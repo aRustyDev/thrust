@@ -1,0 +1,177 @@
+{
+  "skill_name": "rust-test-fuzz",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "got a decode_frame(&[u8]) -> Result<Frame, FrameError> in crates/wire that takes whatever comes off the websocket. someone in standup said we should fuzz it, ive never done that. theres no nightly on this laptop. where do i start, and i dont want ci running a fuzzer on every pr",
+      "expected_output": "A harness fn over raw bytes with a cheap invariant, a thin fuzz target outside the main workspace, committed byte seeds, a fuzz_replay_ test that nextest runs on every PR, campaigns outside nextest, installs left to the user, and a control showing the replay can fail.",
+      "expectations": [
+        "Proposes a harness function that takes raw `&[u8]`, living in a `fuzz_harness` module compiled only under `cfg(any(test, fuzzing))`",
+        "The harness never panics and asserts a cheap invariant, for example that re-encoding a successfully decoded frame reproduces the input",
+        "Adds a thin fuzz target wrapper under `fuzz/fuzz_targets/` and keeps `fuzz/` outside the main workspace",
+        "Commits at least one seed under `fuzz/seeds/<target>/` and says seeds are raw bytes",
+        "Adds a `fuzz_replay_<target>` test that nextest runs on every normal run, so pull requests replay the seeds without running a fuzzer, and says campaigns run outside nextest (for example on a schedule)",
+        "Treats installing the nightly toolchain and cargo-fuzz as the user's decision: proposes it and waits instead of installing, and marks campaign commands as not run or unverified",
+        "Says the replay test must fail when it finds no inputs, and shows a control for that (for example pointing it at an empty directory)"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "my fuzz_replay_ test has been green forever but i just renamed the target dir from parse_hdr to parse_header and forgot to move the seeds and nothing went red?? test is basically `let Ok(entries) = std::fs::read_dir(dir) else { return };` then loops over entries running the harness. is that normal",
+      "expected_output": "Explains the vacuous pass from the early return, states the fail-on-zero-inputs rule, requires the seeds directory to be non-empty on its own, and gives the empty-directory control.",
+      "expectations": [
+        "Explains the test passes vacuously: when the directory is missing, the early return skips every input and nothing is asserted",
+        "States the rule that a replay or corpus test must fail when it finds no inputs, not skip or warn",
+        "Recommends asserting that the seeds directory exists and holds at least one file on its own, rather than a total over seeds and regressions",
+        "Notes that a regressions directory may legitimately be absent or empty, so it is handled separately from seeds",
+        "Gives a control: point the test at an empty or missing directory (or move the seeds aside) and confirm it goes red before trusting it",
+        "Says to move the seeds to the renamed directory or fix the path, and does not suggest deleting, ignoring or weakening the test"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "weekly fuzz job failed and uploaded fuzz/artifacts/parse_frame/crash-9f2c41ab. panic is index out of bounds in decode. can i just commit that file under regressions and move on? its like 4kb",
+      "expected_output": "Minimize with tmin (propose, tool not installed), give it a descriptive name under fuzz/regressions, see the replay go red before the fix, fix the code, commit both, and add a property or named case for the class.",
+      "expectations": [
+        "Says to minimize the artifact first with `cargo fuzz tmin`, and treats installing nightly and cargo-fuzz as the user's decision rather than assuming they are present",
+        "Says to give the minimized file a short descriptive name under `fuzz/regressions/<target>/` instead of committing the hash-named artifact",
+        "Says the replay must go red and name the file before the fix, proving the regression reproduces the bug without a fuzzer",
+        "Says to fix the code, not the test, and to commit the fix and the regression file together",
+        "Suggests a named example case and/or a `prop_` never-panics property when the input represents a class of inputs",
+        "Does not suggest weakening the harness assertion, using `#[ignore]`, or catching and ignoring the panic",
+        "Notes the crash can be reproduced without a fuzzer by copying it into the regressions directory and running the nextest replay"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "added seeds for the frame fuzz target like `echo '\\x01\\x00\\x03abc' > fuzz/seeds/parse_frame/abc`, replay is green. coverage on the ok branch in the harness looks like zero though, is the replay even running my round trip assert",
+      "expected_output": "Identifies echo as writing text (or adding a newline), prescribes printf octal escapes and an xxd read-back, explains the replay passes without reaching the invariant, and requires a seed that reaches the success branch plus a broken-codec control.",
+      "expectations": [
+        "Identifies that `echo` may write the escape sequence as literal text (depending on the shell) or add a trailing newline, so the file is not the intended bytes",
+        "Says to write seeds with `printf` octal escapes, for example `printf '\\001\\000\\003abc'`",
+        "Says to read the bytes back with `xxd` (or `od`) and compare with the intended hex `01 00 03 61 62 63` before committing",
+        "Explains that the replay can then pass while the decode-then-encode invariant never executes, because the decoder rejects the text",
+        "Says at least one seed must reach the harness's success branch, and that the replay should fail if none does",
+        "Gives a control: temporarily break the codec or the invariant (for example drop a payload byte) and confirm the replay goes red"
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "write me a proptest that checks encode then decode gives the same Frame back for any frame, using the arb_frame strategy we already have",
+      "expected_output": "Routes away: a structured-value round trip is a property test (rust-test-logic), not a fuzz campaign; no fuzz targets or seeds are set up.",
+      "expectations": [
+        "Says this is a property test (a round trip over structured values), not fuzzing",
+        "Points to `rust-test-logic` as the place for proptest round trips",
+        "Does not set up cargo-fuzz, a fuzz target or seeds for this request",
+        "At most briefly mentions that robustness against arbitrary hostile bytes is the fuzz skill's job"
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "coverage says 91% on the wire crate but i dont trust the tests. how do i find out if the suite is actually strong enough",
+      "expected_output": "Routes away: suite strength is a mutation-testing question (rust-test-mutation), not fuzzing.",
+      "expectations": [
+        "Recognises this as a question about how strong the test suite is and points to mutation testing (`rust-test-mutation`)",
+        "Does not start by setting up fuzzing",
+        "Explains that fuzzing finds panics and violated invariants in input handling, and does not measure test strength",
+        "Does not run or push installs without asking first"
+      ]
+    },
+    {
+      "id": 7,
+      "prompt": "we have a typescript csv import parser in node that people upload files to. same idea as the cargo-fuzz thing we did for the rust decoder, can you set up fuzzing for the ts one",
+      "expected_output": "Pushes back: cargo-fuzz and afl.rs are for Rust; a TS/Node parser needs a JS fuzzer (Jazzer.js, jsfuzz); no Rust fuzz scaffolding for TS code.",
+      "expectations": [
+        "Says that cargo-fuzz, afl.rs and this skill apply to Rust code and not to a TypeScript or Node parser",
+        "Names a JavaScript-native fuzzer such as Jazzer.js or jsfuzz as the right category of tool",
+        "Does not create `fuzz_targets` or a `fuzz_replay_` test for the TypeScript code",
+        "Says that if the parser is being ported to Rust, Rust fuzzing applies once the Rust port exists, and the port process itself belongs to ts-to-rust"
+      ]
+    },
+    {
+      "id": 8,
+      "prompt": "our frame decoder ships inside a cloudflare worker (wasm32-unknown-unknown, stable rust). reviewer says just wrap decode in catch_unwind so a malformed request cant take anything down, then we dont need the fuzzing stuff. right?",
+      "expected_output": "Corrects the premise: on wasm32-unknown-unknown with stable Rust a panic aborts and cannot be caught, so a decoder panic resets the instance; never-panics matters more, so keep fuzzing and the property test; tagged as derived.",
+      "expectations": [
+        "Says that on `wasm32-unknown-unknown` with the stable toolchain a panic aborts and there is no unwinding, so `catch_unwind` cannot catch it",
+        "Says a decoder panic on hostile bytes therefore resets the Wasm instance",
+        "Concludes that never panicking matters more there and recommends returning an `Err` instead of relying on a catch",
+        "Keeps the fuzz harness and a `prop_..._never_panics` property, noting that native tests and campaigns unwind and so find the bug",
+        "Marks the wasm abort behaviour as reasoned from documentation or toolchain behaviour rather than demonstrated in this session"
+      ]
+    },
+    {
+      "id": 9,
+      "prompt": "fuzz harness asserts decode(x) then encode gives back exactly x. on our json-ish config format it 'crashes' within a second on inputs with extra spaces or reordered keys. thats a parser bug right? fuzzer says its failing",
+      "expected_output": "Diagnoses the harness invariant as too strong for a non-canonical format, proposes a semantic round trip, requires the change and its reason to be stated, and keeps the never-panics check.",
+      "expectations": [
+        "Says the assertion is too strong for this format, so the failure is likely a harness problem and not a parser bug: byte equality only fits formats with one canonical encoding",
+        "Suggests a semantic invariant such as `decode(encode(decode(x))) == decode(x)`",
+        "Says the harness change must be made deliberately with the reason written in the commit message, not quietly weakened",
+        "Keeps the never-panics check and a meaningful invariant instead of deleting the assertion altogether"
+      ]
+    },
+    {
+      "id": 10,
+      "prompt": "write the github action for nightly fuzzing. 3 targets: parse_frame, parse_header, parse_query. i usually do `cargo fuzz run $t | tee fuzz.log; echo $?` so i can see the exit code in the log",
+      "expected_output": "A scheduled workflow with a matrix job per target, nightly toolchain, time-limited campaign, artifact upload on failure, minimal permissions, and output redirected to a log instead of tee or a trailing echo of the status.",
+      "expectations": [
+        "Uses a schedule (cron) trigger, optionally workflow_dispatch, and not a pull_request trigger, saying that pull requests rely on the `fuzz_replay_` tests in the normal nextest job",
+        "Runs one job per target using a matrix with `fail-fast: false`",
+        "Uses a nightly toolchain, pins the cargo-fuzz version, and treats installing it as something the user approves",
+        "Limits each campaign with a time bound such as `-max_total_time`",
+        "Uploads `fuzz/artifacts` (and the log) when the job fails",
+        "Warns that `| tee` and a trailing `; echo $?` replace the fuzzer's exit status, and redirects output to a log instead so the step status is the fuzzer's own",
+        "Keeps permissions minimal, for example `contents: read`",
+        "Passes a generated, uncommitted corpus directory ahead of the committed seeds (so new inputs do not land in `fuzz/seeds/`) and sets a small per-input `-timeout`"
+      ]
+    },
+    {
+      "id": 11,
+      "prompt": "cargo-fuzz works great on our decoder but it plateaued. someone suggested afl.rs on the same thing. do i copy the harness? im on an m2 mac, and what do i do about the seeds dir",
+      "expected_output": "Reuse the same harness fn and shared seeds with a thin afl.rs bin crate outside the workspace; platform note from the sample; installs and system-config left to the user; crash files renamed into regressions; commands tagged unverified.",
+      "expectations": [
+        "Says to reuse the same harness function and share the seeds and regressions directories, adding only a thin afl target that calls it inside `afl::fuzz!`",
+        "Puts the afl bin crate outside the main workspace",
+        "Notes that afl.rs is recorded as working on macOS ARM64 and x86-64 Linux and needs a C compiler and `make`, attributing that to the source sample or marking it unverified",
+        "Treats `cargo install cargo-afl` and `cargo afl system-config` (which needs root) as the user's decision",
+        "Says crashes land under `<out>/default/crashes/` and are minimized and renamed (no colons in the name) into `fuzz/regressions/<target>/` rather than committed raw",
+        "Marks the afl commands as unverified (not run) rather than presenting them as tested"
+      ]
+    },
+    {
+      "id": 12,
+      "prompt": "can you pentest our public api over the weekend and write up whatever you find as a CVE. we have the rust decoder fuzzing stuff already if thats useful",
+      "expected_output": "Declines the pentest and CVE scope; offers only the in-scope piece (local harness fuzzing of the Rust parser) and leaves triage and advisory writing to a security process.",
+      "expectations": [
+        "Says pentesting a live API and writing a CVE are outside this skill",
+        "Does not propose running attack tooling against the live service",
+        "Offers only the in-scope part: coverage-guided fuzzing of the Rust parsing code locally through the harness and replay",
+        "Says security triage and advisory writing belong to a separate security process"
+      ]
+    },
+    {
+      "id": 13,
+      "prompt": "ci left two more files next to the crash one: fuzz/artifacts/parse_frame/oom-77ab and leak-12cd. same drill right, copy them to regressions and run the nextest replay?",
+      "expected_output": "Treats oom and leak artifacts differently: reproduce oom/timeout through the engine with limits first, and keep a leak as an engine-run regression because the replay cannot go red for it.",
+      "expectations": [
+        "Says oom and timeout artifacts should be reproduced through the fuzz engine first, bounded by `-rss_limit_mb` and `-timeout`, because replaying them under nextest can exhaust memory or hang",
+        "Notes a hang is unbounded under nextest unless the nextest config sets a per-test limit, and says to check that it does",
+        "Says a leak cannot make the replay test go red, so the usual 'the replay must go red' check applies only to crash-class artifacts",
+        "Says to keep a leak input as a regression for the engine run rather than relying on the replay",
+        "Treats a decoder that allocates a length the input declares as the finding to fix, and does not suggest raising a limit or timeout to get green"
+      ]
+    },
+    {
+      "id": 14,
+      "prompt": "our ci image doesnt have cargo-nextest yet. can i still run the fuzz_replay_ tests, and do you just go install it?",
+      "expected_output": "The replay is a plain #[test], so cargo test fuzz_replay_ runs it with libtest reporting; installing nextest is the user's decision and is proposed, not done.",
+      "expectations": [
+        "Says the replay is an ordinary `#[test]`, so `cargo test fuzz_replay_` runs it without nextest",
+        "Notes that libtest, not nextest, then reports the result (for example exit 101 on failure rather than nextest's 100)",
+        "Treats installing cargo-nextest as the user's decision: proposes it and waits instead of installing",
+        "Does not suggest skipping, ignoring or weakening the replay while nextest is missing"
+      ]
+    }
+  ]
+}

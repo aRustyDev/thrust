@@ -1,0 +1,39 @@
+{
+  "should_trigger": [
+    "set up cargo-fuzz for our frame decoder",
+    "how do i structure fuzz_targets/parse_header.rs so the seeds also run in ci",
+    "decoder panics on bad input from the socket, how do i find every one of them",
+    "the nightly job left fuzz/artifacts/parse_frame/crash-ab12cd, what do i do with it",
+    "shrink this crash with cargo fuzz tmin and keep it as a regression test",
+    "can i run afl.rs on the same harness i use for cargo-fuzz",
+    "#[cfg(fuzzing)] gives me an unexpected_cfgs warning",
+    "my fuzz_replay_ test is green even when the seeds folder is missing",
+    "libFuzzer found an out of bounds read in our length-prefixed frame parser, add a regression test",
+    "make sure our url and header parser never panics on hostile bytes, i want a fuzz campaign plus something nextest runs on every pr",
+    "cargo afl build fails on apple silicon for my rust decoder fuzz crate",
+    "fuzz the function our axum extractor calls to parse the body bytes",
+    "do my fuzz seeds need to be raw bytes? i made them with echo and the replay passes",
+    "honggfuzz or bolero for our rust parser, can it reuse the same harness and seeds",
+    "set up a cargo-fuzz target with libfuzzer-sys and the arbitrary crate for our Request struct"
+  ],
+  "should_not_trigger": [
+    "write a proptest round-trip for encode and decode",
+    "is my test suite strong enough, coverage says 90% but i dont trust it",
+    "fuzz my Node/TypeScript parser",
+    "pentest this API",
+    "cargo mutants shows MISSED mutants in store.rs, how do i kill them",
+    "write an axum oneshot test for the issues handler",
+    "test this Dioxus component with SSR rendering",
+    "port this TypeScript module to Rust and freeze the behaviour first",
+    "triage this CVE and write the advisory for the buffer overflow",
+    "set up nextest profiles with a slow-timeout for the property tests",
+    "write an rstest table of edge cases for decode",
+    "how does Jazzer.js instrument code for coverage",
+    "compare my rust output with the recorded typescript output for the same inputs",
+    "set up cargo clippy in CI",
+    "write a proptest that checks decode never panics on arbitrary bytes",
+    "post a malformed request body to our axum router in a test and assert it returns 400",
+    "add a nightly cargo-mutants job to ci",
+    "run schemathesis against our openapi spec"
+  ]
+}
