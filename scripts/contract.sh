@@ -159,7 +159,17 @@ echo "[$TARGET/$PASS] target healthy at $THRUST_BASE_URL (adapters=$ADAPTERS fas
 
 # Vacuity guard: ask the target which adapter set it is REALLY running and compare with what this
 # run claims to be testing. (A mislabelled run that exercised the wrong set would otherwise pass.)
-INFO="$(curl -fsS -H "x-admin-token: $THRUST_ADMIN_TOKEN" "$THRUST_BASE_URL/_info" 2>/dev/null)"
+# A few retries: right after startup a `wrangler dev` worker can still be reloading (measured: one
+# `worker-cf blast` run got an empty reply here although /healthz had just answered). The guard
+# still fails closed if no answer ever arrives.
+INFO=""
+i=0
+while [ "$i" -lt 8 ]; do
+  INFO="$(curl -fsS -H "x-admin-token: $THRUST_ADMIN_TOKEN" "$THRUST_BASE_URL/_info" 2>/dev/null || true)"
+  [ -n "$INFO" ] && break
+  i=$((i + 1))
+  sleep 1
+done
 echo "[$TARGET/$PASS] /_info: $INFO"
 case "$INFO" in
   *"\"target\":\"$KIND\""*) ;;

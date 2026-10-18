@@ -1,0 +1,18 @@
+[package]
+name = "sqlx-wasm-probe"
+description = "Spike 0001 evidence for Q-0044.1: does sqlx (postgres) build for wasm32-unknown-unknown?"
+edition = "2021"
+publish = false
+
+# Standalone on purpose: not a member of the thrust workspace.
+[workspace]
+
+[features]
+# the two ways a user could try: with the tokio runtime, or with no runtime at all
+tokio = ["sqlx/runtime-tokio"]
+
+[dependencies]
+sqlx = { version = "0.8", default-features = false, features = ["postgres"] }
+# First blocker found (see run.sh output): getrandom 0.2 needs `js` on wasm32. Enabling it removes
+# that blocker so the NEXT one becomes visible; it does not make sqlx usable by itself.
+getrandom = { version = "0.2", features = ["js"] }
