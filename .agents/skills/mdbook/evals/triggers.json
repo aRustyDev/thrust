@@ -1,0 +1,20 @@
+{
+  "should_trigger": [
+    "my mdbook build says everything is fine but one chapter just isnt in the sidebar, SUMMARY.md looks right to me",
+    "mdbook test docs -L target/debug/deps gives error[E0464] multiple candidates for rlib dependency, whats wrong",
+    "how do i include just part of a rust file in a docs chapter with {{#include}} and keep it compiled",
+    "set up a github action that runs mdbook build and mdbook test in docs/ and deploys the book to pages",
+    "mdbook 0.5 says unknown field in my book.toml after upgrading from 0.4, what changed",
+    "can i add mermaid diagrams to the mdbook, do i need mdbook-mermaid",
+    "mdbook build prints ERROR lines about my include but the exit code is 0 and CI stays green"
+  ],
+  "should_not_trigger": [
+    "cargo doc is failing with an unresolved intra-doc link in my crate, how do i fix the rustdoc warning",
+    "set up a MkDocs Material site for our API documentation with versioning",
+    "my Docusaurus sidebar is missing a page even though the markdown file exists",
+    "my github actions required check is stuck waiting for status to be reported on docs-only PRs",
+    "add a Dockerfile for the server crate with a non-root user",
+    "how do I write a good doc comment with an example for a pub fn so cargo test --doc runs it",
+    "my Sphinx docs build warns about a toctree entry that does not exist"
+  ]
+}
