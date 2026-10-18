@@ -136,26 +136,174 @@ fn raw(
     defining: bool,
     isolating: bool,
 ) -> Raw {
-    Raw { name, content, groups, attrs, inline, atom, marks, code, defining, isolating }
+    Raw {
+        name,
+        content,
+        groups,
+        attrs,
+        inline,
+        atom,
+        marks,
+        code,
+        defining,
+        isolating,
+    }
 }
 
-const CALLOUT_URL: &str = "https://cdn.jsdelivr.net/npm/emoji-datasource-apple/img/apple/64/1f4a1.png";
+const CALLOUT_URL: &str =
+    "https://cdn.jsdelivr.net/npm/emoji-datasource-apple/img/apple/64/1f4a1.png";
 
 fn raw_nodes(variant: Variant) -> Vec<Raw> {
     use MarksSpec::{Default as MD, None as MN};
     let mut n = vec![
-        raw("paragraph", "inline*", &["block"], vec![a("textAlign", v("null"))], false, false, MD, false, false, false),
-        raw("mention", "", &["inline"], vec![a("id", v("null")), a("entity_identifier", v("null")), a("entity_name", v("null"))], true, true, MD, false, false, false),
-        raw("bulletList", "listItem+", &["block", "list"], vec![], false, false, MD, false, false, false),
-        raw("doc", "block+", &[], vec![], false, false, MD, false, false, false),
-        raw("hardBreak", "", &["inline"], vec![], true, true, MD, false, false, false),
-        raw("heading", "inline*", &["block"], vec![a("textAlign", v("null")), a("level", v("1"))], false, false, MD, false, true, false),
-        raw("listItem", "paragraph block*", &[], vec![], false, false, MD, false, true, false),
-        raw("orderedList", "listItem+", &["block", "list"], vec![a("start", v("1")), a("type", v("null"))], false, false, MD, false, false, false),
-        raw("text", "", &["inline"], vec![], true, true, MD, false, false, false),
-        raw("emoji", "", &["inline"], vec![a("name", v("null"))], true, true, MD, false, false, false),
-        raw("blockquote", "block+", &["block"], vec![], false, false, MD, false, true, false),
-        raw("horizontalRule", "", &["block"], vec![], false, true, MD, false, false, false),
+        raw(
+            "paragraph",
+            "inline*",
+            &["block"],
+            vec![a("textAlign", v("null"))],
+            false,
+            false,
+            MD,
+            false,
+            false,
+            false,
+        ),
+        raw(
+            "mention",
+            "",
+            &["inline"],
+            vec![
+                a("id", v("null")),
+                a("entity_identifier", v("null")),
+                a("entity_name", v("null")),
+            ],
+            true,
+            true,
+            MD,
+            false,
+            false,
+            false,
+        ),
+        raw(
+            "bulletList",
+            "listItem+",
+            &["block", "list"],
+            vec![],
+            false,
+            false,
+            MD,
+            false,
+            false,
+            false,
+        ),
+        raw(
+            "doc",
+            "block+",
+            &[],
+            vec![],
+            false,
+            false,
+            MD,
+            false,
+            false,
+            false,
+        ),
+        raw(
+            "hardBreak",
+            "",
+            &["inline"],
+            vec![],
+            true,
+            true,
+            MD,
+            false,
+            false,
+            false,
+        ),
+        raw(
+            "heading",
+            "inline*",
+            &["block"],
+            vec![a("textAlign", v("null")), a("level", v("1"))],
+            false,
+            false,
+            MD,
+            false,
+            true,
+            false,
+        ),
+        raw(
+            "listItem",
+            "paragraph block*",
+            &[],
+            vec![],
+            false,
+            false,
+            MD,
+            false,
+            true,
+            false,
+        ),
+        raw(
+            "orderedList",
+            "listItem+",
+            &["block", "list"],
+            vec![a("start", v("1")), a("type", v("null"))],
+            false,
+            false,
+            MD,
+            false,
+            false,
+            false,
+        ),
+        raw(
+            "text",
+            "",
+            &["inline"],
+            vec![],
+            true,
+            true,
+            MD,
+            false,
+            false,
+            false,
+        ),
+        raw(
+            "emoji",
+            "",
+            &["inline"],
+            vec![a("name", v("null"))],
+            true,
+            true,
+            MD,
+            false,
+            false,
+            false,
+        ),
+        raw(
+            "blockquote",
+            "block+",
+            &["block"],
+            vec![],
+            false,
+            false,
+            MD,
+            false,
+            true,
+            false,
+        ),
+        raw(
+            "horizontalRule",
+            "",
+            &["block"],
+            vec![],
+            false,
+            true,
+            MD,
+            false,
+            false,
+            false,
+        ),
         raw(
             "image",
             "",
@@ -198,15 +346,64 @@ fn raw_nodes(variant: Variant) -> Vec<Raw> {
             false,
             false,
         ),
-        raw("taskList", "taskItem+", &["block", "list"], vec![], false, false, MD, false, false, false),
-        raw("taskItem", "paragraph block*", &[], vec![a("checked", v("false"))], false, false, MD, false, true, false),
-        raw("codeBlock", "text*", &["block"], vec![a("language", v("null"))], false, false, MN, true, true, false),
-        raw("table", "tableRow+", &["block"], vec![], false, false, MD, false, false, true),
+        raw(
+            "taskList",
+            "taskItem+",
+            &["block", "list"],
+            vec![],
+            false,
+            false,
+            MD,
+            false,
+            false,
+            false,
+        ),
+        raw(
+            "taskItem",
+            "paragraph block*",
+            &[],
+            vec![a("checked", v("false"))],
+            false,
+            false,
+            MD,
+            false,
+            true,
+            false,
+        ),
+        raw(
+            "codeBlock",
+            "text*",
+            &["block"],
+            vec![a("language", v("null"))],
+            false,
+            false,
+            MN,
+            true,
+            true,
+            false,
+        ),
+        raw(
+            "table",
+            "tableRow+",
+            &["block"],
+            vec![],
+            false,
+            false,
+            MD,
+            false,
+            false,
+            true,
+        ),
         raw(
             "tableHeader",
             "block+",
             &[],
-            vec![a("colspan", v("1")), a("rowspan", v("1")), a("colwidth", v("[150]")), a("background", v("\"none\""))],
+            vec![
+                a("colspan", v("1")),
+                a("rowspan", v("1")),
+                a("colwidth", v("[150]")),
+                a("background", v("\"none\"")),
+            ],
             false,
             false,
             MD,
@@ -218,7 +415,13 @@ fn raw_nodes(variant: Variant) -> Vec<Raw> {
             "tableCell",
             "block+",
             &[],
-            vec![a("colspan", v("1")), a("rowspan", v("1")), a("colwidth", v("[150]")), a("background", v("null")), a("textColor", v("null"))],
+            vec![
+                a("colspan", v("1")),
+                a("rowspan", v("1")),
+                a("colwidth", v("[150]")),
+                a("background", v("null")),
+                a("textColor", v("null")),
+            ],
             false,
             false,
             MD,
@@ -226,7 +429,18 @@ fn raw_nodes(variant: Variant) -> Vec<Raw> {
             false,
             true,
         ),
-        raw("tableRow", "(tableCell | tableHeader)*", &[], vec![a("background", v("null")), a("textColor", v("null"))], false, false, MD, false, false, false),
+        raw(
+            "tableRow",
+            "(tableCell | tableHeader)*",
+            &[],
+            vec![a("background", v("null")), a("textColor", v("null"))],
+            false,
+            false,
+            MD,
+            false,
+            false,
+            false,
+        ),
         raw(
             "calloutComponent",
             "block+",
@@ -236,7 +450,10 @@ fn raw_nodes(variant: Variant) -> Vec<Raw> {
                 a("data-icon-color", AttrDefault::Undefined),
                 a("data-icon-name", AttrDefault::Undefined),
                 a("data-emoji-unicode", v("\"128161\"")),
-                a("data-emoji-url", AttrDefault::Val(Value::String(CALLOUT_URL.into()))),
+                a(
+                    "data-emoji-url",
+                    AttrDefault::Val(Value::String(CALLOUT_URL.into())),
+                ),
                 a("data-logo-in-use", v("\"emoji\"")),
                 a("data-background", AttrDefault::Undefined),
                 a("data-block-type", v("\"callout-component\"")),
@@ -273,7 +490,16 @@ fn raw_nodes(variant: Variant) -> Vec<Raw> {
 }
 
 fn raw_marks() -> Vec<MarkType> {
-    let m = |name: &'static str, attrs: Vec<AttrSpec>, excludes: Excludes, inclusive: Option<bool>| MarkType { name, rank: 0, attrs, excludes, inclusive };
+    let m = |name: &'static str,
+             attrs: Vec<AttrSpec>,
+             excludes: Excludes,
+             inclusive: Option<bool>| MarkType {
+        name,
+        rank: 0,
+        attrs,
+        excludes,
+        inclusive,
+    };
     let mut marks = vec![
         m(
             "link",
@@ -499,7 +725,12 @@ impl Nfa {
     }
 }
 
-fn build_dfa(nfa: &Nfa, states: &mut Vec<MatchState>, labeled: &mut HashMap<Vec<usize>, usize>, set: Vec<usize>) -> usize {
+fn build_dfa(
+    nfa: &Nfa,
+    states: &mut Vec<MatchState>,
+    labeled: &mut HashMap<Vec<usize>, usize>,
+    set: Vec<usize>,
+) -> usize {
     let mut out: Vec<(TypeId, Vec<usize>)> = vec![];
     for node in &set {
         for e in &nfa.nodes[*node] {
@@ -519,7 +750,10 @@ fn build_dfa(nfa: &Nfa, states: &mut Vec<MatchState>, labeled: &mut HashMap<Vec<
         }
     }
     let id = states.len();
-    states.push(MatchState { valid_end: set.contains(&(nfa.nodes.len() - 1)), next: vec![] });
+    states.push(MatchState {
+        valid_end: set.contains(&(nfa.nodes.len() - 1)),
+        next: vec![],
+    });
     labeled.insert(set, id);
     for (term, mut s) in out {
         s.sort_unstable();
@@ -551,9 +785,16 @@ impl Schema {
             let content_match = if r.content.is_empty() {
                 None
             } else {
-                let mut p = Parser { toks: tokenize(r.content), pos: 0, names: &by_name, groups: &groups };
+                let mut p = Parser {
+                    toks: tokenize(r.content),
+                    pos: 0,
+                    names: &by_name,
+                    groups: &groups,
+                };
                 let expr = p.expr();
-                let mut nfa = Nfa { nodes: vec![vec![]] };
+                let mut nfa = Nfa {
+                    nodes: vec![vec![]],
+                };
                 let dangling = nfa.compile(&expr, 0);
                 let end = nfa.node();
                 nfa.connect(&dangling, end);
@@ -582,7 +823,15 @@ impl Schema {
         let marks = raw_marks();
         let mark_by_name = marks.iter().map(|m| (m.name, m.rank)).collect();
         let top = by_name["doc"];
-        Schema { variant, nodes, marks, states, by_name, mark_by_name, top }
+        Schema {
+            variant,
+            nodes,
+            marks,
+            states,
+            by_name,
+            mark_by_name,
+            top,
+        }
     }
 
     pub fn node_type(&self, name: &str) -> Option<TypeId> {
@@ -604,7 +853,11 @@ impl Schema {
     /// ProseMirror `NodeType.inlineContent`: the first content edge is an inline type.
     pub fn inline_content(&self, id: TypeId) -> bool {
         match self.nodes[id].content_match {
-            Some(s) => self.states[s].next.first().map(|(t, _)| self.nodes[*t].inline).unwrap_or(false),
+            Some(s) => self.states[s]
+                .next
+                .first()
+                .map(|(t, _)| self.nodes[*t].inline)
+                .unwrap_or(false),
             None => false,
         }
     }
@@ -625,7 +878,11 @@ impl Schema {
 
     // ----- ContentMatch API -----
     pub fn match_type(&self, state: usize, ty: TypeId) -> Option<usize> {
-        self.states[state].next.iter().find(|(t, _)| *t == ty).map(|(_, n)| *n)
+        self.states[state]
+            .next
+            .iter()
+            .find(|(t, _)| *t == ty)
+            .map(|(_, n)| *n)
     }
     pub fn match_types(&self, mut state: usize, types: &[TypeId]) -> Option<usize> {
         for t in types {
@@ -637,7 +894,11 @@ impl Schema {
         self.states[state].valid_end
     }
     pub fn default_type(&self, state: usize) -> Option<TypeId> {
-        self.states[state].next.iter().map(|(t, _)| *t).find(|t| !self.nodes[*t].is_text)
+        self.states[state]
+            .next
+            .iter()
+            .map(|(t, _)| *t)
+            .find(|t| !self.nodes[*t].is_text)
     }
 
     /// `ContentMatch.findWrapping`: the chain of node types to open to make `target` fit at `state`.
@@ -648,7 +909,11 @@ impl Schema {
             via: Option<usize>,
         }
         let mut seen: Vec<TypeId> = vec![];
-        let mut active = vec![Active { m: state, ty: None, via: None }];
+        let mut active = vec![Active {
+            m: state,
+            ty: None,
+            via: None,
+        }];
         let mut head = 0;
         while head < active.len() {
             let (m, cur_ty) = (active[head].m, active[head].ty);
@@ -664,8 +929,15 @@ impl Schema {
             }
             for (t, next) in self.states[m].next.clone() {
                 let nt = &self.nodes[t];
-                if !nt.is_leaf() && !seen.contains(&t) && (cur_ty.is_none() || self.states[next].valid_end) {
-                    active.push(Active { m: nt.content_match.unwrap(), ty: Some(t), via: Some(head) });
+                if !nt.is_leaf()
+                    && !seen.contains(&t)
+                    && (cur_ty.is_none() || self.states[next].valid_end)
+                {
+                    active.push(Active {
+                        m: nt.content_match.unwrap(),
+                        ty: Some(t),
+                        via: Some(head),
+                    });
                     seen.push(t);
                 }
             }
@@ -680,7 +952,14 @@ impl Schema {
         let mut seen = vec![state];
         self.fill_search(state, after, to_end, &mut seen, vec![])
     }
-    fn fill_search(&self, m: usize, after: &[TypeId], to_end: bool, seen: &mut Vec<usize>, types: Vec<TypeId>) -> Option<Vec<TypeId>> {
+    fn fill_search(
+        &self,
+        m: usize,
+        after: &[TypeId],
+        to_end: bool,
+        seen: &mut Vec<usize>,
+        types: Vec<TypeId>,
+    ) -> Option<Vec<TypeId>> {
         if let Some(fin) = self.match_types(m, after) {
             if !to_end || self.states[fin].valid_end {
                 return Some(types);
@@ -708,18 +987,26 @@ impl Schema {
         let my_nodes: Vec<&str> = self.nodes.iter().map(|n| n.name).collect();
         let their_nodes: Vec<&str> = dn.keys().map(|s| s.as_str()).collect();
         if my_nodes != their_nodes {
-            out.push(format!("node list/order differs: rust={my_nodes:?} oracle={their_nodes:?}"));
+            out.push(format!(
+                "node list/order differs: rust={my_nodes:?} oracle={their_nodes:?}"
+            ));
         }
         for n in &self.nodes {
             let Some(d) = dn.get(n.name) else { continue };
             let want_content = d["content"].as_str().unwrap_or("");
             if want_content != n.content {
-                out.push(format!("node {}: content `{}` != oracle `{}`", n.name, n.content, want_content));
+                out.push(format!(
+                    "node {}: content `{}` != oracle `{}`",
+                    n.name, n.content, want_content
+                ));
             }
             let want_group = d["group"].as_str().unwrap_or("");
             let have_group = n.groups.join(" ");
             if want_group != have_group {
-                out.push(format!("node {}: group `{}` != oracle `{}`", n.name, have_group, want_group));
+                out.push(format!(
+                    "node {}: group `{}` != oracle `{}`",
+                    n.name, have_group, want_group
+                ));
             }
             if d["inline"].as_bool() != Some(n.inline) {
                 out.push(format!("node {}: inline differs", n.name));
@@ -728,7 +1015,10 @@ impl Schema {
             let have: Vec<&str> = n.attrs.iter().map(|x| x.name).collect();
             let want: Vec<&str> = attrs.keys().map(|s| s.as_str()).collect();
             if have != want {
-                out.push(format!("node {}: attr list/order {have:?} != oracle {want:?}", n.name));
+                out.push(format!(
+                    "node {}: attr list/order {have:?} != oracle {want:?}",
+                    n.name
+                ));
             }
             for at in &n.attrs {
                 if let Some(wd) = attrs.get(at.name) {
@@ -738,7 +1028,10 @@ impl Schema {
                         _ => false,
                     };
                     if !ok {
-                        out.push(format!("node {} attr {}: default {:?} != oracle {}", n.name, at.name, at.default, wd));
+                        out.push(format!(
+                            "node {} attr {}: default {:?} != oracle {}",
+                            n.name, at.name, at.default, wd
+                        ));
                     }
                 }
             }
@@ -746,7 +1039,9 @@ impl Schema {
         let my_marks: Vec<&str> = self.marks.iter().map(|m| m.name).collect();
         let their_marks: Vec<&str> = dm.keys().map(|s| s.as_str()).collect();
         if my_marks != their_marks {
-            out.push(format!("mark list/order differs: rust={my_marks:?} oracle={their_marks:?}"));
+            out.push(format!(
+                "mark list/order differs: rust={my_marks:?} oracle={their_marks:?}"
+            ));
         }
         for m in &self.marks {
             let Some(d) = dm.get(m.name) else { continue };
@@ -755,12 +1050,19 @@ impl Schema {
                 if let Some(wd) = attrs.get(at.name) {
                     let ok = matches!((&at.default, wd.get("default")), (AttrDefault::Val(x), Some(y)) if x == y);
                     if !ok {
-                        out.push(format!("mark {} attr {}: default differs from oracle {}", m.name, at.name, wd));
+                        out.push(format!(
+                            "mark {} attr {}: default differs from oracle {}",
+                            m.name, at.name, wd
+                        ));
                     }
                 }
             }
             let want_excl = d["excludes"].as_str();
-            let have_excl = if m.excludes == Excludes::All { Some("_") } else { None };
+            let have_excl = if m.excludes == Excludes::All {
+                Some("_")
+            } else {
+                None
+            };
             if want_excl != have_excl {
                 out.push(format!("mark {}: excludes differs", m.name));
             }

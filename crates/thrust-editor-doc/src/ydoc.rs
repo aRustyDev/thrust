@@ -17,7 +17,10 @@ use yrs::types::text::YChange;
 use yrs::types::xml::{XmlFragment, XmlOut};
 use yrs::types::{Attrs as YAttrs, Delta};
 use yrs::updates::decoder::Decode;
-use yrs::{Any, Doc, In, OffsetKind, Options, Out, ReadTxn, Text, Transact, Update, Xml, XmlElementPrelim, XmlFragmentRef, XmlTextRef};
+use yrs::{
+    Any, Doc, In, OffsetKind, Options, Out, ReadTxn, Text, Transact, Update, Xml, XmlElementPrelim,
+    XmlFragmentRef, XmlTextRef,
+};
 
 fn new_doc(client_id: Option<u64>) -> Doc {
     let mut o = Options::default();
@@ -43,7 +46,10 @@ pub fn value_to_any(v: &Value) -> Any {
         Value::String(s) => Any::String(Arc::from(s.as_str())),
         Value::Array(a) => Any::Array(a.iter().map(value_to_any).collect::<Vec<_>>().into()),
         Value::Object(o) => {
-            let m: HashMap<String, Any> = o.iter().map(|(k, v)| (k.clone(), value_to_any(v))).collect();
+            let m: HashMap<String, Any> = o
+                .iter()
+                .map(|(k, v)| (k.clone(), value_to_any(v)))
+                .collect();
             Any::Map(Arc::new(m))
         }
     }
@@ -56,11 +62,23 @@ pub fn any_to_value(a: &Any) -> Option<Value> {
         Any::Null => Value::Null,
         Any::Bool(b) => Value::Bool(*b),
         Any::Number(yrs::any::Number::Int(i)) => Value::Number((*i).into()),
-        Any::Number(yrs::any::Number::Float(f)) => norm_num(serde_json::Number::from_f64(*f).map(Value::Number).unwrap_or(Value::Null)),
+        Any::Number(yrs::any::Number::Float(f)) => norm_num(
+            serde_json::Number::from_f64(*f)
+                .map(Value::Number)
+                .unwrap_or(Value::Null),
+        ),
         Any::String(s) => Value::String(s.to_string()),
         Any::Buffer(_) => Value::Null,
-        Any::Array(a) => Value::Array(a.iter().map(|x| any_to_value(x).unwrap_or(Value::Null)).collect()),
-        Any::Map(m) => Value::Object(m.iter().filter_map(|(k, v)| any_to_value(v).map(|x| (k.clone(), x))).collect()),
+        Any::Array(a) => Value::Array(
+            a.iter()
+                .map(|x| any_to_value(x).unwrap_or(Value::Null))
+                .collect(),
+        ),
+        Any::Map(m) => Value::Object(
+            m.iter()
+                .filter_map(|(k, v)| any_to_value(v).map(|x| (k.clone(), x)))
+                .collect(),
+        ),
     })
 }
 
@@ -73,15 +91,27 @@ fn text_delta(schema: &Schema, run: &[&Node]) -> Vec<Delta<In>> {
             for m in &n.marks {
                 // `isOverlapping` would add a `--hash` suffix; no mark in this schema is overlapping
                 // (every mark excludes itself or everything), so the plain name is used.
-                let obj: HashMap<String, Any> = m.attrs.iter().map(|(k, v)| (k.clone(), value_to_any(v))).collect();
+                let obj: HashMap<String, Any> = m
+                    .attrs
+                    .iter()
+                    .map(|(k, v)| (k.clone(), value_to_any(v)))
+                    .collect();
                 attrs.insert(Arc::from(schema.marks[m.ty].name), Any::Map(Arc::new(obj)));
             }
-            Delta::Inserted(In::Any(Any::String(Arc::from(n.text.as_deref().unwrap_or("")))), Some(Box::new(attrs)))
+            Delta::Inserted(
+                In::Any(Any::String(Arc::from(n.text.as_deref().unwrap_or("")))),
+                Some(Box::new(attrs)),
+            )
         })
         .collect()
 }
 
-fn write_children(schema: &Schema, txn: &mut yrs::TransactionMut, parent: &impl XmlFragment, children: &[Node]) {
+fn write_children(
+    schema: &Schema,
+    txn: &mut yrs::TransactionMut,
+    parent: &impl XmlFragment,
+    children: &[Node],
+) {
     let mut i = 0;
     while i < children.len() {
         let c = &children[i];
@@ -91,7 +121,10 @@ fn write_children(schema: &Schema, txn: &mut yrs::TransactionMut, parent: &impl 
                 j += 1;
             }
             let run: Vec<&Node> = children[i..j].iter().collect();
-            let prelim = yrs::types::xml::XmlDeltaPrelim { attributes: HashMap::new(), delta: text_delta(schema, &run) };
+            let prelim = yrs::types::xml::XmlDeltaPrelim {
+                attributes: HashMap::new(),
+                delta: text_delta(schema, &run),
+            };
             parent.push_back(txn, yrs::types::xml::XmlIn::Text(prelim));
             i = j;
         } else {
@@ -118,7 +151,12 @@ fn write_children(schema: &Schema, txn: &mut yrs::TransactionMut, parent: &impl 
 
 /// Encode `root` (a `doc` node) as the `default` XmlFragment and, optionally, `title` as the `title` fragment
 /// (a second client id), producing one Yjs update v1.
-pub fn encode(schema: &Schema, root: &Node, title: Option<&Node>, client_id: Option<u64>) -> Vec<u8> {
+pub fn encode(
+    schema: &Schema,
+    root: &Node,
+    title: Option<&Node>,
+    client_id: Option<u64>,
+) -> Vec<u8> {
     let doc = new_doc(client_id);
     {
         let frag = doc.get_or_insert_xml_fragment("default");
@@ -132,7 +170,9 @@ pub fn encode(schema: &Schema, root: &Node, title: Option<&Node>, client_id: Opt
             let mut txn = tdoc.transact_mut();
             write_children(schema, &mut txn, &frag, &t.content);
         }
-        let upd = tdoc.transact().encode_state_as_update_v1(&yrs::StateVector::default());
+        let upd = tdoc
+            .transact()
+            .encode_state_as_update_v1(&yrs::StateVector::default());
         let mut txn = doc.transact_mut();
         if let Ok(u) = Update::decode_v1(&upd) {
             let _ = txn.apply_update(u);
@@ -159,13 +199,17 @@ fn element_attrs(txn: &impl ReadTxn, el: &yrs::XmlElementRef) -> Attrs {
 fn text_nodes(schema: &Schema, txn: &impl ReadTxn, t: &XmlTextRef) -> Option<Vec<Node>> {
     let mut out = vec![];
     for d in t.diff(txn, YChange::identity) {
-        let Out::Any(Any::String(s)) = d.insert else { continue };
+        let Out::Any(Any::String(s)) = d.insert else {
+            continue;
+        };
         let mut marks = vec![];
         if let Some(attrs) = d.attributes {
             // `attributesToMarks`: iteration order of the delta attributes, then sorted by rank in `schema.text`
             for (name, val) in attrs.iter() {
                 let base = strip_hash(name);
-                let Some(ty) = schema.mark_type(base) else { return None };
+                let Some(ty) = schema.mark_type(base) else {
+                    return None;
+                };
                 let given: Attrs = match any_to_value(val) {
                     Some(Value::Object(o)) => o.into_iter().collect(),
                     _ => Attrs::new(),
@@ -183,7 +227,10 @@ fn strip_hash(name: &str) -> &str {
     let b = name.as_bytes();
     if b.len() > 10 && &b[b.len() - 10..b.len() - 8] == b"--" {
         let tail = &name[name.len() - 8..];
-        if tail.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'+' || c == b'/' || c == b'=') {
+        if tail
+            .bytes()
+            .all(|c| c.is_ascii_alphanumeric() || c == b'+' || c == b'/' || c == b'=')
+        {
             return &name[..name.len() - 10];
         }
     }
@@ -234,7 +281,8 @@ pub fn decode(schema: &Schema, update: &[u8], fragment: &str) -> Result<Node, Pm
     let u = Update::decode_v1(update).map_err(|e| PmError(format!("invalid Yjs update: {e}")))?;
     {
         let mut txn = doc.transact_mut();
-        txn.apply_update(u).map_err(|e| PmError(format!("cannot apply Yjs update: {e}")))?;
+        txn.apply_update(u)
+            .map_err(|e| PmError(format!("cannot apply Yjs update: {e}")))?;
     }
     let frag = doc.get_or_insert_xml_fragment(fragment);
     let txn = doc.transact();
@@ -247,7 +295,8 @@ pub fn struct_dump(update: &[u8], fragment: &str) -> Result<Value, PmError> {
     let u = Update::decode_v1(update).map_err(|e| PmError(format!("invalid Yjs update: {e}")))?;
     {
         let mut txn = doc.transact_mut();
-        txn.apply_update(u).map_err(|e| PmError(format!("cannot apply Yjs update: {e}")))?;
+        txn.apply_update(u)
+            .map_err(|e| PmError(format!("cannot apply Yjs update: {e}")))?;
     }
     let frag = doc.get_or_insert_xml_fragment(fragment);
     let txn = doc.transact();
@@ -260,17 +309,24 @@ fn dump_children(txn: &impl ReadTxn, node: &impl XmlFragment, is_fragment: bool)
         match c {
             XmlOut::Element(e) => {
                 let mut attrs = serde_json::Map::new();
-                let mut keys: Vec<(String, Out)> = e.attributes(txn).map(|(k, v)| (k.to_string(), v)).collect();
+                let mut keys: Vec<(String, Out)> =
+                    e.attributes(txn).map(|(k, v)| (k.to_string(), v)).collect();
                 keys.sort_by(|a, b| a.0.cmp(&b.0));
                 for (k, v) in keys {
                     if let Out::Any(a) = v {
-                        attrs.insert(k, any_to_value(&a).unwrap_or(Value::String("__undefined__".into())));
+                        attrs.insert(
+                            k,
+                            any_to_value(&a).unwrap_or(Value::String("__undefined__".into())),
+                        );
                     }
                 }
                 let mut o = serde_json::Map::new();
                 o.insert("el".into(), Value::String(e.tag().to_string()));
                 o.insert("attrs".into(), Value::Object(attrs));
-                o.insert("children".into(), dump_children(txn, &e, false)["children"].clone());
+                o.insert(
+                    "children".into(),
+                    dump_children(txn, &e, false)["children"].clone(),
+                );
                 kids.push(Value::Object(o));
             }
             XmlOut::Text(t) => {
@@ -281,7 +337,10 @@ fn dump_children(txn: &impl ReadTxn, node: &impl XmlFragment, is_fragment: bool)
                         o.insert("insert".into(), Value::String(s.to_string()));
                     }
                     if let Some(attrs) = d.attributes {
-                        let m: serde_json::Map<String, Value> = attrs.iter().map(|(k, v)| (k.to_string(), any_to_value(v).unwrap_or(Value::Null))).collect();
+                        let m: serde_json::Map<String, Value> = attrs
+                            .iter()
+                            .map(|(k, v)| (k.to_string(), any_to_value(v).unwrap_or(Value::Null)))
+                            .collect();
                         if !m.is_empty() {
                             o.insert("attributes".into(), Value::Object(m));
                         }

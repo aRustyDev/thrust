@@ -1,5 +1,9 @@
 use serde_json::Value;
-use thrust_editor_doc::{html, pm::Node, schema::{Schema, Variant}};
+use thrust_editor_doc::{
+    html,
+    pm::Node,
+    schema::{Schema, Variant},
+};
 
 fn load() -> Value {
     let p = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/corpus/corpus.json");
@@ -16,7 +20,11 @@ fn stage2_html_probe() {
         if d.get("json").is_none() {
             continue;
         }
-        let variant = if d["variant"] == "rich" { Variant::Rich } else { Variant::Document };
+        let variant = if d["variant"] == "rich" {
+            Variant::Rich
+        } else {
+            Variant::Document
+        };
         let schema = Schema::new(variant);
         let node = Node::from_json(&schema, &d["json"]).unwrap();
         let got = html::to_html(&schema, &node);
@@ -25,7 +33,11 @@ fn stage2_html_probe() {
         if got == want {
             ok += 1;
         } else {
-            let at = got.bytes().zip(want.bytes()).position(|(a, b)| a != b).unwrap_or(got.len().min(want.len()));
+            let at = got
+                .bytes()
+                .zip(want.bytes())
+                .position(|(a, b)| a != b)
+                .unwrap_or(got.len().min(want.len()));
             let lo = at.saturating_sub(60);
             fails.push(format!(
                 "{id}: first diff at byte {at}\n   got : {}\n   want: {}",
@@ -38,4 +50,5 @@ fn stage2_html_probe() {
     for f in fails.iter().take(25) {
         eprintln!("FAIL {f}");
     }
+    assert_eq!(ok, n, "json -> html must be byte-identical to generateHTML");
 }

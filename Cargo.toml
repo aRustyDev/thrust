@@ -13,6 +13,7 @@ members = [
     "crates/thrust-server",
     "crates/thrust-contract-tests",
     "crates/thrust-editor-doc",
+    "crates/thrust-editor-worker",
 ]
 
 [workspace.package]

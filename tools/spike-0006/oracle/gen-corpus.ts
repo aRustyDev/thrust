@@ -177,7 +177,25 @@ if (!wantLarge) {
       el("calloutComponent", {}, [el("paragraph", {}, [tx("callout")])]),
     ]);
   });
-  mk("legacy-unknown-types", "unknown node types and unknown marks written by a newer editor", 810002, (f) => {
+  // The client editor (CoreEditorExtensions) also loads the UniqueID extension, which adds an `id` attribute (uuid) to
+  // every block in BLOCK_NODE_TYPES and syncs it through Yjs. The headless server schema has no such extension, so a
+  // server-side decode silently drops those ids (except on nodes that already declare `id`).
+  const bid = (n: number) => `00000000-0000-4000-8000-${String(900000 + n).padStart(12, "0")}`;
+  mk("legacy-client-block-ids", "binary as the real client writes it: UniqueID `id` attributes on block nodes (unknown to the headless schema)", 810005, (f) => {
+    f.insert(0, [
+      el("heading", { id: bid(1), level: 2, textAlign: null }, [tx("Title")]),
+      el("paragraph", { id: bid(2) }, [tx("body ", {}), tx("bold", { bold: {} })]),
+      el("bulletList", { id: bid(3) }, [el("listItem", { id: bid(4) }, [el("paragraph", { id: bid(5) }, [tx("item")])])]),
+      el("taskList", { id: bid(6) }, [el("taskItem", { id: bid(7), checked: true }, [el("paragraph", { id: bid(8) }, [tx("done")])])]),
+      el("blockquote", { id: bid(9) }, [el("paragraph", { id: bid(10) }, [tx("quote")])]),
+      el("codeBlock", { id: bid(11), language: "js" }, [tx("let a = 1;")]),
+      el("horizontalRule", { id: bid(12) }, []),
+      el("table", { id: bid(13) }, [el("tableRow", {}, [el("tableCell", { colspan: 1, rowspan: 1, colwidth: [150] }, [el("paragraph", { id: bid(14) }, [tx("c")])])])]),
+      el("imageComponent", { id: bid(15), src: bid(16), status: "uploaded" }, []),
+      el("calloutComponent", { id: bid(17) }, [el("paragraph", { id: bid(18) }, [tx("callout")])]),
+    ]);
+  });
+  mk("legacy-unknown-types","unknown node types and unknown marks written by a newer editor", 810002, (f) => {
     f.insert(0, [
       el("paragraph", {}, [tx("kept")]),
       el("futureWidget", { a: 1 }, [el("paragraph", {}, [tx("dropped with its parent")])]),

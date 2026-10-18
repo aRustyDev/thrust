@@ -1,0 +1,12 @@
+[package]
+name = "ammonia-400-probe"
+description = "Spike 0006: the Plane sanitiser config compiled against ammonia 4.0.0, the engine inside nh3 0.2.18 (Plane's Python sanitiser)"
+edition = "2021"
+publish = false
+
+# Standalone on purpose: not a member of the thrust workspace.
+[workspace]
+
+[dependencies]
+ammonia = "=4.0.0"
+serde_json = "1"

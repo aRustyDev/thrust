@@ -2611,6 +2611,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "thrust-editor-worker"
+version = "0.0.0"
+dependencies = [
+ "base64 0.22.1",
+ "console_error_panic_hook",
+ "serde_json",
+ "thrust-editor-doc",
+ "worker",
+]
+
+[[package]]
 name = "thrust-ports"
 version = "0.0.0"
 dependencies = [

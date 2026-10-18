@@ -1,0 +1,9 @@
+# Spike 0006, Option A: the Rust conversions in local workerd. No bindings, no secrets, never deployed.
+name = "thrust-editor-worker"
+main = "build/worker/shim.mjs"
+# Newest date the local workerd in wrangler 4.123.0 accepts is 2026-08-18 (measured in spike 0001).
+compatibility_date = "2026-08-01"
+workers_dev = false
+
+[build]
+command = "../../scripts/rs worker-build --release ."

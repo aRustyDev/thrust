@@ -1,0 +1,1016 @@
+[
+{
+"id": "owasp-basic-000",
+"category": "owasp-basic",
+"malicious": true,
+"html": "<script>alert(1)</script>"
+},
+{
+"id": "owasp-basic-001",
+"category": "owasp-basic",
+"malicious": true,
+"html": "<SCRIPT SRC=https://example.invalid/xss.js></SCRIPT>"
+},
+{
+"id": "owasp-basic-002",
+"category": "owasp-basic",
+"malicious": true,
+"html": "<script>alert(String.fromCharCode(88,83,83))</script>"
+},
+{
+"id": "owasp-basic-003",
+"category": "owasp-basic",
+"malicious": true,
+"html": "<IMG SRC=\"javascript:alert('XSS');\">"
+},
+{
+"id": "owasp-basic-004",
+"category": "owasp-basic",
+"malicious": true,
+"html": "<IMG SRC=javascript:alert('XSS')>"
+},
+{
+"id": "owasp-basic-005",
+"category": "owasp-basic",
+"malicious": true,
+"html": "<IMG SRC=JaVaScRiPt:alert('XSS')>"
+},
+{
+"id": "owasp-basic-006",
+"category": "owasp-basic",
+"malicious": false,
+"html": "<IMG SRC=`javascript:alert(\"RSnake says, 'XSS'\")`>"
+},
+{
+"id": "owasp-basic-007",
+"category": "owasp-basic",
+"malicious": true,
+"html": "<IMG \"\"\"><SCRIPT>alert(\"XSS\")</SCRIPT>\">"
+},
+{
+"id": "owasp-basic-008",
+"category": "owasp-basic",
+"malicious": true,
+"html": "<IMG SRC=x onerror=alert(1)>"
+},
+{
+"id": "owasp-basic-009",
+"category": "owasp-basic",
+"malicious": true,
+"html": "<img src=x onerror=\"alert(1)\">"
+},
+{
+"id": "owasp-basic-010",
+"category": "owasp-basic",
+"malicious": true,
+"html": "<IMG SRC=# onmouseover=\"alert('xxs')\">"
+},
+{
+"id": "owasp-basic-011",
+"category": "owasp-basic",
+"malicious": false,
+"html": "<IMG SRC= onmouseover=\"alert('xxs')\">"
+},
+{
+"id": "owasp-basic-012",
+"category": "owasp-basic",
+"malicious": true,
+"html": "<IMG onmouseover=\"alert('xxs')\">"
+},
+{
+"id": "owasp-basic-013",
+"category": "owasp-basic",
+"malicious": true,
+"html": "<IMG SRC=/ onerror=\"alert(String.fromCharCode(88,83,83))\"></img>"
+},
+{
+"id": "owasp-basic-014",
+"category": "owasp-basic",
+"malicious": true,
+"html": "<a href=\"javascript:alert(1)\">click</a>"
+},
+{
+"id": "owasp-basic-015",
+"category": "owasp-basic",
+"malicious": true,
+"html": "<a href=\" javascript:alert(1)\">click</a>"
+},
+{
+"id": "owasp-basic-016",
+"category": "owasp-basic",
+"malicious": true,
+"html": "<a href=\"JAVASCRIPT:alert(1)\">click</a>"
+},
+{
+"id": "owasp-basic-017",
+"category": "owasp-basic",
+"malicious": true,
+"html": "<a href=\"vbscript:msgbox(1)\">click</a>"
+},
+{
+"id": "owasp-basic-018",
+"category": "owasp-basic",
+"malicious": true,
+"html": "<a href=\"data:text/html;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg==\">click</a>"
+},
+{
+"id": "owasp-basic-019",
+"category": "owasp-basic",
+"malicious": true,
+"html": "<a href=\"javascript&colon;alert(1)\">click</a>"
+},
+{
+"id": "owasp-encoding-020",
+"category": "owasp-encoding",
+"malicious": true,
+"html": "<IMG SRC=&#106;&#97;&#118;&#97;&#115;&#99;&#114;&#105;&#112;&#116;&#58;&#97;&#108;&#101;&#114;&#116;&#40;&#39;&#88;&#83;&#83;&#39;&#41;>"
+},
+{
+"id": "owasp-encoding-021",
+"category": "owasp-encoding",
+"malicious": true,
+"html": "<IMG SRC=&#0000106&#0000097&#0000118&#0000097&#0000115&#0000099&#0000114&#0000105&#0000112&#0000116&#0000058&#0000097&#0000108&#0000101&#0000114&#0000116&#0000040&#0000039&#0000088&#0000083&#0000083&#0000039&#0000041>"
+},
+{
+"id": "owasp-encoding-022",
+"category": "owasp-encoding",
+"malicious": true,
+"html": "<IMG SRC=&#x6A&#x61&#x76&#x61&#x73&#x63&#x72&#x69&#x70&#x74&#x3A&#x61&#x6C&#x65&#x72&#x74&#x28&#x27&#x58&#x53&#x53&#x27&#x29>"
+},
+{
+"id": "owasp-encoding-023",
+"category": "owasp-encoding",
+"malicious": true,
+"html": "<a href=\"jav&#x09;ascript:alert(1)\">tab</a>"
+},
+{
+"id": "owasp-encoding-024",
+"category": "owasp-encoding",
+"malicious": true,
+"html": "<a href=\"jav&#x0A;ascript:alert(1)\">newline</a>"
+},
+{
+"id": "owasp-encoding-025",
+"category": "owasp-encoding",
+"malicious": true,
+"html": "<a href=\"jav&#x0D;ascript:alert(1)\">cr</a>"
+},
+{
+"id": "owasp-encoding-026",
+"category": "owasp-encoding",
+"malicious": true,
+"html": "<a href=\"&#x01;javascript:alert(1)\">ctrl</a>"
+},
+{
+"id": "owasp-encoding-027",
+"category": "owasp-encoding",
+"malicious": true,
+"html": "<a href=\"  &#x20;javascript:alert(1)\">spaces</a>"
+},
+{
+"id": "owasp-encoding-028",
+"category": "owasp-encoding",
+"malicious": true,
+"html": "<a href=\"jAvAsCrIpT&#58;alert(1)\">mixed</a>"
+},
+{
+"id": "owasp-encoding-029",
+"category": "owasp-encoding",
+"malicious": true,
+"html": "<a href=\"&#106;avascript:alert(1)\">dec</a>"
+},
+{
+"id": "owasp-encoding-030",
+"category": "owasp-encoding",
+"malicious": true,
+"html": "<IMG SRC=\"jav\tascript:alert('XSS');\">"
+},
+{
+"id": "owasp-encoding-031",
+"category": "owasp-encoding",
+"malicious": true,
+"html": "<IMG SRC=\"jav\nascript:alert('XSS');\">"
+},
+{
+"id": "owasp-encoding-032",
+"category": "owasp-encoding",
+"malicious": true,
+"html": "<IMG SRC=\"jav\rascript:alert('XSS');\">"
+},
+{
+"id": "owasp-encoding-033",
+"category": "owasp-encoding",
+"malicious": false,
+"html": "<IMG SRC=java\u0000script:alert(\"XSS\")>"
+},
+{
+"id": "owasp-encoding-034",
+"category": "owasp-encoding",
+"malicious": false,
+"html": "<SCR\u0000IPT>alert(\"XSS\")</SCR\u0000IPT>"
+},
+{
+"id": "owasp-encoding-035",
+"category": "owasp-encoding",
+"malicious": true,
+"html": "<SCRIPT/XSS SRC=\"https://example.invalid/xss.js\"></SCRIPT>"
+},
+{
+"id": "owasp-encoding-036",
+"category": "owasp-encoding",
+"malicious": true,
+"html": "<SCRIPT/SRC=\"https://example.invalid/xss.js\"></SCRIPT>"
+},
+{
+"id": "owasp-encoding-037",
+"category": "owasp-encoding",
+"malicious": true,
+"html": "<<SCRIPT>alert(\"XSS\");//\\<</SCRIPT>"
+},
+{
+"id": "owasp-encoding-038",
+"category": "owasp-encoding",
+"malicious": true,
+"html": "<SCRIPT SRC=https://example.invalid/xss.js?< B >"
+},
+{
+"id": "owasp-encoding-039",
+"category": "owasp-encoding",
+"malicious": true,
+"html": "<SCRIPT SRC=//example.invalid/xss.js>"
+},
+{
+"id": "owasp-encoding-040",
+"category": "owasp-encoding",
+"malicious": true,
+"html": "<IMG SRC=\"   javascript:alert('XSS');\">"
+},
+{
+"id": "owasp-encoding-041",
+"category": "owasp-encoding",
+"malicious": false,
+"html": "\\\";alert('XSS');//"
+},
+{
+"id": "owasp-encoding-042",
+"category": "owasp-encoding",
+"malicious": false,
+"html": "&lt;script&gt;alert(1)&lt;/script&gt;"
+},
+{
+"id": "owasp-encoding-043",
+"category": "owasp-encoding",
+"malicious": false,
+"html": "<p>&#60;script&#62;alert(1)&#60;/script&#62;</p>"
+},
+{
+"id": "owasp-encoding-044",
+"category": "owasp-encoding",
+"malicious": false,
+"html": "<IMG SRC=x onerror&#61;alert(1)>"
+},
+{
+"id": "owasp-encoding-045",
+"category": "owasp-encoding",
+"malicious": false,
+"html": "+ADw-script+AD4-alert(1)+ADw-/script+AD4-"
+},
+{
+"id": "owasp-event-046",
+"category": "owasp-event",
+"malicious": true,
+"html": "<p onclick=alert(1) style=\"animation-name:x\">x</p>"
+},
+{
+"id": "owasp-event-047",
+"category": "owasp-event",
+"malicious": true,
+"html": "<div onmouseover=alert(1) style=\"animation-name:x\">x</div>"
+},
+{
+"id": "owasp-event-048",
+"category": "owasp-event",
+"malicious": true,
+"html": "<a onfocus=alert(1) style=\"animation-name:x\">x</a>"
+},
+{
+"id": "owasp-event-049",
+"category": "owasp-event",
+"malicious": true,
+"html": "<body onload=alert(1) style=\"animation-name:x\">x</body>"
+},
+{
+"id": "owasp-event-050",
+"category": "owasp-event",
+"malicious": true,
+"html": "<p onanimationstart=alert(1) style=\"animation-name:x\">x</p>"
+},
+{
+"id": "owasp-event-051",
+"category": "owasp-event",
+"malicious": true,
+"html": "<span onpointerover=alert(1) style=\"animation-name:x\">x</span>"
+},
+{
+"id": "owasp-event-052",
+"category": "owasp-event",
+"malicious": true,
+"html": "<details ontoggle=alert(1) style=\"animation-name:x\">x</details>"
+},
+{
+"id": "owasp-event-053",
+"category": "owasp-event",
+"malicious": true,
+"html": "<img onerror=alert(1) style=\"animation-name:x\">x</img>"
+},
+{
+"id": "owasp-event-054",
+"category": "owasp-event",
+"malicious": true,
+"html": "<div onfocusin=alert(1) style=\"animation-name:x\">x</div>"
+},
+{
+"id": "owasp-event-055",
+"category": "owasp-event",
+"malicious": true,
+"html": "<p onauxclick=alert(1) style=\"animation-name:x\">x</p>"
+},
+{
+"id": "owasp-event-056",
+"category": "owasp-event",
+"malicious": true,
+"html": "<p onbeforeinput=alert(1) style=\"animation-name:x\">x</p>"
+},
+{
+"id": "owasp-event-057",
+"category": "owasp-event",
+"malicious": true,
+"html": "<details open ontoggle=alert(1)>x</details>"
+},
+{
+"id": "owasp-event-058",
+"category": "owasp-event",
+"malicious": true,
+"html": "<input autofocus onfocus=alert(1)>"
+},
+{
+"id": "owasp-event-059",
+"category": "owasp-event",
+"malicious": true,
+"html": "<input type=image src=x onerror=alert(1)>"
+},
+{
+"id": "owasp-event-060",
+"category": "owasp-event",
+"malicious": true,
+"html": "<p onclick=\"alert(1)\">a</p>"
+},
+{
+"id": "owasp-event-061",
+"category": "owasp-event",
+"malicious": true,
+"html": "<p ONCLICK=\"alert(1)\">a</p>"
+},
+{
+"id": "owasp-event-062",
+"category": "owasp-event",
+"malicious": false,
+"html": "<p on\fclick=\"alert(1)\">a</p>"
+},
+{
+"id": "owasp-event-063",
+"category": "owasp-event",
+"malicious": true,
+"html": "<img src=1 href=1 onerror=\"javascript:alert(1)\"></img>"
+},
+{
+"id": "owasp-tag-064",
+"category": "owasp-tag",
+"malicious": true,
+"html": "<iframe src=\"javascript:alert(1)\"></iframe>"
+},
+{
+"id": "owasp-tag-065",
+"category": "owasp-tag",
+"malicious": true,
+"html": "<iframe src=\"https://example.invalid/\"></iframe>"
+},
+{
+"id": "owasp-tag-066",
+"category": "owasp-tag",
+"malicious": true,
+"html": "<iframe srcdoc=\"<script>alert(1)</script>\"></iframe>"
+},
+{
+"id": "owasp-tag-067",
+"category": "owasp-tag",
+"malicious": true,
+"html": "<object data=\"javascript:alert(1)\"></object>"
+},
+{
+"id": "owasp-tag-068",
+"category": "owasp-tag",
+"malicious": true,
+"html": "<object data=\"data:text/html;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg==\"></object>"
+},
+{
+"id": "owasp-tag-069",
+"category": "owasp-tag",
+"malicious": true,
+"html": "<embed src=\"javascript:alert(1)\">"
+},
+{
+"id": "owasp-tag-070",
+"category": "owasp-tag",
+"malicious": true,
+"html": "<form action=\"javascript:alert(1)\"><input type=submit></form>"
+},
+{
+"id": "owasp-tag-071",
+"category": "owasp-tag",
+"malicious": true,
+"html": "<form><button formaction=\"javascript:alert(1)\">x</button></form>"
+},
+{
+"id": "owasp-tag-072",
+"category": "owasp-tag",
+"malicious": true,
+"html": "<isindex action=\"javascript:alert(1)\" type=image src=1>"
+},
+{
+"id": "owasp-tag-073",
+"category": "owasp-tag",
+"malicious": true,
+"html": "<meta http-equiv=\"refresh\" content=\"0;url=javascript:alert(1)\">"
+},
+{
+"id": "owasp-tag-074",
+"category": "owasp-tag",
+"malicious": true,
+"html": "<link rel=stylesheet href=\"https://example.invalid/x.css\">"
+},
+{
+"id": "owasp-tag-075",
+"category": "owasp-tag",
+"malicious": true,
+"html": "<base href=\"javascript:alert(1)//\">"
+},
+{
+"id": "owasp-tag-076",
+"category": "owasp-tag",
+"malicious": true,
+"html": "<style>@import 'javascript:alert(1)';</style>"
+},
+{
+"id": "owasp-tag-077",
+"category": "owasp-tag",
+"malicious": true,
+"html": "<style>body{background:url(javascript:alert(1))}</style>"
+},
+{
+"id": "owasp-tag-078",
+"category": "owasp-tag",
+"malicious": true,
+"html": "<svg onload=alert(1)>"
+},
+{
+"id": "owasp-tag-079",
+"category": "owasp-tag",
+"malicious": true,
+"html": "<svg><script>alert(1)</script></svg>"
+},
+{
+"id": "owasp-tag-080",
+"category": "owasp-tag",
+"malicious": true,
+"html": "<svg><a xlink:href=\"javascript:alert(1)\"><text>x</text></a></svg>"
+},
+{
+"id": "owasp-tag-081",
+"category": "owasp-tag",
+"malicious": true,
+"html": "<svg><animate onbegin=alert(1) attributeName=x dur=1s>"
+},
+{
+"id": "owasp-tag-082",
+"category": "owasp-tag",
+"malicious": true,
+"html": "<svg><foreignObject><iframe srcdoc=\"<script>alert(1)</script>\"></iframe></foreignObject></svg>"
+},
+{
+"id": "owasp-tag-083",
+"category": "owasp-tag",
+"malicious": true,
+"html": "<math><mi xlink:href=\"javascript:alert(1)\">x</mi></math>"
+},
+{
+"id": "owasp-tag-084",
+"category": "owasp-tag",
+"malicious": true,
+"html": "<video><source onerror=\"alert(1)\"></video>"
+},
+{
+"id": "owasp-tag-085",
+"category": "owasp-tag",
+"malicious": true,
+"html": "<audio src=x onerror=alert(1)>"
+},
+{
+"id": "owasp-tag-086",
+"category": "owasp-tag",
+"malicious": true,
+"html": "<marquee onstart=alert(1)>x</marquee>"
+},
+{
+"id": "owasp-tag-087",
+"category": "owasp-tag",
+"malicious": true,
+"html": "<body onload=alert(1)>"
+},
+{
+"id": "owasp-tag-088",
+"category": "owasp-tag",
+"malicious": true,
+"html": "<html><body background=\"javascript:alert(1)\">"
+},
+{
+"id": "owasp-tag-089",
+"category": "owasp-tag",
+"malicious": true,
+"html": "<table background=\"javascript:alert(1)\"><tr><td>x</td></tr></table>"
+},
+{
+"id": "owasp-tag-090",
+"category": "owasp-tag",
+"malicious": true,
+"html": "<table><tr><td background=\"javascript:alert(1)\">x</td></tr></table>"
+},
+{
+"id": "owasp-tag-091",
+"category": "owasp-tag",
+"malicious": true,
+"html": "<xss onafterscriptexecute=alert(1)><script>1</script>"
+},
+{
+"id": "owasp-tag-092",
+"category": "owasp-tag",
+"malicious": true,
+"html": "<template><script>alert(1)</script></template>"
+},
+{
+"id": "owasp-tag-093",
+"category": "owasp-tag",
+"malicious": true,
+"html": "<xmp><img src=x onerror=alert(1)></xmp>"
+},
+{
+"id": "owasp-tag-094",
+"category": "owasp-tag",
+"malicious": true,
+"html": "<plaintext><img src=x onerror=alert(1)>"
+},
+{
+"id": "owasp-tag-095",
+"category": "owasp-tag",
+"malicious": true,
+"html": "<select><template><style><img src=x onerror=alert(1)></style></template></select>"
+},
+{
+"id": "owasp-tag-096",
+"category": "owasp-tag",
+"malicious": true,
+"html": "<!--><script>alert(1)</script>-->"
+},
+{
+"id": "owasp-tag-097",
+"category": "owasp-tag",
+"malicious": true,
+"html": "<!-- --!><img src=x onerror=alert(1)> -->"
+},
+{
+"id": "owasp-tag-098",
+"category": "owasp-tag",
+"malicious": true,
+"html": "<?xml version=\"1.0\"?><script>alert(1)</script>"
+},
+{
+"id": "owasp-tag-099",
+"category": "owasp-tag",
+"malicious": true,
+"html": "<a href=\"x\"><script>alert(1)</script></a>"
+},
+{
+"id": "owasp-tag-100",
+"category": "owasp-tag",
+"malicious": true,
+"html": "<div><script>alert(1)</script>text</div>"
+},
+{
+"id": "owasp-tag-101",
+"category": "owasp-tag",
+"malicious": true,
+"html": "<img src=x:alert(alt) onerror=eval(src) alt=1>"
+},
+{
+"id": "owasp-tag-102",
+"category": "owasp-tag",
+"malicious": true,
+"html": "<a href=\"data:text/html,<script>alert(1)</script>\">x</a>"
+},
+{
+"id": "owasp-tag-103",
+"category": "owasp-tag",
+"malicious": false,
+"html": "<noscript><p title=\"</noscript><img src=x onerror=alert(1)>\">"
+},
+{
+"id": "owasp-tag-104",
+"category": "owasp-tag",
+"malicious": false,
+"html": "<textarea><img src=x onerror=alert(1)></textarea>"
+},
+{
+"id": "owasp-tag-105",
+"category": "owasp-tag",
+"malicious": false,
+"html": "<title><img src=x onerror=alert(1)></title>"
+},
+{
+"id": "owasp-tag-106",
+"category": "owasp-tag",
+"malicious": false,
+"html": "<!--[if gte IE 4]><script>alert(1)</script><![endif]-->"
+},
+{
+"id": "owasp-tag-107",
+"category": "owasp-tag",
+"malicious": false,
+"html": "<![CDATA[<script>alert(1)</script>]]>"
+},
+{
+"id": "owasp-tag-108",
+"category": "owasp-tag",
+"malicious": false,
+"html": "<scr<script>ipt>alert(1)</scr</script>ipt>"
+},
+{
+"id": "owasp-tag-109",
+"category": "owasp-tag",
+"malicious": false,
+"html": "<a href=\"//example.invalid/\">protocol relative (external link, not script)</a>"
+},
+{
+"id": "owasp-css-110",
+"category": "owasp-css",
+"malicious": true,
+"html": "<p style=\"background:url(javascript:alert(1))\">x</p>"
+},
+{
+"id": "owasp-css-111",
+"category": "owasp-css",
+"malicious": true,
+"html": "<p style=\"width:expression(alert(1))\">x</p>"
+},
+{
+"id": "owasp-css-112",
+"category": "owasp-css",
+"malicious": true,
+"html": "<p style=\"behavior:url(xss.htc)\">x</p>"
+},
+{
+"id": "owasp-css-113",
+"category": "owasp-css",
+"malicious": true,
+"html": "<p style=\"-moz-binding:url(https://example.invalid/xss.xml#xss)\">x</p>"
+},
+{
+"id": "owasp-css-114",
+"category": "owasp-css",
+"malicious": true,
+"html": "<div style=\"background-image:url('javascript:alert(1)')\">x</div>"
+},
+{
+"id": "owasp-css-115",
+"category": "owasp-css",
+"malicious": true,
+"html": "<div style=\"list-style:url(javascript:alert(1))\">x</div>"
+},
+{
+"id": "owasp-css-116",
+"category": "owasp-css",
+"malicious": false,
+"html": "<div style=\"position:fixed;top:0;left:0;width:100%;height:100%;background:red\">overlay (UI redress, not script)</div>"
+},
+{
+"id": "owasp-css-117",
+"category": "owasp-css",
+"malicious": false,
+"html": "<p style=\"color:red;font-weight:bold\">plain styles</p>"
+},
+{
+"id": "mxss-118",
+"category": "mxss",
+"malicious": true,
+"html": "<math><mtext><table><mglyph><style><!--</style><img title=\"--&gt;&lt;img src=1 onerror=alert(1)&gt;\">"
+},
+{
+"id": "mxss-119",
+"category": "mxss",
+"malicious": true,
+"html": "<svg></p><style><a id=\"</style><img src=1 onerror=alert(1)>\">"
+},
+{
+"id": "mxss-120",
+"category": "mxss",
+"malicious": true,
+"html": "<form><math><mtext></form><form><mglyph><style></math><img src onerror=alert(1)>"
+},
+{
+"id": "mxss-121",
+"category": "mxss",
+"malicious": true,
+"html": "<noscript><style></noscript><img src=x onerror=alert(1)>"
+},
+{
+"id": "mxss-122",
+"category": "mxss",
+"malicious": true,
+"html": "<style><style/><img src=x onerror=alert(1)>"
+},
+{
+"id": "mxss-123",
+"category": "mxss",
+"malicious": false,
+"html": "<a title=\"&lt;script&gt;alert(1)&lt;/script&gt;\" href=\"x\">x</a>"
+},
+{
+"id": "mxss-124",
+"category": "mxss",
+"malicious": false,
+"html": "<p id=\"</p><script>alert(1)</script>\">x</p>"
+},
+{
+"id": "mxss-125",
+"category": "mxss",
+"malicious": false,
+"html": "<div title='\"><script>alert(1)</script>'>x</div>"
+},
+{
+"id": "mxss-126",
+"category": "mxss",
+"malicious": true,
+"html": "<p class=\"x\"><img src=x onerror=alert(1)//\">"
+},
+{
+"id": "mxss-127",
+"category": "mxss",
+"malicious": true,
+"html": "<table><caption><img src=x onerror=alert(1)></caption></table>"
+},
+{
+"id": "plane-mention-128",
+"category": "plane-mention",
+"malicious": true,
+"html": "<mention-component id=\"1\" entity_identifier=\"2\" entity_name=\"user_mention\" onclick=\"alert(1)\"></mention-component>"
+},
+{
+"id": "plane-mention-129",
+"category": "plane-mention",
+"malicious": true,
+"html": "<mention-component id=\"1\" onmouseover=alert(1) entity_name=\"x\"></mention-component>"
+},
+{
+"id": "plane-mention-130",
+"category": "plane-mention",
+"malicious": false,
+"html": "<mention-component id=\"&quot; onclick=&quot;alert(1)\"></mention-component>"
+},
+{
+"id": "plane-mention-131",
+"category": "plane-mention",
+"malicious": false,
+"html": "<mention-component id=\"00000000-0000-4000-8000-000000000001\" entity_identifier=\"00000000-0000-4000-8000-000000000002\" entity_name=\"user_mention\"></mention-component>"
+},
+{
+"id": "plane-image-132",
+"category": "plane-image",
+"malicious": true,
+"html": "<image-component src=\"javascript:alert(1)\" width=\"100px\"></image-component>"
+},
+{
+"id": "plane-image-133",
+"category": "plane-image",
+"malicious": true,
+"html": "<image-component src=\"data:text/html;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg==\"></image-component>"
+},
+{
+"id": "plane-image-134",
+"category": "plane-image",
+"malicious": true,
+"html": "<image-component src=\"x\" onerror=\"alert(1)\" onload=\"alert(1)\"></image-component>"
+},
+{
+"id": "plane-image-135",
+"category": "plane-image",
+"malicious": false,
+"html": "<image-component src=\"https://example.invalid/a.png\" width=\"1px\" height=\"1px\" aspectRatio=\"javascript:alert(1)\"></image-component>"
+},
+{
+"id": "plane-image-136",
+"category": "plane-image",
+"malicious": true,
+"html": "<img src=\"data:image/svg+xml;base64,PHN2ZyBvbmxvYWQ9YWxlcnQoMSk+\">"
+},
+{
+"id": "plane-image-137",
+"category": "plane-image",
+"malicious": true,
+"html": "<img src=\"data:image/svg+xml,<svg onload=alert(1)>\">"
+},
+{
+"id": "plane-image-138",
+"category": "plane-image",
+"malicious": true,
+"html": "<img src=\"javascript:alert(1)\" alt=\"x\">"
+},
+{
+"id": "plane-image-139",
+"category": "plane-image",
+"malicious": false,
+"html": "<image-component src=\"00000000-0000-4000-8000-000000000011\" width=\"400px\" height=\"auto\" alignment=\"center\" status=\"uploaded\"></image-component>"
+},
+{
+"id": "plane-image-140",
+"category": "plane-image",
+"malicious": false,
+"html": "<img src=\"https://example.com/a.png\" alt=\"ok\" width=\"50%\">"
+},
+{
+"id": "plane-embed-141",
+"category": "plane-embed",
+"malicious": true,
+"html": "<issue-embed-component entity_identifier=\"1\" onclick=\"alert(1)\"></issue-embed-component>"
+},
+{
+"id": "plane-embed-142",
+"category": "plane-embed",
+"malicious": true,
+"html": "<issue-embed-component id=\"x\" entity_name=\"issue\"><script>alert(1)</script></issue-embed-component>"
+},
+{
+"id": "plane-embed-143",
+"category": "plane-embed",
+"malicious": false,
+"html": "<issue-embed-component entity_identifier=\"1\" project_identifier=\"2\" workspace_identifier=\"3\" id=\"4\" entity_name=\"issue\"></issue-embed-component>"
+},
+{
+"id": "plane-callout-144",
+"category": "plane-callout",
+"malicious": true,
+"html": "<div data-block-type=\"callout-component\" data-emoji-url=\"javascript:alert(1)\"><p>x</p></div>"
+},
+{
+"id": "plane-callout-145",
+"category": "plane-callout",
+"malicious": true,
+"html": "<div data-block-type=\"callout-component\" data-icon-name=\"x\" onclick=\"alert(1)\"><p>x</p></div>"
+},
+{
+"id": "plane-callout-146",
+"category": "plane-callout",
+"malicious": false,
+"html": "<div data-emoji-unicode=\"128161\" data-emoji-url=\"https://cdn.jsdelivr.net/npm/emoji-datasource-apple/img/apple/64/1f4a1.png\" data-logo-in-use=\"emoji\" data-block-type=\"callout-component\"><p>ok</p></div>"
+},
+{
+"id": "plane-table-147",
+"category": "plane-table",
+"malicious": true,
+"html": "<table><tr><td colspan=\"2\" style=\"background:url(javascript:alert(1))\">x</td></tr></table>"
+},
+{
+"id": "plane-table-148",
+"category": "plane-table",
+"malicious": true,
+"html": "<table><tr onclick=\"alert(1)\" background=\"red\" textColor=\"blue\"><td>x</td></tr></table>"
+},
+{
+"id": "plane-table-149",
+"category": "plane-table",
+"malicious": false,
+"html": "<table><tbody><tr><th colspan=\"1\" rowspan=\"1\" colwidth=\"150\" background=\"none\"><p>h</p></th></tr><tr><td colspan=\"1\" rowspan=\"1\" colwidth=\"150\" background=\"peach\" textColor=\"gray\"><p>c</p></td></tr></tbody></table>"
+},
+{
+"id": "plane-link-150",
+"category": "plane-link",
+"malicious": true,
+"html": "<a href=\"javascript:alert(document.cookie)\" target=\"_blank\" rel=\"opener\">x</a>"
+},
+{
+"id": "plane-link-151",
+"category": "plane-link",
+"malicious": false,
+"html": "<a href=\"https://example.com/?a=1&amp;b=2\" target=\"_blank\" rel=\"noopener noreferrer nofollow\" class=\"link\">ok</a>"
+},
+{
+"id": "plane-link-152",
+"category": "plane-link",
+"malicious": false,
+"html": "<a href=\"mailto:someone@example.com\">mail</a><a href=\"tel:+15551234\">tel</a>"
+},
+{
+"id": "plane-link-153",
+"category": "plane-link",
+"malicious": false,
+"html": "<a href=\"/relative/path\">relative</a>"
+},
+{
+"id": "plane-task-154",
+"category": "plane-task",
+"malicious": true,
+"html": "<ul data-type=\"taskList\"><li data-type=\"taskItem\" data-checked=\"true\" onclick=\"alert(1)\"><label><input type=\"checkbox\" checked=\"checked\" onfocus=\"alert(1)\"><span></span></label><div><p>x</p></div></li></ul>"
+},
+{
+"id": "plane-task-155",
+"category": "plane-task",
+"malicious": false,
+"html": "<ul data-type=\"taskList\"><li data-type=\"taskItem\" data-checked><label><input type=\"checkbox\" checked=\"checked\"><span></span></label><div><p>x</p></div></li></ul>"
+},
+{
+"id": "plane-code-156",
+"category": "plane-code",
+"malicious": true,
+"html": "<pre><code class=\"language-js\" onclick=\"alert(1)\">let a;</code></pre>"
+},
+{
+"id": "plane-code-157",
+"category": "plane-code",
+"malicious": false,
+"html": "<pre><code class=\"language-js\">if (a &lt; b &amp;&amp; c &gt; d) { alert(1) }</code></pre>"
+},
+{
+"id": "plane-code-158",
+"category": "plane-code",
+"malicious": false,
+"html": "<p>alert(1) and &lt;script&gt;alert(1)&lt;/script&gt; as text</p>"
+},
+{
+"id": "plane-color-159",
+"category": "plane-color",
+"malicious": true,
+"html": "<span data-text-color=\"red\" style=\"color:red\" onmouseover=\"alert(1)\">x</span>"
+},
+{
+"id": "plane-color-160",
+"category": "plane-color",
+"malicious": false,
+"html": "<span data-text-color=\"gray\">gray</span><span data-background-color=\"peach\">peach</span>"
+},
+{
+"id": "plane-id-161",
+"category": "plane-id",
+"malicious": false,
+"html": "<p id=\"__proto__\">x</p>"
+},
+{
+"id": "plane-id-162",
+"category": "plane-id",
+"malicious": false,
+"html": "<a id=\"x\" name=\"y\" href=\"https://example.com\">dom clobbering candidate</a>"
+},
+{
+"id": "plane-id-163",
+"category": "plane-id",
+"malicious": true,
+"html": "<form id=\"x\"></form><input name=\"y\" form=\"x\">"
+},
+{
+"id": "benign-164",
+"category": "benign",
+"malicious": false,
+"html": "<h2 class=\"editor-heading-block\">Title</h2><p class=\"editor-paragraph-block\">Hello <strong>bold</strong> <em>it</em> <code class=\"rounded-sm\">c</code></p>"
+},
+{
+"id": "benign-165",
+"category": "benign",
+"malicious": false,
+"html": "<ul class=\"list-disc pl-7\"><li class=\"not-prose space-y-2\"><p>a</p></li></ul>"
+},
+{
+"id": "benign-166",
+"category": "benign",
+"malicious": false,
+"html": "<ol start=\"3\" type=\"a\"><li><p>x</p></li></ol>"
+},
+{
+"id": "benign-167",
+"category": "benign",
+"malicious": false,
+"html": "<blockquote><p>quote</p></blockquote><div data-type=\"horizontalRule\"><div></div></div>"
+},
+{
+"id": "benign-168",
+"category": "benign",
+"malicious": false,
+"html": "<p>unicode 日本語 😀 &amp; &lt; &gt; &quot; &apos; &nbsp;</p>"
+}
+]

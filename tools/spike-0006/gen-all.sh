@@ -20,6 +20,8 @@ mkdir -p "$ROOT/crates/thrust-editor-doc/data"
 "$HERE/run-oracle.sh" "$WD" gen-corpus.ts > "$OUT/corpus.json"
 "$HERE/run-oracle.sh" "$WD" gen-corpus.ts --large > "$ROOT/target/spike-0006/corpus-large.json"
 "$HERE/run-oracle.sh" "$WD" fuzz-html.ts 2000 20261018 > "$ROOT/target/spike-0006/fuzz-html.json"
+"$HERE/run-oracle.sh" "$WD" entities-fuzz.ts 6000 99 > "$ROOT/target/spike-0006/entities-fuzz.json"
+"$HERE/run-oracle.sh" "$WD" deep.ts > "$ROOT/target/spike-0006/deep.json"
 # second seed, generated AFTER the Rust parser was tuned on the first: the held-out set
 "$HERE/run-oracle.sh" "$WD" fuzz-html.ts 4000 777 > "$ROOT/target/spike-0006/fuzz-html-heldout.json"
 ls -la "$OUT" "$ROOT/target/spike-0006"

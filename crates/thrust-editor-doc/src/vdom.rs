@@ -39,12 +39,23 @@ pub struct Dom {
     pub nodes: Vec<DNode>,
 }
 
-const SELF_CLOSING: &[&str] = &["area", "base", "br", "col", "embed", "hr", "img", "input", "keygen", "link", "meta", "param", "source", "track", "wbr", "command"];
+const SELF_CLOSING: &[&str] = &[
+    "area", "base", "br", "col", "embed", "hr", "img", "input", "keygen", "link", "meta", "param",
+    "source", "track", "wbr", "command",
+];
 
 impl Dom {
     pub fn new() -> Dom {
         let mut d = Dom::default();
-        d.nodes.push(DNode { kind: Kind::Fragment, parent: None, children: vec![], name: String::new(), tag: String::new(), attrs: vec![], text: String::new() });
+        d.nodes.push(DNode {
+            kind: Kind::Fragment,
+            parent: None,
+            children: vec![],
+            name: String::new(),
+            tag: String::new(),
+            attrs: vec![],
+            text: String::new(),
+        });
         d
     }
     fn push(&mut self, n: DNode) -> usize {
@@ -84,7 +95,10 @@ impl Dom {
     // ---- element API as zeed-dom exposes it -----------------------------------------------------
     fn find_attr(&self, n: usize, name: &str) -> Option<usize> {
         let lower = name.to_lowercase();
-        self.nodes[n].attrs.iter().position(|(k, _)| k.to_lowercase() == lower)
+        self.nodes[n]
+            .attrs
+            .iter()
+            .position(|(k, _)| k.to_lowercase() == lower)
     }
     /// `getAttribute`: string value, `""` for a valueless attribute, None when absent.
     pub fn get_attribute(&self, n: usize, name: &str) -> Option<String> {
@@ -122,7 +136,11 @@ impl Dom {
             props.push((k.clone(), v.clone()));
             props.push((to_camel_case(k), v.clone()));
         }
-        Style { count, props, decls }
+        Style {
+            count,
+            props,
+            decls,
+        }
     }
     /// `dom.dataset[name]` (camelCase or the raw suffix).
     pub fn dataset(&self, n: usize, key: &str) -> Option<AttrV> {
@@ -136,10 +154,16 @@ impl Dom {
         None
     }
     pub fn first_element_child(&self, n: usize) -> Option<usize> {
-        self.nodes[n].children.iter().copied().find(|c| self.is_element(*c))
+        self.nodes[n]
+            .children
+            .iter()
+            .copied()
+            .find(|c| self.is_element(*c))
     }
     pub fn class_list_contains(&self, n: usize, cls: &str) -> bool {
-        self.get_attribute(n, "class").map(|c| c.trim().split_whitespace().any(|x| x == cls)).unwrap_or(false)
+        self.get_attribute(n, "class")
+            .map(|c| c.trim().split_whitespace().any(|x| x == cls))
+            .unwrap_or(false)
     }
 }
 
@@ -151,11 +175,19 @@ pub struct Style {
 impl Style {
     /// property by camelCase or hyphenated name; later declarations win (JS object spread)
     pub fn get(&self, name: &str) -> Option<&str> {
-        self.props.iter().rev().find(|(k, _)| k == name).map(|(_, v)| v.as_str())
+        self.props
+            .iter()
+            .rev()
+            .find(|(k, _)| k == name)
+            .map(|(_, v)| v.as_str())
     }
     /// `getPropertyValue(name)`: only declared (inline) properties.
     pub fn get_property_value(&self, name: &str) -> Option<&str> {
-        self.decls.iter().rev().find(|(k, _)| k == name).map(|(_, v)| v.as_str())
+        self.decls
+            .iter()
+            .rev()
+            .find(|(k, _)| k == name)
+            .map(|(_, v)| v.as_str())
     }
 }
 
@@ -196,7 +228,12 @@ fn style_re() -> &'static Regex {
 }
 fn start_tag_re() -> &'static Regex {
     static R: OnceLock<Regex> = OnceLock::new();
-    R.get_or_init(|| Regex::new(r#"(?m)^<([^>\s/]+)((\s+[^=>\s]+(\s*=\s*("[^"]*"|'[^']*'|[^>\s]+))?)*)\s*(?:/\s*)?>"#).unwrap())
+    R.get_or_init(|| {
+        Regex::new(
+            r#"(?m)^<([^>\s/]+)((\s+[^=>\s]+(\s*=\s*("[^"]*"|'[^']*'|[^>\s]+))?)*)\s*(?:/\s*)?>"#,
+        )
+        .unwrap()
+    })
 }
 fn end_tag_re() -> &'static Regex {
     static R: OnceLock<Regex> = OnceLock::new();
@@ -213,11 +250,17 @@ fn attr_re() -> &'static Regex {
 
 /// The 106 HTML5 "legacy" entity names that decode without a trailing `;`.
 const LEGACY: &[&str] = &[
-    "AElig", "AMP", "Aacute", "Acirc", "Agrave", "Aring", "Atilde", "Auml", "COPY", "Ccedil", "ETH", "Eacute", "Ecirc", "Egrave", "Euml", "GT", "Iacute", "Icirc", "Igrave", "Iuml", "LT", "Ntilde", "Oacute", "Ocirc",
-    "Ograve", "Oslash", "Otilde", "Ouml", "QUOT", "REG", "THORN", "Uacute", "Ucirc", "Ugrave", "Uuml", "Yacute", "aacute", "acirc", "acute", "aelig", "agrave", "amp", "aring", "atilde", "auml", "brvbar", "ccedil",
-    "cedil", "cent", "copy", "curren", "deg", "divide", "eacute", "ecirc", "egrave", "eth", "euml", "frac12", "frac14", "frac34", "gt", "iacute", "icirc", "iexcl", "igrave", "iquest", "iuml", "laquo", "lt", "macr",
-    "micro", "middot", "nbsp", "not", "ntilde", "oacute", "ocirc", "ograve", "ordf", "ordm", "oslash", "otilde", "ouml", "para", "plusmn", "pound", "quot", "raquo", "reg", "sect", "shy", "sup1", "sup2", "sup3",
-    "szlig", "thorn", "times", "uacute", "ucirc", "ugrave", "uml", "uuml", "yacute", "yen", "yuml",
+    "AElig", "AMP", "Aacute", "Acirc", "Agrave", "Aring", "Atilde", "Auml", "COPY", "Ccedil",
+    "ETH", "Eacute", "Ecirc", "Egrave", "Euml", "GT", "Iacute", "Icirc", "Igrave", "Iuml", "LT",
+    "Ntilde", "Oacute", "Ocirc", "Ograve", "Oslash", "Otilde", "Ouml", "QUOT", "REG", "THORN",
+    "Uacute", "Ucirc", "Ugrave", "Uuml", "Yacute", "aacute", "acirc", "acute", "aelig", "agrave",
+    "amp", "aring", "atilde", "auml", "brvbar", "ccedil", "cedil", "cent", "copy", "curren", "deg",
+    "divide", "eacute", "ecirc", "egrave", "eth", "euml", "frac12", "frac14", "frac34", "gt",
+    "iacute", "icirc", "iexcl", "igrave", "iquest", "iuml", "laquo", "lt", "macr", "micro",
+    "middot", "nbsp", "not", "ntilde", "oacute", "ocirc", "ograve", "ordf", "ordm", "oslash",
+    "otilde", "ouml", "para", "plusmn", "pound", "quot", "raquo", "reg", "sect", "shy", "sup1",
+    "sup2", "sup3", "szlig", "thorn", "times", "uacute", "ucirc", "ugrave", "uml", "uuml",
+    "yacute", "yen", "yuml",
 ];
 
 fn named_entity(name_with_semicolon: &str) -> Option<String> {
@@ -290,11 +333,22 @@ pub fn unescape_html(s: &str) -> String {
                 Some(h) => (true, h),
                 None => (false, num),
             };
-            let n = digits_part.bytes().take_while(|c| if hex { c.is_ascii_hexdigit() } else { c.is_ascii_digit() }).count();
+            let n = digits_part
+                .bytes()
+                .take_while(|c| {
+                    if hex {
+                        c.is_ascii_hexdigit()
+                    } else {
+                        c.is_ascii_digit()
+                    }
+                })
+                .count();
             if n > 0 {
                 let mut cp: u64 = 0;
                 for c in digits_part[..n].chars() {
-                    cp = (cp * if hex { 16 } else { 10 } + c.to_digit(if hex { 16 } else { 10 }).unwrap() as u64).min(0x1fffff);
+                    cp = (cp * if hex { 16 } else { 10 }
+                        + c.to_digit(if hex { 16 } else { 10 }).unwrap() as u64)
+                        .min(0x1fffff);
                 }
                 out.push(replace_code_point(cp as u32));
                 let consumed = 1 + 1 + usize::from(hex) + n;
@@ -308,7 +362,10 @@ pub fn unescape_html(s: &str) -> String {
             i += 1;
             continue;
         }
-        let run: usize = rest.bytes().take_while(|c| c.is_ascii_alphanumeric()).count();
+        let run: usize = rest
+            .bytes()
+            .take_while(|c| c.is_ascii_alphanumeric())
+            .count();
         if run > 0 {
             let name = &rest[..run];
             if rest.as_bytes().get(run) == Some(&b';') {
@@ -393,7 +450,15 @@ pub fn parse_html(input: &str) -> Dom {
                         }
                     }
                     if let Some(&top) = stack.last() {
-                        let el = dom.push(DNode { kind: Kind::Element, parent: None, children: vec![], name: tag_name.clone(), tag: tag_name.to_uppercase(), attrs, text: String::new() });
+                        let el = dom.push(DNode {
+                            kind: Kind::Element,
+                            parent: None,
+                            children: vec![],
+                            name: tag_name.clone(),
+                            tag: tag_name.to_uppercase(),
+                            attrs,
+                            text: String::new(),
+                        });
                         dom.append_child(top, el);
                         if !(SELF_CLOSING.contains(&lower.as_str()) || is_self_close) {
                             stack.push(el);
@@ -457,6 +522,14 @@ fn characters(dom: &mut Dom, stack: &[usize], text: &str) {
             return;
         }
     }
-    let t = dom.push(DNode { kind: Kind::Text, parent: None, children: vec![], name: String::new(), tag: "#text".into(), attrs: vec![], text });
+    let t = dom.push(DNode {
+        kind: Kind::Text,
+        parent: None,
+        children: vec![],
+        name: String::new(),
+        tag: "#text".into(),
+        attrs: vec![],
+        text,
+    });
     dom.append_child(top, t);
 }

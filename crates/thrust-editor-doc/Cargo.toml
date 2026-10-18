@@ -6,11 +6,16 @@ version.workspace = true
 license.workspace = true
 publish.workspace = true
 
+[features]
+default = ["sanitize"]
+# ammonia pulls html5ever; split out so the size of the conversions alone can be measured
+sanitize = ["dep:ammonia"]
+
 [dependencies]
 yrs = "0.28"
 serde_json = "1"
 base64 = "0.22"
-ammonia = "4"
+ammonia = { version = "4", optional = true }
 regex = "1"
 htmlentity = "1"
 

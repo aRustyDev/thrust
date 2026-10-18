@@ -1,7 +1,12 @@
 //! Controls that MUST fail: a fidelity number is only evidence if the check that produced it can observe a defect.
 use base64::Engine;
 use serde_json::Value;
-use thrust_editor_doc::{domparse, html, pm::{norm_num, Node}, schema::{AttrDefault, Schema, Variant}, ydoc};
+use thrust_editor_doc::{
+    domparse, html,
+    pm::{norm_num, Node},
+    schema::{AttrDefault, Schema, Variant},
+    ydoc,
+};
 
 fn load() -> Value {
     let p = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/corpus/corpus.json");
@@ -18,7 +23,11 @@ fn b64d(s: &str) -> Vec<u8> {
     base64::engine::general_purpose::STANDARD.decode(s).unwrap()
 }
 fn variant(d: &Value) -> Variant {
-    if d["variant"] == "rich" { Variant::Rich } else { Variant::Document }
+    if d["variant"] == "rich" {
+        Variant::Rich
+    } else {
+        Variant::Document
+    }
 }
 
 /// number of documents (of those given) where one of D2/D3/D4 disagrees with the oracle, under `mk_schema`
@@ -39,8 +48,15 @@ fn failing_docs(mk: &dyn Fn(Variant) -> Schema, c: &Value) -> Vec<String> {
         if let Ok(node) = Node::from_json(&schema, &d["json"]) {
             fail |= html::to_html(&schema, &node) != d["html"].as_str().unwrap();
         }
-        let h = d.get("html_in").and_then(|x| x.as_str()).or_else(|| d["html"].as_str()).unwrap();
-        fail |= !same(&domparse::html_to_doc(&schema, h).to_json(&schema), &d["html_in_json"]);
+        let h = d
+            .get("html_in")
+            .and_then(|x| x.as_str())
+            .or_else(|| d["html"].as_str())
+            .unwrap();
+        fail |= !same(
+            &domparse::html_to_doc(&schema, h).to_json(&schema),
+            &d["html_in_json"],
+        );
         if fail {
             bad.push(d["id"].as_str().unwrap().to_string());
         }
@@ -52,11 +68,21 @@ fn failing_docs(mk: &dyn Fn(Variant) -> Schema, c: &Value) -> Vec<String> {
 fn baseline_has_zero_failures_and_no_schema_drift() {
     let c = load();
     let bad = failing_docs(&|v| Schema::new(v), &c);
-    assert!(bad.is_empty(), "unmutated Rust implementation disagrees with the oracle on {bad:?}");
+    assert!(
+        bad.is_empty(),
+        "unmutated Rust implementation disagrees with the oracle on {bad:?}"
+    );
     for v in [Variant::Rich, Variant::Document] {
-        let key = if v == Variant::Rich { "rich" } else { "document" };
+        let key = if v == Variant::Rich {
+            "rich"
+        } else {
+            "document"
+        };
         let drift = Schema::new(v).diff_against_dump(&dump()[key]);
-        assert!(drift.is_empty(), "schema drift against the real dump ({key}): {drift:?}");
+        assert!(
+            drift.is_empty(),
+            "schema drift against the real dump ({key}): {drift:?}"
+        );
     }
 }
 
@@ -79,11 +105,19 @@ fn mutated(v: Variant, which: &(&str, &str, &str)) -> Schema {
     let new: Value = serde_json::from_str(which.2).unwrap();
     if let Some(m) = which.0.strip_prefix("mark:") {
         let t = s.mark_type(m).unwrap();
-        let a = s.marks[t].attrs.iter_mut().find(|a| a.name == which.1).unwrap();
+        let a = s.marks[t]
+            .attrs
+            .iter_mut()
+            .find(|a| a.name == which.1)
+            .unwrap();
         a.default = AttrDefault::Val(new);
     } else {
         let t = s.node_type(which.0).unwrap();
-        let a = s.nodes[t].attrs.iter_mut().find(|a| a.name == which.1).unwrap();
+        let a = s.nodes[t]
+            .attrs
+            .iter_mut()
+            .find(|a| a.name == which.1)
+            .unwrap();
         a.default = AttrDefault::Val(new);
     }
     s
@@ -97,14 +131,30 @@ fn mutated_schema_is_detected_by_the_corpus_and_by_the_dump_diff() {
     for m in MUTANTS {
         let bad = failing_docs(&|v| mutated(v, m), &c);
         let drift = mutated(Variant::Document, m).diff_against_dump(&dump()["document"]);
-        report.push(format!("{:>18}.{:<18} -> {:>3} corpus docs fail, dump-diff reports {} mismatch(es)", m.0, m.1, bad.len(), drift.len()));
-        assert!(!drift.is_empty(), "mutant {m:?} was NOT detected by the schema dump diff");
-        assert!(!bad.is_empty() || !drift.is_empty(), "mutant {m:?} was NOT detected at all");
+        report.push(format!(
+            "{:>18}.{:<18} -> {:>3} corpus docs fail, dump-diff reports {} mismatch(es)",
+            m.0,
+            m.1,
+            bad.len(),
+            drift.len()
+        ));
+        assert!(
+            !drift.is_empty(),
+            "mutant {m:?} was NOT detected by the schema dump diff"
+        );
+        assert!(
+            !bad.is_empty() || !drift.is_empty(),
+            "mutant {m:?} was NOT detected at all"
+        );
         if !bad.is_empty() {
             by_corpus += 1;
         }
     }
-    eprintln!("MUTANTS (every one must be detected; corpus alone caught {by_corpus}/{}):\n{}", MUTANTS.len(), report.join("\n"));
+    eprintln!(
+        "MUTANTS (every one must be detected; corpus alone caught {by_corpus}/{}):\n{}",
+        MUTANTS.len(),
+        report.join("\n")
+    );
     // `heading.level` default is a known corpus blind spot (every heading in the corpus carries an explicit level)
     assert!(by_corpus >= MUTANTS.len() - 1);
 }
@@ -113,14 +163,21 @@ fn mutated_schema_is_detected_by_the_corpus_and_by_the_dump_diff() {
 fn comparator_discriminates_between_different_documents() {
     // decode(binary of doc i) compared with the JSON of a DIFFERENT doc must not be equal
     let c = load();
-    let docs: Vec<&Value> = c["docs"].as_array().unwrap().iter().filter(|d| d.get("binary").is_some() && d["kind"] != "foreign").collect();
+    let docs: Vec<&Value> = c["docs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|d| d.get("binary").is_some() && d["kind"] != "foreign")
+        .collect();
     let (mut checked, mut equal) = (0, 0);
     for w in docs.windows(2) {
         if same(&w[0]["json"], &w[1]["json"]) {
             continue; // identical documents are legitimately equal
         }
         let schema = Schema::new(Variant::Document);
-        let got = ydoc::decode(&schema, &b64d(w[0]["binary"].as_str().unwrap()), "default").unwrap().to_json(&schema);
+        let got = ydoc::decode(&schema, &b64d(w[0]["binary"].as_str().unwrap()), "default")
+            .unwrap()
+            .to_json(&schema);
         checked += 1;
         if same(&got, &w[1]["json"]) {
             equal += 1;
@@ -156,10 +213,13 @@ fn corruptions(bin: &[u8], salt: usize) -> Vec<(&'static str, Vec<u8>)> {
 fn corrupted_binaries_are_detected() {
     let c = load();
     let schema = Schema::new(Variant::Document);
-    let mut stats: std::collections::BTreeMap<&str, (usize, usize, usize, usize)> = Default::default(); // total, err, differs, undetected
+    let mut stats: std::collections::BTreeMap<&str, (usize, usize, usize, usize)> =
+        Default::default(); // total, err, differs, undetected
     let mut records = vec![];
     for (i, d) in c["docs"].as_array().unwrap().iter().enumerate() {
-        let Some(bs) = d.get("binary").and_then(|b| b.as_str()) else { continue };
+        let Some(bs) = d.get("binary").and_then(|b| b.as_str()) else {
+            continue;
+        };
         if d["kind"] == "foreign" || d["id"] == "empty" {
             continue;
         }
@@ -189,10 +249,24 @@ fn corrupted_binaries_are_detected() {
     for (k, v) in &stats {
         eprintln!("  {k:20} {:4} / {:4} / {:4} / {:4}", v.0, v.1, v.2, v.3);
     }
-    std::fs::create_dir_all(concat!(env!("CARGO_MANIFEST_DIR"), "/../../target/spike-0006")).ok();
-    std::fs::write(concat!(env!("CARGO_MANIFEST_DIR"), "/../../target/spike-0006/corrupt.json"), serde_json::to_string(&records).unwrap()).unwrap();
+    std::fs::create_dir_all(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../target/spike-0006"
+    ))
+    .ok();
+    std::fs::write(
+        concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../target/spike-0006/corrupt.json"
+        ),
+        serde_json::to_string(&records).unwrap(),
+    )
+    .unwrap();
     // structural corruption (truncation, garbage, empty) must never decode to the original document
     for k in ["truncate-50%", "garbage", "empty"] {
-        assert_eq!(stats[k].3, 0, "{k}: a corrupted binary decoded to the ORIGINAL document");
+        assert_eq!(
+            stats[k].3, 0,
+            "{k}: a corrupted binary decoded to the ORIGINAL document"
+        );
     }
 }

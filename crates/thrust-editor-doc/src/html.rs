@@ -129,13 +129,23 @@ impl AttrList {
     /// Tiptap `mergeAttributes(base, extra)`.
     pub fn merge(mut self, extra: &AttrList) -> Self {
         for (k, v) in &extra.0 {
-            let existing_truthy = self.0.iter().find(|(n, _)| n == k).map(|(_, v)| truthy(v)).unwrap_or(false);
+            let existing_truthy = self
+                .0
+                .iter()
+                .find(|(n, _)| n == k)
+                .map(|(_, v)| truthy(v))
+                .unwrap_or(false);
             if !existing_truthy {
                 self.set(k, v.clone());
                 continue;
             }
             if k == "class" {
-                let mut classes: Vec<String> = match self.0.iter().find(|(n, _)| n == k).and_then(|(_, v)| v.as_ref()) {
+                let mut classes: Vec<String> = match self
+                    .0
+                    .iter()
+                    .find(|(n, _)| n == k)
+                    .and_then(|(_, v)| v.as_ref())
+                {
                     Some(AV::Str(s)) => s.split(' ').map(|x| x.to_string()).collect(),
                     _ => vec![],
                 };
@@ -149,15 +159,23 @@ impl AttrList {
                 self.set("class", Some(AV::Str(classes.join(" "))));
             } else if k == "style" {
                 // dropped on output anyway; keep the structure faithful
-                let a = self.0.iter().find(|(n, _)| n == k).and_then(|(_, v)| v.as_ref()).map(|v| match v {
-                    AV::Str(s) => s.clone(),
-                    _ => String::new(),
-                });
+                let a = self
+                    .0
+                    .iter()
+                    .find(|(n, _)| n == k)
+                    .and_then(|(_, v)| v.as_ref())
+                    .map(|v| match v {
+                        AV::Str(s) => s.clone(),
+                        _ => String::new(),
+                    });
                 let b = match v {
                     Some(AV::Str(s)) => s.clone(),
                     _ => String::new(),
                 };
-                self.set("style", Some(AV::Str(format!("{}; {}", a.unwrap_or_default(), b))));
+                self.set(
+                    "style",
+                    Some(AV::Str(format!("{}; {}", a.unwrap_or_default(), b))),
+                );
             } else {
                 self.set(k, v.clone());
             }
@@ -201,13 +219,22 @@ static EMOJI_JSON: &str = include_str!("../data/emoji.json");
 
 fn emojis() -> &'static Vec<Emoji> {
     EMOJI.get_or_init(|| {
-        let rows: Vec<(String, String, Vec<String>)> = serde_json::from_str(EMOJI_JSON).expect("emoji.json");
-        rows.into_iter().map(|(name, glyph, shortcodes)| Emoji { name, glyph, shortcodes }).collect()
+        let rows: Vec<(String, String, Vec<String>)> =
+            serde_json::from_str(EMOJI_JSON).expect("emoji.json");
+        rows.into_iter()
+            .map(|(name, glyph, shortcodes)| Emoji {
+                name,
+                glyph,
+                shortcodes,
+            })
+            .collect()
     })
 }
 /// `shortcodeToEmoji`: first item whose name equals the shortcode or lists it.
 fn emoji_lookup(name: &str) -> Option<&'static Emoji> {
-    emojis().iter().find(|e| e.name == name || e.shortcodes.iter().any(|s| s == name))
+    emojis()
+        .iter()
+        .find(|e| e.name == name || e.shortcodes.iter().any(|s| s == name))
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -216,15 +243,32 @@ const LINK_CLASS: &str = "text-accent-secondary underline underline-offset-[3px]
 const CODE_CLASS: &str = "rounded-sm bg-layer-3 px-[6px] py-[1.5px] font-code font-medium text-(--extended-color-orange-600) border-[0.5px] border-subtle";
 
 fn js_ws(c: char) -> bool {
-    matches!(c, '\t' | '\n' | '\u{b}' | '\u{c}' | '\r' | ' ' | '\u{a0}' | '\u{1680}' | '\u{2000}'..='\u{200a}' | '\u{2028}' | '\u{2029}' | '\u{202f}' | '\u{205f}' | '\u{3000}' | '\u{feff}')
+    matches!(
+        c,
+        '\t' | '\n' | '\u{b}' | '\u{c}' | '\r' | ' ' | '\u{a0}' | '\u{1680}' | '\u{2000}'
+            ..='\u{200a}'
+                | '\u{2028}'
+                | '\u{2029}'
+                | '\u{202f}'
+                | '\u{205f}'
+                | '\u{3000}'
+                | '\u{feff}'
+    )
 }
 
 /// `isDangerousHref` from custom-link/extension.tsx.
 pub fn is_dangerous_href(raw: &str) -> bool {
-    let no_tab: String = raw.chars().filter(|c| !matches!(c, '\t' | '\n' | '\r')).collect();
-    let trimmed = no_tab.trim_start_matches(|c: char| js_ws(c) || ('\u{0}'..='\u{8}').contains(&c) || ('\u{e}'..='\u{1f}').contains(&c));
+    let no_tab: String = raw
+        .chars()
+        .filter(|c| !matches!(c, '\t' | '\n' | '\r'))
+        .collect();
+    let trimmed = no_tab.trim_start_matches(|c: char| {
+        js_ws(c) || ('\u{0}'..='\u{8}').contains(&c) || ('\u{e}'..='\u{1f}').contains(&c)
+    });
     let lower = trimmed.to_lowercase();
-    ["javascript:", "data:", "vbscript:"].iter().any(|p| lower.starts_with(p))
+    ["javascript:", "data:", "vbscript:"]
+        .iter()
+        .any(|p| lower.starts_with(p))
 }
 
 struct Open {
@@ -252,7 +296,10 @@ fn mark_open(schema: &Schema, m: &Mark) -> Open {
     let name = schema.marks[m.ty].name;
     match name {
         "link" => {
-            let opts = AttrList::new().s("target", "_blank").s("rel", "noopener noreferrer nofollow").s("class", LINK_CLASS);
+            let opts = AttrList::new()
+                .s("target", "_blank")
+                .s("rel", "noopener noreferrer nofollow")
+                .s("class", LINK_CLASS);
             let mut h = AttrList::new()
                 .val("href", m.attrs.get("href"))
                 .val("target", m.attrs.get("target"))
@@ -269,14 +316,29 @@ fn mark_open(schema: &Schema, m: &Mark) -> Open {
         "italic" => Open::t("em", AttrList::new()),
         "strike" => Open::t("s", AttrList::new()),
         "underline" => Open::t("u", AttrList::new()),
-        "code" => Open::t("code", AttrList::new().s("class", CODE_CLASS).s("spellcheck", "false")),
+        "code" => Open::t(
+            "code",
+            AttrList::new()
+                .s("class", CODE_CLASS)
+                .s("spellcheck", "false"),
+        ),
         "customColor" => {
             let mut h = AttrList::new();
-            if let Some(c) = m.attrs.get("color").and_then(|v| v.as_str()).filter(|s| !s.is_empty()) {
+            if let Some(c) = m
+                .attrs
+                .get("color")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+            {
                 h.set("data-text-color", Some(AV::Str(c.to_string())));
                 h.set("style", Some(AV::Str(format!("color: {c}"))));
             }
-            if let Some(c) = m.attrs.get("backgroundColor").and_then(|v| v.as_str()).filter(|s| !s.is_empty()) {
+            if let Some(c) = m
+                .attrs
+                .get("backgroundColor")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+            {
                 h.set("data-background-color", Some(AV::Str(c.to_string())));
             }
             Open::t("span", h)
@@ -291,7 +353,8 @@ fn render_node(schema: &Schema, n: &Node, out: &mut String) {
         return;
     }
     let name = schema.node_name(n.ty);
-    let open = |tag: &'static str, attrs: AttrList, out: &mut String| Open::t(tag, attrs).write(out);
+    let open =
+        |tag: &'static str, attrs: AttrList, out: &mut String| Open::t(tag, attrs).write(out);
     let close = |tag: &str, out: &mut String| {
         out.push_str("</");
         out.push_str(tag);
@@ -300,19 +363,30 @@ fn render_node(schema: &Schema, n: &Node, out: &mut String) {
     let children = |out: &mut String| render_fragment(schema, &n.content, out);
     match name {
         "paragraph" => {
-            open("p", AttrList::new().s("class", "editor-paragraph-block"), out);
+            open(
+                "p",
+                AttrList::new().s("class", "editor-paragraph-block"),
+                out,
+            );
             children(out);
             close("p", out);
         }
         "heading" => {
-            let level = a(n, "level").and_then(|v| v.as_i64()).filter(|l| (1..=6).contains(l)).unwrap_or(1);
+            let level = a(n, "level")
+                .and_then(|v| v.as_i64())
+                .filter(|l| (1..=6).contains(l))
+                .unwrap_or(1);
             let tag = ["h1", "h2", "h3", "h4", "h5", "h6"][(level - 1) as usize];
             open(tag, AttrList::new().s("class", "editor-heading-block"), out);
             children(out);
             close(tag, out);
         }
         "bulletList" => {
-            open("ul", AttrList::new().s("class", "list-disc pl-7 space-y-(--list-spacing-y)"), out);
+            open(
+                "ul",
+                AttrList::new().s("class", "list-disc pl-7 space-y-(--list-spacing-y)"),
+                out,
+            );
             children(out);
             close("ul", out);
         }
@@ -333,14 +407,23 @@ fn render_node(schema: &Schema, n: &Node, out: &mut String) {
             close("li", out);
         }
         "taskList" => {
-            open("ul", AttrList::new().s("class", "not-prose pl-2 space-y-2").s("data-type", "taskList"), out);
+            open(
+                "ul",
+                AttrList::new()
+                    .s("class", "not-prose pl-2 space-y-2")
+                    .s("data-type", "taskList"),
+                out,
+            );
             children(out);
             close("ul", out);
         }
         "taskItem" => {
             let checked = a(n, "checked").and_then(|v| v.as_bool()).unwrap_or(false);
             let mut at = AttrList::new().s("class", "flex");
-            at.set("data-checked", Some(if checked { AV::True } else { AV::False }));
+            at.set(
+                "data-checked",
+                Some(if checked { AV::True } else { AV::False }),
+            );
             at.set("data-type", Some(AV::Str("taskItem".into())));
             open("li", at, out);
             out.push_str("<label><input type=\"checkbox\"");
@@ -358,7 +441,10 @@ fn render_node(schema: &Schema, n: &Node, out: &mut String) {
         }
         "codeBlock" => {
             out.push_str("<pre><code");
-            if let Some(l) = a(n, "language").and_then(|v| v.as_str().map(|s| s.to_string())).filter(|s| !s.is_empty()) {
+            if let Some(l) = a(n, "language")
+                .and_then(|v| v.as_str().map(|s| s.to_string()))
+                .filter(|s| !s.is_empty())
+            {
                 out.push_str(" class=\"language-");
                 escape_html(&l, out);
                 out.push('"');
@@ -368,7 +454,13 @@ fn render_node(schema: &Schema, n: &Node, out: &mut String) {
             out.push_str("</code></pre>");
         }
         "horizontalRule" => {
-            open("div", AttrList::new().s("class", "py-4 border-strong-1").s("data-type", "horizontalRule"), out);
+            open(
+                "div",
+                AttrList::new()
+                    .s("class", "py-4 border-strong-1")
+                    .s("data-type", "horizontalRule"),
+                out,
+            );
             out.push_str("<div></div></div>");
         }
         "hardBreak" => out.push_str("<br>"),
@@ -398,7 +490,10 @@ fn render_node(schema: &Schema, n: &Node, out: &mut String) {
             close("image-component", out);
         }
         "mention" => {
-            let at = AttrList::new().val("id", n.attrs.get("id")).val("entity_identifier", n.attrs.get("entity_identifier")).val("entity_name", n.attrs.get("entity_name"));
+            let at = AttrList::new()
+                .val("id", n.attrs.get("id"))
+                .val("entity_identifier", n.attrs.get("entity_identifier"))
+                .val("entity_name", n.attrs.get("entity_name"));
             open("mention-component", at, out);
             close("mention-component", out);
         }
@@ -422,7 +517,9 @@ fn render_node(schema: &Schema, n: &Node, out: &mut String) {
             out.push_str("</tbody></table>");
         }
         "tableRow" => {
-            let at = AttrList::new().val("background", n.attrs.get("background")).val("textColor", n.attrs.get("textColor"));
+            let at = AttrList::new()
+                .val("background", n.attrs.get("background"))
+                .val("textColor", n.attrs.get("textColor"));
             open("tr", at, out);
             children(out);
             close("tr", out);
@@ -450,7 +547,16 @@ fn render_node(schema: &Schema, n: &Node, out: &mut String) {
         }
         "calloutComponent" => {
             let mut at = AttrList::new();
-            for k in ["id", "data-icon-color", "data-icon-name", "data-emoji-unicode", "data-emoji-url", "data-logo-in-use", "data-background", "data-block-type"] {
+            for k in [
+                "id",
+                "data-icon-color",
+                "data-icon-name",
+                "data-emoji-unicode",
+                "data-emoji-url",
+                "data-logo-in-use",
+                "data-background",
+                "data-block-type",
+            ] {
                 at = at.val(k, n.attrs.get(k));
             }
             open("div", at, out);
@@ -459,7 +565,13 @@ fn render_node(schema: &Schema, n: &Node, out: &mut String) {
         }
         "issue-embed-component" => {
             let mut at = AttrList::new();
-            for k in ["entity_identifier", "project_identifier", "workspace_identifier", "id", "entity_name"] {
+            for k in [
+                "entity_identifier",
+                "project_identifier",
+                "workspace_identifier",
+                "id",
+                "entity_name",
+            ] {
                 at = at.val(k, n.attrs.get(k));
             }
             open("issue-embed-component", at, out);

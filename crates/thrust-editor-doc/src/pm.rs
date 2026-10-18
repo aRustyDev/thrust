@@ -73,7 +73,10 @@ pub fn compute_attrs(spec: &[crate::schema::AttrSpec], given: &Attrs) -> Attrs {
 
 impl Mark {
     pub fn create(schema: &Schema, ty: usize, given: &Attrs) -> Mark {
-        Mark { ty, attrs: compute_attrs(&schema.marks[ty].attrs, given) }
+        Mark {
+            ty,
+            attrs: compute_attrs(&schema.marks[ty].attrs, given),
+        }
     }
 
     /// `Mark.addToSet`: respects exclusion and keeps the set sorted by rank.
@@ -128,7 +131,13 @@ impl Node {
         if text.is_empty() {
             return Err(PmError("Empty text nodes are not allowed".into()));
         }
-        Ok(Node { ty: schema.text_type(), attrs: Attrs::new(), content: vec![], marks: mark_set_from(schema, marks), text: Some(text.to_string()) })
+        Ok(Node {
+            ty: schema.text_type(),
+            attrs: Attrs::new(),
+            content: vec![],
+            marks: mark_set_from(schema, marks),
+            text: Some(text.to_string()),
+        })
     }
 
     pub fn is_text(&self) -> bool {
@@ -137,11 +146,22 @@ impl Node {
 
     /// `NodeType.create(attrs, content, marks)`: no content check, text nodes joined (`Fragment.from`).
     pub fn create(schema: &Schema, ty: TypeId, given: &Attrs, content: Vec<Node>) -> Node {
-        Node { ty, attrs: compute_attrs(&schema.nodes[ty].attrs, given), content: join_text(content), marks: vec![], text: None }
+        Node {
+            ty,
+            attrs: compute_attrs(&schema.nodes[ty].attrs, given),
+            content: join_text(content),
+            marks: vec![],
+            text: None,
+        }
     }
 
     /// `schema.node(...)` = `NodeType.createChecked`: also validates content (and marks on children).
-    pub fn create_checked(schema: &Schema, ty: TypeId, given: &Attrs, content: Vec<Node>) -> Result<Node, PmError> {
+    pub fn create_checked(
+        schema: &Schema,
+        ty: TypeId,
+        given: &Attrs,
+        content: Vec<Node>,
+    ) -> Result<Node, PmError> {
         let n = Node::create(schema, ty, given, content);
         n.check_shallow(schema)?;
         Ok(n)
@@ -216,13 +236,27 @@ impl Node {
         let mut o = Map::new();
         o.insert("type".into(), Value::String(nt.name.into()));
         if !nt.attrs.is_empty() {
-            o.insert("attrs".into(), Value::Object(self.attrs.iter().map(|(k, v)| (k.clone(), v.clone())).collect()));
+            o.insert(
+                "attrs".into(),
+                Value::Object(
+                    self.attrs
+                        .iter()
+                        .map(|(k, v)| (k.clone(), v.clone()))
+                        .collect(),
+                ),
+            );
         }
         if !self.content.is_empty() {
-            o.insert("content".into(), Value::Array(self.content.iter().map(|c| c.to_json(schema)).collect()));
+            o.insert(
+                "content".into(),
+                Value::Array(self.content.iter().map(|c| c.to_json(schema)).collect()),
+            );
         }
         if !self.marks.is_empty() {
-            o.insert("marks".into(), Value::Array(self.marks.iter().map(|m| m.to_json(schema)).collect()));
+            o.insert(
+                "marks".into(),
+                Value::Array(self.marks.iter().map(|m| m.to_json(schema)).collect()),
+            );
         }
         if let Some(t) = &self.text {
             o.insert("text".into(), Value::String(t.clone()));
@@ -232,7 +266,9 @@ impl Node {
 
     /// `Node.fromJSON` (no content validation, like ProseMirror).
     pub fn from_json(schema: &Schema, v: &Value) -> Result<Node, PmError> {
-        let o = v.as_object().ok_or_else(|| PmError("Invalid input for Node.fromJSON".into()))?;
+        let o = v
+            .as_object()
+            .ok_or_else(|| PmError("Invalid input for Node.fromJSON".into()))?;
         let marks = match o.get("marks") {
             Some(Value::Array(ms)) => {
                 let mut out = vec![];
@@ -244,12 +280,20 @@ impl Node {
             Some(Value::Null) | None => vec![],
             Some(_) => return Err(PmError("Invalid mark data".into())),
         };
-        let tname = o.get("type").and_then(|t| t.as_str()).ok_or_else(|| PmError("missing type".into()))?;
+        let tname = o
+            .get("type")
+            .and_then(|t| t.as_str())
+            .ok_or_else(|| PmError("missing type".into()))?;
         if tname == "text" {
-            let t = o.get("text").and_then(|t| t.as_str()).ok_or_else(|| PmError("Invalid text node in JSON".into()))?;
+            let t = o
+                .get("text")
+                .and_then(|t| t.as_str())
+                .ok_or_else(|| PmError("Invalid text node in JSON".into()))?;
             return Node::text(schema, t, marks);
         }
-        let ty = schema.node_type(tname).ok_or_else(|| PmError(format!("There is no node type {tname} in this schema")))?;
+        let ty = schema
+            .node_type(tname)
+            .ok_or_else(|| PmError(format!("There is no node type {tname} in this schema")))?;
         let content = match o.get("content") {
             Some(Value::Array(cs)) => {
                 let mut out = vec![];
@@ -290,14 +334,29 @@ impl Mark {
         let mut o = Map::new();
         o.insert("type".into(), Value::String(mt.name.into()));
         if !mt.attrs.is_empty() {
-            o.insert("attrs".into(), Value::Object(self.attrs.iter().map(|(k, v)| (k.clone(), v.clone())).collect()));
+            o.insert(
+                "attrs".into(),
+                Value::Object(
+                    self.attrs
+                        .iter()
+                        .map(|(k, v)| (k.clone(), v.clone()))
+                        .collect(),
+                ),
+            );
         }
         Value::Object(o)
     }
     pub fn from_json(schema: &Schema, v: &Value) -> Result<Mark, PmError> {
-        let o = v.as_object().ok_or_else(|| PmError("Invalid input for Mark.fromJSON".into()))?;
-        let name = o.get("type").and_then(|t| t.as_str()).ok_or_else(|| PmError("missing mark type".into()))?;
-        let ty = schema.mark_type(name).ok_or_else(|| PmError(format!("There is no mark type {name} in this schema")))?;
+        let o = v
+            .as_object()
+            .ok_or_else(|| PmError("Invalid input for Mark.fromJSON".into()))?;
+        let name = o
+            .get("type")
+            .and_then(|t| t.as_str())
+            .ok_or_else(|| PmError("missing mark type".into()))?;
+        let ty = schema
+            .mark_type(name)
+            .ok_or_else(|| PmError(format!("There is no mark type {name} in this schema")))?;
         let given: Attrs = match o.get("attrs") {
             Some(Value::Object(a)) => a.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
             _ => Attrs::new(),
@@ -312,7 +371,10 @@ pub fn join_text(nodes: Vec<Node>) -> Vec<Node> {
     for n in nodes {
         if let (Some(last), true) = (out.last_mut(), n.is_text()) {
             if last.is_text() && last.marks == n.marks {
-                last.text.as_mut().unwrap().push_str(n.text.as_deref().unwrap());
+                last.text
+                    .as_mut()
+                    .unwrap()
+                    .push_str(n.text.as_deref().unwrap());
                 continue;
             }
         }

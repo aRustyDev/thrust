@@ -6,6 +6,8 @@
 pub mod domparse;
 pub mod html;
 pub mod pm;
+#[cfg(feature = "sanitize")]
+pub mod sanitize;
 pub mod schema;
 pub mod vdom;
 pub mod ydoc;

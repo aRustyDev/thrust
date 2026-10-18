@@ -1,6 +1,10 @@
 use base64::Engine;
 use serde_json::Value;
-use thrust_editor_doc::{pm::Node, schema::{Schema, Variant}, ydoc};
+use thrust_editor_doc::{
+    pm::Node,
+    schema::{Schema, Variant},
+    ydoc,
+};
 
 fn load() -> Value {
     let p = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/corpus/corpus.json");
@@ -24,7 +28,11 @@ fn stage1_probe() {
         if d.get("binary").is_none() || d["kind"] == "foreign" && d.get("json").is_none() {
             continue;
         }
-        let variant = if d["variant"] == "rich" { Variant::Rich } else { Variant::Document };
+        let variant = if d["variant"] == "rich" {
+            Variant::Rich
+        } else {
+            Variant::Document
+        };
         let schema = Schema::new(variant);
         let bin = b64(d["binary"].as_str().unwrap());
         dec_n += 1;
@@ -63,4 +71,13 @@ fn stage1_probe() {
     for f in fails.iter().take(40) {
         eprintln!("FAIL {f}");
     }
+    assert_eq!(
+        dec_ok, dec_n,
+        "binary -> json must equal the oracle for every document"
+    );
+    assert_eq!(
+        enc_ok, enc_n,
+        "json -> binary -> json must round-trip for every document"
+    );
+    assert!(fails.is_empty(), "{fails:?}");
 }

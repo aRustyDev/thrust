@@ -13,7 +13,12 @@ use base64::Engine;
 use serde_json::{json, Map, Value};
 use std::collections::BTreeMap;
 use std::time::Instant;
-use thrust_editor_doc::{domparse, html, pm::{norm_num, Node}, schema::{Schema, Variant}, ydoc};
+use thrust_editor_doc::{
+    domparse, html,
+    pm::{norm_num, Node},
+    schema::{Schema, Variant},
+    ydoc,
+};
 
 fn b64d(s: &str) -> Vec<u8> {
     base64::engine::general_purpose::STANDARD.decode(s).unwrap()
@@ -35,7 +40,13 @@ fn first_diff(a: &Value, b: &Value, path: &str) -> String {
                             return first_diff(p, q, &format!("{path}/{k}"));
                         }
                     }
-                    (p, q) => return format!("{path}/{k}: got {:?} want {:?}", p.map(|v| v.to_string()), q.map(|v| v.to_string())),
+                    (p, q) => {
+                        return format!(
+                            "{path}/{k}: got {:?} want {:?}",
+                            p.map(|v| v.to_string()),
+                            q.map(|v| v.to_string())
+                        )
+                    }
                 }
             }
             String::from("(equal)")
@@ -48,12 +59,22 @@ fn first_diff(a: &Value, b: &Value, path: &str) -> String {
                             return first_diff(p, q, &format!("{path}/{i}"));
                         }
                     }
-                    (p, q) => return format!("{path}/{i}: got {:?} want {:?}", p.map(|v| v.to_string().chars().take(80).collect::<String>()), q.map(|v| v.to_string().chars().take(80).collect::<String>())),
+                    (p, q) => {
+                        return format!(
+                            "{path}/{i}: got {:?} want {:?}",
+                            p.map(|v| v.to_string().chars().take(80).collect::<String>()),
+                            q.map(|v| v.to_string().chars().take(80).collect::<String>())
+                        )
+                    }
                 }
             }
             String::from("(equal)")
         }
-        _ => format!("{path}: got {} want {}", a.to_string().chars().take(100).collect::<String>(), b.to_string().chars().take(100).collect::<String>()),
+        _ => format!(
+            "{path}: got {} want {}",
+            a.to_string().chars().take(100).collect::<String>(),
+            b.to_string().chars().take(100).collect::<String>()
+        ),
     }
 }
 
@@ -85,9 +106,21 @@ const DIRS: &[(&str, &str)] = &[
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let large = args.iter().any(|a| a == "--large");
-    let out_dir = args.iter().position(|a| a == "--out").and_then(|i| args.get(i + 1)).cloned().unwrap_or_else(|| concat!(env!("CARGO_MANIFEST_DIR"), "/../../target/spike-0006").to_string());
-    let corpus_path = if large { format!("{out_dir}/corpus-large.json") } else { concat!(env!("CARGO_MANIFEST_DIR"), "/tests/corpus/corpus.json").to_string() };
-    let corpus: Value = serde_json::from_str(&std::fs::read_to_string(&corpus_path).expect("corpus")).unwrap();
+    let out_dir = args
+        .iter()
+        .position(|a| a == "--out")
+        .and_then(|i| args.get(i + 1))
+        .cloned()
+        .unwrap_or_else(|| {
+            concat!(env!("CARGO_MANIFEST_DIR"), "/../../target/spike-0006").to_string()
+        });
+    let corpus_path = if large {
+        format!("{out_dir}/corpus-large.json")
+    } else {
+        concat!(env!("CARGO_MANIFEST_DIR"), "/tests/corpus/corpus.json").to_string()
+    };
+    let corpus: Value =
+        serde_json::from_str(&std::fs::read_to_string(&corpus_path).expect("corpus")).unwrap();
     let docs: Vec<DocRec> = corpus["docs"]
         .as_array()
         .unwrap()
@@ -96,19 +129,41 @@ fn main() {
         .map(|d| DocRec {
             id: d["id"].as_str().unwrap().to_string(),
             kind: d["kind"].as_str().unwrap().to_string(),
-            variant: if d["variant"] == "rich" { Variant::Rich } else { Variant::Document },
-            nodes: d["nodes"].as_array().unwrap().iter().map(|x| x.as_str().unwrap().to_string()).collect(),
-            marks: d["marks"].as_array().unwrap().iter().map(|x| x.as_str().unwrap().to_string()).collect(),
+            variant: if d["variant"] == "rich" {
+                Variant::Rich
+            } else {
+                Variant::Document
+            },
+            nodes: d["nodes"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|x| x.as_str().unwrap().to_string())
+                .collect(),
+            marks: d["marks"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|x| x.as_str().unwrap().to_string())
+                .collect(),
             v: d.clone(),
         })
         .collect();
     let rich = Schema::new(Variant::Rich);
     let docs_schema = Schema::new(Variant::Document);
-    let schema_of = |v: Variant| if v == Variant::Rich { &rich } else { &docs_schema };
+    let schema_of = |v: Variant| {
+        if v == Variant::Rich {
+            &rich
+        } else {
+            &docs_schema
+        }
+    };
 
     // by direction -> tally; by direction -> (type -> tally)
-    let mut dir_tally: BTreeMap<&str, Tally> = DIRS.iter().map(|(k, _)| (*k, Tally::default())).collect();
-    let mut by_type: BTreeMap<&str, BTreeMap<String, (usize, usize)>> = DIRS.iter().map(|(k, _)| (*k, BTreeMap::new())).collect();
+    let mut dir_tally: BTreeMap<&str, Tally> =
+        DIRS.iter().map(|(k, _)| (*k, Tally::default())).collect();
+    let mut by_type: BTreeMap<&str, BTreeMap<String, (usize, usize)>> =
+        DIRS.iter().map(|(k, _)| (*k, BTreeMap::new())).collect();
     let mut time_us: BTreeMap<&str, u128> = BTreeMap::new();
     let mut rust_out: Vec<Value> = vec![];
     let mut kind_tally: BTreeMap<(String, &str), (usize, usize)> = BTreeMap::new();
@@ -170,16 +225,23 @@ fn main() {
                 Ok(n) => {
                     let j = n.to_json(schema);
                     let mut ok = same(&j, want_json);
-                    let mut msg = if ok { String::new() } else { first_diff(&j, want_json, "") };
+                    let mut msg = if ok {
+                        String::new()
+                    } else {
+                        first_diff(&j, want_json, "")
+                    };
                     if ok {
                         if let (Some(t), Some(tj)) = (v.get("title"), v.get("title_json")) {
                             let tn = ydoc::decode(schema, &bin, "title").map(|n| n.to_json(schema));
                             if !matches!(&tn, Ok(x) if same(x, tj)) {
                                 ok = false;
-                                msg = format!("title fragment differs for {t}: {}", match &tn {
-                                    Ok(x) => first_diff(x, tj, ""),
-                                    Err(e) => e.to_string(),
-                                });
+                                msg = format!(
+                                    "title fragment differs for {t}: {}",
+                                    match &tn {
+                                        Ok(x) => first_diff(x, tj, ""),
+                                        Err(e) => e.to_string(),
+                                    }
+                                );
                             }
                         }
                     }
@@ -190,9 +252,19 @@ fn main() {
             rec("D1", pass, msg, us);
             out.insert("binary".into(), Value::String(b64e(&bin)));
             if d.kind != "history" && d.kind != "legacy" {
-                if let (Some(ys), Ok(mine)) = (v.get("ystruct"), ydoc::struct_dump(&bin, "default")) {
+                if let (Some(ys), Ok(mine)) = (v.get("ystruct"), ydoc::struct_dump(&bin, "default"))
+                {
                     let ok = same(&mine, ys);
-                    rec("D1s", ok, if ok { String::new() } else { first_diff(&mine, ys, "") }, 0);
+                    rec(
+                        "D1s",
+                        ok,
+                        if ok {
+                            String::new()
+                        } else {
+                            first_diff(&mine, ys, "")
+                        },
+                        0,
+                    );
                 }
             }
         }
@@ -207,7 +279,16 @@ fn main() {
                 Ok(n) => {
                     let j = n.to_json(schema);
                     let ok = same(&j, want_json);
-                    rec("D2", ok, if ok { String::new() } else { first_diff(&j, want_json, "") }, us);
+                    rec(
+                        "D2",
+                        ok,
+                        if ok {
+                            String::new()
+                        } else {
+                            first_diff(&j, want_json, "")
+                        },
+                        us,
+                    );
                 }
                 Err(e) => rec("D2", false, e.to_string(), us),
             }
@@ -224,7 +305,11 @@ fn main() {
             let msg = if ok {
                 String::new()
             } else {
-                let at = got.bytes().zip(want.bytes()).position(|(a, b)| a != b).unwrap_or(got.len().min(want.len()));
+                let at = got
+                    .bytes()
+                    .zip(want.bytes())
+                    .position(|(a, b)| a != b)
+                    .unwrap_or(got.len().min(want.len()));
                 format!("first diff at byte {at}")
             };
             rec("D3", ok, msg, us);
@@ -233,13 +318,26 @@ fn main() {
 
         // D4 : html -> json
         {
-            let h = v.get("html_in").and_then(|x| x.as_str()).or_else(|| v["html"].as_str()).unwrap();
+            let h = v
+                .get("html_in")
+                .and_then(|x| x.as_str())
+                .or_else(|| v["html"].as_str())
+                .unwrap();
             let t0 = Instant::now();
             let doc = domparse::html_to_doc(schema, h);
             let us = t0.elapsed().as_micros();
             let j = doc.to_json(schema);
             let ok = same(&j, &v["html_in_json"]);
-            rec("D4", ok, if ok { String::new() } else { first_diff(&j, &v["html_in_json"], "") }, us);
+            rec(
+                "D4",
+                ok,
+                if ok {
+                    String::new()
+                } else {
+                    first_diff(&j, &v["html_in_json"], "")
+                },
+                us,
+            );
             out.insert("html_json".into(), j);
         }
 
@@ -256,7 +354,16 @@ fn main() {
                     let j = n.to_json(schema);
                     let hh = html::to_html(schema, &n);
                     let ok = same(&j, want_json) && hh == v["html"].as_str().unwrap();
-                    rec("D5", ok, if ok { String::new() } else { first_diff(&j, want_json, "") }, us);
+                    rec(
+                        "D5",
+                        ok,
+                        if ok {
+                            String::new()
+                        } else {
+                            first_diff(&j, want_json, "")
+                        },
+                        us,
+                    );
                     out.insert("v1_binary".into(), Value::String(b64e(&bin)));
                     out.insert("v1_json".into(), j);
                     out.insert("v1_html".into(), Value::String(hh));
@@ -268,21 +375,36 @@ fn main() {
     }
 
     // ---------------------------------------------------------------- report
-    println!("# Fidelity report ({} documents from {})\n", docs.len(), corpus_path);
+    println!(
+        "# Fidelity report ({} documents from {})\n",
+        docs.len(),
+        corpus_path
+    );
     println!("| dir | what | pass / total | % |");
     println!("|---|---|---|---|");
     let (mut p, mut t) = (0, 0);
     for (k, label) in DIRS {
         let tl = &dir_tally[k];
-        println!("| {k} | {label} | {} / {} | {:.2} |", tl.pass, tl.total, 100.0 * tl.pass as f64 / tl.total.max(1) as f64);
+        println!(
+            "| {k} | {label} | {} / {} | {:.2} |",
+            tl.pass,
+            tl.total,
+            100.0 * tl.pass as f64 / tl.total.max(1) as f64
+        );
         p += tl.pass;
         t += tl.total;
     }
-    println!("| all | every (document, direction) pair | {p} / {t} | {:.2} |\n", 100.0 * p as f64 / t.max(1) as f64);
+    println!(
+        "| all | every (document, direction) pair | {p} / {t} | {:.2} |\n",
+        100.0 * p as f64 / t.max(1) as f64
+    );
     println!("Instance-weighted (share of node instances in documents that pass):");
     for (k, _) in DIRS {
         let (a, b) = instances.get(k).copied().unwrap_or((0, 0));
-        println!("  {k}: {a}/{b} = {:.2}%", 100.0 * a as f64 / b.max(1) as f64);
+        println!(
+            "  {k}: {a}/{b} = {:.2}%",
+            100.0 * a as f64 / b.max(1) as f64
+        );
     }
     println!("\nBy document kind (pass/total per direction):");
     for ((kind, dir), (a, b)) in &kind_tally {
@@ -299,9 +421,21 @@ fn main() {
             format!("{a}/{b} ({:.1}%)", 100.0 * a as f64 / b.max(1) as f64)
         };
         let n = by_type["D1"][ty].1;
-        println!("| {ty} | {n} | {} | {} | {} | {} |", cell("D1"), cell("D2"), cell("D3"), cell("D4"));
+        println!(
+            "| {ty} | {n} | {} | {} | {} | {} |",
+            cell("D1"),
+            cell("D2"),
+            cell("D3"),
+            cell("D4")
+        );
     }
-    println!("\nCPU (native release, whole corpus): {}", DIRS.iter().map(|(k, _)| format!("{k}={}us", time_us.get(k).copied().unwrap_or(0))).collect::<Vec<_>>().join("  "));
+    println!(
+        "\nCPU (native release, whole corpus): {}",
+        DIRS.iter()
+            .map(|(k, _)| format!("{k}={}us", time_us.get(k).copied().unwrap_or(0)))
+            .collect::<Vec<_>>()
+            .join("  ")
+    );
     for (k, _) in DIRS {
         let tl = &dir_tally[k];
         if !tl.fails.is_empty() {
@@ -312,10 +446,29 @@ fn main() {
         }
     }
     std::fs::create_dir_all(&out_dir).ok();
-    let name = if large { "rust-out-large.json" } else { "rust-out.json" };
-    std::fs::write(format!("{out_dir}/{name}"), serde_json::to_string(&json!({"docs": rust_out})).unwrap()).unwrap();
+    let name = if large {
+        "rust-out-large.json"
+    } else {
+        "rust-out.json"
+    };
+    std::fs::write(
+        format!("{out_dir}/{name}"),
+        serde_json::to_string(&json!({"docs": rust_out})).unwrap(),
+    )
+    .unwrap();
     let fid: Vec<Value> = DIRS.iter().map(|(k, l)| json!({"dir": k, "what": l, "pass": dir_tally[k].pass, "total": dir_tally[k].total})).collect();
-    std::fs::write(format!("{out_dir}/{}", if large { "fidelity-large.json" } else { "fidelity.json" }), serde_json::to_string_pretty(&fid).unwrap()).unwrap();
+    std::fs::write(
+        format!(
+            "{out_dir}/{}",
+            if large {
+                "fidelity-large.json"
+            } else {
+                "fidelity.json"
+            }
+        ),
+        serde_json::to_string_pretty(&fid).unwrap(),
+    )
+    .unwrap();
 }
 
 fn count_nodes(v: &Value) -> usize {
