@@ -1,0 +1,28 @@
+{
+  "should_trigger": [
+    "does blitz-dom support css grid and position sticky",
+    "dioxus-native vs webview, which renderer should i use for a desktop app",
+    "what's the difference between blitz-dom and blitz-paint",
+    "which blitz version does dioxus-native 0.7 require",
+    "my styles render blank in the dioxus native renderer but look fine in the browser",
+    "dx serve --renderer native opens a blank white window",
+    "how do i embed blitz-dom headless in my own app with dioxus-native-dom",
+    "how do stylo taffy parley and vello fit together in blitz",
+    "a dioxus-components button renders unstyled only under dioxus-native",
+    "onfocus handlers never fire in dioxus-native but work in the webview build"
+  ],
+  "should_not_trigger": [
+    "how do i write a use_signal counter with a button in dioxus",
+    "add the dioxus-components dialog with dx components add",
+    "css grid isnt working in chrome, columns collapse",
+    "convert this html into rsx for dioxus",
+    "how do i write a dioxus server function with #[get]",
+    "my bevy game stutters when uploading wgpu textures",
+    "tauri webview2 installer is too big, how do i shrink it",
+    "blitz.js app router middleware isnt running",
+    "how does the react native renderer batch updates",
+    "best opening repertoire for blitz chess",
+    "dx serve --desktop opens a blank window and nothing is logged",
+    "dx serve --hot-patch crashed after my second edit"
+  ]
+}

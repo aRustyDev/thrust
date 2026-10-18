@@ -1,0 +1,126 @@
+{
+  "skill_name": "blitz-native",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "someone told me dioxus-native pins blitz 0.3.0-beta.1. im on dioxus 0.7.10 and want to add blitz-dom as a direct dep for some layout tests. what version goes in Cargo.toml",
+      "expected_output": "Corrects the claim: dioxus-native 0.7.x requires the blitz 0.2 line (blitz-dom ^0.2.4); 0.3.0-beta.1 is required only by dioxus-native 0.8.0-alpha.1; tells the user to read the real requirement with cargo tree.",
+      "expectations": [
+        "The answer states that `dioxus-native` 0.7.x requires the Blitz `0.2` line (for example `blitz-dom` `^0.2.4`), not `0.3.0-beta.1`.",
+        "The answer states that `0.3.0-beta.1` is required by `dioxus-native` 0.8.0-alpha.1 (a 0.8 alpha), not by any 0.7.x release.",
+        "The answer tells the user to check the requirement with `cargo tree` (for example `cargo tree -i blitz-dom`) or `Cargo.lock` instead of hard-coding a guess.",
+        "The answer does not recommend `blitz-dom = \"0.3.0-beta.1\"` for a Dioxus 0.7.10 project."
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "whats the difference between blitz-dom, blitz-paint, blitz-shell and dioxus-native-dom? i want to run a dioxus vdom and lay it out headless inside my own app, no winit window from blitz",
+      "expected_output": "Role of each crate; recommends dioxus-native-dom's DioxusDocument (new, initial_build, handle_ui_event, poll) and not blitz-shell or dioxus_native::launch; paints separately with blitz-paint and an AnyRender backend, tagged unverified.",
+      "expectations": [
+        "The answer says `blitz-dom` holds the DOM, style resolution, layout and event handling but not parsing, painting or windowing.",
+        "The answer says `blitz-paint` translates a Blitz DOM tree into AnyRender draw commands.",
+        "The answer says `blitz-shell` provides the winit window, event loop and AccessKit integration.",
+        "The answer says `dioxus-native-dom` is the headless bridge between a Dioxus `VirtualDom` and `blitz-dom`.",
+        "The answer names `DioxusDocument` (created from a `VirtualDom` with `DocumentConfig`, then `initial_build`) as the headless entry point.",
+        "The answer recommends not using `blitz-shell` or `dioxus_native::launch` when there should be no Blitz-owned window.",
+        "The answer marks the painting side (`blitz-paint` into an AnyRender backend) as unverified or tells the user to read the crate docs for the pinned version.",
+        "The answer says `handle_ui_event` and `poll` are methods of the `blitz_dom::Document` trait, so the caller needs a `blitz-dom` dependency and `use blitz_dom::Document;`.",
+        "The answer says the `MutationWriter` inside `dioxus-native-dom` is crate-private and cannot be reused from outside."
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "we want to ship on dioxus native (0.7.10). will position: sticky, css grid and backdrop-filter work? need a yes/no for each",
+      "expected_output": "Per-feature answer with evidence labels: sticky is open on the roadmap; grid is supported with partial WPT conformance; backdrop-filter is listed under the 0.3 milestone so not assumed for 0.7.x; recommends a repro on the pinned version.",
+      "expectations": [
+        "The answer says `position: sticky` is not yet supported (it is an open item on the Blitz roadmap for 1.0).",
+        "The answer says CSS grid is supported but incompletely, and cites a WPT pass rate or the roadmap rather than asserting full support.",
+        "The answer says `backdrop-filter` is listed under the Blitz 0.3 milestone and should not be assumed for a Dioxus 0.7.x app on Blitz 0.2.",
+        "The answer labels at least one claim with its evidence type (WPT, roadmap or inferred).",
+        "The answer states that WPT pass rates measure conformance and not whether a particular app works.",
+        "The answer recommends confirming each feature with a minimal repro on the pinned Dioxus version."
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "can i use document::eval and the dioxus-components dialog under the native renderer? we also load a third party js charting lib in the webview build today",
+      "expected_output": "document::eval never runs the script on dioxus-native 0.7.10 (send, recv and join return EvalError::Unsupported); JS libraries cannot work; the dioxus-components Dialog survives only because it ignores those results, and its focus trap, escape-to-close, outside-dismiss and exit animation all depend on eval; suggests Rust-side alternatives.",
+      "expectations": [
+        "The answer says `document::eval` never runs the script in `dioxus-native` 0.7.10 and that its `send`, `recv` and `join` return `EvalError::Unsupported`.",
+        "The answer says the native renderer has no JavaScript engine, so a third-party JavaScript charting library will not work there.",
+        "The answer says the dioxus-components Dialog keeps working only because it ignores the `document::eval` results.",
+        "The answer says the Dialog's focus trap, escape-to-close, outside-dismiss and exit animation depend on `document::eval`, so they do nothing on native.",
+        "The answer suggests a Rust-side alternative for charting or states that the feature must be rebuilt without JavaScript."
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "how do i actually start my dioxus 0.7 app on the native renderer instead of webview",
+      "expected_output": "Two documented routes (dioxus crate native feature with the normal launch, or dioxus-native directly with launch), notes dx --renderer native exists but the exact desktop flag combination is unverified, notes beta status and webview as default.",
+      "expectations": [
+        "The answer gives the `native` feature of the `dioxus` crate (`features = [\"native\"]`) as one route.",
+        "The answer gives `dioxus_native::launch(App)` with the `dioxus-native` crate as another route.",
+        "The answer says `dx` accepts `--renderer native` and marks the exact combination with a platform flag as unverified.",
+        "The answer states that native is beta or opt-in and that webview is the default desktop renderer.",
+        "If the answer mentions the Blitz git version of `dioxus-native`, it says to pin a `rev`."
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "where do i see current css conformance numbers for blitz and do they apply to my dioxus 0.7.10 app?",
+      "expected_output": "Points to blitz-wpt-results summary data, explains the pass-rate formula, and warns that the latest numbers are Blitz main (0.3 line), that a 2025-era run is closer to 0.7.x, and that percentages across dates are not comparable.",
+      "expectations": [
+        "The answer points to the `DioxusLabs/blitz-wpt-results` repository (its `summary/` data) as the source.",
+        "The answer gives the pass rate as subtests passed divided by subtests run (`scores[3] / scores[2]` or equivalent).",
+        "The answer says the latest published numbers reflect Blitz `main` (the 0.3 line), not necessarily the Blitz 0.2 that Dioxus 0.7.10 uses.",
+        "The answer says a run near the blitz-dom 0.2.4 release (2025-10-22) is the closer match for a 0.7.x app.",
+        "The answer warns that WPT percentages from different dates are not directly comparable because the number of tests run changed."
+      ]
+    },
+    {
+      "id": 7,
+      "prompt": "is dioxus native faster than the webview renderer? give me rough numbers for startup and frame time so i can put them in a slide",
+      "expected_output": "Declines to invent numbers; says no benchmark data is available in the sources; suggests measuring on the app's real screens.",
+      "expectations": [
+        "The answer does not give specific startup-time or frame-time figures for either renderer.",
+        "The answer states that no benchmark or performance data is available from the sources it used.",
+        "The answer recommends measuring the app's real screens on the target hardware.",
+        "The answer does not claim that the native renderer is faster, or slower, than the webview renderer as a fact."
+      ]
+    },
+    {
+      "id": 8,
+      "prompt": "dx serve --renderer native opens a blank white window, nothing in the logs. webview build looks fine. what's wrong",
+      "expected_output": "Does not assert one root cause; checks dx and dioxus-native/blitz versions; suggests a minimal repro to separate CSS-support problems from others; notes native is beta.",
+      "expectations": [
+        "The answer asks for or checks the output of `dx --version` and of `cargo tree -p dioxus-native` (or `cargo tree -i blitz-dom`).",
+        "The answer does not state a single definitive root cause without evidence.",
+        "The answer suggests reducing the app to a minimal repro (for example one element of plain text) to separate styling or feature gaps from other causes.",
+        "The answer says to compare the CSS features the app uses against the supported-CSS evidence for the pinned Blitz version.",
+        "The answer states that the native renderer is beta."
+      ]
+    },
+    {
+      "id": 9,
+      "prompt": "does dioxus-native support drag and drop and text-overflow: ellipsis right now? we're on 0.7.10",
+      "expected_output": "Both are unchecked items inside the Blitz 0.3 beta milestone on the roadmap, so neither should be assumed on the 0.7.x line (blitz 0.2); advises a repro.",
+      "expectations": [
+        "The answer says drag and drop is listed as not yet done in the Blitz 0.3 beta milestone and should not be assumed for Dioxus 0.7.x.",
+        "The answer says `text-overflow` is listed as not yet done in the Blitz 0.3 beta milestone and should not be assumed for Dioxus 0.7.x.",
+        "The answer labels the claims with the roadmap as the evidence source.",
+        "The answer recommends confirming with a minimal repro on the pinned version."
+      ]
+    },
+    {
+      "id": 10,
+      "prompt": "on dioxus-native 0.7.10 my onfocus and onscroll handlers never fire and typing with a japanese IME does nothing. webview build is fine. bug in my code?",
+      "expected_output": "Reports that in 0.7.10 only mouse move/down/up, click, key down/up/press and input events are converted for Dioxus handlers and IME events are dropped (TODO in source); other kinds are not forwarded (inferred); recommends a repro and notes the roadmap.",
+      "expectations": [
+        "The answer says that in `dioxus-native` 0.7.10 the event handler converts only mouse (move, down, up), click, key (down, up, press) and input events for Dioxus.",
+        "The answer says IME events are dropped in 0.7.10 (the source has a TODO for IME handling).",
+        "The answer says that focus and scroll events are not forwarded to Dioxus handlers in that release, and labels this as inferred from the source rather than tested.",
+        "The answer says the cause is the native renderer rather than the user's code, or recommends confirming with a minimal repro on the pinned version."
+      ]
+    }
+  ]
+}
