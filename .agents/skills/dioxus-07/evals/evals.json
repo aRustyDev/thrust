@@ -131,6 +131,17 @@
         "The answer moves the `localStorage` access into `use_effect` so it runs only after hydration in the browser.",
         "The answer says server-only code and dependencies belong behind the `server` feature."
       ]
+    },
+    {
+      "id": 12,
+      "prompt": "how do i test my dioxus 0.7 component, i want to check it shows the done and open items with the right css classes. is there a dioxus_test crate i should use",
+      "expected_output": "Routes the request to the rust-test-app skill for writing component tests with dioxus-ssr; does not invent a dioxus_test API; may state what the official page covers.",
+      "expectations": [
+        "The answer sends the request to the `rust-test-app` skill (names it) for writing the component tests instead of improvising a harness here.",
+        "The answer does not invent a `dioxus_test::` API and says `DioxusLabs/dioxus-test` is experimental with no stable harness.",
+        "The answer names rendering with `dioxus-ssr` and asserting on the rendered output as the supported way to check component markup.",
+        "The answer lists the supported approaches from the official page: SSR rendering for component output, a hand-driven `VirtualDom` for hooks, and Playwright against `dx serve` for end to end."
+      ]
     }
   ]
 }

@@ -124,9 +124,13 @@ The official 0.7 testing page covers:
   `packages/playwright-tests/{web,liveview,fullstack}` in the Dioxus repository.
 
 `DioxusLabs/dioxus-test` is "An experimental library for testing Dioxus apps ... More details to come."
-There is no stable component-test harness: do not invent a `dioxus_test::` API; name which of the three
-supported approaches you used. `DioxusLabs/dioxus-ai` (component-generation and QA utilities, last
+There is no stable component-test harness: do not invent a `dioxus_test::` API; name the approach the answer
+relies on. `DioxusLabs/dioxus-ai` (component-generation and QA utilities, last
 pushed 2024-11) is not a stable tool.
+
+This section records what exists. To write the tests themselves (the SSR render with
+a flush loop so effects run, assertions on `data-testid` and class, an in-process server for tests that need
+a real URL), use the `rust-test-app` skill.
 
 ## 8. AI-tooling facts for Dioxus 0.7
 
