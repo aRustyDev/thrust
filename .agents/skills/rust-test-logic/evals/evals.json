@@ -1,0 +1,222 @@
+{
+  "skill_name": "rust-test-logic",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "got a proptest in tests/roundtrip.rs for our frame encode/decode. failed in ci last night with some weird 3 byte input and ive got this in the log twice: `proptest: FileFailurePersistence::SourceParallel set, but failed to find lib.rs or main.rs`. does that mean the failing case is gone? also how do i make that noise stop",
+      "expected_output": "Corrects the premise: proptest saves the counterexample beside the test file and the warning only says the default location search failed, but on a CI runner that file does not survive. Points at the printed cc line to copy into the committed regressions file, recommends the tests/common helper for a quiet, explicit location, and pins the shrunk input as a named case.",
+      "expectations": [
+        "Does not tell the user the counterexample is gone; says proptest saves the failure beside the test file, for example tests/roundtrip.proptest-regressions, and notes that on a CI runner that file does not survive the job",
+        "Says to copy the `cc <hash>` seed line proptest printed in the CI log (it says to add the following line to your copy of the file) into the committed regressions file, or to pin the shrunk input as a named case",
+        "Recommends a shared helper in tests/common/mod.rs that builds the proptest config with FileFailurePersistence::WithSource(\"proptest-regressions\"), with `mod common;` in the test file and `#![proptest_config(common::proptest_config(256))]` in the proptest! block",
+        "Describes the helper's benefits as removing the warning, giving an explicit stable location and letting PROPTEST_CASES override the case count, and does not claim the counterexample would otherwise have been dropped",
+        "Recommends pinning the shrunk 3-byte input as a named rstest case so it survives generator changes",
+        "Does not suggest retries to make the failure go away"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "have a parse_duration fn for strings like 1h30m, 90s, 2d. my test is one #[test] with a for loop over a vec of (input, expected) and when it fails i cant tell which row. also last week '0s' returned an error and we fixed that. whats the better way",
+      "expected_output": "Moves the loop to rstest named cases so each row is its own nextest test, adds a named regression case for 0s, puts expected errors in the table, and suggests a property for the rest of the input space.",
+      "expectations": [
+        "Recommends rstest with one #[case::name(...)] per row so each case is its own test, instead of a for loop that stops at the first failure",
+        "Says to name every case because the name is what shows up in a failure",
+        "Recommends a named regression case for the '0s' bug and says not to remove it without removing the behaviour it pins",
+        "Recommends putting expected errors in the table as Result values rather than using #[should_panic]",
+        "Says to assert the full expected value rather than is_ok or contains",
+        "Suggests a prop_ property test (for example a format-then-parse round trip) to cover inputs the table does not list"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "writing a small in-memory session store (create, touch, expire, delete) in rust. unit tests only cover the happy path and ive been burned by weird orderings before. what kind of tests should i add, we use nextest",
+      "expected_output": "A model_ test: random operation sequences against the store and a simple std-collection model, compared after every step, with a tiny key space, an injected clock, preconditions if using proptest-state-machine, invariants, and a replay test for any shrunk sequence.",
+      "expectations": [
+        "Recommends a model-based test that generates random operation sequences and runs each against the real store and a simple model such as a std map, comparing after every step",
+        "Says to name it with the model_ prefix so the nextest config's per-prefix settings apply (retries = 0, flaky-result = \"fail\" and a longer timeout, as defaults that the command line can override)",
+        "Suggests a tiny key or id space so that operations collide on the same keys",
+        "Says that if valid operations depend on state (touch or delete only an existing session) to use proptest-state-machine with preconditions, because shrinking can remove earlier steps",
+        "Says expiry needs an injected clock rather than the wall clock",
+        "Says to check invariants such as len and is_empty after every step, not only the return values",
+        "Says a shrunk failing sequence becomes a plain replay test and the regressions file is committed",
+        "Notes these tests are sequential and that races need loom or shuttle"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "axum service with POST /api/items, GET and DELETE /api/items/{id}. found out that deleting the newest item then creating a new one gives the new item the deleted id. easy fix. but how do i test for this whole class of thing properly, not just this one case",
+      "expected_output": "An API-sequence model test: generated call sequences sent through the in-process router with oneshot, compared with an in-memory model that encodes the id rules; id choice weighted to issued ids; async body via a current-thread runtime; shrunk sequence pinned as a replay test.",
+      "expectations": [
+        "Recommends an API-level model test that generates random sequences of create, get and delete calls, sends them to the in-process router (tower oneshot, no sockets) and compares status codes and JSON with an in-memory model",
+        "Says the model encodes the documented rules, here that ids increase and are never reused, plus 404 behaviour",
+        "Says to pick target ids mostly from ids already issued (live and deleted) plus an occasional id that never existed",
+        "Says proptest bodies are synchronous so the async calls run inside a current-thread tokio runtime built in the body",
+        "Says to turn the shrunk sequence into a plain test with hard-coded calls as a named regression",
+        "Names the test with the model_ prefix and keeps tokio as a dev-dependency rather than adding it as a normal dependency"
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "porting our price formatting util from ts. legacy repo is built in ../legacy. want 2 things in rust: committed golden fixtures that run on every test run, and a test that hits the real ts with random inputs. tried rstest #[files(\"fixtures/*.json\")] but new fixture files dont show up unless i touch the test file. also it uses toFixed(2) a lot",
+      "expected_output": "Explains the compile-time glob, recommends datatest-stable for parity_ and a persistent Node bridge with proptest for oracle_, splits them across profiles, flags the toFixed tie trap, requires the harness to fail once, and defers the port process to ts-to-rust.",
+      "expectations": [
+        "Explains that rstest #[files] resolves its glob at compile time, so new fixture files are missed until the test target rebuilds",
+        "Recommends datatest-stable with harness = false so there is one test per fixture file discovered at run time",
+        "Splits the work by prefix: parity_ for committed fixtures that run in the default profile and oracle_ for the live comparison that is excluded from the default profile and run with --profile oracle",
+        "Recommends one persistent Node process speaking JSON lines over stdin and stdout, not spawning Node for each case",
+        "Warns that JavaScript's toFixed and Rust's format! round exact ties differently (Rust rounds ties to even, for example 2.5 to zero places) and says to put tie cases in the fixtures",
+        "Says the harness only counts after it has failed once, for example by mutating a fixture value or breaking the oracle adapter and showing the test go red",
+        "Points to ts-to-rust for the port and freeze process instead of re-explaining it"
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "how do i port this typescript module to rust? its about 600 lines, lots of unions and optional fields, talks to a db wrapper",
+      "expected_output": "Routes to ts-to-rust for the port process; does not start writing test harness code.",
+      "expectations": [
+        "Identifies this as a TypeScript-to-Rust port request and routes it to the ts-to-rust skill",
+        "Does not start writing rstest, proptest or datatest-stable code in this answer",
+        "Describes the port at most briefly as a staged process (scope, freeze, redesign, port, verify) owned by ts-to-rust",
+        "Mentions the parity_ and oracle_ test harness only as a later step once fixtures exist"
+      ]
+    },
+    {
+      "id": 7,
+      "prompt": "fuzz my parser, it takes raw bytes off a socket and i dont trust it. whats the setup",
+      "expected_output": "Routes coverage-guided fuzzing to rust-test-fuzz; at most mentions a prop_ never-panics property as a cheap complement; does not install tooling.",
+      "expectations": [
+        "Says coverage-guided fuzzing belongs to rust-test-fuzz and does not try to set up a fuzz campaign here",
+        "May mention a prop_ never-panics property as a cheap complement, and says it is not a substitute for fuzzing",
+        "Does not run or tell the agent to run cargo install, cargo-fuzz or a nightly toolchain install without the user's decision",
+        "Does not write a fuzz target in this answer"
+      ]
+    },
+    {
+      "id": 8,
+      "prompt": "coverage on the billing module is 94% but a bug still got through last sprint. how do i know if my tests are actually strong enough",
+      "expected_output": "Says coverage does not show whether tests can fail; routes mutation testing to rust-test-mutation; does not start a mutation workflow here.",
+      "expectations": [
+        "Says line coverage does not show whether the tests would fail on a wrong implementation",
+        "Identifies mutation testing as the way to measure that and routes it to rust-test-mutation",
+        "Does not install cargo-mutants or run a mutation campaign without the user's decision",
+        "Says that once survivors are found, the fix is stronger assertions, properties or model invariants (which this skill covers), not deleting or loosening tests"
+      ]
+    },
+    {
+      "id": 9,
+      "prompt": "one of our prop_ tests fails maybe 1 in 20 ci runs and its blocking merges. just add --retries 3 to the nextest command in ci so it stops, i dont have time for this",
+      "expected_output": "Declines retries: a randomized failure is a finding, the config's flaky-result = fail would count a passing retry as failed anyway; get the counterexample, pin it, fix the code or the property.",
+      "expectations": [
+        "Declines to add retries and says a randomized test that failed once has found a real counterexample",
+        "Says the nextest config sets flaky-result = \"fail\" for prop_ and model_ tests so a retry that passes is still reported as a failure by default, but that this is a default and not a hard guard: --flaky-result pass or NEXTEST_FLAKY_RESULT=pass overrides it",
+        "Says never to pass --retries, --flaky-result, NEXTEST_RETRIES or NEXTEST_FLAKY_RESULT, and suggests a CI step that fails if any of those strings appears in workflow files or scripts, with a control of adding one on purpose to see the step fail",
+        "Says to capture the minimal failing input or the regressions file and pin it as a named case",
+        "Says to fix the code, or if the property was wrong to change it and say why in the commit message",
+        "Does not suggest #[ignore], deleting the test, weakening the assertion or lengthening its timeout",
+        "Suggests reproducing with a higher PROPTEST_CASES locally or in the deep profile"
+      ]
+    },
+    {
+      "id": 10,
+      "prompt": "we already have a contract suite that runs the same http assertions against every adapter and a script that greps the 'test result:' line from cargo test and checks for exit 101. new crate is going to use proptest. can i just switch the whole repo to nextest in one go? do i need to touch .config/nextest.toml for each new test?",
+      "expected_output": "Says to keep the existing suite on cargo test until its exit-code and pass-count handling is migrated on purpose; use nextest for the new hermetic crate; prefixed tests need no config change.",
+      "expectations": [
+        "Advises against converting the existing contract suite blindly, because nextest prints no libtest 'test result:' line and exits 100 rather than 101 on test failures, so the script's exit-code and pass-count handling would have to be migrated deliberately",
+        "Recommends nextest for the new hermetic crate and leaving the existing suite on cargo test until it is migrated on purpose",
+        "Says a new test needs no change to the nextest config when it uses the right prefix (prop_, model_, parity_, oracle_) because the config routes on the name prefix",
+        "Says cargo test --doc stays a libtest call because nextest cannot run doctests",
+        "Says the profiles (default, ci, deep, oracle and so on) come from one shared .config/nextest.toml"
+      ]
+    },
+    {
+      "id": 11,
+      "prompt": "write a vitest test for this ts function that formats currency, it takes a number and a locale",
+      "expected_output": "Not this skill: writes a plain vitest test; no Rust tooling.",
+      "expectations": [
+        "Treats the request as JavaScript or TypeScript testing and writes a vitest test",
+        "Does not use rstest, proptest, nextest or any other Rust testing tool",
+        "Does not mention a Rust parity or oracle harness",
+        "Does not route to ts-to-rust or any Rust testing skill"
+      ]
+    },
+    {
+      "id": 12,
+      "prompt": "need an acceptance test for my terraform provider resource, create then update then import, TestAcc style",
+      "expected_output": "Not this skill: Terraform provider acceptance testing; no rstest, proptest or nextest.",
+      "expectations": [
+        "Treats the request as Terraform provider acceptance testing based on terraform-plugin-testing (resource.Test with TestCase and TestStep)",
+        "Does not use rstest, proptest or nextest",
+        "Does not apply the prop_ or model_ naming or nextest profiles",
+        "Does not route to a Rust testing skill"
+      ]
+    },
+    {
+      "id": 13,
+      "prompt": "my report formatter returns like 300 lines of plain text so asserting with assert_eq is unreadable. someone said use insta. also cargo insta says theres 14 .snap.new files after my refactor, ill just accept all so ci goes green",
+      "expected_output": "Insta suits large output; pushes back on accept-all: each snapshot must be inspected, and changed output after a refactor is a finding.",
+      "expectations": [
+        "Says insta snapshots suit large structured output that is reviewed by eye",
+        "Advises against accepting all snapshots blindly: each one must be inspected because accepting is a claim that the output is correct",
+        "Says that output changing after a refactor is a finding to investigate, not something to regenerate to get green",
+        "Says that in CI insta defaults to never writing snapshots",
+        "Says installing cargo-insta is the user's decision (propose and wait) and that review is done with cargo insta review"
+      ]
+    },
+    {
+      "id": 14,
+      "prompt": "i set PROPTEST_CASES=5000 in the nightly job but my test still only runs 64 cases. i put ProptestConfig::with_cases(64) in the proptest! block. its in src/ not tests/",
+      "expected_output": "Explains that an explicit with_cases overrides the env var; recommends the shared src/test_support.rs helper that reads PROPTEST_CASES with a per-test default; points at the deep profile for the nightly run.",
+      "expectations": [
+        "Says a hardcoded ProptestConfig::with_cases(n) overrides the PROPTEST_CASES environment variable",
+        "Recommends a shared helper that reads PROPTEST_CASES and falls back to the test's own default, in src/test_support.rs for unit tests",
+        "Says to declare the helper module with #[cfg(test)] pub(crate) mod test_support; and use crate::test_support::proptest_config(64) in the proptest_config attribute",
+        "Says the nightly run can use PROPTEST_CASES=4096 cargo nextest run --profile deep"
+      ]
+    },
+    {
+      "id": 15,
+      "prompt": "want an rstest table of status codes for my axum routes, GET /items/{id} gives 200 or 404, POST without a body gives 400, stuff like that",
+      "expected_output": "Not this skill: per-route axum status tables belong to rust-test-app; at most notes that rstest tables suit pure logic.",
+      "expectations": [
+        "Identifies per-route axum status and body tests as the job of rust-test-app and routes the request there",
+        "Does not write the axum router test in this answer",
+        "May note that rstest case tables suit pure functions, and that a model_ sequence test is for state carried across calls, not for single requests",
+        "Does not claim the model_ API-sequence test replaces per-route tests"
+      ]
+    },
+    {
+      "id": 16,
+      "prompt": "can i use insta to snapshot the markup my dioxus component renders? thinking assert_snapshot on the ssr html string",
+      "expected_output": "Not this skill: snapshots of Dioxus markup belong to rust-test-app; insta here covers plain values, JSON and text.",
+      "expectations": [
+        "Identifies snapshots of rendered Dioxus markup as the job of rust-test-app and routes the request there",
+        "Says that within this skill insta is for plain values, JSON and text output",
+        "Does not write a Dioxus SSR test in this answer",
+        "Does not tell the user to accept snapshots blindly"
+      ]
+    },
+    {
+      "id": 17,
+      "prompt": "my parity test fails on 3 fixtures. the ts is clearly wrong there so i just reran gen-fixtures.mjs after changing the rust and the expected values now match rust output. green now, ok?",
+      "expected_output": "Pushes back: fixtures record the TypeScript, never the Rust output; a deliberate difference is an exception-register row (ts-to-rust); a failing test is a finding.",
+      "expectations": [
+        "Says this is not acceptable: the fixtures must record what the legacy TypeScript does, and regenerating them against the Rust output makes the test unable to fail",
+        "Says a deliberate difference from the TypeScript belongs in the exception register of ts-to-rust, with a written reason, not in a regenerated or hand-edited fixture",
+        "Says to triage each of the three divergences: a Rust bug, a TypeScript behaviour clients depend on, or an intended change",
+        "Says a failing parity test is a finding and the fixtures are only regenerated from the TypeScript when the legacy behaviour is the agreed reference",
+        "Suggests a control: show that a deliberately wrong value still makes the parity test fail"
+      ]
+    },
+    {
+      "id": 18,
+      "prompt": "our ci runner doesnt have node. the oracle_ tests are red there with 'could not start node'. can i make them skip when node is missing so the pipeline is green",
+      "expected_output": "Pushes back on skip-when-missing: a test that passes without running proves nothing; run oracle_ only under the oracle or deep profile on a runner with Node, and keep the default profile hermetic.",
+      "expectations": [
+        "Advises against making the oracle_ tests skip or pass silently when node is missing, because a test that did not run is not evidence",
+        "Says oracle_ tests are already excluded from the default profile and run under the oracle or deep profile on a runner that has Node and the built legacy package",
+        "Says the default CI job (the default or ci profile) stays hermetic and needs no Node, and that parity_ fixtures cover the legacy behaviour there",
+        "Says installing Node or building the legacy package is the user's decision, to propose rather than do"
+      ]
+    }
+  ]
+}

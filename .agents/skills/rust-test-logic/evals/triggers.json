@@ -1,0 +1,40 @@
+{
+  "should_trigger": [
+    "add rstest cases for my parse_duration function, one per boundary, plus a named case for the bug we just fixed",
+    "write a proptest round-trip property for encode/decode of my Frame type",
+    "proptest prints `failed to find lib.rs or main.rs` when a test in tests/ fails, where did my counterexample go",
+    "PROPTEST_CASES is ignored because my test hardcodes ProptestConfig::with_cases(64)",
+    "write a model-based test for my LRU cache with proptest-state-machine",
+    "compare my KV store against a BTreeMap with random operation sequences, lockstep style",
+    "random sequences of POST, GET and DELETE against my axum items API checked against an in-memory model",
+    "set up datatest-stable parity_ tests over the golden fixtures we recorded from the old TypeScript lib",
+    "oracle_ test that calls the legacy node implementation through one persistent process with proptest inputs",
+    "rstest #[files] glob doesn't pick up new fixture files until i rebuild",
+    "insta snapshot test for my html renderer output, how do i review the .snap.new files",
+    "how do i pin the shrunk proptest counterexample as a regression test",
+    "why does -E 'test(/\\boracle_/)' run nothing under the default nextest profile",
+    "which nextest profile runs the prop_ and model_ tests with more cases",
+    "can i add --retries 3 to the nextest command in ci, one of our prop_ tests is flaky",
+    "moving our new crate from cargo test to nextest, what happens to the exit code and the test result line"
+  ],
+  "should_not_trigger": [
+    "write a vitest test for this TS function",
+    "terraform acceptance test for my provider resource",
+    "how do I port this TypeScript module to Rust",
+    "freeze golden tests from the TypeScript implementation before I port it to Rust",
+    "my port fails with invalid type: floating point `1.0`, expected i64 on a field the old TypeScript API sent as 1.0",
+    "fuzz my parser, it takes bytes from the network",
+    "write a cargo-fuzz target and a fuzz_replay_ test for my decoder",
+    "is my test suite strong enough? run cargo mutants and tell me which mutants survived",
+    "test my axum handler: GET /health returns 200 with the right JSON",
+    "test that my Dioxus component renders the right html",
+    "playwright browser test for the login flow",
+    "jest snapshot test for my React component",
+    "mdbook test fails with E0432 unresolved import",
+    "explain Rust lifetimes to me",
+    "set up cargo clippy in CI",
+    "add a [profile.mutants] to nextest.toml so cargo-mutants stops at the first failing test",
+    "can i use insta to snapshot the markup my dioxus component renders",
+    "rstest table of status codes for my axum routes"
+  ]
+}
