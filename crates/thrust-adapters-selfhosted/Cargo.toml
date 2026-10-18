@@ -9,7 +9,16 @@ publish.workspace = true
 [dependencies]
 thrust-contracts = { workspace = true }
 thrust-ports = { workspace = true }
+thrust-adapters-postgres = { workspace = true, features = ["native"] }
 async-trait = { workspace = true }
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 uuid = { workspace = true, features = ["v7"] }
 tokio = { version = "1", default-features = false, features = ["rt", "time"] }
+tokio-postgres = { version = "0.7", default-features = false, features = ["runtime"] }
+deadpool-postgres = { version = "0.14", default-features = false, features = ["rt_tokio_1"] }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+testcontainers = "0.23"
+testcontainers-modules = { version = "0.11", features = ["postgres"] }
+tokio = { version = "1", default-features = false, features = ["rt-multi-thread", "macros", "time"] }

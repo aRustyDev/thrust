@@ -93,10 +93,9 @@ if [ "$ADAPTERS" = "postgres" ]; then
   PG_PORT="${THRUST_PG_PORT:-$(pick_port)}"
   PG_PASSWORD="$(openssl rand -hex 12)"
   PG_CONTAINER="thrust-spike-pg-$$"
-  PGPASSWORD_FOR_DOCKER="$PG_PASSWORD"
-  export PGPASSWORD_FOR_DOCKER
-  # the password goes to the container through the environment, not argv
-  docker run -d --rm --name "$PG_CONTAINER" -e POSTGRES_PASSWORD="$PGPASSWORD_FOR_DOCKER" -e POSTGRES_DB=thrust \
+  # `-e NAME` without a value makes the docker CLI forward NAME from ITS environment, so the
+  # password never appears on argv.
+  POSTGRES_PASSWORD="$PG_PASSWORD" docker run -d --rm --name "$PG_CONTAINER" -e POSTGRES_PASSWORD -e POSTGRES_DB=thrust \
     -p "127.0.0.1:$PG_PORT:5432" postgres:16-alpine >"$LOG.pg.log" 2>&1 || { echo "could not start postgres" >&2; exit 3; }
   i=0
   until [ "$(docker exec "$PG_CONTAINER" psql -U postgres -d thrust -tAc 'select 1' 2>/dev/null)" = "1" ]; do
@@ -111,7 +110,7 @@ if [ "$ADAPTERS" = "postgres" ]; then
   done
   export DATABASE_URL="postgres://postgres:$PG_PASSWORD@127.0.0.1:$PG_PORT/thrust"
   # Apply the schema through the very same SQL the adapter ships (no hand-copied DDL).
-  "$ROOT/scripts/rs" cargo run --quiet --manifest-path "$ROOT/Cargo.toml" -p thrust-adapters-postgres --bin migrate \
+  "$ROOT/scripts/rs" cargo run --quiet --manifest-path "$ROOT/Cargo.toml" -p thrust-adapters-postgres --features native --bin migrate \
     >"$LOG.migrate.log" 2>&1 || { echo "migrate failed, see $LOG.migrate.log" >&2; exit 3; }
 fi
 

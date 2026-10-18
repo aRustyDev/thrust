@@ -21,6 +21,8 @@ impl IdGen for NativeIdGen {
     }
 }
 
+pub mod pg;
+
 /// `Background` on the tokio runtime.
 pub struct TokioBackground;
 

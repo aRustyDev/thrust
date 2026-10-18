@@ -6,6 +6,7 @@ members = [
     "crates/thrust-core",
     "crates/thrust-adapters-memory",
     "crates/thrust-api",
+    "crates/thrust-adapters-postgres",
     "crates/thrust-adapters-selfhosted",
     "crates/thrust-adapters-cloudflare",
     "crates/thrust-worker",

@@ -58,7 +58,14 @@ async fn main() {
 
     let db: Arc<dyn Database> = match adapters.as_str() {
         "memory" => Arc::new(MemoryDatabase::new()),
-        other => panic!("unknown THRUST_ADAPTERS '{other}' (this build supports: memory)"),
+        "postgres" => {
+            // the URL carries the password: environment only
+            let url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set for THRUST_ADAPTERS=postgres");
+            let connector = thrust_adapters_selfhosted::pg::PoolConnector::from_url(&url, env_num("THRUST_PG_POOL", 16))
+                .expect("pool");
+            Arc::new(thrust_adapters_postgres::PgDatabase::new(Arc::new(connector)))
+        }
+        other => panic!("unknown THRUST_ADAPTERS '{other}' (this build supports: memory, postgres)"),
     };
 
     let cfg = CoreConfig {

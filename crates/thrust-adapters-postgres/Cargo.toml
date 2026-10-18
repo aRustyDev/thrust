@@ -1,0 +1,26 @@
+[package]
+name = "thrust-adapters-postgres"
+description = "Postgres Database adapter at the tokio-postgres::Client level. One SQL implementation, two connection strategies (native pool / Hyperdrive socket)."
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[features]
+default = []
+# Only for the `migrate` binary and the testcontainers tests. NEVER enabled for wasm32.
+native = ["tokio-postgres/runtime", "dep:tokio"]
+
+[[bin]]
+name = "migrate"
+path = "src/bin/migrate.rs"
+required-features = ["native"]
+
+[dependencies]
+thrust-contracts = { workspace = true }
+thrust-ports = { workspace = true }
+async-trait = { workspace = true }
+serde_json = { workspace = true }
+# `js` makes it build for wasm32; `runtime` (TCP connect) is added only by the native feature.
+tokio-postgres = { version = "0.7", default-features = false, features = ["js", "with-uuid-1", "with-chrono-0_4", "with-serde_json-1"] }
+tokio = { version = "1", default-features = false, features = ["rt", "macros"], optional = true }
