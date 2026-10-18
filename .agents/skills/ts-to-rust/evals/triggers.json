@@ -1,0 +1,28 @@
+{
+  "should_trigger": [
+    "port this .ts module to Rust: interface to struct, union to enum, Promise to async fn",
+    "TS interface with optional fields to a Rust struct, which serde attributes do I need",
+    "#[serde(untagged)] keeps picking the wrong variant, we're porting from a TypeScript codebase",
+    "my Rust port treats {assignee: null} like a missing field but the TypeScript version did not",
+    "replay recorded responses from the reference API against my Rust port and ignore ids and timestamps",
+    "I recorded 60 responses from our Python API with curl, how do I check the Rust port returns the same json",
+    "when porting from TypeScript, what are the Rust equivalents of a?.b ?? 0 and Promise.all",
+    "JS toISOString prints .000Z but my chrono output drops it, and emoji string length differs too",
+    "freeze golden tests from the TypeScript implementation before I port it to Rust",
+    "when porting from TypeScript, `invalid type: floating point `1.0`, expected i64` on a field the old API sent as 1.0"
+  ],
+  "should_not_trigger": [
+    "port this C++ parser to Rust",
+    "port our whole Python codebase to Rust",
+    "translate this Python script to Rust",
+    "split this TypeScript file into smaller modules, staying in TS",
+    "convert our React settings page to Dioxus and run dx translate on the markup",
+    "write a new axum handler that lists issues",
+    "how does #[serde(untagged)] choose a variant in plain Rust, no TypeScript involved",
+    "what does serde_json::Value do",
+    "explain Rust lifetimes to me",
+    "upgrade our TypeScript from 5 to 6",
+    "set up cargo clippy in CI",
+    "how should I structure integration tests for my axum service"
+  ]
+}
