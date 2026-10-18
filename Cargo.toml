@@ -7,6 +7,8 @@ members = [
     "crates/thrust-adapters-memory",
     "crates/thrust-api",
     "crates/thrust-adapters-selfhosted",
+    "crates/thrust-adapters-cloudflare",
+    "crates/thrust-worker",
     "crates/thrust-server",
     "crates/thrust-contract-tests",
 ]
@@ -43,7 +45,9 @@ thrust-api = { path = "crates/thrust-api" }
 opt-level = "s"
 lto = true
 codegen-units = 1
-strip = true
+# NOT `strip = true`: it drops the wasm `target_features` section, wasm-bindgen then does not
+# enable externref and dies with "externref table required for catch wrappers" (measured).
+strip = "debuginfo"
 # No `panic = ...` here on purpose: wasm32-unknown-unknown on stable is always
 # panic=abort, while the native server must keep unwinding so CatchPanicLayer works.
 # The panic policy is recorded in research/0004.

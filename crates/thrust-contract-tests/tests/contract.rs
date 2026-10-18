@@ -359,14 +359,30 @@ async fn invalid_input_is_a_client_error() {
     assert_eq!(create(&t, &f.member_a, f.project_a, json!({"name": "y".repeat(255)})).await.status(), 201);
 }
 
+/// Own pass (`panic_`): a panic under panic=abort resets the whole Worker isolate, which would
+/// kill every other test running in parallel (measured: it did). Run alone, against a fresh
+/// target.
+///
+/// `THRUST_STATE_SURVIVES_PANIC=0` is set only for targets whose state lives inside the isolate
+/// (worker-memory); there losing state is the documented consequence. Everywhere else the
+/// pre-panic row MUST still be there.
 #[tokio::test]
-async fn a_panic_is_contained_and_the_target_keeps_serving() {
+async fn panic_is_contained_and_the_target_keeps_serving() {
     let t = t();
-    let r = t.http.get(t.url("/_test/panic")).send().await.unwrap();
-    assert!(r.status().is_server_error(), "panic route must answer 5xx, got {}", r.status());
-    // control: the target is still alive afterwards (retry once: a Worker re-instantiates lazily)
+    let f = Fixture::seed(&t).await;
+    let before = create_ok(&t, &f.member_a, f.project_a, "before-panic").await;
+
+    match t.http.get(t.url("/_test/panic")).send().await {
+        Ok(r) => {
+            assert!(r.status().is_server_error(), "panic route must answer 5xx, got {}", r.status());
+            eprintln!("PANIC-OBSERVATION: the panicking request got HTTP {}", r.status());
+        }
+        Err(e) => eprintln!("PANIC-OBSERVATION: the panicking request got a transport error: {e}"),
+    }
+
+    // control: the target serves again (a Worker re-instantiates lazily on the next request)
     let mut ok = false;
-    for _ in 0..5 {
+    for _ in 0..10 {
         if let Ok(r) = t.http.get(t.url("/healthz")).send().await {
             if r.status() == 200 {
                 ok = true;
@@ -376,6 +392,19 @@ async fn a_panic_is_contained_and_the_target_keeps_serving() {
         tokio::time::sleep(Duration::from_millis(300)).await;
     }
     assert!(ok, "target did not recover after a panic");
+
+    let survives = std::env::var("THRUST_STATE_SURVIVES_PANIC").map(|v| v != "0").unwrap_or(true);
+    let r = list(&t, &f.member_a, f.project_a, None).await;
+    if survives {
+        assert_eq!(r.status(), 200, "durable state must survive a panic");
+        let items: Vec<WorkItem> = r.json().await.unwrap();
+        assert!(items.iter().any(|i| i.id == before.id), "row written before the panic is gone");
+    } else {
+        eprintln!(
+            "PANIC-OBSERVATION: in-isolate state after the panic: HTTP {} (loss is expected for this target)",
+            r.status()
+        );
+    }
 }
 
 /// Only run in the "sweeper" pass, against a target started with the outbox fast path OFF.

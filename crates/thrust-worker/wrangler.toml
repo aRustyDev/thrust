@@ -1,0 +1,10 @@
+name = "thrust-worker"
+main = "build/worker/shim.mjs"
+# Newest date the local workerd in wrangler 4.123.0 accepts is 2026-08-18 (measured).
+compatibility_date = "2026-08-01"
+workers_dev = false
+
+# The build is a plain command so wrangler never needs to know about Rust. scripts/rs puts the
+# rustup toolchain (with the wasm32 std) in front of Homebrew's rustc.
+[build]
+command = "../../scripts/rs worker-build --release"
