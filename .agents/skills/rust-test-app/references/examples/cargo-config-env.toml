@@ -1,0 +1,9 @@
+# Template: merge this [env] block into the workspace's .cargo/config.toml. <app> is the Dioxus app's package name. [zip]
+[env]
+# Built web UI served by the test harness. `relative = true` resolves the path against the directory that
+# contains `.cargo/`. nextest passes [env] variables to the tests [zip].
+# Build output of the user-run `dx build --platform web` [zip]; release builds land under .../release/... instead.
+E2E_WEB_DIST = { value = "target/dx/<app>/debug/web/public", relative = true }
+
+# Harness self-test before any web build exists: point at a directory holding a stub index.html instead.
+# E2E_WEB_DIST = { value = "crates/e2e/test-dist", relative = true }

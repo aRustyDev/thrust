@@ -1,0 +1,40 @@
+{
+  "should_trigger": [
+    "how do i test an axum handler without starting a server",
+    "rustc: no method named `oneshot` found for struct `Router` in the current scope",
+    "write a component test for my dioxus 0.7 component, no browser, dioxus-ssr",
+    "VirtualDom::new_with_props then rebuild_in_place and my use_effect never ran, the ssr html shows the old value",
+    "how do i find elements in dioxus tests, data-testid in rsx",
+    "TestApp::start panics: E2E_WEB_DIST must point at the built web UI",
+    "spin up my axum router plus the dx web build on 127.0.0.1:0 in a test so the sdk client has a real url",
+    "should this test be a router test, a component test or a browser test",
+    "how should i structure integration tests for my axum service",
+    "tower-http ServeDir with an index.html fallback in a test so client side routes deep link",
+    "how do i test a custom dioxus hook, assert after each render",
+    "rstest table of status codes for my axum routes using oneshot",
+    "my axum test binds a fixed port 3000 and fails when tests run in parallel under nextest",
+    "dioxus component test with ready fake service through context instead of calling the real api",
+    "TestApp returns 200 with index.html for an unknown /api path but oneshot on the router gives 404",
+    "cargo nextest run says no tests to run and exits 4, my e2e harness test never ran because of the default-filter"
+  ],
+  "should_not_trigger": [
+    "write a proptest property for my parse function",
+    "model-based test of my kv store with proptest-state-machine",
+    "set up cargo-fuzz for my frame parser",
+    "cargo mutants shows MISSED mutants in store.rs, how do i kill them",
+    "replay recorded typescript responses against my rust port and ignore ids and timestamps",
+    "my dioxus signal panics with already borrowed when i click",
+    "write a new axum handler that lists issues with pagination",
+    "restyle the dx-components button to match our brand colors",
+    "dioxus-native opens a blank window with no errors",
+    "convert this react page to dioxus and keep the layout",
+    "write a react testing library test for the settings form",
+    "write a playwright-rs login flow test against dx serve",
+    "write a playwright test in typescript for our login page",
+    "run the same http assertions against the in-memory and postgres adapters",
+    "terraform provider acceptance test with statecheck",
+    "explain why use_resource doesnt rerun when my signal changes in dioxus",
+    "how do i deploy my axum api to cloudflare workers",
+    "set up mdbook doc tests for my crate"
+  ]
+}
