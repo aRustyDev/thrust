@@ -1,0 +1,100 @@
+$ find crates/core -name *proptest-regressions*
+crates/core/tests/oracle.proptest-regressions
+[v4-clean-before] exit=0
+$ cargo nextest run -p core-lib --test zz_persist -E test(prop_default_persistence)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.16s
+────────────
+ Nextest run ID 2d755010-b6ed-4977-b4f7-8d496ec54003 with nextest profile: default
+    Starting 1 test across 1 binary (1 test skipped)
+        FAIL [   0.008s] (1/1) core-lib::zz_persist prop_default_persistence
+  stdout ───
+
+    running 1 test
+    test prop_default_persistence ... FAILED
+
+    failures:
+
+    failures:
+        prop_default_persistence
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+  stderr ───
+    proptest: FileFailurePersistence::SourceParallel set, but failed to find lib.rs or main.rs
+    proptest: FileFailurePersistence::SourceParallel set, but failed to find lib.rs or main.rs
+    proptest: Saving this and future failures in $SCRATCH/ref/reference-workspace/crates/core/tests/zz_persist.proptest-regressions
+    proptest: If this test was run on a CI system, you may wish to add the following line to your copy of the file. (You may need to create it.)
+    cc 7b222be88ca0aba5c61cc2d44b454d11587e8937d1c12f15a712083385fabb4f
+
+    thread 'prop_default_persistence' (103821028) panicked at crates/core/tests/zz_persist.rs:6:1:
+    Test failed: assertion failed: x < 10 at crates/core/tests/zz_persist.rs:9.
+    minimal failing input: x = 10
+    successes: 0
+    local rejects: 0
+    global rejects: 0
+
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+  Cancelling due to test failure: 
+────────────
+     Summary [   0.009s] 1 test run: 0 passed, 1 failed, 1 skipped
+        FAIL [   0.008s] (1/1) core-lib::zz_persist prop_default_persistence
+error: test run failed
+[v4a-default-only] exit=100
+$ find crates/core -name *proptest-regressions*
+crates/core/tests/oracle.proptest-regressions
+crates/core/tests/zz_persist.proptest-regressions
+[v4a-find] exit=0
+$ cat crates/core/tests/zz_persist.proptest-regressions
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 7b222be88ca0aba5c61cc2d44b454d11587e8937d1c12f15a712083385fabb4f # shrinks to x = 10
+[v4a-cat] exit=0
+
+-- default persistence + PROPTEST_DISABLE_FAILURE_PERSISTENCE=1
+$ env PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 cargo nextest run -p core-lib --test zz_persist -E test(prop_default_persistence)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.04s
+────────────
+ Nextest run ID 4f579e41-cc95-4ca1-ab70-13c54e7f83f1 with nextest profile: default
+    Starting 1 test across 1 binary (1 test skipped)
+        FAIL [   0.006s] (1/1) core-lib::zz_persist prop_default_persistence
+  stdout ───
+
+    running 1 test
+    test prop_default_persistence ... FAILED
+
+    failures:
+
+    failures:
+        prop_default_persistence
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'prop_default_persistence' (103821108) panicked at crates/core/tests/zz_persist.rs:6:1:
+    Test failed: assertion failed: x < 10 at crates/core/tests/zz_persist.rs:9.
+    minimal failing input: x = 10
+    successes: 0
+    local rejects: 0
+    global rejects: 0
+
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+  Cancelling due to test failure: 
+────────────
+     Summary [   0.006s] 1 test run: 0 passed, 1 failed, 1 skipped
+        FAIL [   0.006s] (1/1) core-lib::zz_persist prop_default_persistence
+error: test run failed
+[v4b-default-env] exit=100
+$ find crates/core -name *proptest-regressions*
+crates/core/tests/oracle.proptest-regressions
+[v4b-find] exit=0
+$ find crates/core -name *zz_*
+crates/core/src/fuzz_harness.rs
+[v4-clean-after] exit=0
+finished

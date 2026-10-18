@@ -1,0 +1,845 @@
+
+##### E0 profile lists (test counts per profile)
+$ cargo nextest list --workspace --profile default --message-format oneline
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.09s
+api tests::get_item_returns_json
+api tests::get_item_status::case_1_existing
+api tests::get_item_status::case_2_missing
+api tests::missing_item_is_404
+api tests::seeded_lookup::case_1_exact
+api tests::seeded_lookup::case_2_neighbour
+api tests::unknown_ids_are_404::id_1_0
+api tests::unknown_ids_are_404::id_2_2
+api tests::unknown_ids_are_404::id_3_u32__MAX
+api::model_api model_items_api_matches_model
+core-lib frame::tests::decode_examples::case_1_empty
+core-lib frame::tests::decode_examples::case_2_header_only
+core-lib frame::tests::decode_examples::case_3_short_payload
+core-lib frame::tests::encode_rejects_oversized_payload
+core-lib frame::tests::prop_decode_never_panics
+core-lib frame::tests::prop_frame_roundtrip
+core-lib fuzz_harness::tests::fuzz_replay_parse_frame
+core-lib tests::isqrt_examples::case_1_zero
+core-lib tests::isqrt_examples::case_2_one
+core-lib tests::isqrt_examples::case_3_below_square
+core-lib tests::isqrt_examples::case_4_square
+core-lib tests::isqrt_examples::case_5_max
+core-lib tests::prop_isqrt_is_floor_sqrt
+core-lib::model model_kv_store_lockstep
+core-lib::model model_kv_store_state_machine
+core-lib::parity parity_isqrt::isqrt-001-boundaries.json
+core-lib::parity parity_isqrt::isqrt-002-random.json
+ui tests::counter_effect_clamps_negative_start
+ui tests::remaining_label_pluralizes
+ui tests::todo_list_matches_reference_markup
+ui tests::todo_list_renders_items_and_remaining_count
+[list-default] exit=0
+$ cargo nextest list --workspace --profile ci --message-format oneline
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.07s
+api tests::get_item_returns_json
+api tests::get_item_status::case_1_existing
+api tests::get_item_status::case_2_missing
+api tests::missing_item_is_404
+api tests::seeded_lookup::case_1_exact
+api tests::seeded_lookup::case_2_neighbour
+api tests::unknown_ids_are_404::id_1_0
+api tests::unknown_ids_are_404::id_2_2
+api tests::unknown_ids_are_404::id_3_u32__MAX
+api::model_api model_items_api_matches_model
+core-lib frame::tests::decode_examples::case_1_empty
+core-lib frame::tests::decode_examples::case_2_header_only
+core-lib frame::tests::decode_examples::case_3_short_payload
+core-lib frame::tests::encode_rejects_oversized_payload
+core-lib frame::tests::prop_decode_never_panics
+core-lib frame::tests::prop_frame_roundtrip
+core-lib fuzz_harness::tests::fuzz_replay_parse_frame
+core-lib tests::isqrt_examples::case_1_zero
+core-lib tests::isqrt_examples::case_2_one
+core-lib tests::isqrt_examples::case_3_below_square
+core-lib tests::isqrt_examples::case_4_square
+core-lib tests::isqrt_examples::case_5_max
+core-lib tests::prop_isqrt_is_floor_sqrt
+core-lib::model model_kv_store_lockstep
+core-lib::model model_kv_store_state_machine
+core-lib::parity parity_isqrt::isqrt-001-boundaries.json
+core-lib::parity parity_isqrt::isqrt-002-random.json
+ui tests::counter_effect_clamps_negative_start
+ui tests::remaining_label_pluralizes
+ui tests::todo_list_matches_reference_markup
+ui tests::todo_list_renders_items_and_remaining_count
+[list-ci] exit=0
+$ cargo nextest list --workspace --profile deep --message-format oneline
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.07s
+api::model_api model_items_api_matches_model
+core-lib frame::tests::prop_decode_never_panics
+core-lib frame::tests::prop_frame_roundtrip
+core-lib tests::prop_isqrt_is_floor_sqrt
+core-lib::model model_kv_store_lockstep
+core-lib::model model_kv_store_state_machine
+core-lib::oracle oracle_isqrt_matches_legacy
+[list-deep] exit=0
+$ cargo nextest list --workspace --profile oracle --message-format oneline
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.07s
+core-lib::oracle oracle_isqrt_matches_legacy
+[list-oracle] exit=0
+$ cargo nextest list --workspace --profile e2e --message-format oneline
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.07s
+e2e::e2e_harness e2e_harness_serves_ui_and_api
+[list-e2e] exit=0
+$ cargo nextest list --workspace --profile mutants --message-format oneline
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.07s
+api tests::get_item_returns_json
+api tests::get_item_status::case_1_existing
+api tests::get_item_status::case_2_missing
+api tests::missing_item_is_404
+api tests::seeded_lookup::case_1_exact
+api tests::seeded_lookup::case_2_neighbour
+api tests::unknown_ids_are_404::id_1_0
+api tests::unknown_ids_are_404::id_2_2
+api tests::unknown_ids_are_404::id_3_u32__MAX
+api::model_api model_items_api_matches_model
+core-lib frame::tests::decode_examples::case_1_empty
+core-lib frame::tests::decode_examples::case_2_header_only
+core-lib frame::tests::decode_examples::case_3_short_payload
+core-lib frame::tests::encode_rejects_oversized_payload
+core-lib frame::tests::prop_decode_never_panics
+core-lib frame::tests::prop_frame_roundtrip
+core-lib fuzz_harness::tests::fuzz_replay_parse_frame
+core-lib tests::isqrt_examples::case_1_zero
+core-lib tests::isqrt_examples::case_2_one
+core-lib tests::isqrt_examples::case_3_below_square
+core-lib tests::isqrt_examples::case_4_square
+core-lib tests::isqrt_examples::case_5_max
+core-lib tests::prop_isqrt_is_floor_sqrt
+core-lib::model model_kv_store_lockstep
+core-lib::model model_kv_store_state_machine
+core-lib::parity parity_isqrt::isqrt-001-boundaries.json
+core-lib::parity parity_isqrt::isqrt-002-random.json
+ui tests::counter_effect_clamps_negative_start
+ui tests::remaining_label_pluralizes
+ui tests::todo_list_matches_reference_markup
+ui tests::todo_list_renders_items_and_remaining_count
+[list-mutants] exit=0
+
+##### E1 retries: plain test is FLAKY-pass, prop_ test must fail under --retries 2
+-- control: no retries, plain probe must FAIL (proves the probe fails on attempt 1)
+$ env ZZ_MARKER_DIR=$TMPDIR/tmp.X cargo nextest run -p core-lib --test zz_flaky -E test(plain_flaky_probe)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.98s
+────────────
+ Nextest run ID 7fc9cb18-ccae-4a7b-a08f-d0bc01185f72 with nextest profile: default
+    Starting 1 test across 1 binary (1 test skipped)
+        FAIL [   0.007s] (1/1) core-lib::zz_flaky plain_flaky_probe
+  stdout ───
+
+    running 1 test
+    test plain_flaky_probe ... FAILED
+
+    failures:
+
+    failures:
+        plain_flaky_probe
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'plain_flaky_probe' (103805566) panicked at crates/core/tests/zz_flaky.rs:22:5:
+    first attempt fails on purpose
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+  Cancelling due to test failure: 
+────────────
+     Summary [   0.007s] 1 test run: 0 passed, 1 failed, 1 skipped
+        FAIL [   0.007s] (1/1) core-lib::zz_flaky plain_flaky_probe
+error: test run failed
+[e1-control-plain] exit=100
+-- plain probe with --retries 2
+$ env ZZ_MARKER_DIR=$TMPDIR/tmp.X cargo nextest run -p core-lib --test zz_flaky --retries 2 -E test(plain_flaky_probe)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.04s
+────────────
+ Nextest run ID 35d8efa2-7099-478e-b98f-ae96f79369d4 with nextest profile: default
+    Starting 1 test across 1 binary (1 test skipped)
+  TRY 1 FAIL [   0.006s] (───) core-lib::zz_flaky plain_flaky_probe
+  stdout ───
+
+    running 1 test
+    test plain_flaky_probe ... FAILED
+
+    failures:
+
+    failures:
+        plain_flaky_probe
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'plain_flaky_probe' (103805640) panicked at crates/core/tests/zz_flaky.rs:22:5:
+    first attempt fails on purpose
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+  TRY 2 PASS [   0.006s] (1/1) core-lib::zz_flaky plain_flaky_probe
+────────────
+     Summary [   0.013s] 1 test run: 1 passed (1 flaky), 1 skipped
+   FLAKY 2/3 [   0.006s] (1/1) core-lib::zz_flaky plain_flaky_probe
+[e1-plain-retries] exit=0
+-- prop_ probe with --retries 2
+$ env ZZ_MARKER_DIR=$TMPDIR/tmp.X cargo nextest run -p core-lib --test zz_flaky --retries 2 -E test(prop_flaky_probe)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.04s
+────────────
+ Nextest run ID e7aa2242-e339-44cb-969f-584358cfd43a with nextest profile: default
+    Starting 1 test across 1 binary (1 test skipped)
+  TRY 1 FAIL [   0.006s] (───) core-lib::zz_flaky prop_flaky_probe
+  stdout ───
+
+    running 1 test
+    test prop_flaky_probe ... FAILED
+
+    failures:
+
+    failures:
+        prop_flaky_probe
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'prop_flaky_probe' (103805716) panicked at crates/core/tests/zz_flaky.rs:17:5:
+    first attempt fails on purpose
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+  TRY 2 PASS [   0.006s] (1/1) core-lib::zz_flaky prop_flaky_probe
+           - test configured to fail if flaky
+  Cancelling due to test failure: 
+────────────
+     Summary [   0.013s] 1 test run: 0 passed, 1 failed, 1 skipped
+ FLKY-FL 2/3 [   0.006s] (1/1) core-lib::zz_flaky prop_flaky_probe
+error: test run failed
+[e1-prop-retries] exit=100
+-- prop_ probe with NEXTEST_RETRIES=2
+$ env ZZ_MARKER_DIR=$TMPDIR/tmp.X NEXTEST_RETRIES=2 cargo nextest run -p core-lib --test zz_flaky -E test(prop_flaky_probe)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.04s
+────────────
+ Nextest run ID 5015a4d0-7df1-439a-9a15-6f4203e8700d with nextest profile: default
+    Starting 1 test across 1 binary (1 test skipped)
+  TRY 1 FAIL [   0.006s] (───) core-lib::zz_flaky prop_flaky_probe
+  stdout ───
+
+    running 1 test
+    test prop_flaky_probe ... FAILED
+
+    failures:
+
+    failures:
+        prop_flaky_probe
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'prop_flaky_probe' (103805809) panicked at crates/core/tests/zz_flaky.rs:17:5:
+    first attempt fails on purpose
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+  TRY 2 PASS [   0.005s] (1/1) core-lib::zz_flaky prop_flaky_probe
+           - test configured to fail if flaky
+  Cancelling due to test failure: 
+────────────
+     Summary [   0.013s] 1 test run: 0 passed, 1 failed, 1 skipped
+ FLKY-FL 2/3 [   0.005s] (1/1) core-lib::zz_flaky prop_flaky_probe
+error: test run failed
+[e1-prop-envretries] exit=100
+
+##### E2 counterexample persistence in tests/: default vs WithSource vs DISABLE env
+-- regression files BEFORE
+$ find crates/core -name *proptest-regressions*
+[e2-find-before] exit=0
+$ cargo nextest run -p core-lib --test zz_persist --no-fail-fast
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.23s
+────────────
+ Nextest run ID d61518af-5589-4641-9c9b-1a7a29f1ea9f with nextest profile: default
+    Starting 2 tests across 1 binary
+        FAIL [   0.008s] (1/2) core-lib::zz_persist prop_default_persistence
+  stdout ───
+
+    running 1 test
+    test prop_default_persistence ... FAILED
+
+    failures:
+
+    failures:
+        prop_default_persistence
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+  stderr ───
+    proptest: FileFailurePersistence::SourceParallel set, but failed to find lib.rs or main.rs
+    proptest: FileFailurePersistence::SourceParallel set, but failed to find lib.rs or main.rs
+    proptest: Saving this and future failures in $SCRATCH/ref/reference-workspace/crates/core/tests/zz_persist.proptest-regressions
+    proptest: If this test was run on a CI system, you may wish to add the following line to your copy of the file.
+    cc dd0e1dddaeb54dc01fb93013ddb8ac59123f77e71d44e1e19d49438e5c1cf1d3
+
+    thread 'prop_default_persistence' (103806054) panicked at crates/core/tests/zz_persist.rs:6:1:
+    Test failed: assertion failed: x < 10 at crates/core/tests/zz_persist.rs:9.
+    minimal failing input: x = 10
+    successes: 0
+    local rejects: 0
+    global rejects: 0
+
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.008s] (2/2) core-lib::zz_persist prop_withsource_persistence
+  stdout ───
+
+    running 1 test
+    test prop_withsource_persistence ... FAILED
+
+    failures:
+
+    failures:
+        prop_withsource_persistence
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+  stderr ───
+    proptest: Saving this and future failures in $SCRATCH/ref/reference-workspace/crates/core/tests/zz_persist.proptest-regressions
+    proptest: If this test was run on a CI system, you may wish to add the following line to your copy of the file. (You may need to create it.)
+    cc 46560ce6a3a79d02b3f1166db8b455f0a31567f442459f1d89ca6584942edf9d
+
+    thread 'prop_withsource_persistence' (103806055) panicked at crates/core/tests/zz_persist.rs:13:1:
+    Test failed: assertion failed: x < 10 at crates/core/tests/zz_persist.rs:18.
+    minimal failing input: x = 10
+    successes: 0
+    local rejects: 0
+    global rejects: 0
+
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+────────────
+     Summary [   0.008s] 2 tests run: 0 passed, 2 failed, 0 skipped
+        FAIL [   0.008s] (1/2) core-lib::zz_persist prop_default_persistence
+        FAIL [   0.008s] (2/2) core-lib::zz_persist prop_withsource_persistence
+error: test run failed
+[e2-run] exit=100
+-- regression files AFTER
+$ find crates/core -name *proptest-regressions*
+crates/core/tests/zz_persist.proptest-regressions
+[e2-find-after] exit=0
+-- content of any saved file
+$ cat crates/core/tests/zz_persist.proptest-regressions
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 46560ce6a3a79d02b3f1166db8b455f0a31567f442459f1d89ca6584942edf9d # shrinks to x = 10
+cc dd0e1dddaeb54dc01fb93013ddb8ac59123f77e71d44e1e19d49438e5c1cf1d3 # shrinks to x = 10
+[e2-cat] exit=0
+-- with PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 (WithSource test only): no file expected
+$ env PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 cargo nextest run -p core-lib --test zz_persist -E test(prop_withsource_persistence)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.04s
+────────────
+ Nextest run ID 18ea182e-afbe-4f8d-a83e-c9d143d2e18c with nextest profile: default
+    Starting 1 test across 1 binary (1 test skipped)
+        FAIL [   0.006s] (1/1) core-lib::zz_persist prop_withsource_persistence
+  stdout ───
+
+    running 1 test
+    test prop_withsource_persistence ... FAILED
+
+    failures:
+
+    failures:
+        prop_withsource_persistence
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'prop_withsource_persistence' (103806136) panicked at crates/core/tests/zz_persist.rs:13:1:
+    Test failed: assertion failed: x < 10 at crates/core/tests/zz_persist.rs:18.
+    minimal failing input: x = 10
+    successes: 0
+    local rejects: 0
+    global rejects: 0
+
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+  Cancelling due to test failure: 
+────────────
+     Summary [   0.006s] 1 test run: 0 passed, 1 failed, 1 skipped
+        FAIL [   0.006s] (1/1) core-lib::zz_persist prop_withsource_persistence
+error: test run failed
+[e2-disable] exit=100
+$ find crates/core -name *proptest-regressions*
+[e2-find-disable] exit=0
+
+##### E3 fuzz_replay_: baseline and controls
+$ cargo nextest run -p core-lib -E test(fuzz_replay_)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.39s
+────────────
+ Nextest run ID 7e075a2e-d725-4742-b79a-aeb6fd087579 with nextest profile: default
+    Starting 1 test across 4 binaries (17 tests skipped)
+        PASS [   0.009s] (1/1) core-lib fuzz_harness::tests::fuzz_replay_parse_frame
+────────────
+     Summary [   0.009s] 1 test run: 1 passed, 17 skipped
+[e3a-baseline] exit=0
+-- E3b both dirs absent: must FAIL ('no fuzz inputs found')
+$ cargo nextest run -p core-lib -E test(fuzz_replay_)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.04s
+────────────
+ Nextest run ID c7d280c2-5c01-4b10-b4fd-f2550637520f with nextest profile: default
+    Starting 1 test across 4 binaries (17 tests skipped)
+        FAIL [   0.007s] (1/1) core-lib fuzz_harness::tests::fuzz_replay_parse_frame
+  stdout ───
+
+    running 1 test
+    test fuzz_harness::tests::fuzz_replay_parse_frame ... FAILED
+
+    failures:
+
+    failures:
+        fuzz_harness::tests::fuzz_replay_parse_frame
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 12 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'fuzz_harness::tests::fuzz_replay_parse_frame' (103806854) panicked at crates/core/src/fuzz_harness.rs:33:9:
+    no fuzz inputs found under $SCRATCH/ref/reference-workspace/crates/core/fuzz
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+  Cancelling due to test failure: 
+────────────
+     Summary [   0.007s] 1 test run: 0 passed, 1 failed, 17 skipped
+        FAIL [   0.007s] (1/1) core-lib fuzz_harness::tests::fuzz_replay_parse_frame
+error: test run failed
+[e3b-no-inputs] exit=100
+-- E3c only seeds absent, regressions present: weakness check (PASS here = partial vacuity)
+$ cargo nextest run -p core-lib -E test(fuzz_replay_)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.04s
+────────────
+ Nextest run ID d46bbd42-31ea-4fb8-a405-a6ce25c2f97e with nextest profile: default
+    Starting 1 test across 4 binaries (17 tests skipped)
+        PASS [   0.006s] (1/1) core-lib fuzz_harness::tests::fuzz_replay_parse_frame
+────────────
+     Summary [   0.006s] 1 test run: 1 passed, 17 skipped
+[e3c-no-seeds] exit=0
+-- the shipped inputs, as bytes:
+$ xxd crates/core/fuzz/seeds/parse_frame/empty-payload
+00000000: 5c78 3037 5c78 3030 5c78 3030            \x07\x00\x00
+[e3-xxd-1] exit=0
+$ xxd crates/core/fuzz/seeds/parse_frame/abc
+00000000: 5c78 3031 5c78 3030 5c78 3033 6162 63    \x01\x00\x03abc
+[e3-xxd-2] exit=0
+$ xxd crates/core/fuzz/regressions/parse_frame/crash-too-short
+00000000: 5c78 6666 5c78 6666                      \xff\xff
+[e3-xxd-3] exit=0
+-- E3d: break the codec silently (tag + 1): replay with the SHIPPED inputs
+$ grep -n wrapping_add crates/core/src/frame.rs
+39:        tag: bytes[0].wrapping_add(1),
+[e3d-grep] exit=0
+$ cargo nextest run -p core-lib -E test(fuzz_replay_)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.32s
+────────────
+ Nextest run ID 1e9cf20d-512b-4bd2-b81f-c399fcb3b828 with nextest profile: default
+    Starting 1 test across 4 binaries (17 tests skipped)
+        PASS [   0.008s] (1/1) core-lib fuzz_harness::tests::fuzz_replay_parse_frame
+────────────
+     Summary [   0.008s] 1 test run: 1 passed, 17 skipped
+[e3d-mutated-shipped] exit=0
+-- E3e: same mutation, but with correct binary seeds added via printf octal
+$ xxd crates/core/fuzz/seeds/parse_frame/zz-good-abc
+00000000: 0100 0361 6263                           ...abc
+[e3e-xxd] exit=0
+$ cargo nextest run -p core-lib -E test(fuzz_replay_)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.04s
+────────────
+ Nextest run ID b9a2964f-b83a-4ab6-826e-d34d145e5834 with nextest profile: default
+    Starting 1 test across 4 binaries (17 tests skipped)
+        FAIL [   0.006s] (1/1) core-lib fuzz_harness::tests::fuzz_replay_parse_frame
+  stdout ───
+
+    running 1 test
+    test fuzz_harness::tests::fuzz_replay_parse_frame ... FAILED
+
+    failures:
+
+    failures:
+        fuzz_harness::tests::fuzz_replay_parse_frame
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 12 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'fuzz_harness::tests::fuzz_replay_parse_frame' (103807711) panicked at crates/core/src/fuzz_harness.rs:10:9:
+    assertion `left == right` failed: decode -> encode must be lossless
+      left: [2, 0, 3, 97, 98, 99]
+     right: [1, 0, 3, 97, 98, 99]
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+    thread 'fuzz_harness::tests::fuzz_replay_parse_frame' (103807711) panicked at crates/core/src/fuzz_harness.rs:29:17:
+    fuzz input $SCRATCH/ref/reference-workspace/crates/core/fuzz/seeds/parse_frame/zz-good-abc panicked
+
+  Cancelling due to test failure: 
+────────────
+     Summary [   0.006s] 1 test run: 0 passed, 1 failed, 17 skipped
+        FAIL [   0.006s] (1/1) core-lib fuzz_harness::tests::fuzz_replay_parse_frame
+error: test run failed
+[e3e-mutated-good-seeds] exit=100
+-- E3f: original codec + good seeds: must PASS
+$ cargo nextest run -p core-lib -E test(fuzz_replay_)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.04s
+────────────
+ Nextest run ID 84f87c15-ea28-42dd-bad3-6a9f63031319 with nextest profile: default
+    Starting 1 test across 4 binaries (17 tests skipped)
+        FAIL [   0.006s] (1/1) core-lib fuzz_harness::tests::fuzz_replay_parse_frame
+  stdout ───
+
+    running 1 test
+    test fuzz_harness::tests::fuzz_replay_parse_frame ... FAILED
+
+    failures:
+
+    failures:
+        fuzz_harness::tests::fuzz_replay_parse_frame
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 12 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'fuzz_harness::tests::fuzz_replay_parse_frame' (103807799) panicked at crates/core/src/fuzz_harness.rs:10:9:
+    assertion `left == right` failed: decode -> encode must be lossless
+      left: [2, 0, 3, 97, 98, 99]
+     right: [1, 0, 3, 97, 98, 99]
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+    thread 'fuzz_harness::tests::fuzz_replay_parse_frame' (103807799) panicked at crates/core/src/fuzz_harness.rs:29:17:
+    fuzz input $SCRATCH/ref/reference-workspace/crates/core/fuzz/seeds/parse_frame/zz-good-abc panicked
+
+  Cancelling due to test failure: 
+────────────
+     Summary [   0.006s] 1 test run: 0 passed, 1 failed, 17 skipped
+        FAIL [   0.006s] (1/1) core-lib fuzz_harness::tests::fuzz_replay_parse_frame
+error: test run failed
+[e3f-original-good-seeds] exit=100
+
+##### E4 parity: mutated fixture must fail and list every divergence; generator is deterministic
+$ cargo nextest run -p core-lib --test parity
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.04s
+────────────
+ Nextest run ID 9ff73a40-a6ad-4358-ba40-a16f0c3cd94c with nextest profile: default
+    Starting 2 tests across 1 binary
+        PASS [   0.009s] (1/2) core-lib::parity parity_isqrt::isqrt-001-boundaries.json
+        PASS [   0.009s] (2/2) core-lib::parity parity_isqrt::isqrt-002-random.json
+────────────
+     Summary [   0.009s] 2 tests run: 2 passed, 0 skipped
+[e4a-baseline] exit=0
+$ cargo nextest run -p core-lib --test parity
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.04s
+────────────
+ Nextest run ID f19f28c0-7583-41df-a8bc-9c35a361f02b with nextest profile: default
+    Starting 2 tests across 1 binary
+        PASS [   0.007s] (1/2) core-lib::parity parity_isqrt::isqrt-002-random.json
+        FAIL [   0.007s] (2/2) core-lib::parity parity_isqrt::isqrt-001-boundaries.json
+  stdout ───
+
+    running 1 test
+    test parity_isqrt::isqrt-001-boundaries.json ... FAILED
+
+    failures:
+
+    ---- parity_isqrt::isqrt-001-boundaries.json ----
+    "tests/parity/fixtures/isqrt-001-boundaries.json: 2 divergence(s)\nisqrt(4294967295) = 65535, legacy TS returned 65534\nisqrt(9007199254740993) = 94906265, legacy TS returned 94906266"
+
+
+    failures:
+        parity_isqrt::isqrt-001-boundaries.json
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+  Cancelling due to test failure: 
+────────────
+     Summary [   0.010s] 2 tests run: 1 passed, 1 failed, 0 skipped
+        FAIL [   0.007s] (2/2) core-lib::parity parity_isqrt::isqrt-001-boundaries.json
+error: test run failed
+[e4b-mutated-fixture] exit=100
+$ shasum crates/core/tests/parity/fixtures/isqrt-001-boundaries.json crates/core/tests/parity/fixtures/isqrt-002-random.json
+afba108949abed489e37772994bdd34ab53755b1  crates/core/tests/parity/fixtures/isqrt-001-boundaries.json
+8853ea4e1bff4fdabdd870f9da311bfd2161055f  crates/core/tests/parity/fixtures/isqrt-002-random.json
+[e4c-sha-before] exit=0
+$ env TZ=UTC node legacy-oracle/gen-fixtures.mjs
+isqrt-001-boundaries.json: 11 cases
+isqrt-002-random.json: 200 cases
+[e4d-regenerate] exit=0
+$ shasum crates/core/tests/parity/fixtures/isqrt-001-boundaries.json crates/core/tests/parity/fixtures/isqrt-002-random.json
+afba108949abed489e37772994bdd34ab53755b1  crates/core/tests/parity/fixtures/isqrt-001-boundaries.json
+8853ea4e1bff4fdabdd870f9da311bfd2161055f  crates/core/tests/parity/fixtures/isqrt-002-random.json
+[e4e-sha-after] exit=0
+
+##### E5 oracle profile: pass; control: broken legacy must fail
+$ cargo nextest run --workspace --profile oracle
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.28s
+────────────
+ Nextest run ID 6ac96247-9492-4af7-949e-50956736dadb with nextest profile: oracle
+    Starting 1 test across 9 binaries (32 tests skipped via profile.oracle.default-filter)
+        PASS [   0.096s] (1/1) core-lib::oracle oracle_isqrt_matches_legacy
+────────────
+     Summary [   0.096s] 1 test run: 1 passed, 32 skipped
+[e5a-oracle] exit=0
+$ grep -n return x legacy-oracle/legacy/isqrt.mjs
+11:  return x + 1n;
+[e5b-grep] exit=0
+$ cargo nextest run --workspace --profile oracle
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.07s
+────────────
+ Nextest run ID 3ad5d766-0ee9-4ea8-848a-7d326fa37318 with nextest profile: oracle
+    Starting 1 test across 9 binaries (32 tests skipped via profile.oracle.default-filter)
+        FAIL [   0.077s] (1/1) core-lib::oracle oracle_isqrt_matches_legacy
+  stdout ───
+
+    running 1 test
+    test oracle_isqrt_matches_legacy ... FAILED
+
+    failures:
+
+    failures:
+        oracle_isqrt_matches_legacy
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+
+  stderr ───
+    proptest: Saving this and future failures in $SCRATCH/ref/reference-workspace/crates/core/tests/oracle.proptest-regressions
+    proptest: If this test was run on a CI system, you may wish to add the following line to your copy of the file. (You may need to create it.)
+    cc 469f8c1d6c9f27b5f0489e9e1e9470cd5daccab435e92df642b5d945b7ee3ae8
+
+    thread 'oracle_isqrt_matches_legacy' (103808700) panicked at crates/core/tests/oracle.rs:52:1:
+    Test failed: assertion failed: `(left == right)` 
+      left: `1`, 
+     right: `2`: input 2 at crates/core/tests/oracle.rs:60.
+    minimal failing input: n = 2
+    successes: 0
+    local rejects: 0
+    global rejects: 0
+
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+────────────
+     Summary [   0.077s] 1 test run: 0 passed, 1 failed, 32 skipped
+        FAIL [   0.077s] (1/1) core-lib::oracle oracle_isqrt_matches_legacy
+error: test run failed
+[e5c-oracle-broken] exit=100
+$ cargo nextest run --workspace --profile oracle
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.07s
+────────────
+ Nextest run ID 8283941e-08b0-4308-acfa-0d2a63e95dc4 with nextest profile: oracle
+    Starting 1 test across 9 binaries (32 tests skipped via profile.oracle.default-filter)
+        PASS [   0.087s] (1/1) core-lib::oracle oracle_isqrt_matches_legacy
+────────────
+     Summary [   0.087s] 1 test run: 1 passed, 32 skipped
+[e5d-oracle-restored] exit=0
+
+##### E6 e2e profile: pass; control: bad E2E_WEB_DIST must fail
+$ cargo nextest run --workspace --profile e2e
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.07s
+────────────
+ Nextest run ID cce37a99-e3f6-439f-bbce-a6e8614f8453 with nextest profile: e2e
+    Starting 1 test across 2 binaries (7 binaries skipped via profile.e2e.default-filter)
+        PASS [   0.009s] (1/1) e2e::e2e_harness e2e_harness_serves_ui_and_api
+────────────
+     Summary [   0.012s] 1 test run: 1 passed, 0 skipped
+[e6a-e2e] exit=0
+$ env E2E_WEB_DIST=/nonexistent cargo nextest run --workspace --profile e2e
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.07s
+────────────
+ Nextest run ID c5c43e34-9f84-4291-ba02-0136f4f3b871 with nextest profile: e2e
+    Starting 1 test across 2 binaries (7 binaries skipped via profile.e2e.default-filter)
+  TRY 1 FAIL [   0.006s] (───) e2e::e2e_harness e2e_harness_serves_ui_and_api
+  stdout ───
+
+    running 1 test
+    test e2e_harness_serves_ui_and_api ... FAILED
+
+    failures:
+
+    failures:
+        e2e_harness_serves_ui_and_api
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'e2e_harness_serves_ui_and_api' (103808988) panicked at crates/e2e/src/lib.rs:18:9:
+    web UI not built at /nonexistent: run `dx build --platform web` first
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+   DELAY 2/3 by   1.000s (───) e2e::e2e_harness e2e_harness_serves_ui_and_api
+  TRY 2 FAIL [   0.018s] (───) e2e::e2e_harness e2e_harness_serves_ui_and_api
+  stdout ───
+
+    running 1 test
+    test e2e_harness_serves_ui_and_api ... FAILED
+
+    failures:
+
+    failures:
+        e2e_harness_serves_ui_and_api
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'e2e_harness_serves_ui_and_api' (103809021) panicked at crates/e2e/src/lib.rs:18:9:
+    web UI not built at /nonexistent: run `dx build --platform web` first
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+   DELAY 3/3 by   1.000s (───) e2e::e2e_harness e2e_harness_serves_ui_and_api
+  TRY 3 FAIL [   0.017s] (1/1) e2e::e2e_harness e2e_harness_serves_ui_and_api
+  stdout ───
+
+    running 1 test
+    test e2e_harness_serves_ui_and_api ... FAILED
+
+    failures:
+
+    failures:
+        e2e_harness_serves_ui_and_api
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'e2e_harness_serves_ui_and_api' (103809082) panicked at crates/e2e/src/lib.rs:18:9:
+    web UI not built at /nonexistent: run `dx build --platform web` first
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+────────────
+     Summary [   2.046s] 1 test run: 0 passed, 1 failed, 0 skipped
+  TRY 3 FAIL [   0.017s] (1/1) e2e::e2e_harness e2e_harness_serves_ui_and_api
+error: test run failed
+[e6b-e2e-bad-dist] exit=100
+
+##### E7 -E intersects the profile's default-filter
+$ cargo nextest run --workspace -E test(/\boracle_/)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.07s
+────────────
+ Nextest run ID 9bb6d5ee-d453-4f93-83de-c9d1100ace24 with nextest profile: default
+    Starting 0 tests across 7 binaries (32 tests and 2 binaries skipped, including 1 test and 2 binaries via profile.default.default-filter)
+────────────
+     Summary [   0.000s] 0 tests run: 0 passed, 32 skipped
+error: no tests to run
+(hint: use `--no-tests` to customize)
+[e7a-oracle-under-default] exit=4
+$ cargo nextest run --workspace --profile oracle -E test(/\bprop_/)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.07s
+────────────
+ Nextest run ID 8f36b9ac-834e-4ef0-b379-0777f07a4eab with nextest profile: oracle
+    Starting 0 tests across 9 binaries (33 tests skipped, including 3 tests via profile.oracle.default-filter)
+────────────
+     Summary [   0.000s] 0 tests run: 0 passed, 33 skipped
+error: no tests to run
+(hint: use `--no-tests` to customize)
+[e7b-prop-under-oracle] exit=4
+$ cargo nextest run --workspace -E package(e2e)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.07s
+────────────
+ Nextest run ID 18fc46dd-2236-409f-bd97-484c49946f5b with nextest profile: default
+    Starting 0 tests across 0 binaries (9 binaries skipped, including 2 binaries via profile.default.default-filter)
+────────────
+     Summary [   0.000s] 0 tests run: 0 passed, 0 skipped
+error: no tests to run
+(hint: use `--no-tests` to customize)
+[e7c-e2e-under-default] exit=4
+
+##### E8 deep profile at 4096 cases
+$ env PROPTEST_CASES=4096 cargo nextest run --workspace --profile deep
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.07s
+────────────
+ Nextest run ID fa7ac97b-9468-4a3a-801a-4a288c9dd3e4 with nextest profile: deep
+    Starting 7 tests across 9 binaries (26 tests skipped via profile.deep.default-filter)
+        PASS [   0.046s] (1/7) core-lib tests::prop_isqrt_is_floor_sqrt
+        PASS [   0.067s] (2/7) core-lib frame::tests::prop_decode_never_panics
+        PASS [   0.213s] (3/7) core-lib::oracle oracle_isqrt_matches_legacy
+        PASS [   0.235s] (4/7) core-lib frame::tests::prop_frame_roundtrip
+        PASS [   0.519s] (5/7) core-lib::model model_kv_store_state_machine
+        PASS [   1.127s] (6/7) api::model_api model_items_api_matches_model
+        PASS [   1.237s] (7/7) core-lib::model model_kv_store_lockstep
+────────────
+     Summary [   1.237s] 7 tests run: 7 passed, 26 skipped
+[e8-deep] exit=0
+
+##### E9 doctests and ci profile junit
+$ cargo test --doc --workspace
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.07s
+   Doc-tests api
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests core_lib
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests e2e
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests ui
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+[e9a-doc] exit=0
+$ cargo nextest run --workspace --profile ci
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.07s
+────────────
+ Nextest run ID ad6979ec-4917-4bbc-a482-8a287f335f76 with nextest profile: ci
+    Starting 31 tests across 7 binaries (1 test and 2 binaries skipped via profile.default.default-filter)
+        PASS [   0.013s] ( 1/31) core-lib frame::tests::decode_examples::case_3_short_payload
+        PASS [   0.013s] ( 2/31) core-lib fuzz_harness::tests::fuzz_replay_parse_frame
+        PASS [   0.015s] ( 3/31) core-lib tests::isqrt_examples::case_1_zero
+        PASS [   0.015s] ( 4/31) api tests::missing_item_is_404
+        PASS [   0.015s] ( 5/31) api tests::get_item_status::case_2_missing
+        PASS [   0.016s] ( 6/31) api tests::get_item_returns_json
+        PASS [   0.016s] ( 7/31) core-lib frame::tests::decode_examples::case_2_header_only
+        PASS [   0.015s] ( 8/31) api tests::unknown_ids_are_404::id_3_u32__MAX
+        PASS [   0.016s] ( 9/31) api tests::unknown_ids_are_404::id_2_2
+        PASS [   0.016s] (10/31) api tests::unknown_ids_are_404::id_1_0
+        PASS [   0.016s] (11/31) core-lib frame::tests::encode_rejects_oversized_payload
+        PASS [   0.016s] (12/31) core-lib frame::tests::decode_examples::case_1_empty
+        PASS [   0.016s] (13/31) api tests::get_item_status::case_1_existing
+        PASS [   0.017s] (14/31) api tests::seeded_lookup::case_1_exact
+        PASS [   0.017s] (15/31) api tests::seeded_lookup::case_2_neighbour
+        PASS [   0.019s] (16/31) core-lib frame::tests::prop_decode_never_panics
+        PASS [   0.009s] (17/31) core-lib tests::isqrt_examples::case_2_one
+        PASS [   0.009s] (18/31) core-lib tests::isqrt_examples::case_3_below_square
+        PASS [   0.007s] (19/31) ui tests::remaining_label_pluralizes
+        PASS [   0.008s] (20/31) core-lib tests::isqrt_examples::case_5_max
+        PASS [   0.008s] (21/31) core-lib tests::isqrt_examples::case_4_square
+        PASS [   0.009s] (22/31) ui tests::counter_effect_clamps_negative_start
+        PASS [   0.008s] (23/31) ui tests::todo_list_renders_items_and_remaining_count
+        PASS [   0.010s] (24/31) core-lib tests::prop_isqrt_is_floor_sqrt
+        PASS [   0.010s] (25/31) core-lib::parity parity_isqrt::isqrt-001-boundaries.json
+        PASS [   0.010s] (26/31) ui tests::todo_list_matches_reference_markup
+        PASS [   0.010s] (27/31) core-lib::parity parity_isqrt::isqrt-002-random.json
+        PASS [   0.032s] (28/31) core-lib frame::tests::prop_frame_roundtrip
+        PASS [   0.025s] (29/31) core-lib::model model_kv_store_state_machine
+        PASS [   0.088s] (30/31) api::model_api model_items_api_matches_model
+        PASS [   0.091s] (31/31) core-lib::model model_kv_store_lockstep
+────────────
+     Summary [   0.107s] 31 tests run: 31 passed, 1 skipped
+[e9b-ci] exit=0
+$ ls -l target/nextest/ci/junit.xml
+-rw-r--r--@ 1 USER  GROUP  5733 Oct 18 16:59 target/nextest/ci/junit.xml
+[e9c-junit] exit=0
+
+##### DONE
+finished

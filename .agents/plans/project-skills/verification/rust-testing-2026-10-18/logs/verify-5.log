@@ -1,0 +1,350 @@
+
+##### M0 version and mutant list for store.rs
+$ cargo mutants --version
+cargo-mutants 27.1.0
+[m0-version] exit=0
+$ cargo mutants --list -f crates/core/src/store.rs
+crates/core/src/store.rs:15:9: replace KvStore::insert -> Option<i64> with None
+crates/core/src/store.rs:15:9: replace KvStore::insert -> Option<i64> with Some(0)
+crates/core/src/store.rs:15:9: replace KvStore::insert -> Option<i64> with Some(1)
+crates/core/src/store.rs:15:9: replace KvStore::insert -> Option<i64> with Some(-1)
+crates/core/src/store.rs:25:9: replace KvStore::get -> Option<i64> with None
+crates/core/src/store.rs:25:9: replace KvStore::get -> Option<i64> with Some(0)
+crates/core/src/store.rs:25:9: replace KvStore::get -> Option<i64> with Some(1)
+crates/core/src/store.rs:25:9: replace KvStore::get -> Option<i64> with Some(-1)
+crates/core/src/store.rs:29:9: replace KvStore::remove -> Option<i64> with None
+crates/core/src/store.rs:29:9: replace KvStore::remove -> Option<i64> with Some(0)
+crates/core/src/store.rs:29:9: replace KvStore::remove -> Option<i64> with Some(1)
+crates/core/src/store.rs:29:9: replace KvStore::remove -> Option<i64> with Some(-1)
+crates/core/src/store.rs:33:9: replace KvStore::len -> usize with 0
+crates/core/src/store.rs:33:9: replace KvStore::len -> usize with 1
+crates/core/src/store.rs:37:9: replace KvStore::is_empty -> bool with true
+crates/core/src/store.rs:37:9: replace KvStore::is_empty -> bool with false
+crates/core/src/store.rs:41:9: replace KvStore::find -> Result<usize, usize> with Ok(0)
+crates/core/src/store.rs:41:9: replace KvStore::find -> Result<usize, usize> with Ok(1)
+[m1-list] exit=0
+
+##### M1 exclude_globs: whole-workspace list must not name e2e, fuzz_harness, test_support, tests/common
+list exit=0
+$ grep -c -E crates/e2e|fuzz_harness|test_support|tests/common $SCRATCH/mlist.txt
+0
+[m1b-count-excluded] exit=1
+$ grep -c crates/core/src/frame.rs $SCRATCH/mlist.txt
+13
+[m1c-count-core] exit=0
+$ grep -o -E ^[^:]+ $SCRATCH/mlist.txt
+crates/api/src/lib.rs
+crates/api/src/lib.rs
+crates/api/src/lib.rs
+crates/api/src/lib.rs
+crates/api/src/lib.rs
+crates/api/src/lib.rs
+crates/api/src/lib.rs
+crates/api/src/lib.rs
+crates/api/src/lib.rs
+crates/api/src/lib.rs
+crates/api/src/lib.rs
+crates/api/src/lib.rs
+crates/core/src/lib.rs
+crates/core/src/lib.rs
+crates/core/src/lib.rs
+crates/core/src/lib.rs
+crates/core/src/lib.rs
+crates/core/src/lib.rs
+crates/core/src/lib.rs
+crates/core/src/lib.rs
+crates/core/src/lib.rs
+crates/core/src/lib.rs
+crates/core/src/lib.rs
+crates/core/src/lib.rs
+crates/core/src/lib.rs
+crates/core/src/lib.rs
+crates/core/src/lib.rs
+crates/core/src/lib.rs
+crates/core/src/lib.rs
+crates/core/src/lib.rs
+crates/core/src/frame.rs
+crates/core/src/frame.rs
+crates/core/src/frame.rs
+crates/core/src/frame.rs
+crates/core/src/frame.rs
+crates/core/src/frame.rs
+crates/core/src/frame.rs
+crates/core/src/frame.rs
+crates/core/src/frame.rs
+crates/core/src/frame.rs
+crates/core/src/frame.rs
+crates/core/src/frame.rs
+crates/core/src/frame.rs
+crates/core/src/store.rs
+crates/core/src/store.rs
+crates/core/src/store.rs
+crates/core/src/store.rs
+crates/core/src/store.rs
+crates/core/src/store.rs
+crates/core/src/store.rs
+crates/core/src/store.rs
+crates/core/src/store.rs
+crates/core/src/store.rs
+crates/core/src/store.rs
+crates/core/src/store.rs
+crates/core/src/store.rs
+crates/core/src/store.rs
+crates/core/src/store.rs
+crates/core/src/store.rs
+crates/core/src/store.rs
+crates/core/src/store.rs
+crates/ui/src/lib.rs
+crates/ui/src/lib.rs
+crates/ui/src/lib.rs
+crates/ui/src/lib.rs
+crates/ui/src/lib.rs
+crates/ui/src/lib.rs
+crates/ui/src/lib.rs
+crates/ui/src/lib.rs
+[m1d-files] exit=0
+
+##### M2 default (temp-copy) run on store.rs: expect exit 0, 18 caught
+$ cargo mutants -f crates/core/src/store.rs
+Found 18 mutants to test
+ok       Unmutated baseline in 4s build + 0s test
+ INFO Auto-set test timeout to 20s
+18 mutants tested in 19s: 18 caught
+[m2-default] exit=0
+$ wc -l mutants.out/caught.txt mutants.out/missed.txt mutants.out/unviable.txt mutants.out/timeout.txt
+      18 mutants.out/caught.txt
+       0 mutants.out/missed.txt
+       0 mutants.out/unviable.txt
+       0 mutants.out/timeout.txt
+      18 total
+[m2-counts] exit=0
+$ head -12 mutants.out/log/baseline.log
+
+*** baseline
+
+*** /opt/homebrew/bin/cargo nextest run --no-run --cargo-profile=mutants --verbose --package=core-lib@0.1.0
+[m2-baseline-log] exit=0
+
+##### M5 --in-place trap: seeds saved into the tree (no env) vs not (with env)
+$ find crates -name *proptest-regressions*
+crates/api/tests/model_api.proptest-regressions
+[m5a-before] exit=0
+$ cargo mutants --in-place -f crates/core/src/store.rs
+Found 18 mutants to test
+ok       Unmutated baseline in 3s build + 0s test
+ INFO Auto-set test timeout to 20s
+18 mutants tested in 18s: 18 caught
+[m5b-inplace] exit=0
+$ find crates -name *proptest-regressions*
+crates/core/tests/model.proptest-regressions
+crates/api/tests/model_api.proptest-regressions
+[m5c-after] exit=0
+$ cat crates/core/tests/model.proptest-regressions
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc b98bf284fe2740d24687ee767afceb130200c7eb3a9a5535ac9ab121dbc8d70f # shrinks to ops = [Insert("a", 0)]
+cc 3e9a98cd6dd3d6eb7559eb2b4998b2a760061899f38a2dd93e1c2bed1ab00282 # shrinks to ops = [Insert("a", 0), Get("a")]
+[m5c-cat] exit=0
+$ env PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 cargo mutants --in-place -f crates/core/src/store.rs
+Found 18 mutants to test
+ok       Unmutated baseline in 0s build + 0s test
+ INFO Auto-set test timeout to 20s
+18 mutants tested in 15s: 18 caught
+[m5d-inplace-env] exit=0
+$ find crates -name *proptest-regressions*
+crates/api/tests/model_api.proptest-regressions
+[m5e-after] exit=0
+$ shasum crates/core/src/store.rs
+67262f96a793b7b37eb9d53aaa8a7538b1f66dfb  crates/core/src/store.rs
+[m5f-sha] exit=0
+
+##### M3 which assertion kills the is_empty mutants? (in-place, persistence disabled)
+-- M3a: remove only the state-machine invariant (model.rs lines 139-140)
+$ env PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 cargo mutants --in-place -f crates/core/src/store.rs
+Found 18 mutants to test
+ok       Unmutated baseline in 0s build + 0s test
+ INFO Auto-set test timeout to 20s
+18 mutants tested in 15s: 18 caught
+[m3a-run] exit=0
+$ cat mutants.out/missed.txt
+[m3a-missed] exit=0
+-- M3b: remove only the lockstep assertion (model.rs line 45)
+$ env PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 cargo mutants --in-place -f crates/core/src/store.rs
+Found 18 mutants to test
+ok       Unmutated baseline in 0s build + 0s test
+ INFO Auto-set test timeout to 20s
+18 mutants tested in 16s: 18 caught
+[m3b-run] exit=0
+$ cat mutants.out/missed.txt
+[m3b-missed] exit=0
+-- M3c: remove both
+$ env PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 cargo mutants --in-place -f crates/core/src/store.rs
+Found 18 mutants to test
+ok       Unmutated baseline in 0s build + 0s test
+ INFO Auto-set test timeout to 20s
+MISSED   crates/core/src/store.rs:37:9: replace KvStore::is_empty -> bool with true in 0s build + 0s test
+MISSED   crates/core/src/store.rs:37:9: replace KvStore::is_empty -> bool with false in 0s build + 0s test
+18 mutants tested in 16s: 2 missed, 16 caught
+[m3c-run] exit=2
+$ cat mutants.out/missed.txt
+crates/core/src/store.rs:37:9: replace KvStore::is_empty -> bool with true
+crates/core/src/store.rs:37:9: replace KvStore::is_empty -> bool with false
+[m3c-missed] exit=0
+-- M4: restore the tests, then --iterate must re-test only the missed ones and catch them
+$ env PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 cargo mutants --in-place --iterate -f crates/core/src/store.rs
+ INFO Iteration excludes 16 previously caught or unviable mutants
+Found 2 mutants to test
+ok       Unmutated baseline in 0s build + 0s test
+ INFO Auto-set test timeout to 20s
+2 mutants tested in 2s: 2 caught
+[m4-iterate] exit=0
+
+##### M6 --in-diff scopes the run to changed code
+diff exit=1 (1 = files differ, expected)
+$ cat $SCRATCH/pr.diff
+--- a/crates/core/src/store.rs
++++ b/crates/core/src/store.rs
+@@ -34,7 +34,7 @@
+     }
+ 
+     pub fn is_empty(&self) -> bool {
+-        self.entries.is_empty()
++        self.entries.len() == 0
+     }
+ 
+     fn find(&self, key: &str) -> Result<usize, usize> {
+[m6a-diff] exit=0
+$ cargo mutants --list --in-diff $SCRATCH/pr.diff
+crates/core/src/store.rs:37:9: replace KvStore::is_empty -> bool with true
+crates/core/src/store.rs:37:9: replace KvStore::is_empty -> bool with false
+crates/core/src/store.rs:37:28: replace == with != in KvStore::is_empty
+[m6b-list-in-diff] exit=0
+$ env PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 cargo mutants --in-place --in-diff $SCRATCH/pr.diff
+Found 3 mutants to test
+ok       Unmutated baseline in 0s build + 0s test
+ INFO Auto-set test timeout to 20s
+3 mutants tested in 3s: 3 caught
+[m6c-run] exit=0
+$ shasum crates/core/src/store.rs
+67262f96a793b7b37eb9d53aaa8a7538b1f66dfb  crates/core/src/store.rs
+[m6d-sha] exit=0
+
+##### M7 exit code when the baseline (unmutated) tests already fail: expect 4
+$ env PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 cargo mutants --in-place -f crates/core/src/store.rs
+Found 18 mutants to test
+FAILED   Unmutated baseline in 0s build + 0s test
+
+*** baseline
+
+*** /opt/homebrew/bin/cargo nextest run --no-run --cargo-profile=mutants --verbose --package=core-lib@0.1.0
+    Finished `mutants` profile [unoptimized] target(s) in 0.33s
+
+*** result: Success
+
+*** /opt/homebrew/bin/cargo nextest run --cargo-profile=mutants --verbose --package=core-lib@0.1.0 --profile mutants
+    Finished `mutants` profile [unoptimized] target(s) in 0.04s
+────────────
+ Nextest run ID a9ae0f0f-ad83-4371-885d-a56786c3a5b6 with nextest profile: mutants
+    Starting 17 tests across 4 binaries (1 test skipped via profile.default.default-filter)
+       START [         ] ( 1/17) core-lib frame::tests::encode_rejects_oversized_payload
+             command: $SCRATCH/ref/reference-workspace/target/mutants/deps/core_lib-47f64cb5035d1bfc --exact frame::tests::encode_rejects_oversized_payload --nocapture
+       START [         ] ( 1/17) core-lib frame::tests::decode_examples::case_3_short_payload
+             command: $SCRATCH/ref/reference-workspace/target/mutants/deps/core_lib-47f64cb5035d1bfc --exact frame::tests::decode_examples::case_3_short_payload --nocapture
+       START [         ] ( 1/17) core-lib frame::tests::decode_examples::case_2_header_only
+             command: $SCRATCH/ref/reference-workspace/target/mutants/deps/core_lib-47f64cb5035d1bfc --exact frame::tests::decode_examples::case_2_header_only --nocapture
+       START [         ] ( 1/17) core-lib frame::tests::prop_frame_roundtrip
+             command: $SCRATCH/ref/reference-workspace/target/mutants/deps/core_lib-47f64cb5035d1bfc --exact frame::tests::prop_frame_roundtrip --nocapture
+       START [         ] ( 1/17) core-lib frame::tests::prop_decode_never_panics
+             command: $SCRATCH/ref/reference-workspace/target/mutants/deps/core_lib-47f64cb5035d1bfc --exact frame::tests::prop_decode_never_panics --nocapture
+       START [         ] ( 1/17) core-lib tests::isqrt_examples::case_1_zero
+             command: $SCRATCH/ref/reference-workspace/target/mutants/deps/core_lib-47f64cb5035d1bfc --exact tests::isqrt_examples::case_1_zero --nocapture
+       START [         ] ( 1/17) core-lib fuzz_harness::tests::fuzz_replay_parse_frame
+             command: $SCRATCH/ref/reference-workspace/target/mutants/deps/core_lib-47f64cb5035d1bfc --exact fuzz_harness::tests::fuzz_replay_parse_frame --nocapture
+       START [         ] ( 1/17) core-lib tests::isqrt_examples::case_3_below_square
+             command: $SCRATCH/ref/reference-workspace/target/mutants/deps/core_lib-47f64cb5035d1bfc --exact tests::isqrt_examples::case_3_below_square --nocapture
+       START [         ] ( 1/17) core-lib tests::isqrt_examples::case_2_one
+             command: $SCRATCH/ref/reference-workspace/target/mutants/deps/core_lib-47f64cb5035d1bfc --exact tests::isqrt_examples::case_2_one --nocapture
+       START [         ] ( 1/17) core-lib frame::tests::decode_examples::case_1_empty
+             command: $SCRATCH/ref/reference-workspace/target/mutants/deps/core_lib-47f64cb5035d1bfc --exact frame::tests::decode_examples::case_1_empty --nocapture
+       START [         ] ( 1/17) core-lib tests::isqrt_examples::case_5_max
+             command: $SCRATCH/ref/reference-workspace/target/mutants/deps/core_lib-47f64cb5035d1bfc --exact tests::isqrt_examples::case_5_max --nocapture
+       START [         ] ( 1/17) core-lib tests::isqrt_examples::case_4_square
+             command: $SCRATCH/ref/reference-workspace/target/mutants/deps/core_lib-47f64cb5035d1bfc --exact tests::isqrt_examples::case_4_square --nocapture
+       START [         ] ( 1/17) core-lib::model model_kv_store_lockstep
+             command: $SCRATCH/ref/reference-workspace/target/mutants/deps/model-8fdef40e3d2aa2f7 --exact model_kv_store_lockstep --nocapture
+       START [         ] ( 1/17) core-lib::parity parity_isqrt::isqrt-001-boundaries.json
+             command: $SCRATCH/ref/reference-workspace/target/mutants/deps/parity-48a9ec9aa6e50375 --exact parity_isqrt::isqrt-001-boundaries.json --nocapture
+       START [         ] ( 1/17) core-lib::model model_kv_store_state_machine
+             command: $SCRATCH/ref/reference-workspace/target/mutants/deps/model-8fdef40e3d2aa2f7 --exact model_kv_store_state_machine --nocapture
+       START [         ] ( 1/17) core-lib tests::prop_isqrt_is_floor_sqrt
+             command: $SCRATCH/ref/reference-workspace/target/mutants/deps/core_lib-47f64cb5035d1bfc --exact tests::prop_isqrt_is_floor_sqrt --nocapture
+       START [         ] ( 1/17) core-lib::parity parity_isqrt::isqrt-002-random.json
+             command: $SCRATCH/ref/reference-workspace/target/mutants/deps/parity-48a9ec9aa6e50375 --exact parity_isqrt::isqrt-002-random.json --nocapture
+        PASS [   0.009s] ( 1/17) core-lib tests::isqrt_examples::case_3_below_square
+        PASS [   0.009s] ( 2/17) core-lib frame::tests::decode_examples::case_1_empty
+        PASS [   0.009s] ( 3/17) core-lib tests::isqrt_examples::case_4_square
+        FAIL [   0.010s] ( 4/17) core-lib frame::tests::decode_examples::case_2_header_only
+  stdout ───
+
+    running 1 test
+    test frame::tests::decode_examples::case_2_header_only ... FAILED
+
+    failures:
+
+    failures:
+        frame::tests::decode_examples::case_2_header_only
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 12 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'frame::tests::decode_examples::case_2_header_only' (103955255) panicked at crates/core/src/frame.rs:55:9:
+    assertion `left == right` failed
+      left: Ok(Frame { tag: 8, payload: [] })
+     right: Ok(Frame { tag: 7, payload: [] })
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+  Cancelling due to test failure: immediately terminating 13 tests still running
+     SIGTERM [   0.010s] ( 5/17) core-lib::model model_kv_store_state_machine
+     SIGTERM [   0.010s] ( 6/17) core-lib frame::tests::encode_rejects_oversized_payload
+     SIGTERM [   0.010s] ( 7/17) core-lib tests::isqrt_examples::case_2_one
+     SIGKILL [   0.010s] ( 8/17) core-lib frame::tests::decode_examples::case_3_short_payload
+  stdout ───
+
+    running 1 test
+
+    (test aborted with signal 9: SIGKILL)
+
+     SIGTERM [   0.010s] ( 9/17) core-lib tests::isqrt_examples::case_5_max
+     SIGTERM [   0.010s] (10/17) core-lib::parity parity_isqrt::isqrt-002-random.json
+     SIGTERM [   0.010s] (11/17) core-lib::parity parity_isqrt::isqrt-001-boundaries.json
+     SIGKILL [   0.010s] (12/17) core-lib::model model_kv_store_lockstep
+  stdout ───
+
+    running 1 test
+
+    (test aborted with signal 9: SIGKILL)
+
+     SIGTERM [   0.010s] (13/17) core-lib tests::prop_isqrt_is_floor_sqrt
+        PASS [   0.010s] (14/17) core-lib tests::isqrt_examples::case_1_zero
+     SIGTERM [   0.010s] (15/17) core-lib fuzz_harness::tests::fuzz_replay_parse_frame
+     SIGTERM [   0.010s] (16/17) core-lib frame::tests::prop_decode_never_panics
+     SIGTERM [   0.010s] (17/17) core-lib frame::tests::prop_frame_roundtrip
+────────────
+     Summary [   0.011s] 17 tests run: 4 passed, 13 failed, 1 skipped
+        FAIL [   0.010s] ( 4/17) core-lib frame::tests::decode_examples::case_2_header_only
+     SIGKILL [   0.010s] ( 8/17) core-lib frame::tests::decode_examples::case_3_short_payload
+     SIGKILL [   0.010s] (12/17) core-lib::model model_kv_store_lockstep
+error: test run failed
+
+*** result: Failure(100)
+
+ERROR cargo test failed in an unmutated tree, so no mutants were tested
+[m7-baseline-fails] exit=4
+
+##### DONE
+finished

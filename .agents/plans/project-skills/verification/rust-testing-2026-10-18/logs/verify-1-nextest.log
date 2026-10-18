@@ -1,0 +1,38 @@
+    Updating crates.io index
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 8.73s
+────────────
+ Nextest run ID 4f43d9fc-3dfc-4e92-b96f-583b6d27d601 with nextest profile: default
+    Starting 31 tests across 7 binaries (1 test and 2 binaries skipped via profile.default.default-filter)
+        PASS [   0.011s] ( 1/31) api tests::get_item_returns_json
+        PASS [   0.012s] ( 2/31) api tests::missing_item_is_404
+        PASS [   0.012s] ( 3/31) core-lib frame::tests::decode_examples::case_2_header_only
+        PASS [   0.013s] ( 4/31) api tests::get_item_status::case_2_missing
+        PASS [   0.013s] ( 5/31) api tests::seeded_lookup::case_2_neighbour
+        PASS [   0.014s] ( 6/31) core-lib frame::tests::encode_rejects_oversized_payload
+        PASS [   0.014s] ( 7/31) api tests::unknown_ids_are_404::id_3_u32__MAX
+        PASS [   0.014s] ( 8/31) core-lib frame::tests::decode_examples::case_3_short_payload
+        PASS [   0.015s] ( 9/31) api tests::get_item_status::case_1_existing
+        PASS [   0.014s] (10/31) api tests::unknown_ids_are_404::id_1_0
+        PASS [   0.014s] (11/31) core-lib frame::tests::decode_examples::case_1_empty
+        PASS [   0.015s] (12/31) api tests::unknown_ids_are_404::id_2_2
+        PASS [   0.015s] (13/31) core-lib fuzz_harness::tests::fuzz_replay_parse_frame
+        PASS [   0.015s] (14/31) api tests::seeded_lookup::case_1_exact
+        PASS [   0.019s] (15/31) core-lib tests::isqrt_examples::case_1_zero
+        PASS [   0.019s] (16/31) core-lib frame::tests::prop_decode_never_panics
+        PASS [   0.011s] (17/31) core-lib tests::isqrt_examples::case_3_below_square
+        PASS [   0.010s] (18/31) core-lib tests::isqrt_examples::case_4_square
+        PASS [   0.011s] (19/31) core-lib tests::isqrt_examples::case_2_one
+        PASS [   0.011s] (20/31) core-lib tests::isqrt_examples::case_5_max
+        PASS [   0.011s] (21/31) core-lib tests::prop_isqrt_is_floor_sqrt
+        PASS [   0.010s] (22/31) ui tests::todo_list_renders_items_and_remaining_count
+        PASS [   0.010s] (23/31) ui tests::counter_effect_clamps_negative_start
+        PASS [   0.011s] (24/31) ui tests::remaining_label_pluralizes
+        PASS [   0.011s] (25/31) ui tests::todo_list_matches_reference_markup
+        PASS [   0.012s] (26/31) core-lib::parity parity_isqrt::isqrt-001-boundaries.json
+        PASS [   0.012s] (27/31) core-lib::parity parity_isqrt::isqrt-002-random.json
+        PASS [   0.031s] (28/31) core-lib frame::tests::prop_frame_roundtrip
+        PASS [   0.027s] (29/31) core-lib::model model_kv_store_state_machine
+        PASS [   0.091s] (30/31) api::model_api model_items_api_matches_model
+        PASS [   0.092s] (31/31) core-lib::model model_kv_store_lockstep
+────────────
+     Summary [   0.107s] 31 tests run: 31 passed, 1 skipped

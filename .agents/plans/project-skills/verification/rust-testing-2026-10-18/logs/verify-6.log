@@ -1,0 +1,99 @@
+with config: list exit=0
+without config: list exit=0
+$ grep -c -E crates/e2e|fuzz_harness|test_support|tests/common $SCRATCH/mlist-with.txt
+0
+[c1-with] exit=1
+$ grep -c -E crates/e2e|fuzz_harness|test_support|tests/common $SCRATCH/mlist-without.txt
+3
+[c1-without] exit=0
+$ grep -o -E (crates/e2e[^:]*|[^: ]*fuzz_harness[^:]*|[^: ]*test_support[^:]*) $SCRATCH/mlist-without.txt
+crates/core/src/fuzz_harness.rs
+crates/e2e/src/lib.rs
+crates/e2e/src/lib.rs
+[c1-without-files] exit=0
+$ cargo mutants -f crates/core/src/store.rs
+Found 18 mutants to test
+ok       Unmutated baseline in 3s build + 0s test
+ INFO Auto-set test timeout to 20s
+18 mutants tested in 19s: 18 caught
+[c2-run] exit=0
+$ ls mutants.out
+caught.txt
+debug.log
+diff
+lock.json
+log
+missed.txt
+mutants.json
+outcomes.json
+timeout.txt
+unviable.txt
+[c2-ls] exit=0
+$ ls mutants.out/log
+baseline.log
+crates__core__src__store.rs_line_15_col_9_001.log
+crates__core__src__store.rs_line_15_col_9_002.log
+crates__core__src__store.rs_line_15_col_9_003.log
+crates__core__src__store.rs_line_15_col_9.log
+crates__core__src__store.rs_line_25_col_9_001.log
+crates__core__src__store.rs_line_25_col_9_002.log
+crates__core__src__store.rs_line_25_col_9_003.log
+crates__core__src__store.rs_line_25_col_9.log
+crates__core__src__store.rs_line_29_col_9_001.log
+crates__core__src__store.rs_line_29_col_9_002.log
+crates__core__src__store.rs_line_29_col_9_003.log
+crates__core__src__store.rs_line_29_col_9.log
+crates__core__src__store.rs_line_33_col_9_001.log
+crates__core__src__store.rs_line_33_col_9.log
+crates__core__src__store.rs_line_37_col_9_001.log
+crates__core__src__store.rs_line_37_col_9.log
+crates__core__src__store.rs_line_41_col_9_001.log
+crates__core__src__store.rs_line_41_col_9.log
+[c2-ls-log] exit=0
+$ head -c 600 mutants.out/outcomes.json
+{
+  "outcomes": [
+    {
+      "scenario": "Baseline",
+      "summary": "Success",
+      "log_path": "log/baseline.log",
+      "diff_path": null,
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 3.805079167,
+          "process_status": "Success",
+          "argv": [
+            "/opt/homebrew/bin/cargo",
+            "nextest",
+            "run",
+            "--no-run",
+            "--cargo-profile=mutants",
+            "--verbose",
+            "--package=core-lib@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 0.327690[c2-outcomes] exit=0
+$ ls mutants.out/diff
+crates__core__src__store.rs_line_15_col_9_001.diff
+crates__core__src__store.rs_line_15_col_9_002.diff
+crates__core__src__store.rs_line_15_col_9_003.diff
+crates__core__src__store.rs_line_15_col_9.diff
+crates__core__src__store.rs_line_25_col_9_001.diff
+crates__core__src__store.rs_line_25_col_9_002.diff
+crates__core__src__store.rs_line_25_col_9_003.diff
+crates__core__src__store.rs_line_25_col_9.diff
+crates__core__src__store.rs_line_29_col_9_001.diff
+crates__core__src__store.rs_line_29_col_9_002.diff
+crates__core__src__store.rs_line_29_col_9_003.diff
+crates__core__src__store.rs_line_29_col_9.diff
+crates__core__src__store.rs_line_33_col_9_001.diff
+crates__core__src__store.rs_line_33_col_9.diff
+crates__core__src__store.rs_line_37_col_9_001.diff
+crates__core__src__store.rs_line_37_col_9.diff
+crates__core__src__store.rs_line_41_col_9_001.diff
+crates__core__src__store.rs_line_41_col_9.diff
+[c2-diff] exit=0
+finished
