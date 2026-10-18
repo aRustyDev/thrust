@@ -1,0 +1,33 @@
+# helm-unittest suite (plugin 1.1.1).
+suite: migrate hook
+templates:
+  - migrate-job.yaml
+set:
+  database.existingSecret: thrust-database
+tests:
+  - it: is a pre-install/pre-upgrade hook by default
+    asserts:
+      - isKind:
+          of: Job
+      - equal:
+          path: metadata.annotations["helm.sh/hook"]
+          value: "pre-install,pre-upgrade"
+
+  - it: overrides the image entrypoint with the migrate binary
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].command
+          value: ["/usr/local/bin/migrate"]
+
+  - it: labels its pod as the migrate component, not the server
+    asserts:
+      - equal:
+          path: spec.template.metadata.labels["app.kubernetes.io/component"]
+          value: migrate
+
+  - it: renders nothing when disabled
+    set:
+      migrate.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0

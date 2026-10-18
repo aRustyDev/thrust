@@ -1,0 +1,86 @@
+{
+  "skill_name": "rust-on-workers",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "ok so i added a method to one of our port traits and now `cargo check --target wasm32-unknown-unknown` blows up with error[E0277]: the trait bound `fn(Extension<Arc<dyn Port>>) -> _ {handler}: Handler<_, _>` is not satisfied. native build is fine. i read workers-rs futures aren't Send so i switched the trait to #[async_trait(?Send)] on wasm only with a cfg_attr and now it's still broken (and the router in thrust-api is shared with the server). what do i do",
+      "expected_output": "Explains that axum's Router needs Send handler futures on every target it is compiled for, so a cfg switch cannot work; keep the port trait plain #[async_trait] on all targets; wrap only the JS-touching blocks in worker::send::SendFuture inside the Cloudflare adapters crate; do not put #[worker::send] in the shared api crate; run scripts/check-deps.sh and the wasm32 cargo check.",
+      "expectations": [
+        "States that axum handler futures must be Send on every target the shared router is compiled for, including wasm32.",
+        "Tells the user to declare the port trait with plain #[async_trait] on all targets, removing both the ?Send and the cfg_attr switch.",
+        "Tells the user to wrap JS-backed futures in worker::send::SendFuture (or SendFuture::new(async move { .. })) inside the Cloudflare adapters crate, not in core or ports.",
+        "Does not recommend adding a worker dependency to the shared router crate (thrust-api) or to ports/core.",
+        "Mentions running scripts/check-deps.sh (or otherwise re-checking the dependency graph) after the change."
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "wasm bundle was 2.1MB so i set strip = true in [profile.release] and added panic = \"abort\" at the workspace level to shave more. worker-build now dies with 'externref table required for catch wrappers' and separately our native thrust-server stopped returning 500 JSON on handler panics, the whole process just dies. help",
+      "expected_output": "Revert strip to \"debuginfo\" (strip = true drops the wasm target_features section so wasm-bindgen does not enable externref); remove the panic key (wasm32-unknown-unknown is already panic=abort; the native server must keep unwinding for CatchPanicLayer).",
+      "expectations": [
+        "Tells the user to change strip = true back to strip = \"debuginfo\".",
+        "Explains that strip = true drops the wasm target_features section so wasm-bindgen does not enable externref, producing the 'externref table required for catch wrappers' error.",
+        "Tells the user to remove the workspace-wide panic = \"abort\" setting.",
+        "Explains that wasm32-unknown-unknown already aborts on panic, so the key is unnecessary for the Worker.",
+        "Explains that the native server needs unwinding for CatchPanicLayer to catch handler panics and return the 500 response."
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "on my mac `cargo build --target wasm32-unknown-unknown` says can't find crate for `std` even though i already ran rustup target add. i put the rustup bin dir first on PATH and now linking dies with dyld: Library not loaded: @rpath/libLLVM.dylib. i've got homebrew rust installed too. what is going on and what's the repo way to run this",
+      "expected_output": "Homebrew rustc shadows rustup's and has no wasm32 std; rustup target add is not the fix because the target is already under rustup. The second error is rust-lld missing libLLVM on its rpath. Both are handled by running through scripts/rs.",
+      "expectations": [
+        "Identifies that the cargo/rustc on PATH is Homebrew's, whose sysroot has no wasm32-unknown-unknown standard library, as the cause of the 'can't find crate for std' error.",
+        "States that re-running rustup target add is not the fix because the wasm32 target is already installed under the rustup toolchain.",
+        "Identifies the dyld error as rustup's rust-lld not finding libLLVM.dylib, which lives in the toolchain lib directory.",
+        "Tells the user to run the command through scripts/rs (for example scripts/rs cargo check --target wasm32-unknown-unknown).",
+        "Mentions that the wrapper sets DYLD_FALLBACK_LIBRARY_PATH inside itself rather than relying on a variable exported in the user's shell."
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "wrangler dev (4.123.0) for the rust worker fails: 'This Worker requires compatibility date \"2026-10-01\", but the newest date supported by this server binary is \"2026-08-18\"'. i bumped compatibility_date to today to get a new flag. do i need to upgrade wrangler or is something else off?",
+      "expected_output": "VERSION-PINNED: 2026-08-18 is the limit of the workerd bundled with wrangler 4.123.0; a different wrangler has a different limit, so expectations 2 and 3 follow the date in the error text. The local workerd bundled with wrangler caps the compatibility date; set compatibility_date at or below the date in the error message in the wrangler config(s); do not rely on workerd --version; re-measure after upgrading wrangler.",
+      "expectations": [
+        "Explains that the workerd bundled with the local wrangler limits the maximum compatibility_date, and the error message states that maximum.",
+        "Tells the user to set compatibility_date to a date no later than the one quoted in the error (2026-08-18).",
+        "Says to check both wrangler config files in the Worker crate (wrangler.toml and wrangler.memory.toml).",
+        "Does not claim that the output of workerd --version is the accepted maximum date.",
+        "Says that after upgrading wrangler the limit should be re-measured by trying a date rather than assumed."
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "we need a Cloudflare Workflow kicked off from our rust worker (after an outbox sweep). can i just write the WorkflowEntrypoint in rust with workers-rs? what's the pattern we already use here",
+      "expected_output": "workers-rs 0.8.7 cannot define a Workflow class; use the JS shim entry.mjs that re-exports the Rust Worker and adds the class; Rust triggers it via env.WORKFLOW.create through js_sys::Reflect; shim holds no business logic and calls back into Rust through a service binding; refer to Cloudflare docs for Workflow semantics.",
+      "expectations": [
+        "States that workers-rs 0.8.7 provides no way to define a Workflow class from Rust, and that a Rust-exported class via wasm-bindgen is untested.",
+        "Points to the JS shim crates/thrust-worker/entry.mjs, which re-exports the Rust Worker and defines the Workflow class.",
+        "Says Rust triggers the Workflow by calling the binding's create method through js_sys::Reflect / wasm-bindgen.",
+        "Says the shim must contain no business logic and calls back into the Rust Worker through the SELF service binding.",
+        "Points to Cloudflare's own Workflows documentation for step semantics instead of restating them."
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "can i just use sqlx for the postgres adapter so both the worker and the server share it? seems nicer than tokio-postgres",
+      "expected_output": "The spike found sqlx (postgres) does not compile for wasm32 (home crate failure); use tokio-postgres with the js feature over Hyperdrive, with the shared SQL written once against tokio_postgres::Client and a Connector trait for the platform-specific connection.",
+      "expectations": [
+        "States that sqlx with the postgres feature did not build for wasm32-unknown-unknown in the spike probe.",
+        "Recommends tokio-postgres with the js feature for the Worker target, connected over the Hyperdrive socket.",
+        "Describes keeping one SQL implementation written against tokio_postgres::Client with a platform-specific connection strategy (native pool vs Hyperdrive).",
+        "Says the runtime/TCP feature of tokio-postgres belongs only to the native crate and never to wasm32."
+      ]
+    },
+    {
+      "id": 7,
+      "prompt": "my typescript worker has a floating promise in the fetch handler and the logging after the response never shows up. do i need ctx.waitUntil? also is my wrangler.jsonc ok for KV + a queue consumer",
+      "expected_output": "NEGATIVE CASE: this is a JS/TS Worker question. The rust-on-workers skill should not shape the answer; a correct answer uses ctx.waitUntil and general Workers guidance.",
+      "expectations": [
+        "Answers the floating-promise question by recommending ctx.waitUntil (or awaiting the promise).",
+        "Does not mention scripts/rs, SendFuture, worker-build, wasm32, or the Rust Worker crate.",
+        "Does not claim that any Rust-specific repo rule (for example strip = \"debuginfo\") applies to this TypeScript Worker."
+      ]
+    }
+  ]
+}

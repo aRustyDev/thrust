@@ -1,0 +1,14 @@
+# helm-unittest suite (plugin 1.1.1).
+suite: service
+templates:
+  - service.yaml
+set:
+  database.existingSecret: thrust-database
+tests:
+  - it: selects only server pods
+    asserts:
+      - isKind:
+          of: Service
+      - equal:
+          path: spec.selector["app.kubernetes.io/component"]
+          value: server

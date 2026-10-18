@@ -1,0 +1,20 @@
+{
+  "should_trigger": [
+    "write a multi stage Dockerfile for the thrust server with cargo-chef so rebuilds dont redownload crates",
+    "my thrust-server container says GLIBC_2.38 not found when it starts, built in rust:1 and running in distroless",
+    "docker build --check is warning about JSONArgsRecommended and SecretsUsedInArgOrEnv in our Dockerfile, how do i fix it",
+    "docker stop on our thrust-server container always takes 10s then exit 137, no graceful shutdown",
+    "how do i add a HEALTHCHECK to the distroless thrust-server image that has no curl",
+    "pin the FROM images in the thrust Dockerfile by digest and keep them updated",
+    "install: cannot stat 'target/release/migrate' in the docker builder stage"
+  ],
+  "should_not_trigger": [
+    "write a Dockerfile for a Node.js express app with a multi-stage build",
+    "write a Dockerfile for my small Rust CLI crate that has no server and no database",
+    "write a helm chart for the server with a values.schema.json",
+    "github actions workflow that builds the image with docker/build-push-action and pushes it with a buildx cache",
+    "write a docker-compose.yml with postgres and redis for local dev",
+    "my kubernetes pod is in CrashLoopBackOff, how do i debug it",
+    "build the Cloudflare Worker bundle for deploy with wrangler"
+  ]
+}

@@ -1,0 +1,3 @@
+# ct lints/installs the chart once per ci/*-values.yaml. Names only - never real credentials.
+database:
+  existingSecret: thrust-database

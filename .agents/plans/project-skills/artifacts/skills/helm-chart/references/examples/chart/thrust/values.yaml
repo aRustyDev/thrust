@@ -1,0 +1,100 @@
+# Defaults for the thrust chart. Keep every key documented here AND constrained in
+# values.schema.json (additionalProperties: false turns a typo into a lint error).
+# NO secret values live in this file: credentials are referenced by Secret name only.
+
+replicaCount: 1
+
+image:
+  repository: registry.example.com/thrust/thrust-server
+  # Empty = .Chart.AppVersion. Set `digest` (sha256:...) to pin immutably; it wins over the tag.
+  tag: ""
+  digest: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+# Non-secret server settings (see the image's environment table). Rendered as plain env.
+server:
+  # Extra plain-text environment, e.g. { THRUST_PG_POOL: "16" }. Never put credentials here.
+  extraEnv: {}
+
+database:
+  # Name of an EXISTING Secret holding the full connection URL (it carries the password).
+  # Required unless postgresql.enabled=true.
+  # The server and the migrate binary connect WITHOUT TLS today (NoTls), so a managed Postgres that
+  # requires TLS cannot be used until the server supports it.
+  existingSecret: ""
+  existingSecretKey: DATABASE_URL
+
+adminToken:
+  # Optional existing Secret holding THRUST_ADMIN_TOKEN. Leave empty to not set it.
+  existingSecret: ""
+  existingSecretKey: THRUST_ADMIN_TOKEN
+
+# DEV / EVALUATION ONLY: a single-pod Postgres with no backups and no HA.
+postgresql:
+  enabled: false
+  image:
+    repository: postgres
+    tag: 16-alpine
+    digest: sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
+  auth:
+    database: thrust
+    # Existing Secret with the postgres superuser password under key `postgres-password`.
+    # The password must be URL-safe: it is interpolated into DATABASE_URL.
+    existingSecret: ""
+  persistence:
+    size: 1Gi
+    storageClass: ""
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 512Mi
+
+migrate:
+  enabled: true
+  # Helm hook phases. A pre-* hook runs BEFORE the chart's own resources exist, so with
+  # postgresql.enabled=true the schema REQUIRES "post-install,post-upgrade" - and install with `--wait`
+  # so the database is Ready before the hook runs.
+  hook: "pre-install,pre-upgrade"
+  backoffLimit: 3
+
+service:
+  type: ClusterIP
+  port: 80
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: thrust.example.com
+      path: /
+  tls: []
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    memory: 256Mi
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  fsGroup: 65532
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: ["ALL"]
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

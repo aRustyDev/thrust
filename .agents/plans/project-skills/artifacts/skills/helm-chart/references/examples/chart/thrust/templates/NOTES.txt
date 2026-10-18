@@ -1,0 +1,11 @@
+thrust {{ .Chart.AppVersion }} installed as {{ include "thrust.fullname" . }}.
+
+Reach it inside the cluster:   http://{{ include "thrust.fullname" . }}.{{ .Release.Namespace }}.svc:{{ .Values.service.port }}
+Local test:                    kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "thrust.fullname" . }} 8080:{{ .Values.service.port }}
+
+{{- if .Values.postgresql.enabled }}
+
+The in-chart Postgres is for development only (no backups, no HA). The migrate Job is a {{ .Values.migrate.hook }} hook:
+install with `--wait` so Postgres is Ready before it runs.
+{{- end }}
+Credentials are read from Secrets you created: this chart never stores or prints one.

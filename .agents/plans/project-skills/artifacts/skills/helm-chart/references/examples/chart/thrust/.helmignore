@@ -1,0 +1,9 @@
+.git/
+.DS_Store
+*.swp
+*.bak
+# helm-unittest suites and their snapshots are test-only; keep them out of the packaged chart
+# (Helm ignore files do NOT support **: see references/chart-and-values.md)
+tests/
+# ct values files are for CI only
+ci/
