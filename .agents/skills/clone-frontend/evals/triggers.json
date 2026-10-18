@@ -1,0 +1,22 @@
+{
+  "should_trigger": [
+    "ran `dx translate` on the issue card html from our react app and the button comes out with disabled: \"false\", is that a bug",
+    "rustc says unexpected closing delimiter after `dx translate --component`",
+    "html to rsx: convert this page's markup, then check it matches the original with a screenshot diff against dx serve",
+    "port our React dashboard to Dioxus, the old app is on localhost:3000 and I want the rsx! version to look identical",
+    "diff screenshots of the original site against `dx serve` output, my script says 0% on every page and the rewrite isnt done",
+    "pull the design tokens out of the running app's css variables before I rewrite the frontend in rsx!",
+    "turn this HTML into rsx and then swap the buttons and dialogs for the Dioxus components library ones"
+  ],
+  "should_not_trigger": [
+    "write a new Dioxus component with use_signal and rsx! from scratch, a counter with a button",
+    "`dx components add button` worked, how do I change the theme colours",
+    "port this TypeScript module to Rust, it has union types and Promise-returning functions",
+    "convert this React component to Vue 3",
+    "critique this Figma mockup, the visual hierarchy feels off",
+    "our lighthouse LCP regressed on the dashboard, find out why",
+    "write Playwright tests for the login flow",
+    "run my Dioxus app natively with Blitz instead of the webview",
+    "`dx serve` fails with a wasm-bindgen version mismatch"
+  ]
+}
