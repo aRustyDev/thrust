@@ -12,6 +12,7 @@ members = [
     "crates/thrust-worker",
     "crates/thrust-server",
     "crates/thrust-contract-tests",
+    "crates/thrust-editor-doc",
 ]
 
 [workspace.package]

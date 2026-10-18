@@ -1,0 +1,19 @@
+[package]
+name = "thrust-editor-doc"
+description = "Spike 0006: Rust model of the Plane editor document (ProseMirror JSON, HTML, Yjs XmlFragment) for the node/mark set in @plane/editor"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+yrs = "0.28"
+serde_json = "1"
+base64 = "0.22"
+ammonia = "4"
+regex = "1"
+htmlentity = "1"
+
+[dev-dependencies]
+# the schema dump is compared in the order the real schema lists nodes/marks/attrs
+serde_json = { version = "1", features = ["preserve_order"] }

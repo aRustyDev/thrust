@@ -1,0 +1,73 @@
+use base64::Engine;
+use serde_json::Value;
+use thrust_editor_doc::{domparse, html, pm::{norm_num, Node}, schema::{Schema, Variant}, ydoc};
+
+fn same(a: &Value, b: &Value) -> bool {
+    norm_num(a.clone()) == norm_num(b.clone())
+}
+
+/// Differential fuzz: every `target/spike-0006/fuzz-html*.json` (mutated HTML + what the real code produced for it).
+/// Checks, per row: html->json (D4), then on the parsed document json->html (D3), json->binary structure (D1s),
+/// json->binary->json (D1) and the oracle's own binary -> json (D2).
+#[test]
+fn stage3_fuzz_probe() {
+    let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../target/spike-0006");
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        eprintln!("no fuzz corpus (run tools/spike-0006/gen-all.sh)");
+        return;
+    };
+    let mut files: Vec<_> = rd.filter_map(|e| e.ok()).map(|e| e.path()).filter(|p| p.file_name().and_then(|n| n.to_str()).map(|n| n.starts_with("fuzz-html") && n.ends_with(".json")).unwrap_or(false)).collect();
+    files.sort();
+    let mut tot = [0usize; 6];
+    let mut tot_n = [0usize; 6];
+    for p in files {
+        let c: Value = serde_json::from_str(&std::fs::read_to_string(&p).unwrap()).unwrap();
+        let mut ok = [0usize; 6];
+        let mut n = [0usize; 6];
+        let mut skipped = 0;
+        let mut fails = vec![];
+        for d in c["rows"].as_array().unwrap() {
+            let Some(want) = d.get("json") else {
+                skipped += 1;
+                continue;
+            };
+            let variant = if d["variant"] == "rich" { Variant::Rich } else { Variant::Document };
+            let schema = Schema::new(variant);
+            let html_in = d["html"].as_str().unwrap();
+            let parsed = domparse::html_to_doc(&schema, html_in);
+            let got = parsed.to_json(&schema);
+            let mut check = |i: usize, pass: bool, what: &str, fails: &mut Vec<String>| {
+                n[i] += 1;
+                if pass {
+                    ok[i] += 1;
+                } else if fails.len() < 12 {
+                    fails.push(format!("{} {what}", d["id"]));
+                }
+            };
+            check(0, same(&got, want), "D4 html->json", &mut fails);
+            // downstream of the oracle's own parse result
+            let node = Node::from_json(&schema, want).unwrap();
+            let bin = ydoc::encode(&schema, &node, None, Some(1234));
+            let back = ydoc::decode(&schema, &bin, "default").map(|x| x.to_json(&schema));
+            let stored = &d["stored_json"];
+            check(1, matches!(&back, Ok(b) if same(b, stored)), "D1 json->bin->json", &mut fails);
+            check(2, ydoc::struct_dump(&bin, "default").map(|s| same(&s, &d["ystruct"])).unwrap_or(false), "D1s yjs structure", &mut fails);
+            let ob = base64::engine::general_purpose::STANDARD.decode(d["binary"].as_str().unwrap()).unwrap();
+            check(3, ydoc::decode(&schema, &ob, "default").map(|x| same(&x.to_json(&schema), stored)).unwrap_or(false), "D2 binary->json", &mut fails);
+            let snode = Node::from_json(&schema, stored).unwrap();
+            check(4, html::to_html(&schema, &snode) == d["stored_html"].as_str().unwrap(), "D3 json->html", &mut fails);
+            // the v1 write pipeline end to end
+            let rt = ydoc::decode(&schema, &ydoc::encode(&schema, &parsed, None, Some(77)), "default").unwrap();
+            check(5, same(&rt.to_json(&schema), stored) && html::to_html(&schema, &rt) == d["stored_html"].as_str().unwrap(), "D5 html->all formats", &mut fails);
+        }
+        eprintln!("fuzz {:?} (oracle threw on {skipped}): D4 {}/{} D1 {}/{} D1s {}/{} D2 {}/{} D3 {}/{} D5 {}/{}", p.file_name().unwrap(), ok[0], n[0], ok[1], n[1], ok[2], n[2], ok[3], n[3], ok[4], n[4], ok[5], n[5]);
+        for f in fails.iter().take(12) {
+            eprintln!("FAIL {f}");
+        }
+        for i in 0..6 {
+            tot[i] += ok[i];
+            tot_n[i] += n[i];
+        }
+    }
+    eprintln!("fuzz TOTAL: D4 {}/{} D1 {}/{} D1s {}/{} D2 {}/{} D3 {}/{} D5 {}/{}", tot[0], tot_n[0], tot[1], tot_n[1], tot[2], tot_n[2], tot[3], tot_n[3], tot[4], tot_n[4], tot[5], tot_n[5]);
+}
