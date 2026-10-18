@@ -1,0 +1,38 @@
+{
+  "should_trigger": [
+    "are these rust tests actually good enough or is 90% coverage meaningless",
+    "cargo mutants says 3 mutants MISSED in src/parse.rs, what do i do",
+    "run cargo-mutants only on the code changed in this PR",
+    "what does exit code 2 from cargo mutants mean",
+    "how do i use --iterate so cargo-mutants only retests the missed ones",
+    "should i put #[mutants::skip] on this function to get CI green",
+    "mutants::skip isnt working with mutants = 0.0.3 in my dev-dependencies",
+    "cargo-mutants reports a function as missed but it has a doctest that checks it",
+    "set up [profile.mutants] in nextest.toml and mutants.toml for cargo-mutants",
+    "mutants.out/timeout.txt has 4 entries, are those bad",
+    "add exclude_re for impl Debug in .cargo/mutants.toml",
+    "which tests should i add next, going by this cargo-mutants missed.txt",
+    "nightly sharded cargo-mutants job in github actions",
+    "cargo mutants --in-place left proptest-regressions files in my tree"
+  ],
+  "should_not_trigger": [
+    "increase our llvm-cov coverage from 71% to 85%",
+    "run Stryker on this TS project and give me the mutation score",
+    "my proptest keeps failing on a roundtrip test",
+    "fuzz my decoder with cargo-fuzz",
+    "write a proptest for this parser's round-trip property",
+    "write a model-based test for my cache against a BTreeMap",
+    "the fuzz_replay_ test fails because the seeds directory is empty",
+    "write an axum router test with tower oneshot",
+    "test this Dioxus component with SSR rendering",
+    "add a playwright end-to-end test for the login flow",
+    "port this TypeScript module to Rust against golden fixtures",
+    "write a terraform test file for this module",
+    "mdbook test fails with E0432 unresolved import",
+    "configure tarpaulin in CI and upload the report",
+    "set up cargo clippy in CI",
+    "write a rstest table of cases for this function",
+    "i just finished the cache module, which tests should i add next",
+    "my rust test process exits with code 2, what does that mean"
+  ]
+}
