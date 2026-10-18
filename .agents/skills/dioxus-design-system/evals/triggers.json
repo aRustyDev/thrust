@@ -1,0 +1,25 @@
+{
+  "should_trigger": [
+    "dx components add button says Cannot download component registry while offline, what now",
+    "which crate do i add for dioxus-primitives, cargo add gives 0.0.0",
+    "is there a shadcn equivalent for dioxus, i want a select and a popover",
+    "how do i theme the dioxus components, what is dx-components-theme.css and the data-theme thing",
+    "my dioxus-components tabs arrow keys dont move focus, is the primitive accessible",
+    "restyle the dioxus button variants to match our brand blue without forking the component",
+    "teammate set components.registry git in Dioxus.toml, is it ok to run dx components add card",
+    "i ran dx components add with --rev but the copied files dont match that commit"
+  ],
+  "should_not_trigger": [
+    "how do i write a use_resource hook that refetches when a signal changes in dioxus",
+    "set up tailwind in my dioxus 0.7 app",
+    "convert this existing react page to dioxus and keep the styles",
+    "a dioxus-components button renders unstyled only under the dioxus native renderer",
+    "which css properties does the blitz native renderer support",
+    "audit our design tokens for consistency across web and ios",
+    "install the shadcn/ui button in my next.js app with tailwind",
+    "make me a figma design token system with dark mode",
+    "set up tailwind v4 in a vite react project",
+    "add a dioxus router layout with an Outlet",
+    "build an accessible modal in plain html and vanilla js"
+  ]
+}
