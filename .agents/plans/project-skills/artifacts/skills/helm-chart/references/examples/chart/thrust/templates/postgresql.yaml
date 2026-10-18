@@ -1,0 +1,91 @@
+{{- if .Values.postgresql.enabled }}
+# DEV / EVALUATION ONLY: single replica, no backups, no HA. Use a managed or operator-run Postgres
+# for anything that matters, and point database.existingSecret at its connection URL (the server
+# connects without TLS today, see values.yaml).
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "thrust.fullname" . }}-postgresql
+  labels:
+    {{- include "thrust.labels" . | nindent 4 }}
+    app.kubernetes.io/component: postgresql
+spec:
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+  selector:
+    {{- include "thrust.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: postgresql
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "thrust.fullname" . }}-postgresql
+  labels:
+    {{- include "thrust.labels" . | nindent 4 }}
+    app.kubernetes.io/component: postgresql
+spec:
+  serviceName: {{ include "thrust.fullname" . }}-postgresql
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "thrust.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: postgresql
+  template:
+    metadata:
+      labels:
+        {{- include "thrust.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: postgresql
+    spec:
+      automountServiceAccountToken: false
+      # uid/gid 70 is the `postgres` user of the alpine image; a non-root uid makes the image entrypoint
+      # skip its chown/gosu path and rely on fsGroup for the data volume.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 70
+        runAsGroup: 70
+        fsGroup: 70
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: postgresql
+          image: {{ include "thrust.postgresImage" . | quote }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          ports:
+            - name: postgres
+              containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              value: {{ .Values.postgresql.auth.database | quote }}
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ required "postgresql.auth.existingSecret is required when postgresql.enabled=true" .Values.postgresql.auth.existingSecret | quote }}
+                  key: postgres-password
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "postgres", "-d", {{ .Values.postgresql.auth.database | quote }}]
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.postgresql.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        {{- with .Values.postgresql.persistence.storageClass }}
+        storageClassName: {{ . | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.postgresql.persistence.size }}
+{{- end }}

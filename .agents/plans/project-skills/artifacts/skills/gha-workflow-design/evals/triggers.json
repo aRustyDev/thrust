@@ -1,0 +1,24 @@
+{
+  "should_trigger": [
+    "our required check is stuck on 'Expected - Waiting for status to be reported' for docs only PRs, ci.yml has a paths filter",
+    "should the contract-cell job be a reusable workflow_call or a composite action",
+    "ci shows startup_failure with zero jobs after i merged a workflow change, how do i find out why",
+    "Swatinem/rust-cache is saving a cache on every PR job and evicting everything, how should save-if look",
+    "pin all uses: lines in our github workflows to full commit shas and keep actionlint and zizmor happy",
+    "add merge_group to the ci workflow and make one gate job the only required check",
+    "required check never reports on a PR that only touches README, the workflow has a paths filter",
+    "how do i make sure CI actually ran the whole contract matrix before the PR is mergeable",
+    "zizmor says unpinned-uses and excessive-permissions on our workflows"
+  ],
+  "should_not_trigger": [
+    "how do i write a Cloudflare Workflow with step.do and step.sleep in a Worker",
+    "convert our GitHub Actions pipeline to a GitLab CI .gitlab-ci.yml",
+    "write the Dockerfile for the server crate with cargo-chef and a distroless runtime",
+    "set up release-please so merging a PR cuts a changelog and a version bump",
+    "my mdbook docs deploy to github pages fails with a missing artifact, fix the pages step",
+    "write a Jenkinsfile that runs cargo test in parallel stages",
+    "what should the contract tests assert about the Workers adapter",
+    "write a Cloudflare Workflow that retries a step with step.do",
+    "configure release-please so merges cut a changelog and version bump"
+  ]
+}

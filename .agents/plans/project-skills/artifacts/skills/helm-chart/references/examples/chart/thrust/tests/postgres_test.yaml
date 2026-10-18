@@ -1,0 +1,37 @@
+# helm-unittest suite (plugin 1.1.1).
+suite: dev postgres
+templates:
+  - postgresql.yaml
+release:
+  name: rel
+tests:
+  - it: renders nothing unless enabled
+    set:
+      database.existingSecret: thrust-database
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders a Service and a StatefulSet with their own component label and a non-root security context
+    set:
+      postgresql.enabled: true
+      postgresql.auth.existingSecret: thrust-postgres
+      migrate.hook: "post-install,post-upgrade"
+    asserts:
+      - hasDocuments:
+          count: 2
+      - equal:
+          path: spec.selector.matchLabels["app.kubernetes.io/component"]
+          value: postgresql
+        documentIndex: 1
+      - equal:
+          path: spec.template.spec.securityContext.runAsNonRoot
+          value: true
+        documentIndex: 1
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.allowPrivilegeEscalation
+          value: false
+        documentIndex: 1
+      - isNotEmpty:
+          path: spec.template.spec.containers[0].resources
+        documentIndex: 1

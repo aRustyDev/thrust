@@ -1,0 +1,95 @@
+{
+  "skill_name": "rust-testing",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "added a contract test that tenant B's admin gets a 404 when reading tenant A's attachment. it passed on the first run which makes me nervous, how do i know the assertion is real and not just always-green? we have the usual scripts/ stuff",
+      "expected_output": "States the principle (a verification that cannot fail is not evidence), pairs the rejected case with an accepted neighbour in the same test, and adds a mutant feature gated at one site, wired through thrust-server and scripts/mutants.sh, then confirms via the mutants summary that the new test is among those that kill it.",
+      "expectations": [
+        "States that a check that cannot fail is not evidence, or that a first-run pass proves nothing until a broken build has made it fail.",
+        "Recommends asserting the accepted neighbour (tenant A's own request succeeds) in the same test as the 404.",
+        "Recommends adding a deliberately broken build, a mutant, that removes exactly the rule under test (for example a mutant_* cargo feature gated by cfg at a single site).",
+        "Mentions wiring the new feature through thrust-server and into the loop in scripts/mutants.sh.",
+        "Says to run scripts/mutants.sh and confirm the new test appears among the tests that fail (KILLED), not merely that some test failed."
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "deleted an obsolete test from tests/contract.rs and now `scripts/contract.sh native-memory main` exits 5: 'VACUITY GUARD: exit 0 but passed count != expected' with passed=14 expected=15. cargo test itself is green. can i just bypass that guard",
+      "expected_output": "Explains the guard exists so a filter or deletion selecting fewer tests cannot report green; if the deletion was intentional, edit EXPECT_MAIN in scripts/contract.sh to 14; do not remove or bypass the guard; check that the deleted test was not the only protection for a rule that a mutant covers.",
+      "expectations": [
+        "Explains that the guard compares the number of passed tests with the hand-maintained EXPECT_ value so a run that selects fewer tests cannot report green.",
+        "Tells the user to update EXPECT_MAIN in scripts/contract.sh to 14 if the deletion was intentional.",
+        "Advises against removing or bypassing the guard.",
+        "Suggests re-running scripts/mutants.sh (or checking which mutant the deleted test killed) to make sure no rule lost its only guard."
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "ran scripts/mutants.sh and the summary line for the duplicate-sequence-number mutant says 'SURVIVED or did not run (exit=3, failed tests=)'. so my suite has a vacuous assertion right?",
+      "expected_output": "Exit 3 is contract.sh's infrastructure-failure exit (for example the server build failed), not a surviving mutant; the empty failed-tests value means no test log was produced; it is not a kill and not proof of a vacuous assertion; read the build log under the mutant's log directory, fix, and re-run; do not change the kill rule.",
+      "expectations": [
+        "Says exit status 3 from contract.sh indicates an infrastructure failure such as the server build or Postgres start failing, not a mutant surviving the suite.",
+        "Says the message means the mutant did not run to a verdict, so it cannot be concluded that an assertion is vacuous.",
+        "Notes that the empty failed-tests value means no test log was produced, so no test ran against that mutant.",
+        "Tells the user to look at the build log for that mutant (the *.build.log under its log directory) and fix the build before re-running.",
+        "Does not suggest relaxing the kill rule to count a build failure as KILLED."
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "we call scripts/flake-hunt.sh worker-cf main 10 from a CI step and the step is always green even though the log shows iter 3: exit=101 and iter 7: exit=101. why, and how many iterations do i even need if it fails like 1 in 4 runs",
+      "expected_output": "flake-hunt.sh ends with an echo so its exit status is always 0: read the 'failures: F / N' line instead; with a 1-in-4 failure rate 10 runs miss it about 6% of the time; keep per-iteration logs; serial runs only.",
+      "expectations": [
+        "Explains that scripts/flake-hunt.sh always exits 0 because its last command is an echo, so the CI step must parse the 'failures: F / N' line rather than the exit status.",
+        "States that at a 1-in-4 failure rate ten runs miss the flake roughly 6% of the time (0.75 to the tenth power), or equivalent arithmetic.",
+        "Recommends keeping the per-iteration logs for diagnosis.",
+        "Does not recommend adding automatic retries to make the step green."
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "thinking of adding proptest state machine tests for the work item sequence numbering, we already use mockall in another repo. is that the way to go here or what",
+      "expected_output": "Says proptest-state-machine and mockall are not used in this repo yet (background references); the repo's spine is the contract suite with in-memory adapters instead of mocks and must-fail controls; describes ReferenceStateMachine + StateMachineTest + prop_state_machine!; recommends running the state machine against existing mutants as its control.",
+      "expectations": [
+        "States that proptest/proptest-state-machine and mockall are not yet used in this repository.",
+        "States that this repo's method is the shared HTTP contract suite with in-memory adapters instead of mocks.",
+        "Describes a proptest-state-machine test as a ReferenceStateMachine (the model) plus a StateMachineTest (the system under test) run with the prop_state_machine! macro.",
+        "Recommends running the new state-machine test against an existing mutant such as mutant_dup_sequence and requiring it to fail.",
+        "Says mocks are for cases where the interaction itself is the behaviour, otherwise prefer the in-memory adapter."
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "cargo nextest is way faster, can we just swap `cargo test` for `cargo nextest run` inside scripts/contract.sh and mutants.sh? also we want retries because the cron test is a bit flaky",
+      "expected_output": "Warns that the scripts depend on libtest behaviour: mutants.sh requires exit status 101 for a kill and nextest exits 100 on a test failure, and contract.sh's pass-count parse expects a 'test result: N passed' line that nextest does not print; nextest does not run doctests; retries need --flaky-result fail or they hide flakes; update and re-prove the parsers with a mutant before swapping.",
+      "expectations": [
+        "Warns that scripts/mutants.sh counts a mutant as killed only on exit status 101 while nextest exits with a different status (100) on test failure, so killed mutants would be reported as surviving.",
+        "Warns that scripts/contract.sh parses the libtest 'test result: ... N passed' line for its pass-count guard, which nextest does not print, so green runs would trip the VACUITY GUARD.",
+        "Recommends updating the parsers and re-proving them with a mutant before swapping the runner.",
+        "Notes that cargo-nextest does not run doctests, so cargo test --doc must remain a separate step.",
+        "Says that nextest retries mark a flaky pass as success by default and recommends --flaky-result fail (or equivalent) so flakes still fail the run."
+      ]
+    },
+    {
+      "id": 7,
+      "prompt": "writing a doctest for a ports crate function. it uses `?` and rustdoc says mismatched types. i also want a compile_fail example showing a non-Send impl can't be used as the port. anything to watch for",
+      "expected_output": "Gives the `# Ok::<(), E>(())` trailer or a hidden fn main returning Result; warns compile_fail passes on any compile error including typos so pair it with a sibling example that compiles; notes doc-tests are not yet used in this repo and need cargo test --doc separate from nextest.",
+      "expectations": [
+        "Shows a working way to use ? in a doctest, either a hidden fn main returning Result or a trailing Ok::<(), ErrorType>(()) line.",
+        "Warns that compile_fail passes on any compilation error, including a typo in the snippet.",
+        "Recommends pairing the compile_fail block with a sibling example that compiles without the offending line.",
+        "States that doc-tests are not yet used in this repository."
+      ]
+    },
+    {
+      "id": 8,
+      "prompt": "need terraform tests for the cloudflare module, mocking the provider and asserting the plan fails when a hostname is duplicated",
+      "expected_output": "NEGATIVE CASE: this is a Terraform testing question; the rust-testing skill should not shape the answer.",
+      "expectations": [
+        "Answers using Terraform testing concepts such as .tftest.hcl files, run blocks, or mock providers.",
+        "Does not mention scripts/contract.sh, scripts/mutants.sh, the HTTP contract suite, or Rust."
+      ]
+    }
+  ]
+}

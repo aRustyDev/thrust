@@ -1,0 +1,21 @@
+{
+  "should_trigger": [
+    "package the thrust server as a helm chart, with an optional postgres for dev, and a values.schema.json",
+    "helm template says values don't meet the specifications of the schema, at '/image/digest' does not match pattern",
+    "helm lint fails with: double-star (**) syntax is not supported, unable to load chart",
+    "how do i run the thrust db migration as a helm hook, it fails because the secret isnt created yet",
+    "ct lint fails saying chart version not incremented on the thrust chart, what do i do",
+    "write helm-unittest tests for the thrust deployment template, check the image tag falls back to appVersion",
+    "how do i pass DATABASE_URL to the thrust pod in the chart without putting the password in values.yaml"
+  ],
+  "should_not_trigger": [
+    "write a Dockerfile for the rust server with cargo-chef",
+    "write the kubernetes deployment yaml for this service by hand, no helm",
+    "set up argo cd to sync our manifests from git",
+    "terraform helm_release resource keeps showing a diff on every plan",
+    "kustomize overlay that patches the image tag per environment",
+    "write a helm chart for our other app, the grafana dashboards service",
+    "helm install this chart onto my cluster and tell me if the pods come up",
+    "my pod is in CrashLoopBackOff, how do i debug it"
+  ]
+}

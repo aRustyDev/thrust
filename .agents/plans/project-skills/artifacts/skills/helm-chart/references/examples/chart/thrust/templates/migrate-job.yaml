@@ -1,0 +1,43 @@
+{{- if .Values.migrate.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "thrust.fullname" . }}-migrate
+  labels:
+    {{- include "thrust.labels" . | nindent 4 }}
+    app.kubernetes.io/component: migrate
+  annotations:
+    "helm.sh/hook": {{ .Values.migrate.hook | quote }}
+    "helm.sh/hook-weight": "0"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  # `migrate` makes a single connection attempt and exits non-zero if the database is not ready;
+  # backoffLimit bounds the retries. With the in-chart Postgres install with `--wait` so the
+  # database is Ready before this post-* hook runs (see references/secrets-and-hooks.md).
+  backoffLimit: {{ .Values.migrate.backoffLimit }}
+  template:
+    metadata:
+      labels:
+        {{- include "thrust.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: migrate
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: migrate
+          image: {{ include "thrust.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          # `command` replaces the image ENTRYPOINT (thrust-server). The binary is idempotent
+          # today (CREATE TABLE IF NOT EXISTS) and reads DATABASE_URL from the environment only.
+          command: ["/usr/local/bin/migrate"]
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          env:
+            {{- include "thrust.databaseEnv" . | nindent 12 }}
+{{- end }}

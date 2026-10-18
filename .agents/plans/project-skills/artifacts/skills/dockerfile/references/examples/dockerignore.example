@@ -1,0 +1,23 @@
+# VCS and agent state
+.git
+.claude
+.agents
+
+# build output (a host `target/` is huge and defeats layer caching)
+target
+**/target
+crates/thrust-worker/build
+.wrangler
+node_modules
+docs/book
+
+# anything that may hold secrets
+.env
+.env.*
+.dev.vars
+.dev.vars.*
+
+# editor / tool litter
+**/*.rs.bk
+**/mutants.out*
+rustc-ice-*.txt

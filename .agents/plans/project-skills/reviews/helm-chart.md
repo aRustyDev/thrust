@@ -1,0 +1,29 @@
+# Review: helm-chart (round 1)
+
+Reviewer: skill-reviewer. Read every file incl. the whole example chart; all probes ran on a scratchpad copy with `KUBECONFIG=/dev/null`, no `--validate`, no `--dry-run=server`; nothing touched a cluster.
+
+**Verdict: PASS (Section A clean). Grade: B.** Reviewer's bar: fix findings 1, 2, 3, 4 and 7 first.
+
+## Section A
+- `allowed-tools`: key correct; no wildcard Bash; one exact Bash entry. `Write(charts/**)` inert; bare `Read/Grep/Glob` redundant in-tree (out-of-tree they pre-approve reads for the turn, including kube credential files).
+- No network/remote-exec/injection; credentials: closest call is `testing-and-release.md:125-127` quoting a `--volume <home>/.kube/config` mount as a prohibition.
+- Example chart: no `lookup`/`tpl`/`.Files` fetch, no `kind: Secret`, no RBAC, no privileged/hostNetwork/hostPath, no default passwords or `latest` tags; app and migrate pods non-root with `drop: ALL`; default Postgres pinned `postgres:16-alpine@sha256:7218...80ea` (confirmed real multi-arch index digest).
+
+## Findings
+1. HIGH: delete inert `Write(charts/**)` and the bare `Read/Grep/Glob`; suggested `allowed-tools: [Edit(charts/**), Bash(helm version --short)]` + a line that the Edit rule covers file writes (owner should confirm in a throwaway session that an edit outside `charts/` still prompts; the skills page shows no path-scoped Edit example).
+2. HIGH (factual): "helm-unittest cannot assert on a schema failure" is false in plugin 1.1.1: `failedTemplate` (bare, or with a matching `errorPattern`) PASSES on a schema failure; a non-matching `errorPattern`/`errorMessage`/`equal`/`notFailedTemplate` errors; control (render succeeds + `failedTemplate`) FAILS. Rewrite testing-and-release.md:21-22, 74-76, tests/deployment_test.yaml:1-3, evals.json:33, 36 (eval 3 expectation 2 and `expected_output`); document `failedTemplate`+`errorPattern` with a wrong-pattern control; keep negative `helm template` cases as a cross-check.
+3. MED-HIGH: the exemplar's schema does not enforce the rule the skill teaches: `postgresql.enabled=true` with the default `pre-install,pre-upgrade` hook renders a migrate Job pointed at a not-yet-created in-chart Postgres. Add `if postgresql.enabled then migrate.hook matches ^post-` to values.schema.json:134-152 and a negative case.
+4. MEDIUM: the `post-*` hook design is racy (migrate makes one connect with no retry; Helm 4.2.4 `--wait` defaults to `hookOnly`; `backoffLimit: 3` gives ~70 s): document `helm install --wait` or add a `pg_isready` wait step. [derived]
+5. MEDIUM: overlapping pod selector labels (app Service/Deployment select `{name, instance}`; Postgres and migrate pods also match; Deployment selector is immutable): add `app.kubernetes.io/component: server` (app) and `component: migrate`; amend chart-and-values.md:98-100.
+6. MEDIUM: advises a managed Postgres the server cannot use today (server and migrate use `NoTls`; most managed offerings require TLS): add the constraint to chart-and-values.md and values.yaml comment.
+7. MEDIUM: provenance dangles in a public repo: SOURCES.md:10-13 and secrets-and-hooks.md:3-5 cite `crates/thrust-server/src/main.rs`, `migrate.rs`, `thrust-api`, `scripts/contract.sh` which exist only on the unmerged spike branch; `/usr/local/bin/migrate` and uid 65532 assume an image defined only by the sibling `dockerfile` draft. Label as the assumed image/server contract, cross-reference `dockerfile`, mark sources "pending merge" or cite a commit.
+8. LOW-MED: process narrative/research idiom ("attempted once ... failed on an expired cloud token", "Observed:", "Do not reproduce:"): rewrite as neutral behaviour ("such flags act on the current kube-context"; "give `ct` only a throwaway `kind` cluster's kubeconfig; never mount your own").
+9. LOW-MED: SKILL.md:17-19 names `--dry-run=server` and `ct install` but not deprecated `--validate`; recommend `env KUBECONFIG=/dev/null` or an explicit disposable `--kube-context` for any agent-run helm command; say "Helm 4" and add Procedure step 0 (`helm version --short`).
+10. LOW: say explicitly that the agent does not install helm-unittest or `ct` (user's decision; tag `[unverified: not run]`); Helm 4.2.4 `plugin install` verifies by default and needs a `.prov` (could not verify helm-unittest ships one).
+11. LOW: eval 5's premise is wrong (piped stdin prints `Summary: 1 resource found parsing stdin`; "0 resource found in 0 file" comes from file arguments): rewrite to a file-argument invocation; roughly half of the 26 expectations likely pass without the skill; no near-miss triggers ("helm install this chart onto my cluster", "write a chart for another app").
+12. LOW: exemplar hardening (Postgres StatefulSet has no securityContext/resources; unquoted interpolations `_helpers.tpl:64`, `deployment.yaml:44-45`; no-op `default .Chart.Name`; brittle `env[2]`/`env[3]` test indices; add the example path to YAML-lint/secret-scan excludes when CI arrives).
+13. LOW: tag vocabulary ("not run" rather than "not installed"); SKILL.md 2,667 B, trim the Example block (~400 B); name licences instead of "see upstream licence".
+
+## Spot-checks: `.helmignore` `**` rejected; `--skip-schema-validation` renders typos silently and `required` still fires; `helm lint --strict` with `ci/` files; `--set` coercion messages; `kubeVersion` `-0` suffix; 9 unittest tests pass; `helm package` excludes `tests/` and `ci/`; secret-leak grep; kubeconform reads only .yaml/.yml/.json; Helm 4 CLI facts; server facts on the spike branch: all CONFIRMED. PARTLY: helm-unittest schema failure (F2). Not verified: `helm template --validate` deprecation text, `ct`, kubeconform `Valid: 8`, `$(VAR)` expansion/hook ordering, OCI push and signing.
+
+## Collisions: none blocking (other installed Kubernetes skills act on live clusters; mutual NOT clauses with dockerfile and gha-workflow-design).

@@ -1,0 +1,12 @@
+apiVersion: v2
+name: thrust
+description: Self-hosted Thrust server (native axum build) with an optional dev-only Postgres.
+type: application
+# Chart version: SemVer, bumped on EVERY chart change (ct lint checks this).
+version: 0.1.0
+# Application version: the default image tag when image.tag is empty.
+appVersion: "0.0.0"
+kubeVersion: ">=1.27.0-0"
+keywords:
+  - thrust
+  - project-management

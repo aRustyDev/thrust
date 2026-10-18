@@ -1,0 +1,109 @@
+{
+  "skill_name": "gha-workflow-design",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "docs-only PRs are stuck on 'Expected - Waiting for status to be reported' for our required `ci` check. ci.yml has `on: pull_request: paths: [crates/**, Cargo.lock]`. we also just turned on the merge queue. whats the cleanest fix, we dont want to run the whole matrix for a readme typo",
+      "expected_output": "Remove the workflow-level paths filter; add a fail-open changes job; one always-running gate job as the only required check that accepts skipped only when changes says nothing relevant changed; add merge_group.",
+      "expectations": [
+        "States that a workflow skipped by a path filter reports no check, so the required context stays Pending and blocks merging",
+        "Recommends removing the workflow-level `paths:` filter from the required workflow and deciding inside it with a `changes` job",
+        "Recommends a single `gate` job with `if: always()` and `needs:` on the other jobs as the only required context",
+        "States that a job skipped by an `if:` conditional reports Success, so a skip must be proven legitimate rather than assumed",
+        "Says the `changes` job should fail open (treat an unknown diff as relevant)",
+        "Says the workflow must also trigger on `merge_group` for the merge queue",
+        "Includes `.github/workflows/**` among the paths treated as relevant, so changes to the pipeline are tested by the pipeline"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "our script that polls a PR printed ALL CHECKS PASSED but github says the PR is BLOCKED, mergeStateStatus BLOCKED. only a couple of bot checks ever reported. how do i make the polling script trustworthy",
+      "expected_output": "Compare required contexts (rulesets + classic protection) with reported statusCheckRollup using a set difference; fail on required-but-never-reported; fail when nothing is required; check for startup_failure runs with zero jobs.",
+      "expectations": [
+        "Explains that a summary computed only from reported checks is vacuous when the required contexts never ran, so success must not be inferred from the absence of failures",
+        "Recommends comparing the branch's required contexts with the PR's reported checks and failing when any required context is absent (a set difference, whatever the implementation)",
+        "Names a source for required contexts: the rulesets endpoint for the branch and/or the classic branch-protection required_status_checks endpoint",
+        "Reads reported checks from `gh pr view --json statusCheckRollup`, handling both check runs and commit statuses",
+        "Says an empty required set must be treated as not certifiable rather than as passing",
+        "Mentions that a run with conclusion `startup_failure` has zero jobs and so creates none of the required contexts, and shows how to list such runs",
+        "Treats only an HTTP 404 from the classic branch-protection lookup as 'none configured' and fails on any other failure (403, 5xx, network), because an unknown answer must not be read as no required checks",
+        "Notes GitHub lets a skipped check satisfy a required context, so an aggregate such as the gate job should be required to be exactly SUCCESS rather than certified when skipped"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "turn scripts/contract-all.sh into CI. it runs a list of `run <target> <pass>` lines serially because parallel runs share crates/thrust-worker/build. targets are native-memory, native-pg, worker-memory, worker-cf. i want it fast but i also want the required check to mean something",
+      "expected_output": "Derive the matrix from the script, one job per cell on separate runners via a reusable workflow, composite setup action, per-cell markers, gate asserting planned set equals reported set, caches saved from the default branch only, contract.sh run as a bare command.",
+      "expectations": [
+        "Derives the CI matrix from the `run <target> <pass>` lines of scripts/contract-all.sh instead of maintaining a second list",
+        "Runs each cell as its own job on a separate runner and explains this removes the shared crates/thrust-worker/build coupling that forces serial runs on one machine",
+        "Uses a reusable `workflow_call` workflow for the per-cell job and a composite action for the repeated setup steps",
+        "Has each cell record a pass marker only after scripts/contract.sh succeeds, and has a `gate` job compare the planned set with the reported set",
+        "Warns against piping scripts/contract.sh through tee or following it with an echo of $?, because that replaces its exit status",
+        "Saves caches only from the default branch while PR jobs restore them",
+        "Makes `gate` the only required check rather than the individual matrix jobs, because matrix job names change when the matrix changes"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "i wired scripts/flake-hunt.sh into a weekly workflow and it has been green for a month but people still see flaky contract tests. the workflow just runs `scripts/flake-hunt.sh native-pg main 20`. also the manual dispatch version with inputs sometimes runs with empty values on the cron",
+      "expected_output": "flake-hunt.sh always exits 0 so assert the final 'failures: 0 / N' line; inputs context is empty on schedule so use defaults with ||; validate iteration count; schedule runs on default branch and is disabled after 60 days inactivity in public repos.",
+      "expectations": [
+        "Identifies that scripts/flake-hunt.sh ends with an echo of the failure count, so its exit status is always 0 and the job is green regardless",
+        "Recommends capturing its output and asserting that the line `failures: 0 / <N>` is present, failing otherwise",
+        "Explains the `inputs` context is empty on scheduled runs and recommends defaults such as `${{ inputs.target || 'native-memory' }}`",
+        "Recommends validating the numeric iterations input in the shell before running",
+        "Notes scheduled workflows run on the default branch and can be disabled after 60 days of repository inactivity in a public repository"
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "actionlint says my workflow is clean but CI fails instantly with a missing required input for the local setup-rust composite action. i run actionlint in a tmp copy of the .github folder. whats happening",
+      "expected_output": "actionlint resolves local actions and reusable workflows only inside a git repository; run it in the checkout and add a must-fail control.",
+      "expectations": [
+        "Explains actionlint checks local composite-action and reusable-workflow inputs only when it can find the repository root (a git checkout), and skips them silently otherwise",
+        "Recommends running `actionlint` from inside the git checkout",
+        "Recommends a deliberately broken copy (for example a misspelled `with:` key) that must make actionlint report an error, to prove the linter can fail",
+        "Says the deliberately broken copy must not live under .github/workflows/ (it would be a live workflow and fail project-mode actionlint) and must be deleted afterwards"
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "our rust tests take 25 min on one runner. i want to shard with cargo nextest --partition hash:1/4 etc and cache aggressively but every PR job is evicting the cache. also i heard filters that match nothing can pass silently?",
+      "expected_output": "Measure first; save cache only on default branch; keying by family; nextest hash vs slice partition; zero-selected tests exits 4 under nextest but 0 under cargo test so assert counts; build once with archive.",
+      "expectations": [
+        "Recommends saving the cache only from the default branch (for example `save-if: github.ref == 'refs/heads/main'`) while PR jobs restore it",
+        "States that nextest partitioning is per test rather than per duration, so a slow test can still dominate one shard",
+        "States that a nextest filter or shard that selects no tests exits non-zero (exit 4, 'no tests to run') unless `--no-tests=pass` or `warn` is given, whereas `cargo test` with a non-matching filter exits 0",
+        "Recommends passing `--no-tests=fail` explicitly, choosing a shard count that cannot exceed the number of tests, and never adding `--no-tests=pass` to a required job",
+        "Mentions `cargo nextest archive` with `--archive-file` to build once and test in shards",
+        "Recommends measuring per-job timings before changing caching or sharding"
+      ]
+    },
+    {
+      "id": 7,
+      "prompt": "reviewing our ci.yml, one step is `run: echo \"Building PR ${{ github.event.pull_request.title }}\"`, we use `actions/checkout@v4` everywhere, there is no permissions block and some workflows use pull_request_target to comment on PRs from forks. zizmor and actionlint are not set up yet. what should i change",
+      "expected_output": "Script injection via the title fixed with env; SHA pins with version comments; permissions {} plus per-job; persist-credentials false; avoid pull_request_target with a head checkout; actionlint in a git checkout with a must-fail control.",
+      "expectations": [
+        "Identifies `${{ github.event.pull_request.title }}` interpolated into `run:` as script injection and fixes it by passing the value through `env:` and using the quoted shell variable",
+        "Recommends pinning actions to full commit SHAs with a `# vX.Y.Z` comment instead of `@v4`, and resolving the SHA from the action's own repository (for example `git ls-remote`)",
+        "Recommends `permissions: {}` at workflow level with least-privilege grants per job, noting unspecified scopes become none once any is specified",
+        "Recommends `persist-credentials: false` on actions/checkout",
+        "Warns against `pull_request_target` workflows that check out or run the PR head, because they run with write access and secrets",
+        "Recommends running actionlint inside a git checkout together with a deliberately broken control that must fail"
+      ]
+    },
+    {
+      "id": 8,
+      "prompt": "our matrix cells all restore Swatinem/rust-cache and we also cache ~/.cargo/bin/worker-build with a separate actions/cache step because someone said rust-cache cant cache cargo install binaries. PR runs keep evicting the main cache. is the separate cache right? what should the save policy be",
+      "expected_output": "rust-cache caches installed binaries (cache-bin default true) when the install runs after the action; a plain actions/cache saves on any ref on a key miss; use one save-if policy for the default branch only or drop the separate cache.",
+      "expectations": [
+        "States that Swatinem/rust-cache caches ~/.cargo including binaries installed after the action runs (`cache-bin` defaults to true), so the separate worker-build cache is unnecessary",
+        "Explains a plain `actions/cache` step saves on any ref when its key missed, so PR runs can write entries and break a 'save only from main' policy",
+        "Recommends saving caches only from the default branch (for example `save-if` on `github.ref == 'refs/heads/main'`, or `actions/cache/restore` plus a guarded `actions/cache/save`) while PR jobs only restore",
+        "Recommends keying the cache by the family of jobs that share build output rather than per cell",
+        "Does not repeat the claim that rust-cache cannot cache `cargo install` binaries"
+      ]
+    }
+  ]
+}

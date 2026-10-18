@@ -1,0 +1,82 @@
+# helm-unittest suite (plugin 1.1.1). Values-schema rejections are asserted in schema_test.yaml.
+suite: deployment
+templates:
+  - deployment.yaml
+release:
+  name: rel
+set:
+  database.existingSecret: thrust-database
+tests:
+  - it: renders one Deployment that listens on all interfaces
+    asserts:
+      - isKind:
+          of: Deployment
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: THRUST_LISTEN
+            value: "0.0.0.0:8080"
+
+  - it: reads DATABASE_URL from the named Secret and never inlines it
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: DATABASE_URL
+            valueFrom:
+              secretKeyRef:
+                name: thrust-database
+                key: DATABASE_URL
+
+  - it: pins by digest when one is given, and the digest wins over the tag
+    set:
+      image.tag: "1.2.3"
+      image.digest: "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: "registry.example.com/thrust/thrust-server@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+
+  - it: falls back to the chart appVersion when no tag is set
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: "registry.example.com/thrust/thrust-server:0.0.0"
+
+  - it: runs as non-root with a read-only root filesystem
+    asserts:
+      - equal:
+          path: spec.template.spec.securityContext.runAsNonRoot
+          value: true
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem
+          value: true
+
+  - it: selects only server pods (component label), so no other pod of the release matches
+    asserts:
+      - equal:
+          path: spec.selector.matchLabels["app.kubernetes.io/component"]
+          value: server
+      - equal:
+          path: spec.template.metadata.labels["app.kubernetes.io/component"]
+          value: server
+
+  - it: with the dev Postgres, builds DATABASE_URL from a password Secret reference
+    set:
+      postgresql.enabled: true
+      postgresql.auth.existingSecret: thrust-postgres
+      migrate.hook: "post-install,post-upgrade"
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: POSTGRES_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: thrust-postgres
+                key: postgres-password
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: DATABASE_URL
+            value: "postgres://postgres:$(POSTGRES_PASSWORD)@rel-thrust-postgresql:5432/thrust"

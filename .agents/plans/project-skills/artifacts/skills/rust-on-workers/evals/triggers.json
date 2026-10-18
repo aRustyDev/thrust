@@ -1,0 +1,22 @@
+{
+  "should_trigger": [
+    "getting 'future cannot be sent between threads safely' in my axum handler when i build the worker for wasm32, native is fine",
+    "worker-build fails with externref table required for catch wrappers after i changed the release profile",
+    "wrangler dev says the newest date supported by this server binary is 2026-08-18, my rust worker (built with worker-build) has compatibility_date set later",
+    "link step for wasm32-unknown-unknown dies with dyld: Library not loaded: @rpath/libLLVM.dylib on my mac",
+    "cargo build --target wasm32-unknown-unknown says can't find crate for `std` on my mac even though i ran rustup target add, homebrew rust is installed too",
+    "how do i read a Hyperdrive binding from workers-rs and hand it to tokio-postgres without breaking the native build",
+    "which cargo features should uuid and tokio-postgres have so the same crate compiles for wasm32 and for the native server",
+    "i need a Durable Object with sqlite storage in rust, using the websocket hibernation api, how do i wire the migration and the class"
+  ],
+  "should_not_trigger": [
+    "my typescript worker leaks a floating promise in the fetch handler, should i use ctx.waitUntil",
+    "my TypeScript worker's wrangler.jsonc has compatibility_date 2026-10-01 and wrangler dev says: This Worker requires compatibility date \"2026-10-01\", but the newest date supported by this server binary is \"2026-08-18\"",
+    "review my wrangler.jsonc for a JS worker that uses KV and a queue consumer",
+    "design the Durable Object API for a chat room in TypeScript with alarms and RPC methods",
+    "how do i make the Dioxus frontend call the thrust API with a server function",
+    "write a Dockerfile for the native thrust-server binary with cargo-chef",
+    "cargo build is slow on my laptop for a plain native Rust CLI, how do i speed up incremental builds",
+    "add a proptest state machine test for my in-memory work item store"
+  ]
+}

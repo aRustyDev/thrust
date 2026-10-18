@@ -1,0 +1,6 @@
+postgresql:
+  enabled: true
+  auth:
+    existingSecret: thrust-postgres
+migrate:
+  hook: "post-install,post-upgrade"

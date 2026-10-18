@@ -1,0 +1,51 @@
+# helm-unittest suite (plugin 1.1.1). A values-schema failure surfaces as a failed render, so
+# `failedTemplate` asserts it. Always give an `errorPattern`: a bare `failedTemplate` passes on ANY failure,
+# including a typo in the test's own values. A non-matching errorPattern makes the test error.
+suite: values schema
+templates:
+  - deployment.yaml
+tests:
+  - it: rejects an unknown top-level key
+    set:
+      replicaCout: 2
+      database.existingSecret: thrust-database
+    asserts:
+      - failedTemplate:
+          errorPattern: "additional properties 'replicaCout' not allowed"
+
+  - it: rejects a malformed image digest
+    set:
+      image.digest: "sha256:xyz"
+      database.existingSecret: thrust-database
+    asserts:
+      - failedTemplate:
+          errorPattern: "image/digest"
+
+  - it: rejects a reserved environment name in server.extraEnv
+    set:
+      server.extraEnv.THRUST_TEST_ROUTES: "1"
+      database.existingSecret: thrust-database
+    asserts:
+      - failedTemplate:
+          errorPattern: "invalid propertyName 'THRUST_TEST_ROUTES'"
+
+  - it: requires a database Secret name when the dev Postgres is off
+    asserts:
+      - failedTemplate:
+          errorPattern: "/database/existingSecret"
+
+  - it: requires a password Secret when the dev Postgres is on
+    set:
+      postgresql.enabled: true
+      migrate.hook: "post-install,post-upgrade"
+    asserts:
+      - failedTemplate:
+          errorPattern: "/postgresql/auth/existingSecret"
+
+  - it: refuses the dev Postgres with a pre-* migrate hook (the database would not exist yet)
+    set:
+      postgresql.enabled: true
+      postgresql.auth.existingSecret: thrust-postgres
+    asserts:
+      - failedTemplate:
+          errorPattern: "/migrate/hook"

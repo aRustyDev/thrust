@@ -1,0 +1,24 @@
+{
+  "should_trigger": [
+    "i added a test that tenant B gets 404 on tenant A's project, does this contract test actually fail if the tenant check is removed",
+    "scripts/contract.sh native-pg main exits 5 with VACUITY GUARD adapter set is not 'postgres', what does that mean",
+    "mutants.sh says a mutant SURVIVED, what does that tell me and what do i change",
+    "add a mutant for the 413 oversize rule so the attachment test isn't vacuous",
+    "how do i run the contract suite against worker-cf and what do the sweeper, panic and cron passes cover",
+    "the cron contract test fails about one run in four on worker-memory, how do i measure the flake rate",
+    "should the pg adapter tests use mocks or the testcontainers setup we already have",
+    "how would we add a doc-test with ? to the ports crate, and would cargo-mutants or a proptest state machine find more bugs in the work item store",
+    "i'm adding a check in thrust-core that rejects a work item with an empty name: unit test or contract test, and how do i know the rejection is really tested"
+  ],
+  "should_not_trigger": [
+    "write terraform test files with mock providers for the cloudflare module",
+    "run the acceptance tests for the terraform provider, TestAccWorkspace",
+    "set up a GitHub Actions workflow that shards the contract matrix across runners",
+    "worker-build fails with externref table required for catch wrappers after i set strip = true",
+    "write Playwright tests for the Dioxus frontend components",
+    "jest snapshot tests for the React admin page keep failing after a dependency bump",
+    "explain why this Rust function needs a lifetime annotation",
+    "write a quick unit test for a pure string-formatting helper in thrust-core",
+    "benchmark the API latency with k6 against the deployed worker"
+  ]
+}
