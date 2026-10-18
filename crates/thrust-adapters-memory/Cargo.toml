@@ -1,0 +1,12 @@
+[package]
+name = "thrust-adapters-memory"
+description = "In-memory adapters for every port. Compiles for wasm32 and native; no runtime dependency."
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+thrust-contracts = { workspace = true }
+thrust-ports = { workspace = true }
+async-trait = { workspace = true }

@@ -1,0 +1,15 @@
+#!/bin/sh
+# Run any command with the rustup *stable* toolchain first on PATH.
+#
+# Why this exists (measured 2026-10-18): on the dev machine `cargo`/`rustc` on PATH are Homebrew's
+# 1.98.1, which ships no wasm32 std, while rustup's stable (1.99.0) has the wasm32-unknown-unknown
+# target. `rustup run stable cargo` does NOT fix it: cargo still resolves a bare `rustc` through
+# PATH and finds Homebrew's. Fix = put the rustup toolchain bin dir first.
+#
+#   scripts/rs cargo check --target wasm32-unknown-unknown
+#   scripts/rs worker-build --release
+set -eu
+bindir="$(dirname "$(rustup which --toolchain stable rustc)")"
+PATH="$bindir:$HOME/.cargo/bin:$PATH"
+export PATH
+exec "$@"

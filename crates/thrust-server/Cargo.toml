@@ -1,0 +1,24 @@
+[package]
+name = "thrust-server"
+description = "Composition root: native axum/tokio server (cargo feature set `selfhosted`)."
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "thrust-server"
+path = "src/main.rs"
+
+[dependencies]
+thrust-contracts = { workspace = true }
+thrust-ports = { workspace = true }
+thrust-core = { workspace = true }
+thrust-api = { workspace = true }
+thrust-adapters-memory = { workspace = true }
+thrust-adapters-selfhosted = { workspace = true }
+serde_json = { workspace = true }
+# The native server is the only place axum's tokio/http1 features are switched on.
+axum = { version = "0.8", default-features = false, features = ["json", "query", "matched-path", "tokio", "http1"] }
+tokio = { version = "1", default-features = false, features = ["rt-multi-thread", "macros", "net", "time", "signal"] }
+tower-http = { version = "0.6", default-features = false, features = ["catch-panic"] }

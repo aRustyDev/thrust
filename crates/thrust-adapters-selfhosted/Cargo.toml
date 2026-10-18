@@ -1,0 +1,15 @@
+[package]
+name = "thrust-adapters-selfhosted"
+description = "Native (tokio) adapters for the self-hosted set. Never compiled into the Worker."
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+thrust-contracts = { workspace = true }
+thrust-ports = { workspace = true }
+async-trait = { workspace = true }
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+uuid = { workspace = true, features = ["v7"] }
+tokio = { version = "1", default-features = false, features = ["rt", "time"] }
