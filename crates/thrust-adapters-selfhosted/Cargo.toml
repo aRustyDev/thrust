@@ -6,6 +6,10 @@ version.workspace = true
 license.workspace = true
 publish.workspace = true
 
+[features]
+# Control-run mutant (scripts/mutants.sh): recycle a connection that is still inside a transaction.
+mutant_discard_noop = []
+
 [dependencies]
 thrust-contracts = { workspace = true }
 thrust-ports = { workspace = true }

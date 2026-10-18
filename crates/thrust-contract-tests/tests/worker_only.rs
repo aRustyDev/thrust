@@ -124,3 +124,75 @@ async fn worker_cron_scheduled_handler_runs_the_sweeper() {
     assert_eq!(acts[0].verb, "created");
     assert_eq!(t.outbox_depth().await, 0, "the scheduled sweep must mark rows dispatched");
 }
+
+// ---------------------------------------------------------------------------------------------
+// Binding probes (pass `bindings`): one REAL operation per binding, through the Rust API where
+// workers-rs has a wrapper and through raw wasm-bindgen where it does not (Workflows).
+// ---------------------------------------------------------------------------------------------
+
+async fn probe(t: &Target, name: &str) -> (u16, Value) {
+    let r = t
+        .http
+        .get(t.url(&format!("/_test/bindings/{name}")))
+        .header("x-admin-token", &t.admin_token)
+        .send()
+        .await
+        .unwrap();
+    let st = r.status().as_u16();
+    (st, r.json::<Value>().await.unwrap_or(Value::Null))
+}
+
+#[tokio::test]
+async fn worker_bindings_probe_routes_require_the_admin_token() {
+    let t = Target::from_env();
+    let r = t.http.get(t.url("/_test/bindings/ratelimit")).send().await.unwrap();
+    assert_eq!(r.status(), 404, "probe routes must not be open");
+    let r = t.http.get(t.url("/_test/bindings/ratelimit")).header("x-admin-token", "wrong").send().await.unwrap();
+    assert_eq!(r.status(), 404);
+}
+
+#[tokio::test]
+async fn worker_bindings_rate_limiting_binding() {
+    let t = Target::from_env();
+    let (st, v) = probe(&t, "ratelimit").await;
+    assert_eq!(st, 200, "{v}");
+    // limit = 3 per 10 s: three allowed then two refused. The refusals are the must-fail control.
+    assert_eq!(v["outcomes"], json!([true, true, true, false, false]));
+}
+
+#[tokio::test]
+async fn worker_bindings_secrets_store_binding() {
+    let t = Target::from_env();
+    let (st, v) = probe(&t, "secret").await;
+    assert_eq!(st, 200, "{v}");
+    assert_eq!(v["present"], true);
+    assert_eq!(v["len"], "local-dev-dummy-not-a-secret".len());
+    assert!(!v.to_string().contains("dummy"), "the probe must never echo the secret value");
+}
+
+#[tokio::test]
+async fn worker_bindings_email_send_binding_simulated_locally() {
+    let t = Target::from_env();
+    let (st, v) = probe(&t, "email").await;
+    assert_eq!(st, 200, "{v}");
+    assert!(v["message_id_len"].as_u64().unwrap() > 0, "{v}");
+}
+
+#[tokio::test]
+async fn worker_bindings_service_binding() {
+    let t = Target::from_env();
+    let (st, v) = probe(&t, "service").await;
+    assert_eq!(st, 200, "{v}");
+    assert_eq!(v["status"], 200);
+}
+
+#[tokio::test]
+async fn worker_bindings_workflow_via_wasm_bindgen_and_js_shim() {
+    let t = Target::from_env();
+    let (st, v) = probe(&t, "workflow").await;
+    assert_eq!(st, 200, "{v}");
+    assert_eq!(v["status"], "complete", "{v}");
+    assert_eq!(v["output"]["doubled"], 42, "the workflow's step.do ran: {v}");
+    assert_eq!(v["output"]["health"]["status"], 200, "workflow -> service binding -> Rust Worker: {v}");
+    assert_eq!(v["output"]["health"]["body"], "ok");
+}

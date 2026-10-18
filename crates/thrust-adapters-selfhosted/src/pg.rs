@@ -32,9 +32,18 @@ impl ClientHandle for Pooled {
     }
 
     fn discard(self: Box<Self>) {
+        // MUTANT (control run only, feature `mutant_discard_noop`): hand the connection back to
+        // the pool while it is still inside the abandoned transaction.
+        #[cfg(feature = "mutant_discard_noop")]
+        {
+            drop(self);
+        }
         // Remove the connection from the pool instead of recycling it: closing it makes the
         // server roll back whatever transaction was left open.
-        let _ = Object::take(self.0);
+        #[cfg(not(feature = "mutant_discard_noop"))]
+        {
+            let _ = Object::take(self.0);
+        }
     }
 }
 

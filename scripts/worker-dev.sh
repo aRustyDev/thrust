@@ -33,6 +33,15 @@ case "${THRUST_ADAPTERS:-memory}" in
   *) CONFIG=wrangler.toml ;;
 esac
 
+if [ "$CONFIG" = wrangler.toml ]; then
+  # Local Secrets Store: create the probe secret in the LOCAL state dir (no --remote, no login).
+  # The value is a throwaway dummy; the probe only ever reports its length.
+  env -i HOME="$HOME" PATH="$PATH" TMPDIR="${TMPDIR:-/tmp}" WRANGLER_SEND_METRICS=false NO_COLOR=1 \
+    wrangler secrets-store secret create 00000000000000000000000000000000 --name probe --scopes workers \
+    --value "local-dev-dummy-not-a-secret" --persist-to "$STATE" -c "$CONFIG" \
+    >"$STATE/secret-create.log" 2>&1 || true
+fi
+
 exec env -i \
   HOME="$HOME" PATH="$PATH" TMPDIR="${TMPDIR:-/tmp}" \
   CLOUDFLARE_INCLUDE_PROCESS_ENV=true WRANGLER_SEND_METRICS=false NO_COLOR=1 \

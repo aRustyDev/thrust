@@ -63,7 +63,12 @@ impl Database for MemoryDatabase {
         user: UserId,
     ) -> Result<Membership, DbError> {
         let s = self.state.lock().unwrap();
-        if s.projects.get(&project) != Some(&ws) {
+        // MUTANT (control run only): forget the tenant predicate. The cross-tenant tests must catch it.
+        #[cfg(feature = "mutant_ignore_tenant")]
+        let wrong_tenant = !s.projects.contains_key(&project);
+        #[cfg(not(feature = "mutant_ignore_tenant"))]
+        let wrong_tenant = s.projects.get(&project) != Some(&ws);
+        if wrong_tenant {
             return Ok(Membership::NoSuchProject);
         }
         Ok(match s.memberships.get(&(project, user)) {
@@ -120,7 +125,12 @@ impl Database for MemoryDatabase {
 
     async fn insert_activity(&self, a: &Activity) -> Result<bool, DbError> {
         let mut s = self.state.lock().unwrap();
-        if !s.activity_events.insert(a.event_id) {
+        // MUTANT (control run only): no idempotency on event_id. The redelivery test must catch it.
+        #[cfg(feature = "mutant_no_activity_dedupe")]
+        let duplicate = false;
+        #[cfg(not(feature = "mutant_no_activity_dedupe"))]
+        let duplicate = !s.activity_events.insert(a.event_id);
+        if duplicate {
             return Ok(false);
         }
         s.activity.push(a.clone());
@@ -195,7 +205,15 @@ impl Tx for MemoryTx {
     async fn allocate(&mut self, _ws: WorkspaceId, project: ProjectId) -> Result<Allocation, DbError> {
         let mut s = self.state.lock().unwrap();
         let c = s.counters.entry(project).or_insert((0, 0));
-        c.0 += 1;
+        // MUTANT (control run only): hand out the same sequence number every time.
+        #[cfg(not(feature = "mutant_dup_sequence"))]
+        {
+            c.0 += 1;
+        }
+        #[cfg(feature = "mutant_dup_sequence")]
+        {
+            c.0 = 1;
+        }
         c.1 += 10_000;
         Ok(Allocation { sequence_id: c.0, sort_order: c.1 })
     }

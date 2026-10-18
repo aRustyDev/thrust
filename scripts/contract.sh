@@ -6,8 +6,12 @@
 #     pass:   main (default)   normal config, outbox fast path ON
 #             sweeper          fast path OFF; asserts the cron sweeper does the delivery
 #             panic            alone against a fresh target (a Worker panic resets the isolate)
-#             worker           (worker-cf only) Durable Object WebSocket hibernation + SQLite
+#             blast            OBSERVATIONAL, not in contract-all: failures of OTHER requests around one panic
+#             bench            latency bench (release native build); success == the bench exits 0
+#             worker         (worker-cf only) Durable Object WebSocket hibernation + SQLite
 #             cron             (worker-* only) fast path OFF; the Worker `scheduled` handler sweeps
+#             bindings         (worker-cf only) one real operation per binding (rate limit, secrets
+#                              store, email, service binding, workflow via JS shim)
 #
 # Exit status is the status of `cargo test` itself (no pipes, no trailing echo). The suite's
 # pass count is also checked against the expected number so that a filter that selects zero
@@ -27,11 +31,13 @@ LOGDIR="${THRUST_LOGDIR:-$ROOT/target/contract-logs}"
 mkdir -p "$LOGDIR"
 LOG="$LOGDIR/$TARGET-$PASS"
 RATE_LIMIT=30
-EXPECT_MAIN=14
+EXPECT_MAIN=15
 EXPECT_SWEEPER=1
 EXPECT_PANIC=1
+EXPECT_BLAST=1
 EXPECT_WORKER=1
 EXPECT_CRON=1
+EXPECT_BINDINGS=6
 
 # A free port, chosen at random: fixed ports collide with OrbStack-published containers and
 # with other sessions' wrangler instances (measured: 18080 and 8787 were both taken).
@@ -117,11 +123,15 @@ if [ "$ADAPTERS" = "postgres" ] || [ "$ADAPTERS" = "cloudflare" ]; then
 fi
 
 if [ "$KIND" = "native" ]; then
-  "$ROOT/scripts/rs" cargo build --quiet --manifest-path "$ROOT/Cargo.toml" -p thrust-server \
+  # THRUST_SERVER_FEATURES is only ever set by scripts/mutants.sh (control runs with broken builds).
+  # The bench pass measures a release build; every other pass uses the debug build.
+  if [ "$PASS" = "bench" ]; then PROFILE_FLAG="--release"; BIN_DIR=release; else PROFILE_FLAG=""; BIN_DIR=debug; fi
+  # shellcheck disable=SC2086
+  "$ROOT/scripts/rs" cargo build --quiet $PROFILE_FLAG --manifest-path "$ROOT/Cargo.toml" -p thrust-server ${THRUST_SERVER_FEATURES:+--features "$THRUST_SERVER_FEATURES"} \
     >"$LOG.build.log" 2>&1 || { echo "server build failed, see $LOG.build.log" >&2; exit 3; }
   THRUST_LISTEN="127.0.0.1:$PORT" THRUST_ADAPTERS="$ADAPTERS" THRUST_TEST_ROUTES=1 \
     THRUST_CREATE_RATE_LIMIT="$RATE_LIMIT" THRUST_OUTBOX_FASTPATH="$FASTPATH" THRUST_SWEEP_INTERVAL_SECS=0 \
-    "$ROOT/target/debug/thrust-server" >"$LOG.server.log" 2>&1 &
+    "$ROOT/target/$BIN_DIR/thrust-server" >"$LOG.server.log" 2>&1 &
   SERVER_PID=$!
 else
   # Worker: `wrangler dev` (local workerd). See scripts/worker-dev.sh.
@@ -179,10 +189,33 @@ case "$PASS" in
     TEST_STATUS=$?
     EXPECT=$EXPECT_PANIC
     ;;
+  blast)
+    # OBSERVATIONAL (not in contract-all): panics the handler while 16 clients run an I/O-bound
+    # request and reports how many OTHER requests failed. Under `wrangler dev` the memory set can
+    # lose the whole dev server here, which is itself an observation, so this is run by hand.
+    "$ROOT/scripts/rs" cargo test --manifest-path "$ROOT/Cargo.toml" -p thrust-contract-tests --test contract -- blast_ --test-threads=1 --nocapture >"$LOG.test.log" 2>&1
+    TEST_STATUS=$?
+    EXPECT=$EXPECT_BLAST
+    ;;
   worker)
     "$ROOT/scripts/rs" cargo test --manifest-path "$ROOT/Cargo.toml" -p thrust-contract-tests --test worker_only -- worker_room_ --test-threads=1 --nocapture >"$LOG.test.log" 2>&1
     TEST_STATUS=$?
     EXPECT=$EXPECT_WORKER
+    ;;
+  bench)
+    # Release-built bench client; the target under test is whatever this script just started.
+    # Not a test: success == the bench binary exiting 0. Numbers are LOCAL (loopback), see research/0004.
+    { "$ROOT/scripts/rs" cargo run --quiet --release --manifest-path "$ROOT/Cargo.toml" -p thrust-contract-tests --bin bench -- 200 1 \
+        && "$ROOT/scripts/rs" cargo run --quiet --release --manifest-path "$ROOT/Cargo.toml" -p thrust-contract-tests --bin bench -- 200 8; } >"$LOG.test.log" 2>&1
+    TEST_STATUS=$?
+    cat "$LOG.test.log"
+    echo "[$TARGET/$PASS] bench exit=$TEST_STATUS"
+    exit "$TEST_STATUS"
+    ;;
+  bindings)
+    "$ROOT/scripts/rs" cargo test --manifest-path "$ROOT/Cargo.toml" -p thrust-contract-tests --test worker_only -- worker_bindings_ --test-threads=1 --nocapture >"$LOG.test.log" 2>&1
+    TEST_STATUS=$?
+    EXPECT=$EXPECT_BINDINGS
     ;;
   cron)
     "$ROOT/scripts/rs" cargo test --manifest-path "$ROOT/Cargo.toml" -p thrust-contract-tests --test worker_only -- worker_cron_ --test-threads=1 --nocapture >"$LOG.test.log" 2>&1
@@ -190,7 +223,7 @@ case "$PASS" in
     EXPECT=$EXPECT_CRON
     ;;
   *)
-    "$ROOT/scripts/rs" cargo test --manifest-path "$ROOT/Cargo.toml" -p thrust-contract-tests --test contract -- --skip sweeper_ --skip panic_ >"$LOG.test.log" 2>&1
+    "$ROOT/scripts/rs" cargo test --manifest-path "$ROOT/Cargo.toml" -p thrust-contract-tests --test contract -- --skip sweeper_ --skip panic_ --skip blast_ >"$LOG.test.log" 2>&1
     TEST_STATUS=$?
     EXPECT=$EXPECT_MAIN
     ;;

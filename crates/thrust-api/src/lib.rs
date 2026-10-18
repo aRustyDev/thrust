@@ -159,6 +159,18 @@ async fn sweep(_: Admin, Extension(app): Extension<App>) -> ApiResult<Json<thrus
     Ok(Json(thrust_core::sweep_outbox(&app, 100).await?))
 }
 
+/// Test support: put an arbitrary envelope on the events topic (what a redelivery or a second
+/// relay would do). It goes through the REAL `Queue` port, so on the Worker it is a real Queues
+/// message consumed by the real consumer.
+async fn inject_event(_: Admin, Extension(app): Extension<App>, Json(env): Json<Envelope>) -> ApiResult<StatusCode> {
+    app.ports
+        .queue
+        .send(thrust_core::EVENTS_TOPIC, &env, thrust_ports::SendOpts::default())
+        .await
+        .map_err(CoreError::from)?;
+    Ok(StatusCode::ACCEPTED)
+}
+
 async fn outbox_depth(_: Admin, Extension(app): Extension<App>) -> ApiResult<Json<serde_json::Value>> {
     let n = app.ports.db.outbox_depth().await.map_err(CoreError::from)?;
     Ok(Json(serde_json::json!({ "undispatched": n })))
@@ -262,6 +274,7 @@ pub fn router() -> Router {
         .route("/internal/seed", post(seed))
         .route("/internal/sweep", post(sweep))
         .route("/internal/outbox-depth", get(outbox_depth))
+        .route("/internal/inject-event", post(inject_event))
         .route(
             "/api/v1/projects/{project_id}/work-items",
             post(create_work_item).get(list_work_items),

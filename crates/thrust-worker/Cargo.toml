@@ -29,4 +29,5 @@ worker = { version = "0.8", features = ["http", "queue"] }
 axum = { version = "0.8", default-features = false, features = ["json", "query", "matched-path"] }
 tower-service = "0.3"
 http-body-util = "0.1"
+serde-wasm-bindgen = "0.6"
 console_error_panic_hook = "0.1"

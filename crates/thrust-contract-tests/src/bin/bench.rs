@@ -106,8 +106,28 @@ async fn main() {
         }
     }
 
+    // End-to-end delivery: create -> outbox -> queue -> consumer -> activity row visible to a reader.
+    let mut delivery = Vec::new();
+    let mut duser = f.extra_member(&t).await;
+    for i in 0..40usize {
+        if i % 20 == 0 {
+            duser = f.extra_member(&t).await;
+        }
+        let s = Instant::now();
+        let item = create_ok(&t, &duser, f.project_a, &format!("delivery-{i}")).await;
+        loop {
+            if !activity(&t, &f.guest_a, f.project_a, item.id).await.is_empty() {
+                break;
+            }
+            assert!(s.elapsed() < Duration::from_secs(20), "activity never appeared");
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        delivery.push(s.elapsed());
+    }
+
     println!("concurrency={conc}");
     report("POST create work item", creates);
     report("GET list work items", lists);
     report("GET activity", activities);
+    report("create -> activity visible", delivery);
 }

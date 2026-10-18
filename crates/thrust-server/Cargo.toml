@@ -10,6 +10,12 @@ publish.workspace = true
 name = "thrust-server"
 path = "src/main.rs"
 
+[features]
+# Pass-through to the memory adapter's control-run mutants (scripts/mutants.sh).
+mutant_ignore_tenant = ["thrust-adapters-memory/mutant_ignore_tenant"]
+mutant_dup_sequence = ["thrust-adapters-memory/mutant_dup_sequence"]
+mutant_no_activity_dedupe = ["thrust-adapters-memory/mutant_no_activity_dedupe"]
+
 [dependencies]
 thrust-contracts = { workspace = true }
 thrust-ports = { workspace = true }

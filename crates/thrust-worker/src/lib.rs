@@ -20,6 +20,7 @@ use worker::worker_sys::web_sys;
 use worker::*;
 
 mod durable;
+mod probes;
 #[cfg(feature = "memory")]
 mod memory;
 
@@ -117,6 +118,10 @@ async fn fetch(req: web_sys::Request, env: Env, ctx: Context) -> Result<web_sys:
     let path = Url::parse(&req.url()).map(|u| u.path().to_string()).unwrap_or_default();
     if path.starts_with("/_test/room/") {
         return durable::room_route(req, &env, &path).await;
+    }
+    // Binding probes: one real operation per binding the matrix claims (test routes + admin token).
+    if path.starts_with("/_test/bindings/") {
+        return probes::probe_route(req, &env, &path).await;
     }
 
     let app = build_app(&env, Arc::new(WaitUntilBackground(Arc::new(ctx))))?;

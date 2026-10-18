@@ -6,7 +6,7 @@
 # The local Postgres URL arrives through CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE
 # (environment), never through `localConnectionString` in this file.
 name = "thrust-worker"
-main = "build/worker/shim.mjs"
+main = "entry.mjs"
 # Newest date the local workerd in wrangler 4.123.0 accepts is 2026-08-18 (measured).
 compatibility_date = "2026-08-01"
 workers_dev = false
@@ -53,3 +53,31 @@ class_name = "RoomDo"
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["RateLimiterDo", "RoomDo"]
+
+# --- binding probes (spike 0001 coverage matrix) ---------------------------------------------
+# Rate Limiting binding (GA). 3 requests per 10 s so the probe can see both outcomes.
+[[ratelimits]]
+name = "RL"
+namespace_id = "1001"
+simple = { limit = 3, period = 10 }
+
+# Secrets Store. Local dev simulates the store; Stage 2 needs a real store id + secret.
+[[secrets_store_secrets]]
+binding = "SS"
+store_id = "00000000000000000000000000000000"
+secret_name = "probe"
+
+# Email Service send binding. `wrangler dev` simulates it (nothing is sent) unless remote = true.
+[[send_email]]
+name = "EMAIL"
+
+# Service binding to this same Worker (also what the Workflow shim calls back through).
+[[services]]
+binding = "SELF"
+service = "thrust-worker"
+
+# Workflows: the class is defined in the JS shim entry.mjs (workers-rs cannot define one).
+[[workflows]]
+name = "thrust-probe"
+binding = "WORKFLOW"
+class_name = "ThrustWorkflow"

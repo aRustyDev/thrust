@@ -268,6 +268,53 @@ async fn outbox_event_reaches_the_queue_consumer_exactly_once() {
     assert_eq!(r.status(), 404);
 }
 
+/// The test above never actually redelivers anything, so on its own it cannot tell an idempotent
+/// consumer from a consumer that happens to be called once. This one forces at-least-once
+/// behaviour: the SAME envelope is put on the queue twice, and a different one once.
+#[tokio::test]
+async fn redelivered_event_is_processed_once() {
+    let t = t();
+    let f = Fixture::seed(&t).await;
+    let item = create_ok(&t, &f.member_a, f.project_a, "redelivery").await;
+    eventually("original activity row", Duration::from_secs(15), || async {
+        (activity(&t, &f.guest_a, f.project_a, item.id).await.len() == 1).then_some(())
+    })
+    .await;
+
+    let envelope = |event_id: uuid::Uuid, verb: &str| {
+        json!({
+            "event_id": event_id,
+            "schema_version": 1,
+            "workspace_id": f.ws_a,
+            "event_type": format!("work_item.{verb}"),
+            "entity_type": "work_item",
+            "entity_id": item.id,
+            "actor_id": f.member_a.id,
+            "occurred_at": "2026-10-18T00:00:00Z",
+            "payload": { "project_id": f.project_a, "changed_fields": ["name"] },
+            "trace_id": null
+        })
+    };
+    let dup_id = uuid::Uuid::new_v4();
+    for _ in 0..2 {
+        let r = t.admin_post("/internal/inject-event", &envelope(dup_id, "updated")).await;
+        assert_eq!(r.status(), 202, "inject: {:?}", r.text().await);
+    }
+    // control: a DIFFERENT event id must still be processed (the dedupe is by event id, not "drop everything")
+    let r = t.admin_post("/internal/inject-event", &envelope(uuid::Uuid::new_v4(), "moved")).await;
+    assert_eq!(r.status(), 202);
+
+    eventually("both distinct injected events", Duration::from_secs(15), || async {
+        (activity(&t, &f.guest_a, f.project_a, item.id).await.len() >= 3).then_some(())
+    })
+    .await;
+    tokio::time::sleep(Duration::from_millis(2000)).await; // give a (wrong) duplicate time to show up
+    let acts = activity(&t, &f.guest_a, f.project_a, item.id).await;
+    let mut verbs: Vec<_> = acts.iter().map(|a| a.verb.clone()).collect();
+    verbs.sort();
+    assert_eq!(verbs, ["created", "moved", "updated"], "the duplicated event must produce ONE activity row");
+}
+
 #[tokio::test]
 async fn create_is_rate_limited_per_user() {
     let t = t();
@@ -405,6 +452,67 @@ async fn panic_is_contained_and_the_target_keeps_serving() {
             r.status()
         );
     }
+}
+
+/// Blast radius of a panic. 16 clients hammer an AUTHENTICATED list request (it awaits database /
+/// KV I/O, so requests are genuinely suspended mid-flight on Postgres-backed targets) while ONE
+/// request panics the handler; we count how many of the OTHER requests fail. Native (panic caught
+/// per request): none. Worker (panic=abort, whole isolate reset): suspended requests can fail,
+/// and on the in-isolate memory set all state is lost (401s afterwards).
+/// The numbers are printed as observations; the assertion is that the target recovers.
+#[tokio::test]
+async fn blast_radius_of_one_panic() {
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    use std::sync::Arc;
+
+    let t = Arc::new(t());
+    let f = Arc::new(Fixture::seed(&t).await);
+    let stop = Arc::new(AtomicBool::new(false));
+    let ok = Arc::new(AtomicUsize::new(0));
+    let bad = Arc::new(AtomicUsize::new(0));
+    let mut tasks = Vec::new();
+    for _ in 0..16 {
+        let (t, f, stop, ok, bad) = (t.clone(), f.clone(), stop.clone(), ok.clone(), bad.clone());
+        tasks.push(tokio::spawn(async move {
+            while !stop.load(Ordering::Relaxed) {
+                let r = t
+                    .http
+                    .get(t.url(&wi_path(f.project_a)))
+                    .bearer_auth(&f.member_a.token)
+                    .send()
+                    .await;
+                match r {
+                    Ok(r) if r.status() == 200 => ok.fetch_add(1, Ordering::Relaxed),
+                    _ => bad.fetch_add(1, Ordering::Relaxed),
+                };
+            }
+        }));
+    }
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    let _ = t.http.get(t.url("/_test/panic")).send().await;
+    tokio::time::sleep(Duration::from_millis(1500)).await;
+    stop.store(true, Ordering::Relaxed);
+    for h in tasks {
+        let _ = h.await;
+    }
+    eprintln!(
+        "PANIC-OBSERVATION: concurrent authenticated list requests around one panic: ok={} failed={}",
+        ok.load(Ordering::Relaxed),
+        bad.load(Ordering::Relaxed)
+    );
+    assert!(ok.load(Ordering::Relaxed) > 100, "the load generator did not actually run");
+    // control: the target answers afterwards
+    let mut served = false;
+    for _ in 0..10 {
+        if let Ok(r) = t.http.get(t.url("/healthz")).send().await {
+            if r.status() == 200 {
+                served = true;
+                break;
+            }
+        }
+        tokio::time::sleep(Duration::from_millis(300)).await;
+    }
+    assert!(served, "target did not recover");
 }
 
 /// Only run in the "sweeper" pass, against a target started with the outbox fast path OFF.

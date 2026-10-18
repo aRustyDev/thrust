@@ -139,17 +139,22 @@ async fn rollback_is_atomic_and_unique_violation_is_a_conflict() {
 async fn an_abandoned_transaction_does_not_poison_the_pool() {
     let env = env().await;
     let (ws, _o, p, _u) = seeded(&env).await;
-    for _ in 0..40 {
-        // more iterations than pool slots: if abandoned connections were recycled mid-transaction,
-        // later iterations would see a stale open transaction / held row lock and hang or fail.
+    // bounded: a pool poisoned by recycled in-transaction connections would otherwise hang the test
+    tokio::time::timeout(std::time::Duration::from_secs(30), async {
+        for _ in 0..40 {
+            // more iterations than pool slots: if abandoned connections were recycled mid-transaction,
+            // later iterations would see a stale open transaction / held row lock and hang or fail.
+            let mut tx = env.db.begin().await.unwrap();
+            tx.allocate(ws, p).await.unwrap();
+            drop(tx); // never committed
+        }
         let mut tx = env.db.begin().await.unwrap();
-        tx.allocate(ws, p).await.unwrap();
-        drop(tx); // never committed
-    }
-    let mut tx = env.db.begin().await.unwrap();
-    let a = tx.allocate(ws, p).await.unwrap();
-    assert_eq!(a.sequence_id, 1, "abandoned transactions must roll back");
-    tx.commit().await.unwrap();
+        let a = tx.allocate(ws, p).await.unwrap();
+        assert_eq!(a.sequence_id, 1, "abandoned transactions must roll back");
+        tx.commit().await.unwrap();
+    })
+    .await
+    .expect("abandoned transactions wedged the pool");
 }
 
 #[tokio::test]
