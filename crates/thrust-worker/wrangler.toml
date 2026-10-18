@@ -1,3 +1,10 @@
+# Cloudflare adapter set: Hyperdrive/Postgres, KV, R2, Queues (producer + consumer), Durable
+# Objects (SQLite), cron. Used by `wrangler dev` (local workerd) in Stage 1 and, with real ids,
+# by Stage 2 (see research/0004 "Stage 2 - ready to run").
+#
+# NO secrets in this file. Placeholders (all-zero ids) are local-dev only; Stage 2 replaces them.
+# The local Postgres URL arrives through CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE
+# (environment), never through `localConnectionString` in this file.
 name = "thrust-worker"
 main = "build/worker/shim.mjs"
 # Newest date the local workerd in wrangler 4.123.0 accepts is 2026-08-18 (measured).
@@ -5,6 +12,44 @@ compatibility_date = "2026-08-01"
 workers_dev = false
 
 # The build is a plain command so wrangler never needs to know about Rust. scripts/rs puts the
-# rustup toolchain (with the wasm32 std) in front of Homebrew's rustc.
+# rustup toolchain (with the wasm32 std) in front of Homebrew's rustc. `--no-default-features`
+# drops the in-memory adapter set: the bundle contains the Cloudflare set only (ADR-0007).
 [build]
-command = "../../scripts/rs worker-build --release"
+command = "../../scripts/rs worker-build --release . --no-default-features"
+
+[triggers]
+crons = ["* * * * *"]   # outbox sweeper (ADR-0046 / ADR-0072)
+
+[[hyperdrive]]
+binding = "HYPERDRIVE"
+id = "00000000000000000000000000000000"
+
+[[kv_namespaces]]
+binding = "SESSIONS"
+id = "00000000000000000000000000000000"
+
+[[r2_buckets]]
+binding = "BLOBS"
+bucket_name = "thrust-spike-blobs"
+
+[[queues.producers]]
+binding = "EVENTS"
+queue = "thrust-spike-events"
+
+[[queues.consumers]]
+queue = "thrust-spike-events"
+max_batch_size = 10
+max_batch_timeout = 1
+max_retries = 3
+
+[[durable_objects.bindings]]
+name = "RATE_LIMITER"
+class_name = "RateLimiterDo"
+
+[[durable_objects.bindings]]
+name = "ROOM"
+class_name = "RoomDo"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["RateLimiterDo", "RoomDo"]

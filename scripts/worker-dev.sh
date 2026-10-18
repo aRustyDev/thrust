@@ -28,13 +28,19 @@ else
   HD=""
 fi
 
+case "${THRUST_ADAPTERS:-memory}" in
+  memory) CONFIG=wrangler.memory.toml ;;
+  *) CONFIG=wrangler.toml ;;
+esac
+
 exec env -i \
   HOME="$HOME" PATH="$PATH" TMPDIR="${TMPDIR:-/tmp}" \
   CLOUDFLARE_INCLUDE_PROCESS_ENV=true WRANGLER_SEND_METRICS=false NO_COLOR=1 \
   THRUST_ADMIN_TOKEN="${THRUST_ADMIN_TOKEN:-}" \
   CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE="$HD" \
-  wrangler dev --local --ip 127.0.0.1 --port "$THRUST_PORT" \
+  wrangler dev -c "$CONFIG" --local --ip 127.0.0.1 --port "$THRUST_PORT" \
     --persist-to "$STATE" --test-scheduled --show-interactive-dev-session=false \
+    --log-level "${THRUST_WRANGLER_LOG_LEVEL:-log}" \
     --var "THRUST_TEST_ROUTES:1" \
     --var "THRUST_ADAPTERS:${THRUST_ADAPTERS:-memory}" \
     --var "THRUST_OUTBOX_FASTPATH:${THRUST_OUTBOX_FASTPATH:-on}" \

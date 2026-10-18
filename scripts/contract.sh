@@ -2,10 +2,12 @@
 # Run the ONE contract suite against one target.
 #
 #   scripts/contract.sh <target> [pass]
-#     target: native-memory | native-pg | worker-memory | worker-pg
+#     target: native-memory | native-pg | worker-memory | worker-cf
 #     pass:   main (default)   normal config, outbox fast path ON
 #             sweeper          fast path OFF; asserts the cron sweeper does the delivery
 #             panic            alone against a fresh target (a Worker panic resets the isolate)
+#             worker           (worker-cf only) Durable Object WebSocket hibernation + SQLite
+#             cron             (worker-* only) fast path OFF; the Worker `scheduled` handler sweeps
 #
 # Exit status is the status of `cargo test` itself (no pipes, no trailing echo). The suite's
 # pass count is also checked against the expected number so that a filter that selects zero
@@ -18,7 +20,7 @@
 # by name: other sessions on this machine run their own wrangler/workerd.
 set -u
 
-TARGET="${1:?usage: contract.sh <native-memory|native-pg|worker-memory|worker-pg> [main|sweeper]}"
+TARGET="${1:?usage: contract.sh <native-memory|native-pg|worker-memory|worker-cf> [main|sweeper|panic]}"
 PASS="${2:-main}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 LOGDIR="${THRUST_LOGDIR:-$ROOT/target/contract-logs}"
@@ -28,6 +30,8 @@ RATE_LIMIT=30
 EXPECT_MAIN=14
 EXPECT_SWEEPER=1
 EXPECT_PANIC=1
+EXPECT_WORKER=1
+EXPECT_CRON=1
 
 # A free port, chosen at random: fixed ports collide with OrbStack-published containers and
 # with other sessions' wrangler instances (measured: 18080 and 8787 were both taken).
@@ -50,11 +54,10 @@ export THRUST_ADMIN_TOKEN
 export THRUST_BASE_URL="http://127.0.0.1:$PORT"
 export THRUST_EXPECT_CREATE_LIMIT="$RATE_LIMIT"
 
-if [ "$PASS" = "sweeper" ]; then
-  FASTPATH=off
-else
-  FASTPATH=on
-fi
+case "$PASS" in
+  sweeper|cron) FASTPATH=off ;;
+  *) FASTPATH=on ;;
+esac
 
 SERVER_PID=""
 PG_CONTAINER=""
@@ -78,18 +81,17 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
+# native-pg  = self-hosted set: Postgres (deadpool) + in-process stand-ins for queue/KV/blob/limiter
+# worker-cf  = Cloudflare set: Postgres via Hyperdrive, Queues, KV, R2, Durable Objects, cron
 case "$TARGET" in
-  native-*) KIND=native ;;
-  worker-*) KIND=worker ;;
-  *) echo "unknown target $TARGET" >&2; exit 2 ;;
-esac
-case "$TARGET" in
-  *-pg) ADAPTERS=postgres ;;
-  *-memory) ADAPTERS=memory ;;
+  native-memory) KIND=native; ADAPTERS=memory ;;
+  native-pg) KIND=native; ADAPTERS=postgres ;;
+  worker-memory) KIND=worker; ADAPTERS=memory ;;
+  worker-cf) KIND=worker; ADAPTERS=cloudflare ;;
   *) echo "unknown target $TARGET" >&2; exit 2 ;;
 esac
 
-if [ "$ADAPTERS" = "postgres" ]; then
+if [ "$ADAPTERS" = "postgres" ] || [ "$ADAPTERS" = "cloudflare" ]; then
   PG_PORT="${THRUST_PG_PORT:-$(pick_port)}"
   PG_PASSWORD="$(openssl rand -hex 12)"
   PG_CONTAINER="thrust-spike-pg-$$"
@@ -145,6 +147,19 @@ until curl -fsS "$THRUST_BASE_URL/healthz" >/dev/null 2>&1; do
 done
 echo "[$TARGET/$PASS] target healthy at $THRUST_BASE_URL (adapters=$ADAPTERS fastpath=$FASTPATH)"
 
+# Vacuity guard: ask the target which adapter set it is REALLY running and compare with what this
+# run claims to be testing. (A mislabelled run that exercised the wrong set would otherwise pass.)
+INFO="$(curl -fsS -H "x-admin-token: $THRUST_ADMIN_TOKEN" "$THRUST_BASE_URL/_info" 2>/dev/null)"
+echo "[$TARGET/$PASS] /_info: $INFO"
+case "$INFO" in
+  *"\"target\":\"$KIND\""*) ;;
+  *) echo "[$TARGET/$PASS] VACUITY GUARD: target kind is not '$KIND'" >&2; exit 5 ;;
+esac
+case "$INFO" in
+  *"\"adapters\":\"$ADAPTERS\""*) ;;
+  *) echo "[$TARGET/$PASS] VACUITY GUARD: adapter set is not '$ADAPTERS'" >&2; exit 5 ;;
+esac
+
 if [ "$TARGET" = "worker-memory" ]; then
   # state lives inside the isolate; a panic (abort) resets it
   THRUST_STATE_SURVIVES_PANIC=0
@@ -164,6 +179,16 @@ case "$PASS" in
     TEST_STATUS=$?
     EXPECT=$EXPECT_PANIC
     ;;
+  worker)
+    "$ROOT/scripts/rs" cargo test --manifest-path "$ROOT/Cargo.toml" -p thrust-contract-tests --test worker_only -- worker_room_ --test-threads=1 --nocapture >"$LOG.test.log" 2>&1
+    TEST_STATUS=$?
+    EXPECT=$EXPECT_WORKER
+    ;;
+  cron)
+    "$ROOT/scripts/rs" cargo test --manifest-path "$ROOT/Cargo.toml" -p thrust-contract-tests --test worker_only -- worker_cron_ --test-threads=1 --nocapture >"$LOG.test.log" 2>&1
+    TEST_STATUS=$?
+    EXPECT=$EXPECT_CRON
+    ;;
   *)
     "$ROOT/scripts/rs" cargo test --manifest-path "$ROOT/Cargo.toml" -p thrust-contract-tests --test contract -- --skip sweeper_ --skip panic_ >"$LOG.test.log" 2>&1
     TEST_STATUS=$?
@@ -171,7 +196,7 @@ case "$PASS" in
     ;;
 esac
 
-grep -E "PANIC-OBSERVATION" "$LOG.test.log" || true
+grep -E "PANIC-OBSERVATION|HIBERNATION-OBSERVATION" "$LOG.test.log" || true
 
 grep -E "^test |^test result|panicked|FAILED" "$LOG.test.log"
 PASSED="$(sed -n 's/^test result: [a-zA-Z]*\. \([0-9]*\) passed.*/\1/p' "$LOG.test.log" | tail -1)"
