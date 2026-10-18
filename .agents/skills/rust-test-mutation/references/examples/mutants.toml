@@ -1,0 +1,32 @@
+# TEMPLATE (rust-test-mutation): copy to .cargo/mutants.toml, replace every <placeholder>; test_tool, additional_cargo_test_args, profile and exclude_globs re-run with cargo-mutants 27.1.0 [re-run], the commented keys are [zip] or [derived].
+
+# Run each mutant's tests with nextest, under the `mutants` nextest profile
+# (fail fast, no retries, e2e and oracle tests excluded by the inherited default filter).
+test_tool = "nextest"
+additional_cargo_test_args = ["--profile", "mutants"]
+
+# Cargo build profile [profile.mutants] from the workspace root Cargo.toml (no debuginfo:
+# faster incremental builds per mutant). Its template is profile-mutants.toml.txt.
+profile = "mutants"
+
+# Not product code, or exercised only by opt-in suites. Adjust to this workspace's layout.
+# The e2e crate and fuzz_harness.rs needed excluding; test_support.rs and tests/common/ are
+# belt-and-braces (code under #[cfg(test)] is not mutated). Prove it: list with and without this file.
+exclude_globs = [
+  "<e2e-crate-dir>/**",
+  "**/fuzz_harness.rs",
+  "**/test_support.rs",
+  "**/tests/common/**",
+]
+
+# Uncomment if the workspace denies warnings: mutants that delete code trip unused-* lints.
+# cap_lints = true
+
+# Also generate `Err(..)` mutants for Result-returning functions (adjust to your error type):
+# error_values = ["<crate>::<ErrorType>::Mutated"]
+
+# Skip a whole class of mutants by name (regexes match the name as `cargo mutants --list` prints it):
+# exclude_re = ["impl Debug"]
+
+# Run every crate's tests against each mutant: thorough, much slower. Default is the mutated package only.
+# test_workspace = true

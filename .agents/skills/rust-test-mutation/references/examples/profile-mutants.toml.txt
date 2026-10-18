@@ -1,0 +1,4 @@
+# TEMPLATE (rust-test-mutation): add to the workspace root Cargo.toml; cargo-mutants builds each mutant with it [zip].
+[profile.mutants]
+inherits = "test"
+debug = "none"
