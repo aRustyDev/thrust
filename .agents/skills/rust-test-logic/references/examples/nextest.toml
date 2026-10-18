@@ -1,0 +1,78 @@
+# TEMPLATE (rust-test-logic), adapted from rust-testing-plan.zip, 2026-10-18: copy to .config/nextest.toml; substitute the browser-test package name in each package(e2e) filter. "Validated" below is the zip author's claim [zip].
+# Test-runner configuration (cargo-nextest). Validated with cargo-nextest 0.9.148.
+#
+# Profiles:  default (fast hermetic loop) | ci | deep | oracle | e2e | mutants
+# Test-name prefixes route tests:  prop_  model_  oracle_  (parity_ and fuzz_replay_ run by default)
+# Filters use single-quoted TOML strings so `\b` reaches the regex engine unchanged.
+nextest-version = { required = "0.9.131", recommended = "0.9.148" }
+
+[test-groups]
+browser = { max-threads = 2 }    # each E2E test drives a real browser
+ts-oracle = { max-threads = 2 }  # each oracle test runs a Node.js process
+
+# --- default: the fast, hermetic inner loop ----------------------------------------
+[profile.default]
+default-filter = 'not (package(e2e) | test(/\boracle_/))'
+retries = 0
+slow-timeout = { period = "30s", terminate-after = 4 }
+
+# Randomized tests: a retry can turn a real counterexample green. retries = 0 and flaky-result = "fail" are
+# DEFAULTS, not guards: --flaky-result pass (or NEXTEST_FLAKY_RESULT=pass) overrides the latter. Never pass
+# --retries, --flaky-result, NEXTEST_RETRIES or NEXTEST_FLAKY_RESULT.
+[[profile.default.overrides]]
+filter = 'test(/\b(prop|model)_/)'
+retries = 0
+flaky-result = "fail"
+slow-timeout = { period = "60s", terminate-after = 5 }
+
+[[profile.default.overrides]]
+filter = 'test(/\boracle_/)'
+test-group = "ts-oracle"
+retries = 0
+flaky-result = "fail"
+slow-timeout = { period = "60s", terminate-after = 5 }
+leak-timeout = "1s"
+
+# DISABLED in this template (deliberate change from the zip, whose override retried every test in package(e2e),
+# including the hermetic harness test). Enable it when browser tests exist, scoped to browser tests only.
+# The only place retries are allowed. Retried passes are reported as FLAKY: fix them.
+# [[profile.default.overrides]]
+# filter = "package(e2e)"
+# test-group = "browser"
+# retries = { backoff = "fixed", count = 2, delay = "1s" }
+# slow-timeout = { period = "60s", terminate-after = 3 }
+
+# --- ci: same tests as default, complete report ---------------------------------------
+[profile.ci]
+fail-fast = false
+failure-output = "immediate-final"
+
+[profile.ci.junit]
+path = "junit.xml"   # written to target/nextest/ci/junit.xml
+
+# --- deep: every randomized test, incl. oracle. Run with PROPTEST_CASES=4096 or more. ----
+[profile.deep]
+default-filter = 'test(/\b(prop|model|oracle)_/)'
+fail-fast = false
+
+[[profile.deep.overrides]]
+filter = 'test(/\b(prop|model|oracle)_/)'
+slow-timeout = { period = "300s", terminate-after = 6 }
+
+# --- opt-in suites that need external resources -----------------------------------------
+[profile.oracle]   # needs Node.js + the built legacy TypeScript package
+default-filter = 'test(/\boracle_/)'
+fail-fast = false
+
+[profile.e2e]      # needs the built web UI (E2E_WEB_DIST) + Playwright browsers
+default-filter = "package(e2e)"
+fail-fast = false
+
+[profile.e2e.junit]
+path = "junit.xml"
+
+# --- mutants: selected by cargo-mutants through .cargo/mutants.toml ---------------------
+# One failing test is enough to prove a mutant was caught: stop and kill stragglers.
+[profile.mutants]
+fail-fast = { max-fail = 1, terminate = "immediate" }
+retries = 0
