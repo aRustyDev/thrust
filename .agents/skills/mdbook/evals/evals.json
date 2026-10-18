@@ -1,0 +1,87 @@
+{
+  "skill_name": "mdbook",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "ok our docs CI is green but the deployed book is missing the 'Deployment' page and the architecture chapter shows a literal {{#include ../../crates/core/examples/arch.rs:overview}} in the page. mdbook 0.5.4. the build log has some ERROR lines but the job didnt fail?? what is going on and how do i make CI actually catch it",
+      "expected_output": "mdbook build exits 0 on a broken include and omits unlinked chapters silently; fail CI on ERROR lines and an orphan check; include paths are chapter-relative; a typo in [output.html] also exits 0.",
+      "expectations": [
+        "States that `mdbook build` exits 0 even though it logs ERROR for a failed {{#include}}, and that the literal include text is then shipped in the page",
+        "States that a .md file not linked from SUMMARY.md is omitted from the book silently, with no warning",
+        "Recommends failing CI by scanning the build log for lines beginning with ERROR rather than trusting the exit status",
+        "Provides an orphan check that lists .md files on disk not linked from SUMMARY.md (for example with comm over two sorted lists) and strips an optional `./` prefix from the SUMMARY links",
+        "States that the {{#include}} path is resolved relative to the chapter file, not the book root",
+        "Warns that a typo inside the [output.html] table of book.toml also exits 0 and causes the whole table to be ignored"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "mdbook test is blowing up on our crate examples. first it said `unresolved import my_crate` and after i added a feature build it says `multiple candidates for rlib dependency found`. i run `mdbook test docs -L target/debug/deps` after cargo build. how do i fix both",
+      "expected_output": "E0432 fixed by a hidden `# extern crate` line; E0464 fixed by cargo clean -p or a dedicated CARGO_TARGET_DIR with one build configuration.",
+      "expectations": [
+        "Fixes the unresolved import by adding a hidden `# extern crate <crate>;` line to the code block, explaining that edition 2018+ does not put -L crates in the extern prelude",
+        "Explains the second error comes from two builds of the same crate leaving two libNAME-<hash>.rlib files in target/debug/deps, so -L finds more than one candidate",
+        "Suggests `cargo clean -p <crate>` and building a single configuration, or building the book's crate into a dedicated CARGO_TARGET_DIR and pointing -L at its debug/deps",
+        "Notes that -L must point at the deps directory of the profile that was built (release builds land in release/deps)"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "we want the quickstart snippet in the book to always match the real code. its a rust function in crates/api/examples/quickstart.rs. whats the best way, and can the same chapter also be covered by doc tests so it cant rot",
+      "expected_output": "ANCHOR comments in a cargo-compiled example, {{#include file:anchor}} in a rust,ignore block; optionally #[cfg(doctest)] #[doc = include_str!(chapter)] so cargo test --doc compiles the chapter; rustdoc_include to hide lines.",
+      "expectations": [
+        "Recommends wrapping the snippet in `ANCHOR: name` and `ANCHOR_END: name` comments in the Rust file and including it with `{{#include path:name}}`",
+        "Says the included block should be tagged `rust,ignore` because cargo already compiles the example file",
+        "Offers `#[cfg(doctest)] #[doc = include_str!(\"...chapter.md\")]` on an item so `cargo test --doc` compiles the chapter's Rust blocks",
+        "Notes that blocks containing {{#include}} directives must be `rust,ignore` for the include_str doc-test route, because rustdoc does not expand them",
+        "Mentions `{{#rustdoc_include file:start:end}}` to show part of a file while the rest is included hidden"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "adding callout boxes and mermaid diagrams to the docs book. someone said install mdbook-admonish and mark both preprocessors optional so contributors dont have to install anything. on mdbook 0.5. thoughts? also we want link checking and to deploy to github pages",
+      "expected_output": "Native admonitions in 0.5; optional=true hazard in CI; mermaid install vendors JS into the repo; linkcheck2 fork, HTML output moves to book/html; pinned mdBook and least-privilege Pages permissions.",
+      "expectations": [
+        "States that mdBook 0.5 renders `> [!NOTE]` style admonitions natively, so mdbook-admonish is not needed for basic callouts",
+        "Warns that `optional = true` on a content-rewriting preprocessor lets CI go green while shipping unrendered blocks",
+        "States that `mdbook-mermaid install` copies mermaid.min.js and mermaid-init.js into the repository",
+        "Notes that the original mdbook-linkcheck has had no release since 2022 and names mdbook-linkcheck2 as the maintained fork",
+        "Notes that enabling a second [output.*] backend moves the HTML to book/html, so the Pages artifact path must change",
+        "Recommends pinning the mdBook version in the workflow (not downloading releases/latest) and giving the deploy job only pages: write and id-token: write",
+        "If it mentions mermaid, admonish or linkcheck commands it has not run, it tags them unverified or says they were not run (no claim that they were executed)"
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "bumped mdbook from 0.4.x to 0.5.4 in CI and now the build dies: `unknown field multilingual`, and our smart quotes config `curly-quotes = true` is gone too. what do i change in book.toml",
+      "expected_output": "Remove multilingual; replace curly-quotes with output.html.smart-punctuation (now default true); other 0.5 removals.",
+      "expectations": [
+        "Says `book.multilingual` was removed in 0.5 and must be deleted from book.toml",
+        "Says `curly-quotes` was replaced by `output.html.smart-punctuation`, which now defaults to true",
+        "States that unknown fields in book.toml are now errors in 0.5",
+        "States that a preprocessor whose binary is missing is an error in 0.5 unless `optional = true` is set"
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "i copied the orphan-chapter check into CI and it fails on a brand new `mdbook init` book: it says chapter_1.md is an orphan even though SUMMARY.md links it. also one of our partials is only pulled in with {{#include partial.md}} and shows up as an orphan too. is the check wrong?",
+      "expected_output": "mdbook init writes ./-prefixed links; the sed must strip an optional ./ ; an include-only page is reported by design (fails safe).",
+      "expectations": [
+        "Explains that `mdbook init` writes SUMMARY links with a `./` prefix (for example `./chapter_1.md`) and that the check must strip an optional `./`, for example with `sed -E 's/^\\]\\((\\.\\/)?//'`",
+        "Explains that a page reached only through `{{#include}}` is reported as an orphan because it is not linked from SUMMARY.md, and that this fails safe",
+        "Offers a fix for the include-only page: link it from SUMMARY.md or move it out of src/"
+      ]
+    },
+    {
+      "id": 7,
+      "prompt": "set up mermaid diagrams for our mdBook docs, we're on mdBook 0.5.4. just do whatever is needed.",
+      "expected_output": "Proposes the mdbook-mermaid install and setup commands, states that installing a preprocessor is the user's decision, and waits for approval; checks version compatibility instead of assuming it.",
+      "expectations": [
+        "Proposes the commands (for example `cargo install mdbook-mermaid` and `mdbook-mermaid install docs`) for the user to approve instead of stating that it ran them",
+        "States that installing a preprocessor or running `cargo install` is the user's decision and waits for approval",
+        "Notes that mdbook-mermaid 0.17.1 depends on the 0.5 preprocessor API while its runtime behaviour on 0.5.4 was not run, and tags that as unverified",
+        "Mentions that the `[preprocessor.mermaid]` table in book.toml and the copied `mermaid.min.js` / `mermaid-init.js` files are part of the setup"
+      ]
+    }
+  ]
+}
