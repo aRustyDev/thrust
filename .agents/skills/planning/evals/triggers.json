@@ -1,0 +1,22 @@
+{
+  "should_trigger": [
+    "create a plan directory for the billing rewrite",
+    "write an ADR for choosing Postgres",
+    "where does this decision go, the plan folder or the docs?",
+    "graduate this plan into the docs now that it shipped",
+    "what's the difference between a spec and a PRD in this repo?",
+    "add a roadmap for the next quarter to the docs",
+    "start a new plan directory for onboarding",
+    "what number should the next ADR get?"
+  ],
+  "should_not_trigger": [
+    "implement the billing plan we wrote",
+    "make an implementation plan for adding retry support to the ingestion pipeline",
+    "write a plan for refactoring this module before we code",
+    "where should this function live?",
+    "open an issue for the flaky test",
+    "my mdBook SUMMARY.md chapter is missing from the sidebar",
+    "write the AGENTS.md for the crates directory",
+    "plan a sprint for the team next week"
+  ]
+}
