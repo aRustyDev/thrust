@@ -1,0 +1,79 @@
+$ grep -n item crates/ui/src/lib.rs
+16:        1 => "1 items left".to_string(),
+17:        n => format!("{n} items left"),
+72:    fn entry_list_renders_items_and_remaining_count() {
+79:        assert!(html.contains("1 item left"), "{html}");
+87:            p { "data-testid": "remaining", "0 items left" }
+100:        assert_eq!(open_label(&[]), "0 items left");
+101:        assert_eq!(open_label(&[entry(1, "a", false)]), "1 item left");
+[g1-grep] exit=0
+$ cargo nextest run -p ui --no-fail-fast
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.27s
+────────────
+ Nextest run ID d389e6b5-be77-4571-9efb-808a069d87c8 with nextest profile: default
+    Starting 4 tests across 1 binary
+        FAIL [   0.011s] (1/4) ui tests::open_label_pluralizes
+  stdout ───
+
+    running 1 test
+    test tests::open_label_pluralizes ... FAILED
+
+    failures:
+
+    failures:
+        tests::open_label_pluralizes
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'tests::open_label_pluralizes' (103999585) panicked at crates/ui/src/lib.rs:101:9:
+    assertion failed: `(left == right)`
+
+    Diff < left / right > :
+    <1 items left
+    >1 item left
+
+
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        PASS [   0.011s] (2/4) ui tests::entry_list_matches_reference_markup
+        PASS [   0.011s] (3/4) ui tests::counter_effect_clamps_negative_start
+        FAIL [   0.011s] (4/4) ui tests::entry_list_renders_items_and_remaining_count
+  stdout ───
+
+    running 1 test
+    test tests::entry_list_renders_items_and_remaining_count ... FAILED
+
+    failures:
+
+    failures:
+        tests::entry_list_renders_items_and_remaining_count
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'tests::entry_list_renders_items_and_remaining_count' (103999584) panicked at crates/ui/src/lib.rs:79:9:
+    <ul class="entries"><li data-testid="entry-1" class="open">alpha</li><li data-testid="entry-2" class="done">beta</li></ul><p data-testid="remaining">1 items left</p>
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+────────────
+     Summary [   0.011s] 4 tests run: 2 passed, 2 failed, 0 skipped
+        FAIL [   0.011s] (1/4) ui tests::open_label_pluralizes
+        FAIL [   0.011s] (4/4) ui tests::entry_list_renders_items_and_remaining_count
+error: test run failed
+[g2-ui-prod-mutated] exit=100
+$ cargo nextest run -p ui
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.38s
+────────────
+ Nextest run ID 74f41e58-d222-4aa4-8df0-5d093bc5b5f4 with nextest profile: default
+    Starting 4 tests across 1 binary
+        PASS [   0.008s] (1/4) ui tests::remaining_label_pluralizes
+        PASS [   0.008s] (2/4) ui tests::todo_list_renders_items_and_remaining_count
+        PASS [   0.008s] (3/4) ui tests::todo_list_matches_reference_markup
+        PASS [   0.008s] (4/4) ui tests::counter_effect_clamps_negative_start
+────────────
+     Summary [   0.008s] 4 tests run: 4 passed, 0 skipped
+[g3-restored] exit=0
+finished

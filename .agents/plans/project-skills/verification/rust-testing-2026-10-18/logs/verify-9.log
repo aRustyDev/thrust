@@ -1,0 +1,195 @@
+##### T1 JS vs Rust numeric claims
+$ node $SCRATCH/roundtrip.mjs
+round -2.5 js=-2
+round -1.5 js=-1
+round -0.5 js=0
+round -0.4 js=0
+round 0.4 js=0
+round 0.5 js=1
+round 1.5 js=2
+round 2.5 js=3
+round 2.4 js=2
+round 2.6 js=3
+round -2.6 js=-3
+fmt 3 0.13 1 2 0.38
+fmt1e21 1e+21
+utf8len n/a utf16 2 codepoints 1
+sort [1,10,9]
+json {"1":1,"2":1,"b":1,"a":1} nan=null negzero=0
+2^53+1 9007199254740992 (2**31)|0=-2147483648
+date 2024-01-01T00:00:00.000Z
+[t1-node] exit=0
+$ rustc -O -o $SCRATCH/roundtrip-bin $SCRATCH/roundtrip.rs
+[t1-rustc] exit=0
+$ $SCRATCH/roundtrip-bin
+round -2.5 std=-3 js_port=-2
+round -1.5 std=-2 js_port=-1
+round -0.5 std=-1 js_port=-0
+round -0.4 std=-0 js_port=-0
+round 0.4 std=0 js_port=0
+round 0.5 std=1 js_port=1
+round 1.5 std=2 js_port=2
+round 2.5 std=3 js_port=3
+round 2.4 std=2 js_port=2
+round 2.6 std=3 js_port=3
+round -2.6 std=-3 js_port=-3
+fmt 2 0.12 0 2 0.38
+fmt1e21 1000000000000000000000
+utf8len 4 chars 1 utf16 2
+[t1-rust] exit=0
+##### T2 does the CLI override the per-test flaky-result = fail? (prop_ probe fails once then passes)
+$ sh -c cargo nextest run --help | grep -i -B1 -A6 flaky
+
+      --flaky-result <RESULT>
+          Whether to treat flaky tests as passing or failing [default: from profile].
+          
+          "pass" treats tests that pass on retry as passing; "fail" treats them as failing.
+
+          Possible values:
+          - pass: Treat flaky tests as passing
+          - fail: Treat flaky tests as failing
+          
+          [env: NEXTEST_FLAKY_RESULT=]
+
+      --fail-fast
+          Stop running tests after the first failure
+          
+          [aliases: --ff]
+
+--
+          [env: NEXTEST_FINAL_STATUS_LEVEL=]
+          [possible values: none, fail, flaky, slow, skip, pass, all]
+
+      --no-output-indent
+          Do not indent captured test output.
+          
+          By default, test output produced by --failure-output and --success-output is indented for
+          visual clarity. This flag disables that behavior.
+[t2-help] exit=0
+-- baseline: --retries 2 only (expect FAIL, the zip's claim)
+$ env ZZ_MARKER_DIR=$TMPDIR/tmp.X cargo nextest run -p core-lib --test zz_flaky --retries 2 -E test(prop_flaky_probe)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.13s
+────────────
+ Nextest run ID baa6cd05-014f-46d2-a981-c468f8c77d0c with nextest profile: default
+    Starting 1 test across 1 binary (1 test skipped)
+  TRY 1 FAIL [   0.008s] (───) core-lib::zz_flaky prop_flaky_probe
+  stdout ───
+
+    running 1 test
+    test prop_flaky_probe ... FAILED
+
+    failures:
+
+    failures:
+        prop_flaky_probe
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'prop_flaky_probe' (104014137) panicked at crates/core/tests/zz_flaky.rs:17:5:
+    first attempt fails on purpose
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+  TRY 2 PASS [   0.006s] (1/1) core-lib::zz_flaky prop_flaky_probe
+           - test configured to fail if flaky
+  Cancelling due to test failure: 
+────────────
+     Summary [   0.016s] 1 test run: 0 passed, 1 failed, 1 skipped
+ FLKY-FL 2/3 [   0.006s] (1/1) core-lib::zz_flaky prop_flaky_probe
+error: test run failed
+[t2a-retries] exit=100
+-- --retries 2 --flaky-result pass
+$ env ZZ_MARKER_DIR=$TMPDIR/tmp.X cargo nextest run -p core-lib --test zz_flaky --retries 2 --flaky-result pass -E test(prop_flaky_probe)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.04s
+────────────
+ Nextest run ID c9dd508c-f5a9-463b-8a3f-8a6362fb2539 with nextest profile: default
+    Starting 1 test across 1 binary (1 test skipped)
+  TRY 1 FAIL [   0.006s] (───) core-lib::zz_flaky prop_flaky_probe
+  stdout ───
+
+    running 1 test
+    test prop_flaky_probe ... FAILED
+
+    failures:
+
+    failures:
+        prop_flaky_probe
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'prop_flaky_probe' (104014213) panicked at crates/core/tests/zz_flaky.rs:17:5:
+    first attempt fails on purpose
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+  TRY 2 PASS [   0.005s] (1/1) core-lib::zz_flaky prop_flaky_probe
+────────────
+     Summary [   0.013s] 1 test run: 1 passed (1 flaky), 1 skipped
+   FLAKY 2/3 [   0.005s] (1/1) core-lib::zz_flaky prop_flaky_probe
+[t2b-cli-pass] exit=0
+-- env NEXTEST_RETRIES=2 NEXTEST_FLAKY_RESULT=pass
+$ env ZZ_MARKER_DIR=$TMPDIR/tmp.X NEXTEST_RETRIES=2 NEXTEST_FLAKY_RESULT=pass cargo nextest run -p core-lib --test zz_flaky -E test(prop_flaky_probe)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.04s
+────────────
+ Nextest run ID 8b3c5ad7-bb68-4d9e-bf97-dcc01dc772bd with nextest profile: default
+    Starting 1 test across 1 binary (1 test skipped)
+  TRY 1 FAIL [   0.006s] (───) core-lib::zz_flaky prop_flaky_probe
+  stdout ───
+
+    running 1 test
+    test prop_flaky_probe ... FAILED
+
+    failures:
+
+    failures:
+        prop_flaky_probe
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'prop_flaky_probe' (104014291) panicked at crates/core/tests/zz_flaky.rs:17:5:
+    first attempt fails on purpose
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+  TRY 2 PASS [   0.005s] (1/1) core-lib::zz_flaky prop_flaky_probe
+────────────
+     Summary [   0.013s] 1 test run: 1 passed (1 flaky), 1 skipped
+   FLAKY 2/3 [   0.005s] (1/1) core-lib::zz_flaky prop_flaky_probe
+[t2c-env-pass] exit=0
+-- plain test with --retries 2 --flaky-result fail (CLI the other way)
+$ env ZZ_MARKER_DIR=$TMPDIR/tmp.X cargo nextest run -p core-lib --test zz_flaky --retries 2 --flaky-result fail -E test(plain_flaky_probe)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.04s
+────────────
+ Nextest run ID a6cc76cb-20d9-4411-acef-aa59dc26bc87 with nextest profile: default
+    Starting 1 test across 1 binary (1 test skipped)
+  TRY 1 FAIL [   0.006s] (───) core-lib::zz_flaky plain_flaky_probe
+  stdout ───
+
+    running 1 test
+    test plain_flaky_probe ... FAILED
+
+    failures:
+
+    failures:
+        plain_flaky_probe
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'plain_flaky_probe' (104014368) panicked at crates/core/tests/zz_flaky.rs:22:5:
+    first attempt fails on purpose
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+  TRY 2 PASS [   0.005s] (1/1) core-lib::zz_flaky plain_flaky_probe
+           - test configured to fail if flaky
+  Cancelling due to test failure: 
+────────────
+     Summary [   0.013s] 1 test run: 0 passed, 1 failed, 1 skipped
+ FLKY-FL 2/3 [   0.005s] (1/1) core-lib::zz_flaky plain_flaky_probe
+error: test run failed
+[t2d-plain-fail] exit=100
+finished
