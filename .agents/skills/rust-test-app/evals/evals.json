@@ -1,0 +1,166 @@
+{
+  "skill_name": "rust-test-app",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "just added GET /api/items/{id} and POST /api/items to our axum router. gonna write tests that spawn the server on port 3000 and hit it with reqwest. fine? also rustc says no method named `oneshot` found for struct `Router` when i tried the other way, what do i import",
+      "expected_output": "Router-level tests with oneshot and no socket; fixed ports rejected; the ServiceExt import (the `use` is what E0599 needs); router(state) with injected state; JSON compared as Value; a rejected neighbour case.",
+      "expectations": [
+        "Says a handler test does not need a socket and should call the router in-process with tower's `oneshot` on the `Router`, building the request with `Request::builder()` and `Body`",
+        "Says a fixed port such as 3000 is wrong because tests run in parallel processes under nextest, and that a real socket (bound to `127.0.0.1:0`) is only for tests where something must connect",
+        "Fixes the compile error with `use tower::ServiceExt;` (adding a direct `tower` dev-dependency if the crate has none) and does not claim a missing `util` feature is the cause",
+        "Recommends exposing `pub fn router(state: AppState) -> Router` so the test injects state such as an in-memory store or fakes",
+        "Says to compare response JSON as `serde_json::Value` rather than raw strings, unless the exact bytes are the contract",
+        "Includes a rejected case next to the accepted one (for example a missing id returning 404, as an rstest case table) so the test can fail"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "writing a test for a dioxus 0.7 component with a use_effect. Counter{start:-5}, the effect sets the signal to 0 but my dioxus_ssr::render output still shows -5. i did VirtualDom::new_with_props, rebuild_in_place, then render. no browser please",
+      "expected_output": "Explains the missing flush loop and gives it, with dioxus-ssr and the host-only crate setup.",
+      "expectations": [
+        "Explains that `rebuild_in_place` only does the first render and that effects and tasks run when the VirtualDom processes pending work",
+        "Gives the flush loop: `while dom.wait_for_work().now_or_never().is_some() { dom.render_immediate(&mut NoOpMutations) }` (using `futures::FutureExt`) before calling `dioxus_ssr::render(&dom)`",
+        "Says the loop takes only work that is already ready, and does not suggest a sleep as the fix",
+        "Suggests asserting on a `data-testid` attribute written on the element in `rsx!`",
+        "Says the component crate needs no platform feature or browser: `dioxus` with `default-features = false` and a small feature set, with `dioxus-ssr` as a dev-dependency; if it names `macro`, `html`, `signals`, `hooks` it notes they suffice only for components that use neither `asset!` nor `document::` (otherwise add those features or use `lib`)",
+        "Stays on Dioxus 0.7 and does not use `cx: Scope`, `render!` or other pre-0.7 or 0.8-alpha APIs"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "my dioxus component loads rows with use_resource from our rest api and the component test hits the real backend. its slow and sometimes red. how do i test the loaded state",
+      "expected_output": "Fake service through context with ready futures, no real network, no sleeps; the real round trip belongs to another layer.",
+      "expectations": [
+        "Says a component test never calls a real API",
+        "Recommends providing a fake service through context (`use_context_provider`) whose futures are ready immediately",
+        "Says the flush loop then renders the loaded state, because it processes work that is already ready",
+        "Says not to add sleeps or timers to wait for the data",
+        "Says the real HTTP round trip is tested at another layer: handler tests with `oneshot` for the API side, or the in-process harness for a real URL",
+        "Does not claim the suspense or `use_resource` path was run here (marks any `wait_for_suspense` suggestion as untested or derived)"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "we have a login flow: form on /login posts to /api/session, sets a cookie, redirects to /home. axum handler plus a dioxus form, no browser tooling set up yet. which layer should each test live in, router test, component test or a browser test? i was thinking one big playwright-rs flow for everything tbh",
+      "expected_output": "Layer table applied (router, component, plain function); says the browser layer is not covered by this skill yet and volunteers no playwright-rs code.",
+      "expectations": [
+        "Applies 'pick the lowest layer that can catch the bug': the status code, cookie header and JSON of POST /api/session are router tests with `oneshot`",
+        "Puts component states such as the error message or a disabled button in Dioxus SSR component tests selected by `data-testid`",
+        "Says validation logic should be extracted into plain functions and tested there",
+        "Says browser tests (playwright-rs) are not covered by this skill yet, pushes back on putting everything in one browser flow, and does not volunteer playwright-rs code",
+        "Says to prove browser tooling on the project's own CI before relying on it, and that the budget is one browser test per critical flow",
+        "Does not suggest an `npx` install or any download-and-pipe-to-shell command"
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "my dioxus component test finds the button by .btn-primary and i put a sleep(200ms) so the async stuff settles. the component also has a huge match inside rsx! that picks the status badge. test is slow and sometimes red, can i just add retries to the nextest run",
+      "expected_output": "Pushes back: data-testid, no sleep, logic out of rsx!, no retries, a control for the markup test.",
+      "expectations": [
+        "Says to select elements by a `data-testid` written in `rsx!`, not by CSS class (or DOM structure or text)",
+        "Says to remove the sleep and flush the VirtualDom with ready fakes instead",
+        "Says to move the badge decision out of `rsx!` into a plain function with its own unit or property tests",
+        "Gives the reason: macro bodies are not mutation-tested, so logic inside `rsx!` escapes mutation testing, while a plain function can be tested directly",
+        "Says not to pass `--retries` or `--flaky-result` (or `NEXTEST_RETRIES` / `NEXTEST_FLAKY_RESULT`), because `--flaky-result pass` overrides a per-test `flaky-result = \"fail\"` and a retried failure goes green, and treats a sometimes-red test as a finding to fix",
+        "Asks for a control for the markup test: break the production markup or logic (not the assertion) once and watch the test fail"
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "want one test where our sdk's http client talks to the real router and also loads the built web ui from the same server, nothing external. TestApp::start panics with E2E_WEB_DIST must point at the built web UI. how do i set this up",
+      "expected_output": "Harness description, E2E_WEB_DIST via .cargo/config.toml [env] relative = true, the dx build as the user's step, env-var precedence, harness crate placement.",
+      "expectations": [
+        "Describes the in-process harness: the real router plus the static web build served from one axum server bound with `TcpListener::bind(\"127.0.0.1:0\")`, `axum::serve` on a spawned task that is aborted on drop, and a `base_url` the SDK client uses",
+        "Sets `E2E_WEB_DIST` in `.cargo/config.toml` under `[env]` with `relative = true`, pointing at the web build output directory",
+        "Says building the web UI with `dx` is the user's step: proposes the command and waits, and does not claim it was run",
+        "Mentions the fallback to `index.html` so client-side routes deep-link",
+        "Says a variable already exported in the shell environment beats the `[env]` entry (no `force`), and to check that when the path is wrong",
+        "Says each test starts its own `TestApp` and seeds through the state or API calls, with no fixed port",
+        "Says the harness and its `tokio` and `tower-http` `fs` dependencies live in a separate test or harness crate"
+      ]
+    },
+    {
+      "id": 7,
+      "prompt": "our shared router crate also gets built for the worker. i put tokio and tower-http with fs in its normal deps so TestApp could live in it, now the dep check script fails. easiest is to add an exception to the script right?",
+      "expected_output": "Refuses to weaken the guard; moves the harness and server dependencies into a test crate; keeps the router crate runtime-free.",
+      "expectations": [
+        "Says not to add an exception or otherwise weaken the dependency guard, because a failing guard is a finding",
+        "Says to move `TestApp` and its `tokio`, `tower-http` (`fs`) and other server dependencies into a separate test or harness crate",
+        "Says the shared router crate must stay free of runtime and server dependencies if it has to run in a Worker or any runtime-free context",
+        "Says dev-dependencies such as tokio's test macros or tower's `util` are fine unless the guard also counts them, and to read the guard",
+        "Says handler tests need none of the harness: `oneshot` on `router(state)` is enough"
+      ]
+    },
+    {
+      "id": 8,
+      "prompt": "my dioxus app panics with already borrowed: BorrowMutError when i click the add button, signal read inside an onclick. this is the running app, not a test. help",
+      "expected_output": "Routes to dioxus-07; no test scaffolding.",
+      "expectations": [
+        "Says this is Dioxus application code (a signal borrow problem), not a testing question, and routes it to the `dioxus-07` skill",
+        "Does not respond with VirtualDom or dioxus-ssr test scaffolding as the answer",
+        "Does not claim to have run `dx` or `cargo`",
+        "Asks for the handler code that holds the borrow, or defers the cause to `dioxus-07`, rather than guessing a test-side fix"
+      ]
+    },
+    {
+      "id": 9,
+      "prompt": "insta snapshot for my EntryList markup fails after i renamed some css classes. 14 snapshots changed. can i just run cargo insta accept and move on",
+      "expected_output": "Review each diff; a failing test is a finding; accepting unread is regenerating the expectation; a whole-markup snapshot changes with class renames, so the review checks nothing else moved.",
+      "expectations": [
+        "Says a failing snapshot test is a finding: read each changed snapshot diff before accepting, not a blanket accept",
+        "Says to check the markup change was intended, because an unintended difference means the code is wrong, not the snapshot",
+        "Says a snapshot accepted unread is a regenerated expectation, not a test",
+        "Says not to delete, weaken or `#[ignore]` the tests to get green",
+        "Says a whole-markup snapshot is expected to change when classes are renamed, so the review should confirm that only the renames changed and nothing else moved",
+        "Does not itself accept all 14 snapshots without showing or reviewing the diffs"
+      ]
+    },
+    {
+      "id": 10,
+      "prompt": "i recorded 40 responses from the old typescript api with curl and want to replay them against our axum router. ids and timestamps are different every run. whats the way to do it without starting the server",
+      "expected_output": "Routes the freeze, normalisation and exception handling to ts-to-rust; names oneshot as the socket-free transport.",
+      "expectations": [
+        "Says freezing the recorded exchanges, normalising volatile ids and timestamps and keeping an exception register belong to the `ts-to-rust` skill",
+        "Says each recorded request can be sent through `oneshot` on `router(state)`, with no socket",
+        "Says to compare parsed JSON values, not raw bytes",
+        "Does not tell the user to bind a fixed port or spawn the server"
+      ]
+    },
+    {
+      "id": 11,
+      "prompt": "the items api has a rule that ids never get reused after a delete and i want to hammer it with random sequences of create/delete/get calls against a simple model. is that just a router test?",
+      "expected_output": "Routes the model-based sequence test to rust-test-logic; oneshot is only the call mechanism.",
+      "expectations": [
+        "Says rules that span sequences of API calls are model-based tests, owned by the `rust-test-logic` skill",
+        "Says `oneshot` on `router(state)` is how each call reaches the router, with no socket",
+        "Says a fresh router state per generated sequence keeps each case isolated",
+        "Does not claim a plain per-endpoint router test covers the id-reuse rule"
+      ]
+    },
+    {
+      "id": 12,
+      "prompt": "in my TestApp test a GET to /api/nope comes back 200 with the html of index.html, but when i oneshot the same path on router(state) its a 404. which one is lying and how do i test that unknown api routes 404",
+      "expected_output": "Explains that the harness's index.html fallback answers any path no route matches; unknown-route 404s are tested with oneshot on the router.",
+      "expectations": [
+        "Explains that the harness serves the router first and then the static build with a fallback to `index.html`, so a path that matches no route (such as `/api/nope`) gets the SPA shell with status 200",
+        "Says neither side is lying: `oneshot` on `router(state)` shows the router's real 404, the harness adds the fallback",
+        "Says to test unknown-route and error-status behaviour with `oneshot` on `router(state)`, and to assert harness statuses only on routes that exist",
+        "Does not recommend removing the `index.html` fallback, because client-side routes need it to deep-link",
+        "Does not claim to have run the harness or `cargo` unless it did"
+      ]
+    },
+    {
+      "id": 13,
+      "prompt": "cargo nextest run -E 'package(e2e)' just prints no tests to run and exits 4. my e2e_harness_serves_ui_and_api test never ran. nextest.toml has a default-filter that excludes package(e2e). do i just pass --no-tests pass so ci stops failing",
+      "expected_output": "Explains the default-filter intersection and exit 4; remedy is the profile that selects the test; an empty run is not a pass.",
+      "expectations": [
+        "Explains that the default profile's `default-filter` excludes package `e2e` and that a `-E` filter is intersected with it, so zero tests were selected and nextest exits 4",
+        "Gives the remedy: run the profile that selects the harness test, such as `--profile e2e` (and notes `--ignore-default-filter` exists but naming the profile is clearer)",
+        "Says an empty run is not a pass and the reported test count should be checked",
+        "Advises against `--no-tests pass` (or similar) to turn the empty run green",
+        "Says the harness test needs `E2E_WEB_DIST` to point at a web build or stub directory when it does run"
+      ]
+    }
+  ]
+}
