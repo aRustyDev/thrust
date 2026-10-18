@@ -8,7 +8,9 @@
     "my dioxus router layout shows the header twice, how do Outlet and #[layout] work in 0.7",
     "convert this old dioxus 0.4 app with cx: Scope to the current version",
     "how do i set up tailwind in my dioxus 0.7 app, dx keeps downloading something",
-    "writing a custom dioxus renderer, what does WriteMutations expect"
+    "writing a custom dioxus renderer, what does WriteMutations expect",
+    "my dioxus fullstack app returns 404 for the axum router route behind a server function",
+    "write a dioxus 0.7 todo list component with a signal for the done state and a test for it"
   ],
   "should_not_trigger": [
     "convert this React page to Dioxus, keep the same layout and styles",
@@ -18,6 +20,8 @@
     "dx serve --renderer native shows an empty window on macos",
     "which css grid features does the blitz native renderer support",
     "add the shadcn-style dialog and button from dioxus-components",
+    "how do i unit test a dioxus component with dioxus-ssr and VirtualDom::new_with_props",
+    "write a tower oneshot test for the axum routes behind my dioxus app",
     "write a leptos component with a signal and an effect",
     "my react useState isnt updating inside a setTimeout",
     "how do i deploy a rust axum api to cloudflare workers",

@@ -1,7 +1,7 @@
 ---
 name: dioxus-07
 description: >-
-  Write, fix or review Dioxus 0.7 app code in Rust - rsx!, #[component], use_signal / use_memo / use_resource, Stores, the Routable router, asset!, Tailwind in a Dioxus app, #[server] / #[get] / #[post] server functions, dx serve / dx fmt, hot-patching, and writing a custom renderer (VirtualDom, WriteMutations). Fire on "dioxus", "rsx", "dx serve", or errors like `cx: Scope`, "cannot find function use_state", "render! not found", "already borrowed" signal panics. NOT for porting an existing web UI or HTML to Dioxus (use clone-frontend), NOT for dx-components registry components or their theme (use dioxus-design-system), NOT for the Blitz / dioxus-native renderer (use blitz-native).
+  Write, fix or review Dioxus 0.7 app code in Rust - rsx!, #[component], use_signal / use_memo / use_resource, Stores, the Routable router, asset!, Tailwind in a Dioxus app, #[server] / #[get] / #[post] server functions, dx serve / dx fmt, hot-patching, and writing a custom renderer (VirtualDom, WriteMutations). Fire on "dioxus", "rsx", "dx serve", or errors like `cx: Scope`, "cannot find function use_state", "render! not found", "already borrowed" signal panics. NOT for porting an existing web UI or HTML to Dioxus (use clone-frontend), NOT for dx-components registry components or their theme (use dioxus-design-system), NOT for the Blitz / dioxus-native renderer (use blitz-native), NOT for writing Dioxus component tests or axum router tests (use rust-test-app).
 allowed-tools:
   - Edit(**/src/**/*.rs)
   - Bash(dx --version)
@@ -43,7 +43,7 @@ fn Counter() -> Element {
 - `references/cheatsheet.md` RSX, props, signals, Stores, router, assets, Tailwind
 - `references/fullstack.md` server functions, Axum, hydration
 - `references/legacy.md` banned list with evidence
-- `references/tooling.md` dx flags, hot-patch, lint/CI, testing
+- `references/tooling.md` dx flags, hot-patch, lint/CI, what the official testing page covers (writing component tests: rust-test-app)
 - `references/renderer.md` VirtualDom and `WriteMutations`
 - `references/SOURCES.md` pages, dates, licences
 
