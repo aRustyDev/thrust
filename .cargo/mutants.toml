@@ -6,19 +6,16 @@
 test_tool = "nextest"
 additional_cargo_test_args = ["--profile", "mutants"]
 
-# Cargo build profile (no debuginfo: faster incremental builds per mutant). DISABLED until the workspace root
-# Cargo.toml defines it: with this line active and no [profile.mutants], cargo-mutants stops at the baseline with
-# "profile `mutants` is not defined" and exit 4, which looks like the project's own tree is broken [re-run].
-# Without it cargo-mutants runs on the default test profile, only slower [re-run]. When the first crate adds the
-# root Cargo.toml, add this block there and uncomment the line:
-#   [profile.mutants]
-#   inherits = "test"
-#   debug = "none"
-# profile = "mutants"
+# Cargo build profile (no debuginfo: faster incremental builds per mutant), defined in the root Cargo.toml.
+# Keep the two together: with this line set and no [profile.mutants] there, cargo-mutants stops at the baseline
+# with "profile `mutants` is not defined" and exit 4, which looks like the project's own tree is broken [re-run].
+profile = "mutants"
 
-# Not product code. fuzz_harness.rs needed excluding; test_support.rs and tests/common/ are belt-and-braces
-# (code under #[cfg(test)] is not mutated). Add the harness crate's directory here when it exists.
+# Not product code. The contract-suite crate is the test harness itself (its mutants would only test the tests).
+# fuzz_harness.rs needed excluding; test_support.rs and tests/common/ are belt-and-braces (code under
+# #[cfg(test)] is not mutated).
 exclude_globs = [
+  "crates/thrust-contract-tests/**",
   "**/fuzz_harness.rs",
   "**/test_support.rs",
   "**/tests/common/**",

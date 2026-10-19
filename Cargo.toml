@@ -52,3 +52,9 @@ strip = "debuginfo"
 # No `panic = ...` here on purpose: wasm32-unknown-unknown on stable is always
 # panic=abort, while the native server must keep unwinding so CatchPanicLayer works.
 # The panic policy is recorded in research/0004.
+
+# Build profile cargo-mutants uses for each mutant (no debuginfo: faster incremental builds).
+# Selected by .cargo/mutants.toml. See .agents/skills/rust-test-mutation.
+[profile.mutants]
+inherits = "test"
+debug = "none"

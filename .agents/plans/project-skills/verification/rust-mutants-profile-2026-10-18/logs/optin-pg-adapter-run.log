@@ -1,0 +1,21 @@
+warning: unused import: `json`
+ --> crates/thrust-contract-tests/tests/worker_only.rs:9:18
+  |
+9 | use serde_json::{json, Value};
+  |                  ^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `thrust-contract-tests` (test "worker_only") generated 1 warning (run `cargo fix --test "worker_only" -p thrust-contract-tests` to apply 1 suggestion)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.13s
+────────────
+ Nextest run ID 33b8e6a4-895f-4708-a2fc-ff45b7f003cd with nextest profile: default
+    Starting 6 tests across 1 binary (15 binaries skipped)
+        PASS [   2.443s] (1/6) thrust-adapters-selfhosted::pg_adapter rollback_is_atomic_and_unique_violation_is_a_conflict
+        PASS [   2.594s] (2/6) thrust-adapters-selfhosted::pg_adapter soft_delete_frees_the_external_key_but_not_the_sequence_number
+        PASS [   2.650s] (3/6) thrust-adapters-selfhosted::pg_adapter concurrent_allocation_is_unique_contiguous_and_serialised
+        PASS [   2.697s] (4/6) thrust-adapters-selfhosted::pg_adapter an_abandoned_transaction_does_not_poison_the_pool
+        PASS [   2.753s] (5/6) thrust-adapters-selfhosted::pg_adapter membership_distinguishes_member_non_member_and_other_tenant
+        PASS [   2.814s] (6/6) thrust-adapters-selfhosted::pg_adapter outbox_is_atomic_with_the_entity_and_dispatch_is_recorded
+────────────
+     Summary [   2.814s] 6 tests run: 6 passed, 0 skipped
