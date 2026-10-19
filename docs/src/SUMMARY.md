@@ -1,5 +1,16 @@
 # Summary
 
+# Architecture
+
+- [Application architecture](architecture/app.md)
+- [Infrastructure](architecture/infra.md)
+
+# Flows
+
+- [Application flow](flows/app.md)
+
+# Testing
+
 - [Testing](testing/README.md)
   - [Strategy](testing/strategy.md)
   - [Which tests a change needs](testing/by-change.md)
