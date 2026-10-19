@@ -1,6 +1,6 @@
 # Contract suite
 
-Status: **live** · Gate: `scripts/contract-all.sh` (run by hand; no CI yet)
+Status: **live** · Gate: the `contract` jobs in CI (one per cell), or `scripts/contract-all.sh` locally
 
 ## Catches
 

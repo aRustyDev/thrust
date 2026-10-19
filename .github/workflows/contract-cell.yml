@@ -1,0 +1,82 @@
+name: contract-cell
+
+# Reusable workflow: run ONE cell of the contract matrix on its own runner.
+# Why a reusable workflow and not a composite action: a cell needs its own runner, timeout,
+# permissions and artifacts (a job), and two callers use it (ci.yml per cell, and anything that
+# wants a single cell). Steps shared between jobs live in .github/actions/setup-rust instead.
+
+on:
+  workflow_call:
+    inputs:
+      target:
+        description: native-memory | native-pg | worker-memory | worker-cf
+        type: string
+        required: true
+      pass:
+        description: main | sweeper | panic | cron | worker | bindings
+        type: string
+        required: true
+
+permissions: {}
+
+jobs:
+  cell:
+    name: ${{ inputs.target }} ${{ inputs.pass }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    permissions:
+      contents: read
+    env:
+      # inputs go through env, never interpolated into the script text
+      CELL_TARGET: ${{ inputs.target }}
+      CELL_PASS: ${{ inputs.pass }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup-rust
+        with:
+          targets: ${{ startsWith(inputs.target, 'worker') && 'wasm32-unknown-unknown' || '' }}
+          worker-tools: ${{ startsWith(inputs.target, 'worker') && 'true' || 'false' }}
+          cache-key: contract-${{ startsWith(inputs.target, 'worker') && 'wasm' || 'native' }}
+          save-cache: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Preflight - host tools scripts/contract.sh relies on
+        run: |
+          missing=""
+          for tool in curl openssl lsof pgrep docker; do
+            command -v "$tool" > /dev/null 2>&1 || missing="$missing $tool"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::runner image lacks:$missing"
+            exit 1
+          fi
+
+      # No pipe, no trailing echo: this step's status IS contract.sh's status. The script also
+      # refuses to pass when its test count differs from the expected one and when the target
+      # reports a different adapter set than the cell claims.
+      - name: Run the cell
+        run: scripts/contract.sh "$CELL_TARGET" "$CELL_PASS"
+
+      - name: Record that exactly this cell passed
+        run: |
+          mkdir -p cell-ok
+          printf '%s %s\n' "$CELL_TARGET" "$CELL_PASS" > "cell-ok/${CELL_TARGET}-${CELL_PASS}.ok"
+
+      - name: Upload the pass marker
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: cell-ok-${{ inputs.target }}-${{ inputs.pass }}
+          path: cell-ok/
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: logs-${{ inputs.target }}-${{ inputs.pass }}
+          path: target/contract-logs/
+          if-no-files-found: ignore
+          retention-days: 7

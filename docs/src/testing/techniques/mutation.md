@@ -54,5 +54,5 @@ one by copying an existing `mutant_*` feature: declare it in the adapter's `Carg
 
 ## Target
 
-cargo-mutants `--in-diff` on every PR and a full run on a schedule, once crates have their own tests and CI exists
-(G-5). Mutation testing of the permission seam is open question Q-0123.1 in ADR-0123.
+cargo-mutants `--in-diff` on every PR and a full run on a schedule, once crates have their own tests (G-3); the
+planted mutants already run in CI (the `mutants` job). Mutation testing of the permission seam is open question Q-0123.1 in ADR-0123.
