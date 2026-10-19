@@ -1,0 +1,13 @@
+{
+  "extraKnownMarketplaces": {
+    "gitnexus-marketplace": {
+      "source": {
+        "source": "github",
+        "repo": "abhigyanpatwari/GitNexus"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "gitnexus@gitnexus-marketplace": true
+  }
+}
