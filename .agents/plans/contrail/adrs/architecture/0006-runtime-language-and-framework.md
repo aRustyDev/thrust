@@ -120,7 +120,7 @@ Reopen trigger 1 (a `BEGIN ... COMMIT` over one Hyperdrive socket must be atomic
 
 ## Update — spike 0001 Stage 2 on the real platform, round 28 (2026-10-18)
 
-**Verdict: conditional pass, now with Stage 2 run** (2026-10-18; `research/0004-rust-on-workers-binding-matrix.md` sections 1 and 10; thrust branch `feat/spike-0001-rust-on-workers`, draft PR aRustyDev/thrust#17). The conditions are the Workflows JS shim, the Hyperdrive statement-flow constraint below, and a real Email send that was not exercised.
+**Verdict: conditional pass, now with Stage 2 run** (2026-10-18; `research/0004-rust-on-workers-binding-matrix.md` sections 1 and 10; thrust branch `feat/spike-0001-rust-on-workers`, merged as PR aRustyDev/thrust#17). The conditions are the Workflows JS shim, the Hyperdrive statement-flow constraint below, and a real Email send that was not exercised.
 
 * **The slice is green against the real platform:** the shared contract suite 15/15, repeated 8/8, against Hyperdrive (to `thrust-pg-dev`, through a Workers VPC service and a tunnel), KV, R2, Queues, Durable Objects and cron. Also on the real platform: Durable Object WebSocket hibernation with SQLite state (the instance was recycled and the state survived), a Workflow on the real engine through the JS shim, a service binding, a real Secrets Store read, the real cron trigger (an outbox row delivered 53 s after the create), and a failing queue message retried three times and then dead-lettered.
 * **Bundle and startup:** 1.67 MiB deployed (568 KiB gzip) against 20 MiB; Worker startup 2 to 3 ms against 300 ms. CPU per invocation averaged 8.35 ms over 6,852 invocations (the cost model assumed about 10.3).
