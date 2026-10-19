@@ -31,6 +31,10 @@ which parse its `test result:` line and exit 101 (nextest exits 100 when tests f
 by accident. The default nextest profile excludes both, so `cargo nextest run` selects nothing and exits 4
 (`no tests to run`) until a crate has hermetic tests of its own. That exit is not a test failure.
 
+Strategy, which technique catches which defect, the agent TDD loop and known gaps: `docs/src/testing/README.md`.
+Where those docs and the rules below disagree, the rules win; record the disagreement in `docs/src/testing/status.md`.
+
+<!-- ANCHOR: testing-rules -->
 1. Run tests with `cargo nextest run`, and `cargo test --doc` for doctests (nextest cannot run them). The profiles in
    `.config/nextest.toml` decide what runs, the timeouts and the retry policy.
 2. Never pass `--retries`, `--flaky-result`, `NEXTEST_RETRIES` or `NEXTEST_FLAKY_RESULT`. `flaky-result = "fail"` in
@@ -49,9 +53,11 @@ by accident. The default nextest profile excludes both, so `cargo nextest run` s
    Never commit `mutants.out*`.
 8. A check that cannot fail is not evidence. Show the control that makes it fail (a mutated fixture, a broken codec,
    an empty seeds directory) before trusting a pass.
+<!-- ANCHOR_END: testing-rules -->
 
 | When you are | Load |
 |---|---|
+| Deciding which tests a change needs, and in what order | `docs/src/testing/by-change.md` |
 | Writing example, property, model or parity tests for a unit of logic; a flaky `prop_` test; moving to nextest | `rust-test-logic` |
 | Porting a TypeScript module (freezing its behaviour, fixtures, type mapping) | `ts-to-rust` |
 | Writing code that parses outside bytes or text | `rust-test-fuzz` |

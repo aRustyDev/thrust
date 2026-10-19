@@ -7,7 +7,7 @@ allowed-tools:
   - Edit(docs/src/**)
 license: AGPL-3.0-only
 author: aRustyDev
-version: 0.1.0
+version: 0.2.0
 ---
 
 # Planning: where plans and docs live
@@ -28,7 +28,9 @@ Assumes the session starts at the repository root and that `docs/` is an mdBook 
 | **objectives** for work not yet done | `.agents/plans/<plan>/{specs,prds}/` (aspirational) |
 | phases, questions, research, session notes | `.agents/plans/<plan>/` |
 
-Rows run from most to least binding. A statement that fits two rows lives in the **more binding** one; the other links to it. Cross-plan roadmaps go in `docs/src/dev/roadmaps/`, defined terms in `docs/src/dev/glossary.md`; a plan's own `PLAN.md` / `ROADMAP.md` stay in the plan.
+Rows run from most to least binding. A statement that fits two rows lives in the **more binding** one; the other links to it. Cross-plan roadmaps go in `docs/src/dev/roadmaps/`, defined terms in `docs/src/dev/glossary.md` (testing terms: `docs/src/testing/glossary.md`); a plan's own `PLAN.md` / `ROADMAP.md` stay in the plan.
+
+**Exception, testing.** Testing strategy, policy, patterns and terms live in one chapter, `docs/src/testing/`, not under `dev/policies/` or `dev/patterns/`; its `README.md` says which page owns which kind of fact. Each technique page carries a status (live / template-only / planned), and a planned item links the ADR or plan that owns it instead of restating it. The binding testing rules stay in `AGENTS.md`, which the chapter includes. Testing ADRs still follow the ADR row.
 
 ## Procedure
 1. Classify each statement with the table. Write it once and link from the other place (**derive, do not duplicate**: a fact in two places will drift).
