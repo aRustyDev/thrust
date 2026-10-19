@@ -16,7 +16,7 @@ Profiles live in `.config/nextest.toml`; read the file for the exact values. In 
 | Profile | Selects | Use |
 |---|---|---|
 | `default` | everything except `oracle_`, package `thrust-contract-tests` and binary `pg_adapter` | the inner loop |
-| `ci` | same as default, no fail-fast, JUnit report at `target/nextest/ci/junit.xml` | CI (none exists yet: G-5) |
+| `ci` | same as default, no fail-fast, JUnit report at `target/nextest/ci/junit.xml` | the `hermetic` job in CI |
 | `deep` | only `prop_`, `model_`, `oracle_` tests, long timeouts | with `PROPTEST_CASES=4096` or more |
 | `oracle` | only `oracle_` tests (need Node, or the oracle's generated output in `target/spike-0006/`) | comparison with the oracle |
 | `mutants` | default filter, fail fast, no retries | selected by cargo-mutants via `.cargo/mutants.toml` |
@@ -78,6 +78,27 @@ scripts/rs cargo nextest run --workspace --profile oracle    # the 4 oracle_ tes
 
 `corrupted_binaries_are_detected` writes `corrupt.json` (evidence for `tools/spike-0006/oracle/verify-rust-out.ts`)
 only when `SPIKE0006_OUT=<dir>` is set, relative to the workspace root.
+
+## CI
+
+`.github/workflows/ci.yml` runs on every pull request, merge-queue entry and push to `main`. Each job runs the
+same script you would run locally, so a red job reproduces with the command in its step.
+
+| Job | Runs |
+|---|---|
+| `changes` | decides whether anything Rust-relevant changed (`.github/scripts/classify-changes.sh`; fails open) |
+| `plan` | derives the contract cells from the `run <target> <pass>` lines of `scripts/contract-all.sh` |
+| `ci-scripts` | the tests of the CI helper scripts themselves (`.github/scripts/tests/`) |
+| `deps` | `scripts/check-deps.sh` |
+| `hermetic` | `cargo nextest run --profile ci --workspace`, then `cargo test --doc --workspace` |
+| `pg-adapter` | `cargo test -p thrust-adapters-selfhosted --test pg_adapter` |
+| `contract` | one job per cell (`.github/workflows/contract-cell.yml`): `scripts/contract.sh <target> <pass>` |
+| `mutants` | `scripts/mutants.sh` |
+| `gate` | `.github/scripts/assert-gate.sh`: every job succeeded **and** every planned cell uploaded its pass marker |
+
+`gate` is the one check to require: it fails on a skipped job when Rust changed and on a planned cell that never
+reported, so a pipeline that silently ran less cannot read as green. `.github/workflows/flake-hunt.yml` repeats one
+cell on demand and weekly. Not in CI: the `oracle_` tests (they need the pinned Plane oracle's output) and stage 2.
 
 ## Don't
 
