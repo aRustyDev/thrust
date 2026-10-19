@@ -1,0 +1,100 @@
+##### E. config in .agents/config/gitnexus, root symlinks, plain analyze (no flags)
+-- root symlinks:
+lrwxr-xr-x@ 1 USER GROUP  38 Oct 18 22:58 .gitnexusignore -> .agents/config/gitnexus/gitnexusignore
+lrwxr-xr-x@ 1 USER GROUP  39 Oct 18 22:58 .gitnexusrc -> .agents/config/gitnexus/gitnexusrc.json
+
+  GitNexus Analyzer
+
+
+  Repository indexed successfully (1.4s)
+
+  6 nodes | 6 edges | 1 clusters | 0 flows
+  $SCRATCH/gn3-e
+
+[E-analyze] exit=0
+-- root listing (no AGENTS.md / CLAUDE.md / .claude expected):
+.agents
+.git
+.gitnexus
+.gitnexusignore
+.gitnexusrc
+Cargo.toml
+ignored
+src
+-- git status (index must not show up):
+-- add is indexed:
+{
+  "status": "found",
+  "symbol": {
+    "uid": "Function:src/lib.rs:add",
+    "name": "add",
+    "kind": "Function",
+    "filePath": "src/lib.rs"
+  },
+  "epistemic": "exact",
+  "incoming": {
+    "calls": [
+      {
+        "uid": "Function:src/lib.rs:use_add",
+        "name": "use_add",
+        "filePath": "src/lib.rs"
+      }
+    ]
+  },
+  "outgoing": {},
+  "processes": []
+}
+[E-context-add] exit=0
+-- hidden_fn (in ignored/) must be absent:
+{
+  "error": "Symbol 'hidden_fn' not found"
+}
+[E-context-hidden] exit=0
+##### F. control: the same files as REAL root files but with NO ignore file: hidden_fn must be found
+
+  GitNexus Analyzer
+
+
+  Repository indexed successfully (1.4s)
+
+  9 nodes | 8 edges | 1 clusters | 0 flows
+  $SCRATCH/gn3-f
+
+[F-analyze] exit=0
+{
+  "status": "found",
+  "symbol": {
+    "uid": "Function:ignored/secret.rs:hidden_fn",
+    "name": "hidden_fn",
+    "kind": "Function",
+    "filePath": "ignored/secret.rs"
+  },
+  "epistemic": "exact",
+  "incoming": {},
+  "outgoing": {},
+  "processes": []
+}
+[F-context-hidden] exit=0
+##### G. clean leaves the config alone
+Deleted: $SCRATCH/gn3-e/.gitnexus
+[G-clean] exit=0
+.agents
+.git
+.gitnexusignore
+.gitnexusrc
+Cargo.toml
+ignored
+src
+lrwxr-xr-x@ 1 USER GROUP  38 Oct 18 22:58 .gitnexusignore -> .agents/config/gitnexus/gitnexusignore
+lrwxr-xr-x@ 1 USER GROUP  39 Oct 18 22:58 .gitnexusrc -> .agents/config/gitnexus/gitnexusrc.json
+
+  GitNexus Analyzer
+
+
+  Repository indexed successfully (1.4s)
+
+  6 nodes | 6 edges | 1 clusters | 0 flows
+  $SCRATCH/gn3-e
+
+[G-reanalyze] exit=0
+finished

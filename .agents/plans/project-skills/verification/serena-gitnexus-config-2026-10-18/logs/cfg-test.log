@@ -1,0 +1,56 @@
+##### GITNEXUS: .gitnexus as a symlink into .agents/config/gitnexus
+-- symlink:
+lrwxr-xr-x@ 1 USER GROUP  23 Oct 18 22:55 .gitnexus -> .agents/config/gitnexus
+
+  GitNexus Analyzer
+
+
+  Repository indexed successfully (1.3s)
+
+  4 nodes | 2 edges | 0 clusters | 0 flows
+  $SCRATCH/gn-link-test/repo
+
+[gn-analyze] exit=0
+-- is .gitnexus still a symlink?
+lrwxr-xr-x@ 1 USER GROUP  23 Oct 18 22:55 .gitnexus -> .agents/config/gitnexus
+-- files in .agents/config/gitnexus:
+total 6672
+drwxr-xr-x@ 8 USER GROUP      256 Oct 18 22:55 .
+drwxr-xr-x@ 3 USER GROUP       96 Oct 18 22:55 ..
+-rw-r--r--@ 1 USER GROUP        2 Oct 18 22:55 .gitignore
+-rw-r--r--@ 1 USER GROUP  3391488 Oct 18 22:55 lbug
+-rw-r--r--@ 1 USER GROUP     1063 Oct 18 22:55 meta.json
+drwxr-xr-x@ 4 USER GROUP      128 Oct 18 22:55 parse-cache
+drwxr-xr-x@ 4 USER GROUP      128 Oct 18 22:55 parsedfile-cache
+-rw-r--r--@ 1 USER GROUP    15584 Oct 18 22:55 run.cjs
+-- git status (what would be committed):
+?? .gitnexus
+Repository: $SCRATCH/gn-link-test/repo
+Branch: master
+Indexed: 10/18/2026, 10:55:31 PM
+Indexed commit: 158fbf2
+Current commit: 158fbf2
+Status: ✅ up-to-date
+[gn-status] exit=0
+##### SERENA: .github/config/serena as a symlink into .agents/config/serena
+-- symlink:
+lrwxr-xr-x@ 1 USER GROUP  27 Oct 18 22:55 .github/config/serena -> ../../.agents/config/serena
+-- project_name in the target:
+2:project_name: "link-probe-xyz"
+NONE
+[serena-claude] done
+-- after: is the symlink intact and what did Serena write?
+lrwxr-xr-x@ 1 USER GROUP  27 Oct 18 22:55 .github/config/serena -> ../../.agents/config/serena
+total 32
+drwxr-xr-x@ 6 USER GROUP    192 Oct 18 22:55 .
+drwxr-xr-x@ 3 USER GROUP     96 Oct 18 22:55 ..
+-rw-r--r--@ 1 USER GROUP     26 Oct 18 22:55 .gitignore
+drwxr-xr-x@ 3 USER GROUP     96 Oct 18 22:55 cache
+drwxr-xr-x@ 2 USER GROUP     64 Oct 18 22:55 memories
+-rw-r--r--@ 1 USER GROUP  10979 Oct 18 22:55 project.yml
+-- real dir created beside it?
+total 0
+drwxr-xr-x@ 3 USER GROUP  96 Oct 18 22:55 .
+drwxr-xr-x@ 3 USER GROUP  96 Oct 18 22:55 ..
+lrwxr-xr-x@ 1 USER GROUP  27 Oct 18 22:55 serena -> ../../.agents/config/serena
+finished

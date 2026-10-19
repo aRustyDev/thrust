@@ -6,6 +6,17 @@ See `README.md`.
 Procedures live in skills under `.agents/skills/` (`.claude/skills` is a symlink to it). Load the skill named in the
 table below before writing that kind of code or test.
 
+## Code intelligence (Serena, GitNexus)
+
+Their configuration lives in `.agents/config/` and is reached through symlinks, because neither tool has a per-repo
+setting for its location (why, and what was rejected: `.agents/config/README.md`).
+
+- Serena: `.agents/config/serena/project.yml`, symlinked at `.github/config/serena`.
+- GitNexus: `.agents/config/gitnexus/gitnexusrc.json`, symlinked at `.gitnexusrc`. It sets `indexOnly`, so a plain
+  `gitnexus analyze` never rewrites `AGENTS.md`, `CLAUDE.md` or `.claude/skills/`. The index is generated into `.gitnexus/`
+  (ignored). The registry is keyed by path, and from a feature branch `analyze` warns that `main` is not the primary
+  index, so index a checkout of `main` that stays, not a worktree you will prune.
+
 ## Testing (Rust)
 
 The Cargo workspace root is `Cargo.toml` (members are listed explicitly). These rules and the configs in

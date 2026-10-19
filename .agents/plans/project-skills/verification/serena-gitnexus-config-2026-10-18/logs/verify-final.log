@@ -1,0 +1,41 @@
+##### config files as committed
+-- rc:
+{
+  "indexOnly": true
+}
+lrwxr-xr-x@ 1 USER GROUP  27 Oct 18 23:22 .github/config/serena -> ../../.agents/config/serena
+lrwxr-xr-x@ 1 USER GROUP  39 Oct 18 23:22 .gitnexusrc -> .agents/config/gitnexus/gitnexusrc.json
+ls: .gitnexusignore: No such file or directory
+(no .gitnexusignore expected above)
+##### GITNEXUS plain analyze, scratch GITNEXUS_HOME
+[gn-analyze] exit=0
+1
+(count of 'default branch' warnings above, expect 0)
+  Repository indexed successfully (5.6s)
+  1,653 nodes | 4,201 edges | 86 clusters | 140 flows
+[status-diff] exit=0 (0 = identical)
+ls: CLAUDE.md: No such file or directory
+(no CLAUDE.md expected above: analyze must not create one)
+ AGENTS.md | 10 ++++++++++
+ 1 file changed, 10 insertions(+)
+(AGENTS.md diff above, expect only my own edit)
+{
+  "status": "found",
+  "symbol": {
+    "uid": "Function:crates/thrust-contract-tests/src/lib.rs:Target.from_env#0",
+    "name": "from_env",
+    "kind": "Function",
+##### SERENA second start leaves project.yml byte-identical and does not re-save
+7c9f7d0e15562a73165b8752a47442be6fe5f084  .agents/config/serena/project.yml
+OK
+8399dc57395cd148eb419a8e7a3c0f0838d9c1f6  .agents/config/serena/project.yml
+(two identical hashes above)
+resave lines in the newest Serena log: 0
+INFO  2026-10-18 23:25:35,013 [MainThread] serena.agent:_activate_project:1219 - Activating thrust at $WORKTREE
+INFO  2026-10-18 23:25:35,105 [StartLS:rust] sensai.util.logging:start:329 - Language server startup (language=rust) starting ...
+lrwxr-xr-x@ 1 USER GROUP  27 Oct 18 23:22 .github/config/serena -> ../../.agents/config/serena
+ M AGENTS.md
+?? .agents/config/
+?? .github/
+?? .gitnexusrc
+finished
