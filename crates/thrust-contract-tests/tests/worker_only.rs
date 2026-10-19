@@ -14,7 +14,9 @@ use tokio_tungstenite::tungstenite::Message;
 type Ws = tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
 async fn ws_connect(t: &Target, room: &str, token: Option<&str>) -> Result<Ws, String> {
-    let url = t.base.replace("http://", "ws://");
+    // https -> wss (a deployed Worker), http -> ws (local workerd). Replacing only `http://` left an
+    // `https://` base as-is and tungstenite refused the scheme (found in Stage 2).
+    let url = t.base.replace("https://", "wss://").replace("http://", "ws://");
     let mut req = format!("{url}/_test/room/{room}/ws").into_client_request().unwrap();
     if let Some(tok) = token {
         req.headers_mut().insert("x-admin-token", tok.parse().unwrap());
@@ -40,9 +42,15 @@ async fn worker_room_do_websocket_hibernation_api_and_sqlite_storage() {
     let t = Target::from_env();
     let room = format!("room-{}", uuid::Uuid::new_v4().simple());
 
-    // control: no admin token -> the upgrade is refused (the route is not open)
-    assert!(ws_connect(&t, &room, None).await.is_err(), "unauthenticated websocket upgrade must fail");
-    assert!(ws_connect(&t, &room, Some("wrong")).await.is_err(), "wrong token must fail");
+    // control: no admin token -> the upgrade is refused (the route is not open). The refusal must be the
+    // Worker's own HTTP 4xx answer: "any error" would also pass on a bad URL scheme or a TLS failure,
+    // and a must-fail control that passes for the wrong reason is no control (Stage 2 hit exactly that).
+    for (what, token) in [("unauthenticated", None), ("wrong token", Some("wrong"))] {
+        match ws_connect(&t, &room, token).await {
+            Ok(_) => panic!("{what} websocket upgrade must fail"),
+            Err(e) => assert!(e.starts_with("HTTP error: 4"), "{what}: refusal must be an HTTP 4xx from the Worker, got: {e}"),
+        }
+    }
 
     let mut a = ws_connect(&t, &room, Some(&t.admin_token)).await.expect("connect a");
     a.send(Message::text("hello")).await.unwrap();
@@ -156,8 +164,15 @@ async fn worker_bindings_rate_limiting_binding() {
     let t = Target::from_env();
     let (st, v) = probe(&t, "ratelimit").await;
     assert_eq!(st, 200, "{v}");
-    // limit = 3 per 10 s: three allowed then two refused. The refusals are the must-fail control.
-    assert_eq!(v["outcomes"], json!([true, true, true, false, false]));
+    // limit = 3 per 10 s. What must hold on EVERY target: the first three calls are allowed (it never
+    // limits early) and a refusal appears (the must-fail control: it does limit). Local workerd is exact
+    // (three allowed, then refused); the deployed binding is approximate and was measured allowing a
+    // fourth call, so the exact `[t,t,t,f,f]` shape is NOT asserted. The observed outcomes go in the message.
+    let o: Vec<bool> = v["outcomes"].as_array().expect("outcomes").iter().map(|b| b.as_bool().unwrap()).collect();
+    assert!(o.len() >= 8, "probe must make enough calls to see a refusal: {v}");
+    assert_eq!(&o[..3], &[true, true, true], "limit 3: the first three calls must be allowed: {v}");
+    assert!(o.contains(&false), "limit 3 per 10 s: some call must be refused: {v}");
+    println!("RATELIMIT-OBSERVATION allowed_before_first_refusal={}", o.iter().position(|a| !a).unwrap());
 }
 
 #[tokio::test]
@@ -166,7 +181,14 @@ async fn worker_bindings_secrets_store_binding() {
     let (st, v) = probe(&t, "secret").await;
     assert_eq!(st, 200, "{v}");
     assert_eq!(v["present"], true);
-    assert_eq!(v["len"], "local-dev-dummy-not-a-secret".len());
+    // Local workerd: the dummy created by scripts/worker-dev.sh (28 chars). Deployed: the length of the secret
+    // actually created in the store, passed as THRUST_EXPECT_SECRET_LEN. Matching a length that differs from
+    // the local dummy's is what shows the REAL store was read.
+    let want: usize = std::env::var("THRUST_EXPECT_SECRET_LEN")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or("local-dev-dummy-not-a-secret".len());
+    assert_eq!(v["len"], want);
     assert!(!v.to_string().contains("dummy"), "the probe must never echo the secret value");
 }
 
@@ -195,4 +217,34 @@ async fn worker_bindings_workflow_via_wasm_bindgen_and_js_shim() {
     assert_eq!(v["output"]["doubled"], 42, "the workflow's step.do ran: {v}");
     assert_eq!(v["output"]["health"]["status"], 200, "workflow -> service binding -> Rust Worker: {v}");
     assert_eq!(v["output"]["health"]["body"], "ok");
+}
+
+/// Pass `crontrigger` of `scripts/stage2-contract.sh` (fast path OFF, DEPLOYED Worker only). The `stage2_` prefix is
+/// load-bearing: the local `cron` pass filters on `worker_cron_`, and a local `wrangler dev` never fires a cron by
+/// itself, so a `worker_cron_*` name would make that pass wait 180 s and fail. Stage 2 twin of the `cron` test: a deployed
+/// Worker has no `/__scheduled` endpoint (that is `wrangler dev` only), so this creates an item and waits
+/// for the REAL cron trigger (`* * * * *`) to run the sweeper, calling nothing that sweeps. The empty-activity
+/// check two seconds after the create is what keeps it from being vacuous (the fast path must really be off).
+#[tokio::test]
+async fn stage2_cron_real_trigger_runs_the_sweeper() {
+    let t = Target::from_env();
+    let f = Fixture::seed(&t).await;
+    let item = create_ok(&t, &f.member_a, f.project_a, "cron-real-trigger").await;
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    assert!(
+        activity(&t, &f.guest_a, f.project_a, item.id).await.is_empty(),
+        "activity exists before any cron ran: fast path is not off, test would be vacuous"
+    );
+    let start = std::time::Instant::now();
+    let acts = loop {
+        let a = activity(&t, &f.guest_a, f.project_a, item.id).await;
+        if !a.is_empty() {
+            break a;
+        }
+        assert!(start.elapsed() < Duration::from_secs(180), "no delivery within 180 s: the cron trigger did not sweep");
+        tokio::time::sleep(Duration::from_secs(1)).await;
+    };
+    eprintln!("CRON-OBSERVATION: delivered {} s after the 2 s empty check (cron `* * * * *`)", start.elapsed().as_secs());
+    assert_eq!(acts.len(), 1);
+    assert_eq!(acts[0].verb, "created");
 }

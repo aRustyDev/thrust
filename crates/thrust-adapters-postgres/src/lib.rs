@@ -14,7 +14,7 @@ use async_trait::async_trait;
 use thrust_contracts::*;
 use thrust_ports::*;
 use tokio_postgres::error::SqlState;
-use tokio_postgres::types::ToSql;
+use tokio_postgres::types::{ToSql, Type};
 use tokio_postgres::{Client, Row};
 
 pub const MIGRATION_0001: &str = include_str!("../migrations/0001_init.sql");
@@ -50,7 +50,81 @@ fn db_err(e: tokio_postgres::Error) -> DbError {
     DbError::Backend(e.to_string())
 }
 
-type Params<'a> = &'a [&'a (dyn ToSql + Sync)];
+// ---------------------------------------------------------------------------------------------
+// Statements run as ONE pipeline on the UNNAMED statement
+// ---------------------------------------------------------------------------------------------
+//
+// tokio-postgres' default `query`/`execute(&str, ..)` PREPARES a named statement (`Parse`,
+// `Describe`, `Sync`) and then `Bind`/`Execute`s it in a second round trip. Through Hyperdrive that
+// flow was unreliable in Stage 2 (research/0004 §10): statements with no result columns (INSERT or
+// UPDATE without RETURNING) failed every time (`connection closed`) and SELECTs failed intermittently
+// (`unexpected message from server`). The `*_typed` calls send `Parse`, `Bind`, `Describe`, `Execute`,
+// `Sync` as one pipeline on the unnamed statement; that passed every time, in one round trip instead
+// of two. The price: no server-side statement caching, and every parameter must carry its Postgres
+// type, which is what `PgParam` is for.
+
+/// The Postgres type of a bind parameter, known statically so `Option::<T>::None` still has one.
+pub trait PgType {
+    const TY: Type;
+}
+
+macro_rules! pg_type {
+    ($($t:ty => $ty:expr),* $(,)?) => { $(impl PgType for $t { const TY: Type = $ty; })* };
+}
+pg_type!(
+    Uuid => Type::UUID,
+    i64 => Type::INT8,
+    i32 => Type::INT4,
+    bool => Type::BOOL,
+    String => Type::TEXT,
+    Timestamp => Type::TIMESTAMPTZ,
+    serde_json::Value => Type::JSONB,
+);
+impl PgType for &str {
+    const TY: Type = Type::TEXT;
+}
+impl<T: PgType> PgType for Option<T> {
+    const TY: Type = T::TY;
+}
+
+/// Object-safe view of a bind parameter that can tell the server its type.
+pub trait PgParam: ToSql + Sync {
+    fn pg_type(&self) -> Type;
+}
+impl<T: PgType + ToSql + Sync> PgParam for T {
+    fn pg_type(&self) -> Type {
+        T::TY
+    }
+}
+
+type Params<'a> = &'a [&'a dyn PgParam];
+
+fn typed<'a>(p: Params<'a>) -> Vec<(&'a (dyn ToSql + Sync), Type)> {
+    p.iter().map(|x| (*x as &(dyn ToSql + Sync), x.pg_type())).collect()
+}
+
+/// A connected client whose statements all go through the single-pipeline typed calls.
+#[derive(Clone, Copy)]
+pub struct Pg<'a>(pub &'a Client);
+
+impl Pg<'_> {
+    pub async fn query(&self, sql: &str, p: Params<'_>) -> Result<Vec<Row>, tokio_postgres::Error> {
+        self.0.query_typed(sql, &typed(p)).await
+    }
+    pub async fn query_opt(&self, sql: &str, p: Params<'_>) -> Result<Option<Row>, tokio_postgres::Error> {
+        self.0.query_typed_opt(sql, &typed(p)).await
+    }
+    pub async fn query_one(&self, sql: &str, p: Params<'_>) -> Result<Row, tokio_postgres::Error> {
+        self.0.query_typed_one(sql, &typed(p)).await
+    }
+    pub async fn execute(&self, sql: &str, p: Params<'_>) -> Result<u64, tokio_postgres::Error> {
+        self.0.execute_typed(sql, &typed(p)).await
+    }
+    /// Simple query protocol; no parameters (BEGIN / COMMIT / ROLLBACK).
+    pub async fn batch_execute(&self, sql: &str) -> Result<(), tokio_postgres::Error> {
+        self.0.batch_execute(sql).await
+    }
+}
 
 pub struct PgDatabase {
     connector: Arc<dyn Connector>,
@@ -110,8 +184,7 @@ impl Database for PgDatabase {
         user: UserId,
     ) -> Result<Membership, DbError> {
         let c = self.conn().await?;
-        let row = c
-            .client()
+        let row = Pg(c.client())
             .query_opt(
                 "SELECT m.role AS role FROM projects p \
                  LEFT JOIN project_members m ON m.project_id = p.id AND m.user_id = $3 \
@@ -154,7 +227,7 @@ impl Database for PgDatabase {
             ),
         };
         let c = self.conn().await?;
-        let rows = c.client().query(&sql, &[&ws.0, &project.0]).await.map_err(db_err)?;
+        let rows = Pg(c.client()).query(&sql, &[&ws.0, &project.0]).await.map_err(db_err)?;
         Ok(rows.iter().map(work_item).collect())
     }
 
@@ -173,14 +246,13 @@ impl Database for PgDatabase {
             "SELECT {WI_COLS} FROM work_items WHERE workspace_id = $1 AND project_id = $2 AND id = $3{hidden}"
         );
         let c = self.conn().await?;
-        let row = c.client().query_opt(&sql, &[&ws.0, &project.0, &id.0]).await.map_err(db_err)?;
+        let row = Pg(c.client()).query_opt(&sql, &[&ws.0, &project.0, &id.0]).await.map_err(db_err)?;
         Ok(row.as_ref().map(work_item))
     }
 
     async fn insert_activity(&self, a: &Activity) -> Result<bool, DbError> {
         let c = self.conn().await?;
-        let n = c
-            .client()
+        let n = Pg(c.client())
             .execute(
                 "INSERT INTO activity (id, event_id, workspace_id, project_id, entity_id, verb, actor_id, created_at) \
                  VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT (event_id) DO NOTHING",
@@ -208,8 +280,7 @@ impl Database for PgDatabase {
     ) -> Result<Vec<Activity>, DbError> {
         let c = self.conn().await?;
         let entity: Option<Uuid> = entity.map(|e| e.0);
-        let rows = c
-            .client()
+        let rows = Pg(c.client())
             .query(
                 "SELECT id, event_id, workspace_id, project_id, entity_id, verb, actor_id, created_at \
                  FROM activity WHERE workspace_id = $1 AND project_id = $2 \
@@ -223,8 +294,7 @@ impl Database for PgDatabase {
 
     async fn undispatched_outbox(&self, limit: u32) -> Result<Vec<OutboxRow>, DbError> {
         let c = self.conn().await?;
-        let rows = c
-            .client()
+        let rows = Pg(c.client())
             .query(
                 "SELECT envelope, created_at, attempts FROM outbox WHERE dispatched_at IS NULL \
                  ORDER BY created_at, event_id LIMIT $1",
@@ -249,7 +319,7 @@ impl Database for PgDatabase {
 
     async fn mark_outbox_dispatched(&self, event: EventId, at: Timestamp) -> Result<(), DbError> {
         let c = self.conn().await?;
-        c.client()
+        Pg(c.client())
             .execute(
                 "UPDATE outbox SET dispatched_at = $2, attempts = attempts + 1 WHERE event_id = $1",
                 &[&event.0, &at],
@@ -261,8 +331,7 @@ impl Database for PgDatabase {
 
     async fn outbox_depth(&self) -> Result<u64, DbError> {
         let c = self.conn().await?;
-        let r = c
-            .client()
+        let r = Pg(c.client())
             .query_one("SELECT count(*) AS n FROM outbox WHERE dispatched_at IS NULL", &[])
             .await
             .map_err(db_err)?;
@@ -272,7 +341,7 @@ impl Database for PgDatabase {
     async fn seed(&self, f: &SeedFixture) -> Result<(), DbError> {
         // `Tx` only exposes slice operations, so the fixture goes through a connection directly.
         let c = self.connector.checkout(true).await?;
-        let cl = c.client();
+        let cl = Pg(c.client());
         cl.batch_execute("BEGIN").await.map_err(db_err)?;
         let res: Result<(), DbError> = async {
             for p in &f.projects {
@@ -310,8 +379,8 @@ pub struct PgTx {
 }
 
 impl PgTx {
-    fn client(&self) -> &Client {
-        self.conn.as_ref().expect("transaction already finished").client()
+    fn client(&self) -> Pg<'_> {
+        Pg(self.conn.as_ref().expect("transaction already finished").client())
     }
 }
 

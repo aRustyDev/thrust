@@ -37,6 +37,8 @@ pub async fn probe_route(req: web_sys::Request, env: &Env, path: &str) -> Result
         "service" => service(env).await,
         "workflow" => workflow(env).await,
         "ai" => ai(env).await,
+        "pgshapes" => pgshapes(env).await,
+        "r2purge" => r2purge(env).await,
         _ => Err(Error::RustError(format!("unknown probe '{name}'"))),
     };
     match out {
@@ -53,7 +55,9 @@ async fn ratelimit(env: &Env) -> Result<Value> {
     let rl = env.rate_limiter("RL")?;
     let key = format!("probe-{}", Date::now().as_millis());
     let mut outcomes = Vec::new();
-    for _ in 0..5 {
+    // 10 calls, not 5: local workerd refuses exactly after the limit, but the deployed binding is approximate
+    // (measured: it allowed a 4th call), so give a lazily-applied limit room to show itself.
+    for _ in 0..10 {
         outcomes.push(rl.limit(key.clone()).await?.success);
     }
     Ok(json!({ "outcomes": outcomes }))
@@ -145,4 +149,214 @@ async fn ai(env: &Env) -> Result<Value> {
     let ai = env.ai("AI")?;
     let out: Value = ai.run("@cf/meta/llama-3.1-8b-instruct", json!({ "prompt": "ping" })).await?;
     Ok(out)
+}
+
+/// Stage 2 teardown helper: empty the spike's R2 bucket through the binding. An R2 bucket must be empty before
+/// it can be deleted, and wrangler has neither object listing nor a bulk delete. Admin-gated like every probe.
+async fn r2purge(env: &Env) -> Result<Value> {
+    let bucket = env.bucket("BLOBS")?;
+    let mut deleted = 0u64;
+    loop {
+        let page = bucket.list().limit(1000).execute().await?;
+        let keys: Vec<String> = page.objects().iter().map(|o| o.key()).collect();
+        if keys.is_empty() {
+            break;
+        }
+        for key in &keys {
+            bucket.delete(key.clone()).await?;
+        }
+        deleted += keys.len() as u64;
+    }
+    Ok(json!({ "deleted": deleted }))
+}
+
+/// Stage 2 diagnostic: which Postgres wire-protocol SHAPES does the Rust driver get through Hyperdrive?
+/// Every case opens its own fresh connection (so one failure cannot poison the next) and reports the
+/// driver's error verbatim (`Debug` shows tokio-postgres' `kind` and `cause`). Writes are rolled back.
+/// Only meaningful with the Cloudflare adapter set; the schema is whatever the role's search_path points at.
+async fn pgshapes(env: &Env) -> Result<Value> {
+    use thrust_adapters_cloudflare::HyperdriveConnector;
+    use thrust_adapters_postgres::{ClientHandle, Connector};
+
+    async fn conn(env: &Env) -> std::result::Result<Box<dyn ClientHandle>, String> {
+        let hd = env.hyperdrive("HYPERDRIVE").map_err(|e| e.to_string())?;
+        HyperdriveConnector::new(hd).checkout(true).await.map_err(|e| format!("{e:?}"))
+    }
+
+    macro_rules! case {
+        ($res:ident, $name:expr, |$cl:ident| $body:block) => {{
+            let r: std::result::Result<String, String> = async {
+                let h = conn(env).await?;
+                let $cl = h.client();
+                $body
+            }
+            .await;
+            $res.insert(
+                $name.to_string(),
+                match r {
+                    Ok(s) => json!({ "ok": s }),
+                    Err(e) => json!({ "error": e }),
+                },
+            );
+        }};
+    }
+    fn d<E: std::fmt::Debug>(e: E) -> String {
+        format!("{e:?}")
+    }
+    let mut res = serde_json::Map::new();
+
+    case!(res, "1_simple_select", |cl| {
+        cl.simple_query("SELECT 1").await.map_err(d)?;
+        Ok("simple_query".to_string())
+    });
+    case!(res, "2_ext_noparam", |cl| {
+        let r = cl.query_one("SELECT 1::int8 AS n", &[]).await.map_err(d)?;
+        Ok(format!("n={}", r.get::<_, i64>("n")))
+    });
+    case!(res, "3_ext_param", |cl| {
+        let r = cl.query_one("SELECT $1::int8 AS n", &[&41i64]).await.map_err(d)?;
+        Ok(format!("n={}", r.get::<_, i64>("n")))
+    });
+    case!(res, "4_two_ext_param_same_conn_no_tx", |cl| {
+        let a = cl.query_one("SELECT $1::int8 AS n", &[&1i64]).await.map_err(d)?;
+        let b = cl.query_one("SELECT $1::int8 AS n", &[&2i64]).await.map_err(d)?;
+        Ok(format!("{}+{}", a.get::<_, i64>("n"), b.get::<_, i64>("n")))
+    });
+    case!(res, "5_tx_simple", |cl| {
+        cl.batch_execute("BEGIN").await.map_err(d)?;
+        cl.simple_query("SELECT 1").await.map_err(d)?;
+        cl.batch_execute("COMMIT").await.map_err(d)?;
+        Ok("begin/simple/commit".to_string())
+    });
+    case!(res, "6_tx_ext_noparam", |cl| {
+        cl.batch_execute("BEGIN").await.map_err(d)?;
+        let r = cl.query_one("SELECT 1::int8 AS n", &[]).await.map_err(d)?;
+        cl.batch_execute("COMMIT").await.map_err(d)?;
+        Ok(format!("n={}", r.get::<_, i64>("n")))
+    });
+    case!(res, "7_tx_ext_param", |cl| {
+        cl.batch_execute("BEGIN").await.map_err(d)?;
+        let r = cl.query_one("SELECT $1::int8 AS n", &[&1i64]).await.map_err(d)?;
+        cl.batch_execute("COMMIT").await.map_err(d)?;
+        Ok(format!("n={}", r.get::<_, i64>("n")))
+    });
+    case!(res, "8_tx_two_ext_param", |cl| {
+        cl.batch_execute("BEGIN").await.map_err(d)?;
+        let a = cl.query_one("SELECT $1::int8 AS n", &[&1i64]).await.map_err(d)?;
+        let b = cl.query_one("SELECT $1::int8 AS n", &[&2i64]).await.map_err(d)?;
+        cl.batch_execute("COMMIT").await.map_err(d)?;
+        Ok(format!("{}+{}", a.get::<_, i64>("n"), b.get::<_, i64>("n")))
+    });
+    case!(res, "9_tx_insert_text_param_rollback", |cl| {
+        cl.batch_execute("BEGIN").await.map_err(d)?;
+        let n = cl
+            .execute(
+                "INSERT INTO projects (id, workspace_id, name) SELECT gen_random_uuid(), gen_random_uuid(), $1",
+                &[&"pgshapes-probe"],
+            )
+            .await
+            .map_err(d)?;
+        cl.batch_execute("ROLLBACK").await.map_err(d)?;
+        Ok(format!("rows={n}"))
+    });
+    case!(res, "10_tx_insert_on_conflict_param_rollback", |cl| {
+        cl.batch_execute("BEGIN").await.map_err(d)?;
+        let n = cl
+            .execute(
+                "INSERT INTO projects (id, workspace_id, name) SELECT gen_random_uuid(), gen_random_uuid(), $1 \
+                 ON CONFLICT (id) DO NOTHING",
+                &[&"pgshapes-probe"],
+            )
+            .await
+            .map_err(d)?;
+        cl.batch_execute("ROLLBACK").await.map_err(d)?;
+        Ok(format!("rows={n}"))
+    });
+    // Bisect: is it "a persistent write" or "an extended-protocol statement that answers NoData"?
+    case!(res, "11_tx_SIMPLE_insert_rollback", |cl| {
+        cl.batch_execute("BEGIN").await.map_err(d)?;
+        cl.simple_query("INSERT INTO projects (id, workspace_id, name) SELECT gen_random_uuid(), gen_random_uuid(), 'pgshapes-probe'")
+            .await
+            .map_err(d)?;
+        cl.batch_execute("ROLLBACK").await.map_err(d)?;
+        Ok("simple-protocol insert, rolled back".to_string())
+    });
+    case!(res, "12_tx_ext_insert_RETURNING_rollback", |cl| {
+        cl.batch_execute("BEGIN").await.map_err(d)?;
+        let r = cl
+            .query_one(
+                "INSERT INTO projects (id, workspace_id, name) SELECT gen_random_uuid(), gen_random_uuid(), $1 RETURNING name",
+                &[&"pgshapes-probe"],
+            )
+            .await
+            .map_err(d)?;
+        cl.batch_execute("ROLLBACK").await.map_err(d)?;
+        Ok(format!("name={}", r.get::<_, String>("name")))
+    });
+    case!(res, "13_tx_ext_update_zero_rows_nodata", |cl| {
+        cl.batch_execute("BEGIN").await.map_err(d)?;
+        let n = cl
+            .execute("UPDATE projects SET name = name WHERE name = $1", &[&"pgshapes-no-such-row"])
+            .await
+            .map_err(d)?;
+        cl.batch_execute("ROLLBACK").await.map_err(d)?;
+        Ok(format!("rows={n}"))
+    });
+    case!(res, "14_tx_ext_insert_zero_rows_nodata", |cl| {
+        cl.batch_execute("BEGIN").await.map_err(d)?;
+        let n = cl
+            .execute(
+                "INSERT INTO projects (id, workspace_id, name) SELECT gen_random_uuid(), gen_random_uuid(), $1 WHERE false",
+                &[&"pgshapes-probe"],
+            )
+            .await
+            .map_err(d)?;
+        cl.batch_execute("ROLLBACK").await.map_err(d)?;
+        Ok(format!("rows={n}"))
+    });
+    case!(res, "15_tx_ext_temp_table_insert_nodata", |cl| {
+        cl.batch_execute("BEGIN").await.map_err(d)?;
+        cl.batch_execute("CREATE TEMP TABLE pgs(x int) ON COMMIT DROP").await.map_err(d)?;
+        let n = cl.execute("INSERT INTO pgs VALUES ($1)", &[&1i32]).await.map_err(d)?;
+        cl.batch_execute("COMMIT").await.map_err(d)?;
+        Ok(format!("rows={n}"))
+    });
+    // `execute_typed` is ONE pipeline on the unnamed statement (Parse, Bind, Describe, Execute, Sync) instead of
+    // prepare-then-execute on a NAMED statement. Does the NoData failure follow the named-statement flow?
+    {
+        use tokio_postgres::types::{ToSql, Type};
+        let probe: &(dyn ToSql + Sync) = &"pgshapes-probe";
+        case!(res, "16_tx_execute_typed_insert_rollback", |cl| {
+            cl.batch_execute("BEGIN").await.map_err(d)?;
+            let n = cl
+                .execute_typed(
+                    "INSERT INTO projects (id, workspace_id, name) SELECT gen_random_uuid(), gen_random_uuid(), $1",
+                    &[(probe, Type::TEXT)],
+                )
+                .await
+                .map_err(d)?;
+            cl.batch_execute("ROLLBACK").await.map_err(d)?;
+            Ok(format!("rows={n}"))
+        });
+        case!(res, "17_tx_execute_typed_update_zero_rows", |cl| {
+            cl.batch_execute("BEGIN").await.map_err(d)?;
+            let n = cl
+                .execute_typed("UPDATE projects SET name = name WHERE name = $1", &[(probe, Type::TEXT)])
+                .await
+                .map_err(d)?;
+            cl.batch_execute("ROLLBACK").await.map_err(d)?;
+            Ok(format!("rows={n}"))
+        });
+        case!(res, "18_execute_typed_autocommit_zero_rows", |cl| {
+            let n = cl
+                .execute_typed(
+                    "INSERT INTO projects (id, workspace_id, name) SELECT gen_random_uuid(), gen_random_uuid(), $1 WHERE false",
+                    &[(probe, Type::TEXT)],
+                )
+                .await
+                .map_err(d)?;
+            Ok(format!("rows={n}"))
+        });
+    }
+    Ok(Value::Object(res))
 }
