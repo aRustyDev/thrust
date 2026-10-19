@@ -14,8 +14,9 @@ grep -E '^ERROR' build.log           # must print nothing: mdBook exits 0 on a b
 ```
 
 `mdbook build` also exits 0 when a page is missing from `src/SUMMARY.md`; the page is silently left out. Run the
-orphan check in `.agents/skills/mdbook/references/book-structure-and-config.md` and link every page. The skill
-`mdbook` covers the rest (`mdbook test`, link checking, CI and Pages).
+orphan check in `.agents/skills/mdbook/references/book-structure-and-config.md` and link every page. No CI job builds
+the book, and a pull request that changes only `docs/` skips the Rust jobs, so these checks are yours to run. The
+skill `mdbook` covers the rest (`mdbook test`, link checking, CI and Pages).
 
 `mermaid.min.js` and `mermaid-init.js` in this directory are written by `mdbook-mermaid install docs`. Regenerate
 them with that command and review the diff; do not edit them by hand.

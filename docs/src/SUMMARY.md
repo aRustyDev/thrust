@@ -4,6 +4,7 @@
 
 - [Application architecture](architecture/app.md)
 - [Infrastructure](architecture/infra.md)
+- [CI/CD](architecture/cicd.md)
 
 # Flows
 

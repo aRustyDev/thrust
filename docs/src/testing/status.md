@@ -38,7 +38,7 @@ A gap is a technique or defect class the [strategy](strategy.md) needs and nothi
 | G-2 | No skill owns planted mutants (`scripts/mutants.sh`). | [mutation](techniques/mutation.md) |
 | G-3 | No unit, property or model-based tests in any crate, so cargo-mutants has nothing to run (exit 4) and pure logic is tested only indirectly. | X15, [Rule 5](rules.md) |
 | G-4 | Unowned defect classes: v1 API compatibility (X14), UI regression (X18), performance budgets (X19), migration up/down checks (X7), coverage thresholds (Q-0123.1), load and concurrency at scale (R-F2), SSRF and other security corpora (R-S3), cron behaviour beyond the sweeper. | [defect matrix](defect-matrix.md) |
-| G-5 | CI runs every suite except the `oracle_` tests and stage 2, but `gate` is not yet a required status check on `main`, so a red run does not block a merge. | everything |
+| G-5 | CI does not run the `oracle_` tests, stage 2, the `blast` and `bench` contract passes or the probes, so those are checked only by hand. (`gate` is the required status check on `main` [verified 2026-10-19 fa4bd6c], so a red run blocks a merge.) | everything |
 | G-6 | No wasm32 unit tests: the Worker is tested only over HTTP. | X8 |
 | G-7 | No browser, desktop or mobile tests, and no `e2e` package or profile. | X18 |
 

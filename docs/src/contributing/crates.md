@@ -23,7 +23,7 @@ depend on one another is on [Application architecture](../architecture/app.md); 
 `thrust-contracts`, `thrust-ports`, `thrust-core` and `thrust-api` must not depend, even indirectly, on a runtime or
 platform crate. `scripts/check-deps.sh` checks that for exactly the crates named in its `CLEAN_CRATES` variable, and
 checks `thrust-adapters-memory` separately. A new crate that has to stay portable is not covered until you add it to
-that list. The check is also a second list: it looks only for the 17 crate names in its `FORBIDDEN` variable, in
+that list, and CI's `deps` job runs the same script, so it does not cover that crate either. The check is also a second list: it looks only for the 17 crate names in its `FORBIDDEN` variable, in
 normal dependencies, so a platform crate that is not on it passes. How the check works and how to prove it can fail
 are on [Architecture gates](../testing/techniques/architecture-gates.md).
 
