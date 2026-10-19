@@ -1,0 +1,13 @@
+[project]
+name = "spike-0006-sanitize"
+version = "0.0.0"
+description = "Spike 0006: Plane's Python HTML sanitiser (nh3) as the oracle for the Rust ammonia port, plus an independent XSS checker"
+requires-python = ">=3.12"
+# The versions Plane pins in apps/api/pyproject.toml (nh3, lxml, beautifulsoup4), plus html5lib as an
+# independent parser for the checker (it is neither the libxml2 parser nor html5ever).
+dependencies = [
+    "nh3==0.2.18",
+    "lxml==6.1.0",
+    "beautifulsoup4==4.12.3",
+    "html5lib==1.1",
+]

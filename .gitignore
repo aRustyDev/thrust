@@ -27,6 +27,8 @@ rustc-ice-*.txt
 .wrangler/
 node_modules/
 crates/thrust-worker/build/
+crates/thrust-editor-worker/build/
 .dev.vars
 .dev.vars.*
 .env
+__pycache__/

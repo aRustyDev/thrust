@@ -1,0 +1,72 @@
+// Spike 0006 probe: the DOM spec arrays (toDOM) the REAL schema returns, for hand-picked attribute sets.
+// The Rust HTML renderer is transcribed from this plus the zeed-dom serialiser rules.
+import { docSchema } from "./lib";
+
+const node = (name: string, attrs: Record<string, unknown> = {}) => {
+  const t = docSchema.nodes[name];
+  const n = t.create(attrs);
+  return JSON.stringify((t.spec as any).toDOM(n), (_k, v) => (v === undefined ? "__undefined__" : v));
+};
+const mark = (name: string, attrs: Record<string, unknown> = {}) => {
+  const t = docSchema.marks[name];
+  const m = t.create(attrs);
+  return JSON.stringify((t.spec as any).toDOM(m, true), (_k, v) => (v === undefined ? "__undefined__" : v));
+};
+const out: Record<string, string> = {};
+const N = (label: string, name: string, attrs?: Record<string, unknown>) => (out[label] = node(name, attrs));
+const M = (label: string, name: string, attrs?: Record<string, unknown>) => (out[label] = mark(name, attrs));
+
+N("paragraph", "paragraph");
+N("paragraph-center", "paragraph", { textAlign: "center" });
+N("heading-1", "heading", { level: 1 });
+N("heading-3-right", "heading", { level: 3, textAlign: "right" });
+N("bulletList", "bulletList");
+N("orderedList", "orderedList");
+N("orderedList-start5", "orderedList", { start: 5 });
+N("orderedList-type-a", "orderedList", { type: "a" });
+N("listItem", "listItem");
+N("taskList", "taskList");
+N("taskItem-checked", "taskItem", { checked: true });
+N("taskItem-unchecked", "taskItem", { checked: false });
+N("blockquote", "blockquote");
+N("codeBlock", "codeBlock");
+N("codeBlock-js", "codeBlock", { language: "js" });
+N("horizontalRule", "horizontalRule");
+N("hardBreak", "hardBreak");
+N("image-default", "image");
+N("image-full", "image", { src: "s", alt: "a", title: "t", width: "50%", height: "20px", aspectRatio: 1.5, alignment: "center" });
+N("imageComponent-default", "imageComponent");
+N("imageComponent-full", "imageComponent", { src: "s", alt: "a", title: "t", id: "i", width: "10px", height: "20px", aspectRatio: 1.5, alignment: "right", status: "uploaded" });
+N("mention-default", "mention");
+N("mention-full", "mention", { id: "i", entity_identifier: "e", entity_name: "user_mention" });
+N("emoji-rocket", "emoji", { name: "rocket" });
+N("emoji-unknown", "emoji", { name: "nope_nope" });
+N("emoji-null", "emoji");
+N("table", "table");
+N("tableRow", "tableRow");
+N("tableRow-colors", "tableRow", { background: "pink", textColor: "gray" });
+N("tableHeader", "tableHeader");
+N("tableHeader-colors", "tableHeader", { background: "#eee", colspan: 2, rowspan: 3, colwidth: [10, 20] });
+N("tableCell", "tableCell");
+N("tableCell-colors", "tableCell", { background: "pink", textColor: "gray", colwidth: null });
+N("callout-default", "calloutComponent");
+N("callout-full", "calloutComponent", { id: "i", "data-icon-color": "#f00", "data-icon-name": "Smile", "data-emoji-unicode": "1f600", "data-emoji-url": "u", "data-logo-in-use": "icon", "data-background": "peach", "data-block-type": "callout-component" });
+N("embed-default", "issue-embed-component");
+N("embed-full", "issue-embed-component", { entity_identifier: "e", project_identifier: "p", workspace_identifier: "w", id: "i", entity_name: "issue" });
+M("link-default", "link");
+M("link-href", "link", { href: "https://x.y/?a=1&b=2" });
+M("link-nulls", "link", { href: "https://x.y", target: null, rel: null, class: null });
+M("link-custom", "link", { href: "https://x.y", target: "_self", rel: "r", class: "c1 c2" });
+M("link-js", "link", { href: "javascript:alert(1)" });
+M("link-js-ws", "link", { href: "  JaVa\tScRiPt:alert(1)" });
+M("textStyle", "textStyle");
+M("bold", "bold");
+M("italic", "italic");
+M("strike", "strike");
+M("underline", "underline");
+M("code", "code");
+M("customColor-default", "customColor");
+M("customColor-named", "customColor", { color: "gray" });
+M("customColor-hex", "customColor", { color: "#ff0000", backgroundColor: "#00ff00" });
+M("customColor-bg-named", "customColor", { backgroundColor: "peach" });
+console.log(JSON.stringify(out, null, 1));

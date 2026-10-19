@@ -1,0 +1,2374 @@
+{
+ "rich": {
+  "topNode": "doc",
+  "nodes": {
+   "paragraph": {
+    "content": "inline*",
+    "group": "block",
+    "marks": null,
+    "inline": false,
+    "atom": false,
+    "leaf": false,
+    "textblock": true,
+    "code": false,
+    "defining": false,
+    "isolating": false,
+    "whitespace": null,
+    "attrs": {
+     "textAlign": {
+      "default": null
+     }
+    },
+    "parseDOM": [
+     {
+      "tag": "p",
+      "style": null,
+      "priority": null,
+      "preserveWhitespace": null,
+      "context": null,
+      "hasGetAttrs": true,
+      "ignore": null,
+      "skip": null,
+      "consuming": null
+     }
+    ],
+    "hasToDOM": true
+   },
+   "mention": {
+    "content": null,
+    "group": "inline",
+    "marks": null,
+    "inline": true,
+    "atom": true,
+    "leaf": true,
+    "textblock": false,
+    "code": false,
+    "defining": false,
+    "isolating": false,
+    "whitespace": null,
+    "attrs": {
+     "id": {
+      "default": null
+     },
+     "entity_identifier": {
+      "default": null
+     },
+     "entity_name": {
+      "default": null
+     }
+    },
+    "parseDOM": [
+     {
+      "tag": "mention-component",
+      "style": null,
+      "priority": null,
+      "preserveWhitespace": null,
+      "context": null,
+      "hasGetAttrs": true,
+      "ignore": null,
+      "skip": null,
+      "consuming": null
+     }
+    ],
+    "hasToDOM": true
+   },
+   "bulletList": {
+    "content": "listItem+",
+    "group": "block list",
+    "marks": null,
+    "inline": false,
+    "atom": false,
+    "leaf": false,
+    "textblock": false,
+    "code": false,
+    "defining": false,
+    "isolating": false,
+    "whitespace": null,
+    "attrs": {},
+    "parseDOM": [
+     {
+      "tag": "ul",
+      "style": null,
+      "priority": null,
+      "preserveWhitespace": null,
+      "context": null,
+      "hasGetAttrs": true,
+      "ignore": null,
+      "skip": null,
+      "consuming": null
+     }
+    ],
+    "hasToDOM": true
+   },
+   "doc": {
+    "content": "block+",
+    "group": null,
+    "marks": null,
+    "inline": false,
+    "atom": false,
+    "leaf": false,
+    "textblock": false,
+    "code": false,
+    "defining": false,
+    "isolating": false,
+    "whitespace": null,
+    "attrs": {},
+    "parseDOM": [],
+    "hasToDOM": false
+   },
+   "hardBreak": {
+    "content": null,
+    "group": "inline",
+    "marks": null,
+    "inline": true,
+    "atom": true,
+    "leaf": true,
+    "textblock": false,
+    "code": false,
+    "defining": false,
+    "isolating": false,
+    "whitespace": null,
+    "attrs": {},
+    "parseDOM": [
+     {
+      "tag": "br",
+      "style": null,
+      "priority": null,
+      "preserveWhitespace": null,
+      "context": null,
+      "hasGetAttrs": true,
+      "ignore": null,
+      "skip": null,
+      "consuming": null
+     }
+    ],
+    "hasToDOM": true
+   },
+   "heading": {
+    "content": "inline*",
+    "group": "block",
+    "marks": null,
+    "inline": false,
+    "atom": false,
+    "leaf": false,
+    "textblock": true,
+    "code": false,
+    "defining": true,
+    "isolating": false,
+    "whitespace": null,
+    "attrs": {
+     "textAlign": {
+      "default": null
+     },
+     "level": {
+      "default": 1
+     }
+    },
+    "parseDOM": [
+     {
+      "tag": "h1",
+      "style": null,
+      "priority": null,
+      "preserveWhitespace": null,
+      "context": null,
+      "hasGetAttrs": true,
+      "ignore": null,
+      "skip": null,
+      "consuming": null
+     },
+     {
+      "tag": "h2",
+      "style": null,
+      "priority": null,
+      "preserveWhitespace": null,
+      "context": null,
+      "hasGetAttrs": true,
+      "ignore": null,
+      "skip": null,
+      "consuming": null
+     },
+     {
+      "tag": "h3",
+      "style": null,
+      "priority": null,
+      "preserveWhitespace": null,
+      "context": null,
+      "hasGetAttrs": true,
+      "ignore": null,
+      "skip": null,
+      "consuming": null
+     },
+     {
+      "tag": "h4",
+      "style": null,
+      "priority": null,
+      "preserveWhitespace": null,
+      "context": null,
+      "hasGetAttrs": true,
+      "ignore": null,
+      "skip": null,
+      "consuming": null
+     },
+     {
+      "tag": "h5",
+      "style": null,
+      "priority": null,
+      "preserveWhitespace": null,
+      "context": null,
+      "hasGetAttrs": true,
+      "ignore": null,
+      "skip": null,
+      "consuming": null
+     },
+     {
+      "tag": "h6",
+      "style": null,
+      "priority": null,
+      "preserveWhitespace": null,
+      "context": null,
+      "hasGetAttrs": true,
+      "ignore": null,
+      "skip": null,
+      "consuming": null
+     }
+    ],
+    "hasToDOM": true
+   },
+   "listItem": {
+    "content": "paragraph block*",
+    "group": null,
+    "marks": null,
+    "inline": false,
+    "atom": false,
+    "leaf": false,
+    "textblock": false,
+    "code": false,
+    "defining": true,
+    "isolating": false,
+    "whitespace": null,
+    "attrs": {},
+    "parseDOM": [
+     {
+      "tag": "li",
+      "style": null,
+      "priority": null,
+      "preserveWhitespace": null,
+      "context": null,
+      "hasGetAttrs": true,
+      "ignore": null,
+      "skip": null,
+      "consuming": null
+     }
+    ],
+    "hasToDOM": true
+   },
+   "orderedList": {
+    "content": "listItem+",
+    "group": "block list",
+    "marks": null,
+    "inline": false,
+    "atom": false,
+    "leaf": false,
+    "textblock": false,
+    "code": false,
+    "defining": false,
+    "isolating": false,
+    "whitespace": null,
+    "attrs": {
+     "start": {
+      "default": 1
+     },
+     "type": {
+      "default": null
+     }
+    },
+    "parseDOM": [
+     {
+      "tag": "ol",
+      "style": null,
+      "priority": null,
+      "preserveWhitespace": null,
+      "context": null,
+      "hasGetAttrs": true,
+      "ignore": null,
+      "skip": null,
+      "consuming": null
+     }
+    ],
+    "hasToDOM": true
+   },
+   "text": {
+    "content": null,
+    "group": "inline",
+    "marks": null,
+    "inline": true,
+    "atom": true,
+    "leaf": true,
+    "textblock": false,
+    "code": false,
+    "defining": false,
+    "isolating": false,
+    "whitespace": null,
+    "attrs": {},
+    "parseDOM": [],
+    "hasToDOM": false
+   },
+   "emoji": {
+    "content": null,
+    "group": "inline",
+    "marks": null,
+    "inline": true,
+    "atom": true,
+    "leaf": true,
+    "textblock": false,
+    "code": false,
+    "defining": false,
+    "isolating": false,
+    "whitespace": null,
+    "attrs": {
+     "name": {
+      "default": null
+     }
+    },
+    "parseDOM": [
+     {
+      "tag": "span[data-type=\"emoji\"]",
+      "style": null,
+      "priority": null,
+      "preserveWhitespace": null,
+      "context": null,
+      "hasGetAttrs": true,
+      "ignore": null,
+      "skip": null,
+      "consuming": null
+     }
+    ],
+    "hasToDOM": true
+   },
+   "blockquote": {
+    "content": "block+",
+    "group": "block",
+    "marks": null,
+    "inline": false,
+    "atom": false,
+    "leaf": false,
+    "textblock": false,
+    "code": false,
+    "defining": true,
+    "isolating": false,
+    "whitespace": null,
+    "attrs": {},
+    "parseDOM": [
+     {
+      "tag": "blockquote",
+      "style": null,
+      "priority": null,
+      "preserveWhitespace": null,
+      "context": null,
+      "hasGetAttrs": true,
+      "ignore": null,
+      "skip": null,
+      "consuming": null
+     }
+    ],
+    "hasToDOM": true
+   },
+   "horizontalRule": {
+    "content": null,
+    "group": "block",
+    "marks": null,
+    "inline": false,
+    "atom": true,
+    "leaf": true,
+    "textblock": false,
+    "code": false,
+    "defining": false,
+    "isolating": false,
+    "whitespace": null,
+    "attrs": {},
+    "parseDOM": [
+     {
+      "tag": "div[data-type=\"horizontalRule\"]",
+      "style": null,
+      "priority": null,
+      "preserveWhitespace": null,
+      "context": null,
+      "hasGetAttrs": true,
+      "ignore": null,
+      "skip": null,
+      "consuming": null
+     },
+     {
+      "tag": "hr",
+      "style": null,
+      "priority": null,
+      "preserveWhitespace": null,
+      "context": null,
+      "hasGetAttrs": true,
+      "ignore": null,
+      "skip": null,
+      "consuming": null
+     }
+    ],
+    "hasToDOM": true
+   },
+   "image": {
+    "content": null,
+    "group": "block",
+    "marks": null,
+    "inline": false,
+    "atom": true,
+    "leaf": true,
+    "textblock": false,
+    "code": false,
+    "defining": false,
+    "isolating": false,
+    "whitespace": null,
+    "attrs": {
+     "src": {
+      "default": null
+     },
+     "alt": {
+      "default": null
+     },
+     "title": {
+      "default": null
+     },
+     "width": {
+      "default": "35%"
+     },
+     "height": {
+      "default": null
+     },
+     "aspectRatio": {
+      "default": null
+     },
+     "alignment": {
+      "default": "left"
+     }
+    },
+    "parseDOM": [
+     {
+      "tag": "img[src]:not([src^=\"data:\"])",
+      "style": null,
+      "priority": null,
+      "preserveWhitespace": null,
+      "context": null,
+      "hasGetAttrs": true,
+      "ignore": null,
+      "skip": null,
+      "consuming": null
+     }
+    ],
+    "hasToDOM": true
+   },
+   "imageComponent": {
+    "content": null,
+    "group": "block",
+    "marks": null,
+    "inline": false,
+    "atom": true,
+    "leaf": true,
+    "textblock": false,
+    "code": false,
+    "defining": false,
+    "isolating": false,
+    "whitespace": null,
+    "attrs": {
+     "src": {
+      "default": null
+     },
+     "alt": {
+      "default": null
+     },
+     "title": {
+      "default": null
+     },
+     "id": {
+      "default": null
+     },
+     "width": {
+      "default": "35%"
+     },
+     "height": {
+      "default": "auto"
+     },
+     "aspectRatio": {
+      "default": null
+     },
+     "alignment": {
+      "default": "left"
+     },
+     "status": {
+      "default": "pending"
+     }
+    },
+    "parseDOM": [
+     {
+      "tag": "image-component",
+      "style": null,
+      "priority": null,
+      "preserveWhitespace": null,
+      "context": null,
+      "hasGetAttrs": true,
+      "ignore": null,
+      "skip": null,
+      "consuming": null
+     }
+    ],
+    "hasToDOM": true
+   },
+   "taskList": {
+    "content": "taskItem+",
+    "group": "block list",
+    "marks": null,
+    "inline": false,
+    "atom": false,
+    "leaf": false,
+    "textblock": false,
+    "code": false,
+    "defining": false,
+    "isolating": false,
+    "whitespace": null,
+    "attrs": {},
+    "parseDOM": [
+     {
+      "tag": "ul[data-type=\"taskList\"]",
+      "style": null,
+      "priority": 51,
+      "preserveWhitespace": null,
+      "context": null,
+      "hasGetAttrs": true,
+      "ignore": null,
+      "skip": null,
+      "consuming": null
+     }
+    ],
+    "hasToDOM": true
+   },
+   "taskItem": {
+    "content": "paragraph block*",
+    "group": null,
+    "marks": null,
+    "inline": false,
+    "atom": false,
+    "leaf": false,
+    "textblock": false,
+    "code": false,
+    "defining": true,
+    "isolating": false,
+    "whitespace": null,
+    "attrs": {
+     "checked": {
+      "default": false
+     }
+    },
+    "parseDOM": [
+     {
+      "tag": "li[data-type=\"taskItem\"]",
+      "style": null,
+      "priority": 51,
+      "preserveWhitespace": null,
+      "context": null,
+      "hasGetAttrs": true,
+      "ignore": null,
+      "skip": null,
+      "consuming": null
+     }
+    ],
+    "hasToDOM": true
+   },
+   "codeBlock": {
+    "content": "text*",
+    "group": "block",
+    "marks": "",
+    "inline": false,
+    "atom": false,
+    "leaf": false,
+    "textblock": true,
+    "code": true,
+    "defining": true,
+    "isolating": false,
+    "whitespace": null,
+    "attrs": {
+     "language": {
+      "default": null
+     }
+    },
+    "parseDOM": [
+     {
+      "tag": "pre",
+      "style": null,
+      "priority": null,
+      "preserveWhitespace": "full",
+      "context": null,
+      "hasGetAttrs": true,
+      "ignore": null,
+      "skip": null,
+      "consuming": null
+     }
+    ],
+    "hasToDOM": true
+   },
+   "table": {
+    "content": "tableRow+",
+    "group": "block",
+    "marks": null,
+    "inline": false,
+    "atom": false,
+    "leaf": false,
+    "textblock": false,
+    "code": false,
+    "defining": false,
+    "isolating": true,
+    "whitespace": null,
+    "attrs": {},
+    "parseDOM": [
+     {
+      "tag": "table",
+      "style": null,
+      "priority": null,
+      "preserveWhitespace": null,
+      "context": null,
+      "hasGetAttrs": true,
+      "ignore": null,
+      "skip": null,
+      "consuming": null
+     }
+    ],
+    "hasToDOM": true
+   },
+   "tableHeader": {
+    "content": "block+",
+    "group": null,
+    "marks": null,
+    "inline": false,
+    "atom": false,
+    "leaf": false,
+    "textblock": false,
+    "code": false,
+    "defining": false,
+    "isolating": true,
+    "whitespace": null,
+    "attrs": {
+     "colspan": {
+      "default": 1
+     },
+     "rowspan": {
+      "default": 1
+     },
+     "colwidth": {
+      "default": [
+       150
+      ]
+     },
+     "background": {
+      "default": "none"
+     }
+    },
+    "parseDOM": [
+     {
+      "tag": "th",
+      "style": null,
+      "priority": null,
+      "preserveWhitespace": null,
+      "context": null,
+      "hasGetAttrs": true,
+      "ignore": null,
+      "skip": null,
+      "consuming": null
+     }
+    ],
+    "hasToDOM": true
+   },
+   "tableCell": {
+    "content": "block+",
+    "group": null,
+    "marks": null,
+    "inline": false,
+    "atom": false,
+    "leaf": false,
+    "textblock": false,
+    "code": false,
+    "defining": false,
+    "isolating": true,
+    "whitespace": null,
+    "attrs": {
+     "colspan": {
+      "default": 1
+     },
+     "rowspan": {
+      "default": 1
+     },
+     "colwidth": {
+      "default": [
+       150
+      ]
+     },
+     "background": {
+      "default": null
+     },
+     "textColor": {
+      "default": null
+     }
+    },
+    "parseDOM": [
+     {
+      "tag": "td",
+      "style": null,
+      "priority": null,
+      "preserveWhitespace": null,
+      "context": null,
+      "hasGetAttrs": true,
+      "ignore": null,
+      "skip": null,
+      "consuming": null
+     }
+    ],
+    "hasToDOM": true
+   },
+   "tableRow": {
+    "content": "(tableCell | tableHeader)*",
+    "group": null,
+    "marks": null,
+    "inline": false,
+    "atom": false,
+    "leaf": false,
+    "textblock": false,
+    "code": false,
+    "defining": false,
+    "isolating": false,
+    "whitespace": null,
+    "attrs": {
+     "background": {
+      "default": null
+     },
+     "textColor": {
+      "default": null
+     }
+    },
+    "parseDOM": [
+     {
+      "tag": "tr",
+      "style": null,
+      "priority": null,
+      "preserveWhitespace": null,
+      "context": null,
+      "hasGetAttrs": true,
+      "ignore": null,
+      "skip": null,
+      "consuming": null
+     }
+    ],
+    "hasToDOM": true
+   },
+   "calloutComponent": {
+    "content": "block+",
+    "group": "block",
+    "marks": null,
+    "inline": false,
+    "atom": false,
+    "leaf": false,
+    "textblock": false,
+    "code": false,
+    "defining": false,
+    "isolating": false,
+    "whitespace": null,
+    "attrs": {
+     "id": {
+      "default": null
+     },
+     "data-icon-color": {
+      "default": "__undefined__"
+     },
+     "data-icon-name": {
+      "default": "__undefined__"
+     },
+     "data-emoji-unicode": {
+      "default": "128161"
+     },
+     "data-emoji-url": {
+      "default": "https://cdn.jsdelivr.net/npm/emoji-datasource-apple/img/apple/64/1f4a1.png"
+     },
+     "data-logo-in-use": {
+      "default": "emoji"
+     },
+     "data-background": {
+      "default": "__undefined__"
+     },
+     "data-block-type": {
+      "default": "callout-component"
+     }
+    },
+    "parseDOM": [
+     {
+      "tag": "div[data-block-type=\"callout-component\"]",
+      "style": null,
+      "priority": null,
+      "preserveWhitespace": null,
+      "context": null,
+      "hasGetAttrs": true,
+      "ignore": null,
+      "skip": null,
+      "consuming": null
+     }
+    ],
+    "hasToDOM": true
+   }
+  },
+  "marks": {
+   "link": {
+    "excludes": null,
+    "inclusive": false,
+    "group": null,
+    "spanning": null,
+    "attrs": {
+     "href": {
+      "default": null
+     },
+     "target": {
+      "default": "_blank"
+     },
+     "rel": {
+      "default": "noopener noreferrer nofollow"
+     },
+     "class": {
+      "default": "text-accent-secondary underline underline-offset-[3px] hover:text-accent-primary transition-colors cursor-pointer"
+     }
+    },
+    "rank": 0,
+    "parseDOM": [
+     {
+      "tag": "a[href]",
+      "style": null,
+      "priority": null,
+      "preserveWhitespace": null,
+      "context": null,
+      "hasGetAttrs": true,
+      "ignore": null,
+      "skip": null,
+      "consuming": null
+     }
+    ]
+   },
+   "textStyle": {
+    "excludes": null,
+    "inclusive": null,
+    "group": null,
+    "spanning": null,
+    "attrs": {},
+    "rank": 1,
+    "parseDOM": [
+     {
+      "tag": "span",
+      "style": null,
+      "priority": null,
+      "preserveWhitespace": null,
+      "context": null,
+      "hasGetAttrs": true,
+      "ignore": null,
+      "skip": null,
+      "consuming": null
+     }
+    ]
+   },
+   "bold": {
+    "excludes": null,
+    "inclusive": null,
+    "group": null,
+    "spanning": null,
+    "attrs": {},
+    "rank": 2,
+    "parseDOM": [
+     {
+      "tag": "strong",
+      "style": null,
+      "priority": null,
+      "preserveWhitespace": null,
+      "context": null,
+      "hasGetAttrs": true,
+      "ignore": null,
+      "skip": null,
+      "consuming": null
+     },
+     {
+      "tag": "b",
+      "style": null,
+      "priority": null,
+      "preserveWhitespace": null,
+      "context": null,
+      "hasGetAttrs": true,
+      "ignore": null,
+      "skip": null,
+      "consuming": null
+     },
+     {
+      "tag": null,
+      "style": "font-weight=400",
+      "priority": null,
+      "preserveWhitespace": null,
+      "context": null,
+      "hasGetAttrs": false,
+      "ignore": null,
+      "skip": null,
+      "consuming": null
+     },
+     {
+      "tag": null,
+      "style": "font-weight",
+      "priority": null,
+      "preserveWhitespace": null,
+      "context": null,
+      "hasGetAttrs": true,
+      "ignore": null,
+      "skip": null,
+      "consuming": null
+     }
+    ]
+   },
+   "italic": {
+    "excludes": null,
+    "inclusive": null,
+    "group": null,
+    "spanning": null,
+    "attrs": {},
+    "rank": 3,
+    "parseDOM": [
+     {
+      "tag": "em",
+      "style": null,
+      "priority": null,
+      "preserveWhitespace": null,
+      "context": null,
+      "hasGetAttrs": true,
+      "ignore": null,
+      "skip": null,
+      "consuming": null
+     },
+     {
+      "tag": "i",
+      "style": null,
+      "priority": null,
+      "preserveWhitespace": null,
+      "context": null,
+      "hasGetAttrs": true,
+      "ignore": null,
+      "skip": null,
+      "consuming": null
+     },
+     {
+      "tag": null,
+      "style": "font-style=normal",
+      "priority": null,
+      "preserveWhitespace": null,
+      "context": null,
+      "hasGetAttrs": false,
+      "ignore": null,
+      "skip": null,
+      "consuming": null
+     },
+     {
+      "tag": null,
+      "style": "font-style=italic",
+      "priority": null,
+      "preserveWhitespace": null,
+      "context": null,
+      "hasGetAttrs": false,
+      "ignore": null,
+      "skip": null,
+      "consuming": null
+     }
+    ]
+   },
+   "strike": {
+    "excludes": null,
+    "inclusive": null,
+    "group": null,
+    "spanning": null,
+    "attrs": {},
+    "rank": 4,
+    "parseDOM": [
+     {
+      "tag": "s",
+      "style": null,
+      "priority": null,
+      "preserveWhitespace": null,
+      "context": null,
+      "hasGetAttrs": true,
+      "ignore": null,
+      "skip": null,
+      "consuming": null
+     },
+     {
+      "tag": "del",
+      "style": null,
+      "priority": null,
+      "preserveWhitespace": null,
+      "context": null,
+      "hasGetAttrs": true,
+      "ignore": null,
+      "skip": null,
+      "consuming": null
+     },
+     {
+      "tag": "strike",
+      "style": null,
+      "priority": null,
+      "preserveWhitespace": null,
+      "context": null,
+      "hasGetAttrs": true,
+      "ignore": null,
+      "skip": null,
+      "consuming": null
+     },
+     {
+      "tag": null,
+      "style": "text-decoration",
+      "priority": null,
+      "preserveWhitespace": null,
+      "context": null,
+      "hasGetAttrs": true,
+      "ignore": null,
+      "skip": null,
+      "consuming": false
+     }
+    ]
+   },
+   "underline": {
+    "excludes": null,
+    "inclusive": null,
+    "group": null,
+    "spanning": null,
+    "attrs": {},
+    "rank": 5,
+    "parseDOM": [
+     {
+      "tag": "u",
+      "style": null,
+      "priority": null,
+      "preserveWhitespace": null,
+      "context": null,
+      "hasGetAttrs": true,
+      "ignore": null,
+      "skip": null,
+      "consuming": null
+     },
+     {
+      "tag": null,
+      "style": "text-decoration",
+      "priority": null,
+      "preserveWhitespace": null,
+      "context": null,
+      "hasGetAttrs": true,
+      "ignore": null,
+      "skip": null,
+      "consuming": false
+     }
+    ]
+   },
+   "code": {
+    "excludes": "_",
+    "inclusive": null,
+    "group": null,
+    "spanning": null,
+    "attrs": {},
+    "rank": 6,
+    "parseDOM": [
+     {
+      "tag": "code",
+      "style": null,
+      "priority": null,
+      "preserveWhitespace": null,
+      "context": null,
+      "hasGetAttrs": true,
+      "ignore": null,
+      "skip": null,
+      "consuming": null
+     }
+    ]
+   },
+   "customColor": {
+    "excludes": null,
+    "inclusive": null,
+    "group": null,
+    "spanning": null,
+    "attrs": {
+     "color": {
+      "default": null
+     },
+     "backgroundColor": {
+      "default": null
+     }
+    },
+    "rank": 7,
+    "parseDOM": [
+     {
+      "tag": "span",
+      "style": null,
+      "priority": null,
+      "preserveWhitespace": null,
+      "context": null,
+      "hasGetAttrs": true,
+      "ignore": null,
+      "skip": null,
+      "consuming": null
+     },
+     {
+      "tag": "span",
+      "style": null,
+      "priority": null,
+      "preserveWhitespace": null,
+      "context": null,
+      "hasGetAttrs": true,
+      "ignore": null,
+      "skip": null,
+      "consuming": null
+     }
+    ]
+   }
+  }
+ },
+ "document": {
+  "topNode": "doc",
+  "nodes": {
+   "paragraph": {
+    "content": "inline*",
+    "group": "block",
+    "marks": null,
+    "inline": false,
+    "atom": false,
+    "leaf": false,
+    "textblock": true,
+    "code": false,
+    "defining": false,
+    "isolating": false,
+    "whitespace": null,
+    "attrs": {
+     "textAlign": {
+      "default": null
+     }
+    },
+    "parseDOM": [
+     {
+      "tag": "p",
+      "style": null,
+      "priority": null,
+      "preserveWhitespace": null,
+      "context": null,
+      "hasGetAttrs": true,
+      "ignore": null,
+      "skip": null,
+      "consuming": null
+     }
+    ],
+    "hasToDOM": true
+   },
+   "mention": {
+    "content": null,
+    "group": "inline",
+    "marks": null,
+    "inline": true,
+    "atom": true,
+    "leaf": true,
+    "textblock": false,
+    "code": false,
+    "defining": false,
+    "isolating": false,
+    "whitespace": null,
+    "attrs": {
+     "id": {
+      "default": null
+     },
+     "entity_identifier": {
+      "default": null
+     },
+     "entity_name": {
+      "default": null
+     }
+    },
+    "parseDOM": [
+     {
+      "tag": "mention-component",
+      "style": null,
+      "priority": null,
+      "preserveWhitespace": null,
+      "context": null,
+      "hasGetAttrs": true,
+      "ignore": null,
+      "skip": null,
+      "consuming": null
+     }
+    ],
+    "hasToDOM": true
+   },
+   "bulletList": {
+    "content": "listItem+",
+    "group": "block list",
+    "marks": null,
+    "inline": false,
+    "atom": false,
+    "leaf": false,
+    "textblock": false,
+    "code": false,
+    "defining": false,
+    "isolating": false,
+    "whitespace": null,
+    "attrs": {},
+    "parseDOM": [
+     {
+      "tag": "ul",
+      "style": null,
+      "priority": null,
+      "preserveWhitespace": null,
+      "context": null,
+      "hasGetAttrs": true,
+      "ignore": null,
+      "skip": null,
+      "consuming": null
+     }
+    ],
+    "hasToDOM": true
+   },
+   "doc": {
+    "content": "block+",
+    "group": null,
+    "marks": null,
+    "inline": false,
+    "atom": false,
+    "leaf": false,
+    "textblock": false,
+    "code": false,
+    "defining": false,
+    "isolating": false,
+    "whitespace": null,
+    "attrs": {},
+    "parseDOM": [],
+    "hasToDOM": false
+   },
+   "hardBreak": {
+    "content": null,
+    "group": "inline",
+    "marks": null,
+    "inline": true,
+    "atom": true,
+    "leaf": true,
+    "textblock": false,
+    "code": false,
+    "defining": false,
+    "isolating": false,
+    "whitespace": null,
+    "attrs": {},
+    "parseDOM": [
+     {
+      "tag": "br",
+      "style": null,
+      "priority": null,
+      "preserveWhitespace": null,
+      "context": null,
+      "hasGetAttrs": true,
+      "ignore": null,
+      "skip": null,
+      "consuming": null
+     }
+    ],
+    "hasToDOM": true
+   },
+   "heading": {
+    "content": "inline*",
+    "group": "block",
+    "marks": null,
+    "inline": false,
+    "atom": false,
+    "leaf": false,
+    "textblock": true,
+    "code": false,
+    "defining": true,
+    "isolating": false,
+    "whitespace": null,
+    "attrs": {
+     "textAlign": {
+      "default": null
+     },
+     "level": {
+      "default": 1
+     }
+    },
+    "parseDOM": [
+     {
+      "tag": "h1",
+      "style": null,
+      "priority": null,
+      "preserveWhitespace": null,
+      "context": null,
+      "hasGetAttrs": true,
+      "ignore": null,
+      "skip": null,
+      "consuming": null
+     },
+     {
+      "tag": "h2",
+      "style": null,
+      "priority": null,
+      "preserveWhitespace": null,
+      "context": null,
+      "hasGetAttrs": true,
+      "ignore": null,
+      "skip": null,
+      "consuming": null
+     },
+     {
+      "tag": "h3",
+      "style": null,
+      "priority": null,
+      "preserveWhitespace": null,
+      "context": null,
+      "hasGetAttrs": true,
+      "ignore": null,
+      "skip": null,
+      "consuming": null
+     },
+     {
+      "tag": "h4",
+      "style": null,
+      "priority": null,
+      "preserveWhitespace": null,
+      "context": null,
+      "hasGetAttrs": true,
+      "ignore": null,
+      "skip": null,
+      "consuming": null
+     },
+     {
+      "tag": "h5",
+      "style": null,
+      "priority": null,
+      "preserveWhitespace": null,
+      "context": null,
+      "hasGetAttrs": true,
+      "ignore": null,
+      "skip": null,
+      "consuming": null
+     },
+     {
+      "tag": "h6",
+      "style": null,
+      "priority": null,
+      "preserveWhitespace": null,
+      "context": null,
+      "hasGetAttrs": true,
+      "ignore": null,
+      "skip": null,
+      "consuming": null
+     }
+    ],
+    "hasToDOM": true
+   },
+   "listItem": {
+    "content": "paragraph block*",
+    "group": null,
+    "marks": null,
+    "inline": false,
+    "atom": false,
+    "leaf": false,
+    "textblock": false,
+    "code": false,
+    "defining": true,
+    "isolating": false,
+    "whitespace": null,
+    "attrs": {},
+    "parseDOM": [
+     {
+      "tag": "li",
+      "style": null,
+      "priority": null,
+      "preserveWhitespace": null,
+      "context": null,
+      "hasGetAttrs": true,
+      "ignore": null,
+      "skip": null,
+      "consuming": null
+     }
+    ],
+    "hasToDOM": true
+   },
+   "orderedList": {
+    "content": "listItem+",
+    "group": "block list",
+    "marks": null,
+    "inline": false,
+    "atom": false,
+    "leaf": false,
+    "textblock": false,
+    "code": false,
+    "defining": false,
+    "isolating": false,
+    "whitespace": null,
+    "attrs": {
+     "start": {
+      "default": 1
+     },
+     "type": {
+      "default": null
+     }
+    },
+    "parseDOM": [
+     {
+      "tag": "ol",
+      "style": null,
+      "priority": null,
+      "preserveWhitespace": null,
+      "context": null,
+      "hasGetAttrs": true,
+      "ignore": null,
+      "skip": null,
+      "consuming": null
+     }
+    ],
+    "hasToDOM": true
+   },
+   "text": {
+    "content": null,
+    "group": "inline",
+    "marks": null,
+    "inline": true,
+    "atom": true,
+    "leaf": true,
+    "textblock": false,
+    "code": false,
+    "defining": false,
+    "isolating": false,
+    "whitespace": null,
+    "attrs": {},
+    "parseDOM": [],
+    "hasToDOM": false
+   },
+   "emoji": {
+    "content": null,
+    "group": "inline",
+    "marks": null,
+    "inline": true,
+    "atom": true,
+    "leaf": true,
+    "textblock": false,
+    "code": false,
+    "defining": false,
+    "isolating": false,
+    "whitespace": null,
+    "attrs": {
+     "name": {
+      "default": null
+     }
+    },
+    "parseDOM": [
+     {
+      "tag": "span[data-type=\"emoji\"]",
+      "style": null,
+      "priority": null,
+      "preserveWhitespace": null,
+      "context": null,
+      "hasGetAttrs": true,
+      "ignore": null,
+      "skip": null,
+      "consuming": null
+     }
+    ],
+    "hasToDOM": true
+   },
+   "blockquote": {
+    "content": "block+",
+    "group": "block",
+    "marks": null,
+    "inline": false,
+    "atom": false,
+    "leaf": false,
+    "textblock": false,
+    "code": false,
+    "defining": true,
+    "isolating": false,
+    "whitespace": null,
+    "attrs": {},
+    "parseDOM": [
+     {
+      "tag": "blockquote",
+      "style": null,
+      "priority": null,
+      "preserveWhitespace": null,
+      "context": null,
+      "hasGetAttrs": true,
+      "ignore": null,
+      "skip": null,
+      "consuming": null
+     }
+    ],
+    "hasToDOM": true
+   },
+   "horizontalRule": {
+    "content": null,
+    "group": "block",
+    "marks": null,
+    "inline": false,
+    "atom": true,
+    "leaf": true,
+    "textblock": false,
+    "code": false,
+    "defining": false,
+    "isolating": false,
+    "whitespace": null,
+    "attrs": {},
+    "parseDOM": [
+     {
+      "tag": "div[data-type=\"horizontalRule\"]",
+      "style": null,
+      "priority": null,
+      "preserveWhitespace": null,
+      "context": null,
+      "hasGetAttrs": true,
+      "ignore": null,
+      "skip": null,
+      "consuming": null
+     },
+     {
+      "tag": "hr",
+      "style": null,
+      "priority": null,
+      "preserveWhitespace": null,
+      "context": null,
+      "hasGetAttrs": true,
+      "ignore": null,
+      "skip": null,
+      "consuming": null
+     }
+    ],
+    "hasToDOM": true
+   },
+   "image": {
+    "content": null,
+    "group": "block",
+    "marks": null,
+    "inline": false,
+    "atom": true,
+    "leaf": true,
+    "textblock": false,
+    "code": false,
+    "defining": false,
+    "isolating": false,
+    "whitespace": null,
+    "attrs": {
+     "src": {
+      "default": null
+     },
+     "alt": {
+      "default": null
+     },
+     "title": {
+      "default": null
+     },
+     "width": {
+      "default": "35%"
+     },
+     "height": {
+      "default": null
+     },
+     "aspectRatio": {
+      "default": null
+     },
+     "alignment": {
+      "default": "left"
+     }
+    },
+    "parseDOM": [
+     {
+      "tag": "img[src]:not([src^=\"data:\"])",
+      "style": null,
+      "priority": null,
+      "preserveWhitespace": null,
+      "context": null,
+      "hasGetAttrs": true,
+      "ignore": null,
+      "skip": null,
+      "consuming": null
+     }
+    ],
+    "hasToDOM": true
+   },
+   "imageComponent": {
+    "content": null,
+    "group": "block",
+    "marks": null,
+    "inline": false,
+    "atom": true,
+    "leaf": true,
+    "textblock": false,
+    "code": false,
+    "defining": false,
+    "isolating": false,
+    "whitespace": null,
+    "attrs": {
+     "src": {
+      "default": null
+     },
+     "alt": {
+      "default": null
+     },
+     "title": {
+      "default": null
+     },
+     "id": {
+      "default": null
+     },
+     "width": {
+      "default": "35%"
+     },
+     "height": {
+      "default": "auto"
+     },
+     "aspectRatio": {
+      "default": null
+     },
+     "alignment": {
+      "default": "left"
+     },
+     "status": {
+      "default": "pending"
+     }
+    },
+    "parseDOM": [
+     {
+      "tag": "image-component",
+      "style": null,
+      "priority": null,
+      "preserveWhitespace": null,
+      "context": null,
+      "hasGetAttrs": true,
+      "ignore": null,
+      "skip": null,
+      "consuming": null
+     }
+    ],
+    "hasToDOM": true
+   },
+   "taskList": {
+    "content": "taskItem+",
+    "group": "block list",
+    "marks": null,
+    "inline": false,
+    "atom": false,
+    "leaf": false,
+    "textblock": false,
+    "code": false,
+    "defining": false,
+    "isolating": false,
+    "whitespace": null,
+    "attrs": {},
+    "parseDOM": [
+     {
+      "tag": "ul[data-type=\"taskList\"]",
+      "style": null,
+      "priority": 51,
+      "preserveWhitespace": null,
+      "context": null,
+      "hasGetAttrs": true,
+      "ignore": null,
+      "skip": null,
+      "consuming": null
+     }
+    ],
+    "hasToDOM": true
+   },
+   "taskItem": {
+    "content": "paragraph block*",
+    "group": null,
+    "marks": null,
+    "inline": false,
+    "atom": false,
+    "leaf": false,
+    "textblock": false,
+    "code": false,
+    "defining": true,
+    "isolating": false,
+    "whitespace": null,
+    "attrs": {
+     "checked": {
+      "default": false
+     }
+    },
+    "parseDOM": [
+     {
+      "tag": "li[data-type=\"taskItem\"]",
+      "style": null,
+      "priority": 51,
+      "preserveWhitespace": null,
+      "context": null,
+      "hasGetAttrs": true,
+      "ignore": null,
+      "skip": null,
+      "consuming": null
+     }
+    ],
+    "hasToDOM": true
+   },
+   "codeBlock": {
+    "content": "text*",
+    "group": "block",
+    "marks": "",
+    "inline": false,
+    "atom": false,
+    "leaf": false,
+    "textblock": true,
+    "code": true,
+    "defining": true,
+    "isolating": false,
+    "whitespace": null,
+    "attrs": {
+     "language": {
+      "default": null
+     }
+    },
+    "parseDOM": [
+     {
+      "tag": "pre",
+      "style": null,
+      "priority": null,
+      "preserveWhitespace": "full",
+      "context": null,
+      "hasGetAttrs": true,
+      "ignore": null,
+      "skip": null,
+      "consuming": null
+     }
+    ],
+    "hasToDOM": true
+   },
+   "table": {
+    "content": "tableRow+",
+    "group": "block",
+    "marks": null,
+    "inline": false,
+    "atom": false,
+    "leaf": false,
+    "textblock": false,
+    "code": false,
+    "defining": false,
+    "isolating": true,
+    "whitespace": null,
+    "attrs": {},
+    "parseDOM": [
+     {
+      "tag": "table",
+      "style": null,
+      "priority": null,
+      "preserveWhitespace": null,
+      "context": null,
+      "hasGetAttrs": true,
+      "ignore": null,
+      "skip": null,
+      "consuming": null
+     }
+    ],
+    "hasToDOM": true
+   },
+   "tableHeader": {
+    "content": "block+",
+    "group": null,
+    "marks": null,
+    "inline": false,
+    "atom": false,
+    "leaf": false,
+    "textblock": false,
+    "code": false,
+    "defining": false,
+    "isolating": true,
+    "whitespace": null,
+    "attrs": {
+     "colspan": {
+      "default": 1
+     },
+     "rowspan": {
+      "default": 1
+     },
+     "colwidth": {
+      "default": [
+       150
+      ]
+     },
+     "background": {
+      "default": "none"
+     }
+    },
+    "parseDOM": [
+     {
+      "tag": "th",
+      "style": null,
+      "priority": null,
+      "preserveWhitespace": null,
+      "context": null,
+      "hasGetAttrs": true,
+      "ignore": null,
+      "skip": null,
+      "consuming": null
+     }
+    ],
+    "hasToDOM": true
+   },
+   "tableCell": {
+    "content": "block+",
+    "group": null,
+    "marks": null,
+    "inline": false,
+    "atom": false,
+    "leaf": false,
+    "textblock": false,
+    "code": false,
+    "defining": false,
+    "isolating": true,
+    "whitespace": null,
+    "attrs": {
+     "colspan": {
+      "default": 1
+     },
+     "rowspan": {
+      "default": 1
+     },
+     "colwidth": {
+      "default": [
+       150
+      ]
+     },
+     "background": {
+      "default": null
+     },
+     "textColor": {
+      "default": null
+     }
+    },
+    "parseDOM": [
+     {
+      "tag": "td",
+      "style": null,
+      "priority": null,
+      "preserveWhitespace": null,
+      "context": null,
+      "hasGetAttrs": true,
+      "ignore": null,
+      "skip": null,
+      "consuming": null
+     }
+    ],
+    "hasToDOM": true
+   },
+   "tableRow": {
+    "content": "(tableCell | tableHeader)*",
+    "group": null,
+    "marks": null,
+    "inline": false,
+    "atom": false,
+    "leaf": false,
+    "textblock": false,
+    "code": false,
+    "defining": false,
+    "isolating": false,
+    "whitespace": null,
+    "attrs": {
+     "background": {
+      "default": null
+     },
+     "textColor": {
+      "default": null
+     }
+    },
+    "parseDOM": [
+     {
+      "tag": "tr",
+      "style": null,
+      "priority": null,
+      "preserveWhitespace": null,
+      "context": null,
+      "hasGetAttrs": true,
+      "ignore": null,
+      "skip": null,
+      "consuming": null
+     }
+    ],
+    "hasToDOM": true
+   },
+   "calloutComponent": {
+    "content": "block+",
+    "group": "block",
+    "marks": null,
+    "inline": false,
+    "atom": false,
+    "leaf": false,
+    "textblock": false,
+    "code": false,
+    "defining": false,
+    "isolating": false,
+    "whitespace": null,
+    "attrs": {
+     "id": {
+      "default": null
+     },
+     "data-icon-color": {
+      "default": "__undefined__"
+     },
+     "data-icon-name": {
+      "default": "__undefined__"
+     },
+     "data-emoji-unicode": {
+      "default": "128161"
+     },
+     "data-emoji-url": {
+      "default": "https://cdn.jsdelivr.net/npm/emoji-datasource-apple/img/apple/64/1f4a1.png"
+     },
+     "data-logo-in-use": {
+      "default": "emoji"
+     },
+     "data-background": {
+      "default": "__undefined__"
+     },
+     "data-block-type": {
+      "default": "callout-component"
+     }
+    },
+    "parseDOM": [
+     {
+      "tag": "div[data-block-type=\"callout-component\"]",
+      "style": null,
+      "priority": null,
+      "preserveWhitespace": null,
+      "context": null,
+      "hasGetAttrs": true,
+      "ignore": null,
+      "skip": null,
+      "consuming": null
+     }
+    ],
+    "hasToDOM": true
+   },
+   "issue-embed-component": {
+    "content": null,
+    "group": "block",
+    "marks": null,
+    "inline": false,
+    "atom": true,
+    "leaf": true,
+    "textblock": false,
+    "code": false,
+    "defining": false,
+    "isolating": false,
+    "whitespace": null,
+    "attrs": {
+     "entity_identifier": {
+      "default": "__undefined__"
+     },
+     "project_identifier": {
+      "default": "__undefined__"
+     },
+     "workspace_identifier": {
+      "default": "__undefined__"
+     },
+     "id": {
+      "default": "__undefined__"
+     },
+     "entity_name": {
+      "default": "__undefined__"
+     }
+    },
+    "parseDOM": [
+     {
+      "tag": "issue-embed-component",
+      "style": null,
+      "priority": null,
+      "preserveWhitespace": null,
+      "context": null,
+      "hasGetAttrs": true,
+      "ignore": null,
+      "skip": null,
+      "consuming": null
+     }
+    ],
+    "hasToDOM": true
+   }
+  },
+  "marks": {
+   "link": {
+    "excludes": null,
+    "inclusive": false,
+    "group": null,
+    "spanning": null,
+    "attrs": {
+     "href": {
+      "default": null
+     },
+     "target": {
+      "default": "_blank"
+     },
+     "rel": {
+      "default": "noopener noreferrer nofollow"
+     },
+     "class": {
+      "default": "text-accent-secondary underline underline-offset-[3px] hover:text-accent-primary transition-colors cursor-pointer"
+     }
+    },
+    "rank": 0,
+    "parseDOM": [
+     {
+      "tag": "a[href]",
+      "style": null,
+      "priority": null,
+      "preserveWhitespace": null,
+      "context": null,
+      "hasGetAttrs": true,
+      "ignore": null,
+      "skip": null,
+      "consuming": null
+     }
+    ]
+   },
+   "textStyle": {
+    "excludes": null,
+    "inclusive": null,
+    "group": null,
+    "spanning": null,
+    "attrs": {},
+    "rank": 1,
+    "parseDOM": [
+     {
+      "tag": "span",
+      "style": null,
+      "priority": null,
+      "preserveWhitespace": null,
+      "context": null,
+      "hasGetAttrs": true,
+      "ignore": null,
+      "skip": null,
+      "consuming": null
+     }
+    ]
+   },
+   "bold": {
+    "excludes": null,
+    "inclusive": null,
+    "group": null,
+    "spanning": null,
+    "attrs": {},
+    "rank": 2,
+    "parseDOM": [
+     {
+      "tag": "strong",
+      "style": null,
+      "priority": null,
+      "preserveWhitespace": null,
+      "context": null,
+      "hasGetAttrs": true,
+      "ignore": null,
+      "skip": null,
+      "consuming": null
+     },
+     {
+      "tag": "b",
+      "style": null,
+      "priority": null,
+      "preserveWhitespace": null,
+      "context": null,
+      "hasGetAttrs": true,
+      "ignore": null,
+      "skip": null,
+      "consuming": null
+     },
+     {
+      "tag": null,
+      "style": "font-weight=400",
+      "priority": null,
+      "preserveWhitespace": null,
+      "context": null,
+      "hasGetAttrs": false,
+      "ignore": null,
+      "skip": null,
+      "consuming": null
+     },
+     {
+      "tag": null,
+      "style": "font-weight",
+      "priority": null,
+      "preserveWhitespace": null,
+      "context": null,
+      "hasGetAttrs": true,
+      "ignore": null,
+      "skip": null,
+      "consuming": null
+     }
+    ]
+   },
+   "italic": {
+    "excludes": null,
+    "inclusive": null,
+    "group": null,
+    "spanning": null,
+    "attrs": {},
+    "rank": 3,
+    "parseDOM": [
+     {
+      "tag": "em",
+      "style": null,
+      "priority": null,
+      "preserveWhitespace": null,
+      "context": null,
+      "hasGetAttrs": true,
+      "ignore": null,
+      "skip": null,
+      "consuming": null
+     },
+     {
+      "tag": "i",
+      "style": null,
+      "priority": null,
+      "preserveWhitespace": null,
+      "context": null,
+      "hasGetAttrs": true,
+      "ignore": null,
+      "skip": null,
+      "consuming": null
+     },
+     {
+      "tag": null,
+      "style": "font-style=normal",
+      "priority": null,
+      "preserveWhitespace": null,
+      "context": null,
+      "hasGetAttrs": false,
+      "ignore": null,
+      "skip": null,
+      "consuming": null
+     },
+     {
+      "tag": null,
+      "style": "font-style=italic",
+      "priority": null,
+      "preserveWhitespace": null,
+      "context": null,
+      "hasGetAttrs": false,
+      "ignore": null,
+      "skip": null,
+      "consuming": null
+     }
+    ]
+   },
+   "strike": {
+    "excludes": null,
+    "inclusive": null,
+    "group": null,
+    "spanning": null,
+    "attrs": {},
+    "rank": 4,
+    "parseDOM": [
+     {
+      "tag": "s",
+      "style": null,
+      "priority": null,
+      "preserveWhitespace": null,
+      "context": null,
+      "hasGetAttrs": true,
+      "ignore": null,
+      "skip": null,
+      "consuming": null
+     },
+     {
+      "tag": "del",
+      "style": null,
+      "priority": null,
+      "preserveWhitespace": null,
+      "context": null,
+      "hasGetAttrs": true,
+      "ignore": null,
+      "skip": null,
+      "consuming": null
+     },
+     {
+      "tag": "strike",
+      "style": null,
+      "priority": null,
+      "preserveWhitespace": null,
+      "context": null,
+      "hasGetAttrs": true,
+      "ignore": null,
+      "skip": null,
+      "consuming": null
+     },
+     {
+      "tag": null,
+      "style": "text-decoration",
+      "priority": null,
+      "preserveWhitespace": null,
+      "context": null,
+      "hasGetAttrs": true,
+      "ignore": null,
+      "skip": null,
+      "consuming": false
+     }
+    ]
+   },
+   "underline": {
+    "excludes": null,
+    "inclusive": null,
+    "group": null,
+    "spanning": null,
+    "attrs": {},
+    "rank": 5,
+    "parseDOM": [
+     {
+      "tag": "u",
+      "style": null,
+      "priority": null,
+      "preserveWhitespace": null,
+      "context": null,
+      "hasGetAttrs": true,
+      "ignore": null,
+      "skip": null,
+      "consuming": null
+     },
+     {
+      "tag": null,
+      "style": "text-decoration",
+      "priority": null,
+      "preserveWhitespace": null,
+      "context": null,
+      "hasGetAttrs": true,
+      "ignore": null,
+      "skip": null,
+      "consuming": false
+     }
+    ]
+   },
+   "code": {
+    "excludes": "_",
+    "inclusive": null,
+    "group": null,
+    "spanning": null,
+    "attrs": {},
+    "rank": 6,
+    "parseDOM": [
+     {
+      "tag": "code",
+      "style": null,
+      "priority": null,
+      "preserveWhitespace": null,
+      "context": null,
+      "hasGetAttrs": true,
+      "ignore": null,
+      "skip": null,
+      "consuming": null
+     }
+    ]
+   },
+   "customColor": {
+    "excludes": null,
+    "inclusive": null,
+    "group": null,
+    "spanning": null,
+    "attrs": {
+     "color": {
+      "default": null
+     },
+     "backgroundColor": {
+      "default": null
+     }
+    },
+    "rank": 7,
+    "parseDOM": [
+     {
+      "tag": "span",
+      "style": null,
+      "priority": null,
+      "preserveWhitespace": null,
+      "context": null,
+      "hasGetAttrs": true,
+      "ignore": null,
+      "skip": null,
+      "consuming": null
+     },
+     {
+      "tag": "span",
+      "style": null,
+      "priority": null,
+      "preserveWhitespace": null,
+      "context": null,
+      "hasGetAttrs": true,
+      "ignore": null,
+      "skip": null,
+      "consuming": null
+     }
+    ]
+   }
+  }
+ },
+ "title": {
+  "topNode": "doc",
+  "nodes": {
+   "doc": {
+    "content": "heading",
+    "group": null,
+    "marks": null,
+    "inline": false,
+    "atom": false,
+    "leaf": false,
+    "textblock": false,
+    "code": false,
+    "defining": false,
+    "isolating": false,
+    "whitespace": null,
+    "attrs": {},
+    "parseDOM": [],
+    "hasToDOM": false
+   },
+   "heading": {
+    "content": "inline*",
+    "group": "block",
+    "marks": null,
+    "inline": false,
+    "atom": false,
+    "leaf": false,
+    "textblock": true,
+    "code": false,
+    "defining": true,
+    "isolating": false,
+    "whitespace": null,
+    "attrs": {
+     "level": {
+      "default": 1
+     }
+    },
+    "parseDOM": [
+     {
+      "tag": "h1",
+      "style": null,
+      "priority": null,
+      "preserveWhitespace": null,
+      "context": null,
+      "hasGetAttrs": true,
+      "ignore": null,
+      "skip": null,
+      "consuming": null
+     }
+    ],
+    "hasToDOM": true
+   },
+   "text": {
+    "content": null,
+    "group": "inline",
+    "marks": null,
+    "inline": true,
+    "atom": true,
+    "leaf": true,
+    "textblock": false,
+    "code": false,
+    "defining": false,
+    "isolating": false,
+    "whitespace": null,
+    "attrs": {},
+    "parseDOM": [],
+    "hasToDOM": false
+   }
+  },
+  "marks": {}
+ }
+}

@@ -1,0 +1,8 @@
+{
+  "name": "spike-0006-extra",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "jsdom": "23.2.0"
+  }
+}

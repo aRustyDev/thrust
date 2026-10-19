@@ -1,0 +1,123 @@
+//! Panic-freedom of the untrusted-input paths. On wasm32-unknown-unknown a panic aborts and resets the instance (spike
+//! 0001 measured ~5% of concurrent requests failing around one panic), so a decoder that can panic on hostile bytes
+//! is a denial-of-service lever. This mutates real binaries and HTML thousands of times under `catch_unwind`.
+use base64::Engine;
+use serde_json::Value;
+use std::panic::{catch_unwind, AssertUnwindSafe};
+use thrust_editor_doc::{
+    domparse, html,
+    schema::{Schema, Variant},
+    ydoc,
+};
+
+fn rng(seed: u64) -> impl FnMut() -> u64 {
+    let mut s = seed;
+    move || {
+        s ^= s << 13;
+        s ^= s >> 7;
+        s ^= s << 17;
+        s
+    }
+}
+
+#[test]
+fn mutated_binaries_never_panic() {
+    let p = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/corpus/corpus.json");
+    let c: Value = serde_json::from_str(&std::fs::read_to_string(p).unwrap()).unwrap();
+    let schema = Schema::new(Variant::Document);
+    let mut next = rng(0x9e3779b97f4a7c15);
+    let (mut total, mut panics, mut errs, mut oks) = (0usize, 0usize, 0usize, 0usize);
+    let mut first_panic: Option<String> = None;
+    for d in c["docs"].as_array().unwrap() {
+        let Some(b) = d.get("binary").and_then(|b| b.as_str()) else { continue };
+        let bin = base64::engine::general_purpose::STANDARD.decode(b).unwrap();
+        if bin.len() > 20_000 {
+            continue;
+        }
+        for _ in 0..120 {
+            let mut m = bin.clone();
+            match next() % 5 {
+                0 => {
+                    let i = (next() as usize) % m.len().max(1);
+                    m[i] ^= (next() % 255 + 1) as u8;
+                }
+                1 => {
+                    let i = (next() as usize) % m.len().max(1);
+                    m.truncate(i);
+                }
+                2 => {
+                    let i = (next() as usize) % (m.len() + 1);
+                    m.insert(i, next() as u8);
+                }
+                3 => {
+                    let i = (next() as usize) % m.len().max(1);
+                    let j = (i + (next() as usize) % 16).min(m.len());
+                    m.drain(i..j);
+                }
+                _ => {
+                    for _ in 0..(1 + next() % 8) {
+                        let i = (next() as usize) % m.len().max(1);
+                        m[i] = next() as u8;
+                    }
+                }
+            }
+            total += 1;
+            match catch_unwind(AssertUnwindSafe(|| ydoc::decode(&schema, &m, "default").map(|n| html::to_html(&schema, &n)))) {
+                Ok(Ok(_)) => oks += 1,
+                Ok(Err(_)) => errs += 1,
+                Err(e) => {
+                    panics += 1;
+                    if first_panic.is_none() {
+                        first_panic = Some(format!("{} bytes, panic payload {:?}", m.len(), e.downcast_ref::<&str>()));
+                    }
+                }
+            }
+        }
+    }
+    eprintln!("mutated Yjs binaries: {total} decode attempts -> {oks} decoded, {errs} rejected, {panics} PANICS {first_panic:?}");
+    assert_eq!(panics, 0, "decoder panicked on hostile input: {first_panic:?}");
+}
+
+#[test]
+fn mutated_html_never_panics() {
+    let p = concat!(env!("CARGO_MANIFEST_DIR"), "/../../target/spike-0006/fuzz-html.json");
+    let Ok(s) = std::fs::read_to_string(p) else {
+        eprintln!("no fuzz corpus");
+        return;
+    };
+    let c: Value = serde_json::from_str(&s).unwrap();
+    let schema = Schema::new(Variant::Rich);
+    let mut next = rng(0xdeadbeefcafef00d);
+    let (mut total, mut panics) = (0usize, 0usize);
+    for r in c["rows"].as_array().unwrap().iter().take(1500) {
+        let h = r["html"].as_str().unwrap();
+        for _ in 0..4 {
+            // byte-level damage on char boundaries
+            let cs: Vec<char> = h.chars().collect();
+            let mut m = cs.clone();
+            if !m.is_empty() {
+                let i = (next() as usize) % m.len();
+                match next() % 3 {
+                    0 => {
+                        m.remove(i);
+                    }
+                    1 => m.insert(i, ['<', '>', '&', '"', '\'', '/', '=', '\0', '\u{fffd}'][(next() % 9) as usize]),
+                    _ => m.truncate(i),
+                }
+            }
+            let mutated: String = m.into_iter().collect();
+            total += 1;
+            if catch_unwind(AssertUnwindSafe(|| {
+                let doc = domparse::html_to_doc(&schema, &mutated);
+                let bin = ydoc::encode(&schema, &doc, None, Some(1));
+                let _ = ydoc::decode(&schema, &bin, "default").map(|n| html::to_html(&schema, &n));
+            }))
+            .is_err()
+            {
+                panics += 1;
+            }
+        }
+    }
+    eprintln!("damaged html through parse+encode+decode+render: {total} inputs, {panics} PANICS");
+    assert_eq!(panics, 0);
+}
