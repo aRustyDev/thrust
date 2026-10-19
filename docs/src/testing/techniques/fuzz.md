@@ -42,8 +42,8 @@ caught by the committed seeds).
 ## In-repo examples
 
 `crates/thrust-editor-doc/tests/decode_panics.rs`: `mutated_binaries_never_panic` mutates committed Yjs binaries
-with a seeded RNG under `catch_unwind`; `mutated_html_never_panics` does the same for generated HTML but returns
-early, passing, when its input file is missing (D-4). No `fuzz/` directory exists yet.
+with a seeded RNG under `catch_unwind`; `oracle_mutated_html_never_panics` does the same for HTML the TypeScript
+oracle generated, and fails when that input is missing. No `fuzz/` directory exists yet.
 
 ## Target
 

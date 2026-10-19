@@ -1,6 +1,6 @@
 # Differential
 
-Status: **live** (editor-doc spike, offline) · **planned** (`oracle_` tests, public v1 oracle) · Gate: none today
+Status: **live** (editor-doc `oracle_` tests, opt-in) · **planned** (live Node `oracle_` tests, public v1 oracle) · Gate: none today
 
 ## Catches
 
@@ -18,23 +18,23 @@ reference needs Node, pnpm or Docker; keep it in an opt-in profile or a schedule
 
 ## Name and location
 
-Live comparisons in nextest use prefix `oracle_` (excluded from the default profile, two at a time in the
-`ts-oracle` group). The editor-doc spike instead generates its differential corpora offline into git-ignored
-`target/spike-0006/` and replays them in ordinary tests (`stage3_fuzz.rs`, `entities_fuzz.rs`, `sanitize.rs`).
+Prefix `oracle_` (excluded from the default profile, two at a time in the `ts-oracle` group), whether the test
+runs the oracle live through Node or replays output the oracle generated. The editor-doc spike does the second: it
+generates its differential corpora offline into git-ignored `target/spike-0006/`, and four `oracle_` tests replay
+them (`stage3_fuzz.rs`, `entities_fuzz.rs`, `sanitize.rs`, `decode_panics.rs`).
 The generators and the reference side are in `tools/spike-0006/oracle/` and, for the Python `nh3` reference,
 `tools/spike-0006/sanitize/`.
 
 ## Run
 
 ```sh
-tools/spike-0006/gen-all.sh                                            # needs Node + pnpm [unverified: not run]
-scripts/rs cargo nextest run -p thrust-editor-doc                      # replays what gen-all produced [verified 2026-10-19 dd093fa]
-scripts/rs cargo nextest run --profile oracle                          # oracle_ tests; none exist yet [derived]
+tools/spike-0006/gen-all.sh <workdir>                                  # after setup-oracle.sh; needs Node + pnpm [verified 2026-10-19]
+scripts/rs cargo nextest run --workspace --profile oracle             # the 4 oracle_ tests (see Status for the run)
 ```
 
-**Without the generated files the replay tests pass while comparing nothing** (measured: `stage3_fuzz_probe` reports
-`D4 0/0`; three others print "no … corpus" and return). That is drift D-4 in [Status](../status.md); until it is
-fixed, a green run of these four tests is not evidence unless `gen-all.sh` ran first.
+Without the generated files each `oracle_` test **fails**, naming the generator to run; with them, each also
+asserts that it compared at least one input. (Before resolved drift D-4 they passed while comparing nothing.)
+The sanitiser test also needs `tools/spike-0006/sanitize/run-all.sh` and the `convert-sanitised.ts` oracle.
 
 ## Required controls
 
@@ -50,7 +50,7 @@ fixed, a green run of these four tests is not evidence unless `gen-all.sh` ran f
 ## In-repo examples
 
 `crates/thrust-editor-doc/tests/stage3_fuzz.rs`, `entities_fuzz.rs`, `sanitize.rs`
-(`v1_write_with_sanitiser_matches_python_plus_js`); reverse direction (Rust output loaded by the real JavaScript)
+(`oracle_v1_write_with_sanitiser_matches_python_plus_js`); reverse direction (Rust output loaded by the real JavaScript)
 in `tools/spike-0006/oracle/verify-rust-out.ts`.
 
 ## Target

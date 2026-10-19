@@ -51,7 +51,7 @@ A fact written in two places drifts. Each kind of fact has one owner; everything
 
 If this chapter and a **rule** in `AGENTS.md` disagree, the rule wins. If they disagree about a **fact** (what a
 command selects, where tests live), re-measure: the measured answer wins, and `AGENTS.md` prose known to be stale is
-listed as drift in [Status](status.md) (D-1, D-2). Record any new disagreement there.
+listed as drift in [Status](status.md). Record any new disagreement there.
 
 Repository files are cited as root-relative code spans (`scripts/contract.sh`), not links: the book only publishes
 `docs/src/`, so a link to a file outside it would break.
