@@ -18,3 +18,7 @@ command = "mdbook-mermaid"
 
 [output.html]
 additional-js = ["mermaid.min.js", "mermaid-init.js"]
+# The brand tokens come from .config/branding/ through the docs/branding symlink, because mdBook copies a path
+# outside the book root to the wrong place. brand-mapping.css maps them onto mdBook's variables. Both files load
+# after mdBook's own CSS, which is what lets the mapping override it.
+additional-css = ["branding/colors.css", "brand-mapping.css"]

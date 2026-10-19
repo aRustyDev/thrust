@@ -1,0 +1,118 @@
+/* thrust brand colours. DRAFT: the design story is not finished, so every value here is provisional.
+ *
+ * This file holds tokens only, and no consumer's variable names. A consumer maps them (the book does it in
+ * docs/brand-mapping.css). It has no selectors other than :root, so any CSS consumer can import it.
+ * The light/dark split is by name (--light-*, --dark-*), not by selector.
+ *
+ * Source: iron pigments. Ochre, russet and umber give the brand and neutral ramps; terre verte (green earth)
+ * the greens; Prussian blue the blues; Mars black the true-dark base. Check a change with
+ *   uv run .config/branding/check.py
+ * Earth tones are low in chroma, so text contrast is checked, and status must never rely on hue alone.
+ */
+
+:root {
+  /* ---- ramps: 50 lightest to 900 darkest. OKLCH lightness runs from 0.975 to 0.26, in smaller steps at the
+          light end (0.03 up to 0.10); chroma is kept low and pulled into the sRGB gamut ---- */
+
+  /* ochre (yellow iron oxide): brand */
+  --ochre-50:  #fff5ea;
+  --ochre-100: #fee9d0;
+  --ochre-200: #fcd3a1;
+  --ochre-300: #ecb670;
+  --ochre-400: #d5963e;
+  --ochre-500: #ba7900;
+  --ochre-600: #976205;
+  --ochre-700: #754b03;
+  --ochre-800: #523302;
+  --ochre-900: #2f2110;
+
+  /* russet (a red-brown; the pigments behind it are the red iron oxides): brand */
+  --russet-50:  #fff4ef;
+  --russet-100: #ffe7dc;
+  --russet-200: #fecfb8;
+  --russet-300: #f2af8d;
+  --russet-400: #dc8f67;
+  --russet-500: #c17248;
+  --russet-600: #a25830;
+  --russet-700: #7f4320;
+  --russet-800: #572f19;
+  --russet-900: #302017;
+
+  /* umber (iron and manganese): the warm neutral ramp */
+  --umber-50:  #fcf6f0;
+  --umber-100: #f4ebe4;
+  --umber-200: #e4d8cd;
+  --umber-300: #cebeaf;
+  --umber-400: #b3a190;
+  --umber-500: #988574;
+  --umber-600: #7c6b5b;
+  --umber-700: #615245;
+  --umber-800: #423930;
+  --umber-900: #272320;
+
+  /* terre verte (green earth, iron-bearing clay): success */
+  --terre-verte-50:  #f1faf1;
+  --terre-verte-100: #e5f1e5;
+  --terre-verte-200: #cfe0cf;
+  --terre-verte-300: #b2c8b2;
+  --terre-verte-400: #93ad93;
+  --terre-verte-500: #779277;
+  --terre-verte-600: #5d765e;
+  --terre-verte-700: #475c47;
+  --terre-verte-800: #313f31;
+  --terre-verte-900: #202620;
+
+  /* Prussian blue (iron cyanide complex): information and links */
+  --prussian-50:  #f0f8ff;
+  --prussian-100: #deefff;
+  --prussian-200: #c0dffa;
+  --prussian-300: #9dc6ea;
+  --prussian-400: #7aaad4;
+  --prussian-500: #5c8fb9;
+  --prussian-600: #43739b;
+  --prussian-700: #31597a;
+  --prussian-800: #233d53;
+  --prussian-900: #1b252e;
+
+  /* Mars black (synthetic iron oxide): the true-dark base and its lifts */
+  --mars-black: #0a0705;
+  --mars-900:   #120f0c;
+  --mars-800:   #1b1715;
+  --mars-700:   #272320;
+
+  /* ---- light theme ---- */
+  --light-bg:        var(--umber-50);
+  --light-surface:   var(--umber-100);
+  --light-surface-2: var(--umber-200);
+  --light-border:    var(--umber-300);
+  --light-fg:        var(--umber-900);
+  --light-fg-muted:  var(--umber-700);
+  --light-link:      var(--prussian-700);
+  --light-accent:       var(--ochre-500);
+  --light-on-accent:    var(--mars-black);
+  --light-accent-text:  var(--russet-700);
+  --light-mark:         var(--ochre-200);
+  --light-status-info:      var(--prussian-700);
+  --light-status-success:   var(--terre-verte-600);
+  --light-status-warning:   var(--ochre-600);
+  --light-status-danger:    var(--russet-700);
+  --light-status-important: var(--umber-800);
+
+  /* ---- dark theme: Mars black ---- */
+  --dark-bg:        var(--mars-black);
+  --dark-surface:   var(--mars-800);
+  --dark-surface-2: var(--mars-700);
+  --dark-border:    var(--umber-800);
+  --dark-fg:        var(--umber-100);
+  --dark-fg-muted:  var(--umber-400);
+  --dark-link:      var(--prussian-300);
+  --dark-accent:       var(--ochre-400);
+  --dark-on-accent:    var(--mars-black);
+  --dark-accent-text:  var(--ochre-300);
+  --dark-mark:         var(--ochre-800);
+  --dark-status-info:      var(--prussian-300);
+  --dark-status-success:   var(--terre-verte-300);
+  --dark-status-warning:   var(--ochre-200);
+  --dark-status-danger:    var(--russet-400);
+  --dark-status-important: var(--umber-500);
+}
