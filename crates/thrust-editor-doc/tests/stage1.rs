@@ -18,7 +18,7 @@ fn eq(a: &Value, b: &Value) -> bool {
 }
 
 #[test]
-fn stage1_probe() {
+fn parity_stage1_yjs_binary_and_json() {
     let c = load();
     let docs = c["docs"].as_array().unwrap();
     let (mut dec_ok, mut dec_n, mut enc_ok, mut enc_n, mut st_ok) = (0, 0, 0, 0, 0);

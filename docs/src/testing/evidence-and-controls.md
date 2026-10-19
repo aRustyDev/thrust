@@ -41,8 +41,9 @@ of `scripts/contract.sh` (and in `scripts/stage2-contract.sh` for a pass it runs
 
 A test asserting that the comparison it relies on actually compared something: enough inputs, non-empty documents,
 bytes compared. Durable. Example: `stage3_not_vacuous` in `crates/thrust-editor-doc/tests/stage3.rs`. A
-differential or golden test that loads its inputs from a file needs one: see drift item D-4 in
-[Status](status.md).
+differential or golden test that loads its inputs from a file needs one, and must **fail** when the file is
+missing: the `oracle_` tests in `crates/thrust-editor-doc/tests/` do both (resolved drift D-4 in
+[Status](status.md)).
 
 ## Mutated fixture
 

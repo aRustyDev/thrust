@@ -1,26 +1,32 @@
 # Status, gaps and drift
 
-Measured on **2026-10-19 at `dd093fa`**. Every claim names the command that produced it; re-run them before
-relying on a number. Cargo commands go through `scripts/rs` ([Running](running.md)).
+Measured on **2026-10-19**, on `main` at `991275e` plus the changes that resolved the drift below. Every claim names
+the command that produced it; re-run them before relying on a number. Cargo commands go through `scripts/rs`
+([Running](running.md)).
 
 ## Inventory
 
 | Claim | Measured with | Result |
 |---|---|---|
-| Tests in the default nextest profile | `cargo nextest list --workspace` | **17**, all in `thrust-editor-doc` |
-| Tests with the default filter ignored | `cargo nextest list --workspace --ignore-default-filter` | **50**: 18 `contract`, 9 `worker_only`, 6 `pg_adapter`, 17 `thrust-editor-doc` |
-| Default run | `cargo nextest run --workspace` | 17 passed, 3 reported leaky |
+| Tests in the default nextest profile | `cargo nextest list --workspace` | **12**, all in `thrust-editor-doc` |
+| Tests in the `oracle` profile | `cargo nextest list --workspace --profile oracle` | **4**, all in `thrust-editor-doc` |
+| Tests with the default filter ignored | `cargo nextest list --workspace --ignore-default-filter` | **49**: 18 `contract`, 9 `worker_only`, 6 `pg_adapter`, 16 `thrust-editor-doc` |
+| Default run | `cargo nextest run --workspace` | 12 passed; `target/spike-0006/` not created |
+| Oracle run, generated inputs missing | `cargo nextest run --workspace --profile oracle` | exit 100, **4 failed**, each naming its generator |
+| Oracle run, inputs generated from Plane tag `oracle/v1-pin-20261018` | `setup-oracle.sh`, `gen-all.sh`, `tools/spike-0006/sanitize/run-all.sh`, `convert-sanitised.ts`, then the oracle run | exit 0, 4 passed: stage-3 fuzz 6000/6000 in all six directions, entities 6000/6000, sanitiser write path 389/392 (the 3 expected), 6000 mutated HTML inputs with 0 panics |
+| Regenerating the committed corpus | `tools/spike-0006/gen-all.sh` then `git status` | fixtures byte-identical |
 | Doctests | `cargo test --doc --workspace` | 0 in 10 crates |
+| A crate with no tests of its own | `cargo nextest run -p thrust-core` | exit 4, `no tests to run` |
 | In-source unit test modules | `grep -rlE '#\[cfg\(test\)\]\|mod tests' crates --include='*.rs'` | 0 files |
 | Property/parameterized/fuzz/snapshot dev-dependencies | grep for `proptest`, `rstest`, `insta`, `datatest-stable`, `libfuzzer-sys`, `arbitrary` in every `Cargo.toml` | 0 |
-| Tests using a category prefix (`prop_`, `model_`, `parity_`, `oracle_`, `fuzz_replay_`, `e2e_`) | grep for `fn <prefix>_` under `crates/` | 0 |
+| Tests using a category prefix | `cargo nextest list` | 3 `parity_`, 4 `oracle_`; no `prop_`, `model_`, `fuzz_replay_`, `e2e_` |
 | `fuzz/` or `tests/parity/` directories, `*.proptest-regressions` files | `find` | 0 |
 | Planted mutants | grep `^mutant_` in `crates/thrust-adapters-*/Cargo.toml` | 4 |
 | Architecture gate | `scripts/check-deps.sh` | exit 0 |
 | CI workflows | `find .github -name '*.yml'` | 0 (`.github/` holds only `config/`) |
 
-Not re-run for this page (they need Docker, wrangler, Node or a Cloudflare sandbox): `scripts/contract-all.sh`,
-`scripts/mutants.sh`, `scripts/verify-all.sh`, `pg_adapter`, `tools/spike-0006/gen-all.sh`, stage 2.
+Not re-run for this page (they need Docker, wrangler or a Cloudflare sandbox): `scripts/contract-all.sh`,
+`scripts/mutants.sh`, `scripts/verify-all.sh`, `pg_adapter`, stage 2.
 
 ## Gaps
 
@@ -38,17 +44,23 @@ A gap is a technique or defect class the [strategy](strategy.md) needs and nothi
 
 ## Drift
 
-Places where the repo contradicts itself or its rules. Each item is one follow-up PR; this chapter does not fix them.
+Places where the repo contradicts itself or its rules. **None known.** Record a new item here with the next free
+id (D-14) and the evidence; each item is one follow-up change.
 
-| Id | Drift | Evidence |
+### Resolved
+
+| Id | Drift | Resolution |
 |---|---|---|
-| D-1 | `AGENTS.md` §Testing says every test is a non-hermetic integration suite and that `cargo nextest run` selects nothing and exits 4. It selects 17 editor-doc tests and passes. | inventory rows 1 and 3 |
-| D-2 | `AGENTS.md` Rule 5 says the workspace's tests are in `thrust-contract-tests`; `thrust-editor-doc` keeps its tests in its own crate. | `crates/thrust-editor-doc/tests/` |
-| D-3 | The editor-doc tests use no category prefix (`entities_match_the_oracle` is a differential test that runs by default as an unprefixed test), and their fixtures are in `crates/thrust-editor-doc/tests/corpus/`, not `tests/parity/fixtures/` (Rules 4 and 7). | `cargo nextest list` |
-| D-4 | Four editor-doc tests pass while checking nothing when the git-ignored corpora in `target/spike-0006/` are missing: `entities_match_the_oracle`, `mutated_html_never_panics` and `v1_write_with_sanitiser_matches_python_plus_js` print "no … corpus" and return; `stage3_fuzz_probe` finds the directory but no `fuzz-html*.json` files and reports `D4 0/0` (zero comparisons in every fidelity direction). Violates Rule 8. | `cargo nextest run -p thrust-editor-doc --no-capture` on a fresh worktree |
-| D-5 | `schema_construction_cost` (`crates/thrust-editor-doc/tests/schema_cost.rs`) times with the wall clock and asserts nothing; it is a measurement in the default test loop (Rule 6). | source |
-| D-6 | `corrupted_binaries_are_detected` (`crates/thrust-editor-doc/tests/controls.rs`) writes `target/spike-0006/corrupt.json`, outside a temp dir (Rule 6). Creating that directory is also what lets `stage3_fuzz_probe` (D-4) get past its "no corpus" check. | `ls target/spike-0006` after a run |
-| D-7 | The header of `crates/thrust-contract-tests/tests/contract.rs` cites `scripts/contract.sh mutants`; no such pass exists. The mutation controls are `scripts/mutants.sh`. | `scripts/contract.sh` usage |
-| D-8 | `scripts/verify-all.sh` does not run the `thrust-editor-doc` tests, so the umbrella gate skips the only hermetic suite. | its header |
-| D-9 | `.cargo/mutants.toml` excludes `**/fuzz_harness.rs`, `**/test_support.rs` and `**/tests/common/**`, none of which exist. Harmless, but reads as coverage. | `find` |
-| D-10 | `.config/nextest.toml` routes `oracle_` tests to the `ts-oracle` group and the `deep` and `oracle` profiles, but no test uses the prefix, so those profiles select nothing (exit 4). | inventory row 7 |
+| D-1 | `AGENTS.md` said `cargo nextest run` selects nothing and exits 4; it ran 17 editor-doc tests. | `AGENTS.md` now says what the default profile runs and when exit 4 happens. |
+| D-2 | `AGENTS.md` Rule 5 said the workspace's tests are all in `thrust-contract-tests`. | Reworded: most crates are tested only through it. |
+| D-3 | Editor-doc tests carried no category prefix. | The golden tests over the committed corpus are `parity_*`; the tests that need the oracle's generated output are `oracle_*`. The corpus stays in `crates/thrust-editor-doc/tests/corpus/`, where the generator writes it; it is committed, which is all Rule 7 asks. |
+| D-4 | Four tests passed while checking nothing when the git-ignored corpora were missing (the stage-3 fuzz test reported `D4 0/0`). | Renamed `oracle_*`, so they leave the hermetic default loop; each now fails when its input is missing and asserts it compared at least one input. |
+| D-5 | `schema_cost.rs` was a timing printout with no assertion in the default loop. | Moved to `crates/thrust-editor-doc/examples/schema_cost.rs`. |
+| D-6 | `corrupted_binaries_are_detected` wrote `target/spike-0006/corrupt.json` on every run. | Written only when `SPIKE0006_OUT=<dir>` is set. |
+| D-7 | `contract.rs` cited a nonexistent `scripts/contract.sh mutants` pass. | Points at `scripts/mutants.sh`. |
+| D-8 | `scripts/verify-all.sh` skipped the hermetic tests. | Step 0 runs `cargo nextest run --workspace`. |
+| D-9 | `.cargo/mutants.toml` excluded files that do not exist, without saying why. | Comment explains they are excluded in advance for the skills' test-support files. |
+| D-10 | The `oracle` and `deep` profiles selected nothing. | They select the 4 `oracle_` tests. |
+| D-11 | `tools/spike-0006/setup-oracle.sh` did not build the editor's workspace dependencies, so `gen-all.sh` failed on a fresh checkout of the pin (`ERR_MODULE_NOT_FOUND`). | It builds them (`pnpm --filter "@plane/editor^..." run build`). |
+| D-12 | `gen-all.sh` redirected straight into committed fixtures, so a failing oracle emptied them. | Writes to a temp file and moves it into place only on success with non-empty output. |
+| D-13 | `run-oracle.sh` with no `tsx` installed ran `node ""`, printed nothing and exited 0. | Fails with a message naming `setup-oracle.sh`. |

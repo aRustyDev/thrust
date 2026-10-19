@@ -16,18 +16,18 @@ output, anything ported from TypeScript. Not when the inputs must be generated f
 
 ## Name and location
 
-Prefix `parity_` for new tests (runs in the default profile). New fixtures go in the crate's `tests/parity/fixtures/`
-([Rule 7](../rules.md)). The editor-doc spike predates both: its tests are unprefixed and its corpus is in
-`crates/thrust-editor-doc/tests/corpus/` (D-3).
+Prefix `parity_` (runs in the default profile). New fixtures go in the crate's `tests/parity/fixtures/` and are
+committed ([Rule 7](../rules.md)). The editor-doc spike keeps its corpus in `crates/thrust-editor-doc/tests/corpus/`,
+where `tools/spike-0006/gen-all.sh` writes it; it is committed, which is what Rule 7 requires.
 
 ## Run
 
 ```sh
-scripts/rs cargo nextest run -p thrust-editor-doc     # [verified 2026-10-19 dd093fa: 17 passed]
+scripts/rs cargo nextest run -p thrust-editor-doc     # [verified 2026-10-19: 12 passed]
 ```
 
 Regenerating the committed corpus needs Node and the pinned Plane checkout: `tools/spike-0006/setup-oracle.sh`, then
-`tools/spike-0006/gen-all.sh` `[unverified: not run]`.
+`tools/spike-0006/gen-all.sh` `[verified 2026-10-19: fixtures regenerate byte-identical]`.
 
 ## Required controls
 

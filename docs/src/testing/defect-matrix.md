@@ -17,9 +17,9 @@ is listed in [Status](status.md).
 | X8 | wasm32 and native behave differently | contract suite on `native-*` vs `worker-*` targets | `scripts/check-deps.sh` on both targets | wasm32 unit tests on workerd (ADR-0123) |
 | X9 | Worker binding or platform semantics | `worker_only.rs` (`worker_room_*`, `worker_cron_*`, `worker_bindings_*`) | stage-2 runs against a deployed Worker (`scripts/stage2-contract.sh`) | |
 | X10 | Layering violated (platform crate in core) | `scripts/check-deps.sh` | | `cargo deny` in CI (R-P1) |
-| X11 | Editor-document conversion wrong | golden corpus `stage1_probe`, `stage2_html_probe`, `stage3_parse_probe` | differential `stage3_fuzz_probe`; controls `mutated_schema_is_detected_by_the_corpus_and_by_the_dump_diff`, `comparator_discriminates_between_different_documents` | |
-| X12 | Sanitiser lets XSS through | `allow_list_preservation_of_editor_html`, `v1_write_with_sanitiser_matches_python_plus_js` | must-fail `unsanitised_payload_is_caught` | sanitiser fuzzing |
-| X13 | Panic or blow-up on hostile input | `mutated_binaries_never_panic`, `mutated_html_never_panics`; contract `invalid_input_is_a_client_error` | contract `panic_is_contained_and_the_target_keeps_serving` (contains the damage) | coverage-guided fuzzing (`rust-test-fuzz`) |
+| X11 | Editor-document conversion wrong | golden corpus `parity_stage1_yjs_binary_and_json`, `parity_stage2_json_to_html`, `parity_stage3_html_to_json` | differential `oracle_stage3_fuzz_html`; controls `mutated_schema_is_detected_by_the_corpus_and_by_the_dump_diff`, `comparator_discriminates_between_different_documents` | |
+| X12 | Sanitiser lets XSS through | `allow_list_preservation_of_editor_html`, `oracle_v1_write_with_sanitiser_matches_python_plus_js` | must-fail `unsanitised_payload_is_caught` | sanitiser fuzzing |
+| X13 | Panic or blow-up on hostile input | `mutated_binaries_never_panic`, `oracle_mutated_html_never_panics`; contract `invalid_input_is_a_client_error` | contract `panic_is_contained_and_the_target_keeps_serving` (contains the damage) | coverage-guided fuzzing (`rust-test-fuzz`) |
 | X14 | Public v1 API incompatible with Plane | **none** | | schema diff + corpus + nightly differential (ADR-0122) |
 | X15 | Pure domain logic wrong | **none** (no unit tests yet) | contract suite, indirectly | example + property tests (`rust-test-logic`) |
 | X16 | A test passes without checking anything | count guard and target guard in `scripts/contract.sh`; `stage3_not_vacuous` | planted mutants (`scripts/mutants.sh`) | cargo-mutants per crate (`rust-test-mutation`) |

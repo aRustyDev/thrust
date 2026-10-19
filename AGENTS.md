@@ -24,12 +24,13 @@ setting for its location (why, and what was rejected: `.agents/config/README.md`
 The Cargo workspace root is `Cargo.toml` (members are listed explicitly). These rules and the configs in
 `.config/nextest.toml` and `.cargo/mutants.toml` apply to crates written for them.
 
-Today every test in the workspace is a non-hermetic integration suite: the contract suite (`thrust-contract-tests`,
-run by `scripts/contract.sh`, needs a running target) and the Postgres adapter tests
+Two suites are non-hermetic integration suites: the contract suite (`thrust-contract-tests`, run by
+`scripts/contract.sh`, needs a running target) and the Postgres adapter tests
 (`thrust-adapters-selfhosted/tests/pg_adapter.rs`, need Docker). They stay on `cargo test` through those scripts,
 which parse its `test result:` line and exit 101 (nextest exits 100 when tests fail); migrate them on purpose, not
-by accident. The default nextest profile excludes both, so `cargo nextest run` selects nothing and exits 4
-(`no tests to run`) until a crate has hermetic tests of its own. That exit is not a test failure.
+by accident. The default nextest profile excludes both, and the `oracle_` tests; what it runs today is the hermetic
+`thrust-editor-doc` suite. A crate with no hermetic tests of its own selects nothing (`-p <crate>` exits 4,
+`no tests to run`). That exit is not a test failure.
 
 Strategy, which technique catches which defect, the agent TDD loop and known gaps: `docs/src/testing/README.md`.
 Where those docs and the rules below disagree, the rules win; record the disagreement in `docs/src/testing/status.md`.
@@ -42,10 +43,11 @@ Where those docs and the rules below disagree, the rules win; record the disagre
 3. A failing test is a finding. Do not delete it, weaken its assertion, `#[ignore]` it, regenerate its fixture or
    snapshot, or raise its timeout to get green. Fix the code, or say in the commit message why the test was wrong.
 4. Name tests by category; nextest routes on the prefix: `prop_` property, `model_` model-based, `parity_` golden
-   fixtures, `oracle_` live comparison with TypeScript (opt-in), `fuzz_replay_` fuzz-input replay.
-5. Keep a crate's tests in that crate: mutation testing runs only the mutated package's own tests. Today's
-   workspace does not (its tests are in `thrust-contract-tests`), so `cargo mutants` on a crate with no tests of its
-   own stops at the baseline with exit 4; the contract suite's own mutation controls are `scripts/mutants.sh`.
+   fixtures, `oracle_` comparison with the TypeScript oracle, live or against its generated output (opt-in),
+   `fuzz_replay_` fuzz-input replay.
+5. Keep a crate's tests in that crate: mutation testing runs only the mutated package's own tests. Most of today's
+   workspace is tested only through `thrust-contract-tests`, so `cargo mutants` on a crate with no tests of its own
+   stops at the baseline with exit 4; the contract suite's own mutation controls are `scripts/mutants.sh`.
 6. The default profile is hermetic and deterministic: no network except an in-process server on `127.0.0.1:0`, no
    sleeps, no wall clock, no files outside a temp dir; inject time and randomness. Suites that need Docker, a
    database, wrangler or Node are opt-in profiles or scripts, never the default loop.
@@ -73,7 +75,7 @@ Where those docs and the rules below disagree, the rules win; record the disagre
 | Doctests | `cargo test --doc --workspace` |
 | CI | `cargo nextest run --profile ci --workspace`, then the doctests |
 | Long randomized run (includes `oracle_`) | `PROPTEST_CASES=4096 cargo nextest run --profile deep` |
-| Live comparison with TypeScript (needs Node) | `cargo nextest run --profile oracle` |
+| Comparison with the TypeScript oracle (needs Node, or its output from `tools/spike-0006/gen-all.sh`) | `cargo nextest run --profile oracle` |
 | Postgres adapter tests through nextest (needs Docker) | `cargo nextest run --ignore-default-filter -E 'binary(pg_adapter)'` |
 | Mutation testing, one file (the crate needs tests of its own) | `cargo mutants -f <path>` |
 

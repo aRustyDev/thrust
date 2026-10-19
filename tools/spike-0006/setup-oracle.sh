@@ -20,6 +20,9 @@ for d in editor blocks constants hooks types utils typescript-config tailwind-co
   rsync -a --exclude node_modules --exclude .turbo --exclude '*.map' "$PL/packages/$d" "$CP/packages/"
 done
 (cd "$CP" && pnpm install --ignore-scripts --filter "@plane/editor..." > "$WD/pnpm-install.log" 2>&1)
+# the editor imports its workspace dependencies through their dist/ builds, which a fresh checkout of the pin does not
+# have (measured 2026-10-19: ERR_MODULE_NOT_FOUND for packages/utils/dist/index.js), so build them in the copy
+(cd "$CP" && pnpm --filter "@plane/editor^..." run build > "$WD/build-deps.log" 2>&1)
 mkdir -p "$CP/packages/editor/spike0006"
 cp "$HERE"/oracle/*.ts "$CP/packages/editor/spike0006/"
 # jsdom (the pinned catalog version, 23.2.0) only for the "does a REAL editor open this binary" check

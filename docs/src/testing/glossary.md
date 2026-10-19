@@ -9,8 +9,8 @@ A reference implementation whose behaviour defines "correct". Three different or
 
 | Oracle | What it is | Where | Used by |
 |---|---|---|---|
-| **Legacy-TypeScript oracle** | the original TypeScript run in Node, side by side with Rust | `oracle_` nextest tests (none yet); templates in `rust-test-logic` | [differential](techniques/differential.md) |
-| **Editor/sanitiser oracle (spike 0006)** | Plane's real editor packages (TipTap, Yjs) and Python `nh3`, run offline to produce corpora | `tools/spike-0006/` | [golden](techniques/golden-fixtures.md), [differential](techniques/differential.md) |
+| **Legacy-TypeScript oracle** | the original TypeScript run in Node, side by side with Rust | `oracle_` nextest tests that run Node (none yet); templates in `rust-test-logic` | [differential](techniques/differential.md) |
+| **Editor/sanitiser oracle (spike 0006)** | Plane's real editor packages (TipTap, Yjs) and Python `nh3`, run offline to produce corpora | `tools/spike-0006/`; replayed by the `oracle_` tests in `crates/thrust-editor-doc` | [golden](techniques/golden-fixtures.md), [differential](techniques/differential.md) |
 | **Plane v1 oracle** | a pinned upstream Plane deployment the public API must match | ADR-0122 (planned) | [differential](techniques/differential.md) |
 
 `ts-to-rust` also replays **recorded** responses of a TypeScript or Python reference API against a port; that is a

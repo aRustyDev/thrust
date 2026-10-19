@@ -3,6 +3,8 @@
 #
 # Profiles:  default (fast hermetic loop) | ci | deep | oracle | mutants
 # Test-name prefixes route tests:  prop_  model_  oracle_  (parity_ and fuzz_replay_ run by default)
+# oracle_ = compared with the TypeScript (or Python) oracle: live through Node, or against its generated, git-ignored
+# output (tools/spike-0006/gen-all.sh). Either way it needs the oracle, so it is opt-in.
 # Filters use single-quoted TOML strings so `\b` reaches the regex engine unchanged.
 #
 # The browser-test pieces (an `e2e` package, a `browser` test group, `[profile.e2e]` and a retry override scoped
@@ -11,11 +13,11 @@
 nextest-version = { required = "0.9.131" }
 
 [test-groups]
-ts-oracle = { max-threads = 2 }  # each oracle test runs a Node.js process
+ts-oracle = { max-threads = 2 }  # a live oracle test runs a Node.js process
 
 # --- default: the fast, hermetic inner loop ----------------------------------------
 [profile.default]
-# Excluded from the hermetic loop: oracle_ tests need Node; the contract suite panics without THRUST_BASE_URL and
+# Excluded from the hermetic loop: oracle_ tests need the oracle (Node, or its generated output); the contract suite panics without THRUST_BASE_URL and
 # THRUST_ADMIN_TOKEN (a running target); pg_adapter starts a Postgres container through Docker. The last two stay
 # on `cargo test` through scripts/contract.sh and scripts/verify-all.sh, which parse its output [derived: read, not run].
 default-filter = 'not (test(/\boracle_/) | package(thrust-contract-tests) | binary(pg_adapter))'
@@ -57,7 +59,7 @@ filter = 'test(/\b(prop|model|oracle)_/)'
 slow-timeout = { period = "300s", terminate-after = 6 }
 
 # --- opt-in suite that needs external resources ------------------------------------------
-[profile.oracle]   # needs Node.js + the built legacy TypeScript package
+[profile.oracle]   # needs Node.js + the legacy TypeScript package, or the oracle's output in target/spike-0006/
 default-filter = 'test(/\boracle_/)'
 fail-fast = false
 

@@ -2,7 +2,7 @@
 //!
 //! Every test that asserts "X is allowed" is paired with a control asserting "the neighbouring Y
 //! is rejected" (cross-tenant, non-member, guest, duplicate, over-limit, oversize), so a server
-//! that accepts everything cannot pass. `scripts/contract.sh mutants` additionally runs this suite
+//! that accepts everything cannot pass. `scripts/mutants.sh` additionally runs this suite
 //! against deliberately broken servers and requires it to FAIL.
 
 use std::time::Duration;

@@ -19,7 +19,7 @@ the PR. Not a test: a slower result does not go red, so never cite it as evidenc
 | `scripts/startup-check.sh [config]` | Worker global-scope startup via `wrangler check startup` (local, writes a `.cpuprofile`) |
 | `scripts/stage2-latency.sh [N]` | cold and warm `/healthz` latency against a **deployed** Worker (owner sandbox only) |
 | `scripts/contract.sh <target> bench` | latency bench in `crates/thrust-contract-tests/src/bin/bench.rs`; succeeds if it exits 0 |
-| `crates/thrust-editor-doc/tests/schema_cost.rs` | prints schema construction time; asserts nothing (D-5) |
+| `crates/thrust-editor-doc/examples/schema_cost.rs` | schema construction time (`cargo run --release -p thrust-editor-doc --example schema_cost`) |
 
 ## Run
 

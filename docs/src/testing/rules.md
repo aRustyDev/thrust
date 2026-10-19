@@ -21,7 +21,8 @@ one. If the test really was wrong, the commit message is where that argument is 
 
 **Rule 4 (prefixes).** The prefix is how `.config/nextest.toml` routes a test to its timeout, its retry policy and
 its profile: `oracle_` tests are excluded from the default loop and grouped to two at a time because each starts a
-Node process. A missing prefix runs the test with the wrong policy, silently (drift item D-3 in [Status](status.md)).
+Node process. A missing prefix runs the test with the wrong policy, silently: an unprefixed test that needed the oracle's
+output passed in the default loop with nothing to compare (resolved drift D-3 and D-4 in [Status](status.md)).
 The contract suite has a second, separate set of prefixes (`sweeper_`, `panic_`, `worker_bindings_`, …) that select a
 *pass* in `scripts/contract.sh` rather than a nextest policy; see [Contract suite](techniques/contract-suite.md).
 
