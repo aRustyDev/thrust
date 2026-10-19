@@ -1,0 +1,102 @@
+name: flake-hunt
+
+# Re-run one contract cell N times to characterise flakiness (scripts/flake-hunt.sh).
+# Manual (workflow_dispatch inputs) or weekly (schedule: UTC, default branch only; GitHub disables
+# scheduled workflows in a public repository after 60 days without repository activity).
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Contract target
+        type: choice
+        options:
+          - native-memory
+          - native-pg
+          - worker-memory
+          - worker-cf
+        default: native-memory
+      pass:
+        description: Pass to repeat (cron needs a worker-* target; worker and bindings need worker-cf)
+        type: choice
+        options:
+          - main
+          - sweeper
+          - panic
+          - cron
+          - worker
+          - bindings
+        default: main
+      iterations:
+        description: Repetitions, 1 to 50
+        type: number
+        default: 5
+  schedule:
+    - cron: "17 3 * * 1"
+
+permissions: {}
+
+concurrency:
+  group: flake-hunt
+  cancel-in-progress: false
+
+jobs:
+  hunt:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    env:
+      # `inputs` is empty on a scheduled run, so every value has a default
+      TARGET: ${{ inputs.target || 'native-memory' }}
+      PASS: ${{ inputs.pass || 'main' }}
+      ITER: ${{ inputs.iterations || 5 }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup-rust
+        with:
+          targets: ${{ startsWith(inputs.target, 'worker') && 'wasm32-unknown-unknown' || '' }}
+          worker-tools: ${{ startsWith(inputs.target, 'worker') && 'true' || 'false' }}
+          # Restore-only (save-cache is left at its default): reuses what the main-branch contract cells saved.
+          cache-key: contract-${{ startsWith(inputs.target, 'worker') && 'wasm' || 'native' }}
+
+      - name: Validate inputs
+        run: |
+          case "$ITER" in
+            "" | *[!0-9]*) echo "::error::iterations must be a whole number"; exit 1 ;;
+          esac
+          if [ "$ITER" -lt 1 ] || [ "$ITER" -gt 50 ]; then
+            echo "::error::iterations must be between 1 and 50"
+            exit 1
+          fi
+          case "$PASS" in
+            cron) case "$TARGET" in worker-*) ;; *) echo "::error::pass 'cron' needs a worker-* target"; exit 1 ;; esac ;;
+            worker | bindings) [ "$TARGET" = "worker-cf" ] || { echo "::error::pass '$PASS' needs target worker-cf"; exit 1; } ;;
+          esac
+
+      # scripts/flake-hunt.sh ends with `echo "failures: X / N"`, so its exit status is ALWAYS 0.
+      # The verdict is that last line: assert it exists and says zero failures out of N.
+      - name: Hunt
+        run: |
+          status=0
+          scripts/flake-hunt.sh "$TARGET" "$PASS" "$ITER" > flake.log 2>&1 || status=$?
+          cat flake.log
+          if [ "$status" -ne 0 ]; then
+            echo "::error::flake-hunt.sh exited $status"
+            exit 1
+          fi
+          if ! grep -qx "failures: 0 / ${ITER}" flake.log; then
+            echo "::error::flake-hunt did not report 'failures: 0 / ${ITER}'"
+            exit 1
+          fi
+
+      - name: Upload every iteration's logs
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: flake-hunt-${{ env.TARGET }}-${{ env.PASS }}
+          path: target/flake-hunt/
+          if-no-files-found: ignore
+          retention-days: 7

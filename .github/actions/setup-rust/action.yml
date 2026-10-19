@@ -1,0 +1,58 @@
+name: setup-rust
+description: Rust toolchain, rustup targets, a keyed cache, and (optionally) the pinned Worker toolchain. One place to change versions for every job that builds the workspace.
+
+inputs:
+  targets:
+    description: Comma-separated rustup targets, e.g. wasm32-unknown-unknown
+    required: false
+    default: ""
+  cache-key:
+    description: rust-cache shared-key; one per family of jobs that can reuse each other's build output
+    required: true
+  save-cache:
+    description: "'true' to save the cache at the end (set it for the default branch only)"
+    required: false
+    default: "false"
+  worker-tools:
+    description: "'true' to install worker-build and wrangler at the pinned versions"
+    required: false
+    default: "false"
+  worker-build-version:
+    description: Exact worker-build version, installed with `cargo install --locked`
+    required: false
+    default: "0.8.7"
+  wrangler-version:
+    description: Exact wrangler version, installed with `npm install --global`
+    required: false
+    default: "4.123.0"
+
+runs:
+  using: composite
+  steps:
+    - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
+      with:
+        toolchain: stable
+        targets: ${{ inputs.targets }}
+
+    # Restores always; saves only when the caller says so, so many PR cells cannot evict each other's
+    # entries from the repository's cache budget. It caches ~/.cargo (including binaries installed AFTER this
+    # step; `cache-bin` defaults to true) and ./target, so the worker-build install below needs no cache of
+    # its own: it is saved with the rest on the default branch.
+    - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      with:
+        shared-key: ${{ inputs.cache-key }}
+        save-if: ${{ inputs.save-cache == 'true' }}
+
+    - name: Install worker-build (exact version, locked)
+      if: inputs.worker-tools == 'true'
+      shell: bash
+      env:
+        WORKER_BUILD_VERSION: ${{ inputs.worker-build-version }}
+      run: cargo install worker-build --locked --version "=${WORKER_BUILD_VERSION}"
+
+    - name: Install wrangler (exact version)
+      if: inputs.worker-tools == 'true'
+      shell: bash
+      env:
+        WRANGLER_VERSION: ${{ inputs.wrangler-version }}
+      run: npm install --global "wrangler@${WRANGLER_VERSION}"

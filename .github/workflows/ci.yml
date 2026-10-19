@@ -1,0 +1,236 @@
+name: ci
+
+# One REQUIRED check: `gate`. Everything else is evidence the gate inspects.
+# Triggers: pull_request and merge_group (a merge queue waits forever for a required check that its
+# workflow does not run on), push to main, and manual runs.
+on:
+  pull_request:
+  merge_group:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions: {}
+
+# Supersede stale PR runs; never cancel main or merge-queue runs.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.event.merge_group.head_sha || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  # Affected-only: decide whether anything the Rust jobs depend on changed. This is a job, not a
+  # workflow-level `paths:` filter, because a workflow skipped by a path filter never reports its
+  # check and a required check that never reports blocks the PR forever.
+  changes:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      rust: ${{ steps.classify.outputs.rust }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - id: classify
+        env:
+          EVENT: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          MG_BASE: ${{ github.event.merge_group.base_sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          case "$EVENT" in
+            pull_request) base="$PR_BASE" ;;
+            merge_group) base="$MG_BASE" ;;
+            push) base="$PUSH_BEFORE" ;;
+            *) base="" ;;
+          esac
+          case "$base" in
+            "" | 0000000000000000000000000000000000000000)
+              echo "rust=true" >> "$GITHUB_OUTPUT"
+              echo "no usable base for '$EVENT'; failing open (run everything)"
+              exit 0
+              ;;
+          esac
+          if ! git diff --name-only "$base" "$HEAD_SHA" > changed.txt; then
+            echo "rust=true" >> "$GITHUB_OUTPUT"
+            echo "cannot diff $base..$HEAD_SHA; failing open (run everything)"
+            exit 0
+          fi
+          echo "changed files: $(wc -l < changed.txt | tr -d ' ')"
+          .github/scripts/classify-changes.sh < changed.txt >> "$GITHUB_OUTPUT"
+
+  # The cell list comes from scripts/contract-all.sh itself; there is no second list to drift.
+  plan:
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      cells: ${{ steps.plan.outputs.cells }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: plan
+        run: .github/scripts/plan-cells.sh >> "$GITHUB_OUTPUT"
+
+  # The logic behind the required check (gate, plan, classifier, certifier) is itself tested; a failing
+  # helper test fails the gate through `needs`.
+  ci-scripts:
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Test the helper scripts
+        run: |
+          sh .github/scripts/tests/test-ci-scripts.sh
+          sh .github/scripts/tests/test-required-contexts.sh
+
+  deps:
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-rust
+        with:
+          targets: wasm32-unknown-unknown
+          cache-key: deps
+          save-cache: ${{ github.ref == 'refs/heads/main' }}
+      - name: Dependency-graph guard
+        run: scripts/check-deps.sh
+
+  # The hermetic loop: the default nextest profile (no Docker, Node, wrangler or running target) under the `ci`
+  # profile, plus the doctests nextest cannot run. `oracle_` tests need the TypeScript oracle's generated output
+  # and are excluded by the profile's default filter, not here.
+  hermetic:
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-rust
+        with:
+          cache-key: native-hermetic
+          save-cache: ${{ github.ref == 'refs/heads/main' }}
+      - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
+        with:
+          tool: cargo-nextest@0.9.140
+      # nextest exits 4 when the filter selects nothing, so an empty default profile fails this step.
+      - name: Hermetic tests (nextest, ci profile)
+        run: scripts/rs cargo nextest run --profile ci --workspace
+      - name: Doctests
+        run: scripts/rs cargo test --doc --workspace
+      - name: Upload the JUnit report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: junit-hermetic
+          path: target/nextest/ci/junit.xml
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # The Postgres adapter tests start their own container through testcontainers (Docker on the runner).
+  pg-adapter:
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-rust
+        with:
+          cache-key: native-pg-adapter
+          save-cache: ${{ github.ref == 'refs/heads/main' }}
+      - name: Postgres adapter tests (testcontainers)
+        run: scripts/rs cargo test -p thrust-adapters-selfhosted --test pg_adapter
+
+  # One job per cell, each on a fresh runner with its own checkout, so the shared-build-directory
+  # hazard that forces contract-all.sh to run serially on one machine does not apply here.
+  contract:
+    needs: [changes, plan]
+    if: needs.changes.outputs.rust == 'true'
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    uses: ./.github/workflows/contract-cell.yml
+    with:
+      target: ${{ matrix.target }}
+      pass: ${{ matrix.pass }}
+    permissions:
+      contents: read
+
+  # Mutation controls: every deliberately broken build must make the suite fail.
+  mutants:
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-rust
+        with:
+          cache-key: native-mutants
+          save-cache: ${{ github.ref == 'refs/heads/main' }}
+      - name: Every mutant must be KILLED
+        run: scripts/mutants.sh
+
+  gate:
+    name: gate
+    if: always()
+    needs: [changes, plan, ci-scripts, deps, hermetic, pg-adapter, contract, mutants]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Collect the per-cell pass markers
+        if: needs.changes.outputs.rust == 'true'
+        # If every cell failed there is nothing to download; the assert step below then fails on
+        # "no cell markers", so tolerating the download error here cannot produce a green gate.
+        continue-on-error: true
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: cell-ok-*
+          path: reported
+          merge-multiple: true
+      - name: Assert the planned set ran and passed
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+          RUST_CHANGED: ${{ needs.changes.outputs.rust }}
+          PLANNED: ${{ needs.plan.outputs.cells || '[]' }}
+          REPORTED_DIR: reported
+        run: .github/scripts/assert-gate.sh
