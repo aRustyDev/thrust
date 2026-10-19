@@ -21,6 +21,11 @@ skill `mdbook` covers the rest (`mdbook test`, link checking, CI and Pages).
 `mermaid.min.js` and `mermaid-init.js` in this directory are written by `mdbook-mermaid install docs`. Regenerate
 them with that command and review the diff; do not edit them by hand.
 
+The book's colours come from `.config/branding/colors.css` through the `docs/branding` symlink, and
+`docs/brand-mapping.css` maps them onto mdBook's variables. Change a colour in the tokens file, run
+`uv run .config/branding/check.py`, then build and look at a light and a dark theme. Show a colour in a page as
+`<span class="swatch" style="--c: var(--ochre-500)"></span>`, never as a hex value. See `src/uiux/book-theme.md`.
+
 ## Writing a page
 
 - Describe what exists. Anything planned goes under a "Not built yet" heading that names the plan file.

@@ -1,0 +1,129 @@
+/* Maps the brand tokens in .config/branding/colors.css (reached through the docs/branding symlink, and loaded
+ * before this file) onto mdBook's theme variables. DRAFT, like the palette.
+ *
+ * mdBook has five themes. The two light ones (light, rust) take the light tokens and the three dark ones
+ * (coal, navy, ayu) take the dark tokens, so the theme picker shows five names for two looks. A token that is
+ * misspelled here fails silently: the variable resolves to nothing and mdBook shows the browser default.
+ *
+ * Not mapped, so they stay mdBook's own: the search box and its results, the copy-button icon filter, the overlay
+ * behind the keyboard-help popup, --color-scheme (each mdBook theme keeps its own light or dark), and the
+ * code-block highlight themes. The in-page search highlight (--search-mark-bg) is mapped, because mdBook's own
+ * colours for it are unreadable under the brand's light text on two of the dark themes. The footnote flash
+ * (--footnote-highlight) takes the same colour, so that links on it can be checked.
+ */
+
+.light,
+.rust,
+html:not(.js) {
+  --bg: var(--light-bg);
+  --fg: var(--light-fg);
+  --sidebar-bg: var(--light-surface);
+  --sidebar-fg: var(--light-fg);
+  --sidebar-non-existant: var(--light-fg-muted);
+  --sidebar-active: var(--light-accent-text);
+  --sidebar-spacer: var(--light-border);
+  --sidebar-header-border-color: var(--light-accent);
+  --scrollbar: var(--light-fg-muted);
+  --icons: var(--light-fg-muted);
+  --icons-hover: var(--light-fg);
+  --links: var(--light-link);
+  --inline-code-color: var(--light-accent-text);
+  --theme-popup-bg: var(--light-surface);
+  --theme-popup-border: var(--light-border);
+  --theme-hover: var(--light-surface-2);
+  --quote-bg: var(--light-surface-2);
+  --quote-border: var(--light-border);
+  --warning-border: var(--light-status-warning);
+  --table-border-color: var(--light-border);
+  --table-header-bg: var(--light-surface-2);
+  --table-alternate-bg: var(--light-surface);
+  --footnote-highlight: var(--light-mark);
+  --search-mark-bg: var(--light-mark);
+  --blockquote-note-color: var(--light-status-info);
+  --blockquote-tip-color: var(--light-status-success);
+  --blockquote-important-color: var(--light-status-important);
+  --blockquote-warning-color: var(--light-status-warning);
+  --blockquote-caution-color: var(--light-status-danger);
+}
+
+.coal,
+.navy,
+.ayu {
+  --bg: var(--dark-bg);
+  --fg: var(--dark-fg);
+  --sidebar-bg: var(--dark-surface);
+  --sidebar-fg: var(--dark-fg);
+  --sidebar-non-existant: var(--dark-fg-muted);
+  --sidebar-active: var(--dark-accent-text);
+  --sidebar-spacer: var(--dark-border);
+  --sidebar-header-border-color: var(--dark-accent);
+  --scrollbar: var(--dark-fg-muted);
+  --icons: var(--dark-fg-muted);
+  --icons-hover: var(--dark-fg);
+  --links: var(--dark-link);
+  --inline-code-color: var(--dark-accent-text);
+  --theme-popup-bg: var(--dark-surface);
+  --theme-popup-border: var(--dark-border);
+  --theme-hover: var(--dark-surface-2);
+  --quote-bg: var(--dark-surface-2);
+  --quote-border: var(--dark-border);
+  --warning-border: var(--dark-status-warning);
+  --table-border-color: var(--dark-border);
+  --table-header-bg: var(--dark-surface-2);
+  --table-alternate-bg: var(--dark-surface);
+  --footnote-highlight: var(--dark-mark);
+  --search-mark-bg: var(--dark-mark);
+  --blockquote-note-color: var(--dark-status-info);
+  --blockquote-tip-color: var(--dark-status-success);
+  --blockquote-important-color: var(--dark-status-important);
+  --blockquote-warning-color: var(--dark-status-warning);
+  --blockquote-caution-color: var(--dark-status-danger);
+}
+
+/* With JavaScript off the html element has no `js` class, and mdBook follows the operating system through its own
+ * html:not(.js) rule. This repeats that rule with the brand tokens. It must come after the light rule above,
+ * because both select html:not(.js). */
+@media (prefers-color-scheme: dark) {
+  html:not(.js) {
+    --bg: var(--dark-bg);
+    --fg: var(--dark-fg);
+    --sidebar-bg: var(--dark-surface);
+    --sidebar-fg: var(--dark-fg);
+    --sidebar-non-existant: var(--dark-fg-muted);
+    --sidebar-active: var(--dark-accent-text);
+    --sidebar-spacer: var(--dark-border);
+    --sidebar-header-border-color: var(--dark-accent);
+    --scrollbar: var(--dark-fg-muted);
+    --icons: var(--dark-fg-muted);
+    --icons-hover: var(--dark-fg);
+    --links: var(--dark-link);
+    --inline-code-color: var(--dark-accent-text);
+    --theme-popup-bg: var(--dark-surface);
+    --theme-popup-border: var(--dark-border);
+    --theme-hover: var(--dark-surface-2);
+    --quote-bg: var(--dark-surface-2);
+    --quote-border: var(--dark-border);
+    --warning-border: var(--dark-status-warning);
+    --table-border-color: var(--dark-border);
+    --table-header-bg: var(--dark-surface-2);
+    --table-alternate-bg: var(--dark-surface);
+    --footnote-highlight: var(--dark-mark);
+    --search-mark-bg: var(--dark-mark);
+    --blockquote-note-color: var(--dark-status-info);
+    --blockquote-tip-color: var(--dark-status-success);
+    --blockquote-important-color: var(--dark-status-important);
+    --blockquote-warning-color: var(--dark-status-warning);
+    --blockquote-caution-color: var(--dark-status-danger);
+  }
+}
+
+/* Colour swatches for docs/src/uiux/palette.md. They read the brand tokens, so no hex value is repeated. */
+.swatch {
+  display: inline-block;
+  width: 2.4em;
+  height: 1.3em;
+  vertical-align: middle;
+  border: 1px solid var(--quote-border);
+  border-radius: 3px;
+  background: var(--c);
+}

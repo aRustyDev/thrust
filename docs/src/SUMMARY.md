@@ -10,6 +10,12 @@
 
 - [Application flow](flows/app.md)
 
+# UI/UX
+
+- [Palette](uiux/palette.md)
+- [Contrast and colour blindness](uiux/accessibility.md)
+- [How the book is themed](uiux/book-theme.md)
+
 # Contributing
 
 - [Crates](contributing/crates.md)

@@ -9,6 +9,7 @@ The book is an mdBook. Build it from the repo root with `mdbook build docs` and 
 |---|---|
 | Architecture | `src/architecture/app.md` (crates, ports, composition roots), `src/architecture/infra.md` (Worker, server, Postgres), `src/architecture/cicd.md` (the CI pipeline and its one required check) |
 | Flows | `src/flows/app.md` (the HTTP surface, permissions, the write path, errors) |
+| UI/UX | `src/uiux/` (the draft earth-pigment palette, its contrast and colour-blindness checks, and how the book is themed from `.config/branding/`) |
 | Contributing | `src/contributing/` (crates, Cargo features, standards and their gates, patterns) |
 | Testing | `src/testing/` (strategy, the TDD loop, techniques, rules, status) |
 
