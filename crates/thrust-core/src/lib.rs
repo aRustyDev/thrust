@@ -534,3 +534,120 @@ impl EventConsumer for ActivityConsumer {
         process_event(&self.0, env).await.map(|_| ()).map_err(|e| e.to_string())
     }
 }
+
+#[cfg(test)]
+pub(crate) mod test_support;
+
+// Unit tests for the private validators. The use-cases are tested through the public API, against the
+// memory adapters, in `tests/`.
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use proptest::prelude::*;
+    use rstest::rstest;
+
+    #[rstest]
+    #[case::empty("", false)]
+    #[case::only_whitespace(" \t\n ", false)]
+    #[case::one_char("a", true)]
+    #[case::padded(" a ", true)]
+    #[case::ascii_255("x".repeat(255), true)]
+    #[case::ascii_256("x".repeat(256), false)]
+    // the limit counts characters, not bytes: 255 two-byte characters are 510 bytes and still valid
+    #[case::multibyte_255("é".repeat(255), true)]
+    #[case::multibyte_256("é".repeat(256), false)]
+    // padding is trimmed before counting
+    #[case::padded_255(format!("  {}  ", "x".repeat(255)), true)]
+    fn validate_name_cases(#[case] name: impl AsRef<str>, #[case] valid: bool) {
+        assert_eq!(validate_name(name.as_ref()).is_ok(), valid);
+    }
+
+    #[rstest]
+    #[case::plain("report.pdf", true)]
+    #[case::one_char("a", true)]
+    #[case::inner_dot("a.b", true)]
+    #[case::empty("", false)]
+    #[case::slash("a/b", false)]
+    #[case::leading_slash("/etc", false)]
+    #[case::dot_dot("..", false)]
+    #[case::dot_dot_inside("a..b", false)]
+    // found by prop_accepted_blob_names_stay_inside_their_scope (proptest-regressions/lib.txt)
+    #[case::single_dot(".", false)]
+    // the limit counts bytes: 64 two-byte characters are exactly 128 bytes
+    #[case::bytes_128("é".repeat(64), true)]
+    #[case::bytes_130("é".repeat(65), false)]
+    #[case::ascii_128("x".repeat(128), true)]
+    #[case::ascii_129("x".repeat(129), false)]
+    fn validate_blob_name_cases(#[case] name: impl AsRef<str>, #[case] valid: bool) {
+        assert_eq!(validate_blob_name(name.as_ref()).is_ok(), valid);
+    }
+
+    fn scope() -> Scope {
+        Scope {
+            workspace_id: WorkspaceId(Uuid::from_u128(1)),
+            project_id: ProjectId(Uuid::from_u128(2)),
+            user_id: UserId(Uuid::from_u128(3)),
+        }
+    }
+
+    /// Names built from mostly ordinary characters with the occasional `.` or multi-byte character, never `/`
+    /// (the slash property below covers that), so most generated names are valid and few are rejected.
+    /// The bare dot segments are drawn on their own as well, because a random string almost never is one.
+    fn blob_name() -> impl Strategy<Value = String> {
+        let general = prop::collection::vec(
+            prop_oneof![8 => "[a-z0-9_-]", 1 => Just(".".to_string()), 1 => Just("\u{e9}".to_string())],
+            1..=60,
+        )
+        .prop_map(|parts| parts.concat());
+        prop_oneof![9 => general, 1 => prop::sample::select(vec![".".to_string(), "..".to_string()])]
+    }
+
+    fn non_whitespace(len: std::ops::RangeInclusive<usize>) -> impl Strategy<Value = String> {
+        prop::collection::vec(any::<char>().prop_filter("not whitespace", |c| !c.is_whitespace()), len)
+            .prop_map(|cs| cs.into_iter().collect())
+    }
+
+    proptest! {
+        #![proptest_config(crate::test_support::proptest_config(256))]
+
+        /// Surrounding whitespace never changes whether a name is accepted.
+        #[test]
+        fn prop_name_validity_ignores_surrounding_whitespace(name in "\\PC{0,300}", pad in "[ \t\n]{0,4}") {
+            let padded = format!("{pad}{name}{pad}");
+            prop_assert_eq!(validate_name(&padded).is_ok(), validate_name(&name).is_ok());
+        }
+
+        #[test]
+        fn prop_names_of_1_to_255_visible_chars_are_accepted(name in non_whitespace(1..=255)) {
+            prop_assert!(validate_name(&name).is_ok());
+        }
+
+        #[test]
+        fn prop_names_longer_than_255_chars_are_rejected(name in non_whitespace(256..=320)) {
+            prop_assert!(validate_name(&name).is_err());
+        }
+
+        /// The tenant boundary for attachments: an accepted name is exactly one path segment, so the blob
+        /// key stays under `<workspace>/<project>/<item>/` and cannot reach another tenant's objects.
+        #[test]
+        fn prop_accepted_blob_names_stay_inside_their_scope(name in blob_name()) {
+            prop_assume!(validate_blob_name(&name).is_ok());
+            let s = scope();
+            let item = WorkItemId(Uuid::from_u128(4));
+            let key = blob_key(&s, item, &name);
+            let segments: Vec<&str> = key.split('/').collect();
+            prop_assert_eq!(segments.len(), 4, "key {:?} has extra segments", key);
+            let want = [s.workspace_id().to_string(), s.project_id().to_string(), item.to_string()];
+            prop_assert_eq!(&segments[..3], &want[..]);
+            prop_assert_eq!(segments[3], name.as_str());
+            prop_assert!(segments.iter().all(|seg| *seg != ".." && *seg != "."));
+        }
+
+        /// Any name containing a slash is rejected, wherever the slash is.
+        #[test]
+        fn prop_blob_names_with_a_slash_are_rejected(before in "[a-z]{0,60}", after in "[a-z]{0,60}") {
+            let name = format!("{before}/{after}");
+            prop_assert!(validate_blob_name(&name).is_err());
+        }
+    }
+}
