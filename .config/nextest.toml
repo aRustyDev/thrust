@@ -5,9 +5,9 @@
 # Test-name prefixes route tests:  prop_  model_  oracle_  (parity_ and fuzz_replay_ run by default)
 # Filters use single-quoted TOML strings so `\b` reaches the regex engine unchanged.
 #
-# Nothing here names a crate. The browser-test pieces (an `e2e` package, a `browser` test group, `[profile.e2e]`
-# and a retry override scoped to browser tests) are NOT in this file: add them from the template when the
-# harness crate exists, and scope retries to browser tests only.
+# The browser-test pieces (an `e2e` package, a `browser` test group, `[profile.e2e]` and a retry override scoped
+# to browser tests) are NOT in this file: add them from the template when the harness crate exists, and scope
+# retries to browser tests only.
 nextest-version = { required = "0.9.131" }
 
 [test-groups]
@@ -15,7 +15,10 @@ ts-oracle = { max-threads = 2 }  # each oracle test runs a Node.js process
 
 # --- default: the fast, hermetic inner loop ----------------------------------------
 [profile.default]
-default-filter = 'not test(/\boracle_/)'
+# Excluded from the hermetic loop: oracle_ tests need Node; the contract suite panics without THRUST_BASE_URL and
+# THRUST_ADMIN_TOKEN (a running target); pg_adapter starts a Postgres container through Docker. The last two stay
+# on `cargo test` through scripts/contract.sh and scripts/verify-all.sh, which parse its output [derived: read, not run].
+default-filter = 'not (test(/\boracle_/) | package(thrust-contract-tests) | binary(pg_adapter))'
 retries = 0
 slow-timeout = { period = "30s", terminate-after = 4 }
 

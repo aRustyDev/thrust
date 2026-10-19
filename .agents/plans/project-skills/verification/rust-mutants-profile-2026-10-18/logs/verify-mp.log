@@ -1,0 +1,204 @@
+##### P1 manifest still parses; [profile.mutants] present
+$ cargo metadata --no-deps --format-version 1 --quiet
+{"packages":[{"name":"thrust-contracts","version":"0.0.0","id":"path+file://$WORKTREE/crates/thrust-contracts#0.0.0","license":"AGPL-3.0-only","license_file":null,"description":"Wire/event/domain data types shared by every crate. No runtime, no platform code.","source":null,"dependencies":[{"name":"chrono","source":"registry+https://github.com/rust-lang/crates.io-index","req":"^0.4","kind":null,"rename":null,"optional":false,"uses_default_features":false,"features":["serde","std"],"target":null,"registry":null},{"name":"serde","source":"registry+https://github.com/rust-lang/crates.io-index","req":"^1","kind":null,"rename":null,"optional":false,"uses_default_features":true,"features":["derive"],"target":null,"registry":null},{"name":"serde_json","source":"registry+https://github.com/rust-lang/crates.io-index","req":"^1","kind":null,"rename":null,"optional":false,"uses_default_features":true,"features":[],"target":null,"registry":null},{"name":"uuid","source":"registry+https://github.com/rust-lang/crates.io-index","req":"^1","kind":null,"rename":null,"optional":false,"uses_default_features":false,"features":["serde","std"],"target":null,"registry":null}],"targets":[{"kind":["lib"],"crate_types":["lib"],"name":"thrust_contracts","src_path":"$WORKTREE/crates/thrust-contracts/src/lib.rs","edition":"2021","doc":true,"doctest":true,"test":true}],"features":{},"manifest_path":"$WORKTREE/crates/thrust-contracts/Cargo.toml","metadata":null,"publish":[],"authors":[],"categories":[],"keywords":[],"readme":null,"repository":null,"homepage":null,"documentation":null,"edition":"2021","links":null,"default_run":null,"rust_version":null},{"name":"thrust-ports","version":"0.0.0","id":"path+file://$WORKTREE/crates/thrust-ports#0.0.0","license":"AGPL-3.0-only","license_file":null,"description":"Port traits (driven side). Futures are Send; see research/0004 for why.","source":null,"dependencies":[{"name":"async-trait","source":"registry+https://github.com/rust-lang/crates.io-index","req":"^0.1","kind":null,"rename":null,"optional":false,"uses_default_features":true,"features":[],"target":null,"registry":null},{"name":"futures-util","source":"registry+https://github.com/rust-lang/crates.io-index","req":"^0.3","kind":null,"rename":null,"optional":false,"uses_default_features":false,"features":["alloc"],"target":null,"registry":null},{"name":"thiserror","source":"registry+https://github.com/rust-lang/crates.io-index","req":"^2","kind":null,"rename":null,"optional":false,"uses_default_features":true,"features":[],"target":null,"registry":null},{"name":"thrust-contracts","source":null,"req":"*","kind":null,"rename":null,"optional":false,"uses_default_features":true,"features":[],"target":null,"registry":null,"path":"$WORKTREE/crates/thrust-contracts"}],"targets":[{"kind":["lib"],"crate_types":["lib"],"name":"thrust_ports","src_path":"$WORKTREE/crates/thrust-ports/src/lib.rs","edition":"2021","doc":true,"doctest":true,"test":true}],"features":{},"manifest_path":"$WORKTREE/crates/thrust-ports/Cargo.toml","metadata":null,"publish":[],"authors":[],"categories":[],"keywords":[],"readme":null,"repository":null,"homepage":null,"documentation":null,"edition":"2021","links":null,"default_run":null,"rust_version":null},{"name":"thrust-core","version":"0.0.0","id":"path+file://$WORKTREE/crates/thrust-core#0.0.0","license":"AGPL-3.0-only","license_file":null,"description":"Use-cases. Depends on ports + contracts only.","source":null,"dependencies":[{"name":"async-trait","source":"registry+https://github.com/rust-lang/crates.io-index","req":"^0.1","kind":null,"rename":null,"optional":false,"uses_default_features":true,"features":[],"target":null,"registry":null},{"name":"serde","source":"registry+https://github.com/rust-lang/crates.io-index","req":"^1","kind":null,"rename":null,"optional":false,"uses_default_features":true,"features":["derive"],"target":null,"registry":null},{"name":"serde_json","source":"registry+https://github.com/rust-lang/crates.io-index","req":"^1","kind":null,"rename":null,"optional":false,"uses_default_features":true,"features":[],"target":null,"registry":null},{"name":"thiserror","source":"registry+https://github.com/rust-lang/crates.io-index","req":"^2","kind":null,"rename":null,"optional":false,"uses_default_features":true,"features":[],"target":null,"registry":null},{"name":"thrust-contracts","source":null,"req":"*","kind":null,"rename":null,"optional":false,"uses_default_features":true,"features":[],"target":null,"registry":null,"path":"$WORKTREE/crates/thrust-contracts"},{"name":"thrust-ports","source":null,"req":"*","kind":null,"rename":null,"optional":false,"uses_default_features":true,"features":[],"target":null,"registry":null,"path":"$WORKTREE/crates/thrust-ports"}],"targets":[{"kind":["lib"],"crate_types":["lib"],"name":"thrust_core","src_path":"$WORKTREE/crates/thrust-core/src/lib.rs","edition":"2021","doc":true,"doctest":true,"test":true}],"features":{},"manifest_path":"$WORKTREE/crates/thrust-core/Cargo.toml","metadata":null,"publish":[],"authors":[],"categories":[],"keywords":[],"readme":null,"repository":null,"homepage":null,"documentation":null,"edition":"2021","links":null,"default_run":null,"rust_version":null},{"name":"thrust-adapters-memory","version":"0.0.0","id":"path+file://$WORKTREE/crates/thrust-adapters-memory#0.0.0","license":"AGPL-3.0-only","license_file":null,"description":"In-memory adapters for every port. Compiles for wasm32 and native; no runtime dependency.","source":null,"dependencies":[{"name":"async-trait","source":"registry+https://github.com/rust-lang/crates.io-index","req":"^0.1","kind":null,"rename":null,"optional":false,"uses_default_features":true,"features":[],"target":null,"registry":null},{"name":"thrust-contracts","source":null,"req":"*","kind":null,"rename":null,"optional":false,"uses_default_features":true,"features":[],"target":null,"registry":null,"path":"$WORKTREE/crates/thrust-contracts"},{"name":"thrust-ports","source":null,"req":"*","kind":null,"rename":null,"optional":false,"uses_default_features":true,"features":[],"target":null,"registry":null,"path":"$WORKTREE/crates/thrust-ports"}],"targets":[{"kind":["lib"],"crate_types":["lib"],"name":"thrust_adapters_memory","src_path":"$WORKTREE/crates/thrust-adapters-memory/src/lib.rs","edition":"2021","doc":true,"doctest":true,"test":true}],"features":{"mutant_dup_sequence":[],"mutant_ignore_tenant":[],"mutant_no_activity_dedupe":[]},"manifest_path":"$WORKTREE/crates/thrust-adapters-memory/Cargo.toml","metadata":null,"publish":[],"authors":[],"categories":[],"keywords":[],"readme":null,"repository":null,"homepage":null,"documentation":null,"edition":"2021","links":null,"default_run":null,"rust_version":null},{"name":"thrust-api","version":"0.0.0","id":"path+file://$WORKTREE/crates/thrust-api#0.0.0","license":"AGPL-3.0-only","license_file":null,"description":"The shared axum router (ARCHITECTURE 2a thrust-api-core). Compiled into BOTH composition roots.","source":null,"dependencies":[{"name":"axum","source":"registry+https://github.com/rust-lang/crates.io-index","req":"^0.8","kind":null,"rename":null,"optional":false,"uses_default_features":false,"features":["json","query","matched-path"],"target":null,"registry":null},{"name":"serde","source":"registry+https://github.com/rust-lang/crates.io-index","req":"^1","kind":null,"rename":null,"optional":false,"uses_default_features":true,"features":["derive"],"target":null,"registry":null},{"name":"serde_json","source":"registry+https://github.com/rust-lang/crates.io-index","req":"^1","kind":null,"rename":null,"optional":false,"uses_default_features":true,"features":[],"target":null,"registry":null},{"name":"thrust-contracts","source":null,"req":"*","kind":null,"rename":null,"optional":false,"uses_default_features":true,"features":[],"target":null,"registry":null,"path":"$WORKTREE/crates/thrust-contracts"},{"name":"thrust-core","source":null,"req":"*","kind":null,"rename":null,"optional":false,"uses_default_features":true,"features":[],"target":null,"registry":null,"path":"$WORKTREE/crates/thrust-core"},{"name":"thrust-ports","source":null,"req":"*","kind":null,"rename":null,"optional":false,"uses_default_features":true,"features":[],"target":null,"registry":null,"path":"$WORKTREE/crates/thrust-ports"}],"targets":[{"kind":["lib"],"crate_types":["lib"],"name":"thrust_api","src_path":"$WORKTREE/crates/thrust-api/src/lib.rs","edition":"2021","doc":true,"doctest":true,"test":true}],"features":{},"manifest_path":"$WORKTREE/crates/thrust-api/Cargo.toml","metadata":null,"publish":[],"authors":[],"categories":[],"keywords":[],"readme":null,"repository":null,"homepage":null,"documentation":null,"edition":"2021","links":null,"default_run":null,"rust_version":null},{"name":"thrust-adapters-postgres","version":"0.0.0","id":"path+file://$WORKTREE/crates/thrust-adapters-postgres#0.0.0","license":"AGPL-3.0-only","license_file":null,"description":"Postgres Database adapter at the tokio-postgres::Client level. One SQL implementation, two connection strategies (native pool / Hyperdrive socket).","source":null,"dependencies":[{"name":"async-trait","source":"registry+https://github.com/rust-lang/crates.io-index","req":"^0.1","kind":null,"rename":null,"optional":false,"uses_default_features":true,"features":[],"target":null,"registry":null},{"name":"serde_json","source":"registry+https://github.com/rust-lang/crates.io-index","req":"^1","kind":null,"rename":null,"optional":false,"uses_default_features":true,"features":[],"target":null,"registry":null},{"name":"thrust-contracts","source":null,"req":"*","kind":null,"rename":null,"optional":false,"uses_default_features":true,"features":[],"target":null,"registry":null,"path":"$WORKTREE/crates/thrust-contracts"},{"name":"thrust-ports","source":null,"req":"*","kind":null,"rename":null,"optional":false,"uses_default_features":true,"features":[],"target":null,"registry":null,"path":"$WORKTREE/crates/thrust-ports"},{"name":"tokio","source":"registry+https://github.com/rust-lang/crates.io-index","req":"^1","kind":null,"rename":null,"optional":true,"uses_default_features":false,"features":["rt","macros"],"target":null,"registry":null},{"name":"tokio-postgres","source":"registry+https://github.com/rust-lang/crates.io-index","req":"^0.7","kind":null,"rename":null,"optional":false,"uses_default_features":false,"features":["js","with-uuid-1","with-chrono-0_4","with-serde_json-1"],"target":null,"registry":null}],"targets":[{"kind":["lib"],"crate_types":["lib"],"name":"thrust_adapters_postgres","src_path":"$WORKTREE/crates/thrust-adapters-postgres/src/lib.rs","edition":"2021","doc":true,"doctest":true,"test":true},{"kind":["bin"],"crate_types":["bin"],"name":"migrate","src_path":"$WORKTREE/crates/thrust-adapters-postgres/src/bin/migrate.rs","edition":"2021","required-features":["native"],"doc":true,"doctest":false,"test":true}],"features":{"default":[],"native":["tokio-postgres/runtime","dep:tokio"]},"manifest_path":"$WORKTREE/crates/thrust-adapters-postgres/Cargo.toml","metadata":null,"publish":[],"authors":[],"categories":[],"keywords":[],"readme":null,"repository":null,"homepage":null,"documentation":null,"edition":"2021","links":null,"default_run":null,"rust_version":null},{"name":"thrust-adapters-selfhosted","version":"0.0.0","id":"path+file://$WORKTREE/crates/thrust-adapters-selfhosted#0.0.0","license":"AGPL-3.0-only","license_file":null,"description":"Native (tokio) adapters for the self-hosted set. Never compiled into the Worker.","source":null,"dependencies":[{"name":"async-trait","source":"registry+https://github.com/rust-lang/crates.io-index","req":"^0.1","kind":null,"rename":null,"optional":false,"uses_default_features":true,"features":[],"target":null,"registry":null},{"name":"chrono","source":"registry+https://github.com/rust-lang/crates.io-index","req":"^0.4","kind":null,"rename":null,"optional":false,"uses_default_features":false,"features":["clock","std"],"target":null,"registry":null},{"name":"deadpool-postgres","source":"registry+https://github.com/rust-lang/crates.io-index","req":"^0.14","kind":null,"rename":null,"optional":false,"uses_default_features":false,"features":["rt_tokio_1"],"target":null,"registry":null},{"name":"thrust-adapters-postgres","source":null,"req":"*","kind":null,"rename":null,"optional":false,"uses_default_features":true,"features":["native"],"target":null,"registry":null,"path":"$WORKTREE/crates/thrust-adapters-postgres"},{"name":"thrust-contracts","source":null,"req":"*","kind":null,"rename":null,"optional":false,"uses_default_features":true,"features":[],"target":null,"registry":null,"path":"$WORKTREE/crates/thrust-contracts"},{"name":"thrust-ports","source":null,"req":"*","kind":null,"rename":null,"optional":false,"uses_default_features":true,"features":[],"target":null,"registry":null,"path":"$WORKTREE/crates/thrust-ports"},{"name":"tokio","source":"registry+https://github.com/rust-lang/crates.io-index","req":"^1","kind":null,"rename":null,"optional":false,"uses_default_features":false,"features":["rt","time"],"target":null,"registry":null},{"name":"tokio-postgres","source":"registry+https://github.com/rust-lang/crates.io-index","req":"^0.7","kind":null,"rename":null,"optional":false,"uses_default_features":false,"features":["runtime"],"target":null,"registry":null},{"name":"uuid","source":"registry+https://github.com/rust-lang/crates.io-index","req":"^1","kind":null,"rename":null,"optional":false,"uses_default_features":false,"features":["serde","std","v7"],"target":null,"registry":null},{"name":"serde_json","source":"registry+https://github.com/rust-lang/crates.io-index","req":"^1","kind":"dev","rename":null,"optional":false,"uses_default_features":true,"features":[],"target":null,"registry":null},{"name":"testcontainers","source":"registry+https://github.com/rust-lang/crates.io-index","req":"^0.23","kind":"dev","rename":null,"optional":false,"uses_default_features":true,"features":[],"target":null,"registry":null},{"name":"testcontainers-modules","source":"registry+https://github.com/rust-lang/crates.io-index","req":"^0.11","kind":"dev","rename":null,"optional":false,"uses_default_features":true,"features":["postgres"],"target":null,"registry":null},{"name":"tokio","source":"registry+https://github.com/rust-lang/crates.io-index","req":"^1","kind":"dev","rename":null,"optional":false,"uses_default_features":false,"features":["rt-multi-thread","macros","time"],"target":null,"registry":null}],"targets":[{"kind":["lib"],"crate_types":["lib"],"name":"thrust_adapters_selfhosted","src_path":"$WORKTREE/crates/thrust-adapters-selfhosted/src/lib.rs","edition":"2021","doc":true,"doctest":true,"test":true},{"kind":["test"],"crate_types":["bin"],"name":"pg_adapter","src_path":"$WORKTREE/crates/thrust-adapters-selfhosted/tests/pg_adapter.rs","edition":"2021","doc":false,"doctest":false,"test":true}],"features":{"mutant_discard_noop":[]},"manifest_path":"$WORKTREE/crates/thrust-adapters-selfhosted/Cargo.toml","metadata":null,"publish":[],"authors":[],"categories":[],"keywords":[],"readme":null,"repository":null,"homepage":null,"documentation":null,"edition":"2021","links":null,"default_run":null,"rust_version":null},{"name":"thrust-adapters-cloudflare","version":"0.0.0","id":"path+file://$WORKTREE/crates/thrust-adapters-cloudflare#0.0.0","license":"AGPL-3.0-only","license_file":null,"description":"workers-rs adapters (KV, R2, Queues, Hyperdrive, DO, ...). wasm32 only; never compiled into the native server.","source":null,"dependencies":[{"name":"async-trait","source":"registry+https://github.com/rust-lang/crates.io-index","req":"^0.1","kind":null,"rename":null,"optional":false,"uses_default_features":true,"features":[],"target":null,"registry":null},{"name":"serde","source":"registry+https://github.com/rust-lang/crates.io-index","req":"^1","kind":null,"rename":null,"optional":false,"uses_default_features":true,"features":["derive"],"target":null,"registry":null},{"name":"serde_json","source":"registry+https://github.com/rust-lang/crates.io-index","req":"^1","kind":null,"rename":null,"optional":false,"uses_default_features":true,"features":[],"target":null,"registry":null},{"name":"thrust-adapters-postgres","source":null,"req":"*","kind":null,"rename":null,"optional":false,"uses_default_features":true,"features":[],"target":null,"registry":null,"path":"$WORKTREE/crates/thrust-adapters-postgres"},{"name":"thrust-contracts","source":null,"req":"*","kind":null,"rename":null,"optional":false,"uses_default_features":true,"features":[],"target":null,"registry":null,"path":"$WORKTREE/crates/thrust-contracts"},{"name":"thrust-ports","source":null,"req":"*","kind":null,"rename":null,"optional":false,"uses_default_features":true,"features":[],"target":null,"registry":null,"path":"$WORKTREE/crates/thrust-ports"},{"name":"tokio-postgres","source":"registry+https://github.com/rust-lang/crates.io-index","req":"^0.7","kind":null,"rename":null,"optional":false,"uses_default_features":false,"features":["js"],"target":null,"registry":null},{"name":"uuid","source":"registry+https://github.com/rust-lang/crates.io-index","req":"^1","kind":null,"rename":null,"optional":false,"uses_default_features":false,"features":["serde","std","v7","js"],"target":null,"registry":null},{"name":"wasm-bindgen-futures","source":"registry+https://github.com/rust-lang/crates.io-index","req":"^0.4","kind":null,"rename":null,"optional":false,"uses_default_features":true,"features":[],"target":null,"registry":null},{"name":"worker","source":"registry+https://github.com/rust-lang/crates.io-index","req":"^0.8","kind":null,"rename":null,"optional":false,"uses_default_features":true,"features":["http","queue"],"target":null,"registry":null}],"targets":[{"kind":["lib"],"crate_types":["lib"],"name":"thrust_adapters_cloudflare","src_path":"$WORKTREE/crates/thrust-adapters-cloudflare/src/lib.rs","edition":"2021","doc":true,"doctest":true,"test":true}],"features":{},"manifest_path":"$WORKTREE/crates/thrust-adapters-cloudflare/Cargo.toml","metadata":null,"publish":[],"authors":[],"categories":[],"keywords":[],"readme":null,"repository":null,"homepage":null,"documentation":null,"edition":"2021","links":null,"default_run":null,"rust_version":null},{"name":"thrust-worker","version":"0.0.0","id":"path+file://$WORKTREE/crates/thrust-worker#0.0.0","license":"AGPL-3.0-only","license_file":null,"description":"Composition root: wasm32 Cloudflare Worker (cargo feature set `cloudflare`).","source":null,"dependencies":[{"name":"axum","source":"registry+https://github.com/rust-lang/crates.io-index","req":"^0.8","kind":null,"rename":null,"optional":false,"uses_default_features":false,"features":["json","query","matched-path"],"target":null,"registry":null},{"name":"console_error_panic_hook","source":"registry+https://github.com/rust-lang/crates.io-index","req":"^0.1","kind":null,"rename":null,"optional":false,"uses_default_features":true,"features":[],"target":null,"registry":null},{"name":"http-body-util","source":"registry+https://github.com/rust-lang/crates.io-index","req":"^0.1","kind":null,"rename":null,"optional":false,"uses_default_features":true,"features":[],"target":null,"registry":null},{"name":"serde","source":"registry+https://github.com/rust-lang/crates.io-index","req":"^1","kind":null,"rename":null,"optional":false,"uses_default_features":true,"features":["derive"],"target":null,"registry":null},{"name":"serde-wasm-bindgen","source":"registry+https://github.com/rust-lang/crates.io-index","req":"^0.6","kind":null,"rename":null,"optional":false,"uses_default_features":true,"features":[],"target":null,"registry":null},{"name":"serde_json","source":"registry+https://github.com/rust-lang/crates.io-index","req":"^1","kind":null,"rename":null,"optional":false,"uses_default_features":true,"features":[],"target":null,"registry":null},{"name":"thrust-adapters-cloudflare","source":null,"req":"*","kind":null,"rename":null,"optional":false,"uses_default_features":true,"features":[],"target":null,"registry":null,"path":"$WORKTREE/crates/thrust-adapters-cloudflare"},{"name":"thrust-adapters-memory","source":null,"req":"*","kind":null,"rename":null,"optional":true,"uses_default_features":true,"features":[],"target":null,"registry":null,"path":"$WORKTREE/crates/thrust-adapters-memory"},{"name":"thrust-adapters-postgres","source":null,"req":"*","kind":null,"rename":null,"optional":false,"uses_default_features":true,"features":[],"target":null,"registry":null,"path":"$WORKTREE/crates/thrust-adapters-postgres"},{"name":"thrust-api","source":null,"req":"*","kind":null,"rename":null,"optional":false,"uses_default_features":true,"features":[],"target":null,"registry":null,"path":"$WORKTREE/crates/thrust-api"},{"name":"thrust-contracts","source":null,"req":"*","kind":null,"rename":null,"optional":false,"uses_default_features":true,"features":[],"target":null,"registry":null,"path":"$WORKTREE/crates/thrust-contracts"},{"name":"thrust-core","source":null,"req":"*","kind":null,"rename":null,"optional":false,"uses_default_features":true,"features":[],"target":null,"registry":null,"path":"$WORKTREE/crates/thrust-core"},{"name":"thrust-ports","source":null,"req":"*","kind":null,"rename":null,"optional":false,"uses_default_features":true,"features":[],"target":null,"registry":null,"path":"$WORKTREE/crates/thrust-ports"},{"name":"tokio-postgres","source":"registry+https://github.com/rust-lang/crates.io-index","req":"^0.7","kind":null,"rename":null,"optional":false,"uses_default_features":false,"features":["js"],"target":null,"registry":null},{"name":"tower-service","source":"registry+https://github.com/rust-lang/crates.io-index","req":"^0.3","kind":null,"rename":null,"optional":false,"uses_default_features":true,"features":[],"target":null,"registry":null},{"name":"worker","source":"registry+https://github.com/rust-lang/crates.io-index","req":"^0.8","kind":null,"rename":null,"optional":false,"uses_default_features":true,"features":["http","queue"],"target":null,"registry":null}],"targets":[{"kind":["cdylib"],"crate_types":["cdylib"],"name":"thrust_worker","src_path":"$WORKTREE/crates/thrust-worker/src/lib.rs","edition":"2021","doc":true,"doctest":false,"test":true}],"features":{"default":["memory"],"memory":["dep:thrust-adapters-memory"]},"manifest_path":"$WORKTREE/crates/thrust-worker/Cargo.toml","metadata":null,"publish":[],"authors":[],"categories":[],"keywords":[],"readme":null,"repository":null,"homepage":null,"documentation":null,"edition":"2021","links":null,"default_run":null,"rust_version":null},{"name":"thrust-server","version":"0.0.0","id":"path+file://$WORKTREE/crates/thrust-server#0.0.0","license":"AGPL-3.0-only","license_file":null,"description":"Composition root: native axum/tokio server (cargo feature set `selfhosted`).","source":null,"dependencies":[{"name":"axum","source":"registry+https://github.com/rust-lang/crates.io-index","req":"^0.8","kind":null,"rename":null,"optional":false,"uses_default_features":false,"features":["json","query","matched-path","tokio","http1"],"target":null,"registry":null},{"name":"serde_json","source":"registry+https://github.com/rust-lang/crates.io-index","req":"^1","kind":null,"rename":null,"optional":false,"uses_default_features":true,"features":[],"target":null,"registry":null},{"name":"thrust-adapters-memory","source":null,"req":"*","kind":null,"rename":null,"optional":false,"uses_default_features":true,"features":[],"target":null,"registry":null,"path":"$WORKTREE/crates/thrust-adapters-memory"},{"name":"thrust-adapters-postgres","source":null,"req":"*","kind":null,"rename":null,"optional":false,"uses_default_features":true,"features":[],"target":null,"registry":null,"path":"$WORKTREE/crates/thrust-adapters-postgres"},{"name":"thrust-adapters-selfhosted","source":null,"req":"*","kind":null,"rename":null,"optional":false,"uses_default_features":true,"features":[],"target":null,"registry":null,"path":"$WORKTREE/crates/thrust-adapters-selfhosted"},{"name":"thrust-api","source":null,"req":"*","kind":null,"rename":null,"optional":false,"uses_default_features":true,"features":[],"target":null,"registry":null,"path":"$WORKTREE/crates/thrust-api"},{"name":"thrust-contracts","source":null,"req":"*","kind":null,"rename":null,"optional":false,"uses_default_features":true,"features":[],"target":null,"registry":null,"path":"$WORKTREE/crates/thrust-contracts"},{"name":"thrust-core","source":null,"req":"*","kind":null,"rename":null,"optional":false,"uses_default_features":true,"features":[],"target":null,"registry":null,"path":"$WORKTREE/crates/thrust-core"},{"name":"thrust-ports","source":null,"req":"*","kind":null,"rename":null,"optional":false,"uses_default_features":true,"features":[],"target":null,"registry":null,"path":"$WORKTREE/crates/thrust-ports"},{"name":"tokio","source":"registry+https://github.com/rust-lang/crates.io-index","req":"^1","kind":null,"rename":null,"optional":false,"uses_default_features":false,"features":["rt-multi-thread","macros","net","time","signal"],"target":null,"registry":null},{"name":"tower-http","source":"registry+https://github.com/rust-lang/crates.io-index","req":"^0.6","kind":null,"rename":null,"optional":false,"uses_default_features":false,"features":["catch-panic"],"target":null,"registry":null}],"targets":[{"kind":["bin"],"crate_types":["bin"],"name":"thrust-server","src_path":"$WORKTREE/crates/thrust-server/src/main.rs","edition":"2021","doc":true,"doctest":false,"test":true}],"features":{"mutant_dup_sequence":["thrust-adapters-memory/mutant_dup_sequence"],"mutant_ignore_tenant":["thrust-adapters-memory/mutant_ignore_tenant"],"mutant_no_activity_dedupe":["thrust-adapters-memory/mutant_no_activity_dedupe"]},"manifest_path":"$WORKTREE/crates/thrust-server/Cargo.toml","metadata":null,"publish":[],"authors":[],"categories":[],"keywords":[],"readme":null,"repository":null,"homepage":null,"documentation":null,"edition":"2021","links":null,"default_run":null,"rust_version":null},{"name":"thrust-contract-tests","version":"0.0.0","id":"path+file://$WORKTREE/crates/thrust-contract-tests#0.0.0","license":"AGPL-3.0-only","license_file":null,"description":"ONE HTTP-level contract suite. Runs unchanged against every target via THRUST_BASE_URL.","source":null,"dependencies":[{"name":"futures-util","source":"registry+https://github.com/rust-lang/crates.io-index","req":"^0.3","kind":null,"rename":null,"optional":false,"uses_default_features":false,"features":["alloc","sink"],"target":null,"registry":null},{"name":"reqwest","source":"registry+https://github.com/rust-lang/crates.io-index","req":"^0.12","kind":null,"rename":null,"optional":false,"uses_default_features":false,"features":["json","rustls-tls"],"target":null,"registry":null},{"name":"serde_json","source":"registry+https://github.com/rust-lang/crates.io-index","req":"^1","kind":null,"rename":null,"optional":false,"uses_default_features":true,"features":[],"target":null,"registry":null},{"name":"thrust-contracts","source":null,"req":"*","kind":null,"rename":null,"optional":false,"uses_default_features":true,"features":[],"target":null,"registry":null,"path":"$WORKTREE/crates/thrust-contracts"},{"name":"tokio","source":"registry+https://github.com/rust-lang/crates.io-index","req":"^1","kind":null,"rename":null,"optional":false,"uses_default_features":false,"features":["rt-multi-thread","macros","time","net"],"target":null,"registry":null},{"name":"tokio-tungstenite","source":"registry+https://github.com/rust-lang/crates.io-index","req":"^0.26","kind":null,"rename":null,"optional":false,"uses_default_features":false,"features":["connect","rustls-tls-webpki-roots"],"target":null,"registry":null},{"name":"uuid","source":"registry+https://github.com/rust-lang/crates.io-index","req":"^1","kind":null,"rename":null,"optional":false,"uses_default_features":false,"features":["serde","std","v4"],"target":null,"registry":null}],"targets":[{"kind":["lib"],"crate_types":["lib"],"name":"thrust_contract_tests","src_path":"$WORKTREE/crates/thrust-contract-tests/src/lib.rs","edition":"2021","doc":true,"doctest":true,"test":true},{"kind":["bin"],"crate_types":["bin"],"name":"bench","src_path":"$WORKTREE/crates/thrust-contract-tests/src/bin/bench.rs","edition":"2021","doc":true,"doctest":false,"test":true},{"kind":["test"],"crate_types":["bin"],"name":"contract","src_path":"$WORKTREE/crates/thrust-contract-tests/tests/contract.rs","edition":"2021","doc":false,"doctest":false,"test":true},{"kind":["test"],"crate_types":["bin"],"name":"worker_only","src_path":"$WORKTREE/crates/thrust-contract-tests/tests/worker_only.rs","edition":"2021","doc":false,"doctest":false,"test":true}],"features":{},"manifest_path":"$WORKTREE/crates/thrust-contract-tests/Cargo.toml","metadata":null,"publish":[],"authors":[],"categories":[],"keywords":[],"readme":null,"repository":null,"homepage":null,"documentation":null,"edition":"2021","links":null,"default_run":null,"rust_version":null}],"workspace_members":["path+file://$WORKTREE/crates/thrust-contracts#0.0.0","path+file://$WORKTREE/crates/thrust-ports#0.0.0","path+file://$WORKTREE/crates/thrust-core#0.0.0","path+file://$WORKTREE/crates/thrust-adapters-memory#0.0.0","path+file://$WORKTREE/crates/thrust-api#0.0.0","path+file://$WORKTREE/crates/thrust-adapters-postgres#0.0.0","path+file://$WORKTREE/crates/thrust-adapters-selfhosted#0.0.0","path+file://$WORKTREE/crates/thrust-adapters-cloudflare#0.0.0","path+file://$WORKTREE/crates/thrust-worker#0.0.0","path+file://$WORKTREE/crates/thrust-server#0.0.0","path+file://$WORKTREE/crates/thrust-contract-tests#0.0.0"],"workspace_default_members":["path+file://$WORKTREE/crates/thrust-contracts#0.0.0","path+file://$WORKTREE/crates/thrust-ports#0.0.0","path+file://$WORKTREE/crates/thrust-core#0.0.0","path+file://$WORKTREE/crates/thrust-adapters-memory#0.0.0","path+file://$WORKTREE/crates/thrust-api#0.0.0","path+file://$WORKTREE/crates/thrust-adapters-postgres#0.0.0","path+file://$WORKTREE/crates/thrust-adapters-selfhosted#0.0.0","path+file://$WORKTREE/crates/thrust-adapters-cloudflare#0.0.0","path+file://$WORKTREE/crates/thrust-worker#0.0.0","path+file://$WORKTREE/crates/thrust-server#0.0.0","path+file://$WORKTREE/crates/thrust-contract-tests#0.0.0"],"resolve":null,"target_directory":"$WORKTREE/target","build_directory":"$WORKTREE/target","version":1,"workspace_root":"$WORKTREE","metadata":null}
+[p1-metadata] exit=0
+$ grep -n -A3 profile.mutants Cargo.toml
+58:[profile.mutants]
+59-inherits = "test"
+60-debug = "none"
+[p1-grep] exit=0
+##### P2 default profile and ci now select no tests
+$ cargo nextest list --workspace --message-format oneline
+warning: unused import: `json`
+ --> crates/thrust-contract-tests/tests/worker_only.rs:9:18
+  |
+9 | use serde_json::{json, Value};
+  |                  ^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `thrust-contract-tests` (test "worker_only") generated 1 warning (run `cargo fix --test "worker_only" -p thrust-contract-tests` to apply 1 suggestion)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.18s
+[p2-list-default] exit=0
+$ cargo nextest run --workspace
+warning: unused import: `json`
+ --> crates/thrust-contract-tests/tests/worker_only.rs:9:18
+  |
+9 | use serde_json::{json, Value};
+  |                  ^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `thrust-contract-tests` (test "worker_only") generated 1 warning (run `cargo fix --test "worker_only" -p thrust-contract-tests` to apply 1 suggestion)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.12s
+────────────
+ Nextest run ID 7594810c-4516-4c60-aaaf-019910c5b063 with nextest profile: default
+    Starting 0 tests across 11 binaries (5 binaries skipped via profile.default.default-filter)
+────────────
+     Summary [   0.000s] 0 tests run: 0 passed, 0 skipped
+error: no tests to run
+(hint: use `--no-tests` to customize)
+[p2-run-default] exit=4
+$ cargo nextest run --workspace --profile ci
+warning: unused import: `json`
+ --> crates/thrust-contract-tests/tests/worker_only.rs:9:18
+  |
+9 | use serde_json::{json, Value};
+  |                  ^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `thrust-contract-tests` (test "worker_only") generated 1 warning (run `cargo fix --test "worker_only" -p thrust-contract-tests` to apply 1 suggestion)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.12s
+────────────
+ Nextest run ID fb03480c-f3f2-4b2a-afdd-b58823bb0036 with nextest profile: ci
+    Starting 0 tests across 11 binaries (5 binaries skipped via profile.default.default-filter)
+────────────
+     Summary [   0.003s] 0 tests run: 0 passed, 0 skipped
+error: no tests to run
+(hint: use `--no-tests` to customize)
+[p2-run-ci] exit=4
+$ cargo nextest run --workspace -E binary(pg_adapter)
+warning: unused import: `json`
+ --> crates/thrust-contract-tests/tests/worker_only.rs:9:18
+  |
+9 | use serde_json::{json, Value};
+  |                  ^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `thrust-contract-tests` (test "worker_only") generated 1 warning (run `cargo fix --test "worker_only" -p thrust-contract-tests` to apply 1 suggestion)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.12s
+────────────
+ Nextest run ID 092a8892-16b9-436a-acee-f4c0fd14c0aa with nextest profile: default
+    Starting 0 tests across 0 binaries (16 binaries skipped, including 1 binary via profile.default.default-filter)
+────────────
+     Summary [   0.000s] 0 tests run: 0 passed, 0 skipped
+error: no tests to run
+(hint: use `--no-tests` to customize)
+[p2-intersect] exit=4
+##### P3 the opt-in route to the Docker-backed adapter tests through nextest
+$ cargo nextest list --workspace --ignore-default-filter -E binary(pg_adapter) --message-format oneline
+warning: unused import: `json`
+ --> crates/thrust-contract-tests/tests/worker_only.rs:9:18
+  |
+9 | use serde_json::{json, Value};
+  |                  ^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `thrust-contract-tests` (test "worker_only") generated 1 warning (run `cargo fix --test "worker_only" -p thrust-contract-tests` to apply 1 suggestion)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.12s
+thrust-adapters-selfhosted::pg_adapter an_abandoned_transaction_does_not_poison_the_pool
+thrust-adapters-selfhosted::pg_adapter concurrent_allocation_is_unique_contiguous_and_serialised
+thrust-adapters-selfhosted::pg_adapter membership_distinguishes_member_non_member_and_other_tenant
+thrust-adapters-selfhosted::pg_adapter outbox_is_atomic_with_the_entity_and_dispatch_is_recorded
+thrust-adapters-selfhosted::pg_adapter rollback_is_atomic_and_unique_violation_is_a_conflict
+thrust-adapters-selfhosted::pg_adapter soft_delete_frees_the_external_key_but_not_the_sequence_number
+[p3-list-optin] exit=0
+$ cargo nextest list --workspace --ignore-default-filter -E package(thrust-contract-tests) --message-format oneline
+warning: unused import: `json`
+ --> crates/thrust-contract-tests/tests/worker_only.rs:9:18
+  |
+9 | use serde_json::{json, Value};
+  |                  ^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `thrust-contract-tests` (test "worker_only") generated 1 warning (run `cargo fix --test "worker_only" -p thrust-contract-tests` to apply 1 suggestion)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.12s
+thrust-contract-tests::contract attachments_roundtrip_with_authz
+thrust-contract-tests::contract blast_radius_of_one_panic
+thrust-contract-tests::contract concurrent_creates_never_duplicate_a_sequence_id
+thrust-contract-tests::contract create_allocates_monotonic_sequence_and_sort_order
+thrust-contract-tests::contract create_is_rate_limited_per_user
+thrust-contract-tests::contract cross_tenant_access_is_rejected_and_has_no_effect
+thrust-contract-tests::contract external_id_is_unique_among_live_rows_only
+thrust-contract-tests::contract health_ok
+thrust-contract-tests::contract internal_routes_require_the_admin_token
+thrust-contract-tests::contract invalid_input_is_a_client_error
+thrust-contract-tests::contract list_returns_visible_items_in_sequence_order
+thrust-contract-tests::contract non_members_and_guests_are_forbidden_to_write
+thrust-contract-tests::contract outbox_event_reaches_the_queue_consumer_exactly_once
+thrust-contract-tests::contract panic_is_contained_and_the_target_keeps_serving
+thrust-contract-tests::contract redelivered_event_is_processed_once
+thrust-contract-tests::contract soft_delete_hides_rows_and_never_reuses_sequence_ids
+thrust-contract-tests::contract sweeper_publishes_rows_the_fast_path_did_not
+thrust-contract-tests::contract unauthenticated_requests_are_rejected
+thrust-contract-tests::worker_only stage2_cron_real_trigger_runs_the_sweeper
+thrust-contract-tests::worker_only worker_bindings_email_send_binding_simulated_locally
+thrust-contract-tests::worker_only worker_bindings_probe_routes_require_the_admin_token
+thrust-contract-tests::worker_only worker_bindings_rate_limiting_binding
+thrust-contract-tests::worker_only worker_bindings_secrets_store_binding
+thrust-contract-tests::worker_only worker_bindings_service_binding
+thrust-contract-tests::worker_only worker_bindings_workflow_via_wasm_bindgen_and_js_shim
+thrust-contract-tests::worker_only worker_cron_scheduled_handler_runs_the_sweeper
+thrust-contract-tests::worker_only worker_room_do_websocket_hibernation_api_and_sqlite_storage
+[p3-list-contract-optin] exit=0
+##### P4 cargo-mutants: harness crate excluded, profile active
+list exit=0
+$ wc -l $SCRATCH/mp-mlist-after.txt
+     561 $SCRATCH/mp-mlist-after.txt
+[p4-count] exit=0
+$ grep -c crates/thrust-contract-tests $SCRATCH/mp-mlist-after.txt
+0
+[p4-harness] exit=1
+$ sh -c grep -o -E '^crates/[^/]+' $SCRATCH/mp-mlist-after.txt | sort | uniq -c
+  31 crates/thrust-adapters-cloudflare
+ 111 crates/thrust-adapters-memory
+  46 crates/thrust-adapters-postgres
+   8 crates/thrust-adapters-selfhosted
+ 190 crates/thrust-api
+   9 crates/thrust-contracts
+  55 crates/thrust-core
+  22 crates/thrust-server
+  89 crates/thrust-worker
+[p4-per-crate] exit=0
+##### P5 a mutation run on a crate with no tests of its own (thrust-contracts, 9 mutants)
+$ cargo mutants -f crates/thrust-contracts/src/lib.rs
+Found 9 mutants to test
+FAILED   Unmutated baseline in 4s build + 0s test
+
+*** baseline
+
+*** /opt/homebrew/bin/cargo nextest run --no-run --cargo-profile=mutants --verbose --package=thrust-contracts@0.0.0
+    Finished `mutants` profile [unoptimized] target(s) in 3.58s
+
+*** result: Success
+
+*** /opt/homebrew/bin/cargo nextest run --cargo-profile=mutants --verbose --package=thrust-contracts@0.0.0 --profile mutants
+    Finished `mutants` profile [unoptimized] target(s) in 0.04s
+────────────
+ Nextest run ID 9e26bdec-39ac-4281-bcdb-ceecbe5fccc8 with nextest profile: mutants
+    Starting 0 tests across 1 binary
+────────────
+     Summary [   0.000s] 0 tests run: 0 passed, 0 skipped
+error: no tests to run
+(hint: use `--no-tests` to customize)
+
+*** result: Failure(4)
+
+ERROR cargo test failed in an unmutated tree, so no mutants were tested
+[p5-mutants] exit=4
+$ sh -c sed -n 1,40p mutants.out/log/baseline.log | cut -c1-220
+
+*** baseline
+
+*** /opt/homebrew/bin/cargo nextest run --no-run --cargo-profile=mutants --verbose --package=thrust-contracts@0.0.0
+    Finished `mutants` profile [unoptimized] target(s) in 3.58s
+
+*** result: Success
+
+*** /opt/homebrew/bin/cargo nextest run --cargo-profile=mutants --verbose --package=thrust-contracts@0.0.0 --profile mutants
+    Finished `mutants` profile [unoptimized] target(s) in 0.04s
+────────────
+ Nextest run ID 9e26bdec-39ac-4281-bcdb-ceecbe5fccc8 with nextest profile: mutants
+    Starting 0 tests across 1 binary
+────────────
+     Summary [   0.000s] 0 tests run: 0 passed, 0 skipped
+error: no tests to run
+(hint: use `--no-tests` to customize)
+
+*** result: Failure(4)
+[p5-baseline-log] exit=0
+finished

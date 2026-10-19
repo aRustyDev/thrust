@@ -1,0 +1,562 @@
+warning: unused import: `json`
+ --> crates/thrust-contract-tests/tests/worker_only.rs:9:18
+  |
+9 | use serde_json::{json, Value};
+  |                  ^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `thrust-contract-tests` (test "worker_only") generated 1 warning (run `cargo fix --test "worker_only" -p thrust-contract-tests` to apply 1 suggestion)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 24.28s
+────────────
+ Nextest run ID 4ad5fc08-2b16-4f64-ae04-93ea89ab2f43 with nextest profile: default
+    Starting 33 tests across 16 binaries
+        FAIL [   0.015s] ( 1/33) thrust-contract-tests::contract external_id_is_unique_among_live_rows_only
+  stdout ───
+
+    running 1 test
+    test external_id_is_unique_among_live_rows_only ... FAILED
+
+    failures:
+
+    failures:
+        external_id_is_unique_among_live_rows_only
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 17 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'external_id_is_unique_among_live_rows_only' (104986304) panicked at crates/thrust-contract-tests/src/lib.rs:19:53:
+    THRUST_BASE_URL must be set (see scripts/contract.sh): NotPresent
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.016s] ( 2/33) thrust-contract-tests::contract create_is_rate_limited_per_user
+  stdout ───
+
+    running 1 test
+    test create_is_rate_limited_per_user ... FAILED
+
+    failures:
+
+    failures:
+        create_is_rate_limited_per_user
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 17 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'create_is_rate_limited_per_user' (104986305) panicked at crates/thrust-contract-tests/src/lib.rs:19:53:
+    THRUST_BASE_URL must be set (see scripts/contract.sh): NotPresent
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.016s] ( 3/33) thrust-contract-tests::contract non_members_and_guests_are_forbidden_to_write
+  stdout ───
+
+    running 1 test
+    test non_members_and_guests_are_forbidden_to_write ... FAILED
+
+    failures:
+
+    failures:
+        non_members_and_guests_are_forbidden_to_write
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 17 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'non_members_and_guests_are_forbidden_to_write' (104986308) panicked at crates/thrust-contract-tests/src/lib.rs:19:53:
+    THRUST_BASE_URL must be set (see scripts/contract.sh): NotPresent
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.015s] ( 4/33) thrust-contract-tests::contract internal_routes_require_the_admin_token
+  stdout ───
+
+    running 1 test
+    test internal_routes_require_the_admin_token ... FAILED
+
+    failures:
+
+    failures:
+        internal_routes_require_the_admin_token
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 17 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'internal_routes_require_the_admin_token' (104986301) panicked at crates/thrust-contract-tests/src/lib.rs:19:53:
+    THRUST_BASE_URL must be set (see scripts/contract.sh): NotPresent
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.016s] ( 5/33) thrust-contract-tests::contract invalid_input_is_a_client_error
+  stdout ───
+
+    running 1 test
+    test invalid_input_is_a_client_error ... FAILED
+
+    failures:
+
+    failures:
+        invalid_input_is_a_client_error
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 17 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'invalid_input_is_a_client_error' (104986307) panicked at crates/thrust-contract-tests/src/lib.rs:19:53:
+    THRUST_BASE_URL must be set (see scripts/contract.sh): NotPresent
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.016s] ( 6/33) thrust-contract-tests::contract list_returns_visible_items_in_sequence_order
+  stdout ───
+
+    running 1 test
+    test list_returns_visible_items_in_sequence_order ... FAILED
+
+    failures:
+
+    failures:
+        list_returns_visible_items_in_sequence_order
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 17 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'list_returns_visible_items_in_sequence_order' (104986310) panicked at crates/thrust-contract-tests/src/lib.rs:19:53:
+    THRUST_BASE_URL must be set (see scripts/contract.sh): NotPresent
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.016s] ( 7/33) thrust-contract-tests::contract blast_radius_of_one_panic
+  stdout ───
+
+    running 1 test
+    test blast_radius_of_one_panic ... FAILED
+
+    failures:
+
+    failures:
+        blast_radius_of_one_panic
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 17 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'blast_radius_of_one_panic' (104986317) panicked at crates/thrust-contract-tests/src/lib.rs:19:53:
+    THRUST_BASE_URL must be set (see scripts/contract.sh): NotPresent
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.017s] ( 8/33) thrust-contract-tests::contract attachments_roundtrip_with_authz
+  stdout ───
+
+    running 1 test
+    test attachments_roundtrip_with_authz ... FAILED
+
+    failures:
+
+    failures:
+        attachments_roundtrip_with_authz
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 17 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'attachments_roundtrip_with_authz' (104986321) panicked at crates/thrust-contract-tests/src/lib.rs:19:53:
+    THRUST_BASE_URL must be set (see scripts/contract.sh): NotPresent
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.017s] ( 9/33) thrust-contract-tests::contract health_ok
+  stdout ───
+
+    running 1 test
+    test health_ok ... FAILED
+
+    failures:
+
+    failures:
+        health_ok
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 17 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'health_ok' (104986309) panicked at crates/thrust-contract-tests/src/lib.rs:19:53:
+    THRUST_BASE_URL must be set (see scripts/contract.sh): NotPresent
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.018s] (10/33) thrust-contract-tests::contract cross_tenant_access_is_rejected_and_has_no_effect
+  stdout ───
+
+    running 1 test
+    test cross_tenant_access_is_rejected_and_has_no_effect ... FAILED
+
+    failures:
+
+    failures:
+        cross_tenant_access_is_rejected_and_has_no_effect
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 17 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'cross_tenant_access_is_rejected_and_has_no_effect' (104986324) panicked at crates/thrust-contract-tests/src/lib.rs:19:53:
+    THRUST_BASE_URL must be set (see scripts/contract.sh): NotPresent
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.019s] (11/33) thrust-contract-tests::contract create_allocates_monotonic_sequence_and_sort_order
+  stdout ───
+
+    running 1 test
+    test create_allocates_monotonic_sequence_and_sort_order ... FAILED
+
+    failures:
+
+    failures:
+        create_allocates_monotonic_sequence_and_sort_order
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 17 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'create_allocates_monotonic_sequence_and_sort_order' (104986331) panicked at crates/thrust-contract-tests/src/lib.rs:19:53:
+    THRUST_BASE_URL must be set (see scripts/contract.sh): NotPresent
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.012s] (12/33) thrust-contract-tests::contract outbox_event_reaches_the_queue_consumer_exactly_once
+  stdout ───
+
+    running 1 test
+    test outbox_event_reaches_the_queue_consumer_exactly_once ... FAILED
+
+    failures:
+
+    failures:
+        outbox_event_reaches_the_queue_consumer_exactly_once
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 17 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'outbox_event_reaches_the_queue_consumer_exactly_once' (104986349) panicked at crates/thrust-contract-tests/src/lib.rs:19:53:
+    THRUST_BASE_URL must be set (see scripts/contract.sh): NotPresent
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.012s] (13/33) thrust-contract-tests::contract redelivered_event_is_processed_once
+  stdout ───
+
+    running 1 test
+    test redelivered_event_is_processed_once ... FAILED
+
+    failures:
+
+    failures:
+        redelivered_event_is_processed_once
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 17 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'redelivered_event_is_processed_once' (104986347) panicked at crates/thrust-contract-tests/src/lib.rs:19:53:
+    THRUST_BASE_URL must be set (see scripts/contract.sh): NotPresent
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.012s] (14/33) thrust-contract-tests::contract sweeper_publishes_rows_the_fast_path_did_not
+  stdout ───
+
+    running 1 test
+    test sweeper_publishes_rows_the_fast_path_did_not ... FAILED
+
+    failures:
+
+    failures:
+        sweeper_publishes_rows_the_fast_path_did_not
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 17 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'sweeper_publishes_rows_the_fast_path_did_not' (104986352) panicked at crates/thrust-contract-tests/src/lib.rs:19:53:
+    THRUST_BASE_URL must be set (see scripts/contract.sh): NotPresent
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.012s] (15/33) thrust-contract-tests::contract soft_delete_hides_rows_and_never_reuses_sequence_ids
+  stdout ───
+
+    running 1 test
+    test soft_delete_hides_rows_and_never_reuses_sequence_ids ... FAILED
+
+    failures:
+
+    failures:
+        soft_delete_hides_rows_and_never_reuses_sequence_ids
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 17 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'soft_delete_hides_rows_and_never_reuses_sequence_ids' (104986350) panicked at crates/thrust-contract-tests/src/lib.rs:19:53:
+    THRUST_BASE_URL must be set (see scripts/contract.sh): NotPresent
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.012s] (16/33) thrust-contract-tests::contract unauthenticated_requests_are_rejected
+  stdout ───
+
+    running 1 test
+    test unauthenticated_requests_are_rejected ... FAILED
+
+    failures:
+
+    failures:
+        unauthenticated_requests_are_rejected
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 17 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'unauthenticated_requests_are_rejected' (104986348) panicked at crates/thrust-contract-tests/src/lib.rs:19:53:
+    THRUST_BASE_URL must be set (see scripts/contract.sh): NotPresent
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.013s] (17/33) thrust-contract-tests::worker_only stage2_cron_real_trigger_runs_the_sweeper
+  stdout ───
+
+    running 1 test
+    test stage2_cron_real_trigger_runs_the_sweeper ... FAILED
+
+    failures:
+
+    failures:
+        stage2_cron_real_trigger_runs_the_sweeper
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 8 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'stage2_cron_real_trigger_runs_the_sweeper' (104986351) panicked at crates/thrust-contract-tests/src/lib.rs:19:53:
+    THRUST_BASE_URL must be set (see scripts/contract.sh): NotPresent
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.012s] (18/33) thrust-contract-tests::worker_only worker_bindings_email_send_binding_simulated_locally
+  stdout ───
+
+    running 1 test
+    test worker_bindings_email_send_binding_simulated_locally ... FAILED
+
+    failures:
+
+    failures:
+        worker_bindings_email_send_binding_simulated_locally
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 8 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'worker_bindings_email_send_binding_simulated_locally' (104986353) panicked at crates/thrust-contract-tests/src/lib.rs:19:53:
+    THRUST_BASE_URL must be set (see scripts/contract.sh): NotPresent
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.011s] (19/33) thrust-contract-tests::worker_only worker_bindings_rate_limiting_binding
+  stdout ───
+
+    running 1 test
+    test worker_bindings_rate_limiting_binding ... FAILED
+
+    failures:
+
+    failures:
+        worker_bindings_rate_limiting_binding
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 8 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'worker_bindings_rate_limiting_binding' (104986356) panicked at crates/thrust-contract-tests/src/lib.rs:19:53:
+    THRUST_BASE_URL must be set (see scripts/contract.sh): NotPresent
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.013s] (20/33) thrust-contract-tests::contract panic_is_contained_and_the_target_keeps_serving
+  stdout ───
+
+    running 1 test
+    test panic_is_contained_and_the_target_keeps_serving ... FAILED
+
+    failures:
+
+    failures:
+        panic_is_contained_and_the_target_keeps_serving
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 17 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'panic_is_contained_and_the_target_keeps_serving' (104986354) panicked at crates/thrust-contract-tests/src/lib.rs:19:53:
+    THRUST_BASE_URL must be set (see scripts/contract.sh): NotPresent
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.011s] (21/33) thrust-contract-tests::worker_only worker_bindings_secrets_store_binding
+  stdout ───
+
+    running 1 test
+    test worker_bindings_secrets_store_binding ... FAILED
+
+    failures:
+
+    failures:
+        worker_bindings_secrets_store_binding
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 8 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'worker_bindings_secrets_store_binding' (104986357) panicked at crates/thrust-contract-tests/src/lib.rs:19:53:
+    THRUST_BASE_URL must be set (see scripts/contract.sh): NotPresent
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.012s] (22/33) thrust-contract-tests::worker_only worker_bindings_probe_routes_require_the_admin_token
+  stdout ───
+
+    running 1 test
+    test worker_bindings_probe_routes_require_the_admin_token ... FAILED
+
+    failures:
+
+    failures:
+        worker_bindings_probe_routes_require_the_admin_token
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 8 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'worker_bindings_probe_routes_require_the_admin_token' (104986355) panicked at crates/thrust-contract-tests/src/lib.rs:19:53:
+    THRUST_BASE_URL must be set (see scripts/contract.sh): NotPresent
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.011s] (23/33) thrust-contract-tests::worker_only worker_room_do_websocket_hibernation_api_and_sqlite_storage
+  stdout ───
+
+    running 1 test
+    test worker_room_do_websocket_hibernation_api_and_sqlite_storage ... FAILED
+
+    failures:
+
+    failures:
+        worker_room_do_websocket_hibernation_api_and_sqlite_storage
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 8 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'worker_room_do_websocket_hibernation_api_and_sqlite_storage' (104986366) panicked at crates/thrust-contract-tests/src/lib.rs:19:53:
+    THRUST_BASE_URL must be set (see scripts/contract.sh): NotPresent
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.011s] (24/33) thrust-contract-tests::worker_only worker_bindings_workflow_via_wasm_bindgen_and_js_shim
+  stdout ───
+
+    running 1 test
+    test worker_bindings_workflow_via_wasm_bindgen_and_js_shim ... FAILED
+
+    failures:
+
+    failures:
+        worker_bindings_workflow_via_wasm_bindgen_and_js_shim
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 8 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'worker_bindings_workflow_via_wasm_bindgen_and_js_shim' (104986367) panicked at crates/thrust-contract-tests/src/lib.rs:19:53:
+    THRUST_BASE_URL must be set (see scripts/contract.sh): NotPresent
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.011s] (25/33) thrust-contract-tests::worker_only worker_cron_scheduled_handler_runs_the_sweeper
+  stdout ───
+
+    running 1 test
+    test worker_cron_scheduled_handler_runs_the_sweeper ... FAILED
+
+    failures:
+
+    failures:
+        worker_cron_scheduled_handler_runs_the_sweeper
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 8 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'worker_cron_scheduled_handler_runs_the_sweeper' (104986368) panicked at crates/thrust-contract-tests/src/lib.rs:19:53:
+    THRUST_BASE_URL must be set (see scripts/contract.sh): NotPresent
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.011s] (26/33) thrust-contract-tests::worker_only worker_bindings_service_binding
+  stdout ───
+
+    running 1 test
+    test worker_bindings_service_binding ... FAILED
+
+    failures:
+
+    failures:
+        worker_bindings_service_binding
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 8 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'worker_bindings_service_binding' (104986369) panicked at crates/thrust-contract-tests/src/lib.rs:19:53:
+    THRUST_BASE_URL must be set (see scripts/contract.sh): NotPresent
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+ FAIL + LEAK [   0.220s] (27/33) thrust-contract-tests::contract concurrent_creates_never_duplicate_a_sequence_id
+  stdout ───
+
+    running 1 test
+    test concurrent_creates_never_duplicate_a_sequence_id ... FAILED
+
+    failures:
+
+    failures:
+        concurrent_creates_never_duplicate_a_sequence_id
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 17 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'concurrent_creates_never_duplicate_a_sequence_id' (104986330) panicked at crates/thrust-contract-tests/src/lib.rs:19:53:
+    THRUST_BASE_URL must be set (see scripts/contract.sh): NotPresent
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        PASS [   2.597s] (28/33) thrust-adapters-selfhosted::pg_adapter outbox_is_atomic_with_the_entity_and_dispatch_is_recorded
+        PASS [   2.786s] (29/33) thrust-adapters-selfhosted::pg_adapter soft_delete_frees_the_external_key_but_not_the_sequence_number
+        PASS [   2.841s] (30/33) thrust-adapters-selfhosted::pg_adapter an_abandoned_transaction_does_not_poison_the_pool
+        PASS [   2.899s] (31/33) thrust-adapters-selfhosted::pg_adapter concurrent_allocation_is_unique_contiguous_and_serialised
+        PASS [   2.963s] (32/33) thrust-adapters-selfhosted::pg_adapter rollback_is_atomic_and_unique_violation_is_a_conflict
+        PASS [   2.973s] (33/33) thrust-adapters-selfhosted::pg_adapter membership_distinguishes_member_non_member_and_other_tenant
+────────────
+     Summary [   2.975s] 33 tests run: 6 passed, 27 failed, 0 skipped
+        FAIL [   0.015s] ( 1/33) thrust-contract-tests::contract external_id_is_unique_among_live_rows_only
+        FAIL [   0.016s] ( 2/33) thrust-contract-tests::contract create_is_rate_limited_per_user
+        FAIL [   0.016s] ( 3/33) thrust-contract-tests::contract non_members_and_guests_are_forbidden_to_write
+        FAIL [   0.015s] ( 4/33) thrust-contract-tests::contract internal_routes_require_the_admin_token
+        FAIL [   0.016s] ( 5/33) thrust-contract-tests::contract invalid_input_is_a_client_error
+        FAIL [   0.016s] ( 6/33) thrust-contract-tests::contract list_returns_visible_items_in_sequence_order
+        FAIL [   0.016s] ( 7/33) thrust-contract-tests::contract blast_radius_of_one_panic
+        FAIL [   0.017s] ( 8/33) thrust-contract-tests::contract attachments_roundtrip_with_authz
+        FAIL [   0.017s] ( 9/33) thrust-contract-tests::contract health_ok
+        FAIL [   0.018s] (10/33) thrust-contract-tests::contract cross_tenant_access_is_rejected_and_has_no_effect
+        FAIL [   0.019s] (11/33) thrust-contract-tests::contract create_allocates_monotonic_sequence_and_sort_order
+        FAIL [   0.012s] (12/33) thrust-contract-tests::contract outbox_event_reaches_the_queue_consumer_exactly_once
+        FAIL [   0.012s] (13/33) thrust-contract-tests::contract redelivered_event_is_processed_once
+        FAIL [   0.012s] (14/33) thrust-contract-tests::contract sweeper_publishes_rows_the_fast_path_did_not
+        FAIL [   0.012s] (15/33) thrust-contract-tests::contract soft_delete_hides_rows_and_never_reuses_sequence_ids
+        FAIL [   0.012s] (16/33) thrust-contract-tests::contract unauthenticated_requests_are_rejected
+        FAIL [   0.013s] (17/33) thrust-contract-tests::worker_only stage2_cron_real_trigger_runs_the_sweeper
+        FAIL [   0.012s] (18/33) thrust-contract-tests::worker_only worker_bindings_email_send_binding_simulated_locally
+        FAIL [   0.011s] (19/33) thrust-contract-tests::worker_only worker_bindings_rate_limiting_binding
+        FAIL [   0.013s] (20/33) thrust-contract-tests::contract panic_is_contained_and_the_target_keeps_serving
+        FAIL [   0.011s] (21/33) thrust-contract-tests::worker_only worker_bindings_secrets_store_binding
+        FAIL [   0.012s] (22/33) thrust-contract-tests::worker_only worker_bindings_probe_routes_require_the_admin_token
+        FAIL [   0.011s] (23/33) thrust-contract-tests::worker_only worker_room_do_websocket_hibernation_api_and_sqlite_storage
+        FAIL [   0.011s] (24/33) thrust-contract-tests::worker_only worker_bindings_workflow_via_wasm_bindgen_and_js_shim
+        FAIL [   0.011s] (25/33) thrust-contract-tests::worker_only worker_cron_scheduled_handler_runs_the_sweeper
+        FAIL [   0.011s] (26/33) thrust-contract-tests::worker_only worker_bindings_service_binding
+ FAIL + LEAK [   0.220s] (27/33) thrust-contract-tests::contract concurrent_creates_never_duplicate_a_sequence_id
+error: test run failed
