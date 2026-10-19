@@ -2,7 +2,7 @@
 
 Date: 2026-10-18. Spike: `spikes/0001-rust-on-workers-feasibility.md` (bead `plane-byd.1`). Code: thrust repo worktree
 `/Users/asmith/repos/arustydev/thrust-wt/spike-0001-rust-on-workers`, branch `feat/spike-0001-rust-on-workers`
-(pushed to `aRustyDev/thrust`; draft PR [#17](https://github.com/aRustyDev/thrust/pull/17)). Commits, all signed: `f037986` skeleton + memory adapters + native server + shared suite · `621115c` wasm32 Worker root ·
+(merged into `aRustyDev/thrust` `main` as PR [#17](https://github.com/aRustyDev/thrust/pull/17)). Commits, all signed: `f037986` skeleton + memory adapters + native server + shared suite · `621115c` wasm32 Worker root ·
 `564baa9` shared Postgres adapter + send-shape probe · `d32df20` Cloudflare adapter set · `620e2a1` redelivery test, mutants, binding probes, bench ·
 `c7ff487` sqlx probe, `verify-all.sh`, harness `/_info` retry · `abbd1b1` Stage 2 on the real platform (single-pipeline statements, harness for a deployed Worker, probes). Method: everything below was **executed locally** (native + `wrangler dev` local workerd +
 Docker Postgres) unless tagged otherwise. **Stage 2 (a real Cloudflare account) WAS run on 2026-10-18** (§10, tag **[tested-cf]**).
