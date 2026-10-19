@@ -1,0 +1,15 @@
+== a-agents-only
+AGENTS.md
+handshake=pelican; other=NONE
+[a-agents-only] done
+== b-import
+AGENTS.md
+CLAUDE.md
+handshake=pelican; other=NONE
+[b-import] done
+== c-claude-no-import
+AGENTS.md
+CLAUDE.md
+handshake=NONE; other=walrus
+[c-claude-no-import] done
+finished
