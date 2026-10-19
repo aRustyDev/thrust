@@ -11,7 +11,7 @@ fn load() -> Value {
 }
 
 #[test]
-fn stage3_parse_probe() {
+fn parity_stage3_html_to_json() {
     let c = load();
     let (mut ok, mut n) = (0, 0);
     let mut fails = vec![];

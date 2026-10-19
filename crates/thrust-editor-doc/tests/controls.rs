@@ -249,19 +249,18 @@ fn corrupted_binaries_are_detected() {
     for (k, v) in &stats {
         eprintln!("  {k:20} {:4} / {:4} / {:4} / {:4}", v.0, v.1, v.2, v.3);
     }
-    std::fs::create_dir_all(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../../target/spike-0006"
-    ))
-    .ok();
-    std::fs::write(
-        concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../target/spike-0006/corrupt.json"
-        ),
-        serde_json::to_string(&records).unwrap(),
-    )
-    .unwrap();
+    // Evidence for tools/spike-0006/oracle/verify-rust-out.ts, which replays these corruptions through Yjs. Written
+    // only on request (SPIKE0006_OUT=<dir>, relative to the workspace root), so the default test loop writes nothing
+    // outside a temp dir.
+    if let Some(dir) = std::env::var_os("SPIKE0006_OUT") {
+        let dir = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../..")).join(dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("corrupt.json"),
+            serde_json::to_string(&records).unwrap(),
+        )
+        .unwrap();
+    }
     // structural corruption (truncation, garbage, empty) must never decode to the original document
     for k in ["truncate-50%", "garbage", "empty"] {
         assert_eq!(

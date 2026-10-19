@@ -328,7 +328,8 @@ Uncertainty drivers: how often upstream Plane changes the schema or the rules (t
 ```
 tools/spike-0006/setup-oracle.sh <plane-tree> <workdir>                  # once: oracle workspace from Plane's lockfile
 tools/spike-0006/gen-all.sh <workdir>                                    # corpus, schema dump, emoji table, fuzz sets (deterministic)
-scripts/rs cargo test -p thrust-editor-doc                               # fidelity, fuzz, controls, entities, panics, sanitiser
+SPIKE0006_OUT=target/spike-0006 scripts/rs cargo nextest run -p thrust-editor-doc   # parity corpus, controls, panics; writes corrupt.json
+scripts/rs cargo nextest run -p thrust-editor-doc --profile oracle       # fuzz, entities, html panics, sanitiser: needs gen-all and the §7 outputs
 scripts/rs cargo run --release -p thrust-editor-doc --example fidelity   # tables in §4 ; --large for the big documents
 JSDOM_FROM=<workdir>/extra/package.json tools/spike-0006/run-oracle.sh <workdir> verify-rust-out.ts \
   target/spike-0006/rust-out.json crates/thrust-editor-doc/tests/corpus/corpus.json target/spike-0006/corrupt.json   # §4.3
