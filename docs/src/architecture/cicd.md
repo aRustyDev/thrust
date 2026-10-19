@@ -40,8 +40,10 @@ its base branch. Nothing calls it, so it is a tool to run by hand.
   base commit, or an empty list, it runs everything. A pull request that changes only `docs/`, `AGENTS.md`,
   `.agents/` or `tools/` runs no tests, and `gate` passes. Run on sample lists, the classifier answers `rust=false`
   for `docs/`, `AGENTS.md`, `.agents/`, `tools/` and `.github/config/`, and `rust=true` for a file under `crates/`,
-  for `.config/nextest.toml`, for a workflow file and for an empty list `[verified 2026-10-19 fa4bd6c]`. That `gate`
-  then passes is `[derived]` from `assert-gate.sh`. **The book is not built in CI at all.**
+  for `.config/nextest.toml`, for a workflow file and for an empty list `[verified 2026-10-19 fa4bd6c]`. On a pull
+  request that touches only `docs/`, `changes` passes, `plan`, `ci-scripts`, `deps`, `hermetic`, `pg-adapter`,
+  `mutants` and `contract` are skipped, and `gate` passes `[verified 2026-10-19 051b849]`. **The book is not built in
+  CI at all.**
 - **The matrix.** The `plan` job reads the `run <target> <pass>` lines of `scripts/contract-all.sh`, so no second
   list can drift. It fails if the number of cells it parsed differs from the number of lines that start with `run`,
   if there are none, or if one repeats. There are 16 cells. Each runs on a fresh runner with its own checkout, which
