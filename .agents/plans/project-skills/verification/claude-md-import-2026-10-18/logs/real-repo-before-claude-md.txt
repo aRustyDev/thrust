@@ -1,0 +1,5 @@
+The sentence is in rule 2 of the "Testing (Rust)" section of this repository's `AGENTS.md`:
+
+> `flaky-result = "fail"` in the config is only a default: `--flaky-result pass` overrides it and turns a retried randomized failure green.
+
+It follows the directive "Never pass `--retries`, `--flaky-result`, `NEXTEST_RETRIES` or `NEXTEST_FLAKY_RESULT`."
