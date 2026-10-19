@@ -45,8 +45,12 @@ A gap is a technique or defect class the [strategy](strategy.md) needs and nothi
 
 ## Drift
 
-Places where the repo contradicts itself or its rules. **None known.** Record a new item here with the next free
-id (D-14) and the evidence; each item is one follow-up change.
+Places where the repo contradicts itself or its rules. Record a new item here with the next free id (D-15) and the
+evidence; each item is one follow-up change.
+
+| Id | Drift | Evidence |
+|---|---|---|
+| D-14 | A `worker-*` contract cell can fail because `wrangler dev` itself crashes mid-run, not because of the code under test: Rule 6 asks the CI loop to be deterministic, and this cell is not. Signature in the cell's `logs-<target>-<pass>` artifact (`*.server.log`): request times climb to 2-4 s, wrangler exits with an empty `✘ [ERROR]`, then the in-flight request gets a 500 from wrangler's proxy (absent from the Worker's own request log) and later ones `IncompleteMessage` or `ConnectionRefused`; the count guard then fails the cell (`passed=7 expected=15`). The `Broken pipe` lines and the `restarting build` line also appear in passing runs and are not the cause. Measured rate: 1 crash in 14 runs of `worker-cf main` (PR #28, `main` push run 39285650535, PR #31's two attempts, and 10 `flake-hunt` repetitions on `main` that reported `failures: 0 / 10`). Next steps: bump the pinned `wrangler` (4.123.0 in `.github/actions/setup-rust/action.yml`; the crashed run suggested 4.151.2) and re-measure with `flake-hunt`; the weekly `flake-hunt` schedule repeats only its default cell (`native-memory main`), so point it at `worker-cf main` to keep measuring. Until then, a crashed cell with this signature may be re-run once; any other failure is a finding (Rule 3). | PR #31 run 39317651310: attempt 1 crashed, attempt 2 on the same commit passed 15/15 and `gate` reported 16 of 16; `flake-hunt` run 39318238613 |
 
 ### Resolved
 
