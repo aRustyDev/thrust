@@ -1,6 +1,6 @@
 # Property
 
-Status: **template-only** · Gate: `scripts/rs cargo nextest run` (and the `deep` profile)
+Status: **live** (`thrust-core`) · Gate: `scripts/rs cargo nextest run` (and the `deep` profile)
 
 ## Catches
 
@@ -38,10 +38,13 @@ plausible wrong implementation. A property that passes on the wrong code is asse
 
 ## In-repo examples
 
-None yet: `proptest` is not a dependency of any crate. `crates/thrust-editor-doc/tests/decode_panics.rs` hand-rolls
-a seeded mutation loop that a `prop_*_never_panics` test would replace.
+`crates/thrust-core/src/lib.rs` (`mod tests`): five `prop_` tests on the validators. `prop_accepted_blob_names_stay_inside_their_scope`
+found that `.` was accepted as an attachment name on its first run; the counterexample is committed in
+`crates/thrust-core/proptest-regressions/lib.txt` and pinned as the named case `single_dot`. The strategies build valid inputs
+by construction (weighted tokens) instead of rejecting them with `prop_assume!`. Still hand-rolled:
+`crates/thrust-editor-doc/tests/decode_panics.rs`, which a `prop_*_never_panics` test would replace.
 
 ## Target
 
-Tenant-scope property for R-S1 (`.agents/plans/contrail/TRACEABILITY.md`); proptest is the property tool chosen in
-ADR-0123.
+The R-S1 tenant-scope property (`.agents/plans/contrail/TRACEABILITY.md`) runs against the memory adapter inside the
+`model_` test; the Postgres adapter is the next target. proptest is the property tool chosen in ADR-0123.

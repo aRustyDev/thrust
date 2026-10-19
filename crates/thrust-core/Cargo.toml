@@ -13,3 +13,12 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 async-trait = { workspace = true }
+
+# Test-only. `scripts/check-deps.sh` checks normal dependencies, so none of these reach the core graph.
+# The memory adapters are the reference implementation the use-case tests run against; the executor is
+# futures-executor rather than tokio, because the memory adapters never yield.
+[dev-dependencies]
+thrust-adapters-memory = { workspace = true }
+futures-executor = "0.3"
+proptest = "1"
+rstest = "0.26"
