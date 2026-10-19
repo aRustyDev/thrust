@@ -1,0 +1,10 @@
+[book]
+title = "thrust"
+src = "src"
+
+[build]
+# A SUMMARY.md link to a missing page is an error, not a silently created stub.
+create-missing = false
+
+[rust]
+edition = "2021"

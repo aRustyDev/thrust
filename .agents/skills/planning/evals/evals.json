@@ -65,6 +65,16 @@
         "Gives the new ADR the number 0012",
         "Says spec numbers are per product and always qualified, for example `billing/SPEC-0003`, never `SPEC 3`"
       ]
+    },
+    {
+      "id": 7,
+      "prompt": "I want to write down why our property tests must use the prop_ prefix and how they relate to mutation testing. Where does that go?",
+      "expected_output": "Routes it to the testing chapter, docs/src/testing/ (the rules page or the property technique page), not docs/src/dev/policies/ or docs/src/dev/patterns/; leaves the binding rule text in AGENTS.md and links or includes it instead of restating it; adds any new page to docs/src/SUMMARY.md.",
+      "expectations": [
+        "Places the note under `docs/src/testing/`, not under `docs/src/dev/policies/` or `docs/src/dev/patterns/`",
+        "Keeps the binding rule itself in `AGENTS.md` and links or includes it rather than duplicating its wording",
+        "Adds any new page to `docs/src/SUMMARY.md`"
+      ]
     }
   ]
 }
