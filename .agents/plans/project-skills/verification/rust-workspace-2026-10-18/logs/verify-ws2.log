@@ -1,0 +1,56 @@
+$ cargo nextest run
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.00s
+────────────
+ Nextest run ID e6f406a2-63a2-4560-9422-babdd9b2348e with nextest profile: default
+    Starting 5 tests across 1 binary (1 test skipped via profile.default.default-filter)
+        PASS [   0.009s] (1/5) probe tests::fuzz_replay_nothing
+        PASS [   0.009s] (2/5) probe tests::prop_add_commutes
+        PASS [   0.009s] (3/5) probe tests::model_is_zero
+        PASS [   0.009s] (4/5) probe tests::plain_adds
+        PASS [   0.009s] (5/5) probe tests::parity_add_fixture
+────────────
+     Summary [   0.009s] 5 tests run: 5 passed, 1 skipped
+[x0-baseline] exit=0
+list with config exit=0
+$ grep -o -E ^[^:]+ $SCRATCH/ws-mlist-with.txt
+crates/probe/src/lib.rs
+crates/probe/src/lib.rs
+crates/probe/src/lib.rs
+crates/probe/src/lib.rs
+crates/probe/src/lib.rs
+crates/probe/src/lib.rs
+crates/probe/src/lib.rs
+[x1-files-with] exit=0
+list without config exit=0
+$ grep -o -E ^[^:]+ $SCRATCH/ws-mlist-without.txt
+crates/probe/src/lib.rs
+crates/probe/src/lib.rs
+crates/probe/src/lib.rs
+crates/probe/src/lib.rs
+crates/probe/src/lib.rs
+crates/probe/src/lib.rs
+crates/probe/src/lib.rs
+crates/probe/src/fuzz_harness.rs
+crates/probe/src/fuzz_harness.rs
+crates/probe/src/fuzz_harness.rs
+crates/probe/src/fuzz_harness.rs
+crates/probe/src/fuzz_harness.rs
+[x2-files-without] exit=0
+$ cargo mutants -f crates/probe/src/lib.rs
+Found 7 mutants to test
+ok       Unmutated baseline in 0s build + 0s test
+ INFO Auto-set test timeout to 20s
+7 mutants tested in 4s: 7 caught
+[x3-mutants] exit=0
+$ wc -l mutants.out/caught.txt mutants.out/missed.txt mutants.out/unviable.txt mutants.out/timeout.txt
+       7 mutants.out/caught.txt
+       0 mutants.out/missed.txt
+       0 mutants.out/unviable.txt
+       0 mutants.out/timeout.txt
+       7 total
+[x4-counts] exit=0
+$ grep -n -E cargo-profile|--profile mutants.out/log/baseline.log
+4:*** /opt/homebrew/bin/cargo nextest run --no-run --cargo-profile=mutants --verbose --package=probe@0.0.0
+10:*** /opt/homebrew/bin/cargo nextest run --cargo-profile=mutants --verbose --package=probe@0.0.0 --profile mutants
+[x5-argv] exit=0
+finished

@@ -1,0 +1,28 @@
+# cargo-mutants configuration. Adapted from .agents/skills/rust-test-mutation/references/examples/mutants.toml.
+# Verified with cargo-mutants 27.1.0 and cargo-nextest 0.9.140.
+
+# Run each mutant's tests with nextest, under the `mutants` nextest profile (.config/nextest.toml):
+# fail fast, no retries, oracle tests excluded by the inherited default filter.
+test_tool = "nextest"
+additional_cargo_test_args = ["--profile", "mutants"]
+
+# Cargo build profile (no debuginfo: faster incremental builds per mutant). DISABLED until the workspace root
+# Cargo.toml defines it: with this line active and no [profile.mutants], cargo-mutants stops at the baseline with
+# "profile `mutants` is not defined" and exit 4, which looks like the project's own tree is broken [re-run].
+# Without it cargo-mutants runs on the default test profile, only slower [re-run]. When the first crate adds the
+# root Cargo.toml, add this block there and uncomment the line:
+#   [profile.mutants]
+#   inherits = "test"
+#   debug = "none"
+# profile = "mutants"
+
+# Not product code. fuzz_harness.rs needed excluding; test_support.rs and tests/common/ are belt-and-braces
+# (code under #[cfg(test)] is not mutated). Add the harness crate's directory here when it exists.
+exclude_globs = [
+  "**/fuzz_harness.rs",
+  "**/test_support.rs",
+  "**/tests/common/**",
+]
+
+# Uncomment if the workspace denies warnings: mutants that delete code trip unused-* lints.
+# cap_lints = true
