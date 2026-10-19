@@ -1,0 +1,88 @@
+$ grep -c profile.mutants Cargo.toml
+0
+[z0-grep-no-profile] exit=1
+$ cargo nextest run
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.26s
+────────────
+ Nextest run ID 7427fb14-ef20-4003-a922-570c4a3f89d7 with nextest profile: default
+    Starting 3 tests across 1 binary (1 test skipped via profile.default.default-filter)
+        PASS [   0.009s] (1/3) probe tests::model_is_zero
+        PASS [   0.009s] (2/3) probe tests::prop_add_commutes
+        PASS [   0.009s] (3/3) probe tests::plain_adds
+────────────
+     Summary [   0.009s] 3 tests run: 3 passed, 1 skipped
+[z1-default] exit=0
+$ cargo nextest run --profile ci --workspace
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.00s
+────────────
+ Nextest run ID 2a8ff4d8-755c-445c-ab54-384276d646d0 with nextest profile: ci
+    Starting 3 tests across 1 binary (1 test skipped via profile.default.default-filter)
+        PASS [   0.008s] (1/3) probe tests::model_is_zero
+        PASS [   0.008s] (2/3) probe tests::plain_adds
+        PASS [   0.008s] (3/3) probe tests::prop_add_commutes
+────────────
+     Summary [   0.009s] 3 tests run: 3 passed, 1 skipped
+[z2-ci] exit=0
+$ env PROPTEST_CASES=4096 cargo nextest run --profile deep
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.00s
+────────────
+ Nextest run ID ebd52197-62e0-4460-83b9-97ed59dc8840 with nextest profile: deep
+    Starting 3 tests across 1 binary (1 test skipped via profile.deep.default-filter)
+        PASS [   0.008s] (1/3) probe tests::oracle_add_matches
+        PASS [   0.008s] (2/3) probe tests::model_is_zero
+        PASS [   0.008s] (3/3) probe tests::prop_add_commutes
+────────────
+     Summary [   0.008s] 3 tests run: 3 passed, 1 skipped
+[z3-deep] exit=0
+$ cargo nextest run --profile oracle
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.00s
+────────────
+ Nextest run ID 0d3ba0b4-5b81-4e00-b312-5a695bad87d5 with nextest profile: oracle
+    Starting 1 test across 1 binary (3 tests skipped via profile.oracle.default-filter)
+        PASS [   0.008s] (1/1) probe tests::oracle_add_matches
+────────────
+     Summary [   0.008s] 1 test run: 1 passed, 3 skipped
+[z4-oracle] exit=0
+$ cargo nextest run -E test(/\bprop_/)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.00s
+────────────
+ Nextest run ID a34e5aaf-7e6e-4558-b540-919ea31f39a2 with nextest profile: default
+    Starting 1 test across 1 binary (3 tests skipped)
+        PASS [   0.008s] (1/1) probe tests::prop_add_commutes
+────────────
+     Summary [   0.008s] 1 test run: 1 passed, 3 skipped
+[z5-category] exit=0
+$ cargo nextest run -E test(/\bnope_/)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.00s
+────────────
+ Nextest run ID 5c57f36d-814c-4a3e-9ed7-fe45b7751bad with nextest profile: default
+    Starting 0 tests across 1 binary (4 tests skipped)
+────────────
+     Summary [   0.000s] 0 tests run: 0 passed, 4 skipped
+error: no tests to run
+(hint: use `--no-tests` to customize)
+[z6-empty-filter] exit=4
+$ cargo test --doc --workspace
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.00s
+   Doc-tests probe
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+[z7-doc] exit=0
+$ cargo mutants -f crates/probe/src/lib.rs
+Found 7 mutants to test
+ok       Unmutated baseline in 0s build + 0s test
+ INFO Auto-set test timeout to 20s
+7 mutants tested in 4s: 7 caught
+[z8-mutants] exit=0
+$ wc -l mutants.out/caught.txt mutants.out/missed.txt
+       7 mutants.out/caught.txt
+       0 mutants.out/missed.txt
+       7 total
+[z9-counts] exit=0
+$ sh -c cargo nextest run 2>&1 | grep -c 'recommends nextest'
+0
+[za-notice] exit=1
+finished

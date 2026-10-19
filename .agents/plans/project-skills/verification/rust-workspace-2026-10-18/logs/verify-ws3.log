@@ -1,0 +1,32 @@
+$ grep -c profile.mutants Cargo.toml
+0
+[y0-cargo-toml] exit=1
+$ cargo mutants -f crates/probe/src/lib.rs
+Found 7 mutants to test
+FAILED   Unmutated baseline in 0s build
+
+*** baseline
+
+*** /opt/homebrew/bin/cargo nextest run --no-run --cargo-profile=mutants --verbose --package=probe@0.0.0
+error: profile `mutants` is not defined
+error: command `/opt/homebrew/bin/cargo test --no-run --message-format json-render-diagnostics --package probe@0.0.0 --profile mutants` exited with code 101
+
+*** result: Failure(101)
+
+ERROR cargo build failed in an unmutated tree, so no mutants were tested
+[y1-missing-profile] exit=4
+$ grep -n profile =  .cargo/mutants.toml
+10:# profile = "mutants"
+[y2-grep] exit=0
+$ cargo mutants -f crates/probe/src/lib.rs
+Found 7 mutants to test
+ok       Unmutated baseline in 0s build + 0s test
+ INFO Auto-set test timeout to 20s
+7 mutants tested in 4s: 7 caught
+[y3-commented-profile] exit=0
+$ wc -l mutants.out/caught.txt mutants.out/missed.txt
+       7 mutants.out/caught.txt
+       0 mutants.out/missed.txt
+       7 total
+[y4-counts] exit=0
+finished

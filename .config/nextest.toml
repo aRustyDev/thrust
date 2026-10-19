@@ -1,0 +1,68 @@
+# Test-runner configuration (cargo-nextest). Adapted from .agents/skills/rust-test-logic/references/examples/nextest.toml.
+# Verified with cargo-nextest 0.9.140; the 0.9.131 floor is from the source archive and was not re-run.
+#
+# Profiles:  default (fast hermetic loop) | ci | deep | oracle | mutants
+# Test-name prefixes route tests:  prop_  model_  oracle_  (parity_ and fuzz_replay_ run by default)
+# Filters use single-quoted TOML strings so `\b` reaches the regex engine unchanged.
+#
+# Nothing here names a crate. The browser-test pieces (an `e2e` package, a `browser` test group, `[profile.e2e]`
+# and a retry override scoped to browser tests) are NOT in this file: add them from the template when the
+# harness crate exists, and scope retries to browser tests only.
+nextest-version = { required = "0.9.131" }
+
+[test-groups]
+ts-oracle = { max-threads = 2 }  # each oracle test runs a Node.js process
+
+# --- default: the fast, hermetic inner loop ----------------------------------------
+[profile.default]
+default-filter = 'not test(/\boracle_/)'
+retries = 0
+slow-timeout = { period = "30s", terminate-after = 4 }
+
+# Randomized tests: a retry can turn a real counterexample green. retries = 0 and flaky-result = "fail" are
+# DEFAULTS, not guards: --flaky-result pass (or NEXTEST_FLAKY_RESULT=pass) overrides the latter. Never pass
+# --retries, --flaky-result, NEXTEST_RETRIES or NEXTEST_FLAKY_RESULT.
+[[profile.default.overrides]]
+filter = 'test(/\b(prop|model)_/)'
+retries = 0
+flaky-result = "fail"
+slow-timeout = { period = "60s", terminate-after = 5 }
+
+[[profile.default.overrides]]
+filter = 'test(/\boracle_/)'
+test-group = "ts-oracle"
+retries = 0
+flaky-result = "fail"
+slow-timeout = { period = "60s", terminate-after = 5 }
+leak-timeout = "1s"
+
+# --- ci: same tests as default, complete report ---------------------------------------
+[profile.ci]
+fail-fast = false
+failure-output = "immediate-final"
+
+[profile.ci.junit]
+path = "junit.xml"   # written to target/nextest/ci/junit.xml
+
+# --- deep: every randomized test, incl. oracle. Run with PROPTEST_CASES=4096 or more. ----
+[profile.deep]
+default-filter = 'test(/\b(prop|model|oracle)_/)'
+fail-fast = false
+
+[[profile.deep.overrides]]
+filter = 'test(/\b(prop|model|oracle)_/)'
+slow-timeout = { period = "300s", terminate-after = 6 }
+
+# --- opt-in suite that needs external resources ------------------------------------------
+[profile.oracle]   # needs Node.js + the built legacy TypeScript package
+default-filter = 'test(/\boracle_/)'
+fail-fast = false
+
+# --- mutants: selected by cargo-mutants through .cargo/mutants.toml ---------------------
+# One failing test is enough to prove a mutant was caught: stop and kill stragglers.
+# This profile inherits [profile.default], including its default-filter and slow-timeout. A slow-timeout
+# kill (terminate-after 4 x 30 s) can fire before a larger cargo-mutants --timeout and count a hang as
+# caught: set slow-timeout here explicitly if you raise that timeout [derived, not run].
+[profile.mutants]
+fail-fast = { max-fail = 1, terminate = "immediate" }
+retries = 0
