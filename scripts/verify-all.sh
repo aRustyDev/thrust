@@ -1,5 +1,6 @@
 #!/bin/sh
 # Everything the results file cites, one serial run, one summary:
+#   0. the hermetic tests                 (cargo nextest run, default profile: thrust-editor-doc today)
 #   1. the 16-cell contract matrix        (scripts/contract-all.sh)
 #   2. the mutation controls              (scripts/mutants.sh)   -> every mutant must be KILLED
 #   3. the dependency-graph check         (scripts/check-deps.sh)
@@ -24,6 +25,7 @@ step() {
   printf '%-28s %s\n' "$name" "$verdict" >>"$SUMMARY"
 }
 
+step hermetic-tests "$ROOT/scripts/rs" cargo nextest run --manifest-path "$ROOT/Cargo.toml" --workspace
 step contract-matrix "$ROOT/scripts/contract-all.sh"
 step mutants "$ROOT/scripts/mutants.sh"
 step check-deps "$ROOT/scripts/check-deps.sh"

@@ -12,8 +12,9 @@ additional_cargo_test_args = ["--profile", "mutants"]
 profile = "mutants"
 
 # Not product code. The contract-suite crate is the test harness itself (its mutants would only test the tests).
-# fuzz_harness.rs needed excluding; test_support.rs and tests/common/ are belt-and-braces (code under
-# #[cfg(test)] is not mutated).
+# The other three are the test-support files the rust-test-* skills tell a crate to add. None exists yet; they are
+# excluded in advance so the first crate to add one is not mutated. fuzz_harness.rs needed excluding in the
+# reference workspace; test_support.rs and tests/common/ are belt-and-braces (code under #[cfg(test)] is not mutated).
 exclude_globs = [
   "crates/thrust-contract-tests/**",
   "**/fuzz_harness.rs",
