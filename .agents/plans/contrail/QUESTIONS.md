@@ -1,0 +1,359 @@
+# QUESTIONS — Contrail open questions
+
+Working list. **One of the goals of the follow-up session is to drive this file to zero `open` rows.**
+Add new questions at the bottom of the relevant section; never renumber. When answered: set `Status: answered`,
+fill `Answer`, and update the linked ADR (`proposed` → `accepted`).
+
+ID scheme: `Q-<adr#>` is the *decision-pending* question for ADR `<adr#>` ("which option?"). `Q-<adr#>.<n>` are
+sub-questions raised by that ADR. `Q-G<n>` are cross-cutting. Source tags: **[I]** interview 2026-10-17,
+**[S]** repo survey, **[O]** Open-EE plan (`woven/plan:.claude/plans/plane-fork/`).
+
+## Decided in the interview (do not reopen without cause)
+| Decision | ADR |
+|---|---|
+| Hybrid: keep React apps/editor/ui, rewrite backend as Workers-native services | 0001 |
+| All CF primitives behind ports with a CF adapter **and** a self-hosted adapter; switch = config/compile + ≤ redeploy | 0002 |
+| Single-org first, multi-tenant-capable data layer | 0003 |
+| Open-EE program on Django is superseded; features built natively in new backend | 0004 |
+| Public `/api/v1` kept compatible; internal API redesigned | 0031 |
+| OIDC (Zitadel) + Cloudflare Access + `X-Api-Key` end state; BetterAuth; phased user+password (P0) → Access → OIDC | 0050 (+A1) |
+| Fork and diverge from upstream Plane (round 4) | 0001, 0005, 0010 |
+| P0 foundations: permission seam + RBAC, outbox, feature flags, audit (round 4) | 0046, 0051 |
+| Adapter sets are compile-time bundles (round 6) | 0007 |
+| Editing = plain API save at P0; DO collab P1; exports/importers/analytics P1; self-hosted P0 = DB/queue/blob only (round 6) | 0060, 0061 |
+| No data import (start fresh); ≤50 users / ≤100k work items (round 5) | 0042, 0040 |
+| Workers static assets for web/admin/space (CF adapter) | 0011 |
+| Collab = Yjs behind a port; DO adapter + Redis/Hocuspocus adapter | 0060 |
+| Queue / Workflow / Cron / Blob / Cache-session ports | 0070–0072, 0080, 0082 |
+
+## Cross-cutting
+| ID | Question | Why it matters | Blocks | Status | Answer |
+|---|---|---|---|---|---|
+| Q-G1 | What is the definition of "equivalent" — behavioral parity with Plane CE at which release (current fork base vs latest upstream)? **[S]** | Moving target; sets the parity oracle | SPEC, 0020 | **answered** | Round 8: update this fork to the latest upstream changes, **then pin it**; reference = that pinned running instance **plus** its OpenAPI schema. Prerequisite work: bead `plane-b6a`. The exact pinned version is recorded when the update lands. |
+| Q-G2 | Is upstream-sync (merging Plane releases into the frontend) a requirement? **[I]** | Hybrid keeps the frontend; divergence cost | 0001, 0010 | **answered** | No — fork and diverge (round 4). Frontend is owned code; service layer may reshape stores. ADR-0010 leading hypothesis should shift from compat shim to regenerated client. |
+| Q-G3 | Who are the first production users/data? Is there a migration of the existing `projects.woven` Postgres data required? **[I]** | Data import path and cutover | 0040, 0042 | **answered** | No — start fresh (round 5). No import of `projects.woven` data. F-X04 dropped; Plane-shaped schema no longer required for import; Q-0042.2, Q-0050.6 (import part) and the APIToken-compat part of Q-0052 become moot. Keep schema Plane-*like* only where the retained frontend needs it. |
+| Q-G4 | Non-functional targets: scale (workspaces, work items, concurrent editors), latency, availability, RPO/RTO. | Drives DB and collab choices | 0040, 0041, 0060 | **partly answered** | Round 5 sizing target: small team, ≤50 users, ≤100k work items. Latency/availability/RPO-RTO and concurrent-editor targets still open (Q-G4.1). Scale is not a driver for sharding at v1; D1 and single-DB options are all in range. |
+| Q-G5 | Cost envelope (CF plan tier, external DB cost)? | Hyperdrive/Workers paid limits | 0040, 0090 | **answered** (round 9): Workers Paid baseline, <$100/mo as a design constraint; spikes report projected monthly cost at the sizing target | |
+| Q-G6 | Licensing posture: Plane is AGPL-3.0. Is the new backend a clean-room reimplementation, and does the retained frontend keep AGPL obligations? **[S][O]** | Legal gate | 0140 | **answered** (round 14): keep AGPL-3.0 for everything; no clean-room claim. Still never copy proprietary EE code or EE-only artefacts (ADR-0140 accepted) | |
+| Q-G7 | Does the self-hosted adapter set need to run on Kubernetes (existing woven cluster) or plain Docker Compose? | Shapes 0091 | 0091 | **answered** (round 14): Docker Compose is the tested self-hosted reference; Kubernetes uses the same images, not CI-tested at first | |
+| Q-G8 | Mobile/desktop clients or third-party API consumers beyond the web apps today? | Affects v1 compat strictness | 0031 | **answered** (round 20): web apps only; third parties are scripts/Beads via v1 | **Superseded in part (round 21):** multi-target (desktop/mobile) is a goal of the Dioxus rewrite (ADR-0013); web only until Phase 2. |
+
+## Architecture
+| ID | Question | Status |
+|---|---|---|
+| Q-0005 | Monorepo layout: extend this repo (new `apps/worker-*`, `packages/ports*`) vs a new repo consuming `@plane/*` packages? | **answered** (round 14): a **new repo** consuming `@plane/*` packages; consumption mechanism and frontend location need follow-up (Q-0005.1, Q-0005.2) |
+| Q-0006 | Backend runtime/language: TypeScript on Workers (default hypothesis) vs Rust→WASM vs Python Workers? Must also run on Node/Bun for the self-hosted adapter set. | **answered** (round 21): Rust (wasm32 Worker + native server); fallback TS if spike 0001 fails; spike 0001 (round 26): **conditional pass**, Stage 1 green and Stage 2 on the real platform pending (Q-0006.2) |
+| Q-0006.1 | Is runtime portability (workerd vs Node) a hard requirement or best-effort? | **answered** (round 21): portability is by compile target (wasm32 + native) from the same crates; confirmed for core, ports, router and SQL by spike 0001 (round 26) |
+| Q-0007 | Adapter selection: compile-time (separate bundles per adapter set) vs runtime config (single bundle, DI by env)? "Compile/config + ≤ redeploy" allows both. | **answered** (round 6): compile-time bundles per adapter set; ADR-0007 accepted. |
+| Q-0007.1 | How are CF-only bindings (DO classes, Workflows) declared when building the self-hosted bundle? | **answered** (round 26, spike 0001): they are not compiled in; the native graph has no `worker*`, `wasm-bindgen`, `js-sys` or `web-sys`, and DO classes exist only in the Worker root (`check-deps.sh`) |
+
+## UI / UX
+| ID | Question | Status |
+|---|---|---|
+| Q-0010 | Service-layer adaptation: regenerate `@plane/services` from the new API contract, or keep a compat shim over the old shapes? **[I]** | **superseded** (round 22): ADR-0034, no regenerated TS client |
+| Q-0010.1 | Which of `apps/web` MobX stores assume Django response shapes (pagination, grouped issues, `group_by` payloads)? Needs inventory. **[S]** | **open** — now the compat-layer inventory: which internal endpoints and response shapes the React stores depend on (ADR-0034); desk half done (round 26, spike 0009): 545 compat rows, 290 P0 rows used by React, minimum slice 48 routes; closes when the dynamic half confirms bodies (`research/0003`) |
+| Q-0012 | Editor reuse: keep `@plane/editor` Yjs binary format unchanged (needed for existing page data) — confirm; i18n locale ownership? | **answered** (round 27): ADR-0012 accepted — reuse `@plane/editor` with an unchanged Yjs binary format; conversion per Q-0012.3; i18n locale ownership split off as Q-0012.5 |
+| Q-0020 | Parity bar per tier: pixel/flow-identical, or "functionally equivalent"? | **answered** (round 14): functionally equivalent UI; the v1 API is the strict contract |
+| Q-0021 | `god-mode` admin app: keep as-is on new instance-config API, or fold into workspace admin? | **answered** (round 23): ADR-0021 accepted |
+| Q-0021.2 | Capability review: inventory every function of `apps/admin` and `api/instances` (instance config, auth-provider toggles, email config, admin bootstrap, telemetry opt-in, …) and classify each as workspace setting / IaC-env only / drop. Do this by reading the code, not from memory. | **answered** (round 23): accepted; auth rows to redo after spike 0003 |
+| Q-0022 | Public `spaces` (published boards): in P0? Anonymous access vs Access policy interplay. | **answered** (round 8): in P0 (F-D09); **unauthenticated public, explicit publish per project**, read-only, on a dedicated host/route that bypasses Access; rate limits per Q-0141.3. |
+
+## API
+| ID | Question | Status |
+|---|---|---|
+| Q-0030 | Internal API style: Hono + typed RPC / tRPC / REST+OpenAPI. **[I: left to ADR]** | **answered** (round 22): REST + OpenAPI core API + transitional compat adapter (ADR-0034) |
+| Q-0030.1 | Real-time push to clients (issue updates) — SSE/WebSocket via DO, or polling/SWR as today? | **answered** (round 9): no live push at P0 (refetch/poll); live push arrives with collab in P1 |
+| Q-0032 | OpenAPI as source of truth (generate server stubs and client) vs code-first? Versioning policy for the redesigned internal API. | **answered** (round 24): hybrid; v1 code-first with frozen-schema diff; core API code-first |
+| Q-0033 | API-key scopes and rate limits: preserve Plane's `X-Api-Key` + `API_KEY_RATE_LIMIT` semantics exactly? Where is the limiter (DO vs KV vs Workers rate-limit binding vs Redis)? | **answered** (round 15): keep `X-Api-Key` and rate-limit semantics; no scopes in v1; oracle quirks to reproduce or fix: Q-0033.2 (round 26) |
+
+## Data
+| ID | Question | Status |
+|---|---|---|
+| Q-0040 | System-of-record DB: Postgres+Hyperdrive vs D1 vs DO-SQLite-per-workspace. **[I: ADR + spike]** | open |
+| Q-0040.1 | Spike scope and exit criteria (see ADR-0040 §Spike). | **partly answered** (round 11): prototype Postgres+Hyperdrive and D1; DO-SQLite desk-reviewed only. Must prove sequence_id race-safety, partial unique indexes, FTS, p95 < 500 ms at 100k items, projected monthly cost; round 27: Postgres only (CNPG through Hyperdrive and the Workers VPC service, ADR-0094); D1 becomes a desk review |
+| Q-0040.2 | `Issue.save()` takes a Postgres advisory lock to assign `sequence_id` per project — what is the portable sequencing mechanism? **[S]** | open; evidence (round 26, spike 0001, Postgres): a per-project counter row upserted in the same transaction gave unique, contiguous numbers (ADR-0043); spike 0002 decides |
+| Q-0040.3 | Plane uses partial unique indexes (soft delete via `deleted_at`) — available in D1/SQLite (yes) but not all adapter targets via ORM; verify. **[S]** | open; evidence (round 26, spike 0001): a partial unique index worked on Postgres and soft delete frees the external key; D1 untested |
+| Q-0040.4 | Cross-workspace queries needed? (user's "my work" across workspaces, instance admin analytics) — affects sharding. | open |
+| Q-0041 | Tenant isolation: row-level `workspace_id` + RLS vs DB-per-workspace vs schema-per-workspace. | **deferred to the DB spike** (round 11); leading hypothesis row-level workspace_id in the repository layer |
+| Q-0042 | Schema source of truth + migrations tooling (Drizzle / Kysely+custom / Atlas / raw SQL) and how to import the end-state of Plane's 122 Django migrations. **[S]** | open |
+| Q-0043 | IDs (UUID v4/v7/ULID), per-project sequence ids, soft-delete universal (`deleted_at`) + two-tier managers (hide triage/archived/draft). Keep semantic parity? **[S]** | open |
+| Q-0044 | Query layer: ORM vs query builder vs hand SQL behind repositories; D1/pg dialect abstraction. | open; narrowed (round 26, spike 0001): `sqlx` does not build for wasm32, `tokio-postgres` works over a Hyperdrive socket, SeaORM and diesel-async untried; the decision waits for spike 0002 |
+| Q-0045 | Repository / unit-of-work port granularity; transaction semantics across adapters (D1 batch vs pg tx vs DO transactionSync). | open |
+| Q-0046 | Event/outbox contract: Plane's activity (`IssueActivity`), webhooks, notifications derived from `issue_activity` Celery task — single event schema? **[S][O]** (`f0-event-backbone`) | open |
+| Q-0047 | File-asset contract: `FileAsset` lifecycle (presign → upload → confirm → delete_unuploaded). Direct-to-R2 vs through Worker; max sizes. | open |
+
+## Auth
+| ID | Question | Status |
+|---|---|---|
+| Q-0050.1 | Zitadel claims→workspace/role mapping; JIT provisioning vs SCIM-only? **[O]** (`oidc-saml-sso`) | **answered** (round 23): JIT provisioning via OIDC claims at P1 |
+| Q-0050.2 | Does Cloudflare Access sit in front of all hosts (incl. API for machine clients) or only UI? Interaction with `status.woven` probing rules and WARP-only access. | **answered** (round 20): Access gates UI hosts only; API uses session/`X-Api-Key` |
+| Q-0050.3 | Keep email/password, magic code, Google/GitHub/GitLab/Gitea OAuth? Tier each. | **partly answered** (round 4): email+password P0; magic code and social OAuth not in the sequence (untiered); order is user+pass → CF Access → OIDC, framework = BetterAuth. |
+| Q-0050.4 | BetterAuth fit with ports/adapters: can its DB adapter, session store (KV/Redis as secondary storage), API-key and OIDC/generic-OAuth plugins run on Workers and Node behind our ports; how does it coexist with our `Authorizer` seam and the wire-compat `X-Api-Key`? Needs a spike. **[I]** | **partly answered** (round 13): spike bar = Workers+Node, user+password, KV/Redis sessions, `X-Api-Key` mapping, Authorizer coexistence; failure falls back to a hand-rolled `Identity` adapter behind the same port |
+| Q-0050.5 | Would Cloudflare Access (JWT validation) simplify the P0 infra enough to ship with, or at, user+password (the owner's stated exception)? | **answered** (round 20): Access JWT validation joins at the CF Access phase, not P0 |
+| Q-0050.6 | Does the existing user table/`Account`/`Profile` shape map onto BetterAuth's schema, or do we adapt? Interplay with the one-time data import (Q-G3). | open |
+| Q-0051 | Authorization model: RBAC (Plane roles 5/15/20) + ReBAC (OpenFGA/Zanzibar-style) + guests. Permission seam shape. **[O]** (`rbac`, `rebac-fine-grained`, `guests`, `f0-permission-seam`) | **answered** (round 24): Option 1; static capability map at P0; types enforce scope |
+| Q-0052 | Sessions (KV vs DO vs signed cookie) and API-key storage/hashing; compatibility with existing `APIToken` values at migration? | **answered** (rounds 15, 25): 30-day sessions, sign-out-everywhere, DB-authoritative, no cache at P0 |
+| Q-0053 | SCIM 2.0 scope (Users, Groups) and tier. **[O]** (`scim`) | **answered** (round 23): SCIM P2, only if Zitadel supports outbound SCIM |
+
+## Collab
+| ID | Question | Status |
+|---|---|---|
+| Q-0061 | Collab persistence: DO storage as primary vs periodic snapshot to DB/R2; page-version cadence; compaction; binary/html/json triple-write parity (`description_binary/html/json`). **[S]** | open |
+| Q-0061.1 | Awareness/presence limits per DO; max doc size; cold-start behavior. | open |
+| Q-0061.2 | Self-hosted adapter: reuse Hocuspocus + Redis unchanged behind the same port? | open |
+
+## Jobs
+| ID | Question | Status |
+|---|---|---|
+| Q-0073 | Map the ~36 `plane/bgtasks` modules to Queue consumers vs Workflows vs Cron; which stay synchronous? **[S]** | open |
+| Q-0073.1 | Email delivery: Cloudflare Email Service vs SMTP vs provider; notification digest (`stack_email_notification` every 5 min). | **answered** (round 7): CF Email Service on the CF set, SMTP adapter elsewhere, behind the `Email` port. Digest cadence still to be set in ADR-0073. |
+| Q-0073.2 | Webhook delivery guarantees (retry, signing, log retention `WebhookLog`). | **answered** (round 17): at-least-once, HMAC-signed, 5 retries with backoff, logs 30 days |
+| Q-0073.3 | Exports (`ExporterHistory`) and long jobs: Workflow limits (duration/memory) for large workspaces. | **answered** (round 17): exports via Workflow at P1; ceiling starts at 100 MB |
+| Q-0073.4 | Self-hosted workflow adapter: what replaces Workflows durability (Temporal? simple DB-backed runner? Celery-compat?). | **answered** (round 17): as Q-0071.1 |
+
+## Storage / Search / Integrations
+| ID | Question | Status |
+|---|---|---|
+| Q-0081 | Uploads: presigned PUT vs Worker-streamed; image transforms (CF Images?) ; cleanup of unuploaded assets. | open; constraint (round 26, spike 0001): the Worker buffers request bodies up to 8 MiB, so larger uploads need presigned PUT |
+| Q-0083 | Search port: D1/pg FTS vs Vectorize/AI Search vs Typesense/Meilisearch/OpenSearch (`features.md` lists these). **[S]** | **answered** (round 25): FTS with trigram for substring parity, proven in spike 0002 |
+| Q-0084 | AI features (Plane AI, MCP): in scope? Workers AI vs external (OpenAI) via AI port. `features.md` lists Agents, MCP client/app, assistant. | **answered** (round 7): P0 API-based access · P1 MCP server · P2 AI assistant via AI Gateway. ADR-0084 stays `proposed` for adapter details. |
+| Q-0084.3 | Confirm the reading of "P0: API based access": the public API (`/api/v1`, API keys) is the P0 AI/agent surface and no AI features ship inside the product at P0. | **answered** (round 9): confirmed, public API is the P0 AI surface; no in-product AI at P0 |
+| Q-0084.4 | Self-hosted adapter for the AI port when the CF adapter is AI Gateway (direct provider API? LiteLLM-style proxy?); P2 so low urgency. | **answered** (round 18): AI Gateway for both sets (twin needs outbound CF access) |
+| Q-0085 | Integrations: GitHub sync, Slack, Beads sync, importers (Jira/Linear/CSV) — tiers and adapter model. **[O]** (`external-sync`, `slack-integration`) | **answered** (round 23): GitHub + Beads sync P1; LWW + echo suppression; encrypted per-workspace credentials |
+
+## Infra / CI / CD
+| ID | Question | Status |
+|---|---|---|
+| Q-0090 | CF topology: one Worker with routes vs Worker-per-domain (service bindings) vs Workers for Platforms; custom domains and `.woven` private hostnames (two-leg rule; external-dns). | open; evidence (round 26, spike 0004): Option 2 not contradicted, confidence medium; run 2 with Access done (round 27): a service-binding hop costs +2.3 to +2.8 ms on the real edge |
+| Q-0091 | Self-hosted twin: reference deployment target and which adapter set is the default. | **partly answered** (round 14): Docker Compose reference with Node server + Postgres + RabbitMQ + MinIO; ADR stays proposed pending adapter details (Q-F6.2) |
+| Q-0092 | Secrets/envs: Secrets Store vs wrangler secrets vs 1Password; env promotion. | **answered** (round 16): dev + staging + prod |
+| Q-0093 | IaC: OpenTofu (cloudflare provider) vs wrangler-only vs both; state backend (infra repo roots with `backend "local"` need canonical-checkout apply). | **answered** (round 15): OpenTofu cloudflare provider in the infra repo; wrangler deploys Worker code |
+| Q-0100 | CI build matrix: per adapter set × runtime; contract-test matrix cost. | **answered** (round 16): PR = lint/types/unit + CF-set contract tests + oracle schema check; nightly = full matrix + differential |
+| Q-0101 | Carry over fork's supply-chain gates (sha-pin, scorecard, attest, CVE gates) to new packages? | **answered** (round 16): carry over sha-pin/scorecard/attest gates |
+| Q-0110 | CD: wrangler deploy via GitHub Actions + environments; progressive delivery (gradual deployments); DB migration ordering. | **answered** (round 24): gradual with 0% smoke via override header, then 10% for 10 min |
+
+## Test / Observability / Security
+| ID | Question | Status |
+|---|---|---|
+| Q-0120 | Test model: pyramid shape; what is the oracle for "behaves like Plane" (golden HTTP recordings from a live Plane vs OpenAPI schema vs both)? | open |
+| Q-0121 | Port contract-test suite design: one suite, N adapters (CF via Miniflare/workerd, self-hosted via testcontainers). | open |
+| Q-0122 | v1 oracle: `drf-spectacular` schema at `api/schema/` as contract; response-diff harness against running Plane. | open |
+| Q-0123 | Standards/tooling: vitest, oxlint/oxfmt (as `AGENTS.md`), coverage gates, e2e (Playwright). | open |
+| Q-0130 | Observability: Workers Observability/Logpush/OTel; map existing OpenTelemetry/PostHog/Scout; tracing across Queue/Workflow hops. | **answered** (round 18): Workers Observability + OTLP to the woven o11y stack; PostHog dropped |
+| Q-0140 | See Q-G6. Clean-room process and attribution requirements. | **answered** (round 14): see Q-G6 |
+| Q-0141 | Threat model for tenant isolation, API keys, public spaces, webhooks (SSRF — note existing URL-security test in `apps/api`). **[S]** | open |
+
+## Features (tiering) — see FEATURES.md
+| ID | Question | Status |
+|---|---|---|
+| Q-F1 | Assign P0/P1/P2 to every row in FEATURES.md. | **answered** (round 12): every row is now tiered or dropped. Tiering is subject to the owner confirmations still open (Q-0021.2 admin inventory review). |
+| Q-F2 | Which Open-EE features are P0 given RBAC/ReBAC/audit are cross-cutting seams (must exist before other features)? **[O]** | **answered** — permission seam + RBAC, event/outbox backbone, feature flags, audit logging are P0 (round 4). ReBAC, guests, SCIM, rest of Open-EE untiered. |
+| Q-F4 | D05 exports, D06 importers, D07 analytics sat inside the "platform basics" P0 range but were not named. P0 or later? | **answered** (round 6): all P1. |
+| Q-F5 | "Editing occurs on Durable Objects; collaboration is not P0": is Pages itself P0 (single-writer editing via DO, no presence/multi-user), and do work-item descriptions use the same DO path? | **answered** (round 6): pages and descriptions both use a **plain API save at P0**; Durable Objects arrive with collaboration in P1. This refines the round-4 remark "editing should occur on durable objects" — the later, explicit answer governs; **owner to confirm** the two are reconciled this way. **Owner-confirmed round 9.** |
+| Q-F5.1 | With plain-API saves at P0, what is the stored rich-text format and the concurrency control (optimistic `updated_at`/version, last-write-wins)? Choose so the P1 move to DO/Yjs does not need a data migration (e.g. persist Yjs binary + html + json from day one, or only html/json and convert lazily). Interacts with ADR-0061 and Q-0012. | **answered** (round 11): persist Yjs binary + html + json from day one; optimistic version check (stale save returns 409).; evidence (round 27, spike 0006): work-item descriptions carry no Yjs binary today (v1 returns it null in 64 of 64 objects); P0 stores client html/json/binary verbatim; client and server html differ in 37 % of documents |
+| Q-F5.2 | Which editor surfaces need real-time before P1 (none?) — and does the frontend's current collab provider have to be stubbed/disabled at P0? | open |
+| Q-F6 | Is the self-hosted adapter set (F-X02) P0 or follows the CF set? SPEC R-P3 says a port is not "done" without both adapters. | **answered** (round 6): P0 = ports + CF adapters + contract-test harness + **self-hosted adapters for DB, queue and blob only**; collab, workflow, cache/session, search etc. self-hosted adapters follow in P1. |
+| Q-F6.1 | R-P3 ("both adapters before a port is done") conflicts with this phasing: redefine as "P0 ports are done with both adapters (DB, queue, blob); others are done at CF-only until their P1 self-hosted adapter lands", and mark the CF-only ports in the contract-test matrix as `pending-adapter`. Confirm. | **answered** (round 9): R-P3 reworded as phased |
+| Q-F6.2 | Self-hosted P0 adapter choices: DB (Postgres? SQLite?), queue (RabbitMQ per ADR-0070), blob (MinIO/S3 per ADR-0080). And with no self-hosted workflow/cron/collab at P0, what runs scheduled and background work there? | **answered** (round 25): P0 self-hosted set = DB, queue, blob, session (DB-backed), scheduler (in-process), SMTP email |
+| Q-F3 | Dormant Plane features with stubs only (work item types management, integrations models, workspace pages): implement or drop? **[S]** | **answered** (round 11): drop integrations and workspace-pages stubs; work item types follow F-E08 (P1) |
+
+## Raised by ADR authors (2026-10-17) — **[ADR]**
+Each row is a sub-question of the ADR named by its number. Some ADRs mark Plane facts `[verify]`; those are
+review task #1 in PROMPT.md.
+
+| ID | Question | Status |
+|---|---|---|
+| Q-0001.1 | Retire Django `apps/api` + `apps/live` at cutover, or keep them for a rollback window? | **open** — round 14 chose a new repo, so this fork becomes the frozen oracle plus frontend source; retirement date still to set |
+| Q-0004.1 | What happens to in-flight `woven/*` Open-EE branches and beads (freeze, close, or port the specs)? | **answered** (round 14): freeze `woven/*` Open-EE branches, port specs only; re-parent beads to this program |
+| Q-0005.1 | Can `@plane/editor`, `@plane/services` etc. be consumed from the new backend packages without leaking Node-only deps? | open |
+| Q-0005.2 | Round 14 chose a new repo consuming `@plane/*`. Where does the forked, diverging frontend (web/space apps) live — this repo, or moved into the new repo? How are `@plane/*` packages published/consumed (npm registry, git dependency, workspace link)? **[I]** | **answered** (round 15): frontend moves into the new repo; this fork frozen as oracle and upstream reference |
+| Q-0011.1 | How are the three apps (`/`, `/god-mode`, `/spaces`) built/prefixed under one Workers asset namespace, incl. SPA fallback? | **answered** (round 26, spike 0004): one SPA per Worker at `/`; `run_worker_first` lists both forms of each Worker-handled path; `space` has its own hostname and Worker. But see Q-0011.2: `space` is server-rendered |
+| Q-0012.1 | Do the editor's HTML⇄JSON⇄binary conversions run in workerd, or need DOM/Node shims? | **answered** (round 27, spike 0006): no DOM shim is needed in workerd; Option C needs `nodejs_compat` or a build-time define; Option A (Rust) matches the JS oracle byte for byte (`research/0008`) |
+| Q-0021.1 | Which `api/instances` endpoints does `apps/admin` call; keep, stub or remove each? | **answered** (round 23): inventory classification accepted |
+| Q-0030.2 | Do internal RPC routes and `/api/v1` share one app and auth stack, or are they separate Workers? | **answered** (round 26, desk): one `api` Worker with one auth stack, route groups inside one router (ADR-0090) |
+| Q-0033.1 | Are Workers rate-limiting binding semantics (per-location, approximate) acceptable for `API_KEY_RATE_LIMIT` parity? | **answered** (round 15): approximate per-location limits acceptable |
+| Q-0040.5 | Which external Postgres provider/region for Hyperdrive; enable Smart Placement? | **answered** (round 27): CloudNativePG in woven-o11y behind a new Cloudflare Tunnel and a Workers VPC service (ADR-0094); the region is the cluster's (`us-east-1` is the infra repo's default for the Stage 1 EKS cluster; verify live); Smart Placement still to be measured in spike 0002; round 27: live and reachable from a Worker through Hyperdrive (smoke test passed); latency and pooling validation remain for spike 0002 |
+| Q-0041.1 | Which tables are instance-level "directory" tables (User, Profile, Account, Instance*)? | open |
+| Q-0041.2 | Per-tenant erasure/export (GDPR) and per-tenant RPO? | open |
+| Q-0042.1 | Freeze schema baseline at the current Plane version, or re-baseline per upstream release? | **answered** (round 20): freeze at the pinned Plane version |
+| Q-0042.2 | Import soft-deleted rows or drop them? | **answered** (round 20): nothing imported (start fresh) |
+| Q-0043.1 | When a work item moves projects: new sequence key or keep an alias? | **answered** (round 16): new sequence key, old key kept as alias |
+| Q-0043.2 | Keep the daily hard-delete cadence; which tables does it cover? | **answered** (round 25): daily hard-delete kept, 30-day default as deviation D-001; F-D10 moves to P0 |
+| Q-0044.1 | Bundle-size and cold-start budgets for the API Worker? | **partly answered** (round 26): 1.58 MiB bundle and 17.7 ms startup locally against limits of 64 MiB and 1 s; the Cloudflare cold start is a Stage 2 measurement (Q-0006.2) |
+| Q-0045.1 | Is serializable isolation needed beyond sequence allocation (cycle transfer, bulk `sort_order` reorder)? | open |
+| Q-0046.1 | Outbox relay: immediate publish + Cron sweeper, or sweeper only? | **answered** (round 16): immediate publish after commit + Cron sweeper |
+| Q-0046.2 | Event retention and replay policy? | **answered** (round 16): 90-day retention, no replay API at P0 |
+| Q-0047.1 | Max asset size target; does `FILE_SIZE_LIMIT` stay per-instance? | **answered** (round 16): 5 MB default, per-instance configurable |
+| Q-0047.2 | How do public `spaces` boards serve assets? | **answered** (round 16): Worker proxy, published data only |
+| Q-0051.1 | Is a Viewer role required, and how does it differ from Guest? | **answered** (round 8): no Viewer at P0 — fixed roles (Admin/Member/Guest, workspace and project level); custom roles/ReBAC/guests-depth decided in the tiering pass (Q-F1/Q-F2). Seam still P0. |
+| Q-0051.2 | Authorization decision caching and invalidation? | **answered** (round 24): no cache at P0; DB read per request |
+| Q-0052.1 | Session lifetime and "sign out everywhere"? | **answered** (round 15): 30 days; sign out everywhere supported |
+| Q-0052.2 | Do API keys need scopes in v1? | **answered** (round 15): no key scopes in v1 |
+| Q-0053.1 | Does this Zitadel deployment support outbound SCIM, or only Actions/management API? | open |
+| Q-0060.1 | How is the editor's auth token delivered to the DO WebSocket upgrade given Access in front? | **answered** (round 19): short-lived signed token minted by the API |
+| Q-0061.3 | Page-version cadence? | **answered** (round 18): version every 10 minutes of edits |
+| Q-0061.4 | Is bounded staleness acceptable for `description_html/json`? | **answered** (round 18): up to 5 s staleness OK; round 27 (spike 0006): not needed for CPU reasons, strong consistency at store time is affordable; the owner answer stands |
+| Q-0070.1 | Common-subset message-size ceiling across Queue adapters (CF limit unconfirmed)? | **answered** (round 25): 128 KB message ceiling (Cloudflare Queues, verified); 24 h delay ceiling; not exercised by spike 0001 (round 26) |
+| Q-0070.2 | Are per-item ordering guarantees needed? | **answered** (round 20): ordering per work item only |
+| Q-0071.1 | Which self-hosted workflow engine (leading hypothesis: Postgres-backed runner)? | **answered** (round 17): Postgres-backed runner in the Node server; no Temporal |
+| Q-0072.1 | Was the double `delete_old_s3_link` schedule (01:30 and 03:45) intentional? | **answered** (round 20): single schedule |
+| Q-0072.2 | Keep, drop or opt-in the `instance_traces` telemetry job (every 6 h)? | **answered** (round 20): drop the job |
+| Q-0073.5 | Complete the bgtasks inventory (ADR-0073's table missed decorator-with-args tasks, e.g. the webhook sender). | open |
+| Q-0073.6 | Read-your-writes for the acting user's activity feed? | **answered** (round 16): activity feed reads the DB so the actor sees their own writes |
+| Q-0073.7 | Move API request logging (`APIActivityLog`) to observability? | **answered** (round 20): move to observability |
+| Q-0080.1 | Public-read assets: R2 public bucket vs Worker proxy? | **answered** (round 16): Worker proxy, not a public R2 bucket |
+| Q-0080.2 | R2 key layout and tenant prefixing? | open |
+| Q-0081.1 | Virus scanning of uploads? | **answered** (round 20): no virus scanning |
+| Q-0081.2 | Export formats and size ceilings? | **answered** (round 17): CSV/JSON; size ceilings at P1 |
+| Q-0081.3 | Export link TTL? | **answered** (round 17): 24 h link TTL |
+| Q-0082.1 | Permission-revocation propagation speed given KV eventual consistency? | **answered** (rounds 24-25): sessions are DB-authoritative; revocation immediate over HTTP; collab bounded by the 5-minute token |
+| Q-0082.2 | Valkey vs Redis for the self-hosted adapter? | **answered** (round 20): Valkey |
+| Q-0083.1 | Is full-text search available for the chosen DB (D1 FTS unconfirmed)? | open |
+| Q-0083.2 | Index freshness SLO? | **answered** (round 18): within 1 minute |
+| Q-0083.3 | Is semantic search a feature? | **answered** (round 18): no semantic search |
+| Q-0084.1 | Data-governance policy for sending content to model providers? | **answered** (round 19): default-off, per-workspace opt-in before content reaches a provider |
+| Q-0084.2 | Is "Plane as an MCP server" distinct from the AI assistant? (CF `McpAgent` is deprecated; stateless `createMcpHandler` preferred.) | **answered** (round 19): MCP (P1) is a separate stateless API surface; assistant is P2 |
+| Q-0085.1 | Which integration providers are P0/P1? | **answered** (round 15): none at P0; GitHub/Beads sync P1 |
+| Q-0085.2 | Importer bulk path and `sequence_id` allocation? | open |
+| Q-0085.3 | Bidirectional-sync conflict policy and echo suppression? | **answered** (round 23): last-write-wins with echo suppression |
+| Q-0085.4 | Per-tenant integration credential storage? | **answered** (round 23): encrypted per workspace |
+| Q-0090.1 | Is any Worker-served host needed on a private `.woven` name (triggers the two-leg hostname rule)? | **answered** (round 5): both — public hostnames behind Access for the product; private `.woven` names for admin/internal. The woven two-leg rule applies to the `.woven` hosts. |
+| Q-0090.3 | Which hosts are `.woven` (admin/`god-mode`? internal API?) and how is a Worker reached over the tunnel path (tunnel origin → Worker custom domain vs Worker VPC)? On woven-o11y, `.woven` names are created by annotating a Service, which does not apply to Workers — what is the Workers-side mechanism? | **partly answered** (round 13): tunnel origin to a Worker custom domain keeps `.woven` names on the CF set; mechanism (tunnel vs Worker VPC, Access interaction) to be proven in a topology spike; desk recipe written (round 26, spike 0004): needs four owner decisions, see ADR-0090 |
+| Q-G4.1 | Remaining non-functional targets: latency, availability, RPO/RTO, concurrent editors per page. | **answered** (rounds 8, 13): 99.5% availability, p95 API < 500 ms, **RPO 24 h, RTO 8 h**, **up to 50 concurrent editors per page** (stress-test DO limits at P1). Business-grade targets backlogged (`plane-9y3`). |
+| Q-G4.2 | Business-grade targets (and the need to define them) are **backlogged follow-on work** — bead `plane-9y3`. Not a v1 blocker. | backlogged |
+| Q-0090.2 | Custom Domains or Routes for each host? | **answered** (round 26, desk): Custom Domains for both product hostnames |
+| Q-0091.1 | Does the self-hosted twin need private `.woven` hostname handling? | open |
+| Q-0092.1 | Which source feeds CI secrets: 1Password or GitHub environment secrets? | **answered** (round 15): 1Password locally, GitHub environment secrets for CI |
+| Q-0092.2 | Which environments exist; do PR previews get isolated DBs? | **answered** (round 16): dev (PR previews, shared DB, per-PR schema/prefix), staging, prod |
+| Q-0093.1 | Which repo hosts the Cloudflare OpenTofu root, and what is its state backend? | **answered** (round 15): the infra repo hosts the Cloudflare Tofu root |
+| Q-0093.2 | Wrangler auto-provisioning or Terraform-created IDs? | open |
+| Q-0100.1 | Which matrix subset is required on PRs, full matrix nightly? | **answered** (round 16): as Q-0100 |
+| Q-0100.2 | Keep Django API CI only as the oracle runner? | **answered** (round 20): Django CI kept only as the oracle runner |
+| Q-0101.1 | How is a Worker bundle's provenance recorded? | **answered** (round 16): record via attestation |
+| Q-0101.2 | Does CI need a GitHub OIDC deploy identity for Cloudflare? | **answered** (round 16): yes, GitHub OIDC deploy identity |
+| Q-0110.1 | Health-gate signal and thresholds for promote/rollback (note: DO lifecycle changes can't be gradual and rollbacks can't cross them)? | **answered** (round 24): absolute-count gates: ≤3 5xx, probe p95 < 500 ms, no CPU-limit exceptions, auto-rollback |
+| Q-0110.2 | Who runs expand migrations? | **answered** (round 16): CI runs expand migrations before deploy |
+| Q-0120.1 | Which Plane version is the reference, and who hosts a pinned instance? | **answered** (round 8): the fork updated to latest upstream then pinned (bead `plane-b6a`); pinned instance + OpenAPI schema together are the oracle. Hosting (local compose in dev/CI vs a shared instance) still to choose — Q-0120.3. |
+| Q-0120.3 | Where does the pinned oracle instance run for CI response-diff tests (compose in CI vs a standing shared instance), and how are its seed data and version recorded? | **answered** (round 20): docker compose in CI, nightly |
+| Q-0120.2 | Anonymised `projects.woven` snapshot or synthetic seed data? | **answered** (round 20): synthetic seed data |
+| Q-0121.1 | Capability-flag vocabulary allowed per port? | open |
+| Q-0121.2 | What can only be proven in deployed staging, not in workerd? | open |
+| Q-0122.1 | Is the drf-spectacular schema endpoint enabled on the reference instance and does it cover all v1 operations? | **answered** (round 26, spike 0008): enabled by `ENABLE_DRF_SPECTACULAR=1`; 130 of 135 routed v1 operations are in the schema; the fork adds none; estimates are not routed |
+| Q-0122.2 | Normalisation rules and exception-register format? | **answered** (round 26, spike 0008): `oracle/NORMALISATION.md` and `oracle/exceptions.yaml` (12 entries) |
+| Q-0123.1 | Coverage thresholds; mutation testing for the permission seam? | open |
+| Q-0123.2 | Does e2e run on both adapter sets? | open |
+| Q-0130.1 | OTLP backend, retention, sampling? | **answered** (round 18): OTLP to the existing woven stack; sampling 10% traces / 100% errors, logs 30 days (proposed defaults) |
+| Q-0130.2 | Keep PostHog product telemetry? | **answered** (round 18): drop PostHog |
+| Q-0130.3 | Which SLIs/SLOs feed Gatus (`status.woven`)? | **answered** (round 18): Gatus probes health and API SLIs |
+| Q-0140.1 | Has the Django backend source been read by implementers? Affects the clean-room claim. | **moot** (round 14: no clean-room claim) |
+| Q-0140.2 | Can the product keep the "Plane" name and branding? | **answered** (round 15): rename now; name TBD (Q-0140.3) |
+| Q-0140.3 | What is the new product name (and licence-notice/attribution wording to retain Plane credit under AGPL)? Needed before the first deploy. **[I]** | **answered** (round 18): MVP = Contrail, v1 = Thrust |
+| Q-0141.1 | Compliance drivers (SOC2/ISO)? | **answered** (round 17): no formal compliance driver |
+| Q-0141.2 | Is public-space exposure Access-gated, unauthenticated, or both? | **answered** (round 8): unauthenticated public with explicit per-project publish; data-minimisation and rate limits (Q-0141.3) become security requirements. |
+| Q-0141.3 | Rate limits for unauthenticated endpoints? | **answered** (round 17): 60 req/min/IP on public spaces, cached |
+
+## Added in round 21 (Rust backend / Dioxus direction)
+
+| ID | Question | Status |
+|---|---|---|
+| Q-R1 | The React frontend is now transitional. Should the backend (a) serve Plane-shaped internal endpoints so the React app works with minimal change, (b) build a new internal API plus a generated TS client (current ADR-0010/0030 direction), or (c) both? This changes the effort of phase 1 and of the Dioxus API client. **[I]** | **answered** (round 22): Plane-shaped compat adapter for React + one new OpenAPI core API (ADR-0034) |
+| Q-R2 | What counts as "minimal changes" to the React frontend? Proposed allowed list: service layer/base URL, auth client, collab provider, branding (Contrail/Thrust), nothing else. **[I]** | **answered** (round 22): base URL/service layer, auth client, collab provider, branding only |
+| Q-R3 | What defines "backend and React frontend are stable" (the trigger for the Dioxus rewrite): feature tiers shipped, SLO met for N weeks, API v1 parity signed off? **[I]** | **answered** (round 22): P0+P1 shipped, SLO held 4 weeks, oracle diff clean |
+| Q-R4 | Policy for non-Rust exceptions: are bounded JS/TS components allowed (shim Worker for Workflows/Email, headless editor conversion, TS BetterAuth sidecar)? **[I]** | **answered** (round 22): bounded documented shims behind a port with an exit plan |
+| Q-R5 | With Rust: API style for the public/internal surface — REST + OpenAPI generated from code (axum + utoipa-style) vs spec-first? (supersedes the Hono/tRPC options in Q-0030 and informs Q-0032). **[ADR]** | **answered** (round 24): REST + OpenAPI, code-first (see Q-0032) |
+| Q-R6 | Repo layout in `thrust`: single repo with a Cargo workspace plus pnpm workspace for adopted React apps? When does the plan package move into the repo (Q-0005.3)? **[I]** | **answered** (round 23): single repo; `crates/` Cargo workspace, `web/` pnpm workspace; plan moves to `docs/plan/` |
+| Q-0005.3 | The repo is `aRustyDev/thrust` (v1 name). Do crate/package names use `thrust` or `contrail`, and when does this planning package move into it? **[I]** | **answered** (round 23): crates prefixed `thrust-*`; plan moves to `docs/plan/` when the repo is populated |
+| Q-0013.1 | Definition of "stable" that triggers the Dioxus rewrite (see Q-R3). | **answered** (round 22): see Q-R3 |
+| Q-0013.2 | Rendering approach per target (WASM DOM, WGPU renderer, webview) and the rich-text editor strategy in Dioxus (JS interop vs native). | open |
+| Q-0013.3 | Which targets are required for v1 (Thrust): web only, plus desktop, plus mobile? | **answered** (round 22): v1 = web only; desktop/mobile after v1 |
+| Q-0013.4 | Dioxus shares generated API types with the backend crates, or uses an OpenAPI-generated client? | open |
+
+## Added in round 25 (review)
+
+| ID | Question | Status |
+|---|---|---|
+| Q-G5.1 | Does the <$100/month envelope include the external Postgres/Hyperdrive provider and per-PR dev schemas? And the measurement point for p95 (edge probes) and the availability window (rolling 30 days). **[I]** | **partly answered** (round 27): the Postgres provider is **not** inside the under-$100/month envelope, which covers the Cloudflare side only; per-PR dev schemas sit on the same Postgres, so they are outside it too [inferred]. The p95 measurement point and the availability window moved to Q-G5.2 |
+| Q-F7 | How does the second user join at P0 when invites are P1? Admin creates the user with a temporary password, or a workspace signup allowlist? **[I]** | open |
+| Q-0008 | Feature-flag storage/evaluation model (leading: DB table behind a `Flags` port) and who may edit flags. **[ADR]** | open |
+| Q-0048 | Audit-logging write path (sync rows for security actions + outbox for the rest?), hash chaining, what is audited. **[ADR]** | open |
+| Q-0048.1 | Audit retention and export format. | open |
+| Q-0009.1 | Cap for the P0 compat-plane slice (spike 0009): at what size do we reopen ADR-0034 and adapt the React service layer instead? **[I]** | **answered** (round 27): tripwires, not a budget. Build the 48-route minimum slice first (estimate 39.3 pd) and re-estimate from the actuals; reopen ADR-0034 if the slice actually costs more than 66 pd or the re-estimated P0 total exceeds 364 pd (the model's high bounds); apply the auth-client JSON change (about 16 pd saved) before reopening. Data: slice 39.3 pd (26.7–66.7), all P0 rows React uses 207.6 pd (139.1–364.2) |
+| Q-R7 | Upstream security triage: who triages upstream Plane CVEs for the adopted React/`@plane/*` packages and the pinned oracle, and how often? **[I]** | open; evidence (round 26): the pin merged 220 upstream commits and 123 of 545 compat handlers changed, mostly security hardening, so upstream security changes are frequent and material |
+
+## Added in round 26 (spike results)
+
+| ID | Question | Status |
+|---|---|---|
+| Q-0006.2 | Stage 2 of spike 0001 (the real platform): which Cloudflare account (Woven, or the separate Sandbox account), a TLS-reachable Postgres 14 or later and its region (ties to Q-G5.1 and Q-0040.5), a token with Workers, KV, R2, Queues, Hyperdrive, Workflows and Secrets Store edit, and an admin token. The Woven account's `workers.dev` subdomain is `woven-4d9`. **[I]** | **answered** (round 28): Stage 2 ran on 2026-10-18 in the Woven account against `thrust-pg-dev` (Hyperdrive config `thrust-spike-pg`, role `pr_1001`) and was torn down; results in `research/0004` section 10. Earlier rounds: Postgres decided (ADR-0094) and live, Hyperdrive configs created. **Token gap:** the `thrust-spikes` API token returned 401 for KV and 403 for R2 and the Secrets Store even after the owner added those scopes, so those three products were driven with the owner's wrangler OAuth login; the token still needs those scopes checked before another run |
+| Q-0006.3 | Worker panic mode: keep `panic=abort` plus the instance reset (measured locally: 4–6 % of other concurrent requests fail on a panic), or build `--panic-unwind` (needs nightly)? Decide at P0 planning, together with the clippy deny list. **[ADR]** | open; round 28: on the real platform 1 of 328 in-flight requests failed around one panic (locally 4 to 6 %); one deployed run, so small weight |
+| Q-0011.2 | `apps/space` is server-rendered (`ssr: true`), unlike `web` and `admin`. Host the public `space` Worker as a React Router SSR Worker (a bounded JS exception under the ADR-0006 policy), build `space` as an SPA (loader edits outside the Q-R2 list), or something else? Blocks ADR-0011 and ADR-0022. **[I]** | **superseded** (round 27) by Q-0011.3: the SSR Worker was decided first, then the feasibility build showed SSR produces only link-preview metadata; the build (`research/0009`, about 8.5 pd, config-only) is kept as the fallback |
+| Q-0033.2 | Plane's v1 behaviour quirks recorded by the oracle: reproduce or fix? An invalid or expired key returns 403 and a missing key 401; two error-body shapes; 403 instead of 404 on an unknown project; unhandled 500s (`per_page` 0 or −1, asset upload). The register recommends `reproduce` for ten entries and `fix` for the 500s. **[ADR]** | **answered** (round 27): reproduce all of Plane's 500s (no `fix` deviation); document every Plane quirk for planning and context (`research/0007-plane-quirks-catalog.md`) |
+| Q-0060.2 | A plain-Worker WebSocket closed before 80 s on the real edge although a message was echoed every 20 s (spike 0004 run 1, no Access). Cause? Retest with a faster ping and with a hibernating Durable Object. **[ADR]** | open; run 2 (round 27): two 120 s soaks on the bypass path passed (6 messages each); the run-1 drop at 80 s is unexplained and not reproduced |
+| Q-0122.3 | Which exception-register entries become numbered deviations (`fix`), and what to do about the oracle's blind spot (dropping a non-required `id` is not detected)? **[ADR]** | **answered** (round 27): no register entry becomes a deviation (all `reproduce`); the `id` blind spot stays documented; the catalogue (research/0007) found 500 sources beyond EX-001/002; all are covered by "reproduce all 500s" |
+| Q-0122.4 | Publish the oracle pin? The branch `feat/plane-b6a-upstream-sync-oracle` and the tag `oracle/v1-pin-20261018` are local only. Push them (and open a PR to the fork), and how to handle the fork's local `v1.4.0`–`v1.4.2` tags, which collide with different upstream tags of the same names? **[I]** | **answered** (round 27): do not push tags to the oracle; the pin stays a local annotated tag plus `oracle/PIN`. The branch was not mentioned and stays local too until the owner says otherwise |
+
+## Added in round 27 (owner decisions and spike 0004 run 2)
+
+| ID | Question | Status |
+|---|---|---|
+| Q-G5.2 | Confirm the SLO measurement proposal (SPEC section 6.4): p95 measured at the Worker edge by synthetic probes plus Workers metrics; availability over a rolling 30 days. **[I]** | open |
+| Q-0094.1 | CNPG layout (ADR-0094): one cluster or one per environment; HA (2 or more instances) for production; how dev, staging and per-PR schemas are hosted given that woven-o11y is a single-environment (dev) cluster; storage size; backup retention to R2 against RPO 24 h and RTO 8 h. **[I]** | **answered** (round 27): two clusters, `thrust-pg` for production with 2 instances and `thrust-pg-dev` for dev, staging and per-PR schemas with 1 instance; storage sizes and backup retention are set in the infra work (bead `plane-byd.4`); capacity (round 27): the `stateful` pool is at 80 to 95 % CPU requests with 1,830m free; owner chose to cut `thrust-pg` requests to 250m and prefer a zone spread; HA is node-level (required anti-affinity), AZ-level only best-effort; applied (round 27): `thrust-pg` 2 of 2 healthy with the replica in a different AZ (zone spread worked), `thrust-pg-dev` 1 of 1; both CNPG clusters live in `thrust`; restore drill done (round 27): recovered cluster Ready after 60 s on a near-empty database, WAL replay verified, negative control failed hard; the repeat with real data is bead `plane-byd.10`; the per-PR schemas and CI wiring are still unowned |
+| Q-0094.2 | TLS between Hyperdrive and CNPG: the generic chart's `pg_hba` rejects non-TLS TCP, so which verification mode (`verify-ca` or `verify-full`) and whose CA (the cluster's internal CA uploaded to Hyperdrive), and does the VPC service's `cert_verification_mode` matter for a TCP service? **[ADR]** | **answered** (round 27, tested): `verify_ca` failed (Hyperdrive create: "Failed to connect to the provided database: Internal error") and `disabled` worked, so the VPC services run with certificate verification **disabled**: encrypted (origin backend TLSv1.3) but the server is not authenticated; `pg_hba` stays TLS-only; hardening is Q-0094.9 |
+| Q-0094.3 | The tunnel and the VPC service (ADR-0094): confirm that "new VPC" means a Workers VPC service backed by a new dedicated tunnel; where `cloudflared` runs (a new Deployment, like `kube/cloudflared.tf`); who holds the Connectivity Directory Admin role; OpenTofu or wrangler; and the fallback if Workers VPC (beta) changes (Tunnel + Access + service token). **[I]** | **answered** (round 27): the tunnel `thrust-pg` and two Workers VPC services were created by OpenTofu with an API token (the token identity could create them); `cloudflared` runs in the `thrust` namespace (2 replicas, PodDisruptionBudget); the fallback (tunnel plus Access application and service token) remains documented if Workers VPC (beta) changes |
+| Q-0094.4 | Availability coupling: the product now depends on woven-o11y (an observability cluster), its `stateful` node pool and the tunnel pods. Acceptable for the 99.5 % SLO? Which maintenance windows apply (EKS upgrades), and should `status.woven` probe the Postgres path? **[I]** | open |
+| Q-0050.7 | Access bypass is case-insensitive (spike 0004 run 2): `/Api/x` skips Access and, with the SPA fallback, returns the gated app shell. Reject non-canonical-case paths in the Worker before any static fallback, run the Worker first (`run_worker_first: true`, one billed invocation per asset request), or give the API its own hostname so no path-scoped bypass is needed? Matters from the CF Access phase (P1), not P0. **[ADR]** | open |
+
+## Added in round 27 (quirks catalogue)
+
+| ID | Question | Status |
+|---|---|---|
+| Q-0033.3 | Two security-relevant Plane defects are recorded for parity in the quirks catalogue: PQ-412 (any valid API key reads the attachment metadata of any project) and PQ-413 (`POST cycle-issues/` re-points other projects' or tenants' issues). Reproducing them contradicts SPEC R-S1 (tenant predicate) and ADR-0141. Fix as deviations (D-014, D-015) with an oracle exception, or reproduce? The round-27 decision covers 500s only. Recommendation: fix. **[ADR]** | **answered** (round 27): fix both as deviations — D-014 (PQ-412, attachment metadata scoped to the project) and D-015 (PQ-413, `cycle-issues/` scoped to the workspace and project) — with oracle exceptions; "reproduce all 500s" is unaffected |
+
+## Added in round 27 (space SSR feasibility)
+
+| ID | Question | Status |
+|---|---|---|
+| Q-0011.3 | The `space` feasibility build shows that SSR only produces the per-board `<head>` (title, description, og/twitter); the board body is client-rendered. Keep the SSR Worker (proven, config-only, about 8.5 pd, a bounded JavaScript exception), or build `space` as a plain SPA and let the Rust API Worker inject the per-board metadata into the static `index.html` (no JavaScript exception, a small loader edit outside the Q-R2 list, not built)? **[I]** | **answered** (round 27): build `space` as a plain SPA and let the Rust side inject the per-board `<head>` metadata into the static `index.html`; no JavaScript exception |
+| Q-0011.4 | The public `space` hostname calls the API from the browser: CORS with credentials from the `space` origin, or a same-origin allow-list proxy? Also affects which API URLs appear in published-board links. **[ADR]** | open |
+
+## Added in round 27 (spike 0006, editor conversions)
+
+| ID | Question | Status |
+|---|---|---|
+| Q-0012.2 | P0 sanitiser stance (Option B stores client html and sanitises in Rust). (1) Plane's allow-list exactly (9 of 125 legacy-browser payloads survive, as in nh3) or the **hardened** variant (125 of 125, zero effect on 195 editor documents; recommended, a deviation from Plane); (2) allow `issue-embed-component` and `rel`, or keep stripping them as Plane does (66 of 195 editor documents change); (3) accept that ammonia 4.1 or later is not byte-identical to nh3's ammonia 4.0.0 (a security improvement); (4) `description_stripped` with the ported `strip_tags` (391 of 391 identical to Django). **[ADR]** | open |
+| Q-0012.3 | Accept ADR-0012 as recommended by spike 0006: P0 = Option B, P1 conversion = Option A (`thrust-editor-doc`) behind an `EditorDocs` port, Option C only as a documented fallback? About 16 person-days to finish A (10 to 25). **[ADR]** | **answered** (round 27): owner accepted ADR-0012 as recommended: P0 = Option B, P1 conversion = Option A (`thrust-editor-doc`) behind an `EditorDocs` port, Option C only as a documented fallback |
+| Q-0012.4 | Is a browser-flavour HTML renderer required (about 3 person-days)? Only needed if P0 must compare server HTML with the client's `getHTML()` byte for byte (they differ in 37 % of documents). And confirm that the eight behaviours of today's stack (section 5 of `research/0008`) are reproduced, per the round-27 default. **[ADR]** | open |
+
+## Added in round 27 (ADR-0012 acceptance)
+
+| ID | Question | Status |
+|---|---|---|
+| Q-0012.5 | i18n locale ownership and translation workflow: `@plane/i18n` is reused as shipped with the adopted React apps (F-D11); who owns the locale files and how are translations updated across Plane pin bumps? Not blocking. **[I]** | open |
+
+## Added in round 27 (infra authoring, plane-byd.4)
+
+| ID | Question | Status |
+|---|---|---|
+| Q-0094.5 | One tunnel and connector for both CNPG clusters, or one each? Today a dev load test shares production's two connector pods and their limits. A second tunnel needs a token container, a connector and a root change. (Not yet asked of the owner; default: one.) **[I]** | open |
+| Q-0094.6 | Credentials for the remaining apply: who holds the **Connectivity Directory Admin** role, which API token carries **Hyperdrive Write** (the wrangler OAuth login has neither the Hyperdrive scope nor a guarantee for the role on an API token), and where do the per-operator `op://` items live (the infra repo's `.env.example` ships placeholders only)? **[I]** | open; round 27: the `thrust-spikes` token first lacked the Workers VPC directory and Hyperdrive permissions (403); the owner then added the tunnel and VPC permissions: tunnels now list 6 (`o11y`, `proton`, the status page and others, so the estate tunnels DO live in the Woven account; the first probe's empty list was a false negative from a missing read permission, not "none") and the VPC directory reads (0 services); **Hyperdrive reads are still 403**, so the Hyperdrive Write token for step 7 is still needed; round 27: the tunnel and VPC permissions worked (the tofu apply succeeded); still needed for step 7: an API token with Hyperdrive Write (Hyperdrive read is still 403) |
+| Q-0094.7 | Smaller infra choices from `research/0010` section 9, none blocking: an un-meshed `thrust` namespace; the `env: prod` label on a dev-tagged cluster; who owns Thrust (`team: UNOWNED`); a NetworkPolicy; ESO-generated owner passwords (ADR 0019) instead of hand-injected ones; a least-privilege `thrust-deploy` role; who owns the per-PR schema wiring and the sweep of stale schemas; a `status.woven` probe for the Postgres path (Q-0094.4). **[I]** | open |
+
+## Added in round 27 (infra branch review)
+
+| ID | Question | Status |
+|---|---|---|
+| Q-0094.8 | Shared-chart side effect: bumping `modules/kube/cnpg-cluster/chart` from 0.2.0 to 0.3.0 makes the next plan of each of the nine other consuming roots show its `helm_release` updated in place (manifests identical). Accept this churn, or avoid the shared-chart change (for example by dropping the best-effort zone spread for `thrust-pg`)? Also: the green chart copy in `ApiraTech/helm-charts` needs the same `zoneSpread` value. **[I]** | open |
+
+## Added in round 27 (Hyperdrive and smoke test)
+
+| ID | Question | Status |
+|---|---|---|
+| Q-0094.9 | Authenticated TLS between Workers VPC and Postgres. The VPC services run with verification disabled because Workers VPC cannot trust CNPG's private CA. Options: CNPG serves a server certificate that chains to Cloudflare Origin CA or a public CA (needs the shared chart to expose `spec.certificates`, a change touching nine other releases), Workers VPC gains custom-CA upload (watch the changelog), or fall back to ADR-0094 Option 2 (tunnel plus an Access application and service token, where Hyperdrive accepts a CA). Which, and when? **[ADR]** | open, owner-**accepted as temporary** (round 27, PR #810 security review): the VPC services run with certificate verification disabled until authenticated TLS lands; **deadline: closed before Thrust holds real data**; tracked as bead `plane-byd.9` here and `infra-qnyi` in the infra repo. Options: a server certificate chaining to Cloudflare Origin CA or a public CA (then `verify_full`; needs the shared chart to expose `spec.certificates`, which touches nine releases), Workers VPC custom-CA upload when available, or ADR-0094 Option 2; a NetworkPolicy is a candidate interim control |
+
+## Questions raised by spike 0001 Stage 2, round 28 (2026-10-18)
+
+| ID | Question | Status |
+|---|---|---|
+| Q-0006.4 | Hyperdrive and the Rust driver: record in ADR-0006 and ADR-0002 that every SQL statement must use the single-pipeline typed flow (`query_typed` / `execute_typed`, no named prepared statements), and does the owner want a Cloudflare support case opened with the `pgshapes` probe as the repro? The root cause (Hyperdrive or an interaction with `tokio-postgres`) is unknown; a JS-driver differential with a named statement would tell. **[ADR]** | open |
+| Q-0006.5 | Queue failure policy (ADR-0070): classify handler errors as permanent or transient so a permanent one (`Invalid`) goes to the DLQ at once instead of three useless retries, and send an undecodable message to the DLQ instead of acking and dropping it. Stage 2 saw a permanent error retried 3 times, then dead-lettered, and could not drive the undecodable branch. **[ADR]** | open |
+| Q-0006.6 | What remains of the real-platform evidence, and where it runs: Hyperdrive caching on versus off (spike 0002's scope), a 24-hour traffic run with a cost reconciliation, a bench from a distant region and from the origin's region, a real Email send (needs an owned sender domain and a verified destination), and `--panic-unwind`. Fold into spike 0002 or run a short Stage 2b? **[I]** | open |

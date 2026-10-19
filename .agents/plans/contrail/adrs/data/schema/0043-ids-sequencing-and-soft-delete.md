@@ -1,0 +1,107 @@
+---
+status: proposed
+date: 2026-10-17
+decision-makers: asmith
+consulted: []
+informed: []
+---
+
+# ADR-0043: IDs, per-project sequencing, and soft delete
+
+## Context and Problem Statement
+
+Three persistence conventions in Plane leak into API behaviour and must be decided deliberately **[S]**:
+
+1. **Primary keys** are UUID v4 (`BaseModel`), exposed in every API payload.
+2. **`sequence_id`** is a per-project running integer (the "PLATF-7" human key). `Issue.save()` computes it under a Postgres advisory lock; `IssueSequence` records it; bulk operations bypass `save()`.
+3. **Soft delete** (`deleted_at`) is universal; uniqueness is enforced with **partial unique constraints** (`WHERE deleted_at IS NULL`); two-tier managers hide triage/archived/draft rows (`Issue.issue_objects` vs `Issue.objects`).
+
+The new backend must keep API-visible semantics (ADR-0031) while not depending on Postgres-only advisory locks if the DB choice (ADR-0040) is open.
+
+## Decision Drivers
+
+* ID format compatibility with `/api/v1` clients (UUIDs retained).
+* Gap-free-ish, collision-free `sequence_id` under concurrency, portable across DB engines.
+* Bulk/import paths must not bypass invariants (the `save()` bypass gotcha).
+* Unique-name semantics must survive soft delete and re-creation.
+* "Hidden-by-default" visibility must be hard to forget (security: drafts/triage leaking).
+
+## Considered Options
+
+### A. Primary keys
+* A1: Keep UUID v4 for all rows
+* A2: UUID v7 (time-ordered) for new rows
+* A3: ULID/integer surrogate internally + UUID external id
+
+### B. `sequence_id` allocation
+* B1: Counter row per project (`project_sequences(project_id, next)`), allocated with one atomic `UPDATE … RETURNING` inside the creating transaction
+* B2: `MAX(sequence_id)+1` under an engine lock (Plane's approach; Postgres advisory lock)
+* B3: Single-writer allocator (DO per project/workspace serializes allocation)
+
+### C. Soft delete
+* C1: Keep `deleted_at` + partial unique indexes; deletion handled in repositories with named scopes
+* C2: Hard delete + tombstone/archive table
+* C3: `deleted_at` + application-level uniqueness checks (no partial indexes)
+
+## Decision Outcome
+
+Decision pending — see Q-0043. Leading hypotheses (confidence in parentheses):
+
+* **A2** — UUID v7 for new rows (medium): same wire format, better index locality; no client-visible change.
+* **B1** — counter row with atomic `UPDATE … RETURNING` in the same transaction (medium-high): works on Postgres and SQLite/D1 (single statement); no advisory lock; the allocation joins the create's transaction/batch. **It must replicate Plane's `MAX(IssueSequence.sequence)+1` semantics (verified against `db/models/issue.py`):** Plane computes the next number from the `IssueSequence` table (FK `SET_NULL` on the issue), so **numbers are never reused after an issue is deleted or moved** — the counter row must be monotonic and never decrement. In the same locked block Plane also allocates **`sort_order`** (largest in the state + 10,000) and `description_stripped`; the allocator must cover `sort_order` too (R-F2). Gaps on rollback are acceptable if documented (Plane's own behaviour on failed save is similar [S, verify]).
+* **C1** — keep `deleted_at` + partial unique indexes, with repository **named scopes** replacing two-tier managers: `visible()` (default; excludes triage, archived, **project-archived**, draft and deleted — Plane's `IssueManager` hides four classes: triage state group, `archived_at`, project archived, `is_draft`), `withHidden()`, `withDeleted()` (medium-high). The default scope is applied inside the repository so call sites cannot forget it.
+
+### Consequences
+
+* Good: API data unchanged; one allocation mechanism for all engines; hidden-row leakage becomes a repository-layer invariant.
+* Bad: counter row is a hot row per project (contention on very busy projects — measured in ADR-0040 spike S1); UUIDv7 leaks creation time ordering (acceptable; already exposed via `created_at`).
+* Neutral: bulk-create paths must call the same allocator (provide `allocateSequenceRange(project, n)`); outbox emission must also be explicit on bulk paths (ADR-0046).
+
+### Confirmation
+
+Spike S1/S2 (ADR-0040); contract test "concurrent creates never duplicate a sequence_id"; contract test "re-create a soft-deleted unique name succeeds; two live duplicates fail"; static check that repositories expose only scoped finders.
+
+## Pros and Cons of the Options
+
+### A1 / A2 / A3
+* A1: simplest, zero change; random-key insertion fragmentation on large tables.
+* A2: locality and sortability; mixed-version IDs; needs v7 generator on all runtimes.
+* A3: double ID system; API complexity; no benefit given UUID compat requirement.
+
+### B1 / B2 / B3
+* B1: portable, simple; hot row; gaps on rollback.
+* B2: matches Plane exactly; requires engine-specific locking (not available on D1; DO needs none); slower under load.
+* B3: serialization for free; couples allocation to a DO and breaks portability unless emulated.
+
+### C1 / C2 / C3
+* C1: preserves Plane semantics and history/audit chains (`created_by`); index bloat from dead rows; hard delete jobs needed (Plane has daily `hard_delete` **[S]**).
+* C2: smaller hot tables; loses in-place restore; migration complexity; breaks audit linkage.
+* C3: engine-agnostic but racy without constraints.
+
+## Update — interview round 16 (2026-10-17)
+
+Moving a work item gives it a **new sequence key and keeps the old key as an alias** so links survive (Q-0043.1). Other items open.
+
+## Update — interview round 20 (2026-10-18)
+
+Keep the daily hard-delete cadence with per-table retention, **30 days default** (Q-0043.2).
+
+## Update — review fixes, round 25 (2026-10-18)
+
+Corrections from the review against `apps/api/plane/db/models/issue.py:179-235`: (1) `sequence_id` is `MAX(IssueSequence.sequence)+1`, not `MAX(Issue.sequence_id)+1`, so numbers are never reused — B1's counter row must behave identically; (2) the same locked block allocates `sort_order` (R-F2 and the spike must cover it); (3) the hidden-row set has **four** classes, not three. **Retention (round 20, deviation recorded):** the default hard-delete retention is **30 days**, a **deliberate deviation from Plane's 60** (`HARD_DELETE_AFTER_DAYS`, `settings/common.py:404`); and because nothing would otherwise purge soft-deleted rows, the **hard-delete cleanup (F-D10) is a P0 deliverable**. Plane's `hard_delete` covers an explicit list of ~18 models, not every table (`bgtasks/deletion_task.py:114-175`). Import-era wording removed (Q-G3: start fresh).
+
+## Update — spike results, round 26 (2026-10-18)
+
+Spike 0001 evidence, Postgres only (spike 0002 still runs the 10,000-create, 50-writer test): option **B1, a per-project counter row upserted in the same transaction, also allocating `sort_order`**, worked. 20 concurrent creates over HTTP and 24 concurrent allocations at the adapter level (real Postgres through testcontainers) gave unique, contiguous numbers; a rollback leaves no gap; soft-deleting an item frees its `external_id` (partial unique index) but never its sequence number. A duplicate-sequence mutant is killed by four tests. Concurrency cost: create p95 at 8 clients was 140 ms against 27 ms at one client on the local Cloudflare-set Worker, which I read as the hot counter row serialising creates in one project — not isolated, treat as a prediction for Stage 2. **B3 (a Durable Object as the allocator) was not tried.**
+
+## Open Questions
+
+* Q-0043 — approve A/B/C choices.
+* Q-0040.2 — portable sequence allocation (this ADR proposes B1).
+* Q-0040.3 — partial unique index availability.
+* Q-0043.1 — Moving a work item between projects: re-sequence (new key) or keep an alias? (Plane behavior to verify.)
+* Q-0043.2 — Retention: keep the daily `hard_delete` cadence, and which tables are covered?
+
+## More Information
+
+[[ADR-0040]], [[ADR-0042]], [[ADR-0045]], [[ADR-0046]]. `apps/api/plane/db/models/{issue,base}.py`, `db/mixins.py`; research `woven/plan:.claude/plans/plane-fork/research/backend-data-model.md` §§2,5.
