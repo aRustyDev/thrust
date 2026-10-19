@@ -7,7 +7,7 @@ The book is an mdBook. Build it from the repo root with `mdbook build docs` and 
 
 | Section | Pages |
 |---|---|
-| Architecture | `src/architecture/app.md` (crates, ports, composition roots), `src/architecture/infra.md` (Worker, server, Postgres) |
+| Architecture | `src/architecture/app.md` (crates, ports, composition roots), `src/architecture/infra.md` (Worker, server, Postgres), `src/architecture/cicd.md` (the CI pipeline and its one required check) |
 | Flows | `src/flows/app.md` (the HTTP surface, permissions, the write path, errors) |
 | Contributing | `src/contributing/` (crates, Cargo features, standards and their gates, patterns) |
 | Testing | `src/testing/` (strategy, the TDD loop, techniques, rules, status) |
@@ -18,7 +18,6 @@ These have no page because there is nothing in the repository to describe yet, o
 
 | Page | Why |
 |---|---|
-| CI/CD | There are no CI workflows. ADR-0100, ADR-0101 and ADR-0110 are decisions only |
 | Justfile recipe flow | There is no justfile; the entry points are `scripts/*.sh` |
 | User flows | No user-flow document exists. `.agents/plans/contrail/TRACEABILITY.md` leaves the P0 journey set as TBD, to be defined during spike 0009 |
 | Contributing: code of conduct | Choosing one is a project decision |

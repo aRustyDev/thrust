@@ -107,8 +107,9 @@ from the environment; core and the router never do.
 tokio-postgres, hyper, worker, wasm-bindgen, sqlx, ...) is in the dependency graph of `thrust-contracts`,
 `thrust-ports`, `thrust-core`, `thrust-api` or `thrust-adapters-memory`, and exits non-zero if one is. It also
 checks that the Worker's wasm32 graph holds none of the native-only crates and that the server's graph holds none
-of the Worker-only ones. `scripts/verify-all.sh` runs it along with the other checks; no CI workflow runs it
-today. How to run it and how to prove it can fail are on
+of the Worker-only ones. The `deps` job in CI runs it on every pull request that changes a Rust-relevant path
+([CI/CD](cicd.md)), and `scripts/verify-all.sh` runs it along with the other checks. How to run it and how to prove it
+can fail are on
 [Architecture gates](../testing/techniques/architecture-gates.md).
 
 ## Not built yet

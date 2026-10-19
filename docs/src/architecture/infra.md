@@ -2,8 +2,8 @@
 
 This page describes the infrastructure the repository declares: what each adapter set is made of, what it is
 configured with, and how to run it. Nothing is deployed from here. The project has no deploy pipeline, Dockerfile,
-compose file, Helm chart, OpenTofu or CI workflow of its own. Examples of a Dockerfile, a chart and workflows are
-kept under `.agents/` as skill material, and they are not this project's files.
+compose file, Helm chart or OpenTofu of its own. Its only workflows run tests ([CI/CD](cicd.md)). Examples of a
+Dockerfile, a chart and workflows are kept under `.agents/` as skill material, and they are not this project's files.
 
 The Worker configuration has run locally under `wrangler dev` and once against real Cloudflare resources (the
 2026-10-18 spike run, torn down afterwards). Nothing in the repository deploys the server. How the code is layered
