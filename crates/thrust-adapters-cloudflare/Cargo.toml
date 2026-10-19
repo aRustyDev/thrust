@@ -1,0 +1,19 @@
+[package]
+name = "thrust-adapters-cloudflare"
+description = "workers-rs adapters (KV, R2, Queues, Hyperdrive, DO, ...). wasm32 only; never compiled into the native server."
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+thrust-contracts = { workspace = true }
+thrust-ports = { workspace = true }
+thrust-adapters-postgres = { workspace = true }
+async-trait = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+worker = { version = "0.8", features = ["http", "queue"] }
+uuid = { workspace = true, features = ["v7", "js"] }
+tokio-postgres = { version = "0.7", default-features = false, features = ["js"] }
+wasm-bindgen-futures = "0.4"

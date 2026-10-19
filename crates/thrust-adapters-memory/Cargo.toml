@@ -1,0 +1,19 @@
+[package]
+name = "thrust-adapters-memory"
+description = "In-memory adapters for every port. Compiles for wasm32 and native; no runtime dependency."
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[features]
+# Control-run mutants: deliberately broken behaviour that the contract suite MUST detect
+# (scripts/mutants.sh). Never enabled outside that script.
+mutant_ignore_tenant = []
+mutant_dup_sequence = []
+mutant_no_activity_dedupe = []
+
+[dependencies]
+thrust-contracts = { workspace = true }
+thrust-ports = { workspace = true }
+async-trait = { workspace = true }

@@ -1,0 +1,17 @@
+[package]
+name = "thrust-api"
+description = "The shared axum router (ARCHITECTURE 2a thrust-api-core). Compiled into BOTH composition roots."
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+thrust-contracts = { workspace = true }
+thrust-ports = { workspace = true }
+thrust-core = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+# default-features = false drops `tokio`, `http1`, `tracing`, `form`... — only the pure router
+# + extractors remain, which is what compiles to wasm32 and runs under workerd.
+axum = { version = "0.8", default-features = false, features = ["json", "query", "matched-path"] }

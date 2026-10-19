@@ -1,0 +1,19 @@
+[package]
+name = "send-shape-probe"
+description = "Spike 0001 evidence: which port-trait shape lets ONE axum router compile on native AND wasm32?"
+edition = "2021"
+publish = false
+
+# Standalone on purpose: not a member of the thrust workspace.
+[workspace]
+
+[features]
+default = []
+# ports use #[async_trait(?Send)]  (what ADR-0070's sketch shows)
+unsend = []
+# ports are ?Send on wasm32 and Send elsewhere (cfg_attr switch)
+cfg-switch = []
+
+[dependencies]
+async-trait = "0.1"
+axum = { version = "0.8", default-features = false }

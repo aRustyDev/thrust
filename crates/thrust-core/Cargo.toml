@@ -1,0 +1,15 @@
+[package]
+name = "thrust-core"
+description = "Use-cases. Depends on ports + contracts only."
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+thrust-contracts = { workspace = true }
+thrust-ports = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+async-trait = { workspace = true }
