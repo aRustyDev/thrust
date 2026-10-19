@@ -1,0 +1,120 @@
+##### A. symlinked index dir, a tracked file inside it, a pre-existing .gitignore in it
+
+  GitNexus Analyzer
+
+
+  Repository indexed successfully (1.4s)
+
+  9 nodes | 8 edges | 1 clusters | 0 flows
+  $SCRATCH/gn2-a
+
+[A-analyze] exit=0
+-- .gitignore inside the dir after analyze (was '# mine / !README.md'):
+*
+-- git status after analyze (clean = nothing below):
+ M .agents/config/gitnexus/.gitignore
+-- gitnexus clean:
+Deleted: $SCRATCH/gn2-a/.gitnexus
+[A-clean] exit=0
+-- .gitnexus after clean:
+ls: .gitnexus: No such file or directory
+-- dir after clean:
+.gitignore
+lbug
+meta.json
+parse-cache
+parsedfile-cache
+README.md
+run.cjs
+-- git status after clean:
+ M .agents/config/gitnexus/.gitignore
+ D .gitnexus
+-- re-analyze after clean:
+
+  GitNexus Analyzer
+
+
+  Repository indexed successfully (1.4s)
+
+  9 nodes | 8 edges | 1 clusters | 0 flows
+  $SCRATCH/gn2-a
+
+[A-reanalyze] exit=0
+drwxr-xr-x@ 8 USER GROUP  256 Oct 18 22:58 .gitnexus
+ M .agents/config/gitnexus/.gitignore
+ D .gitnexus
+##### B. .gitnexusrc indexOnly: plain analyze must not inject AGENTS.md / CLAUDE.md / skills
+
+  GitNexus Analyzer
+
+
+  Repository indexed successfully (1.4s)
+
+  9 nodes | 8 edges | 1 clusters | 0 flows
+  $SCRATCH/gn2-b
+
+[B-analyze-with-rc] exit=0
+-- files at root (with rc):
+.git
+.gitnexus
+.gitnexusrc
+Cargo.toml
+ignored
+src
+-- CONTROL: same repo shape WITHOUT the rc, plain analyze (expect AGENTS.md/CLAUDE.md/.claude to appear):
+
+  GitNexus Analyzer
+
+
+  Repository indexed successfully (1.4s)
+
+  9 nodes | 8 edges | 1 clusters | 0 flows
+  $SCRATCH/gn2-c
+
+[C-analyze-no-rc] exit=0
+.claude
+.git
+.gitnexus
+AGENTS.md
+Cargo.toml
+CLAUDE.md
+ignored
+src
+##### D. .gitnexusignore: ignored/ must not be indexed (control: gn2-c has no ignore file)
+
+  GitNexus Analyzer
+
+
+  Repository indexed successfully (1.4s)
+
+  6 nodes | 6 edges | 1 clusters | 0 flows
+  $SCRATCH/gn2-d
+
+[D-analyze] exit=0
+-- context hidden_fn WITH ignore (expect not found):
+file:///opt/homebrew/lib/node_modules/gitnexus/dist/mcp/local/local-backend.js:643
+        throw new Error(`Multiple repositories indexed. Specify which one with the "repo" parameter. Available: ${labels.join(', ')}`);
+              ^
+
+Error: Multiple repositories indexed. Specify which one with the "repo" parameter. Available: gn2-a, gn2-b, gn2-c, gn2-d
+    at LocalBackend.resolveRepo (file:///opt/homebrew/lib/node_modules/gitnexus/dist/mcp/local/local-backend.js:643:15)
+    at async LocalBackend.callTool (file:///opt/homebrew/lib/node_modules/gitnexus/dist/mcp/local/local-backend.js:1069:22)
+    at async contextCommand (file:///opt/homebrew/lib/node_modules/gitnexus/dist/cli/tool.js:87:20)
+    at async Command.<anonymous> (file:///opt/homebrew/lib/node_modules/gitnexus/dist/cli/lazy-action.js:33:9)
+
+Node.js v26.9.0
+[D-context-with-ignore] exit=1
+-- context hidden_fn WITHOUT ignore (control, expect found):
+file:///opt/homebrew/lib/node_modules/gitnexus/dist/mcp/local/local-backend.js:643
+        throw new Error(`Multiple repositories indexed. Specify which one with the "repo" parameter. Available: ${labels.join(', ')}`);
+              ^
+
+Error: Multiple repositories indexed. Specify which one with the "repo" parameter. Available: gn2-a, gn2-b, gn2-c, gn2-d
+    at LocalBackend.resolveRepo (file:///opt/homebrew/lib/node_modules/gitnexus/dist/mcp/local/local-backend.js:643:15)
+    at async LocalBackend.callTool (file:///opt/homebrew/lib/node_modules/gitnexus/dist/mcp/local/local-backend.js:1069:22)
+    at async contextCommand (file:///opt/homebrew/lib/node_modules/gitnexus/dist/cli/tool.js:87:20)
+    at async Command.<anonymous> (file:///opt/homebrew/lib/node_modules/gitnexus/dist/cli/lazy-action.js:33:9)
+
+Node.js v26.9.0
+[C-context-control] exit=1
+finished

@@ -1,0 +1,15 @@
+# Excerpts from Serena logs (scrubbed). The line listing every registered project was left out.
+
+## Probe: the symlinked directory was used (marker project name found only in the file behind the symlink)
+INFO  2026-10-18 22:55:35,779 [gather-ignorespec[link-probe-xyz]] serena.project:start:329 - Gathering ignore spec for project link-probe-xyz starting ...
+INFO  2026-10-18 22:55:35,780 [MainThread] serena.agent:activate_project_from_path_or_name:1351 - Found registered project 'link-probe-xyz' at path $SCRATCH/serena-link-test
+INFO  2026-10-18 22:55:35,780 [MainThread] serena.agent:_activate_project:1219 - Activating link-probe-xyz at $SCRATCH/serena-link-test
+INFO  2026-10-18 22:55:35,781 [gather-ignorespec[link-probe-xyz]] serena.project:stop:336 - Gathering ignore spec for project link-probe-xyz completed in 0.002 seconds
+
+## First load of a trimmed project.yml in the real worktree
+INFO  2026-10-18 23:23:21,913 [MainThread] serena.config.serena_config:load:732 - Project configuration in $WORKTREE/.github/config/serena/project.yml was incomplete, re-saving with default values for missing fields
+INFO  2026-10-18 23:23:21,914 [MainThread] serena.config.serena_config:save:749 - Saving updated project configuration to $WORKTREE/.github/config/serena/project.yml
+
+## Rust language server started through the symlinked config
+INFO  2026-10-18 22:55:35,908 [StartLS:rust] solidlsp.language_servers.rust_analyzer:_start_server:758 - Starting RustAnalyzer server process
+INFO  2026-10-18 22:55:35,908 [StartLS:rust] solidlsp.ls_process:_start:519 - Starting language server process via command: ['$HOME/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rust-analyzer']

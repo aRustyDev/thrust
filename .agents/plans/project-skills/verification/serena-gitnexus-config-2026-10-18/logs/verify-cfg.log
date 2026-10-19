@@ -1,0 +1,85 @@
+##### GITNEXUS (scratch GITNEXUS_HOME, so the real registry is untouched)
+-- status before analyze:
+?? .agents/config/
+?? .github/
+?? .gitnexusignore
+?? .gitnexusrc
+
+  GitNexus Analyzer
+
+[2KWarning: the default branch "main" is not the primary index — "chore/serena-gitnexus-config" owns the flat slot. Run `gitnexus clean --branch chore/serena-gitnexus-config` then re-index on "main", or query it explicitly with `--branch main`.
+[2K  Skipped 1 large files (>512KB, likely generated/vendored)
+[2K  - crates/thrust-editor-doc/tests/corpus/corpus.json
+[2K  Set GITNEXUS_MAX_FILE_SIZE=<KB> to include files above the default cap.
+
+  Repository indexed successfully (4.2s)
+
+  1,652 nodes | 4,200 edges | 86 clusters | 140 flows
+  $WORKTREE
+
+[gn-analyze-plain] exit=0
+-- status after analyze (must equal 'before'):
+?? .agents/config/
+?? .github/
+?? .gitnexusignore
+?? .gitnexusrc
+[status-diff] exit=0 (0 = identical)
+-- AGENTS.md / CLAUDE.md untouched:
+(empty above = untouched)
+-- .claude/skills/gitnexus created?
+skills
+-- a real crate symbol IS indexed (from_env in thrust-contract-tests):
+{
+  "status": "found",
+  "symbol": {
+    "uid": "Function:crates/thrust-contract-tests/src/lib.rs:Target.from_env#0",
+    "name": "from_env",
+    "kind": "Function",
+    "filePath": "crates/thrust-contract-tests/src/lib.rs",
+    "startLine": 17,
+    "endLine": 26
+  },
+  "epistemic": "exact",
+  "incoming": {
+-- a symbol that exists only under .agents/ must be ABSENT (proptest_config):
+{
+  "error": "Symbol 'proptest_config' not found"
+}
+[gn-context-agents] done
+-- CONTROL: a copy WITHOUT .gitnexusignore, indexed with --skip-git: proptest_config must be FOUND
+
+  GitNexus Analyzer
+
+  Warning: no .git directory found — commit-tracking and incremental updates disabled.
+
+[2K  Skipped 1 large files (>512KB, likely generated/vendored)
+[2K  - crates/thrust-editor-doc/tests/corpus/corpus.json
+[2K  Set GITNEXUS_MAX_FILE_SIZE=<KB> to include files above the default cap.
+
+  Repository indexed successfully (4.2s)
+
+  1,652 nodes | 4,200 edges | 86 clusters | 140 flows
+  $SCRATCH/thrust-copy
+
+[gn-analyze-control] exit=0
+{
+  "error": "Symbol 'proptest_config' not found"
+}
+##### SERENA (a nested Claude starts the serena MCP server with --project-from-cwd in this worktree)
+-- before: symlink and target:
+lrwxr-xr-x@ 1 USER GROUP  27 Oct 18 23:22 .github/config/serena -> ../../.agents/config/serena
+.gitignore
+project.yml
+OK
+[serena-claude] done
+-- after: symlink intact? real dir created beside it? what did Serena write into the target?
+lrwxr-xr-x@ 1 USER GROUP  27 Oct 18 23:22 .github/config/serena -> ../../.agents/config/serena
+serena
+.gitignore
+project.yml
+-- git status (cache must not appear):
+?? .agents/config/
+?? .github/
+?? .gitnexusignore
+?? .gitnexusrc
+finished
