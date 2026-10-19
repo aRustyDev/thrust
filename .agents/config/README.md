@@ -36,4 +36,26 @@ symlinks, because neither tool has a per-repo setting for where it looks (measur
   in the flat slot. This happens with or without `defaultBranch` in the rc (measured both ways), so index a checkout of `main`.
 - Not set: `defaultBranch`. With `indexOnly` nothing uses it (it only names the base ref in a generated example).
 
+## The GitNexus Claude Code plugin
+
+`.claude/settings.json` registers the `gitnexus-marketplace` (GitHub `abhigyanpatwari/GitNexus`) and enables
+`gitnexus@gitnexus-marketplace` for this repo. It references the plugin; nothing of it is copied into the repository.
+
+- **Read from the project settings:** with an empty, isolated config directory, Claude Code's debug log says `Skipping orphaned
+  enabledPlugins entry gitnexus@gitnexus-marketplace: marketplace not registered` inside the repo and says nothing in a control
+  directory. "Orphaned" means a fresh environment must register the marketplace first; the prompt that does that on first open is
+  expected but was not exercised.
+- **What it adds** (plugin 1.6.12, read from its files, not run here): an MCP server started as `npx -y gitnexus@latest mcp`
+  (unpinned, fetched from npm), twelve skills, and two hooks. The `PreToolUse` hook runs on `Grep`, `Glob` and `Bash` and asks
+  `gitnexus augment` for graph context. The `PostToolUse` hook runs on `Bash`; after `git commit`, `merge`, `rebase`,
+  `cherry-pick` or `pull` it compares `HEAD` with the registered index and only *tells the agent* to run
+  `gitnexus analyze --index-only` when the index is stale. It never re-indexes by itself. Both hooks return immediately unless
+  the working directory is in a registered repo or one with its own `.gitnexus/` index.
+- **Licence:** GitNexus is PolyForm Noncommercial 1.0.0. Enabling it from settings does not bundle or redistribute it, which is why
+  `gitnexus-plan` is still not copied into this repo, but it does recommend a noncommercial-only tool to every contributor.
+- **Overlaps and skew:** a machine that also registers its own `gitnexus` MCP server gets two servers with the same tools. The plugin
+  runs `@latest`; a globally installed `gitnexus` may be older (1.6.8 here, 1.6.12 in the plugin) and shares `~/.gitnexus`.
+- **Opting out locally:** set `"enabledPlugins": {"gitnexus@gitnexus-marketplace": false}` in `.claude/settings.local.json`
+  (local settings override project settings; not tested here).
+
 Symlinks need `core.symlinks` on Windows; `.claude/skills` already depends on it.

@@ -16,6 +16,8 @@ setting for its location (why, and what was rejected: `.agents/config/README.md`
   `gitnexus analyze` never rewrites `AGENTS.md`, `CLAUDE.md` or `.claude/skills/`. The index is generated into `.gitnexus/`
   (ignored). The registry is keyed by path, and from a feature branch `analyze` warns that `main` is not the primary
   index, so index a checkout of `main` that stays, not a worktree you will prune.
+- The GitNexus Claude Code plugin (MCP server, hooks, skills) is enabled in `.claude/settings.json`. What it runs, its
+  noncommercial licence and how to opt out locally: `.agents/config/README.md`.
 
 ## Testing (Rust)
 

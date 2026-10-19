@@ -1,0 +1,15 @@
+##### 1. isolated EMPTY config dir, inside the repo WITH the project settings
+[list-in-repo] exit=0
+-- raw output (first 600 bytes):
+[]
+
+-- stderr (first 400 bytes):
+
+##### 2. CONTROL: same isolated config dir, in a directory WITHOUT project settings
+[list-control] exit=0
+[]
+
+
+##### 3. real user config, in the repo: the gitnexus entry only
+[{"id":"gitnexus@gitnexus-marketplace","version":"1.6.12","scope":"user","enabled":true,"projectPath":null}]
+finished

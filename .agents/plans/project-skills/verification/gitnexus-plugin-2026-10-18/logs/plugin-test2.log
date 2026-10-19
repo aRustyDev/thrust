@@ -1,0 +1,41 @@
+##### in: $WORKTREE
+[run] exit=1
+Not logged in · Please run /login
+
+-- debug lines mentioning plugins / marketplaces / gitnexus:
+2026-10-19T03:48:14.100Z [DEBUG] Broken symlink or missing file encountered for settings.json at path: $WORKTREE/.claude/settings.local.json
+2026-10-19T03:48:14.225Z [DEBUG] Loading skills from: managed=/Library/Application Support/ClaudeCode/.claude/skills, user=$SCRATCH
+2026-10-19T03:48:14.226Z [DEBUG] installed_plugins.json doesn't exist, returning empty V2 object
+2026-10-19T03:48:14.235Z [DEBUG] Skipping orphaned enabledPlugins entry gitnexus@gitnexus-marketplace: marketplace not registered
+2026-10-19T03:48:14.236Z [DEBUG] Found 2 plugins (2 enabled, 0 disabled)
+2026-10-19T03:48:14.237Z [DEBUG] getPluginSkills: Processing 2 enabled plugins
+2026-10-19T03:48:14.237Z [DEBUG] Checking plugin cc-plugin-agents-md: skillsPath=none, skillsPaths=0 paths
+2026-10-19T03:48:14.237Z [DEBUG] Checking plugin cc-plugin-telemetry: skillsPath=none, skillsPaths=0 paths
+2026-10-19T03:48:14.237Z [DEBUG] Total plugin workflows loaded: 0
+2026-10-19T03:48:14.237Z [DEBUG] Total plugin commands loaded: 0
+2026-10-19T03:48:14.237Z [DEBUG] Total plugin skills loaded: 0 (0 duplicate/user-owned entries skipped)
+2026-10-19T03:48:14.237Z [DEBUG] Total plugin agents loaded: 0
+2026-10-19T03:48:14.242Z [DEBUG] installed plugins' hooks modules not loaded: rollout flag (tengu_plugin_hooks_modules) is off, from the default (a cold GrowthBook cache, no payload yet); built-in plugins load regardless
+2026-10-19T03:48:14.242Z [DEBUG] cc-plugin-sec-default@builtin not seated: installed plugins' hooks modules are off in this process
+-- count of such lines: 58
+##### in: $SCRATCH
+[run] exit=1
+Not logged in · Please run /login
+
+-- debug lines mentioning plugins / marketplaces / gitnexus:
+2026-10-19T03:48:14.620Z [DEBUG] Broken symlink or missing file encountered for settings.json at path: $SCRATCH
+2026-10-19T03:48:14.620Z [DEBUG] Broken symlink or missing file encountered for settings.json at path: $SCRATCH
+2026-10-19T03:48:14.705Z [DEBUG] Loaded 0 installed plugins from $SCRATCH
+2026-10-19T03:48:14.722Z [DEBUG] Found 2 plugins (2 enabled, 0 disabled)
+2026-10-19T03:48:14.722Z [DEBUG] getPluginSkills: Processing 2 enabled plugins
+2026-10-19T03:48:14.722Z [DEBUG] Checking plugin cc-plugin-agents-md: skillsPath=none, skillsPaths=0 paths
+2026-10-19T03:48:14.722Z [DEBUG] Checking plugin cc-plugin-telemetry: skillsPath=none, skillsPaths=0 paths
+2026-10-19T03:48:14.722Z [DEBUG] Total plugin workflows loaded: 0
+2026-10-19T03:48:14.722Z [DEBUG] Total plugin commands loaded: 0
+2026-10-19T03:48:14.723Z [DEBUG] Total plugin skills loaded: 0 (0 duplicate/user-owned entries skipped)
+2026-10-19T03:48:14.723Z [DEBUG] Total plugin agents loaded: 0
+2026-10-19T03:48:14.729Z [DEBUG] installed plugins' hooks modules not loaded: rollout flag (tengu_plugin_hooks_modules) is off, from the default (a cold GrowthBook cache, no payload yet); built-in plugins load regardless
+2026-10-19T03:48:14.729Z [DEBUG] cc-plugin-sec-default@builtin not seated: installed plugins' hooks modules are off in this process
+2026-10-19T03:48:14.748Z [DEBUG] getSkills returning: 0 skill dir commands, 0 plugin skills, 39 bundled skills, 0 builtin plugin skills
+-- count of such lines: 56
+finished
