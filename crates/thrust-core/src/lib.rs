@@ -455,8 +455,11 @@ pub async fn process_event(app: &App, env: &Envelope) -> Result<bool, CoreError>
 
 // --- attachments (BlobStore) ----------------------------------------------------------------
 
+/// An attachment name is one ordinary path segment, so the blob key cannot leave its
+/// `<workspace>/<project>/<item>/` prefix. `.` is a dot segment too: RFC 3986 clients normalise
+/// `.../attachments/.` away, so an object stored under it could not be fetched through the route.
 fn validate_blob_name(name: &str) -> Result<(), CoreError> {
-    if name.is_empty() || name.len() > 128 || name.contains('/') || name.contains("..") {
+    if name.is_empty() || name.len() > 128 || name.contains('/') || name.contains("..") || name == "." {
         return Err(CoreError::Invalid("bad attachment name".into()));
     }
     Ok(())
