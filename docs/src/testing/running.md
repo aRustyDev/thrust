@@ -7,7 +7,7 @@ wasm32 standard library.
 ## The hermetic loop (nextest)
 
 ```sh
-scripts/rs cargo nextest run --workspace        # [verified 2026-10-19: 12 tests, all thrust-editor-doc]
+scripts/rs cargo nextest run --workspace        # [verified 2026-10-19: 81 tests, thrust-core and thrust-editor-doc]
 scripts/rs cargo test --doc --workspace         # [verified 2026-10-19 dd093fa: 0 doctests in 10 crates]
 ```
 

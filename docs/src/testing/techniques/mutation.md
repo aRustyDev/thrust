@@ -1,6 +1,6 @@
 # Mutation
 
-Status: **live** (planted mutants, `scripts/mutants.sh`) · cargo-mutants **template-only** · Gate: `scripts/mutants.sh`
+Status: **live** (planted mutants, `scripts/mutants.sh`; cargo-mutants on `thrust-core`) · Gate: `scripts/mutants.sh` in CI
 
 ## Catches
 
@@ -49,10 +49,16 @@ one by copying an existing `mutant_*` feature: declare it in the adapter's `Carg
 
 ## In-repo examples
 
-`mutant_ignore_tenant` in `crates/thrust-adapters-memory/src/lib.rs`, killed by
-`cross_tenant_access_is_rejected_and_has_no_effect`.
+- Planted: `mutant_ignore_tenant` in `crates/thrust-adapters-memory/src/lib.rs`, killed by the contract test
+  `cross_tenant_access_is_rejected_and_has_no_effect`, and by `thrust-core`'s `another_tenants_project_is_not_found`
+  and `model_work_items_match_the_reference_model` (enable it with
+  `--features thrust-adapters-memory/mutant_ignore_tenant`, a dev-dependency feature).
+- cargo-mutants: `cargo mutants -f crates/thrust-core/src/lib.rs` (run with `PROPTEST_DISABLE_FAILURE_PERSISTENCE=1`).
+  The first run left 14 MISSED, all in code no test touched yet (outbox relay, attachments, the consumer entrypoint);
+  `crates/thrust-core/tests/outbox.rs` and `attachments.rs` test that behaviour through the public API and the
+  rerun reports 0 missed. `authenticate`'s only mutant is unviable, so its test has a hand-applied control instead.
 
 ## Target
 
-cargo-mutants `--in-diff` on every PR and a full run on a schedule, once crates have their own tests (G-3); the
-planted mutants already run in CI (the `mutants` job). Mutation testing of the permission seam is open question Q-0123.1 in ADR-0123.
+cargo-mutants `--in-diff` on every PR and a full run on a schedule; other crates join once they have tests of their own
+(G-3). The planted mutants already run in CI (the `mutants` job). Mutation testing of the permission seam is open question Q-0123.1 in ADR-0123.

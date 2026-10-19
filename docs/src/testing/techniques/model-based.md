@@ -1,6 +1,6 @@
 # Model-based
 
-Status: **template-only** · Gate: `scripts/rs cargo nextest run` (and the `deep` profile)
+Status: **live** (`thrust-core`) · Gate: `scripts/rs cargo nextest run` (and the `deep` profile)
 
 ## Catches
 
@@ -37,9 +37,13 @@ model test over those ports.
 
 ## In-repo examples
 
-None yet. Templates: `kv_store_model.rs` and `api_model.rs` under `.agents/skills/rust-test-logic/references/examples/`.
+`crates/thrust-core/tests/model.rs`: `model_work_items_match_the_reference_model`, a lockstep loop of create, delete and list by
+five actors in two tenants against the memory adapters, compared after every step with a reference model that
+writes the spec down (validation first, Not Found across tenants, role per operation, sequence ids never reused,
+soft delete, every listed row in scope). It kills the planted `mutant_ignore_tenant` and `mutant_dup_sequence`.
+The shared world (fixed clock, counter ids, a `Background` that panics if used) is `crates/thrust-core/tests/common/mod.rs`.
 
 ## Target
 
-Model-based tests for stateful ports, the leading option in ADR-0121
+The same model run against every adapter set, the leading option in ADR-0121
 (`.agents/plans/contrail/adrs/test/patterns/0121-port-contract-tests-one-suite-n-adapters.md`).

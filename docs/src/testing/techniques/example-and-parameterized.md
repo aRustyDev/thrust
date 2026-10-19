@@ -1,6 +1,6 @@
 # Example and parameterized
 
-Status: **template-only** · Gate: `scripts/rs cargo nextest run`
+Status: **live** (`thrust-core`) · Gate: `scripts/rs cargo nextest run`
 
 ## Catches
 
@@ -17,8 +17,8 @@ counterexample from a property test or fuzz crash. Not as the only test of an in
 ## Name and location
 
 No prefix. In-source `#[cfg(test)] mod tests` or the crate's own `tests/` directory ([Rule 5](../rules.md)).
-Table-driven cases with `rstest`; snapshots of plain values with `insta`. Neither is a dev-dependency yet: the first
-crate to use them adds it.
+Table-driven cases with `rstest` (a dev-dependency of `thrust-core`); snapshots of plain values with `insta` (not
+used yet: the first crate to need it adds it).
 
 ## Run
 
@@ -36,9 +36,11 @@ scripts/rs cargo nextest run -p <crate>    # [derived]
 
 ## In-repo examples
 
-None yet: no crate has `#[cfg(test)]` modules (measured in [Status](../status.md)). Shapes to copy are in
-`.agents/skills/rust-test-logic/references/`.
+- `crates/thrust-core/src/lib.rs` (`mod tests`): `validate_name_cases` and `validate_blob_name_cases`, rstest tables with one named
+  case per boundary and `single_dot` pinned from a property counterexample.
+- `crates/thrust-core/tests/authorize.rs`: `authorize_follows_the_role_table`, an rstest `#[values]` matrix of role by permission
+  against a table written out as the spec, not read from the code.
 
 ## Target
 
-Unit tests in `thrust-core` and `thrust-contracts` as their logic grows (G-3).
+The same for `thrust-contracts` and `thrust-api` (G-3).
