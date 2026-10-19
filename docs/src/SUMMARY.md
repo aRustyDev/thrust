@@ -9,6 +9,13 @@
 
 - [Application flow](flows/app.md)
 
+# Contributing
+
+- [Crates](contributing/crates.md)
+- [Cargo features](contributing/features.md)
+- [Standards and their gates](contributing/standards.md)
+- [Patterns](contributing/patterns.md)
+
 # Testing
 
 - [Testing](testing/README.md)
