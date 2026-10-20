@@ -54,20 +54,30 @@ longest, blank and too-long names and colliding external keys; delete of live, d
 items; list in every scope. The model writes down the order of the checks (`401`, then `400`, then tenancy and role),
 that a failed create may leave at most one sequence gap (ADR-0043: memory leaves one, Postgres does not), and that a
 soft delete frees an external key. `model_strategy_reaches_every_step_class` is its generator coverage control,
-classifying every step of 500 fixed-seed sequences by replaying them through the model. It kills the planted
+classifying every step of 2000 fixed-seed sequences per outbox mode by replaying them through the model. It kills the planted
 `mutant_ignore_tenant` and `mutant_dup_sequence`, and a failure shrinks to the few requests that show it.
 
 The same sequences carry events (ADR-0046). Each committed create and delete is one event, and the model also
 injects events straight onto the queue, re-sends injected ones and real outbox events whose ids an earlier
 checkpoint learnt, and sweeps. A checkpoint reads both projects' activity: it fails at once on a row no published
 event explains (a duplicate, a rejected request's event, an event that should still be in the outbox) and waits up
-to 15 s for the missing ones; a read two seconds after the run catches late duplicates. With the fast path off
+to 15 s for the missing ones. Every case ends by re-sending every event whose id it knows and checking again, so
+each case exercises redelivery whatever the generator drew; a read two seconds after the run catches late duplicates. With the fast path off
 (`sweeper_model_outbox_delivers_what_was_swept_and_nothing_more`, the `sweeper` pass) events wait for a sweep, the
 sweep must report every waiting row as published, and the outbox depth must equal the number waiting. The
 redeliveries kill `mutant_no_activity_dedupe`; running the fast-path-off model against a fast-path-on target fails
 on the first sweep.
 
+Attachments are in the same sequences (ADR-0080): puts of empty, small, exactly 5 MiB and one-byte-over bodies,
+with and without a content type, under valid, longest and invalid names, on live, deleted, unknown and other
+projects' items; gets and deletes of the same. A get must return the stored bytes and content type exactly. The
+model keeps each object as its recipe (size, seed, content type) and makes the bytes only to send or compare them.
+Each project's caller is usually one who may write there and otherwise anyone, so that sequences build up enough
+state for the rare classes (a get after the item's soft delete, a cross-project get) while still covering every
+rejection.
+
 ## Target
 
-Built for work items and their events (ADR-0121, `.agents/plans/contrail/adrs/test/patterns/0121-port-contract-tests-one-suite-n-adapters.md`).
-Still hand-written: attachments, rate limiting and the Worker's `cron` pass (G-8 in [Status](../status.md)).
+Built for work items, their events and attachments (ADR-0121,
+`.agents/plans/contrail/adrs/test/patterns/0121-port-contract-tests-one-suite-n-adapters.md`). Still hand-written:
+rate limiting and the Worker's `cron` pass (G-8 in [Status](../status.md)).

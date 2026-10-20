@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc e3a9b674f338698d145b9f37ed7e520fe7adc21cd7fbec10be479406abaa7d16 # shrinks to [Checkpoint, PutAttachment { actor: BadToken, proj: A, pick: Unknown, name: Data, size: OverLimit, seed: 52, ctype: None }, PutAttachment { actor: AdminB, proj: Unknown, pick: Own(6), name: Data, size: Small(40), seed: 71, ctype: Some(Custom) }, DeleteAttachment { actor: AdminA, proj: A, pick: Own(5), name: DoubleDot }, DeleteAttachment { actor: AdminB, proj: B, pick: Own(11), name: Data }, PutAttachment { actor: OutsiderA, proj: B, pick: Own(2), name: Notes, size: Small(60), seed: 103, ctype: None }, Delete { actor: AdminA, proj: A, pick: Own(13) }, Delete { actor: AdminA, proj: Unknown, pick: OtherProject(6) }, Sweep, Delete { actor: GuestA, proj: A, pick: Own(8) }]
