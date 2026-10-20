@@ -51,7 +51,7 @@ pending — linked to its `Q-<adr#>` row in `../QUESTIONS.md`. New ADRs take the
 | 0083 | search | [Search port](search/0083-search-port.md) | accepted | |
 | 0084 | integrations | [AI port](integrations/0084-ai-port.md) | accepted | |
 | 0085 | integrations | [GitHub, Slack, Beads, importers](integrations/0085-integrations-github-slack-beads-importers.md) | accepted | |
-| 0090 | infra | [Cloudflare topology](infra/0090-cloudflare-topology.md) | proposed | Q-0090 |
+| 0090 | infra | [Cloudflare topology](infra/0090-cloudflare-topology.md) | accepted | |
 | 0091 | infra | [Self-hosted twin](infra/0091-self-hosted-twin.md) | accepted | |
 | 0092 | infra | [Secrets and environments](infra/0092-secrets-and-environments.md) | accepted | |
 | 0093 | infra | [IaC tooling](infra/0093-iac-tooling.md) | accepted | |
@@ -67,5 +67,5 @@ pending — linked to its `Q-<adr#>` row in `../QUESTIONS.md`. New ADRs take the
 | 0140 | security | [Licensing (AGPL) and clean-room](security/0140-licensing-agpl-cleanroom.md) | accepted | |
 | 0141 | security | [Tenancy and threat model](security/0141-tenancy-and-threat-model.md) | proposed | Q-0141 |
 
-Status counts: 45 accepted · 13 proposed · 2 superseded (60 total). Several `proposed` ADRs carry dated "Update — interview round N"
+Status counts: 46 accepted · 12 proposed · 2 superseded (60 total). Several `proposed` ADRs carry dated "Update — interview round N"
 notes recording partial owner direction; they stay `proposed` until the remaining question is answered.

@@ -27,6 +27,7 @@ The Workers backend needs one authoritative relational store for ~150 Plane mode
 * Option 2: Cloudflare D1 (SQLite), single database (sharded by workspace if needed)
 * Option 3: Durable Object SQLite, one DO per workspace
 * Option 4: Hybrid — small control-plane DB (instance/users/workspace directory) + per-workspace data plane (D1-per-workspace or DO-SQLite)
+* Option 5: Durable Object SQLite, one object for the instance (added round 29, FR-04; see the round-29 update)
 
 ## Decision Outcome
 
@@ -116,15 +117,41 @@ Owner decision on the scope of spike 0002 (round 27): **Postgres only** — prot
 
 The Postgres path is live: a Worker reached `thrust-pg` through Hyperdrive, the Workers VPC service and the tunnel (smoke test, `select 1` p50 9 to 10 ms from IAD, transactions commit and roll back correctly; ADR-0094). Spike 0002 can now run against `thrust-pg-dev` (Hyperdrive config `b231d16b672b469d8834a071fa842b9c`, caching disabled; use a separate config to measure caching). The engine decision still waits for the spike; the ADR stays `proposed`.
 
+## Update — review round 29 (2026-10-19)
+
+Per FR-04 and FR-08 (`reviews/2026-10-19-fable-architecture-review.md`), the round-27 narrowing of spike 0002 to Postgres only (Q-0040.1) is reopened, the spike gains an instance-level Durable Object cell, and rows S3 and S5 gain a placement setting, a round-trip budget and a measurement definition. The review's §5 table records the owner's decision for both findings ("apply now"; for FR-04, "Postgres stays the default if the cell fails any exit criterion"). The engine is still undecided, so the ADR stays `proposed`.
+
+**Why the narrowing is reopened (FR-04).** Four facts are new since round 27:
+
+1. The Hyperdrive statement-flow constraint is documented, so it is permanent. Hyperdrive supports named prepared statements only as `postgres.js` and `node-postgres` implement them, and the docs tell rust-postgres users to use `query_typed` (hyperdrive/concepts/connection-pooling; hyperdrive/examples/connect-to-postgres). Every statement stays typed and uncached (ADR-0044, accepted in round 29), and advisory locks are unsupported through Hyperdrive (ADR-0002, round 29), which rules out Plane's own sequencing mechanism.
+2. TLS from the Workers VPC service to CNPG is not authenticated (`cert_verification_mode = disabled`), and the fix touches a shared chart used by nine releases (ADR-0094 round 27, Q-0094.9, bead `plane-byd.9`, deadline "before Thrust holds real data").
+3. Availability now includes the `woven-o11y` cluster (ADR-0094 Consequences; `research/0010` §6 risk 1). FR-10 accepts the coupling for the internal-tool SLO under three conditions (ADR-0094, round 29).
+4. The first database-backed request on a fresh isolate takes about 0.6 s (`research/0004` §10.3, F7), against the p95 < 500 ms target, at a traffic level (≤ 50 users) where fresh isolates are common.
+
+The round-11 desk review rejected DO-SQLite only on cross-workspace fan-out, migrations across all objects and self-hosted emulation. All three assume Option 3's one object per workspace.
+
+**The added candidate: Option 5, Durable Object SQLite, one object for the instance.** One object (single org, ADR-0003) holds the SQLite database. The `fetch` Worker forwards to it, and the axum router and the use-cases run inside it. The self-hosted twin runs the same SQL on `rusqlite` in the native binary, so both adapter sets share one dialect (the second decision driver above). Sequence allocation and transactions are serialised by construction. It removes the tunnel, the VPC service, Hyperdrive, the TLS question and the cluster coupling; backups are point-in-time recovery plus a nightly dump to R2. Its costs: every request serialises through one object in one region, there are no Postgres extensions, the live CNPG work becomes unused, and SQLite storage is billed (FR-04). Durable Object SQLite is GA with 10 GB per object, point-in-time recovery over the last 30 days, FTS5 and the JSON extension (review §4). Spike 0002 runs it as the `worker-do` cell beside the Postgres `worker-pg` cell, on the same HTTP contract suite and `bench`, with a timebox of 3.5 + 3 days. How ADR-0045's explicit `Tx` maps onto the object is an open question that cell must answer (spike 0002, risk R1).
+
+**Decision rule.** Option 1 stays the leading hypothesis and the default. If the `worker-do` cell fails any of spike 0002's exit criteria (the 50-writer create test, FTS plus trigram, list p95 < 300 ms from the origin region, a migration story, projected cost), Postgres is chosen. If both cells pass, Q-0040.6 decides. Option 5 replaces Option 4 as the alternative the spike measures; the Decision Outcome's sentence about Option 4 no longer holds. ADR-0094 is not reopened: it decides where Postgres lives, not whether Postgres is the engine.
+
+**Rows S3 and S5 (FR-08).**
+
+* **Placement.** `placement.region = "aws:us-east-1"` is the P0 Worker setting (issue B5), next to the database. It replaces the Smart Placement question of Q-0040.5. Cloudflare: each sequential query adds 20 to 30 ms from a distant region and 1 to 3 ms when placed nearby (hyperdrive/concepts/how-hyperdrive-works).
+* **S3.** "No N+1 across the port" becomes a budget: a list endpoint makes at most 5 database round trips per request, enforced by a counting `Connector` in the contract suite (issue B5). The p95 ≤ 300 ms criterion stays, measured as SPEC §6.4 now defines it: p95 of a synthetic probe from the origin's region on the warm path, cold starts reported separately. The slice has no states or assignees, so the grouped listing is measured at M1 under the same budget (spike 0002, step 1).
+* **S5.** Re-run with the placement set and unset (spike 0002, step 7). Under the budget a list view makes at most five round trips, so S5's 10-query case measures headroom, not a shape the code may take.
+
+S1's 50-writer test and the FR-22 allocation order are spike 0002's step 2 (ADR-0043, round 29).
+
 ## Open Questions
 
 * Q-0040 — which option?
-* Q-0040.1 — spike scope and exit criteria ratification.
-* Q-0040.2 — portable sequence allocation (see ADR-0043).
-* Q-0040.3 — partial unique indexes across adapters.
+* Q-0040.1 — spike scope and exit criteria ratification. (reopened round 29, FR-04)
+* Q-0040.2 — portable sequence allocation (see ADR-0043). (answered round 29, FR-17)
+* Q-0040.3 — partial unique indexes across adapters. (answered round 29, FR-07)
 * Q-0040.4 — cross-workspace query needs.
 * Q-G3, Q-G4, Q-G5 — data import, scale targets, cost envelope.
 * Q-0040.5 — Which external Postgres provider/region for Hyperdrive, and do we enable Smart Placement so Workers run near it?
+* Q-0040.6 — If both spike 0002 cells pass their exit criteria, which engine? (added round 29, FR-04)
 
 ## More Information
 

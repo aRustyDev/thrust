@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-10-17
 decision-makers: asmith
 consulted: []
@@ -35,21 +35,33 @@ atomic and cannot be rolled out gradually or rolled back across.
 
 ## Decision Outcome
 
-Decision pending — see Q-0090. Leading hypothesis: **Option 2** (confidence: medium). It isolates the DO lifecycle in
-`collab`, lets `api` use gradual deployments, and keeps the hot path to one hop (edge→api) while avoiding the
-version-skew surface of Option 3.
+**Decision (accepted, round 29): Option 1, one Worker (fetch, queue, scheduled, static assets, placement set) for P0
+and the daily-use release; a `collab` Worker is added when the P1 room lands; reopen if the bundle exceeds 20 MiB or a
+Durable Object lifecycle change must ship with an API change. Per FR-11, `reviews/2026-10-19-fable-architecture-review.md` §5.**
+
+(Earlier hypothesis, superseded by the decision above and kept as rationale: **Option 2** (confidence: medium), because
+it isolates the DO lifecycle in `collab`, lets `api` use gradual deployments, and keeps the hot path to one hop
+(edge→api) while avoiding the version-skew surface of Option 3. FR-11 found that these benefits do not apply at P0:
+no DO class is in production before P1, and ADR-0110 no longer uses gradual deployments (FR-12); see the round-29 note.)
 
 ### Consequences
 
-* Good, because DO class changes deploy independently; `api` rolls forward/back freely.
-* Good, because `consumer` can scale/redeploy without affecting request latency.
-* Bad, because inter-Worker contracts (RPC entrypoints) need versioning discipline: deploy callee first, keep compatible.
-* Neutral: self-hosted twin maps roles to processes (api server, worker process, hocuspocus) — see ADR-0091.
+* Good, because there is one deployable and one config for one owner, no version skew between Workers, and no
+  service-binding hop on the request path at P0.
+* Good, because the slice already has this shape (round-29 note).
+* Bad, because a DO lifecycle change ships in the same deployment as the API. No DO class is in production before the
+  P1 room, and the `collab` Worker takes the room when it lands; a DO lifecycle change that must ship with an API
+  change reopens this ADR.
+* Bad, because bundle size and startup grow with every route group and consumer; a bundle over 20 MiB reopens this ADR.
+* Bad, from P1, because the `collab` Worker brings back one inter-Worker contract that needs versioning discipline:
+  deploy the callee first, keep it compatible.
+* Neutral: the self-hosted twin is one binary with no worker process or Hocuspocus (ADR-0091, round 29).
 
 ### Confirmation
 
-A topology smoke test per environment: wrangler config lint asserting (a) only `collab` declares DO `exports/migrations`,
-(b) each binding target exists, (c) no `fetch()` same-zone Worker-to-Worker calls (must be bindings). CI job in ADR-0100.
+A topology smoke test per environment: wrangler config lint asserting (a) only one Worker declares DO
+`exports/migrations` (the one Worker until the `collab` Worker exists, then only `collab`), (b) each binding target
+exists, (c) no `fetch()` same-zone Worker-to-Worker calls (must be bindings). CI job in ADR-0100.
 
 ## Pros and Cons of the Options
 
@@ -126,9 +138,23 @@ The public `space` Worker is a **JavaScript SSR Worker** (ADR-0011, round 27), n
 
 The public `space` hostname is served by **Rust**, not a JavaScript SSR Worker (Q-0011.3, which supersedes the round-27 note above): a small handler that serves the static SPA and injects the per-board metadata; whether it is a route group of the main Worker or its own thin Worker is open for planning. The topology has no JavaScript Worker.
 
+## Update — review round 29 (2026-10-19)
+
+Per FR-11 (`reviews/2026-10-19-fable-architecture-review.md`; the owner's decision is its §5 table: apply now, "ADR-0090 accepted as Option 1 for P0 with a reopen trigger"), this ADR is accepted as Option 1 and Q-0090 is answered. For P0 and the daily-use release (M2, review §3) one Worker holds `fetch` (the compat-plane, `/api/v1` and `/auth` route groups, as Q-0030.2 already decided in round 26), the queue consumer, the `scheduled` handler (the outbox sweeper), the static assets with `run_worker_first` (ADR-0011), and `placement.region = "aws:us-east-1"` (FR-08; ADR-0094, round 29; issue B5). A `collab` Worker hosting the `yrs` room's Durable Object (ADR-0060, round 29) is added when the P1 room lands. Reopen if the bundle exceeds 20 MiB, or if a Durable Object lifecycle change must ship in the same release as an API change. The slice reaches this shape through issue B9, which removes the Workflow binding and `entry.mjs` (FR-05; ADR-0071), the DO rate limiter (ADR-0033) and the `SELF` service binding.
+
+The evidence:
+
+* **A hop is not free.** A service-binding hop costs +2.3 to +2.8 ms (fetch) and +2.3 ms (RPC) median on the real edge (round-27 note above). That is immaterial at one or two hops (review §4), so the case for Option 1 is deployables rather than latency: one instead of three or four for one owner (FR-11).
+* **A DO class must be exported from the same Wasm module as `fetch`** (ADR-0007, round 26, `adrs/architecture/0007-adapter-selection-mechanism.md:67`). A separate `collab` Worker therefore needs its own root crate, and the P1 room it would host does not exist before M5 (ARCHITECTURE §2a, round 29).
+* **The slice already runs one Worker.** `crates/thrust-worker/src/lib.rs` has `#[event(fetch)]`, `#[event(queue)]` and `#[event(scheduled)]` (lines 113, 166 and 193), `crates/thrust-worker/src/durable.rs` exports `RateLimiterDo` and `RoomDo` (lines 26-27 and 79-80), and one `crates/thrust-worker/wrangler.toml` declares them. It binds no static assets yet and sets no `placement`.
+* **ADR-0110's concern (a DO lifecycle change can be neither gradual nor rolled back across) only bites when a DO class is in production**, which is P1; and ADR-0110's round-29 note deploys at 100 % anyway (FR-12).
+* **The bundle has room:** 1.67 MiB deployed against 64 MiB, and 2 to 3 ms startup against 1 s (`research/0004` §10; review §4).
+
+This supersedes the leading hypothesis (Option 2) in the Decision Outcome and in the round-26 and round-27 notes, and the round-27 note's reading that the JavaScript `space` Worker "fits Option 2" (already moot after Q-0011.3). The second and third Decision Drivers (DO lifecycle changes kept off API deploys, gradual API deployment without touching the collab DO class) bind from P1, when the `collab` Worker exists. The round-25 rule that only `collab` declares DO exports and migrations applies from then; until M5 the one Worker declares them, and the rate-limiter DO it names is removed (FR-05). The Consequences and the Confirmation's lint item (a) are restated for Option 1 above. The `space` hostname is not decided here: the round-27 note leaves open whether `space` is a route group of this Worker or its own thin Worker, and review §4 notes that a route group would also answer Q-0011.4.
+
 ## Open Questions
 
-* Q-0090 — topology choice.
+* Q-0090 — topology choice. (answered round 29, FR-11)
 * Q-0090.1 — Is a private `.woven` hostname required for any Worker-served host? Per the woven hostname rules a `.woven` name needs **two legs** (CF hostname route + CoreDNS rewrite) and on woven-o11y is created by annotating a Service; a Worker on a public Custom Domain behind Access needs neither. Decide public-Access vs WARP-private before choosing hostnames.
 * Q-0090.2 — Custom Domains vs Routes per host (Custom Domain points all paths; needs exact hostname).
 * Q-0050.2 — Access scope (UI only vs UI+API).
