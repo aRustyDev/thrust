@@ -144,12 +144,12 @@ Per FR-15 (`reviews/2026-10-19-fable-architecture-review.md`; the owner's decisi
 
 | Piece | Where | Class | Exit or note |
 |---|---|---|---|
-| Workflows shim | `crates/thrust-worker/entry.mjs:1-26` and the `WORKFLOW` binding (`crates/thrust-worker/wrangler.toml:80-83`); ADR-0071 round 26 | **removed** (FR-05) | deleted with the Workflow binding (issue B9); long jobs are queue messages with a `jobs` table (ADR-0071, round 29) |
+| Workflows shim | `crates/thrust-worker/entry.mjs:1-26` and the `WORKFLOW` binding (`crates/thrust-worker/wrangler.toml:80-83`); ADR-0071 round 26 | **removed** (FR-05) | deleted with the Workflow binding (issue #43); long jobs are queue messages with a `jobs` table (ADR-0071, round 29) |
 | TypeScript and Python oracle tooling | `tools/spike-0006/` (`oracle`, `sanitize`, `jsworker`, `bench`); spike 0006, ADR-0012 | permanent tooling | the oracle is the JavaScript editor by definition; never imported by a product crate (`scripts/check-deps.sh` checks only the Cargo graph, so it cannot see this directory) |
 | Hocuspocus + Redis as the self-hosted collab adapter | ADR-0060 Decision and round-21 note; Q-0061.2 | **withdrawn** (FR-15: a shipped TypeScript service with no exit plan) | replaced by the `yrs` room inside the axum server (ADR-0060, round 29) |
 | The React apps and `@plane/editor` | ADR-0001, ADR-0013 | transitional frontend (Phase 1) | exit: Phase 2, the Dioxus clone (ADR-0013) |
 | Editor island in the Dioxus UI (`@plane/editor` through JS interop on the web, a webview on desktop and mobile) | Q-0013.2; spike 0007 method step 3 | **planned permanent exception** (owner, round 29) | spike 0007 may still size a Rust view |
-| Python inventory and spike-0004 scripts | `scripts/compat-inventory/` and `scripts/spike-0004/`, on branch `chore/contrail-plan-scripts` of `aRustyDev/plane` (`spikes/README.md`, "Scripts these documents cite") | tooling, off-repo | their home is decided by issue B21; the `uv` rule applies |
+| Python inventory and spike-0004 scripts | `scripts/compat-inventory/` and `scripts/spike-0004/`, on branch `chore/contrail-plan-scripts` of `aRustyDev/plane` (`spikes/README.md`, "Scripts these documents cite") | tooling, off-repo | their home is decided by issue #55; the `uv` rule applies |
 
 The Workflows shim no longer appears as live: it is removed with the `WorkflowEngine` port (ADR-0071, round 29), and with it the only JavaScript in the Worker. Three entries of the round-27 registers are not carried over: the `space` SSR Worker (withdrawn in round 27, Q-0011.3), headless editor conversion (spike 0006 Option C; ADR-0012 is accepted on the Rust conversions) and the TypeScript BetterAuth sidecar (spike 0003 option B, which FR-16 drops).
 

@@ -18,9 +18,9 @@ Workers-native services. **[I]**
   Cloudflare adapter and a self-hosted adapter; switching is a config/compile-time change plus at most a redeploy. **[I]**
 - G4. Single-org first; data layer MUST be multi-tenant-capable. **[I]**
 - G5. Public `/api/v1` stays wire-compatible with Plane; the internal UI API is redesigned. **[I]**
-- G6. Auth: end state is OIDC (Zitadel) behind Cloudflare Access plus `X-Api-Key` for machine clients, built on a **BetterAuth-shaped identity** (TS BetterAuth, the community `better-auth-rs`, or a hand-rolled Rust adapter — spike 0003, Q-0050.4) and phased **user+password (P0) → Cloudflare Access → OIDC**. **[I]**
+- G6. Auth: end state is OIDC (Zitadel) behind Cloudflare Access plus `X-Api-Key` for machine clients, built on a **BetterAuth-shaped identity** (round 29, FR-16: BetterAuth's HTTP shapes only, implemented in Rust as core code; spike 0003 is the two-day auth slice, Q-0050.4) and phased **user+password (P0) → Cloudflare Access → OIDC**. **[I]**
 - G7. The frontend is owned code: **fork and diverge** from upstream Plane; no upstream-merge requirement. **[I, round 4]** **Round 21:** the React frontend is the phase-1 UI, adopted with minimal changes; it is later replaced by a Rust (Dioxus) clone, then diverges (G9).
-- G8. P0 foundations: permission seam + RBAC, event/outbox backbone, feature flags, audit logging. P0 product scope:
+- G8. P0 foundations: permission seam + RBAC, event/outbox backbone, feature flags, audit logging (round 29, FR-18: audit logging F-E06 moves to P1 and the retained outbox is the P0 audit trail; feature flags are a `flags` table read per request, with no port). P0 product scope:
   work-management core, platform basics, minimal auth; page editing is a plain API save at P0 (client-produced forms stored verbatim); Durable-Object collaboration is P1 (see FEATURES.md for the tier of every row). **[I, round 4]**
 - G9. **Backend in Rust from the start** (wasm32 Worker + native server from the same crates) and a **Dioxus UI for multi-target builds** (web, desktop, mobile) once backend and React frontend are stable (ADR-0006, ADR-0013). **[I, round 21]**
 
@@ -41,8 +41,9 @@ Workers-native services. **[I]**
 
 ## 5. System context
 See ARCHITECTURE.md §0–§1. Today: Caddy → {static React apps, Django/DRF, Hocuspocus} with Postgres, Redis, RabbitMQ,
-MinIO and Celery. Target (CF set): Access → Workers (static assets, API Worker, consumer Worker, DO collab) with
-DB (⚠), KV, R2, Queues, Cron (Workflows withdrawn, round 29, FR-05). **[S]**
+MinIO and Celery. Target (CF set): Access → one Worker (static assets, fetch, queue consumer, cron; round 29, FR-11) plus a collab
+Worker with its Durable Object at P1, with DB (⚠), R2, Queues, Cron (Workflows withdrawn and no KV session store,
+round 29, FR-05, FR-03). **[S]**
 
 ## 6. Requirements
 
@@ -55,7 +56,7 @@ DB (⚠), KV, R2, Queues, Cron (Workflows withdrawn, round 29, FR-05). **[S]**
   versioning (ADR-0061). **[S]**
 - R-F5. `/api/v1` responses MUST match **the pinned instance's drf-spectacular schema** (v1 only; the published docs differ from CE) for P0/P1 resources, and its recorded behaviour (ADR-0031, ADR-0122).
 - R-F6. Background duties of `plane/bgtasks` MUST be mapped to Queue/Cron/sync (ADR-0073; Q-0073); round 29 (FR-05): no Workflow, long jobs are queue messages with a `jobs` table (ADR-0071). **[S]**
-- R-F7. A transitional `compat-plane` adapter serves the internal endpoints the adopted React app expects; the new REST+OpenAPI core API serves v1, scripts, MCP and the Dioxus UI; the compat adapter is deleted when ADR-0013 Phase 2 completes (ADR-0034). **[I, round 22]**
+- R-F7. **Two HTTP surfaces at P0 (round 29, FR-06):** a transitional `compat-plane` adapter serves the internal endpoints the adopted React app expects, bounded by the F-X13 acceptance list (FR-01, `PLAN.md`), and `/api/v1` is its own Plane-shaped surface (ADR-0031), not a shim over a core API. The core REST+OpenAPI API (code-first, ADR-0032) is generated from the `thrust-core` use-cases at M4, when the Dioxus UI is its first client. The slice's routes that are not Plane-shaped move out of the `/api/v1` prefix, which is reserved for wire-compatible routes (issue #47). Compat rows are deleted as each screen moves to Dioxus, and the compat adapter is deleted when ADR-0013 Phase 2 completes (ADR-0034). This replaces the round-22 text, in which one core API served v1, scripts, MCP and the Dioxus UI. **[I, round 22; round 29]**
 
 ### 6.2 Portability
 - R-P1. No import of platform SDKs outside `adapters-*` packages (lint-enforced).
@@ -83,19 +84,20 @@ DB (⚠), KV, R2, Queues, Cron (Workflows withdrawn, round 29, FR-05). **[S]**
   RPO/RTO are backlogged follow-on work (bead `plane-9y3`, Q-G4.2).
 - **Recovery (round 13):** RPO 24 h, RTO 8 h (daily DB export to R2 plus provider PITR where available). **Collab sizing:** up to 50 concurrent editors per page at P1; the DO spike must stress-test this (ADR-0060).
 - **Cost (round 9):** Workers Paid baseline, under $100/month as a design constraint; spikes report projected monthly cost at the sizing target (Q-G5). **The Postgres provider is not inside the envelope (round 27, Q-G5.1):** the CNPG cluster in woven-o11y (ADR-0094) is paid for outside it; the envelope covers the Cloudflare side.
-- **Internal API:** transitional `compat-plane` for React plus the new core REST/OpenAPI API (ADR-0034); no live push at P0 (refetch/poll), live push with collab in P1. Runtime is Rust (ADR-0006).
-- **Latency budget (round 29, FR-08):** the P0 Worker runs with **`placement.region = "aws:us-east-1"`**, next to the database (ADR-0094; issue B5). A list endpoint makes **at most 5 database round trips** per request, enforced by a counting `Connector` in the contract suite (issue B5). Cloudflare: each sequential query adds 20 to 30 ms from a distant region and 1 to 3 ms when placed nearby (hyperdrive/concepts/how-hyperdrive-works). Spike 0002 re-runs the bench with the placement set and reports the equivalent counts for its `worker-do` cell (ADR-0040, round 29).
-- **Measurement (round 29, FR-08; answers Q-G5.2):** **p95 of a synthetic probe from the origin's region on the warm path, 5-minute cadence, cold starts reported separately; availability over a rolling 30 days on the same probe.** The first database-backed request on a fresh isolate (about 0.6 s, `research/0004` §10.3) is such a cold start. The cost envelope **excludes** the Postgres provider (answered, round 27, Q-G5.1). This replaces the earlier proposal (p95 at the Worker edge by synthetic probes plus Workers metrics).
+- **Internal API:** transitional `compat-plane` for React plus the new core REST/OpenAPI API (ADR-0034); round 29 (FR-06): the core API is generated at M4, so P0 has two surfaces (R-F7). No live push at P0 (refetch/poll), live push with collab in P1. Runtime is Rust (ADR-0006).
+- **Latency budget (round 29, FR-08):** the P0 Worker runs with **`placement.region = "aws:us-east-1"`**, next to the database (ADR-0094; issue #39). A list endpoint makes **at most 5 database round trips** per request, enforced by a counting `Connector` in the contract suite (issue #39). Cloudflare: each sequential query adds 20 to 30 ms from a distant region and 1 to 3 ms when placed nearby (hyperdrive/concepts/how-hyperdrive-works). Spike 0002 re-runs the bench with the placement set and reports the equivalent counts for its `worker-do` cell (ADR-0040, round 29).
+- **Measurement (round 29, FR-08, FR-10; answers Q-G5.2): one SLI per probe (owner, round 29).** **p95 latency** comes from a synthetic probe from the origin's region on the warm path at a 5-minute cadence, with cold starts reported separately (FR-08). **Availability (99.5 % over a rolling 30 days)** comes from the `status.woven` deep probe `GET /healthz?deep=1` every 60 s; the endpoint is on the product hostname and runs `select 1` through Hyperdrive, so the SLO is measured end to end and cluster upgrades count (FR-10, ADR-0094; issue #42). This corrects the earlier round-29 sentence, which measured availability "on the same probe" as p95. The first database-backed request on a fresh isolate (about 0.6 s, `research/0004` §10.3) is such a cold start. The cost envelope **excludes** the Postgres provider (answered, round 27, Q-G5.1). This replaces the earlier proposal (p95 at the Worker edge by synthetic probes plus Workers metrics).
 - **Oracle coverage:** `/api/v1` by schema plus recordings; compat-plane endpoints by recordings only (no schema exists for the internal API).
 - **Oracle (round 8):** the v1 reference is this fork updated to latest upstream, then pinned (bead `plane-b6a`), used as a
   running instance plus its OpenAPI schema (ADR-0122).
 - **Public spaces (round 8):** unauthenticated, explicit publish per project, P0 (ADR-0022).
 - **Roles (round 8):** fixed Admin/Member/Guest at P0, no Viewer; custom roles decided in tiering (ADR-0051).
-- Hostnames (round 5): product on public hostnames behind Access; admin/internal on private `.woven` names (ADR-0090, Q-0090.3).
+- Hostnames (round 5): product on public hostnames behind Access; admin/internal on private `.woven` names (ADR-0090, Q-0090.3). Round 29 (owner default, Q-0090.3): no `.woven` host at P0 or M2; the product is on its public hostname; reopen when an internal-only surface is planned.
 
 ### 6.5 Operability
 Trace correlation across HTTP → Queue → DO (ADR-0130; no Workflow hop after round 29, FR-05); IaC for all CF resources (ADR-0093);
-gradual deployments with migration ordering (ADR-0110).
+deploys with migration ordering: expand migration, deploy at 100 %, smoke against the live hostname, automatic
+rollback (ADR-0110; gradual rollout dropped in round 29, FR-12).
 
 ## 7. Plane → Cloudflare mapping (starting hypotheses)
 | Plane component | Target (CF adapter) | Self-hosted adapter | ADR |
@@ -107,26 +109,33 @@ gradual deployments with migration ordering (ADR-0110).
 | Redis/Valkey (cache, sessions) | none: sessions are database rows (FR-03); rate limits on the Workers Rate Limiting binding (D-007) | none: sessions are database rows; in-process rate limiter (no Valkey) | 0082, 0033 |
 | MinIO/S3 | R2 | local disk at P0; S3-compatible (MinIO) at P1 | 0080 |
 | apps/live (Hocuspocus+Redis) | one `yrs` room in a Durable Object (P1) | the same `yrs` room inside the axum server (P1; no Hocuspocus) | 0060 |
-| Caddy + static builds | Workers static assets | Caddy/nginx | 0011 |
+| Caddy + static builds | Workers static assets | the native binary serves the built React apps itself; Caddy or nginx in front is the operator's option (owner, round 29) | 0011, 0091 |
 | SMTP | CF Email Service / SMTP | SMTP via `lettre` | 0073 |
 | session/OAuth auth | OIDC + Access + API keys | OIDC | 0050, 0052 |
 | Django admin/license | admin app on instance-config API | same | 0021 |
 
 **Round 29 (2026-10-19, FR-05, FR-19):** the Celery, Redis/Valkey, MinIO/S3, `apps/live` and SMTP rows follow the
 cut: no Workflows, RabbitMQ, Valkey or Hocuspocus, and a local-disk blob store at P0. A `Cache` port is added only when
-a measured hot path needs it (ADR-0082).
+a measured hot path needs it (ADR-0082). **Static hosting (owner, round 29):** the self-hosted native binary serves the
+built React apps itself, as Workers static assets do on Cloudflare, and a front proxy (Caddy or nginx) is the
+operator's optional choice. This keeps ADR-0091's "Compose file with at most three services" (binary, Postgres, MinIO
+at P1) and supersedes ADR-0011's self-hosted Caddy/nginx line.
 
-## 8. Phasing (indicative only — the next session produces the real plan)
-- **Phase 0 — Foundations**: ports package, contract-test harness, config/adapter selection, CI matrix, DB spike (ADR-0040).
-- **Phase 1 — Core vertical slice**: identity, workspaces/projects/work items/states/labels, outbox+activity, API v1 subset,
-  web app wired to new API on the CF adapter set.
-- **Phase 2 — Breadth**: cycles, modules, views, estimates, intake, notifications, webhooks, files, search.
-- **Phase 3 (P1) — Collab, pages depth, exports/importers/analytics**: collab port + DO adapter (and Hocuspocus
-  adapter), versions, exports, importers, analytics, remaining self-hosted adapters. Page/description editing is a
-  plain API save before this phase (round 6).
-- **Phase 4 — Open-EE superset** and integrations, per tiering.
-- ~~Phase 5 — Self-hosted adapter parity & migration tooling~~ **removed (round 29, FR-19):** parity is the `native-pg` contract cell that already runs in CI (`scripts/contract-all.sh`), not a phase.
-- **Phase 6 — Dioxus UI (ADR-0013)**: starts when P0+P1 are shipped, the SLO has held 4 weeks and the oracle diff is clean (Q-R3); v1 targets web only; clone of Plane UI/UX first, diverge after parity; targets web, then desktop/mobile (Q-0013.3).
+## 8. Phasing (round 29: see `PLAN.md`)
+The phasing is the milestone roadmap in [`PLAN.md`](PLAN.md): M0 to M6 with contents, exit criteria, the critical path
+and the M2 screen list (round 29, FR-01, `reviews/2026-10-19-fable-architecture-review.md` §3). It replaces the
+indicative phases this section listed until round 29, which map to the milestones as follows (review §3, "Diff
+against SPEC §8"):
+
+| SPEC §8 until round 29 | Round 29 | Why |
+|---|---|---|
+| Phase 0 Foundations: ports package, harness, config, CI, DB spike | M0: the same, plus the two port-shape fixes and the engine decision with a DO cell | the harness exists; the shapes are wrong (FR-02, FR-03) |
+| Phase 1 Core vertical slice | M1 plus M2, with a named screen list instead of "web app wired to the new API" | the compat obligation must be bounded (FR-01) |
+| Phase 2 Breadth | M3, after a daily-use release rather than before it | ship something usable first |
+| Phase 3 (P1) Collab, exports, importers, analytics | M5 for collab; exports move into M3 as queue jobs (FR-05); importers and analytics stay P1 | no workflow engine |
+| Phase 4 Open-EE superset | folded into M6 and later; audit at P1 (FR-18) | |
+| Phase 5 Self-hosted parity in parallel | already struck earlier in round 29 (FR-19, R-P3): it is the `native-pg` contract cell that runs in CI (`scripts/contract-all.sh`), not a phase | |
+| Phase 6 Dioxus after P0+P1 and 4 weeks of SLO | M4, after M2 and 4 weeks of SLO, screen by screen (FR-01) | shrink the throwaway; the React app becomes the UI oracle |
 
 ## 9. Acceptance criteria (proposed)
 1. All P0 features pass e2e on the CF adapter set **and** the self-hosted adapter set (the P0 self-hosted set defined in R-P3).
@@ -145,14 +154,14 @@ a measured hot path needs it (ADR-0082).
 | ~~Self-hosted workflow engine has no drop-in equivalent~~ | — | **retired (round 29, FR-05):** no workflow engine; long jobs are queue messages with a `jobs` table (ADR-0071) |
 | DO limits for large docs / many editors | collab | spike; snapshot strategy (ADR-0061) |
 | Upstream Plane drift vs forked frontend | maintenance | **Accepted** — Q-G2 answered "fork and diverge" (round 4) |
-| Identity framework fit (TS BetterAuth vs alpha `better-auth-rs` vs hand-rolled) on wasm32/Workers; security regression surface from rebuilding CSRF, sessions, hashing, SSRF guard | P0 auth blocked / security | spike 0003; external review gate for the identity adapter and SSRF guard; promote ADR-0141 before any public host |
+| Identity on wasm32/Workers (round 29, FR-16: hand-rolled Rust; the framework options are dropped); security regression surface from rebuilding CSRF, sessions, hashing, SSRF guard | P0 auth blocked / security | spike 0003; external review gate for the identity adapter and SSRF guard; promote ADR-0141 before any public host |
 | AGPL obligations (everything AGPL-3.0, no clean-room claim; keep Plane attribution) | legal | ADR-0140 (accepted) |
 | Scope: Plane CE + 25 Open-EE features | schedule | tiering (Q-F1) |
 | Rust on Workers maturity (workers-rs: Queues beta, D1 alpha, panic=abort; Workflows/Email unconfirmed) | P0 blocked | spike 0001; bounded JS shim fallback (Q-R4) |
 | Rich-text editor has no mature Rust equivalent (server conversions, Dioxus editor) | quality/schedule | spikes 0006, 0007 |
 | Oracle drift: the fork carries woven OIDC code, the schema is v1-only and off by default, synthetic seed data never exercises real shapes; upstream security fixes bypass the pinned frontend | quality/security | record the pin delta (spike 0008); owner for upstream CVE triage; small anonymised real-shape sample for the corpus |
 | Cost/latency reality: external Postgres behind Hyperdrive, per-PR dev schemas, <$100/mo may exclude the DB provider | budget | cost model inside spike 0002; decide schema-per-PR cleanup/ownership before it |
-| Capacity: one owner, 25 Open-EE rows, 49 background tasks, ~300 endpoints, two UIs over time | schedule | PLAN.md must carry capacity assumptions and a cut line |
+| Capacity: one owner, 25 Open-EE rows, 49 background tasks, ~300 endpoints, two UIs over time | schedule | `PLAN.md` carries the capacity assumptions and the cut line (round 29, FR-01): the smallest usable release is M1 plus M2 |
 
 ## 11. Open items
 All open items live in QUESTIONS.md; ADR index with status in adrs/README.md.

@@ -85,10 +85,10 @@ The isolation strategy itself (Q-0041) is still open and this ADR stays `propose
 ## Open Questions
 
 * Q-0041 — which strategy?
-* Q-0040.4 — cross-workspace query needs (drives Option 2 viability).
-* Q-G4 — scale targets.
-* Q-0041.1 — Which tables are instance-level "directory" tables (User, Profile, Account, Instance*) and how are they referenced from tenant data (FK across namespaces)?
-* Q-0041.2 — Per-tenant data erasure/export requirement (GDPR) and RPO per tenant.
+* Q-0040.4 — cross-workspace query needs (drives Option 2 viability). (answered round 29, FR-17)
+* Q-G4 — scale targets. (answered round 29, owner)
+* Q-0041.1 — Which tables are instance-level "directory" tables (User, Profile, Account, Instance*) and how are they referenced from tenant data (FK across namespaces)? (answered round 29, FR-17)
+* Q-0041.2 — Per-tenant data erasure/export requirement (GDPR) and RPO per tenant. (answered round 29, owner default)
 
 ## More Information
 

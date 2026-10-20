@@ -7,7 +7,9 @@ Tier: **P0** must ship in first usable release · **P1** next · **P2** later ·
 RBAC, event/outbox, feature flags, audit). Round 6 refined this: page and description editing at P0 is a **plain API save** (no DO); Durable Objects arrive
 with multi-user *collaboration* (F-C02, P1). Auth order: user+password → Cloudflare Access → OIDC (OIDC high priority, P1). Exports/importers/
 analytics (D05–D07) are P1 (round 6). Self-hosted adapters at P0: the set in F-X02 (round 29, FR-19; it replaces the
-round-6 "DB, queue and blob only").
+round-6 "DB, queue and blob only"). Round 29 (FR-18): audit logging (F-E06) moves to P1, and feature flags (F-E00a)
+are a table with no port. Round 29 (FR-01): the compat-plane acceptance list is the minimum slice plus the M2
+daily-use screens (F-X13).
 `Ports` = abstractions from ARCHITECTURE.md §Ports the feature depends on. **Round 29 (FR-05):** ARCHITECTURE §1c now
 lists only the ports whose adapters differ between the two sets. Entries outside that list read as follows: Identity,
 Search, Secrets and Observability name core code; `Session` is a repository over the database (FR-03); `Cache` has no
@@ -95,7 +97,7 @@ From `woven/plan:.claude/plans/plane-fork/features/`. These are *requirements in
 
 | ID | Feature | Spec file | Cross-cutting seam? | Tier |
 |---|---|---|---|---|
-| F-E00a | Feature flags | `f0-feature-flags` | yes | P0 |
+| F-E00a | Feature flags: a `flags` table read per request; no port (round 29, FR-18; ADR-0008) | `f0-feature-flags` | yes | P0 |
 | F-E00b | Permission seam | `f0-permission-seam` | yes | P0 |
 | F-E00c | Event/outbox backbone | `f0-event-backbone` | yes (ADR-0046) | P0 |
 | F-E01 | RBAC (custom roles) | `rbac` | seam consumer | P1 |
@@ -103,7 +105,7 @@ From `woven/plan:.claude/plans/plane-fork/features/`. These are *requirements in
 | F-E03 | Guests | `guests` | | P1 |
 | F-E04 | SCIM 2.0 | `scim` | | P2 |
 | F-E05 | OIDC/SAML SSO | `oidc-saml-sso` | (OIDC overlaps F-A01) | P1 |
-| F-E06 | Audit logging | `audit-logging` | consumes backbone | P0 |
+| F-E06 | Audit logging | `audit-logging` | consumes backbone | P1 (round 29, FR-18: the retained outbox is the P0 audit trail; ADR-0048's synchronous rows for security actions arrive with OIDC and custom roles) |
 | F-E07 | Custom fields | `custom-fields` | schema-affecting | P1 |
 | F-E08 | Work item types | `work-item-types` | schema-affecting (CE has dormant stub) | P1 |
 | F-E09 | Multiple workflows | `multiple-workflows` | | P2 |
@@ -136,10 +138,10 @@ From `woven/plan:.claude/plans/plane-fork/features/`. These are *requirements in
 | F-X07 | Observability (logs, traces, metrics) across Queue/Workflow/DO hops | 0130 | P0 |
 | F-X08 | AI: P0 API-based access (public API) · P1 MCP server · P2 AI assistant via AI Gateway (AI port) | 0084 | P0 / P1 / P2 |
 | F-X09 | Real-time push of work-item updates (beyond SWR polling) | 0034 | P1 |
-| F-X10 | Rust (Dioxus) clone of the Plane UI — web target | 0013 | P2 (starts when P0+P1 shipped, SLO 4 wks, oracle clean; Q-R3) |
+| F-X10 | Rust (Dioxus) clone of the Plane UI — web target | 0013 | P2 (round 29, FR-01: starts screen by screen at M4, once the M2 release has held the SLO for 4 weeks and its journey suite is green; it replaces the round-22 gate "P0+P1 shipped, SLO 4 wks, oracle clean"; Q-R3) |
 | F-X11 | Dioxus desktop target | 0013 | P2 (after v1 web; Q-0013.3) |
 | F-X12 | Dioxus mobile target | 0013 | P2 (after v1 web; Q-0013.3) |
-| F-X13 | `compat-plane` internal API adapter for the React app (deleted when Dioxus lands). Acceptance list = the 290 P0 rows of `scripts/compat-inventory/out-pinned/endpoint-inventory.csv`, minimum slice 48 routes first (spike 0009) | 0034 | P0 |
+| F-X13 | `compat-plane` internal API adapter for the React app; its rows are deleted as each screen moves to Dioxus (ADR-0013, round 29). **Acceptance list (round 29, FR-01; Q-R8):** the 48-route minimum slice (spike 0009, `research/0003` §8.1 and §15.6; issue #44, M1) plus the compat rows behind the M2 daily-use screens (`PLAN.md`; issue #46): work-item list (group-by, filters, pagination); work-item detail (description, comments, activity, attachments, labels, assignees, state, priority, dates); project create and settings; workspace members (no invites); in-app notifications; global search. Every other route the React shell calls is a recorded stub (an empty list, a 404 or the fixture), listed under D-021. This replaces the round-26 list of the 290 P0 rows of `scripts/compat-inventory/out-pinned/endpoint-inventory.csv` | 0034 | P0 |
 | F-X14 | SSRF-safe outbound fetch guard (webhooks, link unfurl; R-S3) | 0141, 0073 | P0 |
 
 ## D. Explicitly dormant in CE (decide: implement / drop — Q-F3)

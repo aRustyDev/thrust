@@ -14,9 +14,13 @@ Two things that are easy to get wrong:
   `Queue`, `EventConsumer`, `BlobStore`, `SessionStore`, `RateLimiter`, `Clock`, `IdGen` and `Background`; work-item
   behaviour reaches storage through `Database` and `Tx`. A new work-item operation is usually a change to
   `thrust-core` plus an HTTP route, and touches a port only if it needs a new `Tx` method.
-- **Every public route is under `/api/v1`** (`crates/thrust-api/src/lib.rs`), so any new or changed public route also
-  matches the v1 row. `/internal/*`, `/_info` and `/_test/*` exist only when the router is built with `test_routes`
-  and are test infrastructure, not API.
+- **Every public route is under `/api/v1` today** (`crates/thrust-api/src/lib.rs`), but these are the slice's own
+  routes, not Plane's wire-compatible v1. Finding FR-06 of the architecture review
+  (`.agents/plans/contrail/reviews/2026-10-19-fable-architecture-review.md`) reserves the prefix for wire-compatible
+  routes, and the slice's routes move out of it ([issue #47](https://github.com/aRustyDev/thrust/issues/47); see
+  [Application flow](../flows/app.md)). Until they move, any new or changed route under `/api/v1` also matches the v1
+  row. `/internal/*`, `/_info` and `/_test/*` exist only when the router is built with `test_routes` and are test
+  infrastructure, not API.
 
 The first test of a new kind may need a test-only dev-dependency (`proptest`, `rstest`, `insta`, `datatest-stable`):
 adding one to the crate under test is part of the change, so name it in the PR. Installing tools outside Cargo

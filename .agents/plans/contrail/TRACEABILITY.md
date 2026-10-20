@@ -55,7 +55,7 @@ needed" must be recorded before the row starts). "Test home" is where the accept
 | F-D11 | i18n (locale files in `@plane/i18n`) | P0 (inherited) | no ADR needed (CRUD over core use-cases; ADR-0045 pattern); reuse @plane/i18n (ADR-0012) |  | e2e |
 | F-D12 | Telemetry (OTel only; PostHog dropped) — likely opt-in | P2 (opt-in) | 0130 |  | integration |
 | F-D13 | Link crawler/unfurl (SSRF-guarded) | P1 | 0141, 0073 |  | SSRF tests |
-| F-E00a | Feature flags | P0 | 0008 (proposed) |  | contract |
+| F-E00a | Feature flags: a `flags` table read per request; no port (round 29, FR-18) | P0 | 0008 |  | contract |
 | F-E00b | Permission seam | P0 | 0051 |  | permission-matrix parity + scope property tests |
 | F-E00c | Event/outbox backbone | P0 | 0046 |  | outbox contract |
 | F-E01 | RBAC (custom roles) | P1 | 0051 |  | contract |
@@ -63,7 +63,7 @@ needed" must be recorded before the row starts). "Test home" is where the accept
 | F-E03 | Guests | P1 | 0051 |  |  |
 | F-E04 | SCIM 2.0 | P2 | 0053 |  |  |
 | F-E05 | OIDC/SAML SSO | P1 | 0050 | 0003 |  |
-| F-E06 | Audit logging | P0 | 0048 (proposed) |  | audit registry test |
+| F-E06 | Audit logging | P1 (round 29, FR-18: the retained outbox is the P0 audit trail) | 0048 |  | audit registry test |
 | F-E07 | Custom fields | P1 | — GAP: ADR at P1 start; conflicts with schema frozen at the pinned version (ADR-0042) |  |  |
 | F-E08 | Work item types | P1 | — GAP: ADR at P1 start; same schema conflict (ADR-0042) |  |  |
 | F-E09 | Multiple workflows | P2 | — GAP (P2) |  |  |
@@ -92,10 +92,10 @@ needed" must be recorded before the row starts). "Test home" is where the accept
 | F-X07 | Observability (logs, traces, metrics) across Queue/Workflow/DO hops | P0 | 0130 | 0001 | integration |
 | F-X08 | AI: P0 API-based access (public API) · P1 MCP server · P2 AI assistant | P0 / P1 / P2 | 0084 |  | e2e |
 | F-X09 | Real-time push of work-item updates (beyond SWR polling) | P1 | 0034, 0060 |  |  |
-| F-X10 | Rust (Dioxus) clone of the Plane UI — web target | P2 (starts when P0+P1 shipped, SLO 4 wks | 0013 | 0007 |  |
+| F-X10 | Rust (Dioxus) clone of the Plane UI — web target | P2 (M4, screen by screen, once M2 holds the SLO 4 wks; round 29, FR-01) | 0013 | 0007 | the parity matrix below (the UI oracle) |
 | F-X11 | Dioxus desktop target | P2 (after v1 web; Q-0013.3) | 0013 | 0007 |  |
 | F-X12 | Dioxus mobile target | P2 (after v1 web; Q-0013.3) | 0013 | 0007 |  |
-| F-X13 | `compat-plane` internal API adapter for the React app (deleted when Di | P0 | 0034 | 0009 | recorded-journey replay |
+| F-X13 | `compat-plane` internal API adapter for the React app (acceptance list = the slice plus the M2 screens; round 29, FR-01) | P0 | 0034 | 0009 | recorded-journey replay + the Playwright journey suite over the M2 screens (issue #45); stubs outside the list per D-021 |
 | F-X14 | SSRF-safe outbound fetch guard (webhooks, link unfurl; R-S3) | P0 | 0141, 0073 |  | SSRF test corpus |
 
 ## Requirements
@@ -108,7 +108,7 @@ needed" must be recorded before the row starts). "Test home" is where the accept
 | R-F4 page forms persisted consistently | 0012, 0061 | contract + XSS corpus (spike 0006) |
 | R-F5 /api/v1 matches pinned schema | 0031, 0032, 0122 | schema diff + response diff (spike 0008) |
 | R-F6 bgtasks mapped | 0073, 0072, 0071 | ADR-0073 table review; per-task contract tests |
-| R-F7 compat-plane + core API | 0034 | recorded-journey replay (spike 0009) |
+| R-F7 compat-plane + core API | 0034 | recorded-journey replay (spike 0009) and the Playwright journey suite over the M2 screens (issue #45); the core API is not built at P0 and is generated from the use-cases at M4 (round 29, FR-06) |
 | R-P1 no platform SDK outside adapters | 0002 | lint/`cargo deny` + CI |
 | R-P2/R-P5 adapter selection compile-time | 0007 | build matrix (ADR-0100) |
 | R-P3 P0 self-hosted set | 0007, 0091 | the `native-pg` contract cell (`scripts/contract-all.sh`; round 29, FR-19); after the FR-05 cut no P0 port is CF-only, so no row is `pending-adapter` |
@@ -122,8 +122,15 @@ needed" must be recorded before the row starts). "Test home" is where the accept
 ## Parity matrix (UI, ADR-0020)
 
 "Functionally equivalent UI" is tested as: the adopted React app, changed only in the four allowed areas (base URL/service
-layer, auth client, collab provider, branding — Q-R2), passes a Playwright smoke set covering the P0 journeys. The set is
-defined during spike 0009 (journey recordings) and listed here when written: _TBD_.
+layer, auth client, collab provider, branding — Q-R2), passes a Playwright journey suite.
+
+**Round 29 (FR-01):** the parity matrix is **the Playwright journey suite over the M2 screens (issue #45)**, with a
+journey for every screen in the F-X13 acceptance list: work-item list (group-by, filters, pagination); work-item detail
+(description, comments, activity, attachments, labels, assignees, state, priority, dates); project create and
+settings; workspace members (no invites); in-app notifications; global search (Q-R8). The first journey is M1's "sign
+in, create a workspace, project and work item, see it" on the stock React app; each screen M3 adds brings its own
+journey (`reviews/2026-10-19-fable-architecture-review.md` §3). The suite is the UI oracle for the Dioxus port: a
+screen moves to Dioxus once the M2 release has held the SLO for 4 weeks and the suite is green (ADR-0013, round 29).
 
 ## Gaps to close
 
@@ -137,8 +144,9 @@ F-A05, F-A07, F-A10, F-B09, F-B19, F-C05, F-D07, F-E07, F-E08, F-E09, F-E10, F-E
 | 0004 topology, public half | `research/0006-topology-public-half.md` | A02, D09; ADR-0011, 0022, 0048, 0050, 0090 (both real runs done; `.woven` half is a desk recipe) |
 | 0008 oracle harness | `research/0005-oracle-harness.md` | A06, B16, X06; ADR-0031, 0032, 0033, 0120, 0122 |
 | 0006 editor conversions | `research/0008-editor-conversions.md` | C01, C02, C03, C04; ADR-0012, 0061, 0013, 0141 |
-| 0009 compat-plane inventory (desk half) | `research/0003-compat-plane-inventory.md` | X13 (acceptance list = 290 P0 rows), E00b; ADR-0034, 0051 |
+| 0009 compat-plane inventory (desk half) | `research/0003-compat-plane-inventory.md` | X13 (acceptance list: the 290 P0 rows in round 26; the slice plus the M2 screens' rows since round 29, FR-01), E00b; ADR-0034, 0051 |
 | (not a spike) Plane quirks catalogue | `research/0007-plane-quirks-catalog.md` | X06, X13, A06, E00b; ADR-0031, 0033, 0034, 0122 |
 | (not a spike) `space` SSR feasibility | `research/0009-space-ssr-worker.md` | D09; ADR-0006 (exception register), 0011, 0022 |
 
-The parity-matrix smoke set (section above) stays _TBD_: it is the dynamic half of spike 0009.
+The parity matrix (section above) is defined in round 29 as the Playwright journey suite over the M2 screens (issue
+#45, FR-01); the dynamic half of spike 0009 (HAR recordings, response bodies) runs per screen (Q-0010.1).

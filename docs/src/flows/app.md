@@ -22,6 +22,14 @@ same on the Worker and on the native server. The crates involved are on
 | `GET /api/v1/projects/{project_id}/work-items/{id}/attachments/{name}` | Bearer token, role Guest | 200 and the bytes, with the `Content-Type` they were stored with, if any |
 | `DELETE /api/v1/projects/{project_id}/work-items/{id}/attachments/{name}` | Bearer token, role Member | 204 |
 
+**Pending rename.** The `/api/v1/...` routes above are the slice's own, not Plane's wire-compatible v1. Plane's v1
+work items live at `/api/v1/workspaces/{slug}/projects/{project_id}/work-items/` and authenticate with `X-Api-Key`
+(`apps/api/plane/api/urls/work_item.py:99-103` and `apps/api/plane/api/middleware/api_authentication.py:24` at
+the oracle tag `oracle/v1-pin-20261018`). Finding FR-06 of the architecture review
+(`.agents/plans/contrail/reviews/2026-10-19-fable-architecture-review.md`) reserves the `/api/v1` prefix for
+wire-compatible routes, so these routes move out of it ([issue #47](https://github.com/aRustyDev/thrust/issues/47)).
+The new prefix is chosen in that issue; until it lands, the paths above are what the router serves.
+
 These routes exist for tests and answer 404 unless `THRUST_TEST_ROUTES` is on:
 
 | Method and path | Needs | Answers |

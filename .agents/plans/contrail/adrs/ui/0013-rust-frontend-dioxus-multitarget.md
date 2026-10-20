@@ -71,12 +71,30 @@ Gate and targets: Phase 2 starts when **P0+P1 tiers are shipped, the 99.5%/p95 <
 
 Input from spike 0006 (`research/0008-editor-conversions.md`, section 10): the **Yjs binary stays the long-term source of truth** for any collaboratively edited document; JSON and HTML are projections (JSON is exactly derivable from the binary, the reverse loses history and client identity, HTML loses more). The ProseMirror-JSON model in `thrust-editor-doc` (compiles for wasm32 and native) is the natural shared intermediate representation for a Dioxus editor, so the web, desktop and mobile targets share one schema crate. Dioxus should **not** parse HTML as an input format: HTML import is a lossy, quirk-ridden ingest path that belongs on the server. What Rust lacks is the ProseMirror *view* layer (selection, input rules, IME, drag handles): that is Q-0013.2, not a data-model gap. Keep the schema versioned: the client's `UniqueID` block ids already make the client and headless schemas differ, and a Dioxus client would add a third unless the schema crate is the single definition that generates all of them.
 
+## Update — review round 29 (2026-10-19)
+
+Per FR-01 (`reviews/2026-10-19-fable-architecture-review.md`; the owner's decision is its §5 table: apply now, Dioxus
+starts after M2 holds the SLO for 4 weeks), Phase 2 starts **screen by screen** (milestone M4, `PLAN.md`) when the M2
+daily-use release has held the SLO (99.5 %, p95 < 500 ms) for 4 weeks **and** its Playwright journey suite (issue
+#45) is green. The journey suite, recorded on the stock React app over the M2 screens, is the UI oracle that each
+ported Dioxus screen is checked against. The `/api/v1` oracle diff gate applies to M3's operations (the full
+P0 `/api/v1` resource list), not to the Phase 2 start. This supersedes the round-22 gate ("P0 + P1 shipped, SLO held
+4 weeks, v1 oracle diff clean"; Q-R3, Q-0013.1), which could not fire as written: the oracle covers `/api/v1` only
+(D-013), so nothing checked the UI. The Decision's Option 2 is unchanged; what changes is the definition of "stable"
+it left to Q-R3. Each screen is ported with the `clone-frontend` skill, and the compat rows behind it are deleted when
+it ships (ADR-0034, round 29). Spike 0007 stays the go/no-go, with the editor-island decision pulled into the Phase 2
+planning gate (FR-16); the island is registered in ADR-0006 as a planned permanent exception (FR-15). Q-0013.2 is
+answered (owner, round 29): v1 targets the web only (round 22), so the renderer is WASM DOM; desktop and mobile
+renderers are chosen after v1; the editor island is the registered exception. Q-0013.4 is answered (owner, round 29):
+the Dioxus client uses the core OpenAPI surface generated from the use-cases at M4 (FR-06, ADR-0034 round 29), and
+compat DTOs never enter shared crates (FR-20, issue #52).
+
 ## Open Questions
 
 * Q-0013.1 — Definition of "stable" that triggers Phase 2.
-* Q-0013.2 — Rendering approach per target (WASM DOM, WGPU renderer, webview) and the rich-text editor strategy.
+* Q-0013.2 — Rendering approach per target (WASM DOM, WGPU renderer, webview) and the rich-text editor strategy. (answered round 29, FR-15)
 * Q-0013.3 — Which targets are required in v1 (Thrust): web only, plus desktop, plus mobile?
-* Q-0013.4 — Does the Dioxus app share generated API types with the backend crates, or an OpenAPI-generated client?
+* Q-0013.4 — Does the Dioxus app share generated API types with the backend crates, or an OpenAPI-generated client? (answered round 29, FR-06)
 
 ## More Information
 

@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-10-17
 decision-makers: asmith
 consulted: []
@@ -27,7 +27,11 @@ New crates (core, ports, adapters, api, collab) need a consistent test/lint/form
 
 ## Decision Outcome
 
-**Revised round 25 (Rust backend, ADR-0006):** the toolchain is **`cargo test` / `cargo nextest` for `core` and native adapters, `proptest` for property tests, `wasm-bindgen-test`/workerd (via `wrangler dev` or Miniflare) for the wasm32 Worker leg, testcontainers for self-hosted adapters, Playwright for e2e, `clippy`/`rustfmt` for Rust, oxlint/oxfmt and vitest only for the adopted React packages.** The original TypeScript-era text below (Option 1 'Vitest everywhere', confidence high) is **superseded** and kept for history. Coverage tool (e.g. `cargo-llvm-cov`) and thresholds are planning-time (Q-0123.1). ADR stays `proposed` until the spike 0001 harness exists.
+**Decision (accepted, round 29): the round-25 revision below, the Rust toolchain, with `docs/src/testing/` and the
+`AGENTS.md` testing rules as the graduated standard; mutation testing on the permission seam and no line-coverage
+threshold; e2e on the Cloudflare set only. Per FR-17, `reviews/2026-10-19-fable-architecture-review.md` §5.**
+
+**Revised round 25 (Rust backend, ADR-0006):** the toolchain is **`cargo test` / `cargo nextest` for `core` and native adapters, `proptest` for property tests, `wasm-bindgen-test`/workerd (via `wrangler dev` or Miniflare) for the wasm32 Worker leg, testcontainers for self-hosted adapters, Playwright for e2e, `clippy`/`rustfmt` for Rust, oxlint/oxfmt and vitest only for the adopted React packages.** The original TypeScript-era text below (Option 1 'Vitest everywhere', confidence high) is **superseded** and kept for history. Coverage tool (e.g. `cargo-llvm-cov`) and thresholds are planning-time (Q-0123.1; answered round 29: no line-coverage threshold). The spike 0001 harness this waited for exists, and the ADR is accepted (round-29 note).
 
 ### Consequences
 
@@ -64,11 +68,21 @@ Tooling follows Rust: `cargo test`/nextest, workerd-hosted wasm tests, testconta
 
 Context, Consequences and Confirmation are rewritten for the Rust toolchain; the TypeScript-era options remain only as history and apply to the adopted React packages. The ADR stays `proposed`.
 
+## Update — review round 29 (2026-10-19)
+
+Per FR-17 (`reviews/2026-10-19-fable-architecture-review.md`; the owner's decision is its §5 table: apply now, "every acceptance cites this review as the recorded owner decision"), this ADR is accepted on its leading hypothesis, the round-25 revision in the Decision Outcome: "`cargo test` / `cargo nextest` for `core` and native adapters, `proptest` for property tests, `wasm-bindgen-test`/workerd (via `wrangler dev` or Miniflare) for the wasm32 Worker leg, testcontainers for self-hosted adapters, Playwright for e2e, `clippy`/`rustfmt` for Rust, oxlint/oxfmt and vitest only for the adopted React packages". Q-0123, Q-0123.1 and Q-0123.2 are answered. FR-17's evidence is that `docs/src/testing/` has graduated this ADR's content.
+
+* **The graduated standard is `docs/src/testing/`**, with the binding rules in `AGENTS.md` §Testing (rules 1 to 8, which win where the two disagree) and the profiles in `.config/nextest.toml` and `.cargo/mutants.toml`. This ADR keeps the decision; the docs say what is live today, technique by technique (`docs/src/testing/README.md`, "Where each fact lives"). Live today: nextest, proptest, Postgres through testcontainers, workerd through `wrangler dev`, and mutation testing (`scripts/mutants.sh`, cargo-mutants on `thrust-core`). Not yet: Playwright e2e (planned, `docs/src/testing/techniques/app-and-e2e.md`) and `wasm-bindgen-test` (a target, `docs/src/testing/techniques/real-backends.md`). Clippy and rustfmt are not in CI yet (review §4, "Dependency guard and CI gate"); the clippy deny list and `cargo fmt --check` are issue #40.
+* **Coverage (Q-0123.1):** mutation testing on the permission seam, and no line-coverage threshold. This supersedes the Confirmation's "coverage thresholds per crate in config" and the Consequences' Neutral item on coverage gates.
+* **E2E (Q-0123.2):** e2e runs on the Cloudflare set only; the self-hosted set's evidence is the contract suite's `native-pg` cell (FR-19).
+* **Contract suites:** the Confirmation's "every adapter crate runs its port's contract suite" is superseded by one black-box HTTP suite against four targets, with `gate` failing a pull request unless every planned cell reported (ADR-0121, round 29; `docs/src/architecture/cicd.md`).
+* **TypeScript-era text superseded.** Options 1 to 3 (Vitest, Node's runner, Jest and Cypress) and the Context's and Q-0123's citation of `AGENTS.md` for a pnpm, turbo, oxlint and oxfmt standard no longer describe anything: `AGENTS.md` now holds the Rust testing rules and commands. Oxlint, oxfmt and vitest stay only for the adopted React packages, as the round-25 revision says.
+
 ## Open Questions
 
-* Q-0123 — standards.
-* Q-0123.1 — Coverage thresholds (core vs adapters) and mutation testing for the permission seam?
-* Q-0123.2 — Does e2e run against both adapter sets or only the primary?
+* Q-0123 — standards. (answered round 29, FR-17)
+* Q-0123.1 — Coverage thresholds (core vs adapters) and mutation testing for the permission seam? (answered round 29, FR-17)
+* Q-0123.2 — Does e2e run against both adapter sets or only the primary? (answered round 29, FR-17)
 
 ## More Information
 

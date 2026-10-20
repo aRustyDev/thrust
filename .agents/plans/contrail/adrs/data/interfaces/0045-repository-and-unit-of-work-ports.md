@@ -113,7 +113,7 @@ Per FR-17 and FR-02 (`reviews/2026-10-19-fable-architecture-review.md`), this AD
 * `project_sequences` carries `workspace_id`, which it lacks today (`crates/thrust-adapters-postgres/migrations/0001_init.sql:20-24`), and `allocate` stops ignoring the workspace.
 * The two-tenant property test (ADR-0041 Confirmation) stays. Where the types allow it, a planted "ignore the tenant predicate" bug fails to compile instead of failing at runtime: a use-case that passes bare ids to a repository no longer compiles. The existing control `mutant_ignore_tenant` plants its bug in `membership` (`crates/thrust-adapters-memory/src/lib.rs:66-70`), which runs before a `Scope` exists, so it stays a runtime control that the contract suite must kill.
 
-Implementation constraint for issue B1: `Database` and `Tx` are declared in `thrust-ports`, which does not depend on `thrust-core` (`crates/thrust-ports/Cargo.toml`), and the adapters must read the ids to build their predicates. The proof type the ports take therefore cannot be `thrust-core`'s `Scope` as it stands. Issue B1 decides where that type is declared, and how its constructor stays reserved to `authorize` while the adapters can still read the ids.
+Implementation constraint for issue #35: `Database` and `Tx` are declared in `thrust-ports`, which does not depend on `thrust-core` (`crates/thrust-ports/Cargo.toml`), and the adapters must read the ids to build their predicates. The proof type the ports take therefore cannot be `thrust-core`'s `Scope` as it stands. Issue #35 decides where that type is declared, and how its constructor stays reserved to `authorize` while the adapters can still read the ids.
 
 ## Open Questions
 

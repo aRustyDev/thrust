@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-10-17
 decision-makers: asmith
 consulted: []
@@ -29,7 +29,9 @@ Plane stores attachments, avatars, covers, and inline editor images as `FileAsse
 
 ## Decision Outcome
 
-Decision pending — see Q-0047. Leading hypothesis: **Option 4 (hybrid), with the presigned path as the contract's reference behaviour**, confidence **medium**. Both adapters expose the same `BlobStore` operations (ADR-0080) and the asset service exposes:
+**Decision (accepted, round 29): the leading hypothesis, Option 4 (hybrid), with the presigned path as the contract's reference behaviour, and the asset service, states, key layout and limits below. Per FR-17, `reviews/2026-10-19-fable-architecture-review.md` §5.**
+
+Leading hypothesis (accepted): **Option 4 (hybrid), with the presigned path as the contract's reference behaviour**, confidence **medium**. Both adapters expose the same `BlobStore` operations (ADR-0080) and the asset service exposes:
 
 ```
 createAsset({workspace, entity_type, entity_id, name, mime, size, access}) -> { asset_id, upload: {method, url, headers, expires_at} }
@@ -80,10 +82,16 @@ Default max asset size **5 MB per instance, configurable** (Q-0047.1). Public-bo
 
 Defaults aligned with rounds 16 and 25: **default maximum asset size 5 MB per instance, configurable** (`max_size`; the multipart/presigned path exists for operators who raise it); **public-board assets are served through the Worker proxy** (published data only; ADR-0022, ADR-0080) — the presigned-GET path is for authenticated access only. The `createAsset`/`confirmUpload` sketch is language-neutral; its Rust form is a trait in `thrust-core` over the `BlobStore` port. The ADR stays `proposed` (lifecycle contract still open).
 
+## Update — review round 29 (2026-10-19)
+
+Per FR-17 (`reviews/2026-10-19-fable-architecture-review.md`; the owner's decision is its §5 table: apply now, "every acceptance cites this review as the recorded owner decision"), this ADR is accepted on its leading hypothesis, quoted in the Decision Outcome: "Option 4 (hybrid), with the presigned path as the contract's reference behaviour". Q-0047 is answered. FR-17 names 0047 among the open questions whose default is already in their own text. The lifecycle (`pending → uploaded → (deleted)`), the four asset-service operations, the key layout as built, `<workspace>/<project>/<item>/<name>` with the name one validated path segment (`blob_key` and `validate_blob_name`, `crates/thrust-core/src/lib.rs:461-470`; Q-0080.2; this supersedes the `{workspace_id}/{asset_id}-{safe_name}` sketch in the Decision Outcome), the 5 MB default limit (round 16) and the Worker proxy for public-board assets (round 25) are the contract.
+
+Not built yet: the `BlobStore` trait in the code has `put`, `get`, `delete` and `list` and no presign method (`crates/thrust-ports/src/lib.rs:200-204`), and no asset service exists. On the self-hosted set at P0 the blob adapter is local disk, which has no presigned PUT (ADR-0080, round 29); ADR-0081's round-29 note says how uploads work there. The Confirmation's MinIO testcontainer applies from P1, with the S3-compatible adapter (ADR-0080, round 29).
+
 ## Open Questions
 
-* Q-0047 — approve contract and upload path.
-* Q-0081 — uploads, image transforms, cleanup.
+* Q-0047 — approve contract and upload path. (answered round 29, FR-17)
+* Q-0081 — uploads, image transforms, cleanup. (answered round 29, FR-17)
 * Q-0010 — frontend upload service changes.
 * Q-0047.1 — Maximum asset size target and whether `FILE_SIZE_LIMIT` semantics stay per-instance.
 * Q-0047.2 — Public `spaces` asset access: signed URL, public bucket prefix, or Worker proxy?
