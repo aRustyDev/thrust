@@ -92,6 +92,14 @@ TypeScript sketch replaced by a Rust trait (ADR-0006). **Public-read assets (ava
 
 The `?Send` sketch above is corrected (ADR-0002). Spike 0001: R2 put, get and delete are native and `[tested]` locally through the attachment tests (`list` compiled, not exercised). **The Worker root buffers request bodies, drained with an 8 MiB bound**, so a streaming `BlobBody` upload through the Worker is not available; larger uploads use presigned PUT (ADR-0081). Reason: `worker::Body` holds a reader on the JS request stream and cancels it on drop; after an early error response workerd rejects the cancel, which reset other in-flight connections in `wrangler dev` (2 of 8 runs failed, 0 of 16 after draining). Whether production workerd tolerates the unfixed shape is unverified.
 
+## Update — review round 29 (2026-10-19)
+
+Per FR-19 (`reviews/2026-10-19-fable-architecture-review.md`; the owner's decision is its §5 table: apply now, local-disk blob store at P0, S3 adapter at P1), the self-hosted `BlobStore` adapter at P0 is a local-disk adapter inside the single native binary (ADR-0091, round 29). The S3-compatible adapter (MinIO or S3) arrives at P1. The Cloudflare adapter stays the R2 binding. Reason: each self-hosted service costs a compose service, a testcontainer and a CI cell (FR-05), and FR-19 takes the MinIO service out of P0.
+
+Today the native server keeps blobs in process memory (`MemoryBlobStore`, `crates/thrust-server/src/main.rs:83`), so a restart loses attachments (`docs/src/architecture/infra.md:91-96`); the local-disk adapter is not built yet. The built trait (`crates/thrust-ports/src/lib.rs:199-205`) has `put`, `get`, `delete` and `list`, which local disk covers directly. The sketch's `presign` has no SigV4 endpoint on local disk; how the self-hosted set answers presigned uploads before the P1 S3-compatible adapter lands is open under Q-0081.
+
+This supersedes the Decision's S3/MinIO adapter as the P0 self-hosted adapter (it becomes the P1 adapter) and the Confirmation's MinIO testcontainer at P0: until P1 the self-hosted leg of the contract suite is the `native-pg` cell, which runs the local-disk adapter once it is built.
+
 ## Open Questions
 
 * Q-0081 — upload flow, image transforms, cleanup of unuploaded assets.

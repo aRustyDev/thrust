@@ -126,10 +126,16 @@ Spike 0001 and spike 0004 findings that touch the collab Worker (`[tested]` loca
 
 Spike 0004 run 2: the unexplained 80 s drop of a plain-Worker WebSocket in run 1 was **not reproduced** — two 120 s soaks on the bypass path (a message every 20 s) passed, and WebSockets worked on a gated path with a service token and across a service-binding hop. Q-0060.2 stays open at low priority; a reconnect-on-close client is still required.
 
+## Update — review round 29 (2026-10-19)
+
+Per FR-05 and FR-15 (`reviews/2026-10-19-fable-architecture-review.md`; the owner's decision is its §5 table: apply now, with Hocuspocus among FR-05's five cuts), the `Collab` adapter is one `yrs` room implementation with two hosts. The room logic (sync, awareness and the wire framing) lives in one crate; it runs inside a Durable Object on Cloudflare and inside the axum server natively. Hocuspocus + Redis is withdrawn as the self-hosted adapter: it was a shipped TypeScript service with no exit plan, which the round-22 non-Rust policy (ADR-0006) does not allow (FR-15). The room speaks Hocuspocus framing, or the editor's collab provider is swapped under Q-R2 (the round-25 protocol caveat above). Spike 0005 adds the exit criterion "the same room runs on axum".
+
+This supersedes the Decision's Hocuspocus + Redis adapter (Option 1's second adapter, the "reuses current `apps/live` code" pro, and the Consequences' Redis topology difference) and the round-21 note's choice between Hocuspocus + Redis and a Rust y-sweet/axum+yrs service. Q-0061.2 is answered: the `yrs` room on axum. The Confirmation's contract test still runs against both hosts. ADR-0006's round-29 register lists Hocuspocus as withdrawn.
+
 ## Open Questions
 
 * Q-0061.1 — presence limits per DO, max doc size, cold-start behavior.
-* Q-0061.2 — can the self-hosted adapter reuse Hocuspocus + Redis unchanged behind this port?
+* Q-0061.2 — can the self-hosted adapter reuse Hocuspocus + Redis unchanged behind this port? (answered round 29, FR-05, FR-15)
 * Q-0060.1 — how is the editor's auth token delivered to the DO upgrade request (cookie vs ticket/JWT) given Cloudflare Access in front?
 
 ## More Information

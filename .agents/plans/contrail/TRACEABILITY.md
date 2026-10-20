@@ -84,7 +84,7 @@ needed" must be recorded before the row starts). "Test home" is where the accept
 | F-E24 | Slack integration | P2 | 0085 |  |  |
 | F-E25 | External sync (GitHub/Beads) | P1 | 0085 |  | integration |
 | F-X01 | Port/adapter runtime: Cloudflare adapter set | P0 | 0002, 0007 | 0001 | contract suite on CF set |
-| F-X02 | Port/adapter runtime: self-hosted adapter set | P0 (DB, queue, blob, session, scheduler, | 0007, 0091 | 0001 | contract suite on self-hosted set |
+| F-X02 | Port/adapter runtime: self-hosted adapter set | P0 (database, the outbox as queue, local-disk `BlobStore`, SMTP via `lettre`, in-process scheduler; round 29, FR-19); S3-compatible blob adapter P1 | 0007, 0091, 0080 | 0001 | the `native-pg` contract cell (FR-19) |
 | F-X03 | Multi-tenant isolation (tenant key; quotas out of scope) | P0 | 0003, 0041 | 0002 | tenant-predicate property tests (R-S1) |
 | F-X04 | One-time import of existing Plane Postgres data | **drop** (round 5: start fresh) | dropped |  |  |
 | F-X05 | Contract-test harness (every port × every adapter) | P0 | 0121 | 0001 | self |
@@ -111,7 +111,7 @@ needed" must be recorded before the row starts). "Test home" is where the accept
 | R-F7 compat-plane + core API | 0034 | recorded-journey replay (spike 0009) |
 | R-P1 no platform SDK outside adapters | 0002 | lint/`cargo deny` + CI |
 | R-P2/R-P5 adapter selection compile-time | 0007 | build matrix (ADR-0100) |
-| R-P3 P0 self-hosted set | 0007, 0091 | contract matrix with `pending-adapter` markers |
+| R-P3 P0 self-hosted set | 0007, 0091 | the `native-pg` contract cell (`scripts/contract-all.sh`; round 29, FR-19); after the FR-05 cut no P0 port is CF-only, so no row is `pending-adapter` |
 | R-P4 CF-only code isolated | 0002, 0090 | crate dependency check |
 | R-S1 tenant predicate | 0041, 0051 | property tests (user never sees rows outside scope) |
 | R-S2 secrets never in code/config | 0092 | secret scanning in CI |

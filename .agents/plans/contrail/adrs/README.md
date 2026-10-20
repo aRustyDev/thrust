@@ -42,7 +42,7 @@ pending — linked to its `Q-<adr#>` row in `../QUESTIONS.md`. New ADRs take the
 | 0060 | collab | [Yjs collab provider port](collab/0060-yjs-collab-provider-port.md) | accepted | |
 | 0061 | collab | [Collab persistence and versioning](collab/0061-collab-persistence-and-versioning.md) | proposed | Q-0061 |
 | 0070 | jobs | [Queue port](jobs/0070-queue-port.md) | accepted | |
-| 0071 | jobs | [Workflow port](jobs/0071-workflow-port.md) | accepted | |
+| 0071 | jobs | [Workflow port](jobs/0071-workflow-port.md), superseded in part (round 29) | accepted | |
 | 0072 | jobs | [Cron port](jobs/0072-cron-port.md) | accepted | |
 | 0073 | jobs | [Notifications, email, webhooks pipeline](jobs/0073-notifications-email-webhooks-pipeline.md) | proposed | Q-0073 |
 | 0080 | storage | [Blob port (R2)](storage/0080-blob-port-r2.md) | accepted | |
@@ -52,7 +52,7 @@ pending — linked to its `Q-<adr#>` row in `../QUESTIONS.md`. New ADRs take the
 | 0084 | integrations | [AI port](integrations/0084-ai-port.md) | accepted | |
 | 0085 | integrations | [GitHub, Slack, Beads, importers](integrations/0085-integrations-github-slack-beads-importers.md) | accepted | |
 | 0090 | infra | [Cloudflare topology](infra/0090-cloudflare-topology.md) | proposed | Q-0090 |
-| 0091 | infra | [Self-hosted twin](infra/0091-self-hosted-twin.md) | proposed | Q-0091 |
+| 0091 | infra | [Self-hosted twin](infra/0091-self-hosted-twin.md) | accepted | |
 | 0092 | infra | [Secrets and environments](infra/0092-secrets-and-environments.md) | accepted | |
 | 0093 | infra | [IaC tooling](infra/0093-iac-tooling.md) | accepted | |
 | 0094 | infra | [Postgres hosting: CNPG in woven-o11y via Tunnel and Workers VPC](infra/0094-postgres-hosting-cnpg-tunnel-vpc.md) | accepted | Q-0094.1 |
@@ -67,5 +67,5 @@ pending — linked to its `Q-<adr#>` row in `../QUESTIONS.md`. New ADRs take the
 | 0140 | security | [Licensing (AGPL) and clean-room](security/0140-licensing-agpl-cleanroom.md) | accepted | |
 | 0141 | security | [Tenancy and threat model](security/0141-tenancy-and-threat-model.md) | proposed | Q-0141 |
 
-Status counts: 44 accepted · 14 proposed · 2 superseded (60 total). Several `proposed` ADRs carry dated "Update — interview round N"
+Status counts: 45 accepted · 13 proposed · 2 superseded (60 total). Several `proposed` ADRs carry dated "Update — interview round N"
 notes recording partial owner direction; they stay `proposed` until the remaining question is answered.

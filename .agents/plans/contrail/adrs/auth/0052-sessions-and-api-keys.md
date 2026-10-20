@@ -87,6 +87,8 @@ Per FR-03 (`reviews/2026-10-19-fable-architecture-review.md`; the owner's decisi
 * `SessionStore` becomes a repository over the `Database` port: one row per session, a `revoked_at` column, and `last_seen_at` updated lazily rather than on every request. As S1 already says, revocation is a row update, effective on the next request.
 * `KvSessionStore` (`crates/thrust-adapters-cloudflare/src/lib.rs:65-94`: Workers KV, with a 60 s minimum TTL on an eventually consistent store) is deleted from the Cloudflare set (ADR-0082, round 29; D-003). The `SessionStore` trait is kept only if the memory adapter is still wanted for tests.
 
+Per FR-05 (same review and §5 table), K1's rate-limit placement ("CF: Workers rate-limit binding or DO for exact counts; self-hosted: Redis") is superseded: the counters are the Workers Rate Limiting binding on Cloudflare (approximate, D-007) and an in-process counter natively. There is no Durable Object limiter and no Redis (ADR-0033 and ADR-0082, round 29).
+
 ## Open Questions
 
 * Q-0052 — session and key mechanics.
