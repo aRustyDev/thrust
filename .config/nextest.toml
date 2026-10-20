@@ -51,7 +51,9 @@ path = "junit.xml"   # written to target/nextest/ci/junit.xml
 
 # --- deep: every randomized test, incl. oracle. Run with PROPTEST_CASES=4096 or more. ----
 [profile.deep]
-default-filter = 'test(/\b(prop|model|oracle)_/)'
+# The prefix filter alone would also select the generated `model_` tests in the contract suite (they need a running
+# target) and in pg_adapter (it needs Docker); they run through scripts/contract.sh and the pg-adapter job instead.
+default-filter = 'test(/\b(prop|model|oracle)_/) & not (package(thrust-contract-tests) | binary(pg_adapter))'
 fail-fast = false
 
 [[profile.deep.overrides]]

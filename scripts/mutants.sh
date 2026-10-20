@@ -42,7 +42,7 @@ done
 
 # Postgres adapter mutant: recycle a connection that is still inside an abandoned transaction.
 "$ROOT/scripts/rs" cargo test --manifest-path "$ROOT/Cargo.toml" -p thrust-adapters-selfhosted \
-  --features mutant_discard_noop --test pg_adapter -- an_abandoned_transaction >"$OUT/pg-discard.out" 2>&1
+  --features mutant_discard_noop --test pg_adapter -- an_abandoned_transaction model_postgres_adapter_matches >"$OUT/pg-discard.out" 2>&1
 status=$?
 kill_check "postgres adapter + discard-noop" "$status" "$OUT/pg-discard.out"
 

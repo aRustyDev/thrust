@@ -1,6 +1,12 @@
 //! Adapter-level tests for the shared Postgres adapter, native side, against a REAL Postgres
 //! started by testcontainers (OrbStack docker). These pin the properties the core relies on:
 //! atomic sequence allocation, rollback atomicity, partial-unique semantics, outbox, tenancy.
+//!
+//! The tests below each pin one behaviour; `model` generates them instead: random sequences of `Database` and `Tx`
+//! calls against a reference model. It is compiled into this binary, so it needs Docker too and stays out of the
+//! hermetic default loop.
+
+mod model;
 
 use std::sync::Arc;
 

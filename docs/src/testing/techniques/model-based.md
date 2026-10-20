@@ -76,6 +76,17 @@ Each project's caller is usually one who may write there and otherwise anyone, s
 state for the rare classes (a get after the item's soft delete, a cross-project get) while still covering every
 rejection.
 
+`crates/thrust-adapters-selfhosted/tests/model/mod.rs`: `model_postgres_adapter_matches_the_reference_model`, the
+same idea one layer down, against the Postgres adapter and a real Postgres. The test chooses every id itself and the
+adapter's own values (sequence and sort numbers) are predictable, so the model is a pure planner: each generated
+operation becomes a script of port calls, each with the exact answer the adapter must give. Transactions of up to
+four steps (create, soft delete, outbox row) commit, roll back, or are dropped unfinished; the model knows that
+Postgres gives a rolled-back allocation back, that a conflict can come from a row of the same transaction, and that
+an abandoned transaction's writes must not reach the next one. It kills `mutant_discard_noop` (shrunk: a dropped
+transaction that wrote an outbox row, then a commit that published it), and a soft delete that ignored the
+workspace fails it on a create and a cross-workspace delete. Every call has a 20 s timeout, so a wedged pool fails
+instead of hanging.
+
 ## Target
 
 Built for work items, their events and attachments (ADR-0121,
