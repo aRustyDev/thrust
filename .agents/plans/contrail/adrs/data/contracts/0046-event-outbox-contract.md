@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-10-17
 decision-makers: asmith
 consulted: []
@@ -29,9 +29,11 @@ Plane fans out from entity mutations through three overlapping mechanisms **[S][
 
 ## Decision Outcome
 
-Decision pending — see Q-0046. Leading hypothesis: **Option 1**, confidence **medium-high**, because it is the only option that gives atomicity across (entity write + event) on every DB engine in ADR-0040 and maps directly to the Open-EE design already reviewed. Relay: after-commit fast path (`waitUntil`/in-process publish) plus a Cron-driven sweeper for undispatched rows (Q-0046.1, answered round 16).
+**Decision (accepted, round 29): as built in PR #17, Option 1: envelope v1 as in `thrust-contracts`, written to the outbox in the entity's transaction; an after-commit relay plus a cron sweeper; outbox rows kept 90 days; consumers idempotent on `event_id`. Per FR-17, `reviews/2026-10-19-fable-architecture-review.md` §5.**
 
-### Proposed envelope (schema v1)
+**Option 1** is chosen because it is the only option that gives atomicity across (entity write + event) on every DB engine in ADR-0040 and maps directly to the Open-EE design already reviewed. Relay: after-commit fast path (`waitUntil`/in-process publish) plus a Cron-driven sweeper for undispatched rows (Q-0046.1, answered round 16).
+
+### Proposed envelope (schema v1 as first written; the accepted v1 is in the round-29 note)
 
 ```json
 {
@@ -67,7 +69,7 @@ Outbox row adds `dispatched_at`, `attempts`, `dead_lettered_at`. Ordering guaran
 
 * Good: durable, atomic, single contract; new consumers need no producer changes.
 * Bad: outbox table growth (needs retention job; fits existing daily cleanups); additional write per mutation; relay latency; consumer idempotency burden.
-* Neutral: `IssueActivity` becomes a *projection* — decide whether it is written by a consumer (eventually consistent) or synchronously inside the transaction for UI read-your-writes (Q-0046).
+* Neutral: `IssueActivity` becomes a *projection*, written by a consumer (eventually consistent), as built (round 29; Q-0046).
 
 ### Confirmation
 
@@ -107,9 +109,19 @@ Envelope message size must stay under the Queue common-subset ceiling of **128 K
 
 Spike 0001: both delivery paths work on both targets `[tested]` locally — the after-commit fast path (`Background` port: `waitUntil` on the Worker, `tokio::spawn` natively) and the Cron-driven sweeper (an outbox row nothing delivered before the sweep is delivered by it). The consumer writes the activity row idempotently on `event_id`, verified with an injected duplicate delivery. Cloudflare Queues provides no per-key ordering (unchanged; see ADR-0070). Queue messages are JSON text. Retry, DLQ and real delivery semantics are Stage 2.
 
+## Update — review round 29 (2026-10-19)
+
+Per FR-17 (`reviews/2026-10-19-fable-architecture-review.md`), this ADR is accepted as built in PR #17 (owner disposition in review §5), and Q-0046 is answered. The review checked the design and found its at-least-once semantics correct (review §4, "Transactional outbox"). As built:
+
+* **Envelope v1** is `Envelope` in `thrust-contracts` (`crates/thrust-contracts/src/lib.rs:125-139`), not in `thrust-ports` as the round-25 note says. Its fields: `event_id`, `schema_version` (1, `crates/thrust-core/src/lib.rs:209`), `workspace_id`, `event_type` (`<entity>.<verb>`), `entity_type`, `entity_id`, `actor_id`, `occurred_at`, `payload`, `trace_id`. The proposed JSON's `external_source` and `external_id` are not in v1. The outbox row (`crates/thrust-contracts/src/lib.rs:150-157`; table at `crates/thrust-adapters-postgres/migrations/0001_init.sql:53-62`) carries `dispatched_at` and `attempts`; `dead_lettered_at` is not built.
+* **Atomic write.** The entity row and the outbox row are written in one transaction, with an explicit rollback on error (`crates/thrust-core/src/lib.rs:250-298`).
+* **Relay.** After commit, `Background::spawn` publishes the row and marks it dispatched; a publish failure leaves the row for the sweeper (`crates/thrust-core/src/lib.rs:380-410`). The sweeper (`sweep_outbox`, lines 419-430) runs from the Worker's cron every minute (`crates/thrust-worker/wrangler.toml:21`, `crates/thrust-worker/src/lib.rs:193-211`) and from an in-process timer natively (`crates/thrust-server/src/main.rs:93-106`). The relay sets the event id as the idempotency key and `ordering_key` to `<workspace_id>:<entity_id>` (line 389); no queue adapter reads `ordering_key` yet, so per-key ordering stays with ADR-0070.
+* **Consumer idempotency.** `process_event` (lines 432-454) writes the activity row with `ON CONFLICT (event_id) DO NOTHING` against a unique `event_id` (`crates/thrust-adapters-postgres/src/lib.rs:253-258`; `0001_init.sql:64-67`), and the `no-activity-dedupe` mutation control (`scripts/mutants.sh:32`) is a broken build the suite must fail. The activity row is a consumer projection, which settles the Neutral consequence above.
+* **Retention.** Outbox rows are kept 90 days (round 16). The retention job is not built yet.
+
 ## Open Questions
 
-* Q-0046 — approve outbox + envelope; activity as sync write vs consumer projection.
+* Q-0046 — approve outbox + envelope; activity as sync write vs consumer projection. (answered round 29, FR-17)
 * Q-0073 — mapping of bgtasks to consumers/workflows.
 * Q-0073.2 — webhook delivery guarantees.
 * Q-0046.1 — Relay mechanism: immediate publish + Cron sweeper vs sweeper-only (latency vs complexity)?

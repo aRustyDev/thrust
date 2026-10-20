@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-10-17
 decision-makers: asmith
 consulted: []
@@ -45,7 +45,9 @@ The new backend must keep API-visible semantics (ADR-0031) while not depending o
 
 ## Decision Outcome
 
-Decision pending — see Q-0043. Leading hypotheses (confidence in parentheses):
+**Decision (accepted, round 29): A2, B1 and C1, as built in PR #17 (B1 counter row, `sort_order` in the same critical section, partial unique indexes), with the FR-22 allocation order. Per FR-17 and FR-22, `reviews/2026-10-19-fable-architecture-review.md` §5.**
+
+The accepted options as first written (confidence as recorded before round 29; the allocation order is set in the round-29 note):
 
 * **A2** — UUID v7 for new rows (medium): same wire format, better index locality; no client-visible change.
 * **B1** — counter row with atomic `UPDATE … RETURNING` in the same transaction (medium-high): works on Postgres and SQLite/D1 (single statement); no advisory lock; the allocation joins the create's transaction/batch. **It must replicate Plane's `MAX(IssueSequence.sequence)+1` semantics (verified against `db/models/issue.py`):** Plane computes the next number from the `IssueSequence` table (FK `SET_NULL` on the issue), so **numbers are never reused after an issue is deleted or moved** — the counter row must be monotonic and never decrement. In the same locked block Plane also allocates **`sort_order`** (largest in the state + 10,000) and `description_stripped`; the allocator must cover `sort_order` too (R-F2). Gaps on rollback are acceptable if documented (Plane's own behaviour on failed save is similar [S, verify]).
@@ -94,11 +96,17 @@ Corrections from the review against `apps/api/plane/db/models/issue.py:179-235`:
 
 Spike 0001 evidence, Postgres only (spike 0002 still runs the 10,000-create, 50-writer test): option **B1, a per-project counter row upserted in the same transaction, also allocating `sort_order`**, worked. 20 concurrent creates over HTTP and 24 concurrent allocations at the adapter level (real Postgres through testcontainers) gave unique, contiguous numbers; a rollback leaves no gap; soft-deleting an item frees its `external_id` (partial unique index) but never its sequence number. A duplicate-sequence mutant is killed by four tests. Concurrency cost: create p95 at 8 clients was 140 ms against 27 ms at one client on the local Cloudflare-set Worker, which I read as the hot counter row serialising creates in one project — not isolated, treat as a prediction for Stage 2. **B3 (a Durable Object as the allocator) was not tried.**
 
+## Update — review round 29 (2026-10-19)
+
+Per FR-22 and FR-08 (4) (`reviews/2026-10-19-fable-architecture-review.md`), the sequence number is allocated in its own short transaction before the create's transaction, or by an `UPDATE … RETURNING` as the last statement before commit, so that the counter-row lock is held for one round trip. Today the counter upsert (`crates/thrust-adapters-postgres/src/lib.rs:399-414`) is the first statement of the create transaction (`crates/thrust-core/src/lib.rs:250-295`: allocate, insert, outbox row, commit), so the row lock is held across the insert, the outbox write and the commit, and each create in a project waits for the one before it. `research/0004` §10.3 measured create p95 559 ms at 8 clients against 296 ms at 1, attributed to the hot row but not isolated. Plane's advisory lock serialises creates the same way, so this is parity, not a regression; advisory locks are unsupported through Hyperdrive (FR-04, ADR-0002 round 29), so B1 stays the mechanism. Gaps on failure are accepted: a create that fails after its allocation committed loses that number, which the B1 bullet already allows, and the counter stays monotonic. This gives up the round-26 property "a rollback leaves no gap" on the create path. `crates/thrust-adapters-selfhosted/tests/pg_adapter.rs:134` asserts that property at the adapter level, so the change that implements this order must restate that test and say why in its commit message (`AGENTS.md`, Testing rule 3). Confirm with spike 0002's 50-writer test (the 10,000-create run named in the round-26 note) and re-measure create p95 at 8 clients (FR-08).
+
+Per FR-17, A2, B1 and C1 are accepted as built in PR #17, and Q-0043, Q-0040.2 (B1) and Q-0040.3 (partial unique indexes: yes on Postgres; D1 is moot) are answered. As built: **A2**, UUID v7 from both `IdGen` adapters (`crates/thrust-adapters-selfhosted/src/lib.rs:19-20`, `crates/thrust-adapters-cloudflare/src/lib.rs:31-38`). **B1**, the `project_sequences` counter row, monotonic and never decremented, with `sort_order` allocated in the same statement (`crates/thrust-adapters-postgres/migrations/0001_init.sql:18-24`), and a unique index on `(project_id, sequence_id)` across live and deleted rows (line 44); the statement is an upsert (`INSERT … ON CONFLICT DO UPDATE … RETURNING`), so it also creates the row on a project's first create. **C1**, a partial unique index on the live external key (lines 46-49) and two scopes applied inside the adapter's queries, `Visibility::Visible` (excludes deleted, archived and draft rows) and `Visibility::WithDeleted` (`crates/thrust-contracts/src/lib.rs:110-115`). Not built yet, as expected at slice size (review §4): the triage-state and project-archived hidden classes, `withHidden()`, and the bulk `allocateSequenceRange`.
+
 ## Open Questions
 
-* Q-0043 — approve A/B/C choices.
-* Q-0040.2 — portable sequence allocation (this ADR proposes B1).
-* Q-0040.3 — partial unique index availability.
+* Q-0043 — approve A/B/C choices. (answered round 29, FR-17, FR-22)
+* Q-0040.2 — portable sequence allocation (this ADR proposes B1). (answered round 29, FR-17, FR-22)
+* Q-0040.3 — partial unique index availability. (answered round 29, FR-07)
 * Q-0043.1 — Moving a work item between projects: re-sequence (new key) or keep an alias? (Plane behavior to verify.)
 * Q-0043.2 — Retention: keep the daily `hard_delete` cadence, and which tables are covered?
 

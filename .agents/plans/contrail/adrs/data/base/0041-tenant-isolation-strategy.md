@@ -71,6 +71,17 @@ The owner deferred the choice to the DB spike (Q-0041). Leading hypothesis stays
 
 No substantive change in round 25. The Rust backend enforces the tenant predicate through the `Scope` type the `Authorizer` produces (ADR-0051, round 24): repositories accept only a `Scope`, so a query cannot run without a tenant. Isolation strategy is still deferred to spike 0002.
 
+## Update — review round 29 (2026-10-19)
+
+Per FR-02 (`reviews/2026-10-19-fable-architecture-review.md`), the round-25 sentence above ("repositories accept only a `Scope`, so a query cannot run without a tenant") states the intent, not the code, and round 29 makes it binding. Today the `Database` port takes bare `WorkspaceId` and `ProjectId` arguments, and `insert_activity`, the three outbox methods and `seed` take no tenant at all (`crates/thrust-ports/src/lib.rs:92-138`). `Scope` hands its ids back through public getters (`crates/thrust-core/src/lib.rs:139-155`). The Postgres `Tx::allocate` ignores the workspace (`crates/thrust-adapters-postgres/src/lib.rs:399`), and the membership query joins `project_members` without `m.workspace_id` (`:189-191`). Decision (owner, review §5: apply now):
+
+* Repository and `Tx` methods take `&Scope`, minted only by `authorize`, or a `SystemScope`, minted only by the composition roots and the consumer, instead of bare `WorkspaceId`/`ProjectId`. The adapter derives the tenant key from the scope. This is the "mandatory `TenantContext`" of the leading hypothesis above. The signatures are in ADR-0045 (round 29) and the proof in ADR-0051 (round 29).
+* `Scope`'s getters are not public outside `thrust-core`.
+* `project_sequences` and the membership join carry `workspace_id`.
+* The two-tenant property test in the Confirmation stays, and the "ignore the tenant predicate" mutant fails to compile where the types allow it (ADR-0045, round 29, says which controls can).
+
+The isolation strategy itself (Q-0041) is still open and this ADR stays `proposed`. This note decides only how the repository layer enforces the tenant predicate.
+
 ## Open Questions
 
 * Q-0041 — which strategy?

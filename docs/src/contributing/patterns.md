@@ -24,6 +24,18 @@ key. Shown by `PgDatabase` in `crates/thrust-adapters-postgres/src/lib.rs`. The 
 `mutant_ignore_tenant` removes the check in the memory adapter, so that `scripts/mutants.sh` can show the contract
 suite catches it.
 
+**Repository calls take a `Scope`, never ids.** This is the decided shape, not yet the code. Today the `Database` and
+`Tx` methods take bare `WorkspaceId` and `ProjectId` arguments (`crates/thrust-ports/src/lib.rs:92-157`), and the
+public getters on `Scope` hand the ids back (`crates/thrust-core/src/lib.rs:145-155`), so a use-case can skip
+`authorize` and call a port with ids of its own. Finding FR-02 of the architecture review
+(`.agents/plans/contrail/reviews/2026-10-19-fable-architecture-review.md`) decided that every repository and `Tx`
+method takes `&Scope`, which only `authorize` mints, and that the adapter derives the tenant key from it. The outbox
+relay, the sweeper, the consumer and `seed` take a `SystemScope`, which only the composition roots and the consumer
+mint. The reason is the cost of one missed predicate: with about 150 tables, a repository method that forgets the
+tenant key is the top security risk the threat model names (ADR-0141), and a type error is the cheapest guard. The
+decision is recorded in ADR-0045 (round 29). Until the code follows it, check in review that ids reach a port only
+from a `Scope`.
+
 **Write the event in the transaction, relay it after.** The outbox row is inserted in the same transaction as the
 entity (`Tx::insert_outbox`). `relay_after_commit` asks the `Background` port to run `dispatch`, which publishes the
 event through `Queue::send` and marks the row dispatched, and it swallows a failure on purpose. `sweep_outbox`

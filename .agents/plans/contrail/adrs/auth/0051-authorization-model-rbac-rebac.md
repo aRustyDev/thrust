@@ -113,6 +113,14 @@ Spike 0009 (pinned tree): three permission classes are **stricter under the same
 
 The permission seam must enforce D-014 and D-015 (`DEVIATIONS.md`): the attachment list routes check project membership, and the `cycle-issues/` lookup is scoped to the workspace and project. Both are cross-scope defects in the pinned Plane that the owner decided to fix (Q-0033.3); the property tests for the tenant predicate (R-S1) cover them.
 
+## Update — review round 29 (2026-10-19)
+
+Per FR-02 and FR-03 (`reviews/2026-10-19-fable-architecture-review.md`; the owner's decision is its §5 table: apply now), the permission proof gates the database and the principal stops carrying a workspace. Neither changes the round-24 Decision. FR-02 makes its "permission proof enforced by types" concrete, and FR-03 supersedes the slice's `Principal` shape, which no ADR decided.
+
+**FR-02: the proof is the argument.** Round 24 says repositories accept only a `Scope`; the slice does not. The `Database` port takes bare `WorkspaceId` and `ProjectId` (`crates/thrust-ports/src/lib.rs:92-138`), and `Scope` has private fields but public getters that hand the ids back (`crates/thrust-core/src/lib.rs:139-155`), so any caller can unwrap a `Scope` and call the port directly. Decision: repository and `Tx` methods take `&Scope`, minted only by `authorize`, instead of bare ids. Untenanted work (the outbox relay, the sweeper, the consumer and `seed`) takes a `SystemScope`, minted only by the composition roots and the consumer. `Scope`'s getters are not public outside `thrust-core`. The signatures, and the layering constraint on where the proof type is declared, are in ADR-0045 (round 29). The round-24 lint stays as a backstop.
+
+**FR-03: the principal is the user.** `Principal { user_id, workspace_id }` (`crates/thrust-contracts/src/lib.rs:81-86`) binds one workspace to a session, and `authorize` takes the workspace from it (`crates/thrust-core/src/lib.rs:165`). Plane resolves the workspace from the URL slug on every request (`apps/api/plane/app/permissions/base.py:28,47,55`), and a user can be in several workspaces. Decision: `Principal { user_id }` only. `authorize` resolves the workspace per request from the URL slug through the membership query, and returns the `Scope`. This follows round 24's rule that roles and memberships are read from the database on every request and never trusted from the session. Sessions: ADR-0052 (round 29).
+
 ## Open Questions
 
 * Q-0051 — model choice and seam shape.
