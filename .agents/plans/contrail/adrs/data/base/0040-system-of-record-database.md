@@ -136,8 +136,8 @@ The round-11 desk review rejected DO-SQLite only on cross-workspace fan-out, mig
 
 **Rows S3 and S5 (FR-08).**
 
-* **Placement.** `placement.region = "aws:us-east-1"` is the P0 Worker setting (issue B5), next to the database. It replaces the Smart Placement question of Q-0040.5. Cloudflare: each sequential query adds 20 to 30 ms from a distant region and 1 to 3 ms when placed nearby (hyperdrive/concepts/how-hyperdrive-works).
-* **S3.** "No N+1 across the port" becomes a budget: a list endpoint makes at most 5 database round trips per request, enforced by a counting `Connector` in the contract suite (issue B5). The p95 ≤ 300 ms criterion stays, measured as SPEC §6.4 now defines it: p95 of a synthetic probe from the origin's region on the warm path, cold starts reported separately. The slice has no states or assignees, so the grouped listing is measured at M1 under the same budget (spike 0002, step 1).
+* **Placement.** `placement.region = "aws:us-east-1"` is the P0 Worker setting (issue #39), next to the database. It replaces the Smart Placement question of Q-0040.5. Cloudflare: each sequential query adds 20 to 30 ms from a distant region and 1 to 3 ms when placed nearby (hyperdrive/concepts/how-hyperdrive-works).
+* **S3.** "No N+1 across the port" becomes a budget: a list endpoint makes at most 5 database round trips per request, enforced by a counting `Connector` in the contract suite (issue #39). The p95 ≤ 300 ms criterion stays, measured as SPEC §6.4 now defines it: p95 of a synthetic probe from the origin's region on the warm path, cold starts reported separately. The slice has no states or assignees, so the grouped listing is measured at M1 under the same budget (spike 0002, step 1).
 * **S5.** Re-run with the placement set and unset (spike 0002, step 7). Under the budget a list view makes at most five round trips, so S5's 10-query case measures headroom, not a shape the code may take.
 
 S1's 50-writer test and the FR-22 allocation order are spike 0002's step 2 (ADR-0043, round 29).
