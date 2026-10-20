@@ -41,8 +41,16 @@ plausible wrong implementation. A property that passes on the wrong code is asse
 `crates/thrust-core/src/lib.rs` (`mod tests`): five `prop_` tests on the validators. `prop_accepted_blob_names_stay_inside_their_scope`
 found that `.` was accepted as an attachment name on its first run; the counterexample is committed in
 `crates/thrust-core/proptest-regressions/lib.txt` and pinned as the named case `single_dot`. The strategies build valid inputs
-by construction (weighted tokens) instead of rejecting them with `prop_assume!`. Still hand-rolled:
-`crates/thrust-editor-doc/tests/decode_panics.rs`, which a `prop_*_never_panics` test would replace.
+by construction (weighted tokens) instead of rejecting them with `prop_assume!`.
+
+`crates/thrust-editor-doc/tests/roundtrip.rs`: documents are generated as a small spec and built with the crate's own
+constructors, and every one must pass `Node::check`. JSON and Yjs round trips are identities; the HTML round trip
+is not (the parser collapses whitespace, in TypeScript too), so its properties are a fixed point after one round
+trip and no text lost but whitespace. Two lessons from mutation testing it: a property that calls the function
+under test on both sides (`text_content` here) passes when that function is broken, so the expected value comes
+from the spec; and a generator that calls a function to build its input (`Mark::add_to_set`) cannot test it, so
+that function gets its own property (`crates/thrust-editor-doc/tests/normalisation.rs`). `decode_panics.rs` stays: it mutates the
+recorded corpus, which the generated documents do not resemble.
 
 ## Target
 

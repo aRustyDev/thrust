@@ -2797,6 +2797,7 @@ dependencies = [
  "ammonia",
  "base64 0.22.1",
  "htmlentity",
+ "proptest",
  "regex",
  "serde_json",
  "yrs",

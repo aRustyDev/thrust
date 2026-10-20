@@ -361,3 +361,36 @@ fn dump_children(txn: &impl ReadTxn, node: &impl XmlFragment, is_fragment: bool)
     o.insert("children".into(), Value::Array(kids));
     Value::Object(o)
 }
+
+// `strip_hash` is private and only reached by updates that y-prosemirror wrote (it hashes the attribute name of a mark
+// that occurs more than once in a run); this crate's own encoder never writes such names, so no round trip reaches it.
+#[cfg(test)]
+mod tests {
+    use super::strip_hash;
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn prop_strip_hash_removes_a_y_prosemirror_hash(name in "[a-zA-Z]{1,12}", hash in "[A-Za-z0-9+/=]{8}") {
+            let hashed = format!("{name}--{hash}");
+            prop_assert_eq!(strip_hash(&hashed), name.as_str());
+        }
+
+        /// A tail that is not `--` and eight hash characters is part of the name.
+        #[test]
+        fn prop_strip_hash_keeps_any_other_name(
+            name in "[a-zA-Z]{1,12}",
+            hash in "[A-Za-z0-9+/=]{7}",
+            bad in "[-_.~ ]",
+            at in 0..8usize,
+        ) {
+            let mut tail = hash.clone();
+            tail.insert_str(at.min(tail.len()), &bad);
+            let not_a_hash = format!("{name}--{tail}");
+            prop_assert_eq!(strip_hash(&not_a_hash), not_a_hash.as_str());
+            let single_dash = format!("{name}-{hash}x");
+            prop_assert_eq!(strip_hash(&single_dash), single_dash.as_str());
+            prop_assert_eq!(strip_hash(&name), name.as_str());
+        }
+    }
+}
