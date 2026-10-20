@@ -21,6 +21,9 @@ which target it runs on. Fixtures are created through `POST /internal/seed`, the
 (`crates/thrust-contract-tests/src/lib.rs`), which is mounted only when `thrust-api` is built with `test_routes`.
 
 - `crates/thrust-contract-tests/tests/contract.rs`: the portable suite.
+- `crates/thrust-contract-tests/tests/model/mod.rs`: its generated part, compiled into the same binary and run in the
+  `main` pass: random operation sequences against a reference [model](model-based.md), every caller × project ×
+  route against the access table, and the generator coverage control.
 - `crates/thrust-contract-tests/tests/worker_only.rs`: Durable Object, cron and binding tests for `worker-*` targets.
 
 A pass is selected by **test-name prefix** in `scripts/contract.sh`, not by nextest: `sweeper_`, `panic_`,
@@ -30,7 +33,7 @@ A pass is selected by **test-name prefix** in `scripts/contract.sh`, not by next
 ## Run
 
 ```sh
-scripts/contract.sh native-memory           # main pass, 15 tests [unverified: not run]
+scripts/contract.sh native-memory           # main pass, 18 tests [verified 2026-10-20: 18 passed]
 scripts/contract.sh worker-cf bindings      # [unverified: not run]
 scripts/contract-all.sh                     # the 16-cell matrix, serially [unverified: not run]
 ```
@@ -42,19 +45,26 @@ See [Running](../running.md#the-contract-suite) for targets, passes and prerequi
 [Paired allow/deny](../evidence-and-controls.md#paired-allow-deny) in every test,
 [target guard](../evidence-and-controls.md#target-guard) and [count guard](../evidence-and-controls.md#count-guard)
 in every run, and a [planted mutant](../evidence-and-controls.md#planted-mutant) for each security or uniqueness
-invariant. Adding a test means updating the pass's `EXPECT_*` count.
+invariant. Adding a test means updating the pass's `EXPECT_*` count. The generated tests add
+[generator coverage](../evidence-and-controls.md#generator-coverage) and fail when they sent no requests; a
+counterexample is saved in `crates/thrust-contract-tests/tests/model/mod.proptest-regressions`, committed
+([Rule 7](../rules.md)). `scripts/mutants.sh` sets `PROPTEST_DISABLE_FAILURE_PERSISTENCE`, so the counterexamples
+found against its broken builds are not saved.
 
 ## Owning skill
 
 **None** (G-1). `rust-test-app` explicitly excludes "HTTP assertions shared across adapters". Until a skill exists,
 copy the shape of an existing test in `crates/thrust-contract-tests/tests/contract.rs`: seed with `Fixture::seed`,
 assert the allowed case, assert the neighbouring rejected case and its lack of effect, and use `eventually()` for
-asynchronous effects.
+asynchronous effects. For a new operation or route, extend the generated part first ([Rule 9](../rules.md)): an `Op`
+and its rule in the model, or a `Route` in the matrix.
 
 ## In-repo examples
 
 `cross_tenant_access_is_rejected_and_has_no_effect`, `concurrent_creates_never_duplicate_a_sequence_id`,
-`redelivered_event_is_processed_once`, `worker_bindings_rate_limiting_binding`.
+`redelivered_event_is_processed_once`, `worker_bindings_rate_limiting_binding`; generated:
+`model_work_items_over_http_match_the_reference_model`,
+`every_actor_project_and_route_gets_the_status_of_the_access_table`.
 
 ## Target
 

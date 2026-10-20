@@ -66,8 +66,9 @@ is compatible with [Rule 6](rules.md) because the nondeterminism is in the *sear
 finding, its seed is persisted in `*.proptest-regressions` and replayed first on every later run ([Rule 7](rules.md)).
 `PROPTEST_CASES` sets the budget through the shared config helper: each test's own default (256 in `thrust-core`)
 in the loop, 4096 or more under `deep`, and lower for a mutation run if one is too slow (nothing sets that today).
-Generated scenarios against a live target are not built yet (G-8 in [Status](status.md)). When they are, they
-take a small fixed case budget per target, so a cell's runtime stays bounded.
+Generated scenarios against a live target (the contract suite's `crates/thrust-contract-tests/tests/model/mod.rs`)
+take a small fixed case budget per target, `THRUST_MODEL_CASES` (default 16) rather than `PROPTEST_CASES`, so a
+cell's runtime stays bounded.
 
 ## Evidence before trust
 

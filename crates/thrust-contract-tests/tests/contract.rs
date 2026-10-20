@@ -4,6 +4,11 @@
 //! is rejected" (cross-tenant, non-member, guest, duplicate, over-limit, oversize), so a server
 //! that accepts everything cannot pass. `scripts/mutants.sh` additionally runs this suite
 //! against deliberately broken servers and requires it to FAIL.
+//!
+//! The hand-written scenarios below each pin one behaviour. `model` generates them instead: random operation
+//! sequences against a reference model, and every caller × project × route against the access table.
+
+mod model;
 
 use std::time::Duration;
 

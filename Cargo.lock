@@ -2754,6 +2754,7 @@ name = "thrust-contract-tests"
 version = "0.0.0"
 dependencies = [
  "futures-util",
+ "proptest",
  "reqwest",
  "serde_json",
  "thrust-contracts",
