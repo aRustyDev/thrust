@@ -16,14 +16,16 @@ forms (binary, html, json)?
    edits (round 18); description staleness ≤ 5 s.
 3. Load test: 1, 10, 50 simulated editors typing; measure fan-out latency, DO CPU/memory, message rate, cost.
 4. Limits: max doc size, connections per DO, cold start/rehydration time, behaviour at DO eviction.
-5. Self-hosted adapter: Hocuspocus + Redis unchanged behind the port **or** a Rust y-sweet/axum+yrs service (Q-0061.2).
+5. Self-hosted host (round 29, FR-05, FR-15): the same `yrs` room crate runs inside the axum server. Hocuspocus + Redis
+   is withdrawn as the self-hosted adapter (ADR-0060, round 29), which answers Q-0061.2.
 6. Plain-API-save → collab migration: a page stored at P0 as binary+html+json opens collaboratively with no data
    migration (Q-F5.1).
 
 ## Exit criteria
 50 editors on one page with p95 update fan-out < 250 ms and no data loss on forced DO eviction; a P0-saved page
-opens in collab unchanged; cost within envelope. If hibernating WebSockets or DO limits fail, fall back to sharding
-awareness or capping editors (record the cap).
+opens in collab unchanged; cost within envelope; the same room runs on axum (round 29, FR-05): the room crate the
+Durable Object hosts also runs inside the native axum server and passes the same contract tests. If hibernating
+WebSockets or DO limits fail, fall back to sharding awareness or capping editors (record the cap).
 
 ## Deliverables
 ADR-0060/0061 decisions; load-test report; Q-G4.1 closed with measured limits.

@@ -96,12 +96,14 @@ Note for readers of spike 0001: its Cloudflare adapter set uses a KV-backed sess
 
 Per FR-03 (`reviews/2026-10-19-fable-architecture-review.md`; the owner's decision is its §5 table: apply now), the spike's KV session store is removed. `KvSessionStore` (`crates/thrust-adapters-cloudflare/src/lib.rs:65-94`) is deleted from the Cloudflare set, which ends the round-26 exception above. `SessionStore` is a repository over the `Database` port on both adapter sets (a session row, `revoked_at`, `last_seen_at` updated lazily), and it returns `Principal { user_id }` only (ADR-0052, round 29; D-003). The memory adapter may remain for tests. This supersedes nothing in the round-25 revised decision; it removes the last code that did not follow it.
 
+Per FR-05 (`reviews/2026-10-19-fable-architecture-review.md`; the owner's decision is its §5 table: apply now, all five cuts), Valkey is dropped from P0 and P1. There is no session cache (round 25) and no authorization cache (ADR-0051), so Valkey has no job; this supersedes the round-20 note (Valkey as the self-hosted cache and session adapter, Q-0082.2) and the table's self-hosted Redis column. A `Cache` port is added only when a measured hot path needs it; until then there is no `Cache` port (`crates/thrust-ports/src/lib.rs` defines none) and no KV cache adapter. Rate limiting is the Workers Rate Limiting binding on Cloudflare (approximate and per location, D-007) and an in-process counter natively (ADR-0033, round 29). The Durable Object limiter (`DoRateLimiter`, `crates/thrust-adapters-cloudflare/src/lib.rs:193-223`) is removed from the API Worker, which supersedes the table's "DO counter" for rate limits; its Durable Object code is kept only as the template for the P1 collab Durable Object (FR-05).
+
 ## Open Questions
 
 * Q-0052 — **answered (rounds 15, 25)**: DB-authoritative sessions, no cache at P0; API-key hashing in ADR-0052.
 * Q-0033 — **answered (round 15)**: keep Plane's semantics; approximate Workers rate-limit binding acceptable.
 * Q-0082.1 — **answered (rounds 24–25)**: no authorization or session cache at P0; revocation immediate over HTTP.
-* Q-0082.2 — **answered (round 20)**: Valkey for the self-hosted `Cache` adapter.
+* Q-0082.2 — **answered (round 20)**: Valkey for the self-hosted `Cache` adapter. (superseded round 29, FR-05)
 
 ## More Information
 

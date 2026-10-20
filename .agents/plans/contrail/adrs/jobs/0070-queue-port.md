@@ -114,6 +114,14 @@ Spike 0001 evidence (`[tested]` on local workerd and wrangler's Queues emulation
 
 **Not tested:** `retry_with_options`, `max_retries`, the DLQ, the 128 KB message ceiling (Q-0070.1 stays as verified from the vendor docs), real delivery semantics, and ordering. Cloudflare Queues has no ordering primitive, so the per-key mechanism above (a single consumer per key through a DO, or a per-entity sequence check) still has to be built and tested.
 
+## Update — review round 29 (2026-10-19)
+
+Per FR-05 (`reviews/2026-10-19-fable-architecture-review.md`; the owner's decision is its §5 table: apply now, all five cuts), the self-hosted `Queue` adapter is the transactional outbox (ADR-0046) in a single process: the in-process fast path after commit, plus the sweeper. RabbitMQ and `lapin` are dropped from the self-hosted set. The Cloudflare adapter stays Cloudflare Queues.
+
+This is the shape the native server already runs: `crates/thrust-server/src/main.rs:57` wires `MemoryQueue`, which hands each message to the in-process consumer through `Background` (`crates/thrust-adapters-memory/src/lib.rs:298-326`), and the sweeper is an in-process timer (`crates/thrust-server/src/main.rs:93-106`, enabled by `THRUST_SWEEP_INTERVAL_SECS`; ADR-0072). "Single process" is the recorded self-hosted shape. A broker is reconsidered only when a second native process exists. Ordering per key (Q-0070.2) is trivial in-process, because one process sees every key: the adapter serialises delivery per `ordering_key` locally, with no consistent-hash exchange and no single-active-consumer. Today's `MemoryQueue` spawns one task per message and does not do this yet.
+
+This supersedes the Decision's RabbitMQ adapter, the RabbitMQ sentences in the Consequences (prefetch, DLX and TTL equivalents; the delayed-message plugin; the consistent-hash exchange), the RabbitMQ testcontainer in the Confirmation, and the `lapin` part of its lint rule. Option 3's "polling load" objection does not apply to the self-hosted set: the outbox sweeper already polls the database every minute. Workflow-shaped needs no longer go to ADR-0071: long jobs are queue messages with a `jobs` table and idempotent steps (ADR-0071, round 29).
+
 ## Open Questions
 
 * Q-0073 — which tasks are Queue consumers vs Workflow vs Cron vs sync (mapping in ADR-0073).

@@ -100,7 +100,7 @@ sub-questions raised by that ADR. `Q-G<n>` are cross-cutting. Source tags: **[I]
 |---|---|---|
 | Q-0061 | Collab persistence: DO storage as primary vs periodic snapshot to DB/R2; page-version cadence; compaction; binary/html/json triple-write parity (`description_binary/html/json`). **[S]** | open |
 | Q-0061.1 | Awareness/presence limits per DO; max doc size; cold-start behavior. | open |
-| Q-0061.2 | Self-hosted adapter: reuse Hocuspocus + Redis unchanged behind the same port? | open |
+| Q-0061.2 | Self-hosted adapter: reuse Hocuspocus + Redis unchanged behind the same port? | **answered** (round 29, FR-05, FR-15): no. Hocuspocus + Redis is withdrawn as the self-hosted adapter: it is a shipped TypeScript service with no exit plan, so it breaks the ADR-0006 round-22 rule (a bounded shim behind a port, with an exit plan; FR-15). The collab adapter is one `yrs` room implementation in one crate (sync, awareness, and Hocuspocus framing or a provider swapped under Q-R2), hosted in a Durable Object on Cloudflare and inside the axum server natively (ADR-0060 round-29 note). Spike 0005 adds the exit criterion "the same room runs on axum" (FR-16); the build is issue B20 (M5) |
 
 ## Jobs
 | ID | Question | Status |
@@ -109,7 +109,7 @@ sub-questions raised by that ADR. `Q-G<n>` are cross-cutting. Source tags: **[I]
 | Q-0073.1 | Email delivery: Cloudflare Email Service vs SMTP vs provider; notification digest (`stack_email_notification` every 5 min). | **answered** (round 7): CF Email Service on the CF set, SMTP adapter elsewhere, behind the `Email` port. Digest cadence still to be set in ADR-0073. |
 | Q-0073.2 | Webhook delivery guarantees (retry, signing, log retention `WebhookLog`). | **answered** (round 17): at-least-once, HMAC-signed, 5 retries with backoff, logs 30 days |
 | Q-0073.3 | Exports (`ExporterHistory`) and long jobs: Workflow limits (duration/memory) for large workspaces. | **answered** (round 17): exports via Workflow at P1; ceiling starts at 100 MB |
-| Q-0073.4 | Self-hosted workflow adapter: what replaces Workflows durability (Temporal? simple DB-backed runner? Celery-compat?). | **answered** (round 17): as Q-0071.1 |
+| Q-0073.4 | Self-hosted workflow adapter: what replaces Workflows durability (Temporal? simple DB-backed runner? Celery-compat?). | **answered** (round 17): as Q-0071.1. **Superseded (round 29, FR-05):** no workflow engine on either adapter set. The `WorkflowEngine` port is withdrawn, so nothing replaces Workflows durability: long jobs (exports, imports, seeding, backfills) are queue messages with a `jobs` table for state and idempotent steps (ADR-0071 round-29 note; issue B22, M3). A queue consumer or cron run gets 15 minutes of wall time on Workers, which FR-05 judges enough for a 100k-row CSV export. |
 
 ## Storage / Search / Integrations
 | ID | Question | Status |
@@ -125,7 +125,7 @@ sub-questions raised by that ADR. `Q-G<n>` are cross-cutting. Source tags: **[I]
 | ID | Question | Status |
 |---|---|---|
 | Q-0090 | CF topology: one Worker with routes vs Worker-per-domain (service bindings) vs Workers for Platforms; custom domains and `.woven` private hostnames (two-leg rule; external-dns). | open; evidence (round 26, spike 0004): Option 2 not contradicted, confidence medium; run 2 with Access done (round 27): a service-binding hop costs +2.3 to +2.8 ms on the real edge |
-| Q-0091 | Self-hosted twin: reference deployment target and which adapter set is the default. | **partly answered** (round 14): Docker Compose reference with Node server + Postgres + RabbitMQ + MinIO; ADR stays proposed pending adapter details (Q-F6.2) |
+| Q-0091 | Self-hosted twin: reference deployment target and which adapter set is the default. | **answered** (round 29, FR-19): one binary, one database, one object store; the reference is a Docker Compose file with at most three services (Compose per Q-G7); ADR-0091 accepted. The default self-hosted set is the P0 set of SPEC R-P3 (Q-F6.2): the database, the outbox as queue, a local-disk `BlobStore`, SMTP via `lettre` and the in-process scheduler, with the S3-compatible blob adapter (for MinIO) at P1. What runs "in parallel from Phase 0" is the `native-pg` contract cell that already runs in CI, not a twin built per port. Earlier, **partly answered** (round 14): Docker Compose reference with Node server + Postgres + RabbitMQ + MinIO; ADR stays proposed pending adapter details (Q-F6.2). **Superseded (round 29, FR-19):** the server is the native Rust binary (ADR-0091, round 21), the outbox replaces RabbitMQ (FR-05), and MinIO waits for the P1 S3-compatible adapter. |
 | Q-0092 | Secrets/envs: Secrets Store vs wrangler secrets vs 1Password; env promotion. | **answered** (round 16): dev + staging + prod |
 | Q-0093 | IaC: OpenTofu (cloudflare provider) vs wrangler-only vs both; state backend (infra repo roots with `backend "local"` need canonical-checkout apply). | **answered** (round 15): OpenTofu cloudflare provider in the infra repo; wrangler deploys Worker code |
 | Q-0100 | CI build matrix: per adapter set × runtime; contract-test matrix cost. | **answered** (round 16): PR = lint/types/unit + CF-set contract tests + oracle schema check; nightly = full matrix + differential |
@@ -154,7 +154,7 @@ sub-questions raised by that ADR. `Q-G<n>` are cross-cutting. Source tags: **[I]
 | Q-F5.2 | Which editor surfaces need real-time before P1 (none?) — and does the frontend's current collab provider have to be stubbed/disabled at P0? | open |
 | Q-F6 | Is the self-hosted adapter set (F-X02) P0 or follows the CF set? SPEC R-P3 says a port is not "done" without both adapters. | **answered** (round 6): P0 = ports + CF adapters + contract-test harness + **self-hosted adapters for DB, queue and blob only**; collab, workflow, cache/session, search etc. self-hosted adapters follow in P1. |
 | Q-F6.1 | R-P3 ("both adapters before a port is done") conflicts with this phasing: redefine as "P0 ports are done with both adapters (DB, queue, blob); others are done at CF-only until their P1 self-hosted adapter lands", and mark the CF-only ports in the contract-test matrix as `pending-adapter`. Confirm. | **answered** (round 9): R-P3 reworded as phased |
-| Q-F6.2 | Self-hosted P0 adapter choices: DB (Postgres? SQLite?), queue (RabbitMQ per ADR-0070), blob (MinIO/S3 per ADR-0080). And with no self-hosted workflow/cron/collab at P0, what runs scheduled and background work there? | **answered** (round 25): P0 self-hosted set = DB, queue, blob, session (DB-backed), scheduler (in-process), SMTP email |
+| Q-F6.2 | Self-hosted P0 adapter choices: DB (Postgres? SQLite?), queue (RabbitMQ per ADR-0070), blob (MinIO/S3 per ADR-0080). And with no self-hosted workflow/cron/collab at P0, what runs scheduled and background work there? | **answered** (round 25): P0 self-hosted set = DB, queue, blob, session (DB-backed), scheduler (in-process), SMTP email. **Superseded (round 29, FR-19):** per SPEC R-P3 as rewritten, the P0 self-hosted set is the database (Postgres, or SQLite per FR-04), the outbox as queue (the in-process fast path plus the sweeper; no RabbitMQ, FR-05), a local-disk `BlobStore`, SMTP via `lettre` and the in-process scheduler; the S3-compatible blob adapter (for MinIO) lands at P1. Sessions are a repository over the `Database` port (FR-03), not a separate adapter. Scheduled and background work runs in the single native process (FR-05). |
 | Q-F3 | Dormant Plane features with stubs only (work item types management, integrations models, workspace pages): implement or drop? **[S]** | **answered** (round 11): drop integrations and workspace-pages stubs; work item types follow F-E08 (P1) |
 
 ## Raised by ADR authors (2026-10-17) — **[ADR]**
@@ -195,7 +195,7 @@ review task #1 in PROMPT.md.
 | Q-0061.4 | Is bounded staleness acceptable for `description_html/json`? | **answered** (round 18): up to 5 s staleness OK; round 27 (spike 0006): not needed for CPU reasons, strong consistency at store time is affordable; the owner answer stands |
 | Q-0070.1 | Common-subset message-size ceiling across Queue adapters (CF limit unconfirmed)? | **answered** (round 25): 128 KB message ceiling (Cloudflare Queues, verified); 24 h delay ceiling; not exercised by spike 0001 (round 26) |
 | Q-0070.2 | Are per-item ordering guarantees needed? | **answered** (round 20): ordering per work item only |
-| Q-0071.1 | Which self-hosted workflow engine (leading hypothesis: Postgres-backed runner)? | **answered** (round 17): Postgres-backed runner in the Node server; no Temporal |
+| Q-0071.1 | Which self-hosted workflow engine (leading hypothesis: Postgres-backed runner)? | **answered** (round 17): Postgres-backed runner in the Node server; no Temporal. **Superseded (round 29, FR-05):** no workflow engine. The `WorkflowEngine` port is withdrawn and the Postgres-backed step runner (Option B) is not built; long jobs are queue messages with a `jobs` table and idempotent steps. On Cloudflare, `entry.mjs` and the Workflow binding are removed (issue B9). |
 | Q-0072.1 | Was the double `delete_old_s3_link` schedule (01:30 and 03:45) intentional? | **answered** (round 20): single schedule |
 | Q-0072.2 | Keep, drop or opt-in the `instance_traces` telemetry job (every 6 h)? | **answered** (round 20): drop the job |
 | Q-0073.5 | Complete the bgtasks inventory (ADR-0073's table missed decorator-with-args tasks, e.g. the webhook sender). | open |
@@ -207,7 +207,7 @@ review task #1 in PROMPT.md.
 | Q-0081.2 | Export formats and size ceilings? | **answered** (round 17): CSV/JSON; size ceilings at P1 |
 | Q-0081.3 | Export link TTL? | **answered** (round 17): 24 h link TTL |
 | Q-0082.1 | Permission-revocation propagation speed given KV eventual consistency? | **answered** (rounds 24-25): sessions are DB-authoritative; revocation immediate over HTTP; collab bounded by the 5-minute token |
-| Q-0082.2 | Valkey vs Redis for the self-hosted adapter? | **answered** (round 20): Valkey |
+| Q-0082.2 | Valkey vs Redis for the self-hosted adapter? | **answered** (round 20): Valkey. **Superseded (round 29, FR-05):** no Valkey and no Redis at P0 or P1, so there is no self-hosted cache or session adapter to choose. Sessions are database rows (FR-03), the native rate limiter is an in-process counter, and a `Cache` port is added only when a measured hot path needs it (ADR-0082 round-29 note). |
 | Q-0083.1 | Is full-text search available for the chosen DB (D1 FTS unconfirmed)? | open |
 | Q-0083.2 | Index freshness SLO? | **answered** (round 18): within 1 minute |
 | Q-0083.3 | Is semantic search a feature? | **answered** (round 18): no semantic search |
@@ -264,7 +264,7 @@ review task #1 in PROMPT.md.
 | Q-R6 | Repo layout in `thrust`: single repo with a Cargo workspace plus pnpm workspace for adopted React apps? When does the plan package move into the repo (Q-0005.3)? **[I]** | **answered** (round 23): single repo; `crates/` Cargo workspace, `web/` pnpm workspace; plan moves to `docs/plan/` |
 | Q-0005.3 | The repo is `aRustyDev/thrust` (v1 name). Do crate/package names use `thrust` or `contrail`, and when does this planning package move into it? **[I]** | **answered** (round 23): crates prefixed `thrust-*`; plan moves to `docs/plan/` when the repo is populated |
 | Q-0013.1 | Definition of "stable" that triggers the Dioxus rewrite (see Q-R3). | **answered** (round 22): see Q-R3 |
-| Q-0013.2 | Rendering approach per target (WASM DOM, WGPU renderer, webview) and the rich-text editor strategy in Dioxus (JS interop vs native). | open |
+| Q-0013.2 | Rendering approach per target (WASM DOM, WGPU renderer, webview) and the rich-text editor strategy in Dioxus (JS interop vs native). | **partly answered** (round 29, FR-15): the rich-text editor strategy is JS interop. The editor island (`@plane/editor` embedded in the Dioxus UI, spike 0007 step 3) is registered in ADR-0006 as a planned permanent exception (owner decision, review §5); spike 0007 may still size a Rust ProseMirror view for information. The rendering approach per target (WASM DOM, WGPU renderer, webview) stays open for spike 0007, which stays a go/no-go (FR-16). Owner: asmith; decide at spike 0007's go/no-go (M4). |
 | Q-0013.3 | Which targets are required for v1 (Thrust): web only, plus desktop, plus mobile? | **answered** (round 22): v1 = web only; desktop/mobile after v1 |
 | Q-0013.4 | Dioxus shares generated API types with the backend crates, or uses an OpenAPI-generated client? | open |
 

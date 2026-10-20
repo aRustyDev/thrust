@@ -6,8 +6,13 @@ Tier: **P0** must ship in first usable release · **P1** next · **P2** later ·
 (user+password via BetterAuth, API keys, membership/roles; invites P1), and the four foundations (permission seam +
 RBAC, event/outbox, feature flags, audit). Round 6 refined this: page and description editing at P0 is a **plain API save** (no DO); Durable Objects arrive
 with multi-user *collaboration* (F-C02, P1). Auth order: user+password → Cloudflare Access → OIDC (OIDC high priority, P1). Exports/importers/
-analytics (D05–D07) are P1 (round 6). Self-hosted adapters at P0 cover DB, queue and blob only (F-X02).
-`Ports` = abstractions from ARCHITECTURE.md §Ports the feature depends on. `Src` = where the current behavior lives
+analytics (D05–D07) are P1 (round 6). Self-hosted adapters at P0: the set in F-X02 (round 29, FR-19; it replaces the
+round-6 "DB, queue and blob only").
+`Ports` = abstractions from ARCHITECTURE.md §Ports the feature depends on. **Round 29 (FR-05):** ARCHITECTURE §1c now
+lists only the ports whose adapters differ between the two sets. Entries outside that list read as follows: Identity,
+Search, Secrets and Observability name core code; `Session` is a repository over the database (FR-03); `Cache` has no
+port until a measured hot path needs one (ADR-0082); `RateLimit` is the Workers binding or an in-process counter
+(ADR-0033); `Workflow` names a long job run as a queue message (ADR-0071). `Src` = where the current behavior lives
 (Plane CE paths under `apps/api/plane/…`; `[O]` = Open-EE spec on branch `woven/plan` at
 `.claude/plans/plane-fork/features/<name>.md`).
 
@@ -123,7 +128,7 @@ From `woven/plan:.claude/plans/plane-fork/features/`. These are *requirements in
 | ID | Feature | ADR | Tier |
 |---|---|---|---|
 | F-X01 | Port/adapter runtime: Cloudflare adapter set | 0002, 0007 | P0 |
-| F-X02 | Port/adapter runtime: self-hosted adapter set | 0002, 0091 | P0 (DB, queue, blob, session, scheduler, SMTP email); rest P1 |
+| F-X02 | Port/adapter runtime: self-hosted adapter set | 0002, 0091 | P0 (database, the outbox as queue, local-disk `BlobStore`, SMTP via `lettre`, in-process scheduler; round 29, FR-19); S3-compatible blob adapter P1 |
 | F-X03 | Multi-tenant isolation (tenant key; quotas out of scope) | 0003, 0041 | P0 |
 | F-X04 | One-time import of existing Plane Postgres data | 0042 (Q-G3) | **drop** (round 5: start fresh) |
 | F-X05 | Contract-test harness (every port × every adapter) | 0121 | P0 |

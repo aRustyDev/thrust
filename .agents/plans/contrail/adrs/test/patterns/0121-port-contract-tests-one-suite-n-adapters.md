@@ -101,6 +101,11 @@ they test and follow `docs/src/testing/`, for example `crates/thrust-core/tests/
 Q-0121.1: the legal adapter differences are those of the FR-05 port list: ordering per key, delay ≤ 24 h, message
 ≤ 128 KB. Q-0121.2: only Stage 2 items need a deployed environment: real cron, DLQ, and hibernation timing.
 
+Per FR-05, the planned matrix shrinks to the ports of ARCHITECTURE §1c (round 29): the Context's `WorkflowEngine`
+contract is withdrawn and no RabbitMQ, Valkey or Hocuspocus adapter will join it; the matrix itself is the
+`run <target> <pass>` lines of `scripts/contract-all.sh`, which CI's `plan` job reads
+(`docs/src/architecture/cicd.md:47-50`), and it never had a cell for any of the four.
+
 ## Open Questions
 
 * Q-0121 — suite design. (answered round 29, FR-17)

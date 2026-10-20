@@ -6,7 +6,7 @@ consulted: []
 informed: []
 ---
 
-# ADR-0071: `WorkflowEngine` port — Cloudflare Workflows adapter and a self-hosted engine
+# ADR-0071: `WorkflowEngine` port — Cloudflare Workflows adapter and a self-hosted engine — superseded in part (round 29)
 
 ## Context and Problem Statement
 
@@ -121,11 +121,17 @@ The `?Send` sketch above is corrected (ADR-0002).
 
 **The Cloudflare adapter is a bounded non-Rust shim** (ADR-0006, round 22 policy). workers-rs 0.8.7 has **no Workflow API** and cannot define a Workflow class (`WorkflowEntrypoint` is JavaScript). Spike 0001 (`[tested]` locally, `worker_bindings_workflow_via_wasm_bindgen_and_js_shim`): Rust creates and polls an instance through raw `js_sys::Reflect` calls on `env.WORKFLOW`; the Workflow class lives in a 26-line JS file, `crates/thrust-worker/entry.mjs`; the two-step workflow called back into the Rust Worker through a service binding and ended `complete` with the expected output. **Shim contract:** `start` and `status` are called from Rust; step bodies call back into Rust over a service binding; no business logic lives in the JS. **Exit plan:** delete the shim when workers-rs ships a Workflow API. Pause, resume and terminate through the shim, the real engine's limits and retries are not exercised (Stage 2 step S2-6). Workflows are not used at P0.
 
+## Update — review round 29 (2026-10-19)
+
+Per FR-05 (`reviews/2026-10-19-fable-architecture-review.md`; the owner's decision is its §5 table: apply now, all five cuts), the `WorkflowEngine` port is withdrawn. Long jobs (exports, imports, seeding, backfills) are queue messages over the `Queue` port (ADR-0070), with a `jobs` table for their state and idempotent steps (issue B22). `crates/thrust-worker/entry.mjs` and the Workflow binding (`WORKFLOW`, class `ThrustWorkflow`, `crates/thrust-worker/wrangler.toml:80-83`) are removed (issue B9); with them goes the only JavaScript in the Worker. The Postgres step runner (Option B) is not built.
+
+This supersedes the Decision Outcome (the port, its Rust sketch and the Cloudflare Workflows adapter), the self-hosted engine chosen in the round-17 and round-25 notes, and the round-26 shim with its exit plan. The Confirmation (the workflow contract suite and the reference workflow on two engines) is withdrawn with the port. The review's reasons: for 50 users or fewer a durable-execution engine does not earn its keep; the self-hosted engine was net-new code whose timers, leader election and replay determinism we would own (Option B, above); and the shim's exit plan waited on a workers-rs Workflow API with no date. The Workers limits leave room for long jobs as queue consumers: 5 minutes of CPU per invocation and 15 minutes of wall time per queue consumer or cron run (workers/platform/limits, as the review quotes it), enough for a 100k-row CSV export. ADR-0006's round-29 register lists the Workflows shim as removed.
+
 ## Open Questions
 
-* Q-0071.1 — **answered (round 17)**: Option B (Postgres-backed runner, native Rust server).
+* Q-0071.1 — **answered (round 17)**: Option B (Postgres-backed runner, native Rust server). (superseded round 29, FR-05)
 * Q-0073.3 — export/long-job limits on Workflows for large workspaces.
-* Q-0073.4 — self-hosted workflow adapter (same as Q-0071.1; keep both linked).
+* Q-0073.4 — self-hosted workflow adapter (same as Q-0071.1; keep both linked). (superseded round 29, FR-05)
 
 ## More Information
 

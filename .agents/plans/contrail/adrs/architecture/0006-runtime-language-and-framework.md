@@ -104,11 +104,11 @@ Non-vacuity: four mutation controls (tenant predicate ignored, duplicate sequenc
 
 ## Update — owner decision, round 27 (2026-10-18)
 
-Register of non-Rust exceptions under the round-22 policy (each lives as a dated note in its owning ADR): the Workflows shim (ADR-0071, `entry.mjs`, exit: a Rust Workflow API in workers-rs); the **`space` SSR Worker** (ADR-0011, round 27, feasibility confirmed, about 8.5 pd; it only serves static assets and the per-board `<head>`; exit: the Dioxus public viewer; an SPA plus Rust head injection would remove it, Q-0011.3); headless editor conversion (spike 0006, only if Option C is chosen); a TypeScript BetterAuth sidecar (spike 0003, only if chosen).
+Register of non-Rust exceptions under the round-22 policy (each lives as a dated note in its owning ADR): the Workflows shim (ADR-0071, `entry.mjs`, exit: a Rust Workflow API in workers-rs); the **`space` SSR Worker** (ADR-0011, round 27, feasibility confirmed, about 8.5 pd; it only serves static assets and the per-board `<head>`; exit: the Dioxus public viewer; an SPA plus Rust head injection would remove it, Q-0011.3); headless editor conversion (spike 0006, only if Option C is chosen); a TypeScript BetterAuth sidecar (spike 0003, only if chosen) (superseded by the round-29 register).
 
 ## Update — space hosting decision (Q-0011.3, supersedes the SSR Worker), round 27 (2026-10-18)
 
-The **`space` SSR Worker exception is withdrawn** (Q-0011.3, round 27): `space` is built as an SPA and the per-board metadata is injected by Rust (ADR-0011). The register of non-Rust exceptions is therefore the Workflows shim (ADR-0071) plus, only if chosen, headless editor conversion (spike 0006) and a TypeScript BetterAuth sidecar (spike 0003).
+The **`space` SSR Worker exception is withdrawn** (Q-0011.3, round 27): `space` is built as an SPA and the per-board metadata is injected by Rust (ADR-0011). The register of non-Rust exceptions is therefore the Workflows shim (ADR-0071) plus, only if chosen, headless editor conversion (spike 0006) and a TypeScript BetterAuth sidecar (spike 0003) (superseded by the round-29 register).
 
 ## Update — spike 0006 results, round 27 (2026-10-18)
 
@@ -139,6 +139,21 @@ Per FR-07 (`reviews/2026-10-19-fable-architecture-review.md`), Q-0006.4 is answe
 2. hyperdrive/reference/supported-databases-and-features: Hyperdrive does not support advisory locks, `LISTEN`/`NOTIFY`, SQL `PREPARE` or per-session state.
 
 This supersedes two statements in the round-28 note. "The root cause is not known": `tokio-postgres`' default `query`/`execute(&str, …)` uses a named prepared statement, which Hyperdrive supports only as `pg` and `postgres.js` implement it. "sqlx, sea-orm and diesel-async are likely to hit the same failure [unverified]": they are out (ADR-0044, accepted round 29), so the "ORMs on `tokio-postgres`" item of the round-26 "Not proven" list is closed too. The rule for every Rust statement over Hyperdrive is permanent: one pipeline on the unnamed statement (`query_typed` / `execute_typed`, through the `Pg` wrapper, `crates/thrust-adapters-postgres/src/lib.rs:106-127`), no server-side statement caching, and an explicit type on every parameter. It also supersedes the Consequences' phrase that advisory locks need a Rust data layer: through Hyperdrive they are unavailable, which is why sequencing uses the counter row (ADR-0043 B1). Reopen trigger 1 is unchanged; the typed flow cleared it in round 28.
+
+Per FR-15 (`reviews/2026-10-19-fable-architecture-review.md`; the owner's decision is its §5 table: apply now, with the editor island in Dioxus registered as a planned permanent exception), the register of non-Rust exceptions is the table below. It supersedes the registers in the two round-27 notes above. The review found the old register incomplete (the oracle tooling, the off-repo scripts and the Dioxus editor surface were missing) and one planned piece a violation (Hocuspocus). The round-22 policy is unchanged: in the product, a non-Rust piece is a bounded, documented shim behind a port with an exit plan; tooling is registered as tooling, and no product crate imports it.
+
+| Piece | Where | Class | Exit or note |
+|---|---|---|---|
+| Workflows shim | `crates/thrust-worker/entry.mjs:1-26` and the `WORKFLOW` binding (`crates/thrust-worker/wrangler.toml:80-83`); ADR-0071 round 26 | **removed** (FR-05) | deleted with the Workflow binding (issue B9); long jobs are queue messages with a `jobs` table (ADR-0071, round 29) |
+| TypeScript and Python oracle tooling | `tools/spike-0006/` (`oracle`, `sanitize`, `jsworker`, `bench`); spike 0006, ADR-0012 | permanent tooling | the oracle is the JavaScript editor by definition; never imported by a product crate (`scripts/check-deps.sh` checks only the Cargo graph, so it cannot see this directory) |
+| Hocuspocus + Redis as the self-hosted collab adapter | ADR-0060 Decision and round-21 note; Q-0061.2 | **withdrawn** (FR-15: a shipped TypeScript service with no exit plan) | replaced by the `yrs` room inside the axum server (ADR-0060, round 29) |
+| The React apps and `@plane/editor` | ADR-0001, ADR-0013 | transitional frontend (Phase 1) | exit: Phase 2, the Dioxus clone (ADR-0013) |
+| Editor island in the Dioxus UI (`@plane/editor` through JS interop on the web, a webview on desktop and mobile) | Q-0013.2; spike 0007 method step 3 | **planned permanent exception** (owner, round 29) | spike 0007 may still size a Rust view |
+| Python inventory and spike-0004 scripts | `scripts/compat-inventory/` and `scripts/spike-0004/`, on branch `chore/contrail-plan-scripts` of `aRustyDev/plane` (`spikes/README.md`, "Scripts these documents cite") | tooling, off-repo | their home is decided by issue B21; the `uv` rule applies |
+
+The Workflows shim no longer appears as live: it is removed with the `WorkflowEngine` port (ADR-0071, round 29), and with it the only JavaScript in the Worker. Three entries of the round-27 registers are not carried over: the `space` SSR Worker (withdrawn in round 27, Q-0011.3), headless editor conversion (spike 0006 Option C; ADR-0012 is accepted on the Rust conversions) and the TypeScript BetterAuth sidecar (spike 0003 option B, which FR-16 drops).
+
+Per FR-05 (same review and §5 table), four earlier statements in this ADR are superseded. Of the round-28 verdict's conditions, the Workflows JS shim no longer applies. The round-28 bullet "the Durable Object limiter stays for exact limits" is replaced by the Rate Limiting binding on Cloudflare (D-007) and an in-process counter natively (ADR-0033, round 29). The Consequences' remark that CPU-heavy tasks need Workflows or a shim no longer holds for exports, which are queue jobs (ADR-0071, round 29). The round-26 "Not proven" items for the Valkey and RabbitMQ adapters are closed because neither adapter is built (ADR-0082 and ADR-0070, round 29).
 
 ## Open Questions
 

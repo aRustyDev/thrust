@@ -66,39 +66,42 @@ between them; the API Worker never talks to the DO except via the collab port.
 
 ### 1b. Self-hosted twin (same application code, different adapters)
 
+> **Round 29 (2026-10-19, FR-05, FR-19):** the twin is one binary, one database and local disk. The queue is the
+> outbox (in-process fast path plus the sweeper), the scheduler is an in-process timer, blobs live on local disk at P0
+> (an S3-compatible adapter for MinIO at P1), email goes over SMTP through `lettre`, and the P1 collab room runs inside
+> the same binary. RabbitMQ, Valkey, Hocuspocus and the separate worker process are cut. The database is Postgres, or
+> SQLite on `rusqlite` if spike 0002's `worker-do` cell wins (FR-04). Parity is the `native-pg` contract cell in CI.
+
 ```mermaid
 flowchart TB
-  B[Browser] --> RP[Caddy / nginx]
+  B[Browser] --> RP[Caddy / nginx<br/>ADR-0011]
   RP --> STAT[static files]
-  RP --> API[API server<br/>native Rust (axum), same crates]
-  RP --> COL[Hocuspocus server]
-  API --> PG[(Postgres)]
-  API --> VK[(Valkey)]
-  API --> S3[(MinIO / S3)]
-  API --> MQ[[RabbitMQ]]
-  MQ --> WRK[Worker process<br/>queue consumers + workflow runner + scheduler]
-  COL --> VK
-  COL --> PG
+  RP --> API["thrust-server: one native Rust binary, axum, same crates<br/>API · outbox queue + sweeper · in-process scheduler · P1 collab room"]
+  API --> DB[("Postgres, or SQLite per FR-04")]
+  API --> DISK[("local disk<br/>BlobStore at P0, S3-compatible adapter at P1")]
+  API --> SMTP["SMTP relay<br/>via lettre"]
 ```
 
 ### 1c. Adapter matrix (switch = config / compile-time + at most a redeploy)
 
+> **Round 29 (2026-10-19, FR-05):** reduced from 16 ports to those whose adapters really differ between the two
+> sets. `WorkflowEngine` is withdrawn: long jobs are queue messages with a `jobs` table (ADR-0071). RabbitMQ, Valkey
+> and Hocuspocus are cut (ADR-0070, ADR-0082, ADR-0060). Sessions are rows behind `Database` (FR-03), and a `Cache`
+> port is added only when a measured hot path needs it (ADR-0082). Rate limiting is the Workers Rate Limiting binding
+> on Cloudflare (D-007) and an in-process counter natively (ADR-0033). `StaticHost` has no trait in code; ADR-0011
+> serves the static apps from Workers static assets or Caddy/nginx.
+
 | Port | Cloudflare adapter | Self-hosted adapter | ADR |
 |---|---|---|---|
-| `Database` | Hyperdrive→Workers VPC→Tunnel→CNPG Postgres (ADR-0094; engine still ⚠ pending spike 0002) | Postgres / SQLite ⚠ | 0040 |
-| `Queue` | Cloudflare Queues | RabbitMQ | 0070 |
-| `WorkflowEngine` | Cloudflare Workflows | ⚠ DB-backed runner / Temporal / Celery-compat | 0071 |
-| `Scheduler` | Cron Triggers | in-process / cron scheduler | 0072 |
-| `Collab` | Durable Objects + Yjs | Hocuspocus + Redis | 0060 |
-| `BlobStore` | R2 | S3 / MinIO | 0080 |
-| `Cache` / `SessionStore` / `RateLimiter` | KV (+ DO for strong counters) | Redis/Valkey | 0082, 0033 |
-| `StaticHost` | Workers static assets | Caddy/nginx | 0011 |
-| `Email` | CF Email Service / SMTP | SMTP | 0073 |
-| `Search` | ⚠ D1/pg FTS · Vectorize · external | ⚠ Typesense/Meilisearch/OpenSearch | 0083 |
-| `AI` | Workers AI / external | external | 0084 |
-| `Identity` | OIDC (Zitadel) + Access JWT | OIDC | 0050 |
-| `Secrets/Config` | Secrets Store / wrangler secrets | env / file / 1Password | 0092 |
-| `Telemetry` | Workers Observability / OTel | OTel | 0130 |
+| `Database` connector | Hyperdrive→Workers VPC→Tunnel→CNPG Postgres (ADR-0094; engine still ⚠ pending spike 0002, which adds the FR-04 `worker-do` cell) | Postgres through a native pool; `rusqlite` if the `worker-do` cell wins (FR-04) | 0040 |
+| `Queue` | Cloudflare Queues | the outbox: in-process fast path + sweeper, one process | 0070 |
+| `BlobStore` | R2 | local disk at P0; S3-compatible (MinIO) at P1 (FR-19) | 0080 |
+| `Scheduler` | Cron Triggers | in-process timer | 0072 |
+| `Email` | CF Email Service / SMTP | SMTP through `lettre` | 0073 |
+| `Collab` host | the `yrs` room in a Durable Object (P1) | the same `yrs` room inside the axum server (P1) | 0060 |
+| `Clock` / `IdGen` / `Background` | `JsClock`, `JsIdGen`, `WaitUntilBackground` (`crates/thrust-adapters-cloudflare/src/lib.rs:22-49`) | `SystemClock`, `NativeIdGen`, `TokioBackground` (`crates/thrust-adapters-selfhosted/src/lib.rs:8-33`) | 0002 |
+
+Search, flags, AI, identity, secrets and telemetry are core code on one dialect.
 
 ## 2. Application architecture (hexagonal)
 
@@ -118,11 +121,11 @@ flowchart LR
     DOM[Domain model + policies<br/>permissions seam · workflow rules · events]
   end
   subgraph Driven[Driven ports → adapters]
-    P1[Database / Repos / UoW]
-    P2[Queue · Workflow · Scheduler]
-    P3[BlobStore · Cache · Session · RateLimiter]
-    P4[Collab · Search · Email · AI]
-    P5[Identity · Secrets · Telemetry]
+    P1[Database connector / Repos / UoW]
+    P2[Queue · Scheduler]
+    P3[BlobStore · Email]
+    P4[Collab host, P1]
+    P5[Clock · IdGen · Background]
   end
   HTTP --> UC
   WS --> UC
@@ -136,26 +139,32 @@ flowchart LR
   UC --> P5
 ```
 
+**Round 29 (2026-10-19, FR-05):** the driven ports are the §1c list; search, flags, AI, identity, secrets and
+telemetry are core code on one dialect.
+
 ### 2a. Package layout (Rust workspace in `aRustyDev/thrust`, ADR-0005/0006; redrawn round 25)
 
 ```
 thrust/
   crates/
-    thrust-ports/               # traits: Database/Repos/UoW, Queue, Workflow, Scheduler, BlobStore, Cache, Session,
-                                #   RateLimiter, Collab, Search, Email, Ai, Identity, Secrets, Telemetry, Flags;
+    thrust-ports/               # traits (round 29, the §1c list): Database connector/Repos/UoW, Queue, Scheduler,
+                                #   BlobStore, Email, Collab host, Clock/IdGen/Background;
                                 #   shared contract-test suites (ADR-0121)
     thrust-core/                # domain + use-cases; depends on ports only; Authorizer + `Scope` proof types (ADR-0051)
     thrust-contracts/           # event/outbox schemas, file-asset contract, API types (OpenAPI source, ADR-0032)
-    thrust-api-core/            # axum: the new REST + OpenAPI core API (v1 clients, MCP, Dioxus later)
+    thrust-api-core/            # NOT AT P0 (round 29, FR-06): the core REST + OpenAPI surface for Dioxus, scripts
+                                #   and MCP, generated from the use-cases at M4, when the Dioxus client exists
     thrust-api-v1/              # /api/v1 Plane wire-compat, a thin shim over core use-cases (ADR-0031)
     thrust-compat-plane/        # TRANSITIONAL: Plane-shaped internal endpoints for the React app (ADR-0034);
                                 #   deleted when the Dioxus UI lands (ADR-0013 Phase 2)
-    thrust-adapters-cloudflare/ # workers-rs: hyperdrive|d1, queues, kv, r2, cron, email, ai-gateway, rate limiting …
-    thrust-adapters-selfhosted/ # postgres, rabbitmq, valkey, s3, smtp, in-process scheduler …
+    thrust-adapters-cloudflare/ # workers-rs: hyperdrive|d1, queues, r2, cron, email, ai-gateway, rate limiting …
+    thrust-adapters-selfhosted/ # native pool, in-process queue (the outbox), local disk (S3-compatible at P1),
+                                #   smtp (`lettre`), in-process scheduler … (round 29, FR-05, FR-19)
     thrust-worker/              # composition root: wasm32 Cloudflare Worker (cargo feature set `cloudflare`)
     thrust-server/              # composition root: native axum/tokio (cargo feature set `selfhosted`)
-    thrust-collab-do/           # P1: the Durable Object classes. A DO must be exported from the same Wasm module as
-                                #   `fetch`, so the collab Worker has its own root crate (spike 0001, ADR-0090)
+    thrust-collab-do/           # NOT BEFORE M5 (round 29, FR-05, FR-11): the collab Worker's own root crate, added
+                                #   when the P1 room lands; a DO must be exported from the same Wasm module as `fetch`
+                                #   (spike 0001, ADR-0090), so until then the one Worker exports the DO classes
   web/                          # pnpm workspace: adopted React apps (web, space) + @plane/* packages,
                                 #   minimal changes only (ADR-0034); retired by ADR-0013 Phase 2
   docs/plan/                    # this planning package, once the repo is populated
@@ -165,6 +174,12 @@ Three HTTP surfaces sit on the same use-cases: **compat-plane** (React), **`/api
 **core API**. `apps/admin` is retired (ADR-0021), so two apps are served: `web` (a static SPA) and `space` (server-rendered in Plane, `ssr: true`; here an SPA plus Rust-injected metadata, Q-0011.3).
 
 **Spike 0001 notes (round 26; crate names are those of the spike branch).** (1) Every port returns a `Send` future (ADR-0002); `Background`, `Clock` and `IdGen` are ports, so core never spawns or reads the clock. (2) One router crate (`thrust-api`) is compiled into both roots; `thrust-api-core`, `thrust-api-v1` and `thrust-compat-plane` are route groups composed into it. (3) The SQL lives once, in `thrust-adapters-postgres`, written at `tokio_postgres::Client` level behind a `Connector` (a native pool on the server, a Hyperdrive socket on the Worker); the cloudflare and selfhosted adapter crates supply the connector and the non-SQL adapters. (4) The one HTTP contract suite lives in `thrust-contract-tests` and runs against every target.
+
+**Round 29 (2026-10-19, FR-05, FR-06, FR-11).** `thrust-api-core` is not built at P0: two HTTP surfaces sit on the
+use-cases (compat-plane and `/api/v1`), and the core OpenAPI surface is generated from them at M4 (review §3).
+`thrust-collab-do` is not a separate root until M5: the one Worker exports the DO classes, as the slice already does
+(`RateLimiterDo` and `RoomDo`, `crates/thrust-worker/src/durable.rs:26-86`). The `thrust-ports` and
+`thrust-adapters-selfhosted` lines follow the §1c list, and `kv` leaves the Cloudflare adapter line (FR-03; ADR-0082).
 
 ### 2b. Request flow (write path, any adapter set)
 
@@ -195,7 +210,7 @@ idempotent; the permission seam is called in the use-case layer (not the router)
 ```mermaid
 sequenceDiagram
   participant E as Editor (Yjs)
-  participant S as Collab adapter (DO | Hocuspocus)
+  participant S as Collab host (DO | axum, one yrs room, round 29)
   participant P as Persistence port
   E->>S: WebSocket (auth token)
   S->>S: authorize via Identity + permission seam
@@ -211,7 +226,7 @@ sequenceDiagram
   mechanism per ADR-0041. No query without the tenant predicate (enforced in repository layer).
 - **Contracts**: events (`contracts/events`), API schemas, and the file-asset lifecycle are versioned artifacts.
 - **Config-driven adapters**: one typed `AppConfig` selects an adapter per port (ADR-0007); invalid combos fail at startup.
-- **Observability**: trace-id propagated through Queue/Workflow/DO hops (ADR-0130).
+- **Observability**: trace-id propagated through Queue/DO hops (ADR-0130; no Workflow hop after round 29, FR-05).
 - **Security**: SSRF guard on outbound URL fetches (link crawl, webhooks); API-key hashing; public-space data
   minimisation (ADR-0141).
 
