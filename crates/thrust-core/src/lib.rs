@@ -602,9 +602,31 @@ mod tests {
         prop_oneof![9 => general, 1 => prop::sample::select(vec![".".to_string(), "..".to_string()])]
     }
 
+    /// Visible characters (multi-byte ones included, since the limit counts characters), with the two end lengths of
+    /// the range drawn on their own as well: a uniform length almost never is one.
     fn non_whitespace(len: std::ops::RangeInclusive<usize>) -> impl Strategy<Value = String> {
-        prop::collection::vec(any::<char>().prop_filter("not whitespace", |c| !c.is_whitespace()), len)
-            .prop_map(|cs| cs.into_iter().collect())
+        let (lo, hi) = (*len.start(), *len.end());
+        prop_oneof![1 => Just(lo), 1 => Just(hi), 8 => len].prop_flat_map(|n| {
+            prop::collection::vec(any::<char>().prop_filter("not whitespace", |c| !c.is_whitespace()), n)
+                .prop_map(|cs| cs.into_iter().collect::<String>())
+        })
+    }
+
+    /// Any printable text, plus the cases a uniform draw almost never makes: empty, only whitespace, and names right at
+    /// the 255-character limit and one past it.
+    fn any_name() -> impl Strategy<Value = String> {
+        prop_oneof![
+            6 => "\\PC{0,300}",
+            1 => Just(String::new()),
+            1 => "[ \t\n]{1,6}",
+            1 => Just("x".repeat(255)),
+            1 => Just("\u{e9}".repeat(256)),
+        ]
+    }
+
+    /// One side of a slash: empty (a leading or trailing slash) or a word.
+    fn segment() -> impl Strategy<Value = String> {
+        prop_oneof![1 => Just(String::new()), 4 => "[a-z]{1,60}"]
     }
 
     proptest! {
@@ -612,7 +634,7 @@ mod tests {
 
         /// Surrounding whitespace never changes whether a name is accepted.
         #[test]
-        fn prop_name_validity_ignores_surrounding_whitespace(name in "\\PC{0,300}", pad in "[ \t\n]{0,4}") {
+        fn prop_name_validity_ignores_surrounding_whitespace(name in any_name(), pad in "[ \t\n]{0,4}") {
             let padded = format!("{pad}{name}{pad}");
             prop_assert_eq!(validate_name(&padded).is_ok(), validate_name(&name).is_ok());
         }
@@ -645,9 +667,76 @@ mod tests {
 
         /// Any name containing a slash is rejected, wherever the slash is.
         #[test]
-        fn prop_blob_names_with_a_slash_are_rejected(before in "[a-z]{0,60}", after in "[a-z]{0,60}") {
+        fn prop_blob_names_with_a_slash_are_rejected(before in segment(), after in segment()) {
             let name = format!("{before}/{after}");
             prop_assert!(validate_blob_name(&name).is_err());
         }
+    }
+
+    /// Rule 8 for the properties above: each strategy reaches the inputs its property is about within one run's
+    /// budget (`CASES`, the properties' own default), and `prop_accepted_blob_names_stay_inside_their_scope` (which
+    /// discards rejected names) is not mostly discarding.
+    #[test]
+    fn strategies_reach_every_input_class() {
+        use proptest::strategy::ValueTree;
+        use proptest::test_runner::TestRunner;
+        use std::collections::BTreeSet;
+
+        const CASES: usize = 256;
+        fn sample<S: Strategy>(s: S) -> Vec<S::Value> {
+            let mut runner = TestRunner::deterministic();
+            (0..CASES).map(|_| s.new_tree(&mut runner).unwrap().current()).collect()
+        }
+        let mut seen = BTreeSet::new();
+        let mut note = |class: &'static str, hit: bool| {
+            if hit {
+                seen.insert(class);
+            }
+        };
+
+        for name in sample(any_name()) {
+            let trimmed = name.trim().chars().count();
+            note("name: empty", name.is_empty());
+            note("name: only whitespace", !name.is_empty() && name.trim().is_empty());
+            note("name: valid", (1..=255).contains(&trimmed));
+            note("name: exactly 255", trimmed == 255);
+            note("name: over 255", trimmed > 255);
+        }
+        for name in sample(non_whitespace(1..=255)) {
+            let n = name.chars().count();
+            note("visible: 1", n == 1);
+            note("visible: 255", n == 255);
+            note("visible: multi-byte", name.len() > n);
+        }
+        for name in sample(non_whitespace(256..=320)) {
+            note("visible: 256", name.chars().count() == 256);
+        }
+        let blobs = sample(blob_name());
+        let accepted: Vec<&String> = blobs.iter().filter(|b| validate_blob_name(b).is_ok()).collect();
+        for b in &blobs {
+            note("blob: bare dot", b == ".");
+            note("blob: dot dot", b == "..");
+            note("blob: rejected for ..", b.contains("..") && b != "..");
+        }
+        for b in &accepted {
+            note("blob accepted: one character", b.len() == 1);
+            note("blob accepted: with a dot", b.contains('.'));
+            note("blob accepted: multi-byte", b.chars().count() < b.len());
+        }
+        for (before, after) in sample((segment(), segment())) {
+            note("slash: leading", before.is_empty());
+            note("slash: trailing", after.is_empty());
+            note("slash: inside", !before.is_empty() && !after.is_empty());
+        }
+
+        let all = [
+            "name: empty", "name: only whitespace", "name: valid", "name: exactly 255", "name: over 255", "visible: 1",
+            "visible: 255", "visible: multi-byte", "visible: 256", "blob: bare dot", "blob: dot dot",
+            "blob: rejected for ..", "blob accepted: one character", "blob accepted: with a dot",
+            "blob accepted: multi-byte", "slash: leading", "slash: trailing", "slash: inside",
+        ];
+        let missing: Vec<_> = all.iter().filter(|c| !seen.contains(*c)).collect();
+        assert!(missing.is_empty(), "never generated: {missing:?}");
+        assert!(accepted.len() * 2 > blobs.len(), "only {} of {} blob names are accepted", accepted.len(), blobs.len());
     }
 }
