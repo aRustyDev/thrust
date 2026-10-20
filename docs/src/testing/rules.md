@@ -39,3 +39,12 @@ already found; without them the next run starts from zero. `mutants.out*` is a r
 **Rule 8 (a check that cannot fail is not evidence).** Every live suite in this repo has had a vacuous pass at some
 point: a filter selecting nothing, a target that was the wrong adapter, a replay with no inputs. The controls that
 caught them are catalogued in [Evidence and controls](evidence-and-controls.md).
+
+**Rule 9 (generative first).** A static case proves only the input someone thought of, and the bugs that matter
+here (a cross-tenant leak, a reused sequence id, a lost event) sit in the inputs and orderings nobody thought of.
+A generator searches that space on every run, and the shrunk counterexample it finds becomes the static case. So
+static tests keep a role, as the memory of what a generator, a fuzzer or a user already found, but they are not
+where a behaviour is first specified. The three allowed kinds (regression, a named spec example, oracle output)
+are the cases where the input is fixed for a reason outside the test. Labelling each one shows a reviewer why it is
+static, and a static case with no label is the cue to write the generator. The ladder of generative techniques and
+the seed policy are in [Strategy](strategy.md#generative-first).

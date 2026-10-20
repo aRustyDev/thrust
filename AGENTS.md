@@ -55,6 +55,12 @@ Where those docs and the rules below disagree, the rules win; record the disagre
    Never commit `mutants.out*`.
 8. A check that cannot fail is not evidence. Show the control that makes it fail (a mutated fixture, a broken codec,
    an empty seeds directory) before trusting a pass.
+9. Generative first. A new or changed test generates its inputs: an exhaustive `#[values]` matrix over a finite
+   domain, a `model_` sequence against a reference model, a `prop_` property, an `oracle_` differential run or a fuzz
+   target. A static example, fixture, golden file or snapshot is allowed only as (a) a pinned regression (a shrunk
+   counterexample, a fuzz crash, a fixed bug), (b) an example the spec, an ADR or Plane itself names, or (c) output
+   recorded from an independent oracle (`parity_`); its case name or a one-line comment says which. A behaviour
+   tested only by static cases is a gap: add the generative test or record the gap in `docs/src/testing/status.md`.
 <!-- ANCHOR_END: testing-rules -->
 
 | When you are | Load |

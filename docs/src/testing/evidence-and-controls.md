@@ -71,3 +71,20 @@ lasting version is cargo-mutants ([Mutation](techniques/mutation.md)).
 
 One-off or durable: remove the seeds, fixtures or corpus a replay test reads and require it to **fail**, not pass
 with nothing to check. `rust-test-fuzz` requires a `fuzz_replay_` test to fail when it finds no inputs.
+
+## Generator coverage
+
+The [broken-implementation](#broken-implementation) control proves that a property *can* fail. This one proves
+that its generator *reaches* the inputs that matter. A strategy that never produces a cross-tenant actor, a
+soft-deleted row or a bare `.` passes on code that is wrong for exactly those inputs. The broken-implementation
+control will not notice unless the planted bug happens to fall in a class the generator does reach.
+
+Durable form: an unprefixed test samples the strategy with a fixed-seed `TestRunner::deterministic()`, maps each
+value to a small enum of input classes the test owns, and asserts that every class appears at least once. For a
+`model_` test the classes depend on state (operation kind, an actor inside or outside the target's tenant, a live
+or deleted target), so it samples whole sequences, replays each through the reference model and classifies every
+step by the model's state at that point. proptest has no built-in `classify`, so this is the pattern;
+the template is in `.agents/skills/rust-test-logic/references/property.md` ("Checking the strategy's reach")
+`[verified 2026-10-20: proptest 1.12.0, in a scratch crate]`. Its own control: drop one class from the strategy and
+the test must fail (it did). Required for every `model_` test and for any `prop_` test whose strategy is weighted or
+filtered. Reach the rare classes by weighting them in the strategy, not by rejecting with `prop_assume!`.

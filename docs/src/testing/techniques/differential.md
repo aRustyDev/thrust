@@ -6,7 +6,9 @@ Status: **live** (editor-doc `oracle_` tests, opt-in) · **planned** (live Node 
 
 X11 (B), X12 (P), X13 (B), X14 (planned primary). Runs the same inputs through Rust and through a reference
 implementation and compares the outputs. Unlike [golden fixtures](golden-fixtures.md), the inputs can be generated or
-mutated in bulk, so it finds disagreements nobody thought to record.
+mutated in bulk, so it finds disagreements nobody thought to record. Under [Rule 9](../rules.md) this is the
+generative test of a conversion. The golden corpus is its committed record, and each disagreement it finds goes
+into that corpus.
 
 "Oracle" means three different things in this repo; read the [Glossary](../glossary.md#oracle) before using the word.
 

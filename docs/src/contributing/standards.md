@@ -50,7 +50,7 @@ What exists and what is missing, measured, is on [Status, gaps and drift](../tes
 | Commit subjects are Conventional Commits (`type(scope): summary`) | `.agents/plans/contrail/PROMPT.md` (the plan's handoff prompt) states it, and every non-merge commit after the initial one follows it | No hook or workflow checks it. There is no commitlint or release-please configuration |
 | Secrets come from the environment, never from a file or the command line | Comments in `crates/thrust-server/src/main.rs`, `crates/thrust-worker/wrangler.toml` and the scripts' headers | Nothing scans for them |
 | Format and lint | ADR-0123 (proposed) says `clippy` and `rustfmt` are required in CI, and `research/0004` lists the `clippy` panic lints as a TODO for P0 | There is no `rustfmt.toml`, `clippy.toml` or `rust-toolchain` file at the repository root, and nothing runs `cargo fmt` or `cargo clippy` |
-| The testing rules | `AGENTS.md`, rules 1 to 8 | Partly the nextest config and the scripts above. No command checks that rule 3 (a failing test is a finding) or rule 8 (a check that cannot fail is not evidence) was followed |
+| The testing rules | `AGENTS.md`, rules 1 to 9 | Partly the nextest config and the scripts above. No command checks that rule 3 (a failing test is a finding), rule 8 (a check that cannot fail is not evidence) or rule 9 (generative first) was followed |
 
 ## Decided, and built only in part
 
