@@ -22,3 +22,5 @@ htmlentity = "1"
 [dev-dependencies]
 # the schema dump is compared in the order the real schema lists nodes/marks/attrs
 serde_json = { version = "1", features = ["preserve_order"] }
+# tests/roundtrip.rs: generated documents through the JSON, Yjs and HTML round trips (gap G-10)
+proptest = "1"

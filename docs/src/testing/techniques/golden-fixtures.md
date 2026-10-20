@@ -17,7 +17,7 @@ found, every new input class), not by hand-picking inputs.
 
 Use when a reference implementation exists and its output can be recorded: editor-document conversions, sanitiser
 output, anything ported from TypeScript. Pair it with the differential run it records, and with a hermetic
-round-trip [property](property.md) where the conversion has an inverse (G-10). Not as the only test of a
+round-trip [property](property.md) where the conversion has an inverse (`crates/thrust-editor-doc/tests/roundtrip.rs`). Not as the only test of a
 conversion, not when the inputs must be generated fresh each run (that is [differential](differential.md)), and
 never by regenerating the fixture to make a failing test pass ([Rule 3](../rules.md)).
 
