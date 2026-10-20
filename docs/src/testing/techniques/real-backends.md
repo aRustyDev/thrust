@@ -18,13 +18,14 @@ the [contract suite](contract-suite.md) can already see over HTTP, and never in 
 ## Name and location
 
 `crates/thrust-adapters-selfhosted/tests/pg_adapter.rs` (`#[tokio::test]`, starts a Postgres container through
-`testcontainers`). It is excluded from the default profile by `binary(pg_adapter)`. The Worker side is exercised
+`testcontainers`), with its generated part in `crates/thrust-adapters-selfhosted/tests/model/mod.rs` compiled into the same
+binary. It is excluded from the default and `deep` profiles by `binary(pg_adapter)`. The Worker side is exercised
 through the contract suite on the `worker-*` targets, which run on local workerd via `scripts/worker-dev.sh`.
 
 ## Run
 
 ```sh
-scripts/rs cargo nextest run --ignore-default-filter -E 'binary(pg_adapter)'   # needs Docker [unverified: not run]
+scripts/rs cargo nextest run --ignore-default-filter -E 'binary(pg_adapter)'   # needs Docker [verified 2026-10-20: 8 passed]
 ```
 
 `scripts/verify-all.sh` runs it with `cargo test` as step 4.
@@ -32,8 +33,9 @@ scripts/rs cargo nextest run --ignore-default-filter -E 'binary(pg_adapter)'   #
 ## Required controls
 
 [Planted mutant](../evidence-and-controls.md#planted-mutant): `mutant_discard_noop` must make
-`an_abandoned_transaction_does_not_poison_the_pool` fail (`scripts/mutants.sh` checks it). The rollback test carries
-its own control.
+`an_abandoned_transaction_does_not_poison_the_pool` and `model_postgres_adapter_matches_the_reference_model` fail
+(`scripts/mutants.sh` checks both). The rollback test carries its own control; the model has
+[generator coverage](../evidence-and-controls.md#generator-coverage) (`model_postgres_strategy_reaches_every_step_class`).
 
 ## Owning skill
 
@@ -43,7 +45,8 @@ but is not installed.
 ## In-repo examples
 
 `membership_distinguishes_member_non_member_and_other_tenant`, `concurrent_allocation_is_unique_contiguous_and_serialised`,
-`rollback_is_atomic_and_unique_violation_is_a_conflict`, `outbox_is_atomic_with_the_entity_and_dispatch_is_recorded`.
+`rollback_is_atomic_and_unique_violation_is_a_conflict`, `outbox_is_atomic_with_the_entity_and_dispatch_is_recorded`;
+generated: `model_postgres_adapter_matches_the_reference_model`.
 
 ## Target
 

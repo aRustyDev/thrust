@@ -22,6 +22,8 @@ tokio-postgres = { version = "0.7", default-features = false, features = ["runti
 deadpool-postgres = { version = "0.14", default-features = false, features = ["rt_tokio_1"] }
 
 [dev-dependencies]
+# tests/model: generated Database/Tx call sequences against a reference model (gap G-9).
+proptest = "1"
 serde_json = { workspace = true }
 testcontainers = "0.23"
 testcontainers-modules = { version = "0.11", features = ["postgres"] }

@@ -2726,6 +2726,7 @@ dependencies = [
  "async-trait",
  "chrono",
  "deadpool-postgres",
+ "proptest",
  "serde_json",
  "testcontainers",
  "testcontainers-modules",
