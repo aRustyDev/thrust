@@ -34,7 +34,13 @@
 //!   is delivered: re-sending an injected event, or a real outbox event seen at an earlier checkpoint, adds nothing
 //!   (the consumer is idempotent on `event_id`). A checkpoint fails at once on any row the model cannot explain (an
 //!   event that should still be waiting, a rejected request's event, a duplicate) and otherwise waits up to 15 s for
-//!   the missing ones. Two seconds after the run, every case's activity is read again, to catch late duplicates.
+//!   the missing ones. Two seconds after the run, every case's activity is read again, to catch late duplicates;
+//! * attachments (ADR-0080): a put checks, in order, the name (one ordinary path segment of at most 128 bytes, no
+//!   `..`; `400`), the size (at most 5 MiB, `413`), the caller's role (Member) and that the item is live in the path's
+//!   project (`404`), then stores the bytes and the content type, replacing any earlier object of that name. A get
+//!   (Guest) returns exactly the stored bytes and content type, or `404`; it does not look at the item, so the
+//!   attachments of a soft-deleted item stay readable. A delete (Member) is `204` whether or not anything was stored.
+//!   An attachment belongs to its path's project: another project's item id reaches nothing.
 //!
 //! Budget: `THRUST_MODEL_CASES` sequences per run (default 16 in `main`, 8 in `sweeper`), deliberately not
 //! `PROPTEST_CASES`, so a `deep` run's setting cannot turn one contract cell into thousands of round trips. Each case
@@ -43,7 +49,7 @@
 
 mod matrix;
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -57,7 +63,7 @@ use thrust_contract_tests::*;
 use thrust_contracts::*;
 use uuid::Uuid;
 
-const MAX_OPS: usize = 24;
+const MAX_OPS: usize = 28;
 
 // ---------------------------------------------------------------------------------------------
 // The spec: who may do what
@@ -196,6 +202,82 @@ enum Replay {
     Observed(usize),
 }
 
+/// The attachment size limit (`CoreConfig::max_attachment_bytes`).
+const ATTACHMENT_LIMIT: usize = 5 * 1024 * 1024;
+
+#[derive(Debug, Clone, Copy)]
+enum BlobName {
+    Notes,
+    Data,
+    /// 128 bytes, the longest valid name.
+    Longest,
+    /// Contains `..`.
+    DoubleDot,
+    /// 129 bytes.
+    TooLong,
+}
+
+impl BlobName {
+    fn as_string(self) -> String {
+        match self {
+            BlobName::Notes => "notes.txt".to_string(),
+            BlobName::Data => "data.bin".to_string(),
+            BlobName::Longest => "x".repeat(128),
+            BlobName::DoubleDot => "a..b".to_string(),
+            BlobName::TooLong => "x".repeat(129),
+        }
+    }
+
+    fn valid(self) -> bool {
+        match self {
+            BlobName::Notes | BlobName::Data | BlobName::Longest => true,
+            BlobName::DoubleDot | BlobName::TooLong => false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Size {
+    Empty,
+    /// 1..=64 bytes.
+    Small(u8),
+    /// Exactly the limit.
+    AtLimit,
+    /// One byte over it.
+    OverLimit,
+}
+
+impl Size {
+    fn len(self) -> usize {
+        match self {
+            Size::Empty => 0,
+            Size::Small(n) => usize::from(n),
+            Size::AtLimit => ATTACHMENT_LIMIT,
+            Size::OverLimit => ATTACHMENT_LIMIT + 1,
+        }
+    }
+
+    /// Binary content (zero bytes included) that differs by `seed`, so a replaced object is distinguishable.
+    fn bytes(self, seed: u8) -> Vec<u8> {
+        (0..self.len()).map(|i| (i as u8).wrapping_mul(31).wrapping_add(seed)).collect()
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+enum Ctype {
+    Text,
+    Custom,
+}
+
+impl Ctype {
+    fn as_str(self) -> &'static str {
+        match self {
+            Ctype::Text => "text/plain",
+            Ctype::Custom => "application/x-thrust",
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 enum Op {
     /// `ext`: an external key from a small domain, so that keys collide.
@@ -208,6 +290,9 @@ enum Op {
     Sweep,
     /// Read both projects' activity and compare it with the model.
     Checkpoint,
+    PutAttachment { actor: Actor, proj: Proj, pick: Pick, name: BlobName, size: Size, seed: u8, ctype: Option<Ctype> },
+    GetAttachment { actor: Actor, proj: Proj, pick: Pick, name: BlobName },
+    DeleteAttachment { actor: Actor, proj: Proj, pick: Pick, name: BlobName },
 }
 
 fn actor() -> impl Strategy<Value = Actor> {
@@ -225,6 +310,18 @@ fn actor() -> impl Strategy<Value = Actor> {
 
 fn proj() -> impl Strategy<Value = Proj> {
     prop_oneof![5 => Just(Proj::A), 3 => Just(Proj::B), 1 => Just(Proj::Unknown)]
+}
+
+/// A project and a caller: usually one who may write there, so sequences build up state worth checking, otherwise
+/// anyone (drawn independently, the pair is mostly a cross-tenant or unauthenticated rejection).
+fn caller() -> impl Strategy<Value = (Actor, Proj)> {
+    proj().prop_flat_map(|p| {
+        let writers = match p {
+            Proj::A => vec![Actor::AdminA, Actor::MemberA],
+            Proj::B | Proj::Unknown => vec![Actor::AdminB],
+        };
+        (prop_oneof![3 => prop::sample::select(writers), 2 => actor()], Just(p))
+    })
 }
 
 fn seeded() -> impl Strategy<Value = Proj> {
@@ -257,16 +354,42 @@ fn replay() -> impl Strategy<Value = Replay> {
     prop_oneof![2 => Just(Replay::Fresh), 1 => (0..8usize).prop_map(Replay::Injected), 1 => (0..8usize).prop_map(Replay::Observed)]
 }
 
+fn blob_name() -> impl Strategy<Value = BlobName> {
+    prop_oneof![
+        4 => Just(BlobName::Notes),
+        3 => Just(BlobName::Data),
+        1 => Just(BlobName::Longest),
+        1 => Just(BlobName::DoubleDot),
+        1 => Just(BlobName::TooLong),
+    ]
+}
+
+fn size() -> impl Strategy<Value = Size> {
+    // the two 5 MiB sizes are rare: each one is a real 5 MiB upload
+    prop_oneof![8 => (1..=64u8).prop_map(Size::Small), 1 => Just(Size::Empty), 1 => Just(Size::AtLimit), 1 => Just(Size::OverLimit)]
+}
+
+fn ctype() -> impl Strategy<Value = Option<Ctype>> {
+    prop::option::weighted(0.6, prop_oneof![Just(Ctype::Text), Just(Ctype::Custom)])
+}
+
 fn op() -> impl Strategy<Value = Op> {
     prop_oneof![
-        5 => (actor(), proj(), name(), prop::option::weighted(0.4, 0..3u8))
-            .prop_map(|(actor, proj, name, ext)| Op::Create { actor, proj, name, ext }),
-        3 => (actor(), proj(), pick()).prop_map(|(actor, proj, pick)| Op::Delete { actor, proj, pick }),
-        2 => (actor(), proj(), scope()).prop_map(|(actor, proj, scope)| Op::List { actor, proj, scope }),
+        5 => (caller(), name(), prop::option::weighted(0.4, 0..3u8))
+            .prop_map(|((actor, proj), name, ext)| Op::Create { actor, proj, name, ext }),
+        3 => (caller(), pick()).prop_map(|((actor, proj), pick)| Op::Delete { actor, proj, pick }),
+        1 => (caller(), scope()).prop_map(|((actor, proj), scope)| Op::List { actor, proj, scope }),
         2 => (seeded(), 0..16usize, verb(), replay())
             .prop_map(|(proj, item, verb, replay)| Op::Inject { proj, item, verb, replay }),
         1 => Just(Op::Sweep),
         1 => Just(Op::Checkpoint),
+        3 => (caller(), pick(), blob_name(), size(), any::<u8>(), ctype()).prop_map(
+            |((actor, proj), pick, name, size, seed, ctype)| Op::PutAttachment { actor, proj, pick, name, size, seed, ctype }
+        ),
+        3 => (caller(), pick(), blob_name())
+            .prop_map(|((actor, proj), pick, name)| Op::GetAttachment { actor, proj, pick, name }),
+        2 => (caller(), pick(), blob_name())
+            .prop_map(|((actor, proj), pick, name)| Op::DeleteAttachment { actor, proj, pick, name }),
     ]
 }
 
@@ -308,10 +431,28 @@ enum Class {
     /// A sweep that publishes waiting events (fast path off only).
     SweptPending,
     Checked,
+    AttachmentStored,
+    /// A put over an existing object of the same name.
+    AttachmentReplaced,
+    /// A put of exactly the size limit.
+    AttachmentAtLimit,
+    AttachmentTooLarge,
+    AttachmentBadName,
+    AttachmentOnDeletedItem,
+    AttachmentOnOtherProjectsItem,
+    AttachmentOnUnknownItem,
+    AttachmentRead,
+    /// A get of an attachment whose item was soft-deleted afterwards.
+    AttachmentReadAfterItemDeleted,
+    AttachmentMissing,
+    /// A get through one project of an object stored under another project's item.
+    AttachmentCrossProject,
+    AttachmentDeleted,
+    AttachmentDeleteMissing,
 }
 
 impl Class {
-    const ALL: [Class; 23] = [
+    const ALL: [Class; 37] = [
         Class::Unauthenticated,
         Class::InvalidName,
         Class::BogusScope,
@@ -335,6 +476,20 @@ impl Class {
         Class::Swept,
         Class::SweptPending,
         Class::Checked,
+        Class::AttachmentStored,
+        Class::AttachmentReplaced,
+        Class::AttachmentAtLimit,
+        Class::AttachmentTooLarge,
+        Class::AttachmentBadName,
+        Class::AttachmentOnDeletedItem,
+        Class::AttachmentOnOtherProjectsItem,
+        Class::AttachmentOnUnknownItem,
+        Class::AttachmentRead,
+        Class::AttachmentReadAfterItemDeleted,
+        Class::AttachmentMissing,
+        Class::AttachmentCrossProject,
+        Class::AttachmentDeleted,
+        Class::AttachmentDeleteMissing,
     ];
 }
 
@@ -357,6 +512,32 @@ struct ProjectModel {
     last_sort: i64,
     /// `409`s since the last successful create: each may have used up a sequence number.
     failed_since: i64,
+    /// Stored attachments by (item, name).
+    blobs: BTreeMap<(WorkItemId, String), Stored>,
+}
+
+/// An attachment as the model keeps it: how to make its bytes, not the bytes (two of the sizes are 5 MiB).
+#[derive(Debug, Clone, PartialEq)]
+struct Stored {
+    size: Size,
+    seed: u8,
+    content_type: Option<&'static str>,
+}
+
+impl Stored {
+    fn bytes(&self) -> Vec<u8> {
+        self.size.bytes(self.seed)
+    }
+}
+
+/// Whose item a request names.
+#[derive(Debug, Clone, Copy)]
+enum ItemRef {
+    /// A row of the path's project, by index.
+    Own(usize),
+    /// An item of the other seeded project, by slot.
+    Other(usize),
+    Unknown,
 }
 
 /// One event the model expects to become one activity row.
@@ -401,6 +582,9 @@ enum Want {
     Inject(Option<Event>),
     Sweep,
     Checkpoint,
+    PutAttachment { slot: usize, key: (WorkItemId, String), stored: Stored },
+    GetAttachment(Stored),
+    DeleteAttachment { slot: usize, key: (WorkItemId, String) },
 }
 
 /// One work-item request, in model terms; `World::send` turns it into ids.
@@ -412,6 +596,30 @@ struct Req {
     item: Option<WorkItemId>,
     query: Option<&'static str>,
     body: Option<Value>,
+    /// `.../work-items/<item>/attachments/<name>`.
+    attachment: Option<String>,
+    /// The body and content type of an attachment put.
+    upload: Option<Stored>,
+}
+
+impl Req {
+    fn bare(actor: Actor, method: Method, proj: Proj) -> Req {
+        Req { actor, method, proj, item: None, query: None, body: None, attachment: None, upload: None }
+    }
+}
+
+/// A response, as far as the model looks at it.
+struct Resp {
+    status: u16,
+    content_type: Option<String>,
+    body: Vec<u8>,
+}
+
+impl Resp {
+    /// The body for a failure message, cut short (an attachment can be 5 MiB).
+    fn text(&self) -> String {
+        String::from_utf8_lossy(&self.body[..self.body.len().min(300)]).into_owned()
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -460,7 +668,7 @@ impl Model {
                     body["external_source"] = json!("gh");
                     body["external_id"] = json!(format!("k{k}"));
                 }
-                let call = Call::Api(Req { actor, method: Method::POST, proj, item: None, query: None, body: Some(body) });
+                let call = Call::Api(Req { body: Some(body), ..Req::bare(actor, Method::POST, proj) });
                 let (want, class) = if matches!(standing(actor, proj), Standing::Unauthenticated) {
                     (Want::Reject(401), Class::Unauthenticated)
                 } else if matches!(name, Name::Blank | Name::TooLong) {
@@ -487,40 +695,19 @@ impl Model {
                 Plan { call, want, class }
             }
             Op::Delete { actor, proj, pick } => {
-                let own = slot(proj);
-                let other = match proj {
-                    Proj::A | Proj::Unknown => 1,
-                    Proj::B => 0,
-                };
-                let rows_of = |s: usize| &self.projects[s].rows;
-                // (item id, the own-project row it is, if any)
-                let (item, row) = match pick {
-                    Pick::Own(i) => match own {
-                        Some(s) if !rows_of(s).is_empty() => {
-                            let r = i % rows_of(s).len();
-                            (rows_of(s)[r].id, Some(r))
-                        }
-                        _ => (unknown_item(step), None),
-                    },
-                    Pick::OtherProject(i) if !rows_of(other).is_empty() => {
-                        (rows_of(other)[i % rows_of(other).len()].id, None)
-                    }
-                    Pick::OtherProject(_) | Pick::Unknown => (unknown_item(step), None),
-                };
-                let call = Call::Api(Req { actor, method: Method::DELETE, proj, item: Some(item), query: None, body: None });
+                let (item, target) = self.resolve(step, proj, pick);
+                let call = Call::Api(Req { item: Some(item), ..Req::bare(actor, Method::DELETE, proj) });
                 let (want, class) = if let Some((status, class)) = gate(actor, proj, Role::Member) {
                     (Want::Reject(status), class)
                 } else {
-                    let s = own.expect("an authorized project is a seeded one");
-                    match (pick, row) {
-                        (_, Some(r)) if !rows_of(s)[r].deleted => {
+                    let s = slot(proj).expect("an authorized project is a seeded one");
+                    match target {
+                        ItemRef::Own(r) if !self.projects[s].rows[r].deleted => {
                             (Want::Delete { slot: s, row: r, actor }, Class::Deleted)
                         }
-                        (_, Some(_)) => (Want::Reject(404), Class::DeleteAlreadyDeleted),
-                        (Pick::OtherProject(_), None) if !rows_of(other).is_empty() => {
-                            (Want::Reject(404), Class::DeleteOtherProjectsItem)
-                        }
-                        _ => (Want::Reject(404), Class::DeleteUnknownId),
+                        ItemRef::Own(_) => (Want::Reject(404), Class::DeleteAlreadyDeleted),
+                        ItemRef::Other(_) => (Want::Reject(404), Class::DeleteOtherProjectsItem),
+                        ItemRef::Unknown => (Want::Reject(404), Class::DeleteUnknownId),
                     }
                 };
                 Plan { call, want, class }
@@ -532,7 +719,7 @@ impl Model {
                     Scope::WithDeleted => Some("with_deleted"),
                     Scope::Bogus => Some("bogus"),
                 };
-                let call = Call::Api(Req { actor, method: Method::GET, proj, item: None, query, body: None });
+                let call = Call::Api(Req { query, ..Req::bare(actor, Method::GET, proj) });
                 let with_deleted = matches!(scope, Scope::WithDeleted);
                 let min = if with_deleted { Role::Admin } else { Role::Guest };
                 let (want, class) = if matches!(standing(actor, proj), Standing::Unauthenticated) {
@@ -586,6 +773,120 @@ impl Model {
                 Plan { call: Call::Sweep, want: Want::Sweep, class }
             }
             Op::Checkpoint => Plan { call: Call::Checkpoint, want: Want::Checkpoint, class: Class::Checked },
+            Op::PutAttachment { actor, proj, pick, name, size, seed, ctype } => {
+                let (item, target) = self.resolve(step, proj, pick);
+                let stored = Stored { size, seed, content_type: ctype.map(Ctype::as_str) };
+                let call = Call::Api(Req {
+                    item: Some(item),
+                    attachment: Some(name.as_string()),
+                    upload: Some(stored.clone()),
+                    ..Req::bare(actor, Method::PUT, proj)
+                });
+                let (want, class) = if matches!(standing(actor, proj), Standing::Unauthenticated) {
+                    (Want::Reject(401), Class::Unauthenticated)
+                } else if !name.valid() {
+                    (Want::Reject(400), Class::AttachmentBadName)
+                } else if matches!(size, Size::OverLimit) {
+                    (Want::Reject(413), Class::AttachmentTooLarge)
+                } else if let Some((status, class)) = gate(actor, proj, Role::Member) {
+                    (Want::Reject(status), class)
+                } else {
+                    let s = slot(proj).expect("an authorized project is a seeded one");
+                    match target {
+                        ItemRef::Own(r) if !self.projects[s].rows[r].deleted => {
+                            let key = (item, name.as_string());
+                            let class = if self.projects[s].blobs.contains_key(&key) {
+                                Class::AttachmentReplaced
+                            } else if matches!(size, Size::AtLimit) {
+                                Class::AttachmentAtLimit
+                            } else {
+                                Class::AttachmentStored
+                            };
+                            (Want::PutAttachment { slot: s, key, stored }, class)
+                        }
+                        ItemRef::Own(_) => (Want::Reject(404), Class::AttachmentOnDeletedItem),
+                        ItemRef::Other(_) => (Want::Reject(404), Class::AttachmentOnOtherProjectsItem),
+                        ItemRef::Unknown => (Want::Reject(404), Class::AttachmentOnUnknownItem),
+                    }
+                };
+                Plan { call, want, class }
+            }
+            Op::GetAttachment { actor, proj, pick, name } => {
+                let (item, target) = self.resolve(step, proj, pick);
+                let call = Call::Api(Req {
+                    item: Some(item),
+                    attachment: Some(name.as_string()),
+                    ..Req::bare(actor, Method::GET, proj)
+                });
+                let key = (item, name.as_string());
+                let (want, class) = if matches!(standing(actor, proj), Standing::Unauthenticated) {
+                    (Want::Reject(401), Class::Unauthenticated)
+                } else if !name.valid() {
+                    (Want::Reject(400), Class::AttachmentBadName)
+                } else if let Some((status, class)) = gate(actor, proj, Role::Guest) {
+                    (Want::Reject(status), class)
+                } else {
+                    let s = slot(proj).expect("an authorized project is a seeded one");
+                    match (self.projects[s].blobs.get(&key), target) {
+                        (Some(b), ItemRef::Own(r)) if self.projects[s].rows[r].deleted => {
+                            (Want::GetAttachment(b.clone()), Class::AttachmentReadAfterItemDeleted)
+                        }
+                        (Some(b), _) => (Want::GetAttachment(b.clone()), Class::AttachmentRead),
+                        (None, ItemRef::Other(o)) if self.projects[o].blobs.contains_key(&key) => {
+                            (Want::Reject(404), Class::AttachmentCrossProject)
+                        }
+                        (None, _) => (Want::Reject(404), Class::AttachmentMissing),
+                    }
+                };
+                Plan { call, want, class }
+            }
+            Op::DeleteAttachment { actor, proj, pick, name } => {
+                let (item, _) = self.resolve(step, proj, pick);
+                let call = Call::Api(Req {
+                    item: Some(item),
+                    attachment: Some(name.as_string()),
+                    ..Req::bare(actor, Method::DELETE, proj)
+                });
+                let (want, class) = if matches!(standing(actor, proj), Standing::Unauthenticated) {
+                    (Want::Reject(401), Class::Unauthenticated)
+                } else if !name.valid() {
+                    (Want::Reject(400), Class::AttachmentBadName)
+                } else if let Some((status, class)) = gate(actor, proj, Role::Member) {
+                    (Want::Reject(status), class)
+                } else {
+                    let s = slot(proj).expect("an authorized project is a seeded one");
+                    let key = (item, name.as_string());
+                    let class = if self.projects[s].blobs.contains_key(&key) {
+                        Class::AttachmentDeleted
+                    } else {
+                        Class::AttachmentDeleteMissing
+                    };
+                    (Want::DeleteAttachment { slot: s, key }, class)
+                };
+                Plan { call, want, class }
+            }
+        }
+    }
+
+    /// The item `pick` names in a request on `proj`: its id, and whose row it is.
+    fn resolve(&self, step: usize, proj: Proj, pick: Pick) -> (WorkItemId, ItemRef) {
+        let other = match proj {
+            Proj::A | Proj::Unknown => 1,
+            Proj::B => 0,
+        };
+        let rows = |s: usize| &self.projects[s].rows;
+        match pick {
+            Pick::Own(i) => match slot(proj) {
+                Some(s) if !rows(s).is_empty() => {
+                    let r = i % rows(s).len();
+                    (rows(s)[r].id, ItemRef::Own(r))
+                }
+                _ => (unknown_item(step), ItemRef::Unknown),
+            },
+            Pick::OtherProject(i) if !rows(other).is_empty() => {
+                (rows(other)[i % rows(other).len()].id, ItemRef::Other(other))
+            }
+            Pick::OtherProject(_) | Pick::Unknown => (unknown_item(step), ItemRef::Unknown),
         }
     }
 
@@ -622,6 +923,17 @@ impl Model {
     fn emit(&mut self, slot: usize, entity: Uuid, verb: &'static str, actor: Actor) {
         let published = self.fastpath;
         self.events.push(Event { slot, id: None, entity, verb, actor, injected: false, published });
+    }
+
+    /// Every event whose id is known, sent again, then a checkpoint: the consumer must add nothing.
+    fn redeliver_everything(&self) -> Vec<Op> {
+        let known = |injected: bool| self.events.iter().filter(|e| e.injected == injected && e.id.is_some()).count();
+        let again = |replay| Op::Inject { proj: Proj::A, item: 0, verb: Verb::Updated, replay };
+        (0..known(true))
+            .map(|i| again(Replay::Injected(i)))
+            .chain((0..known(false)).map(|i| again(Replay::Observed(i))))
+            .chain([Op::Checkpoint])
+            .collect()
     }
 
     /// Events waiting in the outbox.
@@ -706,6 +1018,13 @@ impl Model {
             Want::Delete { slot, row, actor } => self.record_delete(slot, row, actor),
             Want::Inject(ref fresh) => self.events.extend(fresh.clone()),
             Want::Sweep => self.publish_all(),
+            Want::PutAttachment { slot, ref key, ref stored } => {
+                self.projects[slot].blobs.insert(key.clone(), stored.clone());
+            }
+            Want::GetAttachment(_) => {}
+            Want::DeleteAttachment { slot, ref key } => {
+                self.projects[slot].blobs.remove(key);
+            }
             Want::Checkpoint => {
                 for e in &mut self.events {
                     if e.published && e.id.is_none() {
@@ -768,10 +1087,17 @@ impl<'a> World<'a> {
         }
     }
 
-    async fn send(&self, req: &Req) -> (u16, String) {
+    async fn send(&self, req: &Req) -> Resp {
+        self.try_send(req).await.unwrap()
+    }
+
+    async fn try_send(&self, req: &Req) -> Result<Resp, reqwest::Error> {
         let mut path = wi_path(self.project(req.proj));
         if let Some(id) = req.item {
             path.push_str(&format!("/{id}"));
+        }
+        if let Some(name) = &req.attachment {
+            path.push_str(&format!("/attachments/{name}"));
         }
         if let Some(q) = req.query {
             path.push_str(&format!("?scope={q}"));
@@ -780,9 +1106,16 @@ impl<'a> World<'a> {
         if let Some(body) = &req.body {
             b = b.json(body);
         }
-        let r = b.send().await.unwrap();
+        if let Some(up) = &req.upload {
+            b = b.body(up.bytes());
+            if let Some(ct) = up.content_type {
+                b = b.header("content-type", ct);
+            }
+        }
+        let r = b.send().await?;
         let status = r.status().as_u16();
-        (status, r.text().await.unwrap_or_default())
+        let content_type = r.headers().get("content-type").and_then(|v| v.to_str().ok()).map(str::to_string);
+        Ok(Resp { status, content_type, body: r.bytes().await.map(|b| b.to_vec()).unwrap_or_default() })
     }
 
     /// The envelope a producer would put on the queue for `ev`.
@@ -847,15 +1180,43 @@ async fn run_case(
     // Undispatched rows other tests left behind; a sweep takes them too. Only read with the fast path off, where the
     // pass runs one test at a time.
     let mut leftover = if fastpath { 0 } else { t.outbox_depth().await };
-    // Every case ends with a checkpoint; with the fast path off, a sweep first so that everything is delivered.
-    let tail = if fastpath { vec![Op::Checkpoint] } else { vec![Op::Sweep, Op::Checkpoint] };
-    for (step, op) in ops.iter().chain(&tail).enumerate() {
+    // Every case ends with a checkpoint; with the fast path off, a sweep first so that everything is delivered. Then
+    // every event whose id is now known is sent again and checked once more, so that each case exercises redelivery
+    // whatever the generator drew (the read after the run catches a duplicate that lands late).
+    let mut all: Vec<Op> = ops.to_vec();
+    all.extend(if fastpath { vec![Op::Checkpoint] } else { vec![Op::Sweep, Op::Checkpoint] });
+    let mut redelivered = false;
+    let mut next = 0;
+    loop {
+        if next == all.len() {
+            if redelivered {
+                break;
+            }
+            redelivered = true;
+            all.extend(m.redeliver_everything());
+        }
+        let (step, op) = (next, all[next].clone());
+        next += 1;
+        let op = &op;
         let plan = m.plan(step, op);
         counts.requests.fetch_add(1, Ordering::Relaxed);
         let at = format!("step {step}: {op:?} ({:?})", plan.class);
         match (plan.call, plan.want) {
             (Call::Api(req), want) => {
-                let (status, body) = w.send(&req).await;
+                let resp = match w.try_send(&req).await {
+                    Ok(resp) => resp,
+                    // An upload without a valid session is refused before its body is read: the server answers 401
+                    // and closes the connection while a large body is still being sent, so the client may see the
+                    // connection close instead of the 401. Only that case, and only for a large body.
+                    Err(_)
+                        if matches!(want, Want::Reject(401))
+                            && req.upload.as_ref().is_some_and(|u| u.size.len() > 64 * 1024) =>
+                    {
+                        continue;
+                    }
+                    Err(e) => return Err(fail(&at, e)),
+                };
+                let (status, body) = (resp.status, resp.text());
                 match want {
                     Want::Reject(want) => prop_assert_eq!(status, want, "{}; body {}", at, body),
                     Want::Conflict { slot, ext } => {
@@ -864,7 +1225,7 @@ async fn run_case(
                     }
                     Want::Create { slot, name, ext, actor } => {
                         prop_assert_eq!(status, 201, "{}; body {}", at, body);
-                        let item: WorkItem = serde_json::from_str(&body).map_err(|e| fail(&at, e))?;
+                        let item: WorkItem = serde_json::from_slice(&resp.body).map_err(|e| fail(&at, e))?;
                         let p = &m.projects[slot];
                         prop_assert_eq!((item.workspace_id, item.project_id), w.scope_of(slot), "{}: created outside its scope", at);
                         prop_assert_eq!(&item.name, &name, "{}: the stored name is the trimmed name", at);
@@ -890,13 +1251,28 @@ async fn run_case(
                     }
                     Want::List { slot, with_deleted } => {
                         prop_assert_eq!(status, 200, "{}; body {}", at, body);
-                        let items: Vec<WorkItem> = serde_json::from_str(&body).map_err(|e| fail(&at, e))?;
+                        let items: Vec<WorkItem> = serde_json::from_slice(&resp.body).map_err(|e| fail(&at, e))?;
                         for i in &items {
                             prop_assert_eq!((i.workspace_id, i.project_id), w.scope_of(slot), "{}: a row outside its scope", at);
                         }
                         let got: Vec<(i64, String, bool)> =
                             items.iter().map(|i| (i.sequence_id, i.name.clone(), i.deleted_at.is_some())).collect();
                         prop_assert_eq!(got, m.expected_rows(slot, with_deleted), "{}", at);
+                    }
+                    Want::PutAttachment { slot, key, stored } => {
+                        prop_assert_eq!(status, 204, "{}; body {}", at, body);
+                        m.projects[slot].blobs.insert(key, stored);
+                    }
+                    Want::GetAttachment(stored) => {
+                        prop_assert_eq!(status, 200, "{}; body {}", at, body);
+                        let want = stored.bytes();
+                        prop_assert_eq!(resp.body.len(), want.len(), "{}: attachment length", at);
+                        prop_assert!(resp.body == want, "{}: the attachment's bytes differ from what was stored", at);
+                        prop_assert_eq!(resp.content_type.as_deref(), stored.content_type, "{}: content type", at);
+                    }
+                    Want::DeleteAttachment { slot, key } => {
+                        prop_assert_eq!(status, 204, "{}; body {}", at, body);
+                        m.projects[slot].blobs.remove(&key);
                     }
                     other => unreachable!("a work-item request planned {other:?}"),
                 }
@@ -1040,13 +1416,14 @@ fn sweeper_model_outbox_delivers_what_was_swept_and_nothing_more() {
 
 /// Rule 8 for the two tests above: a sequence generator that never produces, say, a delete of an already deleted row
 /// or a redelivery of a real outbox event would pass on a server that gets that case wrong. Samples sequences with a
-/// fixed seed in both outbox modes, replays them through the model alone, and requires every step class at least once.
+/// fixed seed in both outbox modes (2000 each), replays them through the model alone, and requires every step class at
+/// least once.
 #[test]
 fn model_strategy_reaches_every_step_class() {
     let mut seen = BTreeSet::new();
     for fastpath in [true, false] {
         let mut runner = TestRunner::deterministic();
-        for _ in 0..500 {
+        for _ in 0..2000 {
             let ops = ops().new_tree(&mut runner).unwrap().current();
             let mut m = Model::new(fastpath);
             for (step, op) in ops.iter().enumerate() {
