@@ -38,6 +38,37 @@ Example tests miss inputs nobody thought of (property and fuzz find them); prope
 invariant (golden and differential tests compare against an independent implementation); every test can pass
 vacuously (controls and mutation catch that).
 
+## Generative first
+
+[Rule 9](rules.md) makes generated inputs the default at every layer, with static cases reserved for regressions,
+named spec examples and oracle output. Pick the first rung that can express the behaviour:
+
+| Rung | Technique | Generates | Fits best at layer |
+|---|---|---|---|
+| 1 | Exhaustive matrix ([parameterized](techniques/example-and-parameterized.md), rstest `#[values]`) | every point of a small finite domain: role × permission, status × transition | 1, 3 (role × tenant × route) |
+| 2 | [Model-based](techniques/model-based.md) (`model_`) | sequences of operations, checked against a reference model after every step | 2, 3, 4 (the same model over HTTP on every target) |
+| 3 | [Property](techniques/property.md) (`prop_`) | values of a stated shape, checked against an invariant | 1, 2 |
+| 4 | [Differential](techniques/differential.md) (`oracle_`) | bulk or mutated inputs, compared with an independent implementation | 1, 3 (v1 against pinned Plane) |
+| 5 | [Fuzz](techniques/fuzz.md) (`fuzz_replay_`) | coverage-guided bytes for untrusted parsers | 1 |
+
+An exhaustive matrix comes first because, when the domain is small, it checks every input, not a sample. Model-based
+comes before property because most of thrust's risk is in state and ordering (X1, X3-X5). The rungs overlap on
+purpose: a property states the invariant, a model states the whole behaviour, and a differential run checks both
+against an implementation nobody here wrote.
+
+Static tests are the output of this process, not its input: every shrunk counterexample, fuzz crash and fixed bug
+becomes a named [pinned case](techniques/example-and-parameterized.md), and the oracle's recorded output becomes the
+hermetic [golden corpus](techniques/golden-fixtures.md) that guards the differential run between its live runs.
+
+**Seed policy.** The default loop runs generators on fresh random seeds, so every run searches new inputs. That
+is compatible with [Rule 6](rules.md) because the nondeterminism is in the *search*, not in the code under test
+(time and randomness are injected), and because a failure is never retried away ([Rule 2](rules.md)): it is a
+finding, its seed is persisted in `*.proptest-regressions` and replayed first on every later run ([Rule 7](rules.md)).
+`PROPTEST_CASES` sets the budget through the shared config helper: each test's own default (256 in `thrust-core`)
+in the loop, 4096 or more under `deep`, and lower for a mutation run if one is too slow (nothing sets that today).
+Generated scenarios against a live target are not built yet (G-8 in [Status](status.md)). When they are, they
+take a small fixed case budget per target, so a cell's runtime stays bounded.
+
 ## Evidence before trust
 
 A pass counts only once something has shown the test can fail ([Rule 8](rules.md), [Evidence and

@@ -101,6 +101,34 @@ values cleanly. A panic also counts as a failure and is shrunk too.
 - Give collections explicit size ranges; the default maximum is 100 elements.
 - `proptest-derive`'s `#[derive(Arbitrary)]` is optional; a hand-written strategy usually documents the valid domain
   better.
+- **Put the boundaries in the strategy, not in a table.** Empty, maximum length, the first invalid length,
+  multi-byte characters and bare `.` go in as weighted alternatives (`prop_oneof![8 => general, 1 => Just(..)]`), so
+  every run hits them. Named `#[case]`s are for pinned counterexamples and spec examples.
+
+### Checking the strategy's reach
+
+A property can pass because its strategy never produces the input that breaks the code. proptest has no
+`classify`, so add an unprefixed test that samples the strategy with a fixed seed and asserts that every input class
+the behaviour depends on appears `[re-run]` (proptest 1.12.0, in a scratch crate; a strategy missing one class
+fails it). `blob_name`, `class_of` and `ALL_CLASSES` are placeholders for your own:
+
+```rust
+use proptest::strategy::{Strategy, ValueTree};
+
+#[test]
+fn blob_name_strategy_reaches_every_class() {
+    let mut runner = proptest::test_runner::TestRunner::deterministic();
+    let seen: std::collections::HashSet<_> =
+        (0..1_000).map(|_| class_of(&blob_name().new_tree(&mut runner).unwrap().current())).collect();
+    let missing: Vec<_> = ALL_CLASSES.iter().filter(|c| !seen.contains(c)).collect();
+    assert!(missing.is_empty(), "never generated: {missing:?}");
+}
+```
+
+`class_of` maps a value to a small enum the test owns (valid, empty, too long, contains `/`, a dot segment), and
+`ALL_CLASSES` is a `const` array of its variants. For a `model_` test, classify whole sequences instead
+(`model-based.md`, Rules).
+`TestRunner::deterministic()` keeps the check stable, so it can sit in the default loop.
 
 ## Async bodies
 

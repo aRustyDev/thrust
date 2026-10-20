@@ -15,7 +15,8 @@
     "why does -E 'test(/\\boracle_/)' run nothing under the default nextest profile",
     "which nextest profile runs the prop_ and model_ tests with more cases",
     "can i add --retries 3 to the nextest command in ci, one of our prop_ tests is flaky",
-    "moving our new crate from cargo test to nextest, what happens to the exit code and the test result line"
+    "moving our new crate from cargo test to nextest, what happens to the exit code and the test result line",
+    "write an rstest #[values] matrix that checks every role against every permission for my authorize fn"
   ],
   "should_not_trigger": [
     "write a vitest test for this TS function",

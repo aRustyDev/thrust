@@ -39,7 +39,7 @@ A fact written in two places drifts. Each kind of fact has one owner; everything
 
 | Fact | Owner | This chapter |
 |---|---|---|
-| The binding testing rules 1-8 | `AGENTS.md` (§Testing) | includes them verbatim in [Rules](rules.md); elsewhere cites "Rule N" |
+| The binding testing rules 1-9 | `AGENTS.md` (§Testing) | includes them verbatim in [Rules](rules.md); elsewhere cites "Rule N" |
 | How to write a test of kind X | the owning skill in `.agents/skills/` | links to it; never pastes its templates |
 | Profiles, filters, timeouts, retries | `.config/nextest.toml`, `.cargo/mutants.toml` | [Running](running.md) explains them |
 | What a script does and its arguments | the script's header comment | quoted in [Running](running.md) |

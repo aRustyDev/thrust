@@ -17,20 +17,20 @@
     {
       "id": 2,
       "prompt": "have a parse_duration fn for strings like 1h30m, 90s, 2d. my test is one #[test] with a for loop over a vec of (input, expected) and when it fails i cant tell which row. also last week '0s' returned an error and we fixed that. whats the better way",
-      "expected_output": "Moves the loop to rstest named cases so each row is its own nextest test, adds a named regression case for 0s, puts expected errors in the table, and suggests a property for the rest of the input space.",
+      "expected_output": "Leads with a generative test: a prop_ property (a format-then-parse round trip, or a defining relation on the total seconds) with the known boundaries weighted into the strategy; keeps rstest named cases only for the examples the spec names and a labelled regression case for 0s, each row its own nextest test, expected errors in the table.",
       "expectations": [
-        "Recommends rstest with one #[case::name(...)] per row so each case is its own test, instead of a for loop that stops at the first failure",
-        "Says to name every case because the name is what shows up in a failure",
-        "Recommends a named regression case for the '0s' bug and says not to remove it without removing the behaviour it pins",
+        "Recommends a prop_ property test (for example a format-then-parse round trip) as the main test of parse_duration, not as an afterthought to the table",
+        "Says boundaries and tricky values (zero, the largest unit, missing units) belong in the property's strategy as weighted values rather than as hand-picked table rows",
+        "Recommends a named regression case for the '0s' bug, labelled as a regression, and says not to remove it without removing the behaviour it pins",
+        "Says the remaining rstest rows should be only examples the spec names, each with one #[case::name(...)] so each case is its own test, instead of a for loop that stops at the first failure",
         "Recommends putting expected errors in the table as Result values rather than using #[should_panic]",
-        "Says to assert the full expected value rather than is_ok or contains",
-        "Suggests a prop_ property test (for example a format-then-parse round trip) to cover inputs the table does not list"
+        "Says to assert the full expected value rather than is_ok or contains"
       ]
     },
     {
       "id": 3,
       "prompt": "writing a small in-memory session store (create, touch, expire, delete) in rust. unit tests only cover the happy path and ive been burned by weird orderings before. what kind of tests should i add, we use nextest",
-      "expected_output": "A model_ test: random operation sequences against the store and a simple std-collection model, compared after every step, with a tiny key space, an injected clock, preconditions if using proptest-state-machine, invariants, and a replay test for any shrunk sequence.",
+      "expected_output": "A model_ test: random operation sequences against the store and a simple std-collection model, compared after every step, with a tiny key space, an injected clock, preconditions if using proptest-state-machine, invariants, and a replay test for any shrunk sequence, and a check that the operation strategy reaches every kind of step.",
       "expectations": [
         "Recommends a model-based test that generates random operation sequences and runs each against the real store and a simple model such as a std map, comparing after every step",
         "Says to name it with the model_ prefix so the nextest config's per-prefix settings apply (retries = 0, flaky-result = \"fail\" and a longer timeout, as defaults that the command line can override)",
@@ -39,7 +39,8 @@
         "Says expiry needs an injected clock rather than the wall clock",
         "Says to check invariants such as len and is_empty after every step, not only the return values",
         "Says a shrunk failing sequence becomes a plain replay test and the regressions file is committed",
-        "Notes these tests are sequential and that races need loom or shuttle"
+        "Notes these tests are sequential and that races need loom or shuttle",
+        "Suggests checking that the operation strategy actually generates every kind of step (each operation, existing and missing ids, expired sessions), for example by sampling whole sequences with a fixed seed and classifying each step against the model"
       ]
     },
     {
@@ -180,7 +181,7 @@
       "expectations": [
         "Identifies per-route axum status and body tests as the job of rust-test-app and routes the request there",
         "Does not write the axum router test in this answer",
-        "May note that rstest case tables suit pure functions, and that a model_ sequence test is for state carried across calls, not for single requests",
+        "May note that rstest matrices suit pure functions over finite domains, and that a model_ sequence test is for state carried across calls, not for single requests",
         "Does not claim the model_ API-sequence test replaces per-route tests"
       ]
     },
@@ -216,6 +217,20 @@
         "Says oracle_ tests are already excluded from the default profile and run under the oracle or deep profile on a runner that has Node and the built legacy package",
         "Says the default CI job (the default or ci profile) stays hermetic and needs no Node, and that parity_ fixtures cover the legacy behaviour there",
         "Says installing Node or building the legacy package is the user's decision, to propose rather than do"
+      ]
+    },
+    {
+      "id": 19,
+      "prompt": "small rust fn can_transition(state: State, event: Event) -> bool for our work item workflow, 5 states and 6 events. was going to write maybe 10 #[test]s for the transitions that matter most. good enough?",
+      "expected_output": "No: the domain is finite, so test all 30 combinations with an exhaustive rstest #[values] matrix against a transition table the test owns; pinned cases only for regressions and spec examples; show a broken-implementation control.",
+      "expectations": [
+        "Says the domain is small and finite (5 x 6 = 30 combinations), so every combination should be tested rather than a hand-picked subset",
+        "Recommends an rstest #[values] matrix over every State and every Event variant, so each combination is its own test",
+        "Says the expected value must come from a transition table or match written in the test as the spec, never from calling the code under test",
+        "Says the #[values] lists are typed by hand, so the spec match should have no _ arm and the lists should be guarded against the enum (a const ALL array or a variant iterator) so a new variant cannot silently drop out",
+        "Says hand-picked named cases are only for regressions (a fixed bug) or examples the spec names, and should be labelled as such",
+        "Recommends a control: a deliberately wrong transition in the implementation must make the matrix fail",
+        "Does not suggest proptest sampling as the main test, since enumeration is exhaustive for a domain this small"
       ]
     }
   ]

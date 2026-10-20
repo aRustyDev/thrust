@@ -128,6 +128,14 @@ async fn ids_are_never_reused_after_delete() {
 - Check invariants after every step, including the cheap queries (`len`, `is_empty`): in the zip's mutation run two
   missed mutants on `is_empty` were closed by one model invariant `[zip]`.
 - Sequence length `1..40` is a good default; raise it in `deep` runs.
+- Time is a generated step (`Op::Advance(d)`) on an injected clock shared by the store and the model, never the
+  wall clock: expiry bugs live in where the advances fall among the other operations.
+- Prove the operation strategy reaches every class of step the model distinguishes (each operation; for a
+  multi-tenant store, an actor in the target's tenant and one outside it; a live and a deleted target). Most of
+  those classes depend on state, so sample **whole sequences** with a fixed seed (the sequence strategy, or
+  proptest-state-machine's `sequential_strategy`), replay each through the model, and classify every step by the
+  model's state at that point. The single-value form is in `property.md` ("Checking the strategy's reach"). A model
+  test whose generator never deletes cannot find a soft-delete bug.
 - These tests are **sequential**. Concurrency bugs (races, linearizability) need loom or shuttle; raise that as a
   separate task.
 - Do not use the `model` crate: its last release was in 2019 and it pins an old proptest `[zip]`.
