@@ -28,11 +28,11 @@ pending — linked to its `Q-<adr#>` row in `../QUESTIONS.md`. New ADRs take the
 | 0034 | api | [Internal API: compat layer + core OpenAPI](api/0034-internal-api-compat-layer-and-core-openapi.md) | accepted | Q-R5 |
 | 0040 | data/base | [System-of-record database (+ spike)](data/base/0040-system-of-record-database.md) | proposed | Q-0040 |
 | 0041 | data/base | [Tenant isolation strategy](data/base/0041-tenant-isolation-strategy.md) | proposed | Q-0041 |
-| 0042 | data/schema | [Schema source and migrations](data/schema/0042-schema-source-and-migrations.md) | proposed | Q-0042 |
-| 0043 | data/schema | [IDs, sequencing, soft delete](data/schema/0043-ids-sequencing-and-soft-delete.md) | proposed | Q-0043 |
-| 0044 | data/layer | [Query layer / ORM](data/layer/0044-query-layer-orm.md) | proposed | Q-0044 |
-| 0045 | data/interfaces | [Repository and unit-of-work ports](data/interfaces/0045-repository-and-unit-of-work-ports.md) | proposed | Q-0045 |
-| 0046 | data/contracts | [Event / outbox contract](data/contracts/0046-event-outbox-contract.md) | proposed | Q-0046 |
+| 0042 | data/schema | [Schema source and migrations](data/schema/0042-schema-source-and-migrations.md) | accepted | |
+| 0043 | data/schema | [IDs, sequencing, soft delete](data/schema/0043-ids-sequencing-and-soft-delete.md) | accepted | |
+| 0044 | data/layer | [Query layer / ORM](data/layer/0044-query-layer-orm.md) | accepted | |
+| 0045 | data/interfaces | [Repository and unit-of-work ports](data/interfaces/0045-repository-and-unit-of-work-ports.md) | accepted | |
+| 0046 | data/contracts | [Event / outbox contract](data/contracts/0046-event-outbox-contract.md) | accepted | |
 | 0047 | data/contracts | [File-asset contract](data/contracts/0047-file-asset-contract.md) | proposed | Q-0047 |
 | 0048 | data/contracts | [Audit logging](data/contracts/0048-audit-logging.md) | proposed | Q-0048 |
 | 0050 | auth | [Identity: OIDC (Zitadel) + Access](auth/0050-identity-oidc-zitadel-access.md) | accepted | |
@@ -60,12 +60,12 @@ pending — linked to its `Q-<adr#>` row in `../QUESTIONS.md`. New ADRs take the
 | 0101 | ci | [CI supply chain](ci/0101-ci-supply-chain.md) | accepted | |
 | 0110 | cd | [Deploy pipeline](cd/0110-deploy-pipeline.md) | accepted | |
 | 0120 | test/models | [Test model and oracle](test/models/0120-test-model-and-oracle.md) | proposed | Q-0120 |
-| 0121 | test/patterns | [Port contract tests: one suite, N adapters](test/patterns/0121-port-contract-tests-one-suite-n-adapters.md) | proposed | Q-0121 |
+| 0121 | test/patterns | [Port contract tests: one suite, N adapters](test/patterns/0121-port-contract-tests-one-suite-n-adapters.md) | accepted | |
 | 0122 | test/patterns | [v1 oracle and parity tests](test/patterns/0122-v1-oracle-and-parity-tests.md) | proposed | Q-0122 |
 | 0123 | test/standards | [Test standards and tooling](test/standards/0123-test-standards-and-tooling.md) | proposed | Q-0123 |
 | 0130 | observability | [Observability](observability/0130-observability.md) | accepted | |
 | 0140 | security | [Licensing (AGPL) and clean-room](security/0140-licensing-agpl-cleanroom.md) | accepted | |
 | 0141 | security | [Tenancy and threat model](security/0141-tenancy-and-threat-model.md) | proposed | Q-0141 |
 
-Status counts: 38 accepted · 20 proposed · 2 superseded (60 total). Several `proposed` ADRs carry dated "Update — interview round N"
+Status counts: 44 accepted · 14 proposed · 2 superseded (60 total). Several `proposed` ADRs carry dated "Update — interview round N"
 notes recording partial owner direction; they stay `proposed` until the remaining question is answered.

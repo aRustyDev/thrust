@@ -79,6 +79,14 @@ Sessions: **database row is authoritative and there is no KV/Valkey cache at P0*
 
 Removed import-era text (legacy-token re-hash, 'imported legacy key authenticates' test), removed the `scopes` metadata field, and rewrote S1 as DB-authoritative with no cache at P0. Decisions unchanged.
 
+## Update — review round 29 (2026-10-19)
+
+Per FR-03 (`reviews/2026-10-19-fable-architecture-review.md`; the owner's decision is its §5 table: apply now), a session resolves to a user only, and the session store is a repository over the database. This makes the round-25 S1 decision (the database row is authoritative, no cache at P0) concrete. It supersedes the spike's session shape, not the Decision.
+
+* `Principal { user_id }` only. Today it is `Principal { user_id, workspace_id }` (`crates/thrust-contracts/src/lib.rs:81-86`), which binds one workspace to a session and cannot serve a user who is in several workspaces. The workspace is resolved per request from the URL slug inside `authorize` (ADR-0051, round 29).
+* `SessionStore` becomes a repository over the `Database` port: one row per session, a `revoked_at` column, and `last_seen_at` updated lazily rather than on every request. As S1 already says, revocation is a row update, effective on the next request.
+* `KvSessionStore` (`crates/thrust-adapters-cloudflare/src/lib.rs:65-94`: Workers KV, with a 60 s minimum TTL on an eventually consistent store) is deleted from the Cloudflare set (ADR-0082, round 29; D-003). The `SessionStore` trait is kept only if the memory adapter is still wanted for tests.
+
 ## Open Questions
 
 * Q-0052 — session and key mechanics.

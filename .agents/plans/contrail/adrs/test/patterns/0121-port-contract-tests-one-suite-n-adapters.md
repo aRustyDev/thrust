@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-10-17
 decision-makers: asmith
 consulted: []
@@ -29,8 +29,13 @@ the same behavioral contract: `Queue` (at-least-once, ordering, retry/DLQ), `Col
 
 ## Decision Outcome
 
-Decision pending — see Q-0121. Leading hypothesis: **Option 1 + Option 3 for stateful ports** (confidence: medium) —
-sequence allocation, queue redelivery, Yjs convergence and outbox atomicity benefit from model-based tests.
+**Decision (accepted, round 29): as built in PR #17, one black-box HTTP suite (`thrust-contract-tests`) run against
+four targets (`native-memory`, `native-pg`, `worker-memory`, `worker-cf`), with mutation controls (`scripts/mutants.sh`)
+and a pass-count guard (`scripts/contract.sh`). Per FR-17, `reviews/2026-10-19-fable-architecture-review.md` §5.**
+
+This keeps Option 1's intent (one authoritative suite that every adapter set must pass) at the HTTP boundary, not as
+generic per-port functions in `thrust-ports`. The earlier leading hypothesis, Option 1 + Option 3 for stateful ports,
+is narrowed: model-based tests are not part of the contract suite (see the round-29 note).
 
 ### Consequences
 
@@ -72,11 +77,35 @@ Rust wording: the conformance suites are generic test functions in `thrust-ports
 
 Spike 0001 exercised this pattern end to end and found rules worth keeping: the suite is **HTTP-only** and never learns which target it runs on (16 cells over four targets, 77 executions); every "allowed" assertion is paired with a neighbouring must-fail control; the runner **fails if the exit code is 0 but the passed count differs from the expected count**, and asks the target which adapter set it is really running before testing (this guard fired twice during development); and a **mutation-control script** keeps four deliberately broken builds that the suite must fail. Run the matrix serially: parallel `wrangler dev` runs share the build directory and reload each other (measured). Native adapter tests use testcontainers (6 pass). The Worker side runs under wrangler dev with local Hyperdrive, KV, R2 and Queues emulation; real-platform parity is Stage 2.
 
+## Update — review round 29 (2026-10-19)
+
+Per FR-17 (`reviews/2026-10-19-fable-architecture-review.md`), this ADR is accepted as built in PR #17 (owner disposition
+in review §5), and Q-0121, Q-0121.1 and Q-0121.2 are answered. As built:
+
+* **One HTTP suite.** `crates/thrust-contract-tests` (`tests/contract.rs`, plus `tests/worker_only.rs` for the
+  Worker-only passes) depends on `thrust-contracts` only, so it never links the code it tests
+  (`docs/src/contributing/crates.md:19`), and it never learns which target it runs on (round 26).
+* **Four targets.** `scripts/contract.sh` runs it against `native-memory`, `native-pg`, `worker-memory` and `worker-cf`
+  (lines 5 and 92-98), in passes such as `main`, `sweeper`, `panic`, `cron`, `worker` and `bindings`.
+  `scripts/contract-all.sh` runs the matrix serially, and CI runs it as 16 cells (`docs/src/architecture/cicd.md:47-50`).
+* **Mutation controls.** `scripts/mutants.sh` builds three broken servers (`ignore-tenant`,
+  `duplicate-sequence-number`, `no-activity-dedupe`) and one broken Postgres adapter (`discard-noop`); each must make
+  the suite exit 101 with at least one failed test (lines 16-44).
+* **Count guard.** `scripts/contract.sh` exits 5 when `cargo test` exits 0 but the passed count differs from the
+  expected count (lines 245-250), and when the target's `/_info` reports a different target kind or adapter set
+  (lines 160-181).
+
+The Confirmation's meta-test is realised by `gate`: it fails unless the set of contract cells that uploaded a pass
+marker equals the planned set (`docs/src/architecture/cicd.md:21-28`). Model-based tests (Option 3) live in the crate
+they test and follow `docs/src/testing/`, for example `crates/thrust-core/tests/model.rs:144`, added later by PR #31.
+Q-0121.1: the legal adapter differences are those of the FR-05 port list: ordering per key, delay ≤ 24 h, message
+≤ 128 KB. Q-0121.2: only Stage 2 items need a deployed environment: real cron, DLQ, and hibernation timing.
+
 ## Open Questions
 
-* Q-0121 — suite design.
-* Q-0121.1 — Capability-flag vocabulary per port (what differences are legal?).
-* Q-0121.2 — Minimum fidelity of local queue/workflow emulation in workerd vs real CF (what is only provable in a deployed staging?).
+* Q-0121 — suite design. (answered round 29, FR-17)
+* Q-0121.1 — Capability-flag vocabulary per port (what differences are legal?). (answered round 29, FR-05, FR-17)
+* Q-0121.2 — Minimum fidelity of local queue/workflow emulation in workerd vs real CF (what is only provable in a deployed staging?). (answered round 29, FR-17)
 
 ## More Information
 

@@ -131,6 +131,15 @@ Reopen trigger 1 (a `BEGIN ... COMMIT` over one Hyperdrive socket must be atomic
 * **Also learned:** the Rate Limiting binding is approximate (limit 3 allowed 4), so the Durable Object limiter stays for exact limits (ADR-0033, ADR-0082); a fixed window can allow twice the limit across a boundary; a permanent handler error is retried for nothing and an undecodable message is dropped, not dead-lettered (Q-0006.5).
 * **Not covered:** Hyperdrive caching on versus off, a 24-hour cost reconciliation, a distant-region bench, a real Email send, KV eventual consistency, Durable Object billing, `--panic-unwind` (Q-0006.6).
 
+## Update — review round 29 (2026-10-19)
+
+Per FR-07 (`reviews/2026-10-19-fable-architecture-review.md`), Q-0006.4 is answered: the Hyperdrive statement-flow constraint is recorded here and in ADR-0002 (round 29), and no Cloudflare support case is opened (owner disposition in review §5). The Cloudflare docs explain the constraint. The two facts, as the review quotes them under FR-04 and FR-07:
+
+1. hyperdrive/concepts/connection-pooling: "Hyperdrive supports named prepared statements as implemented in the `postgres.js` and `node-postgres` drivers. Named prepared statements in other drivers may have worse performance or may not be supported". The rust-postgres row of hyperdrive/examples/connect-to-postgres says "Use the `query_typed` method for best performance".
+2. hyperdrive/reference/supported-databases-and-features: Hyperdrive does not support advisory locks, `LISTEN`/`NOTIFY`, SQL `PREPARE` or per-session state.
+
+This supersedes two statements in the round-28 note. "The root cause is not known": `tokio-postgres`' default `query`/`execute(&str, …)` uses a named prepared statement, which Hyperdrive supports only as `pg` and `postgres.js` implement it. "sqlx, sea-orm and diesel-async are likely to hit the same failure [unverified]": they are out (ADR-0044, accepted round 29), so the "ORMs on `tokio-postgres`" item of the round-26 "Not proven" list is closed too. The rule for every Rust statement over Hyperdrive is permanent: one pipeline on the unnamed statement (`query_typed` / `execute_typed`, through the `Pg` wrapper, `crates/thrust-adapters-postgres/src/lib.rs:106-127`), no server-side statement caching, and an explicit type on every parameter. It also supersedes the Consequences' phrase that advisory locks need a Rust data layer: through Hyperdrive they are unavailable, which is why sequencing uses the counter row (ADR-0043 B1). Reopen trigger 1 is unchanged; the typed flow cleared it in round 28.
+
 ## Open Questions
 
 * Q-0006 — which runtime/language. **Answered (round 21): Rust.**

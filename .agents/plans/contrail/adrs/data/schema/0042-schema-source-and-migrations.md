@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-10-17
 decision-makers: asmith
 consulted: []
@@ -29,7 +29,9 @@ Plane's schema is defined in Django models and evolved by **121 migrations** (`d
 
 ## Decision Outcome
 
-Decision pending — see Q-0042. Leading hypothesis: **Option 2** (SQL migrations as source of truth + codegen), confidence **low–medium**, because it is dialect-explicit (partial indexes, `RETURNING`), engine-agnostic, and makes the Plane end-state adoption a literal first migration. The Drizzle-based Option 1 is superseded by the Rust backend; its Rust analogue is only attractive if ADR-0044 picks an ORM that owns the schema and ADR-0040 picks a single dialect.
+**Decision (accepted, round 29): as built in PR #17, hand-written SQL migration files are the schema source of truth, applied by the `migrate` binary; every migration is expand/contract; no ORM and no codegen of Rust types from the schema. Per FR-17, `reviews/2026-10-19-fable-architecture-review.md` §5.**
+
+This is **Option 2** without its codegen half, chosen because it is dialect-explicit (partial indexes, `RETURNING`), engine-agnostic, and makes the Plane end-state adoption a literal first migration. The Drizzle-based Option 1 is superseded by the Rust backend; its Rust analogue needed an ORM that owns the schema, and ADR-0044 (accepted round 29) picks none.
 
 ### Adopting the end-state (applies to any option)
 
@@ -99,9 +101,15 @@ The leading option from round 19 (Drizzle) is **moot** — the backend is Rust. 
 
 Count corrected to **121 migrations** (`0001`–`0121`). Import-era text (end-state import, per-table checksums, API-token re-hashing, byte-for-byte Yjs import, the anonymised-dump dry-run, and the 'soft-deleted rows included' phrase) is struck or withdrawn because Q-G3 is answered 'start fresh'. Drizzle (TypeScript) is superseded by the Rust backend; Rust migration/schema tooling candidates are evaluated in spike 0002 and the decision still waits for it. The ADR stays `proposed`.
 
+## Update — review round 29 (2026-10-19)
+
+Per FR-17 (`reviews/2026-10-19-fable-architecture-review.md`), this ADR is accepted as built in PR #17 (owner disposition in review §5); spike 0002 no longer decides tooling (FR-16 drops its data-layer step). As built: the schema is plain SQL in `crates/thrust-adapters-postgres/migrations/` (one file today, `0001_init.sql`), embedded in the adapter as `MIGRATION_0001` and applied with `batch_execute` (`crates/thrust-adapters-postgres/src/lib.rs:20-24`) by the native-only `migrate` binary (`crates/thrust-adapters-postgres/src/bin/migrate.rs`; `crates/thrust-adapters-postgres/Cargo.toml:14-17`), which reads `DATABASE_URL` from the environment. `scripts/contract.sh:120-122` applies the schema through that binary, and neither the server nor the Worker migrates at start (`docs/src/architecture/infra.md:128-132`). Rows are mapped by hand, and type safety comes from the typed parameters of ADR-0044's `Pg` wrapper, not from generated types; so Option 2's codegen half (`sqlx` offline metadata, `sea-orm-cli`) and Option 1's Rust analogue (SeaORM entities, diesel `schema.rs`) are not adopted, and neither are Options 3 and 4. Every migration follows the expand/contract rule that ADR-0110 already sets for deploys.
+
+Not built yet: `0001_init.sql` is the spike's schema, not the product schema (its line 1); the binary applies that one file through `IF NOT EXISTS` statements and keeps no record of applied migrations; the `native-pg` and `worker-cf` contract cells apply it to an empty Postgres on every run, but the schema-parity test under Confirmation does not exist.
+
 ## Open Questions
 
-* Q-0042 — which option?
+* Q-0042 — which option? (answered round 29, FR-17)
 * Q-G3 — **answered (round 5)**: start fresh, no import.
 * Q-G1/Q-G2 — upstream version tracking.
 * Q-0042.1 — **answered (round 20)**: freeze at the pinned Plane version.

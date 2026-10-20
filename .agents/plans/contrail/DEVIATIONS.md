@@ -8,7 +8,7 @@ timestamps, ordering; Q-0122.2) live with spike 0008.
 |---|---|---|---|---|
 | D-001 | Retention default 30 days; hard-delete cleanup (F-D10) ships at P0 | `HARD_DELETE_AFTER_DAYS` = 60 | owner, rounds 20/25 | Q-0043.2 |
 | D-002 | Search = full-text + trigram (substring/prefix parity) | `icontains` substring only | owner, round 25 | ADR-0083 |
-| D-003 | Sessions are DB-authoritative, no cache at P0 | Django sessions (Valkey-backed cache) | owner, round 25 | ADR-0052, 0082 |
+| D-003 | Sessions are DB-authoritative, no cache at P0; round 29: the spike's KV store is removed (FR-03) | Django sessions (Valkey-backed cache) | owner, rounds 25/29 | ADR-0052, 0082 |
 | D-004 | `apps/admin` (god-mode) retired; settings folded into workspace settings + env/IaC | instance admin app | owner, rounds 7/23 | ADR-0021 |
 | D-005 | PostHog product telemetry and `instance_traces` job dropped | present | owner, rounds 18/20 | ADR-0130, 0072 |
 | D-006 | Duplicate `delete_old_s3_link` schedule collapsed to one | 01:30 and 03:45 | owner, round 20 | ADR-0072 |

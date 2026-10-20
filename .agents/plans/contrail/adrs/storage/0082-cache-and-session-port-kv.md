@@ -92,6 +92,10 @@ The decision body now carries a **Revised decision (round 25)** paragraph: the s
 
 Note for readers of spike 0001: its Cloudflare adapter set uses a KV-backed session store because KV was the quickest native session binding to exercise. It is **not** the accepted design: sessions are DB-authoritative with no cache at P0 (round 25). KV's eventual consistency cannot show up locally and was not observed; anything needing read-your-writes must not use KV (a DO for strong counters, as above).
 
+## Update — review round 29 (2026-10-19)
+
+Per FR-03 (`reviews/2026-10-19-fable-architecture-review.md`; the owner's decision is its §5 table: apply now), the spike's KV session store is removed. `KvSessionStore` (`crates/thrust-adapters-cloudflare/src/lib.rs:65-94`) is deleted from the Cloudflare set, which ends the round-26 exception above. `SessionStore` is a repository over the `Database` port on both adapter sets (a session row, `revoked_at`, `last_seen_at` updated lazily), and it returns `Principal { user_id }` only (ADR-0052, round 29; D-003). The memory adapter may remain for tests. This supersedes nothing in the round-25 revised decision; it removes the last code that did not follow it.
+
 ## Open Questions
 
 * Q-0052 — **answered (rounds 15, 25)**: DB-authoritative sessions, no cache at P0; API-key hashing in ADR-0052.

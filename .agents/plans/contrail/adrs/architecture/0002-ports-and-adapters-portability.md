@@ -81,6 +81,15 @@ Port location and boundary rules restated for Rust crates (`thrust-ports`, depen
 
 The sketches that assumed `?Send` (ADR-0045, 0070, 0071, 0080) were corrected in round 26.
 
+## Update — review round 29 (2026-10-19)
+
+Per FR-07 (`reviews/2026-10-19-fable-architecture-review.md`), the Hyperdrive statement-flow constraint found in spike 0001 Stage 2 (ADR-0006, round 28) is documented Cloudflare behaviour, not a defect, and it binds every adapter of the `Database` port. The two docs facts, as the review quotes them under FR-04 and FR-07:
+
+1. hyperdrive/concepts/connection-pooling: "Hyperdrive supports named prepared statements as implemented in the `postgres.js` and `node-postgres` drivers. Named prepared statements in other drivers may have worse performance or may not be supported". The rust-postgres row of hyperdrive/examples/connect-to-postgres says "Use the `query_typed` method for best performance". Hyperdrive pools in transaction mode and warns against long transactions (connection-pooling).
+2. hyperdrive/reference/supported-databases-and-features: Hyperdrive does not support advisory locks, `LISTEN`/`NOTIFY`, SQL `PREPARE` or per-session state.
+
+Rules that follow, for both adapter sets: every SQL statement goes through the single-pipeline typed flow on the unnamed statement (`query_typed` / `execute_typed`), which the `Pg` wrapper enforces (`crates/thrust-adapters-postgres/src/lib.rs:53-64,106-127`); the adapter keeps no server-side statement cache, and every bind parameter carries its Postgres type (`PgParam`). No port or adapter relies on advisory locks, `LISTEN`/`NOTIFY`, SQL `PREPARE` or per-session state. The native server uses the same SQL crate (round 26), so it follows the same rules although a direct Postgres connection would allow these features. Sequence allocation therefore stays on the counter row (ADR-0043 B1), and the query layer is hand SQL with no ORM (ADR-0044, accepted round 29). No Cloudflare support case is opened (Q-0006.4; owner disposition in review §5). FR-07 notes that the constraint lapses if ADR-0040 picks the instance-level Durable Object cell (FR-04), because that path has no Hyperdrive.
+
 ## Open Questions
 
 * Q-0006.1 — is workerd/Node runtime portability a hard requirement?

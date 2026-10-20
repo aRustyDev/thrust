@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-10-17
 decision-makers: asmith
 consulted: []
@@ -29,7 +29,9 @@ ADR-0002 (accepted) requires every platform primitive behind a port. For persist
 
 ## Decision Outcome
 
-Decision pending — see Q-0045. Leading hypothesis: **Option 3 with Option-2-compatible UoW semantics**, confidence **medium**: the write side exposes a transaction whose body may only use repositories obtained from the `tx` handle and must be expressible as *reads-then-atomic-writes* (so D1's batch model and DO's `transactionSync` can implement it; Postgres implements it with a real transaction); the read side (`IssueListQuery`, `AnalyticsQuery`, `SearchQuery`) is a separate port with adapters free to use optimal SQL. Outbox insertion is a UoW primitive (`tx.emit(event)`).
+**Decision (accepted, round 29): as built in PR #17, an explicit transaction object: `Database::begin()` returns a boxed `Tx`, the entity writes and the outbox insert go through it, `Tx::commit` consumes it, and a `Tx` dropped without a commit discards its connection instead of returning it to the pool; every repository and `Tx` method takes the FR-02 scope argument (`&Scope`, or a `SystemScope` for untenanted work) instead of bare ids. Per FR-17 and FR-02, `reviews/2026-10-19-fable-architecture-review.md` §5.**
+
+(Earlier hypothesis, retained as rationale — the accepted outcome is above: Leading hypothesis: **Option 3 with Option-2-compatible UoW semantics**, confidence **medium**: the write side exposes a transaction whose body may only use repositories obtained from the `tx` handle and must be expressible as *reads-then-atomic-writes* (so D1's batch model and DO's `transactionSync` can implement it; Postgres implements it with a real transaction); the read side (`IssueListQuery`, `AnalyticsQuery`, `SearchQuery`) is a separate port with adapters free to use optimal SQL. Outbox insertion is a UoW primitive (`tx.emit(event)`).)
 
 ### Consequences
 
@@ -96,12 +98,29 @@ Postgres implements `Tx` with a real transaction. D1 (batch-only) implements the
 
 Spike 0001 evidence for the recommended shape: the slice used an **explicit transaction object**, not a closure — `Database::begin()` returns a boxed `Tx`, `Tx::commit` consumes it, and repositories and the outbox write go through the `Tx`. Locally against Postgres (also over wrangler's Hyperdrive emulation): a rollback leaves no counter gap, a unique violation maps to `Conflict`, and an **abandoned transaction is discarded, not returned to the pool** (a mutation control: a pool that recycled a connection still inside a transaction was killed by `an_abandoned_transaction_does_not_poison_the_pool`). The closure-based `run` shape was not tried, and neither was the D1 command-buffer variant. The decision still waits for the DB spike; the ADR stays `proposed`.
 
+## Update — review round 29 (2026-10-19)
+
+Per FR-17 and FR-02 (`reviews/2026-10-19-fable-architecture-review.md`), this ADR is accepted as built in PR #17, with the FR-02 scope argument added. The review's §5 table records the owner's decision ("apply now" for both findings).
+
+**Acceptance (FR-17).** The accepted shape is the one spike 0001 built (round 26 above). `Database::begin()` returns a boxed `Tx`. `allocate`, `insert_work_item`, `soft_delete_work_item` and `insert_outbox` go through the `Tx`, and `commit` and `rollback` consume it (`crates/thrust-ports/src/lib.rs:140-157`). `PgTx` implements `Drop` so that a connection still inside a transaction is discarded, not returned to the pool (`crates/thrust-adapters-postgres/src/lib.rs:387-395`). The ADR is accepted without waiting for spike 0002, so the round-25 and round-26 sentences "the decision still waits for the DB spike; the ADR stays `proposed`" no longer hold. The earlier hypothesis's closure-based `run`, separate read-model query port and D1 command buffer were not built and are not part of the decision. FR-04 adds an instance-level Durable Object SQLite cell to spike 0002; that reopens the round-11 "desk review only" status of DO-SQLite in ADR-0040 and spike 0002, not here.
+
+**Scope argument (FR-02).** The slice's port takes bare ids. Every `Database` method takes `WorkspaceId` and `ProjectId` as plain arguments, and `insert_activity`, `undispatched_outbox`, `mark_outbox_dispatched`, `outbox_depth` and `seed` take no tenant at all (`crates/thrust-ports/src/lib.rs:92-138`). `Tx::allocate` takes the workspace (`:145`), and the Postgres adapter ignores it (`_ws`, `crates/thrust-adapters-postgres/src/lib.rs:399`). Decision:
+
+* Every repository and `Tx` method that reads or writes tenant data takes `&Scope` instead of bare `WorkspaceId`/`ProjectId`. Only `authorize` mints a `Scope` (ADR-0051). The adapter derives `workspace_id` and `project_id` from the scope.
+* Untenanted operations take a `SystemScope`, which only the composition roots and the consumer mint: the outbox relay and sweeper (`undispatched_outbox`, `mark_outbox_dispatched`, `outbox_depth`), the consumer's `insert_activity`, and `seed`.
+* `Scope`'s getters (`crates/thrust-core/src/lib.rs:145-155`) are not public outside `thrust-core`.
+* `membership` is the one port call that runs before a `Scope` exists, and only `authorize` calls it (`crates/thrust-core/src/lib.rs:165`). Its join on `project_members` adds `m.workspace_id`; today it joins on `project_id` and `user_id` only (`crates/thrust-adapters-postgres/src/lib.rs:189-191`).
+* `project_sequences` carries `workspace_id`, which it lacks today (`crates/thrust-adapters-postgres/migrations/0001_init.sql:20-24`), and `allocate` stops ignoring the workspace.
+* The two-tenant property test (ADR-0041 Confirmation) stays. Where the types allow it, a planted "ignore the tenant predicate" bug fails to compile instead of failing at runtime: a use-case that passes bare ids to a repository no longer compiles. The existing control `mutant_ignore_tenant` plants its bug in `membership` (`crates/thrust-adapters-memory/src/lib.rs:66-70`), which runs before a `Scope` exists, so it stays a runtime control that the contract suite must kill.
+
+Implementation constraint for issue B1: `Database` and `Tx` are declared in `thrust-ports`, which does not depend on `thrust-core` (`crates/thrust-ports/Cargo.toml`), and the adapters must read the ids to build their predicates. The proof type the ports take therefore cannot be `thrust-core`'s `Scope` as it stands. Issue B1 decides where that type is declared, and how its constructor stays reserved to `authorize` while the adapters can still read the ids.
+
 ## Open Questions
 
-* Q-0045 — granularity and transaction semantics.
+* Q-0045 — granularity and transaction semantics. (answered round 29, FR-17)
 * Q-0040 — engine decides whether Option 1 is viable.
-* Q-0046 — outbox as UoW primitive.
-* Q-0045.1 — Do we require serializable isolation anywhere beyond sequence allocation (e.g. cycle transfer, bulk reorder `sort_order`)?
+* Q-0046 — outbox as UoW primitive. (answered round 29, FR-17)
+* Q-0045.1 — Do we require serializable isolation anywhere beyond sequence allocation (e.g. cycle transfer, bulk reorder `sort_order`)? (answered round 29, FR-22)
 
 ## More Information
 
