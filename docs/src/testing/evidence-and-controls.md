@@ -87,6 +87,15 @@ step by the model's state at that point. proptest has no built-in `classify`, so
 the template is in `.agents/skills/rust-test-logic/references/property.md` ("Checking the strategy's reach")
 `[verified 2026-10-20: proptest 1.12.0, in a scratch crate]`. Its own control: drop one class from the strategy and
 the test must fail (it did). Required for every `model_` test and for any `prop_` test whose strategy is weighted or
-filtered. Reach the rare classes by weighting them in the strategy, not by rejecting with `prop_assume!`. In-repo:
-`model_strategy_reaches_every_step_class` in `crates/thrust-contract-tests/tests/model/mod.rs`, over whole
-sequences.
+filtered. Reach the rare classes by weighting them in the strategy, not by rejecting with `prop_assume!`.
+
+Sample as many inputs as one run of the property draws, not more. A generous sample proves only that the strategy
+can reach a class eventually: with 1000 samples the original `thrust-core` validator strategies passed, while at
+their own 256 cases they never drew an empty or whitespace-only name or a one-character one, the inputs two of
+those properties are about. Where a property discards inputs with `prop_assume!`, assert the share it keeps too.
+
+In-repo: `model_strategy_reaches_every_step_class` in `crates/thrust-contract-tests/tests/model/mod.rs` and in
+`crates/thrust-core/tests/model.rs` (over whole sequences), `model_postgres_strategy_reaches_every_step_class` in
+`crates/thrust-adapters-selfhosted/tests/model/mod.rs`, `generated_documents_reach_every_kind` in
+`crates/thrust-editor-doc/tests/roundtrip.rs`, and `strategies_reach_every_input_class` in
+`crates/thrust-core/src/lib.rs`.

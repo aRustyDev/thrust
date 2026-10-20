@@ -45,7 +45,8 @@ model test over those ports.
 five actors in two tenants against the memory adapters, compared after every step with a reference model that
 writes the spec down (validation first, Not Found across tenants, role per operation, sequence ids never reused,
 soft delete, every listed row in scope). It kills the planted `mutant_ignore_tenant` and `mutant_dup_sequence`.
-The shared world (fixed clock, counter ids, a `Background` that panics if used) is `crates/thrust-core/tests/common/mod.rs`.
+The spec is a pure `expect` and `apply`, so `model_strategy_reaches_every_step_class` can replay sampled
+sequences through them alone and require all 12 step classes. The shared world (fixed clock, counter ids, a `Background` that panics if used) is `crates/thrust-core/tests/common/mod.rs`.
 
 `crates/thrust-contract-tests/tests/model/mod.rs`: `model_work_items_over_http_match_the_reference_model`, the same idea
 over HTTP in the contract suite's `main` pass, so it runs unchanged against all four targets. Seven callers
