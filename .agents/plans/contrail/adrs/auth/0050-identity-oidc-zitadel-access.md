@@ -39,7 +39,7 @@ Chosen option: **Option 1**, because it was selected in the interview as the rec
 
 The end state above (OIDC + Access + API keys) stands, but the owner refined **how and in what order** **[I, round 4]**:
 
-* **Framework: BetterAuth** is the intended basis for in-app authentication (sessions, credential, OIDC/generic-OAuth, API-key plugins). It must still sit behind the `Identity`/`SessionStore` ports (ADR-0002) — fit is unproven, see **Q-0050.4** (spike) and Q-0050.6 (schema mapping).
+* **Framework: BetterAuth** is the intended basis for in-app authentication (sessions, credential, OIDC/generic-OAuth, API-key plugins). It must still sit behind the `Identity`/`SessionStore` ports (ADR-0002) — fit is unproven, see **Q-0050.4** (spike) and Q-0050.6 (schema mapping). (Superseded in round 29, FR-16: BetterAuth's HTTP shapes only; the implementation is the Rust auth slice. See the round-29 update.)
 * **Phasing:** (1) **user + password — the only P0 login** (F-A03); (2) **Cloudflare Access** JWT validation (F-A02, P1); (3) **OIDC / Zitadel** (F-A01, P1, "high priority"). Exception: if Access *simplifies the infrastructure* needed for P0 it may land with or before user+password (**Q-0050.5**).
 * **Consequence change:** the "no local break-glass login" bad-consequence above no longer applies; user+password is the baseline and remains as break-glass after OIDC lands. Password storage/reset/brute-force controls are now P0 scope (BetterAuth supplies them if the spike passes).
 * **Not in sequence (untiered):** magic code (F-A04), Google/GitHub/GitLab/Gitea OAuth (F-A05) — Q-0050.3.
@@ -75,7 +75,7 @@ Integration test: unauthenticated request → 302 to IdP; callback with unverifi
 
 ## Update — interview round 13 (2026-10-17)
 
-Spike bar (Q-0050.4): BetterAuth must run on Workers and Node, support user+password, use KV/Redis secondary storage for sessions, map to the wire-compatible `X-Api-Key`, and coexist with the `Authorizer` seam. If it fails, fall back to a hand-rolled `Identity` adapter behind the same port.
+Spike bar (Q-0050.4): BetterAuth must run on Workers and Node, support user+password, use KV/Redis secondary storage for sessions, map to the wire-compatible `X-Api-Key`, and coexist with the `Authorizer` seam. If it fails, fall back to a hand-rolled `Identity` adapter behind the same port. (Superseded in round 29, FR-16: the bar is spike 0003's exit criteria. See the round-29 update.)
 
 ## Update — interview round 20 (2026-10-18)
 
@@ -119,14 +119,23 @@ Spike 0004, public half (`research/0006-topology-public-half.md`): Cloudflare do
 * Gated paths hand the Worker a valid Access JWT, verified against the real team JWKS (RS256, `kid`, `exp`, `iss`, `aud`). An unauthenticated request to the UI application gets a 302 to login; to a service-auth-only nested application a **403**; OPTIONS on a gated path is 403.
 * WebSockets work on the bypass path and on a gated path with a service token (text, binary, 1 MiB), and across a service-binding hop. A TLS SNI/Host mismatch between the two hostnames answers 403 (no domain fronting); a trailing-dot or upper-case Host and `:443`/`:8443` do not bypass.
 
+## Update — review round 29 (2026-10-19)
+
+Per FR-16 (`reviews/2026-10-19-fable-architecture-review.md`; the owner's decision is its §5 table: apply now), "BetterAuth-shaped" means BetterAuth's HTTP shapes only, and the implementation is the Rust auth slice: spike 0003 as rewritten (`spikes/0003-auth-slice-rust.md`), built as issue B4. This supersedes Amendment A1's "Framework: BetterAuth" bullet and the round-21 note's three options. The end state, the phasing and the Decision are unchanged. BetterAuth is a TypeScript library, and its Rust port `better-auth-rs` is a community alpha whose wasm32 support is undocumented (`research/0002` §2). Spike 0003 therefore drops its options A (`better-auth-rs`) and B (a TypeScript identity Worker), and C, hand-rolled Rust, is the plan.
+
+* **The round-13 spike bar is superseded.** It still asks for "KV/Redis secondary storage for sessions", which contradicts ADR-0052 round 25 (the database row is authoritative, no cache at P0) and FR-03 (sessions are rows behind the `Database` port; ADR-0052, round 29). Round 25 amended the bar for sessions; this replaces the rest of it. The bar is now spike 0003's exit criteria: argon2id with OWASP parameters, its CPU time measured on a deployed Worker and inside the default 30 s limit with margin; a session row with an HttpOnly cookie and a CSRF double-submit token; hashed API keys accepted as `X-Api-Key`; and one OIDC authorization-code login through the `openidconnect` crate against Zitadel or a mock IdP. All of it runs on both targets, through the user-only `Principal` (FR-03; ADR-0051, round 29), and passes the contract suite on its four targets.
+* **Q-0050.4 is answered:** a hand-rolled Rust implementation; spike 0003 as rewritten is its evidence and has not run yet. Per FR-05 (same review and §5 table), identity is core code over the `Database` port, not a port of its own (ARCHITECTURE §1c, round 29); this ADR's `Identity` port and A1's `Identity`/`SessionStore` ports are read that way. The known unknown is the OIDC client on wasm32: its HTTP calls need a client built on `worker::Fetch`. The slice's tests cover part of the Confirmation above: a callback with an unverified email is rejected, an API key works without OIDC, and the login is tested against a fake IdP.
+* **Q-0050.6 is answered:** nothing is imported (Q-G3), and the `User`, `Profile` and `Account` tables are defined fresh in the schema; nothing is mapped onto a BetterAuth schema. The Decision's `User` + `Account(provider, provider_account_id)` shape stands, and "the final schema may follow the chosen identity implementation" now means the tables the Rust implementation defines.
+* A1's "BetterAuth supplies them if the spike passes" (password storage, reset and brute-force controls) is superseded: the Rust implementation supplies them. The slice covers argon2id hashing and reviews the sign-in rate limit (ADR-0033, round 29); password reset is not in it.
+
 ## Open Questions
 
 * Q-0050.1 — answered (round 23): JIT provisioning via OIDC claims at P1.
 * Q-0050.2 — answered (rounds 20, 25): the API bypasses Access (path-scoped); machine clients use `X-Api-Key`.
 * Q-0050.3 — Keep email/password, magic code, other OAuth? Tier each. (partly answered, A1)
-* Q-0050.4 — BetterAuth fit behind our ports (spike).
+* Q-0050.4 — BetterAuth fit behind our ports (spike). (answered round 29, FR-16)
 * Q-0050.5 — answered (round 20): Access JWT validation joins at the CF Access phase, not P0.
-* Q-0050.6 — Plane `User`/`Account`/`Profile` ↔ BetterAuth schema mapping.
+* Q-0050.6 — Plane `User`/`Account`/`Profile` ↔ BetterAuth schema mapping. (answered round 29, FR-16)
 * Q-0052 — sessions and API-key mechanics.
 
 ## More Information

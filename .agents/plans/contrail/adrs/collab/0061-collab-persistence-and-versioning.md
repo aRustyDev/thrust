@@ -90,13 +90,17 @@ P0 persistence follows ADR-0012 Option B (round 25): forms stored verbatim, HTML
 
 Spike 0006 (`research/0008-editor-conversions.md`): **Confirmation (d) is met for the server flavour** — the Rust projection equals today's server output byte for byte on 263 documents and 6,000 fuzzed inputs. Caveat: server projections are the **zeed-dom flavour**, which differs from the client's `editor.getHTML()` in 37 % of corpus documents (`style` attributes, boolean attribute form, attribute-name case), so any equality test that mixes the two fails spuriously; and server JSON and HTML drop the client's block `id`s. **Q-0061.4** (round-18 answer: up to 5 s staleness is fine): the allowance is not needed for CPU reasons — a collab Durable Object in Rust can project html and json synchronously at store time (0.09 to 0.5 ms for typical pages, 118 ms for a 745 KB document), so strong consistency inside the store transaction is affordable; the owner's answer stands and nothing forces a change. Add an explicit **depth cap (about 200), a size cap and a schema-version column** before the P1 collab: the Rust Worker dies, an instance reset, at about 1,000 nesting levels.
 
+## Update — review round 29 (2026-10-19)
+
+Per FR-14 (`reviews/2026-10-19-fable-architecture-review.md`; the owner's decision is its §5 table: apply now, with FR-23), P0 persistence stores one form for work items and three only for pages. Work items store the sanitised `description_html` and `description_stripped` only; `thrust-editor-doc` derives JSON and binary lazily at P1, on the first collab open (html to binary, `research/0008` §8). Pages store the triple that the fallback path sends (`apps/web/hooks/use-page-fallback.ts:66-68`), with the HTML sanitised and the binary validated to decode with `yrs`, which is stricter than Plane's `validate_binary_data` (D-020; ADR-0012's round-29 note has the evidence). This supersedes, for work items, the round-11 note's "persist Yjs binary + html + json from day one" (Q-F5.1, reopened and answered in round 29) and the round-25 note's "forms stored verbatim". The round-11 optimistic version check (a stale save returns 409) is unchanged. The P1 move to collab still needs no data migration, because the Rust converter produces from HTML a binary that the real editor opens (`research/0008` §4.3). **Q-0061.4 is answered for P0**: there is no staleness window, because work items store one form and pages store the client's triple as sent, so the server projects nothing that could fall behind. The round-18 allowance (up to 5 s) and the round-27 evidence (synchronous projection is affordable) remain the record for P1, when the collab room projects html and json from the binary. The ADR stays `proposed`: the P1 strategy (Q-0061) is not decided here.
+
 ## Open Questions
 
 * Q-0061 — choose the strategy (decision-pending).
 * Q-0061.1 — presence limits, max doc size, cold-start.
 * Q-0061.2 — Hocuspocus adapter reuse.
 * Q-0061.3 — version cadence: Plane's `track_page_version` triggers on each store; keep per-store, per-N-minutes, or on-explicit-save?
-* Q-0061.4 — are `description_html/json` required to be strongly consistent with `binary` for API v1 reads, or is bounded staleness acceptable?
+* Q-0061.4 — are `description_html/json` required to be strongly consistent with `binary` for API v1 reads, or is bounded staleness acceptable? (answered round 29, FR-14)
 
 ## More Information
 
