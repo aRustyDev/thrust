@@ -88,10 +88,16 @@ From the `space` SSR feasibility build (ADR-0011): (1) the published-board URLs 
 
 Owner decision on Q-0011.3: the public `space` hostname serves the **SPA plus a Rust handler that injects the per-board link-preview metadata** (ADR-0011); the earlier "SSR Worker" decision is superseded. Escape every injected value; cache with a short TTL keyed on the anchor and purge on publish and unpublish.
 
+## Update — review round 29 (2026-10-19)
+
+Per FR-11 (`reviews/2026-10-19-fable-architecture-review.md`; the owner's decision is its §5 table: apply now, "ADR-0090 accepted as Option 1 for P0 with a reopen trigger"), the `space` hostname is a route group of the one Worker (ADR-0090, round 29), not a separate Worker. That Worker serves the `space` SPA, the head-injection handler and the public API on the `space` hostname, so the browser calls the API same-origin and needs no CORS; this answers point (2) of the round-27 feasibility note (Q-0011.4, answered round 29 with FR-11's default; review §4, "`space` as an SPA with Rust head injection").
+
+This supersedes only "served by a separate cached Worker" in the Decision Outcome and "by a separate Worker with caching" in the round-19 note. Unchanged: public spaces keep their own public hostname, so the Access bypass stays scoped by hostname (Consequences); the response is cached with a short TTL keyed on the anchor and purged on publish and unpublish (round 27); the limit is 60 req/min/IP (round 17); and publishing is explicit per project.
+
 ## Open Questions
 
 * Q-0022 — scope and tier of public spaces.
-* Q-0141 — threat model for public spaces.
+* Q-0141 — threat model for public spaces. (answered round 29, FR-17)
 
 ## More Information
 

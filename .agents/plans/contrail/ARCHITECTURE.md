@@ -77,12 +77,17 @@ Worker or its own thin Worker is still open (ADR-0090, round 27).
 > (an S3-compatible adapter for MinIO at P1), email goes over SMTP through `lettre`, and the P1 collab room runs inside
 > the same binary. RabbitMQ, Valkey, Hocuspocus and the separate worker process are cut. The database is Postgres, or
 > SQLite on `rusqlite` if spike 0002's `worker-do` cell wins (FR-04). Parity is the `native-pg` contract cell in CI.
+>
+> **Static apps (owner, round 29):** the native binary serves the built React apps (`web` and `space`) itself, as
+> Workers static assets do on Cloudflare. A front proxy (Caddy or nginx) is the operator's optional choice, drawn
+> dashed below. This keeps ADR-0091's Compose file to at most three services (the binary, Postgres, and MinIO at P1) and
+> supersedes ADR-0011's self-hosted Caddy/nginx line.
 
 ```mermaid
 flowchart TB
-  B[Browser] --> RP[Caddy / nginx<br/>ADR-0011]
-  RP --> STAT[static files]
-  RP --> API["thrust-server: one native Rust binary, axum, same crates<br/>API · outbox queue + sweeper · in-process scheduler · P1 collab room"]
+  B[Browser] --> API["thrust-server: one native Rust binary, axum, same crates<br/>built React apps: web · space<br/>API · outbox queue + sweeper · in-process scheduler · P1 collab room"]
+  B -.->|optional| RP["front proxy, optional<br/>Caddy or nginx, the operator's choice"]
+  RP -.-> API
   API --> DB[("Postgres, or SQLite per FR-04")]
   API --> DISK[("local disk<br/>BlobStore at P0, S3-compatible adapter at P1")]
   API --> SMTP["SMTP relay<br/>via lettre"]
@@ -94,8 +99,9 @@ flowchart TB
 > sets. `WorkflowEngine` is withdrawn: long jobs are queue messages with a `jobs` table (ADR-0071). RabbitMQ, Valkey
 > and Hocuspocus are cut (ADR-0070, ADR-0082, ADR-0060). Sessions are rows behind `Database` (FR-03), and a `Cache`
 > port is added only when a measured hot path needs it (ADR-0082). Rate limiting is the Workers Rate Limiting binding
-> on Cloudflare (D-007) and an in-process counter natively (ADR-0033). `StaticHost` has no trait in code; ADR-0011
-> serves the static apps from Workers static assets or Caddy/nginx.
+> on Cloudflare (D-007) and an in-process counter natively (ADR-0033). `StaticHost` has no trait in code: the static
+> apps are Workers static assets on Cloudflare (ADR-0011) and are served by the native binary itself in the twin,
+> with a front proxy optional (owner, round 29; §1b).
 
 | Port | Cloudflare adapter | Self-hosted adapter | ADR |
 |---|---|---|---|
@@ -117,7 +123,7 @@ crate import outside an adapter crate.** An adapter set is chosen at composition
 ```mermaid
 flowchart LR
   subgraph Driving[Driving adapters]
-    HTTP[HTTP routes<br/>compat-plane · core API · /api/v1 · /auth]
+    HTTP[HTTP routes<br/>compat-plane · /api/v1 · /auth<br/>core API from M4, round 29]
     WS[Collab sockets]
     QC[Queue consumers]
     CR[Scheduled triggers]
@@ -161,8 +167,9 @@ thrust/
     thrust-api-core/            # NOT AT P0 (round 29, FR-06): the core REST + OpenAPI surface for Dioxus, scripts
                                 #   and MCP, generated from the use-cases at M4, when the Dioxus client exists
     thrust-api-v1/              # /api/v1 Plane wire-compat, a thin shim over core use-cases (ADR-0031)
-    thrust-compat-plane/        # TRANSITIONAL: Plane-shaped internal endpoints for the React app (ADR-0034);
-                                #   deleted when the Dioxus UI lands (ADR-0013 Phase 2)
+    thrust-compat-plane/        # TRANSITIONAL: Plane-shaped internal endpoints for the React app (ADR-0034); the
+                                #   slice plus the M2 screens' rows (F-X13), each deleted as its screen moves to
+                                #   Dioxus (ADR-0013 Phase 2; round 29, FR-01)
     thrust-adapters-cloudflare/ # workers-rs: hyperdrive|d1, queues, r2, cron, email, ai-gateway, rate limiting …
     thrust-adapters-selfhosted/ # native pool, in-process queue (the outbox), local disk (S3-compatible at P1),
                                 #   smtp (`lettre`), in-process scheduler … (round 29, FR-05, FR-19)
@@ -176,13 +183,15 @@ thrust/
   docs/plan/                    # this planning package, once the repo is populated
 ```
 
-Three HTTP surfaces sit on the same use-cases: **compat-plane** (React), **`/api/v1`** (wire-compatible with Plane) and the
-**core API**. `apps/admin` is retired (ADR-0021), so two apps are served: `web` (a static SPA) and `space` (server-rendered in Plane, `ssr: true`; here an SPA plus Rust-injected metadata, Q-0011.3).
+Two HTTP surfaces sit on the same use-cases at P0: **compat-plane** (React) and **`/api/v1`** (wire-compatible with
+Plane); the **core API** joins them at M4 (round 29, FR-06). `apps/admin` is retired (ADR-0021), so two apps are served: `web` (a static SPA) and `space` (server-rendered in Plane, `ssr: true`; here an SPA plus Rust-injected metadata, Q-0011.3).
 
 **Spike 0001 notes (round 26; crate names are those of the spike branch).** (1) Every port returns a `Send` future (ADR-0002); `Background`, `Clock` and `IdGen` are ports, so core never spawns or reads the clock. (2) One router crate (`thrust-api`) is compiled into both roots; `thrust-api-core`, `thrust-api-v1` and `thrust-compat-plane` are route groups composed into it. (3) The SQL lives once, in `thrust-adapters-postgres`, written at `tokio_postgres::Client` level behind a `Connector` (a native pool on the server, a Hyperdrive socket on the Worker); the cloudflare and selfhosted adapter crates supply the connector and the non-SQL adapters. (4) The one HTTP contract suite lives in `thrust-contract-tests` and runs against every target.
 
 **Round 29 (2026-10-19, FR-05, FR-06, FR-11).** `thrust-api-core` is not built at P0: two HTTP surfaces sit on the
-use-cases (compat-plane and `/api/v1`), and the core OpenAPI surface is generated from them at M4 (review §3).
+use-cases (compat-plane and `/api/v1`), and the core OpenAPI surface is generated from them at M4 (review §3). The
+slice's own routes are mounted under `/api/v1/` (`crates/thrust-api/src/lib.rs:269-293`) but are not Plane-shaped;
+they move out of that prefix, which is reserved for the wire-compatible `thrust-api-v1` routes (issue #47).
 `thrust-collab-do` is not a separate root until M5: the one Worker exports the DO classes, as the slice already does
 (`RateLimiterDo` and `RoomDo`, `crates/thrust-worker/src/durable.rs:26-86`). The `thrust-ports` and
 `thrust-adapters-selfhosted` lines follow the §1c list, and `kv` leaves the Cloudflare adapter line (FR-03; ADR-0082).

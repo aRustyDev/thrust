@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-10-17
 decision-makers: asmith
 consulted: []
@@ -30,7 +30,11 @@ API; the public `/api/v1` contract is a hard external contract (ADR-0031).
 
 ## Decision Outcome
 
-Decision pending — see Q-0120. Leading hypothesis: **Option 1 with Option 3 applied selectively** (confidence:
+**Decision (accepted, round 29): the leading hypothesis, Option 1 with Option 3 applied selectively: a layered model,
+with differential scenarios for the behaviours a schema cannot express; the layers that exist are documented in
+`docs/src/testing/strategy.md`. Per FR-17, `reviews/2026-10-19-fable-architecture-review.md` §5.**
+
+Leading hypothesis (accepted): **Option 1 with Option 3 applied selectively** (confidence:
 medium): schema/golden contract tests for v1 (ADR-0122); differential scenarios for behaviors that schemas cannot
 express (sequencing, activity/notification side effects, soft-delete visibility, filters/grouping).
 
@@ -77,9 +81,17 @@ Rust toolchain wording and the promised artefacts are made concrete: the traceab
 
 Spike 0008 and bead `plane-b6a`: **the oracle exists.** It is this fork merged with upstream `makeplane/plane` preview `879ce8b5c6` (1.4.2) and pinned by the annotated tag `oracle/v1-pin-20261018` pointing at `ba85d4d3d3`; `oracle/PIN` records the `apps/api` tree sha and `scripts/verify-pin.sh` checks it. The branch `feat/plane-b6a-upstream-sync-oracle` and the tag are **local and not pushed** (Q-0122.4). It runs under docker compose (Postgres, Valkey, RabbitMQ, MinIO, api) from `oracle/compose.oracle.yml` with synthetic seed data only and `ENABLE_DRF_SPECTACULAR=1`; cold build 58 s and cold start 87–90 s make a nightly run cheap. Two findings for the test model: Plane's schema is weaker than its behaviour (12 failure classes, ADR-0122), so recorded behaviour has to carry weight; and the internal `/api/` and `/auth/` have no schema at all, so they are covered by recordings only (the dynamic half of spike 0009, ADR-0034). Q-0120.3 stays answered (compose in CI, nightly); the CI definition is a draft that has not run.
 
+## Update — review round 29 (2026-10-19)
+
+Per FR-17 (`reviews/2026-10-19-fable-architecture-review.md`; the owner's decision is its §5 table: apply now, "every acceptance cites this review as the recorded owner decision"), this ADR is accepted on its leading hypothesis, quoted in the Decision Outcome: "Option 1 with Option 3 applied selectively". Q-0120 is answered. FR-17's evidence is that `docs/src/testing/` has graduated this ADR's content.
+
+* **The layers as built** are in `docs/src/testing/strategy.md` ("Layers"): pure logic, port behaviour, HTTP behaviour, the cross-target matrix and deployed or end-to-end tests, with architecture gates, mutation and controls across all of them. `docs/src/testing/defect-matrix.md` names a primary technique and a backstop for each defect class. The binding rules are `AGENTS.md` §Testing, rules 1 to 8; where the docs and the rules disagree, the rules win.
+* **One change from Option 1 as written:** the port-contract layer is one black-box HTTP suite run against four targets, not a suite per port (ADR-0121, round 29).
+* **The v1 oracle is not decided here.** Its schema gate, golden corpus and nightly differential run stay in ADR-0122, which stays `proposed`, and Q-0122 stays open with an owner and a date (decided with issue #58's oracle gate). This acceptance settles the layered model only.
+
 ## Open Questions
 
-* Q-0120 — model and oracle.
+* Q-0120 — model and oracle. (answered round 29, FR-17)
 * Q-0120.1 — Which Plane version is the reference (Q-G1), and who hosts a pinned reference instance for differential runs?
 * Q-0120.2 — **answered (round 20)**: synthetic seed data.
 

@@ -84,12 +84,14 @@ Today's server is not yet this twin (`docs/src/architecture/infra.md:86-99`): in
 
 This supersedes the third decision driver (a workflow-engine substitute and a Hocuspocus+Redis collab server behind the same ports), the RabbitMQ, Valkey and MinIO stack in the Consequences, and the reference-stack CI job in the Confirmation, which is now the `native-pg` cell. Q-0091 is answered.
 
+The three services of the Compose file are the native binary, Postgres, and MinIO from P1, when the S3-compatible blob adapter arrives (ADR-0080, round 29); at P0 the local-disk blob store needs no MinIO. **The binary also serves the built React apps** (owner, round 29; FR-19), as Workers static assets do on the Cloudflare set, so no proxy service is part of the twin; a front proxy (Caddy or nginx) is the operator's optional choice. This supersedes ADR-0011's self-hosted Caddy/nginx line (ADR-0011, round 29). The binary does not serve static files yet (`crates/thrust-server/src/main.rs`).
+
 ## Open Questions
 
 * Q-0091 — reference target. (answered round 29, FR-19)
 * Q-G7 — Kubernetes vs Compose requirement.
 * Q-0073.4 — workflow-engine adapter for the twin. (superseded round 29, FR-05)
-* Q-0091.1 — Is a private-network (`.woven`) deployment of the twin expected, i.e. does it need external-dns two-leg hostname handling or is it public/Access-fronted?
+* Q-0091.1 — Is a private-network (`.woven`) deployment of the twin expected, i.e. does it need external-dns two-leg hostname handling or is it public/Access-fronted? (answered round 29, owner default)
 
 ## More Information
 

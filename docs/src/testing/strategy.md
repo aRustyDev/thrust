@@ -46,14 +46,16 @@ and count guards in the scripts, planted mutants. New tests follow the same stan
 
 ## Decisions this strategy implements
 
-All four are `status: proposed`; this chapter describes the parts that already exist and links the rest.
+ADR-0120, ADR-0121 and ADR-0123 were accepted in round 29 of the plan, and ADR-0122 is still `status: proposed`
+(`.agents/plans/contrail/reviews/2026-10-19-fable-architecture-review.md`, FR-17). This chapter describes the parts
+that already exist and links the rest.
 
 | ADR | In one line |
 |---|---|
 | `.agents/plans/contrail/adrs/test/models/0120-test-model-and-oracle.md` | Layered tests with differential scenarios where a schema cannot express the behaviour; each P0/P1 feature maps to at least one test at the right layer. |
 | `.agents/plans/contrail/adrs/test/patterns/0121-port-contract-tests-one-suite-n-adapters.md` | One contract suite runs against every adapter; model-based tests for stateful ports. |
 | `.agents/plans/contrail/adrs/test/patterns/0122-v1-oracle-and-parity-tests.md` | Public v1 API: schema diff as the PR gate, a curated scenario corpus, a nightly differential run against pinned Plane. |
-| `.agents/plans/contrail/adrs/test/standards/0123-test-standards-and-tooling.md` | Toolchain: nextest, proptest, workerd for the wasm32 leg, testcontainers, Playwright; coverage thresholds still open. |
+| `.agents/plans/contrail/adrs/test/standards/0123-test-standards-and-tooling.md` | Toolchain: nextest, proptest, workerd for the wasm32 leg, testcontainers, Playwright; no line-coverage threshold, mutation testing on the permission seam instead (Q-0123.1, round 29). |
 
 Requirements are traced to their test home in `.agents/plans/contrail/TRACEABILITY.md`; see [The TDD
 loop](tdd-loop.md).

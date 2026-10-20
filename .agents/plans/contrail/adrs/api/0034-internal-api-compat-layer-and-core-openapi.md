@@ -67,10 +67,36 @@ Clarified that there are **three** surfaces (compat-plane, `/api/v1`, core API) 
 
 Owner decision on Q-0009.1: **tripwires, not a budget.** Build the 48-route minimum slice first (estimate 39.3 person-days) and re-estimate from the actual cost per endpoint class. **Reopen this ADR** (adapt the React service layer instead of emulating Plane's internal API) if the slice actually costs more than **66 pd** or the re-estimated P0 total exceeds **364 pd** (the model's high bounds, `research/0003` section 15.6). Before reopening, apply the cheap levers that are inside the allowed change areas: the auth-client JSON change (about 16 pd, 41 of the 545 rows), a native comments list and a single-POST cover upload (trailing-slash normalisation is moot at the pin).
 
+## Update — review round 29 (2026-10-19)
+
+Per FR-01 and FR-06 (`reviews/2026-10-19-fable-architecture-review.md`; the owner's decision is its §5 table: apply
+now, with the M2 screen list confirmed as the review's default and two surfaces at P0), the acceptance list and the
+P0 surfaces change as follows.
+
+**Acceptance list (FR-01).** The F-X13 acceptance list is the 48-route minimum slice (`research/0003` §8.1 and §15.6;
+issue #44, M1) plus the compat rows behind the M2 daily-use screens (`PLAN.md`, Q-R8; issue #46, M2): work-item list
+(group-by, filters, pagination); work-item detail (description, comments, activity, attachments, labels, assignees,
+state, priority, dates); project create and settings; workspace members (no invites); in-app notifications; global
+search. This replaces the round-26 proposal of the 290 P0 rows. Every other route the React shell calls answers with
+the cheapest shape-correct stub (an empty list, a 404 or the recorded fixture), and each stub is recorded under
+deviation D-021. The Playwright journey suite over the M2 screens (issue #45) is the UI parity matrix (TRACEABILITY)
+and the UI oracle for the Dioxus port. Compat rows are deleted as each screen moves to Dioxus (ADR-0013, round 29), so the
+adapter shrinks screen by screen and its last row goes when Phase 2 completes. The round-27 tripwires apply to the
+acceptance list, not to the 290 rows (Q-0009.1).
+
+**Two surfaces at P0 (FR-06).** At P0 the use-cases carry two driving surfaces: compat-plane and `/api/v1`. The core
+REST+OpenAPI surface (item 3 of the Decision) has no P0 consumer: the Dioxus client is M4, MCP is P1, and the P0 AI
+access is the public `/api/v1` (F-X08). It is generated from the `thrust-core` use-cases at M4, when the first Dioxus
+client exists (ADR-0032, round 29). This supersedes the Decision's "three thin driving surfaces" and the round-25
+"three surfaces" clarification until M4; the Consequences' "three HTTP surfaces during the transition" reads two until
+then. The slice's own routes (`crates/thrust-api/src/lib.rs:269-293`) are mounted under `/api/v1/` but are neither
+Plane-shaped nor documented; they move out of that prefix, which is reserved for wire-compatible routes (issue #47,
+M0). Keeping Plane-shaped request and response types out of the shared crates is FR-20, tracked as issue #52.
+
 ## Open Questions
 
 * Q-R5 / Q-0032 — answered (round 24): REST + OpenAPI, code-first, hybrid for v1 (ADR-0032).
-* Q-0010.1 — which internal endpoints/response shapes React depends on (the compat inventory).
+* Q-0010.1 — which internal endpoints/response shapes React depends on (the compat inventory). (answered round 29, FR-01, FR-17)
 
 ## More Information
 
