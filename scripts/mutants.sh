@@ -6,6 +6,9 @@
 #
 #   scripts/mutants.sh
 set -u
+# A counterexample found against a deliberately broken build is not a regression of the real code: do not let the
+# generated tests (crates/thrust-contract-tests/tests/model) save it into the source tree.
+export PROPTEST_DISABLE_FAILURE_PERSISTENCE=1
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="$ROOT/target/mutants"
 mkdir -p "$OUT"

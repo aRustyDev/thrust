@@ -76,5 +76,6 @@ implementation.
 
 ## Target
 
-Matrices and pinned cases for `thrust-contracts` and `thrust-api` (G-3); the role × tenant × route matrix over HTTP
-(G-8).
+Matrices and pinned cases for `thrust-contracts` and `thrust-api` (G-3). The caller × project × route matrix over
+HTTP is built: `every_actor_project_and_route_gets_the_status_of_the_access_table` in
+`crates/thrust-contract-tests/tests/model/mod.rs`; attachments are not in it yet (G-8).

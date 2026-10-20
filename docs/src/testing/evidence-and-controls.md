@@ -87,4 +87,6 @@ step by the model's state at that point. proptest has no built-in `classify`, so
 the template is in `.agents/skills/rust-test-logic/references/property.md` ("Checking the strategy's reach")
 `[verified 2026-10-20: proptest 1.12.0, in a scratch crate]`. Its own control: drop one class from the strategy and
 the test must fail (it did). Required for every `model_` test and for any `prop_` test whose strategy is weighted or
-filtered. Reach the rare classes by weighting them in the strategy, not by rejecting with `prop_assume!`.
+filtered. Reach the rare classes by weighting them in the strategy, not by rejecting with `prop_assume!`. In-repo:
+`model_strategy_reaches_every_step_class` in `crates/thrust-contract-tests/tests/model/mod.rs`, over whole
+sequences.
