@@ -57,7 +57,17 @@ soft delete frees an external key. `model_strategy_reaches_every_step_class` is 
 classifying every step of 500 fixed-seed sequences by replaying them through the model. It kills the planted
 `mutant_ignore_tenant` and `mutant_dup_sequence`, and a failure shrinks to the few requests that show it.
 
+The same sequences carry events (ADR-0046). Each committed create and delete is one event, and the model also
+injects events straight onto the queue, re-sends injected ones and real outbox events whose ids an earlier
+checkpoint learnt, and sweeps. A checkpoint reads both projects' activity: it fails at once on a row no published
+event explains (a duplicate, a rejected request's event, an event that should still be in the outbox) and waits up
+to 15 s for the missing ones; a read two seconds after the run catches late duplicates. With the fast path off
+(`sweeper_model_outbox_delivers_what_was_swept_and_nothing_more`, the `sweeper` pass) events wait for a sweep, the
+sweep must report every waiting row as published, and the outbox depth must equal the number waiting. The
+redeliveries kill `mutant_no_activity_dedupe`; running the fast-path-off model against a fast-path-on target fails
+on the first sweep.
+
 ## Target
 
-Built for work items (ADR-0121, `.agents/plans/contrail/adrs/test/patterns/0121-port-contract-tests-one-suite-n-adapters.md`).
-Still hand-written: outbox, queue and sweeper sequences, and attachments (G-8 in [Status](../status.md)).
+Built for work items and their events (ADR-0121, `.agents/plans/contrail/adrs/test/patterns/0121-port-contract-tests-one-suite-n-adapters.md`).
+Still hand-written: attachments, rate limiting and the Worker's `cron` pass (G-8 in [Status](../status.md)).

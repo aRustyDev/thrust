@@ -10,7 +10,7 @@
 # worker     1 test : Durable Object WebSocket hibernation + SQLite
 # bindings   6 tests: one real operation per binding (rate limit, secrets store, email, service, workflow)
 # cron       1 test : needs the Worker deployed with THRUST_OUTBOX_FASTPATH=off
-# sweeper    1 test : needs THRUST_OUTBOX_FASTPATH=off
+# sweeper    2 tests: needs THRUST_OUTBOX_FASTPATH=off
 # panic      1 test : alone, against a Worker nobody else is using (a panic resets the isolate)
 #
 # The admin token is read from the file into THIS process's environment only: never on argv, never
@@ -50,7 +50,7 @@ case "$PASS" in
   cron)     EXPECT=1;  "$RS" cargo test --manifest-path "$M" -p thrust-contract-tests --test worker_only -- worker_cron_ --test-threads=1 --nocapture >"$LOG.test.log" 2>&1 ;;
   # crontrigger: the REAL every-minute trigger (the `cron` pass uses wrangler dev's /__scheduled, which a deployed Worker lacks)
   crontrigger) EXPECT=1; "$RS" cargo test --manifest-path "$M" -p thrust-contract-tests --test worker_only -- stage2_cron_real_trigger_ --test-threads=1 --nocapture >"$LOG.test.log" 2>&1 ;;
-  sweeper)  EXPECT=1;  "$RS" cargo test --manifest-path "$M" -p thrust-contract-tests --test contract -- sweeper_ --test-threads=1 --nocapture >"$LOG.test.log" 2>&1 ;;
+  sweeper)  EXPECT=2;  "$RS" cargo test --manifest-path "$M" -p thrust-contract-tests --test contract -- sweeper_ --test-threads=1 --nocapture >"$LOG.test.log" 2>&1 ;;
   panic)    EXPECT=1;  "$RS" cargo test --manifest-path "$M" -p thrust-contract-tests --test contract -- panic_ --test-threads=1 --nocapture >"$LOG.test.log" 2>&1 ;;
   # blast is OBSERVATIONAL: how many OTHER in-flight requests fail around one panic (a panic aborts the isolate)
   blast)    EXPECT=1;  "$RS" cargo test --manifest-path "$M" -p thrust-contract-tests --test contract -- blast_ --test-threads=1 --nocapture >"$LOG.test.log" 2>&1 ;;

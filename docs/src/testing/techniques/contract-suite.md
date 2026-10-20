@@ -22,8 +22,10 @@ which target it runs on. Fixtures are created through `POST /internal/seed`, the
 
 - `crates/thrust-contract-tests/tests/contract.rs`: the portable suite.
 - `crates/thrust-contract-tests/tests/model/mod.rs`: its generated part, compiled into the same binary and run in the
-  `main` pass: random operation sequences against a reference [model](model-based.md), every caller × project ×
-  route against the access table, and the generator coverage control.
+  `main` pass: random operation sequences, events included, against a reference [model](model-based.md), every
+  caller × project × route against the access table, and the generator coverage control. Its
+  `sweeper_model_outbox_delivers_what_was_swept_and_nothing_more` runs the same model in the `sweeper` pass, with
+  the outbox fast path off.
 - `crates/thrust-contract-tests/tests/worker_only.rs`: Durable Object, cron and binding tests for `worker-*` targets.
 
 A pass is selected by **test-name prefix** in `scripts/contract.sh`, not by nextest: `sweeper_`, `panic_`,

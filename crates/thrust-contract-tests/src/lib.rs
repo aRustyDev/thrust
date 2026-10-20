@@ -34,6 +34,11 @@ impl Target {
         std::env::var("THRUST_EXPECT_CREATE_LIMIT").ok().and_then(|v| v.parse().ok()).unwrap_or(30)
     }
 
+    /// The target's rate-limit window (`THRUST_RATE_WINDOW_SECS` on the server, 60 unless set).
+    pub fn rate_window_secs() -> u64 {
+        std::env::var("THRUST_EXPECT_RATE_WINDOW_SECS").ok().and_then(|v| v.parse().ok()).unwrap_or(60)
+    }
+
     pub async fn admin_post(&self, path: &str, body: &Value) -> reqwest::Response {
         self.http
             .post(self.url(path))
