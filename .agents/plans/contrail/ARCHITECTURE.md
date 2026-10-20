@@ -33,36 +33,42 @@ session cookies + `X-Api-Key`, no OIDC/SAML/SCIM in CE.
 
 ### 1a. Cloudflare adapter set (target)
 
-> **Phasing (rounds 4–6):** the diagram is the end state. At P0 the **Durable Object collab** and **Workflows** boxes
-> are absent (editing is a plain API save; exports/importers are P1), only DB/queue/blob have self-hosted twins, and
-> adapter sets are compile-time bundles (ADR-0007). Auth starts as user+password, with Access then OIDC added.
+> **Phasing (rounds 4–6):** the diagram is the end state. At P0 the **collab Worker** and its Durable Object are
+> absent (editing is a plain API save; the room is P1), and adapter sets are compile-time bundles (ADR-0007). Auth
+> starts as user+password, with Access then OIDC added.
+
+> **Round 29 (2026-10-19, FR-11, FR-05, FR-03, FR-08):** one API Worker replaces the edge, API and consumer Workers
+> (ADR-0090, accepted). The Workflows box is removed: long jobs are queue messages with a `jobs` table (ADR-0071). The
+> KV box is removed: sessions are rows behind `Database` (FR-03), and a `Cache` port is added only when a measured hot
+> path needs it (ADR-0082). `placement.region` puts the Worker beside the database in us-east-1 (FR-08, ADR-0094).
+> The self-hosted set is §1b and SPEC R-P3.
 
 ```mermaid
 flowchart TB
   U[Users / WARP] --> ACC[Cloudflare Access<br/>outer gate]
   M[Machine clients<br/>API keys] --> EDGE
-  ACC --> EDGE[Workers edge]
+  ACC --> EDGE[product hostname<br/>Custom Domain, Q-0090.2]
   subgraph CF[Cloudflare account]
-    EDGE --> STAT[Workers static assets<br/>web SPA and space SPA with Rust head injection, Q-0011.3]
-    EDGE --> API[API Worker<br/>internal API + public /api/v1 + /auth]
-    EDGE -->|WebSocket| COL[Durable Object: DocRoom<br/>Yjs]
+    EDGE --> API["API Worker, the one Worker (ADR-0090)<br/>fetch: compat-plane · /api/v1 · /auth<br/>queue: notifications · webhooks · activity<br/>scheduled: outbox sweeper<br/>static assets: web SPA · space SPA with Rust head injection, Q-0011.3<br/>placement.region = aws:us-east-1"]
+    API -->|"/live WebSocket via the collab port, P1"| COL[collab Worker, P1<br/>Durable Object: yrs room, ADR-0060]
     API --> DB[(DB: Hyperdrive via Workers VPC and Tunnel to CNPG Postgres in woven-o11y, ADR-0094)]
-    API --> KV[(KV: cache · sessions)]
     API --> R2[(R2: assets · exports)]
     API --> Q[[Queues: events/outbox]]
-    Q --> CONS[Consumer Worker<br/>notifications · webhooks · activity]
-    API --> WF[Workflows<br/>exports · imports · long jobs]
-    CRON[Cron Triggers] --> CONS
+    Q -->|queue handler| API
+    CRON[Cron Triggers] -->|scheduled handler| API
     COL --> R2
     COL --> DB
   end
   API --> IDP[Zitadel OIDC]
-  CONS --> MAIL[Email: CF Email Service | SMTP]
+  API --> MAIL["Email: CF Email Service | SMTP"]
 ```
 
-Worker topology (⚠ ADR-0090): default hypothesis = one **API Worker** (Rust, workers-rs; router per ADR-0030), one **queue/cron consumer
-Worker**, one **collab Worker** hosting the DO class, plus static assets bound to the edge Worker. Service bindings
-between them; the API Worker never talks to the DO except via the collab port.
+Worker topology (ADR-0090, accepted round 29, FR-11): one **API Worker** (Rust, workers-rs; router per ADR-0030)
+holds `fetch`, the queue consumer, the `scheduled` handler, the static assets and `placement.region = "aws:us-east-1"`
+for P0 and the daily-use release (M2). A **collab Worker** hosting the DO class is added when the P1 room lands
+(ADR-0060), joined by a service binding; the API Worker never talks to the DO except via the collab port. Reopen if the
+bundle exceeds 20 MiB or a DO lifecycle change must ship with an API change. Whether `space` is a route group of this
+Worker or its own thin Worker is still open (ADR-0090, round 27).
 
 ### 1b. Self-hosted twin (same application code, different adapters)
 
@@ -194,7 +200,7 @@ sequenceDiagram
   C->>H: POST /work-items
   H->>H: Identity + permission seam
   H->>U: createWorkItem(cmd)
-  U->>D: tx{ allocate sequence_id; insert issue; insert outbox(event) }
+  U->>D: tx: allocate sequence_id, insert issue, insert outbox(event)
   D-->>U: committed
   U-->>H: result
   H-->>C: 201

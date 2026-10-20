@@ -132,12 +132,36 @@ Owner confirmations: **go-ahead granted** to start the infra work, and "new VPC"
 * **Costs seen:** the first database-backed request on a fresh isolate took about 0.6 s; a simple read was 56 to 68 ms at p50 from one US-east laptop. Caching stayed disabled (D10) and was not compared.
 * **Unchanged:** the VPC service still runs with `cert_verification_mode = disabled` (Q-0094.9, `plane-byd.9`); `thrust-pg` (production) was not touched; `thrust-pg-dev` carries no spike state now.
 
+## Update — review round 29 (2026-10-19)
+
+Per FR-08, FR-09 and FR-10 (`reviews/2026-10-19-fable-architecture-review.md`; the owner's decisions are its §5 table, apply now for all three), this ADR records the Worker's placement and query budget, the closing plan for authenticated TLS, and the conditions under which the coupling to `woven-o11y` is accepted. FR-04 does not reopen this ADR: it decides where Postgres lives, not whether Thrust uses Postgres. If spike 0002's `worker-do` cell wins (FR-04), FR-09 is moot and the review expects that cell to remove most of FR-08.
+
+**Placement and query budget (FR-08).** The P0 Worker sets `placement.region = "aws:us-east-1"` (issue B5), because the database is in us-east-1: the `thrust-pg` primary runs in us-east-1b and its replica in us-east-1a (round-27 note above). Cloudflare: "Each query adds round-trip latency: 20-30 ms from a distant region, or 1-3 ms when placed nearby" (hyperdrive/concepts/how-hyperdrive-works). `crates/thrust-worker/wrangler.toml` sets no `placement` today. A list endpoint makes **at most 5 database round trips** per request, and a counting `Connector` in the contract suite enforces the budget (issue B5). The bench is re-run once placement is set; the baseline is `research/0004` §10.3 (from one US-east laptop: list p95 86 ms, create p95 296 ms at c=1 and 559 ms at c=8, about 0.6 s for the first database request on a fresh isolate). The p95 measurement point is Q-G5.2 (SPEC §6.4).
+
+**Authenticated TLS: the closing plan (FR-09, Q-0094.9).** The plan is a Cloudflare Origin CA server certificate for CNPG, with the VPC services back on `verify_ca`:
+
+1. Issue a Cloudflare Origin CA certificate for a hostname in a zone the account owns (Origin CA allows a 15-year validity), and mount it as CNPG's server certificate through `spec.certificates` (`serverTLSSecret`, `serverCASecret`).
+2. The shared chart `modules/kube/cnpg-cluster/chart` exposes `spec.certificates` as a strictly opt-in value, the same pattern as `zoneSpread` (round-27 note above): the Thrust releases set it, and the nine other releases render unchanged manifests.
+3. Set `cert_verification_mode` on both VPC services back to `verify_ca`. Workers VPC trusts "publicly trusted certificates ... [and] Cloudflare Origin CA certificates", and `verify_ca` means "Verify the certificate chain only, skip hostname verification" (workers-vpc/configuration/vpc-services), so the chain verifies. Hostname verification could not pass: the VPC service's host is the cluster-local name `thrust-pg-rw.thrust.svc.cluster.local` (`research/0010` §3), and Origin CA issues only for hostnames in a zone the account owns, not for `*.svc.cluster.local` (`research/0010` §2). That is why the target is `verify_ca` and not `verify_full`. This supersedes the hardening target written as `verify_full` in the round-27 note above, in Q-0094.9 and in `research/0010` §2 and §9.
+
+The fallback is Option 2 (the same tunnel plus an Access application and a service token): its Hyperdrive config is a connection-string origin, which takes CNPG's CA (`wrangler cert upload certificate-authority`, then `--ca-certificate-id` and `--sslmode verify-full`; changelog 2025-04-09; `research/0010` §2). CNPG renews its own CA and leaf certificates, so an uploaded copy must be tracked (`research/0010` §2). Neither path is tested: the first `wrangler` update is the test. The work starts after the FR-04 engine decision (issue B7; beads `plane-byd.9` and `infra-qnyi`), because a `worker-do` win makes it moot. The deadline from the PR #810 note stands: authenticated TLS is closed before Thrust holds real data. Until then the VPC services stay at `disabled`.
+
+Q-0094.8 is answered: the chart churn is accepted. The `zoneSpread` value and the `spec.certificates` value are opt-in, the nine other releases' manifests stay unchanged, and each of those roots shows its `helm_release` updated in place on its next plan. The green chart copy in `ApiraTech/helm-charts` needs the same values.
+
+**Availability coupling: accepted with three conditions (FR-10, Q-0094.4).** The coupling to `woven-o11y` (Consequences above; `research/0010` §6 risks 1, 2 and 7) is accepted for the 99.5 % internal-tool SLO (SPEC §6.4), about 3.6 hours a month over 30 days, under these conditions:
+
+1. **A deep probe (issue B8).** The Worker serves `GET /healthz?deep=1` on the product hostname, which runs one query through Hyperdrive, and `status.woven` probes it every 60 s. The query is one Hyperdrive never answers from cache, such as `SELECT now()`, not `select 1`: an immutable query can be served from cache if a config ever has caching on (every Thrust config has caching disabled today, round-27 notes above). `status.woven` does not probe this path today, because its prober is WARP-side and this is not a `.woven` name (`research/0010` §6 risk 1). The product hostname is public and not behind Access at P0 (ADR-0090, round 25), so the prober reaches it. Once Cloudflare Access gates the product hostname, the probe path needs an Access bypass, because the prober cannot pass Access (issue B16).
+2. **The SLO is measured end to end on that probe**, so cluster upgrades and every hop on the path (Hyperdrive, the VPC service, the tunnel connectors, CNPG) count against the budget.
+3. **Exit trigger.** Two breaches of the monthly budget within a quarter, or an EKS upgrade that needs more than the budget, moves the database to Option 3 (managed Postgres) or to the FR-04 outcome. This makes the Confirmation's last reopen condition ("`woven-o11y` cannot meet the availability SLO") measurable.
+
+Of Q-0094.7's items, the `status.woven` probe for the Postgres path is issue B8, and the owner of the per-PR schema wiring and the sweep of stale schemas is issue B23.
+
 ## Open Questions
 
 * Q-0094.1 — CNPG layout: HA, environments, per-PR schemas, backup retention.
 * Q-0094.2 — TLS verification between Hyperdrive and CNPG.
 * Q-0094.3 — The tunnel and the VPC service: ownership, tooling, fallback.
-* Q-0094.4 — Availability coupling to `woven-o11y`.
+* Q-0094.4 — Availability coupling to `woven-o11y`. (answered round 29, FR-10)
 
 ## More Information
 
