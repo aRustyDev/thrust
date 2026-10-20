@@ -49,7 +49,7 @@ A gap is a technique or defect class the [strategy](strategy.md) needs and nothi
 
 ## Drift
 
-Places where the repo contradicts itself or its rules. Record a new item here with the next free id (D-16) and the
+Places where the repo contradicts itself or its rules. Record a new item here with the next free id (D-17) and the
 evidence; each item is one follow-up change.
 
 | Id | Drift | Evidence |
@@ -74,3 +74,4 @@ evidence; each item is one follow-up change.
 | D-11 | `tools/spike-0006/setup-oracle.sh` did not build the editor's workspace dependencies, so `gen-all.sh` failed on a fresh checkout of the pin (`ERR_MODULE_NOT_FOUND`). | It builds them (`pnpm --filter "@plane/editor^..." run build`). |
 | D-12 | `gen-all.sh` redirected straight into committed fixtures, so a failing oracle emptied them. | Writes to a temp file and moves it into place only on success with non-empty output. |
 | D-13 | `run-oracle.sh` with no `tsx` installed ran `node ""`, printed nothing and exited 0. | Fails with a message naming `setup-oracle.sh`. |
+| D-16 | `create_is_rate_limited_per_user` assumed its 31 creates land in one rate-limit window. Every limiter (memory, and the Worker's `RateLimiterDo`) is a fixed window aligned to multiples of its length, so a burst that straddles a boundary legitimately gets up to twice the limit: request 31 got `201` on `worker-cf main` (PR #67, run 39449013259), where the generated tests' extra load made each create take about 550 ms. | The test detects a crossing from its own clock (2 s of slack for skew) and repeats once with a fresh user, whose burst starts just after the boundary; a `201` inside one window still fails. `THRUST_EXPECT_RATE_WINDOW_SECS` (default 60) tells it the window. |

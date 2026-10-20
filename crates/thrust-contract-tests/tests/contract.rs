@@ -320,17 +320,37 @@ async fn redelivered_event_is_processed_once() {
     assert_eq!(verbs, ["created", "moved", "updated"], "the duplicated event must produce ONE activity row");
 }
 
+/// Every limiter is a fixed window aligned to multiples of the window length (`start = now - now % window`), so a
+/// burst that straddles a boundary legitimately gets up to twice the limit. Such a burst says nothing about the
+/// limit; the test notices it from its own clock (with 2 s of slack for clock skew between client and target) and
+/// runs one more burst with a fresh user. That burst starts right after the boundary, so it cannot reach the next
+/// one; a limiter that lets `limit + 1` creates through inside one window fails on whichever burst shows it.
 #[tokio::test]
 async fn create_is_rate_limited_per_user() {
     let t = t();
     let f = Fixture::seed(&t).await;
     let limit = Target::create_limit();
-    let user = f.extra_member(&t).await;
-    for i in 0..limit {
-        let r = create(&t, &user, f.project_a, json!({"name": format!("r{i}")})).await;
-        assert_eq!(r.status(), 201, "request {i} of {limit} must pass");
+    let window = Target::rate_window_secs();
+    let now = || std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+    let mut over = None;
+    for attempt in 1..=2 {
+        let user = f.extra_member(&t).await;
+        let started = now();
+        for i in 0..limit {
+            let r = create(&t, &user, f.project_a, json!({"name": format!("r{i}")})).await;
+            assert_eq!(r.status(), 201, "request {i} of {limit} must pass");
+        }
+        let r = create(&t, &user, f.project_a, json!({"name": "over"})).await;
+        let ended = now();
+        let crossed = (started.saturating_sub(2)) / window != (ended + 2) / window;
+        if r.status() == 429 || !crossed {
+            over = Some(r);
+            break;
+        }
+        assert!(attempt < 2, "both bursts crossed a {window}s window boundary: a burst is too slow to test the limit");
+        eprintln!("RATELIMIT-OBSERVATION: burst {attempt} crossed a window boundary ({started}..{ended}); repeating");
     }
-    let r = create(&t, &user, f.project_a, json!({"name": "over"})).await;
+    let r = over.expect("one burst stayed inside one window");
     assert_eq!(r.status(), 429, "request {} must be limited", limit + 1);
     assert!(r.headers().contains_key("retry-after"));
     // control: the limit is per user, another member is unaffected
