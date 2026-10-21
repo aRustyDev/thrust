@@ -13,7 +13,7 @@ required check guarantees. The jobs and the command each runs are in the CI sect
 | `.github/workflows/ci.yml` (`ci`) | The pipeline. Runs on pull requests, merge-queue entries, pushes to `main` and manual dispatch |
 | `.github/workflows/contract-cell.yml` | A reusable workflow that runs one contract cell on its own runner |
 | `.github/workflows/flake-hunt.yml` | Repeats one cell 1 to 50 times (5 by default), by hand or every Monday at 03:17 UTC. It passes only if `scripts/flake-hunt.sh` prints `failures: 0 / N`, because the script ends with an `echo`, so its exit status does not say whether an iteration failed |
-| `.github/actions/setup-rust` | A composite action: the stable toolchain, the rustup targets, a keyed `rust-cache`, and optionally `worker-build` 0.8.7 and wrangler 4.123.0 |
+| `.github/actions/setup-rust` | A composite action: the stable toolchain, the rustup targets, a keyed `rust-cache`, and optionally `worker-build` 0.8.7 and wrangler 4.151.2 |
 | `.github/scripts/` | The pipeline's own logic: `classify-changes.sh`, `plan-cells.sh`, `assert-gate.sh`, and `assert-required-contexts.sh`. The `ci-scripts` job tests them with `.github/scripts/tests/` |
 
 ## One required check
