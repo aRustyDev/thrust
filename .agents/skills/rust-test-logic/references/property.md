@@ -117,9 +117,10 @@ use proptest::strategy::{Strategy, ValueTree};
 
 #[test]
 fn blob_name_strategy_reaches_every_class() {
+    const CASES: usize = 256; // the property's own case count: what one run draws
     let mut runner = proptest::test_runner::TestRunner::deterministic();
     let seen: std::collections::HashSet<_> =
-        (0..1_000).map(|_| class_of(&blob_name().new_tree(&mut runner).unwrap().current())).collect();
+        (0..CASES).map(|_| class_of(&blob_name().new_tree(&mut runner).unwrap().current())).collect();
     let missing: Vec<_> = ALL_CLASSES.iter().filter(|c| !seen.contains(c)).collect();
     assert!(missing.is_empty(), "never generated: {missing:?}");
 }
@@ -129,6 +130,12 @@ fn blob_name_strategy_reaches_every_class() {
 `ALL_CLASSES` is a `const` array of its variants. For a `model_` test, classify whole sequences instead
 (`model-based.md`, Rules).
 `TestRunner::deterministic()` keeps the check stable, so it can sit in the default loop.
+
+Sample what one run of the property draws, not more: a large sample only shows that the strategy reaches a class
+eventually, not in a run. Measured in thrust-core: 1000 samples passed the old uniform strategies, 256 (their case
+count) showed they never drew an empty name, a whitespace-only name or a one-character name `[re-run]`. A class
+that one run misses goes into the strategy as a weighted value. If the property uses `prop_assume!`, also assert
+the share of inputs it keeps.
 
 ## Async bodies
 
