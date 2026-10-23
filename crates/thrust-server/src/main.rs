@@ -11,7 +11,7 @@ use axum::Extension;
 use thrust_adapters_memory::*;
 use thrust_adapters_selfhosted::*;
 use thrust_api::{ApiConfig, InternalErrorDetail};
-use thrust_core::{ActivityConsumer, App, CoreConfig, Ports, SystemScope};
+use thrust_core::{ActivityConsumer, Argon2Params, Argon2idHasher, App, CoreConfig, Ports, SystemScope};
 use thrust_ports::*;
 use tower_http::catch_panic::CatchPanicLayer;
 
@@ -68,12 +68,21 @@ async fn main() {
         other => panic!("unknown THRUST_ADAPTERS '{other}' (this build supports: memory, postgres)"),
     };
 
+    let defaults = CoreConfig::default();
     let cfg = CoreConfig {
         create_rate_limit: env_num("THRUST_CREATE_RATE_LIMIT", 1000),
         rate_window_secs: env_num("THRUST_RATE_WINDOW_SECS", 60),
         outbox_fastpath: env_flag("THRUST_OUTBOX_FASTPATH", true),
-        ..CoreConfig::default()
+        sign_in_rate_limit: env_num("THRUST_SIGNIN_RATE_LIMIT", defaults.sign_in_rate_limit),
+        // OWASP's minimum unless the environment says otherwise (a test target sets a cheap cost)
+        argon2: Argon2Params {
+            m_cost_kib: env_num("THRUST_ARGON2_M_KIB", defaults.argon2.m_cost_kib),
+            t_cost: env_num("THRUST_ARGON2_T", defaults.argon2.t_cost),
+            p_cost: env_num("THRUST_ARGON2_P", defaults.argon2.p_cost),
+        },
+        ..defaults
     };
+    let hasher = Arc::new(Argon2idHasher::new(cfg.argon2));
 
     // This composition root mints the proof for the relay, sweeper, consumer and seed.
     let app = App::new(
@@ -85,6 +94,8 @@ async fn main() {
             clock,
             ids,
             background,
+            rng: Arc::new(NativeRng),
+            hasher,
         },
         cfg,
         SystemScope::mint(),

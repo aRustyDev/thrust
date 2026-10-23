@@ -39,6 +39,15 @@ impl IdGen for JsIdGen {
     }
 }
 
+/// The `Rng` port on `crypto.getRandomValues` (through `getrandom`'s `wasm_js` backend).
+pub struct JsRng;
+
+impl Rng for JsRng {
+    fn fill(&self, buf: &mut [u8]) -> Result<(), RngError> {
+        getrandom::fill(buf).map_err(|e| RngError(e.to_string()))
+    }
+}
+
 /// `Background` on `ctx.waitUntil`: the isolate stays alive until the future completes.
 pub struct WaitUntilBackground(pub Arc<worker::Context>);
 

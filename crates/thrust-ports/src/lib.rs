@@ -62,6 +62,38 @@ pub trait IdGen: Send + Sync {
     fn new_uuid(&self) -> Uuid;
 }
 
+/// Cryptographically secure random bytes (issue #38): session tokens, API keys, CSRF tokens, the OIDC `state`, `nonce`
+/// and PKCE verifier, and password salts. Core cannot reach an operating-system generator, so it asks this port.
+///
+/// * native: the operating system's generator (`getrandom`)
+/// * Worker: `crypto.getRandomValues`
+/// * tests: a deterministic stream, so a test can tell two tokens apart and repeat a run
+///
+/// A source that cannot deliver is an error, never a short or zero-filled buffer: the caller refuses the request.
+pub trait Rng: Send + Sync {
+    fn fill(&self, buf: &mut [u8]) -> Result<(), RngError>;
+}
+
+#[derive(Debug, Error)]
+#[error("random source failed: {0}")]
+pub struct RngError(pub String);
+
+/// Password hashing (argon2id, ADR-0050). A port so that a test can count how much hash work a request costs: an
+/// unknown email must cost the same as a wrong password, and a stopwatch would be a flaky way to show it.
+pub trait PasswordHasher: Send + Sync {
+    /// The PHC string (`$argon2id$v=19$m=...,t=...,p=...$salt$hash`) for `password` under the configured cost
+    /// parameters. `salt` comes from the [`Rng`] port. One call is one unit of hash work.
+    fn hash(&self, password: &str, salt: &[u8]) -> Result<String, PasswordError>;
+
+    /// Whether `password` matches the PHC string `phc`, under the cost parameters the string itself carries. A string
+    /// that is not a PHC hash does not match. One call is one unit of hash work, whatever the answer.
+    fn verify(&self, password: &str, phc: &str) -> bool;
+}
+
+#[derive(Debug, Error)]
+#[error("password hashing failed: {0}")]
+pub struct PasswordError(pub String);
+
 /// The executor abstraction. Core never calls `tokio::spawn`; it asks this port.
 ///
 /// * native: `tokio::spawn`

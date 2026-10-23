@@ -16,7 +16,14 @@ struct MemShared {
 
 static MEM: OnceLock<MemShared> = OnceLock::new();
 
-pub fn app(clock: Arc<dyn Clock>, ids: Arc<dyn IdGen>, background: Arc<dyn Background>, cfg: CoreConfig) -> App {
+pub fn app(
+    clock: Arc<dyn Clock>,
+    ids: Arc<dyn IdGen>,
+    background: Arc<dyn Background>,
+    rng: Arc<dyn Rng>,
+    hasher: Arc<dyn PasswordHasher>,
+    cfg: CoreConfig,
+) -> App {
     let m = MEM.get_or_init(|| MemShared {
         db: MemoryDatabase::new(),
         blobs: Arc::new(MemoryBlobStore::new()),
@@ -34,6 +41,8 @@ pub fn app(clock: Arc<dyn Clock>, ids: Arc<dyn IdGen>, background: Arc<dyn Backg
             clock,
             ids,
             background,
+            rng,
+            hasher,
         },
         cfg,
         SystemScope::mint(),

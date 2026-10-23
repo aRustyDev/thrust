@@ -46,6 +46,61 @@ impl IdGen for CounterIds {
     }
 }
 
+/// A deterministic stream of distinct bytes (Rule 6: inject randomness). Every call returns different bytes, so two
+/// tokens made one after the other differ and a run can be repeated.
+#[derive(Default)]
+pub struct CounterRng(AtomicU64);
+impl Rng for CounterRng {
+    fn fill(&self, buf: &mut [u8]) -> Result<(), RngError> {
+        for chunk in buf.chunks_mut(8) {
+            // splitmix64 over a counter: distinct, well spread, no repeats within 2^64 calls
+            let mut z = self.0.fetch_add(0x9E37_79B9_7F4A_7C15, Ordering::Relaxed).wrapping_add(0x9E37_79B9_7F4A_7C15);
+            z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+            z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+            z ^= z >> 31;
+            let bytes = z.to_le_bytes();
+            chunk.copy_from_slice(&bytes[..chunk.len()]);
+        }
+        Ok(())
+    }
+}
+
+/// A source that cannot deliver.
+pub struct FailingRng;
+impl Rng for FailingRng {
+    fn fill(&self, _buf: &mut [u8]) -> Result<(), RngError> {
+        Err(RngError("down (test)".into()))
+    }
+}
+
+/// The real argon2id at a cheap cost, counting every unit of hash work: a `hash` and a `verify` each count once.
+pub struct CountingHasher {
+    inner: Argon2idHasher,
+    pub calls: AtomicU64,
+}
+impl CountingHasher {
+    pub const CHEAP: Argon2Params = Argon2Params { m_cost_kib: 32, t_cost: 1, p_cost: 1 };
+    pub fn new() -> Self {
+        Self { inner: Argon2idHasher::new(Self::CHEAP), calls: AtomicU64::new(0) }
+    }
+    pub fn count(&self) -> u64 {
+        self.calls.load(Ordering::Relaxed)
+    }
+    pub fn reset(&self) {
+        self.calls.store(0, Ordering::Relaxed);
+    }
+}
+impl PasswordHasher for CountingHasher {
+    fn hash(&self, password: &str, salt: &[u8]) -> Result<String, PasswordError> {
+        self.calls.fetch_add(1, Ordering::Relaxed);
+        self.inner.hash(password, salt)
+    }
+    fn verify(&self, password: &str, phc: &str) -> bool {
+        self.calls.fetch_add(1, Ordering::Relaxed);
+        self.inner.verify(password, phc)
+    }
+}
+
 /// The default world runs with the outbox fast path off, so nothing should ever be spawned. Fail loudly if it is.
 pub struct NoBackground;
 impl Background for NoBackground {
@@ -135,6 +190,8 @@ pub enum Proj {
 
 pub struct World {
     pub app: App,
+    pub hasher: Arc<CountingHasher>,
+    pub db: MemoryDatabase,
     pub ws_a: WorkspaceId,
     pub ws_b: WorkspaceId,
     pub slug_a: WorkspaceSlug,
@@ -199,6 +256,7 @@ pub fn world() -> World {
 pub fn world_with(cfg: CoreConfig, queue: Arc<dyn Queue>, background: Arc<dyn Background>) -> World {
     let clock: Arc<dyn Clock> = Arc::new(FixedClock(DateTime::from_timestamp(1_760_000_000, 0).unwrap()));
     let db = MemoryDatabase::new();
+    let hasher = Arc::new(CountingHasher::new());
     let app = App::new(
         Ports {
             db: Arc::new(db.clone()),
@@ -208,12 +266,16 @@ pub fn world_with(cfg: CoreConfig, queue: Arc<dyn Queue>, background: Arc<dyn Ba
             clock,
             ids: Arc::new(CounterIds(AtomicU64::new(0))),
             background,
+            rng: Arc::new(CounterRng::default()),
+            hasher: hasher.clone(),
         },
         cfg,
         SystemScope::mint(),
     );
     let w = World {
         app,
+        hasher,
+        db: db.clone(),
         ws_a: WorkspaceId(id(0xA0)),
         ws_b: WorkspaceId(id(0xB0)),
         slug_a: WorkspaceSlug::new("ws-a"),
@@ -266,6 +328,7 @@ pub fn world_with(cfg: CoreConfig, queue: Arc<dyn Queue>, background: Arc<dyn Ba
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Outcome {
     Ok,
+    Unauthenticated,
     NotFound,
     Forbidden,
     Invalid,
@@ -276,6 +339,7 @@ pub enum Outcome {
 pub fn outcome<T>(r: &Result<T, CoreError>) -> Outcome {
     match r {
         Ok(_) => Outcome::Ok,
+        Err(CoreError::Unauthenticated) => Outcome::Unauthenticated,
         Err(CoreError::NotFound) => Outcome::NotFound,
         Err(CoreError::Forbidden) => Outcome::Forbidden,
         Err(CoreError::Invalid(_)) => Outcome::Invalid,

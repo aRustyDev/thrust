@@ -12,8 +12,8 @@ use thrust_adapters_cloudflare::*;
 use thrust_adapters_postgres::PgDatabase;
 use thrust_api::{ApiConfig, InternalErrorDetail};
 use thrust_contracts::Envelope;
-use thrust_core::{ActivityConsumer, App, CoreConfig, Ports, SystemScope};
-use thrust_ports::{Background, Clock, EventConsumer, IdGen};
+use thrust_core::{ActivityConsumer, Argon2Params, Argon2idHasher, App, CoreConfig, Ports, SystemScope};
+use thrust_ports::{Background, Clock, EventConsumer, IdGen, PasswordHasher, Rng};
 use http_body_util::BodyExt;
 use tower_service::Service;
 use worker::worker_sys::web_sys;
@@ -53,11 +53,19 @@ fn num<T: std::str::FromStr>(env: &Env, name: &str, default: T) -> T {
 }
 
 fn core_config(env: &Env) -> CoreConfig {
+    let defaults = CoreConfig::default();
     CoreConfig {
         create_rate_limit: num(env, "THRUST_CREATE_RATE_LIMIT", 1000),
         rate_window_secs: num(env, "THRUST_RATE_WINDOW_SECS", 60),
         outbox_fastpath: flag(env, "THRUST_OUTBOX_FASTPATH", true),
-        ..CoreConfig::default()
+        sign_in_rate_limit: num(env, "THRUST_SIGNIN_RATE_LIMIT", defaults.sign_in_rate_limit),
+        // OWASP's minimum unless a var says otherwise (a test target sets a cheap cost)
+        argon2: Argon2Params {
+            m_cost_kib: num(env, "THRUST_ARGON2_M_KIB", defaults.argon2.m_cost_kib),
+            t_cost: num(env, "THRUST_ARGON2_T", defaults.argon2.t_cost),
+            p_cost: num(env, "THRUST_ARGON2_P", defaults.argon2.p_cost),
+        },
+        ..defaults
     }
 }
 
@@ -82,6 +90,10 @@ fn build_app(env: &Env, background: Arc<dyn Background>) -> Result<App> {
     let clock: Arc<dyn Clock> = Arc::new(JsClock);
     let ids: Arc<dyn IdGen> = Arc::new(JsIdGen);
 
+    let cfg = core_config(env);
+    let rng: Arc<dyn Rng> = Arc::new(JsRng);
+    let hasher: Arc<dyn PasswordHasher> = Arc::new(Argon2idHasher::new(cfg.argon2));
+
     let app = match adapters.as_str() {
         "cloudflare" => {
             let connector = HyperdriveConnector::new(env.hyperdrive("HYPERDRIVE")?);
@@ -95,13 +107,15 @@ fn build_app(env: &Env, background: Arc<dyn Background>) -> Result<App> {
                     clock,
                     ids,
                     background,
+                    rng,
+                    hasher,
                 },
-                core_config(env),
+                cfg,
                 SystemScope::mint(),
             )
         }
         #[cfg(feature = "memory")]
-        "memory" => memory::app(clock, ids, background, core_config(env)),
+        "memory" => memory::app(clock, ids, background, rng, hasher, cfg),
         other => return Err(Error::RustError(format!("THRUST_ADAPTERS '{other}' is not compiled into this bundle"))),
     };
     Ok(app)

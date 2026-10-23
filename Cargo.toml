@@ -55,6 +55,13 @@ strip = "debuginfo"
 # panic=abort, while the native server must keep unwinding so CatchPanicLayer works.
 # The panic policy is recorded in research/0004.
 
+# argon2id at OWASP's minimum cost (19 MiB, t = 2) takes seconds unoptimised, and the tests pin that cost, so the hashing
+# crates are optimised even in dev and test builds (issue #38). Only these two; everything else keeps the dev profile.
+[profile.dev.package.argon2]
+opt-level = 3
+[profile.dev.package.blake2]
+opt-level = 3
+
 # Build profile cargo-mutants uses for each mutant (no debuginfo: faster incremental builds).
 # Selected by .cargo/mutants.toml. See .agents/skills/rust-test-mutation.
 [profile.mutants]

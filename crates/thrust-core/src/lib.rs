@@ -7,6 +7,9 @@ use std::sync::Arc;
 
 use sha2::{Digest, Sha256};
 use thiserror::Error;
+
+mod auth;
+pub use auth::*;
 use thrust_contracts::chrono::TimeDelta;
 use thrust_contracts::*;
 use thrust_ports::*;
@@ -24,6 +27,10 @@ pub struct Ports {
     pub clock: Arc<dyn Clock>,
     pub ids: Arc<dyn IdGen>,
     pub background: Arc<dyn Background>,
+    /// Secure random bytes: tokens, keys, salts (issue #38).
+    pub rng: Arc<dyn Rng>,
+    /// Password hashing, counted in tests (issue #38).
+    pub hasher: Arc<dyn PasswordHasher>,
 }
 
 #[derive(Debug, Clone)]
@@ -39,6 +46,13 @@ pub struct CoreConfig {
     /// `authenticate` rewrites a session's `last_seen_at` only when it is at least this old, so a busy
     /// session costs one write an hour, not one per request (ADR-0052 round 29: updated lazily).
     pub session_touch_after_secs: i64,
+    /// Cost of a new password hash. The default is OWASP's minimum; a test target sets a cheap one through its
+    /// configuration, and one test pins the default into the encoded hash (issue #38).
+    pub argon2: Argon2Params,
+    /// Sign-in attempts per email inside `sign_in_rate_window_secs`, counted before any hashing (so a refused attempt
+    /// costs nothing, and a known and an unknown email are limited alike).
+    pub sign_in_rate_limit: u32,
+    pub sign_in_rate_window_secs: u64,
 }
 
 impl Default for CoreConfig {
@@ -50,6 +64,9 @@ impl Default for CoreConfig {
             max_attachment_bytes: 5 * 1024 * 1024,
             session_ttl_secs: 30 * 24 * 60 * 60,
             session_touch_after_secs: 60 * 60,
+            argon2: Argon2Params::OWASP_MINIMUM,
+            sign_in_rate_limit: 10,
+            sign_in_rate_window_secs: 60,
         }
     }
 }
@@ -487,6 +504,7 @@ pub async fn outbox_depth(app: &App) -> Result<u64, CoreError> {
 /// Test support behind `/internal/seed`: insert fixture rows.
 pub async fn seed(app: &App, fixture: &SeedFixture) -> Result<(), CoreError> {
     app.ports.db.seed(&app.system, fixture).await?;
+    auth::seed_identities(app, fixture).await?;
     // The fixture carries plaintext tokens; the database only ever sees their hashes.
     let now = app.ports.clock.now();
     for s in &fixture.sessions {
