@@ -202,6 +202,24 @@ pub(crate) async fn seed_identities(app: &App, f: &SeedFixture) -> Result<(), Co
             })
             .await?;
     }
+    for k in &f.api_keys {
+        let id = ApiKeyId(app.ports.ids.new_uuid());
+        app.ports
+            .db
+            .insert_api_key(&NewApiKey {
+                id,
+                user_id: k.user_id,
+                token_hash: crate::hash_token(&k.token),
+                prefix: k.token.chars().take(API_KEY_PREFIX_LEN).collect(),
+                label: k.label.clone(),
+                created_at: now,
+                expires_at: k.expires_at,
+            })
+            .await?;
+        if k.revoked {
+            app.ports.db.revoke_api_key(k.user_id, id, now).await?;
+        }
+    }
     Ok(())
 }
 
@@ -210,6 +228,8 @@ pub(crate) async fn seed_identities(app: &App, f: &SeedFixture) -> Result<(), Co
 pub struct Credentials<'a> {
     /// `Authorization: Bearer <session token>`.
     pub bearer: Option<&'a str>,
+    /// `X-Api-Key`.
+    pub api_key: Option<&'a str>,
     /// The session cookie's value.
     pub session_cookie: Option<&'a str>,
     /// The CSRF cookie's value, and the token the request sent in its header.
@@ -224,6 +244,8 @@ pub struct Credentials<'a> {
 pub enum Via {
     /// A session, by its digest (what sign-out revokes).
     Session(TokenHash),
+    /// An API key, by its id.
+    ApiKey(ApiKeyId),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -260,13 +282,18 @@ pub fn new_csrf_token(app: &App) -> Result<String, CoreError> {
     random_hex(app, 16)
 }
 
-/// The credential of a request, and who it belongs to. A bearer token wins when there is one (it cannot be an ambient
-/// credential, so it needs no CSRF token); otherwise the session cookie counts, and a mutation made with it must carry
-/// the CSRF token. See `tests/credentials.rs` for the table.
+/// The credential of a request, and who it belongs to. A bearer token wins when there is one, then an API key (neither
+/// can be an ambient credential, so neither needs a CSRF token); otherwise the session cookie counts, and a mutation
+/// made with it must carry the CSRF token. See `tests/credentials.rs` and `tests/api_keys.rs` for the tables.
 pub async fn authenticate_request(app: &App, c: &Credentials<'_>) -> Result<Authenticated, CoreError> {
     if let Some(token) = c.bearer {
         let principal = crate::authenticate(app, token).await?;
         return Ok(Authenticated { principal, via: Via::Session(crate::hash_token(token)) });
+    }
+    // an empty header is no key (Plane: `if not token`), and only a missing key is a 401
+    if let Some(key) = c.api_key.filter(|k| !k.is_empty()) {
+        let (principal, id) = authenticate_api_key(app, key).await?;
+        return Ok(Authenticated { principal, via: Via::ApiKey(id) });
     }
     if let Some(token) = c.session_cookie {
         let principal = crate::authenticate(app, token).await?;
@@ -276,4 +303,75 @@ pub async fn authenticate_request(app: &App, c: &Credentials<'_>) -> Result<Auth
         return Ok(Authenticated { principal, via: Via::Session(crate::hash_token(token)) });
     }
     Err(CoreError::Unauthenticated)
+}
+
+// --- API keys (ADR-0052 K1) ---------------------------------------------------------------------------------------
+
+/// What every key starts with, so one can be recognised in a log or a leaked file (and found by a secret scanner).
+const API_KEY_MARKER: &str = "thrk_";
+/// The marker and the first four characters of the secret: all that is ever shown again.
+const API_KEY_PREFIX_LEN: usize = 9;
+const MAX_LABEL_LEN: usize = 100;
+
+/// An `X-Api-Key` to its user, or [`CoreError::InvalidApiKey`]: the key must exist, not be revoked, not be expired, and
+/// belong to an active user, and the lookup does not say which of those failed. A successful use stamps `last_used_at`
+/// through [`Background`], at most once per `session_touch_after_secs`, so a busy key costs one write an hour and a
+/// request never waits for it.
+async fn authenticate_api_key(app: &App, key: &str) -> Result<(Principal, ApiKeyId), CoreError> {
+    let now = app.ports.clock.now();
+    let live = app.ports.db.api_key(&crate::hash_token(key), now).await?.ok_or(CoreError::InvalidApiKey)?;
+    let stale = live
+        .last_used_at
+        .is_none_or(|t| now - t >= thrust_contracts::chrono::TimeDelta::seconds(app.cfg.session_touch_after_secs));
+    if stale {
+        let db = app.ports.db.clone();
+        app.ports.background.spawn(Box::pin(async move {
+            // bookkeeping: a failed write changes nothing the caller sees
+            let _ = db.touch_api_key(live.id, now).await;
+        }));
+    }
+    Ok((Principal { user_id: live.user_id }, live.id))
+}
+
+/// Make a key for `who`: `thrk_` and 256 random bits (hex), stored as its SHA-256 only, so the token is in the answer
+/// to this call and nowhere else. The expiry, when there is one, must be in the future.
+pub async fn create_api_key(app: &App, who: &Principal, req: CreateApiKeyRequest) -> Result<CreatedApiKey, CoreError> {
+    let label = req.label.unwrap_or_default();
+    if label.chars().count() > MAX_LABEL_LEN {
+        return Err(CoreError::Invalid(format!("a label is at most {MAX_LABEL_LEN} characters")));
+    }
+    let now = app.ports.clock.now();
+    if req.expires_at.is_some_and(|e| e <= now) {
+        return Err(CoreError::Invalid("expires_at must be in the future".into()));
+    }
+    let token = format!("{API_KEY_MARKER}{}", random_hex(app, 32)?);
+    let prefix = token[..API_KEY_PREFIX_LEN].to_string();
+    let id = ApiKeyId(app.ports.ids.new_uuid());
+    app.ports
+        .db
+        .insert_api_key(&NewApiKey {
+            id,
+            user_id: who.user_id,
+            token_hash: crate::hash_token(&token),
+            prefix: prefix.clone(),
+            label: label.clone(),
+            created_at: now,
+            expires_at: req.expires_at,
+        })
+        .await?;
+    Ok(CreatedApiKey { id, token, prefix, label, created_at: now, expires_at: req.expires_at })
+}
+
+pub async fn list_api_keys(app: &App, who: &Principal) -> Result<Vec<ApiKeyInfo>, CoreError> {
+    Ok(app.ports.db.list_api_keys(who.user_id).await?)
+}
+
+/// Revoke `who`'s key `id`: effective on the next request. Idempotent; a key that is unknown or someone else's is
+/// `NotFound` (a caller cannot probe for other users' key ids).
+pub async fn revoke_api_key(app: &App, who: &Principal, id: ApiKeyId) -> Result<(), CoreError> {
+    if app.ports.db.revoke_api_key(who.user_id, id, app.ports.clock.now()).await? {
+        Ok(())
+    } else {
+        Err(CoreError::NotFound)
+    }
 }

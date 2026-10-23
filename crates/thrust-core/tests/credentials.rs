@@ -124,6 +124,7 @@ fn the_credential_and_the_csrf_rule_decide_the_outcome(
     let w = credential_world();
     let c = Credentials {
         bearer: cred.bearer(),
+        api_key: None,
         session_cookie: cred.cookie(),
         csrf_cookie: csrf.cookie(),
         csrf_header: csrf.header(),

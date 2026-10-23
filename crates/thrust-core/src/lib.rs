@@ -102,6 +102,10 @@ pub enum CoreError {
     /// A cookie-authenticated mutation without a matching CSRF token (ADR-0052, double submit).
     #[error("csrf token missing or wrong")]
     Csrf,
+    /// An `X-Api-Key` that does not resolve: unknown, revoked, expired, or its user is inactive. The oracle answers 403
+    /// for all four and 401 only for a missing key (ADR-0033, round 27), so the lookup does not say which.
+    #[error("given API key is not valid")]
+    InvalidApiKey,
     #[error("not found")]
     NotFound,
     #[error("conflict: {0}")]

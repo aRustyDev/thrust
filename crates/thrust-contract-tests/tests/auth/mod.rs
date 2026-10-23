@@ -280,3 +280,177 @@ async fn a_deactivated_users_session_is_rejected() {
     let r = t.admin_post("/internal/set-user-active", &json!({ "user_id": UserId(uuid::Uuid::new_v4()), "active": false })).await;
     assert_eq!(r.status(), 404);
 }
+
+// ---------------------------------------------------------------------------------------------------------------
+// API keys (ADR-0052 K1, ADR-0033 round 27): `X-Api-Key`, shown once, stored hashed. Statuses reproduce the oracle:
+// only a MISSING key is 401; an invalid, expired, revoked or inactive-user key is 403.
+// ---------------------------------------------------------------------------------------------------------------
+
+const API_KEY_HEADER: &str = "x-api-key";
+
+fn keys_url(t: &Target) -> String {
+    t.url(&format!("{SLICE_PREFIX}/api-keys"))
+}
+
+async fn create_key(t: &Target, who: &User, body: Value) -> reqwest::Response {
+    t.http.post(keys_url(t)).bearer_auth(&who.token).json(&body).send().await.unwrap()
+}
+
+async fn create_key_ok(t: &Target, who: &User, body: Value) -> CreatedApiKey {
+    let r = create_key(t, who, body).await;
+    assert_eq!(r.status(), 201, "create key");
+    r.json().await.unwrap()
+}
+
+/// The status of a work-item list made with `X-Api-Key: key` (a header value that is `None` sends no header).
+async fn list_with_key(t: &Target, at: &At, key: Option<&str>) -> u16 {
+    let mut r = t.http.get(t.url(&wi_path(at)));
+    if let Some(k) = key {
+        r = r.header(API_KEY_HEADER, k);
+    }
+    r.send().await.unwrap().status().as_u16()
+}
+
+async fn seed_keys(t: &Target, keys: Vec<SeedApiKey>) {
+    let f = SeedFixture { api_keys: keys, ..SeedFixture::default() };
+    let r = t.admin_post("/internal/seed", &serde_json::to_value(&f).unwrap()).await;
+    assert_eq!(r.status(), 204, "seed keys: {:?}", r.text().await);
+}
+
+/// A key is a token with a visible prefix, returned once, accepted as `X-Api-Key` for reads and mutations without a
+/// CSRF token, and never shown again; a session is needed to manage keys, a key is not.
+#[tokio::test]
+async fn an_api_key_is_shown_once_and_authenticates_as_x_api_key() {
+    let t = t();
+    let f = Fixture::seed(&t).await;
+    let r = create_key(&t, &f.member_a, json!({ "label": "ci" })).await;
+    assert_eq!(r.status(), 201);
+    assert_eq!(r.headers().get("cache-control").and_then(|v| v.to_str().ok()), Some("no-store"));
+    let text = r.text().await.unwrap();
+    let key: CreatedApiKey = serde_json::from_str(&text).unwrap();
+    let secret = key.token.strip_prefix("thrk_").expect("the visible marker");
+    assert!(is_hex(secret, 64), "256 random bits, hex: {}", key.token);
+    assert_eq!((key.prefix.as_str(), key.label.as_str()), (&key.token[..9], "ci"));
+
+    // it authenticates, for a read and for a mutation (no CSRF token: a key is not an ambient credential), as its owner
+    assert_eq!(list_with_key(&t, &f.a, Some(&key.token)).await, 200);
+    let r = t.http.post(t.url(&wi_path(&f.a))).header(API_KEY_HEADER, &key.token).json(&json!({"name": "by key"})).send().await.unwrap();
+    assert_eq!(r.status(), 201);
+    assert_eq!(r.json::<WorkItem>().await.unwrap().created_by, f.member_a.id);
+    let me = t.http.get(auth_url(&t, "/session")).header(API_KEY_HEADER, &key.token).send().await.unwrap();
+    assert_eq!(me.json::<SessionInfo>().await.unwrap(), SessionInfo { user_id: f.member_a.id, credential: CredentialKind::ApiKey });
+    // it carries its owner's rights and no more: a guest's key cannot write
+    let guest_key = create_key_ok(&t, &f.guest_a, json!({})).await;
+    let r = t.http.post(t.url(&wi_path(&f.a))).header(API_KEY_HEADER, &guest_key.token).json(&json!({"name": "x"})).send().await.unwrap();
+    assert_eq!(r.status(), 403, "a guest's key is a guest");
+    assert_eq!(list_with_key(&t, &f.a, Some(&guest_key.token)).await, 200);
+
+    // listed without the token, with the prefix; `last_used_at` is stamped after the response
+    let r = t.http.get(keys_url(&t)).bearer_auth(&f.member_a.token).send().await.unwrap();
+    assert_eq!(r.status(), 200);
+    let text = r.text().await.unwrap();
+    assert!(!text.contains(secret) && !text.contains(&key.token), "the listing shows the token: {text}");
+    let listed: Vec<ApiKeyInfo> = serde_json::from_str(&text).unwrap();
+    assert_eq!(listed.len(), 1);
+    assert_eq!((listed[0].id, listed[0].prefix.as_str(), listed[0].label.as_str()), (key.id, key.prefix.as_str(), "ci"));
+    eventually("the key's last use is recorded", std::time::Duration::from_secs(15), || async {
+        let r = t.http.get(keys_url(&t)).bearer_auth(&f.member_a.token).send().await.unwrap();
+        let keys: Vec<ApiKeyInfo> = r.json().await.unwrap();
+        keys[0].last_used_at.map(|_| ())
+    })
+    .await;
+    // another user's listing has none of it
+    let theirs: Vec<ApiKeyInfo> = t.http.get(keys_url(&t)).bearer_auth(&f.admin_a.token).send().await.unwrap().json().await.unwrap();
+    assert!(theirs.is_empty());
+
+    // controls: a missing key is the only 401; an unknown one, and an empty header, are not what they look like
+    assert_eq!(list_with_key(&t, &f.a, None).await, 401, "no key");
+    assert_eq!(list_with_key(&t, &f.a, Some("")).await, 401, "an empty header is no key");
+    assert_eq!(list_with_key(&t, &f.a, Some("thrk_not-a-key")).await, 403, "an unknown key");
+    // control: a key manages nothing: it cannot mint keys, list them, or end the owner's sessions
+    let with_key = |m: Method, url: String| t.http.request(m, url).header(API_KEY_HEADER, &key.token);
+    assert_eq!(with_key(Method::POST, keys_url(&t)).json(&json!({})).send().await.unwrap().status(), 401, "a key mints no key");
+    assert_eq!(with_key(Method::GET, keys_url(&t)).send().await.unwrap().status(), 401);
+    assert_eq!(with_key(Method::POST, auth_url(&t, "/sign-out-all")).send().await.unwrap().status(), 401);
+    assert_eq!(list(&t, &f.member_a, &f.a, None).await.status(), 200, "the owner's session was not ended");
+    // control: minting a key with the cookie is a mutation, so it needs the CSRF token
+    let s = t.sign_in(&f.admin_a).await;
+    let r = as_browser(&t, Method::POST, keys_url(&t), &s, Csrf::Absent).json(&json!({})).send().await.unwrap();
+    assert_eq!(r.status(), 403);
+    let r = as_browser(&t, Method::POST, keys_url(&t), &s, Csrf::Matching).json(&json!({})).send().await.unwrap();
+    assert_eq!(r.status(), 201);
+    // a bad request is a 400, not a key
+    let past = serde_json::to_value(CreateApiKeyRequest { label: None, expires_at: Some(thrust_contracts::chrono::DateTime::from_timestamp(1_000_000_000, 0).unwrap()) }).unwrap();
+    assert_eq!(create_key(&t, &f.member_a, past).await.status(), 400, "an expiry in the past");
+    assert_eq!(create_key(&t, &f.member_a, json!({ "label": "y".repeat(101) })).await.status(), 400, "a label of 101 characters");
+}
+
+/// ADR-0052 (Tests) with the status corrected by this issue: a revoked key is rejected on the NEXT request with Plane's
+/// status, 403 (the oracle answers 403 for an invalid, expired, revoked or inactive-user key, ADR-0033 round 27; ADR-0052
+/// said 401), while an unrevoked key still gets 200.
+#[tokio::test]
+async fn a_revoked_key_is_rejected_on_the_next_request_with_403() {
+    let t = t();
+    let f = Fixture::seed(&t).await;
+    let (a, b) = (create_key_ok(&t, &f.member_a, json!({})).await, create_key_ok(&t, &f.member_a, json!({})).await);
+    let theirs = create_key_ok(&t, &f.admin_a, json!({})).await;
+    for k in [&a, &b, &theirs] {
+        assert_eq!(list_with_key(&t, &f.a, Some(&k.token)).await, 200, "before the revoke");
+    }
+    let delete = |who: &User, id: ApiKeyId| {
+        let url = format!("{}/{id}", keys_url(&t));
+        let r = t.http.delete(url).bearer_auth(&who.token);
+        async move { r.send().await.unwrap().status().as_u16() }
+    };
+    // someone else cannot revoke it (404: nothing to learn about other users' keys), and it keeps working
+    assert_eq!(delete(&f.admin_a, a.id).await, 404);
+    assert_eq!(list_with_key(&t, &f.a, Some(&a.token)).await, 200, "another user's revoke must not end the key");
+    assert_eq!(delete(&f.member_a, ApiKeyId(uuid::Uuid::new_v4())).await, 404, "an unknown id");
+    // the owner revokes it: 403 from the next request on, with Plane's status and not 401
+    assert_eq!(delete(&f.member_a, a.id).await, 204);
+    assert_eq!(list_with_key(&t, &f.a, Some(&a.token)).await, 403, "the revoked key");
+    let r = t.http.post(t.url(&wi_path(&f.a))).header(API_KEY_HEADER, &a.token).json(&json!({"name": "x"})).send().await.unwrap();
+    assert_eq!(r.status(), 403, "a mutation with it");
+    assert_eq!(error_code(r).await, "invalid_api_key");
+    // controls: the owner's other key and another user's key are unaffected (so the 403 is the revoke, not the route)
+    assert_eq!(list_with_key(&t, &f.a, Some(&b.token)).await, 200, "an unrevoked key of the same user");
+    assert_eq!(list_with_key(&t, &f.a, Some(&theirs.token)).await, 200, "another user's key");
+    // revoking again is a 204, and the listing shows both keys with the first revocation
+    assert_eq!(delete(&f.member_a, a.id).await, 204);
+    let listed: Vec<ApiKeyInfo> = t.http.get(keys_url(&t)).bearer_auth(&f.member_a.token).send().await.unwrap().json().await.unwrap();
+    assert_eq!(listed.iter().map(|k| (k.id, k.revoked_at.is_some())).collect::<Vec<_>>(), [(a.id, true), (b.id, false)]);
+    // the key's own request did not revive anything: still 403
+    assert_eq!(list_with_key(&t, &f.a, Some(&a.token)).await, 403);
+}
+
+/// An expired key and a deactivated user's key are 403 too, and the live ones next to them are 200.
+#[tokio::test]
+async fn an_expired_key_and_a_deactivated_users_key_are_rejected_with_403() {
+    let t = t();
+    let f = Fixture::seed(&t).await;
+    let token = |n: &str| format!("thrk_{n}-{}", uuid::Uuid::new_v4().simple());
+    let (expired, live, forever, inactive_owner) = (token("expired"), token("live"), token("forever"), token("inactive"));
+    let in_a_day = thrust_contracts::chrono::DateTime::from_timestamp(4_000_000_000, 0).unwrap();
+    let in_the_past = thrust_contracts::chrono::DateTime::from_timestamp(1_000_000_000, 0).unwrap();
+    let key = |token: &String, user: &User, expires_at| SeedApiKey { token: token.clone(), user_id: user.id, label: "seeded".into(), expires_at, revoked: false };
+    seed_keys(
+        &t,
+        vec![
+            key(&expired, &f.member_a, Some(in_the_past)),
+            key(&live, &f.member_a, Some(in_a_day)),
+            key(&forever, &f.member_a, None),
+            key(&inactive_owner, &f.guest_a, None),
+        ],
+    )
+    .await;
+    assert_eq!(list_with_key(&t, &f.a, Some(&expired)).await, 403, "an expired key");
+    assert_eq!(list_with_key(&t, &f.a, Some(&live)).await, 200, "control: a key that expires later");
+    assert_eq!(list_with_key(&t, &f.a, Some(&forever)).await, 200, "control: a key that never expires");
+
+    assert_eq!(list_with_key(&t, &f.a, Some(&inactive_owner)).await, 200, "before the deactivation");
+    t.set_user_active(f.guest_a.id, false).await;
+    assert_eq!(list_with_key(&t, &f.a, Some(&inactive_owner)).await, 403, "a deactivated user's key");
+    assert_eq!(list_with_key(&t, &f.a, Some(&live)).await, 200, "control: another user's key");
+    t.set_user_active(f.guest_a.id, true).await;
+    assert_eq!(list_with_key(&t, &f.a, Some(&inactive_owner)).await, 200, "reactivated");
+}

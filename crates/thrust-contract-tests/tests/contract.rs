@@ -53,8 +53,11 @@ fn slice_routes() -> [(Method, &'static str); 8] {
 /// Every slice route that is not under a project: a method and the part after the prefix (issue #38's identity routes).
 /// A route added to `thrust_api::router()` later must be added here, too. They are called with no credentials: sign-out
 /// and sign-out-everywhere with a real token would end the very sessions the rest of the test uses.
-fn slice_auth_routes() -> [(Method, &'static str); 5] {
+fn slice_auth_routes() -> [(Method, &'static str); 8] {
     [
+        (Method::POST, "/api-keys"),
+        (Method::GET, "/api-keys"),
+        (Method::DELETE, "/api-keys/00000000-0000-0000-0000-000000000000"),
         (Method::POST, "/auth/sign-in/email"),
         (Method::POST, "/auth/sign-out"),
         (Method::POST, "/auth/sign-out-all"),

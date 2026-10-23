@@ -53,6 +53,7 @@ impl IntoResponse for ApiError {
         let (status, code, msg, detail) = match &self.0 {
             CoreError::Unauthenticated => (StatusCode::UNAUTHORIZED, "unauthenticated", "missing or invalid credentials".to_string(), None),
             CoreError::Forbidden => (StatusCode::FORBIDDEN, "forbidden", "insufficient role".to_string(), None),
+            CoreError::InvalidApiKey => (StatusCode::FORBIDDEN, "invalid_api_key", "Given API token is not valid".to_string(), None),
             CoreError::Csrf => (StatusCode::FORBIDDEN, "csrf_failed", "csrf token missing or wrong".to_string(), None),
             CoreError::NotFound => (StatusCode::NOT_FOUND, "not_found", "not found".to_string(), None),
             CoreError::Conflict(m) => (StatusCode::CONFLICT, "conflict", m.clone(), None),
@@ -91,6 +92,8 @@ pub const SESSION_COOKIE: &str = "__Host-thrust_session";
 /// The double-submit CSRF cookie, and the header a client sends the same value in (the name Django and Plane use).
 pub const CSRF_COOKIE: &str = "__Host-thrust_csrf";
 pub const CSRF_HEADER: &str = "x-csrftoken";
+/// Plane's API key header (ADR-0031, ADR-0052 K1).
+pub const API_KEY_HEADER: &str = "x-api-key";
 
 /// The value of cookie `name` in the request's `Cookie` headers (the first one, if a client sent it twice).
 fn cookie_value<'a>(headers: &'a HeaderMap, name: &str) -> Option<&'a str> {
@@ -109,6 +112,7 @@ fn credentials(parts: &Parts) -> thrust_core::Credentials<'_> {
     thrust_core::Credentials {
         // an `Authorization` header that is not a bearer token is not a credential here
         bearer: h.get(AUTHORIZATION).and_then(|v| v.to_str().ok()).and_then(|v| v.strip_prefix("Bearer ")),
+        api_key: h.get(API_KEY_HEADER).and_then(|v| v.to_str().ok()).filter(|k| !k.is_empty()),
         session_cookie: cookie_value(h, SESSION_COOKIE),
         csrf_cookie: cookie_value(h, CSRF_COOKIE),
         csrf_header: h.get(CSRF_HEADER).and_then(|v| v.to_str().ok()),
@@ -261,9 +265,18 @@ async fn sign_in(Extension(app): Extension<App>, Json(req): Json<SignInRequest>)
     Ok(resp)
 }
 
+/// The routes that manage the account itself (sign-out, API keys) take a session, not an API key: a leaked key must not
+/// be able to end the user's sessions or mint more keys. A key presented there is as good as no credential.
+fn require_session(a: &thrust_core::Authenticated) -> Result<thrust_ports::TokenHash, ApiError> {
+    match a.via {
+        thrust_core::Via::Session(hash) => Ok(hash),
+        thrust_core::Via::ApiKey(_) => Err(ApiError(CoreError::Unauthenticated)),
+    }
+}
+
 /// A session credential only: the cookie (with the CSRF token) or the bearer token. Signing out revokes that one session.
 async fn sign_out(AuthedVia(a): AuthedVia, Extension(app): Extension<App>) -> ApiResult<Response<Body>> {
-    let thrust_core::Via::Session(hash) = a.via;
+    let hash = require_session(&a)?;
     thrust_core::sign_out(&app, &hash).await?;
     let mut resp = StatusCode::NO_CONTENT.into_response();
     add_cookies(&mut resp, &cleared_cookies());
@@ -271,6 +284,7 @@ async fn sign_out(AuthedVia(a): AuthedVia, Extension(app): Extension<App>) -> Ap
 }
 
 async fn sign_out_all(AuthedVia(a): AuthedVia, Extension(app): Extension<App>) -> ApiResult<Response<Body>> {
+    require_session(&a)?;
     let n = thrust_core::sign_out_everywhere(&app, &a.principal).await?;
     let mut resp = Json(serde_json::json!({ "revoked": n })).into_response();
     add_cookies(&mut resp, &cleared_cookies());
@@ -285,9 +299,38 @@ async fn csrf(Extension(app): Extension<App>) -> ApiResult<Response<Body>> {
     Ok(resp)
 }
 
+/// Make an API key. A session credential only (a key cannot mint keys). The token is in this response and nowhere else.
+async fn create_api_key(
+    AuthedVia(a): AuthedVia,
+    Extension(app): Extension<App>,
+    Json(req): Json<CreateApiKeyRequest>,
+) -> ApiResult<Response<Body>> {
+    require_session(&a)?;
+    let key = thrust_core::create_api_key(&app, &a.principal, req).await?;
+    let mut resp = (StatusCode::CREATED, Json(key)).into_response();
+    resp.headers_mut().insert(CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    Ok(resp)
+}
+
+async fn list_api_keys(AuthedVia(a): AuthedVia, Extension(app): Extension<App>) -> ApiResult<Json<Vec<ApiKeyInfo>>> {
+    require_session(&a)?;
+    Ok(Json(thrust_core::list_api_keys(&app, &a.principal).await?))
+}
+
+async fn revoke_api_key(
+    AuthedVia(a): AuthedVia,
+    Extension(app): Extension<App>,
+    Path(id): Path<ApiKeyId>,
+) -> ApiResult<StatusCode> {
+    require_session(&a)?;
+    thrust_core::revoke_api_key(&app, &a.principal, id).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
 async fn session_info(AuthedVia(a): AuthedVia) -> ApiResult<Json<SessionInfo>> {
     let credential = match a.via {
         thrust_core::Via::Session(_) => CredentialKind::Session,
+        thrust_core::Via::ApiKey(_) => CredentialKind::ApiKey,
     };
     Ok(Json(SessionInfo { user_id: a.principal.user_id, credential }))
 }
@@ -434,6 +477,8 @@ pub fn router() -> Router {
         .route(&auth_path("/sign-out-all"), post(sign_out_all))
         .route(&auth_path("/csrf"), get(csrf))
         .route(&auth_path("/session"), get(session_info))
+        .route(&format!("{SLICE_PREFIX}/api-keys"), post(create_api_key).get(list_api_keys))
+        .route(&format!("{SLICE_PREFIX}/api-keys/{{id}}"), delete(revoke_api_key))
         .route("/internal/outbox-depth", get(outbox_depth))
         .route("/internal/inject-event", post(inject_event))
         .route(&slice_path("/work-items"), post(create_work_item).get(list_work_items))

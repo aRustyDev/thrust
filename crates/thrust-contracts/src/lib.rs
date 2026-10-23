@@ -350,6 +350,26 @@ pub struct SessionInfo {
     pub credential: CredentialKind,
 }
 
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct CreateApiKeyRequest {
+    #[serde(default)]
+    pub label: Option<String>,
+    /// Must be in the future. `None`: the key does not expire.
+    #[serde(default)]
+    pub expires_at: Option<Timestamp>,
+}
+
+/// The one response that carries the token. Only its SHA-256 is stored, so it cannot be shown again.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CreatedApiKey {
+    pub id: ApiKeyId,
+    pub token: String,
+    pub prefix: String,
+    pub label: String,
+    pub created_at: Timestamp,
+    pub expires_at: Option<Timestamp>,
+}
+
 /// A key as listed: everything but the token.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ApiKeyInfo {
