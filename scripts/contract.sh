@@ -3,6 +3,8 @@
 #
 #   scripts/contract.sh <target> [pass]
 #     target: native-memory | native-pg | worker-memory | worker-cf
+#             native-sqlite   (spike 0002, opt-in: NOT in contract-all.sh, so not a required CI check until ADR-0040
+#                              decides) the SQLite adapter on rusqlite, the twin of the worker-do cell
 #     pass:   main (default)   normal config, outbox fast path ON
 #             sweeper          fast path OFF; asserts the cron sweeper does the delivery
 #             panic            alone against a fresh target (a Worker panic resets the isolate)
@@ -24,7 +26,7 @@
 # by name: other sessions on this machine run their own wrangler/workerd.
 set -u
 
-TARGET="${1:?usage: contract.sh <native-memory|native-pg|worker-memory|worker-cf> [main|sweeper|panic]}"
+TARGET="${1:?usage: contract.sh <native-memory|native-pg|native-sqlite|worker-memory|worker-cf> [main|sweeper|panic]}"
 PASS="${2:-main}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 LOGDIR="${THRUST_LOGDIR:-$ROOT/target/contract-logs}"
@@ -67,6 +69,7 @@ esac
 
 SERVER_PID=""
 PG_CONTAINER=""
+SQLITE_DIR=""
 
 kill_tree() {
   for child in $(pgrep -P "$1" 2>/dev/null); do
@@ -84,6 +87,9 @@ cleanup() {
   if [ -n "$PG_CONTAINER" ]; then
     docker rm -f "$PG_CONTAINER" >/dev/null 2>&1 || true
   fi
+  if [ -n "$SQLITE_DIR" ]; then
+    rm -rf "$SQLITE_DIR"
+  fi
 }
 trap cleanup EXIT INT TERM
 
@@ -92,6 +98,7 @@ trap cleanup EXIT INT TERM
 case "$TARGET" in
   native-memory) KIND=native; ADAPTERS=memory ;;
   native-pg) KIND=native; ADAPTERS=postgres ;;
+  native-sqlite) KIND=native; ADAPTERS=sqlite ;;
   worker-memory) KIND=worker; ADAPTERS=memory ;;
   worker-cf) KIND=worker; ADAPTERS=cloudflare ;;
   *) echo "unknown target $TARGET" >&2; exit 2 ;;
@@ -120,6 +127,12 @@ if [ "$ADAPTERS" = "postgres" ] || [ "$ADAPTERS" = "cloudflare" ]; then
   # Apply the schema through the very same SQL the adapter ships (no hand-copied DDL).
   "$ROOT/scripts/rs" cargo run --quiet --manifest-path "$ROOT/Cargo.toml" -p thrust-adapters-postgres --features native --bin migrate \
     >"$LOG.migrate.log" 2>&1 || { echo "migrate failed, see $LOG.migrate.log" >&2; exit 3; }
+fi
+
+if [ "$ADAPTERS" = "sqlite" ]; then
+  # A database FILE (write-ahead log and all), private to this run: removed by `cleanup`.
+  SQLITE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/thrust-sqlite.XXXXXX")"
+  export THRUST_SQLITE_PATH="$SQLITE_DIR/thrust.db"
 fi
 
 if [ "$KIND" = "native" ]; then

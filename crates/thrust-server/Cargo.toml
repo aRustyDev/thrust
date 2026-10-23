@@ -13,7 +13,9 @@ path = "src/main.rs"
 [features]
 # Pass-through to the memory adapter's control-run mutants (scripts/mutants.sh).
 mutant_ignore_tenant = ["thrust-adapters-memory/mutant_ignore_tenant"]
-mutant_dup_sequence = ["thrust-adapters-memory/mutant_dup_sequence"]
+mutant_dup_sequence = ["thrust-adapters-memory/mutant_dup_sequence", "thrust-adapters-sqlite/mutant_dup_sequence"]
+# SQLite adapter only: transactions are not serialised (the 50-writer test must catch it).
+mutant_no_gate = ["thrust-adapters-sqlite/mutant_no_gate"]
 mutant_no_activity_dedupe = ["thrust-adapters-memory/mutant_no_activity_dedupe"]
 mutant_ignore_revoked = ["thrust-adapters-memory/mutant_ignore_revoked"]
 
@@ -25,6 +27,7 @@ thrust-api = { workspace = true }
 thrust-adapters-memory = { workspace = true }
 thrust-adapters-selfhosted = { workspace = true }
 thrust-adapters-postgres = { workspace = true }
+thrust-adapters-sqlite = { workspace = true, features = ["native"] }
 serde_json = { workspace = true }
 # The native server is the only place axum's tokio/http1 features are switched on.
 axum = { version = "0.8", default-features = false, features = ["json", "query", "matched-path", "tokio", "http1"] }
