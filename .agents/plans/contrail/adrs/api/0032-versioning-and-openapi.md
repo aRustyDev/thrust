@@ -83,6 +83,15 @@ only wire-compatible routes and the breaking-change diff applies to every route 
 that round 26 left open needs wire-compatible v1 routes; the first are projects, states, labels and work items with
 the oracle gate (issue #58, M1).
 
+## Update — issue #47 (2026-10-23)
+
+Issue #47 moved the slice's non-Plane routes out of `/api/v1`, as the round-29 note said it would. They are mounted
+under `/api/_slice` (`SLICE_PREFIX` and `slice_path` in `crates/thrust-api/src/lib.rs`; the range
+`crates/thrust-api/src/lib.rs:269-293` that the note cites has moved). The `/api/v1` prefix therefore holds no route
+today, and the first ones, those of #58, are wire-compatible by construction and gated by the oracle, so the
+breaking-change diff will apply to every route under it. ADR-0034 (issue #47 note) has the facts and where the edge
+patterns stand.
+
 ## Open Questions
 
 * Q-0032 — source of truth and versioning policy.

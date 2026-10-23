@@ -93,6 +93,26 @@ then. The slice's own routes (`crates/thrust-api/src/lib.rs:269-293`) are mounte
 Plane-shaped nor documented; they move out of that prefix, which is reserved for wire-compatible routes (issue #47,
 M0). Keeping Plane-shaped request and response types out of the shared crates is FR-20, tracked as issue #52.
 
+## Update — issue #47 (2026-10-23)
+
+Issue #47 moved the slice's routes out of the `/api/v1` prefix, which the round-29 note reserved for wire-compatible
+routes. The facts, with their locations on the branch that closes #47:
+
+- **The prefix is `/api/_slice`.** `SLICE_PREFIX` in `crates/thrust-api/src/lib.rs` is the one place the router spells
+  it, and `slice_path` builds every slice route from it: `/api/_slice/workspaces/{slug}/projects/{project_id}/...`.
+  No Plane route starts with an underscore, and the prefix stays under `/api`.
+- **No edge change is needed.** `/api/*` in `run_worker_first` (ADR-0011, round 26) and the `/api` Access bypass
+  (ADR-0090, round 25) cover it as they cover `/api/v1`. Nothing in the repository configures either yet, so this is
+  a reading of the plan, not something tested.
+- **Nothing is served under `/api/v1` yet.** The contract test `the_slice_routes_are_gone_from_the_reserved_v1_prefix`
+  shows that each of the eight slice routes answers a routing 404 through `/api/v1` and is mounted through the new
+  prefix. The first routes under `/api/v1` are those of #58.
+- **The slice's routes are temporary.** #58, which builds the Plane-shaped `/api/v1/workspaces/{slug}/...` routes,
+  deletes the `_slice` routes, moves the contract suite onto its own and retires that test, which stops being true
+  once `/api/v1` is live. (#44 supplies the compat routes under `/api/` and `/auth/`, not the replacements.)
+- **A stale anchor.** The round-29 note above cites `crates/thrust-api/src/lib.rs:269-293`. That range has moved;
+  `SLICE_PREFIX` and `slice_path` name the code.
+
 ## Open Questions
 
 * Q-R5 / Q-0032 — answered (round 24): REST + OpenAPI, code-first, hybrid for v1 (ADR-0032).

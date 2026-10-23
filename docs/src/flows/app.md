@@ -13,29 +13,38 @@ same on the Worker and on the native server. The crates involved are on
 | Method and path | Needs | Answers |
 |---|---|---|
 | `GET /healthz` | nothing | 200 `ok` |
-| `POST /api/v1/workspaces/{slug}/projects/{project_id}/work-items` | Bearer token, role Member | 201 and the work item |
-| `GET /api/v1/workspaces/{slug}/projects/{project_id}/work-items` | Bearer token, role Guest | 200 and a list. `?scope=visible` (the default) or `?scope=with_deleted` (role Admin); any other scope is 400 |
-| `DELETE /api/v1/workspaces/{slug}/projects/{project_id}/work-items/{id}` | Bearer token, role Member | 204 |
-| `GET /api/v1/workspaces/{slug}/projects/{project_id}/work-items/{id}/activity` | Bearer token, role Guest | 200 and the item's activity |
-| `GET /api/v1/workspaces/{slug}/projects/{project_id}/activity` | Bearer token, role Guest | 200 and the project's activity |
-| `PUT /api/v1/workspaces/{slug}/projects/{project_id}/work-items/{id}/attachments/{name}` | Bearer token, role Member | 204 |
-| `GET /api/v1/workspaces/{slug}/projects/{project_id}/work-items/{id}/attachments/{name}` | Bearer token, role Guest | 200 and the bytes, with the `Content-Type` they were stored with, if any |
-| `DELETE /api/v1/workspaces/{slug}/projects/{project_id}/work-items/{id}/attachments/{name}` | Bearer token, role Member | 204 |
+| `POST /api/_slice/workspaces/{slug}/projects/{project_id}/work-items` | Bearer token, role Member | 201 and the work item |
+| `GET /api/_slice/workspaces/{slug}/projects/{project_id}/work-items` | Bearer token, role Guest | 200 and a list. `?scope=visible` (the default) or `?scope=with_deleted` (role Admin); any other scope is 400 |
+| `DELETE /api/_slice/workspaces/{slug}/projects/{project_id}/work-items/{id}` | Bearer token, role Member | 204 |
+| `GET /api/_slice/workspaces/{slug}/projects/{project_id}/work-items/{id}/activity` | Bearer token, role Guest | 200 and the item's activity |
+| `GET /api/_slice/workspaces/{slug}/projects/{project_id}/activity` | Bearer token, role Guest | 200 and the project's activity |
+| `PUT /api/_slice/workspaces/{slug}/projects/{project_id}/work-items/{id}/attachments/{name}` | Bearer token, role Member | 204 |
+| `GET /api/_slice/workspaces/{slug}/projects/{project_id}/work-items/{id}/attachments/{name}` | Bearer token, role Guest | 200 and the bytes, with the `Content-Type` they were stored with, if any |
+| `DELETE /api/_slice/workspaces/{slug}/projects/{project_id}/work-items/{id}/attachments/{name}` | Bearer token, role Member | 204 |
 
 **The workspace slug.** Every route carries the workspace slug before the project, where Plane puts it
 (`kwargs["slug"]` in `apps/api/plane/app/permissions/base.py:28,47,55` at the oracle tag `oracle/v1-pin-20261018`).
 A session belongs to a user, not to a workspace, so the slug is what says which workspace a request is for, and
 `authorize` resolves it on every request (see below).
 
-**Pending rename.** The `/api/v1/...` routes above are still the slice's own, not Plane's wire-compatible v1. Plane's
-v1 work items live at `/api/v1/workspaces/{slug}/projects/{project_id}/work-items/` with a trailing slash, key
-attachments by id and authenticate with `X-Api-Key` (`apps/api/plane/api/urls/work_item.py:99-103` and
-`apps/api/plane/api/middleware/api_authentication.py:24` at the same tag). Finding FR-06 of the architecture review
-(`.agents/plans/contrail/reviews/2026-10-19-fable-architecture-review.md`) reserves the `/api/v1` prefix for
-wire-compatible routes, so these routes move out of it ([issue #47](https://github.com/aRustyDev/thrust/issues/47)).
-The router builds every path from one constant, `SLICE_PREFIX` in `thrust-api` (the contract suite mirrors it in
-`thrust-contract-tests`), so that issue changes the constant and the pages that show it. The new prefix is chosen in
-that issue; until it lands, the paths above are what the router serves.
+**The prefix.** The routes live under `/api/_slice`, the slice's own prefix. `/api/v1` is reserved for routes that are
+wire-compatible with Plane (ADR-0031; finding FR-06 of the architecture review,
+`.agents/plans/contrail/reviews/2026-10-19-fable-architecture-review.md`; [issue #47](https://github.com/aRustyDev/thrust/issues/47)),
+and no route is served under it today. Plane's v1 work items are at
+`/api/v1/workspaces/{slug}/projects/{project_id}/work-items/` with a trailing slash, key attachments by id and
+authenticate with `X-Api-Key` (`apps/api/plane/api/urls/work_item.py:99-103` and
+`apps/api/plane/api/middleware/api_authentication.py:24` at the oracle tag `oracle/v1-pin-20261018`), so the slice's
+routes differ on every count. No Plane route starts with an underscore, which keeps the prefix clear of all of them.
+It stays under `/api`, so the edge patterns planned for `/api/*` cover it (ADR-0011, ADR-0090).
+
+The router builds every path from one constant, `SLICE_PREFIX` in `thrust-api`; the contract suite mirrors it in
+`thrust-contract-tests`, and the two must be equal or every request is a 404. The contract test
+`the_slice_routes_are_gone_from_the_reserved_v1_prefix` shows that each of these eight routes answers a routing 404
+through `/api/v1` and is mounted through `/api/_slice`.
+
+These routes are temporary. [Issue #58](https://github.com/aRustyDev/thrust/issues/58) builds the Plane-shaped
+`/api/v1/workspaces/{slug}/...` routes, and it deletes the `_slice` routes, moves the contract suite onto its own and
+retires that test, which stops being true once `/api/v1` is live.
 
 These routes exist for tests and answer 404 unless `THRUST_TEST_ROUTES` is on:
 
@@ -94,7 +103,7 @@ sequenceDiagram
   participant Q as Queue port
   participant E as Consumer
 
-  C->>A: POST /api/v1/workspaces/{slug}/projects/{id}/work-items
+  C->>A: POST /api/_slice/workspaces/{slug}/projects/{id}/work-items
   A->>K: authenticate(token), create_work_item
   K->>K: validate the name
   K->>K: rate limit, then authorize (Member)

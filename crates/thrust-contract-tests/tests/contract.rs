@@ -13,6 +13,7 @@ mod model;
 use std::time::Duration;
 
 use futures_util::future::join_all;
+use reqwest::Method;
 use serde_json::{json, Value};
 use thrust_contract_tests::*;
 use thrust_contracts::*;
@@ -27,6 +28,69 @@ async fn health_ok() {
     let r = t.http.get(t.url("/healthz")).send().await.unwrap();
     assert_eq!(r.status(), 200);
     assert_eq!(r.text().await.unwrap(), "ok");
+}
+
+/// The prefix the slice's routes left (#47, FR-06): `/api/v1` is reserved for routes that are wire-compatible with
+/// Plane. This is the one place the suite names it, on purpose, to show nothing is served there any more.
+const RETIRED_SLICE_PREFIX: &str = "/api/v1";
+
+/// Every slice route as a method and the part after `.../projects/{project_id}`, with `{item}` for a work item id.
+/// A route added to `thrust_api::router()` later must be added here.
+fn slice_routes() -> [(Method, &'static str); 8] {
+    [
+        (Method::POST, "/work-items"),
+        (Method::GET, "/work-items"),
+        (Method::DELETE, "/work-items/{item}"),
+        (Method::GET, "/work-items/{item}/activity"),
+        (Method::GET, "/activity"),
+        (Method::PUT, "/work-items/{item}/attachments/notes.txt"),
+        (Method::GET, "/work-items/{item}/attachments/notes.txt"),
+        (Method::DELETE, "/work-items/{item}/attachments/notes.txt"),
+    ]
+}
+
+/// A 404 from routing: no route matched. A 404 the use-cases raise (an unknown project, workspace or item) carries
+/// the API's JSON error body, so a body without an error code is what tells the two apart.
+fn is_routing_404(status: u16, body: &[u8]) -> bool {
+    let code = serde_json::from_slice::<Value>(body).ok().and_then(|v| v["error"]["code"].as_str().map(str::to_owned));
+    status == 404 && code.is_none()
+}
+
+/// The slice's routes left `/api/v1`: every one of them is a routing 404 through the retired prefix and is mounted
+/// through the live one. The old path with a real token, workspace slug and project is the discriminating case: it
+/// answered before the move, so this test fails against the router as it was. (The path from before #36, without the
+/// slug, answered 404 already, so it would prove nothing.) The control is the same request through `SLICE_PREFIX`,
+/// which is routed, so the 404 above is the prefix and not a bad request. A pinned regression for FR-06; once #58
+/// serves `/api/v1` again this test is retired or rewritten with the `_slice` routes.
+#[tokio::test]
+async fn the_slice_routes_are_gone_from_the_reserved_v1_prefix() {
+    let t = t();
+    let f = Fixture::seed(&t).await;
+    let item = WorkItemId(uuid::Uuid::new_v4());
+    for (method, tail) in slice_routes() {
+        let tail = tail.replace("{item}", &item.to_string());
+        for (prefix, retired) in [(RETIRED_SLICE_PREFIX, true), (SLICE_PREFIX, false)] {
+            let url = t.url(&format!("{prefix}/workspaces/{}/projects/{}{tail}", f.a.slug, f.a.project));
+            let req = t.http.request(method.clone(), url).bearer_auth(&f.admin_a.token);
+            let req = match method {
+                Method::POST => req.json(&json!({"name": "x"})),
+                Method::PUT => req.body(b"x".to_vec()),
+                _ => req,
+            };
+            let r = req.send().await.unwrap();
+            let status = r.status().as_u16();
+            let body = r.bytes().await.unwrap();
+            let routing_404 = is_routing_404(status, &body);
+            if retired {
+                assert!(routing_404, "{method} {prefix}...{tail}: got {status}, want a routing 404");
+            } else {
+                assert!(!routing_404, "{method} {prefix}...{tail}: not mounted ({status})");
+            }
+        }
+    }
+    // the retired-prefix calls had no effect: only the one create made through the live prefix is there
+    let items: Vec<WorkItem> = list(&t, &f.admin_a, &f.a, None).await.json().await.unwrap();
+    assert_eq!(items.len(), 1, "a request through the retired prefix reached a use-case");
 }
 
 #[tokio::test]

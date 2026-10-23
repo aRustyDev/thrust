@@ -275,10 +275,12 @@ async fn delete_attachment(
     Ok(StatusCode::NO_CONTENT)
 }
 
-/// Where the slice's tenant routes are mounted. It is not Plane's `/api/v1`; #47 moves it out of that
-/// prefix, and the constant is the only thing that changes (the contract suite builds its paths from
-/// the same segments).
-pub const SLICE_PREFIX: &str = "/api/v1";
+/// Where the slice's own tenant routes are mounted. It is deliberately not `/api/v1`: that prefix is reserved for
+/// routes that are wire-compatible with Plane (ADR-0031, issue #47, FR-06), and no Plane route starts with an
+/// underscore. It stays under `/api`, so every edge pattern that covers `/api/*` covers it. The contract suite
+/// mirrors this constant (`thrust_contract_tests::SLICE_PREFIX`); the two must be equal or every request 404s.
+/// These routes are deleted when the `/api/v1` routes of #58 replace them.
+pub const SLICE_PREFIX: &str = "/api/_slice";
 
 /// An axum route pattern under `{SLICE_PREFIX}/workspaces/{slug}/projects/{project_id}`.
 fn slice_path(tail: &str) -> String {
