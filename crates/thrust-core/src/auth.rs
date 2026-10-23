@@ -153,6 +153,11 @@ pub async fn sign_in(app: &App, email: &str, password: &str) -> Result<SignedIn,
     }
 }
 
+/// Sign-out of one session, by the digest of its token. Idempotent.
+pub async fn sign_out(app: &App, session: &TokenHash) -> Result<(), CoreError> {
+    Ok(app.ports.db.revoke_session(session, app.ports.clock.now()).await?)
+}
+
 /// Sign-out everywhere: every session of the caller's user, this one included. Returns how many it ended.
 pub async fn sign_out_everywhere(app: &App, who: &Principal) -> Result<u64, CoreError> {
     Ok(app.ports.db.revoke_user_sessions(who.user_id, app.ports.clock.now()).await?)
@@ -198,4 +203,77 @@ pub(crate) async fn seed_identities(app: &App, f: &SeedFixture) -> Result<(), Co
             .await?;
     }
     Ok(())
+}
+
+/// What a request carries, parsed by the API layer. Core decides which one counts and whether it needs a CSRF token.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct Credentials<'a> {
+    /// `Authorization: Bearer <session token>`.
+    pub bearer: Option<&'a str>,
+    /// The session cookie's value.
+    pub session_cookie: Option<&'a str>,
+    /// The CSRF cookie's value, and the token the request sent in its header.
+    pub csrf_cookie: Option<&'a str>,
+    pub csrf_header: Option<&'a str>,
+    /// POST, PUT, PATCH or DELETE: anything that is not a safe method.
+    pub mutating: bool,
+}
+
+/// How the caller proved who they are.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Via {
+    /// A session, by its digest (what sign-out revokes).
+    Session(TokenHash),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Authenticated {
+    pub principal: Principal,
+    pub via: Via,
+}
+
+/// Constant-time equality of two byte strings (the comparison time does not depend on where they first differ; the
+/// length is not secret). For CSRF tokens and the admin token.
+pub fn ct_eq(a: &[u8], b: &[u8]) -> bool {
+    use subtle::ConstantTimeEq;
+    a.len() == b.len() && bool::from(a.ct_eq(b))
+}
+
+/// The double-submit check: the token the request sent in its header must equal the one in its cookie. Both must be
+/// there and not empty, so a request with neither (or both blank) is not "equal".
+pub fn csrf_ok(cookie: Option<&str>, header: Option<&str>) -> bool {
+    // MUTANT (control run only): accept any request. The contract suite's CSRF tests must catch it.
+    #[cfg(feature = "mutant_skip_csrf")]
+    {
+        let _ = (cookie, header);
+        return true;
+    }
+    #[cfg(not(feature = "mutant_skip_csrf"))]
+    match (cookie, header) {
+        (Some(c), Some(h)) => !c.is_empty() && ct_eq(c.as_bytes(), h.as_bytes()),
+        _ => false,
+    }
+}
+
+/// A fresh double-submit token: 128 random bits, hex.
+pub fn new_csrf_token(app: &App) -> Result<String, CoreError> {
+    random_hex(app, 16)
+}
+
+/// The credential of a request, and who it belongs to. A bearer token wins when there is one (it cannot be an ambient
+/// credential, so it needs no CSRF token); otherwise the session cookie counts, and a mutation made with it must carry
+/// the CSRF token. See `tests/credentials.rs` for the table.
+pub async fn authenticate_request(app: &App, c: &Credentials<'_>) -> Result<Authenticated, CoreError> {
+    if let Some(token) = c.bearer {
+        let principal = crate::authenticate(app, token).await?;
+        return Ok(Authenticated { principal, via: Via::Session(crate::hash_token(token)) });
+    }
+    if let Some(token) = c.session_cookie {
+        let principal = crate::authenticate(app, token).await?;
+        if c.mutating && !csrf_ok(c.csrf_cookie, c.csrf_header) {
+            return Err(CoreError::Csrf);
+        }
+        return Ok(Authenticated { principal, via: Via::Session(crate::hash_token(token)) });
+    }
+    Err(CoreError::Unauthenticated)
 }

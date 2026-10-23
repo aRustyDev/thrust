@@ -8,6 +8,7 @@
 //! The hand-written scenarios below each pin one behaviour. `model` generates them instead: random operation
 //! sequences against a reference model, and every caller × project × route against the access table.
 
+mod auth;
 mod model;
 
 use std::time::Duration;
@@ -49,6 +50,19 @@ fn slice_routes() -> [(Method, &'static str); 8] {
     ]
 }
 
+/// Every slice route that is not under a project: a method and the part after the prefix (issue #38's identity routes).
+/// A route added to `thrust_api::router()` later must be added here, too. They are called with no credentials: sign-out
+/// and sign-out-everywhere with a real token would end the very sessions the rest of the test uses.
+fn slice_auth_routes() -> [(Method, &'static str); 5] {
+    [
+        (Method::POST, "/auth/sign-in/email"),
+        (Method::POST, "/auth/sign-out"),
+        (Method::POST, "/auth/sign-out-all"),
+        (Method::GET, "/auth/csrf"),
+        (Method::GET, "/auth/session"),
+    ]
+}
+
 /// A 404 from routing: no route matched. A 404 the use-cases raise (an unknown project, workspace or item) carries
 /// the API's JSON error body, so a body without an error code is what tells the two apart.
 fn is_routing_404(status: u16, body: &[u8]) -> bool {
@@ -85,6 +99,22 @@ async fn the_slice_routes_are_gone_from_the_reserved_v1_prefix() {
                 assert!(routing_404, "{method} {prefix}...{tail}: got {status}, want a routing 404");
             } else {
                 assert!(!routing_404, "{method} {prefix}...{tail}: not mounted ({status})");
+            }
+        }
+    }
+    // the identity routes left `/api/v1` as well, and are mounted under the live prefix
+    for (method, tail) in slice_auth_routes() {
+        for (prefix, retired) in [(RETIRED_SLICE_PREFIX, true), (SLICE_PREFIX, false)] {
+            let req = t.http.request(method.clone(), t.url(&format!("{prefix}{tail}")));
+            let req = if method == Method::POST { req.json(&json!({})) } else { req };
+            let r = req.send().await.unwrap();
+            let status = r.status().as_u16();
+            let body = r.bytes().await.unwrap();
+            let routing_404 = is_routing_404(status, &body);
+            if retired {
+                assert!(routing_404, "{method} {prefix}{tail}: got {status}, want a routing 404");
+            } else {
+                assert!(!routing_404, "{method} {prefix}{tail}: not mounted ({status})");
             }
         }
     }

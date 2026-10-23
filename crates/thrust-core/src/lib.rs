@@ -99,6 +99,9 @@ pub enum CoreError {
     Unauthenticated,
     #[error("forbidden")]
     Forbidden,
+    /// A cookie-authenticated mutation without a matching CSRF token (ADR-0052, double submit).
+    #[error("csrf token missing or wrong")]
+    Csrf,
     #[error("not found")]
     NotFound,
     #[error("conflict: {0}")]
@@ -252,7 +255,7 @@ pub async fn authenticate(app: &App, token: &str) -> Result<Principal, CoreError
 
 /// Sign-out for one token. Idempotent: an unknown or already revoked token changes nothing.
 pub async fn revoke_session(app: &App, token: &str) -> Result<(), CoreError> {
-    Ok(app.ports.db.revoke_session(&hash_token(token), app.ports.clock.now()).await?)
+    sign_out(app, &hash_token(token)).await
 }
 
 // ---------------------------------------------------------------------------------------------

@@ -311,6 +311,45 @@ pub struct ApiErrorDetail {
     pub message: String,
 }
 
+// ---------------------------------------------------------------------------------------------
+// Identity DTOs (issue #38). Secrets only ever travel in the one response that creates them.
+// ---------------------------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SignInRequest {
+    pub email: String,
+    pub password: String,
+}
+
+/// The answer to a sign-in or an OIDC login. The session token is in the `Set-Cookie` header only, never in the body.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SignInResponse {
+    pub user_id: UserId,
+    /// The double-submit token; the same value is in the CSRF cookie. A client sends it back in `X-CSRFToken`.
+    pub csrf_token: String,
+    pub expires_at: Timestamp,
+}
+
+/// `GET /auth/csrf`, as Plane's `get-csrf-token` (its CSRF cookie is HttpOnly, so the token is handed out as JSON).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CsrfResponse {
+    pub csrf_token: String,
+}
+
+/// Which credential a request was authenticated with.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CredentialKind {
+    Session,
+    ApiKey,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SessionInfo {
+    pub user_id: UserId,
+    pub credential: CredentialKind,
+}
+
 /// A key as listed: everything but the token.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ApiKeyInfo {

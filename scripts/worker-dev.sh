@@ -6,6 +6,8 @@
 #   THRUST_ADAPTERS                memory | postgres
 #   THRUST_OUTBOX_FASTPATH         on | off
 #   THRUST_CREATE_RATE_LIMIT       per-user create limit per window
+#   THRUST_ARGON2_M_KIB / _T / _P  password hashing cost (default: OWASP's minimum)
+#   THRUST_SIGNIN_RATE_LIMIT       sign-in attempts per email per window
 #   THRUST_ADMIN_TOKEN             (env only) gate for /internal/*
 #   DATABASE_URL                   (env only) Postgres URL for the *local* Hyperdrive binding
 #
@@ -42,6 +44,13 @@ if [ "$CONFIG" = wrangler.toml ]; then
     >"$STATE/secret-create.log" 2>&1 || true
 fi
 
+# Optional vars are passed only when set, so an unset one leaves the Worker's own default in force.
+set --
+for v in THRUST_ARGON2_M_KIB THRUST_ARGON2_T THRUST_ARGON2_P THRUST_SIGNIN_RATE_LIMIT; do
+  eval "val=\${$v:-}"
+  [ -n "$val" ] && set -- "$@" --var "$v:$val"
+done
+
 exec env -i \
   HOME="$HOME" PATH="$PATH" TMPDIR="${TMPDIR:-/tmp}" \
   CLOUDFLARE_INCLUDE_PROCESS_ENV=true WRANGLER_SEND_METRICS=false NO_COLOR=1 \
@@ -53,4 +62,5 @@ exec env -i \
     --var "THRUST_TEST_ROUTES:1" \
     --var "THRUST_ADAPTERS:${THRUST_ADAPTERS:-memory}" \
     --var "THRUST_OUTBOX_FASTPATH:${THRUST_OUTBOX_FASTPATH:-on}" \
-    --var "THRUST_CREATE_RATE_LIMIT:${THRUST_CREATE_RATE_LIMIT:-1000}"
+    --var "THRUST_CREATE_RATE_LIMIT:${THRUST_CREATE_RATE_LIMIT:-1000}" \
+    "$@"

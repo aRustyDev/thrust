@@ -31,7 +31,14 @@ LOGDIR="${THRUST_LOGDIR:-$ROOT/target/contract-logs}"
 mkdir -p "$LOGDIR"
 LOG="$LOGDIR/$TARGET-$PASS"
 RATE_LIMIT=30
-EXPECT_MAIN=21
+# Passwords are hashed at a cheap argon2id cost on every local target (one hash is about a millisecond), because the
+# suite signs in many times; OWASP's real cost is pinned by a core test and measured on a deployed Worker (issue #38).
+# The sign-in limit is high enough that no test comes near it.
+ARGON2_M_KIB=64
+ARGON2_T=1
+ARGON2_P=1
+SIGNIN_LIMIT=30
+EXPECT_MAIN=27
 EXPECT_SWEEPER=2
 EXPECT_PANIC=1
 EXPECT_BLAST=1
@@ -59,6 +66,8 @@ THRUST_ADMIN_TOKEN="$(openssl rand -hex 16)"
 export THRUST_ADMIN_TOKEN
 export THRUST_BASE_URL="http://127.0.0.1:$PORT"
 export THRUST_EXPECT_CREATE_LIMIT="$RATE_LIMIT"
+export THRUST_ARGON2_M_KIB="$ARGON2_M_KIB" THRUST_ARGON2_T="$ARGON2_T" THRUST_ARGON2_P="$ARGON2_P"
+export THRUST_SIGNIN_RATE_LIMIT="$SIGNIN_LIMIT"
 
 case "$PASS" in
   sweeper|cron) FASTPATH=off ;;

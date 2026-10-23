@@ -6,6 +6,11 @@ version.workspace = true
 license.workspace = true
 publish.workspace = true
 
+[features]
+# Control-run mutants: deliberately broken behaviour that the contract suite MUST detect (scripts/mutants.sh). Never
+# enabled outside that script; the server crate forwards them.
+mutant_skip_csrf = []
+
 [dependencies]
 thrust-contracts = { workspace = true }
 thrust-ports = { workspace = true }
