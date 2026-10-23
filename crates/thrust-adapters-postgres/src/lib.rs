@@ -19,10 +19,12 @@ use tokio_postgres::{Client, Row};
 
 pub const MIGRATION_0001: &str = include_str!("../migrations/0001_init.sql");
 pub const MIGRATION_0002: &str = include_str!("../migrations/0002_sequence_tenant_key.sql");
+pub const MIGRATION_0003: &str = include_str!("../migrations/0003_workspaces.sql");
 
 pub async fn migrate(client: &Client) -> Result<(), tokio_postgres::Error> {
     client.batch_execute(MIGRATION_0001).await?;
-    client.batch_execute(MIGRATION_0002).await
+    client.batch_execute(MIGRATION_0002).await?;
+    client.batch_execute(MIGRATION_0003).await
 }
 
 pub trait ClientHandle: Send {
@@ -181,25 +183,30 @@ fn activity(r: &Row) -> Activity {
 impl Database for PgDatabase {
     async fn membership(
         &self,
-        ws: WorkspaceId,
+        slug: &WorkspaceSlug,
         project: ProjectId,
         user: UserId,
     ) -> Result<Membership, DbError> {
         let c = self.conn().await?;
+        // One query: the slug, the caller's workspace membership (inner join), the project in that
+        // workspace (inner join) and the caller's project row (left join, same workspace). No row
+        // means the caller may not know the workspace or the project exists.
         let row = Pg(c.client())
             .query_opt(
-                "SELECT m.role AS role FROM projects p \
+                "SELECT w.id AS workspace_id, m.role AS role FROM workspaces w \
+                 JOIN workspace_members wm ON wm.workspace_id = w.id AND wm.user_id = $3 \
+                 JOIN projects p ON p.workspace_id = w.id AND p.id = $2 \
                  LEFT JOIN project_members m \
                    ON m.project_id = p.id AND m.workspace_id = p.workspace_id AND m.user_id = $3 \
-                 WHERE p.id = $1 AND p.workspace_id = $2",
-                &[&project.0, &ws.0, &user.0],
+                 WHERE w.slug = $1",
+                &[&slug.as_str(), &project.0, &user.0],
             )
             .await
             .map_err(db_err)?;
         Ok(match row {
             None => Membership::NoSuchProject,
             Some(r) => match r.get::<_, Option<String>>("role").as_deref().and_then(Role::parse) {
-                Some(role) => Membership::Member(role),
+                Some(role) => Membership::Member { workspace_id: WorkspaceId(r.get("workspace_id")), role },
                 None => Membership::NotAMember,
             },
         })
@@ -339,6 +346,22 @@ impl Database for PgDatabase {
         let cl = Pg(c.client());
         cl.batch_execute("BEGIN").await.map_err(db_err)?;
         let res: Result<(), DbError> = async {
+            for w in &f.workspaces {
+                cl.execute(
+                    "INSERT INTO workspaces (id, slug) VALUES ($1, $2) ON CONFLICT (id) DO UPDATE SET slug = EXCLUDED.slug",
+                    &[&w.id.0, &w.slug.as_str()],
+                )
+                .await
+                .map_err(db_err)?;
+            }
+            for m in &f.workspace_members {
+                cl.execute(
+                    "INSERT INTO workspace_members (workspace_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+                    &[&m.workspace_id.0, &m.user_id.0],
+                )
+                .await
+                .map_err(db_err)?;
+            }
             for p in &f.projects {
                 cl.execute(
                     "INSERT INTO projects (id, workspace_id, name) VALUES ($1, $2, $3) ON CONFLICT (id) DO NOTHING",

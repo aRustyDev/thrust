@@ -147,8 +147,12 @@ impl Permission {
 /// [`authorize`] is the only place a [`Scope`] is minted.
 pub use thrust_ports::{Scope, SystemScope};
 
-/// 404 for a project that is not in the caller's workspace (cross-tenant probes learn nothing),
-/// 403 for a project the caller can see exists but may not touch.
+/// Resolves the route's workspace slug, the caller's membership of that workspace and of the project
+/// in one query (ADR-0051 round 29), and mints the [`Scope`]. 404 for anything the caller may not
+/// know about: a slug that names no workspace, a workspace the caller does not belong to, or a
+/// project that is not in it (cross-tenant probes learn nothing). 403 for a workspace member who is
+/// not a member of the project, or whose role is too low. (Plane answers 403 for an unknown slug;
+/// that is the compat surface's business, #44.)
 ///
 /// The [`Scope`] it returns is the only key to a repository call (issue #35). A use-case cannot
 /// build one by struct literal:
@@ -176,8 +180,13 @@ pub use thrust_ports::{Scope, SystemScope};
 /// ```
 /// use thrust_contracts::*;
 /// use thrust_core::*;
-/// async fn use_case(app: &App, who: &Principal, project: ProjectId) -> Result<Vec<WorkItem>, CoreError> {
-///     let scope = authorize(app, who, project, Permission::ReadWorkItems).await?;
+/// async fn use_case(
+///     app: &App,
+///     who: &Principal,
+///     slug: &WorkspaceSlug,
+///     project: ProjectId,
+/// ) -> Result<Vec<WorkItem>, CoreError> {
+///     let scope = authorize(app, who, slug, project, Permission::ReadWorkItems).await?;
 ///     let _ids = (scope.workspace_id(), scope.project_id(), UserId(Uuid::nil()));
 ///     Ok(app.ports.db.list_work_items(&scope, Visibility::Visible).await?)
 /// }
@@ -185,16 +194,17 @@ pub use thrust_ports::{Scope, SystemScope};
 pub async fn authorize(
     app: &App,
     who: &Principal,
+    slug: &WorkspaceSlug,
     project: ProjectId,
     perm: Permission,
 ) -> Result<Scope, CoreError> {
-    match app.ports.db.membership(who.workspace_id, project, who.user_id).await? {
+    match app.ports.db.membership(slug, project, who.user_id).await? {
         Membership::NoSuchProject => Err(CoreError::NotFound),
         Membership::NotAMember => Err(CoreError::Forbidden),
-        Membership::Member(role) if role >= perm.min_role() => {
-            Ok(Scope::mint(who.workspace_id, project, who.user_id))
+        Membership::Member { workspace_id, role } if role >= perm.min_role() => {
+            Ok(Scope::mint(workspace_id, project, who.user_id))
         }
-        Membership::Member(_) => Err(CoreError::Forbidden),
+        Membership::Member { .. } => Err(CoreError::Forbidden),
     }
 }
 
@@ -251,6 +261,7 @@ fn event(
 pub async fn create_work_item(
     app: &App,
     who: &Principal,
+    slug: &WorkspaceSlug,
     project: ProjectId,
     req: CreateWorkItemRequest,
 ) -> Result<WorkItem, CoreError> {
@@ -269,7 +280,7 @@ pub async fn create_work_item(
         return Err(CoreError::RateLimited { retry_after_secs });
     }
 
-    let scope = authorize(app, who, project, Permission::CreateWorkItem).await?;
+    let scope = authorize(app, who, slug, project, Permission::CreateWorkItem).await?;
 
     let mut tx = app.ports.db.begin(&scope).await?;
     let work = async {
@@ -325,10 +336,11 @@ pub async fn create_work_item(
 pub async fn delete_work_item(
     app: &App,
     who: &Principal,
+    slug: &WorkspaceSlug,
     project: ProjectId,
     id: WorkItemId,
 ) -> Result<(), CoreError> {
-    let scope = authorize(app, who, project, Permission::DeleteWorkItem).await?;
+    let scope = authorize(app, who, slug, project, Permission::DeleteWorkItem).await?;
     let mut tx = app.ports.db.begin(&scope).await?;
     let now = app.ports.clock.now();
     let work = async {
@@ -368,6 +380,7 @@ pub async fn delete_work_item(
 pub async fn list_work_items(
     app: &App,
     who: &Principal,
+    slug: &WorkspaceSlug,
     project: ProjectId,
     vis: Visibility,
 ) -> Result<Vec<WorkItem>, CoreError> {
@@ -375,17 +388,18 @@ pub async fn list_work_items(
         Visibility::Visible => Permission::ReadWorkItems,
         Visibility::WithDeleted => Permission::ReadDeleted,
     };
-    let scope = authorize(app, who, project, perm).await?;
+    let scope = authorize(app, who, slug, project, perm).await?;
     Ok(app.ports.db.list_work_items(&scope, vis).await?)
 }
 
 pub async fn list_activity(
     app: &App,
     who: &Principal,
+    slug: &WorkspaceSlug,
     project: ProjectId,
     entity: Option<WorkItemId>,
 ) -> Result<Vec<Activity>, CoreError> {
-    let scope = authorize(app, who, project, Permission::ReadWorkItems).await?;
+    let scope = authorize(app, who, slug, project, Permission::ReadWorkItems).await?;
     Ok(app.ports.db.list_activity(&scope, entity).await?)
 }
 
@@ -496,6 +510,7 @@ fn blob_key(scope: &Scope, item: WorkItemId, name: &str) -> String {
 pub async fn put_attachment(
     app: &App,
     who: &Principal,
+    slug: &WorkspaceSlug,
     project: ProjectId,
     item: WorkItemId,
     name: &str,
@@ -506,7 +521,7 @@ pub async fn put_attachment(
     if bytes.len() > app.cfg.max_attachment_bytes {
         return Err(CoreError::TooLarge);
     }
-    let scope = authorize(app, who, project, Permission::WriteAttachment).await?;
+    let scope = authorize(app, who, slug, project, Permission::WriteAttachment).await?;
     app.ports
         .db
         .get_work_item(&scope, item, Visibility::Visible)
@@ -522,12 +537,13 @@ pub async fn put_attachment(
 pub async fn get_attachment(
     app: &App,
     who: &Principal,
+    slug: &WorkspaceSlug,
     project: ProjectId,
     item: WorkItemId,
     name: &str,
 ) -> Result<Blob, CoreError> {
     validate_blob_name(name)?;
-    let scope = authorize(app, who, project, Permission::ReadAttachment).await?;
+    let scope = authorize(app, who, slug, project, Permission::ReadAttachment).await?;
     app.ports
         .blobs
         .get(&blob_key(&scope, item, name))
@@ -538,12 +554,13 @@ pub async fn get_attachment(
 pub async fn delete_attachment(
     app: &App,
     who: &Principal,
+    slug: &WorkspaceSlug,
     project: ProjectId,
     item: WorkItemId,
     name: &str,
 ) -> Result<(), CoreError> {
     validate_blob_name(name)?;
-    let scope = authorize(app, who, project, Permission::WriteAttachment).await?;
+    let scope = authorize(app, who, slug, project, Permission::WriteAttachment).await?;
     app.ports.blobs.delete(&blob_key(&scope, item, name)).await?;
     Ok(())
 }

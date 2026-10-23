@@ -78,11 +78,32 @@ impl Role {
     }
 }
 
-/// Authenticated caller. Produced by the `SessionStore` port, consumed by the use-cases.
+/// The workspace segment of a route (`/workspaces/{slug}/...`). Unvalidated on purpose: a slug that
+/// names no workspace is a 404 from `authorize`, never a parse error.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct WorkspaceSlug(pub String);
+
+impl WorkspaceSlug {
+    pub fn new(s: impl Into<String>) -> Self {
+        Self(s.into())
+    }
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for WorkspaceSlug {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+/// Authenticated caller: the user and nothing else. A session belongs to a user, not to a workspace
+/// (ADR-0052 round 29); `authorize` resolves the workspace per request from the route's slug.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Principal {
     pub user_id: UserId,
-    pub workspace_id: WorkspaceId,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -175,11 +196,26 @@ pub struct Activity {
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct SeedFixture {
-    pub workspaces: Vec<WorkspaceId>,
+    pub workspaces: Vec<SeedWorkspace>,
     pub users: Vec<UserId>,
+    /// Workspace membership. A project member must also be a member of the project's workspace.
+    #[serde(default)]
+    pub workspace_members: Vec<SeedWorkspaceMember>,
     pub projects: Vec<SeedProject>,
     pub memberships: Vec<SeedMembership>,
     pub sessions: Vec<SeedSession>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SeedWorkspace {
+    pub id: WorkspaceId,
+    pub slug: WorkspaceSlug,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SeedWorkspaceMember {
+    pub workspace_id: WorkspaceId,
+    pub user_id: UserId,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -200,7 +236,7 @@ pub struct SeedMembership {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SeedSession {
     pub token: String,
-    pub principal: Principal,
+    pub user_id: UserId,
 }
 
 // ---------------------------------------------------------------------------------------------

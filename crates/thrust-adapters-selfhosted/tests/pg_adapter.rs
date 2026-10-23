@@ -69,6 +69,11 @@ fn scope(ws: WorkspaceId, p: ProjectId) -> Scope {
     Scope::mint(ws, p, UserId(Uuid::nil()))
 }
 
+/// Slugs are unique in the database and one container serves every test, so each workspace's follows its id.
+fn slug_of(ws: WorkspaceId) -> WorkspaceSlug {
+    WorkspaceSlug::new(format!("ws-{}", ws.0.simple()))
+}
+
 async fn seeded(env: &Env) -> (WorkspaceId, WorkspaceId, ProjectId, UserId) {
     let ws = WorkspaceId(new_id());
     let other_ws = WorkspaceId(new_id());
@@ -76,8 +81,9 @@ async fn seeded(env: &Env) -> (WorkspaceId, WorkspaceId, ProjectId, UserId) {
     let u = UserId(new_id());
     env.db
         .seed(&SystemScope::mint(), &SeedFixture {
-            workspaces: vec![ws],
+            workspaces: vec![SeedWorkspace { id: ws, slug: slug_of(ws) }],
             users: vec![u],
+            workspace_members: vec![SeedWorkspaceMember { workspace_id: ws, user_id: u }],
             projects: vec![SeedProject { id: p, workspace_id: ws, name: "p".into() }],
             memberships: vec![SeedMembership { project_id: p, workspace_id: ws, user_id: u, role: Role::Member }],
             sessions: vec![],
@@ -91,10 +97,69 @@ async fn seeded(env: &Env) -> (WorkspaceId, WorkspaceId, ProjectId, UserId) {
 async fn membership_distinguishes_member_non_member_and_other_tenant() {
     let env = env().await;
     let (ws, other_ws, p, u) = seeded(&env).await;
-    assert_eq!(env.db.membership(ws, p, u).await.unwrap(), Membership::Member(Role::Member));
-    assert_eq!(env.db.membership(ws, p, UserId(new_id())).await.unwrap(), Membership::NotAMember);
-    // control: the SAME project asked through another tenant does not exist
-    assert_eq!(env.db.membership(other_ws, p, u).await.unwrap(), Membership::NoSuchProject);
+    let slug = slug_of(ws);
+    assert_eq!(
+        env.db.membership(&slug, p, u).await.unwrap(),
+        Membership::Member { workspace_id: ws, role: Role::Member }
+    );
+    // a member of the workspace with no row for the project is a non-member
+    // and a second, real workspace that `u` also belongs to, in which the project does not exist
+    let v = UserId(new_id());
+    env.db
+        .seed(&SystemScope::mint(), &SeedFixture {
+            workspaces: vec![SeedWorkspace { id: other_ws, slug: slug_of(other_ws) }],
+            workspace_members: vec![
+                SeedWorkspaceMember { workspace_id: ws, user_id: v },
+                SeedWorkspaceMember { workspace_id: other_ws, user_id: u },
+            ],
+            ..SeedFixture::default()
+        })
+        .await
+        .unwrap();
+    assert_eq!(env.db.membership(&slug, p, v).await.unwrap(), Membership::NotAMember);
+    // a stranger to the workspace does not learn that the project exists
+    assert_eq!(env.db.membership(&slug, p, UserId(new_id())).await.unwrap(), Membership::NoSuchProject);
+    // control: the SAME project asked through another tenant's slug, or one that names nothing, does not exist
+    assert_eq!(env.db.membership(&slug_of(other_ws), p, u).await.unwrap(), Membership::NoSuchProject);
+    assert_eq!(env.db.membership(&WorkspaceSlug::new("nope"), p, u).await.unwrap(), Membership::NoSuchProject);
+}
+
+/// A database created before issue #36 has projects and member rows but no workspaces. `migrate` backfills them (slug
+/// = the id as text, a workspace member for every member row) before it puts the foreign keys on, and applying it a
+/// second time changes nothing (`migrate` runs every file on every start). A pinned regression for the upgrade path
+/// of a stage-2 database; every other test here starts from an empty one.
+#[tokio::test]
+async fn migration_0003_backfills_a_database_created_before_it() {
+    let container = Postgres::default().start().await.expect("start postgres container");
+    let port = container.get_host_port_ipv4(5432).await.expect("mapped port");
+    let url = format!("postgres://postgres:postgres@127.0.0.1:{port}/postgres");
+    let conn = Arc::new(PoolConnector::from_url(&url, 4).unwrap());
+    let raw = conn.raw().await.unwrap();
+    raw.batch_execute(thrust_adapters_postgres::MIGRATION_0001).await.unwrap();
+    raw.batch_execute(thrust_adapters_postgres::MIGRATION_0002).await.unwrap();
+    let (ws, p, u) = (WorkspaceId(new_id()), ProjectId(new_id()), UserId(new_id()));
+    raw.execute("INSERT INTO projects (id, workspace_id, name) VALUES ($1, $2, 'legacy')", &[&p.0, &ws.0])
+        .await
+        .unwrap();
+    raw.execute(
+        "INSERT INTO project_members (project_id, workspace_id, user_id, role) VALUES ($1, $2, $3, 'member')",
+        &[&p.0, &ws.0, &u.0],
+    )
+    .await
+    .unwrap();
+    thrust_adapters_postgres::migrate(&raw).await.unwrap();
+    thrust_adapters_postgres::migrate(&raw).await.unwrap();
+    drop(raw);
+    let db = PgDatabase::new(conn);
+    let by_id = WorkspaceSlug::new(ws.0.to_string());
+    assert_eq!(
+        db.membership(&by_id, p, u).await.unwrap(),
+        Membership::Member { workspace_id: ws, role: Role::Member },
+        "the backfilled slug is the workspace id"
+    );
+    // control: the backfill made the one workspace and one member the rows imply, not a looser grant
+    assert_eq!(db.membership(&by_id, p, UserId(new_id())).await.unwrap(), Membership::NoSuchProject);
+    assert_eq!(db.membership(&WorkspaceSlug::new("other"), p, u).await.unwrap(), Membership::NoSuchProject);
 }
 
 #[tokio::test]

@@ -97,6 +97,20 @@ enum Proj {
 
 const ALL_PROJECTS: [Proj; 3] = [Proj::A, Proj::B, Proj::Unknown];
 
+/// Which workspace slug a request names, relative to the project it addresses. The generated sequences always name
+/// the project's own workspace; `matrix` covers the other two for every actor, project and route.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Slug {
+    /// The slug of the workspace the project is in (workspace A's for a project that does not exist).
+    Own,
+    /// The slug of the other seeded workspace.
+    Other,
+    /// A slug that names no workspace.
+    Unknown,
+}
+
+const ALL_SLUGS: [Slug; 3] = [Slug::Own, Slug::Other, Slug::Unknown];
+
 enum Standing {
     Unauthenticated,
     NoSuchProject,
@@ -593,6 +607,7 @@ struct Req {
     actor: Actor,
     method: Method,
     proj: Proj,
+    slug: Slug,
     item: Option<WorkItemId>,
     query: Option<&'static str>,
     body: Option<Value>,
@@ -604,7 +619,7 @@ struct Req {
 
 impl Req {
     fn bare(actor: Actor, method: Method, proj: Proj) -> Req {
-        Req { actor, method, proj, item: None, query: None, body: None, attachment: None, upload: None }
+        Req { actor, method, proj, slug: Slug::Own, item: None, query: None, body: None, attachment: None, upload: None }
     }
 }
 
@@ -1065,17 +1080,40 @@ impl<'a> World<'a> {
 
     fn project(&self, p: Proj) -> ProjectId {
         match p {
-            Proj::A => self.f.project_a,
-            Proj::B => self.f.project_b,
+            Proj::A => self.f.a.project,
+            Proj::B => self.f.b.project,
             Proj::Unknown => self.unknown,
         }
     }
 
+    /// The seeded project in `slot`, through its own workspace's slug.
+    fn at_slot(&self, slot: usize) -> &At {
+        if slot == 0 {
+            &self.f.a
+        } else {
+            &self.f.b
+        }
+    }
+
+    /// `p` addressed through the slug `slug` names for it.
+    fn at(&self, p: Proj, slug: Slug) -> At {
+        let (own, other) = match p {
+            Proj::A | Proj::Unknown => (&self.f.a, &self.f.b),
+            Proj::B => (&self.f.b, &self.f.a),
+        };
+        let slug = match slug {
+            Slug::Own => own.slug.clone(),
+            Slug::Other => other.slug.clone(),
+            Slug::Unknown => "no-such-workspace".to_string(),
+        };
+        At { slug, project: self.project(p) }
+    }
+
     fn scope_of(&self, slot: usize) -> (WorkspaceId, ProjectId) {
         if slot == 0 {
-            (self.f.ws_a, self.f.project_a)
+            (self.f.ws_a, self.f.a.project)
         } else {
-            (self.f.ws_b, self.f.project_b)
+            (self.f.ws_b, self.f.b.project)
         }
     }
 
@@ -1092,7 +1130,7 @@ impl<'a> World<'a> {
     }
 
     async fn try_send(&self, req: &Req) -> Result<Resp, reqwest::Error> {
-        let mut path = wi_path(self.project(req.proj));
+        let mut path = wi_path(&self.at(req.proj, req.slug));
         if let Some(id) = req.item {
             path.push_str(&format!("/{id}"));
         }
@@ -1137,7 +1175,7 @@ impl<'a> World<'a> {
 
     /// A project's activity, read by its admin.
     async fn activity(&self, slot: usize) -> Result<Vec<Activity>, String> {
-        let url = self.t.url(&format!("/api/v1/projects/{}/activity", self.scope_of(slot).1));
+        let url = self.t.url(&format!("{}/activity", project_path(self.at_slot(slot))));
         let r = self.as_actor(self.t.http.get(url), admin_of(slot)).send().await.unwrap();
         let status = r.status().as_u16();
         let body = r.text().await.unwrap_or_default();
@@ -1158,7 +1196,7 @@ struct Counts {
 
 /// One case's activity after its last checkpoint, read again once the whole run is over.
 struct Settle {
-    project: ProjectId,
+    at: At,
     token: String,
     event_ids: Vec<EventId>,
 }
@@ -1334,7 +1372,7 @@ async fn run_case(
             m.events.iter().filter(|e| e.slot == s).map(|e| e.id.expect("the last checkpoint matched every event")).collect();
         event_ids.sort();
         let token = w.user(admin_of(s)).unwrap().token.clone();
-        late.push(Settle { project: w.scope_of(s).1, token, event_ids });
+        late.push(Settle { at: w.at_slot(s).clone(), token, event_ids });
     }
     Ok(())
 }
@@ -1389,12 +1427,12 @@ fn run_model(fastpath: bool, default_cases: u32) {
     let late: Vec<String> = rt.block_on(async {
         let mut late = Vec::new();
         for s in &settle {
-            let url = t.url(&format!("/api/v1/projects/{}/activity", s.project));
+            let url = t.url(&format!("{}/activity", project_path(&s.at)));
             let rows: Vec<Activity> = t.http.get(url).bearer_auth(&s.token).send().await.unwrap().json().await.unwrap();
             let mut got: Vec<EventId> = rows.iter().map(|r| r.event_id).collect();
             got.sort();
             if got != s.event_ids {
-                late.push(format!("project {}: event ids {got:?}, the model {:?}", s.project, s.event_ids));
+                late.push(format!("project {}: event ids {got:?}, the model {:?}", s.at.project, s.event_ids));
             }
         }
         late

@@ -15,6 +15,9 @@ use thrust_ports::*;
 
 #[derive(Default)]
 struct DbState {
+    /// Slug -> workspace (the `workspaces.slug` unique index).
+    workspaces: HashMap<WorkspaceSlug, WorkspaceId>,
+    workspace_members: HashSet<(WorkspaceId, UserId)>,
     projects: HashMap<ProjectId, WorkspaceId>,
     /// The member row keeps the workspace it was written with; `membership` counts it only when that
     /// is the project's workspace (the Postgres join on `m.workspace_id`).
@@ -61,21 +64,28 @@ fn is_visible(w: &WorkItem) -> bool {
 impl Database for MemoryDatabase {
     async fn membership(
         &self,
-        ws: WorkspaceId,
+        slug: &WorkspaceSlug,
         project: ProjectId,
         user: UserId,
     ) -> Result<Membership, DbError> {
         let s = self.state.lock().unwrap();
-        // MUTANT (control run only): forget the tenant predicate. The cross-tenant tests must catch it.
+        // The workspace the caller may act in: the slug names it, the caller belongs to it and the
+        // project is in it (the three inner joins of the Postgres query).
+        // MUTANT (control run only): forget the tenant predicates and trust the project's own
+        // workspace. The cross-tenant tests must catch it.
         #[cfg(feature = "mutant_ignore_tenant")]
-        let wrong_tenant = !s.projects.contains_key(&project);
+        let resolved = s.projects.get(&project).copied();
         #[cfg(not(feature = "mutant_ignore_tenant"))]
-        let wrong_tenant = s.projects.get(&project) != Some(&ws);
-        if wrong_tenant {
+        let resolved = s
+            .workspaces
+            .get(slug)
+            .copied()
+            .filter(|ws| s.workspace_members.contains(&(*ws, user)) && s.projects.get(&project) == Some(ws));
+        let Some(ws) = resolved else {
             return Ok(Membership::NoSuchProject);
-        }
+        };
         Ok(match s.memberships.get(&(project, user)) {
-            Some((m_ws, r)) if *m_ws == ws => Membership::Member(*r),
+            Some((m_ws, role)) if *m_ws == ws => Membership::Member { workspace_id: ws, role: *role },
             _ => Membership::NotAMember,
         })
     }
@@ -176,6 +186,12 @@ impl Database for MemoryDatabase {
 
     async fn seed(&self, _sys: &SystemScope, f: &SeedFixture) -> Result<(), DbError> {
         let mut s = self.state.lock().unwrap();
+        for w in &f.workspaces {
+            s.workspaces.insert(w.slug.clone(), w.id);
+        }
+        for m in &f.workspace_members {
+            s.workspace_members.insert((m.workspace_id, m.user_id));
+        }
         for p in &f.projects {
             s.projects.insert(p.id, p.workspace_id);
         }

@@ -131,20 +131,27 @@ impl SystemScope {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Membership {
-    /// The project does not exist *in the caller's workspace* (also: it exists in another tenant).
+    /// Nothing the caller may know about: the slug names no workspace, the caller is not a member of
+    /// that workspace, or the project is not in it (also: it exists in another tenant). All three
+    /// look the same on purpose, so a caller cannot probe for workspaces or projects.
     NoSuchProject,
+    /// A member of the workspace, but not of the project.
     NotAMember,
-    Member(Role),
+    /// A member of the project. `workspace_id` is what the slug resolved to, for `authorize` to mint
+    /// the [`Scope`] with.
+    Member { workspace_id: WorkspaceId, role: Role },
 }
 
 #[async_trait]
 pub trait Database: Send + Sync {
     /// The one call that runs before a [`Scope`] exists: only `thrust_core::authorize` makes it,
-    /// to decide whether to mint one (ADR-0045 round 29). Every other method takes a [`Scope`],
-    /// from which the adapter reads the tenant key, or a [`SystemScope`]; none takes bare ids.
+    /// to decide whether to mint one (ADR-0045 round 29). It resolves the route's workspace slug,
+    /// the caller's membership of that workspace and of the project in one query (ADR-0051 round
+    /// 29). Every other method takes a [`Scope`], from which the adapter reads the tenant key, or a
+    /// [`SystemScope`]; none takes bare ids.
     async fn membership(
         &self,
-        ws: WorkspaceId,
+        slug: &WorkspaceSlug,
         project: ProjectId,
         user: UserId,
     ) -> Result<Membership, DbError>;
@@ -183,7 +190,7 @@ pub trait Database: Send + Sync {
 
     async fn outbox_depth(&self, sys: &SystemScope) -> Result<u64, DbError>;
 
-    /// Test support: insert fixture rows (workspaces/users/projects/memberships).
+    /// Test support: insert fixture rows (workspaces, workspace members, projects, project members).
     async fn seed(&self, sys: &SystemScope, fixture: &SeedFixture) -> Result<(), DbError>;
 }
 

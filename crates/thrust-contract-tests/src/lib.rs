@@ -69,60 +69,87 @@ pub struct User {
     pub token: String,
 }
 
+/// Where the slice's tenant routes are mounted. It must equal `thrust_api::SLICE_PREFIX`; #47 moves it out of
+/// `/api/v1` and this constant is the only place the suite spells the prefix.
+pub const SLICE_PREFIX: &str = "/api/v1";
+
+/// A project addressed through a workspace slug: the two segments a slice route carries after the prefix.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct At {
+    pub slug: String,
+    pub project: ProjectId,
+}
+
+impl At {
+    /// The same project, addressed through another workspace's slug.
+    pub fn via(&self, slug: &str) -> At {
+        At { slug: slug.to_string(), project: self.project }
+    }
+}
+
 /// Two tenants. Tenant A has one project with an admin, a member, a guest and an outsider
-/// (same workspace, no membership). Tenant B has its own project and admin.
+/// (same workspace, no membership). Tenant B has its own project and admin. `dual` belongs to both workspaces
+/// and is a member of both projects: one session, two workspaces.
 pub struct Fixture {
     pub ws_a: WorkspaceId,
     pub ws_b: WorkspaceId,
-    pub project_a: ProjectId,
-    pub project_b: ProjectId,
+    /// Project A through workspace A's slug, and project B through workspace B's.
+    pub a: At,
+    pub b: At,
     pub admin_a: User,
     pub member_a: User,
     pub guest_a: User,
     pub outsider_a: User,
     pub admin_b: User,
+    pub dual: User,
 }
 
 impl Fixture {
     pub async fn seed(t: &Target) -> Fixture {
-        let mk = |ws: WorkspaceId| {
-            let id = UserId(uid());
-            (User { id, token: format!("tok-{}", uid().simple()) }, ws)
-        };
+        let mk = || User { id: UserId(uid()), token: format!("tok-{}", uid().simple()) };
         let ws_a = WorkspaceId(uid());
         let ws_b = WorkspaceId(uid());
-        let project_a = ProjectId(uid());
-        let project_b = ProjectId(uid());
-        let (admin_a, _) = mk(ws_a);
-        let (member_a, _) = mk(ws_a);
-        let (guest_a, _) = mk(ws_a);
-        let (outsider_a, _) = mk(ws_a);
-        let (admin_b, _) = mk(ws_b);
+        // Slugs are unique in the database, and one database serves every fixture of a run.
+        let a = At { slug: format!("ws-a-{}", uid().simple()), project: ProjectId(uid()) };
+        let b = At { slug: format!("ws-b-{}", uid().simple()), project: ProjectId(uid()) };
+        let (admin_a, member_a, guest_a, outsider_a, admin_b, dual) = (mk(), mk(), mk(), mk(), mk(), mk());
 
+        let in_ws = |workspace_id, u: &User| SeedWorkspaceMember { workspace_id, user_id: u.id };
+        let on_a = |u: &User, role| SeedMembership { project_id: a.project, workspace_id: ws_a, user_id: u.id, role };
+        let on_b = |u: &User, role| SeedMembership { project_id: b.project, workspace_id: ws_b, user_id: u.id, role };
+        let all = [&admin_a, &member_a, &guest_a, &outsider_a, &admin_b, &dual];
         let fixture = SeedFixture {
-            workspaces: vec![ws_a, ws_b],
-            users: vec![admin_a.id, member_a.id, guest_a.id, outsider_a.id, admin_b.id],
+            workspaces: vec![
+                SeedWorkspace { id: ws_a, slug: WorkspaceSlug::new(&a.slug) },
+                SeedWorkspace { id: ws_b, slug: WorkspaceSlug::new(&b.slug) },
+            ],
+            users: all.iter().map(|u| u.id).collect(),
+            workspace_members: vec![
+                in_ws(ws_a, &admin_a),
+                in_ws(ws_a, &member_a),
+                in_ws(ws_a, &guest_a),
+                in_ws(ws_a, &outsider_a),
+                in_ws(ws_b, &admin_b),
+                in_ws(ws_a, &dual),
+                in_ws(ws_b, &dual),
+            ],
             projects: vec![
-                SeedProject { id: project_a, workspace_id: ws_a, name: "A".into() },
-                SeedProject { id: project_b, workspace_id: ws_b, name: "B".into() },
+                SeedProject { id: a.project, workspace_id: ws_a, name: "A".into() },
+                SeedProject { id: b.project, workspace_id: ws_b, name: "B".into() },
             ],
             memberships: vec![
-                SeedMembership { project_id: project_a, workspace_id: ws_a, user_id: admin_a.id, role: Role::Admin },
-                SeedMembership { project_id: project_a, workspace_id: ws_a, user_id: member_a.id, role: Role::Member },
-                SeedMembership { project_id: project_a, workspace_id: ws_a, user_id: guest_a.id, role: Role::Guest },
-                SeedMembership { project_id: project_b, workspace_id: ws_b, user_id: admin_b.id, role: Role::Admin },
+                on_a(&admin_a, Role::Admin),
+                on_a(&member_a, Role::Member),
+                on_a(&guest_a, Role::Guest),
+                on_b(&admin_b, Role::Admin),
+                on_a(&dual, Role::Member),
+                on_b(&dual, Role::Guest),
             ],
-            sessions: vec![
-                SeedSession { token: admin_a.token.clone(), principal: Principal { user_id: admin_a.id, workspace_id: ws_a } },
-                SeedSession { token: member_a.token.clone(), principal: Principal { user_id: member_a.id, workspace_id: ws_a } },
-                SeedSession { token: guest_a.token.clone(), principal: Principal { user_id: guest_a.id, workspace_id: ws_a } },
-                SeedSession { token: outsider_a.token.clone(), principal: Principal { user_id: outsider_a.id, workspace_id: ws_a } },
-                SeedSession { token: admin_b.token.clone(), principal: Principal { user_id: admin_b.id, workspace_id: ws_b } },
-            ],
+            sessions: all.iter().map(|u| SeedSession { token: u.token.clone(), user_id: u.id }).collect(),
         };
         let r = t.admin_post("/internal/seed", &serde_json::to_value(&fixture).unwrap()).await;
         assert_eq!(r.status(), 204, "seed failed: {:?}", r.text().await);
-        Fixture { ws_a, ws_b, project_a, project_b, admin_a, member_a, guest_a, outsider_a, admin_b }
+        Fixture { ws_a, ws_b, a, b, admin_a, member_a, guest_a, outsider_a, admin_b, dual }
     }
 
     /// A fresh member of project A with its own rate-limit bucket.
@@ -130,16 +157,17 @@ impl Fixture {
         let id = UserId(uid());
         let token = format!("tok-{}", uid().simple());
         let f = SeedFixture {
-            workspaces: vec![self.ws_a],
+            workspaces: vec![SeedWorkspace { id: self.ws_a, slug: WorkspaceSlug::new(&self.a.slug) }],
             users: vec![id],
+            workspace_members: vec![SeedWorkspaceMember { workspace_id: self.ws_a, user_id: id }],
             projects: vec![],
             memberships: vec![SeedMembership {
-                project_id: self.project_a,
+                project_id: self.a.project,
                 workspace_id: self.ws_a,
                 user_id: id,
                 role: Role::Member,
             }],
-            sessions: vec![SeedSession { token: token.clone(), principal: Principal { user_id: id, workspace_id: self.ws_a } }],
+            sessions: vec![SeedSession { token: token.clone(), user_id: id }],
         };
         let r = t.admin_post("/internal/seed", &serde_json::to_value(&f).unwrap()).await;
         assert_eq!(r.status(), 204);
@@ -147,13 +175,18 @@ impl Fixture {
     }
 }
 
-pub fn wi_path(project: ProjectId) -> String {
-    format!("/api/v1/projects/{project}/work-items")
+/// `{SLICE_PREFIX}/workspaces/{slug}/projects/{project}`.
+pub fn project_path(at: &At) -> String {
+    format!("{SLICE_PREFIX}/workspaces/{}/projects/{}", at.slug, at.project)
 }
 
-pub async fn create(t: &Target, who: &User, project: ProjectId, body: Value) -> reqwest::Response {
+pub fn wi_path(at: &At) -> String {
+    format!("{}/work-items", project_path(at))
+}
+
+pub async fn create(t: &Target, who: &User, at: &At, body: Value) -> reqwest::Response {
     t.http
-        .post(t.url(&wi_path(project)))
+        .post(t.url(&wi_path(at)))
         .bearer_auth(&who.token)
         .json(&body)
         .send()
@@ -161,24 +194,24 @@ pub async fn create(t: &Target, who: &User, project: ProjectId, body: Value) -> 
         .unwrap()
 }
 
-pub async fn create_ok(t: &Target, who: &User, project: ProjectId, name: &str) -> WorkItem {
-    let r = create(t, who, project, json!({ "name": name })).await;
+pub async fn create_ok(t: &Target, who: &User, at: &At, name: &str) -> WorkItem {
+    let r = create(t, who, at, json!({ "name": name })).await;
     assert_eq!(r.status(), 201, "create '{name}' failed: {:?}", r.text().await);
     r.json::<WorkItem>().await.unwrap()
 }
 
-pub async fn list(t: &Target, who: &User, project: ProjectId, scope: Option<&str>) -> reqwest::Response {
-    let mut u = t.url(&wi_path(project));
+pub async fn list(t: &Target, who: &User, at: &At, scope: Option<&str>) -> reqwest::Response {
+    let mut u = t.url(&wi_path(at));
     if let Some(s) = scope {
         u.push_str(&format!("?scope={s}"));
     }
     t.http.get(u).bearer_auth(&who.token).send().await.unwrap()
 }
 
-pub async fn activity(t: &Target, who: &User, project: ProjectId, item: WorkItemId) -> Vec<Activity> {
+pub async fn activity(t: &Target, who: &User, at: &At, item: WorkItemId) -> Vec<Activity> {
     let r = t
         .http
-        .get(t.url(&format!("{}/{}/activity", wi_path(project), item)))
+        .get(t.url(&format!("{}/{}/activity", wi_path(at), item)))
         .bearer_auth(&who.token)
         .send()
         .await

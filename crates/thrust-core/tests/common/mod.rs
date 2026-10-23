@@ -107,9 +107,25 @@ pub enum Actor {
     OutsiderA,
     /// Member of project B in workspace B; a stranger to everything in workspace A.
     MemberB,
+    /// A member of both workspaces: Member of project A, Guest of project B. One session, two workspaces.
+    Dual,
 }
 
-pub const ACTORS: [Actor; 5] = [Actor::AdminA, Actor::MemberA, Actor::GuestA, Actor::OutsiderA, Actor::MemberB];
+pub const ACTORS: [Actor; 6] =
+    [Actor::AdminA, Actor::MemberA, Actor::GuestA, Actor::OutsiderA, Actor::MemberB, Actor::Dual];
+
+/// Which workspace slug a request names, relative to the project it addresses.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Slug {
+    /// The slug of the project's own workspace.
+    Own,
+    /// The slug of the other workspace.
+    Other,
+    /// A slug that names no workspace.
+    Unknown,
+}
+
+pub const SLUGS: [Slug; 3] = [Slug::Own, Slug::Other, Slug::Unknown];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Proj {
@@ -121,6 +137,8 @@ pub struct World {
     pub app: App,
     pub ws_a: WorkspaceId,
     pub ws_b: WorkspaceId,
+    pub slug_a: WorkspaceSlug,
+    pub slug_b: WorkspaceSlug,
     pub project_a: ProjectId,
     pub project_b: ProjectId,
 }
@@ -131,14 +149,28 @@ fn id(n: u128) -> Uuid {
 
 impl World {
     pub fn principal(&self, a: Actor) -> Principal {
-        let (user, ws) = match a {
-            Actor::AdminA => (1, self.ws_a),
-            Actor::MemberA => (2, self.ws_a),
-            Actor::GuestA => (3, self.ws_a),
-            Actor::OutsiderA => (4, self.ws_a),
-            Actor::MemberB => (5, self.ws_b),
+        let user = match a {
+            Actor::AdminA => 1,
+            Actor::MemberA => 2,
+            Actor::GuestA => 3,
+            Actor::OutsiderA => 4,
+            Actor::MemberB => 5,
+            Actor::Dual => 6,
         };
-        Principal { user_id: UserId(id(user)), workspace_id: ws }
+        Principal { user_id: UserId(id(user)) }
+    }
+
+    /// The slug a request addressed to `proj` names.
+    pub fn slug(&self, proj: Proj, slug: Slug) -> WorkspaceSlug {
+        let (own, other) = match proj {
+            Proj::A => (&self.slug_a, &self.slug_b),
+            Proj::B => (&self.slug_b, &self.slug_a),
+        };
+        match slug {
+            Slug::Own => own.clone(),
+            Slug::Other => other.clone(),
+            Slug::Unknown => WorkspaceSlug::new("no-such-workspace"),
+        }
     }
 
     pub fn project(&self, p: Proj) -> ProjectId {
@@ -185,6 +217,8 @@ pub fn world_with(cfg: CoreConfig, queue: Arc<dyn Queue>, background: Arc<dyn Ba
         app,
         ws_a: WorkspaceId(id(0xA0)),
         ws_b: WorkspaceId(id(0xB0)),
+        slug_a: WorkspaceSlug::new("ws-a"),
+        slug_b: WorkspaceSlug::new("ws-b"),
         project_a: ProjectId(id(0xA1)),
         project_b: ProjectId(id(0xB1)),
     };
@@ -194,9 +228,22 @@ pub fn world_with(cfg: CoreConfig, queue: Arc<dyn Queue>, background: Arc<dyn Ba
         user_id: w.principal(a).user_id,
         role,
     };
+    let in_ws = |a: Actor, ws: WorkspaceId| SeedWorkspaceMember { workspace_id: ws, user_id: w.principal(a).user_id };
     let fixture = SeedFixture {
-        workspaces: vec![w.ws_a, w.ws_b],
+        workspaces: vec![
+            SeedWorkspace { id: w.ws_a, slug: w.slug_a.clone() },
+            SeedWorkspace { id: w.ws_b, slug: w.slug_b.clone() },
+        ],
         users: ACTORS.iter().map(|a| w.principal(*a).user_id).collect(),
+        workspace_members: vec![
+            in_ws(Actor::AdminA, w.ws_a),
+            in_ws(Actor::MemberA, w.ws_a),
+            in_ws(Actor::GuestA, w.ws_a),
+            in_ws(Actor::OutsiderA, w.ws_a),
+            in_ws(Actor::MemberB, w.ws_b),
+            in_ws(Actor::Dual, w.ws_a),
+            in_ws(Actor::Dual, w.ws_b),
+        ],
         projects: vec![
             SeedProject { id: w.project_a, workspace_id: w.ws_a, name: "A".into() },
             SeedProject { id: w.project_b, workspace_id: w.ws_b, name: "B".into() },
@@ -206,6 +253,8 @@ pub fn world_with(cfg: CoreConfig, queue: Arc<dyn Queue>, background: Arc<dyn Ba
             member(Actor::MemberA, Proj::A, Role::Member),
             member(Actor::GuestA, Proj::A, Role::Guest),
             member(Actor::MemberB, Proj::B, Role::Member),
+            member(Actor::Dual, Proj::A, Role::Member),
+            member(Actor::Dual, Proj::B, Role::Guest),
         ],
         sessions: vec![],
     };

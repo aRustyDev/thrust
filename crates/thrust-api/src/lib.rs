@@ -150,7 +150,8 @@ async fn panic_route(Extension(cfg): Extension<ApiConfig>) -> ApiResult<&'static
 async fn seed(_: Admin, Extension(app): Extension<App>, Json(f): Json<SeedFixture>) -> ApiResult<StatusCode> {
     thrust_core::seed(&app, &f).await?;
     for s in &f.sessions {
-        app.ports.sessions.put(&s.token, &s.principal, 3600).await.map_err(CoreError::from)?;
+        let who = Principal { user_id: s.user_id };
+        app.ports.sessions.put(&s.token, &who, 3600).await.map_err(CoreError::from)?;
     }
     Ok(StatusCode::NO_CONTENT)
 }
@@ -179,10 +180,10 @@ async fn outbox_depth(_: Admin, Extension(app): Extension<App>) -> ApiResult<Jso
 async fn create_work_item(
     Authed(who): Authed,
     Extension(app): Extension<App>,
-    Path(project): Path<ProjectId>,
+    Path((slug, project)): Path<(WorkspaceSlug, ProjectId)>,
     Json(req): Json<CreateWorkItemRequest>,
 ) -> ApiResult<(StatusCode, Json<WorkItem>)> {
-    let item = thrust_core::create_work_item(&app, &who, project, req).await?;
+    let item = thrust_core::create_work_item(&app, &who, &slug, project, req).await?;
     Ok((StatusCode::CREATED, Json(item)))
 }
 
@@ -194,7 +195,7 @@ struct ListQuery {
 async fn list_work_items(
     Authed(who): Authed,
     Extension(app): Extension<App>,
-    Path(project): Path<ProjectId>,
+    Path((slug, project)): Path<(WorkspaceSlug, ProjectId)>,
     Query(q): Query<ListQuery>,
 ) -> ApiResult<Json<Vec<WorkItem>>> {
     let vis = match q.scope.as_deref() {
@@ -204,52 +205,52 @@ async fn list_work_items(
             return Err(ApiError(CoreError::Invalid(format!("unknown scope '{other}'"))));
         }
     };
-    Ok(Json(thrust_core::list_work_items(&app, &who, project, vis).await?))
+    Ok(Json(thrust_core::list_work_items(&app, &who, &slug, project, vis).await?))
 }
 
 async fn delete_work_item(
     Authed(who): Authed,
     Extension(app): Extension<App>,
-    Path((project, id)): Path<(ProjectId, WorkItemId)>,
+    Path((slug, project, id)): Path<(WorkspaceSlug, ProjectId, WorkItemId)>,
 ) -> ApiResult<StatusCode> {
-    thrust_core::delete_work_item(&app, &who, project, id).await?;
+    thrust_core::delete_work_item(&app, &who, &slug, project, id).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
 async fn list_activity_for_item(
     Authed(who): Authed,
     Extension(app): Extension<App>,
-    Path((project, id)): Path<(ProjectId, WorkItemId)>,
+    Path((slug, project, id)): Path<(WorkspaceSlug, ProjectId, WorkItemId)>,
 ) -> ApiResult<Json<Vec<Activity>>> {
-    Ok(Json(thrust_core::list_activity(&app, &who, project, Some(id)).await?))
+    Ok(Json(thrust_core::list_activity(&app, &who, &slug, project, Some(id)).await?))
 }
 
 async fn list_activity_for_project(
     Authed(who): Authed,
     Extension(app): Extension<App>,
-    Path(project): Path<ProjectId>,
+    Path((slug, project)): Path<(WorkspaceSlug, ProjectId)>,
 ) -> ApiResult<Json<Vec<Activity>>> {
-    Ok(Json(thrust_core::list_activity(&app, &who, project, None).await?))
+    Ok(Json(thrust_core::list_activity(&app, &who, &slug, project, None).await?))
 }
 
 async fn put_attachment(
     Authed(who): Authed,
     Extension(app): Extension<App>,
-    Path((project, id, name)): Path<(ProjectId, WorkItemId, String)>,
+    Path((slug, project, id, name)): Path<(WorkspaceSlug, ProjectId, WorkItemId, String)>,
     headers: HeaderMap,
     body: Bytes,
 ) -> ApiResult<StatusCode> {
     let ct = headers.get(CONTENT_TYPE).and_then(|v| v.to_str().ok()).map(str::to_string);
-    thrust_core::put_attachment(&app, &who, project, id, &name, body.to_vec(), ct).await?;
+    thrust_core::put_attachment(&app, &who, &slug, project, id, &name, body.to_vec(), ct).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
 async fn get_attachment(
     Authed(who): Authed,
     Extension(app): Extension<App>,
-    Path((project, id, name)): Path<(ProjectId, WorkItemId, String)>,
+    Path((slug, project, id, name)): Path<(WorkspaceSlug, ProjectId, WorkItemId, String)>,
 ) -> ApiResult<Response<Body>> {
-    let blob = thrust_core::get_attachment(&app, &who, project, id, &name).await?;
+    let blob = thrust_core::get_attachment(&app, &who, &slug, project, id, &name).await?;
     let mut resp = Response::new(Body::from(blob.bytes));
     if let Some(ct) = blob.content_type.and_then(|c| HeaderValue::from_str(&c).ok()) {
         resp.headers_mut().insert(CONTENT_TYPE, ct);
@@ -260,10 +261,20 @@ async fn get_attachment(
 async fn delete_attachment(
     Authed(who): Authed,
     Extension(app): Extension<App>,
-    Path((project, id, name)): Path<(ProjectId, WorkItemId, String)>,
+    Path((slug, project, id, name)): Path<(WorkspaceSlug, ProjectId, WorkItemId, String)>,
 ) -> ApiResult<StatusCode> {
-    thrust_core::delete_attachment(&app, &who, project, id, &name).await?;
+    thrust_core::delete_attachment(&app, &who, &slug, project, id, &name).await?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+/// Where the slice's tenant routes are mounted. It is not Plane's `/api/v1`; #47 moves it out of that
+/// prefix, and the constant is the only thing that changes (the contract suite builds its paths from
+/// the same segments).
+pub const SLICE_PREFIX: &str = "/api/v1";
+
+/// An axum route pattern under `{SLICE_PREFIX}/workspaces/{slug}/projects/{project_id}`.
+fn slice_path(tail: &str) -> String {
+    format!("{SLICE_PREFIX}/workspaces/{{slug}}/projects/{{project_id}}{tail}")
 }
 
 pub fn router() -> Router {
@@ -275,18 +286,12 @@ pub fn router() -> Router {
         .route("/internal/sweep", post(sweep))
         .route("/internal/outbox-depth", get(outbox_depth))
         .route("/internal/inject-event", post(inject_event))
+        .route(&slice_path("/work-items"), post(create_work_item).get(list_work_items))
+        .route(&slice_path("/work-items/{id}"), delete(delete_work_item))
+        .route(&slice_path("/work-items/{id}/activity"), get(list_activity_for_item))
+        .route(&slice_path("/activity"), get(list_activity_for_project))
         .route(
-            "/api/v1/projects/{project_id}/work-items",
-            post(create_work_item).get(list_work_items),
-        )
-        .route("/api/v1/projects/{project_id}/work-items/{id}", delete(delete_work_item))
-        .route(
-            "/api/v1/projects/{project_id}/work-items/{id}/activity",
-            get(list_activity_for_item),
-        )
-        .route("/api/v1/projects/{project_id}/activity", get(list_activity_for_project))
-        .route(
-            "/api/v1/projects/{project_id}/work-items/{id}/attachments/{name}",
+            &slice_path("/work-items/{id}/attachments/{name}"),
             put(put_attachment).get(get_attachment).delete(delete_attachment),
         )
         .layer(DefaultBodyLimit::max(8 * 1024 * 1024))

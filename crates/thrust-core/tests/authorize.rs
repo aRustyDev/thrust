@@ -38,7 +38,7 @@ fn authorize_follows_the_role_table(
         _ => Role::Admin,
     };
     let who = w.principal(actor);
-    let got = block_on(authorize(&w.app, &who, w.project_a, perm));
+    let got = block_on(authorize(&w.app, &who, &w.slug_a, w.project_a, perm));
     let want = if allowed(role, perm) { Outcome::Ok } else { Outcome::Forbidden };
     assert_eq!(outcome(&got), want, "{actor:?} {perm:?}");
     if let Ok(scope) = got {
@@ -64,7 +64,7 @@ fn authenticate_resolves_a_live_session_and_nothing_else() {
 #[test]
 fn a_workspace_member_outside_the_project_is_forbidden() {
     let w = world();
-    let got = block_on(authorize(&w.app, &w.principal(Actor::OutsiderA), w.project_a, Permission::ReadWorkItems));
+    let got = block_on(authorize(&w.app, &w.principal(Actor::OutsiderA), &w.slug_a, w.project_a, Permission::ReadWorkItems));
     assert_eq!(outcome(&got), Outcome::Forbidden);
 }
 
@@ -74,10 +74,62 @@ fn another_tenants_project_is_not_found(
     #[values(Permission::ReadWorkItems, Permission::CreateWorkItem, Permission::ReadDeleted)] perm: Permission,
 ) {
     let w = world();
-    let cross = block_on(authorize(&w.app, &w.principal(Actor::MemberB), w.project_a, perm));
-    let missing = block_on(authorize(&w.app, &w.principal(Actor::MemberB), ProjectId(Uuid::from_u128(0xDEAD)), perm));
+    let cross = block_on(authorize(&w.app, &w.principal(Actor::MemberB), &w.slug_a, w.project_a, perm));
+    let missing = block_on(authorize(&w.app, &w.principal(Actor::MemberB), &w.slug_b, ProjectId(Uuid::from_u128(0xDEAD)), perm));
     assert_eq!(outcome(&cross), Outcome::NotFound);
     assert_eq!(outcome(&missing), Outcome::NotFound);
+}
+
+/// Who belongs to which workspace and project, written out as the fixture's spec: `([in A, in B], [role in
+/// project A, role in project B])`. Read it with `common::world`, not from the code under test.
+fn standing(actor: Actor) -> ([bool; 2], [Option<Role>; 2]) {
+    match actor {
+        Actor::AdminA => ([true, false], [Some(Role::Admin), None]),
+        Actor::MemberA => ([true, false], [Some(Role::Member), None]),
+        Actor::GuestA => ([true, false], [Some(Role::Guest), None]),
+        Actor::OutsiderA => ([true, false], [None, None]),
+        Actor::MemberB => ([false, true], [None, Some(Role::Member)]),
+        Actor::Dual => ([true, true], [Some(Role::Member), Some(Role::Guest)]),
+    }
+}
+
+fn slot(p: Proj) -> usize {
+    match p {
+        Proj::A => 0,
+        Proj::B => 1,
+    }
+}
+
+/// The slug picks the workspace the project is looked up in (ADR-0051 round 29), for every actor, project and
+/// slug: a slug that names no workspace, a workspace the caller is not in and a project that is not in the named
+/// workspace are all Not Found; a workspace member who is not a member of the project is Forbidden; and one
+/// session (`Actor::Dual`) works in both workspaces.
+#[rstest]
+fn the_slug_decides_which_workspace_a_project_is_looked_up_in(
+    #[values(Actor::AdminA, Actor::MemberA, Actor::GuestA, Actor::OutsiderA, Actor::MemberB, Actor::Dual)] actor: Actor,
+    #[values(Proj::A, Proj::B)] proj: Proj,
+    #[values(Slug::Own, Slug::Other, Slug::Unknown)] slug: Slug,
+) {
+    let w = world();
+    let got = block_on(authorize(
+        &w.app,
+        &w.principal(actor),
+        &w.slug(proj, slug),
+        w.project(proj),
+        Permission::ReadWorkItems,
+    ));
+    let (in_ws, role) = standing(actor);
+    let want = match slug {
+        Slug::Unknown | Slug::Other => Outcome::NotFound,
+        Slug::Own if !in_ws[slot(proj)] => Outcome::NotFound,
+        Slug::Own if role[slot(proj)].is_none() => Outcome::Forbidden,
+        Slug::Own => Outcome::Ok,
+    };
+    assert_eq!(outcome(&got), want, "{actor:?} on {proj:?} via {slug:?}");
+    if let Ok(scope) = got {
+        // the scope names the workspace the slug resolved to, which is the project's own
+        assert_eq!((scope.workspace_id(), scope.project_id()), (w.workspace_of(proj), w.project(proj)));
+    }
 }
 
 fn created_event(w: &World) -> Envelope {
@@ -102,7 +154,7 @@ fn process_event_is_idempotent_on_event_id() {
     let env = created_event(&w);
     assert!(block_on(process_event(&w.app, &env)).unwrap(), "first delivery inserts");
     assert!(!block_on(process_event(&w.app, &env)).unwrap(), "redelivery inserts nothing");
-    let rows = block_on(list_activity(&w.app, &w.principal(Actor::GuestA), w.project_a, None)).unwrap();
+    let rows = block_on(list_activity(&w.app, &w.principal(Actor::GuestA), &w.slug_a, w.project_a, None)).unwrap();
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].verb, "created");
     assert_eq!(rows[0].event_id, env.event_id);

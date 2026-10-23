@@ -2,7 +2,8 @@
 //! two tenants. Each step's result is compared with the model, which encodes the spec:
 //!
 //! * names are validated before anything else (1..=255 characters after trimming);
-//! * a project in another workspace is Not Found, a project the caller is not a member of is Forbidden;
+//! * a slug that names no workspace, a workspace the caller is not in and a project that is not in the named
+//!   workspace are Not Found, a project the caller is not a member of is Forbidden;
 //! * creating and deleting need Member, listing needs Guest, listing deleted rows needs Admin;
 //! * sequence ids are per project, start at 1, increase by one per create and are never reused (ADR-0043 B1);
 //! * a soft-deleted item disappears from the default list and stays in the with-deleted list;
@@ -26,10 +27,10 @@ use thrust_core::*;
 
 #[derive(Debug, Clone)]
 enum Op {
-    Create { actor: Actor, proj: Proj, valid_name: bool },
+    Create { actor: Actor, slug: Slug, proj: Proj, valid_name: bool },
     /// `pick` chooses one of the project's items (live or deleted); with none, a random unknown id.
-    Delete { actor: Actor, proj: Proj, pick: usize },
-    List { actor: Actor, proj: Proj, with_deleted: bool },
+    Delete { actor: Actor, slug: Slug, proj: Proj, pick: usize },
+    List { actor: Actor, slug: Slug, proj: Proj, with_deleted: bool },
 }
 
 fn actor() -> impl Strategy<Value = Actor> {
@@ -40,12 +41,19 @@ fn proj() -> impl Strategy<Value = Proj> {
     prop_oneof![Just(Proj::A), Just(Proj::B)]
 }
 
+/// Mostly the project's own workspace, so work items accumulate; the rest probe the wrong and unknown slugs.
+fn slug() -> impl Strategy<Value = Slug> {
+    prop_oneof![8 => Just(Slug::Own), 1 => Just(Slug::Other), 1 => Just(Slug::Unknown)]
+}
+
 fn op() -> impl Strategy<Value = Op> {
     prop_oneof![
-        4 => (actor(), proj(), prop::bool::weighted(0.9))
-            .prop_map(|(actor, proj, valid_name)| Op::Create { actor, proj, valid_name }),
-        2 => (actor(), proj(), 0..16usize).prop_map(|(actor, proj, pick)| Op::Delete { actor, proj, pick }),
-        2 => (actor(), proj(), any::<bool>()).prop_map(|(actor, proj, with_deleted)| Op::List { actor, proj, with_deleted }),
+        4 => (actor(), slug(), proj(), prop::bool::weighted(0.9))
+            .prop_map(|(actor, slug, proj, valid_name)| Op::Create { actor, slug, proj, valid_name }),
+        2 => (actor(), slug(), proj(), 0..16usize)
+            .prop_map(|(actor, slug, proj, pick)| Op::Delete { actor, slug, proj, pick }),
+        2 => (actor(), slug(), proj(), any::<bool>())
+            .prop_map(|(actor, slug, proj, with_deleted)| Op::List { actor, slug, proj, with_deleted }),
     ]
 }
 
@@ -73,21 +81,26 @@ fn slot(p: Proj) -> usize {
     }
 }
 
-/// The spec's access rule for `actor` on `proj`, needing `min` (None = no role needed beyond membership).
-fn access(actor: Actor, proj: Proj, min: Role) -> Outcome {
-    let role = match (actor, proj) {
-        (Actor::MemberB, Proj::A) | (Actor::AdminA | Actor::MemberA | Actor::GuestA | Actor::OutsiderA, Proj::B) => {
-            return Outcome::NotFound
-        }
-        (Actor::OutsiderA, Proj::A) => return Outcome::Forbidden,
-        (Actor::AdminA, _) => Role::Admin,
-        (Actor::MemberA | Actor::MemberB, _) => Role::Member,
-        (Actor::GuestA, _) => Role::Guest,
+/// The spec's access rule for `actor` on `proj` through `slug`, needing at least `min`: the slug must name the
+/// project's own workspace, the actor must belong to it, and then the actor's role in the project decides.
+fn access(actor: Actor, slug: Slug, proj: Proj, min: Role) -> Outcome {
+    // (belongs to workspace A, belongs to workspace B), and the role in (project A, project B)
+    let (in_ws, roles): ([bool; 2], [Option<Role>; 2]) = match actor {
+        Actor::AdminA => ([true, false], [Some(Role::Admin), None]),
+        Actor::MemberA => ([true, false], [Some(Role::Member), None]),
+        Actor::GuestA => ([true, false], [Some(Role::Guest), None]),
+        Actor::OutsiderA => ([true, false], [None, None]),
+        Actor::MemberB => ([false, true], [None, Some(Role::Member)]),
+        Actor::Dual => ([true, true], [Some(Role::Member), Some(Role::Guest)]),
     };
-    if role >= min {
-        Outcome::Ok
-    } else {
-        Outcome::Forbidden
+    let s = slot(proj);
+    if slug != Slug::Own || !in_ws[s] {
+        return Outcome::NotFound;
+    }
+    match roles[s] {
+        None => Outcome::Forbidden,
+        Some(role) if role >= min => Outcome::Ok,
+        Some(_) => Outcome::Forbidden,
     }
 }
 
@@ -98,7 +111,12 @@ enum Class {
     /// A create after a delete in the same project: where a reused sequence id would show.
     CreatedAfterDelete,
     InvalidName,
+    /// The project's own slug, by someone who is not in that workspace.
     CrossTenant,
+    /// A real workspace's slug, for a project that is in the other one.
+    WrongSlug,
+    /// A slug that names no workspace.
+    UnknownSlug,
     NotAMember,
     RoleTooLow,
     Deleted,
@@ -110,11 +128,13 @@ enum Class {
     ListedWithDeleted,
 }
 
-const ALL_CLASSES: [Class; 12] = [
+const ALL_CLASSES: [Class; 14] = [
     Class::Created,
     Class::CreatedAfterDelete,
     Class::InvalidName,
     Class::CrossTenant,
+    Class::WrongSlug,
+    Class::UnknownSlug,
     Class::NotAMember,
     Class::RoleTooLow,
     Class::Deleted,
@@ -133,50 +153,52 @@ struct Expect {
     target: Option<usize>,
 }
 
-fn denied(actor: Actor, want: &Outcome) -> Class {
-    match (want, actor) {
-        (Outcome::NotFound, _) => Class::CrossTenant,
-        (_, Actor::OutsiderA) => Class::NotAMember,
+fn denied(actor: Actor, slug: Slug, want: &Outcome) -> Class {
+    match (want, slug, actor) {
+        (Outcome::NotFound, Slug::Unknown, _) => Class::UnknownSlug,
+        (Outcome::NotFound, Slug::Other, _) => Class::WrongSlug,
+        (Outcome::NotFound, Slug::Own, _) => Class::CrossTenant,
+        (_, _, Actor::OutsiderA) => Class::NotAMember,
         _ => Class::RoleTooLow,
     }
 }
 
 fn expect(m: &Model, op: &Op) -> Expect {
     match *op {
-        Op::Create { actor, proj, valid_name } => {
+        Op::Create { actor, slug, proj, valid_name } => {
             let s = slot(proj);
-            let want = if valid_name { access(actor, proj, Role::Member) } else { Outcome::Invalid };
+            let want = if valid_name { access(actor, slug, proj, Role::Member) } else { Outcome::Invalid };
             let class = match want {
                 Outcome::Invalid => Class::InvalidName,
                 Outcome::Ok if m.items[s].iter().any(|i| i.deleted) => Class::CreatedAfterDelete,
                 Outcome::Ok => Class::Created,
-                ref w => denied(actor, w),
+                ref w => denied(actor, slug, w),
             };
             Expect { want, class, target: None }
         }
-        Op::Delete { actor, proj, pick } => {
+        Op::Delete { actor, slug, proj, pick } => {
             let s = slot(proj);
             let target = (!m.items[s].is_empty()).then(|| pick % m.items[s].len());
-            let mut want = access(actor, proj, Role::Member);
+            let mut want = access(actor, slug, proj, Role::Member);
             let class = match (&want, target) {
                 (Outcome::Ok, Some(i)) if !m.items[s][i].deleted => Class::Deleted,
                 (Outcome::Ok, Some(_)) => Class::DeleteAlreadyDeleted,
                 (Outcome::Ok, None) => Class::DeleteUnknown,
-                (w, _) => denied(actor, w),
+                (w, _) => denied(actor, slug, w),
             };
             if matches!(class, Class::DeleteAlreadyDeleted | Class::DeleteUnknown) {
                 want = Outcome::NotFound;
             }
             Expect { want, class, target }
         }
-        Op::List { actor, proj, with_deleted } => {
+        Op::List { actor, slug, proj, with_deleted } => {
             let min = if with_deleted { Role::Admin } else { Role::Guest };
-            let want = access(actor, proj, min);
+            let want = access(actor, slug, proj, min);
             let class = match want {
                 Outcome::Ok if with_deleted => Class::ListedWithDeleted,
                 Outcome::Ok if m.items[slot(proj)].iter().any(|i| i.deleted) => Class::ListedHidingADeletedRow,
                 Outcome::Ok => Class::Listed,
-                ref w => denied(actor, w),
+                ref w => denied(actor, slug, w),
             };
             Expect { want, class, target: None }
         }
@@ -211,10 +233,10 @@ fn run(ops: &[Op]) -> Result<(), TestCaseError> {
         let e = expect(&m, op);
         let mut created = None;
         match *op {
-            Op::Create { actor, proj, valid_name } => {
+            Op::Create { actor, slug, proj, valid_name } => {
                 let name = if valid_name { format!("item {step}") } else { "   ".to_string() };
                 let req = CreateWorkItemRequest { name, description: None, external_source: None, external_id: None };
-                let got = block_on(create_work_item(&w.app, &w.principal(actor), w.project(proj), req));
+                let got = block_on(create_work_item(&w.app, &w.principal(actor), &w.slug(proj, slug), w.project(proj), req));
                 prop_assert_eq!(outcome(&got), e.want.clone(), "step {}: {:?}", step, op);
                 if let Ok(item) = got {
                     let s = slot(proj);
@@ -223,15 +245,15 @@ fn run(ops: &[Op]) -> Result<(), TestCaseError> {
                     created = Some((item.id, item.sequence_id));
                 }
             }
-            Op::Delete { actor, proj, pick } => {
+            Op::Delete { actor, slug, proj, pick } => {
                 let s = slot(proj);
                 let id = e.target.map_or(WorkItemId(Uuid::from_u128(0xBAD0 + pick as u128)), |i| m.items[s][i].id);
-                let got = block_on(delete_work_item(&w.app, &w.principal(actor), w.project(proj), id));
+                let got = block_on(delete_work_item(&w.app, &w.principal(actor), &w.slug(proj, slug), w.project(proj), id));
                 prop_assert_eq!(outcome(&got), e.want.clone(), "step {}: {:?}", step, op);
             }
-            Op::List { actor, proj, with_deleted } => {
+            Op::List { actor, slug, proj, with_deleted } => {
                 let vis = if with_deleted { Visibility::WithDeleted } else { Visibility::Visible };
-                let got = block_on(list_work_items(&w.app, &w.principal(actor), w.project(proj), vis));
+                let got = block_on(list_work_items(&w.app, &w.principal(actor), &w.slug(proj, slug), w.project(proj), vis));
                 prop_assert_eq!(outcome(&got), e.want.clone(), "step {}: {:?}", step, op);
                 if let Ok(rows) = got {
                     for r in &rows {

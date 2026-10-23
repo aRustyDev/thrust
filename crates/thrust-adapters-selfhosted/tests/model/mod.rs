@@ -9,8 +9,10 @@
 //!
 //! The spec, written out (ADR-0043, ADR-0046):
 //!
-//! * `membership` is `NoSuchProject` for a project outside the workspace asked about, `NotAMember` without a
-//!   membership (a member row written with another workspace does not count), and the member's role otherwise;
+//! * `membership` resolves the workspace slug, the caller's membership of that workspace and of the project in one
+//!   answer: `NoSuchProject` for a slug that names no workspace, a workspace the caller is not in, or a project
+//!   outside the workspace the slug names; `NotAMember` for a workspace member without a project membership (a
+//!   member row written with another workspace does not count); the member's role, with the workspace, otherwise;
 //! * inside a transaction, `allocate` hands out the project's next sequence number and `sort_order` = 10 000 × that
 //!   number; a transaction that commits keeps them, one that rolls back or is dropped unfinished gives them back (the
 //!   counter row is transactional in Postgres: no gap, unlike the memory adapter); `allocate` under another
@@ -68,6 +70,14 @@ enum Ws {
     Other,
 }
 
+/// The slug a `membership` call names for a project: its own workspace's, the other one's, or one that names none.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Sl {
+    Own,
+    Other,
+    Unknown,
+}
+
 #[derive(Debug, Clone, Copy)]
 enum U {
     AdminA,
@@ -76,8 +86,11 @@ enum U {
     /// In workspace A, member of nothing.
     OutsiderA,
     AdminB,
-    /// In workspace B, with a stray `project_members` row for project A that carries workspace B. It must not count.
+    /// In both workspaces, with a stray `project_members` row for project A that carries workspace B. It must not
+    /// count.
     StrayB,
+    /// In both workspaces, Admin of both projects: one user, two workspaces.
+    Dual,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -115,7 +128,7 @@ enum Op {
     List { proj: P, ws: Ws, with_deleted: bool },
     /// `pick`: one of the project's rows, or `None` for an unknown id.
     Get { proj: P, ws: Ws, pick: Option<usize>, with_deleted: bool },
-    Membership { proj: P, ws: Ws, user: U },
+    Membership { proj: P, slug: Sl, user: U },
     Undispatched { limit: u32 },
     /// `pick`: one of this case's outbox rows, dispatched or not, or `None` for an unknown event id.
     Mark { pick: Option<usize> },
@@ -132,6 +145,10 @@ fn ws() -> impl Strategy<Value = Ws> {
     prop_oneof![5 => Just(Ws::Own), 1 => Just(Ws::Other)]
 }
 
+fn sl() -> impl Strategy<Value = Sl> {
+    prop_oneof![3 => Just(Sl::Own), 1 => Just(Sl::Other), 1 => Just(Sl::Unknown)]
+}
+
 fn step() -> impl Strategy<Value = Step> {
     prop_oneof![
         4 => (proj(), prop::option::weighted(0.5, 0..3u8)).prop_map(|(proj, ext)| Step::Create { proj, ext }),
@@ -146,7 +163,15 @@ fn end() -> impl Strategy<Value = End> {
 }
 
 fn user() -> impl Strategy<Value = U> {
-    prop_oneof![Just(U::AdminA), Just(U::MemberA), Just(U::GuestA), Just(U::OutsiderA), Just(U::AdminB), Just(U::StrayB)]
+    prop_oneof![
+        Just(U::AdminA),
+        Just(U::MemberA),
+        Just(U::GuestA),
+        Just(U::OutsiderA),
+        Just(U::AdminB),
+        Just(U::StrayB),
+        Just(U::Dual)
+    ]
 }
 
 fn ev() -> impl Strategy<Value = Ev> {
@@ -159,7 +184,7 @@ fn op() -> impl Strategy<Value = Op> {
         2 => (proj(), ws(), any::<bool>()).prop_map(|(proj, ws, with_deleted)| Op::List { proj, ws, with_deleted }),
         2 => (proj(), ws(), prop::option::weighted(0.85, 0..16usize), any::<bool>())
             .prop_map(|(proj, ws, pick, with_deleted)| Op::Get { proj, ws, pick, with_deleted }),
-        1 => (proj(), ws(), user()).prop_map(|(proj, ws, user)| Op::Membership { proj, ws, user }),
+        2 => (proj(), sl(), user()).prop_map(|(proj, slug, user)| Op::Membership { proj, slug, user }),
         1 => (1..6u32).prop_map(|limit| Op::Undispatched { limit }),
         1 => prop::option::weighted(0.85, 0..16usize).prop_map(|pick| Op::Mark { pick }),
         1 => Just(Op::Depth),
@@ -209,7 +234,12 @@ enum Class {
     GotUnknown,
     IsMember,
     NotAMember,
+    /// A project outside the workspace the slug names.
     NoSuchProject,
+    /// A slug that names no workspace.
+    UnknownSlug,
+    /// The project's own slug, by a user who is not in that workspace.
+    NotInWorkspace,
     UndispatchedSome,
     Marked,
     MarkedAgain,
@@ -227,7 +257,7 @@ enum Class {
 }
 
 impl Class {
-    const ALL: [Class; 37] = [
+    const ALL: [Class; 39] = [
         Class::Created,
         Class::ExternalKeyFreed,
         Class::Conflict,
@@ -253,6 +283,8 @@ impl Class {
         Class::IsMember,
         Class::NotAMember,
         Class::NoSuchProject,
+        Class::UnknownSlug,
+        Class::NotInWorkspace,
         Class::UndispatchedSome,
         Class::Marked,
         Class::MarkedAgain,
@@ -282,7 +314,7 @@ enum Call {
     Abandon,
     List { ws: WorkspaceId, p: ProjectId, vis: Visibility, want: Vec<WorkItem> },
     Get { ws: WorkspaceId, p: ProjectId, id: WorkItemId, vis: Visibility, want: Option<WorkItem> },
-    Membership { ws: WorkspaceId, p: ProjectId, user: UserId, want: Membership },
+    Membership { slug: WorkspaceSlug, p: ProjectId, user: UserId, want: Membership },
     Undispatched { limit: u32, want: Vec<OutboxRow> },
     Mark { event: EventId, at: Timestamp },
     Depth { want: u64 },
@@ -294,26 +326,44 @@ enum Call {
 #[derive(Debug, Clone)]
 struct Fix {
     ws: [WorkspaceId; 2],
+    /// Slugs are unique in the database and one container serves every case.
+    slug: [WorkspaceSlug; 2],
     p: [ProjectId; 2],
-    /// AdminA, MemberA, GuestA, OutsiderA, AdminB, StrayB.
-    users: [UserId; 6],
+    /// AdminA, MemberA, GuestA, OutsiderA, AdminB, StrayB, Dual.
+    users: [UserId; 7],
 }
 
 impl Fix {
     fn new() -> Fix {
         Fix {
             ws: [WorkspaceId(new_id()), WorkspaceId(new_id())],
+            slug: [
+                WorkspaceSlug::new(format!("ws-a-{}", new_id().simple())),
+                WorkspaceSlug::new(format!("ws-b-{}", new_id().simple())),
+            ],
             p: [ProjectId(new_id()), ProjectId(new_id())],
-            users: [UserId(new_id()), UserId(new_id()), UserId(new_id()), UserId(new_id()), UserId(new_id()), UserId(new_id())],
+            users: std::array::from_fn(|_| UserId(new_id())),
         }
     }
 
     fn seed(&self) -> SeedFixture {
-        let [admin_a, member_a, guest_a, _outsider_a, admin_b, stray_b] = self.users;
+        let [admin_a, member_a, guest_a, outsider_a, admin_b, stray_b, dual] = self.users;
         let m = |s: usize, user_id, role| SeedMembership { project_id: self.p[s], workspace_id: self.ws[s], user_id, role };
+        let in_ws = |s: usize, user_id| SeedWorkspaceMember { workspace_id: self.ws[s], user_id };
         SeedFixture {
-            workspaces: self.ws.to_vec(),
+            workspaces: (0..2).map(|s| SeedWorkspace { id: self.ws[s], slug: self.slug[s].clone() }).collect(),
             users: self.users.to_vec(),
+            workspace_members: vec![
+                in_ws(0, admin_a),
+                in_ws(0, member_a),
+                in_ws(0, guest_a),
+                in_ws(0, outsider_a),
+                in_ws(1, admin_b),
+                in_ws(0, stray_b),
+                in_ws(1, stray_b),
+                in_ws(0, dual),
+                in_ws(1, dual),
+            ],
             projects: vec![
                 SeedProject { id: self.p[0], workspace_id: self.ws[0], name: "A".into() },
                 SeedProject { id: self.p[1], workspace_id: self.ws[1], name: "B".into() },
@@ -323,6 +373,8 @@ impl Fix {
                 m(0, member_a, Role::Member),
                 m(0, guest_a, Role::Guest),
                 m(1, admin_b, Role::Admin),
+                m(0, dual, Role::Admin),
+                m(1, dual, Role::Admin),
                 // project A's row, written with workspace B
                 SeedMembership { project_id: self.p[0], workspace_id: self.ws[1], user_id: stray_b, role: Role::Admin },
             ],
@@ -339,6 +391,16 @@ impl Fix {
         let own = slot(proj);
         self.ws[if ws == Ws::Own { own } else { 1 - own }]
     }
+
+    /// The slug a `membership` call names for `proj`.
+    fn slug_for(&self, proj: P, sl: Sl) -> WorkspaceSlug {
+        let own = slot(proj);
+        match sl {
+            Sl::Own => self.slug[own].clone(),
+            Sl::Other => self.slug[1 - own].clone(),
+            Sl::Unknown => WorkspaceSlug::new("no-such-workspace"),
+        }
+    }
 }
 
 fn slot(p: P) -> usize {
@@ -348,16 +410,35 @@ fn slot(p: P) -> usize {
     }
 }
 
-/// The spec's membership answer, written out from `Fix::seed`.
-fn membership(proj: P, ws: Ws, user: U) -> Membership {
-    match (ws, proj, user) {
-        (Ws::Other, _, _) => Membership::NoSuchProject,
-        (Ws::Own, P::A, U::AdminA) => Membership::Member(Role::Admin),
-        (Ws::Own, P::A, U::MemberA) => Membership::Member(Role::Member),
-        (Ws::Own, P::A, U::GuestA) => Membership::Member(Role::Guest),
-        (Ws::Own, P::A, U::OutsiderA | U::AdminB | U::StrayB) => Membership::NotAMember,
-        (Ws::Own, P::B, U::AdminB) => Membership::Member(Role::Admin),
-        (Ws::Own, P::B, U::AdminA | U::MemberA | U::GuestA | U::OutsiderA | U::StrayB) => Membership::NotAMember,
+/// Which workspaces (A, B) a user belongs to, written out from `Fix::seed`.
+fn in_workspace(user: U) -> [bool; 2] {
+    match user {
+        U::AdminA | U::MemberA | U::GuestA | U::OutsiderA => [true, false],
+        U::AdminB => [false, true],
+        U::StrayB | U::Dual => [true, true],
+    }
+}
+
+/// A user's role in a project, written out from `Fix::seed`. `StrayB`'s row for project A names workspace B, so it is
+/// not a membership of project A.
+fn role_in(proj: P, user: U) -> Option<Role> {
+    match (proj, user) {
+        (P::A, U::AdminA) | (P::B, U::AdminB) | (_, U::Dual) => Some(Role::Admin),
+        (P::A, U::MemberA) => Some(Role::Member),
+        (P::A, U::GuestA) => Some(Role::Guest),
+        _ => None,
+    }
+}
+
+/// The spec's membership answer: only the project's own slug resolves it, and only for a member of that workspace.
+fn membership(fix: &Fix, proj: P, sl: Sl, user: U) -> Membership {
+    let s = slot(proj);
+    if sl != Sl::Own || !in_workspace(user)[s] {
+        return Membership::NoSuchProject;
+    }
+    match role_in(proj, user) {
+        Some(role) => Membership::Member { workspace_id: fix.ws[s], role },
+        None => Membership::NotAMember,
     }
 }
 
@@ -452,18 +533,20 @@ impl Model {
                 let vis = if with_deleted { Visibility::WithDeleted } else { Visibility::Visible };
                 calls.push(Call::Get { ws: self.fix.ws_for(proj, ws), p: self.fix.p[slot(proj)], id, vis, want });
             }
-            &Op::Membership { proj, ws, user } => {
-                let want = membership(proj, ws, user);
-                classes.push(match want {
-                    Membership::NotAMember if matches!((proj, ws, user), (P::A, Ws::Own, U::StrayB)) => {
+            &Op::Membership { proj, slug, user } => {
+                let want = membership(&self.fix, proj, slug, user);
+                classes.push(match (slug, want) {
+                    (Sl::Unknown, _) => Class::UnknownSlug,
+                    (Sl::Other, _) => Class::NoSuchProject,
+                    (Sl::Own, Membership::NoSuchProject) => Class::NotInWorkspace,
+                    (Sl::Own, Membership::NotAMember) if matches!((proj, user), (P::A, U::StrayB)) => {
                         Class::StrayMemberIgnored
                     }
-                    Membership::Member(_) => Class::IsMember,
-                    Membership::NotAMember => Class::NotAMember,
-                    Membership::NoSuchProject => Class::NoSuchProject,
+                    (Sl::Own, Membership::NotAMember) => Class::NotAMember,
+                    (Sl::Own, Membership::Member { .. }) => Class::IsMember,
                 });
-                let (w, p, u) = (self.fix.ws_for(proj, ws), self.fix.p[slot(proj)], self.fix.user(user));
-                calls.push(Call::Membership { ws: w, p, user: u, want });
+                let (slug, p, u) = (self.fix.slug_for(proj, slug), self.fix.p[slot(proj)], self.fix.user(user));
+                calls.push(Call::Membership { slug, p, user: u, want });
             }
             &Op::Undispatched { limit } => {
                 let want: Vec<OutboxRow> = self.undispatched().into_iter().take(limit as usize).collect();
@@ -746,8 +829,8 @@ async fn execute(db: &dyn Database, tx: &mut Option<Box<dyn Tx>>, call: Call, at
             let got = bounded(at, db.get_work_item(&scope(ws, p), id, vis)).await?;
             prop_assert_eq!(got, want, "{}: get", at);
         }
-        Call::Membership { ws, p, user, want } => {
-            let got = bounded(at, db.membership(ws, p, user)).await?;
+        Call::Membership { slug, p, user, want } => {
+            let got = bounded(at, db.membership(&slug, p, user)).await?;
             prop_assert_eq!(got, want, "{}: membership", at);
         }
         Call::Undispatched { limit, want } => {

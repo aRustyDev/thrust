@@ -21,7 +21,7 @@ fn create(w: &World, n: usize) -> Vec<WorkItem> {
                 external_source: None,
                 external_id: None,
             };
-            block_on(create_work_item(&w.app, &w.principal(Actor::MemberA), w.project_a, req)).unwrap()
+            block_on(create_work_item(&w.app, &w.principal(Actor::MemberA), &w.slug_a, w.project_a, req)).unwrap()
         })
         .collect()
 }
@@ -129,7 +129,7 @@ fn the_activity_consumer_records_events_and_rejects_bad_ones() {
     let mut env = block_on(w.app.ports.db.undispatched_outbox(&SystemScope::mint(), 10)).unwrap().remove(0).envelope;
 
     block_on(consumer.handle(&env)).unwrap();
-    let rows = block_on(list_activity(&w.app, &w.principal(Actor::GuestA), w.project_a, Some(item.id))).unwrap();
+    let rows = block_on(list_activity(&w.app, &w.principal(Actor::GuestA), &w.slug_a, w.project_a, Some(item.id))).unwrap();
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].verb, "created");
 
