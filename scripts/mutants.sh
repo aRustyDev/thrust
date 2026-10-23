@@ -53,7 +53,8 @@ done
 for spec in \
   "native-memory:duplicate-sequence-number:mutant_dup_sequence" \
   "native-sqlite:duplicate-sequence-number:mutant_dup_sequence" \
-  "native-sqlite:no-transaction-gate:mutant_no_gate"; do
+  "native-sqlite:no-transaction-gate:mutant_no_gate" \
+  "native-memory:case-sensitive-search:mutant_search_case_sensitive"; do
   target="${spec%%:*}"
   rest="${spec#*:}"
   name="${rest%%:*}"

@@ -17,7 +17,8 @@
 #             engine           the tests that decide the database engine (spike 0002): the 50-writer, 10k-create test,
 #                              and the search tests. Own test binary (`--test engine`), so EXPECT_MAIN is untouched.
 #                              The target starts with a very high create rate limit. Opt-in: not in contract-all.sh.
-#             tx               (worker-do only) the Tx-mapping control on the object's real SqlStorage (risk R1)
+#             do               (worker-do only) the object's own checks on its real SqlStorage: the Tx-mapping control
+#                              (risk R1) and the SQLite capabilities search needs (FTS5, the trigram tokenizer, risk R3)
 #             bindings         (worker-cf only) one real operation per binding (rate limit, secrets
 #                              store, email, service binding, workflow via JS shim)
 #
@@ -41,6 +42,13 @@ LOG="$LOGDIR/$TARGET-$PASS"
 RATE_LIMIT=30
 # The engine pass makes thousands of creates per user per window: the main pass's limit would refuse them.
 [ "${2:-main}" = "engine" ] && RATE_LIMIT=1000000
+# ... and 50 parallel writers hold up to ~100 Postgres connections at once on the Worker path (each request opens one for
+# its reads and one for its transaction; wrangler's local Hyperdrive emulation does not pool, a deployed Hyperdrive
+# does), which is the image's default `max_connections`. Measured: at 100, 1 of 50 writers got HTTP 500 ("postgres
+# handshake: db error", the server's reason is not in the Worker's log) in 1 run; at 400, 0 in 2 runs. The connection
+# limit is the inferred cause.
+PG_MAX_CONNECTIONS=100
+[ "${2:-main}" = "engine" ] && PG_MAX_CONNECTIONS=400
 EXPECT_MAIN=21
 EXPECT_SWEEPER=2
 EXPECT_PANIC=1
@@ -48,8 +56,8 @@ EXPECT_BLAST=1
 EXPECT_WORKER=1
 EXPECT_CRON=1
 EXPECT_BINDINGS=6
-EXPECT_TX=2
-EXPECT_ENGINE=1
+EXPECT_DO=3
+EXPECT_ENGINE=4
 
 # A free port, chosen at random: fixed ports collide with OrbStack-published containers and
 # with other sessions' wrangler instances (measured: 18080 and 8787 were both taken).
@@ -122,7 +130,7 @@ if [ "$ADAPTERS" = "postgres" ] || [ "$ADAPTERS" = "cloudflare" ]; then
   # `-e NAME` without a value makes the docker CLI forward NAME from ITS environment, so the
   # password never appears on argv.
   POSTGRES_PASSWORD="$PG_PASSWORD" docker run -d --rm --name "$PG_CONTAINER" -e POSTGRES_PASSWORD -e POSTGRES_DB=thrust \
-    -p "127.0.0.1:$PG_PORT:5432" postgres:16-alpine >"$LOG.pg.log" 2>&1 || { echo "could not start postgres" >&2; exit 3; }
+    -p "127.0.0.1:$PG_PORT:5432" postgres:16-alpine -c "max_connections=$PG_MAX_CONNECTIONS" >"$LOG.pg.log" 2>&1 || { echo "could not start postgres" >&2; exit 3; }
   i=0
   until [ "$(docker exec "$PG_CONTAINER" psql -U postgres -d thrust -tAc 'select 1' 2>/dev/null)" = "1" ]; do
     i=$((i + 1)); [ "$i" -gt 60 ] && { echo "postgres query probe failed" >&2; exit 3; }
@@ -251,10 +259,10 @@ case "$PASS" in
     TEST_STATUS=$?
     EXPECT=$EXPECT_ENGINE
     ;;
-  tx)
-    "$ROOT/scripts/rs" cargo test --manifest-path "$ROOT/Cargo.toml" -p thrust-contract-tests --test worker_only -- worker_do_tx_ --test-threads=1 --nocapture >"$LOG.test.log" 2>&1
+  do)
+    "$ROOT/scripts/rs" cargo test --manifest-path "$ROOT/Cargo.toml" -p thrust-contract-tests --test worker_only -- worker_do_ --test-threads=1 --nocapture >"$LOG.test.log" 2>&1
     TEST_STATUS=$?
-    EXPECT=$EXPECT_TX
+    EXPECT=$EXPECT_DO
     ;;
   bindings)
     "$ROOT/scripts/rs" cargo test --manifest-path "$ROOT/Cargo.toml" -p thrust-contract-tests --test worker_only -- worker_bindings_ --test-threads=1 --nocapture >"$LOG.test.log" 2>&1

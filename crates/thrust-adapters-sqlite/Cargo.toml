@@ -32,3 +32,5 @@ proptest = "1"
 tokio = { version = "1", default-features = false, features = ["rt", "macros", "time"] }
 futures-executor = "0.3"
 rstest = "0.26"
+# The reference implementation of search (a scan) the SQLite adapter is compared with.
+thrust-adapters-memory = { workspace = true }

@@ -251,7 +251,7 @@ async fn stage2_cron_real_trigger_runs_the_sweeper() {
 
 // ---------------------------------------------------------------------------------------------------------------------
 // Cell `worker-do` (spike 0002, risk R1): how ADR-0045's explicit `Tx` maps onto the object's SQLite.
-// Run via `scripts/contract.sh worker-do tx`. The same scenario runs hermetically on rusqlite in
+// Run via `scripts/contract.sh worker-do do`. The same scenario runs hermetically on rusqlite in
 // `crates/thrust-adapters-sqlite/tests/commit.rs`; here it runs on the REAL `SqlStorage` and `transactionSync`.
 // ---------------------------------------------------------------------------------------------------------------------
 
@@ -293,4 +293,36 @@ async fn worker_do_tx_naive_mapping_is_caught() {
     // control: no probe without the admin token (the probe is a test route)
     let r = t.http.get(t.url("/_test/do/tx-control?mode=atomic")).send().await.unwrap();
     assert_eq!(r.status(), 404, "the probe answered without the admin token");
+}
+
+/// Spike 0002 risk R3, asked of the real runtime: does the SQLite inside a Durable Object have FTS5 with the `trigram`
+/// tokenizer, which is what substring search (`icontains` parity, ADR-0083) needs? The probe builds a scratch FTS5 table
+/// and drops it again. The findings are printed whatever they are (`FTS5-OBSERVATION`), so a build of workerd without the
+/// tokenizer is reported as a finding with its SQLite version, and fails this test.
+#[tokio::test]
+async fn worker_do_fts5_trigram_tokenizer_is_available() {
+    let t = Target::from_env();
+    let r = t.admin_get("/_test/do/fts-probe").await;
+    assert_eq!(r.status(), 200, "fts-probe: {:?}", r.text().await);
+    let report: Value = r.json().await.unwrap();
+    eprintln!("FTS5-OBSERVATION: {report}");
+    let tri = &report["fts5_trigram"];
+    assert_eq!(tri["created"], true, "no FTS5 `trigram` tokenizer in this SQLite: {report}");
+    assert_eq!(tri["inserted"], true, "{report}");
+    // a substring, in the middle of a word, with the other case, across a space: what `icontains` finds
+    assert_eq!(tri["substring_world"], json!(["Hello World"]), "{report}");
+    assert_eq!(tri["substring_inside_word"], json!(["needle in a haystack"]), "{report}");
+    assert_eq!(tri["phrase_with_spaces"], json!(["needle in a haystack"]), "{report}");
+    // non-ASCII case folding, as `icontains` does it
+    assert_eq!(tri["non_ascii_case_fold"], json!(["\u{c9}COLE normale"]), "{report}");
+    // controls: a query in no row finds none, so the hits above are not "everything matches"; and a 2-character
+    // query matches NOTHING through the index (a trigram needs 3), which is why the adapter falls back to LIKE for
+    // short queries, and LIKE finds it (with `%` and `_` escaped)
+    assert_eq!(tri["absent"], json!([]), "{report}");
+    assert_eq!(tri["two_characters_match"], json!([]), "{report}");
+    assert_eq!(tri["two_characters_like"], json!(["Hello World"]), "{report}");
+    assert_eq!(tri["percent_escaped_like"], json!(["50% off_sale"]), "{report}");
+    // the probe is repeatable: it drops its scratch table
+    let again: Value = t.admin_get("/_test/do/fts-probe").await.json().await.unwrap();
+    assert_eq!(again["fts5_trigram"]["created"], true);
 }

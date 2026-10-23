@@ -79,7 +79,40 @@ impl SqliteDatabase {
     fn x(&self, sql: &str, p: &[Value]) -> Result<(), DbError> {
         self.sql.execute(sql, p).map_err(db_err)
     }
+
+    /// `icontains` by the reference rule (`to_lowercase`, `contains`), over the project's visible rows in sequence order,
+    /// a page at a time so a project of 100k rows is never held whole, stopping at `limit` matches.
+    fn scan_in_rust(&self, ws: Uuid, project: Uuid, query: &str, limit: u32) -> Result<Vec<WorkItem>, DbError> {
+        const PAGE: i64 = 500;
+        let q = query.to_lowercase();
+        let (mut found, mut after) = (Vec::new(), 0i64);
+        while found.len() < limit as usize {
+            let page = self.q(
+                &format!(
+                    "SELECT {WI_COLS} FROM work_items WHERE workspace_id = ? AND project_id = ? AND deleted_at IS NULL \
+                     AND archived_at IS NULL AND is_draft = 0 AND sequence_id > ? ORDER BY sequence_id LIMIT ?"
+                ),
+                params![ws, project, after, PAGE],
+            )?;
+            for r in &page {
+                let w = work_item(r).map_err(db_err)?;
+                after = w.sequence_id;
+                if w.name.to_lowercase().contains(&q) || w.description.as_deref().is_some_and(|d| d.to_lowercase().contains(&q)) {
+                    found.push(w);
+                    if found.len() == limit as usize {
+                        break;
+                    }
+                }
+            }
+            if (page.len() as i64) < PAGE {
+                break;
+            }
+        }
+        Ok(found)
+    }
 }
+
+const SORT_STEP: i64 = 10_000;
 
 const WI_COLS: &str = "id, workspace_id, project_id, sequence_id, sort_order, name, description, external_source, \
     external_id, created_by, created_at, archived_at, is_draft, deleted_at";
@@ -101,6 +134,20 @@ fn work_item(r: &Row) -> Result<WorkItem, SqlError> {
         is_draft: r.bool(12)?,
         deleted_at: r.opt_timestamp(13)?,
     })
+}
+
+/// `%query%` for `LIKE ... ESCAPE '\'`, with the query's own `\`, `%` and `_` escaped so they match themselves.
+fn like_pattern(query: &str) -> String {
+    let mut p = String::with_capacity(query.len() + 2);
+    p.push('%');
+    for c in query.chars() {
+        if matches!(c, '\\' | '%' | '_') {
+            p.push('\\');
+        }
+        p.push(c);
+    }
+    p.push('%');
+    p
 }
 
 fn activity(r: &Row) -> Result<Activity, SqlError> {
@@ -207,6 +254,97 @@ impl Database for SqliteDatabase {
             params![scope.workspace_id().0, scope.project_id().0, id.0],
         )?;
         rows.first().map(work_item).transpose().map_err(db_err)
+    }
+
+    /// A query of three characters or more is answered by the FTS5 trigram index (which folds case for every script). A
+    /// shorter one has no trigram, so it scans the project: with LIKE when it is ASCII (SQLite's LIKE folds ASCII case
+    /// only), and in Rust, a page of rows at a time, when it is not (`icontains` folds the rest too, and only the
+    /// reference matcher does that exactly). The Postgres adapter scans below three characters as well, as `pg_trgm`
+    /// needs three.
+    async fn search_work_items(&self, scope: &Scope, query: &str, limit: u32) -> Result<Vec<WorkItem>, DbError> {
+        const VISIBLE: &str = "workspace_id = ? AND project_id = ? AND deleted_at IS NULL AND archived_at IS NULL AND is_draft = 0";
+        let (ws, project) = (scope.workspace_id().0, scope.project_id().0);
+        let rows = if query.chars().count() >= 3 {
+            // an FTS5 phrase: the query as one quoted string, its own quotes doubled, so nothing in it is syntax
+            let phrase = format!("\"{}\"", query.replace('"', "\"\""));
+            self.q(
+                &format!(
+                    "SELECT {WI_COLS} FROM work_items WHERE {VISIBLE} \
+                     AND rowid IN (SELECT rowid FROM work_items_fts WHERE work_items_fts MATCH ?) \
+                     ORDER BY sequence_id LIMIT ?"
+                ),
+                params![ws, project, phrase, i64::from(limit)],
+            )?
+        } else if query.is_ascii() {
+            let pattern = like_pattern(query);
+            self.q(
+                &format!(
+                    "SELECT {WI_COLS} FROM work_items WHERE {VISIBLE} \
+                     AND (name LIKE ? ESCAPE '\\' OR description LIKE ? ESCAPE '\\') ORDER BY sequence_id LIMIT ?"
+                ),
+                params![ws, project, pattern.as_str(), pattern.as_str(), i64::from(limit)],
+            )?
+        } else {
+            return self.scan_in_rust(ws, project, query, limit);
+        };
+        rows.iter().map(work_item).collect::<Result<_, _>>().map_err(db_err)
+    }
+
+    async fn seed_work_items(
+        &self,
+        _sys: &SystemScope,
+        workspace: WorkspaceId,
+        project: ProjectId,
+        items: &[SeedWorkItem],
+    ) -> Result<i64, DbError> {
+        // Serialised with the transactions (the gate) because it reads and moves the same counter; one `atomically`.
+        let _permit = self.gate.acquire().await;
+        let n = items.len() as i64;
+        let mut first = 0i64;
+        self.sql
+            .atomically(&mut |x| {
+                let counter = x.query(
+                    "SELECT last_sequence_id, last_sort_order FROM project_sequences WHERE workspace_id = ? AND project_id = ?",
+                    params![workspace.0, project.0],
+                )?;
+                let (base_sequence, base_sort) = match counter.first() {
+                    Some(r) => (r.int(0)?, r.int(1)?),
+                    None => {
+                        if x.query("SELECT 1 FROM projects WHERE id = ? AND workspace_id = ?", params![project.0, workspace.0])?.is_empty() {
+                            return Err(SqlError::Other("project is not in this workspace".into()));
+                        }
+                        (0, 0)
+                    }
+                };
+                x.execute(
+                    "INSERT INTO project_sequences (workspace_id, project_id, last_sequence_id, last_sort_order) VALUES (?, ?, ?, ?) \
+                     ON CONFLICT (workspace_id, project_id) DO UPDATE SET \
+                       last_sequence_id = excluded.last_sequence_id, last_sort_order = excluded.last_sort_order",
+                    params![workspace.0, project.0, base_sequence + n, base_sort + n * SORT_STEP],
+                )?;
+                for (i, item) in items.iter().enumerate() {
+                    let ord = i as i64 + 1;
+                    x.execute(
+                        "INSERT INTO work_items (id, workspace_id, project_id, sequence_id, sort_order, name, description, \
+                           created_by, created_at, is_draft) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)",
+                        params![
+                            item.id.0,
+                            workspace.0,
+                            project.0,
+                            base_sequence + ord,
+                            base_sort + ord * SORT_STEP,
+                            item.name.as_str(),
+                            item.description.as_deref(),
+                            item.created_by.0,
+                            item.created_at
+                        ],
+                    )?;
+                }
+                first = base_sequence + 1;
+                Ok(())
+            })
+            .map_err(db_err)?;
+        Ok(first)
     }
 
     async fn insert_activity(&self, _sys: &SystemScope, a: &Activity) -> Result<bool, DbError> {
@@ -328,7 +466,6 @@ pub struct SqliteTx {
     ops: Vec<Op>,
 }
 
-const SORT_STEP: i64 = 10_000;
 
 impl SqliteTx {
     fn q(&self, sql: &str, p: &[Value]) -> Result<Vec<Row>, DbError> {

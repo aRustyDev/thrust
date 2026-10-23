@@ -21,7 +21,10 @@ pub struct Migration {
 
 /// Every migration this build knows, in order. Numbers match the Postgres files they translate or sit beside:
 /// 0001 is the end state of Postgres 0001 to 0004; 0005 is identity (issue #38); 0006 is search.
-pub const MIGRATIONS: &[Migration] = &[Migration { version: 1, name: "init", sql: include_str!("../migrations/0001_init.sql") }];
+pub const MIGRATIONS: &[Migration] = &[
+    Migration { version: 1, name: "init", sql: include_str!("../migrations/0001_init.sql") },
+    Migration { version: 6, name: "search", sql: include_str!("../migrations/0006_search.sql") },
+];
 
 const CREATE_LEDGER: &str = "CREATE TABLE IF NOT EXISTS schema_migrations (\
     version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at INTEGER NOT NULL)";

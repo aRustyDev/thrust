@@ -414,6 +414,30 @@ pub async fn list_work_items(
     Ok(app.ports.db.list_work_items(&scope, vis).await?)
 }
 
+/// How many work items a search returns at most, in sequence order. Plane's search is capped too; the cap also keeps one
+/// query from answering with a whole project.
+pub const SEARCH_LIMIT: u32 = 100;
+
+/// The longest query a search accepts, in characters.
+pub const SEARCH_QUERY_MAX: usize = 100;
+
+/// Work items of the project whose name or description contains `query`, any case (Plane's `icontains`), in sequence order.
+/// Needs the same permission as a listing.
+pub async fn search_work_items(
+    app: &App,
+    who: &Principal,
+    slug: &WorkspaceSlug,
+    project: ProjectId,
+    query: &str,
+) -> Result<Vec<WorkItem>, CoreError> {
+    // Blank is refused, but the query is NOT trimmed: `icontains` is exact about a leading or trailing space.
+    if query.trim().is_empty() || query.chars().count() > SEARCH_QUERY_MAX {
+        return Err(CoreError::Invalid(format!("q must be 1..={SEARCH_QUERY_MAX} characters, not blank")));
+    }
+    let scope = authorize(app, who, slug, project, Permission::ReadWorkItems).await?;
+    Ok(app.ports.db.search_work_items(&scope, query, SEARCH_LIMIT).await?)
+}
+
 pub async fn list_activity(
     app: &App,
     who: &Principal,
@@ -499,6 +523,28 @@ pub async fn seed(app: &App, fixture: &SeedFixture) -> Result<(), CoreError> {
         app.ports.db.insert_session(&session).await?;
     }
     Ok(())
+}
+
+/// Test and bench support behind `/internal/seed-work-items`: insert the request's items as live work items of one
+/// project, in bulk, numbered from its counter.
+pub async fn seed_work_items(app: &App, req: &SeedWorkItemsRequest) -> Result<SeedWorkItemsReport, CoreError> {
+    if req.items.is_empty() {
+        return Err(CoreError::Invalid("no items".into()));
+    }
+    let now = app.ports.clock.now();
+    let items: Vec<SeedWorkItem> = req
+        .items
+        .iter()
+        .map(|i| SeedWorkItem {
+            id: WorkItemId(app.ports.ids.new_uuid()),
+            name: i.name.clone(),
+            description: i.description.clone(),
+            created_by: req.created_by,
+            created_at: now,
+        })
+        .collect();
+    let first = app.ports.db.seed_work_items(&app.system, req.workspace_id, req.project_id, &items).await?;
+    Ok(SeedWorkItemsReport { first_sequence_id: first, count: items.len() as u64 })
 }
 
 /// Queue consumer body. Idempotent on `event_id`: a redelivery inserts nothing.

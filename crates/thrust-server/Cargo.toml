@@ -18,6 +18,7 @@ mutant_dup_sequence = ["thrust-adapters-memory/mutant_dup_sequence", "thrust-ada
 mutant_no_gate = ["thrust-adapters-sqlite/mutant_no_gate"]
 mutant_no_activity_dedupe = ["thrust-adapters-memory/mutant_no_activity_dedupe"]
 mutant_ignore_revoked = ["thrust-adapters-memory/mutant_ignore_revoked"]
+mutant_search_case_sensitive = ["thrust-adapters-memory/mutant_search_case_sensitive"]
 
 [dependencies]
 thrust-contracts = { workspace = true }

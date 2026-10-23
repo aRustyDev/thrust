@@ -165,3 +165,204 @@ async fn engine_fifty_writers_ten_thousand_creates_never_duplicate_a_sequence_id
     let visible: Vec<WorkItem> = list(&t, &f.guest_a, &f.a, None).await.json().await.unwrap();
     assert_eq!(visible.len(), grand_total - deleted_numbers.len());
 }
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Search (spike 0002 exit criterion 2, ADR-0083): substring queries return what Plane's `icontains` returns.
+// ---------------------------------------------------------------------------------------------------------------------
+
+/// The route returns at most this many work items, in sequence order (`thrust_core::SEARCH_LIMIT`).
+const SEARCH_LIMIT: usize = 100;
+
+/// Plane's `icontains`, written out: the oracle every engine is compared with. A work item matches when its name or its
+/// description contains the query, ignoring case.
+fn icontains(item: &(String, Option<String>), q: &str) -> bool {
+    let q = q.to_lowercase();
+    item.0.to_lowercase().contains(&q) || item.1.as_deref().is_some_and(|d| d.to_lowercase().contains(&q))
+}
+
+/// Words that collide on purpose: shared stems and case variants, plus the characters a LIKE pattern or a trigram
+/// phrase would mistake for syntax (`%`, `_`, `\`, quotes). ASCII only: the engines fold case through different
+/// locale rules beyond it, and that is reported separately below, not folded into the parity claim.
+const WORDS: &[&str] = &[
+    "fix", "Fix", "FIX", "login", "Login", "logout", "bug", "BUG", "debug", "timeout", "time", "Time", "queue", "Queue",
+    "100%", "a_b", "a%b", "back\\slash", "it's", "say\"hi\"", "x", "ab", "abc", "ABC", "api", "API", "v2", "retry-after",
+];
+
+fn words() -> impl Strategy<Value = String> {
+    (prop::collection::vec(prop::sample::select(WORDS), 1..4), prop::sample::select(&[" ", "-", "_", "", "/"][..]))
+        .prop_map(|(w, sep)| w.join(sep))
+}
+
+fn corpus() -> impl Strategy<Value = Vec<(String, Option<String>)>> {
+    prop::collection::vec((words(), prop::option::weighted(0.6, words())), 300..=300)
+}
+
+/// A query: usually a piece of an item (so there are hits, case flipped half the time), sometimes arbitrary (so
+/// there are misses and syntax characters), 1 to 8 characters (1 and 2 cannot use a trigram index).
+fn queries(items: Vec<(String, Option<String>)>) -> impl Strategy<Value = String> {
+    let texts: Vec<String> = items.iter().flat_map(|(n, d)| std::iter::once(n.clone()).chain(d.clone())).collect();
+    let from_item = (0..texts.len(), 0..40usize, 1..=8usize, any::<bool>()).prop_map(move |(i, at, len, flip)| {
+        let chars: Vec<char> = texts[i].chars().collect();
+        let start = at % chars.len();
+        let piece: String = chars[start..(start + len).min(chars.len())].iter().collect();
+        if flip { piece.chars().map(|c| if c.is_lowercase() { c.to_ascii_uppercase() } else { c.to_ascii_lowercase() }).collect() } else { piece }
+    });
+    let arbitrary = prop::collection::vec(prop::sample::select(&['a', 'b', 'c', 'x', '%', '_', '\\', '\'', '"', ' ', '-', '1', '0'][..]), 1..=5)
+        .prop_map(|c| c.into_iter().collect::<String>());
+    // a blank query is refused (400), so the generator makes none; a leading or trailing space is a real query
+    prop_oneof![7 => from_item, 3 => arbitrary].prop_filter("not blank", |q| !q.trim().is_empty())
+}
+
+use proptest::prelude::*;
+use proptest::strategy::ValueTree;
+use proptest::test_runner::TestRunner;
+
+/// Sequence ids a search answered with.
+async fn search_ids(t: &Target, who: &User, at: &At, q: &str) -> Vec<i64> {
+    let r = search(t, who, at, q).await;
+    let status = r.status();
+    assert_eq!(status, 200, "search for {q:?}: HTTP {status}: {:?}", r.text().await);
+    r.json::<Vec<WorkItem>>().await.unwrap().iter().map(|w| w.sequence_id).collect()
+}
+
+/// Spike 0002 exit criterion 2: on a generated seed, substring queries answer exactly what `icontains` answers, as the
+/// first `SEARCH_LIMIT` matches in sequence order, soft-deleted items excluded. 300 items seeded through the bulk route,
+/// 20 of them deleted through the API, 400 generated queries. The case a trigram index cannot answer (1 and 2
+/// characters) and the characters that are syntax in LIKE and in an FTS phrase are in the generator on purpose.
+///
+/// Rule 8, the control: the oracle is checked against a deliberately wrong one (case-sensitive, and prefix-only) and must
+/// disagree with it on this very corpus, so a corpus that every matcher answers alike cannot pass here.
+#[tokio::test]
+async fn engine_search_matches_icontains_on_a_generated_seed() {
+    let t = Target::from_env();
+    let f = Fixture::seed(&t).await;
+    let mut runner = TestRunner::deterministic();
+    let seed = corpus().new_tree(&mut runner).unwrap().current();
+    let report = seed_work_items(&t, &f, &f.a, f.admin_a.id, &seed).await;
+    assert_eq!((report.first_sequence_id, report.count), (1, seed.len() as u64));
+
+    // the project as the API shows it: the seeded rows, in sequence order, with their ids
+    let mut rows: Vec<WorkItem> = list(&t, &f.guest_a, &f.a, None).await.json().await.unwrap();
+    assert_eq!(rows.iter().map(|w| (w.name.clone(), w.description.clone())).collect::<Vec<_>>(), seed, "the seed route changed what it was given");
+    // delete 20 of them: their text must stop matching
+    let mut alive: Vec<(i64, (String, Option<String>))> = rows.iter().map(|w| (w.sequence_id, (w.name.clone(), w.description.clone()))).collect();
+    for n in (0..seed.len()).step_by(15).take(20) {
+        let r = t.http.delete(t.url(&format!("{}/{}", wi_path(&f.a), rows[n].id))).bearer_auth(&f.member_a.token).send().await.unwrap();
+        assert_eq!(r.status(), 204);
+        alive.retain(|(seq, _)| *seq != rows[n].sequence_id);
+    }
+    rows.clear();
+
+    let mut hits_total = 0usize;
+    let mut empty = 0usize;
+    let mut capped = 0usize;
+    let mut differ_from_case_sensitive = 0usize;
+    let mut differ_from_prefix = 0usize;
+    let strategy = queries(seed.clone());
+    for _ in 0..400 {
+        let q = strategy.new_tree(&mut runner).unwrap().current();
+        let want: Vec<i64> = alive.iter().filter(|(_, item)| icontains(item, &q)).map(|(seq, _)| *seq).take(SEARCH_LIMIT).collect();
+        let got = search_ids(&t, &f.guest_a, &f.a, &q).await;
+        assert_eq!(got, want, "search for {q:?} disagrees with icontains");
+        hits_total += want.len();
+        empty += want.is_empty() as usize;
+        capped += (want.len() == SEARCH_LIMIT) as usize;
+        let wrong_case: Vec<i64> = alive.iter().filter(|(_, (n, d))| n.contains(&q) || d.as_deref().is_some_and(|d| d.contains(&q))).map(|(s, _)| *s).take(SEARCH_LIMIT).collect();
+        let wrong_prefix: Vec<i64> = alive.iter().filter(|(_, (n, d))| n.to_lowercase().starts_with(&q.to_lowercase()) || d.as_deref().is_some_and(|d| d.to_lowercase().starts_with(&q.to_lowercase()))).map(|(s, _)| *s).take(SEARCH_LIMIT).collect();
+        differ_from_case_sensitive += (wrong_case != want) as usize;
+        differ_from_prefix += (wrong_prefix != want) as usize;
+    }
+    // the corpus and the queries exercised the engine: hits, misses, the cap, and both wrong oracles told apart from the right one
+    assert!(hits_total > 1000, "the queries found almost nothing: {hits_total} hits");
+    assert!(empty > 10 && empty < 300, "{empty} of 400 queries had no match");
+    assert!(capped > 0, "no query reached the {SEARCH_LIMIT}-result cap, so the cap was not exercised");
+    assert!(differ_from_case_sensitive > 20, "a case-sensitive matcher differed from icontains on only {differ_from_case_sensitive} queries: the corpus does not test case folding");
+    assert!(differ_from_prefix > 20, "a prefix-only matcher differed from icontains on only {differ_from_prefix} queries: the corpus does not test substring matching");
+    eprintln!("SEARCH-OBSERVATION: 400 queries, {hits_total} hits, {empty} empty, {capped} capped");
+}
+
+/// Freshness and scope (exit criterion 2: "1-minute freshness"; ADR-0083: tenant-aware results). A created item is found
+/// by the very next search, a deleted one is not, `%` `_` and `\` are literal, and nothing crosses a tenant or a role
+/// line. Every allowed case has its neighbouring rejected case.
+#[tokio::test]
+async fn engine_search_is_fresh_literal_and_scoped() {
+    let t = Target::from_env();
+    let f = Fixture::seed(&t).await;
+    let needle = format!("zq{}x", uuid::Uuid::new_v4().simple());
+
+    // fresh: found at once after the create (the bound is 60 s; nothing here waits), gone at once after the delete
+    assert!(search_ids(&t, &f.guest_a, &f.a, &needle).await.is_empty(), "found before it exists");
+    let item = create(&t, &f.member_a, &f.a, json!({ "name": format!("A {needle} b"), "description": "plain" })).await.json::<WorkItem>().await.unwrap();
+    assert_eq!(search_ids(&t, &f.guest_a, &f.a, &needle).await, [item.sequence_id], "not searchable right after the create");
+    assert_eq!(search_ids(&t, &f.guest_a, &f.a, &needle.to_uppercase()).await, [item.sequence_id], "case matters");
+    let r = t.http.delete(t.url(&format!("{}/{}", wi_path(&f.a), item.id))).bearer_auth(&f.member_a.token).send().await.unwrap();
+    assert_eq!(r.status(), 204);
+    assert!(search_ids(&t, &f.guest_a, &f.a, &needle).await.is_empty(), "a deleted item is still searchable");
+
+    // a description is searched too, and a name and a description of one item are one hit
+    let both = create(&t, &f.member_a, &f.a, json!({ "name": format!("n-{needle}"), "description": format!("d-{needle}") })).await.json::<WorkItem>().await.unwrap();
+    assert_eq!(search_ids(&t, &f.guest_a, &f.a, &needle).await, [both.sequence_id]);
+    let only_desc = create(&t, &f.member_a, &f.a, json!({ "name": "no match here", "description": format!("see {needle}2") })).await.json::<WorkItem>().await.unwrap();
+    assert_eq!(search_ids(&t, &f.guest_a, &f.a, &format!("{needle}2")).await, [only_desc.sequence_id]);
+
+    // `%`, `_` and `\` are literal characters, not pattern syntax
+    for name in ["100% done", "100 done", "a_b", "axb", "c\\d", "cd"] {
+        create_ok(&t, &f.member_a, &f.a, name).await;
+    }
+    let names = |hits: Vec<WorkItem>| hits.into_iter().map(|w| w.name).collect::<Vec<_>>();
+    for (q, want) in [("0% d", vec!["100% done"]), ("a_b", vec!["a_b"]), ("c\\d", vec!["c\\d"])] {
+        let hits: Vec<WorkItem> = search(&t, &f.guest_a, &f.a, q).await.json().await.unwrap();
+        assert_eq!(names(hits), want, "{q:?} was read as pattern syntax");
+    }
+
+    // tenant and role lines: B has an item with the same text, and A's search must not return it
+    let other = create(&t, &f.admin_b, &f.b, json!({ "name": format!("tenant b {needle}") })).await.json::<WorkItem>().await.unwrap();
+    assert_eq!(
+        search_ids(&t, &f.guest_a, &f.a, &needle).await,
+        [both.sequence_id, only_desc.sequence_id],
+        "another tenant's item was returned (or one of A's went missing)"
+    );
+    assert_eq!(search_ids(&t, &f.admin_b, &f.b, &needle).await, [other.sequence_id], "B does not find its own item");
+    assert_eq!(search(&t, &f.admin_b, &f.a, &needle).await.status(), 404, "cross-tenant search");
+    assert_eq!(search(&t, &f.outsider_a, &f.a, &needle).await.status(), 403, "a workspace member who is not in the project");
+    let r = t.http.get(t.url(&search_path(&f.a))).query(&[("q", needle.as_str())]).send().await.unwrap();
+    assert_eq!(r.status(), 401, "unauthenticated search");
+    for bad in ["", "   ", &"x".repeat(101)] {
+        assert_eq!(search(&t, &f.guest_a, &f.a, bad).await.status(), 400, "q = {bad:?}");
+    }
+    let r = t.http.get(t.url(&search_path(&f.a))).bearer_auth(&f.guest_a.token).send().await.unwrap();
+    assert_eq!(r.status(), 400, "no q at all");
+}
+
+/// The bulk-seed route (`/internal/seed-work-items`, the way the benches get to 100k rows): numbers come from the
+/// project's own counter, so they continue after the work items created through the API and the next API create
+/// continues after them; `sort_order` keeps increasing; the rows are ordinary work items.
+#[tokio::test]
+async fn engine_seed_work_items_numbers_from_the_projects_counter() {
+    let t = Target::from_env();
+    let f = Fixture::seed(&t).await;
+    for n in ["one", "two", "three"] {
+        create_ok(&t, &f.member_a, &f.a, n).await;
+    }
+    let batch: Vec<(String, Option<String>)> = (0..50).map(|i| (format!("seeded {i}"), (i % 2 == 0).then(|| format!("desc {i}")))).collect();
+    let report = seed_work_items(&t, &f, &f.a, f.admin_a.id, &batch).await;
+    assert_eq!((report.first_sequence_id, report.count), (4, 50));
+    // a second batch continues after the first
+    let more = seed_work_items(&t, &f, &f.a, f.admin_a.id, &batch[..5]).await;
+    assert_eq!((more.first_sequence_id, more.count), (54, 5));
+    let next = create_ok(&t, &f.member_a, &f.a, "after the seed").await;
+    assert_eq!(next.sequence_id, 59, "the API create did not continue after the seeded numbers");
+    let rows: Vec<WorkItem> = list(&t, &f.guest_a, &f.a, None).await.json().await.unwrap();
+    assert_eq!(rows.len(), 59);
+    assert_eq!(rows.iter().map(|w| w.sequence_id).collect::<Vec<_>>(), (1..=59).collect::<Vec<i64>>());
+    assert!(rows.windows(2).all(|p| p[0].sort_order < p[1].sort_order));
+    assert_eq!(rows[3].name, "seeded 0");
+    assert_eq!(rows[3].description.as_deref(), Some("desc 0"));
+    assert_eq!(rows[4].description, None);
+    assert!(rows[3..53].iter().all(|w| w.created_by == f.admin_a.id && w.workspace_id == f.ws_a && w.deleted_at.is_none() && !w.is_draft));
+    // the other project is untouched: its counter is its own
+    assert_eq!(create_ok(&t, &f.admin_b, &f.b, "b").await.sequence_id, 1);
+    // control: the route is a test route, closed without the admin token
+    let r = t.http.post(t.url("/internal/seed-work-items")).json(&json!({})).send().await.unwrap();
+    assert_eq!(r.status(), 401);
+}

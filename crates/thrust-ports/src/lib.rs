@@ -199,6 +199,23 @@ pub trait Database: Send + Sync {
         vis: Visibility,
     ) -> Result<Option<WorkItem>, DbError>;
 
+    /// The visible work items of the project (`Visibility::Visible`) whose name or description contains `query`, in any
+    /// case: Plane's `icontains`. In sequence order, at most `limit`. `query` is literal text, so `%`, `_` and `\`
+    /// are ordinary characters; it is not empty (the use-case refuses that). Spike 0002, ADR-0083.
+    async fn search_work_items(&self, scope: &Scope, query: &str, limit: u32) -> Result<Vec<WorkItem>, DbError>;
+
+    /// Bulk path behind `/internal/seed-work-items` (test and bench support, like `seed`): insert `items` as live work
+    /// items of one project, numbered from the project's own counter in one transaction, so the numbers continue after
+    /// whatever is there and stay unique and never reused (ADR-0043: a bulk path calls the same allocator). Returns the
+    /// sequence number of the first item. A project that is not in `workspace` is refused (`Backend`).
+    async fn seed_work_items(
+        &self,
+        sys: &SystemScope,
+        workspace: WorkspaceId,
+        project: ProjectId,
+        items: &[SeedWorkItem],
+    ) -> Result<i64, DbError>;
+
     /// Idempotent on `event_id`; returns `true` if a row was inserted, `false` on a redelivery.
     /// The queue consumer's write: its tenant is the one the envelope carries (ADR-0141).
     async fn insert_activity(&self, sys: &SystemScope, a: &Activity) -> Result<bool, DbError>;

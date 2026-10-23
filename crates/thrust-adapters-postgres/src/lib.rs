@@ -21,12 +21,14 @@ pub const MIGRATION_0001: &str = include_str!("../migrations/0001_init.sql");
 pub const MIGRATION_0002: &str = include_str!("../migrations/0002_sequence_tenant_key.sql");
 pub const MIGRATION_0003: &str = include_str!("../migrations/0003_workspaces.sql");
 pub const MIGRATION_0004: &str = include_str!("../migrations/0004_sessions.sql");
+pub const MIGRATION_0006: &str = include_str!("../migrations/0006_search.sql");
 
 pub async fn migrate(client: &Client) -> Result<(), tokio_postgres::Error> {
     client.batch_execute(MIGRATION_0001).await?;
     client.batch_execute(MIGRATION_0002).await?;
     client.batch_execute(MIGRATION_0003).await?;
-    client.batch_execute(MIGRATION_0004).await
+    client.batch_execute(MIGRATION_0004).await?;
+    client.batch_execute(MIGRATION_0006).await
 }
 
 pub trait ClientHandle: Send {
@@ -86,6 +88,16 @@ pg_type!(
     Timestamp => Type::TIMESTAMPTZ,
     serde_json::Value => Type::JSONB,
 );
+/// Whole columns at once, for the bulk seed's `unnest`.
+impl PgType for Vec<Uuid> {
+    const TY: Type = Type::UUID_ARRAY;
+}
+impl PgType for Vec<String> {
+    const TY: Type = Type::TEXT_ARRAY;
+}
+impl PgType for Vec<Option<String>> {
+    const TY: Type = Type::TEXT_ARRAY;
+}
 impl PgType for &str {
     const TY: Type = Type::TEXT;
 }
@@ -170,6 +182,20 @@ fn work_item(r: &Row) -> WorkItem {
         is_draft: r.get("is_draft"),
         deleted_at: r.get("deleted_at"),
     }
+}
+
+/// `%query%` for `ILIKE ... ESCAPE '\'`, with the query's own `\`, `%` and `_` escaped so they match themselves.
+fn like_pattern(query: &str) -> String {
+    let mut p = String::with_capacity(query.len() + 2);
+    p.push('%');
+    for c in query.chars() {
+        if matches!(c, '\\' | '%' | '_') {
+            p.push('\\');
+        }
+        p.push(c);
+    }
+    p.push('%');
+    p
 }
 
 fn activity(r: &Row) -> Activity {
@@ -307,6 +333,77 @@ impl Database for PgDatabase {
         let c = self.conn().await?;
         let row = Pg(c.client()).query_opt(&sql, &[&ws.0, &project.0, &id.0]).await.map_err(db_err)?;
         Ok(row.as_ref().map(work_item))
+    }
+
+    async fn search_work_items(&self, scope: &Scope, query: &str, limit: u32) -> Result<Vec<WorkItem>, DbError> {
+        let (ws, project) = (scope.workspace_id(), scope.project_id());
+        // `%`, `_` and `\` are literal in a query, so they are escaped for LIKE (the trigram GIN index serves `ILIKE`).
+        let pattern = like_pattern(query);
+        let c = self.conn().await?;
+        let rows = Pg(c.client())
+            .query(
+                &format!(
+                    "SELECT {WI_COLS} FROM work_items WHERE workspace_id = $1 AND project_id = $2 \
+                     AND deleted_at IS NULL AND archived_at IS NULL AND is_draft = false \
+                     AND (name ILIKE $3 ESCAPE '\\' OR description ILIKE $3 ESCAPE '\\') ORDER BY sequence_id LIMIT $4"
+                ),
+                &[&ws.0, &project.0, &pattern, &i64::from(limit)],
+            )
+            .await
+            .map_err(db_err)?;
+        Ok(rows.iter().map(work_item).collect())
+    }
+
+    async fn seed_work_items(
+        &self,
+        _sys: &SystemScope,
+        workspace: WorkspaceId,
+        project: ProjectId,
+        items: &[SeedWorkItem],
+    ) -> Result<i64, DbError> {
+        // One transaction on a connection of its own: the counter advance and the rows commit together. The rows go in as
+        // columns (`unnest`), so 5,000 of them are one round trip, which is what makes 100k seedable through Hyperdrive.
+        let n = items.len() as i64;
+        let c = self.connector.checkout(true).await?;
+        let cl = Pg(c.client());
+        cl.batch_execute("BEGIN").await.map_err(db_err)?;
+        let res: Result<i64, DbError> = async {
+            let r = cl
+                .query_one(
+                    "INSERT INTO project_sequences (workspace_id, project_id, last_sequence_id, last_sort_order) \
+                     VALUES ($1, $2, $3, $4) \
+                     ON CONFLICT (workspace_id, project_id) DO UPDATE SET \
+                       last_sequence_id = project_sequences.last_sequence_id + $3, \
+                       last_sort_order  = project_sequences.last_sort_order + $4 \
+                     RETURNING last_sequence_id, last_sort_order",
+                    &[&workspace.0, &project.0, &n, &(n * 10_000)],
+                )
+                .await
+                .map_err(db_err)?;
+            let (last_sequence, last_sort): (i64, i64) = (r.get(0), r.get(1));
+            let (base_sequence, base_sort) = (last_sequence - n, last_sort - n * 10_000);
+            let ids: Vec<Uuid> = items.iter().map(|i| i.id.0).collect();
+            let names: Vec<String> = items.iter().map(|i| i.name.clone()).collect();
+            let descriptions: Vec<Option<String>> = items.iter().map(|i| i.description.clone()).collect();
+            let (created_by, created_at) = items.first().map(|i| (i.created_by.0, i.created_at)).ok_or_else(|| DbError::Backend("no items".into()))?;
+            cl.execute(
+                "INSERT INTO work_items (id, workspace_id, project_id, sequence_id, sort_order, name, description, created_by, created_at, is_draft) \
+                 SELECT t.id, $1, $2, $3 + t.ord, $4 + t.ord * 10000, t.name, t.description, $5, $6, false \
+                 FROM unnest($7, $8, $9) WITH ORDINALITY AS t(id, name, description, ord)",
+                &[&workspace.0, &project.0, &base_sequence, &base_sort, &created_by, &created_at, &ids, &names, &descriptions],
+            )
+            .await
+            .map_err(db_err)?;
+            Ok(base_sequence + 1)
+        }
+        .await;
+        match res {
+            Ok(first) => cl.batch_execute("COMMIT").await.map(|()| first).map_err(db_err),
+            Err(e) => {
+                let _ = cl.batch_execute("ROLLBACK").await;
+                Err(e)
+            }
+        }
     }
 
     async fn insert_activity(&self, _sys: &SystemScope, a: &Activity) -> Result<bool, DbError> {

@@ -2838,6 +2838,7 @@ dependencies = [
  "rstest",
  "rusqlite",
  "serde_json",
+ "thrust-adapters-memory",
  "thrust-adapters-sqlite",
  "thrust-contracts",
  "thrust-ports",
