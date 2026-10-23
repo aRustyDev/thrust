@@ -82,7 +82,7 @@ hits="$(
     | grep -vE '^crates/[^/]+/tests/' \
     | grep -v '^crates/thrust-core/src/lib.rs:' \
     | grep -vE '^[^:]+:[0-9]+:[ \t]*//' \
-    | grep -vE '^crates/(thrust-server/src/main\.rs|thrust-worker/src/lib\.rs|thrust-worker/src/memory\.rs):[0-9]+:.*[^A-Za-z0-9_]SystemScope::mint\(' \
+    | grep -vE '^crates/(thrust-server/src/main\.rs|thrust-worker/src/lib\.rs|thrust-worker/src/memory\.rs|thrust-worker/src/app_do\.rs):[0-9]+:.*[^A-Za-z0-9_]SystemScope::mint\(' \
     || true
 )"
 if [ -n "$hits" ]; then

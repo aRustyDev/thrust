@@ -3,7 +3,7 @@
 # remote bindings. Configuration comes from the environment so no secret touches a file or argv:
 #
 #   THRUST_PORT                    listen port
-#   THRUST_ADAPTERS                memory | postgres
+#   THRUST_ADAPTERS                memory | postgres | durable
 #   THRUST_OUTBOX_FASTPATH         on | off
 #   THRUST_CREATE_RATE_LIMIT       per-user create limit per window
 #   THRUST_ADMIN_TOKEN             (env only) gate for /internal/*
@@ -30,6 +30,7 @@ fi
 
 case "${THRUST_ADAPTERS:-memory}" in
   memory) CONFIG=wrangler.memory.toml ;;
+  durable) CONFIG=wrangler.do.toml ;;
   *) CONFIG=wrangler.toml ;;
 esac
 

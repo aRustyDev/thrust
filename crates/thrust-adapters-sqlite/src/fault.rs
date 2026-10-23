@@ -117,3 +117,23 @@ impl Sql for FaultSql {
         self.inner.atomically(&mut |x| f(&FaultExec { owner: self, inner: x }))
     }
 }
+
+/// A `Sql` whose `atomically` is no transaction at all: the callback just runs, each statement on its own. It is the
+/// naive mapping of `Tx::commit` onto an engine, kept so the control can be shown failing against it on the real
+/// runtime (the probe's `naive` mode), not only against a mutant build.
+pub struct Unatomic(pub Arc<dyn Sql>);
+
+impl Exec for Unatomic {
+    fn query(&self, sql: &str, params: &[Value]) -> Result<Vec<Row>, SqlError> {
+        self.0.query(sql, params)
+    }
+    fn execute(&self, sql: &str, params: &[Value]) -> Result<(), SqlError> {
+        self.0.execute(sql, params)
+    }
+}
+
+impl Sql for Unatomic {
+    fn atomically(&self, f: &mut dyn FnMut(&dyn Exec) -> Result<(), SqlError>) -> Result<(), SqlError> {
+        f(self)
+    }
+}

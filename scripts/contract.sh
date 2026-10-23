@@ -5,6 +5,8 @@
 #     target: native-memory | native-pg | worker-memory | worker-cf
 #             native-sqlite   (spike 0002, opt-in: NOT in contract-all.sh, so not a required CI check until ADR-0040
 #                              decides) the SQLite adapter on rusqlite, the twin of the worker-do cell
+#             worker-do       (spike 0002, opt-in, same reason) `wrangler dev` with the SQLite adapter inside the one
+#                              instance-level Durable Object (crates/thrust-worker/wrangler.do.toml)
 #     pass:   main (default)   normal config, outbox fast path ON
 #             sweeper          fast path OFF; asserts the cron sweeper does the delivery
 #             panic            alone against a fresh target (a Worker panic resets the isolate)
@@ -12,6 +14,7 @@
 #             bench            latency bench (release native build); success == the bench exits 0
 #             worker         (worker-cf only) Durable Object WebSocket hibernation + SQLite
 #             cron             (worker-* only) fast path OFF; the Worker `scheduled` handler sweeps
+#             tx               (worker-do only) the Tx-mapping control on the object's real SqlStorage (risk R1)
 #             bindings         (worker-cf only) one real operation per binding (rate limit, secrets
 #                              store, email, service binding, workflow via JS shim)
 #
@@ -26,7 +29,7 @@
 # by name: other sessions on this machine run their own wrangler/workerd.
 set -u
 
-TARGET="${1:?usage: contract.sh <native-memory|native-pg|native-sqlite|worker-memory|worker-cf> [main|sweeper|panic]}"
+TARGET="${1:?usage: contract.sh <native-memory|native-pg|native-sqlite|worker-memory|worker-cf|worker-do> [main|sweeper|panic]}"
 PASS="${2:-main}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 LOGDIR="${THRUST_LOGDIR:-$ROOT/target/contract-logs}"
@@ -40,6 +43,7 @@ EXPECT_BLAST=1
 EXPECT_WORKER=1
 EXPECT_CRON=1
 EXPECT_BINDINGS=6
+EXPECT_TX=2
 
 # A free port, chosen at random: fixed ports collide with OrbStack-published containers and
 # with other sessions' wrangler instances (measured: 18080 and 8787 were both taken).
@@ -101,6 +105,7 @@ case "$TARGET" in
   native-sqlite) KIND=native; ADAPTERS=sqlite ;;
   worker-memory) KIND=worker; ADAPTERS=memory ;;
   worker-cf) KIND=worker; ADAPTERS=cloudflare ;;
+  worker-do) KIND=worker; ADAPTERS=durable ;;
   *) echo "unknown target $TARGET" >&2; exit 2 ;;
 esac
 
@@ -234,6 +239,11 @@ case "$PASS" in
     cat "$LOG.test.log"
     echo "[$TARGET/$PASS] bench exit=$TEST_STATUS"
     exit "$TEST_STATUS"
+    ;;
+  tx)
+    "$ROOT/scripts/rs" cargo test --manifest-path "$ROOT/Cargo.toml" -p thrust-contract-tests --test worker_only -- worker_do_tx_ --test-threads=1 --nocapture >"$LOG.test.log" 2>&1
+    TEST_STATUS=$?
+    EXPECT=$EXPECT_TX
     ;;
   bindings)
     "$ROOT/scripts/rs" cargo test --manifest-path "$ROOT/Cargo.toml" -p thrust-contract-tests --test worker_only -- worker_bindings_ --test-threads=1 --nocapture >"$LOG.test.log" 2>&1

@@ -24,6 +24,7 @@
 //! three questions above are answered from the buffer), and transactions are serialised, which is the cost spike 0002
 //! measures (R2).
 
+pub mod control;
 pub mod fault;
 mod gate;
 pub mod migrate;

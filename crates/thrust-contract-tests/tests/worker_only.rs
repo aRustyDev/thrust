@@ -248,3 +248,49 @@ async fn stage2_cron_real_trigger_runs_the_sweeper() {
     assert_eq!(acts.len(), 1);
     assert_eq!(acts[0].verb, "created");
 }
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Cell `worker-do` (spike 0002, risk R1): how ADR-0045's explicit `Tx` maps onto the object's SQLite.
+// Run via `scripts/contract.sh worker-do tx`. The same scenario runs hermetically on rusqlite in
+// `crates/thrust-adapters-sqlite/tests/commit.rs`; here it runs on the REAL `SqlStorage` and `transactionSync`.
+// ---------------------------------------------------------------------------------------------------------------------
+
+async fn tx_control(t: &Target, mode: &str) -> Value {
+    let r = t.admin_get(&format!("/_test/do/tx-control?mode={mode}")).await;
+    assert_eq!(r.status(), 200, "tx-control probe ({mode}): {:?}", r.text().await);
+    r.json().await.unwrap()
+}
+
+/// `Tx::commit` is one `transactionSync` in the object: a commit that fails at any statement, over every number of
+/// creates, leaves the database exactly as it was, and the same transaction then commits.
+#[tokio::test]
+async fn worker_do_tx_commit_is_atomic_on_the_objects_sqlite() {
+    let t = Target::from_env();
+    let report = tx_control(&t, "atomic").await;
+    assert_eq!(report["mode"], "atomic");
+    assert_eq!(report["violations"], json!([]), "the commit is not atomic on the object's SqlStorage: {report}");
+    // not vacuous: the scenario really failed statements. Of the 36 cases, the ones that name a statement the commit
+    // issues that many times fire: the counter upsert and the delete once each, the item and outbox inserts once per
+    // create, so 3 + 3 + 2 * (1 + 2 + 3) = 18. The other 18 are the "no fault fires, the commit applies" half.
+    assert_eq!(report["cases"], 36);
+    assert_eq!(report["fired"], 18, "the faults did not fire as often as the scenario issues statements: {report}");
+}
+
+/// The control for the control: the same scenario over a `Sql` whose `atomically` is no transaction at all (each
+/// statement on its own) must be caught on the real runtime. If it were not, the test above could not tell a
+/// transaction from a script.
+#[tokio::test]
+async fn worker_do_tx_naive_mapping_is_caught() {
+    let t = Target::from_env();
+    let report = tx_control(&t, "naive").await;
+    assert_eq!(report["mode"], "naive");
+    let violations = report["violations"].as_array().unwrap();
+    assert!(!violations.is_empty(), "a commit with no transaction passed the atomicity control: {report}");
+    assert!(
+        violations.iter().all(|v| v.as_str().unwrap().contains("changed the database")),
+        "the naive mapping failed, but not for the reason under test: {report}"
+    );
+    // control: no probe without the admin token (the probe is a test route)
+    let r = t.http.get(t.url("/_test/do/tx-control?mode=atomic")).send().await.unwrap();
+    assert_eq!(r.status(), 404, "the probe answered without the admin token");
+}

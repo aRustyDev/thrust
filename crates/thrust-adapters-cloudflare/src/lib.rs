@@ -243,3 +243,121 @@ impl Connector for HyperdriveConnector {
         Ok(Box::new(keep))
     }
 }
+
+// ---------------------------------------------------------------------------------------------
+// Durable Object SQLite -> `Sql` (the storage of the instance-level object, spike 0002 cell `worker-do`)
+// ---------------------------------------------------------------------------------------------
+
+/// `thrust_adapters_sqlite::Sql` over a Durable Object's storage: `storage.sql.exec` for statements and
+/// `storage.transactionSync` for `atomically`. workers-rs 0.8.7 binds the first and not the second, so the second is
+/// called through `js_sys::Reflect` on `Storage::as_raw()`.
+pub struct DoSql {
+    storage: worker::Storage,
+}
+
+// SAFETY: a Worker isolate is single-threaded, so the JS handles inside are never touched from two threads; this is the
+// argument workers-rs itself makes for its own `unsafe impl Send for SqlStorage`, and the one this crate's header makes
+// for `SendFuture`. A `DoSql` must not be moved out of the isolate that made it (nothing here can).
+unsafe impl Send for DoSql {}
+unsafe impl Sync for DoSql {}
+
+impl DoSql {
+    pub fn new(storage: worker::Storage) -> Self {
+        Self { storage }
+    }
+}
+
+fn sql_err(e: worker::Error) -> thrust_adapters_sqlite::SqlError {
+    thrust_adapters_sqlite::SqlError::from_message(e.to_string())
+}
+
+fn js_message(e: &worker::wasm_bindgen::JsValue) -> String {
+    e.as_string().unwrap_or_else(|| {
+        worker::js_sys::Reflect::get(e, &"message".into())
+            .ok()
+            .and_then(|m| m.as_string())
+            .unwrap_or_else(|| format!("{e:?}"))
+    })
+}
+
+impl thrust_adapters_sqlite::Exec for DoSql {
+    fn query(
+        &self,
+        sql: &str,
+        params: &[thrust_adapters_sqlite::Value],
+    ) -> Result<Vec<thrust_adapters_sqlite::Row>, thrust_adapters_sqlite::SqlError> {
+        use thrust_adapters_sqlite::{Row, SqlError, Value};
+        use worker::SqlStorageValue as Sv;
+        let bindings: Vec<Sv> = params
+            .iter()
+            .map(|p| match p {
+                Value::Null => Sv::Null,
+                Value::Int(i) => Sv::Integer(*i),
+                Value::Text(t) => Sv::String(t.clone()),
+                Value::Blob(b) => Sv::Blob(b.clone()),
+            })
+            .collect();
+        // Consume the cursor to the end: that is what runs a write, and it surfaces a constraint failure raised
+        // after the first row.
+        let cursor = self.storage.sql().exec(sql, if bindings.is_empty() { None } else { Some(bindings) }).map_err(sql_err)?;
+        cursor
+            .raw()
+            .map(|r| {
+                let cols = r.map_err(sql_err)?;
+                cols.into_iter()
+                    .map(|c| match c {
+                        Sv::Null => Ok(Value::Null),
+                        Sv::Integer(i) => Ok(Value::Int(i)),
+                        Sv::String(t) => Ok(Value::Text(t)),
+                        Sv::Blob(b) => Ok(Value::Blob(b)),
+                        other => Err(SqlError::decode(format!("unexpected column value {other:?}: the slice stores no floats or booleans"))),
+                    })
+                    .collect::<Result<Vec<_>, _>>()
+                    .map(Row)
+            })
+            .collect()
+    }
+
+    fn execute(&self, sql: &str, params: &[thrust_adapters_sqlite::Value]) -> Result<(), thrust_adapters_sqlite::SqlError> {
+        self.query(sql, params).map(|_| ())
+    }
+}
+
+impl thrust_adapters_sqlite::Sql for DoSql {
+    fn atomically(
+        &self,
+        f: &mut dyn FnMut(&dyn thrust_adapters_sqlite::Exec) -> Result<(), thrust_adapters_sqlite::SqlError>,
+    ) -> Result<(), thrust_adapters_sqlite::SqlError> {
+        use thrust_adapters_sqlite::SqlError;
+        use worker::js_sys::{Function, Reflect};
+        use worker::wasm_bindgen::closure::ScopedClosure;
+        use worker::wasm_bindgen::{JsCast, JsValue};
+
+        let storage: &JsValue = self.storage.as_raw().as_ref();
+        let transaction_sync: Function = Reflect::get(storage, &"transactionSync".into())
+            .map_err(|e| SqlError::Other(js_message(&e)))?
+            .dyn_into()
+            .map_err(|_| SqlError::Other("storage.transactionSync is not a function".into()))?;
+
+        // A thrown exception is how `transactionSync` is told to roll back, and it rethrows it. The callback keeps the
+        // real error aside, because what comes back through JS is only a string.
+        let mut failure: Option<SqlError> = None;
+        let mut callback = || -> Result<JsValue, JsValue> {
+            match f(self) {
+                Ok(()) => Ok(JsValue::UNDEFINED),
+                Err(e) => {
+                    failure = Some(e);
+                    Err(JsValue::from_str("thrust: roll back the transaction"))
+                }
+            }
+        };
+        let closure = ScopedClosure::<dyn FnMut() -> Result<JsValue, JsValue>>::borrow_mut_aborting(&mut callback);
+        let called = transaction_sync.call1(storage, closure.as_ref());
+        drop(closure);
+        match (failure, called) {
+            (Some(e), _) => Err(e),
+            (None, Ok(_)) => Ok(()),
+            (None, Err(e)) => Err(SqlError::from_message(format!("transactionSync: {}", js_message(&e)))),
+        }
+    }
+}

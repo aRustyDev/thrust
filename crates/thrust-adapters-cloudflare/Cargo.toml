@@ -10,6 +10,8 @@ publish.workspace = true
 thrust-contracts = { workspace = true }
 thrust-ports = { workspace = true }
 thrust-adapters-postgres = { workspace = true }
+# `Sql` and the SQLite adapter, WITHOUT the `native` feature (rusqlite compiles SQLite from C and is never in the Worker).
+thrust-adapters-sqlite = { workspace = true }
 async-trait = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

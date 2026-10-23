@@ -15,7 +15,7 @@ fn ok_json(v: Value) -> Result<web_sys::Response> {
     Ok(r.into())
 }
 
-fn admin_ok(req: &web_sys::Request, env: &Env) -> bool {
+pub(crate) fn admin_ok(req: &web_sys::Request, env: &Env) -> bool {
     let test_routes = matches!(text(env, "THRUST_TEST_ROUTES").as_deref(), Some("1") | Some("true") | Some("on"));
     let given = req.headers().get("x-admin-token").ok().flatten();
     match (test_routes, text(env, "THRUST_ADMIN_TOKEN"), given) {
