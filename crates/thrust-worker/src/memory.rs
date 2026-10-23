@@ -10,7 +10,6 @@ use thrust_ports::*;
 /// Process-lifetime state of the in-memory adapter set (one isolate == one "server").
 struct MemShared {
     db: MemoryDatabase,
-    sessions: Arc<MemorySessionStore>,
     blobs: Arc<MemoryBlobStore>,
     limiter: Arc<MemoryRateLimiter>,
 }
@@ -20,7 +19,6 @@ static MEM: OnceLock<MemShared> = OnceLock::new();
 pub fn app(clock: Arc<dyn Clock>, ids: Arc<dyn IdGen>, background: Arc<dyn Background>, cfg: CoreConfig) -> App {
     let m = MEM.get_or_init(|| MemShared {
         db: MemoryDatabase::new(),
-        sessions: Arc::new(MemorySessionStore::new(Arc::new(JsClock))),
         blobs: Arc::new(MemoryBlobStore::new()),
         limiter: Arc::new(MemoryRateLimiter::new(Arc::new(JsClock))),
     });
@@ -31,7 +29,6 @@ pub fn app(clock: Arc<dyn Clock>, ids: Arc<dyn IdGen>, background: Arc<dyn Backg
         Ports {
             db: Arc::new(m.db.clone()),
             queue,
-            sessions: m.sessions.clone(),
             blobs: m.blobs.clone(),
             limiter: m.limiter.clone(),
             clock,

@@ -12,22 +12,28 @@ transaction and relays. The `list_*` use-cases authorize and read, with no trans
 functions in `crates/thrust-core/src/lib.rs`.
 
 **Authorize in the core, and carry the proof.** `authorize` returns a `Scope`, the proof that the user may act in
-that workspace and project, and the use-case passes it to every repository call. It answers 404 for a project outside
-the caller's workspace and 403 for a project the caller can see but may not touch, so a cross-tenant probe learns
-nothing. Shown by `authorize` and `Permission::min_role` in `crates/thrust-core/src/lib.rs`.
+that workspace and project, and the use-case passes it to every repository call. The workspace comes from the route's
+slug, not from the session: a `Principal` is a user and nothing else, so one session works in every workspace its user
+belongs to, and `authorize` resolves the slug, the workspace membership and the project membership in one query. It
+answers 404 for a slug that names no workspace, a workspace the caller is not in, or a project outside it, and 403 for
+a member of the workspace who may not touch the project, so a cross-tenant probe learns nothing. Shown by `authorize`
+and `Permission::min_role` in `crates/thrust-core/src/lib.rs`.
 
 **Scope every tenant query by the tenant key.** The adapter reads the workspace and project from the `Scope` and the
 SQL filters on both: the reads and the soft delete filter on `workspace_id` and `project_id`, and sequence allocation
 upserts on `(workspace_id, project_id)`, with a foreign key to `projects (workspace_id, id)` that refuses a project
-outside the workspace (migration 0002). `membership` filters on `p.workspace_id`, and its left join on
-`project_members` also requires `m.workspace_id = p.workspace_id`. Each `Tx` write also refuses a work item or outbox
+outside the workspace (migration 0002). `membership` joins `workspaces` on the slug, `workspace_members` on the
+caller and `projects` on that workspace, and its left join on `project_members` also requires
+`m.workspace_id = p.workspace_id`. Each `Tx` write also refuses a work item or outbox
 row of another tenant than its scope (`check_tenant` in `thrust-ports`). Shown by `PgDatabase` in
 `crates/thrust-adapters-postgres/src/lib.rs`. The planted bug `mutant_ignore_tenant` removes the check in the memory
 adapter, so that `scripts/mutants.sh` can show the contract suite catches it.
 
 **Repository calls take a `Scope`, never ids.** Every `Database` and `Tx` method takes `&Scope` or `&SystemScope`
-(`crates/thrust-ports/src/lib.rs`). The one exception is `membership`, which runs before a `Scope` exists and which
-only `authorize` calls. Both proof types are declared in `thrust-ports`, because the ports take them and the adapters
+(`crates/thrust-ports/src/lib.rs`). The exceptions are the calls that run before a `Scope` exists: `membership`, which
+only `authorize` calls, and the session calls (`session`, `touch_session`, `revoke_session`, `insert_session`), which
+only `authenticate`, `revoke_session` and `seed` in `thrust-core` call. A session belongs to a user and is found by
+the hash of its token, so there is no tenant key to pass (`sessions` is a directory table, ADR-0041). Both proof types are declared in `thrust-ports`, because the ports take them and the adapters
 read the ids from them, and each has one constructor, `mint`:
 - `Scope::mint` is called only by `authorize`.
 - `SystemScope::mint` is called only by the composition roots (`thrust-server`, and `thrust-worker` for both adapter
@@ -62,7 +68,7 @@ clock or spawns a task itself, and a test can supply each. Shown by `App.ports` 
 Shown by `crates/thrust-ports/src/lib.rs` and `crates/thrust-adapters-cloudflare/src/lib.rs`.
 
 **One error type per layer, mapped at the boundary.** Each fallible port has its own error enum (`DbError`,
-`QueueError`, `BlobError`, `CacheError`, `RateError`); `EventConsumer` returns a `String`. `From` impls turn the enums
+`QueueError`, `BlobError`, `RateError`); `EventConsumer` returns a `String`. `From` impls turn the enums
 into `CoreError`, and `ApiError` turns `CoreError` into a status and a code. An internal error's real cause travels in an
 `InternalErrorDetail` response extension for the root to log, and the body says only `internal error`. Shown by
 `crates/thrust-core/src/lib.rs` and `crates/thrust-api/src/lib.rs`.

@@ -1,7 +1,7 @@
 //! Cloudflare Worker composition root.
 //!
 //! Compile-time adapter set = this crate's dependency/feature list (ADR-0007):
-//!   * `cloudflare` (always): Hyperdrive/Postgres, KV, R2, Queues, Durable Objects
+//!   * `cloudflare` (always): Hyperdrive/Postgres (sessions included), R2, Queues, Durable Objects
 //!   * `memory` (default, dev/test only): in-isolate adapters
 //! `THRUST_ADAPTERS` only chooses between sets that were compiled in.
 
@@ -90,7 +90,6 @@ fn build_app(env: &Env, background: Arc<dyn Background>) -> Result<App> {
                 Ports {
                     db: Arc::new(PgDatabase::new(Arc::new(connector))),
                     queue: Arc::new(CfQueue(env.queue("EVENTS")?)),
-                    sessions: Arc::new(KvSessionStore(env.kv("SESSIONS")?)),
                     blobs: Arc::new(R2BlobStore(env.bucket("BLOBS")?)),
                     limiter: Arc::new(DoRateLimiter(env.durable_object("RATE_LIMITER")?)),
                     clock,

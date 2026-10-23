@@ -15,7 +15,7 @@ names, each labelled as such. A row whose generative test is a gap still gets it
 Two things that are easy to get wrong:
 
 - **Ports are infrastructure traits, not entity stores.** `crates/thrust-ports/src/lib.rs` defines `Database`, `Tx`,
-  `Queue`, `EventConsumer`, `BlobStore`, `SessionStore`, `RateLimiter`, `Clock`, `IdGen` and `Background`; work-item
+  `Queue`, `EventConsumer`, `BlobStore`, `RateLimiter`, `Clock`, `IdGen` and `Background`; work-item
   behaviour reaches storage through `Database` and `Tx`. A new work-item operation is usually a change to
   `thrust-core` plus an HTTP route, and touches a port only if it needs a new `Tx` method.
 - **Every public route is under `/api/v1` today** (`crates/thrust-api/src/lib.rs`), but these are the slice's own

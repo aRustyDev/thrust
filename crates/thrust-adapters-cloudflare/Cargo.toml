@@ -1,6 +1,6 @@
 [package]
 name = "thrust-adapters-cloudflare"
-description = "workers-rs adapters (KV, R2, Queues, Hyperdrive, DO, ...). wasm32 only; never compiled into the native server."
+description = "workers-rs adapters (R2, Queues, Hyperdrive, DO, ...). wasm32 only; never compiled into the native server."
 edition.workspace = true
 version.workspace = true
 license.workspace = true

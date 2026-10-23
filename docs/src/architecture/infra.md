@@ -14,7 +14,6 @@ flowchart LR
   subgraph cf[Cloudflare adapter set: thrust-worker]
     w[Worker<br/>fetch, queue, scheduled]
     w --> hd[(Hyperdrive to Postgres)]
-    w --> kv[(KV: SESSIONS)]
     w --> r2[(R2: BLOBS)]
     w --> q[[Queue: EVENTS]]
     w --> rl[RATE_LIMITER<br/>Durable Object]
@@ -24,7 +23,7 @@ flowchart LR
   subgraph sh[Self-hosted set: thrust-server]
     s[axum server]
     s --> pgn[(Postgres, deadpool pool)]
-    s --> mem[In-process memory:<br/>sessions, blobs, rate limiter, queue]
+    s --> mem[In-process memory:<br/>blobs, rate limiter, queue]
   end
 ```
 
@@ -39,7 +38,6 @@ The bindings in `crates/thrust-worker/wrangler.toml`:
 | Binding | Kind | Port it backs |
 |---|---|---|
 | `HYPERDRIVE` | Hyperdrive | `Database`, through `PgDatabase` and `HyperdriveConnector` |
-| `SESSIONS` | KV namespace | `SessionStore` |
 | `BLOBS` | R2 bucket | `BlobStore` |
 | `EVENTS` | Queue, producer and consumer (batch of 10, 1 s timeout, 3 retries) | `Queue` |
 | `RATE_LIMITER` | Durable Object `RateLimiterDo` (SQLite) | `RateLimiter` |
@@ -62,7 +60,7 @@ Behaviour worth knowing:
   config names one, and the spike run recorded a rejected event reaching it (research note 0004, S2-9). A message
   that cannot be decoded is acknowledged and dropped, so it never reaches a dead-letter queue.
 - **Cron.** Each tick runs one outbox sweep of up to 100 rows.
-- **Configuration and secrets.** The config file holds no secret. The Hyperdrive, KV and Secrets Store ids in it
+- **Configuration and secrets.** The config file holds no secret. The Hyperdrive and Secrets Store ids in it
   are all-zero placeholders for local use; R2 and the queue are given by name, and the rate-limit namespace id is
   `1001`. The Worker reads `THRUST_ADMIN_TOKEN` from its secrets or variables, and the local Postgres URL reaches
   `wrangler dev` through an environment variable, never through the file.
@@ -88,15 +86,16 @@ Postgres in Docker.
 One native binary serves the same router. It has two adapter sets, chosen by `THRUST_ADAPTERS`:
 
 - `memory` (the default): every port in process memory.
-- `postgres`: the `Database` port on Postgres through a deadpool pool. **Only the database changes.** Sessions,
-  blobs, the rate limiter and the queue stay in process memory in both modes.
+- `postgres`: the `Database` port on Postgres through a deadpool pool. **Only the database changes.** Blobs, the
+  rate limiter and the queue stay in process memory in both modes. Sessions are rows behind the `Database` port, so
+  they are in process memory with `memory` and in Postgres with `postgres`.
 
-So a `postgres` server loses its sessions and attachments when it restarts, and so does any event that was already
-handed to the in-process queue and not yet consumed. Outbox rows are in Postgres, so the sweeper delivers the rest
-later. Sessions, blobs and the rate limiter belong to one process, so a second process would not share them. The
-plan's RabbitMQ, Valkey and S3 adapters do not exist. There is also no login route:
-a session token exists only if `POST /internal/seed` created it, and that route answers only when test routes are
-on.
+So a `postgres` server keeps its sessions across a restart, and a second process shares them. It loses its
+attachments when it restarts, and so does any event that was already handed to the in-process queue and not yet
+consumed. Outbox rows are in Postgres, so the sweeper delivers the rest later. Blobs and the rate limiter belong to
+one process, so a second process would not share them. The plan's RabbitMQ, Valkey and S3 adapters do not exist.
+There is also no login route yet (#38): a session token exists only if `POST /internal/seed` created it, and that
+route answers only when test routes are on.
 
 Configuration is read from the environment, in `crates/thrust-server/src/main.rs`:
 
@@ -120,12 +119,21 @@ logs the cause.
 
 ## Postgres
 
-`thrust-adapters-postgres` carries its own schema, `migrations/0001_init.sql`: `projects`, `project_members`,
-`project_sequences`, `work_items`, `outbox` and `activity`. Its header says it is the spike's schema, enough for
-the vertical slice and not the product schema. Every table carries `workspace_id`, the tenant key, except
-`project_sequences`.
+`thrust-adapters-postgres` carries its own schema, in four files that `migrate` applies in order on every run, so each
+is idempotent:
 
-The `migrate` binary applies it. It needs the `native` feature and reads `DATABASE_URL` from the environment, and
+| File | Adds |
+|---|---|
+| `0001_init.sql` | `projects`, `project_members`, `project_sequences`, `work_items`, `outbox` and `activity`. Its header says it is the spike's schema, enough for the vertical slice and not the product schema |
+| `0002_sequence_tenant_key.sql` | `workspace_id` on `project_sequences`, and a foreign key that refuses a counter for a project outside its workspace (#35) |
+| `0003_workspaces.sql` | `workspaces (id, slug)` and `workspace_members`, backfilled for a database that has projects and no workspaces, and the foreign keys that tie projects and project members to them (#36) |
+| `0004_sessions.sql` | `sessions`, a directory table keyed by the SHA-256 of the token, with no plaintext and no workspace column (#36) |
+
+Tenant tables carry `workspace_id`, the tenant key; `sessions` does not, because a session belongs to a user. The
+migrations mark each table they add with `-- scope: tenant` or `-- scope: directory`, the first instance of
+ADR-0041's marker. Tables from `0001` are not marked yet.
+
+The `migrate` binary applies them. It needs the `native` feature and reads `DATABASE_URL` from the environment, and
 `scripts/contract.sh` runs it as `scripts/rs cargo run -p thrust-adapters-postgres --features native --bin migrate`.
 Neither the server nor the Worker applies the schema when it starts. `scripts/contract.sh native-pg` and `worker-cf` start
 a throwaway `postgres:16-alpine` container in Docker, with a generated password that lives only in the script's

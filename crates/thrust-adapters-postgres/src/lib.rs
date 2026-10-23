@@ -19,10 +19,14 @@ use tokio_postgres::{Client, Row};
 
 pub const MIGRATION_0001: &str = include_str!("../migrations/0001_init.sql");
 pub const MIGRATION_0002: &str = include_str!("../migrations/0002_sequence_tenant_key.sql");
+pub const MIGRATION_0003: &str = include_str!("../migrations/0003_workspaces.sql");
+pub const MIGRATION_0004: &str = include_str!("../migrations/0004_sessions.sql");
 
 pub async fn migrate(client: &Client) -> Result<(), tokio_postgres::Error> {
     client.batch_execute(MIGRATION_0001).await?;
-    client.batch_execute(MIGRATION_0002).await
+    client.batch_execute(MIGRATION_0002).await?;
+    client.batch_execute(MIGRATION_0003).await?;
+    client.batch_execute(MIGRATION_0004).await
 }
 
 pub trait ClientHandle: Send {
@@ -84,6 +88,10 @@ pg_type!(
 );
 impl PgType for &str {
     const TY: Type = Type::TEXT;
+}
+/// A session token's hash (`sessions.token_hash`).
+impl PgType for &[u8] {
+    const TY: Type = Type::BYTEA;
 }
 impl<T: PgType> PgType for Option<T> {
     const TY: Type = T::TY;
@@ -181,28 +189,80 @@ fn activity(r: &Row) -> Activity {
 impl Database for PgDatabase {
     async fn membership(
         &self,
-        ws: WorkspaceId,
+        slug: &WorkspaceSlug,
         project: ProjectId,
         user: UserId,
     ) -> Result<Membership, DbError> {
         let c = self.conn().await?;
+        // One query: the slug, the caller's workspace membership (inner join), the project in that
+        // workspace (inner join) and the caller's project row (left join, same workspace). No row
+        // means the caller may not know the workspace or the project exists.
         let row = Pg(c.client())
             .query_opt(
-                "SELECT m.role AS role FROM projects p \
+                "SELECT w.id AS workspace_id, m.role AS role FROM workspaces w \
+                 JOIN workspace_members wm ON wm.workspace_id = w.id AND wm.user_id = $3 \
+                 JOIN projects p ON p.workspace_id = w.id AND p.id = $2 \
                  LEFT JOIN project_members m \
                    ON m.project_id = p.id AND m.workspace_id = p.workspace_id AND m.user_id = $3 \
-                 WHERE p.id = $1 AND p.workspace_id = $2",
-                &[&project.0, &ws.0, &user.0],
+                 WHERE w.slug = $1",
+                &[&slug.as_str(), &project.0, &user.0],
             )
             .await
             .map_err(db_err)?;
         Ok(match row {
             None => Membership::NoSuchProject,
             Some(r) => match r.get::<_, Option<String>>("role").as_deref().and_then(Role::parse) {
-                Some(role) => Membership::Member(role),
+                Some(role) => Membership::Member { workspace_id: WorkspaceId(r.get("workspace_id")), role },
                 None => Membership::NotAMember,
             },
         })
+    }
+
+    async fn session(&self, hash: &TokenHash, now: Timestamp) -> Result<Option<LiveSession>, DbError> {
+        let c = self.conn().await?;
+        let row = Pg(c.client())
+            .query_opt(
+                "SELECT user_id, last_seen_at FROM sessions \
+                 WHERE token_hash = $1 AND revoked_at IS NULL AND expires_at > $2",
+                &[&&hash.0[..], &now],
+            )
+            .await
+            .map_err(db_err)?;
+        Ok(row.map(|r| LiveSession { user_id: UserId(r.get("user_id")), last_seen_at: r.get("last_seen_at") }))
+    }
+
+    async fn touch_session(&self, hash: &TokenHash, at: Timestamp) -> Result<(), DbError> {
+        let c = self.conn().await?;
+        Pg(c.client())
+            .execute("UPDATE sessions SET last_seen_at = $2 WHERE token_hash = $1", &[&&hash.0[..], &at])
+            .await
+            .map_err(db_err)?;
+        Ok(())
+    }
+
+    async fn revoke_session(&self, hash: &TokenHash, at: Timestamp) -> Result<(), DbError> {
+        let c = self.conn().await?;
+        Pg(c.client())
+            .execute(
+                "UPDATE sessions SET revoked_at = $2 WHERE token_hash = $1 AND revoked_at IS NULL",
+                &[&&hash.0[..], &at],
+            )
+            .await
+            .map_err(db_err)?;
+        Ok(())
+    }
+
+    async fn insert_session(&self, s: &NewSession) -> Result<(), DbError> {
+        let c = self.conn().await?;
+        Pg(c.client())
+            .execute(
+                "INSERT INTO sessions (token_hash, user_id, created_at, expires_at, last_seen_at) \
+                 VALUES ($1, $2, $3, $4, $3) ON CONFLICT (token_hash) DO NOTHING",
+                &[&&s.token_hash.0[..], &s.user_id.0, &s.created_at, &s.expires_at],
+            )
+            .await
+            .map_err(db_err)?;
+        Ok(())
     }
 
     async fn begin(&self, _scope: &Scope) -> Result<Box<dyn Tx>, DbError> {
@@ -339,6 +399,22 @@ impl Database for PgDatabase {
         let cl = Pg(c.client());
         cl.batch_execute("BEGIN").await.map_err(db_err)?;
         let res: Result<(), DbError> = async {
+            for w in &f.workspaces {
+                cl.execute(
+                    "INSERT INTO workspaces (id, slug) VALUES ($1, $2) ON CONFLICT (id) DO UPDATE SET slug = EXCLUDED.slug",
+                    &[&w.id.0, &w.slug.as_str()],
+                )
+                .await
+                .map_err(db_err)?;
+            }
+            for m in &f.workspace_members {
+                cl.execute(
+                    "INSERT INTO workspace_members (workspace_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+                    &[&m.workspace_id.0, &m.user_id.0],
+                )
+                .await
+                .map_err(db_err)?;
+            }
             for p in &f.projects {
                 cl.execute(
                     "INSERT INTO projects (id, workspace_id, name) VALUES ($1, $2, $3) ON CONFLICT (id) DO NOTHING",

@@ -82,6 +82,15 @@ Per FR-02 (`reviews/2026-10-19-fable-architecture-review.md`), the round-25 sent
 
 The isolation strategy itself (Q-0041) is still open and this ADR stays `proposed`. This note decides only how the repository layer enforces the tenant predicate.
 
+## Update — issue #36 (2026-10-23)
+
+The first `scope: tenant|directory` markers exist. Migrations `0003_workspaces.sql` and `0004_sessions.sql` start the
+table definitions they add with a comment, `-- scope: tenant` for `workspaces` and `workspace_members` and
+`-- scope: directory` for `sessions`, which matches Q-0041.1 (`sessions` is a directory table and carries no
+`workspace_id`). `workspaces` is a tenant table that `membership` reads by slug before a `Scope` exists, and the
+comment says so. The tables from `0001` and `0002` are not marked, and the lint that the CI line above asks for
+(every new table declares its scope) is not built. This note decides no strategy; the ADR stays `proposed`.
+
 ## Open Questions
 
 * Q-0041 — which strategy?

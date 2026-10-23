@@ -1,4 +1,4 @@
-# Cloudflare adapter set: Hyperdrive/Postgres, KV, R2, Queues (producer + consumer), Durable
+# Cloudflare adapter set: Hyperdrive/Postgres (sessions included), R2, Queues (producer + consumer), Durable
 # Objects (SQLite), cron. Used by `wrangler dev` (local workerd) in Stage 1 and, with real ids,
 # by Stage 2 (see research/0004 "Stage 2 - ready to run").
 #
@@ -23,10 +23,6 @@ crons = ["* * * * *"]   # outbox sweeper (ADR-0046 / ADR-0072)
 
 [[hyperdrive]]
 binding = "HYPERDRIVE"
-id = "00000000000000000000000000000000"
-
-[[kv_namespaces]]
-binding = "SESSIONS"
 id = "00000000000000000000000000000000"
 
 [[r2_buckets]]

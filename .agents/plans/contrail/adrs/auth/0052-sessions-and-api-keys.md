@@ -89,6 +89,34 @@ Per FR-03 (`reviews/2026-10-19-fable-architecture-review.md`; the owner's decisi
 
 Per FR-05 (same review and §5 table), K1's rate-limit placement ("CF: Workers rate-limit binding or DO for exact counts; self-hosted: Redis") is superseded: the counters are the Workers Rate Limiting binding on Cloudflare (approximate, D-007) and an in-process counter natively. There is no Durable Object limiter and no Redis (ADR-0033 and ADR-0082, round 29).
 
+## Update — issue #36 (2026-10-23)
+
+Issue #36 built the FR-03 session shape from the round-29 note. The facts, with their locations on the branch that
+closes #36:
+
+- **Sessions are `Database` rows.** Migration `0004_sessions.sql` creates `sessions`: `token_hash` (`bytea`, the
+  key, checked to be 32 bytes), `user_id`, `created_at`, `expires_at`, `revoked_at` and `last_seen_at`. There is no
+  plaintext column and no `workspace_id`, because a session belongs to a user (a directory table, ADR-0041).
+  `Database` gained `session`, `touch_session`, `revoke_session` and `insert_session`
+  (`crates/thrust-ports/src/lib.rs`).
+- **The `SessionStore` trait is not kept.** The memory `Database` serves the tests, so `SessionStore`,
+  `MemorySessionStore`, `KvSessionStore`, `CacheError` and the `SESSIONS` KV binding in both `wrangler*.toml` files
+  are deleted. The native server's sessions now survive a restart on the `postgres` set and are shared between
+  processes.
+- **Hashing: SHA-256, no pepper** (owner, 2026-10-22). `thrust_core::hash_token` hashes the token before any call, so
+  no adapter sees one. A pepper protects low-entropy secrets that a leaked hash could be guessed back from, and a
+  session token is not one: the decision depends on sign-in (#38) minting at least 128 bits of CSPRNG output. That is
+  a requirement on #38, not something this issue can check, because the only tokens today are the test seed's.
+  ADR-0141's "peppered hashes" are for API keys (K1), which this does not decide.
+- **Lifetime and bookkeeping.** `CoreConfig.session_ttl_secs` is 30 days from creation. `authenticate` rewrites
+  `last_seen_at` only when it is at least `session_touch_after_secs` (one hour) old, and a failed touch does not fail
+  the request.
+- **One answer for a bad session.** A token whose row is missing, revoked or expired is `Unauthenticated` (401),
+  and the lookup does not say which.
+- **What is not built.** Sign-in, sign-out and sign-out-everywhere belong to #38; `sessions_user` is the index that
+  sign-out-everywhere will use. Until then `POST /internal/revoke-session` (test routes and the admin token) revokes
+  a session, and `/internal/seed` creates them.
+
 ## Open Questions
 
 * Q-0052 — session and key mechanics.

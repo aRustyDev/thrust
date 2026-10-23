@@ -13,22 +13,29 @@ same on the Worker and on the native server. The crates involved are on
 | Method and path | Needs | Answers |
 |---|---|---|
 | `GET /healthz` | nothing | 200 `ok` |
-| `POST /api/v1/projects/{project_id}/work-items` | Bearer token, role Member | 201 and the work item |
-| `GET /api/v1/projects/{project_id}/work-items` | Bearer token, role Guest | 200 and a list. `?scope=visible` (the default) or `?scope=with_deleted` (role Admin); any other scope is 400 |
-| `DELETE /api/v1/projects/{project_id}/work-items/{id}` | Bearer token, role Member | 204 |
-| `GET /api/v1/projects/{project_id}/work-items/{id}/activity` | Bearer token, role Guest | 200 and the item's activity |
-| `GET /api/v1/projects/{project_id}/activity` | Bearer token, role Guest | 200 and the project's activity |
-| `PUT /api/v1/projects/{project_id}/work-items/{id}/attachments/{name}` | Bearer token, role Member | 204 |
-| `GET /api/v1/projects/{project_id}/work-items/{id}/attachments/{name}` | Bearer token, role Guest | 200 and the bytes, with the `Content-Type` they were stored with, if any |
-| `DELETE /api/v1/projects/{project_id}/work-items/{id}/attachments/{name}` | Bearer token, role Member | 204 |
+| `POST /api/v1/workspaces/{slug}/projects/{project_id}/work-items` | Bearer token, role Member | 201 and the work item |
+| `GET /api/v1/workspaces/{slug}/projects/{project_id}/work-items` | Bearer token, role Guest | 200 and a list. `?scope=visible` (the default) or `?scope=with_deleted` (role Admin); any other scope is 400 |
+| `DELETE /api/v1/workspaces/{slug}/projects/{project_id}/work-items/{id}` | Bearer token, role Member | 204 |
+| `GET /api/v1/workspaces/{slug}/projects/{project_id}/work-items/{id}/activity` | Bearer token, role Guest | 200 and the item's activity |
+| `GET /api/v1/workspaces/{slug}/projects/{project_id}/activity` | Bearer token, role Guest | 200 and the project's activity |
+| `PUT /api/v1/workspaces/{slug}/projects/{project_id}/work-items/{id}/attachments/{name}` | Bearer token, role Member | 204 |
+| `GET /api/v1/workspaces/{slug}/projects/{project_id}/work-items/{id}/attachments/{name}` | Bearer token, role Guest | 200 and the bytes, with the `Content-Type` they were stored with, if any |
+| `DELETE /api/v1/workspaces/{slug}/projects/{project_id}/work-items/{id}/attachments/{name}` | Bearer token, role Member | 204 |
 
-**Pending rename.** The `/api/v1/...` routes above are the slice's own, not Plane's wire-compatible v1. Plane's v1
-work items live at `/api/v1/workspaces/{slug}/projects/{project_id}/work-items/` and authenticate with `X-Api-Key`
-(`apps/api/plane/api/urls/work_item.py:99-103` and `apps/api/plane/api/middleware/api_authentication.py:24` at
-the oracle tag `oracle/v1-pin-20261018`). Finding FR-06 of the architecture review
+**The workspace slug.** Every route carries the workspace slug before the project, where Plane puts it
+(`kwargs["slug"]` in `apps/api/plane/app/permissions/base.py:28,47,55` at the oracle tag `oracle/v1-pin-20261018`).
+A session belongs to a user, not to a workspace, so the slug is what says which workspace a request is for, and
+`authorize` resolves it on every request (see below).
+
+**Pending rename.** The `/api/v1/...` routes above are still the slice's own, not Plane's wire-compatible v1. Plane's
+v1 work items live at `/api/v1/workspaces/{slug}/projects/{project_id}/work-items/` with a trailing slash, key
+attachments by id and authenticate with `X-Api-Key` (`apps/api/plane/api/urls/work_item.py:99-103` and
+`apps/api/plane/api/middleware/api_authentication.py:24` at the same tag). Finding FR-06 of the architecture review
 (`.agents/plans/contrail/reviews/2026-10-19-fable-architecture-review.md`) reserves the `/api/v1` prefix for
 wire-compatible routes, so these routes move out of it ([issue #47](https://github.com/aRustyDev/thrust/issues/47)).
-The new prefix is chosen in that issue; until it lands, the paths above are what the router serves.
+The router builds every path from one constant, `SLICE_PREFIX` in `thrust-api` (the contract suite mirrors it in
+`thrust-contract-tests`), so that issue changes the constant and the pages that show it. The new prefix is chosen in
+that issue; until it lands, the paths above are what the router serves.
 
 These routes exist for tests and answer 404 unless `THRUST_TEST_ROUTES` is on:
 
@@ -36,7 +43,8 @@ These routes exist for tests and answer 404 unless `THRUST_TEST_ROUTES` is on:
 |---|---|---|
 | `GET /_info` | test routes | The `target` and `adapters` the process was started with |
 | `GET /_test/panic` | test routes | Panics on purpose, to check that a panic becomes a 500 |
-| `POST /internal/seed` | test routes and `x-admin-token` | 204 after storing the fixture's projects and memberships and putting its sessions in the session store. The fixture's workspace and user lists are accepted and not stored |
+| `POST /internal/seed` | test routes and `x-admin-token` | 204 after storing the fixture's workspaces (with their slugs), workspace members, projects and project memberships, and its sessions (as hashes of the tokens, expiring after 30 days). The fixture's user list is accepted and not stored |
+| `POST /internal/revoke-session` | same | 204 after revoking the session behind the `token` in the JSON body. A token that is unknown or already revoked is a 204 too. It stands in for sign-out until #38 |
 | `POST /internal/sweep` | same | 200 and a sweep report (`found`, `published`, `failed`) |
 | `GET /internal/outbox-depth` | same | 200 and `{"undispatched": n}` |
 | `POST /internal/inject-event` | same | 202 after putting an event on the queue |
@@ -46,18 +54,31 @@ belong to the spike. They are on [Infrastructure](../architecture/infra.md).
 
 ## Authentication and permission
 
-There is no login route. A caller sends `Authorization: Bearer <token>`. The `Authed` extractor looks the token up
-through the `SessionStore` port and gets a `Principal` (a user and a workspace), or the request is 401.
+There is no login route yet (#38). A caller sends `Authorization: Bearer <token>`. The `Authed` extractor calls
+`authenticate`, which hashes the token (SHA-256) and reads the session row through the `Database` port on every
+request. The row must exist, not be revoked and not be expired (30 days after it was created), or the request is
+401. The result is a `Principal` with the user and nothing else: a session belongs to a user, not to a workspace,
+so one token works in every workspace the user belongs to. The database holds only the hash, in a `sessions` table
+with no workspace column (a directory table, ADR-0041). `last_seen_at` is rewritten only when it is an hour old, so
+a busy session costs one write an hour.
+
+Revocation is a row update, and the row is read on every request, so it is effective on the next request on every
+target. There is no cache to wait out (ADR-0052 round 29). `POST /internal/revoke-session` does it for the tests.
 
 The permission check is in the core, not in the router, so every entry point that calls a use-case gets it.
-`authorize(app, who, project, permission)` asks the `Database` port for the caller's membership in that project
-within the caller's own workspace, and returns a `Scope` that only it can create.
+`authorize(app, who, slug, project, permission)` asks the `Database` port, in one query, for the workspace the slug
+names, the caller's membership of that workspace and the caller's membership of the project, and returns a `Scope`
+that only it can create.
 
 | Result | When |
 |---|---|
-| 404 | The project does not exist in the caller's workspace. A project in another workspace looks the same, so a cross-tenant probe learns nothing |
-| 403 | The caller is not a member of the project, or their role is below the one the action needs |
-| `Scope` | The caller is a member whose role is high enough |
+| 404 | The slug names no workspace, the caller is not a member of that workspace, or the project is not in it. All three look the same, so a probe learns neither that a workspace nor that a project exists |
+| 403 | The caller is a member of the workspace but not of the project, or their role is below the one the action needs |
+| `Scope` | The caller is a member of the project whose role is high enough |
+
+Plane answers 403 for an unknown slug and for a non-member of the workspace (quirk PQ-003, to be reproduced). That
+belongs to the wire-compatible routes of [issue #44](https://github.com/aRustyDev/thrust/issues/44); the slice's
+routes keep 404, which tells a probe less.
 
 Roles are ordered Guest, Member, Admin. Reading work items, activity and attachments needs Guest. Creating and
 deleting work items and writing or deleting attachments needs Member. Reading soft-deleted work items needs Admin.
@@ -73,7 +94,7 @@ sequenceDiagram
   participant Q as Queue port
   participant E as Consumer
 
-  C->>A: POST /api/v1/projects/{id}/work-items
+  C->>A: POST /api/v1/workspaces/{slug}/projects/{id}/work-items
   A->>K: authenticate(token), create_work_item
   K->>K: validate the name
   K->>K: rate limit, then authorize (Member)
@@ -137,9 +158,9 @@ Errors raised by the use-cases and the router's own guards share one body,
 | Status | `code` | Raised when |
 |---|---|---|
 | 400 | `invalid` | A bad work item name or attachment name, or an unknown `scope` |
-| 401 | `unauthenticated` | No Bearer token, an unknown token, or a missing or wrong admin token |
+| 401 | `unauthenticated` | No Bearer token, a token that is unknown, revoked or expired, or a missing or wrong admin token |
 | 403 | `forbidden` | Not a member, or a role that is too low |
-| 404 | `not_found` | No such project in the caller's workspace, no such item or attachment, or a test route that is switched off |
+| 404 | `not_found` | A slug that names no workspace, a workspace the caller is not in, a project that is not in it, no such item or attachment, or a test route that is switched off |
 | 409 | `conflict` | A uniqueness constraint failed, such as a live work item with the same external source and id |
 | 413 | `too_large` | An attachment over the size limit |
 | 429 | `rate_limited` | Over the create limit. `Retry-After` carries the seconds |

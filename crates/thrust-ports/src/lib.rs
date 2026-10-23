@@ -43,12 +43,6 @@ pub enum BlobError {
 }
 
 #[derive(Debug, Error)]
-pub enum CacheError {
-    #[error("cache backend error: {0}")]
-    Backend(String),
-}
-
-#[derive(Debug, Error)]
 pub enum RateError {
     #[error("rate-limiter backend error: {0}")]
     Backend(String),
@@ -131,23 +125,67 @@ impl SystemScope {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Membership {
-    /// The project does not exist *in the caller's workspace* (also: it exists in another tenant).
+    /// Nothing the caller may know about: the slug names no workspace, the caller is not a member of
+    /// that workspace, or the project is not in it (also: it exists in another tenant). All three
+    /// look the same on purpose, so a caller cannot probe for workspaces or projects.
     NoSuchProject,
+    /// A member of the workspace, but not of the project.
     NotAMember,
-    Member(Role),
+    /// A member of the project. `workspace_id` is what the slug resolved to, for `authorize` to mint
+    /// the [`Scope`] with.
+    Member { workspace_id: WorkspaceId, role: Role },
+}
+
+/// SHA-256 of a session token. The database stores and compares only this, never the token
+/// (ADR-0052, ADR-0141); `thrust_core::hash_token` is the one place that makes one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct TokenHash(pub [u8; 32]);
+
+/// A session row to insert: sign-in (#38) and the test seed make these.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NewSession {
+    pub token_hash: TokenHash,
+    pub user_id: UserId,
+    pub created_at: Timestamp,
+    pub expires_at: Timestamp,
+}
+
+/// What a live session row says: whose it is, and when it was last used.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LiveSession {
+    pub user_id: UserId,
+    pub last_seen_at: Timestamp,
 }
 
 #[async_trait]
 pub trait Database: Send + Sync {
     /// The one call that runs before a [`Scope`] exists: only `thrust_core::authorize` makes it,
-    /// to decide whether to mint one (ADR-0045 round 29). Every other method takes a [`Scope`],
-    /// from which the adapter reads the tenant key, or a [`SystemScope`]; none takes bare ids.
+    /// to decide whether to mint one (ADR-0045 round 29). It resolves the route's workspace slug,
+    /// the caller's membership of that workspace and of the project in one query (ADR-0051 round
+    /// 29). Every other method takes a [`Scope`], from which the adapter reads the tenant key, or a
+    /// [`SystemScope`]; none takes bare ids.
     async fn membership(
         &self,
-        ws: WorkspaceId,
+        slug: &WorkspaceSlug,
         project: ProjectId,
         user: UserId,
     ) -> Result<Membership, DbError>;
+
+    // --- Sessions: a directory table (ADR-0041), so no call here carries a tenant key. Like
+    // `membership`, they run before a `Scope` exists, and take no proof type: the token is the
+    // credential (ADR-0052 round 29: the row is authoritative and read on every request).
+
+    /// The session behind `hash`, only while it is live: not revoked and `expires_at > now`.
+    async fn session(&self, hash: &TokenHash, now: Timestamp) -> Result<Option<LiveSession>, DbError>;
+
+    /// Record that the session was used at `at`. Core calls it lazily (`session_touch_after`).
+    async fn touch_session(&self, hash: &TokenHash, at: Timestamp) -> Result<(), DbError>;
+
+    /// Revoke the session at `at`. A session that is unknown or already revoked is left as it is.
+    async fn revoke_session(&self, hash: &TokenHash, at: Timestamp) -> Result<(), DbError>;
+
+    /// Insert a session. A hash that already exists is left as it is.
+    async fn insert_session(&self, s: &NewSession) -> Result<(), DbError>;
 
     /// `scope` is the proof that the caller was authorised to open a unit of work.
     async fn begin(&self, scope: &Scope) -> Result<Box<dyn Tx>, DbError>;
@@ -183,7 +221,7 @@ pub trait Database: Send + Sync {
 
     async fn outbox_depth(&self, sys: &SystemScope) -> Result<u64, DbError>;
 
-    /// Test support: insert fixture rows (workspaces/users/projects/memberships).
+    /// Test support: insert fixture rows (workspaces, workspace members, projects, project members).
     async fn seed(&self, sys: &SystemScope, fixture: &SeedFixture) -> Result<(), DbError>;
 }
 
@@ -244,14 +282,8 @@ pub trait EventConsumer: Send + Sync {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Cache / session (ADR-0082) and blobs (ADR-0080) and rate limiting (ADR-0033)
+// Blobs (ADR-0080) and rate limiting (ADR-0033)
 // ---------------------------------------------------------------------------------------------
-
-#[async_trait]
-pub trait SessionStore: Send + Sync {
-    async fn get(&self, token: &str) -> Result<Option<Principal>, CacheError>;
-    async fn put(&self, token: &str, principal: &Principal, ttl_secs: u64) -> Result<(), CacheError>;
-}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Blob {

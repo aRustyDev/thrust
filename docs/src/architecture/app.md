@@ -59,10 +59,10 @@ depends on it directly. `thrust-api` and both roots also depend directly on `thr
 | Ports | `thrust-ports` | The port traits and their error types. Every returned future is `Send` |
 | Core | `thrust-core` | The use-cases, the `Ports` bundle, `App` and `CoreConfig`, and the permission seam (`authorize`, which mints a `Scope`) |
 | HTTP | `thrust-api` | One `router()` that both roots serve. Handlers see `App` and never a platform type |
-| Adapters | `thrust-adapters-memory` | `Database`, `Queue`, `SessionStore`, `BlobStore` and `RateLimiter` in process memory, for tests and as the reference the real adapters are compared with. It has no clock, id or background adapter |
+| Adapters | `thrust-adapters-memory` | `Database` (workspaces, sessions and all), `Queue`, `BlobStore` and `RateLimiter` in process memory, for tests and as the reference the real adapters are compared with. It has no clock, id or background adapter |
 | | `thrust-adapters-postgres` | The `Database` port written once against `tokio_postgres::Client`, plus the schema migration and a `migrate` binary |
 | | `thrust-adapters-selfhosted` | Native pieces: a system clock, UUID v7 ids, `Background` on tokio, and a deadpool connection pool that gives the Postgres adapter its connections |
-| | `thrust-adapters-cloudflare` | Workers pieces: clock and ids from JavaScript, `Background` on `waitUntil`, KV sessions, R2 blobs, Queues, a Durable Object rate limiter and a Hyperdrive connection for the Postgres adapter |
+| | `thrust-adapters-cloudflare` | Workers pieces: clock and ids from JavaScript, `Background` on `waitUntil`, R2 blobs, Queues, a Durable Object rate limiter and a Hyperdrive connection for the Postgres adapter |
 | Roots | `thrust-worker` | The Cloudflare Worker (`cdylib`): `fetch`, `queue` and `scheduled` handlers, and the Durable Object classes |
 | | `thrust-server` | The native binary |
 | Tests | `thrust-contract-tests` | A black-box HTTP suite. It depends on `thrust-contracts` only, so it never links the code it tests |
@@ -77,9 +77,8 @@ on it.
 |---|---|---|
 | `Clock`, `IdGen` | Wall time and time-ordered ids. Core takes time from the port. `thrust-contracts` depends on chrono without its `clock` feature, so `Utc::now()` is unavailable to it when built alone. `thrust-adapters-selfhosted` turns the feature on for the native server, so this is a convention that the dependency declaration backs, not a guarantee in every build | `SystemClock`, `NativeIdGen` (selfhosted); `JsClock`, `JsIdGen` (cloudflare) |
 | `Background` | Running work after the response. Core never calls `tokio::spawn` | `TokioBackground`; `WaitUntilBackground`, `LocalBackground` |
-| `Database` and `Tx` | Reads, a unit of work, the outbox and the activity projection. Every method takes a `Scope` (minted only by `authorize`), from which the adapter reads the tenant key, or a `SystemScope` (minted only by the composition roots) for the outbox relay and sweeper, the consumer's activity write and `seed`. `membership`, which `authorize` calls before a `Scope` exists, is the one exception | `MemoryDatabase`; `PgDatabase` over a `Connector` (`PoolConnector` native, `HyperdriveConnector` on the Worker) |
+| `Database` and `Tx` | Reads, a unit of work, the outbox and the activity projection. Every method takes a `Scope` (minted only by `authorize`), from which the adapter reads the tenant key, or a `SystemScope` (minted only by the composition roots) for the outbox relay and sweeper, the consumer's activity write and `seed`. `membership` (which resolves the workspace slug) and the session calls (`session`, `touch_session`, `revoke_session`, `insert_session`) run before a `Scope` exists and take none: they are the exceptions | `MemoryDatabase`; `PgDatabase` over a `Connector` (`PoolConnector` native, `HyperdriveConnector` on the Worker) |
 | `Queue` and `EventConsumer` | Publishing events, and the callback a queue adapter invokes per delivered message | `MemoryQueue`; `CfQueue` |
-| `SessionStore` | Bearer token to `Principal` | `MemorySessionStore`; `KvSessionStore` |
 | `BlobStore` | Attachments | `MemoryBlobStore`; `R2BlobStore` |
 | `RateLimiter` | A fixed-window counter | `MemoryRateLimiter`; `DoRateLimiter` |
 

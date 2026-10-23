@@ -15,6 +15,11 @@ use thrust_ports::*;
 
 #[derive(Default)]
 struct DbState {
+    /// The `sessions` table: keyed by the token hash, no workspace (a directory table).
+    sessions: HashMap<TokenHash, SessionRow>,
+    /// Slug -> workspace (the `workspaces.slug` unique index).
+    workspaces: HashMap<WorkspaceSlug, WorkspaceId>,
+    workspace_members: HashSet<(WorkspaceId, UserId)>,
     projects: HashMap<ProjectId, WorkspaceId>,
     /// The member row keeps the workspace it was written with; `membership` counts it only when that
     /// is the project's workspace (the Postgres join on `m.workspace_id`).
@@ -26,6 +31,13 @@ struct DbState {
     outbox: Vec<OutboxRow>,
     activity: Vec<Activity>,
     activity_events: HashSet<EventId>,
+}
+
+struct SessionRow {
+    user_id: UserId,
+    expires_at: Timestamp,
+    revoked_at: Option<Timestamp>,
+    last_seen_at: Timestamp,
 }
 
 impl DbState {
@@ -61,23 +73,67 @@ fn is_visible(w: &WorkItem) -> bool {
 impl Database for MemoryDatabase {
     async fn membership(
         &self,
-        ws: WorkspaceId,
+        slug: &WorkspaceSlug,
         project: ProjectId,
         user: UserId,
     ) -> Result<Membership, DbError> {
         let s = self.state.lock().unwrap();
-        // MUTANT (control run only): forget the tenant predicate. The cross-tenant tests must catch it.
+        // The workspace the caller may act in: the slug names it, the caller belongs to it and the
+        // project is in it (the three inner joins of the Postgres query).
+        // MUTANT (control run only): forget the tenant predicates and trust the project's own
+        // workspace. The cross-tenant tests must catch it.
         #[cfg(feature = "mutant_ignore_tenant")]
-        let wrong_tenant = !s.projects.contains_key(&project);
+        let resolved = s.projects.get(&project).copied();
         #[cfg(not(feature = "mutant_ignore_tenant"))]
-        let wrong_tenant = s.projects.get(&project) != Some(&ws);
-        if wrong_tenant {
+        let resolved = s
+            .workspaces
+            .get(slug)
+            .copied()
+            .filter(|ws| s.workspace_members.contains(&(*ws, user)) && s.projects.get(&project) == Some(ws));
+        let Some(ws) = resolved else {
             return Ok(Membership::NoSuchProject);
-        }
+        };
         Ok(match s.memberships.get(&(project, user)) {
-            Some((m_ws, r)) if *m_ws == ws => Membership::Member(*r),
+            Some((m_ws, role)) if *m_ws == ws => Membership::Member { workspace_id: ws, role: *role },
             _ => Membership::NotAMember,
         })
+    }
+
+    async fn session(&self, hash: &TokenHash, now: Timestamp) -> Result<Option<LiveSession>, DbError> {
+        let s = self.state.lock().unwrap();
+        // MUTANT (control run only): a revoked session still resolves. The revocation test must catch it.
+        #[cfg(feature = "mutant_ignore_revoked")]
+        let revoked = |_: &SessionRow| false;
+        #[cfg(not(feature = "mutant_ignore_revoked"))]
+        let revoked = |r: &SessionRow| r.revoked_at.is_some();
+        Ok(s.sessions
+            .get(hash)
+            .filter(|r| !revoked(r) && r.expires_at > now)
+            .map(|r| LiveSession { user_id: r.user_id, last_seen_at: r.last_seen_at }))
+    }
+
+    async fn touch_session(&self, hash: &TokenHash, at: Timestamp) -> Result<(), DbError> {
+        if let Some(r) = self.state.lock().unwrap().sessions.get_mut(hash) {
+            r.last_seen_at = at;
+        }
+        Ok(())
+    }
+
+    async fn revoke_session(&self, hash: &TokenHash, at: Timestamp) -> Result<(), DbError> {
+        if let Some(r) = self.state.lock().unwrap().sessions.get_mut(hash) {
+            r.revoked_at.get_or_insert(at);
+        }
+        Ok(())
+    }
+
+    async fn insert_session(&self, new: &NewSession) -> Result<(), DbError> {
+        self.state.lock().unwrap().sessions.entry(new.token_hash).or_insert(SessionRow {
+            user_id: new.user_id,
+            expires_at: new.expires_at,
+            revoked_at: None,
+            last_seen_at: new.created_at,
+        });
+        Ok(())
     }
 
     async fn begin(&self, _scope: &Scope) -> Result<Box<dyn Tx>, DbError> {
@@ -176,6 +232,12 @@ impl Database for MemoryDatabase {
 
     async fn seed(&self, _sys: &SystemScope, f: &SeedFixture) -> Result<(), DbError> {
         let mut s = self.state.lock().unwrap();
+        for w in &f.workspaces {
+            s.workspaces.insert(w.slug.clone(), w.id);
+        }
+        for m in &f.workspace_members {
+            s.workspace_members.insert((m.workspace_id, m.user_id));
+        }
         for p in &f.projects {
             s.projects.insert(p.id, p.workspace_id);
         }
@@ -324,33 +386,8 @@ impl Queue for MemoryQueue {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Session store, blob store, rate limiter
+// Blob store, rate limiter
 // ---------------------------------------------------------------------------------------------
-
-pub struct MemorySessionStore {
-    clock: Arc<dyn Clock>,
-    map: Mutex<HashMap<String, (Principal, Timestamp)>>,
-}
-
-impl MemorySessionStore {
-    pub fn new(clock: Arc<dyn Clock>) -> Self {
-        Self { clock, map: Mutex::new(HashMap::new()) }
-    }
-}
-
-#[async_trait]
-impl SessionStore for MemorySessionStore {
-    async fn get(&self, token: &str) -> Result<Option<Principal>, CacheError> {
-        let now = self.clock.now();
-        let m = self.map.lock().unwrap();
-        Ok(m.get(token).filter(|(_, exp)| *exp > now).map(|(p, _)| p.clone()))
-    }
-    async fn put(&self, token: &str, principal: &Principal, ttl_secs: u64) -> Result<(), CacheError> {
-        let exp = self.clock.now() + chrono::TimeDelta::seconds(ttl_secs as i64);
-        self.map.lock().unwrap().insert(token.to_string(), (principal.clone(), exp));
-        Ok(())
-    }
-}
 
 #[derive(Default)]
 pub struct MemoryBlobStore {

@@ -34,12 +34,12 @@ async fn unauthenticated_requests_are_rejected() {
     let t = t();
     let f = Fixture::seed(&t).await;
     // no credentials
-    let r = t.http.post(t.url(&wi_path(f.project_a))).json(&json!({"name":"x"})).send().await.unwrap();
+    let r = t.http.post(t.url(&wi_path(&f.a))).json(&json!({"name":"x"})).send().await.unwrap();
     assert_eq!(r.status(), 401, "no token");
     // unknown token
     let r = t
         .http
-        .post(t.url(&wi_path(f.project_a)))
+        .post(t.url(&wi_path(&f.a)))
         .bearer_auth("not-a-session")
         .json(&json!({"name":"x"}))
         .send()
@@ -47,7 +47,7 @@ async fn unauthenticated_requests_are_rejected() {
         .unwrap();
     assert_eq!(r.status(), 401, "bad token");
     // control: nothing was created by the rejected calls
-    let items: Vec<WorkItem> = list(&t, &f.admin_a, f.project_a, None).await.json().await.unwrap();
+    let items: Vec<WorkItem> = list(&t, &f.admin_a, &f.a, None).await.json().await.unwrap();
     assert!(items.is_empty());
 }
 
@@ -64,15 +64,15 @@ async fn internal_routes_require_the_admin_token() {
 async fn create_allocates_monotonic_sequence_and_sort_order() {
     let t = t();
     let f = Fixture::seed(&t).await;
-    let a = create_ok(&t, &f.member_a, f.project_a, "first").await;
-    let b = create_ok(&t, &f.member_a, f.project_a, "second").await;
+    let a = create_ok(&t, &f.member_a, &f.a, "first").await;
+    let b = create_ok(&t, &f.member_a, &f.a, "second").await;
     assert_eq!((a.sequence_id, b.sequence_id), (1, 2));
     assert_eq!((a.sort_order, b.sort_order), (10_000, 20_000));
     assert_eq!(a.workspace_id, f.ws_a);
     assert_eq!(a.created_by, f.member_a.id);
     assert!(a.deleted_at.is_none());
     // control: a different project has its own counter (sequence is per project, not global)
-    let c = create_ok(&t, &f.admin_b, f.project_b, "other tenant").await;
+    let c = create_ok(&t, &f.admin_b, &f.b, "other tenant").await;
     assert_eq!(c.sequence_id, 1);
 }
 
@@ -81,9 +81,9 @@ async fn list_returns_visible_items_in_sequence_order() {
     let t = t();
     let f = Fixture::seed(&t).await;
     for n in ["a", "b", "c"] {
-        create_ok(&t, &f.member_a, f.project_a, n).await;
+        create_ok(&t, &f.member_a, &f.a, n).await;
     }
-    let items: Vec<WorkItem> = list(&t, &f.guest_a, f.project_a, None).await.json().await.unwrap();
+    let items: Vec<WorkItem> = list(&t, &f.guest_a, &f.a, None).await.json().await.unwrap();
     let names: Vec<_> = items.iter().map(|i| i.name.as_str()).collect();
     assert_eq!(names, ["a", "b", "c"]);
     assert_eq!(items.iter().map(|i| i.sequence_id).collect::<Vec<_>>(), [1, 2, 3]);
@@ -93,13 +93,13 @@ async fn list_returns_visible_items_in_sequence_order() {
 async fn soft_delete_hides_rows_and_never_reuses_sequence_ids() {
     let t = t();
     let f = Fixture::seed(&t).await;
-    let _one = create_ok(&t, &f.member_a, f.project_a, "one").await;
-    let two = create_ok(&t, &f.member_a, f.project_a, "two").await;
-    let _three = create_ok(&t, &f.member_a, f.project_a, "three").await;
+    let _one = create_ok(&t, &f.member_a, &f.a, "one").await;
+    let two = create_ok(&t, &f.member_a, &f.a, "two").await;
+    let _three = create_ok(&t, &f.member_a, &f.a, "three").await;
 
     let r = t
         .http
-        .delete(t.url(&format!("{}/{}", wi_path(f.project_a), two.id)))
+        .delete(t.url(&format!("{}/{}", wi_path(&f.a), two.id)))
         .bearer_auth(&f.member_a.token)
         .send()
         .await
@@ -107,17 +107,17 @@ async fn soft_delete_hides_rows_and_never_reuses_sequence_ids() {
     assert_eq!(r.status(), 204);
 
     // default scope hides the deleted row
-    let visible: Vec<WorkItem> = list(&t, &f.member_a, f.project_a, None).await.json().await.unwrap();
+    let visible: Vec<WorkItem> = list(&t, &f.member_a, &f.a, None).await.json().await.unwrap();
     assert_eq!(visible.iter().map(|i| i.sequence_id).collect::<Vec<_>>(), [1, 3]);
 
     // control 1: a member may NOT ask for deleted rows
-    let r = list(&t, &f.member_a, f.project_a, Some("with_deleted")).await;
+    let r = list(&t, &f.member_a, &f.a, Some("with_deleted")).await;
     assert_eq!(r.status(), 403, "member must not see deleted rows");
     // control 2: unknown scope is a client error, not a silent default
-    assert_eq!(list(&t, &f.member_a, f.project_a, Some("bogus")).await.status(), 400);
+    assert_eq!(list(&t, &f.member_a, &f.a, Some("bogus")).await.status(), 400);
 
     // an admin may, and sees the tombstone
-    let all: Vec<WorkItem> = list(&t, &f.admin_a, f.project_a, Some("with_deleted")).await.json().await.unwrap();
+    let all: Vec<WorkItem> = list(&t, &f.admin_a, &f.a, Some("with_deleted")).await.json().await.unwrap();
     assert_eq!(all.len(), 3);
     let tomb = all.iter().find(|i| i.id == two.id).unwrap();
     assert!(tomb.deleted_at.is_some());
@@ -125,7 +125,7 @@ async fn soft_delete_hides_rows_and_never_reuses_sequence_ids() {
     // deleting twice is a 404, not a second success
     let r = t
         .http
-        .delete(t.url(&format!("{}/{}", wi_path(f.project_a), two.id)))
+        .delete(t.url(&format!("{}/{}", wi_path(&f.a), two.id)))
         .bearer_auth(&f.member_a.token)
         .send()
         .await
@@ -133,7 +133,7 @@ async fn soft_delete_hides_rows_and_never_reuses_sequence_ids() {
     assert_eq!(r.status(), 404);
 
     // numbers are never reused: the next item is #4, not #2 or #3 (ADR-0043 B1)
-    let four = create_ok(&t, &f.member_a, f.project_a, "four").await;
+    let four = create_ok(&t, &f.member_a, &f.a, "four").await;
     assert_eq!(four.sequence_id, 4);
 }
 
@@ -142,31 +142,76 @@ async fn cross_tenant_access_is_rejected_and_has_no_effect() {
     let t = t();
     let f = Fixture::seed(&t).await;
     // Tenant B's admin targets tenant A's project: 404, indistinguishable from "no such project".
-    let r = create(&t, &f.admin_b, f.project_a, json!({"name": "intruder"})).await;
+    let r = create(&t, &f.admin_b, &f.a, json!({"name": "intruder"})).await;
     assert_eq!(r.status(), 404, "cross-tenant create must be 404");
-    assert_eq!(list(&t, &f.admin_b, f.project_a, None).await.status(), 404, "cross-tenant list");
+    assert_eq!(list(&t, &f.admin_b, &f.a, None).await.status(), 404, "cross-tenant list");
     assert_eq!(
-        list(&t, &f.admin_b, f.project_a, Some("with_deleted")).await.status(),
+        list(&t, &f.admin_b, &f.a, Some("with_deleted")).await.status(),
         404,
         "cross-tenant with_deleted list"
     );
     // control: the rejected create left nothing behind in tenant A ...
-    let items: Vec<WorkItem> = list(&t, &f.admin_a, f.project_a, None).await.json().await.unwrap();
+    let items: Vec<WorkItem> = list(&t, &f.admin_a, &f.a, None).await.json().await.unwrap();
     assert!(items.is_empty(), "cross-tenant create leaked a row");
     // ... and tenant A's own admin is NOT rejected on the same path (the 404 above is tenancy, not a bad route)
-    assert_eq!(list(&t, &f.admin_a, f.project_a, None).await.status(), 200);
+    assert_eq!(list(&t, &f.admin_a, &f.a, None).await.status(), 200);
+    // The other URL form: tenant B's own slug with tenant A's project id. The project is not in the workspace the
+    // slug names, so it is 404 as well, and so is a slug that names no workspace at all.
+    assert_eq!(list(&t, &f.admin_b, &f.a.via(&f.b.slug), None).await.status(), 404, "A's project under B's slug");
+    assert_eq!(list(&t, &f.admin_a, &f.a.via("no-such-workspace"), None).await.status(), 404, "unknown slug");
+    // a workspace member who is not a member of the project is a different answer: 403 (see the next test)
+    assert_eq!(list(&t, &f.outsider_a, &f.a, None).await.status(), 403);
+}
+
+/// The session row is read on every request (ADR-0052 round 29), so a revocation is visible to the very next request,
+/// on every target: there is no cache to wait out. The revocation goes through the test route until sign-out exists
+/// (#38).
+#[tokio::test]
+async fn a_revoked_session_is_rejected_on_the_next_request() {
+    let t = t();
+    let f = Fixture::seed(&t).await;
+    let other = f.extra_member(&t).await;
+    assert_eq!(list(&t, &f.member_a, &f.a, None).await.status(), 200, "before the revoke");
+    t.revoke_session(&f.member_a.token).await;
+    // the next request, and every kind of route, not only the one used first
+    assert_eq!(list(&t, &f.member_a, &f.a, None).await.status(), 401, "list with the revoked token");
+    assert_eq!(create(&t, &f.member_a, &f.a, json!({"name": "x"})).await.status(), 401, "create with it");
+    // control: an unrevoked token on the same request still gets 200, so the 401 is the revoke, not the route
+    assert_eq!(list(&t, &other, &f.a, None).await.status(), 200, "an unrevoked token");
+    assert_eq!(list(&t, &f.admin_a, &f.a, None).await.status(), 200, "another unrevoked token");
+    // revoking again, or revoking a token that was never issued, changes nothing
+    t.revoke_session(&f.member_a.token).await;
+    t.revoke_session("never-issued").await;
+    assert_eq!(list(&t, &other, &f.a, None).await.status(), 200, "still unrevoked after the no-op revokes");
+}
+
+/// A session belongs to a user, not to a workspace (ADR-0052 round 29): `dual` belongs to both workspaces and its one
+/// token works in each, with that workspace's project.
+#[tokio::test]
+async fn a_session_is_not_bound_to_a_workspace() {
+    let t = t();
+    let f = Fixture::seed(&t).await;
+    assert_eq!(list(&t, &f.dual, &f.a, None).await.status(), 200, "dual in workspace A");
+    assert_eq!(list(&t, &f.dual, &f.b, None).await.status(), 200, "dual in workspace B");
+    // the two workspaces stay two tenants: what dual creates in A is not in B
+    let item = create_ok(&t, &f.dual, &f.a, "from dual in A").await;
+    let in_b: Vec<WorkItem> = list(&t, &f.dual, &f.b, None).await.json().await.unwrap();
+    assert!(in_b.iter().all(|w| w.id != item.id), "an item of workspace A showed up in workspace B");
+    // control: a token of a user who belongs to one workspace only gets 404 on a project of the other
+    assert_eq!(list(&t, &f.admin_a, &f.b, None).await.status(), 404, "admin_a is not in workspace B");
+    assert_eq!(list(&t, &f.admin_b, &f.a, None).await.status(), 404, "admin_b is not in workspace A");
 }
 
 #[tokio::test]
 async fn non_members_and_guests_are_forbidden_to_write() {
     let t = t();
     let f = Fixture::seed(&t).await;
-    assert_eq!(create(&t, &f.outsider_a, f.project_a, json!({"name":"x"})).await.status(), 403, "outsider create");
-    assert_eq!(list(&t, &f.outsider_a, f.project_a, None).await.status(), 403, "outsider list");
-    assert_eq!(create(&t, &f.guest_a, f.project_a, json!({"name":"x"})).await.status(), 403, "guest create");
+    assert_eq!(create(&t, &f.outsider_a, &f.a, json!({"name":"x"})).await.status(), 403, "outsider create");
+    assert_eq!(list(&t, &f.outsider_a, &f.a, None).await.status(), 403, "outsider list");
+    assert_eq!(create(&t, &f.guest_a, &f.a, json!({"name":"x"})).await.status(), 403, "guest create");
     // control: guests can read, members can write
-    assert_eq!(list(&t, &f.guest_a, f.project_a, None).await.status(), 200, "guest list");
-    assert_eq!(create(&t, &f.member_a, f.project_a, json!({"name":"ok"})).await.status(), 201);
+    assert_eq!(list(&t, &f.guest_a, &f.a, None).await.status(), 200, "guest list");
+    assert_eq!(create(&t, &f.member_a, &f.a, json!({"name":"ok"})).await.status(), 201);
 }
 
 #[tokio::test]
@@ -174,27 +219,27 @@ async fn external_id_is_unique_among_live_rows_only() {
     let t = t();
     let f = Fixture::seed(&t).await;
     let body = |ext: &str| json!({"name": "imported", "external_source": "github", "external_id": ext});
-    let first = create(&t, &f.member_a, f.project_a, body("42")).await;
+    let first = create(&t, &f.member_a, &f.a, body("42")).await;
     assert_eq!(first.status(), 201);
     let first: WorkItem = first.json().await.unwrap();
     // duplicate live (source, id) -> 409 (the must-fail control for the unique constraint)
-    let dup = create(&t, &f.member_a, f.project_a, body("42")).await;
+    let dup = create(&t, &f.member_a, &f.a, body("42")).await;
     assert_eq!(dup.status(), 409, "duplicate external_id must conflict");
     // control: a different id is fine
-    assert_eq!(create(&t, &f.member_a, f.project_a, body("43")).await.status(), 201);
+    assert_eq!(create(&t, &f.member_a, &f.a, body("43")).await.status(), 201);
     // the failed duplicate must not have burned a visible row
-    let n = list(&t, &f.member_a, f.project_a, None).await.json::<Vec<WorkItem>>().await.unwrap().len();
+    let n = list(&t, &f.member_a, &f.a, None).await.json::<Vec<WorkItem>>().await.unwrap().len();
     assert_eq!(n, 2);
     // after a soft delete the key is free again (partial unique index semantics)
     let r = t
         .http
-        .delete(t.url(&format!("{}/{}", wi_path(f.project_a), first.id)))
+        .delete(t.url(&format!("{}/{}", wi_path(&f.a), first.id)))
         .bearer_auth(&f.member_a.token)
         .send()
         .await
         .unwrap();
     assert_eq!(r.status(), 204);
-    assert_eq!(create(&t, &f.member_a, f.project_a, body("42")).await.status(), 201, "re-create after soft delete");
+    assert_eq!(create(&t, &f.member_a, &f.a, body("42")).await.status(), 201, "re-create after soft delete");
 }
 
 #[tokio::test]
@@ -205,7 +250,7 @@ async fn concurrent_creates_never_duplicate_a_sequence_id() {
     let futs = (0..n).map(|i| {
         let t = &t;
         let f = &f;
-        async move { create(t, &f.member_a, f.project_a, json!({"name": format!("c{i}")})).await }
+        async move { create(t, &f.member_a, &f.a, json!({"name": format!("c{i}")})).await }
     });
     let resps = join_all(futs).await;
     let mut seqs = Vec::new();
@@ -227,10 +272,10 @@ async fn concurrent_creates_never_duplicate_a_sequence_id() {
 async fn outbox_event_reaches_the_queue_consumer_exactly_once() {
     let t = t();
     let f = Fixture::seed(&t).await;
-    let item = create_ok(&t, &f.member_a, f.project_a, "evented").await;
+    let item = create_ok(&t, &f.member_a, &f.a, "evented").await;
 
     let acts = eventually("created activity row", Duration::from_secs(15), || async {
-        let a = activity(&t, &f.guest_a, f.project_a, item.id).await;
+        let a = activity(&t, &f.guest_a, &f.a, item.id).await;
         (!a.is_empty()).then_some(a)
     })
     .await;
@@ -243,19 +288,19 @@ async fn outbox_event_reaches_the_queue_consumer_exactly_once() {
     // delete -> second event -> second activity row; no duplicates of the first
     let r = t
         .http
-        .delete(t.url(&format!("{}/{}", wi_path(f.project_a), item.id)))
+        .delete(t.url(&format!("{}/{}", wi_path(&f.a), item.id)))
         .bearer_auth(&f.member_a.token)
         .send()
         .await
         .unwrap();
     assert_eq!(r.status(), 204);
     let acts = eventually("deleted activity row", Duration::from_secs(15), || async {
-        let a = activity(&t, &f.guest_a, f.project_a, item.id).await;
+        let a = activity(&t, &f.guest_a, &f.a, item.id).await;
         (a.len() >= 2).then_some(a)
     })
     .await;
     tokio::time::sleep(Duration::from_millis(1500)).await;
-    let acts_later = activity(&t, &f.guest_a, f.project_a, item.id).await;
+    let acts_later = activity(&t, &f.guest_a, &f.a, item.id).await;
     assert_eq!(acts.len(), 2);
     assert_eq!(acts_later.len(), 2, "redelivery must not duplicate activity rows");
     let mut verbs: Vec<_> = acts_later.iter().map(|a| a.verb.clone()).collect();
@@ -265,7 +310,7 @@ async fn outbox_event_reaches_the_queue_consumer_exactly_once() {
     // control: tenant B cannot read tenant A's activity
     let r = t
         .http
-        .get(t.url(&format!("{}/{}/activity", wi_path(f.project_a), item.id)))
+        .get(t.url(&format!("{}/{}/activity", wi_path(&f.a), item.id)))
         .bearer_auth(&f.admin_b.token)
         .send()
         .await
@@ -280,9 +325,9 @@ async fn outbox_event_reaches_the_queue_consumer_exactly_once() {
 async fn redelivered_event_is_processed_once() {
     let t = t();
     let f = Fixture::seed(&t).await;
-    let item = create_ok(&t, &f.member_a, f.project_a, "redelivery").await;
+    let item = create_ok(&t, &f.member_a, &f.a, "redelivery").await;
     eventually("original activity row", Duration::from_secs(15), || async {
-        (activity(&t, &f.guest_a, f.project_a, item.id).await.len() == 1).then_some(())
+        (activity(&t, &f.guest_a, &f.a, item.id).await.len() == 1).then_some(())
     })
     .await;
 
@@ -296,7 +341,7 @@ async fn redelivered_event_is_processed_once() {
             "entity_id": item.id,
             "actor_id": f.member_a.id,
             "occurred_at": "2026-10-18T00:00:00Z",
-            "payload": { "project_id": f.project_a, "changed_fields": ["name"] },
+            "payload": { "project_id": f.a.project, "changed_fields": ["name"] },
             "trace_id": null
         })
     };
@@ -310,11 +355,11 @@ async fn redelivered_event_is_processed_once() {
     assert_eq!(r.status(), 202);
 
     eventually("both distinct injected events", Duration::from_secs(15), || async {
-        (activity(&t, &f.guest_a, f.project_a, item.id).await.len() >= 3).then_some(())
+        (activity(&t, &f.guest_a, &f.a, item.id).await.len() >= 3).then_some(())
     })
     .await;
     tokio::time::sleep(Duration::from_millis(2000)).await; // give a (wrong) duplicate time to show up
-    let acts = activity(&t, &f.guest_a, f.project_a, item.id).await;
+    let acts = activity(&t, &f.guest_a, &f.a, item.id).await;
     let mut verbs: Vec<_> = acts.iter().map(|a| a.verb.clone()).collect();
     verbs.sort();
     assert_eq!(verbs, ["created", "moved", "updated"], "the duplicated event must produce ONE activity row");
@@ -337,10 +382,10 @@ async fn create_is_rate_limited_per_user() {
         let user = f.extra_member(&t).await;
         let started = now();
         for i in 0..limit {
-            let r = create(&t, &user, f.project_a, json!({"name": format!("r{i}")})).await;
+            let r = create(&t, &user, &f.a, json!({"name": format!("r{i}")})).await;
             assert_eq!(r.status(), 201, "request {i} of {limit} must pass");
         }
-        let r = create(&t, &user, f.project_a, json!({"name": "over"})).await;
+        let r = create(&t, &user, &f.a, json!({"name": "over"})).await;
         let ended = now();
         let crossed = (started.saturating_sub(2)) / window != (ended + 2) / window;
         if r.status() == 429 || !crossed {
@@ -355,15 +400,15 @@ async fn create_is_rate_limited_per_user() {
     assert!(r.headers().contains_key("retry-after"));
     // control: the limit is per user, another member is unaffected
     let other = f.extra_member(&t).await;
-    assert_eq!(create(&t, &other, f.project_a, json!({"name": "fine"})).await.status(), 201);
+    assert_eq!(create(&t, &other, &f.a, json!({"name": "fine"})).await.status(), 201);
 }
 
 #[tokio::test]
 async fn attachments_roundtrip_with_authz() {
     let t = t();
     let f = Fixture::seed(&t).await;
-    let item = create_ok(&t, &f.member_a, f.project_a, "with file").await;
-    let path = format!("{}/{}/attachments/notes.txt", wi_path(f.project_a), item.id);
+    let item = create_ok(&t, &f.member_a, &f.a, "with file").await;
+    let path = format!("{}/{}/attachments/notes.txt", wi_path(&f.a), item.id);
     let payload = b"hello r2 \x00\x01\x02 binary-safe".to_vec();
 
     // guest cannot write (control)
@@ -386,12 +431,12 @@ async fn attachments_roundtrip_with_authz() {
     assert_eq!(r.headers().get("content-type").unwrap(), "application/x-thrust");
     assert_eq!(r.bytes().await.unwrap().to_vec(), payload);
     // unknown name -> 404 (control: the 200 above is not "always 200")
-    let other = format!("{}/{}/attachments/missing.txt", wi_path(f.project_a), item.id);
+    let other = format!("{}/{}/attachments/missing.txt", wi_path(&f.a), item.id);
     assert_eq!(t.http.get(t.url(&other)).bearer_auth(&f.guest_a.token).send().await.unwrap().status(), 404);
     // other tenant cannot read it
     assert_eq!(t.http.get(t.url(&path)).bearer_auth(&f.admin_b.token).send().await.unwrap().status(), 404);
     // path traversal in the name is rejected
-    let evil = format!("{}/{}/attachments/..%2Fescape", wi_path(f.project_a), item.id);
+    let evil = format!("{}/{}/attachments/..%2Fescape", wi_path(&f.a), item.id);
     let st = t.http.put(t.url(&evil)).bearer_auth(&f.member_a.token).body("x").send().await.unwrap().status();
     assert!(st == 400 || st == 404, "traversal name must not be accepted, got {st}");
     // oversize is rejected before touching storage (limit is 5 MiB)
@@ -411,16 +456,16 @@ async fn attachments_roundtrip_with_authz() {
 async fn invalid_input_is_a_client_error() {
     let t = t();
     let f = Fixture::seed(&t).await;
-    let r = create(&t, &f.member_a, f.project_a, json!({"name": "   "})).await;
+    let r = create(&t, &f.member_a, &f.a, json!({"name": "   "})).await;
     assert_eq!(r.status(), 400);
     let body: Value = r.json().await.unwrap();
     assert_eq!(body["error"]["code"], "invalid");
     let long = "x".repeat(256);
-    assert_eq!(create(&t, &f.member_a, f.project_a, json!({"name": long})).await.status(), 400);
+    assert_eq!(create(&t, &f.member_a, &f.a, json!({"name": long})).await.status(), 400);
     // not a uuid in the path
     let r = t
         .http
-        .post(t.url("/api/v1/projects/not-a-uuid/work-items"))
+        .post(t.url(&format!("{SLICE_PREFIX}/workspaces/{}/projects/not-a-uuid/work-items", f.a.slug)))
         .bearer_auth(&f.member_a.token)
         .json(&json!({"name":"x"}))
         .send()
@@ -428,7 +473,7 @@ async fn invalid_input_is_a_client_error() {
         .unwrap();
     assert!(r.status().is_client_error(), "got {}", r.status());
     // control: a 255-char name is accepted
-    assert_eq!(create(&t, &f.member_a, f.project_a, json!({"name": "y".repeat(255)})).await.status(), 201);
+    assert_eq!(create(&t, &f.member_a, &f.a, json!({"name": "y".repeat(255)})).await.status(), 201);
 }
 
 /// Own pass (`panic_`): a panic under panic=abort resets the whole Worker isolate, which would
@@ -442,7 +487,7 @@ async fn invalid_input_is_a_client_error() {
 async fn panic_is_contained_and_the_target_keeps_serving() {
     let t = t();
     let f = Fixture::seed(&t).await;
-    let before = create_ok(&t, &f.member_a, f.project_a, "before-panic").await;
+    let before = create_ok(&t, &f.member_a, &f.a, "before-panic").await;
 
     match t.http.get(t.url("/_test/panic")).send().await {
         Ok(r) => {
@@ -466,7 +511,7 @@ async fn panic_is_contained_and_the_target_keeps_serving() {
     assert!(ok, "target did not recover after a panic");
 
     let survives = std::env::var("THRUST_STATE_SURVIVES_PANIC").map(|v| v != "0").unwrap_or(true);
-    let r = list(&t, &f.member_a, f.project_a, None).await;
+    let r = list(&t, &f.member_a, &f.a, None).await;
     if survives {
         assert_eq!(r.status(), 200, "durable state must survive a panic");
         let items: Vec<WorkItem> = r.json().await.unwrap();
@@ -502,7 +547,7 @@ async fn blast_radius_of_one_panic() {
             while !stop.load(Ordering::Relaxed) {
                 let r = t
                     .http
-                    .get(t.url(&wi_path(f.project_a)))
+                    .get(t.url(&wi_path(&f.a)))
                     .bearer_auth(&f.member_a.token)
                     .send()
                     .await;
@@ -546,12 +591,12 @@ async fn sweeper_publishes_rows_the_fast_path_did_not() {
     let t = t();
     let f = Fixture::seed(&t).await;
     let before = t.outbox_depth().await;
-    let item = create_ok(&t, &f.member_a, f.project_a, "swept").await;
+    let item = create_ok(&t, &f.member_a, &f.a, "swept").await;
     assert_eq!(t.outbox_depth().await, before + 1, "row must sit in the outbox");
     // control: with the fast path off nothing may have delivered the event yet
     tokio::time::sleep(Duration::from_secs(2)).await;
     assert!(
-        activity(&t, &f.guest_a, f.project_a, item.id).await.is_empty(),
+        activity(&t, &f.guest_a, &f.a, item.id).await.is_empty(),
         "an activity row appeared without the sweeper: the fast path is not actually off, this test would be vacuous"
     );
     // run the sweeper (what cron does)
@@ -560,7 +605,7 @@ async fn sweeper_publishes_rows_the_fast_path_did_not() {
     let rep: Value = r.json().await.unwrap();
     assert!(rep["published"].as_u64().unwrap() >= 1, "sweeper published nothing: {rep}");
     let acts = eventually("activity after sweep", Duration::from_secs(15), || async {
-        let a = activity(&t, &f.guest_a, f.project_a, item.id).await;
+        let a = activity(&t, &f.guest_a, &f.a, item.id).await;
         (!a.is_empty()).then_some(a)
     })
     .await;

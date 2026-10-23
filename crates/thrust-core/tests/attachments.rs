@@ -21,16 +21,16 @@ fn setup() -> (World, WorkItemId) {
     let cfg = CoreConfig { outbox_fastpath: false, max_attachment_bytes: LIMIT, ..CoreConfig::default() };
     let w = world_with(cfg, queue, background);
     let req = CreateWorkItemRequest { name: "item".into(), description: None, external_source: None, external_id: None };
-    let item = block_on(create_work_item(&w.app, &w.principal(Actor::MemberA), w.project_a, req)).unwrap();
+    let item = block_on(create_work_item(&w.app, &w.principal(Actor::MemberA), &w.slug_a, w.project_a, req)).unwrap();
     (w, item.id)
 }
 
 fn put(w: &World, a: Actor, item: WorkItemId, name: &str, bytes: &[u8]) -> Result<(), CoreError> {
-    block_on(put_attachment(&w.app, &w.principal(a), w.project_a, item, name, bytes.to_vec(), Some("text/plain".into())))
+    block_on(put_attachment(&w.app, &w.principal(a), &w.slug_a, w.project_a, item, name, bytes.to_vec(), Some("text/plain".into())))
 }
 
 fn get(w: &World, a: Actor, item: WorkItemId, name: &str) -> Result<Blob, CoreError> {
-    block_on(get_attachment(&w.app, &w.principal(a), w.project_a, item, name))
+    block_on(get_attachment(&w.app, &w.principal(a), &w.slug_a, w.project_a, item, name))
 }
 
 #[test]
@@ -40,7 +40,7 @@ fn an_attachment_round_trips_and_delete_removes_it() {
     let blob = get(&w, Actor::GuestA, item, "notes.txt").unwrap();
     assert_eq!(blob, Blob { bytes: b"hello".to_vec(), content_type: Some("text/plain".into()) });
 
-    block_on(delete_attachment(&w.app, &w.principal(Actor::MemberA), w.project_a, item, "notes.txt")).unwrap();
+    block_on(delete_attachment(&w.app, &w.principal(Actor::MemberA), &w.slug_a, w.project_a, item, "notes.txt")).unwrap();
     assert_eq!(outcome(&get(&w, Actor::GuestA, item, "notes.txt")), Outcome::NotFound);
 }
 
@@ -60,7 +60,7 @@ fn an_attachment_needs_a_live_work_item() {
     let unknown = WorkItemId(Uuid::from_u128(0xF00));
     assert_eq!(outcome(&put(&w, Actor::MemberA, unknown, "f", b"x")), Outcome::NotFound);
 
-    block_on(delete_work_item(&w.app, &w.principal(Actor::MemberA), w.project_a, item)).unwrap();
+    block_on(delete_work_item(&w.app, &w.principal(Actor::MemberA), &w.slug_a, w.project_a, item)).unwrap();
     assert_eq!(outcome(&put(&w, Actor::MemberA, item, "f", b"x")), Outcome::NotFound, "deleted items take no attachments");
 }
 
@@ -71,7 +71,7 @@ fn an_attachment_needs_a_live_work_item() {
 fn writing_needs_member_in_the_same_tenant(#[case] who: Actor, #[case] want: Outcome) {
     let (w, item) = setup();
     assert_eq!(outcome(&put(&w, who, item, "f", b"x")), want);
-    let del = block_on(delete_attachment(&w.app, &w.principal(who), w.project_a, item, "f"));
+    let del = block_on(delete_attachment(&w.app, &w.principal(who), &w.slug_a, w.project_a, item, "f"));
     assert_eq!(outcome(&del), want);
 }
 

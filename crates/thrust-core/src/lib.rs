@@ -5,7 +5,9 @@
 
 use std::sync::Arc;
 
+use sha2::{Digest, Sha256};
 use thiserror::Error;
+use thrust_contracts::chrono::TimeDelta;
 use thrust_contracts::*;
 use thrust_ports::*;
 
@@ -17,7 +19,6 @@ use thrust_ports::*;
 pub struct Ports {
     pub db: Arc<dyn Database>,
     pub queue: Arc<dyn Queue>,
-    pub sessions: Arc<dyn SessionStore>,
     pub blobs: Arc<dyn BlobStore>,
     pub limiter: Arc<dyn RateLimiter>,
     pub clock: Arc<dyn Clock>,
@@ -33,6 +34,11 @@ pub struct CoreConfig {
     /// ADR-0046 relay: publish right after commit (true) or leave every row to the cron sweeper.
     pub outbox_fastpath: bool,
     pub max_attachment_bytes: usize,
+    /// How long a session lives from its creation (ADR-0052: 30 days).
+    pub session_ttl_secs: i64,
+    /// `authenticate` rewrites a session's `last_seen_at` only when it is at least this old, so a busy
+    /// session costs one write an hour, not one per request (ADR-0052 round 29: updated lazily).
+    pub session_touch_after_secs: i64,
 }
 
 impl Default for CoreConfig {
@@ -42,6 +48,8 @@ impl Default for CoreConfig {
             rate_window_secs: 60,
             outbox_fastpath: true,
             max_attachment_bytes: 5 * 1024 * 1024,
+            session_ttl_secs: 30 * 24 * 60 * 60,
+            session_touch_after_secs: 60 * 60,
         }
     }
 }
@@ -106,11 +114,6 @@ impl From<BlobError> for CoreError {
         CoreError::Internal(e.to_string())
     }
 }
-impl From<CacheError> for CoreError {
-    fn from(e: CacheError) -> Self {
-        CoreError::Internal(e.to_string())
-    }
-}
 impl From<RateError> for CoreError {
     fn from(e: RateError) -> Self {
         CoreError::Internal(e.to_string())
@@ -147,8 +150,12 @@ impl Permission {
 /// [`authorize`] is the only place a [`Scope`] is minted.
 pub use thrust_ports::{Scope, SystemScope};
 
-/// 404 for a project that is not in the caller's workspace (cross-tenant probes learn nothing),
-/// 403 for a project the caller can see exists but may not touch.
+/// Resolves the route's workspace slug, the caller's membership of that workspace and of the project
+/// in one query (ADR-0051 round 29), and mints the [`Scope`]. 404 for anything the caller may not
+/// know about: a slug that names no workspace, a workspace the caller does not belong to, or a
+/// project that is not in it (cross-tenant probes learn nothing). 403 for a workspace member who is
+/// not a member of the project, or whose role is too low. (Plane answers 403 for an unknown slug;
+/// that is the compat surface's business, #44.)
 ///
 /// The [`Scope`] it returns is the only key to a repository call (issue #35). A use-case cannot
 /// build one by struct literal:
@@ -176,8 +183,13 @@ pub use thrust_ports::{Scope, SystemScope};
 /// ```
 /// use thrust_contracts::*;
 /// use thrust_core::*;
-/// async fn use_case(app: &App, who: &Principal, project: ProjectId) -> Result<Vec<WorkItem>, CoreError> {
-///     let scope = authorize(app, who, project, Permission::ReadWorkItems).await?;
+/// async fn use_case(
+///     app: &App,
+///     who: &Principal,
+///     slug: &WorkspaceSlug,
+///     project: ProjectId,
+/// ) -> Result<Vec<WorkItem>, CoreError> {
+///     let scope = authorize(app, who, slug, project, Permission::ReadWorkItems).await?;
 ///     let _ids = (scope.workspace_id(), scope.project_id(), UserId(Uuid::nil()));
 ///     Ok(app.ports.db.list_work_items(&scope, Visibility::Visible).await?)
 /// }
@@ -185,25 +197,45 @@ pub use thrust_ports::{Scope, SystemScope};
 pub async fn authorize(
     app: &App,
     who: &Principal,
+    slug: &WorkspaceSlug,
     project: ProjectId,
     perm: Permission,
 ) -> Result<Scope, CoreError> {
-    match app.ports.db.membership(who.workspace_id, project, who.user_id).await? {
+    match app.ports.db.membership(slug, project, who.user_id).await? {
         Membership::NoSuchProject => Err(CoreError::NotFound),
         Membership::NotAMember => Err(CoreError::Forbidden),
-        Membership::Member(role) if role >= perm.min_role() => {
-            Ok(Scope::mint(who.workspace_id, project, who.user_id))
+        Membership::Member { workspace_id, role } if role >= perm.min_role() => {
+            Ok(Scope::mint(workspace_id, project, who.user_id))
         }
-        Membership::Member(_) => Err(CoreError::Forbidden),
+        Membership::Member { .. } => Err(CoreError::Forbidden),
     }
 }
 
+/// The digest the database stores and compares for a session token. A token is a high-entropy random value
+/// (sign-in, #38, must mint at least 128 bits of CSPRNG output), so a plain SHA-256 is enough: there is nothing to
+/// guess and nothing to stretch, and a pepper would only add a secret to every target (owner decision,
+/// 2026-10-22; ADR-0052, issue #36 note).
+pub fn hash_token(token: &str) -> TokenHash {
+    TokenHash(Sha256::digest(token.as_bytes()).into())
+}
+
+/// A bearer token to the user it belongs to, or `Unauthenticated`: the row must exist, not be revoked
+/// and not be expired. The row is read on every request, so a revocation is effective at once
+/// (ADR-0052 round 29).
 pub async fn authenticate(app: &App, token: &str) -> Result<Principal, CoreError> {
-    app.ports
-        .sessions
-        .get(token)
-        .await?
-        .ok_or(CoreError::Unauthenticated)
+    let hash = hash_token(token);
+    let now = app.ports.clock.now();
+    let live = app.ports.db.session(&hash, now).await?.ok_or(CoreError::Unauthenticated)?;
+    if now - live.last_seen_at >= TimeDelta::seconds(app.cfg.session_touch_after_secs) {
+        // `last_seen_at` is bookkeeping: failing to write it must not fail a request that is authentic.
+        let _ = app.ports.db.touch_session(&hash, now).await;
+    }
+    Ok(Principal { user_id: live.user_id })
+}
+
+/// Sign-out for one token. Idempotent: an unknown or already revoked token changes nothing.
+pub async fn revoke_session(app: &App, token: &str) -> Result<(), CoreError> {
+    Ok(app.ports.db.revoke_session(&hash_token(token), app.ports.clock.now()).await?)
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -251,6 +283,7 @@ fn event(
 pub async fn create_work_item(
     app: &App,
     who: &Principal,
+    slug: &WorkspaceSlug,
     project: ProjectId,
     req: CreateWorkItemRequest,
 ) -> Result<WorkItem, CoreError> {
@@ -269,7 +302,7 @@ pub async fn create_work_item(
         return Err(CoreError::RateLimited { retry_after_secs });
     }
 
-    let scope = authorize(app, who, project, Permission::CreateWorkItem).await?;
+    let scope = authorize(app, who, slug, project, Permission::CreateWorkItem).await?;
 
     let mut tx = app.ports.db.begin(&scope).await?;
     let work = async {
@@ -325,10 +358,11 @@ pub async fn create_work_item(
 pub async fn delete_work_item(
     app: &App,
     who: &Principal,
+    slug: &WorkspaceSlug,
     project: ProjectId,
     id: WorkItemId,
 ) -> Result<(), CoreError> {
-    let scope = authorize(app, who, project, Permission::DeleteWorkItem).await?;
+    let scope = authorize(app, who, slug, project, Permission::DeleteWorkItem).await?;
     let mut tx = app.ports.db.begin(&scope).await?;
     let now = app.ports.clock.now();
     let work = async {
@@ -368,6 +402,7 @@ pub async fn delete_work_item(
 pub async fn list_work_items(
     app: &App,
     who: &Principal,
+    slug: &WorkspaceSlug,
     project: ProjectId,
     vis: Visibility,
 ) -> Result<Vec<WorkItem>, CoreError> {
@@ -375,17 +410,18 @@ pub async fn list_work_items(
         Visibility::Visible => Permission::ReadWorkItems,
         Visibility::WithDeleted => Permission::ReadDeleted,
     };
-    let scope = authorize(app, who, project, perm).await?;
+    let scope = authorize(app, who, slug, project, perm).await?;
     Ok(app.ports.db.list_work_items(&scope, vis).await?)
 }
 
 pub async fn list_activity(
     app: &App,
     who: &Principal,
+    slug: &WorkspaceSlug,
     project: ProjectId,
     entity: Option<WorkItemId>,
 ) -> Result<Vec<Activity>, CoreError> {
-    let scope = authorize(app, who, project, Permission::ReadWorkItems).await?;
+    let scope = authorize(app, who, slug, project, Permission::ReadWorkItems).await?;
     Ok(app.ports.db.list_activity(&scope, entity).await?)
 }
 
@@ -450,7 +486,19 @@ pub async fn outbox_depth(app: &App) -> Result<u64, CoreError> {
 
 /// Test support behind `/internal/seed`: insert fixture rows.
 pub async fn seed(app: &App, fixture: &SeedFixture) -> Result<(), CoreError> {
-    Ok(app.ports.db.seed(&app.system, fixture).await?)
+    app.ports.db.seed(&app.system, fixture).await?;
+    // The fixture carries plaintext tokens; the database only ever sees their hashes.
+    let now = app.ports.clock.now();
+    for s in &fixture.sessions {
+        let session = NewSession {
+            token_hash: hash_token(&s.token),
+            user_id: s.user_id,
+            created_at: now,
+            expires_at: now + TimeDelta::seconds(app.cfg.session_ttl_secs),
+        };
+        app.ports.db.insert_session(&session).await?;
+    }
+    Ok(())
 }
 
 /// Queue consumer body. Idempotent on `event_id`: a redelivery inserts nothing.
@@ -496,6 +544,7 @@ fn blob_key(scope: &Scope, item: WorkItemId, name: &str) -> String {
 pub async fn put_attachment(
     app: &App,
     who: &Principal,
+    slug: &WorkspaceSlug,
     project: ProjectId,
     item: WorkItemId,
     name: &str,
@@ -506,7 +555,7 @@ pub async fn put_attachment(
     if bytes.len() > app.cfg.max_attachment_bytes {
         return Err(CoreError::TooLarge);
     }
-    let scope = authorize(app, who, project, Permission::WriteAttachment).await?;
+    let scope = authorize(app, who, slug, project, Permission::WriteAttachment).await?;
     app.ports
         .db
         .get_work_item(&scope, item, Visibility::Visible)
@@ -522,12 +571,13 @@ pub async fn put_attachment(
 pub async fn get_attachment(
     app: &App,
     who: &Principal,
+    slug: &WorkspaceSlug,
     project: ProjectId,
     item: WorkItemId,
     name: &str,
 ) -> Result<Blob, CoreError> {
     validate_blob_name(name)?;
-    let scope = authorize(app, who, project, Permission::ReadAttachment).await?;
+    let scope = authorize(app, who, slug, project, Permission::ReadAttachment).await?;
     app.ports
         .blobs
         .get(&blob_key(&scope, item, name))
@@ -538,12 +588,13 @@ pub async fn get_attachment(
 pub async fn delete_attachment(
     app: &App,
     who: &Principal,
+    slug: &WorkspaceSlug,
     project: ProjectId,
     item: WorkItemId,
     name: &str,
 ) -> Result<(), CoreError> {
     validate_blob_name(name)?;
-    let scope = authorize(app, who, project, Permission::WriteAttachment).await?;
+    let scope = authorize(app, who, slug, project, Permission::WriteAttachment).await?;
     app.ports.blobs.delete(&blob_key(&scope, item, name)).await?;
     Ok(())
 }

@@ -40,7 +40,7 @@ async fn main() {
     // warm-up so isolate/connection start-up is not in the percentiles (reported separately)
     let w0 = Instant::now();
     let warm_user = f.extra_member(&t).await;
-    create_ok(&t, &warm_user, f.project_a, "warmup").await;
+    create_ok(&t, &warm_user, &f.a, "warmup").await;
     println!("first create (cold-ish): {:.2}ms", w0.elapsed().as_secs_f64() * 1000.0);
 
     let per_user = (Target::create_limit() as usize).saturating_sub(5).max(1);
@@ -69,7 +69,7 @@ async fn main() {
                 let s = Instant::now();
                 let r = t
                     .http
-                    .post(t.url(&wi_path(f.project_a)))
+                    .post(t.url(&wi_path(&f.a)))
                     .bearer_auth(tok)
                     .json(&json!({ "name": name }))
                     .send()
@@ -93,7 +93,7 @@ async fn main() {
 
     for _ in 0..n.min(100) {
         let s = Instant::now();
-        let r = list(&t, &f.guest_a, f.project_a, None).await;
+        let r = list(&t, &f.guest_a, &f.a, None).await;
         assert_eq!(r.status(), 200);
         let _ = r.bytes().await.unwrap();
         lists.push(s.elapsed());
@@ -101,7 +101,7 @@ async fn main() {
     if let Some(item) = last_item {
         for _ in 0..n.min(100) {
             let s = Instant::now();
-            let _ = activity(&t, &f.guest_a, f.project_a, item.id).await;
+            let _ = activity(&t, &f.guest_a, &f.a, item.id).await;
             activities.push(s.elapsed());
         }
     }
@@ -114,9 +114,9 @@ async fn main() {
             duser = f.extra_member(&t).await;
         }
         let s = Instant::now();
-        let item = create_ok(&t, &duser, f.project_a, &format!("delivery-{i}")).await;
+        let item = create_ok(&t, &duser, &f.a, &format!("delivery-{i}")).await;
         loop {
-            if !activity(&t, &f.guest_a, f.project_a, item.id).await.is_empty() {
+            if !activity(&t, &f.guest_a, &f.a, item.id).await.is_empty() {
                 break;
             }
             assert!(s.elapsed() < Duration::from_secs(20), "activity never appeared");

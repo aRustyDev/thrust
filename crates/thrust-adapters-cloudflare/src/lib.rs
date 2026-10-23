@@ -59,41 +59,6 @@ impl Background for LocalBackground {
 }
 
 // ---------------------------------------------------------------------------------------------
-// KV -> SessionStore
-// ---------------------------------------------------------------------------------------------
-
-pub struct KvSessionStore(pub worker::kv::KvStore);
-
-fn kv_err(e: impl std::fmt::Display) -> CacheError {
-    CacheError::Backend(e.to_string())
-}
-
-#[async_trait]
-impl SessionStore for KvSessionStore {
-    async fn get(&self, token: &str) -> Result<Option<Principal>, CacheError> {
-        let key = format!("sess:{token}");
-        SendFuture::new(async move { self.0.get(&key).json::<Principal>().await.map_err(kv_err) }).await
-    }
-
-    async fn put(&self, token: &str, principal: &Principal, ttl_secs: u64) -> Result<(), CacheError> {
-        let key = format!("sess:{token}");
-        let body = serde_json::to_string(principal).map_err(kv_err)?;
-        // KV rejects expirationTtl < 60
-        let ttl = ttl_secs.max(60);
-        SendFuture::new(async move {
-            self.0
-                .put(&key, body)
-                .map_err(kv_err)?
-                .expiration_ttl(ttl)
-                .execute()
-                .await
-                .map_err(kv_err)
-        })
-        .await
-    }
-}
-
-// ---------------------------------------------------------------------------------------------
 // R2 -> BlobStore
 // ---------------------------------------------------------------------------------------------
 

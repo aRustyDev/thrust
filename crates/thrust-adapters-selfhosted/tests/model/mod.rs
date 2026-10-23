@@ -9,8 +9,10 @@
 //!
 //! The spec, written out (ADR-0043, ADR-0046):
 //!
-//! * `membership` is `NoSuchProject` for a project outside the workspace asked about, `NotAMember` without a
-//!   membership (a member row written with another workspace does not count), and the member's role otherwise;
+//! * `membership` resolves the workspace slug, the caller's membership of that workspace and of the project in one
+//!   answer: `NoSuchProject` for a slug that names no workspace, a workspace the caller is not in, or a project
+//!   outside the workspace the slug names; `NotAMember` for a workspace member without a project membership (a
+//!   member row written with another workspace does not count); the member's role, with the workspace, otherwise;
 //! * inside a transaction, `allocate` hands out the project's next sequence number and `sort_order` = 10 000 × that
 //!   number; a transaction that commits keeps them, one that rolls back or is dropped unfinished gives them back (the
 //!   counter row is transactional in Postgres: no gap, unlike the memory adapter); `allocate` under another
@@ -24,6 +26,10 @@
 //!   after a commit; a dropped transaction neither holds locks nor poisons the pool (`mutant_discard_noop`);
 //! * `list_work_items` returns exactly the project's rows in sequence order (live ones, or all with `WithDeleted`),
 //!   and nothing through another workspace; `get_work_item` likewise for one id;
+//! * `session` returns a session exactly while its row exists, is not revoked and has `expires_at > now` (a lookup at
+//!   the expiry instant misses), with the user and the last time it was seen; `touch_session` moves `last_seen_at` and
+//!   nothing else; `revoke_session` makes the session miss from then on (a second revoke changes nothing);
+//!   `insert_session` of a hash that exists leaves the row as it was;
 //! * `undispatched_outbox(n)` returns the first `n` undispatched rows by `(created_at, event_id)`, unchanged;
 //!   `mark_outbox_dispatched` takes a row out of it (an unknown id is a no-op); `outbox_depth` counts what is left;
 //! * `insert_activity` is `true` for a new `event_id` and `false` for one already projected, in any project;
@@ -42,7 +48,7 @@ use std::time::Duration;
 use proptest::prelude::*;
 use proptest::strategy::ValueTree;
 use proptest::test_runner::{Config, FailurePersistence, FileFailurePersistence, TestCaseError, TestRunner};
-use thrust_contracts::chrono::{TimeZone, Utc};
+use thrust_contracts::chrono::{TimeDelta, TimeZone, Utc};
 use thrust_contracts::*;
 use thrust_ports::*;
 
@@ -68,6 +74,23 @@ enum Ws {
     Other,
 }
 
+/// Where a session lookup's `now` falls against the session's `expires_at`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum When {
+    Before,
+    /// Exactly at it: the session is already expired.
+    AtExpiry,
+    After,
+}
+
+/// The slug a `membership` call names for a project: its own workspace's, the other one's, or one that names none.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Sl {
+    Own,
+    Other,
+    Unknown,
+}
+
 #[derive(Debug, Clone, Copy)]
 enum U {
     AdminA,
@@ -76,8 +99,11 @@ enum U {
     /// In workspace A, member of nothing.
     OutsiderA,
     AdminB,
-    /// In workspace B, with a stray `project_members` row for project A that carries workspace B. It must not count.
+    /// In both workspaces, with a stray `project_members` row for project A that carries workspace B. It must not
+    /// count.
     StrayB,
+    /// In both workspaces, Admin of both projects: one user, two workspaces.
+    Dual,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -115,7 +141,13 @@ enum Op {
     List { proj: P, ws: Ws, with_deleted: bool },
     /// `pick`: one of the project's rows, or `None` for an unknown id.
     Get { proj: P, ws: Ws, pick: Option<usize>, with_deleted: bool },
-    Membership { proj: P, ws: Ws, user: U },
+    Membership { proj: P, slug: Sl, user: U },
+    /// `sess`: one of the case's two seeded sessions, or (2) a hash that was never inserted.
+    SessionLookup { sess: usize, when: When },
+    SessionTouch { sess: usize },
+    SessionRevoke { sess: usize },
+    /// Insert again a session that exists, with another user and expiry: the row must stay as it was.
+    SessionReinsert { sess: usize },
     Undispatched { limit: u32 },
     /// `pick`: one of this case's outbox rows, dispatched or not, or `None` for an unknown event id.
     Mark { pick: Option<usize> },
@@ -132,6 +164,14 @@ fn ws() -> impl Strategy<Value = Ws> {
     prop_oneof![5 => Just(Ws::Own), 1 => Just(Ws::Other)]
 }
 
+fn when() -> impl Strategy<Value = When> {
+    prop_oneof![Just(When::Before), Just(When::AtExpiry), Just(When::After)]
+}
+
+fn sl() -> impl Strategy<Value = Sl> {
+    prop_oneof![3 => Just(Sl::Own), 1 => Just(Sl::Other), 1 => Just(Sl::Unknown)]
+}
+
 fn step() -> impl Strategy<Value = Step> {
     prop_oneof![
         4 => (proj(), prop::option::weighted(0.5, 0..3u8)).prop_map(|(proj, ext)| Step::Create { proj, ext }),
@@ -146,7 +186,15 @@ fn end() -> impl Strategy<Value = End> {
 }
 
 fn user() -> impl Strategy<Value = U> {
-    prop_oneof![Just(U::AdminA), Just(U::MemberA), Just(U::GuestA), Just(U::OutsiderA), Just(U::AdminB), Just(U::StrayB)]
+    prop_oneof![
+        Just(U::AdminA),
+        Just(U::MemberA),
+        Just(U::GuestA),
+        Just(U::OutsiderA),
+        Just(U::AdminB),
+        Just(U::StrayB),
+        Just(U::Dual)
+    ]
 }
 
 fn ev() -> impl Strategy<Value = Ev> {
@@ -159,7 +207,11 @@ fn op() -> impl Strategy<Value = Op> {
         2 => (proj(), ws(), any::<bool>()).prop_map(|(proj, ws, with_deleted)| Op::List { proj, ws, with_deleted }),
         2 => (proj(), ws(), prop::option::weighted(0.85, 0..16usize), any::<bool>())
             .prop_map(|(proj, ws, pick, with_deleted)| Op::Get { proj, ws, pick, with_deleted }),
-        1 => (proj(), ws(), user()).prop_map(|(proj, ws, user)| Op::Membership { proj, ws, user }),
+        2 => (proj(), sl(), user()).prop_map(|(proj, slug, user)| Op::Membership { proj, slug, user }),
+        2 => (0..3usize, when()).prop_map(|(sess, when)| Op::SessionLookup { sess, when }),
+        1 => (0..3usize).prop_map(|sess| Op::SessionTouch { sess }),
+        1 => (0..3usize).prop_map(|sess| Op::SessionRevoke { sess }),
+        1 => (0..2usize).prop_map(|sess| Op::SessionReinsert { sess }),
         1 => (1..6u32).prop_map(|limit| Op::Undispatched { limit }),
         1 => prop::option::weighted(0.85, 0..16usize).prop_map(|pick| Op::Mark { pick }),
         1 => Just(Op::Depth),
@@ -209,7 +261,24 @@ enum Class {
     GotUnknown,
     IsMember,
     NotAMember,
+    /// A project outside the workspace the slug names.
     NoSuchProject,
+    /// A slug that names no workspace.
+    UnknownSlug,
+    /// The project's own slug, by a user who is not in that workspace.
+    NotInWorkspace,
+    SessionLive,
+    /// A hash that was never inserted.
+    SessionUnknown,
+    /// A revoked session, which must not be found.
+    SessionRevokedHidden,
+    /// An unrevoked session looked up at or after its `expires_at`, which must not be found.
+    SessionExpiredHidden,
+    SessionTouched,
+    SessionRevoked,
+    /// A revoke of a session that is already revoked.
+    SessionRevokedAgain,
+    SessionReinsertIgnored,
     UndispatchedSome,
     Marked,
     MarkedAgain,
@@ -227,7 +296,7 @@ enum Class {
 }
 
 impl Class {
-    const ALL: [Class; 37] = [
+    const ALL: [Class; 47] = [
         Class::Created,
         Class::ExternalKeyFreed,
         Class::Conflict,
@@ -253,6 +322,16 @@ impl Class {
         Class::IsMember,
         Class::NotAMember,
         Class::NoSuchProject,
+        Class::UnknownSlug,
+        Class::NotInWorkspace,
+        Class::SessionLive,
+        Class::SessionUnknown,
+        Class::SessionRevokedHidden,
+        Class::SessionExpiredHidden,
+        Class::SessionTouched,
+        Class::SessionRevoked,
+        Class::SessionRevokedAgain,
+        Class::SessionReinsertIgnored,
         Class::UndispatchedSome,
         Class::Marked,
         Class::MarkedAgain,
@@ -282,7 +361,11 @@ enum Call {
     Abandon,
     List { ws: WorkspaceId, p: ProjectId, vis: Visibility, want: Vec<WorkItem> },
     Get { ws: WorkspaceId, p: ProjectId, id: WorkItemId, vis: Visibility, want: Option<WorkItem> },
-    Membership { ws: WorkspaceId, p: ProjectId, user: UserId, want: Membership },
+    Membership { slug: WorkspaceSlug, p: ProjectId, user: UserId, want: Membership },
+    InsertSession { s: NewSession },
+    Session { hash: TokenHash, now: Timestamp, want: Option<LiveSession> },
+    TouchSession { hash: TokenHash, at: Timestamp },
+    RevokeSession { hash: TokenHash, at: Timestamp },
     Undispatched { limit: u32, want: Vec<OutboxRow> },
     Mark { event: EventId, at: Timestamp },
     Depth { want: u64 },
@@ -294,26 +377,54 @@ enum Call {
 #[derive(Debug, Clone)]
 struct Fix {
     ws: [WorkspaceId; 2],
+    /// Slugs are unique in the database and one container serves every case.
+    slug: [WorkspaceSlug; 2],
     p: [ProjectId; 2],
-    /// AdminA, MemberA, GuestA, OutsiderA, AdminB, StrayB.
-    users: [UserId; 6],
+    /// AdminA, MemberA, GuestA, OutsiderA, AdminB, StrayB, Dual.
+    users: [UserId; 7],
+    /// The hashes of two seeded sessions and of one that is never inserted.
+    tokens: [TokenHash; 3],
+}
+
+fn token_hash() -> TokenHash {
+    let mut b = [0u8; 32];
+    b[..16].copy_from_slice(new_id().as_bytes());
+    b[16..].copy_from_slice(new_id().as_bytes());
+    TokenHash(b)
 }
 
 impl Fix {
     fn new() -> Fix {
         Fix {
             ws: [WorkspaceId(new_id()), WorkspaceId(new_id())],
+            slug: [
+                WorkspaceSlug::new(format!("ws-a-{}", new_id().simple())),
+                WorkspaceSlug::new(format!("ws-b-{}", new_id().simple())),
+            ],
             p: [ProjectId(new_id()), ProjectId(new_id())],
-            users: [UserId(new_id()), UserId(new_id()), UserId(new_id()), UserId(new_id()), UserId(new_id()), UserId(new_id())],
+            users: std::array::from_fn(|_| UserId(new_id())),
+            tokens: std::array::from_fn(|_| token_hash()),
         }
     }
 
     fn seed(&self) -> SeedFixture {
-        let [admin_a, member_a, guest_a, _outsider_a, admin_b, stray_b] = self.users;
+        let [admin_a, member_a, guest_a, outsider_a, admin_b, stray_b, dual] = self.users;
         let m = |s: usize, user_id, role| SeedMembership { project_id: self.p[s], workspace_id: self.ws[s], user_id, role };
+        let in_ws = |s: usize, user_id| SeedWorkspaceMember { workspace_id: self.ws[s], user_id };
         SeedFixture {
-            workspaces: self.ws.to_vec(),
+            workspaces: (0..2).map(|s| SeedWorkspace { id: self.ws[s], slug: self.slug[s].clone() }).collect(),
             users: self.users.to_vec(),
+            workspace_members: vec![
+                in_ws(0, admin_a),
+                in_ws(0, member_a),
+                in_ws(0, guest_a),
+                in_ws(0, outsider_a),
+                in_ws(1, admin_b),
+                in_ws(0, stray_b),
+                in_ws(1, stray_b),
+                in_ws(0, dual),
+                in_ws(1, dual),
+            ],
             projects: vec![
                 SeedProject { id: self.p[0], workspace_id: self.ws[0], name: "A".into() },
                 SeedProject { id: self.p[1], workspace_id: self.ws[1], name: "B".into() },
@@ -323,6 +434,8 @@ impl Fix {
                 m(0, member_a, Role::Member),
                 m(0, guest_a, Role::Guest),
                 m(1, admin_b, Role::Admin),
+                m(0, dual, Role::Admin),
+                m(1, dual, Role::Admin),
                 // project A's row, written with workspace B
                 SeedMembership { project_id: self.p[0], workspace_id: self.ws[1], user_id: stray_b, role: Role::Admin },
             ],
@@ -339,6 +452,16 @@ impl Fix {
         let own = slot(proj);
         self.ws[if ws == Ws::Own { own } else { 1 - own }]
     }
+
+    /// The slug a `membership` call names for `proj`.
+    fn slug_for(&self, proj: P, sl: Sl) -> WorkspaceSlug {
+        let own = slot(proj);
+        match sl {
+            Sl::Own => self.slug[own].clone(),
+            Sl::Other => self.slug[1 - own].clone(),
+            Sl::Unknown => WorkspaceSlug::new("no-such-workspace"),
+        }
+    }
 }
 
 fn slot(p: P) -> usize {
@@ -348,22 +471,51 @@ fn slot(p: P) -> usize {
     }
 }
 
-/// The spec's membership answer, written out from `Fix::seed`.
-fn membership(proj: P, ws: Ws, user: U) -> Membership {
-    match (ws, proj, user) {
-        (Ws::Other, _, _) => Membership::NoSuchProject,
-        (Ws::Own, P::A, U::AdminA) => Membership::Member(Role::Admin),
-        (Ws::Own, P::A, U::MemberA) => Membership::Member(Role::Member),
-        (Ws::Own, P::A, U::GuestA) => Membership::Member(Role::Guest),
-        (Ws::Own, P::A, U::OutsiderA | U::AdminB | U::StrayB) => Membership::NotAMember,
-        (Ws::Own, P::B, U::AdminB) => Membership::Member(Role::Admin),
-        (Ws::Own, P::B, U::AdminA | U::MemberA | U::GuestA | U::OutsiderA | U::StrayB) => Membership::NotAMember,
+/// Which workspaces (A, B) a user belongs to, written out from `Fix::seed`.
+fn in_workspace(user: U) -> [bool; 2] {
+    match user {
+        U::AdminA | U::MemberA | U::GuestA | U::OutsiderA => [true, false],
+        U::AdminB => [false, true],
+        U::StrayB | U::Dual => [true, true],
     }
+}
+
+/// A user's role in a project, written out from `Fix::seed`. `StrayB`'s row for project A names workspace B, so it is
+/// not a membership of project A.
+fn role_in(proj: P, user: U) -> Option<Role> {
+    match (proj, user) {
+        (P::A, U::AdminA) | (P::B, U::AdminB) | (_, U::Dual) => Some(Role::Admin),
+        (P::A, U::MemberA) => Some(Role::Member),
+        (P::A, U::GuestA) => Some(Role::Guest),
+        _ => None,
+    }
+}
+
+/// The spec's membership answer: only the project's own slug resolves it, and only for a member of that workspace.
+fn membership(fix: &Fix, proj: P, sl: Sl, user: U) -> Membership {
+    let s = slot(proj);
+    if sl != Sl::Own || !in_workspace(user)[s] {
+        return Membership::NoSuchProject;
+    }
+    match role_in(proj, user) {
+        Some(role) => Membership::Member { workspace_id: fix.ws[s], role },
+        None => Membership::NotAMember,
+    }
+}
+
+/// A seeded session as the model knows it.
+#[derive(Debug, Clone)]
+struct SessModel {
+    new: NewSession,
+    revoked: bool,
+    last_seen: Timestamp,
 }
 
 #[derive(Debug)]
 struct Model {
     fix: Fix,
+    /// Sessions 0 (expires far off) and 1 (expires 100 s after it was created); session 2 does not exist.
+    sessions: Vec<SessModel>,
     /// Committed rows per project, in sequence order.
     rows: [Vec<WorkItem>; 2],
     counter: [i64; 2],
@@ -404,14 +556,32 @@ fn item(ws: WorkspaceId, p: ProjectId, a: Allocation, ext: Option<u8>) -> WorkIt
 
 impl Model {
     fn new(fix: Fix) -> Model {
+        let created = tick();
+        let session = |i: usize, ttl: i64| SessModel {
+            new: NewSession {
+                token_hash: fix.tokens[i],
+                user_id: fix.users[i],
+                created_at: created,
+                expires_at: created + TimeDelta::seconds(ttl),
+            },
+            revoked: false,
+            last_seen: created,
+        };
+        let sessions = vec![session(0, 1_000_000), session(1, 100)];
         Model {
             fix,
+            sessions,
             rows: [Vec::new(), Vec::new()],
             counter: [0, 0],
             outbox: Vec::new(),
             activity: Vec::new(),
             projected: BTreeSet::new(),
         }
+    }
+
+    /// The calls that create the case's two sessions; their answers are all `()`.
+    fn setup(&self) -> Vec<Call> {
+        self.sessions.iter().map(|s| Call::InsertSession { s: s.new.clone() }).collect()
     }
 
     fn undispatched(&self) -> Vec<OutboxRow> {
@@ -452,18 +622,75 @@ impl Model {
                 let vis = if with_deleted { Visibility::WithDeleted } else { Visibility::Visible };
                 calls.push(Call::Get { ws: self.fix.ws_for(proj, ws), p: self.fix.p[slot(proj)], id, vis, want });
             }
-            &Op::Membership { proj, ws, user } => {
-                let want = membership(proj, ws, user);
-                classes.push(match want {
-                    Membership::NotAMember if matches!((proj, ws, user), (P::A, Ws::Own, U::StrayB)) => {
+            &Op::Membership { proj, slug, user } => {
+                let want = membership(&self.fix, proj, slug, user);
+                classes.push(match (slug, want) {
+                    (Sl::Unknown, _) => Class::UnknownSlug,
+                    (Sl::Other, _) => Class::NoSuchProject,
+                    (Sl::Own, Membership::NoSuchProject) => Class::NotInWorkspace,
+                    (Sl::Own, Membership::NotAMember) if matches!((proj, user), (P::A, U::StrayB)) => {
                         Class::StrayMemberIgnored
                     }
-                    Membership::Member(_) => Class::IsMember,
-                    Membership::NotAMember => Class::NotAMember,
-                    Membership::NoSuchProject => Class::NoSuchProject,
+                    (Sl::Own, Membership::NotAMember) => Class::NotAMember,
+                    (Sl::Own, Membership::Member { .. }) => Class::IsMember,
                 });
-                let (w, p, u) = (self.fix.ws_for(proj, ws), self.fix.p[slot(proj)], self.fix.user(user));
-                calls.push(Call::Membership { ws: w, p, user: u, want });
+                let (slug, p, u) = (self.fix.slug_for(proj, slug), self.fix.p[slot(proj)], self.fix.user(user));
+                calls.push(Call::Membership { slug, p, user: u, want });
+            }
+            &Op::SessionLookup { sess, when } => {
+                let (hash, now, want, class) = match self.sessions.get(sess) {
+                    None => (self.fix.tokens[sess], tick(), None, Class::SessionUnknown),
+                    Some(m) => {
+                        let at = m.new.expires_at;
+                        let now = match when {
+                            When::Before => at - TimeDelta::seconds(1),
+                            When::AtExpiry => at,
+                            When::After => at + TimeDelta::seconds(1),
+                        };
+                        let live = !m.revoked && m.new.expires_at > now;
+                        let class = match (m.revoked, live) {
+                            (true, _) => Class::SessionRevokedHidden,
+                            (false, false) => Class::SessionExpiredHidden,
+                            (false, true) => Class::SessionLive,
+                        };
+                        let want = live.then(|| LiveSession { user_id: m.new.user_id, last_seen_at: m.last_seen });
+                        (m.new.token_hash, now, want, class)
+                    }
+                };
+                classes.push(class);
+                calls.push(Call::Session { hash, now, want });
+            }
+            &Op::SessionTouch { sess } => {
+                let at = tick();
+                classes.push(if sess < self.sessions.len() { Class::SessionTouched } else { Class::SessionUnknown });
+                if let Some(m) = self.sessions.get_mut(sess) {
+                    m.last_seen = at;
+                }
+                calls.push(Call::TouchSession { hash: self.fix.tokens[sess], at });
+            }
+            &Op::SessionRevoke { sess } => {
+                let at = tick();
+                classes.push(match self.sessions.get(sess) {
+                    None => Class::SessionUnknown,
+                    Some(m) if m.revoked => Class::SessionRevokedAgain,
+                    Some(_) => Class::SessionRevoked,
+                });
+                if let Some(m) = self.sessions.get_mut(sess) {
+                    m.revoked = true;
+                }
+                calls.push(Call::RevokeSession { hash: self.fix.tokens[sess], at });
+            }
+            &Op::SessionReinsert { sess } => {
+                let t = tick();
+                classes.push(Class::SessionReinsertIgnored);
+                let again = NewSession {
+                    token_hash: self.fix.tokens[sess],
+                    user_id: self.fix.users[6],
+                    created_at: t,
+                    expires_at: t + TimeDelta::seconds(9_999_999),
+                };
+                // the model does not change: the row stays as it was, revoked or not
+                calls.push(Call::InsertSession { s: again });
             }
             &Op::Undispatched { limit } => {
                 let want: Vec<OutboxRow> = self.undispatched().into_iter().take(limit as usize).collect();
@@ -746,10 +973,17 @@ async fn execute(db: &dyn Database, tx: &mut Option<Box<dyn Tx>>, call: Call, at
             let got = bounded(at, db.get_work_item(&scope(ws, p), id, vis)).await?;
             prop_assert_eq!(got, want, "{}: get", at);
         }
-        Call::Membership { ws, p, user, want } => {
-            let got = bounded(at, db.membership(ws, p, user)).await?;
+        Call::Membership { slug, p, user, want } => {
+            let got = bounded(at, db.membership(&slug, p, user)).await?;
             prop_assert_eq!(got, want, "{}: membership", at);
         }
+        Call::InsertSession { s } => bounded(at, db.insert_session(&s)).await?,
+        Call::Session { hash, now, want } => {
+            let got = bounded(at, db.session(&hash, now)).await?;
+            prop_assert_eq!(got, want, "{}: session", at);
+        }
+        Call::TouchSession { hash, at: when } => bounded(at, db.touch_session(&hash, when)).await?,
+        Call::RevokeSession { hash, at: when } => bounded(at, db.revoke_session(&hash, when)).await?,
         Call::Undispatched { limit, want } => {
             let got = bounded(at, db.undispatched_outbox(&sys, limit)).await?;
             prop_assert_eq!(got, want, "{}: undispatched outbox", at);
@@ -777,6 +1011,9 @@ async fn run_case(env: &Env, ops: &[Op]) -> Result<(), TestCaseError> {
     bounded("seed", env.db.seed(&sys, &fix.seed())).await?;
     let mut m = Model::new(fix);
     let mut tx: Option<Box<dyn Tx>> = None;
+    for call in m.setup() {
+        execute(env.db.as_ref(), &mut tx, call, "seed the case's sessions").await?;
+    }
     // A failed earlier case (shrinking runs many) may have left rows behind: take them out of the way first.
     let at = tick();
     for row in bounded("start", env.db.undispatched_outbox(&sys, 10_000)).await? {
