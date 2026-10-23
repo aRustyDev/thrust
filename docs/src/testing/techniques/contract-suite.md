@@ -4,7 +4,7 @@ Status: **live** · Gate: the `contract` jobs in CI (one per cell), or `scripts/
 
 ## Catches
 
-X1, X2, X3, X4, X5, X8, X9, X20 (P); X13 (B, panic containment); X16 (its own guards). This is the backbone of the
+X1, X2, X3, X4, X5, X8, X9, X20 (P); X13 (B, panic containment); X16 (its own guards); X21 to X24 (P, identity). This is the backbone of the
 repo's evidence: **one** suite of HTTP assertions, run unchanged against every adapter set and both runtimes.
 
 ## Use when / Not when
@@ -26,6 +26,14 @@ which target it runs on. Fixtures are created through `POST /internal/seed`, the
   caller × project × route against the access table, and the generator coverage control. Its
   `sweeper_model_outbox_delivers_what_was_swept_and_nothing_more` runs the same model in the `sweeper` pass, with
   the outbox fast path off.
+- `crates/thrust-contract-tests/tests/auth/mod.rs` and `tests/auth/matrix.rs`: identity, in the `main` pass (issue #38):
+  sign-in and the cookie attributes, the CSRF double-submit rule, sign-out and sign-out-everywhere, deactivation, API
+  keys (`X-Api-Key`, shown once, revoked, expired, inactive owner) and one OIDC login, plus the generated matrix of every
+  credential kind × state × method × CSRF-token position against a status table (126 requests). The OIDC tests
+  (`oidc_` prefix) run against a mock identity provider that the suite serves on `127.0.0.1`
+  (`crates/thrust-contract-tests/src/mock_idp.rs`, RS256 signed with the `rsa` crate, so it shares no code with the
+  `openidconnect` crate that verifies its tokens); a deployed Worker cannot reach it, so `scripts/stage2-contract.sh`
+  skips them (31 tests there).
 - `crates/thrust-contract-tests/tests/worker_only.rs`: Durable Object, cron and binding tests for `worker-*` targets.
 
 A pass is selected by **test-name prefix** in `scripts/contract.sh`, not by nextest: `sweeper_`, `panic_`,
@@ -35,7 +43,7 @@ A pass is selected by **test-name prefix** in `scripts/contract.sh`, not by next
 ## Run
 
 ```sh
-scripts/contract.sh native-memory           # main pass, 21 tests [verified 2026-10-23: 21 passed]
+scripts/contract.sh native-memory           # main pass, 37 tests [verified 2026-10-23: 37 passed]
 scripts/contract.sh worker-cf bindings      # [unverified: not run]
 scripts/contract-all.sh                     # the 16-cell matrix, serially [unverified: not run]
 ```

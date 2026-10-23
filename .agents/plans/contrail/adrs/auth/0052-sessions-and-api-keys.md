@@ -50,7 +50,7 @@ Plane uses Django server-side sessions (cookie, CSRF via `BaseSessionAuthenticat
 
 ### Confirmation
 
-Tests: revoke key → 401 on the next request; deactivated user's session rejected; hash-only storage (no plaintext column); CSRF failure on mutation without token; `RateLimiter` contract test on both adapters.
+Tests: revoke key → 403 on the next request (corrected from 401 by issue #38: the oracle answers 403 for an invalid, expired, revoked or inactive-owner key and 401 only for a missing one, ADR-0033 round 27; see the 2026-10-23 issue #38 update below); deactivated user's session rejected; hash-only storage (no plaintext column); CSRF failure on mutation without token; `RateLimiter` contract test on both adapters.
 
 ## Pros and Cons of the Options
 
@@ -117,6 +117,44 @@ closes #36:
   sign-out-everywhere will use. Until then `POST /internal/revoke-session` (test routes and the admin token) revokes
   a session, and `/internal/seed` creates them.
 
+## Update — issue #38, the auth slice (2026-10-23)
+
+Spike 0003 built S1 and K1 as the Rust auth slice and measured them (`research/0012-auth-slice.md`). The outcome, with
+the places it differs from the text above:
+
+- **Correction: a revoked key is 403, not 401.** The Confirmation's "revoke key → 401" was wrong. Plane answers 403 for
+  an invalid, expired, revoked or inactive-owner key, and 401 only for a missing (or empty) `X-Api-Key` (ADR-0033, round
+  27), and the contract tests assert exactly that: `a_revoked_key_is_rejected_on_the_next_request_with_403` (with an
+  unrevoked key at 200 beside it), `an_expired_key_and_a_deactivated_users_key_are_rejected_with_403`, and a generated
+  matrix of 126 requests (credential kind, state, method, CSRF-token position) against a status table. The lookup does
+  not say which of the four failed.
+- **Sessions (S1, no cache).** Sign-in (`POST /api/_slice/auth/sign-in/email`) mints a fresh token every time (256 random
+  bits, hex) and a row holding only its SHA-256; the row is joined to `users` on every request, so a session of a user
+  who is deactivated, or who has no row, is not live (fail closed). Sign-out revokes one session, sign-out-everywhere
+  all of the user's (`sessions_user`). The cookie is `__Host-thrust_session` with `Secure; HttpOnly; SameSite=Lax;
+  Path=/`, no `Domain`, `Max-Age` 30 days; `Lax` and not `Strict` because the OIDC callback is a top-level navigation
+  whose cookie must reach the next page.
+- **CSRF (double submit).** `GET /auth/csrf` returns a fresh 128-bit token as JSON (Plane's `get-csrf-token`) and sets it
+  as `__Host-thrust_csrf` (same attributes, `HttpOnly` as in Plane); a cookie-authenticated mutation must send it back in
+  `X-CSRFToken`, compared in constant time, or it is 403 `csrf_failed`. A bearer token and an API key are not ambient
+  credentials and need no token; a safe method needs none; a dead session is 401 before the token is looked at. K3's gap
+  (the stock React app sends no token on its JSON calls) is recorded in the research note, not decided (Q-0050.8).
+- **Passwords: argon2id at OWASP's minimum** (m = 19,456 KiB, t = 2, p = 1; salt from the `Rng` port; the cost is read
+  from the hash, so raising it locks nobody out). **Measured on a deployed Worker: p50 45 ms and p99 78 ms of CPU at the
+  minimum, and a p99 of at most 93 ms across OWASP's five equivalent configurations, against the default 30 s limit.**
+  An unknown email costs exactly one unit of hash work, like a wrong password (counted in a test, not timed), and every
+  refusal is one 401 with one body. A sign-in limiter per normalised email (10 a minute by default) runs before any
+  hashing.
+- **API keys (K1).** `thrk_` and 256 random bits; the first nine characters are the visible prefix; only the SHA-256 is
+  stored (`api_keys`, no plaintext column, pinned by a test of the column list); shown once, in the creation response.
+  **No pepper:** the token is 256 random bits, so there is nothing to guess or stretch (the same reasoning as the
+  2026-10-22 decision for sessions), which differs from ADR-0141's "peppered hashes" for keys (Q-0052.3). `X-Api-Key` is
+  accepted after a bearer token and before the cookie; `last_used_at` is written through `Background`, at most once an
+  hour per key. Creating, listing and revoking keys, and signing out, need a session: a key cannot mint keys or end
+  sessions.
+- **Controls.** `scripts/mutants.sh` plants `ignore_revoked` (it now breaks keys as well as sessions), `skip_csrf` and
+  `unverified_email`; all seven mutants are killed.
+
 ## Open Questions
 
 * Q-0052 — session and key mechanics.
@@ -124,6 +162,7 @@ closes #36:
 * Q-G3 — answered: start fresh, no token migration.
 * Q-0052.1 — Session lifetime/idle timeout policy and "sign out everywhere" requirement.
 * Q-0052.2 — Do API keys need scopes (read-only keys) in v1, or exact Plane parity?
+* Q-0052.3 — Should API-key hashes carry ADR-0141's pepper? Issue #38 stores a plain SHA-256 (256-bit tokens). Open, owner asmith.
 
 ## More Information
 

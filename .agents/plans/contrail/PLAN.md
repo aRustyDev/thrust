@@ -147,7 +147,7 @@ Subjects are shortened from the handoff's Track B table (`reviews/2026-10-19-fab
 | #35 | `Scope` is the argument of every repository and `Tx` method | M0 | | FR-02 | |
 | #36 | user-only `Principal`, database-authoritative sessions, delete `KvSessionStore` | M0 | #35 | FR-03 | |
 | #37 | spike 0002: `worker-pg` cell and instance-level `worker-do` SQLite cell | M0 | #35 | FR-04, FR-16 | `plane-byd.4` |
-| #38 | spike 0003: the two-day Rust auth slice | M0 | #36 | FR-16 | |
+| #38 | spike 0003: the two-day Rust auth slice (done on `feat/auth-slice`: `research/0012-auth-slice.md`) | M0 | #36 | FR-16 | `plane-byd.11.5` |
 | #39 | `placement.region = aws:us-east-1`; 5-round-trip budget counter in the contract suite | M0 | | FR-08 | |
 | #40 | clippy deny list, `cargo fmt --check`, `cargo-deny`; forbid `sqlx`, `sea-orm`, `diesel` | M0 | | FR-07, ADR-0006 panic policy | |
 | #41 | authenticated TLS to CNPG through an Origin CA server certificate and `verify_ca` | M0 | #37 | FR-09 | `plane-byd.9`, `infra-qnyi` |
