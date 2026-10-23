@@ -115,6 +115,36 @@ Per FR-17 and FR-02 (`reviews/2026-10-19-fable-architecture-review.md`), this AD
 
 Implementation constraint for issue #35: `Database` and `Tx` are declared in `thrust-ports`, which does not depend on `thrust-core` (`crates/thrust-ports/Cargo.toml`), and the adapters must read the ids to build their predicates. The proof type the ports take therefore cannot be `thrust-core`'s `Scope` as it stands. Issue #35 decides where that type is declared, and how its constructor stays reserved to `authorize` while the adapters can still read the ids.
 
+## Update — issue #35 (2026-10-22)
+
+Issue #35 built the FR-02 scope argument and settled the constraint the round-29 note left to it. The facts, with
+their locations on the branch that closes #35:
+
+- **Where the proof type is declared.** `Scope` and `SystemScope` are declared in `thrust-ports`
+  (`crates/thrust-ports/src/lib.rs`). They have private fields, `pub` read accessors and one constructor each, `mint`.
+  `thrust-core` re-exports both.
+- **How minting stays reserved.** A struct literal outside `thrust-ports` does not compile. The `compile_fail`
+  doctests on `authorize` show it, and show that a repository call with bare ids does not compile. The `pub`
+  constructor is the one remaining path, so `scripts/check-deps.sh` rejects:
+  - `Scope::mint` anywhere but `authorize`;
+  - `SystemScope::mint` anywhere but the composition roots (`thrust-server`, and `thrust-worker` for both adapter
+    sets).
+
+  Tests may mint either. Clippy's `disallowed-methods` replaces the grep once the clippy job exists (#40).
+- **Who holds the `SystemScope`.** The composition root passes it to `App::new`, and `App` keeps it private. The
+  outbox relay (fast path and sweeper), the queue consumer and `seed` read it there, so the consumer does not mint
+  its own.
+- **Port shape.**
+  - `begin(&Scope)` takes the proof of authorisation.
+  - Each `Tx` write takes the `&Scope` it writes under rather than binding the transaction to one scope. A
+    transaction can then still span the projects its caller is authorised for.
+  - `insert_work_item` and `insert_outbox` refuse a row of another tenant (`check_tenant` in `thrust-ports`).
+- **`membership` keeps its id arguments** (owner, 2026-10-22). It runs before a `Scope` exists, and #36 reshapes it
+  around the workspace slug. #35's first acceptance criterion was amended to exclude it.
+- **Tenant key in the data.** Migration `0002_sequence_tenant_key.sql` gives `project_sequences` a `workspace_id`,
+  keys it on `(workspace_id, project_id)` and adds a foreign key to `projects (workspace_id, id)`, so an allocation
+  under the wrong workspace is refused. The membership join requires `m.workspace_id = p.workspace_id`.
+
 ## Open Questions
 
 * Q-0045 — granularity and transaction semantics. (answered round 29, FR-17)

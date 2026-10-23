@@ -11,30 +11,36 @@ limit, authorizes, runs one transaction, and relays the event after the commit. 
 transaction and relays. The `list_*` use-cases authorize and read, with no transaction and no event. Shown by those
 functions in `crates/thrust-core/src/lib.rs`.
 
-**Authorize in the core, and carry the proof.** `authorize` returns a `Scope` whose fields are private, so the only
-way to hold a verified workspace, project and user is to have called it, and use-cases take the ids they pass on from
-the `Scope`. Nothing in the types forces a use-case to call `authorize`, so check for it in review. It answers 404 for
-a project outside the caller's workspace and 403 for a project the caller can see but may not touch, so a
-cross-tenant probe learns nothing. Shown by `authorize`, `Scope` and `Permission::min_role` in the same file.
+**Authorize in the core, and carry the proof.** `authorize` returns a `Scope`, the proof that the user may act in
+that workspace and project, and the use-case passes it to every repository call. It answers 404 for a project outside
+the caller's workspace and 403 for a project the caller can see but may not touch, so a cross-tenant probe learns
+nothing. Shown by `authorize` and `Permission::min_role` in `crates/thrust-core/src/lib.rs`.
 
-**Scope every tenant query by the tenant key.** The `Database` methods that query a project's data take a
-`WorkspaceId`, and the SQL filters on it: `membership` filters on `p.workspace_id` and left-joins `project_members`
-for the role, and the reads filter on `workspace_id` and `project_id`. The outbox methods and `seed` take no tenant
-key. Shown by `PgDatabase` in `crates/thrust-adapters-postgres/src/lib.rs`. The planted bug
-`mutant_ignore_tenant` removes the check in the memory adapter, so that `scripts/mutants.sh` can show the contract
-suite catches it.
+**Scope every tenant query by the tenant key.** The adapter reads the workspace and project from the `Scope` and the
+SQL filters on both: the reads and the soft delete filter on `workspace_id` and `project_id`, and sequence allocation
+upserts on `(workspace_id, project_id)`, with a foreign key to `projects (workspace_id, id)` that refuses a project
+outside the workspace (migration 0002). `membership` filters on `p.workspace_id`, and its left join on
+`project_members` also requires `m.workspace_id = p.workspace_id`. Each `Tx` write also refuses a work item or outbox
+row of another tenant than its scope (`check_tenant` in `thrust-ports`). Shown by `PgDatabase` in
+`crates/thrust-adapters-postgres/src/lib.rs`. The planted bug `mutant_ignore_tenant` removes the check in the memory
+adapter, so that `scripts/mutants.sh` can show the contract suite catches it.
 
-**Repository calls take a `Scope`, never ids.** This is the decided shape, not yet the code. Today the `Database` and
-`Tx` methods take bare `WorkspaceId` and `ProjectId` arguments (`crates/thrust-ports/src/lib.rs:92-157`), and the
-public getters on `Scope` hand the ids back (`crates/thrust-core/src/lib.rs:145-155`), so a use-case can skip
-`authorize` and call a port with ids of its own. Finding FR-02 of the architecture review
-(`.agents/plans/contrail/reviews/2026-10-19-fable-architecture-review.md`) decided that every repository and `Tx`
-method takes `&Scope`, which only `authorize` mints, and that the adapter derives the tenant key from it. The outbox
-relay, the sweeper, the consumer and `seed` take a `SystemScope`, which only the composition roots and the consumer
-mint. The reason is the cost of one missed predicate: with about 150 tables, a repository method that forgets the
-tenant key is the top security risk the threat model names (ADR-0141), and a type error is the cheapest guard. The
-decision is recorded in ADR-0045 (round 29). Until the code follows it, check in review that ids reach a port only
-from a `Scope`.
+**Repository calls take a `Scope`, never ids.** Every `Database` and `Tx` method takes `&Scope` or `&SystemScope`
+(`crates/thrust-ports/src/lib.rs`). The one exception is `membership`, which runs before a `Scope` exists and which
+only `authorize` calls. Both proof types are declared in `thrust-ports`, because the ports take them and the adapters
+read the ids from them, and each has one constructor, `mint`:
+- `Scope::mint` is called only by `authorize`.
+- `SystemScope::mint` is called only by the composition roots (`thrust-server`, and `thrust-worker` for both adapter
+  sets), which hand it to `App::new`. `App` keeps it private, and the outbox relay, the sweeper, the queue consumer and
+  `seed` pass it to the untenanted calls (`undispatched_outbox`, `mark_outbox_dispatched`, `outbox_depth`,
+  `insert_activity`, `seed`).
+
+The fields are private, so a struct literal outside `thrust-ports` does not compile, and passing bare ids to a
+repository method is a type error. The `compile_fail` doctests on `authorize` show both. The constructor itself is
+`pub`, so `scripts/check-deps.sh` rejects a `mint` call anywhere else in product code; tests may mint. The reason is
+the cost of one missed predicate: with about 150 tables, a repository method that forgets the tenant key is the top
+security risk the threat model names (ADR-0141), and a type error is the cheapest guard. Decided in ADR-0045 (round
+29, FR-02), built in issue #35.
 
 **Write the event in the transaction, relay it after.** The outbox row is inserted in the same transaction as the
 entity (`Tx::insert_outbox`). `relay_after_commit` asks the `Background` port to run `dispatch`, which publishes the
