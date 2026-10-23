@@ -88,6 +88,7 @@ esac
 SERVER_PID=""
 PG_CONTAINER=""
 SQLITE_DIR=""
+PROXY_PID=""
 
 kill_tree() {
   for child in $(pgrep -P "$1" 2>/dev/null); do
@@ -107,6 +108,9 @@ cleanup() {
   fi
   if [ -n "$SQLITE_DIR" ]; then
     rm -rf "$SQLITE_DIR"
+  fi
+  if [ -n "$PROXY_PID" ]; then
+    kill -TERM "$PROXY_PID" 2>/dev/null || true
   fi
 }
 trap cleanup EXIT INT TERM
@@ -146,6 +150,18 @@ if [ "$ADAPTERS" = "postgres" ] || [ "$ADAPTERS" = "cloudflare" ]; then
   # Apply the schema through the very same SQL the adapter ships (no hand-copied DDL).
   "$ROOT/scripts/rs" cargo run --quiet --manifest-path "$ROOT/Cargo.toml" -p thrust-adapters-postgres --features native --bin migrate \
     >"$LOG.migrate.log" 2>&1 || { echo "migrate failed, see $LOG.migrate.log" >&2; exit 3; }
+fi
+
+if [ -n "${THRUST_PG_LATENCY_MS:-}" ] && [ -n "${PG_PORT:-}" ]; then
+  # Put a fixed one-way delay between the server and Postgres (after the schema is applied directly), so a loopback run
+  # pays something like the round trips of Hyperdrive + VPC service + tunnel. For the FR-22 before/after (research/0011).
+  PROXY_PORT="$(pick_port)"
+  uv run --quiet "$ROOT/scripts/pg-delay-proxy.py" "$PROXY_PORT" "$PG_PORT" "$THRUST_PG_LATENCY_MS" >"$LOG.proxy.log" 2>&1 &
+  PROXY_PID=$!
+  sleep 2
+  kill -0 "$PROXY_PID" 2>/dev/null || { echo "delay proxy did not start, see $LOG.proxy.log" >&2; exit 3; }
+  export DATABASE_URL="postgres://postgres:$PG_PASSWORD@127.0.0.1:$PROXY_PORT/thrust"
+  echo "[$TARGET/$PASS] postgres behind a ${THRUST_PG_LATENCY_MS} ms one-way delay proxy (port $PROXY_PORT)"
 fi
 
 if [ "$ADAPTERS" = "sqlite" ]; then

@@ -237,7 +237,7 @@ async fn rollback_is_atomic_and_unique_violation_is_a_conflict() {
     tx.insert_work_item(&s, &item(ws, p, a, "keep", Some("1"))).await.unwrap();
     tx.commit().await.unwrap();
 
-    // duplicate live external key -> Conflict, and the failed tx rolls back its allocation too
+    // duplicate live external key -> Conflict; the failed tx writes nothing
     let mut tx = env.db.begin(&s).await.unwrap();
     let a2 = tx.allocate(&s).await.unwrap();
     assert_eq!(a2.sequence_id, 2);
@@ -245,11 +245,15 @@ async fn rollback_is_atomic_and_unique_violation_is_a_conflict() {
     assert!(matches!(err, DbError::Conflict(_)), "got {err:?}");
     tx.rollback().await.unwrap();
 
-    // control: nothing leaked, and the counter went back (Postgres allocation is transactional)
+    // control: nothing leaked. The number is NOT given back: FR-22 (ADR-0043 round 29) allocates in its own short
+    // transaction so the counter row is locked for one statement, and a create that fails after its allocation loses the
+    // number, which ADR-0043 accepts. Until FR-22 this asserted the opposite ("a rolled-back allocation must not leave a
+    // gap", the counter row was transactional); the property was given up on purpose, in the commit that moved the
+    // allocation, and `model_postgres_adapter_matches_the_reference_model` carries the same change.
     let rows = env.db.list_work_items(&s, Visibility::WithDeleted).await.unwrap();
     assert_eq!(rows.len(), 1);
     let mut tx = env.db.begin(&s).await.unwrap();
-    assert_eq!(tx.allocate(&s).await.unwrap().sequence_id, 2, "rolled-back allocation must not leave a gap");
+    assert_eq!(tx.allocate(&s).await.unwrap().sequence_id, 3, "a rolled-back create's number stays taken (gap, FR-22)");
     tx.rollback().await.unwrap();
 }
 
@@ -262,15 +266,22 @@ async fn an_abandoned_transaction_does_not_poison_the_pool() {
     tokio::time::timeout(std::time::Duration::from_secs(30), async {
         for _ in 0..40 {
             // more iterations than pool slots: if abandoned connections were recycled mid-transaction,
-            // later iterations would see a stale open transaction / held row lock and hang or fail.
+            // later iterations would see a stale open transaction and a later commit would commit what they left.
+            // The abandoned transaction WRITES (an item, so it is inside a transaction when dropped): since FR-22 an
+            // allocation alone is its own short transaction and leaves nothing open.
             let mut tx = env.db.begin(&s).await.unwrap();
-            tx.allocate(&s).await.unwrap();
+            let a = tx.allocate(&s).await.unwrap();
+            tx.insert_work_item(&s, &item(ws, p, a, "abandoned", None)).await.unwrap();
             drop(tx); // never committed
         }
+        // nothing an abandoned transaction wrote is visible, and the numbers it took stay taken (40 of them)
         let mut tx = env.db.begin(&s).await.unwrap();
         let a = tx.allocate(&s).await.unwrap();
-        assert_eq!(a.sequence_id, 1, "abandoned transactions must roll back");
+        assert_eq!(a.sequence_id, 41, "the numbers of abandoned transactions are not given back (FR-22)");
+        tx.insert_work_item(&s, &item(ws, p, a, "kept", None)).await.unwrap();
         tx.commit().await.unwrap();
+        let rows = env.db.list_work_items(&s, Visibility::WithDeleted).await.unwrap();
+        assert_eq!(rows.iter().map(|r| r.name.as_str()).collect::<Vec<_>>(), ["kept"], "abandoned transactions must roll back");
     })
     .await
     .expect("abandoned transactions wedged the pool");

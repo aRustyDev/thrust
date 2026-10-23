@@ -7,6 +7,12 @@
 //!
 //! Transactions use plain `BEGIN`/`COMMIT` on a connection the transaction owns, so a `Tx` is a
 //! self-contained `Send` value (no borrowed `tokio_postgres::Transaction<'_>`).
+//!
+//! FR-22 (ADR-0043 round 29): the sequence number is taken in its own short transaction, BEFORE the create's. A `Tx`
+//! checks its connection out at `begin` but opens no transaction until its first write, so `allocate` (the counter
+//! upsert, one statement in autocommit) holds the counter row's lock for one round trip, not for the insert, the outbox
+//! row and the commit as when the upsert was the first statement of the transaction. The price is a gap: a number taken
+//! by a create that then fails or is abandoned is not given back.
 
 use std::sync::Arc;
 
@@ -292,12 +298,10 @@ impl Database for PgDatabase {
     }
 
     async fn begin(&self, _scope: &Scope) -> Result<Box<dyn Tx>, DbError> {
+        // The connection is the transaction's own, but nothing is open on it yet: `BEGIN` waits for the first write
+        // (FR-22, see the module docs), so `allocate` can run before it.
         let conn = self.connector.checkout(true).await?;
-        if let Err(e) = conn.client().batch_execute("BEGIN").await {
-            conn.discard();
-            return Err(db_err(e));
-        }
-        Ok(Box::new(PgTx { conn: Some(conn) }))
+        Ok(Box::new(PgTx { conn: Some(conn), in_tx: false, connector: self.connector.clone() }))
     }
 
     async fn list_work_items(&self, scope: &Scope, vis: Visibility) -> Result<Vec<WorkItem>, DbError> {
@@ -544,20 +548,44 @@ impl Database for PgDatabase {
 
 pub struct PgTx {
     conn: Option<Box<dyn ClientHandle>>,
+    /// `BEGIN` has been sent on `conn`: the first write opens the transaction.
+    in_tx: bool,
+    connector: Arc<dyn Connector>,
 }
 
 impl PgTx {
     fn client(&self) -> Pg<'_> {
         Pg(self.conn.as_ref().expect("transaction already finished").client())
     }
+
+    /// Open the transaction on first use. If `BEGIN` fails the connection's state is unknown, so it is not reused.
+    async fn ensure_tx(&mut self) -> Result<(), DbError> {
+        if self.in_tx {
+            return Ok(());
+        }
+        match self.client().batch_execute("BEGIN").await {
+            Ok(()) => {
+                self.in_tx = true;
+                Ok(())
+            }
+            Err(e) => {
+                if let Some(c) = self.conn.take() {
+                    c.discard();
+                }
+                Err(db_err(e))
+            }
+        }
+    }
 }
 
 impl Drop for PgTx {
     fn drop(&mut self) {
-        // Dropped without commit/rollback (e.g. the request future was cancelled): never return
-        // a connection that is still inside a transaction to the pool.
+        // Dropped without commit/rollback (e.g. the request future was cancelled): never return a connection that is
+        // still inside a transaction to the pool. One that never opened a transaction is clean and goes back as it is.
         if let Some(c) = self.conn.take() {
-            c.discard();
+            if self.in_tx {
+                c.discard();
+            }
         }
     }
 }
@@ -565,27 +593,35 @@ impl Drop for PgTx {
 #[async_trait]
 impl Tx for PgTx {
     /// A scope whose project is outside its workspace violates `project_sequences_tenant_fkey`
-    /// (migration 0002): `Backend`. `authorize` never mints one; a test can.
+    /// (migration 0002): `Backend`, and nothing is taken. `authorize` never mints one; a test can.
+    ///
+    /// FR-22: the upsert is a transaction of its own (one statement, autocommit), so the counter row is locked for one
+    /// round trip. Before the first write that is this transaction's own connection; if a write has opened the
+    /// transaction already (a second `allocate` in one create), another connection takes the number, because on this
+    /// one the upsert would join the transaction and keep the lock until it ends.
     async fn allocate(&mut self, scope: &Scope) -> Result<Allocation, DbError> {
+        const UPSERT: &str = "INSERT INTO project_sequences (workspace_id, project_id, last_sequence_id, last_sort_order) \
+             VALUES ($1, $2, 1, 10000) \
+             ON CONFLICT (workspace_id, project_id) DO UPDATE SET \
+               last_sequence_id = project_sequences.last_sequence_id + 1, \
+               last_sort_order  = project_sequences.last_sort_order + 10000 \
+             RETURNING last_sequence_id, last_sort_order";
         let (ws, project) = (scope.workspace_id(), scope.project_id());
-        let r = self
-            .client()
-            .query_one(
-                "INSERT INTO project_sequences (workspace_id, project_id, last_sequence_id, last_sort_order) \
-                 VALUES ($1, $2, 1, 10000) \
-                 ON CONFLICT (workspace_id, project_id) DO UPDATE SET \
-                   last_sequence_id = project_sequences.last_sequence_id + 1, \
-                   last_sort_order  = project_sequences.last_sort_order + 10000 \
-                 RETURNING last_sequence_id, last_sort_order",
-                &[&ws.0, &project.0],
-            )
-            .await
-            .map_err(db_err)?;
+        let r = if self.in_tx {
+            let other = self.connector.checkout(true).await?;
+            let r = Pg(other.client()).query_one(UPSERT, &[&ws.0, &project.0]).await;
+            drop(other); // autocommit: nothing is open on it, it is clean
+            r
+        } else {
+            self.client().query_one(UPSERT, &[&ws.0, &project.0]).await
+        }
+        .map_err(db_err)?;
         Ok(Allocation { sequence_id: r.get(0), sort_order: r.get(1) })
     }
 
     async fn insert_work_item(&mut self, scope: &Scope, w: &WorkItem) -> Result<(), DbError> {
         check_tenant(scope, w.workspace_id, Some(w.project_id))?;
+        self.ensure_tx().await?;
         self.client()
             .execute(
                 &format!(
@@ -615,6 +651,7 @@ impl Tx for PgTx {
 
     async fn soft_delete_work_item(&mut self, scope: &Scope, id: WorkItemId, at: Timestamp) -> Result<bool, DbError> {
         let (ws, project) = (scope.workspace_id(), scope.project_id());
+        self.ensure_tx().await?;
         let n = self
             .client()
             .execute(
@@ -636,6 +673,7 @@ impl Tx for PgTx {
             &envelope,
             &row.created_at,
         ];
+        self.ensure_tx().await?;
         self.client()
             .execute(
                 "INSERT INTO outbox (event_id, workspace_id, envelope, created_at, dispatched_at, attempts) \
@@ -649,7 +687,12 @@ impl Tx for PgTx {
 
     async fn commit(self: Box<Self>) -> Result<(), DbError> {
         let mut this = *self;
+        let in_tx = this.in_tx;
         let conn = this.conn.take().expect("transaction already finished");
+        if !in_tx {
+            // Nothing was written, so no transaction was opened: the connection is clean and goes back as it is.
+            return Ok(());
+        }
         match conn.client().batch_execute("COMMIT").await {
             Ok(()) => Ok(()),
             Err(e) => {
@@ -661,7 +704,11 @@ impl Tx for PgTx {
 
     async fn rollback(self: Box<Self>) -> Result<(), DbError> {
         let mut this = *self;
+        let in_tx = this.in_tx;
         let conn = this.conn.take().expect("transaction already finished");
+        if !in_tx {
+            return Ok(());
+        }
         match conn.client().batch_execute("ROLLBACK").await {
             Ok(()) => Ok(()),
             Err(e) => {
