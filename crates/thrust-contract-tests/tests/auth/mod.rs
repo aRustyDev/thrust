@@ -11,6 +11,8 @@ use thrust_contracts::*;
 
 use super::t;
 
+mod matrix;
+
 fn auth_url(t: &Target, tail: &str) -> String {
     t.url(&format!("{SLICE_PREFIX}/auth{tail}"))
 }
