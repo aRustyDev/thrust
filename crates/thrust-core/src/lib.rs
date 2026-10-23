@@ -133,26 +133,9 @@ impl Permission {
     }
 }
 
-/// Proof that `user` may act in `(workspace, project)`. Fields are private: the only way to get
-/// one is [`authorize`], so repository calls that take a `Scope` cannot be reached unchecked.
-#[derive(Debug, Clone, Copy)]
-pub struct Scope {
-    workspace_id: WorkspaceId,
-    project_id: ProjectId,
-    user_id: UserId,
-}
-
-impl Scope {
-    pub fn workspace_id(&self) -> WorkspaceId {
-        self.workspace_id
-    }
-    pub fn project_id(&self) -> ProjectId {
-        self.project_id
-    }
-    pub fn user_id(&self) -> UserId {
-        self.user_id
-    }
-}
+/// The proof types are declared in `thrust-ports`, so that the ports can take them (issue #35).
+/// [`authorize`] is the only place a [`Scope`] is minted.
+pub use thrust_ports::{Scope, SystemScope};
 
 /// 404 for a project that is not in the caller's workspace (cross-tenant probes learn nothing),
 /// 403 for a project the caller can see exists but may not touch.
@@ -165,11 +148,9 @@ pub async fn authorize(
     match app.ports.db.membership(who.workspace_id, project, who.user_id).await? {
         Membership::NoSuchProject => Err(CoreError::NotFound),
         Membership::NotAMember => Err(CoreError::Forbidden),
-        Membership::Member(role) if role >= perm.min_role() => Ok(Scope {
-            workspace_id: who.workspace_id,
-            project_id: project,
-            user_id: who.user_id,
-        }),
+        Membership::Member(role) if role >= perm.min_role() => {
+            Ok(Scope::mint(who.workspace_id, project, who.user_id))
+        }
         Membership::Member(_) => Err(CoreError::Forbidden),
     }
 }
@@ -583,11 +564,11 @@ mod tests {
     }
 
     fn scope() -> Scope {
-        Scope {
-            workspace_id: WorkspaceId(Uuid::from_u128(1)),
-            project_id: ProjectId(Uuid::from_u128(2)),
-            user_id: UserId(Uuid::from_u128(3)),
-        }
+        Scope::mint(
+            WorkspaceId(Uuid::from_u128(1)),
+            ProjectId(Uuid::from_u128(2)),
+            UserId(Uuid::from_u128(3)),
+        )
     }
 
     /// Names built from mostly ordinary characters with the occasional `.` or multi-byte character, never `/`

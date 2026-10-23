@@ -78,6 +78,54 @@ pub trait Background: Send + Sync {
 }
 
 // ---------------------------------------------------------------------------------------------
+// Proof types (ADR-0041, ADR-0045, ADR-0051; issue #35)
+// ---------------------------------------------------------------------------------------------
+
+/// Proof that `user` may act in `(workspace, project)`. Declared here so that the ports can take
+/// it and the adapters can read the tenant key from it; minted only by `thrust_core::authorize`.
+/// Fields are private, so a struct literal outside this crate does not compile, and
+/// `scripts/check-deps.sh` rejects a call to [`Scope::mint`] anywhere else.
+#[derive(Debug, Clone, Copy)]
+pub struct Scope {
+    workspace_id: WorkspaceId,
+    project_id: ProjectId,
+    user_id: UserId,
+}
+
+impl Scope {
+    /// Reserved to `thrust_core::authorize`, after the membership check passes.
+    #[doc(hidden)]
+    pub fn mint(workspace_id: WorkspaceId, project_id: ProjectId, user_id: UserId) -> Self {
+        Self { workspace_id, project_id, user_id }
+    }
+    pub fn workspace_id(&self) -> WorkspaceId {
+        self.workspace_id
+    }
+    pub fn project_id(&self) -> ProjectId {
+        self.project_id
+    }
+    pub fn user_id(&self) -> UserId {
+        self.user_id
+    }
+}
+
+/// Permission for the untenanted operations: the outbox relay and sweeper, the queue consumer's
+/// activity write, and `seed`. Minted only by the composition roots and the consumer entry
+/// (ADR-0045 round 29); `scripts/check-deps.sh` rejects a call to [`SystemScope::mint`] elsewhere.
+#[derive(Debug)]
+pub struct SystemScope {
+    _private: (),
+}
+
+impl SystemScope {
+    /// Reserved to the composition roots and the queue consumer entry.
+    #[doc(hidden)]
+    pub fn mint() -> Self {
+        Self { _private: () }
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
 // Database / unit of work (ADR-0045, shape reduced to what the slice needs)
 // ---------------------------------------------------------------------------------------------
 
