@@ -14,6 +14,9 @@
 #             bench            latency bench (release native build); success == the bench exits 0
 #             worker         (worker-cf only) Durable Object WebSocket hibernation + SQLite
 #             cron             (worker-* only) fast path OFF; the Worker `scheduled` handler sweeps
+#             engine           the tests that decide the database engine (spike 0002): the 50-writer, 10k-create test,
+#                              and the search tests. Own test binary (`--test engine`), so EXPECT_MAIN is untouched.
+#                              The target starts with a very high create rate limit. Opt-in: not in contract-all.sh.
 #             tx               (worker-do only) the Tx-mapping control on the object's real SqlStorage (risk R1)
 #             bindings         (worker-cf only) one real operation per binding (rate limit, secrets
 #                              store, email, service binding, workflow via JS shim)
@@ -36,6 +39,8 @@ LOGDIR="${THRUST_LOGDIR:-$ROOT/target/contract-logs}"
 mkdir -p "$LOGDIR"
 LOG="$LOGDIR/$TARGET-$PASS"
 RATE_LIMIT=30
+# The engine pass makes thousands of creates per user per window: the main pass's limit would refuse them.
+[ "${2:-main}" = "engine" ] && RATE_LIMIT=1000000
 EXPECT_MAIN=21
 EXPECT_SWEEPER=2
 EXPECT_PANIC=1
@@ -44,6 +49,7 @@ EXPECT_WORKER=1
 EXPECT_CRON=1
 EXPECT_BINDINGS=6
 EXPECT_TX=2
+EXPECT_ENGINE=1
 
 # A free port, chosen at random: fixed ports collide with OrbStack-published containers and
 # with other sessions' wrangler instances (measured: 18080 and 8787 were both taken).
@@ -239,6 +245,11 @@ case "$PASS" in
     cat "$LOG.test.log"
     echo "[$TARGET/$PASS] bench exit=$TEST_STATUS"
     exit "$TEST_STATUS"
+    ;;
+  engine)
+    "$ROOT/scripts/rs" cargo test --manifest-path "$ROOT/Cargo.toml" -p thrust-contract-tests --test engine -- --test-threads=1 --nocapture >"$LOG.test.log" 2>&1
+    TEST_STATUS=$?
+    EXPECT=$EXPECT_ENGINE
     ;;
   tx)
     "$ROOT/scripts/rs" cargo test --manifest-path "$ROOT/Cargo.toml" -p thrust-contract-tests --test worker_only -- worker_do_tx_ --test-threads=1 --nocapture >"$LOG.test.log" 2>&1

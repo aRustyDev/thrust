@@ -70,6 +70,7 @@ fn uid() -> uuid::Uuid {
     uuid::Uuid::new_v4()
 }
 
+#[derive(Clone)]
 pub struct User {
     pub id: UserId,
     pub token: String,

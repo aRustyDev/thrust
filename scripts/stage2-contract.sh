@@ -12,6 +12,12 @@
 # cron       1 test : needs the Worker deployed with THRUST_OUTBOX_FASTPATH=off
 # sweeper    2 tests: needs THRUST_OUTBOX_FASTPATH=off
 # panic      1 test : alone, against a Worker nobody else is using (a panic resets the isolate)
+# engine     the engine pass (spike 0002, `contract.sh <target> engine`): the 50-writer test and the search tests.
+#            Needs a Worker deployed with a very high THRUST_CREATE_RATE_LIMIT (the 50-writer test makes ~10k creates).
+# tx         2 tests: the Tx-mapping control on the object's SQLite (cell worker-do only)
+#
+# For a deployed `worker-do` cell (spike 0002) set THRUST_EXPECT_ADAPTERS=durable: the vacuity guard then wants the
+# `durable` adapter set instead of `cloudflare`.
 #
 # The admin token is read from the file into THIS process's environment only: never on argv, never
 # printed. Exit status is cargo test's own (no pipe, no trailing echo); the passed count is checked
@@ -30,13 +36,14 @@ export THRUST_EXPECT_CREATE_LIMIT="${THRUST_EXPECT_CREATE_LIMIT:-30}"
 export THRUST_STATE_SURVIVES_PANIC=1
 LOGDIR="${THRUST_LOGDIR:-$ROOT/target/stage2-logs}"
 mkdir -p "$LOGDIR"
-LOG="$LOGDIR/worker-cf-$PASS"
+EXPECT_ADAPTERS="${THRUST_EXPECT_ADAPTERS:-cloudflare}"
+case "$EXPECT_ADAPTERS" in durable) LOG="$LOGDIR/worker-do-$PASS" ;; *) LOG="$LOGDIR/worker-cf-$PASS" ;; esac
 
 # Vacuity guard: the deployed Worker must say it is the Cloudflare adapter set, on the Worker target.
 INFO="$(curl -fsS --max-time 30 -H "x-admin-token: $THRUST_ADMIN_TOKEN" "$BASE/_info" 2>/dev/null || true)"
 echo "[stage2/$PASS] /_info: $INFO"
 case "$INFO" in *'"target":"worker"'*) ;; *) echo "[stage2/$PASS] VACUITY GUARD: not a Worker target" >&2; exit 5 ;; esac
-case "$INFO" in *'"adapters":"cloudflare"'*) ;; *) echo "[stage2/$PASS] VACUITY GUARD: adapters not cloudflare" >&2; exit 5 ;; esac
+case "$INFO" in *"\"adapters\":\"$EXPECT_ADAPTERS\""*) ;; *) echo "[stage2/$PASS] VACUITY GUARD: adapters not $EXPECT_ADAPTERS" >&2; exit 5 ;; esac
 
 RS="$ROOT/scripts/rs"
 M="$ROOT/Cargo.toml"
@@ -54,6 +61,8 @@ case "$PASS" in
   panic)    EXPECT=1;  "$RS" cargo test --manifest-path "$M" -p thrust-contract-tests --test contract -- panic_ --test-threads=1 --nocapture >"$LOG.test.log" 2>&1 ;;
   # blast is OBSERVATIONAL: how many OTHER in-flight requests fail around one panic (a panic aborts the isolate)
   blast)    EXPECT=1;  "$RS" cargo test --manifest-path "$M" -p thrust-contract-tests --test contract -- blast_ --test-threads=1 --nocapture >"$LOG.test.log" 2>&1 ;;
+  engine)   EXPECT=1;  "$RS" cargo test --manifest-path "$M" -p thrust-contract-tests --test engine -- --test-threads=1 --nocapture >"$LOG.test.log" 2>&1 ;;
+  tx)       EXPECT=2;  "$RS" cargo test --manifest-path "$M" -p thrust-contract-tests --test worker_only -- worker_do_tx_ --test-threads=1 --nocapture >"$LOG.test.log" 2>&1 ;;
   ratelimit) EXPECT=1; "$RS" cargo test --manifest-path "$M" -p thrust-contract-tests --test contract -- create_is_rate_limited_per_user --test-threads=1 --nocapture >"$LOG.test.log" 2>&1 ;;
   *) echo "unknown pass $PASS" >&2; exit 2 ;;
 esac

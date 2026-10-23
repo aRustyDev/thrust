@@ -20,9 +20,15 @@ kill_check() {
   # $1 label, $2 exit status, $3 log file with test output
   label="$1"; status="$2"; log="$3"
   failed="$(grep -c '\.\.\. FAILED$' "$log")"
+  # A pass run with --nocapture (the engine pass) prints `test x ... ` and the panic text, and only then `FAILED` on a
+  # line of its own, so its failures are counted from cargo's own `test result: FAILED. N passed; M failed` line.
+  if [ "$failed" -eq 0 ]; then
+    failed="$(sed -n 's/^test result: FAILED\. [0-9]* passed; \([0-9]*\) failed.*/\1/p' "$log" | tail -1)"
+    failed="${failed:-0}"
+  fi
   if [ "$status" -eq 101 ] && [ "$failed" -ge 1 ]; then
     printf '%-34s KILLED   (%s test(s) failed)\n' "$label" "$failed" >>"$SUMMARY"
-    grep '\.\.\. FAILED$' "$log" | sed 's/^/    /' >>"$SUMMARY"
+    grep -E '\.\.\. FAILED$|^test .* \.\.\. $' "$log" | sed 's/^/    /' >>"$SUMMARY"
   else
     printf '%-34s SURVIVED or did not run (exit=%s, failed tests=%s)\n' "$label" "$status" "$failed" >>"$SUMMARY"
     SURVIVED=1
@@ -39,6 +45,42 @@ for pair in \
   THRUST_SERVER_FEATURES="$feature" THRUST_LOGDIR="$OUT/$name" "$ROOT/scripts/contract.sh" native-memory main >"$OUT/$name.out" 2>&1
   status=$?
   kill_check "native-memory + $name" "$status" "$OUT/$name/native-memory-main.test.log"
+done
+
+# The engine pass (spike 0002, `contract.sh <target> engine`): the 50-writer, 10k-create test against the duplicate-sequence
+# mutant of BOTH adapters that have one (memory and SQLite), and against the SQLite adapter's own transaction gate being
+# removed. Each must fail it: that is the control the issue names for the 50-writer test.
+for spec in \
+  "native-memory:duplicate-sequence-number:mutant_dup_sequence" \
+  "native-sqlite:duplicate-sequence-number:mutant_dup_sequence" \
+  "native-sqlite:no-transaction-gate:mutant_no_gate"; do
+  target="${spec%%:*}"
+  rest="${spec#*:}"
+  name="${rest%%:*}"
+  feature="${rest##*:}"
+  THRUST_SERVER_FEATURES="$feature" THRUST_LOGDIR="$OUT/engine-$target-$name" "$ROOT/scripts/contract.sh" "$target" engine >"$OUT/engine-$target-$name.out" 2>&1
+  status=$?
+  kill_check "$target engine + $name" "$status" "$OUT/engine-$target-$name/$target-engine.test.log"
+done
+
+# The same SQLite mutant against the main pass (the first version of this mutant survived it: see its commit message).
+THRUST_SERVER_FEATURES=mutant_dup_sequence THRUST_LOGDIR="$OUT/sqlite-dup-main" "$ROOT/scripts/contract.sh" native-sqlite main >"$OUT/sqlite-dup-main.out" 2>&1
+status=$?
+kill_check "native-sqlite + duplicate-sequence-number" "$status" "$OUT/sqlite-dup-main/native-sqlite-main.test.log"
+
+# SQLite adapter mutants, hermetic (the crate's own tests): a commit that is no transaction (risk R1), a transaction gate
+# that never reopens after an abandoned transaction, and the duplicate number.
+for spec in \
+  "non-atomic-commit:mutant_non_atomic_commit:commit" \
+  "gate-leak:mutant_gate_leak:model" \
+  "duplicate-sequence-number:mutant_dup_sequence:model"; do
+  name="${spec%%:*}"
+  rest="${spec#*:}"
+  feature="${rest%%:*}"
+  suite="${rest##*:}"
+  "$ROOT/scripts/rs" cargo test --manifest-path "$ROOT/Cargo.toml" -p thrust-adapters-sqlite --features "$feature" --test "$suite" >"$OUT/sqlite-$name.out" 2>&1
+  status=$?
+  kill_check "sqlite adapter + $name" "$status" "$OUT/sqlite-$name.out"
 done
 
 # Postgres adapter mutant: recycle a connection that is still inside an abandoned transaction.
