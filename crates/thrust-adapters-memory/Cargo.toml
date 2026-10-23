@@ -12,6 +12,7 @@ publish.workspace = true
 mutant_ignore_tenant = []
 mutant_dup_sequence = []
 mutant_no_activity_dedupe = []
+mutant_ignore_revoked = []
 
 [dependencies]
 thrust-contracts = { workspace = true }

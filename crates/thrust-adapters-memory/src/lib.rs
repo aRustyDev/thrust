@@ -101,9 +101,14 @@ impl Database for MemoryDatabase {
 
     async fn session(&self, hash: &TokenHash, now: Timestamp) -> Result<Option<LiveSession>, DbError> {
         let s = self.state.lock().unwrap();
+        // MUTANT (control run only): a revoked session still resolves. The revocation test must catch it.
+        #[cfg(feature = "mutant_ignore_revoked")]
+        let revoked = |_: &SessionRow| false;
+        #[cfg(not(feature = "mutant_ignore_revoked"))]
+        let revoked = |r: &SessionRow| r.revoked_at.is_some();
         Ok(s.sessions
             .get(hash)
-            .filter(|r| r.revoked_at.is_none() && r.expires_at > now)
+            .filter(|r| !revoked(r) && r.expires_at > now)
             .map(|r| LiveSession { user_id: r.user_id, last_seen_at: r.last_seen_at }))
     }
 

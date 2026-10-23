@@ -163,6 +163,28 @@ async fn cross_tenant_access_is_rejected_and_has_no_effect() {
     assert_eq!(list(&t, &f.outsider_a, &f.a, None).await.status(), 403);
 }
 
+/// The session row is read on every request (ADR-0052 round 29), so a revocation is visible to the very next request,
+/// on every target: there is no cache to wait out. The revocation goes through the test route until sign-out exists
+/// (#38).
+#[tokio::test]
+async fn a_revoked_session_is_rejected_on_the_next_request() {
+    let t = t();
+    let f = Fixture::seed(&t).await;
+    let other = f.extra_member(&t).await;
+    assert_eq!(list(&t, &f.member_a, &f.a, None).await.status(), 200, "before the revoke");
+    t.revoke_session(&f.member_a.token).await;
+    // the next request, and every kind of route, not only the one used first
+    assert_eq!(list(&t, &f.member_a, &f.a, None).await.status(), 401, "list with the revoked token");
+    assert_eq!(create(&t, &f.member_a, &f.a, json!({"name": "x"})).await.status(), 401, "create with it");
+    // control: an unrevoked token on the same request still gets 200, so the 401 is the revoke, not the route
+    assert_eq!(list(&t, &other, &f.a, None).await.status(), 200, "an unrevoked token");
+    assert_eq!(list(&t, &f.admin_a, &f.a, None).await.status(), 200, "another unrevoked token");
+    // revoking again, or revoking a token that was never issued, changes nothing
+    t.revoke_session(&f.member_a.token).await;
+    t.revoke_session("never-issued").await;
+    assert_eq!(list(&t, &other, &f.a, None).await.status(), 200, "still unrevoked after the no-op revokes");
+}
+
 /// A session belongs to a user, not to a workspace (ADR-0052 round 29): `dual` belongs to both workspaces and its one
 /// token works in each, with that workspace's project.
 #[tokio::test]

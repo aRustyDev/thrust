@@ -152,6 +152,18 @@ async fn seed(_: Admin, Extension(app): Extension<App>, Json(f): Json<SeedFixtur
     Ok(StatusCode::NO_CONTENT)
 }
 
+#[derive(Deserialize)]
+struct RevokeSession {
+    token: String,
+}
+
+/// Test support until sign-out exists (#38): revoke the session behind a bearer token. Idempotent, like the use
+/// case: a token that is unknown or already revoked is a 204 too.
+async fn revoke_session(_: Admin, Extension(app): Extension<App>, Json(b): Json<RevokeSession>) -> ApiResult<StatusCode> {
+    thrust_core::revoke_session(&app, &b.token).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
 async fn sweep(_: Admin, Extension(app): Extension<App>) -> ApiResult<Json<thrust_core::SweepReport>> {
     Ok(Json(thrust_core::sweep_outbox(&app, 100).await?))
 }
@@ -280,6 +292,7 @@ pub fn router() -> Router {
         .route("/_test/panic", get(panic_route))
         .route("/internal/seed", post(seed))
         .route("/internal/sweep", post(sweep))
+        .route("/internal/revoke-session", post(revoke_session))
         .route("/internal/outbox-depth", get(outbox_depth))
         .route("/internal/inject-event", post(inject_event))
         .route(&slice_path("/work-items"), post(create_work_item).get(list_work_items))

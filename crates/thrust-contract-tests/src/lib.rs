@@ -53,6 +53,12 @@ impl Target {
         self.http.get(self.url(path)).header("x-admin-token", &self.admin_token).send().await.unwrap()
     }
 
+    /// Revoke the session behind `token` through the test route. 204 whether or not the token is a session.
+    pub async fn revoke_session(&self, token: &str) {
+        let r = self.admin_post("/internal/revoke-session", &json!({ "token": token })).await;
+        assert_eq!(r.status(), 204, "revoke-session");
+    }
+
     pub async fn outbox_depth(&self) -> u64 {
         let r = self.admin_get("/internal/outbox-depth").await;
         assert_eq!(r.status(), 200, "outbox-depth");
