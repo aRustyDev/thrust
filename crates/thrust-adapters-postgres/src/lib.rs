@@ -18,9 +18,11 @@ use tokio_postgres::types::{ToSql, Type};
 use tokio_postgres::{Client, Row};
 
 pub const MIGRATION_0001: &str = include_str!("../migrations/0001_init.sql");
+pub const MIGRATION_0002: &str = include_str!("../migrations/0002_sequence_tenant_key.sql");
 
 pub async fn migrate(client: &Client) -> Result<(), tokio_postgres::Error> {
-    client.batch_execute(MIGRATION_0001).await
+    client.batch_execute(MIGRATION_0001).await?;
+    client.batch_execute(MIGRATION_0002).await
 }
 
 pub trait ClientHandle: Send {
@@ -187,7 +189,8 @@ impl Database for PgDatabase {
         let row = Pg(c.client())
             .query_opt(
                 "SELECT m.role AS role FROM projects p \
-                 LEFT JOIN project_members m ON m.project_id = p.id AND m.user_id = $3 \
+                 LEFT JOIN project_members m \
+                   ON m.project_id = p.id AND m.workspace_id = p.workspace_id AND m.user_id = $3 \
                  WHERE p.id = $1 AND p.workspace_id = $2",
                 &[&project.0, &ws.0, &user.0],
             )
@@ -396,17 +399,18 @@ impl Drop for PgTx {
 
 #[async_trait]
 impl Tx for PgTx {
-    async fn allocate(&mut self, _ws: WorkspaceId, project: ProjectId) -> Result<Allocation, DbError> {
+    /// A project outside `ws` violates `project_sequences_tenant_fkey` (migration 0002): `Backend`.
+    async fn allocate(&mut self, ws: WorkspaceId, project: ProjectId) -> Result<Allocation, DbError> {
         let r = self
             .client()
             .query_one(
-                "INSERT INTO project_sequences (project_id, last_sequence_id, last_sort_order) \
-                 VALUES ($1, 1, 10000) \
-                 ON CONFLICT (project_id) DO UPDATE SET \
+                "INSERT INTO project_sequences (workspace_id, project_id, last_sequence_id, last_sort_order) \
+                 VALUES ($1, $2, 1, 10000) \
+                 ON CONFLICT (workspace_id, project_id) DO UPDATE SET \
                    last_sequence_id = project_sequences.last_sequence_id + 1, \
                    last_sort_order  = project_sequences.last_sort_order + 10000 \
                  RETURNING last_sequence_id, last_sort_order",
-                &[&project.0],
+                &[&ws.0, &project.0],
             )
             .await
             .map_err(db_err)?;

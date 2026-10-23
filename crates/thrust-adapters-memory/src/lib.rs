@@ -16,9 +16,12 @@ use thrust_ports::*;
 #[derive(Default)]
 struct DbState {
     projects: HashMap<ProjectId, WorkspaceId>,
-    memberships: HashMap<(ProjectId, UserId), Role>,
-    /// project -> (last sequence_id handed out, last sort_order handed out). Never decrements.
-    counters: HashMap<ProjectId, (i64, i64)>,
+    /// The member row keeps the workspace it was written with; `membership` counts it only when that
+    /// is the project's workspace (the Postgres join on `m.workspace_id`).
+    memberships: HashMap<(ProjectId, UserId), (WorkspaceId, Role)>,
+    /// (workspace, project) -> (last sequence_id handed out, last sort_order handed out). Never
+    /// decrements.
+    counters: HashMap<(WorkspaceId, ProjectId), (i64, i64)>,
     work_items: Vec<WorkItem>,
     outbox: Vec<OutboxRow>,
     activity: Vec<Activity>,
@@ -72,8 +75,8 @@ impl Database for MemoryDatabase {
             return Ok(Membership::NoSuchProject);
         }
         Ok(match s.memberships.get(&(project, user)) {
-            Some(r) => Membership::Member(*r),
-            None => Membership::NotAMember,
+            Some((m_ws, r)) if *m_ws == ws => Membership::Member(*r),
+            _ => Membership::NotAMember,
         })
     }
 
@@ -185,7 +188,7 @@ impl Database for MemoryDatabase {
             s.projects.insert(p.id, p.workspace_id);
         }
         for m in &f.memberships {
-            s.memberships.insert((m.project_id, m.user_id), m.role);
+            s.memberships.insert((m.project_id, m.user_id), (m.workspace_id, m.role));
         }
         Ok(())
     }
@@ -202,9 +205,13 @@ struct MemoryTx {
 
 #[async_trait]
 impl Tx for MemoryTx {
-    async fn allocate(&mut self, _ws: WorkspaceId, project: ProjectId) -> Result<Allocation, DbError> {
+    /// A project outside `ws` is `Backend`, as the Postgres foreign key makes it.
+    async fn allocate(&mut self, ws: WorkspaceId, project: ProjectId) -> Result<Allocation, DbError> {
         let mut s = self.state.lock().unwrap();
-        let c = s.counters.entry(project).or_insert((0, 0));
+        if s.projects.get(&project) != Some(&ws) {
+            return Err(DbError::Backend("project is not in this workspace".into()));
+        }
+        let c = s.counters.entry((ws, project)).or_insert((0, 0));
         // MUTANT (control run only): hand out the same sequence number every time.
         #[cfg(not(feature = "mutant_dup_sequence"))]
         {

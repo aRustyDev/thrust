@@ -10,10 +10,11 @@
 //! The spec, written out (ADR-0043, ADR-0046):
 //!
 //! * `membership` is `NoSuchProject` for a project outside the workspace asked about, `NotAMember` without a
-//!   membership, and the member's role otherwise;
+//!   membership (a member row written with another workspace does not count), and the member's role otherwise;
 //! * inside a transaction, `allocate` hands out the project's next sequence number and `sort_order` = 10 000 × that
 //!   number; a transaction that commits keeps them, one that rolls back or is dropped unfinished gives them back (the
-//!   counter row is transactional in Postgres: no gap, unlike the memory adapter);
+//!   counter row is transactional in Postgres: no gap, unlike the memory adapter); `allocate` under another
+//!   workspace than the project's is refused, and the transaction is then rolled back;
 //! * `insert_work_item` is a `Conflict` when the project already has a live row with the same external key, rows of
 //!   the same transaction included; the transaction is then rolled back, as the core does;
 //! * `soft_delete_work_item` is `true` exactly for a live row of that workspace and project (one inserted earlier in
@@ -75,6 +76,8 @@ enum U {
     /// In workspace A, member of nothing.
     OutsiderA,
     AdminB,
+    /// In workspace B, with a stray `project_members` row for project A that carries workspace B. It must not count.
+    StrayB,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -84,6 +87,9 @@ enum Step {
     /// `pick`: one of the project's rows, committed or written earlier in this transaction (an unknown id if none).
     Delete { proj: P, ws: Ws, pick: usize },
     Outbox { proj: P },
+    /// `allocate` naming the other tenant's workspace for the project. The core never makes this call (a `Scope`
+    /// carries the project's own workspace); the adapter must still refuse it rather than start a second counter.
+    AllocateElsewhere { proj: P },
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -131,6 +137,7 @@ fn step() -> impl Strategy<Value = Step> {
         4 => (proj(), prop::option::weighted(0.5, 0..3u8)).prop_map(|(proj, ext)| Step::Create { proj, ext }),
         2 => (proj(), ws(), 0..16usize).prop_map(|(proj, ws, pick)| Step::Delete { proj, ws, pick }),
         2 => proj().prop_map(|proj| Step::Outbox { proj }),
+        1 => proj().prop_map(|proj| Step::AllocateElsewhere { proj }),
     ]
 }
 
@@ -139,7 +146,7 @@ fn end() -> impl Strategy<Value = End> {
 }
 
 fn user() -> impl Strategy<Value = U> {
-    prop_oneof![Just(U::AdminA), Just(U::MemberA), Just(U::GuestA), Just(U::OutsiderA), Just(U::AdminB)]
+    prop_oneof![Just(U::AdminA), Just(U::MemberA), Just(U::GuestA), Just(U::OutsiderA), Just(U::AdminB), Just(U::StrayB)]
 }
 
 fn ev() -> impl Strategy<Value = Ev> {
@@ -213,10 +220,14 @@ enum Class {
     ActivityListed,
     ActivityListedForEntity,
     ActivityWrongWorkspace,
+    /// `allocate` under the other tenant's workspace, refused; the transaction is rolled back.
+    AllocateWrongWorkspace,
+    /// `membership` of the stray member row: `NotAMember`.
+    StrayMemberIgnored,
 }
 
 impl Class {
-    const ALL: [Class; 35] = [
+    const ALL: [Class; 37] = [
         Class::Created,
         Class::ExternalKeyFreed,
         Class::Conflict,
@@ -252,6 +263,8 @@ impl Class {
         Class::ActivityListed,
         Class::ActivityListedForEntity,
         Class::ActivityWrongWorkspace,
+        Class::AllocateWrongWorkspace,
+        Class::StrayMemberIgnored,
     ];
 }
 
@@ -259,7 +272,8 @@ impl Class {
 #[derive(Debug, Clone)]
 enum Call {
     Begin,
-    Allocate { ws: WorkspaceId, p: ProjectId, want: Allocation },
+    /// `want: None`: the adapter must refuse the allocation.
+    Allocate { ws: WorkspaceId, p: ProjectId, want: Option<Allocation> },
     Insert { item: WorkItem, conflict: bool },
     SoftDelete { ws: WorkspaceId, p: ProjectId, id: WorkItemId, at: Timestamp, want: bool },
     InsertOutbox { row: OutboxRow },
@@ -281,8 +295,8 @@ enum Call {
 struct Fix {
     ws: [WorkspaceId; 2],
     p: [ProjectId; 2],
-    /// AdminA, MemberA, GuestA, OutsiderA, AdminB.
-    users: [UserId; 5],
+    /// AdminA, MemberA, GuestA, OutsiderA, AdminB, StrayB.
+    users: [UserId; 6],
 }
 
 impl Fix {
@@ -290,12 +304,12 @@ impl Fix {
         Fix {
             ws: [WorkspaceId(new_id()), WorkspaceId(new_id())],
             p: [ProjectId(new_id()), ProjectId(new_id())],
-            users: [UserId(new_id()), UserId(new_id()), UserId(new_id()), UserId(new_id()), UserId(new_id())],
+            users: [UserId(new_id()), UserId(new_id()), UserId(new_id()), UserId(new_id()), UserId(new_id()), UserId(new_id())],
         }
     }
 
     fn seed(&self) -> SeedFixture {
-        let [admin_a, member_a, guest_a, _outsider_a, admin_b] = self.users;
+        let [admin_a, member_a, guest_a, _outsider_a, admin_b, stray_b] = self.users;
         let m = |s: usize, user_id, role| SeedMembership { project_id: self.p[s], workspace_id: self.ws[s], user_id, role };
         SeedFixture {
             workspaces: self.ws.to_vec(),
@@ -309,6 +323,8 @@ impl Fix {
                 m(0, member_a, Role::Member),
                 m(0, guest_a, Role::Guest),
                 m(1, admin_b, Role::Admin),
+                // project A's row, written with workspace B
+                SeedMembership { project_id: self.p[0], workspace_id: self.ws[1], user_id: stray_b, role: Role::Admin },
             ],
             sessions: vec![],
         }
@@ -339,9 +355,9 @@ fn membership(proj: P, ws: Ws, user: U) -> Membership {
         (Ws::Own, P::A, U::AdminA) => Membership::Member(Role::Admin),
         (Ws::Own, P::A, U::MemberA) => Membership::Member(Role::Member),
         (Ws::Own, P::A, U::GuestA) => Membership::Member(Role::Guest),
-        (Ws::Own, P::A, U::OutsiderA | U::AdminB) => Membership::NotAMember,
+        (Ws::Own, P::A, U::OutsiderA | U::AdminB | U::StrayB) => Membership::NotAMember,
         (Ws::Own, P::B, U::AdminB) => Membership::Member(Role::Admin),
-        (Ws::Own, P::B, U::AdminA | U::MemberA | U::GuestA | U::OutsiderA) => Membership::NotAMember,
+        (Ws::Own, P::B, U::AdminA | U::MemberA | U::GuestA | U::OutsiderA | U::StrayB) => Membership::NotAMember,
     }
 }
 
@@ -439,6 +455,9 @@ impl Model {
             &Op::Membership { proj, ws, user } => {
                 let want = membership(proj, ws, user);
                 classes.push(match want {
+                    Membership::NotAMember if matches!((proj, ws, user), (P::A, Ws::Own, U::StrayB)) => {
+                        Class::StrayMemberIgnored
+                    }
                     Membership::Member(_) => Class::IsMember,
                     Membership::NotAMember => Class::NotAMember,
                     Membership::NoSuchProject => Class::NoSuchProject,
@@ -534,7 +553,7 @@ impl Model {
                     allocs[s] += 1;
                     let seq = self.counter[s] + allocs[s];
                     let a = Allocation { sequence_id: seq, sort_order: seq * 10_000 };
-                    calls.push(Call::Allocate { ws: self.fix.ws[s], p: self.fix.p[s], want: a });
+                    calls.push(Call::Allocate { ws: self.fix.ws[s], p: self.fix.p[s], want: Some(a) });
                     let it = item(self.fix.ws[s], self.fix.p[s], a, ext);
                     let key = it.external_id.clone();
                     let live_in = |rows: &[WorkItem]| {
@@ -598,6 +617,12 @@ impl Model {
                     classes.push(Class::OutboxWritten);
                     calls.push(Call::InsertOutbox { row: row.clone() });
                     outbox.push(row);
+                }
+                Step::AllocateElsewhere { proj } => {
+                    classes.push(Class::AllocateWrongWorkspace);
+                    calls.push(Call::Allocate { ws: self.fix.ws_for(proj, Ws::Other), p: self.fix.p[slot(proj)], want: None });
+                    failed = true;
+                    break;
                 }
             }
         }
@@ -674,9 +699,17 @@ async fn execute(db: &dyn Database, tx: &mut Option<Box<dyn Tx>>, call: Call, at
     let open = |tx| open(tx, at);
     match call {
         Call::Begin => *tx = Some(bounded(at, db.begin()).await?),
-        Call::Allocate { ws, p, want } => {
+        Call::Allocate { ws, p, want: Some(want) } => {
             let got = bounded(at, open(tx)?.allocate(ws, p)).await?;
             prop_assert_eq!(got, want, "{}: allocation", at);
+        }
+        Call::Allocate { ws, p, want: None } => {
+            let got = tokio::time::timeout(Duration::from_secs(20), open(tx)?.allocate(ws, p))
+                .await
+                .map_err(|_| fail(at, "timed out after 20 s"))?;
+            if let Ok(a) = got {
+                return Err(fail(at, format!("allocate under another workspace: got {a:?}, want a refusal")));
+            }
         }
         Call::Insert { item, conflict } => {
             let got = tokio::time::timeout(Duration::from_secs(20), open(tx)?.insert_work_item(&item))

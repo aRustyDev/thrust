@@ -2703,6 +2703,8 @@ name = "thrust-adapters-memory"
 version = "0.0.0"
 dependencies = [
  "async-trait",
+ "futures-executor",
+ "rstest",
  "thrust-contracts",
  "thrust-ports",
 ]
