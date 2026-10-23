@@ -190,8 +190,9 @@ Plane); the **core API** joins them at M4 (round 29, FR-06). `apps/admin` is ret
 
 **Round 29 (2026-10-19, FR-05, FR-06, FR-11).** `thrust-api-core` is not built at P0: two HTTP surfaces sit on the
 use-cases (compat-plane and `/api/v1`), and the core OpenAPI surface is generated from them at M4 (review §3). The
-slice's own routes are mounted under `/api/v1/` (`crates/thrust-api/src/lib.rs:269-293`) but are not Plane-shaped;
-they move out of that prefix, which is reserved for the wire-compatible `thrust-api-v1` routes (issue #47).
+slice's own routes are not Plane-shaped: they are mounted under `/api/_slice` (`SLICE_PREFIX` in
+`crates/thrust-api/src/lib.rs`), outside the `/api/v1` prefix that is reserved for the wire-compatible
+`thrust-api-v1` routes (issue #47), and are deleted when #58 replaces them.
 `thrust-collab-do` is not a separate root until M5: the one Worker exports the DO classes, as the slice already does
 (`RateLimiterDo` and `RoomDo`, `crates/thrust-worker/src/durable.rs:26-86`). The `thrust-ports` and
 `thrust-adapters-selfhosted` lines follow the §1c list, and `kv` leaves the Cloudflare adapter line (FR-03; ADR-0082).

@@ -167,7 +167,7 @@ Subjects are shortened from the handoff's Track B table (`reviews/2026-10-19-fab
 | #55 | the compat-inventory and spike-0004 Python scripts into `tools/` (`uv`) | M0 | | FR-15 | |
 | #56 | exports and seeding as queue jobs with a `jobs` table | M3 | #43 #46 | FR-05 | |
 | #57 | per-PR schema sweep owner and CI wiring for preview environments | M1 | | Q-0094.7 (FR-10) | `plane-byd.4` |
-| #58 | `/api/v1` projects, states, labels and work items with the oracle gate | M1 | | FR-01 | |
+| #58 | `/api/v1` projects, states, labels and work items with the oracle gate | M1 | #35 #36 #47 | FR-01 | |
 | #59 | daily hard-delete retention cleanup (F-D10) | M2 | | FR-01 | |
 
 ## Decisions taken in round 29
