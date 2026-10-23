@@ -253,6 +253,10 @@ impl Connector for HyperdriveConnector {
 /// called through `js_sys::Reflect` on `Storage::as_raw()`.
 pub struct DoSql {
     storage: worker::Storage,
+    /// Rows the object has read and written since it was constructed, as `SqlStorageCursor` counts them: the numbers
+    /// Durable Object SQLite is BILLED by (indexes and the FTS5 shadow tables count as rows written).
+    rows_read: std::sync::atomic::AtomicU64,
+    rows_written: std::sync::atomic::AtomicU64,
 }
 
 // SAFETY: a Worker isolate is single-threaded, so the JS handles inside are never touched from two threads; this is the
@@ -263,7 +267,18 @@ unsafe impl Sync for DoSql {}
 
 impl DoSql {
     pub fn new(storage: worker::Storage) -> Self {
-        Self { storage }
+        Self { storage, rows_read: Default::default(), rows_written: Default::default() }
+    }
+
+    /// `(rows read, rows written)` since the object was constructed (the billing counters, see the fields).
+    pub fn usage(&self) -> (u64, u64) {
+        use std::sync::atomic::Ordering::Relaxed;
+        (self.rows_read.load(Relaxed), self.rows_written.load(Relaxed))
+    }
+
+    /// Size of the object's SQLite database in bytes (what SQLite storage is billed on).
+    pub fn database_size(&self) -> usize {
+        self.storage.sql().database_size()
     }
 }
 
@@ -300,7 +315,7 @@ impl thrust_adapters_sqlite::Exec for DoSql {
         // Consume the cursor to the end: that is what runs a write, and it surfaces a constraint failure raised
         // after the first row.
         let cursor = self.storage.sql().exec(sql, if bindings.is_empty() { None } else { Some(bindings) }).map_err(sql_err)?;
-        cursor
+        let rows = cursor
             .raw()
             .map(|r| {
                 let cols = r.map_err(sql_err)?;
@@ -315,7 +330,12 @@ impl thrust_adapters_sqlite::Exec for DoSql {
                     .collect::<Result<Vec<_>, _>>()
                     .map(Row)
             })
-            .collect()
+            .collect();
+        // The final counts are only known once the cursor has been read to the end.
+        use std::sync::atomic::Ordering::Relaxed;
+        self.rows_read.fetch_add(cursor.rows_read() as u64, Relaxed);
+        self.rows_written.fetch_add(cursor.rows_written() as u64, Relaxed);
+        rows
     }
 
     fn execute(&self, sql: &str, params: &[thrust_adapters_sqlite::Value]) -> Result<(), thrust_adapters_sqlite::SqlError> {

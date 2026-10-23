@@ -17,6 +17,8 @@ mutant_gate_leak = []
 mutant_no_gate = []
 # `commit` applies its statements one by one instead of in one transaction (tests/commit.rs).
 mutant_non_atomic_commit = []
+# A migration that fails halfway is part of MIGRATIONS (the migration-failure demonstration on workerd, not a test).
+mutant_broken_migration = []
 
 [dependencies]
 thrust-contracts = { workspace = true }

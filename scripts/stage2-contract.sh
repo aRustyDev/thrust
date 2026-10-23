@@ -14,7 +14,7 @@
 # panic      1 test : alone, against a Worker nobody else is using (a panic resets the isolate)
 # engine     the engine pass (spike 0002, `contract.sh <target> engine`): the 50-writer test and the search tests.
 #            Needs a Worker deployed with a very high THRUST_CREATE_RATE_LIMIT (the 50-writer test makes ~10k creates).
-# do         3 tests: the object's own checks, the Tx-mapping control and the SQLite capabilities (cell worker-do only)
+# do         5 tests: the object's own checks: the Tx-mapping control, the SQLite capabilities, the cost and migration probes (cell worker-do only)
 #
 # For a deployed `worker-do` cell (spike 0002) set THRUST_EXPECT_ADAPTERS=durable: the vacuity guard then wants the
 # `durable` adapter set instead of `cloudflare`.
@@ -62,7 +62,7 @@ case "$PASS" in
   # blast is OBSERVATIONAL: how many OTHER in-flight requests fail around one panic (a panic aborts the isolate)
   blast)    EXPECT=1;  "$RS" cargo test --manifest-path "$M" -p thrust-contract-tests --test contract -- blast_ --test-threads=1 --nocapture >"$LOG.test.log" 2>&1 ;;
   engine)   EXPECT=4;  "$RS" cargo test --manifest-path "$M" -p thrust-contract-tests --test engine -- --test-threads=1 --nocapture >"$LOG.test.log" 2>&1 ;;
-  do)       EXPECT=3;  "$RS" cargo test --manifest-path "$M" -p thrust-contract-tests --test worker_only -- worker_do_ --test-threads=1 --nocapture >"$LOG.test.log" 2>&1 ;;
+  do)       EXPECT=5;  "$RS" cargo test --manifest-path "$M" -p thrust-contract-tests --test worker_only -- worker_do_ --test-threads=1 --nocapture >"$LOG.test.log" 2>&1 ;;
   ratelimit) EXPECT=1; "$RS" cargo test --manifest-path "$M" -p thrust-contract-tests --test contract -- create_is_rate_limited_per_user --test-threads=1 --nocapture >"$LOG.test.log" 2>&1 ;;
   *) echo "unknown pass $PASS" >&2; exit 2 ;;
 esac

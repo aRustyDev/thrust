@@ -137,6 +137,18 @@ impl AppDo {
                 let naive = req.url()?.query_pairs().any(|(k, v)| k == "mode" && v == "naive");
                 Response::from_json(&self.tx_control(b, naive).await?)
             }
+            // Billing counters and size of the object's database (spike 0002, exit criterion 5).
+            "usage" => {
+                let (rows_read, rows_written) = b.sql.usage();
+                Response::from_json(&json!({ "rows_read": rows_read, "rows_written": rows_written, "database_bytes": b.sql.database_size() }))
+            }
+            // Rows read and written per operation, as the platform counts (and bills) them.
+            "cost-probe" => Response::from_json(&self.cost_probe(b).await?),
+            // The migration story on a copy of the live data, one phase per request so the client can time each.
+            "migration-story" => {
+                let phase = req.url()?.query_pairs().find(|(k, _)| k == "phase").map(|(_, v)| v.to_string()).unwrap_or_default();
+                Response::from_json(&migration_story(b, &phase))
+            }
             // Spike 0002 risk R3, answered by asking the real runtime: is FTS5 compiled in, does it have the `trigram`
             // tokenizer, does a substring query find what `icontains` finds, and what does a 2-character query do.
             "fts-probe" => Response::from_json(&fts_probe(b)),
@@ -240,4 +252,187 @@ fn fts_probe(b: &Built) -> serde_json::Value {
         "fts5_trigram": trigram,
         "json_each_count": json_each,
     })
+}
+
+/// Rows read and written (the numbers Durable Object SQLite is billed by) and bytes stored, per operation, measured on the
+/// real `SqlStorage`: the slice's own use-cases against a fixture of their own, with the outbox relay switched off so
+/// that nothing asynchronous lands in a measurement window. The relay's and the consumer's writes are measured separately
+/// (`mark_outbox_dispatched`, `insert_activity`), because every create costs them too.
+impl AppDo {
+    async fn cost_probe(&self, b: &Built) -> Result<serde_json::Value> {
+        let mut cfg = b.app.cfg.clone();
+        cfg.outbox_fastpath = false;
+        cfg.create_rate_limit = u32::MAX;
+        let app = App::new(b.app.ports.clone(), cfg, SystemScope::mint());
+        let ids = &app.ports.ids;
+        let (ws, project, user) = (WorkspaceId(ids.new_uuid()), ProjectId(ids.new_uuid()), UserId(ids.new_uuid()));
+        let slug = WorkspaceSlug::new(format!("cost-{}", ws.0.simple()));
+        let fixture = SeedFixture {
+            workspaces: vec![SeedWorkspace { id: ws, slug: slug.clone() }],
+            users: vec![user],
+            workspace_members: vec![SeedWorkspaceMember { workspace_id: ws, user_id: user }],
+            projects: vec![SeedProject { id: project, workspace_id: ws, name: "cost".into() }],
+            memberships: vec![SeedMembership { project_id: project, workspace_id: ws, user_id: user, role: Role::Admin }],
+            sessions: vec![],
+        };
+        thrust_core::seed(&app, &fixture).await.map_err(|e| Error::RustError(e.to_string()))?;
+        let who = Principal { user_id: user };
+        let err = |e: thrust_core::CoreError| Error::RustError(e.to_string());
+        let sys = SystemScope::mint();
+
+        let measure = |before: (u64, u64), n: u64| {
+            let (r, w) = b.sql.usage();
+            json!({ "n": n, "rows_read_per_op": (r - before.0) as f64 / n as f64, "rows_written_per_op": (w - before.1) as f64 / n as f64 })
+        };
+        let size_before = b.sql.database_size();
+
+        // 40 creates through the real use-case (membership, allocate, insert, outbox row, commit)
+        const N: u64 = 40;
+        let before = b.sql.usage();
+        let mut created = Vec::new();
+        for i in 0..N {
+            let item = thrust_core::create_work_item(
+                &app,
+                &who,
+                &slug,
+                project,
+                CreateWorkItemRequest {
+                    name: format!("Fix billing page #{i}"),
+                    description: Some(format!("Investigate the queue consumer so that it no longer stalls (ref {i:06})")),
+                    external_source: None,
+                    external_id: None,
+                },
+            )
+            .await
+            .map_err(err)?;
+            created.push(item);
+        }
+        let create = measure(before, N);
+
+        // the relay's write per create (mark the outbox row dispatched) and the consumer's (the activity row)
+        let outbox = app.ports.db.undispatched_outbox(&sys, 1000).await.map_err(|e| Error::RustError(e.to_string()))?;
+        let mine: Vec<_> = outbox.iter().filter(|r| r.envelope.workspace_id == ws).collect();
+        let before = b.sql.usage();
+        for r in &mine {
+            app.ports.db.mark_outbox_dispatched(&sys, r.envelope.event_id, app.ports.clock.now()).await.map_err(|e| Error::RustError(e.to_string()))?;
+        }
+        let relay = measure(before, mine.len() as u64);
+        let before = b.sql.usage();
+        for r in &mine {
+            thrust_core::process_event(&app, &r.envelope).await.map_err(err)?;
+        }
+        let consume = measure(before, mine.len() as u64);
+
+        // a soft delete (update + outbox row)
+        let before = b.sql.usage();
+        for it in created.iter().take(10) {
+            thrust_core::delete_work_item(&app, &who, &slug, project, it.id).await.map_err(err)?;
+        }
+        let delete = measure(before, 10);
+
+        // the bulk seed: 1,000 rows in one call, FTS5 index and all
+        let items: Vec<SeedWorkItemSpec> = (0..1000)
+            .map(|i| SeedWorkItemSpec {
+                name: format!("Refactor search index #{i}"),
+                description: (i % 5 != 0).then(|| format!("Migrate the audit log so that the api key no longer fails; see rate limiter (ref {i:06})")),
+            })
+            .collect();
+        let before = b.sql.usage();
+        thrust_core::seed_work_items(&app, &SeedWorkItemsRequest { workspace_id: ws, project_id: project, created_by: user, items })
+            .await
+            .map_err(err)?;
+        let seed = measure(before, 1000);
+        let size_after = b.sql.database_size();
+
+        // reads: a listing of the ~1,030 live items, and the three kinds of search
+        let before = b.sql.usage();
+        let listed = thrust_core::list_work_items(&app, &who, &slug, project, Visibility::Visible).await.map_err(err)?;
+        let list = measure(before, 1);
+        let mut searches = serde_json::Map::new();
+        for (label, q) in [("indexed_common_word_Fix", "Fix"), ("indexed_phrase_miss", "zzzzqq"), ("scan_two_characters_ou", "ou")] {
+            let before = b.sql.usage();
+            let hits = thrust_core::search_work_items(&app, &who, &slug, project, q).await.map_err(err)?;
+            let mut m = measure(before, 1);
+            m["hits"] = json!(hits.len());
+            searches.insert(label.to_string(), m);
+        }
+
+        Ok(json!({
+            "create_use_case": create,
+            "relay_mark_dispatched": relay,
+            "consumer_activity_insert": consume,
+            "soft_delete_use_case": delete,
+            "bulk_seed_per_item": seed,
+            "list_of_live_items": { "items": listed.len(), "cost": list },
+            "search": searches,
+            "database_bytes_before": size_before,
+            "database_bytes_after": size_after,
+            "bytes_per_seeded_item_all_indexes_and_fts": (size_after as i64 - size_before as i64) as f64 / 1040.0,
+        }))
+    }
+}
+
+/// The migration story on the real runtime, on a COPY of the live work items (`_ms_*` tables, dropped by the `cleanup`
+/// phase), one phase per call so the caller can time each over HTTP (`Date.now()` stands still during synchronous SQL in a
+/// Worker, so the object cannot time itself):
+/// `copy`; `expand` (a new nullable column, backfilled, and an index on it); `fts` (the work_items FTS5 index built over
+/// the copy, which is what migration 0006 does to a seeded database); `contract` (the index and the column dropped);
+/// `fail` (the real runner given a migration whose third statement fails, which must change nothing); `cleanup`.
+fn migration_story(b: &Built, phase: &str) -> serde_json::Value {
+    use thrust_adapters_sqlite::{Exec, Migration, MIGRATIONS};
+    let sql = b.sql.as_ref();
+    let count = |q: &str| sql.query(q, &[]).ok().and_then(|r| r.first().and_then(|r| r.int(0).ok()));
+    let run = |statements: &[&str]| -> serde_json::Value {
+        let r = sql.atomically(&mut |x| statements.iter().try_for_each(|s| x.execute(s, &[])));
+        json!({ "ok": r.is_ok(), "error": r.err().map(|e| e.to_string()) })
+    };
+    match phase {
+        "copy" => {
+            let r = run(&["DROP TABLE IF EXISTS _ms_items", "CREATE TABLE _ms_items AS SELECT * FROM work_items"]);
+            json!({ "phase": phase, "result": r, "rows": count("SELECT count(*) FROM _ms_items") })
+        }
+        "expand" => {
+            let r = run(&[
+                "ALTER TABLE _ms_items ADD COLUMN estimate INTEGER",
+                "UPDATE _ms_items SET estimate = length(name) % 8",
+                "CREATE INDEX _ms_items_estimate ON _ms_items (estimate)",
+            ]);
+            json!({ "phase": phase, "result": r, "rows_with_estimate": count("SELECT count(estimate) FROM _ms_items") })
+        }
+        "fts" => {
+            let r = run(&[
+                "DROP TABLE IF EXISTS _ms_fts",
+                "CREATE VIRTUAL TABLE _ms_fts USING fts5(name, description, content = '_ms_items', content_rowid = 'rowid', tokenize = 'trigram')",
+                "INSERT INTO _ms_fts (_ms_fts) VALUES ('rebuild')",
+            ]);
+            json!({ "phase": phase, "result": r })
+        }
+        "contract" => {
+            let r = run(&["DROP INDEX _ms_items_estimate", "ALTER TABLE _ms_items DROP COLUMN estimate"]);
+            json!({ "phase": phase, "result": r, "estimate_column_left": count("SELECT count(*) FROM pragma_table_info('_ms_items') WHERE name = 'estimate'") })
+        }
+        "fail" => {
+            // the REAL runner, given a migration whose third statement fails after two that succeed
+            let mut all: Vec<Migration> = MIGRATIONS.to_vec();
+            all.push(Migration {
+                version: 99,
+                name: "probe_fails_halfway",
+                sql: "CREATE TABLE _ms_fail (x); INSERT INTO _ms_fail VALUES (1); INSERT INTO no_such_table VALUES (1);",
+            });
+            let outcome = thrust_adapters_sqlite::migrate(sql, &all);
+            json!({
+                "phase": phase,
+                "migrate_failed": outcome.is_err(),
+                "error": outcome.err().map(|e| e.to_string()),
+                "scratch_table_left_behind": count("SELECT count(*) FROM sqlite_master WHERE name = '_ms_fail'"),
+                "ledger_rows_for_99": count("SELECT count(*) FROM schema_migrations WHERE version = 99"),
+                "ledger_versions": sql.query("SELECT version FROM schema_migrations ORDER BY version", &[]).map(|r| r.iter().filter_map(|r| r.int(0).ok()).collect::<Vec<_>>()).ok(),
+            })
+        }
+        "cleanup" => {
+            let r = run(&["DROP TABLE IF EXISTS _ms_fts", "DROP TABLE IF EXISTS _ms_items", "DROP TABLE IF EXISTS _ms_fail"]);
+            json!({ "phase": phase, "result": r })
+        }
+        other => json!({ "error": format!("unknown phase '{other}'") }),
+    }
 }

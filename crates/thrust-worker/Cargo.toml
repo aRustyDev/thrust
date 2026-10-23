@@ -14,6 +14,8 @@ crate-type = ["cdylib"]
 # `--no-default-features` so the size numbers measure only the Cloudflare adapter set.
 default = ["memory"]
 memory = ["dep:thrust-adapters-memory"]
+# Build the object with a migration that fails halfway (spike 0002, the migration story's failure case). Never in a real build.
+mutant_broken_migration = ["thrust-adapters-sqlite/mutant_broken_migration"]
 
 [dependencies]
 thrust-contracts = { workspace = true }

@@ -326,3 +326,83 @@ async fn worker_do_fts5_trigram_tokenizer_is_available() {
     let again: Value = t.admin_get("/_test/do/fts-probe").await.json().await.unwrap();
     assert_eq!(again["fts5_trigram"]["created"], true);
 }
+
+/// The cost probe (`/_test/do/cost-probe`) reports the rows Durable Object SQLite bills by. A probe that reported zeros
+/// would make the cost projection look free, so this checks it counts what must be counted: a create writes more than one
+/// row (the table row, its indexes and its outbox row), a bulk-seeded item costs more than a bare row because the FTS5
+/// trigram index is written too, reads write nothing, and a 2-character query scans the project.
+#[tokio::test]
+async fn worker_do_cost_probe_counts_the_rows_that_are_billed() {
+    let t = Target::from_env();
+    let r = t.admin_get("/_test/do/cost-probe").await;
+    assert_eq!(r.status(), 200, "cost-probe: {:?}", r.text().await);
+    let c: Value = r.json().await.unwrap();
+    eprintln!("COST-OBSERVATION: {c}");
+    let f = |v: &Value, k: &str| v[k].as_f64().unwrap_or_else(|| panic!("no {k} in {v}"));
+    assert!(f(&c["create_use_case"], "rows_written_per_op") >= 4.0, "a create wrote fewer rows than table + indexes + outbox: {c}");
+    assert!(f(&c["bulk_seed_per_item"], "rows_written_per_op") > 2.0, "{c}");
+    assert!(f(&c["relay_mark_dispatched"], "rows_written_per_op") >= 1.0, "{c}");
+    assert!(f(&c["consumer_activity_insert"], "rows_written_per_op") >= 1.0, "{c}");
+    // reads write nothing (control for "the counter is just counting everything as written")
+    assert_eq!(f(&c["list_of_live_items"]["cost"], "rows_written_per_op"), 0.0, "{c}");
+    assert_eq!(f(&c["search"]["indexed_common_word_Fix"], "rows_written_per_op"), 0.0, "{c}");
+    // A 2-character query scans the project (a trigram needs three characters), so it reads about as many rows as the
+    // project holds. A 3-character query is answered through the FTS5 index (`a_three_character_query_uses_the_trigram_index`
+    // shows the plan), but SQLite's planner reads the project's rows through `work_items_list` and uses the index's matches
+    // as a membership filter, so rows read stay near the project's size for a miss too. That is reported
+    // (`COST-OBSERVATION`), not asserted: the cost projection uses it, and it is O(project), not O(matches).
+    let items = c["list_of_live_items"]["items"].as_f64().unwrap();
+    assert!(f(&c["search"]["scan_two_characters_ou"], "rows_read_per_op") >= items / 2.0, "a 2-character query did not scan: {c}");
+    assert!(f(&c["search"]["indexed_phrase_miss"], "rows_read_per_op") > 0.0, "{c}");
+    assert!(c["database_bytes_after"].as_i64().unwrap() > c["database_bytes_before"].as_i64().unwrap(), "{c}");
+}
+
+/// The migration story's phases on the real runtime (`/_test/do/migration-story`), and its failure case: the real runner
+/// given a migration whose third statement fails changes nothing (no table, no ledger row), and the object goes on serving.
+#[tokio::test]
+async fn worker_do_migration_story_phases_run_and_a_failed_migration_changes_nothing() {
+    let t = Target::from_env();
+    let phase = |p: &str| {
+        let t = &t;
+        let p = p.to_string();
+        async move {
+            let r = t.admin_get(&format!("/_test/do/migration-story?phase={p}")).await;
+            assert_eq!(r.status(), 200, "phase {p}");
+            r.json::<Value>().await.unwrap()
+        }
+    };
+    // seed a few rows so the copy has something in it
+    let f = Fixture::seed(&t).await;
+    seed_some(&t, &f).await;
+    let mut copied = 0i64;
+    for p in ["copy", "expand", "fts", "contract"] {
+        let v = phase(p).await;
+        assert_eq!(v["result"]["ok"], true, "phase {p} failed: {v}");
+        match p {
+            "copy" => {
+                copied = v["rows"].as_i64().unwrap();
+                assert!(copied >= 3, "{v}");
+            }
+            // the expand migration backfilled every row of the copy
+            "expand" => assert_eq!(v["rows_with_estimate"], copied, "{v}"),
+            "contract" => assert_eq!(v["estimate_column_left"], 0, "the contract migration left the column: {v}"),
+            _ => {}
+        }
+    }
+    let failed = phase("fail").await;
+    assert_eq!(failed["migrate_failed"], true, "the broken migration succeeded: {failed}");
+    assert!(failed["error"].as_str().unwrap().contains("no_such_table"), "{failed}");
+    assert_eq!(failed["scratch_table_left_behind"], 0, "two statements of the failed migration survived: {failed}");
+    assert_eq!(failed["ledger_rows_for_99"], 0, "{failed}");
+    // control: the real migrations are all recorded, and the object still answers
+    assert_eq!(failed["ledger_versions"], json!([1, 6]), "{failed}");
+    assert_eq!(t.http.get(t.url("/healthz")).send().await.unwrap().status(), 200);
+    assert_eq!(list(&t, &f.admin_a, &f.a, None).await.status(), 200, "the object stopped serving after the failed migration");
+    assert_eq!(phase("cleanup").await["result"]["ok"], true);
+}
+
+async fn seed_some(t: &Target, f: &Fixture) {
+    for n in ["one", "two", "three"] {
+        create_ok(t, &f.member_a, &f.a, n).await;
+    }
+}

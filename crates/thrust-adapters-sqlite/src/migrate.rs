@@ -24,6 +24,15 @@ pub struct Migration {
 pub const MIGRATIONS: &[Migration] = &[
     Migration { version: 1, name: "init", sql: include_str!("../migrations/0001_init.sql") },
     Migration { version: 6, name: "search", sql: include_str!("../migrations/0006_search.sql") },
+    // MUTANT (build for the migration-failure demonstration only, feature `mutant_broken_migration`): a migration whose
+    // third statement fails, after two that succeed. An object built with it must fail to start, and must roll the first
+    // two back (research/0011, the migration story's failure case).
+    #[cfg(feature = "mutant_broken_migration")]
+    Migration {
+        version: 98,
+        name: "broken",
+        sql: "CREATE TABLE broken_migration_marker (x); INSERT INTO broken_migration_marker VALUES (1); INSERT INTO no_such_table VALUES (1);",
+    },
 ];
 
 const CREATE_LEDGER: &str = "CREATE TABLE IF NOT EXISTS schema_migrations (\

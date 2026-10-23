@@ -12,6 +12,9 @@
 #             panic            alone against a fresh target (a Worker panic resets the isolate)
 #             blast            OBSERVATIONAL, not in contract-all: failures of OTHER requests around one panic
 #             bench            latency bench (release native build); success == the bench exits 0
+#             scale            list, search and create latency with THRUST_SCALE_TOTAL (default 100000) work items in the
+#                              database, in projects of THRUST_SCALE_PER_PROJECT (default 1000) (spike 0002); like bench,
+#                              success == the binary exits 0
 #             worker         (worker-cf only) Durable Object WebSocket hibernation + SQLite
 #             cron             (worker-* only) fast path OFF; the Worker `scheduled` handler sweeps
 #             engine           the tests that decide the database engine (spike 0002): the 50-writer, 10k-create test,
@@ -56,7 +59,7 @@ EXPECT_BLAST=1
 EXPECT_WORKER=1
 EXPECT_CRON=1
 EXPECT_BINDINGS=6
-EXPECT_DO=3
+EXPECT_DO=5
 EXPECT_ENGINE=4
 
 # A free port, chosen at random: fixed ports collide with OrbStack-published containers and
@@ -172,8 +175,8 @@ fi
 
 if [ "$KIND" = "native" ]; then
   # THRUST_SERVER_FEATURES is only ever set by scripts/mutants.sh (control runs with broken builds).
-  # The bench pass measures a release build; every other pass uses the debug build.
-  if [ "$PASS" = "bench" ]; then PROFILE_FLAG="--release"; BIN_DIR=release; else PROFILE_FLAG=""; BIN_DIR=debug; fi
+  # The bench and scale passes measure a release build; every other pass uses the debug build.
+  if [ "$PASS" = "bench" ] || [ "$PASS" = "scale" ]; then PROFILE_FLAG="--release"; BIN_DIR=release; else PROFILE_FLAG=""; BIN_DIR=debug; fi
   # shellcheck disable=SC2086
   "$ROOT/scripts/rs" cargo build --quiet $PROFILE_FLAG --manifest-path "$ROOT/Cargo.toml" -p thrust-server ${THRUST_SERVER_FEATURES:+--features "$THRUST_SERVER_FEATURES"} \
     >"$LOG.build.log" 2>&1 || { echo "server build failed, see $LOG.build.log" >&2; exit 3; }
@@ -279,6 +282,14 @@ case "$PASS" in
     "$ROOT/scripts/rs" cargo test --manifest-path "$ROOT/Cargo.toml" -p thrust-contract-tests --test worker_only -- worker_do_ --test-threads=1 --nocapture >"$LOG.test.log" 2>&1
     TEST_STATUS=$?
     EXPECT=$EXPECT_DO
+    ;;
+  scale)
+    "$ROOT/scripts/rs" cargo run --quiet --release --manifest-path "$ROOT/Cargo.toml" -p thrust-contract-tests --bin bench_scale -- \
+      "${THRUST_SCALE_TOTAL:-100000}" "${THRUST_SCALE_PER_PROJECT:-1000}" >"$LOG.test.log" 2>&1
+    TEST_STATUS=$?
+    cat "$LOG.test.log"
+    echo "[$TARGET/$PASS] scale exit=$TEST_STATUS"
+    exit "$TEST_STATUS"
     ;;
   bindings)
     "$ROOT/scripts/rs" cargo test --manifest-path "$ROOT/Cargo.toml" -p thrust-contract-tests --test worker_only -- worker_bindings_ --test-threads=1 --nocapture >"$LOG.test.log" 2>&1
