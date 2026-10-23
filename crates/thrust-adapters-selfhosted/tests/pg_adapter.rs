@@ -88,6 +88,7 @@ async fn seeded(env: &Env) -> (WorkspaceId, WorkspaceId, ProjectId, UserId) {
             projects: vec![SeedProject { id: p, workspace_id: ws, name: "p".into() }],
             memberships: vec![SeedMembership { project_id: p, workspace_id: ws, user_id: u, role: Role::Member }],
             sessions: vec![],
+            ..SeedFixture::default()
         })
         .await
         .unwrap();
@@ -200,6 +201,128 @@ async fn the_sessions_table_has_a_hash_and_no_plaintext_and_no_workspace() {
         )
         .await;
     assert!(refused.is_err(), "a 20-byte key must violate the length check");
+}
+
+/// ADR-0052 (Tests), issue #38: no column of the identity tables holds a plaintext token, key or password. The columns
+/// are written out, so a `token`, `secret`, `password` or `api_key` column added later fails here and has to be argued
+/// for. The constraints that keep a digest a digest are exercised too: only 32 bytes can be stored as an API key's or a
+/// pending login's key, a digest and an email are unique, and a key cannot belong to a user that does not exist.
+#[tokio::test]
+async fn the_identity_tables_have_hashes_and_no_plaintext_and_no_workspace() {
+    let env = env().await;
+    let raw = env.conn.raw().await.unwrap();
+    let columns = |table: &'static str| {
+        let raw = &raw;
+        async move {
+            let rows = raw
+                .query(
+                    "SELECT column_name, data_type FROM information_schema.columns \
+                     WHERE table_schema = 'public' AND table_name = $1 ORDER BY column_name",
+                    &[&table],
+                )
+                .await
+                .unwrap();
+            rows.iter().map(|r| (r.get::<_, String>(0), r.get::<_, String>(1))).collect::<Vec<_>>()
+        }
+    };
+    let want = |cols: &[(&str, &str)]| cols.iter().map(|(n, t)| (n.to_string(), t.to_string())).collect::<Vec<_>>();
+    let ts = "timestamp with time zone";
+    assert_eq!(
+        columns("users").await,
+        want(&[
+            ("created_at", ts),
+            ("email", "text"),
+            ("id", "uuid"),
+            ("is_active", "boolean"),
+            ("password_hash", "text"),
+        ])
+    );
+    assert_eq!(
+        columns("accounts").await,
+        want(&[
+            ("created_at", ts),
+            ("email", "text"),
+            ("provider", "text"),
+            ("provider_account_id", "text"),
+            ("user_id", "uuid"),
+        ])
+    );
+    assert_eq!(
+        columns("api_keys").await,
+        want(&[
+            ("created_at", ts),
+            ("expires_at", ts),
+            ("id", "uuid"),
+            ("label", "text"),
+            ("last_used_at", ts),
+            ("prefix", "text"),
+            ("revoked_at", ts),
+            ("token_hash", "bytea"),
+            ("user_id", "uuid"),
+        ])
+    );
+    assert_eq!(
+        columns("oidc_logins").await,
+        want(&[
+            ("code_verifier", "text"),
+            ("created_at", ts),
+            ("expires_at", ts),
+            ("nonce", "text"),
+            ("state_hash", "bytea"),
+        ])
+    );
+
+    // controls: each of these must be refused
+    let user = UserId(new_id());
+    raw.execute("INSERT INTO users (id, email) VALUES ($1, 'a@example.test')", &[&user.0]).await.unwrap();
+    let digest = [7u8; 32];
+    let insert_key = |id: Uuid, user: Uuid, hash: Vec<u8>| {
+        let raw = &raw;
+        async move {
+            raw.execute(
+                "INSERT INTO api_keys (id, user_id, token_hash, prefix, label, created_at) \
+                 VALUES ($1, $2, $3, 'thrk_x', '', now())",
+                &[&id, &user, &hash],
+            )
+            .await
+        }
+    };
+    insert_key(new_id(), user.0, digest.to_vec()).await.expect("a 32-byte digest is accepted");
+    assert!(insert_key(new_id(), user.0, digest.to_vec()).await.is_err(), "the same digest twice");
+    assert!(insert_key(new_id(), user.0, b"a plaintext token".to_vec()).await.is_err(), "a token is not a digest");
+    assert!(insert_key(new_id(), new_id(), vec![8u8; 32]).await.is_err(), "a key of a user that does not exist");
+    assert!(
+        raw.execute("INSERT INTO users (id, email) VALUES ($1, 'a@example.test')", &[&new_id()]).await.is_err(),
+        "the same email twice"
+    );
+    raw.execute("INSERT INTO users (id) VALUES ($1), ($2)", &[&new_id(), &new_id()])
+        .await
+        .expect("users without an email do not clash");
+    assert!(
+        raw.execute(
+            "INSERT INTO oidc_logins (state_hash, nonce, code_verifier, created_at, expires_at) \
+             VALUES ('\\x7374617465'::bytea, 'n', 'v', now(), now())",
+            &[],
+        )
+        .await
+        .is_err(),
+        "a pending login's key must be a 32-byte digest too"
+    );
+}
+
+/// `migrate` runs every file on every start, so 0005 must be re-runnable and must not touch the rows it made.
+#[tokio::test]
+async fn migration_0005_is_idempotent_and_keeps_its_rows() {
+    let env = env().await;
+    let raw = env.conn.raw().await.unwrap();
+    let user = UserId(new_id());
+    raw.execute("INSERT INTO users (id, email, is_active) VALUES ($1, 'keep@example.test', false)", &[&user.0])
+        .await
+        .unwrap();
+    thrust_adapters_postgres::migrate(&raw).await.unwrap();
+    thrust_adapters_postgres::migrate(&raw).await.unwrap();
+    let row = raw.query_one("SELECT email, is_active FROM users WHERE id = $1", &[&user.0]).await.unwrap();
+    assert_eq!((row.get::<_, String>(0), row.get::<_, bool>(1)), ("keep@example.test".to_string(), false));
 }
 
 #[tokio::test]

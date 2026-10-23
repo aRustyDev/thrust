@@ -35,6 +35,9 @@ enum Life {
 /// Session 1 exists, created 100 s ago and expiring as `life` says; session 2 never does.
 fn with_session(life: Life) -> MemoryDatabase {
     let db = MemoryDatabase::new();
+    // a session is live only for a user that exists and is active (issue #38), so the user is part of the setup
+    let users = SeedFixture { users: vec![USER], ..SeedFixture::default() };
+    block_on(db.seed(&SystemScope::mint(), &users)).unwrap();
     let expires_at = match life {
         Life::Live => now() + secs(60),
         Life::ExpiresNow => now(),

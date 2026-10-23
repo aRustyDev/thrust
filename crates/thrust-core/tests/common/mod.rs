@@ -256,6 +256,7 @@ pub fn world_with(cfg: CoreConfig, queue: Arc<dyn Queue>, background: Arc<dyn Ba
             member(Actor::Dual, Proj::B, Role::Guest),
         ],
         sessions: vec![],
+        ..SeedFixture::default()
     };
     futures_executor::block_on(db.seed(&SystemScope::mint(), &fixture)).unwrap();
     w

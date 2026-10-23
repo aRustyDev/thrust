@@ -98,6 +98,7 @@ fn seeded() -> MemoryDatabase {
             m(1, WS[1], U::Dual),
         ],
         sessions: vec![],
+        ..SeedFixture::default()
     }))
     .unwrap();
     db

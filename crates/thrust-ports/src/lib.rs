@@ -157,6 +157,67 @@ pub struct LiveSession {
     pub last_seen_at: Timestamp,
 }
 
+/// A user as the identity tables hold it (ADR-0050; directory tables, ADR-0041: no workspace). `password_hash` is a PHC
+/// string, never a password. A user created by id only has neither email nor hash.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UserRecord {
+    pub id: UserId,
+    /// Normalised (trimmed, lower case) by the core. Unique when present.
+    pub email: Option<String>,
+    pub password_hash: Option<String>,
+    pub is_active: bool,
+}
+
+/// A link from an identity provider's subject to a user: `provider` is the issuer, `provider_account_id` the `sub`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NewAccount {
+    pub provider: String,
+    pub provider_account_id: String,
+    pub user_id: UserId,
+    /// The email the provider reported when the link was made.
+    pub email: Option<String>,
+    pub created_at: Timestamp,
+}
+
+/// An API key row to insert. Only the digest of the token is stored; `prefix` is the part of the token that is safe to
+/// show (ADR-0052 K1).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NewApiKey {
+    pub id: ApiKeyId,
+    pub user_id: UserId,
+    pub token_hash: TokenHash,
+    pub prefix: String,
+    pub label: String,
+    pub created_at: Timestamp,
+    pub expires_at: Option<Timestamp>,
+}
+
+/// What a live API key resolves to: its id (for the usage stamp), its owner, and when it was last used.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LiveApiKey {
+    pub id: ApiKeyId,
+    pub user_id: UserId,
+    pub last_used_at: Option<Timestamp>,
+}
+
+/// One pending OIDC login: written when the browser is sent to the provider, taken (and deleted) by the callback. The
+/// `state` is stored as its digest.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NewOidcLogin {
+    pub state_hash: TokenHash,
+    pub nonce: String,
+    pub code_verifier: String,
+    pub created_at: Timestamp,
+    pub expires_at: Timestamp,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OidcLogin {
+    pub nonce: String,
+    pub code_verifier: String,
+    pub expires_at: Timestamp,
+}
+
 #[async_trait]
 pub trait Database: Send + Sync {
     /// The one call that runs before a [`Scope`] exists: only `thrust_core::authorize` makes it,
@@ -175,7 +236,8 @@ pub trait Database: Send + Sync {
     // `membership`, they run before a `Scope` exists, and take no proof type: the token is the
     // credential (ADR-0052 round 29: the row is authoritative and read on every request).
 
-    /// The session behind `hash`, only while it is live: not revoked and `expires_at > now`.
+    /// The session behind `hash`, only while it is live: not revoked, `expires_at > now`, and its user exists and is
+    /// active (a deactivated user's sessions stop working at once, ADR-0052 Tests).
     async fn session(&self, hash: &TokenHash, now: Timestamp) -> Result<Option<LiveSession>, DbError>;
 
     /// Record that the session was used at `at`. Core calls it lazily (`session_touch_after`).
@@ -186,6 +248,58 @@ pub trait Database: Send + Sync {
 
     /// Insert a session. A hash that already exists is left as it is.
     async fn insert_session(&self, s: &NewSession) -> Result<(), DbError>;
+
+    /// Sign-out everywhere: revoke every session of `user` that is not revoked yet, at `at`. Returns how many it
+    /// revoked. Another user's sessions are not touched.
+    async fn revoke_user_sessions(&self, user: UserId, at: Timestamp) -> Result<u64, DbError>;
+
+    // --- Users, accounts, API keys, pending OIDC logins (issue #38; migration 0005). Directory tables like
+    // `sessions`: no call carries a tenant key, and none takes a proof type, because they run before there is a
+    // caller to authorise. Nothing here ever receives or returns a password or a token, only hashes.
+
+    /// The user with this (already normalised) email, active or not: the caller decides what an inactive user may do.
+    async fn user_by_email(&self, email: &str) -> Result<Option<UserRecord>, DbError>;
+
+    /// The user an identity provider's subject is linked to, active or not.
+    async fn user_for_account(
+        &self,
+        provider: &str,
+        provider_account_id: &str,
+    ) -> Result<Option<UserRecord>, DbError>;
+
+    /// Link a provider subject to a user. A link that exists is left as it is.
+    async fn link_account(&self, a: &NewAccount) -> Result<(), DbError>;
+
+    /// Insert an API key. A `Conflict` for a digest that exists.
+    async fn insert_api_key(&self, k: &NewApiKey) -> Result<(), DbError>;
+
+    /// The key behind `hash`, only while it is live: not revoked, not expired (`expires_at > now`, or none) and its
+    /// owner exists and is active.
+    async fn api_key(&self, hash: &TokenHash, now: Timestamp) -> Result<Option<LiveApiKey>, DbError>;
+
+    /// Stamp the key's last use. Core calls it through [`Background`], so a request does not wait for the write.
+    async fn touch_api_key(&self, id: ApiKeyId, at: Timestamp) -> Result<(), DbError>;
+
+    /// `user`'s keys, oldest first, revoked ones included.
+    async fn list_api_keys(&self, user: UserId) -> Result<Vec<ApiKeyInfo>, DbError>;
+
+    /// Revoke `user`'s key `id` at `at`. `true` when `user` owns such a key (also when it was already revoked: the
+    /// first revocation time is kept), `false` for an unknown id or another user's key.
+    async fn revoke_api_key(&self, user: UserId, id: ApiKeyId, at: Timestamp) -> Result<bool, DbError>;
+
+    /// Store a pending login, and drop the ones that have expired by `l.created_at`.
+    async fn insert_oidc_login(&self, l: &NewOidcLogin) -> Result<(), DbError>;
+
+    /// Take a pending login: it is returned once and deleted by the same call, so a replayed callback finds nothing.
+    /// Expiry is the caller's check (`expires_at` is returned).
+    async fn take_oidc_login(&self, state: &TokenHash) -> Result<Option<OidcLogin>, DbError>;
+
+    /// Test support and deactivation until ADR-0053 provides the real one: set `is_active`. `true` if the user exists.
+    async fn set_user_active(&self, sys: &SystemScope, user: UserId, active: bool) -> Result<bool, DbError>;
+
+    /// Test support: upsert users with their email, password hash and state. The fixture's id-only users are created
+    /// by [`Database::seed`].
+    async fn seed_users(&self, sys: &SystemScope, users: &[UserRecord]) -> Result<(), DbError>;
 
     /// `scope` is the proof that the caller was authorised to open a unit of work.
     async fn begin(&self, scope: &Scope) -> Result<Box<dyn Tx>, DbError>;

@@ -153,6 +153,7 @@ impl Fixture {
                 on_b(&dual, Role::Guest),
             ],
             sessions: all.iter().map(|u| SeedSession { token: u.token.clone(), user_id: u.id }).collect(),
+            ..SeedFixture::default()
         };
         let r = t.admin_post("/internal/seed", &serde_json::to_value(&fixture).unwrap()).await;
         assert_eq!(r.status(), 204, "seed failed: {:?}", r.text().await);
@@ -175,6 +176,7 @@ impl Fixture {
                 role: Role::Member,
             }],
             sessions: vec![SeedSession { token: token.clone(), user_id: id }],
+            ..SeedFixture::default()
         };
         let r = t.admin_post("/internal/seed", &serde_json::to_value(&f).unwrap()).await;
         assert_eq!(r.status(), 204);
