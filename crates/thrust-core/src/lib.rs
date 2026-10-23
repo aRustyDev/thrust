@@ -50,6 +50,16 @@ impl Default for CoreConfig {
 pub struct App {
     pub ports: Ports,
     pub cfg: CoreConfig,
+    /// The proof the outbox relay, the sweeper, the consumer and `seed` pass to the untenanted
+    /// `Database` calls. Private: only the code in this crate that does that work reads it.
+    system: Arc<SystemScope>,
+}
+
+impl App {
+    /// `system` is minted by the composition root that builds the `App` (ADR-0045 round 29).
+    pub fn new(ports: Ports, cfg: CoreConfig, system: SystemScope) -> Self {
+        Self { ports, cfg, system: Arc::new(system) }
+    }
 }
 
 pub const EVENTS_TOPIC: &str = "events";
@@ -133,29 +143,45 @@ impl Permission {
     }
 }
 
-/// Proof that `user` may act in `(workspace, project)`. Fields are private: the only way to get
-/// one is [`authorize`], so repository calls that take a `Scope` cannot be reached unchecked.
-#[derive(Debug, Clone, Copy)]
-pub struct Scope {
-    workspace_id: WorkspaceId,
-    project_id: ProjectId,
-    user_id: UserId,
-}
-
-impl Scope {
-    pub fn workspace_id(&self) -> WorkspaceId {
-        self.workspace_id
-    }
-    pub fn project_id(&self) -> ProjectId {
-        self.project_id
-    }
-    pub fn user_id(&self) -> UserId {
-        self.user_id
-    }
-}
+/// The proof types are declared in `thrust-ports`, so that the ports can take them (issue #35).
+/// [`authorize`] is the only place a [`Scope`] is minted.
+pub use thrust_ports::{Scope, SystemScope};
 
 /// 404 for a project that is not in the caller's workspace (cross-tenant probes learn nothing),
 /// 403 for a project the caller can see exists but may not touch.
+///
+/// The [`Scope`] it returns is the only key to a repository call (issue #35). A use-case cannot
+/// build one by struct literal:
+///
+/// ```compile_fail
+/// use thrust_contracts::*;
+/// use thrust_core::Scope;
+/// let ids = (WorkspaceId(Uuid::nil()), ProjectId(Uuid::nil()), UserId(Uuid::nil()));
+/// let _ = Scope { workspace_id: ids.0, project_id: ids.1, user_id: ids.2 };
+/// ```
+///
+/// and cannot reach a repository with bare ids:
+///
+/// ```compile_fail
+/// use thrust_contracts::*;
+/// use thrust_core::*;
+/// async fn use_case(app: &App, ws: WorkspaceId, project: ProjectId) {
+///     let _ = app.ports.db.list_work_items(ws, project, Visibility::Visible).await;
+/// }
+/// ```
+///
+/// Control for both: the same imports and the same call, through `authorize`, compile. (The one
+/// remaining path, the `pub` constructor `Scope::mint`, is closed by `scripts/check-deps.sh`.)
+///
+/// ```
+/// use thrust_contracts::*;
+/// use thrust_core::*;
+/// async fn use_case(app: &App, who: &Principal, project: ProjectId) -> Result<Vec<WorkItem>, CoreError> {
+///     let scope = authorize(app, who, project, Permission::ReadWorkItems).await?;
+///     let _ids = (scope.workspace_id(), scope.project_id(), UserId(Uuid::nil()));
+///     Ok(app.ports.db.list_work_items(&scope, Visibility::Visible).await?)
+/// }
+/// ```
 pub async fn authorize(
     app: &App,
     who: &Principal,
@@ -165,11 +191,9 @@ pub async fn authorize(
     match app.ports.db.membership(who.workspace_id, project, who.user_id).await? {
         Membership::NoSuchProject => Err(CoreError::NotFound),
         Membership::NotAMember => Err(CoreError::Forbidden),
-        Membership::Member(role) if role >= perm.min_role() => Ok(Scope {
-            workspace_id: who.workspace_id,
-            project_id: project,
-            user_id: who.user_id,
-        }),
+        Membership::Member(role) if role >= perm.min_role() => {
+            Ok(Scope::mint(who.workspace_id, project, who.user_id))
+        }
         Membership::Member(_) => Err(CoreError::Forbidden),
     }
 }
@@ -247,9 +271,9 @@ pub async fn create_work_item(
 
     let scope = authorize(app, who, project, Permission::CreateWorkItem).await?;
 
-    let mut tx = app.ports.db.begin().await?;
+    let mut tx = app.ports.db.begin(&scope).await?;
     let work = async {
-        let alloc = tx.allocate(scope.workspace_id(), scope.project_id()).await?;
+        let alloc = tx.allocate(&scope).await?;
         let item = WorkItem {
             id: WorkItemId(app.ports.ids.new_uuid()),
             workspace_id: scope.workspace_id(),
@@ -266,7 +290,7 @@ pub async fn create_work_item(
             is_draft: false,
             deleted_at: None,
         };
-        tx.insert_work_item(&item).await?;
+        tx.insert_work_item(&scope, &item).await?;
         let row = event(
             app,
             item.workspace_id,
@@ -279,7 +303,7 @@ pub async fn create_work_item(
                 "changed_fields": ["name"],
             }),
         );
-        tx.insert_outbox(&row).await?;
+        tx.insert_outbox(&scope, &row).await?;
         Ok::<_, DbError>((item, row))
     }
     .await;
@@ -305,12 +329,10 @@ pub async fn delete_work_item(
     id: WorkItemId,
 ) -> Result<(), CoreError> {
     let scope = authorize(app, who, project, Permission::DeleteWorkItem).await?;
-    let mut tx = app.ports.db.begin().await?;
+    let mut tx = app.ports.db.begin(&scope).await?;
     let now = app.ports.clock.now();
     let work = async {
-        let deleted = tx
-            .soft_delete_work_item(scope.workspace_id(), scope.project_id(), id, now)
-            .await?;
+        let deleted = tx.soft_delete_work_item(&scope, id, now).await?;
         if !deleted {
             return Ok::<_, DbError>(None);
         }
@@ -322,7 +344,7 @@ pub async fn delete_work_item(
             id,
             serde_json::json!({ "project_id": scope.project_id(), "changed_fields": ["deleted_at"] }),
         );
-        tx.insert_outbox(&row).await?;
+        tx.insert_outbox(&scope, &row).await?;
         Ok(Some(row))
     }
     .await;
@@ -354,11 +376,7 @@ pub async fn list_work_items(
         Visibility::WithDeleted => Permission::ReadDeleted,
     };
     let scope = authorize(app, who, project, perm).await?;
-    Ok(app
-        .ports
-        .db
-        .list_work_items(scope.workspace_id(), scope.project_id(), vis)
-        .await?)
+    Ok(app.ports.db.list_work_items(&scope, vis).await?)
 }
 
 pub async fn list_activity(
@@ -368,11 +386,7 @@ pub async fn list_activity(
     entity: Option<WorkItemId>,
 ) -> Result<Vec<Activity>, CoreError> {
     let scope = authorize(app, who, project, Permission::ReadWorkItems).await?;
-    Ok(app
-        .ports
-        .db
-        .list_activity(scope.workspace_id(), scope.project_id(), entity)
-        .await?)
+    Ok(app.ports.db.list_activity(&scope, entity).await?)
 }
 
 // --- ADR-0046 relay -------------------------------------------------------------------------
@@ -393,7 +407,7 @@ pub async fn dispatch(app: &App, row: &OutboxRow) -> Result<(), CoreError> {
         .await?;
     app.ports
         .db
-        .mark_outbox_dispatched(row.envelope.event_id, app.ports.clock.now())
+        .mark_outbox_dispatched(&app.system, row.envelope.event_id, app.ports.clock.now())
         .await?;
     Ok(())
 }
@@ -418,7 +432,7 @@ pub struct SweepReport {
 
 /// The cron sweeper (ADR-0046 Q-0046.1): publishes rows the fast path did not.
 pub async fn sweep_outbox(app: &App, limit: u32) -> Result<SweepReport, CoreError> {
-    let rows = app.ports.db.undispatched_outbox(limit).await?;
+    let rows = app.ports.db.undispatched_outbox(&app.system, limit).await?;
     let mut rep = SweepReport { found: rows.len(), published: 0, failed: 0 };
     for row in &rows {
         match dispatch(app, row).await {
@@ -427,6 +441,16 @@ pub async fn sweep_outbox(app: &App, limit: u32) -> Result<SweepReport, CoreErro
         }
     }
     Ok(rep)
+}
+
+/// Rows the relay has not published yet (`/internal/outbox-depth`).
+pub async fn outbox_depth(app: &App) -> Result<u64, CoreError> {
+    Ok(app.ports.db.outbox_depth(&app.system).await?)
+}
+
+/// Test support behind `/internal/seed`: insert fixture rows.
+pub async fn seed(app: &App, fixture: &SeedFixture) -> Result<(), CoreError> {
+    Ok(app.ports.db.seed(&app.system, fixture).await?)
 }
 
 /// Queue consumer body. Idempotent on `event_id`: a redelivery inserts nothing.
@@ -450,7 +474,7 @@ pub async fn process_event(app: &App, env: &Envelope) -> Result<bool, CoreError>
         actor_id: env.actor_id,
         created_at: app.ports.clock.now(),
     };
-    Ok(app.ports.db.insert_activity(&a).await?)
+    Ok(app.ports.db.insert_activity(&app.system, &a).await?)
 }
 
 // --- attachments (BlobStore) ----------------------------------------------------------------
@@ -485,7 +509,7 @@ pub async fn put_attachment(
     let scope = authorize(app, who, project, Permission::WriteAttachment).await?;
     app.ports
         .db
-        .get_work_item(scope.workspace_id(), scope.project_id(), item, Visibility::Visible)
+        .get_work_item(&scope, item, Visibility::Visible)
         .await?
         .ok_or(CoreError::NotFound)?;
     app.ports
@@ -583,11 +607,11 @@ mod tests {
     }
 
     fn scope() -> Scope {
-        Scope {
-            workspace_id: WorkspaceId(Uuid::from_u128(1)),
-            project_id: ProjectId(Uuid::from_u128(2)),
-            user_id: UserId(Uuid::from_u128(3)),
-        }
+        Scope::mint(
+            WorkspaceId(Uuid::from_u128(1)),
+            ProjectId(Uuid::from_u128(2)),
+            UserId(Uuid::from_u128(3)),
+        )
     }
 
     /// Names built from mostly ordinary characters with the occasional `.` or multi-byte character, never `/`

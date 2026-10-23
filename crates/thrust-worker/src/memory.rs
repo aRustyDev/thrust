@@ -26,8 +26,9 @@ pub fn app(clock: Arc<dyn Clock>, ids: Arc<dyn IdGen>, background: Arc<dyn Backg
     });
     let slot: ConsumerSlot = Default::default();
     let queue: Arc<dyn Queue> = Arc::new(MemoryQueue::new(background.clone(), slot.clone()));
-    let app = App {
-        ports: Ports {
+    // This composition root mints the proof for the relay, sweeper, consumer and seed.
+    let app = App::new(
+        Ports {
             db: Arc::new(m.db.clone()),
             queue,
             sessions: m.sessions.clone(),
@@ -38,7 +39,8 @@ pub fn app(clock: Arc<dyn Clock>, ids: Arc<dyn IdGen>, background: Arc<dyn Backg
             background,
         },
         cfg,
-    };
+        SystemScope::mint(),
+    );
     slot.set(Arc::new(ActivityConsumer(app.clone()))).ok();
     app
 }

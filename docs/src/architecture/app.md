@@ -77,7 +77,7 @@ on it.
 |---|---|---|
 | `Clock`, `IdGen` | Wall time and time-ordered ids. Core takes time from the port. `thrust-contracts` depends on chrono without its `clock` feature, so `Utc::now()` is unavailable to it when built alone. `thrust-adapters-selfhosted` turns the feature on for the native server, so this is a convention that the dependency declaration backs, not a guarantee in every build | `SystemClock`, `NativeIdGen` (selfhosted); `JsClock`, `JsIdGen` (cloudflare) |
 | `Background` | Running work after the response. Core never calls `tokio::spawn` | `TokioBackground`; `WaitUntilBackground`, `LocalBackground` |
-| `Database` and `Tx` | Reads, a unit of work, the outbox and the activity projection. The queries that read tenant data take the tenant key; the outbox methods and `seed` do not | `MemoryDatabase`; `PgDatabase` over a `Connector` (`PoolConnector` native, `HyperdriveConnector` on the Worker) |
+| `Database` and `Tx` | Reads, a unit of work, the outbox and the activity projection. Every method takes a `Scope` (minted only by `authorize`), from which the adapter reads the tenant key, or a `SystemScope` (minted only by the composition roots) for the outbox relay and sweeper, the consumer's activity write and `seed`. `membership`, which `authorize` calls before a `Scope` exists, is the one exception | `MemoryDatabase`; `PgDatabase` over a `Connector` (`PoolConnector` native, `HyperdriveConnector` on the Worker) |
 | `Queue` and `EventConsumer` | Publishing events, and the callback a queue adapter invokes per delivered message | `MemoryQueue`; `CfQueue` |
 | `SessionStore` | Bearer token to `Principal` | `MemorySessionStore`; `KvSessionStore` |
 | `BlobStore` | Attachments | `MemoryBlobStore`; `R2BlobStore` |

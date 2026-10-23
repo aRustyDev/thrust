@@ -17,3 +17,8 @@ mutant_no_activity_dedupe = []
 thrust-contracts = { workspace = true }
 thrust-ports = { workspace = true }
 async-trait = { workspace = true }
+
+[dev-dependencies]
+# futures-executor rather than tokio, because the memory adapters never yield.
+futures-executor = "0.3"
+rstest = "0.26"

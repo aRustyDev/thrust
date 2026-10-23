@@ -12,7 +12,7 @@ use thrust_adapters_cloudflare::*;
 use thrust_adapters_postgres::PgDatabase;
 use thrust_api::{ApiConfig, InternalErrorDetail};
 use thrust_contracts::Envelope;
-use thrust_core::{ActivityConsumer, App, CoreConfig, Ports};
+use thrust_core::{ActivityConsumer, App, CoreConfig, Ports, SystemScope};
 use thrust_ports::{Background, Clock, EventConsumer, IdGen};
 use http_body_util::BodyExt;
 use tower_service::Service;
@@ -85,8 +85,9 @@ fn build_app(env: &Env, background: Arc<dyn Background>) -> Result<App> {
     let app = match adapters.as_str() {
         "cloudflare" => {
             let connector = HyperdriveConnector::new(env.hyperdrive("HYPERDRIVE")?);
-            App {
-                ports: Ports {
+            // This composition root mints the proof for the relay, sweeper, consumer and seed.
+            App::new(
+                Ports {
                     db: Arc::new(PgDatabase::new(Arc::new(connector))),
                     queue: Arc::new(CfQueue(env.queue("EVENTS")?)),
                     sessions: Arc::new(KvSessionStore(env.kv("SESSIONS")?)),
@@ -96,8 +97,9 @@ fn build_app(env: &Env, background: Arc<dyn Background>) -> Result<App> {
                     ids,
                     background,
                 },
-                cfg: core_config(env),
-            }
+                core_config(env),
+                SystemScope::mint(),
+            )
         }
         #[cfg(feature = "memory")]
         "memory" => memory::app(clock, ids, background, core_config(env)),
