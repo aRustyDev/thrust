@@ -149,6 +149,39 @@ pub use thrust_ports::{Scope, SystemScope};
 
 /// 404 for a project that is not in the caller's workspace (cross-tenant probes learn nothing),
 /// 403 for a project the caller can see exists but may not touch.
+///
+/// The [`Scope`] it returns is the only key to a repository call (issue #35). A use-case cannot
+/// build one by struct literal:
+///
+/// ```compile_fail
+/// use thrust_contracts::*;
+/// use thrust_core::Scope;
+/// let ids = (WorkspaceId(Uuid::nil()), ProjectId(Uuid::nil()), UserId(Uuid::nil()));
+/// let _ = Scope { workspace_id: ids.0, project_id: ids.1, user_id: ids.2 };
+/// ```
+///
+/// and cannot reach a repository with bare ids:
+///
+/// ```compile_fail
+/// use thrust_contracts::*;
+/// use thrust_core::*;
+/// async fn use_case(app: &App, ws: WorkspaceId, project: ProjectId) {
+///     let _ = app.ports.db.list_work_items(ws, project, Visibility::Visible).await;
+/// }
+/// ```
+///
+/// Control for both: the same imports and the same call, through `authorize`, compile. (The one
+/// remaining path, the `pub` constructor `Scope::mint`, is closed by `scripts/check-deps.sh`.)
+///
+/// ```
+/// use thrust_contracts::*;
+/// use thrust_core::*;
+/// async fn use_case(app: &App, who: &Principal, project: ProjectId) -> Result<Vec<WorkItem>, CoreError> {
+///     let scope = authorize(app, who, project, Permission::ReadWorkItems).await?;
+///     let _ids = (scope.workspace_id(), scope.project_id(), UserId(Uuid::nil()));
+///     Ok(app.ports.db.list_work_items(&scope, Visibility::Visible).await?)
+/// }
+/// ```
 pub async fn authorize(
     app: &App,
     who: &Principal,
