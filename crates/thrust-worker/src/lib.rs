@@ -90,7 +90,6 @@ fn build_app(env: &Env, background: Arc<dyn Background>) -> Result<App> {
                 Ports {
                     db: Arc::new(PgDatabase::new(Arc::new(connector))),
                     queue: Arc::new(CfQueue(env.queue("EVENTS")?)),
-                    sessions: Arc::new(KvSessionStore(env.kv("SESSIONS")?)),
                     blobs: Arc::new(R2BlobStore(env.bucket("BLOBS")?)),
                     limiter: Arc::new(DoRateLimiter(env.durable_object("RATE_LIMITER")?)),
                     clock,

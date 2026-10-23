@@ -5,8 +5,10 @@ mod common;
 use common::*;
 use futures_executor::block_on;
 use rstest::rstest;
+use thrust_contracts::chrono::TimeDelta;
 use thrust_contracts::*;
 use thrust_core::*;
+use thrust_ports::NewSession;
 
 /// The role a permission needs, written out as the spec (Plane: Guest < Member < Admin) rather than read from
 /// `Permission::min_role`, so the table and the code can disagree.
@@ -47,18 +49,92 @@ fn authorize_follows_the_role_table(
     }
 }
 
-/// cargo-mutants cannot mutate `authenticate` (its only mutant does not compile), so this test is its only check.
-#[test]
-fn authenticate_resolves_a_live_session_and_nothing_else() {
+/// Insert a session row for `who` under `token`: created `age_secs` before the fixed clock's instant, expiring
+/// `expires_in_secs` after it (negative: already expired).
+fn insert_session(w: &World, token: &str, who: &Principal, age_secs: i64, expires_in_secs: i64) {
+    let now = w.app.ports.clock.now();
+    let row = NewSession {
+        token_hash: hash_token(token),
+        user_id: who.user_id,
+        created_at: now - TimeDelta::seconds(age_secs),
+        expires_at: now + TimeDelta::seconds(expires_in_secs),
+    };
+    block_on(w.app.ports.db.insert_session(&row)).unwrap();
+}
+
+#[derive(Debug, Clone, Copy)]
+enum Life {
+    Live,
+    /// `expires_at` is exactly now: expired (the row is live only while `expires_at > now`).
+    ExpiresNow,
+    Expired,
+}
+
+/// A bearer token resolves to a user exactly when its row exists, is not revoked and is not expired, for every
+/// combination of those. The principal is the user and nothing else (no workspace).
+#[rstest]
+fn authenticate_resolves_a_live_session_and_nothing_else(
+    #[values(true, false)] known: bool,
+    #[values(Life::Live, Life::ExpiresNow, Life::Expired)] life: Life,
+    #[values(false, true)] revoked: bool,
+) {
     let w = world();
     let who = w.principal(Actor::MemberA);
-    block_on(w.app.ports.sessions.put("tok-1", &who, 60)).unwrap();
-    assert_eq!(block_on(authenticate(&w.app, "tok-1")).unwrap(), who);
-    let unknown = block_on(authenticate(&w.app, "tok-unknown"));
-    assert!(matches!(unknown, Err(CoreError::Unauthenticated)), "{unknown:?}");
-    block_on(w.app.ports.sessions.put("tok-expired", &who, 0)).unwrap();
-    let expired = block_on(authenticate(&w.app, "tok-expired"));
-    assert!(matches!(expired, Err(CoreError::Unauthenticated)), "an expired session is not a principal: {expired:?}");
+    let expires_in = match life {
+        Life::Live => 60,
+        Life::ExpiresNow => 0,
+        Life::Expired => -60,
+    };
+    insert_session(&w, "tok-1", &who, 10, expires_in);
+    if revoked {
+        block_on(revoke_session(&w.app, "tok-1")).unwrap();
+    }
+    let got = block_on(authenticate(&w.app, if known { "tok-1" } else { "tok-unknown" }));
+    if known && matches!(life, Life::Live) && !revoked {
+        assert_eq!(got.unwrap(), who);
+    } else {
+        assert!(matches!(got, Err(CoreError::Unauthenticated)), "known={known} {life:?} revoked={revoked}: {got:?}");
+    }
+}
+
+/// `last_seen_at` is written lazily: only when it is at least an hour old (the spec's number, written out rather
+/// than read from `CoreConfig`). A fresh session costs a request no write.
+#[rstest]
+fn authenticate_touches_a_session_only_when_it_is_stale(
+    #[values(0, 3_599, 3_600, 86_400)] age_secs: i64,
+) {
+    let w = world();
+    let who = w.principal(Actor::MemberA);
+    insert_session(&w, "tok-1", &who, age_secs, 3_600_000);
+    let now = w.app.ports.clock.now();
+    block_on(authenticate(&w.app, "tok-1")).unwrap();
+    let seen = block_on(w.app.ports.db.session(&hash_token("tok-1"), now)).unwrap().unwrap().last_seen_at;
+    let want = if age_secs >= 3_600 { now } else { now - TimeDelta::seconds(age_secs) };
+    assert_eq!(seen, want, "a session last seen {age_secs} s ago");
+}
+
+/// Sign-out is idempotent and never resurrects a session: a second revoke keeps the first revocation.
+#[test]
+fn revoking_a_session_twice_leaves_it_revoked() {
+    let w = world();
+    let who = w.principal(Actor::MemberA);
+    insert_session(&w, "tok-1", &who, 10, 3_600);
+    block_on(authenticate(&w.app, "tok-1")).unwrap();
+    block_on(revoke_session(&w.app, "tok-1")).unwrap();
+    block_on(revoke_session(&w.app, "tok-1")).unwrap();
+    block_on(revoke_session(&w.app, "tok-never-issued")).unwrap();
+    assert!(matches!(block_on(authenticate(&w.app, "tok-1")), Err(CoreError::Unauthenticated)));
+}
+
+/// Pinned: the NIST FIPS 180-4 example for SHA-256("abc"). What the database stores for a token is this digest.
+#[test]
+fn hash_token_is_sha256() {
+    let want = [
+        0xba, 0x78, 0x16, 0xbf, 0x8f, 0x01, 0xcf, 0xea, 0x41, 0x41, 0x40, 0xde, 0x5d, 0xae, 0x22, 0x23, 0xb0, 0x03,
+        0x61, 0xa3, 0x96, 0x17, 0x7a, 0x9c, 0xb4, 0x10, 0xff, 0x61, 0xf2, 0x00, 0x15, 0xad,
+    ];
+    assert_eq!(hash_token("abc").0, want);
+    assert_ne!(hash_token("abd"), hash_token("abc"));
 }
 
 #[test]

@@ -20,11 +20,13 @@ use tokio_postgres::{Client, Row};
 pub const MIGRATION_0001: &str = include_str!("../migrations/0001_init.sql");
 pub const MIGRATION_0002: &str = include_str!("../migrations/0002_sequence_tenant_key.sql");
 pub const MIGRATION_0003: &str = include_str!("../migrations/0003_workspaces.sql");
+pub const MIGRATION_0004: &str = include_str!("../migrations/0004_sessions.sql");
 
 pub async fn migrate(client: &Client) -> Result<(), tokio_postgres::Error> {
     client.batch_execute(MIGRATION_0001).await?;
     client.batch_execute(MIGRATION_0002).await?;
-    client.batch_execute(MIGRATION_0003).await
+    client.batch_execute(MIGRATION_0003).await?;
+    client.batch_execute(MIGRATION_0004).await
 }
 
 pub trait ClientHandle: Send {
@@ -86,6 +88,10 @@ pg_type!(
 );
 impl PgType for &str {
     const TY: Type = Type::TEXT;
+}
+/// A session token's hash (`sessions.token_hash`).
+impl PgType for &[u8] {
+    const TY: Type = Type::BYTEA;
 }
 impl<T: PgType> PgType for Option<T> {
     const TY: Type = T::TY;
@@ -210,6 +216,53 @@ impl Database for PgDatabase {
                 None => Membership::NotAMember,
             },
         })
+    }
+
+    async fn session(&self, hash: &TokenHash, now: Timestamp) -> Result<Option<LiveSession>, DbError> {
+        let c = self.conn().await?;
+        let row = Pg(c.client())
+            .query_opt(
+                "SELECT user_id, last_seen_at FROM sessions \
+                 WHERE token_hash = $1 AND revoked_at IS NULL AND expires_at > $2",
+                &[&&hash.0[..], &now],
+            )
+            .await
+            .map_err(db_err)?;
+        Ok(row.map(|r| LiveSession { user_id: UserId(r.get("user_id")), last_seen_at: r.get("last_seen_at") }))
+    }
+
+    async fn touch_session(&self, hash: &TokenHash, at: Timestamp) -> Result<(), DbError> {
+        let c = self.conn().await?;
+        Pg(c.client())
+            .execute("UPDATE sessions SET last_seen_at = $2 WHERE token_hash = $1", &[&&hash.0[..], &at])
+            .await
+            .map_err(db_err)?;
+        Ok(())
+    }
+
+    async fn revoke_session(&self, hash: &TokenHash, at: Timestamp) -> Result<(), DbError> {
+        let c = self.conn().await?;
+        Pg(c.client())
+            .execute(
+                "UPDATE sessions SET revoked_at = $2 WHERE token_hash = $1 AND revoked_at IS NULL",
+                &[&&hash.0[..], &at],
+            )
+            .await
+            .map_err(db_err)?;
+        Ok(())
+    }
+
+    async fn insert_session(&self, s: &NewSession) -> Result<(), DbError> {
+        let c = self.conn().await?;
+        Pg(c.client())
+            .execute(
+                "INSERT INTO sessions (token_hash, user_id, created_at, expires_at, last_seen_at) \
+                 VALUES ($1, $2, $3, $4, $3) ON CONFLICT (token_hash) DO NOTHING",
+                &[&&s.token_hash.0[..], &s.user_id.0, &s.created_at, &s.expires_at],
+            )
+            .await
+            .map_err(db_err)?;
+        Ok(())
     }
 
     async fn begin(&self, _scope: &Scope) -> Result<Box<dyn Tx>, DbError> {

@@ -79,7 +79,7 @@ fn missing_app() -> ApiError {
     ApiError(CoreError::Internal("App extension not installed by the composition root".into()))
 }
 
-/// `Authorization: Bearer <token>` -> `Principal` through the `SessionStore` port.
+/// `Authorization: Bearer <token>` -> `Principal`, from the session row in the database.
 pub struct Authed(pub Principal);
 
 impl<S: Send + Sync> FromRequestParts<S> for Authed {
@@ -149,10 +149,6 @@ async fn panic_route(Extension(cfg): Extension<ApiConfig>) -> ApiResult<&'static
 
 async fn seed(_: Admin, Extension(app): Extension<App>, Json(f): Json<SeedFixture>) -> ApiResult<StatusCode> {
     thrust_core::seed(&app, &f).await?;
-    for s in &f.sessions {
-        let who = Principal { user_id: s.user_id };
-        app.ports.sessions.put(&s.token, &who, 3600).await.map_err(CoreError::from)?;
-    }
     Ok(StatusCode::NO_CONTENT)
 }
 

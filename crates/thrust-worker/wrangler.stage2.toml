@@ -30,10 +30,6 @@ THRUST_RATE_WINDOW_SECS = "3600"
 binding = "HYPERDRIVE"
 id = "99c52fa606644158b8924075e62e5438"
 
-[[kv_namespaces]]
-binding = "SESSIONS"
-id = "ff6073c998684013a8a25cd4850a7fac"
-
 [[r2_buckets]]
 binding = "BLOBS"
 bucket_name = "thrust-spike-blobs"

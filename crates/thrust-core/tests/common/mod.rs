@@ -203,7 +203,6 @@ pub fn world_with(cfg: CoreConfig, queue: Arc<dyn Queue>, background: Arc<dyn Ba
         Ports {
             db: Arc::new(db.clone()),
             queue,
-            sessions: Arc::new(MemorySessionStore::new(clock.clone())),
             blobs: Arc::new(MemoryBlobStore::new()),
             limiter: Arc::new(MemoryRateLimiter::new(clock.clone())),
             clock,

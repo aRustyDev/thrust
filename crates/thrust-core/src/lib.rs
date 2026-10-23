@@ -5,7 +5,9 @@
 
 use std::sync::Arc;
 
+use sha2::{Digest, Sha256};
 use thiserror::Error;
+use thrust_contracts::chrono::TimeDelta;
 use thrust_contracts::*;
 use thrust_ports::*;
 
@@ -17,7 +19,6 @@ use thrust_ports::*;
 pub struct Ports {
     pub db: Arc<dyn Database>,
     pub queue: Arc<dyn Queue>,
-    pub sessions: Arc<dyn SessionStore>,
     pub blobs: Arc<dyn BlobStore>,
     pub limiter: Arc<dyn RateLimiter>,
     pub clock: Arc<dyn Clock>,
@@ -33,6 +34,11 @@ pub struct CoreConfig {
     /// ADR-0046 relay: publish right after commit (true) or leave every row to the cron sweeper.
     pub outbox_fastpath: bool,
     pub max_attachment_bytes: usize,
+    /// How long a session lives from its creation (ADR-0052: 30 days).
+    pub session_ttl_secs: i64,
+    /// `authenticate` rewrites a session's `last_seen_at` only when it is at least this old, so a busy
+    /// session costs one write an hour, not one per request (ADR-0052 round 29: updated lazily).
+    pub session_touch_after_secs: i64,
 }
 
 impl Default for CoreConfig {
@@ -42,6 +48,8 @@ impl Default for CoreConfig {
             rate_window_secs: 60,
             outbox_fastpath: true,
             max_attachment_bytes: 5 * 1024 * 1024,
+            session_ttl_secs: 30 * 24 * 60 * 60,
+            session_touch_after_secs: 60 * 60,
         }
     }
 }
@@ -103,11 +111,6 @@ impl From<QueueError> for CoreError {
 }
 impl From<BlobError> for CoreError {
     fn from(e: BlobError) -> Self {
-        CoreError::Internal(e.to_string())
-    }
-}
-impl From<CacheError> for CoreError {
-    fn from(e: CacheError) -> Self {
         CoreError::Internal(e.to_string())
     }
 }
@@ -208,12 +211,30 @@ pub async fn authorize(
     }
 }
 
+/// The digest the database stores and compares for a session token. Tokens are 256-bit random values
+/// (ADR-0052), so a plain SHA-256 is enough: there is nothing to guess and nothing to stretch, and a
+/// pepper would only add a secret to every target (owner decision, 2026-10-22).
+pub fn hash_token(token: &str) -> TokenHash {
+    TokenHash(Sha256::digest(token.as_bytes()).into())
+}
+
+/// A bearer token to the user it belongs to, or `Unauthenticated`: the row must exist, not be revoked
+/// and not be expired. The row is read on every request, so a revocation is effective at once
+/// (ADR-0052 round 29).
 pub async fn authenticate(app: &App, token: &str) -> Result<Principal, CoreError> {
-    app.ports
-        .sessions
-        .get(token)
-        .await?
-        .ok_or(CoreError::Unauthenticated)
+    let hash = hash_token(token);
+    let now = app.ports.clock.now();
+    let live = app.ports.db.session(&hash, now).await?.ok_or(CoreError::Unauthenticated)?;
+    if now - live.last_seen_at >= TimeDelta::seconds(app.cfg.session_touch_after_secs) {
+        // `last_seen_at` is bookkeeping: failing to write it must not fail a request that is authentic.
+        let _ = app.ports.db.touch_session(&hash, now).await;
+    }
+    Ok(Principal { user_id: live.user_id })
+}
+
+/// Sign-out for one token. Idempotent: an unknown or already revoked token changes nothing.
+pub async fn revoke_session(app: &App, token: &str) -> Result<(), CoreError> {
+    Ok(app.ports.db.revoke_session(&hash_token(token), app.ports.clock.now()).await?)
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -464,7 +485,19 @@ pub async fn outbox_depth(app: &App) -> Result<u64, CoreError> {
 
 /// Test support behind `/internal/seed`: insert fixture rows.
 pub async fn seed(app: &App, fixture: &SeedFixture) -> Result<(), CoreError> {
-    Ok(app.ports.db.seed(&app.system, fixture).await?)
+    app.ports.db.seed(&app.system, fixture).await?;
+    // The fixture carries plaintext tokens; the database only ever sees their hashes.
+    let now = app.ports.clock.now();
+    for s in &fixture.sessions {
+        let session = NewSession {
+            token_hash: hash_token(&s.token),
+            user_id: s.user_id,
+            created_at: now,
+            expires_at: now + TimeDelta::seconds(app.cfg.session_ttl_secs),
+        };
+        app.ports.db.insert_session(&session).await?;
+    }
+    Ok(())
 }
 
 /// Queue consumer body. Idempotent on `event_id`: a redelivery inserts nothing.

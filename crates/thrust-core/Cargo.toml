@@ -13,6 +13,9 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 async-trait = { workspace = true }
+# Session tokens are stored hashed. Pure Rust, no platform crate; it is already in the Worker graph
+# through tokio-postgres' SCRAM, so the version matches and wasm32 is known to build it.
+sha2 = { version = "0.11", default-features = false }
 
 # Test-only. `scripts/check-deps.sh` checks normal dependencies, so none of these reach the core graph.
 # The memory adapters are the reference implementation the use-case tests run against; the executor is

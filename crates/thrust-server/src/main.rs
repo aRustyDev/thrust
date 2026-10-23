@@ -80,7 +80,6 @@ async fn main() {
         Ports {
             db,
             queue,
-            sessions: Arc::new(MemorySessionStore::new(clock.clone())),
             blobs: Arc::new(MemoryBlobStore::new()),
             limiter: Arc::new(MemoryRateLimiter::new(clock.clone())),
             clock,

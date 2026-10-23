@@ -21,6 +21,7 @@ use thrust_ports::*;
 
 struct Env {
     db: Arc<PgDatabase>,
+    conn: Arc<PoolConnector>,
     _container: ContainerAsync<Postgres>,
 }
 
@@ -33,7 +34,7 @@ async fn env() -> Env {
     let raw = conn.raw().await.unwrap();
     thrust_adapters_postgres::migrate(&raw).await.unwrap();
     drop(raw);
-    Env { db: Arc::new(PgDatabase::new(conn)), _container: container }
+    Env { db: Arc::new(PgDatabase::new(conn.clone())), conn, _container: container }
 }
 
 fn new_id() -> Uuid {
@@ -160,6 +161,45 @@ async fn migration_0003_backfills_a_database_created_before_it() {
     // control: the backfill made the one workspace and one member the rows imply, not a looser grant
     assert_eq!(db.membership(&by_id, p, UserId(new_id())).await.unwrap(), Membership::NoSuchProject);
     assert_eq!(db.membership(&WorkspaceSlug::new("other"), p, u).await.unwrap(), Membership::NoSuchProject);
+}
+
+/// ADR-0052 (Tests): sessions are stored hashed, with no plaintext column, and a session belongs to a user, not a
+/// workspace (ADR-0041 `scope: directory`). The table's columns are written out, so a `token`, `secret` or
+/// `workspace_id` column added later fails here and has to be argued for; and nothing but a 32-byte digest can be
+/// stored as the key.
+#[tokio::test]
+async fn the_sessions_table_has_a_hash_and_no_plaintext_and_no_workspace() {
+    let env = env().await;
+    let raw = env.conn.raw().await.unwrap();
+    let rows = raw
+        .query(
+            "SELECT column_name, data_type FROM information_schema.columns \
+             WHERE table_schema = 'public' AND table_name = 'sessions' ORDER BY column_name",
+            &[],
+        )
+        .await
+        .unwrap();
+    let got: Vec<(String, String)> = rows.iter().map(|r| (r.get(0), r.get(1))).collect();
+    let want: Vec<(String, String)> = [
+        ("created_at", "timestamp with time zone"),
+        ("expires_at", "timestamp with time zone"),
+        ("last_seen_at", "timestamp with time zone"),
+        ("revoked_at", "timestamp with time zone"),
+        ("token_hash", "bytea"),
+        ("user_id", "uuid"),
+    ]
+    .map(|(n, t)| (n.to_string(), t.to_string()))
+    .to_vec();
+    assert_eq!(got, want);
+    // control: the key is a digest, not a token: anything but 32 bytes is refused
+    let refused = raw
+        .execute(
+            "INSERT INTO sessions (token_hash, user_id, created_at, expires_at, last_seen_at) \
+             VALUES ('\\x74686973206973206e6f74206120646967657374'::bytea, $1, now(), now(), now())",
+            &[&new_id()],
+        )
+        .await;
+    assert!(refused.is_err(), "a 20-byte key must violate the length check");
 }
 
 #[tokio::test]

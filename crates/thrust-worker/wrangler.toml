@@ -25,10 +25,6 @@ crons = ["* * * * *"]   # outbox sweeper (ADR-0046 / ADR-0072)
 binding = "HYPERDRIVE"
 id = "00000000000000000000000000000000"
 
-[[kv_namespaces]]
-binding = "SESSIONS"
-id = "00000000000000000000000000000000"
-
 [[r2_buckets]]
 binding = "BLOBS"
 bucket_name = "thrust-spike-blobs"
