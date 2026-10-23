@@ -145,6 +145,26 @@ their locations on the branch that closes #35:
   keys it on `(workspace_id, project_id)` and adds a foreign key to `projects (workspace_id, id)`, so an allocation
   under the wrong workspace is refused. The membership join requires `m.workspace_id = p.workspace_id`.
 
+## Update — issue #36 (2026-10-23)
+
+Issue #36 reshaped `membership` around the workspace slug, as the issue-#35 note said it would, and added the second
+call that runs before a `Scope` exists.
+
+- **`membership(slug, project, user)`** resolves, in one query, the workspace the slug names, the caller's membership
+  of that workspace and of the project, and answers `Member { workspace_id, role }` (the id is what `authorize` mints
+  the `Scope` with), `NotAMember` or `NoSuchProject`. `NoSuchProject` covers a slug that names no workspace, a
+  workspace the caller is not in and a project outside the workspace, so the three cannot be told apart. The query
+  joins `workspaces` on the slug, `workspace_members` on the caller and `projects` on that workspace, and keeps the
+  left join on `project_members` with `m.workspace_id = p.workspace_id` from #35 (migration `0003_workspaces.sql`).
+- **The session calls are the second exception.** `session`, `touch_session`, `revoke_session` and `insert_session`
+  take no proof type. A session is found by the hash of its token and belongs to a user, so there is no tenant key to
+  pass, and the lookup has to run before any `Scope` can exist (ADR-0052, ADR-0041 `scope: directory`). In
+  `thrust-core` only `authenticate`, `revoke_session` and `seed` call them. Nothing but convention enforces that, and
+  they read no tenant table.
+- **`mutant_ignore_tenant`** now plants its bug in the new `membership`: the memory adapter trusts the project's own
+  workspace and ignores the slug and the workspace membership. It is still a runtime control, and it is killed by
+  the contract suite, including the new `a_session_is_not_bound_to_a_workspace`.
+
 ## Open Questions
 
 * Q-0045 — granularity and transaction semantics. (answered round 29, FR-17)

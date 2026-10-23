@@ -1,7 +1,7 @@
 //! Cloudflare Worker composition root.
 //!
 //! Compile-time adapter set = this crate's dependency/feature list (ADR-0007):
-//!   * `cloudflare` (always): Hyperdrive/Postgres, KV, R2, Queues, Durable Objects
+//!   * `cloudflare` (always): Hyperdrive/Postgres (sessions included), R2, Queues, Durable Objects
 //!   * `memory` (default, dev/test only): in-isolate adapters
 //! `THRUST_ADAPTERS` only chooses between sets that were compiled in.
 

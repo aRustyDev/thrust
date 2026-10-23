@@ -211,9 +211,10 @@ pub async fn authorize(
     }
 }
 
-/// The digest the database stores and compares for a session token. Tokens are 256-bit random values
-/// (ADR-0052), so a plain SHA-256 is enough: there is nothing to guess and nothing to stretch, and a
-/// pepper would only add a secret to every target (owner decision, 2026-10-22).
+/// The digest the database stores and compares for a session token. A token is a high-entropy random value
+/// (sign-in, #38, must mint at least 128 bits of CSPRNG output), so a plain SHA-256 is enough: there is nothing to
+/// guess and nothing to stretch, and a pepper would only add a secret to every target (owner decision,
+/// 2026-10-22; ADR-0052, issue #36 note).
 pub fn hash_token(token: &str) -> TokenHash {
     TokenHash(Sha256::digest(token.as_bytes()).into())
 }

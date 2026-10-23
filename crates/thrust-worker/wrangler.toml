@@ -1,4 +1,4 @@
-# Cloudflare adapter set: Hyperdrive/Postgres, KV, R2, Queues (producer + consumer), Durable
+# Cloudflare adapter set: Hyperdrive/Postgres (sessions included), R2, Queues (producer + consumer), Durable
 # Objects (SQLite), cron. Used by `wrangler dev` (local workerd) in Stage 1 and, with real ids,
 # by Stage 2 (see research/0004 "Stage 2 - ready to run").
 #

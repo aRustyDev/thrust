@@ -13,7 +13,7 @@ depend on one another is on [Application architecture](../architecture/app.md); 
 | An HTTP route or its error mapping | `thrust-api` | The product handlers call a core use-case and never see a platform type. Only the test-route handlers reach `app.ports` directly |
 | SQL | `thrust-adapters-postgres` | Written once, against `tokio_postgres::Client`, behind a `Connector` |
 | Code that only runs natively | `thrust-adapters-selfhosted` | Never compiled into the Worker |
-| Code that uses a Workers binding (KV, R2, Queues, Hyperdrive, a Durable Object client) | `thrust-adapters-cloudflare` | wasm32 only. The Durable Object classes themselves live in `thrust-worker`, because the Wasm module that exports them must also export `fetch` |
+| Code that uses a Workers binding (R2, Queues, Hyperdrive, a Durable Object client) | `thrust-adapters-cloudflare` | wasm32 only. The Durable Object classes themselves live in `thrust-worker`, because the Wasm module that exports them must also export `fetch` |
 | A reference implementation of a port | `thrust-adapters-memory` | Compiles for wasm32 and native with no runtime dependency, because both roots can include it |
 | Reading configuration, choosing adapters, starting the process | a root: `thrust-server` or `thrust-worker` | Where the application reads its configuration from the environment. Core, the router and the ports read none; the `migrate` binary and the contract suite read their own variables |
 | An HTTP assertion that must hold on every target | `thrust-contract-tests` | Depends on `thrust-contracts` only, so it never links the code it tests |
