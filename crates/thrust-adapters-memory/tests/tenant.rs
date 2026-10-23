@@ -53,7 +53,7 @@ fn user(u: U) -> UserId {
 fn seeded() -> MemoryDatabase {
     let db = MemoryDatabase::new();
     let m = |project, workspace_id, u| SeedMembership { project_id: PROJECT[project], workspace_id, user_id: user(u), role: Role::Admin };
-    block_on(db.seed(&SeedFixture {
+    block_on(db.seed(&SystemScope::mint(), &SeedFixture {
         workspaces: WS.to_vec(),
         users: [U::AdminA, U::OutsiderA, U::AdminB, U::StrayB].map(user).to_vec(),
         projects: vec![
@@ -82,11 +82,14 @@ fn membership_counts_only_member_rows_of_the_projects_workspace(
     assert_eq!(got, want);
 }
 
+/// `authorize` never mints a scope whose project is outside its workspace; the test does, to reach the adapter's own
+/// check.
 #[rstest]
 fn allocate_refuses_a_project_outside_the_workspace(#[values(P::A, P::B)] p: P, #[values(Ws::Own, Ws::Other)] ws: Ws) {
     let db = seeded();
-    let mut tx = block_on(db.begin()).unwrap();
-    match (ws, block_on(tx.allocate(ws_for(p, ws), PROJECT[slot(p)]))) {
+    let scope = Scope::mint(ws_for(p, ws), PROJECT[slot(p)], user(U::AdminA));
+    let mut tx = block_on(db.begin(&scope)).unwrap();
+    match (ws, block_on(tx.allocate(&scope))) {
         (Ws::Own, Ok(a)) => assert_eq!(a, Allocation { sequence_id: 1, sort_order: 10_000 }),
         (Ws::Other, Err(DbError::Backend(_))) => {}
         (ws, got) => panic!("allocate under {ws:?} workspace: got {got:?}"),

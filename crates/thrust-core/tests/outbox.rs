@@ -27,7 +27,7 @@ fn create(w: &World, n: usize) -> Vec<WorkItem> {
 }
 
 fn depth(w: &World) -> u64 {
-    block_on(w.app.ports.db.outbox_depth()).unwrap()
+    block_on(outbox_depth(&w.app)).unwrap()
 }
 
 fn slow_path() -> (World, Arc<RecordingQueue>) {
@@ -126,7 +126,7 @@ fn the_activity_consumer_records_events_and_rejects_bad_ones() {
     let w = world();
     let consumer = ActivityConsumer(w.app.clone());
     let item = create(&w, 1).remove(0);
-    let mut env = block_on(w.app.ports.db.undispatched_outbox(10)).unwrap().remove(0).envelope;
+    let mut env = block_on(w.app.ports.db.undispatched_outbox(&SystemScope::mint(), 10)).unwrap().remove(0).envelope;
 
     block_on(consumer.handle(&env)).unwrap();
     let rows = block_on(list_activity(&w.app, &w.principal(Actor::GuestA), w.project_a, Some(item.id))).unwrap();

@@ -271,7 +271,7 @@ impl Class {
 /// One port call and the answer the adapter must give.
 #[derive(Debug, Clone)]
 enum Call {
-    Begin,
+    Begin { ws: WorkspaceId, p: ProjectId },
     /// `want: None`: the adapter must refuse the allocation.
     Allocate { ws: WorkspaceId, p: ProjectId, want: Option<Allocation> },
     Insert { item: WorkItem, conflict: bool },
@@ -538,7 +538,7 @@ impl Model {
     }
 
     fn plan_tx(&mut self, steps: &[Step], end: End, calls: &mut Vec<Call>, classes: &mut Vec<Class>) {
-        calls.push(Call::Begin);
+        calls.push(Call::Begin { ws: self.fix.ws[0], p: self.fix.p[0] });
         let mut allocs = [0i64; 2];
         // rows written by this transaction, and the ids it soft-deleted (committed rows or its own)
         let mut written: [Vec<WorkItem>; 2] = [Vec::new(), Vec::new()];
@@ -691,20 +691,27 @@ async fn bounded<T>(at: &str, f: impl std::future::Future<Output = Result<T, DbE
     }
 }
 
+/// The proof a call passes. The adapter reads only the tenant key from it, so the user is a placeholder; the
+/// planner names the workspace itself, the other tenant's included, to reach the adapter's own checks.
+fn scope(ws: WorkspaceId, p: ProjectId) -> Scope {
+    Scope::mint(ws, p, UserId(Uuid::nil()))
+}
+
 fn open<'a>(tx: &'a mut Option<Box<dyn Tx>>, at: &str) -> Result<&'a mut (dyn Tx + 'static), TestCaseError> {
     tx.as_deref_mut().ok_or_else(|| fail(at, "no open transaction"))
 }
 
 async fn execute(db: &dyn Database, tx: &mut Option<Box<dyn Tx>>, call: Call, at: &str) -> Result<(), TestCaseError> {
     let open = |tx| open(tx, at);
+    let sys = SystemScope::mint();
     match call {
-        Call::Begin => *tx = Some(bounded(at, db.begin()).await?),
+        Call::Begin { ws, p } => *tx = Some(bounded(at, db.begin(&scope(ws, p))).await?),
         Call::Allocate { ws, p, want: Some(want) } => {
-            let got = bounded(at, open(tx)?.allocate(ws, p)).await?;
+            let got = bounded(at, open(tx)?.allocate(&scope(ws, p))).await?;
             prop_assert_eq!(got, want, "{}: allocation", at);
         }
         Call::Allocate { ws, p, want: None } => {
-            let got = tokio::time::timeout(Duration::from_secs(20), open(tx)?.allocate(ws, p))
+            let got = tokio::time::timeout(Duration::from_secs(20), open(tx)?.allocate(&scope(ws, p)))
                 .await
                 .map_err(|_| fail(at, "timed out after 20 s"))?;
             if let Ok(a) = got {
@@ -712,7 +719,7 @@ async fn execute(db: &dyn Database, tx: &mut Option<Box<dyn Tx>>, call: Call, at
             }
         }
         Call::Insert { item, conflict } => {
-            let got = tokio::time::timeout(Duration::from_secs(20), open(tx)?.insert_work_item(&item))
+            let got = tokio::time::timeout(Duration::from_secs(20), open(tx)?.insert_work_item(&scope(item.workspace_id, item.project_id), &item))
                 .await
                 .map_err(|_| fail(at, "timed out after 20 s"))?;
             match (got, conflict) {
@@ -721,19 +728,22 @@ async fn execute(db: &dyn Database, tx: &mut Option<Box<dyn Tx>>, call: Call, at
             }
         }
         Call::SoftDelete { ws, p, id, at: when, want } => {
-            let got = bounded(at, open(tx)?.soft_delete_work_item(ws, p, id, when)).await?;
+            let got = bounded(at, open(tx)?.soft_delete_work_item(&scope(ws, p), id, when)).await?;
             prop_assert_eq!(got, want, "{}: soft delete", at);
         }
-        Call::InsertOutbox { row } => bounded(at, open(tx)?.insert_outbox(&row)).await?,
+        Call::InsertOutbox { row } => {
+            let p = row.envelope.project_id().ok_or_else(|| fail(at, "outbox row without project_id"))?;
+            bounded(at, open(tx)?.insert_outbox(&scope(row.envelope.workspace_id, p), &row)).await?
+        }
         Call::Commit => bounded(at, tx.take().ok_or_else(|| fail(at, "no open transaction"))?.commit()).await?,
         Call::Rollback => bounded(at, tx.take().ok_or_else(|| fail(at, "no open transaction"))?.rollback()).await?,
         Call::Abandon => drop(tx.take()),
         Call::List { ws, p, vis, want } => {
-            let got = bounded(at, db.list_work_items(ws, p, vis)).await?;
+            let got = bounded(at, db.list_work_items(&scope(ws, p), vis)).await?;
             prop_assert_eq!(got, want, "{}: list", at);
         }
         Call::Get { ws, p, id, vis, want } => {
-            let got = bounded(at, db.get_work_item(ws, p, id, vis)).await?;
+            let got = bounded(at, db.get_work_item(&scope(ws, p), id, vis)).await?;
             prop_assert_eq!(got, want, "{}: get", at);
         }
         Call::Membership { ws, p, user, want } => {
@@ -741,20 +751,20 @@ async fn execute(db: &dyn Database, tx: &mut Option<Box<dyn Tx>>, call: Call, at
             prop_assert_eq!(got, want, "{}: membership", at);
         }
         Call::Undispatched { limit, want } => {
-            let got = bounded(at, db.undispatched_outbox(limit)).await?;
+            let got = bounded(at, db.undispatched_outbox(&sys, limit)).await?;
             prop_assert_eq!(got, want, "{}: undispatched outbox", at);
         }
-        Call::Mark { event, at: when } => bounded(at, db.mark_outbox_dispatched(event, when)).await?,
+        Call::Mark { event, at: when } => bounded(at, db.mark_outbox_dispatched(&sys, event, when)).await?,
         Call::Depth { want } => {
-            let got = bounded(at, db.outbox_depth()).await?;
+            let got = bounded(at, db.outbox_depth(&sys)).await?;
             prop_assert_eq!(got, want, "{}: outbox depth", at);
         }
         Call::InsertActivity { a, want } => {
-            let got = bounded(at, db.insert_activity(&a)).await?;
+            let got = bounded(at, db.insert_activity(&sys, &a)).await?;
             prop_assert_eq!(got, want, "{}: insert activity (true = new event id)", at);
         }
         Call::ListActivity { ws, p, entity, want } => {
-            let got = bounded(at, db.list_activity(ws, p, entity)).await?;
+            let got = bounded(at, db.list_activity(&scope(ws, p), entity)).await?;
             prop_assert_eq!(got, want, "{}: list activity", at);
         }
     }
@@ -763,13 +773,14 @@ async fn execute(db: &dyn Database, tx: &mut Option<Box<dyn Tx>>, call: Call, at
 
 async fn run_case(env: &Env, ops: &[Op]) -> Result<(), TestCaseError> {
     let fix = Fix::new();
-    bounded("seed", env.db.seed(&fix.seed())).await?;
+    let sys = SystemScope::mint();
+    bounded("seed", env.db.seed(&sys, &fix.seed())).await?;
     let mut m = Model::new(fix);
     let mut tx: Option<Box<dyn Tx>> = None;
     // A failed earlier case (shrinking runs many) may have left rows behind: take them out of the way first.
     let at = tick();
-    for row in bounded("start", env.db.undispatched_outbox(10_000)).await? {
-        bounded("start", env.db.mark_outbox_dispatched(row.envelope.event_id, at)).await?;
+    for row in bounded("start", env.db.undispatched_outbox(&sys, 10_000)).await? {
+        bounded("start", env.db.mark_outbox_dispatched(&sys, row.envelope.event_id, at)).await?;
     }
     execute(env.db.as_ref(), &mut tx, Call::Depth { want: 0 }, "start: no undispatched rows left").await?;
     for (step, op) in ops.iter().enumerate() {

@@ -11,7 +11,7 @@ use axum::Extension;
 use thrust_adapters_memory::*;
 use thrust_adapters_selfhosted::*;
 use thrust_api::{ApiConfig, InternalErrorDetail};
-use thrust_core::{ActivityConsumer, App, CoreConfig, Ports};
+use thrust_core::{ActivityConsumer, App, CoreConfig, Ports, SystemScope};
 use thrust_ports::*;
 use tower_http::catch_panic::CatchPanicLayer;
 
@@ -75,8 +75,9 @@ async fn main() {
         ..CoreConfig::default()
     };
 
-    let app = App {
-        ports: Ports {
+    // This composition root mints the proof for the relay, sweeper, consumer and seed.
+    let app = App::new(
+        Ports {
             db,
             queue,
             sessions: Arc::new(MemorySessionStore::new(clock.clone())),
@@ -87,7 +88,8 @@ async fn main() {
             background,
         },
         cfg,
-    };
+        SystemScope::mint(),
+    );
     consumer_slot.set(Arc::new(ActivityConsumer(app.clone()))).ok().expect("consumer slot");
 
     // Cron stand-in: ADR-0072 says the self-hosted Scheduler is an in-process timer.

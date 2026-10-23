@@ -139,7 +139,9 @@ pub enum Membership {
 
 #[async_trait]
 pub trait Database: Send + Sync {
-    /// Every method takes the tenant key; an adapter never answers a query without it.
+    /// The one call that runs before a [`Scope`] exists: only `thrust_core::authorize` makes it,
+    /// to decide whether to mint one (ADR-0045 round 29). Every other method takes a [`Scope`],
+    /// from which the adapter reads the tenant key, or a [`SystemScope`]; none takes bare ids.
     async fn membership(
         &self,
         ws: WorkspaceId,
@@ -147,61 +149,74 @@ pub trait Database: Send + Sync {
         user: UserId,
     ) -> Result<Membership, DbError>;
 
-    async fn begin(&self) -> Result<Box<dyn Tx>, DbError>;
+    /// `scope` is the proof that the caller was authorised to open a unit of work.
+    async fn begin(&self, scope: &Scope) -> Result<Box<dyn Tx>, DbError>;
 
-    async fn list_work_items(
-        &self,
-        ws: WorkspaceId,
-        project: ProjectId,
-        vis: Visibility,
-    ) -> Result<Vec<WorkItem>, DbError>;
+    async fn list_work_items(&self, scope: &Scope, vis: Visibility) -> Result<Vec<WorkItem>, DbError>;
 
     async fn get_work_item(
         &self,
-        ws: WorkspaceId,
-        project: ProjectId,
+        scope: &Scope,
         id: WorkItemId,
         vis: Visibility,
     ) -> Result<Option<WorkItem>, DbError>;
 
     /// Idempotent on `event_id`; returns `true` if a row was inserted, `false` on a redelivery.
-    async fn insert_activity(&self, a: &Activity) -> Result<bool, DbError>;
+    /// The queue consumer's write: its tenant is the one the envelope carries (ADR-0141).
+    async fn insert_activity(&self, sys: &SystemScope, a: &Activity) -> Result<bool, DbError>;
 
     async fn list_activity(
         &self,
-        ws: WorkspaceId,
-        project: ProjectId,
+        scope: &Scope,
         entity: Option<WorkItemId>,
     ) -> Result<Vec<Activity>, DbError>;
 
     /// Rows with `dispatched_at IS NULL`, oldest first. Used by the cron sweeper.
-    async fn undispatched_outbox(&self, limit: u32) -> Result<Vec<OutboxRow>, DbError>;
+    async fn undispatched_outbox(&self, sys: &SystemScope, limit: u32) -> Result<Vec<OutboxRow>, DbError>;
 
-    async fn mark_outbox_dispatched(&self, event: EventId, at: Timestamp) -> Result<(), DbError>;
+    async fn mark_outbox_dispatched(
+        &self,
+        sys: &SystemScope,
+        event: EventId,
+        at: Timestamp,
+    ) -> Result<(), DbError>;
 
-    async fn outbox_depth(&self) -> Result<u64, DbError>;
+    async fn outbox_depth(&self, sys: &SystemScope) -> Result<u64, DbError>;
 
     /// Test support: insert fixture rows (workspaces/users/projects/memberships).
-    async fn seed(&self, fixture: &SeedFixture) -> Result<(), DbError>;
+    async fn seed(&self, sys: &SystemScope, fixture: &SeedFixture) -> Result<(), DbError>;
 }
 
 /// One transaction. Dropped without `commit` == rolled back (adapters must guarantee this;
-/// the Postgres adapter documents the pooled-connection caveat).
+/// the Postgres adapter documents the pooled-connection caveat). Each write names the [`Scope`]
+/// it writes under, and a work item or outbox row of another tenant is refused ([`check_tenant`]).
 #[async_trait]
 pub trait Tx: Send {
     /// Atomic counter increment + `sort_order` (ADR-0043 B1). Monotonic, never reused.
-    async fn allocate(&mut self, ws: WorkspaceId, project: ProjectId) -> Result<Allocation, DbError>;
-    async fn insert_work_item(&mut self, item: &WorkItem) -> Result<(), DbError>;
+    async fn allocate(&mut self, scope: &Scope) -> Result<Allocation, DbError>;
+    async fn insert_work_item(&mut self, scope: &Scope, item: &WorkItem) -> Result<(), DbError>;
     async fn soft_delete_work_item(
         &mut self,
-        ws: WorkspaceId,
-        project: ProjectId,
+        scope: &Scope,
         id: WorkItemId,
         at: Timestamp,
     ) -> Result<bool, DbError>;
-    async fn insert_outbox(&mut self, row: &OutboxRow) -> Result<(), DbError>;
+    async fn insert_outbox(&mut self, scope: &Scope, row: &OutboxRow) -> Result<(), DbError>;
     async fn commit(self: Box<Self>) -> Result<(), DbError>;
     async fn rollback(self: Box<Self>) -> Result<(), DbError>;
+}
+
+/// What every adapter checks before a `Tx` write: the row belongs to the scope it is written
+/// under (its workspace, and its project when the row has one).
+pub fn check_tenant(
+    scope: &Scope,
+    workspace_id: WorkspaceId,
+    project_id: Option<ProjectId>,
+) -> Result<(), DbError> {
+    if workspace_id != scope.workspace_id() || project_id.is_some_and(|p| p != scope.project_id()) {
+        return Err(DbError::Backend("row is outside the scope it is written under".into()));
+    }
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------------------------

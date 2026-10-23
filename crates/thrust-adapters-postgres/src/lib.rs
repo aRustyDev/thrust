@@ -205,7 +205,7 @@ impl Database for PgDatabase {
         })
     }
 
-    async fn begin(&self) -> Result<Box<dyn Tx>, DbError> {
+    async fn begin(&self, _scope: &Scope) -> Result<Box<dyn Tx>, DbError> {
         let conn = self.connector.checkout(true).await?;
         if let Err(e) = conn.client().batch_execute("BEGIN").await {
             conn.discard();
@@ -214,12 +214,8 @@ impl Database for PgDatabase {
         Ok(Box::new(PgTx { conn: Some(conn) }))
     }
 
-    async fn list_work_items(
-        &self,
-        ws: WorkspaceId,
-        project: ProjectId,
-        vis: Visibility,
-    ) -> Result<Vec<WorkItem>, DbError> {
+    async fn list_work_items(&self, scope: &Scope, vis: Visibility) -> Result<Vec<WorkItem>, DbError> {
+        let (ws, project) = (scope.workspace_id(), scope.project_id());
         let sql = match vis {
             Visibility::Visible => format!(
                 "SELECT {WI_COLS} FROM work_items WHERE workspace_id = $1 AND project_id = $2 \
@@ -236,11 +232,11 @@ impl Database for PgDatabase {
 
     async fn get_work_item(
         &self,
-        ws: WorkspaceId,
-        project: ProjectId,
+        scope: &Scope,
         id: WorkItemId,
         vis: Visibility,
     ) -> Result<Option<WorkItem>, DbError> {
+        let (ws, project) = (scope.workspace_id(), scope.project_id());
         let hidden = match vis {
             Visibility::Visible => " AND deleted_at IS NULL AND archived_at IS NULL AND is_draft = false",
             Visibility::WithDeleted => "",
@@ -253,7 +249,7 @@ impl Database for PgDatabase {
         Ok(row.as_ref().map(work_item))
     }
 
-    async fn insert_activity(&self, a: &Activity) -> Result<bool, DbError> {
+    async fn insert_activity(&self, _sys: &SystemScope, a: &Activity) -> Result<bool, DbError> {
         let c = self.conn().await?;
         let n = Pg(c.client())
             .execute(
@@ -275,12 +271,8 @@ impl Database for PgDatabase {
         Ok(n == 1)
     }
 
-    async fn list_activity(
-        &self,
-        ws: WorkspaceId,
-        project: ProjectId,
-        entity: Option<WorkItemId>,
-    ) -> Result<Vec<Activity>, DbError> {
+    async fn list_activity(&self, scope: &Scope, entity: Option<WorkItemId>) -> Result<Vec<Activity>, DbError> {
+        let (ws, project) = (scope.workspace_id(), scope.project_id());
         let c = self.conn().await?;
         let entity: Option<Uuid> = entity.map(|e| e.0);
         let rows = Pg(c.client())
@@ -295,7 +287,7 @@ impl Database for PgDatabase {
         Ok(rows.iter().map(activity).collect())
     }
 
-    async fn undispatched_outbox(&self, limit: u32) -> Result<Vec<OutboxRow>, DbError> {
+    async fn undispatched_outbox(&self, _sys: &SystemScope, limit: u32) -> Result<Vec<OutboxRow>, DbError> {
         let c = self.conn().await?;
         let rows = Pg(c.client())
             .query(
@@ -320,7 +312,7 @@ impl Database for PgDatabase {
             .collect()
     }
 
-    async fn mark_outbox_dispatched(&self, event: EventId, at: Timestamp) -> Result<(), DbError> {
+    async fn mark_outbox_dispatched(&self, _sys: &SystemScope, event: EventId, at: Timestamp) -> Result<(), DbError> {
         let c = self.conn().await?;
         Pg(c.client())
             .execute(
@@ -332,7 +324,7 @@ impl Database for PgDatabase {
         Ok(())
     }
 
-    async fn outbox_depth(&self) -> Result<u64, DbError> {
+    async fn outbox_depth(&self, _sys: &SystemScope) -> Result<u64, DbError> {
         let c = self.conn().await?;
         let r = Pg(c.client())
             .query_one("SELECT count(*) AS n FROM outbox WHERE dispatched_at IS NULL", &[])
@@ -341,7 +333,7 @@ impl Database for PgDatabase {
         Ok(r.get::<_, i64>("n") as u64)
     }
 
-    async fn seed(&self, f: &SeedFixture) -> Result<(), DbError> {
+    async fn seed(&self, _sys: &SystemScope, f: &SeedFixture) -> Result<(), DbError> {
         // `Tx` only exposes slice operations, so the fixture goes through a connection directly.
         let c = self.connector.checkout(true).await?;
         let cl = Pg(c.client());
@@ -399,8 +391,10 @@ impl Drop for PgTx {
 
 #[async_trait]
 impl Tx for PgTx {
-    /// A project outside `ws` violates `project_sequences_tenant_fkey` (migration 0002): `Backend`.
-    async fn allocate(&mut self, ws: WorkspaceId, project: ProjectId) -> Result<Allocation, DbError> {
+    /// A scope whose project is outside its workspace violates `project_sequences_tenant_fkey`
+    /// (migration 0002): `Backend`. `authorize` never mints one; a test can.
+    async fn allocate(&mut self, scope: &Scope) -> Result<Allocation, DbError> {
+        let (ws, project) = (scope.workspace_id(), scope.project_id());
         let r = self
             .client()
             .query_one(
@@ -417,7 +411,8 @@ impl Tx for PgTx {
         Ok(Allocation { sequence_id: r.get(0), sort_order: r.get(1) })
     }
 
-    async fn insert_work_item(&mut self, w: &WorkItem) -> Result<(), DbError> {
+    async fn insert_work_item(&mut self, scope: &Scope, w: &WorkItem) -> Result<(), DbError> {
+        check_tenant(scope, w.workspace_id, Some(w.project_id))?;
         self.client()
             .execute(
                 &format!(
@@ -445,13 +440,8 @@ impl Tx for PgTx {
         Ok(())
     }
 
-    async fn soft_delete_work_item(
-        &mut self,
-        ws: WorkspaceId,
-        project: ProjectId,
-        id: WorkItemId,
-        at: Timestamp,
-    ) -> Result<bool, DbError> {
+    async fn soft_delete_work_item(&mut self, scope: &Scope, id: WorkItemId, at: Timestamp) -> Result<bool, DbError> {
+        let (ws, project) = (scope.workspace_id(), scope.project_id());
         let n = self
             .client()
             .execute(
@@ -464,7 +454,8 @@ impl Tx for PgTx {
         Ok(n == 1)
     }
 
-    async fn insert_outbox(&mut self, row: &OutboxRow) -> Result<(), DbError> {
+    async fn insert_outbox(&mut self, scope: &Scope, row: &OutboxRow) -> Result<(), DbError> {
+        check_tenant(scope, row.envelope.workspace_id, row.envelope.project_id())?;
         let envelope = serde_json::to_value(&row.envelope).map_err(|e| DbError::Backend(e.to_string()))?;
         let params: Params = &[
             &row.envelope.event_id.0,

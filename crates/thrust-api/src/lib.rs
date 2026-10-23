@@ -148,7 +148,7 @@ async fn panic_route(Extension(cfg): Extension<ApiConfig>) -> ApiResult<&'static
 }
 
 async fn seed(_: Admin, Extension(app): Extension<App>, Json(f): Json<SeedFixture>) -> ApiResult<StatusCode> {
-    app.ports.db.seed(&f).await.map_err(CoreError::from)?;
+    thrust_core::seed(&app, &f).await?;
     for s in &f.sessions {
         app.ports.sessions.put(&s.token, &s.principal, 3600).await.map_err(CoreError::from)?;
     }
@@ -172,7 +172,7 @@ async fn inject_event(_: Admin, Extension(app): Extension<App>, Json(env): Json<
 }
 
 async fn outbox_depth(_: Admin, Extension(app): Extension<App>) -> ApiResult<Json<serde_json::Value>> {
-    let n = app.ports.db.outbox_depth().await.map_err(CoreError::from)?;
+    let n = thrust_core::outbox_depth(&app).await?;
     Ok(Json(serde_json::json!({ "undispatched": n })))
 }
 

@@ -80,7 +80,7 @@ impl Database for MemoryDatabase {
         })
     }
 
-    async fn begin(&self) -> Result<Box<dyn Tx>, DbError> {
+    async fn begin(&self, _scope: &Scope) -> Result<Box<dyn Tx>, DbError> {
         Ok(Box::new(MemoryTx {
             state: self.state.clone(),
             pending_items: Vec::new(),
@@ -89,12 +89,8 @@ impl Database for MemoryDatabase {
         }))
     }
 
-    async fn list_work_items(
-        &self,
-        ws: WorkspaceId,
-        project: ProjectId,
-        vis: Visibility,
-    ) -> Result<Vec<WorkItem>, DbError> {
+    async fn list_work_items(&self, scope: &Scope, vis: Visibility) -> Result<Vec<WorkItem>, DbError> {
+        let (ws, project) = (scope.workspace_id(), scope.project_id());
         let s = self.state.lock().unwrap();
         let mut v: Vec<WorkItem> = s
             .work_items
@@ -109,11 +105,11 @@ impl Database for MemoryDatabase {
 
     async fn get_work_item(
         &self,
-        ws: WorkspaceId,
-        project: ProjectId,
+        scope: &Scope,
         id: WorkItemId,
         vis: Visibility,
     ) -> Result<Option<WorkItem>, DbError> {
+        let (ws, project) = (scope.workspace_id(), scope.project_id());
         let s = self.state.lock().unwrap();
         Ok(s.work_items
             .iter()
@@ -126,7 +122,7 @@ impl Database for MemoryDatabase {
             .cloned())
     }
 
-    async fn insert_activity(&self, a: &Activity) -> Result<bool, DbError> {
+    async fn insert_activity(&self, _sys: &SystemScope, a: &Activity) -> Result<bool, DbError> {
         let mut s = self.state.lock().unwrap();
         // MUTANT (control run only): no idempotency on event_id. The redelivery test must catch it.
         #[cfg(feature = "mutant_no_activity_dedupe")]
@@ -140,12 +136,8 @@ impl Database for MemoryDatabase {
         Ok(true)
     }
 
-    async fn list_activity(
-        &self,
-        ws: WorkspaceId,
-        project: ProjectId,
-        entity: Option<WorkItemId>,
-    ) -> Result<Vec<Activity>, DbError> {
+    async fn list_activity(&self, scope: &Scope, entity: Option<WorkItemId>) -> Result<Vec<Activity>, DbError> {
+        let (ws, project) = (scope.workspace_id(), scope.project_id());
         let s = self.state.lock().unwrap();
         let mut v: Vec<Activity> = s
             .activity
@@ -158,7 +150,7 @@ impl Database for MemoryDatabase {
         Ok(v)
     }
 
-    async fn undispatched_outbox(&self, limit: u32) -> Result<Vec<OutboxRow>, DbError> {
+    async fn undispatched_outbox(&self, _sys: &SystemScope, limit: u32) -> Result<Vec<OutboxRow>, DbError> {
         let s = self.state.lock().unwrap();
         Ok(s.outbox
             .iter()
@@ -168,7 +160,7 @@ impl Database for MemoryDatabase {
             .collect())
     }
 
-    async fn mark_outbox_dispatched(&self, event: EventId, at: Timestamp) -> Result<(), DbError> {
+    async fn mark_outbox_dispatched(&self, _sys: &SystemScope, event: EventId, at: Timestamp) -> Result<(), DbError> {
         let mut s = self.state.lock().unwrap();
         for r in s.outbox.iter_mut().filter(|r| r.envelope.event_id == event) {
             r.dispatched_at = Some(at);
@@ -177,12 +169,12 @@ impl Database for MemoryDatabase {
         Ok(())
     }
 
-    async fn outbox_depth(&self) -> Result<u64, DbError> {
+    async fn outbox_depth(&self, _sys: &SystemScope) -> Result<u64, DbError> {
         let s = self.state.lock().unwrap();
         Ok(s.outbox.iter().filter(|r| r.dispatched_at.is_none()).count() as u64)
     }
 
-    async fn seed(&self, f: &SeedFixture) -> Result<(), DbError> {
+    async fn seed(&self, _sys: &SystemScope, f: &SeedFixture) -> Result<(), DbError> {
         let mut s = self.state.lock().unwrap();
         for p in &f.projects {
             s.projects.insert(p.id, p.workspace_id);
@@ -205,8 +197,10 @@ struct MemoryTx {
 
 #[async_trait]
 impl Tx for MemoryTx {
-    /// A project outside `ws` is `Backend`, as the Postgres foreign key makes it.
-    async fn allocate(&mut self, ws: WorkspaceId, project: ProjectId) -> Result<Allocation, DbError> {
+    /// A scope whose project is outside its workspace is `Backend`, as the Postgres foreign key
+    /// makes it. `authorize` never mints one; a test can.
+    async fn allocate(&mut self, scope: &Scope) -> Result<Allocation, DbError> {
+        let (ws, project) = (scope.workspace_id(), scope.project_id());
         let mut s = self.state.lock().unwrap();
         if s.projects.get(&project) != Some(&ws) {
             return Err(DbError::Backend("project is not in this workspace".into()));
@@ -225,7 +219,8 @@ impl Tx for MemoryTx {
         Ok(Allocation { sequence_id: c.0, sort_order: c.1 })
     }
 
-    async fn insert_work_item(&mut self, item: &WorkItem) -> Result<(), DbError> {
+    async fn insert_work_item(&mut self, scope: &Scope, item: &WorkItem) -> Result<(), DbError> {
+        check_tenant(scope, item.workspace_id, Some(item.project_id))?;
         let s = self.state.lock().unwrap();
         let clash_pending = self.pending_items.iter().any(|w| {
             w.project_id == item.project_id
@@ -241,13 +236,8 @@ impl Tx for MemoryTx {
         Ok(())
     }
 
-    async fn soft_delete_work_item(
-        &mut self,
-        ws: WorkspaceId,
-        project: ProjectId,
-        id: WorkItemId,
-        at: Timestamp,
-    ) -> Result<bool, DbError> {
+    async fn soft_delete_work_item(&mut self, scope: &Scope, id: WorkItemId, at: Timestamp) -> Result<bool, DbError> {
+        let (ws, project) = (scope.workspace_id(), scope.project_id());
         let s = self.state.lock().unwrap();
         let exists = s
             .work_items
@@ -260,7 +250,8 @@ impl Tx for MemoryTx {
         Ok(exists)
     }
 
-    async fn insert_outbox(&mut self, row: &OutboxRow) -> Result<(), DbError> {
+    async fn insert_outbox(&mut self, scope: &Scope, row: &OutboxRow) -> Result<(), DbError> {
+        check_tenant(scope, row.envelope.workspace_id, row.envelope.project_id())?;
         self.pending_outbox.push(row.clone());
         Ok(())
     }

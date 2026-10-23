@@ -167,8 +167,8 @@ pub fn world() -> World {
 pub fn world_with(cfg: CoreConfig, queue: Arc<dyn Queue>, background: Arc<dyn Background>) -> World {
     let clock: Arc<dyn Clock> = Arc::new(FixedClock(DateTime::from_timestamp(1_760_000_000, 0).unwrap()));
     let db = MemoryDatabase::new();
-    let app = App {
-        ports: Ports {
+    let app = App::new(
+        Ports {
             db: Arc::new(db.clone()),
             queue,
             sessions: Arc::new(MemorySessionStore::new(clock.clone())),
@@ -179,7 +179,8 @@ pub fn world_with(cfg: CoreConfig, queue: Arc<dyn Queue>, background: Arc<dyn Ba
             background,
         },
         cfg,
-    };
+        SystemScope::mint(),
+    );
     let w = World {
         app,
         ws_a: WorkspaceId(id(0xA0)),
@@ -208,7 +209,7 @@ pub fn world_with(cfg: CoreConfig, queue: Arc<dyn Queue>, background: Arc<dyn Ba
         ],
         sessions: vec![],
     };
-    futures_executor::block_on(db.seed(&fixture)).unwrap();
+    futures_executor::block_on(db.seed(&SystemScope::mint(), &fixture)).unwrap();
     w
 }
 
