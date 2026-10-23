@@ -53,8 +53,10 @@ fn slice_routes() -> [(Method, &'static str); 8] {
 /// Every slice route that is not under a project: a method and the part after the prefix (issue #38's identity routes).
 /// A route added to `thrust_api::router()` later must be added here, too. They are called with no credentials: sign-out
 /// and sign-out-everywhere with a real token would end the very sessions the rest of the test uses.
-fn slice_auth_routes() -> [(Method, &'static str); 8] {
+fn slice_auth_routes() -> [(Method, &'static str); 10] {
     [
+        (Method::GET, "/auth/oidc/start"),
+        (Method::GET, "/auth/oidc/callback"),
         (Method::POST, "/api-keys"),
         (Method::GET, "/api-keys"),
         (Method::DELETE, "/api-keys/00000000-0000-0000-0000-000000000000"),
@@ -108,7 +110,8 @@ async fn the_slice_routes_are_gone_from_the_reserved_v1_prefix() {
     // the identity routes left `/api/v1` as well, and are mounted under the live prefix
     for (method, tail) in slice_auth_routes() {
         for (prefix, retired) in [(RETIRED_SLICE_PREFIX, true), (SLICE_PREFIX, false)] {
-            let req = t.http.request(method.clone(), t.url(&format!("{prefix}{tail}")));
+            // not following redirects: the live `oidc/start` is a 302 to the identity provider, which is not under test here
+            let req = t.no_redirect().request(method.clone(), t.url(&format!("{prefix}{tail}")));
             let req = if method == Method::POST { req.json(&json!({})) } else { req };
             let r = req.send().await.unwrap();
             let status = r.status().as_u16();

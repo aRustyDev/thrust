@@ -22,6 +22,7 @@ pub fn app(
     background: Arc<dyn Background>,
     rng: Arc<dyn Rng>,
     hasher: Arc<dyn PasswordHasher>,
+    oidc: Option<Arc<dyn OidcProvider>>,
     cfg: CoreConfig,
 ) -> App {
     let m = MEM.get_or_init(|| MemShared {
@@ -43,6 +44,7 @@ pub fn app(
             background,
             rng,
             hasher,
+            oidc,
         },
         cfg,
         SystemScope::mint(),

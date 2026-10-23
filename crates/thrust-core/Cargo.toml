@@ -10,6 +10,7 @@ publish.workspace = true
 # Control-run mutants: deliberately broken behaviour that the contract suite MUST detect (scripts/mutants.sh). Never
 # enabled outside that script; the server crate forwards them.
 mutant_skip_csrf = []
+mutant_unverified_email = []
 
 [dependencies]
 thrust-contracts = { workspace = true }

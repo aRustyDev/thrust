@@ -3,6 +3,8 @@
 //! The suite (`tests/contract.rs`) is target-agnostic: it only ever sees `THRUST_BASE_URL`.
 //! Fixtures are created through `POST /internal/seed`, the same route on every target.
 
+pub mod mock_idp;
+
 use std::time::Duration;
 
 use serde_json::{json, Value};
@@ -28,6 +30,16 @@ impl Target {
 
     pub fn url(&self, path: &str) -> String {
         format!("{}{}", self.base, path)
+    }
+
+    /// A client that does not follow redirects: the OIDC legs are redirects, and the suite plays the browser itself.
+    pub fn no_redirect(&self) -> reqwest::Client {
+        reqwest::Client::builder()
+            .timeout(Duration::from_secs(30))
+            .no_proxy()
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .unwrap()
     }
 
     pub fn create_limit() -> u32 {

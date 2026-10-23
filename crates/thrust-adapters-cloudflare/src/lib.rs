@@ -48,6 +48,37 @@ impl Rng for JsRng {
     }
 }
 
+/// `worker::Fetch` as the `Fetch` port: a subrequest from the Worker. `redirect: manual`, so a redirect is an answer
+/// like any other.
+pub struct WorkerFetch;
+
+#[async_trait]
+impl Fetch for WorkerFetch {
+    async fn send(&self, req: FetchRequest) -> Result<FetchResponse, FetchError> {
+        let e = |x: worker::Error| FetchError(x.to_string());
+        SendFuture::new(async move {
+            let headers = worker::Headers::new();
+            for (k, v) in &req.headers {
+                headers.append(k, v).map_err(e)?;
+            }
+            let mut init = worker::RequestInit::new();
+            init.with_method(worker::Method::from(req.method.clone()))
+                .with_headers(headers)
+                .with_redirect(worker::RequestRedirect::Manual);
+            if !req.body.is_empty() {
+                init.with_body(Some(worker::js_sys::Uint8Array::from(req.body.as_slice()).into()));
+            }
+            let request = worker::Request::new_with_init(&req.url, &init).map_err(e)?;
+            let mut res = worker::Fetch::Request(request).send().await.map_err(e)?;
+            let status = res.status_code();
+            let headers = res.headers().entries().collect();
+            let body = res.bytes().await.map_err(e)?;
+            Ok(FetchResponse { status, headers, body })
+        })
+        .await
+    }
+}
+
 /// `Background` on `ctx.waitUntil`: the isolate stays alive until the future completes.
 pub struct WaitUntilBackground(pub Arc<worker::Context>);
 

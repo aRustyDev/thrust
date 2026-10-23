@@ -7,6 +7,7 @@ members = [
     "crates/thrust-adapters-memory",
     "crates/thrust-api",
     "crates/thrust-adapters-postgres",
+    "crates/thrust-adapters-oidc",
     "crates/thrust-adapters-selfhosted",
     "crates/thrust-adapters-cloudflare",
     "crates/thrust-worker",
@@ -41,6 +42,7 @@ thrust-adapters-memory = { path = "crates/thrust-adapters-memory" }
 thrust-adapters-postgres = { path = "crates/thrust-adapters-postgres" }
 thrust-adapters-cloudflare = { path = "crates/thrust-adapters-cloudflare" }
 thrust-adapters-selfhosted = { path = "crates/thrust-adapters-selfhosted" }
+thrust-adapters-oidc = { path = "crates/thrust-adapters-oidc" }
 thrust-api = { path = "crates/thrust-api" }
 
 [profile.release]
@@ -60,6 +62,14 @@ strip = "debuginfo"
 [profile.dev.package.argon2]
 opt-level = 3
 [profile.dev.package.blake2]
+opt-level = 3
+# The mock identity provider of the contract suite generates a 2048-bit RSA key once per test run; unoptimised that is
+# many seconds.
+[profile.dev.package.rsa]
+opt-level = 3
+[profile.dev.package.num-bigint-dig]
+opt-level = 3
+[profile.dev.package.crypto-bigint]
 opt-level = 3
 
 # Build profile cargo-mutants uses for each mutant (no debuginfo: faster incremental builds).

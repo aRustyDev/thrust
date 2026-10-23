@@ -457,3 +457,70 @@ pub enum RateDecision {
 pub trait RateLimiter: Send + Sync {
     async fn hit(&self, key: &str, limit: u32, window_secs: u64) -> Result<RateDecision, RateError>;
 }
+
+// ---------------------------------------------------------------------------------------------
+// Outbound HTTP and the OIDC relying party (ADR-0050; issue #38)
+// ---------------------------------------------------------------------------------------------
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FetchRequest {
+    pub method: String,
+    pub url: String,
+    pub headers: Vec<(String, String)>,
+    pub body: Vec<u8>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FetchResponse {
+    pub status: u16,
+    pub headers: Vec<(String, String)>,
+    pub body: Vec<u8>,
+}
+
+#[derive(Debug, Error)]
+#[error("outbound request failed: {0}")]
+pub struct FetchError(pub String);
+
+/// Outbound HTTP, the only way the application reaches a server it does not own (so far: an OIDC provider's discovery,
+/// token and key endpoints). Never follows a redirect on its own: a redirect is a response like any other.
+///
+/// * native: `reqwest`
+/// * Worker: `worker::Fetch`
+#[async_trait]
+pub trait Fetch: Send + Sync {
+    async fn send(&self, req: FetchRequest) -> Result<FetchResponse, FetchError>;
+}
+
+/// What a provider vouched for in a verified ID token.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OidcClaims {
+    pub issuer: String,
+    pub subject: String,
+    pub email: Option<String>,
+    /// The `email_verified` claim; absent counts as `false`.
+    pub email_verified: bool,
+}
+
+#[derive(Debug, Error)]
+pub enum OidcError {
+    /// The provider could not be reached or answered something unusable (discovery, token endpoint, keys).
+    #[error("identity provider unavailable: {0}")]
+    Provider(String),
+    /// The provider answered, and what it answered does not authenticate: an error from the token endpoint (a wrong
+    /// code or PKCE verifier), or an ID token that fails verification (signature, issuer, audience, expiry, nonce).
+    #[error("identity provider response rejected: {0}")]
+    Rejected(String),
+}
+
+/// One OIDC provider, as a relying party (authorization code with PKCE, discovery, ID-token verification). The
+/// `state`, `nonce` and PKCE verifier are the caller's: core makes them with the [`Rng`] port, stores them, and hands
+/// them back, so the adapter holds no per-login state and a Worker isolate that dies between the two legs loses nothing.
+#[async_trait]
+pub trait OidcProvider: Send + Sync {
+    /// The authorization endpoint's URL for this login, with the S256 challenge of `code_verifier`.
+    async fn authorization_url(&self, state: &str, nonce: &str, code_verifier: &str) -> Result<String, OidcError>;
+
+    /// Exchange the authorization `code` (proving possession of `code_verifier`) and verify the ID token against
+    /// `nonce`. Returns only what verification vouches for.
+    async fn exchange(&self, code: &str, code_verifier: &str, nonce: &str) -> Result<OidcClaims, OidcError>;
+}

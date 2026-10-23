@@ -9,11 +9,12 @@ use std::sync::Arc;
 
 use axum::body::Body;
 use thrust_adapters_cloudflare::*;
+use thrust_adapters_oidc::{OidcConfig, OpenIdProvider};
 use thrust_adapters_postgres::PgDatabase;
 use thrust_api::{ApiConfig, InternalErrorDetail};
 use thrust_contracts::Envelope;
 use thrust_core::{ActivityConsumer, Argon2Params, Argon2idHasher, App, CoreConfig, Ports, SystemScope};
-use thrust_ports::{Background, Clock, EventConsumer, IdGen, PasswordHasher, Rng};
+use thrust_ports::{Background, Clock, EventConsumer, IdGen, OidcProvider, PasswordHasher, Rng};
 use http_body_util::BodyExt;
 use tower_service::Service;
 use worker::worker_sys::web_sys;
@@ -69,6 +70,22 @@ fn core_config(env: &Env) -> CoreConfig {
     }
 }
 
+/// The OIDC provider, when the issuer, client id and redirect URI are all configured (the client secret is a Worker
+/// secret). Some of the three and not all is an error, not a Worker that quietly has no login.
+fn oidc_provider(env: &Env) -> Result<Option<Arc<dyn OidcProvider>>> {
+    let get = |n: &str| text(env, n).filter(|v| !v.is_empty());
+    match (get("THRUST_OIDC_ISSUER"), get("THRUST_OIDC_CLIENT_ID"), get("THRUST_OIDC_REDIRECT_URI")) {
+        (Some(issuer), Some(client_id), Some(redirect_uri)) => {
+            let cfg = OidcConfig { issuer, client_id, client_secret: get("THRUST_OIDC_CLIENT_SECRET"), redirect_uri };
+            Ok(Some(Arc::new(OpenIdProvider::new(cfg, Arc::new(WorkerFetch)))))
+        }
+        (None, None, None) => Ok(None),
+        _ => Err(Error::RustError(
+            "THRUST_OIDC_ISSUER, THRUST_OIDC_CLIENT_ID and THRUST_OIDC_REDIRECT_URI must be set together".into(),
+        )),
+    }
+}
+
 fn adapter_set(env: &Env) -> String {
     let default = if cfg!(feature = "memory") { "memory" } else { "cloudflare" };
     text(env, "THRUST_ADAPTERS").unwrap_or_else(|| default.into())
@@ -93,6 +110,7 @@ fn build_app(env: &Env, background: Arc<dyn Background>) -> Result<App> {
     let cfg = core_config(env);
     let rng: Arc<dyn Rng> = Arc::new(JsRng);
     let hasher: Arc<dyn PasswordHasher> = Arc::new(Argon2idHasher::new(cfg.argon2));
+    let oidc = oidc_provider(env)?;
 
     let app = match adapters.as_str() {
         "cloudflare" => {
@@ -109,13 +127,14 @@ fn build_app(env: &Env, background: Arc<dyn Background>) -> Result<App> {
                     background,
                     rng,
                     hasher,
+                    oidc,
                 },
                 cfg,
                 SystemScope::mint(),
             )
         }
         #[cfg(feature = "memory")]
-        "memory" => memory::app(clock, ids, background, rng, hasher, cfg),
+        "memory" => memory::app(clock, ids, background, rng, hasher, oidc, cfg),
         other => return Err(Error::RustError(format!("THRUST_ADAPTERS '{other}' is not compiled into this bundle"))),
     };
     Ok(app)

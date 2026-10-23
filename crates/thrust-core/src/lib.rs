@@ -31,6 +31,9 @@ pub struct Ports {
     pub rng: Arc<dyn Rng>,
     /// Password hashing, counted in tests (issue #38).
     pub hasher: Arc<dyn PasswordHasher>,
+    /// The one OIDC provider, when the deployment configured one (ADR-0050; issue #38). `None`: the login routes are
+    /// 404 and nothing else changes: passwords and API keys never involve it.
+    pub oidc: Option<Arc<dyn OidcProvider>>,
 }
 
 #[derive(Debug, Clone)]
@@ -53,6 +56,8 @@ pub struct CoreConfig {
     /// costs nothing, and a known and an unknown email are limited alike).
     pub sign_in_rate_limit: u32,
     pub sign_in_rate_window_secs: u64,
+    /// How long a started OIDC login may wait for its callback before the stored `state` is useless.
+    pub oidc_login_ttl_secs: i64,
 }
 
 impl Default for CoreConfig {
@@ -67,6 +72,7 @@ impl Default for CoreConfig {
             argon2: Argon2Params::OWASP_MINIMUM,
             sign_in_rate_limit: 10,
             sign_in_rate_window_secs: 60,
+            oidc_login_ttl_secs: 10 * 60,
         }
     }
 }
@@ -116,6 +122,9 @@ pub enum CoreError {
     Invalid(String),
     #[error("payload too large")]
     TooLarge,
+    /// A server this one depends on (the OIDC provider) failed or answered something unusable.
+    #[error("upstream: {0}")]
+    Upstream(String),
     #[error("internal: {0}")]
     Internal(String),
 }

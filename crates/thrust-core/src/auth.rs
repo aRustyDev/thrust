@@ -375,3 +375,83 @@ pub async fn revoke_api_key(app: &App, who: &Principal, id: ApiKeyId) -> Result<
         Err(CoreError::NotFound)
     }
 }
+
+// --- OIDC login (ADR-0050) --------------------------------------------------------------------------------------
+
+fn oidc_error(e: OidcError) -> CoreError {
+    match e {
+        // the provider answered and what it answered does not authenticate: not a server fault
+        OidcError::Rejected(_) => CoreError::Unauthenticated,
+        OidcError::Provider(m) => CoreError::Upstream(m),
+    }
+}
+
+/// Begin a login: make a `state`, a `nonce` and a PKCE verifier (256 random bits each), store them for
+/// `oidc_login_ttl_secs` (the `state` as its digest), and return the provider's authorization URL to send the browser
+/// to. `NotFound` when no provider is configured.
+pub async fn oidc_start(app: &App) -> Result<String, CoreError> {
+    let oidc = app.ports.oidc.as_ref().ok_or(CoreError::NotFound)?;
+    let (state, nonce, code_verifier) = (random_hex(app, 32)?, random_hex(app, 32)?, random_hex(app, 32)?);
+    let now = app.ports.clock.now();
+    app.ports
+        .db
+        .insert_oidc_login(&NewOidcLogin {
+            state_hash: crate::hash_token(&state),
+            nonce: nonce.clone(),
+            code_verifier: code_verifier.clone(),
+            created_at: now,
+            expires_at: now + thrust_contracts::chrono::TimeDelta::seconds(app.cfg.oidc_login_ttl_secs),
+        })
+        .await?;
+    oidc.authorization_url(&state, &nonce, &code_verifier).await.map_err(oidc_error)
+}
+
+/// Finish a login. The order is the security of it: the `state` must be one this server started, unused and unexpired
+/// (taking it deletes it, so a replay finds nothing), and only then is the provider asked, with the STORED verifier and
+/// nonce. What the provider vouches for needs a verified email; the account is the one linked to `(issuer, sub)`, else
+/// the active user with that email (who is then linked), else nobody (no just-in-time provisioning at P0, Q-0050.1).
+pub async fn oidc_callback(app: &App, code: &str, state: &str) -> Result<SignedIn, CoreError> {
+    let oidc = app.ports.oidc.as_ref().ok_or(CoreError::NotFound)?;
+    if code.is_empty() || state.is_empty() {
+        return Err(CoreError::Invalid("a code and a state are required".into()));
+    }
+    let now = app.ports.clock.now();
+    let login = app
+        .ports
+        .db
+        .take_oidc_login(&crate::hash_token(state))
+        .await?
+        .filter(|l| l.expires_at > now)
+        .ok_or_else(|| CoreError::Invalid("unknown, used or expired login state".into()))?;
+    let claims = oidc.exchange(code, &login.code_verifier, &login.nonce).await.map_err(oidc_error)?;
+
+    // MUTANT (control run only): accept an unverified email. The contract suite's unverified-email test must catch it.
+    #[cfg(not(feature = "mutant_unverified_email"))]
+    if !claims.email_verified {
+        return Err(CoreError::Forbidden);
+    }
+    let email = claims.email.as_deref().map(normalize_email).filter(|e| !e.is_empty()).ok_or(CoreError::Forbidden)?;
+
+    let linked = app.ports.db.user_for_account(&claims.issuer, &claims.subject).await?;
+    let user = match linked {
+        Some(u) => u,
+        None => {
+            let u = app.ports.db.user_by_email(&email).await?.ok_or(CoreError::Forbidden)?;
+            app.ports
+                .db
+                .link_account(&NewAccount {
+                    provider: claims.issuer.clone(),
+                    provider_account_id: claims.subject.clone(),
+                    user_id: u.id,
+                    email: Some(email),
+                    created_at: now,
+                })
+                .await?;
+            u
+        }
+    };
+    if !user.is_active {
+        return Err(CoreError::Forbidden);
+    }
+    mint_session(app, user.id).await
+}

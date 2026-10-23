@@ -9,7 +9,7 @@
 
 use axum::body::{Body, Bytes};
 use axum::extract::{DefaultBodyLimit, FromRequestParts, Path, Query};
-use axum::http::header::{AUTHORIZATION, CACHE_CONTROL, CONTENT_TYPE, COOKIE, RETRY_AFTER, SET_COOKIE};
+use axum::http::header::{AUTHORIZATION, CACHE_CONTROL, CONTENT_TYPE, COOKIE, LOCATION, RETRY_AFTER, SET_COOKIE};
 use axum::http::request::Parts;
 use axum::http::{HeaderMap, HeaderValue, Method, Response, StatusCode};
 use axum::response::IntoResponse;
@@ -60,6 +60,7 @@ impl IntoResponse for ApiError {
             CoreError::RateLimited { .. } => (StatusCode::TOO_MANY_REQUESTS, "rate_limited", "too many requests".to_string(), None),
             CoreError::Invalid(m) => (StatusCode::BAD_REQUEST, "invalid", m.clone(), None),
             CoreError::TooLarge => (StatusCode::PAYLOAD_TOO_LARGE, "too_large", "payload too large".to_string(), None),
+            CoreError::Upstream(m) => (StatusCode::BAD_GATEWAY, "bad_gateway", "the identity provider is unavailable".to_string(), Some(m.clone())),
             CoreError::Internal(m) => (StatusCode::INTERNAL_SERVER_ERROR, "internal", "internal error".to_string(), Some(m.clone())),
         };
         let mut resp = (status, err_body(code, msg)).into_response();
@@ -299,6 +300,38 @@ async fn csrf(Extension(app): Extension<App>) -> ApiResult<Response<Body>> {
     Ok(resp)
 }
 
+/// Begin the OIDC login: a 302 to the provider's authorization endpoint (ADR-0050). 404 when no provider is configured.
+async fn oidc_start(Extension(app): Extension<App>) -> ApiResult<Response<Body>> {
+    let url = thrust_core::oidc_start(&app).await?;
+    let location = HeaderValue::from_str(&url).map_err(|e| ApiError(CoreError::Upstream(format!("authorization url: {e}"))))?;
+    let mut resp = StatusCode::FOUND.into_response();
+    resp.headers_mut().insert(LOCATION, location);
+    resp.headers_mut().insert(CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    Ok(resp)
+}
+
+#[derive(Deserialize)]
+struct OidcCallbackQuery {
+    code: Option<String>,
+    state: Option<String>,
+    /// What a provider sends instead of a code when the user said no (or it failed): `?error=access_denied&state=...`.
+    error: Option<String>,
+}
+
+/// The provider sends the browser back here. On success: the same session and CSRF cookies as a password sign-in, and a
+/// 303 to the application root. The `state` must be one this server started and has not seen before.
+async fn oidc_callback(Extension(app): Extension<App>, Query(q): Query<OidcCallbackQuery>) -> ApiResult<Response<Body>> {
+    if q.error.is_some() {
+        // the user refused, or the provider failed: no code to exchange, no session, and the stored state expires on its own
+        return Err(ApiError(CoreError::Unauthenticated));
+    }
+    let s = thrust_core::oidc_callback(&app, q.code.as_deref().unwrap_or(""), q.state.as_deref().unwrap_or("")).await?;
+    let mut resp = StatusCode::SEE_OTHER.into_response();
+    resp.headers_mut().insert(LOCATION, HeaderValue::from_static("/"));
+    add_cookies(&mut resp, &session_cookies(&s.token, &s.csrf_token, app.cfg.session_ttl_secs));
+    Ok(resp)
+}
+
 /// Make an API key. A session credential only (a key cannot mint keys). The token is in this response and nowhere else.
 async fn create_api_key(
     AuthedVia(a): AuthedVia,
@@ -477,6 +510,8 @@ pub fn router() -> Router {
         .route(&auth_path("/sign-out-all"), post(sign_out_all))
         .route(&auth_path("/csrf"), get(csrf))
         .route(&auth_path("/session"), get(session_info))
+        .route(&auth_path("/oidc/start"), get(oidc_start))
+        .route(&auth_path("/oidc/callback"), get(oidc_callback))
         .route(&format!("{SLICE_PREFIX}/api-keys"), post(create_api_key).get(list_api_keys))
         .route(&format!("{SLICE_PREFIX}/api-keys/{{id}}"), delete(revoke_api_key))
         .route("/internal/outbox-depth", get(outbox_depth))

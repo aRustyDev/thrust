@@ -454,3 +454,190 @@ async fn an_expired_key_and_a_deactivated_users_key_are_rejected_with_403() {
     t.set_user_active(f.guest_a.id, true).await;
     assert_eq!(list_with_key(&t, &f.a, Some(&inactive_owner)).await, 200, "reactivated");
 }
+
+// ---------------------------------------------------------------------------------------------------------------
+// OIDC: one authorization-code login with PKCE through the `openidconnect` crate, against the mock identity provider
+// the suite serves on 127.0.0.1 (`thrust_contract_tests::mock_idp`). The mock checks the authorization request the
+// target built and the PKCE verifier it sends, and signs ID tokens with the `rsa` crate, so the two sides share no code.
+// A deployed Worker cannot reach 127.0.0.1: these `oidc_` tests are skipped by scripts/stage2-contract.sh.
+// ---------------------------------------------------------------------------------------------------------------
+
+use thrust_contract_tests::mock_idp::{Callback, Identity, MockIdp, Tamper};
+
+fn unique_sub() -> String {
+    format!("sub-{}", uuid::Uuid::new_v4().simple())
+}
+
+/// `GET /auth/oidc/start` as a browser: a 302 whose Location the caller takes to the provider.
+async fn oidc_start(t: &Target) -> String {
+    let r = t.no_redirect().get(auth_url(t, "/oidc/start")).send().await.unwrap();
+    assert_eq!(r.status(), 302, "start answers a redirect");
+    r.headers().get("location").and_then(|v| v.to_str().ok()).expect("a Location").to_string()
+}
+
+/// The whole front half: start, then the provider logs `identity` in.
+async fn begin(t: &Target, identity: Identity, tamper: Tamper) -> Callback {
+    // the provider first: the target discovers it while it handles `start`
+    let idp = MockIdp::shared();
+    let location = oidc_start(t).await;
+    idp.authorize(&location, identity, tamper)
+}
+
+async fn finish(t: &Target, cb: &Callback) -> reqwest::Response {
+    t.no_redirect().get(cb.url()).send().await.unwrap()
+}
+
+/// A callback that was accepted: 303 to the root with the session and CSRF cookies, which are a working session.
+async fn assert_logged_in(t: &Target, r: reqwest::Response, who: UserId) -> Session {
+    assert_eq!(r.status(), 303);
+    assert_eq!(r.headers().get("location").and_then(|v| v.to_str().ok()), Some("/"));
+    let cookies = SetCookie::all(&r);
+    let session = SetCookie::find(&cookies, SESSION_COOKIE).expect("a session cookie");
+    let csrf = SetCookie::find(&cookies, CSRF_COOKIE).expect("a csrf cookie");
+    assert!(is_hex(&session.value, 64) && is_hex(&csrf.value, 32));
+    for c in [session, csrf] {
+        assert!(c.has_attr("Secure") && c.has_attr("HttpOnly") && c.attr("SameSite") == Some("Lax"), "{}", c.name);
+        assert_eq!((c.attr("Path"), c.attr("Domain"), c.attr("Max-Age")), (Some("/"), None, Some("2592000")), "{}", c.name);
+    }
+    let s = Session { user_id: who, token: session.value.clone(), csrf: csrf.value.clone() };
+    let me = as_browser(t, Method::GET, auth_url(t, "/session"), &s, Csrf::Absent).send().await.unwrap();
+    assert_eq!(me.status(), 200, "the cookie from the callback is a session");
+    assert_eq!(me.json::<SessionInfo>().await.unwrap().user_id, who);
+    s
+}
+
+/// A callback that was refused: the status, and no cookie, whatever else.
+async fn assert_refused(r: reqwest::Response, status: u16, what: &str) {
+    assert_eq!(r.status().as_u16(), status, "{what}");
+    assert!(SetCookie::all(&r).is_empty(), "{what}: a refused login must not set a cookie");
+}
+
+/// ADR-0050, spike 0003 step 4: the login completes through `openidconnect` and ends in the same session row and
+/// cookies as a password sign-in. The first login of a user known by email links the provider's subject; from then on
+/// the subject decides, so another user's email cannot take the account over.
+#[tokio::test]
+async fn oidc_login_completes_and_ends_in_the_same_session_as_a_password_sign_in() {
+    let t = t();
+    let f = Fixture::seed(&t).await;
+    let sub = unique_sub();
+
+    // verified email of a user with no link yet: the subject is linked and the user is logged in
+    let cb = begin(&t, Identity::verified(&sub, &f.member_a.email), Tamper::None).await;
+    let s = assert_logged_in(&t, finish(&t, &cb).await, f.member_a.id).await;
+    assert_eq!(list(&t, &User { token: s.token.clone(), ..clone_user(&f.member_a) }, &f.a, None).await.status(), 200);
+
+    // the link now decides: the same subject reporting another user's verified email is still the first user
+    let cb = begin(&t, Identity::verified(&sub, &f.admin_a.email), Tamper::None).await;
+    assert_logged_in(&t, finish(&t, &cb).await, f.member_a.id).await;
+    // control: a different subject with that email is a different login, and goes to that user
+    let cb = begin(&t, Identity::verified(&unique_sub(), &f.admin_a.email), Tamper::None).await;
+    assert_logged_in(&t, finish(&t, &cb).await, f.admin_a.id).await;
+    // the email is matched like a password sign-in's: case and padding do not matter
+    let cb = begin(&t, Identity::verified(&unique_sub(), &format!(" {} ", f.guest_a.email.to_uppercase())), Tamper::None).await;
+    assert_logged_in(&t, finish(&t, &cb).await, f.guest_a.id).await;
+
+    // control for the mock itself (rule 8): it refuses an exchange whose PKCE verifier is not the challenge's. Without
+    // this, nothing here would show that the target's own, correct verifier is what made the logins above work.
+    let cb = begin(&t, Identity::verified(&unique_sub(), &f.member_a.email), Tamper::None).await;
+    let (status, body) = MockIdp::shared().exchange_with_verifier(&cb, &"0".repeat(64)).await;
+    assert_eq!((status, body["error"].as_str()), (400, Some("invalid_grant")), "{body}");
+}
+
+/// A callback whose `state` is not the one this server issued is refused before the provider is asked anything, and the
+/// real callback of the same login still completes afterwards (the bad one used nothing up).
+#[tokio::test]
+async fn oidc_a_tampered_state_is_rejected() {
+    let t = t();
+    let f = Fixture::seed(&t).await;
+    let cb = begin(&t, Identity::verified(&unique_sub(), &f.member_a.email), Tamper::None).await;
+    let flipped = if cb.state.ends_with('0') { '1' } else { '0' };
+    let tampered = Callback { state: format!("{}{flipped}", &cb.state[..63]), ..cb.clone() };
+    assert_refused(finish(&t, &tampered).await, 400, "a state with one character changed").await;
+    let unknown = Callback { state: "f".repeat(64), ..cb.clone() };
+    assert_refused(finish(&t, &unknown).await, 400, "a state nobody issued").await;
+    let none = t.no_redirect().get(t.url(&format!("{SLICE_PREFIX}/auth/oidc/callback"))).send().await.unwrap();
+    assert_refused(none, 400, "no code and no state").await;
+    let denied = t.no_redirect().get(format!("{}?error=access_denied&state={}", cb.redirect_uri, cb.state)).send().await.unwrap();
+    assert_refused(denied, 401, "the provider reports an error").await;
+    // control: none of that used the login up; the genuine callback completes
+    assert_logged_in(&t, finish(&t, &cb).await, f.member_a.id).await;
+}
+
+/// A callback is good once: the stored `state` is deleted when it is taken, so repeating it finds nothing.
+#[tokio::test]
+async fn oidc_a_replayed_callback_is_rejected() {
+    let t = t();
+    let f = Fixture::seed(&t).await;
+    let cb = begin(&t, Identity::verified(&unique_sub(), &f.member_a.email), Tamper::None).await;
+    assert_logged_in(&t, finish(&t, &cb).await, f.member_a.id).await;
+    assert_refused(finish(&t, &cb).await, 400, "the same callback again").await;
+    // control: a fresh login is unaffected
+    let cb = begin(&t, Identity::verified(&unique_sub(), &f.member_a.email), Tamper::None).await;
+    assert_logged_in(&t, finish(&t, &cb).await, f.member_a.id).await;
+}
+
+/// The target verifies the ID token the provider returns: a wrong `nonce`, another audience or issuer, an expired
+/// token and a corrupted signature are each refused (401, no cookie). On the Worker this is `openidconnect`'s RS256
+/// verification running as wasm32.
+#[tokio::test]
+async fn oidc_an_id_token_that_does_not_verify_is_rejected() {
+    let t = t();
+    let f = Fixture::seed(&t).await;
+    for tamper in [Tamper::WrongNonce, Tamper::WrongAudience, Tamper::WrongIssuer, Tamper::Expired, Tamper::BadSignature] {
+        let cb = begin(&t, Identity::verified(&unique_sub(), &f.member_a.email), tamper).await;
+        assert_refused(finish(&t, &cb).await, 401, &format!("{tamper:?}")).await;
+    }
+    // control: the same login with an honest token is accepted, so each refusal above was the tampering
+    let cb = begin(&t, Identity::verified(&unique_sub(), &f.member_a.email), Tamper::None).await;
+    assert_logged_in(&t, finish(&t, &cb).await, f.member_a.id).await;
+}
+
+/// ADR-0050: a verified email is required (the guard Plane added after GHSA-7j95-vh8g-f365). A provider that says the
+/// email is not verified, says nothing about it, or gives none does not log anyone in, even when the email is a user's.
+#[tokio::test]
+async fn oidc_an_unverified_or_missing_email_is_rejected() {
+    let t = t();
+    let f = Fixture::seed(&t).await;
+    let email = f.member_a.email.clone();
+    for (what, identity) in [
+        ("email_verified false", Identity { sub: unique_sub(), email: Some(email.clone()), email_verified: Some(false) }),
+        ("email_verified absent", Identity { sub: unique_sub(), email: Some(email.clone()), email_verified: None }),
+        ("no email", Identity { sub: unique_sub(), email: None, email_verified: Some(true) }),
+    ] {
+        let cb = begin(&t, identity, Tamper::None).await;
+        assert_refused(finish(&t, &cb).await, 403, what).await;
+    }
+    // an already linked subject does not get around it
+    let sub = unique_sub();
+    let cb = begin(&t, Identity::verified(&sub, &email), Tamper::None).await;
+    assert_logged_in(&t, finish(&t, &cb).await, f.member_a.id).await;
+    let cb = begin(&t, Identity { sub, email: Some(email.clone()), email_verified: Some(false) }, Tamper::None).await;
+    assert_refused(finish(&t, &cb).await, 403, "a linked subject with an unverified email").await;
+    // control: verified is accepted
+    let cb = begin(&t, Identity::verified(&unique_sub(), &email), Tamper::None).await;
+    assert_logged_in(&t, finish(&t, &cb).await, f.member_a.id).await;
+}
+
+/// No just-in-time provisioning at P0 (Q-0050.1): a verified email that no user has is refused, and creates nobody. A
+/// deactivated user cannot log in through the provider either.
+#[tokio::test]
+async fn oidc_there_is_no_provisioning_and_a_deactivated_user_cannot_log_in() {
+    let t = t();
+    let f = Fixture::seed(&t).await;
+    let stranger = format!("stranger-{}@example.test", uuid::Uuid::new_v4().simple());
+    let cb = begin(&t, Identity::verified(&unique_sub(), &stranger), Tamper::None).await;
+    assert_refused(finish(&t, &cb).await, 403, "a verified email nobody has").await;
+    assert_eq!(t.sign_in_raw(&stranger, "anything").await.status(), 401, "and no user was made");
+
+    let sub = unique_sub();
+    t.set_user_active(f.guest_a.id, false).await;
+    let cb = begin(&t, Identity::verified(&sub, &f.guest_a.email), Tamper::None).await;
+    assert_refused(finish(&t, &cb).await, 403, "a deactivated user, by email").await;
+    // control: reactivated, the same login is accepted, and then the link makes the deactivated state matter by subject
+    t.set_user_active(f.guest_a.id, true).await;
+    let cb = begin(&t, Identity::verified(&sub, &f.guest_a.email), Tamper::None).await;
+    assert_logged_in(&t, finish(&t, &cb).await, f.guest_a.id).await;
+    t.set_user_active(f.guest_a.id, false).await;
+    let cb = begin(&t, Identity::verified(&sub, &f.guest_a.email), Tamper::None).await;
+    assert_refused(finish(&t, &cb).await, 403, "a deactivated user, by link").await;
+}

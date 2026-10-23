@@ -101,6 +101,55 @@ impl PasswordHasher for CountingHasher {
     }
 }
 
+/// What a scripted OIDC provider answers to `exchange`.
+#[derive(Clone)]
+pub enum OidcReply {
+    Claims(OidcClaims),
+    /// The provider says no: a bad code, or an ID token that fails verification.
+    Rejected,
+    /// The provider cannot be reached.
+    Down,
+}
+
+/// An OIDC provider that answers what it is told and records what it was asked, so a test can see which values core
+/// sent (the stored nonce and verifier, never the caller's).
+pub struct ScriptedOidc {
+    pub reply: std::sync::Mutex<OidcReply>,
+    /// `(state, nonce, code_verifier)` of every `authorization_url` call.
+    pub started: std::sync::Mutex<Vec<(String, String, String)>>,
+    /// `(code, code_verifier, nonce)` of every `exchange` call.
+    pub exchanged: std::sync::Mutex<Vec<(String, String, String)>>,
+}
+impl ScriptedOidc {
+    pub const ISSUER: &'static str = "https://idp.example.test";
+    pub fn new(reply: OidcReply) -> Arc<Self> {
+        Arc::new(Self { reply: reply.into(), started: Default::default(), exchanged: Default::default() })
+    }
+    pub fn claims(sub: &str, email: Option<&str>, verified: bool) -> OidcReply {
+        OidcReply::Claims(OidcClaims {
+            issuer: Self::ISSUER.into(),
+            subject: sub.into(),
+            email: email.map(str::to_string),
+            email_verified: verified,
+        })
+    }
+}
+#[async_trait::async_trait]
+impl OidcProvider for ScriptedOidc {
+    async fn authorization_url(&self, state: &str, nonce: &str, verifier: &str) -> Result<String, OidcError> {
+        self.started.lock().unwrap().push((state.into(), nonce.into(), verifier.into()));
+        Ok(format!("{}/authorize?state={state}", Self::ISSUER))
+    }
+    async fn exchange(&self, code: &str, verifier: &str, nonce: &str) -> Result<OidcClaims, OidcError> {
+        self.exchanged.lock().unwrap().push((code.into(), verifier.into(), nonce.into()));
+        match self.reply.lock().unwrap().clone() {
+            OidcReply::Claims(c) => Ok(c),
+            OidcReply::Rejected => Err(OidcError::Rejected("scripted".into())),
+            OidcReply::Down => Err(OidcError::Provider("scripted".into())),
+        }
+    }
+}
+
 /// The default world runs with the outbox fast path off, so nothing should ever be spawned. Fail loudly if it is.
 pub struct NoBackground;
 impl Background for NoBackground {
@@ -268,6 +317,7 @@ pub fn world_with(cfg: CoreConfig, queue: Arc<dyn Queue>, background: Arc<dyn Ba
             background,
             rng: Arc::new(CounterRng::default()),
             hasher: hasher.clone(),
+            oidc: None,
         },
         cfg,
         SystemScope::mint(),

@@ -9,6 +9,7 @@ use axum::body::Body;
 use axum::http::{header, Response, StatusCode};
 use axum::Extension;
 use thrust_adapters_memory::*;
+use thrust_adapters_oidc::{OidcConfig, OpenIdProvider};
 use thrust_adapters_selfhosted::*;
 use thrust_api::{ApiConfig, InternalErrorDetail};
 use thrust_core::{ActivityConsumer, Argon2Params, Argon2idHasher, App, CoreConfig, Ports, SystemScope};
@@ -29,6 +30,23 @@ fn env_flag(name: &str, default: bool) -> bool {
 
 fn env_num<T: std::str::FromStr>(name: &str, default: T) -> T {
     std::env::var(name).ok().and_then(|v| v.parse().ok()).unwrap_or(default)
+}
+
+/// The OIDC provider, when `THRUST_OIDC_ISSUER`, `THRUST_OIDC_CLIENT_ID` and `THRUST_OIDC_REDIRECT_URI` are all set
+/// (`THRUST_OIDC_CLIENT_SECRET` too for a confidential client; a secret, so only from the environment). Some of the
+/// three and not all is a mistake, not a reason to start without a login nobody notices is missing.
+fn oidc_provider() -> Option<Arc<dyn OidcProvider>> {
+    let get = |n: &str| std::env::var(n).ok().filter(|v| !v.is_empty());
+    let (issuer, client_id, redirect_uri) =
+        (get("THRUST_OIDC_ISSUER"), get("THRUST_OIDC_CLIENT_ID"), get("THRUST_OIDC_REDIRECT_URI"));
+    match (issuer, client_id, redirect_uri) {
+        (Some(issuer), Some(client_id), Some(redirect_uri)) => {
+            let cfg = OidcConfig { issuer, client_id, client_secret: get("THRUST_OIDC_CLIENT_SECRET"), redirect_uri };
+            Some(Arc::new(OpenIdProvider::new(cfg, Arc::new(ReqwestFetch::new()))))
+        }
+        (None, None, None) => None,
+        _ => panic!("THRUST_OIDC_ISSUER, THRUST_OIDC_CLIENT_ID and THRUST_OIDC_REDIRECT_URI must be set together"),
+    }
 }
 
 fn panic_response(err: Box<dyn std::any::Any + Send + 'static>) -> Response<Body> {
@@ -96,6 +114,7 @@ async fn main() {
             background,
             rng: Arc::new(NativeRng),
             hasher,
+            oidc: oidc_provider(),
         },
         cfg,
         SystemScope::mint(),
