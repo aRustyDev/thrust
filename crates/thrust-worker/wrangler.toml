@@ -7,7 +7,8 @@
 # (environment), never through `localConnectionString` in this file.
 name = "thrust-worker"
 main = "entry.mjs"
-# Newest date the local workerd in wrangler 4.123.0 accepts is 2026-08-18 (measured).
+# Newest date the local workerd in wrangler 4.123.0 accepts is 2026-08-18 (measured). CI runs the wrangler pinned in
+# .github/actions/setup-rust/action.yml (4.151.2), whose newer workerd accepts this date as well.
 compatibility_date = "2026-08-01"
 workers_dev = false
 
