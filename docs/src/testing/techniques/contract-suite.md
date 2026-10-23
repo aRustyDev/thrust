@@ -35,7 +35,7 @@ A pass is selected by **test-name prefix** in `scripts/contract.sh`, not by next
 ## Run
 
 ```sh
-scripts/contract.sh native-memory           # main pass, 18 tests [verified 2026-10-20: 18 passed]
+scripts/contract.sh native-memory           # main pass, 21 tests [verified 2026-10-23: 21 passed]
 scripts/contract.sh worker-cf bindings      # [unverified: not run]
 scripts/contract-all.sh                     # the 16-cell matrix, serially [unverified: not run]
 ```

@@ -75,9 +75,10 @@ pub struct User {
     pub token: String,
 }
 
-/// Where the slice's tenant routes are mounted. It must equal `thrust_api::SLICE_PREFIX`; #47 moves it out of
-/// `/api/v1` and this constant is the only place the suite spells the prefix.
-pub const SLICE_PREFIX: &str = "/api/v1";
+/// Where the slice's tenant routes are mounted. It must equal `thrust_api::SLICE_PREFIX` (this crate is black-box and
+/// does not depend on it). The slice left `/api/v1` in #47; the one other place the suite names a prefix is
+/// `RETIRED_SLICE_PREFIX` in `tests/contract.rs`, which shows the old one is gone.
+pub const SLICE_PREFIX: &str = "/api/_slice";
 
 /// A project addressed through a workspace slug: the two segments a slice route carries after the prefix.
 #[derive(Debug, Clone, PartialEq, Eq)]
