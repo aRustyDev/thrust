@@ -56,12 +56,11 @@ for triple in \
 done
 
 # The engine pass (spike 0002, `contract.sh <target> engine`): the 50-writer, 10k-create test against the duplicate-sequence
-# mutant of BOTH adapters that have one (memory and SQLite), and against the SQLite adapter's own transaction gate being
-# removed. Each must fail it: that is the control the issue names for the 50-writer test.
+# mutant of the memory adapter, and the search tests against its case-sensitive-search mutant. Each must fail it: that is the
+# control the issue names for the 50-writer test. (The SQLite adapter's own rows are archived with it, on the tag
+# `spike/0002-worker-do`.)
 for spec in \
   "native-memory:duplicate-sequence-number:mutant_dup_sequence" \
-  "native-sqlite:duplicate-sequence-number:mutant_dup_sequence" \
-  "native-sqlite:no-transaction-gate:mutant_no_gate" \
   "native-memory:case-sensitive-search:mutant_search_case_sensitive"; do
   target="${spec%%:*}"
   rest="${spec#*:}"
@@ -70,26 +69,6 @@ for spec in \
   THRUST_SERVER_FEATURES="$feature" THRUST_LOGDIR="$OUT/engine-$target-$name" "$ROOT/scripts/contract.sh" "$target" engine >"$OUT/engine-$target-$name.out" 2>&1
   status=$?
   kill_check "$target engine + $name" "$status" "$OUT/engine-$target-$name/$target-engine.test.log"
-done
-
-# The same SQLite mutant against the main pass (the first version of this mutant survived it: see its commit message).
-THRUST_SERVER_FEATURES=mutant_dup_sequence THRUST_LOGDIR="$OUT/sqlite-dup-main" "$ROOT/scripts/contract.sh" native-sqlite main >"$OUT/sqlite-dup-main.out" 2>&1
-status=$?
-kill_check "native-sqlite + duplicate-sequence-number" "$status" "$OUT/sqlite-dup-main/native-sqlite-main.test.log"
-
-# SQLite adapter mutants, hermetic (the crate's own tests): a commit that is no transaction (risk R1), a transaction gate
-# that never reopens after an abandoned transaction, and the duplicate number.
-for spec in \
-  "non-atomic-commit:mutant_non_atomic_commit:commit" \
-  "gate-leak:mutant_gate_leak:model" \
-  "duplicate-sequence-number:mutant_dup_sequence:model"; do
-  name="${spec%%:*}"
-  rest="${spec#*:}"
-  feature="${rest%%:*}"
-  suite="${rest##*:}"
-  "$ROOT/scripts/rs" cargo test --manifest-path "$ROOT/Cargo.toml" -p thrust-adapters-sqlite --features "$feature" --test "$suite" >"$OUT/sqlite-$name.out" 2>&1
-  status=$?
-  kill_check "sqlite adapter + $name" "$status" "$OUT/sqlite-$name.out"
 done
 # The vacuity guard of the CSRF switch (Q-0050.8): a pass that is started against a server with the OTHER enforcement
 # setting must be refused before a test runs (exit 5, and the message says csrf_enforce). Not a build mutant: the server

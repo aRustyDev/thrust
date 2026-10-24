@@ -6,7 +6,7 @@
 -- pending login's `state` are SHA-256 digests (like `sessions.token_hash`). The only readable values are the ones a
 -- provider round trip needs back: the nonce and the PKCE verifier, which live for minutes and are deleted when taken.
 --
--- Kept portable on purpose (issue #37 may have to carry this to SQLite): the column types are the ones 0001-0004
+-- Kept portable on purpose (issue #37 carried it to SQLite, on a branch archived at the tag `spike/0002-worker-do`): the column types are the ones 0001-0004
 -- already use (`uuid` keys, `bytea` digests, `timestamptz`, `boolean`), and there is no partial index, no `jsonb` and
 -- no `DO` block here.
 

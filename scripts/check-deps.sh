@@ -60,7 +60,7 @@ echo "=== who pulls tokio into the Worker bundle (wasm32, thrust-worker, cloudfl
 
 echo
 echo "=== native-only crates that must NOT be in the Worker bundle (wasm32 graph) ==="
-for bad in deadpool-postgres hyper hyper-util mio socket2 tower-http thrust-adapters-selfhosted thrust-server rusqlite libsqlite3-sys; do
+for bad in deadpool-postgres hyper hyper-util mio socket2 tower-http thrust-adapters-selfhosted thrust-server; do
   out="$("$ROOT/scripts/rs" cargo tree --manifest-path "$MANIFEST" -p thrust-worker --no-default-features --target wasm32-unknown-unknown -e normal -i "$bad" 2>&1)"
   case "$out" in
     *"did not match any packages"*|*"nothing to print"*|"") echo "ok: $bad absent from the Worker graph" ;;
@@ -100,7 +100,7 @@ hits="$(
     | grep -vE '^crates/[^/]+/tests/' \
     | grep -v '^crates/thrust-core/src/lib.rs:' \
     | grep -vE '^[^:]+:[0-9]+:[ \t]*//' \
-    | grep -vE '^crates/(thrust-server/src/main\.rs|thrust-worker/src/lib\.rs|thrust-worker/src/memory\.rs|thrust-worker/src/app_do\.rs):[0-9]+:.*[^A-Za-z0-9_]SystemScope::mint\(' \
+    | grep -vE '^crates/(thrust-server/src/main\.rs|thrust-worker/src/lib\.rs|thrust-worker/src/memory\.rs):[0-9]+:.*[^A-Za-z0-9_]SystemScope::mint\(' \
     || true
 )"
 if [ -n "$hits" ]; then

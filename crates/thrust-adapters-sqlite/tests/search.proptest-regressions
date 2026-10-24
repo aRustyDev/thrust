@@ -1,7 +1,0 @@
-# Seeds for failure cases proptest has generated in the past. It is
-# automatically read and these particular cases re-run before any
-# novel cases are generated.
-#
-# It is recommended to check this file in to source control so that
-# everyone who runs the test benefits from these saved cases.
-cc 008e044beef36042548716c35b60c4688229a032cdc20256013f493df21eeb3e # shrinks to items = [("fix", None), ("fix", None), ("fix", Some("ÉCOLE")), ("fix", None), ("fix", None)], queries = ["é"], limit = 5, deletes = [26, 18, 31, 34]

@@ -1,7 +1,7 @@
 -- Spike 0002 (issue #37, ADR-0083): substring search over a work item's name and description, Plane's `icontains`
 -- (`name ILIKE '%q%' OR description ILIKE '%q%'`). A trigram GIN index answers `ILIKE '%q%'` for a query of three
--- characters or more; a shorter one scans the project. The SQLite adapters do the same with an FTS5 table that uses the
--- `trigram` tokenizer (`thrust-adapters-sqlite/migrations/0006_search.sql`).
+-- characters or more; a shorter one scans the project. (A SQLite twin did the same with an FTS5 table that uses the
+-- `trigram` tokenizer; it is archived on the tag `spike/0002-worker-do`.)
 -- Idempotent like the files before it: `migrate` applies every file on every run.
 --
 -- `pg_trgm` is a trusted extension (PostgreSQL 13 and later): a role with CREATE on the database may install it, and a

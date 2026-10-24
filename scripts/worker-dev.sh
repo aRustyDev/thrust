@@ -3,7 +3,7 @@
 # remote bindings. Configuration comes from the environment so no secret touches a file or argv:
 #
 #   THRUST_PORT                    listen port
-#   THRUST_ADAPTERS                memory | postgres | durable
+#   THRUST_ADAPTERS                memory | postgres
 #   THRUST_OUTBOX_FASTPATH         on | off
 #   THRUST_CREATE_RATE_LIMIT       per-user create limit per window
 #   THRUST_ARGON2_M_KIB / _T / _P  password hashing cost (default: OWASP's minimum)
@@ -38,7 +38,6 @@ fi
 
 case "${THRUST_ADAPTERS:-memory}" in
   memory) CONFIG=wrangler.memory.toml ;;
-  durable) CONFIG=wrangler.do.toml ;;
   *) CONFIG=wrangler.toml ;;
 esac
 

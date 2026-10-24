@@ -19,10 +19,8 @@
 #            stock frontend is in use). Every other pass needs it ON, which wrangler.stage2.toml sets; /_info is checked
 # engine     the engine pass (spike 0002, `contract.sh <target> engine`): the 50-writer test and the search tests.
 #            Needs a Worker deployed with a very high THRUST_CREATE_RATE_LIMIT (the 50-writer test makes ~10k creates).
-# do         5 tests: the object's own checks: the Tx-mapping control, the SQLite capabilities, the cost and migration probes (cell worker-do only)
-#
-# For a deployed `worker-do` cell (spike 0002) set THRUST_EXPECT_ADAPTERS=durable: the vacuity guard then wants the
-# `durable` adapter set instead of `cloudflare`.
+# email      1 test : ONE real send through the EMAIL binding (a Worker deployed with THRUST_EMAIL_FROM and THRUST_EMAIL_TO);
+#            it sends a mail every time it is run
 #
 # The admin token is read from the file into THIS process's environment only: never on argv, never
 # printed. Exit status is cargo test's own (no pipe, no trailing echo); the passed count is checked
@@ -41,8 +39,7 @@ export THRUST_EXPECT_CREATE_LIMIT="${THRUST_EXPECT_CREATE_LIMIT:-30}"
 export THRUST_STATE_SURVIVES_PANIC=1
 LOGDIR="${THRUST_LOGDIR:-$ROOT/target/stage2-logs}"
 mkdir -p "$LOGDIR"
-EXPECT_ADAPTERS="${THRUST_EXPECT_ADAPTERS:-cloudflare}"
-case "$EXPECT_ADAPTERS" in durable) LOG="$LOGDIR/worker-do-$PASS" ;; *) LOG="$LOGDIR/worker-cf-$PASS" ;; esac
+LOG="$LOGDIR/worker-cf-$PASS"
 
 # CSRF enforcement (Q-0050.8): every pass needs a Worker that enforces the token, except `csrfoff`, which needs one that does
 # not. The deployed Worker says which it is; a pass against the other kind proves nothing, so it is refused.
@@ -52,7 +49,7 @@ case "$PASS" in csrfoff) WANT_CSRF=false ;; *) WANT_CSRF=true ;; esac
 INFO="$(curl -fsS --max-time 30 -H "x-admin-token: $THRUST_ADMIN_TOKEN" "$BASE/_info" 2>/dev/null || true)"
 echo "[stage2/$PASS] /_info: $INFO"
 case "$INFO" in *'"target":"worker"'*) ;; *) echo "[stage2/$PASS] VACUITY GUARD: not a Worker target" >&2; exit 5 ;; esac
-case "$INFO" in *"\"adapters\":\"$EXPECT_ADAPTERS\""*) ;; *) echo "[stage2/$PASS] VACUITY GUARD: adapters not $EXPECT_ADAPTERS" >&2; exit 5 ;; esac
+case "$INFO" in *'"adapters":"cloudflare"'*) ;; *) echo "[stage2/$PASS] VACUITY GUARD: adapters not cloudflare" >&2; exit 5 ;; esac
 case "$INFO" in *"\"csrf_enforce\":$WANT_CSRF"*) ;; *) echo "[stage2/$PASS] VACUITY GUARD: csrf_enforce is not $WANT_CSRF (pass '$PASS')" >&2; exit 5 ;; esac
 
 RS="$ROOT/scripts/rs"
@@ -77,7 +74,6 @@ case "$PASS" in
   # Run it once: a second run sends a second mail.
   email)    EXPECT=1;  "$RS" cargo test --manifest-path "$M" -p thrust-contract-tests --test worker_only -- stage2_email_real_ --test-threads=1 --nocapture >"$LOG.test.log" 2>&1 ;;
   engine)   EXPECT=4;  "$RS" cargo test --manifest-path "$M" -p thrust-contract-tests --test engine -- --test-threads=1 --nocapture >"$LOG.test.log" 2>&1 ;;
-  do)       EXPECT=5;  "$RS" cargo test --manifest-path "$M" -p thrust-contract-tests --test worker_only -- worker_do_ --test-threads=1 --nocapture >"$LOG.test.log" 2>&1 ;;
   ratelimit) EXPECT=1; "$RS" cargo test --manifest-path "$M" -p thrust-contract-tests --test contract -- create_is_rate_limited_per_user --test-threads=1 --nocapture >"$LOG.test.log" 2>&1 ;;
   *) echo "unknown pass $PASS" >&2; exit 2 ;;
 esac

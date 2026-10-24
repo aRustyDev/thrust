@@ -3,8 +3,8 @@
 //! the main pass and its expected count (`EXPECT_MAIN`) are untouched, and every test is named `engine_`.
 //!
 //! The pass starts the target with a very high create rate limit (the main pass's 30 per user per window would refuse
-//! the creates below), and runs against every target that has an engine: `native-pg`, `native-sqlite`, `worker-cf`,
-//! `worker-do`, and the memory sets as the reference.
+//! the creates below), and runs against every target that has an engine: `native-pg`, `worker-cf`, and the memory sets as
+//! the reference. (`native-sqlite` and `worker-do` ran it too: that code is archived on the tag `spike/0002-worker-do`.)
 
 use std::collections::BTreeSet;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -83,8 +83,7 @@ fn duplicates(seqs: &[i64]) -> Vec<i64> {
 /// further creates show no number is reused. The contract suite's own 20-writer test (`contract.rs`) is the small
 /// version of this one.
 ///
-/// Control: `scripts/mutants.sh` runs this pass against `mutant_dup_sequence` (memory and SQLite adapters) and, on the
-/// SQLite adapter, `mutant_no_gate` (transactions not serialised): each must fail it.
+/// Control: `scripts/mutants.sh` runs this pass against the memory adapter's `mutant_dup_sequence`: it must fail it.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn engine_fifty_writers_ten_thousand_creates_never_duplicate_a_sequence_id() {
     let t = Arc::new(Target::from_env());

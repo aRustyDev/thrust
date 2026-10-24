@@ -29,7 +29,7 @@ Two suites are non-hermetic integration suites: the contract suite (`thrust-cont
 (`thrust-adapters-selfhosted/tests/pg_adapter.rs`, need Docker). They stay on `cargo test` through those scripts,
 which parse its `test result:` line and exit 101 (nextest exits 100 when tests fail); migrate them on purpose, not
 by accident. The default nextest profile excludes both, and the `oracle_` tests; what it runs today is the hermetic
-`thrust-editor-doc`, `thrust-core`, `thrust-adapters-memory` and `thrust-adapters-sqlite` suites. A crate with no hermetic tests of its own selects nothing (`-p <crate>` exits 4,
+`thrust-editor-doc`, `thrust-core` and `thrust-adapters-memory` suites. A crate with no hermetic tests of its own selects nothing (`-p <crate>` exits 4,
 `no tests to run`). That exit is not a test failure.
 
 Strategy, which technique catches which defect, the agent TDD loop and known gaps: `docs/src/testing/README.md`.

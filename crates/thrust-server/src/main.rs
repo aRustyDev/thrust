@@ -11,7 +11,6 @@ use axum::Extension;
 use thrust_adapters_memory::*;
 use thrust_adapters_oidc::{OidcConfig, OpenIdProvider};
 use thrust_adapters_selfhosted::*;
-use thrust_adapters_sqlite::{NativeSql, SqliteDatabase};
 use thrust_api::{ApiConfig, InternalErrorDetail};
 use thrust_core::{ActivityConsumer, Argon2Params, Argon2idHasher, App, CoreConfig, Ports, SystemScope};
 use thrust_ports::*;
@@ -84,15 +83,7 @@ async fn main() {
                 .expect("pool");
             Arc::new(thrust_adapters_postgres::PgDatabase::new(Arc::new(connector)))
         }
-        "sqlite" => {
-            // The native twin of the worker-do cell: the same SQL on rusqlite (spike 0002). A file, or `:memory:`.
-            let path = env_or("THRUST_SQLITE_PATH", ":memory:");
-            let sql = if path == ":memory:" { NativeSql::memory() } else { NativeSql::open(&path) }.expect("open sqlite");
-            let db = SqliteDatabase::new(Arc::new(sql));
-            db.migrate().expect("migrate sqlite");
-            Arc::new(db)
-        }
-        other => panic!("unknown THRUST_ADAPTERS '{other}' (this build supports: memory, postgres, sqlite)"),
+        other => panic!("unknown THRUST_ADAPTERS '{other}' (this build supports: memory, postgres)"),
     };
 
     let defaults = CoreConfig::default();

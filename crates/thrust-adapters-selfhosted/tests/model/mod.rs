@@ -16,8 +16,7 @@
 //! * inside a transaction, `allocate` hands out the project's next sequence number and `sort_order` = 10 000 × that
 //!   number, taking it in its own short transaction (ADR-0043 round 29, FR-22: the counter row is locked for one
 //!   statement, not for the whole create): a number is taken for good, so a transaction that rolls back, is dropped
-//!   unfinished or fails on a conflict leaves a GAP and the next transaction goes on after it (unlike the SQLite twin, whose
-//!   counter is written by the commit); `allocate` under another workspace than the project's is refused, takes
+//!   unfinished or fails on a conflict leaves a GAP and the next transaction goes on after it; `allocate` under another workspace than the project's is refused, takes
 //!   nothing, and the transaction is then rolled back;
 //! * `insert_work_item` is a `Conflict` when the project already has a live row with the same external key, rows of
 //!   the same transaction included; the transaction is then rolled back, as the core does;

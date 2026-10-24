@@ -9,7 +9,6 @@ members = [
     "crates/thrust-adapters-postgres",
     "crates/thrust-adapters-oidc",
     "crates/thrust-adapters-selfhosted",
-    "crates/thrust-adapters-sqlite",
     "crates/thrust-adapters-cloudflare",
     "crates/thrust-worker",
     "crates/thrust-server",
@@ -43,7 +42,6 @@ thrust-adapters-memory = { path = "crates/thrust-adapters-memory" }
 thrust-adapters-postgres = { path = "crates/thrust-adapters-postgres" }
 thrust-adapters-cloudflare = { path = "crates/thrust-adapters-cloudflare" }
 thrust-adapters-selfhosted = { path = "crates/thrust-adapters-selfhosted" }
-thrust-adapters-sqlite = { path = "crates/thrust-adapters-sqlite" }
 thrust-adapters-oidc = { path = "crates/thrust-adapters-oidc" }
 thrust-api = { path = "crates/thrust-api" }
 

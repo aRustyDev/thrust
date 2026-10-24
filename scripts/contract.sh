@@ -3,10 +3,6 @@
 #
 #   scripts/contract.sh <target> [pass]
 #     target: native-memory | native-pg | worker-memory | worker-cf
-#             native-sqlite   (spike 0002, opt-in: NOT in contract-all.sh, so not a required CI check until ADR-0040
-#                              decides) the SQLite adapter on rusqlite, the twin of the worker-do cell
-#             worker-do       (spike 0002, opt-in, same reason) `wrangler dev` with the SQLite adapter inside the one
-#                              instance-level Durable Object (crates/thrust-worker/wrangler.do.toml)
 #     pass:   main (default)   normal config, outbox fast path ON
 #             sweeper          fast path OFF; asserts the cron sweeper does the delivery
 #             csrfoff          CSRF enforcement OFF (Q-0050.8, the production default while the stock frontend is in use);
@@ -24,8 +20,6 @@
 #             engine           the tests that decide the database engine (spike 0002): the 50-writer, 10k-create test,
 #                              and the search tests. Own test binary (`--test engine`), so EXPECT_MAIN is untouched.
 #                              The target starts with a very high create rate limit. Opt-in: not in contract-all.sh.
-#             do               (worker-do only) the object's own checks on its real SqlStorage: the Tx-mapping control
-#                              (risk R1) and the SQLite capabilities search needs (FTS5, the trigram tokenizer, risk R3)
 #             bindings         (worker-cf only) one real operation per binding (rate limit, secrets
 #                              store, email, service binding, workflow via JS shim)
 #
@@ -40,7 +34,7 @@
 # by name: other sessions on this machine run their own wrangler/workerd.
 set -u
 
-TARGET="${1:?usage: contract.sh <native-memory|native-pg|native-sqlite|worker-memory|worker-cf|worker-do> [main|sweeper|panic]}"
+TARGET="${1:?usage: contract.sh <native-memory|native-pg|worker-memory|worker-cf> [main|sweeper|panic]}"
 PASS="${2:-main}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 LOGDIR="${THRUST_LOGDIR:-$ROOT/target/contract-logs}"
@@ -71,7 +65,6 @@ EXPECT_BLAST=1
 EXPECT_WORKER=1
 EXPECT_CRON=1
 EXPECT_BINDINGS=6
-EXPECT_DO=5
 EXPECT_ENGINE=4
 
 # A free port, chosen at random: fixed ports collide with OrbStack-published containers and
@@ -127,7 +120,6 @@ unset THRUST_CSRF_ENFORCE
 
 SERVER_PID=""
 PG_CONTAINER=""
-SQLITE_DIR=""
 PROXY_PID=""
 
 kill_tree() {
@@ -146,9 +138,6 @@ cleanup() {
   if [ -n "$PG_CONTAINER" ]; then
     docker rm -f "$PG_CONTAINER" >/dev/null 2>&1 || true
   fi
-  if [ -n "$SQLITE_DIR" ]; then
-    rm -rf "$SQLITE_DIR"
-  fi
   if [ -n "$PROXY_PID" ]; then
     kill -TERM "$PROXY_PID" 2>/dev/null || true
   fi
@@ -160,10 +149,8 @@ trap cleanup EXIT INT TERM
 case "$TARGET" in
   native-memory) KIND=native; ADAPTERS=memory ;;
   native-pg) KIND=native; ADAPTERS=postgres ;;
-  native-sqlite) KIND=native; ADAPTERS=sqlite ;;
   worker-memory) KIND=worker; ADAPTERS=memory ;;
   worker-cf) KIND=worker; ADAPTERS=cloudflare ;;
-  worker-do) KIND=worker; ADAPTERS=durable ;;
   *) echo "unknown target $TARGET" >&2; exit 2 ;;
 esac
 
@@ -202,12 +189,6 @@ if [ -n "${THRUST_PG_LATENCY_MS:-}" ] && [ -n "${PG_PORT:-}" ]; then
   kill -0 "$PROXY_PID" 2>/dev/null || { echo "delay proxy did not start, see $LOG.proxy.log" >&2; exit 3; }
   export DATABASE_URL="postgres://postgres:$PG_PASSWORD@127.0.0.1:$PROXY_PORT/thrust"
   echo "[$TARGET/$PASS] postgres behind a ${THRUST_PG_LATENCY_MS} ms one-way delay proxy (port $PROXY_PORT)"
-fi
-
-if [ "$ADAPTERS" = "sqlite" ]; then
-  # A database FILE (write-ahead log and all), private to this run: removed by `cleanup`.
-  SQLITE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/thrust-sqlite.XXXXXX")"
-  export THRUST_SQLITE_PATH="$SQLITE_DIR/thrust.db"
 fi
 
 if [ "$KIND" = "native" ]; then
@@ -330,11 +311,6 @@ case "$PASS" in
     "$ROOT/scripts/rs" cargo test --manifest-path "$ROOT/Cargo.toml" -p thrust-contract-tests --test engine -- --test-threads=1 --nocapture >"$LOG.test.log" 2>&1
     TEST_STATUS=$?
     EXPECT=$EXPECT_ENGINE
-    ;;
-  do)
-    "$ROOT/scripts/rs" cargo test --manifest-path "$ROOT/Cargo.toml" -p thrust-contract-tests --test worker_only -- worker_do_ --test-threads=1 --nocapture >"$LOG.test.log" 2>&1
-    TEST_STATUS=$?
-    EXPECT=$EXPECT_DO
     ;;
   scale)
     "$ROOT/scripts/rs" cargo run --quiet --release --manifest-path "$ROOT/Cargo.toml" -p thrust-contract-tests --bin bench_scale -- \

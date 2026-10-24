@@ -2,8 +2,6 @@
 //!
 //! Compile-time adapter set = this crate's dependency/feature list (ADR-0007):
 //!   * `cloudflare` (always): Hyperdrive/Postgres (sessions included), R2, Queues, Durable Objects
-//!   * `durable` (always): SQLite inside the one instance-level Durable Object `AppDo` (spike 0002, cell `worker-do`);
-//!     the Worker only forwards to it
 //!   * `memory` (default, dev/test only): in-isolate adapters
 //! `THRUST_ADAPTERS` only chooses between sets that were compiled in.
 
@@ -22,7 +20,6 @@ use tower_service::Service;
 use worker::worker_sys::web_sys;
 use worker::*;
 
-mod app_do;
 mod durable;
 mod probes;
 #[cfg(feature = "memory")]
@@ -56,7 +53,7 @@ fn num<T: std::str::FromStr>(env: &Env, name: &str, default: T) -> T {
     text(env, name).and_then(|v| v.parse().ok()).unwrap_or(default)
 }
 
-pub(crate) fn core_config(env: &Env) -> CoreConfig {
+fn core_config(env: &Env) -> CoreConfig {
     let defaults = CoreConfig::default();
     CoreConfig {
         create_rate_limit: num(env, "THRUST_CREATE_RATE_LIMIT", 1000),
@@ -78,7 +75,7 @@ pub(crate) fn core_config(env: &Env) -> CoreConfig {
 
 /// The OIDC provider, when the issuer, client id and redirect URI are all configured (the client secret is a Worker
 /// secret). Some of the three and not all is an error, not a Worker that quietly has no login.
-pub(crate) fn oidc_provider(env: &Env) -> Result<Option<Arc<dyn OidcProvider>>> {
+fn oidc_provider(env: &Env) -> Result<Option<Arc<dyn OidcProvider>>> {
     let get = |n: &str| text(env, n).filter(|v| !v.is_empty());
     match (get("THRUST_OIDC_ISSUER"), get("THRUST_OIDC_CLIENT_ID"), get("THRUST_OIDC_REDIRECT_URI")) {
         (Some(issuer), Some(client_id), Some(redirect_uri)) => {
@@ -141,9 +138,6 @@ fn build_app(env: &Env, background: Arc<dyn Background>) -> Result<App> {
         }
         #[cfg(feature = "memory")]
         "memory" => memory::app(clock, ids, background, rng, hasher, oidc, cfg),
-        "durable" => {
-            return Err(Error::RustError("the durable set is built inside AppDo; the Worker only forwards to it".into()))
-        }
         other => return Err(Error::RustError(format!("THRUST_ADAPTERS '{other}' is not compiled into this bundle"))),
     };
     Ok(app)
@@ -167,40 +161,8 @@ async fn fetch(req: web_sys::Request, env: Env, ctx: Context) -> Result<web_sys:
         return probes::probe_route(req, &env, &path).await;
     }
 
-    // `durable`: everything that touches the database runs inside the one instance-level object. `/_do/*` is the
-    // Worker-to-object protocol, so a client may not name it.
-    if adapter_set(&env) == "durable" {
-        if path.starts_with("/_do/") {
-            let r: Response = Response::error("not found", 404)?;
-            return Ok(r.into());
-        }
-        // The object's own probes (test routes + admin token): `/_test/do/<name>` -> `/_do/<name>`.
-        if let Some(name) = path.strip_prefix("/_test/do/") {
-            if !probes::admin_ok(&req, &env) {
-                let r: Response = Response::error("not found", 404)?;
-                return Ok(r.into());
-            }
-            let url = Url::parse(&req.url())?;
-            let mut target = format!("https://app.internal/_do/{name}");
-            if let Some(q) = url.query() {
-                target.push('?');
-                target.push_str(q);
-            }
-            let resp = app_do::stub(&env)?.fetch_with_str(&target).await?;
-            return Ok(resp.into());
-        }
-        let resp = app_do::stub(&env)?.fetch_with_request(Request::from(req)).await?;
-        return Ok(resp.into());
-    }
-
     let app = build_app(&env, Arc::new(WaitUntilBackground(Arc::new(ctx))))?;
     let adapters = adapter_set(&env);
-    serve(req, app, api_config(&env, &adapters)).await
-}
-
-/// Route one request through the shared router with `app` and `api` installed as its extensions. Used by the `fetch`
-/// handler for the sets that build their `App` per request and by `AppDo` for the one it holds.
-pub(crate) async fn serve(req: web_sys::Request, app: App, api: thrust_api::ApiConfig) -> Result<web_sys::Response> {
     let http_req = request_from_wasm(req)?;
 
     // Drain the request body BEFORE routing (measured: skipping this makes ~1 in 4 `wrangler dev`
@@ -221,7 +183,7 @@ pub(crate) async fn serve(req: web_sys::Request, app: App, api: thrust_api::ApiC
     };
     let mut http_req = axum::http::Request::from_parts(parts, Body::from(bytes));
     http_req.extensions_mut().insert(app);
-    http_req.extensions_mut().insert(api);
+    http_req.extensions_mut().insert(api_config(&env, &adapters));
 
     let mut router = ROUTER.get_or_init(thrust_api::router).clone();
     let resp: axum::http::Response<Body> = match router.call(http_req).await {
@@ -240,27 +202,6 @@ pub(crate) async fn serve(req: web_sys::Request, app: App, api: thrust_api::ApiC
 
 #[event(queue)]
 async fn queue(batch: MessageBatch<String>, env: Env, _ctx: Context) -> Result<()> {
-    if adapter_set(&env) == "durable" {
-        // The consumer writes the activity row, so it runs inside the object that owns the database.
-        let stub = app_do::stub(&env)?;
-        for msg in batch.messages()? {
-            let mut init = RequestInit::new();
-            init.with_method(Method::Post).with_body(Some(msg.body().into()));
-            let req = Request::new_with_init("https://app.internal/_do/consume", &init)?;
-            match stub.fetch_with_request(req).await {
-                Ok(r) if r.status_code() == 200 => msg.ack(),
-                Ok(r) => {
-                    console_error!("consumer (object) answered {} for a message", r.status_code());
-                    msg.retry_with_options(&QueueRetryOptionsBuilder::new().with_delay_seconds(5).build());
-                }
-                Err(e) => {
-                    console_error!("consumer (object) failed: {e}");
-                    msg.retry_with_options(&QueueRetryOptionsBuilder::new().with_delay_seconds(5).build());
-                }
-            }
-        }
-        return Ok(());
-    }
     let app = build_app(&env, Arc::new(LocalBackground))?;
     let consumer = ActivityConsumer(app);
     for msg in batch.messages()? {
@@ -289,20 +230,6 @@ async fn queue(batch: MessageBatch<String>, env: Env, _ctx: Context) -> Result<(
 #[event(scheduled)]
 async fn scheduled(event: ScheduledEvent, env: Env, _ctx: ScheduleContext) {
     console_error_panic_hook::set_once();
-    if adapter_set(&env) == "durable" {
-        let mut init = RequestInit::new();
-        init.with_method(Method::Post);
-        let outcome = match app_do::stub(&env).and_then(|s| Request::new_with_init("https://app.internal/_do/sweep", &init).map(|r| (s, r))) {
-            Ok((stub, req)) => stub.fetch_with_request(req).await.map(|r| (r.status_code(), r)),
-            Err(e) => Err(e),
-        };
-        match outcome {
-            Ok((200, mut r)) => console_log!("scheduled cron='{}': sweep in the object: {}", event.cron(), r.text().await.unwrap_or_default()),
-            Ok((code, _)) => console_error!("scheduled: the object answered {code}"),
-            Err(e) => console_error!("scheduled: cannot reach the object: {e}"),
-        }
-        return;
-    }
     let app = match build_app(&env, Arc::new(LocalBackground)) {
         Ok(v) => v,
         Err(e) => {

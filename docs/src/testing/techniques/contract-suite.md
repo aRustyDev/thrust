@@ -54,16 +54,15 @@ scripts/contract-all.sh                     # the 18-cell matrix, serially [veri
 
 See [Running](../running.md#the-contract-suite) for targets, passes and prerequisites.
 
-## Opt-in cells and the engine pass
+## The engine pass and the scale pass
 
-Spike 0002 (issue #37) adds two targets and three passes that are **not** in `contract-all.sh`, so they are not required CI checks until ADR-0040 decides the engine: `native-sqlite` (the SQLite adapter on rusqlite) and `worker-do` (the same adapter inside one instance-level Durable Object, under `wrangler dev`). `scripts/contract.sh native-sqlite main` and `worker-do main` run the same 21 tests.
-- `engine` (own test binary, `crates/thrust-contract-tests/tests/engine.rs`, tests named `engine_`, so the main pass and `EXPECT_MAIN` are untouched; the target starts with a very high create rate limit): the 50-writer, 10k-create test, search parity with `icontains`, search freshness and scope, and the bulk seed. 4 tests on every target; `scripts/mutants.sh` runs it against `mutant_dup_sequence` on the memory and SQLite adapters, `mutant_no_gate` and `mutant_search_case_sensitive`.
-- `do` (`worker-do` only, `worker_only.rs`, tests named `worker_do_`): the `Tx` mapping control on the real `SqlStorage`, the FTS5 trigram probe, the billed-rows probe and the migration story. 5 tests.
+Spike 0002 (issue #37) adds two passes that are **not** in `contract-all.sh`, so they are not required CI checks:
+- `engine` (own test binary, `crates/thrust-contract-tests/tests/engine.rs`, tests named `engine_`, so the main pass and `EXPECT_MAIN` are untouched; the target starts with a very high create rate limit): the 50-writer, 10k-create test, search parity with `icontains`, search freshness and scope, and the bulk seed. 4 tests on every target; `scripts/mutants.sh` runs it against the memory adapter's `mutant_dup_sequence` and `mutant_search_case_sensitive`.
 - `scale` (a binary, like `bench`): list, search and create latency with 100,000 items seeded through `/internal/seed-work-items`.
 
-`scripts/stage2-contract.sh` runs `main` (31 tests: the six `oidc_` tests need the mock provider on 127.0.0.1, which a deployed Worker cannot reach), `csrfoff`, `do` and `engine` against a deployed `worker-do` with `THRUST_EXPECT_ADAPTERS=durable`, `main` and `engine` against a deployed `worker-pg`, and an `email` pass that sends one real message each time it is run. Numbers and conditions: `research/0011-database-engine-cells.md`.
+`scripts/stage2-contract.sh` runs `main` (31 tests: the six `oidc_` tests need the mock provider on 127.0.0.1, which a deployed Worker cannot reach), `csrfoff` and `engine` against a deployed `worker-pg`, and an `email` pass that sends one real message each time it is run. Numbers and conditions: `research/0011-database-engine-cells.md`.
 
-[verified 2026-10-24, after the auth slice was merged into the branch, local only: `native-sqlite` main 37 of 37, csrfoff 6 of 6, engine 4 of 4; `worker-do` main 37 of 37, csrfoff 6 of 6, do 5 of 5, engine 4 of 4. The deployed runs of the cells (21 tests then) were taken before the merge and never ran the auth tests.]
+The spike also built `native-sqlite` and `worker-do` targets (the same suite against a SQLite adapter on rusqlite and inside one Durable Object) and a `do` pass for the object's own checks. They are archived on the tag `spike/0002-worker-do`, not in the tree.
 
 ## Required controls
 
