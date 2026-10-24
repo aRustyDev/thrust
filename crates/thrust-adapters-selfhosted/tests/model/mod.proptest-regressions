@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc fa583e6086ec2dd2adba0a261e3fef904632f5a103d2aff45ab8eb979210e943 # shrinks to [Tx { steps: [Create { proj: A, ext: None }], end: Rollback }, Tx { steps: [Create { proj: A, ext: None }], end: Commit }]

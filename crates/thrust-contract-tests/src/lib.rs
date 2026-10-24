@@ -91,6 +91,7 @@ fn uid() -> uuid::Uuid {
 
 /// A seeded user: a session token the fixture planted (the legacy bearer credential of most tests), and an email and
 /// password that sign in through the real route.
+#[derive(Clone)]
 pub struct User {
     pub id: UserId,
     pub token: String,
@@ -336,6 +337,36 @@ pub async fn create_ok(t: &Target, who: &User, at: &At, name: &str) -> WorkItem 
     let r = create(t, who, at, json!({ "name": name })).await;
     assert_eq!(r.status(), 201, "create '{name}' failed: {:?}", r.text().await);
     r.json::<WorkItem>().await.unwrap()
+}
+
+/// `GET .../work-items/search?q=`: the work items of the project whose name or description contains `q`, any case.
+pub fn search_path(at: &At) -> String {
+    format!("{}/search", wi_path(at))
+}
+
+pub async fn search(t: &Target, who: &User, at: &At, q: &str) -> reqwest::Response {
+    t.http.get(t.url(&search_path(at))).query(&[("q", q)]).bearer_auth(&who.token).send().await.unwrap()
+}
+
+/// `POST /internal/seed-work-items`: bulk-insert live work items into a project, numbered from its counter (what the
+/// bench and the search parity test seed 100k rows with). Names and descriptions are the caller's.
+pub async fn seed_work_items(
+    t: &Target,
+    f: &Fixture,
+    at: &At,
+    created_by: UserId,
+    items: &[(String, Option<String>)],
+) -> SeedWorkItemsReport {
+    let workspace_id = if at.project == f.a.project { f.ws_a } else { f.ws_b };
+    let req = SeedWorkItemsRequest {
+        workspace_id,
+        project_id: at.project,
+        created_by,
+        items: items.iter().map(|(name, description)| SeedWorkItemSpec { name: name.clone(), description: description.clone() }).collect(),
+    };
+    let r = t.admin_post("/internal/seed-work-items", &serde_json::to_value(&req).unwrap()).await;
+    assert_eq!(r.status(), 200, "seed-work-items failed: {:?}", r.text().await);
+    r.json().await.unwrap()
 }
 
 pub async fn list(t: &Target, who: &User, at: &At, scope: Option<&str>) -> reqwest::Response {

@@ -285,6 +285,41 @@ pub struct SeedSession {
     pub user_id: UserId,
 }
 
+/// One row of a bulk seed (`/internal/seed-work-items`): the text of a live work item. Everything else is assigned: the
+/// id by the `IdGen`, the number and `sort_order` from the project's counter, the time from the `Clock`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SeedWorkItemSpec {
+    pub name: String,
+    #[serde(default)]
+    pub description: Option<String>,
+}
+
+/// Body of `/internal/seed-work-items`: `items` become live work items of one project, in order.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SeedWorkItemsRequest {
+    pub workspace_id: WorkspaceId,
+    pub project_id: ProjectId,
+    pub created_by: UserId,
+    pub items: Vec<SeedWorkItemSpec>,
+}
+
+/// Answer of `/internal/seed-work-items`: the number given to the first item (the rest follow, one by one).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SeedWorkItemsReport {
+    pub first_sequence_id: i64,
+    pub count: u64,
+}
+
+/// A work item the bulk seed inserts, as the port takes it: complete except for the numbers.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SeedWorkItem {
+    pub id: WorkItemId,
+    pub name: String,
+    pub description: Option<String>,
+    pub created_by: UserId,
+    pub created_at: Timestamp,
+}
+
 // ---------------------------------------------------------------------------------------------
 // API DTOs
 // ---------------------------------------------------------------------------------------------

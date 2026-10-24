@@ -54,6 +54,16 @@ scripts/contract-all.sh                     # the 18-cell matrix, serially [veri
 
 See [Running](../running.md#the-contract-suite) for targets, passes and prerequisites.
 
+## The engine pass and the scale pass
+
+Spike 0002 (issue #37) adds two passes that are **not** in `contract-all.sh`, so they are not required CI checks:
+- `engine` (own test binary, `crates/thrust-contract-tests/tests/engine.rs`, tests named `engine_`, so the main pass and `EXPECT_MAIN` are untouched; the target starts with a very high create rate limit): the 50-writer, 10k-create test, search parity with `icontains`, search freshness and scope, and the bulk seed. 4 tests on every target; `scripts/mutants.sh` runs it against the memory adapter's `mutant_dup_sequence` and `mutant_search_case_sensitive`.
+- `scale` (a binary, like `bench`): list, search and create latency with 100,000 items seeded through `/internal/seed-work-items`.
+
+`scripts/stage2-contract.sh` runs `main` (31 tests: the six `oidc_` tests need the mock provider on 127.0.0.1, which a deployed Worker cannot reach), `csrfoff` and `engine` against a deployed `worker-pg`, and an `email` pass that sends one real message each time it is run. Numbers and conditions: `research/0011-database-engine-cells.md`.
+
+The spike also built `native-sqlite` and `worker-do` targets (the same suite against a SQLite adapter on rusqlite and inside one Durable Object) and a `do` pass for the object's own checks. They are archived on the tag `spike/0002-worker-do`, not in the tree.
+
 ## Required controls
 
 [Paired allow/deny](../evidence-and-controls.md#paired-allow-deny) in every test,

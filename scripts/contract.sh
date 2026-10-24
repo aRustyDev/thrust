@@ -12,8 +12,14 @@
 #             panic            alone against a fresh target (a Worker panic resets the isolate)
 #             blast            OBSERVATIONAL, not in contract-all: failures of OTHER requests around one panic
 #             bench            latency bench (release native build); success == the bench exits 0
+#             scale            list, search and create latency with THRUST_SCALE_TOTAL (default 100000) work items in the
+#                              database, in projects of THRUST_SCALE_PER_PROJECT (default 1000) (spike 0002); like bench,
+#                              success == the binary exits 0
 #             worker         (worker-cf only) Durable Object WebSocket hibernation + SQLite
 #             cron             (worker-* only) fast path OFF; the Worker `scheduled` handler sweeps
+#             engine           the tests that decide the database engine (spike 0002): the 50-writer, 10k-create test,
+#                              and the search tests. Own test binary (`--test engine`), so EXPECT_MAIN is untouched.
+#                              The target starts with a very high create rate limit. Opt-in: not in contract-all.sh.
 #             bindings         (worker-cf only) one real operation per binding (rate limit, secrets
 #                              store, email, service binding, workflow via JS shim)
 #
@@ -35,6 +41,15 @@ LOGDIR="${THRUST_LOGDIR:-$ROOT/target/contract-logs}"
 mkdir -p "$LOGDIR"
 LOG="$LOGDIR/$TARGET-$PASS"
 RATE_LIMIT=30
+# The engine pass makes thousands of creates per user per window: the main pass's limit would refuse them.
+[ "${2:-main}" = "engine" ] && RATE_LIMIT=1000000
+# ... and 50 parallel writers hold up to ~100 Postgres connections at once on the Worker path (each request opens one for
+# its reads and one for its transaction; wrangler's local Hyperdrive emulation does not pool, a deployed Hyperdrive
+# does), which is the image's default `max_connections`. Measured: at 100, 1 of 50 writers got HTTP 500 ("postgres
+# handshake: db error", the server's reason is not in the Worker's log) in 1 run; at 400, 0 in 2 runs. The connection
+# limit is the inferred cause.
+PG_MAX_CONNECTIONS=100
+[ "${2:-main}" = "engine" ] && PG_MAX_CONNECTIONS=400
 # Passwords are hashed at a cheap argon2id cost on every local target (one hash is about a millisecond), because the
 # suite signs in many times; OWASP's real cost is pinned by a core test and measured on a deployed Worker (issue #38).
 # The sign-in limit is high enough that no test comes near it.
@@ -50,6 +65,7 @@ EXPECT_BLAST=1
 EXPECT_WORKER=1
 EXPECT_CRON=1
 EXPECT_BINDINGS=6
+EXPECT_ENGINE=4
 
 # A free port, chosen at random: fixed ports collide with OrbStack-published containers and
 # with other sessions' wrangler instances (measured: 18080 and 8787 were both taken).
@@ -104,6 +120,7 @@ unset THRUST_CSRF_ENFORCE
 
 SERVER_PID=""
 PG_CONTAINER=""
+PROXY_PID=""
 
 kill_tree() {
   for child in $(pgrep -P "$1" 2>/dev/null); do
@@ -120,6 +137,9 @@ cleanup() {
   fi
   if [ -n "$PG_CONTAINER" ]; then
     docker rm -f "$PG_CONTAINER" >/dev/null 2>&1 || true
+  fi
+  if [ -n "$PROXY_PID" ]; then
+    kill -TERM "$PROXY_PID" 2>/dev/null || true
   fi
 }
 trap cleanup EXIT INT TERM
@@ -141,7 +161,7 @@ if [ "$ADAPTERS" = "postgres" ] || [ "$ADAPTERS" = "cloudflare" ]; then
   # `-e NAME` without a value makes the docker CLI forward NAME from ITS environment, so the
   # password never appears on argv.
   POSTGRES_PASSWORD="$PG_PASSWORD" docker run -d --rm --name "$PG_CONTAINER" -e POSTGRES_PASSWORD -e POSTGRES_DB=thrust \
-    -p "127.0.0.1:$PG_PORT:5432" postgres:16-alpine >"$LOG.pg.log" 2>&1 || { echo "could not start postgres" >&2; exit 3; }
+    -p "127.0.0.1:$PG_PORT:5432" postgres:16-alpine -c "max_connections=$PG_MAX_CONNECTIONS" >"$LOG.pg.log" 2>&1 || { echo "could not start postgres" >&2; exit 3; }
   i=0
   until [ "$(docker exec "$PG_CONTAINER" psql -U postgres -d thrust -tAc 'select 1' 2>/dev/null)" = "1" ]; do
     i=$((i + 1)); [ "$i" -gt 60 ] && { echo "postgres query probe failed" >&2; exit 3; }
@@ -159,10 +179,22 @@ if [ "$ADAPTERS" = "postgres" ] || [ "$ADAPTERS" = "cloudflare" ]; then
     >"$LOG.migrate.log" 2>&1 || { echo "migrate failed, see $LOG.migrate.log" >&2; exit 3; }
 fi
 
+if [ -n "${THRUST_PG_LATENCY_MS:-}" ] && [ -n "${PG_PORT:-}" ]; then
+  # Put a fixed one-way delay between the server and Postgres (after the schema is applied directly), so a loopback run
+  # pays something like the round trips of Hyperdrive + VPC service + tunnel. For the FR-22 before/after (research/0011).
+  PROXY_PORT="$(pick_port)"
+  uv run --quiet "$ROOT/scripts/pg-delay-proxy.py" "$PROXY_PORT" "$PG_PORT" "$THRUST_PG_LATENCY_MS" >"$LOG.proxy.log" 2>&1 &
+  PROXY_PID=$!
+  sleep 2
+  kill -0 "$PROXY_PID" 2>/dev/null || { echo "delay proxy did not start, see $LOG.proxy.log" >&2; exit 3; }
+  export DATABASE_URL="postgres://postgres:$PG_PASSWORD@127.0.0.1:$PROXY_PORT/thrust"
+  echo "[$TARGET/$PASS] postgres behind a ${THRUST_PG_LATENCY_MS} ms one-way delay proxy (port $PROXY_PORT)"
+fi
+
 if [ "$KIND" = "native" ]; then
   # THRUST_SERVER_FEATURES is only ever set by scripts/mutants.sh (control runs with broken builds).
-  # The bench pass measures a release build; every other pass uses the debug build.
-  if [ "$PASS" = "bench" ]; then PROFILE_FLAG="--release"; BIN_DIR=release; else PROFILE_FLAG=""; BIN_DIR=debug; fi
+  # The bench and scale passes measure a release build; every other pass uses the debug build.
+  if [ "$PASS" = "bench" ] || [ "$PASS" = "scale" ]; then PROFILE_FLAG="--release"; BIN_DIR=release; else PROFILE_FLAG=""; BIN_DIR=debug; fi
   # shellcheck disable=SC2086
   "$ROOT/scripts/rs" cargo build --quiet $PROFILE_FLAG --manifest-path "$ROOT/Cargo.toml" -p thrust-server ${THRUST_SERVER_FEATURES:+--features "$THRUST_SERVER_FEATURES"} \
     >"$LOG.build.log" 2>&1 || { echo "server build failed, see $LOG.build.log" >&2; exit 3; }
@@ -273,6 +305,19 @@ case "$PASS" in
     TEST_STATUS=$?
     cat "$LOG.test.log"
     echo "[$TARGET/$PASS] bench exit=$TEST_STATUS"
+    exit "$TEST_STATUS"
+    ;;
+  engine)
+    "$ROOT/scripts/rs" cargo test --manifest-path "$ROOT/Cargo.toml" -p thrust-contract-tests --test engine -- --test-threads=1 --nocapture >"$LOG.test.log" 2>&1
+    TEST_STATUS=$?
+    EXPECT=$EXPECT_ENGINE
+    ;;
+  scale)
+    "$ROOT/scripts/rs" cargo run --quiet --release --manifest-path "$ROOT/Cargo.toml" -p thrust-contract-tests --bin bench_scale -- \
+      "${THRUST_SCALE_TOTAL:-100000}" "${THRUST_SCALE_PER_PROJECT:-1000}" >"$LOG.test.log" 2>&1
+    TEST_STATUS=$?
+    cat "$LOG.test.log"
+    echo "[$TARGET/$PASS] scale exit=$TEST_STATUS"
     exit "$TEST_STATUS"
     ;;
   bindings)

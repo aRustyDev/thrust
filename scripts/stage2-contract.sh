@@ -17,6 +17,10 @@
 # panic      1 test : alone, against a Worker nobody else is using (a panic resets the isolate)
 # csrfoff    6 tests: needs the Worker deployed with THRUST_CSRF_ENFORCE=off (Q-0050.8, the production default while the
 #            stock frontend is in use). Every other pass needs it ON, which wrangler.stage2.toml sets; /_info is checked
+# engine     the engine pass (spike 0002, `contract.sh <target> engine`): the 50-writer test and the search tests.
+#            Needs a Worker deployed with a very high THRUST_CREATE_RATE_LIMIT (the 50-writer test makes ~10k creates).
+# email      1 test : ONE real send through the EMAIL binding (a Worker deployed with THRUST_EMAIL_FROM and THRUST_EMAIL_TO);
+#            it sends a mail every time it is run
 #
 # The admin token is read from the file into THIS process's environment only: never on argv, never
 # printed. Exit status is cargo test's own (no pipe, no trailing echo); the passed count is checked
@@ -66,12 +70,16 @@ case "$PASS" in
   panic)    EXPECT=1;  "$RS" cargo test --manifest-path "$M" -p thrust-contract-tests --test contract -- panic_ --test-threads=1 --nocapture >"$LOG.test.log" 2>&1 ;;
   # blast is OBSERVATIONAL: how many OTHER in-flight requests fail around one panic (a panic aborts the isolate)
   blast)    EXPECT=1;  "$RS" cargo test --manifest-path "$M" -p thrust-contract-tests --test contract -- blast_ --test-threads=1 --nocapture >"$LOG.test.log" 2>&1 ;;
+  # email: the ONE real send of spike 0002 (a deployed Worker with the EMAIL binding and the vars THRUST_EMAIL_FROM and THRUST_EMAIL_TO).
+  # Run it once: a second run sends a second mail.
+  email)    EXPECT=1;  "$RS" cargo test --manifest-path "$M" -p thrust-contract-tests --test worker_only -- stage2_email_real_ --test-threads=1 --nocapture >"$LOG.test.log" 2>&1 ;;
+  engine)   EXPECT=4;  "$RS" cargo test --manifest-path "$M" -p thrust-contract-tests --test engine -- --test-threads=1 --nocapture >"$LOG.test.log" 2>&1 ;;
   ratelimit) EXPECT=1; "$RS" cargo test --manifest-path "$M" -p thrust-contract-tests --test contract -- create_is_rate_limited_per_user --test-threads=1 --nocapture >"$LOG.test.log" 2>&1 ;;
   *) echo "unknown pass $PASS" >&2; exit 2 ;;
 esac
 TEST_STATUS=$?
 
-grep -E "PANIC-OBSERVATION|HIBERNATION-OBSERVATION|RATELIMIT-OBSERVATION|CRON-OBSERVATION" "$LOG.test.log" || true
+grep -E "PANIC-OBSERVATION|HIBERNATION-OBSERVATION|RATELIMIT-OBSERVATION|CRON-OBSERVATION|EMAIL-OBSERVATION" "$LOG.test.log" || true
 grep -E "^test |^test result|panicked|FAILED" "$LOG.test.log"
 PASSED="$(sed -n 's/^test result: [a-zA-Z]*\. \([0-9]*\) passed.*/\1/p' "$LOG.test.log" | tail -1)"
 echo "[stage2/$PASS] cargo test exit=$TEST_STATUS passed=${PASSED:-?} expected=$EXPECT"

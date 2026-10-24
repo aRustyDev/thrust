@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-10-17
 decision-makers: asmith
 consulted: []
@@ -31,7 +31,7 @@ The Workers backend needs one authoritative relational store for ~150 Plane mode
 
 ## Decision Outcome
 
-Decision pending — see Q-0040. Leading hypothesis: **Option 1 (Postgres + Hyperdrive)**, confidence **medium**, because it keeps one SQL dialect across the CF and self-hosted adapter sets, preserves partial unique indexes / advisory-lock-free-but-transactional sequencing / rich grouped queries, and keeps the schema baseline a direct copy of Plane's frozen end-state. Option 4 is the strongest alternative if the spike shows Hyperdrive latency or cost is unacceptable or Q-G4 demands very large multi-tenant scale.
+**Decision (owner, 2026-10-24): Option 1, Postgres through Hyperdrive**, accepted after spike 0002 ("Decision — spike 0002" below; the evidence is `research/0011-database-engine-cells.md`). Option 5, the instance-level Durable Object, was built and measured and stays documented as a viable fallback; its code is archived on the tag `spike/0002-worker-do`. Options 2, 3 and 4 were not built (D1 stays a desk review). The reasons recorded before the spike still hold: Postgres keeps one SQL dialect across the CF and self-hosted adapter sets, preserves partial unique indexes / advisory-lock-free-but-transactional sequencing / rich grouped queries, and keeps the schema baseline a direct copy of Plane's frozen end-state. The spike did not show Hyperdrive latency or cost to be unacceptable (placed in `us-east-1`, a list is 161 ms p95 at c=1 from the origin's region), so the strongest alternative the ADR named, Option 4, is not pursued.
 
 ### Consequences
 
@@ -142,16 +142,67 @@ The round-11 desk review rejected DO-SQLite only on cross-workspace fan-out, mig
 
 S1's 50-writer test and the FR-22 allocation order are spike 0002's step 2 (ADR-0043, round 29).
 
+## Update — spike 0002 results, issue #37 (2026-10-24)
+
+**Results as reported before the owner's decision of the same day, which is the next section.** Both cells were measured on the platform, and the spike's decision rule did not decide the engine without two owner readings. The numbers, their conditions and everything not measured are in `research/0011-database-engine-cells.md`.
+
+**The rule applied to the five criteria** (conditions: one laptop in Virginia, in the origin's region, as the main vantage; one run at a time; n=200 per bench cell; `worker-do` on a Durable Object with hint `enam`, `worker-pg` through Hyperdrive and the Workers VPC service to CNPG `thrust-pg-dev`, placed in `us-east-1`):
+
+| # | `worker-do` | `worker-pg` |
+|---|---|---|
+| 1. 50-writer test | **passes**: 10,500 creates, 1,428 deletes, no duplicate, no reuse, `sort_order` increasing; the controls (a duplicate-number build, a build without the transaction gate) fail the right way | **passes**: the same test on the deployed Worker, 4 of 4 in the engine pass |
+| 2. FTS plus trigram | **passes**: FTS5 `trigram` is in workerd's SQLite (R3); 400 generated queries identical to `icontains`; a created item is found by the next search | **passes**: the same 400 queries identical to `icontains`; freshness and scope pass; `pg_trgm` is installed once by an administrator in `public`, and the operator class must be schema-qualified for the per-PR roles |
+| 3. list p95 < 300 ms at 100k items | **passes for a 1,000-item project** (77 ms c=1, 216 ms c=8; database of about 124k items); **fails for an unpaged 10,000-item project** (350 ms, 1,687 ms). A cold object adds nothing measurable (71-132 ms) | **passes for a 1,000-item project** (161 ms, 220 ms; about 132k items); **fails for an unpaged 10,000-item project** (642 ms, 1,231 ms). The first request after a fresh deployment adds nothing measurable (127-209 ms; stage 2 measured 595-615 ms) |
+| 4. migration story | **passes**: expand 0.90 s, FTS5 build 3.8 s, contract 0.67 s over 124k rows; a migration that fails at its third statement leaves nothing; **a build whose migration fails takes the instance down** (every request, `/healthz` included, answers 500) until a good build is deployed | **passes**: the migrations apply as the per-PR role; expand 0.54 s, two GIN builds 1.6 s, contract 1.5 ms over 132k rows (database-side); a failing migration leaves nothing and does not touch the running Worker. Applied with `psql`, not through the Rust runner |
+| 5. projected cost | about $6.8 a month at the sizing target, about $63 at ten times it; **not reconciled** | Cloudflare side as `research/0004` section 9 ($6.38), the Postgres host outside the envelope (round 27); **not reconciled** |
+
+**The rule's outcome.** Criterion 3 is the same on both: it passes for a realistic list and fails for the slice's unpaged list of a big project, because the response (509 bytes an item, no paging) is the cost, not the engine; and criterion 5 is a projection on both (the owner skipped the 24-hour reconciliation: no real traffic). So:
+- **If criterion 3 is read on a 1,000-item project and a projection satisfies criterion 5, both cells pass all five, and Q-0040.6 is the owner's.**
+- **If criterion 3 is read on the unpaged 10,000-item list, or criterion 5 must be reconciled, `worker-do` fails and Postgres stays the default** by the rule's first line; `worker-pg` fails criterion 3 on that reading too, a finding about the unpaged list that goes to the owner under Q-0040 (paging is needed whichever engine is chosen).
+
+**What the owner decides:** (a) the reading of criterion 3; (b) whether a projection satisfies criterion 5; (c) if both pass, Q-0040.6. The measured differences between the cells, as facts for (c) and not a recommendation: near the origin the object's small reads are about 30 ms faster at p50 (a few-item list 36-40 ms against 66-69 ms); from us-west-2 (mid-distance, not antipodal) it is 40-70 ms faster than placed Postgres at p50, and Postgres **without** placement is 1.5 to 3.8 times slower than placed, by operation; c=8 creates are close at p95 (302-385 ms against 300-381 ms) and the object's p50 is lower (102-126 against 174-190 ms); 8 concurrent 5 MB lists cost 1,687 ms on the object against 1,231 ms on Postgres (R2: one object serialises the instance), while seeding is 3 times faster on Postgres (5,490 against 1,830 rows a second) and search is steadier on the object (43-77 ms against 70-105 ms); a failed migration takes the object's instance down until redeployed, and does not touch a running Postgres Worker; Postgres needs `pg_trgm` installed by an administrator, a role connection limit sized with Hyperdrive's pool (a second config on a role limited to 8 failed every request), caching off, and placement for distant users.
+
+**The other things measured** (reported, not pass or fail): **Hyperdrive caching** takes 10-20 ms off a repeated read and nothing off a write, and **breaks read-after-write**: 4 of 21 contract tests fail with it enabled (the activity row never appears; a list is stale after writes), so it stays disabled for the system of record. **Placement** changes nothing from the origin's own region and is what makes the cell usable from a distance (create 3.3 to 3.8 times faster, list 1.5 to 1.7 times, from us-west-2); this is the evidence for the open half of Q-0040.5 (the Postgres cell, `placement.region = "aws:us-east-1"`); the question is not answered here. **Round trips by reading the code:** a list is 3 statements on one Hyperdrive connection, a create 7 statements on two connections plus the rate limiter's object (issue #39's budget is not enforced by a counting connector yet). **FR-22 on the platform** is in ADR-0043's note: correct and harmless, worth about 15 percent of the c=8 create p50. **One real email** was accepted by the Email binding (delivery to the mailbox not verified).
+
+What the `worker-do` cell cost, as observed: R2 is real (above); the outbox fast path loses relays when the object is evicted (the cron sweeper delivered the 100 of about 10.5k that were lost, within a minute); health checks go through the object; SQLite's planner reads a project's rows for an indexed search (O(project)); argon2id sign-in would run inside the one object (`research/0012`). R1 is answered (ADR-0045 note): a buffered `Tx` committed in one `transactionSync`, with a control that fails against the naive mapping on the real runtime.
+
+**Not measured:** the 24-hour reconciliation (skipped); any vantage beyond us-west-2; the Rust `migrate` runner and a migration under load; why a concurrent create still costs 1.4 times a sequential one on `worker-pg`; delivery of the email. The deployed numbers were taken before the branch was reconciled onto the auth slice and were not re-taken (`research/0011` sections 12 and 14).
+
+## Decision — spike 0002 (owner, 2026-10-24)
+
+**Postgres is the system of record: this ADR is `accepted` as Option 1, Postgres through Hyperdrive (CNPG in `woven-o11y`, ADR-0094).** Q-0040, Q-0040.1 and Q-0040.6 are answered with it.
+
+**How the exit criteria were read** (the two readings the results above left to the owner):
+1. **Criterion 3 is read on the realistic, paged list** (a 1,000-item project in a database of about 100k items): **both cells pass**. The unpaged 10,000-item list is a slice artifact that both engines fail; it becomes a **pagination requirement of the list endpoint (issue #58)**, not an argument about the engine.
+2. **A projected cost satisfies criterion 5** (the 24-hour run was skipped: there is no real traffic): both cells pass, as projected.
+3. Both cells pass all five criteria, so Q-0040.6 decided, and the owner chose Postgres.
+
+**Evidence, in short** (`research/0011-database-engine-cells.md`; one laptop in the origin's region, n=200 per bench cell, deployed `worker-pg` placed in `us-east-1`): the 50-writer, 10k-create test passes on the deployed cell with no duplicate and no reuse; search through `pg_trgm` answers exactly what Plane's `icontains` answers (400 generated queries); a list of 1,000 items is 161 ms p95 (c=1) and 220 ms (c=8); the Postgres migrations apply as the per-PR role and a failing migration changes nothing; the FR-22 order is confirmed on the platform (ADR-0043 note); the first database request after a fresh deployment is no slower than the next (127 to 209 ms; stage 2 had measured 595 to 615 ms); the projected cost is within the envelope (Cloudflare side $6.38 a month, the Postgres host outside it, ADR-0040 round 27). The Postgres adapter is also the one that the self-hosted set and ADR-0044's hand-written SQL already use, so the two adapter sets keep one dialect.
+
+**`worker-do` stays documented as a viable fallback.** Why it is viable: it removes the tunnel, the Workers VPC service, Hyperdrive, the coupling to the CNPG cluster and the unauthenticated TLS to it; its projected cost is lower in total once the Postgres host is counted (about $6.8 a month on the Cloudflare side at the sizing target, against $6.38 plus the host); and from a distant client it was 40 to 70 ms faster than placed Postgres at p50 (from us-west-2). Why it was not chosen: it **serialises the instance** (8 concurrent 5 MB lists took 1,687 ms on the object against 1,231 ms on Postgres), **including argon2id sign-in**, which blocks the one object for the length of each hash (26 ms locally; 45 ms of CPU at p50 on the platform, derived); **the one object's location is fixed at creation** (hint `enam`); **backup and restore of a Durable Object was not exercised**; a build whose migration fails takes the whole instance down until a good build is deployed; the outbox fast path loses relays when the object is evicted (the cron sweeper recovers them); and it **would reopen ADR-0042, ADR-0044 and ADR-0045** for the SQLite dialect. The code, with its SQLite adapter, tests, targets and docs, is archived on the tag `spike/0002-worker-do` (commit 021dc65 of PR #77) and is not merged; its deployed numbers were taken before the auth slice (#76, #78) was merged, and its SQLite identity code never ran on a deployed Worker.
+
+**What Postgres staying the default means for the open work.** None of it is moot:
+- **FR-09, authenticated TLS to CNPG (issue #41)** still stands: the link is still unauthenticated until it lands (Q-0094.9).
+- **FR-10, the cluster coupling (`/healthz?deep=1`, a `status.woven` probe; issues #42 and #57)** still stands: availability includes `woven-o11y`.
+- **The CNPG infrastructure** (ADR-0094: the cluster, the tunnel, the Workers VPC service, Hyperdrive) is the production path, not a spike resource; the per-PR roles and schemas on the shared dev database stay (issue #57 owns their cleanup).
+- **Pagination** of the list endpoint (issue #58), as above.
+
+**Postgres follow-ups the spike found, which stand** (recorded here, not changed by the spike's PR):
+- A per-PR role is created with `CONNECTION LIMIT 8`, and the Hyperdrive config with an origin connection limit of 8 (its minimum is 5), so **one role cannot host two Hyperdrive configs**: the second got `53300 too many connections` and every request answered 500. A role's limit must cover the sum of its configs' limits plus room for an administrator.
+- **The adapter's error text drops the SQLSTATE and the message**: a server error reads `db error` through `DbError::Backend(e.to_string())`, so a `53300` was found in the database's log, not the Worker's. Follow-up: include `as_db_error()`'s code and message.
+- **Hyperdrive caching stays off** for the system of record: with it on, 4 of the 21 contract tests then in the main pass fail on read-after-write (the activity row never appears; a list is stale after writes).
+- **`worker-pg` placement must be `aws:us-east-1`** (`placement.region`): from us-west-2 a create took 665 to 738 ms without it and 197 to 200 ms with it.
+
 ## Open Questions
 
-* Q-0040 — which option?
-* Q-0040.1 — spike scope and exit criteria ratification. (reopened round 29, FR-04)
+* Q-0040 — which option? (**answered 2026-10-24, owner: Postgres through Hyperdrive.**)
+* Q-0040.1 — spike scope and exit criteria ratification. (reopened round 29, FR-04; **answered**: the criteria ran as written and were read as above.)
 * Q-0040.2 — portable sequence allocation (see ADR-0043). (answered round 29, FR-17)
 * Q-0040.3 — partial unique indexes across adapters. (answered round 29, FR-07)
 * Q-0040.4 — cross-workspace query needs.
 * Q-G3, Q-G4, Q-G5 — data import, scale targets, cost envelope.
 * Q-0040.5 — Which external Postgres provider/region for Hyperdrive, and do we enable Smart Placement so Workers run near it?
-* Q-0040.6 — If both spike 0002 cells pass their exit criteria, which engine? (added round 29, FR-04)
+* Q-0040.6 — If both spike 0002 cells pass their exit criteria, which engine? (added round 29, FR-04; **answered 2026-10-24, owner: Postgres.**)
 
 ## More Information
 

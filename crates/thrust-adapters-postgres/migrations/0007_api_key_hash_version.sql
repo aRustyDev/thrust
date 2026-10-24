@@ -10,9 +10,9 @@
 -- Idempotent like the files before it (`migrate` applies every file on every run). `ADD COLUMN IF NOT EXISTS` skips the
 -- column when it is there, but NOT a CHECK written inline with it: Postgres adds that one again on every run (measured:
 -- three runs, three identical checks), so the CHECK is its own statement, dropped and added by name, and there is one.
--- No `DO` block, no Postgres-only type: a smallint and a plain CHECK. Number 0006 is not used here on purpose (the SQLite
--- adapter's search index migration owns it; `migrate` applies files in order, a gap is harmless), and the SQLite adapter
--- carries this file over in its own spelling of "add the column once".
+-- No `DO` block, no Postgres-only type: a smallint and a plain CHECK. Number 0006 is the search migration (`0006_search.sql`),
+-- applied before this file; `migrate` applies the files in order. (The archived SQLite twin, tag `spike/0002-worker-do`,
+-- carried this file over in its own spelling of "add the column once".)
 ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS hash_version smallint NOT NULL DEFAULT 1;
 ALTER TABLE api_keys DROP CONSTRAINT IF EXISTS api_keys_hash_version_positive;
 ALTER TABLE api_keys ADD CONSTRAINT api_keys_hash_version_positive CHECK (hash_version > 0);

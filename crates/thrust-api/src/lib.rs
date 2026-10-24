@@ -215,6 +215,15 @@ async fn revoke_session(_: Admin, Extension(app): Extension<App>, Json(b): Json<
     Ok(StatusCode::NO_CONTENT)
 }
 
+/// Test and bench support: bulk-insert live work items into a project (the way the benches get to 100k rows).
+async fn seed_work_items(
+    _: Admin,
+    Extension(app): Extension<App>,
+    Json(req): Json<SeedWorkItemsRequest>,
+) -> ApiResult<Json<SeedWorkItemsReport>> {
+    Ok(Json(thrust_core::seed_work_items(&app, &req).await?))
+}
+
 #[derive(Deserialize)]
 struct SetUserActive {
     user_id: UserId,
@@ -423,6 +432,21 @@ async fn list_work_items(
     Ok(Json(thrust_core::list_work_items(&app, &who, &slug, project, vis).await?))
 }
 
+#[derive(Deserialize)]
+struct SearchQuery {
+    q: Option<String>,
+}
+
+async fn search_work_items(
+    Authed(who): Authed,
+    Extension(app): Extension<App>,
+    Path((slug, project)): Path<(WorkspaceSlug, ProjectId)>,
+    Query(q): Query<SearchQuery>,
+) -> ApiResult<Json<Vec<WorkItem>>> {
+    let q = q.q.ok_or_else(|| ApiError(CoreError::Invalid("q is required".into())))?;
+    Ok(Json(thrust_core::search_work_items(&app, &who, &slug, project, &q).await?))
+}
+
 async fn delete_work_item(
     Authed(who): Authed,
     Extension(app): Extension<App>,
@@ -507,6 +531,7 @@ pub fn router() -> Router {
         .route("/internal/seed", post(seed))
         .route("/internal/sweep", post(sweep))
         .route("/internal/revoke-session", post(revoke_session))
+        .route("/internal/seed-work-items", post(seed_work_items))
         .route("/internal/set-user-active", post(set_user_active))
         .route(&auth_path("/sign-in/email"), post(sign_in))
         .route(&auth_path("/sign-out"), post(sign_out))
@@ -520,6 +545,7 @@ pub fn router() -> Router {
         .route("/internal/outbox-depth", get(outbox_depth))
         .route("/internal/inject-event", post(inject_event))
         .route(&slice_path("/work-items"), post(create_work_item).get(list_work_items))
+        .route(&slice_path("/work-items/search"), get(search_work_items))
         .route(&slice_path("/work-items/{id}"), delete(delete_work_item))
         .route(&slice_path("/work-items/{id}/activity"), get(list_activity_for_item))
         .route(&slice_path("/activity"), get(list_activity_for_project))

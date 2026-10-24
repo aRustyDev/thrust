@@ -20,9 +20,15 @@ kill_check() {
   # $1 label, $2 exit status, $3 log file with test output
   label="$1"; status="$2"; log="$3"
   failed="$(grep -c '\.\.\. FAILED$' "$log")"
+  # A pass run with --nocapture (the engine pass) prints `test x ... ` and the panic text, and only then `FAILED` on a
+  # line of its own, so its failures are counted from cargo's own `test result: FAILED. N passed; M failed` line.
+  if [ "$failed" -eq 0 ]; then
+    failed="$(sed -n 's/^test result: FAILED\. [0-9]* passed; \([0-9]*\) failed.*/\1/p' "$log" | tail -1)"
+    failed="${failed:-0}"
+  fi
   if [ "$status" -eq 101 ] && [ "$failed" -ge 1 ]; then
     printf '%-34s KILLED   (%s test(s) failed)\n' "$label" "$failed" >>"$SUMMARY"
-    grep '\.\.\. FAILED$' "$log" | sed 's/^/    /' >>"$SUMMARY"
+    grep -E '\.\.\. FAILED$|^test .* \.\.\. $' "$log" | sed 's/^/    /' >>"$SUMMARY"
   else
     printf '%-34s SURVIVED or did not run (exit=%s, failed tests=%s)\n' "$label" "$status" "$failed" >>"$SUMMARY"
     SURVIVED=1
@@ -49,6 +55,21 @@ for triple in \
   kill_check "native-memory $pass + $name" "$status" "$OUT/$name/native-memory-$pass.test.log"
 done
 
+# The engine pass (spike 0002, `contract.sh <target> engine`): the 50-writer, 10k-create test against the duplicate-sequence
+# mutant of the memory adapter, and the search tests against its case-sensitive-search mutant. Each must fail it: that is the
+# control the issue names for the 50-writer test. (The SQLite adapter's own rows are archived with it, on the tag
+# `spike/0002-worker-do`.)
+for spec in \
+  "native-memory:duplicate-sequence-number:mutant_dup_sequence" \
+  "native-memory:case-sensitive-search:mutant_search_case_sensitive"; do
+  target="${spec%%:*}"
+  rest="${spec#*:}"
+  name="${rest%%:*}"
+  feature="${rest##*:}"
+  THRUST_SERVER_FEATURES="$feature" THRUST_LOGDIR="$OUT/engine-$target-$name" "$ROOT/scripts/contract.sh" "$target" engine >"$OUT/engine-$target-$name.out" 2>&1
+  status=$?
+  kill_check "$target engine + $name" "$status" "$OUT/engine-$target-$name/$target-engine.test.log"
+done
 # The vacuity guard of the CSRF switch (Q-0050.8): a pass that is started against a server with the OTHER enforcement
 # setting must be refused before a test runs (exit 5, and the message says csrf_enforce). Not a build mutant: the server
 # is the real one, started with THRUST_SERVER_CSRF_ENFORCE, the knob only this script sets.

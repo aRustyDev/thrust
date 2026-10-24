@@ -91,6 +91,13 @@ table definitions they add with a comment, `-- scope: tenant` for `workspaces` a
 comment says so. The tables from `0001` and `0002` are not marked, and the lint that the CI line above asks for
 (every new table declares its scope) is not built. This note decides no strategy; the ADR stays `proposed`.
 
+## Update — spike 0002, issue #37: isolation under Postgres (2026-10-24)
+
+ADR-0040 is accepted: **Postgres is the system of record** (owner, 2026-10-24), so the isolation question is how to isolate tenants on Postgres, not on the Durable Object cell the spike also built (archived on the tag `spike/0002-worker-do`). What the spike says, and what it does not:
+- Spike 0002's tenant-isolation step was dropped in round 29 (FR-02): the tenant guard is the `Scope` argument of every repository and `Tx` method, enforced by the adapter. On the deployed `worker-pg` cell (main pass 21 of 21 at that time) the cross-tenant tests (`cross_tenant_access_is_rejected_and_has_no_effect`, the access-table matrix) and the generated two-tenant model test pass. **No row-level security was built or measured**, and no isolation strategy is decided here: Q-0041 stays open and this ADR stays `proposed`.
+- The per-PR environments of the shared dev database (`pr-schema.sh`: a NOSUPERUSER role that owns its own schema, `search_path` set on the role) isolated the run from every other schema, as intended. Two findings for that tooling: an extension's operator class must be schema-qualified for a role whose `search_path` excludes `public` (`research/0011` section 5.4, the `pg_trgm` index), and the role's connection limit has to be sized with the Hyperdrive pool bound to it (section 10, item 7: one role cannot host two configs at a limit of 8).
+- The archived Durable Object cell would have made a tenant boundary inside the one object the `Scope` and nothing else, as on Postgres; a per-tenant object was not built.
+
 ## Open Questions
 
 * Q-0041 — which strategy?

@@ -369,6 +369,67 @@ impl Database for MemoryDatabase {
             .cloned())
     }
 
+    /// The reference implementation of search: a scan, `to_lowercase` and `contains` (Plane's `icontains`).
+    async fn search_work_items(&self, scope: &Scope, query: &str, limit: u32) -> Result<Vec<WorkItem>, DbError> {
+        let (ws, project) = (scope.workspace_id(), scope.project_id());
+        // MUTANT (control run only, feature `mutant_search_case_sensitive`): `contains` without folding case. The engine
+        // pass's `icontains` comparison must catch it.
+        #[cfg(feature = "mutant_search_case_sensitive")]
+        let fold = |t: &str| t.to_string();
+        #[cfg(not(feature = "mutant_search_case_sensitive"))]
+        let fold = |t: &str| t.to_lowercase();
+        let q = fold(query);
+        let s = self.state.lock().unwrap();
+        let mut v: Vec<WorkItem> = s
+            .work_items
+            .iter()
+            .filter(|w| w.workspace_id == ws && w.project_id == project && is_visible(w))
+            .filter(|w| fold(&w.name).contains(&q) || w.description.as_deref().is_some_and(|d| fold(d).contains(&q)))
+            .cloned()
+            .collect();
+        v.sort_by_key(|w| w.sequence_id);
+        v.truncate(limit as usize);
+        Ok(v)
+    }
+
+    async fn seed_work_items(
+        &self,
+        _sys: &SystemScope,
+        workspace: WorkspaceId,
+        project: ProjectId,
+        items: &[SeedWorkItem],
+    ) -> Result<i64, DbError> {
+        let mut s = self.state.lock().unwrap();
+        if s.projects.get(&project) != Some(&workspace) {
+            return Err(DbError::Backend("project is not in this workspace".into()));
+        }
+        let c = s.counters.entry((workspace, project)).or_insert((0, 0));
+        let first = c.0 + 1;
+        let mut rows = Vec::with_capacity(items.len());
+        for i in items {
+            c.0 += 1;
+            c.1 += 10_000;
+            rows.push(WorkItem {
+                id: i.id,
+                workspace_id: workspace,
+                project_id: project,
+                sequence_id: c.0,
+                sort_order: c.1,
+                name: i.name.clone(),
+                description: i.description.clone(),
+                external_source: None,
+                external_id: None,
+                created_by: i.created_by,
+                created_at: i.created_at,
+                archived_at: None,
+                is_draft: false,
+                deleted_at: None,
+            });
+        }
+        s.work_items.extend(rows);
+        Ok(first)
+    }
+
     async fn insert_activity(&self, _sys: &SystemScope, a: &Activity) -> Result<bool, DbError> {
         let mut s = self.state.lock().unwrap();
         // MUTANT (control run only): no idempotency on event_id. The redelivery test must catch it.

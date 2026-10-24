@@ -14,9 +14,10 @@
 //!   outside the workspace the slug names; `NotAMember` for a workspace member without a project membership (a
 //!   member row written with another workspace does not count); the member's role, with the workspace, otherwise;
 //! * inside a transaction, `allocate` hands out the project's next sequence number and `sort_order` = 10 000 × that
-//!   number; a transaction that commits keeps them, one that rolls back or is dropped unfinished gives them back (the
-//!   counter row is transactional in Postgres: no gap, unlike the memory adapter); `allocate` under another
-//!   workspace than the project's is refused, and the transaction is then rolled back;
+//!   number, taking it in its own short transaction (ADR-0043 round 29, FR-22: the counter row is locked for one
+//!   statement, not for the whole create): a number is taken for good, so a transaction that rolls back, is dropped
+//!   unfinished or fails on a conflict leaves a GAP and the next transaction goes on after it; `allocate` under another workspace than the project's is refused, takes
+//!   nothing, and the transaction is then rolled back;
 //! * `insert_work_item` is a `Conflict` when the project already has a live row with the same external key, rows of
 //!   the same transaction included; the transaction is then rolled back, as the core does;
 //! * `soft_delete_work_item` is `true` exactly for a live row of that workspace and project (one inserted earlier in
@@ -326,6 +327,8 @@ enum Class {
     Abandoned,
     /// A transaction rolled back because of a conflict.
     FailedAndRolledBack,
+    /// A transaction that took sequence numbers and did not commit: the numbers stay taken (FR-22), the next one skips them.
+    NumbersKeptAfterAbort,
     ListedVisible,
     ListedWithDeleted,
     ListedWrongWorkspace,
@@ -420,7 +423,7 @@ enum Class {
 }
 
 impl Class {
-    const ALL: [Class; 81] = [
+    const ALL: [Class; 82] = [
         Class::Created,
         Class::ExternalKeyFreed,
         Class::Conflict,
@@ -435,6 +438,7 @@ impl Class {
         Class::RolledBack,
         Class::Abandoned,
         Class::FailedAndRolledBack,
+        Class::NumbersKeptAfterAbort,
         Class::ListedVisible,
         Class::ListedWithDeleted,
         Class::ListedWrongWorkspace,
@@ -1448,8 +1452,16 @@ impl Model {
                 }
             }
         }
+        // FR-22: every number `allocate` handed out is taken for good, whatever becomes of the transaction.
+        for s in 0..2 {
+            self.counter[s] += allocs[s];
+        }
+        let took_numbers = allocs.iter().any(|a| *a > 0);
         if failed {
             classes.push(Class::FailedAndRolledBack);
+            if took_numbers {
+                classes.push(Class::NumbersKeptAfterAbort);
+            }
             calls.push(Call::Rollback);
             return;
         }
@@ -1458,7 +1470,6 @@ impl Model {
                 classes.push(Class::Committed);
                 calls.push(Call::Commit);
                 for s in 0..2 {
-                    self.counter[s] += allocs[s];
                     self.rows[s].append(&mut written[s]);
                 }
                 for (s, id, at) in deleted {
@@ -1470,10 +1481,16 @@ impl Model {
             }
             End::Rollback => {
                 classes.push(Class::RolledBack);
+                if took_numbers {
+                    classes.push(Class::NumbersKeptAfterAbort);
+                }
                 calls.push(Call::Rollback);
             }
             End::Abandon => {
                 classes.push(Class::Abandoned);
+                if took_numbers {
+                    classes.push(Class::NumbersKeptAfterAbort);
+                }
                 calls.push(Call::Abandon);
             }
         }

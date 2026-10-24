@@ -37,10 +37,11 @@ const RETIRED_SLICE_PREFIX: &str = "/api/v1";
 
 /// Every slice route as a method and the part after `.../projects/{project_id}`, with `{item}` for a work item id.
 /// A route added to `thrust_api::router()` later must be added here.
-fn slice_routes() -> [(Method, &'static str); 8] {
+fn slice_routes() -> [(Method, &'static str); 9] {
     [
         (Method::POST, "/work-items"),
         (Method::GET, "/work-items"),
+        (Method::GET, "/work-items/search"),
         (Method::DELETE, "/work-items/{item}"),
         (Method::GET, "/work-items/{item}/activity"),
         (Method::GET, "/activity"),

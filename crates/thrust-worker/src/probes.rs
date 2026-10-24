@@ -34,6 +34,8 @@ pub async fn probe_route(req: web_sys::Request, env: &Env, path: &str) -> Result
         "ratelimit" => ratelimit(env).await,
         "secret" => secret(env).await,
         "email" => email(env).await,
+        "email-refused" => email_refused(env).await,
+        "email-real" => email_real(env).await,
         "service" => service(env).await,
         "workflow" => workflow(env).await,
         "ai" => ai(env).await,
@@ -82,6 +84,33 @@ async fn email(env: &Env) -> Result<Value> {
         .await
         .map_err(|e| Error::RustError(format!("{e:?}")))?;
     Ok(json!({ "message_id_len": res.message_id().len() }))
+}
+
+/// The control for the real send: the same call from a sender domain the account does not own. The deployed binding refuses it
+/// (`email from example.com not allowed because domain is not owned by the same account`, `research/0004` F9), so nothing is
+/// sent; if it did not refuse, the real send below would prove nothing about ownership. Never reaches a mailbox.
+async fn email_refused(env: &Env) -> Result<Value> {
+    let sender = env.send_email("EMAIL")?;
+    let to = text(env, "THRUST_EMAIL_TO").ok_or_else(|| Error::RustError("THRUST_EMAIL_TO is not set".into()))?;
+    let msg = worker::SendEmailBuilder::builder("noreply@example.com", &to, "spike 0002 control: must be refused").text("must not be delivered").build();
+    let res = sender.send_with_builder(&msg).await.map_err(|e| Error::RustError(format!("{e:?}")))?;
+    // reaching here means the binding accepted an unowned sender: report it as a failure of the control
+    Ok(json!({ "accepted_unowned_sender": true, "message_id": res.message_id() }))
+}
+
+/// Spike 0002 step 10: ONE real send through the Email binding of a deployed Worker, from a sender domain the account owns and
+/// Email Sending is enabled for, to a verified destination (owner-approved, 2026-10-24: exactly one). The addresses come from
+/// the Worker vars `THRUST_EMAIL_FROM` and `THRUST_EMAIL_TO`, set at deploy time and never committed. It returns the message id
+/// and the lengths of the addresses, not the addresses. The caller runs it once.
+async fn email_real(env: &Env) -> Result<Value> {
+    let sender = env.send_email("EMAIL")?;
+    let from = text(env, "THRUST_EMAIL_FROM").ok_or_else(|| Error::RustError("THRUST_EMAIL_FROM is not set".into()))?;
+    let to = text(env, "THRUST_EMAIL_TO").ok_or_else(|| Error::RustError("THRUST_EMAIL_TO is not set".into()))?;
+    let msg = worker::SendEmailBuilder::builder(&from, &to, "thrust spike 0002: one real send from a deployed Worker")
+        .text("This is the single real email of spike 0002 (database engine cells), sent through the Email Service binding of a deployed Cloudflare Worker. No action is needed.")
+        .build();
+    let res = sender.send_with_builder(&msg).await.map_err(|e| Error::RustError(format!("{e:?}")))?;
+    Ok(json!({ "sent": true, "message_id": res.message_id(), "from_len": from.len(), "to_len": to.len() }))
 }
 
 /// Service binding to this same Worker (`[[services]] SELF`): native in workers-rs (`Fetcher`).

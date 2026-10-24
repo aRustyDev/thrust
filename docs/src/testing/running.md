@@ -42,6 +42,7 @@ profile selects nothing. To reach the excluded integration suites through nextes
 scripts/contract.sh <target> [pass]
   target: native-memory | native-pg | worker-memory | worker-cf
   pass:   main | sweeper | panic | csrfoff | blast | bench | worker | cron | bindings
+          engine | scale                    (every target, opt-in: not in contract-all.sh. The engine-deciding tests; list, search and create at 100k items)
 ```
 
 `csrfoff` runs the six `csrf_off_` tests against a target started with no CSRF setting at all, so that it shows the
@@ -58,7 +59,8 @@ admin token and database password per run and keeps them out of files and argv.
 | `scripts/mutants.sh` | the planted mutants; every one must be KILLED | Docker |
 | `scripts/verify-all.sh` | the hermetic nextest run, matrix, mutants, `check-deps.sh`, `pg_adapter`, probes; summary in `target/verify/summary.txt` | Docker, wrangler |
 | `scripts/flake-hunt.sh <target> <pass> <iterations>` | one cell N times, keeping every log | as the cell |
-| `scripts/stage2-contract.sh [pass]` | the suite against a **deployed** Worker | an owner-provided Cloudflare sandbox only |
+| `scripts/stage2-contract.sh [pass]` | the suite against a **deployed** Worker (run it with `sh`) | an owner-provided Cloudflare sandbox only |
+| `scripts/spike-0002-pg.sh role\|migrate\|hyperdrive\|resources\|deploy\|sql\|status\|down` | creates, inspects and tears down the deployed `worker-pg` cell (a per-PR role and schema, two Hyperdrive configs, the Worker) and keeps a UTC ledger | `CLOUDFLARE_ACCOUNT_ID`, a Hyperdrive Write token, cluster access, wrangler's OAuth login |
 
 Run matrix cells **serially**: parallel runs share `crates/thrust-worker/build` and a second wrangler rebuild reloads
 the first one's Worker (the header of `scripts/contract-all.sh` records this). Contract and stage-2 commands above are

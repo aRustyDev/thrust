@@ -14,7 +14,8 @@ show about how to add another. The three probe crates are outside the workspace 
 | `thrust-adapters-postgres` | `native` | off | Turns on `tokio-postgres/runtime` and `tokio`. The `migrate` binary requires it (`required-features`), and `thrust-adapters-selfhosted` depends on the crate with it. Never enable it for wasm32 |
 | `thrust-adapters-memory` | `mutant_ignore_tenant`, `mutant_dup_sequence`, `mutant_no_activity_dedupe` | off | Planted bugs: forget the tenant predicate, hand out the same sequence number every time, skip the activity de-duplication |
 | `thrust-adapters-selfhosted` | `mutant_discard_noop` | off | Planted bug: hand a connection that is still inside an abandoned transaction back to the pool |
-| `thrust-server` | the same three `mutant_*` names | off | Forwards each one to `thrust-adapters-memory`, so a build of the server can switch a planted bug on |
+| `thrust-adapters-memory` | `mutant_search_case_sensitive` | off | Planted bug: search without folding case |
+| `thrust-server` | the `mutant_*` names of `thrust-adapters-memory`, and the CSRF and e-mail ones of `thrust-core` | off | Forwards each one to the crate that has it, so a build of the server can switch a planted bug on |
 | `thrust-editor-doc` | `sanitize` | on | Pulls in the ammonia sanitiser (and html5ever). It is split out so the size of the conversions alone can be measured |
 | `thrust-editor-worker` | `sanitize` | on | Forwards to `thrust-editor-doc/sanitize` |
 

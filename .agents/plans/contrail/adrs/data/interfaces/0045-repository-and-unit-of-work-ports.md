@@ -165,6 +165,15 @@ call that runs before a `Scope` exists.
   workspace and ignores the slug and the workspace membership. It is still a runtime control, and it is killed by
   the contract suite, including the new `a_session_is_not_bound_to_a_workspace`.
 
+## Update — issue #37: the `Tx` on SQLite and in the Durable Object (2026-10-24)
+
+Spike 0002's risk R1 asked how this ADR's explicit `Tx` maps onto an engine that cannot hold a transaction open across awaits (`sql.exec()` rejects `BEGIN` and `SAVEPOINT`; `transactionSync` takes a callback that must finish without yielding). The accepted shape works unchanged (thrust PR #77, `research/0011-database-engine-cells.md` section 3):
+- the SQLite adapter's `Tx` **buffers** its writes and commits them in **one** `Sql::atomically` (`BEGIN IMMEDIATE` on rusqlite, `ctx.storage.transactionSync` in the object, which workers-rs 0.8.7 does not bind, so it is called through `Storage::as_raw()`); `allocate` reads the counter and the commit advances it and checks it did not move; `rollback` and `Drop` discard the buffer. A gate lets one `Tx` be open at a time, because the read of the counter and its write would otherwise interleave with another transaction's. This is the "reads-then-atomic-writes" contract of the earlier hypothesis, built behind the same `Database::begin` and `Tx` as the Postgres adapter, with no change to the port.
+- it gives up reading its own uncommitted writes through the database (the `Tx` answers the two questions a use-case asks mid-transaction, a duplicate external key and whether a row is live, from the committed rows plus its buffer) and runs transactions one at a time.
+- the Postgres adapter now opens its transaction at the first write, not at `begin`, so that `allocate` is its own short transaction (ADR-0043 note); a second `allocate` in an open transaction goes through another connection.
+
+**Control:** every statement a commit issues is failed in turn, over one to three creates plus a soft delete; after each failed commit the database is exactly as it was and the same transaction commits. It passes on rusqlite and on the real `SqlStorage` (local workerd and a deployed object); against a commit that is no transaction it fails (15 of 36 cases on rusqlite; on workerd "a failed commit changed the database"). This ADR was accepted without waiting for the engine decision and is not changed by it. **The engine decision is made (ADR-0040, 2026-10-24: Postgres)**, so the explicit `Tx` stays as built on Postgres; the buffered mapping described above, with its adapter and its controls, is archived on the tag `spike/0002-worker-do` and is not merged. Had the Durable Object cell won, this ADR (with 0042 and 0044) would have been reopened for the SQLite dialect.
+
 ## Open Questions
 
 * Q-0045 — granularity and transaction semantics. (answered round 29, FR-17)

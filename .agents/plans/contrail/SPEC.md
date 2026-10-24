@@ -103,7 +103,7 @@ rollback (ADR-0110; gradual rollout dropped in round 29, FR-12).
 | Plane component | Target (CF adapter) | Self-hosted adapter | ADR |
 |---|---|---|---|
 | Django/DRF API | API Worker (Rust, workers-rs, wasm32) | same crates as a native axum server | 0006, 0034 |
-| Postgres | ⚠ Hyperdrive→PG / D1 / DO-SQLite | Postgres | 0040 |
+| Postgres | Hyperdrive→PG (decided 2026-10-24; D1 and DO-SQLite were the alternatives) | Postgres | 0040 |
 | Celery + RabbitMQ | Queues; long jobs are queue messages with a `jobs` table (no Workflows) | the outbox: in-process fast path + sweeper, one process (no RabbitMQ) | 0070, 0071 |
 | Celery beat | Cron Triggers | scheduler | 0072 |
 | Redis/Valkey (cache, sessions) | none: sessions are database rows (FR-03); rate limits on the Workers Rate Limiting binding (D-007) | none: sessions are database rows; in-process rate limiter (no Valkey) | 0082, 0033 |

@@ -32,6 +32,8 @@ gated with `#[cfg(feature = "mutant_…")]` at the line they break, passed throu
 in `scripts/mutants.sh`. cargo-mutants: configured by `.cargo/mutants.toml` and the `mutants` nextest profile;
 `mutants.out*` is never committed.
 
+Spike 0002 adds `crates/thrust-adapters-memory` `mutant_search_case_sensitive` (search without folding case) and runs the engine pass in `scripts/mutants.sh` against it and against `mutant_dup_sequence` of the memory adapter. The SQLite adapter's own planted bugs (`mutant_no_gate`, `mutant_gate_leak`, `mutant_non_atomic_commit`, `mutant_broken_migration`) and their rows were archived with that adapter on the tag `spike/0002-worker-do`.
+
 ## Run
 
 ```sh
