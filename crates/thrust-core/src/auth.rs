@@ -278,6 +278,26 @@ pub fn csrf_ok(cookie: Option<&str>, header: Option<&str>) -> bool {
     }
 }
 
+/// Whether this process asks a cookie-authenticated mutation for the CSRF token: `CoreConfig::csrf_enforce`.
+fn csrf_enforced(app: &App) -> bool {
+    // MUTANT (control run only): the switch is ignored when it is on, so no cookie mutation is ever asked for the token.
+    // The contract suite's main pass (enforcement on) must catch it.
+    #[cfg(feature = "mutant_csrf_never")]
+    {
+        let _ = app;
+        return false;
+    }
+    // MUTANT (control run only): the switch is ignored when it is off, so every cookie mutation is asked for the token.
+    // The contract suite's `csrfoff` pass (enforcement off) must catch it.
+    #[cfg(all(feature = "mutant_csrf_always", not(feature = "mutant_csrf_never")))]
+    {
+        let _ = app;
+        return true;
+    }
+    #[cfg(not(any(feature = "mutant_csrf_never", feature = "mutant_csrf_always")))]
+    app.cfg.csrf_enforce
+}
+
 /// A fresh double-submit token: 128 random bits, hex.
 pub fn new_csrf_token(app: &App) -> Result<String, CoreError> {
     random_hex(app, 16)
@@ -285,7 +305,9 @@ pub fn new_csrf_token(app: &App) -> Result<String, CoreError> {
 
 /// The credential of a request, and who it belongs to. A bearer token wins when there is one, then an API key (neither
 /// can be an ambient credential, so neither needs a CSRF token); otherwise the session cookie counts, and a mutation
-/// made with it must carry the CSRF token. See `tests/credentials.rs` and `tests/api_keys.rs` for the tables.
+/// made with it must carry the CSRF token when `CoreConfig::csrf_enforce` is on (it is off in the composition roots'
+/// defaults while the stock frontend is in use: then the token is not consulted at all). See `tests/credentials.rs` and
+/// `tests/api_keys.rs` for the tables.
 pub async fn authenticate_request(app: &App, c: &Credentials<'_>) -> Result<Authenticated, CoreError> {
     if let Some(token) = c.bearer {
         let principal = crate::authenticate(app, token).await?;
@@ -298,7 +320,7 @@ pub async fn authenticate_request(app: &App, c: &Credentials<'_>) -> Result<Auth
     }
     if let Some(token) = c.session_cookie {
         let principal = crate::authenticate(app, token).await?;
-        if c.mutating && !csrf_ok(c.csrf_cookie, c.csrf_header) {
+        if c.mutating && csrf_enforced(app) && !csrf_ok(c.csrf_cookie, c.csrf_header) {
             return Err(CoreError::Csrf);
         }
         return Ok(Authenticated { principal, via: Via::Session(crate::hash_token(token)) });

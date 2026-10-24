@@ -6,3 +6,11 @@ workers_dev = false
 
 [build]
 command = "../../scripts/rs worker-build --release"
+
+[vars]
+# Whether a mutation authenticated by the session cookie must carry the CSRF token (ADR-0052, Q-0050.8). OFF while the
+# stock Plane frontend is what talks to this Worker: it sends the token only on its auth form posts, so enforcing it on
+# JSON mutations would break it. Until then the cookie-side protection is SameSite=Lax, HttpOnly, Secure and the __Host-
+# prefix, as in Plane. Set "on" when the custom frontend replaces the stock one (PLAN.md, M4). The contract targets and
+# Stage 2 run with it on (scripts/worker-dev.sh, wrangler.stage2.toml).
+THRUST_CSRF_ENFORCE = "off"

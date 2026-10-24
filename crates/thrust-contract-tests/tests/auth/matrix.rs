@@ -9,7 +9,8 @@
 //! * a bearer token: 401 unless it is a live session; the CSRF header is never looked at (it is not an ambient credential);
 //! * the session cookie: 401 unless it is a live session (checked first, so a dead cookie is 401 whatever the header
 //!   says); a live one is accepted for a safe method, and for a mutation only with the CSRF header equal to the CSRF
-//!   cookie, else 403;
+//!   cookie, else 403, WHILE ENFORCEMENT IS ON (the main pass); with it off (the `csrfoff` pass, Q-0050.8) a live cookie
+//!   is accepted for a mutation whatever the header says, and nothing else in the table changes;
 //! * `X-Api-Key`: 403 unless it is live (an unknown, revoked, expired or inactive-user key are all 403: ADR-0033), the
 //!   CSRF header is never looked at.
 //!
@@ -76,14 +77,14 @@ fn states(kind: Kind) -> &'static [St] {
     }
 }
 
-/// The spec.
-fn expected(kind: Kind, st: St, m: M, tok: Tok) -> u16 {
+/// The spec. `enforce`: whether the target asks a cookie mutation for the CSRF token.
+fn expected(kind: Kind, st: St, m: M, tok: Tok, enforce: bool) -> u16 {
     let live = st == St::Live;
     match kind {
         Kind::Nothing => 401,
         Kind::Bearer if live => success(m),
         Kind::Bearer => 401,
-        Kind::Cookie if live && (!mutating(m) || tok == Tok::Matching) => success(m),
+        Kind::Cookie if live && (!mutating(m) || !enforce || tok == Tok::Matching) => success(m),
         Kind::Cookie if live => 403,
         Kind::Cookie => 401,
         Kind::ApiKey if live => success(m),
@@ -170,6 +171,17 @@ async fn make_creds(t: &Target, f: &Fixture, ghost: &User) -> Creds {
 
 #[tokio::test]
 async fn every_credential_state_method_and_csrf_position_gets_the_status_of_the_table() {
+    run_table(true).await;
+}
+
+/// The same table against a target that does not enforce the token (the `csrfoff` pass): the one row that differs is the
+/// live cookie's mutation, which is accepted whatever the CSRF header says.
+#[tokio::test]
+async fn csrf_off_every_credential_state_method_and_csrf_position_gets_the_status_of_the_table() {
+    run_table(false).await;
+}
+
+async fn run_table(enforce: bool) {
     let t = t();
     let f = Fixture::seed(&t).await;
     let ghost = f.extra_member(&t).await;
@@ -183,8 +195,8 @@ async fn every_credential_state_method_and_csrf_position_gets_the_status_of_the_
         for &st in states(kind) {
             for m in [M::List, M::Create, M::Delete] {
                 for tok in [Tok::Matching, Tok::Absent, Tok::Wrong] {
-                    let want = expected(kind, st, m, tok);
-                    let label = format!("{kind:?} {st:?} {m:?} csrf={tok:?}");
+                    let want = expected(kind, st, m, tok, enforce);
+                    let label = format!("{kind:?} {st:?} {m:?} csrf={tok:?} enforce={enforce}");
                     // a delete that is expected to succeed gets a victim of its own; every refused one aims at the
                     // shared victim, which must still be live at the end (the create limit is 30 a window per user)
                     let victim = match (m, want) {
@@ -262,7 +274,7 @@ async fn every_credential_state_method_and_csrf_position_gets_the_status_of_the_
         .iter()
         .flat_map(|k| states(*k).iter().map(move |s| (*k, *s)))
         .flat_map(|(k, s)| [M::List, M::Create, M::Delete].into_iter().map(move |m| (k, s, m)))
-        .flat_map(|(k, s, m)| [Tok::Matching, Tok::Absent, Tok::Wrong].into_iter().map(move |t| expected(k, s, m, t)))
+        .flat_map(|(k, s, m)| [Tok::Matching, Tok::Absent, Tok::Wrong].into_iter().map(move |t| expected(k, s, m, t, enforce)))
         .collect();
     assert_eq!(outcomes, [200, 201, 204, 401, 403].into_iter().collect());
 }

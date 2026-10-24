@@ -71,6 +71,13 @@ impl Target {
         assert_eq!(r.status(), 204, "revoke-session");
     }
 
+    /// What the target says it is (`/_info`): `target`, `adapters` and `csrf_enforce`.
+    pub async fn info(&self) -> Value {
+        let r = self.admin_get("/_info").await;
+        assert_eq!(r.status(), 200, "/_info");
+        r.json().await.unwrap()
+    }
+
     pub async fn outbox_depth(&self) -> u64 {
         let r = self.admin_get("/internal/outbox-depth").await;
         assert_eq!(r.status(), 200, "outbox-depth");

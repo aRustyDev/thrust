@@ -92,6 +92,9 @@ async fn main() {
         rate_window_secs: env_num("THRUST_RATE_WINDOW_SECS", 60),
         outbox_fastpath: env_flag("THRUST_OUTBOX_FASTPATH", true),
         sign_in_rate_limit: env_num("THRUST_SIGNIN_RATE_LIMIT", defaults.sign_in_rate_limit),
+        // OFF unless the environment says on: the stock Plane frontend sends the CSRF token only on its auth form posts, so
+        // enforcing it on JSON mutations would break it (Q-0050.8). The flip is when the custom frontend replaces it.
+        csrf_enforce: env_flag("THRUST_CSRF_ENFORCE", false),
         // OWASP's minimum unless the environment says otherwise (a test target sets a cheap cost)
         argon2: Argon2Params {
             m_cost_kib: env_num("THRUST_ARGON2_M_KIB", defaults.argon2.m_cost_kib),

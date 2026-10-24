@@ -181,11 +181,14 @@ async fn healthz() -> &'static str {
     "ok"
 }
 
-async fn info(Extension(cfg): Extension<ApiConfig>) -> ApiResult<Json<serde_json::Value>> {
+/// What the target says it is: its kind, its adapter set, and whether it enforces the CSRF token on cookie mutations
+/// (`CoreConfig::csrf_enforce`). The contract script reads it before any test runs and refuses a target that is not what
+/// the pass claims to test: the main pass needs `csrf_enforce: true`, the `csrfoff` pass `false`.
+async fn info(Extension(cfg): Extension<ApiConfig>, Extension(app): Extension<App>) -> ApiResult<Json<serde_json::Value>> {
     if !cfg.test_routes {
         return Err(ApiError(CoreError::NotFound));
     }
-    Ok(Json(serde_json::json!({ "target": cfg.target, "adapters": cfg.adapters })))
+    Ok(Json(serde_json::json!({ "target": cfg.target, "adapters": cfg.adapters, "csrf_enforce": app.cfg.csrf_enforce })))
 }
 
 async fn panic_route(Extension(cfg): Extension<ApiConfig>) -> ApiResult<&'static str> {

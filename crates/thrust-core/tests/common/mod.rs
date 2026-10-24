@@ -301,6 +301,14 @@ pub fn world() -> World {
     world_with(CoreConfig { outbox_fastpath: false, ..CoreConfig::default() }, queue, background)
 }
 
+/// The default world (memory queue, nothing may be spawned) with a chosen config. Keep `outbox_fastpath` off, as `world`
+/// does: the background refuses any work.
+pub fn world_config(cfg: CoreConfig) -> World {
+    let background: Arc<dyn Background> = Arc::new(NoBackground);
+    let queue: Arc<dyn Queue> = Arc::new(MemoryQueue::new(background.clone(), ConsumerSlot::default()));
+    world_with(cfg, queue, background)
+}
+
 /// The same world with a chosen config, queue and background (keep your own `Arc` to inspect them).
 pub fn world_with(cfg: CoreConfig, queue: Arc<dyn Queue>, background: Arc<dyn Background>) -> World {
     let clock: Arc<dyn Clock> = Arc::new(FixedClock(DateTime::from_timestamp(1_760_000_000, 0).unwrap()));

@@ -71,6 +71,14 @@ pub struct CoreConfig {
     /// this build writes must be one it can read); dropping an older version from here is how its keys are retired,
     /// on purpose. Defaults to [`API_KEY_HASH_SUPPORTED`].
     pub api_key_hash_supported: Vec<i16>,
+    /// Whether a mutation authenticated by the session COOKIE must carry the CSRF token (ADR-0052, double submit,
+    /// Q-0050.8). The rule as the ADR wrote it is the core's default: `true`. The composition roots read
+    /// `THRUST_CSRF_ENFORCE` and default it to `false` while the stock Plane frontend is what talks to this server,
+    /// because that app sends the token only on its auth form posts, so enforcing it would refuse its JSON mutations;
+    /// the flip is to `true` when the custom frontend replaces it. Off changes exactly one thing: the token is not
+    /// consulted for a cookie mutation. The cookie, `GET auth/csrf`, `csrf_ok`, and a bearer token or an API key (which
+    /// never needed the token) are untouched.
+    pub csrf_enforce: bool,
 }
 
 impl Default for CoreConfig {
@@ -88,6 +96,7 @@ impl Default for CoreConfig {
             oidc_login_ttl_secs: 10 * 60,
             api_key_hash_current: API_KEY_HASH_CURRENT,
             api_key_hash_supported: API_KEY_HASH_SUPPORTED.to_vec(),
+            csrf_enforce: true,
         }
     }
 }
