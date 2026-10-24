@@ -1,0 +1,23 @@
+# THROWAWAY Worker for spike 0003's K4 (issue #38): argon2id CPU time on the real platform, because CPU limits are
+# enforced only on Cloudflare's network, not under `wrangler dev`. Driven by `scripts/measure-argon2.sh`, which deploys it
+# once per OWASP configuration (the cost comes in as THRUST_ARGON2_* --var flags), signs in N times, reads each
+# invocation's CPU time from the tail consumer below, and deletes both Workers at the end.
+#
+# Memory adapter set: no bindings at all, so nothing to create but the two Workers. Everything is `thrust-spike-` prefixed.
+# NO secrets here: THRUST_ADMIN_TOKEN is a Worker secret (`wrangler secret put`, from stdin).
+name = "thrust-spike-auth"
+main = "build/worker/shim.mjs"
+compatibility_date = "2026-08-01"
+workers_dev = true
+
+# The tail consumer is what sees `cpuTime`: `wrangler tail` does not print it. (A top-level key: after a [table] header it
+# would be read as part of that table and silently ignored, which is how the first run of the measurement saw nothing.)
+tail_consumers = [{ service = "thrust-spike-auth-tail" }]
+
+[build]
+command = "../../scripts/rs worker-build --release"
+
+[vars]
+THRUST_TEST_ROUTES = "1"            # spike only: exposes /internal/* to the measurement driver
+THRUST_ADAPTERS = "memory"
+THRUST_SIGNIN_RATE_LIMIT = "1000000"  # one email, hundreds of sign-ins: the per-email limiter is not what is measured

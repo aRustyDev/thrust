@@ -9,9 +9,10 @@ use axum::body::Body;
 use axum::http::{header, Response, StatusCode};
 use axum::Extension;
 use thrust_adapters_memory::*;
+use thrust_adapters_oidc::{OidcConfig, OpenIdProvider};
 use thrust_adapters_selfhosted::*;
 use thrust_api::{ApiConfig, InternalErrorDetail};
-use thrust_core::{ActivityConsumer, App, CoreConfig, Ports, SystemScope};
+use thrust_core::{ActivityConsumer, Argon2Params, Argon2idHasher, App, CoreConfig, Ports, SystemScope};
 use thrust_ports::*;
 use tower_http::catch_panic::CatchPanicLayer;
 
@@ -29,6 +30,23 @@ fn env_flag(name: &str, default: bool) -> bool {
 
 fn env_num<T: std::str::FromStr>(name: &str, default: T) -> T {
     std::env::var(name).ok().and_then(|v| v.parse().ok()).unwrap_or(default)
+}
+
+/// The OIDC provider, when `THRUST_OIDC_ISSUER`, `THRUST_OIDC_CLIENT_ID` and `THRUST_OIDC_REDIRECT_URI` are all set
+/// (`THRUST_OIDC_CLIENT_SECRET` too for a confidential client; a secret, so only from the environment). Some of the
+/// three and not all is a mistake, not a reason to start without a login nobody notices is missing.
+fn oidc_provider() -> Option<Arc<dyn OidcProvider>> {
+    let get = |n: &str| std::env::var(n).ok().filter(|v| !v.is_empty());
+    let (issuer, client_id, redirect_uri) =
+        (get("THRUST_OIDC_ISSUER"), get("THRUST_OIDC_CLIENT_ID"), get("THRUST_OIDC_REDIRECT_URI"));
+    match (issuer, client_id, redirect_uri) {
+        (Some(issuer), Some(client_id), Some(redirect_uri)) => {
+            let cfg = OidcConfig { issuer, client_id, client_secret: get("THRUST_OIDC_CLIENT_SECRET"), redirect_uri };
+            Some(Arc::new(OpenIdProvider::new(cfg, Arc::new(ReqwestFetch::new()))))
+        }
+        (None, None, None) => None,
+        _ => panic!("THRUST_OIDC_ISSUER, THRUST_OIDC_CLIENT_ID and THRUST_OIDC_REDIRECT_URI must be set together"),
+    }
 }
 
 fn panic_response(err: Box<dyn std::any::Any + Send + 'static>) -> Response<Body> {
@@ -68,12 +86,21 @@ async fn main() {
         other => panic!("unknown THRUST_ADAPTERS '{other}' (this build supports: memory, postgres)"),
     };
 
+    let defaults = CoreConfig::default();
     let cfg = CoreConfig {
         create_rate_limit: env_num("THRUST_CREATE_RATE_LIMIT", 1000),
         rate_window_secs: env_num("THRUST_RATE_WINDOW_SECS", 60),
         outbox_fastpath: env_flag("THRUST_OUTBOX_FASTPATH", true),
-        ..CoreConfig::default()
+        sign_in_rate_limit: env_num("THRUST_SIGNIN_RATE_LIMIT", defaults.sign_in_rate_limit),
+        // OWASP's minimum unless the environment says otherwise (a test target sets a cheap cost)
+        argon2: Argon2Params {
+            m_cost_kib: env_num("THRUST_ARGON2_M_KIB", defaults.argon2.m_cost_kib),
+            t_cost: env_num("THRUST_ARGON2_T", defaults.argon2.t_cost),
+            p_cost: env_num("THRUST_ARGON2_P", defaults.argon2.p_cost),
+        },
+        ..defaults
     };
+    let hasher = Arc::new(Argon2idHasher::new(cfg.argon2));
 
     // This composition root mints the proof for the relay, sweeper, consumer and seed.
     let app = App::new(
@@ -85,6 +112,9 @@ async fn main() {
             clock,
             ids,
             background,
+            rng: Arc::new(NativeRng),
+            hasher,
+            oidc: oidc_provider(),
         },
         cfg,
         SystemScope::mint(),

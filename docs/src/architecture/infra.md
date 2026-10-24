@@ -94,8 +94,9 @@ So a `postgres` server keeps its sessions across a restart, and a second process
 attachments when it restarts, and so does any event that was already handed to the in-process queue and not yet
 consumed. Outbox rows are in Postgres, so the sweeper delivers the rest later. Blobs and the rate limiter belong to
 one process, so a second process would not share them. The plan's RabbitMQ, Valkey and S3 adapters do not exist.
-There is also no login route yet (#38): a session token exists only if `POST /internal/seed` created it, and that
-route answers only when test routes are on.
+A user signs in with an email and a password (`POST /api/_slice/auth/sign-in/email`) or through the one configured OIDC
+provider, and gets a session row and cookies; the test seed (`POST /internal/seed`, test routes only) also creates
+sessions, users, API keys and provider links directly. The full flow is on [Application flow](../flows/app.md).
 
 Configuration is read from the environment, in `crates/thrust-server/src/main.rs`:
 

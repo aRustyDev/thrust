@@ -6,6 +6,12 @@ version.workspace = true
 license.workspace = true
 publish.workspace = true
 
+[features]
+# Control-run mutants: deliberately broken behaviour that the contract suite MUST detect (scripts/mutants.sh). Never
+# enabled outside that script; the server crate forwards them.
+mutant_skip_csrf = []
+mutant_unverified_email = []
+
 [dependencies]
 thrust-contracts = { workspace = true }
 thrust-ports = { workspace = true }
@@ -16,6 +22,10 @@ async-trait = { workspace = true }
 # Session tokens are stored hashed. Pure Rust, no platform crate; it is already in the Worker graph
 # through tokio-postgres' SCRAM, so the version matches and wasm32 is known to build it.
 sha2 = { version = "0.11", default-features = false }
+# argon2id for passwords (ADR-0050). Pure Rust and no platform crate, so core builds it for wasm32 and native alike (measured
+# in the issue #38 feasibility probe). No `getrandom` feature: the salt comes from the `Rng` port, not from the platform.
+argon2 = { version = "0.6", default-features = false, features = ["alloc", "password-hash"] }
+subtle = { version = "2", default-features = false }
 
 # Test-only. `scripts/check-deps.sh` checks normal dependencies, so none of these reach the core graph.
 # The memory adapters are the reference implementation the use-case tests run against; the executor is

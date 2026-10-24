@@ -33,7 +33,9 @@ for pair in \
   "ignore-tenant:mutant_ignore_tenant" \
   "duplicate-sequence-number:mutant_dup_sequence" \
   "no-activity-dedupe:mutant_no_activity_dedupe" \
-  "ignore-revoked:mutant_ignore_revoked"; do
+  "ignore-revoked:mutant_ignore_revoked" \
+  "skip-csrf:mutant_skip_csrf" \
+  "unverified-email:mutant_unverified_email"; do
   name="${pair%%:*}"
   feature="${pair##*:}"
   THRUST_SERVER_FEATURES="$feature" THRUST_LOGDIR="$OUT/$name" "$ROOT/scripts/contract.sh" native-memory main >"$OUT/$name.out" 2>&1

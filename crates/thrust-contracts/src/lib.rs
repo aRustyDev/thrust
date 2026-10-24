@@ -50,6 +50,7 @@ id_type!(UserId);
 id_type!(WorkItemId);
 id_type!(EventId);
 id_type!(ActivityId);
+id_type!(ApiKeyId);
 
 /// Project-level role. Plane: Guest 5 / Member 15 / Admin 20.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -197,6 +198,8 @@ pub struct Activity {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct SeedFixture {
     pub workspaces: Vec<SeedWorkspace>,
+    /// Users that exist, by id only: they have no email and no password, so they cannot sign in, but a session or an
+    /// API key can belong to them. A user who signs in is in `logins` as well.
     pub users: Vec<UserId>,
     /// Workspace membership. A project member must also be a member of the project's workspace.
     #[serde(default)]
@@ -204,6 +207,49 @@ pub struct SeedFixture {
     pub projects: Vec<SeedProject>,
     pub memberships: Vec<SeedMembership>,
     pub sessions: Vec<SeedSession>,
+    /// Users with an email and optionally a password. The password is hashed by the core before the database sees it.
+    #[serde(default)]
+    pub logins: Vec<SeedLogin>,
+    /// Links from an identity provider's subject to a user (`accounts` rows).
+    #[serde(default)]
+    pub accounts: Vec<SeedAccount>,
+    /// API keys with a known token (the database only ever sees its hash), optionally already revoked or expired.
+    #[serde(default)]
+    pub api_keys: Vec<SeedApiKey>,
+}
+
+fn yes() -> bool {
+    true
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SeedLogin {
+    pub user_id: UserId,
+    pub email: String,
+    /// `None`: the user has no password and can only be reached through an identity provider.
+    #[serde(default)]
+    pub password: Option<String>,
+    #[serde(default = "yes")]
+    pub is_active: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SeedAccount {
+    pub user_id: UserId,
+    pub provider: String,
+    pub provider_account_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SeedApiKey {
+    pub token: String,
+    pub user_id: UserId,
+    #[serde(default)]
+    pub label: String,
+    #[serde(default)]
+    pub expires_at: Option<Timestamp>,
+    #[serde(default)]
+    pub revoked: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -263,4 +309,75 @@ pub struct ApiErrorBody {
 pub struct ApiErrorDetail {
     pub code: String,
     pub message: String,
+}
+
+// ---------------------------------------------------------------------------------------------
+// Identity DTOs (issue #38). Secrets only ever travel in the one response that creates them.
+// ---------------------------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SignInRequest {
+    pub email: String,
+    pub password: String,
+}
+
+/// The answer to a sign-in or an OIDC login. The session token is in the `Set-Cookie` header only, never in the body.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SignInResponse {
+    pub user_id: UserId,
+    /// The double-submit token; the same value is in the CSRF cookie. A client sends it back in `X-CSRFToken`.
+    pub csrf_token: String,
+    pub expires_at: Timestamp,
+}
+
+/// `GET /auth/csrf`, as Plane's `get-csrf-token` (its CSRF cookie is HttpOnly, so the token is handed out as JSON).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CsrfResponse {
+    pub csrf_token: String,
+}
+
+/// Which credential a request was authenticated with.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CredentialKind {
+    Session,
+    ApiKey,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SessionInfo {
+    pub user_id: UserId,
+    pub credential: CredentialKind,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct CreateApiKeyRequest {
+    #[serde(default)]
+    pub label: Option<String>,
+    /// Must be in the future. `None`: the key does not expire.
+    #[serde(default)]
+    pub expires_at: Option<Timestamp>,
+}
+
+/// The one response that carries the token. Only its SHA-256 is stored, so it cannot be shown again.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CreatedApiKey {
+    pub id: ApiKeyId,
+    pub token: String,
+    pub prefix: String,
+    pub label: String,
+    pub created_at: Timestamp,
+    pub expires_at: Option<Timestamp>,
+}
+
+/// A key as listed: everything but the token.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ApiKeyInfo {
+    pub id: ApiKeyId,
+    pub prefix: String,
+    pub label: String,
+    pub created_at: Timestamp,
+    pub expires_at: Option<Timestamp>,
+    pub revoked_at: Option<Timestamp>,
+    pub last_used_at: Option<Timestamp>,
 }

@@ -30,6 +30,17 @@
 //!   the expiry instant misses), with the user and the last time it was seen; `touch_session` moves `last_seen_at` and
 //!   nothing else; `revoke_session` makes the session miss from then on (a second revoke changes nothing);
 //!   `insert_session` of a hash that exists leaves the row as it was;
+//! * a session is live only while its user is active as well (issue #38): `set_user_active` takes the user's sessions
+//!   away and brings them back (a revoked or expired one stays gone), and `revoke_user_sessions` revokes exactly the
+//!   user's sessions that were not revoked yet, returning how many, and nobody else's;
+//! * `api_key` returns a key exactly while its row exists, is not revoked, has no expiry or `expires_at > now`, and its
+//!   user is active, with the key's id, owner and last use; `touch_api_key` moves `last_used_at` and nothing else;
+//!   `revoke_api_key` answers `true` for the owner's key (again on a second call, keeping the first time) and `false`
+//!   for another user's key or an unknown id, which it does not touch; `list_api_keys` is the user's keys, oldest first;
+//! * `user_by_email` and `user_for_account` return the user, active or not, and nothing for an unknown email or a link
+//!   that was never made; `link_account` of a subject that is linked already changes nothing;
+//! * a pending OIDC login is returned by `take_oidc_login` once, and deleted by it (a second take, a replayed
+//!   callback, finds nothing); an insert drops the logins whose `expires_at` is not after its `created_at`;
 //! * `undispatched_outbox(n)` returns the first `n` undispatched rows by `(created_at, event_id)`, unchanged;
 //!   `mark_outbox_dispatched` takes a row out of it (an unknown id is a no-op); `outbox_depth` counts what is left;
 //! * `insert_activity` is `true` for a new `event_id` and `false` for one already projected, in any project;
@@ -148,6 +159,36 @@ enum Op {
     SessionRevoke { sess: usize },
     /// Insert again a session that exists, with another user and expiry: the row must stay as it was.
     SessionReinsert { sess: usize },
+    /// Deactivate or reactivate one of the three seeded login users (0..3).
+    SetActive { who: usize, active: bool },
+    /// Sign-out everywhere for one of the three seeded users.
+    RevokeUserSessions { who: usize },
+    /// `key`: one of the case's two inserted API keys, or (2) a digest that was never inserted.
+    KeyLookup { key: usize, when: When },
+    KeyTouch { key: usize },
+    /// `by_owner: false`: another seeded user asks to revoke it.
+    KeyRevoke { key: usize, by_owner: bool },
+    KeyList { who: usize },
+    /// `who`: a seeded login user, or (3) an email nobody has.
+    EmailLookup { who: usize },
+    /// `who`: a seeded user with a link, (2) one without, or (3) a subject nobody has.
+    AccountLookup { who: usize },
+    /// Link a subject that is linked already, to someone else: the first link stays.
+    AccountRelink,
+    OidcInsert { ttl: u8 },
+    /// Compound ops: the sequences a single random op almost never reaches, planned as the ops they are made of.
+    /// A user (0 or 1) is deactivated, then everything that depends on it is looked up, then optionally reactivated.
+    Deactivated { who: usize, restore: bool },
+    /// A login is stored, taken, taken again (a replay) and a state that was never stored is taken.
+    OidcRoundTrip { ttl: u8 },
+    /// A login that expires (5 s) is followed, 5 ticks later, by an insert that sweeps it: taking it finds nothing, and
+    /// taking the new one does.
+    OidcExpiry,
+    /// Key 0 or 1: looked up, touched twice (looked up in between), revoked by someone else (refused), looked up,
+    /// revoked by its owner, looked up, revoked again, listed.
+    KeyCycle { key: usize },
+    /// `pick`: one of the logins ever inserted (taken, swept or still pending), or `None` for a state never stored.
+    OidcTake { pick: Option<usize> },
     Undispatched { limit: u32 },
     /// `pick`: one of this case's outbox rows, dispatched or not, or `None` for an unknown event id.
     Mark { pick: Option<usize> },
@@ -208,10 +249,25 @@ fn op() -> impl Strategy<Value = Op> {
         2 => (proj(), ws(), prop::option::weighted(0.85, 0..16usize), any::<bool>())
             .prop_map(|(proj, ws, pick, with_deleted)| Op::Get { proj, ws, pick, with_deleted }),
         2 => (proj(), sl(), user()).prop_map(|(proj, slug, user)| Op::Membership { proj, slug, user }),
-        2 => (0..3usize, when()).prop_map(|(sess, when)| Op::SessionLookup { sess, when }),
+        3 => (0..3usize, when()).prop_map(|(sess, when)| Op::SessionLookup { sess, when }),
         1 => (0..3usize).prop_map(|sess| Op::SessionTouch { sess }),
         1 => (0..3usize).prop_map(|sess| Op::SessionRevoke { sess }),
         1 => (0..2usize).prop_map(|sess| Op::SessionReinsert { sess }),
+        3 => (0..3usize, any::<bool>()).prop_map(|(who, active)| Op::SetActive { who, active }),
+        1 => (0..3usize).prop_map(|who| Op::RevokeUserSessions { who }),
+        2 => (0..3usize, when()).prop_map(|(key, when)| Op::KeyLookup { key, when }),
+        1 => (0..3usize).prop_map(|key| Op::KeyTouch { key }),
+        1 => (0..3usize, prop::bool::weighted(0.75)).prop_map(|(key, by_owner)| Op::KeyRevoke { key, by_owner }),
+        1 => (0..3usize).prop_map(|who| Op::KeyList { who }),
+        1 => (0..4usize).prop_map(|who| Op::EmailLookup { who }),
+        1 => (0..4usize).prop_map(|who| Op::AccountLookup { who }),
+        1 => Just(Op::AccountRelink),
+        2 => (0..2usize, any::<bool>()).prop_map(|(who, restore)| Op::Deactivated { who, restore }),
+        2 => prop_oneof![Just(5u8), Just(100u8)].prop_map(|ttl| Op::OidcRoundTrip { ttl }),
+        2 => (0..2usize).prop_map(|key| Op::KeyCycle { key }),
+        2 => Just(Op::OidcExpiry),
+        3 => prop_oneof![Just(5u8), Just(100u8)].prop_map(|ttl| Op::OidcInsert { ttl }),
+        4 => prop::option::weighted(0.85, 0..8usize).prop_map(|pick| Op::OidcTake { pick }),
         1 => (1..6u32).prop_map(|limit| Op::Undispatched { limit }),
         1 => prop::option::weighted(0.85, 0..16usize).prop_map(|pick| Op::Mark { pick }),
         1 => Just(Op::Depth),
@@ -279,6 +335,42 @@ enum Class {
     /// A revoke of a session that is already revoked.
     SessionRevokedAgain,
     SessionReinsertIgnored,
+    /// An unrevoked, unexpired session whose user is deactivated, which must not be found.
+    SessionUserInactiveHidden,
+    UserDeactivated,
+    UserReactivated,
+    /// Sign-out everywhere that revoked at least one session.
+    UserSessionsRevoked,
+    /// Sign-out everywhere with nothing left to revoke.
+    UserSessionsRevokedNone,
+    KeyLive,
+    KeyUnknown,
+    KeyRevokedHidden,
+    KeyExpiredHidden,
+    KeyUserInactiveHidden,
+    KeyTouched,
+    KeyRevoked,
+    /// The owner revokes a key that is revoked already: still `true`, first time kept.
+    KeyRevokedAgain,
+    /// Another user's revoke: `false`, nothing changes.
+    KeyRevokeRefused,
+    KeyListed,
+    EmailFound,
+    EmailFoundInactive,
+    EmailUnknown,
+    AccountFound,
+    AccountFoundInactive,
+    AccountUnlinked,
+    AccountRelinkKept,
+    OidcInserted,
+    /// An insert that dropped an expired login.
+    OidcSwept,
+    OidcTaken,
+    /// A take of a login that was taken already: nothing.
+    OidcReplayHidden,
+    /// A take of a login that an insert swept away: nothing.
+    OidcSweptHidden,
+    OidcUnknown,
     UndispatchedSome,
     Marked,
     MarkedAgain,
@@ -296,7 +388,7 @@ enum Class {
 }
 
 impl Class {
-    const ALL: [Class; 47] = [
+    const ALL: [Class; 75] = [
         Class::Created,
         Class::ExternalKeyFreed,
         Class::Conflict,
@@ -332,6 +424,34 @@ impl Class {
         Class::SessionRevoked,
         Class::SessionRevokedAgain,
         Class::SessionReinsertIgnored,
+        Class::SessionUserInactiveHidden,
+        Class::UserDeactivated,
+        Class::UserReactivated,
+        Class::UserSessionsRevoked,
+        Class::UserSessionsRevokedNone,
+        Class::KeyLive,
+        Class::KeyUnknown,
+        Class::KeyRevokedHidden,
+        Class::KeyExpiredHidden,
+        Class::KeyUserInactiveHidden,
+        Class::KeyTouched,
+        Class::KeyRevoked,
+        Class::KeyRevokedAgain,
+        Class::KeyRevokeRefused,
+        Class::KeyListed,
+        Class::EmailFound,
+        Class::EmailFoundInactive,
+        Class::EmailUnknown,
+        Class::AccountFound,
+        Class::AccountFoundInactive,
+        Class::AccountUnlinked,
+        Class::AccountRelinkKept,
+        Class::OidcInserted,
+        Class::OidcSwept,
+        Class::OidcTaken,
+        Class::OidcReplayHidden,
+        Class::OidcSweptHidden,
+        Class::OidcUnknown,
         Class::UndispatchedSome,
         Class::Marked,
         Class::MarkedAgain,
@@ -366,6 +486,19 @@ enum Call {
     Session { hash: TokenHash, now: Timestamp, want: Option<LiveSession> },
     TouchSession { hash: TokenHash, at: Timestamp },
     RevokeSession { hash: TokenHash, at: Timestamp },
+    SeedUsers { users: Vec<UserRecord> },
+    LinkAccount { a: NewAccount },
+    InsertApiKey { k: NewApiKey },
+    SetActive { user: UserId, active: bool },
+    RevokeUserSessions { user: UserId, at: Timestamp, want: u64 },
+    ApiKey { hash: TokenHash, now: Timestamp, want: Option<LiveApiKey> },
+    TouchApiKey { id: ApiKeyId, at: Timestamp },
+    RevokeApiKey { user: UserId, id: ApiKeyId, at: Timestamp, want: bool },
+    ListApiKeys { user: UserId, want: Vec<ApiKeyInfo> },
+    UserByEmail { email: String, want: Option<UserRecord> },
+    UserForAccount { provider: String, sub: String, want: Option<UserRecord> },
+    InsertOidcLogin { l: NewOidcLogin },
+    TakeOidcLogin { state: TokenHash, want: Option<OidcLogin> },
     Undispatched { limit: u32, want: Vec<OutboxRow> },
     Mark { event: EventId, at: Timestamp },
     Depth { want: u64 },
@@ -384,6 +517,12 @@ struct Fix {
     users: [UserId; 7],
     /// The hashes of two seeded sessions and of one that is never inserted.
     tokens: [TokenHash; 3],
+    /// Two API keys that are inserted, and a digest that never is.
+    keys: [(ApiKeyId, TokenHash); 3],
+    /// Unique per case: the unique index on `users.email` spans the whole container.
+    emails: [String; 3],
+    /// The issuer of the case's account links: unique per case, `(provider, sub)` is global.
+    provider: String,
 }
 
 fn token_hash() -> TokenHash {
@@ -404,6 +543,9 @@ impl Fix {
             p: [ProjectId(new_id()), ProjectId(new_id())],
             users: std::array::from_fn(|_| UserId(new_id())),
             tokens: std::array::from_fn(|_| token_hash()),
+            keys: std::array::from_fn(|_| (ApiKeyId(new_id()), token_hash())),
+            emails: std::array::from_fn(|_| format!("u-{}@example.test", new_id().simple())),
+            provider: format!("https://idp-{}.example.test", new_id().simple()),
         }
     }
 
@@ -440,11 +582,38 @@ impl Fix {
                 SeedMembership { project_id: self.p[0], workspace_id: self.ws[1], user_id: stray_b, role: Role::Admin },
             ],
             sessions: vec![],
+            ..SeedFixture::default()
         }
     }
 
     fn user(&self, u: U) -> UserId {
         self.users[u as usize]
+    }
+
+    /// The three users who have a login: AdminA, MemberA, GuestA. Active, with a stub hash (the adapter never looks
+    /// inside it).
+    fn login_users(&self) -> Vec<UserRecord> {
+        (0..3).map(|i| self.login_user(i, true)).collect()
+    }
+
+    fn login_user(&self, i: usize, is_active: bool) -> UserRecord {
+        UserRecord {
+            id: self.users[i],
+            email: Some(self.emails[i].clone()),
+            password_hash: Some(format!("$argon2id$stub{i}")),
+            is_active,
+        }
+    }
+
+    /// Users 0 and 1 are linked to `(provider, sub-i)`; user 2 is not.
+    fn account(&self, i: usize, user: usize) -> NewAccount {
+        NewAccount {
+            provider: self.provider.clone(),
+            provider_account_id: format!("sub-{i}"),
+            user_id: self.users[user],
+            email: Some(self.emails[user].clone()),
+            created_at: Utc.timestamp_opt(1_800_000_000, 0).unwrap(),
+        }
     }
 
     /// The workspace a call names for `proj`.
@@ -503,6 +672,20 @@ fn membership(fix: &Fix, proj: P, sl: Sl, user: U) -> Membership {
     }
 }
 
+#[derive(Debug, Clone)]
+struct KeyModel {
+    new: NewApiKey,
+    revoked: Option<Timestamp>,
+    last_used: Option<Timestamp>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LoginState {
+    Pending,
+    Taken,
+    Swept,
+}
+
 /// A seeded session as the model knows it.
 #[derive(Debug, Clone)]
 struct SessModel {
@@ -516,6 +699,12 @@ struct Model {
     fix: Fix,
     /// Sessions 0 (expires far off) and 1 (expires 100 s after it was created); session 2 does not exist.
     sessions: Vec<SessModel>,
+    /// Whether each of the three seeded login users (the first three of `Fix::users`) is active.
+    active: [bool; 3],
+    /// Keys 0 (no expiry) and 1 (expires 100 s after it was created, for user 1); key 2 does not exist.
+    api_keys: Vec<KeyModel>,
+    /// Every OIDC login ever inserted, with whether it is still pending (not taken, not swept).
+    logins: Vec<(NewOidcLogin, LoginState)>,
     /// Committed rows per project, in sequence order.
     rows: [Vec<WorkItem>; 2],
     counter: [i64; 2],
@@ -568,9 +757,30 @@ impl Model {
             last_seen: created,
         };
         let sessions = vec![session(0, 1_000_000), session(1, 100)];
+        // both keys belong to user 0, so a listing has two rows; key 1 expires 100 s after it was created
+        let key = |i: usize, ttl: Option<i64>| {
+            let created_at = created + TimeDelta::seconds(i as i64);
+            KeyModel {
+                new: NewApiKey {
+                    id: fix.keys[i].0,
+                    user_id: fix.users[0],
+                    token_hash: fix.keys[i].1,
+                    prefix: format!("thrk_{i:04}"),
+                    label: format!("key {i}"),
+                    created_at,
+                    expires_at: ttl.map(|t| created_at + TimeDelta::seconds(t)),
+                },
+                revoked: None,
+                last_used: None,
+            }
+        };
+        let api_keys = vec![key(0, None), key(1, Some(100))];
         Model {
             fix,
             sessions,
+            active: [true; 3],
+            api_keys,
+            logins: Vec::new(),
             rows: [Vec::new(), Vec::new()],
             counter: [0, 0],
             outbox: Vec::new(),
@@ -579,9 +789,18 @@ impl Model {
         }
     }
 
-    /// The calls that create the case's two sessions; their answers are all `()`.
+    /// The calls that create the case's logins, sessions, API keys and account links; their answers are all `()`.
     fn setup(&self) -> Vec<Call> {
-        self.sessions.iter().map(|s| Call::InsertSession { s: s.new.clone() }).collect()
+        let mut calls = vec![Call::SeedUsers { users: self.fix.login_users() }];
+        calls.extend(self.sessions.iter().map(|s| Call::InsertSession { s: s.new.clone() }));
+        calls.extend(self.api_keys.iter().map(|k| Call::InsertApiKey { k: k.new.clone() }));
+        calls.extend((0..2).map(|i| Call::LinkAccount { a: self.fix.account(i, i) }));
+        calls
+    }
+
+    /// What `user_by_email` and `user_for_account` must return for seeded user `i` now.
+    fn user_record(&self, i: usize) -> UserRecord {
+        self.fix.login_user(i, self.active[i])
     }
 
     fn undispatched(&self) -> Vec<OutboxRow> {
@@ -647,11 +866,13 @@ impl Model {
                             When::AtExpiry => at,
                             When::After => at + TimeDelta::seconds(1),
                         };
-                        let live = !m.revoked && m.new.expires_at > now;
-                        let class = match (m.revoked, live) {
-                            (true, _) => Class::SessionRevokedHidden,
-                            (false, false) => Class::SessionExpiredHidden,
-                            (false, true) => Class::SessionLive,
+                        let user_active = self.active[sess];
+                        let live = !m.revoked && m.new.expires_at > now && user_active;
+                        let class = match (m.revoked, m.new.expires_at > now, user_active) {
+                            (true, _, _) => Class::SessionRevokedHidden,
+                            (false, false, _) => Class::SessionExpiredHidden,
+                            (false, true, false) => Class::SessionUserInactiveHidden,
+                            (false, true, true) => Class::SessionLive,
                         };
                         let want = live.then(|| LiveSession { user_id: m.new.user_id, last_seen_at: m.last_seen });
                         (m.new.token_hash, now, want, class)
@@ -691,6 +912,230 @@ impl Model {
                 };
                 // the model does not change: the row stays as it was, revoked or not
                 calls.push(Call::InsertSession { s: again });
+            }
+            &Op::SetActive { who, active } => {
+                classes.push(if active { Class::UserReactivated } else { Class::UserDeactivated });
+                self.active[who] = active;
+                calls.push(Call::SetActive { user: self.fix.users[who], active });
+            }
+            &Op::RevokeUserSessions { who } => {
+                let at = tick();
+                let user = self.fix.users[who];
+                let mut want = 0;
+                for m in self.sessions.iter_mut().filter(|m| m.new.user_id == user && !m.revoked) {
+                    m.revoked = true;
+                    want += 1;
+                }
+                classes.push(if want > 0 { Class::UserSessionsRevoked } else { Class::UserSessionsRevokedNone });
+                calls.push(Call::RevokeUserSessions { user, at, want });
+            }
+            &Op::KeyLookup { key, when } => {
+                let (hash, now, want, class) = match self.api_keys.get(key) {
+                    None => (self.fix.keys[key].1, tick(), None, Class::KeyUnknown),
+                    Some(m) => {
+                        let base = m.new.expires_at.unwrap_or(m.new.created_at + TimeDelta::seconds(1_000));
+                        let now = match when {
+                            When::Before => base - TimeDelta::seconds(1),
+                            When::AtExpiry => base,
+                            When::After => base + TimeDelta::seconds(1),
+                        };
+                        let unexpired = m.new.expires_at.is_none_or(|e| e > now);
+                        let owner_active = self.active[0];
+                        let class = match (m.revoked.is_some(), unexpired, owner_active) {
+                            (true, _, _) => Class::KeyRevokedHidden,
+                            (false, false, _) => Class::KeyExpiredHidden,
+                            (false, true, false) => Class::KeyUserInactiveHidden,
+                            (false, true, true) => Class::KeyLive,
+                        };
+                        let live = class == Class::KeyLive;
+                        let want = live.then(|| LiveApiKey { id: m.new.id, user_id: m.new.user_id, last_used_at: m.last_used });
+                        (m.new.token_hash, now, want, class)
+                    }
+                };
+                classes.push(class);
+                calls.push(Call::ApiKey { hash, now, want });
+            }
+            &Op::KeyTouch { key } => {
+                let at = tick();
+                classes.push(if key < self.api_keys.len() { Class::KeyTouched } else { Class::KeyUnknown });
+                if let Some(m) = self.api_keys.get_mut(key) {
+                    m.last_used = Some(at);
+                }
+                calls.push(Call::TouchApiKey { id: self.fix.keys[key].0, at });
+            }
+            &Op::KeyRevoke { key, by_owner } => {
+                let at = tick();
+                let user = self.fix.users[if by_owner { 0 } else { 1 }];
+                let want = match self.api_keys.get_mut(key) {
+                    None => {
+                        classes.push(Class::KeyUnknown);
+                        false
+                    }
+                    Some(_) if !by_owner => {
+                        classes.push(Class::KeyRevokeRefused);
+                        false
+                    }
+                    Some(m) => {
+                        classes.push(if m.revoked.is_some() { Class::KeyRevokedAgain } else { Class::KeyRevoked });
+                        m.revoked.get_or_insert(at);
+                        true
+                    }
+                };
+                calls.push(Call::RevokeApiKey { user, id: self.fix.keys[key].0, at, want });
+            }
+            &Op::KeyList { who } => {
+                let user = self.fix.users[who];
+                let mut want: Vec<ApiKeyInfo> = self
+                    .api_keys
+                    .iter()
+                    .filter(|m| m.new.user_id == user)
+                    .map(|m| ApiKeyInfo {
+                        id: m.new.id,
+                        prefix: m.new.prefix.clone(),
+                        label: m.new.label.clone(),
+                        created_at: m.new.created_at,
+                        expires_at: m.new.expires_at,
+                        revoked_at: m.revoked,
+                        last_used_at: m.last_used,
+                    })
+                    .collect();
+                want.sort_by_key(|k| (k.created_at, k.id));
+                classes.push(Class::KeyListed);
+                calls.push(Call::ListApiKeys { user, want });
+            }
+            &Op::EmailLookup { who } => {
+                let (email, want) = if who < 3 {
+                    classes.push(if self.active[who] { Class::EmailFound } else { Class::EmailFoundInactive });
+                    (self.fix.emails[who].clone(), Some(self.user_record(who)))
+                } else {
+                    classes.push(Class::EmailUnknown);
+                    (format!("nobody-{}@example.test", new_id().simple()), None)
+                };
+                calls.push(Call::UserByEmail { email, want });
+            }
+            &Op::AccountLookup { who } => {
+                let (sub, want) = if who < 2 {
+                    classes.push(if self.active[who] { Class::AccountFound } else { Class::AccountFoundInactive });
+                    (format!("sub-{who}"), Some(self.user_record(who)))
+                } else {
+                    classes.push(Class::AccountUnlinked);
+                    (format!("sub-{who}"), None)
+                };
+                calls.push(Call::UserForAccount { provider: self.fix.provider.clone(), sub, want });
+            }
+            &Op::Deactivated { who, restore } => {
+                let mut ops = vec![
+                    Op::SetActive { who, active: false },
+                    Op::SessionLookup { sess: who, when: When::Before },
+                    Op::EmailLookup { who },
+                    Op::AccountLookup { who },
+                ];
+                if who == 0 {
+                    ops.push(Op::KeyLookup { key: 0, when: When::Before });
+                }
+                if restore {
+                    ops.push(Op::SetActive { who, active: true });
+                    ops.push(Op::SessionLookup { sess: who, when: When::Before });
+                }
+                self.plan_all(&ops, &mut calls, &mut classes);
+            }
+            &Op::OidcRoundTrip { ttl } => {
+                self.plan_all(&[Op::OidcInsert { ttl }], &mut calls, &mut classes);
+                let last = self.logins.len() - 1;
+                self.plan_all(
+                    &[Op::OidcTake { pick: Some(last) }, Op::OidcTake { pick: Some(last) }, Op::OidcTake { pick: None }],
+                    &mut calls,
+                    &mut classes,
+                );
+            }
+            Op::OidcExpiry => {
+                self.plan_all(&[Op::OidcInsert { ttl: 5 }], &mut calls, &mut classes);
+                let first = self.logins.len() - 1;
+                // each of these ticks the clock once (and touches nothing that matters here)
+                let ticks: Vec<Op> = (0..6).map(|_| Op::KeyTouch { key: 2 }).collect();
+                self.plan_all(&ticks, &mut calls, &mut classes);
+                self.plan_all(&[Op::OidcInsert { ttl: 100 }], &mut calls, &mut classes);
+                let second = self.logins.len() - 1;
+                self.plan_all(
+                    &[Op::OidcTake { pick: Some(first) }, Op::OidcTake { pick: Some(second) }],
+                    &mut calls,
+                    &mut classes,
+                );
+            }
+            &Op::KeyCycle { key } => {
+                self.plan_all(
+                    &[
+                        Op::KeyLookup { key, when: When::Before },
+                        Op::KeyTouch { key },
+                        Op::KeyLookup { key, when: When::Before },
+                        Op::KeyTouch { key },
+                        Op::KeyLookup { key, when: When::Before },
+                        Op::KeyRevoke { key, by_owner: false },
+                        Op::KeyLookup { key, when: When::Before },
+                        Op::KeyRevoke { key, by_owner: true },
+                        Op::KeyLookup { key, when: When::Before },
+                        Op::KeyRevoke { key, by_owner: true },
+                        Op::KeyList { who: 0 },
+                    ],
+                    &mut calls,
+                    &mut classes,
+                );
+            }
+            Op::AccountRelink => {
+                classes.push(Class::AccountRelinkKept);
+                // subject 0 is user 0's: linking it to user 2 must change nothing
+                calls.push(Call::LinkAccount { a: self.fix.account(0, 2) });
+                calls.push(Call::UserForAccount {
+                    provider: self.fix.provider.clone(),
+                    sub: "sub-0".into(),
+                    want: Some(self.user_record(0)),
+                });
+            }
+            &Op::OidcInsert { ttl } => {
+                let created_at = tick();
+                let l = NewOidcLogin {
+                    state_hash: token_hash(),
+                    nonce: format!("nonce-{}", new_id().simple()),
+                    code_verifier: format!("verifier-{}", new_id().simple()),
+                    created_at,
+                    expires_at: created_at + TimeDelta::seconds(i64::from(ttl)),
+                };
+                let mut swept = false;
+                for (old, state) in &mut self.logins {
+                    if *state == LoginState::Pending && old.expires_at <= created_at {
+                        *state = LoginState::Swept;
+                        swept = true;
+                    }
+                }
+                classes.push(Class::OidcInserted);
+                if swept {
+                    classes.push(Class::OidcSwept);
+                }
+                self.logins.push((l.clone(), LoginState::Pending));
+                calls.push(Call::InsertOidcLogin { l });
+            }
+            &Op::OidcTake { pick } => {
+                let n = self.logins.len();
+                match pick.filter(|_| n > 0).map(|i| i % n) {
+                    Some(i) => {
+                        let (l, state) = &mut self.logins[i];
+                        let (want, class) = match *state {
+                            LoginState::Pending => (
+                                Some(OidcLogin { nonce: l.nonce.clone(), code_verifier: l.code_verifier.clone(), expires_at: l.expires_at }),
+                                Class::OidcTaken,
+                            ),
+                            LoginState::Taken => (None, Class::OidcReplayHidden),
+                            LoginState::Swept => (None, Class::OidcSweptHidden),
+                        };
+                        *state = if *state == LoginState::Pending { LoginState::Taken } else { *state };
+                        classes.push(class);
+                        calls.push(Call::TakeOidcLogin { state: l.state_hash, want });
+                    }
+                    None => {
+                        classes.push(Class::OidcUnknown);
+                        calls.push(Call::TakeOidcLogin { state: token_hash(), want: None });
+                    }
+                }
             }
             &Op::Undispatched { limit } => {
                 let want: Vec<OutboxRow> = self.undispatched().into_iter().take(limit as usize).collect();
@@ -762,6 +1207,15 @@ impl Model {
             }
         }
         (calls, classes)
+    }
+
+    /// Plan `ops` one after the other, appending their calls and classes.
+    fn plan_all(&mut self, ops: &[Op], calls: &mut Vec<Call>, classes: &mut Vec<Class>) {
+        for op in ops {
+            let (c, k) = self.plan(op);
+            calls.extend(c);
+            classes.extend(k);
+        }
     }
 
     fn plan_tx(&mut self, steps: &[Step], end: End, calls: &mut Vec<Call>, classes: &mut Vec<Class>) {
@@ -984,6 +1438,43 @@ async fn execute(db: &dyn Database, tx: &mut Option<Box<dyn Tx>>, call: Call, at
         }
         Call::TouchSession { hash, at: when } => bounded(at, db.touch_session(&hash, when)).await?,
         Call::RevokeSession { hash, at: when } => bounded(at, db.revoke_session(&hash, when)).await?,
+        Call::SeedUsers { users } => bounded(at, db.seed_users(&sys, &users)).await?,
+        Call::LinkAccount { a } => bounded(at, db.link_account(&a)).await?,
+        Call::InsertApiKey { k } => bounded(at, db.insert_api_key(&k)).await?,
+        Call::SetActive { user, active } => {
+            let found = bounded(at, db.set_user_active(&sys, user, active)).await?;
+            prop_assert!(found, "{}: the user exists", at);
+        }
+        Call::RevokeUserSessions { user, at: when, want } => {
+            let got = bounded(at, db.revoke_user_sessions(user, when)).await?;
+            prop_assert_eq!(got, want, "{}: sessions revoked", at);
+        }
+        Call::ApiKey { hash, now, want } => {
+            let got = bounded(at, db.api_key(&hash, now)).await?;
+            prop_assert_eq!(got, want, "{}: api key", at);
+        }
+        Call::TouchApiKey { id, at: when } => bounded(at, db.touch_api_key(id, when)).await?,
+        Call::RevokeApiKey { user, id, at: when, want } => {
+            let got = bounded(at, db.revoke_api_key(user, id, when)).await?;
+            prop_assert_eq!(got, want, "{}: revoke api key (true = the caller's key)", at);
+        }
+        Call::ListApiKeys { user, want } => {
+            let got = bounded(at, db.list_api_keys(user)).await?;
+            prop_assert_eq!(got, want, "{}: list api keys", at);
+        }
+        Call::UserByEmail { email, want } => {
+            let got = bounded(at, db.user_by_email(&email)).await?;
+            prop_assert_eq!(got, want, "{}: user by email", at);
+        }
+        Call::UserForAccount { provider, sub, want } => {
+            let got = bounded(at, db.user_for_account(&provider, &sub)).await?;
+            prop_assert_eq!(got, want, "{}: user for account", at);
+        }
+        Call::InsertOidcLogin { l } => bounded(at, db.insert_oidc_login(&l)).await?,
+        Call::TakeOidcLogin { state, want } => {
+            let got = bounded(at, db.take_oidc_login(&state)).await?;
+            prop_assert_eq!(got, want, "{}: take oidc login", at);
+        }
         Call::Undispatched { limit, want } => {
             let got = bounded(at, db.undispatched_outbox(&sys, limit)).await?;
             prop_assert_eq!(got, want, "{}: undispatched outbox", at);
@@ -1012,7 +1503,7 @@ async fn run_case(env: &Env, ops: &[Op]) -> Result<(), TestCaseError> {
     let mut m = Model::new(fix);
     let mut tx: Option<Box<dyn Tx>> = None;
     for call in m.setup() {
-        execute(env.db.as_ref(), &mut tx, call, "seed the case's sessions").await?;
+        execute(env.db.as_ref(), &mut tx, call, "seed the case's logins, sessions, keys and links").await?;
     }
     // A failed earlier case (shrinking runs many) may have left rows behind: take them out of the way first.
     let at = tick();

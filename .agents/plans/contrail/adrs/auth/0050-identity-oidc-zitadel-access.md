@@ -128,6 +128,42 @@ Per FR-16 (`reviews/2026-10-19-fable-architecture-review.md`; the owner's decisi
 * **Q-0050.6 is answered:** nothing is imported (Q-G3), and the `User`, `Profile` and `Account` tables are defined fresh in the schema; nothing is mapped onto a BetterAuth schema. The Decision's `User` + `Account(provider, provider_account_id)` shape stands, and "the final schema may follow the chosen identity implementation" now means the tables the Rust implementation defines.
 * A1's "BetterAuth supplies them if the spike passes" (password storage, reset and brute-force controls) is superseded: the Rust implementation supplies them. The slice covers argon2id hashing and reviews the sign-in rate limit (ADR-0033, round 29); password reset is not in it.
 
+## Update — issue #38, the auth slice (2026-10-23)
+
+Spike 0003 ran as the two-day Rust auth slice (`research/0012-auth-slice.md`). Q-0050.4's round-29 answer (a hand-rolled
+Rust implementation) now has its evidence. What the OIDC half established:
+
+* **K1 passes: `openidconnect` 4.0.1 runs on wasm32.** With `default-features = false` it builds for
+  `wasm32-unknown-unknown`, and a client on the `Fetch` port (reqwest natively, `worker::Fetch` on the Worker) gives
+  futures that meet the `Send` rule (without `SendFuture` the build fails with E0277). The whole login, including the RSA
+  signature check of the ID token, runs as wasm under workerd on `worker-memory` and `worker-cf`.
+* **It lives in its own crate.** On wasm32 `openidconnect` pulls `wasm-bindgen` and `js-sys` (through `chrono` and
+  `getrandom`), which `scripts/check-deps.sh` forbids in `thrust-core`. `thrust-adapters-oidc` implements an
+  `OidcProvider` port over the `Fetch` port, and the check keeps the crate free of everything else forbidden and keeps core
+  free of the crate. This changes where the code sits, not the decision above.
+* **The login.** `GET /api/_slice/auth/oidc/start` makes a `state`, a `nonce` and a PKCE verifier (256 random bits each),
+  stores them in `oidc_logins` for ten minutes (the `state` as its SHA-256) and redirects to the provider; the callback
+  takes the stored login by its `state`, once, and refuses an empty, unknown, replayed or expired `state` before it asks the
+  provider anything, then exchanges the code with the stored verifier and verifies the ID token (signature, issuer,
+  audience, expiry, the stored nonce). It ends in the same session and cookies as a password sign-in (ADR-0052).
+* **A verified email is required, always** (also for an already linked subject). The account is the one linked to
+  `(issuer, sub)` (`accounts`, Plane's `Account(provider, provider_account_id)` shape, with the issuer as the provider);
+  failing that, the active user with that verified email, who is then linked; failing that, nobody. **There is no
+  just-in-time provisioning at P0**: round 23's JIT stays a P1 decision (Q-0050.1), and a login for an email nobody has is
+  403. A deactivated user is refused. A provider that refuses is 401, one that cannot be reached is 502, and with no
+  provider configured the routes are 404 and passwords and API keys are unaffected.
+* **Confirmation, as run:** a callback with an unverified (or missing) email is rejected; a tampered or replayed `state`
+  is rejected; an ID token with a wrong nonce, another audience, another issuer, a past expiry or a corrupted signature is
+  rejected; the same login completes on `native-memory`, `native-pg`, `worker-memory` and `worker-cf` against a mock
+  provider the suite serves on `127.0.0.1` (hand-written discovery and JWKS, RS256 signed with the `rsa` crate, PKCE and
+  redirect URI checked); an API key works with no provider configured (core test). `mutant_unverified_email` is a planted
+  mutant, and `scripts/mutants.sh` kills it.
+* **Not proven:** the login against Zitadel (K2: `id.auth.woven` is WARP-only; the owner chose the mock only), and the
+  login from a deployed Worker, which cannot reach a `127.0.0.1` provider (how it reaches a WARP-only issuer is Q-0050.9,
+  for M6). Every leg discovers the provider again (two extra round trips), with no cache.
+* **Password sign-in** (the P0 login of Amendment A1) is built and measured: argon2id at OWASP's minimum, p99 78 ms of CPU on a
+  deployed Worker (ADR-0052's update has the numbers).
+
 ## Open Questions
 
 * Q-0050.1 — answered (round 23): JIT provisioning via OIDC claims at P1.
@@ -136,6 +172,8 @@ Per FR-16 (`reviews/2026-10-19-fable-architecture-review.md`; the owner's decisi
 * Q-0050.4 — BetterAuth fit behind our ports (spike). (answered round 29, FR-16)
 * Q-0050.5 — answered (round 20): Access JWT validation joins at the CF Access phase, not P0.
 * Q-0050.6 — Plane `User`/`Account`/`Profile` ↔ BetterAuth schema mapping. (answered round 29, FR-16)
+* Q-0050.8 — How does the stock React app's JSON mutations carry the CSRF token (K3)? Open, owner asmith, for M1's auth-client change.
+* Q-0050.9 — How does a deployed Worker reach a WARP-only issuer (K2)? Open, for M6.
 * Q-0052 — sessions and API-key mechanics.
 
 ## More Information

@@ -22,6 +22,7 @@ thrust-core = { workspace = true }
 thrust-api = { workspace = true }
 thrust-adapters-cloudflare = { workspace = true }
 thrust-adapters-postgres = { workspace = true }
+thrust-adapters-oidc = { workspace = true }
 thrust-adapters-memory = { workspace = true, optional = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

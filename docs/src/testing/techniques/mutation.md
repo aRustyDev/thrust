@@ -23,7 +23,9 @@ invariant the mutant broke.
 ## Name and location
 
 Planted mutants: features in `crates/thrust-adapters-memory/Cargo.toml` (`mutant_ignore_tenant`,
-`mutant_dup_sequence`, `mutant_no_activity_dedupe`) and `crates/thrust-adapters-selfhosted` (`mutant_discard_noop`),
+`mutant_dup_sequence`, `mutant_no_activity_dedupe`, `mutant_ignore_revoked`, which makes a revoked session and a revoked
+API key resolve), `crates/thrust-core/Cargo.toml` (`mutant_skip_csrf`, `mutant_unverified_email`) and
+`crates/thrust-adapters-selfhosted` (`mutant_discard_noop`),
 gated with `#[cfg(feature = "mutant_…")]` at the line they break, passed through by `thrust-server`. Each is listed
 in `scripts/mutants.sh`. cargo-mutants: configured by `.cargo/mutants.toml` and the `mutants` nextest profile;
 `mutants.out*` is never committed.

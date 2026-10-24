@@ -3,6 +3,8 @@
 //! The suite (`tests/contract.rs`) is target-agnostic: it only ever sees `THRUST_BASE_URL`.
 //! Fixtures are created through `POST /internal/seed`, the same route on every target.
 
+pub mod mock_idp;
+
 use std::time::Duration;
 
 use serde_json::{json, Value};
@@ -28,6 +30,16 @@ impl Target {
 
     pub fn url(&self, path: &str) -> String {
         format!("{}{}", self.base, path)
+    }
+
+    /// A client that does not follow redirects: the OIDC legs are redirects, and the suite plays the browser itself.
+    pub fn no_redirect(&self) -> reqwest::Client {
+        reqwest::Client::builder()
+            .timeout(Duration::from_secs(30))
+            .no_proxy()
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .unwrap()
     }
 
     pub fn create_limit() -> u32 {
@@ -70,9 +82,117 @@ fn uid() -> uuid::Uuid {
     uuid::Uuid::new_v4()
 }
 
+/// A seeded user: a session token the fixture planted (the legacy bearer credential of most tests), and an email and
+/// password that sign in through the real route.
 pub struct User {
     pub id: UserId,
     pub token: String,
+    pub email: String,
+    pub password: String,
+}
+
+impl User {
+    fn new() -> User {
+        let n = uid().simple();
+        User { id: UserId(uid()), token: format!("tok-{}", uid().simple()), email: format!("user-{n}@example.test"), password: format!("pw-{}", uid().simple()) }
+    }
+
+    fn login(&self) -> SeedLogin {
+        SeedLogin { user_id: self.id, email: self.email.clone(), password: Some(self.password.clone()), is_active: true }
+    }
+}
+
+/// Names the API uses on the wire; must equal `thrust_api::SESSION_COOKIE`, `CSRF_COOKIE` and `CSRF_HEADER` (this crate
+/// is black-box and does not depend on it). A mismatch makes every cookie test fail.
+pub const SESSION_COOKIE: &str = "__Host-thrust_session";
+pub const CSRF_COOKIE: &str = "__Host-thrust_csrf";
+pub const CSRF_HEADER: &str = "x-csrftoken";
+
+/// One `Set-Cookie` header: its name, value and the attributes after them, as sent.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SetCookie {
+    pub name: String,
+    pub value: String,
+    pub attrs: Vec<String>,
+}
+
+impl SetCookie {
+    /// Every `Set-Cookie` header of a response, in order.
+    pub fn all(r: &reqwest::Response) -> Vec<SetCookie> {
+        r.headers()
+            .get_all("set-cookie")
+            .iter()
+            .map(|h| {
+                let line = h.to_str().expect("set-cookie is ascii");
+                let mut parts = line.split(';').map(str::trim);
+                let (name, value) = parts.next().and_then(|nv| nv.split_once('=')).expect("name=value");
+                SetCookie { name: name.into(), value: value.into(), attrs: parts.map(str::to_string).collect() }
+            })
+            .collect()
+    }
+
+    pub fn find<'a>(cookies: &'a [SetCookie], name: &str) -> Option<&'a SetCookie> {
+        cookies.iter().find(|c| c.name == name)
+    }
+
+    pub fn has_attr(&self, attr: &str) -> bool {
+        self.attrs.iter().any(|a| a.eq_ignore_ascii_case(attr))
+    }
+
+    /// The value of an attribute written `Name=value` (`Max-Age`, `SameSite`, `Path`).
+    pub fn attr(&self, name: &str) -> Option<&str> {
+        self.attrs.iter().find_map(|a| a.split_once('=').filter(|(n, _)| n.eq_ignore_ascii_case(name)).map(|(_, v)| v))
+    }
+}
+
+/// A signed-in session as a client holds it: the two cookie values from a sign-in response. The suite sends them back
+/// itself, because a client cookie jar would withhold a `Secure` cookie over the plain HTTP the local targets serve.
+#[derive(Debug, Clone)]
+pub struct Session {
+    pub user_id: UserId,
+    pub token: String,
+    pub csrf: String,
+}
+
+impl Session {
+    /// The `Cookie` header a browser would send.
+    pub fn cookie_header(&self) -> String {
+        format!("{SESSION_COOKIE}={}; {CSRF_COOKIE}={}", self.token, self.csrf)
+    }
+
+    /// The same session with only the session cookie (no CSRF cookie).
+    pub fn session_cookie_only(&self) -> String {
+        format!("{SESSION_COOKIE}={}", self.token)
+    }
+}
+
+impl Target {
+    pub async fn sign_in_raw(&self, email: &str, password: &str) -> reqwest::Response {
+        self.http
+            .post(self.url(&format!("{SLICE_PREFIX}/auth/sign-in/email")))
+            .json(&json!({ "email": email, "password": password }))
+            .send()
+            .await
+            .unwrap()
+    }
+
+    /// Sign in through the real route and keep what the response set. Panics unless it is a 200 with both cookies.
+    pub async fn sign_in(&self, who: &User) -> Session {
+        let r = self.sign_in_raw(&who.email, &who.password).await;
+        assert_eq!(r.status(), 200, "sign-in of a seeded user");
+        let cookies = SetCookie::all(&r);
+        let body: SignInResponse = r.json().await.unwrap();
+        let token = SetCookie::find(&cookies, SESSION_COOKIE).expect("a session cookie").value.clone();
+        let csrf = SetCookie::find(&cookies, CSRF_COOKIE).expect("a csrf cookie").value.clone();
+        assert_eq!(body.csrf_token, csrf, "the body's csrf token is the cookie's");
+        Session { user_id: body.user_id, token, csrf }
+    }
+
+    /// Deactivate or reactivate a user through the test route.
+    pub async fn set_user_active(&self, user: UserId, active: bool) {
+        let r = self.admin_post("/internal/set-user-active", &json!({ "user_id": user, "active": active })).await;
+        assert_eq!(r.status(), 204, "set-user-active");
+    }
 }
 
 /// Where the slice's tenant routes are mounted. It must equal `thrust_api::SLICE_PREFIX` (this crate is black-box and
@@ -113,7 +233,7 @@ pub struct Fixture {
 
 impl Fixture {
     pub async fn seed(t: &Target) -> Fixture {
-        let mk = || User { id: UserId(uid()), token: format!("tok-{}", uid().simple()) };
+        let mk = User::new;
         let ws_a = WorkspaceId(uid());
         let ws_b = WorkspaceId(uid());
         // Slugs are unique in the database, and one database serves every fixture of a run.
@@ -153,6 +273,8 @@ impl Fixture {
                 on_b(&dual, Role::Guest),
             ],
             sessions: all.iter().map(|u| SeedSession { token: u.token.clone(), user_id: u.id }).collect(),
+            logins: all.iter().map(|u| u.login()).collect(),
+            ..SeedFixture::default()
         };
         let r = t.admin_post("/internal/seed", &serde_json::to_value(&fixture).unwrap()).await;
         assert_eq!(r.status(), 204, "seed failed: {:?}", r.text().await);
@@ -161,8 +283,8 @@ impl Fixture {
 
     /// A fresh member of project A with its own rate-limit bucket.
     pub async fn extra_member(&self, t: &Target) -> User {
-        let id = UserId(uid());
-        let token = format!("tok-{}", uid().simple());
+        let who = User::new();
+        let (id, token) = (who.id, who.token.clone());
         let f = SeedFixture {
             workspaces: vec![SeedWorkspace { id: self.ws_a, slug: WorkspaceSlug::new(&self.a.slug) }],
             users: vec![id],
@@ -174,11 +296,13 @@ impl Fixture {
                 user_id: id,
                 role: Role::Member,
             }],
-            sessions: vec![SeedSession { token: token.clone(), user_id: id }],
+            sessions: vec![SeedSession { token, user_id: id }],
+            logins: vec![who.login()],
+            ..SeedFixture::default()
         };
         let r = t.admin_post("/internal/seed", &serde_json::to_value(&f).unwrap()).await;
         assert_eq!(r.status(), 204);
-        User { id, token }
+        who
     }
 }
 

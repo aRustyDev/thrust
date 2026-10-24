@@ -6,7 +6,10 @@
 #   THRUST_ADMIN_TOKEN_FILE=<0600 file holding the Worker's THRUST_ADMIN_TOKEN> \
 #     scripts/stage2-contract.sh [main|worker|bindings|cron|sweeper|panic]
 #
-# main      21 tests: the portable contract (the deployed Worker must have THRUST_CREATE_RATE_LIMIT=30)
+# main      31 tests: the portable contract minus the 6 `oidc_` tests (they need the mock IdP on 127.0.0.1, which a
+#           deployed Worker cannot reach) (the deployed Worker must have THRUST_CREATE_RATE_LIMIT=30, and a cheap
+#           argon2id cost, THRUST_ARGON2_M_KIB=64 THRUST_ARGON2_T=1 THRUST_ARGON2_P=1, or every fixture seeds six
+#           passwords at the real cost)
 # worker     1 test : Durable Object WebSocket hibernation + SQLite
 # bindings   6 tests: one real operation per binding (rate limit, secrets store, email, service, workflow)
 # cron       1 test : needs the Worker deployed with THRUST_OUTBOX_FASTPATH=off
@@ -41,7 +44,7 @@ case "$INFO" in *'"adapters":"cloudflare"'*) ;; *) echo "[stage2/$PASS] VACUITY 
 RS="$ROOT/scripts/rs"
 M="$ROOT/Cargo.toml"
 case "$PASS" in
-  main)     EXPECT=21; "$RS" cargo test --manifest-path "$M" -p thrust-contract-tests --test contract -- --skip sweeper_ --skip panic_ --skip blast_ >"$LOG.test.log" 2>&1 ;;
+  main)     EXPECT=31; "$RS" cargo test --manifest-path "$M" -p thrust-contract-tests --test contract -- --skip sweeper_ --skip panic_ --skip blast_ --skip oidc_ >"$LOG.test.log" 2>&1 ;;
   worker)   EXPECT=1;  "$RS" cargo test --manifest-path "$M" -p thrust-contract-tests --test worker_only -- worker_room_ --test-threads=1 --nocapture >"$LOG.test.log" 2>&1 ;;
   # Email is skipped on purpose: a real send needs a sender domain owned by the account and a verified
   # destination; the deployed binding rejects `example.com` ("domain is not owned by the same account").
