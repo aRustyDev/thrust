@@ -1,0 +1,234 @@
+{
+  "exchanges": [
+    {
+      "name": "no fields",
+      "request": {
+        "body": {
+          "form": {}
+        },
+        "method": "POST",
+        "path": "/auth/sign-up/"
+      },
+      "response": {
+        "body": null,
+        "headers": {
+          "content-type": "text/html; charset=utf-8",
+          "location": "<base_url>/?error_code=5040&error_message=REQUIRED_EMAIL_PASSWORD_SIGN_UP&email=False"
+        },
+        "status": 302
+      }
+    },
+    {
+      "name": "empty fields",
+      "request": {
+        "body": {
+          "form": {
+            "email": "",
+            "password": ""
+          }
+        },
+        "method": "POST",
+        "path": "/auth/sign-up/"
+      },
+      "response": {
+        "body": null,
+        "headers": {
+          "content-type": "text/html; charset=utf-8",
+          "location": "<base_url>/?error_code=5040&error_message=REQUIRED_EMAIL_PASSWORD_SIGN_UP&email="
+        },
+        "status": 302
+      }
+    },
+    {
+      "name": "an email and no password",
+      "request": {
+        "body": {
+          "form": {
+            "email": "journey@example.test"
+          }
+        },
+        "method": "POST",
+        "path": "/auth/sign-up/"
+      },
+      "response": {
+        "body": null,
+        "headers": {
+          "content-type": "text/html; charset=utf-8",
+          "location": "<base_url>/?error_code=5040&error_message=REQUIRED_EMAIL_PASSWORD_SIGN_UP&email=journey%40example.test"
+        },
+        "status": 302
+      }
+    },
+    {
+      "name": "a password and no email",
+      "request": {
+        "body": {
+          "form": {
+            "password": "Journey-Sample-Pa55word-Zebra-81"
+          }
+        },
+        "method": "POST",
+        "path": "/auth/sign-up/"
+      },
+      "response": {
+        "body": null,
+        "headers": {
+          "content-type": "text/html; charset=utf-8",
+          "location": "<base_url>/?error_code=5040&error_message=REQUIRED_EMAIL_PASSWORD_SIGN_UP&email=False"
+        },
+        "status": 302
+      }
+    },
+    {
+      "name": "not an email",
+      "request": {
+        "body": {
+          "form": {
+            "email": "nope",
+            "password": "Journey-Sample-Pa55word-Zebra-81"
+          }
+        },
+        "method": "POST",
+        "path": "/auth/sign-up/"
+      },
+      "response": {
+        "body": null,
+        "headers": {
+          "content-type": "text/html; charset=utf-8",
+          "location": "<base_url>/?error_code=5045&error_message=INVALID_EMAIL_SIGN_UP&email=nope"
+        },
+        "status": 302
+      }
+    },
+    {
+      "name": "weak password",
+      "request": {
+        "body": {
+          "form": {
+            "email": "journey@example.test",
+            "password": "password"
+          }
+        },
+        "method": "POST",
+        "path": "/auth/sign-up/"
+      },
+      "response": {
+        "body": null,
+        "headers": {
+          "content-type": "text/html; charset=utf-8",
+          "location": "<base_url>/?error_code=5021&error_message=PASSWORD_TOO_WEAK&email=journey%40example.test"
+        },
+        "status": 302
+      }
+    },
+    {
+      "name": "sign up",
+      "request": {
+        "body": {
+          "form": {
+            "email": "journey@example.test",
+            "password": "Journey-Sample-Pa55word-Zebra-81"
+          }
+        },
+        "method": "POST",
+        "path": "/auth/sign-up/"
+      },
+      "response": {
+        "body": null,
+        "headers": {
+          "content-type": "text/html; charset=utf-8",
+          "location": "<base_url>"
+        },
+        "status": 302
+      }
+    },
+    {
+      "name": "the same email again",
+      "request": {
+        "body": {
+          "form": {
+            "email": "journey@example.test",
+            "password": "Journey-Sample-Pa55word-Zebra-81"
+          }
+        },
+        "method": "POST",
+        "path": "/auth/sign-up/"
+      },
+      "response": {
+        "body": null,
+        "headers": {
+          "content-type": "text/html; charset=utf-8",
+          "location": "<base_url>/?error_code=5030&error_message=USER_ALREADY_EXIST&email=journey%40example.test"
+        },
+        "status": 302
+      }
+    },
+    {
+      "name": "taken email and a weak password",
+      "request": {
+        "body": {
+          "form": {
+            "email": "journey@example.test",
+            "password": "password"
+          }
+        },
+        "method": "POST",
+        "path": "/auth/sign-up/"
+      },
+      "response": {
+        "body": null,
+        "headers": {
+          "content-type": "text/html; charset=utf-8",
+          "location": "<base_url>/?error_code=5030&error_message=USER_ALREADY_EXIST&email=journey%40example.test"
+        },
+        "status": 302
+      }
+    },
+    {
+      "name": "not an email and a weak password",
+      "request": {
+        "body": {
+          "form": {
+            "email": "nope",
+            "password": "password"
+          }
+        },
+        "method": "POST",
+        "path": "/auth/sign-up/"
+      },
+      "response": {
+        "body": null,
+        "headers": {
+          "content-type": "text/html; charset=utf-8",
+          "location": "<base_url>/?error_code=5045&error_message=INVALID_EMAIL_SIGN_UP&email=nope"
+        },
+        "status": 302
+      }
+    },
+    {
+      "name": "sign up with a next_path",
+      "request": {
+        "body": {
+          "form": {
+            "email": "second@example.test",
+            "next_path": "/dashboard",
+            "password": "Journey-Sample-Pa55word-Zebra-81"
+          }
+        },
+        "method": "POST",
+        "path": "/auth/sign-up/"
+      },
+      "response": {
+        "body": null,
+        "headers": {
+          "content-type": "text/html; charset=utf-8",
+          "location": "<base_url>/?next_path=/dashboard"
+        },
+        "status": 302
+      }
+    }
+  ],
+  "format_version": 1,
+  "recorded_from": "ba85d4d3d3",
+  "row": "S05"
+}

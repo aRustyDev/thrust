@@ -367,6 +367,41 @@ fn an_email_is_unique_and_seeding_the_same_user_again_updates_it() {
     assert!(!block_on(db.user_by_email("new@example.test")).unwrap().unwrap().is_active);
 }
 
+/// `insert_user` (sign-up, issue #44): creates, finds by email, and refuses a taken id or email. Unlike `seed_users` it
+/// never overwrites. A user without an email is never a clash, however many there are.
+#[rstest]
+fn insert_user_creates_one_and_refuses_a_taken_id_or_email(
+    #[values(true, false)] same_id: bool,
+    #[values(true, false)] same_email: bool,
+) {
+    let db = MemoryDatabase::new();
+    block_on(db.insert_user(&user(OWNER, Some("o@example.test"), true))).unwrap();
+    assert_eq!(block_on(db.user_by_email("o@example.test")).unwrap().unwrap().id, OWNER);
+
+    let second = user(
+        if same_id { OWNER } else { OTHER },
+        Some(if same_email { "o@example.test" } else { "x@example.test" }),
+        true,
+    );
+    let got = block_on(db.insert_user(&second));
+    if same_id || same_email {
+        assert!(matches!(got, Err(DbError::Conflict(_))), "{got:?}");
+        // nothing was overwritten: the first user is as it was, and the refused email names nobody new
+        assert_eq!(block_on(db.user_by_email("o@example.test")).unwrap().unwrap().id, OWNER);
+        assert!(block_on(db.user_by_email("x@example.test")).unwrap().is_none());
+    } else {
+        got.unwrap();
+        assert_eq!(block_on(db.user_by_email("x@example.test")).unwrap().unwrap().id, OTHER);
+    }
+}
+
+#[test]
+fn insert_user_never_clashes_on_a_missing_email() {
+    let db = MemoryDatabase::new();
+    block_on(db.insert_user(&user(OWNER, None, true))).unwrap();
+    block_on(db.insert_user(&user(OTHER, None, true))).unwrap();
+}
+
 fn account(user: UserId, sub: &str) -> NewAccount {
     NewAccount {
         provider: "https://idp.example.test".into(),

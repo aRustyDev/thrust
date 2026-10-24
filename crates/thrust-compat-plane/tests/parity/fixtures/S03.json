@@ -1,0 +1,23 @@
+{
+  "exchanges": [
+    {
+      "name": "a token, no session",
+      "request": {
+        "method": "GET",
+        "path": "/auth/get-csrf-token/"
+      },
+      "response": {
+        "body": {
+          "csrf_token": "<opaque>"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    }
+  ],
+  "format_version": 1,
+  "recorded_from": "ba85d4d3d3",
+  "row": "S03"
+}

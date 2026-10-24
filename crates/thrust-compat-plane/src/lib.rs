@@ -17,9 +17,10 @@
 //! Every row has a `parity_` test (`tests/parity.rs`) that replays a fixture recorded from the pinned Plane
 //! (`oracle/v1-pin-20261018`, `ba85d4d3d3`) with `tools/compat-record/record.py`.
 
-use axum::routing::get;
+use axum::routing::{get, post};
 use axum::Router;
 
+mod auth;
 mod error;
 mod instance;
 mod users;
@@ -31,4 +32,8 @@ pub fn routes() -> Router {
     Router::new()
         .route("/api/instances/", get(instance::get_instance)) // S01
         .route("/api/users/me/", get(users::get_me)) // S02
+        .route("/auth/get-csrf-token/", get(auth::get_csrf_token)) // S03
+        .route("/auth/email-check/", post(auth::email_check)) // S04
+        .route("/auth/sign-up/", post(auth::sign_up)) // S05
+        .route("/auth/sign-in/", post(auth::sign_in)) // S06
 }

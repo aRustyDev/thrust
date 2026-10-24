@@ -153,6 +153,110 @@ pub async fn sign_in(app: &App, email: &str, password: &str) -> Result<SignedIn,
     }
 }
 
+// ---------------------------------------------------------------------------------------------------------------------
+// Sign-up (issue #44). The stock Plane app signs a person up with an email and a password: one new user, signed in.
+// ---------------------------------------------------------------------------------------------------------------------
+
+/// Whether `email` (already [`normalize_email`]d) is something a mailbox could be: an ASCII address of the usual shape.
+/// This is Django's `validate_email` in outline, not in full: one `@`, a local part of at most 64 characters made of
+/// the usual atom characters and single dots, and a domain of at least two dot-separated labels (letters, digits and
+/// inner hyphens) ending in an alphabetic top-level domain or an `xn--` one. It refuses what Django accepts but no one
+/// signs up with (quoted local parts, domain literals, `user@localhost`, domains in Unicode rather than punycode).
+pub fn is_valid_email(email: &str) -> bool {
+    if email.is_empty() || email.len() > MAX_EMAIL_LEN {
+        return false;
+    }
+    let Some((local, domain)) = email.rsplit_once('@') else { return false };
+    let atom = |c: char| c.is_ascii_alphanumeric() || "!#$%&'*+/=?^_`{|}~-".contains(c);
+    let local_ok = !local.is_empty()
+        && local.len() <= 64
+        && local.split('.').all(|part| !part.is_empty() && part.chars().all(atom));
+    let labels: Vec<&str> = domain.split('.').collect();
+    let label_ok = |l: &str| {
+        !l.is_empty()
+            && l.len() <= 63
+            && !l.starts_with('-')
+            && !l.ends_with('-')
+            && l.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+    };
+    // an `xn--` label that is only `xn--` ends in a hyphen, which `label_ok` already refuses, so nothing more is needed
+    let tld_ok = labels
+        .last()
+        .is_some_and(|t| (t.len() >= 2 && t.chars().all(|c| c.is_ascii_alphabetic())) || t.starts_with("xn--"));
+    local_ok && labels.len() >= 2 && labels.iter().all(|l| label_ok(l)) && tld_ok
+}
+
+/// The shortest password sign-up accepts, in characters.
+pub const MIN_PASSWORD_LEN: usize = 10;
+/// Fewest distinct characters a password may have: `aaaaaaaaaa` and `abababababab` are not passwords.
+const MIN_DISTINCT_CHARS: usize = 5;
+
+/// The passwords people pick most, compared lower case with the digits and symbols around the letters stripped (so
+/// `Password123!` is `password`).
+const COMMON_PASSWORDS: &[&str] = &[
+    "password", "passw0rd", "qwerty", "qwertyuiop", "letmein", "welcome", "admin", "administrator", "iloveyou", "monkey",
+    "dragon", "football", "baseball", "master", "login", "trustno", "sunshine", "princess", "starwars", "whatever",
+    "freedom", "shadow", "superman", "michael", "jordan", "hello", "charlie", "donald", "hunter", "abc", "abcdef",
+    "asdfgh", "asdfghjkl", "zxcvbn", "zxcvbnm", "plane", "thrust", "changeme", "secret", "default", "test", "guest",
+];
+
+/// Whether `password` is acceptable for a new account. A deliberately modest rule in place of Plane's zxcvbn score of
+/// at least 3, which would put a large frequency dictionary into the Worker bundle (its size was not measured): at
+/// least [`MIN_PASSWORD_LEN`] characters, at least [`MIN_DISTINCT_CHARS`] different ones, and not one of the most
+/// common passwords once its decoration is stripped. It is stricter than zxcvbn about length and weaker about
+/// everything else, and the difference is deviation D-023.
+pub fn password_is_strong(password: &str) -> bool {
+    let chars = password.chars().count();
+    if chars < MIN_PASSWORD_LEN || password.len() > MAX_PASSWORD_LEN {
+        return false;
+    }
+    let distinct: std::collections::BTreeSet<char> = password.chars().collect();
+    if distinct.len() < MIN_DISTINCT_CHARS {
+        return false;
+    }
+    let letters = password.trim_matches(|c: char| !c.is_alphabetic()).to_lowercase();
+    !COMMON_PASSWORDS.contains(&letters.as_str())
+}
+
+/// Whether an account has this email: what Plane's `email-check` answers, and what its sign-in asks before it checks the
+/// password (so it can say "no such user" apart from "wrong password"). Plane answers it to anyone, so this does not
+/// widen what a caller can learn there; the answer is `false` for an email that is not valid, without a lookup.
+pub async fn email_exists(app: &App, email: &str) -> Result<bool, CoreError> {
+    let email = normalize_email(email);
+    if !is_valid_email(&email) {
+        return Ok(false);
+    }
+    Ok(app.ports.db.user_by_email(&email).await?.is_some())
+}
+
+/// A new account with an email and a password, signed in. In this order, with no hash work until the last decision:
+/// the bounds and the email's shape and the password's strength (`Invalid`, nothing stored), then whether the email is
+/// taken (`Conflict`), then one hash, one insert (a race for the same email is the unique index's `Conflict`), one
+/// session. The user is active and has no name yet: the profile is the onboarding step's.
+///
+/// There is no limiter here, unlike [`sign_in`]'s per-email one: a per-address limit needs the caller's address, which
+/// core never sees, and a global one would let anyone lock everyone else out. Plane limits sign-up per IP; see gap G-16.
+pub async fn sign_up(app: &App, email: &str, password: &str) -> Result<SignedIn, CoreError> {
+    let email = normalize_email(email);
+    if !is_valid_email(&email) {
+        return Err(CoreError::Invalid("not a valid email".into()));
+    }
+    if !password_is_strong(password) {
+        return Err(CoreError::Invalid("password too weak".into()));
+    }
+    if app.ports.db.user_by_email(&email).await?.is_some() {
+        return Err(CoreError::Conflict("a user with this email exists".into()));
+    }
+    let password_hash =
+        app.ports.hasher.hash(password, &random_salt(app)?).map_err(|e| CoreError::Internal(e.to_string()))?;
+    let id = UserId(app.ports.ids.new_uuid());
+    app.ports
+        .db
+        .insert_user(&UserRecord { id, email: Some(email), password_hash: Some(password_hash), is_active: true })
+        .await?;
+    mint_session(app, id).await
+}
+
 /// Sign-out of one session, by the digest of its token. Idempotent.
 pub async fn sign_out(app: &App, session: &TokenHash) -> Result<(), CoreError> {
     Ok(app.ports.db.revoke_session(session, app.ports.clock.now()).await?)

@@ -3298,6 +3298,8 @@ version = "0.0.0"
 dependencies = [
  "axum",
  "futures-executor",
+ "proptest",
+ "rstest",
  "serde",
  "serde_json",
  "thrust-adapters-memory",

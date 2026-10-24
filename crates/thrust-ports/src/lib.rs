@@ -297,6 +297,10 @@ pub trait Database: Send + Sync {
     /// The user with this (already normalised) email, active or not: the caller decides what an inactive user may do.
     async fn user_by_email(&self, email: &str) -> Result<Option<UserRecord>, DbError>;
 
+    /// Create a user (sign-up, issue #44). A taken email is `DbError::Conflict`, raised by the UNIQUE index, so two
+    /// sign-ups racing for one email cannot both win. An id that exists is the caller's bug, and also a `Conflict`.
+    async fn insert_user(&self, user: &UserRecord) -> Result<(), DbError>;
+
     /// The user an identity provider's subject is linked to, active or not.
     async fn user_for_account(
         &self,

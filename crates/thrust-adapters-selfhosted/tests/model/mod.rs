@@ -45,6 +45,8 @@
 //!   a digest that another key holds is a `Conflict`, and the key stays as it was;
 //! * `user_by_email` and `user_for_account` return the user, active or not, and nothing for an unknown email or a link
 //!   that was never made; `link_account` of a subject that is linked already changes nothing;
+//! * `insert_user` creates a login that `user_by_email` then finds; a taken email or a taken id is a `Conflict` that
+//!   changes nothing (the user that holds it is as it was, and the refused email names nobody);
 //! * a pending OIDC login is returned by `take_oidc_login` once, and deleted by it (a second take, a replayed
 //!   callback, finds nothing); an insert drops the logins whose `expires_at` is not after its `created_at`;
 //! * `undispatched_outbox(n)` returns the first `n` undispatched rows by `(created_at, event_id)`, unchanged;
@@ -152,6 +154,14 @@ enum Ev {
     Fresh,
 }
 
+/// What `Op::UserInsert` tries.
+#[derive(Debug, Clone, Copy)]
+enum UserIns {
+    New,
+    EmailTaken(usize),
+    IdTaken(usize),
+}
+
 #[derive(Debug, Clone)]
 enum Op {
     Tx { steps: Vec<Step>, end: End },
@@ -192,6 +202,8 @@ enum Op {
     AccountLookup { who: usize },
     /// Link a subject that is linked already, to someone else: the first link stays.
     AccountRelink,
+    /// `insert_user` of a new login, of one whose email a seeded user (0..3) holds, or of one whose id a seeded user holds.
+    UserInsert { kind: UserIns },
     OidcInsert { ttl: u8 },
     /// Compound ops: the sequences a single random op almost never reaches, planned as the ops they are made of.
     /// A user (0 or 1) is deactivated, then everything that depends on it is looked up, then optionally reactivated.
@@ -283,6 +295,12 @@ fn op() -> impl Strategy<Value = Op> {
         1 => (0..4usize).prop_map(|who| Op::EmailLookup { who }),
         1 => (0..4usize).prop_map(|who| Op::AccountLookup { who }),
         1 => Just(Op::AccountRelink),
+        2 => prop_oneof![
+            2 => Just(UserIns::New),
+            1 => (0..3usize).prop_map(UserIns::EmailTaken),
+            1 => (0..3usize).prop_map(UserIns::IdTaken),
+        ]
+        .prop_map(|kind| Op::UserInsert { kind }),
         2 => (0..2usize, any::<bool>()).prop_map(|(who, restore)| Op::Deactivated { who, restore }),
         2 => prop_oneof![Just(5u8), Just(100u8)].prop_map(|ttl| Op::OidcRoundTrip { ttl }),
         2 => (0..2usize).prop_map(|key| Op::KeyCycle { key }),
@@ -397,6 +415,12 @@ enum Class {
     AccountFoundInactive,
     AccountUnlinked,
     AccountRelinkKept,
+    /// `insert_user` of a new login: found by email afterwards.
+    UserInserted,
+    /// `insert_user` with an email a user holds: a `Conflict`, the holder unchanged.
+    UserInsertEmailTaken,
+    /// `insert_user` with an id a user holds: a `Conflict`, the new email names nobody.
+    UserInsertIdTaken,
     OidcInserted,
     /// An insert that dropped an expired login.
     OidcSwept,
@@ -423,7 +447,7 @@ enum Class {
 }
 
 impl Class {
-    const ALL: [Class; 82] = [
+    const ALL: [Class; 85] = [
         Class::Created,
         Class::ExternalKeyFreed,
         Class::Conflict,
@@ -488,6 +512,9 @@ impl Class {
         Class::AccountFoundInactive,
         Class::AccountUnlinked,
         Class::AccountRelinkKept,
+        Class::UserInserted,
+        Class::UserInsertEmailTaken,
+        Class::UserInsertIdTaken,
         Class::OidcInserted,
         Class::OidcSwept,
         Class::OidcTaken,
@@ -529,6 +556,8 @@ enum Call {
     TouchSession { hash: TokenHash, at: Timestamp },
     RevokeSession { hash: TokenHash, at: Timestamp },
     SeedUsers { users: Vec<UserRecord> },
+    /// `conflict`: the adapter must answer `DbError::Conflict`.
+    InsertUser { u: UserRecord, conflict: bool },
     LinkAccount { a: NewAccount },
     InsertApiKey { k: NewApiKey },
     SetActive { user: UserId, active: bool },
@@ -1236,6 +1265,37 @@ impl Model {
                     want: Some(self.user_record(0)),
                 });
             }
+            &Op::UserInsert { kind } => {
+                let fresh_email = format!("signup-{}@example.test", new_id().simple());
+                let user_with = |id: UserId, email: String| UserRecord {
+                    id,
+                    email: Some(email),
+                    password_hash: Some("$argon2id$stub-signup".into()),
+                    is_active: true,
+                };
+                match kind {
+                    UserIns::New => {
+                        classes.push(Class::UserInserted);
+                        let u = user_with(UserId(new_id()), fresh_email.clone());
+                        calls.push(Call::InsertUser { u: u.clone(), conflict: false });
+                        calls.push(Call::UserByEmail { email: fresh_email, want: Some(u) });
+                    }
+                    UserIns::EmailTaken(who) => {
+                        classes.push(Class::UserInsertEmailTaken);
+                        let u = user_with(UserId(new_id()), self.fix.emails[who].clone());
+                        calls.push(Call::InsertUser { u: u.clone(), conflict: true });
+                        // the holder is as it was: nothing was overwritten
+                        calls.push(Call::UserByEmail { email: self.fix.emails[who].clone(), want: Some(self.user_record(who)) });
+                    }
+                    UserIns::IdTaken(who) => {
+                        classes.push(Class::UserInsertIdTaken);
+                        let u = user_with(self.fix.users[who], fresh_email.clone());
+                        calls.push(Call::InsertUser { u, conflict: true });
+                        calls.push(Call::UserByEmail { email: fresh_email, want: None });
+                        calls.push(Call::UserByEmail { email: self.fix.emails[who].clone(), want: Some(self.user_record(who)) });
+                    }
+                }
+            }
             &Op::OidcInsert { ttl } => {
                 let created_at = tick();
                 let l = NewOidcLogin {
@@ -1597,6 +1657,15 @@ async fn execute(db: &dyn Database, tx: &mut Option<Box<dyn Tx>>, call: Call, at
         Call::TouchSession { hash, at: when } => bounded(at, db.touch_session(&hash, when)).await?,
         Call::RevokeSession { hash, at: when } => bounded(at, db.revoke_session(&hash, when)).await?,
         Call::SeedUsers { users } => bounded(at, db.seed_users(&sys, &users)).await?,
+        Call::InsertUser { u, conflict } => {
+            let got = tokio::time::timeout(Duration::from_secs(20), db.insert_user(&u))
+                .await
+                .map_err(|_| fail(at, "timed out after 20 s"))?;
+            match (got, conflict) {
+                (Ok(()), false) | (Err(DbError::Conflict(_)), true) => {}
+                (got, _) => return Err(fail(at, format!("insert user: got {got:?}, want conflict = {conflict}"))),
+            }
+        }
         Call::LinkAccount { a } => bounded(at, db.link_account(&a)).await?,
         Call::InsertApiKey { k } => bounded(at, db.insert_api_key(&k)).await?,
         Call::SetActive { user, active } => {

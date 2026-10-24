@@ -169,6 +169,19 @@ impl Database for MemoryDatabase {
         Ok(s.users.values().find(|u| u.email.as_deref() == Some(email)).cloned())
     }
 
+    async fn insert_user(&self, user: &UserRecord) -> Result<(), DbError> {
+        let mut s = self.state.lock().unwrap();
+        // the PRIMARY KEY on `users.id` and the UNIQUE index on `users.email`, in that order, as Postgres reports them
+        if s.users.contains_key(&user.id) {
+            return Err(DbError::Conflict("users_pkey".into()));
+        }
+        if user.email.is_some() && s.users.values().any(|o| o.email == user.email) {
+            return Err(DbError::Conflict("users_email_key".into()));
+        }
+        s.users.insert(user.id, user.clone());
+        Ok(())
+    }
+
     async fn user_for_account(&self, provider: &str, provider_account_id: &str) -> Result<Option<UserRecord>, DbError> {
         let s = self.state.lock().unwrap();
         let key = (provider.to_string(), provider_account_id.to_string());

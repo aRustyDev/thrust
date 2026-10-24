@@ -17,11 +17,17 @@
     "instance.current_version": "<version>",
     "instance.latest_version": "<version>",
     "instance.instance_name": "<name>",
+    "csrf_token": "<opaque>",
     "config.admin_base_url": "<base_url>",
     "config.space_base_url": "<base_url>",
     "config.app_base_url": "<base_url>",
     "config.instance_changelog_url": "<url>"
   },
   "headers_keep": ["content-type", "location", "www-authenticate", "retry-after"],
+  "header_origin_rewrite": {
+    "_comment": "The scheme and authority at the start of these headers name the deployment, not the API: the pin redirects to its WEB_URL, Thrust to its own origin. A relative value is left alone.",
+    "headers": ["location"],
+    "token": "<base_url>"
+  },
   "_headers_comment": "cache-control is not kept: the pin answers /api/instances/ with `private, max-age=<remaining TTL>`, which changes per request."
 }

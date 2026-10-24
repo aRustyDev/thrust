@@ -1,12 +1,36 @@
 //! Plane's internal API (`/api/...`, `/auth/...`) over HTTP, from `thrust-compat-plane` (issue #44). The hermetic
 //! `parity_` tests of that crate compare each row with a recording of the pinned Plane; this module holds what has to be
-//! true on every deployed target: both composition roots mount the routes, and the status codes the React client acts on
-//! (research/0003 section 9, rows 2 and 3).
+//! true on every deployed target: both composition roots mount the routes, the status codes the React client acts on
+//! (research/0003 section 9, rows 2 and 3), and the sign-up and sign-in that the stock app's JSON auth client uses.
+//!
+//! Every test that asserts "X is accepted" is paired with the neighbouring "Y is refused" inside the same test.
 
-use serde_json::Value;
+use reqwest::StatusCode;
+use serde_json::{json, Value};
 use thrust_contract_tests::*;
 
 use super::t;
+
+const STRONG: &str = "Contract-Sample-Pa55word-Zebra-81";
+
+fn new_email() -> String {
+    format!("signup-{}@example.test", uuid::Uuid::new_v4().simple())
+}
+
+async fn post(t: &Target, path: &str, body: &Value) -> reqwest::Response {
+    t.http.post(t.url(path)).json(body).send().await.unwrap()
+}
+
+/// Whether the response sets a live session cookie (a value, not a clearing), with the attributes that make it safe.
+fn session_cookie(r: &reqwest::Response) -> Option<String> {
+    let cookies = SetCookie::all(r);
+    let c = SetCookie::find(&cookies, SESSION_COOKIE)?;
+    if c.value.is_empty() {
+        return None;
+    }
+    assert!(c.has_attr("Secure") && c.has_attr("HttpOnly"), "{c:?}");
+    Some(c.value.clone())
+}
 
 /// S01. The boot request answers anyone, before there is a session, and says setup is done: a `false` would send the
 /// visitor to Plane's instance-admin setup, which Thrust does not have.
@@ -43,4 +67,164 @@ async fn compat_users_me_without_a_session_is_401_json_with_no_id() {
     let r = t.http.get(&url).bearer_auth(&f.admin_a.token).send().await.unwrap();
     // 200 once the boot stage builds the user; until then a 501. Either way, not "sign in".
     assert_ne!(r.status(), 401, "a real session was treated as signed out");
+}
+
+/// S03. A token as JSON and as the CSRF cookie, to anyone. Two calls give two tokens.
+#[tokio::test]
+async fn compat_csrf_token_is_json_and_sets_the_csrf_cookie() {
+    let t = t();
+    let get = || async { t.http.get(t.url("/auth/get-csrf-token/")).send().await.unwrap() };
+    let (a, b) = (get().await, get().await);
+    assert_eq!(a.status(), 200);
+    let cookies = SetCookie::all(&a);
+    let cookie = SetCookie::find(&cookies, CSRF_COOKIE).expect("a csrf cookie").clone();
+    let (a, b): (Value, Value) = (a.json().await.unwrap(), b.json().await.unwrap());
+    let token = a["csrf_token"].as_str().expect("a csrf_token string");
+    assert!(token.len() >= 32, "{token}");
+    assert_eq!(token, cookie.value, "the body's token is the cookie's");
+    assert_ne!(a["csrf_token"], b["csrf_token"], "a fresh token each time");
+}
+
+/// S04. Whether an account has the email, in any spelling, and the two refusals Plane has. Control: the answer is not
+/// constant, an email nobody has is `false` and a seeded one `true`.
+#[tokio::test]
+async fn compat_email_check_tells_a_known_email_from_an_unknown_one_and_refuses_bad_input() {
+    let t = t();
+    let f = Fixture::seed(&t).await;
+    let check = |email: Value| {
+        let t = &t;
+        async move { post(t, "/auth/email-check/", &json!({ "email": email })).await }
+    };
+
+    for (what, email, existing) in [
+        ("a seeded email", f.member_a.email.clone(), true),
+        ("the same email in capitals, padded", format!("  {}  ", f.member_a.email.to_uppercase()), true),
+        ("an email nobody has", new_email(), false),
+    ] {
+        let r = check(json!(email)).await;
+        assert_eq!(r.status(), 200, "{what}");
+        let body: Value = r.json().await.unwrap();
+        assert_eq!(body, json!({"existing": existing, "status": "CREDENTIAL"}), "{what}");
+    }
+
+    for (what, body, code) in [
+        ("no email", json!({}), 5010),
+        ("an empty email", json!({"email": ""}), 5010),
+        ("not an email", json!({"email": "not-an-email"}), 5005),
+        ("not JSON at all", Value::Null, 5010),
+    ] {
+        let r = if body.is_null() {
+            t.http.post(t.url("/auth/email-check/")).body("not json").send().await.unwrap()
+        } else {
+            post(&t, "/auth/email-check/", &body).await
+        };
+        assert_eq!(r.status(), 400, "{what}");
+        let got: Value = r.json().await.unwrap();
+        assert_eq!(got["error_code"], code, "{what}: {got}");
+        assert!(got["error_message"].is_string(), "{what}: {got}");
+    }
+}
+
+/// S05. A sign-up makes an account and signs it in: the session cookie works, the same email signs in afterwards in any
+/// case. Controls: the same email again, a weak password and a malformed email are each refused, with Plane's codes, no
+/// cookie, and without making or changing an account.
+#[tokio::test]
+async fn compat_sign_up_makes_an_account_that_is_signed_in_and_refuses_a_taken_email_or_weak_password() {
+    let t = t();
+    let email = new_email();
+    let r = post(&t, "/auth/sign-up/", &json!({"email": email, "password": STRONG})).await;
+    assert_eq!(r.status(), 200);
+    let token = session_cookie(&r).expect("a sign-up signs the new account in");
+    let body: Value = r.json().await.unwrap();
+    assert_eq!(body, json!({"redirect_path": "/"}));
+
+    // the cookie is a real session: it authenticates against a route that needs one
+    let me = t.http.get(t.url(&format!("{SLICE_PREFIX}/auth/session"))).bearer_auth(&token).send().await.unwrap();
+    assert_eq!(me.status(), 200, "the session the sign-up made does not authenticate");
+
+    // and the account exists, however the email is spelled
+    let r = post(&t, "/auth/email-check/", &json!({"email": email.to_uppercase()})).await;
+    assert_eq!(r.json::<Value>().await.unwrap()["existing"], true);
+
+    for (what, body, code) in [
+        ("the same email again", json!({"email": email, "password": STRONG}), 5030),
+        ("the same email in capitals", json!({"email": email.to_uppercase(), "password": STRONG}), 5030),
+        ("a weak password", json!({"email": new_email(), "password": "password"}), 5021),
+        ("a taken email and a weak password (taken is checked first)", json!({"email": email, "password": "password"}), 5030),
+        ("not an email", json!({"email": "nope", "password": STRONG}), 5045),
+        ("no fields", json!({}), 5040),
+        ("an empty password", json!({"email": new_email(), "password": ""}), 5040),
+    ] {
+        let r = post(&t, "/auth/sign-up/", &body).await;
+        assert_eq!(r.status(), 400, "{what}");
+        assert!(session_cookie(&r).is_none(), "{what}: a refused sign-up set a session");
+        let got: Value = r.json().await.unwrap();
+        assert_eq!(got["error_code"], code, "{what}: {got}");
+    }
+
+    // nothing was made by the weak one: its email is still nobody's
+    let weak = new_email();
+    post(&t, "/auth/sign-up/", &json!({"email": weak, "password": "password"})).await;
+    let r = post(&t, "/auth/email-check/", &json!({"email": weak})).await;
+    assert_eq!(r.json::<Value>().await.unwrap()["existing"], false);
+}
+
+/// S06. A seeded user signs in with the right password, in any spelling of the email. Controls, each refused with
+/// Plane's code and no cookie: a wrong password, an email nobody has, a malformed email, missing fields, and a
+/// deactivated user (one answer for every refusal of a password, so the response does not say which).
+#[tokio::test]
+async fn compat_sign_in_signs_a_seeded_user_in_and_refuses_everyone_else_with_planes_codes() {
+    let t = t();
+    let f = Fixture::seed(&t).await;
+    let u = &f.member_a;
+
+    for (what, email) in [("the seeded email", u.email.clone()), ("another spelling", format!(" {} ", u.email.to_uppercase()))] {
+        let r = post(&t, "/auth/sign-in/", &json!({"email": email, "password": u.password})).await;
+        assert_eq!(r.status(), 200, "{what}");
+        let token = session_cookie(&r).unwrap_or_else(|| panic!("{what}: no session cookie"));
+        assert_eq!(r.json::<Value>().await.unwrap(), json!({"redirect_path": "/"}), "{what}");
+        let me = t.http.get(t.url(&format!("{SLICE_PREFIX}/auth/session"))).bearer_auth(&token).send().await.unwrap();
+        assert_eq!(me.status(), 200, "{what}: the session does not authenticate");
+    }
+
+    let inactive = f.extra_member(&t).await;
+    t.set_user_active(inactive.id, false).await;
+
+    for (what, body, code) in [
+        ("a wrong password", json!({"email": u.email, "password": "not the password at all"}), 5065),
+        ("an email nobody has", json!({"email": new_email(), "password": STRONG}), 5060),
+        ("not an email", json!({"email": "nope", "password": STRONG}), 5075),
+        ("no fields", json!({}), 5070),
+        ("an empty email", json!({"email": "", "password": STRONG}), 5070),
+        ("a deactivated user with the right password", json!({"email": inactive.email, "password": inactive.password}), 5065),
+    ] {
+        let r = post(&t, "/auth/sign-in/", &body).await;
+        assert_eq!(r.status(), StatusCode::BAD_REQUEST, "{what}");
+        assert!(session_cookie(&r).is_none(), "{what}: a refused sign-in set a session");
+        let got: Value = r.json().await.unwrap();
+        assert_eq!(got["error_code"], code, "{what}: {got}");
+    }
+}
+
+/// Where the browser goes after a sign-in or sign-up: the root, with `?next_path=` for a safe place and the bare root
+/// for an unsafe one. The unsafe ones are the open-redirect attempts: a second slash, a scheme, a traversal, a backslash.
+#[tokio::test]
+async fn compat_a_safe_next_path_is_kept_and_an_unsafe_one_is_dropped() {
+    let t = t();
+    let f = Fixture::seed(&t).await;
+    let u = &f.member_a;
+    for (what, next, redirect) in [
+        ("a safe path", "/acme/projects", "/?next_path=/acme/projects"),
+        ("a path with a query, encoded", "/a?b=c&d=e", "/?next_path=/a%3Fb%3Dc%26d%3De"),
+        ("a second leading slash", "//evil.test/x", "/"),
+        ("an absolute URL", "https://evil.test/x", "/"),
+        ("a javascript URL", "javascript:alert(1)", "/"),
+        ("a traversal", "/a/../b", "/"),
+        ("a backslash", "/\\evil.test", "/"),
+        ("no leading slash", "acme", "/"),
+    ] {
+        let r = post(&t, "/auth/sign-in/", &json!({"email": u.email, "password": u.password, "next_path": next})).await;
+        assert_eq!(r.status(), 200, "{what}");
+        assert_eq!(r.json::<Value>().await.unwrap(), json!({"redirect_path": redirect}), "{what}: {next}");
+    }
 }
