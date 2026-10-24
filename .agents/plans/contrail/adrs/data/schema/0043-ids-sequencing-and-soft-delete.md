@@ -112,7 +112,9 @@ The three Postgres adapter tests that asserted "a rollback leaves no gap" were r
 
 **Confirmed and revised, on the platform:** the order is correct and harmless there, and the price this ADR accepted (a number lost to a failed create) buys a p50 improvement of about 15 percent at c=8 on this vantage and nothing at c=1; the benefit is smaller than the delay proxy suggested. The order is not revised; whether that benefit is worth the gaps is the owner's to weigh, and this note changes neither the decision nor the accepted price.
 
-For `worker-do`, allocation is serialised inside the object: the counter is read by `allocate` and written by the commit, and a one-transaction-at-a-time gate keeps another transaction from moving it in between (ADR-0045 note).
+For the archived `worker-do` cell (tag `spike/0002-worker-do`), allocation was serialised inside the object: the counter was read by `allocate` and written by the commit, and a one-transaction-at-a-time gate kept another transaction from moving it in between (ADR-0045 note). That cell keeps the no-gap property the Postgres order gives up; it is not merged.
+
+**Decided 2026-10-24 (owner, ADR-0040): Postgres is the system of record, so the FR-22 order measured above is the order of record.** It is confirmed on the platform (correct and harmless, about 15 percent of the c=8 create p50 and nothing at c=1), and the price this ADR accepted, a gap for a number taken by a create that then fails, stands.
 
 ## Open Questions
 

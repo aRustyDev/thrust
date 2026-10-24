@@ -85,7 +85,7 @@ Spike 0002 asked whether full-text search meets F-D08 on each candidate engine (
 - **Not built or measured:** ranking (the slice and Plane's search do not rank), `tsvector` word search, typo tolerance, ACL terms, cursors. The port is a `Database` method (`search_work_items(scope, query, limit)`), not the `Search` port of the sketch above, because the spike only needed substring parity.
 - An indexed SQLite search reads about the project's rows (SQLite scans the project and uses the FTS5 matches as a filter), so cost grows with project size rather than with matches.
 
-Q-0083.1's answer (round 29: yes, and FTS5 trigram is a criterion for the Durable Object cell) now has its evidence for the Durable Object. The adapter for the chosen engine is whichever ADR-0040 picks; this note decides nothing about that.
+Q-0083.1's answer (round 29: yes) now has its evidence for both engines. **Decided 2026-10-24 (owner, ADR-0040): the engine is Postgres, so the path is `pg_trgm`**: trigram GIN indexes on `name` and `description` and `ILIKE '%q%'`, with the query's `\`, `%` and `_` escaped (migration 0006, `search_work_items`), the operator class qualified (`public.gin_trgm_ops`) and the extension installed once by an administrator in `public`. The FTS5 `trigram` path (Durable Object SQLite, with the ASCII-only `LIKE` and Rust-scan fallbacks it needed below three characters) is the evidence for the archived `worker-do` cell, on the tag `spike/0002-worker-do`; it is not merged.
 
 ## Open Questions
 

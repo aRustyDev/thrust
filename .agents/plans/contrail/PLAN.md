@@ -25,7 +25,7 @@ Open decisions (text and owner in `QUESTIONS.md`; all owned by asmith):
 
 | Question | Decide by | Trigger |
 |---|---|---|
-| Q-0040, Q-0040.6, Q-0041 | 2026-11-09 | the spike 0002 report (M0) |
+| Q-0041 | 2026-11-09 | the isolation strategy (spike 0002 decided the engine on 2026-10-24: Q-0040 and Q-0040.6 are answered, Postgres) |
 | Q-0094.6 | 2026-11-09 | recreating the `worker-pg` cell's Hyperdrive resources (spike 0002) |
 | Q-0122 | review by 2026-11-09 | M0 exit; decided with issue #58's oracle gate |
 | Q-R7 | review by 2026-11-09 | M0 exit |
@@ -36,7 +36,7 @@ Open decisions (text and owner in `QUESTIONS.md`; all owned by asmith):
 
 | Milestone | Contents | Exit criterion |
 |---|---|---|
-| **M0 Foundations fixed** (2 to 3 weeks) | FR-02 and FR-03 port shapes (#35, #36); single Worker with `placement.region` (#43, #39); clippy deny list in CI, since ADR-0006's panic policy says "not yet enforced" (#40); spike 0002 with the Postgres cell and the FR-04 Durable Object cell (#37); spike 0003 as the two-day auth slice (#38); the FR-09 TLS move if Postgres stays (#41); the round-29 ADR and question sweep (FR-17); `PLAN.md`. Also filed for M0: the slice's routes leave the `/api/v1` prefix (#47, FR-06) and the compat-inventory and spike-0004 scripts move into `tools/` (#55, FR-15). | Engine decided in ADR-0040; auth slice green on both targets; `gate` green with clippy; the 4 contract targets still green. |
+| **M0 Foundations fixed** (2 to 3 weeks) | FR-02 and FR-03 port shapes (#35, #36); single Worker with `placement.region` (#43, #39); clippy deny list in CI, since ADR-0006's panic policy says "not yet enforced" (#40); spike 0002 with the Postgres cell and the FR-04 Durable Object cell (#37, decided 2026-10-24: Postgres); spike 0003 as the two-day auth slice (#38); the FR-09 TLS move, which stands because Postgres stays (#41); the round-29 ADR and question sweep (FR-17); `PLAN.md`. Also filed for M0: the slice's routes leave the `/api/v1` prefix (#47, FR-06) and the compat-inventory and spike-0004 scripts move into `tools/` (#55, FR-15). | Engine decided in ADR-0040; auth slice green on both targets; `gate` green with clippy; the 4 contract targets still green. |
 | **M1 Walking skeleton** (about 39 pd of compat plus the auth and workspace/project use-cases) | The 48-route minimum slice with the auth-client JSON change applied (#44); `/api/v1` for projects, states, labels and work items, with the oracle gate on those operations (#58); Playwright journey "sign in, create a workspace, project and work item, see it" (#45). Also filed for M1: the deploy pipeline per ADR-0110 round 29 (#49), one `plane_500()` helper and compat parity scoped to the acceptance list (#51), compat DTOs kept out of `thrust-contracts` (#52), the per-PR schema sweep (#57). | The owner does that journey on the production hostname through the stock React app. |
 | **M2 Daily-use release, "Contrail"** | The screens in [M2 screen list](#m2-screen-list) (#46); plain-save descriptions (FR-14, #48); outbox consumers for activity and notifications; retention cleanup F-D10 (#59); the `status.woven` deep probe (#42); Playwright journeys for every screen in scope. Also filed for M2: the queue failure policy (#53, FR-21). | The team uses it daily for four weeks inside the SLO; compat rows outside the list are stubs, listed in `DEVIATIONS.md`. |
 | **M3 Breadth** | Cycles, modules, views, estimates, intake, webhooks (with the SSRF guard), email digest, public spaces, API keys and the full P0 `/api/v1` resource list, exports as queue jobs (#56), workspace invites (Q-F7). | Oracle gate green for all P0 v1 operations; each new screen adds its Playwright journey. |
@@ -146,7 +146,7 @@ Subjects are shortened from the handoff's Track B table (`reviews/2026-10-19-fab
 |---|---|---|---|---|---|
 | #35 | `Scope` is the argument of every repository and `Tx` method | M0 | | FR-02 | |
 | #36 | user-only `Principal`, database-authoritative sessions, delete `KvSessionStore` | M0 | #35 | FR-03 | |
-| #37 | spike 0002: `worker-pg` cell and instance-level `worker-do` SQLite cell (both measured on the platform; the rule gives two answers and the owner reads criterion 3: `research/0011-database-engine-cells.md`, PR #77, draft) | M0 | #35 | FR-04, FR-16 | `plane-byd.4`, `plane-byd.11.4` |
+| #37 | spike 0002: `worker-pg` cell and instance-level `worker-do` SQLite cell (**decided 2026-10-24: Postgres is the system of record, ADR-0040 `accepted`**; both cells measured on the platform, `worker-do` archived on the tag `spike/0002-worker-do`, not merged: `research/0011-database-engine-cells.md`, PR #77) | M0 | #35 | FR-04, FR-16 | `plane-byd.4`, `plane-byd.11.4` |
 | #38 | spike 0003: the two-day Rust auth slice (done on `feat/auth-slice`: `research/0012-auth-slice.md`) | M0 | #36 | FR-16 | `plane-byd.11.5` |
 | #39 | `placement.region = aws:us-east-1`; 5-round-trip budget counter in the contract suite | M0 | | FR-08 | |
 | #40 | clippy deny list, `cargo fmt --check`, `cargo-deny`; forbid `sqlx`, `sea-orm`, `diesel` | M0 | | FR-07, ADR-0006 panic policy | |

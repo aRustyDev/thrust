@@ -1,6 +1,6 @@
 # Spike 0002 — Database engine (`worker-pg`: Postgres through Hyperdrive vs `worker-do`: one instance-level Durable Object with SQLite)
 
-**Gates:** ADR-0040 (engine), ADR-0041 (isolation), ADR-0083 (FTS + trigram). ADR-0042, 0043, 0044 and 0045 were accepted in round 29 as built (FR-17, FR-07, FR-22); this spike confirms ADR-0043's FR-22 allocation order, and a `worker-do` win reopens 0042, 0044 and 0045 for the SQLite dialect.
+**Gates:** ADR-0040 (engine), ADR-0041 (isolation), ADR-0083 (FTS + trigram). ADR-0042, 0043, 0044 and 0045 were accepted in round 29 as built (FR-17, FR-07, FR-22); this spike confirms ADR-0043's FR-22 allocation order, and a `worker-do` win would have reopened 0042, 0044 and 0045 for the SQLite dialect (it did not win: ADR-0040, 2026-10-24).
 **Questions:** Q-0040, Q-0040.1, Q-0040.6, Q-0041, Q-0083.1, Q-0006.6 (folded in, FR-16).
 **Timebox:** 3.5 days for the `worker-pg` cell (round 27) plus 3 days for the `worker-do` cell (FR-04). **Depends on:** spike 0001 (done); issue #35 (the FR-02 `Scope` port shape, so both cells implement the final signatures); for `worker-pg`, the CNPG Postgres `thrust-pg-dev` with its tunnel and Workers VPC service (ADR-0094, bead `plane-byd.4`). **Tracked as:** issue #37. **Owner:** TBD.
 
@@ -50,7 +50,7 @@ Precondition: the HTTP contract suite's main pass is green on the deployed cell 
 Reported, not pass or fail: the FR-22 allocation-order check and the placement re-run (ADR-0043 and FR-08 take their numbers), caching on versus off, the distant-region bench, the round-trip counts (the contract suite enforces the budget once issue #39 lands) and the email send.
 
 ## Results (2026-10-24, issue #37)
-Both cells were built and measured on the platform (`worker-do` on 2026-10-23 and 24, `worker-pg` on 2026-10-24). **The decision rule does not decide the engine without two owner readings, so no decision is taken here and ADR-0040 stays `proposed`.** Numbers, conditions and everything not measured: `research/0011-database-engine-cells.md`.
+Both cells were built and measured on the platform (`worker-do` on 2026-10-23 and 24, `worker-pg` on 2026-10-24). **Decided by the owner on 2026-10-24: Postgres is the system of record (ADR-0040 `accepted`, Q-0040.6 answered).** The `worker-do` cell and the SQLite adapter are archived on the tag `spike/0002-worker-do`, not merged. Numbers, conditions and everything not measured: `research/0011-database-engine-cells.md`.
 
 | Criterion | `worker-do` | `worker-pg` |
 |---|---|---|
@@ -60,7 +60,12 @@ Both cells were built and measured on the platform (`worker-do` on 2026-10-23 an
 | 4. migration story | passes, deployed, failure case included (a failed build takes the instance down until redeployed) | passes, deployed: expand 0.54 s, GIN builds 1.6 s, contract 1.5 ms on 132k rows; a failing migration changes nothing; applied with `psql`, not the Rust runner |
 | 5. projected cost | projected about $6.8 a month, about $63 at ten times the load; **not reconciled** (24-hour run skipped by the owner) | projected, Cloudflare side as `research/0004` section 9 plus the Postgres host outside the envelope; **not reconciled** |
 
-**The rule's outcome.** Criterion 3 passes on both cells for a 1,000-item project and fails on both for the unpaged 10,000-item list (the list's shape, not the engine: paging is needed either way), and criterion 5 is a projection on both. If criterion 3 is read on the realistic list and a projection is accepted for criterion 5, both cells pass all five and **Q-0040.6 is the owner's**. If criterion 3 is read on the unpaged 10,000-item list, or criterion 5 must be reconciled, `worker-do` fails and **Postgres stays the default**, and `worker-pg`'s own failure of criterion 3 goes to the owner under Q-0040. The owner decides the reading of criterion 3, whether a projection satisfies criterion 5, and Q-0040.6.
+**The rule's outcome, with the owner's three readings (2026-10-24).**
+1. **Criterion 3 is read on the realistic, paged list**: a 1,000-item project in a database of about 100k items. **Both cells pass** it (`worker-do` p95 77 ms at c=1 and 216 ms at c=8; `worker-pg` 161 and 220 ms, from a laptop in the origin's region). The unpaged list of a 10,000-item project (5 MB; `worker-do` 350 and 1,687 ms, `worker-pg` 642 and 1,231 ms) is a **slice artifact that both engines fail**: the slice's list has no paging. **Pagination becomes a requirement of the list endpoint (issue #58)**, whichever engine runs it.
+2. **A projected cost satisfies criterion 5** (the 24-hour run was skipped because there is no real traffic): **both cells pass**, as projected, not reconciled.
+3. **Both cells therefore pass all five criteria, so Q-0040.6 decided: Postgres is the default.** `worker-do` stays documented as a viable fallback (ADR-0040, "Decision — spike 0002") and its code is archived on the tag `spike/0002-worker-do`.
+
+The decision rule's first line (Postgres stays the default if `worker-do` fails any criterion) was therefore not what decided it; the second (Q-0040.6 decides if both pass) was, and the owner chose Postgres.
 
 Reported, not pass or fail (measured): the **FR-22** order on the platform is correct and harmless, worth about 15 percent of the c=8 create p50 and nothing at c=1 (the delay proxy suggested much more); **Hyperdrive caching** takes 10 to 20 ms off a repeated read and breaks read-after-write (4 of 21 contract tests fail), so it stays off; **placement** changes nothing from the origin's region and is what makes Postgres usable from us-west-2 (create 3.3 to 3.8 times faster, list 1.5 to 1.7 times); **distant region** (us-west-2, mid-distance, not antipodal): the object is 40 to 70 ms faster than placed Postgres at p50; round trips (by reading): list 3 statements, create 7; **email**: one send accepted, delivery not verified. R1, R2 and R3 are answered. Not run: the 24-hour reconciliation (skipped), any vantage beyond us-west-2, the Rust `migrate` runner and a migration under load, delivery of the email.
 
@@ -70,4 +75,4 @@ Reported, not pass or fail (measured): the **FR-22** order on the platform is co
 - If `worker-pg` fails a criterion, that is a finding against the default; it goes to the owner under Q-0040 with both cells' numbers.
 
 ## Deliverables
-Decision in ADR-0040 (it moves to `accepted`), with ADR-0041 updated; ADR-0043's FR-22 order confirmed or revised; ADR-0083 and Q-0083.1 closed for the chosen engine; Q-0040, Q-0040.1 and Q-0040.6 answered. Numbers in `research/0011-database-engine-cells.md`. If `worker-do` wins: notes on ADR-0042 (migrations for SQLite), ADR-0044 (moot, FR-07) and ADR-0045 (the `Tx` mapping from R1); the TLS work (FR-09, issue #41) and the cluster coupling (FR-10) become moot. As every spike: what the timebox did not prove.
+Decision in ADR-0040 (it moved to `accepted` on 2026-10-24, as Postgres), with ADR-0041 updated; ADR-0043's FR-22 order confirmed or revised; ADR-0083 and Q-0083.1 closed for the chosen engine; Q-0040, Q-0040.1 and Q-0040.6 answered. Numbers in `research/0011-database-engine-cells.md`. If `worker-do` wins: notes on ADR-0042 (migrations for SQLite), ADR-0044 (moot, FR-07) and ADR-0045 (the `Tx` mapping from R1); the TLS work (FR-09, issue #41) and the cluster coupling (FR-10) become moot. As every spike: what the timebox did not prove.

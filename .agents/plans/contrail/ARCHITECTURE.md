@@ -105,7 +105,7 @@ flowchart TB
 
 | Port | Cloudflare adapter | Self-hosted adapter | ADR |
 |---|---|---|---|
-| `Database` connector | Hyperdrive→Workers VPC→Tunnel→CNPG Postgres (ADR-0094; engine still ⚠ pending spike 0002, which adds the FR-04 `worker-do` cell) | Postgres through a native pool; `rusqlite` if the `worker-do` cell wins (FR-04) | 0040 |
+| `Database` connector | Hyperdrive→Workers VPC→Tunnel→CNPG Postgres (ADR-0094; engine decided 2026-10-24: Postgres, ADR-0040) | Postgres through a native pool | 0040 |
 | `Queue` | Cloudflare Queues | the outbox: in-process fast path + sweeper, one process | 0070 |
 | `BlobStore` | R2 | local disk at P0; S3-compatible (MinIO) at P1 (FR-19) | 0080 |
 | `Scheduler` | Cron Triggers | in-process timer | 0072 |

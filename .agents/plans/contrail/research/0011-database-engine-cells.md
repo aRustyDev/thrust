@@ -1,16 +1,16 @@
 # Research 0011: database engine cells (spike 0002, issue #37)
 
-**Date:** 2026-10-24. **Spike:** `spikes/0002-database-engine.md`. **Gates:** ADR-0040 (engine), ADR-0041, ADR-0083; confirms ADR-0043's FR-22 order. **Code:** thrust PR #77 (branch `feat/engine-cells`, draft), beads `plane-byd.11.4.1` to `.9`.
+**Date:** 2026-10-24. **Spike:** `spikes/0002-database-engine.md`. **Gates:** ADR-0040 (engine), ADR-0041, ADR-0083; confirms ADR-0043's FR-22 order. **Code:** thrust PR #77 (branch `feat/engine-cells`, draft), beads `plane-byd.11.4.1` to `.9`. **Decided 2026-10-24 (owner): Postgres is the system of record (ADR-0040 `accepted`).** The `worker-do` cell and the SQLite adapter are **archived on the tag `spike/0002-worker-do`** (commit 021dc65 of the PR's branch), not merged: every path in this note under `crates/thrust-adapters-sqlite/`, `crates/thrust-worker/src/app_do.rs`, `crates/thrust-worker/wrangler.do*.toml` and `scripts/spike-0002-do.sh`, and the `native-sqlite` and `worker-do` targets and `do` pass of `scripts/contract.sh`, resolve on that tag, not in the merged tree (section 15).
 
-## 1. Verdict: both cells are measured on the platform; the rule does not decide the engine without two owner readings. ADR-0040 stays `proposed`.
+## 1. Verdict: both cells are measured on the platform and pass; the owner decided Postgres (2026-10-24).
 
-This note records what was built, what was measured and under what conditions, and what was **not** measured. It does not decide the engine and does not answer Q-0040.6. The decision rule (spike 0002, "Decision rule") is: Postgres stays the default if the `worker-do` cell fails any exit criterion; if both cells pass, Q-0040.6 is the owner's; a `worker-pg` failure is a finding against the default and goes to the owner under Q-0040.
+This note records what was built, what was measured and under what conditions, and what was **not** measured. It was written before the owner's decision, which section 15 records; the sections below are the evidence. The decision rule (spike 0002, "Decision rule") is: Postgres stays the default if the `worker-do` cell fails any exit criterion; if both cells pass, Q-0040.6 is the owner's; a `worker-pg` failure is a finding against the default and goes to the owner under Q-0040.
 
 **The rule's outcome.** Both cells ran on the platform (`worker-do` on 2026-10-23 and 24, `worker-pg` on 2026-10-24; section 11 is the ledger). Criteria 1, 2 and 4 pass on both. **Criterion 3 passes on both for a 1,000-item project and fails on both for an unpaged 10,000-item list**, so it separates the engines on neither reading. **Criterion 5 is a projection for both** (the owner skipped the 24-hour reconciliation). The rule therefore gives two answers, and which one applies is the owner's reading, not a measurement:
 - Read criterion 3 on a project of 1,000 items (the realistic list, section 6.1) and accept a projection for criterion 5: **both cells pass all five, and Q-0040.6 is the owner's.**
 - Read criterion 3 on the unpaged 10,000-item list, or require criterion 5 to be reconciled: `worker-do` fails, so **Postgres stays the default** by the rule's first line, and `worker-pg` fails the same criterion 3, a finding against the default that goes to the owner under Q-0040 (it is a finding about the unpaged list, not about either engine: paging is needed whichever is chosen).
 
-What the owner has to decide: (a) the reading of criterion 3; (b) whether a projection satisfies criterion 5; (c) if both pass, Q-0040.6. Section 1.1 puts the measured differences between the cells next to each other, as facts for (c), not as a recommendation.
+What the owner had to decide: (a) the reading of criterion 3; (b) whether a projection satisfies criterion 5; (c) if both pass, Q-0040.6. **Decided 2026-10-24: (a) the realistic paged list, so both pass; (b) yes, both pass as projected; (c) Postgres.** Section 1.1 puts the measured differences between the cells next to each other, as facts for (c); section 15 records the decision.
 
 Tags, as in `research/0004`: **[tested]** = ran locally (Apple-silicon macOS laptop, loopback, local workerd from wrangler 4.123.0 or a local Docker Postgres 16); **[tested-cf]** = ran against the Worker deployed on Cloudflare's network; **[derived]** = arithmetic on measured numbers, vendor prices, or reading the code; **[unverified]** = not run.
 
@@ -53,6 +53,8 @@ These are facts about two builds, one laptop, one distant host and n of 200; the
 Reported, not pass or fail: the FR-22 allocation-order check (section 9: on the platform it is a modest effect), Hyperdrive caching on versus off (6.7: caching breaks read-after-write), the placement re-run (6.8, 6.9), the distant-region bench (6.9), the round-trip counts (6.10), and the one real email send (section 10, item 9). Section 12 lists what was not run.
 
 ## 2. What was built
+
+This is what the spike built. The SQLite adapter, the object (`AppDo`), the `durable` adapter set, `DoSql`, the `worker-do` and `native-sqlite` targets and `scripts/spike-0002-do.sh` below are **archived on the tag `spike/0002-worker-do`** and are not in the merged tree (section 15); the rest merges.
 
 | Part | Where | Notes |
 |---|---|---|
@@ -560,14 +562,13 @@ One `t4g.small` (Amazon Linux 2023, arm64, `Project=thrust-spike`, `TTL=3h`, sel
 
 ## 13. Reproduce
 
+On the merged tree (Postgres and engine-agnostic parts):
+
 ```
-scripts/contract.sh native-sqlite main            # 37 of 37 (21 before the auth slice, section 14)
-scripts/contract.sh worker-do main                # 37 of 37 (wrangler dev)
-scripts/contract.sh <target> engine               # 4 tests; native-memory native-sqlite native-pg worker-do worker-cf
-scripts/contract.sh worker-do do                  # 5 tests: Tx control, FTS5 probe, cost probe, migration story
+scripts/contract.sh <target> engine               # 4 tests; native-memory native-pg worker-memory worker-cf
 scripts/contract.sh <target> scale                # 100k items: list, search, create
 THRUST_PG_LATENCY_MS=5 scripts/contract.sh native-pg bench    # the delay proxy (needs uv)
-scripts/mutants.sh                                # 17 mutants KILLED, 2 guard checks REFUSED (set DOCKER_HOST for the Postgres one)
+DOCKER_HOST=unix://$HOME/.orbstack/run/docker.sock scripts/mutants.sh   # DOCKER_HOST only where the socket is not /var/run/docker.sock
 # deployed Postgres cell (needs CLOUDFLARE_ACCOUNT_ID, HYPERDRIVE_API_TOKEN with Hyperdrive Write, THRUST_DEV_VPC_SERVICE_ID,
 # an AWS_PROFILE that reaches the cluster, and wrangler's OAuth login):
 scripts/spike-0002-pg.sh role && scripts/spike-0002-pg.sh migrate && scripts/spike-0002-pg.sh hyperdrive && scripts/spike-0002-pg.sh resources
@@ -575,11 +576,20 @@ scripts/spike-0002-pg.sh deploy --var THRUST_CREATE_RATE_LIMIT:1000000      # al
 THRUST_BASE_URL=https://thrust-spike-pg.<subdomain>.workers.dev THRUST_ADMIN_TOKEN_FILE=target/spike-pg/admin-token sh scripts/stage2-contract.sh main   # also engine, email (sends one mail)
 THRUST_BENCH_SKIP_DELIVERY=1 THRUST_EXPECT_CREATE_LIMIT=1000000 THRUST_BASE_URL=... THRUST_ADMIN_TOKEN=... target/release/bench 200 8   # the skip is for a caching-enabled config
 THRUST_SPIKE_PG_URL=https://thrust-spike-pg.<subdomain>.workers.dev scripts/spike-0002-pg.sh down
-# deployed (needs CLOUDFLARE_ACCOUNT_ID and wrangler's OAuth login):
-scripts/spike-0002-do.sh up
-THRUST_BASE_URL=https://thrust-spike-do.woven-4d9.workers.dev THRUST_ADMIN_TOKEN_FILE=target/spike-do/admin-token \
+```
+
+On the tag `spike/0002-worker-do` (the archived `worker-do` cell and SQLite adapter; `git checkout spike/0002-worker-do`):
+
+```
+scripts/contract.sh native-sqlite main            # 37 of 37 (21 before the auth slice, section 14)
+scripts/contract.sh worker-do main                # 37 of 37 (wrangler dev)
+scripts/contract.sh <target> engine               # also native-sqlite and worker-do
+scripts/contract.sh worker-do do                  # 5 tests: Tx control, FTS5 probe, cost probe, migration story
+scripts/mutants.sh                                # 17 mutants KILLED, 2 guard checks REFUSED (the SQLite rows are on the tag)
+scripts/spike-0002-do.sh up                       # deployed (needs CLOUDFLARE_ACCOUNT_ID and wrangler's OAuth login)
+THRUST_BASE_URL=https://thrust-spike-do.<subdomain>.workers.dev THRUST_ADMIN_TOKEN_FILE=target/spike-do/admin-token \
   THRUST_EXPECT_ADAPTERS=durable sh scripts/stage2-contract.sh main    # also do, engine
-THRUST_SPIKE_DO_URL=https://thrust-spike-do.woven-4d9.workers.dev scripts/spike-0002-do.sh down
+THRUST_SPIKE_DO_URL=https://thrust-spike-do.<subdomain>.workers.dev scripts/spike-0002-do.sh down
 ```
 
 ## 14. The reconcile onto the auth slice (2026-10-24, after the deployed runs and the teardown)
@@ -599,4 +609,14 @@ THRUST_SPIKE_DO_URL=https://thrust-spike-do.woven-4d9.workers.dev scripts/spike-
 - **argon2id inside the one object** (section 10, item 6): at the real cost a sign-in costs the object 26 ms locally and the object serves nothing else while it runs; the contract suite runs the cell with a cheap cost, so its passes say nothing about that.
 
 **Not verified, and affecting the earlier sections:** the SQLite adapter's identity code was never run on a deployed Worker (so the platform's rows-per-request counts of section 8.1 predate it: an authenticated request now also reads one `users` row through the session join [derived]; the local cost probe reads 6.975 and writes 9.025 rows per create, against 7.975 and 9.025 deployed, a difference of one read that was not chased); the `worker-do` and `worker-pg` latency numbers do not include the sign-in path; and the cost projection was not recomputed.
+
+## 15. The decision (owner, 2026-10-24) and what was archived
+
+**Decision.** Criterion 3 is read on the realistic paged list (a 1,000-item project in a database of about 100k items): both cells pass; the unpaged 10,000-item list is a slice artifact that both engines fail, and becomes a pagination requirement of the list endpoint (issue #58). A projected cost satisfies criterion 5: both cells pass as projected. Q-0040.6: **Postgres is the default**; ADR-0040 is `accepted` as Postgres through Hyperdrive (ADR-0040, "Decision — spike 0002", which carries the evidence, the case for `worker-do` as a viable fallback and why it was not chosen). Q-0040, Q-0040.1, Q-0040.6, Q-0006.6 and Q-0083.1 are answered in QUESTIONS.md.
+
+**What Postgres staying the default means for the open work.** The authenticated-TLS item (FR-09, issue #41), the cluster coupling (FR-10, issues #42 and #57) and the CNPG infrastructure (ADR-0094) are **not moot**: they were the costs the Durable Object cell would have removed. The Postgres follow-ups the spike found stand and are recorded, not changed here: the 8-connection per-PR role cannot host two Hyperdrive configs (section 10, item 7); the adapter's error reads `db error` and drops the SQLSTATE and message (item 8); Hyperdrive caching stays off (section 6.7: 4 of the 21 contract tests then in the main pass fail on read-after-write); and `worker-pg` placement must be `us-east-1` (section 6.9: 665 to 738 ms for a create from a distant client without it, 197 to 200 ms with it).
+
+**What was archived, and where.** The tag `spike/0002-worker-do` (an annotated tag on commit 021dc65 of branch `feat/engine-cells`, pushed to `aRustyDev/thrust`) holds the complete `worker-do` and SQLite state with these docs: `crates/thrust-adapters-sqlite` (the adapter, migrations 0001, 0005, 0006, 0007, tests, mutants), `AppDo` and the `durable` adapter set of `thrust-worker`, `DoSql` in `thrust-adapters-cloudflare`, `wrangler.do.toml` and `wrangler.do.stage.toml`, `scripts/spike-0002-do.sh`, the sqlite arm of `thrust-server`, the `native-sqlite` and `worker-do` targets and the `do` pass, and the SQLite rows of `scripts/mutants.sh`. The merged tree keeps what is engine-agnostic or Postgres: the engine pass and the 50-writer test (with the memory adapter's mutants), the search route and the bulk-seed route with Postgres migration 0006, the memory implementation, the FR-22 allocation order, `bench_scale`, `scripts/pg-delay-proxy.py`, `scripts/spike-0002-pg.sh` and the Email probes with their one-send test, this note, the spike record and the ADRs. The repository squash-merges, so the squash message lists the branch's commits, SQLite ones included: they are the archived work.
+
+**What the archived cell's numbers are, and are not.** Its deployed figures (sections 4 to 8, 6.9 and the `worker-do` columns) were taken on 2026-10-23 and 24 **before the auth slice (#76, #78) was merged into the branch**, and its SQLite identity code (section 14) **never ran on a deployed Worker**; it ran only under `wrangler dev`. The `worker-pg` figures were taken on the same pre-merge code and were not re-taken either.
 

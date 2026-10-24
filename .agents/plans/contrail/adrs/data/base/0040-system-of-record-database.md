@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-10-17
 decision-makers: asmith
 consulted: []
@@ -31,7 +31,7 @@ The Workers backend needs one authoritative relational store for ~150 Plane mode
 
 ## Decision Outcome
 
-Decision pending — see Q-0040. Leading hypothesis: **Option 1 (Postgres + Hyperdrive)**, confidence **medium**, because it keeps one SQL dialect across the CF and self-hosted adapter sets, preserves partial unique indexes / advisory-lock-free-but-transactional sequencing / rich grouped queries, and keeps the schema baseline a direct copy of Plane's frozen end-state. Option 4 is the strongest alternative if the spike shows Hyperdrive latency or cost is unacceptable or Q-G4 demands very large multi-tenant scale.
+**Decision (owner, 2026-10-24): Option 1, Postgres through Hyperdrive**, accepted after spike 0002 ("Decision — spike 0002" below; the evidence is `research/0011-database-engine-cells.md`). Option 5, the instance-level Durable Object, was built and measured and stays documented as a viable fallback; its code is archived on the tag `spike/0002-worker-do`. Options 2, 3 and 4 were not built (D1 stays a desk review). The reasons recorded before the spike still hold: Postgres keeps one SQL dialect across the CF and self-hosted adapter sets, preserves partial unique indexes / advisory-lock-free-but-transactional sequencing / rich grouped queries, and keeps the schema baseline a direct copy of Plane's frozen end-state. The spike did not show Hyperdrive latency or cost to be unacceptable (placed in `us-east-1`, a list is 161 ms p95 at c=1 from the origin's region), so the strongest alternative the ADR named, Option 4, is not pursued.
 
 ### Consequences
 
@@ -144,7 +144,7 @@ S1's 50-writer test and the FR-22 allocation order are spike 0002's step 2 (ADR-
 
 ## Update — spike 0002 results, issue #37 (2026-10-24)
 
-**This ADR stays `proposed`. Both cells are measured on the platform, and the spike's decision rule does not decide the engine without two owner readings.** The numbers, their conditions and everything not measured are in `research/0011-database-engine-cells.md`; nothing below accepts an option or answers Q-0040.6.
+**Results as reported before the owner's decision of the same day, which is the next section.** Both cells were measured on the platform, and the spike's decision rule did not decide the engine without two owner readings. The numbers, their conditions and everything not measured are in `research/0011-database-engine-cells.md`.
 
 **The rule applied to the five criteria** (conditions: one laptop in Virginia, in the origin's region, as the main vantage; one run at a time; n=200 per bench cell; `worker-do` on a Durable Object with hint `enam`, `worker-pg` through Hyperdrive and the Workers VPC service to CNPG `thrust-pg-dev`, placed in `us-east-1`):
 
@@ -168,16 +168,41 @@ What the `worker-do` cell cost, as observed: R2 is real (above); the outbox fast
 
 **Not measured:** the 24-hour reconciliation (skipped); any vantage beyond us-west-2; the Rust `migrate` runner and a migration under load; why a concurrent create still costs 1.4 times a sequential one on `worker-pg`; delivery of the email. The deployed numbers were taken before the branch was reconciled onto the auth slice and were not re-taken (`research/0011` sections 12 and 14).
 
+## Decision — spike 0002 (owner, 2026-10-24)
+
+**Postgres is the system of record: this ADR is `accepted` as Option 1, Postgres through Hyperdrive (CNPG in `woven-o11y`, ADR-0094).** Q-0040, Q-0040.1 and Q-0040.6 are answered with it.
+
+**How the exit criteria were read** (the two readings the results above left to the owner):
+1. **Criterion 3 is read on the realistic, paged list** (a 1,000-item project in a database of about 100k items): **both cells pass**. The unpaged 10,000-item list is a slice artifact that both engines fail; it becomes a **pagination requirement of the list endpoint (issue #58)**, not an argument about the engine.
+2. **A projected cost satisfies criterion 5** (the 24-hour run was skipped: there is no real traffic): both cells pass, as projected.
+3. Both cells pass all five criteria, so Q-0040.6 decided, and the owner chose Postgres.
+
+**Evidence, in short** (`research/0011-database-engine-cells.md`; one laptop in the origin's region, n=200 per bench cell, deployed `worker-pg` placed in `us-east-1`): the 50-writer, 10k-create test passes on the deployed cell with no duplicate and no reuse; search through `pg_trgm` answers exactly what Plane's `icontains` answers (400 generated queries); a list of 1,000 items is 161 ms p95 (c=1) and 220 ms (c=8); the Postgres migrations apply as the per-PR role and a failing migration changes nothing; the FR-22 order is confirmed on the platform (ADR-0043 note); the first database request after a fresh deployment is no slower than the next (127 to 209 ms; stage 2 had measured 595 to 615 ms); the projected cost is within the envelope (Cloudflare side $6.38 a month, the Postgres host outside it, ADR-0040 round 27). The Postgres adapter is also the one that the self-hosted set and ADR-0044's hand-written SQL already use, so the two adapter sets keep one dialect.
+
+**`worker-do` stays documented as a viable fallback.** Why it is viable: it removes the tunnel, the Workers VPC service, Hyperdrive, the coupling to the CNPG cluster and the unauthenticated TLS to it; its projected cost is lower in total once the Postgres host is counted (about $6.8 a month on the Cloudflare side at the sizing target, against $6.38 plus the host); and from a distant client it was 40 to 70 ms faster than placed Postgres at p50 (from us-west-2). Why it was not chosen: it **serialises the instance** (8 concurrent 5 MB lists took 1,687 ms on the object against 1,231 ms on Postgres), **including argon2id sign-in**, which blocks the one object for the length of each hash (26 ms locally; 45 ms of CPU at p50 on the platform, derived); **the one object's location is fixed at creation** (hint `enam`); **backup and restore of a Durable Object was not exercised**; a build whose migration fails takes the whole instance down until a good build is deployed; the outbox fast path loses relays when the object is evicted (the cron sweeper recovers them); and it **would reopen ADR-0042, ADR-0044 and ADR-0045** for the SQLite dialect. The code, with its SQLite adapter, tests, targets and docs, is archived on the tag `spike/0002-worker-do` (commit 021dc65 of PR #77) and is not merged; its deployed numbers were taken before the auth slice (#76, #78) was merged, and its SQLite identity code never ran on a deployed Worker.
+
+**What Postgres staying the default means for the open work.** None of it is moot:
+- **FR-09, authenticated TLS to CNPG (issue #41)** still stands: the link is still unauthenticated until it lands (Q-0094.9).
+- **FR-10, the cluster coupling (`/healthz?deep=1`, a `status.woven` probe; issues #42 and #57)** still stands: availability includes `woven-o11y`.
+- **The CNPG infrastructure** (ADR-0094: the cluster, the tunnel, the Workers VPC service, Hyperdrive) is the production path, not a spike resource; the per-PR roles and schemas on the shared dev database stay (issue #57 owns their cleanup).
+- **Pagination** of the list endpoint (issue #58), as above.
+
+**Postgres follow-ups the spike found, which stand** (recorded here, not changed by the spike's PR):
+- A per-PR role is created with `CONNECTION LIMIT 8`, and the Hyperdrive config with an origin connection limit of 8 (its minimum is 5), so **one role cannot host two Hyperdrive configs**: the second got `53300 too many connections` and every request answered 500. A role's limit must cover the sum of its configs' limits plus room for an administrator.
+- **The adapter's error text drops the SQLSTATE and the message**: a server error reads `db error` through `DbError::Backend(e.to_string())`, so a `53300` was found in the database's log, not the Worker's. Follow-up: include `as_db_error()`'s code and message.
+- **Hyperdrive caching stays off** for the system of record: with it on, 4 of the 21 contract tests then in the main pass fail on read-after-write (the activity row never appears; a list is stale after writes).
+- **`worker-pg` placement must be `aws:us-east-1`** (`placement.region`): from us-west-2 a create took 665 to 738 ms without it and 197 to 200 ms with it.
+
 ## Open Questions
 
-* Q-0040 — which option?
-* Q-0040.1 — spike scope and exit criteria ratification. (reopened round 29, FR-04)
+* Q-0040 — which option? (**answered 2026-10-24, owner: Postgres through Hyperdrive.**)
+* Q-0040.1 — spike scope and exit criteria ratification. (reopened round 29, FR-04; **answered**: the criteria ran as written and were read as above.)
 * Q-0040.2 — portable sequence allocation (see ADR-0043). (answered round 29, FR-17)
 * Q-0040.3 — partial unique indexes across adapters. (answered round 29, FR-07)
 * Q-0040.4 — cross-workspace query needs.
 * Q-G3, Q-G4, Q-G5 — data import, scale targets, cost envelope.
 * Q-0040.5 — Which external Postgres provider/region for Hyperdrive, and do we enable Smart Placement so Workers run near it?
-* Q-0040.6 — If both spike 0002 cells pass their exit criteria, which engine? (added round 29, FR-04)
+* Q-0040.6 — If both spike 0002 cells pass their exit criteria, which engine? (added round 29, FR-04; **answered 2026-10-24, owner: Postgres.**)
 
 ## More Information
 
