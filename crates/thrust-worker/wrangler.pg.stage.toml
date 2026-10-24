@@ -1,0 +1,57 @@
+# Cell `worker-pg` DEPLOYED on the Woven account (spike 0002, issue #37, research/0011): the Cloudflare adapter set (Postgres
+# through Hyperdrive, the Workers VPC service and the tunnel to CNPG `thrust-pg-dev`) with real resource names. Every resource
+# is `thrust-spike-pg`-prefixed and is torn down by `scripts/spike-0002-pg.sh down`. This is a TEMPLATE: `scripts/spike-0002-pg.sh deploy`
+# fills in the Hyperdrive config id (and the placement block) into a throwaway copy. No ids and no credentials are in this file;
+# THRUST_ADMIN_TOKEN is a Worker secret, the database password lives only in the Hyperdrive config.
+name = "thrust-spike-pg"
+main = "entry.mjs"
+compatibility_date = "2026-08-01"
+workers_dev = true
+
+# __PLACEMENT__
+
+[build]
+command = "../../scripts/rs worker-build --release . --no-default-features"
+
+[triggers]
+crons = ["* * * * *"]   # outbox sweeper (ADR-0046 / ADR-0072)
+
+[vars]
+THRUST_TEST_ROUTES = "1"            # spike only: exposes /internal/*, /_info and the probes to the contract suite
+THRUST_ADAPTERS = "cloudflare"
+THRUST_OUTBOX_FASTPATH = "on"
+THRUST_CREATE_RATE_LIMIT = "30"     # the main pass wants 30; the engine pass redeploys with `--var THRUST_CREATE_RATE_LIMIT:1000000`
+THRUST_RATE_WINDOW_SECS = "3600"    # research/0004 F3
+
+# Hyperdrive config `thrust-spike-pg` (caching disabled) or `thrust-spike-pg-cached` (caching enabled, the caching measurement):
+# role pr_<n>, schema pr_<n>, on thrust-pg-dev.
+[[hyperdrive]]
+binding = "HYPERDRIVE"
+id = "__HYPERDRIVE_ID__"
+
+[[r2_buckets]]
+binding = "BLOBS"
+bucket_name = "thrust-spike-pg-blobs"
+
+[[queues.producers]]
+binding = "EVENTS"
+queue = "thrust-spike-pg-events"
+
+[[queues.consumers]]
+queue = "thrust-spike-pg-events"
+max_batch_size = 10
+max_batch_timeout = 1
+max_retries = 3
+dead_letter_queue = "thrust-spike-pg-events-dlq"
+
+[[durable_objects.bindings]]
+name = "RATE_LIMITER"
+class_name = "RateLimiterDo"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["RateLimiterDo", "RoomDo"]
+
+# Email Service send binding: the one real send of the run (the account's enabled sender domain and a verified destination).
+[[send_email]]
+name = "EMAIL"
