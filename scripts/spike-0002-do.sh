@@ -8,13 +8,16 @@
 #   scripts/spike-0002-do.sh down                        tear everything down, in the order research/0004 section 10.7 found
 #
 # Credentials: wrangler's OAuth login (workers, queues and R2 are in its scopes; the `thrust-spikes` API token could not do
-# R2). The account is the Woven one; its id is an identifier, not a secret. The admin token is generated into a 0600 file
-# under target/ and sent as a Worker secret over stdin: never on argv, never printed.
+# R2). The account is the Woven one: put its id in CLOUDFLARE_ACCOUNT_ID. It is an identifier, not a secret, but this
+# package is public and redacts it (spikes/README.md, "Redactions"), so it is read from the environment and never written
+# down here. The admin token is generated into a 0600 file under target/ and sent as a Worker secret over stdin: never on
+# argv, never printed.
 #
 # Everything created is appended to target/spike-do/ledger.txt with a UTC time, which is the resource ledger of the run.
 set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-export CLOUDFLARE_ACCOUNT_ID=4d90c2d31b480584f8f878d2f62848ab
+: "${CLOUDFLARE_ACCOUNT_ID:?set CLOUDFLARE_ACCOUNT_ID to the Woven Cloudflare account id (not committed: this package redacts it)}"
+export CLOUDFLARE_ACCOUNT_ID
 export WRANGLER_SEND_METRICS=false
 STATE="$ROOT/target/spike-do"
 LEDGER="$STATE/ledger.txt"
