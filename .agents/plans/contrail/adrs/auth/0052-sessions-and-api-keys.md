@@ -155,6 +155,99 @@ the places it differs from the text above:
 - **Controls.** `scripts/mutants.sh` plants `ignore_revoked` (it now breaks keys as well as sessions), `skip_csrf` and
   `unverified_email`; all seven mutants are killed.
 
+## Update — owner decisions on the #38 review (2026-10-24)
+
+The owner decided the three questions that PR #76 (issue #38) left open: Q-0052.3 here, and Q-0050.8 and Q-0050.9 in
+ADR-0050. The first two change behaviour and are built (bead `plane-byd.11.6`, the PR that carries this note); the third
+is recorded for M6.
+
+**K1 stays plain SHA-256, with no pepper, and has an escape hatch (Q-0052.3, answered).** A key is `thrk_` and 256 random
+bits, so a leaked digest cannot be reversed with a pepper or without one: there is nothing low-entropy to guess back. A
+pepper would add a secret, and a rotation story for it, to every target (the Worker and the native server each need to
+read it) for no gain. Sessions took the same decision on 2026-10-22, and a pepper is for low-entropy secrets, which here
+means passwords, and those are argon2id with a salt of their own. ADR-0141's "peppered hashes" for keys is amended by a
+note there. The hatch exists so that this can change without a flag day: **a pepper can be introduced later and no key is
+invalidated.** What is built:
+
+- `api_keys.hash_version smallint NOT NULL DEFAULT 1`, checked positive by the named constraint
+  `api_keys_hash_version_positive` (migration `0007_api_key_hash_version.sql`; `0006` is left to the SQLite adapter).
+  Every key made before the column existed is version 1. (A CHECK written inline with `ADD COLUMN IF NOT EXISTS` is added
+  again on every run of an idempotent migration, three runs, three checks, which is why it is a statement of its own.)
+- `thrust_core::api_key_hash(version, token)`: version 1 is `hash_token`, the plain SHA-256, and the only scheme that
+  ships. `API_KEY_HASH_CURRENT` and `API_KEY_HASH_SUPPORTED` are the shipped constants, and `CoreConfig` carries them as
+  `api_key_hash_current` and `api_key_hash_supported` (code, not an environment variable: a scheme is a code change, and a
+  stray variable must not be able to change how keys are hashed).
+- `authenticate_api_key` looks the key up under every version the process reads, the current one first, and accepts a row
+  only when it is stored under the version whose digest found it. A key that is found under another version than the
+  current one is moved to it after the response, by the task that stamps `last_used_at` (`Background`), through
+  `Database::rehash_api_key(id, from_version, new_hash, new_version)`: a compare-and-set that does nothing when the row is
+  no longer at `from_version`. A failed move is ignored (the key keeps working and is moved by its next use).
+  `create_api_key` stores the current version.
+- Proved with a stand-in second scheme that exists only under `cfg(test)`: version 2, an HMAC-SHA256 under a fixed public
+  test pepper (checked against RFC 4231). No build that ships has a second scheme or a pepper.
+
+To introduce a pepper (or any second scheme):
+
+1. Generate the pepper (at least 256 random bits) and put it where every target can read it at startup: a Worker secret,
+   an environment variable natively. It is a secret with the durability of the database: if it is lost, every key moved to
+   version 2 stops authenticating. Never commit it.
+2. Add the scheme as a new arm of `api_key_hash` (HMAC-SHA256 keyed by the pepper, bound at startup; the function is pure
+   today), under version 2. Leave version 1 as it is. The `cfg(test)` stand-in is the template for the tests.
+3. Release 1: `API_KEY_HASH_SUPPORTED = [1, 2]` with `API_KEY_HASH_CURRENT` still 1. Every instance can now read both
+   versions and nothing is written under 2.
+4. Release 2, only after every instance runs release 1: `API_KEY_HASH_CURRENT = 2`. New keys are stored at version 2 and
+   existing ones move as they are used, one background write each.
+5. Watch the move with `SELECT hash_version, count(*) FROM api_keys GROUP BY 1`. To see the keys that still matter, add
+   `WHERE revoked_at IS NULL AND (expires_at IS NULL OR expires_at > now())`.
+6. **Idle keys** are never moved: a key that nobody uses keeps its version 1 digest, and keeps working for as long as
+   version 1 is supported.
+7. **Dropping version 1 is a deliberate act that invalidates the keys still at version 1.** Remove 1 from
+   `API_KEY_HASH_SUPPORTED` only when the query shows nothing live is left there, or after telling their owners: those
+   keys then get 403 like any invalid key, and the owner makes a new one.
+
+**Rollback caveat.** Code that no longer knows version 2 cannot authenticate a version 2 key (the digest cannot be
+recomputed, so the key looks unknown) and cannot move it back. After step 4, the safe rollback is to set
+`API_KEY_HASH_CURRENT` back to 1 and keep version 2 in the supported set: the keys found at version 2 then move back to 1
+as they are used. Going back to a build that predates the scheme strands every key that was moved. A pepper is not edited:
+a rotation is a new version (3), with the same steps.
+
+**Q-0050.8: option A is built and is not enforced while the stock frontend exists (answered).** The design is the one
+ADR-0052 describes: `GET auth/csrf`, the double-submit cookie, and `X-CSRFToken` on a cookie-authenticated mutation. But
+the stock Plane React app sends the token only on its auth form posts and on `set-password` (`research/0012` §5), so
+enforcing it on JSON mutations would break that app. The frontend is going to be custom, and enforcement is the target.
+Until then there is a switch.
+
+- `CoreConfig::csrf_enforce`. Core's default is `true`, the rule as this ADR wrote it. The composition roots read
+  `THRUST_CSRF_ENFORCE` (the native server's environment, the Worker's var, declared in `wrangler.toml` and
+  `wrangler.memory.toml`) and default it **off**. The contract targets and Stage 2 run with it **on**
+  (`scripts/contract.sh`, `scripts/worker-dev.sh`, `wrangler.stage2.toml`), and `/_info` (test routes) reports
+  `csrf_enforce`, so that `scripts/contract.sh` can refuse a pass whose server says otherwise.
+- Off changes one thing: a cookie-authenticated mutation is accepted without the token, whatever is sent in its place.
+  The cookie, `GET auth/csrf`, `csrf_ok` and the exemption of a bearer token and an API key are as before, and so is the
+  order of the checks (a dead session is 401 first).
+- **The interim posture, plainly.** While it is off, the only cookie-side protection against a forged cross-site request
+  is `SameSite=Lax`, `HttpOnly`, `Secure` and the `__Host-` prefix. That is the same posture as Plane, whose REST API
+  disables Django's CSRF check (`apps/api/plane/authentication/session.py:10`). `Lax` is a browser behaviour (it does not
+  send the cookie on a cross-site POST, PUT, PATCH or DELETE); it does not help against a request from the same site (a
+  sibling subdomain; the `__Host-` prefix stops one from planting a cookie, not from sending requests) or in a browser
+  that does not implement it.
+- **The flip criterion.** Turn it on when the custom frontend replaces the stock one: when no cookie-authenticated
+  mutation is made by a client that does not send the token. The flip is `THRUST_CSRF_ENFORCE=on` in the Worker's vars
+  and the server's environment, with no code change, and it is an explicit item of PLAN.md's M4 row. The main contract
+  pass runs the enforcing behaviour on every target on every pull request, so it stays tested while the production
+  default is off.
+- Tested in both modes: the core credential matrix has an enforcement dimension, the HTTP credential table runs in the
+  main pass (on) and in the new `csrfoff` pass (off, the target started with no setting, so the pass also shows the roots'
+  own default). Controls, all shown failing: `mutant_csrf_never` (switch ignored when on, killed by the main pass),
+  `mutant_csrf_always` (ignored when off, killed by `csrfoff`), `mutant_skip_csrf` as before, and the guard refusing a
+  server that does not match its pass.
+
+**Q-0050.9 (for M6, not built).** A deployed Worker reaches the OIDC issuer through a Workers VPC service over a tunnel
+that can reach `id.auth.woven`, as for Postgres (ADR-0094); see ADR-0050's note.
+
+**Confirmation, amended.** "CSRF failure on mutation without token" holds while enforcement is on, which is the core's
+default and every contract target's setting; the production default is off until the flip above.
+
 ## Open Questions
 
 * Q-0052 — session and key mechanics.
@@ -162,7 +255,7 @@ the places it differs from the text above:
 * Q-G3 — answered: start fresh, no token migration.
 * Q-0052.1 — Session lifetime/idle timeout policy and "sign out everywhere" requirement.
 * Q-0052.2 — Do API keys need scopes (read-only keys) in v1, or exact Plane parity?
-* Q-0052.3 — Should API-key hashes carry ADR-0141's pepper? Issue #38 stores a plain SHA-256 (256-bit tokens). Open, owner asmith.
+* Q-0052.3 — Should API-key hashes carry ADR-0141's pepper? **Answered (owner, 2026-10-24): no.** Plain SHA-256 of a 256-bit token, with the `hash_version` hatch so a pepper can be added later without invalidating a key (the 2026-10-24 update above).
 
 ## More Information
 

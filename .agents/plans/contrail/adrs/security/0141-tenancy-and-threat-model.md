@@ -35,7 +35,7 @@ breaks it **[user rules]**.
 
 Decision pending — see Q-0141. Leading hypothesis: **Option 1** (confidence: medium). Baseline controls proposed for
 adoption regardless of the final model: tenant predicate enforced in the repository layer *and* verified in tests
-(negative cross-tenant tests per aggregate); API keys stored as peppered hashes with prefix lookup; SSRF guard (deny
+(negative cross-tenant tests per aggregate); API keys stored as peppered hashes with prefix lookup *(amended 2026-10-24: SHA-256 with no pepper, see the update below)*; SSRF guard (deny
 RFC1918/link-local/loopback/metadata, re-resolve after redirect, size/time limits) shared by webhook delivery and link
 crawl; strict CORS/CSRF for cookie sessions; consumers validate message schemas (zod/JSON-schema) and authorise by
 tenant id carried in the message; public-space DTOs are separate types from internal ones.
@@ -84,6 +84,18 @@ Two upstream defects are deliberately **not** reproduced (Q-0033.3, round 27): P
 ## Update — spike 0006 results, round 27 (2026-10-18)
 
 Sanitiser evidence from spike 0006: Plane's current sanitiser (nh3 0.2.18, ammonia 4.0.0) lets **9 of 125** executable test payloads survive (CSS `url(javascript:)`, `expression()`, `behavior:`, `-moz-binding`, `td background`, a callout `data-emoji-url`), all legacy-browser or CSS-injection class and probably not exploitable in evergreen browsers; a hardened Rust config closes all 125 and changes none of 195 editor documents. Not blocked by this: `style="position:fixed…"` (UI redress) and `id`/`name` clobbering remain allowed. The stance on hardening is Q-0012.2.
+
+## Update — Q-0052.3, owner decision (2026-10-24)
+
+The baseline control above, "API keys stored as peppered hashes with prefix lookup", is amended; the text above is left
+as it was written. An API key is stored as the SHA-256 of a token of at least 256 random bits (`thrk_` and 64 hex
+characters), with no pepper, and the lookup is by that digest (a unique index): the prefix is only what is shown again
+in a listing. A pepper is for low-entropy secrets that a leaked hash could be guessed back from, and a key is not one;
+passwords are argon2id with a salt of their own, and session tokens are plain SHA-256 for the same reason as keys
+(2026-10-22). So a leak of the `api_keys` table does not yield a usable key either way, and a pepper would add a secret
+and a rotation story to every target. The decision keeps a way out: `api_keys.hash_version` and the versioned
+`api_key_hash` let a pepper be introduced later without invalidating a key (ADR-0052's 2026-10-24 note has the steps, the
+query that shows progress and the caveats). Everything else in the baseline stands.
 
 ## Open Questions
 

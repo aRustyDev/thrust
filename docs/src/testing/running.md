@@ -41,8 +41,12 @@ profile selects nothing. To reach the excluded integration suites through nextes
 ```
 scripts/contract.sh <target> [pass]
   target: native-memory | native-pg | worker-memory | worker-cf
-  pass:   main | sweeper | panic | blast | bench | worker | cron | bindings
+  pass:   main | sweeper | panic | csrfoff | blast | bench | worker | cron | bindings
 ```
+
+`csrfoff` runs the six `csrf_off_` tests against a target started with no CSRF setting at all, so that it shows the
+composition roots' default (enforcement off, Q-0050.8); every other pass runs with it on, and the script refuses a pass whose
+target's `/_info` says otherwise (exit 5).
 
 The header of `scripts/contract.sh` describes each pass and which targets accept it. Prerequisites: Docker (for
 Postgres on `native-pg` and `worker-cf`), and `wrangler` for `worker-*` targets. The script generates a throwaway

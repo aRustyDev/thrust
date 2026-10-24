@@ -28,7 +28,9 @@ invariant guards tenancy, uniqueness, idempotency or transaction safety. See [Mu
 
 Before running the contract suite, `scripts/contract.sh` reads `/_info` and requires the target to report the
 expected runtime and adapter set (it exits 5 otherwise). Without it, a run "against Postgres" that actually hit the
-memory adapter would pass. Durable.
+memory adapter would pass. Durable. It reads `csrf_enforce` the same way: the main pass needs a server that enforces the
+CSRF token and the `csrfoff` pass one that does not, because a CSRF test run against the wrong setting would pass or fail for
+the wrong reason (`scripts/mutants.sh` starts a server with the other setting and requires exit 5).
 
 ## Count guard
 
