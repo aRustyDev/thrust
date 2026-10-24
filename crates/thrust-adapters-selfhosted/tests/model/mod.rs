@@ -37,6 +37,11 @@
 //!   user is active, with the key's id, owner and last use; `touch_api_key` moves `last_used_at` and nothing else;
 //!   `revoke_api_key` answers `true` for the owner's key (again on a second call, keeping the first time) and `false`
 //!   for another user's key or an unknown id, which it does not touch; `list_api_keys` is the user's keys, oldest first;
+//! * a key carries the version of the scheme that made its digest (Q-0052.3), which `api_key` returns; `rehash_api_key`
+//!   is a compare-and-set on it: for a key that is at `from` it stores the new digest and version and answers `true`
+//!   (from then on the old digest finds nothing, the new one finds the key, and nothing else about the key moved,
+//!   revoked keys included); for a key that is not at `from`, or an unknown id, it answers `false` and changes nothing;
+//!   a digest that another key holds is a `Conflict`, and the key stays as it was;
 //! * `user_by_email` and `user_for_account` return the user, active or not, and nothing for an unknown email or a link
 //!   that was never made; `link_account` of a subject that is linked already changes nothing;
 //! * a pending OIDC login is returned by `take_oidc_login` once, and deleted by it (a second take, a replayed
@@ -166,6 +171,17 @@ enum Op {
     /// `key`: one of the case's two inserted API keys, or (2) a digest that was never inserted.
     KeyLookup { key: usize, when: When },
     KeyTouch { key: usize },
+    /// Look a key up by the digest of scheme `v` (1 to 3) instead of the one it is stored under: found only when `v` is
+    /// the version it is stored at. Never expired (looked up just before its expiry).
+    KeyLookupAs { key: usize, v: u8 },
+    /// `rehash_api_key` of `key` to version `to` (1 to 3), compared against the version it is at (`stale_from: false`)
+    /// or another one (`true`); `key` 2 is an id that was never inserted.
+    KeyRehash { key: usize, stale_from: bool, to: u8 },
+    /// Move key 0 or 1 to the digest the other one holds: a `Conflict`.
+    KeyRehashCollide { key: usize },
+    /// A key is moved to another version, looked up under the old digest (nothing) and the new one (found, new
+    /// version), moved again from a version it is no longer at (refused), touched, and moved back.
+    KeyMigration { key: usize, to: u8 },
     /// `by_owner: false`: another seeded user asks to revoke it.
     KeyRevoke { key: usize, by_owner: bool },
     KeyList { who: usize },
@@ -257,6 +273,10 @@ fn op() -> impl Strategy<Value = Op> {
         1 => (0..3usize).prop_map(|who| Op::RevokeUserSessions { who }),
         2 => (0..3usize, when()).prop_map(|(key, when)| Op::KeyLookup { key, when }),
         1 => (0..3usize).prop_map(|key| Op::KeyTouch { key }),
+        2 => (0..3usize, 1..=3u8).prop_map(|(key, v)| Op::KeyLookupAs { key, v }),
+        3 => (0..3usize, any::<bool>(), 1..=3u8).prop_map(|(key, stale_from, to)| Op::KeyRehash { key, stale_from, to }),
+        1 => (0..2usize).prop_map(|key| Op::KeyRehashCollide { key }),
+        2 => (0..2usize, 2..=3u8).prop_map(|(key, to)| Op::KeyMigration { key, to }),
         1 => (0..3usize, prop::bool::weighted(0.75)).prop_map(|(key, by_owner)| Op::KeyRevoke { key, by_owner }),
         1 => (0..3usize).prop_map(|who| Op::KeyList { who }),
         1 => (0..4usize).prop_map(|who| Op::EmailLookup { who }),
@@ -349,6 +369,18 @@ enum Class {
     KeyExpiredHidden,
     KeyUserInactiveHidden,
     KeyTouched,
+    /// A lookup by the digest of a version the key is not stored at: nothing.
+    KeyOtherVersionHidden,
+    /// `rehash_api_key` of a key at the version it names.
+    KeyRehashed,
+    /// The same for a key that is revoked: it moves, and stays revoked.
+    KeyRehashedWhileRevoked,
+    /// `rehash_api_key` naming a version the key is not at: `false`, nothing changes.
+    KeyRehashStale,
+    /// `rehash_api_key` of an id that was never inserted: `false`.
+    KeyRehashUnknown,
+    /// `rehash_api_key` to a digest another key holds: a `Conflict`, nothing changes.
+    KeyRehashConflict,
     KeyRevoked,
     /// The owner revokes a key that is revoked already: still `true`, first time kept.
     KeyRevokedAgain,
@@ -388,7 +420,7 @@ enum Class {
 }
 
 impl Class {
-    const ALL: [Class; 75] = [
+    const ALL: [Class; 81] = [
         Class::Created,
         Class::ExternalKeyFreed,
         Class::Conflict,
@@ -435,6 +467,12 @@ impl Class {
         Class::KeyExpiredHidden,
         Class::KeyUserInactiveHidden,
         Class::KeyTouched,
+        Class::KeyOtherVersionHidden,
+        Class::KeyRehashed,
+        Class::KeyRehashedWhileRevoked,
+        Class::KeyRehashStale,
+        Class::KeyRehashUnknown,
+        Class::KeyRehashConflict,
         Class::KeyRevoked,
         Class::KeyRevokedAgain,
         Class::KeyRevokeRefused,
@@ -493,6 +531,7 @@ enum Call {
     RevokeUserSessions { user: UserId, at: Timestamp, want: u64 },
     ApiKey { hash: TokenHash, now: Timestamp, want: Option<LiveApiKey> },
     TouchApiKey { id: ApiKeyId, at: Timestamp },
+    RehashApiKey { id: ApiKeyId, from: i16, new_hash: TokenHash, to: i16, want: Rehash },
     RevokeApiKey { user: UserId, id: ApiKeyId, at: Timestamp, want: bool },
     ListApiKeys { user: UserId, want: Vec<ApiKeyInfo> },
     UserByEmail { email: String, want: Option<UserRecord> },
@@ -506,6 +545,15 @@ enum Call {
     ListActivity { ws: WorkspaceId, p: ProjectId, entity: Option<WorkItemId>, want: Vec<Activity> },
 }
 
+/// What `rehash_api_key` must answer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Rehash {
+    /// `Ok`, with whether a row changed.
+    Changed(bool),
+    /// `Err(DbError::Conflict)`.
+    Conflict,
+}
+
 /// The ids of one case's fixture, chosen by the test.
 #[derive(Debug, Clone)]
 struct Fix {
@@ -517,8 +565,10 @@ struct Fix {
     users: [UserId; 7],
     /// The hashes of two seeded sessions and of one that is never inserted.
     tokens: [TokenHash; 3],
-    /// Two API keys that are inserted, and a digest that never is.
+    /// Two API keys that are inserted, and a digest that never is. The digest is the key's version 1 digest.
     keys: [(ApiKeyId, TokenHash); 3],
+    /// The same three keys' digests under versions 2 and 3, for `rehash_api_key` to move them to.
+    moved: [[TokenHash; 2]; 3],
     /// Unique per case: the unique index on `users.email` spans the whole container.
     emails: [String; 3],
     /// The issuer of the case's account links: unique per case, `(provider, sub)` is global.
@@ -544,6 +594,7 @@ impl Fix {
             users: std::array::from_fn(|_| UserId(new_id())),
             tokens: std::array::from_fn(|_| token_hash()),
             keys: std::array::from_fn(|_| (ApiKeyId(new_id()), token_hash())),
+            moved: std::array::from_fn(|_| std::array::from_fn(|_| token_hash())),
             emails: std::array::from_fn(|_| format!("u-{}@example.test", new_id().simple())),
             provider: format!("https://idp-{}.example.test", new_id().simple()),
         }
@@ -588,6 +639,14 @@ impl Fix {
 
     fn user(&self, u: U) -> UserId {
         self.users[u as usize]
+    }
+
+    /// Key `key`'s digest under scheme `version` (1 to 3): what the planner stores it as after a move to that version.
+    fn digest(&self, key: usize, version: i16) -> TokenHash {
+        match version {
+            1 => self.keys[key].1,
+            v => self.moved[key][usize::from(v.unsigned_abs()) - 2],
+        }
     }
 
     /// The three users who have a login: AdminA, MemberA, GuestA. Active, with a stub hash (the adapter never looks
@@ -765,6 +824,7 @@ impl Model {
                     id: fix.keys[i].0,
                     user_id: fix.users[0],
                     token_hash: fix.keys[i].1,
+                    hash_version: 1,
                     prefix: format!("thrk_{i:04}"),
                     label: format!("key {i}"),
                     created_at,
@@ -807,6 +867,41 @@ impl Model {
         let mut rows: Vec<OutboxRow> = self.outbox.iter().filter(|(_, d)| !d).map(|(r, _)| r.clone()).collect();
         rows.sort_by_key(|r| (r.created_at, r.envelope.event_id));
         rows
+    }
+
+    /// One `api_key` lookup of key `key` (2 is a digest that was never inserted), at a time that is `when` against its
+    /// expiry, by the digest it is stored under or (`v`) by its digest under another scheme. The answer the adapter must
+    /// give, and the class of the step.
+    fn key_lookup(&self, key: usize, when: When, v: Option<i16>) -> (TokenHash, Timestamp, Option<LiveApiKey>, Class) {
+        let Some(m) = self.api_keys.get(key) else {
+            return (self.fix.digest(key, v.unwrap_or(1)), tick(), None, Class::KeyUnknown);
+        };
+        let base = m.new.expires_at.unwrap_or(m.new.created_at + TimeDelta::seconds(1_000));
+        let now = match when {
+            When::Before => base - TimeDelta::seconds(1),
+            When::AtExpiry => base,
+            When::After => base + TimeDelta::seconds(1),
+        };
+        let hash = v.map_or(m.new.token_hash, |v| self.fix.digest(key, v));
+        if v.is_some_and(|v| v != m.new.hash_version) {
+            // a digest of another scheme belongs to no row, whatever state the key is in
+            return (hash, now, None, Class::KeyOtherVersionHidden);
+        }
+        let unexpired = m.new.expires_at.is_none_or(|e| e > now);
+        let owner_active = self.active[0];
+        let class = match (m.revoked.is_some(), unexpired, owner_active) {
+            (true, _, _) => Class::KeyRevokedHidden,
+            (false, false, _) => Class::KeyExpiredHidden,
+            (false, true, false) => Class::KeyUserInactiveHidden,
+            (false, true, true) => Class::KeyLive,
+        };
+        let want = (class == Class::KeyLive).then(|| LiveApiKey {
+            id: m.new.id,
+            user_id: m.new.user_id,
+            last_used_at: m.last_used,
+            hash_version: m.new.hash_version,
+        });
+        (hash, now, want, class)
     }
 
     fn plan(&mut self, op: &Op) -> (Vec<Call>, Vec<Class>) {
@@ -930,30 +1025,76 @@ impl Model {
                 calls.push(Call::RevokeUserSessions { user, at, want });
             }
             &Op::KeyLookup { key, when } => {
-                let (hash, now, want, class) = match self.api_keys.get(key) {
-                    None => (self.fix.keys[key].1, tick(), None, Class::KeyUnknown),
-                    Some(m) => {
-                        let base = m.new.expires_at.unwrap_or(m.new.created_at + TimeDelta::seconds(1_000));
-                        let now = match when {
-                            When::Before => base - TimeDelta::seconds(1),
-                            When::AtExpiry => base,
-                            When::After => base + TimeDelta::seconds(1),
-                        };
-                        let unexpired = m.new.expires_at.is_none_or(|e| e > now);
-                        let owner_active = self.active[0];
-                        let class = match (m.revoked.is_some(), unexpired, owner_active) {
-                            (true, _, _) => Class::KeyRevokedHidden,
-                            (false, false, _) => Class::KeyExpiredHidden,
-                            (false, true, false) => Class::KeyUserInactiveHidden,
-                            (false, true, true) => Class::KeyLive,
-                        };
-                        let live = class == Class::KeyLive;
-                        let want = live.then(|| LiveApiKey { id: m.new.id, user_id: m.new.user_id, last_used_at: m.last_used });
-                        (m.new.token_hash, now, want, class)
-                    }
-                };
+                let (hash, now, want, class) = self.key_lookup(key, when, None);
                 classes.push(class);
                 calls.push(Call::ApiKey { hash, now, want });
+            }
+            &Op::KeyLookupAs { key, v } => {
+                let (hash, now, want, class) = self.key_lookup(key, When::Before, Some(i16::from(v)));
+                classes.push(class);
+                calls.push(Call::ApiKey { hash, now, want });
+            }
+            &Op::KeyRehash { key, stale_from, to } => {
+                let to = i16::from(to);
+                let new_hash = self.fix.digest(key, to);
+                let id = self.fix.keys[key].0;
+                match self.api_keys.get_mut(key) {
+                    None => {
+                        classes.push(Class::KeyRehashUnknown);
+                        calls.push(Call::RehashApiKey { id, from: 1, new_hash, to, want: Rehash::Changed(false) });
+                    }
+                    Some(m) => {
+                        let stored = m.new.hash_version;
+                        // 1 -> 2, 2 -> 3, 3 -> 1: never the version it is at
+                        let from = if stale_from { stored % 3 + 1 } else { stored };
+                        if from != stored {
+                            classes.push(Class::KeyRehashStale);
+                            calls.push(Call::RehashApiKey { id, from, new_hash, to, want: Rehash::Changed(false) });
+                        } else {
+                            classes.push(if m.revoked.is_some() { Class::KeyRehashedWhileRevoked } else { Class::KeyRehashed });
+                            m.new.token_hash = new_hash;
+                            m.new.hash_version = to;
+                            calls.push(Call::RehashApiKey { id, from, new_hash, to, want: Rehash::Changed(true) });
+                        }
+                    }
+                }
+            }
+            &Op::KeyRehashCollide { key } => {
+                let other = self.api_keys[1 - key].new.token_hash;
+                let m = &self.api_keys[key];
+                classes.push(Class::KeyRehashConflict);
+                calls.push(Call::RehashApiKey {
+                    id: m.new.id,
+                    from: m.new.hash_version,
+                    new_hash: other,
+                    to: if m.new.hash_version == 1 { 2 } else { 1 },
+                    want: Rehash::Conflict,
+                });
+                // the key is where it was
+                let (hash, now, want, class) = self.key_lookup(key, When::Before, None);
+                classes.push(class);
+                calls.push(Call::ApiKey { hash, now, want });
+            }
+            &Op::KeyMigration { key, to } => {
+                let stored = self.api_keys[key].new.hash_version;
+                let others: Vec<u8> = (1..=3u8).filter(|v| i16::from(*v) != stored).collect();
+                let to = if i16::from(to) == stored { others[0] } else { to };
+                self.plan_all(
+                    &[
+                        Op::KeyRehash { key, stale_from: false, to },
+                        Op::KeyLookupAs { key, v: stored as u8 },
+                        Op::KeyLookupAs { key, v: to },
+                        Op::KeyRehash { key, stale_from: true, to: stored as u8 },
+                        Op::KeyTouch { key },
+                        Op::KeyLookupAs { key, v: to },
+                        Op::KeyRehash { key, stale_from: false, to: stored as u8 },
+                        Op::KeyLookupAs { key, v: stored as u8 },
+                        Op::KeyLookupAs { key, v: to },
+                        Op::KeyList { who: 0 },
+                    ],
+                    &mut calls,
+                    &mut classes,
+                );
             }
             &Op::KeyTouch { key } => {
                 let at = tick();
@@ -1454,6 +1595,16 @@ async fn execute(db: &dyn Database, tx: &mut Option<Box<dyn Tx>>, call: Call, at
             prop_assert_eq!(got, want, "{}: api key", at);
         }
         Call::TouchApiKey { id, at: when } => bounded(at, db.touch_api_key(id, when)).await?,
+        Call::RehashApiKey { id, from, new_hash, to, want } => {
+            let got = tokio::time::timeout(Duration::from_secs(20), db.rehash_api_key(id, from, &new_hash, to))
+                .await
+                .map_err(|_| fail(at, "timed out after 20 s"))?;
+            match (got, want) {
+                (Ok(changed), Rehash::Changed(w)) if changed == w => {}
+                (Err(DbError::Conflict(_)), Rehash::Conflict) => {}
+                (got, want) => return Err(fail(at, format!("rehash api key: got {got:?}, want {want:?}"))),
+            }
+        }
         Call::RevokeApiKey { user, id, at: when, want } => {
             let got = bounded(at, db.revoke_api_key(user, id, when)).await?;
             prop_assert_eq!(got, want, "{}: revoke api key (true = the caller's key)", at);

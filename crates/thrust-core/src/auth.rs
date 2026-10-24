@@ -8,7 +8,7 @@ use argon2::{Algorithm, Argon2, Params, PasswordHasher as _, PasswordVerifier as
 use thrust_contracts::*;
 use thrust_ports::*;
 
-use crate::{App, CoreError};
+use crate::{App, CoreConfig, CoreError};
 
 /// Argon2id cost parameters.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -209,7 +209,8 @@ pub(crate) async fn seed_identities(app: &App, f: &SeedFixture) -> Result<(), Co
             .insert_api_key(&NewApiKey {
                 id,
                 user_id: k.user_id,
-                token_hash: crate::hash_token(&k.token),
+                token_hash: api_key_digest(app, &k.token)?,
+                hash_version: app.cfg.api_key_hash_current,
                 prefix: k.token.chars().take(API_KEY_PREFIX_LEN).collect(),
                 label: k.label.clone(),
                 created_at: now,
@@ -307,34 +308,106 @@ pub async fn authenticate_request(app: &App, c: &Credentials<'_>) -> Result<Auth
 
 // --- API keys (ADR-0052 K1) ---------------------------------------------------------------------------------------
 
+/// The digest scheme that ships: plain SHA-256 of the token (`hash_token`), no pepper. An API key is at least 256 random
+/// bits, so a leaked digest cannot be reversed with or without a pepper, and a pepper would add a secret and a rotation
+/// story to every target for no gain; sessions took the same decision on 2026-10-22 (Q-0052.3, owner decision
+/// 2026-10-24).
+pub const API_KEY_HASH_V1: i16 = 1;
+/// The scheme new keys are stored under, and the one a key is moved to when it is next used.
+pub const API_KEY_HASH_CURRENT: i16 = API_KEY_HASH_V1;
+/// The schemes a key is looked up under. Version 1 only: the hatch below is documented, not used.
+pub const API_KEY_HASH_SUPPORTED: &[i16] = &[API_KEY_HASH_V1];
+
+/// The digest an API key `token` is stored and looked up under in scheme `version`, or `None` for a version this
+/// build has no scheme for (so a row of that version can never match).
+///
+/// This is the escape hatch of Q-0052.3: to introduce a pepper (or any other scheme) later WITHOUT invalidating a
+/// key, add an arm here, keep version 1, and move `API_KEY_HASH_CURRENT` and `API_KEY_HASH_SUPPORTED`; keys then move
+/// to the new scheme as they are used. The steps, the query that shows progress and the caveats are in ADR-0052's
+/// 2026-10-24 note. Tests prove the mechanism with a stand-in scheme that exists only under `cfg(test)`.
+pub fn api_key_hash(version: i16, token: &str) -> Option<TokenHash> {
+    match version {
+        API_KEY_HASH_V1 => Some(crate::hash_token(token)),
+        #[cfg(test)]
+        key_hash_tests::STAND_IN_VERSION => Some(key_hash_tests::stand_in_digest(token)),
+        _ => None,
+    }
+}
+
+/// The versions an `X-Api-Key` is looked up under, in the order they are tried: the current one first (a key that is at
+/// the current version, which is nearly every key, costs one lookup), then the other supported ones in ascending order,
+/// each once. The current one is always included, listed or not: a key this build writes must be one it can read.
+fn api_key_lookup_versions(cfg: &CoreConfig) -> Vec<i16> {
+    let mut rest: Vec<i16> =
+        cfg.api_key_hash_supported.iter().copied().filter(|v| *v != cfg.api_key_hash_current).collect();
+    rest.sort_unstable();
+    rest.dedup();
+    let mut all = vec![cfg.api_key_hash_current];
+    all.extend(rest);
+    all
+}
+
+/// The digest of `token` in the scheme new keys are stored under.
+fn api_key_digest(app: &App, token: &str) -> Result<TokenHash, CoreError> {
+    let v = app.cfg.api_key_hash_current;
+    api_key_hash(v, token).ok_or_else(|| CoreError::Internal(format!("no API key hash scheme for version {v}")))
+}
+
 /// What every key starts with, so one can be recognised in a log or a leaked file (and found by a secret scanner).
 const API_KEY_MARKER: &str = "thrk_";
 /// The marker and the first four characters of the secret: all that is ever shown again.
 const API_KEY_PREFIX_LEN: usize = 9;
 const MAX_LABEL_LEN: usize = 100;
 
+/// The key behind `key`, looked up under every version this process reads, with the version it was found under. A row is
+/// a match only when it is stored under the version whose digest found it: a digest belongs to the scheme that made it.
+async fn find_api_key(app: &App, key: &str, now: Timestamp) -> Result<Option<(LiveApiKey, i16)>, CoreError> {
+    for version in api_key_lookup_versions(&app.cfg) {
+        let Some(digest) = api_key_hash(version, key) else { continue };
+        if let Some(live) = app.ports.db.api_key(&digest, now).await? {
+            if live.hash_version == version {
+                return Ok(Some((live, version)));
+            }
+        }
+    }
+    Ok(None)
+}
+
 /// An `X-Api-Key` to its user, or [`CoreError::InvalidApiKey`]: the key must exist, not be revoked, not be expired, and
 /// belong to an active user, and the lookup does not say which of those failed. A successful use stamps `last_used_at`
 /// through [`Background`], at most once per `session_touch_after_secs`, so a busy key costs one write an hour and a
 /// request never waits for it.
+///
+/// The hash hatch (Q-0052.3): the key is looked up under every version the process reads, and one that is stored under
+/// another version than the current one is moved to the current one by the same background task, as a compare-and-set
+/// on the version it was found at. A failed move changes nothing the caller sees and is retried by the next use; a key
+/// that is not used is never moved, and keeps working while its version is read.
 async fn authenticate_api_key(app: &App, key: &str) -> Result<(Principal, ApiKeyId), CoreError> {
     let now = app.ports.clock.now();
-    let live = app.ports.db.api_key(&crate::hash_token(key), now).await?.ok_or(CoreError::InvalidApiKey)?;
+    let (live, version) = find_api_key(app, key, now).await?.ok_or(CoreError::InvalidApiKey)?;
     let stale = live
         .last_used_at
         .is_none_or(|t| now - t >= thrust_contracts::chrono::TimeDelta::seconds(app.cfg.session_touch_after_secs));
-    if stale {
+    let current = app.cfg.api_key_hash_current;
+    // the digest is made here, in the request, so the background task holds a digest and not the key
+    let move_to = if version == current { None } else { api_key_hash(current, key).map(|digest| (digest, current)) };
+    if stale || move_to.is_some() {
         let db = app.ports.db.clone();
         app.ports.background.spawn(Box::pin(async move {
             // bookkeeping: a failed write changes nothing the caller sees
-            let _ = db.touch_api_key(live.id, now).await;
+            if stale {
+                let _ = db.touch_api_key(live.id, now).await;
+            }
+            if let Some((digest, to)) = move_to {
+                let _ = db.rehash_api_key(live.id, version, &digest, to).await;
+            }
         }));
     }
     Ok((Principal { user_id: live.user_id }, live.id))
 }
 
-/// Make a key for `who`: `thrk_` and 256 random bits (hex), stored as its SHA-256 only, so the token is in the answer
-/// to this call and nowhere else. The expiry, when there is one, must be in the future.
+/// Make a key for `who`: `thrk_` and 256 random bits (hex), stored as its digest only (under the current version, 1 =
+/// plain SHA-256 unless the hatch is in use), so the token is in the answer to this call and nowhere else. The expiry, when there is one, must be in the future.
 pub async fn create_api_key(app: &App, who: &Principal, req: CreateApiKeyRequest) -> Result<CreatedApiKey, CoreError> {
     let label = req.label.unwrap_or_default();
     if label.chars().count() > MAX_LABEL_LEN {
@@ -352,7 +425,8 @@ pub async fn create_api_key(app: &App, who: &Principal, req: CreateApiKeyRequest
         .insert_api_key(&NewApiKey {
             id,
             user_id: who.user_id,
-            token_hash: crate::hash_token(&token),
+            token_hash: api_key_digest(app, &token)?,
+            hash_version: app.cfg.api_key_hash_current,
             prefix: prefix.clone(),
             label: label.clone(),
             created_at: now,
@@ -375,6 +449,9 @@ pub async fn revoke_api_key(app: &App, who: &Principal, id: ApiKeyId) -> Result<
         Err(CoreError::NotFound)
     }
 }
+
+#[cfg(test)]
+mod key_hash_tests;
 
 // --- OIDC login (ADR-0050) --------------------------------------------------------------------------------------
 
