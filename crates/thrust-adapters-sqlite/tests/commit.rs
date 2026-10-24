@@ -37,6 +37,7 @@ fn rig(inner: Arc<dyn Sql>) -> (SqliteDatabase, Arc<FaultSql>, Scope) {
             projects: vec![SeedProject { id: project, workspace_id: ws, name: "p".into() }],
             memberships: vec![SeedMembership { project_id: project, workspace_id: ws, user_id: user, role: Role::Member }],
             sessions: vec![],
+            ..SeedFixture::default()
         },
     ))
     .unwrap();

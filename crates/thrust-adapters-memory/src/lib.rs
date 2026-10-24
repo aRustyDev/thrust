@@ -17,6 +17,12 @@ use thrust_ports::*;
 struct DbState {
     /// The `sessions` table: keyed by the token hash, no workspace (a directory table).
     sessions: HashMap<TokenHash, SessionRow>,
+    /// The identity tables (migration 0005), all directory tables like `sessions`.
+    users: HashMap<UserId, UserRecord>,
+    /// (provider, provider_account_id) -> the user it is linked to.
+    accounts: HashMap<(String, String), UserId>,
+    api_keys: Vec<ApiKeyRow>,
+    oidc_logins: HashMap<TokenHash, OidcLogin>,
     /// Slug -> workspace (the `workspaces.slug` unique index).
     workspaces: HashMap<WorkspaceSlug, WorkspaceId>,
     workspace_members: HashSet<(WorkspaceId, UserId)>,
@@ -38,6 +44,18 @@ struct SessionRow {
     expires_at: Timestamp,
     revoked_at: Option<Timestamp>,
     last_seen_at: Timestamp,
+}
+
+struct ApiKeyRow {
+    key: NewApiKey,
+    revoked_at: Option<Timestamp>,
+    last_used_at: Option<Timestamp>,
+}
+
+impl DbState {
+    fn user_is_active(&self, user: UserId) -> bool {
+        self.users.get(&user).is_some_and(|u| u.is_active)
+    }
 }
 
 impl DbState {
@@ -108,7 +126,7 @@ impl Database for MemoryDatabase {
         let revoked = |r: &SessionRow| r.revoked_at.is_some();
         Ok(s.sessions
             .get(hash)
-            .filter(|r| !revoked(r) && r.expires_at > now)
+            .filter(|r| !revoked(r) && r.expires_at > now && s.user_is_active(r.user_id))
             .map(|r| LiveSession { user_id: r.user_id, last_seen_at: r.last_seen_at }))
     }
 
@@ -133,6 +151,179 @@ impl Database for MemoryDatabase {
             revoked_at: None,
             last_seen_at: new.created_at,
         });
+        Ok(())
+    }
+
+    async fn revoke_user_sessions(&self, user: UserId, at: Timestamp) -> Result<u64, DbError> {
+        let mut s = self.state.lock().unwrap();
+        let mut n = 0;
+        for r in s.sessions.values_mut().filter(|r| r.user_id == user && r.revoked_at.is_none()) {
+            r.revoked_at = Some(at);
+            n += 1;
+        }
+        Ok(n)
+    }
+
+    async fn user_by_email(&self, email: &str) -> Result<Option<UserRecord>, DbError> {
+        let s = self.state.lock().unwrap();
+        Ok(s.users.values().find(|u| u.email.as_deref() == Some(email)).cloned())
+    }
+
+    async fn user_for_account(&self, provider: &str, provider_account_id: &str) -> Result<Option<UserRecord>, DbError> {
+        let s = self.state.lock().unwrap();
+        let key = (provider.to_string(), provider_account_id.to_string());
+        Ok(s.accounts.get(&key).and_then(|u| s.users.get(u)).cloned())
+    }
+
+    async fn link_account(&self, a: &NewAccount) -> Result<(), DbError> {
+        let mut s = self.state.lock().unwrap();
+        if !s.users.contains_key(&a.user_id) {
+            // the foreign key of Postgres
+            return Err(DbError::Backend("account of a user that does not exist".into()));
+        }
+        s.accounts
+            .entry((a.provider.clone(), a.provider_account_id.clone()))
+            .or_insert(a.user_id);
+        Ok(())
+    }
+
+    async fn insert_api_key(&self, k: &NewApiKey) -> Result<(), DbError> {
+        let mut s = self.state.lock().unwrap();
+        if !s.users.contains_key(&k.user_id) {
+            return Err(DbError::Backend("api key of a user that does not exist".into()));
+        }
+        if k.hash_version <= 0 {
+            // the CHECK on `api_keys.hash_version`
+            return Err(DbError::Backend("api key hash_version must be positive".into()));
+        }
+        if s.api_keys.iter().any(|r| r.key.token_hash == k.token_hash || r.key.id == k.id) {
+            return Err(DbError::Conflict("api key already exists".into()));
+        }
+        s.api_keys.push(ApiKeyRow { key: k.clone(), revoked_at: None, last_used_at: None });
+        Ok(())
+    }
+
+    async fn api_key(&self, hash: &TokenHash, now: Timestamp) -> Result<Option<LiveApiKey>, DbError> {
+        let s = self.state.lock().unwrap();
+        // MUTANT (control run only): a revoked key still resolves. The revocation test must catch it.
+        #[cfg(feature = "mutant_ignore_revoked")]
+        let revoked = |_: &ApiKeyRow| false;
+        #[cfg(not(feature = "mutant_ignore_revoked"))]
+        let revoked = |r: &ApiKeyRow| r.revoked_at.is_some();
+        Ok(s.api_keys
+            .iter()
+            .find(|r| r.key.token_hash == *hash)
+            .filter(|r| !revoked(r) && r.key.expires_at.is_none_or(|e| e > now) && s.user_is_active(r.key.user_id))
+            .map(|r| LiveApiKey {
+                id: r.key.id,
+                user_id: r.key.user_id,
+                last_used_at: r.last_used_at,
+                hash_version: r.key.hash_version,
+            }))
+    }
+
+    async fn touch_api_key(&self, id: ApiKeyId, at: Timestamp) -> Result<(), DbError> {
+        let mut s = self.state.lock().unwrap();
+        if let Some(r) = s.api_keys.iter_mut().find(|r| r.key.id == id) {
+            r.last_used_at = Some(at);
+        }
+        Ok(())
+    }
+
+    async fn rehash_api_key(
+        &self,
+        id: ApiKeyId,
+        from_version: i16,
+        new_hash: &TokenHash,
+        new_version: i16,
+    ) -> Result<bool, DbError> {
+        let mut s = self.state.lock().unwrap();
+        // `UPDATE ... WHERE id = $1 AND hash_version = $2`: a row that does not match is not touched, so neither
+        // constraint below is looked at for it
+        let Some(at) = s.api_keys.iter().position(|r| r.key.id == id && r.key.hash_version == from_version) else {
+            return Ok(false);
+        };
+        if new_version <= 0 {
+            // the CHECK on `api_keys.hash_version`
+            return Err(DbError::Backend("api key hash_version must be positive".into()));
+        }
+        // the UNIQUE index on `token_hash`
+        if s.api_keys.iter().any(|r| r.key.id != id && r.key.token_hash == *new_hash) {
+            return Err(DbError::Conflict("api key already exists".into()));
+        }
+        let row = &mut s.api_keys[at];
+        row.key.token_hash = *new_hash;
+        row.key.hash_version = new_version;
+        Ok(true)
+    }
+
+    async fn list_api_keys(&self, user: UserId) -> Result<Vec<ApiKeyInfo>, DbError> {
+        let s = self.state.lock().unwrap();
+        let mut v: Vec<ApiKeyInfo> = s
+            .api_keys
+            .iter()
+            .filter(|r| r.key.user_id == user)
+            .map(|r| ApiKeyInfo {
+                id: r.key.id,
+                prefix: r.key.prefix.clone(),
+                label: r.key.label.clone(),
+                created_at: r.key.created_at,
+                expires_at: r.key.expires_at,
+                revoked_at: r.revoked_at,
+                last_used_at: r.last_used_at,
+            })
+            .collect();
+        v.sort_by_key(|k| (k.created_at, k.id));
+        Ok(v)
+    }
+
+    async fn revoke_api_key(&self, user: UserId, id: ApiKeyId, at: Timestamp) -> Result<bool, DbError> {
+        let mut s = self.state.lock().unwrap();
+        match s.api_keys.iter_mut().find(|r| r.key.id == id && r.key.user_id == user) {
+            Some(r) => {
+                r.revoked_at.get_or_insert(at);
+                Ok(true)
+            }
+            None => Ok(false),
+        }
+    }
+
+    async fn insert_oidc_login(&self, l: &NewOidcLogin) -> Result<(), DbError> {
+        let mut s = self.state.lock().unwrap();
+        s.oidc_logins.retain(|_, v| v.expires_at > l.created_at);
+        if s.oidc_logins.contains_key(&l.state_hash) {
+            return Err(DbError::Conflict("oidc login already exists".into()));
+        }
+        s.oidc_logins.insert(
+            l.state_hash,
+            OidcLogin { nonce: l.nonce.clone(), code_verifier: l.code_verifier.clone(), expires_at: l.expires_at },
+        );
+        Ok(())
+    }
+
+    async fn take_oidc_login(&self, state: &TokenHash) -> Result<Option<OidcLogin>, DbError> {
+        Ok(self.state.lock().unwrap().oidc_logins.remove(state))
+    }
+
+    async fn set_user_active(&self, _sys: &SystemScope, user: UserId, active: bool) -> Result<bool, DbError> {
+        match self.state.lock().unwrap().users.get_mut(&user) {
+            Some(u) => {
+                u.is_active = active;
+                Ok(true)
+            }
+            None => Ok(false),
+        }
+    }
+
+    async fn seed_users(&self, _sys: &SystemScope, users: &[UserRecord]) -> Result<(), DbError> {
+        let mut s = self.state.lock().unwrap();
+        for u in users {
+            // the UNIQUE index on `users.email`
+            if u.email.is_some() && s.users.values().any(|o| o.id != u.id && o.email == u.email) {
+                return Err(DbError::Conflict("users_email_key".into()));
+            }
+            s.users.insert(u.id, u.clone());
+        }
         Ok(())
     }
 
@@ -293,6 +484,10 @@ impl Database for MemoryDatabase {
 
     async fn seed(&self, _sys: &SystemScope, f: &SeedFixture) -> Result<(), DbError> {
         let mut s = self.state.lock().unwrap();
+        for u in &f.users {
+            // a user that exists already (with an email, say) is left as it is
+            s.users.entry(*u).or_insert(UserRecord { id: *u, email: None, password_hash: None, is_active: true });
+        }
         for w in &f.workspaces {
             s.workspaces.insert(w.slug.clone(), w.id);
         }

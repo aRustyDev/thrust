@@ -4,7 +4,7 @@ Status: **live** · Gate: the `contract` jobs in CI (one per cell), or `scripts/
 
 ## Catches
 
-X1, X2, X3, X4, X5, X8, X9, X20 (P); X13 (B, panic containment); X16 (its own guards). This is the backbone of the
+X1, X2, X3, X4, X5, X8, X9, X20 (P); X13 (B, panic containment); X16 (its own guards); X21 to X24 (P, identity). This is the backbone of the
 repo's evidence: **one** suite of HTTP assertions, run unchanged against every adapter set and both runtimes.
 
 ## Use when / Not when
@@ -26,18 +26,30 @@ which target it runs on. Fixtures are created through `POST /internal/seed`, the
   caller × project × route against the access table, and the generator coverage control. Its
   `sweeper_model_outbox_delivers_what_was_swept_and_nothing_more` runs the same model in the `sweeper` pass, with
   the outbox fast path off.
+- `crates/thrust-contract-tests/tests/auth/mod.rs` and `tests/auth/matrix.rs`: identity, in the `main` pass (issue #38):
+  sign-in and the cookie attributes, the CSRF double-submit rule, sign-out and sign-out-everywhere, deactivation, API
+  keys (`X-Api-Key`, shown once, revoked, expired, inactive owner) and one OIDC login, plus the generated matrix of every
+  credential kind × state × method × CSRF-token position against a status table (126 requests). The CSRF rule is a
+  switch (`THRUST_CSRF_ENFORCE`, Q-0050.8): the main pass runs with it on, and the `csrfoff` pass (the six `csrf_off_`
+  tests, in these two files) runs the same table with it off, a cookie mutation with no token, and the identity routes
+  with the cookie alone. The OIDC tests
+  (`oidc_` prefix) run against a mock identity provider that the suite serves on `127.0.0.1`
+  (`crates/thrust-contract-tests/src/mock_idp.rs`, RS256 signed with the `rsa` crate, so it shares no code with the
+  `openidconnect` crate that verifies its tokens); a deployed Worker cannot reach it, so `scripts/stage2-contract.sh`
+  skips them (31 tests there).
 - `crates/thrust-contract-tests/tests/worker_only.rs`: Durable Object, cron and binding tests for `worker-*` targets.
 
 A pass is selected by **test-name prefix** in `scripts/contract.sh`, not by nextest: `sweeper_`, `panic_`,
-`blast_`, `worker_room_`, `worker_cron_`, `worker_bindings_`, `stage2_cron_real_trigger_`. Unprefixed tests in
+`blast_`, `csrf_off_`, `worker_room_`, `worker_cron_`, `worker_bindings_`, `stage2_cron_real_trigger_`. Unprefixed tests in
 `contract.rs` form the `main` pass. A new test therefore picks its pass by its name.
 
 ## Run
 
 ```sh
-scripts/contract.sh native-memory           # main pass, 21 tests [verified 2026-10-23: 21 passed]
+scripts/contract.sh native-memory           # main pass, 37 tests [verified 2026-10-24: 37 passed]
+scripts/contract.sh native-memory csrfoff   # CSRF enforcement off, 6 tests [verified 2026-10-24: 6 passed]
 scripts/contract.sh worker-cf bindings      # [unverified: not run]
-scripts/contract-all.sh                     # the 16-cell matrix, serially [unverified: not run]
+scripts/contract-all.sh                     # the 18-cell matrix, serially [verified 2026-10-24: 18 of 18 PASS]
 ```
 
 See [Running](../running.md#the-contract-suite) for targets, passes and prerequisites.
@@ -49,14 +61,18 @@ Spike 0002 (issue #37) adds two targets and three passes that are **not** in `co
 - `do` (`worker-do` only, `worker_only.rs`, tests named `worker_do_`): the `Tx` mapping control on the real `SqlStorage`, the FTS5 trigram probe, the billed-rows probe and the migration story. 5 tests.
 - `scale` (a binary, like `bench`): list, search and create latency with 100,000 items seeded through `/internal/seed-work-items`.
 
-`scripts/stage2-contract.sh` runs `main`, `do` and `engine` against a deployed `worker-do` with `THRUST_EXPECT_ADAPTERS=durable`. Numbers and conditions: `research/0011-database-engine-cells.md`.
+`scripts/stage2-contract.sh` runs `main` (31 tests: the six `oidc_` tests need the mock provider on 127.0.0.1, which a deployed Worker cannot reach), `csrfoff`, `do` and `engine` against a deployed `worker-do` with `THRUST_EXPECT_ADAPTERS=durable`, `main` and `engine` against a deployed `worker-pg`, and an `email` pass that sends one real message each time it is run. Numbers and conditions: `research/0011-database-engine-cells.md`.
+
+[verified 2026-10-24, after the auth slice was merged into the branch, local only: `native-sqlite` main 37 of 37, csrfoff 6 of 6, engine 4 of 4; `worker-do` main 37 of 37, csrfoff 6 of 6, do 5 of 5, engine 4 of 4. The deployed runs of the cells (21 tests then) were taken before the merge and never ran the auth tests.]
 
 ## Required controls
 
 [Paired allow/deny](../evidence-and-controls.md#paired-allow-deny) in every test,
 [target guard](../evidence-and-controls.md#target-guard) and [count guard](../evidence-and-controls.md#count-guard)
 in every run, and a [planted mutant](../evidence-and-controls.md#planted-mutant) for each security or uniqueness
-invariant. Adding a test means updating the pass's `EXPECT_*` count. The generated tests add
+invariant. Adding a test means updating the pass's `EXPECT_*` count. The CSRF switch has its own [target guard](../evidence-and-controls.md#target-guard):
+`scripts/contract.sh` refuses a main pass whose server does not enforce the token and a `csrfoff` pass whose server does, and
+`scripts/mutants.sh` shows both refusals. The generated tests add
 [generator coverage](../evidence-and-controls.md#generator-coverage) and fail when they sent no requests; a
 counterexample is saved in `crates/thrust-contract-tests/tests/model/mod.proptest-regressions`, committed
 ([Rule 7](../rules.md)). `scripts/mutants.sh` sets `PROPTEST_DISABLE_FAILURE_PERSISTENCE`, so the counterexamples

@@ -26,6 +26,7 @@ thrust-adapters-cloudflare = { workspace = true }
 thrust-adapters-postgres = { workspace = true }
 # The SQLite adapter WITHOUT its `native` feature: rusqlite never reaches the Worker (scripts/check-deps.sh checks it).
 thrust-adapters-sqlite = { workspace = true }
+thrust-adapters-oidc = { workspace = true }
 thrust-adapters-memory = { workspace = true, optional = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

@@ -11,11 +11,12 @@ use std::sync::Arc;
 
 use axum::body::Body;
 use thrust_adapters_cloudflare::*;
+use thrust_adapters_oidc::{OidcConfig, OpenIdProvider};
 use thrust_adapters_postgres::PgDatabase;
 use thrust_api::{ApiConfig, InternalErrorDetail};
 use thrust_contracts::Envelope;
-use thrust_core::{ActivityConsumer, App, CoreConfig, Ports, SystemScope};
-use thrust_ports::{Background, Clock, EventConsumer, IdGen};
+use thrust_core::{ActivityConsumer, Argon2Params, Argon2idHasher, App, CoreConfig, Ports, SystemScope};
+use thrust_ports::{Background, Clock, EventConsumer, IdGen, OidcProvider, PasswordHasher, Rng};
 use http_body_util::BodyExt;
 use tower_service::Service;
 use worker::worker_sys::web_sys;
@@ -55,12 +56,39 @@ fn num<T: std::str::FromStr>(env: &Env, name: &str, default: T) -> T {
     text(env, name).and_then(|v| v.parse().ok()).unwrap_or(default)
 }
 
-fn core_config(env: &Env) -> CoreConfig {
+pub(crate) fn core_config(env: &Env) -> CoreConfig {
+    let defaults = CoreConfig::default();
     CoreConfig {
         create_rate_limit: num(env, "THRUST_CREATE_RATE_LIMIT", 1000),
         rate_window_secs: num(env, "THRUST_RATE_WINDOW_SECS", 60),
         outbox_fastpath: flag(env, "THRUST_OUTBOX_FASTPATH", true),
-        ..CoreConfig::default()
+        sign_in_rate_limit: num(env, "THRUST_SIGNIN_RATE_LIMIT", defaults.sign_in_rate_limit),
+        // OFF unless a var says on, as in the native server (Q-0050.8): the stock frontend sends the CSRF token only on its
+        // auth form posts. The flip is when the custom frontend replaces it.
+        csrf_enforce: flag(env, "THRUST_CSRF_ENFORCE", false),
+        // OWASP's minimum unless a var says otherwise (a test target sets a cheap cost)
+        argon2: Argon2Params {
+            m_cost_kib: num(env, "THRUST_ARGON2_M_KIB", defaults.argon2.m_cost_kib),
+            t_cost: num(env, "THRUST_ARGON2_T", defaults.argon2.t_cost),
+            p_cost: num(env, "THRUST_ARGON2_P", defaults.argon2.p_cost),
+        },
+        ..defaults
+    }
+}
+
+/// The OIDC provider, when the issuer, client id and redirect URI are all configured (the client secret is a Worker
+/// secret). Some of the three and not all is an error, not a Worker that quietly has no login.
+pub(crate) fn oidc_provider(env: &Env) -> Result<Option<Arc<dyn OidcProvider>>> {
+    let get = |n: &str| text(env, n).filter(|v| !v.is_empty());
+    match (get("THRUST_OIDC_ISSUER"), get("THRUST_OIDC_CLIENT_ID"), get("THRUST_OIDC_REDIRECT_URI")) {
+        (Some(issuer), Some(client_id), Some(redirect_uri)) => {
+            let cfg = OidcConfig { issuer, client_id, client_secret: get("THRUST_OIDC_CLIENT_SECRET"), redirect_uri };
+            Ok(Some(Arc::new(OpenIdProvider::new(cfg, Arc::new(WorkerFetch)))))
+        }
+        (None, None, None) => Ok(None),
+        _ => Err(Error::RustError(
+            "THRUST_OIDC_ISSUER, THRUST_OIDC_CLIENT_ID and THRUST_OIDC_REDIRECT_URI must be set together".into(),
+        )),
     }
 }
 
@@ -85,6 +113,11 @@ fn build_app(env: &Env, background: Arc<dyn Background>) -> Result<App> {
     let clock: Arc<dyn Clock> = Arc::new(JsClock);
     let ids: Arc<dyn IdGen> = Arc::new(JsIdGen);
 
+    let cfg = core_config(env);
+    let rng: Arc<dyn Rng> = Arc::new(JsRng);
+    let hasher: Arc<dyn PasswordHasher> = Arc::new(Argon2idHasher::new(cfg.argon2));
+    let oidc = oidc_provider(env)?;
+
     let app = match adapters.as_str() {
         "cloudflare" => {
             let connector = HyperdriveConnector::new(env.hyperdrive("HYPERDRIVE")?);
@@ -98,13 +131,16 @@ fn build_app(env: &Env, background: Arc<dyn Background>) -> Result<App> {
                     clock,
                     ids,
                     background,
+                    rng,
+                    hasher,
+                    oidc,
                 },
-                core_config(env),
+                cfg,
                 SystemScope::mint(),
             )
         }
         #[cfg(feature = "memory")]
-        "memory" => memory::app(clock, ids, background, core_config(env)),
+        "memory" => memory::app(clock, ids, background, rng, hasher, oidc, cfg),
         "durable" => {
             return Err(Error::RustError("the durable set is built inside AppDo; the Worker only forwards to it".into()))
         }

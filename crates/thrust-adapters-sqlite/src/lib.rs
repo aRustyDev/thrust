@@ -150,6 +150,12 @@ fn like_pattern(query: &str) -> String {
     p
 }
 
+const USER_COLS: &str = "id, email, password_hash, is_active";
+
+fn user_record(r: &Row) -> Result<UserRecord, SqlError> {
+    Ok(UserRecord { id: UserId(r.uuid(0)?), email: r.opt_text(1)?, password_hash: r.opt_text(2)?, is_active: r.bool(3)? })
+}
+
 fn activity(r: &Row) -> Result<Activity, SqlError> {
     Ok(Activity {
         id: ActivityId(r.uuid(0)?),
@@ -192,9 +198,11 @@ impl Database for SqliteDatabase {
     }
 
     async fn session(&self, hash: &TokenHash, now: Timestamp) -> Result<Option<LiveSession>, DbError> {
+        // The user must exist and be active (ADR-0052 Tests): a deactivated user's sessions stop working at once, and a
+        // session whose user has no row fails closed.
         let rows = self.q(
-            "SELECT user_id, last_seen_at FROM sessions \
-             WHERE token_hash = ? AND revoked_at IS NULL AND expires_at > ?",
+            "SELECT s.user_id, s.last_seen_at FROM sessions s JOIN users u ON u.id = s.user_id \
+             WHERE s.token_hash = ? AND s.revoked_at IS NULL AND s.expires_at > ? AND u.is_active = 1",
             params![&hash.0[..], now],
         )?;
         rows.first()
@@ -220,6 +228,176 @@ impl Database for SqliteDatabase {
              VALUES (?, ?, ?, ?, ?) ON CONFLICT (token_hash) DO NOTHING",
             params![&s.token_hash.0[..], s.user_id.0, s.created_at, s.expires_at, s.created_at],
         )
+    }
+
+    async fn revoke_user_sessions(&self, user: UserId, at: Timestamp) -> Result<u64, DbError> {
+        // `RETURNING` and count: no call of the `Sql` trait reports rows changed (see sql.rs).
+        let rows = self.q(
+            "UPDATE sessions SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL RETURNING token_hash",
+            params![at, user.0],
+        )?;
+        Ok(rows.len() as u64)
+    }
+
+    async fn user_by_email(&self, email: &str) -> Result<Option<UserRecord>, DbError> {
+        let rows = self.q(&format!("SELECT {USER_COLS} FROM users WHERE email = ?"), params![email])?;
+        rows.first().map(user_record).transpose().map_err(db_err)
+    }
+
+    async fn user_for_account(
+        &self,
+        provider: &str,
+        provider_account_id: &str,
+    ) -> Result<Option<UserRecord>, DbError> {
+        let rows = self.q(
+            "SELECT u.id, u.email, u.password_hash, u.is_active FROM accounts a JOIN users u ON u.id = a.user_id \
+             WHERE a.provider = ? AND a.provider_account_id = ?",
+            params![provider, provider_account_id],
+        )?;
+        rows.first().map(user_record).transpose().map_err(db_err)
+    }
+
+    async fn link_account(&self, a: &NewAccount) -> Result<(), DbError> {
+        self.x(
+            "INSERT INTO accounts (provider, provider_account_id, user_id, email, created_at) VALUES (?, ?, ?, ?, ?) \
+             ON CONFLICT (provider, provider_account_id) DO NOTHING",
+            params![a.provider.as_str(), a.provider_account_id.as_str(), a.user_id.0, a.email.as_deref(), a.created_at],
+        )
+    }
+
+    async fn insert_api_key(&self, k: &NewApiKey) -> Result<(), DbError> {
+        self.x(
+            "INSERT INTO api_keys (id, user_id, token_hash, hash_version, prefix, label, created_at, expires_at) \
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            params![
+                k.id.0,
+                k.user_id.0,
+                &k.token_hash.0[..],
+                i64::from(k.hash_version),
+                k.prefix.as_str(),
+                k.label.as_str(),
+                k.created_at,
+                k.expires_at
+            ],
+        )
+    }
+
+    async fn api_key(&self, hash: &TokenHash, now: Timestamp) -> Result<Option<LiveApiKey>, DbError> {
+        let rows = self.q(
+            "SELECT k.id, k.user_id, k.last_used_at, k.hash_version FROM api_keys k JOIN users u ON u.id = k.user_id \
+             WHERE k.token_hash = ? AND k.revoked_at IS NULL AND (k.expires_at IS NULL OR k.expires_at > ?) \
+             AND u.is_active = 1",
+            params![&hash.0[..], now],
+        )?;
+        rows.first()
+            .map(|r| {
+                Ok(LiveApiKey {
+                    id: ApiKeyId(r.uuid(0)?),
+                    user_id: UserId(r.uuid(1)?),
+                    last_used_at: r.opt_timestamp(2)?,
+                    hash_version: i16::try_from(r.int(3)?).map_err(|e| SqlError::decode(format!("hash_version: {e}")))?,
+                })
+            })
+            .transpose()
+            .map_err(db_err)
+    }
+
+    async fn touch_api_key(&self, id: ApiKeyId, at: Timestamp) -> Result<(), DbError> {
+        self.x("UPDATE api_keys SET last_used_at = ? WHERE id = ?", params![at, id.0])
+    }
+
+    async fn rehash_api_key(
+        &self,
+        id: ApiKeyId,
+        from_version: i16,
+        new_hash: &TokenHash,
+        new_version: i16,
+    ) -> Result<bool, DbError> {
+        // The compare-and-set is the WHERE clause: a row that is not (or no longer) at `from_version` is not touched, and
+        // none of its other constraints is looked at. Owner, expiry, revocation and last use stay.
+        let rows = self.q(
+            "UPDATE api_keys SET token_hash = ?, hash_version = ? WHERE id = ? AND hash_version = ? RETURNING id",
+            params![&new_hash.0[..], i64::from(new_version), id.0, i64::from(from_version)],
+        )?;
+        Ok(!rows.is_empty())
+    }
+
+    async fn list_api_keys(&self, user: UserId) -> Result<Vec<ApiKeyInfo>, DbError> {
+        let rows = self.q(
+            "SELECT id, prefix, label, created_at, expires_at, revoked_at, last_used_at FROM api_keys \
+             WHERE user_id = ? ORDER BY created_at, id",
+            params![user.0],
+        )?;
+        rows.iter()
+            .map(|r| {
+                Ok(ApiKeyInfo {
+                    id: ApiKeyId(r.uuid(0)?),
+                    prefix: r.text(1)?.to_string(),
+                    label: r.text(2)?.to_string(),
+                    created_at: r.timestamp(3)?,
+                    expires_at: r.opt_timestamp(4)?,
+                    revoked_at: r.opt_timestamp(5)?,
+                    last_used_at: r.opt_timestamp(6)?,
+                })
+            })
+            .collect::<Result<_, SqlError>>()
+            .map_err(db_err)
+    }
+
+    async fn revoke_api_key(&self, user: UserId, id: ApiKeyId, at: Timestamp) -> Result<bool, DbError> {
+        // COALESCE keeps the first revocation time, so a second revoke changes nothing but still says "yours".
+        let rows = self.q(
+            "UPDATE api_keys SET revoked_at = COALESCE(revoked_at, ?) WHERE id = ? AND user_id = ? RETURNING id",
+            params![at, id.0, user.0],
+        )?;
+        Ok(!rows.is_empty())
+    }
+
+    async fn insert_oidc_login(&self, l: &NewOidcLogin) -> Result<(), DbError> {
+        self.x("DELETE FROM oidc_logins WHERE expires_at <= ?", params![l.created_at])?;
+        self.x(
+            "INSERT INTO oidc_logins (state_hash, nonce, code_verifier, created_at, expires_at) VALUES (?, ?, ?, ?, ?)",
+            params![&l.state_hash.0[..], l.nonce.as_str(), l.code_verifier.as_str(), l.created_at, l.expires_at],
+        )
+    }
+
+    async fn take_oidc_login(&self, state: &TokenHash) -> Result<Option<OidcLogin>, DbError> {
+        // One statement: the row is returned to exactly one caller, and gone for the next.
+        let rows = self.q(
+            "DELETE FROM oidc_logins WHERE state_hash = ? RETURNING nonce, code_verifier, expires_at",
+            params![&state.0[..]],
+        )?;
+        rows.first()
+            .map(|r| {
+                Ok(OidcLogin {
+                    nonce: r.text(0)?.to_string(),
+                    code_verifier: r.text(1)?.to_string(),
+                    expires_at: r.timestamp(2)?,
+                })
+            })
+            .transpose()
+            .map_err(db_err)
+    }
+
+    async fn set_user_active(&self, _sys: &SystemScope, user: UserId, active: bool) -> Result<bool, DbError> {
+        let rows = self.q("UPDATE users SET is_active = ? WHERE id = ? RETURNING id", params![active, user.0])?;
+        Ok(!rows.is_empty())
+    }
+
+    async fn seed_users(&self, _sys: &SystemScope, users: &[UserRecord]) -> Result<(), DbError> {
+        self.sql
+            .atomically(&mut |x| {
+                for u in users {
+                    x.execute(
+                        "INSERT INTO users (id, email, password_hash, is_active) VALUES (?, ?, ?, ?) \
+                         ON CONFLICT (id) DO UPDATE SET email = excluded.email, password_hash = excluded.password_hash, \
+                           is_active = excluded.is_active",
+                        params![u.id.0, u.email.as_deref(), u.password_hash.as_deref(), u.is_active],
+                    )?;
+                }
+                Ok(())
+            })
+            .map_err(db_err)
     }
 
     async fn begin(&self, _scope: &Scope) -> Result<Box<dyn Tx>, DbError> {
@@ -409,6 +587,10 @@ impl Database for SqliteDatabase {
         // `Tx` only exposes slice operations, so the fixture goes through the SQL surface directly, in one transaction.
         self.sql
             .atomically(&mut |x| {
+                // users that exist by id only; a row that is there already (with an email, say) is left as it is
+                for u in &f.users {
+                    x.execute("INSERT INTO users (id) VALUES (?) ON CONFLICT (id) DO NOTHING", params![u.0])?;
+                }
                 for w in &f.workspaces {
                     x.execute(
                         "INSERT INTO workspaces (id, slug) VALUES (?, ?) ON CONFLICT (id) DO UPDATE SET slug = excluded.slug",

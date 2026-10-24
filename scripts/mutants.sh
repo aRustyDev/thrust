@@ -35,16 +35,24 @@ kill_check() {
   fi
 }
 
-for pair in \
-  "ignore-tenant:mutant_ignore_tenant" \
-  "duplicate-sequence-number:mutant_dup_sequence" \
-  "no-activity-dedupe:mutant_no_activity_dedupe" \
-  "ignore-revoked:mutant_ignore_revoked"; do
-  name="${pair%%:*}"
-  feature="${pair##*:}"
-  THRUST_SERVER_FEATURES="$feature" THRUST_LOGDIR="$OUT/$name" "$ROOT/scripts/contract.sh" native-memory main >"$OUT/$name.out" 2>&1
+# name:feature:pass. The CSRF switch (Q-0050.8) has a mutant for each direction: ignored when on (the main pass, which runs
+# with enforcement on, must fail) and ignored when off (the `csrfoff` pass must fail).
+for triple in \
+  "ignore-tenant:mutant_ignore_tenant:main" \
+  "duplicate-sequence-number:mutant_dup_sequence:main" \
+  "no-activity-dedupe:mutant_no_activity_dedupe:main" \
+  "ignore-revoked:mutant_ignore_revoked:main" \
+  "skip-csrf:mutant_skip_csrf:main" \
+  "csrf-switch-ignored-when-on:mutant_csrf_never:main" \
+  "csrf-switch-ignored-when-off:mutant_csrf_always:csrfoff" \
+  "unverified-email:mutant_unverified_email:main"; do
+  name="${triple%%:*}"
+  rest="${triple#*:}"
+  feature="${rest%%:*}"
+  pass="${rest##*:}"
+  THRUST_SERVER_FEATURES="$feature" THRUST_LOGDIR="$OUT/$name" "$ROOT/scripts/contract.sh" native-memory "$pass" >"$OUT/$name.out" 2>&1
   status=$?
-  kill_check "native-memory + $name" "$status" "$OUT/$name/native-memory-main.test.log"
+  kill_check "native-memory $pass + $name" "$status" "$OUT/$name/native-memory-$pass.test.log"
 done
 
 # The engine pass (spike 0002, `contract.sh <target> engine`): the 50-writer, 10k-create test against the duplicate-sequence
@@ -83,6 +91,25 @@ for spec in \
   status=$?
   kill_check "sqlite adapter + $name" "$status" "$OUT/sqlite-$name.out"
 done
+# The vacuity guard of the CSRF switch (Q-0050.8): a pass that is started against a server with the OTHER enforcement
+# setting must be refused before a test runs (exit 5, and the message says csrf_enforce). Not a build mutant: the server
+# is the real one, started with THRUST_SERVER_CSRF_ENFORCE, the knob only this script sets.
+guard_check() {
+  # $1 label, $2 exit status, $3 output file
+  label="$1"; status="$2"; out="$3"
+  if [ "$status" -eq 5 ] && grep -q 'VACUITY GUARD: csrf_enforce' "$out"; then
+    printf '%-34s REFUSED  (exit 5, no test ran)\n' "$label" >>"$SUMMARY"
+  else
+    printf '%-34s NOT REFUSED (exit=%s)\n' "$label" "$status" >>"$SUMMARY"
+    SURVIVED=1
+  fi
+}
+THRUST_SERVER_CSRF_ENFORCE=off THRUST_LOGDIR="$OUT/guard-main-vs-off" "$ROOT/scripts/contract.sh" native-memory main >"$OUT/guard-main-vs-off.out" 2>&1
+status=$?
+guard_check "guard: main pass, server off" "$status" "$OUT/guard-main-vs-off.out"
+THRUST_SERVER_CSRF_ENFORCE=on THRUST_LOGDIR="$OUT/guard-off-vs-on" "$ROOT/scripts/contract.sh" native-memory csrfoff >"$OUT/guard-off-vs-on.out" 2>&1
+status=$?
+guard_check "guard: csrfoff pass, server on" "$status" "$OUT/guard-off-vs-on.out"
 
 # Postgres adapter mutant: recycle a connection that is still inside an abandoned transaction.
 "$ROOT/scripts/rs" cargo test --manifest-path "$ROOT/Cargo.toml" -p thrust-adapters-selfhosted \

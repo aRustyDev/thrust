@@ -63,6 +63,7 @@ fn both() -> Both {
         projects: vec![SeedProject { id: project, workspace_id: ws, name: "p".into() }],
         memberships: vec![SeedMembership { project_id: project, workspace_id: ws, user_id: user, role: Role::Member }],
         sessions: vec![],
+        ..SeedFixture::default()
     };
     let sys = SystemScope::mint();
     block_on(sqlite.seed(&sys, &fixture)).unwrap();
@@ -176,6 +177,7 @@ fn the_index_is_what_answers_a_long_query() {
         projects: vec![SeedProject { id: project, workspace_id: ws, name: "p".into() }],
         memberships: vec![],
         sessions: vec![],
+        ..SeedFixture::default()
     }))
     .unwrap();
     block_on(broken.seed_work_items(&sys, ws, project, &rows(&[("needle in a haystack".to_string(), None)], 500))).unwrap();

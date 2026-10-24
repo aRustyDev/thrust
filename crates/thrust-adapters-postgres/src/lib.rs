@@ -27,14 +27,18 @@ pub const MIGRATION_0001: &str = include_str!("../migrations/0001_init.sql");
 pub const MIGRATION_0002: &str = include_str!("../migrations/0002_sequence_tenant_key.sql");
 pub const MIGRATION_0003: &str = include_str!("../migrations/0003_workspaces.sql");
 pub const MIGRATION_0004: &str = include_str!("../migrations/0004_sessions.sql");
+pub const MIGRATION_0005: &str = include_str!("../migrations/0005_identity.sql");
 pub const MIGRATION_0006: &str = include_str!("../migrations/0006_search.sql");
+pub const MIGRATION_0007: &str = include_str!("../migrations/0007_api_key_hash_version.sql");
 
 pub async fn migrate(client: &Client) -> Result<(), tokio_postgres::Error> {
     client.batch_execute(MIGRATION_0001).await?;
     client.batch_execute(MIGRATION_0002).await?;
     client.batch_execute(MIGRATION_0003).await?;
     client.batch_execute(MIGRATION_0004).await?;
-    client.batch_execute(MIGRATION_0006).await
+    client.batch_execute(MIGRATION_0005).await?;
+    client.batch_execute(MIGRATION_0006).await?;
+    client.batch_execute(MIGRATION_0007).await
 }
 
 pub trait ClientHandle: Send {
@@ -89,6 +93,8 @@ pg_type!(
     Uuid => Type::UUID,
     i64 => Type::INT8,
     i32 => Type::INT4,
+    // `api_keys.hash_version` is a smallint
+    i16 => Type::INT2,
     bool => Type::BOOL,
     String => Type::TEXT,
     Timestamp => Type::TIMESTAMPTZ,
@@ -204,6 +210,17 @@ fn like_pattern(query: &str) -> String {
     p
 }
 
+const USER_COLS: &str = "id, email, password_hash, is_active";
+
+fn user_record(r: &Row) -> UserRecord {
+    UserRecord {
+        id: UserId(r.get("id")),
+        email: r.get("email"),
+        password_hash: r.get("password_hash"),
+        is_active: r.get("is_active"),
+    }
+}
+
 fn activity(r: &Row) -> Activity {
     Activity {
         id: ActivityId(r.get("id")),
@@ -254,8 +271,8 @@ impl Database for PgDatabase {
         let c = self.conn().await?;
         let row = Pg(c.client())
             .query_opt(
-                "SELECT user_id, last_seen_at FROM sessions \
-                 WHERE token_hash = $1 AND revoked_at IS NULL AND expires_at > $2",
+                "SELECT s.user_id, s.last_seen_at FROM sessions s JOIN users u ON u.id = s.user_id \
+                 WHERE s.token_hash = $1 AND s.revoked_at IS NULL AND s.expires_at > $2 AND u.is_active",
                 &[&&hash.0[..], &now],
             )
             .await
@@ -295,6 +312,230 @@ impl Database for PgDatabase {
             .await
             .map_err(db_err)?;
         Ok(())
+    }
+
+    async fn revoke_user_sessions(&self, user: UserId, at: Timestamp) -> Result<u64, DbError> {
+        let c = self.conn().await?;
+        Pg(c.client())
+            .execute(
+                "UPDATE sessions SET revoked_at = $2 WHERE user_id = $1 AND revoked_at IS NULL",
+                &[&user.0, &at],
+            )
+            .await
+            .map_err(db_err)
+    }
+
+    async fn user_by_email(&self, email: &str) -> Result<Option<UserRecord>, DbError> {
+        let c = self.conn().await?;
+        let row = Pg(c.client())
+            .query_opt(&format!("SELECT {USER_COLS} FROM users WHERE email = $1"), &[&email])
+            .await
+            .map_err(db_err)?;
+        Ok(row.as_ref().map(user_record))
+    }
+
+    async fn user_for_account(
+        &self,
+        provider: &str,
+        provider_account_id: &str,
+    ) -> Result<Option<UserRecord>, DbError> {
+        let c = self.conn().await?;
+        let row = Pg(c.client())
+            .query_opt(
+                "SELECT u.id, u.email, u.password_hash, u.is_active FROM accounts a JOIN users u ON u.id = a.user_id \
+                 WHERE a.provider = $1 AND a.provider_account_id = $2",
+                &[&provider, &provider_account_id],
+            )
+            .await
+            .map_err(db_err)?;
+        Ok(row.as_ref().map(user_record))
+    }
+
+    async fn link_account(&self, a: &NewAccount) -> Result<(), DbError> {
+        let c = self.conn().await?;
+        Pg(c.client())
+            .execute(
+                "INSERT INTO accounts (provider, provider_account_id, user_id, email, created_at) \
+                 VALUES ($1, $2, $3, $4, $5) ON CONFLICT (provider, provider_account_id) DO NOTHING",
+                &[&a.provider.as_str(), &a.provider_account_id.as_str(), &a.user_id.0, &a.email.as_deref(), &a.created_at],
+            )
+            .await
+            .map_err(db_err)?;
+        Ok(())
+    }
+
+    async fn insert_api_key(&self, k: &NewApiKey) -> Result<(), DbError> {
+        let c = self.conn().await?;
+        Pg(c.client())
+            .execute(
+                "INSERT INTO api_keys (id, user_id, token_hash, hash_version, prefix, label, created_at, expires_at) \
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+                &[
+                    &k.id.0,
+                    &k.user_id.0,
+                    &&k.token_hash.0[..],
+                    &k.hash_version,
+                    &k.prefix.as_str(),
+                    &k.label.as_str(),
+                    &k.created_at,
+                    &k.expires_at,
+                ],
+            )
+            .await
+            .map_err(db_err)?;
+        Ok(())
+    }
+
+    async fn api_key(&self, hash: &TokenHash, now: Timestamp) -> Result<Option<LiveApiKey>, DbError> {
+        let c = self.conn().await?;
+        let row = Pg(c.client())
+            .query_opt(
+                "SELECT k.id, k.user_id, k.last_used_at, k.hash_version FROM api_keys k JOIN users u ON u.id = k.user_id \
+                 WHERE k.token_hash = $1 AND k.revoked_at IS NULL AND (k.expires_at IS NULL OR k.expires_at > $2) \
+                 AND u.is_active",
+                &[&&hash.0[..], &now],
+            )
+            .await
+            .map_err(db_err)?;
+        Ok(row.map(|r| LiveApiKey {
+            id: ApiKeyId(r.get("id")),
+            user_id: UserId(r.get("user_id")),
+            last_used_at: r.get("last_used_at"),
+            hash_version: r.get("hash_version"),
+        }))
+    }
+
+    async fn touch_api_key(&self, id: ApiKeyId, at: Timestamp) -> Result<(), DbError> {
+        let c = self.conn().await?;
+        Pg(c.client())
+            .execute("UPDATE api_keys SET last_used_at = $2 WHERE id = $1", &[&id.0, &at])
+            .await
+            .map_err(db_err)?;
+        Ok(())
+    }
+
+    async fn rehash_api_key(
+        &self,
+        id: ApiKeyId,
+        from_version: i16,
+        new_hash: &TokenHash,
+        new_version: i16,
+    ) -> Result<bool, DbError> {
+        let c = self.conn().await?;
+        // The compare-and-set is the WHERE clause: a row that is not (or no longer) at `from_version` is not touched,
+        // and neither of its other constraints is looked at. Owner, expiry, revocation and last use stay.
+        let n = Pg(c.client())
+            .execute(
+                "UPDATE api_keys SET token_hash = $3, hash_version = $4 WHERE id = $1 AND hash_version = $2",
+                &[&id.0, &from_version, &&new_hash.0[..], &new_version],
+            )
+            .await
+            .map_err(db_err)?;
+        Ok(n == 1)
+    }
+
+    async fn list_api_keys(&self, user: UserId) -> Result<Vec<ApiKeyInfo>, DbError> {
+        let c = self.conn().await?;
+        let rows = Pg(c.client())
+            .query(
+                "SELECT id, prefix, label, created_at, expires_at, revoked_at, last_used_at FROM api_keys \
+                 WHERE user_id = $1 ORDER BY created_at, id",
+                &[&user.0],
+            )
+            .await
+            .map_err(db_err)?;
+        Ok(rows
+            .iter()
+            .map(|r| ApiKeyInfo {
+                id: ApiKeyId(r.get("id")),
+                prefix: r.get("prefix"),
+                label: r.get("label"),
+                created_at: r.get("created_at"),
+                expires_at: r.get("expires_at"),
+                revoked_at: r.get("revoked_at"),
+                last_used_at: r.get("last_used_at"),
+            })
+            .collect())
+    }
+
+    async fn revoke_api_key(&self, user: UserId, id: ApiKeyId, at: Timestamp) -> Result<bool, DbError> {
+        let c = self.conn().await?;
+        // COALESCE keeps the first revocation time, so a second revoke changes nothing but still says "yours".
+        let n = Pg(c.client())
+            .execute(
+                "UPDATE api_keys SET revoked_at = COALESCE(revoked_at, $3) WHERE id = $1 AND user_id = $2",
+                &[&id.0, &user.0, &at],
+            )
+            .await
+            .map_err(db_err)?;
+        Ok(n == 1)
+    }
+
+    async fn insert_oidc_login(&self, l: &NewOidcLogin) -> Result<(), DbError> {
+        let c = self.conn().await?;
+        let pg = Pg(c.client());
+        pg.execute("DELETE FROM oidc_logins WHERE expires_at <= $1", &[&l.created_at]).await.map_err(db_err)?;
+        pg.execute(
+            "INSERT INTO oidc_logins (state_hash, nonce, code_verifier, created_at, expires_at) \
+             VALUES ($1, $2, $3, $4, $5)",
+            &[&&l.state_hash.0[..], &l.nonce.as_str(), &l.code_verifier.as_str(), &l.created_at, &l.expires_at],
+        )
+        .await
+        .map_err(db_err)?;
+        Ok(())
+    }
+
+    async fn take_oidc_login(&self, state: &TokenHash) -> Result<Option<OidcLogin>, DbError> {
+        let c = self.conn().await?;
+        // One statement: the row is returned to exactly one caller, and gone for the next.
+        let row = Pg(c.client())
+            .query_opt(
+                "DELETE FROM oidc_logins WHERE state_hash = $1 RETURNING nonce, code_verifier, expires_at",
+                &[&&state.0[..]],
+            )
+            .await
+            .map_err(db_err)?;
+        Ok(row.map(|r| OidcLogin {
+            nonce: r.get("nonce"),
+            code_verifier: r.get("code_verifier"),
+            expires_at: r.get("expires_at"),
+        }))
+    }
+
+    async fn set_user_active(&self, _sys: &SystemScope, user: UserId, active: bool) -> Result<bool, DbError> {
+        let c = self.conn().await?;
+        let n = Pg(c.client())
+            .execute("UPDATE users SET is_active = $2 WHERE id = $1", &[&user.0, &active])
+            .await
+            .map_err(db_err)?;
+        Ok(n == 1)
+    }
+
+    async fn seed_users(&self, _sys: &SystemScope, users: &[UserRecord]) -> Result<(), DbError> {
+        let c = self.connector.checkout(true).await?;
+        let cl = Pg(c.client());
+        cl.batch_execute("BEGIN").await.map_err(db_err)?;
+        let res: Result<(), DbError> = async {
+            for u in users {
+                cl.execute(
+                    "INSERT INTO users (id, email, password_hash, is_active) VALUES ($1, $2, $3, $4) \
+                     ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email, password_hash = EXCLUDED.password_hash, \
+                       is_active = EXCLUDED.is_active",
+                    &[&u.id.0, &u.email.as_deref(), &u.password_hash.as_deref(), &u.is_active],
+                )
+                .await
+                .map_err(db_err)?;
+            }
+            Ok(())
+        }
+        .await;
+        match res {
+            Ok(()) => cl.batch_execute("COMMIT").await.map_err(db_err),
+            Err(e) => {
+                let _ = cl.batch_execute("ROLLBACK").await;
+                Err(e)
+            }
+        }
     }
 
     async fn begin(&self, _scope: &Scope) -> Result<Box<dyn Tx>, DbError> {
@@ -500,6 +741,12 @@ impl Database for PgDatabase {
         let cl = Pg(c.client());
         cl.batch_execute("BEGIN").await.map_err(db_err)?;
         let res: Result<(), DbError> = async {
+            // users that exist by id only; a row that is there already (with an email, say) is left as it is
+            for u in &f.users {
+                cl.execute("INSERT INTO users (id) VALUES ($1) ON CONFLICT (id) DO NOTHING", &[&u.0])
+                    .await
+                    .map_err(db_err)?;
+            }
             for w in &f.workspaces {
                 cl.execute(
                     "INSERT INTO workspaces (id, slug) VALUES ($1, $2) ON CONFLICT (id) DO UPDATE SET slug = EXCLUDED.slug",

@@ -6,12 +6,17 @@
 #   THRUST_ADMIN_TOKEN_FILE=<0600 file holding the Worker's THRUST_ADMIN_TOKEN> \
 #     scripts/stage2-contract.sh [main|worker|bindings|cron|sweeper|panic]
 #
-# main      21 tests: the portable contract (the deployed Worker must have THRUST_CREATE_RATE_LIMIT=30)
+# main      31 tests: the portable contract minus the 6 `oidc_` tests (they need the mock IdP on 127.0.0.1, which a
+#           deployed Worker cannot reach) (the deployed Worker must have THRUST_CREATE_RATE_LIMIT=30, and a cheap
+#           argon2id cost, THRUST_ARGON2_M_KIB=64 THRUST_ARGON2_T=1 THRUST_ARGON2_P=1, or every fixture seeds six
+#           passwords at the real cost)
 # worker     1 test : Durable Object WebSocket hibernation + SQLite
 # bindings   6 tests: one real operation per binding (rate limit, secrets store, email, service, workflow)
 # cron       1 test : needs the Worker deployed with THRUST_OUTBOX_FASTPATH=off
 # sweeper    2 tests: needs THRUST_OUTBOX_FASTPATH=off
 # panic      1 test : alone, against a Worker nobody else is using (a panic resets the isolate)
+# csrfoff    6 tests: needs the Worker deployed with THRUST_CSRF_ENFORCE=off (Q-0050.8, the production default while the
+#            stock frontend is in use). Every other pass needs it ON, which wrangler.stage2.toml sets; /_info is checked
 # engine     the engine pass (spike 0002, `contract.sh <target> engine`): the 50-writer test and the search tests.
 #            Needs a Worker deployed with a very high THRUST_CREATE_RATE_LIMIT (the 50-writer test makes ~10k creates).
 # do         5 tests: the object's own checks: the Tx-mapping control, the SQLite capabilities, the cost and migration probes (cell worker-do only)
@@ -39,16 +44,23 @@ mkdir -p "$LOGDIR"
 EXPECT_ADAPTERS="${THRUST_EXPECT_ADAPTERS:-cloudflare}"
 case "$EXPECT_ADAPTERS" in durable) LOG="$LOGDIR/worker-do-$PASS" ;; *) LOG="$LOGDIR/worker-cf-$PASS" ;; esac
 
+# CSRF enforcement (Q-0050.8): every pass needs a Worker that enforces the token, except `csrfoff`, which needs one that does
+# not. The deployed Worker says which it is; a pass against the other kind proves nothing, so it is refused.
+case "$PASS" in csrfoff) WANT_CSRF=false ;; *) WANT_CSRF=true ;; esac
+
 # Vacuity guard: the deployed Worker must say it is the Cloudflare adapter set, on the Worker target.
 INFO="$(curl -fsS --max-time 30 -H "x-admin-token: $THRUST_ADMIN_TOKEN" "$BASE/_info" 2>/dev/null || true)"
 echo "[stage2/$PASS] /_info: $INFO"
 case "$INFO" in *'"target":"worker"'*) ;; *) echo "[stage2/$PASS] VACUITY GUARD: not a Worker target" >&2; exit 5 ;; esac
 case "$INFO" in *"\"adapters\":\"$EXPECT_ADAPTERS\""*) ;; *) echo "[stage2/$PASS] VACUITY GUARD: adapters not $EXPECT_ADAPTERS" >&2; exit 5 ;; esac
+case "$INFO" in *"\"csrf_enforce\":$WANT_CSRF"*) ;; *) echo "[stage2/$PASS] VACUITY GUARD: csrf_enforce is not $WANT_CSRF (pass '$PASS')" >&2; exit 5 ;; esac
 
 RS="$ROOT/scripts/rs"
 M="$ROOT/Cargo.toml"
 case "$PASS" in
-  main)     EXPECT=21; "$RS" cargo test --manifest-path "$M" -p thrust-contract-tests --test contract -- --skip sweeper_ --skip panic_ --skip blast_ >"$LOG.test.log" 2>&1 ;;
+  main)     EXPECT=31; "$RS" cargo test --manifest-path "$M" -p thrust-contract-tests --test contract -- --skip sweeper_ --skip panic_ --skip blast_ --skip oidc_ --skip csrf_off_ >"$LOG.test.log" 2>&1 ;;
+  # the csrf_off_ tests that need nothing else the deployed Worker lacks (all six: none of them is an `oidc_` test)
+  csrfoff)  EXPECT=6;  "$RS" cargo test --manifest-path "$M" -p thrust-contract-tests --test contract -- csrf_off_ >"$LOG.test.log" 2>&1 ;;
   worker)   EXPECT=1;  "$RS" cargo test --manifest-path "$M" -p thrust-contract-tests --test worker_only -- worker_room_ --test-threads=1 --nocapture >"$LOG.test.log" 2>&1 ;;
   # Email is skipped on purpose: a real send needs a sender domain owned by the account and a verified
   # destination; the deployed binding rejects `example.com` ("domain is not owned by the same account").

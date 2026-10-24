@@ -23,7 +23,11 @@ invariant the mutant broke.
 ## Name and location
 
 Planted mutants: features in `crates/thrust-adapters-memory/Cargo.toml` (`mutant_ignore_tenant`,
-`mutant_dup_sequence`, `mutant_no_activity_dedupe`) and `crates/thrust-adapters-selfhosted` (`mutant_discard_noop`),
+`mutant_dup_sequence`, `mutant_no_activity_dedupe`, `mutant_ignore_revoked`, which makes a revoked session and a revoked
+API key resolve), `crates/thrust-core/Cargo.toml` (`mutant_skip_csrf`, `mutant_unverified_email`, and the two that break the CSRF enforcement switch,
+`mutant_csrf_never`, ignored when it is on, killed by the main pass, and `mutant_csrf_always`, ignored when it is off, killed by the
+`csrfoff` pass) and
+`crates/thrust-adapters-selfhosted` (`mutant_discard_noop`),
 gated with `#[cfg(feature = "mutant_…")]` at the line they break, passed through by `thrust-server`. Each is listed
 in `scripts/mutants.sh`. cargo-mutants: configured by `.cargo/mutants.toml` and the `mutants` nextest profile;
 `mutants.out*` is never committed.
@@ -33,7 +37,7 @@ Spike 0002 adds `crates/thrust-adapters-sqlite` features `mutant_dup_sequence`, 
 ## Run
 
 ```sh
-scripts/mutants.sh                                   # needs Docker [unverified: not run]
+scripts/mutants.sh                                   # needs Docker [verified 2026-10-24: 9 KILLED, 2 guard refusals, 0 SocketNotFoundError]
 scripts/rs cargo mutants -f <path/to/file.rs>        # [derived]; exit 4 if the crate has no tests of its own
 ```
 

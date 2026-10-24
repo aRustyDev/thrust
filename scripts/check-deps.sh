@@ -37,6 +37,24 @@ for bad in $FORBIDDEN; do
 done
 
 echo
+echo "=== adapters-oidc (it ships in both roots; openidconnect brings wasm-bindgen and js-sys on wasm32 through chrono and"
+echo "    getrandom, so those two are allowed here and kept out of core. Everything else forbidden is not allowed.) ==="
+OIDC_FORBIDDEN="tokio tokio-util tokio-postgres mio socket2 hyper hyper-util tower-http worker worker-sys deadpool-postgres lapin sqlx reqwest"
+for bad in $OIDC_FORBIDDEN; do
+  out="$("$ROOT/scripts/rs" cargo tree --manifest-path "$MANIFEST" -p thrust-adapters-oidc -e normal --target all -i "$bad" 2>&1)"
+  case "$out" in
+    *"did not match any packages"*|*"nothing to print"*|"") ;;
+    *) echo "FORBIDDEN: thrust-adapters-oidc depends on $bad"; echo "$out" | head -5; STATUS=1 ;;
+  esac
+done
+# the one thing it must not be: part of core's graph (core must stay free of wasm-bindgen)
+out="$("$ROOT/scripts/rs" cargo tree --manifest-path "$MANIFEST" -p thrust-core -e normal --target all -i thrust-adapters-oidc 2>&1)"
+case "$out" in
+  *"did not match any packages"*|*"nothing to print"*|"") echo "ok: thrust-adapters-oidc is not in thrust-core's graph" ;;
+  *) echo "FORBIDDEN: thrust-core depends on thrust-adapters-oidc"; STATUS=1 ;;
+esac
+
+echo
 echo "=== who pulls tokio into the Worker bundle (wasm32, thrust-worker, cloudflare set only) ==="
 "$ROOT/scripts/rs" cargo tree --manifest-path "$MANIFEST" -p thrust-worker --no-default-features --target wasm32-unknown-unknown -e normal -i tokio 2>&1 | head -30
 

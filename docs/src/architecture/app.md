@@ -24,6 +24,7 @@ flowchart TB
     sh[thrust-adapters-selfhosted]
     pg[thrust-adapters-postgres]
     mem[thrust-adapters-memory]
+    oidc[thrust-adapters-oidc]
   end
   api[thrust-api<br/>the shared axum router]
   core[thrust-core<br/>use-cases and the permission seam]
@@ -34,10 +35,12 @@ flowchart TB
   worker --> cf
   worker --> pg
   worker -.->|feature memory, on by default| mem
+  worker --> oidc
   server --> api
   server --> sh
   server --> pg
   server --> mem
+  server --> oidc
   api --> core
   core --> ports
   ports --> contracts
@@ -47,6 +50,7 @@ flowchart TB
   sh --> ports
   pg --> ports
   mem --> ports
+  oidc --> ports
 ```
 
 The diagram leaves out edges that the drawn ones already imply. Every drawn crate except `thrust-contracts` also
@@ -57,12 +61,13 @@ depends on it directly. `thrust-api` and both roots also depend directly on `thr
 |---|---|---|
 | Data | `thrust-contracts` | Identifiers (`WorkspaceId`, `ProjectId`, ...), records (`WorkItem`, `Activity`), the event `Envelope`, the outbox row and the API request and error types. Depends on serde, serde_json, uuid and chrono without its clock feature |
 | Ports | `thrust-ports` | The port traits and their error types. Every returned future is `Send` |
-| Core | `thrust-core` | The use-cases, the `Ports` bundle, `App` and `CoreConfig`, and the permission seam (`authorize`, which mints a `Scope`) |
+| Core | `thrust-core` | The use-cases, the `Ports` bundle, `App` and `CoreConfig`, the permission seam (`authorize`, which mints a `Scope`) and the identity use-cases (`sign_in`, sessions, CSRF, API keys with a versioned digest, the OIDC login) with the argon2id hasher. `CoreConfig` holds the CSRF enforcement switch (`csrf_enforce`) and the API key hash version (`api_key_hash_current`, `api_key_hash_supported`). It depends on `argon2` and `subtle`, both pure Rust, and on no OIDC crate |
 | HTTP | `thrust-api` | One `router()` that both roots serve. Handlers see `App` and never a platform type |
-| Adapters | `thrust-adapters-memory` | `Database` (workspaces, sessions and all), `Queue`, `BlobStore` and `RateLimiter` in process memory, for tests and as the reference the real adapters are compared with. It has no clock, id or background adapter |
-| | `thrust-adapters-postgres` | The `Database` port written once against `tokio_postgres::Client`, plus the schema migration and a `migrate` binary |
-| | `thrust-adapters-selfhosted` | Native pieces: a system clock, UUID v7 ids, `Background` on tokio, and a deadpool connection pool that gives the Postgres adapter its connections |
-| | `thrust-adapters-cloudflare` | Workers pieces: clock and ids from JavaScript, `Background` on `waitUntil`, R2 blobs, Queues, a Durable Object rate limiter and a Hyperdrive connection for the Postgres adapter |
+| Adapters | `thrust-adapters-memory` | `Database` (workspaces, sessions, users, API keys and pending logins, and all), `Queue`, `BlobStore` and `RateLimiter` in process memory, for tests and as the reference the real adapters are compared with. It has no clock, id, random or background adapter |
+| | `thrust-adapters-postgres` | The `Database` port written once against `tokio_postgres::Client`, plus the schema migrations (0001 to 0005, and 0007, which adds `api_keys.hash_version`; 0006 belongs to the SQLite adapter) and a `migrate` binary |
+| | `thrust-adapters-selfhosted` | Native pieces: a system clock, UUID v7 ids, the operating system's random source, `reqwest` as the `Fetch` port, `Background` on tokio, and a deadpool connection pool that gives the Postgres adapter its connections |
+| | `thrust-adapters-cloudflare` | Workers pieces: clock and ids from JavaScript, `crypto.getRandomValues` as the random source, `worker::Fetch` as the `Fetch` port, `Background` on `waitUntil`, R2 blobs, Queues, a Durable Object rate limiter and a Hyperdrive connection for the Postgres adapter |
+| | `thrust-adapters-oidc` | The OIDC relying party: the `openidconnect` crate over the `Fetch` port, so one implementation serves both roots. It is its own crate because `openidconnect` pulls `wasm-bindgen` and `js-sys` into the wasm32 graph (through `chrono` and `getrandom`), which `thrust-core` must not have |
 | Roots | `thrust-worker` | The Cloudflare Worker (`cdylib`): `fetch`, `queue` and `scheduled` handlers, and the Durable Object classes |
 | | `thrust-server` | The native binary |
 | Tests | `thrust-contract-tests` | A black-box HTTP suite. It depends on `thrust-contracts` only, so it never links the code it tests |
@@ -77,10 +82,14 @@ on it.
 |---|---|---|
 | `Clock`, `IdGen` | Wall time and time-ordered ids. Core takes time from the port. `thrust-contracts` depends on chrono without its `clock` feature, so `Utc::now()` is unavailable to it when built alone. `thrust-adapters-selfhosted` turns the feature on for the native server, so this is a convention that the dependency declaration backs, not a guarantee in every build | `SystemClock`, `NativeIdGen` (selfhosted); `JsClock`, `JsIdGen` (cloudflare) |
 | `Background` | Running work after the response. Core never calls `tokio::spawn` | `TokioBackground`; `WaitUntilBackground`, `LocalBackground` |
-| `Database` and `Tx` | Reads, a unit of work, the outbox and the activity projection. Every method takes a `Scope` (minted only by `authorize`), from which the adapter reads the tenant key, or a `SystemScope` (minted only by the composition roots) for the outbox relay and sweeper, the consumer's activity write and `seed`. `membership` (which resolves the workspace slug) and the session calls (`session`, `touch_session`, `revoke_session`, `insert_session`) run before a `Scope` exists and take none: they are the exceptions | `MemoryDatabase`; `PgDatabase` over a `Connector` (`PoolConnector` native, `HyperdriveConnector` on the Worker) |
+| `Database` and `Tx` | Reads, a unit of work, the outbox and the activity projection. Every method takes a `Scope` (minted only by `authorize`), from which the adapter reads the tenant key, or a `SystemScope` (minted only by the composition roots) for the outbox relay and sweeper, the consumer's activity write, `seed` and the test-support user calls. `membership` (which resolves the workspace slug) and the identity calls run before a `Scope` exists and take none: they are the exceptions. They are the session calls (`session`, `touch_session`, `revoke_session`, `revoke_user_sessions`, `insert_session`), the user and account calls (`user_by_email`, `user_for_account`, `link_account`), the API-key calls (`insert_api_key`, `api_key`, `touch_api_key`, `rehash_api_key`, `list_api_keys`, `revoke_api_key`; `rehash_api_key` is a compare-and-set on the key's `hash_version`) and the pending OIDC login (`insert_oidc_login`, `take_oidc_login`). They are directory tables (ADR-0041), and none receives or returns a password or a token, only hashes | `MemoryDatabase`; `PgDatabase` over a `Connector` (`PoolConnector` native, `HyperdriveConnector` on the Worker) |
 | `Queue` and `EventConsumer` | Publishing events, and the callback a queue adapter invokes per delivered message | `MemoryQueue`; `CfQueue` |
 | `BlobStore` | Attachments | `MemoryBlobStore`; `R2BlobStore` |
 | `RateLimiter` | A fixed-window counter | `MemoryRateLimiter`; `DoRateLimiter` |
+| `Rng` | Cryptographically secure random bytes: session tokens, API keys, CSRF tokens, the OIDC `state`, `nonce` and PKCE verifier, password salts. A failing source is an error, never a short buffer | `NativeRng` (selfhosted); `JsRng` (cloudflare); a counter stream in tests |
+| `PasswordHasher` | argon2id, as a port so that a test can count hash work (an unknown email must cost what a wrong password does) | `Argon2idHasher` (core); a counting wrapper in tests |
+| `Fetch` | Outbound HTTP, the only way the application reaches a server it does not own | `ReqwestFetch`; `WorkerFetch` |
+| `OidcProvider` | One OIDC provider as a relying party: the authorization URL, and the code exchange with ID-token verification. The `state`, `nonce` and verifier are core's, stored in a row, so the adapter holds nothing per login | `OpenIdProvider` (adapters-oidc) over `Fetch`; a scripted provider in tests |
 
 Every future a port returns is `Send`, on both targets, because the one shared axum router needs `Send` handlers.
 A Worker isolate is single-threaded, so the Cloudflare adapters wrap their JavaScript-backed futures in
@@ -104,7 +113,9 @@ from the environment; core and the router never do.
 
 `scripts/check-deps.sh` is the guard. It asks `cargo tree` whether any of 17 forbidden crates (tokio,
 tokio-postgres, hyper, worker, wasm-bindgen, sqlx, ...) is in the dependency graph of `thrust-contracts`,
-`thrust-ports`, `thrust-core`, `thrust-api` or `thrust-adapters-memory`, and exits non-zero if one is. It also
+`thrust-ports`, `thrust-core`, `thrust-api` or `thrust-adapters-memory`, and exits non-zero if one is. It holds
+`thrust-adapters-oidc` to the same list minus `wasm-bindgen` and `js-sys` (the `openidconnect` crate brings those two on
+wasm32 and nothing else) and also `reqwest`, and checks that `thrust-core` does not depend on it. It also
 checks that the Worker's wasm32 graph holds none of the native-only crates and that the server's graph holds none
 of the Worker-only ones. The `deps` job in CI runs it on every pull request that changes a Rust-relevant path
 ([CI/CD](cicd.md)), and `scripts/verify-all.sh` runs it along with the other checks. How to run it and how to prove it

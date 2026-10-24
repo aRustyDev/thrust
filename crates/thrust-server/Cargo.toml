@@ -19,6 +19,11 @@ mutant_no_gate = ["thrust-adapters-sqlite/mutant_no_gate"]
 mutant_no_activity_dedupe = ["thrust-adapters-memory/mutant_no_activity_dedupe"]
 mutant_ignore_revoked = ["thrust-adapters-memory/mutant_ignore_revoked"]
 mutant_search_case_sensitive = ["thrust-adapters-memory/mutant_search_case_sensitive"]
+# Pass-through to thrust-core's control-run mutants.
+mutant_skip_csrf = ["thrust-core/mutant_skip_csrf"]
+mutant_csrf_never = ["thrust-core/mutant_csrf_never"]
+mutant_csrf_always = ["thrust-core/mutant_csrf_always"]
+mutant_unverified_email = ["thrust-core/mutant_unverified_email"]
 
 [dependencies]
 thrust-contracts = { workspace = true }
@@ -29,6 +34,7 @@ thrust-adapters-memory = { workspace = true }
 thrust-adapters-selfhosted = { workspace = true }
 thrust-adapters-postgres = { workspace = true }
 thrust-adapters-sqlite = { workspace = true, features = ["native"] }
+thrust-adapters-oidc = { workspace = true }
 serde_json = { workspace = true }
 # The native server is the only place axum's tokio/http1 features are switched on.
 axum = { version = "0.8", default-features = false, features = ["json", "query", "matched-path", "tokio", "http1"] }

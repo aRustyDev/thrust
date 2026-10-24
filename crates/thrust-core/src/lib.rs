@@ -7,6 +7,14 @@ use std::sync::Arc;
 
 use sha2::{Digest, Sha256};
 use thiserror::Error;
+
+// The unit tests in `auth/key_hash_tests.rs` reuse the integration tests' world (`tests/common`), which names this crate
+// the way an integration test does.
+#[cfg(test)]
+extern crate self as thrust_core;
+
+mod auth;
+pub use auth::*;
 use thrust_contracts::chrono::TimeDelta;
 use thrust_contracts::*;
 use thrust_ports::*;
@@ -24,6 +32,13 @@ pub struct Ports {
     pub clock: Arc<dyn Clock>,
     pub ids: Arc<dyn IdGen>,
     pub background: Arc<dyn Background>,
+    /// Secure random bytes: tokens, keys, salts (issue #38).
+    pub rng: Arc<dyn Rng>,
+    /// Password hashing, counted in tests (issue #38).
+    pub hasher: Arc<dyn PasswordHasher>,
+    /// The one OIDC provider, when the deployment configured one (ADR-0050; issue #38). `None`: the login routes are
+    /// 404 and nothing else changes: passwords and API keys never involve it.
+    pub oidc: Option<Arc<dyn OidcProvider>>,
 }
 
 #[derive(Debug, Clone)]
@@ -39,6 +54,31 @@ pub struct CoreConfig {
     /// `authenticate` rewrites a session's `last_seen_at` only when it is at least this old, so a busy
     /// session costs one write an hour, not one per request (ADR-0052 round 29: updated lazily).
     pub session_touch_after_secs: i64,
+    /// Cost of a new password hash. The default is OWASP's minimum; a test target sets a cheap one through its
+    /// configuration, and one test pins the default into the encoded hash (issue #38).
+    pub argon2: Argon2Params,
+    /// Sign-in attempts per email inside `sign_in_rate_window_secs`, counted before any hashing (so a refused attempt
+    /// costs nothing, and a known and an unknown email are limited alike).
+    pub sign_in_rate_limit: u32,
+    pub sign_in_rate_window_secs: u64,
+    /// How long a started OIDC login may wait for its callback before the stored `state` is useless.
+    pub oidc_login_ttl_secs: i64,
+    /// The digest scheme new API keys are stored under, and the one a key is moved to the next time it is used while
+    /// it is stored under another (Q-0052.3). Defaults to [`API_KEY_HASH_CURRENT`]: version 1, plain SHA-256. Not read
+    /// from the environment: changing it means shipping a scheme (see `api_key_hash`), which is a code change.
+    pub api_key_hash_current: i16,
+    /// Every scheme an `X-Api-Key` is looked up under. The current one is always tried, whether listed or not (a key
+    /// this build writes must be one it can read); dropping an older version from here is how its keys are retired,
+    /// on purpose. Defaults to [`API_KEY_HASH_SUPPORTED`].
+    pub api_key_hash_supported: Vec<i16>,
+    /// Whether a mutation authenticated by the session COOKIE must carry the CSRF token (ADR-0052, double submit,
+    /// Q-0050.8). The rule as the ADR wrote it is the core's default: `true`. The composition roots read
+    /// `THRUST_CSRF_ENFORCE` and default it to `false` while the stock Plane frontend is what talks to this server,
+    /// because that app sends the token only on its auth form posts, so enforcing it would refuse its JSON mutations;
+    /// the flip is to `true` when the custom frontend replaces it. Off changes exactly one thing: the token is not
+    /// consulted for a cookie mutation. The cookie, `GET auth/csrf`, `csrf_ok`, and a bearer token or an API key (which
+    /// never needed the token) are untouched.
+    pub csrf_enforce: bool,
 }
 
 impl Default for CoreConfig {
@@ -50,6 +90,13 @@ impl Default for CoreConfig {
             max_attachment_bytes: 5 * 1024 * 1024,
             session_ttl_secs: 30 * 24 * 60 * 60,
             session_touch_after_secs: 60 * 60,
+            argon2: Argon2Params::OWASP_MINIMUM,
+            sign_in_rate_limit: 10,
+            sign_in_rate_window_secs: 60,
+            oidc_login_ttl_secs: 10 * 60,
+            api_key_hash_current: API_KEY_HASH_CURRENT,
+            api_key_hash_supported: API_KEY_HASH_SUPPORTED.to_vec(),
+            csrf_enforce: true,
         }
     }
 }
@@ -82,6 +129,13 @@ pub enum CoreError {
     Unauthenticated,
     #[error("forbidden")]
     Forbidden,
+    /// A cookie-authenticated mutation without a matching CSRF token (ADR-0052, double submit).
+    #[error("csrf token missing or wrong")]
+    Csrf,
+    /// An `X-Api-Key` that does not resolve: unknown, revoked, expired, or its user is inactive. The oracle answers 403
+    /// for all four and 401 only for a missing key (ADR-0033, round 27), so the lookup does not say which.
+    #[error("given API key is not valid")]
+    InvalidApiKey,
     #[error("not found")]
     NotFound,
     #[error("conflict: {0}")]
@@ -92,6 +146,9 @@ pub enum CoreError {
     Invalid(String),
     #[error("payload too large")]
     TooLarge,
+    /// A server this one depends on (the OIDC provider) failed or answered something unusable.
+    #[error("upstream: {0}")]
+    Upstream(String),
     #[error("internal: {0}")]
     Internal(String),
 }
@@ -235,7 +292,7 @@ pub async fn authenticate(app: &App, token: &str) -> Result<Principal, CoreError
 
 /// Sign-out for one token. Idempotent: an unknown or already revoked token changes nothing.
 pub async fn revoke_session(app: &App, token: &str) -> Result<(), CoreError> {
-    Ok(app.ports.db.revoke_session(&hash_token(token), app.ports.clock.now()).await?)
+    sign_out(app, &hash_token(token)).await
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -511,6 +568,7 @@ pub async fn outbox_depth(app: &App) -> Result<u64, CoreError> {
 /// Test support behind `/internal/seed`: insert fixture rows.
 pub async fn seed(app: &App, fixture: &SeedFixture) -> Result<(), CoreError> {
     app.ports.db.seed(&app.system, fixture).await?;
+    auth::seed_identities(app, fixture).await?;
     // The fixture carries plaintext tokens; the database only ever sees their hashes.
     let now = app.ports.clock.now();
     for s in &fixture.sessions {

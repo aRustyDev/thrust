@@ -107,7 +107,7 @@ async fn main() {
     let uid = || uuid::Uuid::new_v4();
     let ws = WorkspaceId(uid());
     let slug = format!("scale-{}", uid().simple());
-    let admin = User { id: UserId(uid()), token: format!("tok-{}", uid().simple()) };
+    let admin = User { id: UserId(uid()), token: format!("tok-{}", uid().simple()), email: String::new(), password: String::new() };
     let project_ids: Vec<ProjectId> = (0..projects + 1).map(|_| ProjectId(uid())).collect();
     let fixture = SeedFixture {
         workspaces: vec![SeedWorkspace { id: ws, slug: WorkspaceSlug::new(&slug) }],
@@ -119,6 +119,7 @@ async fn main() {
             .map(|p| SeedMembership { project_id: *p, workspace_id: ws, user_id: admin.id, role: Role::Admin })
             .collect(),
         sessions: vec![SeedSession { token: admin.token.clone(), user_id: admin.id }],
+        ..SeedFixture::default()
     };
     let r = t.admin_post("/internal/seed", &serde_json::to_value(&fixture).unwrap()).await;
     assert_eq!(r.status(), 204, "seed fixture: {:?}", r.text().await);
@@ -215,10 +216,11 @@ async fn main() {
                 projects: vec![],
                 memberships: vec![SeedMembership { project_id: project_ids[0], workspace_id: ws, user_id: id, role: Role::Member }],
                 sessions: vec![SeedSession { token: token.clone(), user_id: id }],
+                ..SeedFixture::default()
             };
             let r = t.admin_post("/internal/seed", &serde_json::to_value(&f).unwrap()).await;
             assert_eq!(r.status(), 204);
-            users.push(User { id, token });
+            users.push(User { id, token, email: String::new(), password: String::new() });
         }
         let users = Arc::new(users);
         let (t2, small2) = (t.clone(), small.clone());

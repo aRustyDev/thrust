@@ -467,6 +467,7 @@ impl Fix {
                 SeedMembership { project_id: self.p[0], workspace_id: self.ws[1], user_id: stray_b, role: Role::Admin },
             ],
             sessions: vec![],
+            ..SeedFixture::default()
         }
     }
 

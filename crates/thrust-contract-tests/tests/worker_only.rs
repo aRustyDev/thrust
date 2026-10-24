@@ -395,7 +395,7 @@ async fn worker_do_migration_story_phases_run_and_a_failed_migration_changes_not
     assert_eq!(failed["scratch_table_left_behind"], 0, "two statements of the failed migration survived: {failed}");
     assert_eq!(failed["ledger_rows_for_99"], 0, "{failed}");
     // control: the real migrations are all recorded, and the object still answers
-    assert_eq!(failed["ledger_versions"], json!([1, 6]), "{failed}");
+    assert_eq!(failed["ledger_versions"], json!([1, 5, 6, 7]), "{failed}");
     assert_eq!(t.http.get(t.url("/healthz")).send().await.unwrap().status(), 200);
     assert_eq!(list(&t, &f.admin_a, &f.a, None).await.status(), 200, "the object stopped serving after the failed migration");
     assert_eq!(phase("cleanup").await["result"]["ok"], true);

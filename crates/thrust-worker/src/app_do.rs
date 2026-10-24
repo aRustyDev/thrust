@@ -26,12 +26,12 @@ use thrust_adapters_sqlite::fault::{FaultSql, Unatomic};
 use thrust_adapters_sqlite::{Sql, SqliteDatabase};
 use thrust_api::ApiConfig;
 use thrust_contracts::*;
-use thrust_core::{ActivityConsumer, App, Permission, Ports, SystemScope};
+use thrust_core::{ActivityConsumer, App, Argon2idHasher, Permission, Ports, SystemScope};
 use thrust_ports::*;
 use worker::worker_sys::web_sys;
 use worker::*;
 
-use crate::{api_config, core_config};
+use crate::{api_config, core_config, oidc_provider};
 
 /// The Durable Object binding and the one name the whole instance lives under.
 pub const BINDING: &str = "APP";
@@ -80,6 +80,9 @@ impl DurableObject for AppDo {
         });
 
         let built = (|| -> Result<Built> {
+            // The same configuration the Worker's other sets read (CSRF enforcement, the argon2id cost, the sign-in limit):
+            // sign-in hashes inside this one object, so the cost parameters are the object's too (research/0011, section 10).
+            let cfg = core_config(&env);
             let ports = Ports {
                 db,
                 queue: Arc::new(CfQueue(env.queue("EVENTS")?)),
@@ -88,9 +91,12 @@ impl DurableObject for AppDo {
                 clock: Arc::new(JsClock),
                 ids: Arc::new(JsIdGen),
                 background: Arc::new(StateBackground(state)),
+                rng: Arc::new(JsRng),
+                hasher: Arc::new(Argon2idHasher::new(cfg.argon2)),
+                oidc: oidc_provider(&env)?,
             };
             // This composition root mints the proof for the relay, sweeper, consumer and seed.
-            let app = App::new(ports, core_config(&env), SystemScope::mint());
+            let app = App::new(ports, cfg, SystemScope::mint());
             Ok(Built { app, sql, env })
         })()
         .map_err(|e| e.to_string());
@@ -178,6 +184,7 @@ impl AppDo {
             projects: vec![SeedProject { id: project, workspace_id: ws, name: "tx-control".into() }],
             memberships: vec![SeedMembership { project_id: project, workspace_id: ws, user_id: user, role: Role::Member }],
             sessions: vec![],
+            ..SeedFixture::default()
         };
         thrust_core::seed(&app, &fixture).await.map_err(|e| Error::RustError(e.to_string()))?;
         let scope = thrust_core::authorize(&app, &Principal { user_id: user }, &slug, project, Permission::CreateWorkItem)
@@ -274,6 +281,7 @@ impl AppDo {
             projects: vec![SeedProject { id: project, workspace_id: ws, name: "cost".into() }],
             memberships: vec![SeedMembership { project_id: project, workspace_id: ws, user_id: user, role: Role::Admin }],
             sessions: vec![],
+            ..SeedFixture::default()
         };
         thrust_core::seed(&app, &fixture).await.map_err(|e| Error::RustError(e.to_string()))?;
         let who = Principal { user_id: user };

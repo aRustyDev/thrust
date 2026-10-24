@@ -1,0 +1,16 @@
+[package]
+name = "thrust-adapters-oidc"
+description = "OIDC relying party over the Fetch port: openidconnect with no HTTP client of its own. Builds for wasm32 and native; compiled into both composition roots."
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+thrust-ports = { workspace = true }
+async-trait = { workspace = true }
+# `default-features = false` drops its reqwest client: every request goes through the `Fetch` port instead (native:
+# reqwest, Worker: worker::Fetch). On wasm32 it pulls chrono's `wasmbind` and getrandom's `js` backend, i.e. wasm-bindgen
+# and js-sys, which is why this is its own crate and not part of `thrust-core` (scripts/check-deps.sh keeps those out
+# of core). Measured in the issue #38 feasibility probe: it builds for wasm32-unknown-unknown and its futures are `Send`.
+openidconnect = { version = "4", default-features = false }

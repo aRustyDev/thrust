@@ -19,6 +19,10 @@ THRUST_TEST_ROUTES = "1"            # spike only: exposes /internal/*, /_info an
 THRUST_ADAPTERS = "durable"
 THRUST_OUTBOX_FASTPATH = "on"
 THRUST_CREATE_RATE_LIMIT = "30"     # the main pass wants 30; the engine pass redeploys with `--var THRUST_CREATE_RATE_LIMIT:1000000`
+# The contract's CSRF tests need enforcement on (ADR-0052); `scripts/stage2-contract.sh` refuses a Worker that does not say
+# so in /_info (the `csrfoff` pass needs "off"). A deployed main pass also wants a cheap argon2id cost, or every fixture seeds
+# six passwords at the real cost: deploy with `--var THRUST_ARGON2_M_KIB:64 --var THRUST_ARGON2_T:1 --var THRUST_ARGON2_P:1`.
+THRUST_CSRF_ENFORCE = "on"
 # Fixed windows are aligned to the wall clock; one hour keeps a slow test from straddling a boundary (research/0004 F3).
 THRUST_RATE_WINDOW_SECS = "3600"
 

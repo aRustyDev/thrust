@@ -27,6 +27,14 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 uuid = { workspace = true, features = ["v4"] }
 futures-util = { workspace = true, features = ["sink"] }
 tokio-tungstenite = { version = "0.26", default-features = false, features = ["connect", "rustls-tls-webpki-roots"] }
+# The mock OIDC identity provider the suite serves on 127.0.0.1 (issue #38, `src/mock_idp.rs`): an axum server, and an
+# RS256 signer written against the `rsa` crate directly, so that what verifies its ID tokens (the `openidconnect`
+# crate inside the target) is not the code that made them.
+axum = { version = "0.8", default-features = false, features = ["json", "form", "query", "tokio", "http1"] }
+rsa = { version = "0.9", features = ["sha2"] }
+sha2 = "0.10"
+base64 = "0.22"
+rand = "0.8"
 
 [dev-dependencies]
 # tests/model: generated operation sequences against a reference model (gap G-8).

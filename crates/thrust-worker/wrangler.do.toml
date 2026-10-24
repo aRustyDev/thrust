@@ -19,6 +19,9 @@ crons = ["* * * * *"]   # outbox sweeper (ADR-0046 / ADR-0072), forwarded to the
 
 [vars]
 THRUST_ADAPTERS = "durable"
+# Whether a cookie-authenticated mutation must carry the CSRF token (ADR-0052, Q-0050.8): the production default, OFF, as in
+# wrangler.toml; scripts/worker-dev.sh passes "on" for every pass but `csrfoff`.
+THRUST_CSRF_ENFORCE = "off"
 
 [[r2_buckets]]
 binding = "BLOBS"

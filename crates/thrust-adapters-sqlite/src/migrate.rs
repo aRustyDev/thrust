@@ -20,10 +20,13 @@ pub struct Migration {
 }
 
 /// Every migration this build knows, in order. Numbers match the Postgres files they translate or sit beside:
-/// 0001 is the end state of Postgres 0001 to 0004; 0005 is identity (issue #38); 0006 is search.
+/// 0001 is the end state of Postgres 0001 to 0004; 0005 is identity (issue #38); 0006 is search; 0007 is the API key hash
+/// version (Q-0052.3).
 pub const MIGRATIONS: &[Migration] = &[
     Migration { version: 1, name: "init", sql: include_str!("../migrations/0001_init.sql") },
+    Migration { version: 5, name: "identity", sql: include_str!("../migrations/0005_identity.sql") },
     Migration { version: 6, name: "search", sql: include_str!("../migrations/0006_search.sql") },
+    Migration { version: 7, name: "api_key_hash_version", sql: include_str!("../migrations/0007_api_key_hash_version.sql") },
     // MUTANT (build for the migration-failure demonstration only, feature `mutant_broken_migration`): a migration whose
     // third statement fails, after two that succeed. An object built with it must fail to start, and must roll the first
     // two back (research/0011, the migration story's failure case).

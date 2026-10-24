@@ -22,6 +22,7 @@ run() {
 run native-memory main
 run native-memory sweeper
 run native-memory panic
+run native-memory csrfoff
 run native-pg main
 run native-pg sweeper
 run native-pg panic
@@ -29,6 +30,7 @@ run worker-memory main
 run worker-memory sweeper
 run worker-memory panic
 run worker-memory cron
+run worker-memory csrfoff
 run worker-cf main
 run worker-cf sweeper
 run worker-cf panic
