@@ -91,6 +91,12 @@ table definitions they add with a comment, `-- scope: tenant` for `workspaces` a
 comment says so. The tables from `0001` and `0002` are not marked, and the lint that the CI line above asks for
 (every new table declares its scope) is not built. This note decides no strategy; the ADR stays `proposed`.
 
+## Update — spike 0002, issue #37 (2026-10-24)
+
+What the engine spike says about isolation, and what it does not. Spike 0002's tenant-isolation step was dropped in round 29 (FR-02): the tenant guard is the `Scope` argument of every repository and `Tx` method, and **both cells implement the same port**, so isolation between tenants is enforced identically on `worker-pg` and `worker-do`: by `Scope`, with no row-level security in either. The cross-tenant tests (`cross_tenant_access_is_rejected_and_has_no_effect` and the access-table matrix in the contract suite) pass on the deployed `worker-do` and on the deployed `worker-pg` (main pass 21 of 21 on each), and the generated two-tenant model test passes on both. RLS cost was not measured, and **no isolation strategy is decided here** (Q-0041 stays open, this ADR stays `proposed`).
+
+Two facts the spike adds. On `worker-do` the whole instance is one Durable Object with one SQLite database, so a tenant boundary inside it is the `Scope` and nothing else, as on Postgres; a per-tenant object was not built. On `worker-pg`, the per-PR environments of the shared dev database (`pr-schema.sh`: a NOSUPERUSER role that owns its own schema, `search_path` set on the role) isolated the run from every other schema as intended, with two findings for that tooling: an extension's operator class must be schema-qualified for a role whose `search_path` excludes `public` (`research/0011` section 5.4), and the role's connection limit has to be sized with the Hyperdrive pool bound to it (section 10, item 7).
+
 ## Open Questions
 
 * Q-0041 — which strategy?
