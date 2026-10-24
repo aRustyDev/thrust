@@ -11,7 +11,7 @@
 #   scripts/spike-0002-pg.sh status               what exists, and the ledger
 #   scripts/spike-0002-pg.sh down                 tear everything down: consumer, Worker, queues, bucket, Hyperdrive configs, role + schema
 #
-# Environment (nothing here is committed): CLOUDFLARE_ACCOUNT_ID; HYPERDRIVE_API_TOKEN for `hyperdrive`, `deploy` and `down` (Hyperdrive Write);
+# Environment (nothing here is committed): CLOUDFLARE_ACCOUNT_ID; THRUST_SPIKE_PG_URL (the Worker's workers.dev URL) for `down`, to empty the bucket; HYPERDRIVE_API_TOKEN for `hyperdrive`, `deploy` and `down` (Hyperdrive Write);
 # AWS_PROFILE for the cluster steps (the SSO session lasts about an hour); THRUST_DEV_VPC_SERVICE_ID for `hyperdrive`; THRUST_INFRA_ROOT (the
 # infrastructure repo's `infrastructure/` directory, default ~/repos/woven/infrastructure/infrastructure); THRUST_SPIKE_PR (the role number,
 # default 1101). R2, queues and the Worker go through wrangler's OAuth login (the token has no R2 or Queues permission). The database password
@@ -141,6 +141,10 @@ case "${1:-}" in
   down)
     : "${HYPERDRIVE_API_TOKEN:?set HYPERDRIVE_API_TOKEN (Hyperdrive Write)}"
     status=0
+    # An R2 bucket must be empty before it is deleted, and wrangler cannot bulk delete: empty it through the binding first.
+    if [ -f "$TOKEN_FILE" ] && [ -n "${THRUST_SPIKE_PG_URL:-}" ]; then
+      printf 'header = "x-admin-token: %s"\n' "$(cat "$TOKEN_FILE")" | curl -sS -m 120 -K - "$THRUST_SPIKE_PG_URL/_test/bindings/r2purge" && echo
+    fi
     wrangler queues consumer remove "$QUEUE" "$WORKER" && note "removed queue consumer $WORKER of $QUEUE" || { note "consumer remove failed or absent"; status=1; }
     (cd "$WR" && wrangler delete --name "$WORKER" --force) && note "deleted worker $WORKER (with its Durable Object storage, cron and secret)" || { note "worker delete failed"; status=1; }
     wrangler queues delete "$QUEUE" && note "deleted queue $QUEUE" || { note "queue delete failed: $QUEUE"; status=1; }
