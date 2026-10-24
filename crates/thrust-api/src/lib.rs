@@ -244,15 +244,15 @@ async fn set_user_active(_: Admin, Extension(app): Extension<App>, Json(b): Json
 // Authentication routes (issue #38). BetterAuth's HTTP shapes in spirit, Plane's `get-csrf-token` as JSON.
 // ---------------------------------------------------------------------------------------------
 
-/// `Max-Age` for both cookies: the session's lifetime.
-fn set_cookie(name: &str, value: &str, max_age_secs: i64) -> String {
+/// `Max-Age` for both cookies: the session's lifetime. Public so the compat routes spell their cookies the same way.
+pub fn set_cookie(name: &str, value: &str, max_age_secs: i64) -> String {
     // Secure + __Host- (so Path=/ and no Domain), HttpOnly (a script cannot read the session or, as Plane does, the CSRF
     // cookie: the token is handed out as JSON instead), SameSite=Lax (the OIDC callback is a top-level navigation that
     // must carry the cookie to the next page, which Strict would drop).
     format!("{name}={value}; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age={max_age_secs}")
 }
 
-fn add_cookies(resp: &mut Response<Body>, cookies: &[String]) {
+pub fn add_cookies(resp: &mut Response<Body>, cookies: &[String]) {
     for c in cookies {
         if let Ok(v) = HeaderValue::from_str(c) {
             resp.headers_mut().append(SET_COOKIE, v);
@@ -262,7 +262,7 @@ fn add_cookies(resp: &mut Response<Body>, cookies: &[String]) {
     resp.headers_mut().insert(CACHE_CONTROL, HeaderValue::from_static("no-store"));
 }
 
-fn session_cookies(token: &str, csrf: &str, max_age_secs: i64) -> [String; 2] {
+pub fn session_cookies(token: &str, csrf: &str, max_age_secs: i64) -> [String; 2] {
     [set_cookie(SESSION_COOKIE, token, max_age_secs), set_cookie(CSRF_COOKIE, csrf, max_age_secs)]
 }
 

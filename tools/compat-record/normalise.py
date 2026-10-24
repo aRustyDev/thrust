@@ -96,9 +96,19 @@ def value(rules, ids, v, path=""):
     return v
 
 
+_ORIGIN = re.compile(r"^https?://[^/?#]+")
+
+
 def headers(rules, hs):
     keep = set(rules["headers_keep"])
-    return {k.lower(): v for k, v in sorted(hs.items(), key=lambda kv: kv[0].lower()) if k.lower() in keep}
+    rewrite = rules["header_origin_rewrite"]
+    out = {}
+    for k, v in sorted(hs.items(), key=lambda kv: kv[0].lower()):
+        name = k.lower()
+        if name not in keep:
+            continue
+        out[name] = _ORIGIN.sub(rewrite["token"], v) if name in rewrite["headers"] else v
+    return out
 
 
 def exchange(rules, ids, ex):

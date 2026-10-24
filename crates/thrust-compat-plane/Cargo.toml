@@ -23,3 +23,5 @@ thrust-adapters-memory = { workspace = true }
 tower = { version = "0.5", features = ["util"] }
 # The router future never yields to a reactor, so a plain executor drives it (as in thrust-core's tests).
 futures-executor = "0.3"
+proptest = "1"
+rstest = "0.26"

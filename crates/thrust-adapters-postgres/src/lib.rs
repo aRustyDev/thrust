@@ -334,6 +334,19 @@ impl Database for PgDatabase {
         Ok(row.as_ref().map(user_record))
     }
 
+    async fn insert_user(&self, user: &UserRecord) -> Result<(), DbError> {
+        // No ON CONFLICT: a taken id or email must fail, and `db_err` turns the unique violation into `Conflict`.
+        let c = self.conn().await?;
+        Pg(c.client())
+            .execute(
+                "INSERT INTO users (id, email, password_hash, is_active) VALUES ($1, $2, $3, $4)",
+                &[&user.id.0, &user.email.as_deref(), &user.password_hash.as_deref(), &user.is_active],
+            )
+            .await
+            .map_err(db_err)?;
+        Ok(())
+    }
+
     async fn user_for_account(
         &self,
         provider: &str,

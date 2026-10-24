@@ -1,0 +1,27 @@
+{
+  "exchanges": [
+    {
+      "name": "an email somebody has",
+      "request": {
+        "body": {
+          "email": "journey@example.test"
+        },
+        "method": "POST",
+        "path": "/auth/email-check/"
+      },
+      "response": {
+        "body": {
+          "existing": true,
+          "status": "CREDENTIAL"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    }
+  ],
+  "format_version": 1,
+  "recorded_from": "ba85d4d3d3",
+  "row": "S04-existing"
+}

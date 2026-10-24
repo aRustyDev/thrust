@@ -177,6 +177,53 @@
           "response": {"status": 204, "headers": {}, "body": null}
         }
       ]
+    },
+    {
+      "name": "the origin of a Location header is replaced, whatever its scheme and port; a relative one is left alone; other headers are not rewritten",
+      "input": [
+        {
+          "name": "bare origin",
+          "request": {"method": "POST", "path": "/auth/sign-up/"},
+          "response": {"status": 302, "headers": {"Location": "http://localhost:18080"}}
+        },
+        {
+          "name": "root with a query",
+          "request": {"method": "POST", "path": "/auth/sign-in/"},
+          "response": {"status": 302, "headers": {"Location": "https://thrust.example.test:8443/?error_code=5021&email=a%40b.test"}}
+        },
+        {
+          "name": "origin then a fragment",
+          "request": {"method": "GET", "path": "/x"},
+          "response": {"status": 302, "headers": {"Location": "http://host#frag"}}
+        },
+        {
+          "name": "relative",
+          "request": {"method": "GET", "path": "/y"},
+          "response": {"status": 302, "headers": {"Location": "/onboarding", "WWW-Authenticate": "http://not-a-location"}}
+        }
+      ],
+      "expected": [
+        {
+          "name": "bare origin",
+          "request": {"method": "POST", "path": "/auth/sign-up/"},
+          "response": {"status": 302, "headers": {"location": "<base_url>"}, "body": null}
+        },
+        {
+          "name": "root with a query",
+          "request": {"method": "POST", "path": "/auth/sign-in/"},
+          "response": {"status": 302, "headers": {"location": "<base_url>/?error_code=5021&email=a%40b.test"}, "body": null}
+        },
+        {
+          "name": "origin then a fragment",
+          "request": {"method": "GET", "path": "/x"},
+          "response": {"status": 302, "headers": {"location": "<base_url>#frag"}, "body": null}
+        },
+        {
+          "name": "relative",
+          "request": {"method": "GET", "path": "/y"},
+          "response": {"status": 302, "headers": {"location": "/onboarding", "www-authenticate": "http://not-a-location"}, "body": null}
+        }
+      ]
     }
   ]
 }

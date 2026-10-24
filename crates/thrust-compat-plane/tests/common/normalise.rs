@@ -19,6 +19,8 @@ pub struct Rules {
     date_token: String,
     opaque: BTreeMap<String, String>,
     headers_keep: Vec<String>,
+    origin_headers: Vec<String>,
+    origin_token: String,
 }
 
 fn strings(v: &Value) -> Vec<String> {
@@ -44,6 +46,8 @@ impl Rules {
             date_token: v["date"]["token"].as_str().expect("token").to_string(),
             opaque,
             headers_keep: strings(&v["headers_keep"]),
+            origin_headers: strings(&v["header_origin_rewrite"]["headers"]),
+            origin_token: v["header_origin_rewrite"]["token"].as_str().expect("token").to_string(),
         }
     }
 }
@@ -164,14 +168,32 @@ pub fn value(rules: &Rules, ids: &mut Ids, v: &Value, path: &str) -> Value {
     }
 }
 
+/// `^https?://[^/?#]+` replaced by `token`; a value that does not start that way is unchanged.
+fn replace_origin(v: &str, token: &str) -> String {
+    for scheme in ["http://", "https://"] {
+        if let Some(rest) = v.strip_prefix(scheme) {
+            let end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
+            if end > 0 {
+                return format!("{token}{}", &rest[end..]);
+            }
+        }
+    }
+    v.to_string()
+}
+
 fn headers(rules: &Rules, hs: Option<&Value>) -> Value {
     let mut out = Map::new();
     if let Some(Value::Object(m)) = hs {
         for (k, v) in m {
             let lower = k.to_lowercase();
-            if rules.headers_keep.contains(&lower) {
-                out.insert(lower, v.clone());
+            if !rules.headers_keep.contains(&lower) {
+                continue;
             }
+            let value = match v.as_str() {
+                Some(s) if rules.origin_headers.contains(&lower) => Value::String(replace_origin(s, &rules.origin_token)),
+                _ => v.clone(),
+            };
+            out.insert(lower, value);
         }
     }
     Value::Object(out)
