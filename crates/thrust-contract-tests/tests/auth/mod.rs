@@ -57,6 +57,17 @@ async fn error_code(r: reqwest::Response) -> String {
 /// the attributes on `Set-Cookie` itself, because the local targets serve plain HTTP.)
 #[tokio::test]
 async fn sign_in_sets_http_only_cookies_and_the_session_works() {
+    sign_in_cookies().await;
+}
+
+/// Enforcement of the CSRF token is the one thing the `csrfoff` pass changes, and a sign-in does not depend on it: the
+/// same cookies, with the same attributes.
+#[tokio::test]
+async fn csrf_off_sign_in_still_sets_both_cookies_and_the_session_works() {
+    sign_in_cookies().await;
+}
+
+async fn sign_in_cookies() {
     let t = t();
     let f = Fixture::seed(&t).await;
     let r = t.sign_in_raw(&f.member_a.email, &f.member_a.password).await;
@@ -152,10 +163,115 @@ async fn a_cookie_authenticated_mutation_needs_the_csrf_token() {
     assert_eq!(del(Csrf::Matching).send().await.unwrap().status(), 204, "the same delete with it");
 }
 
+/// Q-0050.8, the `csrfoff` pass: a target that does not enforce the token says so, and the main pass's server says the
+/// opposite (the script refuses a mismatch before any test runs; this is the same fact asserted by the suite).
+#[tokio::test]
+async fn csrf_off_the_server_says_it_does_not_enforce_the_token() {
+    let t = t();
+    let info = t.info().await;
+    assert_eq!(info["csrf_enforce"], json!(false), "{info}");
+    // control: the field is the one that matters, not a missing one that compares unequal to `true`
+    assert!(info.get("csrf_enforce").is_some_and(Value::is_boolean), "{info}");
+}
+
+/// Q-0050.8: with enforcement off, a mutation authenticated by the cookie is accepted without the token, whatever is
+/// (or is not) sent in its place: the mirror of `a_cookie_authenticated_mutation_needs_the_csrf_token`, request for
+/// request. The token is not asked for, and a token that is sent is not wrong either.
+#[tokio::test]
+async fn csrf_off_a_cookie_authenticated_mutation_needs_no_token() {
+    let t = t();
+    let f = Fixture::seed(&t).await;
+    let s = t.sign_in(&f.member_a).await;
+    let create = |csrf| as_browser(&t, Method::POST, t.url(&wi_path(&f.a)), &s, csrf).json(&json!({"name": "from a cookie"}));
+
+    let mut created = Vec::new();
+    for (what, csrf) in [
+        ("no token", Csrf::Absent),
+        ("a token that is not the cookie's", Csrf::Wrong("0123456789abcdef0123456789abcdef")),
+        ("an empty token", Csrf::Wrong("")),
+        ("a token and no CSRF cookie", Csrf::NoCookie),
+        ("the token", Csrf::Matching),
+    ] {
+        let r = create(csrf).send().await.unwrap();
+        assert_eq!(r.status(), 201, "{what}");
+        let item: WorkItem = r.json().await.unwrap();
+        assert_eq!(item.created_by, f.member_a.id, "created as the session's user ({what})");
+        created.push(item.id);
+    }
+    let rows: Vec<WorkItem> = list(&t, &f.member_a, &f.a, None).await.json().await.unwrap();
+    assert_eq!(rows.len(), created.len(), "every one of them created a row");
+    // a delete is a mutation too
+    let del = |id: WorkItemId, csrf| as_browser(&t, Method::DELETE, t.url(&format!("{}/{}", wi_path(&f.a), id)), &s, csrf);
+    assert_eq!(del(created[0], Csrf::Absent).send().await.unwrap().status(), 204, "a delete without the token");
+    assert_eq!(del(created[1], Csrf::Wrong("ffffffffffffffffffffffffffffffff")).send().await.unwrap().status(), 204);
+
+    // controls: the credential is still checked. A dead cookie is 401 with or without a token, and no cookie at all is
+    // 401, so this is "the token is not asked for", not "anything is accepted"
+    let ghost = Session { token: "not-a-session".into(), ..s.clone() };
+    let dead = as_browser(&t, Method::POST, t.url(&wi_path(&f.a)), &ghost, Csrf::Matching).json(&json!({"name": "x"}));
+    assert_eq!(dead.send().await.unwrap().status(), 401, "a dead cookie");
+    let none = t.http.post(t.url(&wi_path(&f.a))).json(&json!({"name": "x"})).send().await.unwrap();
+    assert_eq!(none.status(), 401, "no credential");
+    // and a cookie of a user who cannot create is refused for that reason, not waved through
+    let guest = t.sign_in(&f.guest_a).await;
+    let r = as_browser(&t, Method::POST, t.url(&wi_path(&f.a)), &guest, Csrf::Absent).json(&json!({"name": "x"}));
+    assert_eq!(r.send().await.unwrap().status(), 403, "a guest still may not create");
+}
+
+/// Q-0050.8: the identity routes that need a session (sign-out, sign-out-everywhere, the three API-key routes) are
+/// cookie mutations like any other, so with enforcement off the cookie is enough for them too, and an API key is still
+/// not a session. (The stock app's sign-out, for one, is a cookie POST.)
+#[tokio::test]
+async fn csrf_off_identity_routes_take_the_cookie_without_a_token() {
+    let t = t();
+    let f = Fixture::seed(&t).await;
+    let s = t.sign_in(&f.member_a).await;
+    let other = t.sign_in(&f.member_a).await;
+
+    // make a key with the cookie alone, list it, revoke it
+    let made = as_browser(&t, Method::POST, keys_url(&t), &s, Csrf::Absent).json(&json!({"label": "no token"})).send().await.unwrap();
+    assert_eq!(made.status(), 201, "an API key made with the cookie and no token");
+    let key: CreatedApiKey = made.json().await.unwrap();
+    assert_eq!(list_with_key(&t, &f.a, Some(&key.token)).await, 200, "the key works");
+    let revoked = as_browser(&t, Method::DELETE, format!("{}/{}", keys_url(&t), key.id), &s, Csrf::Absent).send().await.unwrap();
+    assert_eq!(revoked.status(), 204, "revoked with the cookie and no token");
+    assert_eq!(list_with_key(&t, &f.a, Some(&key.token)).await, 403, "and it is revoked");
+
+    // an API key is still not a session: it cannot mint keys, token or no token
+    let live = create_key_ok(&t, &f.member_a, json!({})).await;
+    let by_key = t.http.post(keys_url(&t)).header(API_KEY_HEADER, &live.token).json(&json!({})).send().await.unwrap();
+    assert_eq!(by_key.status(), 401, "a key cannot mint keys");
+
+    // sign-out ends this session with the cookie alone, and clears both cookies; the other session lives on
+    let out = as_browser(&t, Method::POST, auth_url(&t, "/sign-out"), &s, Csrf::Absent).send().await.unwrap();
+    assert_eq!(out.status(), 204, "sign-out with the cookie and no token");
+    assert!(SetCookie::all(&out).iter().all(|c| c.attr("Max-Age") == Some("0")), "both cookies cleared");
+    let after = as_browser(&t, Method::GET, auth_url(&t, "/session"), &s, Csrf::Absent).send().await.unwrap();
+    assert_eq!(after.status(), 401, "the signed-out session is dead");
+    let still = as_browser(&t, Method::GET, auth_url(&t, "/session"), &other, Csrf::Absent).send().await.unwrap();
+    assert_eq!(still.status(), 200, "control: the other session is not the one that was ended");
+    // sign-out everywhere, likewise
+    let all = as_browser(&t, Method::POST, auth_url(&t, "/sign-out-all"), &other, Csrf::Absent).send().await.unwrap();
+    assert_eq!(all.status(), 200, "sign-out-everywhere with the cookie and no token");
+    let gone = as_browser(&t, Method::GET, auth_url(&t, "/session"), &other, Csrf::Absent).send().await.unwrap();
+    assert_eq!(gone.status(), 401);
+}
+
 /// `GET /auth/csrf` (Plane's `get-csrf-token`): a fresh token each time, in the JSON body and in the CSRF cookie, with
 /// the cookie's attributes, for a caller who has no session yet.
 #[tokio::test]
 async fn the_csrf_endpoint_hands_out_a_fresh_token_in_json_and_in_the_cookie() {
+    csrf_endpoint().await;
+}
+
+/// With enforcement off the endpoint is exactly as before: a client that already fetches the token (the stock app does,
+/// for its auth forms) keeps getting one, and the cookie is the same.
+#[tokio::test]
+async fn csrf_off_the_csrf_endpoint_still_hands_out_a_fresh_token() {
+    csrf_endpoint().await;
+}
+
+async fn csrf_endpoint() {
     let t = t();
     let mut seen = Vec::new();
     for _ in 0..2 {

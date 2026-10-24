@@ -135,6 +135,7 @@ fn key(n: u8, user: UserId, life: Life) -> NewApiKey {
         id: ApiKeyId(Uuid::from_u128(1000 + u128::from(n))),
         user_id: user,
         token_hash: hash(n),
+        hash_version: 1,
         prefix: format!("thrk_{n:04}"),
         label: format!("key {n}"),
         created_at: now() - secs(100 - i64::from(n)),
@@ -162,7 +163,7 @@ fn an_api_key_is_live_only_while_unrevoked_unexpired_and_its_user_active(
     }
     let got = block_on(db.api_key(&hash(if known { 1 } else { 2 }), now())).unwrap();
     let live = known && matches!(life, Life::NoExpiry | Life::Live) && !revoked && matches!(who, Who::Active);
-    let want = live.then_some(LiveApiKey { id: k.id, user_id: OWNER, last_used_at: None });
+    let want = live.then_some(LiveApiKey { id: k.id, user_id: OWNER, last_used_at: None, hash_version: 1 });
     assert_eq!(got, want, "known={known} {life:?} revoked={revoked} {who:?}");
 }
 
@@ -242,6 +243,87 @@ fn an_api_key_digest_or_id_that_exists_is_a_conflict_and_a_missing_owner_is_refu
     }
     // the key of a user that does not exist (the foreign key in Postgres)
     assert!(block_on(db.insert_api_key(&key(3, OTHER, Life::NoExpiry))).is_err());
+}
+
+/// Q-0052.3: a key carries the version of the scheme that made its digest. It must be positive (the column's CHECK), and
+/// it comes back with the key.
+#[rstest]
+fn an_api_key_keeps_its_hash_version_and_a_version_that_is_not_positive_is_refused(
+    #[values(i16::MIN, -1, 0, 1, 2, i16::MAX)] version: i16,
+) {
+    let db = with_user(Who::Active);
+    let k = NewApiKey { hash_version: version, ..key(1, OWNER, Life::NoExpiry) };
+    let got = block_on(db.insert_api_key(&k));
+    if version > 0 {
+        got.unwrap();
+        assert_eq!(block_on(db.api_key(&k.token_hash, now())).unwrap().unwrap().hash_version, version);
+    } else {
+        assert!(matches!(got, Err(DbError::Backend(_))), "{got:?}");
+        assert!(block_on(db.api_key(&k.token_hash, now())).unwrap().is_none(), "a refused key is not stored");
+    }
+}
+
+/// `rehash_api_key` is a compare-and-set on the stored version: it changes a row only while the row is at `from`, and
+/// then only the digest and the version. A row that is not at `from` (or an unknown id) answers `false` and is left
+/// alone, and so is checked for nothing else (as `UPDATE ... WHERE hash_version = $2` touches no constraint for a row it
+/// does not match); a matching row is refused for a version that is not positive (the CHECK) and for a digest that
+/// another row holds (the UNIQUE index). Every combination, and the answer, the row and its neighbour afterwards.
+#[rstest]
+fn rehash_api_key_is_a_compare_and_set_on_the_stored_version(
+    #[values(1, 2)] stored: i16,
+    #[values(1, 2, 3)] from: i16,
+    #[values(0, 1, 2, 3)] to: i16,
+    #[values(true, false)] known_id: bool,
+    #[values(true, false)] digest_taken: bool,
+) {
+    let db = with_user(Who::Active);
+    let k = NewApiKey { hash_version: stored, ..key(1, OWNER, Life::Live) };
+    let neighbour = key(2, OWNER, Life::NoExpiry);
+    block_on(db.insert_api_key(&k)).unwrap();
+    block_on(db.insert_api_key(&neighbour)).unwrap();
+    block_on(db.touch_api_key(k.id, now() + secs(5))).unwrap();
+    let new_hash = hash(100);
+    if digest_taken {
+        // a third row already holds the digest the move wants
+        block_on(db.insert_api_key(&NewApiKey { token_hash: new_hash, ..key(3, OWNER, Life::NoExpiry) })).unwrap();
+    }
+    let before = block_on(db.list_api_keys(OWNER)).unwrap();
+    let id = if known_id { k.id } else { ApiKeyId(Uuid::from_u128(999)) };
+
+    let got = block_on(db.rehash_api_key(id, from, &new_hash, to));
+    let label = format!("stored {stored} from {from} to {to} known={known_id} taken={digest_taken}");
+    let matches_row = known_id && from == stored;
+    let moved = match got {
+        Ok(moved) => {
+            assert!(matches_row || !moved, "{label}: only a matching row moves");
+            moved
+        }
+        Err(e) => {
+            assert!(matches_row, "{label}: a row that does not match is not looked at, so it cannot fail: {e}");
+            match e {
+                DbError::Backend(_) => assert!(to <= 0, "{label}"),
+                DbError::Conflict(_) => assert!(to > 0 && digest_taken, "{label}"),
+            }
+            false
+        }
+    };
+    assert_eq!(moved, matches_row && to > 0 && !digest_taken, "{label}");
+
+    // what stays: every listed field of every key, the neighbour's digest, and either the old digest (unmoved) or the new
+    assert_eq!(block_on(db.list_api_keys(OWNER)).unwrap(), before, "{label}");
+    assert!(block_on(db.api_key(&neighbour.token_hash, now())).unwrap().is_some(), "{label}: the neighbour");
+    let old = block_on(db.api_key(&k.token_hash, now())).unwrap();
+    let new = block_on(db.api_key(&new_hash, now())).unwrap();
+    if moved {
+        assert!(old.is_none(), "{label}: the old digest no longer finds it");
+        let new = new.expect("the new digest finds it");
+        assert_eq!((new.id, new.hash_version, new.last_used_at), (k.id, to, Some(now() + secs(5))), "{label}");
+    } else {
+        let old = old.expect("the old digest still finds it");
+        assert_eq!((old.id, old.hash_version), (k.id, stored), "{label}");
+        // the digest is another row's if it is anyone's
+        assert_eq!(new.is_some(), digest_taken, "{label}");
+    }
 }
 
 // --- users, accounts ------------------------------------------------------------------------------------------

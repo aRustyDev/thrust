@@ -18,6 +18,8 @@ mutant_no_activity_dedupe = ["thrust-adapters-memory/mutant_no_activity_dedupe"]
 mutant_ignore_revoked = ["thrust-adapters-memory/mutant_ignore_revoked"]
 # Pass-through to thrust-core's control-run mutants.
 mutant_skip_csrf = ["thrust-core/mutant_skip_csrf"]
+mutant_csrf_never = ["thrust-core/mutant_csrf_never"]
+mutant_csrf_always = ["thrust-core/mutant_csrf_always"]
 mutant_unverified_email = ["thrust-core/mutant_unverified_email"]
 
 [dependencies]

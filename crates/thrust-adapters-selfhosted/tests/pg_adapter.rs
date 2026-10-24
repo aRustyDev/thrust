@@ -252,6 +252,8 @@ async fn the_identity_tables_have_hashes_and_no_plaintext_and_no_workspace() {
         want(&[
             ("created_at", ts),
             ("expires_at", ts),
+            // which digest scheme made `token_hash` (Q-0052.3, migration 0007); a version, not a secret
+            ("hash_version", "smallint"),
             ("id", "uuid"),
             ("label", "text"),
             ("last_used_at", ts),
@@ -308,6 +310,108 @@ async fn the_identity_tables_have_hashes_and_no_plaintext_and_no_workspace() {
         .is_err(),
         "a pending login's key must be a 32-byte digest too"
     );
+}
+
+/// Migration 0007 (Q-0052.3) adds `api_keys.hash_version` to a database that has keys already: every one of them was made
+/// before there was a second scheme, so every one is version 1 (the column's default), and none of them is touched by
+/// running the migration again. The column is NOT NULL and must be positive, and applying the file twice leaves one
+/// check, not two. A pinned regression for the upgrade path (every other test starts from an empty database).
+#[tokio::test]
+async fn migration_0007_gives_existing_keys_version_1_and_is_idempotent() {
+    let container = Postgres::default().start().await.expect("start postgres container");
+    let port = container.get_host_port_ipv4(5432).await.expect("mapped port");
+    let url = format!("postgres://postgres:postgres@127.0.0.1:{port}/postgres");
+    let conn = Arc::new(PoolConnector::from_url(&url, 4).unwrap());
+    let raw = conn.raw().await.unwrap();
+    // a database as stage 2 left it: everything up to 0005, a user and two keys that have no `hash_version`
+    for sql in [
+        thrust_adapters_postgres::MIGRATION_0001,
+        thrust_adapters_postgres::MIGRATION_0002,
+        thrust_adapters_postgres::MIGRATION_0003,
+        thrust_adapters_postgres::MIGRATION_0004,
+        thrust_adapters_postgres::MIGRATION_0005,
+    ] {
+        raw.batch_execute(sql).await.unwrap();
+    }
+    let user = UserId(new_id());
+    raw.execute("INSERT INTO users (id, email) VALUES ($1, 'legacy@example.test')", &[&user.0]).await.unwrap();
+    let (a, b) = (new_id(), new_id());
+    for (id, digest) in [(a, [1u8; 32]), (b, [2u8; 32])] {
+        raw.execute(
+            "INSERT INTO api_keys (id, user_id, token_hash, prefix, label, created_at) VALUES ($1, $2, $3, 'thrk_x', '', now())",
+            &[&id, &user.0, &digest.to_vec()],
+        )
+        .await
+        .unwrap();
+    }
+    let versions = || {
+        let raw = &raw;
+        async move {
+            raw.query("SELECT hash_version FROM api_keys ORDER BY token_hash", &[])
+                .await
+                .unwrap()
+                .iter()
+                .map(|r| r.get::<_, i16>(0))
+                .collect::<Vec<_>>()
+        }
+    };
+    assert!(raw.query("SELECT hash_version FROM api_keys", &[]).await.is_err(), "control: there is no such column yet");
+
+    thrust_adapters_postgres::migrate(&raw).await.unwrap();
+    assert_eq!(versions().await, [1, 1], "every key made before the column is version 1");
+    // a key moved to another version keeps it when the migration runs again
+    raw.execute("UPDATE api_keys SET hash_version = 2 WHERE id = $1", &[&a]).await.unwrap();
+    thrust_adapters_postgres::migrate(&raw).await.unwrap();
+    thrust_adapters_postgres::migrate(&raw).await.unwrap();
+    assert_eq!(versions().await, [2, 1], "applying the file again does not reset a version");
+
+    // the column's default, NOT NULL and CHECK: a key inserted without a version is version 1; none, zero or a
+    // negative one is refused; the largest smallint is accepted
+    let insert = |digest: u8, version: Option<i16>| {
+        let raw = &raw;
+        let user = user.0;
+        async move {
+            match version {
+                None => raw
+                    .execute(
+                        "INSERT INTO api_keys (id, user_id, token_hash, prefix, label, created_at) \
+                         VALUES ($1, $2, $3, 'thrk_x', '', now())",
+                        &[&new_id(), &user, &vec![digest; 32]],
+                    )
+                    .await,
+                Some(v) => raw
+                    .execute(
+                        "INSERT INTO api_keys (id, user_id, token_hash, hash_version, prefix, label, created_at) \
+                         VALUES ($1, $2, $3, $4, 'thrk_x', '', now())",
+                        &[&new_id(), &user, &vec![digest; 32], &v],
+                    )
+                    .await,
+            }
+        }
+    };
+    insert(10, None).await.expect("the default");
+    assert_eq!(
+        raw.query_one("SELECT hash_version FROM api_keys WHERE token_hash = $1", &[&vec![10u8; 32]]).await.unwrap().get::<_, i16>(0),
+        1
+    );
+    insert(11, Some(i16::MAX)).await.expect("the largest version");
+    assert!(insert(12, Some(0)).await.is_err(), "zero is not a version");
+    assert!(insert(13, Some(-1)).await.is_err(), "a negative one is not either");
+    assert!(
+        raw.execute("UPDATE api_keys SET hash_version = NULL WHERE id = $1", &[&a]).await.is_err(),
+        "NOT NULL"
+    );
+    // idempotent in the schema too: one CHECK on the version, not one per run
+    let checks = raw
+        .query_one(
+            "SELECT count(*) FROM pg_constraint WHERE conrelid = 'api_keys'::regclass AND contype = 'c' \
+             AND pg_get_constraintdef(oid) LIKE '%hash_version%'",
+            &[],
+        )
+        .await
+        .unwrap()
+        .get::<_, i64>(0);
+    assert_eq!(checks, 1);
 }
 
 /// `migrate` runs every file on every start, so 0005 must be re-runnable and must not touch the rows it made.

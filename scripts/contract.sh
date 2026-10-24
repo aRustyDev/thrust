@@ -5,6 +5,10 @@
 #     target: native-memory | native-pg | worker-memory | worker-cf
 #     pass:   main (default)   normal config, outbox fast path ON
 #             sweeper          fast path OFF; asserts the cron sweeper does the delivery
+#             csrfoff          CSRF enforcement OFF (Q-0050.8, the production default while the stock frontend is in use);
+#                              asserts a cookie mutation is accepted without the token. The target is started with NO
+#                              setting for it, so the pass also shows that the composition root's own default is off
+#                              (the native server's, and the Worker's `[vars]`). Every other pass runs with it ON
 #             panic            alone against a fresh target (a Worker panic resets the isolate)
 #             blast            OBSERVATIONAL, not in contract-all: failures of OTHER requests around one panic
 #             bench            latency bench (release native build); success == the bench exits 0
@@ -40,6 +44,7 @@ ARGON2_P=1
 SIGNIN_LIMIT=30
 EXPECT_MAIN=37
 EXPECT_SWEEPER=2
+EXPECT_CSRFOFF=6
 EXPECT_PANIC=1
 EXPECT_BLAST=1
 EXPECT_WORKER=1
@@ -83,6 +88,19 @@ case "$PASS" in
   sweeper|cron) FASTPATH=off ;;
   *) FASTPATH=on ;;
 esac
+
+# CSRF enforcement (Q-0050.8). The composition roots default it OFF, but the contract targets keep the meaning of their CSRF
+# tests, so every pass runs with it ON except `csrfoff`, which starts the target with no setting at all ("default": the
+# native server gets no THRUST_CSRF_ENFORCE, the Worker no `--var` for it, so its `[vars]` apply) and so shows the default.
+# WANT_CSRF is what /_info must say; the vacuity guard below refuses a target that says otherwise.
+# THRUST_SERVER_CSRF_ENFORCE (on|off) is only ever set by scripts/mutants.sh (control runs): it starts the server with a
+# setting the pass does not expect, to show that the guard refuses it.
+case "$PASS" in
+  csrfoff) CSRF=off; WANT_CSRF=false; CSRF_DEFAULT=default ;;
+  *) CSRF=on; WANT_CSRF=true; CSRF_DEFAULT=on ;;
+esac
+CSRF_SERVER="${THRUST_SERVER_CSRF_ENFORCE:-$CSRF_DEFAULT}"
+unset THRUST_CSRF_ENFORCE
 
 SERVER_PID=""
 PG_CONTAINER=""
@@ -148,6 +166,8 @@ if [ "$KIND" = "native" ]; then
   # shellcheck disable=SC2086
   "$ROOT/scripts/rs" cargo build --quiet $PROFILE_FLAG --manifest-path "$ROOT/Cargo.toml" -p thrust-server ${THRUST_SERVER_FEATURES:+--features "$THRUST_SERVER_FEATURES"} \
     >"$LOG.build.log" 2>&1 || { echo "server build failed, see $LOG.build.log" >&2; exit 3; }
+  # `default` sets nothing, so the server's own default decides
+  [ "$CSRF_SERVER" = default ] || export THRUST_CSRF_ENFORCE="$CSRF_SERVER"
   THRUST_LISTEN="127.0.0.1:$PORT" THRUST_ADAPTERS="$ADAPTERS" THRUST_TEST_ROUTES=1 \
     THRUST_CREATE_RATE_LIMIT="$RATE_LIMIT" THRUST_OUTBOX_FASTPATH="$FASTPATH" THRUST_SWEEP_INTERVAL_SECS=0 \
     "$ROOT/target/$BIN_DIR/thrust-server" >"$LOG.server.log" 2>&1 &
@@ -155,6 +175,7 @@ if [ "$KIND" = "native" ]; then
 else
   # Worker: `wrangler dev` (local workerd). See scripts/worker-dev.sh.
   THRUST_PORT="$PORT" THRUST_ADAPTERS="$ADAPTERS" THRUST_OUTBOX_FASTPATH="$FASTPATH" THRUST_CREATE_RATE_LIMIT="$RATE_LIMIT" \
+    THRUST_CSRF_ENFORCE="$CSRF_SERVER" \
     "$ROOT/scripts/worker-dev.sh" >"$LOG.server.log" 2>&1 &
   SERVER_PID=$!
 fi
@@ -199,6 +220,14 @@ case "$INFO" in
   *) echo "[$TARGET/$PASS] VACUITY GUARD: adapter set is not '$ADAPTERS'" >&2; exit 5 ;;
 esac
 
+# The same guard for the CSRF switch: a main pass against a server that does not enforce the token would pass every CSRF
+# test that does not look (and fail the ones that do, for the wrong reason), and a `csrfoff` pass against one that does
+# enforce it would be a pass that proves nothing about the switch. /_info says what the server was started with.
+case "$INFO" in
+  *"\"csrf_enforce\":$WANT_CSRF"*) ;;
+  *) echo "[$TARGET/$PASS] VACUITY GUARD: csrf_enforce is not $WANT_CSRF (pass '$PASS' needs enforcement $CSRF)" >&2; exit 5 ;;
+esac
+
 if [ "$TARGET" = "worker-memory" ]; then
   # state lives inside the isolate; a panic (abort) resets it
   THRUST_STATE_SURVIVES_PANIC=0
@@ -212,6 +241,11 @@ case "$PASS" in
     "$ROOT/scripts/rs" cargo test --manifest-path "$ROOT/Cargo.toml" -p thrust-contract-tests --test contract -- sweeper_ --test-threads=1 --nocapture >"$LOG.test.log" 2>&1
     TEST_STATUS=$?
     EXPECT=$EXPECT_SWEEPER
+    ;;
+  csrfoff)
+    "$ROOT/scripts/rs" cargo test --manifest-path "$ROOT/Cargo.toml" -p thrust-contract-tests --test contract -- csrf_off_ >"$LOG.test.log" 2>&1
+    TEST_STATUS=$?
+    EXPECT=$EXPECT_CSRFOFF
     ;;
   panic)
     "$ROOT/scripts/rs" cargo test --manifest-path "$ROOT/Cargo.toml" -p thrust-contract-tests --test contract -- panic_ --test-threads=1 --nocapture >"$LOG.test.log" 2>&1
@@ -252,7 +286,7 @@ case "$PASS" in
     EXPECT=$EXPECT_CRON
     ;;
   *)
-    "$ROOT/scripts/rs" cargo test --manifest-path "$ROOT/Cargo.toml" -p thrust-contract-tests --test contract -- --skip sweeper_ --skip panic_ --skip blast_ >"$LOG.test.log" 2>&1
+    "$ROOT/scripts/rs" cargo test --manifest-path "$ROOT/Cargo.toml" -p thrust-contract-tests --test contract -- --skip sweeper_ --skip panic_ --skip blast_ --skip csrf_off_ >"$LOG.test.log" 2>&1
     TEST_STATUS=$?
     EXPECT=$EXPECT_MAIN
     ;;

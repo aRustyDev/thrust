@@ -60,6 +60,9 @@ fn core_config(env: &Env) -> CoreConfig {
         rate_window_secs: num(env, "THRUST_RATE_WINDOW_SECS", 60),
         outbox_fastpath: flag(env, "THRUST_OUTBOX_FASTPATH", true),
         sign_in_rate_limit: num(env, "THRUST_SIGNIN_RATE_LIMIT", defaults.sign_in_rate_limit),
+        // OFF unless a var says on, as in the native server (Q-0050.8): the stock frontend sends the CSRF token only on its
+        // auth form posts. The flip is when the custom frontend replaces it.
+        csrf_enforce: flag(env, "THRUST_CSRF_ENFORCE", false),
         // OWASP's minimum unless a var says otherwise (a test target sets a cheap cost)
         argon2: Argon2Params {
             m_cost_kib: num(env, "THRUST_ARGON2_M_KIB", defaults.argon2.m_cost_kib),

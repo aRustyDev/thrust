@@ -164,6 +164,35 @@ Rust implementation) now has its evidence. What the OIDC half established:
 * **Password sign-in** (the P0 login of Amendment A1) is built and measured: argon2id at OWASP's minimum, p99 78 ms of CPU on a
   deployed Worker (ADR-0052's update has the numbers).
 
+## Update — owner decisions on the #38 review (2026-10-24)
+
+Two of the questions that the auth slice left open are decided; the third decision of that review (Q-0052.3) is in
+ADR-0052.
+
+* **Q-0050.8, answered: option A is built and is not enforced while the stock frontend exists.** The client sends
+  `X-CSRFToken`, taken from the token it already fetches (`GET auth/csrf`, Plane's `get-csrf-token`), on a
+  cookie-authenticated mutation, and the server can check it: that is ADR-0052's double submit, built. The stock React
+  app sends the token only on its auth form posts, so enforcing it on its JSON mutations would break it. A switch
+  decides: `THRUST_CSRF_ENFORCE`, **off** in the composition
+  roots' defaults, **on** in the contract targets and Stage 2. The flip is when the custom frontend replaces the stock
+  one, and it is an explicit item of PLAN.md's M4 row. The interim posture (only `SameSite=Lax`, `HttpOnly`, `Secure`
+  and the `__Host-` prefix protect the cookie, as in Plane), the mechanism and the controls are in ADR-0052's
+  2026-10-24 note. The question no longer waits for M1's auth-client change: enforcement is off, so that change is not
+  required to send the token.
+* **Q-0050.9, direction recorded and still for M6: a Workers VPC service to the issuer.** A Worker that redirects to
+  `id.auth.woven` (Zitadel) reaches it, for discovery, the token exchange and the key set, through a Workers VPC service
+  over a tunnel that can reach `id.auth.woven`: the same pattern as CNPG, a tunnel plus a VPC service (ADR-0094; the
+  `thrust-pg` tunnel is its model, and a service pins one host and port, which is what an issuer is). It can wait until
+  M6. This is the owner's lean on the pattern, not a built thing: nothing deployed has exercised `worker::Fetch` against
+  a remote issuer, and the login against Zitadel (K2) is still open (`research/0012` §9). The tunnel, the service's
+  hostname and the binding the `Fetch` port would use are for M6 to settle.
+* Also recorded: issue #40 (the lint and supply-chain gate) now carries an explicit `cargo-deny` ignore for
+  RUSTSEC-2023-0071, the `rsa` crate (its private-key operations are not constant-time), with a re-check note; `rsa`
+  reaches this stack through `openidconnect`, which is expected to use it only to verify RS256 ID-token signatures with
+  the issuer's public key (the issue asks for that to be confirmed against the crate's source when the ignore is
+  written), and through the contract suite's mock identity provider, which signs on `127.0.0.1` inside the test process. Zitadel signs
+  with RS256, so the decision is to keep RS256 and carry the ignore, not to avoid it.
+
 ## Open Questions
 
 * Q-0050.1 — answered (round 23): JIT provisioning via OIDC claims at P1.
@@ -172,8 +201,8 @@ Rust implementation) now has its evidence. What the OIDC half established:
 * Q-0050.4 — BetterAuth fit behind our ports (spike). (answered round 29, FR-16)
 * Q-0050.5 — answered (round 20): Access JWT validation joins at the CF Access phase, not P0.
 * Q-0050.6 — Plane `User`/`Account`/`Profile` ↔ BetterAuth schema mapping. (answered round 29, FR-16)
-* Q-0050.8 — How does the stock React app's JSON mutations carry the CSRF token (K3)? Open, owner asmith, for M1's auth-client change.
-* Q-0050.9 — How does a deployed Worker reach a WARP-only issuer (K2)? Open, for M6.
+* Q-0050.8 — How does the stock React app's JSON mutations carry the CSRF token (K3)? **Answered (owner, 2026-10-24):** option A is built and not enforced while the stock frontend exists; enforcement flips on with the custom frontend (M4).
+* Q-0050.9 — How does a deployed Worker reach a WARP-only issuer (K2)? Direction recorded (owner, 2026-10-24): a Workers VPC service over a tunnel to `id.auth.woven`, as for CNPG (ADR-0094). Still open until M6 builds it.
 * Q-0052 — sessions and API-key mechanics.
 
 ## More Information

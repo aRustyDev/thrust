@@ -20,6 +20,10 @@ THRUST_TEST_ROUTES = "1"            # spike only: exposes /internal/* and /_info
 THRUST_ADAPTERS = "cloudflare"
 THRUST_OUTBOX_FASTPATH = "on"
 THRUST_CREATE_RATE_LIMIT = "30"
+# The contract's CSRF tests need enforcement on (ADR-0052); `scripts/stage2-contract.sh` refuses a Worker that does not
+# say so in /_info. The `csrfoff` pass needs a Worker deployed with "off" instead. The production default is off
+# (wrangler.toml) until the custom frontend replaces the stock one.
+THRUST_CSRF_ENFORCE = "on"
 # Fixed windows are aligned to the wall clock. The contract's rate-limit test takes ~8 s over real network
 # latency, so with the 60 s default it straddles a boundary ~12% of the time and the 31st create is allowed
 # (measured: 4/4 fail starting at :56, 4/4 pass starting at :02). One hour makes that ~0.2%.

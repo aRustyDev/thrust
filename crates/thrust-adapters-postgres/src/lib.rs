@@ -22,13 +22,16 @@ pub const MIGRATION_0002: &str = include_str!("../migrations/0002_sequence_tenan
 pub const MIGRATION_0003: &str = include_str!("../migrations/0003_workspaces.sql");
 pub const MIGRATION_0004: &str = include_str!("../migrations/0004_sessions.sql");
 pub const MIGRATION_0005: &str = include_str!("../migrations/0005_identity.sql");
+// 0006 is the SQLite adapter's (search indexes); `migrate` applies files in order, so the gap is harmless.
+pub const MIGRATION_0007: &str = include_str!("../migrations/0007_api_key_hash_version.sql");
 
 pub async fn migrate(client: &Client) -> Result<(), tokio_postgres::Error> {
     client.batch_execute(MIGRATION_0001).await?;
     client.batch_execute(MIGRATION_0002).await?;
     client.batch_execute(MIGRATION_0003).await?;
     client.batch_execute(MIGRATION_0004).await?;
-    client.batch_execute(MIGRATION_0005).await
+    client.batch_execute(MIGRATION_0005).await?;
+    client.batch_execute(MIGRATION_0007).await
 }
 
 pub trait ClientHandle: Send {
@@ -83,6 +86,8 @@ pg_type!(
     Uuid => Type::UUID,
     i64 => Type::INT8,
     i32 => Type::INT4,
+    // `api_keys.hash_version` is a smallint
+    i16 => Type::INT2,
     bool => Type::BOOL,
     String => Type::TEXT,
     Timestamp => Type::TIMESTAMPTZ,
@@ -332,12 +337,13 @@ impl Database for PgDatabase {
         let c = self.conn().await?;
         Pg(c.client())
             .execute(
-                "INSERT INTO api_keys (id, user_id, token_hash, prefix, label, created_at, expires_at) \
-                 VALUES ($1, $2, $3, $4, $5, $6, $7)",
+                "INSERT INTO api_keys (id, user_id, token_hash, hash_version, prefix, label, created_at, expires_at) \
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
                 &[
                     &k.id.0,
                     &k.user_id.0,
                     &&k.token_hash.0[..],
+                    &k.hash_version,
                     &k.prefix.as_str(),
                     &k.label.as_str(),
                     &k.created_at,
@@ -353,7 +359,7 @@ impl Database for PgDatabase {
         let c = self.conn().await?;
         let row = Pg(c.client())
             .query_opt(
-                "SELECT k.id, k.user_id, k.last_used_at FROM api_keys k JOIN users u ON u.id = k.user_id \
+                "SELECT k.id, k.user_id, k.last_used_at, k.hash_version FROM api_keys k JOIN users u ON u.id = k.user_id \
                  WHERE k.token_hash = $1 AND k.revoked_at IS NULL AND (k.expires_at IS NULL OR k.expires_at > $2) \
                  AND u.is_active",
                 &[&&hash.0[..], &now],
@@ -364,6 +370,7 @@ impl Database for PgDatabase {
             id: ApiKeyId(r.get("id")),
             user_id: UserId(r.get("user_id")),
             last_used_at: r.get("last_used_at"),
+            hash_version: r.get("hash_version"),
         }))
     }
 
@@ -374,6 +381,26 @@ impl Database for PgDatabase {
             .await
             .map_err(db_err)?;
         Ok(())
+    }
+
+    async fn rehash_api_key(
+        &self,
+        id: ApiKeyId,
+        from_version: i16,
+        new_hash: &TokenHash,
+        new_version: i16,
+    ) -> Result<bool, DbError> {
+        let c = self.conn().await?;
+        // The compare-and-set is the WHERE clause: a row that is not (or no longer) at `from_version` is not touched,
+        // and neither of its other constraints is looked at. Owner, expiry, revocation and last use stay.
+        let n = Pg(c.client())
+            .execute(
+                "UPDATE api_keys SET token_hash = $3, hash_version = $4 WHERE id = $1 AND hash_version = $2",
+                &[&id.0, &from_version, &&new_hash.0[..], &new_version],
+            )
+            .await
+            .map_err(db_err)?;
+        Ok(n == 1)
     }
 
     async fn list_api_keys(&self, user: UserId) -> Result<Vec<ApiKeyInfo>, DbError> {

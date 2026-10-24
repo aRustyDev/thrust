@@ -46,7 +46,7 @@ its base branch. Nothing calls it, so it is a tool to run by hand.
   CI at all.**
 - **The matrix.** The `plan` job reads the `run <target> <pass>` lines of `scripts/contract-all.sh`, so no second
   list can drift. It fails if the number of cells it parsed differs from the number of lines that start with `run`,
-  if there are none, or if one repeats. There are 16 cells. Each runs on a fresh runner with its own checkout, which
+  if there are none, or if one repeats. There are 18 cells. Each runs on a fresh runner with its own checkout, which
   is why the shared-build-directory hazard that makes `contract-all.sh` run serially does not apply.
 - **A cell.** `contract-cell.yml` checks that `curl`, `openssl`, `lsof`, `pgrep` and `docker` exist, runs
   `scripts/contract.sh <target> <pass>` with no pipe so the step's status is the script's, and uploads a marker named

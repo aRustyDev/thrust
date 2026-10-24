@@ -192,6 +192,10 @@ impl Database for MemoryDatabase {
         if !s.users.contains_key(&k.user_id) {
             return Err(DbError::Backend("api key of a user that does not exist".into()));
         }
+        if k.hash_version <= 0 {
+            // the CHECK on `api_keys.hash_version`
+            return Err(DbError::Backend("api key hash_version must be positive".into()));
+        }
         if s.api_keys.iter().any(|r| r.key.token_hash == k.token_hash || r.key.id == k.id) {
             return Err(DbError::Conflict("api key already exists".into()));
         }
@@ -210,7 +214,12 @@ impl Database for MemoryDatabase {
             .iter()
             .find(|r| r.key.token_hash == *hash)
             .filter(|r| !revoked(r) && r.key.expires_at.is_none_or(|e| e > now) && s.user_is_active(r.key.user_id))
-            .map(|r| LiveApiKey { id: r.key.id, user_id: r.key.user_id, last_used_at: r.last_used_at }))
+            .map(|r| LiveApiKey {
+                id: r.key.id,
+                user_id: r.key.user_id,
+                last_used_at: r.last_used_at,
+                hash_version: r.key.hash_version,
+            }))
     }
 
     async fn touch_api_key(&self, id: ApiKeyId, at: Timestamp) -> Result<(), DbError> {
@@ -219,6 +228,33 @@ impl Database for MemoryDatabase {
             r.last_used_at = Some(at);
         }
         Ok(())
+    }
+
+    async fn rehash_api_key(
+        &self,
+        id: ApiKeyId,
+        from_version: i16,
+        new_hash: &TokenHash,
+        new_version: i16,
+    ) -> Result<bool, DbError> {
+        let mut s = self.state.lock().unwrap();
+        // `UPDATE ... WHERE id = $1 AND hash_version = $2`: a row that does not match is not touched, so neither
+        // constraint below is looked at for it
+        let Some(at) = s.api_keys.iter().position(|r| r.key.id == id && r.key.hash_version == from_version) else {
+            return Ok(false);
+        };
+        if new_version <= 0 {
+            // the CHECK on `api_keys.hash_version`
+            return Err(DbError::Backend("api key hash_version must be positive".into()));
+        }
+        // the UNIQUE index on `token_hash`
+        if s.api_keys.iter().any(|r| r.key.id != id && r.key.token_hash == *new_hash) {
+            return Err(DbError::Conflict("api key already exists".into()));
+        }
+        let row = &mut s.api_keys[at];
+        row.key.token_hash = *new_hash;
+        row.key.hash_version = new_version;
+        Ok(true)
     }
 
     async fn list_api_keys(&self, user: UserId) -> Result<Vec<ApiKeyInfo>, DbError> {

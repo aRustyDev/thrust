@@ -6,7 +6,11 @@
 //!   is not riding an ambient cookie, so there is nothing to forge);
 //! * otherwise the session cookie counts: an unknown, revoked or expired one is `Unauthenticated` whatever else the
 //!   request carries; a valid one authenticates a safe method outright, and a mutation only when the CSRF header
-//!   equals the CSRF cookie (both present, non-empty, constant-time compared);
+//!   equals the CSRF cookie (both present, non-empty, constant-time compared), while enforcement is on;
+//! * with enforcement off (`CoreConfig::csrf_enforce`, Q-0050.8: off in the composition roots while the stock frontend
+//!   is in use) the token is not consulted: a valid cookie authenticates a mutation whatever the CSRF header and cookie
+//!   say, and nothing else in this list changes (a dead cookie is still `Unauthenticated`, the bearer token is still
+//!   the only credential considered when there is one);
 //! * no credential at all is `Unauthenticated`.
 
 mod common;
@@ -24,8 +28,9 @@ const LIVE: &str = "live-session-token";
 const REVOKED: &str = "revoked-session-token";
 const UNKNOWN: &str = "never-issued";
 
-fn credential_world() -> World {
-    let w = world();
+/// The world the credential tests run in, with CSRF enforcement `enforce`.
+fn credential_world(enforce: bool) -> World {
+    let w = world_config(CoreConfig { outbox_fastpath: false, csrf_enforce: enforce, ..CoreConfig::default() });
     let who = w.principal(Actor::MemberA).user_id;
     let fixture = SeedFixture {
         sessions: vec![
@@ -120,8 +125,9 @@ fn the_credential_and_the_csrf_rule_decide_the_outcome(
     #[values(false, true)] mutating: bool,
     #[values(Csrf::Absent, Csrf::Matching, Csrf::Mismatching, Csrf::CookieOnly, Csrf::HeaderOnly, Csrf::BothEmpty)]
     csrf: Csrf,
+    #[values(true, false)] enforce: bool,
 ) {
-    let w = credential_world();
+    let w = credential_world(enforce);
     let c = Credentials {
         bearer: cred.bearer(),
         api_key: None,
@@ -134,7 +140,7 @@ fn the_credential_and_the_csrf_rule_decide_the_outcome(
     let want = match (cred.bearer(), cred.cookie()) {
         (Some(t), _) => (t == LIVE).then_some(t).ok_or(Outcome::Unauthenticated),
         (None, Some(t)) if t == LIVE => {
-            if mutating && !csrf.accepted() {
+            if mutating && enforce && !csrf.accepted() {
                 Err(Outcome::Other("csrf token missing or wrong".into()))
             } else {
                 Ok(t)
@@ -142,7 +148,7 @@ fn the_credential_and_the_csrf_rule_decide_the_outcome(
         }
         _ => Err(Outcome::Unauthenticated),
     };
-    let label = format!("{cred:?} mutating={mutating} {csrf:?}");
+    let label = format!("{cred:?} mutating={mutating} {csrf:?} enforce={enforce}");
     match (got, want) {
         (Ok(a), Ok(token)) => {
             assert_eq!(a.principal, w.principal(Actor::MemberA), "{label}");
@@ -199,9 +205,43 @@ proptest! {
     }
 }
 
+/// The rule as ADR-0052 wrote it is the core's default; the composition roots turn it off (and say so in `/_info`).
+#[test]
+fn enforcement_is_on_unless_a_root_turns_it_off() {
+    assert!(CoreConfig::default().csrf_enforce);
+}
+
+/// What turning enforcement off does not touch: the token endpoint's token, the comparison, and the two credentials that
+/// never needed it. A token that is presented is still validated by `csrf_ok` (it is only not asked for), and a bearer
+/// token or an API key is exactly as before.
+#[rstest]
+fn turning_enforcement_off_changes_nothing_but_the_cookie_mutation(#[values(true, false)] enforce: bool) {
+    let w = credential_world(enforce);
+    let c = |bearer, cookie| Credentials {
+        bearer,
+        api_key: None,
+        session_cookie: cookie,
+        csrf_cookie: None,
+        csrf_header: None,
+        mutating: true,
+    };
+    // a bearer token, with no token: accepted either way; a dead bearer: refused either way
+    assert!(block_on(authenticate_request(&w.app, &c(Some(LIVE), None))).is_ok());
+    assert_eq!(outcome(&block_on(authenticate_request(&w.app, &c(Some(UNKNOWN), None)))), Outcome::Unauthenticated);
+    // a dead cookie is refused either way, whatever it carries
+    assert_eq!(outcome(&block_on(authenticate_request(&w.app, &c(None, Some(UNKNOWN))))), Outcome::Unauthenticated);
+    // the cookie mutation with no token is the one thing that differs
+    let got = block_on(authenticate_request(&w.app, &c(None, Some(LIVE))));
+    assert_eq!(got.is_ok(), !enforce, "enforce={enforce}: {got:?}");
+    // the token's own code does not look at the switch
+    assert!(csrf_ok(Some("t0ken"), Some("t0ken")));
+    assert!(!csrf_ok(Some("t0ken"), Some("other")));
+    assert!(new_csrf_token(&w.app).is_ok());
+}
+
 #[test]
 fn a_csrf_token_is_128_random_bits_and_different_every_time() {
-    let w = credential_world();
+    let w = credential_world(true);
     let a = new_csrf_token(&w.app).unwrap();
     let b = new_csrf_token(&w.app).unwrap();
     assert_ne!(a, b);

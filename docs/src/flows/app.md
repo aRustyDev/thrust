@@ -24,13 +24,13 @@ same on the Worker and on the native server. The crates involved are on
 | `DELETE /api/_slice/workspaces/{slug}/projects/{project_id}/work-items/{id}/attachments/{name}` | Bearer token, role Member | 204 |
 
 The tenant routes above take any credential in [Authentication](#authentication-and-permission): a bearer token, the
-session cookie (a mutation then also needs the CSRF token) or an `X-Api-Key`. The identity routes, under the same
-prefix, are not tenant routes:
+session cookie (a mutation then also needs the CSRF token, while [enforcement](#authentication-and-permission) is on) or an
+`X-Api-Key`. The identity routes, under the same prefix, are not tenant routes:
 
 | Method and path | Needs | Answers |
 |---|---|---|
 | `POST /api/_slice/auth/sign-in/email` | nothing; JSON `{email, password}` | 200 and `{user_id, csrf_token, expires_at}`, with two `Set-Cookie` headers. 401 for every refusal, with one body |
-| `POST /api/_slice/auth/sign-out` | a session (cookie plus CSRF token, or bearer) | 204, ends that session and clears both cookies. An API key is a 401 here |
+| `POST /api/_slice/auth/sign-out` | a session (cookie, plus the CSRF token while enforcement is on, or bearer) | 204, ends that session and clears both cookies. An API key is a 401 here |
 | `POST /api/_slice/auth/sign-out-all` | a session, as above | 200 and `{revoked: n}`, ends every session of the user |
 | `GET /api/_slice/auth/csrf` | nothing | 200 and `{csrf_token}`, and the same value in the CSRF cookie (Plane's `get-csrf-token`) |
 | `GET /api/_slice/auth/session` | any credential | 200 and `{user_id, credential}` (`session` or `api_key`) |
@@ -67,7 +67,7 @@ These routes exist for tests and answer 404 unless `THRUST_TEST_ROUTES` is on:
 
 | Method and path | Needs | Answers |
 |---|---|---|
-| `GET /_info` | test routes | The `target` and `adapters` the process was started with |
+| `GET /_info` | test routes | The `target` and `adapters` the process was started with, and `csrf_enforce`: whether it asks a cookie mutation for the CSRF token. `scripts/contract.sh` reads it before any test runs |
 | `GET /_test/panic` | test routes | Panics on purpose, to check that a panic becomes a 500 |
 | `POST /internal/seed` | test routes and `x-admin-token` | 204 after storing the fixture's workspaces (with their slugs), workspace members, projects and project memberships, its users (by id, or with an email and a password, which is hashed before the database sees it), provider links, API keys and sessions (as hashes of the tokens; sessions expire after 30 days) |
 | `POST /internal/revoke-session` | same | 204 after revoking the session behind the `token` in the JSON body. A token that is unknown or already revoked is a 204 too |
@@ -90,13 +90,26 @@ workspace, so one credential works in every workspace the user belongs to.
 |---|---|---|
 | `Authorization: Bearer <token>` | the token is a live session | 401 |
 | `X-Api-Key: <key>` | the key is live: it exists, is not revoked, has not expired and its owner is active | 403 `invalid_api_key` for an unknown, revoked, expired or inactive-owner key (Plane's status, ADR-0033 round 27); 401 only when the header is missing or empty |
-| the session cookie (`__Host-thrust_session`) | the cookie is a live session, and for a mutation the `X-CSRFToken` header equals the CSRF cookie (`__Host-thrust_csrf`) | 401 for a dead session (checked first), 403 `csrf_failed` for a live one without the matching token |
+| the session cookie (`__Host-thrust_session`) | the cookie is a live session, and for a mutation, **while CSRF enforcement is on**, the `X-CSRFToken` header equals the CSRF cookie (`__Host-thrust_csrf`) | 401 for a dead session (checked first), 403 `csrf_failed` for a live one without the matching token (only while enforcement is on) |
 
 A bearer token and a key are not ambient credentials, so neither needs the CSRF token; a safe method (`GET`, `HEAD`,
 `OPTIONS`) never does. Signing out and the API-key routes need a session, not a key, so a leaked key cannot end the
 owner's sessions or mint more keys. The table is checked request by request, 126 combinations of credential kind,
 state, method and CSRF-token position, by the contract test
-`every_credential_state_method_and_csrf_position_gets_the_status_of_the_table`.
+`every_credential_state_method_and_csrf_position_gets_the_status_of_the_table` (enforcement on, the main pass), and again, with
+the one row that differs, by `csrf_off_every_credential_state_method_and_csrf_position_gets_the_status_of_the_table` (the
+`csrfoff` pass).
+
+**CSRF enforcement is a switch (Q-0050.8).** `CoreConfig::csrf_enforce` decides whether a mutation authenticated by the
+session cookie must carry the token. The core's default is on, the rule ADR-0052 wrote. The composition roots read
+`THRUST_CSRF_ENFORCE` (an environment variable natively, a var of the Worker declared in its `wrangler*.toml`) and default it
+**off**: the stock Plane frontend sends the token only on its auth form posts, so enforcing it on JSON mutations would break
+it. The flip is when the custom frontend replaces the stock one (PLAN.md, M4), with no code change. Off changes one thing:
+the token is not consulted for a cookie mutation, so one is accepted without it, whatever is sent in its place. The cookie,
+`GET auth/csrf`, a bearer token, an API key and the order of the checks (a dead session is 401 first) are as before. **While it
+is off, the only cookie-side protection is `SameSite=Lax`, `HttpOnly`, `Secure` and the `__Host-` prefix**, the posture of
+Plane, whose REST API disables Django's CSRF check; `Lax` does not help against a request from the same site (a sibling
+subdomain) or in a browser without it. The contract targets run with it on.
 
 **Sessions.** A session is a row, found by the SHA-256 of its token, and the row is read on every request. It must
 exist, not be revoked, not be expired (30 days after it was created) and belong to a user who exists and is active, or
@@ -117,8 +130,12 @@ otherwise (the local contract targets use a cheap cost; the real cost is pinned 
 deployed Worker in `research/0012-auth-slice.md`).
 
 **API keys.** A key is `thrk_` and 256 random bits, made by `POST /api/_slice/api-keys` and shown in that response only.
-The database holds its SHA-256 and the first nine characters (the prefix), never the token. `last_used_at` is stamped
-through the `Background` port, at most once an hour per key, so a request never waits for it.
+The database holds its digest and the first nine characters (the prefix), never the token. The digest is the plain SHA-256
+of the token, with no pepper (Q-0052.3: 256 random bits cannot be guessed back from a hash), and the row says which scheme
+made it (`hash_version`, 1 today): a key is looked up under every version the process reads, and one found under another
+version than the current one is moved to the current one after the response, so that a pepper can be introduced later
+without invalidating a key (the steps are in ADR-0052's 2026-10-24 note). `last_used_at` is stamped through the `Background`
+port, at most once an hour per key, so a request never waits for it.
 
 **OIDC.** `GET .../oidc/start` makes a `state`, a `nonce` and a PKCE verifier (256 random bits each), stores them in
 `oidc_logins` for ten minutes (the `state` as its digest) and redirects the browser to the provider. The callback takes
@@ -225,7 +242,7 @@ Errors raised by the use-cases and the router's own guards share one body,
 | 400 | `invalid` | A bad work item name or attachment name, or an unknown `scope`; a sign-in with an empty or over-long email or password; an API key label over 100 characters or an expiry in the past; an OIDC callback with no code or an unknown, used or expired `state` |
 | 401 | `unauthenticated` | No credential, a session that is unknown, revoked, expired or whose user is inactive, a refused sign-in or OIDC login, or a missing or wrong admin token |
 | 403 | `forbidden` | Not a member, a role that is too low, or an OIDC login without a verified email, without a matching user, or of a deactivated user |
-| 403 | `csrf_failed` | A mutation authenticated by the session cookie without an `X-CSRFToken` that equals the CSRF cookie |
+| 403 | `csrf_failed` | While CSRF enforcement is on: a mutation authenticated by the session cookie without an `X-CSRFToken` that equals the CSRF cookie |
 | 403 | `invalid_api_key` | An `X-Api-Key` that is unknown, revoked, expired or whose owner is inactive |
 | 404 | `not_found` | A slug that names no workspace, a workspace the caller is not in, a project that is not in it, no such item or attachment, or a test route that is switched off |
 | 409 | `conflict` | A uniqueness constraint failed, such as a live work item with the same external source and id |

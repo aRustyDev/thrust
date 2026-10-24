@@ -8,6 +8,10 @@
 #   THRUST_CREATE_RATE_LIMIT       per-user create limit per window
 #   THRUST_ARGON2_M_KIB / _T / _P  password hashing cost (default: OWASP's minimum)
 #   THRUST_SIGNIN_RATE_LIMIT       sign-in attempts per email per window
+#   THRUST_CSRF_ENFORCE            on | off | default: CSRF token on cookie mutations. Unset means ON here, unlike the
+#                                  production default of off, so the contract targets keep the meaning of their CSRF
+#                                  tests. `default` passes no setting at all, so the wrangler config's own [vars]
+#                                  value applies (off): scripts/contract.sh uses it for the `csrfoff` pass
 #   THRUST_OIDC_ISSUER / _CLIENT_ID / _REDIRECT_URI, THRUST_OIDC_CLIENT_SECRET (env only, like the admin token)
 #                                  the one OIDC provider; all three of the first group or none
 #   THRUST_ADMIN_TOKEN             (env only) gate for /internal/*
@@ -52,6 +56,11 @@ for v in THRUST_ARGON2_M_KIB THRUST_ARGON2_T THRUST_ARGON2_P THRUST_SIGNIN_RATE_
   eval "val=\${$v:-}"
   [ -n "$val" ] && set -- "$@" --var "$v:$val"
 done
+# CSRF enforcement: on unless told otherwise; `default` passes nothing (the config's `[vars]` decide)
+case "${THRUST_CSRF_ENFORCE:-on}" in
+  default) ;;
+  *) set -- "$@" --var "THRUST_CSRF_ENFORCE:${THRUST_CSRF_ENFORCE:-on}" ;;
+esac
 
 exec env -i \
   HOME="$HOME" PATH="$PATH" TMPDIR="${TMPDIR:-/tmp}" \

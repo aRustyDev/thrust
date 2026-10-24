@@ -218,18 +218,23 @@ pub struct NewApiKey {
     pub id: ApiKeyId,
     pub user_id: UserId,
     pub token_hash: TokenHash,
+    /// Which digest scheme made `token_hash` (Q-0052.3): `thrust_core::api_key_hash` maps a version and a token to a
+    /// digest. Positive; version 1 is plain SHA-256. The adapter stores it and never interprets it.
+    pub hash_version: i16,
     pub prefix: String,
     pub label: String,
     pub created_at: Timestamp,
     pub expires_at: Option<Timestamp>,
 }
 
-/// What a live API key resolves to: its id (for the usage stamp), its owner, and when it was last used.
+/// What a live API key resolves to: its id (for the usage stamp), its owner, when it was last used, and the scheme its
+/// digest was made with.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LiveApiKey {
     pub id: ApiKeyId,
     pub user_id: UserId,
     pub last_used_at: Option<Timestamp>,
+    pub hash_version: i16,
 }
 
 /// One pending OIDC login: written when the browser is sent to the provider, taken (and deleted) by the callback. The
@@ -302,15 +307,31 @@ pub trait Database: Send + Sync {
     /// Link a provider subject to a user. A link that exists is left as it is.
     async fn link_account(&self, a: &NewAccount) -> Result<(), DbError>;
 
-    /// Insert an API key. A `Conflict` for a digest that exists.
+    /// Insert an API key. A `Conflict` for a digest that exists; a backend error for a `hash_version` that is not
+    /// positive (the column's check).
     async fn insert_api_key(&self, k: &NewApiKey) -> Result<(), DbError>;
 
     /// The key behind `hash`, only while it is live: not revoked, not expired (`expires_at > now`, or none) and its
-    /// owner exists and is active.
+    /// owner exists and is active. The digest alone is the key; the row says which scheme made it
+    /// ([`LiveApiKey::hash_version`]) and core checks that it is the one it hashed with.
     async fn api_key(&self, hash: &TokenHash, now: Timestamp) -> Result<Option<LiveApiKey>, DbError>;
 
     /// Stamp the key's last use. Core calls it through [`Background`], so a request does not wait for the write.
     async fn touch_api_key(&self, id: ApiKeyId, at: Timestamp) -> Result<(), DbError>;
+
+    /// Move key `id` to another digest scheme (Q-0052.3): store `new_hash` and `new_version`, but only while the row
+    /// is still stored under `from_version` (a compare-and-set, so a re-hash that lost a race, or that was decided on
+    /// a row that has since moved, is a no-op). `true` when the row changed, `false` when it did not (an unknown id, or
+    /// a row no longer at `from_version`). Nothing else about the key changes: its owner, expiry, revocation and last
+    /// use stay. A `new_hash` that another row already holds is a `Conflict`. Core calls it through [`Background`]
+    /// after a successful use and ignores a failure.
+    async fn rehash_api_key(
+        &self,
+        id: ApiKeyId,
+        from_version: i16,
+        new_hash: &TokenHash,
+        new_version: i16,
+    ) -> Result<bool, DbError>;
 
     /// `user`'s keys, oldest first, revoked ones included.
     async fn list_api_keys(&self, user: UserId) -> Result<Vec<ApiKeyInfo>, DbError>;

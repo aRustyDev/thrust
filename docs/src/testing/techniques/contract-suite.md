@@ -29,7 +29,10 @@ which target it runs on. Fixtures are created through `POST /internal/seed`, the
 - `crates/thrust-contract-tests/tests/auth/mod.rs` and `tests/auth/matrix.rs`: identity, in the `main` pass (issue #38):
   sign-in and the cookie attributes, the CSRF double-submit rule, sign-out and sign-out-everywhere, deactivation, API
   keys (`X-Api-Key`, shown once, revoked, expired, inactive owner) and one OIDC login, plus the generated matrix of every
-  credential kind × state × method × CSRF-token position against a status table (126 requests). The OIDC tests
+  credential kind × state × method × CSRF-token position against a status table (126 requests). The CSRF rule is a
+  switch (`THRUST_CSRF_ENFORCE`, Q-0050.8): the main pass runs with it on, and the `csrfoff` pass (the six `csrf_off_`
+  tests, in these two files) runs the same table with it off, a cookie mutation with no token, and the identity routes
+  with the cookie alone. The OIDC tests
   (`oidc_` prefix) run against a mock identity provider that the suite serves on `127.0.0.1`
   (`crates/thrust-contract-tests/src/mock_idp.rs`, RS256 signed with the `rsa` crate, so it shares no code with the
   `openidconnect` crate that verifies its tokens); a deployed Worker cannot reach it, so `scripts/stage2-contract.sh`
@@ -37,15 +40,16 @@ which target it runs on. Fixtures are created through `POST /internal/seed`, the
 - `crates/thrust-contract-tests/tests/worker_only.rs`: Durable Object, cron and binding tests for `worker-*` targets.
 
 A pass is selected by **test-name prefix** in `scripts/contract.sh`, not by nextest: `sweeper_`, `panic_`,
-`blast_`, `worker_room_`, `worker_cron_`, `worker_bindings_`, `stage2_cron_real_trigger_`. Unprefixed tests in
+`blast_`, `csrf_off_`, `worker_room_`, `worker_cron_`, `worker_bindings_`, `stage2_cron_real_trigger_`. Unprefixed tests in
 `contract.rs` form the `main` pass. A new test therefore picks its pass by its name.
 
 ## Run
 
 ```sh
-scripts/contract.sh native-memory           # main pass, 37 tests [verified 2026-10-23: 37 passed]
+scripts/contract.sh native-memory           # main pass, 37 tests [verified 2026-10-24: 37 passed]
+scripts/contract.sh native-memory csrfoff   # CSRF enforcement off, 6 tests [verified 2026-10-24: 6 passed]
 scripts/contract.sh worker-cf bindings      # [unverified: not run]
-scripts/contract-all.sh                     # the 16-cell matrix, serially [unverified: not run]
+scripts/contract-all.sh                     # the 18-cell matrix, serially [verified 2026-10-24: 18 of 18 PASS]
 ```
 
 See [Running](../running.md#the-contract-suite) for targets, passes and prerequisites.
@@ -55,7 +59,9 @@ See [Running](../running.md#the-contract-suite) for targets, passes and prerequi
 [Paired allow/deny](../evidence-and-controls.md#paired-allow-deny) in every test,
 [target guard](../evidence-and-controls.md#target-guard) and [count guard](../evidence-and-controls.md#count-guard)
 in every run, and a [planted mutant](../evidence-and-controls.md#planted-mutant) for each security or uniqueness
-invariant. Adding a test means updating the pass's `EXPECT_*` count. The generated tests add
+invariant. Adding a test means updating the pass's `EXPECT_*` count. The CSRF switch has its own [target guard](../evidence-and-controls.md#target-guard):
+`scripts/contract.sh` refuses a main pass whose server does not enforce the token and a `csrfoff` pass whose server does, and
+`scripts/mutants.sh` shows both refusals. The generated tests add
 [generator coverage](../evidence-and-controls.md#generator-coverage) and fail when they sent no requests; a
 counterexample is saved in `crates/thrust-contract-tests/tests/model/mod.proptest-regressions`, committed
 ([Rule 7](../rules.md)). `scripts/mutants.sh` sets `PROPTEST_DISABLE_FAILURE_PERSISTENCE`, so the counterexamples
