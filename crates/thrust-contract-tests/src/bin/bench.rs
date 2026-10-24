@@ -106,10 +106,13 @@ async fn main() {
         }
     }
 
-    // End-to-end delivery: create -> outbox -> queue -> consumer -> activity row visible to a reader.
+    // End-to-end delivery: create -> outbox -> queue -> consumer -> activity row visible to a reader. `THRUST_BENCH_SKIP_DELIVERY=1`
+    // skips it: against a Hyperdrive config with caching ENABLED the poll below sees a cached empty list and times out (spike 0002,
+    // research/0011), and the other three numbers would be lost with the panic.
+    let skip_delivery = std::env::var("THRUST_BENCH_SKIP_DELIVERY").is_ok();
     let mut delivery = Vec::new();
     let mut duser = f.extra_member(&t).await;
-    for i in 0..40usize {
+    for i in 0..(if skip_delivery { 0usize } else { 40usize }) {
         if i % 20 == 0 {
             duser = f.extra_member(&t).await;
         }
@@ -129,5 +132,7 @@ async fn main() {
     report("POST create work item", creates);
     report("GET list work items", lists);
     report("GET activity", activities);
-    report("create -> activity visible", delivery);
+    if !skip_delivery {
+        report("create -> activity visible", delivery);
+    }
 }

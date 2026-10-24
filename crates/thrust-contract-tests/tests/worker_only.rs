@@ -406,3 +406,32 @@ async fn seed_some(t: &Target, f: &Fixture) {
         create_ok(t, &f.member_a, &f.a, n).await;
     }
 }
+
+// ---------------------------------------------------------------------------------------------------------------------
+// The one real email send of spike 0002 (step 10). Run via `scripts/stage2-contract.sh email` against a DEPLOYED Worker
+// that has the `EMAIL` binding and the vars `THRUST_EMAIL_FROM` (an owned sender domain with Email Sending enabled) and
+// `THRUST_EMAIL_TO` (a verified destination). The owner approved exactly one send, so this test sends once and a second run
+// would send a second mail: run it once. The existing `worker_bindings_email_send_binding_simulated_locally` is simulated and
+// skipped when deployed.
+// ---------------------------------------------------------------------------------------------------------------------
+
+#[tokio::test]
+async fn stage2_email_real_send_once() {
+    let t = Target::from_env();
+    // control first, and it sends nothing: a sender domain the account does not own is refused by the deployed binding. If it
+    // were accepted the real send below would say nothing about domain ownership.
+    let r = t.admin_get("/_test/bindings/email-refused").await;
+    let status = r.status();
+    let body: Value = r.json().await.unwrap();
+    assert_eq!(status, 502, "an unowned sender domain was not refused: {body}");
+    let err = body["error"].as_str().unwrap_or_default();
+    assert!(err.contains("not allowed") || err.contains("not owned"), "refused, but not for ownership: {body}");
+    // the real send
+    let r = t.admin_get("/_test/bindings/email-real").await;
+    let status = r.status();
+    let body: Value = r.json().await.unwrap();
+    eprintln!("EMAIL-OBSERVATION: {body}");
+    assert_eq!(status, 200, "the real send failed: {body}");
+    assert_eq!(body["sent"], true);
+    assert!(!body["message_id"].as_str().unwrap_or_default().is_empty(), "no message id: {body}");
+}
