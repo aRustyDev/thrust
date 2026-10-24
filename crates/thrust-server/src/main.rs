@@ -147,6 +147,7 @@ async fn main() {
     };
 
     let router = thrust_api::router()
+        .merge(thrust_compat_plane::routes())
         .layer(axum::middleware::from_fn(log_internal_errors))
         .layer(Extension(app))
         .layer(Extension(api_cfg))

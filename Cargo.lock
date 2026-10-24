@@ -3293,6 +3293,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "thrust-compat-plane"
+version = "0.0.0"
+dependencies = [
+ "axum",
+ "futures-executor",
+ "serde",
+ "serde_json",
+ "thrust-adapters-memory",
+ "thrust-api",
+ "thrust-contracts",
+ "thrust-core",
+ "thrust-ports",
+ "tower",
+]
+
+[[package]]
 name = "thrust-contract-tests"
 version = "0.0.0"
 dependencies = [
@@ -3385,6 +3401,7 @@ dependencies = [
  "thrust-adapters-postgres",
  "thrust-adapters-selfhosted",
  "thrust-api",
+ "thrust-compat-plane",
  "thrust-contracts",
  "thrust-core",
  "thrust-ports",
@@ -3407,6 +3424,7 @@ dependencies = [
  "thrust-adapters-oidc",
  "thrust-adapters-postgres",
  "thrust-api",
+ "thrust-compat-plane",
  "thrust-contracts",
  "thrust-core",
  "thrust-ports",

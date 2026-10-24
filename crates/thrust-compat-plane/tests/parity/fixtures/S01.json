@@ -1,0 +1,69 @@
+{
+  "exchanges": [
+    {
+      "name": "boot, no session, instance set up",
+      "request": {
+        "method": "GET",
+        "path": "/api/instances/"
+      },
+      "response": {
+        "body": {
+          "config": {
+            "admin_base_url": "<base_url>",
+            "app_base_url": "<base_url>",
+            "enable_signup": true,
+            "file_size_limit": 5242880.0,
+            "github_app_name": "",
+            "has_llm_configured": false,
+            "has_unsplash_configured": false,
+            "instance_changelog_url": "<url>",
+            "is_email_password_enabled": true,
+            "is_gitea_enabled": false,
+            "is_github_enabled": false,
+            "is_gitlab_enabled": false,
+            "is_google_enabled": false,
+            "is_magic_login_enabled": false,
+            "is_oidc_enabled": false,
+            "is_self_managed": true,
+            "is_smtp_configured": false,
+            "is_workspace_creation_disabled": false,
+            "slack_client_id": null,
+            "space_base_url": "<base_url>"
+          },
+          "instance": {
+            "created_at": "<ts>",
+            "created_by": null,
+            "current_version": "<version>",
+            "deleted_at": null,
+            "domain": "",
+            "edition": "PLANE_COMMUNITY",
+            "id": "<uuid:1>",
+            "instance_id": "<opaque>",
+            "instance_name": "<name>",
+            "is_current_version_deprecated": false,
+            "is_setup_done": true,
+            "is_signup_screen_visited": false,
+            "is_support_required": true,
+            "is_telemetry_enabled": false,
+            "is_test": false,
+            "is_verified": false,
+            "last_checked_at": "<ts>",
+            "latest_version": "<version>",
+            "namespace": null,
+            "updated_at": "<ts>",
+            "updated_by": null,
+            "whitelist_emails": null,
+            "workspaces_exist": false
+          }
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    }
+  ],
+  "format_version": 1,
+  "recorded_from": "ba85d4d3d3",
+  "row": "S01"
+}

@@ -1,0 +1,27 @@
+{
+  "format_version": 1,
+  "_comment": "Normalisation rules shared by tools/compat-record/normalise.py (records the fixtures) and tests/common/normalise.rs (normalises what Thrust answers). Both implement exactly this, in the same traversal order: object keys sorted, request path, then request body, then response body, per exchange, numbering ids across the whole fixture. tests/parity/normalise-cases.json is the shared self-test. Modelled on the oracle's oracle/normalise.yaml in the Plane fork.",
+  "uuid_token": "<uuid:{n}>",
+  "datetime": {
+    "key_suffixes": ["_at", "_on"],
+    "key_exact": ["last_used", "last_active", "date_joined", "last_login_time", "expired_at"],
+    "token": "<ts>"
+  },
+  "date": {
+    "key_suffixes": ["_date"],
+    "token": "<date>"
+  },
+  "opaque_paths": {
+    "_comment": "Exact JSON paths ('.' between keys, '[]' for any array element). A value at one of these is replaced by the token; null stays null. These are values a correct implementation cannot reproduce or that name the deployment, not the API.",
+    "instance.instance_id": "<opaque>",
+    "instance.current_version": "<version>",
+    "instance.latest_version": "<version>",
+    "instance.instance_name": "<name>",
+    "config.admin_base_url": "<base_url>",
+    "config.space_base_url": "<base_url>",
+    "config.app_base_url": "<base_url>",
+    "config.instance_changelog_url": "<url>"
+  },
+  "headers_keep": ["content-type", "location", "www-authenticate", "retry-after"],
+  "_headers_comment": "cache-control is not kept: the pin answers /api/instances/ with `private, max-age=<remaining TTL>`, which changes per request."
+}
