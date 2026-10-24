@@ -64,7 +64,7 @@ case "${1:-}" in
     echo "--- ledger"; cat "$LEDGER" 2>/dev/null || echo "(none)"
     echo "--- queues"; wrangler queues list 2>&1 | grep -E "thrust-spike-do|No queues" || echo "none under thrust-spike-do"
     echo "--- r2 bucket"; wrangler r2 bucket info "$BUCKET" 2>&1 | grep -E "name:|does not exist" | head -2
-    echo "--- worker"; (cd "$WR" && wrangler deployments list -c "$CONFIG" 2>&1 | grep -E "Created|not found|workers.dev|could not" | head -3)
+    echo "--- worker"; (cd "$WR" && wrangler deployments list -c "$CONFIG" 2>&1 | grep -E "Created|does not exist|not found|workers.dev|could not" | head -3)
     ;;
   down)
     # A Worker cannot be deleted while it is a queue consumer, and a queue cannot be deleted while a Worker binds it:

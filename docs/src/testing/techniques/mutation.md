@@ -28,6 +28,8 @@ gated with `#[cfg(feature = "mutant_…")]` at the line they break, passed throu
 in `scripts/mutants.sh`. cargo-mutants: configured by `.cargo/mutants.toml` and the `mutants` nextest profile;
 `mutants.out*` is never committed.
 
+Spike 0002 adds `crates/thrust-adapters-sqlite` features `mutant_dup_sequence`, `mutant_no_gate` (transactions not serialised), `mutant_gate_leak` (an abandoned transaction never reopens the gate) and `mutant_non_atomic_commit` (statements applied one by one), `crates/thrust-adapters-memory` `mutant_search_case_sensitive`, all in `scripts/mutants.sh` (the engine pass, `native-sqlite main` and the crate's own `commit` and `model` tests). `mutant_broken_migration` (also `thrust-worker`) is not a kill control: it builds an object whose migration fails, to show what the platform does with it.
+
 ## Run
 
 ```sh

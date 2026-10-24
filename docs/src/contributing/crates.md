@@ -12,6 +12,7 @@ depend on one another is on [Application architecture](../architecture/app.md); 
 | A business rule, a use-case or a permission check | `thrust-core` | Reaches the outside only through the `Ports` bundle |
 | An HTTP route or its error mapping | `thrust-api` | The product handlers call a core use-case and never see a platform type. Only the test-route handlers reach `app.ports` directly |
 | SQL | `thrust-adapters-postgres` | Written once, against `tokio_postgres::Client`, behind a `Connector` |
+| SQLite SQL (spike 0002) | `thrust-adapters-sqlite` | Written once, against the synchronous `Sql` trait: rusqlite natively (feature `native`, never for wasm32) and `DoSql` (in `thrust-adapters-cloudflare`) inside the Durable Object. Opt-in until ADR-0040 decides |
 | Code that only runs natively | `thrust-adapters-selfhosted` | Never compiled into the Worker |
 | Code that uses a Workers binding (R2, Queues, Hyperdrive, a Durable Object client) | `thrust-adapters-cloudflare` | wasm32 only. The Durable Object classes themselves live in `thrust-worker`, because the Wasm module that exports them must also export `fetch` |
 | A reference implementation of a port | `thrust-adapters-memory` | Compiles for wasm32 and native with no runtime dependency, because both roots can include it |

@@ -42,6 +42,15 @@ scripts/contract-all.sh                     # the 16-cell matrix, serially [unve
 
 See [Running](../running.md#the-contract-suite) for targets, passes and prerequisites.
 
+## Opt-in cells and the engine pass
+
+Spike 0002 (issue #37) adds two targets and three passes that are **not** in `contract-all.sh`, so they are not required CI checks until ADR-0040 decides the engine: `native-sqlite` (the SQLite adapter on rusqlite) and `worker-do` (the same adapter inside one instance-level Durable Object, under `wrangler dev`). `scripts/contract.sh native-sqlite main` and `worker-do main` run the same 21 tests.
+- `engine` (own test binary, `crates/thrust-contract-tests/tests/engine.rs`, tests named `engine_`, so the main pass and `EXPECT_MAIN` are untouched; the target starts with a very high create rate limit): the 50-writer, 10k-create test, search parity with `icontains`, search freshness and scope, and the bulk seed. 4 tests on every target; `scripts/mutants.sh` runs it against `mutant_dup_sequence` on the memory and SQLite adapters, `mutant_no_gate` and `mutant_search_case_sensitive`.
+- `do` (`worker-do` only, `worker_only.rs`, tests named `worker_do_`): the `Tx` mapping control on the real `SqlStorage`, the FTS5 trigram probe, the billed-rows probe and the migration story. 5 tests.
+- `scale` (a binary, like `bench`): list, search and create latency with 100,000 items seeded through `/internal/seed-work-items`.
+
+`scripts/stage2-contract.sh` runs `main`, `do` and `engine` against a deployed `worker-do` with `THRUST_EXPECT_ADAPTERS=durable`. Numbers and conditions: `research/0011-database-engine-cells.md`.
+
 ## Required controls
 
 [Paired allow/deny](../evidence-and-controls.md#paired-allow-deny) in every test,

@@ -142,6 +142,23 @@ The round-11 desk review rejected DO-SQLite only on cross-workspace fan-out, mig
 
 S1's 50-writer test and the FR-22 allocation order are spike 0002's step 2 (ADR-0043, round 29).
 
+## Update — spike 0002 results so far, issue #37 (2026-10-24)
+
+**This ADR stays `proposed`. The decision waits for the `worker-pg` cell, which has not been measured on the platform.** The `worker-do` cell (Option 5) is built and was measured on a deployed Worker; the numbers, their conditions and everything not measured are in `research/0011-database-engine-cells.md`. The decision rule is unchanged: Postgres stays the default if the `worker-do` cell fails any exit criterion, and Q-0040.6 is the owner's if both cells pass. Nothing below decides it.
+
+Against spike 0002's five criteria, `worker-do` (conditions: one US laptop as the only client, not the origin region; one run at a time; n=200 per bench cell):
+1. **50-writer test: passes**, deployed. 10,500 creates and 1,428 deletes, no duplicate, no reuse, `sort_order` increasing. The controls fail the right way (a duplicate-number build, and a build with the transaction gate removed).
+2. **FTS plus trigram: passes**, deployed. FTS5 with the `trigram` tokenizer is present in workerd's Durable Object SQLite (R3); 400 generated queries answer exactly what Plane's `icontains` answers; a created item is found by the next search. Postgres: the same test passes locally with `pg_trgm`; not run on the platform, and `pg_trgm` must be installed once by an administrator in schema `public`.
+3. **List p95 < 300 ms at 100k items: passes for a 1,000-item project, fails for an unpaged 10,000-item project**, in a database of about 124k items: 77 ms (c=1) and 216 ms (c=8) against 350 ms and 1,687 ms. The result depends on the list's shape (the slice's list is unpaged, about 509 bytes an item), not on the engine, and it was not measured from the origin's region. A cold object adds no measurable latency (71-132 ms to a freshly constructed object against 79-186 ms warm).
+4. **Migration story: passes**, deployed. Expand 0.90 s, FTS5 build 3.8 s, contract 0.67 s over 124,081 rows; a migration that fails at its third statement leaves nothing; a build whose migration fails takes the instance down (every request, `/healthz` included, answers 500) until a good build is deployed, and then it recovers with its data intact.
+5. **Projected cost: within the envelope as a projection, not reconciled.** About $6.8 a month at the sizing target and about $63 at ten times the load, Cloudflare side, from the rows read and written per operation measured on the platform (a create writes 9.0 rows and reads 8.0; its relay and consumer writes add 5.0) and the vendor prices. The owner skipped the 24-hour reconciliation on 2026-10-24 (no real traffic), so the criterion has no reconciliation behind it.
+
+What the cell cost, as observed: **R2 is real**: every request goes through one object, so 8 concurrent lists of a 1,000-item project cost 2.8 times one (and 8 concurrent 5 MB lists 4.8 times one), where Postgres would serialise each response in its own isolate. The outbox fast path loses relays when the object is evicted (the cron sweeper delivered the 100 of about 10.5k that were lost, within a minute). Health checks go through the object. SQLite's planner reads a project's rows for an indexed search (O(project)). These are the costs the round-29 note named (one region, one object) made concrete; none of them fails a criterion as written.
+
+R1 is answered (ADR-0045 note): a buffered `Tx` committed in one `transactionSync`, with a control that fails against the naive mapping on the real runtime.
+
+**Not measured, and needed before this ADR can move:** `worker-pg` on the platform (create, list and activity through Hyperdrive, the tunnel and the VPC service, with the FR-22 allocation order, next to stage 2's 296 and 559 ms); Hyperdrive caching on versus off; the placement re-run; the 24-hour reconciliation (skipped); the distant-region bench; the real Email send. Both the owner's Q-0040.6 and the Postgres cell's own pass or fail are therefore still ahead.
+
 ## Open Questions
 
 * Q-0040 — which option?

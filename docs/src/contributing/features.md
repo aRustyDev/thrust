@@ -14,7 +14,11 @@ show about how to add another. The three probe crates are outside the workspace 
 | `thrust-adapters-postgres` | `native` | off | Turns on `tokio-postgres/runtime` and `tokio`. The `migrate` binary requires it (`required-features`), and `thrust-adapters-selfhosted` depends on the crate with it. Never enable it for wasm32 |
 | `thrust-adapters-memory` | `mutant_ignore_tenant`, `mutant_dup_sequence`, `mutant_no_activity_dedupe` | off | Planted bugs: forget the tenant predicate, hand out the same sequence number every time, skip the activity de-duplication |
 | `thrust-adapters-selfhosted` | `mutant_discard_noop` | off | Planted bug: hand a connection that is still inside an abandoned transaction back to the pool |
-| `thrust-server` | the same three `mutant_*` names | off | Forwards each one to `thrust-adapters-memory`, so a build of the server can switch a planted bug on |
+| `thrust-adapters-sqlite` | `native` | off | Turns on rusqlite (bundled SQLite, compiled from C): `NativeSql`, the native twin. `thrust-server` enables it; the Worker must not (`scripts/check-deps.sh` checks `rusqlite` and `libsqlite3-sys` are absent from the Worker graph) |
+| `thrust-adapters-sqlite` | `mutant_dup_sequence`, `mutant_no_gate`, `mutant_gate_leak`, `mutant_non_atomic_commit`, `mutant_broken_migration` | off | Planted bugs: always sequence 1; transactions not serialised; an abandoned transaction never reopens the gate; a commit applied statement by statement; a migration that fails halfway (a demonstration build, not a kill control) |
+| `thrust-adapters-memory` | `mutant_search_case_sensitive` | off | Planted bug: search without folding case |
+| `thrust-worker` | `mutant_broken_migration` | off | Forwards to `thrust-adapters-sqlite`: an object whose migration fails, to see what the platform does |
+| `thrust-server` | the `mutant_*` names (memory's, and `mutant_dup_sequence` and `mutant_no_gate` also for SQLite) | off | Forwards each one to the adapter that has it, so a build of the server can switch a planted bug on |
 | `thrust-editor-doc` | `sanitize` | on | Pulls in the ammonia sanitiser (and html5ever). It is split out so the size of the conversions alone can be measured |
 | `thrust-editor-worker` | `sanitize` | on | Forwards to `thrust-editor-doc/sanitize` |
 

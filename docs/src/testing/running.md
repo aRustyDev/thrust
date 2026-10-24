@@ -41,7 +41,10 @@ profile selects nothing. To reach the excluded integration suites through nextes
 ```
 scripts/contract.sh <target> [pass]
   target: native-memory | native-pg | worker-memory | worker-cf
+          native-sqlite | worker-do          (opt-in, spike 0002: not in contract-all.sh)
   pass:   main | sweeper | panic | blast | bench | worker | cron | bindings
+          engine | scale                    (every target: the engine-deciding tests; list, search and create at 100k items)
+          do                                (worker-do only: the object's own checks on its real SQLite)
 ```
 
 The header of `scripts/contract.sh` describes each pass and which targets accept it. Prerequisites: Docker (for
@@ -54,7 +57,8 @@ admin token and database password per run and keeps them out of files and argv.
 | `scripts/mutants.sh` | the planted mutants; every one must be KILLED | Docker |
 | `scripts/verify-all.sh` | the hermetic nextest run, matrix, mutants, `check-deps.sh`, `pg_adapter`, probes; summary in `target/verify/summary.txt` | Docker, wrangler |
 | `scripts/flake-hunt.sh <target> <pass> <iterations>` | one cell N times, keeping every log | as the cell |
-| `scripts/stage2-contract.sh [pass]` | the suite against a **deployed** Worker | an owner-provided Cloudflare sandbox only |
+| `scripts/stage2-contract.sh [pass]` | the suite against a **deployed** Worker (`THRUST_EXPECT_ADAPTERS=durable` for a deployed `worker-do`; run it with `sh`) | an owner-provided Cloudflare sandbox only |
+| `scripts/spike-0002-do.sh up\|deploy\|status\|url\|down` | creates, inspects and tears down the deployed `worker-do` cell and keeps a UTC ledger | `CLOUDFLARE_ACCOUNT_ID` in the environment, wrangler's OAuth login |
 
 Run matrix cells **serially**: parallel runs share `crates/thrust-worker/build` and a second wrangler rebuild reloads
 the first one's Worker (the header of `scripts/contract-all.sh` records this). Contract and stage-2 commands above are
