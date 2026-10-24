@@ -6,6 +6,7 @@ members = [
     "crates/thrust-core",
     "crates/thrust-adapters-memory",
     "crates/thrust-api",
+    "crates/thrust-compat-plane",
     "crates/thrust-adapters-postgres",
     "crates/thrust-adapters-oidc",
     "crates/thrust-adapters-selfhosted",
@@ -44,6 +45,7 @@ thrust-adapters-cloudflare = { path = "crates/thrust-adapters-cloudflare" }
 thrust-adapters-selfhosted = { path = "crates/thrust-adapters-selfhosted" }
 thrust-adapters-oidc = { path = "crates/thrust-adapters-oidc" }
 thrust-api = { path = "crates/thrust-api" }
+thrust-compat-plane = { path = "crates/thrust-compat-plane" }
 
 [profile.release]
 # Spike measurement profile for the wasm bundle. See research/0004 for the numbers.

@@ -113,7 +113,7 @@ from the environment; core and the router never do.
 
 `scripts/check-deps.sh` is the guard. It asks `cargo tree` whether any of 17 forbidden crates (tokio,
 tokio-postgres, hyper, worker, wasm-bindgen, sqlx, ...) is in the dependency graph of `thrust-contracts`,
-`thrust-ports`, `thrust-core`, `thrust-api` or `thrust-adapters-memory`, and exits non-zero if one is. It holds
+`thrust-ports`, `thrust-core`, `thrust-api`, `thrust-compat-plane` or `thrust-adapters-memory`, and exits non-zero if one is. It holds
 `thrust-adapters-oidc` to the same list minus `wasm-bindgen` and `js-sys` (the `openidconnect` crate brings those two on
 wasm32 and nothing else) and also `reqwest`, and checks that `thrust-core` does not depend on it. It also
 checks that the Worker's wasm32 graph holds none of the native-only crates and that the server's graph holds none
@@ -126,8 +126,10 @@ can fail are on
 
 The plan's `ARCHITECTURE.md` (draft v0, `.agents/plans/contrail/ARCHITECTURE.md`) describes more than exists:
 
-- **Crates:** `thrust-api-core`, `thrust-api-v1`, `thrust-compat-plane` and `thrust-collab-do` do not exist, and
-  there is no `web/` directory. `thrust-api` is the only router crate.
+- **Crates:** `thrust-api-core`, `thrust-api-v1` and `thrust-collab-do` do not exist, and there is no `web/`
+  directory. `thrust-compat-plane` exists but serves only S01 (`/api/instances/`) and S02 (`/api/users/me/`, signed out
+  only) so far; issue #44 builds the rest of the 48-route slice stage by stage. Each composition root mounts it beside
+  `thrust-api`'s router, which is still the only other router crate.
 - **Ports:** Workflow, Scheduler, Collab, Search, Email, AI, Identity, Secrets, Telemetry and Flags have no trait.
   Scheduling today is a `scheduled` handler on the Worker and an optional timer in the server.
 - **Adapters:** the self-hosted set in the plan's diagrams (RabbitMQ, Valkey, S3) does not exist. See

@@ -28,6 +28,7 @@ thrust-contracts = { workspace = true }
 thrust-ports = { workspace = true }
 thrust-core = { workspace = true }
 thrust-api = { workspace = true }
+thrust-compat-plane = { workspace = true }
 thrust-adapters-memory = { workspace = true }
 thrust-adapters-selfhosted = { workspace = true }
 thrust-adapters-postgres = { workspace = true }

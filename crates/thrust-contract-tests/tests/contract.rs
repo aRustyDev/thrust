@@ -9,6 +9,7 @@
 //! sequences against a reference model, and every caller × project × route against the access table.
 
 mod auth;
+mod compat;
 mod model;
 
 use std::time::Duration;

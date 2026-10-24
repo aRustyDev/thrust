@@ -11,7 +11,7 @@ set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 MANIFEST="$ROOT/Cargo.toml"
 FORBIDDEN="tokio tokio-util tokio-postgres mio socket2 hyper hyper-util tower-http worker worker-sys wasm-bindgen wasm-bindgen-futures js-sys web-sys deadpool-postgres lapin sqlx"
-CLEAN_CRATES="thrust-contracts thrust-ports thrust-core thrust-api"
+CLEAN_CRATES="thrust-contracts thrust-ports thrust-core thrust-api thrust-compat-plane"
 STATUS=0
 
 for crate in $CLEAN_CRATES; do

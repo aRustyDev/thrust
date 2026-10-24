@@ -1,0 +1,25 @@
+[package]
+name = "thrust-compat-plane"
+description = "Plane's internal API (/api/ and /auth/) as a route group over thrust-core use-cases (ADR-0034). Plane-shaped types stay in this crate (#52)."
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+thrust-contracts = { workspace = true }
+thrust-ports = { workspace = true }
+thrust-core = { workspace = true }
+thrust-api = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+# Runtime-free, as in thrust-api: this crate compiles to wasm32 and runs under workerd.
+axum = { version = "0.8", default-features = false, features = ["json", "query", "matched-path"] }
+
+# Test-only (scripts/check-deps.sh checks normal dependencies). The memory adapters are the reference implementation
+# of every port; the router is driven in process with `oneshot`, so no socket and no runtime beyond tokio's test macro.
+[dev-dependencies]
+thrust-adapters-memory = { workspace = true }
+tower = { version = "0.5", features = ["util"] }
+# The router future never yields to a reactor, so a plain executor drives it (as in thrust-core's tests).
+futures-executor = "0.3"

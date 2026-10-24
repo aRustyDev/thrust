@@ -27,6 +27,11 @@ mod memory;
 
 static ROUTER: std::sync::OnceLock<axum::Router> = std::sync::OnceLock::new();
 
+/// The shared router with Plane's internal API (`/api/`, `/auth/`) mounted beside it (issue #44).
+fn router() -> axum::Router {
+    thrust_api::router().merge(thrust_compat_plane::routes())
+}
+
 /// Same ceiling as the router's `DefaultBodyLimit` (8 MiB).
 const MAX_REQUEST_BODY: usize = 8 * 1024 * 1024;
 
@@ -185,7 +190,7 @@ async fn fetch(req: web_sys::Request, env: Env, ctx: Context) -> Result<web_sys:
     http_req.extensions_mut().insert(app);
     http_req.extensions_mut().insert(api_config(&env, &adapters));
 
-    let mut router = ROUTER.get_or_init(thrust_api::router).clone();
+    let mut router = ROUTER.get_or_init(router).clone();
     let resp: axum::http::Response<Body> = match router.call(http_req).await {
         Ok(r) => r,
         Err(never) => match never {},

@@ -20,6 +20,7 @@ thrust-contracts = { workspace = true }
 thrust-ports = { workspace = true }
 thrust-core = { workspace = true }
 thrust-api = { workspace = true }
+thrust-compat-plane = { workspace = true }
 thrust-adapters-cloudflare = { workspace = true }
 thrust-adapters-postgres = { workspace = true }
 thrust-adapters-oidc = { workspace = true }
