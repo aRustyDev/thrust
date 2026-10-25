@@ -553,6 +553,81 @@ def step_s18(base, pacer):
     ]
 
 
+def workspace_read(base, pacer, template, query=""):
+    """The cases every read of a workspace has: no session, a member, someone who is not one, a workspace that is not there.
+    `template` is the route with `{slug}` where the workspace goes; `query` is what the stock app appends."""
+    get = lambda who, slug: api(base, pacer, who, "GET", template.format(slug=slug) + query)  # noqa: E731
+    return [
+        ("no session", get(NOT_SIGNED_IN, WS_ONE)),
+        ("a member of a workspace", get(J, WS_ONE)),
+        ("not a member", get(SECOND_EMAIL, WS_ONE)),
+        ("a workspace that does not exist", get(J, "no-such-workspace")),
+    ]
+
+
+def workspace_settings_read(base, pacer, template):
+    """The reads that make the caller's row on their first visit (the pin creates it then): the cases above, and the first
+    answer again, and what the creator's other workspace holds, which is a row of its own."""
+    get = lambda who, slug: api(base, pacer, who, "GET", template.format(slug=slug))  # noqa: E731
+    return [
+        ("no session", get(NOT_SIGNED_IN, WS_ONE)),
+        ("a member's first visit", get(J, WS_ONE)),
+        ("the same member again", get(J, WS_ONE)),
+        ("the same member in another workspace", get(J, WS_TWO)),
+        ("not a member", get(SECOND_EMAIL, WS_ONE)),
+        ("a workspace that does not exist", get(J, "no-such-workspace")),
+    ]
+
+
+def step_s17(base, pacer):
+    """GET .../projects/ : the projects the caller can see (none yet, in any workspace)."""
+    out = workspace_read(base, pacer, "/api/workspaces/{slug}/projects/")
+    out.insert(2, ("a member of the other workspace", api(base, pacer, J, "GET", f"/api/workspaces/{WS_TWO}/projects/")))
+    return out
+
+
+def step_s19(base, pacer):
+    """GET .../user-favorites/ : what the caller has starred; the stock app asks for all of it."""
+    return workspace_read(base, pacer, "/api/workspaces/{slug}/user-favorites/", "?all=true")
+
+
+def step_s20(base, pacer):
+    """GET .../states/ : the work-item states of the projects the caller is in (none yet)."""
+    return workspace_read(base, pacer, "/api/workspaces/{slug}/states/")
+
+
+def step_s21(base, pacer):
+    """GET .../sidebar-preferences/ : which entries of the sidebar the caller pins, and in what order."""
+    return workspace_settings_read(base, pacer, "/api/workspaces/{slug}/sidebar-preferences/")
+
+
+def step_s22(base, pacer):
+    """GET .../user-properties/ : the caller's view settings for the workspace's work-item lists."""
+    return workspace_settings_read(base, pacer, "/api/workspaces/{slug}/user-properties/")
+
+
+def step_s23(base, pacer):
+    """GET .../users/notifications/unread/ : how many notifications the caller has not read."""
+    return workspace_read(base, pacer, "/api/workspaces/{slug}/users/notifications/unread/")
+
+
+def step_s24(base, pacer):
+    """GET .../home-preferences/ : which widgets the home page shows for the caller, and in what order."""
+    return workspace_settings_read(base, pacer, "/api/workspaces/{slug}/home-preferences/")
+
+
+def step_s25(base, pacer):
+    """GET .../quick-links/ : the caller's links on the home page."""
+    return workspace_read(base, pacer, "/api/workspaces/{slug}/quick-links/")
+
+
+def step_s26(base, pacer):
+    """GET .../recent-visits/ : what the caller opened lately, everything or only one kind of entity."""
+    out = workspace_read(base, pacer, "/api/workspaces/{slug}/recent-visits/")
+    out.insert(2, ("one kind of entity", api(base, pacer, J, "GET", f"/api/workspaces/{WS_ONE}/recent-visits/?entity_name=project")))
+    return out
+
+
 # Journey order. The file name is the step id; `S04-existing` is S04's route again, after S05, and `S02-signed-in` is
 # S02's route again, once there is a session. `X04` is a route the stock onboarding calls that the inventory lacks.
 STEPS = [
@@ -580,7 +655,16 @@ STEPS = [
     ("S08-after", step_s08_after),
     ("S15", step_s15),
     ("S16", step_s16),
+    ("S17", step_s17),
     ("S18", step_s18),
+    ("S19", step_s19),
+    ("S20", step_s20),
+    ("S21", step_s21),
+    ("S22", step_s22),
+    ("S23", step_s23),
+    ("S24", step_s24),
+    ("S25", step_s25),
+    ("S26", step_s26),
 ]
 
 

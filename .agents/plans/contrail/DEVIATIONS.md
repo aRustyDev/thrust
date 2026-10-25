@@ -45,6 +45,15 @@ served, with the recorded empty shape and no table behind it, until a screen nee
 | Route | Row | Answers | Called by |
 |---|---|---|---|
 | `GET /api/users/me/workspaces/invitations/` | S12 | `[]` | the onboarding step that lists the invitations to join an existing workspace |
+| `GET /api/workspaces/{slug}/user-favorites/` | S19 | `[]` for an admin or a member (a guest is refused with 403, as on the pin) | the sidebar's list of starred entries |
+| `GET /api/workspaces/{slug}/states/` | S20 | `[]` until a project has states: the project stage makes the default ones with the project, and the route then lists the states of the projects the caller is in. Any active member may ask | the workspace wrapper, which loads every state the member can see for the filters and badges |
+| `GET /api/workspaces/{slug}/users/notifications/unread/` | S23 | `{"total_unread_notifications_count": 0, "mention_unread_notifications_count": 0}` | the sidebar's notification badge |
+| `GET /api/workspaces/{slug}/quick-links/` | S25 | `[]` | the home page's links widget |
+| `GET /api/workspaces/{slug}/recent-visits/` | S26 | `[]`, with or without `entity_name` | the home page's recents widget |
+| `GET /api/workspaces/{slug}/projects/`, the field `intake_count` only | S17 | `0` for every project: there is no intake yet, so no work item waits in one | the workspace's project list |
+
+Each stub still asks who the caller is and answers the pin's 401 or 403 before its empty answer, so a stranger is not told
+a workspace exists (`tests/workspace_load.rs`, the matrix of nine rows by six kinds of caller).
 
 ## Oracle quirks (round 26 candidates; decided in round 27: reproduce all)
 

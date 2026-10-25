@@ -21,7 +21,7 @@ use crate::users::{non_empty, object_body, ts, Caller};
 use crate::PlaneError;
 
 /// Plane's role numbers: Guest 5, Member 15, Admin 20.
-fn role_number(r: Role) -> u8 {
+pub(crate) fn role_number(r: Role) -> u8 {
     match r {
         Role::Guest => 5,
         Role::Member => 15,
@@ -29,7 +29,7 @@ fn role_number(r: Role) -> u8 {
     }
 }
 
-fn id_or_null(id: Option<UserId>) -> Value {
+pub(crate) fn id_or_null(id: Option<UserId>) -> Value {
     id.map_or(Value::Null, |u| json!(u.0))
 }
 
@@ -253,7 +253,7 @@ pub(crate) async fn create(Caller(who): Caller, Extension(app): Extension<App>, 
 
 /// The caller's way into the workspace the slug names, or `None` when there is none (no such workspace, or not an active
 /// member: the same answer, so nobody can probe for workspaces).
-async fn scope(app: &App, who: &Principal, slug: String) -> Result<Option<WorkspaceScope>, PlaneError> {
+pub(crate) async fn scope(app: &App, who: &Principal, slug: String) -> Result<Option<WorkspaceScope>, PlaneError> {
     match thrust_core::authorize_workspace(app, who, &WorkspaceSlug::new(slug)).await {
         Ok(scope) => Ok(Some(scope)),
         Err(CoreError::NotFound) => Ok(None),

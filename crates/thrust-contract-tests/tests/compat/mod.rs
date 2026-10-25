@@ -8,6 +8,7 @@
 use reqwest::StatusCode;
 use serde_json::{json, Value};
 use thrust_contract_tests::*;
+use thrust_contracts::{default_project_identifier, ProjectId, ProjectNetwork, Role, SeedFixture, SeedMembership, SeedProject, SeedProjectDetails, SeedWorkspace, WorkspaceId, WorkspaceSlug};
 
 use super::t;
 
@@ -502,4 +503,139 @@ async fn compat_a_workspace_that_breaks_a_rule_is_refused_with_planes_message_an
     let r = post_as(&t, &token, "/api/workspaces/", &json!({"name": "see example", "slug": url_name})).await;
     assert_eq!(r.status(), 201);
     assert!(!slug_is_free(&t, &token, &url_name).await);
+}
+
+/// The nine routes the app reads when it opens a workspace and its home page (S17, S19 to S26), by the path after the slug and
+/// whether Plane's 403 for them says `error` (its decorator) or `detail` (a permission class).
+const OPENING_ROUTES: [(&str, bool); 9] = [
+    ("projects/", false),
+    ("user-favorites/", false),
+    ("states/", true),
+    ("sidebar-preferences/", false),
+    ("user-properties/", true),
+    ("users/notifications/unread/", false),
+    ("home-preferences/", false),
+    ("quick-links/", false),
+    ("recent-visits/", false),
+];
+
+/// S17 and S19 to S26 for a member who has just made a workspace. Each answers 200: the stubs (S19, S20, S23, S25, S26) with
+/// what the pin gives a member who has none, the sidebar with its seven entries and the pin's pins and places, the home page
+/// with its three widgets (the last made first), and the list settings with the pin's defaults; asking again changes nothing
+/// (the list settings keep their id), and a second member of the workspace's own rows are not the first's. Controls: a stranger
+/// is refused every row with the body Plane's guard gives it, and nobody without a session is let in.
+#[tokio::test]
+async fn compat_opening_a_workspace_reads_the_sidebar_the_home_page_and_the_list_settings_once_and_refuses_everyone_else() {
+    let t = t();
+    let (_, token) = signed_up(&t).await;
+    let (_, stranger) = signed_up(&t).await;
+    let slug = new_slug();
+    let made = post_as(&t, &token, "/api/workspaces/", &json!({"name": "Opening", "slug": slug})).await;
+    assert_eq!(made.status(), 201);
+    let made: Value = made.json().await.unwrap();
+    let path = |tail: &str| format!("/api/workspaces/{slug}/{tail}");
+
+    for tail in ["projects/", "user-favorites/", "states/", "quick-links/", "recent-visits/", "recent-visits/?entity_name=project"] {
+        assert_eq!(get(&t, &token, &path(tail)).await, json!([]), "{tail}");
+    }
+    assert_eq!(
+        get(&t, &token, &path("users/notifications/unread/")).await,
+        json!({"total_unread_notifications_count": 0, "mention_unread_notifications_count": 0})
+    );
+
+    let sidebar = get(&t, &token, &path("sidebar-preferences/")).await;
+    let pins: Vec<(String, bool, f64)> = {
+        let mut v: Vec<_> = sidebar.as_object().unwrap().iter().map(|(k, p)| (k.clone(), p["is_pinned"].as_bool().unwrap(), p["sort_order"].as_f64().unwrap())).collect();
+        v.sort_by(|a, b| a.2.total_cmp(&b.2));
+        v
+    };
+    let want: Vec<(String, bool, f64)> =
+        [("views", false), ("active_cycles", false), ("analytics", false), ("drafts", true), ("your_work", true), ("archives", false), ("stickies", true)]
+            .iter()
+            .enumerate()
+            .map(|(i, (k, pinned))| ((*k).to_string(), *pinned, 65535.0 + 10000.0 * i as f64))
+            .collect();
+    assert_eq!(pins, want, "{sidebar}");
+
+    let home = get(&t, &token, &path("home-preferences/")).await;
+    let widgets: Vec<(&str, f64)> = home.as_array().unwrap().iter().map(|w| (w["key"].as_str().unwrap(), w["sort_order"].as_f64().unwrap())).collect();
+    assert_eq!(widgets, [("my_stickies", 997.0), ("recents", 998.0), ("quick_links", 999.0)], "{home}");
+
+    let props = get(&t, &token, &path("user-properties/")).await;
+    assert_eq!((props["workspace"].clone(), props["navigation_project_limit"].clone(), props["navigation_control_preference"].clone()), (made["id"].clone(), json!(10), json!("ACCORDION")), "{props}");
+    assert_eq!(props["display_filters"]["display_filters"]["layout"], "list", "{props}");
+
+    // again: the same rows, not new ones
+    assert_eq!(get(&t, &token, &path("sidebar-preferences/")).await, sidebar);
+    assert_eq!(get(&t, &token, &path("home-preferences/")).await, home);
+    assert_eq!(get(&t, &token, &path("user-properties/")).await["id"], props["id"], "the list settings were made again");
+
+    // a stranger is refused every row, each with its own guard's body; nobody without a session is let in
+    for (tail, class) in OPENING_ROUTES {
+        let r = t.http.get(t.url(&path(tail))).bearer_auth(&stranger).send().await.unwrap();
+        assert_eq!(r.status(), 403, "a stranger on {tail}");
+        let want = if class {
+            json!({"detail": "You do not have permission to perform this action."})
+        } else {
+            json!({"error": "You don't have the required permissions."})
+        };
+        assert_eq!(r.json::<Value>().await.unwrap(), want, "a stranger on {tail}");
+        let r = t.http.get(t.url(&path(tail))).send().await.unwrap();
+        assert_eq!(r.status(), 401, "no session on {tail}");
+    }
+}
+
+/// S17 for each way of being in a workspace. A workspace admin (the person who made it) lists every project, a secret one they
+/// are not in among them, with `member_role` null. A member of a seeded workspace lists the projects they are in and the public
+/// ones, so a member of the project sees it with their role number and a member who is not in it sees it with `member_role`
+/// null, and neither sees a secret project they are not in. Controls: the second kind of project is left out of the lists that
+/// must not have it (the secret project is in the admin's and not in the members').
+#[tokio::test]
+async fn compat_a_workspace_admin_lists_every_project_and_a_member_only_their_own_and_the_public_ones() {
+    let t = t();
+    // the admin: made the workspace, so is its admin, and a secret project that nobody is in is in it
+    let (_, admin) = signed_up(&t).await;
+    let slug = new_slug();
+    let made: Value = post_as(&t, &admin, "/api/workspaces/", &json!({"name": "Listed", "slug": slug})).await.json().await.unwrap();
+    let ws = WorkspaceId(made["id"].as_str().unwrap().parse().unwrap());
+    let secret = ProjectId(uuid::Uuid::new_v4());
+    let seeded = SeedFixture {
+        workspaces: vec![SeedWorkspace { id: ws, slug: WorkspaceSlug::new(&slug) }],
+        projects: vec![SeedProject { id: secret, workspace_id: ws, name: "Secret".into() }],
+        project_details: vec![SeedProjectDetails { identifier: Some("SEC".into()), network: ProjectNetwork::Secret, ..SeedProjectDetails::of(secret) }],
+        ..SeedFixture::default()
+    };
+    assert_eq!(t.admin_post("/internal/seed", &serde_json::to_value(&seeded).unwrap()).await.status(), 204);
+    let listed = get(&t, &admin, &format!("/api/workspaces/{slug}/projects/")).await;
+    assert_eq!(listed.as_array().unwrap().len(), 1, "{listed}");
+    let p = &listed[0];
+    assert_eq!((p["id"].clone(), p["identifier"].clone(), p["network"].clone(), p["member_role"].clone()), (json!(secret.0), json!("SEC"), json!(0), Value::Null), "{p}");
+    assert_eq!(p.as_object().unwrap().len(), 21, "{p}");
+
+    // the members: a seeded workspace whose members are all members of it, one project they are in and the secret one they are not
+    let f = Fixture::seed(&t).await;
+    let hidden = ProjectId(uuid::Uuid::new_v4());
+    let seeded = SeedFixture {
+        workspaces: vec![SeedWorkspace { id: f.ws_a, slug: WorkspaceSlug::new(&f.a.slug) }],
+        projects: vec![SeedProject { id: hidden, workspace_id: f.ws_a, name: "Hidden".into() }],
+        project_details: vec![SeedProjectDetails { network: ProjectNetwork::Secret, ..SeedProjectDetails::of(hidden) }],
+        memberships: vec![SeedMembership { project_id: hidden, workspace_id: f.ws_a, user_id: f.admin_a.id, role: Role::Admin }],
+        ..SeedFixture::default()
+    };
+    assert_eq!(t.admin_post("/internal/seed", &serde_json::to_value(&seeded).unwrap()).await.status(), 204);
+    let path = format!("/api/workspaces/{}/projects/", f.a.slug);
+    for (who, role) in [(&f.member_a, json!(15)), (&f.guest_a, json!(5)), (&f.admin_a, json!(20))] {
+        let listed = get(&t, &who.token, &path).await;
+        let names: Vec<&str> = listed.as_array().unwrap().iter().map(|p| p["name"].as_str().unwrap()).collect();
+        // admin_a is in the secret project too (and is a MEMBER of the workspace, as seeded workspace members are): theirs is listed
+        let hidden_to_them = !std::ptr::eq(who, &f.admin_a);
+        assert_eq!(names.contains(&"Hidden"), !hidden_to_them, "{names:?}");
+        let a = listed.as_array().unwrap().iter().find(|p| p["name"] == "A").expect("project A is listed");
+        assert_eq!((a["member_role"].clone(), a["network"].clone()), (role, json!(2)), "{a}");
+        assert_eq!(a["identifier"], json!(default_project_identifier(f.a.project)), "{a}");
+    }
+    // a member of the workspace who is in no project still sees the public one, with no role
+    let outsider = get(&t, &f.outsider_a.token, &path).await;
+    assert_eq!(outsider.as_array().unwrap().len(), 1, "{outsider}");
+    assert_eq!((outsider[0]["name"].clone(), outsider[0]["member_role"].clone()), (json!("A"), Value::Null), "{outsider}");
 }

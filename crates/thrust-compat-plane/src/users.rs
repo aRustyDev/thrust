@@ -37,7 +37,7 @@ pub(crate) fn ts(t: Timestamp) -> String {
     t.to_rfc3339_opts(SecondsFormat::Micros, true)
 }
 
-fn ts_or_null(t: Option<Timestamp>) -> Value {
+pub(crate) fn ts_or_null(t: Option<Timestamp>) -> Value {
     t.map_or(Value::Null, |t| json!(ts(t)))
 }
 
