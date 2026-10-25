@@ -1,0 +1,202 @@
+{
+  "exchanges": [
+    {
+      "name": "no session",
+      "request": {
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/project-stats/"
+      },
+      "response": {
+        "body": {
+          "detail": "Authentication credentials were not provided."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 401
+      }
+    },
+    {
+      "name": "every project of the workspace",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/project-stats/"
+      },
+      "response": {
+        "body": [
+          {
+            "completed_issues": 0,
+            "id": "<uuid:1>",
+            "total_cycles": 0,
+            "total_issues": 0,
+            "total_members": 1,
+            "total_modules": 0
+          }
+        ],
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "the other workspace, with two projects",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-two/project-stats/"
+      },
+      "response": {
+        "body": [
+          {
+            "completed_issues": 0,
+            "id": "<uuid:3>",
+            "total_cycles": 0,
+            "total_issues": 0,
+            "total_members": 1,
+            "total_modules": 0
+          },
+          {
+            "completed_issues": 0,
+            "id": "<uuid:4>",
+            "total_cycles": 0,
+            "total_issues": 0,
+            "total_members": 1,
+            "total_modules": 0
+          },
+          {
+            "completed_issues": 0,
+            "id": "<uuid:2>",
+            "total_cycles": 0,
+            "total_issues": 0,
+            "total_members": 1,
+            "total_modules": 0
+          }
+        ],
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "one project and the fields the app asks for",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/project-stats/?project_ids=<uuid:1>&fields=total_issues,completed_issues"
+      },
+      "response": {
+        "body": [
+          {
+            "completed_issues": 0,
+            "id": "<uuid:1>",
+            "total_issues": 0
+          }
+        ],
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "fields that are not counts",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/project-stats/?fields=name,nothing"
+      },
+      "response": {
+        "body": [
+          {
+            "completed_issues": 0,
+            "id": "<uuid:1>",
+            "total_cycles": 0,
+            "total_issues": 0,
+            "total_members": 1,
+            "total_modules": 0
+          }
+        ],
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "a project of another workspace",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/project-stats/?project_ids=<uuid:2>"
+      },
+      "response": {
+        "body": [],
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "not a member of the workspace",
+      "request": {
+        "as": "second@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/project-stats/"
+      },
+      "response": {
+        "body": {
+          "error": "You don't have the required permissions."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 403
+      }
+    },
+    {
+      "name": "a workspace that does not exist",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/no-such-workspace/project-stats/"
+      },
+      "response": {
+        "body": {
+          "error": "You don't have the required permissions."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 403
+      }
+    },
+    {
+      "name": "a project id that is not an id",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/project-stats/?project_ids=not-an-id"
+      },
+      "response": {
+        "body": {
+          "error": "Please provide valid detail"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    }
+  ],
+  "format_version": 1,
+  "recorded_from": "ba85d4d3d3",
+  "row": "S35",
+  "uses": [
+    "project",
+    "other"
+  ]
+}

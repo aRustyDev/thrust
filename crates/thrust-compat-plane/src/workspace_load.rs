@@ -7,7 +7,7 @@
 //!
 //! S19, S23, S25 and S26 are stubs (D-021): what they list does not exist yet (favourites, notifications, quick links, recent
 //! visits), so they answer the empty list or the zero count the pin gives a member who has none. They still ask who the caller
-//! is, so a stranger gets the pin's refusal and not an empty list. S20 is a stub too until a project has states (stage 5).
+//! is, so a stranger gets the pin's refusal and not an empty list.
 
 use axum::extract::Path;
 use axum::{Extension, Json};
@@ -21,27 +21,27 @@ use crate::workspaces::{id_or_null, role_number, scope};
 use crate::PlaneError;
 
 /// The 403 of a view whose role check is Plane's `allow_permission` decorator.
-fn refused_by_decorator() -> PlaneError {
+pub(crate) fn refused_by_decorator() -> PlaneError {
     PlaneError::Forbidden(json!({"error": "You don't have the required permissions."}))
 }
 
 /// The 403 of a view whose role check is a DRF permission class.
-fn refused_by_class() -> PlaneError {
+pub(crate) fn refused_by_class() -> PlaneError {
     PlaneError::Forbidden(json!({"detail": "You do not have permission to perform this action."}))
 }
 
 /// The caller's way into the workspace for a view guarded by the decorator, which lets in the roles `allowed`.
-async fn decorated(app: &App, who: &Principal, slug: String, allowed: &[Role]) -> Result<WorkspaceScope, PlaneError> {
+pub(crate) async fn decorated(app: &App, who: &Principal, slug: String, allowed: &[Role]) -> Result<WorkspaceScope, PlaneError> {
     match scope(app, who, slug).await? {
         Some(scope) if allowed.contains(&scope.role()) => Ok(scope),
         _ => Err(refused_by_decorator()),
     }
 }
 
-const ALL_ROLES: [Role; 3] = [Role::Guest, Role::Member, Role::Admin];
+pub(crate) const ALL_ROLES: [Role; 3] = [Role::Guest, Role::Member, Role::Admin];
 
 /// Plane's `network` numbers: 0 secret, 2 public.
-fn network_number(n: ProjectNetwork) -> u8 {
+pub(crate) fn network_number(n: ProjectNetwork) -> u8 {
     match n {
         ProjectNetwork::Secret => 0,
         ProjectNetwork::Public => 2,
@@ -91,11 +91,14 @@ pub(crate) async fn favorites(Caller(who): Caller, Extension(app): Extension<App
     Ok(Json(json!([])))
 }
 
-/// S20. The states of the projects the caller is in. A stub until a project has states (stage 5 makes the default ones with
-/// the project): none exist, so none are listed. Any active member may ask.
+/// S20. The states of the projects the caller is in (not the archived ones, and without the intake state), by `sequence`. Each
+/// state's `order` is its place among the listed states of its group over how many there are, so it counts the states of every
+/// project at once. Any active member may ask.
 pub(crate) async fn states(Caller(who): Caller, Extension(app): Extension<App>, Path(slug): Path<String>) -> Result<Json<Value>, PlaneError> {
-    scope(&app, &who, slug).await?.ok_or_else(refused_by_class)?;
-    Ok(Json(json!([])))
+    let scope = scope(&app, &who, slug).await?.ok_or_else(refused_by_class)?;
+    let states = thrust_core::workspace_states(&app, &scope).await?;
+    let orders = crate::projects::state_orders(&states);
+    Ok(Json(Value::Array(states.iter().zip(orders).map(|(s, o)| crate::projects::state_json(s, Some(o))).collect())))
 }
 
 /// S21. The caller's sidebar: each entry's pinned flag and place, by key.

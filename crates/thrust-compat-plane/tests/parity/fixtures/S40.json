@@ -1,0 +1,136 @@
+{
+  "exchanges": [
+    {
+      "name": "no session",
+      "request": {
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/states/"
+      },
+      "response": {
+        "body": {
+          "detail": "Authentication credentials were not provided."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 401
+      }
+    },
+    {
+      "name": "the creator of the project",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/states/"
+      },
+      "response": {
+        "body": [
+          {
+            "color": "#60646C",
+            "default": true,
+            "description": "",
+            "group": "backlog",
+            "id": "<uuid:2>",
+            "name": "Backlog",
+            "order": 1.0,
+            "project_id": "<uuid:1>",
+            "sequence": 15000.0,
+            "workspace_id": "<uuid:3>"
+          },
+          {
+            "color": "#60646C",
+            "default": false,
+            "description": "",
+            "group": "unstarted",
+            "id": "<uuid:4>",
+            "name": "Todo",
+            "order": 1.0,
+            "project_id": "<uuid:1>",
+            "sequence": 25000.0,
+            "workspace_id": "<uuid:3>"
+          },
+          {
+            "color": "#F59E0B",
+            "default": false,
+            "description": "",
+            "group": "started",
+            "id": "<uuid:5>",
+            "name": "In Progress",
+            "order": 1.0,
+            "project_id": "<uuid:1>",
+            "sequence": 35000.0,
+            "workspace_id": "<uuid:3>"
+          },
+          {
+            "color": "#46A758",
+            "default": false,
+            "description": "",
+            "group": "completed",
+            "id": "<uuid:6>",
+            "name": "Done",
+            "order": 1.0,
+            "project_id": "<uuid:1>",
+            "sequence": 45000.0,
+            "workspace_id": "<uuid:3>"
+          },
+          {
+            "color": "#9AA4BC",
+            "default": false,
+            "description": "",
+            "group": "cancelled",
+            "id": "<uuid:7>",
+            "name": "Cancelled",
+            "order": 1.0,
+            "project_id": "<uuid:1>",
+            "sequence": 55000.0,
+            "workspace_id": "<uuid:3>"
+          }
+        ],
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "not a member of the workspace",
+      "request": {
+        "as": "second@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/states/"
+      },
+      "response": {
+        "body": {
+          "error": "You don't have the required permissions."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 403
+      }
+    },
+    {
+      "name": "a project that does not exist",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:8>/states/"
+      },
+      "response": {
+        "body": {
+          "error": "You don't have the required permissions."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 403
+      }
+    }
+  ],
+  "format_version": 1,
+  "recorded_from": "ba85d4d3d3",
+  "row": "S40",
+  "uses": [
+    "project"
+  ]
+}

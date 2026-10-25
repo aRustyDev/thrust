@@ -17,6 +17,9 @@
 //! Every row has a `parity_` test (`tests/parity.rs`) that replays a fixture recorded from the pinned Plane
 //! (`oracle/v1-pin-20261018`, `ba85d4d3d3`) with `tools/compat-record/record.py`.
 
+// a project's answer is one `json!` of 44 keys, which is more than the macro's default depth allows
+#![recursion_limit = "256"]
+
 use axum::routing::{get, patch, post};
 use axum::Router;
 
@@ -26,6 +29,9 @@ mod fields;
 #[cfg(test)]
 mod fields_tests;
 mod instance;
+mod projects;
+#[cfg(test)]
+mod projects_tests;
 mod users;
 mod workspace_load;
 mod workspaces;
@@ -48,7 +54,20 @@ pub fn routes() -> Router {
         .route("/api/workspaces/", post(workspaces::create)) // S14
         .route("/api/workspaces/{slug}/workspace-members/me/", get(workspaces::member_me)) // S15
         .route("/api/users/me/workspaces/{slug}/project-roles/", get(workspaces::project_roles)) // S16
-        .route("/api/workspaces/{slug}/projects/", get(workspace_load::projects)) // S17
+        .route("/api/workspaces/{slug}/projects/", get(workspace_load::projects).post(projects::create)) // S17, S30
+        .route("/api/workspaces/{slug}/projects/{project}/", get(projects::retrieve).patch(projects::update)) // S34, S32
+        .route("/api/workspaces/{slug}/project-stats/", get(projects::stats)) // S35
+        .route("/api/workspaces/{slug}/projects/{project}/project-members/me/", get(projects::member_me)) // S36
+        .route("/api/workspaces/{slug}/projects/{project}/user-properties/", get(projects::user_properties)) // S37
+        .route("/api/workspaces/{slug}/projects/{project}/issue-labels/", get(projects::labels)) // S38
+        .route("/api/workspaces/{slug}/projects/{project}/members/", get(projects::members)) // S39
+        .route("/api/workspaces/{slug}/projects/{project}/states/", get(projects::states)) // S40
+        .route("/api/workspaces/{slug}/projects/{project}/intake-state/", get(projects::intake_state)) // S41
+        .route("/api/workspaces/{slug}/projects/{project}/estimates/", get(projects::estimates)) // S42
+        .route("/api/workspaces/{slug}/projects/{project}/cycles/", get(projects::project_stub)) // S43
+        .route("/api/workspaces/{slug}/modules/", get(projects::workspace_modules)) // S44
+        .route("/api/workspaces/{slug}/projects/{project}/modules/", get(projects::project_stub)) // S45
+        .route("/api/workspaces/{slug}/projects/{project}/views/", get(projects::project_stub)) // S46
         .route("/api/workspaces/{slug}/members/", get(workspaces::members)) // S18
         .route("/api/workspaces/{slug}/user-favorites/", get(workspace_load::favorites)) // S19
         .route("/api/workspaces/{slug}/states/", get(workspace_load::states)) // S20

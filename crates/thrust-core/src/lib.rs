@@ -25,6 +25,8 @@ mod workspace;
 pub use workspace::*;
 mod workspace_load;
 pub use workspace_load::*;
+mod projects;
+pub use projects::*;
 #[cfg(test)]
 mod timezones_tests;
 use thrust_contracts::chrono::TimeDelta;
@@ -195,6 +197,8 @@ impl From<RateError> for CoreError {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Permission {
+    /// What a member of a project may read about it (its people, states, labels and their own settings).
+    ReadProject,
     ReadWorkItems,
     ReadDeleted,
     CreateWorkItem,
@@ -206,7 +210,7 @@ pub enum Permission {
 impl Permission {
     fn min_role(self) -> Role {
         match self {
-            Permission::ReadWorkItems | Permission::ReadAttachment => Role::Guest,
+            Permission::ReadProject | Permission::ReadWorkItems | Permission::ReadAttachment => Role::Guest,
             Permission::CreateWorkItem | Permission::DeleteWorkItem | Permission::WriteAttachment => {
                 Role::Member
             }

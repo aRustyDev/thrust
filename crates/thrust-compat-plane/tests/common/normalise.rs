@@ -89,6 +89,14 @@ impl Ids {
         Ids { token: rules.uuid_token.clone(), seen: Vec::new() }
     }
 
+    /// Number an id before anything is normalised, so it is the next ordinal whatever comes first. A fixture whose requests name
+    /// an id that an earlier fixture made (the project the journey created) lists it under `uses`, and the replay gives it
+    /// here the id THIS implementation made for it; the recorder did the same with the pin's (`Ids.preseed` in normalise.py).
+    pub fn preseed(&mut self, id: &str) {
+        let cs: Vec<char> = id.chars().collect();
+        self.ordinal(&cs);
+    }
+
     fn ordinal(&mut self, raw: &[char]) -> String {
         let h: String = raw.iter().filter(|c| **c != '-').collect::<String>().to_lowercase();
         let key = format!("{}-{}-{}-{}-{}", &h[0..8], &h[8..12], &h[12..16], &h[16..20], &h[20..32]);

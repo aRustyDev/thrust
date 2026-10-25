@@ -1,0 +1,202 @@
+{
+  "exchanges": [
+    {
+      "name": "no session",
+      "request": {
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/user-properties/"
+      },
+      "response": {
+        "body": {
+          "detail": "Authentication credentials were not provided."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 401
+      }
+    },
+    {
+      "name": "the creator of the project",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/user-properties/"
+      },
+      "response": {
+        "body": {
+          "created_at": "<ts>",
+          "created_by": "<uuid:2>",
+          "deleted_at": null,
+          "display_filters": {
+            "calendar_date_range": "",
+            "group_by": null,
+            "layout": "list",
+            "order_by": "-created_at",
+            "show_empty_groups": true,
+            "sub_issue": true,
+            "type": null
+          },
+          "display_properties": {
+            "assignee": true,
+            "attachment_count": true,
+            "created_on": true,
+            "due_date": true,
+            "estimate": true,
+            "key": true,
+            "labels": true,
+            "link": true,
+            "priority": true,
+            "start_date": true,
+            "state": true,
+            "sub_issue_count": true,
+            "updated_on": true
+          },
+          "filters": {
+            "assignees": null,
+            "created_by": null,
+            "labels": null,
+            "priority": null,
+            "start_date": null,
+            "state": null,
+            "state_group": null,
+            "subscriber": null,
+            "target_date": null
+          },
+          "id": "<uuid:3>",
+          "preferences": {
+            "navigation": {
+              "default_tab": "work_items",
+              "hide_in_more_menu": []
+            },
+            "pages": {
+              "block_display": true
+            }
+          },
+          "project": "<uuid:1>",
+          "rich_filters": {},
+          "sort_order": 65535.0,
+          "updated_at": "<ts>",
+          "updated_by": null,
+          "user": "<uuid:2>",
+          "workspace": "<uuid:4>"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "the creator again",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/user-properties/"
+      },
+      "response": {
+        "body": {
+          "created_at": "<ts>",
+          "created_by": "<uuid:2>",
+          "deleted_at": null,
+          "display_filters": {
+            "calendar_date_range": "",
+            "group_by": null,
+            "layout": "list",
+            "order_by": "-created_at",
+            "show_empty_groups": true,
+            "sub_issue": true,
+            "type": null
+          },
+          "display_properties": {
+            "assignee": true,
+            "attachment_count": true,
+            "created_on": true,
+            "due_date": true,
+            "estimate": true,
+            "key": true,
+            "labels": true,
+            "link": true,
+            "priority": true,
+            "start_date": true,
+            "state": true,
+            "sub_issue_count": true,
+            "updated_on": true
+          },
+          "filters": {
+            "assignees": null,
+            "created_by": null,
+            "labels": null,
+            "priority": null,
+            "start_date": null,
+            "state": null,
+            "state_group": null,
+            "subscriber": null,
+            "target_date": null
+          },
+          "id": "<uuid:3>",
+          "preferences": {
+            "navigation": {
+              "default_tab": "work_items",
+              "hide_in_more_menu": []
+            },
+            "pages": {
+              "block_display": true
+            }
+          },
+          "project": "<uuid:1>",
+          "rich_filters": {},
+          "sort_order": 65535.0,
+          "updated_at": "<ts>",
+          "updated_by": null,
+          "user": "<uuid:2>",
+          "workspace": "<uuid:4>"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "not a member of the workspace",
+      "request": {
+        "as": "second@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/user-properties/"
+      },
+      "response": {
+        "body": {
+          "error": "You don't have the required permissions."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 403
+      }
+    },
+    {
+      "name": "a project that does not exist",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:5>/user-properties/"
+      },
+      "response": {
+        "body": {
+          "error": "You don't have the required permissions."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 403
+      }
+    }
+  ],
+  "format_version": 1,
+  "recorded_from": "ba85d4d3d3",
+  "row": "S37",
+  "uses": [
+    "project"
+  ]
+}

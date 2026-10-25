@@ -377,6 +377,69 @@ pub struct ProjectRow {
     pub updated_by: Option<UserId>,
     pub created_at: Timestamp,
     pub updated_at: Timestamp,
+    // What the list leaves out and the project's own routes show (migration 0012).
+    pub description: String,
+    pub description_text: Option<serde_json::Value>,
+    pub description_html: Option<serde_json::Value>,
+    pub emoji: Option<String>,
+    pub icon_prop: Option<serde_json::Value>,
+    pub is_time_tracking_enabled: bool,
+    pub is_issue_type_enabled: bool,
+    pub cover_image: Option<String>,
+    pub cover_image_asset: Option<Uuid>,
+    pub estimate: Option<Uuid>,
+    /// Months, 0 to 12.
+    pub archive_in: i32,
+    pub close_in: i32,
+    pub default_state: Option<Uuid>,
+    pub timezone: String,
+    pub external_source: Option<String>,
+    pub external_id: Option<String>,
+    pub default_assignee: Option<UserId>,
+}
+
+impl ProjectRow {
+    /// A project made with no options, as the seed and the tests make one: public, nothing archived, only pages on, the identifier
+    /// `default_project_identifier` makes from its id, UTC, and `at` for its time.
+    pub fn bare(id: ProjectId, workspace_id: WorkspaceId, name: impl Into<String>, at: Timestamp) -> ProjectRow {
+        ProjectRow {
+            id,
+            workspace_id,
+            name: name.into(),
+            identifier: default_project_identifier(id),
+            network: ProjectNetwork::default(),
+            logo_props: serde_json::json!({}),
+            archived_at: None,
+            cycle_view: false,
+            issue_views_view: false,
+            module_view: false,
+            page_view: true,
+            intake_view: false,
+            guest_view_all_features: false,
+            project_lead: None,
+            created_by: None,
+            updated_by: None,
+            created_at: at,
+            updated_at: at,
+            description: String::new(),
+            description_text: None,
+            description_html: None,
+            emoji: None,
+            icon_prop: None,
+            is_time_tracking_enabled: false,
+            is_issue_type_enabled: false,
+            cover_image: None,
+            cover_image_asset: None,
+            estimate: None,
+            archive_in: 0,
+            close_in: 0,
+            default_state: None,
+            timezone: "UTC".to_string(),
+            external_source: None,
+            external_id: None,
+            default_assignee: None,
+        }
+    }
 }
 
 /// A project in the list of one workspace member: the project, the role the member holds in it (none when they are not in
@@ -421,6 +484,131 @@ pub struct UserProperties {
     pub navigation_control_preference: String,
     pub created_at: Timestamp,
     pub updated_at: Timestamp,
+}
+
+/// A person's row in a project (issue #44, migration 0012): their role, their view settings (JSON objects, in which the compat
+/// layer fills the keys a row has not set), their place in the project's own member list, and who made the row and when.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ProjectMemberRow {
+    /// The row's own id, not the user's.
+    pub id: Uuid,
+    pub project_id: ProjectId,
+    /// The workspace the row was written with, which is the project's own for every row but a stray one.
+    pub workspace_id: WorkspaceId,
+    pub user_id: UserId,
+    pub role: Role,
+    pub comment: Option<String>,
+    pub view_props: serde_json::Value,
+    pub default_props: serde_json::Value,
+    pub preferences: serde_json::Value,
+    pub sort_order: f64,
+    pub created_by: Option<UserId>,
+    pub created_at: Timestamp,
+    pub updated_at: Timestamp,
+}
+
+/// A member's own settings for one project, and where their list puts it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ProjectUserProperties {
+    pub id: Uuid,
+    pub project_id: ProjectId,
+    pub workspace_id: WorkspaceId,
+    pub user_id: UserId,
+    pub filters: serde_json::Value,
+    pub display_filters: serde_json::Value,
+    pub display_properties: serde_json::Value,
+    pub rich_filters: serde_json::Value,
+    pub preferences: serde_json::Value,
+    pub sort_order: f64,
+    pub created_at: Timestamp,
+    pub updated_at: Timestamp,
+}
+
+/// A work-item state of a project.
+#[derive(Debug, Clone, PartialEq)]
+pub struct StateRow {
+    pub id: Uuid,
+    pub workspace_id: WorkspaceId,
+    pub project_id: ProjectId,
+    pub name: String,
+    pub description: String,
+    pub color: String,
+    /// The state's place among its project's, and what the lists order by.
+    pub sequence: f64,
+    pub group: StateGroup,
+    pub is_default: bool,
+    pub created_by: Option<UserId>,
+    pub created_at: Timestamp,
+    pub updated_at: Timestamp,
+}
+
+/// A label of a project.
+#[derive(Debug, Clone, PartialEq)]
+pub struct LabelRow {
+    pub id: Uuid,
+    pub workspace_id: WorkspaceId,
+    pub project_id: ProjectId,
+    pub parent_id: Option<Uuid>,
+    pub name: String,
+    pub description: String,
+    pub color: String,
+    pub sort_order: f64,
+    pub created_by: Option<UserId>,
+    pub created_at: Timestamp,
+    pub updated_at: Timestamp,
+}
+
+/// A person to add to a project that is being made, with their own settings row. The adapter replaces
+/// `properties.sort_order` with the place the pin gives a project a person has just joined: 10000 less than the lowest place they
+/// hold in the workspace, or 65535 when they hold none.
+#[derive(Debug, Clone, PartialEq)]
+pub struct NewProjectMember {
+    pub member: ProjectMemberRow,
+    pub properties: ProjectUserProperties,
+}
+
+/// A project, its first members and its states, inserted together or not at all.
+#[derive(Debug, Clone, PartialEq)]
+pub struct NewProject {
+    pub project: ProjectRow,
+    pub members: Vec<NewProjectMember>,
+    pub states: Vec<StateRow>,
+}
+
+/// Whether a name or a key is already a project's in the workspace (exact match, `Plane` and `plane` are two names). A field that
+/// was not asked about is `false`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct ProjectClashes {
+    pub name: bool,
+    pub identifier: bool,
+}
+
+/// A project with what the app shows beside it: the caller's role and place in it, who is in it, and the number the next work
+/// item will have.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ProjectDetail {
+    pub listing: ProjectListing,
+    /// The people in the project, newest row first.
+    pub members: Vec<UserId>,
+    pub next_sequence: i64,
+}
+
+/// A member's row with the person behind it, the project and the workspace, as the member's own route shows it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ProjectMemberWithUser {
+    pub member: ProjectMemberRow,
+    pub user: MemberUser,
+    pub project: ProjectRow,
+    pub workspace: Workspace,
+}
+
+/// What a workspace's project statistics say of one project.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ProjectStat {
+    pub id: ProjectId,
+    /// Work items that count: not deleted, not archived, not a draft.
+    pub total_issues: i64,
+    pub total_members: i64,
 }
 
 /// A link from an identity provider's subject to a user: `provider` is the issuer, `provider_account_id` the `sub`.
@@ -554,6 +742,9 @@ pub trait Database: Send + Sync {
     /// names nothing and for a user who is not (or no longer) a member, which look the same on purpose.
     async fn workspace_access(&self, slug: &WorkspaceSlug, user: UserId) -> Result<Option<WorkspaceAccess>, DbError>;
 
+    /// Whether `user` (anyone, not only the caller) is an active member of the scope's workspace.
+    async fn is_workspace_member(&self, scope: &WorkspaceScope, user: UserId) -> Result<bool, DbError>;
+
     /// Deactivate or reactivate a membership: the row stays (the member list shows the person as suspended) but an inactive
     /// member has no access to the workspace's slug, its projects or its member list. Test support and the seam of the real
     /// deactivation (ADR-0053), like `set_user_active`. `true` if the membership exists.
@@ -597,6 +788,61 @@ pub trait Database: Send + Sync {
     /// The caller's work-item list settings for this workspace: `new` is stored (at its own time) if there is no row yet, and
     /// whichever row is there is returned. A row that exists is left exactly as it is.
     async fn ensure_user_properties(&self, scope: &WorkspaceScope, new: &UserProperties) -> Result<UserProperties, DbError>;
+
+    // --- Projects (issue #44, the project stage). The writes take the workspace's scope: who may make or change a project is
+    // the core's to decide (it reads the caller's roles), and the adapter writes under the workspace the scope names.
+
+    /// Make a project, its first members (each with a settings row) and its states, together or not at all. A name or key that
+    /// another project of the workspace has is `DbError::Conflict`, raised by the UNIQUE indexes, so two creations racing for one
+    /// name cannot both win and the loser leaves nothing behind.
+    async fn insert_project(&self, scope: &WorkspaceScope, p: &NewProject) -> Result<(), DbError>;
+
+    /// Whether the workspace has a project with this name, and one with this key (exact), leaving out `except` (the project being
+    /// renamed). A name or key that is `None` is not asked about.
+    async fn project_clashes(
+        &self,
+        scope: &WorkspaceScope,
+        name: Option<&str>,
+        identifier: Option<&str>,
+        except: Option<ProjectId>,
+    ) -> Result<ProjectClashes, DbError>;
+
+    /// Replace everything but the id, the workspace and the creation of the project `row.id` of the scope's workspace with
+    /// `row`'s values (the pin saves every column, as this does). `false` when the workspace has no such project; a name or key
+    /// another project has is `DbError::Conflict`.
+    async fn update_project(&self, scope: &WorkspaceScope, row: &ProjectRow) -> Result<bool, DbError>;
+
+    /// The project of the scope's workspace with the caller's role and place in it, who is in it and its next sequence number;
+    /// `None` when the workspace has no such project. It does not ask whether the caller may see it: that is the core's rule.
+    async fn project_detail(&self, scope: &WorkspaceScope, id: ProjectId) -> Result<Option<ProjectDetail>, DbError>;
+
+    /// The caller's own row in the project, with who they are; `None` when they have none (also for a project of another
+    /// workspace, a row that names another workspace than the project's is no row).
+    async fn project_member(&self, scope: &WorkspaceScope, project: ProjectId) -> Result<Option<ProjectMemberWithUser>, DbError>;
+
+    /// The people in the project who are active members of its workspace, newest row first (ties by id).
+    async fn project_members(&self, scope: &Scope) -> Result<Vec<ProjectMemberRow>, DbError>;
+
+    /// The caller's settings for the project: `new` is stored if they have none (a row the project's creation did not make), and
+    /// whichever row is there is returned. A row that exists is left exactly as it is.
+    async fn ensure_project_user_properties(&self, scope: &Scope, new: &ProjectUserProperties) -> Result<ProjectUserProperties, DbError>;
+
+    /// The project's labels by `sort_order` (ties by id).
+    async fn project_labels(&self, scope: &Scope) -> Result<Vec<LabelRow>, DbError>;
+
+    /// The project's states, the intake one left out, by `sequence` (ties by id).
+    async fn project_states(&self, scope: &Scope) -> Result<Vec<StateRow>, DbError>;
+
+    /// The states of every project of the workspace that the caller is in and that is not archived, the intake ones left out, by
+    /// `sequence` (ties by project, then id).
+    async fn workspace_states(&self, scope: &WorkspaceScope) -> Result<Vec<StateRow>, DbError>;
+
+    /// The project's intake state (group `triage`), if it has one.
+    async fn triage_state(&self, scope: &Scope) -> Result<Option<StateRow>, DbError>;
+
+    /// Counts for the projects of the scope's workspace (all of them, or those in `only`), newest first (ties by id), whoever the
+    /// caller is in them.
+    async fn project_stats(&self, scope: &WorkspaceScope, only: Option<&[ProjectId]>) -> Result<Vec<ProjectStat>, DbError>;
 
     /// Create a user (sign-up, issue #44). A taken email is `DbError::Conflict`, raised by the UNIQUE index, so two
     /// sign-ups racing for one email cannot both win. An id that exists is the caller's bug, and also a `Conflict`.

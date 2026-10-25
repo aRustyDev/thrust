@@ -37,6 +37,12 @@ class Ids:
         self.token = token
         self.seen = {}
 
+    def preseed(self, raw):
+        """Number an id before anything is normalised, so it is the next ordinal whatever comes first. A fixture whose requests
+        name an id that an earlier fixture made (the project the journey created) lists it under `uses` and gets it here; the
+        Rust half does the same with the id Thrust made for it (`Ids::preseed`)."""
+        self.ordinal(raw)
+
     def ordinal(self, raw):
         key = _canonical(raw)
         if key not in self.seen:

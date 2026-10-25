@@ -305,6 +305,19 @@ enum Op {
     /// A first or later visit: `ensure_*` of seeded user `user` in the workspace of project `ws`'s tenant, with defaults of this
     /// shape. What is made stays as it is, whatever the later defaults say.
     FirstVisit { ws: P, user: U, kind: Visit },
+    /// The reads of seeded project `proj` (0 to 3: A, B, the secret one, the archived one) by seeded user `user`: the project with their
+    /// role and place, their own member row, who is in it, its states, its intake state and its labels.
+    ProjectReads { proj: usize, user: U },
+    /// `workspace_states` of seeded user `user` in the workspace of project `ws`'s tenant.
+    WorkspaceStatesRead { ws: P, user: U },
+    /// `project_stats` of the workspace of project `ws`'s tenant: all of its projects, or one of them and one of the other workspace's.
+    StatsRead { ws: P, only: bool },
+    /// `ensure_project_user_properties` of seeded user `user` for seeded project `proj`: what is there (the seed's, or an earlier call's)
+    /// stays.
+    ProjectProps { proj: usize, user: U, salt: u8 },
+    /// A compound op on brand-new users and a brand-new workspace: projects made, refused for a name, a key or an id that is taken,
+    /// renamed, and read back.
+    ProjectLife { lead: bool, second: bool },
     /// A compound op, for the sequences a single random op almost never reaches: the profile is made if there is none, then
     /// patched with both halves of the preferences (so the second must merge, not replace), the cover set and cleared, the
     /// onboarding steps replaced, the flags set, the last workspace set and cleared, the names changed, and read back.
@@ -450,6 +463,11 @@ fn op() -> impl Strategy<Value = Op> {
         3 => (proj(), user(), any::<bool>()).prop_map(|(ws, user, active)| Op::MemberActive { ws, user, active }),
         3 => (proj(), user(), role()).prop_map(|(ws, user, role)| Op::ProjectsRead { ws, user, role }),
         3 => (proj(), visitor(), visit()).prop_map(|(ws, user, kind)| Op::FirstVisit { ws, user, kind }),
+        3 => (0..4usize, user()).prop_map(|(proj, user)| Op::ProjectReads { proj, user }),
+        2 => (proj(), user()).prop_map(|(ws, user)| Op::WorkspaceStatesRead { ws, user }),
+        2 => (proj(), any::<bool>()).prop_map(|(ws, only)| Op::StatsRead { ws, only }),
+        3 => (0..4usize, visitor(), 0..4u8).prop_map(|(proj, user, salt)| Op::ProjectProps { proj, user, salt }),
+        2 => (any::<bool>(), any::<bool>()).prop_map(|(lead, second)| Op::ProjectLife { lead, second }),
         2 => (0..2usize, any::<bool>()).prop_map(|(who, restore)| Op::Deactivated { who, restore }),
         2 => prop_oneof![Just(5u8), Just(100u8)].prop_map(|ttl| Op::OidcRoundTrip { ttl }),
         2 => (0..2usize).prop_map(|key| Op::KeyCycle { key }),
@@ -625,6 +643,53 @@ enum Class {
     HomeKept,
     PropertiesMade,
     PropertiesKept,
+    /// `project_detail` for a person who is in the project: their role and place.
+    ProjectDetailOfMember,
+    /// `project_detail` for someone who is not in it (or whose only row names the wrong workspace): no role.
+    ProjectDetailOfOutsider,
+    /// `project_detail` through the other workspace's scope: no such project.
+    ProjectDetailOtherWorkspace,
+    /// `project_member` for a person who has a row, and for one who has none.
+    ProjectMemberRowShown,
+    ProjectMemberRowNone,
+    /// `project_members` that leaves out a person who is no longer an active member of the workspace.
+    ProjectMembersLeftOut,
+    ProjectMembersListed,
+    ProjectStatesListed,
+    /// `triage_state` of a project that has an intake state, and of one that has none.
+    TriageShown,
+    TriageNone,
+    LabelsListed,
+    LabelsNone,
+    /// `workspace_states` with states, with none, with an archived project's states left out, and with two projects' states of one
+    /// sequence (the project's id breaks the tie).
+    WorkspaceStatesSome,
+    WorkspaceStatesNone,
+    WorkspaceStatesArchivedLeftOut,
+    WorkspaceStatesTie,
+    /// `project_stats` of every project, and of those asked for.
+    StatsAll,
+    StatsOnly,
+    /// `ensure_project_user_properties` that finds the row the seed made, makes one, and finds it again with other defaults.
+    ProjectPropsSeeded,
+    ProjectPropsMade,
+    ProjectPropsKept,
+    /// `insert_project`: made, refused for a taken name, a taken key and a taken id (each leaving nothing of its own).
+    ProjectMade,
+    ProjectNameConflict,
+    ProjectKeyConflict,
+    ProjectIdConflict,
+    ProjectMemberOutsideWorkspace,
+    /// A lead who is someone else is a member too, listed first.
+    ProjectLeadListedFirst,
+    /// A second project in the workspace: each member's place is 10000 below the lowest they hold.
+    ProjectPlaceBelow,
+    /// `update_project`: renamed, refused for a name or key another project has, and a project that is not there.
+    ProjectRenamed,
+    ProjectRenameConflict,
+    ProjectUpdateUnknown,
+    /// `project_clashes`: exact, leaving out the project itself.
+    ProjectClashesFound,
     OidcInserted,
     /// An insert that dropped an expired login.
     OidcSwept,
@@ -651,7 +716,7 @@ enum Class {
 }
 
 impl Class {
-    const ALL: [Class; 114] = [
+    const ALL: [Class; 146] = [
         Class::Created,
         Class::ExternalKeyFreed,
         Class::Conflict,
@@ -748,6 +813,38 @@ impl Class {
         Class::HomeKept,
         Class::PropertiesMade,
         Class::PropertiesKept,
+        Class::ProjectDetailOfMember,
+        Class::ProjectDetailOfOutsider,
+        Class::ProjectDetailOtherWorkspace,
+        Class::ProjectMemberRowShown,
+        Class::ProjectMemberRowNone,
+        Class::ProjectMembersLeftOut,
+        Class::ProjectMembersListed,
+        Class::ProjectStatesListed,
+        Class::TriageShown,
+        Class::TriageNone,
+        Class::LabelsListed,
+        Class::LabelsNone,
+        Class::WorkspaceStatesSome,
+        Class::WorkspaceStatesNone,
+        Class::WorkspaceStatesArchivedLeftOut,
+        Class::WorkspaceStatesTie,
+        Class::StatsAll,
+        Class::StatsOnly,
+        Class::ProjectPropsSeeded,
+        Class::ProjectPropsMade,
+        Class::ProjectPropsKept,
+        Class::ProjectMade,
+        Class::ProjectNameConflict,
+        Class::ProjectKeyConflict,
+        Class::ProjectIdConflict,
+        Class::ProjectMemberOutsideWorkspace,
+        Class::ProjectLeadListedFirst,
+        Class::ProjectPlaceBelow,
+        Class::ProjectRenamed,
+        Class::ProjectRenameConflict,
+        Class::ProjectUpdateUnknown,
+        Class::ProjectClashesFound,
         Class::OidcInserted,
         Class::OidcSwept,
         Class::OidcTaken,
@@ -803,6 +900,8 @@ enum Call {
     WorkspaceAccessOf { slug: WorkspaceSlug, user: UserId, want: Option<WorkspaceAccess> },
     /// `want`: whether the membership exists.
     SetMemberActive { ws: WorkspaceId, user: UserId, active: bool, want: bool },
+    /// Whether `user` (not the scope's own) is an active member of the scope's workspace.
+    IsMemberOf { scope: (WorkspaceId, UserId, Role), user: UserId, want: bool },
     /// The three calls below take a `WorkspaceScope`: `(workspace, user, role)` are what the executor mints it from.
     WorkspaceMemberOf { scope: (WorkspaceId, UserId, Role), want: Option<WorkspaceMember> },
     WorkspaceMembersOf { scope: (WorkspaceId, UserId, Role), want: Vec<MemberWithUser> },
@@ -811,6 +910,26 @@ enum Call {
     EnsureSidebar { scope: (WorkspaceId, UserId, Role), defaults: Vec<SidebarPreference>, at: Timestamp, want: Vec<SidebarPreference> },
     EnsureHome { scope: (WorkspaceId, UserId, Role), defaults: Vec<HomePreference>, want: Vec<HomePreference> },
     EnsureProperties { scope: (WorkspaceId, UserId, Role), new: UserProperties, want: UserProperties },
+    InsertProject { scope: (WorkspaceId, UserId, Role), p: NewProject, conflict: bool },
+    /// A project one of whose members is no member of the workspace: the adapter must refuse all of it with `DbError::Backend`
+    /// (the foreign key of migration 0003; deviation D-026 makes the core ask first).
+    InsertProjectOutsider { scope: (WorkspaceId, UserId, Role), p: NewProject },
+    /// Make `user` an active member of the workspace (the seed is the port's only way to add one).
+    JoinWorkspace { ws: WorkspaceId, user: UserId },
+    ProjectClashesOf { scope: (WorkspaceId, UserId, Role), name: Option<String>, identifier: Option<String>, except: Option<ProjectId>, want: ProjectClashes },
+    UpdateProjectCall { scope: (WorkspaceId, UserId, Role), row: ProjectRow, want: UpdateWant },
+    ProjectDetailOf { scope: (WorkspaceId, UserId, Role), id: ProjectId, want: Option<ProjectDetail> },
+    /// A seeded member's own row: compared by its role, its id, its place, the project and the workspace it names (the seeded
+    /// workspace's timestamps are the database's own).
+    ProjectMemberSeeded { scope: (WorkspaceId, UserId, Role), project: ProjectId, slug: WorkspaceSlug, want: Option<(UserId, Role, Uuid, f64)> },
+    /// The three calls below take a project `Scope`: `(workspace, project, user)` are what the executor mints it from.
+    ProjectMembersOf { scope: (WorkspaceId, ProjectId, UserId), want: Vec<(UserId, Role)> },
+    ProjectStatesOf { scope: (WorkspaceId, ProjectId, UserId), want: Vec<StateRow> },
+    TriageOf { scope: (WorkspaceId, ProjectId, UserId), want: Option<StateRow> },
+    LabelsOf { scope: (WorkspaceId, ProjectId, UserId), want: Vec<LabelRow> },
+    WorkspaceStatesOf { scope: (WorkspaceId, UserId, Role), want: Vec<StateRow> },
+    ProjectStatsOf { scope: (WorkspaceId, UserId, Role), only: Option<Vec<ProjectId>>, want: Vec<(ProjectId, i64, i64)> },
+    EnsureProjectProps { scope: (WorkspaceId, ProjectId, UserId), new: ProjectUserProperties, want: ProjectUserProperties },
     /// `workspaces_of(user)` for a seeded user, as `(workspace, role, active members)` sorted by workspace id: the seed's
     /// timestamps are the database's own, so the listing's order and its timestamps are not compared here.
     SeededListing { user: UserId, want: Vec<(WorkspaceId, Role, u64)> },
@@ -834,6 +953,17 @@ enum Call {
     Depth { want: u64 },
     InsertActivity { a: Activity, want: bool },
     ListActivity { ws: WorkspaceId, p: ProjectId, entity: Option<WorkItemId>, want: Vec<Activity> },
+}
+
+/// What `update_project` must answer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum UpdateWant {
+    /// `Ok(true)`.
+    Done,
+    /// `Ok(false)`: the workspace has no such project.
+    Unknown,
+    /// `Err(DbError::Conflict)`.
+    Conflict,
 }
 
 /// What `rehash_api_key` must answer.
@@ -896,43 +1026,107 @@ impl ProjSpec {
         self.members.iter().find(|m| m.0 as usize == user as usize).and_then(|m| m.3)
     }
 
+    /// The states the seed gives it, as (name, sequence, group, default): four projects whose first state shares one sequence, so that
+    /// the workspace's list has ties across projects to break, and only some have an intake (triage) state.
+    fn state_templates(&self) -> Vec<(&'static str, f64, StateGroup, bool)> {
+        use StateGroup::*;
+        match self.name {
+            "A" => vec![("Backlog", 15000.0, Backlog, true), ("Todo", 25000.0, Unstarted, false), ("Triage", 65000.0, Triage, false)],
+            "B" => vec![("Backlog", 15000.0, Backlog, true), ("Done", 45000.0, Completed, false)],
+            "secret" => vec![("Backlog", 15000.0, Backlog, true), ("Triage", 65000.0, Triage, false)],
+            _ => vec![("Backlog", 15000.0, Backlog, true)],
+        }
+    }
+
+    /// The labels the seed gives it, as (name, sort order): two with one order, so that the id breaks the tie.
+    fn label_templates(&self) -> Vec<(&'static str, f64)> {
+        match self.name {
+            "A" => vec![("later", 20.0), ("first", 10.0), ("tie", 10.0)],
+            "secret" => vec![("one", 1.0)],
+            _ => vec![],
+        }
+    }
+
+    /// The states as the table holds them (a seeded state has no creator and the epoch for its time).
+    fn state_rows(&self, ws: WorkspaceId) -> Vec<StateRow> {
+        let epoch = Utc.timestamp_opt(0, 0).unwrap();
+        self.state_templates()
+            .into_iter()
+            .enumerate()
+            .map(|(i, (name, sequence, group, is_default))| StateRow {
+                id: Uuid::from_u128(self.id.0.as_u128().rotate_left(8) ^ (i as u128 + 1)),
+                workspace_id: ws,
+                project_id: self.id,
+                name: name.to_string(),
+                description: String::new(),
+                color: "#112233".into(),
+                sequence,
+                group,
+                is_default,
+                created_by: None,
+                created_at: epoch,
+                updated_at: epoch,
+            })
+            .collect()
+    }
+
+    fn label_rows(&self, ws: WorkspaceId) -> Vec<LabelRow> {
+        let epoch = Utc.timestamp_opt(0, 0).unwrap();
+        self.label_templates()
+            .into_iter()
+            .enumerate()
+            .map(|(i, (name, sort_order))| LabelRow {
+                id: Uuid::from_u128(self.id.0.as_u128().rotate_left(16) ^ (i as u128 + 1)),
+                workspace_id: ws,
+                project_id: self.id,
+                parent_id: None,
+                name: name.to_string(),
+                description: String::new(),
+                color: "#aabbcc".into(),
+                sort_order,
+                created_by: None,
+                created_at: epoch,
+                updated_at: epoch,
+            })
+            .collect()
+    }
+
+    /// The id of the member row the seed made for `user` (a pure function of the project and the user, as the memory adapter's).
+    fn member_row_id(&self, user: UserId) -> Uuid {
+        Uuid::from_u128(self.id.0.as_u128() ^ user.0.as_u128().rotate_left(64))
+    }
+
     /// The project as the table holds it: what a project made with no options has, and what the seed gave it.
     fn row(&self, ws: WorkspaceId) -> ProjectRow {
         let created_at = self.created_at();
+        // a project made with no options (`bare`), with what the seed gave this one
         ProjectRow {
-            id: self.id,
-            workspace_id: ws,
-            name: self.name.to_string(),
-            identifier: default_project_identifier(self.id),
             network: self.network,
-            logo_props: serde_json::json!({}),
             archived_at: self.archived.then_some(created_at),
-            cycle_view: false,
-            issue_views_view: false,
-            module_view: false,
-            page_view: true,
-            intake_view: false,
-            guest_view_all_features: false,
-            project_lead: None,
-            created_by: None,
-            updated_by: None,
-            created_at,
-            updated_at: created_at,
+            ..ProjectRow::bare(self.id, ws, self.name, created_at)
         }
     }
 }
 
 /// The spec's project list for a caller holding workspace role `role` in the workspace of slot `slot`: the projects of that
-/// workspace, filtered by the table `sees`, newest first with ties by id.
-fn projects_listing(fix: &Fix, slot: usize, user: U, role: Role) -> Vec<ProjectListing> {
-    let mut specs: Vec<ProjSpec> = fix.specs().into_iter().filter(|s| s.slot == slot).collect();
-    specs.retain(|s| match role {
+/// workspace, filtered by the table `sees`, newest first with ties by id. The caller's place is the one their settings row holds
+/// (`props`, by project and person): the seed's, or one a `ProjectProps` step made, a member or not.
+fn projects_listing(fix: &Fix, props: &BTreeMap<(usize, usize), ProjectUserProperties>, slot: usize, user: U, role: Role) -> Vec<ProjectListing> {
+    let mut specs: Vec<(usize, ProjSpec)> = fix.specs().into_iter().enumerate().filter(|(_, s)| s.slot == slot).collect();
+    specs.retain(|(_, s)| match role {
         Role::Admin => true,
         Role::Member => s.role_of(user).is_some() || s.network == ProjectNetwork::Public,
         Role::Guest => s.role_of(user).is_some(),
     });
-    specs.sort_by(|a, b| b.created.cmp(&a.created).then(b.id.cmp(&a.id)));
-    specs.iter().map(|s| ProjectListing { project: s.row(fix.ws[slot]), role: s.role_of(user), sort_order: s.sort_of(user) }).collect()
+    specs.sort_by(|(_, a), (_, b)| b.created.cmp(&a.created).then(b.id.cmp(&a.id)));
+    specs
+        .iter()
+        .map(|(i, s)| ProjectListing {
+            project: s.row(fix.ws[slot]),
+            role: s.role_of(user),
+            sort_order: props.get(&(*i, user as usize)).map(|p| p.sort_order),
+        })
+        .collect()
 }
 
 /// The user's role in each project of workspace slot `slot`, by project id: `project_roles`' answer.
@@ -1070,6 +1264,35 @@ impl Fix {
                     })
                 })
                 .collect(),
+            states: specs
+                .iter()
+                .flat_map(|s| {
+                    s.state_rows(self.ws[s.slot]).into_iter().map(|st| SeedState {
+                        id: st.id,
+                        project_id: st.project_id,
+                        workspace_id: st.workspace_id,
+                        name: st.name,
+                        color: st.color,
+                        sequence: st.sequence,
+                        group: st.group,
+                        is_default: st.is_default,
+                    })
+                })
+                .collect(),
+            labels: specs
+                .iter()
+                .flat_map(|s| {
+                    s.label_rows(self.ws[s.slot]).into_iter().map(|l| SeedLabel {
+                        id: l.id,
+                        project_id: l.project_id,
+                        workspace_id: l.workspace_id,
+                        name: l.name,
+                        color: l.color,
+                        parent_id: l.parent_id,
+                        sort_order: l.sort_order,
+                    })
+                })
+                .collect(),
             sessions: vec![],
             ..SeedFixture::default()
         }
@@ -1183,6 +1406,90 @@ fn new_workspace(owner: UserId, role: Role, tag: &str) -> NewWorkspace {
     }
 }
 
+/// A project of workspace `ws` made by `creator` at the model's next tick, with `lead` as a second admin if it is someone else, a
+/// settings row for each, and the pin's six states. Every id is new.
+fn model_project(ws: WorkspaceId, creator: UserId, lead: Option<UserId>, name: &str, identifier: &str) -> NewProject {
+    let now = tick();
+    let id = ProjectId(new_id());
+    let mut project = ProjectRow::bare(id, ws, name, now);
+    project.identifier = identifier.to_string();
+    project.created_by = Some(creator);
+    project.project_lead = lead;
+    let people: Vec<UserId> = std::iter::once(creator).chain(lead.filter(|l| *l != creator)).collect();
+    let members = people
+        .iter()
+        .enumerate()
+        .map(|(i, user)| {
+            // a row made after another has a later time (a microsecond), as the core makes them
+            let t = now + TimeDelta::microseconds(i as i64);
+            NewProjectMember {
+                member: ProjectMemberRow {
+                    id: new_id(),
+                    project_id: id,
+                    workspace_id: ws,
+                    user_id: *user,
+                    role: Role::Admin,
+                    comment: None,
+                    view_props: serde_json::json!({"v": 1}),
+                    default_props: serde_json::json!({}),
+                    preferences: serde_json::json!({"p": [1, 2]}),
+                    sort_order: 65535.0,
+                    created_by: Some(creator),
+                    created_at: t,
+                    updated_at: t,
+                },
+                properties: ProjectUserProperties {
+                    id: new_id(),
+                    project_id: id,
+                    workspace_id: ws,
+                    user_id: *user,
+                    filters: serde_json::json!({"f": 1}),
+                    display_filters: serde_json::json!({}),
+                    display_properties: serde_json::json!({"d": true}),
+                    rich_filters: serde_json::json!({}),
+                    preferences: serde_json::json!({}),
+                    // the adapter replaces this
+                    sort_order: -1.0,
+                    created_at: t,
+                    updated_at: t,
+                },
+            }
+        })
+        .collect();
+    let states = [
+        ("Backlog", 15000.0, StateGroup::Backlog, true),
+        ("Todo", 25000.0, StateGroup::Unstarted, false),
+        ("In Progress", 35000.0, StateGroup::Started, false),
+        ("Done", 45000.0, StateGroup::Completed, false),
+        ("Cancelled", 55000.0, StateGroup::Cancelled, false),
+        ("Triage", 65000.0, StateGroup::Triage, false),
+    ]
+    .iter()
+    .map(|(n, sequence, group, is_default)| StateRow {
+        id: new_id(),
+        workspace_id: ws,
+        project_id: id,
+        name: (*n).to_string(),
+        description: String::new(),
+        color: "#445566".into(),
+        sequence: *sequence,
+        group: *group,
+        is_default: *is_default,
+        created_by: Some(creator),
+        created_at: now,
+        updated_at: now,
+    })
+    .collect();
+    NewProject { project, members, states }
+}
+
+/// A project's states as the lists show them (the intake state left out), by sequence then id.
+fn listed_states(p: &NewProject) -> Vec<StateRow> {
+    let mut v: Vec<StateRow> = p.states.iter().filter(|s| s.group != StateGroup::Triage).cloned().collect();
+    v.sort_by(|a, b| a.sequence.total_cmp(&b.sequence).then(a.id.cmp(&b.id)));
+    v
+}
+
 /// A user's role in a project, written out from `Fix::seed`. `StrayB`'s row for project A names workspace B, so it is
 /// not a membership of project A.
 fn role_in(proj: P, user: U) -> Option<Role> {
@@ -1248,6 +1555,9 @@ struct Model {
     sidebar: BTreeMap<(usize, usize, String), SidebarPreference>,
     home: BTreeMap<(usize, usize, String), HomePreference>,
     properties: BTreeMap<(usize, usize), UserProperties>,
+    /// The settings rows a member has for a seeded project, by (project index, user index): the ones the seed made, and the first a call
+    /// asked for after that.
+    project_props: BTreeMap<(usize, usize), ProjectUserProperties>,
     /// Committed rows per project, in sequence order.
     rows: [Vec<WorkItem>; 2],
     counter: [i64; 2],
@@ -1407,6 +1717,33 @@ impl Model {
             }
         };
         let api_keys = vec![key(0, None), key(1, Some(100))];
+        // the settings rows the seed makes: one for each member who has a sort order, with the pin's empty objects and the epoch
+        let epoch = Utc.timestamp_opt(0, 0).unwrap();
+        let mut project_props = BTreeMap::new();
+        for (p, spec) in fix.specs().iter().enumerate() {
+            for &(u, _, _, sort) in &spec.members {
+                if let Some(sort_order) = sort {
+                    let user = fix.user(u);
+                    project_props.insert(
+                        (p, u as usize),
+                        ProjectUserProperties {
+                            id: Uuid::from_u128(spec.id.0.as_u128().rotate_left(32) ^ user.0.as_u128()),
+                            project_id: spec.id,
+                            workspace_id: fix.ws[spec.slot],
+                            user_id: user,
+                            filters: serde_json::json!({}),
+                            display_filters: serde_json::json!({}),
+                            display_properties: serde_json::json!({}),
+                            rich_filters: serde_json::json!({}),
+                            preferences: serde_json::json!({}),
+                            sort_order,
+                            created_at: epoch,
+                            updated_at: epoch,
+                        },
+                    );
+                }
+            }
+        }
         Model {
             fix,
             sessions,
@@ -1418,6 +1755,7 @@ impl Model {
             sidebar: BTreeMap::new(),
             home: BTreeMap::new(),
             properties: BTreeMap::new(),
+            project_props,
             rows: [Vec::new(), Vec::new()],
             counter: [0, 0],
             outbox: Vec::new(),
@@ -2006,7 +2344,7 @@ impl Model {
             }
             &Op::ProjectsRead { ws, user, role } => {
                 let s = slot(ws);
-                let want = projects_listing(&self.fix, s, user, role);
+                let want = projects_listing(&self.fix, &self.project_props, s, user, role);
                 let in_slot = || self.fix.specs().into_iter().filter(|p| p.slot == s);
                 let listed = |p: &ProjSpec| want.iter().any(|l| l.project.id == p.id);
                 if want.is_empty() {
@@ -2088,6 +2426,291 @@ impl Model {
                     }
                 }
             }
+            &Op::ProjectReads { proj, user } => {
+                let specs = self.fix.specs();
+                let spec = &specs[proj];
+                let (s, u, uid) = (spec.slot, user as usize, self.fix.user(user));
+                let ws = self.fix.ws[s];
+                let scope = (ws, uid, Role::Member);
+                // who is in it: the rows that name its own workspace, newest first (the seed gives them all one time, so the id breaks the tie)
+                let mut rows: Vec<(UserId, Role, Uuid)> =
+                    spec.members.iter().filter(|m| m.2 == s).map(|m| (self.fix.user(m.0), m.1, spec.member_row_id(self.fix.user(m.0)))).collect();
+                rows.sort_by(|a, b| b.2.cmp(&a.2));
+                let next_sequence = if proj < 2 { self.counter[proj] + 1 } else { 1 };
+                let detail = ProjectDetail {
+                    listing: ProjectListing { project: spec.row(ws), role: spec.role_of(user), sort_order: self.project_props.get(&(proj, u)).map(|p| p.sort_order) },
+                    members: rows.iter().map(|r| r.0).collect(),
+                    next_sequence,
+                };
+                classes.push(if detail.listing.role.is_some() { Class::ProjectDetailOfMember } else { Class::ProjectDetailOfOutsider });
+                calls.push(Call::ProjectDetailOf { scope, id: spec.id, want: Some(detail) });
+                // through the other workspace's scope the project is not there
+                classes.push(Class::ProjectDetailOtherWorkspace);
+                calls.push(Call::ProjectDetailOf { scope: (self.fix.ws[1 - s], uid, Role::Member), id: spec.id, want: None });
+                // their own row
+                let mine = rows.iter().find(|r| r.0 == uid).map(|r| (r.0, r.1, r.2, 65535.0));
+                classes.push(if mine.is_some() { Class::ProjectMemberRowShown } else { Class::ProjectMemberRowNone });
+                calls.push(Call::ProjectMemberSeeded { scope, project: spec.id, slug: self.fix.slug[s].clone(), want: mine });
+                // the people in it who are still active members of the workspace
+                let active = |m: &(UserId, Role, Uuid)| {
+                    let who = U::ALL.iter().find(|x| self.fix.user(**x) == m.0).copied().expect("a seeded user");
+                    in_workspace(who)[s] && self.member_active[who as usize][s]
+                };
+                let listed: Vec<(UserId, Role)> = rows.iter().filter(|m| active(m)).map(|m| (m.0, m.1)).collect();
+                classes.push(if listed.len() < rows.len() { Class::ProjectMembersLeftOut } else { Class::ProjectMembersListed });
+                calls.push(Call::ProjectMembersOf { scope: (ws, spec.id, uid), want: listed });
+                // its states and labels
+                let states = spec.state_rows(ws);
+                let mut shown: Vec<StateRow> = states.iter().filter(|st| st.group != StateGroup::Triage).cloned().collect();
+                shown.sort_by(|a, b| a.sequence.total_cmp(&b.sequence).then(a.id.cmp(&b.id)));
+                classes.push(Class::ProjectStatesListed);
+                calls.push(Call::ProjectStatesOf { scope: (ws, spec.id, uid), want: shown });
+                let triage = states.iter().find(|st| st.group == StateGroup::Triage).cloned();
+                classes.push(if triage.is_some() { Class::TriageShown } else { Class::TriageNone });
+                calls.push(Call::TriageOf { scope: (ws, spec.id, uid), want: triage });
+                let mut labels = spec.label_rows(ws);
+                labels.sort_by(|a, b| a.sort_order.total_cmp(&b.sort_order).then(a.id.cmp(&b.id)));
+                classes.push(if labels.is_empty() { Class::LabelsNone } else { Class::LabelsListed });
+                calls.push(Call::LabelsOf { scope: (ws, spec.id, uid), want: labels });
+                let _ = u;
+            }
+            &Op::WorkspaceStatesRead { ws, user } => {
+                let (s, uid) = (slot(ws), self.fix.user(user));
+                let specs = self.fix.specs();
+                // the states of the projects of this workspace that the caller is in (their row names the workspace) and that are not archived
+                let mut want: Vec<StateRow> = Vec::new();
+                let mut archived_left_out = false;
+                for spec in specs.iter().filter(|p| p.slot == s) {
+                    if spec.role_of(user).is_none() {
+                        continue;
+                    }
+                    if spec.archived {
+                        archived_left_out |= !spec.state_rows(self.fix.ws[s]).is_empty();
+                        continue;
+                    }
+                    want.extend(spec.state_rows(self.fix.ws[s]).into_iter().filter(|st| st.group != StateGroup::Triage));
+                }
+                want.sort_by(|a, b| a.sequence.total_cmp(&b.sequence).then(a.project_id.0.cmp(&b.project_id.0)).then(a.id.cmp(&b.id)));
+                classes.push(if want.is_empty() { Class::WorkspaceStatesNone } else { Class::WorkspaceStatesSome });
+                if archived_left_out {
+                    classes.push(Class::WorkspaceStatesArchivedLeftOut);
+                }
+                if want.windows(2).any(|w| w[0].sequence == w[1].sequence && w[0].project_id != w[1].project_id) {
+                    classes.push(Class::WorkspaceStatesTie);
+                }
+                calls.push(Call::WorkspaceStatesOf { scope: (self.fix.ws[s], uid, Role::Member), want });
+            }
+            &Op::StatsRead { ws, only } => {
+                let s = slot(ws);
+                let specs = self.fix.specs();
+                let mut in_slot: Vec<(usize, &ProjSpec)> = specs.iter().enumerate().filter(|(_, p)| p.slot == s).collect();
+                in_slot.sort_by(|a, b| (b.1.created, b.1.id).cmp(&(a.1.created, a.1.id)));
+                let stat = |(i, p): &(usize, &ProjSpec)| {
+                    // only the committed live work items of the two projects that have a counter count
+                    let issues = if *i < 2 && !p.archived {
+                        self.rows[*i].iter().filter(|w| w.deleted_at.is_none() && w.archived_at.is_none() && !w.is_draft).count() as i64
+                    } else {
+                        0
+                    };
+                    (p.id, issues, p.members.iter().filter(|m| m.2 == s).count() as i64)
+                };
+                let (asked, want): (Option<Vec<ProjectId>>, Vec<(ProjectId, i64, i64)>) = if only {
+                    // the first project of the workspace, and one of the other workspace's, which is not there
+                    let first = in_slot[0].1.id;
+                    let foreign = specs.iter().find(|p| p.slot != s).expect("a project of the other workspace").id;
+                    (Some(vec![first, foreign]), in_slot.iter().filter(|(_, p)| p.id == first).map(stat).collect())
+                } else {
+                    (None, in_slot.iter().map(stat).collect())
+                };
+                classes.push(if only { Class::StatsOnly } else { Class::StatsAll });
+                calls.push(Call::ProjectStatsOf { scope: (self.fix.ws[s], self.fix.user(U::AdminA), Role::Member), only: asked, want });
+            }
+            &Op::ProjectProps { proj, user, salt } => {
+                let specs = self.fix.specs();
+                let spec = &specs[proj];
+                let (u, uid) = (user as usize, self.fix.user(user));
+                let ws = self.fix.ws[spec.slot];
+                let at = tick();
+                let new = ProjectUserProperties {
+                    id: new_id(),
+                    project_id: spec.id,
+                    workspace_id: ws,
+                    user_id: uid,
+                    filters: serde_json::json!({"salt": salt}),
+                    display_filters: serde_json::json!({}),
+                    display_properties: serde_json::json!({"salt": salt}),
+                    rich_filters: serde_json::json!({}),
+                    preferences: serde_json::json!({}),
+                    sort_order: 5.0 + f64::from(salt),
+                    created_at: at,
+                    updated_at: at,
+                };
+                let seeded = spec.sort_of(user).is_some();
+                let existed = self.project_props.contains_key(&(proj, u));
+                classes.push(match (existed, seeded) {
+                    (false, _) => Class::ProjectPropsMade,
+                    (true, true) if self.project_props[&(proj, u)].created_at == Utc.timestamp_opt(0, 0).unwrap() => Class::ProjectPropsSeeded,
+                    (true, _) => Class::ProjectPropsKept,
+                });
+                let want = self.project_props.entry((proj, u)).or_insert_with(|| new.clone()).clone();
+                calls.push(Call::EnsureProjectProps { scope: (ws, spec.id, uid), new, want });
+            }
+            &Op::ProjectLife { lead, second } => {
+                // u1 owns the workspace, u2 may lead the project (and then has joined the workspace: D-026), u3 is a user who has not
+                let (u1, u2, u3) = (UserId(new_id()), UserId(new_id()), UserId(new_id()));
+                let id_only = |id| UserRecord { id, email: None, password_hash: None, is_active: true };
+                calls.push(Call::SeedUsers { users: vec![id_only(u1), id_only(u2), id_only(u3)] });
+                let workspace = new_workspace(u1, Role::Admin, "pl");
+                let ws = workspace.workspace.id;
+                calls.push(Call::InsertWorkspace { w: workspace, conflict: false });
+                if lead {
+                    calls.push(Call::JoinWorkspace { ws, user: u2 });
+                }
+                for (user, want) in [(u1, true), (u2, lead), (u3, false)] {
+                    calls.push(Call::IsMemberOf { scope: (ws, u1, Role::Admin), user, want });
+                }
+                let admin = (ws, u1, Role::Admin);
+                let as_user = |user: UserId| (ws, user, Role::Member);
+                let lead_user = lead.then_some(u2);
+
+                // made, with its members, their places and its states
+                let p1 = model_project(ws, u1, lead_user, "One", "ONE");
+                calls.push(Call::InsertProject { scope: admin, p: p1.clone(), conflict: false });
+                classes.push(Class::ProjectMade);
+                let detail = |p: &NewProject, user: UserId, place: Option<f64>, members: Vec<UserId>| ProjectDetail {
+                    listing: ProjectListing { project: p.project.clone(), role: p.members.iter().any(|m| m.member.user_id == user).then_some(Role::Admin), sort_order: place },
+                    members,
+                    next_sequence: 1,
+                };
+                // the lead's row is the newer, so it is listed first
+                let mut people: Vec<UserId> = vec![u1];
+                if lead {
+                    people.insert(0, u2);
+                    classes.push(Class::ProjectLeadListedFirst);
+                }
+                calls.push(Call::ProjectDetailOf { scope: as_user(u1), id: p1.project.id, want: Some(detail(&p1, u1, Some(65535.0), people.clone())) });
+                calls.push(Call::ProjectDetailOf {
+                    scope: as_user(u2),
+                    id: p1.project.id,
+                    want: Some(detail(&p1, u2, lead.then_some(65535.0), people.clone())),
+                });
+                // everyone in it is a member of the workspace, the lead (who joined it) listed first as in the project's own list
+                calls.push(Call::ProjectMembersOf { scope: (ws, p1.project.id, u1), want: people.iter().map(|u| (*u, Role::Admin)).collect() });
+                calls.push(Call::ProjectStatesOf { scope: (ws, p1.project.id, u1), want: listed_states(&p1) });
+                let triage = p1.states.iter().find(|s| s.group == StateGroup::Triage).cloned();
+                calls.push(Call::TriageOf { scope: (ws, p1.project.id, u1), want: triage });
+
+                // a name, a key and an id that are taken are refused, and each leaves nothing of its own
+                let by_name = model_project(ws, u1, None, "One", "TWO");
+                let by_key = model_project(ws, u1, None, "Other", "ONE");
+                let mut by_id = model_project(ws, u1, None, "Third", "THR");
+                by_id.project.id = p1.project.id;
+                for (loser, class) in [(&by_name, Class::ProjectNameConflict), (&by_key, Class::ProjectKeyConflict), (&by_id, Class::ProjectIdConflict)] {
+                    calls.push(Call::InsertProject { scope: admin, p: loser.clone(), conflict: true });
+                    classes.push(class);
+                    if loser.project.id != p1.project.id {
+                        calls.push(Call::ProjectDetailOf { scope: admin, id: loser.project.id, want: None });
+                        calls.push(Call::ProjectStatesOf { scope: (ws, loser.project.id, u1), want: vec![] });
+                    }
+                }
+                // a member who is no member of the workspace is refused, whole
+                let by_outsider = model_project(ws, u1, Some(u3), "Outsider", "OUT");
+                calls.push(Call::InsertProjectOutsider { scope: admin, p: by_outsider.clone() });
+                classes.push(Class::ProjectMemberOutsideWorkspace);
+                calls.push(Call::ProjectDetailOf { scope: admin, id: by_outsider.project.id, want: None });
+                calls.push(Call::ProjectStatesOf { scope: (ws, by_outsider.project.id, u1), want: vec![] });
+                // the first project is as it was
+                calls.push(Call::ProjectDetailOf { scope: as_user(u1), id: p1.project.id, want: Some(detail(&p1, u1, Some(65535.0), people.clone())) });
+
+                // clashes: exact, and leaving out the project itself
+                let clash = |name: &str, identifier: &str, except: Option<ProjectId>, want: (bool, bool)| Call::ProjectClashesOf {
+                    scope: admin,
+                    name: Some(name.to_string()),
+                    identifier: Some(identifier.to_string()),
+                    except,
+                    want: ProjectClashes { name: want.0, identifier: want.1 },
+                };
+                classes.push(Class::ProjectClashesFound);
+                calls.push(Call::ProjectClashesOf { scope: admin, name: Some("One".into()), identifier: None, except: None, want: ProjectClashes { name: true, identifier: false } });
+                calls.push(clash("one", "ONE", None, (false, true)));
+                calls.push(clash("One", "one", None, (true, false)));
+                calls.push(clash("One", "ONE", Some(p1.project.id), (false, false)));
+                calls.push(clash("zzz", "zzz", None, (false, false)));
+                calls.push(Call::ProjectClashesOf {
+                    scope: (self.fix.ws[0], u1, Role::Admin),
+                    name: Some("One".into()),
+                    identifier: Some("ONE".into()),
+                    except: None,
+                    want: ProjectClashes::default(),
+                });
+
+                // a second project: each member's place is 10000 below the lowest they hold in the workspace
+                let mut stats_order = vec![p1.project.id];
+                if second {
+                    let p2 = model_project(ws, u1, lead_user, "Two", "TWO");
+                    calls.push(Call::InsertProject { scope: admin, p: p2.clone(), conflict: false });
+                    classes.push(Class::ProjectMade);
+                    classes.push(Class::ProjectPlaceBelow);
+                    calls.push(Call::ProjectDetailOf { scope: as_user(u1), id: p2.project.id, want: Some(detail(&p2, u1, Some(55535.0), people.clone())) });
+                    calls.push(Call::ProjectDetailOf { scope: as_user(u2), id: p2.project.id, want: Some(detail(&p2, u2, lead.then_some(55535.0), people.clone())) });
+                    stats_order.insert(0, p2.project.id);
+                    // the workspace's states: every project's, by sequence (the projects' ids break the ties)
+                    let mut want: Vec<StateRow> = listed_states(&p1).into_iter().chain(listed_states(&p2)).collect();
+                    want.sort_by(|a, b| a.sequence.total_cmp(&b.sequence).then(a.project_id.0.cmp(&b.project_id.0)).then(a.id.cmp(&b.id)));
+                    classes.push(Class::WorkspaceStatesSome);
+                    classes.push(Class::WorkspaceStatesTie);
+                    calls.push(Call::WorkspaceStatesOf { scope: admin, want });
+                    // renaming onto the other's name or key is refused
+                    for (what, name, key) in [("name", "Two", "ONE"), ("key", "One", "TWO")] {
+                        let mut row = p1.project.clone();
+                        row.name = name.to_string();
+                        row.identifier = key.to_string();
+                        row.updated_by = Some(u1);
+                        row.updated_at = tick();
+                        let _ = what;
+                        calls.push(Call::UpdateProjectCall { scope: admin, row, want: UpdateWant::Conflict });
+                        classes.push(Class::ProjectRenameConflict);
+                    }
+                }
+                // the counts: every project of the workspace, newest first, with the members each has
+                let members_of = |p: &NewProject| p.members.len() as i64;
+                let mut want_stats: Vec<(ProjectId, i64, i64)> = vec![(p1.project.id, 0, members_of(&p1))];
+                if second {
+                    // `members_of` of the second equals the first's: the same people are in both
+                    want_stats.insert(0, (stats_order[0], 0, members_of(&p1)));
+                }
+                classes.push(Class::StatsAll);
+                calls.push(Call::ProjectStatsOf { scope: admin, only: None, want: want_stats });
+
+                // renamed: the new name and what the change saves, and what it keeps
+                let mut renamed = p1.project.clone();
+                renamed.name = "Renamed".into();
+                renamed.description = "now described".into();
+                renamed.network = ProjectNetwork::Secret;
+                renamed.updated_by = Some(u1);
+                renamed.updated_at = tick();
+                // a change tries to move the creation and the workspace: neither moves
+                let mut sent = renamed.clone();
+                sent.created_at = tick();
+                sent.created_by = Some(u2);
+                calls.push(Call::UpdateProjectCall { scope: admin, row: sent, want: UpdateWant::Done });
+                classes.push(Class::ProjectRenamed);
+                calls.push(Call::ProjectDetailOf { scope: as_user(u1), id: p1.project.id, want: Some(detail(&NewProject { project: renamed.clone(), ..p1.clone() }, u1, Some(65535.0), people.clone())) });
+                calls.push(Call::ProjectClashesOf {
+                    scope: admin,
+                    name: Some("One".into()),
+                    identifier: None,
+                    except: None,
+                    want: ProjectClashes::default(),
+                });
+                // a project that is not in the workspace is not there to change
+                let mut unknown = renamed.clone();
+                unknown.id = ProjectId(new_id());
+                calls.push(Call::UpdateProjectCall { scope: admin, row: unknown, want: UpdateWant::Unknown });
+                classes.push(Class::ProjectUpdateUnknown);
+                // and a project of this workspace through another workspace's scope is not there either
+                calls.push(Call::UpdateProjectCall { scope: (self.fix.ws[0], u1, Role::Admin), row: renamed, want: UpdateWant::Unknown });
+            }
             &Op::MemberActive { ws, user, active } => {
                 let s = slot(ws);
                 let member = in_workspace(user)[s];
@@ -2105,6 +2728,12 @@ impl Model {
                 let access = (member && self.member_active[user as usize][s])
                     .then_some(WorkspaceAccess { workspace_id: self.fix.ws[s], role: Role::Member });
                 calls.push(Call::WorkspaceAccessOf { slug: self.fix.slug[s].clone(), user: self.fix.user(user), want: access });
+                // whether a person is a member is asked about them, by someone else (the other seeded user of the workspace)
+                calls.push(Call::IsMemberOf {
+                    scope: (self.fix.ws[s], self.fix.user(U::AdminA), Role::Admin),
+                    user: self.fix.user(user),
+                    want: member && self.member_active[user as usize][s],
+                });
                 for u in U::ALL {
                     let want = (0..2)
                         .filter(|&w| in_workspace(u)[w] && self.member_active[u as usize][w])
@@ -2533,6 +3162,10 @@ async fn execute(db: &dyn Database, tx: &mut Option<Box<dyn Tx>>, call: Call, at
             let got = bounded(at, db.set_workspace_member_active(&sys, ws, user, active)).await?;
             prop_assert_eq!(got, want, "{}: set workspace member active (true = the membership exists)", at);
         }
+        Call::IsMemberOf { scope: (w, u, r), user, want } => {
+            let got = bounded(at, db.is_workspace_member(&WorkspaceScope::mint(w, u, r), user)).await?;
+            prop_assert_eq!(got, want, "{}: is workspace member", at);
+        }
         Call::WorkspaceMemberOf { scope: (w, u, r), want } => {
             let got = bounded(at, db.workspace_member(&WorkspaceScope::mint(w, u, r))).await?;
             prop_assert_eq!(got, want, "{}: workspace member", at);
@@ -2560,6 +3193,84 @@ async fn execute(db: &dyn Database, tx: &mut Option<Box<dyn Tx>>, call: Call, at
         Call::EnsureProperties { scope: (w, u, r), new, want } => {
             let got = bounded(at, db.ensure_user_properties(&WorkspaceScope::mint(w, u, r), &new)).await?;
             prop_assert_eq!(got, want, "{}: ensure user properties", at);
+        }
+        Call::InsertProjectOutsider { scope: (w, u, r), p } => {
+            let got = tokio::time::timeout(Duration::from_secs(20), db.insert_project(&WorkspaceScope::mint(w, u, r), &p))
+                .await
+                .map_err(|_| fail(at, "timed out after 20 s"))?;
+            if !matches!(got, Err(DbError::Backend(_))) {
+                return Err(fail(at, format!("insert project with a member outside the workspace: got {got:?}, want a backend error")));
+            }
+        }
+        Call::JoinWorkspace { ws, user } => {
+            let f = SeedFixture { workspace_members: vec![SeedWorkspaceMember { workspace_id: ws, user_id: user }], ..SeedFixture::default() };
+            bounded(at, db.seed(&sys, &f)).await?
+        }
+        Call::InsertProject { scope: (w, u, r), p, conflict } => {
+            let got = tokio::time::timeout(Duration::from_secs(20), db.insert_project(&WorkspaceScope::mint(w, u, r), &p))
+                .await
+                .map_err(|_| fail(at, "timed out after 20 s"))?;
+            match (got, conflict) {
+                (Ok(()), false) | (Err(DbError::Conflict(_)), true) => {}
+                (got, _) => return Err(fail(at, format!("insert project: got {got:?}, want conflict = {conflict}"))),
+            }
+        }
+        Call::ProjectClashesOf { scope: (w, u, r), name, identifier, except, want } => {
+            let got = bounded(at, db.project_clashes(&WorkspaceScope::mint(w, u, r), name.as_deref(), identifier.as_deref(), except)).await?;
+            prop_assert_eq!(got, want, "{}: project clashes", at);
+        }
+        Call::UpdateProjectCall { scope: (w, u, r), row, want } => {
+            let got = tokio::time::timeout(Duration::from_secs(20), db.update_project(&WorkspaceScope::mint(w, u, r), &row))
+                .await
+                .map_err(|_| fail(at, "timed out after 20 s"))?;
+            let ok = match (&got, want) {
+                (Ok(true), UpdateWant::Done) | (Ok(false), UpdateWant::Unknown) | (Err(DbError::Conflict(_)), UpdateWant::Conflict) => true,
+                _ => false,
+            };
+            prop_assert!(ok, "{}: update project: got {:?}, want {:?}", at, got, want);
+        }
+        Call::ProjectDetailOf { scope: (w, u, r), id, want } => {
+            let got = bounded(at, db.project_detail(&WorkspaceScope::mint(w, u, r), id)).await?;
+            prop_assert_eq!(got, want, "{}: project detail", at);
+        }
+        Call::ProjectMemberSeeded { scope: (w, u, r), project, slug, want } => {
+            let got = bounded(at, db.project_member(&WorkspaceScope::mint(w, u, r), project)).await?;
+            let got = got.map(|m| {
+                // the seeded workspace's timestamps are the database's, so what is compared is what names it
+                assert_eq!((m.workspace.id, m.workspace.slug.clone(), m.project.id, m.user.id), (w, slug.clone(), project, u), "{at}");
+                (m.member.user_id, m.member.role, m.member.id, m.member.sort_order)
+            });
+            prop_assert_eq!(got, want, "{}: project member", at);
+        }
+        Call::ProjectMembersOf { scope: (w, p, u), want } => {
+            let got = bounded(at, db.project_members(&Scope::mint(w, p, u))).await?;
+            let got: Vec<(UserId, Role)> = got.into_iter().map(|m| (m.user_id, m.role)).collect();
+            prop_assert_eq!(got, want, "{}: project members", at);
+        }
+        Call::ProjectStatesOf { scope: (w, p, u), want } => {
+            let got = bounded(at, db.project_states(&Scope::mint(w, p, u))).await?;
+            prop_assert_eq!(got, want, "{}: project states", at);
+        }
+        Call::TriageOf { scope: (w, p, u), want } => {
+            let got = bounded(at, db.triage_state(&Scope::mint(w, p, u))).await?;
+            prop_assert_eq!(got, want, "{}: triage state", at);
+        }
+        Call::LabelsOf { scope: (w, p, u), want } => {
+            let got = bounded(at, db.project_labels(&Scope::mint(w, p, u))).await?;
+            prop_assert_eq!(got, want, "{}: project labels", at);
+        }
+        Call::WorkspaceStatesOf { scope: (w, u, r), want } => {
+            let got = bounded(at, db.workspace_states(&WorkspaceScope::mint(w, u, r))).await?;
+            prop_assert_eq!(got, want, "{}: workspace states", at);
+        }
+        Call::ProjectStatsOf { scope: (w, u, r), only, want } => {
+            let got = bounded(at, db.project_stats(&WorkspaceScope::mint(w, u, r), only.as_deref())).await?;
+            let got: Vec<(ProjectId, i64, i64)> = got.into_iter().map(|s| (s.id, s.total_issues, s.total_members)).collect();
+            prop_assert_eq!(got, want, "{}: project stats", at);
+        }
+        Call::EnsureProjectProps { scope: (w, p, u), new, want } => {
+            let got = bounded(at, db.ensure_project_user_properties(&Scope::mint(w, p, u), &new)).await?;
+            prop_assert_eq!(got, want, "{}: ensure project user properties", at);
         }
         Call::SeededListing { user, want } => {
             let got = bounded(at, db.workspaces_of(user)).await?;
@@ -2708,9 +3419,10 @@ fn model_postgres_adapter_matches_the_reference_model() {
 fn model_postgres_strategy_reaches_every_step_class() {
     let mut runner = TestRunner::deterministic();
     let mut seen = BTreeSet::new();
-    // 3000, not 1000: every op added to the strategy thins out the others, and a rare class (`GotDeletedHidden`) was one
-    // sample from missing at 1000. The control is stronger for the larger sample, and planning is model-only and quick.
-    for _ in 0..3000 {
+    // 6000, not 1000: every op added to the strategy thins out the others, and a rare class (`GotDeletedHidden` at 1000, then
+    // `HomeKept`, which needs two visits of one person to one workspace the second of which asks for keys already there, at 3000)
+    // was missing. The control is stronger for the larger sample, and planning is model-only and quick.
+    for _ in 0..6000 {
         let ops = ops().new_tree(&mut runner).unwrap().current();
         let mut m = Model::new(Fix::new());
         for op in &ops {

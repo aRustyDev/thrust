@@ -1,0 +1,68 @@
+{
+  "exchanges": [
+    {
+      "name": "one project",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/projects/"
+      },
+      "response": {
+        "body": [
+          {
+            "archived_at": null,
+            "created_at": "<ts>",
+            "created_by": "<uuid:1>",
+            "cycle_view": false,
+            "guest_view_all_features": false,
+            "id": "<uuid:2>",
+            "identifier": "JRN",
+            "inbox_view": false,
+            "intake_count": 0,
+            "issue_views_view": false,
+            "logo_props": {
+              "emoji": {
+                "value": "128512"
+              },
+              "in_use": "emoji"
+            },
+            "member_role": 20,
+            "module_view": false,
+            "name": "Journey Project",
+            "network": 2,
+            "page_view": true,
+            "project_lead": null,
+            "sort_order": 65535.0,
+            "updated_at": "<ts>",
+            "updated_by": "<uuid:1>",
+            "workspace": "<uuid:3>"
+          }
+        ],
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "not a member of the workspace",
+      "request": {
+        "as": "second@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/projects/"
+      },
+      "response": {
+        "body": {
+          "error": "You don't have the required permissions."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 403
+      }
+    }
+  ],
+  "format_version": 1,
+  "recorded_from": "ba85d4d3d3",
+  "row": "S17-after"
+}

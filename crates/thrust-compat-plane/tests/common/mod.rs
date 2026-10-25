@@ -313,10 +313,27 @@ pub fn divergences(router: &Router, fixture: &Value) -> Vec<String> {
 pub fn divergences_with(router: &Router, fixture: &Value, jar: &mut Jar) -> Vec<String> {
     let rules = normalise::Rules::load();
     let mut ids = normalise::Ids::new(&rules);
+    // the ids an earlier fixture made that this one's requests name: the recorder numbered them first, in this order
+    for name in fixture["uses"].as_array().into_iter().flatten().map(|n| n.as_str().expect("a name")) {
+        let id = jar.get(&format!("bind:{name}")).unwrap_or_else(|| panic!("the fixture uses {name:?}, which no earlier fixture binds"));
+        ids.preseed(id);
+    }
     let mut out = Vec::new();
     for recorded in fixture["exchanges"].as_array().expect("exchanges") {
         let want = project(recorded);
         let raw = send(router, &want["name"], &resolve_ids(&want["request"], &ids), jar);
+        // an id this exchange made that later fixtures use (`binds`: {name: {"exchange": .., "path": [..]}})
+        for (name, bind) in fixture["binds"].as_object().into_iter().flatten() {
+            if bind["exchange"] == want["name"] {
+                let mut at = &raw["response"]["body"];
+                for key in bind["path"].as_array().expect("a path") {
+                    at = &at[key.as_str().expect("a key")];
+                }
+                if let Some(id) = at.as_str() {
+                    jar.insert(format!("bind:{name}"), id.to_string());
+                }
+            }
+        }
         let got = normalise::exchange(&rules, &mut ids, &raw);
         let mut lines = Vec::new();
         if got != want {

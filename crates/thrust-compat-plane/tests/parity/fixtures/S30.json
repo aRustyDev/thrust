@@ -1,0 +1,1059 @@
+{
+  "binds": {
+    "other": {
+      "exchange": "another project, in the other workspace",
+      "path": [
+        "id"
+      ]
+    },
+    "project": {
+      "exchange": "the journey's project",
+      "path": [
+        "id"
+      ]
+    },
+    "third": {
+      "exchange": "a secret project with a description, in the other workspace",
+      "path": [
+        "id"
+      ]
+    }
+  },
+  "exchanges": [
+    {
+      "name": "no session",
+      "request": {
+        "body": {
+          "cover_image_url": "/cover-images/image_5.webp",
+          "description": "",
+          "identifier": "JRN",
+          "logo_props": {
+            "emoji": {
+              "value": "128512"
+            },
+            "in_use": "emoji"
+          },
+          "name": "Journey Project",
+          "network": 2,
+          "project_lead": null
+        },
+        "method": "POST",
+        "path": "/api/workspaces/journey-ws/projects/"
+      },
+      "response": {
+        "body": {
+          "detail": "Authentication credentials were not provided."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 401
+      }
+    },
+    {
+      "name": "not a member of the workspace",
+      "request": {
+        "as": "second@example.test",
+        "body": {
+          "cover_image_url": "/cover-images/image_5.webp",
+          "description": "",
+          "identifier": "JRN",
+          "logo_props": {
+            "emoji": {
+              "value": "128512"
+            },
+            "in_use": "emoji"
+          },
+          "name": "Journey Project",
+          "network": 2,
+          "project_lead": null
+        },
+        "method": "POST",
+        "path": "/api/workspaces/journey-ws/projects/"
+      },
+      "response": {
+        "body": {
+          "error": "You don't have the required permissions."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 403
+      }
+    },
+    {
+      "name": "no fields",
+      "request": {
+        "as": "journey@example.test",
+        "body": {},
+        "method": "POST",
+        "path": "/api/workspaces/journey-ws/projects/"
+      },
+      "response": {
+        "body": {
+          "identifier": [
+            "This field is required."
+          ],
+          "name": [
+            "This field is required."
+          ]
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "no name",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "cover_image_url": "/cover-images/image_5.webp",
+          "description": "",
+          "identifier": "JRN",
+          "logo_props": {
+            "emoji": {
+              "value": "128512"
+            },
+            "in_use": "emoji"
+          },
+          "network": 2,
+          "project_lead": null
+        },
+        "method": "POST",
+        "path": "/api/workspaces/journey-ws/projects/"
+      },
+      "response": {
+        "body": {
+          "name": [
+            "This field is required."
+          ]
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "no identifier",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "cover_image_url": "/cover-images/image_5.webp",
+          "description": "",
+          "logo_props": {
+            "emoji": {
+              "value": "128512"
+            },
+            "in_use": "emoji"
+          },
+          "name": "Journey Project",
+          "network": 2,
+          "project_lead": null
+        },
+        "method": "POST",
+        "path": "/api/workspaces/journey-ws/projects/"
+      },
+      "response": {
+        "body": {
+          "identifier": [
+            "This field is required."
+          ]
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "a blank name",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "cover_image_url": "/cover-images/image_5.webp",
+          "description": "",
+          "identifier": "JRN",
+          "logo_props": {
+            "emoji": {
+              "value": "128512"
+            },
+            "in_use": "emoji"
+          },
+          "name": "",
+          "network": 2,
+          "project_lead": null
+        },
+        "method": "POST",
+        "path": "/api/workspaces/journey-ws/projects/"
+      },
+      "response": {
+        "body": {
+          "name": [
+            "This field may not be blank."
+          ]
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "a blank identifier",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "cover_image_url": "/cover-images/image_5.webp",
+          "description": "",
+          "identifier": "",
+          "logo_props": {
+            "emoji": {
+              "value": "128512"
+            },
+            "in_use": "emoji"
+          },
+          "name": "Journey Project",
+          "network": 2,
+          "project_lead": null
+        },
+        "method": "POST",
+        "path": "/api/workspaces/journey-ws/projects/"
+      },
+      "response": {
+        "body": {
+          "identifier": [
+            "This field may not be blank."
+          ]
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "a name that is too long",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "cover_image_url": "/cover-images/image_5.webp",
+          "description": "",
+          "identifier": "JRN",
+          "logo_props": {
+            "emoji": {
+              "value": "128512"
+            },
+            "in_use": "emoji"
+          },
+          "name": "nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn",
+          "network": 2,
+          "project_lead": null
+        },
+        "method": "POST",
+        "path": "/api/workspaces/journey-ws/projects/"
+      },
+      "response": {
+        "body": {
+          "name": [
+            "Ensure this field has no more than 255 characters."
+          ]
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "an identifier that is too long",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "cover_image_url": "/cover-images/image_5.webp",
+          "description": "",
+          "identifier": "IIIIIIIIIIIII",
+          "logo_props": {
+            "emoji": {
+              "value": "128512"
+            },
+            "in_use": "emoji"
+          },
+          "name": "Journey Project",
+          "network": 2,
+          "project_lead": null
+        },
+        "method": "POST",
+        "path": "/api/workspaces/journey-ws/projects/"
+      },
+      "response": {
+        "body": {
+          "identifier": [
+            "Ensure this field has no more than 12 characters."
+          ]
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "a name with a forbidden character",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "cover_image_url": "/cover-images/image_5.webp",
+          "description": "",
+          "identifier": "JRN",
+          "logo_props": {
+            "emoji": {
+              "value": "128512"
+            },
+            "in_use": "emoji"
+          },
+          "name": "My.Project",
+          "network": 2,
+          "project_lead": null
+        },
+        "method": "POST",
+        "path": "/api/workspaces/journey-ws/projects/"
+      },
+      "response": {
+        "body": {
+          "name": [
+            "PROJECT_NAME_CANNOT_CONTAIN_SPECIAL_CHARACTERS"
+          ]
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "an identifier with a forbidden character",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "cover_image_url": "/cover-images/image_5.webp",
+          "description": "",
+          "identifier": "A-B",
+          "logo_props": {
+            "emoji": {
+              "value": "128512"
+            },
+            "in_use": "emoji"
+          },
+          "name": "Journey Project",
+          "network": 2,
+          "project_lead": null
+        },
+        "method": "POST",
+        "path": "/api/workspaces/journey-ws/projects/"
+      },
+      "response": {
+        "body": {
+          "identifier": [
+            "PROJECT_IDENTIFIER_CANNOT_CONTAIN_SPECIAL_CHARACTERS"
+          ]
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "a network that is not one of the two",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "cover_image_url": "/cover-images/image_5.webp",
+          "description": "",
+          "identifier": "JRN",
+          "logo_props": {
+            "emoji": {
+              "value": "128512"
+            },
+            "in_use": "emoji"
+          },
+          "name": "Journey Project",
+          "network": 3,
+          "project_lead": null
+        },
+        "method": "POST",
+        "path": "/api/workspaces/journey-ws/projects/"
+      },
+      "response": {
+        "body": {
+          "network": [
+            "\"3\" is not a valid choice."
+          ]
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "a lead who is not a user",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "cover_image_url": "/cover-images/image_5.webp",
+          "description": "",
+          "identifier": "JRN",
+          "logo_props": {
+            "emoji": {
+              "value": "128512"
+            },
+            "in_use": "emoji"
+          },
+          "name": "Journey Project",
+          "network": 2,
+          "project_lead": "<uuid:1>"
+        },
+        "method": "POST",
+        "path": "/api/workspaces/journey-ws/projects/"
+      },
+      "response": {
+        "body": {
+          "project_lead": [
+            "Invalid pk \"<uuid:1>\" - object does not exist."
+          ]
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "a time zone that does not exist",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "cover_image_url": "/cover-images/image_5.webp",
+          "description": "",
+          "identifier": "JRN",
+          "logo_props": {
+            "emoji": {
+              "value": "128512"
+            },
+            "in_use": "emoji"
+          },
+          "name": "Journey Project",
+          "network": 2,
+          "project_lead": null,
+          "timezone": "Mars/Olympus"
+        },
+        "method": "POST",
+        "path": "/api/workspaces/journey-ws/projects/"
+      },
+      "response": {
+        "body": {
+          "timezone": [
+            "\"Mars/Olympus\" is not a valid choice."
+          ]
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "a name that is not text",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "cover_image_url": "/cover-images/image_5.webp",
+          "description": "",
+          "identifier": "JRN",
+          "logo_props": {
+            "emoji": {
+              "value": "128512"
+            },
+            "in_use": "emoji"
+          },
+          "name": [
+            "x"
+          ],
+          "network": 2,
+          "project_lead": null
+        },
+        "method": "POST",
+        "path": "/api/workspaces/journey-ws/projects/"
+      },
+      "response": {
+        "body": {
+          "name": [
+            "Not a valid string."
+          ]
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "a lead that is not an id",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "cover_image_url": "/cover-images/image_5.webp",
+          "description": "",
+          "identifier": "JRN",
+          "logo_props": {
+            "emoji": {
+              "value": "128512"
+            },
+            "in_use": "emoji"
+          },
+          "name": "Journey Project",
+          "network": 2,
+          "project_lead": "not-an-id"
+        },
+        "method": "POST",
+        "path": "/api/workspaces/journey-ws/projects/"
+      },
+      "response": {
+        "body": {
+          "project_lead": [
+            "\u201cnot-an-id\u201d is not a valid UUID."
+          ]
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "a number of months out of range",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "archive_in": 13,
+          "cover_image_url": "/cover-images/image_5.webp",
+          "description": "",
+          "identifier": "JRN",
+          "logo_props": {
+            "emoji": {
+              "value": "128512"
+            },
+            "in_use": "emoji"
+          },
+          "name": "Journey Project",
+          "network": 2,
+          "project_lead": null
+        },
+        "method": "POST",
+        "path": "/api/workspaces/journey-ws/projects/"
+      },
+      "response": {
+        "body": {
+          "archive_in": [
+            "Ensure this value is less than or equal to 12."
+          ]
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "a logo that is null",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "cover_image_url": "/cover-images/image_5.webp",
+          "description": "",
+          "identifier": "JRN",
+          "logo_props": null,
+          "name": "Journey Project",
+          "network": 2,
+          "project_lead": null
+        },
+        "method": "POST",
+        "path": "/api/workspaces/journey-ws/projects/"
+      },
+      "response": {
+        "body": {
+          "logo_props": [
+            "This field may not be null."
+          ]
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "a key with spaces around it, no name",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "cover_image_url": "/cover-images/image_5.webp",
+          "description": "",
+          "identifier": "  JR4  ",
+          "logo_props": {
+            "emoji": {
+              "value": "128512"
+            },
+            "in_use": "emoji"
+          },
+          "name": "",
+          "network": 2,
+          "project_lead": null
+        },
+        "method": "POST",
+        "path": "/api/workspaces/journey-ws/projects/"
+      },
+      "response": {
+        "body": {
+          "name": [
+            "This field may not be blank."
+          ]
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "the journey's project",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "cover_image_url": "/cover-images/image_5.webp",
+          "description": "",
+          "identifier": "JRN",
+          "logo_props": {
+            "emoji": {
+              "value": "128512"
+            },
+            "in_use": "emoji"
+          },
+          "name": "Journey Project",
+          "network": 2,
+          "project_lead": null
+        },
+        "method": "POST",
+        "path": "/api/workspaces/journey-ws/projects/"
+      },
+      "response": {
+        "body": {
+          "anchor": null,
+          "archive_in": 0,
+          "archived_at": null,
+          "close_in": 0,
+          "cover_image": null,
+          "cover_image_asset": null,
+          "cover_image_url": null,
+          "created_at": "<ts>",
+          "created_by": "<uuid:2>",
+          "cycle_view": false,
+          "default_assignee": null,
+          "default_state": null,
+          "deleted_at": null,
+          "description": "",
+          "description_html": null,
+          "description_text": null,
+          "emoji": null,
+          "estimate": null,
+          "external_id": null,
+          "external_source": null,
+          "guest_view_all_features": false,
+          "icon_prop": null,
+          "id": "<uuid:3>",
+          "identifier": "JRN",
+          "inbox_view": false,
+          "intake_view": false,
+          "is_favorite": false,
+          "is_issue_type_enabled": false,
+          "is_time_tracking_enabled": false,
+          "issue_views_view": false,
+          "logo_props": {
+            "emoji": {
+              "value": "128512"
+            },
+            "in_use": "emoji"
+          },
+          "member_role": 20,
+          "members": [
+            "<uuid:2>"
+          ],
+          "module_view": false,
+          "name": "Journey Project",
+          "network": 2,
+          "next_work_item_sequence": 1,
+          "page_view": true,
+          "project_lead": null,
+          "sort_order": 65535.0,
+          "timezone": "UTC",
+          "updated_at": "<ts>",
+          "updated_by": null,
+          "workspace": "<uuid:4>"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 201
+      }
+    },
+    {
+      "name": "the same name again",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "cover_image_url": "/cover-images/image_5.webp",
+          "description": "",
+          "identifier": "JR2",
+          "logo_props": {
+            "emoji": {
+              "value": "128512"
+            },
+            "in_use": "emoji"
+          },
+          "name": "Journey Project",
+          "network": 2,
+          "project_lead": null
+        },
+        "method": "POST",
+        "path": "/api/workspaces/journey-ws/projects/"
+      },
+      "response": {
+        "body": {
+          "name": [
+            "PROJECT_NAME_ALREADY_EXIST"
+          ]
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "the same name with spaces around it",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "cover_image_url": "/cover-images/image_5.webp",
+          "description": "",
+          "identifier": "JR3",
+          "logo_props": {
+            "emoji": {
+              "value": "128512"
+            },
+            "in_use": "emoji"
+          },
+          "name": "  Journey Project  ",
+          "network": 2,
+          "project_lead": null
+        },
+        "method": "POST",
+        "path": "/api/workspaces/journey-ws/projects/"
+      },
+      "response": {
+        "body": {
+          "name": [
+            "PROJECT_NAME_ALREADY_EXIST"
+          ]
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "the same identifier again",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "cover_image_url": "/cover-images/image_5.webp",
+          "description": "",
+          "identifier": "JRN",
+          "logo_props": {
+            "emoji": {
+              "value": "128512"
+            },
+            "in_use": "emoji"
+          },
+          "name": "Another Name",
+          "network": 2,
+          "project_lead": null
+        },
+        "method": "POST",
+        "path": "/api/workspaces/journey-ws/projects/"
+      },
+      "response": {
+        "body": {
+          "identifier": [
+            "PROJECT_IDENTIFIER_ALREADY_EXIST"
+          ]
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "another project, in the other workspace",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "cover_image_url": "/cover-images/image_5.webp",
+          "description": "",
+          "identifier": "OTH",
+          "logo_props": {
+            "emoji": {
+              "value": "128512"
+            },
+            "in_use": "emoji"
+          },
+          "name": "Other Project",
+          "network": 2,
+          "project_lead": null
+        },
+        "method": "POST",
+        "path": "/api/workspaces/journey-two/projects/"
+      },
+      "response": {
+        "body": {
+          "anchor": null,
+          "archive_in": 0,
+          "archived_at": null,
+          "close_in": 0,
+          "cover_image": null,
+          "cover_image_asset": null,
+          "cover_image_url": null,
+          "created_at": "<ts>",
+          "created_by": "<uuid:2>",
+          "cycle_view": false,
+          "default_assignee": null,
+          "default_state": null,
+          "deleted_at": null,
+          "description": "",
+          "description_html": null,
+          "description_text": null,
+          "emoji": null,
+          "estimate": null,
+          "external_id": null,
+          "external_source": null,
+          "guest_view_all_features": false,
+          "icon_prop": null,
+          "id": "<uuid:5>",
+          "identifier": "OTH",
+          "inbox_view": false,
+          "intake_view": false,
+          "is_favorite": false,
+          "is_issue_type_enabled": false,
+          "is_time_tracking_enabled": false,
+          "issue_views_view": false,
+          "logo_props": {
+            "emoji": {
+              "value": "128512"
+            },
+            "in_use": "emoji"
+          },
+          "member_role": 20,
+          "members": [
+            "<uuid:2>"
+          ],
+          "module_view": false,
+          "name": "Other Project",
+          "network": 2,
+          "next_work_item_sequence": 1,
+          "page_view": true,
+          "project_lead": null,
+          "sort_order": 65535.0,
+          "timezone": "UTC",
+          "updated_at": "<ts>",
+          "updated_by": null,
+          "workspace": "<uuid:6>"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 201
+      }
+    },
+    {
+      "name": "a secret project with a description, in the other workspace",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "cover_image_url": "/cover-images/image_5.webp",
+          "description": "Third",
+          "identifier": "THR",
+          "logo_props": {
+            "emoji": {
+              "value": "128512"
+            },
+            "in_use": "emoji"
+          },
+          "name": "Third Project",
+          "network": 0,
+          "project_lead": null
+        },
+        "method": "POST",
+        "path": "/api/workspaces/journey-two/projects/"
+      },
+      "response": {
+        "body": {
+          "anchor": null,
+          "archive_in": 0,
+          "archived_at": null,
+          "close_in": 0,
+          "cover_image": null,
+          "cover_image_asset": null,
+          "cover_image_url": null,
+          "created_at": "<ts>",
+          "created_by": "<uuid:2>",
+          "cycle_view": false,
+          "default_assignee": null,
+          "default_state": null,
+          "deleted_at": null,
+          "description": "Third",
+          "description_html": null,
+          "description_text": null,
+          "emoji": null,
+          "estimate": null,
+          "external_id": null,
+          "external_source": null,
+          "guest_view_all_features": false,
+          "icon_prop": null,
+          "id": "<uuid:7>",
+          "identifier": "THR",
+          "inbox_view": false,
+          "intake_view": false,
+          "is_favorite": false,
+          "is_issue_type_enabled": false,
+          "is_time_tracking_enabled": false,
+          "issue_views_view": false,
+          "logo_props": {
+            "emoji": {
+              "value": "128512"
+            },
+            "in_use": "emoji"
+          },
+          "member_role": 20,
+          "members": [
+            "<uuid:2>"
+          ],
+          "module_view": false,
+          "name": "Third Project",
+          "network": 0,
+          "next_work_item_sequence": 1,
+          "page_view": true,
+          "project_lead": null,
+          "sort_order": 55535.0,
+          "timezone": "UTC",
+          "updated_at": "<ts>",
+          "updated_by": null,
+          "workspace": "<uuid:6>"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 201
+      }
+    },
+    {
+      "name": "the journey's name and key, in the other workspace",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "cover_image_url": "/cover-images/image_5.webp",
+          "description": "",
+          "identifier": "JRN",
+          "logo_props": {
+            "emoji": {
+              "value": "128512"
+            },
+            "in_use": "emoji"
+          },
+          "name": "Journey Project",
+          "network": 2,
+          "project_lead": null
+        },
+        "method": "POST",
+        "path": "/api/workspaces/journey-two/projects/"
+      },
+      "response": {
+        "body": {
+          "anchor": null,
+          "archive_in": 0,
+          "archived_at": null,
+          "close_in": 0,
+          "cover_image": null,
+          "cover_image_asset": null,
+          "cover_image_url": null,
+          "created_at": "<ts>",
+          "created_by": "<uuid:2>",
+          "cycle_view": false,
+          "default_assignee": null,
+          "default_state": null,
+          "deleted_at": null,
+          "description": "",
+          "description_html": null,
+          "description_text": null,
+          "emoji": null,
+          "estimate": null,
+          "external_id": null,
+          "external_source": null,
+          "guest_view_all_features": false,
+          "icon_prop": null,
+          "id": "<uuid:8>",
+          "identifier": "JRN",
+          "inbox_view": false,
+          "intake_view": false,
+          "is_favorite": false,
+          "is_issue_type_enabled": false,
+          "is_time_tracking_enabled": false,
+          "issue_views_view": false,
+          "logo_props": {
+            "emoji": {
+              "value": "128512"
+            },
+            "in_use": "emoji"
+          },
+          "member_role": 20,
+          "members": [
+            "<uuid:2>"
+          ],
+          "module_view": false,
+          "name": "Journey Project",
+          "network": 2,
+          "next_work_item_sequence": 1,
+          "page_view": true,
+          "project_lead": null,
+          "sort_order": 45535.0,
+          "timezone": "UTC",
+          "updated_at": "<ts>",
+          "updated_by": null,
+          "workspace": "<uuid:6>"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 201
+      }
+    }
+  ],
+  "format_version": 1,
+  "recorded_from": "ba85d4d3d3",
+  "row": "S30"
+}

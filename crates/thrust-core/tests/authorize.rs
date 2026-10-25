@@ -14,7 +14,7 @@ use thrust_ports::NewSession;
 /// `Permission::min_role`, so the table and the code can disagree.
 fn allowed(role: Role, perm: Permission) -> bool {
     match perm {
-        Permission::ReadWorkItems | Permission::ReadAttachment => true,
+        Permission::ReadProject | Permission::ReadWorkItems | Permission::ReadAttachment => true,
         Permission::CreateWorkItem | Permission::DeleteWorkItem | Permission::WriteAttachment => role != Role::Guest,
         Permission::ReadDeleted => role == Role::Admin,
     }
@@ -24,6 +24,7 @@ fn allowed(role: Role, perm: Permission) -> bool {
 fn authorize_follows_the_role_table(
     #[values(Actor::GuestA, Actor::MemberA, Actor::AdminA)] actor: Actor,
     #[values(
+        Permission::ReadProject,
         Permission::ReadWorkItems,
         Permission::ReadDeleted,
         Permission::CreateWorkItem,

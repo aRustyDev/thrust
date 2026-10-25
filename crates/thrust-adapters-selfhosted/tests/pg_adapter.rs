@@ -769,33 +769,7 @@ async fn the_project_and_first_visit_tables_have_the_columns_they_say_and_the_co
     };
     let ts = "timestamp with time zone";
     let pairs = |v: Vec<(&str, &str)>| v.into_iter().map(|(n, t)| (n.to_string(), t.to_string())).collect::<Vec<_>>();
-    assert_eq!(
-        columns("projects").await,
-        pairs(vec![
-            ("archived_at", ts),
-            ("created_at", ts),
-            ("created_by", "uuid"),
-            ("cycle_view", "boolean"),
-            ("guest_view_all_features", "boolean"),
-            ("id", "uuid"),
-            ("identifier", "text"),
-            ("intake_view", "boolean"),
-            ("issue_views_view", "boolean"),
-            ("logo_props", "jsonb"),
-            ("module_view", "boolean"),
-            ("name", "text"),
-            ("network", "text"),
-            ("page_view", "boolean"),
-            ("project_lead", "uuid"),
-            ("updated_at", ts),
-            ("updated_by", "uuid"),
-            ("workspace_id", "uuid"),
-        ])
-    );
-    assert_eq!(
-        columns("project_user_properties").await,
-        pairs(vec![("created_at", ts), ("project_id", "uuid"), ("sort_order", "double precision"), ("updated_at", ts), ("user_id", "uuid")])
-    );
+    // (the columns of `projects` and `project_user_properties` are asserted whole by the test of migration 0012, which extends both)
     assert_eq!(
         columns("workspace_user_preferences").await,
         pairs(vec![
@@ -995,6 +969,391 @@ async fn first_visits_racing_make_each_row_once_and_every_visit_sees_all_of_them
             .get(0);
         assert_eq!(n, want, "{table}");
     }
+}
+
+/// A project of workspace `ws` made by `owner`, who is its one admin, with two states (the default one and the intake one).
+fn project_for(ws: WorkspaceId, owner: UserId, name: &str, identifier: &str) -> NewProject {
+    let now = Utc.timestamp_opt(1_800_000_400, 0).unwrap();
+    let id = ProjectId(new_id());
+    let mut project = ProjectRow::bare(id, ws, name, now);
+    project.identifier = identifier.to_string();
+    project.created_by = Some(owner);
+    let state = |name: &str, sequence: f64, group: StateGroup, is_default: bool| StateRow {
+        id: new_id(),
+        workspace_id: ws,
+        project_id: id,
+        name: name.into(),
+        description: String::new(),
+        color: "#000000".into(),
+        sequence,
+        group,
+        is_default,
+        created_by: Some(owner),
+        created_at: now,
+        updated_at: now,
+    };
+    NewProject {
+        members: vec![NewProjectMember {
+            member: ProjectMemberRow {
+                id: new_id(),
+                project_id: id,
+                workspace_id: ws,
+                user_id: owner,
+                role: Role::Admin,
+                comment: None,
+                view_props: serde_json::json!({}),
+                default_props: serde_json::json!({}),
+                preferences: serde_json::json!({}),
+                sort_order: 65535.0,
+                created_by: Some(owner),
+                created_at: now,
+                updated_at: now,
+            },
+            properties: ProjectUserProperties {
+                id: new_id(),
+                project_id: id,
+                workspace_id: ws,
+                user_id: owner,
+                filters: serde_json::json!({}),
+                display_filters: serde_json::json!({}),
+                display_properties: serde_json::json!({}),
+                rich_filters: serde_json::json!({}),
+                preferences: serde_json::json!({}),
+                sort_order: 65535.0,
+                created_at: now,
+                updated_at: now,
+            },
+        }],
+        states: vec![state("Backlog", 15000.0, StateGroup::Backlog, true), state("Triage", 65000.0, StateGroup::Triage, false)],
+        project,
+    }
+}
+
+/// Issue #44, migration 0012: the project, member, settings, state and label tables' columns are written out, so a column added later
+/// has to be argued for, and the constraints that keep them well formed are exercised: months from 0 to 12, a name and a key that are
+/// each unique in their workspace, users that exist, settings that are objects, a state group from the six, one default state, a
+/// state or a label that belongs to a project of its own workspace.
+#[tokio::test]
+async fn the_project_tables_have_the_columns_they_say_and_the_constraints_that_keep_them_well_formed() {
+    let env = env().await;
+    let raw = env.conn.raw().await.unwrap();
+    let columns = |table: &'static str| {
+        let raw = &raw;
+        async move {
+            let rows = raw
+                .query(
+                    "SELECT column_name, data_type FROM information_schema.columns \
+                     WHERE table_schema = 'public' AND table_name = $1 ORDER BY column_name",
+                    &[&table],
+                )
+                .await
+                .unwrap();
+            rows.iter().map(|r| (r.get::<_, String>(0), r.get::<_, String>(1))).collect::<Vec<_>>()
+        }
+    };
+    let ts = "timestamp with time zone";
+    let (text, uuid, boolean, jsonb, double) = ("text", "uuid", "boolean", "jsonb", "double precision");
+    let pairs = |v: Vec<(&str, &str)>| v.into_iter().map(|(n, t)| (n.to_string(), t.to_string())).collect::<Vec<_>>();
+    assert_eq!(
+        columns("projects").await,
+        pairs(vec![
+            ("archive_in", "integer"),
+            ("archived_at", ts),
+            ("close_in", "integer"),
+            ("cover_image", text),
+            ("cover_image_asset", uuid),
+            ("created_at", ts),
+            ("created_by", uuid),
+            ("cycle_view", boolean),
+            ("default_assignee", uuid),
+            ("default_state", uuid),
+            ("description", text),
+            ("description_html", jsonb),
+            ("description_text", jsonb),
+            ("emoji", text),
+            ("estimate", uuid),
+            ("external_id", text),
+            ("external_source", text),
+            ("guest_view_all_features", boolean),
+            ("icon_prop", jsonb),
+            ("id", uuid),
+            ("identifier", text),
+            ("intake_view", boolean),
+            ("is_issue_type_enabled", boolean),
+            ("is_time_tracking_enabled", boolean),
+            ("issue_views_view", boolean),
+            ("logo_props", jsonb),
+            ("module_view", boolean),
+            ("name", text),
+            ("network", text),
+            ("page_view", boolean),
+            ("project_lead", uuid),
+            ("timezone", text),
+            ("updated_at", ts),
+            ("updated_by", uuid),
+            ("workspace_id", uuid),
+        ])
+    );
+    assert_eq!(
+        columns("project_members").await,
+        pairs(vec![
+            ("comment", text),
+            ("created_at", ts),
+            ("created_by", uuid),
+            ("default_props", jsonb),
+            ("id", uuid),
+            ("preferences", jsonb),
+            ("project_id", uuid),
+            ("role", text),
+            ("sort_order", double),
+            ("updated_at", ts),
+            ("user_id", uuid),
+            ("view_props", jsonb),
+            ("workspace_id", uuid),
+        ])
+    );
+    assert_eq!(
+        columns("project_user_properties").await,
+        pairs(vec![
+            ("created_at", ts),
+            ("display_filters", jsonb),
+            ("display_properties", jsonb),
+            ("filters", jsonb),
+            ("id", uuid),
+            ("preferences", jsonb),
+            ("project_id", uuid),
+            ("rich_filters", jsonb),
+            ("sort_order", double),
+            ("updated_at", ts),
+            ("user_id", uuid),
+            ("workspace_id", uuid),
+        ])
+    );
+    assert_eq!(
+        columns("states").await,
+        pairs(vec![
+            ("color", text),
+            ("created_at", ts),
+            ("created_by", uuid),
+            ("description", text),
+            ("id", uuid),
+            ("is_default", boolean),
+            ("name", text),
+            ("project_id", uuid),
+            ("sequence", double),
+            ("state_group", text),
+            ("updated_at", ts),
+            ("workspace_id", uuid),
+        ])
+    );
+    assert_eq!(
+        columns("labels").await,
+        pairs(vec![
+            ("color", text),
+            ("created_at", ts),
+            ("created_by", uuid),
+            ("description", text),
+            ("id", uuid),
+            ("name", text),
+            ("parent_id", uuid),
+            ("project_id", uuid),
+            ("sort_order", double),
+            ("updated_at", ts),
+            ("workspace_id", uuid),
+        ])
+    );
+
+    let owner = user_without_login(&env).await;
+    let (w1, w2) = (workspace_for(owner, "projects-one"), workspace_for(owner, "projects-two"));
+    env.db.insert_workspace(&w1).await.unwrap();
+    env.db.insert_workspace(&w2).await.unwrap();
+    let scope = |w: &NewWorkspace| WorkspaceScope::mint(w.workspace.id, owner, Role::Admin);
+    let first = project_for(w1.workspace.id, owner, "First", "FST");
+    env.db.insert_project(&scope(&w1), &first).await.unwrap();
+    let project = first.project.id.0;
+    // months from 0 to 12
+    for (set, ok) in [("archive_in = 12", true), ("archive_in = 0", true), ("archive_in = 13", false), ("close_in = -1", false)] {
+        assert_eq!(raw.execute(&format!("UPDATE projects SET {set} WHERE id = $1"), &[&project]).await.is_ok(), ok, "{set}");
+    }
+    // a name and a key are each unique in their workspace, and free in another
+    let clash = |name: &str, identifier: &str| project_for(w1.workspace.id, owner, name, identifier);
+    assert!(matches!(env.db.insert_project(&scope(&w1), &clash("First", "OTH")).await, Err(DbError::Conflict(_))), "the name");
+    assert!(matches!(env.db.insert_project(&scope(&w1), &clash("Other", "FST")).await, Err(DbError::Conflict(_))), "the key");
+    env.db.insert_project(&scope(&w2), &project_for(w2.workspace.id, owner, "First", "FST")).await.unwrap();
+    // the users a project names are users
+    let nobody = new_id();
+    for column in ["created_by", "updated_by", "project_lead", "default_assignee"] {
+        assert!(raw.execute(&format!("UPDATE projects SET {column} = $2 WHERE id = $1"), &[&project, &nobody]).await.is_err(), "{column}");
+    }
+    // settings are objects
+    for set in ["view_props = '[]'::jsonb", "default_props = '1'::jsonb", "preferences = 'null'::jsonb"] {
+        assert!(raw.execute(&format!("UPDATE project_members SET {set} WHERE project_id = $1"), &[&project]).await.is_err(), "{set}");
+    }
+    for set in ["filters = '[]'::jsonb", "display_filters = '1'::jsonb", "display_properties = '\"x\"'::jsonb", "rich_filters = '[]'::jsonb", "preferences = '1'::jsonb"] {
+        assert!(raw.execute(&format!("UPDATE project_user_properties SET {set} WHERE project_id = $1"), &[&project]).await.is_err(), "{set}");
+    }
+    // control: objects are accepted
+    raw.execute("UPDATE project_members SET view_props = '{\"a\": 1}'::jsonb WHERE project_id = $1", &[&project]).await.unwrap();
+    // a state: a group from the six, a name once per project, one default, a project of its own workspace
+    let state = "INSERT INTO states (id, workspace_id, project_id, name, color, sequence, state_group, is_default, created_at, updated_at) \
+                 VALUES ($1, $2, $3, $4, '#fff', 1, $5, $6, now(), now())";
+    let ws1 = w1.workspace.id.0;
+    assert!(raw.execute(state, &[&new_id(), &ws1, &project, &"Review", &"reviewing", &false]).await.is_err(), "a group of its own");
+    assert!(raw.execute(state, &[&new_id(), &ws1, &project, &"Backlog", &"backlog", &false]).await.is_err(), "a name twice");
+    assert!(raw.execute(state, &[&new_id(), &ws1, &project, &"Second default", &"started", &true]).await.is_err(), "two default states");
+    assert!(raw.execute(state, &[&new_id(), &w2.workspace.id.0, &project, &"Elsewhere", &"started", &false]).await.is_err(), "a state in another workspace than its project's");
+    raw.execute(state, &[&new_id(), &ws1, &project, &"Review", &"started", &false]).await.unwrap();
+    // a label: a name once per project, a parent that exists, a project of its own workspace
+    let label = "INSERT INTO labels (id, workspace_id, project_id, parent_id, name, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, now(), now())";
+    let parent = new_id();
+    raw.execute(label, &[&parent, &ws1, &project, &None::<Uuid>, &"bug"]).await.unwrap();
+    assert!(raw.execute(label, &[&new_id(), &ws1, &project, &None::<Uuid>, &"bug"]).await.is_err(), "a label name twice");
+    assert!(raw.execute(label, &[&new_id(), &ws1, &project, &Some(new_id()), &"child"]).await.is_err(), "a parent that is no label");
+    assert!(raw.execute(label, &[&new_id(), &w2.workspace.id.0, &project, &None::<Uuid>, &"x"]).await.is_err(), "a label in another workspace than its project's");
+    raw.execute(label, &[&new_id(), &ws1, &project, &Some(parent), &"child"]).await.unwrap();
+}
+
+/// A database created before migration 0012 has projects with members that are a project, a workspace, a user and a role, and
+/// settings rows that are a sort order alone. `migrate` gives each member an id of its own and the pin's empty settings, each settings
+/// row the workspace of its project, and applying it a second time changes nothing. A pinned regression for the upgrade path of a
+/// database that has data; every other test here starts from an empty one.
+#[tokio::test]
+async fn migration_0012_upgrades_a_database_that_has_projects_members_and_settings() {
+    let container = Postgres::default().start().await.expect("start postgres container");
+    let port = container.get_host_port_ipv4(5432).await.expect("mapped port");
+    let url = format!("postgres://postgres:postgres@127.0.0.1:{port}/postgres");
+    let conn = Arc::new(PoolConnector::from_url(&url, 4).unwrap());
+    let raw = conn.raw().await.unwrap();
+    for sql in [
+        thrust_adapters_postgres::MIGRATION_0001,
+        thrust_adapters_postgres::MIGRATION_0002,
+        thrust_adapters_postgres::MIGRATION_0003,
+        thrust_adapters_postgres::MIGRATION_0004,
+        thrust_adapters_postgres::MIGRATION_0005,
+        thrust_adapters_postgres::MIGRATION_0006,
+        thrust_adapters_postgres::MIGRATION_0007,
+        thrust_adapters_postgres::MIGRATION_0008,
+        thrust_adapters_postgres::MIGRATION_0009,
+        thrust_adapters_postgres::MIGRATION_0010,
+        thrust_adapters_postgres::MIGRATION_0011,
+    ] {
+        raw.batch_execute(sql).await.unwrap();
+    }
+    let (ws, project, u1, u2) = (new_id(), new_id(), new_id(), new_id());
+    for u in [u1, u2] {
+        raw.execute("INSERT INTO users (id) VALUES ($1)", &[&u]).await.unwrap();
+    }
+    raw.execute("INSERT INTO workspaces (id, slug, name) VALUES ($1, 'legacy-members', 'Legacy')", &[&ws]).await.unwrap();
+    raw.execute("INSERT INTO workspace_members (workspace_id, user_id) VALUES ($1, $2), ($1, $3)", &[&ws, &u1, &u2]).await.unwrap();
+    raw.execute("INSERT INTO projects (id, workspace_id, name, identifier) VALUES ($1, $2, 'Legacy project', 'LEG')", &[&project, &ws]).await.unwrap();
+    for u in [u1, u2] {
+        raw.execute("INSERT INTO project_members (project_id, workspace_id, user_id, role) VALUES ($1, $2, $3, 'member')", &[&project, &ws, &u]).await.unwrap();
+    }
+    raw.execute("INSERT INTO project_user_properties (project_id, user_id, sort_order) VALUES ($1, $2, 7.5)", &[&project, &u1]).await.unwrap();
+
+    thrust_adapters_postgres::migrate(&raw).await.unwrap();
+    async fn state(raw: &tokio_postgres::Client) -> (Vec<(Uuid, Uuid)>, Vec<(Uuid, Uuid, f64, serde_json::Value)>) {
+        let members = raw.query("SELECT user_id, id FROM project_members ORDER BY user_id", &[]).await.unwrap();
+        let props = raw.query("SELECT user_id, workspace_id, sort_order, filters FROM project_user_properties ORDER BY user_id", &[]).await.unwrap();
+        (
+            members.iter().map(|r| (r.get(0), r.get(1))).collect(),
+            props.iter().map(|r| (r.get(0), r.get(1), r.get(2), r.get(3))).collect(),
+        )
+    }
+    let first = state(&raw).await;
+    thrust_adapters_postgres::migrate(&raw).await.unwrap();
+    assert_eq!(first, state(&raw).await, "a second run changed the members or their settings");
+    assert_ne!(first.0[0].1, first.0[1].1, "two members share an id");
+    assert_eq!(first.1, vec![(u1, ws, 7.5, serde_json::json!({}))], "a settings row has the workspace of its project and the empty object");
+
+    drop(raw);
+    let db = PgDatabase::new(conn);
+    let scope = WorkspaceScope::mint(WorkspaceId(ws), UserId(u1), Role::Member);
+    let d = db.project_detail(&scope, ProjectId(project)).await.unwrap().unwrap();
+    assert_eq!((d.listing.role, d.listing.sort_order, d.members.len(), d.next_sequence), (Some(Role::Member), Some(7.5), 2, 1));
+    assert_eq!((d.listing.project.description.as_str(), d.listing.project.timezone.as_str(), d.listing.project.archive_in), ("", "UTC", 0));
+    // a member who has no settings row yet gets one on their first ask, and the one that was there is kept
+    let m = db.project_member(&scope, ProjectId(project)).await.unwrap().unwrap();
+    assert_eq!((m.member.role, m.member.sort_order, m.member.view_props.clone()), (Role::Member, 65535.0, serde_json::json!({})));
+}
+
+/// Two creations racing for one name cannot both win, and the loser leaves nothing behind: the unique index decides, not a
+/// check-then-insert. 16 projects with one name and sixteen keys are made from as many tasks; exactly one exists, with its own member,
+/// settings row and states, and no row of a loser is left.
+#[tokio::test]
+async fn creations_racing_for_one_project_name_make_exactly_one_project_with_nothing_left_behind() {
+    let env = env().await;
+    let owner = user_without_login(&env).await;
+    let w = workspace_for(owner, "project-race");
+    env.db.insert_workspace(&w).await.unwrap();
+    let scope = WorkspaceScope::mint(w.workspace.id, owner, Role::Admin);
+    let mut handles = Vec::new();
+    for i in 0..16 {
+        let db = env.db.clone();
+        let p = project_for(w.workspace.id, owner, "One name", &format!("K{i}"));
+        handles.push(tokio::spawn(async move { db.insert_project(&scope, &p).await }));
+    }
+    let mut won = 0;
+    for h in handles {
+        match h.await.unwrap() {
+            Ok(()) => won += 1,
+            Err(DbError::Conflict(_)) => {}
+            Err(e) => panic!("a loser was refused with {e:?}, not a conflict"),
+        }
+    }
+    assert_eq!(won, 1);
+    let raw = env.conn.raw().await.unwrap();
+    for (table, want) in [("projects", 1i64), ("project_members", 1), ("project_user_properties", 1), ("states", 2)] {
+        let n: i64 = raw
+            .query_one(&format!("SELECT count(*) FROM {table} WHERE workspace_id = $1"), &[&w.workspace.id.0])
+            .await
+            .unwrap()
+            .get(0);
+        assert_eq!(n, want, "{table}: a loser left rows behind, or the winner is incomplete");
+    }
+}
+
+/// `project_stats` counts a project's live work items (not a draft, an archived or a deleted one) and every member row, for each
+/// project of the workspace. The model cannot reach this: the slice's `create` never makes a draft or an archived item, so the
+/// clauses that leave them out are held here, the way the memory adapter's `tests/projects.rs` holds them.
+#[tokio::test]
+async fn project_counts_leave_out_drafts_archived_and_deleted_work_items_and_count_every_member() {
+    let env = env().await;
+    let owner = user_without_login(&env).await;
+    let w = workspace_for(owner, "project-counts");
+    env.db.insert_workspace(&w).await.unwrap();
+    let ws = w.workspace.id;
+    let scope_of = |id: ProjectId| Scope::mint(ws, id, owner);
+    let (one, two) = (project_for(ws, owner, "Counted", "CNT"), project_for(ws, owner, "Other", "OTH"));
+    let admin = WorkspaceScope::mint(ws, owner, Role::Admin);
+    env.db.insert_project(&admin, &one).await.unwrap();
+    env.db.insert_project(&admin, &two).await.unwrap();
+    let (p1, p2) = (one.project.id, two.project.id);
+
+    let gone = Utc.timestamp_opt(1_800_000_500, 0).unwrap();
+    // project one: two live items, a draft and a deleted one; project two: an archived one
+    for (project, draft, archived, deleted) in [(p1, false, false, false), (p1, true, false, false), (p1, false, false, false), (p1, false, false, true), (p2, false, true, false)] {
+        let s = scope_of(project);
+        let mut tx = env.db.begin(&s).await.unwrap();
+        let a = tx.allocate(&s).await.unwrap();
+        let mut w = item(ws, project, a, "counted", None);
+        w.is_draft = draft;
+        w.archived_at = archived.then_some(gone);
+        tx.insert_work_item(&s, &w).await.unwrap();
+        if deleted {
+            assert!(tx.soft_delete_work_item(&s, w.id, gone).await.unwrap());
+        }
+        tx.commit().await.unwrap();
+    }
+    let counts = |stats: Vec<ProjectStat>| {
+        let mut v: Vec<(ProjectId, i64, i64)> = stats.iter().map(|s| (s.id, s.total_issues, s.total_members)).collect();
+        v.sort_by_key(|s| s.0 .0);
+        v
+    };
+    let mut want = vec![(p1, 2, 1), (p2, 0, 1)];
+    want.sort_by_key(|s| s.0 .0);
+    assert_eq!(counts(env.db.project_stats(&admin, None).await.unwrap()), want);
+    assert_eq!(counts(env.db.project_stats(&admin, Some(&[p1])).await.unwrap()), vec![(p1, 2, 1)]);
 }
 
 /// `update_profile` is ONE statement: the onboarding page sends several requests at once, each changing different fields of

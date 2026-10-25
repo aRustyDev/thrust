@@ -49,7 +49,7 @@ pub(crate) fn char_field(v: &Value, max: Option<usize>, allow_blank: bool, allow
 }
 
 /// DRF `BooleanField`: a real bool, or one of its spellings (`"yes"`, `"off"`, `1`, ...). Anything else is refused.
-fn bool_field(v: &Value) -> Result<bool, String> {
+pub(crate) fn bool_field(v: &Value) -> Result<bool, String> {
     const TRUE: &[&str] = &["t", "T", "y", "Y", "yes", "Yes", "YES", "true", "True", "TRUE", "on", "On", "ON", "1"];
     const FALSE: &[&str] = &["f", "F", "n", "N", "no", "No", "NO", "false", "False", "FALSE", "off", "Off", "OFF", "0"];
     match v {
@@ -65,7 +65,7 @@ fn bool_field(v: &Value) -> Result<bool, String> {
 }
 
 /// DRF `ChoiceField`: the value's text must be one of the choices; the choice is returned.
-fn choice_field<'a>(v: &Value, choices: &'a [&'a str]) -> Result<&'a str, String> {
+pub(crate) fn choice_field<'a>(v: &Value, choices: &'a [&'a str]) -> Result<&'a str, String> {
     if v.is_null() {
         return Err("This field may not be null.".into());
     }

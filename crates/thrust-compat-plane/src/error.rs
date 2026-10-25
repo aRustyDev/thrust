@@ -118,6 +118,8 @@ pub enum PlaneError {
     Forbidden(serde_json::Value),
     /// A 409 with a body the caller built (workspace creation's lost race for a slug).
     Conflict(serde_json::Value),
+    /// A 404 with a body the caller built (the pin gives a missing object, a missing project and a missing route different ones).
+    NotFound(serde_json::Value),
     /// Anything whose Plane shape has not been recorded yet.
     Other(CoreError),
 }
@@ -150,6 +152,7 @@ impl IntoResponse for PlaneError {
             PlaneError::Fields(errors) => (StatusCode::BAD_REQUEST, Json(serde_json::Value::Object(errors))).into_response(),
             PlaneError::Forbidden(body) => (StatusCode::FORBIDDEN, Json(body)).into_response(),
             PlaneError::Conflict(body) => (StatusCode::CONFLICT, Json(body)).into_response(),
+            PlaneError::NotFound(body) => (StatusCode::NOT_FOUND, Json(body)).into_response(),
             PlaneError::Other(e) => thrust_api::ApiError(e).into_response(),
         }
     }

@@ -1,0 +1,195 @@
+{
+  "exchanges": [
+    {
+      "name": "no session",
+      "request": {
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/"
+      },
+      "response": {
+        "body": {
+          "detail": "Authentication credentials were not provided."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 401
+      }
+    },
+    {
+      "name": "the creator of the project",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/"
+      },
+      "response": {
+        "body": {
+          "anchor": null,
+          "archive_in": 0,
+          "archived_at": null,
+          "close_in": 0,
+          "cover_image": null,
+          "cover_image_asset": null,
+          "cover_image_url": null,
+          "created_at": "<ts>",
+          "created_by": "<uuid:3>",
+          "cycle_view": false,
+          "default_assignee": null,
+          "default_state": null,
+          "deleted_at": null,
+          "description": "",
+          "description_html": null,
+          "description_text": null,
+          "emoji": null,
+          "estimate": null,
+          "external_id": null,
+          "external_source": null,
+          "guest_view_all_features": false,
+          "icon_prop": null,
+          "id": "<uuid:1>",
+          "identifier": "JRN",
+          "inbox_view": false,
+          "intake_view": false,
+          "is_favorite": false,
+          "is_issue_type_enabled": false,
+          "is_time_tracking_enabled": false,
+          "issue_views_view": false,
+          "logo_props": {
+            "emoji": {
+              "value": "128512"
+            },
+            "in_use": "emoji"
+          },
+          "member_role": 20,
+          "members": [
+            "<uuid:3>"
+          ],
+          "module_view": false,
+          "name": "Journey Project",
+          "network": 2,
+          "next_work_item_sequence": 1,
+          "page_view": true,
+          "project_lead": null,
+          "sort_order": 65535.0,
+          "timezone": "UTC",
+          "updated_at": "<ts>",
+          "updated_by": "<uuid:3>",
+          "workspace": "<uuid:4>"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "not a member of the workspace",
+      "request": {
+        "as": "second@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/"
+      },
+      "response": {
+        "body": {
+          "error": "You don't have the required permissions."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 403
+      }
+    },
+    {
+      "name": "a project that does not exist",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:5>/"
+      },
+      "response": {
+        "body": {
+          "error": "Project does not exist"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 404
+      }
+    },
+    {
+      "name": "the creator of a secret project they are in",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-two/projects/<uuid:2>/"
+      },
+      "response": {
+        "body": {
+          "anchor": null,
+          "archive_in": 0,
+          "archived_at": null,
+          "close_in": 0,
+          "cover_image": null,
+          "cover_image_asset": null,
+          "cover_image_url": null,
+          "created_at": "<ts>",
+          "created_by": "<uuid:3>",
+          "cycle_view": false,
+          "default_assignee": null,
+          "default_state": null,
+          "deleted_at": null,
+          "description": "Third",
+          "description_html": null,
+          "description_text": null,
+          "emoji": null,
+          "estimate": null,
+          "external_id": null,
+          "external_source": null,
+          "guest_view_all_features": false,
+          "icon_prop": null,
+          "id": "<uuid:2>",
+          "identifier": "THR",
+          "inbox_view": false,
+          "intake_view": false,
+          "is_favorite": false,
+          "is_issue_type_enabled": false,
+          "is_time_tracking_enabled": false,
+          "issue_views_view": false,
+          "logo_props": {
+            "emoji": {
+              "value": "128512"
+            },
+            "in_use": "emoji"
+          },
+          "member_role": 20,
+          "members": [
+            "<uuid:3>"
+          ],
+          "module_view": false,
+          "name": "Third Project",
+          "network": 0,
+          "next_work_item_sequence": 1,
+          "page_view": true,
+          "project_lead": null,
+          "sort_order": 55535.0,
+          "timezone": "UTC",
+          "updated_at": "<ts>",
+          "updated_by": null,
+          "workspace": "<uuid:6>"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    }
+  ],
+  "format_version": 1,
+  "recorded_from": "ba85d4d3d3",
+  "row": "S34",
+  "uses": [
+    "project",
+    "third"
+  ]
+}

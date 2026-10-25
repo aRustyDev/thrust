@@ -628,6 +628,262 @@ def step_s26(base, pacer):
     return out
 
 
+# ---------------------------------------------------------------------------------------------------------------------
+# Projects (stage 5). The ids the pin makes that later steps name in their paths are kept here, by name, and a fixture says
+# in its header which it makes (`binds`) and which it names (`uses`), so the replay can give the request the id Thrust made.
+# ---------------------------------------------------------------------------------------------------------------------
+
+CTX = {}
+
+# The React payload of "create project" (components/projects/create/root.tsx, utils.ts): `cover_image_url` is read only on
+# the pin, so it is ignored there.
+PROJECT = {
+    "cover_image_url": "/cover-images/image_5.webp",
+    "description": "",
+    "logo_props": {"in_use": "emoji", "emoji": {"value": "128512"}},
+    "identifier": "JRN",
+    "name": "Journey Project",
+    "network": 2,
+    "project_lead": None,
+}
+NO_SUCH_PROJECT = "7a9c1d5e-3b2f-4e86-9a47-5d1c0b8e6f23"
+NO_SUCH_USER = "4f6c2f0a-9d52-4a3c-8c7e-0a1b2c3d4e5f"
+
+
+def projects_path(slug=WS_ONE):
+    return f"/api/workspaces/{slug}/projects/"
+
+
+def step_s30(base, pacer):
+    """POST .../projects/ : every refusal, then the journey's project, then what depends on it, then two more in another
+    workspace (the same name and key there is allowed, and the second one is what S32 renames onto)."""
+    create = lambda who, body, slug=WS_ONE: api(base, pacer, who, "POST", projects_path(slug), body)  # noqa: E731
+    out = [
+        ("no session", create(NOT_SIGNED_IN, PROJECT)),
+        ("not a member of the workspace", create(SECOND_EMAIL, PROJECT)),
+        ("no fields", create(J, {})),
+        ("no name", create(J, {k: v for k, v in PROJECT.items() if k != "name"})),
+        ("no identifier", create(J, {k: v for k, v in PROJECT.items() if k != "identifier"})),
+        ("a blank name", create(J, {**PROJECT, "name": ""})),
+        ("a blank identifier", create(J, {**PROJECT, "identifier": ""})),
+        ("a name that is too long", create(J, {**PROJECT, "name": "n" * 256})),
+        ("an identifier that is too long", create(J, {**PROJECT, "identifier": "I" * 13})),
+        ("a name with a forbidden character", create(J, {**PROJECT, "name": "My.Project"})),
+        ("an identifier with a forbidden character", create(J, {**PROJECT, "identifier": "A-B"})),
+        ("a network that is not one of the two", create(J, {**PROJECT, "network": 3})),
+        ("a lead who is not a user", create(J, {**PROJECT, "project_lead": NO_SUCH_USER})),
+        ("a time zone that does not exist", create(J, {**PROJECT, "timezone": "Mars/Olympus"})),
+        ("a name that is not text", create(J, {**PROJECT, "name": ["x"]})),
+        ("a lead that is not an id", create(J, {**PROJECT, "project_lead": "not-an-id"})),
+        ("a number of months out of range", create(J, {**PROJECT, "archive_in": 13})),
+        ("a logo that is null", create(J, {**PROJECT, "logo_props": None})),
+        ("a key with spaces around it, no name", create(J, {**PROJECT, "name": "", "identifier": "  JR4  "})),
+    ]
+    journey = create(J, PROJECT)
+    out.append(("the journey's project", journey))
+    CTX["project"] = journey["response"]["body"]["id"]
+    out += [
+        ("the same name again", create(J, {**PROJECT, "identifier": "JR2"})),
+        ("the same name with spaces around it", create(J, {**PROJECT, "name": "  Journey Project  ", "identifier": "JR3"})),
+        ("the same identifier again", create(J, {**PROJECT, "name": "Another Name"})),
+    ]
+    other = create(J, {**PROJECT, "name": "Other Project", "identifier": "OTH"}, WS_TWO)
+    out.append(("another project, in the other workspace", other))
+    CTX["other"] = other["response"]["body"]["id"]
+    third = create(J, {**PROJECT, "name": "Third Project", "identifier": "THR", "network": 0, "description": "Third"}, WS_TWO)
+    out.append(("a secret project with a description, in the other workspace", third))
+    CTX["third"] = third["response"]["body"]["id"]
+    out.append(("the journey's name and key, in the other workspace", create(J, PROJECT, WS_TWO)))
+    # Not recorded: a lead who is someone else. The pin makes them an admin of the project even when they are not a member of the
+    # workspace; Thrust refuses a lead who is not one (deviation D-026), and no one can be put in the oracle's workspace through its
+    # API, so the journey has no such lead.
+    return out
+
+
+def step_s32(base, pacer):
+    """PATCH .../projects/{id}/ : the cover image the app sends after the upload, then every rule."""
+    patch = lambda who, pid, body, slug=WS_ONE: api(base, pacer, who, "PATCH", f"{projects_path(slug)}{pid}/", body)  # noqa: E731
+    p, o = CTX["project"], CTX["other"]
+    return [
+        ("no session", patch(NOT_SIGNED_IN, p, {"name": "x"})),
+        ("not a member of the workspace", patch(SECOND_EMAIL, p, {"name": "x"})),
+        ("the cover image the app sends after the upload", patch(J, p, {"cover_image_url": "/cover-images/image_5.webp"})),
+        ("an empty patch", patch(J, p, {})),
+        ("a project that does not exist", patch(J, NO_SUCH_PROJECT, {"name": "x"})),
+        ("a new name", patch(J, o, {"name": "Renamed Other"}, WS_TWO)),
+        ("the name of another project", patch(J, o, {"name": "Third Project"}, WS_TWO)),
+        ("its own name", patch(J, o, {"name": "Renamed Other"}, WS_TWO)),
+        ("the key of another project", patch(J, o, {"identifier": "THR"}, WS_TWO)),
+        ("a new key", patch(J, o, {"identifier": "OTHER"}, WS_TWO)),
+        ("a name that is too long", patch(J, o, {"name": "n" * 256}, WS_TWO)),
+        ("a forbidden character in the name", patch(J, o, {"name": "A&B"}, WS_TWO)),
+        ("a network that is not one of the two", patch(J, o, {"network": 1}, WS_TWO)),
+        ("a secret network, a description, the views and a time zone", patch(J, o, {"network": 0, "description": "Now secret", "cycle_view": True, "module_view": True, "issue_views_view": True, "page_view": False, "inbox_view": True, "timezone": "Europe/Berlin", "logo_props": {"in_use": "icon", "icon": {"name": "Smile", "color": "#fff"}}}, WS_TWO)),
+        ("a view flag that is not a boolean", patch(J, o, {"cycle_view": "maybe"}, WS_TWO)),
+        ("fields the pin does not let a patch change", patch(J, o, {"id": NO_SUCH_PROJECT, "workspace": NO_SUCH_PROJECT, "created_at": "2001-01-01T00:00:00Z", "deleted_at": "2001-01-01T00:00:00Z"}, WS_TWO)),
+        # what DRF says of each kind of value a field may be sent as (probed against the pin, then recorded): a user as a number, a
+        # float, a boolean, a list, an object or blank; a number of months as a float, a string and a value that is no number
+        ("a lead and a default assignee that are an integer and a boolean", patch(J, o, {"project_lead": 5, "default_assignee": True}, WS_TWO)),
+        ("a lead that is a negative integer", patch(J, o, {"project_lead": -1}, WS_TWO)),
+        ("a lead that is a float", patch(J, o, {"project_lead": 1.5, "default_assignee": 0.0}, WS_TWO)),
+        ("a lead that is a list", patch(J, o, {"project_lead": ["a", 1, None, True], "default_assignee": []}, WS_TWO)),
+        ("a lead that is an object", patch(J, o, {"project_lead": {"a": 1, "b": ["c"]}, "default_assignee": {}}, WS_TWO)),
+        ("a lead that is blank", patch(J, o, {"project_lead": "  "}, WS_TWO)),
+        ("months that are not whole", patch(J, o, {"archive_in": 5.5, "close_in": "abc"}, WS_TWO)),
+        ("months that are a boolean, null or a list", patch(J, o, {"archive_in": True, "close_in": None}, WS_TWO)),
+        ("months that are a list and an object", patch(J, o, {"archive_in": [1], "close_in": {}}, WS_TWO)),
+        ("months out of range as floats and strings", patch(J, o, {"archive_in": 13.0, "close_in": "-1"}, WS_TWO)),
+        ("an estimate, a default state and a cover image that name nothing", patch(J, o, {"estimate": NO_SUCH_USER, "default_state": NO_SUCH_USER, "cover_image_asset": NO_SUCH_USER}, WS_TWO)),
+        ("a logo that is null", patch(J, o, {"logo_props": None}, WS_TWO)),
+        ("months as a float with no fraction and a string with one", patch(J, o, {"archive_in": 5.0, "close_in": "7.0"}, WS_TWO)),
+        ("months as a string with spaces and a sign", patch(J, o, {"archive_in": " 7 ", "close_in": "+3"}, WS_TWO)),
+        ("months at the top as a float", patch(J, o, {"archive_in": 12.0, "close_in": 12}, WS_TWO)),
+        ("a lead that is an empty string, and values for the JSON columns that allow null or anything", patch(J, o, {"project_lead": "", "description_text": None, "description_html": 5, "icon_prop": None}, WS_TWO)),
+        # the edges of the same readings: an integer past the largest signed 64-bit one, how Python writes the strings in a list or an
+        # object (quotes, a backslash, a tab, a letter outside ASCII), floats at the edge of the exponent, and strings that are no whole number
+        ("a lead that is an integer past the largest signed one", patch(J, o, {"project_lead": 9223372036854775808}, WS_TWO)),
+        ("leads that are lists with a quote in a string", patch(J, o, {"project_lead": ["it's"], "default_assignee": ['say "hi"']}, WS_TWO)),
+        ("leads that are lists with both quotes, a backslash and a tab", patch(J, o, {"project_lead": ["both ' and \""], "default_assignee": ["back\\slash", "tab\there", "é"]}, WS_TWO)),
+        ("a lead that is an object with a quote in a key", patch(J, o, {"project_lead": {"it's": 1}}, WS_TWO)),
+        ("leads that are lists with control characters", patch(J, o, {"project_lead": ["\x01"], "default_assignee": ["\x7f", "a\x1fb"]}, WS_TWO)),
+        ("months as floats at the edge of the exponent", patch(J, o, {"archive_in": 1e16, "close_in": 9999999999999998.0}, WS_TWO)),
+        ("months as a string with a fraction", patch(J, o, {"archive_in": "5.5"}, WS_TWO)),
+        ("months as strings with zeros after the point", patch(J, o, {"archive_in": "12.000", "close_in": "0."}, WS_TWO)),
+        ("a relation that is blank or no UUID, and one that is empty", patch(J, o, {"estimate": " ", "default_state": "x", "cover_image_asset": ""}, WS_TWO)),
+        ("relations that are empty strings", patch(J, o, {"estimate": "", "default_state": "", "cover_image_asset": ""}, WS_TWO)),
+        # the pin keeps null, a string and an empty list or object in `description_html`, and writes anything else as Python's str()
+        ("a description_html that is a boolean", patch(J, o, {"description_html": True}, WS_TWO)),
+        ("a description_html that is a float", patch(J, o, {"description_html": 1.5}, WS_TWO)),
+        ("a description_html that is an object", patch(J, o, {"description_html": {"a": 1, "b": [None, "c"]}}, WS_TWO)),
+        ("a description_html that is a list", patch(J, o, {"description_html": [1, "b", False]}, WS_TWO)),
+        ("a description_html that is an empty object", patch(J, o, {"description_html": {}}, WS_TWO)),
+        ("a description_html that is an empty list", patch(J, o, {"description_html": []}, WS_TWO)),
+        ("months back to none", patch(J, o, {"archive_in": 0, "close_in": 0, "description_html": None}, WS_TWO)),
+    ]
+
+
+def project_read(base, pacer, template, query=""):
+    """The cases every read of the journey's project has: no session, the creator, someone outside the workspace, and a
+    project that does not exist. `template` is the route with `{slug}` and `{project}`."""
+    get = lambda who, pid=None: api(base, pacer, who, "GET", template.format(slug=WS_ONE, project=pid or CTX["project"]) + query)  # noqa: E731
+    return [
+        ("no session", get(NOT_SIGNED_IN)),
+        ("the creator of the project", get(J)),
+        ("not a member of the workspace", get(SECOND_EMAIL)),
+        ("a project that does not exist", get(J, NO_SUCH_PROJECT)),
+    ]
+
+
+def step_s34(base, pacer):
+    """GET .../projects/{id}/ : the project, as the app opens it."""
+    out = project_read(base, pacer, "/api/workspaces/{slug}/projects/{project}/")
+    out.append(("the creator of a secret project they are in", api(base, pacer, J, "GET", f"{projects_path(WS_TWO)}{CTX['third']}/")))
+    return out
+
+
+def step_s35(base, pacer):
+    """GET .../project-stats/ : counts for the projects of the workspace (all of them, whoever asks)."""
+    get = lambda who, slug=WS_ONE, query="": api(base, pacer, who, "GET", f"/api/workspaces/{slug}/project-stats/{query}")  # noqa: E731
+    return [
+        ("no session", get(NOT_SIGNED_IN)),
+        ("every project of the workspace", get(J)),
+        ("the other workspace, with two projects", get(J, WS_TWO)),
+        ("one project and the fields the app asks for", get(J, WS_ONE, f"?project_ids={CTX['project']}&fields=total_issues,completed_issues")),
+        ("fields that are not counts", get(J, WS_ONE, "?fields=name,nothing")),
+        ("a project of another workspace", get(J, WS_ONE, f"?project_ids={CTX['other']}")),
+        ("not a member of the workspace", get(SECOND_EMAIL)),
+        ("a workspace that does not exist", get(J, "no-such-workspace")),
+        ("a project id that is not an id", get(J, WS_ONE, "?project_ids=not-an-id")),
+    ]
+
+
+def step_s36(base, pacer):
+    return project_read(base, pacer, "/api/workspaces/{slug}/projects/{project}/project-members/me/")
+
+
+def step_s37(base, pacer):
+    out = project_read(base, pacer, "/api/workspaces/{slug}/projects/{project}/user-properties/")
+    out.insert(2, ("the creator again", api(base, pacer, J, "GET", f"{projects_path()}{CTX['project']}/user-properties/")))
+    return out
+
+
+def step_s38(base, pacer):
+    return project_read(base, pacer, "/api/workspaces/{slug}/projects/{project}/issue-labels/")
+
+
+def step_s39(base, pacer):
+    return project_read(base, pacer, "/api/workspaces/{slug}/projects/{project}/members/")
+
+
+def step_s40(base, pacer):
+    return project_read(base, pacer, "/api/workspaces/{slug}/projects/{project}/states/")
+
+
+def step_s41(base, pacer):
+    out = project_read(base, pacer, "/api/workspaces/{slug}/projects/{project}/intake-state/")
+    out.insert(2, ("the creator again", api(base, pacer, J, "GET", f"{projects_path()}{CTX['project']}/intake-state/")))
+    return out
+
+
+def step_s42(base, pacer):
+    return project_read(base, pacer, "/api/workspaces/{slug}/projects/{project}/estimates/")
+
+
+def step_s43(base, pacer):
+    return project_read(base, pacer, "/api/workspaces/{slug}/projects/{project}/cycles/")
+
+
+def step_s44(base, pacer):
+    """GET .../modules/ : the workspace's modules (the app asks for them next to the project's)."""
+    return workspace_read(base, pacer, "/api/workspaces/{slug}/modules/")
+
+
+def step_s45(base, pacer):
+    return project_read(base, pacer, "/api/workspaces/{slug}/projects/{project}/modules/")
+
+
+def step_s46(base, pacer):
+    return project_read(base, pacer, "/api/workspaces/{slug}/projects/{project}/views/")
+
+
+def step_s17_after(base, pacer):
+    """GET .../projects/ once a project exists: the caller's role and sort order. One project only: the pin's list of several is
+    in no order the request names (the query groups, which drops the model's ordering, and Postgres returns the groups by id), and
+    ids differ between the pin and Thrust, so no implementation can match it."""
+    get = lambda who, slug: api(base, pacer, who, "GET", projects_path(slug))  # noqa: E731
+    return [
+        ("one project", get(J, WS_ONE)),
+        ("not a member of the workspace", get(SECOND_EMAIL, WS_ONE)),
+    ]
+
+
+def step_s20_after(base, pacer):
+    """GET .../states/ once a project has states (one project only: states of two projects tie on `sequence`, and the pin's
+    order for ties is not defined)."""
+    get = lambda who: api(base, pacer, who, "GET", f"/api/workspaces/{WS_ONE}/states/")  # noqa: E731
+    return [("the states of the one project", get(J)), ("not a member of the workspace", get(SECOND_EMAIL))]
+
+
+# Which fixtures make an id that later ones use (`binds`), and which name one in their requests (`uses`).
+USES_PROJECT = {"uses": ["project"]}
+FIXTURE_META = {
+    "S30": {"binds": {"project": {"exchange": "the journey's project", "path": ["id"]}, "other": {"exchange": "another project, in the other workspace", "path": ["id"]}, "third": {"exchange": "a secret project with a description, in the other workspace", "path": ["id"]}}},
+    "S32": {"uses": ["project", "other"]},
+    "S34": {"uses": ["project", "third"]},
+    "S36": USES_PROJECT,
+    "S37": USES_PROJECT,
+    "S38": USES_PROJECT,
+    "S39": USES_PROJECT,
+    "S40": USES_PROJECT,
+    "S41": USES_PROJECT,
+    "S42": USES_PROJECT,
+    "S43": USES_PROJECT,
+    "S45": USES_PROJECT,
+    "S46": USES_PROJECT,
+    "S35": {"uses": ["project", "other"]},
+}
+
+
 # Journey order. The file name is the step id; `S04-existing` is S04's route again, after S05, and `S02-signed-in` is
 # S02's route again, once there is a session. `X04` is a route the stock onboarding calls that the inventory lacks.
 STEPS = [
@@ -665,6 +921,23 @@ STEPS = [
     ("S24", step_s24),
     ("S25", step_s25),
     ("S26", step_s26),
+    ("S30", step_s30),
+    ("S32", step_s32),
+    ("S34", step_s34),
+    ("S35", step_s35),
+    ("S36", step_s36),
+    ("S37", step_s37),
+    ("S38", step_s38),
+    ("S39", step_s39),
+    ("S40", step_s40),
+    ("S41", step_s41),
+    ("S42", step_s42),
+    ("S43", step_s43),
+    ("S44", step_s44),
+    ("S45", step_s45),
+    ("S46", step_s46),
+    ("S17-after", step_s17_after),
+    ("S20-after", step_s20_after),
 ]
 
 
@@ -681,10 +954,15 @@ def record(base, raw_dir):
         raw = [{"name": n, **ex} for n, ex in named]
         (raw_dir / f"{step}.raw.json").write_text(json.dumps(raw, indent=2, sort_keys=True) + "\n")
         ids = normalise.Ids(rules["uuid_token"])
+        meta = FIXTURE_META.get(step, {})
+        # an id an earlier fixture made, which this one's requests name, is numbered first, in the order the fixture lists
+        for name in meta.get("uses", []):
+            ids.preseed(CTX[name])
         fixture = {
             "format_version": 1,
             "recorded_from": PIN,
             "row": step,
+            **meta,
             "exchanges": [normalise.exchange(rules, ids, ex) for ex in raw],
         }
         (out_dir / f"{step}.json").write_text(json.dumps(fixture, indent=2, sort_keys=True) + "\n")
