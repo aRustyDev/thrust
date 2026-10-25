@@ -1,0 +1,168 @@
+{
+  "exchanges": [
+    {
+      "name": "no session",
+      "request": {
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/project-members/me/"
+      },
+      "response": {
+        "body": {
+          "detail": "Authentication credentials were not provided."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 401
+      }
+    },
+    {
+      "name": "the creator of the project",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/project-members/me/"
+      },
+      "response": {
+        "body": {
+          "comment": null,
+          "created_at": "<ts>",
+          "created_by": "<uuid:2>",
+          "default_props": {
+            "display_filters": {
+              "calendar_date_range": "",
+              "group_by": null,
+              "layout": "list",
+              "order_by": "-created_at",
+              "show_empty_groups": true,
+              "sub_issue": true,
+              "type": null
+            },
+            "filters": {
+              "assignees": null,
+              "created_by": null,
+              "labels": null,
+              "priority": null,
+              "start_date": null,
+              "state": null,
+              "state_group": null,
+              "subscriber": null,
+              "target_date": null
+            }
+          },
+          "deleted_at": null,
+          "id": "<uuid:3>",
+          "is_active": true,
+          "member": {
+            "avatar": "",
+            "avatar_url": null,
+            "display_name": "Journey T.",
+            "first_name": "Journey",
+            "id": "<uuid:2>",
+            "is_bot": false,
+            "last_name": "Tester"
+          },
+          "preferences": {
+            "navigation": {
+              "default_tab": "work_items",
+              "hide_in_more_menu": []
+            },
+            "pages": {
+              "block_display": true
+            }
+          },
+          "project": {
+            "cover_image": null,
+            "cover_image_url": null,
+            "description": "",
+            "id": "<uuid:1>",
+            "identifier": "JRN",
+            "logo_props": {
+              "emoji": {
+                "value": "128512"
+              },
+              "in_use": "emoji"
+            },
+            "name": "Journey Project"
+          },
+          "role": 20,
+          "sort_order": 65535.0,
+          "updated_at": "<ts>",
+          "updated_by": null,
+          "view_props": {
+            "display_filters": {
+              "calendar_date_range": "",
+              "group_by": null,
+              "layout": "list",
+              "order_by": "-created_at",
+              "show_empty_groups": true,
+              "sub_issue": true,
+              "type": null
+            },
+            "filters": {
+              "assignees": null,
+              "created_by": null,
+              "labels": null,
+              "priority": null,
+              "start_date": null,
+              "state": null,
+              "state_group": null,
+              "subscriber": null,
+              "target_date": null
+            }
+          },
+          "workspace": {
+            "id": "<uuid:4>",
+            "logo_url": null,
+            "name": "Journey Workspace",
+            "slug": "journey-ws"
+          }
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "not a member of the workspace",
+      "request": {
+        "as": "second@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/project-members/me/"
+      },
+      "response": {
+        "body": {
+          "error": "The required object does not exist."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 404
+      }
+    },
+    {
+      "name": "a project that does not exist",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:5>/project-members/me/"
+      },
+      "response": {
+        "body": {
+          "error": "The required object does not exist."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 404
+      }
+    }
+  ],
+  "format_version": 1,
+  "recorded_from": "ba85d4d3d3",
+  "row": "S36",
+  "uses": [
+    "project"
+  ]
+}

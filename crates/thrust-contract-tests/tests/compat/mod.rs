@@ -8,7 +8,7 @@
 use reqwest::StatusCode;
 use serde_json::{json, Value};
 use thrust_contract_tests::*;
-use thrust_contracts::{default_project_identifier, ProjectId, ProjectNetwork, Role, SeedFixture, SeedMembership, SeedProject, SeedProjectDetails, SeedWorkspace, WorkspaceId, WorkspaceSlug};
+use thrust_contracts::{default_project_identifier, ProjectId, ProjectNetwork, Role, SeedFixture, SeedMembership, SeedProject, SeedProjectDetails, SeedWorkspace, SeedWorkspaceRole, WorkspaceId, WorkspaceSlug};
 
 use super::t;
 
@@ -583,6 +583,146 @@ async fn compat_opening_a_workspace_reads_the_sidebar_the_home_page_and_the_list
         let r = t.http.get(t.url(&path(tail))).send().await.unwrap();
         assert_eq!(r.status(), 401, "no session on {tail}");
     }
+}
+
+/// S30, S32 and S34 to S46 for a person who has just made a workspace and a project in it. The project is theirs: they are its admin
+/// and its only member, it has the pin's five states and an intake state, and every read the app makes when it opens one answers
+/// 200 with what that is (the stubs, S42 to S46, with the empty list). Controls, each paired with the person it is not: a second
+/// account is refused every one of those reads with the body the pin's guard for it gives, nobody without a session is let in, a
+/// project that breaks a rule is refused with the pin's code and makes nothing, and a name or key that is taken is refused.
+#[tokio::test]
+async fn compat_a_project_is_made_by_its_creator_who_is_its_admin_and_the_app_reads_what_it_needs_of_it() {
+    let t = t();
+    let (_, token) = signed_up(&t).await;
+    let (_, other) = signed_up(&t).await;
+    let slug = new_slug();
+    assert_eq!(post_as(&t, &token, "/api/workspaces/", &json!({"name": "Projects", "slug": slug})).await.status(), 201);
+    let me = get(&t, &token, "/api/users/me/").await["id"].clone();
+    let projects = format!("/api/workspaces/{slug}/projects/");
+
+    let payload = json!({"name": "Journey Project", "identifier": "JRN", "network": 2, "description": "", "project_lead": null,
+        "logo_props": {"in_use": "emoji", "emoji": {"value": "128512"}}, "cover_image_url": "/cover-images/image_5.webp"});
+    let r = post_as(&t, &token, &projects, &payload).await;
+    assert_eq!(r.status(), 201);
+    let made: Value = r.json().await.unwrap();
+    assert_eq!(made.as_object().unwrap().len(), 44, "{made}");
+    assert_eq!((made["member_role"].clone(), made["members"].clone(), made["sort_order"].clone(), made["next_work_item_sequence"].clone()), (json!(20), json!([me]), json!(65535.0), json!(1)), "{made}");
+    let id = made["id"].as_str().unwrap().to_string();
+    let p = |tail: &str| format!("{projects}{id}/{tail}");
+
+    // what the app reads when it opens the project
+    assert_eq!(get(&t, &token, &p("")).await["identifier"], "JRN");
+    let row = get(&t, &token, &p("project-members/me/")).await;
+    assert_eq!((row["role"].clone(), row["member"]["id"].clone(), row["project"]["identifier"].clone(), row["workspace"]["slug"].clone()), (json!(20), me.clone(), json!("JRN"), json!(slug)), "{row}");
+    let props = get(&t, &token, &p("user-properties/")).await;
+    assert_eq!((props["user"].clone(), props["sort_order"].clone(), props["display_filters"]["layout"].clone()), (me.clone(), json!(65535.0), json!("list")), "{props}");
+    assert_eq!(get(&t, &token, &p("user-properties/")).await["id"], props["id"], "asking again made another row");
+    assert_eq!(get(&t, &token, &p("issue-labels/")).await, json!([]));
+    let members = get(&t, &token, &p("members/")).await;
+    assert_eq!((members.as_array().unwrap().len(), members[0]["member"].clone(), members[0]["role"].clone()), (1, me.clone(), json!(20)), "{members}");
+    let states = get(&t, &token, &p("states/")).await;
+    let names: Vec<&str> = states.as_array().unwrap().iter().map(|s| s["name"].as_str().unwrap()).collect();
+    assert_eq!(names, ["Backlog", "Todo", "In Progress", "Done", "Cancelled"], "{states}");
+    assert_eq!(get(&t, &token, &format!("/api/workspaces/{slug}/states/")).await.as_array().unwrap().len(), 5);
+    let triage = get(&t, &token, &p("intake-state/")).await;
+    assert_eq!((triage["group"].clone(), triage["name"].clone()), (json!("triage"), json!("Triage")), "{triage}");
+    for tail in ["estimates/", "cycles/", "modules/", "views/"] {
+        assert_eq!(get(&t, &token, &p(tail)).await, json!([]), "{tail}");
+    }
+    assert_eq!(get(&t, &token, &format!("/api/workspaces/{slug}/modules/")).await, json!([]));
+    let stats = get(&t, &token, &format!("/api/workspaces/{slug}/project-stats/")).await;
+    assert_eq!(stats, json!([{"id": id, "total_issues": 0, "completed_issues": 0, "total_members": 1, "total_cycles": 0, "total_modules": 0}]));
+    let listed = get(&t, &token, &projects).await;
+    assert_eq!((listed.as_array().unwrap().len(), listed[0]["member_role"].clone(), listed[0]["sort_order"].clone(), listed[0]["name"].clone()), (1, json!(20), json!(65535.0), json!("Journey Project")), "{listed}");
+
+    // changing it: the app sends the cover image after the upload, which changes nothing but who and when
+    let patch = |who: &str, body: Value| {
+        let (t, url) = (&t, t.url(&p("")));
+        let who = who.to_string();
+        async move { t.http.patch(url).bearer_auth(who).json(&body).send().await.unwrap() }
+    };
+    let r = patch(&token, json!({"cover_image_url": "/cover-images/image_5.webp"})).await;
+    assert_eq!(r.status(), 200);
+    let changed: Value = r.json().await.unwrap();
+    assert_eq!((changed["updated_by"].clone(), changed["name"].clone()), (me.clone(), json!("Journey Project")));
+    let r = patch(&token, json!({"name": "Renamed", "description": "d"})).await;
+    assert_eq!(r.json::<Value>().await.unwrap()["name"], "Renamed");
+
+    // refusals make nothing, and say why in the pin's words
+    for (what, body, want) in [
+        ("a name that is taken", json!({"name": "Renamed", "identifier": "NEW"}), json!({"name": ["PROJECT_NAME_ALREADY_EXIST"]})),
+        ("a key that is taken", json!({"name": "Another", "identifier": "JRN"}), json!({"identifier": ["PROJECT_IDENTIFIER_ALREADY_EXIST"]})),
+        ("no fields", json!({}), json!({"name": ["This field is required."], "identifier": ["This field is required."]})),
+        ("a forbidden character", json!({"name": "A.B", "identifier": "AB"}), json!({"name": ["PROJECT_NAME_CANNOT_CONTAIN_SPECIAL_CHARACTERS"]})),
+        ("a network that is not one of the two", json!({"name": "Net", "identifier": "NET", "network": 3}), json!({"network": ["\"3\" is not a valid choice."]})),
+    ] {
+        let r = post_as(&t, &token, &projects, &body).await;
+        assert_eq!(r.status(), 400, "{what}");
+        assert_eq!(r.json::<Value>().await.unwrap(), want, "{what}");
+    }
+    assert_eq!(get(&t, &token, &projects).await.as_array().unwrap().len(), 1, "a refused project was made");
+
+    // the second account: no member of the workspace, so each read is refused with its own guard's body, and nothing is changed
+    for (tail, class) in [("", false), ("user-properties/", false), ("members/", false), ("states/", false), ("intake-state/", false), ("estimates/", true), ("issue-labels/", true)] {
+        let r = t.http.get(t.url(&p(tail))).bearer_auth(&other).send().await.unwrap();
+        assert_eq!(r.status(), 403, "a stranger on {tail}");
+        let want = if class { json!({"detail": "You do not have permission to perform this action."}) } else { json!({"error": "You don't have the required permissions."}) };
+        assert_eq!(r.json::<Value>().await.unwrap(), want, "a stranger on {tail}");
+    }
+    let r = t.http.get(t.url(&p("project-members/me/"))).bearer_auth(&other).send().await.unwrap();
+    assert_eq!((r.status().as_u16(), r.json::<Value>().await.unwrap()), (404, json!({"error": "The required object does not exist."})));
+    let r = patch(&other, json!({"name": "Mine now"})).await;
+    assert_eq!((r.status().as_u16(), r.json::<Value>().await.unwrap()), (403, json!({"error": "You don't have the required permissions."})));
+    assert_eq!(get(&t, &token, &p("")).await["name"], "Renamed", "a refused change changed the project");
+    let r = t.http.get(t.url(&p(""))).send().await.unwrap();
+    assert_eq!(r.status(), 401);
+}
+
+/// S34 and the guards of S30 over a seeded workspace, whose members are members of it, one of them a guest of the workspace. A member
+/// of the project opens it; a member of the workspace who is not in it is told it is public (409) or secret (403); a guest of the
+/// workspace may open a project they are in but not make one, and a member may make one and is then its admin.
+#[tokio::test]
+async fn compat_a_project_is_opened_by_its_members_and_refused_to_the_rest_of_the_workspace_in_the_pins_ways() {
+    let t = t();
+    let f = Fixture::seed(&t).await;
+    let secret = ProjectId(uuid::Uuid::new_v4());
+    let seeded = SeedFixture {
+        workspaces: vec![SeedWorkspace { id: f.ws_a, slug: WorkspaceSlug::new(&f.a.slug) }],
+        workspace_roles: vec![SeedWorkspaceRole { workspace_id: f.ws_a, user_id: f.guest_a.id, role: Role::Guest }],
+        projects: vec![SeedProject { id: secret, workspace_id: f.ws_a, name: format!("Secret {}", secret.0.simple()) }],
+        project_details: vec![SeedProjectDetails { network: ProjectNetwork::Secret, ..SeedProjectDetails::of(secret) }],
+        memberships: vec![SeedMembership { project_id: secret, workspace_id: f.ws_a, user_id: f.member_a.id, role: Role::Member }],
+        ..SeedFixture::default()
+    };
+    assert_eq!(t.admin_post("/internal/seed", &serde_json::to_value(&seeded).unwrap()).await.status(), 204);
+    let open = |who: &User, project: ProjectId| {
+        let url = t.url(&format!("/api/workspaces/{}/projects/{}/", f.a.slug, project.0));
+        let token = who.token.clone();
+        let http = t.http.clone();
+        async move {
+            let r = http.get(url).bearer_auth(token).send().await.unwrap();
+            (r.status().as_u16(), r.json::<Value>().await.unwrap())
+        }
+    };
+    // a member of the project opens it (a guest of the workspace too), a member of the workspace who is not in it does not
+    for who in [&f.admin_a, &f.member_a, &f.guest_a] {
+        let (status, body) = open(who, f.a.project).await;
+        assert_eq!((status, body["id"].clone()), (200, json!(f.a.project.0)), "{body}");
+    }
+    assert_eq!(open(&f.outsider_a, f.a.project).await, (409, json!({"error": "You are not a member of this project"})));
+    assert_eq!(open(&f.outsider_a, secret).await, (403, json!({"error": "You do not have permission"})));
+    assert_eq!(open(&f.member_a, secret).await.0, 200);
+    assert_eq!(open(&f.admin_a, secret).await, (403, json!({"error": "You do not have permission"})), "an admin of the project A is not in the secret one");
+    assert_eq!(open(&f.member_a, ProjectId(uuid::Uuid::new_v4())).await, (404, json!({"error": "Project does not exist"})));
+    // the guest of the workspace may not make a project; a member may, and is its admin
+    let projects = format!("/api/workspaces/{}/projects/", f.a.slug);
+    let r = post_as(&t, &f.guest_a.token, &projects, &json!({"name": format!("G {}", secret.0.simple()), "identifier": "GST"})).await;
+    assert_eq!(r.status(), 403);
+    assert_eq!(r.json::<Value>().await.unwrap(), json!({"error": "You don't have the required permissions."}));
+    let r = post_as(&t, &f.member_a.token, &projects, &json!({"name": format!("M {}", secret.0.simple()), "identifier": format!("M{}", &secret.0.simple().to_string()[..8])})).await;
+    assert_eq!(r.status(), 201);
+    let made: Value = r.json().await.unwrap();
+    assert_eq!((made["member_role"].clone(), made["members"].clone()), (json!(20), json!([f.member_a.id.0])), "{made}");
 }
 
 /// S17 for each way of being in a workspace. A workspace admin (the person who made it) lists every project, a secret one they

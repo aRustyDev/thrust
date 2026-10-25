@@ -1,0 +1,75 @@
+{
+  "exchanges": [
+    {
+      "name": "no session",
+      "request": {
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/cycles/"
+      },
+      "response": {
+        "body": {
+          "detail": "Authentication credentials were not provided."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 401
+      }
+    },
+    {
+      "name": "the creator of the project",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/cycles/"
+      },
+      "response": {
+        "body": [],
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "not a member of the workspace",
+      "request": {
+        "as": "second@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/cycles/"
+      },
+      "response": {
+        "body": {
+          "error": "You don't have the required permissions."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 403
+      }
+    },
+    {
+      "name": "a project that does not exist",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:2>/cycles/"
+      },
+      "response": {
+        "body": {
+          "error": "You don't have the required permissions."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 403
+      }
+    }
+  ],
+  "format_version": 1,
+  "recorded_from": "ba85d4d3d3",
+  "row": "S43",
+  "uses": [
+    "project"
+  ]
+}

@@ -5,3 +5,5 @@
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
 cc fa583e6086ec2dd2adba0a261e3fef904632f5a103d2aff45ab8eb979210e943 # shrinks to [Tx { steps: [Create { proj: A, ext: None }], end: Rollback }, Tx { steps: [Create { proj: A, ext: None }], end: Commit }]
+cc 8f63de163a451b62044e2d1ba2a663be544dde1b5f39ecff80d334f95a182430 # shrinks to [ProjectLife { lead: true, second: false }]
+cc db64338f9c209a20a211fd2e1f3367cd8bdafb16a0953288786e999fcfd9e17d # shrinks to [ProjectProps { proj: 2, user: MemberA, salt: 0 }, ProjectReads { proj: 2, user: MemberA }]

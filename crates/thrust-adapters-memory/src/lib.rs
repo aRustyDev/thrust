@@ -33,8 +33,11 @@ struct DbState {
     projects: HashMap<ProjectId, WorkspaceId>,
     /// The `projects` table's other columns (migration 0010); `projects` above is its id-to-workspace index.
     project_rows: HashMap<ProjectId, ProjectRow>,
-    /// `project_user_properties` (migration 0011): where a member's project list puts a project.
-    project_sort_orders: HashMap<(ProjectId, UserId), f64>,
+    /// `project_user_properties` (migrations 0010 and 0012): a member's own settings for a project, and where their list puts it.
+    project_user_props: HashMap<(ProjectId, UserId), ProjectUserProperties>,
+    /// `states` and `labels` (migration 0012), in the order they were written.
+    states: Vec<StateRow>,
+    labels: Vec<LabelRow>,
     /// `workspace_user_preferences`, `workspace_home_preferences` and `workspace_user_properties` (migration 0011): rows
     /// a member's first visit to a workspace makes.
     sidebar_preferences: HashMap<(WorkspaceId, UserId, String), (bool, f64)>,
@@ -42,7 +45,7 @@ struct DbState {
     user_properties: HashMap<(WorkspaceId, UserId), UserProperties>,
     /// The member row keeps the workspace it was written with; `membership` counts it only when that
     /// is the project's workspace (the Postgres join on `m.workspace_id`).
-    memberships: HashMap<(ProjectId, UserId), (WorkspaceId, Role)>,
+    memberships: HashMap<(ProjectId, UserId), ProjectMemberRow>,
     /// (workspace, project) -> (last sequence_id handed out, last sort_order handed out). Never
     /// decrements.
     counters: HashMap<(WorkspaceId, ProjectId), (i64, i64)>,
@@ -63,6 +66,19 @@ struct ApiKeyRow {
     key: NewApiKey,
     revoked_at: Option<Timestamp>,
     last_used_at: Option<Timestamp>,
+}
+
+/// What a member list says about a person: their email and, when they have a profile, its names and avatar (empty when not).
+fn member_user(s: &DbState, user: UserId) -> MemberUser {
+    let profile = s.profiles.get(&user);
+    MemberUser {
+        id: user,
+        email: s.users.get(&user).and_then(|u| u.email.clone()),
+        first_name: profile.map(|p| p.first_name.clone()).unwrap_or_default(),
+        last_name: profile.map(|p| p.last_name.clone()).unwrap_or_default(),
+        display_name: profile.map(|p| p.display_name.clone()).unwrap_or_default(),
+        avatar: profile.map(|p| p.avatar.clone()).unwrap_or_default(),
+    }
 }
 
 impl DbState {
@@ -127,7 +143,7 @@ impl Database for MemoryDatabase {
             return Ok(Membership::NoSuchProject);
         };
         Ok(match s.memberships.get(&(project, user)) {
-            Some((m_ws, role)) if *m_ws == ws => Membership::Member { workspace_id: ws, role: *role },
+            Some(m) if m.workspace_id == ws => Membership::Member { workspace_id: ws, role: m.role },
             _ => Membership::NotAMember,
         })
     }
@@ -240,6 +256,10 @@ impl Database for MemoryDatabase {
             .map(|m| WorkspaceAccess { workspace_id: ws, role: m.role }))
     }
 
+    async fn is_workspace_member(&self, scope: &WorkspaceScope, user: UserId) -> Result<bool, DbError> {
+        Ok(self.state.lock().unwrap().workspace_members.get(&(scope.workspace_id(), user)).is_some_and(|m| m.is_active))
+    }
+
     async fn set_workspace_member_active(
         &self,
         _sys: &SystemScope,
@@ -267,18 +287,7 @@ impl Database for MemoryDatabase {
             .workspace_members
             .values()
             .filter(|m| m.workspace_id == scope.workspace_id())
-            .map(|m| {
-                let profile = s.profiles.get(&m.user_id);
-                let user = MemberUser {
-                    id: m.user_id,
-                    email: s.users.get(&m.user_id).and_then(|u| u.email.clone()),
-                    first_name: profile.map(|p| p.first_name.clone()).unwrap_or_default(),
-                    last_name: profile.map(|p| p.last_name.clone()).unwrap_or_default(),
-                    display_name: profile.map(|p| p.display_name.clone()).unwrap_or_default(),
-                    avatar: profile.map(|p| p.avatar.clone()).unwrap_or_default(),
-                };
-                MemberWithUser { member: m.clone(), user }
-            })
+            .map(|m| MemberWithUser { member: m.clone(), user: member_user(&s, m.user_id) })
             .collect();
         out.sort_by(|a, b| (b.member.created_at, b.member.id).cmp(&(a.member.created_at, a.member.id)));
         Ok(out)
@@ -290,10 +299,10 @@ impl Database for MemoryDatabase {
             .memberships
             .iter()
             // the project must really be in the workspace the member row names (the join on `projects` in Postgres)
-            .filter(|((project, user), (ws, _))| {
-                *user == scope.user_id() && *ws == scope.workspace_id() && s.projects.get(project) == Some(ws)
+            .filter(|((project, user), m)| {
+                *user == scope.user_id() && m.workspace_id == scope.workspace_id() && s.projects.get(project) == Some(&m.workspace_id)
             })
-            .map(|((project, _), (_, role))| (*project, *role))
+            .map(|((project, _), m)| (*project, m.role))
             .collect();
         out.sort_by_key(|(p, _)| p.0);
         Ok(out)
@@ -309,8 +318,8 @@ impl Database for MemoryDatabase {
             .map(|p| ProjectListing {
                 project: p.clone(),
                 // the member row must name the project's own workspace (the join on `m.workspace_id` in Postgres)
-                role: s.memberships.get(&(p.id, user)).filter(|(row_ws, _)| *row_ws == ws).map(|(_, role)| *role),
-                sort_order: s.project_sort_orders.get(&(p.id, user)).copied(),
+                role: s.memberships.get(&(p.id, user)).filter(|m| m.workspace_id == ws).map(|m| m.role),
+                sort_order: s.project_user_props.get(&(p.id, user)).map(|up| up.sort_order),
             })
             .filter(|l| match scope.role() {
                 Role::Admin => true,
@@ -359,6 +368,224 @@ impl Database for MemoryDatabase {
         let mut s = self.state.lock().unwrap();
         let row = s.user_properties.entry((scope.workspace_id(), scope.user_id())).or_insert_with(|| new.clone());
         Ok(row.clone())
+    }
+
+    async fn insert_project(&self, scope: &WorkspaceScope, p: &NewProject) -> Result<(), DbError> {
+        let ws = scope.workspace_id();
+        let mut s = self.state.lock().unwrap();
+        let row = &p.project;
+        if row.workspace_id != ws {
+            return Err(DbError::Backend("project is not in this workspace".into()));
+        }
+        // the primary key and the two unique indexes (in the order Postgres creates them), then the foreign keys of the users the
+        // rows name, then the states' own unique indexes: all of it checked before anything is written, as a transaction is
+        if s.projects.contains_key(&row.id) {
+            return Err(DbError::Conflict("projects_pkey".into()));
+        }
+        if s.project_rows.values().any(|o| o.workspace_id == ws && o.identifier == row.identifier) {
+            return Err(DbError::Conflict("projects_workspace_identifier_key".into()));
+        }
+        if s.project_rows.values().any(|o| o.workspace_id == ws && o.name == row.name) {
+            return Err(DbError::Conflict("projects_workspace_name_key".into()));
+        }
+        for (column, user) in [("created_by", row.created_by), ("updated_by", row.updated_by), ("project_lead", row.project_lead), ("default_assignee", row.default_assignee)] {
+            if user.is_some_and(|u| !s.users.contains_key(&u)) {
+                return Err(DbError::Backend(format!("projects_{column}_fkey")));
+            }
+        }
+        if p.members.iter().any(|m| !s.users.contains_key(&m.member.user_id)) {
+            return Err(DbError::Backend("project_user_properties_user_id_fkey".into()));
+        }
+        // a project member is a member of the workspace the member row names (migration 0003: the row must exist, active or not)
+        if p.members.iter().any(|m| !s.workspace_members.contains_key(&(m.member.workspace_id, m.member.user_id))) {
+            return Err(DbError::Backend("project_members_workspace_member_fkey".into()));
+        }
+        let mut names = HashSet::new();
+        if !p.states.iter().all(|st| names.insert(st.name.as_str())) {
+            return Err(DbError::Conflict("states_project_id_name_key".into()));
+        }
+        if p.states.iter().filter(|st| st.is_default).count() > 1 {
+            return Err(DbError::Conflict("states_one_default_per_project".into()));
+        }
+        s.projects.insert(row.id, ws);
+        s.project_rows.insert(row.id, row.clone());
+        for m in &p.members {
+            // the place the pin gives a project its member has just joined: 10000 less than the lowest they hold in the workspace
+            let lowest = s
+                .project_user_props
+                .values()
+                .filter(|up| up.workspace_id == ws && up.user_id == m.member.user_id)
+                .map(|up| up.sort_order)
+                .reduce(f64::min);
+            let mut props = m.properties.clone();
+            props.sort_order = lowest.map_or(65535.0, |l| l - 10000.0);
+            s.memberships.insert((row.id, m.member.user_id), m.member.clone());
+            s.project_user_props.insert((row.id, m.member.user_id), props);
+        }
+        s.states.extend(p.states.iter().cloned());
+        Ok(())
+    }
+
+    async fn project_clashes(
+        &self,
+        scope: &WorkspaceScope,
+        name: Option<&str>,
+        identifier: Option<&str>,
+        except: Option<ProjectId>,
+    ) -> Result<ProjectClashes, DbError> {
+        let s = self.state.lock().unwrap();
+        let others = || s.project_rows.values().filter(|r| r.workspace_id == scope.workspace_id() && Some(r.id) != except);
+        Ok(ProjectClashes {
+            name: name.is_some_and(|n| others().any(|r| r.name == n)),
+            identifier: identifier.is_some_and(|i| others().any(|r| r.identifier == i)),
+        })
+    }
+
+    async fn update_project(&self, scope: &WorkspaceScope, row: &ProjectRow) -> Result<bool, DbError> {
+        let ws = scope.workspace_id();
+        let mut s = self.state.lock().unwrap();
+        let Some(current) = s.project_rows.get(&row.id).filter(|r| r.workspace_id == ws).cloned() else { return Ok(false) };
+        let others = || s.project_rows.values().filter(|r| r.workspace_id == ws && r.id != row.id);
+        if others().any(|r| r.identifier == row.identifier) {
+            return Err(DbError::Conflict("projects_workspace_identifier_key".into()));
+        }
+        if others().any(|r| r.name == row.name) {
+            return Err(DbError::Conflict("projects_workspace_name_key".into()));
+        }
+        for (column, user) in [("updated_by", row.updated_by), ("project_lead", row.project_lead), ("default_assignee", row.default_assignee)] {
+            if user.is_some_and(|u| !s.users.contains_key(&u)) {
+                return Err(DbError::Backend(format!("projects_{column}_fkey")));
+            }
+        }
+        let mut new = row.clone();
+        new.workspace_id = current.workspace_id;
+        new.created_at = current.created_at;
+        new.created_by = current.created_by;
+        s.project_rows.insert(row.id, new);
+        Ok(true)
+    }
+
+    async fn project_detail(&self, scope: &WorkspaceScope, id: ProjectId) -> Result<Option<ProjectDetail>, DbError> {
+        let (ws, user) = (scope.workspace_id(), scope.user_id());
+        let s = self.state.lock().unwrap();
+        let Some(project) = s.project_rows.get(&id).filter(|r| r.workspace_id == ws).cloned() else { return Ok(None) };
+        let mut rows: Vec<&ProjectMemberRow> = s.memberships.values().filter(|m| m.project_id == id && m.workspace_id == ws).collect();
+        rows.sort_by(|a, b| (b.created_at, b.id).cmp(&(a.created_at, a.id)));
+        Ok(Some(ProjectDetail {
+            listing: ProjectListing {
+                project,
+                role: s.memberships.get(&(id, user)).filter(|m| m.workspace_id == ws).map(|m| m.role),
+                sort_order: s.project_user_props.get(&(id, user)).map(|up| up.sort_order),
+            },
+            members: rows.iter().map(|m| m.user_id).collect(),
+            next_sequence: s.counters.get(&(ws, id)).map_or(0, |c| c.0) + 1,
+        }))
+    }
+
+    async fn project_member(&self, scope: &WorkspaceScope, project: ProjectId) -> Result<Option<ProjectMemberWithUser>, DbError> {
+        let (ws, user) = (scope.workspace_id(), scope.user_id());
+        let s = self.state.lock().unwrap();
+        let (Some(row), Some(workspace)) = (s.project_rows.get(&project).filter(|r| r.workspace_id == ws), s.workspace_rows.get(&ws)) else {
+            return Ok(None);
+        };
+        Ok(s.memberships.get(&(project, user)).filter(|m| m.workspace_id == ws).map(|m| ProjectMemberWithUser {
+            member: m.clone(),
+            user: member_user(&s, user),
+            project: row.clone(),
+            workspace: workspace.clone(),
+        }))
+    }
+
+    async fn project_members(&self, scope: &Scope) -> Result<Vec<ProjectMemberRow>, DbError> {
+        let (ws, project) = (scope.workspace_id(), scope.project_id());
+        let s = self.state.lock().unwrap();
+        let mut out: Vec<ProjectMemberRow> = s
+            .memberships
+            .values()
+            .filter(|m| m.project_id == project && m.workspace_id == ws && s.projects.get(&project) == Some(&ws))
+            .filter(|m| s.workspace_members.get(&(ws, m.user_id)).is_some_and(|w| w.is_active))
+            .cloned()
+            .collect();
+        out.sort_by(|a, b| (b.created_at, b.id).cmp(&(a.created_at, a.id)));
+        Ok(out)
+    }
+
+    async fn ensure_project_user_properties(&self, scope: &Scope, new: &ProjectUserProperties) -> Result<ProjectUserProperties, DbError> {
+        let (ws, project, user) = (scope.workspace_id(), scope.project_id(), scope.user_id());
+        let mut s = self.state.lock().unwrap();
+        if s.projects.get(&project) != Some(&ws) {
+            return Err(DbError::Backend("project is not in this workspace".into()));
+        }
+        let row = s.project_user_props.entry((project, user)).or_insert_with(|| ProjectUserProperties {
+            project_id: project,
+            workspace_id: ws,
+            user_id: user,
+            ..new.clone()
+        });
+        Ok(row.clone())
+    }
+
+    async fn project_labels(&self, scope: &Scope) -> Result<Vec<LabelRow>, DbError> {
+        let (ws, project) = (scope.workspace_id(), scope.project_id());
+        let s = self.state.lock().unwrap();
+        let mut out: Vec<LabelRow> = s.labels.iter().filter(|l| l.project_id == project && l.workspace_id == ws).cloned().collect();
+        out.sort_by(|a, b| a.sort_order.total_cmp(&b.sort_order).then(a.id.cmp(&b.id)));
+        Ok(out)
+    }
+
+    async fn project_states(&self, scope: &Scope) -> Result<Vec<StateRow>, DbError> {
+        let (ws, project) = (scope.workspace_id(), scope.project_id());
+        let s = self.state.lock().unwrap();
+        let mut out: Vec<StateRow> =
+            s.states.iter().filter(|st| st.project_id == project && st.workspace_id == ws && st.group != StateGroup::Triage).cloned().collect();
+        out.sort_by(|a, b| a.sequence.total_cmp(&b.sequence).then(a.id.cmp(&b.id)));
+        Ok(out)
+    }
+
+    async fn workspace_states(&self, scope: &WorkspaceScope) -> Result<Vec<StateRow>, DbError> {
+        let (ws, user) = (scope.workspace_id(), scope.user_id());
+        let s = self.state.lock().unwrap();
+        let mut out: Vec<StateRow> = s
+            .states
+            .iter()
+            .filter(|st| st.workspace_id == ws && st.group != StateGroup::Triage)
+            // a project of this workspace that is not archived, and that the caller is in (their row names the project's workspace)
+            .filter(|st| s.project_rows.get(&st.project_id).is_some_and(|p| p.workspace_id == ws && p.archived_at.is_none()))
+            .filter(|st| s.memberships.get(&(st.project_id, user)).is_some_and(|m| m.workspace_id == ws))
+            .cloned()
+            .collect();
+        out.sort_by(|a, b| a.sequence.total_cmp(&b.sequence).then(a.project_id.0.cmp(&b.project_id.0)).then(a.id.cmp(&b.id)));
+        Ok(out)
+    }
+
+    async fn triage_state(&self, scope: &Scope) -> Result<Option<StateRow>, DbError> {
+        let (ws, project) = (scope.workspace_id(), scope.project_id());
+        let s = self.state.lock().unwrap();
+        let mut found: Vec<&StateRow> =
+            s.states.iter().filter(|st| st.project_id == project && st.workspace_id == ws && st.group == StateGroup::Triage).collect();
+        found.sort_by(|a, b| a.sequence.total_cmp(&b.sequence).then(a.id.cmp(&b.id)));
+        Ok(found.first().map(|st| (*st).clone()))
+    }
+
+    async fn project_stats(&self, scope: &WorkspaceScope, only: Option<&[ProjectId]>) -> Result<Vec<ProjectStat>, DbError> {
+        let ws = scope.workspace_id();
+        let s = self.state.lock().unwrap();
+        let mut projects: Vec<&ProjectRow> =
+            s.project_rows.values().filter(|p| p.workspace_id == ws && only.map_or(true, |ids| ids.contains(&p.id))).collect();
+        projects.sort_by(|a, b| (b.created_at, b.id).cmp(&(a.created_at, a.id)));
+        Ok(projects
+            .iter()
+            .map(|p| ProjectStat {
+                id: p.id,
+                // the work items of an archived project do not count
+                total_issues: if p.archived_at.is_some() {
+                    0
+                } else {
+                    s.work_items.iter().filter(|w| w.workspace_id == ws && w.project_id == p.id && is_visible(w)).count() as i64
+                },
+                total_members: s.memberships.values().filter(|m| m.project_id == p.id && m.workspace_id == ws).count() as i64,
+            })
+            .collect())
     }
 
     async fn user_by_id(&self, id: UserId) -> Result<Option<UserRecord>, DbError> {
@@ -788,54 +1015,111 @@ impl Database for MemoryDatabase {
                     updated_at: epoch,
                 });
         }
+        // a seeded membership is an active `member` with no company role; one that exists is left as it is
+        let seeded_member = |workspace_id: WorkspaceId, user_id: UserId| WorkspaceMember {
+            id: Uuid::from_u128(workspace_id.0.as_u128() ^ user_id.0.as_u128().rotate_left(64)),
+            workspace_id,
+            user_id,
+            role: Role::Member,
+            company_role: None,
+            is_active: true,
+            props: serde_json::json!({}),
+            created_at: epoch,
+            updated_at: epoch,
+        };
         for m in &f.workspace_members {
-            // a seeded membership is an active `member` with no company role; one that exists is left as it is
-            s.workspace_members.entry((m.workspace_id, m.user_id)).or_insert_with(|| WorkspaceMember {
-                id: Uuid::from_u128(m.workspace_id.0.as_u128() ^ m.user_id.0.as_u128().rotate_left(64)),
-                workspace_id: m.workspace_id,
-                user_id: m.user_id,
-                role: Role::Member,
-                company_role: None,
-                is_active: true,
-                props: serde_json::json!({}),
-                created_at: epoch,
-                updated_at: epoch,
-            });
+            s.workspace_members.entry((m.workspace_id, m.user_id)).or_insert_with(|| seeded_member(m.workspace_id, m.user_id));
+        }
+        // the role of a member the seed names, made when the seed did not have them
+        for r in &f.workspace_roles {
+            s.workspace_members.entry((r.workspace_id, r.user_id)).or_insert_with(|| seeded_member(r.workspace_id, r.user_id)).role = r.role;
         }
         for p in &f.projects {
             s.projects.insert(p.id, p.workspace_id);
             // a project with no `project_details` entry is what a project made with no options is
             let details = f.project_details.iter().find(|d| d.project_id == p.id).cloned().unwrap_or_else(|| SeedProjectDetails::of(p.id));
             let created_at = details.created_at.unwrap_or(epoch);
-            s.project_rows.insert(
-                p.id,
-                ProjectRow {
-                    id: p.id,
-                    workspace_id: p.workspace_id,
-                    name: p.name.clone(),
-                    identifier: details.identifier.unwrap_or_else(|| default_project_identifier(p.id)),
-                    network: details.network,
-                    logo_props: serde_json::json!({}),
-                    archived_at: details.archived.then_some(created_at),
-                    cycle_view: false,
-                    issue_views_view: false,
-                    module_view: false,
-                    page_view: true,
-                    intake_view: false,
-                    guest_view_all_features: false,
-                    project_lead: details.project_lead,
-                    created_by: details.created_by,
-                    updated_by: None,
-                    created_at,
-                    updated_at: created_at,
+            let mut row = ProjectRow::bare(p.id, p.workspace_id, p.name.clone(), created_at);
+            row.identifier = details.identifier.unwrap_or_else(|| default_project_identifier(p.id));
+            row.network = details.network;
+            row.archived_at = details.archived.then_some(created_at);
+            row.project_lead = details.project_lead;
+            row.created_by = details.created_by;
+            s.project_rows.insert(p.id, row);
+        }
+        for m in &f.memberships {
+            // a seeded member row has an id made from the project and the user, the settings the pin starts with unset
+            // (`{}`), and the epoch for its time
+            s.memberships.insert(
+                (m.project_id, m.user_id),
+                ProjectMemberRow {
+                    id: Uuid::from_u128(m.project_id.0.as_u128() ^ m.user_id.0.as_u128().rotate_left(64)),
+                    project_id: m.project_id,
+                    workspace_id: m.workspace_id,
+                    user_id: m.user_id,
+                    role: m.role,
+                    comment: None,
+                    view_props: serde_json::json!({}),
+                    default_props: serde_json::json!({}),
+                    preferences: serde_json::json!({}),
+                    sort_order: 65535.0,
+                    created_by: None,
+                    created_at: epoch,
+                    updated_at: epoch,
                 },
             );
         }
-        for m in &f.memberships {
-            s.memberships.insert((m.project_id, m.user_id), (m.workspace_id, m.role));
-        }
         for o in &f.project_sort_orders {
-            s.project_sort_orders.insert((o.project_id, o.user_id), o.sort_order);
+            // the settings row names the project's workspace; one for a project that is not seeded is the test's bug
+            let workspace_id = s.projects.get(&o.project_id).copied().ok_or_else(|| DbError::Backend("project_user_properties_project_id_fkey".into()))?;
+            s.project_user_props.insert(
+                (o.project_id, o.user_id),
+                ProjectUserProperties {
+                    id: Uuid::from_u128(o.project_id.0.as_u128().rotate_left(32) ^ o.user_id.0.as_u128()),
+                    project_id: o.project_id,
+                    workspace_id,
+                    user_id: o.user_id,
+                    filters: serde_json::json!({}),
+                    display_filters: serde_json::json!({}),
+                    display_properties: serde_json::json!({}),
+                    rich_filters: serde_json::json!({}),
+                    preferences: serde_json::json!({}),
+                    sort_order: o.sort_order,
+                    created_at: epoch,
+                    updated_at: epoch,
+                },
+            );
+        }
+        for st in &f.states {
+            s.states.push(StateRow {
+                id: st.id,
+                workspace_id: st.workspace_id,
+                project_id: st.project_id,
+                name: st.name.clone(),
+                description: String::new(),
+                color: st.color.clone(),
+                sequence: st.sequence,
+                group: st.group,
+                is_default: st.is_default,
+                created_by: None,
+                created_at: epoch,
+                updated_at: epoch,
+            });
+        }
+        for l in &f.labels {
+            s.labels.push(LabelRow {
+                id: l.id,
+                workspace_id: l.workspace_id,
+                project_id: l.project_id,
+                parent_id: l.parent_id,
+                name: l.name.clone(),
+                description: String::new(),
+                color: l.color.clone(),
+                sort_order: l.sort_order,
+                created_by: None,
+                created_at: epoch,
+                updated_at: epoch,
+            });
         }
         Ok(())
     }

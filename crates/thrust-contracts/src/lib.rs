@@ -105,6 +105,45 @@ impl ProjectNetwork {
     }
 }
 
+/// What kind of state a work item is in (Plane's `StateGroup`). A project's states each belong to one; `Triage` is the one that
+/// intake uses, and the lists of a project's states leave it out.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StateGroup {
+    Backlog,
+    Unstarted,
+    Started,
+    Completed,
+    Cancelled,
+    Triage,
+}
+
+impl StateGroup {
+    pub const ALL: [StateGroup; 6] = [
+        StateGroup::Backlog,
+        StateGroup::Unstarted,
+        StateGroup::Started,
+        StateGroup::Completed,
+        StateGroup::Cancelled,
+        StateGroup::Triage,
+    ];
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            StateGroup::Backlog => "backlog",
+            StateGroup::Unstarted => "unstarted",
+            StateGroup::Started => "started",
+            StateGroup::Completed => "completed",
+            StateGroup::Cancelled => "cancelled",
+            StateGroup::Triage => "triage",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<StateGroup> {
+        StateGroup::ALL.into_iter().find(|g| g.as_str() == s)
+    }
+}
+
 /// The workspace segment of a route (`/workspaces/{slug}/...`). Unvalidated on purpose: a slug that
 /// names no workspace is a 404 from `authorize`, never a parse error.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
@@ -230,6 +269,9 @@ pub struct SeedFixture {
     /// Workspace membership. A project member must also be a member of the project's workspace.
     #[serde(default)]
     pub workspace_members: Vec<SeedWorkspaceMember>,
+    /// The roles of some workspace members (issue #44): a seeded member is a `member` unless one of these says otherwise.
+    #[serde(default)]
+    pub workspace_roles: Vec<SeedWorkspaceRole>,
     pub projects: Vec<SeedProject>,
     /// What some of the `projects` have beyond their name (issue #44): identifier, network, archived, lead, creator, time.
     #[serde(default)]
@@ -238,6 +280,11 @@ pub struct SeedFixture {
     /// Where members' project lists put the `projects`: the `project_user_properties` rows.
     #[serde(default)]
     pub project_sort_orders: Vec<SeedProjectSortOrder>,
+    /// States and labels of the `projects` (issue #44, the project stage).
+    #[serde(default)]
+    pub states: Vec<SeedState>,
+    #[serde(default)]
+    pub labels: Vec<SeedLabel>,
     pub sessions: Vec<SeedSession>,
     /// Users with an email and optionally a password. The password is hashed by the core before the database sees it.
     #[serde(default)]
@@ -303,6 +350,15 @@ pub struct SeedProject {
     pub name: String,
 }
 
+/// The role a test gives a member of a workspace: a `workspace_members` entry makes a member with the role `member`, and this sets
+/// the role of that member, who is made when the seed does not have them.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SeedWorkspaceRole {
+    pub workspace_id: WorkspaceId,
+    pub user_id: UserId,
+    pub role: Role,
+}
+
 /// What a seeded project has beyond the id, workspace and name of its [`SeedProject`] (the fixture's `project_details`). A
 /// project with no entry has what a project made with no options has: the identifier [`default_project_identifier`] makes
 /// from its id, a public network, not archived, no lead and no creator, and the database's own time.
@@ -345,6 +401,34 @@ impl SeedProjectDetails {
 pub struct SeedProjectSortOrder {
     pub project_id: ProjectId,
     pub user_id: UserId,
+    pub sort_order: f64,
+}
+
+/// A state a test seeds in a project (`states`): everything but who made it and when, which a seeded state does not have.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SeedState {
+    pub id: Uuid,
+    pub project_id: ProjectId,
+    pub workspace_id: WorkspaceId,
+    pub name: String,
+    pub color: String,
+    pub sequence: f64,
+    pub group: StateGroup,
+    #[serde(default)]
+    pub is_default: bool,
+}
+
+/// A label a test seeds in a project (`labels`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SeedLabel {
+    pub id: Uuid,
+    pub project_id: ProjectId,
+    pub workspace_id: WorkspaceId,
+    pub name: String,
+    #[serde(default)]
+    pub color: String,
+    #[serde(default)]
+    pub parent_id: Option<Uuid>,
     pub sort_order: f64,
 }
 

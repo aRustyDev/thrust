@@ -1,0 +1,2183 @@
+{
+  "exchanges": [
+    {
+      "name": "no session",
+      "request": {
+        "body": {
+          "name": "x"
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/"
+      },
+      "response": {
+        "body": {
+          "detail": "Authentication credentials were not provided."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 401
+      }
+    },
+    {
+      "name": "not a member of the workspace",
+      "request": {
+        "as": "second@example.test",
+        "body": {
+          "name": "x"
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/"
+      },
+      "response": {
+        "body": {
+          "error": "You don't have the required permissions."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 403
+      }
+    },
+    {
+      "name": "the cover image the app sends after the upload",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "cover_image_url": "/cover-images/image_5.webp"
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/"
+      },
+      "response": {
+        "body": {
+          "anchor": null,
+          "archive_in": 0,
+          "archived_at": null,
+          "close_in": 0,
+          "cover_image": null,
+          "cover_image_asset": null,
+          "cover_image_url": null,
+          "created_at": "<ts>",
+          "created_by": "<uuid:3>",
+          "cycle_view": false,
+          "default_assignee": null,
+          "default_state": null,
+          "deleted_at": null,
+          "description": "",
+          "description_html": null,
+          "description_text": null,
+          "emoji": null,
+          "estimate": null,
+          "external_id": null,
+          "external_source": null,
+          "guest_view_all_features": false,
+          "icon_prop": null,
+          "id": "<uuid:1>",
+          "identifier": "JRN",
+          "inbox_view": false,
+          "intake_view": false,
+          "is_favorite": false,
+          "is_issue_type_enabled": false,
+          "is_time_tracking_enabled": false,
+          "issue_views_view": false,
+          "logo_props": {
+            "emoji": {
+              "value": "128512"
+            },
+            "in_use": "emoji"
+          },
+          "member_role": 20,
+          "members": [
+            "<uuid:3>"
+          ],
+          "module_view": false,
+          "name": "Journey Project",
+          "network": 2,
+          "next_work_item_sequence": 1,
+          "page_view": true,
+          "project_lead": null,
+          "sort_order": 65535.0,
+          "timezone": "UTC",
+          "updated_at": "<ts>",
+          "updated_by": "<uuid:3>",
+          "workspace": "<uuid:4>"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "an empty patch",
+      "request": {
+        "as": "journey@example.test",
+        "body": {},
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/"
+      },
+      "response": {
+        "body": {
+          "anchor": null,
+          "archive_in": 0,
+          "archived_at": null,
+          "close_in": 0,
+          "cover_image": null,
+          "cover_image_asset": null,
+          "cover_image_url": null,
+          "created_at": "<ts>",
+          "created_by": "<uuid:3>",
+          "cycle_view": false,
+          "default_assignee": null,
+          "default_state": null,
+          "deleted_at": null,
+          "description": "",
+          "description_html": null,
+          "description_text": null,
+          "emoji": null,
+          "estimate": null,
+          "external_id": null,
+          "external_source": null,
+          "guest_view_all_features": false,
+          "icon_prop": null,
+          "id": "<uuid:1>",
+          "identifier": "JRN",
+          "inbox_view": false,
+          "intake_view": false,
+          "is_favorite": false,
+          "is_issue_type_enabled": false,
+          "is_time_tracking_enabled": false,
+          "issue_views_view": false,
+          "logo_props": {
+            "emoji": {
+              "value": "128512"
+            },
+            "in_use": "emoji"
+          },
+          "member_role": 20,
+          "members": [
+            "<uuid:3>"
+          ],
+          "module_view": false,
+          "name": "Journey Project",
+          "network": 2,
+          "next_work_item_sequence": 1,
+          "page_view": true,
+          "project_lead": null,
+          "sort_order": 65535.0,
+          "timezone": "UTC",
+          "updated_at": "<ts>",
+          "updated_by": "<uuid:3>",
+          "workspace": "<uuid:4>"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "a project that does not exist",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "name": "x"
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:5>/"
+      },
+      "response": {
+        "body": {
+          "error": "The required object does not exist."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 404
+      }
+    },
+    {
+      "name": "a new name",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "name": "Renamed Other"
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-two/projects/<uuid:2>/"
+      },
+      "response": {
+        "body": {
+          "anchor": null,
+          "archive_in": 0,
+          "archived_at": null,
+          "close_in": 0,
+          "cover_image": null,
+          "cover_image_asset": null,
+          "cover_image_url": null,
+          "created_at": "<ts>",
+          "created_by": "<uuid:3>",
+          "cycle_view": false,
+          "default_assignee": null,
+          "default_state": null,
+          "deleted_at": null,
+          "description": "",
+          "description_html": null,
+          "description_text": null,
+          "emoji": null,
+          "estimate": null,
+          "external_id": null,
+          "external_source": null,
+          "guest_view_all_features": false,
+          "icon_prop": null,
+          "id": "<uuid:2>",
+          "identifier": "OTH",
+          "inbox_view": false,
+          "intake_view": false,
+          "is_favorite": false,
+          "is_issue_type_enabled": false,
+          "is_time_tracking_enabled": false,
+          "issue_views_view": false,
+          "logo_props": {
+            "emoji": {
+              "value": "128512"
+            },
+            "in_use": "emoji"
+          },
+          "member_role": 20,
+          "members": [
+            "<uuid:3>"
+          ],
+          "module_view": false,
+          "name": "Renamed Other",
+          "network": 2,
+          "next_work_item_sequence": 1,
+          "page_view": true,
+          "project_lead": null,
+          "sort_order": 65535.0,
+          "timezone": "UTC",
+          "updated_at": "<ts>",
+          "updated_by": "<uuid:3>",
+          "workspace": "<uuid:6>"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "the name of another project",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "name": "Third Project"
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-two/projects/<uuid:2>/"
+      },
+      "response": {
+        "body": {
+          "name": [
+            "PROJECT_NAME_ALREADY_EXIST"
+          ]
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "its own name",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "name": "Renamed Other"
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-two/projects/<uuid:2>/"
+      },
+      "response": {
+        "body": {
+          "anchor": null,
+          "archive_in": 0,
+          "archived_at": null,
+          "close_in": 0,
+          "cover_image": null,
+          "cover_image_asset": null,
+          "cover_image_url": null,
+          "created_at": "<ts>",
+          "created_by": "<uuid:3>",
+          "cycle_view": false,
+          "default_assignee": null,
+          "default_state": null,
+          "deleted_at": null,
+          "description": "",
+          "description_html": null,
+          "description_text": null,
+          "emoji": null,
+          "estimate": null,
+          "external_id": null,
+          "external_source": null,
+          "guest_view_all_features": false,
+          "icon_prop": null,
+          "id": "<uuid:2>",
+          "identifier": "OTH",
+          "inbox_view": false,
+          "intake_view": false,
+          "is_favorite": false,
+          "is_issue_type_enabled": false,
+          "is_time_tracking_enabled": false,
+          "issue_views_view": false,
+          "logo_props": {
+            "emoji": {
+              "value": "128512"
+            },
+            "in_use": "emoji"
+          },
+          "member_role": 20,
+          "members": [
+            "<uuid:3>"
+          ],
+          "module_view": false,
+          "name": "Renamed Other",
+          "network": 2,
+          "next_work_item_sequence": 1,
+          "page_view": true,
+          "project_lead": null,
+          "sort_order": 65535.0,
+          "timezone": "UTC",
+          "updated_at": "<ts>",
+          "updated_by": "<uuid:3>",
+          "workspace": "<uuid:6>"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "the key of another project",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "identifier": "THR"
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-two/projects/<uuid:2>/"
+      },
+      "response": {
+        "body": {
+          "identifier": [
+            "PROJECT_IDENTIFIER_ALREADY_EXIST"
+          ]
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "a new key",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "identifier": "OTHER"
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-two/projects/<uuid:2>/"
+      },
+      "response": {
+        "body": {
+          "anchor": null,
+          "archive_in": 0,
+          "archived_at": null,
+          "close_in": 0,
+          "cover_image": null,
+          "cover_image_asset": null,
+          "cover_image_url": null,
+          "created_at": "<ts>",
+          "created_by": "<uuid:3>",
+          "cycle_view": false,
+          "default_assignee": null,
+          "default_state": null,
+          "deleted_at": null,
+          "description": "",
+          "description_html": null,
+          "description_text": null,
+          "emoji": null,
+          "estimate": null,
+          "external_id": null,
+          "external_source": null,
+          "guest_view_all_features": false,
+          "icon_prop": null,
+          "id": "<uuid:2>",
+          "identifier": "OTHER",
+          "inbox_view": false,
+          "intake_view": false,
+          "is_favorite": false,
+          "is_issue_type_enabled": false,
+          "is_time_tracking_enabled": false,
+          "issue_views_view": false,
+          "logo_props": {
+            "emoji": {
+              "value": "128512"
+            },
+            "in_use": "emoji"
+          },
+          "member_role": 20,
+          "members": [
+            "<uuid:3>"
+          ],
+          "module_view": false,
+          "name": "Renamed Other",
+          "network": 2,
+          "next_work_item_sequence": 1,
+          "page_view": true,
+          "project_lead": null,
+          "sort_order": 65535.0,
+          "timezone": "UTC",
+          "updated_at": "<ts>",
+          "updated_by": "<uuid:3>",
+          "workspace": "<uuid:6>"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "a name that is too long",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "name": "nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn"
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-two/projects/<uuid:2>/"
+      },
+      "response": {
+        "body": {
+          "name": [
+            "Ensure this field has no more than 255 characters."
+          ]
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "a forbidden character in the name",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "name": "A&B"
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-two/projects/<uuid:2>/"
+      },
+      "response": {
+        "body": {
+          "name": [
+            "PROJECT_NAME_CANNOT_CONTAIN_SPECIAL_CHARACTERS"
+          ]
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "a network that is not one of the two",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "network": 1
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-two/projects/<uuid:2>/"
+      },
+      "response": {
+        "body": {
+          "network": [
+            "\"1\" is not a valid choice."
+          ]
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "a secret network, a description, the views and a time zone",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "cycle_view": true,
+          "description": "Now secret",
+          "inbox_view": true,
+          "issue_views_view": true,
+          "logo_props": {
+            "icon": {
+              "color": "#fff",
+              "name": "Smile"
+            },
+            "in_use": "icon"
+          },
+          "module_view": true,
+          "network": 0,
+          "page_view": false,
+          "timezone": "Europe/Berlin"
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-two/projects/<uuid:2>/"
+      },
+      "response": {
+        "body": {
+          "anchor": null,
+          "archive_in": 0,
+          "archived_at": null,
+          "close_in": 0,
+          "cover_image": null,
+          "cover_image_asset": null,
+          "cover_image_url": null,
+          "created_at": "<ts>",
+          "created_by": "<uuid:3>",
+          "cycle_view": true,
+          "default_assignee": null,
+          "default_state": null,
+          "deleted_at": null,
+          "description": "Now secret",
+          "description_html": null,
+          "description_text": null,
+          "emoji": null,
+          "estimate": null,
+          "external_id": null,
+          "external_source": null,
+          "guest_view_all_features": false,
+          "icon_prop": null,
+          "id": "<uuid:2>",
+          "identifier": "OTHER",
+          "inbox_view": true,
+          "intake_view": true,
+          "is_favorite": false,
+          "is_issue_type_enabled": false,
+          "is_time_tracking_enabled": false,
+          "issue_views_view": true,
+          "logo_props": {
+            "icon": {
+              "color": "#fff",
+              "name": "Smile"
+            },
+            "in_use": "icon"
+          },
+          "member_role": 20,
+          "members": [
+            "<uuid:3>"
+          ],
+          "module_view": true,
+          "name": "Renamed Other",
+          "network": 0,
+          "next_work_item_sequence": 1,
+          "page_view": false,
+          "project_lead": null,
+          "sort_order": 65535.0,
+          "timezone": "Europe/Berlin",
+          "updated_at": "<ts>",
+          "updated_by": "<uuid:3>",
+          "workspace": "<uuid:6>"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "a view flag that is not a boolean",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "cycle_view": "maybe"
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-two/projects/<uuid:2>/"
+      },
+      "response": {
+        "body": {
+          "cycle_view": [
+            "Must be a valid boolean."
+          ]
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "fields the pin does not let a patch change",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "created_at": "<ts>",
+          "deleted_at": "<ts>",
+          "id": "<uuid:5>",
+          "workspace": "<uuid:5>"
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-two/projects/<uuid:2>/"
+      },
+      "response": {
+        "body": {
+          "anchor": null,
+          "archive_in": 0,
+          "archived_at": null,
+          "close_in": 0,
+          "cover_image": null,
+          "cover_image_asset": null,
+          "cover_image_url": null,
+          "created_at": "<ts>",
+          "created_by": "<uuid:3>",
+          "cycle_view": true,
+          "default_assignee": null,
+          "default_state": null,
+          "deleted_at": null,
+          "description": "Now secret",
+          "description_html": null,
+          "description_text": null,
+          "emoji": null,
+          "estimate": null,
+          "external_id": null,
+          "external_source": null,
+          "guest_view_all_features": false,
+          "icon_prop": null,
+          "id": "<uuid:2>",
+          "identifier": "OTHER",
+          "inbox_view": true,
+          "intake_view": true,
+          "is_favorite": false,
+          "is_issue_type_enabled": false,
+          "is_time_tracking_enabled": false,
+          "issue_views_view": true,
+          "logo_props": {
+            "icon": {
+              "color": "#fff",
+              "name": "Smile"
+            },
+            "in_use": "icon"
+          },
+          "member_role": 20,
+          "members": [
+            "<uuid:3>"
+          ],
+          "module_view": true,
+          "name": "Renamed Other",
+          "network": 0,
+          "next_work_item_sequence": 1,
+          "page_view": false,
+          "project_lead": null,
+          "sort_order": 65535.0,
+          "timezone": "Europe/Berlin",
+          "updated_at": "<ts>",
+          "updated_by": "<uuid:3>",
+          "workspace": "<uuid:6>"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "a lead and a default assignee that are an integer and a boolean",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "default_assignee": true,
+          "project_lead": 5
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-two/projects/<uuid:2>/"
+      },
+      "response": {
+        "body": {
+          "default_assignee": [
+            "Incorrect type. Expected pk value, received bool."
+          ],
+          "project_lead": [
+            "Invalid pk \"5\" - object does not exist."
+          ]
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "a lead that is a negative integer",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "project_lead": -1
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-two/projects/<uuid:2>/"
+      },
+      "response": {
+        "body": {
+          "project_lead": [
+            "\u201c-1\u201d is not a valid UUID."
+          ]
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "a lead that is a float",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "default_assignee": 0.0,
+          "project_lead": 1.5
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-two/projects/<uuid:2>/"
+      },
+      "response": {
+        "body": {
+          "default_assignee": [
+            "\u201c0.0\u201d is not a valid UUID."
+          ],
+          "project_lead": [
+            "\u201c1.5\u201d is not a valid UUID."
+          ]
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "a lead that is a list",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "default_assignee": [],
+          "project_lead": [
+            "a",
+            1,
+            null,
+            true
+          ]
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-two/projects/<uuid:2>/"
+      },
+      "response": {
+        "body": {
+          "default_assignee": [
+            "\u201c[]\u201d is not a valid UUID."
+          ],
+          "project_lead": [
+            "\u201c['a', 1, None, True]\u201d is not a valid UUID."
+          ]
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "a lead that is an object",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "default_assignee": {},
+          "project_lead": {
+            "a": 1,
+            "b": [
+              "c"
+            ]
+          }
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-two/projects/<uuid:2>/"
+      },
+      "response": {
+        "body": {
+          "default_assignee": [
+            "\u201c{}\u201d is not a valid UUID."
+          ],
+          "project_lead": [
+            "\u201c{'a': 1, 'b': ['c']}\u201d is not a valid UUID."
+          ]
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "a lead that is blank",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "project_lead": "  "
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-two/projects/<uuid:2>/"
+      },
+      "response": {
+        "body": {
+          "project_lead": [
+            "\u201c  \u201d is not a valid UUID."
+          ]
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "months that are not whole",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "archive_in": 5.5,
+          "close_in": "abc"
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-two/projects/<uuid:2>/"
+      },
+      "response": {
+        "body": {
+          "archive_in": [
+            "A valid integer is required."
+          ],
+          "close_in": [
+            "A valid integer is required."
+          ]
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "months that are a boolean, null or a list",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "archive_in": true,
+          "close_in": null
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-two/projects/<uuid:2>/"
+      },
+      "response": {
+        "body": {
+          "archive_in": [
+            "A valid integer is required."
+          ],
+          "close_in": [
+            "This field may not be null."
+          ]
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "months that are a list and an object",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "archive_in": [
+            1
+          ],
+          "close_in": {}
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-two/projects/<uuid:2>/"
+      },
+      "response": {
+        "body": {
+          "archive_in": [
+            "A valid integer is required."
+          ],
+          "close_in": [
+            "A valid integer is required."
+          ]
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "months out of range as floats and strings",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "archive_in": 13.0,
+          "close_in": "-1"
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-two/projects/<uuid:2>/"
+      },
+      "response": {
+        "body": {
+          "archive_in": [
+            "Ensure this value is less than or equal to 12."
+          ],
+          "close_in": [
+            "Ensure this value is greater than or equal to 0."
+          ]
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "an estimate, a default state and a cover image that name nothing",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "cover_image_asset": "<uuid:7>",
+          "default_state": "<uuid:7>",
+          "estimate": "<uuid:7>"
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-two/projects/<uuid:2>/"
+      },
+      "response": {
+        "body": {
+          "cover_image_asset": [
+            "Invalid pk \"<uuid:7>\" - object does not exist."
+          ],
+          "default_state": [
+            "Invalid pk \"<uuid:7>\" - object does not exist."
+          ],
+          "estimate": [
+            "Invalid pk \"<uuid:7>\" - object does not exist."
+          ]
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "a logo that is null",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "logo_props": null
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-two/projects/<uuid:2>/"
+      },
+      "response": {
+        "body": {
+          "logo_props": [
+            "This field may not be null."
+          ]
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "months as a float with no fraction and a string with one",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "archive_in": 5.0,
+          "close_in": "7.0"
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-two/projects/<uuid:2>/"
+      },
+      "response": {
+        "body": {
+          "anchor": null,
+          "archive_in": 5,
+          "archived_at": null,
+          "close_in": 7,
+          "cover_image": null,
+          "cover_image_asset": null,
+          "cover_image_url": null,
+          "created_at": "<ts>",
+          "created_by": "<uuid:3>",
+          "cycle_view": true,
+          "default_assignee": null,
+          "default_state": null,
+          "deleted_at": null,
+          "description": "Now secret",
+          "description_html": null,
+          "description_text": null,
+          "emoji": null,
+          "estimate": null,
+          "external_id": null,
+          "external_source": null,
+          "guest_view_all_features": false,
+          "icon_prop": null,
+          "id": "<uuid:2>",
+          "identifier": "OTHER",
+          "inbox_view": true,
+          "intake_view": true,
+          "is_favorite": false,
+          "is_issue_type_enabled": false,
+          "is_time_tracking_enabled": false,
+          "issue_views_view": true,
+          "logo_props": {
+            "icon": {
+              "color": "#fff",
+              "name": "Smile"
+            },
+            "in_use": "icon"
+          },
+          "member_role": 20,
+          "members": [
+            "<uuid:3>"
+          ],
+          "module_view": true,
+          "name": "Renamed Other",
+          "network": 0,
+          "next_work_item_sequence": 1,
+          "page_view": false,
+          "project_lead": null,
+          "sort_order": 65535.0,
+          "timezone": "Europe/Berlin",
+          "updated_at": "<ts>",
+          "updated_by": "<uuid:3>",
+          "workspace": "<uuid:6>"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "months as a string with spaces and a sign",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "archive_in": " 7 ",
+          "close_in": "+3"
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-two/projects/<uuid:2>/"
+      },
+      "response": {
+        "body": {
+          "anchor": null,
+          "archive_in": 7,
+          "archived_at": null,
+          "close_in": 3,
+          "cover_image": null,
+          "cover_image_asset": null,
+          "cover_image_url": null,
+          "created_at": "<ts>",
+          "created_by": "<uuid:3>",
+          "cycle_view": true,
+          "default_assignee": null,
+          "default_state": null,
+          "deleted_at": null,
+          "description": "Now secret",
+          "description_html": null,
+          "description_text": null,
+          "emoji": null,
+          "estimate": null,
+          "external_id": null,
+          "external_source": null,
+          "guest_view_all_features": false,
+          "icon_prop": null,
+          "id": "<uuid:2>",
+          "identifier": "OTHER",
+          "inbox_view": true,
+          "intake_view": true,
+          "is_favorite": false,
+          "is_issue_type_enabled": false,
+          "is_time_tracking_enabled": false,
+          "issue_views_view": true,
+          "logo_props": {
+            "icon": {
+              "color": "#fff",
+              "name": "Smile"
+            },
+            "in_use": "icon"
+          },
+          "member_role": 20,
+          "members": [
+            "<uuid:3>"
+          ],
+          "module_view": true,
+          "name": "Renamed Other",
+          "network": 0,
+          "next_work_item_sequence": 1,
+          "page_view": false,
+          "project_lead": null,
+          "sort_order": 65535.0,
+          "timezone": "Europe/Berlin",
+          "updated_at": "<ts>",
+          "updated_by": "<uuid:3>",
+          "workspace": "<uuid:6>"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "months at the top as a float",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "archive_in": 12.0,
+          "close_in": 12
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-two/projects/<uuid:2>/"
+      },
+      "response": {
+        "body": {
+          "anchor": null,
+          "archive_in": 12,
+          "archived_at": null,
+          "close_in": 12,
+          "cover_image": null,
+          "cover_image_asset": null,
+          "cover_image_url": null,
+          "created_at": "<ts>",
+          "created_by": "<uuid:3>",
+          "cycle_view": true,
+          "default_assignee": null,
+          "default_state": null,
+          "deleted_at": null,
+          "description": "Now secret",
+          "description_html": null,
+          "description_text": null,
+          "emoji": null,
+          "estimate": null,
+          "external_id": null,
+          "external_source": null,
+          "guest_view_all_features": false,
+          "icon_prop": null,
+          "id": "<uuid:2>",
+          "identifier": "OTHER",
+          "inbox_view": true,
+          "intake_view": true,
+          "is_favorite": false,
+          "is_issue_type_enabled": false,
+          "is_time_tracking_enabled": false,
+          "issue_views_view": true,
+          "logo_props": {
+            "icon": {
+              "color": "#fff",
+              "name": "Smile"
+            },
+            "in_use": "icon"
+          },
+          "member_role": 20,
+          "members": [
+            "<uuid:3>"
+          ],
+          "module_view": true,
+          "name": "Renamed Other",
+          "network": 0,
+          "next_work_item_sequence": 1,
+          "page_view": false,
+          "project_lead": null,
+          "sort_order": 65535.0,
+          "timezone": "Europe/Berlin",
+          "updated_at": "<ts>",
+          "updated_by": "<uuid:3>",
+          "workspace": "<uuid:6>"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "a lead that is an empty string, and values for the JSON columns that allow null or anything",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "description_html": 5,
+          "description_text": null,
+          "icon_prop": null,
+          "project_lead": ""
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-two/projects/<uuid:2>/"
+      },
+      "response": {
+        "body": {
+          "anchor": null,
+          "archive_in": 12,
+          "archived_at": null,
+          "close_in": 12,
+          "cover_image": null,
+          "cover_image_asset": null,
+          "cover_image_url": null,
+          "created_at": "<ts>",
+          "created_by": "<uuid:3>",
+          "cycle_view": true,
+          "default_assignee": null,
+          "default_state": null,
+          "deleted_at": null,
+          "description": "Now secret",
+          "description_html": "5",
+          "description_text": null,
+          "emoji": null,
+          "estimate": null,
+          "external_id": null,
+          "external_source": null,
+          "guest_view_all_features": false,
+          "icon_prop": null,
+          "id": "<uuid:2>",
+          "identifier": "OTHER",
+          "inbox_view": true,
+          "intake_view": true,
+          "is_favorite": false,
+          "is_issue_type_enabled": false,
+          "is_time_tracking_enabled": false,
+          "issue_views_view": true,
+          "logo_props": {
+            "icon": {
+              "color": "#fff",
+              "name": "Smile"
+            },
+            "in_use": "icon"
+          },
+          "member_role": 20,
+          "members": [
+            "<uuid:3>"
+          ],
+          "module_view": true,
+          "name": "Renamed Other",
+          "network": 0,
+          "next_work_item_sequence": 1,
+          "page_view": false,
+          "project_lead": null,
+          "sort_order": 65535.0,
+          "timezone": "Europe/Berlin",
+          "updated_at": "<ts>",
+          "updated_by": "<uuid:3>",
+          "workspace": "<uuid:6>"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "a lead that is an integer past the largest signed one",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "project_lead": 9223372036854775808
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-two/projects/<uuid:2>/"
+      },
+      "response": {
+        "body": {
+          "project_lead": [
+            "Invalid pk \"9223372036854775808\" - object does not exist."
+          ]
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "leads that are lists with a quote in a string",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "default_assignee": [
+            "say \"hi\""
+          ],
+          "project_lead": [
+            "it's"
+          ]
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-two/projects/<uuid:2>/"
+      },
+      "response": {
+        "body": {
+          "default_assignee": [
+            "\u201c['say \"hi\"']\u201d is not a valid UUID."
+          ],
+          "project_lead": [
+            "\u201c[\"it's\"]\u201d is not a valid UUID."
+          ]
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "leads that are lists with both quotes, a backslash and a tab",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "default_assignee": [
+            "back\\slash",
+            "tab\there",
+            "\u00e9"
+          ],
+          "project_lead": [
+            "both ' and \""
+          ]
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-two/projects/<uuid:2>/"
+      },
+      "response": {
+        "body": {
+          "default_assignee": [
+            "\u201c['back\\\\slash', 'tab\\there', '\u00e9']\u201d is not a valid UUID."
+          ],
+          "project_lead": [
+            "\u201c['both \\' and \"']\u201d is not a valid UUID."
+          ]
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "a lead that is an object with a quote in a key",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "project_lead": {
+            "it's": 1
+          }
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-two/projects/<uuid:2>/"
+      },
+      "response": {
+        "body": {
+          "project_lead": [
+            "\u201c{\"it's\": 1}\u201d is not a valid UUID."
+          ]
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "leads that are lists with control characters",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "default_assignee": [
+            "\u007f",
+            "a\u001fb"
+          ],
+          "project_lead": [
+            "\u0001"
+          ]
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-two/projects/<uuid:2>/"
+      },
+      "response": {
+        "body": {
+          "default_assignee": [
+            "\u201c['\\x7f', 'a\\x1fb']\u201d is not a valid UUID."
+          ],
+          "project_lead": [
+            "\u201c['\\x01']\u201d is not a valid UUID."
+          ]
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "months as floats at the edge of the exponent",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "archive_in": 1e+16,
+          "close_in": 9999999999999998.0
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-two/projects/<uuid:2>/"
+      },
+      "response": {
+        "body": {
+          "archive_in": [
+            "A valid integer is required."
+          ],
+          "close_in": [
+            "Ensure this value is less than or equal to 12."
+          ]
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "months as a string with a fraction",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "archive_in": "5.5"
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-two/projects/<uuid:2>/"
+      },
+      "response": {
+        "body": {
+          "archive_in": [
+            "A valid integer is required."
+          ]
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "months as strings with zeros after the point",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "archive_in": "12.000",
+          "close_in": "0."
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-two/projects/<uuid:2>/"
+      },
+      "response": {
+        "body": {
+          "anchor": null,
+          "archive_in": 12,
+          "archived_at": null,
+          "close_in": 0,
+          "cover_image": null,
+          "cover_image_asset": null,
+          "cover_image_url": null,
+          "created_at": "<ts>",
+          "created_by": "<uuid:3>",
+          "cycle_view": true,
+          "default_assignee": null,
+          "default_state": null,
+          "deleted_at": null,
+          "description": "Now secret",
+          "description_html": "5",
+          "description_text": null,
+          "emoji": null,
+          "estimate": null,
+          "external_id": null,
+          "external_source": null,
+          "guest_view_all_features": false,
+          "icon_prop": null,
+          "id": "<uuid:2>",
+          "identifier": "OTHER",
+          "inbox_view": true,
+          "intake_view": true,
+          "is_favorite": false,
+          "is_issue_type_enabled": false,
+          "is_time_tracking_enabled": false,
+          "issue_views_view": true,
+          "logo_props": {
+            "icon": {
+              "color": "#fff",
+              "name": "Smile"
+            },
+            "in_use": "icon"
+          },
+          "member_role": 20,
+          "members": [
+            "<uuid:3>"
+          ],
+          "module_view": true,
+          "name": "Renamed Other",
+          "network": 0,
+          "next_work_item_sequence": 1,
+          "page_view": false,
+          "project_lead": null,
+          "sort_order": 65535.0,
+          "timezone": "Europe/Berlin",
+          "updated_at": "<ts>",
+          "updated_by": "<uuid:3>",
+          "workspace": "<uuid:6>"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "a relation that is blank or no UUID, and one that is empty",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "cover_image_asset": "",
+          "default_state": "x",
+          "estimate": " "
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-two/projects/<uuid:2>/"
+      },
+      "response": {
+        "body": {
+          "default_state": [
+            "\u201cx\u201d is not a valid UUID."
+          ],
+          "estimate": [
+            "\u201c \u201d is not a valid UUID."
+          ]
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "relations that are empty strings",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "cover_image_asset": "",
+          "default_state": "",
+          "estimate": ""
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-two/projects/<uuid:2>/"
+      },
+      "response": {
+        "body": {
+          "anchor": null,
+          "archive_in": 12,
+          "archived_at": null,
+          "close_in": 0,
+          "cover_image": null,
+          "cover_image_asset": null,
+          "cover_image_url": null,
+          "created_at": "<ts>",
+          "created_by": "<uuid:3>",
+          "cycle_view": true,
+          "default_assignee": null,
+          "default_state": null,
+          "deleted_at": null,
+          "description": "Now secret",
+          "description_html": "5",
+          "description_text": null,
+          "emoji": null,
+          "estimate": null,
+          "external_id": null,
+          "external_source": null,
+          "guest_view_all_features": false,
+          "icon_prop": null,
+          "id": "<uuid:2>",
+          "identifier": "OTHER",
+          "inbox_view": true,
+          "intake_view": true,
+          "is_favorite": false,
+          "is_issue_type_enabled": false,
+          "is_time_tracking_enabled": false,
+          "issue_views_view": true,
+          "logo_props": {
+            "icon": {
+              "color": "#fff",
+              "name": "Smile"
+            },
+            "in_use": "icon"
+          },
+          "member_role": 20,
+          "members": [
+            "<uuid:3>"
+          ],
+          "module_view": true,
+          "name": "Renamed Other",
+          "network": 0,
+          "next_work_item_sequence": 1,
+          "page_view": false,
+          "project_lead": null,
+          "sort_order": 65535.0,
+          "timezone": "Europe/Berlin",
+          "updated_at": "<ts>",
+          "updated_by": "<uuid:3>",
+          "workspace": "<uuid:6>"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "a description_html that is a boolean",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "description_html": true
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-two/projects/<uuid:2>/"
+      },
+      "response": {
+        "body": {
+          "anchor": null,
+          "archive_in": 12,
+          "archived_at": null,
+          "close_in": 0,
+          "cover_image": null,
+          "cover_image_asset": null,
+          "cover_image_url": null,
+          "created_at": "<ts>",
+          "created_by": "<uuid:3>",
+          "cycle_view": true,
+          "default_assignee": null,
+          "default_state": null,
+          "deleted_at": null,
+          "description": "Now secret",
+          "description_html": "True",
+          "description_text": null,
+          "emoji": null,
+          "estimate": null,
+          "external_id": null,
+          "external_source": null,
+          "guest_view_all_features": false,
+          "icon_prop": null,
+          "id": "<uuid:2>",
+          "identifier": "OTHER",
+          "inbox_view": true,
+          "intake_view": true,
+          "is_favorite": false,
+          "is_issue_type_enabled": false,
+          "is_time_tracking_enabled": false,
+          "issue_views_view": true,
+          "logo_props": {
+            "icon": {
+              "color": "#fff",
+              "name": "Smile"
+            },
+            "in_use": "icon"
+          },
+          "member_role": 20,
+          "members": [
+            "<uuid:3>"
+          ],
+          "module_view": true,
+          "name": "Renamed Other",
+          "network": 0,
+          "next_work_item_sequence": 1,
+          "page_view": false,
+          "project_lead": null,
+          "sort_order": 65535.0,
+          "timezone": "Europe/Berlin",
+          "updated_at": "<ts>",
+          "updated_by": "<uuid:3>",
+          "workspace": "<uuid:6>"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "a description_html that is a float",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "description_html": 1.5
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-two/projects/<uuid:2>/"
+      },
+      "response": {
+        "body": {
+          "anchor": null,
+          "archive_in": 12,
+          "archived_at": null,
+          "close_in": 0,
+          "cover_image": null,
+          "cover_image_asset": null,
+          "cover_image_url": null,
+          "created_at": "<ts>",
+          "created_by": "<uuid:3>",
+          "cycle_view": true,
+          "default_assignee": null,
+          "default_state": null,
+          "deleted_at": null,
+          "description": "Now secret",
+          "description_html": "1.5",
+          "description_text": null,
+          "emoji": null,
+          "estimate": null,
+          "external_id": null,
+          "external_source": null,
+          "guest_view_all_features": false,
+          "icon_prop": null,
+          "id": "<uuid:2>",
+          "identifier": "OTHER",
+          "inbox_view": true,
+          "intake_view": true,
+          "is_favorite": false,
+          "is_issue_type_enabled": false,
+          "is_time_tracking_enabled": false,
+          "issue_views_view": true,
+          "logo_props": {
+            "icon": {
+              "color": "#fff",
+              "name": "Smile"
+            },
+            "in_use": "icon"
+          },
+          "member_role": 20,
+          "members": [
+            "<uuid:3>"
+          ],
+          "module_view": true,
+          "name": "Renamed Other",
+          "network": 0,
+          "next_work_item_sequence": 1,
+          "page_view": false,
+          "project_lead": null,
+          "sort_order": 65535.0,
+          "timezone": "Europe/Berlin",
+          "updated_at": "<ts>",
+          "updated_by": "<uuid:3>",
+          "workspace": "<uuid:6>"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "a description_html that is an object",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "description_html": {
+            "a": 1,
+            "b": [
+              null,
+              "c"
+            ]
+          }
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-two/projects/<uuid:2>/"
+      },
+      "response": {
+        "body": {
+          "anchor": null,
+          "archive_in": 12,
+          "archived_at": null,
+          "close_in": 0,
+          "cover_image": null,
+          "cover_image_asset": null,
+          "cover_image_url": null,
+          "created_at": "<ts>",
+          "created_by": "<uuid:3>",
+          "cycle_view": true,
+          "default_assignee": null,
+          "default_state": null,
+          "deleted_at": null,
+          "description": "Now secret",
+          "description_html": "{'a': 1, 'b': [None, 'c']}",
+          "description_text": null,
+          "emoji": null,
+          "estimate": null,
+          "external_id": null,
+          "external_source": null,
+          "guest_view_all_features": false,
+          "icon_prop": null,
+          "id": "<uuid:2>",
+          "identifier": "OTHER",
+          "inbox_view": true,
+          "intake_view": true,
+          "is_favorite": false,
+          "is_issue_type_enabled": false,
+          "is_time_tracking_enabled": false,
+          "issue_views_view": true,
+          "logo_props": {
+            "icon": {
+              "color": "#fff",
+              "name": "Smile"
+            },
+            "in_use": "icon"
+          },
+          "member_role": 20,
+          "members": [
+            "<uuid:3>"
+          ],
+          "module_view": true,
+          "name": "Renamed Other",
+          "network": 0,
+          "next_work_item_sequence": 1,
+          "page_view": false,
+          "project_lead": null,
+          "sort_order": 65535.0,
+          "timezone": "Europe/Berlin",
+          "updated_at": "<ts>",
+          "updated_by": "<uuid:3>",
+          "workspace": "<uuid:6>"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "a description_html that is a list",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "description_html": [
+            1,
+            "b",
+            false
+          ]
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-two/projects/<uuid:2>/"
+      },
+      "response": {
+        "body": {
+          "anchor": null,
+          "archive_in": 12,
+          "archived_at": null,
+          "close_in": 0,
+          "cover_image": null,
+          "cover_image_asset": null,
+          "cover_image_url": null,
+          "created_at": "<ts>",
+          "created_by": "<uuid:3>",
+          "cycle_view": true,
+          "default_assignee": null,
+          "default_state": null,
+          "deleted_at": null,
+          "description": "Now secret",
+          "description_html": "[1, 'b', False]",
+          "description_text": null,
+          "emoji": null,
+          "estimate": null,
+          "external_id": null,
+          "external_source": null,
+          "guest_view_all_features": false,
+          "icon_prop": null,
+          "id": "<uuid:2>",
+          "identifier": "OTHER",
+          "inbox_view": true,
+          "intake_view": true,
+          "is_favorite": false,
+          "is_issue_type_enabled": false,
+          "is_time_tracking_enabled": false,
+          "issue_views_view": true,
+          "logo_props": {
+            "icon": {
+              "color": "#fff",
+              "name": "Smile"
+            },
+            "in_use": "icon"
+          },
+          "member_role": 20,
+          "members": [
+            "<uuid:3>"
+          ],
+          "module_view": true,
+          "name": "Renamed Other",
+          "network": 0,
+          "next_work_item_sequence": 1,
+          "page_view": false,
+          "project_lead": null,
+          "sort_order": 65535.0,
+          "timezone": "Europe/Berlin",
+          "updated_at": "<ts>",
+          "updated_by": "<uuid:3>",
+          "workspace": "<uuid:6>"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "a description_html that is an empty object",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "description_html": {}
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-two/projects/<uuid:2>/"
+      },
+      "response": {
+        "body": {
+          "anchor": null,
+          "archive_in": 12,
+          "archived_at": null,
+          "close_in": 0,
+          "cover_image": null,
+          "cover_image_asset": null,
+          "cover_image_url": null,
+          "created_at": "<ts>",
+          "created_by": "<uuid:3>",
+          "cycle_view": true,
+          "default_assignee": null,
+          "default_state": null,
+          "deleted_at": null,
+          "description": "Now secret",
+          "description_html": {},
+          "description_text": null,
+          "emoji": null,
+          "estimate": null,
+          "external_id": null,
+          "external_source": null,
+          "guest_view_all_features": false,
+          "icon_prop": null,
+          "id": "<uuid:2>",
+          "identifier": "OTHER",
+          "inbox_view": true,
+          "intake_view": true,
+          "is_favorite": false,
+          "is_issue_type_enabled": false,
+          "is_time_tracking_enabled": false,
+          "issue_views_view": true,
+          "logo_props": {
+            "icon": {
+              "color": "#fff",
+              "name": "Smile"
+            },
+            "in_use": "icon"
+          },
+          "member_role": 20,
+          "members": [
+            "<uuid:3>"
+          ],
+          "module_view": true,
+          "name": "Renamed Other",
+          "network": 0,
+          "next_work_item_sequence": 1,
+          "page_view": false,
+          "project_lead": null,
+          "sort_order": 65535.0,
+          "timezone": "Europe/Berlin",
+          "updated_at": "<ts>",
+          "updated_by": "<uuid:3>",
+          "workspace": "<uuid:6>"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "a description_html that is an empty list",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "description_html": []
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-two/projects/<uuid:2>/"
+      },
+      "response": {
+        "body": {
+          "anchor": null,
+          "archive_in": 12,
+          "archived_at": null,
+          "close_in": 0,
+          "cover_image": null,
+          "cover_image_asset": null,
+          "cover_image_url": null,
+          "created_at": "<ts>",
+          "created_by": "<uuid:3>",
+          "cycle_view": true,
+          "default_assignee": null,
+          "default_state": null,
+          "deleted_at": null,
+          "description": "Now secret",
+          "description_html": [],
+          "description_text": null,
+          "emoji": null,
+          "estimate": null,
+          "external_id": null,
+          "external_source": null,
+          "guest_view_all_features": false,
+          "icon_prop": null,
+          "id": "<uuid:2>",
+          "identifier": "OTHER",
+          "inbox_view": true,
+          "intake_view": true,
+          "is_favorite": false,
+          "is_issue_type_enabled": false,
+          "is_time_tracking_enabled": false,
+          "issue_views_view": true,
+          "logo_props": {
+            "icon": {
+              "color": "#fff",
+              "name": "Smile"
+            },
+            "in_use": "icon"
+          },
+          "member_role": 20,
+          "members": [
+            "<uuid:3>"
+          ],
+          "module_view": true,
+          "name": "Renamed Other",
+          "network": 0,
+          "next_work_item_sequence": 1,
+          "page_view": false,
+          "project_lead": null,
+          "sort_order": 65535.0,
+          "timezone": "Europe/Berlin",
+          "updated_at": "<ts>",
+          "updated_by": "<uuid:3>",
+          "workspace": "<uuid:6>"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "months back to none",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "archive_in": 0,
+          "close_in": 0,
+          "description_html": null
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-two/projects/<uuid:2>/"
+      },
+      "response": {
+        "body": {
+          "anchor": null,
+          "archive_in": 0,
+          "archived_at": null,
+          "close_in": 0,
+          "cover_image": null,
+          "cover_image_asset": null,
+          "cover_image_url": null,
+          "created_at": "<ts>",
+          "created_by": "<uuid:3>",
+          "cycle_view": true,
+          "default_assignee": null,
+          "default_state": null,
+          "deleted_at": null,
+          "description": "Now secret",
+          "description_html": null,
+          "description_text": null,
+          "emoji": null,
+          "estimate": null,
+          "external_id": null,
+          "external_source": null,
+          "guest_view_all_features": false,
+          "icon_prop": null,
+          "id": "<uuid:2>",
+          "identifier": "OTHER",
+          "inbox_view": true,
+          "intake_view": true,
+          "is_favorite": false,
+          "is_issue_type_enabled": false,
+          "is_time_tracking_enabled": false,
+          "issue_views_view": true,
+          "logo_props": {
+            "icon": {
+              "color": "#fff",
+              "name": "Smile"
+            },
+            "in_use": "icon"
+          },
+          "member_role": 20,
+          "members": [
+            "<uuid:3>"
+          ],
+          "module_view": true,
+          "name": "Renamed Other",
+          "network": 0,
+          "next_work_item_sequence": 1,
+          "page_view": false,
+          "project_lead": null,
+          "sort_order": 65535.0,
+          "timezone": "Europe/Berlin",
+          "updated_at": "<ts>",
+          "updated_by": "<uuid:3>",
+          "workspace": "<uuid:6>"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    }
+  ],
+  "format_version": 1,
+  "recorded_from": "ba85d4d3d3",
+  "row": "S32",
+  "uses": [
+    "project",
+    "other"
+  ]
+}
