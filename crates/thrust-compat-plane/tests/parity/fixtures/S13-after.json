@@ -1,0 +1,58 @@
+{
+  "exchanges": [
+    {
+      "name": "a slug that is taken",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspace-slug-check/?slug=journey-ws"
+      },
+      "response": {
+        "body": {
+          "status": false
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "the other slug that is taken",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspace-slug-check/?slug=journey-two"
+      },
+      "response": {
+        "body": {
+          "status": false
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "the same slug in capitals (the check is case sensitive)",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspace-slug-check/?slug=Journey-WS"
+      },
+      "response": {
+        "body": {
+          "status": true
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    }
+  ],
+  "format_version": 1,
+  "recorded_from": "ba85d4d3d3",
+  "row": "S13-after"
+}

@@ -79,11 +79,11 @@ for bad in worker worker-sys wasm-bindgen js-sys web-sys thrust-adapters-cloudfl
 done
 
 echo
-echo "=== proof minting (issue #35): Scope::mint only in authorize, SystemScope::mint only in the composition roots ==="
+echo "=== proof minting (issues #35, #44): Scope::mint only in authorize, WorkspaceScope::mint only in authorize_workspace, SystemScope::mint only in the composition roots ==="
 # thrust-core's unit-test module and the integration tests (crates/*/tests) may mint either; comment lines (doctests
 # included) are skipped. A call spelled through an alias or a qualified path is not caught: the complete check is
 # clippy's disallowed-methods, once the clippy job exists (issue #40).
-MINT='(^|[^A-Za-z0-9_])(Scope|SystemScope)::mint\('
+MINT='(^|[^A-Za-z0-9_])(Scope|SystemScope|WorkspaceScope)::mint\('
 hits="$(
   awk -v f="crates/thrust-core/src/lib.rs" '
     /^#\[cfg\(test\)\]/ { cfgtest = 1; next }
@@ -93,6 +93,7 @@ hits="$(
     match($0, /fn [a-z_0-9]+/) { fn = substr($0, RSTART + 3, RLENGTH - 3) }
     intests { next }
     /SystemScope::mint\(/ { print f ":" NR ":" $0; next }
+    /WorkspaceScope::mint\(/ && fn != "authorize_workspace" { print f ":" NR ":" $0; next }
     /(^|[^A-Za-z0-9_])Scope::mint\(/ && fn != "authorize" { print f ":" NR ":" $0 }
   ' "$ROOT/crates/thrust-core/src/lib.rs"
   grep -rnE "$MINT" "$ROOT/crates" --include='*.rs' \
@@ -108,7 +109,7 @@ if [ -n "$hits" ]; then
   echo "$hits"
   STATUS=1
 else
-  echo "ok: Scope minted only in authorize, SystemScope only in the composition roots"
+  echo "ok: Scope minted only in authorize, WorkspaceScope only in authorize_workspace, SystemScope only in the composition roots"
 fi
 
 exit "$STATUS"

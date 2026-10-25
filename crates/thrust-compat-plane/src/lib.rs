@@ -27,6 +27,7 @@ mod fields;
 mod fields_tests;
 mod instance;
 mod users;
+mod workspaces;
 
 pub use error::PlaneError;
 
@@ -39,6 +40,14 @@ pub fn routes() -> Router {
         .route("/api/users/me/profile/", get(users::get_profile).patch(users::patch_profile)) // S07, S11
         .route("/api/users/me/tour-completed/", patch(users::patch_tour_completed)) // S27
         .route("/api/users/me/onboard/", patch(users::patch_onboard)) // X04
+        .route("/api/users/me/settings/", get(workspaces::settings)) // S08
+        .route("/api/users/me/workspaces/", get(workspaces::my_workspaces)) // S09
+        .route("/api/users/me/workspaces/invitations/", get(workspaces::invitations)) // S12
+        .route("/api/workspace-slug-check/", get(workspaces::slug_check)) // S13
+        .route("/api/workspaces/", post(workspaces::create)) // S14
+        .route("/api/workspaces/{slug}/workspace-members/me/", get(workspaces::member_me)) // S15
+        .route("/api/users/me/workspaces/{slug}/project-roles/", get(workspaces::project_roles)) // S16
+        .route("/api/workspaces/{slug}/members/", get(workspaces::members)) // S18
         .route("/auth/get-csrf-token/", get(auth::get_csrf_token)) // S03
         .route("/auth/email-check/", post(auth::email_check)) // S04
         .route("/auth/sign-up/", post(auth::sign_up)) // S05

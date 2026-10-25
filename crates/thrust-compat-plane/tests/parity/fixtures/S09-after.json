@@ -1,0 +1,76 @@
+{
+  "exchanges": [
+    {
+      "name": "two workspaces",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/users/me/workspaces/"
+      },
+      "response": {
+        "body": [
+          {
+            "background_color": "<opaque>",
+            "created_at": "<ts>",
+            "created_by": "<uuid:1>",
+            "deleted_at": null,
+            "id": "<uuid:2>",
+            "logo": null,
+            "logo_asset": null,
+            "logo_url": null,
+            "name": "Second Workspace",
+            "organization_size": "2-10",
+            "owner": "<uuid:1>",
+            "role": 20,
+            "slug": "journey-two",
+            "timezone": "UTC",
+            "total_members": 1,
+            "updated_at": "<ts>",
+            "updated_by": null
+          },
+          {
+            "background_color": "<opaque>",
+            "created_at": "<ts>",
+            "created_by": "<uuid:1>",
+            "deleted_at": null,
+            "id": "<uuid:3>",
+            "logo": null,
+            "logo_asset": null,
+            "logo_url": null,
+            "name": "Journey Workspace",
+            "organization_size": "Just myself",
+            "owner": "<uuid:1>",
+            "role": 20,
+            "slug": "journey-ws",
+            "timezone": "UTC",
+            "total_members": 1,
+            "updated_at": "<ts>",
+            "updated_by": null
+          }
+        ],
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "another user",
+      "request": {
+        "as": "second@example.test",
+        "method": "GET",
+        "path": "/api/users/me/workspaces/"
+      },
+      "response": {
+        "body": [],
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    }
+  ],
+  "format_version": 1,
+  "recorded_from": "ba85d4d3d3",
+  "row": "S09-after"
+}

@@ -17,6 +17,12 @@ dc() {
 dc down -v --remove-orphans
 dc up -d --wait --wait-timeout 300
 
+# Stop the Celery workers. Creating a workspace on the pin dispatches `workspace_seed`, which adds a bot user and a sample
+# project with states, labels, cycles, modules, issues and views. Thrust does not reproduce that seed in M1 (deviation
+# D-024, to be ported after M1), so the fixtures are recorded with the worker stopped and the seed never runs: the message
+# sits in the broker, unconsumed, and the recorded workspace holds exactly what the request created.
+dc stop worker beat-worker
+
 # `--wait` returns when the containers are healthy; the API answers a little later.
 n=0
 until curl -fsS -o /dev/null -m 5 "$BASE/api/instances/"; do

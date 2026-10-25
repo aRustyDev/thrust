@@ -49,6 +49,13 @@
 //!   nothing changes); `update_profile` sets the fields its patch names, merges the patch's preferences key by key,
 //!   replaces the onboarding steps whole, clears a field the patch says to clear, always sets `updated_at`, and answers the
 //!   row as it is after (nothing at all for a user with no profile); `profile` reads it back;
+//! * `insert_workspace` makes a workspace and its first member together or not at all (a taken slug is a `Conflict` that
+//!   leaves no member row behind); `workspaces_of` lists a user's workspaces newest first, with their role and the count of
+//!   active members, and only while the user is an active member; `workspace_access` resolves a slug for an active member and
+//!   for nobody else; `workspace_slug_taken` is exact and case-sensitive; `set_workspace_member_active` hides a workspace from
+//!   its member and shows it again; `workspace_members` lists everyone, the inactive too, with the person's profile fields;
+//! * `project_roles` is the user's role in each project of the workspace whose member row names that workspace, and no other
+//!   (a row that names another workspace than its project's is no role);
 //! * `insert_user` creates a login that `user_by_email` then finds; a taken email or a taken id is a `Conflict` that
 //!   changes nothing (the user that holds it is as it was, and the refused email names nobody);
 //! * a pending OIDC login is returned by `take_oidc_login` once, and deleted by it (a second take, a replayed
@@ -127,6 +134,11 @@ enum U {
     StrayB,
     /// In both workspaces, Admin of both projects: one user, two workspaces.
     Dual,
+}
+
+impl U {
+    /// In declaration order, which is the order of `Fix::users`.
+    const ALL: [U; 7] = [U::AdminA, U::MemberA, U::GuestA, U::OutsiderA, U::AdminB, U::StrayB, U::Dual];
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -228,6 +240,15 @@ enum Op {
     ProfileUpdate { who: usize, sel: PatchSel },
     /// `profile` of one of the three seeded users.
     ProfileRead { who: usize },
+    /// A compound op on brand-new users and workspaces (so the seeded workspaces, whose timestamps the database assigns, are not
+    /// in the way): two workspaces for one new user, listed, looked up, deactivated and reactivated, and a creation that loses
+    /// the race for a slug and must leave nothing behind.
+    WorkspaceLife { with_profile: bool },
+    /// `project_roles` of seeded user `user` in the workspace of project `proj`'s tenant.
+    ProjectRolesRead { proj: P, user: U },
+    /// Deactivate or reactivate seeded user `user`'s membership of project `ws`'s workspace (a no-op for a user who is not in
+    /// it), then read back every query that depends on it.
+    MemberActive { ws: P, user: U, active: bool },
     /// A compound op, for the sequences a single random op almost never reaches: the profile is made if there is none, then
     /// patched with both halves of the preferences (so the second must merge, not replace), the cover set and cleared, the
     /// onboarding steps replaced, the flags set, the last workspace set and cleared, the names changed, and read back.
@@ -346,6 +367,9 @@ fn op() -> impl Strategy<Value = Op> {
         3 => ((0..3usize), patch_sel()).prop_map(|(who, sel)| Op::ProfileUpdate { who, sel }),
         1 => (0..3usize).prop_map(|who| Op::ProfileRead { who }),
         2 => (0..3usize).prop_map(|who| Op::ProfileLife { who }),
+        2 => any::<bool>().prop_map(|with_profile| Op::WorkspaceLife { with_profile }),
+        2 => (proj(), user()).prop_map(|(proj, user)| Op::ProjectRolesRead { proj, user }),
+        3 => (proj(), user(), any::<bool>()).prop_map(|(ws, user, active)| Op::MemberActive { ws, user, active }),
         2 => (0..2usize, any::<bool>()).prop_map(|(who, restore)| Op::Deactivated { who, restore }),
         2 => prop_oneof![Just(5u8), Just(100u8)].prop_map(|ttl| Op::OidcRoundTrip { ttl }),
         2 => (0..2usize).prop_map(|key| Op::KeyCycle { key }),
@@ -477,6 +501,21 @@ enum Class {
     /// `update_profile` whose preferences leave a key the profile already holds unnamed: the key must survive (a merge, not
     /// a replace).
     ProfilePrefsMerged,
+    /// `insert_workspace`: a workspace and its first member, read back through every query that should see them.
+    WorkspaceMade,
+    /// `insert_workspace` with a taken slug: a `Conflict`, and the loser has no workspace and no membership.
+    WorkspaceSlugConflict,
+    /// `set_workspace_member_active(false)`: the workspace leaves the member's list and their slug lookup, stays in the member
+    /// list as suspended, and comes back when reactivated.
+    WorkspaceMemberDeactivated,
+    /// `set_workspace_member_active(true)` on a membership that was deactivated.
+    WorkspaceMemberReactivated,
+    /// A workspace's member list shows the profile fields of a member who has a profile.
+    WorkspaceMemberProfileShown,
+    /// `project_roles` with at least one role.
+    ProjectRolesSome,
+    /// `project_roles` with none: a user who is in no project of the workspace, or whose only row names the wrong workspace.
+    ProjectRolesNone,
     OidcInserted,
     /// An insert that dropped an expired login.
     OidcSwept,
@@ -503,7 +542,7 @@ enum Class {
 }
 
 impl Class {
-    const ALL: [Class; 90] = [
+    const ALL: [Class; 97] = [
         Class::Created,
         Class::ExternalKeyFreed,
         Class::Conflict,
@@ -576,6 +615,13 @@ impl Class {
         Class::ProfileUpdated,
         Class::ProfileUpdateMissing,
         Class::ProfilePrefsMerged,
+        Class::WorkspaceMade,
+        Class::WorkspaceSlugConflict,
+        Class::WorkspaceMemberDeactivated,
+        Class::WorkspaceMemberReactivated,
+        Class::WorkspaceMemberProfileShown,
+        Class::ProjectRolesSome,
+        Class::ProjectRolesNone,
         Class::OidcInserted,
         Class::OidcSwept,
         Class::OidcTaken,
@@ -623,6 +669,23 @@ enum Call {
     InsertProfile { p: UserProfile, want: bool },
     Profile { user: UserId, want: Option<UserProfile> },
     UpdateProfile { user: UserId, patch: ProfilePatch, at: Timestamp, want: Option<UserProfile> },
+    /// `conflict`: the adapter must answer `DbError::Conflict`.
+    InsertWorkspace { w: NewWorkspace, conflict: bool },
+    SlugTaken { slug: String, want: bool },
+    AnyWorkspace { want: bool },
+    WorkspacesOf { user: UserId, want: Vec<WorkspaceListing> },
+    WorkspaceAccessOf { slug: WorkspaceSlug, user: UserId, want: Option<WorkspaceAccess> },
+    /// `want`: whether the membership exists.
+    SetMemberActive { ws: WorkspaceId, user: UserId, active: bool, want: bool },
+    /// The three calls below take a `WorkspaceScope`: `(workspace, user, role)` are what the executor mints it from.
+    WorkspaceMemberOf { scope: (WorkspaceId, UserId, Role), want: Option<WorkspaceMember> },
+    WorkspaceMembersOf { scope: (WorkspaceId, UserId, Role), want: Vec<MemberWithUser> },
+    ProjectRolesOf { scope: (WorkspaceId, UserId, Role), want: Vec<(ProjectId, Role)> },
+    /// `workspaces_of(user)` for a seeded user, as `(workspace, role, active members)` sorted by workspace id: the seed's
+    /// timestamps are the database's own, so the listing's order and its timestamps are not compared here.
+    SeededListing { user: UserId, want: Vec<(WorkspaceId, Role, u64)> },
+    /// `workspace_members` of a seeded workspace, as `(user, is_active)` sorted by user id, for the same reason.
+    SeededMembers { ws: WorkspaceId, want: Vec<(UserId, bool)> },
     LinkAccount { a: NewAccount },
     InsertApiKey { k: NewApiKey },
     SetActive { user: UserId, active: bool },
@@ -806,6 +869,43 @@ fn in_workspace(user: U) -> [bool; 2] {
     }
 }
 
+/// `v` ordered by the id `key` names: the seeded rows' timestamps are the database's, so those answers are compared as sets.
+fn sorted_by_id<T>(mut v: Vec<T>, key: impl Fn(&T) -> Uuid) -> Vec<T> {
+    v.sort_by_key(|t| key(t));
+    v
+}
+
+/// A workspace and its first member for a brand-new `owner`, stamped now (so a later one is newer), with every field set to
+/// something the read-back can tell from a default.
+fn new_workspace(owner: UserId, role: Role, tag: &str) -> NewWorkspace {
+    let now = tick();
+    let id = WorkspaceId(new_id());
+    NewWorkspace {
+        workspace: Workspace {
+            id,
+            slug: WorkspaceSlug::new(format!("{tag}-{}", new_id().simple())),
+            name: format!("Workspace {tag}"),
+            owner_id: Some(owner),
+            organization_size: Some("11-50".into()),
+            timezone: "Europe/Berlin".into(),
+            background_color: "#112233".into(),
+            created_at: now,
+            updated_at: now,
+        },
+        owner: WorkspaceMember {
+            id: new_id(),
+            workspace_id: id,
+            user_id: owner,
+            role,
+            company_role: Some("Engineer".into()),
+            is_active: true,
+            props: serde_json::json!({"filters": {"state": ["a"]}, "n": 3}),
+            created_at: now,
+            updated_at: now,
+        },
+    }
+}
+
 /// A user's role in a project, written out from `Fix::seed`. `StrayB`'s row for project A names workspace B, so it is
 /// not a membership of project A.
 fn role_in(proj: P, user: U) -> Option<Role> {
@@ -817,10 +917,11 @@ fn role_in(proj: P, user: U) -> Option<Role> {
     }
 }
 
-/// The spec's membership answer: only the project's own slug resolves it, and only for a member of that workspace.
-fn membership(fix: &Fix, proj: P, sl: Sl, user: U) -> Membership {
+/// The spec's membership answer: only the project's own slug resolves it, and only for an ACTIVE member of that workspace
+/// (`active`: the user's membership of it, which a user who is not a member has too).
+fn membership(fix: &Fix, proj: P, sl: Sl, user: U, active: bool) -> Membership {
     let s = slot(proj);
-    if sl != Sl::Own || !in_workspace(user)[s] {
+    if sl != Sl::Own || !in_workspace(user)[s] || !active {
         return Membership::NoSuchProject;
     }
     match role_in(proj, user) {
@@ -864,6 +965,8 @@ struct Model {
     logins: Vec<(NewOidcLogin, LoginState)>,
     /// The profile of each of the three seeded login users, once an op has made it.
     profiles: [Option<UserProfile>; 3],
+    /// Whether each seeded user's membership of each seeded workspace is active (it is for users who are not members).
+    member_active: [[bool; 2]; 7],
     /// Committed rows per project, in sequence order.
     rows: [Vec<WorkItem>; 2],
     counter: [i64; 2],
@@ -1030,6 +1133,7 @@ impl Model {
             api_keys,
             logins: Vec::new(),
             profiles: [None, None, None],
+            member_active: [[true; 2]; 7],
             rows: [Vec::new(), Vec::new()],
             counter: [0, 0],
             outbox: Vec::new(),
@@ -1126,7 +1230,7 @@ impl Model {
                 calls.push(Call::Get { ws: self.fix.ws_for(proj, ws), p: self.fix.p[slot(proj)], id, vis, want });
             }
             &Op::Membership { proj, slug, user } => {
-                let want = membership(&self.fix, proj, slug, user);
+                let want = membership(&self.fix, proj, slug, user, self.member_active[user as usize][slot(proj)]);
                 classes.push(match (slug, want) {
                     (Sl::Unknown, _) => Class::UnknownSlug,
                     (Sl::Other, _) => Class::NoSuchProject,
@@ -1518,6 +1622,138 @@ impl Model {
                 ]);
                 self.plan_all(&ops, &mut calls, &mut classes);
             }
+            &Op::WorkspaceLife { with_profile } => {
+                let (owner, other) = (UserId(new_id()), UserId(new_id()));
+                let login = |id| UserRecord {
+                    id,
+                    email: Some(format!("wl-{}@example.test", new_id().simple())),
+                    password_hash: Some("$argon2id$stub-workspace".into()),
+                    is_active: true,
+                };
+                let (owner_rec, other_rec) = (login(owner), login(other));
+                calls.push(Call::InsertUser { u: owner_rec.clone(), conflict: false });
+                calls.push(Call::InsertUser { u: other_rec, conflict: false });
+                // what the member list says about the owner: the profile's fields, or nothing at all
+                let profile = with_profile.then(|| profile_of(owner, 9));
+                if let Some(p) = &profile {
+                    calls.push(Call::InsertProfile { p: p.clone(), want: true });
+                    classes.push(Class::WorkspaceMemberProfileShown);
+                }
+                let shown = MemberUser {
+                    id: owner,
+                    email: owner_rec.email.clone(),
+                    first_name: profile.as_ref().map(|p| p.first_name.clone()).unwrap_or_default(),
+                    last_name: profile.as_ref().map(|p| p.last_name.clone()).unwrap_or_default(),
+                    display_name: profile.as_ref().map(|p| p.display_name.clone()).unwrap_or_default(),
+                    avatar: profile.as_ref().map(|p| p.avatar.clone()).unwrap_or_default(),
+                };
+                let scope = |w: &NewWorkspace, user, role| (w.workspace.id, user, role);
+
+                let first = new_workspace(owner, Role::Admin, "wl-a");
+                let ws1 = &first.workspace;
+                let listing1 = WorkspaceListing { workspace: ws1.clone(), role: Role::Admin, total_members: 1 };
+                calls.push(Call::SlugTaken { slug: ws1.slug.as_str().to_owned(), want: false });
+                calls.push(Call::AnyWorkspace { want: true });
+                calls.push(Call::InsertWorkspace { w: first.clone(), conflict: false });
+                classes.push(Class::WorkspaceMade);
+                calls.push(Call::AnyWorkspace { want: true });
+                calls.push(Call::SlugTaken { slug: ws1.slug.as_str().to_owned(), want: true });
+                // the slug check is exact: another case is another slug
+                calls.push(Call::SlugTaken { slug: ws1.slug.as_str().to_uppercase(), want: false });
+                calls.push(Call::WorkspacesOf { user: owner, want: vec![listing1.clone()] });
+                calls.push(Call::WorkspacesOf { user: other, want: vec![] });
+                let access = |w: &NewWorkspace, role| Some(WorkspaceAccess { workspace_id: w.workspace.id, role });
+                calls.push(Call::WorkspaceAccessOf { slug: ws1.slug.clone(), user: owner, want: access(&first, Role::Admin) });
+                calls.push(Call::WorkspaceAccessOf { slug: ws1.slug.clone(), user: other, want: None });
+                calls.push(Call::WorkspaceAccessOf { slug: WorkspaceSlug::new("no-such-workspace"), user: owner, want: None });
+                calls.push(Call::WorkspaceMemberOf { scope: scope(&first, owner, Role::Admin), want: Some(first.owner.clone()) });
+                calls.push(Call::WorkspaceMemberOf { scope: scope(&first, other, Role::Member), want: None });
+                calls.push(Call::WorkspaceMembersOf {
+                    scope: scope(&first, owner, Role::Admin),
+                    want: vec![MemberWithUser { member: first.owner.clone(), user: shown.clone() }],
+                });
+
+                // a second workspace, made later: the list is newest first
+                let second = new_workspace(owner, Role::Member, "wl-b");
+                let listing2 = WorkspaceListing { workspace: second.workspace.clone(), role: Role::Member, total_members: 1 };
+                calls.push(Call::InsertWorkspace { w: second.clone(), conflict: false });
+                classes.push(Class::WorkspaceMade);
+                calls.push(Call::WorkspacesOf { user: owner, want: vec![listing2.clone(), listing1.clone()] });
+
+                // a creation that loses the race for a slug is refused and leaves nothing of its own
+                let mut slug_loser = new_workspace(other, Role::Admin, "wl-c");
+                slug_loser.workspace.slug = ws1.slug.clone();
+                calls.push(Call::InsertWorkspace { w: slug_loser, conflict: true });
+                // a creation whose member row cannot be written (its id is taken) takes its workspace back with it
+                let mut member_loser = new_workspace(other, Role::Admin, "wl-d");
+                member_loser.owner.id = first.owner.id;
+                let loser_slug = member_loser.workspace.slug.as_str().to_owned();
+                calls.push(Call::InsertWorkspace { w: member_loser, conflict: true });
+                classes.push(Class::WorkspaceSlugConflict);
+                calls.push(Call::SlugTaken { slug: loser_slug, want: false });
+                calls.push(Call::WorkspacesOf { user: other, want: vec![] });
+                calls.push(Call::WorkspacesOf { user: owner, want: vec![listing2.clone(), listing1.clone()] });
+
+                // deactivated, the workspace is gone from the owner's list and slug lookup but not from the member list
+                let mut suspended = first.owner.clone();
+                suspended.is_active = false;
+                calls.push(Call::SetMemberActive { ws: ws1.id, user: owner, active: false, want: true });
+                classes.push(Class::WorkspaceMemberDeactivated);
+                calls.push(Call::WorkspacesOf { user: owner, want: vec![listing2.clone()] });
+                calls.push(Call::WorkspaceAccessOf { slug: ws1.slug.clone(), user: owner, want: None });
+                calls.push(Call::SlugTaken { slug: ws1.slug.as_str().to_owned(), want: true });
+                calls.push(Call::WorkspaceMemberOf { scope: scope(&first, owner, Role::Admin), want: Some(suspended.clone()) });
+                calls.push(Call::WorkspaceMembersOf {
+                    scope: scope(&first, owner, Role::Admin),
+                    want: vec![MemberWithUser { member: suspended, user: shown }],
+                });
+                // a membership that does not exist cannot be switched
+                calls.push(Call::SetMemberActive { ws: ws1.id, user: other, active: false, want: false });
+                calls.push(Call::SetMemberActive { ws: ws1.id, user: owner, active: true, want: true });
+                classes.push(Class::WorkspaceMemberReactivated);
+                calls.push(Call::WorkspacesOf { user: owner, want: vec![listing2, listing1] });
+                calls.push(Call::WorkspaceAccessOf { slug: ws1.slug.clone(), user: owner, want: access(&first, Role::Admin) });
+            }
+            &Op::ProjectRolesRead { proj, user } => {
+                let s = slot(proj);
+                let want: Vec<(ProjectId, Role)> = role_in(proj, user).map(|r| (self.fix.p[s], r)).into_iter().collect();
+                classes.push(if want.is_empty() { Class::ProjectRolesNone } else { Class::ProjectRolesSome });
+                calls.push(Call::ProjectRolesOf { scope: (self.fix.ws[s], self.fix.user(user), Role::Member), want });
+            }
+            &Op::MemberActive { ws, user, active } => {
+                let s = slot(ws);
+                let member = in_workspace(user)[s];
+                let was = self.member_active[user as usize][s];
+                calls.push(Call::SetMemberActive { ws: self.fix.ws[s], user: self.fix.user(user), active, want: member });
+                if member {
+                    self.member_active[user as usize][s] = active;
+                    if !active {
+                        classes.push(Class::WorkspaceMemberDeactivated);
+                    } else if !was {
+                        classes.push(Class::WorkspaceMemberReactivated);
+                    }
+                }
+                // seeded members hold the role `member`; only active ones get in by slug or see the workspace listed
+                let access = (member && self.member_active[user as usize][s])
+                    .then_some(WorkspaceAccess { workspace_id: self.fix.ws[s], role: Role::Member });
+                calls.push(Call::WorkspaceAccessOf { slug: self.fix.slug[s].clone(), user: self.fix.user(user), want: access });
+                for u in U::ALL {
+                    let want = (0..2)
+                        .filter(|&w| in_workspace(u)[w] && self.member_active[u as usize][w])
+                        .map(|w| {
+                            let total = U::ALL.iter().filter(|&&n| in_workspace(n)[w] && self.member_active[n as usize][w]).count();
+                            (self.fix.ws[w], Role::Member, total as u64)
+                        })
+                        .collect::<Vec<_>>();
+                    calls.push(Call::SeededListing { user: self.fix.user(u), want: sorted_by_id(want, |t| t.0 .0) });
+                }
+                let members: Vec<(UserId, bool)> = U::ALL
+                    .iter()
+                    .filter(|&&u| in_workspace(u)[s])
+                    .map(|&u| (self.fix.user(u), self.member_active[u as usize][s]))
+                    .collect();
+                calls.push(Call::SeededMembers { ws: self.fix.ws[s], want: sorted_by_id(members, |t| t.0 .0) });
+            }
             &Op::OidcInsert { ttl } => {
                 let created_at = tick();
                 let l = NewOidcLogin {
@@ -1899,6 +2135,57 @@ async fn execute(db: &dyn Database, tx: &mut Option<Box<dyn Tx>>, call: Call, at
         Call::UpdateProfile { user, patch, at: when, want } => {
             let got = bounded(at, db.update_profile(user, &patch, when)).await?;
             prop_assert_eq!(got, want, "{}: update profile", at);
+        }
+        Call::InsertWorkspace { w, conflict } => {
+            let got = tokio::time::timeout(Duration::from_secs(20), db.insert_workspace(&w))
+                .await
+                .map_err(|_| fail(at, "timed out after 20 s"))?;
+            match (got, conflict) {
+                (Ok(()), false) | (Err(DbError::Conflict(_)), true) => {}
+                (got, _) => return Err(fail(at, format!("insert workspace: got {got:?}, want conflict = {conflict}"))),
+            }
+        }
+        Call::SlugTaken { slug, want } => {
+            let got = bounded(at, db.workspace_slug_taken(&slug)).await?;
+            prop_assert_eq!(got, want, "{}: slug taken", at);
+        }
+        Call::AnyWorkspace { want } => {
+            let got = bounded(at, db.any_workspace()).await?;
+            prop_assert_eq!(got, want, "{}: any workspace", at);
+        }
+        Call::WorkspacesOf { user, want } => {
+            let got = bounded(at, db.workspaces_of(user)).await?;
+            prop_assert_eq!(got, want, "{}: workspaces of", at);
+        }
+        Call::WorkspaceAccessOf { slug, user, want } => {
+            let got = bounded(at, db.workspace_access(&slug, user)).await?;
+            prop_assert_eq!(got, want, "{}: workspace access", at);
+        }
+        Call::SetMemberActive { ws, user, active, want } => {
+            let got = bounded(at, db.set_workspace_member_active(&sys, ws, user, active)).await?;
+            prop_assert_eq!(got, want, "{}: set workspace member active (true = the membership exists)", at);
+        }
+        Call::WorkspaceMemberOf { scope: (w, u, r), want } => {
+            let got = bounded(at, db.workspace_member(&WorkspaceScope::mint(w, u, r))).await?;
+            prop_assert_eq!(got, want, "{}: workspace member", at);
+        }
+        Call::WorkspaceMembersOf { scope: (w, u, r), want } => {
+            let got = bounded(at, db.workspace_members(&WorkspaceScope::mint(w, u, r))).await?;
+            prop_assert_eq!(got, want, "{}: workspace members", at);
+        }
+        Call::ProjectRolesOf { scope: (w, u, r), want } => {
+            let got = bounded(at, db.project_roles(&WorkspaceScope::mint(w, u, r))).await?;
+            prop_assert_eq!(got, want, "{}: project roles", at);
+        }
+        Call::SeededListing { user, want } => {
+            let got = bounded(at, db.workspaces_of(user)).await?;
+            let got = sorted_by_id(got.into_iter().map(|l| (l.workspace.id, l.role, l.total_members)).collect(), |t| t.0 .0);
+            prop_assert_eq!(got, want, "{}: seeded workspaces of", at);
+        }
+        Call::SeededMembers { ws, want } => {
+            let got = bounded(at, db.workspace_members(&WorkspaceScope::mint(ws, UserId(Uuid::nil()), Role::Member))).await?;
+            let got = sorted_by_id(got.into_iter().map(|m| (m.member.user_id, m.member.is_active)).collect(), |t| t.0 .0);
+            prop_assert_eq!(got, want, "{}: seeded workspace members", at);
         }
         Call::LinkAccount { a } => bounded(at, db.link_account(&a)).await?,
         Call::InsertApiKey { k } => bounded(at, db.insert_api_key(&k)).await?,

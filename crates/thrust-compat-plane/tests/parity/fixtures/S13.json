@@ -1,0 +1,108 @@
+{
+  "exchanges": [
+    {
+      "name": "no session",
+      "request": {
+        "method": "GET",
+        "path": "/api/workspace-slug-check/?slug=journey-ws"
+      },
+      "response": {
+        "body": {
+          "detail": "Authentication credentials were not provided."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 401
+      }
+    },
+    {
+      "name": "no slug",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspace-slug-check/"
+      },
+      "response": {
+        "body": {
+          "error": "Workspace Slug is required"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "an empty slug",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspace-slug-check/?slug="
+      },
+      "response": {
+        "body": {
+          "error": "Workspace Slug is required"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "a slug nobody has",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspace-slug-check/?slug=journey-ws"
+      },
+      "response": {
+        "body": {
+          "status": true
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "a reserved slug",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspace-slug-check/?slug=onboarding"
+      },
+      "response": {
+        "body": {
+          "status": false
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "another reserved slug",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspace-slug-check/?slug=api"
+      },
+      "response": {
+        "body": {
+          "status": false
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    }
+  ],
+  "format_version": 1,
+  "recorded_from": "ba85d4d3d3",
+  "row": "S13"
+}

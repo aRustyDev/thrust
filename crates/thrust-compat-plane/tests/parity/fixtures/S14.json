@@ -1,0 +1,458 @@
+{
+  "exchanges": [
+    {
+      "name": "no session",
+      "request": {
+        "body": {
+          "name": "Nobody",
+          "slug": "nobody"
+        },
+        "method": "POST",
+        "path": "/api/workspaces/"
+      },
+      "response": {
+        "body": {
+          "detail": "Authentication credentials were not provided."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 401
+      }
+    },
+    {
+      "name": "no fields",
+      "request": {
+        "as": "journey@example.test",
+        "body": {},
+        "method": "POST",
+        "path": "/api/workspaces/"
+      },
+      "response": {
+        "body": {
+          "error": "Both name and slug are required"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "no slug",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "name": "No Slug"
+        },
+        "method": "POST",
+        "path": "/api/workspaces/"
+      },
+      "response": {
+        "body": {
+          "error": "Both name and slug are required"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "no name",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "slug": "no-name"
+        },
+        "method": "POST",
+        "path": "/api/workspaces/"
+      },
+      "response": {
+        "body": {
+          "error": "Both name and slug are required"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "a name that is too long",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "name": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "slug": "long-name"
+        },
+        "method": "POST",
+        "path": "/api/workspaces/"
+      },
+      "response": {
+        "body": {
+          "error": "The maximum length for name is 80 and for slug is 48"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "a slug that is too long",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "name": "Long Slug",
+          "slug": "sssssssssssssssssssssssssssssssssssssssssssssssss"
+        },
+        "method": "POST",
+        "path": "/api/workspaces/"
+      },
+      "response": {
+        "body": {
+          "error": "The maximum length for name is 80 and for slug is 48"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "a URL in the name",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "name": "see example.com",
+          "slug": "url-name"
+        },
+        "method": "POST",
+        "path": "/api/workspaces/"
+      },
+      "response": {
+        "body": {
+          "error": "Name cannot contain a URL"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "a name with no letter or number",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "name": "!!!",
+          "slug": "no-alnum"
+        },
+        "method": "POST",
+        "path": "/api/workspaces/"
+      },
+      "response": {
+        "body": {
+          "name": [
+            "Name must contain at least one letter or number"
+          ]
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "a reserved slug",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "name": "Reserved",
+          "slug": "onboarding"
+        },
+        "method": "POST",
+        "path": "/api/workspaces/"
+      },
+      "response": {
+        "body": {
+          "slug": [
+            "Slug is not valid"
+          ]
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "a slug with a space",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "name": "Spaced",
+          "slug": "a b"
+        },
+        "method": "POST",
+        "path": "/api/workspaces/"
+      },
+      "response": {
+        "body": {
+          "slug": [
+            "Enter a valid \"slug\" consisting of letters, numbers, underscores or hyphens."
+          ]
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "an organization size that is too long",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "name": "Big",
+          "organization_size": "xxxxxxxxxxxxxxxxxxxxx",
+          "slug": "big-org"
+        },
+        "method": "POST",
+        "path": "/api/workspaces/"
+      },
+      "response": {
+        "body": {
+          "organization_size": [
+            "Ensure this field has no more than 20 characters."
+          ]
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "a time zone that does not exist",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "name": "Zoned",
+          "slug": "zoned",
+          "timezone": "Mars/Olympus"
+        },
+        "method": "POST",
+        "path": "/api/workspaces/"
+      },
+      "response": {
+        "body": {
+          "timezone": [
+            "\"Mars/Olympus\" is not a valid choice."
+          ]
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "a workspace",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "name": "Journey Workspace",
+          "organization_size": "Just myself",
+          "slug": "journey-ws"
+        },
+        "method": "POST",
+        "path": "/api/workspaces/"
+      },
+      "response": {
+        "body": {
+          "background_color": "<opaque>",
+          "created_at": "<ts>",
+          "created_by": "<uuid:1>",
+          "deleted_at": null,
+          "id": "<uuid:2>",
+          "logo": null,
+          "logo_asset": null,
+          "logo_url": null,
+          "name": "Journey Workspace",
+          "organization_size": "Just myself",
+          "owner": "<uuid:1>",
+          "role": 20,
+          "slug": "journey-ws",
+          "timezone": "UTC",
+          "total_members": 1,
+          "updated_at": "<ts>",
+          "updated_by": null
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 201
+      }
+    },
+    {
+      "name": "the same slug again",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "name": "Again",
+          "slug": "journey-ws"
+        },
+        "method": "POST",
+        "path": "/api/workspaces/"
+      },
+      "response": {
+        "body": {
+          "slug": [
+            "Workspace with this slug already exists."
+          ]
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "another workspace, with a company role",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "company_role": "engineer",
+          "name": "Second Workspace",
+          "organization_size": "2-10",
+          "slug": "journey-two"
+        },
+        "method": "POST",
+        "path": "/api/workspaces/"
+      },
+      "response": {
+        "body": {
+          "background_color": "<opaque>",
+          "created_at": "<ts>",
+          "created_by": "<uuid:1>",
+          "deleted_at": null,
+          "id": "<uuid:3>",
+          "logo": null,
+          "logo_asset": null,
+          "logo_url": null,
+          "name": "Second Workspace",
+          "organization_size": "2-10",
+          "owner": "<uuid:1>",
+          "role": 20,
+          "slug": "journey-two",
+          "timezone": "UTC",
+          "total_members": 1,
+          "updated_at": "<ts>",
+          "updated_by": null
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 201
+      }
+    },
+    {
+      "name": "settings: workspaces, and no last workspace",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/users/me/settings/"
+      },
+      "response": {
+        "body": {
+          "email": "journey@example.test",
+          "id": "<uuid:1>",
+          "workspace": {
+            "fallback_workspace_id": "<uuid:2>",
+            "fallback_workspace_slug": "journey-ws",
+            "invites": 0,
+            "last_workspace_id": null,
+            "last_workspace_slug": null
+          }
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "the last workspace is set",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "last_workspace_id": "<uuid:3>"
+        },
+        "method": "PATCH",
+        "path": "/api/users/me/profile/"
+      },
+      "response": {
+        "body": {
+          "background_color": "<opaque>",
+          "billing_address": null,
+          "billing_address_country": "INDIA",
+          "company_name": "",
+          "created_at": "<ts>",
+          "goals": {},
+          "has_billing_address": false,
+          "has_marketing_email_consent": true,
+          "id": "<uuid:4>",
+          "is_app_rail_docked": true,
+          "is_mobile_onboarded": false,
+          "is_navigation_tour_completed": false,
+          "is_onboarded": true,
+          "is_smooth_cursor_enabled": false,
+          "is_subscribed_to_changelog": false,
+          "is_tour_completed": true,
+          "language": "en",
+          "last_workspace_id": "<uuid:3>",
+          "mobile_onboarding_step": {
+            "profile_complete": false,
+            "workspace_create": false,
+            "workspace_join": false
+          },
+          "mobile_timezone_auto_set": false,
+          "notification_view_mode": "full",
+          "onboarding_step": {
+            "profile_complete": true,
+            "workspace_create": false,
+            "workspace_invite": false,
+            "workspace_join": false
+          },
+          "product_tour": {
+            "cycles": false,
+            "intake": false,
+            "modules": false,
+            "pages": false,
+            "work_items": false
+          },
+          "role": "5",
+          "start_of_the_week": 2,
+          "theme": {
+            "background": "#1a1a1a",
+            "darkPalette": true,
+            "primary": "#3f76ff",
+            "theme": "dark"
+          },
+          "updated_at": "<ts>",
+          "use_case": "Plan work. Track bugs",
+          "user": "<uuid:1>"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    }
+  ],
+  "format_version": 1,
+  "recorded_from": "ba85d4d3d3",
+  "row": "S14"
+}
