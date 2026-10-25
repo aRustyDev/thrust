@@ -8,7 +8,7 @@
 use reqwest::StatusCode;
 use serde_json::{json, Value};
 use thrust_contract_tests::*;
-use thrust_contracts::{default_project_identifier, ProjectId, ProjectNetwork, Role, SeedFixture, SeedMembership, SeedProject, SeedProjectDetails, SeedWorkspace, SeedWorkspaceRole, WorkspaceId, WorkspaceSlug};
+use thrust_contracts::{default_project_identifier, ProjectId, ProjectNetwork, Role, SeedFixture, SeedMembership, SeedProject, SeedProjectDetails, SeedState, SeedWorkspace, SeedWorkspaceRole, StateGroup, WorkspaceId, WorkspaceSlug};
 
 use super::t;
 
@@ -778,4 +778,76 @@ async fn compat_a_workspace_admin_lists_every_project_and_a_member_only_their_ow
     let outsider = get(&t, &f.outsider_a.token, &path).await;
     assert_eq!(outsider.as_array().unwrap().len(), 1, "{outsider}");
     assert_eq!((outsider[0]["name"].clone(), outsider[0]["member_role"].clone()), (json!("A"), Value::Null), "{outsider}");
+}
+
+/// S48, S47 and X01 on every target. A member of the project makes a work item (201, in the pin's 26 keys, numbered 1 and put at
+/// 65535), the project lists it (the twelve keys of the pin's paginator, the 23 columns of a row) and the app opens it with what it
+/// asks to be expanded; a guest of the project reads (sees only what they made) and may not make one; someone in the workspace who is
+/// not in the project is the decorator's 403 on all three. Controls: the second work item is placed 10000 after the first, and the
+/// stranger's refusals are on the same routes the members' successes are.
+#[tokio::test]
+async fn compat_a_member_makes_a_work_item_the_project_lists_it_and_the_app_opens_it() {
+    let t = t();
+    let f = Fixture::seed(&t).await;
+    let state = uuid::Uuid::new_v4();
+    let seeded = SeedFixture {
+        states: vec![SeedState {
+            id: state,
+            project_id: f.a.project,
+            workspace_id: f.ws_a,
+            name: "Backlog".into(),
+            color: "#60646C".into(),
+            sequence: 15000.0,
+            group: StateGroup::Backlog,
+            is_default: true,
+        }],
+        ..SeedFixture::default()
+    };
+    assert_eq!(t.admin_post("/internal/seed", &serde_json::to_value(&seeded).unwrap()).await.status(), 204);
+    let issues = format!("/api/workspaces/{}/projects/{}/issues/", f.a.slug, f.a.project.0);
+    let by_decorator = json!({"error": "You don't have the required permissions."});
+
+    // a member makes one; a guest of the project and a member of the workspace who is not in it are refused
+    let r = post_as(&t, &f.member_a.token, &issues, &json!({"name": "  The first  ", "priority": "high", "description_html": "<p>hi</p><script>x()</script>"})).await;
+    assert_eq!(r.status(), 201);
+    let made: Value = r.json().await.unwrap();
+    assert_eq!((made["name"].clone(), made["priority"].clone(), made["sequence_id"].clone(), made["sort_order"].clone()), (json!("The first"), json!("high"), json!(1), json!(65535.0)), "{made}");
+    assert_eq!((made["state_id"].clone(), made["created_by"].clone()), (json!(state), json!(f.member_a.id.0)), "{made}");
+    assert_eq!(made.as_object().unwrap().len(), 26, "{made}");
+    for who in [&f.guest_a, &f.outsider_a] {
+        let r = post_as(&t, &who.token, &issues, &json!({"name": "no"})).await;
+        assert_eq!((r.status().as_u16(), r.json::<Value>().await.unwrap()), (403, by_decorator.clone()));
+    }
+    let second: Value = post_as(&t, &f.admin_a.token, &issues, &json!({"name": "The second"})).await.json().await.unwrap();
+    assert_eq!((second["sequence_id"].clone(), second["sort_order"].clone()), (json!(2), json!(75535.0)), "{second}");
+
+    // the project lists them, newest first, in the pin's envelope; a member sees both, the guest only what they made (none)
+    let first_page = "?cursor=100:0:0&per_page=100&order_by=-created_at&sub_issue=true&layout=list&filters=%7B%7D";
+    let listed = get(&t, &f.admin_a.token, &format!("{issues}{first_page}")).await;
+    assert_eq!(listed.as_object().unwrap().len(), 12, "{listed}");
+    assert_eq!((listed["count"].clone(), listed["total_count"].clone(), listed["next_cursor"].clone(), listed["prev_cursor"].clone()), (json!(2), json!(2), json!("100:1:0"), json!("100:-1:1")), "{listed}");
+    let names: Vec<&str> = listed["results"].as_array().unwrap().iter().map(|r| r["name"].as_str().unwrap()).collect();
+    assert_eq!(names, ["The second", "The first"]);
+    assert_eq!(listed["results"][0].as_object().unwrap().len(), 26, "the 22 columns, the three arrays and the state's group: {}", listed["results"][0]);
+    let guest = get(&t, &f.guest_a.token, &format!("{issues}{first_page}")).await;
+    assert_eq!((guest["count"].clone(), guest["results"].clone()), (json!(0), json!([])), "{guest}");
+    // a page of one, and what is refused
+    let paged = get(&t, &f.admin_a.token, &format!("{issues}?per_page=1&cursor=1:1:0&order_by=sequence_id")).await;
+    assert_eq!((paged["results"][0]["name"].clone(), paged["next_page_results"].clone(), paged["prev_page_results"].clone()), (json!("The second"), json!(false), json!(true)), "{paged}");
+    let r = t.http.get(t.url(&format!("{issues}?group_by=priority"))).bearer_auth(&f.admin_a.token).send().await.unwrap();
+    assert_eq!(r.status(), 400);
+    let r = t.http.get(t.url(&format!("{issues}{first_page}"))).bearer_auth(&f.outsider_a.token).send().await.unwrap();
+    assert_eq!((r.status().as_u16(), r.json::<Value>().await.unwrap()), (403, by_decorator.clone()));
+
+    // the app opens the first, with what it expands; the guest may not open it, the stranger is refused, a work item that is not there is a 404
+    let id = made["id"].as_str().unwrap();
+    let open = format!("{issues}{id}/?expand=issue_reactions,issue_attachments,issue_link,parent");
+    let opened = get(&t, &f.member_a.token, &open).await;
+    assert_eq!((opened["description_html"].clone(), opened["is_subscribed"].clone(), opened["issue_link"].clone(), opened["parent"].clone()), (json!("<p>hi</p>"), json!(false), json!([]), Value::Null), "the script is gone: {opened}");
+    let r = t.http.get(t.url(&open)).bearer_auth(&f.guest_a.token).send().await.unwrap();
+    assert_eq!((r.status().as_u16(), r.json::<Value>().await.unwrap()), (403, json!({"error": "You are not allowed to view this issue"})));
+    let r = t.http.get(t.url(&open)).bearer_auth(&f.outsider_a.token).send().await.unwrap();
+    assert_eq!((r.status().as_u16(), r.json::<Value>().await.unwrap()), (403, by_decorator));
+    let r = t.http.get(t.url(&format!("{issues}{}/", uuid::Uuid::new_v4()))).bearer_auth(&f.member_a.token).send().await.unwrap();
+    assert_eq!((r.status().as_u16(), r.json::<Value>().await.unwrap()), (404, json!({"error": "The required object does not exist."})));
 }

@@ -1356,6 +1356,320 @@ async fn project_counts_leave_out_drafts_archived_and_deleted_work_items_and_cou
     assert_eq!(counts(env.db.project_stats(&admin, Some(&[p1])).await.unwrap()), vec![(p1, 2, 1)]);
 }
 
+/// The work items' compat columns and their two join tables, and the constraints that keep them well formed: a priority from the
+/// five, dates in order, a state, a person and a label that exist, a person and a label once, a project of its own workspace.
+#[tokio::test]
+async fn the_work_item_tables_have_the_columns_they_say_and_the_constraints_that_keep_them_well_formed() {
+    let env = env().await;
+    let raw = env.conn.raw().await.unwrap();
+    let columns = |table: &'static str| {
+        let raw = &raw;
+        async move {
+            let rows = raw
+                .query(
+                    "SELECT column_name, data_type FROM information_schema.columns \
+                     WHERE table_schema = 'public' AND table_name = $1 ORDER BY column_name",
+                    &[&table],
+                )
+                .await
+                .unwrap();
+            rows.iter().map(|r| (r.get::<_, String>(0), r.get::<_, String>(1))).collect::<Vec<_>>()
+        }
+    };
+    let ts = "timestamp with time zone";
+    let (text, uuid, boolean, bigint, date) = ("text", "uuid", "boolean", "bigint", "date");
+    let pairs = |v: Vec<(&str, &str)>| v.into_iter().map(|(n, t)| (n.to_string(), t.to_string())).collect::<Vec<_>>();
+    assert_eq!(
+        columns("work_items").await,
+        pairs(vec![
+            ("archived_at", ts),
+            ("completed_at", ts),
+            ("created_at", ts),
+            ("created_by", uuid),
+            ("deleted_at", ts),
+            ("description", text),
+            ("description_html", text),
+            ("external_id", text),
+            ("external_source", text),
+            ("id", uuid),
+            ("is_draft", boolean),
+            ("name", text),
+            ("priority", text),
+            ("project_id", uuid),
+            ("sequence_id", bigint),
+            ("sort_order", bigint),
+            ("start_date", date),
+            ("state_id", uuid),
+            ("target_date", date),
+            ("updated_at", ts),
+            ("updated_by", uuid),
+            ("workspace_id", uuid),
+        ])
+    );
+    assert_eq!(
+        columns("work_item_assignees").await,
+        pairs(vec![("created_at", ts), ("project_id", uuid), ("user_id", uuid), ("work_item_id", uuid), ("workspace_id", uuid)])
+    );
+    assert_eq!(
+        columns("work_item_labels").await,
+        pairs(vec![("created_at", ts), ("label_id", uuid), ("project_id", uuid), ("work_item_id", uuid), ("workspace_id", uuid)])
+    );
+
+    let owner = user_without_login(&env).await;
+    let (w1, w2) = (workspace_for(owner, "items-one"), workspace_for(owner, "items-two"));
+    env.db.insert_workspace(&w1).await.unwrap();
+    env.db.insert_workspace(&w2).await.unwrap();
+    let first = project_for(w1.workspace.id, owner, "First", "FST");
+    env.db.insert_project(&WorkspaceScope::mint(w1.workspace.id, owner, Role::Admin), &first).await.unwrap();
+    let second = project_for(w2.workspace.id, owner, "Second", "SND");
+    env.db.insert_project(&WorkspaceScope::mint(w2.workspace.id, owner, Role::Admin), &second).await.unwrap();
+    let (ws, project) = (w1.workspace.id, first.project.id);
+    let s = scope(ws, project);
+    let mut tx = env.db.begin(&s).await.unwrap();
+    let a = tx.allocate(&s).await.unwrap();
+    let w = item(ws, project, a, "constrained", None);
+    tx.insert_work_item(&s, &w).await.unwrap();
+    tx.commit().await.unwrap();
+    let id = w.id.0;
+    // what a work item has when nothing says otherwise: the defaults a slice-made item reads as
+    let row = raw.query_one("SELECT priority, description_html, state_id IS NULL, start_date IS NULL, updated_at IS NOT NULL FROM work_items WHERE id = $1", &[&id]).await.unwrap();
+    assert_eq!((row.get::<_, String>(0), row.get::<_, String>(1), row.get::<_, bool>(2), row.get::<_, bool>(3), row.get::<_, bool>(4)), ("none".into(), "<p></p>".into(), true, true, true));
+    // a priority from the five
+    for (priority, ok) in [("urgent", true), ("high", true), ("medium", true), ("low", true), ("none", true), ("huge", false), ("", false), ("High", false)] {
+        assert_eq!(raw.execute("UPDATE work_items SET priority = $2 WHERE id = $1", &[&id, &priority]).await.is_ok(), ok, "{priority:?}");
+    }
+    // a start that is not after the target, or either missing
+    for (set, ok) in [
+        ("start_date = '2026-11-01', target_date = '2026-11-01'", true),
+        ("start_date = '2026-11-01', target_date = '2026-11-02'", true),
+        ("start_date = '2026-11-03', target_date = '2026-11-02'", false),
+        ("start_date = '2026-11-03', target_date = NULL", true),
+        ("start_date = NULL, target_date = '2026-01-01'", true),
+    ] {
+        assert_eq!(raw.execute(&format!("UPDATE work_items SET {set} WHERE id = $1"), &[&id]).await.is_ok(), ok, "{set}");
+    }
+    // a state that exists, whatever project it is of (the foreign key is to the state)
+    let state = first.states[0].id;
+    assert!(raw.execute("UPDATE work_items SET state_id = $2 WHERE id = $1", &[&id, &state]).await.is_ok());
+    assert!(raw.execute("UPDATE work_items SET state_id = $2 WHERE id = $1", &[&id, &second.states[0].id]).await.is_ok(), "the key is to the state, as the core's rule is");
+    assert!(raw.execute("UPDATE work_items SET state_id = $2 WHERE id = $1", &[&id, &new_id()]).await.is_err(), "a state that is not there");
+    // who changed it is a user
+    assert!(raw.execute("UPDATE work_items SET updated_by = $2 WHERE id = $1", &[&id, &owner.0]).await.is_ok());
+    assert!(raw.execute("UPDATE work_items SET updated_by = $2 WHERE id = $1", &[&id, &new_id()]).await.is_err());
+    // a person, once, a user, in the work item's own workspace and project
+    let assign = "INSERT INTO work_item_assignees (work_item_id, workspace_id, project_id, user_id, created_at) VALUES ($1, $2, $3, $4, now())";
+    raw.execute(assign, &[&id, &ws.0, &project.0, &owner.0]).await.unwrap();
+    assert!(raw.execute(assign, &[&id, &ws.0, &project.0, &owner.0]).await.is_err(), "a person twice");
+    assert!(raw.execute(assign, &[&id, &ws.0, &project.0, &new_id()]).await.is_err(), "a person who is no user");
+    assert!(raw.execute(assign, &[&id, &w2.workspace.id.0, &project.0, &owner.0]).await.is_err(), "another workspace than the project's");
+    assert!(raw.execute(assign, &[&new_id(), &ws.0, &project.0, &owner.0]).await.is_err(), "a work item that is not there");
+    // a label, once, that exists
+    let label_id = new_id();
+    raw.execute("INSERT INTO labels (id, workspace_id, project_id, name, created_at, updated_at) VALUES ($1, $2, $3, 'bug', now(), now())", &[&label_id, &ws.0, &project.0]).await.unwrap();
+    let tag = "INSERT INTO work_item_labels (work_item_id, workspace_id, project_id, label_id, created_at) VALUES ($1, $2, $3, $4, now())";
+    raw.execute(tag, &[&id, &ws.0, &project.0, &label_id]).await.unwrap();
+    assert!(raw.execute(tag, &[&id, &ws.0, &project.0, &label_id]).await.is_err(), "a label twice");
+    assert!(raw.execute(tag, &[&id, &ws.0, &project.0, &new_id()]).await.is_err(), "a label that is not there");
+}
+
+/// A database created before migration 0013 has work items with a name, a number and a place. `migrate` gives each the pin's
+/// defaults (no state, priority `none`, no dates, the empty paragraph) and the time it was made as the time it was changed, and
+/// applying it a second time changes nothing. A pinned regression for the upgrade path of a database that has data; every other
+/// test here starts from an empty one.
+#[tokio::test]
+async fn migration_0013_upgrades_a_database_that_has_work_items() {
+    let container = Postgres::default().start().await.expect("start postgres container");
+    let port = container.get_host_port_ipv4(5432).await.expect("mapped port");
+    let url = format!("postgres://postgres:postgres@127.0.0.1:{port}/postgres");
+    let conn = Arc::new(PoolConnector::from_url(&url, 4).unwrap());
+    let raw = conn.raw().await.unwrap();
+    for sql in [
+        thrust_adapters_postgres::MIGRATION_0001,
+        thrust_adapters_postgres::MIGRATION_0002,
+        thrust_adapters_postgres::MIGRATION_0003,
+        thrust_adapters_postgres::MIGRATION_0004,
+        thrust_adapters_postgres::MIGRATION_0005,
+        thrust_adapters_postgres::MIGRATION_0006,
+        thrust_adapters_postgres::MIGRATION_0007,
+        thrust_adapters_postgres::MIGRATION_0008,
+        thrust_adapters_postgres::MIGRATION_0009,
+        thrust_adapters_postgres::MIGRATION_0010,
+        thrust_adapters_postgres::MIGRATION_0011,
+        thrust_adapters_postgres::MIGRATION_0012,
+    ] {
+        raw.batch_execute(sql).await.unwrap();
+    }
+    let (ws, project, user, item) = (new_id(), new_id(), new_id(), new_id());
+    raw.execute("INSERT INTO users (id) VALUES ($1)", &[&user]).await.unwrap();
+    raw.execute("INSERT INTO workspaces (id, slug, name) VALUES ($1, 'legacy-items', 'Legacy')", &[&ws]).await.unwrap();
+    raw.execute("INSERT INTO workspace_members (workspace_id, user_id) VALUES ($1, $2)", &[&ws, &user]).await.unwrap();
+    raw.execute("INSERT INTO projects (id, workspace_id, name, identifier) VALUES ($1, $2, 'Legacy project', 'LEG')", &[&project, &ws]).await.unwrap();
+    raw.execute("INSERT INTO project_members (project_id, workspace_id, user_id, role) VALUES ($1, $2, $3, 'member')", &[&project, &ws, &user]).await.unwrap();
+    let made = Utc.timestamp_opt(1_700_000_000, 0).unwrap();
+    raw.execute(
+        "INSERT INTO work_items (id, workspace_id, project_id, sequence_id, sort_order, name, created_by, created_at) VALUES ($1, $2, $3, 1, 10000, 'Legacy item', $4, $5)",
+        &[&item, &ws, &project, &user, &made],
+    )
+    .await
+    .unwrap();
+
+    thrust_adapters_postgres::migrate(&raw).await.unwrap();
+    async fn state(raw: &tokio_postgres::Client) -> Vec<String> {
+        let r = raw
+            .query_one(
+                "SELECT priority, description_html, state_id::text, start_date::text, target_date::text, completed_at::text, updated_at::text, updated_by::text \
+                 FROM work_items",
+                &[],
+            )
+            .await
+            .unwrap();
+        (0..8).map(|i| r.get::<_, Option<String>>(i).unwrap_or_else(|| "NULL".into())).collect()
+    }
+    let first = state(&raw).await;
+    thrust_adapters_postgres::migrate(&raw).await.unwrap();
+    assert_eq!(first, state(&raw).await, "a second run changed the work item");
+    assert_eq!(&first[..6], ["none", "<p></p>", "NULL", "NULL", "NULL", "NULL"]);
+    assert_eq!(first[6], raw.query_one("SELECT created_at::text FROM work_items", &[]).await.unwrap().get::<_, String>(0), "changed when it was made");
+
+    drop(raw);
+    let db = PgDatabase::new(conn);
+    let s = Scope::mint(WorkspaceId(ws), ProjectId(project), UserId(user));
+    let row = db.work_item_row(&s, WorkItemId(item)).await.unwrap().expect("the item is there");
+    assert_eq!(row.attrs, WorkItemAttrs::bare(made));
+    assert_eq!((row.item.name.as_str(), row.state_group), ("Legacy item", None));
+}
+
+/// A work item of the scope's project with these attributes, in the open transaction.
+async fn insert_with_attrs(tx: &mut Box<dyn Tx>, s: Scope, a: Allocation, attrs: &WorkItemAttrs) -> Result<WorkItemId, DbError> {
+    let w = item(s.workspace_id(), s.project_id(), a, "with attributes", None);
+    tx.insert_work_item(&s, &w).await?;
+    tx.insert_work_item_attrs(&s, w.id, attrs).await?;
+    Ok(w.id)
+}
+
+/// A work item and its attributes are one transaction: all of it commits, or none of it does, and what is refused (a state, a person
+/// or a label that is not there; a start after a target) refuses all of it. The read gives back every attribute exactly as it was
+/// written, with the people and the labels in id order and the group of the state.
+#[tokio::test]
+async fn a_work_item_and_its_attributes_are_one_transaction() {
+    let env = env().await;
+    let owner = user_without_login(&env).await;
+    let w = workspace_for(owner, "item-attrs");
+    env.db.insert_workspace(&w).await.unwrap();
+    let ws = w.workspace.id;
+    let new_project = project_for(ws, owner, "Attrs", "ATR");
+    env.db.insert_project(&WorkspaceScope::mint(ws, owner, Role::Admin), &new_project).await.unwrap();
+    let project = new_project.project.id;
+    let s = Scope::mint(ws, project, owner);
+    let (label, done) = (new_id(), new_id());
+    {
+        let raw = env.conn.raw().await.unwrap();
+        raw.execute("INSERT INTO labels (id, workspace_id, project_id, name, created_at, updated_at) VALUES ($1, $2, $3, 'bug', now(), now())", &[&label, &ws.0, &project.0]).await.unwrap();
+        // the project `project_for` makes has a default state and an intake state; one of the completed group is added
+        raw.execute(
+            "INSERT INTO states (id, workspace_id, project_id, name, color, sequence, state_group, is_default, created_at, updated_at) \
+             VALUES ($1, $2, $3, 'Done', '#fff', 45000, 'completed', false, now(), now())",
+            &[&done, &ws.0, &project.0],
+        )
+        .await
+        .unwrap();
+    }
+    let when = Utc.timestamp_opt(1_800_000_600, 0).unwrap();
+    let attrs = WorkItemAttrs {
+        state_id: Some(done),
+        priority: Priority::High,
+        start_date: chrono::NaiveDate::from_ymd_opt(2026, 11, 1),
+        target_date: chrono::NaiveDate::from_ymd_opt(2026, 11, 30),
+        completed_at: Some(when),
+        updated_at: when,
+        updated_by: Some(owner),
+        description_html: "<p>Résumé &amp; more</p>".into(),
+        assignee_ids: vec![owner, owner],
+        label_ids: vec![label],
+    };
+    // committed: every attribute as written, the owner once, the group of the state
+    let mut tx = env.db.begin(&s).await.unwrap();
+    let a = tx.allocate(&s).await.unwrap();
+    let id = insert_with_attrs(&mut tx, s, a, &attrs).await.unwrap();
+    tx.commit().await.unwrap();
+    let row = env.db.work_item_row(&s, id).await.unwrap().expect("committed");
+    let mut want = attrs.clone();
+    want.assignee_ids = vec![owner];
+    assert_eq!(row.attrs, want);
+    assert_eq!(row.state_group, Some(StateGroup::Completed));
+    // rolled back: nothing of it is there, and the number is gone (a rollback leaves a gap)
+    let mut tx = env.db.begin(&s).await.unwrap();
+    let a = tx.allocate(&s).await.unwrap();
+    let rolled = insert_with_attrs(&mut tx, s, a, &attrs).await.unwrap();
+    tx.rollback().await.unwrap();
+    assert!(env.db.work_item_row(&s, rolled).await.unwrap().is_none());
+    // refused: each, and the item with it
+    let bad = |f: &dyn Fn(&mut WorkItemAttrs)| {
+        let mut a = attrs.clone();
+        f(&mut a);
+        a
+    };
+    for refused in [
+        bad(&|a| a.state_id = Some(new_id())),
+        bad(&|a| a.assignee_ids = vec![UserId(new_id())]),
+        bad(&|a| a.label_ids = vec![new_id()]),
+        bad(&|a| a.start_date = chrono::NaiveDate::from_ymd_opt(2026, 12, 1)),
+    ] {
+        let mut tx = env.db.begin(&s).await.unwrap();
+        let a = tx.allocate(&s).await.unwrap();
+        let got = insert_with_attrs(&mut tx, s, a, &refused).await;
+        assert!(matches!(got, Err(DbError::Backend(_))), "{refused:?}: {got:?}");
+        let _ = tx.rollback().await;
+    }
+    assert_eq!(env.db.work_item_page(&s, &WorkItemQuery { order: WorkItemOrder { field: WorkItemOrderField::SequenceId, descending: false }, limit: 10, page: 0, updated_after: None, created_by: None }).await.unwrap().total, 1);
+}
+
+/// The place a new work item takes is read from the greatest in its state: one per state (and one for the items with none), a deleted
+/// item not counted, an archived one and a draft counted (what the pin's `Issue.objects` finds).
+#[tokio::test]
+async fn the_greatest_place_in_a_state_is_read_from_the_live_rows_of_that_state() {
+    let env = env().await;
+    let owner = user_without_login(&env).await;
+    let w = workspace_for(owner, "item-places");
+    env.db.insert_workspace(&w).await.unwrap();
+    let ws = w.workspace.id;
+    let new_project = project_for(ws, owner, "Places", "PLC");
+    env.db.insert_project(&WorkspaceScope::mint(ws, owner, Role::Admin), &new_project).await.unwrap();
+    let project = new_project.project.id;
+    let s = Scope::mint(ws, project, owner);
+    let (a, b) = (new_project.states[0].id, new_project.states[1].id);
+    let make = |state: Option<Uuid>, place: i64, edit: &dyn Fn(&mut WorkItem)| {
+        let env = &env;
+        let mut w = item(ws, project, Allocation { sequence_id: 0, sort_order: place }, "n", None);
+        edit(&mut w);
+        let state_attrs = WorkItemAttrs { state_id: state, ..WorkItemAttrs::bare(w.created_at) };
+        async move {
+            let mut tx = env.db.begin(&s).await.unwrap();
+            let alloc = tx.allocate(&s).await.unwrap();
+            w.sequence_id = alloc.sequence_id;
+            tx.insert_work_item(&s, &w).await.unwrap();
+            tx.insert_work_item_attrs(&s, w.id, &state_attrs).await.unwrap();
+            tx.commit().await.unwrap();
+            w.id
+        }
+    };
+    assert_eq!(env.db.max_work_item_sort_order(&s, Some(a)).await.unwrap(), None, "no item has a place yet");
+    make(Some(a), 65_535, &|_| {}).await;
+    make(Some(a), 75_535, &|_| {}).await;
+    make(Some(b), 65_535, &|_| {}).await;
+    make(None, 10_000, &|_| {}).await;
+    let gone = make(Some(a), 95_535, &|_| {}).await;
+    make(Some(b), 85_535, &|w| w.archived_at = Some(Utc.timestamp_opt(1_800_000_000, 0).unwrap())).await;
+    make(Some(b), 95_535, &|w| w.is_draft = true).await;
+    let mut tx = env.db.begin(&s).await.unwrap();
+    assert!(tx.soft_delete_work_item(&s, gone, Utc.timestamp_opt(1_800_000_001, 0).unwrap()).await.unwrap());
+    tx.commit().await.unwrap();
+    assert_eq!(env.db.max_work_item_sort_order(&s, Some(a)).await.unwrap(), Some(75_535), "the deleted one is not counted");
+    assert_eq!(env.db.max_work_item_sort_order(&s, Some(b)).await.unwrap(), Some(95_535), "an archived one and a draft are");
+    assert_eq!(env.db.max_work_item_sort_order(&s, None).await.unwrap(), Some(10_000), "items with no state are their own run");
+    assert_eq!(env.db.max_work_item_sort_order(&s, Some(new_id())).await.unwrap(), None);
+}
+
 /// `update_profile` is ONE statement: the onboarding page sends several requests at once, each changing different fields of
 /// one profile, and none may lose another's change. 32 patches, each setting its own preference, from as many tasks.
 #[tokio::test]

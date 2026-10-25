@@ -483,3 +483,145 @@ pub fn role_number(r: Role) -> u8 {
         Role::Admin => 20,
     }
 }
+
+// ---------------------------------------------------------------------------------------------------------------------
+// The cast: a workspace with a caller of every kind and one project, shared by the tests of the routes that name a project.
+// ---------------------------------------------------------------------------------------------------------------------
+
+/// Who asks. The workspace's roles are admin, member and guest; the project's are admin, member and guest, and those three are
+/// members (guest among them) of the workspace; the other three are in the workspace and in no project.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Caller {
+    Anonymous,
+    /// Signed in, in no workspace of this one.
+    Stranger,
+    WsAdmin,
+    WsMember,
+    WsGuest,
+    ProjectAdmin,
+    ProjectMember,
+    ProjectGuest,
+}
+
+pub const CALLERS: [Caller; 8] = [
+    Caller::Anonymous,
+    Caller::Stranger,
+    Caller::WsAdmin,
+    Caller::WsMember,
+    Caller::WsGuest,
+    Caller::ProjectAdmin,
+    Caller::ProjectMember,
+    Caller::ProjectGuest,
+];
+
+impl Caller {
+    pub fn email(self) -> &'static str {
+        match self {
+            Caller::Anonymous => "",
+            Caller::Stranger => "stranger@example.test",
+            Caller::WsAdmin => "ws-admin@example.test",
+            Caller::WsMember => "ws-member@example.test",
+            Caller::WsGuest => "ws-guest@example.test",
+            Caller::ProjectAdmin => "p-admin@example.test",
+            Caller::ProjectMember => "p-member@example.test",
+            Caller::ProjectGuest => "p-guest@example.test",
+        }
+    }
+    pub fn in_workspace(self) -> bool {
+        !matches!(self, Caller::Anonymous | Caller::Stranger)
+    }
+    pub fn in_project(self) -> bool {
+        matches!(self, Caller::ProjectAdmin | Caller::ProjectMember | Caller::ProjectGuest)
+    }
+    /// The role the workspace gives them: the project's people are members of the workspace, the guest a guest.
+    pub fn workspace_role(self) -> Option<Role> {
+        match self {
+            Caller::Anonymous | Caller::Stranger => None,
+            Caller::WsAdmin => Some(Role::Admin),
+            Caller::WsGuest | Caller::ProjectGuest => Some(Role::Guest),
+            Caller::WsMember | Caller::ProjectAdmin | Caller::ProjectMember => Some(Role::Member),
+        }
+    }
+}
+
+pub const WS: u128 = 0xA0;
+pub const PROJECT: u128 = 0xA1;
+pub const SLUG: &str = "cast";
+
+pub struct Cast {
+    pub router: axum::Router,
+    pub db: std::sync::Arc<thrust_adapters_memory::MemoryDatabase>,
+    pub jar: Jar,
+}
+
+impl Cast {
+    pub fn call(&self, who: Caller, method: &str, path: &str, body: Value) -> Value {
+        call(&self.router, &self.jar, who.email(), method, path, body)
+    }
+    pub fn user(&self, who: Caller) -> UserId {
+        user_id(&self.db, who.email())
+    }
+    pub fn workspace_scope(&self) -> WorkspaceScope {
+        WorkspaceScope::mint(WorkspaceId(Uuid::from_u128(WS)), self.user(Caller::WsAdmin), Role::Admin)
+    }
+    /// The seeded project as the table holds it, and a way to save a changed copy.
+    pub fn project_row(&self) -> ProjectRow {
+        futures_executor::block_on(self.db.project_detail(&self.workspace_scope(), ProjectId(Uuid::from_u128(PROJECT)))).unwrap().unwrap().listing.project
+    }
+    pub fn save(&self, row: &ProjectRow) {
+        assert!(futures_executor::block_on(self.db.update_project(&self.workspace_scope(), row)).unwrap());
+    }
+}
+
+/// A workspace `cast` with a caller of every kind, and one project (`PROJECT`, public, the key `PRJ`) that the three project callers
+/// are in with their three roles.
+pub fn cast() -> Cast {
+    let emails: Vec<&str> = CALLERS.iter().filter(|c| **c != Caller::Anonymous).map(|c| c.email()).collect();
+    let (router, db, jar) = world(&emails);
+    let c = Cast { router, db, jar };
+    let ws = WorkspaceId(Uuid::from_u128(WS));
+    let project = ProjectId(Uuid::from_u128(PROJECT));
+    make_workspace(&c.db, WS, SLUG, c.user(Caller::WsAdmin), Role::Admin);
+    seed(
+        &c.db,
+        SeedFixture {
+            workspace_roles: CALLERS
+                .iter()
+                .filter(|x| x.in_workspace() && **x != Caller::WsAdmin)
+                .map(|x| SeedWorkspaceRole { workspace_id: ws, user_id: c.user(*x), role: x.workspace_role().unwrap() })
+                .collect(),
+            projects: vec![SeedProject { id: project, workspace_id: ws, name: "Cast Project".into() }],
+            project_details: vec![SeedProjectDetails { identifier: Some("PRJ".into()), created_at: Some(at(1)), ..SeedProjectDetails::of(project) }],
+            // a default state and the intake state: the project has been made as the pin makes one, in short
+            states: [(0x5001, "Backlog", 15000.0, StateGroup::Backlog, true), (0x5002, "Triage", 65000.0, StateGroup::Triage, false)]
+                .iter()
+                .map(|(n, name, sequence, group, is_default)| SeedState {
+                    id: Uuid::from_u128(*n),
+                    project_id: project,
+                    workspace_id: ws,
+                    name: (*name).into(),
+                    color: "#000000".into(),
+                    sequence: *sequence,
+                    group: *group,
+                    is_default: *is_default,
+                })
+                .collect(),
+            memberships: [(Caller::ProjectAdmin, Role::Admin), (Caller::ProjectMember, Role::Member), (Caller::ProjectGuest, Role::Guest)]
+                .iter()
+                .map(|(x, role)| SeedMembership { project_id: project, workspace_id: ws, user_id: c.user(*x), role: *role })
+                .collect(),
+            ..SeedFixture::default()
+        },
+    );
+    c
+}
+
+pub fn projects_path() -> String {
+    format!("/api/workspaces/{SLUG}/projects/")
+}
+
+/// The seeded project's route, `tail` after it.
+pub fn project_path(tail: &str) -> String {
+    format!("{}{}/{tail}", projects_path(), Uuid::from_u128(PROJECT))
+}
+

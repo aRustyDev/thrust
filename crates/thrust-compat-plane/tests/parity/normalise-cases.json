@@ -265,6 +265,31 @@
           }
         }
       ]
+    },
+    {
+      "name": "a date or a timestamp in a request body is the client's own and is kept (a replay sends it); the same keys in a response are replaced",
+      "input": [
+        {
+          "name": "dates",
+          "request": {"method": "POST", "path": "/p/", "body": {"start_date": "2026-11-01", "created_at": "2026-11-01T10:00:00Z", "nested": {"target_date": "2026-12-01"}}},
+          "response": {
+            "status": 201,
+            "headers": {},
+            "body": {"start_date": "2026-11-01", "created_at": "2026-11-01T10:00:00Z", "nested": {"target_date": "2026-12-01"}}
+          }
+        }
+      ],
+      "expected": [
+        {
+          "name": "dates",
+          "request": {"method": "POST", "path": "/p/", "body": {"created_at": "2026-11-01T10:00:00Z", "nested": {"target_date": "2026-12-01"}, "start_date": "2026-11-01"}},
+          "response": {
+            "status": 201,
+            "headers": {},
+            "body": {"created_at": "<ts>", "nested": {"target_date": "<date>"}, "start_date": "<date>"}
+          }
+        }
+      ]
     }
   ]
 }

@@ -629,8 +629,8 @@
       "request": {
         "as": "journey@example.test",
         "body": {
-          "created_at": "<ts>",
-          "deleted_at": "<ts>",
+          "created_at": "2001-01-01T00:00:00Z",
+          "deleted_at": "2001-01-01T00:00:00Z",
           "id": "<uuid:5>",
           "workspace": "<uuid:5>"
         },

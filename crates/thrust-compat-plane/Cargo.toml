@@ -11,6 +11,9 @@ thrust-contracts = { workspace = true }
 thrust-ports = { workspace = true }
 thrust-core = { workspace = true }
 thrust-api = { workspace = true }
+# Cleans the HTML of a work item's description as the pin does: the `sanitize` feature only. Not `yjs`, whose `yrs` reaches
+# getrandom and so wasm-bindgen and js-sys on wasm32, which scripts/check-deps.sh keeps out of this crate.
+thrust-editor-doc = { path = "../thrust-editor-doc", default-features = false, features = ["sanitize"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 # Runtime-free, as in thrust-api: this crate compiles to wasm32 and runs under workerd.

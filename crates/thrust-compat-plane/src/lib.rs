@@ -29,6 +29,7 @@ mod fields;
 #[cfg(test)]
 mod fields_tests;
 mod instance;
+mod issues;
 mod projects;
 #[cfg(test)]
 mod projects_tests;
@@ -68,6 +69,8 @@ pub fn routes() -> Router {
         .route("/api/workspaces/{slug}/modules/", get(projects::workspace_modules)) // S44
         .route("/api/workspaces/{slug}/projects/{project}/modules/", get(projects::project_stub)) // S45
         .route("/api/workspaces/{slug}/projects/{project}/views/", get(projects::project_stub)) // S46
+        .route("/api/workspaces/{slug}/projects/{project}/issues/", get(issues::list).post(issues::create)) // S47, S48
+        .route("/api/workspaces/{slug}/projects/{project}/issues/{issue}/", get(issues::retrieve)) // X01
         .route("/api/workspaces/{slug}/members/", get(workspaces::members)) // S18
         .route("/api/workspaces/{slug}/user-favorites/", get(workspace_load::favorites)) // S19
         .route("/api/workspaces/{slug}/states/", get(workspace_load::states)) // S20

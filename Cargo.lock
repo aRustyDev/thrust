@@ -3308,6 +3308,7 @@ dependencies = [
  "thrust-api",
  "thrust-contracts",
  "thrust-core",
+ "thrust-editor-doc",
  "thrust-ports",
  "tower",
 ]

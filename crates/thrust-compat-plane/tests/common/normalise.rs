@@ -190,6 +190,13 @@ fn key_matches(key: &str, suffixes: &[String], exact: &[String]) -> bool {
 
 /// Normalise one JSON value; `path` is its dotted path with `[]` for array elements.
 pub fn value(rules: &Rules, ids: &mut Ids, v: &Value, path: &str) -> Value {
+    value_with(rules, ids, v, path, false)
+}
+
+/// [`value`], and `keep_times` leaves a date or a timestamp as it is: a request body is what the client sent, and a replay must
+/// be able to send the same date (an implementation answers a date that is no date, and a start that is after a target), where a
+/// response's times are the server's own.
+pub fn value_with(rules: &Rules, ids: &mut Ids, v: &Value, path: &str, keep_times: bool) -> Value {
     match v {
         Value::Object(m) => {
             let mut keys: Vec<&String> = m.keys().collect();
@@ -201,18 +208,18 @@ pub fn value(rules: &Rules, ids: &mut Ids, v: &Value, path: &str) -> Value {
                 let token = rules.opaque.get(&p).or_else(|| rules.opaque_keys.get(k));
                 let normalised = if let (Some(token), false) = (token, child.is_null()) {
                     Value::String(token.clone())
-                } else if child.as_str().is_some_and(|s| key_matches(k, &rules.dt_suffixes, &rules.dt_exact) && is_datetime(s)) {
+                } else if !keep_times && child.as_str().is_some_and(|s| key_matches(k, &rules.dt_suffixes, &rules.dt_exact) && is_datetime(s)) {
                     Value::String(rules.dt_token.clone())
-                } else if child.as_str().is_some_and(|s| key_matches(k, &rules.date_suffixes, &[]) && is_date(s)) {
+                } else if !keep_times && child.as_str().is_some_and(|s| key_matches(k, &rules.date_suffixes, &[]) && is_date(s)) {
                     Value::String(rules.date_token.clone())
                 } else {
-                    value(rules, ids, child, &p)
+                    value_with(rules, ids, child, &p, keep_times)
                 };
                 out.insert(k.clone(), normalised);
             }
             Value::Object(out)
         }
-        Value::Array(a) => Value::Array(a.iter().map(|x| value(rules, ids, x, &format!("{path}[]"))).collect()),
+        Value::Array(a) => Value::Array(a.iter().map(|x| value_with(rules, ids, x, &format!("{path}[]"), keep_times)).collect()),
         Value::String(s) => Value::String(ids.scrub(s)),
         other => other.clone(),
     }
@@ -257,7 +264,7 @@ pub fn exchange(rules: &Rules, ids: &mut Ids, ex: &Value) -> Value {
         out_req["as"] = who.clone(); // whose session the request used: part of the contract, never scrubbed
     }
     if let Some(body) = req.get("body").filter(|b| !b.is_null()) {
-        out_req["body"] = value(rules, ids, body, "");
+        out_req["body"] = value_with(rules, ids, body, "", true);
     }
     let body = match resp.get("body").filter(|b| !b.is_null()) {
         Some(b) => value(rules, ids, b, ""),

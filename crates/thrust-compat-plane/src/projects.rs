@@ -30,12 +30,12 @@ use crate::workspaces::{id_or_null, role_number, scope};
 use crate::PlaneError;
 
 /// The 404 of a view that fetches one object with `.get()` and does not find it.
-fn missing_object() -> PlaneError {
+pub(crate) fn missing_object() -> PlaneError {
     PlaneError::NotFound(json!({"error": "The required object does not exist."}))
 }
 
 /// A route's project id, or the 404 Django gives a path that no route matches: the pin's URLs take `<uuid:project_id>`.
-fn project_id(raw: &str) -> Result<ProjectId, PlaneError> {
+pub(crate) fn project_id(raw: &str) -> Result<ProjectId, PlaneError> {
     raw.parse().map_err(|_| PlaneError::NotFound(json!({"detail": "Not found."})))
 }
 
@@ -203,7 +203,7 @@ fn months_field(v: &Value) -> Result<i32, String> {
 /// braces, hyphens anywhere, `urn:` and `uuid:`), and anything else (a float, a list, an object) is no UUID, written as Python
 /// writes it. The messages are DRF's and Django's. An integer above 2^64 reaches this as a float (`serde_json` keeps no more), so it
 /// is told as one.
-fn key_field(v: &Value) -> Result<Option<(String, Uuid)>, String> {
+pub(crate) fn key_field(v: &Value) -> Result<Option<(String, Uuid)>, String> {
     let not_a_uuid = |text: &str| format!("\u{201c}{text}\u{201d} is not a valid UUID.");
     match v {
         Value::Null => Ok(None),
@@ -234,7 +234,7 @@ async fn user_field(app: &App, v: &Value) -> Result<Option<UserId>, String> {
 /// DRF `PrimaryKeyRelatedField` to a table that has no rows the app can name yet (the estimate, the default state, the cover
 /// image's asset): no row (null, or an empty string), or a key that names nothing. A `default_state` that names one of the
 /// project's own states is refused here, which the pin accepts (D-027).
-fn nothing_field(v: &Value) -> Result<(), String> {
+pub(crate) fn nothing_field(v: &Value) -> Result<(), String> {
     match key_field(v)? {
         None => Ok(()),
         Some((text, _)) => Err(format!("Invalid pk \"{text}\" - object does not exist.")),

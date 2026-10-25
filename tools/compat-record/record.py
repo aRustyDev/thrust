@@ -864,6 +864,164 @@ def step_s20_after(base, pacer):
     return [("the states of the one project", get(J)), ("not a member of the workspace", get(SECOND_EMAIL))]
 
 
+def issues_path(project=None, slug=WS_ONE):
+    return f"{projects_path(slug)}{project or CTX['project']}/issues/"
+
+
+# What the stock app sends when it opens a project's work item list for the first time (list layout, nothing grouped, no
+# filter): the display filters' defaults, the first page of 100 (apps/web store/issue/helpers/issue-filter-helper.store.ts).
+FIRST_PAGE = "cursor=100:0:0&per_page=100&order_by=-created_at&sub_issue=true&layout=list&filters=%7B%7D"
+# And what it sends to open one (store/issue/issue-details/issue.store.ts).
+OPEN_ISSUE = "expand=issue_reactions,issue_attachments,issue_link,parent"
+
+
+def step_s48(base, pacer):
+    """POST .../projects/{id}/issues/ : every refusal, the work item the create modal sends, and a spread of others that the list
+    and the detail then show (a priority, a state of each group, dates, an assignee, text that the pin cleans)."""
+    post = lambda who, body, project=None: api(base, pacer, who, "POST", issues_path(project), body)  # noqa: E731
+    states = api(base, pacer, J, "GET", f"{projects_path()}{CTX['project']}/states/")
+    by_name = {s["name"]: s["id"] for s in states["response"]["body"]}
+    me = api(base, pacer, J, "GET", ME)
+    second = api(base, pacer, SECOND_EMAIL, "GET", ME)
+    me_id, second_id = me["response"]["body"]["id"], second["response"]["body"]["id"]
+    # the payload of the create modal (packages/constants/src/issue/modal.ts), with the name and state the person chose
+    modal = {
+        "project_id": CTX["project"], "type_id": None, "name": "Journey work item", "description_html": "<p>The first work item</p>",
+        "estimate_point": None, "state_id": by_name["Backlog"], "parent_id": None, "priority": "none", "assignee_ids": [], "label_ids": [],
+        "cycle_id": None, "module_ids": None, "start_date": None, "target_date": None,
+    }
+    out = [
+        ("no session", post(NOT_SIGNED_IN, {"name": "x"})),
+        ("not a member of the workspace", post(SECOND_EMAIL, {"name": "x"})),
+        ("a project that does not exist", post(J, {"name": "x"}, NO_SUCH_PROJECT)),
+        ("the states of the project", states),
+        ("the signed-in user", me),
+        ("the other user", second),
+        ("no fields", post(J, {})),
+        ("a blank name", post(J, {"name": ""})),
+        ("a name of spaces", post(J, {"name": "   "})),
+        ("a name that is too long", post(J, {"name": "n" * 256})),
+        ("a name that is null", post(J, {"name": None})),
+        ("a name that is a list", post(J, {"name": ["x"]})),
+        ("a priority that is not one", post(J, {"name": "p", "priority": "huge"})),
+        ("a priority that is null", post(J, {"name": "p", "priority": None})),
+        ("a priority that is empty", post(J, {"name": "p", "priority": ""})),
+        ("a start date after the target date", post(J, {"name": "d", "start_date": "2026-12-01", "target_date": "2026-11-01"})),
+        ("a date that is not a date", post(J, {"name": "d", "start_date": "yesterday"})),
+        ("a date with a time", post(J, {"name": "d", "target_date": "2026-11-01T10:00:00Z"})),
+        ("a date with a space after it", post(J, {"name": "d", "start_date": "2026-01-05 "})),
+        ("a date that does not exist", post(J, {"name": "d", "start_date": "2026-02-30"})),
+        ("a date that is a number", post(J, {"name": "d", "start_date": 20260105})),
+        ("a state that does not exist", post(J, {"name": "s", "state_id": NO_SUCH_PROJECT})),
+        ("a state that is not an id", post(J, {"name": "s", "state_id": "nope"})),
+        ("a parent that does not exist", post(J, {"name": "s", "parent_id": NO_SUCH_PROJECT})),
+        ("an assignee that does not exist", post(J, {"name": "a", "assignee_ids": [NO_SUCH_USER]})),
+        ("assignees that are not a list", post(J, {"name": "a", "assignee_ids": me_id})),
+        ("a label that does not exist", post(J, {"name": "l", "label_ids": [NO_SUCH_USER]})),
+        ("an estimate that does not exist", post(J, {"name": "e", "estimate_point": NO_SUCH_USER})),
+        ("a description that is null", post(J, {"name": "h", "description_html": None})),
+        ("a description that is a list", post(J, {"name": "h", "description_html": ["a"]})),
+        # a list is read member by member: a member that is null or empty, and a value that is null or a boolean (DRF's messages)
+        ("an assignee that is null", post(J, {"name": "a", "assignee_ids": [None]})),
+        ("a label that is empty", post(J, {"name": "l", "label_ids": [""]})),
+        ("labels that are null", post(J, {"name": "l", "label_ids": None})),
+        ("labels that are true", post(J, {"name": "l", "label_ids": True})),
+        # the edges of what a date can be (Python's date and ISO weeks): a week the year has not, a weekday that is not one, a year past the last
+        ("a week that the year does not have", post(J, {"name": "d", "start_date": "2025-W53-1"})),
+        ("a weekday of eight", post(J, {"name": "d", "start_date": "2026-W01-8"})),
+        ("a year of five digits", post(J, {"name": "d", "start_date": "10000-01-01"})),
+    ]
+    first = post(J, modal)
+    out.append(("the journey's work item", first))
+    CTX["issue"] = first["response"]["body"]["id"]
+    full = post(J, {**modal, "name": "Urgent, with an assignee and dates", "priority": "urgent", "assignee_ids": [me_id], "state_id": by_name["Todo"], "start_date": "2026-11-01", "target_date": "2026-11-15"})
+    out.append(("an urgent work item with an assignee, dates and a state", full))
+    CTX["full_issue"] = full["response"]["body"]["id"]
+    out += [
+        ("a high priority one in progress", post(J, {**modal, "name": "High, in progress", "priority": "high", "state_id": by_name["In Progress"], "target_date": "2026-10-20"})),
+        ("a medium priority one that is done", post(J, {**modal, "name": "Medium, done", "priority": "medium", "state_id": by_name["Done"]})),
+        ("a low priority one that is cancelled", post(J, {**modal, "name": "Low, cancelled", "priority": "low", "state_id": by_name["Cancelled"], "start_date": "2026-09-01"})),
+        ("a name with spaces around it", post(J, {"name": "  padded  "})),
+        ("a name that is a number", post(J, {"name": 5})),
+        ("only a name", post(J, {"name": "Only a name"})),
+        ("a state that is null and a blank one", post(J, {"name": "No state", "state_id": None})),
+        ("the empty state", post(J, {"name": "Empty state", "state_id": ""})),
+        ("the same assignee twice", post(J, {"name": "Twice", "assignee_ids": [me_id, me_id]})),
+        ("an assignee who is not in the project", post(J, {"name": "Stranger", "assignee_ids": [second_id]})),
+        # the other ways the pin reads a date: without the zeros, as eight digits, as an ISO week
+        ("dates without the zeros and as eight digits", post(J, {"name": "Dates", "start_date": "2026-1-5", "target_date": "20260131"})),
+        ("a date as an ISO week", post(J, {"name": "Week", "start_date": "2026-W01-1"})),
+        ("fields that the pin sets itself", post(J, {"name": "Ignored", "sort_order": 5, "sequence_id": 99, "completed_at": "2026-01-01T00:00:00Z", "created_by": NO_SUCH_USER, "project_id": NO_SUCH_PROJECT, "type_id": NO_SUCH_USER, "cycle_id": NO_SUCH_USER, "module_ids": [NO_SUCH_USER]})),
+    ]
+    html = post(J, {"name": "Cleaned text", "description_html": "<script>alert(1)</script><p onclick='x()'>y</p><a href='javascript:alert(1)'>l</a><img src=x onerror=alert(1)>"})
+    out.append(("a description with markup the pin cleans", html))
+    CTX["html_issue"] = html["response"]["body"]["id"]
+    out += [
+        ("a description of plain text", post(J, {"name": "Plain", "description_html": "text"})),
+        ("a description that is a number", post(J, {"name": "Number", "description_html": 5})),
+    ]
+    return out
+
+
+def step_s47(base, pacer):
+    """GET .../projects/{id}/issues/ : the first page the app asks for, the pages and orders it can ask, and what it is refused."""
+    get = lambda query="", who=J, project=None: api(base, pacer, who, "GET", issues_path(project) + (f"?{query}" if query else ""))  # noqa: E731
+    out = [
+        ("no session", get(FIRST_PAGE, NOT_SIGNED_IN)),
+        ("not a member of the workspace", get(FIRST_PAGE, SECOND_EMAIL)),
+        ("a project that does not exist", get(FIRST_PAGE, J, NO_SUCH_PROJECT)),
+        ("the first page the app asks for", get(FIRST_PAGE)),
+        ("no query at all", get()),
+        ("a cursor and no page size", get("cursor=3:0:0")),
+        ("a page size and no cursor", get("per_page=3")),
+        ("the first page of three", get("cursor=3:0:0&per_page=3&order_by=-created_at")),
+        ("the second page", get("cursor=3:1:0&per_page=3&order_by=-created_at")),
+        ("the last page", get("cursor=3:5:0&per_page=3&order_by=-created_at")),
+        ("a page past the end", get("cursor=3:20:0&per_page=3&order_by=-created_at")),
+        ("a cursor to the previous page", get("cursor=3:1:1&per_page=3&order_by=-created_at")),
+        ("a cursor with a float for a size", get("cursor=3.5:0:0&per_page=3")),
+        ("a cursor whose size disagrees with the page size", get("cursor=100:0:0&per_page=3")),
+        ("pages of one", get("cursor=1:2:0&per_page=1")),
+        ("the largest page size", get("cursor=1000:0:0&per_page=1000")),
+    ]
+    for order in ["created_at", "sort_order", "-sort_order", "sequence_id", "-sequence_id", "updated_at", "-updated_at", "target_date", "-target_date", "start_date", "-start_date", "priority", "-priority", "state__name", "-state__name", "state__group", "-state__group", "completed_at", "-completed_at", "archived_at", "name", "--created_at", "bogus", ""]:
+        out.append((f"ordered by {order or 'nothing'}", get(f"cursor=100:0:0&per_page=100&order_by={order}")))
+    out += [
+        ("sub work items left out", get("cursor=100:0:0&per_page=100&sub_issue=false&order_by=sequence_id")),
+        ("changed after a date in the far future", get("cursor=100:0:0&per_page=100&updated_at__gt=2099-01-01T00:00:00Z")),
+        ("changed after a date long ago", get("cursor=100:0:0&per_page=100&updated_at__gt=2001-01-01T00:00:00Z&order_by=sequence_id")),
+        ("a change date that is not a date", get("cursor=100:0:0&per_page=100&updated_at__gt=nonsense")),
+        ("a page size over the cap", get("per_page=1001")),
+        ("a page size that is not a number", get("per_page=abc")),
+        ("a page size with spaces around it", get("per_page=%202%20")),
+        ("a page size with a plus sign", get("per_page=%2B2")),
+        ("a page size that is a decimal", get("per_page=1.0")),
+        ("a cursor that is not a cursor", get("cursor=abc")),
+        ("a cursor with two parts", get("cursor=3:0")),
+        ("a cursor with a size that is not a number", get("cursor=x:0:0")),
+        ("a cursor with a page that is not a number", get("cursor=3:x:0")),
+        ("a cursor to a page before the first", get("cursor=3:-1:1&per_page=3")),
+        ("filters that are not JSON", get("cursor=100:0:0&per_page=100&filters=nonsense")),
+    ]
+    return out
+
+
+def step_x01(base, pacer):
+    """GET .../projects/{id}/issues/{id}/ : the work item the app opens, with what it asks to be expanded."""
+    get = lambda issue, query="", who=J, project=None: api(base, pacer, who, "GET", f"{issues_path(project)}{issue}/" + (f"?{query}" if query else ""))  # noqa: E731
+    first, full, html = CTX["issue"], CTX["full_issue"], CTX["html_issue"]
+    return [
+        ("no session", get(first, OPEN_ISSUE, NOT_SIGNED_IN)),
+        ("not a member of the workspace", get(first, OPEN_ISSUE, SECOND_EMAIL)),
+        ("the journey's work item, as the app opens it", get(first, OPEN_ISSUE)),
+        ("the same without what the app expands", get(first)),
+        ("one with an assignee, dates and a state", get(full, OPEN_ISSUE)),
+        ("one with a description the pin cleaned", get(html, OPEN_ISSUE)),
+        ("a work item that does not exist", get(NO_SUCH_PROJECT, OPEN_ISSUE)),
+        ("an id that is not an id", get("nope", OPEN_ISSUE)),
+    ]
+
+
 # Which fixtures make an id that later ones use (`binds`), and which name one in their requests (`uses`).
 USES_PROJECT = {"uses": ["project"]}
 FIXTURE_META = {
@@ -881,6 +1039,16 @@ FIXTURE_META = {
     "S45": USES_PROJECT,
     "S46": USES_PROJECT,
     "S35": {"uses": ["project", "other"]},
+    "S48": {
+        "uses": ["project"],
+        "binds": {
+            "issue": {"exchange": "the journey's work item", "path": ["id"]},
+            "full_issue": {"exchange": "an urgent work item with an assignee, dates and a state", "path": ["id"]},
+            "html_issue": {"exchange": "a description with markup the pin cleans", "path": ["id"]},
+        },
+    },
+    "S47": USES_PROJECT,
+    "X01": {"uses": ["project", "issue", "full_issue", "html_issue"]},
 }
 
 
@@ -938,6 +1106,9 @@ STEPS = [
     ("S46", step_s46),
     ("S17-after", step_s17_after),
     ("S20-after", step_s20_after),
+    ("S48", step_s48),
+    ("S47", step_s47),
+    ("X01", step_x01),
 ]
 
 

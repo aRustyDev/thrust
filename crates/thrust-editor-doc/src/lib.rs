@@ -10,4 +10,5 @@ pub mod pm;
 pub mod sanitize;
 pub mod schema;
 pub mod vdom;
+#[cfg(feature = "yjs")]
 pub mod ydoc;

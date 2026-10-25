@@ -14,7 +14,7 @@ default = ["sanitize"]
 sanitize = ["thrust-editor-doc/sanitize"]
 
 [dependencies]
-thrust-editor-doc = { path = "../thrust-editor-doc", default-features = false }
+thrust-editor-doc = { path = "../thrust-editor-doc", default-features = false, features = ["yjs"] }
 serde_json = { workspace = true }
 base64 = "0.22"
 worker = { version = "0.8" }

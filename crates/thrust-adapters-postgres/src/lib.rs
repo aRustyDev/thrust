@@ -35,6 +35,7 @@ pub const MIGRATION_0009: &str = include_str!("../migrations/0009_workspace_deta
 pub const MIGRATION_0010: &str = include_str!("../migrations/0010_project_details.sql");
 pub const MIGRATION_0011: &str = include_str!("../migrations/0011_workspace_user_settings.sql");
 pub const MIGRATION_0012: &str = include_str!("../migrations/0012_projects.sql");
+pub const MIGRATION_0013: &str = include_str!("../migrations/0013_work_item_details.sql");
 
 pub async fn migrate(client: &Client) -> Result<(), tokio_postgres::Error> {
     client.batch_execute(MIGRATION_0001).await?;
@@ -48,7 +49,8 @@ pub async fn migrate(client: &Client) -> Result<(), tokio_postgres::Error> {
     client.batch_execute(MIGRATION_0009).await?;
     client.batch_execute(MIGRATION_0010).await?;
     client.batch_execute(MIGRATION_0011).await?;
-    client.batch_execute(MIGRATION_0012).await
+    client.batch_execute(MIGRATION_0012).await?;
+    client.batch_execute(MIGRATION_0013).await
 }
 
 pub trait ClientHandle: Send {
@@ -112,6 +114,7 @@ pg_type!(
     bool => Type::BOOL,
     String => Type::TEXT,
     Timestamp => Type::TIMESTAMPTZ,
+    chrono::NaiveDate => Type::DATE,
     serde_json::Value => Type::JSONB,
     f64 => Type::FLOAT8,
 );
@@ -223,6 +226,69 @@ fn work_item(r: &Row) -> WorkItem {
         archived_at: r.get("archived_at"),
         is_draft: r.get("is_draft"),
         deleted_at: r.get("deleted_at"),
+    }
+}
+
+/// What a page or a single read of the compat work item selects, over `work_items w LEFT JOIN states st ON st.id = w.state_id`: the
+/// columns of the item, the compat columns, the state's group, and the people and labels as arrays. A person counts only while they
+/// are an active member of the workspace and in the project (the rows stay when they leave).
+const WIR_COLS: &str = "w.id, w.workspace_id, w.project_id, w.sequence_id, w.sort_order, w.name, w.description, \
+    w.external_source, w.external_id, w.created_by, w.created_at, w.archived_at, w.is_draft, w.deleted_at, \
+    w.state_id, w.priority, w.start_date, w.target_date, w.completed_at, w.updated_at, w.updated_by, w.description_html, \
+    st.state_group AS st_group, \
+    ARRAY(SELECT a.user_id FROM work_item_assignees a \
+            JOIN project_members pm ON pm.project_id = a.project_id AND pm.workspace_id = a.workspace_id AND pm.user_id = a.user_id \
+            JOIN workspace_members wm ON wm.workspace_id = a.workspace_id AND wm.user_id = a.user_id AND wm.is_active \
+          WHERE a.work_item_id = w.id ORDER BY a.user_id) AS assignee_ids, \
+    ARRAY(SELECT l.label_id FROM work_item_labels l WHERE l.work_item_id = w.id ORDER BY l.label_id) AS label_ids";
+
+fn work_item_row(r: &Row) -> Result<WorkItemRow, DbError> {
+    let priority: String = r.get("priority");
+    let group: Option<String> = r.get("st_group");
+    Ok(WorkItemRow {
+        item: work_item(r),
+        attrs: WorkItemAttrs {
+            state_id: r.get("state_id"),
+            priority: Priority::parse(&priority).ok_or_else(|| DbError::Backend(format!("priority holds '{priority}', which is no priority")))?,
+            start_date: r.get("start_date"),
+            target_date: r.get("target_date"),
+            completed_at: r.get("completed_at"),
+            updated_at: r.get("updated_at"),
+            updated_by: r.get::<_, Option<Uuid>>("updated_by").map(UserId),
+            description_html: r.get("description_html"),
+            assignee_ids: r.get::<_, Vec<Uuid>>("assignee_ids").into_iter().map(UserId).collect(),
+            label_ids: r.get("label_ids"),
+        },
+        state_group: group
+            .map(|g| StateGroup::parse(&g).ok_or_else(|| DbError::Backend(format!("a state's group holds '{g}', which is no group"))))
+            .transpose()?,
+    })
+}
+
+/// The `ORDER BY` of a page, as [`WorkItemOrder`] states it (every piece is a fixed string: nothing a request sent is in the SQL).
+/// Names sort as bytes (`COLLATE "C"`), as the memory adapter's strings do.
+fn work_item_order_sql(o: WorkItemOrder) -> String {
+    let dir = if o.descending { "DESC" } else { "ASC" };
+    let newest = "w.created_at DESC, w.sequence_id DESC";
+    match o.field {
+        WorkItemOrderField::CreatedAt => format!("w.created_at {dir}, w.sequence_id {dir}"),
+        WorkItemOrderField::UpdatedAt => format!("w.updated_at {dir}, w.sequence_id {dir}"),
+        WorkItemOrderField::SequenceId => format!("w.sequence_id {dir}"),
+        WorkItemOrderField::SortOrder => format!("w.sort_order {dir}, {newest}"),
+        WorkItemOrderField::TargetDate => format!("w.target_date {dir} NULLS LAST, {newest}"),
+        WorkItemOrderField::StartDate => format!("w.start_date {dir} NULLS LAST, {newest}"),
+        WorkItemOrderField::CompletedAt => format!("w.completed_at {dir} NULLS LAST, {newest}"),
+        WorkItemOrderField::ArchivedAt => format!("w.archived_at {dir} NULLS LAST, {newest}"),
+        // the pin sorts on the inverse of the rank it computed: ascending runs from `none` to `urgent`
+        WorkItemOrderField::Priority => format!(
+            "CASE w.priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END {}, {newest}",
+            if o.descending { "ASC" } else { "DESC" }
+        ),
+        WorkItemOrderField::StateName => format!("st.name COLLATE \"C\" {dir} NULLS LAST, {newest}"),
+        // however it is asked, as the pin's own code has it
+        WorkItemOrderField::StateGroup => format!(
+            "CASE st.state_group WHEN 'backlog' THEN 0 WHEN 'unstarted' THEN 1 WHEN 'started' THEN 2 WHEN 'completed' THEN 3 WHEN 'cancelled' THEN 4 ELSE 5 END ASC, {newest}"
+        ),
     }
 }
 
@@ -1694,6 +1760,75 @@ impl Database for PgDatabase {
         Ok(row.as_ref().map(work_item))
     }
 
+    async fn work_item_page(&self, scope: &Scope, q: &WorkItemQuery) -> Result<WorkItemPage, DbError> {
+        let (ws, project) = (scope.workspace_id(), scope.project_id());
+        let limit = i64::from(q.limit);
+        let offset = i64::from(q.page).saturating_mul(limit);
+        let created_by = q.created_by.map(|u| u.0);
+        let c = self.conn().await?;
+        // one statement: the rows of the page and one more (is there a next page), and how many rows match, in each of them
+        let rows = Pg(c.client())
+            .query(
+                &format!(
+                    "SELECT {WIR_COLS}, count(*) OVER () AS total \
+                     FROM work_items w LEFT JOIN states st ON st.id = w.state_id \
+                     WHERE w.workspace_id = $1 AND w.project_id = $2 AND w.deleted_at IS NULL AND w.archived_at IS NULL AND NOT w.is_draft \
+                       AND ($3::timestamptz IS NULL OR w.updated_at > $3) AND ($4::uuid IS NULL OR w.created_by = $4) \
+                     ORDER BY {} LIMIT $5 OFFSET $6",
+                    work_item_order_sql(q.order)
+                ),
+                &[&ws.0, &project.0, &q.updated_after, &created_by, &(limit + 1), &offset],
+            )
+            .await
+            .map_err(db_err)?;
+        let total: i64 = match rows.first() {
+            Some(r) => r.get("total"),
+            // a page past the end has no row to carry the count
+            None => Pg(c.client())
+                .query_one(
+                    "SELECT count(*) FROM work_items w \
+                     WHERE w.workspace_id = $1 AND w.project_id = $2 AND w.deleted_at IS NULL AND w.archived_at IS NULL AND NOT w.is_draft \
+                       AND ($3::timestamptz IS NULL OR w.updated_at > $3) AND ($4::uuid IS NULL OR w.created_by = $4)",
+                    &[&ws.0, &project.0, &q.updated_after, &created_by],
+                )
+                .await
+                .map_err(db_err)?
+                .get(0),
+        };
+        let has_next = rows.len() as i64 > limit;
+        let rows = rows.iter().take(q.limit as usize).map(work_item_row).collect::<Result<Vec<_>, _>>()?;
+        Ok(WorkItemPage { rows, has_next, total: total as u64 })
+    }
+
+    async fn work_item_row(&self, scope: &Scope, id: WorkItemId) -> Result<Option<WorkItemRow>, DbError> {
+        let c = self.conn().await?;
+        let row = Pg(c.client())
+            .query_opt(
+                &format!(
+                    "SELECT {WIR_COLS} FROM work_items w LEFT JOIN states st ON st.id = w.state_id \
+                     WHERE w.workspace_id = $1 AND w.project_id = $2 AND w.id = $3 \
+                       AND w.deleted_at IS NULL AND w.archived_at IS NULL AND NOT w.is_draft"
+                ),
+                &[&scope.workspace_id().0, &scope.project_id().0, &id.0],
+            )
+            .await
+            .map_err(db_err)?;
+        row.as_ref().map(work_item_row).transpose()
+    }
+
+    async fn max_work_item_sort_order(&self, scope: &Scope, state: Option<Uuid>) -> Result<Option<i64>, DbError> {
+        let c = self.conn().await?;
+        let row = Pg(c.client())
+            .query_one(
+                "SELECT max(sort_order) FROM work_items \
+                 WHERE workspace_id = $1 AND project_id = $2 AND deleted_at IS NULL AND state_id IS NOT DISTINCT FROM $3",
+                &[&scope.workspace_id().0, &scope.project_id().0, &state],
+            )
+            .await
+            .map_err(db_err)?;
+        Ok(row.get(0))
+    }
+
     async fn search_work_items(&self, scope: &Scope, query: &str, limit: u32) -> Result<Vec<WorkItem>, DbError> {
         let (ws, project) = (scope.workspace_id(), scope.project_id());
         // `%`, `_` and `\` are literal in a query, so they are escaped for LIKE (the trigram GIN index serves `ILIKE`).
@@ -1746,8 +1881,8 @@ impl Database for PgDatabase {
             let descriptions: Vec<Option<String>> = items.iter().map(|i| i.description.clone()).collect();
             let (created_by, created_at) = items.first().map(|i| (i.created_by.0, i.created_at)).ok_or_else(|| DbError::Backend("no items".into()))?;
             cl.execute(
-                "INSERT INTO work_items (id, workspace_id, project_id, sequence_id, sort_order, name, description, created_by, created_at, is_draft) \
-                 SELECT t.id, $1, $2, $3 + t.ord, $4 + t.ord * 10000, t.name, t.description, $5, $6, false \
+                "INSERT INTO work_items (id, workspace_id, project_id, sequence_id, sort_order, name, description, created_by, created_at, is_draft, updated_at) \
+                 SELECT t.id, $1, $2, $3 + t.ord, $4 + t.ord * 10000, t.name, t.description, $5, $6, false, $6 \
                  FROM unnest($7, $8, $9) WITH ORDINALITY AS t(id, name, description, ord)",
                 &[&workspace.0, &project.0, &base_sequence, &base_sort, &created_by, &created_at, &ids, &names, &descriptions],
             )
@@ -2053,7 +2188,8 @@ impl Tx for PgTx {
         self.client()
             .execute(
                 &format!(
-                    "INSERT INTO work_items ({WI_COLS}) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)"
+                    // a work item has been changed when it was made: `updated_at` is the creation time until a change moves it
+                    "INSERT INTO work_items ({WI_COLS}, updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$11)"
                 ),
                 &[
                     &w.id.0,
@@ -2071,6 +2207,55 @@ impl Tx for PgTx {
                     &w.is_draft,
                     &w.deleted_at,
                 ],
+            )
+            .await
+            .map_err(db_err)?;
+        Ok(())
+    }
+
+    async fn insert_work_item_attrs(&mut self, scope: &Scope, id: WorkItemId, attrs: &WorkItemAttrs) -> Result<(), DbError> {
+        let (ws, project) = (scope.workspace_id(), scope.project_id());
+        self.ensure_tx().await?;
+        let priority = attrs.priority.as_str();
+        let n = self
+            .client()
+            .execute(
+                "UPDATE work_items SET state_id = $4, priority = $5, start_date = $6, target_date = $7, completed_at = $8, \
+                   updated_at = $9, updated_by = $10, description_html = $11 \
+                 WHERE workspace_id = $1 AND project_id = $2 AND id = $3",
+                &[
+                    &ws.0,
+                    &project.0,
+                    &id.0,
+                    &attrs.state_id,
+                    &priority,
+                    &attrs.start_date,
+                    &attrs.target_date,
+                    &attrs.completed_at,
+                    &attrs.updated_at,
+                    &attrs.updated_by.map(|u| u.0),
+                    &attrs.description_html,
+                ],
+            )
+            .await
+            .map_err(db_err)?;
+        if n != 1 {
+            return Err(DbError::Backend("work item attributes for a work item that is not there".into()));
+        }
+        let people: Vec<Uuid> = attrs.assignee_ids.iter().map(|u| u.0).collect();
+        self.client()
+            .execute(
+                "INSERT INTO work_item_assignees (work_item_id, workspace_id, project_id, user_id, created_at) \
+                 SELECT $1, $2, $3, t.user_id, $5 FROM unnest($4::uuid[]) AS t(user_id) ON CONFLICT (work_item_id, user_id) DO NOTHING",
+                &[&id.0, &ws.0, &project.0, &people, &attrs.updated_at],
+            )
+            .await
+            .map_err(db_err)?;
+        self.client()
+            .execute(
+                "INSERT INTO work_item_labels (work_item_id, workspace_id, project_id, label_id, created_at) \
+                 SELECT $1, $2, $3, t.label_id, $5 FROM unnest($4::uuid[]) AS t(label_id) ON CONFLICT (work_item_id, label_id) DO NOTHING",
+                &[&id.0, &ws.0, &project.0, &attrs.label_ids, &attrs.updated_at],
             )
             .await
             .map_err(db_err)?;
