@@ -18,6 +18,7 @@ pub struct Rules {
     date_suffixes: Vec<String>,
     date_token: String,
     opaque: BTreeMap<String, String>,
+    opaque_keys: BTreeMap<String, String>,
     headers_keep: Vec<String>,
     origin_headers: Vec<String>,
     origin_token: String,
@@ -37,7 +38,15 @@ impl Rules {
             .filter(|(k, _)| !k.starts_with('_'))
             .map(|(k, t)| (k.clone(), t.as_str().expect("token").to_string()))
             .collect();
+        let opaque_keys = v["opaque_keys"]
+            .as_object()
+            .expect("opaque_keys")
+            .iter()
+            .filter(|(k, _)| !k.starts_with('_'))
+            .map(|(k, t)| (k.clone(), t.as_str().expect("token").to_string()))
+            .collect();
         Rules {
+            opaque_keys,
             uuid_token: v["uuid_token"].as_str().expect("uuid_token").to_string(),
             dt_suffixes: strings(&v["datetime"]["key_suffixes"]),
             dt_exact: strings(&v["datetime"]["key_exact"]),
@@ -149,7 +158,8 @@ pub fn value(rules: &Rules, ids: &mut Ids, v: &Value, path: &str) -> Value {
             for k in keys {
                 let p = if path.is_empty() { k.clone() } else { format!("{path}.{k}") };
                 let child = &m[k];
-                let normalised = if let (Some(token), false) = (rules.opaque.get(&p), child.is_null()) {
+                let token = rules.opaque.get(&p).or_else(|| rules.opaque_keys.get(k));
+                let normalised = if let (Some(token), false) = (token, child.is_null()) {
                     Value::String(token.clone())
                 } else if child.as_str().is_some_and(|s| key_matches(k, &rules.dt_suffixes, &rules.dt_exact) && is_datetime(s)) {
                     Value::String(rules.dt_token.clone())
@@ -203,6 +213,9 @@ fn headers(rules: &Rules, hs: Option<&Value>) -> Value {
 pub fn exchange(rules: &Rules, ids: &mut Ids, ex: &Value) -> Value {
     let (req, resp) = (&ex["request"], &ex["response"]);
     let mut out_req = json!({"method": req["method"], "path": ids.scrub(req["path"].as_str().expect("request.path"))});
+    if let Some(who) = req.get("as").filter(|a| !a.is_null()) {
+        out_req["as"] = who.clone(); // whose session the request used: part of the contract, never scrubbed
+    }
     if let Some(body) = req.get("body").filter(|b| !b.is_null()) {
         out_req["body"] = value(rules, ids, body, "");
     }

@@ -36,6 +36,12 @@ rows! {
     parity_s05_sign_up => "S05",
     parity_s04_email_check_after_sign_up => "S04-existing",
     parity_s06_sign_in => "S06",
+    parity_s02_users_me_signed_in => "S02-signed-in",
+    parity_s07_profile => "S07",
+    parity_s10_update_user => "S10",
+    parity_s11_update_profile => "S11",
+    parity_s27_tour_completed => "S27",
+    parity_x04_onboard => "X04",
 }
 
 /// A fixture without a test would pass unseen, and a test without a fixture is `load_fixture` panicking: hold the two

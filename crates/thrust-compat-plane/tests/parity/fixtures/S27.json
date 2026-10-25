@@ -1,0 +1,84 @@
+{
+  "exchanges": [
+    {
+      "name": "no session",
+      "request": {
+        "body": {
+          "is_tour_completed": true
+        },
+        "method": "PATCH",
+        "path": "/api/users/me/tour-completed/"
+      },
+      "response": {
+        "body": {
+          "detail": "Authentication credentials were not provided."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 401
+      }
+    },
+    {
+      "name": "not a boolean",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "is_tour_completed": "abc"
+        },
+        "method": "PATCH",
+        "path": "/api/users/me/tour-completed/"
+      },
+      "response": {
+        "body": {
+          "error": "Please provide valid detail"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "no key sets it to false",
+      "request": {
+        "as": "journey@example.test",
+        "body": {},
+        "method": "PATCH",
+        "path": "/api/users/me/tour-completed/"
+      },
+      "response": {
+        "body": {
+          "message": "Updated successfully"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "the tour is completed",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "is_tour_completed": true
+        },
+        "method": "PATCH",
+        "path": "/api/users/me/tour-completed/"
+      },
+      "response": {
+        "body": {
+          "message": "Updated successfully"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    }
+  ],
+  "format_version": 1,
+  "recorded_from": "ba85d4d3d3",
+  "row": "S27"
+}

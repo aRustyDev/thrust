@@ -30,6 +30,7 @@ pub const MIGRATION_0004: &str = include_str!("../migrations/0004_sessions.sql")
 pub const MIGRATION_0005: &str = include_str!("../migrations/0005_identity.sql");
 pub const MIGRATION_0006: &str = include_str!("../migrations/0006_search.sql");
 pub const MIGRATION_0007: &str = include_str!("../migrations/0007_api_key_hash_version.sql");
+pub const MIGRATION_0008: &str = include_str!("../migrations/0008_user_profiles.sql");
 
 pub async fn migrate(client: &Client) -> Result<(), tokio_postgres::Error> {
     client.batch_execute(MIGRATION_0001).await?;
@@ -38,7 +39,8 @@ pub async fn migrate(client: &Client) -> Result<(), tokio_postgres::Error> {
     client.batch_execute(MIGRATION_0004).await?;
     client.batch_execute(MIGRATION_0005).await?;
     client.batch_execute(MIGRATION_0006).await?;
-    client.batch_execute(MIGRATION_0007).await
+    client.batch_execute(MIGRATION_0007).await?;
+    client.batch_execute(MIGRATION_0008).await
 }
 
 pub trait ClientHandle: Send {
@@ -221,6 +223,33 @@ fn user_record(r: &Row) -> UserRecord {
     }
 }
 
+const PROFILE_COLS: &str = "user_id, id, username, first_name, last_name, display_name, avatar, cover_image, timezone, \
+    date_joined, last_login_at, is_onboarded, is_tour_completed, last_workspace_id, onboarding_step, preferences, \
+    created_at, updated_at";
+
+fn user_profile(r: &Row) -> UserProfile {
+    UserProfile {
+        id: r.get("id"),
+        user_id: UserId(r.get("user_id")),
+        username: r.get("username"),
+        first_name: r.get("first_name"),
+        last_name: r.get("last_name"),
+        display_name: r.get("display_name"),
+        avatar: r.get("avatar"),
+        cover_image: r.get("cover_image"),
+        timezone: r.get("timezone"),
+        date_joined: r.get("date_joined"),
+        last_login_at: r.get("last_login_at"),
+        is_onboarded: r.get("is_onboarded"),
+        is_tour_completed: r.get("is_tour_completed"),
+        last_workspace_id: r.get::<_, Option<Uuid>>("last_workspace_id").map(WorkspaceId),
+        onboarding_step: r.get("onboarding_step"),
+        preferences: r.get("preferences"),
+        created_at: r.get("created_at"),
+        updated_at: r.get("updated_at"),
+    }
+}
+
 fn activity(r: &Row) -> Activity {
     Activity {
         id: ActivityId(r.get("id")),
@@ -332,6 +361,107 @@ impl Database for PgDatabase {
             .await
             .map_err(db_err)?;
         Ok(row.as_ref().map(user_record))
+    }
+
+    async fn user_by_id(&self, id: UserId) -> Result<Option<UserRecord>, DbError> {
+        let c = self.conn().await?;
+        let row = Pg(c.client())
+            .query_opt(&format!("SELECT {USER_COLS} FROM users WHERE id = $1"), &[&id.0])
+            .await
+            .map_err(db_err)?;
+        Ok(row.as_ref().map(user_record))
+    }
+
+    async fn insert_profile(&self, p: &UserProfile) -> Result<bool, DbError> {
+        // ON CONFLICT on the user only: a taken `id` or `username` is a unique violation, which `db_err` makes a `Conflict`
+        let c = self.conn().await?;
+        let n = Pg(c.client())
+            .execute(
+                &format!(
+                    "INSERT INTO user_profiles ({PROFILE_COLS}) VALUES \
+                     ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18) \
+                     ON CONFLICT (user_id) DO NOTHING"
+                ),
+                &[
+                    &p.user_id.0,
+                    &p.id,
+                    &p.username,
+                    &p.first_name,
+                    &p.last_name,
+                    &p.display_name,
+                    &p.avatar,
+                    &p.cover_image,
+                    &p.timezone,
+                    &p.date_joined,
+                    &p.last_login_at,
+                    &p.is_onboarded,
+                    &p.is_tour_completed,
+                    &p.last_workspace_id.map(|w| w.0),
+                    &p.onboarding_step,
+                    &p.preferences,
+                    &p.created_at,
+                    &p.updated_at,
+                ],
+            )
+            .await
+            .map_err(db_err)?;
+        Ok(n == 1)
+    }
+
+    async fn profile(&self, user: UserId) -> Result<Option<UserProfile>, DbError> {
+        let c = self.conn().await?;
+        let row = Pg(c.client())
+            .query_opt(&format!("SELECT {PROFILE_COLS} FROM user_profiles WHERE user_id = $1"), &[&user.0])
+            .await
+            .map_err(db_err)?;
+        Ok(row.as_ref().map(user_profile))
+    }
+
+    async fn update_profile(&self, user: UserId, patch: &ProfilePatch, at: Timestamp) -> Result<Option<UserProfile>, DbError> {
+        // ONE statement: every column the patch does not name keeps its value, and the preferences are merged by jsonb `||`
+        // inside the row lock, so two requests that change different fields cannot overwrite each other.
+        let set_cover = patch.cover_image.is_some();
+        let cover: Option<&str> = patch.cover_image.as_ref().and_then(|c| c.as_deref());
+        let set_workspace = patch.last_workspace_id.is_some();
+        let workspace: Option<Uuid> = patch.last_workspace_id.and_then(|w| w.map(|w| w.0));
+        let preferences = serde_json::Value::Object(patch.preferences.clone());
+        let c = self.conn().await?;
+        let row = Pg(c.client())
+            .query_opt(
+                &format!(
+                    "UPDATE user_profiles SET \
+                       first_name = COALESCE($2, first_name), last_name = COALESCE($3, last_name), \
+                       display_name = COALESCE($4, display_name), avatar = COALESCE($5, avatar), \
+                       cover_image = CASE WHEN $6 THEN $7 ELSE cover_image END, \
+                       timezone = COALESCE($8, timezone), last_login_at = COALESCE($9, last_login_at), \
+                       is_onboarded = COALESCE($10, is_onboarded), is_tour_completed = COALESCE($11, is_tour_completed), \
+                       last_workspace_id = CASE WHEN $12 THEN $13 ELSE last_workspace_id END, \
+                       onboarding_step = COALESCE($14, onboarding_step), preferences = preferences || $15, \
+                       updated_at = $16 \
+                     WHERE user_id = $1 RETURNING {PROFILE_COLS}"
+                ),
+                &[
+                    &user.0,
+                    &patch.first_name.as_deref(),
+                    &patch.last_name.as_deref(),
+                    &patch.display_name.as_deref(),
+                    &patch.avatar.as_deref(),
+                    &set_cover,
+                    &cover,
+                    &patch.timezone.as_deref(),
+                    &patch.last_login_at,
+                    &patch.is_onboarded,
+                    &patch.is_tour_completed,
+                    &set_workspace,
+                    &workspace,
+                    &patch.onboarding_step,
+                    &preferences,
+                    &at,
+                ],
+            )
+            .await
+            .map_err(db_err)?;
+        Ok(row.as_ref().map(user_profile))
     }
 
     async fn insert_user(&self, user: &UserRecord) -> Result<(), DbError> {

@@ -15,6 +15,11 @@ extern crate self as thrust_core;
 
 mod auth;
 pub use auth::*;
+mod profile;
+pub use profile::*;
+mod timezones;
+#[cfg(test)]
+mod timezones_tests;
 use thrust_contracts::chrono::TimeDelta;
 use thrust_contracts::*;
 use thrust_ports::*;

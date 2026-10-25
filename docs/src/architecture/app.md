@@ -127,8 +127,8 @@ can fail are on
 The plan's `ARCHITECTURE.md` (draft v0, `.agents/plans/contrail/ARCHITECTURE.md`) describes more than exists:
 
 - **Crates:** `thrust-api-core`, `thrust-api-v1` and `thrust-collab-do` do not exist, and there is no `web/`
-  directory. `thrust-compat-plane` exists but serves only S01 to S06 (`/api/instances/`, `/api/users/me/` signed out
-  only, and the four `/auth/` routes the sign-up and sign-in pages call) so far; issue #44 builds the rest of the
+  directory. `thrust-compat-plane` exists but serves only S01 to S07, S10, S11, S27 and X04 (the instance, the four `/auth/`
+  routes the sign-up and sign-in pages call, and the signed-in user, their profile and the onboarding flags) so far; issue #44 builds the rest of the
   48-route slice stage by stage. Each composition root mounts it beside
   `thrust-api`'s router, which is still the only other router crate.
 - **Ports:** Workflow, Scheduler, Collab, Search, Email, AI, Identity, Secrets, Telemetry and Flags have no trait.

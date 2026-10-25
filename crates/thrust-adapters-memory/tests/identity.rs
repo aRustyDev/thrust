@@ -402,6 +402,134 @@ fn insert_user_never_clashes_on_a_missing_email() {
     block_on(db.insert_user(&user(OTHER, None, true))).unwrap();
 }
 
+// --- profiles (issue #44, migration 0008) ----------------------------------------------------------------------------
+
+fn profile(user: UserId, n: u128) -> UserProfile {
+    UserProfile {
+        id: Uuid::from_u128(0x1000 + n),
+        user_id: user,
+        username: format!("user-{n}"),
+        first_name: "f".into(),
+        last_name: "l".into(),
+        display_name: "d".into(),
+        avatar: "a".into(),
+        cover_image: Some("https://example.test/c".into()),
+        timezone: "UTC".into(),
+        date_joined: now(),
+        last_login_at: None,
+        is_onboarded: false,
+        is_tour_completed: false,
+        last_workspace_id: Some(WorkspaceId(Uuid::from_u128(5))),
+        onboarding_step: serde_json::json!({"a": false}),
+        preferences: serde_json::json!({"k": 1}),
+        created_at: now(),
+        updated_at: now(),
+    }
+}
+
+const STRANGER: UserId = UserId(Uuid::from_u128(99));
+
+#[test]
+fn user_by_id_finds_a_user_active_or_not_and_nothing_for_a_stranger() {
+    let db = MemoryDatabase::new();
+    block_on(db.seed_users(&sys(), &[user(OWNER, Some("o@example.test"), true), user(OTHER, Some("x@example.test"), false)])).unwrap();
+    assert_eq!(block_on(db.user_by_id(OWNER)).unwrap().unwrap().email.as_deref(), Some("o@example.test"));
+    assert!(!block_on(db.user_by_id(OTHER)).unwrap().unwrap().is_active, "an inactive user is found too");
+    assert!(block_on(db.user_by_id(STRANGER)).unwrap().is_none());
+}
+
+/// `insert_profile` for every combination of: whose profile (one who has one, one who has none, one who is not a user),
+/// and an id and a username that are fresh or already another profile's. One profile per user wins over the unique
+/// columns (as `ON CONFLICT (user_id) DO NOTHING` does); a user that does not exist is an error; a taken id or username is
+/// a conflict that writes nothing.
+#[rstest]
+fn insert_profile_for_every_combination_of_user_id_and_username(
+    #[values(OWNER, OTHER, STRANGER)] target: UserId,
+    #[values(true, false)] id_taken: bool,
+    #[values(true, false)] username_taken: bool,
+) {
+    let db = MemoryDatabase::new();
+    block_on(db.seed_users(&sys(), &[user(OWNER, Some("o@example.test"), true), user(OTHER, Some("x@example.test"), true)])).unwrap();
+    let held = profile(OWNER, 1);
+    assert!(block_on(db.insert_profile(&held)).unwrap());
+
+    let mut p = profile(target, 2);
+    if id_taken {
+        p.id = held.id;
+    }
+    if username_taken {
+        p.username = held.username.clone();
+    }
+    let got = block_on(db.insert_profile(&p));
+    match (target, id_taken || username_taken) {
+        (STRANGER, _) => assert!(matches!(got, Err(DbError::Backend(_))), "{got:?}"),
+        (OWNER, _) => assert!(matches!(got, Ok(false)), "{got:?}"),
+        (_, true) => assert!(matches!(got, Err(DbError::Conflict(_))), "{got:?}"),
+        (_, false) => assert!(matches!(got, Ok(true)), "{got:?}"),
+    }
+    // whatever happened, the held profile is as it was, and a refused one left nothing behind
+    assert_eq!(block_on(db.profile(OWNER)).unwrap(), Some(held));
+    let made = matches!(got, Ok(true));
+    assert_eq!(block_on(db.profile(target)).unwrap().is_some(), made || target == OWNER);
+}
+
+/// `update_profile`: one patch per field it can set; the answer is the row after, the field changed and no other, and
+/// `updated_at` is the call's. A patch for a user with no profile answers nothing and makes nothing.
+#[rstest]
+#[case::first_name(ProfilePatch { first_name: Some("F2".into()), ..ProfilePatch::default() })]
+#[case::last_name(ProfilePatch { last_name: Some("L2".into()), ..ProfilePatch::default() })]
+#[case::display_name(ProfilePatch { display_name: Some("D2".into()), ..ProfilePatch::default() })]
+#[case::avatar(ProfilePatch { avatar: Some("A2".into()), ..ProfilePatch::default() })]
+#[case::cover_set(ProfilePatch { cover_image: Some(Some("https://example.test/2".into())), ..ProfilePatch::default() })]
+#[case::cover_cleared(ProfilePatch { cover_image: Some(None), ..ProfilePatch::default() })]
+#[case::timezone(ProfilePatch { timezone: Some("Asia/Kolkata".into()), ..ProfilePatch::default() })]
+#[case::last_login(ProfilePatch { last_login_at: Some(DateTime::from_timestamp(1_760_000_500, 0).unwrap()), ..ProfilePatch::default() })]
+#[case::onboarded(ProfilePatch { is_onboarded: Some(true), ..ProfilePatch::default() })]
+#[case::tour(ProfilePatch { is_tour_completed: Some(true), ..ProfilePatch::default() })]
+#[case::workspace_set(ProfilePatch { last_workspace_id: Some(Some(WorkspaceId(Uuid::from_u128(6)))), ..ProfilePatch::default() })]
+#[case::workspace_cleared(ProfilePatch { last_workspace_id: Some(None), ..ProfilePatch::default() })]
+#[case::onboarding_replaced(ProfilePatch { onboarding_step: Some(serde_json::json!({"b": true})), ..ProfilePatch::default() })]
+#[case::preferences_merged(ProfilePatch { preferences: serde_json::json!({"j": 2}).as_object().unwrap().clone(), ..ProfilePatch::default() })]
+#[case::nothing(ProfilePatch::default())]
+fn update_profile_changes_the_field_the_patch_names_and_no_other(#[case] patch: ProfilePatch) {
+    let db = MemoryDatabase::new();
+    block_on(db.seed_users(&sys(), &[user(OWNER, Some("o@example.test"), true)])).unwrap();
+    let before = profile(OWNER, 1);
+    block_on(db.insert_profile(&before)).unwrap();
+    let at = DateTime::from_timestamp(1_760_000_100, 0).unwrap();
+
+    let after = block_on(db.update_profile(OWNER, &patch, at)).unwrap().unwrap();
+    assert_eq!(block_on(db.profile(OWNER)).unwrap(), Some(after.clone()), "the answer is the row");
+    assert_eq!(after.updated_at, at);
+
+    // what the patch names is what it says; everything else is as it was
+    let mut want = before.clone();
+    want.updated_at = at;
+    if let Some(v) = &patch.first_name { want.first_name = v.clone(); }
+    if let Some(v) = &patch.last_name { want.last_name = v.clone(); }
+    if let Some(v) = &patch.display_name { want.display_name = v.clone(); }
+    if let Some(v) = &patch.avatar { want.avatar = v.clone(); }
+    if let Some(v) = &patch.cover_image { want.cover_image = v.clone(); }
+    if let Some(v) = &patch.timezone { want.timezone = v.clone(); }
+    if let Some(v) = patch.last_login_at { want.last_login_at = Some(v); }
+    if let Some(v) = patch.is_onboarded { want.is_onboarded = v; }
+    if let Some(v) = patch.is_tour_completed { want.is_tour_completed = v; }
+    if let Some(v) = patch.last_workspace_id { want.last_workspace_id = v; }
+    if let Some(v) = &patch.onboarding_step { want.onboarding_step = v.clone(); }
+    if !patch.preferences.is_empty() { want.preferences = serde_json::json!({"k": 1, "j": 2}); }
+    assert_eq!(after, want);
+}
+
+#[test]
+fn update_profile_of_a_user_with_no_profile_answers_nothing_and_makes_none() {
+    let db = MemoryDatabase::new();
+    block_on(db.seed_users(&sys(), &[user(OWNER, Some("o@example.test"), true)])).unwrap();
+    let patch = ProfilePatch { first_name: Some("x".into()), ..ProfilePatch::default() };
+    assert!(block_on(db.update_profile(OWNER, &patch, now())).unwrap().is_none());
+    assert!(block_on(db.update_profile(STRANGER, &patch, now())).unwrap().is_none());
+    assert!(block_on(db.profile(OWNER)).unwrap().is_none(), "an update does not make a profile");
+}
+
 fn account(user: UserId, sub: &str) -> NewAccount {
     NewAccount {
         provider: "https://idp.example.test".into(),

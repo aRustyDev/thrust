@@ -1,0 +1,83 @@
+{
+  "exchanges": [
+    {
+      "name": "no session",
+      "request": {
+        "method": "GET",
+        "path": "/api/users/me/profile/"
+      },
+      "response": {
+        "body": {
+          "detail": "Authentication credentials were not provided."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 401
+      }
+    },
+    {
+      "name": "a new user's profile",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/users/me/profile/"
+      },
+      "response": {
+        "body": {
+          "background_color": "<opaque>",
+          "billing_address": null,
+          "billing_address_country": "INDIA",
+          "company_name": "",
+          "created_at": "<ts>",
+          "goals": {},
+          "has_billing_address": false,
+          "has_marketing_email_consent": false,
+          "id": "<uuid:1>",
+          "is_app_rail_docked": true,
+          "is_mobile_onboarded": false,
+          "is_navigation_tour_completed": false,
+          "is_onboarded": false,
+          "is_smooth_cursor_enabled": false,
+          "is_subscribed_to_changelog": false,
+          "is_tour_completed": false,
+          "language": "en",
+          "last_workspace_id": null,
+          "mobile_onboarding_step": {
+            "profile_complete": false,
+            "workspace_create": false,
+            "workspace_join": false
+          },
+          "mobile_timezone_auto_set": false,
+          "notification_view_mode": "full",
+          "onboarding_step": {
+            "profile_complete": false,
+            "workspace_create": false,
+            "workspace_invite": false,
+            "workspace_join": false
+          },
+          "product_tour": {
+            "cycles": false,
+            "intake": false,
+            "modules": false,
+            "pages": false,
+            "work_items": false
+          },
+          "role": null,
+          "start_of_the_week": 0,
+          "theme": {},
+          "updated_at": "<ts>",
+          "use_case": null,
+          "user": "<uuid:2>"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    }
+  ],
+  "format_version": 1,
+  "recorded_from": "ba85d4d3d3",
+  "row": "S07"
+}

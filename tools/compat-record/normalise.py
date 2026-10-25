@@ -77,7 +77,7 @@ def value(rules, ids, v, path=""):
         for k in sorted(v):
             p = f"{path}.{k}" if path else k
             child = v[k]
-            token = rules["opaque_paths"].get(p)
+            token = rules["opaque_paths"].get(p) or rules["opaque_keys"].get(k)
             dt = rules["datetime"]
             dd = rules["date"]
             if token is not None and child is not None:
@@ -115,6 +115,8 @@ def exchange(rules, ids, ex):
     """Normalise one recorded exchange in the fixed traversal order: request path, request body, response body."""
     req, resp = ex["request"], ex["response"]
     out_req = {"method": req["method"], "path": ids.scrub(req["path"])}
+    if req.get("as") is not None:
+        out_req["as"] = req["as"]  # whose session the request used: part of the contract, never scrubbed
     if req.get("body") is not None:
         out_req["body"] = value(rules, ids, req["body"])
     out_resp = {"status": resp["status"], "headers": headers(rules, resp.get("headers", {}))}

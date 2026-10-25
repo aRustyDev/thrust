@@ -19,6 +19,8 @@ struct DbState {
     sessions: HashMap<TokenHash, SessionRow>,
     /// The identity tables (migration 0005), all directory tables like `sessions`.
     users: HashMap<UserId, UserRecord>,
+    /// `user_profiles` (migration 0008): one per user, keyed by the user.
+    profiles: HashMap<UserId, UserProfile>,
     /// (provider, provider_account_id) -> the user it is linked to.
     accounts: HashMap<(String, String), UserId>,
     api_keys: Vec<ApiKeyRow>,
@@ -167,6 +169,82 @@ impl Database for MemoryDatabase {
     async fn user_by_email(&self, email: &str) -> Result<Option<UserRecord>, DbError> {
         let s = self.state.lock().unwrap();
         Ok(s.users.values().find(|u| u.email.as_deref() == Some(email)).cloned())
+    }
+
+    async fn user_by_id(&self, id: UserId) -> Result<Option<UserRecord>, DbError> {
+        Ok(self.state.lock().unwrap().users.get(&id).cloned())
+    }
+
+    async fn insert_profile(&self, profile: &UserProfile) -> Result<bool, DbError> {
+        let mut s = self.state.lock().unwrap();
+        // the FOREIGN KEY on `user_profiles.user_id`, then the PRIMARY KEY, then the UNIQUE indexes on `id` and `username`
+        if !s.users.contains_key(&profile.user_id) {
+            // Postgres reports a foreign key violation as a backend error, not a `Conflict`
+            return Err(DbError::Backend("user_profiles_user_id_fkey".into()));
+        }
+        if s.profiles.contains_key(&profile.user_id) {
+            return Ok(false);
+        }
+        if s.profiles.values().any(|p| p.id == profile.id) {
+            return Err(DbError::Conflict("user_profiles_id_key".into()));
+        }
+        if s.profiles.values().any(|p| p.username == profile.username) {
+            return Err(DbError::Conflict("user_profiles_username_key".into()));
+        }
+        s.profiles.insert(profile.user_id, profile.clone());
+        Ok(true)
+    }
+
+    async fn profile(&self, user: UserId) -> Result<Option<UserProfile>, DbError> {
+        Ok(self.state.lock().unwrap().profiles.get(&user).cloned())
+    }
+
+    async fn update_profile(&self, user: UserId, patch: &ProfilePatch, at: Timestamp) -> Result<Option<UserProfile>, DbError> {
+        let mut s = self.state.lock().unwrap();
+        let Some(p) = s.profiles.get_mut(&user) else { return Ok(None) };
+        if let Some(v) = &patch.first_name {
+            p.first_name = v.clone();
+        }
+        if let Some(v) = &patch.last_name {
+            p.last_name = v.clone();
+        }
+        if let Some(v) = &patch.display_name {
+            p.display_name = v.clone();
+        }
+        if let Some(v) = &patch.avatar {
+            p.avatar = v.clone();
+        }
+        if let Some(v) = &patch.cover_image {
+            p.cover_image = v.clone();
+        }
+        if let Some(v) = &patch.timezone {
+            p.timezone = v.clone();
+        }
+        if let Some(v) = patch.last_login_at {
+            p.last_login_at = Some(v);
+        }
+        if let Some(v) = patch.is_onboarded {
+            p.is_onboarded = v;
+        }
+        if let Some(v) = patch.is_tour_completed {
+            p.is_tour_completed = v;
+        }
+        if let Some(v) = patch.last_workspace_id {
+            p.last_workspace_id = v;
+        }
+        if let Some(v) = &patch.onboarding_step {
+            p.onboarding_step = v.clone();
+        }
+        if !patch.preferences.is_empty() {
+            // jsonb `||`: the patch's keys win, the others stay
+            let mut merged = p.preferences.as_object().cloned().unwrap_or_default();
+            for (k, v) in &patch.preferences {
+                merged.insert(k.clone(), v.clone());
+            }
+            p.preferences = serde_json::Value::Object(merged);
+        }
+        p.updated_at = at;
+        Ok(Some(p.clone()))
     }
 
     async fn insert_user(&self, user: &UserRecord) -> Result<(), DbError> {

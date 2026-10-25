@@ -45,6 +45,10 @@
 //!   a digest that another key holds is a `Conflict`, and the key stays as it was;
 //! * `user_by_email` and `user_for_account` return the user, active or not, and nothing for an unknown email or a link
 //!   that was never made; `link_account` of a subject that is linked already changes nothing;
+//! * `insert_profile` creates a seeded user's profile (`true`) and refuses a second one for the same user (`false`,
+//!   nothing changes); `update_profile` sets the fields its patch names, merges the patch's preferences key by key,
+//!   replaces the onboarding steps whole, clears a field the patch says to clear, always sets `updated_at`, and answers the
+//!   row as it is after (nothing at all for a user with no profile); `profile` reads it back;
 //! * `insert_user` creates a login that `user_by_email` then finds; a taken email or a taken id is a `Conflict` that
 //!   changes nothing (the user that holds it is as it was, and the refused email names nobody);
 //! * a pending OIDC login is returned by `take_oidc_login` once, and deleted by it (a second take, a replayed
@@ -162,6 +166,20 @@ enum UserIns {
     IdTaken(usize),
 }
 
+/// The shape of a `ProfilePatch` an `Op::ProfileUpdate` sends. The values inside are made fresh by the planner.
+#[derive(Debug, Clone, Copy)]
+enum PatchSel {
+    Names,
+    Cover { clear: bool },
+    /// 0 sets `a` and `b`; 1 sets `b` and `c`: after both, `a` survives, `b` is the second one's, `c` is new.
+    Prefs(u8),
+    Onboarding,
+    Flags,
+    Workspace { clear: bool },
+    Login,
+    Empty,
+}
+
 #[derive(Debug, Clone)]
 enum Op {
     Tx { steps: Vec<Step>, end: End },
@@ -204,6 +222,16 @@ enum Op {
     AccountRelink,
     /// `insert_user` of a new login, of one whose email a seeded user (0..3) holds, or of one whose id a seeded user holds.
     UserInsert { kind: UserIns },
+    /// `insert_profile` for one of the three seeded users: the first time it is made, after that it is refused.
+    ProfileInsert { who: usize },
+    /// `update_profile` of one of the three seeded users, with a patch of this shape.
+    ProfileUpdate { who: usize, sel: PatchSel },
+    /// `profile` of one of the three seeded users.
+    ProfileRead { who: usize },
+    /// A compound op, for the sequences a single random op almost never reaches: the profile is made if there is none, then
+    /// patched with both halves of the preferences (so the second must merge, not replace), the cover set and cleared, the
+    /// onboarding steps replaced, the flags set, the last workspace set and cleared, the names changed, and read back.
+    ProfileLife { who: usize },
     OidcInsert { ttl: u8 },
     /// Compound ops: the sequences a single random op almost never reaches, planned as the ops they are made of.
     /// A user (0 or 1) is deactivated, then everything that depends on it is looked up, then optionally reactivated.
@@ -271,6 +299,19 @@ fn ev() -> impl Strategy<Value = Ev> {
     prop_oneof![2 => (0..8usize).prop_map(Ev::Outbox), 1 => (0..8usize).prop_map(Ev::Again), 1 => Just(Ev::Fresh)]
 }
 
+fn patch_sel() -> impl Strategy<Value = PatchSel> {
+    prop_oneof![
+        Just(PatchSel::Names),
+        any::<bool>().prop_map(|clear| PatchSel::Cover { clear }),
+        (0..2u8).prop_map(PatchSel::Prefs),
+        Just(PatchSel::Onboarding),
+        Just(PatchSel::Flags),
+        any::<bool>().prop_map(|clear| PatchSel::Workspace { clear }),
+        Just(PatchSel::Login),
+        Just(PatchSel::Empty),
+    ]
+}
+
 fn op() -> impl Strategy<Value = Op> {
     prop_oneof![
         6 => (prop::collection::vec(step(), 1..5), end()).prop_map(|(steps, end)| Op::Tx { steps, end }),
@@ -301,6 +342,10 @@ fn op() -> impl Strategy<Value = Op> {
             1 => (0..3usize).prop_map(UserIns::IdTaken),
         ]
         .prop_map(|kind| Op::UserInsert { kind }),
+        1 => (0..3usize).prop_map(|who| Op::ProfileInsert { who }),
+        3 => ((0..3usize), patch_sel()).prop_map(|(who, sel)| Op::ProfileUpdate { who, sel }),
+        1 => (0..3usize).prop_map(|who| Op::ProfileRead { who }),
+        2 => (0..3usize).prop_map(|who| Op::ProfileLife { who }),
         2 => (0..2usize, any::<bool>()).prop_map(|(who, restore)| Op::Deactivated { who, restore }),
         2 => prop_oneof![Just(5u8), Just(100u8)].prop_map(|ttl| Op::OidcRoundTrip { ttl }),
         2 => (0..2usize).prop_map(|key| Op::KeyCycle { key }),
@@ -421,6 +466,17 @@ enum Class {
     UserInsertEmailTaken,
     /// `insert_user` with an id a user holds: a `Conflict`, the new email names nobody.
     UserInsertIdTaken,
+    /// `insert_profile` for a user with none: made, and read back.
+    ProfileInserted,
+    /// `insert_profile` for a user that has one: `false`, the profile unchanged.
+    ProfileInsertKept,
+    /// `update_profile` of a profile: the patched row, read back.
+    ProfileUpdated,
+    /// `update_profile` of a user with no profile: nothing, and nothing is made.
+    ProfileUpdateMissing,
+    /// `update_profile` whose preferences leave a key the profile already holds unnamed: the key must survive (a merge, not
+    /// a replace).
+    ProfilePrefsMerged,
     OidcInserted,
     /// An insert that dropped an expired login.
     OidcSwept,
@@ -447,7 +503,7 @@ enum Class {
 }
 
 impl Class {
-    const ALL: [Class; 85] = [
+    const ALL: [Class; 90] = [
         Class::Created,
         Class::ExternalKeyFreed,
         Class::Conflict,
@@ -515,6 +571,11 @@ impl Class {
         Class::UserInserted,
         Class::UserInsertEmailTaken,
         Class::UserInsertIdTaken,
+        Class::ProfileInserted,
+        Class::ProfileInsertKept,
+        Class::ProfileUpdated,
+        Class::ProfileUpdateMissing,
+        Class::ProfilePrefsMerged,
         Class::OidcInserted,
         Class::OidcSwept,
         Class::OidcTaken,
@@ -558,6 +619,10 @@ enum Call {
     SeedUsers { users: Vec<UserRecord> },
     /// `conflict`: the adapter must answer `DbError::Conflict`.
     InsertUser { u: UserRecord, conflict: bool },
+    /// `want`: whether the profile was made (`false`: the user has one already).
+    InsertProfile { p: UserProfile, want: bool },
+    Profile { user: UserId, want: Option<UserProfile> },
+    UpdateProfile { user: UserId, patch: ProfilePatch, at: Timestamp, want: Option<UserProfile> },
     LinkAccount { a: NewAccount },
     InsertApiKey { k: NewApiKey },
     SetActive { user: UserId, active: bool },
@@ -797,6 +862,8 @@ struct Model {
     api_keys: Vec<KeyModel>,
     /// Every OIDC login ever inserted, with whether it is still pending (not taken, not swept).
     logins: Vec<(NewOidcLogin, LoginState)>,
+    /// The profile of each of the three seeded login users, once an op has made it.
+    profiles: [Option<UserProfile>; 3],
     /// Committed rows per project, in sequence order.
     rows: [Vec<WorkItem>; 2],
     counter: [i64; 2],
@@ -814,6 +881,94 @@ static CLOCK: AtomicI64 = AtomicI64::new(0);
 
 fn tick() -> Timestamp {
     Utc.timestamp_opt(1_800_000_000 + CLOCK.fetch_add(1, Ordering::Relaxed) + 1, 0).unwrap()
+}
+
+/// A fresh profile for seeded user `who`, as sign-up would make one.
+fn profile_of(user: UserId, who: usize) -> UserProfile {
+    let now = tick();
+    UserProfile {
+        id: new_id(),
+        user_id: user,
+        username: format!("user-{}", new_id().simple()),
+        first_name: String::new(),
+        last_name: String::new(),
+        display_name: format!("user {who}"),
+        avatar: String::new(),
+        cover_image: None,
+        timezone: "UTC".into(),
+        date_joined: now,
+        last_login_at: None,
+        is_onboarded: false,
+        is_tour_completed: false,
+        last_workspace_id: None,
+        onboarding_step: serde_json::json!({"profile_complete": false}),
+        preferences: serde_json::json!({}),
+        created_at: now,
+        updated_at: now,
+    }
+}
+
+/// The patch an `Op::ProfileUpdate` of this shape sends, with fresh values where it sets one.
+fn patch_for(sel: PatchSel, workspace: WorkspaceId) -> ProfilePatch {
+    let fresh = || new_id().simple().to_string();
+    let prefs = |v: serde_json::Value| v.as_object().cloned().unwrap_or_default();
+    match sel {
+        PatchSel::Names => ProfilePatch {
+            first_name: Some(format!("first-{}", fresh())),
+            last_name: Some(format!("last-{}", fresh())),
+            display_name: Some(format!("display-{}", fresh())),
+            avatar: Some(format!("avatar-{}", fresh())),
+            timezone: Some("Asia/Kolkata".into()),
+            ..ProfilePatch::default()
+        },
+        PatchSel::Cover { clear: true } => ProfilePatch { cover_image: Some(None), ..ProfilePatch::default() },
+        PatchSel::Cover { clear: false } => ProfilePatch { cover_image: Some(Some(format!("https://example.test/{}", fresh()))), ..ProfilePatch::default() },
+        PatchSel::Prefs(0) => ProfilePatch { preferences: prefs(serde_json::json!({"a": fresh(), "b": {"x": true}})), ..ProfilePatch::default() },
+        PatchSel::Prefs(_) => ProfilePatch { preferences: prefs(serde_json::json!({"b": 2, "c": [fresh()]})), ..ProfilePatch::default() },
+        PatchSel::Onboarding => ProfilePatch {
+            onboarding_step: Some(serde_json::json!({"profile_complete": true, "step": fresh()})),
+            ..ProfilePatch::default()
+        },
+        PatchSel::Flags => ProfilePatch { is_onboarded: Some(true), is_tour_completed: Some(true), ..ProfilePatch::default() },
+        PatchSel::Workspace { clear: true } => ProfilePatch { last_workspace_id: Some(None), ..ProfilePatch::default() },
+        PatchSel::Workspace { clear: false } => ProfilePatch { last_workspace_id: Some(Some(workspace)), ..ProfilePatch::default() },
+        PatchSel::Login => ProfilePatch { last_login_at: Some(tick()), ..ProfilePatch::default() },
+        PatchSel::Empty => ProfilePatch::default(),
+    }
+}
+
+/// The spec of `update_profile`, written from the port's documentation: what the patch names is set, the preferences are
+/// merged key by key, the onboarding steps are replaced whole, `Some(None)` clears, and `updated_at` is always the call's.
+fn apply_patch(p: &mut UserProfile, patch: &ProfilePatch, at: Timestamp) {
+    let ProfilePatch {
+        first_name,
+        last_name,
+        display_name,
+        avatar,
+        cover_image,
+        timezone,
+        last_login_at,
+        is_onboarded,
+        is_tour_completed,
+        last_workspace_id,
+        onboarding_step,
+        preferences,
+    } = patch.clone();
+    p.first_name = first_name.unwrap_or_else(|| p.first_name.clone());
+    p.last_name = last_name.unwrap_or_else(|| p.last_name.clone());
+    p.display_name = display_name.unwrap_or_else(|| p.display_name.clone());
+    p.avatar = avatar.unwrap_or_else(|| p.avatar.clone());
+    p.cover_image = cover_image.unwrap_or_else(|| p.cover_image.clone());
+    p.timezone = timezone.unwrap_or_else(|| p.timezone.clone());
+    p.last_login_at = last_login_at.or(p.last_login_at);
+    p.is_onboarded = is_onboarded.unwrap_or(p.is_onboarded);
+    p.is_tour_completed = is_tour_completed.unwrap_or(p.is_tour_completed);
+    p.last_workspace_id = last_workspace_id.unwrap_or(p.last_workspace_id);
+    p.onboarding_step = onboarding_step.unwrap_or_else(|| p.onboarding_step.clone());
+    if let Some(map) = p.preferences.as_object_mut() {
+        map.extend(preferences);
+    }
+    p.updated_at = at;
 }
 
 fn item(ws: WorkspaceId, p: ProjectId, a: Allocation, ext: Option<u8>) -> WorkItem {
@@ -874,6 +1029,7 @@ impl Model {
             active: [true; 3],
             api_keys,
             logins: Vec::new(),
+            profiles: [None, None, None],
             rows: [Vec::new(), Vec::new()],
             counter: [0, 0],
             outbox: Vec::new(),
@@ -1296,6 +1452,72 @@ impl Model {
                     }
                 }
             }
+            &Op::ProfileInsert { who } => {
+                let user = self.fix.users[who];
+                match self.profiles[who].clone() {
+                    None => {
+                        let p = profile_of(user, who);
+                        classes.push(Class::ProfileInserted);
+                        calls.push(Call::InsertProfile { p: p.clone(), want: true });
+                        calls.push(Call::Profile { user, want: Some(p.clone()) });
+                        self.profiles[who] = Some(p);
+                    }
+                    Some(kept) => {
+                        classes.push(Class::ProfileInsertKept);
+                        // another profile for the same user: refused, and the one that is there is as it was
+                        calls.push(Call::InsertProfile { p: profile_of(user, who), want: false });
+                        calls.push(Call::Profile { user, want: Some(kept) });
+                    }
+                }
+            }
+            &Op::ProfileUpdate { who, sel } => {
+                let user = self.fix.users[who];
+                let patch = patch_for(sel, self.fix.ws[0]);
+                let at = tick();
+                match &mut self.profiles[who] {
+                    None => {
+                        classes.push(Class::ProfileUpdateMissing);
+                        calls.push(Call::UpdateProfile { user, patch, at, want: None });
+                        calls.push(Call::Profile { user, want: None });
+                    }
+                    Some(p) => {
+                        classes.push(Class::ProfileUpdated);
+                        if p.preferences.as_object().is_some_and(|held| held.keys().any(|k| !patch.preferences.contains_key(k))) && !patch.preferences.is_empty() {
+                            classes.push(Class::ProfilePrefsMerged);
+                        }
+                        apply_patch(p, &patch, at);
+                        let want = p.clone();
+                        calls.push(Call::UpdateProfile { user, patch, at, want: Some(want.clone()) });
+                        calls.push(Call::Profile { user, want: Some(want) });
+                    }
+                }
+            }
+            &Op::ProfileRead { who } => {
+                let want = self.profiles[who].clone();
+                calls.push(Call::Profile { user: self.fix.users[who], want });
+            }
+            &Op::ProfileLife { who } => {
+                let update = |sel| Op::ProfileUpdate { who, sel };
+                let mut ops = Vec::new();
+                if self.profiles[who].is_none() {
+                    ops.push(Op::ProfileInsert { who });
+                }
+                ops.extend([
+                    update(PatchSel::Prefs(0)),
+                    update(PatchSel::Prefs(1)),
+                    update(PatchSel::Cover { clear: false }),
+                    update(PatchSel::Cover { clear: true }),
+                    update(PatchSel::Onboarding),
+                    update(PatchSel::Flags),
+                    update(PatchSel::Workspace { clear: false }),
+                    update(PatchSel::Workspace { clear: true }),
+                    update(PatchSel::Names),
+                    update(PatchSel::Login),
+                    update(PatchSel::Empty),
+                    Op::ProfileRead { who },
+                ]);
+                self.plan_all(&ops, &mut calls, &mut classes);
+            }
             &Op::OidcInsert { ttl } => {
                 let created_at = tick();
                 let l = NewOidcLogin {
@@ -1666,6 +1888,18 @@ async fn execute(db: &dyn Database, tx: &mut Option<Box<dyn Tx>>, call: Call, at
                 (got, _) => return Err(fail(at, format!("insert user: got {got:?}, want conflict = {conflict}"))),
             }
         }
+        Call::InsertProfile { p, want } => {
+            let got = bounded(at, db.insert_profile(&p)).await?;
+            prop_assert_eq!(got, want, "{}: insert profile (true = made)", at);
+        }
+        Call::Profile { user, want } => {
+            let got = bounded(at, db.profile(user)).await?;
+            prop_assert_eq!(got, want, "{}: profile", at);
+        }
+        Call::UpdateProfile { user, patch, at: when, want } => {
+            let got = bounded(at, db.update_profile(user, &patch, when)).await?;
+            prop_assert_eq!(got, want, "{}: update profile", at);
+        }
         Call::LinkAccount { a } => bounded(at, db.link_account(&a)).await?,
         Call::InsertApiKey { k } => bounded(at, db.insert_api_key(&k)).await?,
         Call::SetActive { user, active } => {
@@ -1803,7 +2037,9 @@ fn model_postgres_adapter_matches_the_reference_model() {
 fn model_postgres_strategy_reaches_every_step_class() {
     let mut runner = TestRunner::deterministic();
     let mut seen = BTreeSet::new();
-    for _ in 0..1000 {
+    // 3000, not 1000: every op added to the strategy thins out the others, and a rare class (`GotDeletedHidden`) was one
+    // sample from missing at 1000. The control is stronger for the larger sample, and planning is model-only and quick.
+    for _ in 0..3000 {
         let ops = ops().new_tree(&mut runner).unwrap().current();
         let mut m = Model::new(Fix::new());
         for op in &ops {

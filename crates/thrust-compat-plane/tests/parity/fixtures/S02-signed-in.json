@@ -1,0 +1,75 @@
+{
+  "exchanges": [
+    {
+      "name": "a new user",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/users/me/"
+      },
+      "response": {
+        "body": {
+          "avatar": "",
+          "avatar_url": null,
+          "cover_image": null,
+          "cover_image_url": null,
+          "date_joined": "<ts>",
+          "display_name": "journey",
+          "email": "journey@example.test",
+          "first_name": "",
+          "id": "<uuid:1>",
+          "is_active": true,
+          "is_bot": false,
+          "is_email_verified": false,
+          "is_password_autoset": false,
+          "last_login_medium": "email",
+          "last_login_time": "<ts>",
+          "last_name": "",
+          "user_timezone": "UTC",
+          "username": "<uuid:2>"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "another user",
+      "request": {
+        "as": "second@example.test",
+        "method": "GET",
+        "path": "/api/users/me/"
+      },
+      "response": {
+        "body": {
+          "avatar": "",
+          "avatar_url": null,
+          "cover_image": null,
+          "cover_image_url": null,
+          "date_joined": "<ts>",
+          "display_name": "second",
+          "email": "second@example.test",
+          "first_name": "",
+          "id": "<uuid:3>",
+          "is_active": true,
+          "is_bot": false,
+          "is_email_verified": false,
+          "is_password_autoset": false,
+          "last_login_medium": "email",
+          "last_login_time": "<ts>",
+          "last_name": "",
+          "user_timezone": "UTC",
+          "username": "<uuid:4>"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    }
+  ],
+  "format_version": 1,
+  "recorded_from": "ba85d4d3d3",
+  "row": "S02-signed-in"
+}

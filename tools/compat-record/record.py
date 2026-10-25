@@ -98,10 +98,11 @@ class Client:
         self.jar = http.cookiejar.CookieJar()
         self.opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(self.jar), NoRedirect)
 
-    def request(self, method, path, body=None, form=None, headers=None, hidden_form=None):
+    def request(self, method, path, body=None, form=None, headers=None, hidden_form=None, as_email=None):
         """Returns the exchange as the raw dict `normalise.exchange` takes (name added by the caller).
 
-        `hidden_form` is sent with a form post but not recorded (the CSRF token)."""
+        `hidden_form` is sent with a form post but not recorded (the CSRF token). `as_email` is recorded as the request's
+        `as`: whose session this client holds, so the harness can send the request with that user's session."""
         hs = dict(headers or {})
         data = None
         if body is not None:
@@ -124,6 +125,8 @@ class Client:
                 raise SystemExit(f"{method} {path}: {status} body is {ctype!r}, not JSON; extend the fixture format before recording it")
             parsed = json.loads(raw)
         request = {"method": method, "path": path}
+        if as_email is not None:
+            request["as"] = as_email
         if body is not None:
             request["body"] = body
         elif form is not None:
@@ -190,6 +193,31 @@ def post_form(base, pacer, path, form):
     token = c.csrf()
     pacer.wait()
     return c.request("POST", path, form=form, headers={"X-CSRFToken": token}, hidden_form={"csrfmiddlewaretoken": token})
+
+
+PASSWORDS = {JOURNEY_EMAIL: STRONG, SECOND_EMAIL: STRONG}
+_SESSIONS = {}
+
+
+def session(base, pacer, email):
+    """A signed-in client for `email`, signed in once (by the same form post the sign-in page makes) and kept: a browser
+    keeps its session. The pin's API authenticates by session cookie and does not check CSRF on it."""
+    if email not in _SESSIONS:
+        c = Client(base)
+        token = c.csrf()
+        pacer.wait()
+        ex = c.request("POST", "/auth/sign-in/", form={"email": email, "password": PASSWORDS[email]}, headers={"X-CSRFToken": token}, hidden_form={"csrfmiddlewaretoken": token})
+        location = ex["response"]["headers"].get("Location", "")
+        if ex["response"]["status"] != 302 or "error_code" in location:
+            raise SystemExit(f"could not sign {email} in to record a signed-in step: {location}")
+        _SESSIONS[email] = c
+    return _SESSIONS[email]
+
+
+def api(base, pacer, email, method, path, body=None):
+    """One API call, as `email` (a signed-in session) or, for `None`, with no session."""
+    c = session(base, pacer, email) if email else fresh(base)
+    return c.request(method, path, body=body, as_email=email)
 
 
 def step_s01(base, pacer):
@@ -260,7 +288,112 @@ def step_s06(base, pacer):
     ]
 
 
-# Journey order. The file name is the step id; `S04-existing` is S04's route again, after S05.
+J = JOURNEY_EMAIL
+NOT_SIGNED_IN = None
+ME = "/api/users/me/"
+PROFILE = "/api/users/me/profile/"
+
+
+def step_s02_signed_in(base, pacer):
+    """GET /api/users/me/ signed in: the user a sign-up made, and (to pin that it is the caller's own) another one."""
+    return [
+        ("a new user", api(base, pacer, J, "GET", ME)),
+        ("another user", api(base, pacer, SECOND_EMAIL, "GET", ME)),
+    ]
+
+
+def step_s07(base, pacer):
+    """GET /api/users/me/profile/ : a new user's profile, with every default."""
+    return [
+        ("no session", api(base, pacer, NOT_SIGNED_IN, "GET", PROFILE)),
+        ("a new user's profile", api(base, pacer, J, "GET", PROFILE)),
+    ]
+
+
+def step_s10(base, pacer):
+    """PATCH /api/users/me/ : the onboarding profile step, the preferences, and what the pin ignores or refuses."""
+    patch = lambda who, body: api(base, pacer, who, "PATCH", ME, body)  # noqa: E731
+    return [
+        ("no session", patch(NOT_SIGNED_IN, {"first_name": "Nobody"})),
+        ("the names the onboarding page sends", patch(J, {"first_name": "Journey", "last_name": "Tester"})),
+        ("a first name with space around it", patch(J, {"first_name": "  Journey  "})),
+        ("a first name that is not a string", patch(J, {"first_name": ["a"]})),
+        ("a first name that is null", patch(J, {"first_name": None})),
+        ("a first name that is too long", patch(J, {"first_name": "x" * 256})),
+        ("a URL in the first name", patch(J, {"first_name": "see example.com"})),
+        ("a URL in the last name", patch(J, {"last_name": "http://example.test/x"})),
+        ("a blank display name", patch(J, {"display_name": ""})),
+        ("a time zone that does not exist", patch(J, {"user_timezone": "Mars/Olympus"})),
+        ("a time zone", patch(J, {"user_timezone": "Asia/Kolkata"})),
+        ("fields that are read only are ignored", patch(J, {"email": "changed@example.test", "is_bot": True, "username": "changed", "avatar_url": "https://example.test/a.png"})),
+        ("an empty body", patch(J, {})),
+        ("a cover image that is not a URL", patch(J, {"cover_image": "nope"})),
+        ("a cover image", patch(J, {"cover_image": "https://example.test/cover.png"})),
+        ("a cover image cleared", patch(J, {"cover_image": None})),
+        ("a display name", patch(J, {"display_name": "Journey T."})),
+        ("back to UTC", patch(J, {"user_timezone": "UTC"})),
+        ("the user now", api(base, pacer, J, "GET", ME)),
+    ]
+
+
+def step_s11(base, pacer):
+    """PATCH /api/users/me/profile/ : what the onboarding steps and the settings pages send, and what the pin refuses."""
+    patch = lambda who, body: api(base, pacer, who, "PATCH", PROFILE, body)  # noqa: E731
+    steps = {"profile_complete": True, "workspace_create": False, "workspace_invite": False, "workspace_join": False}
+    return [
+        ("no session", patch(NOT_SIGNED_IN, {"role": "developer"})),
+        ("marketing consent", patch(J, {"has_marketing_email_consent": False})),
+        ("a role", patch(J, {"role": "developer"})),
+        ("a use case", patch(J, {"use_case": "Plan work. Track bugs"})),
+        ("an onboarding step", patch(J, {"onboarding_step": steps})),
+        ("a theme", patch(J, {"theme": {"theme": "dark", "primary": "#3f76ff", "background": "#1a1a1a", "darkPalette": True}})),
+        ("the start of the week", patch(J, {"start_of_the_week": 1})),
+        ("a start of the week out of range", patch(J, {"start_of_the_week": 9})),
+        ("a notification view that does not exist", patch(J, {"notification_view_mode": "huge"})),
+        ("a last workspace that is not an id", patch(J, {"last_workspace_id": "not-a-uuid"})),
+        ("a role that is too long", patch(J, {"role": "x" * 301})),
+        ("a boolean that is not one", patch(J, {"is_onboarded": "maybe"})),
+        ("a boolean that is null", patch(J, {"is_tour_completed": None})),
+        ("a boolean spelled yes", patch(J, {"has_marketing_email_consent": "yes"})),
+        ("a number for the role", patch(J, {"role": 5})),
+        ("a theme that is null", patch(J, {"theme": None})),
+        ("a language that is blank", patch(J, {"language": ""})),
+        ("the start of the week as text", patch(J, {"start_of_the_week": "2"})),
+        ("an unknown field", patch(J, {"nonsense": 1})),
+        ("fields that are read only are ignored", patch(J, {"user": "00000000-0000-4000-8000-000000000001", "id": "00000000-0000-4000-8000-000000000002"})),
+        ("an empty body", patch(J, {})),
+        ("the profile now", api(base, pacer, J, "GET", PROFILE)),
+    ]
+
+
+def step_s27(base, pacer):
+    """PATCH /api/users/me/tour-completed/ : the home page's tour overlay."""
+    tour = "/api/users/me/tour-completed/"
+    patch = lambda who, body: api(base, pacer, who, "PATCH", tour, body)  # noqa: E731
+    return [
+        ("no session", patch(NOT_SIGNED_IN, {"is_tour_completed": True})),
+        ("not a boolean", patch(J, {"is_tour_completed": "abc"})),
+        ("no key sets it to false", patch(J, {})),
+        ("the tour is completed", patch(J, {"is_tour_completed": True})),
+    ]
+
+
+def step_x04_onboard(base, pacer):
+    """PATCH /api/users/me/onboard/ : not one of the 48 rows of research/0003 section 8.1, but the last request of the
+    stock onboarding (`finishUserOnboarding` awaits it, and a 404 would stop the page from finishing)."""
+    onboard = "/api/users/me/onboard/"
+    patch = lambda who, body: api(base, pacer, who, "PATCH", onboard, body)  # noqa: E731
+    return [
+        ("no session", patch(NOT_SIGNED_IN, {"is_onboarded": True})),
+        ("not a boolean", patch(J, {"is_onboarded": "abc"})),
+        ("no key sets it to false", patch(J, {})),
+        ("onboarded", patch(J, {"is_onboarded": True})),
+        ("the profile now", api(base, pacer, J, "GET", PROFILE)),
+    ]
+
+
+# Journey order. The file name is the step id; `S04-existing` is S04's route again, after S05, and `S02-signed-in` is
+# S02's route again, once there is a session. `X04` is a route the stock onboarding calls that the inventory lacks.
 STEPS = [
     ("S01", step_s01),
     ("S02", step_s02),
@@ -269,6 +402,12 @@ STEPS = [
     ("S05", step_s05),
     ("S04-existing", step_s04_existing),
     ("S06", step_s06),
+    ("S02-signed-in", step_s02_signed_in),
+    ("S07", step_s07),
+    ("S10", step_s10),
+    ("S11", step_s11),
+    ("S27", step_s27),
+    ("X04", step_x04_onboard),
 ]
 
 

@@ -10,5 +10,7 @@ publish.workspace = true
 thrust-contracts = { workspace = true }
 async-trait = { workspace = true }
 thiserror = { workspace = true }
+# A profile keeps its free-form settings as a JSON object (`UserProfile::preferences`).
+serde_json = { workspace = true }
 # `alloc` only: BoxFuture. No executor, no tokio.
 futures-util = { workspace = true }
