@@ -746,6 +746,257 @@ async fn creations_racing_for_one_slug_make_exactly_one_workspace() {
     assert_eq!(have, 1, "a loser kept a membership");
 }
 
+/// Issue #44, migrations 0010 and 0011: the columns of the project and first-visit tables are written out, and the constraints
+/// that keep them well formed are exercised: a network of two words, JSON that is an object, a navigation control of two words,
+/// rows that belong to a workspace and a user that exist, and one row per member and key.
+#[tokio::test]
+async fn the_project_and_first_visit_tables_have_the_columns_they_say_and_the_constraints_that_keep_them_well_formed() {
+    let env = env().await;
+    let raw = env.conn.raw().await.unwrap();
+    let columns = |table: &'static str| {
+        let raw = &raw;
+        async move {
+            let rows = raw
+                .query(
+                    "SELECT column_name, data_type FROM information_schema.columns \
+                     WHERE table_schema = 'public' AND table_name = $1 ORDER BY column_name",
+                    &[&table],
+                )
+                .await
+                .unwrap();
+            rows.iter().map(|r| (r.get::<_, String>(0), r.get::<_, String>(1))).collect::<Vec<_>>()
+        }
+    };
+    let ts = "timestamp with time zone";
+    let pairs = |v: Vec<(&str, &str)>| v.into_iter().map(|(n, t)| (n.to_string(), t.to_string())).collect::<Vec<_>>();
+    assert_eq!(
+        columns("projects").await,
+        pairs(vec![
+            ("archived_at", ts),
+            ("created_at", ts),
+            ("created_by", "uuid"),
+            ("cycle_view", "boolean"),
+            ("guest_view_all_features", "boolean"),
+            ("id", "uuid"),
+            ("identifier", "text"),
+            ("intake_view", "boolean"),
+            ("issue_views_view", "boolean"),
+            ("logo_props", "jsonb"),
+            ("module_view", "boolean"),
+            ("name", "text"),
+            ("network", "text"),
+            ("page_view", "boolean"),
+            ("project_lead", "uuid"),
+            ("updated_at", ts),
+            ("updated_by", "uuid"),
+            ("workspace_id", "uuid"),
+        ])
+    );
+    assert_eq!(
+        columns("project_user_properties").await,
+        pairs(vec![("created_at", ts), ("project_id", "uuid"), ("sort_order", "double precision"), ("updated_at", ts), ("user_id", "uuid")])
+    );
+    assert_eq!(
+        columns("workspace_user_preferences").await,
+        pairs(vec![
+            ("created_at", ts),
+            ("is_pinned", "boolean"),
+            ("key", "text"),
+            ("sort_order", "double precision"),
+            ("updated_at", ts),
+            ("user_id", "uuid"),
+            ("workspace_id", "uuid"),
+        ])
+    );
+    assert_eq!(
+        columns("workspace_home_preferences").await,
+        pairs(vec![
+            ("config", "jsonb"),
+            ("created_at", ts),
+            ("is_enabled", "boolean"),
+            ("key", "text"),
+            ("sort_order", "double precision"),
+            ("updated_at", ts),
+            ("user_id", "uuid"),
+            ("workspace_id", "uuid"),
+        ])
+    );
+    assert_eq!(
+        columns("workspace_user_properties").await,
+        pairs(vec![
+            ("created_at", ts),
+            ("display_filters", "jsonb"),
+            ("display_properties", "jsonb"),
+            ("filters", "jsonb"),
+            ("id", "uuid"),
+            ("navigation_control_preference", "text"),
+            ("navigation_project_limit", "integer"),
+            ("rich_filters", "jsonb"),
+            ("updated_at", ts),
+            ("user_id", "uuid"),
+            ("workspace_id", "uuid"),
+        ])
+    );
+
+    let owner = user_without_login(&env).await;
+    let w = workspace_for(owner, "first-visit");
+    env.db.insert_workspace(&w).await.unwrap();
+    let ws = w.workspace.id.0;
+    let project = new_id();
+    raw.execute("INSERT INTO projects (id, workspace_id, name, identifier) VALUES ($1, $2, 'p', 'P')", &[&project, &ws]).await.unwrap();
+    // a network outside the two words, and a logo that is not an object, are refused by the database itself
+    for (set, why) in [("network = 'private'", "network"), ("logo_props = '[]'::jsonb", "logo array"), ("logo_props = '1'::jsonb", "logo scalar")] {
+        assert!(raw.execute(&format!("UPDATE projects SET {set} WHERE id = $1"), &[&project]).await.is_err(), "{why}");
+    }
+    // a project has an identifier
+    assert!(raw.execute("UPDATE projects SET identifier = NULL WHERE id = $1", &[&project]).await.is_err());
+    // control: the two networks and an object are accepted
+    raw.execute("UPDATE projects SET network = 'secret', logo_props = '{\"in_use\": \"emoji\"}'::jsonb WHERE id = $1", &[&project]).await.unwrap();
+
+    // the first-visit rows belong to a workspace and a user that exist
+    let stranger = new_id();
+    let pref = "INSERT INTO workspace_user_preferences (workspace_id, user_id, key, is_pinned, sort_order, created_at, updated_at) \
+                VALUES ($1, $2, 'k', false, 1, now(), now())";
+    assert!(raw.execute(pref, &[&ws, &stranger]).await.is_err(), "a row for a user who does not exist");
+    assert!(raw.execute(pref, &[&stranger, &owner.0]).await.is_err(), "a row for a workspace that does not exist");
+    raw.execute(pref, &[&ws, &owner.0]).await.unwrap();
+    assert!(raw.execute(pref, &[&ws, &owner.0]).await.is_err(), "two rows for one key");
+    let home = "INSERT INTO workspace_home_preferences (workspace_id, user_id, key, is_enabled, config, sort_order, created_at, updated_at) \
+                VALUES ($1, $2, 'k', true, $3, 1, now(), now())";
+    assert!(raw.execute(home, &[&ws, &owner.0, &serde_json::json!([])]).await.is_err(), "a widget config that is not an object");
+    raw.execute(home, &[&ws, &owner.0, &serde_json::json!({"a": 1})]).await.unwrap();
+    let props = "INSERT INTO workspace_user_properties (id, workspace_id, user_id, filters, display_filters, display_properties, \
+                   rich_filters, navigation_project_limit, navigation_control_preference, created_at, updated_at) \
+                 VALUES ($1, $2, $3, $4, '{}', '{}', '{}', 10, $5, now(), now())";
+    let object = serde_json::json!({});
+    assert!(raw.execute(props, &[&new_id(), &ws, &owner.0, &serde_json::json!([]), &"ACCORDION"]).await.is_err(), "filters that are no object");
+    assert!(raw.execute(props, &[&new_id(), &ws, &owner.0, &object, &"SIDEWAYS"]).await.is_err(), "a navigation control of another word");
+    raw.execute(props, &[&new_id(), &ws, &owner.0, &object, &"TABBED"]).await.unwrap();
+    assert!(raw.execute(props, &[&new_id(), &ws, &owner.0, &object, &"TABBED"]).await.is_err(), "two settings rows for one member");
+}
+
+/// A database created before migration 0010 has projects that are an id, a workspace and a name, and 0011 adds tables beside
+/// them. `migrate` gives each project the identifier `default_project_identifier` makes from its id, a public network, no
+/// archive time, an empty logo and the default views (only pages on), and applying it again changes nothing. A pinned regression
+/// for the upgrade path of a database that has data; every other test here starts from an empty one.
+#[tokio::test]
+async fn migrations_0010_and_0011_upgrade_a_database_that_has_projects() {
+    let container = Postgres::default().start().await.expect("start postgres container");
+    let port = container.get_host_port_ipv4(5432).await.expect("mapped port");
+    let url = format!("postgres://postgres:postgres@127.0.0.1:{port}/postgres");
+    let conn = Arc::new(PoolConnector::from_url(&url, 4).unwrap());
+    let raw = conn.raw().await.unwrap();
+    for sql in [
+        thrust_adapters_postgres::MIGRATION_0001,
+        thrust_adapters_postgres::MIGRATION_0002,
+        thrust_adapters_postgres::MIGRATION_0003,
+        thrust_adapters_postgres::MIGRATION_0004,
+        thrust_adapters_postgres::MIGRATION_0005,
+        thrust_adapters_postgres::MIGRATION_0006,
+        thrust_adapters_postgres::MIGRATION_0007,
+        thrust_adapters_postgres::MIGRATION_0008,
+        thrust_adapters_postgres::MIGRATION_0009,
+    ] {
+        raw.batch_execute(sql).await.unwrap();
+    }
+    let (ws, user) = (new_id(), new_id());
+    // ids that differ only in their first group, as random ones do, and ones that differ only in their last
+    let projects = [new_id(), Uuid::from_u128(0xAB), Uuid::from_u128(0xCD)];
+    raw.execute("INSERT INTO users (id) VALUES ($1)", &[&user]).await.unwrap();
+    raw.execute("INSERT INTO workspaces (id, slug, name) VALUES ($1, 'legacy-projects', 'Legacy')", &[&ws]).await.unwrap();
+    raw.execute("INSERT INTO workspace_members (workspace_id, user_id) VALUES ($1, $2)", &[&ws, &user]).await.unwrap();
+    for p in projects {
+        raw.execute("INSERT INTO projects (id, workspace_id, name) VALUES ($1, $2, $3)", &[&p, &ws, &format!("legacy {p}")]).await.unwrap();
+        raw.execute("INSERT INTO project_members (project_id, workspace_id, user_id, role) VALUES ($1, $2, $3, 'member')", &[&p, &ws, &user])
+            .await
+            .unwrap();
+    }
+    thrust_adapters_postgres::migrate(&raw).await.unwrap();
+    async fn state(raw: &tokio_postgres::Client) -> Vec<(Uuid, String, String, Timestamp)> {
+        raw.query("SELECT id, identifier, network, created_at FROM projects ORDER BY id", &[])
+            .await
+            .unwrap()
+            .iter()
+            .map(|r| (r.get::<_, Uuid>(0), r.get::<_, String>(1), r.get::<_, String>(2), r.get::<_, Timestamp>(3)))
+            .collect()
+    }
+    let first = state(&raw).await;
+    thrust_adapters_postgres::migrate(&raw).await.unwrap();
+    assert_eq!(first, state(&raw).await, "a second run changed the projects");
+    for (id, identifier, network, _) in &first {
+        assert_eq!(identifier, &default_project_identifier(ProjectId(*id)), "the backfill and the helper disagree");
+        assert_eq!(network, "public");
+    }
+    assert_eq!(first.iter().find(|r| r.0 == Uuid::from_u128(0xAB)).unwrap().1, "0000000000AB");
+
+    drop(raw);
+    let db = PgDatabase::new(conn);
+    let listed = db.workspace_projects(&WorkspaceScope::mint(WorkspaceId(ws), UserId(user), Role::Member)).await.unwrap();
+    assert_eq!(listed.len(), 3);
+    for l in &listed {
+        let p = &l.project;
+        assert_eq!((p.network, p.archived_at, p.logo_props.clone(), p.project_lead, p.created_by), (ProjectNetwork::Public, None, serde_json::json!({}), None, None));
+        assert_eq!((p.cycle_view, p.issue_views_view, p.module_view, p.page_view, p.intake_view, p.guest_view_all_features), (false, false, false, true, false, false));
+        assert_eq!((l.role, l.sort_order), (Some(Role::Member), None));
+    }
+}
+
+/// A member's first visits can race (the app reads the sidebar, the home page and the list settings at once, and a second tab
+/// does the same): 16 tasks ask for the same rows, and every one of them gets every row, each made once. The unique key
+/// decides, and the loser's SELECT, which comes after its INSERT, sees what the winner made.
+#[tokio::test]
+async fn first_visits_racing_make_each_row_once_and_every_visit_sees_all_of_them() {
+    let env = env().await;
+    let owner = user_without_login(&env).await;
+    let w = workspace_for(owner, "visit-race");
+    env.db.insert_workspace(&w).await.unwrap();
+    let scope = WorkspaceScope::mint(w.workspace.id, owner, Role::Admin);
+    let now = Utc.timestamp_opt(1_800_000_300, 0).unwrap();
+    let sidebar: Vec<SidebarPreference> =
+        (0..7).map(|i| SidebarPreference { key: format!("key{i}"), is_pinned: i % 2 == 0, sort_order: 65535.0 + 10000.0 * f64::from(i) }).collect();
+    let home: Vec<HomePreference> = (0..3)
+        .map(|i| HomePreference { key: format!("widget{i}"), is_enabled: true, config: serde_json::json!({}), sort_order: 999.0 - f64::from(i), created_at: now })
+        .collect();
+    let mut handles = Vec::new();
+    for task in 0..16u128 {
+        let (db, sidebar, home) = (env.db.clone(), sidebar.clone(), home.clone());
+        let properties = UserProperties {
+            id: Uuid::from_u128(0x7000 + task),
+            filters: serde_json::json!({}),
+            display_filters: serde_json::json!({}),
+            display_properties: serde_json::json!({}),
+            rich_filters: serde_json::json!({}),
+            navigation_project_limit: 10,
+            navigation_control_preference: "ACCORDION".into(),
+            created_at: now,
+            updated_at: now,
+        };
+        handles.push(tokio::spawn(async move {
+            let s = db.ensure_sidebar_preferences(&scope, &sidebar, now).await.unwrap();
+            let h = db.ensure_home_preferences(&scope, &home).await.unwrap();
+            let p = db.ensure_user_properties(&scope, &properties).await.unwrap();
+            (s, h, p.id)
+        }));
+    }
+    let mut ids = std::collections::BTreeSet::new();
+    for h in handles {
+        let (s, h, id) = h.await.unwrap();
+        assert_eq!(s, sidebar, "a visit did not see all the sidebar rows");
+        assert_eq!(h.len(), 3, "a visit did not see all the widgets");
+        ids.insert(id);
+    }
+    assert_eq!(ids.len(), 1, "the settings were made more than once, or the visits saw different rows");
+    let raw = env.conn.raw().await.unwrap();
+    for (table, want) in [("workspace_user_preferences", 7i64), ("workspace_home_preferences", 3), ("workspace_user_properties", 1)] {
+        let n: i64 = raw
+            .query_one(&format!("SELECT count(*) FROM {table} WHERE workspace_id = $1"), &[&w.workspace.id.0])
+            .await
+            .unwrap()
+            .get(0);
+        assert_eq!(n, want, "{table}");
+    }
+}
+
 /// `update_profile` is ONE statement: the onboarding page sends several requests at once, each changing different fields of
 /// one profile, and none may lose another's change. 32 patches, each setting its own preference, from as many tasks.
 #[tokio::test]

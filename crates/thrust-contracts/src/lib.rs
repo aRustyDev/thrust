@@ -79,6 +79,32 @@ impl Role {
     }
 }
 
+/// Who may see a project without being a member of it (Plane's `network`: 0 secret, 2 public). A secret project is seen
+/// by its members and by the workspace's admins; a public one also by every workspace member who is not a guest.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProjectNetwork {
+    Secret,
+    #[default]
+    Public,
+}
+
+impl ProjectNetwork {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ProjectNetwork::Secret => "secret",
+            ProjectNetwork::Public => "public",
+        }
+    }
+    pub fn parse(s: &str) -> Option<ProjectNetwork> {
+        match s {
+            "secret" => Some(ProjectNetwork::Secret),
+            "public" => Some(ProjectNetwork::Public),
+            _ => None,
+        }
+    }
+}
+
 /// The workspace segment of a route (`/workspaces/{slug}/...`). Unvalidated on purpose: a slug that
 /// names no workspace is a 404 from `authorize`, never a parse error.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
@@ -205,7 +231,13 @@ pub struct SeedFixture {
     #[serde(default)]
     pub workspace_members: Vec<SeedWorkspaceMember>,
     pub projects: Vec<SeedProject>,
+    /// What some of the `projects` have beyond their name (issue #44): identifier, network, archived, lead, creator, time.
+    #[serde(default)]
+    pub project_details: Vec<SeedProjectDetails>,
     pub memberships: Vec<SeedMembership>,
+    /// Where members' project lists put the `projects`: the `project_user_properties` rows.
+    #[serde(default)]
+    pub project_sort_orders: Vec<SeedProjectSortOrder>,
     pub sessions: Vec<SeedSession>,
     /// Users with an email and optionally a password. The password is hashed by the core before the database sees it.
     #[serde(default)]
@@ -269,6 +301,57 @@ pub struct SeedProject {
     pub id: ProjectId,
     pub workspace_id: WorkspaceId,
     pub name: String,
+}
+
+/// What a seeded project has beyond the id, workspace and name of its [`SeedProject`] (the fixture's `project_details`). A
+/// project with no entry has what a project made with no options has: the identifier [`default_project_identifier`] makes
+/// from its id, a public network, not archived, no lead and no creator, and the database's own time.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SeedProjectDetails {
+    pub project_id: ProjectId,
+    #[serde(default)]
+    pub identifier: Option<String>,
+    #[serde(default)]
+    pub network: ProjectNetwork,
+    #[serde(default)]
+    pub archived: bool,
+    #[serde(default)]
+    pub project_lead: Option<UserId>,
+    #[serde(default)]
+    pub created_by: Option<UserId>,
+    /// When it was made; the epoch in memory and the database's `now()` in Postgres when none is given.
+    #[serde(default)]
+    pub created_at: Option<Timestamp>,
+}
+
+impl SeedProjectDetails {
+    /// The details of a project made with no options.
+    pub fn of(project_id: ProjectId) -> Self {
+        Self {
+            project_id,
+            identifier: None,
+            network: ProjectNetwork::default(),
+            archived: false,
+            project_lead: None,
+            created_by: None,
+            created_at: None,
+        }
+    }
+}
+
+/// Where a member's project list puts a project: their `project_user_properties` row. A member with no entry has no such
+/// row, as one who was added to the project by something other than its creation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SeedProjectSortOrder {
+    pub project_id: ProjectId,
+    pub user_id: UserId,
+    pub sort_order: f64,
+}
+
+/// The last twelve hex digits of the id, upper-cased: unique where the ids differ in their last group, and the longest key
+/// Plane allows (12). Migration 0010 backfills a project that exists already the same way.
+pub fn default_project_identifier(id: ProjectId) -> String {
+    id.0.simple().to_string()[20..].to_uppercase()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

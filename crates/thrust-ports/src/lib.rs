@@ -354,6 +354,75 @@ pub struct WorkspaceAccess {
     pub role: Role,
 }
 
+/// A project as its table holds it (issue #44). `intake_view` is what Plane's project list calls `inbox_view`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ProjectRow {
+    pub id: ProjectId,
+    pub workspace_id: WorkspaceId,
+    pub name: String,
+    /// The project's key, which prefixes its work items (`JRN-1`).
+    pub identifier: String,
+    pub network: ProjectNetwork,
+    /// The icon or emoji the project shows, as a JSON object.
+    pub logo_props: serde_json::Value,
+    pub archived_at: Option<Timestamp>,
+    pub cycle_view: bool,
+    pub issue_views_view: bool,
+    pub module_view: bool,
+    pub page_view: bool,
+    pub intake_view: bool,
+    pub guest_view_all_features: bool,
+    pub project_lead: Option<UserId>,
+    pub created_by: Option<UserId>,
+    pub updated_by: Option<UserId>,
+    pub created_at: Timestamp,
+    pub updated_at: Timestamp,
+}
+
+/// A project in the list of one workspace member: the project, the role the member holds in it (none when they are not in
+/// it: a project they see only because it is public, or because they administer the workspace), and where their own list
+/// puts it (none when they have no row of their own for it).
+#[derive(Debug, Clone, PartialEq)]
+pub struct ProjectListing {
+    pub project: ProjectRow,
+    pub role: Option<Role>,
+    pub sort_order: Option<f64>,
+}
+
+/// One entry of a member's sidebar for a workspace: whether it is pinned and where it goes.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SidebarPreference {
+    pub key: String,
+    pub is_pinned: bool,
+    pub sort_order: f64,
+}
+
+/// One widget of a member's home page for a workspace: whether it shows, what it is set to and where it goes. `created_at`
+/// is when the member's row was made, which is the order the pin lists them in.
+#[derive(Debug, Clone, PartialEq)]
+pub struct HomePreference {
+    pub key: String,
+    pub is_enabled: bool,
+    pub config: serde_json::Value,
+    pub sort_order: f64,
+    pub created_at: Timestamp,
+}
+
+/// A member's settings for the work-item lists of one workspace. The four JSON values are objects.
+#[derive(Debug, Clone, PartialEq)]
+pub struct UserProperties {
+    pub id: Uuid,
+    pub filters: serde_json::Value,
+    pub display_filters: serde_json::Value,
+    pub display_properties: serde_json::Value,
+    pub rich_filters: serde_json::Value,
+    pub navigation_project_limit: i32,
+    /// `ACCORDION` or `TABBED`.
+    pub navigation_control_preference: String,
+    pub created_at: Timestamp,
+    pub updated_at: Timestamp,
+}
+
 /// A link from an identity provider's subject to a user: `provider` is the issuer, `provider_account_id` the `sub`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NewAccount {
@@ -504,6 +573,30 @@ pub trait Database: Send + Sync {
 
     /// The caller's role in each project of the workspace they are an active member of, by project id.
     async fn project_roles(&self, scope: &WorkspaceScope) -> Result<Vec<(ProjectId, Role)>, DbError>;
+
+    /// The projects of the workspace the caller sees, newest first (ties by id), in ONE statement (issue #39's budget). An
+    /// admin of the workspace sees all of them, archived and secret ones included; a member sees the ones they are in and
+    /// the public ones; a guest sees only the ones they are in. A project's member row counts only when it names the
+    /// project's own workspace, as in `project_roles`.
+    async fn workspace_projects(&self, scope: &WorkspaceScope) -> Result<Vec<ProjectListing>, DbError>;
+
+    /// Make the caller's sidebar rows for this workspace that are not there yet, from `defaults` (at time `at`), and return
+    /// all of them: by `sort_order`, ties by key. A row that exists is left exactly as it is, so two first visits at once
+    /// make one row each.
+    async fn ensure_sidebar_preferences(
+        &self,
+        scope: &WorkspaceScope,
+        defaults: &[SidebarPreference],
+        at: Timestamp,
+    ) -> Result<Vec<SidebarPreference>, DbError>;
+
+    /// As [`Database::ensure_sidebar_preferences`], for the home page's widgets: a row made here keeps the `created_at` of
+    /// its default, and the rows come back by key.
+    async fn ensure_home_preferences(&self, scope: &WorkspaceScope, defaults: &[HomePreference]) -> Result<Vec<HomePreference>, DbError>;
+
+    /// The caller's work-item list settings for this workspace: `new` is stored (at its own time) if there is no row yet, and
+    /// whichever row is there is returned. A row that exists is left exactly as it is.
+    async fn ensure_user_properties(&self, scope: &WorkspaceScope, new: &UserProperties) -> Result<UserProperties, DbError>;
 
     /// Create a user (sign-up, issue #44). A taken email is `DbError::Conflict`, raised by the UNIQUE index, so two
     /// sign-ups racing for one email cannot both win. An id that exists is the caller's bug, and also a `Conflict`.

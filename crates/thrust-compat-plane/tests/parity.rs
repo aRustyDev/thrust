@@ -53,7 +53,16 @@ rows! {
     parity_s08_settings_after => "S08-after",
     parity_s15_member_me => "S15",
     parity_s16_project_roles => "S16",
+    parity_s17_projects => "S17",
     parity_s18_members => "S18",
+    parity_s19_user_favorites => "S19",
+    parity_s20_states => "S20",
+    parity_s21_sidebar_preferences => "S21",
+    parity_s22_user_properties => "S22",
+    parity_s23_unread_notifications => "S23",
+    parity_s24_home_preferences => "S24",
+    parity_s25_quick_links => "S25",
+    parity_s26_recent_visits => "S26",
 }
 
 /// A fixture without a test would pass unseen, and a test without a fixture is `load_fixture` panicking: hold the two

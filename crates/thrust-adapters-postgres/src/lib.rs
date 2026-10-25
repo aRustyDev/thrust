@@ -32,6 +32,8 @@ pub const MIGRATION_0006: &str = include_str!("../migrations/0006_search.sql");
 pub const MIGRATION_0007: &str = include_str!("../migrations/0007_api_key_hash_version.sql");
 pub const MIGRATION_0008: &str = include_str!("../migrations/0008_user_profiles.sql");
 pub const MIGRATION_0009: &str = include_str!("../migrations/0009_workspace_details.sql");
+pub const MIGRATION_0010: &str = include_str!("../migrations/0010_project_details.sql");
+pub const MIGRATION_0011: &str = include_str!("../migrations/0011_workspace_user_settings.sql");
 
 pub async fn migrate(client: &Client) -> Result<(), tokio_postgres::Error> {
     client.batch_execute(MIGRATION_0001).await?;
@@ -42,7 +44,9 @@ pub async fn migrate(client: &Client) -> Result<(), tokio_postgres::Error> {
     client.batch_execute(MIGRATION_0006).await?;
     client.batch_execute(MIGRATION_0007).await?;
     client.batch_execute(MIGRATION_0008).await?;
-    client.batch_execute(MIGRATION_0009).await
+    client.batch_execute(MIGRATION_0009).await?;
+    client.batch_execute(MIGRATION_0010).await?;
+    client.batch_execute(MIGRATION_0011).await
 }
 
 pub trait ClientHandle: Send {
@@ -103,6 +107,7 @@ pg_type!(
     String => Type::TEXT,
     Timestamp => Type::TIMESTAMPTZ,
     serde_json::Value => Type::JSONB,
+    f64 => Type::FLOAT8,
 );
 /// Whole columns at once, for the bulk seed's `unnest`.
 impl PgType for Vec<Uuid> {
@@ -113,6 +118,21 @@ impl PgType for Vec<String> {
 }
 impl PgType for Vec<Option<String>> {
     const TY: Type = Type::TEXT_ARRAY;
+}
+impl PgType for Vec<&str> {
+    const TY: Type = Type::TEXT_ARRAY;
+}
+impl PgType for Vec<bool> {
+    const TY: Type = Type::BOOL_ARRAY;
+}
+impl PgType for Vec<f64> {
+    const TY: Type = Type::FLOAT8_ARRAY;
+}
+impl PgType for Vec<serde_json::Value> {
+    const TY: Type = Type::JSONB_ARRAY;
+}
+impl PgType for Vec<Timestamp> {
+    const TY: Type = Type::TIMESTAMPTZ_ARRAY;
 }
 impl PgType for &str {
     const TY: Type = Type::TEXT;
@@ -294,6 +314,52 @@ fn member_of(r: &Row) -> Result<WorkspaceMember, DbError> {
         created_at: r.get("m_created_at"),
         updated_at: r.get("m_updated_at"),
     })
+}
+
+/// The columns of `projects` the port's `ProjectRow` is made of (aliased `p`).
+const PROJECT_COLS: &str = "p.id AS p_id, p.workspace_id AS p_workspace_id, p.name AS p_name, p.identifier AS p_identifier, \
+    p.network AS p_network, p.logo_props AS p_logo_props, p.archived_at AS p_archived_at, p.cycle_view AS p_cycle_view, \
+    p.issue_views_view AS p_issue_views_view, p.module_view AS p_module_view, p.page_view AS p_page_view, \
+    p.intake_view AS p_intake_view, p.guest_view_all_features AS p_guest_view_all_features, \
+    p.project_lead AS p_project_lead, p.created_by AS p_created_by, p.updated_by AS p_updated_by, \
+    p.created_at AS p_created_at, p.updated_at AS p_updated_at";
+
+fn project_of(r: &Row) -> Result<ProjectRow, DbError> {
+    let network: String = r.get("p_network");
+    Ok(ProjectRow {
+        id: ProjectId(r.get("p_id")),
+        workspace_id: WorkspaceId(r.get("p_workspace_id")),
+        name: r.get("p_name"),
+        identifier: r.get("p_identifier"),
+        network: ProjectNetwork::parse(&network).ok_or_else(|| DbError::Backend(format!("p_network holds '{network}', which is no network")))?,
+        logo_props: r.get("p_logo_props"),
+        archived_at: r.get("p_archived_at"),
+        cycle_view: r.get("p_cycle_view"),
+        issue_views_view: r.get("p_issue_views_view"),
+        module_view: r.get("p_module_view"),
+        page_view: r.get("p_page_view"),
+        intake_view: r.get("p_intake_view"),
+        guest_view_all_features: r.get("p_guest_view_all_features"),
+        project_lead: r.get::<_, Option<Uuid>>("p_project_lead").map(UserId),
+        created_by: r.get::<_, Option<Uuid>>("p_created_by").map(UserId),
+        updated_by: r.get::<_, Option<Uuid>>("p_updated_by").map(UserId),
+        created_at: r.get("p_created_at"),
+        updated_at: r.get("p_updated_at"),
+    })
+}
+
+fn user_properties_of(r: &Row) -> UserProperties {
+    UserProperties {
+        id: r.get("id"),
+        filters: r.get("filters"),
+        display_filters: r.get("display_filters"),
+        display_properties: r.get("display_properties"),
+        rich_filters: r.get("rich_filters"),
+        navigation_project_limit: r.get("navigation_project_limit"),
+        navigation_control_preference: r.get("navigation_control_preference"),
+        created_at: r.get("created_at"),
+        updated_at: r.get("updated_at"),
+    }
 }
 
 fn activity(r: &Row) -> Activity {
@@ -593,6 +659,148 @@ impl Database for PgDatabase {
             .await
             .map_err(db_err)?;
         rows.iter().map(|r| Ok((ProjectId(r.get("project_id")), role_of(r, "role")?))).collect()
+    }
+
+    async fn workspace_projects(&self, scope: &WorkspaceScope) -> Result<Vec<ProjectListing>, DbError> {
+        // Who sees what is decided by two booleans from the caller's workspace role, so the whole list is one statement: an
+        // admin sees every project, a member the ones they are in and the public ones, a guest only the ones they are in.
+        let (all, public) = (scope.role() == Role::Admin, scope.role() == Role::Member);
+        let c = self.conn().await?;
+        let rows = Pg(c.client())
+            .query(
+                &format!(
+                    "SELECT {PROJECT_COLS}, m.role AS m_role, up.sort_order AS up_sort_order FROM projects p \
+                     LEFT JOIN project_members m \
+                       ON m.project_id = p.id AND m.workspace_id = p.workspace_id AND m.user_id = $2 \
+                     LEFT JOIN project_user_properties up ON up.project_id = p.id AND up.user_id = $2 \
+                     WHERE p.workspace_id = $1 AND ($3 OR m.role IS NOT NULL OR ($4 AND p.network = 'public')) \
+                     ORDER BY p.created_at DESC, p.id DESC"
+                ),
+                &[&scope.workspace_id().0, &scope.user_id().0, &all, &public],
+            )
+            .await
+            .map_err(db_err)?;
+        rows.iter()
+            .map(|r| {
+                let role: Option<String> = r.get("m_role");
+                Ok(ProjectListing {
+                    project: project_of(r)?,
+                    role: role
+                        .map(|s| Role::parse(&s).ok_or_else(|| DbError::Backend(format!("m_role holds '{s}', which is no role"))))
+                        .transpose()?,
+                    sort_order: r.get("up_sort_order"),
+                })
+            })
+            .collect()
+    }
+
+    async fn ensure_sidebar_preferences(
+        &self,
+        scope: &WorkspaceScope,
+        defaults: &[SidebarPreference],
+        at: Timestamp,
+    ) -> Result<Vec<SidebarPreference>, DbError> {
+        let keys: Vec<&str> = defaults.iter().map(|d| d.key.as_str()).collect();
+        let pinned: Vec<bool> = defaults.iter().map(|d| d.is_pinned).collect();
+        let orders: Vec<f64> = defaults.iter().map(|d| d.sort_order).collect();
+        let c = self.conn().await?;
+        let cl = Pg(c.client());
+        // INSERT first, then SELECT: a first visit racing another waits on the other's row at the conflict, so its SELECT
+        // (a new snapshot) sees every row
+        cl.execute(
+            "INSERT INTO workspace_user_preferences (workspace_id, user_id, key, is_pinned, sort_order, created_at, updated_at) \
+             SELECT $1, $2, d.key, d.is_pinned, d.sort_order, $6, $6 \
+             FROM unnest($3::text[], $4::bool[], $5::float8[]) AS d(key, is_pinned, sort_order) \
+             ON CONFLICT (workspace_id, user_id, key) DO NOTHING",
+            &[&scope.workspace_id().0, &scope.user_id().0, &keys, &pinned, &orders, &at],
+        )
+        .await
+        .map_err(db_err)?;
+        let rows = cl
+            .query(
+                "SELECT key, is_pinned, sort_order FROM workspace_user_preferences WHERE workspace_id = $1 AND user_id = $2 \
+                 ORDER BY sort_order, key",
+                &[&scope.workspace_id().0, &scope.user_id().0],
+            )
+            .await
+            .map_err(db_err)?;
+        Ok(rows
+            .iter()
+            .map(|r| SidebarPreference { key: r.get("key"), is_pinned: r.get("is_pinned"), sort_order: r.get("sort_order") })
+            .collect())
+    }
+
+    async fn ensure_home_preferences(&self, scope: &WorkspaceScope, defaults: &[HomePreference]) -> Result<Vec<HomePreference>, DbError> {
+        let keys: Vec<&str> = defaults.iter().map(|d| d.key.as_str()).collect();
+        let enabled: Vec<bool> = defaults.iter().map(|d| d.is_enabled).collect();
+        let configs: Vec<serde_json::Value> = defaults.iter().map(|d| d.config.clone()).collect();
+        let orders: Vec<f64> = defaults.iter().map(|d| d.sort_order).collect();
+        let made: Vec<Timestamp> = defaults.iter().map(|d| d.created_at).collect();
+        let c = self.conn().await?;
+        let cl = Pg(c.client());
+        cl.execute(
+            "INSERT INTO workspace_home_preferences (workspace_id, user_id, key, is_enabled, config, sort_order, created_at, updated_at) \
+             SELECT $1, $2, d.key, d.is_enabled, d.config, d.sort_order, d.created_at, d.created_at \
+             FROM unnest($3::text[], $4::bool[], $5::jsonb[], $6::float8[], $7::timestamptz[]) \
+               AS d(key, is_enabled, config, sort_order, created_at) \
+             ON CONFLICT (workspace_id, user_id, key) DO NOTHING",
+            &[&scope.workspace_id().0, &scope.user_id().0, &keys, &enabled, &configs, &orders, &made],
+        )
+        .await
+        .map_err(db_err)?;
+        let rows = cl
+            .query(
+                "SELECT key, is_enabled, config, sort_order, created_at FROM workspace_home_preferences \
+                 WHERE workspace_id = $1 AND user_id = $2 ORDER BY key",
+                &[&scope.workspace_id().0, &scope.user_id().0],
+            )
+            .await
+            .map_err(db_err)?;
+        Ok(rows
+            .iter()
+            .map(|r| HomePreference {
+                key: r.get("key"),
+                is_enabled: r.get("is_enabled"),
+                config: r.get("config"),
+                sort_order: r.get("sort_order"),
+                created_at: r.get("created_at"),
+            })
+            .collect())
+    }
+
+    async fn ensure_user_properties(&self, scope: &WorkspaceScope, new: &UserProperties) -> Result<UserProperties, DbError> {
+        let c = self.conn().await?;
+        let cl = Pg(c.client());
+        cl.execute(
+            "INSERT INTO workspace_user_properties (id, workspace_id, user_id, filters, display_filters, display_properties, \
+               rich_filters, navigation_project_limit, navigation_control_preference, created_at, updated_at) \
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) ON CONFLICT (workspace_id, user_id) DO NOTHING",
+            &[
+                &new.id,
+                &scope.workspace_id().0,
+                &scope.user_id().0,
+                &new.filters,
+                &new.display_filters,
+                &new.display_properties,
+                &new.rich_filters,
+                &new.navigation_project_limit,
+                &new.navigation_control_preference,
+                &new.created_at,
+                &new.updated_at,
+            ],
+        )
+        .await
+        .map_err(db_err)?;
+        let row = cl
+            .query_one(
+                "SELECT id, filters, display_filters, display_properties, rich_filters, navigation_project_limit, \
+                   navigation_control_preference, created_at, updated_at \
+                 FROM workspace_user_properties WHERE workspace_id = $1 AND user_id = $2",
+                &[&scope.workspace_id().0, &scope.user_id().0],
+            )
+            .await
+            .map_err(db_err)?;
+        Ok(user_properties_of(&row))
     }
 
     async fn user_by_id(&self, id: UserId) -> Result<Option<UserRecord>, DbError> {
@@ -1141,9 +1349,27 @@ impl Database for PgDatabase {
                 .map_err(db_err)?;
             }
             for p in &f.projects {
+                // a project with no `project_details` entry is what a project made with no options is; with no time given it
+                // is made at `now()`, and an archived one was archived when it was made
+                let details = f.project_details.iter().find(|d| d.project_id == p.id).cloned().unwrap_or_else(|| SeedProjectDetails::of(p.id));
+                let identifier = details.identifier.unwrap_or_else(|| default_project_identifier(p.id));
                 cl.execute(
-                    "INSERT INTO projects (id, workspace_id, name) VALUES ($1, $2, $3) ON CONFLICT (id) DO NOTHING",
-                    &[&p.id.0, &p.workspace_id.0, &p.name],
+                    "INSERT INTO projects (id, workspace_id, name, identifier, network, archived_at, project_lead, created_by, \
+                       created_at, updated_at) \
+                     VALUES ($1, $2, $3, $4, $5, CASE WHEN $6 THEN COALESCE($9, now()) END, $7, $8, COALESCE($9, now()), \
+                       COALESCE($9, now())) \
+                     ON CONFLICT (id) DO NOTHING",
+                    &[
+                        &p.id.0,
+                        &p.workspace_id.0,
+                        &p.name,
+                        &identifier,
+                        &details.network.as_str(),
+                        &details.archived,
+                        &details.project_lead.map(|u| u.0),
+                        &details.created_by.map(|u| u.0),
+                        &details.created_at,
+                    ],
                 )
                 .await
                 .map_err(db_err)?;
@@ -1153,6 +1379,15 @@ impl Database for PgDatabase {
                     "INSERT INTO project_members (project_id, workspace_id, user_id, role) VALUES ($1, $2, $3, $4) \
                      ON CONFLICT (project_id, user_id) DO UPDATE SET role = EXCLUDED.role",
                     &[&m.project_id.0, &m.workspace_id.0, &m.user_id.0, &m.role.as_str()],
+                )
+                .await
+                .map_err(db_err)?;
+            }
+            for o in &f.project_sort_orders {
+                cl.execute(
+                    "INSERT INTO project_user_properties (project_id, user_id, sort_order) VALUES ($1, $2, $3) \
+                     ON CONFLICT (project_id, user_id) DO UPDATE SET sort_order = EXCLUDED.sort_order",
+                    &[&o.project_id.0, &o.user_id.0, &o.sort_order],
                 )
                 .await
                 .map_err(db_err)?;

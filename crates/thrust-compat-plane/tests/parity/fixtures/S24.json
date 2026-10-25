@@ -1,0 +1,159 @@
+{
+  "exchanges": [
+    {
+      "name": "no session",
+      "request": {
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/home-preferences/"
+      },
+      "response": {
+        "body": {
+          "detail": "Authentication credentials were not provided."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 401
+      }
+    },
+    {
+      "name": "a member's first visit",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/home-preferences/"
+      },
+      "response": {
+        "body": [
+          {
+            "config": {},
+            "is_enabled": true,
+            "key": "my_stickies",
+            "sort_order": 997.0
+          },
+          {
+            "config": {},
+            "is_enabled": true,
+            "key": "recents",
+            "sort_order": 998.0
+          },
+          {
+            "config": {},
+            "is_enabled": true,
+            "key": "quick_links",
+            "sort_order": 999.0
+          }
+        ],
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "the same member again",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/home-preferences/"
+      },
+      "response": {
+        "body": [
+          {
+            "config": {},
+            "is_enabled": true,
+            "key": "my_stickies",
+            "sort_order": 997.0
+          },
+          {
+            "config": {},
+            "is_enabled": true,
+            "key": "recents",
+            "sort_order": 998.0
+          },
+          {
+            "config": {},
+            "is_enabled": true,
+            "key": "quick_links",
+            "sort_order": 999.0
+          }
+        ],
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "the same member in another workspace",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-two/home-preferences/"
+      },
+      "response": {
+        "body": [
+          {
+            "config": {},
+            "is_enabled": true,
+            "key": "my_stickies",
+            "sort_order": 997.0
+          },
+          {
+            "config": {},
+            "is_enabled": true,
+            "key": "recents",
+            "sort_order": 998.0
+          },
+          {
+            "config": {},
+            "is_enabled": true,
+            "key": "quick_links",
+            "sort_order": 999.0
+          }
+        ],
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "not a member",
+      "request": {
+        "as": "second@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/home-preferences/"
+      },
+      "response": {
+        "body": {
+          "error": "You don't have the required permissions."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 403
+      }
+    },
+    {
+      "name": "a workspace that does not exist",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/no-such-workspace/home-preferences/"
+      },
+      "response": {
+        "body": {
+          "error": "You don't have the required permissions."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 403
+      }
+    }
+  ],
+  "format_version": 1,
+  "recorded_from": "ba85d4d3d3",
+  "row": "S24"
+}

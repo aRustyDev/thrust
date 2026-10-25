@@ -31,6 +31,15 @@ struct DbState {
     workspace_rows: HashMap<WorkspaceId, Workspace>,
     workspace_members: HashMap<(WorkspaceId, UserId), WorkspaceMember>,
     projects: HashMap<ProjectId, WorkspaceId>,
+    /// The `projects` table's other columns (migration 0010); `projects` above is its id-to-workspace index.
+    project_rows: HashMap<ProjectId, ProjectRow>,
+    /// `project_user_properties` (migration 0011): where a member's project list puts a project.
+    project_sort_orders: HashMap<(ProjectId, UserId), f64>,
+    /// `workspace_user_preferences`, `workspace_home_preferences` and `workspace_user_properties` (migration 0011): rows
+    /// a member's first visit to a workspace makes.
+    sidebar_preferences: HashMap<(WorkspaceId, UserId, String), (bool, f64)>,
+    home_preferences: HashMap<(WorkspaceId, UserId, String), HomePreference>,
+    user_properties: HashMap<(WorkspaceId, UserId), UserProperties>,
     /// The member row keeps the workspace it was written with; `membership` counts it only when that
     /// is the project's workspace (the Postgres join on `m.workspace_id`).
     memberships: HashMap<(ProjectId, UserId), (WorkspaceId, Role)>,
@@ -288,6 +297,68 @@ impl Database for MemoryDatabase {
             .collect();
         out.sort_by_key(|(p, _)| p.0);
         Ok(out)
+    }
+
+    async fn workspace_projects(&self, scope: &WorkspaceScope) -> Result<Vec<ProjectListing>, DbError> {
+        let (ws, user) = (scope.workspace_id(), scope.user_id());
+        let s = self.state.lock().unwrap();
+        let mut out: Vec<ProjectListing> = s
+            .project_rows
+            .values()
+            .filter(|p| p.workspace_id == ws)
+            .map(|p| ProjectListing {
+                project: p.clone(),
+                // the member row must name the project's own workspace (the join on `m.workspace_id` in Postgres)
+                role: s.memberships.get(&(p.id, user)).filter(|(row_ws, _)| *row_ws == ws).map(|(_, role)| *role),
+                sort_order: s.project_sort_orders.get(&(p.id, user)).copied(),
+            })
+            .filter(|l| match scope.role() {
+                Role::Admin => true,
+                Role::Member => l.role.is_some() || l.project.network == ProjectNetwork::Public,
+                Role::Guest => l.role.is_some(),
+            })
+            .collect();
+        out.sort_by(|a, b| b.project.created_at.cmp(&a.project.created_at).then(b.project.id.cmp(&a.project.id)));
+        Ok(out)
+    }
+
+    async fn ensure_sidebar_preferences(
+        &self,
+        scope: &WorkspaceScope,
+        defaults: &[SidebarPreference],
+        _at: Timestamp,
+    ) -> Result<Vec<SidebarPreference>, DbError> {
+        let (ws, user) = (scope.workspace_id(), scope.user_id());
+        let mut s = self.state.lock().unwrap();
+        for d in defaults {
+            s.sidebar_preferences.entry((ws, user, d.key.clone())).or_insert((d.is_pinned, d.sort_order));
+        }
+        let mut out: Vec<SidebarPreference> = s
+            .sidebar_preferences
+            .iter()
+            .filter(|((w, u, _), _)| *w == ws && *u == user)
+            .map(|((_, _, key), (is_pinned, sort_order))| SidebarPreference { key: key.clone(), is_pinned: *is_pinned, sort_order: *sort_order })
+            .collect();
+        out.sort_by(|a, b| a.sort_order.total_cmp(&b.sort_order).then_with(|| a.key.cmp(&b.key)));
+        Ok(out)
+    }
+
+    async fn ensure_home_preferences(&self, scope: &WorkspaceScope, defaults: &[HomePreference]) -> Result<Vec<HomePreference>, DbError> {
+        let (ws, user) = (scope.workspace_id(), scope.user_id());
+        let mut s = self.state.lock().unwrap();
+        for d in defaults {
+            s.home_preferences.entry((ws, user, d.key.clone())).or_insert_with(|| d.clone());
+        }
+        let mut out: Vec<HomePreference> =
+            s.home_preferences.iter().filter(|((w, u, _), _)| *w == ws && *u == user).map(|(_, p)| p.clone()).collect();
+        out.sort_by(|a, b| a.key.cmp(&b.key));
+        Ok(out)
+    }
+
+    async fn ensure_user_properties(&self, scope: &WorkspaceScope, new: &UserProperties) -> Result<UserProperties, DbError> {
+        let mut s = self.state.lock().unwrap();
+        let row = s.user_properties.entry((scope.workspace_id(), scope.user_id())).or_insert_with(|| new.clone());
+        Ok(row.clone())
     }
 
     async fn user_by_id(&self, id: UserId) -> Result<Option<UserRecord>, DbError> {
@@ -733,9 +804,38 @@ impl Database for MemoryDatabase {
         }
         for p in &f.projects {
             s.projects.insert(p.id, p.workspace_id);
+            // a project with no `project_details` entry is what a project made with no options is
+            let details = f.project_details.iter().find(|d| d.project_id == p.id).cloned().unwrap_or_else(|| SeedProjectDetails::of(p.id));
+            let created_at = details.created_at.unwrap_or(epoch);
+            s.project_rows.insert(
+                p.id,
+                ProjectRow {
+                    id: p.id,
+                    workspace_id: p.workspace_id,
+                    name: p.name.clone(),
+                    identifier: details.identifier.unwrap_or_else(|| default_project_identifier(p.id)),
+                    network: details.network,
+                    logo_props: serde_json::json!({}),
+                    archived_at: details.archived.then_some(created_at),
+                    cycle_view: false,
+                    issue_views_view: false,
+                    module_view: false,
+                    page_view: true,
+                    intake_view: false,
+                    guest_view_all_features: false,
+                    project_lead: details.project_lead,
+                    created_by: details.created_by,
+                    updated_by: None,
+                    created_at,
+                    updated_at: created_at,
+                },
+            );
         }
         for m in &f.memberships {
             s.memberships.insert((m.project_id, m.user_id), (m.workspace_id, m.role));
+        }
+        for o in &f.project_sort_orders {
+            s.project_sort_orders.insert((o.project_id, o.user_id), o.sort_order);
         }
         Ok(())
     }

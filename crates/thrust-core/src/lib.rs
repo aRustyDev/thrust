@@ -23,6 +23,8 @@ mod reserved_slugs_tests;
 mod timezones;
 mod workspace;
 pub use workspace::*;
+mod workspace_load;
+pub use workspace_load::*;
 #[cfg(test)]
 mod timezones_tests;
 use thrust_contracts::chrono::TimeDelta;

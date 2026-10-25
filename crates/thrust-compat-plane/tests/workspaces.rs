@@ -10,86 +10,12 @@
 
 mod common;
 
-use axum::Router;
 use common::*;
 use proptest::prelude::*;
 use rstest::rstest;
 use serde_json::{json, Value};
-use thrust_adapters_memory::MemoryDatabase;
-use thrust_contracts::chrono::DateTime;
 use thrust_contracts::*;
 use thrust_ports::*;
-
-const STRONG: &str = "Workspaces-Sample-Pa55word-Zebra-81";
-
-/// A world with a signed-up account for each email, and the jar that holds their sessions.
-fn world(emails: &[&str]) -> (Router, std::sync::Arc<MemoryDatabase>, Jar) {
-    let (router, db) = app_with_db();
-    let mut jar = Jar::new();
-    for email in emails {
-        let raw = send(&router, &json!("sign-up"), &json!({"method": "POST", "path": "/auth/sign-up/", "body": {"email": email, "password": STRONG}}), &jar);
-        assert_eq!(raw["response"]["status"], 200, "{raw}");
-        jar.insert(jar_key(email), session_token(&raw).expect("a session"));
-    }
-    (router, db, jar)
-}
-
-fn call(router: &Router, jar: &Jar, who: &str, method: &str, path: &str, body: Value) -> Value {
-    let mut req = json!({"method": method, "path": path, "as": who});
-    if !body.is_null() {
-        req["body"] = body;
-    }
-    send(router, &json!("call"), &req, jar)["response"].clone()
-}
-
-fn user_id(db: &MemoryDatabase, email: &str) -> UserId {
-    futures_executor::block_on(db.user_by_email(email)).unwrap().expect("the account exists").id
-}
-
-fn at(n: i64) -> Timestamp {
-    DateTime::from_timestamp(1_760_000_000 + n, 0).unwrap()
-}
-
-/// A workspace whose only member is `user`, with `role`.
-fn make_workspace(db: &MemoryDatabase, id: u128, slug: &str, user: UserId, role: Role) -> WorkspaceId {
-    let id = WorkspaceId(Uuid::from_u128(id));
-    let workspace = Workspace {
-        id,
-        slug: WorkspaceSlug::new(slug),
-        name: slug.to_owned(),
-        owner_id: Some(user),
-        organization_size: None,
-        timezone: "UTC".into(),
-        background_color: "#808080".into(),
-        created_at: at(0),
-        updated_at: at(0),
-    };
-    let owner = WorkspaceMember {
-        id: Uuid::from_u128(id.0.as_u128() ^ 0xFFFF),
-        workspace_id: id,
-        user_id: user,
-        role,
-        company_role: None,
-        is_active: true,
-        props: json!({}),
-        created_at: at(0),
-        updated_at: at(0),
-    };
-    futures_executor::block_on(db.insert_workspace(&NewWorkspace { workspace, owner })).unwrap();
-    id
-}
-
-fn seed(db: &MemoryDatabase, f: SeedFixture) {
-    futures_executor::block_on(db.seed(&SystemScope::mint(), &f)).unwrap();
-}
-
-fn role_number(r: Role) -> u8 {
-    match r {
-        Role::Guest => 5,
-        Role::Member => 15,
-        Role::Admin => 20,
-    }
-}
 
 fn any_role() -> impl Strategy<Value = Role> {
     prop_oneof![Just(Role::Guest), Just(Role::Member), Just(Role::Admin)]

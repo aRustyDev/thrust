@@ -27,6 +27,7 @@ mod fields;
 mod fields_tests;
 mod instance;
 mod users;
+mod workspace_load;
 mod workspaces;
 
 pub use error::PlaneError;
@@ -47,7 +48,16 @@ pub fn routes() -> Router {
         .route("/api/workspaces/", post(workspaces::create)) // S14
         .route("/api/workspaces/{slug}/workspace-members/me/", get(workspaces::member_me)) // S15
         .route("/api/users/me/workspaces/{slug}/project-roles/", get(workspaces::project_roles)) // S16
+        .route("/api/workspaces/{slug}/projects/", get(workspace_load::projects)) // S17
         .route("/api/workspaces/{slug}/members/", get(workspaces::members)) // S18
+        .route("/api/workspaces/{slug}/user-favorites/", get(workspace_load::favorites)) // S19
+        .route("/api/workspaces/{slug}/states/", get(workspace_load::states)) // S20
+        .route("/api/workspaces/{slug}/sidebar-preferences/", get(workspace_load::sidebar_preferences)) // S21
+        .route("/api/workspaces/{slug}/user-properties/", get(workspace_load::user_properties)) // S22
+        .route("/api/workspaces/{slug}/users/notifications/unread/", get(workspace_load::unread_notifications)) // S23
+        .route("/api/workspaces/{slug}/home-preferences/", get(workspace_load::home_preferences)) // S24
+        .route("/api/workspaces/{slug}/quick-links/", get(workspace_load::quick_links)) // S25
+        .route("/api/workspaces/{slug}/recent-visits/", get(workspace_load::recent_visits)) // S26
         .route("/auth/get-csrf-token/", get(auth::get_csrf_token)) // S03
         .route("/auth/email-check/", post(auth::email_check)) // S04
         .route("/auth/sign-up/", post(auth::sign_up)) // S05

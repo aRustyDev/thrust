@@ -71,7 +71,7 @@
 //! from one clock for the whole run, so rows of different cases never interleave. Every port call has a 20 s timeout: a wedged pool fails, it does not
 //! hang. Budget: `THRUST_MODEL_CASES` cases (default 32).
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::time::Duration;
 
@@ -192,6 +192,56 @@ enum PatchSel {
     Empty,
 }
 
+/// What one `ensure_*` call asks for. `mask` picks which of five keys the defaults hold (never none); `salt` makes this call's
+/// values differ from another's, so a row that asking again changed shows.
+#[derive(Debug, Clone, Copy)]
+enum Visit {
+    Sidebar { mask: u8, salt: u8 },
+    Home { mask: u8, salt: u8 },
+    Properties { salt: u8 },
+}
+
+const PREF_KEYS: [&str; 5] = ["alpha", "beta", "gamma", "delta", "epsilon"];
+
+fn sidebar_defaults(mask: u8, salt: u8) -> Vec<SidebarPreference> {
+    (0..5)
+        .filter(|i| mask & (1 << i) != 0)
+        // two keys can share a sort order (the port breaks the tie by key), and the orders are fractional
+        .map(|i| SidebarPreference {
+            key: PREF_KEYS[i].to_string(),
+            is_pinned: (i as u8 + salt) % 2 == 0,
+            sort_order: f64::from((i as u8 + salt) % 3) + 0.5,
+        })
+        .collect()
+}
+
+fn home_defaults(mask: u8, salt: u8, at: Timestamp) -> Vec<HomePreference> {
+    (0..5)
+        .filter(|i| mask & (1 << i) != 0)
+        .map(|i| HomePreference {
+            key: PREF_KEYS[i].to_string(),
+            is_enabled: (i as u8 + salt) % 2 == 1,
+            config: serde_json::json!({"salt": salt, "i": i}),
+            sort_order: 100.0 - i as f64 - f64::from(salt),
+            created_at: at,
+        })
+        .collect()
+}
+
+fn properties_defaults(salt: u8, at: Timestamp) -> UserProperties {
+    UserProperties {
+        id: new_id(),
+        filters: serde_json::json!({"salt": salt, "state": null}),
+        display_filters: serde_json::json!({"display_filters": {"salt": salt}}),
+        display_properties: serde_json::json!({"display_properties": {"key": true}}),
+        rich_filters: serde_json::json!({}),
+        navigation_project_limit: 10 + i32::from(salt),
+        navigation_control_preference: if salt % 2 == 0 { "ACCORDION" } else { "TABBED" }.to_string(),
+        created_at: at,
+        updated_at: at,
+    }
+}
+
 #[derive(Debug, Clone)]
 enum Op {
     Tx { steps: Vec<Step>, end: End },
@@ -249,6 +299,12 @@ enum Op {
     /// Deactivate or reactivate seeded user `user`'s membership of project `ws`'s workspace (a no-op for a user who is not in
     /// it), then read back every query that depends on it.
     MemberActive { ws: P, user: U, active: bool },
+    /// `workspace_projects` of seeded user `user` in the workspace of project `ws`'s tenant, with the workspace role `role` in the
+    /// scope (the adapter reads the role from the scope, as `authorize_workspace` made it, not from the database).
+    ProjectsRead { ws: P, user: U, role: Role },
+    /// A first or later visit: `ensure_*` of seeded user `user` in the workspace of project `ws`'s tenant, with defaults of this
+    /// shape. What is made stays as it is, whatever the later defaults say.
+    FirstVisit { ws: P, user: U, kind: Visit },
     /// A compound op, for the sequences a single random op almost never reaches: the profile is made if there is none, then
     /// patched with both halves of the preferences (so the second must merge, not replace), the cover set and cleared, the
     /// onboarding steps replaced, the flags set, the last workspace set and cleared, the names changed, and read back.
@@ -316,6 +372,28 @@ fn user() -> impl Strategy<Value = U> {
     ]
 }
 
+fn role() -> impl Strategy<Value = Role> {
+    prop_oneof![Just(Role::Guest), Just(Role::Member), Just(Role::Admin)]
+}
+
+/// Which of five keys a visit's defaults name: often one, or all (so that a later visit finds every key made), else any.
+fn mask() -> impl Strategy<Value = u8> {
+    prop_oneof![2 => Just(0b00001u8), 1 => Just(0b00011u8), 2 => Just(0b11111u8), 3 => 1..32u8]
+}
+
+fn visit() -> impl Strategy<Value = Visit> {
+    prop_oneof![
+        (mask(), 0..4u8).prop_map(|(mask, salt)| Visit::Sidebar { mask, salt }),
+        (mask(), 0..4u8).prop_map(|(mask, salt)| Visit::Home { mask, salt }),
+        (0..4u8).prop_map(|salt| Visit::Properties { salt }),
+    ]
+}
+
+/// The users that visit: a few, so that one asks again for a workspace it has visited.
+fn visitor() -> impl Strategy<Value = U> {
+    prop_oneof![Just(U::AdminA), Just(U::MemberA), Just(U::Dual)]
+}
+
 fn ev() -> impl Strategy<Value = Ev> {
     prop_oneof![2 => (0..8usize).prop_map(Ev::Outbox), 1 => (0..8usize).prop_map(Ev::Again), 1 => Just(Ev::Fresh)]
 }
@@ -370,6 +448,8 @@ fn op() -> impl Strategy<Value = Op> {
         2 => any::<bool>().prop_map(|with_profile| Op::WorkspaceLife { with_profile }),
         2 => (proj(), user()).prop_map(|(proj, user)| Op::ProjectRolesRead { proj, user }),
         3 => (proj(), user(), any::<bool>()).prop_map(|(ws, user, active)| Op::MemberActive { ws, user, active }),
+        3 => (proj(), user(), role()).prop_map(|(ws, user, role)| Op::ProjectsRead { ws, user, role }),
+        3 => (proj(), visitor(), visit()).prop_map(|(ws, user, kind)| Op::FirstVisit { ws, user, kind }),
         2 => (0..2usize, any::<bool>()).prop_map(|(who, restore)| Op::Deactivated { who, restore }),
         2 => prop_oneof![Just(5u8), Just(100u8)].prop_map(|ttl| Op::OidcRoundTrip { ttl }),
         2 => (0..2usize).prop_map(|key| Op::KeyCycle { key }),
@@ -516,6 +596,35 @@ enum Class {
     ProjectRolesSome,
     /// `project_roles` with none: a user who is in no project of the workspace, or whose only row names the wrong workspace.
     ProjectRolesNone,
+    /// `workspace_projects` of an admin: a project they are not in is listed (a secret one among them).
+    ProjectsAdminSeesAll,
+    /// A public project the member is not in is listed, with no role.
+    ProjectsPublicNotMine,
+    /// A secret project the member is not in is left out.
+    ProjectsSecretHidden,
+    /// A secret project the member is in is listed.
+    ProjectsSecretMine,
+    /// A guest's list leaves out a public project they are not in.
+    ProjectsGuestFiltered,
+    /// An archived project is listed.
+    ProjectsArchivedListed,
+    /// The caller's own sort order is shown for a project.
+    ProjectsSortOrderShown,
+    /// A project with a sort order and no role: the member row names the wrong workspace, and the sort order is still shown.
+    ProjectsStrayRowIgnored,
+    /// A workspace the caller sees no project of.
+    ProjectsNone,
+    /// A sidebar's first visit: every row is made.
+    SidebarMade,
+    /// A visit whose defaults name some keys that have rows and some that have none: the missing ones are made, the rest kept.
+    SidebarFilledIn,
+    /// A visit whose keys all have rows: nothing changes, whatever the new defaults say.
+    SidebarKept,
+    HomeMade,
+    HomeFilledIn,
+    HomeKept,
+    PropertiesMade,
+    PropertiesKept,
     OidcInserted,
     /// An insert that dropped an expired login.
     OidcSwept,
@@ -542,7 +651,7 @@ enum Class {
 }
 
 impl Class {
-    const ALL: [Class; 97] = [
+    const ALL: [Class; 114] = [
         Class::Created,
         Class::ExternalKeyFreed,
         Class::Conflict,
@@ -622,6 +731,23 @@ impl Class {
         Class::WorkspaceMemberProfileShown,
         Class::ProjectRolesSome,
         Class::ProjectRolesNone,
+        Class::ProjectsAdminSeesAll,
+        Class::ProjectsPublicNotMine,
+        Class::ProjectsSecretHidden,
+        Class::ProjectsSecretMine,
+        Class::ProjectsGuestFiltered,
+        Class::ProjectsArchivedListed,
+        Class::ProjectsSortOrderShown,
+        Class::ProjectsStrayRowIgnored,
+        Class::ProjectsNone,
+        Class::SidebarMade,
+        Class::SidebarFilledIn,
+        Class::SidebarKept,
+        Class::HomeMade,
+        Class::HomeFilledIn,
+        Class::HomeKept,
+        Class::PropertiesMade,
+        Class::PropertiesKept,
         Class::OidcInserted,
         Class::OidcSwept,
         Class::OidcTaken,
@@ -681,6 +807,10 @@ enum Call {
     WorkspaceMemberOf { scope: (WorkspaceId, UserId, Role), want: Option<WorkspaceMember> },
     WorkspaceMembersOf { scope: (WorkspaceId, UserId, Role), want: Vec<MemberWithUser> },
     ProjectRolesOf { scope: (WorkspaceId, UserId, Role), want: Vec<(ProjectId, Role)> },
+    ProjectsOf { scope: (WorkspaceId, UserId, Role), want: Vec<ProjectListing> },
+    EnsureSidebar { scope: (WorkspaceId, UserId, Role), defaults: Vec<SidebarPreference>, at: Timestamp, want: Vec<SidebarPreference> },
+    EnsureHome { scope: (WorkspaceId, UserId, Role), defaults: Vec<HomePreference>, want: Vec<HomePreference> },
+    EnsureProperties { scope: (WorkspaceId, UserId, Role), new: UserProperties, want: UserProperties },
     /// `workspaces_of(user)` for a seeded user, as `(workspace, role, active members)` sorted by workspace id: the seed's
     /// timestamps are the database's own, so the listing's order and its timestamps are not compared here.
     SeededListing { user: UserId, want: Vec<(WorkspaceId, Role, u64)> },
@@ -722,6 +852,8 @@ struct Fix {
     /// Slugs are unique in the database and one container serves every case.
     slug: [WorkspaceSlug; 2],
     p: [ProjectId; 2],
+    /// Two more projects of workspace A, for the project list: a secret one and a public archived one.
+    extra: [ProjectId; 2],
     /// AdminA, MemberA, GuestA, OutsiderA, AdminB, StrayB, Dual.
     users: [UserId; 7],
     /// The hashes of two seeded sessions and of one that is never inserted.
@@ -734,6 +866,81 @@ struct Fix {
     emails: [String; 3],
     /// The issuer of the case's account links: unique per case, `(provider, sub)` is global.
     provider: String,
+}
+
+/// A seeded project and who is tied to it (see [`Fix::specs`]): `members` are `(user, role, the workspace slot the member row was
+/// written with, the sort order of the member's own row)`.
+#[derive(Debug, Clone)]
+struct ProjSpec {
+    name: &'static str,
+    id: ProjectId,
+    slot: usize,
+    network: ProjectNetwork,
+    archived: bool,
+    created: i64,
+    members: Vec<(U, Role, usize, Option<f64>)>,
+}
+
+impl ProjSpec {
+    fn created_at(&self) -> Timestamp {
+        Utc.timestamp_opt(1_700_000_000 + self.created, 0).unwrap()
+    }
+
+    /// The user's role: their member row counts only when it names the project's own workspace.
+    fn role_of(&self, user: U) -> Option<Role> {
+        self.members.iter().find(|m| m.0 as usize == user as usize && m.2 == self.slot).map(|m| m.1)
+    }
+
+    /// The sort order of the user's own row, which is theirs whether or not their member row counts.
+    fn sort_of(&self, user: U) -> Option<f64> {
+        self.members.iter().find(|m| m.0 as usize == user as usize).and_then(|m| m.3)
+    }
+
+    /// The project as the table holds it: what a project made with no options has, and what the seed gave it.
+    fn row(&self, ws: WorkspaceId) -> ProjectRow {
+        let created_at = self.created_at();
+        ProjectRow {
+            id: self.id,
+            workspace_id: ws,
+            name: self.name.to_string(),
+            identifier: default_project_identifier(self.id),
+            network: self.network,
+            logo_props: serde_json::json!({}),
+            archived_at: self.archived.then_some(created_at),
+            cycle_view: false,
+            issue_views_view: false,
+            module_view: false,
+            page_view: true,
+            intake_view: false,
+            guest_view_all_features: false,
+            project_lead: None,
+            created_by: None,
+            updated_by: None,
+            created_at,
+            updated_at: created_at,
+        }
+    }
+}
+
+/// The spec's project list for a caller holding workspace role `role` in the workspace of slot `slot`: the projects of that
+/// workspace, filtered by the table `sees`, newest first with ties by id.
+fn projects_listing(fix: &Fix, slot: usize, user: U, role: Role) -> Vec<ProjectListing> {
+    let mut specs: Vec<ProjSpec> = fix.specs().into_iter().filter(|s| s.slot == slot).collect();
+    specs.retain(|s| match role {
+        Role::Admin => true,
+        Role::Member => s.role_of(user).is_some() || s.network == ProjectNetwork::Public,
+        Role::Guest => s.role_of(user).is_some(),
+    });
+    specs.sort_by(|a, b| b.created.cmp(&a.created).then(b.id.cmp(&a.id)));
+    specs.iter().map(|s| ProjectListing { project: s.row(fix.ws[slot]), role: s.role_of(user), sort_order: s.sort_of(user) }).collect()
+}
+
+/// The user's role in each project of workspace slot `slot`, by project id: `project_roles`' answer.
+fn roles_in(fix: &Fix, slot: usize, user: U) -> Vec<(ProjectId, Role)> {
+    let mut v: Vec<(ProjectId, Role)> =
+        fix.specs().iter().filter(|s| s.slot == slot).filter_map(|s| s.role_of(user).map(|r| (s.id, r))).collect();
+    v.sort_by_key(|(p, _)| p.0);
+    v
 }
 
 fn token_hash() -> TokenHash {
@@ -752,6 +959,7 @@ impl Fix {
                 WorkspaceSlug::new(format!("ws-b-{}", new_id().simple())),
             ],
             p: [ProjectId(new_id()), ProjectId(new_id())],
+            extra: [ProjectId(new_id()), ProjectId(new_id())],
             users: std::array::from_fn(|_| UserId(new_id())),
             tokens: std::array::from_fn(|_| token_hash()),
             keys: std::array::from_fn(|_| (ApiKeyId(new_id()), token_hash())),
@@ -761,10 +969,64 @@ impl Fix {
         }
     }
 
+    /// The four projects, written out once: the seed is made from this table and so are the expected answers of the project list
+    /// and of `project_roles`. A member row names the workspace slot it was written with (which is not the project's, for
+    /// `StrayB`'s row of project A), and the sort order the member's own row holds, if any. Times are whole seconds after
+    /// `CREATED`, chosen so that two projects tie (the id breaks it).
+    fn specs(&self) -> Vec<ProjSpec> {
+        use ProjectNetwork::{Public, Secret};
+        use U::*;
+        vec![
+            ProjSpec {
+                name: "A",
+                id: self.p[0],
+                slot: 0,
+                network: Public,
+                archived: false,
+                created: 100,
+                members: vec![
+                    (AdminA, Role::Admin, 0, Some(65535.0)),
+                    (MemberA, Role::Member, 0, Some(70000.0)),
+                    (GuestA, Role::Guest, 0, None),
+                    (Dual, Role::Admin, 0, None),
+                    // project A's row, written with workspace B: no role, though the member's own sort order is still theirs
+                    (StrayB, Role::Admin, 1, Some(3.5)),
+                ],
+            },
+            ProjSpec {
+                name: "B",
+                id: self.p[1],
+                slot: 1,
+                network: Public,
+                archived: false,
+                created: 100,
+                members: vec![(AdminB, Role::Admin, 1, Some(65535.0)), (Dual, Role::Admin, 1, None)],
+            },
+            ProjSpec {
+                name: "secret",
+                id: self.extra[0],
+                slot: 0,
+                network: Secret,
+                archived: false,
+                created: 200,
+                members: vec![(AdminA, Role::Admin, 0, Some(1.5)), (OutsiderA, Role::Guest, 0, None)],
+            },
+            ProjSpec {
+                name: "archived",
+                id: self.extra[1],
+                slot: 0,
+                network: Public,
+                archived: true,
+                created: 200,
+                members: vec![(MemberA, Role::Member, 0, Some(2.5))],
+            },
+        ]
+    }
+
     fn seed(&self) -> SeedFixture {
         let [admin_a, member_a, guest_a, outsider_a, admin_b, stray_b, dual] = self.users;
-        let m = |s: usize, user_id, role| SeedMembership { project_id: self.p[s], workspace_id: self.ws[s], user_id, role };
         let in_ws = |s: usize, user_id| SeedWorkspaceMember { workspace_id: self.ws[s], user_id };
+        let specs = self.specs();
         SeedFixture {
             workspaces: (0..2).map(|s| SeedWorkspace { id: self.ws[s], slug: self.slug[s].clone() }).collect(),
             users: self.users.to_vec(),
@@ -779,20 +1041,35 @@ impl Fix {
                 in_ws(0, dual),
                 in_ws(1, dual),
             ],
-            projects: vec![
-                SeedProject { id: self.p[0], workspace_id: self.ws[0], name: "A".into() },
-                SeedProject { id: self.p[1], workspace_id: self.ws[1], name: "B".into() },
-            ],
-            memberships: vec![
-                m(0, admin_a, Role::Admin),
-                m(0, member_a, Role::Member),
-                m(0, guest_a, Role::Guest),
-                m(1, admin_b, Role::Admin),
-                m(0, dual, Role::Admin),
-                m(1, dual, Role::Admin),
-                // project A's row, written with workspace B
-                SeedMembership { project_id: self.p[0], workspace_id: self.ws[1], user_id: stray_b, role: Role::Admin },
-            ],
+            projects: specs.iter().map(|s| SeedProject { id: s.id, workspace_id: self.ws[s.slot], name: s.name.into() }).collect(),
+            project_details: specs
+                .iter()
+                .map(|s| SeedProjectDetails {
+                    network: s.network,
+                    archived: s.archived,
+                    created_at: Some(s.created_at()),
+                    ..SeedProjectDetails::of(s.id)
+                })
+                .collect(),
+            memberships: specs
+                .iter()
+                .flat_map(|s| {
+                    s.members.iter().map(|&(u, role, row_slot, _)| SeedMembership {
+                        project_id: s.id,
+                        workspace_id: self.ws[row_slot],
+                        user_id: self.user(u),
+                        role,
+                    })
+                })
+                .collect(),
+            project_sort_orders: specs
+                .iter()
+                .flat_map(|s| {
+                    s.members.iter().filter_map(|&(u, _, _, sort)| {
+                        sort.map(|sort_order| SeedProjectSortOrder { project_id: s.id, user_id: self.user(u), sort_order })
+                    })
+                })
+                .collect(),
             sessions: vec![],
             ..SeedFixture::default()
         }
@@ -967,6 +1244,10 @@ struct Model {
     profiles: [Option<UserProfile>; 3],
     /// Whether each seeded user's membership of each seeded workspace is active (it is for users who are not members).
     member_active: [[bool; 2]; 7],
+    /// What first visits have made, by (workspace slot, user index) and key: the first row ever asked for stays.
+    sidebar: BTreeMap<(usize, usize, String), SidebarPreference>,
+    home: BTreeMap<(usize, usize, String), HomePreference>,
+    properties: BTreeMap<(usize, usize), UserProperties>,
     /// Committed rows per project, in sequence order.
     rows: [Vec<WorkItem>; 2],
     counter: [i64; 2],
@@ -1134,6 +1415,9 @@ impl Model {
             logins: Vec::new(),
             profiles: [None, None, None],
             member_active: [[true; 2]; 7],
+            sidebar: BTreeMap::new(),
+            home: BTreeMap::new(),
+            properties: BTreeMap::new(),
             rows: [Vec::new(), Vec::new()],
             counter: [0, 0],
             outbox: Vec::new(),
@@ -1716,9 +2000,93 @@ impl Model {
             }
             &Op::ProjectRolesRead { proj, user } => {
                 let s = slot(proj);
-                let want: Vec<(ProjectId, Role)> = role_in(proj, user).map(|r| (self.fix.p[s], r)).into_iter().collect();
+                let want = roles_in(&self.fix, s, user);
                 classes.push(if want.is_empty() { Class::ProjectRolesNone } else { Class::ProjectRolesSome });
                 calls.push(Call::ProjectRolesOf { scope: (self.fix.ws[s], self.fix.user(user), Role::Member), want });
+            }
+            &Op::ProjectsRead { ws, user, role } => {
+                let s = slot(ws);
+                let want = projects_listing(&self.fix, s, user, role);
+                let in_slot = || self.fix.specs().into_iter().filter(|p| p.slot == s);
+                let listed = |p: &ProjSpec| want.iter().any(|l| l.project.id == p.id);
+                if want.is_empty() {
+                    classes.push(Class::ProjectsNone);
+                }
+                if role == Role::Admin && want.iter().any(|l| l.role.is_none()) {
+                    classes.push(Class::ProjectsAdminSeesAll);
+                }
+                if role == Role::Member && want.iter().any(|l| l.role.is_none() && l.project.network == ProjectNetwork::Public) {
+                    classes.push(Class::ProjectsPublicNotMine);
+                }
+                if role != Role::Admin && in_slot().any(|p| p.network == ProjectNetwork::Secret && p.role_of(user).is_none()) {
+                    classes.push(Class::ProjectsSecretHidden);
+                }
+                if role != Role::Admin && want.iter().any(|l| l.project.network == ProjectNetwork::Secret && l.role.is_some()) {
+                    classes.push(Class::ProjectsSecretMine);
+                }
+                if role == Role::Guest && in_slot().any(|p| p.network == ProjectNetwork::Public && p.role_of(user).is_none() && !listed(&p)) {
+                    classes.push(Class::ProjectsGuestFiltered);
+                }
+                if want.iter().any(|l| l.project.archived_at.is_some()) {
+                    classes.push(Class::ProjectsArchivedListed);
+                }
+                if want.iter().any(|l| l.sort_order.is_some()) {
+                    classes.push(Class::ProjectsSortOrderShown);
+                }
+                if want.iter().any(|l| l.role.is_none() && l.sort_order.is_some()) {
+                    classes.push(Class::ProjectsStrayRowIgnored);
+                }
+                calls.push(Call::ProjectsOf { scope: (self.fix.ws[s], self.fix.user(user), role), want });
+            }
+            &Op::FirstVisit { ws, user, kind } => {
+                let (s, u) = (slot(ws), user as usize);
+                let scope = (self.fix.ws[s], self.fix.user(user), Role::Member);
+                match kind {
+                    Visit::Sidebar { mask, salt } => {
+                        let defaults = sidebar_defaults(mask, salt);
+                        let had = self.sidebar.keys().filter(|k| (k.0, k.1) == (s, u)).count();
+                        let missing = defaults.iter().filter(|d| !self.sidebar.contains_key(&(s, u, d.key.clone()))).count();
+                        for d in &defaults {
+                            self.sidebar.entry((s, u, d.key.clone())).or_insert_with(|| d.clone());
+                        }
+                        let mut want: Vec<SidebarPreference> =
+                            self.sidebar.iter().filter(|(k, _)| (k.0, k.1) == (s, u)).map(|(_, p)| p.clone()).collect();
+                        want.sort_by(|a, b| a.sort_order.total_cmp(&b.sort_order).then_with(|| a.key.cmp(&b.key)));
+                        classes.push(if had == 0 {
+                            Class::SidebarMade
+                        } else if missing == 0 {
+                            Class::SidebarKept
+                        } else {
+                            Class::SidebarFilledIn
+                        });
+                        calls.push(Call::EnsureSidebar { scope, defaults, at: tick(), want });
+                    }
+                    Visit::Home { mask, salt } => {
+                        let defaults = home_defaults(mask, salt, tick());
+                        let had = self.home.keys().filter(|k| (k.0, k.1) == (s, u)).count();
+                        let missing = defaults.iter().filter(|d| !self.home.contains_key(&(s, u, d.key.clone()))).count();
+                        for d in &defaults {
+                            self.home.entry((s, u, d.key.clone())).or_insert_with(|| d.clone());
+                        }
+                        // the map is ordered by key, which is the port's order
+                        let want: Vec<HomePreference> =
+                            self.home.iter().filter(|(k, _)| (k.0, k.1) == (s, u)).map(|(_, p)| p.clone()).collect();
+                        classes.push(if had == 0 {
+                            Class::HomeMade
+                        } else if missing == 0 {
+                            Class::HomeKept
+                        } else {
+                            Class::HomeFilledIn
+                        });
+                        calls.push(Call::EnsureHome { scope, defaults, want });
+                    }
+                    Visit::Properties { salt } => {
+                        let new = properties_defaults(salt, tick());
+                        classes.push(if self.properties.contains_key(&(s, u)) { Class::PropertiesKept } else { Class::PropertiesMade });
+                        let want = self.properties.entry((s, u)).or_insert_with(|| new.clone()).clone();
+                        calls.push(Call::EnsureProperties { scope, new, want });
+                    }
+                }
             }
             &Op::MemberActive { ws, user, active } => {
                 let s = slot(ws);
@@ -2176,6 +2544,22 @@ async fn execute(db: &dyn Database, tx: &mut Option<Box<dyn Tx>>, call: Call, at
         Call::ProjectRolesOf { scope: (w, u, r), want } => {
             let got = bounded(at, db.project_roles(&WorkspaceScope::mint(w, u, r))).await?;
             prop_assert_eq!(got, want, "{}: project roles", at);
+        }
+        Call::ProjectsOf { scope: (w, u, r), want } => {
+            let got = bounded(at, db.workspace_projects(&WorkspaceScope::mint(w, u, r))).await?;
+            prop_assert_eq!(got, want, "{}: workspace projects", at);
+        }
+        Call::EnsureSidebar { scope: (w, u, r), defaults, at: when, want } => {
+            let got = bounded(at, db.ensure_sidebar_preferences(&WorkspaceScope::mint(w, u, r), &defaults, when)).await?;
+            prop_assert_eq!(got, want, "{}: ensure sidebar preferences", at);
+        }
+        Call::EnsureHome { scope: (w, u, r), defaults, want } => {
+            let got = bounded(at, db.ensure_home_preferences(&WorkspaceScope::mint(w, u, r), &defaults)).await?;
+            prop_assert_eq!(got, want, "{}: ensure home preferences", at);
+        }
+        Call::EnsureProperties { scope: (w, u, r), new, want } => {
+            let got = bounded(at, db.ensure_user_properties(&WorkspaceScope::mint(w, u, r), &new)).await?;
+            prop_assert_eq!(got, want, "{}: ensure user properties", at);
         }
         Call::SeededListing { user, want } => {
             let got = bounded(at, db.workspaces_of(user)).await?;
