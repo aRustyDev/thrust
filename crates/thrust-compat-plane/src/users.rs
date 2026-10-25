@@ -33,7 +33,7 @@ impl<S: Send + Sync> FromRequestParts<S> for Caller {
 
 /// A DRF datetime: UTC, microseconds, `Z`. (The pin renders in the user's own time zone, with an offset; a client that
 /// parses either gets the same instant, and the parity rules treat the value as opaque.)
-fn ts(t: Timestamp) -> String {
+pub(crate) fn ts(t: Timestamp) -> String {
     t.to_rfc3339_opts(SecondsFormat::Micros, true)
 }
 
@@ -41,7 +41,7 @@ fn ts_or_null(t: Option<Timestamp>) -> Value {
     t.map_or(Value::Null, |t| json!(ts(t)))
 }
 
-fn non_empty(s: &str) -> Value {
+pub(crate) fn non_empty(s: &str) -> Value {
     if s.is_empty() {
         Value::Null
     } else {
@@ -51,7 +51,7 @@ fn non_empty(s: &str) -> Value {
 
 /// The body of a request as a JSON object: an empty body is an empty object, as DRF reads it. A body that is not an object is
 /// refused with a message of Thrust's own (the pin's DRF wording is not recorded; G-17).
-fn object_body(bytes: &Bytes) -> Result<Map<String, Value>, PlaneError> {
+pub(crate) fn object_body(bytes: &Bytes) -> Result<Map<String, Value>, PlaneError> {
     if bytes.iter().all(u8::is_ascii_whitespace) {
         return Ok(Map::new());
     }

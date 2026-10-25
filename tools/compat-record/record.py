@@ -28,6 +28,8 @@ import argparse
 import collections
 import http.cookiejar
 import json
+import os
+import subprocess
 import sys
 import time
 import urllib.error
@@ -392,6 +394,165 @@ def step_x04_onboard(base, pacer):
     ]
 
 
+WS_ONE = "journey-ws"
+WS_TWO = "journey-two"
+INVITATIONS = "/api/users/me/workspaces/invitations/"
+MY_WORKSPACES = "/api/users/me/workspaces/"
+SETTINGS = "/api/users/me/settings/"
+WORKSPACES = "/api/workspaces/"
+SLUG_CHECK = "/api/workspace-slug-check/"
+
+
+def step_s12(base, pacer):
+    """GET /api/users/me/workspaces/invitations/ : a user nobody has invited. (Invitations are P1, F-A07: a stub.)"""
+    return [
+        ("no session", api(base, pacer, NOT_SIGNED_IN, "GET", INVITATIONS)),
+        ("a user with no invitations", api(base, pacer, J, "GET", INVITATIONS)),
+    ]
+
+
+def step_s09_before(base, pacer):
+    """GET /api/users/me/workspaces/ before the user has one."""
+    return [
+        ("no session", api(base, pacer, NOT_SIGNED_IN, "GET", MY_WORKSPACES)),
+        ("a user with no workspace", api(base, pacer, J, "GET", MY_WORKSPACES)),
+    ]
+
+
+def step_s08_before(base, pacer):
+    """GET /api/users/me/settings/ for a user with no workspace."""
+    return [
+        ("no session", api(base, pacer, NOT_SIGNED_IN, "GET", SETTINGS)),
+        ("a user with no workspace", api(base, pacer, J, "GET", SETTINGS)),
+    ]
+
+
+def step_s13_before(base, pacer):
+    """GET /api/workspace-slug-check/ before the workspace exists."""
+    check = lambda who, slug: api(base, pacer, who, "GET", f"{SLUG_CHECK}?slug={slug}" if slug is not None else SLUG_CHECK)  # noqa: E731
+    return [
+        ("no session", check(NOT_SIGNED_IN, WS_ONE)),
+        ("no slug", check(J, None)),
+        ("an empty slug", check(J, "")),
+        ("a slug nobody has", check(J, WS_ONE)),
+        ("a reserved slug", check(J, "onboarding")),
+        ("another reserved slug", check(J, "api")),
+    ]
+
+
+def step_s14(base, pacer):
+    """POST /api/workspaces/ : every refusal, then two workspaces, then what depends on them and on the second one's id.
+
+    The exchanges that follow the creation and need its id live in this one fixture, because a request that carries an
+    id from an earlier response is resolved by the fixture's own ordinals."""
+    create = lambda who, body: api(base, pacer, who, "POST", WORKSPACES, body)  # noqa: E731
+    out = [
+        ("no session", create(NOT_SIGNED_IN, {"name": "Nobody", "slug": "nobody"})),
+        ("no fields", create(J, {})),
+        ("no slug", create(J, {"name": "No Slug"})),
+        ("no name", create(J, {"slug": "no-name"})),
+        ("a name that is too long", create(J, {"name": "x" * 81, "slug": "long-name"})),
+        ("a slug that is too long", create(J, {"name": "Long Slug", "slug": "s" * 49})),
+        ("a URL in the name", create(J, {"name": "see example.com", "slug": "url-name"})),
+        ("a name with no letter or number", create(J, {"name": "!!!", "slug": "no-alnum"})),
+        ("a reserved slug", create(J, {"name": "Reserved", "slug": "onboarding"})),
+        ("a slug with a space", create(J, {"name": "Spaced", "slug": "a b"})),
+        ("an organization size that is too long", create(J, {"name": "Big", "slug": "big-org", "organization_size": "x" * 21})),
+        ("a time zone that does not exist", create(J, {"name": "Zoned", "slug": "zoned", "timezone": "Mars/Olympus"})),
+        ("a workspace", create(J, {"name": "Journey Workspace", "slug": WS_ONE, "organization_size": "Just myself"})),
+        ("the same slug again", create(J, {"name": "Again", "slug": WS_ONE})),
+    ]
+    second = create(J, {"name": "Second Workspace", "slug": WS_TWO, "organization_size": "2-10", "company_role": "engineer"})
+    out.append(("another workspace, with a company role", second))
+    second_id = second["response"]["body"]["id"]
+    out += [
+        ("settings: workspaces, and no last workspace", api(base, pacer, J, "GET", SETTINGS)),
+        ("the last workspace is set", api(base, pacer, J, "PATCH", PROFILE, {"last_workspace_id": second_id})),
+    ]
+    return out
+
+
+INSTANCE_CACHE_KEY = ":1:/api/instances/"
+
+
+def drop_instance_cache():
+    """The pin caches the whole answer of `/api/instances/` for two hours (`@cache_response(60 * 60 * 2, user=False)`), and
+    works out `workspaces_exist` only when it fills the cache. The first S01 request filled it, so a request right after a
+    workspace is made still says `false`, for up to two hours: an artifact of the cache, not of the data. Thrust does not
+    cache it and answers what is true (deviation D-025), so the recorder deletes that one key and records the answer the
+    endpoint gives once the cache has expired. `ORACLE_REDIS` names the container holding the pin's Valkey."""
+    container = os.environ.get("ORACLE_REDIS", "plane-oracle-plane-redis-1")
+    done = subprocess.run(["docker", "exec", container, "valkey-cli", "DEL", INSTANCE_CACHE_KEY], capture_output=True, text=True)
+    if done.returncode != 0 or done.stdout.strip() not in ("0", "1"):
+        raise SystemExit(f"could not drop the instance cache key in {container}: {done.stdout!r} {done.stderr!r}")
+
+
+def step_s01_after(base, pacer):
+    """GET /api/instances/ once a workspace exists: `workspaces_exist` flips (once the pin's cache is out of the way)."""
+    drop_instance_cache()
+    return [("a workspace exists", fresh(base).request("GET", "/api/instances/"))]
+
+
+def step_s13_after(base, pacer):
+    """GET /api/workspace-slug-check/ for slugs that are taken."""
+    check = lambda slug: api(base, pacer, J, "GET", f"{SLUG_CHECK}?slug={slug}")  # noqa: E731
+    return [
+        ("a slug that is taken", check(WS_ONE)),
+        ("the other slug that is taken", check(WS_TWO)),
+        ("the same slug in capitals (the check is case sensitive)", check("Journey-WS")),
+    ]
+
+
+def step_s09_after(base, pacer):
+    """GET /api/users/me/workspaces/ with two workspaces: newest first, with the caller's role and the member count."""
+    return [
+        ("two workspaces", api(base, pacer, J, "GET", MY_WORKSPACES)),
+        ("another user", api(base, pacer, SECOND_EMAIL, "GET", MY_WORKSPACES)),
+    ]
+
+
+def step_s08_after(base, pacer):
+    """GET /api/users/me/settings/ once the user has a last workspace."""
+    return [
+        ("a last workspace", api(base, pacer, J, "GET", SETTINGS)),
+        ("another user, with no workspace", api(base, pacer, SECOND_EMAIL, "GET", SETTINGS)),
+    ]
+
+
+def step_s15(base, pacer):
+    """GET .../workspace-members/me/ : the caller's own membership, and what the pin answers a non-member."""
+    me = lambda who, slug: api(base, pacer, who, "GET", f"/api/workspaces/{slug}/workspace-members/me/")  # noqa: E731
+    return [
+        ("no session", me(NOT_SIGNED_IN, WS_ONE)),
+        ("the creator of a workspace", me(J, WS_ONE)),
+        ("the creator, with a company role", me(J, WS_TWO)),
+        ("not a member", me(SECOND_EMAIL, WS_ONE)),
+        ("a workspace that does not exist", me(J, "no-such-workspace")),
+    ]
+
+
+def step_s16(base, pacer):
+    """GET .../project-roles/ : the caller's roles in the workspace's projects (none yet)."""
+    roles = lambda who, slug: api(base, pacer, who, "GET", f"/api/users/me/workspaces/{slug}/project-roles/")  # noqa: E731
+    return [
+        ("no session", roles(NOT_SIGNED_IN, WS_ONE)),
+        ("a member of a workspace with no projects", roles(J, WS_ONE)),
+        ("not a member", roles(SECOND_EMAIL, WS_ONE)),
+        ("a workspace that does not exist", roles(J, "no-such-workspace")),
+    ]
+
+
+def step_s18(base, pacer):
+    """GET .../members/ : the members of a workspace."""
+    members = lambda who, slug: api(base, pacer, who, "GET", f"/api/workspaces/{slug}/members/")  # noqa: E731
+    return [
+        ("no session", members(NOT_SIGNED_IN, WS_ONE)),
+        ("the creator, the only member", members(J, WS_ONE)),
+        ("not a member", members(SECOND_EMAIL, WS_ONE)),
+        ("a workspace that does not exist", members(J, "no-such-workspace")),
+    ]
+
+
 # Journey order. The file name is the step id; `S04-existing` is S04's route again, after S05, and `S02-signed-in` is
 # S02's route again, once there is a session. `X04` is a route the stock onboarding calls that the inventory lacks.
 STEPS = [
@@ -408,6 +569,18 @@ STEPS = [
     ("S11", step_s11),
     ("S27", step_s27),
     ("X04", step_x04_onboard),
+    ("S12", step_s12),
+    ("S09", step_s09_before),
+    ("S08", step_s08_before),
+    ("S13", step_s13_before),
+    ("S14", step_s14),
+    ("S01-after", step_s01_after),
+    ("S13-after", step_s13_after),
+    ("S09-after", step_s09_after),
+    ("S08-after", step_s08_after),
+    ("S15", step_s15),
+    ("S16", step_s16),
+    ("S18", step_s18),
 ]
 
 

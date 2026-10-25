@@ -27,7 +27,9 @@ struct DbState {
     oidc_logins: HashMap<TokenHash, OidcLogin>,
     /// Slug -> workspace (the `workspaces.slug` unique index).
     workspaces: HashMap<WorkspaceSlug, WorkspaceId>,
-    workspace_members: HashSet<(WorkspaceId, UserId)>,
+    /// The `workspaces` table by id (migration 0009); `workspaces` above is its slug index.
+    workspace_rows: HashMap<WorkspaceId, Workspace>,
+    workspace_members: HashMap<(WorkspaceId, UserId), WorkspaceMember>,
     projects: HashMap<ProjectId, WorkspaceId>,
     /// The member row keeps the workspace it was written with; `membership` counts it only when that
     /// is the project's workspace (the Postgres join on `m.workspace_id`).
@@ -109,7 +111,9 @@ impl Database for MemoryDatabase {
             .workspaces
             .get(slug)
             .copied()
-            .filter(|ws| s.workspace_members.contains(&(*ws, user)) && s.projects.get(&project) == Some(ws));
+            .filter(|ws| {
+                s.workspace_members.get(&(*ws, user)).is_some_and(|m| m.is_active) && s.projects.get(&project) == Some(ws)
+            });
         let Some(ws) = resolved else {
             return Ok(Membership::NoSuchProject);
         };
@@ -169,6 +173,121 @@ impl Database for MemoryDatabase {
     async fn user_by_email(&self, email: &str) -> Result<Option<UserRecord>, DbError> {
         let s = self.state.lock().unwrap();
         Ok(s.users.values().find(|u| u.email.as_deref() == Some(email)).cloned())
+    }
+
+    async fn insert_workspace(&self, w: &NewWorkspace) -> Result<(), DbError> {
+        let mut s = self.state.lock().unwrap();
+        let ws = &w.workspace;
+        // the constraints of the two INSERTs, checked before either row is written (a transaction that fails leaves nothing)
+        if s.workspace_rows.contains_key(&ws.id) {
+            return Err(DbError::Conflict("workspaces_pkey".into()));
+        }
+        if s.workspaces.contains_key(&ws.slug) {
+            return Err(DbError::Conflict("workspaces_slug_key".into()));
+        }
+        // a foreign key violation is a backend error, not a `Conflict`, as in Postgres
+        if ws.owner_id.is_some_and(|o| !s.users.contains_key(&o)) {
+            return Err(DbError::Backend("workspaces_owner_id_fkey".into()));
+        }
+        if s.workspace_members.values().any(|m| m.id == w.owner.id) {
+            return Err(DbError::Conflict("workspace_members_id_key".into()));
+        }
+        s.workspaces.insert(ws.slug.clone(), ws.id);
+        s.workspace_rows.insert(ws.id, ws.clone());
+        s.workspace_members.insert((w.owner.workspace_id, w.owner.user_id), w.owner.clone());
+        Ok(())
+    }
+
+    async fn workspace_slug_taken(&self, slug: &str) -> Result<bool, DbError> {
+        Ok(self.state.lock().unwrap().workspaces.contains_key(&WorkspaceSlug::new(slug)))
+    }
+
+    async fn any_workspace(&self) -> Result<bool, DbError> {
+        Ok(!self.state.lock().unwrap().workspace_rows.is_empty())
+    }
+
+    async fn workspaces_of(&self, user: UserId) -> Result<Vec<WorkspaceListing>, DbError> {
+        let s = self.state.lock().unwrap();
+        let mut out: Vec<WorkspaceListing> = s
+            .workspace_members
+            .values()
+            .filter(|m| m.user_id == user && m.is_active)
+            .filter_map(|m| {
+                let workspace = s.workspace_rows.get(&m.workspace_id)?.clone();
+                let total = s.workspace_members.values().filter(|n| n.workspace_id == m.workspace_id && n.is_active).count();
+                Some(WorkspaceListing { workspace, role: m.role, total_members: total as u64 })
+            })
+            .collect();
+        out.sort_by(|a, b| (b.workspace.created_at, b.workspace.id.0).cmp(&(a.workspace.created_at, a.workspace.id.0)));
+        Ok(out)
+    }
+
+    async fn workspace_access(&self, slug: &WorkspaceSlug, user: UserId) -> Result<Option<WorkspaceAccess>, DbError> {
+        let s = self.state.lock().unwrap();
+        let Some(ws) = s.workspaces.get(slug).copied() else { return Ok(None) };
+        Ok(s.workspace_members
+            .get(&(ws, user))
+            .filter(|m| m.is_active)
+            .map(|m| WorkspaceAccess { workspace_id: ws, role: m.role }))
+    }
+
+    async fn set_workspace_member_active(
+        &self,
+        _sys: &SystemScope,
+        workspace: WorkspaceId,
+        user: UserId,
+        active: bool,
+    ) -> Result<bool, DbError> {
+        let mut s = self.state.lock().unwrap();
+        Ok(match s.workspace_members.get_mut(&(workspace, user)) {
+            Some(m) => {
+                m.is_active = active;
+                true
+            }
+            None => false,
+        })
+    }
+
+    async fn workspace_member(&self, scope: &WorkspaceScope) -> Result<Option<WorkspaceMember>, DbError> {
+        Ok(self.state.lock().unwrap().workspace_members.get(&(scope.workspace_id(), scope.user_id())).cloned())
+    }
+
+    async fn workspace_members(&self, scope: &WorkspaceScope) -> Result<Vec<MemberWithUser>, DbError> {
+        let s = self.state.lock().unwrap();
+        let mut out: Vec<MemberWithUser> = s
+            .workspace_members
+            .values()
+            .filter(|m| m.workspace_id == scope.workspace_id())
+            .map(|m| {
+                let profile = s.profiles.get(&m.user_id);
+                let user = MemberUser {
+                    id: m.user_id,
+                    email: s.users.get(&m.user_id).and_then(|u| u.email.clone()),
+                    first_name: profile.map(|p| p.first_name.clone()).unwrap_or_default(),
+                    last_name: profile.map(|p| p.last_name.clone()).unwrap_or_default(),
+                    display_name: profile.map(|p| p.display_name.clone()).unwrap_or_default(),
+                    avatar: profile.map(|p| p.avatar.clone()).unwrap_or_default(),
+                };
+                MemberWithUser { member: m.clone(), user }
+            })
+            .collect();
+        out.sort_by(|a, b| (b.member.created_at, b.member.id).cmp(&(a.member.created_at, a.member.id)));
+        Ok(out)
+    }
+
+    async fn project_roles(&self, scope: &WorkspaceScope) -> Result<Vec<(ProjectId, Role)>, DbError> {
+        let s = self.state.lock().unwrap();
+        let mut out: Vec<(ProjectId, Role)> = s
+            .memberships
+            .iter()
+            // the project must really be in the workspace the member row names (the join on `projects` in Postgres)
+            .filter(|((project, user), (ws, _))| {
+                *user == scope.user_id() && *ws == scope.workspace_id() && s.projects.get(project) == Some(ws)
+            })
+            .map(|((project, _), (_, role))| (*project, *role))
+            .collect();
+        out.sort_by_key(|(p, _)| p.0);
+        Ok(out)
     }
 
     async fn user_by_id(&self, id: UserId) -> Result<Option<UserRecord>, DbError> {
@@ -579,11 +698,38 @@ impl Database for MemoryDatabase {
             // a user that exists already (with an email, say) is left as it is
             s.users.entry(*u).or_insert(UserRecord { id: *u, email: None, password_hash: None, is_active: true });
         }
+        // a seeded workspace is named after its slug and has no owner; one that exists keeps everything but its slug
+        let epoch = thrust_contracts::chrono::DateTime::from_timestamp(0, 0).expect("the epoch");
         for w in &f.workspaces {
             s.workspaces.insert(w.slug.clone(), w.id);
+            s.workspace_rows
+                .entry(w.id)
+                .and_modify(|row| row.slug = w.slug.clone())
+                .or_insert_with(|| Workspace {
+                    id: w.id,
+                    slug: w.slug.clone(),
+                    name: w.slug.to_string(),
+                    owner_id: None,
+                    organization_size: None,
+                    timezone: "UTC".into(),
+                    background_color: "#808080".into(),
+                    created_at: epoch,
+                    updated_at: epoch,
+                });
         }
         for m in &f.workspace_members {
-            s.workspace_members.insert((m.workspace_id, m.user_id));
+            // a seeded membership is an active `member` with no company role; one that exists is left as it is
+            s.workspace_members.entry((m.workspace_id, m.user_id)).or_insert_with(|| WorkspaceMember {
+                id: Uuid::from_u128(m.workspace_id.0.as_u128() ^ m.user_id.0.as_u128().rotate_left(64)),
+                workspace_id: m.workspace_id,
+                user_id: m.user_id,
+                role: Role::Member,
+                company_role: None,
+                is_active: true,
+                props: serde_json::json!({}),
+                created_at: epoch,
+                updated_at: epoch,
+            });
         }
         for p in &f.projects {
             s.projects.insert(p.id, p.workspace_id);

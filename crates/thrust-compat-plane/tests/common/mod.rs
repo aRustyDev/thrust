@@ -83,6 +83,12 @@ impl Background for NoBackground {
 /// The compat routes over an empty memory world, with a fixed clock and counting ids. Configured as the composition roots
 /// are (CSRF not enforced while the stock frontend exists, Q-0050.8).
 pub fn app() -> Router {
+    app_with_db().0
+}
+
+/// [`app`], and the memory database behind it, for a test that needs rows no route makes (a guest, a second project).
+pub fn app_with_db() -> (Router, Arc<MemoryDatabase>) {
+    let db = Arc::new(MemoryDatabase::new());
     let background: Arc<dyn Background> = Arc::new(NoBackground);
     let queue: Arc<dyn Queue> = Arc::new(MemoryQueue::new(background.clone(), ConsumerSlot::default()));
     let clock: Arc<dyn Clock> = Arc::new(FixedClock(DateTime::from_timestamp(1_760_000_000, 0).unwrap()));
@@ -96,7 +102,7 @@ pub fn app() -> Router {
     let hasher = Arc::new(Argon2idHasher::new(cfg.argon2));
     let app = App::new(
         Ports {
-            db: Arc::new(MemoryDatabase::new()),
+            db: db.clone(),
             queue,
             blobs: Arc::new(MemoryBlobStore::new()),
             limiter: Arc::new(MemoryRateLimiter::new(clock.clone())),
@@ -110,7 +116,7 @@ pub fn app() -> Router {
         cfg,
         SystemScope::mint(),
     );
-    thrust_compat_plane::routes().layer(Extension(app))
+    (thrust_compat_plane::routes().layer(Extension(app)), db)
 }
 
 fn fixtures_dir() -> PathBuf {
@@ -271,6 +277,16 @@ pub fn send(router: &Router, name: &Value, req: &Value, jar: &Jar) -> Value {
     })
 }
 
+/// A recorded request with every `<uuid:N>` in its path and body replaced by this replay's own id (see `Ids::resolve`).
+fn resolve_ids(v: &Value, ids: &normalise::Ids) -> Value {
+    match v {
+        Value::String(s) => Value::String(ids.resolve(s)),
+        Value::Array(a) => Value::Array(a.iter().map(|x| resolve_ids(x, ids)).collect()),
+        Value::Object(m) => Value::Object(m.iter().map(|(k, x)| (k.clone(), resolve_ids(x, ids))).collect()),
+        other => other.clone(),
+    }
+}
+
 /// The session token a raw response sets (not a cookie that clears it), if it sets one.
 pub fn session_token(raw: &Value) -> Option<String> {
     let h = &raw["response"]["headers"]["set-cookie"];
@@ -300,7 +316,7 @@ pub fn divergences_with(router: &Router, fixture: &Value, jar: &mut Jar) -> Vec<
     let mut out = Vec::new();
     for recorded in fixture["exchanges"].as_array().expect("exchanges") {
         let want = project(recorded);
-        let raw = send(router, &want["name"], &want["request"], jar);
+        let raw = send(router, &want["name"], &resolve_ids(&want["request"], &ids), jar);
         let got = normalise::exchange(&rules, &mut ids, &raw);
         let mut lines = Vec::new();
         if got != want {

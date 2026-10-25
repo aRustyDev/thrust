@@ -25,4 +25,5 @@ serde_json = { workspace = true }
 [dev-dependencies]
 # futures-executor rather than tokio, because the memory adapters never yield.
 futures-executor = "0.3"
+proptest = "1"
 rstest = "0.26"

@@ -39,6 +39,7 @@ impl Clock for FixedClock {
 }
 
 /// Deterministic, unique ids. The high bits keep them clear of the fixture ids below.
+#[derive(Default)]
 pub struct CounterIds(AtomicU64);
 impl IdGen for CounterIds {
     fn new_uuid(&self) -> Uuid {

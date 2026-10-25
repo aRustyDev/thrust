@@ -1,0 +1,179 @@
+{
+  "exchanges": [
+    {
+      "name": "no session",
+      "request": {
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/members/"
+      },
+      "response": {
+        "body": {
+          "detail": "Authentication credentials were not provided."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 401
+      }
+    },
+    {
+      "name": "the creator, the only member",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/members/"
+      },
+      "response": {
+        "body": [
+          {
+            "company_role": "",
+            "created_at": "<ts>",
+            "created_by": "<uuid:1>",
+            "default_props": {
+              "display_filters": {
+                "calendar_date_range": "",
+                "group_by": null,
+                "layout": "list",
+                "order_by": "-created_at",
+                "show_empty_groups": true,
+                "sub_issue": true,
+                "type": null
+              },
+              "display_properties": {
+                "assignee": true,
+                "attachment_count": true,
+                "created_on": true,
+                "due_date": true,
+                "estimate": true,
+                "key": true,
+                "labels": true,
+                "link": true,
+                "priority": true,
+                "start_date": true,
+                "state": true,
+                "sub_issue_count": true,
+                "updated_on": true
+              },
+              "filters": {
+                "assignees": null,
+                "created_by": null,
+                "labels": null,
+                "priority": null,
+                "start_date": null,
+                "state": null,
+                "state_group": null,
+                "subscriber": null,
+                "target_date": null
+              }
+            },
+            "deleted_at": null,
+            "explored_features": {},
+            "getting_started_checklist": {},
+            "id": "<uuid:2>",
+            "is_active": true,
+            "issue_props": {
+              "all_issues": true,
+              "assigned": true,
+              "created": true,
+              "subscribed": true
+            },
+            "member": {
+              "avatar": "",
+              "avatar_url": null,
+              "display_name": "Journey T.",
+              "email": "journey@example.test",
+              "first_name": "Journey",
+              "id": "<uuid:1>",
+              "is_bot": false,
+              "last_login_medium": "email",
+              "last_name": "Tester"
+            },
+            "role": 20,
+            "tips": {},
+            "updated_at": "<ts>",
+            "updated_by": null,
+            "view_props": {
+              "display_filters": {
+                "calendar_date_range": "",
+                "group_by": null,
+                "layout": "list",
+                "order_by": "-created_at",
+                "show_empty_groups": true,
+                "sub_issue": true,
+                "type": null
+              },
+              "display_properties": {
+                "assignee": true,
+                "attachment_count": true,
+                "created_on": true,
+                "due_date": true,
+                "estimate": true,
+                "key": true,
+                "labels": true,
+                "link": true,
+                "priority": true,
+                "start_date": true,
+                "state": true,
+                "sub_issue_count": true,
+                "updated_on": true
+              },
+              "filters": {
+                "assignees": null,
+                "created_by": null,
+                "labels": null,
+                "priority": null,
+                "start_date": null,
+                "state": null,
+                "state_group": null,
+                "subscriber": null,
+                "target_date": null
+              }
+            },
+            "workspace": "<uuid:3>"
+          }
+        ],
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "not a member",
+      "request": {
+        "as": "second@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/members/"
+      },
+      "response": {
+        "body": {
+          "error": "You don't have the required permissions."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 403
+      }
+    },
+    {
+      "name": "a workspace that does not exist",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/no-such-workspace/members/"
+      },
+      "response": {
+        "body": {
+          "error": "You don't have the required permissions."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 403
+      }
+    }
+  ],
+  "format_version": 1,
+  "recorded_from": "ba85d4d3d3",
+  "row": "S18"
+}

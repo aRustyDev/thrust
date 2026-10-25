@@ -135,6 +135,34 @@ impl Scope {
     }
 }
 
+/// Proof that `user` is an active member of `workspace`, with the role they hold there (issue #44). The workspace-level
+/// sibling of [`Scope`]: a [`Scope`] names a project too, and the reads that belong to the workspace itself (its members,
+/// the caller's own membership, the caller's roles in its projects) need no project. Fields are private, and
+/// `scripts/check-deps.sh` rejects a call to [`WorkspaceScope::mint`] anywhere but `thrust_core::authorize_workspace`.
+#[derive(Debug, Clone, Copy)]
+pub struct WorkspaceScope {
+    workspace_id: WorkspaceId,
+    user_id: UserId,
+    role: Role,
+}
+
+impl WorkspaceScope {
+    /// Reserved to `thrust_core::authorize_workspace`, after the membership check passes.
+    #[doc(hidden)]
+    pub fn mint(workspace_id: WorkspaceId, user_id: UserId, role: Role) -> Self {
+        Self { workspace_id, user_id, role }
+    }
+    pub fn workspace_id(&self) -> WorkspaceId {
+        self.workspace_id
+    }
+    pub fn user_id(&self) -> UserId {
+        self.user_id
+    }
+    pub fn role(&self) -> Role {
+        self.role
+    }
+}
+
 /// Permission for the untenanted operations: the outbox relay and sweeper, the queue consumer's
 /// activity write, and `seed`. Minted only by the composition roots and the consumer entry
 /// (ADR-0045 round 29); `scripts/check-deps.sh` rejects a call to [`SystemScope::mint`] elsewhere.
@@ -254,6 +282,78 @@ pub struct ProfilePatch {
     pub preferences: serde_json::Map<String, serde_json::Value>,
 }
 
+/// A workspace as its table holds it (issue #44). The slug is unique and is what routes name it by.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Workspace {
+    pub id: WorkspaceId,
+    pub slug: WorkspaceSlug,
+    pub name: String,
+    /// The user who made it; none for a workspace a test seeded.
+    pub owner_id: Option<UserId>,
+    pub organization_size: Option<String>,
+    pub timezone: String,
+    pub background_color: String,
+    pub created_at: Timestamp,
+    pub updated_at: Timestamp,
+}
+
+/// A user's membership of a workspace. `props` is a JSON object of the per-member view settings (the compat layer
+/// fills the keys a member has not set with defaults).
+#[derive(Debug, Clone, PartialEq)]
+pub struct WorkspaceMember {
+    /// The membership row's own id, not the user's.
+    pub id: Uuid,
+    pub workspace_id: WorkspaceId,
+    pub user_id: UserId,
+    pub role: Role,
+    pub company_role: Option<String>,
+    /// A deactivated member keeps the row (and shows in the member list as suspended) but has no access.
+    pub is_active: bool,
+    pub props: serde_json::Value,
+    pub created_at: Timestamp,
+    pub updated_at: Timestamp,
+}
+
+/// A workspace and its first member, inserted together or not at all.
+#[derive(Debug, Clone, PartialEq)]
+pub struct NewWorkspace {
+    pub workspace: Workspace,
+    pub owner: WorkspaceMember,
+}
+
+/// A workspace as one of its members sees it: their role and how many active members it has.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorkspaceListing {
+    pub workspace: Workspace,
+    pub role: Role,
+    pub total_members: u64,
+}
+
+/// What a workspace's member list says about the person behind a row. A user with no profile has empty names.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MemberUser {
+    pub id: UserId,
+    pub email: Option<String>,
+    pub first_name: String,
+    pub last_name: String,
+    pub display_name: String,
+    pub avatar: String,
+}
+
+/// A row of a workspace's member list.
+#[derive(Debug, Clone, PartialEq)]
+pub struct MemberWithUser {
+    pub member: WorkspaceMember,
+    pub user: MemberUser,
+}
+
+/// An active member's way into a workspace, resolved from its slug.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WorkspaceAccess {
+    pub workspace_id: WorkspaceId,
+    pub role: Role,
+}
+
 /// A link from an identity provider's subject to a user: `provider` is the issuer, `provider_account_id` the `sub`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NewAccount {
@@ -364,6 +464,46 @@ pub trait Database: Send + Sync {
     /// Apply `patch` to the user's profile at `at` (`updated_at`), atomically, and return the row as it is after. `None`
     /// when the user has no profile.
     async fn update_profile(&self, user: UserId, patch: &ProfilePatch, at: Timestamp) -> Result<Option<UserProfile>, DbError>;
+
+    // --- Workspaces (issue #44). The first four run before there is a `WorkspaceScope` (they are how one is made, or they
+    // are about the caller's own workspaces), the rest take one.
+
+    /// Create a workspace and its first member in one transaction. A taken slug is `DbError::Conflict`, raised by the UNIQUE
+    /// index, so two creations racing for one slug cannot both win, and the loser leaves no member row behind.
+    async fn insert_workspace(&self, w: &NewWorkspace) -> Result<(), DbError>;
+
+    /// Whether some workspace has this slug (exact, case-sensitive).
+    async fn workspace_slug_taken(&self, slug: &str) -> Result<bool, DbError>;
+
+    /// Whether any workspace exists at all (what `workspaces_exist` on the instance reports).
+    async fn any_workspace(&self) -> Result<bool, DbError>;
+
+    /// The workspaces `user` is an ACTIVE member of, newest first (ties by id), with their role and the member count.
+    async fn workspaces_of(&self, user: UserId) -> Result<Vec<WorkspaceListing>, DbError>;
+
+    /// The workspace `slug` names and the role `user` holds in it, when `user` is an active member. `None` for a slug that
+    /// names nothing and for a user who is not (or no longer) a member, which look the same on purpose.
+    async fn workspace_access(&self, slug: &WorkspaceSlug, user: UserId) -> Result<Option<WorkspaceAccess>, DbError>;
+
+    /// Deactivate or reactivate a membership: the row stays (the member list shows the person as suspended) but an inactive
+    /// member has no access to the workspace's slug, its projects or its member list. Test support and the seam of the real
+    /// deactivation (ADR-0053), like `set_user_active`. `true` if the membership exists.
+    async fn set_workspace_member_active(
+        &self,
+        sys: &SystemScope,
+        workspace: WorkspaceId,
+        user: UserId,
+        active: bool,
+    ) -> Result<bool, DbError>;
+
+    /// The caller's own membership row.
+    async fn workspace_member(&self, scope: &WorkspaceScope) -> Result<Option<WorkspaceMember>, DbError>;
+
+    /// Every member of the workspace, deactivated ones included, newest first (ties by id).
+    async fn workspace_members(&self, scope: &WorkspaceScope) -> Result<Vec<MemberWithUser>, DbError>;
+
+    /// The caller's role in each project of the workspace they are an active member of, by project id.
+    async fn project_roles(&self, scope: &WorkspaceScope) -> Result<Vec<(ProjectId, Role)>, DbError>;
 
     /// Create a user (sign-up, issue #44). A taken email is `DbError::Conflict`, raised by the UNIQUE index, so two
     /// sign-ups racing for one email cannot both win. An id that exists is the caller's bug, and also a `Conflict`.

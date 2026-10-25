@@ -18,6 +18,9 @@ CREATE TABLE IF NOT EXISTS workspace_members (
     PRIMARY KEY (workspace_id, user_id)
 );
 
+-- Only workspaces that have no row yet. `ON CONFLICT DO NOTHING` alone is not enough once 0009 has made `name` NOT NULL:
+-- Postgres checks NOT NULL on the proposed row BEFORE it looks for the conflict, so this statement, which names no `name`,
+-- would fail on every start of a database that already has a workspace and a project.
 INSERT INTO workspaces (id, slug)
 SELECT w, w::text
 FROM (
@@ -25,6 +28,7 @@ FROM (
     UNION
     SELECT workspace_id AS w FROM project_members
 ) AS known
+WHERE NOT EXISTS (SELECT 1 FROM workspaces x WHERE x.id = known.w)
 ON CONFLICT DO NOTHING;
 
 INSERT INTO workspace_members (workspace_id, user_id)

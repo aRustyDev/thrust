@@ -378,3 +378,128 @@ async fn compat_a_safe_next_path_is_kept_and_an_unsafe_one_is_dropped() {
         assert_eq!(r.json::<Value>().await.unwrap(), json!({"redirect_path": redirect}), "{what}: {next}");
     }
 }
+
+async fn post_as(t: &Target, token: &str, path: &str, body: &Value) -> reqwest::Response {
+    t.http.post(t.url(path)).bearer_auth(token).json(body).send().await.unwrap()
+}
+
+/// A slug no earlier run of the suite used: a deployed target keeps its workspaces.
+fn new_slug() -> String {
+    format!("contract-{}", uuid::Uuid::new_v4().simple())
+}
+
+/// S13: whether the slug is free.
+async fn slug_is_free(t: &Target, token: &str, slug: &str) -> bool {
+    get(t, token, &format!("/api/workspace-slug-check/?slug={slug}")).await["status"].as_bool().expect("a status")
+}
+
+/// S08 to S09, S12 to S16 and S18, with S01 after them. A person makes a workspace and is its admin, and it is theirs
+/// alone: it is in their list and the slug check calls its slug taken; its member list is them; their own member row says
+/// admin. Controls, each paired with the person it is not: a second account has no workspace, is refused the member list
+/// and the project roles of this one (with Plane's two different 403 bodies), gets the blank member row Plane answers a
+/// stranger, and cannot take the slug; nobody without a session is let in.
+#[tokio::test]
+async fn compat_a_workspace_is_made_by_its_creator_who_is_its_admin_and_no_one_else_has_it() {
+    let t = t();
+    let (email, token) = signed_up(&t).await;
+    let (_, other) = signed_up(&t).await;
+    let slug = new_slug();
+    let me = get(&t, &token, "/api/users/me/").await;
+
+    assert_eq!(get(&t, &token, "/api/users/me/workspaces/invitations/").await, json!([]));
+    assert_eq!(get(&t, &token, "/api/users/me/workspaces/").await, json!([]));
+    let settings = get(&t, &token, "/api/users/me/settings/").await;
+    assert_eq!((settings["workspace"]["fallback_workspace_slug"].clone(), settings["workspace"]["invites"].clone()), (Value::Null, json!(0)), "{settings}");
+    assert!(slug_is_free(&t, &token, &slug).await);
+
+    let r = post_as(&t, &token, "/api/workspaces/", &json!({"name": "Contract Workspace", "slug": slug, "organization_size": "2-10"})).await;
+    assert_eq!(r.status(), 201);
+    let made: Value = r.json().await.unwrap();
+    assert_eq!(made.as_object().unwrap().len(), 17, "{made}");
+    assert_eq!((made["slug"].as_str(), made["name"].as_str(), made["role"].as_i64(), made["total_members"].as_i64()), (Some(slug.as_str()), Some("Contract Workspace"), Some(20), Some(1)), "{made}");
+    assert_eq!((made["owner"].clone(), made["created_by"].clone(), made["organization_size"].clone()), (me["id"].clone(), me["id"].clone(), json!("2-10")), "{made}");
+
+    // theirs: listed, taken, the first one to open
+    let listed = get(&t, &token, "/api/users/me/workspaces/").await;
+    assert_eq!(listed.as_array().unwrap().len(), 1, "{listed}");
+    assert_eq!((listed[0]["id"].clone(), listed[0]["role"].clone()), (made["id"].clone(), json!(20)));
+    assert!(!slug_is_free(&t, &token, &slug).await, "a made workspace's slug is taken");
+    let settings = get(&t, &token, "/api/users/me/settings/").await;
+    assert_eq!(settings["workspace"]["fallback_workspace_slug"], json!(slug), "{settings}");
+    assert_eq!(get(&t, &token, "/api/instances/").await["instance"]["workspaces_exist"], true, "S01 after the first workspace");
+
+    // what it says about its creator
+    let member = get(&t, &token, &format!("/api/workspaces/{slug}/workspace-members/me/")).await;
+    assert_eq!((member["role"].as_i64(), member["is_active"].as_bool(), member["company_role"].as_str()), (Some(20), Some(true), Some("")), "{member}");
+    let members = get(&t, &token, &format!("/api/workspaces/{slug}/members/")).await;
+    assert_eq!(members.as_array().unwrap().len(), 1, "{members}");
+    assert_eq!((members[0]["role"].clone(), members[0]["member"]["id"].clone(), members[0]["member"]["email"].clone()), (json!(20), me["id"].clone(), json!(email)), "{members}");
+    assert_eq!(get(&t, &token, &format!("/api/users/me/workspaces/{slug}/project-roles/")).await, json!({}), "a new workspace has no project");
+
+    // not theirs: nothing listed, nothing readable, nothing to take
+    assert_eq!(get(&t, &other, "/api/users/me/workspaces/").await, json!([]));
+    let r = t.http.get(t.url(&format!("/api/workspaces/{slug}/members/"))).bearer_auth(&other).send().await.unwrap();
+    assert_eq!(r.status(), 403);
+    assert_eq!(r.json::<Value>().await.unwrap(), json!({"error": "You don't have the required permissions."}));
+    let r = t.http.get(t.url(&format!("/api/users/me/workspaces/{slug}/project-roles/"))).bearer_auth(&other).send().await.unwrap();
+    assert_eq!(r.status(), 403);
+    assert_eq!(r.json::<Value>().await.unwrap(), json!({"detail": "You do not have permission to perform this action."}));
+    let blank = get(&t, &other, &format!("/api/workspaces/{slug}/workspace-members/me/")).await;
+    assert_eq!((blank["is_active"].clone(), blank["member"].clone(), blank["role"].clone()), (json!(false), Value::Null, Value::Null), "{blank}");
+    let r = post_as(&t, &other, "/api/workspaces/", &json!({"name": "Mine now", "slug": slug})).await;
+    assert_eq!(r.status(), 400);
+    assert_eq!(r.json::<Value>().await.unwrap(), json!({"slug": ["Workspace with this slug already exists."]}));
+    assert_eq!(get(&t, &other, "/api/users/me/workspaces/").await, json!([]), "the refused creation made nothing");
+
+    // nobody without a session
+    for path in [
+        "/api/users/me/workspaces/".to_string(),
+        "/api/users/me/workspaces/invitations/".to_string(),
+        "/api/users/me/settings/".to_string(),
+        format!("/api/workspace-slug-check/?slug={slug}"),
+        format!("/api/workspaces/{slug}/workspace-members/me/"),
+        format!("/api/workspaces/{slug}/members/"),
+        format!("/api/users/me/workspaces/{slug}/project-roles/"),
+    ] {
+        let r = t.http.get(t.url(&path)).send().await.unwrap();
+        assert_eq!(r.status(), 401, "GET {path}");
+    }
+    let r = t.http.post(t.url("/api/workspaces/")).json(&json!({"name": "x", "slug": new_slug()})).send().await.unwrap();
+    assert_eq!(r.status(), 401);
+}
+
+/// S14, the rules a workspace must satisfy. Each refusal has Plane's status and body, and makes nothing: the slug it named
+/// is still free afterwards. Controls: a slug the pin reserves reads as taken before and after, and the same name and slug
+/// without the fault is made.
+#[tokio::test]
+async fn compat_a_workspace_that_breaks_a_rule_is_refused_with_planes_message_and_makes_nothing() {
+    let t = t();
+    let (_, token) = signed_up(&t).await;
+    let url_name = new_slug();
+    let no_alnum = new_slug();
+    for (what, body, status, want) in [
+        ("no fields", json!({}), 400, json!({"error": "Both name and slug are required"})),
+        ("no slug", json!({"name": "No Slug"}), 400, json!({"error": "Both name and slug are required"})),
+        ("a name that is too long", json!({"name": "x".repeat(81), "slug": new_slug()}), 400, json!({"error": "The maximum length for name is 80 and for slug is 48"})),
+        ("a slug that is too long", json!({"name": "Long Slug", "slug": "s".repeat(49)}), 400, json!({"error": "The maximum length for name is 80 and for slug is 48"})),
+        ("a URL in the name", json!({"name": "see example.com", "slug": url_name}), 400, json!({"error": "Name cannot contain a URL"})),
+        ("a name with no letter or number", json!({"name": "!!!", "slug": no_alnum}), 400, json!({"name": ["Name must contain at least one letter or number"]})),
+        ("a reserved slug", json!({"name": "Reserved", "slug": "onboarding"}), 400, json!({"slug": ["Slug is not valid"]})),
+        ("a slug with a space", json!({"name": "Spaced", "slug": "a b"}), 400, json!({"slug": ["Enter a valid \"slug\" consisting of letters, numbers, underscores or hyphens."]})),
+    ] {
+        let r = post_as(&t, &token, "/api/workspaces/", &body).await;
+        assert_eq!(r.status(), status, "{what}");
+        assert_eq!(r.json::<Value>().await.unwrap(), want, "{what}");
+    }
+    assert_eq!(get(&t, &token, "/api/users/me/workspaces/").await, json!([]), "no refusal made a workspace");
+    for slug in [&url_name, &no_alnum] {
+        assert!(slug_is_free(&t, &token, slug).await, "a refused creation took {slug}");
+    }
+    // a reserved slug is not free, and stays so
+    assert!(!slug_is_free(&t, &token, "onboarding").await);
+
+    // control: without the fault, the same request is made
+    let r = post_as(&t, &token, "/api/workspaces/", &json!({"name": "see example", "slug": url_name})).await;
+    assert_eq!(r.status(), 201);
+    assert!(!slug_is_free(&t, &token, &url_name).await);
+}

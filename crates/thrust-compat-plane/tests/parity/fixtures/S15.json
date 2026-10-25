@@ -1,0 +1,305 @@
+{
+  "exchanges": [
+    {
+      "name": "no session",
+      "request": {
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/workspace-members/me/"
+      },
+      "response": {
+        "body": {
+          "detail": "Authentication credentials were not provided."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 401
+      }
+    },
+    {
+      "name": "the creator of a workspace",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/workspace-members/me/"
+      },
+      "response": {
+        "body": {
+          "company_role": "",
+          "created_at": "<ts>",
+          "created_by": "<uuid:1>",
+          "default_props": {
+            "display_filters": {
+              "calendar_date_range": "",
+              "group_by": null,
+              "layout": "list",
+              "order_by": "-created_at",
+              "show_empty_groups": true,
+              "sub_issue": true,
+              "type": null
+            },
+            "display_properties": {
+              "assignee": true,
+              "attachment_count": true,
+              "created_on": true,
+              "due_date": true,
+              "estimate": true,
+              "key": true,
+              "labels": true,
+              "link": true,
+              "priority": true,
+              "start_date": true,
+              "state": true,
+              "sub_issue_count": true,
+              "updated_on": true
+            },
+            "filters": {
+              "assignees": null,
+              "created_by": null,
+              "labels": null,
+              "priority": null,
+              "start_date": null,
+              "state": null,
+              "state_group": null,
+              "subscriber": null,
+              "target_date": null
+            }
+          },
+          "deleted_at": null,
+          "draft_issue_count": 0,
+          "explored_features": {},
+          "getting_started_checklist": {},
+          "id": "<uuid:2>",
+          "is_active": true,
+          "issue_props": {
+            "all_issues": true,
+            "assigned": true,
+            "created": true,
+            "subscribed": true
+          },
+          "member": "<uuid:1>",
+          "role": 20,
+          "tips": {},
+          "updated_at": "<ts>",
+          "updated_by": null,
+          "view_props": {
+            "display_filters": {
+              "calendar_date_range": "",
+              "group_by": null,
+              "layout": "list",
+              "order_by": "-created_at",
+              "show_empty_groups": true,
+              "sub_issue": true,
+              "type": null
+            },
+            "display_properties": {
+              "assignee": true,
+              "attachment_count": true,
+              "created_on": true,
+              "due_date": true,
+              "estimate": true,
+              "key": true,
+              "labels": true,
+              "link": true,
+              "priority": true,
+              "start_date": true,
+              "state": true,
+              "sub_issue_count": true,
+              "updated_on": true
+            },
+            "filters": {
+              "assignees": null,
+              "created_by": null,
+              "labels": null,
+              "priority": null,
+              "start_date": null,
+              "state": null,
+              "state_group": null,
+              "subscriber": null,
+              "target_date": null
+            }
+          },
+          "workspace": "<uuid:3>"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "the creator, with a company role",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-two/workspace-members/me/"
+      },
+      "response": {
+        "body": {
+          "company_role": "engineer",
+          "created_at": "<ts>",
+          "created_by": "<uuid:1>",
+          "default_props": {
+            "display_filters": {
+              "calendar_date_range": "",
+              "group_by": null,
+              "layout": "list",
+              "order_by": "-created_at",
+              "show_empty_groups": true,
+              "sub_issue": true,
+              "type": null
+            },
+            "display_properties": {
+              "assignee": true,
+              "attachment_count": true,
+              "created_on": true,
+              "due_date": true,
+              "estimate": true,
+              "key": true,
+              "labels": true,
+              "link": true,
+              "priority": true,
+              "start_date": true,
+              "state": true,
+              "sub_issue_count": true,
+              "updated_on": true
+            },
+            "filters": {
+              "assignees": null,
+              "created_by": null,
+              "labels": null,
+              "priority": null,
+              "start_date": null,
+              "state": null,
+              "state_group": null,
+              "subscriber": null,
+              "target_date": null
+            }
+          },
+          "deleted_at": null,
+          "draft_issue_count": 0,
+          "explored_features": {},
+          "getting_started_checklist": {},
+          "id": "<uuid:4>",
+          "is_active": true,
+          "issue_props": {
+            "all_issues": true,
+            "assigned": true,
+            "created": true,
+            "subscribed": true
+          },
+          "member": "<uuid:1>",
+          "role": 20,
+          "tips": {},
+          "updated_at": "<ts>",
+          "updated_by": null,
+          "view_props": {
+            "display_filters": {
+              "calendar_date_range": "",
+              "group_by": null,
+              "layout": "list",
+              "order_by": "-created_at",
+              "show_empty_groups": true,
+              "sub_issue": true,
+              "type": null
+            },
+            "display_properties": {
+              "assignee": true,
+              "attachment_count": true,
+              "created_on": true,
+              "due_date": true,
+              "estimate": true,
+              "key": true,
+              "labels": true,
+              "link": true,
+              "priority": true,
+              "start_date": true,
+              "state": true,
+              "sub_issue_count": true,
+              "updated_on": true
+            },
+            "filters": {
+              "assignees": null,
+              "created_by": null,
+              "labels": null,
+              "priority": null,
+              "start_date": null,
+              "state": null,
+              "state_group": null,
+              "subscriber": null,
+              "target_date": null
+            }
+          },
+          "workspace": "<uuid:5>"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "not a member",
+      "request": {
+        "as": "second@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/workspace-members/me/"
+      },
+      "response": {
+        "body": {
+          "company_role": "",
+          "created_by": null,
+          "default_props": null,
+          "deleted_at": null,
+          "explored_features": null,
+          "getting_started_checklist": null,
+          "is_active": false,
+          "issue_props": null,
+          "member": null,
+          "role": null,
+          "tips": null,
+          "updated_by": null,
+          "view_props": null,
+          "workspace": null
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "a workspace that does not exist",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/no-such-workspace/workspace-members/me/"
+      },
+      "response": {
+        "body": {
+          "company_role": "",
+          "created_by": null,
+          "default_props": null,
+          "deleted_at": null,
+          "explored_features": null,
+          "getting_started_checklist": null,
+          "is_active": false,
+          "issue_props": null,
+          "member": null,
+          "role": null,
+          "tips": null,
+          "updated_by": null,
+          "view_props": null,
+          "workspace": null
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    }
+  ],
+  "format_version": 1,
+  "recorded_from": "ba85d4d3d3",
+  "row": "S15"
+}

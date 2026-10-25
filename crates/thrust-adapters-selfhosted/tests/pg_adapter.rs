@@ -553,6 +553,199 @@ async fn migration_0008_is_idempotent_and_keeps_its_rows() {
     assert_eq!(env.db.profile(user).await.unwrap().unwrap().first_name, "Kept");
 }
 
+fn workspace_for(owner: UserId, tag: &str) -> NewWorkspace {
+    let now = Utc.timestamp_opt(1_800_000_200, 0).unwrap();
+    let id = WorkspaceId(new_id());
+    NewWorkspace {
+        workspace: Workspace {
+            id,
+            slug: WorkspaceSlug::new(format!("{tag}-{}", new_id().simple())),
+            name: format!("Workspace {tag}"),
+            owner_id: Some(owner),
+            organization_size: None,
+            timezone: "UTC".into(),
+            background_color: "#808080".into(),
+            created_at: now,
+            updated_at: now,
+        },
+        owner: WorkspaceMember {
+            id: new_id(),
+            workspace_id: id,
+            user_id: owner,
+            role: Role::Admin,
+            company_role: None,
+            is_active: true,
+            props: serde_json::json!({}),
+            created_at: now,
+            updated_at: now,
+        },
+    }
+}
+
+async fn user_without_login(env: &Env) -> UserId {
+    let user = UserId(new_id());
+    env.db.insert_user(&UserRecord { id: user, email: None, password_hash: None, is_active: true }).await.unwrap();
+    user
+}
+
+/// Issue #44, migration 0009: the workspace tables' columns are written out, so a column added later has to be argued for,
+/// and the constraints that keep a workspace and a membership well formed are exercised: a name, a role from the three, view
+/// settings that are an object, a unique membership id, an owner who is a user.
+#[tokio::test]
+async fn the_workspace_tables_have_the_columns_they_say_and_the_constraints_that_keep_them_well_formed() {
+    let env = env().await;
+    let raw = env.conn.raw().await.unwrap();
+    let columns = |table: &'static str| {
+        let raw = &raw;
+        async move {
+            let rows = raw
+                .query(
+                    "SELECT column_name, data_type FROM information_schema.columns \
+                     WHERE table_schema = 'public' AND table_name = $1 ORDER BY column_name",
+                    &[&table],
+                )
+                .await
+                .unwrap();
+            rows.iter().map(|r| (r.get::<_, String>(0), r.get::<_, String>(1))).collect::<Vec<_>>()
+        }
+    };
+    let ts = "timestamp with time zone";
+    let pairs = |v: Vec<(&str, &str)>| v.into_iter().map(|(n, t)| (n.to_string(), t.to_string())).collect::<Vec<_>>();
+    assert_eq!(
+        columns("workspaces").await,
+        pairs(vec![
+            ("background_color", "text"),
+            ("created_at", ts),
+            ("id", "uuid"),
+            ("name", "text"),
+            ("organization_size", "text"),
+            ("owner_id", "uuid"),
+            ("slug", "text"),
+            ("timezone", "text"),
+            ("updated_at", ts),
+        ])
+    );
+    assert_eq!(
+        columns("workspace_members").await,
+        pairs(vec![
+            ("company_role", "text"),
+            ("created_at", ts),
+            ("id", "uuid"),
+            ("is_active", "boolean"),
+            ("props", "jsonb"),
+            ("role", "text"),
+            ("updated_at", ts),
+            ("user_id", "uuid"),
+            ("workspace_id", "uuid"),
+        ])
+    );
+
+    let owner = user_without_login(&env).await;
+    let w = workspace_for(owner, "constraints");
+    env.db.insert_workspace(&w).await.unwrap();
+    let (ws, id) = (w.workspace.id.0, w.owner.id);
+    // a role outside the three, and view settings that are not an object, are refused by the database itself
+    for (set, why) in [("role = 'owner'", "role"), ("props = '[]'::jsonb", "props array"), ("props = '1'::jsonb", "props scalar")] {
+        let refused = raw.execute(&format!("UPDATE workspace_members SET {set} WHERE workspace_id = $1"), &[&ws]).await;
+        assert!(refused.is_err(), "{why}");
+    }
+    // control: a role from the three and an object are accepted
+    raw.execute("UPDATE workspace_members SET role = 'guest', props = '{\"k\": 1}'::jsonb WHERE workspace_id = $1", &[&ws]).await.unwrap();
+    assert_eq!(env.db.workspace_member(&WorkspaceScope::mint(w.workspace.id, owner, Role::Guest)).await.unwrap().unwrap().role, Role::Guest);
+    // a workspace has a name
+    assert!(raw.execute("UPDATE workspaces SET name = NULL WHERE id = $1", &[&ws]).await.is_err());
+    // a membership id is unique, and a taken one is a conflict that takes its workspace back with it
+    let mut clash = workspace_for(user_without_login(&env).await, "clash");
+    clash.owner.id = id;
+    let slug = clash.workspace.slug.as_str().to_owned();
+    assert!(matches!(env.db.insert_workspace(&clash).await, Err(DbError::Conflict(_))));
+    assert!(!env.db.workspace_slug_taken(&slug).await.unwrap(), "the workspace of a failed creation stayed");
+    // an owner who is no user is refused (a foreign key is a backend error, not a conflict)
+    let stranger = workspace_for(UserId(new_id()), "stranger");
+    assert!(matches!(env.db.insert_workspace(&stranger).await, Err(DbError::Backend(_))));
+    assert!(!env.db.workspace_slug_taken(stranger.workspace.slug.as_str()).await.unwrap());
+}
+
+/// A database created before migration 0009 has workspaces that are a slug and members that are a pair of ids. `migrate`
+/// gives them a name (the slug), no owner, an id of their own, the role `member`, active, an empty view-settings object and
+/// the default time zone and colour, and applying it a second time changes nothing. A pinned regression for the upgrade
+/// path of a database that has data; every other test here starts from an empty one.
+#[tokio::test]
+async fn migration_0009_upgrades_a_database_that_has_workspaces_and_members() {
+    let container = Postgres::default().start().await.expect("start postgres container");
+    let port = container.get_host_port_ipv4(5432).await.expect("mapped port");
+    let url = format!("postgres://postgres:postgres@127.0.0.1:{port}/postgres");
+    let conn = Arc::new(PoolConnector::from_url(&url, 4).unwrap());
+    let raw = conn.raw().await.unwrap();
+    for sql in [
+        thrust_adapters_postgres::MIGRATION_0001,
+        thrust_adapters_postgres::MIGRATION_0002,
+        thrust_adapters_postgres::MIGRATION_0003,
+        thrust_adapters_postgres::MIGRATION_0004,
+        thrust_adapters_postgres::MIGRATION_0005,
+        thrust_adapters_postgres::MIGRATION_0006,
+        thrust_adapters_postgres::MIGRATION_0007,
+        thrust_adapters_postgres::MIGRATION_0008,
+    ] {
+        raw.batch_execute(sql).await.unwrap();
+    }
+    let (ws, u1, u2) = (new_id(), new_id(), new_id());
+    raw.execute("INSERT INTO workspaces (id, slug) VALUES ($1, 'legacy-space')", &[&ws]).await.unwrap();
+    raw.execute("INSERT INTO workspace_members (workspace_id, user_id) VALUES ($1, $2), ($1, $3)", &[&ws, &u1, &u2]).await.unwrap();
+    thrust_adapters_postgres::migrate(&raw).await.unwrap();
+    let first = raw.query("SELECT user_id, id FROM workspace_members ORDER BY user_id", &[]).await.unwrap();
+    thrust_adapters_postgres::migrate(&raw).await.unwrap();
+    let again = raw.query("SELECT user_id, id FROM workspace_members ORDER BY user_id", &[]).await.unwrap();
+    let ids = |rows: &[tokio_postgres::Row]| rows.iter().map(|r| (r.get::<_, Uuid>(0), r.get::<_, Uuid>(1))).collect::<Vec<_>>();
+    assert_eq!(ids(&first), ids(&again), "a second run gave the members new ids");
+    assert_ne!(ids(&first)[0].1, ids(&first)[1].1, "two members share an id");
+
+    drop(raw);
+    let db = PgDatabase::new(conn);
+    let listed = db.workspaces_of(UserId(u1)).await.unwrap();
+    assert_eq!(listed.len(), 1);
+    let (w, role, total) = (&listed[0].workspace, listed[0].role, listed[0].total_members);
+    assert_eq!((w.id, w.slug.as_str(), w.name.as_str(), w.owner_id), (WorkspaceId(ws), "legacy-space", "legacy-space", None));
+    assert_eq!((w.timezone.as_str(), w.background_color.as_str(), w.organization_size.clone()), ("UTC", "#808080", None));
+    assert_eq!((role, total), (Role::Member, 2));
+    let m = db.workspace_member(&WorkspaceScope::mint(WorkspaceId(ws), UserId(u2), Role::Member)).await.unwrap().unwrap();
+    assert_eq!((m.is_active, m.company_role.clone(), m.props.clone()), (true, None, serde_json::json!({})));
+    assert!(db.workspace_access(&WorkspaceSlug::new("legacy-space"), UserId(u1)).await.unwrap().is_some());
+}
+
+/// Two creations racing for one slug cannot both win, and the loser leaves no member row behind: the unique index decides,
+/// not a check-then-insert. 16 users from as many tasks make a workspace with the same slug.
+#[tokio::test]
+async fn creations_racing_for_one_slug_make_exactly_one_workspace() {
+    let env = env().await;
+    let slug = WorkspaceSlug::new(format!("race-{}", new_id().simple()));
+    let mut users = Vec::new();
+    for _ in 0..16 {
+        users.push(user_without_login(&env).await);
+    }
+    let mut handles = Vec::new();
+    for owner in users.clone() {
+        let db = env.db.clone();
+        let mut w = workspace_for(owner, "race");
+        w.workspace.slug = slug.clone();
+        handles.push(tokio::spawn(async move { db.insert_workspace(&w).await }));
+    }
+    let mut won = 0;
+    for h in handles {
+        match h.await.unwrap() {
+            Ok(()) => won += 1,
+            Err(DbError::Conflict(_)) => {}
+            Err(e) => panic!("a loser was refused with {e:?}, not a conflict"),
+        }
+    }
+    assert_eq!(won, 1);
+    let mut have = 0;
+    for u in users {
+        have += env.db.workspaces_of(u).await.unwrap().len();
+    }
+    assert_eq!(have, 1, "a loser kept a membership");
+}
+
 /// `update_profile` is ONE statement: the onboarding page sends several requests at once, each changing different fields of
 /// one profile, and none may lose another's change. 32 patches, each setting its own preference, from as many tasks.
 #[tokio::test]

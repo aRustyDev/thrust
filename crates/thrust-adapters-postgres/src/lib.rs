@@ -31,6 +31,7 @@ pub const MIGRATION_0005: &str = include_str!("../migrations/0005_identity.sql")
 pub const MIGRATION_0006: &str = include_str!("../migrations/0006_search.sql");
 pub const MIGRATION_0007: &str = include_str!("../migrations/0007_api_key_hash_version.sql");
 pub const MIGRATION_0008: &str = include_str!("../migrations/0008_user_profiles.sql");
+pub const MIGRATION_0009: &str = include_str!("../migrations/0009_workspace_details.sql");
 
 pub async fn migrate(client: &Client) -> Result<(), tokio_postgres::Error> {
     client.batch_execute(MIGRATION_0001).await?;
@@ -40,7 +41,8 @@ pub async fn migrate(client: &Client) -> Result<(), tokio_postgres::Error> {
     client.batch_execute(MIGRATION_0005).await?;
     client.batch_execute(MIGRATION_0006).await?;
     client.batch_execute(MIGRATION_0007).await?;
-    client.batch_execute(MIGRATION_0008).await
+    client.batch_execute(MIGRATION_0008).await?;
+    client.batch_execute(MIGRATION_0009).await
 }
 
 pub trait ClientHandle: Send {
@@ -250,6 +252,50 @@ fn user_profile(r: &Row) -> UserProfile {
     }
 }
 
+/// A role as the `role` columns hold it. The CHECK constraints keep them to the three names, so anything else is a bug.
+fn role_of(r: &Row, column: &str) -> Result<Role, DbError> {
+    let s: String = r.get(column);
+    Role::parse(&s).ok_or_else(|| DbError::Backend(format!("{column} holds '{s}', which is no role")))
+}
+
+/// The columns of `workspaces` the port's `Workspace` is made of, as `workspace_of` reads them (aliased `w`).
+const WORKSPACE_COLS: &str = "w.id AS w_id, w.slug AS w_slug, w.name AS w_name, w.owner_id AS w_owner_id, \
+    w.organization_size AS w_organization_size, w.timezone AS w_timezone, w.background_color AS w_background_color, \
+    w.created_at AS w_created_at, w.updated_at AS w_updated_at";
+
+fn workspace_of(r: &Row) -> Workspace {
+    Workspace {
+        id: WorkspaceId(r.get("w_id")),
+        slug: WorkspaceSlug::new(r.get::<_, String>("w_slug")),
+        name: r.get("w_name"),
+        owner_id: r.get::<_, Option<Uuid>>("w_owner_id").map(UserId),
+        organization_size: r.get("w_organization_size"),
+        timezone: r.get("w_timezone"),
+        background_color: r.get("w_background_color"),
+        created_at: r.get("w_created_at"),
+        updated_at: r.get("w_updated_at"),
+    }
+}
+
+/// The columns of `workspace_members` the port's `WorkspaceMember` is made of (aliased `wm`).
+const MEMBER_COLS: &str = "wm.id AS m_id, wm.workspace_id AS m_workspace_id, wm.user_id AS m_user_id, wm.role AS m_role, \
+    wm.company_role AS m_company_role, wm.is_active AS m_is_active, wm.props AS m_props, wm.created_at AS m_created_at, \
+    wm.updated_at AS m_updated_at";
+
+fn member_of(r: &Row) -> Result<WorkspaceMember, DbError> {
+    Ok(WorkspaceMember {
+        id: r.get("m_id"),
+        workspace_id: WorkspaceId(r.get("m_workspace_id")),
+        user_id: UserId(r.get("m_user_id")),
+        role: role_of(r, "m_role")?,
+        company_role: r.get("m_company_role"),
+        is_active: r.get("m_is_active"),
+        props: r.get("m_props"),
+        created_at: r.get("m_created_at"),
+        updated_at: r.get("m_updated_at"),
+    })
+}
+
 fn activity(r: &Row) -> Activity {
     Activity {
         id: ActivityId(r.get("id")),
@@ -278,7 +324,7 @@ impl Database for PgDatabase {
         let row = Pg(c.client())
             .query_opt(
                 "SELECT w.id AS workspace_id, m.role AS role FROM workspaces w \
-                 JOIN workspace_members wm ON wm.workspace_id = w.id AND wm.user_id = $3 \
+                 JOIN workspace_members wm ON wm.workspace_id = w.id AND wm.user_id = $3 AND wm.is_active \
                  JOIN projects p ON p.workspace_id = w.id AND p.id = $2 \
                  LEFT JOIN project_members m \
                    ON m.project_id = p.id AND m.workspace_id = p.workspace_id AND m.user_id = $3 \
@@ -361,6 +407,192 @@ impl Database for PgDatabase {
             .await
             .map_err(db_err)?;
         Ok(row.as_ref().map(user_record))
+    }
+
+    async fn insert_workspace(&self, w: &NewWorkspace) -> Result<(), DbError> {
+        // The workspace and its first member go in together or not at all: `Tx` only exposes slice operations, so this goes
+        // through a connection of its own, as `seed` does. A taken slug is a unique violation, which `db_err` makes a `Conflict`.
+        let c = self.connector.checkout(true).await?;
+        let cl = Pg(c.client());
+        cl.batch_execute("BEGIN").await.map_err(db_err)?;
+        let res: Result<(), DbError> = async {
+            let ws = &w.workspace;
+            cl.execute(
+                "INSERT INTO workspaces (id, slug, name, owner_id, organization_size, timezone, background_color, created_at, updated_at) \
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+                &[
+                    &ws.id.0,
+                    &ws.slug.as_str(),
+                    &ws.name,
+                    &ws.owner_id.map(|u| u.0),
+                    &ws.organization_size,
+                    &ws.timezone,
+                    &ws.background_color,
+                    &ws.created_at,
+                    &ws.updated_at,
+                ],
+            )
+            .await
+            .map_err(db_err)?;
+            let m = &w.owner;
+            cl.execute(
+                "INSERT INTO workspace_members (id, workspace_id, user_id, role, company_role, is_active, props, created_at, updated_at) \
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+                &[
+                    &m.id,
+                    &m.workspace_id.0,
+                    &m.user_id.0,
+                    &m.role.as_str(),
+                    &m.company_role,
+                    &m.is_active,
+                    &m.props,
+                    &m.created_at,
+                    &m.updated_at,
+                ],
+            )
+            .await
+            .map_err(db_err)?;
+            Ok(())
+        }
+        .await;
+        match res {
+            Ok(()) => cl.batch_execute("COMMIT").await.map_err(db_err),
+            Err(e) => {
+                let _ = cl.batch_execute("ROLLBACK").await;
+                Err(e)
+            }
+        }
+    }
+
+    async fn workspace_slug_taken(&self, slug: &str) -> Result<bool, DbError> {
+        let c = self.conn().await?;
+        let row = Pg(c.client())
+            .query_one("SELECT EXISTS (SELECT 1 FROM workspaces WHERE slug = $1) AS taken", &[&slug])
+            .await
+            .map_err(db_err)?;
+        Ok(row.get("taken"))
+    }
+
+    async fn any_workspace(&self) -> Result<bool, DbError> {
+        let c = self.conn().await?;
+        let row = Pg(c.client()).query_one("SELECT EXISTS (SELECT 1 FROM workspaces) AS any", &[]).await.map_err(db_err)?;
+        Ok(row.get("any"))
+    }
+
+    async fn workspaces_of(&self, user: UserId) -> Result<Vec<WorkspaceListing>, DbError> {
+        let c = self.conn().await?;
+        let rows = Pg(c.client())
+            .query(
+                &format!(
+                    "SELECT {WORKSPACE_COLS}, wm.role AS m_role, \
+                       (SELECT count(*) FROM workspace_members n WHERE n.workspace_id = w.id AND n.is_active) AS total_members \
+                     FROM workspaces w JOIN workspace_members wm ON wm.workspace_id = w.id AND wm.user_id = $1 AND wm.is_active \
+                     ORDER BY w.created_at DESC, w.id DESC"
+                ),
+                &[&user.0],
+            )
+            .await
+            .map_err(db_err)?;
+        rows.iter()
+            .map(|r| {
+                Ok(WorkspaceListing {
+                    workspace: workspace_of(r),
+                    role: role_of(r, "m_role")?,
+                    total_members: u64::try_from(r.get::<_, i64>("total_members")).unwrap_or(0),
+                })
+            })
+            .collect()
+    }
+
+    async fn workspace_access(&self, slug: &WorkspaceSlug, user: UserId) -> Result<Option<WorkspaceAccess>, DbError> {
+        let c = self.conn().await?;
+        let row = Pg(c.client())
+            .query_opt(
+                "SELECT w.id AS workspace_id, wm.role AS role FROM workspaces w \
+                 JOIN workspace_members wm ON wm.workspace_id = w.id AND wm.user_id = $2 AND wm.is_active \
+                 WHERE w.slug = $1",
+                &[&slug.as_str(), &user.0],
+            )
+            .await
+            .map_err(db_err)?;
+        row.map(|r| Ok(WorkspaceAccess { workspace_id: WorkspaceId(r.get("workspace_id")), role: role_of(&r, "role")? })).transpose()
+    }
+
+    async fn set_workspace_member_active(
+        &self,
+        _sys: &SystemScope,
+        workspace: WorkspaceId,
+        user: UserId,
+        active: bool,
+    ) -> Result<bool, DbError> {
+        let c = self.conn().await?;
+        let n = Pg(c.client())
+            .execute(
+                "UPDATE workspace_members SET is_active = $3 WHERE workspace_id = $1 AND user_id = $2",
+                &[&workspace.0, &user.0, &active],
+            )
+            .await
+            .map_err(db_err)?;
+        Ok(n == 1)
+    }
+
+    async fn workspace_member(&self, scope: &WorkspaceScope) -> Result<Option<WorkspaceMember>, DbError> {
+        let c = self.conn().await?;
+        let row = Pg(c.client())
+            .query_opt(
+                &format!("SELECT {MEMBER_COLS} FROM workspace_members wm WHERE wm.workspace_id = $1 AND wm.user_id = $2"),
+                &[&scope.workspace_id().0, &scope.user_id().0],
+            )
+            .await
+            .map_err(db_err)?;
+        row.as_ref().map(member_of).transpose()
+    }
+
+    async fn workspace_members(&self, scope: &WorkspaceScope) -> Result<Vec<MemberWithUser>, DbError> {
+        let c = self.conn().await?;
+        let rows = Pg(c.client())
+            .query(
+                &format!(
+                    "SELECT {MEMBER_COLS}, u.email AS u_email, COALESCE(p.first_name, '') AS u_first_name, \
+                       COALESCE(p.last_name, '') AS u_last_name, COALESCE(p.display_name, '') AS u_display_name, \
+                       COALESCE(p.avatar, '') AS u_avatar \
+                     FROM workspace_members wm LEFT JOIN users u ON u.id = wm.user_id \
+                       LEFT JOIN user_profiles p ON p.user_id = wm.user_id \
+                     WHERE wm.workspace_id = $1 ORDER BY wm.created_at DESC, wm.id DESC"
+                ),
+                &[&scope.workspace_id().0],
+            )
+            .await
+            .map_err(db_err)?;
+        rows.iter()
+            .map(|r| {
+                let member = member_of(r)?;
+                let user = MemberUser {
+                    id: member.user_id,
+                    email: r.get("u_email"),
+                    first_name: r.get("u_first_name"),
+                    last_name: r.get("u_last_name"),
+                    display_name: r.get("u_display_name"),
+                    avatar: r.get("u_avatar"),
+                };
+                Ok(MemberWithUser { member, user })
+            })
+            .collect()
+    }
+
+    async fn project_roles(&self, scope: &WorkspaceScope) -> Result<Vec<(ProjectId, Role)>, DbError> {
+        let c = self.conn().await?;
+        let rows = Pg(c.client())
+            .query(
+                // the project must really be in the workspace the member row names: a row that says otherwise is not a role
+                "SELECT m.project_id AS project_id, m.role AS role FROM project_members m \
+                 JOIN projects p ON p.id = m.project_id AND p.workspace_id = m.workspace_id \
+                 WHERE m.workspace_id = $1 AND m.user_id = $2 ORDER BY m.project_id",
+                &[&scope.workspace_id().0, &scope.user_id().0],
+            )
+            .await
+            .map_err(db_err)?;
+        rows.iter().map(|r| Ok((ProjectId(r.get("project_id")), role_of(r, "role")?))).collect()
     }
 
     async fn user_by_id(&self, id: UserId) -> Result<Option<UserRecord>, DbError> {
@@ -892,7 +1124,9 @@ impl Database for PgDatabase {
             }
             for w in &f.workspaces {
                 cl.execute(
-                    "INSERT INTO workspaces (id, slug) VALUES ($1, $2) ON CONFLICT (id) DO UPDATE SET slug = EXCLUDED.slug",
+                    // a seeded workspace is named after its slug and has no owner
+                    "INSERT INTO workspaces (id, slug, name) VALUES ($1, $2, $2) \
+                     ON CONFLICT (id) DO UPDATE SET slug = EXCLUDED.slug",
                     &[&w.id.0, &w.slug.as_str()],
                 )
                 .await

@@ -1,0 +1,38 @@
+{
+  "exchanges": [
+    {
+      "name": "no session",
+      "request": {
+        "method": "GET",
+        "path": "/api/users/me/workspaces/"
+      },
+      "response": {
+        "body": {
+          "detail": "Authentication credentials were not provided."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 401
+      }
+    },
+    {
+      "name": "a user with no workspace",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/users/me/workspaces/"
+      },
+      "response": {
+        "body": [],
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    }
+  ],
+  "format_version": 1,
+  "recorded_from": "ba85d4d3d3",
+  "row": "S09"
+}

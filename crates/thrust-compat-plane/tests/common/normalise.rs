@@ -9,6 +9,7 @@
 use std::collections::BTreeMap;
 
 use serde_json::{json, Map, Value};
+use thrust_contracts::Uuid;
 
 pub struct Rules {
     uuid_token: String,
@@ -99,6 +100,37 @@ impl Ids {
             }
         };
         self.token.replace("{n}", &n.to_string())
+    }
+
+    /// The reverse of [`Ids::scrub`] for a request: each `<uuid:N>` is replaced by the id that is N-th in order of first
+    /// appearance so far in this fixture, which is the id THIS implementation made for it. A recorded request that carries an
+    /// id from an earlier response (the workspace a profile names as its last one) is replayed with the matching id of the
+    /// replay, because ids differ between the pin and Thrust and only their identity is the contract.
+    pub fn resolve(&self, s: &str) -> String {
+        let (pre, post) = self.token.split_once("{n}").expect("the id token holds {n}");
+        let (mut out, mut rest) = (String::new(), s);
+        while let Some(i) = rest.find(pre) {
+            let after = &rest[i + pre.len()..];
+            let digits: String = after.chars().take_while(char::is_ascii_digit).collect();
+            if !digits.is_empty() && after[digits.len()..].starts_with(post) {
+                let n: usize = digits.parse().expect("digits");
+                // An id that no earlier exchange produced is not a reference but a constant the recorder chose (the pin
+                // ignores a `user` and an `id` in a profile patch, say): any id will do, so a fixed fresh one stands in
+                // for it, the same each time, and the normaliser then numbers it where the recording did.
+                let id = match n.checked_sub(1).and_then(|k| self.seen.get(k)) {
+                    Some(seen) => seen.clone(),
+                    None => Uuid::from_u128(0xF0F0_0000_0000_0000_0000_0000_0000_0000 + n as u128).hyphenated().to_string(),
+                };
+                out.push_str(&rest[..i]);
+                out.push_str(&id);
+                rest = &after[digits.len() + post.len()..];
+            } else {
+                out.push_str(&rest[..i + pre.len()]);
+                rest = after;
+            }
+        }
+        out.push_str(rest);
+        out
     }
 
     pub fn scrub(&mut self, s: &str) -> String {

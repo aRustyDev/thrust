@@ -12,12 +12,12 @@ use thrust_ports::ProfilePatch;
 /// `{field: [message]}`, the body of a DRF 400.
 pub(crate) type FieldErrors = Map<String, Value>;
 
-fn fail(errors: &mut FieldErrors, field: &str, message: impl Into<String>) {
+pub(crate) fn fail(errors: &mut FieldErrors, field: &str, message: impl Into<String>) {
     errors.insert(field.to_string(), json!([message.into()]));
 }
 
 /// Python's `str()` of a JSON value, which DRF puts into "is not a valid choice" and "is not a valid boolean".
-fn py_str(v: &Value) -> String {
+pub(crate) fn py_str(v: &Value) -> String {
     match v {
         Value::String(s) => s.clone(),
         Value::Bool(true) => "True".into(),
@@ -29,7 +29,7 @@ fn py_str(v: &Value) -> String {
 
 /// DRF `CharField` (and `TextField`): trims, refuses blank and null unless the column allows them, accepts a number as its
 /// text, refuses a bool, a list and an object, and counts the length in characters after trimming.
-fn char_field(v: &Value, max: Option<usize>, allow_blank: bool, allow_null: bool) -> Result<Option<String>, String> {
+pub(crate) fn char_field(v: &Value, max: Option<usize>, allow_blank: bool, allow_null: bool) -> Result<Option<String>, String> {
     let text = match v {
         Value::Null if allow_null => return Ok(None),
         Value::Null => return Err("This field may not be null.".into()),

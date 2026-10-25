@@ -17,7 +17,12 @@ mod auth;
 pub use auth::*;
 mod profile;
 pub use profile::*;
+mod reserved_slugs;
+#[cfg(test)]
+mod reserved_slugs_tests;
 mod timezones;
+mod workspace;
+pub use workspace::*;
 #[cfg(test)]
 mod timezones_tests;
 use thrust_contracts::chrono::TimeDelta;
@@ -210,7 +215,7 @@ impl Permission {
 
 /// The proof types are declared in `thrust-ports`, so that the ports can take them (issue #35).
 /// [`authorize`] is the only place a [`Scope`] is minted.
-pub use thrust_ports::{Scope, SystemScope};
+pub use thrust_ports::{Scope, SystemScope, WorkspaceScope};
 
 /// Resolves the route's workspace slug, the caller's membership of that workspace and of the project
 /// in one query (ADR-0051 round 29), and mints the [`Scope`]. 404 for anything the caller may not
@@ -270,6 +275,20 @@ pub async fn authorize(
             Ok(Scope::mint(workspace_id, project, who.user_id))
         }
         Membership::Member { .. } => Err(CoreError::Forbidden),
+    }
+}
+
+/// Resolves the route's workspace slug and the caller's ACTIVE membership of it, and mints the [`WorkspaceScope`] (issue
+/// #44). `NotFound` for a slug that names no workspace and for a workspace the caller is not (or no longer) a member of: the
+/// two look the same on purpose, so a caller cannot probe for workspaces. The compat layer maps that to the status each of
+/// Plane's routes gives such a caller.
+///
+/// This is the only place a [`WorkspaceScope`] is minted; `scripts/check-deps.sh` rejects a call to
+/// `WorkspaceScope::mint` anywhere else.
+pub async fn authorize_workspace(app: &App, who: &Principal, slug: &WorkspaceSlug) -> Result<WorkspaceScope, CoreError> {
+    match app.ports.db.workspace_access(slug, who.user_id).await? {
+        Some(a) => Ok(WorkspaceScope::mint(a.workspace_id, who.user_id, a.role)),
+        None => Err(CoreError::NotFound),
     }
 }
 

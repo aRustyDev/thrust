@@ -114,6 +114,10 @@ pub enum PlaneError {
     BadRequest(serde_json::Value),
     /// DRF's field errors, `{field: [message]}`, as a 400.
     Fields(serde_json::Map<String, serde_json::Value>),
+    /// A 403 with the body the route's own permission class gives (they differ per route on the pin).
+    Forbidden(serde_json::Value),
+    /// A 409 with a body the caller built (workspace creation's lost race for a slug).
+    Conflict(serde_json::Value),
     /// Anything whose Plane shape has not been recorded yet.
     Other(CoreError),
 }
@@ -144,6 +148,8 @@ impl IntoResponse for PlaneError {
                 .into_response(),
             PlaneError::BadRequest(body) => (StatusCode::BAD_REQUEST, Json(body)).into_response(),
             PlaneError::Fields(errors) => (StatusCode::BAD_REQUEST, Json(serde_json::Value::Object(errors))).into_response(),
+            PlaneError::Forbidden(body) => (StatusCode::FORBIDDEN, Json(body)).into_response(),
+            PlaneError::Conflict(body) => (StatusCode::CONFLICT, Json(body)).into_response(),
             PlaneError::Other(e) => thrust_api::ApiError(e).into_response(),
         }
     }

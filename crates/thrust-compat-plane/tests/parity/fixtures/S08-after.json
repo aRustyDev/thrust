@@ -1,0 +1,59 @@
+{
+  "exchanges": [
+    {
+      "name": "a last workspace",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/users/me/settings/"
+      },
+      "response": {
+        "body": {
+          "email": "journey@example.test",
+          "id": "<uuid:1>",
+          "workspace": {
+            "fallback_workspace_id": "<uuid:2>",
+            "fallback_workspace_slug": "journey-two",
+            "invites": 0,
+            "last_workspace_id": "<uuid:2>",
+            "last_workspace_logo": "",
+            "last_workspace_name": "Second Workspace",
+            "last_workspace_slug": "journey-two"
+          }
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "another user, with no workspace",
+      "request": {
+        "as": "second@example.test",
+        "method": "GET",
+        "path": "/api/users/me/settings/"
+      },
+      "response": {
+        "body": {
+          "email": "second@example.test",
+          "id": "<uuid:3>",
+          "workspace": {
+            "fallback_workspace_id": null,
+            "fallback_workspace_slug": null,
+            "invites": 0,
+            "last_workspace_id": null,
+            "last_workspace_slug": null
+          }
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    }
+  ],
+  "format_version": 1,
+  "recorded_from": "ba85d4d3d3",
+  "row": "S08-after"
+}
