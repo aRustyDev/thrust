@@ -4,7 +4,7 @@
   "uuid_token": "<uuid:{n}>",
   "datetime": {
     "key_suffixes": ["_at", "_on"],
-    "key_exact": ["last_used", "last_active", "date_joined", "last_login_time", "expired_at"],
+    "key_exact": ["last_used", "last_active", "date_joined", "last_login", "last_login_time", "expired_at"],
     "token": "<ts>"
   },
   "date": {
@@ -22,6 +22,13 @@
     "config.space_base_url": "<base_url>",
     "config.app_base_url": "<base_url>",
     "config.instance_changelog_url": "<url>"
+  },
+  "opaque_keys": {
+    "_comment": "Keys that are opaque wherever they appear, at any depth: values the pin makes at random or from the connection (a rotated token, a random default colour, the address and user agent of the last login). A correct implementation sends some string; null stays null.",
+    "token": "<opaque>",
+    "background_color": "<opaque>",
+    "last_login_ip": "<ip>",
+    "last_login_uagent": "<ua>"
   },
   "headers_keep": ["content-type", "location", "www-authenticate", "retry-after"],
   "header_origin_rewrite": {

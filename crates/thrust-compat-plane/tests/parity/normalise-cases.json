@@ -224,6 +224,47 @@
           "response": {"status": 302, "headers": {"location": "/onboarding", "www-authenticate": "http://not-a-location"}, "body": null}
         }
       ]
+    },
+    {
+      "name": "opaque keys are replaced wherever they appear, null stays null, and an `as` on a request is kept as written",
+      "input": [
+        {
+          "name": "opaque keys",
+          "request": {"method": "PATCH", "path": "/api/users/me/", "as": "Journey@example.test", "body": {"token": "client-sent", "first_name": "A"}},
+          "response": {
+            "status": 200,
+            "headers": {},
+            "body": {
+              "token": "0123abcd",
+              "background_color": "#a1b2c3",
+              "last_login_ip": "172.18.0.1",
+              "last_login_uagent": "Python-urllib/3.12",
+              "nested": {"background_color": "#ffffff", "token": null, "last_login_ip": null},
+              "list": [{"token": "x", "other": "kept"}],
+              "tokens": "kept: only the exact key counts"
+            }
+          }
+        }
+      ],
+      "expected": [
+        {
+          "name": "opaque keys",
+          "request": {"method": "PATCH", "path": "/api/users/me/", "as": "Journey@example.test", "body": {"first_name": "A", "token": "<opaque>"}},
+          "response": {
+            "status": 200,
+            "headers": {},
+            "body": {
+              "background_color": "<opaque>",
+              "last_login_ip": "<ip>",
+              "last_login_uagent": "<ua>",
+              "list": [{"other": "kept", "token": "<opaque>"}],
+              "nested": {"background_color": "<opaque>", "last_login_ip": null, "token": null},
+              "token": "<opaque>",
+              "tokens": "kept: only the exact key counts"
+            }
+          }
+        }
+      ]
     }
   ]
 }

@@ -1,0 +1,762 @@
+{
+  "exchanges": [
+    {
+      "name": "no session",
+      "request": {
+        "body": {
+          "first_name": "Nobody"
+        },
+        "method": "PATCH",
+        "path": "/api/users/me/"
+      },
+      "response": {
+        "body": {
+          "detail": "Authentication credentials were not provided."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 401
+      }
+    },
+    {
+      "name": "the names the onboarding page sends",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "first_name": "Journey",
+          "last_name": "Tester"
+        },
+        "method": "PATCH",
+        "path": "/api/users/me/"
+      },
+      "response": {
+        "body": {
+          "avatar": "",
+          "avatar_asset": null,
+          "bot_type": null,
+          "cover_image": null,
+          "cover_image_asset": null,
+          "created_at": "<ts>",
+          "created_location": "",
+          "date_joined": "<ts>",
+          "display_name": "journey",
+          "email": "journey@example.test",
+          "first_name": "Journey",
+          "id": "<uuid:1>",
+          "is_active": true,
+          "is_bot": false,
+          "is_email_valid": false,
+          "is_email_verified": false,
+          "is_managed": false,
+          "is_password_autoset": false,
+          "is_password_expired": false,
+          "is_password_reset_required": false,
+          "is_staff": false,
+          "is_superuser": false,
+          "last_active": "<ts>",
+          "last_location": "",
+          "last_login": "<ts>",
+          "last_login_ip": "<ip>",
+          "last_login_medium": "email",
+          "last_login_time": "<ts>",
+          "last_login_uagent": "<ua>",
+          "last_logout_ip": "",
+          "last_logout_time": null,
+          "last_name": "Tester",
+          "masked_at": null,
+          "mobile_number": null,
+          "token": "<opaque>",
+          "token_updated_at": "<ts>",
+          "updated_at": "<ts>",
+          "user_timezone": "UTC",
+          "username": "<uuid:2>"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "a first name with space around it",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "first_name": "  Journey  "
+        },
+        "method": "PATCH",
+        "path": "/api/users/me/"
+      },
+      "response": {
+        "body": {
+          "avatar": "",
+          "avatar_asset": null,
+          "bot_type": null,
+          "cover_image": null,
+          "cover_image_asset": null,
+          "created_at": "<ts>",
+          "created_location": "",
+          "date_joined": "<ts>",
+          "display_name": "journey",
+          "email": "journey@example.test",
+          "first_name": "Journey",
+          "id": "<uuid:1>",
+          "is_active": true,
+          "is_bot": false,
+          "is_email_valid": false,
+          "is_email_verified": false,
+          "is_managed": false,
+          "is_password_autoset": false,
+          "is_password_expired": false,
+          "is_password_reset_required": false,
+          "is_staff": false,
+          "is_superuser": false,
+          "last_active": "<ts>",
+          "last_location": "",
+          "last_login": "<ts>",
+          "last_login_ip": "<ip>",
+          "last_login_medium": "email",
+          "last_login_time": "<ts>",
+          "last_login_uagent": "<ua>",
+          "last_logout_ip": "",
+          "last_logout_time": null,
+          "last_name": "Tester",
+          "masked_at": null,
+          "mobile_number": null,
+          "token": "<opaque>",
+          "token_updated_at": "<ts>",
+          "updated_at": "<ts>",
+          "user_timezone": "UTC",
+          "username": "<uuid:2>"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "a first name that is not a string",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "first_name": [
+            "a"
+          ]
+        },
+        "method": "PATCH",
+        "path": "/api/users/me/"
+      },
+      "response": {
+        "body": {
+          "first_name": [
+            "Not a valid string."
+          ]
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "a first name that is null",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "first_name": null
+        },
+        "method": "PATCH",
+        "path": "/api/users/me/"
+      },
+      "response": {
+        "body": {
+          "first_name": [
+            "This field may not be null."
+          ]
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "a first name that is too long",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "first_name": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+        },
+        "method": "PATCH",
+        "path": "/api/users/me/"
+      },
+      "response": {
+        "body": {
+          "first_name": [
+            "Ensure this field has no more than 255 characters."
+          ]
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "a URL in the first name",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "first_name": "see example.com"
+        },
+        "method": "PATCH",
+        "path": "/api/users/me/"
+      },
+      "response": {
+        "body": {
+          "first_name": [
+            "First name cannot contain a URL."
+          ]
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "a URL in the last name",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "last_name": "http://example.test/x"
+        },
+        "method": "PATCH",
+        "path": "/api/users/me/"
+      },
+      "response": {
+        "body": {
+          "last_name": [
+            "Last name cannot contain a URL."
+          ]
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "a blank display name",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "display_name": ""
+        },
+        "method": "PATCH",
+        "path": "/api/users/me/"
+      },
+      "response": {
+        "body": {
+          "display_name": [
+            "This field may not be blank."
+          ]
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "a time zone that does not exist",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "user_timezone": "Mars/Olympus"
+        },
+        "method": "PATCH",
+        "path": "/api/users/me/"
+      },
+      "response": {
+        "body": {
+          "user_timezone": [
+            "\"Mars/Olympus\" is not a valid choice."
+          ]
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "a time zone",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "user_timezone": "Asia/Kolkata"
+        },
+        "method": "PATCH",
+        "path": "/api/users/me/"
+      },
+      "response": {
+        "body": {
+          "avatar": "",
+          "avatar_asset": null,
+          "bot_type": null,
+          "cover_image": null,
+          "cover_image_asset": null,
+          "created_at": "<ts>",
+          "created_location": "",
+          "date_joined": "<ts>",
+          "display_name": "journey",
+          "email": "journey@example.test",
+          "first_name": "Journey",
+          "id": "<uuid:1>",
+          "is_active": true,
+          "is_bot": false,
+          "is_email_valid": false,
+          "is_email_verified": false,
+          "is_managed": false,
+          "is_password_autoset": false,
+          "is_password_expired": false,
+          "is_password_reset_required": false,
+          "is_staff": false,
+          "is_superuser": false,
+          "last_active": "<ts>",
+          "last_location": "",
+          "last_login": "<ts>",
+          "last_login_ip": "<ip>",
+          "last_login_medium": "email",
+          "last_login_time": "<ts>",
+          "last_login_uagent": "<ua>",
+          "last_logout_ip": "",
+          "last_logout_time": null,
+          "last_name": "Tester",
+          "masked_at": null,
+          "mobile_number": null,
+          "token": "<opaque>",
+          "token_updated_at": "<ts>",
+          "updated_at": "<ts>",
+          "user_timezone": "Asia/Kolkata",
+          "username": "<uuid:2>"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "fields that are read only are ignored",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "avatar_url": "https://example.test/a.png",
+          "email": "changed@example.test",
+          "is_bot": true,
+          "username": "changed"
+        },
+        "method": "PATCH",
+        "path": "/api/users/me/"
+      },
+      "response": {
+        "body": {
+          "avatar": "",
+          "avatar_asset": null,
+          "bot_type": null,
+          "cover_image": null,
+          "cover_image_asset": null,
+          "created_at": "<ts>",
+          "created_location": "",
+          "date_joined": "<ts>",
+          "display_name": "journey",
+          "email": "journey@example.test",
+          "first_name": "Journey",
+          "id": "<uuid:1>",
+          "is_active": true,
+          "is_bot": false,
+          "is_email_valid": false,
+          "is_email_verified": false,
+          "is_managed": false,
+          "is_password_autoset": false,
+          "is_password_expired": false,
+          "is_password_reset_required": false,
+          "is_staff": false,
+          "is_superuser": false,
+          "last_active": "<ts>",
+          "last_location": "",
+          "last_login": "<ts>",
+          "last_login_ip": "<ip>",
+          "last_login_medium": "email",
+          "last_login_time": "<ts>",
+          "last_login_uagent": "<ua>",
+          "last_logout_ip": "",
+          "last_logout_time": null,
+          "last_name": "Tester",
+          "masked_at": null,
+          "mobile_number": null,
+          "token": "<opaque>",
+          "token_updated_at": "<ts>",
+          "updated_at": "<ts>",
+          "user_timezone": "Asia/Kolkata",
+          "username": "<uuid:2>"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "an empty body",
+      "request": {
+        "as": "journey@example.test",
+        "body": {},
+        "method": "PATCH",
+        "path": "/api/users/me/"
+      },
+      "response": {
+        "body": {
+          "avatar": "",
+          "avatar_asset": null,
+          "bot_type": null,
+          "cover_image": null,
+          "cover_image_asset": null,
+          "created_at": "<ts>",
+          "created_location": "",
+          "date_joined": "<ts>",
+          "display_name": "journey",
+          "email": "journey@example.test",
+          "first_name": "Journey",
+          "id": "<uuid:1>",
+          "is_active": true,
+          "is_bot": false,
+          "is_email_valid": false,
+          "is_email_verified": false,
+          "is_managed": false,
+          "is_password_autoset": false,
+          "is_password_expired": false,
+          "is_password_reset_required": false,
+          "is_staff": false,
+          "is_superuser": false,
+          "last_active": "<ts>",
+          "last_location": "",
+          "last_login": "<ts>",
+          "last_login_ip": "<ip>",
+          "last_login_medium": "email",
+          "last_login_time": "<ts>",
+          "last_login_uagent": "<ua>",
+          "last_logout_ip": "",
+          "last_logout_time": null,
+          "last_name": "Tester",
+          "masked_at": null,
+          "mobile_number": null,
+          "token": "<opaque>",
+          "token_updated_at": "<ts>",
+          "updated_at": "<ts>",
+          "user_timezone": "Asia/Kolkata",
+          "username": "<uuid:2>"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "a cover image that is not a URL",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "cover_image": "nope"
+        },
+        "method": "PATCH",
+        "path": "/api/users/me/"
+      },
+      "response": {
+        "body": {
+          "cover_image": [
+            "Enter a valid URL."
+          ]
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "a cover image",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "cover_image": "https://example.test/cover.png"
+        },
+        "method": "PATCH",
+        "path": "/api/users/me/"
+      },
+      "response": {
+        "body": {
+          "avatar": "",
+          "avatar_asset": null,
+          "bot_type": null,
+          "cover_image": "https://example.test/cover.png",
+          "cover_image_asset": null,
+          "created_at": "<ts>",
+          "created_location": "",
+          "date_joined": "<ts>",
+          "display_name": "journey",
+          "email": "journey@example.test",
+          "first_name": "Journey",
+          "id": "<uuid:1>",
+          "is_active": true,
+          "is_bot": false,
+          "is_email_valid": false,
+          "is_email_verified": false,
+          "is_managed": false,
+          "is_password_autoset": false,
+          "is_password_expired": false,
+          "is_password_reset_required": false,
+          "is_staff": false,
+          "is_superuser": false,
+          "last_active": "<ts>",
+          "last_location": "",
+          "last_login": "<ts>",
+          "last_login_ip": "<ip>",
+          "last_login_medium": "email",
+          "last_login_time": "<ts>",
+          "last_login_uagent": "<ua>",
+          "last_logout_ip": "",
+          "last_logout_time": null,
+          "last_name": "Tester",
+          "masked_at": null,
+          "mobile_number": null,
+          "token": "<opaque>",
+          "token_updated_at": "<ts>",
+          "updated_at": "<ts>",
+          "user_timezone": "Asia/Kolkata",
+          "username": "<uuid:2>"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "a cover image cleared",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "cover_image": null
+        },
+        "method": "PATCH",
+        "path": "/api/users/me/"
+      },
+      "response": {
+        "body": {
+          "avatar": "",
+          "avatar_asset": null,
+          "bot_type": null,
+          "cover_image": null,
+          "cover_image_asset": null,
+          "created_at": "<ts>",
+          "created_location": "",
+          "date_joined": "<ts>",
+          "display_name": "journey",
+          "email": "journey@example.test",
+          "first_name": "Journey",
+          "id": "<uuid:1>",
+          "is_active": true,
+          "is_bot": false,
+          "is_email_valid": false,
+          "is_email_verified": false,
+          "is_managed": false,
+          "is_password_autoset": false,
+          "is_password_expired": false,
+          "is_password_reset_required": false,
+          "is_staff": false,
+          "is_superuser": false,
+          "last_active": "<ts>",
+          "last_location": "",
+          "last_login": "<ts>",
+          "last_login_ip": "<ip>",
+          "last_login_medium": "email",
+          "last_login_time": "<ts>",
+          "last_login_uagent": "<ua>",
+          "last_logout_ip": "",
+          "last_logout_time": null,
+          "last_name": "Tester",
+          "masked_at": null,
+          "mobile_number": null,
+          "token": "<opaque>",
+          "token_updated_at": "<ts>",
+          "updated_at": "<ts>",
+          "user_timezone": "Asia/Kolkata",
+          "username": "<uuid:2>"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "a display name",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "display_name": "Journey T."
+        },
+        "method": "PATCH",
+        "path": "/api/users/me/"
+      },
+      "response": {
+        "body": {
+          "avatar": "",
+          "avatar_asset": null,
+          "bot_type": null,
+          "cover_image": null,
+          "cover_image_asset": null,
+          "created_at": "<ts>",
+          "created_location": "",
+          "date_joined": "<ts>",
+          "display_name": "Journey T.",
+          "email": "journey@example.test",
+          "first_name": "Journey",
+          "id": "<uuid:1>",
+          "is_active": true,
+          "is_bot": false,
+          "is_email_valid": false,
+          "is_email_verified": false,
+          "is_managed": false,
+          "is_password_autoset": false,
+          "is_password_expired": false,
+          "is_password_reset_required": false,
+          "is_staff": false,
+          "is_superuser": false,
+          "last_active": "<ts>",
+          "last_location": "",
+          "last_login": "<ts>",
+          "last_login_ip": "<ip>",
+          "last_login_medium": "email",
+          "last_login_time": "<ts>",
+          "last_login_uagent": "<ua>",
+          "last_logout_ip": "",
+          "last_logout_time": null,
+          "last_name": "Tester",
+          "masked_at": null,
+          "mobile_number": null,
+          "token": "<opaque>",
+          "token_updated_at": "<ts>",
+          "updated_at": "<ts>",
+          "user_timezone": "Asia/Kolkata",
+          "username": "<uuid:2>"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "back to UTC",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "user_timezone": "UTC"
+        },
+        "method": "PATCH",
+        "path": "/api/users/me/"
+      },
+      "response": {
+        "body": {
+          "avatar": "",
+          "avatar_asset": null,
+          "bot_type": null,
+          "cover_image": null,
+          "cover_image_asset": null,
+          "created_at": "<ts>",
+          "created_location": "",
+          "date_joined": "<ts>",
+          "display_name": "Journey T.",
+          "email": "journey@example.test",
+          "first_name": "Journey",
+          "id": "<uuid:1>",
+          "is_active": true,
+          "is_bot": false,
+          "is_email_valid": false,
+          "is_email_verified": false,
+          "is_managed": false,
+          "is_password_autoset": false,
+          "is_password_expired": false,
+          "is_password_reset_required": false,
+          "is_staff": false,
+          "is_superuser": false,
+          "last_active": "<ts>",
+          "last_location": "",
+          "last_login": "<ts>",
+          "last_login_ip": "<ip>",
+          "last_login_medium": "email",
+          "last_login_time": "<ts>",
+          "last_login_uagent": "<ua>",
+          "last_logout_ip": "",
+          "last_logout_time": null,
+          "last_name": "Tester",
+          "masked_at": null,
+          "mobile_number": null,
+          "token": "<opaque>",
+          "token_updated_at": "<ts>",
+          "updated_at": "<ts>",
+          "user_timezone": "UTC",
+          "username": "<uuid:2>"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "the user now",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/users/me/"
+      },
+      "response": {
+        "body": {
+          "avatar": "",
+          "avatar_url": null,
+          "cover_image": null,
+          "cover_image_url": null,
+          "date_joined": "<ts>",
+          "display_name": "Journey T.",
+          "email": "journey@example.test",
+          "first_name": "Journey",
+          "id": "<uuid:1>",
+          "is_active": true,
+          "is_bot": false,
+          "is_email_verified": false,
+          "is_password_autoset": false,
+          "last_login_medium": "email",
+          "last_login_time": "<ts>",
+          "last_name": "Tester",
+          "user_timezone": "UTC",
+          "username": "<uuid:2>"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    }
+  ],
+  "format_version": 1,
+  "recorded_from": "ba85d4d3d3",
+  "row": "S10"
+}

@@ -19,6 +19,8 @@ mutant_search_case_sensitive = []
 thrust-contracts = { workspace = true }
 thrust-ports = { workspace = true }
 async-trait = { workspace = true }
+# the profile's JSON settings
+serde_json = { workspace = true }
 
 [dev-dependencies]
 # futures-executor rather than tokio, because the memory adapters never yield.

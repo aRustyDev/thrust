@@ -217,11 +217,26 @@ pub fn project(ex: &Value) -> Value {
 // Driving the router
 // ---------------------------------------------------------------------------------------------------------------------
 
+/// The sessions the journey has made so far: the session token of the last successful sign-in or sign-up of each email
+/// (trimmed, lower case). A request recorded `as` an email is sent with that email's session, as the recorder's browser
+/// sent the session cookie of the user it had signed in.
+pub type Jar = std::collections::BTreeMap<String, String>;
+
+pub fn jar_key(email: &str) -> String {
+    email.trim().to_lowercase()
+}
+
 /// Send one request to `router` and return what it answered, as a raw exchange (the shape the normaliser takes). A header
-/// that came more than once (`set-cookie`) is an array.
-pub fn send(router: &Router, name: &Value, req: &Value) -> Value {
+/// that came more than once (`set-cookie`) is an array. A request with an `as` carries that user's session from `jar`.
+pub fn send(router: &Router, name: &Value, req: &Value, jar: &Jar) -> Value {
     let method: Method = req["method"].as_str().expect("method").parse().expect("method");
     let mut builder = Request::builder().method(method).uri(req["path"].as_str().expect("path"));
+    if let Some(who) = req.get("as").and_then(Value::as_str) {
+        let token = jar
+            .get(&jar_key(who))
+            .unwrap_or_else(|| panic!("{name}: no session for {who}: an earlier step of the journey must sign them in"));
+        builder = builder.header("cookie", format!("__Host-thrust_session={token}"));
+    }
     let body = match req.get("body").filter(|b| !b.is_null()) {
         Some(b) if b.get("form").is_some() => panic!("a form body must be projected before it is sent; found one in {name}"),
         Some(b) => {
@@ -256,15 +271,18 @@ pub fn send(router: &Router, name: &Value, req: &Value) -> Value {
     })
 }
 
-/// Whether a raw response sets a live session cookie (not one that clears it).
-fn sets_session_cookie(raw: &Value) -> bool {
+/// The session token a raw response sets (not a cookie that clears it), if it sets one.
+pub fn session_token(raw: &Value) -> Option<String> {
     let h = &raw["response"]["headers"]["set-cookie"];
     let all: Vec<&str> = match h {
         Value::String(s) => vec![s.as_str()],
         Value::Array(a) => a.iter().filter_map(Value::as_str).collect(),
         _ => vec![],
     };
-    all.iter().any(|c| c.starts_with("__Host-thrust_session=") && !c.starts_with("__Host-thrust_session=;") && !c.contains("Max-Age=0"))
+    all.iter().find_map(|c| {
+        let value = c.strip_prefix("__Host-thrust_session=")?.split(';').next()?;
+        (!value.is_empty() && !c.contains("Max-Age=0")).then(|| value.to_string())
+    })
 }
 
 /// Replay every exchange of `fixture` against `router`, normalise what comes back and compare it with the recording as
@@ -272,12 +290,17 @@ fn sets_session_cookie(raw: &Value) -> bool {
 /// that the recording says worked must also set the session cookie, and one that failed must not: cookies are transport
 /// the normaliser drops, so they are checked here.
 pub fn divergences(router: &Router, fixture: &Value) -> Vec<String> {
+    divergences_with(router, fixture, &mut Jar::new())
+}
+
+/// [`divergences`] on a journey: `jar` holds the sessions the earlier steps made and gets the ones this fixture makes.
+pub fn divergences_with(router: &Router, fixture: &Value, jar: &mut Jar) -> Vec<String> {
     let rules = normalise::Rules::load();
     let mut ids = normalise::Ids::new(&rules);
     let mut out = Vec::new();
     for recorded in fixture["exchanges"].as_array().expect("exchanges") {
         let want = project(recorded);
-        let raw = send(router, &want["name"], &want["request"]);
+        let raw = send(router, &want["name"], &want["request"], jar);
         let got = normalise::exchange(&rules, &mut ids, &raw);
         let mut lines = Vec::new();
         if got != want {
@@ -286,8 +309,17 @@ pub fn divergences(router: &Router, fixture: &Value) -> Vec<String> {
         let signs_in = matches!(want["request"]["path"].as_str(), Some("/auth/sign-in/" | "/auth/sign-up/"));
         if signs_in {
             let expected = want["response"]["status"] == 200;
-            if sets_session_cookie(&raw) != expected {
-                lines.push(format!("  session cookie: the recording says it {} be set, the answer {} it", if expected { "must" } else { "must not" }, if expected { "did not set" } else { "set" }));
+            let token = session_token(&raw);
+            if token.is_some() != expected {
+                lines.push(format!(
+                    "  session cookie: the recording says it {} be set, the answer {} it",
+                    if expected { "must" } else { "must not" },
+                    if expected { "did not set" } else { "set" }
+                ));
+            }
+            // the user signed in or up now holds this session for the rest of the journey
+            if let (Some(token), Some(email)) = (token, want["request"]["body"]["email"].as_str()) {
+                jar.insert(jar_key(email), token);
             }
         }
         if !lines.is_empty() {
@@ -302,12 +334,13 @@ pub fn divergences(router: &Router, fixture: &Value) -> Vec<String> {
 /// divergences are returned: each earlier step has a test of its own.
 pub fn journey(rows: &[&str], target: &str, edit: impl FnOnce(&mut Value)) -> Vec<String> {
     let router = app();
+    let mut jar = Jar::new();
     for row in rows.iter().take_while(|r| **r != target) {
-        let _ = divergences(&router, &load_fixture(row));
+        let _ = divergences_with(&router, &load_fixture(row), &mut jar);
     }
     let mut fixture = load_fixture(target);
     edit(&mut fixture);
-    divergences(&router, &fixture)
+    divergences_with(&router, &fixture, &mut jar)
 }
 
 /// The JSON paths at which `recorded` and `answered` differ, one line each.

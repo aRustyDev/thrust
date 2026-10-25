@@ -17,21 +17,28 @@
 //! Every row has a `parity_` test (`tests/parity.rs`) that replays a fixture recorded from the pinned Plane
 //! (`oracle/v1-pin-20261018`, `ba85d4d3d3`) with `tools/compat-record/record.py`.
 
-use axum::routing::{get, post};
+use axum::routing::{get, patch, post};
 use axum::Router;
 
 mod auth;
 mod error;
+mod fields;
+#[cfg(test)]
+mod fields_tests;
 mod instance;
 mod users;
 
 pub use error::PlaneError;
 
-/// The route group. Row ids (`S01`...) are those of `research/0003` section 8.1.
+/// The route group. Row ids (`S01`...) are those of `research/0003` section 8.1; `X04` is a route the stock onboarding
+/// calls that the inventory does not list.
 pub fn routes() -> Router {
     Router::new()
         .route("/api/instances/", get(instance::get_instance)) // S01
-        .route("/api/users/me/", get(users::get_me)) // S02
+        .route("/api/users/me/", get(users::get_me).patch(users::patch_me)) // S02, S10
+        .route("/api/users/me/profile/", get(users::get_profile).patch(users::patch_profile)) // S07, S11
+        .route("/api/users/me/tour-completed/", patch(users::patch_tour_completed)) // S27
+        .route("/api/users/me/onboard/", patch(users::patch_onboard)) // X04
         .route("/auth/get-csrf-token/", get(auth::get_csrf_token)) // S03
         .route("/auth/email-check/", post(auth::email_check)) // S04
         .route("/auth/sign-up/", post(auth::sign_up)) // S05

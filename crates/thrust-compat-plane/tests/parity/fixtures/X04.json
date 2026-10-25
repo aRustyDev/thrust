@@ -1,0 +1,149 @@
+{
+  "exchanges": [
+    {
+      "name": "no session",
+      "request": {
+        "body": {
+          "is_onboarded": true
+        },
+        "method": "PATCH",
+        "path": "/api/users/me/onboard/"
+      },
+      "response": {
+        "body": {
+          "detail": "Authentication credentials were not provided."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 401
+      }
+    },
+    {
+      "name": "not a boolean",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "is_onboarded": "abc"
+        },
+        "method": "PATCH",
+        "path": "/api/users/me/onboard/"
+      },
+      "response": {
+        "body": {
+          "error": "Please provide valid detail"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "no key sets it to false",
+      "request": {
+        "as": "journey@example.test",
+        "body": {},
+        "method": "PATCH",
+        "path": "/api/users/me/onboard/"
+      },
+      "response": {
+        "body": {
+          "message": "Updated successfully"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "onboarded",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "is_onboarded": true
+        },
+        "method": "PATCH",
+        "path": "/api/users/me/onboard/"
+      },
+      "response": {
+        "body": {
+          "message": "Updated successfully"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "the profile now",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/users/me/profile/"
+      },
+      "response": {
+        "body": {
+          "background_color": "<opaque>",
+          "billing_address": null,
+          "billing_address_country": "INDIA",
+          "company_name": "",
+          "created_at": "<ts>",
+          "goals": {},
+          "has_billing_address": false,
+          "has_marketing_email_consent": true,
+          "id": "<uuid:1>",
+          "is_app_rail_docked": true,
+          "is_mobile_onboarded": false,
+          "is_navigation_tour_completed": false,
+          "is_onboarded": true,
+          "is_smooth_cursor_enabled": false,
+          "is_subscribed_to_changelog": false,
+          "is_tour_completed": true,
+          "language": "en",
+          "last_workspace_id": null,
+          "mobile_onboarding_step": {
+            "profile_complete": false,
+            "workspace_create": false,
+            "workspace_join": false
+          },
+          "mobile_timezone_auto_set": false,
+          "notification_view_mode": "full",
+          "onboarding_step": {
+            "profile_complete": true,
+            "workspace_create": false,
+            "workspace_invite": false,
+            "workspace_join": false
+          },
+          "product_tour": {
+            "cycles": false,
+            "intake": false,
+            "modules": false,
+            "pages": false,
+            "work_items": false
+          },
+          "role": "5",
+          "start_of_the_week": 2,
+          "theme": {
+            "background": "#1a1a1a",
+            "darkPalette": true,
+            "primary": "#3f76ff",
+            "theme": "dark"
+          },
+          "updated_at": "<ts>",
+          "use_case": "Plan work. Track bugs",
+          "user": "<uuid:2>"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    }
+  ],
+  "format_version": 1,
+  "recorded_from": "ba85d4d3d3",
+  "row": "X04"
+}

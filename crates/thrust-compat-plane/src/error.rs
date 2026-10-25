@@ -109,9 +109,11 @@ pub enum PlaneError {
     /// No session, or an expired one. The React client sends every 401 to the sign-in page, so this status means only
     /// that (research/0003 section 9, row 2); a role failure is a 403.
     Unauthenticated,
-    /// The route exists but the data behind it does not yet (issue #44 builds the slice stage by stage). A 501, never a
-    /// half-shaped 200 that the React app would render.
-    NotYet(&'static str),
+    /// A 400 with a body the caller built: DRF's `{field: [message]}` for a field that is wrong, or one of the pin's
+    /// single-message bodies.
+    BadRequest(serde_json::Value),
+    /// DRF's field errors, `{field: [message]}`, as a 400.
+    Fields(serde_json::Map<String, serde_json::Value>),
     /// Anything whose Plane shape has not been recorded yet.
     Other(CoreError),
 }
@@ -140,7 +142,8 @@ impl IntoResponse for PlaneError {
                 Json(json!({"detail": "Authentication credentials were not provided."})),
             )
                 .into_response(),
-            PlaneError::NotYet(what) => (StatusCode::NOT_IMPLEMENTED, Json(json!({"error": what}))).into_response(),
+            PlaneError::BadRequest(body) => (StatusCode::BAD_REQUEST, Json(body)).into_response(),
+            PlaneError::Fields(errors) => (StatusCode::BAD_REQUEST, Json(serde_json::Value::Object(errors))).into_response(),
             PlaneError::Other(e) => thrust_api::ApiError(e).into_response(),
         }
     }

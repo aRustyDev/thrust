@@ -429,6 +429,159 @@ async fn migration_0005_is_idempotent_and_keeps_its_rows() {
     assert_eq!((row.get::<_, String>(0), row.get::<_, bool>(1)), ("keep@example.test".to_string(), false));
 }
 
+fn profile_for(user: UserId) -> UserProfile {
+    let now = Utc.timestamp_opt(1_800_000_000, 0).unwrap();
+    UserProfile {
+        id: new_id(),
+        user_id: user,
+        username: format!("u-{}", new_id().simple()),
+        first_name: String::new(),
+        last_name: String::new(),
+        display_name: "d".into(),
+        avatar: String::new(),
+        cover_image: None,
+        timezone: "UTC".into(),
+        date_joined: now,
+        last_login_at: None,
+        is_onboarded: false,
+        is_tour_completed: false,
+        last_workspace_id: None,
+        onboarding_step: serde_json::json!({}),
+        preferences: serde_json::json!({}),
+        created_at: now,
+        updated_at: now,
+    }
+}
+
+async fn user_with_profile(env: &Env) -> UserId {
+    let user = UserId(new_id());
+    env.db
+        .insert_user(&UserRecord { id: user, email: Some(format!("{}@example.test", user.0.simple())), password_hash: None, is_active: true })
+        .await
+        .unwrap();
+    assert!(env.db.insert_profile(&profile_for(user)).await.unwrap());
+    user
+}
+
+/// Issue #44, migration 0008: the profile table's columns are written out, so a column added later has to be argued for
+/// (it is a directory table: keyed by the user, with no tenant key and no secret), and the constraints that keep a profile
+/// well formed are exercised: one per user, a user that exists, a unique id and username, JSON objects and not scalars.
+#[tokio::test]
+async fn the_profile_table_has_the_columns_it_says_and_the_constraints_that_keep_it_well_formed() {
+    let env = env().await;
+    let raw = env.conn.raw().await.unwrap();
+    let rows = raw
+        .query(
+            "SELECT column_name, data_type FROM information_schema.columns \
+             WHERE table_schema = 'public' AND table_name = 'user_profiles' ORDER BY column_name",
+            &[],
+        )
+        .await
+        .unwrap();
+    let got: Vec<(String, String)> = rows.iter().map(|r| (r.get(0), r.get(1))).collect();
+    let ts = "timestamp with time zone";
+    let want: Vec<(&str, &str)> = vec![
+        ("avatar", "text"),
+        ("cover_image", "text"),
+        ("created_at", ts),
+        ("date_joined", ts),
+        ("display_name", "text"),
+        ("first_name", "text"),
+        ("id", "uuid"),
+        ("is_onboarded", "boolean"),
+        ("is_tour_completed", "boolean"),
+        // a value the app writes and reads back, not a tenant key: no foreign key, so it names no workspace the database knows
+        ("last_login_at", ts),
+        ("last_name", "text"),
+        ("last_workspace_id", "uuid"),
+        ("onboarding_step", "jsonb"),
+        ("preferences", "jsonb"),
+        ("timezone", "text"),
+        ("updated_at", ts),
+        ("user_id", "uuid"),
+        ("username", "text"),
+    ];
+    assert_eq!(got, want.iter().map(|(n, t)| (n.to_string(), t.to_string())).collect::<Vec<_>>());
+
+    let user = user_with_profile(&env).await;
+    // one profile per user: the second is refused without an error, and the first is untouched
+    let mut again = profile_for(user);
+    again.display_name = "second".into();
+    assert!(!env.db.insert_profile(&again).await.unwrap());
+    assert_eq!(env.db.profile(user).await.unwrap().unwrap().display_name, "d");
+    // the same user wins over the unique columns, as in the memory adapter: a second profile that also reuses the first's id
+    // and username is still `false`, not a conflict
+    let held = env.db.profile(user).await.unwrap().unwrap();
+    let mut clash = profile_for(user);
+    (clash.id, clash.username) = (held.id, held.username.clone());
+    assert!(!env.db.insert_profile(&clash).await.unwrap());
+    // a profile for a user that does not exist
+    let stranger = UserId(new_id());
+    assert!(env.db.insert_profile(&profile_for(stranger)).await.is_err());
+    assert!(env.db.profile(stranger).await.unwrap().is_none());
+    // a taken profile id, and a taken username, are conflicts and write nothing
+    let other = UserId(new_id());
+    env.db.insert_user(&UserRecord { id: other, email: None, password_hash: None, is_active: true }).await.unwrap();
+    let mut same_id = profile_for(other);
+    same_id.id = env.db.profile(user).await.unwrap().unwrap().id;
+    assert!(matches!(env.db.insert_profile(&same_id).await, Err(DbError::Conflict(_))));
+    let mut same_name = profile_for(other);
+    same_name.username = env.db.profile(user).await.unwrap().unwrap().username;
+    assert!(matches!(env.db.insert_profile(&same_name).await, Err(DbError::Conflict(_))));
+    assert!(env.db.profile(other).await.unwrap().is_none());
+    // the JSON columns hold objects: a scalar or an array is refused by the database itself
+    for (column, bad) in [("onboarding_step", "[]"), ("onboarding_step", "1"), ("preferences", "[]"), ("preferences", "\"x\"")] {
+        let sql = format!("UPDATE user_profiles SET {column} = $2::jsonb WHERE user_id = $1");
+        let refused = raw.execute(&sql, &[&user.0, &bad]).await;
+        assert!(refused.is_err(), "{column} = {bad}");
+    }
+    // control: an object is accepted
+    raw.execute("UPDATE user_profiles SET preferences = '{\"k\": 1}'::jsonb WHERE user_id = $1", &[&user.0]).await.unwrap();
+}
+
+#[tokio::test]
+async fn migration_0008_is_idempotent_and_keeps_its_rows() {
+    let env = env().await;
+    let user = user_with_profile(&env).await;
+    env.db
+        .update_profile(user, &ProfilePatch { first_name: Some("Kept".into()), ..ProfilePatch::default() }, Utc.timestamp_opt(1_800_000_100, 0).unwrap())
+        .await
+        .unwrap();
+    let raw = env.conn.raw().await.unwrap();
+    thrust_adapters_postgres::migrate(&raw).await.unwrap();
+    thrust_adapters_postgres::migrate(&raw).await.unwrap();
+    assert_eq!(env.db.profile(user).await.unwrap().unwrap().first_name, "Kept");
+}
+
+/// `update_profile` is ONE statement: the onboarding page sends several requests at once, each changing different fields of
+/// one profile, and none may lose another's change. 32 patches, each setting its own preference, from as many tasks.
+#[tokio::test]
+async fn concurrent_profile_patches_to_different_fields_all_survive() {
+    let env = env().await;
+    let user = user_with_profile(&env).await;
+    let at = Utc.timestamp_opt(1_800_000_100, 0).unwrap();
+    let mut handles = Vec::new();
+    for i in 0..32 {
+        let db = env.db.clone();
+        handles.push(tokio::spawn(async move {
+            let mut patch = ProfilePatch::default();
+            patch.preferences.insert(format!("k{i}"), serde_json::json!(i));
+            if i % 2 == 0 {
+                patch.first_name = Some(format!("n{i}"));
+            }
+            db.update_profile(user, &patch, at).await.unwrap().unwrap();
+        }));
+    }
+    for h in handles {
+        h.await.unwrap();
+    }
+    let p = env.db.profile(user).await.unwrap().unwrap();
+    let keys = p.preferences.as_object().unwrap();
+    assert_eq!(keys.len(), 32, "a patch lost another's change: {keys:?}");
+    assert!((0..32).all(|i| keys[&format!("k{i}")] == serde_json::json!(i)));
+    assert!(p.first_name.starts_with('n'), "a name was written by one of the even patches");
+}
+
 #[tokio::test]
 async fn concurrent_allocation_is_unique_contiguous_and_serialised() {
     let env = env().await;

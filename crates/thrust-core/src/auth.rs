@@ -115,6 +115,10 @@ pub(crate) async fn mint_session(app: &App, user: UserId) -> Result<SignedIn, Co
         .db
         .insert_session(&NewSession { token_hash: crate::hash_token(&token), user_id: user, created_at: now, expires_at })
         .await?;
+    // When they last signed in is bookkeeping, like a session's `last_seen_at`: failing to write it, or an account with no
+    // profile yet, must not fail a sign-in that is authentic.
+    let seen = ProfilePatch { last_login_at: Some(now), ..ProfilePatch::default() };
+    let _ = app.ports.db.update_profile(user, &seen, now).await;
     Ok(SignedIn { user_id: user, token, csrf_token, expires_at })
 }
 
@@ -252,8 +256,9 @@ pub async fn sign_up(app: &App, email: &str, password: &str) -> Result<SignedIn,
     let id = UserId(app.ports.ids.new_uuid());
     app.ports
         .db
-        .insert_user(&UserRecord { id, email: Some(email), password_hash: Some(password_hash), is_active: true })
+        .insert_user(&UserRecord { id, email: Some(email.clone()), password_hash: Some(password_hash), is_active: true })
         .await?;
+    app.ports.db.insert_profile(&crate::profile::new_profile(app, id, Some(&email))).await?;
     mint_session(app, id).await
 }
 

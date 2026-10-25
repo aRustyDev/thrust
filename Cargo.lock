@@ -3234,6 +3234,7 @@ dependencies = [
  "async-trait",
  "futures-executor",
  "rstest",
+ "serde_json",
  "thrust-contracts",
  "thrust-ports",
 ]
@@ -3347,6 +3348,7 @@ dependencies = [
  "async-trait",
  "futures-executor",
  "proptest",
+ "regex",
  "rstest",
  "serde",
  "serde_json",
@@ -3388,6 +3390,7 @@ version = "0.0.0"
 dependencies = [
  "async-trait",
  "futures-util",
+ "serde_json",
  "thiserror 2.0.21",
  "thrust-contracts",
 ]

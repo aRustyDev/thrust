@@ -24,7 +24,7 @@ fn redirect_for(next_path: &str) -> String {
         "path": "/auth/sign-up/",
         "body": {"email": "next@example.test", "password": STRONG, "next_path": next_path},
     });
-    let raw = send(&router, &json!("sign-up"), &req);
+    let raw = send(&router, &json!("sign-up"), &req, &Jar::new());
     assert_eq!(raw["response"]["status"], 200, "{raw}");
     let body: &Value = &raw["response"]["body"];
     body["redirect_path"].as_str().unwrap_or_else(|| panic!("{body}")).to_string()
@@ -116,7 +116,7 @@ fn the_length_limit_is_exact() {
 fn no_next_path_and_an_empty_one_both_go_to_the_root() {
     // a fresh world per call: the same email signs up once
     let go = |body: Value| {
-        let raw = send(&app(), &json!("n"), &json!({"method": "POST", "path": "/auth/sign-up/", "body": body}));
+        let raw = send(&app(), &json!("n"), &json!({"method": "POST", "path": "/auth/sign-up/", "body": body}), &Jar::new());
         raw["response"]["body"]["redirect_path"].as_str().unwrap().to_string()
     };
     assert_eq!(go(json!({"email": "a@example.test", "password": STRONG})), "/");

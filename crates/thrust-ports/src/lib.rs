@@ -200,6 +200,60 @@ pub struct UserRecord {
     pub is_active: bool,
 }
 
+/// What a person says about themselves and how they have set the app up: one row per user, a directory table (keyed by
+/// the user, no workspace; `last_workspace_id` is a value, not a tenant key). The typed fields are the ones core or the
+/// router acts on; `preferences` holds the rest as a JSON object (theme, language, role, use case, ...), which the
+/// compat layer fills with defaults where a key is missing, so a setting costs no migration (issue #44).
+#[derive(Debug, Clone, PartialEq)]
+pub struct UserProfile {
+    /// The profile row's own id (Plane's `Profile.id`), distinct from the user's.
+    pub id: Uuid,
+    pub user_id: UserId,
+    /// Made at sign-up and never shown to anyone as a name: 32 hex digits.
+    pub username: String,
+    pub first_name: String,
+    pub last_name: String,
+    pub display_name: String,
+    pub avatar: String,
+    pub cover_image: Option<String>,
+    /// An IANA name from the list `thrust_core::is_known_timezone` knows.
+    pub timezone: String,
+    pub date_joined: Timestamp,
+    pub last_login_at: Option<Timestamp>,
+    pub is_onboarded: bool,
+    pub is_tour_completed: bool,
+    /// Not checked against any workspace (Plane does not either): the app writes it and reads it back.
+    pub last_workspace_id: Option<WorkspaceId>,
+    /// A JSON object of step name to bool; replaced whole by a patch, as the client sends the merged object.
+    pub onboarding_step: serde_json::Value,
+    /// A JSON object; a patch sets the keys it names and leaves the others.
+    pub preferences: serde_json::Value,
+    pub created_at: Timestamp,
+    pub updated_at: Timestamp,
+}
+
+/// A change to a profile: the fields that are `Some` (and the keys of `preferences`) are set, the rest stay. The adapter
+/// applies it in ONE statement, so two requests that change different fields of one profile (the onboarding page sends
+/// several at once) cannot lose each other's change.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct ProfilePatch {
+    pub first_name: Option<String>,
+    pub last_name: Option<String>,
+    pub display_name: Option<String>,
+    pub avatar: Option<String>,
+    /// `Some(None)` clears it.
+    pub cover_image: Option<Option<String>>,
+    pub timezone: Option<String>,
+    pub last_login_at: Option<Timestamp>,
+    pub is_onboarded: Option<bool>,
+    pub is_tour_completed: Option<bool>,
+    /// `Some(None)` clears it.
+    pub last_workspace_id: Option<Option<WorkspaceId>>,
+    pub onboarding_step: Option<serde_json::Value>,
+    /// The keys to set; the others are kept.
+    pub preferences: serde_json::Map<String, serde_json::Value>,
+}
+
 /// A link from an identity provider's subject to a user: `provider` is the issuer, `provider_account_id` the `sub`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NewAccount {
@@ -296,6 +350,20 @@ pub trait Database: Send + Sync {
 
     /// The user with this (already normalised) email, active or not: the caller decides what an inactive user may do.
     async fn user_by_email(&self, email: &str) -> Result<Option<UserRecord>, DbError>;
+
+    /// The user with this id, active or not.
+    async fn user_by_id(&self, id: UserId) -> Result<Option<UserRecord>, DbError>;
+
+    /// Create a profile (issue #44). `false`, and nothing written, when the user already has one: signing up and the
+    /// first read of an older account both ask, and the first to arrive wins.
+    async fn insert_profile(&self, profile: &UserProfile) -> Result<bool, DbError>;
+
+    /// The user's profile, if they have one.
+    async fn profile(&self, user: UserId) -> Result<Option<UserProfile>, DbError>;
+
+    /// Apply `patch` to the user's profile at `at` (`updated_at`), atomically, and return the row as it is after. `None`
+    /// when the user has no profile.
+    async fn update_profile(&self, user: UserId, patch: &ProfilePatch, at: Timestamp) -> Result<Option<UserProfile>, DbError>;
 
     /// Create a user (sign-up, issue #44). A taken email is `DbError::Conflict`, raised by the UNIQUE index, so two
     /// sign-ups racing for one email cannot both win. An id that exists is the caller's bug, and also a `Conflict`.

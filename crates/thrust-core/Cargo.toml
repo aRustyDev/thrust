@@ -38,3 +38,5 @@ thrust-adapters-memory = { workspace = true }
 futures-executor = "0.3"
 proptest = "1"
 rstest = "0.26"
+# The pinned Plane's own URL pattern, as the oracle of a differential test of `contains_url` (core itself has no regex).
+regex = "1"
