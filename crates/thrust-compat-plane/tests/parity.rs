@@ -80,6 +80,9 @@ rows! {
     parity_s46_project_views => "S46",
     parity_s17_projects_once_they_exist => "S17-after",
     parity_s20_states_once_they_exist => "S20-after",
+    parity_s48_create_work_item => "S48",
+    parity_s47_list_work_items => "S47",
+    parity_x01_open_work_item => "X01",
 }
 
 /// A fixture without a test would pass unseen, and a test without a fixture is `load_fixture` panicking: hold the two

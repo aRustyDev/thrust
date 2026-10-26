@@ -191,6 +191,94 @@ pub struct WorkItem {
     pub deleted_at: Option<Timestamp>,
 }
 
+/// A work item's priority: Plane's five, written as it writes them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Priority {
+    Urgent,
+    High,
+    Medium,
+    Low,
+    None,
+}
+
+impl Priority {
+    /// In the order a list by priority starts with (`urgent` first).
+    pub const ALL: [Priority; 5] = [Priority::Urgent, Priority::High, Priority::Medium, Priority::Low, Priority::None];
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Priority::Urgent => "urgent",
+            Priority::High => "high",
+            Priority::Medium => "medium",
+            Priority::Low => "low",
+            Priority::None => "none",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Priority> {
+        Priority::ALL.into_iter().find(|p| p.as_str() == s)
+    }
+
+    /// 0 for `urgent` to 4 for `none`: the number Plane orders a list by priority with.
+    pub fn rank(&self) -> u8 {
+        match self {
+            Priority::Urgent => 0,
+            Priority::High => 1,
+            Priority::Medium => 2,
+            Priority::Low => 3,
+            Priority::None => 4,
+        }
+    }
+}
+
+/// What the compat plane keeps of a work item beyond what the slice does (issue #44, stage 6): its state, priority, dates, who
+/// last changed it, its description as HTML, who it is assigned to and its labels. It lives on the same row as the slice's
+/// [`WorkItem`] (migration 0013), which does not carry it, so the slice's JSON is what it was.
+#[derive(Debug, Clone, PartialEq)]
+pub struct WorkItemAttrs {
+    /// `None` for an item the slice made: it has no state until a compat request gives it one.
+    pub state_id: Option<Uuid>,
+    pub priority: Priority,
+    pub start_date: Option<chrono::NaiveDate>,
+    pub target_date: Option<chrono::NaiveDate>,
+    /// When the item entered a state of the `completed` group.
+    pub completed_at: Option<Timestamp>,
+    pub updated_at: Timestamp,
+    pub updated_by: Option<UserId>,
+    pub description_html: String,
+    /// Ascending by id.
+    pub assignee_ids: Vec<UserId>,
+    /// Ascending by id.
+    pub label_ids: Vec<Uuid>,
+}
+
+impl WorkItemAttrs {
+    /// What a work item made by the slice has: the pin's defaults, from its creation.
+    pub fn bare(created_at: Timestamp) -> WorkItemAttrs {
+        WorkItemAttrs {
+            state_id: None,
+            priority: Priority::None,
+            start_date: None,
+            target_date: None,
+            completed_at: None,
+            updated_at: created_at,
+            updated_by: None,
+            description_html: "<p></p>".to_string(),
+            assignee_ids: Vec::new(),
+            label_ids: Vec::new(),
+        }
+    }
+}
+
+/// A work item with its compat attributes, and the group of its state (the list shows it as `state__group`).
+#[derive(Debug, Clone, PartialEq)]
+pub struct WorkItemRow {
+    pub item: WorkItem,
+    pub attrs: WorkItemAttrs,
+    pub state_group: Option<StateGroup>,
+}
+
 /// Which hidden-row classes a read includes (ADR-0043 C1 named scopes).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

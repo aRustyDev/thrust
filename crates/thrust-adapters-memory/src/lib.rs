@@ -50,6 +50,8 @@ struct DbState {
     /// decrements.
     counters: HashMap<(WorkspaceId, ProjectId), (i64, i64)>,
     work_items: Vec<WorkItem>,
+    /// The compat attributes of a work item (migration 0013); a work item with no entry has [`WorkItemAttrs::bare`].
+    work_item_attrs: HashMap<WorkItemId, WorkItemAttrs>,
     outbox: Vec<OutboxRow>,
     activity: Vec<Activity>,
     activity_events: HashSet<EventId>,
@@ -98,6 +100,63 @@ impl DbState {
             }),
             _ => false,
         }
+    }
+
+    /// The work item with its compat attributes (the defaults when it has none: the slice made it), the group of its state, and
+    /// only the people assigned to it who are still active members of the project's workspace and in the project (as the Postgres
+    /// join leaves out the rest; the rows stay).
+    fn work_item_row_of(&self, w: &WorkItem) -> WorkItemRow {
+        let mut attrs = self.work_item_attrs.get(&w.id).cloned().unwrap_or_else(|| WorkItemAttrs::bare(w.created_at));
+        attrs.assignee_ids.retain(|u| {
+            self.memberships.get(&(w.project_id, *u)).is_some_and(|m| m.workspace_id == w.workspace_id)
+                && self.workspace_members.get(&(w.workspace_id, *u)).is_some_and(|m| m.is_active)
+        });
+        let state_group = attrs.state_id.and_then(|id| self.states.iter().find(|st| st.id == id)).map(|st| st.group);
+        WorkItemRow { item: w.clone(), attrs, state_group }
+    }
+}
+
+/// The order of two work items of one page, as [`WorkItemOrder`] states it.
+fn compare_work_items(a: &WorkItemRow, b: &WorkItemRow, order: WorkItemOrder, s: &DbState) -> std::cmp::Ordering {
+    use std::cmp::Ordering;
+    let newest_first = || b.item.created_at.cmp(&a.item.created_at).then(b.item.sequence_id.cmp(&a.item.sequence_id));
+    let run = |o: Ordering| if order.descending { o.reverse() } else { o };
+    // a value that is null sorts after every other, whichever way the order runs
+    fn nulls_last<T: Ord>(a: Option<T>, b: Option<T>, descending: bool) -> Ordering {
+        match (a, b) {
+            (Some(x), Some(y)) if descending => y.cmp(&x),
+            (Some(x), Some(y)) => x.cmp(&y),
+            (Some(_), None) => Ordering::Less,
+            (None, Some(_)) => Ordering::Greater,
+            (None, None) => Ordering::Equal,
+        }
+    }
+    let state_name = |r: &WorkItemRow| r.attrs.state_id.and_then(|id| s.states.iter().find(|st| st.id == id)).map(|st| st.name.clone());
+    let group_rank = |r: &WorkItemRow| match r.state_group {
+        Some(StateGroup::Backlog) => 0,
+        Some(StateGroup::Unstarted) => 1,
+        Some(StateGroup::Started) => 2,
+        Some(StateGroup::Completed) => 3,
+        Some(StateGroup::Cancelled) => 4,
+        Some(StateGroup::Triage) | None => 5,
+    };
+    match order.field {
+        WorkItemOrderField::CreatedAt => run(a.item.created_at.cmp(&b.item.created_at).then(a.item.sequence_id.cmp(&b.item.sequence_id))),
+        WorkItemOrderField::UpdatedAt => run(a.attrs.updated_at.cmp(&b.attrs.updated_at).then(a.item.sequence_id.cmp(&b.item.sequence_id))),
+        WorkItemOrderField::SequenceId => run(a.item.sequence_id.cmp(&b.item.sequence_id)),
+        WorkItemOrderField::SortOrder => run(a.item.sort_order.cmp(&b.item.sort_order)).then_with(newest_first),
+        WorkItemOrderField::TargetDate => nulls_last(a.attrs.target_date, b.attrs.target_date, order.descending).then_with(newest_first),
+        WorkItemOrderField::StartDate => nulls_last(a.attrs.start_date, b.attrs.start_date, order.descending).then_with(newest_first),
+        WorkItemOrderField::CompletedAt => nulls_last(a.attrs.completed_at, b.attrs.completed_at, order.descending).then_with(newest_first),
+        WorkItemOrderField::ArchivedAt => nulls_last(a.item.archived_at, b.item.archived_at, order.descending).then_with(newest_first),
+        // the pin sorts on the inverse of the rank it computed, so ascending runs from `none` to `urgent`
+        WorkItemOrderField::Priority => {
+            let by_rank = a.attrs.priority.rank().cmp(&b.attrs.priority.rank());
+            (if order.descending { by_rank } else { by_rank.reverse() }).then_with(newest_first)
+        }
+        WorkItemOrderField::StateName => nulls_last(state_name(a), state_name(b), order.descending).then_with(newest_first),
+        // however it is asked, as the pin's own code has it
+        WorkItemOrderField::StateGroup => group_rank(a).cmp(&group_rank(b)).then_with(newest_first),
     }
 }
 
@@ -839,6 +898,7 @@ impl Database for MemoryDatabase {
         Ok(Box::new(MemoryTx {
             state: self.state.clone(),
             pending_items: Vec::new(),
+            pending_attrs: Vec::new(),
             pending_outbox: Vec::new(),
             pending_deletes: Vec::new(),
         }))
@@ -878,6 +938,43 @@ impl Database for MemoryDatabase {
     }
 
     /// The reference implementation of search: a scan, `to_lowercase` and `contains` (Plane's `icontains`).
+    async fn work_item_page(&self, scope: &Scope, q: &WorkItemQuery) -> Result<WorkItemPage, DbError> {
+        let (ws, project) = (scope.workspace_id(), scope.project_id());
+        let s = self.state.lock().unwrap();
+        let mut rows: Vec<WorkItemRow> = s
+            .work_items
+            .iter()
+            .filter(|w| w.workspace_id == ws && w.project_id == project && is_visible(w))
+            .map(|w| s.work_item_row_of(w))
+            .filter(|r| q.updated_after.map_or(true, |t| r.attrs.updated_at > t))
+            .filter(|r| q.created_by.map_or(true, |u| r.item.created_by == u))
+            .collect();
+        rows.sort_by(|a, b| compare_work_items(a, b, q.order, &s));
+        let total = rows.len() as u64;
+        let start = (q.page as usize).saturating_mul(q.limit as usize);
+        let mut page: Vec<WorkItemRow> = rows.into_iter().skip(start).take(q.limit as usize + 1).collect();
+        let has_next = page.len() > q.limit as usize;
+        page.truncate(q.limit as usize);
+        Ok(WorkItemPage { rows: page, has_next, total })
+    }
+
+    async fn work_item_row(&self, scope: &Scope, id: WorkItemId) -> Result<Option<WorkItemRow>, DbError> {
+        let (ws, project) = (scope.workspace_id(), scope.project_id());
+        let s = self.state.lock().unwrap();
+        Ok(s.work_items.iter().find(|w| w.workspace_id == ws && w.project_id == project && w.id == id && is_visible(w)).map(|w| s.work_item_row_of(w)))
+    }
+
+    async fn max_work_item_sort_order(&self, scope: &Scope, state: Option<Uuid>) -> Result<Option<i64>, DbError> {
+        let (ws, project) = (scope.workspace_id(), scope.project_id());
+        let s = self.state.lock().unwrap();
+        Ok(s.work_items
+            .iter()
+            .filter(|w| w.workspace_id == ws && w.project_id == project && w.deleted_at.is_none())
+            .filter(|w| s.work_item_attrs.get(&w.id).and_then(|a| a.state_id) == state)
+            .map(|w| w.sort_order)
+            .max())
+    }
+
     async fn search_work_items(&self, scope: &Scope, query: &str, limit: u32) -> Result<Vec<WorkItem>, DbError> {
         let (ws, project) = (scope.workspace_id(), scope.project_id());
         // MUTANT (control run only, feature `mutant_search_case_sensitive`): `contains` without folding case. The engine
@@ -1130,6 +1227,7 @@ impl Database for MemoryDatabase {
 struct MemoryTx {
     state: Arc<Mutex<DbState>>,
     pending_items: Vec<WorkItem>,
+    pending_attrs: Vec<(WorkItemId, WorkItemAttrs)>,
     pending_outbox: Vec<OutboxRow>,
     pending_deletes: Vec<(ProjectId, WorkItemId, Timestamp)>,
 }
@@ -1175,6 +1273,36 @@ impl Tx for MemoryTx {
         Ok(())
     }
 
+    /// The Postgres constraints, checked before anything is written: the item is one this transaction inserted for the scope's
+    /// project, the state, the people and the labels exist (their foreign keys), and the start is not after the target.
+    async fn insert_work_item_attrs(&mut self, scope: &Scope, id: WorkItemId, attrs: &WorkItemAttrs) -> Result<(), DbError> {
+        let (ws, project) = (scope.workspace_id(), scope.project_id());
+        if !self.pending_items.iter().any(|w| w.id == id && w.workspace_id == ws && w.project_id == project) {
+            return Err(DbError::Backend("work item attributes for a work item this transaction did not insert".into()));
+        }
+        let s = self.state.lock().unwrap();
+        if attrs.state_id.is_some_and(|st| !s.states.iter().any(|x| x.id == st)) {
+            return Err(DbError::Backend("work_items_state_fkey".into()));
+        }
+        if attrs.assignee_ids.iter().any(|u| !s.users.contains_key(u)) {
+            return Err(DbError::Backend("work_item_assignees_user_id_fkey".into()));
+        }
+        if attrs.label_ids.iter().any(|l| !s.labels.iter().any(|x| x.id == *l)) {
+            return Err(DbError::Backend("work_item_labels_label_id_fkey".into()));
+        }
+        if matches!((attrs.start_date, attrs.target_date), (Some(a), Some(b)) if a > b) {
+            return Err(DbError::Backend("work_items_dates_ordered".into()));
+        }
+        drop(s);
+        let mut attrs = attrs.clone();
+        attrs.assignee_ids.sort();
+        attrs.assignee_ids.dedup();
+        attrs.label_ids.sort();
+        attrs.label_ids.dedup();
+        self.pending_attrs.push((id, attrs));
+        Ok(())
+    }
+
     async fn soft_delete_work_item(&mut self, scope: &Scope, id: WorkItemId, at: Timestamp) -> Result<bool, DbError> {
         let (ws, project) = (scope.workspace_id(), scope.project_id());
         let s = self.state.lock().unwrap();
@@ -1206,6 +1334,9 @@ impl Tx for MemoryTx {
         }
         for item in this.pending_items {
             s.work_items.push(item);
+        }
+        for (id, attrs) in this.pending_attrs {
+            s.work_item_attrs.insert(id, attrs);
         }
         for (project, id, at) in this.pending_deletes {
             if let Some(w) = s

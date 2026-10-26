@@ -78,7 +78,7 @@ use std::time::Duration;
 use proptest::prelude::*;
 use proptest::strategy::ValueTree;
 use proptest::test_runner::{Config, FailurePersistence, FileFailurePersistence, TestCaseError, TestRunner};
-use thrust_contracts::chrono::{TimeDelta, TimeZone, Utc};
+use thrust_contracts::chrono::{NaiveDate, TimeDelta, TimeZone, Utc};
 use thrust_contracts::*;
 use thrust_ports::*;
 
@@ -242,9 +242,38 @@ fn properties_defaults(salt: u8, at: Timestamp) -> UserProperties {
     }
 }
 
+/// What `Op::ItemPages` gives one work item it makes. The indexes pick among what the project has (its states without the intake one,
+/// its labels, the people in it); a date is a number of days from one day, so that two items can share one.
+#[derive(Debug, Clone, Copy)]
+struct AttrSpec {
+    priority: usize,
+    state: Option<usize>,
+    start: Option<i64>,
+    extra: Option<i64>,
+    completed: Option<i64>,
+    /// Seconds after one time: the model makes items that tie on it, which the order must break.
+    created: i64,
+    updated: i64,
+    /// Which of the project's people (bit i) and of a stranger to it (bit 4) are assigned.
+    people: u8,
+    labels: u8,
+}
+
+fn attr_spec() -> impl Strategy<Value = AttrSpec> {
+    (0..5usize, prop::option::of(0..3usize), prop::option::of(0..5i64), prop::option::of(0..3i64), prop::option::of(0..3i64), 0..3i64, 0..3i64, 0..32u8, 0..8u8)
+        .prop_map(|(priority, state, start, extra, completed, created, updated, people, labels)| AttrSpec { priority, state, start, extra, completed, created, updated, people, labels })
+}
+
+fn day(n: i64) -> NaiveDate {
+    NaiveDate::from_ymd_opt(2026, 11, 1).unwrap() + TimeDelta::days(n)
+}
+
 #[derive(Debug, Clone)]
 enum Op {
     Tx { steps: Vec<Step>, end: End },
+    /// Make work items with their compat attributes (a transaction each), then read the project's work items in an order, a page at a
+    /// time, with the cuts a page can have, one row at a time, and the greatest place in each state.
+    ItemPages { proj: P, specs: Vec<AttrSpec>, field: usize, descending: bool, limit: u32 },
     List { proj: P, ws: Ws, with_deleted: bool },
     /// `pick`: one of the project's rows, or `None` for an unknown id.
     Get { proj: P, ws: Ws, pick: Option<usize>, with_deleted: bool },
@@ -427,6 +456,8 @@ fn patch_sel() -> impl Strategy<Value = PatchSel> {
 fn op() -> impl Strategy<Value = Op> {
     prop_oneof![
         6 => (prop::collection::vec(step(), 1..5), end()).prop_map(|(steps, end)| Op::Tx { steps, end }),
+        3 => (proj(), prop::collection::vec(attr_spec(), 0..5), 0..11usize, any::<bool>(), 1..4u32)
+            .prop_map(|(proj, specs, field, descending, limit)| Op::ItemPages { proj, specs, field, descending, limit }),
         2 => (proj(), ws(), any::<bool>()).prop_map(|(proj, ws, with_deleted)| Op::List { proj, ws, with_deleted }),
         2 => (proj(), ws(), prop::option::weighted(0.85, 0..16usize), any::<bool>())
             .prop_map(|(proj, ws, pick, with_deleted)| Op::Get { proj, ws, pick, with_deleted }),
@@ -713,10 +744,25 @@ enum Class {
     AllocateWrongWorkspace,
     /// `membership` of the stray member row: `NotAMember`.
     StrayMemberIgnored,
+    /// A work item made with its attributes, in one transaction.
+    ItemWithAttrs,
+    /// The first page of work items, a later one that has a page after it, the last, and one past the end.
+    ItemPageFirst,
+    ItemPageNext,
+    ItemPageLast,
+    ItemPagePastEnd,
+    /// A page cut by when the items changed and by who made them.
+    ItemPageCut,
+    /// One work item with its attributes, and one that is not there.
+    ItemRowRead,
+    ItemRowMissing,
+    /// The greatest place among the items of a state that has some, and of one that has none.
+    SortOrderMax,
+    SortOrderNone,
 }
 
 impl Class {
-    const ALL: [Class; 146] = [
+    const ALL: [Class; 156] = [
         Class::Created,
         Class::ExternalKeyFreed,
         Class::Conflict,
@@ -863,6 +909,16 @@ impl Class {
         Class::ActivityWrongWorkspace,
         Class::AllocateWrongWorkspace,
         Class::StrayMemberIgnored,
+        Class::ItemWithAttrs,
+        Class::ItemPageFirst,
+        Class::ItemPageNext,
+        Class::ItemPageLast,
+        Class::ItemPagePastEnd,
+        Class::ItemPageCut,
+        Class::ItemRowRead,
+        Class::ItemRowMissing,
+        Class::SortOrderMax,
+        Class::SortOrderNone,
     ];
 }
 
@@ -873,6 +929,11 @@ enum Call {
     /// `want: None`: the adapter must refuse the allocation.
     Allocate { ws: WorkspaceId, p: ProjectId, want: Option<Allocation> },
     Insert { item: WorkItem, conflict: bool },
+    /// A transaction of its own: allocate (the number the model expects), insert the item, give it its attributes, commit.
+    CreateWithAttrs { item: WorkItem, attrs: WorkItemAttrs, alloc: Allocation },
+    WorkItemPageOf { ws: WorkspaceId, p: ProjectId, q: WorkItemQuery, want: WorkItemPage },
+    WorkItemRowOf { ws: WorkspaceId, p: ProjectId, id: WorkItemId, want: Option<WorkItemRow> },
+    MaxSortOrderOf { ws: WorkspaceId, p: ProjectId, state: Option<Uuid>, want: Option<i64> },
     SoftDelete { ws: WorkspaceId, p: ProjectId, id: WorkItemId, at: Timestamp, want: bool },
     InsertOutbox { row: OutboxRow },
     Commit,
@@ -1560,6 +1621,8 @@ struct Model {
     project_props: BTreeMap<(usize, usize), ProjectUserProperties>,
     /// Committed rows per project, in sequence order.
     rows: [Vec<WorkItem>; 2],
+    /// The compat attributes of the work items an `ItemPages` op made (the others have the pin's defaults), as they were written.
+    attrs: BTreeMap<WorkItemId, WorkItemAttrs>,
     counter: [i64; 2],
     /// This case's committed outbox rows, and whether they are dispatched.
     outbox: Vec<(OutboxRow, bool)>,
@@ -1684,6 +1747,74 @@ fn item(ws: WorkspaceId, p: ProjectId, a: Allocation, ext: Option<u8>) -> WorkIt
     }
 }
 
+/// The order a page of work items is documented to have (`WorkItemOrder`), written as a stable sort on top of the newest first order, so
+/// that a tie is left newest first: an oracle for the adapter's own comparison and for the SQL.
+fn order_oracle(rows: &[WorkItemRow], order: WorkItemOrder, states: &[StateRow]) -> Vec<WorkItemRow> {
+    use std::cmp::Ordering;
+    let mut v: Vec<WorkItemRow> = rows.to_vec();
+    v.sort_by(|a, b| (b.item.created_at, b.item.sequence_id).cmp(&(a.item.created_at, a.item.sequence_id)));
+    fn nulls_last<K: Ord>(v: &mut [WorkItemRow], key: impl Fn(&WorkItemRow) -> Option<K>, descending: bool) {
+        v.sort_by(|a, b| match (key(a), key(b)) {
+            (Some(x), Some(y)) => {
+                if descending {
+                    y.cmp(&x)
+                } else {
+                    x.cmp(&y)
+                }
+            }
+            (Some(_), None) => Ordering::Less,
+            (None, Some(_)) => Ordering::Greater,
+            (None, None) => Ordering::Equal,
+        });
+    }
+    let name = |r: &WorkItemRow| r.attrs.state_id.and_then(|id| states.iter().find(|st| st.id == id)).map(|st| st.name.clone());
+    let mut reverse_whole = false;
+    match order.field {
+        WorkItemOrderField::CreatedAt => {
+            v.sort_by_key(|r| (r.item.created_at, r.item.sequence_id));
+            reverse_whole = order.descending;
+        }
+        WorkItemOrderField::UpdatedAt => {
+            v.sort_by_key(|r| (r.attrs.updated_at, r.item.sequence_id));
+            reverse_whole = order.descending;
+        }
+        WorkItemOrderField::SequenceId => {
+            v.sort_by_key(|r| r.item.sequence_id);
+            reverse_whole = order.descending;
+        }
+        // the places and the numbers of one project run together here (the counter hands out both)
+        WorkItemOrderField::SortOrder => {
+            v.sort_by_key(|r| (r.item.sort_order, r.item.sequence_id));
+            reverse_whole = order.descending;
+        }
+        WorkItemOrderField::TargetDate => nulls_last(&mut v, |r| r.attrs.target_date, order.descending),
+        WorkItemOrderField::StartDate => nulls_last(&mut v, |r| r.attrs.start_date, order.descending),
+        WorkItemOrderField::CompletedAt => nulls_last(&mut v, |r| r.attrs.completed_at, order.descending),
+        WorkItemOrderField::ArchivedAt => {}
+        WorkItemOrderField::Priority => v.sort_by_key(|r| {
+            let rank = i32::from(r.attrs.priority.rank());
+            if order.descending {
+                rank
+            } else {
+                -rank
+            }
+        }),
+        WorkItemOrderField::StateName => nulls_last(&mut v, |r| name(r), order.descending),
+        WorkItemOrderField::StateGroup => v.sort_by_key(|r| match r.state_group {
+            Some(StateGroup::Backlog) => 0,
+            Some(StateGroup::Unstarted) => 1,
+            Some(StateGroup::Started) => 2,
+            Some(StateGroup::Completed) => 3,
+            Some(StateGroup::Cancelled) => 4,
+            Some(StateGroup::Triage) | None => 5,
+        }),
+    }
+    if reverse_whole {
+        v.reverse();
+    }
+    v
+}
+
 impl Model {
     fn new(fix: Fix) -> Model {
         let created = tick();
@@ -1757,6 +1888,7 @@ impl Model {
             properties: BTreeMap::new(),
             project_props,
             rows: [Vec::new(), Vec::new()],
+            attrs: BTreeMap::new(),
             counter: [0, 0],
             outbox: Vec::new(),
             activity: Vec::new(),
@@ -1824,6 +1956,9 @@ impl Model {
         let mut classes = Vec::new();
         match op {
             Op::Tx { steps, end } => self.plan_tx(steps, *end, &mut calls, &mut classes),
+            Op::ItemPages { proj, specs, field, descending, limit } => {
+                self.plan_item_pages(*proj, specs, *field, *descending, *limit, &mut calls, &mut classes)
+            }
             &Op::List { proj, ws, with_deleted } => {
                 let s = slot(proj);
                 let want = if ws == Ws::Own {
@@ -2878,6 +3013,108 @@ impl Model {
         }
     }
 
+    /// The work item as a read finds it: its attributes (the pin's defaults when no op gave it any), the group of its state, and only
+    /// the people assigned to it who are members of the project's workspace and in the project.
+    fn expected_row(&self, s: usize, w: &WorkItem, spec: &ProjSpec, states: &[StateRow]) -> WorkItemRow {
+        let mut attrs = self.attrs.get(&w.id).cloned().unwrap_or_else(|| WorkItemAttrs::bare(w.created_at));
+        attrs.assignee_ids.retain(|u| {
+            let who = U::ALL.iter().copied().find(|x| self.fix.user(*x) == *u);
+            who.is_some_and(|who| spec.members.iter().any(|m| m.0 as usize == who as usize && m.2 == s) && in_workspace(who)[s] && self.member_active[who as usize][s])
+        });
+        let state_group = attrs.state_id.and_then(|id| states.iter().find(|st| st.id == id)).map(|st| st.group);
+        WorkItemRow { item: w.clone(), attrs, state_group }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn plan_item_pages(&mut self, proj: P, specs: &[AttrSpec], field: usize, descending: bool, limit: u32, calls: &mut Vec<Call>, classes: &mut Vec<Class>) {
+        let s = slot(proj);
+        let (ws, p) = (self.fix.ws[s], self.fix.p[s]);
+        let proj_spec = self.fix.specs().remove(s);
+        let all_states = proj_spec.state_rows(ws);
+        let states: Vec<StateRow> = all_states.iter().filter(|st| st.group != StateGroup::Triage).cloned().collect();
+        let labels = proj_spec.label_rows(ws);
+        let people: Vec<UserId> = proj_spec.members.iter().filter(|m| m.2 == s).map(|m| self.fix.user(m.0)).collect();
+        // someone in no project at all, who may be named and is never shown
+        let stranger = self.fix.user(U::OutsiderA);
+        for spec in specs {
+            self.counter[s] += 1;
+            let a = Allocation { sequence_id: self.counter[s], sort_order: self.counter[s] * 10_000 };
+            let mut it = item(ws, p, a, None);
+            it.created_at = Utc.timestamp_opt(1_800_000_000 + spec.created, 0).unwrap();
+            let mut assignees: Vec<UserId> = people.iter().enumerate().filter(|(i, _)| spec.people & (1 << i) != 0).map(|(_, u)| *u).collect();
+            if spec.people & 16 != 0 {
+                assignees.push(stranger);
+            }
+            assignees.sort();
+            let mut label_ids: Vec<Uuid> = labels.iter().enumerate().filter(|(i, _)| spec.labels & (1 << i) != 0).map(|(_, l)| l.id).collect();
+            label_ids.sort();
+            let target = match (spec.start, spec.extra) {
+                (Some(a), Some(e)) => Some(day(a + e)),
+                (None, Some(e)) => Some(day(e)),
+                _ => None,
+            };
+            let attrs = WorkItemAttrs {
+                state_id: spec.state.map(|i| states[i % states.len()].id),
+                priority: Priority::ALL[spec.priority],
+                start_date: spec.start.map(day),
+                target_date: target,
+                completed_at: spec.completed.map(|d| Utc.timestamp_opt(1_800_100_000 + d, 0).unwrap()),
+                updated_at: it.created_at + TimeDelta::seconds(spec.updated),
+                updated_by: Some(self.fix.users[0]),
+                description_html: format!("<p>{}</p>", a.sequence_id),
+                assignee_ids: assignees,
+                label_ids,
+            };
+            classes.push(Class::ItemWithAttrs);
+            calls.push(Call::CreateWithAttrs { item: it.clone(), attrs: attrs.clone(), alloc: a });
+            self.attrs.insert(it.id, attrs);
+            self.rows[s].push(it);
+        }
+
+        let live: Vec<WorkItemRow> = self.rows[s].iter().filter(|w| w.deleted_at.is_none()).map(|w| self.expected_row(s, w, &proj_spec, &all_states)).collect();
+        let order = WorkItemOrder { field: WorkItemOrderField::ALL[field], descending };
+        let ordered = order_oracle(&live, order, &all_states);
+        let (total, lim) = (ordered.len() as u64, limit as usize);
+        let pages = ordered.len().div_ceil(lim).clamp(1, 5);
+        for page in 0..pages {
+            let rows: Vec<WorkItemRow> = ordered.iter().skip(page * lim).take(lim).cloned().collect();
+            let has_next = ordered.len() > (page + 1) * lim;
+            classes.push(if page == 0 { Class::ItemPageFirst } else if has_next { Class::ItemPageNext } else { Class::ItemPageLast });
+            let q = WorkItemQuery { order, limit, page: page as u32, updated_after: None, created_by: None };
+            calls.push(Call::WorkItemPageOf { ws, p, q, want: WorkItemPage { rows, has_next, total } });
+        }
+        classes.push(Class::ItemPagePastEnd);
+        let past = (ordered.len() / lim + 1) as u32;
+        calls.push(Call::WorkItemPageOf {
+            ws,
+            p,
+            q: WorkItemQuery { order, limit, page: past, updated_after: None, created_by: None },
+            want: WorkItemPage { rows: vec![], has_next: false, total },
+        });
+        // a page cut by when the items changed and by who made them: the order is kept, and so is the count of what is left
+        if let Some(first) = ordered.first() {
+            let (after, by) = (first.attrs.updated_at, first.item.created_by);
+            let kept: Vec<WorkItemRow> = ordered.iter().filter(|r| r.attrs.updated_at > after && r.item.created_by == by).cloned().collect();
+            let q = WorkItemQuery { order, limit: 100, page: 0, updated_after: Some(after), created_by: Some(by) };
+            classes.push(Class::ItemPageCut);
+            calls.push(Call::WorkItemPageOf { ws, p, q, want: WorkItemPage { total: kept.len() as u64, rows: kept, has_next: false } });
+        }
+        // one row at a time, and one that is not there
+        for r in live.iter().filter(|r| specs.len() > 0 && self.attrs.contains_key(&r.item.id)).take(2) {
+            classes.push(Class::ItemRowRead);
+            calls.push(Call::WorkItemRowOf { ws, p, id: r.item.id, want: Some(r.clone()) });
+        }
+        classes.push(Class::ItemRowMissing);
+        calls.push(Call::WorkItemRowOf { ws, p, id: WorkItemId(new_id()), want: None });
+        // the greatest place in each state, and in none
+        let place = |state: Option<Uuid>| self.rows[s].iter().filter(|w| w.deleted_at.is_none()).filter(|w| self.attrs.get(&w.id).and_then(|a| a.state_id) == state).map(|w| w.sort_order).max();
+        for state in std::iter::once(None).chain(states.iter().map(|st| Some(st.id))) {
+            let want = place(state);
+            classes.push(if want.is_some() { Class::SortOrderMax } else { Class::SortOrderNone });
+            calls.push(Call::MaxSortOrderOf { ws, p, state, want });
+        }
+    }
+
     fn plan_tx(&mut self, steps: &[Step], end: End, calls: &mut Vec<Call>, classes: &mut Vec<Class>) {
         calls.push(Call::Begin { ws: self.fix.ws[0], p: self.fix.p[0] });
         let mut allocs = [0i64; 2];
@@ -3080,6 +3317,27 @@ async fn execute(db: &dyn Database, tx: &mut Option<Box<dyn Tx>>, call: Call, at
                 (Ok(()), false) | (Err(DbError::Conflict(_)), true) => {}
                 (got, _) => return Err(fail(at, format!("insert: got {got:?}, want conflict = {conflict}"))),
             }
+        }
+        Call::CreateWithAttrs { item, attrs, alloc } => {
+            let s = scope(item.workspace_id, item.project_id);
+            let mut t = bounded(at, db.begin(&s)).await?;
+            let got = bounded(at, t.allocate(&s)).await?;
+            prop_assert_eq!(got, alloc, "{}: allocation", at);
+            bounded(at, t.insert_work_item(&s, &item)).await?;
+            bounded(at, t.insert_work_item_attrs(&s, item.id, &attrs)).await?;
+            bounded(at, t.commit()).await?;
+        }
+        Call::WorkItemPageOf { ws, p, q, want } => {
+            let got = bounded(at, db.work_item_page(&scope(ws, p), &q)).await?;
+            prop_assert_eq!(got, want, "{}: work item page {:?}", at, q);
+        }
+        Call::WorkItemRowOf { ws, p, id, want } => {
+            let got = bounded(at, db.work_item_row(&scope(ws, p), id)).await?;
+            prop_assert_eq!(got, want, "{}: work item row", at);
+        }
+        Call::MaxSortOrderOf { ws, p, state, want } => {
+            let got = bounded(at, db.max_work_item_sort_order(&scope(ws, p), state)).await?;
+            prop_assert_eq!(got, want, "{}: greatest place in a state", at);
         }
         Call::SoftDelete { ws, p, id, at: when, want } => {
             let got = bounded(at, open(tx)?.soft_delete_work_item(&scope(ws, p), id, when)).await?;

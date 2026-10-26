@@ -76,8 +76,10 @@ def _key_matches(key, suffixes, exact=()):
     return key in exact or any(key.endswith(s) for s in suffixes)
 
 
-def value(rules, ids, v, path=""):
-    """Normalise one JSON value; `path` is the dotted path of `v` with `[]` for array elements."""
+def value(rules, ids, v, path="", keep_times=False):
+    """Normalise one JSON value; `path` is the dotted path of `v` with `[]` for array elements. `keep_times` leaves a date or a
+    timestamp as it is: a request body is what the client sent, and a replay must be able to send the same date (an implementation
+    answers a date that is no date, and a start that is after a target), where a response's times are the server's own."""
     if isinstance(v, dict):
         out = {}
         for k in sorted(v):
@@ -88,15 +90,15 @@ def value(rules, ids, v, path=""):
             dd = rules["date"]
             if token is not None and child is not None:
                 out[k] = token
-            elif isinstance(child, str) and _key_matches(k, dt["key_suffixes"], dt["key_exact"]) and _DATETIME.match(child):
+            elif not keep_times and isinstance(child, str) and _key_matches(k, dt["key_suffixes"], dt["key_exact"]) and _DATETIME.match(child):
                 out[k] = dt["token"]
-            elif isinstance(child, str) and _key_matches(k, dd["key_suffixes"]) and _DATE.match(child):
+            elif not keep_times and isinstance(child, str) and _key_matches(k, dd["key_suffixes"]) and _DATE.match(child):
                 out[k] = dd["token"]
             else:
-                out[k] = value(rules, ids, child, p)
+                out[k] = value(rules, ids, child, p, keep_times)
         return out
     if isinstance(v, list):
-        return [value(rules, ids, x, f"{path}[]") for x in v]
+        return [value(rules, ids, x, f"{path}[]", keep_times) for x in v]
     if isinstance(v, str):
         return ids.scrub(v)
     return v
@@ -124,7 +126,7 @@ def exchange(rules, ids, ex):
     if req.get("as") is not None:
         out_req["as"] = req["as"]  # whose session the request used: part of the contract, never scrubbed
     if req.get("body") is not None:
-        out_req["body"] = value(rules, ids, req["body"])
+        out_req["body"] = value(rules, ids, req["body"], keep_times=True)
     out_resp = {"status": resp["status"], "headers": headers(rules, resp.get("headers", {}))}
     out_resp["body"] = value(rules, ids, resp["body"]) if resp.get("body") is not None else None
     return {"name": ex["name"], "request": out_req, "response": out_resp}

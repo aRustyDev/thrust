@@ -27,6 +27,8 @@ mod workspace_load;
 pub use workspace_load::*;
 mod projects;
 pub use projects::*;
+mod issues;
+pub use issues::*;
 #[cfg(test)]
 mod timezones_tests;
 use thrust_contracts::chrono::TimeDelta;
@@ -274,11 +276,23 @@ pub async fn authorize(
     project: ProjectId,
     perm: Permission,
 ) -> Result<Scope, CoreError> {
+    authorize_with_role(app, who, slug, project, perm).await.map(|(scope, _)| scope)
+}
+
+/// [`authorize`], and the caller's role in the project that let them in (a use-case that treats a guest differently asks for
+/// it). This is where a [`Scope`] is minted; `authorize` is this and nothing else.
+pub async fn authorize_with_role(
+    app: &App,
+    who: &Principal,
+    slug: &WorkspaceSlug,
+    project: ProjectId,
+    perm: Permission,
+) -> Result<(Scope, Role), CoreError> {
     match app.ports.db.membership(slug, project, who.user_id).await? {
         Membership::NoSuchProject => Err(CoreError::NotFound),
         Membership::NotAMember => Err(CoreError::Forbidden),
         Membership::Member { workspace_id, role } if role >= perm.min_role() => {
-            Ok(Scope::mint(workspace_id, project, who.user_id))
+            Ok((Scope::mint(workspace_id, project, who.user_id), role))
         }
         Membership::Member { .. } => Err(CoreError::Forbidden),
     }

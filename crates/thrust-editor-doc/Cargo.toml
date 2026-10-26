@@ -7,12 +7,15 @@ license.workspace = true
 publish.workspace = true
 
 [features]
-default = ["sanitize"]
+default = ["yjs", "sanitize"]
+# The Yjs update encoding (`ydoc`). yrs reaches getrandom through fastrand, which brings wasm-bindgen and js-sys on wasm32, so a
+# crate that wants only the sanitiser (thrust-compat-plane) turns this off; scripts/check-deps.sh keeps those out of it.
+yjs = ["dep:yrs"]
 # ammonia pulls html5ever; split out so the size of the conversions alone can be measured
 sanitize = ["dep:ammonia"]
 
 [dependencies]
-yrs = "0.28"
+yrs = { version = "0.28", optional = true }
 serde_json = "1"
 base64 = "0.22"
 ammonia = { version = "4", optional = true }

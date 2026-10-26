@@ -917,6 +917,19 @@ pub trait Database: Send + Sync {
         vis: Visibility,
     ) -> Result<Option<WorkItem>, DbError>;
 
+    /// One page of the project's live work items (not deleted, archived or a draft) with their compat attributes, in the order
+    /// `q` names, `q.limit` of them from page `q.page` (a page number, not a row offset), and whether another page follows
+    /// and how many items match (the same number whichever page is asked for, also one past the end). At most two statements:
+    /// the page, and the count when the page is empty.
+    async fn work_item_page(&self, scope: &Scope, q: &WorkItemQuery) -> Result<WorkItemPage, DbError>;
+
+    /// One work item with its compat attributes, live (not deleted, archived or a draft), or `None`.
+    async fn work_item_row(&self, scope: &Scope, id: WorkItemId) -> Result<Option<WorkItemRow>, DbError>;
+
+    /// The greatest `sort_order` among the project's work items that are in `state` (`None`: that have no state), counting an
+    /// archived item and a draft but not a deleted one, or `None` when there is not one: what the pin puts a new item's place after.
+    async fn max_work_item_sort_order(&self, scope: &Scope, state: Option<Uuid>) -> Result<Option<i64>, DbError>;
+
     /// The visible work items of the project (`Visibility::Visible`) whose name or description contains `query`, in any
     /// case: Plane's `icontains`. In sequence order, at most `limit`. `query` is literal text, so `%`, `_` and `\`
     /// are ordinary characters; it is not empty (the use-case refuses that). Spike 0002, ADR-0083.
@@ -968,6 +981,9 @@ pub trait Tx: Send {
     /// Atomic counter increment + `sort_order` (ADR-0043 B1). Monotonic, never reused.
     async fn allocate(&mut self, scope: &Scope) -> Result<Allocation, DbError>;
     async fn insert_work_item(&mut self, scope: &Scope, item: &WorkItem) -> Result<(), DbError>;
+    /// Give a work item this transaction has just inserted its compat attributes (state, priority, dates, description, who it
+    /// is assigned to and its labels). The item is of the scope's project, or the call is refused.
+    async fn insert_work_item_attrs(&mut self, scope: &Scope, id: WorkItemId, attrs: &WorkItemAttrs) -> Result<(), DbError>;
     async fn soft_delete_work_item(
         &mut self,
         scope: &Scope,
@@ -977,6 +993,76 @@ pub trait Tx: Send {
     async fn insert_outbox(&mut self, scope: &Scope, row: &OutboxRow) -> Result<(), DbError>;
     async fn commit(self: Box<Self>) -> Result<(), DbError>;
     async fn rollback(self: Box<Self>) -> Result<(), DbError>;
+}
+
+/// The column a page of work items is ordered by (the pin's allowlist, less the three that order by the least of a list: labels,
+/// assignees and modules, which the compat plane does not offer yet).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WorkItemOrderField {
+    CreatedAt,
+    UpdatedAt,
+    SequenceId,
+    SortOrder,
+    TargetDate,
+    StartDate,
+    CompletedAt,
+    ArchivedAt,
+    Priority,
+    StateName,
+    StateGroup,
+}
+
+impl WorkItemOrderField {
+    pub const ALL: [WorkItemOrderField; 11] = [
+        WorkItemOrderField::CreatedAt,
+        WorkItemOrderField::UpdatedAt,
+        WorkItemOrderField::SequenceId,
+        WorkItemOrderField::SortOrder,
+        WorkItemOrderField::TargetDate,
+        WorkItemOrderField::StartDate,
+        WorkItemOrderField::CompletedAt,
+        WorkItemOrderField::ArchivedAt,
+        WorkItemOrderField::Priority,
+        WorkItemOrderField::StateName,
+        WorkItemOrderField::StateGroup,
+    ];
+}
+
+/// How a page of work items is ordered. The pin's rules, which an adapter must keep: a date that is null sorts last, whichever way
+/// the order runs; ties are broken by newest first (`created_at`, then `sequence_id`, both descending), except that an order by
+/// `created_at` or `updated_at` breaks its own ties the way it runs (by `sequence_id`); `priority` runs from `none` to `urgent`
+/// when it is ascending and from `urgent` to `none` when it is descending (its number is inverted before it is sorted on);
+/// `state_group` runs `backlog`, `unstarted`, `started`, `completed`, `cancelled` whichever way it is asked (a quirk of the
+/// pin's own code, kept).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WorkItemOrder {
+    pub field: WorkItemOrderField,
+    pub descending: bool,
+}
+
+/// What a page of the project's work items is asked for.
+#[derive(Debug, Clone, PartialEq)]
+pub struct WorkItemQuery {
+    pub order: WorkItemOrder,
+    /// Rows to a page, at least 1.
+    pub limit: u32,
+    /// The page's number, from 0.
+    pub page: u32,
+    /// Only the items changed after this time (`updated_at__gt`).
+    pub updated_after: Option<Timestamp>,
+    /// Only the items this person made (a guest who may not see the others').
+    pub created_by: Option<UserId>,
+}
+
+/// One page of work items.
+#[derive(Debug, Clone, PartialEq)]
+pub struct WorkItemPage {
+    /// At most `limit` rows.
+    pub rows: Vec<WorkItemRow>,
+    /// Whether the next page has a row.
+    pub has_next: bool,
+    /// How many items match the query, over every page.
+    pub total: u64,
 }
 
 /// What every adapter checks before a `Tx` write: the row belongs to the scope it is written
