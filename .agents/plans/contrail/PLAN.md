@@ -150,7 +150,7 @@ Subjects are shortened from the handoff's Track B table (`reviews/2026-10-19-fab
 | #38 | spike 0003: the two-day Rust auth slice (done on `feat/auth-slice`: `research/0012-auth-slice.md`) | M0 | #36 | FR-16 | `plane-byd.11.5` |
 | #39 | `placement.region = aws:us-east-1`; 5-round-trip budget counter in the contract suite | M0 | | FR-08 | |
 | #40 | clippy deny list, `cargo fmt --check`, `cargo-deny`; forbid `sqlx`, `sea-orm`, `diesel` | M0 | | FR-07, ADR-0006 panic policy | |
-| #41 | authenticated TLS to CNPG through an Origin CA server certificate and `verify_ca` | M0 | #37 | FR-09 | `plane-byd.9`, `infra-qnyi` |
+| #41 | authenticated TLS to CNPG through an Origin CA server certificate and `verify_ca` (done on `thrust-pg-dev` 2026-11-06, infra PRs #1008 and #1009; `thrust-pg` still to do) | M0 | #37 | FR-09 | `plane-byd.9`, `infra-qnyi` |
 | #42 | `GET /healthz?deep=1` and a `status.woven` probe; availability measured on it | M2 | #37 | FR-10 | |
 | #43 | single-Worker topology; remove the Workflow binding, `entry.mjs`, the DO rate limiter, `SELF` | M0 | | FR-05, FR-11 | |
 | #44 | the 48-route minimum slice with the auth-client JSON change | M1 | #35 #36 #37 #38 #47 | FR-01 | `plane-byd.3` |
