@@ -1,4 +1,11 @@
 //! Attachments (ADR-0080) through the use-cases: storage round trip, the size limit, and who may read and write.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test fails, and clippy.toml exempts only #[test] functions and #[cfg(test)] modules, not the helpers around them"
+)]
 
 mod common;
 

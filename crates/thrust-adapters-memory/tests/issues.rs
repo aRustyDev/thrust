@@ -12,6 +12,13 @@
 //! * A page holds the live items of one project (not deleted, archived or a draft), `limit` of them from page number `page`,
 //!   says whether another page follows and how many items match. The order is the one `WorkItemOrder` documents: a null date
 //!   last, ties newest first, `priority` from `none` to `urgent` when ascending, `state_group` always from `backlog` on.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test fails, and clippy.toml exempts only #[test] functions and #[cfg(test)] modules, not the helpers around them"
+)]
 
 mod common;
 
@@ -404,7 +411,7 @@ fn group_rank(m: &Made) -> u8 {
 /// the oracle for the adapter's comparator, which is written as one comparison.
 fn oracle(items: &[Made], field: WorkItemOrderField, descending: bool) -> Vec<i64> {
     let mut v: Vec<Made> = items.to_vec();
-    v.sort_by(|a, b| (b.spec.created, b.seq).cmp(&(a.spec.created, a.seq)));
+    v.sort_by_key(|a| std::cmp::Reverse((a.spec.created, a.seq)));
     // dates and times: the ones that are null go after the others, whichever way it runs
     fn nulls_last<K: Ord + Copy>(v: &mut [Made], key: impl Fn(&Made) -> Option<K>, descending: bool) {
         v.sort_by(|a, b| match (key(a), key(b)) {
@@ -441,7 +448,7 @@ fn oracle(items: &[Made], field: WorkItemOrderField, descending: bool) -> Vec<i6
                 }
             });
         }
-        WorkItemOrderField::StateName => nulls_last(&mut v, |m| state_name(m), descending),
+        WorkItemOrderField::StateName => nulls_last(&mut v, state_name, descending),
         WorkItemOrderField::StateGroup => v.sort_by_key(group_rank),
     }
     let by_key_only = matches!(
@@ -596,7 +603,7 @@ proptest! {
             block_on(tx.insert_work_item(&s, &item)).unwrap();
             block_on(tx.insert_work_item_attrs(&s, id, &spec.attrs(*creator))).unwrap();
             block_on(tx.commit()).unwrap();
-            if after.map_or(true, |t| spec.updated > t) && by.map_or(true, |u| u == *creator) {
+            if after.is_none_or(|t| spec.updated > t) && by.is_none_or(|u| u == *creator) {
                 kept += 1;
             }
         }

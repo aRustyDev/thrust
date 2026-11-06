@@ -3,7 +3,7 @@
 //! The roots inject an [`App`] (and an [`ApiConfig`]) as request extensions:
 //!   * native  -> `router().layer(Extension(app))`
 //!   * Worker  -> `req.extensions_mut().insert(app)` once per request (adapters such as the
-//!                Hyperdrive socket are request-scoped in workerd, so the `App` is too)
+//!     Hyperdrive socket are request-scoped in workerd, so the `App` is too)
 //!
 //! Handlers therefore never see a platform type.
 

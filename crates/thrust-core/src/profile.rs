@@ -66,7 +66,7 @@ fn line_has_url(s: &[char]) -> bool {
         // www. then a letter or digit
         let www = starts_with(i, "www.") && alnum(at(i + 4));
         // a dot after a letter or digit and before two letters
-        let dotted = s[i] == '.' && i > 0 && alnum(at(i - 1)) && letter(at(i + 1)) && letter(at(i + 2));
+        let dotted = at(i) == Some('.') && i > 0 && alnum(at(i - 1)) && letter(at(i + 1)) && letter(at(i + 2));
         http || www || dotted
     }) || has_ipv4(s)
 }
@@ -80,10 +80,11 @@ fn has_ipv4(s: &[char]) -> bool {
         (1..=3).contains(&p.len()) && p.chars().all(|c| c.is_ascii_digit()) && p.parse::<u16>().is_ok_and(|n| n <= 255)
     };
     parts.windows(4).any(|w| {
-        w[0].chars().last().is_some_and(|c| c.is_ascii_digit())
-            && octet(w[1])
-            && octet(w[2])
-            && w[3].chars().next().is_some_and(|c| c.is_ascii_digit())
+        let [first, second, third, last] = w else { return false };
+        first.chars().last().is_some_and(|c| c.is_ascii_digit())
+            && octet(second)
+            && octet(third)
+            && last.chars().next().is_some_and(|c| c.is_ascii_digit())
     })
 }
 

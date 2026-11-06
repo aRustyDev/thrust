@@ -230,10 +230,9 @@ fn a_lead_must_be_a_user() {
     );
     assert!(matches!(got, Err(ProjectError::Core(CoreError::Invalid(_)))), "{got:?}");
     assert!(
-        block_on(project_clashes(&w.app, &wscope(&w, Actor::OutsiderA, Role::Admin), Some("New"), None, None))
+        !block_on(project_clashes(&w.app, &wscope(&w, Actor::OutsiderA, Role::Admin), Some("New"), None, None))
             .unwrap()
             .name
-            == false
     );
 }
 

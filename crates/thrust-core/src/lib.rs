@@ -679,6 +679,11 @@ fn blob_key(scope: &Scope, item: WorkItemId, name: &str) -> String {
     format!("{}/{}/{}/{}", scope.workspace_id(), scope.project_id(), item, name)
 }
 
+#[allow(
+    clippy::too_many_arguments,
+    reason = "a use-case entry point takes who is asking, the route (slug, project, item) and the upload (name, bytes, type) as \
+              separate arguments, like its siblings; a parameter struct would only rename them"
+)]
 pub async fn put_attachment(
     app: &App,
     who: &Principal,

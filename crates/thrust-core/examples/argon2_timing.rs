@@ -6,6 +6,13 @@
 //! It is an example, not a test: it reads a wall clock, which hermetic tests may not (AGENTS.md rule 6). The release
 //! profile of this workspace optimises for size (`opt-level = "s"`, the Worker's), so this is the speed of the same build
 //! the wasm bundle gets, not of a speed-tuned native one.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    reason = "an example, not shipped: it is run by hand and a panic is how it fails"
+)]
 
 use std::time::Instant;
 

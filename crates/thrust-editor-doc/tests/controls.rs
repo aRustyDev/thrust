@@ -163,8 +163,8 @@ fn corruptions(bin: &[u8], salt: usize) -> Vec<(&'static str, Vec<u8>)> {
     out.push(("flip-byte", f));
     let mut z = bin.to_vec();
     let at = (salt * 104729 + n / 2) % n.max(1);
-    for i in at..(at + 4).min(n) {
-        z[i] = 0;
+    for byte in z.iter_mut().take((at + 4).min(n)).skip(at) {
+        *byte = 0;
     }
     out.push(("zero-4-bytes", z));
     out.push(("garbage", vec![0xde, 0xad, 0xbe, 0xef, 1, 2, 3]));

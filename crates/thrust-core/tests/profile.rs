@@ -5,6 +5,13 @@
 //! generated ASCII text, with the pattern as the oracle); an account has a profile from the moment it is made, and an older
 //! one gets its profile on first read; a change sets exactly the fields it names and leaves the rest; two changes to
 //! different fields both survive; a refused change writes nothing; signing in records when.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test fails, and clippy.toml exempts only #[test] functions and #[cfg(test)] modules, not the helpers around them"
+)]
 
 mod common;
 

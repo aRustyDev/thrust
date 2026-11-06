@@ -1,6 +1,13 @@
 //! Shared helpers for the `thrust-core` integration tests: proptest configuration and a fixed world built from
 //! the memory adapters (the reference implementation of every port).
 #![allow(dead_code)]
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test fails, and clippy.toml exempts only #[test] functions and #[cfg(test)] modules, not the helpers around them"
+)]
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;

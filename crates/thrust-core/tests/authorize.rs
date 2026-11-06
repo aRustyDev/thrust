@@ -1,4 +1,11 @@
 //! The permission seam and the queue consumer, against the memory adapters.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test fails, and clippy.toml exempts only #[test] functions and #[cfg(test)] modules, not the helpers around them"
+)]
 
 mod common;
 

@@ -5,6 +5,13 @@
 //! The tests below each pin one behaviour; `model` generates them instead: random sequences of `Database` and `Tx`
 //! calls against a reference model. It is compiled into this binary, so it needs Docker too and stays out of the
 //! hermetic default loop.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test fails, and clippy.toml exempts only #[test] functions and #[cfg(test)] modules, not the helpers around them"
+)]
 
 mod model;
 

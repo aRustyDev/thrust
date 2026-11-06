@@ -16,6 +16,13 @@
 //! * `project_members` leaves out people who are no longer active members of the workspace.
 //! * the states lists leave out the intake (triage) state; `workspace_states` holds only the projects the caller is in that are not
 //!   archived; `project_stats` counts every project of the workspace, whoever asks.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test fails, and clippy.toml exempts only #[test] functions and #[cfg(test)] modules, not the helpers around them"
+)]
 
 mod common;
 

@@ -47,6 +47,17 @@ thrust-adapters-oidc = { path = "crates/thrust-adapters-oidc" }
 thrust-api = { path = "crates/thrust-api" }
 thrust-compat-plane = { path = "crates/thrust-compat-plane" }
 
+# ADR-0006's panic policy: request-derived data can never panic, because on the Worker (panic=abort) a panic fails its own request
+# and can fail others on the same isolate. A crate opts in with `[lints] workspace = true`: thrust-core, thrust-ports and every
+# adapter. These four are in clippy's `restriction` group, off unless named here. `deny`, not `forbid`, so a site that is right (a
+# startup `expect`, an index that a bound proves) can say so with `#[allow(clippy::..., reason = "...")]`. Test code is exempt
+# through `clippy.toml`.
+[workspace.lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+
 [profile.release]
 # Spike measurement profile for the wasm bundle. See research/0004 for the numbers.
 opt-level = "s"

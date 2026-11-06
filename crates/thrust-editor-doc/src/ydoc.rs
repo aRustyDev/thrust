@@ -173,9 +173,7 @@ fn text_nodes(schema: &Schema, txn: &impl ReadTxn, t: &XmlTextRef) -> Option<Vec
             // `attributesToMarks`: iteration order of the delta attributes, then sorted by rank in `schema.text`
             for (name, val) in attrs.iter() {
                 let base = strip_hash(name);
-                let Some(ty) = schema.mark_type(base) else {
-                    return None;
-                };
+                let ty = schema.mark_type(base)?;
                 let given: Attrs = match any_to_value(val) {
                     Some(Value::Object(o)) => o.into_iter().collect(),
                     _ => Attrs::new(),
@@ -226,14 +224,11 @@ fn node_from_element(schema: &Schema, txn: &impl ReadTxn, el: &yrs::XmlElementRe
 pub fn fragment_to_doc(schema: &Schema, txn: &impl ReadTxn, frag: &XmlFragmentRef) -> Node {
     let mut children = vec![];
     for c in frag.children(txn) {
-        match c {
-            XmlOut::Element(e) => {
-                if let Some(n) = node_from_element(schema, txn, &e) {
-                    children.push(n);
-                }
+        // y-prosemirror's yXmlFragmentToProseMirrorFragment assumes elements; text at the root is not produced
+        if let XmlOut::Element(e) = c {
+            if let Some(n) = node_from_element(schema, txn, &e) {
+                children.push(n);
             }
-            // y-prosemirror's yXmlFragmentToProseMirrorFragment assumes elements; text at the root is not produced
-            _ => {}
         }
     }
     Node::create(schema, schema.top, &Attrs::new(), join_text(children))

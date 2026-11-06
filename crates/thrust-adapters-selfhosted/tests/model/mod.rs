@@ -224,7 +224,7 @@ fn sidebar_defaults(mask: u8, salt: u8) -> Vec<SidebarPreference> {
         // two keys can share a sort order (the port breaks the tie by key), and the orders are fractional
         .map(|i| SidebarPreference {
             key: PREF_KEYS[i].to_string(),
-            is_pinned: (i as u8 + salt) % 2 == 0,
+            is_pinned: (i as u8 + salt).is_multiple_of(2),
             sort_order: f64::from((i as u8 + salt) % 3) + 0.5,
         })
         .collect()
@@ -251,7 +251,7 @@ fn properties_defaults(salt: u8, at: Timestamp) -> UserProperties {
         display_properties: serde_json::json!({"display_properties": {"key": true}}),
         rich_filters: serde_json::json!({}),
         navigation_project_limit: 10 + i32::from(salt),
-        navigation_control_preference: if salt % 2 == 0 { "ACCORDION" } else { "TABBED" }.to_string(),
+        navigation_control_preference: if salt.is_multiple_of(2) { "ACCORDION" } else { "TABBED" }.to_string(),
         created_at: at,
         updated_at: at,
     }
@@ -1287,7 +1287,7 @@ enum Call {
         except: Option<ProjectId>,
         want: ProjectClashes,
     },
-    UpdateProjectCall {
+    UpdateProject {
         scope: (WorkspaceId, UserId, Role),
         row: ProjectRow,
         want: UpdateWant,
@@ -2195,7 +2195,7 @@ fn item(ws: WorkspaceId, p: ProjectId, a: Allocation, ext: Option<u8>) -> WorkIt
 fn order_oracle(rows: &[WorkItemRow], order: WorkItemOrder, states: &[StateRow]) -> Vec<WorkItemRow> {
     use std::cmp::Ordering;
     let mut v: Vec<WorkItemRow> = rows.to_vec();
-    v.sort_by(|a, b| (b.item.created_at, b.item.sequence_id).cmp(&(a.item.created_at, a.item.sequence_id)));
+    v.sort_by_key(|a| std::cmp::Reverse((a.item.created_at, a.item.sequence_id)));
     fn nulls_last<K: Ord>(v: &mut [WorkItemRow], key: impl Fn(&WorkItemRow) -> Option<K>, descending: bool) {
         v.sort_by(|a, b| match (key(a), key(b)) {
             (Some(x), Some(y)) => {
@@ -2387,7 +2387,7 @@ impl Model {
             (false, true, false) => Class::KeyUserInactiveHidden,
             (false, true, true) => Class::KeyLive,
         };
-        let want = (class == Class::KeyLive).then(|| LiveApiKey {
+        let want = (class == Class::KeyLive).then_some(LiveApiKey {
             id: m.new.id,
             user_id: m.new.user_id,
             last_used_at: m.last_used,
@@ -2465,7 +2465,7 @@ impl Model {
                             (false, true, false) => Class::SessionUserInactiveHidden,
                             (false, true, true) => Class::SessionLive,
                         };
-                        let want = live.then(|| LiveSession { user_id: m.new.user_id, last_seen_at: m.last_seen });
+                        let want = live.then_some(LiveSession { user_id: m.new.user_id, last_seen_at: m.last_seen });
                         (m.new.token_hash, now, want, class)
                     }
                 };
@@ -3072,7 +3072,7 @@ impl Model {
                     .filter(|m| m.2 == s)
                     .map(|m| (self.fix.user(m.0), m.1, spec.member_row_id(self.fix.user(m.0))))
                     .collect();
-                rows.sort_by(|a, b| b.2.cmp(&a.2));
+                rows.sort_by_key(|a| std::cmp::Reverse(a.2));
                 let next_sequence = if proj < 2 { self.counter[proj] + 1 } else { 1 };
                 let detail = ProjectDetail {
                     listing: ProjectListing {
@@ -3168,7 +3168,7 @@ impl Model {
                 let specs = self.fix.specs();
                 let mut in_slot: Vec<(usize, &ProjSpec)> =
                     specs.iter().enumerate().filter(|(_, p)| p.slot == s).collect();
-                in_slot.sort_by(|a, b| (b.1.created, b.1.id).cmp(&(a.1.created, a.1.id)));
+                in_slot.sort_by_key(|a| std::cmp::Reverse((a.1.created, a.1.id)));
                 let stat = |(i, p): &(usize, &ProjSpec)| {
                     // only the committed live work items of the two projects that have a counter count
                     let issues = if *i < 2 && !p.archived {
@@ -3181,7 +3181,8 @@ impl Model {
                     };
                     (p.id, issues, p.members.iter().filter(|m| m.2 == s).count() as i64)
                 };
-                let (asked, want): (Option<Vec<ProjectId>>, Vec<(ProjectId, i64, i64)>) = if only {
+                type ProjectStat = (ProjectId, i64, i64);
+                let (asked, want): (Option<Vec<ProjectId>>, Vec<ProjectStat>) = if only {
                     // the first project of the workspace, and one of the other workspace's, which is not there
                     let first = in_slot[0].1.id;
                     let foreign = specs.iter().find(|p| p.slot != s).expect("a project of the other workspace").id;
@@ -3381,7 +3382,7 @@ impl Model {
                         row.updated_by = Some(u1);
                         row.updated_at = tick();
                         let _ = what;
-                        calls.push(Call::UpdateProjectCall { scope: admin, row, want: UpdateWant::Conflict });
+                        calls.push(Call::UpdateProject { scope: admin, row, want: UpdateWant::Conflict });
                         classes.push(Class::ProjectRenameConflict);
                     }
                 }
@@ -3406,7 +3407,7 @@ impl Model {
                 let mut sent = renamed.clone();
                 sent.created_at = tick();
                 sent.created_by = Some(u2);
-                calls.push(Call::UpdateProjectCall { scope: admin, row: sent, want: UpdateWant::Done });
+                calls.push(Call::UpdateProject { scope: admin, row: sent, want: UpdateWant::Done });
                 classes.push(Class::ProjectRenamed);
                 calls.push(Call::ProjectDetailOf {
                     scope: as_user(u1),
@@ -3428,10 +3429,10 @@ impl Model {
                 // a project that is not in the workspace is not there to change
                 let mut unknown = renamed.clone();
                 unknown.id = ProjectId(new_id());
-                calls.push(Call::UpdateProjectCall { scope: admin, row: unknown, want: UpdateWant::Unknown });
+                calls.push(Call::UpdateProject { scope: admin, row: unknown, want: UpdateWant::Unknown });
                 classes.push(Class::ProjectUpdateUnknown);
                 // and a project of this workspace through another workspace's scope is not there either
-                calls.push(Call::UpdateProjectCall {
+                calls.push(Call::UpdateProject {
                     scope: (self.fix.ws[0], u1, Role::Admin),
                     row: renamed,
                     want: UpdateWant::Unknown,
@@ -3739,7 +3740,7 @@ impl Model {
             });
         }
         // one row at a time, and one that is not there
-        for r in live.iter().filter(|r| specs.len() > 0 && self.attrs.contains_key(&r.item.id)).take(2) {
+        for r in live.iter().filter(|r| !specs.is_empty() && self.attrs.contains_key(&r.item.id)).take(2) {
             classes.push(Class::ItemRowRead);
             calls.push(Call::WorkItemRowOf { ws, p, id: r.item.id, want: Some(r.clone()) });
         }
@@ -3858,8 +3859,8 @@ impl Model {
             }
         }
         // FR-22: every number `allocate` handed out is taken for good, whatever becomes of the transaction.
-        for s in 0..2 {
-            self.counter[s] += allocs[s];
+        for (counter, taken) in self.counter.iter_mut().zip(&allocs) {
+            *counter += *taken;
         }
         let took_numbers = allocs.iter().any(|a| *a > 0);
         if failed {
@@ -3874,8 +3875,8 @@ impl Model {
             End::Commit => {
                 classes.push(Class::Committed);
                 calls.push(Call::Commit);
-                for s in 0..2 {
-                    self.rows[s].append(&mut written[s]);
+                for (rows, new_rows) in self.rows.iter_mut().zip(written.iter_mut()) {
+                    rows.append(new_rows);
                 }
                 for (s, id, at) in deleted {
                     if let Some(r) = self.rows[s].iter_mut().find(|r| r.id == id) {
@@ -4146,17 +4147,17 @@ async fn execute(db: &dyn Database, tx: &mut Option<Box<dyn Tx>>, call: Call, at
             .await?;
             prop_assert_eq!(got, want, "{}: project clashes", at);
         }
-        Call::UpdateProjectCall { scope: (w, u, r), row, want } => {
+        Call::UpdateProject { scope: (w, u, r), row, want } => {
             let got =
                 tokio::time::timeout(Duration::from_secs(20), db.update_project(&WorkspaceScope::mint(w, u, r), &row))
                     .await
                     .map_err(|_| fail(at, "timed out after 20 s"))?;
-            let ok = match (&got, want) {
+            let ok = matches!(
+                (&got, want),
                 (Ok(true), UpdateWant::Done)
-                | (Ok(false), UpdateWant::Unknown)
-                | (Err(DbError::Conflict(_)), UpdateWant::Conflict) => true,
-                _ => false,
-            };
+                    | (Ok(false), UpdateWant::Unknown)
+                    | (Err(DbError::Conflict(_)), UpdateWant::Conflict)
+            );
             prop_assert!(ok, "{}: update project: got {:?}, want {:?}", at, got, want);
         }
         Call::ProjectDetailOf { scope: (w, u, r), id, want } => {

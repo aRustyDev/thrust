@@ -150,7 +150,7 @@ impl Dom {
         self.nodes[n].children.iter().copied().find(|c| self.is_element(*c))
     }
     pub fn class_list_contains(&self, n: usize, cls: &str) -> bool {
-        self.get_attribute(n, "class").map(|c| c.trim().split_whitespace().any(|x| x == cls)).unwrap_or(false)
+        self.get_attribute(n, "class").map(|c| c.split_whitespace().any(|x| x == cls)).unwrap_or(false)
     }
 }
 

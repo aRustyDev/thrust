@@ -1197,10 +1197,11 @@ impl Database for PgDatabase {
         let temps = ProjectTemps::of(row);
         let columns = project_columns(row, &temps);
         // everything but the first four columns (the id, the workspace and the creation) is replaced
-        let set: Vec<String> = columns[4..].iter().enumerate().map(|(i, c)| format!("{} = ${}", c.0, i + 3)).collect();
+        let replaced = columns.get(4..).unwrap_or_default();
+        let set: Vec<String> = replaced.iter().enumerate().map(|(i, c)| format!("{} = ${}", c.0, i + 3)).collect();
         let workspace = scope.workspace_id().0;
         let mut params: Vec<&dyn PgParam> = vec![&row.id.0, &workspace];
-        params.extend(columns[4..].iter().map(|c| c.1));
+        params.extend(replaced.iter().map(|c| c.1));
         let c = self.conn().await?;
         let n = Pg(c.client())
             .execute(&format!("UPDATE projects SET {} WHERE id = $1 AND workspace_id = $2", set.join(", ")), &params)
@@ -2164,9 +2165,16 @@ pub struct PgTx {
     connector: Arc<dyn Connector>,
 }
 
+/// What a call on a transaction that has lost its connection answers. `ensure_tx` drops the connection when `BEGIN` fails (its state
+/// is unknown, so it is not reused); a further call on that transaction must fail, and never panic.
+const TX_HAS_NO_CONNECTION: &str = "transaction already finished: its connection was discarded";
+
 impl PgTx {
-    fn client(&self) -> Pg<'_> {
-        Pg(self.conn.as_ref().expect("transaction already finished").client())
+    fn client(&self) -> Result<Pg<'_>, DbError> {
+        match &self.conn {
+            Some(c) => Ok(Pg(c.client())),
+            None => Err(DbError::Backend(TX_HAS_NO_CONNECTION.into())),
+        }
     }
 
     /// Open the transaction on first use. If `BEGIN` fails the connection's state is unknown, so it is not reused.
@@ -2174,7 +2182,7 @@ impl PgTx {
         if self.in_tx {
             return Ok(());
         }
-        match self.client().batch_execute("BEGIN").await {
+        match self.client()?.batch_execute("BEGIN").await {
             Ok(()) => {
                 self.in_tx = true;
                 Ok(())
@@ -2225,7 +2233,7 @@ impl Tx for PgTx {
             drop(other); // autocommit: nothing is open on it, it is clean
             r
         } else {
-            self.client().query_one(UPSERT, &[&ws.0, &project.0]).await
+            self.client()?.query_one(UPSERT, &[&ws.0, &project.0]).await
         }
         .map_err(db_err)?;
         Ok(Allocation { sequence_id: r.get(0), sort_order: r.get(1) })
@@ -2234,7 +2242,7 @@ impl Tx for PgTx {
     async fn insert_work_item(&mut self, scope: &Scope, w: &WorkItem) -> Result<(), DbError> {
         check_tenant(scope, w.workspace_id, Some(w.project_id))?;
         self.ensure_tx().await?;
-        self.client()
+        self.client()?
             .execute(
                 &format!(
                     // a work item has been changed when it was made: `updated_at` is the creation time until a change moves it
@@ -2272,7 +2280,7 @@ impl Tx for PgTx {
         self.ensure_tx().await?;
         let priority = attrs.priority.as_str();
         let n = self
-            .client()
+            .client()?
             .execute(
                 "UPDATE work_items SET state_id = $4, priority = $5, start_date = $6, target_date = $7, completed_at = $8, \
                    updated_at = $9, updated_by = $10, description_html = $11 \
@@ -2297,7 +2305,7 @@ impl Tx for PgTx {
             return Err(DbError::Backend("work item attributes for a work item that is not there".into()));
         }
         let people: Vec<Uuid> = attrs.assignee_ids.iter().map(|u| u.0).collect();
-        self.client()
+        self.client()?
             .execute(
                 "INSERT INTO work_item_assignees (work_item_id, workspace_id, project_id, user_id, created_at) \
                  SELECT $1, $2, $3, t.user_id, $5 FROM unnest($4::uuid[]) AS t(user_id) ON CONFLICT (work_item_id, user_id) DO NOTHING",
@@ -2305,7 +2313,7 @@ impl Tx for PgTx {
             )
             .await
             .map_err(db_err)?;
-        self.client()
+        self.client()?
             .execute(
                 "INSERT INTO work_item_labels (work_item_id, workspace_id, project_id, label_id, created_at) \
                  SELECT $1, $2, $3, t.label_id, $5 FROM unnest($4::uuid[]) AS t(label_id) ON CONFLICT (work_item_id, label_id) DO NOTHING",
@@ -2320,7 +2328,7 @@ impl Tx for PgTx {
         let (ws, project) = (scope.workspace_id(), scope.project_id());
         self.ensure_tx().await?;
         let n = self
-            .client()
+            .client()?
             .execute(
                 "UPDATE work_items SET deleted_at = $4 \
                  WHERE workspace_id = $1 AND project_id = $2 AND id = $3 AND deleted_at IS NULL",
@@ -2336,7 +2344,7 @@ impl Tx for PgTx {
         let envelope = serde_json::to_value(&row.envelope).map_err(|e| DbError::Backend(e.to_string()))?;
         let params: Params = &[&row.envelope.event_id.0, &row.envelope.workspace_id.0, &envelope, &row.created_at];
         self.ensure_tx().await?;
-        self.client()
+        self.client()?
             .execute(
                 "INSERT INTO outbox (event_id, workspace_id, envelope, created_at, dispatched_at, attempts) \
                  VALUES ($1, $2, $3, $4, NULL, 0)",
@@ -2350,7 +2358,10 @@ impl Tx for PgTx {
     async fn commit(self: Box<Self>) -> Result<(), DbError> {
         let mut this = *self;
         let in_tx = this.in_tx;
-        let conn = this.conn.take().expect("transaction already finished");
+        let Some(conn) = this.conn.take() else {
+            // The connection was discarded (a failed `BEGIN`): nothing can be committed, and the caller is not told it was.
+            return Err(DbError::Backend(TX_HAS_NO_CONNECTION.into()));
+        };
         if !in_tx {
             // Nothing was written, so no transaction was opened: the connection is clean and goes back as it is.
             return Ok(());
@@ -2367,7 +2378,10 @@ impl Tx for PgTx {
     async fn rollback(self: Box<Self>) -> Result<(), DbError> {
         let mut this = *self;
         let in_tx = this.in_tx;
-        let conn = this.conn.take().expect("transaction already finished");
+        let Some(conn) = this.conn.take() else {
+            // The connection was discarded (a failed `BEGIN`), which closed it and so rolled back whatever it held: nothing to do.
+            return Ok(());
+        };
         if !in_tx {
             return Ok(());
         }
@@ -2378,5 +2392,58 @@ impl Tx for PgTx {
                 Err(db_err(e))
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::future::Future;
+    use std::task::{Context, Poll, Waker};
+
+    use super::*;
+
+    /// A `Connector` that is never asked: the transactions below have no connection, which is the point.
+    struct NoConnector;
+
+    #[async_trait]
+    impl Connector for NoConnector {
+        async fn checkout(&self, _exclusive: bool) -> Result<Box<dyn ClientHandle>, DbError> {
+            Err(DbError::Backend("no connector in this test".into()))
+        }
+    }
+
+    /// Runs a future that has nothing to wait for.
+    fn ready<T>(f: impl Future<Output = T>) -> T {
+        let mut f = std::pin::pin!(f);
+        match f.as_mut().poll(&mut Context::from_waker(Waker::noop())) {
+            Poll::Ready(v) => v,
+            Poll::Pending => panic!("the future was not ready"),
+        }
+    }
+
+    /// A transaction whose connection has been discarded: what `ensure_tx` leaves behind when `BEGIN` fails.
+    fn discarded() -> PgTx {
+        PgTx { conn: None, in_tx: false, connector: Arc::new(NoConnector) }
+    }
+
+    // Pinned regression (issue #40, ADR-0006): each of these was `expect("transaction already finished")`, a panic on request-driven
+    // control flow (a first write whose `BEGIN` failed, then any further call on the same transaction).
+    #[test]
+    fn a_call_on_a_transaction_that_lost_its_connection_is_an_error() {
+        let tx = discarded();
+        let r = tx.client();
+        assert!(matches!(&r, Err(DbError::Backend(m)) if m == TX_HAS_NO_CONNECTION));
+    }
+
+    #[test]
+    fn commit_on_a_transaction_that_lost_its_connection_is_an_error() {
+        let r = ready(Box::new(discarded()).commit());
+        assert!(matches!(&r, Err(DbError::Backend(m)) if m == TX_HAS_NO_CONNECTION), "{r:?}");
+    }
+
+    #[test]
+    fn rollback_on_a_transaction_that_lost_its_connection_is_a_no_op() {
+        let r = ready(Box::new(discarded()).rollback());
+        assert!(r.is_ok(), "{r:?}");
     }
 }
