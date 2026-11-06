@@ -1,0 +1,1782 @@
+{
+ "facts": {
+  "grouped_listing_rows": [
+   "internal GET /api/workspaces/{slug}/advance-analytics-charts/ [P1]",
+   "internal GET /api/workspaces/{slug}/projects/{project_id}/advance-analytics-charts/ [P1]",
+   "internal GET /api/workspaces/{slug}/projects/{project_id}/archived-issues/ [P0]",
+   "internal GET /api/workspaces/{slug}/projects/{project_id}/cycles/{cycle_id}/cycle-issues/ [P0]",
+   "internal GET /api/workspaces/{slug}/projects/{project_id}/issues/ [P0]",
+   "internal GET /api/workspaces/{slug}/projects/{project_id}/issues/list/ [P0]",
+   "internal GET /api/workspaces/{slug}/projects/{project_id}/issues/{issue_id}/sub-issues/ [P0]",
+   "internal GET /api/workspaces/{slug}/projects/{project_id}/modules/{module_id}/issues/ [not-used]",
+   "internal GET /api/workspaces/{slug}/user-issues/{user_id}/ [P0]",
+   "space GET /api/public/anchor/{anchor}/issues/ [P0]"
+  ],
+  "p0_rows_with_bg_tasks": 72,
+  "paginated_listing_rows": 19,
+  "slice_entries_whose_handler_dispatches_a_task": [
+   "S14",
+   "S29",
+   "S30",
+   "S32",
+   "S34",
+   "S47",
+   "S48",
+   "X01",
+   "X03"
+  ],
+  "slice_methods": {
+   "GET": 35,
+   "PATCH": 5,
+   "POST": 8
+  },
+  "slice_non_p0_rows": [
+   "S12 GET /api/users/me/workspaces/invitations/ [P1]",
+   "S35 GET /api/workspaces/{}/project-stats/ [P1]"
+  ],
+  "slice_tiers": {
+   "P0": 46,
+   "P1": 2
+  }
+ },
+ "model": {
+  "foundations": {
+   "csrf+session-form-flow": {
+    "days": 4.0,
+    "what": "GET /auth/get-csrf-token/, form-POST sign-in/sign-up/sign-out with 302 + ?error_code=...&error_message=... + next_path validation, rate limits, session cookie 'session-id'",
+    "where": "authentication/views/app/*, authentication/adapter/error.py, authentication/rate_limit.py"
+   },
+   "error-bodies": {
+    "days": 1.0,
+    "what": "three error shapes: DRF {detail}, project {error}, serializer {field:[msgs]}; map core errors onto them (status codes included)",
+    "where": "app/views/base.py handle_exception, authentication/adapter/exception.py (anchors in shapes-anchors.json)"
+   },
+   "expand-fields-projection": {
+    "days": 2.0,
+    "what": "?expand= / ?fields= serializer projection (BaseViewSet.fields/expand)",
+    "where": "app/views/base.py fields/expand properties"
+   },
+   "group-by-engine": {
+    "days": 6.0,
+    "what": "group_by / sub_group_by listing incl. m2m FIELD_MAPPER (labels/assignees/modules), window-function paging per group, per-group total_results, group value enumeration",
+    "where": "utils/paginator.py GroupedOffsetPaginator/SubGroupedOffsetPaginator, utils/grouper.py"
+   },
+   "issue-filter-parser": {
+    "days": 6.0,
+    "what": "work item filter machinery shared by every issue listing: legacy query params (25 names, issue_filters.py) AND the rich JSON `filters` tree (ComplexFilterBackend, max depth 5), order_by, sub_issue, expand, fields",
+    "where": "utils/issue_filters.py (463 lines), utils/filters/* , utils/order_queryset.py"
+   },
+   "pagination-envelope": {
+    "days": 2.0,
+    "what": "cursor 'value:offset:is_prev', per_page cap 1000, envelope {grouped_by, sub_grouped_by, total_count, next_cursor, prev_cursor, next_page_results, prev_page_results, count, total_pages, total_results, extra_stats, results}",
+    "where": "utils/paginator.py BasePaginator.paginate"
+   },
+   "presigned-asset-flow": {
+    "days": 3.0,
+    "what": "POST create asset -> presigned POST/PUT (object store) -> PATCH confirm; GET -> 302 redirect to presigned URL; bulk/restore/duplicate",
+    "where": "app/views/asset/v2.py"
+   },
+   "route-scaffold+authn": {
+    "days": 3.0,
+    "what": "axum router mounted under /api, /auth, /api/public, /api/instances; session cookie extraction -> permission seam; role decorator equivalent of @allow_permission (ROLE 5/15/20)",
+    "where": "app/permissions/base.py, authentication/session.py"
+   },
+   "serializer-shape-fidelity": {
+    "days": 3.0,
+    "what": "oracle-diff iteration on the ~25 hot serializers (IssueSerializer incl. computed counts, ProjectSerializer, UserMeSerializer, WorkspaceSerializer ...): field names, nesting, null vs absent, date formats",
+    "where": "app/serializers/*"
+   }
+  },
+  "note": "unit costs are judgement [inferred]; classification and counts are computed",
+  "per_row_days": {
+   "aggregate-other": {
+    "L": 2.5,
+    "M": 1.0,
+    "S": 0.4
+   },
+   "auth-redirect": {
+    "L": 1.5,
+    "M": 0.8,
+    "S": 0.3
+   },
+   "bulk": {
+    "L": 1.2,
+    "M": 0.8,
+    "S": 0.4
+   },
+   "crud": {
+    "L": 0.9,
+    "M": 0.4,
+    "S": 0.15
+   },
+   "file-upload": {
+    "L": 1.2,
+    "M": 0.8,
+    "S": 0.4
+   },
+   "grouped-listing": {
+    "L": 2.5,
+    "M": 1.5,
+    "S": 1.0
+   },
+   "paginated-listing": {
+    "L": 1.2,
+    "M": 0.8,
+    "S": 0.5
+   }
+  },
+  "range_multipliers": {
+   "aggregate-other": [
+    0.6,
+    2.0
+   ],
+   "auth-redirect": [
+    0.7,
+    1.6
+   ],
+   "bulk": [
+    0.7,
+    1.6
+   ],
+   "crud": [
+    0.7,
+    1.6
+   ],
+   "file-upload": [
+    0.7,
+    1.6
+   ],
+   "grouped-listing": [
+    0.7,
+    2.0
+   ],
+   "paginated-listing": [
+    0.7,
+    1.6
+   ]
+  }
+ },
+ "p0_class_by_feature": {
+  "aggregate-other": {
+   "F-A07": 1,
+   "F-A09": 2,
+   "F-A09,F-A03": 1,
+   "F-B01": 2,
+   "F-B02": 1,
+   "F-B03": 3,
+   "F-B06": 1,
+   "F-B08": 1,
+   "F-B10": 5,
+   "F-B11": 4,
+   "F-B12": 1,
+   "F-B14": 3,
+   "F-B18": 1,
+   "F-C01": 1,
+   "F-D04": 1,
+   "F-D08": 3,
+   "F-D09": 1,
+   "F-X08": 1
+  },
+  "auth-redirect": {
+   "F-A03": 13
+  },
+  "bulk": {
+   "F-B10": 1,
+   "F-B10,F-B16": 1,
+   "F-B11": 1,
+   "F-B11,F-B16": 1,
+   "F-B16": 3,
+   "F-D01": 1
+  },
+  "crud": {
+   "F-A06": 4,
+   "F-A07": 4,
+   "F-A08": 7,
+   "F-A09": 10,
+   "F-A09,F-A03": 2,
+   "F-A10": 1,
+   "F-B01": 4,
+   "F-B02": 7,
+   "F-B03": 4,
+   "F-B03,F-B16": 1,
+   "F-B04": 6,
+   "F-B05": 8,
+   "F-B06": 6,
+   "F-B07": 9,
+   "F-B10": 8,
+   "F-B10,F-B16": 1,
+   "F-B11": 9,
+   "F-B11,F-B16": 1,
+   "F-B12": 15,
+   "F-B13": 6,
+   "F-B14": 2,
+   "F-B15": 8,
+   "F-B16": 1,
+   "F-B18": 13,
+   "F-C01": 12,
+   "F-D01": 8,
+   "F-D03": 6,
+   "F-D09": 12,
+   "F-D09,F-B07": 12
+  },
+  "file-upload": {
+   "F-B06,F-D04": 4,
+   "F-D04": 20,
+   "F-D09,F-D04": 6
+  },
+  "grouped-listing": {
+   "F-A09": 1,
+   "F-B03": 1,
+   "F-B03,F-B16": 3,
+   "F-B10,F-B16": 1,
+   "F-D09": 1
+  },
+  "paginated-listing": {
+   "F-A09": 1,
+   "F-B02": 1,
+   "F-B03,F-B16": 1,
+   "F-B09": 2,
+   "F-B14": 1,
+   "F-B14,F-B09": 2,
+   "F-B15": 2,
+   "F-B16,F-B12": 1,
+   "F-D01": 1
+  }
+ },
+ "p0_slice": {
+  "by_class_min": {
+   "aggregate-other": 6,
+   "auth-redirect": 4,
+   "crud": 33,
+   "file-upload": 4,
+   "grouped-listing": 1
+  },
+  "distinct_server_routes_min": 42,
+  "entries": [
+   {
+    "call": "web:InstanceService.getInstanceInfo",
+    "class": "crud",
+    "complexity": "L",
+    "days": 0.9,
+    "features": [
+     "F-A10"
+    ],
+    "handler": "apps/api/plane/license/api/views/instance.py:36",
+    "id": "S01",
+    "kind": "min",
+    "method": "GET",
+    "path": "/api/instances/",
+    "scale": 1.0,
+    "stage": "boot",
+    "trigger": "apps/web/core/lib/wrappers/instance-wrapper.tsx:24",
+    "why": "InstanceWrapper blocks the whole app: web's getInstanceInfo has NO validateStatus override, so non-2xx -> SWR error -> MaintenanceView; `is_setup_done:false` renders InstanceNotReady and stops (space/admin use @plane/services InstanceService.info with validateStatus:null)"
+   },
+   {
+    "call": "web:UserService.currentUser",
+    "class": "crud",
+    "complexity": "S",
+    "days": 0.15,
+    "features": [
+     "F-A09",
+     "F-A03"
+    ],
+    "handler": "apps/api/plane/app/views/user/base.py:77",
+    "id": "S02",
+    "kind": "min",
+    "method": "GET",
+    "path": "/api/users/me/",
+    "scale": 1.0,
+    "stage": "boot",
+    "trigger": "apps/web/core/lib/wrappers/authentication-wrapper.tsx:41",
+    "why": "AuthenticationWrapper; `validateStatus: null` so the 401 JSON body {detail} (no `id`) means 'signed out' without tripping the 401 interceptor; with `id` it fans out to S07-S09"
+   },
+   {
+    "call": "web:AuthService.requestCSRFToken",
+    "class": "auth-redirect",
+    "complexity": "S",
+    "days": 0.3,
+    "features": [
+     "F-A03"
+    ],
+    "handler": "apps/api/plane/authentication/views/common.py:31",
+    "id": "S03",
+    "kind": "min",
+    "method": "GET",
+    "path": "/auth/get-csrf-token/",
+    "scale": 1.0,
+    "stage": "auth",
+    "trigger": "apps/web/core/components/account/auth-forms/password.tsx:74",
+    "why": "CSRF cookie is HttpOnly, so the SPA fetches the token as JSON and copies it into a hidden `csrfmiddlewaretoken` form field"
+   },
+   {
+    "call": "web:AuthService.emailCheck",
+    "class": "auth-redirect",
+    "complexity": "M",
+    "days": 0.8,
+    "features": [
+     "F-A03"
+    ],
+    "handler": "apps/api/plane/authentication/views/app/check.py:34",
+    "id": "S04",
+    "kind": "min",
+    "method": "POST",
+    "path": "/auth/email-check/",
+    "scale": 1.0,
+    "stage": "auth",
+    "trigger": "apps/web/core/components/account/auth-forms/form-root.tsx:57",
+    "why": "decides sign-in vs sign-up UI (JSON POST via axios, not a form)"
+   },
+   {
+    "call": "ref:form-action",
+    "class": "auth-redirect",
+    "complexity": "L",
+    "days": 1.5,
+    "features": [
+     "F-A03"
+    ],
+    "handler": "apps/api/plane/authentication/views/app/email.py:142",
+    "id": "S05",
+    "kind": "min",
+    "method": "POST",
+    "path": "/auth/sign-up/",
+    "scale": 1.0,
+    "stage": "auth",
+    "trigger": "apps/web/core/components/account/auth-forms/password.tsx:151",
+    "why": "HTML form POST -> always 302 (to next_path or ?error_code=...)"
+   },
+   {
+    "call": "ref:form-action",
+    "class": "auth-redirect",
+    "complexity": "L",
+    "days": 1.5,
+    "features": [
+     "F-A03"
+    ],
+    "handler": "apps/api/plane/authentication/views/app/email.py:32",
+    "id": "S06",
+    "kind": "min",
+    "method": "POST",
+    "path": "/auth/sign-in/",
+    "scale": 1.0,
+    "stage": "auth",
+    "trigger": "apps/web/core/components/account/auth-forms/password.tsx:151",
+    "why": "same form, mode switch"
+   },
+   {
+    "call": "web:UserService.getCurrentUserProfile",
+    "class": "crud",
+    "complexity": "S",
+    "days": 0.15,
+    "features": [
+     "F-A09"
+    ],
+    "handler": "apps/api/plane/app/views/user/base.py:419",
+    "id": "S07",
+    "kind": "min",
+    "method": "GET",
+    "path": "/api/users/me/profile/",
+    "scale": 1.0,
+    "stage": "boot",
+    "trigger": "apps/web/core/store/user/index.ts:121",
+    "why": "Promise.all after /users/me/ (is_onboarded drives routing)"
+   },
+   {
+    "call": "web:UserService.currentUserSettings",
+    "class": "crud",
+    "complexity": "S",
+    "days": 0.15,
+    "features": [
+     "F-A09"
+    ],
+    "handler": "apps/api/plane/app/views/user/base.py:83",
+    "id": "S08",
+    "kind": "min",
+    "method": "GET",
+    "path": "/api/users/me/settings/",
+    "scale": 1.0,
+    "stage": "boot",
+    "trigger": "apps/web/core/store/user/index.ts:122",
+    "why": "last/fallback workspace slug for the post-login redirect"
+   },
+   {
+    "call": "web:WorkspaceService.userWorkspaces",
+    "class": "aggregate-other",
+    "complexity": "M",
+    "days": 1.0,
+    "features": [
+     "F-B01"
+    ],
+    "handler": "apps/api/plane/app/views/workspace/base.py:180",
+    "id": "S09",
+    "kind": "min",
+    "method": "GET",
+    "path": "/api/users/me/workspaces/",
+    "scale": 1.0,
+    "stage": "boot",
+    "trigger": "apps/web/core/store/user/index.ts:123",
+    "why": "workspace list (also re-fetched after create-workspace)"
+   },
+   {
+    "call": "web:UserService.updateUser",
+    "class": "crud",
+    "complexity": "S",
+    "days": 0.15,
+    "features": [
+     "F-A09",
+     "F-A03"
+    ],
+    "handler": "apps/api/plane/app/views/user/base.py:92",
+    "id": "S10",
+    "kind": "min",
+    "method": "PATCH",
+    "path": "/api/users/me/",
+    "scale": 1.0,
+    "stage": "onboarding",
+    "trigger": "apps/web/core/components/onboarding/steps/profile/root.tsx:96",
+    "why": "first/last name, avatar"
+   },
+   {
+    "call": "web:UserService.updateCurrentUserProfile",
+    "class": "crud",
+    "complexity": "S",
+    "days": 0.15,
+    "features": [
+     "F-A09"
+    ],
+    "handler": "apps/api/plane/app/views/user/base.py:424",
+    "id": "S11",
+    "kind": "min",
+    "method": "PATCH",
+    "path": "/api/users/me/profile/",
+    "scale": 1.0,
+    "stage": "onboarding",
+    "trigger": "apps/web/core/components/onboarding/steps/workspace/create.tsx:109",
+    "why": "onboarding_step flags, is_onboarded, role, use_case"
+   },
+   {
+    "call": "web:WorkspaceService.userWorkspaceInvitations",
+    "class": "crud",
+    "complexity": "S",
+    "days": 0.15,
+    "features": [
+     "F-A07"
+    ],
+    "handler": "apps/api/plane/app/views/workspace/invite.py:263 (get_queryset)",
+    "id": "S12",
+    "kind": "min",
+    "method": "GET",
+    "path": "/api/users/me/workspaces/invitations/",
+    "scale": 1.0,
+    "stage": "onboarding",
+    "trigger": "apps/web/app/(all)/onboarding/page.tsx:43",
+    "why": "fires on entering onboarding; may return [] (invites are P1, but the route must exist)"
+   },
+   {
+    "call": "web:WorkspaceService.workspaceSlugCheck",
+    "class": "crud",
+    "complexity": "S",
+    "days": 0.15,
+    "features": [
+     "F-B01"
+    ],
+    "handler": "apps/api/plane/app/views/workspace/base.py:215",
+    "id": "S13",
+    "kind": "min",
+    "method": "GET",
+    "path": "/api/workspace-slug-check/",
+    "scale": 1.0,
+    "stage": "onboarding",
+    "trigger": "apps/web/core/components/onboarding/steps/workspace/create.tsx:75",
+    "why": "`{status: boolean}` shape"
+   },
+   {
+    "call": "web:WorkspaceService.createWorkspace",
+    "class": "crud",
+    "complexity": "M",
+    "days": 0.4,
+    "features": [
+     "F-B01"
+    ],
+    "handler": "apps/api/plane/app/views/workspace/base.py:81",
+    "id": "S14",
+    "kind": "min",
+    "method": "POST",
+    "path": "/api/workspaces/",
+    "scale": 1.0,
+    "stage": "onboarding",
+    "trigger": "apps/web/core/components/onboarding/steps/workspace/create.tsx:79",
+    "why": "creator becomes workspace admin (ROLE 20)"
+   },
+   {
+    "call": "web:WorkspaceService.workspaceMemberMe",
+    "class": "aggregate-other",
+    "complexity": "M",
+    "days": 1.0,
+    "features": [
+     "F-A07"
+    ],
+    "handler": "apps/api/plane/app/views/workspace/member.py:233",
+    "id": "S15",
+    "kind": "min",
+    "method": "GET",
+    "path": "/api/workspaces/{}/workspace-members/me/",
+    "scale": 1.0,
+    "stage": "workspace-load",
+    "trigger": "apps/web/core/layouts/auth-layout/workspace-wrapper.tsx:76",
+    "why": "my workspace role: drives every `allowPermissions` check in the UI"
+   },
+   {
+    "call": "web:WorkspaceService.getWorkspaceUserProjectsRole",
+    "class": "crud",
+    "complexity": "S",
+    "days": 0.15,
+    "features": [
+     "F-A08"
+    ],
+    "handler": "apps/api/plane/app/views/project/member.py:369",
+    "id": "S16",
+    "kind": "min",
+    "method": "GET",
+    "path": "/api/users/me/workspaces/{}/project-roles/",
+    "scale": 1.0,
+    "stage": "workspace-load",
+    "trigger": "apps/web/core/layouts/auth-layout/workspace-wrapper.tsx:81",
+    "why": "map project_id -> my role (permission bootstrap)"
+   },
+   {
+    "call": "web:ProjectService.getProjectsLite",
+    "class": "aggregate-other",
+    "complexity": "L",
+    "days": 2.5,
+    "features": [
+     "F-B02"
+    ],
+    "handler": "apps/api/plane/app/views/project/base.py:146",
+    "id": "S17",
+    "kind": "min",
+    "method": "GET",
+    "path": "/api/workspaces/{}/projects/",
+    "scale": 1.0,
+    "stage": "workspace-load",
+    "trigger": "apps/web/core/layouts/auth-layout/workspace-wrapper.tsx:88",
+    "why": "partial project list for the sidebar"
+   },
+   {
+    "call": "web:WorkspaceService.fetchWorkspaceMembers",
+    "class": "crud",
+    "complexity": "S",
+    "days": 0.15,
+    "features": [
+     "F-A07"
+    ],
+    "handler": "apps/api/plane/app/views/workspace/member.py:62",
+    "id": "S18",
+    "kind": "min",
+    "method": "GET",
+    "path": "/api/workspaces/{}/members/",
+    "scale": 1.0,
+    "stage": "workspace-load",
+    "trigger": "apps/web/core/layouts/auth-layout/workspace-wrapper.tsx:94",
+    "why": "member directory (assignee pickers)"
+   },
+   {
+    "call": "web:FavoriteService.getFavorites",
+    "class": "crud",
+    "complexity": "S",
+    "days": 0.15,
+    "features": [
+     "F-B18"
+    ],
+    "handler": "apps/api/plane/app/views/workspace/favorite.py:24",
+    "id": "S19",
+    "kind": "min",
+    "method": "GET",
+    "path": "/api/workspaces/{}/user-favorites/",
+    "scale": 1.0,
+    "stage": "workspace-load",
+    "trigger": "apps/web/core/layouts/auth-layout/workspace-wrapper.tsx:100",
+    "why": "only when role >= member; sidebar favorites"
+   },
+   {
+    "call": "web:ProjectStateService.getWorkspaceStates",
+    "class": "crud",
+    "complexity": "S",
+    "days": 0.15,
+    "features": [
+     "F-B04"
+    ],
+    "handler": "apps/api/plane/app/views/workspace/state.py:21",
+    "id": "S20",
+    "kind": "min",
+    "method": "GET",
+    "path": "/api/workspaces/{}/states/",
+    "scale": 1.0,
+    "stage": "workspace-load",
+    "trigger": "apps/web/core/layouts/auth-layout/workspace-wrapper.tsx:110",
+    "why": "all states in the workspace"
+   },
+   {
+    "call": "web:WorkspaceService.fetchSidebarNavigationPreferences",
+    "class": "crud",
+    "complexity": "M",
+    "days": 0.4,
+    "features": [
+     "F-B18"
+    ],
+    "handler": "apps/api/plane/app/views/workspace/user_preference.py:26",
+    "id": "S21",
+    "kind": "min",
+    "method": "GET",
+    "path": "/api/workspaces/{}/sidebar-preferences/",
+    "scale": 1.0,
+    "stage": "workspace-load",
+    "trigger": "apps/web/core/layouts/auth-layout/workspace-wrapper.tsx:117",
+    "why": "sidebar nav prefs; server creates defaults on first read [inferred]"
+   },
+   {
+    "call": "web:WorkspaceService.fetchWorkspaceFilters",
+    "class": "crud",
+    "complexity": "S",
+    "days": 0.15,
+    "features": [
+     "F-A09"
+    ],
+    "handler": "apps/api/plane/app/views/workspace/user.py:269",
+    "id": "S22",
+    "kind": "min",
+    "method": "GET",
+    "path": "/api/workspaces/{}/user-properties/",
+    "scale": 1.0,
+    "stage": "workspace-load",
+    "trigger": "apps/web/core/layouts/auth-layout/workspace-wrapper.tsx:124",
+    "why": "workspace-level display properties/filters"
+   },
+   {
+    "call": "web:WorkspaceNotificationService.fetchUnreadNotificationsCount",
+    "class": "crud",
+    "complexity": "M",
+    "days": 0.4,
+    "features": [
+     "F-D01"
+    ],
+    "handler": "apps/api/plane/app/views/notification/base.py:205",
+    "id": "S23",
+    "kind": "min",
+    "method": "GET",
+    "path": "/api/workspaces/{}/users/notifications/unread/",
+    "scale": 1.0,
+    "stage": "workspace-load",
+    "trigger": "apps/web/core/components/workspace-notifications/notification-app-sidebar-option.tsx:29",
+    "why": "sidebar badge; fires on every workspace page"
+   },
+   {
+    "call": "web:WorkspaceService.fetchWorkspaceWidgets",
+    "class": "crud",
+    "complexity": "M",
+    "days": 0.4,
+    "features": [
+     "F-B18"
+    ],
+    "handler": "apps/api/plane/app/views/workspace/home.py:24",
+    "id": "S24",
+    "kind": "min",
+    "method": "GET",
+    "path": "/api/workspaces/{}/home-preferences/",
+    "scale": 1.0,
+    "stage": "home",
+    "trigger": "apps/web/core/components/home/root.tsx:29",
+    "why": "home widgets list"
+   },
+   {
+    "call": "web:WorkspaceService.fetchWorkspaceLinks",
+    "class": "crud",
+    "complexity": "S",
+    "days": 0.15,
+    "features": [
+     "F-B18"
+    ],
+    "handler": "apps/api/plane/app/views/workspace/quick_link.py:61",
+    "id": "S25",
+    "kind": "min",
+    "method": "GET",
+    "path": "/api/workspaces/{}/quick-links/",
+    "scale": 1.0,
+    "stage": "home",
+    "trigger": "apps/web/core/components/home/widgets/links/root.tsx:32",
+    "why": "quick-links widget"
+   },
+   {
+    "call": "web:WorkspaceService.fetchWorkspaceRecents",
+    "class": "aggregate-other",
+    "complexity": "S",
+    "days": 0.4,
+    "features": [
+     "F-B18"
+    ],
+    "handler": "apps/api/plane/app/views/workspace/recent_visit.py:25",
+    "id": "S26",
+    "kind": "min",
+    "method": "GET",
+    "path": "/api/workspaces/{}/recent-visits/",
+    "scale": 1.0,
+    "stage": "home",
+    "trigger": "apps/web/core/components/home/widgets/recents/index.tsx:48",
+    "why": "recents widget"
+   },
+   {
+    "call": "web:UserService.updateUserTourCompleted",
+    "class": "crud",
+    "complexity": "S",
+    "days": 0.15,
+    "features": [
+     "F-A09"
+    ],
+    "handler": "apps/api/plane/app/views/user/base.py:374",
+    "id": "S27",
+    "kind": "min",
+    "method": "PATCH",
+    "path": "/api/users/me/tour-completed/",
+    "scale": 1.0,
+    "stage": "home",
+    "trigger": "apps/web/core/components/home/root.tsx:36",
+    "why": "first visit shows a full-screen tour until `is_tour_completed`; skipping it PATCHes this"
+   },
+   {
+    "call": "web:FileService.uploadWorkspaceAsset",
+    "class": "file-upload",
+    "complexity": "L",
+    "days": 1.2,
+    "features": [
+     "F-D04"
+    ],
+    "handler": "apps/api/plane/app/views/asset/v2.py:341",
+    "id": "S28",
+    "kind": "min",
+    "method": "POST",
+    "path": "/api/assets/v2/workspaces/{}/",
+    "scale": 1.0,
+    "stage": "project-create",
+    "trigger": "apps/web/ce/components/projects/create/root.tsx:74",
+    "why": "getProjectFormValues() preselects a random STATIC cover (`local_static`) -> uploaded to the object store on submit"
+   },
+   {
+    "call": "web:FileService.updateWorkspaceAssetUploadStatus",
+    "class": "file-upload",
+    "complexity": "M",
+    "days": 0.8,
+    "features": [
+     "F-D04"
+    ],
+    "handler": "apps/api/plane/app/views/asset/v2.py:418",
+    "id": "S29",
+    "kind": "min",
+    "method": "PATCH",
+    "path": "/api/assets/v2/workspaces/{}/{}/",
+    "scale": 1.0,
+    "stage": "project-create",
+    "trigger": "apps/web/core/services/file.service.ts:92",
+    "why": "confirm upload (after the browser POSTs to the presigned URL)"
+   },
+   {
+    "call": "web:ProjectService.createProject",
+    "class": "crud",
+    "complexity": "M",
+    "days": 0.4,
+    "features": [
+     "F-B02"
+    ],
+    "handler": "apps/api/plane/app/views/project/base.py:258",
+    "id": "S30",
+    "kind": "min",
+    "method": "POST",
+    "path": "/api/workspaces/{}/projects/",
+    "scale": 1.0,
+    "stage": "project-create",
+    "trigger": "apps/web/ce/components/projects/create/root.tsx:96",
+    "why": "creates project + default states + creator membership"
+   },
+   {
+    "call": "web:FileService.updateBulkProjectAssetsUploadStatus",
+    "class": "file-upload",
+    "complexity": "M",
+    "days": 0.8,
+    "features": [
+     "F-D04"
+    ],
+    "handler": "apps/api/plane/app/views/asset/v2.py:702",
+    "id": "S31",
+    "kind": "min",
+    "method": "POST",
+    "path": "/api/assets/v2/workspaces/{}/projects/{}/{}/bulk/",
+    "scale": 1.0,
+    "stage": "project-create",
+    "trigger": "apps/web/core/components/project/create-project-modal.tsx:57",
+    "why": "attach the uploaded cover to the new project"
+   },
+   {
+    "call": "web:ProjectService.updateProject",
+    "class": "crud",
+    "complexity": "M",
+    "days": 0.4,
+    "features": [
+     "F-B02"
+    ],
+    "handler": "apps/api/plane/app/views/project/base.py:314",
+    "id": "S32",
+    "kind": "min",
+    "method": "PATCH",
+    "path": "/api/workspaces/{}/projects/{}/",
+    "scale": 1.0,
+    "stage": "project-create",
+    "trigger": "apps/web/ce/components/projects/create/root.tsx:100",
+    "why": "set cover_image_url"
+   },
+   {
+    "call": "ref:asset-url",
+    "class": "file-upload",
+    "complexity": "M",
+    "days": 0.8,
+    "features": [
+     "F-D04"
+    ],
+    "handler": "apps/api/plane/app/views/asset/v2.py:462",
+    "id": "S33",
+    "kind": "min",
+    "method": "GET",
+    "path": "/api/assets/v2/workspaces/{}/{}/",
+    "scale": 1.0,
+    "stage": "project-create",
+    "trigger": "packages/utils/src/editor/common.ts:26",
+    "why": "<img src> for uploaded assets -> 302 to a presigned GET [inferred: the cover uses the same route via getFileURL(asset_url)]"
+   },
+   {
+    "call": "web:ProjectService.getProject",
+    "class": "crud",
+    "complexity": "M",
+    "days": 0.4,
+    "features": [
+     "F-B02"
+    ],
+    "handler": "apps/api/plane/app/views/project/base.py:226",
+    "id": "S34",
+    "kind": "min",
+    "method": "GET",
+    "path": "/api/workspaces/{}/projects/{}/",
+    "scale": 1.0,
+    "stage": "project-open",
+    "trigger": "apps/web/core/layouts/auth-layout/project-wrapper.tsx:83",
+    "why": "project detail"
+   },
+   {
+    "call": "web:ProjectService.getProjectAnalyticsCount",
+    "class": "aggregate-other",
+    "complexity": "M",
+    "days": 1.0,
+    "features": [
+     "F-D07"
+    ],
+    "handler": "apps/api/plane/app/views/analytic/base.py:411",
+    "id": "S35",
+    "kind": "min",
+    "method": "GET",
+    "path": "/api/workspaces/{}/project-stats/",
+    "scale": 1.0,
+    "stage": "project-open",
+    "trigger": "apps/web/core/store/project/project.store.ts:388",
+    "why": "second half of fetchProjectDetails"
+   },
+   {
+    "call": "web:ProjectMemberService.projectMemberMe",
+    "class": "crud",
+    "complexity": "S",
+    "days": 0.15,
+    "features": [
+     "F-A08"
+    ],
+    "handler": "apps/api/plane/app/views/project/member.py:353",
+    "id": "S36",
+    "kind": "min",
+    "method": "GET",
+    "path": "/api/workspaces/{}/projects/{}/project-members/me/",
+    "scale": 1.0,
+    "stage": "project-open",
+    "trigger": "apps/web/core/layouts/auth-layout/project-wrapper.tsx:88",
+    "why": "my project role"
+   },
+   {
+    "call": "web:ProjectService.getProjectUserProperties",
+    "class": "crud",
+    "complexity": "S",
+    "days": 0.15,
+    "features": [
+     "F-B12"
+    ],
+    "handler": "apps/api/plane/app/views/issue/base.py:767",
+    "id": "S37",
+    "kind": "min",
+    "method": "GET",
+    "path": "/api/workspaces/{}/projects/{}/user-properties/",
+    "scale": 1.0,
+    "stage": "project-open",
+    "trigger": "apps/web/core/layouts/auth-layout/project-wrapper.tsx:90",
+    "why": "display_filters / display_properties / rich filters (default `group_by: null, layout: list`)"
+   },
+   {
+    "call": "web:IssueLabelService.getProjectLabels",
+    "class": "crud",
+    "complexity": "S",
+    "days": 0.15,
+    "features": [
+     "F-B05"
+    ],
+    "handler": "apps/api/plane/app/views/issue/label.py:28 (get_queryset)",
+    "id": "S38",
+    "kind": "min",
+    "method": "GET",
+    "path": "/api/workspaces/{}/projects/{}/issue-labels/",
+    "scale": 1.0,
+    "stage": "project-open",
+    "trigger": "apps/web/core/layouts/auth-layout/project-wrapper.tsx:96",
+    "why": "labels"
+   },
+   {
+    "call": "web:ProjectMemberService.fetchProjectMembers",
+    "class": "crud",
+    "complexity": "S",
+    "days": 0.15,
+    "features": [
+     "F-A08"
+    ],
+    "handler": "apps/api/plane/app/views/project/member.py:157",
+    "id": "S39",
+    "kind": "min",
+    "method": "GET",
+    "path": "/api/workspaces/{}/projects/{}/members/",
+    "scale": 1.0,
+    "stage": "project-open",
+    "trigger": "apps/web/core/layouts/auth-layout/project-wrapper.tsx:101",
+    "why": "project members"
+   },
+   {
+    "call": "web:ProjectStateService.getStates",
+    "class": "crud",
+    "complexity": "S",
+    "days": 0.15,
+    "features": [
+     "F-B04"
+    ],
+    "handler": "apps/api/plane/app/views/state/base.py:81",
+    "id": "S40",
+    "kind": "min",
+    "method": "GET",
+    "path": "/api/workspaces/{}/projects/{}/states/",
+    "scale": 1.0,
+    "stage": "project-open",
+    "trigger": "apps/web/core/layouts/auth-layout/project-wrapper.tsx:106",
+    "why": "states"
+   },
+   {
+    "call": "web:ProjectStateService.getIntakeState",
+    "class": "crud",
+    "complexity": "S",
+    "days": 0.15,
+    "features": [
+     "F-B14"
+    ],
+    "handler": "apps/api/plane/app/views/state/base.py:143",
+    "id": "S41",
+    "kind": "min",
+    "method": "GET",
+    "path": "/api/workspaces/{}/projects/{}/intake-state/",
+    "scale": 1.0,
+    "stage": "project-open",
+    "trigger": "apps/web/core/layouts/auth-layout/project-wrapper.tsx:111",
+    "why": "triage state (fires even when intake is off)"
+   },
+   {
+    "call": "web:EstimateService.fetchProjectEstimates",
+    "class": "crud",
+    "complexity": "S",
+    "days": 0.15,
+    "features": [
+     "F-B13"
+    ],
+    "handler": "apps/api/plane/app/views/estimate/base.py:54",
+    "id": "S42",
+    "kind": "min",
+    "method": "GET",
+    "path": "/api/workspaces/{}/projects/{}/estimates/",
+    "scale": 1.0,
+    "stage": "project-open",
+    "trigger": "apps/web/core/layouts/auth-layout/project-wrapper.tsx:116",
+    "why": "estimates"
+   },
+   {
+    "call": "web:CycleService.getCyclesWithParams",
+    "class": "crud",
+    "complexity": "L",
+    "days": 0.9,
+    "features": [
+     "F-B10"
+    ],
+    "handler": "apps/api/plane/app/views/cycle/base.py:184",
+    "id": "S43",
+    "kind": "min",
+    "method": "GET",
+    "path": "/api/workspaces/{}/projects/{}/cycles/",
+    "scale": 1.0,
+    "stage": "project-open",
+    "trigger": "apps/web/core/layouts/auth-layout/project-wrapper.tsx:121",
+    "why": "cycles (`cycle_view` param)"
+   },
+   {
+    "call": "web:ModuleService.getWorkspaceModules",
+    "class": "aggregate-other",
+    "complexity": "L",
+    "days": 2.5,
+    "features": [
+     "F-B11"
+    ],
+    "handler": "apps/api/plane/app/views/workspace/module.py:25",
+    "id": "S44",
+    "kind": "min",
+    "method": "GET",
+    "path": "/api/workspaces/{}/modules/",
+    "scale": 1.0,
+    "stage": "project-open",
+    "trigger": "apps/web/core/layouts/auth-layout/project-wrapper.tsx:129",
+    "why": "fetchModulesSlim"
+   },
+   {
+    "call": "web:ModuleService.getModules",
+    "class": "crud",
+    "complexity": "M",
+    "days": 0.4,
+    "features": [
+     "F-B11"
+    ],
+    "handler": "apps/api/plane/app/views/module/base.py:354",
+    "id": "S45",
+    "kind": "min",
+    "method": "GET",
+    "path": "/api/workspaces/{}/projects/{}/modules/",
+    "scale": 1.0,
+    "stage": "project-open",
+    "trigger": "apps/web/core/layouts/auth-layout/project-wrapper.tsx:129",
+    "why": "fetchModules"
+   },
+   {
+    "call": "web:ViewService.getViews",
+    "class": "crud",
+    "complexity": "M",
+    "days": 0.4,
+    "features": [
+     "F-B12"
+    ],
+    "handler": "apps/api/plane/app/views/view/base.py:296",
+    "id": "S46",
+    "kind": "min",
+    "method": "GET",
+    "path": "/api/workspaces/{}/projects/{}/views/",
+    "scale": 1.0,
+    "stage": "project-open",
+    "trigger": "apps/web/core/layouts/auth-layout/project-wrapper.tsx:134",
+    "why": "saved views"
+   },
+   {
+    "call": "web:IssueService.getIssuesFromServer",
+    "class": "grouped-listing",
+    "complexity": "L",
+    "days": 1.25,
+    "features": [
+     "F-B03",
+     "F-B16"
+    ],
+    "handler": "apps/api/plane/app/views/issue/base.py:266",
+    "id": "S47",
+    "kind": "min",
+    "method": "GET",
+    "path": "/api/workspaces/{}/projects/{}/issues/",
+    "scale": 0.5,
+    "stage": "work-item",
+    "trigger": "apps/web/core/store/issue/project/issue.store.ts:117",
+    "why": "flat paginated list (default display filter group_by=null); GROUPED/SUB-GROUPED envelope only after the user picks Kanban or a group"
+   },
+   {
+    "call": "web:IssueService.createIssue",
+    "class": "crud",
+    "complexity": "L",
+    "days": 0.9,
+    "features": [
+     "F-B03",
+     "F-B16"
+    ],
+    "handler": "apps/api/plane/app/views/issue/base.py:405",
+    "id": "S48",
+    "kind": "min",
+    "method": "POST",
+    "path": "/api/workspaces/{}/projects/{}/issues/",
+    "scale": 1.0,
+    "stage": "work-item",
+    "trigger": "apps/web/core/store/issue/helpers/base-issues.store.ts:534",
+    "why": "allocates sequence_id; response is stored as-is by the MobX store"
+   },
+   {
+    "call": "web:IssueService.retrieve",
+    "class": "aggregate-other",
+    "complexity": "L",
+    "days": 2.5,
+    "features": [
+     "F-B03"
+    ],
+    "handler": "apps/api/plane/app/views/issue/base.py:493",
+    "id": "X01",
+    "kind": "ext",
+    "method": "GET",
+    "path": "/api/workspaces/{}/projects/{}/issues/{}/",
+    "scale": 1.0,
+    "stage": "work-item",
+    "trigger": "apps/web/core/components/issues/peek-overview/root.tsx:220",
+    "why": "peek overview"
+   },
+   {
+    "call": "web:IssueActivityService.getIssueActivities",
+    "class": "aggregate-other",
+    "complexity": "M",
+    "days": 1.0,
+    "features": [
+     "F-B08"
+    ],
+    "handler": "apps/api/plane/app/views/issue/activity.py:30",
+    "id": "X02",
+    "kind": "ext",
+    "method": "GET",
+    "path": "/api/workspaces/{}/projects/{}/issues/{}/history/",
+    "scale": 1.0,
+    "stage": "work-item",
+    "trigger": "apps/web/core/services/issue/issue_comment.service.ts:36",
+    "why": "activity AND comments (comments are listed via /history/?activity_type=issue-comment, not /comments/)"
+   },
+   {
+    "call": "web:IssueService.patchIssue",
+    "class": "aggregate-other",
+    "complexity": "L",
+    "days": 2.5,
+    "features": [
+     "F-B03"
+    ],
+    "handler": "apps/api/plane/app/views/issue/base.py:628",
+    "id": "X03",
+    "kind": "ext",
+    "method": "PATCH",
+    "path": "/api/workspaces/{}/projects/{}/issues/{}/",
+    "scale": 1.0,
+    "stage": "work-item",
+    "trigger": "apps/web/core/services/issue/issue.service.ts:227",
+    "why": "field edits (PUT is never used)"
+   }
+  ],
+  "entries_ext": 3,
+  "entries_min": 48,
+  "excluded_foundations": [
+   "expand-fields-projection",
+   "group-by-engine"
+  ],
+  "external_calls_not_in_server_table": [
+   "pkg-services:FileUploadService.uploadFile",
+   "web:FileUploadService.uploadFile",
+   "web:ProjectService.getGithubRepositories"
+  ],
+  "foundations_used": {
+   "csrf+session-form-flow": {
+    "days": 3.0,
+    "fraction": 0.75,
+    "why": "sign-up/sign-in/sign-out + csrf token + next_path; magic / OAuth / OIDC are follow-on"
+   },
+   "error-bodies": {
+    "days": 1.0,
+    "fraction": 1.0,
+    "why": "full"
+   },
+   "issue-filter-parser": {
+    "days": 1.5,
+    "fraction": 0.25,
+    "why": "order_by, sub_issue, type, layout, `filters={}` only; legacy filter set and rich filter trees are follow-on"
+   },
+   "pagination-envelope": {
+    "days": 1.0,
+    "fraction": 0.5,
+    "why": "flat OffsetPaginator envelope only; grouped / sub-grouped envelopes are follow-on"
+   },
+   "presigned-asset-flow": {
+    "days": 1.8,
+    "fraction": 0.6,
+    "why": "workspace asset create/confirm/302 + project bulk-attach; user assets, duplicate, restore are follow-on"
+   },
+   "route-scaffold+authn": {
+    "days": 3.0,
+    "fraction": 1.0,
+    "why": "full"
+   },
+   "serializer-shape-fidelity": {
+    "days": 1.2,
+    "fraction": 0.4,
+    "why": "~10 of ~25 hot serializers: User/Profile/Settings, Workspace, WorkspaceMember, Project, State, Label, Member, Issue list+create"
+   }
+  },
+  "stages": {
+   "auth": 4,
+   "boot": 5,
+   "home": 4,
+   "onboarding": 5,
+   "project-create": 6,
+   "project-open": 13,
+   "work-item": 2,
+   "workspace-load": 9
+  },
+  "validation_errors": []
+ },
+ "permission_decorator_combos": {
+  " +creator-of:IssueView @ PROJECT": 1,
+  " +creator-of:IssueView @ WORKSPACE": 1,
+  " +creator-of:Sticky @ WORKSPACE": 2,
+  "(class permission_classes: (WorkspaceUserPermission,)) @ -": 1,
+  "(class permission_classes: [AllowAny]) @ -": 29,
+  "(class permission_classes: [InstanceAdminPermission]) @ -": 15,
+  "(class permission_classes: [IsAuthenticated, WorkspaceMemberPermission]) @ -": 7,
+  "(class permission_classes: [IsAuthenticated]) @ -": 130,
+  "(class permission_classes: [ProjectBasePermission]) @ -": 3,
+  "(class permission_classes: [ProjectEntityPermission]) @ -": 37,
+  "(class permission_classes: [ProjectLitePermission]) @ -": 3,
+  "(class permission_classes: [ProjectMemberPermission]) @ -": 5,
+  "(class permission_classes: [ProjectPagePermission]) @ -": 16,
+  "(class permission_classes: [WorkSpaceAdminPermission]) @ -": 15,
+  "(class permission_classes: [WorkSpaceBasePermission]) @ -": 3,
+  "(class permission_classes: [WorkspaceEntityPermission]) @ -": 5,
+  "(class permission_classes: [WorkspaceUserPermission]) @ -": 1,
+  "(class permission_classes: [WorkspaceViewerPermission]) @ -": 6,
+  "(class permission_classes: default) @ -": 34,
+  "ADMIN +creator-of:Cycle @ PROJECT": 1,
+  "ADMIN +creator-of:DraftIssue @ WORKSPACE": 1,
+  "ADMIN +creator-of:FileAsset @ PROJECT": 4,
+  "ADMIN +creator-of:Issue @ PROJECT": 5,
+  "ADMIN +creator-of:Issue @ WORKSPACE": 1,
+  "ADMIN +creator-of:IssueComment @ PROJECT": 2,
+  "ADMIN +creator-of:IssueView @ PROJECT": 1,
+  "ADMIN +creator-of:IssueView @ WORKSPACE": 1,
+  "ADMIN +creator-of:Module @ PROJECT": 1,
+  "ADMIN @ PROJECT": 12,
+  "ADMIN @ WORKSPACE": 14,
+  "ADMIN,MEMBER +creator-of:Issue @ PROJECT": 1,
+  "ADMIN,MEMBER +creator-of:Issue @ WORKSPACE": 1,
+  "ADMIN,MEMBER @ PROJECT": 50,
+  "ADMIN,MEMBER @ WORKSPACE": 23,
+  "ADMIN,MEMBER,GUEST +creator-of:Issue @ PROJECT": 3,
+  "ADMIN,MEMBER,GUEST @ PROJECT": 63,
+  "ADMIN,MEMBER,GUEST @ WORKSPACE": 47
+ },
+ "scopes": {
+  "P0_used": {
+   "by_class": {
+    "aggregate-other": {
+     "complexity": {
+      "L": 21,
+      "M": 9,
+      "S": 3
+     },
+     "marginal_days_high": 125.4,
+     "marginal_days_likely": 62.7,
+     "marginal_days_low": 37.62,
+     "paths": 31,
+     "rows": 33
+    },
+    "auth-redirect": {
+     "complexity": {
+      "L": 5,
+      "M": 5,
+      "S": 3
+     },
+     "marginal_days_high": 19.84,
+     "marginal_days_likely": 12.4,
+     "marginal_days_low": 8.68,
+     "paths": 13,
+     "rows": 13
+    },
+    "bulk": {
+     "complexity": {
+      "L": 1,
+      "M": 7
+     },
+     "marginal_days_high": 10.88,
+     "marginal_days_likely": 6.8,
+     "marginal_days_low": 4.76,
+     "paths": 8,
+     "rows": 8
+    },
+    "crud": {
+     "complexity": {
+      "L": 9,
+      "M": 62,
+      "S": 116
+     },
+     "marginal_days_high": 80.48,
+     "marginal_days_likely": 50.3,
+     "marginal_days_low": 35.21,
+     "paths": 119,
+     "rows": 187
+    },
+    "file-upload": {
+     "complexity": {
+      "L": 2,
+      "M": 12,
+      "S": 16
+     },
+     "marginal_days_high": 29.44,
+     "marginal_days_likely": 18.4,
+     "marginal_days_low": 12.88,
+     "paths": 21,
+     "rows": 30
+    },
+    "grouped-listing": {
+     "complexity": {
+      "L": 7
+     },
+     "marginal_days_high": 35.0,
+     "marginal_days_likely": 17.5,
+     "marginal_days_low": 12.25,
+     "paths": 7,
+     "rows": 7
+    },
+    "paginated-listing": {
+     "complexity": {
+      "L": 2,
+      "M": 7,
+      "S": 3
+     },
+     "marginal_days_high": 15.2,
+     "marginal_days_likely": 9.5,
+     "marginal_days_low": 6.65,
+     "paths": 12,
+     "rows": 12
+    }
+   },
+   "foundations_days": 30.0,
+   "foundations_detail": {
+    "csrf+session-form-flow": 4.0,
+    "error-bodies": 1.0,
+    "expand-fields-projection": 2.0,
+    "group-by-engine": 6.0,
+    "issue-filter-parser": 6.0,
+    "pagination-envelope": 2.0,
+    "presigned-asset-flow": 3.0,
+    "route-scaffold+authn": 3.0,
+    "serializer-shape-fidelity": 3.0
+   },
+   "paths": 197,
+   "rows": 290,
+   "total_days_high": 364.2,
+   "total_days_likely": 207.6,
+   "total_days_low": 139.1
+  },
+  "P0_used_excl_minimum_slice": {
+   "by_class": {
+    "aggregate-other": {
+     "complexity": {
+      "L": 19,
+      "M": 7,
+      "S": 2
+     },
+     "marginal_days_high": 110.6,
+     "marginal_days_likely": 55.3,
+     "marginal_days_low": 33.18,
+     "paths": 26,
+     "rows": 28
+    },
+    "auth-redirect": {
+     "complexity": {
+      "L": 3,
+      "M": 4,
+      "S": 2
+     },
+     "marginal_days_high": 13.28,
+     "marginal_days_likely": 8.3,
+     "marginal_days_low": 5.81,
+     "paths": 9,
+     "rows": 9
+    },
+    "bulk": {
+     "complexity": {
+      "L": 1,
+      "M": 7
+     },
+     "marginal_days_high": 10.88,
+     "marginal_days_likely": 6.8,
+     "marginal_days_low": 4.76,
+     "paths": 8,
+     "rows": 8
+    },
+    "crud": {
+     "complexity": {
+      "L": 6,
+      "M": 53,
+      "S": 96
+     },
+     "marginal_days_high": 65.6,
+     "marginal_days_likely": 41.0,
+     "marginal_days_low": 28.7,
+     "paths": 102,
+     "rows": 155
+    },
+    "file-upload": {
+     "complexity": {
+      "L": 1,
+      "M": 9,
+      "S": 16
+     },
+     "marginal_days_high": 23.68,
+     "marginal_days_likely": 14.8,
+     "marginal_days_low": 10.36,
+     "paths": 19,
+     "rows": 26
+    },
+    "grouped-listing": {
+     "complexity": {
+      "L": 6
+     },
+     "marginal_days_high": 30.0,
+     "marginal_days_likely": 15.0,
+     "marginal_days_low": 10.5,
+     "paths": 6,
+     "rows": 6
+    },
+    "paginated-listing": {
+     "complexity": {
+      "L": 2,
+      "M": 7,
+      "S": 3
+     },
+     "marginal_days_high": 15.2,
+     "marginal_days_likely": 9.5,
+     "marginal_days_low": 6.65,
+     "paths": 12,
+     "rows": 12
+    }
+   },
+   "foundations_days": 17.5,
+   "foundations_detail": {
+    "csrf+session-form-flow": 1.0,
+    "error-bodies": 0.0,
+    "expand-fields-projection": 2.0,
+    "group-by-engine": 6.0,
+    "issue-filter-parser": 4.5,
+    "pagination-envelope": 1.0,
+    "presigned-asset-flow": 1.2,
+    "route-scaffold+authn": 0.0,
+    "serializer-shape-fidelity": 1.8
+   },
+   "paths": 172,
+   "rows": 244,
+   "total_days_high": 297.2,
+   "total_days_likely": 168.2,
+   "total_days_low": 112.2
+  },
+  "all_compat_rows(internal+space+instance+auth)": {
+   "by_class": {
+    "aggregate-other": {
+     "complexity": {
+      "L": 28,
+      "M": 24,
+      "S": 21
+     },
+     "marginal_days_high": 204.8,
+     "marginal_days_likely": 102.4,
+     "marginal_days_low": 61.44,
+     "paths": 63,
+     "rows": 73
+    },
+    "auth-redirect": {
+     "complexity": {
+      "L": 5,
+      "M": 31,
+      "S": 5
+     },
+     "marginal_days_high": 54.08,
+     "marginal_days_likely": 33.8,
+     "marginal_days_low": 23.66,
+     "paths": 41,
+     "rows": 41
+    },
+    "bulk": {
+     "complexity": {
+      "L": 1,
+      "M": 8
+     },
+     "marginal_days_high": 12.16,
+     "marginal_days_likely": 7.6,
+     "marginal_days_low": 5.32,
+     "paths": 9,
+     "rows": 9
+    },
+    "crud": {
+     "complexity": {
+      "L": 18,
+      "M": 79,
+      "S": 230
+     },
+     "marginal_days_high": 131.68,
+     "marginal_days_likely": 82.3,
+     "marginal_days_low": 57.61,
+     "paths": 177,
+     "rows": 327
+    },
+    "file-upload": {
+     "complexity": {
+      "L": 4,
+      "M": 24,
+      "S": 38
+     },
+     "marginal_days_high": 62.72,
+     "marginal_days_likely": 39.2,
+     "marginal_days_low": 27.44,
+     "paths": 26,
+     "rows": 66
+    },
+    "grouped-listing": {
+     "complexity": {
+      "L": 8,
+      "M": 2
+     },
+     "marginal_days_high": 46.0,
+     "marginal_days_likely": 23.0,
+     "marginal_days_low": 16.1,
+     "paths": 10,
+     "rows": 10
+    },
+    "paginated-listing": {
+     "complexity": {
+      "L": 3,
+      "M": 12,
+      "S": 4
+     },
+     "marginal_days_high": 24.32,
+     "marginal_days_likely": 15.2,
+     "marginal_days_low": 10.64,
+     "paths": 19,
+     "rows": 19
+    }
+   },
+   "foundations_days": 30.0,
+   "foundations_detail": {
+    "csrf+session-form-flow": 4.0,
+    "error-bodies": 1.0,
+    "expand-fields-projection": 2.0,
+    "group-by-engine": 6.0,
+    "issue-filter-parser": 6.0,
+    "pagination-envelope": 2.0,
+    "presigned-asset-flow": 3.0,
+    "route-scaffold+authn": 3.0,
+    "serializer-shape-fidelity": 3.0
+   },
+   "paths": 313,
+   "rows": 545,
+   "total_days_high": 583.8,
+   "total_days_likely": 333.5,
+   "total_days_low": 223.2
+  },
+  "minimum_slice": {
+   "by_class": {
+    "aggregate-other": {
+     "complexity": {
+      "L": 2,
+      "M": 3,
+      "S": 1
+     },
+     "marginal_days_high": 16.8,
+     "marginal_days_likely": 8.4,
+     "marginal_days_low": 5.04,
+     "paths": 6,
+     "rows": 6
+    },
+    "auth-redirect": {
+     "complexity": {
+      "L": 2,
+      "M": 1,
+      "S": 1
+     },
+     "marginal_days_high": 6.56,
+     "marginal_days_likely": 4.1,
+     "marginal_days_low": 2.87,
+     "paths": 4,
+     "rows": 4
+    },
+    "bulk": {
+     "complexity": {},
+     "marginal_days_high": 0.0,
+     "marginal_days_likely": 0,
+     "marginal_days_low": 0.0,
+     "paths": 0,
+     "rows": 0
+    },
+    "crud": {
+     "complexity": {
+      "L": 3,
+      "M": 9,
+      "S": 21
+     },
+     "marginal_days_high": 15.12,
+     "marginal_days_likely": 9.45,
+     "marginal_days_low": 6.61,
+     "paths": 30,
+     "rows": 33
+    },
+    "file-upload": {
+     "complexity": {
+      "L": 1,
+      "M": 3
+     },
+     "marginal_days_high": 5.76,
+     "marginal_days_likely": 3.6,
+     "marginal_days_low": 2.52,
+     "paths": 3,
+     "rows": 4
+    },
+    "grouped-listing": {
+     "complexity": {
+      "L": 1
+     },
+     "marginal_days_high": 2.5,
+     "marginal_days_likely": 1.25,
+     "marginal_days_low": 0.88,
+     "paths": 1,
+     "rows": 1
+    },
+    "paginated-listing": {
+     "complexity": {},
+     "marginal_days_high": 0.0,
+     "marginal_days_likely": 0,
+     "marginal_days_low": 0.0,
+     "paths": 0,
+     "rows": 0
+    }
+   },
+   "foundations_days": 12.5,
+   "foundations_detail": {
+    "csrf+session-form-flow": 3.0,
+    "error-bodies": 1.0,
+    "issue-filter-parser": 1.5,
+    "pagination-envelope": 1.0,
+    "presigned-asset-flow": 1.8,
+    "route-scaffold+authn": 3.0,
+    "serializer-shape-fidelity": 1.2
+   },
+   "paths": 42,
+   "rows": 48,
+   "total_days_high": 66.7,
+   "total_days_likely": 39.3,
+   "total_days_low": 26.7
+  },
+  "used_by_react_not_dropped(P0+P1+P2)": {
+   "by_class": {
+    "aggregate-other": {
+     "complexity": {
+      "L": 21,
+      "M": 14,
+      "S": 7
+     },
+     "marginal_days_high": 138.6,
+     "marginal_days_likely": 69.3,
+     "marginal_days_low": 41.58,
+     "paths": 40,
+     "rows": 42
+    },
+    "auth-redirect": {
+     "complexity": {
+      "L": 5,
+      "M": 19,
+      "S": 5
+     },
+     "marginal_days_high": 38.72,
+     "marginal_days_likely": 24.2,
+     "marginal_days_low": 16.94,
+     "paths": 29,
+     "rows": 29
+    },
+    "bulk": {
+     "complexity": {
+      "L": 1,
+      "M": 7
+     },
+     "marginal_days_high": 10.88,
+     "marginal_days_likely": 6.8,
+     "marginal_days_low": 4.76,
+     "paths": 8,
+     "rows": 8
+    },
+    "crud": {
+     "complexity": {
+      "L": 11,
+      "M": 64,
+      "S": 121
+     },
+     "marginal_days_high": 85.84,
+     "marginal_days_likely": 53.65,
+     "marginal_days_low": 37.55,
+     "paths": 124,
+     "rows": 196
+    },
+    "file-upload": {
+     "complexity": {
+      "L": 2,
+      "M": 12,
+      "S": 16
+     },
+     "marginal_days_high": 29.44,
+     "marginal_days_likely": 18.4,
+     "marginal_days_low": 12.88,
+     "paths": 21,
+     "rows": 30
+    },
+    "grouped-listing": {
+     "complexity": {
+      "L": 7,
+      "M": 2
+     },
+     "marginal_days_high": 41.0,
+     "marginal_days_likely": 20.5,
+     "marginal_days_low": 14.35,
+     "paths": 9,
+     "rows": 9
+    },
+    "paginated-listing": {
+     "complexity": {
+      "L": 2,
+      "M": 8,
+      "S": 3
+     },
+     "marginal_days_high": 16.48,
+     "marginal_days_likely": 10.3,
+     "marginal_days_low": 7.21,
+     "paths": 13,
+     "rows": 13
+    }
+   },
+   "foundations_days": 30.0,
+   "foundations_detail": {
+    "csrf+session-form-flow": 4.0,
+    "error-bodies": 1.0,
+    "expand-fields-projection": 2.0,
+    "group-by-engine": 6.0,
+    "issue-filter-parser": 6.0,
+    "pagination-envelope": 2.0,
+    "presigned-asset-flow": 3.0,
+    "route-scaffold+authn": 3.0,
+    "serializer-shape-fidelity": 3.0
+   },
+   "paths": 229,
+   "rows": 327,
+   "total_days_high": 409.0,
+   "total_days_likely": 233.2,
+   "total_days_low": 156.3
+  }
+ }
+}

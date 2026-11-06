@@ -1,0 +1,1616 @@
+{
+ "auth_flow": {
+  "HttpResponseRedirect_sites": 133,
+  "base_host": [
+   {
+    "loc": "apps/api/plane/authentication/utils/host.py:16",
+    "text": "def base_host("
+   },
+   {
+    "loc": "apps/api/plane/authentication/utils/host.py:24",
+    "text": "base_origin = settings.WEB_URL or settings.APP_BASE_URL"
+   },
+   {
+    "loc": "apps/api/plane/authentication/utils/host.py:58",
+    "text": "if settings.APP_BASE_URL:"
+   },
+   {
+    "loc": "apps/api/plane/authentication/utils/host.py:59",
+    "text": "return settings.APP_BASE_URL"
+   }
+  ],
+  "client_error_code_readers": [
+   {
+    "loc": "apps/web/components/account/auth-forms/auth-root.tsx:42",
+    "text": "const error_code = searchParams.get(\"error_code\");"
+   },
+   {
+    "loc": "apps/web/components/account/auth-forms/auth-root.tsx:65",
+    "text": "if (error_code && authMode) {"
+   },
+   {
+    "loc": "apps/web/components/account/auth-forms/auth-root.tsx:66",
+    "text": "const errorhandler = authErrorHandler(error_code?.toString() as EAuthenticationErrorCodes);"
+   },
+   {
+    "loc": "apps/web/components/account/auth-forms/auth-root.tsx:104",
+    "text": "}, [error_code, authMode]);"
+   }
+  ],
+  "error_dict": [
+   {
+    "loc": "apps/api/plane/authentication/adapter/error.py:93",
+    "text": "def get_error_dict(self):"
+   },
+   {
+    "loc": "apps/api/plane/authentication/adapter/error.py:94",
+    "text": "error = {\"error_code\": self.error_code, \"error_message\": self.error_message}"
+   }
+  ],
+  "get_safe_redirect_url": [
+   {
+    "loc": "apps/api/plane/utils/path_validator.py:157",
+    "text": "def get_safe_redirect_url(base_url: str, next_path: str = \"\", params: dict = {}) -> str:"
+   }
+  ],
+  "login_sets_session": [
+   {
+    "loc": "apps/api/plane/authentication/utils/login.py:14",
+    "text": "def user_login(request, user, is_app=False, is_admin=False, is_space=False):"
+   },
+   {
+    "loc": "apps/api/plane/authentication/utils/login.py:15",
+    "text": "login(request=request, user=user)"
+   },
+   {
+    "loc": "apps/api/plane/authentication/utils/login.py:26",
+    "text": "request.session[\"device_info\"] = device_info"
+   }
+  ],
+  "next_path_read_sites": 19,
+  "redirection_path_targets": [
+   {
+    "loc": "apps/api/plane/authentication/utils/redirection_path.py:14",
+    "text": "return \"onboarding\""
+   },
+   {
+    "loc": "apps/api/plane/authentication/utils/redirection_path.py:30",
+    "text": "return f\"{workspace.slug}\""
+   },
+   {
+    "loc": "apps/api/plane/authentication/utils/redirection_path.py:39",
+    "text": "return f\"{fallback_workspace.slug}\""
+   },
+   {
+    "loc": "apps/api/plane/authentication/utils/redirection_path.py:43",
+    "text": "return \"invitations\""
+   },
+   {
+    "loc": "apps/api/plane/authentication/utils/redirection_path.py:46",
+    "text": "return \"create-workspace\""
+   }
+  ],
+  "view_classes_View_or_APIView": 41
+ },
+ "client_TIssueParams": {
+  "count": 26,
+  "values": [
+   "priority",
+   "state_group",
+   "state",
+   "assignees",
+   "mentions",
+   "created_by",
+   "subscriber",
+   "labels",
+   "cycle",
+   "module",
+   "start_date",
+   "target_date",
+   "project",
+   "team_project",
+   "group_by",
+   "sub_group_by",
+   "order_by",
+   "type",
+   "sub_issue",
+   "show_empty_groups",
+   "cursor",
+   "per_page",
+   "issue_type",
+   "layout",
+   "expand",
+   "filters"
+  ]
+ },
+ "client_issue_param_keys_literal": [
+  "cursor",
+  "filters",
+  "group_by",
+  "order_by",
+  "per_page",
+  "sub_group_by",
+  "sub_issue",
+  "target_date",
+  "type"
+ ],
+ "cookies_csrf_session": {
+  "ADMIN_SESSION_COOKIE_NAME": [
+   {
+    "loc": "apps/api/plane/settings/common.py:379",
+    "text": "ADMIN_SESSION_COOKIE_NAME = \"admin-session-id\""
+   }
+  ],
+  "APPEND_SLASH": [],
+  "CORS_ALLOW_CREDENTIALS": [
+   {
+    "loc": "apps/api/plane/settings/common.py:181",
+    "text": "CORS_ALLOW_CREDENTIALS = True"
+   }
+  ],
+  "CORS_ALLOW_HEADERS": [
+   {
+    "loc": "apps/api/plane/settings/common.py:192",
+    "text": "CORS_ALLOW_HEADERS = [*default_headers, \"X-API-Key\"]"
+   }
+  ],
+  "CSRF_COOKIE_DOMAIN": [
+   {
+    "loc": "apps/api/plane/settings/common.py:386",
+    "text": "CSRF_COOKIE_DOMAIN = os.environ.get(\"COOKIE_DOMAIN\", None)"
+   }
+  ],
+  "CSRF_COOKIE_HTTPONLY": [
+   {
+    "loc": "apps/api/plane/settings/common.py:384",
+    "text": "CSRF_COOKIE_HTTPONLY = True"
+   }
+  ],
+  "CSRF_COOKIE_SECURE": [
+   {
+    "loc": "apps/api/plane/settings/common.py:383",
+    "text": "CSRF_COOKIE_SECURE = secure_origins"
+   }
+  ],
+  "CSRF_FAILURE_VIEW": [
+   {
+    "loc": "apps/api/plane/settings/common.py:387",
+    "text": "CSRF_FAILURE_VIEW = \"plane.authentication.views.common.csrf_failure\""
+   }
+  ],
+  "CSRF_TRUSTED_ORIGINS": [
+   {
+    "loc": "apps/api/plane/settings/common.py:385",
+    "text": "CSRF_TRUSTED_ORIGINS = cors_allowed_origins"
+   }
+  ],
+  "SESSION_COOKIE_AGE": [
+   {
+    "loc": "apps/api/plane/settings/common.py:373",
+    "text": "SESSION_COOKIE_AGE = int(os.environ.get(\"SESSION_COOKIE_AGE\", 604800))"
+   }
+  ],
+  "SESSION_COOKIE_DOMAIN": [
+   {
+    "loc": "apps/api/plane/settings/common.py:375",
+    "text": "SESSION_COOKIE_DOMAIN = os.environ.get(\"COOKIE_DOMAIN\", None)"
+   }
+  ],
+  "SESSION_COOKIE_HTTPONLY": [
+   {
+    "loc": "apps/api/plane/settings/common.py:371",
+    "text": "SESSION_COOKIE_HTTPONLY = True"
+   }
+  ],
+  "SESSION_COOKIE_NAME": [
+   {
+    "loc": "apps/api/plane/settings/common.py:374",
+    "text": "SESSION_COOKIE_NAME = os.environ.get(\"SESSION_COOKIE_NAME\", \"session-id\")"
+   }
+  ],
+  "SESSION_COOKIE_SECURE": [
+   {
+    "loc": "apps/api/plane/settings/common.py:370",
+    "text": "SESSION_COOKIE_SECURE = secure_origins"
+   }
+  ],
+  "SESSION_ENGINE": [
+   {
+    "loc": "apps/api/plane/settings/common.py:372",
+    "text": "SESSION_ENGINE = \"plane.db.models.session\""
+   }
+  ],
+  "SESSION_SAVE_EVERY_REQUEST": [
+   {
+    "loc": "apps/api/plane/settings/common.py:376",
+    "text": "SESSION_SAVE_EVERY_REQUEST = os.environ.get(\"SESSION_SAVE_EVERY_REQUEST\", \"0\") == \"1\""
+   }
+  ],
+  "client_X_CSRFTOKEN_sites": 3,
+  "client_axios_withCredentials_and_401_redirect": [
+   {
+    "loc": "apps/web/services/api.service.ts:20",
+    "text": "withCredentials: true,"
+   },
+   {
+    "loc": "apps/web/services/api.service.ts:43",
+    "text": "if (error.response && error.response.status === 401) {"
+   },
+   {
+    "loc": "apps/web/services/api.service.ts:51",
+    "text": "window.location.replace(`/${currentPath ? `?next_path=${encodeURIComponent(currentPath)}` : ``}`);"
+   }
+  ],
+  "client_csrfmiddlewaretoken_field_sites": 11,
+  "csrf_token_endpoint": [
+   {
+    "loc": "apps/api/plane/authentication/views/common.py:23",
+    "text": "from django.middleware.csrf import get_token"
+   },
+   {
+    "loc": "apps/api/plane/authentication/views/common.py:28",
+    "text": "class CSRFTokenEndpoint(APIView):"
+   },
+   {
+    "loc": "apps/api/plane/authentication/views/common.py:33",
+    "text": "csrf_token = get_token(request)"
+   },
+   {
+    "loc": "apps/api/plane/authentication/views/common.py:35",
+    "text": "return Response({\"csrf_token\": str(csrf_token)}, status=status.HTTP_200_OK)"
+   }
+  ],
+  "drf_session_auth_no_csrf": [
+   {
+    "loc": "apps/api/plane/authentication/session.py:10",
+    "text": "def enforce_csrf(self, request):"
+   },
+   {
+    "loc": "apps/api/plane/authentication/session.py:11",
+    "text": "return"
+   }
+  ],
+  "middleware": [
+   {
+    "loc": "apps/api/plane/settings/common.py:110",
+    "text": "\"plane.middleware\","
+   },
+   {
+    "loc": "apps/api/plane/settings/common.py:122",
+    "text": "\"corsheaders.middleware.CorsMiddleware\","
+   },
+   {
+    "loc": "apps/api/plane/settings/common.py:123",
+    "text": "\"django.middleware.security.SecurityMiddleware\","
+   },
+   {
+    "loc": "apps/api/plane/settings/common.py:124",
+    "text": "\"whitenoise.middleware.WhiteNoiseMiddleware\","
+   },
+   {
+    "loc": "apps/api/plane/settings/common.py:125",
+    "text": "\"plane.authentication.middleware.session.SessionMiddleware\","
+   },
+   {
+    "loc": "apps/api/plane/settings/common.py:126",
+    "text": "\"django.middleware.common.CommonMiddleware\","
+   },
+   {
+    "loc": "apps/api/plane/settings/common.py:127",
+    "text": "\"django.middleware.csrf.CsrfViewMiddleware\","
+   },
+   {
+    "loc": "apps/api/plane/settings/common.py:128",
+    "text": "\"django.contrib.auth.middleware.AuthenticationMiddleware\","
+   },
+   {
+    "loc": "apps/api/plane/settings/common.py:129",
+    "text": "\"django.middleware.clickjacking.XFrameOptionsMiddleware\","
+   },
+   {
+    "loc": "apps/api/plane/settings/common.py:130",
+    "text": "\"crum.CurrentRequestUserMiddleware\","
+   },
+   {
+    "loc": "apps/api/plane/settings/common.py:131",
+    "text": "\"django.middleware.gzip.GZipMiddleware\","
+   },
+   {
+    "loc": "apps/api/plane/settings/common.py:132",
+    "text": "\"plane.middleware.request_body_size.RequestBodySizeLimitMiddleware\","
+   },
+   {
+    "loc": "apps/api/plane/settings/common.py:133",
+    "text": "\"plane.middleware.logger.APITokenLogMiddleware\","
+   },
+   {
+    "loc": "apps/api/plane/settings/common.py:134",
+    "text": "\"plane.middleware.logger.RequestLoggerMiddleware\","
+   }
+  ],
+  "throttle_rates": [
+   {
+    "loc": "apps/api/plane/settings/common.py:142",
+    "text": "\"anon\": \"30/minute\","
+   },
+   {
+    "loc": "apps/api/plane/settings/common.py:143",
+    "text": "\"asset_id\": \"5/minute\","
+   }
+  ]
+ },
+ "error_bodies": {
+  "app_views_response_body_shapes": {
+   "Response(serializer.errors)": 50,
+   "Response({'detail': ...})": 2,
+   "Response({'error': ...})": 209,
+   "Response({'message': ...})": 29,
+   "raise ValidationError/ParseError/PermissionDenied (DRF {detail})": 0
+  },
+  "auth_error_code_count": 60,
+  "auth_error_codes": {
+   "ADMIN_ALREADY_EXIST": 5150,
+   "ADMIN_AUTHENTICATION_FAILED": 5175,
+   "ADMIN_USER_ALREADY_EXIST": 5180,
+   "ADMIN_USER_DEACTIVATED": 5190,
+   "ADMIN_USER_DOES_NOT_EXIST": 5185,
+   "AUTHENTICATION_FAILED": 5999,
+   "AUTHENTICATION_FAILED_SIGN_IN": 5065,
+   "AUTHENTICATION_FAILED_SIGN_UP": 5035,
+   "BOT_USER_LOGIN_FORBIDDEN": 5017,
+   "EMAIL_CODE_ATTEMPT_EXHAUSTED_SIGN_IN": 5100,
+   "EMAIL_CODE_ATTEMPT_EXHAUSTED_SIGN_UP": 5102,
+   "EMAIL_PASSWORD_AUTHENTICATION_DISABLED": 5056,
+   "EMAIL_REQUIRED": 5010,
+   "EXPIRED_MAGIC_CODE_SIGN_IN": 5095,
+   "EXPIRED_MAGIC_CODE_SIGN_UP": 5097,
+   "EXPIRED_PASSWORD_TOKEN": 5130,
+   "GITEA_NOT_CONFIGURED": 5112,
+   "GITEA_OAUTH_PROVIDER_ERROR": 5123,
+   "GITHUB_NOT_CONFIGURED": 5110,
+   "GITHUB_OAUTH_PROVIDER_ERROR": 5120,
+   "GITHUB_USER_NOT_IN_ORG": 5122,
+   "GITLAB_NOT_CONFIGURED": 5111,
+   "GITLAB_OAUTH_PROVIDER_ERROR": 5121,
+   "GOOGLE_NOT_CONFIGURED": 5105,
+   "GOOGLE_OAUTH_PROVIDER_ERROR": 5115,
+   "INCORRECT_OLD_PASSWORD": 5135,
+   "INSTANCE_NOT_CONFIGURED": 5000,
+   "INVALID_ADMIN_EMAIL": 5160,
+   "INVALID_ADMIN_PASSWORD": 5165,
+   "INVALID_EMAIL": 5005,
+   "INVALID_EMAIL_MAGIC_SIGN_IN": 5080,
+   "INVALID_EMAIL_MAGIC_SIGN_UP": 5050,
+   "INVALID_EMAIL_SIGN_IN": 5075,
+   "INVALID_EMAIL_SIGN_UP": 5045,
+   "INVALID_MAGIC_CODE_SIGN_IN": 5090,
+   "INVALID_MAGIC_CODE_SIGN_UP": 5092,
+   "INVALID_NEW_PASSWORD": 5140,
+   "INVALID_PASSWORD": 5020,
+   "INVALID_PASSWORD_TOKEN": 5125,
+   "MAGIC_LINK_LOGIN_DISABLED": 5016,
+   "MAGIC_SIGN_IN_EMAIL_CODE_REQUIRED": 5085,
+   "MAGIC_SIGN_UP_EMAIL_CODE_REQUIRED": 5055,
+   "MISSING_PASSWORD": 5138,
+   "OAUTH_NOT_CONFIGURED": 5104,
+   "OAUTH_PROVIDER_UNVERIFIED_EMAIL": 5124,
+   "OIDC_NOT_CONFIGURED": 5300,
+   "OIDC_OAUTH_PROVIDER_ERROR": 5301,
+   "PASSWORD_ALREADY_SET": 5145,
+   "PASSWORD_LOGIN_DISABLED": 5018,
+   "PASSWORD_TOO_WEAK": 5021,
+   "RATE_LIMIT_EXCEEDED": 5900,
+   "REQUIRED_ADMIN_EMAIL_PASSWORD": 5170,
+   "REQUIRED_ADMIN_EMAIL_PASSWORD_FIRST_NAME": 5155,
+   "REQUIRED_EMAIL_PASSWORD_SIGN_IN": 5070,
+   "REQUIRED_EMAIL_PASSWORD_SIGN_UP": 5040,
+   "SIGNUP_DISABLED": 5015,
+   "SMTP_NOT_CONFIGURED": 5025,
+   "USER_ACCOUNT_DEACTIVATED": 5019,
+   "USER_ALREADY_EXIST": 5030,
+   "USER_DOES_NOT_EXIST": 5060
+  },
+  "auth_error_codes_loc": "apps/api/plane/authentication/adapter/error.py:5",
+  "auth_exception_handler": [
+   {
+    "loc": "apps/api/plane/authentication/adapter/exception.py:17",
+    "text": "def auth_exception_handler(exc, context):"
+   },
+   {
+    "loc": "apps/api/plane/authentication/adapter/exception.py:21",
+    "text": "if isinstance(exc, NotAuthenticated):"
+   },
+   {
+    "loc": "apps/api/plane/authentication/adapter/exception.py:22",
+    "text": "response.status_code = 401"
+   },
+   {
+    "loc": "apps/api/plane/authentication/adapter/exception.py:25",
+    "text": "if isinstance(exc, Throttled):"
+   },
+   {
+    "loc": "apps/api/plane/authentication/adapter/exception.py:31",
+    "text": "response.status_code = 429"
+   }
+  ],
+  "base_viewset_handle_exception": [
+   {
+    "loc": "apps/api/plane/app/views/base.py:70",
+    "text": "def handle_exception(self, exc):"
+   },
+   {
+    "loc": "apps/api/plane/app/views/base.py:82",
+    "text": "{\"error\": \"The payload is not valid\"},"
+   },
+   {
+    "loc": "apps/api/plane/app/views/base.py:88",
+    "text": "{\"error\": \"Please provide valid detail\"},"
+   },
+   {
+    "loc": "apps/api/plane/app/views/base.py:94",
+    "text": "{\"error\": \"The required object does not exist.\"},"
+   },
+   {
+    "loc": "apps/api/plane/app/views/base.py:101",
+    "text": "{\"error\": \"The required key does not exist.\"},"
+   },
+   {
+    "loc": "apps/api/plane/app/views/base.py:107",
+    "text": "{\"error\": \"Something went wrong please try again later\"},"
+   },
+   {
+    "loc": "apps/api/plane/app/views/base.py:167",
+    "text": "def handle_exception(self, exc):"
+   },
+   {
+    "loc": "apps/api/plane/app/views/base.py:178",
+    "text": "{\"error\": \"The payload is not valid\"},"
+   },
+   {
+    "loc": "apps/api/plane/app/views/base.py:184",
+    "text": "{\"error\": \"Please provide valid detail\"},"
+   },
+   {
+    "loc": "apps/api/plane/app/views/base.py:190",
+    "text": "{\"error\": \"The required object does not exist.\"},"
+   },
+   {
+    "loc": "apps/api/plane/app/views/base.py:196",
+    "text": "{\"error\": \"The required key does not exist.\"},"
+   },
+   {
+    "loc": "apps/api/plane/app/views/base.py:202",
+    "text": "{\"error\": \"Something went wrong please try again later\"},"
+   }
+  ],
+  "rest_framework_exception_handler": [
+   {
+    "loc": "apps/api/plane/settings/common.py:148",
+    "text": "\"EXCEPTION_HANDLER\": \"plane.authentication.adapter.exception.auth_exception_handler\","
+   }
+  ]
+ },
+ "expand_fields": {
+  "client_expand_values": {
+   "issue_inbox": 1,
+   "issue_reactions,issue_attachments,issue_link,parent": 2
+  },
+  "server_property": [
+   {
+    "loc": "apps/api/plane/app/views/base.py:139",
+    "text": "def fields(self):"
+   },
+   {
+    "loc": "apps/api/plane/app/views/base.py:144",
+    "text": "def expand(self):"
+   },
+   {
+    "loc": "apps/api/plane/app/views/base.py:229",
+    "text": "def fields(self):"
+   },
+   {
+    "loc": "apps/api/plane/app/views/base.py:234",
+    "text": "def expand(self):"
+   }
+  ],
+  "server_uses_expand": 12,
+  "server_uses_fields": 13
+ },
+ "legacy_issue_filter_params": {
+  "count": 25,
+  "file": "apps/api/plane/utils/issue_filters.py",
+  "params": [
+   "assignees",
+   "completed_at",
+   "created_at",
+   "created_by",
+   "cycle",
+   "estimate_point",
+   "inbox_status",
+   "intake_status",
+   "labels",
+   "logged_by",
+   "mentions",
+   "module",
+   "name",
+   "parent",
+   "priority",
+   "project",
+   "start_date",
+   "start_target_date",
+   "state",
+   "state_group",
+   "sub_issue",
+   "subscriber",
+   "target_date",
+   "type",
+   "updated_at"
+  ]
+ },
+ "other_quirks": {
+  "asset_handlers_returning_302_redirect": [
+   "apps/api/plane/app/views/asset/v2.py:462 WorkspaceFileAssetEndpoint.get",
+   "apps/api/plane/app/views/asset/v2.py:496 StaticFileAssetEndpoint.get",
+   "apps/api/plane/app/views/asset/v2.py:672 ProjectAssetEndpoint.get",
+   "apps/api/plane/app/views/asset/v2.py:869 WorkspaceAssetDownloadEndpoint.get",
+   "apps/api/plane/app/views/asset/v2.py:896 ProjectAssetDownloadEndpoint.get",
+   "apps/api/plane/space/views/asset.py:35 EntityAssetEndpoint.get"
+  ],
+  "gzip_middleware": [
+   {
+    "loc": "apps/api/plane/settings/common.py:131",
+    "text": "\"django.middleware.gzip.GZipMiddleware\","
+   }
+  ],
+  "gzip_page_decorated_handlers_in_app_views": 8,
+  "instance_cache": [
+   {
+    "loc": "apps/api/plane/license/api/views/instance.py:23",
+    "text": "from plane.utils.cache import cache_response, invalidate_cache"
+   },
+   {
+    "loc": "apps/api/plane/license/api/views/instance.py:25",
+    "text": "from django.views.decorators.cache import cache_control"
+   },
+   {
+    "loc": "apps/api/plane/license/api/views/instance.py:34",
+    "text": "@cache_response(60 * 60 * 2, user=False)"
+   },
+   {
+    "loc": "apps/api/plane/license/api/views/instance.py:35",
+    "text": "@method_decorator(cache_control(private=True, max_age=12))"
+   }
+  ],
+  "users_me_cache_headers": [
+   {
+    "loc": "apps/api/plane/app/views/user/base.py:16",
+    "text": "from django.views.decorators.cache import cache_control"
+   },
+   {
+    "loc": "apps/api/plane/app/views/user/base.py:17",
+    "text": "from django.views.decorators.vary import vary_on_cookie"
+   },
+   {
+    "loc": "apps/api/plane/app/views/user/base.py:75",
+    "text": "@method_decorator(cache_control(private=True, max_age=12))"
+   },
+   {
+    "loc": "apps/api/plane/app/views/user/base.py:76",
+    "text": "@method_decorator(vary_on_cookie)"
+   },
+   {
+    "loc": "apps/api/plane/app/views/user/base.py:81",
+    "text": "@method_decorator(cache_control(private=True, max_age=12))"
+   },
+   {
+    "loc": "apps/api/plane/app/views/user/base.py:82",
+    "text": "@method_decorator(vary_on_cookie)"
+   },
+   {
+    "loc": "apps/api/plane/app/views/user/base.py:417",
+    "text": "@method_decorator(cache_control(private=True, max_age=12))"
+   },
+   {
+    "loc": "apps/api/plane/app/views/user/base.py:418",
+    "text": "@method_decorator(vary_on_cookie)"
+   }
+  ],
+  "web_not_found_handler": [
+   {
+    "loc": "apps/api/plane/urls.py:16",
+    "text": "handler404 = \"plane.app.views.error_404.custom_404_view\""
+   }
+  ]
+ },
+ "paginate_call_sites": {
+  "by_surface": {
+   "api": 26,
+   "app": 25,
+   "space": 3
+  },
+  "default_per_page": {
+   "20": 2,
+   "None": 52
+  },
+  "paginator_cls": {
+   "GroupedOffsetPaginator": 6,
+   "None": 42,
+   "SubGroupedOffsetPaginator": 6
+  },
+  "sites": [
+   {
+    "default_per_page": null,
+    "kwargs": [
+     "on_results",
+     "order_by",
+     "queryset",
+     "request",
+     "total_count_queryset"
+    ],
+    "loc": "apps/api/plane/app/views/cycle/issue.py:215",
+    "paginator_cls": null,
+    "surface": "app"
+   },
+   {
+    "default_per_page": null,
+    "kwargs": [
+     "count_filter",
+     "group_by_field_name",
+     "group_by_fields",
+     "on_results",
+     "order_by",
+     "paginator_cls",
+     "queryset",
+     "request",
+     "total_count_queryset"
+    ],
+    "loc": "apps/api/plane/app/views/cycle/issue.py:188",
+    "paginator_cls": "GroupedOffsetPaginator",
+    "surface": "app"
+   },
+   {
+    "default_per_page": null,
+    "kwargs": [
+     "count_filter",
+     "group_by_field_name",
+     "group_by_fields",
+     "on_results",
+     "order_by",
+     "paginator_cls",
+     "queryset",
+     "request",
+     "sub_group_by_field_name",
+     "sub_group_by_fields",
+     "total_count_queryset"
+    ],
+    "loc": "apps/api/plane/app/views/cycle/issue.py:153",
+    "paginator_cls": "SubGroupedOffsetPaginator",
+    "surface": "app"
+   },
+   {
+    "default_per_page": null,
+    "kwargs": [
+     "on_results",
+     "order_by",
+     "queryset",
+     "request"
+    ],
+    "loc": "apps/api/plane/app/views/exporter/base.py:74",
+    "paginator_cls": null,
+    "surface": "app"
+   },
+   {
+    "default_per_page": null,
+    "kwargs": [
+     "on_results",
+     "queryset",
+     "request"
+    ],
+    "loc": "apps/api/plane/app/views/intake/base.py:222",
+    "paginator_cls": null,
+    "surface": "app"
+   },
+   {
+    "default_per_page": null,
+    "kwargs": [
+     "on_results",
+     "order_by",
+     "queryset",
+     "request",
+     "total_count_queryset"
+    ],
+    "loc": "apps/api/plane/app/views/issue/archive.py:212",
+    "paginator_cls": null,
+    "surface": "app"
+   },
+   {
+    "default_per_page": null,
+    "kwargs": [
+     "count_filter",
+     "group_by_field_name",
+     "group_by_fields",
+     "on_results",
+     "order_by",
+     "paginator_cls",
+     "queryset",
+     "request",
+     "total_count_queryset"
+    ],
+    "loc": "apps/api/plane/app/views/issue/archive.py:185",
+    "paginator_cls": "GroupedOffsetPaginator",
+    "surface": "app"
+   },
+   {
+    "default_per_page": null,
+    "kwargs": [
+     "count_filter",
+     "group_by_field_name",
+     "group_by_fields",
+     "on_results",
+     "order_by",
+     "paginator_cls",
+     "queryset",
+     "request",
+     "sub_group_by_field_name",
+     "sub_group_by_fields",
+     "total_count_queryset"
+    ],
+    "loc": "apps/api/plane/app/views/issue/archive.py:150",
+    "paginator_cls": "SubGroupedOffsetPaginator",
+    "surface": "app"
+   },
+   {
+    "default_per_page": null,
+    "kwargs": [
+     "on_results",
+     "order_by",
+     "queryset",
+     "request",
+     "total_count_queryset"
+    ],
+    "loc": "apps/api/plane/app/views/issue/base.py:1095",
+    "paginator_cls": null,
+    "surface": "app"
+   },
+   {
+    "default_per_page": null,
+    "kwargs": [
+     "on_results",
+     "order_by",
+     "queryset",
+     "request",
+     "total_count_queryset"
+    ],
+    "loc": "apps/api/plane/app/views/issue/base.py:396",
+    "paginator_cls": null,
+    "surface": "app"
+   },
+   {
+    "default_per_page": null,
+    "kwargs": [
+     "count_filter",
+     "group_by_field_name",
+     "group_by_fields",
+     "on_results",
+     "order_by",
+     "paginator_cls",
+     "queryset",
+     "request",
+     "total_count_queryset"
+    ],
+    "loc": "apps/api/plane/app/views/issue/base.py:369",
+    "paginator_cls": "GroupedOffsetPaginator",
+    "surface": "app"
+   },
+   {
+    "default_per_page": null,
+    "kwargs": [
+     "count_filter",
+     "group_by_field_name",
+     "group_by_fields",
+     "on_results",
+     "order_by",
+     "paginator_cls",
+     "queryset",
+     "request",
+     "sub_group_by_field_name",
+     "sub_group_by_fields",
+     "total_count_queryset"
+    ],
+    "loc": "apps/api/plane/app/views/issue/base.py:333",
+    "paginator_cls": "SubGroupedOffsetPaginator",
+    "surface": "app"
+   },
+   {
+    "default_per_page": null,
+    "kwargs": [
+     "on_results",
+     "order_by",
+     "queryset",
+     "request",
+     "total_count_queryset"
+    ],
+    "loc": "apps/api/plane/app/views/module/issue.py:201",
+    "paginator_cls": null,
+    "surface": "app"
+   },
+   {
+    "default_per_page": null,
+    "kwargs": [
+     "count_filter",
+     "group_by_field_name",
+     "group_by_fields",
+     "on_results",
+     "order_by",
+     "paginator_cls",
+     "queryset",
+     "request",
+     "total_count_queryset"
+    ],
+    "loc": "apps/api/plane/app/views/module/issue.py:173",
+    "paginator_cls": "GroupedOffsetPaginator",
+    "surface": "app"
+   },
+   {
+    "default_per_page": null,
+    "kwargs": [
+     "count_filter",
+     "group_by_field_name",
+     "group_by_fields",
+     "on_results",
+     "order_by",
+     "paginator_cls",
+     "queryset",
+     "request",
+     "sub_group_by_field_name",
+     "sub_group_by_fields",
+     "total_count_queryset"
+    ],
+    "loc": "apps/api/plane/app/views/module/issue.py:136",
+    "paginator_cls": "SubGroupedOffsetPaginator",
+    "surface": "app"
+   },
+   {
+    "default_per_page": null,
+    "kwargs": [
+     "on_results",
+     "order_by",
+     "queryset",
+     "request"
+    ],
+    "loc": "apps/api/plane/app/views/notification/base.py:142",
+    "paginator_cls": null,
+    "surface": "app"
+   },
+   {
+    "default_per_page": null,
+    "kwargs": [
+     "on_results",
+     "order_by",
+     "queryset",
+     "request"
+    ],
+    "loc": "apps/api/plane/app/views/project/base.py:131",
+    "paginator_cls": null,
+    "surface": "app"
+   },
+   {
+    "default_per_page": null,
+    "kwargs": [
+     "on_results",
+     "order_by",
+     "queryset",
+     "request"
+    ],
+    "loc": "apps/api/plane/app/views/user/base.py:387",
+    "paginator_cls": null,
+    "surface": "app"
+   },
+   {
+    "default_per_page": null,
+    "kwargs": [
+     "on_results",
+     "order_by",
+     "queryset",
+     "request",
+     "total_count_queryset"
+    ],
+    "loc": "apps/api/plane/app/views/view/base.py:253",
+    "paginator_cls": null,
+    "surface": "app"
+   },
+   {
+    "default_per_page": null,
+    "kwargs": [
+     "on_results",
+     "queryset",
+     "request"
+    ],
+    "loc": "apps/api/plane/app/views/workspace/draft.py:105",
+    "paginator_cls": null,
+    "surface": "app"
+   },
+   {
+    "default_per_page": "20",
+    "kwargs": [
+     "default_per_page",
+     "on_results",
+     "queryset",
+     "request"
+    ],
+    "loc": "apps/api/plane/app/views/workspace/sticky.py:47",
+    "paginator_cls": null,
+    "surface": "app"
+   },
+   {
+    "default_per_page": null,
+    "kwargs": [
+     "on_results",
+     "order_by",
+     "queryset",
+     "request"
+    ],
+    "loc": "apps/api/plane/app/views/workspace/user.py:393",
+    "paginator_cls": null,
+    "surface": "app"
+   },
+   {
+    "default_per_page": null,
+    "kwargs": [
+     "on_results",
+     "order_by",
+     "queryset",
+     "request",
+     "total_count_queryset"
+    ],
+    "loc": "apps/api/plane/app/views/workspace/user.py:243",
+    "paginator_cls": null,
+    "surface": "app"
+   },
+   {
+    "default_per_page": null,
+    "kwargs": [
+     "count_filter",
+     "group_by_field_name",
+     "group_by_fields",
+     "on_results",
+     "order_by",
+     "paginator_cls",
+     "queryset",
+     "request",
+     "total_count_queryset"
+    ],
+    "loc": "apps/api/plane/app/views/workspace/user.py:217",
+    "paginator_cls": "GroupedOffsetPaginator",
+    "surface": "app"
+   },
+   {
+    "default_per_page": null,
+    "kwargs": [
+     "count_filter",
+     "group_by_field_name",
+     "group_by_fields",
+     "on_results",
+     "order_by",
+     "paginator_cls",
+     "queryset",
+     "request",
+     "sub_group_by_field_name",
+     "sub_group_by_fields",
+     "total_count_queryset"
+    ],
+    "loc": "apps/api/plane/app/views/workspace/user.py:183",
+    "paginator_cls": "SubGroupedOffsetPaginator",
+    "surface": "app"
+   },
+   {
+    "default_per_page": null,
+    "kwargs": [
+     "on_results",
+     "order_by",
+     "queryset",
+     "request"
+    ],
+    "loc": "apps/api/plane/space/views/issue.py:233",
+    "paginator_cls": null,
+    "surface": "space"
+   },
+   {
+    "default_per_page": null,
+    "kwargs": [
+     "count_filter",
+     "group_by_field_name",
+     "group_by_fields",
+     "on_results",
+     "order_by",
+     "paginator_cls",
+     "queryset",
+     "request"
+    ],
+    "loc": "apps/api/plane/space/views/issue.py:208",
+    "paginator_cls": "GroupedOffsetPaginator",
+    "surface": "space"
+   },
+   {
+    "default_per_page": null,
+    "kwargs": [
+     "count_filter",
+     "group_by_field_name",
+     "group_by_fields",
+     "on_results",
+     "order_by",
+     "paginator_cls",
+     "queryset",
+     "request",
+     "sub_group_by_field_name",
+     "sub_group_by_fields"
+    ],
+    "loc": "apps/api/plane/space/views/issue.py:175",
+    "paginator_cls": "SubGroupedOffsetPaginator",
+    "surface": "space"
+   },
+   {
+    "default_per_page": null,
+    "kwargs": [
+     "on_results",
+     "queryset",
+     "request"
+    ],
+    "loc": "apps/api/plane/api/views/cycle.py:273",
+    "paginator_cls": null,
+    "surface": "api"
+   },
+   {
+    "default_per_page": null,
+    "kwargs": [
+     "on_results",
+     "queryset",
+     "request"
+    ],
+    "loc": "apps/api/plane/api/views/cycle.py:401",
+    "paginator_cls": null,
+    "surface": "api"
+   },
+   {
+    "default_per_page": null,
+    "kwargs": [
+     "on_results",
+     "queryset",
+     "request"
+    ],
+    "loc": "apps/api/plane/api/views/cycle.py:793",
+    "paginator_cls": null,
+    "surface": "api"
+   },
+   {
+    "default_per_page": null,
+    "kwargs": [
+     "on_results",
+     "queryset",
+     "request"
+    ],
+    "loc": "apps/api/plane/api/views/cycle.py:943",
+    "paginator_cls": null,
+    "surface": "api"
+   },
+   {
+    "default_per_page": null,
+    "kwargs": [
+     "on_results",
+     "queryset",
+     "request"
+    ],
+    "loc": "apps/api/plane/api/views/cycle.py:217",
+    "paginator_cls": null,
+    "surface": "api"
+   },
+   {
+    "default_per_page": null,
+    "kwargs": [
+     "on_results",
+     "queryset",
+     "request"
+    ],
+    "loc": "apps/api/plane/api/views/cycle.py:232",
+    "paginator_cls": null,
+    "surface": "api"
+   },
+   {
+    "default_per_page": null,
+    "kwargs": [
+     "on_results",
+     "queryset",
+     "request"
+    ],
+    "loc": "apps/api/plane/api/views/cycle.py:247",
+    "paginator_cls": null,
+    "surface": "api"
+   },
+   {
+    "default_per_page": null,
+    "kwargs": [
+     "on_results",
+     "queryset",
+     "request"
+    ],
+    "loc": "apps/api/plane/api/views/cycle.py:262",
+    "paginator_cls": null,
+    "surface": "api"
+   },
+   {
+    "default_per_page": null,
+    "kwargs": [
+     "on_results",
+     "queryset",
+     "request"
+    ],
+    "loc": "apps/api/plane/api/views/intake.py:114",
+    "paginator_cls": null,
+    "surface": "api"
+   },
+   {
+    "default_per_page": null,
+    "kwargs": [
+     "on_results",
+     "queryset",
+     "request",
+     "total_count_queryset"
+    ],
+    "loc": "apps/api/plane/api/views/issue.py:427",
+    "paginator_cls": null,
+    "surface": "api"
+   },
+   {
+    "default_per_page": null,
+    "kwargs": [
+     "on_results",
+     "queryset",
+     "request"
+    ],
+    "loc": "apps/api/plane/api/views/issue.py:1001",
+    "paginator_cls": null,
+    "surface": "api"
+   },
+   {
+    "default_per_page": null,
+    "kwargs": [
+     "on_results",
+     "queryset",
+     "request"
+    ],
+    "loc": "apps/api/plane/api/views/issue.py:1166",
+    "paginator_cls": null,
+    "surface": "api"
+   },
+   {
+    "default_per_page": null,
+    "kwargs": [
+     "on_results",
+     "queryset",
+     "request"
+    ],
+    "loc": "apps/api/plane/api/views/issue.py:1427",
+    "paginator_cls": null,
+    "surface": "api"
+   },
+   {
+    "default_per_page": null,
+    "kwargs": [
+     "on_results",
+     "queryset",
+     "request"
+    ],
+    "loc": "apps/api/plane/api/views/issue.py:1740",
+    "paginator_cls": null,
+    "surface": "api"
+   },
+   {
+    "default_per_page": null,
+    "kwargs": [
+     "on_results",
+     "queryset",
+     "request"
+    ],
+    "loc": "apps/api/plane/api/views/issue.py:1273",
+    "paginator_cls": null,
+    "surface": "api"
+   },
+   {
+    "default_per_page": null,
+    "kwargs": [
+     "on_results",
+     "queryset",
+     "request"
+    ],
+    "loc": "apps/api/plane/api/views/member.py:273",
+    "paginator_cls": null,
+    "surface": "api"
+   },
+   {
+    "default_per_page": null,
+    "kwargs": [
+     "on_results",
+     "queryset",
+     "request"
+    ],
+    "loc": "apps/api/plane/api/views/member.py:328",
+    "paginator_cls": null,
+    "surface": "api"
+   },
+   {
+    "default_per_page": null,
+    "kwargs": [
+     "on_results",
+     "queryset",
+     "request"
+    ],
+    "loc": "apps/api/plane/api/views/module.py:272",
+    "paginator_cls": null,
+    "surface": "api"
+   },
+   {
+    "default_per_page": null,
+    "kwargs": [
+     "on_results",
+     "queryset",
+     "request"
+    ],
+    "loc": "apps/api/plane/api/views/module.py:322",
+    "paginator_cls": null,
+    "surface": "api"
+   },
+   {
+    "default_per_page": null,
+    "kwargs": [
+     "on_results",
+     "queryset",
+     "request"
+    ],
+    "loc": "apps/api/plane/api/views/module.py:685",
+    "paginator_cls": null,
+    "surface": "api"
+   },
+   {
+    "default_per_page": null,
+    "kwargs": [
+     "on_results",
+     "queryset",
+     "request"
+    ],
+    "loc": "apps/api/plane/api/views/module.py:895",
+    "paginator_cls": null,
+    "surface": "api"
+   },
+   {
+    "default_per_page": null,
+    "kwargs": [
+     "on_results",
+     "queryset",
+     "request"
+    ],
+    "loc": "apps/api/plane/api/views/module.py:1062",
+    "paginator_cls": null,
+    "surface": "api"
+   },
+   {
+    "default_per_page": null,
+    "kwargs": [
+     "on_results",
+     "queryset",
+     "request"
+    ],
+    "loc": "apps/api/plane/api/views/project.py:198",
+    "paginator_cls": null,
+    "surface": "api"
+   },
+   {
+    "default_per_page": null,
+    "kwargs": [
+     "on_results",
+     "queryset",
+     "request"
+    ],
+    "loc": "apps/api/plane/api/views/project.py:423",
+    "paginator_cls": null,
+    "surface": "api"
+   },
+   {
+    "default_per_page": null,
+    "kwargs": [
+     "on_results",
+     "queryset",
+     "request"
+    ],
+    "loc": "apps/api/plane/api/views/state.py:161",
+    "paginator_cls": null,
+    "surface": "api"
+   },
+   {
+    "default_per_page": "20",
+    "kwargs": [
+     "default_per_page",
+     "on_results",
+     "queryset",
+     "request"
+    ],
+    "loc": "apps/api/plane/api/views/sticky.py:72",
+    "paginator_cls": null,
+    "surface": "api"
+   }
+  ],
+  "total": 54,
+  "with_group_by": 12,
+  "with_sub_group_by": 6
+ },
+ "pagination": {
+  "MAX_LIMIT": [
+   {
+    "loc": "apps/api/plane/utils/paginator.py:87",
+    "text": "MAX_LIMIT = 1000"
+   }
+  ],
+  "cursor_str": "return f'{self.value}:{self.offset}:{int(self.is_prev)}'",
+  "cursor_str_loc": "apps/api/plane/utils/paginator.py:31",
+  "envelope_keys": [
+   {
+    "key": "grouped_by",
+    "line": 730
+   },
+   {
+    "key": "sub_grouped_by",
+    "line": 731
+   },
+   {
+    "key": "total_count",
+    "line": 732
+   },
+   {
+    "key": "next_cursor",
+    "line": 733
+   },
+   {
+    "key": "prev_cursor",
+    "line": 734
+   },
+   {
+    "key": "next_page_results",
+    "line": 735
+   },
+   {
+    "key": "prev_page_results",
+    "line": 736
+   },
+   {
+    "key": "count",
+    "line": 737
+   },
+   {
+    "key": "total_pages",
+    "line": 738
+   },
+   {
+    "key": "total_results",
+    "line": 739
+   },
+   {
+    "key": "extra_stats",
+    "line": 740
+   },
+   {
+    "key": "results",
+    "line": 741
+   }
+  ],
+  "field_mapper_m2m": [
+   {
+    "loc": "apps/api/plane/utils/paginator.py:198",
+    "text": "\"labels__id\": \"label_ids\","
+   },
+   {
+    "loc": "apps/api/plane/utils/paginator.py:199",
+    "text": "\"assignees__id\": \"assignee_ids\","
+   },
+   {
+    "loc": "apps/api/plane/utils/paginator.py:200",
+    "text": "\"issue_module__module_id\": \"module_ids\","
+   }
+  ],
+  "file": "apps/api/plane/utils/paginator.py",
+  "get_result_default_limit": {
+   "GroupedOffsetPaginator": {
+    "limit_default": "50",
+    "loc": "apps/api/plane/utils/paginator.py:224"
+   },
+   "OffsetPaginator": {
+    "limit_default": "1000",
+    "loc": "apps/api/plane/utils/paginator.py:125"
+   },
+   "SubGroupedOffsetPaginator": {
+    "limit_default": "30",
+    "loc": "apps/api/plane/utils/paginator.py:425"
+   }
+  },
+  "paginate_defaults": {
+   "default_per_page": "1000",
+   "max_per_page": "1000",
+   "paginator_cls": "OffsetPaginator"
+  },
+  "paginate_loc": "apps/api/plane/utils/paginator.py:655",
+  "row_number_window": [
+   {
+    "loc": "apps/api/plane/utils/paginator.py:251",
+    "text": "row_number=Window("
+   },
+   {
+    "loc": "apps/api/plane/utils/paginator.py:456",
+    "text": "row_number=Window("
+   }
+  ]
+ },
+ "rich_filter": {
+  "backend": [
+   {
+    "loc": "apps/api/plane/utils/filters/filter_backend.py:28",
+    "text": "filter_param = \"filters\""
+   },
+   {
+    "loc": "apps/api/plane/utils/filters/filter_backend.py:29",
+    "text": "default_max_depth = 5"
+   }
+  ],
+  "readme": false
+ },
+ "server_query_params_by_view_file": {
+  "apps/api/plane/app/views/analytic/advance.py": [
+   "date_filter",
+   "group_by",
+   "project_ids",
+   "tab",
+   "type",
+   "x_axis"
+  ],
+  "apps/api/plane/app/views/analytic/base.py": [
+   "fields",
+   "project_ids",
+   "segment",
+   "x_axis",
+   "y_axis"
+  ],
+  "apps/api/plane/app/views/analytic/project_analytics.py": [
+   "cycle_id",
+   "date_filter",
+   "group_by",
+   "module_id",
+   "project_ids",
+   "type",
+   "x_axis"
+  ],
+  "apps/api/plane/app/views/base.py": [
+   "expand",
+   "fields"
+  ],
+  "apps/api/plane/app/views/cycle/base.py": [
+   "cycle_view",
+   "type"
+  ],
+  "apps/api/plane/app/views/cycle/issue.py": [
+   "group_by",
+   "order_by",
+   "sub_group_by"
+  ],
+  "apps/api/plane/app/views/exporter/base.py": [
+   "cursor",
+   "order_by",
+   "per_page"
+  ],
+  "apps/api/plane/app/views/external/base.py": [
+   "page",
+   "per_page",
+   "query"
+  ],
+  "apps/api/plane/app/views/intake/base.py": [
+   "cursor",
+   "order_by",
+   "status"
+  ],
+  "apps/api/plane/app/views/issue/activity.py": [
+   "activity_type",
+   "created_at__gt"
+  ],
+  "apps/api/plane/app/views/issue/archive.py": [
+   "group_by",
+   "order_by",
+   "show_sub_issues",
+   "sub_group_by"
+  ],
+  "apps/api/plane/app/views/issue/base.py": [
+   "cursor",
+   "description",
+   "group_by",
+   "issues",
+   "order_by",
+   "sub_group_by",
+   "updated_at__gt"
+  ],
+  "apps/api/plane/app/views/issue/sub_issue.py": [
+   "group_by",
+   "order_by"
+  ],
+  "apps/api/plane/app/views/issue/version.py": [
+   "cursor"
+  ],
+  "apps/api/plane/app/views/module/issue.py": [
+   "group_by",
+   "order_by",
+   "sub_group_by"
+  ],
+  "apps/api/plane/app/views/notification/base.py": [
+   "archived",
+   "cursor",
+   "mentioned",
+   "order_by",
+   "per_page",
+   "read",
+   "snoozed",
+   "type"
+  ],
+  "apps/api/plane/app/views/page/base.py": [
+   "order_by",
+   "track_visit"
+  ],
+  "apps/api/plane/app/views/project/base.py": [
+   "cursor",
+   "fields",
+   "name",
+   "order_by",
+   "per_page"
+  ],
+  "apps/api/plane/app/views/search/base.py": [
+   "count",
+   "entities",
+   "project_id",
+   "query",
+   "query_type",
+   "search",
+   "workspace_search"
+  ],
+  "apps/api/plane/app/views/search/issue.py": [
+   "cycle",
+   "issue_id",
+   "issue_relation",
+   "module",
+   "parent",
+   "search",
+   "sub_issue",
+   "target_date",
+   "workspace_search"
+  ],
+  "apps/api/plane/app/views/state/base.py": [
+   "grouped"
+  ],
+  "apps/api/plane/app/views/user/base.py": [
+   "order_by"
+  ],
+  "apps/api/plane/app/views/view/base.py": [
+   "fields",
+   "order_by"
+  ],
+  "apps/api/plane/app/views/workspace/base.py": [
+   "fields",
+   "month",
+   "slug"
+  ],
+  "apps/api/plane/app/views/workspace/recent_visit.py": [
+   "entity_name"
+  ],
+  "apps/api/plane/app/views/workspace/sticky.py": [
+   "query"
+  ],
+  "apps/api/plane/app/views/workspace/user.py": [
+   "group_by",
+   "month",
+   "order_by",
+   "sub_group_by"
+  ]
+ }
+}

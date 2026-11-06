@@ -1,0 +1,56 @@
+{
+ "client_calls": 501,
+ "client_handcheck": {
+  "n_sites": 30,
+  "per_field_ok_over_checked": {
+   "body": "30/30",
+   "catch": "29/29",
+   "path": "30/30",
+   "query": "30/30",
+   "response": "30/30",
+   "verb": "30/30"
+  },
+  "sites_fully_correct": 30
+ },
+ "client_literal_recall": 0.9962,
+ "client_recall_check": "501/501",
+ "join_unmatched_by_category": {
+  "method-mismatch": 1,
+  "no-route": 52,
+  "variant-fanout": 93
+ },
+ "server_routes": {
+  "auth": 41,
+  "instance": 14,
+  "internal": 233,
+  "schema": 3,
+  "space": 25,
+  "v1": 73,
+  "web": 2
+ },
+ "server_rows": {
+  "auth": 41,
+  "instance": 21,
+  "internal": 441,
+  "schema": 3,
+  "space": 42,
+  "v1": 137,
+  "web": 2
+ },
+ "slice_validation_errors": [],
+ "tree_commit": "72b2e014972cc30b38d56290da501c56af866c65",
+ "tree_describe": "n/a (--vcs files: git is never executed against this tree)",
+ "tree_dirty_files_under_apps_packages": null,
+ "tree_label": "oracle/v1-pin-20261018 -> ba85d4d3d3 (upstream preview 879ce8b5c6)",
+ "tree_pin_file": {
+  "date": "2026-10-18",
+  "fork_base_commit": "300c2009d4fdcf5369b92e108da0c2de4212eb4a",
+  "pin_tag": "oracle/v1-pin-20261018",
+  "pinned_commit": "ba85d4d3d332b5380bebca4b9e0143b1127de907",
+  "upstream_describe": "v1.4.2-rc1-111-g879ce8b5c6",
+  "upstream_sha": "879ce8b5c6b4fe21efff4789a7062747f46d6383",
+  "upstream_version": "1.4.2"
+ },
+ "tree_root": "/Users/asmith/repos/woven/forks/plane/.claude/worktrees/agent-a69ad036a9c59b0a8",
+ "unmapped_server_routes": []
+}

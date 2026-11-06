@@ -1,0 +1,26 @@
+{
+ "precision_handcheck": {
+  "n_sites": 30,
+  "per_field_ok_over_checked": {
+   "body": "30/30",
+   "catch": "29/29",
+   "path": "30/30",
+   "query": "30/30",
+   "response": "30/30",
+   "verb": "30/30"
+  },
+  "sites_fully_correct": 30
+ },
+ "recall": {
+  "missing": [
+   {
+    "first_seen": "apps/web/services/issue/issue.service.ts:261",
+    "path": "/api/workspaces/{}/projects/{}/{}/{}/${this.serviceType"
+   }
+  ],
+  "raw_distinct_normalised_paths": 261,
+  "raw_literal_occurrences": 497,
+  "recall": 0.9962,
+  "recalled": 260
+ }
+}

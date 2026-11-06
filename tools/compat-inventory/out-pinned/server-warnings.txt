@@ -1,0 +1,2 @@
+/Users/asmith/repos/woven/forks/plane/.claude/worktrees/agent-a69ad036a9c59b0a8/apps/api/plane/urls.py:46: include() of non-project object skipped: debug_toolbar.urls
+/Users/asmith/repos/woven/forks/plane/.claude/worktrees/agent-a69ad036a9c59b0a8/apps/api/plane/urls.py:46: re_path used (^__debug__/)

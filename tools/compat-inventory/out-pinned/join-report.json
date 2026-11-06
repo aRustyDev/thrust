@@ -1,0 +1,2804 @@
+{
+ "ambiguous_matches": [],
+ "client_alternatives_matched": 499,
+ "client_alternatives_total": 645,
+ "client_call_sites_external_not_plane_api": 5,
+ "client_call_sites_matched": 477,
+ "client_call_sites_total": 533,
+ "client_call_sites_unmatched": 51,
+ "client_call_sites_unmatched_dead_vs_live": {
+  "dead_service_method(no reference elsewhere)": 29,
+  "live": 22
+ },
+ "client_call_sites_unmatched_list": [
+  {
+   "call": "PageCoreService.fetchUserMentions",
+   "client": "live",
+   "dead": false,
+   "site": "apps/live/src/services/page/core.service.ts:140",
+   "status": [
+    "no-route"
+   ],
+   "verb": "GET"
+  },
+  {
+   "call": "literal",
+   "client": "web",
+   "dead": false,
+   "site": "apps/web/components/integration/github/select-repository.tsx:36",
+   "status": [
+    "no-route"
+   ],
+   "verb": "GET"
+  },
+  {
+   "call": "AIService.performEditorTask",
+   "client": "web",
+   "dead": false,
+   "site": "apps/web/services/ai.service.ts:43",
+   "status": [
+    "no-route"
+   ],
+   "verb": "POST"
+  },
+  {
+   "call": "AppConfigService.envConfig",
+   "client": "web",
+   "dead": true,
+   "site": "apps/web/services/app_config.service.ts:21",
+   "status": [
+    "no-route"
+   ],
+   "verb": "GET"
+  },
+  {
+   "call": "AppInstallationService.addInstallationApp",
+   "client": "web",
+   "dead": true,
+   "site": "apps/web/services/app_installation.service.ts:18",
+   "status": [
+    "no-route"
+   ],
+   "verb": "POST"
+  },
+  {
+   "call": "AppInstallationService.addSlackChannel",
+   "client": "web",
+   "dead": true,
+   "site": "apps/web/services/app_installation.service.ts:31",
+   "status": [
+    "no-route"
+   ],
+   "verb": "POST"
+  },
+  {
+   "call": "AppInstallationService.getSlackChannelDetail",
+   "client": "web",
+   "dead": false,
+   "site": "apps/web/services/app_installation.service.ts:46",
+   "status": [
+    "no-route"
+   ],
+   "verb": "GET"
+  },
+  {
+   "call": "AppInstallationService.removeSlackChannel",
+   "client": "web",
+   "dead": false,
+   "site": "apps/web/services/app_installation.service.ts:61",
+   "status": [
+    "no-route"
+   ],
+   "verb": "DELETE"
+  },
+  {
+   "call": "CycleService.workspaceActiveCyclesProgressPro",
+   "client": "web",
+   "dead": true,
+   "site": "apps/web/services/cycle.service.ts:57",
+   "status": [
+    "no-route"
+   ],
+   "verb": "GET"
+  },
+  {
+   "call": "CycleService.workspaceActiveCycles",
+   "client": "web",
+   "dead": true,
+   "site": "apps/web/services/cycle.service.ts:69",
+   "status": [
+    "no-route"
+   ],
+   "verb": "GET"
+  },
+  {
+   "call": "DashboardService.getHomeDashboardWidgets",
+   "client": "web",
+   "dead": false,
+   "site": "apps/web/services/dashboard.service.ts:19",
+   "status": [
+    "no-route"
+   ],
+   "verb": "GET"
+  },
+  {
+   "call": "DashboardService.getWidgetStats",
+   "client": "web",
+   "dead": false,
+   "site": "apps/web/services/dashboard.service.ts:35",
+   "status": [
+    "no-route"
+   ],
+   "verb": "GET"
+  },
+  {
+   "call": "DashboardService.getDashboardDetails",
+   "client": "web",
+   "dead": true,
+   "site": "apps/web/services/dashboard.service.ts:45",
+   "status": [
+    "no-route"
+   ],
+   "verb": "GET"
+  },
+  {
+   "call": "DashboardService.updateDashboardWidget",
+   "client": "web",
+   "dead": false,
+   "site": "apps/web/services/dashboard.service.ts:53",
+   "status": [
+    "no-route"
+   ],
+   "verb": "PATCH"
+  },
+  {
+   "call": "FileService.updateBulkWorkspaceAssetsUploadStatus",
+   "client": "web",
+   "dead": false,
+   "site": "apps/web/services/file.service.ts:127",
+   "status": [
+    "no-route"
+   ],
+   "verb": "POST"
+  },
+  {
+   "call": "GithubIntegrationService.listAllRepositories",
+   "client": "web",
+   "dead": true,
+   "site": "apps/web/services/integrations/github.service.ts:21",
+   "status": [
+    "no-route"
+   ],
+   "verb": "GET"
+  },
+  {
+   "call": "GithubIntegrationService.getGithubRepoInfo",
+   "client": "web",
+   "dead": true,
+   "site": "apps/web/services/integrations/github.service.ts:29",
+   "status": [
+    "no-route"
+   ],
+   "verb": "GET"
+  },
+  {
+   "call": "GithubIntegrationService.createGithubServiceImport",
+   "client": "web",
+   "dead": true,
+   "site": "apps/web/services/integrations/github.service.ts:39",
+   "status": [
+    "no-route"
+   ],
+   "verb": "POST"
+  },
+  {
+   "call": "IntegrationService.getAppIntegrationsList",
+   "client": "web",
+   "dead": false,
+   "site": "apps/web/services/integrations/integration.service.ts:19",
+   "status": [
+    "no-route"
+   ],
+   "verb": "GET"
+  },
+  {
+   "call": "IntegrationService.getWorkspaceIntegrationsList",
+   "client": "web",
+   "dead": false,
+   "site": "apps/web/services/integrations/integration.service.ts:27",
+   "status": [
+    "no-route"
+   ],
+   "verb": "GET"
+  },
+  {
+   "call": "IntegrationService.deleteWorkspaceIntegration",
+   "client": "web",
+   "dead": false,
+   "site": "apps/web/services/integrations/integration.service.ts:35",
+   "status": [
+    "no-route"
+   ],
+   "verb": "DELETE"
+  },
+  {
+   "call": "IntegrationService.getImporterServicesList",
+   "client": "web",
+   "dead": true,
+   "site": "apps/web/services/integrations/integration.service.ts:43",
+   "status": [
+    "no-route"
+   ],
+   "verb": "GET"
+  },
+  {
+   "call": "IntegrationService.deleteImporterService",
+   "client": "web",
+   "dead": true,
+   "site": "apps/web/services/integrations/integration.service.ts:67",
+   "status": [
+    "no-route"
+   ],
+   "verb": "DELETE"
+  },
+  {
+   "call": "JiraImporterService.getJiraProjectInfo",
+   "client": "web",
+   "dead": true,
+   "site": "apps/web/services/integrations/jira.service.ts:18",
+   "status": [
+    "no-route"
+   ],
+   "verb": "GET"
+  },
+  {
+   "call": "JiraImporterService.createJiraImporter",
+   "client": "web",
+   "dead": true,
+   "site": "apps/web/services/integrations/jira.service.ts:28",
+   "status": [
+    "no-route"
+   ],
+   "verb": "POST"
+  },
+  {
+   "call": "IssueService.deleteIssueRelation",
+   "client": "web",
+   "dead": false,
+   "site": "apps/web/services/issue/issue.service.ts:195",
+   "status": [
+    "no-route"
+   ],
+   "verb": "DELETE"
+  },
+  {
+   "call": "IssueService.getIssueDisplayProperties",
+   "client": "web",
+   "dead": true,
+   "site": "apps/web/services/issue/issue.service.ts:205",
+   "status": [
+    "no-route"
+   ],
+   "verb": "GET"
+  },
+  {
+   "call": "IssueService.updateIssueDisplayProperties",
+   "client": "web",
+   "dead": true,
+   "site": "apps/web/services/issue/issue.service.ts:217",
+   "status": [
+    "no-route"
+   ],
+   "verb": "POST"
+  },
+  {
+   "call": "IssueService.bulkOperations",
+   "client": "web",
+   "dead": false,
+   "site": "apps/web/services/issue/issue.service.ts:340",
+   "status": [
+    "no-route"
+   ],
+   "verb": "POST"
+  },
+  {
+   "call": "IssueService.bulkSubscribeIssues",
+   "client": "web",
+   "dead": true,
+   "site": "apps/web/services/issue/issue.service.ts:417",
+   "status": [
+    "no-route"
+   ],
+   "verb": "POST"
+  },
+  {
+   "call": "IssueFiltersService.fetchProjectEpicFilters",
+   "client": "web",
+   "dead": true,
+   "site": "apps/web/services/issue_filter.service.ts:39",
+   "status": [
+    "no-route"
+   ],
+   "verb": "GET"
+  },
+  {
+   "call": "IssueFiltersService.patchProjectEpicFilters",
+   "client": "web",
+   "dead": true,
+   "site": "apps/web/services/issue_filter.service.ts:50",
+   "status": [
+    "no-route"
+   ],
+   "verb": "PATCH"
+  },
+  {
+   "call": "ProjectPageVersionService.restoreVersion",
+   "client": "web",
+   "dead": false,
+   "site": "apps/web/services/page/project-page-version.service.ts:41",
+   "status": [
+    "no-route"
+   ],
+   "verb": "POST"
+  },
+  {
+   "call": "ProjectPageService.fetchFavorites",
+   "client": "web",
+   "dead": true,
+   "site": "apps/web/services/page/project-page.service.ts:82",
+   "status": [
+    "no-route"
+   ],
+   "verb": "GET"
+  },
+  {
+   "call": "ProjectPageService.fetchArchived",
+   "client": "web",
+   "dead": true,
+   "site": "apps/web/services/page/project-page.service.ts:106",
+   "status": [
+    "no-route"
+   ],
+   "verb": "GET"
+  },
+  {
+   "call": "ProjectPageService.move",
+   "client": "web",
+   "dead": false,
+   "site": "apps/web/services/page/project-page.service.ts:186",
+   "status": [
+    "no-route"
+   ],
+   "verb": "POST"
+  },
+  {
+   "call": "ProjectStateService.updateState",
+   "client": "web",
+   "dead": true,
+   "site": "apps/web/services/project/project-state.service.ts:60",
+   "status": [
+    "method-mismatch"
+   ],
+   "verb": "PUT"
+  },
+  {
+   "call": "ProjectService.syncGithubRepository",
+   "client": "web",
+   "dead": false,
+   "site": "apps/web/services/project/project.service.ts:143",
+   "status": [
+    "no-route"
+   ],
+   "verb": "POST"
+  },
+  {
+   "call": "ProjectService.getProjectGithubRepository",
+   "client": "web",
+   "dead": false,
+   "site": "apps/web/services/project/project.service.ts:154",
+   "status": [
+    "no-route"
+   ],
+   "verb": "GET"
+  },
+  {
+   "call": "UserService.userIssues",
+   "client": "web",
+   "dead": true,
+   "site": "apps/web/services/user.service.ts:46",
+   "status": [
+    "no-route"
+   ],
+   "verb": "GET"
+  },
+  {
+   "call": "ViewService.getViewIssues",
+   "client": "web",
+   "dead": false,
+   "site": "apps/web/services/view.service.ts:59",
+   "status": [
+    "no-route"
+   ],
+   "verb": "GET"
+  },
+  {
+   "call": "WorkspaceService.getProductUpdates",
+   "client": "web",
+   "dead": true,
+   "site": "apps/web/services/workspace.service.ts:225",
+   "status": [
+    "no-route"
+   ],
+   "verb": "GET"
+  },
+  {
+   "call": "WorkspaceService.updateSidebarPreference",
+   "client": "web",
+   "dead": false,
+   "site": "apps/web/services/workspace.service.ts:390",
+   "status": [
+    "no-route"
+   ],
+   "verb": "PATCH"
+  },
+  {
+   "call": "AIService.rephraseGrammar",
+   "client": "pkg-services",
+   "dead": true,
+   "site": "packages/services/src/ai/ai.service.ts:68",
+   "status": [
+    "no-route"
+   ],
+   "verb": "POST"
+  },
+  {
+   "call": "CycleAnalyticsService.workspaceActiveCyclesProgressPro",
+   "client": "pkg-services",
+   "dead": true,
+   "site": "packages/services/src/cycle/cycle-analytics.service.ts:78",
+   "status": [
+    "no-route"
+   ],
+   "verb": "GET"
+  },
+  {
+   "call": "CycleService.workspaceActiveCycles",
+   "client": "pkg-services",
+   "dead": true,
+   "site": "packages/services/src/cycle/cycle.service.ts:34",
+   "status": [
+    "no-route"
+   ],
+   "verb": "GET"
+  },
+  {
+   "call": "DashboardService.getHomeWidgets",
+   "client": "pkg-services",
+   "dead": true,
+   "site": "packages/services/src/dashboard/dashboard.service.ts:23",
+   "status": [
+    "no-route"
+   ],
+   "verb": "GET"
+  },
+  {
+   "call": "DashboardService.getWidgetStats",
+   "client": "pkg-services",
+   "dead": false,
+   "site": "packages/services/src/dashboard/dashboard.service.ts:47",
+   "status": [
+    "no-route"
+   ],
+   "verb": "GET"
+  },
+  {
+   "call": "DashboardService.retrieve",
+   "client": "pkg-services",
+   "dead": false,
+   "site": "packages/services/src/dashboard/dashboard.service.ts:63",
+   "status": [
+    "no-route"
+   ],
+   "verb": "GET"
+  },
+  {
+   "call": "DashboardService.updateWidget",
+   "client": "pkg-services",
+   "dead": true,
+   "site": "packages/services/src/dashboard/dashboard.service.ts:79",
+   "status": [
+    "no-route"
+   ],
+   "verb": "PATCH"
+  },
+  {
+   "call": "InstanceService.changelog",
+   "client": "pkg-services",
+   "dead": true,
+   "site": "packages/services/src/instance/instance.service.ts:54",
+   "status": [
+    "no-route"
+   ],
+   "verb": "GET"
+  }
+ ],
+ "client_matched_without_trailing_slash": [
+  "GET /api/workspaces/{workspaceSlug}/projects/{projectId}/cycles/{cycleId}/analytics  packages/services/src/cycle/cycle-analytics.service.ts:36",
+  "GET /api/users/api-tokens/{tokenId}  packages/services/src/developer/api-token.service.ts:36",
+  "DELETE /api/users/api-tokens/{tokenId}  packages/services/src/developer/api-token.service.ts:64",
+  "DELETE /api/assets/v2/workspaces/{workspaceSlug}/projects/{projectId}/{assetId}  packages/services/src/file/file.service.ts:36",
+  "DELETE /api/assets/v2/workspaces/{workspaceSlug}/{assetId}  packages/services/src/file/file.service.ts:36",
+  "DELETE /api/public/assets/v2/anchor/{anchor}/{assetId}  packages/services/src/file/file.service.ts:36",
+  "GET /api/workspaces/{workspaceSlug}/advance-analytics  apps/web/services/analytics.service.ts:29",
+  "GET /api/workspaces/{workspaceSlug}/projects/{projectId}/advance-analytics  apps/web/services/analytics.service.ts:29",
+  "GET /api/workspaces/{workspaceSlug}/advance-analytics-stats  apps/web/services/analytics.service.ts:54",
+  "GET /api/workspaces/{workspaceSlug}/projects/{projectId}/advance-analytics-stats  apps/web/services/analytics.service.ts:54",
+  "GET /api/workspaces/{workspaceSlug}/advance-analytics-charts  apps/web/services/analytics.service.ts:79",
+  "GET /api/workspaces/{workspaceSlug}/projects/{projectId}/advance-analytics-charts  apps/web/services/analytics.service.ts:79",
+  "GET /api/workspaces/{workspaceSlug}/projects/{projectId}/cycles/{cycleId}/analytics  apps/web/services/cycle.service.ts:31",
+  "DELETE /api/assets/v2/workspaces/{workspaceSlug}/projects/{projectId}/{assetId}  apps/web/services/file.service.ts:217",
+  "DELETE /api/assets/v2/workspaces/{workspaceSlug}/{assetId}  apps/web/services/file.service.ts:217",
+  "GET /api/workspaces/{workspaceSlug}/export-issues  apps/web/services/integrations/integration.service.ts:54",
+  "GET /api/workspaces/{workspaceSlug}/project-identifiers  apps/web/services/project/project.service.ts:36",
+  "GET /api/workspaces/{workspaceSlug}/stickies/{id}  apps/web/services/sticky.service.ts:46",
+  "DELETE /api/workspaces/{workspaceSlug}/stickies/{id}  apps/web/services/sticky.service.ts:62"
+ ],
+ "client_unmatched": [
+  {
+   "category": "method-mismatch",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/states/{stateId}/",
+   "dead": true,
+   "file": "apps/web/services/project/project-state.service.ts",
+   "label": "ProjectStateService.updateState",
+   "line": 60,
+   "resolution": "literal",
+   "server_path": "/api/workspaces/{}/projects/{}/states/{}",
+   "verb": "PUT"
+  },
+  {
+   "category": "no-route",
+   "client": "live",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/pages/{pageId}/mentions/",
+   "dead": false,
+   "file": "apps/live/src/services/page/core.service.ts",
+   "label": "PageCoreService.fetchUserMentions",
+   "line": 140,
+   "resolution": "derived",
+   "server_path": "",
+   "verb": "GET"
+  },
+  {
+   "category": "no-route",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/workspace-integrations/{id}/github-repositories/",
+   "dead": false,
+   "file": "apps/web/components/integration/github/select-repository.tsx",
+   "label": "literal",
+   "line": 36,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "GET"
+  },
+  {
+   "category": "no-route",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/rephrase-grammar/",
+   "dead": false,
+   "file": "apps/web/services/ai.service.ts",
+   "label": "AIService.performEditorTask",
+   "line": 43,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "POST"
+  },
+  {
+   "category": "no-route",
+   "client": "web",
+   "client_path": "/api/configs/",
+   "dead": true,
+   "file": "apps/web/services/app_config.service.ts",
+   "label": "AppConfigService.envConfig",
+   "line": 21,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "GET"
+  },
+  {
+   "category": "no-route",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/workspace-integrations/{provider}/",
+   "dead": true,
+   "file": "apps/web/services/app_installation.service.ts",
+   "label": "AppInstallationService.addInstallationApp",
+   "line": 18,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "POST"
+  },
+  {
+   "category": "no-route",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/workspace-integrations/{integrationId}/project-slack-sync/",
+   "dead": true,
+   "file": "apps/web/services/app_installation.service.ts",
+   "label": "AppInstallationService.addSlackChannel",
+   "line": 31,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "POST"
+  },
+  {
+   "category": "no-route",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/workspace-integrations/{integrationId}/project-slack-sync/",
+   "dead": false,
+   "file": "apps/web/services/app_installation.service.ts",
+   "label": "AppInstallationService.getSlackChannelDetail",
+   "line": 46,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "GET"
+  },
+  {
+   "category": "no-route",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/workspace-integrations/{integrationId}/project-slack-sync/{slackSyncId}",
+   "dead": false,
+   "file": "apps/web/services/app_installation.service.ts",
+   "label": "AppInstallationService.removeSlackChannel",
+   "line": 61,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "DELETE"
+  },
+  {
+   "category": "no-route",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/cycles/{cycleId}/cycle-progress/",
+   "dead": true,
+   "file": "apps/web/services/cycle.service.ts",
+   "label": "CycleService.workspaceActiveCyclesProgressPro",
+   "line": 57,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "GET"
+  },
+  {
+   "category": "no-route",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/active-cycles/",
+   "dead": true,
+   "file": "apps/web/services/cycle.service.ts",
+   "label": "CycleService.workspaceActiveCycles",
+   "line": 69,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "GET"
+  },
+  {
+   "category": "no-route",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/dashboard/",
+   "dead": false,
+   "file": "apps/web/services/dashboard.service.ts",
+   "label": "DashboardService.getHomeDashboardWidgets",
+   "line": 19,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "GET"
+  },
+  {
+   "category": "no-route",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/dashboard/{dashboardId}/",
+   "dead": false,
+   "file": "apps/web/services/dashboard.service.ts",
+   "label": "DashboardService.getWidgetStats",
+   "line": 35,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "GET"
+  },
+  {
+   "category": "no-route",
+   "client": "web",
+   "client_path": "/api/dashboard/{dashboardId}/",
+   "dead": true,
+   "file": "apps/web/services/dashboard.service.ts",
+   "label": "DashboardService.getDashboardDetails",
+   "line": 45,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "GET"
+  },
+  {
+   "category": "no-route",
+   "client": "web",
+   "client_path": "/api/dashboard/{dashboardId}/widgets/{widgetId}/",
+   "dead": false,
+   "file": "apps/web/services/dashboard.service.ts",
+   "label": "DashboardService.updateDashboardWidget",
+   "line": 53,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "PATCH"
+  },
+  {
+   "category": "no-route",
+   "client": "web",
+   "client_path": "/api/assets/v2/workspaces/{workspaceSlug}/{entityId}/bulk/",
+   "dead": false,
+   "file": "apps/web/services/file.service.ts",
+   "label": "FileService.updateBulkWorkspaceAssetsUploadStatus",
+   "line": 127,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "POST"
+  },
+  {
+   "category": "no-route",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/workspace-integrations/{integrationSlug}/github-repositories",
+   "dead": true,
+   "file": "apps/web/services/integrations/github.service.ts",
+   "label": "GithubIntegrationService.listAllRepositories",
+   "line": 21,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "GET"
+  },
+  {
+   "category": "no-route",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/importers/{integrationServiceType}/",
+   "dead": true,
+   "file": "apps/web/services/integrations/github.service.ts",
+   "label": "GithubIntegrationService.getGithubRepoInfo",
+   "line": 29,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "GET"
+  },
+  {
+   "category": "no-route",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/importers/{integrationServiceType}/",
+   "dead": true,
+   "file": "apps/web/services/integrations/github.service.ts",
+   "label": "GithubIntegrationService.createGithubServiceImport",
+   "line": 39,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "POST"
+  },
+  {
+   "category": "no-route",
+   "client": "web",
+   "client_path": "/api/integrations/",
+   "dead": false,
+   "file": "apps/web/services/integrations/integration.service.ts",
+   "label": "IntegrationService.getAppIntegrationsList",
+   "line": 19,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "GET"
+  },
+  {
+   "category": "no-route",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/workspace-integrations/",
+   "dead": false,
+   "file": "apps/web/services/integrations/integration.service.ts",
+   "label": "IntegrationService.getWorkspaceIntegrationsList",
+   "line": 27,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "GET"
+  },
+  {
+   "category": "no-route",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/workspace-integrations/{integrationId}/provider/",
+   "dead": false,
+   "file": "apps/web/services/integrations/integration.service.ts",
+   "label": "IntegrationService.deleteWorkspaceIntegration",
+   "line": 35,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "DELETE"
+  },
+  {
+   "category": "no-route",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/importers/",
+   "dead": true,
+   "file": "apps/web/services/integrations/integration.service.ts",
+   "label": "IntegrationService.getImporterServicesList",
+   "line": 43,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "GET"
+  },
+  {
+   "category": "no-route",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/importers/{service}/{importerId}/",
+   "dead": true,
+   "file": "apps/web/services/integrations/integration.service.ts",
+   "label": "IntegrationService.deleteImporterService",
+   "line": 67,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "DELETE"
+  },
+  {
+   "category": "no-route",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/importers/jira",
+   "dead": true,
+   "file": "apps/web/services/integrations/jira.service.ts",
+   "label": "JiraImporterService.getJiraProjectInfo",
+   "line": 18,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "GET"
+  },
+  {
+   "category": "no-route",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/importers/jira/",
+   "dead": true,
+   "file": "apps/web/services/integrations/jira.service.ts",
+   "label": "JiraImporterService.createJiraImporter",
+   "line": 28,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "POST"
+  },
+  {
+   "category": "no-route",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/issues/{issueId}/issue-relation/{relationId}/",
+   "dead": false,
+   "file": "apps/web/services/issue/issue.service.ts",
+   "label": "IssueService.deleteIssueRelation",
+   "line": 195,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "DELETE"
+  },
+  {
+   "category": "no-route",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/epics/{issueId}/issue-relation/{relationId}/",
+   "dead": false,
+   "file": "apps/web/services/issue/issue.service.ts",
+   "label": "IssueService.deleteIssueRelation",
+   "line": 195,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "DELETE"
+  },
+  {
+   "category": "no-route",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/work-items/{issueId}/issue-relation/{relationId}/",
+   "dead": false,
+   "file": "apps/web/services/issue/issue.service.ts",
+   "label": "IssueService.deleteIssueRelation",
+   "line": 195,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "DELETE"
+  },
+  {
+   "category": "no-route",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/issue-display-properties/",
+   "dead": true,
+   "file": "apps/web/services/issue/issue.service.ts",
+   "label": "IssueService.getIssueDisplayProperties",
+   "line": 205,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "GET"
+  },
+  {
+   "category": "no-route",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/issue-display-properties/",
+   "dead": true,
+   "file": "apps/web/services/issue/issue.service.ts",
+   "label": "IssueService.updateIssueDisplayProperties",
+   "line": 217,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "POST"
+  },
+  {
+   "category": "no-route",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/bulk-operation-issues/",
+   "dead": false,
+   "file": "apps/web/services/issue/issue.service.ts",
+   "label": "IssueService.bulkOperations",
+   "line": 340,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "POST"
+  },
+  {
+   "category": "no-route",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/bulk-subscribe-issues/",
+   "dead": true,
+   "file": "apps/web/services/issue/issue.service.ts",
+   "label": "IssueService.bulkSubscribeIssues",
+   "line": 417,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "POST"
+  },
+  {
+   "category": "no-route",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/epics-user-properties/",
+   "dead": true,
+   "file": "apps/web/services/issue_filter.service.ts",
+   "label": "IssueFiltersService.fetchProjectEpicFilters",
+   "line": 39,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "GET"
+  },
+  {
+   "category": "no-route",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/epics-user-properties/",
+   "dead": true,
+   "file": "apps/web/services/issue_filter.service.ts",
+   "label": "IssueFiltersService.patchProjectEpicFilters",
+   "line": 50,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "PATCH"
+  },
+  {
+   "category": "no-route",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/pages/{pageId}/versions/{versionId}/restore/",
+   "dead": false,
+   "file": "apps/web/services/page/project-page-version.service.ts",
+   "label": "ProjectPageVersionService.restoreVersion",
+   "line": 41,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "POST"
+  },
+  {
+   "category": "no-route",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/favorite-pages/",
+   "dead": true,
+   "file": "apps/web/services/page/project-page.service.ts",
+   "label": "ProjectPageService.fetchFavorites",
+   "line": 82,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "GET"
+  },
+  {
+   "category": "no-route",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/archived-pages/",
+   "dead": true,
+   "file": "apps/web/services/page/project-page.service.ts",
+   "label": "ProjectPageService.fetchArchived",
+   "line": 106,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "GET"
+  },
+  {
+   "category": "no-route",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/pages/{pageId}/move/",
+   "dead": false,
+   "file": "apps/web/services/page/project-page.service.ts",
+   "label": "ProjectPageService.move",
+   "line": 186,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "POST"
+  },
+  {
+   "category": "no-route",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/workspace-integrations/{workspaceIntegrationId}/github-repository-sync/",
+   "dead": false,
+   "file": "apps/web/services/project/project.service.ts",
+   "label": "ProjectService.syncGithubRepository",
+   "line": 143,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "POST"
+  },
+  {
+   "category": "no-route",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/workspace-integrations/{integrationId}/github-repository-sync/",
+   "dead": false,
+   "file": "apps/web/services/project/project.service.ts",
+   "label": "ProjectService.getProjectGithubRepository",
+   "line": 154,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "GET"
+  },
+  {
+   "category": "no-route",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/my-issues/",
+   "dead": true,
+   "file": "apps/web/services/user.service.ts",
+   "label": "UserService.userIssues",
+   "line": 46,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "GET"
+  },
+  {
+   "category": "no-route",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/views/{viewId}/issues/",
+   "dead": false,
+   "file": "apps/web/services/view.service.ts",
+   "label": "ViewService.getViewIssues",
+   "line": 59,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "GET"
+  },
+  {
+   "category": "no-route",
+   "client": "web",
+   "client_path": "/api/release-notes/",
+   "dead": true,
+   "file": "apps/web/services/workspace.service.ts",
+   "label": "WorkspaceService.getProductUpdates",
+   "line": 225,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "GET"
+  },
+  {
+   "category": "no-route",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/sidebar-preferences/{key}/",
+   "dead": false,
+   "file": "apps/web/services/workspace.service.ts",
+   "label": "WorkspaceService.updateSidebarPreference",
+   "line": 390,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "PATCH"
+  },
+  {
+   "category": "no-route",
+   "client": "pkg-services",
+   "client_path": "/api/workspaces/{workspaceSlug}/rephrase-grammar/",
+   "dead": true,
+   "file": "packages/services/src/ai/ai.service.ts",
+   "label": "AIService.rephraseGrammar",
+   "line": 68,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "POST"
+  },
+  {
+   "category": "no-route",
+   "client": "pkg-services",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/cycles/{cycleId}/cycle-progress/",
+   "dead": true,
+   "file": "packages/services/src/cycle/cycle-analytics.service.ts",
+   "label": "CycleAnalyticsService.workspaceActiveCyclesProgressPro",
+   "line": 78,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "GET"
+  },
+  {
+   "category": "no-route",
+   "client": "pkg-services",
+   "client_path": "/api/workspaces/{workspaceSlug}/active-cycles/",
+   "dead": true,
+   "file": "packages/services/src/cycle/cycle.service.ts",
+   "label": "CycleService.workspaceActiveCycles",
+   "line": 34,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "GET"
+  },
+  {
+   "category": "no-route",
+   "client": "pkg-services",
+   "client_path": "/api/workspaces/{workspaceSlug}/dashboard/",
+   "dead": true,
+   "file": "packages/services/src/dashboard/dashboard.service.ts",
+   "label": "DashboardService.getHomeWidgets",
+   "line": 23,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "GET"
+  },
+  {
+   "category": "no-route",
+   "client": "pkg-services",
+   "client_path": "/api/workspaces/{workspaceSlug}/dashboard/{dashboardId}/",
+   "dead": false,
+   "file": "packages/services/src/dashboard/dashboard.service.ts",
+   "label": "DashboardService.getWidgetStats",
+   "line": 47,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "GET"
+  },
+  {
+   "category": "no-route",
+   "client": "pkg-services",
+   "client_path": "/api/dashboard/{dashboardId}/",
+   "dead": false,
+   "file": "packages/services/src/dashboard/dashboard.service.ts",
+   "label": "DashboardService.retrieve",
+   "line": 63,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "GET"
+  },
+  {
+   "category": "no-route",
+   "client": "pkg-services",
+   "client_path": "/api/dashboard/{dashboardId}/widgets/{widgetId}/",
+   "dead": true,
+   "file": "packages/services/src/dashboard/dashboard.service.ts",
+   "label": "DashboardService.updateWidget",
+   "line": 79,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "PATCH"
+  },
+  {
+   "category": "no-route",
+   "client": "pkg-services",
+   "client_path": "/api/instances/changelog/",
+   "dead": true,
+   "file": "packages/services/src/instance/instance.service.ts",
+   "label": "InstanceService.changelog",
+   "line": 54,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "GET"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/epics/",
+   "dead": false,
+   "file": "apps/web/services/issue/issue.service.ts",
+   "label": "IssueService.createIssue",
+   "line": 33,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "POST"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/work-items/",
+   "dead": false,
+   "file": "apps/web/services/issue/issue.service.ts",
+   "label": "IssueService.createIssue",
+   "line": 33,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "POST"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/epics-detail/",
+   "dead": false,
+   "file": "apps/web/services/issue/issue.service.ts",
+   "label": "IssueService.getIssuesFromServer",
+   "line": 50,
+   "resolution": "derived",
+   "server_path": "",
+   "verb": "GET"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/work-items-detail/",
+   "dead": false,
+   "file": "apps/web/services/issue/issue.service.ts",
+   "label": "IssueService.getIssuesFromServer",
+   "line": 50,
+   "resolution": "derived",
+   "server_path": "",
+   "verb": "GET"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/epics/",
+   "dead": false,
+   "file": "apps/web/services/issue/issue.service.ts",
+   "label": "IssueService.getIssuesFromServer",
+   "line": 50,
+   "resolution": "derived",
+   "server_path": "",
+   "verb": "GET"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/work-items/",
+   "dead": false,
+   "file": "apps/web/services/issue/issue.service.ts",
+   "label": "IssueService.getIssuesFromServer",
+   "line": 50,
+   "resolution": "derived",
+   "server_path": "",
+   "verb": "GET"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/v2/epics/",
+   "dead": true,
+   "file": "apps/web/services/issue/issue.service.ts",
+   "label": "IssueService.getIssuesForSync",
+   "line": 69,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "GET"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/v2/work-items/",
+   "dead": true,
+   "file": "apps/web/services/issue/issue.service.ts",
+   "label": "IssueService.getIssuesForSync",
+   "line": 69,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "GET"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/epics/",
+   "dead": true,
+   "file": "apps/web/services/issue/issue.service.ts",
+   "label": "IssueService.getIssuesWithParams",
+   "line": 104,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "GET"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/work-items/",
+   "dead": true,
+   "file": "apps/web/services/issue/issue.service.ts",
+   "label": "IssueService.getIssuesWithParams",
+   "line": 104,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "GET"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/epics/{issueId}/",
+   "dead": false,
+   "file": "apps/web/services/issue/issue.service.ts",
+   "label": "IssueService.retrieve",
+   "line": 114,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "GET"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/work-items/{issueId}/",
+   "dead": false,
+   "file": "apps/web/services/issue/issue.service.ts",
+   "label": "IssueService.retrieve",
+   "line": 114,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "GET"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/epics/list/",
+   "dead": false,
+   "file": "apps/web/services/issue/issue.service.ts",
+   "label": "IssueService.retrieveIssues",
+   "line": 130,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "GET"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/work-items/list/",
+   "dead": false,
+   "file": "apps/web/services/issue/issue.service.ts",
+   "label": "IssueService.retrieveIssues",
+   "line": 130,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "GET"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/epics/{issueId}/history/",
+   "dead": false,
+   "file": "apps/web/services/issue/issue.service.ts",
+   "label": "IssueService.getIssueActivities",
+   "line": 140,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "GET"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/work-items/{issueId}/history/",
+   "dead": false,
+   "file": "apps/web/services/issue/issue.service.ts",
+   "label": "IssueService.getIssueActivities",
+   "line": 140,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "GET"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/epics/{issueId}/issue-relation/",
+   "dead": true,
+   "file": "apps/web/services/issue/issue.service.ts",
+   "label": "IssueService.createIssueRelation",
+   "line": 184,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "POST"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/work-items/{issueId}/issue-relation/",
+   "dead": true,
+   "file": "apps/web/services/issue/issue.service.ts",
+   "label": "IssueService.createIssueRelation",
+   "line": 184,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "POST"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/epics/{issueId}/",
+   "dead": false,
+   "file": "apps/web/services/issue/issue.service.ts",
+   "label": "IssueService.patchIssue",
+   "line": 227,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "PATCH"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/work-items/{issueId}/",
+   "dead": false,
+   "file": "apps/web/services/issue/issue.service.ts",
+   "label": "IssueService.patchIssue",
+   "line": 227,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "PATCH"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/epics/{issuesId}/",
+   "dead": false,
+   "file": "apps/web/services/issue/issue.service.ts",
+   "label": "IssueService.deleteIssue",
+   "line": 235,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "DELETE"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/work-items/{issuesId}/",
+   "dead": false,
+   "file": "apps/web/services/issue/issue.service.ts",
+   "label": "IssueService.deleteIssue",
+   "line": 235,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "DELETE"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/issues/{issueId}/issues/",
+   "dead": false,
+   "file": "apps/web/services/issue/issue.service.ts",
+   "label": "IssueService.subIssues",
+   "line": 260,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "GET"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/epics/{issueId}/issues/",
+   "dead": false,
+   "file": "apps/web/services/issue/issue.service.ts",
+   "label": "IssueService.subIssues",
+   "line": 260,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "GET"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/epics/{issueId}/sub-issues/",
+   "dead": false,
+   "file": "apps/web/services/issue/issue.service.ts",
+   "label": "IssueService.subIssues",
+   "line": 260,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "GET"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/work-items/{issueId}/issues/",
+   "dead": false,
+   "file": "apps/web/services/issue/issue.service.ts",
+   "label": "IssueService.subIssues",
+   "line": 260,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "GET"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/work-items/{issueId}/sub-issues/",
+   "dead": false,
+   "file": "apps/web/services/issue/issue.service.ts",
+   "label": "IssueService.subIssues",
+   "line": 260,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "GET"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/issues/{issueId}/issues/",
+   "dead": false,
+   "file": "apps/web/services/issue/issue.service.ts",
+   "label": "IssueService.addSubIssues",
+   "line": 276,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "POST"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/epics/{issueId}/issues/",
+   "dead": false,
+   "file": "apps/web/services/issue/issue.service.ts",
+   "label": "IssueService.addSubIssues",
+   "line": 276,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "POST"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/epics/{issueId}/sub-issues/",
+   "dead": false,
+   "file": "apps/web/services/issue/issue.service.ts",
+   "label": "IssueService.addSubIssues",
+   "line": 276,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "POST"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/work-items/{issueId}/issues/",
+   "dead": false,
+   "file": "apps/web/services/issue/issue.service.ts",
+   "label": "IssueService.addSubIssues",
+   "line": 276,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "POST"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/work-items/{issueId}/sub-issues/",
+   "dead": false,
+   "file": "apps/web/services/issue/issue.service.ts",
+   "label": "IssueService.addSubIssues",
+   "line": 276,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "POST"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/issues/{issueId}/links/",
+   "dead": false,
+   "file": "apps/web/services/issue/issue.service.ts",
+   "label": "IssueService.fetchIssueLinks",
+   "line": 287,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "GET"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/epics/{issueId}/links/",
+   "dead": false,
+   "file": "apps/web/services/issue/issue.service.ts",
+   "label": "IssueService.fetchIssueLinks",
+   "line": 287,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "GET"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/epics/{issueId}/issue-links/",
+   "dead": false,
+   "file": "apps/web/services/issue/issue.service.ts",
+   "label": "IssueService.fetchIssueLinks",
+   "line": 287,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "GET"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/work-items/{issueId}/links/",
+   "dead": false,
+   "file": "apps/web/services/issue/issue.service.ts",
+   "label": "IssueService.fetchIssueLinks",
+   "line": 287,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "GET"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/work-items/{issueId}/issue-links/",
+   "dead": false,
+   "file": "apps/web/services/issue/issue.service.ts",
+   "label": "IssueService.fetchIssueLinks",
+   "line": 287,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "GET"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/issues/{issueId}/links/",
+   "dead": false,
+   "file": "apps/web/services/issue/issue.service.ts",
+   "label": "IssueService.createIssueLink",
+   "line": 302,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "POST"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/epics/{issueId}/links/",
+   "dead": false,
+   "file": "apps/web/services/issue/issue.service.ts",
+   "label": "IssueService.createIssueLink",
+   "line": 302,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "POST"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/epics/{issueId}/issue-links/",
+   "dead": false,
+   "file": "apps/web/services/issue/issue.service.ts",
+   "label": "IssueService.createIssueLink",
+   "line": 302,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "POST"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/work-items/{issueId}/links/",
+   "dead": false,
+   "file": "apps/web/services/issue/issue.service.ts",
+   "label": "IssueService.createIssueLink",
+   "line": 302,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "POST"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/work-items/{issueId}/issue-links/",
+   "dead": false,
+   "file": "apps/web/services/issue/issue.service.ts",
+   "label": "IssueService.createIssueLink",
+   "line": 302,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "POST"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/issues/{issueId}/links/{linkId}/",
+   "dead": false,
+   "file": "apps/web/services/issue/issue.service.ts",
+   "label": "IssueService.updateIssueLink",
+   "line": 319,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "PATCH"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/epics/{issueId}/links/{linkId}/",
+   "dead": false,
+   "file": "apps/web/services/issue/issue.service.ts",
+   "label": "IssueService.updateIssueLink",
+   "line": 319,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "PATCH"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/epics/{issueId}/issue-links/{linkId}/",
+   "dead": false,
+   "file": "apps/web/services/issue/issue.service.ts",
+   "label": "IssueService.updateIssueLink",
+   "line": 319,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "PATCH"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/work-items/{issueId}/links/{linkId}/",
+   "dead": false,
+   "file": "apps/web/services/issue/issue.service.ts",
+   "label": "IssueService.updateIssueLink",
+   "line": 319,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "PATCH"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/work-items/{issueId}/issue-links/{linkId}/",
+   "dead": false,
+   "file": "apps/web/services/issue/issue.service.ts",
+   "label": "IssueService.updateIssueLink",
+   "line": 319,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "PATCH"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/issues/{issueId}/links/{linkId}/",
+   "dead": false,
+   "file": "apps/web/services/issue/issue.service.ts",
+   "label": "IssueService.deleteIssueLink",
+   "line": 330,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "DELETE"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/epics/{issueId}/links/{linkId}/",
+   "dead": false,
+   "file": "apps/web/services/issue/issue.service.ts",
+   "label": "IssueService.deleteIssueLink",
+   "line": 330,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "DELETE"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/epics/{issueId}/issue-links/{linkId}/",
+   "dead": false,
+   "file": "apps/web/services/issue/issue.service.ts",
+   "label": "IssueService.deleteIssueLink",
+   "line": 330,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "DELETE"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/work-items/{issueId}/links/{linkId}/",
+   "dead": false,
+   "file": "apps/web/services/issue/issue.service.ts",
+   "label": "IssueService.deleteIssueLink",
+   "line": 330,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "DELETE"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/work-items/{issueId}/issue-links/{linkId}/",
+   "dead": false,
+   "file": "apps/web/services/issue/issue.service.ts",
+   "label": "IssueService.deleteIssueLink",
+   "line": 330,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "DELETE"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/epics/{issueId}/subscribe/",
+   "dead": false,
+   "file": "apps/web/services/issue/issue.service.ts",
+   "label": "IssueService.getIssueNotificationSubscriptionStatus",
+   "line": 385,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "GET"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/work-items/{issueId}/subscribe/",
+   "dead": false,
+   "file": "apps/web/services/issue/issue.service.ts",
+   "label": "IssueService.getIssueNotificationSubscriptionStatus",
+   "line": 385,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "GET"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/epics/{issueId}/subscribe/",
+   "dead": false,
+   "file": "apps/web/services/issue/issue.service.ts",
+   "label": "IssueService.unsubscribeFromIssueNotifications",
+   "line": 393,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "DELETE"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/work-items/{issueId}/subscribe/",
+   "dead": false,
+   "file": "apps/web/services/issue/issue.service.ts",
+   "label": "IssueService.unsubscribeFromIssueNotifications",
+   "line": 393,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "DELETE"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/epics/{issueId}/subscribe/",
+   "dead": false,
+   "file": "apps/web/services/issue/issue.service.ts",
+   "label": "IssueService.subscribeToIssueNotifications",
+   "line": 403,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "POST"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/work-items/{issueId}/subscribe/",
+   "dead": false,
+   "file": "apps/web/services/issue/issue.service.ts",
+   "label": "IssueService.subscribeToIssueNotifications",
+   "line": 403,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "POST"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/epics/{issueId}/history/",
+   "dead": false,
+   "file": "apps/web/services/issue/issue_activity.service.ts",
+   "label": "IssueActivityService.getIssueActivities",
+   "line": 32,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "GET"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/work-items/{issueId}/history/",
+   "dead": false,
+   "file": "apps/web/services/issue/issue_activity.service.ts",
+   "label": "IssueActivityService.getIssueActivities",
+   "line": 32,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "GET"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/epics/{issueId}/archive/",
+   "dead": false,
+   "file": "apps/web/services/issue/issue_archive.service.ts",
+   "label": "IssueArchiveService.archiveIssue",
+   "line": 43,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "POST"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/work-items/{issueId}/archive/",
+   "dead": false,
+   "file": "apps/web/services/issue/issue_archive.service.ts",
+   "label": "IssueArchiveService.archiveIssue",
+   "line": 43,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "POST"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/epics/{issueId}/archive/",
+   "dead": false,
+   "file": "apps/web/services/issue/issue_archive.service.ts",
+   "label": "IssueArchiveService.restoreIssue",
+   "line": 51,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "DELETE"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/work-items/{issueId}/archive/",
+   "dead": false,
+   "file": "apps/web/services/issue/issue_archive.service.ts",
+   "label": "IssueArchiveService.restoreIssue",
+   "line": 51,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "DELETE"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/epics/{issueId}/archive/",
+   "dead": true,
+   "file": "apps/web/services/issue/issue_archive.service.ts",
+   "label": "IssueArchiveService.retrieveArchivedIssue",
+   "line": 64,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "GET"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/work-items/{issueId}/archive/",
+   "dead": true,
+   "file": "apps/web/services/issue/issue_archive.service.ts",
+   "label": "IssueArchiveService.retrieveArchivedIssue",
+   "line": 64,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "GET"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/assets/v2/workspaces/{workspaceSlug}/projects/{projectId}/epics/{issueId}/attachments/{attachmentId}/",
+   "dead": false,
+   "file": "apps/web/services/issue/issue_attachment.service.ts",
+   "label": "IssueAttachmentService.updateIssueAttachmentUploadStatus",
+   "line": 34,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "PATCH"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/assets/v2/workspaces/{workspaceSlug}/projects/{projectId}/work-items/{issueId}/attachments/{attachmentId}/",
+   "dead": false,
+   "file": "apps/web/services/issue/issue_attachment.service.ts",
+   "label": "IssueAttachmentService.updateIssueAttachmentUploadStatus",
+   "line": 34,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "PATCH"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/assets/v2/workspaces/{workspaceSlug}/projects/{projectId}/epics/{issueId}/attachments/",
+   "dead": false,
+   "file": "apps/web/services/issue/issue_attachment.service.ts",
+   "label": "IssueAttachmentService.uploadIssueAttachment",
+   "line": 51,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "POST"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/assets/v2/workspaces/{workspaceSlug}/projects/{projectId}/work-items/{issueId}/attachments/",
+   "dead": false,
+   "file": "apps/web/services/issue/issue_attachment.service.ts",
+   "label": "IssueAttachmentService.uploadIssueAttachment",
+   "line": 51,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "POST"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/assets/v2/workspaces/{workspaceSlug}/projects/{projectId}/epics/{issueId}/attachments/",
+   "dead": false,
+   "file": "apps/web/services/issue/issue_attachment.service.ts",
+   "label": "IssueAttachmentService.getIssueAttachments",
+   "line": 73,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "GET"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/assets/v2/workspaces/{workspaceSlug}/projects/{projectId}/work-items/{issueId}/attachments/",
+   "dead": false,
+   "file": "apps/web/services/issue/issue_attachment.service.ts",
+   "label": "IssueAttachmentService.getIssueAttachments",
+   "line": 73,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "GET"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/assets/v2/workspaces/{workspaceSlug}/projects/{projectId}/epics/{issueId}/attachments/{assetId}/",
+   "dead": false,
+   "file": "apps/web/services/issue/issue_attachment.service.ts",
+   "label": "IssueAttachmentService.deleteIssueAttachment",
+   "line": 88,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "DELETE"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/assets/v2/workspaces/{workspaceSlug}/projects/{projectId}/work-items/{issueId}/attachments/{assetId}/",
+   "dead": false,
+   "file": "apps/web/services/issue/issue_attachment.service.ts",
+   "label": "IssueAttachmentService.deleteIssueAttachment",
+   "line": 88,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "DELETE"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/epics/{issueId}/history/",
+   "dead": false,
+   "file": "apps/web/services/issue/issue_comment.service.ts",
+   "label": "IssueCommentService.getIssueComments",
+   "line": 36,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "GET"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/work-items/{issueId}/history/",
+   "dead": false,
+   "file": "apps/web/services/issue/issue_comment.service.ts",
+   "label": "IssueCommentService.getIssueComments",
+   "line": 36,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "GET"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/epics/{issueId}/comments/",
+   "dead": false,
+   "file": "apps/web/services/issue/issue_comment.service.ts",
+   "label": "IssueCommentService.createIssueComment",
+   "line": 54,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "POST"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/work-items/{issueId}/comments/",
+   "dead": false,
+   "file": "apps/web/services/issue/issue_comment.service.ts",
+   "label": "IssueCommentService.createIssueComment",
+   "line": 54,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "POST"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/epics/{issueId}/comments/{commentId}/",
+   "dead": false,
+   "file": "apps/web/services/issue/issue_comment.service.ts",
+   "label": "IssueCommentService.patchIssueComment",
+   "line": 71,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "PATCH"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/work-items/{issueId}/comments/{commentId}/",
+   "dead": false,
+   "file": "apps/web/services/issue/issue_comment.service.ts",
+   "label": "IssueCommentService.patchIssueComment",
+   "line": 71,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "PATCH"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/epics/{issueId}/comments/{commentId}/",
+   "dead": false,
+   "file": "apps/web/services/issue/issue_comment.service.ts",
+   "label": "IssueCommentService.deleteIssueComment",
+   "line": 87,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "DELETE"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/work-items/{issueId}/comments/{commentId}/",
+   "dead": false,
+   "file": "apps/web/services/issue/issue_comment.service.ts",
+   "label": "IssueCommentService.deleteIssueComment",
+   "line": 87,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "DELETE"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/epics/{issueId}/reactions/",
+   "dead": false,
+   "file": "apps/web/services/issue/issue_reaction.service.ts",
+   "label": "IssueReactionService.createIssueReaction",
+   "line": 28,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "POST"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/work-items/{issueId}/reactions/",
+   "dead": false,
+   "file": "apps/web/services/issue/issue_reaction.service.ts",
+   "label": "IssueReactionService.createIssueReaction",
+   "line": 28,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "POST"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/epics/{issueId}/reactions/",
+   "dead": false,
+   "file": "apps/web/services/issue/issue_reaction.service.ts",
+   "label": "IssueReactionService.listIssueReactions",
+   "line": 39,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "GET"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/work-items/{issueId}/reactions/",
+   "dead": false,
+   "file": "apps/web/services/issue/issue_reaction.service.ts",
+   "label": "IssueReactionService.listIssueReactions",
+   "line": 39,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "GET"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/epics/{issueId}/reactions/{reaction}/",
+   "dead": false,
+   "file": "apps/web/services/issue/issue_reaction.service.ts",
+   "label": "IssueReactionService.deleteIssueReaction",
+   "line": 47,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "DELETE"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/work-items/{issueId}/reactions/{reaction}/",
+   "dead": false,
+   "file": "apps/web/services/issue/issue_reaction.service.ts",
+   "label": "IssueReactionService.deleteIssueReaction",
+   "line": 47,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "DELETE"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/issues/{workItemId}/description-versions/",
+   "dead": false,
+   "file": "apps/web/services/issue/work_item_version.service.ts",
+   "label": "WorkItemVersionService.listDescriptionVersions",
+   "line": 28,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "GET"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/epics/{workItemId}/description-versions/",
+   "dead": false,
+   "file": "apps/web/services/issue/work_item_version.service.ts",
+   "label": "WorkItemVersionService.listDescriptionVersions",
+   "line": 28,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "GET"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/issues/{workItemId}/description-versions/{versionId}/",
+   "dead": false,
+   "file": "apps/web/services/issue/work_item_version.service.ts",
+   "label": "WorkItemVersionService.retrieveDescriptionVersion",
+   "line": 43,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "GET"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/projects/{projectId}/epics/{workItemId}/description-versions/{versionId}/",
+   "dead": false,
+   "file": "apps/web/services/issue/work_item_version.service.ts",
+   "label": "WorkItemVersionService.retrieveDescriptionVersion",
+   "line": 43,
+   "resolution": "literal",
+   "server_path": "",
+   "verb": "GET"
+  },
+  {
+   "category": "variant-fanout",
+   "client": "web",
+   "client_path": "/api/workspaces/{workspaceSlug}/issues-detail/",
+   "dead": false,
+   "file": "apps/web/services/workspace.service.ts",
+   "label": "WorkspaceService.getViewIssues",
+   "line": 276,
+   "resolution": "derived",
+   "server_path": "",
+   "verb": "GET"
+  }
+ ],
+ "client_unmatched_by_category": {
+  "method-mismatch": 1,
+  "no-route": 52,
+  "variant-fanout": 93
+ },
+ "disposition_by_surface": {
+  "auth": {
+   "P0": 13,
+   "P1": 8,
+   "P2": 8,
+   "not-used": 12
+  },
+  "instance": {
+   "P0": 1,
+   "admin-only": 13,
+   "not-used": 7
+  },
+  "internal": {
+   "P0": 248,
+   "P1": 21,
+   "not-used": 172
+  },
+  "schema": {
+   "drop": 3
+  },
+  "space": {
+   "P0": 28,
+   "not-used": 14
+  },
+  "v1": {
+   "v1-out-of-scope": 137
+  },
+  "web": {
+   "infra": 2
+  }
+ },
+ "disposition_internal_space_instance_auth": {
+  "P0": 290,
+  "P1": 29,
+  "P2": 8,
+  "admin-only": 13,
+  "not-used": 205
+ },
+ "multi_client_routes": [
+  "DELETE /api/workspaces/file-assets/{workspace_id}/{asset_key}/  {space:1, web:2}",
+  "POST /api/workspaces/file-assets/{workspace_id}/{asset_key}/restore/  {space:1, web:2}",
+  "DELETE /api/assets/v2/workspaces/{slug}/{asset_id}/  {space:1, web:3}",
+  "DELETE /api/assets/v2/workspaces/{slug}/projects/{project_id}/{pk}/  {space:1, web:2}",
+  "GET /api/workspaces/{slug}/projects/{project_id}/pages/{page_id}/  {live:2, web:1}",
+  "PATCH /api/workspaces/{slug}/projects/{project_id}/pages/{page_id}/  {live:2, web:1}",
+  "GET /api/workspaces/{slug}/projects/{project_id}/pages/{page_id}/description/  {live:3, web:1}",
+  "PATCH /api/workspaces/{slug}/projects/{project_id}/pages/{page_id}/description/  {live:2, web:1}",
+  "GET /api/workspaces/{slug}/projects/{pk}/  {live:1, web:1}",
+  "GET /api/users/me/  {live:3, space:2, web:3}",
+  "PATCH /api/users/me/  {space:1, web:1}",
+  "GET /api/users/me/profile/  {space:4, web:2}",
+  "PATCH /api/users/me/profile/  {space:1, web:3}",
+  "DELETE /api/public/assets/v2/anchor/{anchor}/{pk}/  {space:1, web:1}",
+  "GET /api/instances/  {admin:1, space:1, web:1}",
+  "GET /auth/get-csrf-token/  {admin:3, space:3, web:31}",
+  "GET /auth/google/  {space:2, web:2}",
+  "GET /auth/github/  {space:2, web:2}",
+  "GET /auth/gitlab/  {space:2, web:2}",
+  "GET /auth/gitea/  {space:2, web:2}",
+  "GET /auth/oidc/  {space:2, web:2}"
+ ],
+ "not_used_by_surface": {
+  "auth": 12,
+  "instance": 7,
+  "internal": 172,
+  "space": 14
+ },
+ "not_used_internal_by_method": {
+  "DELETE": 32,
+  "GET": 74,
+  "PATCH": 18,
+  "POST": 35,
+  "PUT": 13
+ },
+ "not_used_internal_by_primary_feature": {
+  "F-A03": 1,
+  "F-A06": 4,
+  "F-A07": 2,
+  "F-A08": 11,
+  "F-A09": 12,
+  "F-A10": 1,
+  "F-B01": 2,
+  "F-B02": 2,
+  "F-B03": 4,
+  "F-B04": 1,
+  "F-B05": 6,
+  "F-B06": 12,
+  "F-B07": 3,
+  "F-B09": 2,
+  "F-B10": 9,
+  "F-B11": 13,
+  "F-B12": 4,
+  "F-B13": 4,
+  "F-B14": 15,
+  "F-B15": 1,
+  "F-B18": 21,
+  "F-C01": 3,
+  "F-D01": 2,
+  "F-D03": 4,
+  "F-D04": 22,
+  "F-D07": 9,
+  "F-D09": 1,
+  "F-X08": 1
+ },
+ "not_used_internal_by_status": {
+  "dead-client-method": 25,
+  "no-client-call": 147
+ },
+ "put_rows_internal": {
+  "not_used": 13,
+  "total": 13
+ },
+ "routes_called_from_shared_packages_services": [
+  "DELETE /api/workspaces/file-assets/{workspace_id}/{asset_key}/",
+  "POST /api/workspaces/file-assets/{workspace_id}/{asset_key}/restore/",
+  "DELETE /api/assets/v2/workspaces/{slug}/{asset_id}/",
+  "POST /api/assets/v2/workspaces/{slug}/{asset_id}/",
+  "DELETE /api/assets/v2/workspaces/{slug}/projects/{project_id}/{pk}/",
+  "GET /api/workspaces/{slug}/projects/{project_id}/cycles/",
+  "POST /api/workspaces/{slug}/projects/{project_id}/cycles/",
+  "DELETE /api/workspaces/{slug}/projects/{project_id}/cycles/{pk}/",
+  "GET /api/workspaces/{slug}/projects/{project_id}/cycles/{pk}/",
+  "PATCH /api/workspaces/{slug}/projects/{project_id}/cycles/{pk}/",
+  "GET /api/workspaces/{slug}/projects/{project_id}/cycles/{cycle_id}/cycle-issues/",
+  "POST /api/workspaces/{slug}/projects/{project_id}/cycles/date-check/",
+  "POST /api/workspaces/{slug}/projects/{project_id}/user-favorite-cycles/",
+  "DELETE /api/workspaces/{slug}/projects/{project_id}/user-favorite-cycles/{cycle_id}/",
+  "POST /api/workspaces/{slug}/projects/{project_id}/cycles/{cycle_id}/transfer-issues/",
+  "DELETE /api/workspaces/{slug}/projects/{project_id}/cycles/{cycle_id}/archive/",
+  "POST /api/workspaces/{slug}/projects/{project_id}/cycles/{cycle_id}/archive/",
+  "GET /api/workspaces/{slug}/projects/{project_id}/archived-cycles/",
+  "GET /api/workspaces/{slug}/projects/{project_id}/archived-cycles/{pk}/",
+  "GET /api/workspaces/{slug}/projects/{project_id}/cycles/{cycle_id}/progress/",
+  "GET /api/workspaces/{slug}/projects/{project_id}/cycles/{cycle_id}/analytics/",
+  "POST /api/workspaces/{slug}/ai-assistant/",
+  "GET /api/workspaces/{slug}/projects/{project_id}/inbox-issues/",
+  "GET /api/workspaces/{slug}/projects/{project_id}/modules/",
+  "POST /api/workspaces/{slug}/projects/{project_id}/modules/",
+  "DELETE /api/workspaces/{slug}/projects/{project_id}/modules/{pk}/",
+  "GET /api/workspaces/{slug}/projects/{project_id}/modules/{pk}/",
+  "PATCH /api/workspaces/{slug}/projects/{project_id}/modules/{pk}/",
+  "POST /api/workspaces/{slug}/projects/{project_id}/issues/{issue_id}/modules/",
+  "GET /api/workspaces/{slug}/projects/{project_id}/modules/{module_id}/issues/",
+  "POST /api/workspaces/{slug}/projects/{project_id}/modules/{module_id}/issues/",
+  "DELETE /api/workspaces/{slug}/projects/{project_id}/modules/{module_id}/issues/{issue_id}/",
+  "POST /api/workspaces/{slug}/projects/{project_id}/modules/{module_id}/module-links/",
+  "DELETE /api/workspaces/{slug}/projects/{project_id}/modules/{module_id}/module-links/{pk}/",
+  "PATCH /api/workspaces/{slug}/projects/{project_id}/modules/{module_id}/module-links/{pk}/",
+  "POST /api/workspaces/{slug}/projects/{project_id}/user-favorite-modules/",
+  "DELETE /api/workspaces/{slug}/projects/{project_id}/user-favorite-modules/{module_id}/",
+  "GET /api/workspaces/{slug}/users/notifications/",
+  "PATCH /api/workspaces/{slug}/users/notifications/{pk}/",
+  "DELETE /api/workspaces/{slug}/users/notifications/{pk}/read/",
+  "POST /api/workspaces/{slug}/users/notifications/{pk}/read/",
+  "DELETE /api/workspaces/{slug}/users/notifications/{pk}/archive/",
+  "POST /api/workspaces/{slug}/users/notifications/{pk}/archive/",
+  "GET /api/workspaces/{slug}/users/notifications/unread/",
+  "POST /api/workspaces/{slug}/users/notifications/mark-all-read/",
+  "GET /api/users/me/workspaces/{slug}/project-roles/",
+  "GET /api/workspaces/{slug}/search/",
+  "GET /api/users/me/",
+  "PATCH /api/users/me/",
+  "GET /api/users/me/profile/",
+  "PATCH /api/users/me/profile/",
+  "GET /api/users/me/workspaces/",
+  "GET /api/workspaces/{slug}/views/",
+  "POST /api/workspaces/{slug}/views/",
+  "DELETE /api/workspaces/{slug}/views/{pk}/",
+  "GET /api/workspaces/{slug}/views/{pk}/",
+  "PATCH /api/workspaces/{slug}/views/{pk}/",
+  "GET /api/workspaces/{slug}/issues/",
+  "GET /api/workspace-slug-check/",
+  "POST /api/workspaces/",
+  "DELETE /api/workspaces/{slug}/",
+  "GET /api/workspaces/{slug}/",
+  "PATCH /api/workspaces/{slug}/",
+  "GET /api/workspaces/{slug}/invitations/",
+  "POST /api/workspaces/{slug}/invitations/",
+  "DELETE /api/workspaces/{slug}/invitations/{pk}/",
+  "PATCH /api/workspaces/{slug}/invitations/{pk}/",
+  "GET /api/users/me/workspaces/invitations/",
+  "POST /api/users/me/workspaces/invitations/",
+  "POST /api/workspaces/{slug}/invitations/{pk}/join/",
+  "GET /api/workspaces/{slug}/members/",
+  "DELETE /api/workspaces/{slug}/members/{pk}/",
+  "PATCH /api/workspaces/{slug}/members/{pk}/",
+  "GET /api/users/last-visited-workspace/",
+  "GET /api/workspaces/{slug}/workspace-members/me/",
+  "GET /api/workspaces/{slug}/modules/",
+  "GET /api/workspaces/{slug}/cycles/",
+  "GET /api/workspaces/{slug}/user-favorites/",
+  "POST /api/workspaces/{slug}/user-favorites/",
+  "DELETE /api/workspaces/{slug}/user-favorites/{favorite_id}/",
+  "PATCH /api/workspaces/{slug}/user-favorites/{favorite_id}/",
+  "GET /api/workspaces/{slug}/user-favorites/{favorite_id}/group/",
+  "GET /api/users/api-tokens/",
+  "POST /api/users/api-tokens/",
+  "DELETE /api/users/api-tokens/{pk}/",
+  "GET /api/users/api-tokens/{pk}/",
+  "GET /api/workspaces/{slug}/webhooks/",
+  "POST /api/workspaces/{slug}/webhooks/",
+  "DELETE /api/workspaces/{slug}/webhooks/{pk}/",
+  "GET /api/workspaces/{slug}/webhooks/{pk}/",
+  "PATCH /api/workspaces/{slug}/webhooks/{pk}/",
+  "POST /api/workspaces/{slug}/webhooks/{pk}/regenerate/",
+  "GET /api/public/anchor/{anchor}/issues/{issue_id}/",
+  "GET /api/public/anchor/{anchor}/issues/{issue_id}/comments/",
+  "POST /api/public/anchor/{anchor}/issues/{issue_id}/comments/",
+  "DELETE /api/public/anchor/{anchor}/issues/{issue_id}/comments/{pk}/",
+  "PATCH /api/public/anchor/{anchor}/issues/{issue_id}/comments/{pk}/",
+  "GET /api/public/anchor/{anchor}/issues/{issue_id}/reactions/",
+  "POST /api/public/anchor/{anchor}/issues/{issue_id}/reactions/",
+  "DELETE /api/public/anchor/{anchor}/issues/{issue_id}/reactions/{reaction_code}/",
+  "POST /api/public/anchor/{anchor}/comments/{comment_id}/reactions/",
+  "DELETE /api/public/anchor/{anchor}/comments/{comment_id}/reactions/{reaction_code}/",
+  "DELETE /api/public/anchor/{anchor}/issues/{issue_id}/votes/",
+  "GET /api/public/anchor/{anchor}/issues/{issue_id}/votes/",
+  "POST /api/public/anchor/{anchor}/issues/{issue_id}/votes/",
+  "GET /api/public/anchor/{anchor}/settings/",
+  "GET /api/public/anchor/{anchor}/issues/",
+  "GET /api/public/workspaces/{slug}/projects/{project_id}/anchor/",
+  "GET /api/public/anchor/{anchor}/cycles/",
+  "GET /api/public/anchor/{anchor}/modules/",
+  "GET /api/public/anchor/{anchor}/states/",
+  "GET /api/public/anchor/{anchor}/labels/",
+  "GET /api/public/anchor/{anchor}/members/",
+  "POST /api/public/assets/v2/anchor/{anchor}/",
+  "DELETE /api/public/assets/v2/anchor/{anchor}/{pk}/",
+  "PATCH /api/public/assets/v2/anchor/{anchor}/{pk}/",
+  "POST /api/public/assets/v2/anchor/{anchor}/restore/{pk}/",
+  "POST /api/public/assets/v2/anchor/{anchor}/{entity_id}/bulk/",
+  "GET /api/instances/",
+  "PATCH /api/instances/",
+  "GET /api/instances/admins/",
+  "GET /api/instances/admins/me/",
+  "GET /api/instances/configurations/",
+  "PATCH /api/instances/configurations/",
+  "DELETE /api/instances/configurations/disable-email-feature/",
+  "POST /api/instances/email-credentials-check/",
+  "GET /api/instances/workspace-slug-check/",
+  "GET /api/instances/workspaces/",
+  "POST /api/instances/workspaces/",
+  "POST /auth/sign-out/",
+  "GET /auth/get-csrf-token/",
+  "POST /auth/magic-generate/",
+  "POST /auth/spaces/magic-generate/",
+  "POST /auth/email-check/",
+  "POST /auth/spaces/email-check/",
+  "POST /auth/forgot-password/",
+  "POST /auth/set-password/"
+ ],
+ "server_routes_no_client_use": [
+  "auth POST /auth/spaces/forgot-password/  [no-client-call] F-A03",
+  "auth GET /auth/spaces/gitea/  [no-client-call] F-A05",
+  "auth GET /auth/spaces/gitea/callback/  [no-client-call] F-A05",
+  "auth GET /auth/spaces/github/  [no-client-call] F-A05",
+  "auth GET /auth/spaces/github/callback/  [no-client-call] F-A05",
+  "auth GET /auth/spaces/gitlab/  [no-client-call] F-A05",
+  "auth GET /auth/spaces/gitlab/callback/  [no-client-call] F-A05",
+  "auth GET /auth/spaces/google/  [no-client-call] F-A05",
+  "auth GET /auth/spaces/google/callback/  [no-client-call] F-A05",
+  "auth GET /auth/spaces/oidc/  [no-client-call] F-A01",
+  "auth GET /auth/spaces/oidc/callback/  [no-client-call] F-A01",
+  "auth POST /auth/spaces/reset-password/{uidb64}/{token}/  [no-client-call] F-A03",
+  "instance DELETE /api/instances/admins/  [no-client-call] F-A10",
+  "instance POST /api/instances/admins/  [no-client-call] F-A10",
+  "instance GET /api/instances/admins/session/  [no-client-call] F-A10",
+  "instance POST /api/instances/admins/sign-up-screen-visited/  [no-client-call] F-A10",
+  "instance DELETE /api/instances/admins/{pk}/  [no-client-call] F-A10",
+  "instance GET /api/instances/admins/{pk}/  [no-client-call] F-A10",
+  "instance POST /api/instances/admins/{pk}/  [no-client-call] F-A10",
+  "internal GET /api/assets/v2/static/{asset_id}/  [no-client-call] F-D04",
+  "internal DELETE /api/assets/v2/user-assets/  [no-client-call] F-D04",
+  "internal PATCH /api/assets/v2/user-assets/  [no-client-call] F-D04",
+  "internal POST /api/assets/v2/user-assets/{asset_id}/  [no-client-call] F-D04",
+  "internal DELETE /api/assets/v2/workspaces/{slug}/  [no-client-call] F-D04",
+  "internal GET /api/assets/v2/workspaces/{slug}/  [no-client-call] F-D04",
+  "internal PATCH /api/assets/v2/workspaces/{slug}/  [no-client-call] F-D04",
+  "internal DELETE /api/assets/v2/workspaces/{slug}/projects/{project_id}/  [no-client-call] F-D04",
+  "internal GET /api/assets/v2/workspaces/{slug}/projects/{project_id}/  [no-client-call] F-D04",
+  "internal PATCH /api/assets/v2/workspaces/{slug}/projects/{project_id}/  [no-client-call] F-D04",
+  "internal DELETE /api/assets/v2/workspaces/{slug}/projects/{project_id}/issues/{issue_id}/attachments/  [no-client-call] F-B06,F-D04",
+  "internal PATCH /api/assets/v2/workspaces/{slug}/projects/{project_id}/issues/{issue_id}/attachments/  [no-client-call] F-B06,F-D04",
+  "internal GET /api/assets/v2/workspaces/{slug}/projects/{project_id}/issues/{issue_id}/attachments/{pk}/  [no-client-call] F-B06,F-D04",
+  "internal POST /api/assets/v2/workspaces/{slug}/projects/{project_id}/issues/{issue_id}/attachments/{pk}/  [no-client-call] F-B06,F-D04",
+  "internal POST /api/assets/v2/workspaces/{slug}/projects/{project_id}/{pk}/  [no-client-call] F-D04",
+  "internal POST /api/assets/v2/workspaces/{slug}/{asset_id}/  [dead-client-method] F-D04",
+  "internal DELETE /api/users/api-tokens/  [no-client-call] F-A06",
+  "internal PATCH /api/users/api-tokens/  [no-client-call] F-A06",
+  "internal PATCH /api/users/api-tokens/{pk}/  [no-client-call] F-A06",
+  "internal POST /api/users/api-tokens/{pk}/  [no-client-call] F-A06",
+  "internal DELETE /api/users/file-assets/  [no-client-call] F-D04",
+  "internal GET /api/users/file-assets/  [no-client-call] F-D04",
+  "internal POST /api/users/file-assets/  [no-client-call] F-D04",
+  "internal GET /api/users/file-assets/{asset_key}/  [no-client-call] F-D04",
+  "internal POST /api/users/file-assets/{asset_key}/  [no-client-call] F-D04",
+  "internal GET /api/users/last-visited-workspace/  [dead-client-method] F-B18",
+  "internal DELETE /api/users/me/accounts/  [no-client-call] F-A09",
+  "internal GET /api/users/me/accounts/  [dead-client-method] F-A09",
+  "internal DELETE /api/users/me/accounts/{pk}/  [no-client-call] F-A09",
+  "internal GET /api/users/me/accounts/{pk}/  [no-client-call] F-A09",
+  "internal GET /api/users/me/activities/  [no-client-call] F-A09",
+  "internal GET /api/users/me/instance-admin/  [dead-client-method] F-A10",
+  "internal GET /api/users/me/workspaces/{slug}/activity-graph/  [no-client-call] F-A09",
+  "internal GET /api/users/me/workspaces/{slug}/dashboard/  [no-client-call] F-B18",
+  "internal GET /api/users/me/workspaces/{slug}/issues-completed-graph/  [no-client-call] F-A09",
+  "internal GET /api/users/me/workspaces/{slug}/projects/invitations/  [no-client-call] F-A08",
+  "internal GET /api/users/session/  [no-client-call] F-A03",
+  "internal GET /api/workspaces/  [no-client-call] F-B01",
+  "internal GET /api/workspaces/file-assets/{workspace_id}/{asset_key}/  [no-client-call] F-D04",
+  "internal POST /api/workspaces/file-assets/{workspace_id}/{asset_key}/  [no-client-call] F-D04",
+  "internal PUT /api/workspaces/{slug}/  [no-client-call] F-B01",
+  "internal GET /api/workspaces/{slug}/analytic-view/  [no-client-call] F-D07",
+  "internal POST /api/workspaces/{slug}/analytic-view/  [no-client-call] F-D07",
+  "internal DELETE /api/workspaces/{slug}/analytic-view/{pk}/  [no-client-call] F-D07",
+  "internal GET /api/workspaces/{slug}/analytic-view/{pk}/  [no-client-call] F-D07",
+  "internal PATCH /api/workspaces/{slug}/analytic-view/{pk}/  [no-client-call] F-D07",
+  "internal GET /api/workspaces/{slug}/analytics/  [no-client-call] F-D07",
+  "internal GET /api/workspaces/{slug}/default-analytics/  [no-client-call] F-D07",
+  "internal POST /api/workspaces/{slug}/export-analytics/  [no-client-call] F-D07,F-D05",
+  "internal DELETE /api/workspaces/{slug}/file-assets/  [no-client-call] F-D04",
+  "internal GET /api/workspaces/{slug}/file-assets/  [no-client-call] F-D04",
+  "internal POST /api/workspaces/{slug}/file-assets/  [no-client-call] F-D04",
+  "internal PATCH /api/workspaces/{slug}/home-preferences/  [no-client-call] F-B18",
+  "internal GET /api/workspaces/{slug}/home-preferences/{key}/  [no-client-call] F-B18",
+  "internal GET /api/workspaces/{slug}/invitations/{pk}/  [no-client-call] F-A07",
+  "internal GET /api/workspaces/{slug}/members/{pk}/  [no-client-call] F-A07",
+  "internal DELETE /api/workspaces/{slug}/project-identifiers/  [no-client-call] F-B02",
+  "internal GET /api/workspaces/{slug}/project-members/  [no-client-call] F-A08",
+  "internal PUT /api/workspaces/{slug}/projects/{pk}/  [no-client-call] F-B02",
+  "internal POST /api/workspaces/{slug}/projects/{project_id}/ai-assistant/  [no-client-call] F-X08",
+  "internal DELETE /api/workspaces/{slug}/projects/{project_id}/archived-cycles/  [no-client-call] F-B10",
+  "internal POST /api/workspaces/{slug}/projects/{project_id}/archived-cycles/  [no-client-call] F-B10",
+  "internal DELETE /api/workspaces/{slug}/projects/{project_id}/archived-cycles/{pk}/  [no-client-call] F-B10",
+  "internal POST /api/workspaces/{slug}/projects/{project_id}/archived-cycles/{pk}/  [no-client-call] F-B10",
+  "internal DELETE /api/workspaces/{slug}/projects/{project_id}/archived-modules/  [no-client-call] F-B11",
+  "internal POST /api/workspaces/{slug}/projects/{project_id}/archived-modules/  [no-client-call] F-B11",
+  "internal DELETE /api/workspaces/{slug}/projects/{project_id}/archived-modules/{pk}/  [no-client-call] F-B11",
+  "internal POST /api/workspaces/{slug}/projects/{project_id}/archived-modules/{pk}/  [no-client-call] F-B11",
+  "internal POST /api/workspaces/{slug}/projects/{project_id}/bulk-create-labels/  [no-client-call] F-B05,F-B16",
+  "internal GET /api/workspaces/{slug}/projects/{project_id}/cycles/{cycle_id}/archive/  [no-client-call] F-B10",
+  "internal GET /api/workspaces/{slug}/projects/{project_id}/cycles/{cycle_id}/cycle-issues/{issue_id}/  [no-client-call] F-B10,F-B16",
+  "internal PATCH /api/workspaces/{slug}/projects/{project_id}/cycles/{cycle_id}/cycle-issues/{issue_id}/  [no-client-call] F-B10,F-B16",
+  "internal PUT /api/workspaces/{slug}/projects/{project_id}/cycles/{cycle_id}/cycle-issues/{issue_id}/  [no-client-call] F-B10,F-B16",
+  "internal PUT /api/workspaces/{slug}/projects/{project_id}/cycles/{pk}/  [no-client-call] F-B10",
+  "internal GET /api/workspaces/{slug}/projects/{project_id}/deleted-issues/  [dead-client-method] F-B03,F-B16",
+  "internal GET /api/workspaces/{slug}/projects/{project_id}/estimates/{estimate_id}/  [dead-client-method] F-B13",
+  "internal PATCH /api/workspaces/{slug}/projects/{project_id}/estimates/{estimate_id}/  [no-client-call] F-B13",
+  "internal DELETE /api/workspaces/{slug}/projects/{project_id}/estimates/{estimate_id}/estimate-points/{estimate_point_id}/  [no-client-call] F-B13",
+  "internal DELETE /api/workspaces/{slug}/projects/{project_id}/favorite-pages/{page_id}/  [dead-client-method] F-C01",
+  "internal POST /api/workspaces/{slug}/projects/{project_id}/favorite-pages/{page_id}/  [dead-client-method] F-C01",
+  "internal GET /api/workspaces/{slug}/projects/{project_id}/inboxes/  [no-client-call] F-B14",
+  "internal POST /api/workspaces/{slug}/projects/{project_id}/inboxes/  [no-client-call] F-B14",
+  "internal DELETE /api/workspaces/{slug}/projects/{project_id}/inboxes/{pk}/  [no-client-call] F-B14",
+  "internal GET /api/workspaces/{slug}/projects/{project_id}/inboxes/{pk}/  [no-client-call] F-B14",
+  "internal PATCH /api/workspaces/{slug}/projects/{project_id}/inboxes/{pk}/  [no-client-call] F-B14",
+  "internal GET /api/workspaces/{slug}/projects/{project_id}/intake-issues/  [no-client-call] F-B14",
+  "internal POST /api/workspaces/{slug}/projects/{project_id}/intake-issues/  [no-client-call] F-B14",
+  "internal DELETE /api/workspaces/{slug}/projects/{project_id}/intake-issues/{pk}/  [no-client-call] F-B14",
+  "internal GET /api/workspaces/{slug}/projects/{project_id}/intake-issues/{pk}/  [no-client-call] F-B14",
+  "internal PATCH /api/workspaces/{slug}/projects/{project_id}/intake-issues/{pk}/  [no-client-call] F-B14",
+  "internal GET /api/workspaces/{slug}/projects/{project_id}/intakes/  [no-client-call] F-B14",
+  "internal POST /api/workspaces/{slug}/projects/{project_id}/intakes/  [no-client-call] F-B14",
+  "internal DELETE /api/workspaces/{slug}/projects/{project_id}/intakes/{pk}/  [no-client-call] F-B14",
+  "internal GET /api/workspaces/{slug}/projects/{project_id}/intakes/{pk}/  [no-client-call] F-B14",
+  "internal PATCH /api/workspaces/{slug}/projects/{project_id}/intakes/{pk}/  [no-client-call] F-B14",
+  "internal GET /api/workspaces/{slug}/projects/{project_id}/invitations/  [no-client-call] F-A08",
+  "internal POST /api/workspaces/{slug}/projects/{project_id}/invitations/  [no-client-call] F-A08",
+  "internal DELETE /api/workspaces/{slug}/projects/{project_id}/invitations/{pk}/  [no-client-call] F-A08",
+  "internal GET /api/workspaces/{slug}/projects/{project_id}/invitations/{pk}/  [no-client-call] F-A08",
+  "internal GET /api/workspaces/{slug}/projects/{project_id}/issue-labels/{pk}/  [no-client-call] F-B05",
+  "internal PUT /api/workspaces/{slug}/projects/{project_id}/issue-labels/{pk}/  [no-client-call] F-B05",
+  "internal GET /api/workspaces/{slug}/projects/{project_id}/issues/{issue_id}/comments/  [no-client-call] F-B07",
+  "internal GET /api/workspaces/{slug}/projects/{project_id}/issues/{issue_id}/comments/{pk}/  [no-client-call] F-B07",
+  "internal PUT /api/workspaces/{slug}/projects/{project_id}/issues/{issue_id}/comments/{pk}/  [no-client-call] F-B07",
+  "internal DELETE /api/workspaces/{slug}/projects/{project_id}/issues/{issue_id}/issue-attachments/  [no-client-call] F-B06,F-D04",
+  "internal GET /api/workspaces/{slug}/projects/{project_id}/issues/{issue_id}/issue-attachments/  [no-client-call] F-B06,F-D04",
+  "internal POST /api/workspaces/{slug}/projects/{project_id}/issues/{issue_id}/issue-attachments/  [no-client-call] F-B06,F-D04",
+  "internal DELETE /api/workspaces/{slug}/projects/{project_id}/issues/{issue_id}/issue-attachments/{pk}/  [no-client-call] F-B06,F-D04",
+  "internal GET /api/workspaces/{slug}/projects/{project_id}/issues/{issue_id}/issue-attachments/{pk}/  [no-client-call] F-B06,F-D04",
+  "internal POST /api/workspaces/{slug}/projects/{project_id}/issues/{issue_id}/issue-attachments/{pk}/  [no-client-call] F-B06,F-D04",
+  "internal GET /api/workspaces/{slug}/projects/{project_id}/issues/{issue_id}/issue-links/{pk}/  [no-client-call] F-B06",
+  "internal PUT /api/workspaces/{slug}/projects/{project_id}/issues/{issue_id}/issue-links/{pk}/  [no-client-call] F-B06",
+  "internal GET /api/workspaces/{slug}/projects/{project_id}/issues/{issue_id}/issue-subscribers/  [no-client-call] F-B05",
+  "internal POST /api/workspaces/{slug}/projects/{project_id}/issues/{issue_id}/issue-subscribers/  [no-client-call] F-B05",
+  "internal DELETE /api/workspaces/{slug}/projects/{project_id}/issues/{issue_id}/issue-subscribers/{subscriber_id}/  [no-client-call] F-B05",
+  "internal GET /api/workspaces/{slug}/projects/{project_id}/issues/{issue_id}/versions/  [no-client-call] F-B09",
+  "internal GET /api/workspaces/{slug}/projects/{project_id}/issues/{issue_id}/versions/{pk}/  [no-client-call] F-B09",
+  "internal PUT /api/workspaces/{slug}/projects/{project_id}/issues/{pk}/  [no-client-call] F-B03",
+  "internal GET /api/workspaces/{slug}/projects/{project_id}/issues/{pk}/archive/  [dead-client-method] F-B03",
+  "internal GET /api/workspaces/{slug}/projects/{project_id}/join/{pk}/  [no-client-call] F-A08",
+  "internal POST /api/workspaces/{slug}/projects/{project_id}/join/{pk}/  [no-client-call] F-A08",
+  "internal GET /api/workspaces/{slug}/projects/{project_id}/members/{pk}/  [dead-client-method] F-A08",
+  "internal GET /api/workspaces/{slug}/projects/{project_id}/modules/{module_id}/archive/  [no-client-call] F-B11",
+  "internal GET /api/workspaces/{slug}/projects/{project_id}/modules/{module_id}/issues/  [dead-client-method] F-B11,F-B16",
+  "internal GET /api/workspaces/{slug}/projects/{project_id}/modules/{module_id}/issues/{issue_id}/  [no-client-call] F-B11,F-B16",
+  "internal PATCH /api/workspaces/{slug}/projects/{project_id}/modules/{module_id}/issues/{issue_id}/  [no-client-call] F-B11,F-B16",
+  "internal PUT /api/workspaces/{slug}/projects/{project_id}/modules/{module_id}/issues/{issue_id}/  [no-client-call] F-B11,F-B16",
+  "internal GET /api/workspaces/{slug}/projects/{project_id}/modules/{module_id}/module-links/  [no-client-call] F-B11",
+  "internal GET /api/workspaces/{slug}/projects/{project_id}/modules/{module_id}/module-links/{pk}/  [no-client-call] F-B11",
+  "internal PUT /api/workspaces/{slug}/projects/{project_id}/modules/{module_id}/module-links/{pk}/  [no-client-call] F-B11",
+  "internal PUT /api/workspaces/{slug}/projects/{project_id}/modules/{pk}/  [dead-client-method] F-B11",
+  "internal GET /api/workspaces/{slug}/projects/{project_id}/pages-summary/  [no-client-call] F-C01",
+  "internal GET /api/workspaces/{slug}/projects/{project_id}/preferences/member/{member_id}/  [no-client-call] F-A08",
+  "internal PATCH /api/workspaces/{slug}/projects/{project_id}/preferences/member/{member_id}/  [no-client-call] F-A08",
+  "internal GET /api/workspaces/{slug}/projects/{project_id}/project-deploy-boards/{pk}/  [no-client-call] F-D09",
+  "internal GET /api/workspaces/{slug}/projects/{project_id}/project-estimates/  [no-client-call] F-B13",
+  "internal POST /api/workspaces/{slug}/projects/{project_id}/project-views/  [no-client-call] F-B12",
+  "internal GET /api/workspaces/{slug}/projects/{project_id}/states/{pk}/  [dead-client-method] F-B04",
+  "internal GET /api/workspaces/{slug}/projects/{project_id}/user-favorite-cycles/  [no-client-call] F-B18",
+  "internal POST /api/workspaces/{slug}/projects/{project_id}/user-favorite-cycles/  [dead-client-method] F-B18",
+  "internal DELETE /api/workspaces/{slug}/projects/{project_id}/user-favorite-cycles/{cycle_id}/  [dead-client-method] F-B18",
+  "internal GET /api/workspaces/{slug}/projects/{project_id}/user-favorite-modules/  [no-client-call] F-B18",
+  "internal POST /api/workspaces/{slug}/projects/{project_id}/user-favorite-modules/  [dead-client-method] F-B18",
+  "internal DELETE /api/workspaces/{slug}/projects/{project_id}/user-favorite-modules/{module_id}/  [dead-client-method] F-B18",
+  "internal GET /api/workspaces/{slug}/projects/{project_id}/user-favorite-views/  [no-client-call] F-B18",
+  "internal POST /api/workspaces/{slug}/projects/{project_id}/user-favorite-views/  [dead-client-method] F-B18",
+  "internal DELETE /api/workspaces/{slug}/projects/{project_id}/user-favorite-views/{view_id}/  [dead-client-method] F-B18",
+  "internal GET /api/workspaces/{slug}/projects/{project_id}/v2/issues/  [dead-client-method] F-B03,F-B16",
+  "internal PUT /api/workspaces/{slug}/projects/{project_id}/views/{pk}/  [no-client-call] F-B12",
+  "internal GET /api/workspaces/{slug}/quick-links/{pk}/  [no-client-call] F-B18",
+  "internal GET /api/workspaces/{slug}/saved-analytic-view/{analytic_id}/  [no-client-call] F-D07",
+  "internal GET /api/workspaces/{slug}/stickies/{pk}/  [dead-client-method] F-B15",
+  "internal GET /api/workspaces/{slug}/user-favorite-projects/  [dead-client-method] F-B18",
+  "internal POST /api/workspaces/{slug}/user-favorite-projects/  [dead-client-method] F-B18",
+  "internal DELETE /api/workspaces/{slug}/user-favorite-projects/{project_id}/  [dead-client-method] F-B18",
+  "internal DELETE /api/workspaces/{slug}/user-favorites/  [no-client-call] F-B18",
+  "internal PATCH /api/workspaces/{slug}/user-favorites/  [no-client-call] F-B18",
+  "internal GET /api/workspaces/{slug}/user-favorites/{favorite_id}/  [no-client-call] F-B18",
+  "internal POST /api/workspaces/{slug}/user-favorites/{favorite_id}/  [no-client-call] F-B18",
+  "internal DELETE /api/workspaces/{slug}/users/notifications/{pk}/  [no-client-call] F-D01",
+  "internal GET /api/workspaces/{slug}/users/notifications/{pk}/  [no-client-call] F-D01",
+  "internal PUT /api/workspaces/{slug}/views/{pk}/  [no-client-call] F-B12",
+  "internal GET /api/workspaces/{slug}/webhook-logs/{webhook_id}/  [no-client-call] F-D03",
+  "internal DELETE /api/workspaces/{slug}/webhooks/  [no-client-call] F-D03",
+  "internal PATCH /api/workspaces/{slug}/webhooks/  [no-client-call] F-D03",
+  "internal POST /api/workspaces/{slug}/webhooks/{pk}/  [no-client-call] F-D03",
+  "internal GET /api/workspaces/{slug}/workspace-themes/  [no-client-call] F-A09",
+  "internal POST /api/workspaces/{slug}/workspace-themes/  [no-client-call] F-A09",
+  "internal DELETE /api/workspaces/{slug}/workspace-themes/{pk}/  [no-client-call] F-A09",
+  "internal GET /api/workspaces/{slug}/workspace-themes/{pk}/  [no-client-call] F-A09",
+  "internal PATCH /api/workspaces/{slug}/workspace-themes/{pk}/  [no-client-call] F-A09",
+  "internal POST /api/workspaces/{slug}/workspace-views/  [dead-client-method] F-B12",
+  "space GET /api/public/anchor/{anchor}/comments/{comment_id}/reactions/  [no-client-call] F-D09,F-B07",
+  "space GET /api/public/anchor/{anchor}/intakes/{intake_id}/inbox-issues/  [no-client-call] F-D09,F-B14",
+  "space POST /api/public/anchor/{anchor}/intakes/{intake_id}/inbox-issues/  [no-client-call] F-D09,F-B14",
+  "space GET /api/public/anchor/{anchor}/intakes/{intake_id}/intake-issues/  [no-client-call] F-D09,F-B14",
+  "space POST /api/public/anchor/{anchor}/intakes/{intake_id}/intake-issues/  [no-client-call] F-D09,F-B14",
+  "space DELETE /api/public/anchor/{anchor}/intakes/{intake_id}/intake-issues/{pk}/  [no-client-call] F-D09,F-B14",
+  "space GET /api/public/anchor/{anchor}/intakes/{intake_id}/intake-issues/{pk}/  [no-client-call] F-D09,F-B14",
+  "space PATCH /api/public/anchor/{anchor}/intakes/{intake_id}/intake-issues/{pk}/  [no-client-call] F-D09,F-B14",
+  "space GET /api/public/anchor/{anchor}/issues/{issue_id}/comments/{pk}/  [no-client-call] F-D09,F-B07",
+  "space DELETE /api/public/assets/v2/anchor/{anchor}/  [no-client-call] F-D09,F-D04",
+  "space GET /api/public/assets/v2/anchor/{anchor}/  [no-client-call] F-D09,F-D04",
+  "space PATCH /api/public/assets/v2/anchor/{anchor}/  [no-client-call] F-D09,F-D04",
+  "space POST /api/public/assets/v2/anchor/{anchor}/{pk}/  [no-client-call] F-D09,F-D04",
+  "space GET /api/public/workspaces/{slug}/project-boards/  [no-client-call] F-D09"
+ ],
+ "server_rows_by_client_status": {
+  "auth": {
+   "no-client-call": 12,
+   "used": 24,
+   "used-via-redirect [inferred]": 5
+  },
+  "instance": {
+   "admin-only": 13,
+   "no-client-call": 7,
+   "used": 1
+  },
+  "internal": {
+   "dead-client-method": 25,
+   "no-client-call": 147,
+   "used": 265,
+   "used-other": 4
+  },
+  "schema": {
+   "n/a": 3
+  },
+  "space": {
+   "no-client-call": 14,
+   "used": 28
+  },
+  "v1": {
+   "external-contract": 137
+  },
+  "web": {
+   "infra": 2
+  }
+ },
+ "server_rows_by_surface": {
+  "auth": 41,
+  "instance": 21,
+  "internal": 441,
+  "schema": 3,
+  "space": 42,
+  "v1": 137,
+  "web": 2
+ },
+ "unmapped_server_routes": []
+}

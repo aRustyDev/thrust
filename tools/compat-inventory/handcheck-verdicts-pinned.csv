@@ -1,0 +1,31 @@
+n,site,member,verb,path,query,body,response,catch,note
+1,apps/live/src/services/page/core.service.ts:120,PageCoreService.updateDescriptionBinary,ok,ok,ok,ok,ok,n/a,catch is try/catch (not a promise chain) -> n/a; basePath substituted from client_overrides.PLACEHOLDER_SUBST (apps/live unchanged at the pin)
+2,apps/web/services/cycle.service.ts:45,CycleService.workspaceActiveCyclesProgress,ok,ok,ok,ok,ok,ok,
+3,apps/web/services/dashboard.service.ts:53,DashboardService.updateDashboardWidget,ok,ok,ok,ok,ok,ok,
+4,apps/web/services/file.service.ts:299,FileService.duplicateAsset,ok,ok,ok,ok,ok,ok,
+5,apps/web/services/instance.service.ts:28,InstanceService.getInstanceInfo,ok,ok,ok,ok,ok,ok,
+6,apps/web/services/integrations/integration.service.ts:35,IntegrationService.deleteWorkspaceIntegration,ok,ok,ok,ok,ok,ok,
+7,apps/web/services/issue/issue.service.ts:90,IssueService.getDeletedIssues,ok,ok,ok,ok,ok,ok,params: queries is a variable typed `any` -> keys unknowable statically (recorded as dynamic)
+8,apps/web/services/issue/issue_comment.service.ts:87,IssueCommentService.deleteIssueComment,ok,ok,ok,ok,ok,ok,three paths = ${this.serviceType} fan-out issues|epics|work-items (enum EIssueServiceType)
+9,apps/web/services/module.service.ts:72,ModuleService.deleteModule,ok,ok,ok,ok,ok,ok,
+10,apps/web/services/module.service.ts:105,ModuleService.addIssuesToModule,ok,ok,ok,ok,ok,ok,
+11,apps/web/services/page/project-page.service.ts:45,ProjectPageService.create,ok,ok,ok,ok,ok,ok,
+12,apps/web/services/page/project-page.service.ts:74,ProjectPageService.remove,ok,ok,ok,ok,ok,ok,
+13,apps/web/services/project/project-publish.service.ts:20,ProjectPublishService.fetchPublishSettings,ok,ok,ok,ok,ok,ok,
+14,apps/web/services/project/project.service.ts:48,ProjectService.getProjectsLite,ok,ok,ok,ok,ok,ok,
+15,apps/web/services/project/project.service.ts:102,ProjectService.getProjectUserProperties,ok,ok,ok,ok,ok,ok,
+16,apps/web/services/user.service.ts:97,UserService.currentUserSettings,ok,ok,ok,ok,ok,ok,inline ?t= query stripped
+17,apps/web/services/view.service.ts:81,ViewService.removeViewFromFavorites,ok,ok,ok,ok,ok,ok,
+18,apps/web/services/workspace.service.ts:129,WorkspaceService.updateWorkspaceView,ok,ok,ok,ok,ok,ok,
+19,apps/web/services/workspace.service.ts:165,WorkspaceService.workspaceInvitations,ok,ok,ok,ok,ok,ok,
+20,apps/web/services/workspace.service.ts:185,WorkspaceService.updateWorkspaceInvitation,ok,ok,ok,ok,ok,ok,
+21,packages/services/src/auth/auth.service.ts:95,AuthService.generateUniqueCode,ok,ok,ok,ok,ok,ok,headers: {} recorded in options
+22,packages/services/src/cycle/cycle-operations.service.ts:70,CycleOperationsService.transferIssues,ok,ok,ok,ok,ok,ok,
+23,packages/services/src/cycle/cycle.service.ts:53,CycleService.getWorkspaceCycles,ok,ok,ok,ok,ok,ok,
+24,packages/services/src/dashboard/dashboard.service.ts:63,DashboardService.retrieve,ok,ok,ok,ok,ok,ok,
+25,packages/services/src/dashboard/dashboard.service.ts:79,DashboardService.updateWidget,ok,ok,ok,ok,ok,ok,
+26,packages/services/src/user/favorite.service.ts:29,UserFavoriteService.add,ok,ok,ok,ok,ok,ok,
+27,packages/services/src/workspace/invitation.service.ts:56,WorkspaceInvitationService.invite,ok,ok,ok,ok,ok,ok,
+28,packages/services/src/workspace/view.service.ts:37,WorkspaceViewService.destroy,ok,ok,ok,ok,ok,ok,
+29,packages/services/src/workspace/workspace.service.ts:44,WorkspaceService.retrieve,ok,ok,ok,ok,ok,ok,
+30,packages/services/src/workspace/workspace.service.ts:87,WorkspaceService.destroy,ok,ok,ok,ok,ok,ok,

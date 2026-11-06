@@ -1,0 +1,364 @@
+{
+ "anchor_checks_total": 41,
+ "anchor_checks_violated": [],
+ "optional_paths_absent": [
+  "apps/api/plane/utils/filters/README.md",
+  "packages/propel",
+  "packages/ui"
+ ],
+ "paths_moved_vs_hand_curated_layout": {
+  "apps/web/ce/components/projects/create/root.tsx": "apps/web/components/projects/create/root.tsx",
+  "apps/web/core/components/account/auth-forms/auth-root.tsx": "apps/web/components/account/auth-forms/auth-root.tsx",
+  "apps/web/core/components/account/auth-forms/form-root.tsx": "apps/web/components/account/auth-forms/form-root.tsx",
+  "apps/web/core/components/account/auth-forms/password.tsx": "apps/web/components/account/auth-forms/password.tsx",
+  "apps/web/core/components/home/root.tsx": "apps/web/components/home/root.tsx",
+  "apps/web/core/components/home/widgets/links/root.tsx": "apps/web/components/home/widgets/links/root.tsx",
+  "apps/web/core/components/home/widgets/recents/index.tsx": "apps/web/components/home/widgets/recents/index.tsx",
+  "apps/web/core/components/issues/peek-overview/root.tsx": "apps/web/components/issues/peek-overview/root.tsx",
+  "apps/web/core/components/onboarding/steps/profile/root.tsx": "apps/web/components/onboarding/steps/profile/root.tsx",
+  "apps/web/core/components/onboarding/steps/workspace/create.tsx": "apps/web/components/onboarding/steps/workspace/create.tsx",
+  "apps/web/core/components/project/create-project-modal.tsx": "apps/web/components/project/create-project-modal.tsx",
+  "apps/web/core/components/workspace-notifications/notification-app-sidebar-option.tsx": "apps/web/components/workspace-notifications/notification-app-sidebar-option.tsx",
+  "apps/web/core/layouts/auth-layout/project-wrapper.tsx": "apps/web/layouts/auth-layout/project-wrapper.tsx",
+  "apps/web/core/layouts/auth-layout/workspace-wrapper.tsx": "apps/web/layouts/auth-layout/workspace-wrapper.tsx",
+  "apps/web/core/lib/wrappers/authentication-wrapper.tsx": "apps/web/lib/wrappers/authentication-wrapper.tsx",
+  "apps/web/core/lib/wrappers/instance-wrapper.tsx": "apps/web/lib/wrappers/instance-wrapper.tsx",
+  "apps/web/core/services/api.service.ts": "apps/web/services/api.service.ts",
+  "apps/web/core/services/auth.service.ts": "apps/web/services/auth.service.ts",
+  "apps/web/core/services/file.service.ts": "apps/web/services/file.service.ts",
+  "apps/web/core/services/issue/issue.service.ts": "apps/web/services/issue/issue.service.ts",
+  "apps/web/core/services/issue/issue_comment.service.ts": "apps/web/services/issue/issue_comment.service.ts",
+  "apps/web/core/services/user.service.ts": "apps/web/services/user.service.ts",
+  "apps/web/core/store/issue/helpers/base-issues.store.ts": "apps/web/store/issue/helpers/base-issues.store.ts",
+  "apps/web/core/store/issue/helpers/issue-filter-helper.store.ts": "apps/web/store/issue/helpers/issue-filter-helper.store.ts",
+  "apps/web/core/store/issue/project/issue.store.ts": "apps/web/store/issue/project/issue.store.ts",
+  "apps/web/core/store/project/project.store.ts": "apps/web/store/project/project.store.ts",
+  "apps/web/core/store/user/index.ts": "apps/web/store/user/index.ts"
+ },
+ "paths_resolved": 68,
+ "slice_triggers": {
+  "drift": [
+   "S02: cited apps/web/core/lib/wrappers/authentication-wrapper.tsx:41, token 'fetchCurrentUser' now at apps/web/lib/wrappers/authentication-wrapper.tsx:[50, 55]",
+   "S05: cited apps/web/core/components/account/auth-forms/password.tsx:151, token 'action=' now at apps/web/components/account/auth-forms/password.tsx:[143]",
+   "S06: cited apps/web/core/components/account/auth-forms/password.tsx:151, token 'action=' now at apps/web/components/account/auth-forms/password.tsx:[143]"
+  ],
+  "errors": [],
+  "resolved": {
+   "S01": {
+    "file": "apps/web/lib/wrappers/instance-wrapper.tsx",
+    "line": 24,
+    "moved_file": true
+   },
+   "S02": {
+    "drift_from": 41,
+    "file": "apps/web/lib/wrappers/authentication-wrapper.tsx",
+    "line": 50,
+    "moved_file": true
+   },
+   "S03": {
+    "file": "apps/web/components/account/auth-forms/password.tsx",
+    "line": 74,
+    "moved_file": true
+   },
+   "S04": {
+    "file": "apps/web/components/account/auth-forms/form-root.tsx",
+    "line": 57,
+    "moved_file": true
+   },
+   "S05": {
+    "drift_from": 151,
+    "file": "apps/web/components/account/auth-forms/password.tsx",
+    "line": 143,
+    "moved_file": true
+   },
+   "S06": {
+    "drift_from": 151,
+    "file": "apps/web/components/account/auth-forms/password.tsx",
+    "line": 143,
+    "moved_file": true
+   },
+   "S07": {
+    "file": "apps/web/store/user/index.ts",
+    "line": 121,
+    "moved_file": true
+   },
+   "S08": {
+    "file": "apps/web/store/user/index.ts",
+    "line": 122,
+    "moved_file": true
+   },
+   "S09": {
+    "file": "apps/web/store/user/index.ts",
+    "line": 123,
+    "moved_file": true
+   },
+   "S10": {
+    "file": "apps/web/components/onboarding/steps/profile/root.tsx",
+    "line": 96,
+    "moved_file": true
+   },
+   "S11": {
+    "file": "apps/web/components/onboarding/steps/workspace/create.tsx",
+    "line": 109,
+    "moved_file": true
+   },
+   "S12": {
+    "file": "apps/web/app/(all)/onboarding/page.tsx",
+    "line": 43,
+    "moved_file": false
+   },
+   "S13": {
+    "file": "apps/web/components/onboarding/steps/workspace/create.tsx",
+    "line": 75,
+    "moved_file": true
+   },
+   "S14": {
+    "file": "apps/web/components/onboarding/steps/workspace/create.tsx",
+    "line": 79,
+    "moved_file": true
+   },
+   "S15": {
+    "file": "apps/web/layouts/auth-layout/workspace-wrapper.tsx",
+    "line": 76,
+    "moved_file": true
+   },
+   "S16": {
+    "file": "apps/web/layouts/auth-layout/workspace-wrapper.tsx",
+    "line": 81,
+    "moved_file": true
+   },
+   "S17": {
+    "file": "apps/web/layouts/auth-layout/workspace-wrapper.tsx",
+    "line": 88,
+    "moved_file": true
+   },
+   "S18": {
+    "file": "apps/web/layouts/auth-layout/workspace-wrapper.tsx",
+    "line": 94,
+    "moved_file": true
+   },
+   "S19": {
+    "file": "apps/web/layouts/auth-layout/workspace-wrapper.tsx",
+    "line": 100,
+    "moved_file": true
+   },
+   "S20": {
+    "file": "apps/web/layouts/auth-layout/workspace-wrapper.tsx",
+    "line": 110,
+    "moved_file": true
+   },
+   "S21": {
+    "file": "apps/web/layouts/auth-layout/workspace-wrapper.tsx",
+    "line": 117,
+    "moved_file": true
+   },
+   "S22": {
+    "file": "apps/web/layouts/auth-layout/workspace-wrapper.tsx",
+    "line": 124,
+    "moved_file": true
+   },
+   "S23": {
+    "file": "apps/web/components/workspace-notifications/notification-app-sidebar-option.tsx",
+    "line": 29,
+    "moved_file": true
+   },
+   "S24": {
+    "file": "apps/web/components/home/root.tsx",
+    "line": 29,
+    "moved_file": true
+   },
+   "S25": {
+    "file": "apps/web/components/home/widgets/links/root.tsx",
+    "line": 32,
+    "moved_file": true
+   },
+   "S26": {
+    "file": "apps/web/components/home/widgets/recents/index.tsx",
+    "line": 48,
+    "moved_file": true
+   },
+   "S27": {
+    "file": "apps/web/components/home/root.tsx",
+    "line": 36,
+    "moved_file": true
+   },
+   "S28": {
+    "file": "apps/web/components/projects/create/root.tsx",
+    "line": 74,
+    "moved_file": true
+   },
+   "S29": {
+    "file": "apps/web/services/file.service.ts",
+    "line": 92,
+    "moved_file": true
+   },
+   "S30": {
+    "file": "apps/web/components/projects/create/root.tsx",
+    "line": 96,
+    "moved_file": true
+   },
+   "S31": {
+    "file": "apps/web/components/project/create-project-modal.tsx",
+    "line": 57,
+    "moved_file": true
+   },
+   "S32": {
+    "file": "apps/web/components/projects/create/root.tsx",
+    "line": 100,
+    "moved_file": true
+   },
+   "S33": {
+    "file": "packages/utils/src/editor/common.ts",
+    "line": 26,
+    "moved_file": false
+   },
+   "S34": {
+    "file": "apps/web/layouts/auth-layout/project-wrapper.tsx",
+    "line": 83,
+    "moved_file": true
+   },
+   "S35": {
+    "file": "apps/web/store/project/project.store.ts",
+    "line": 388,
+    "moved_file": true
+   },
+   "S36": {
+    "file": "apps/web/layouts/auth-layout/project-wrapper.tsx",
+    "line": 88,
+    "moved_file": true
+   },
+   "S37": {
+    "file": "apps/web/layouts/auth-layout/project-wrapper.tsx",
+    "line": 90,
+    "moved_file": true
+   },
+   "S38": {
+    "file": "apps/web/layouts/auth-layout/project-wrapper.tsx",
+    "line": 96,
+    "moved_file": true
+   },
+   "S39": {
+    "file": "apps/web/layouts/auth-layout/project-wrapper.tsx",
+    "line": 101,
+    "moved_file": true
+   },
+   "S40": {
+    "file": "apps/web/layouts/auth-layout/project-wrapper.tsx",
+    "line": 106,
+    "moved_file": true
+   },
+   "S41": {
+    "file": "apps/web/layouts/auth-layout/project-wrapper.tsx",
+    "line": 111,
+    "moved_file": true
+   },
+   "S42": {
+    "file": "apps/web/layouts/auth-layout/project-wrapper.tsx",
+    "line": 116,
+    "moved_file": true
+   },
+   "S43": {
+    "file": "apps/web/layouts/auth-layout/project-wrapper.tsx",
+    "line": 121,
+    "moved_file": true
+   },
+   "S44": {
+    "file": "apps/web/layouts/auth-layout/project-wrapper.tsx",
+    "line": 129,
+    "moved_file": true
+   },
+   "S45": {
+    "file": "apps/web/layouts/auth-layout/project-wrapper.tsx",
+    "line": 129,
+    "moved_file": true
+   },
+   "S46": {
+    "file": "apps/web/layouts/auth-layout/project-wrapper.tsx",
+    "line": 134,
+    "moved_file": true
+   },
+   "S47": {
+    "file": "apps/web/store/issue/project/issue.store.ts",
+    "line": 117,
+    "moved_file": true
+   },
+   "S48": {
+    "file": "apps/web/store/issue/helpers/base-issues.store.ts",
+    "line": 534,
+    "moved_file": true
+   },
+   "X01": {
+    "file": "apps/web/components/issues/peek-overview/root.tsx",
+    "line": 220,
+    "moved_file": true
+   },
+   "X02": {
+    "file": "apps/web/services/issue/issue_comment.service.ts",
+    "line": 36,
+    "moved_file": true
+   },
+   "X03": {
+    "file": "apps/web/services/issue/issue.service.ts",
+    "line": 227,
+    "moved_file": true
+   }
+  }
+ },
+ "tree_root_name": "agent-a69ad036a9c59b0a8",
+ "unlisted_dirs_not_scanned_as_clients": [
+  {
+   "api_literal_hits": 0,
+   "dir": "apps/proxy",
+   "files": 0,
+   "first_hits": []
+  },
+  {
+   "api_literal_hits": 0,
+   "dir": "packages/blocks",
+   "files": 278,
+   "first_hits": []
+  },
+  {
+   "api_literal_hits": 0,
+   "dir": "packages/codemods",
+   "files": 5,
+   "first_hits": []
+  },
+  {
+   "api_literal_hits": 0,
+   "dir": "packages/decorators",
+   "files": 5,
+   "first_hits": []
+  },
+  {
+   "api_literal_hits": 0,
+   "dir": "packages/i18n",
+   "files": 17,
+   "first_hits": []
+  },
+  {
+   "api_literal_hits": 0,
+   "dir": "packages/logger",
+   "files": 4,
+   "first_hits": []
+  },
+  {
+   "api_literal_hits": 0,
+   "dir": "packages/tailwind-config",
+   "files": 1,
+   "first_hits": []
+  },
+  {
+   "api_literal_hits": 0,
+   "dir": "packages/types",
+   "files": 120,
+   "first_hits": []
+  },
+  {
+   "api_literal_hits": 0,
+   "dir": "packages/typescript-config",
+   "files": 0,
+   "first_hits": []
+  }
+ ]
+}
