@@ -38,6 +38,12 @@ impl Rng for NativeRng {
 pub struct ReqwestFetch(reqwest::Client);
 
 impl ReqwestFetch {
+    /// Built once, when the server starts (never per request).
+    #[allow(
+        clippy::expect_used,
+        reason = "a fixed configuration that fails only if the TLS backend cannot start, and then the server must not come up; \
+                  this runs once at startup, so no request can reach it"
+    )]
     pub fn new() -> Self {
         let client = reqwest::Client::builder()
             .redirect(reqwest::redirect::Policy::none())

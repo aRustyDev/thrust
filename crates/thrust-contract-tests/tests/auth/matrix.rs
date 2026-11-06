@@ -19,8 +19,6 @@
 
 use reqwest::Method;
 use serde_json::json;
-use thrust_contract_tests::*;
-use thrust_contracts::*;
 
 use super::*;
 

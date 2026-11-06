@@ -8,6 +8,13 @@
 //! neither). What the provider vouches for must carry a verified email, or the login is refused. The account is the one
 //! linked to `(issuer, sub)`; failing that, the active user with that email, who is then linked; failing that, nobody:
 //! there is no just-in-time provisioning at P0 (Q-0050.1). An inactive user is refused.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test fails, and clippy.toml exempts only #[test] functions and #[cfg(test)] modules, not the helpers around them"
+)]
 
 mod common;
 

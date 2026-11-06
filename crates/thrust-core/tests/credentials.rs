@@ -12,6 +12,13 @@
 //!   say, and nothing else in this list changes (a dead cookie is still `Unauthenticated`, the bearer token is still
 //!   the only credential considered when there is one);
 //! * no credential at all is `Unauthenticated`.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test fails, and clippy.toml exempts only #[test] functions and #[cfg(test)] modules, not the helpers around them"
+)]
 
 mod common;
 

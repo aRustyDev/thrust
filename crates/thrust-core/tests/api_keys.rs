@@ -2,6 +2,13 @@
 //! its SHA-256, accepted as `X-Api-Key`. Statuses reproduce the oracle (ADR-0033, round 27): only a MISSING key is
 //! `Unauthenticated` (401); an unknown, revoked, expired or inactive-user key is `InvalidApiKey` (403), and the lookup
 //! does not say which. Nothing here involves OIDC: the `oidc` port is absent from these worlds, and a key works.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test fails, and clippy.toml exempts only #[test] functions and #[cfg(test)] modules, not the helpers around them"
+)]
 
 mod common;
 

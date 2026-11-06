@@ -81,11 +81,11 @@ pub fn normalize_email(raw: &str) -> String {
 }
 
 fn hex(bytes: &[u8]) -> String {
-    const DIGITS: &[u8; 16] = b"0123456789abcdef";
+    use std::fmt::Write;
     let mut out = String::with_capacity(bytes.len() * 2);
     for b in bytes {
-        out.push(DIGITS[usize::from(b >> 4)] as char);
-        out.push(DIGITS[usize::from(b & 0x0f)] as char);
+        // lower case, two digits a byte; writing to a `String` cannot fail
+        let _ = write!(out, "{b:02x}");
     }
     out
 }

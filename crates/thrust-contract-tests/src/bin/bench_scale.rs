@@ -66,7 +66,7 @@ fn report(name: &str, mut v: Vec<Duration>) {
 
 fn item(i: usize) -> (String, Option<String>) {
     let name = format!("{} {} #{i}", VERBS[i % VERBS.len()], NOUNS[(i / VERBS.len()) % NOUNS.len()]);
-    let description = (i % 5 != 0).then(|| {
+    let description = (!i.is_multiple_of(5)).then(|| {
         format!(
             "{} the {} so that the {} no longer {}; see {} for context (ref {:06})",
             VERBS[(i * 7) % VERBS.len()],

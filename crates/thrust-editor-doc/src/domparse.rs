@@ -545,11 +545,10 @@ impl<'a> Parser<'a> {
             let start = schema.nodes[t].content_match.unwrap();
             if let Some(fill) = schema.fill_before(start, &[node_ty], false) {
                 self.nodes[depth].matcher = schema.match_types(start, &fill);
-            } else if let Some(wrap) = schema.find_wrapping(start, node_ty) {
+            } else {
+                let wrap = schema.find_wrapping(start, node_ty)?;
                 self.nodes[depth].matcher = Some(start);
                 return Some(wrap);
-            } else {
-                return None;
             }
         }
         schema.find_wrapping(self.nodes[depth].matcher.unwrap(), node_ty)
@@ -828,7 +827,7 @@ impl<'a> Parser<'a> {
                             continue;
                         }
                         if r.style.len() > name.len()
-                            && (r.style.as_bytes()[name.len()] != b'=' || &r.style[name.len() + 1..] != value)
+                            && (r.style.as_bytes()[name.len()] != b'=' || r.style[name.len() + 1..] != value)
                         {
                             continue;
                         }
@@ -1080,8 +1079,7 @@ impl<'a> Parser<'a> {
                 continue; // name == null: no change to prev_item (JS: `else if (name)` branches only)
             }
             let name = self.dom.nodes[child].tag.to_lowercase();
-            if (name == "ol" || name == "ul") && prev_item.is_some() {
-                let pi = prev_item.unwrap();
+            if let Some(pi) = prev_item.filter(|_| name == "ol" || name == "ul") {
                 self.dom.append_child(pi, child);
                 // JS: child = prevItem (then nextSibling of prevItem): continue from the item
             } else if name == "li" {

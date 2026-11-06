@@ -13,6 +13,13 @@
 //!   there yet and return what is there. A row that exists is never changed by asking again, whatever the new defaults are;
 //!   one member's rows, or one workspace's, are not another's. The sidebar comes back by `sort_order` (ties by key), the
 //!   home page's widgets by key.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test fails, and clippy.toml exempts only #[test] functions and #[cfg(test)] modules, not the helpers around them"
+)]
 
 mod common;
 
@@ -325,7 +332,7 @@ fn sidebar_defaults(mask: u8, salt: u8) -> Vec<SidebarPreference> {
         // sort orders collide on purpose (two keys at one order), and are fractional
         .map(|i| SidebarPreference {
             key: KEYS[i].to_string(),
-            is_pinned: (i as u8 + salt) % 2 == 0,
+            is_pinned: (i as u8 + salt).is_multiple_of(2),
             sort_order: f64::from((i as u8 + salt) % 3) + 0.5,
         })
         .collect()
@@ -352,7 +359,7 @@ fn properties(salt: u8) -> UserProperties {
         display_properties: json!({"display_properties": {}}),
         rich_filters: json!({}),
         navigation_project_limit: 10 + i32::from(salt),
-        navigation_control_preference: if salt % 2 == 0 { "ACCORDION" } else { "TABBED" }.to_string(),
+        navigation_control_preference: if salt.is_multiple_of(2) { "ACCORDION" } else { "TABBED" }.to_string(),
         created_at: at(i64::from(salt)),
         updated_at: at(i64::from(salt)),
     }

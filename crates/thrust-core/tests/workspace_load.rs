@@ -5,6 +5,13 @@
 //! plane's own source or as the fixture the pin was recorded in); a visit makes a member's rows once, whatever the clock says
 //! on the next one, and one member's rows or one workspace's are never another's; and the project list reaches only through a
 //! scope, so it holds the projects of THAT workspace and carries the caller's own role in each.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test fails, and clippy.toml exempts only #[test] functions and #[cfg(test)] modules, not the helpers around them"
+)]
 
 mod common;
 

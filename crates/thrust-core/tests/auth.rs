@@ -6,6 +6,13 @@
 //! says nothing about whether the email exists (counted, not timed); every sign-in makes a fresh high-entropy session
 //! whose token the database never sees; sign-out reaches one session and sign-out-everywhere all of a user's; the cost
 //! parameters are OWASP's minimum unless configured, and a hash encodes them.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test fails, and clippy.toml exempts only #[test] functions and #[cfg(test)] modules, not the helpers around them"
+)]
 
 mod common;
 

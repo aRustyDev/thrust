@@ -6,6 +6,9 @@
 # Each forbidden crate is also checked with `cargo tree -i`, which is the authoritative query
 # ("is this crate anywhere in the graph?"), on BOTH targets.
 #
+# The ORM crates (ADR-0044: hand SQL on tokio-postgres, so no sqlx, sea-orm or diesel) are checked separately, over the
+# WHOLE workspace: every member, every kind of edge, every feature, both targets.
+#
 #   scripts/check-deps.sh
 set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -55,6 +58,24 @@ case "$out" in
 esac
 
 echo
+echo "=== ORM crates (ADR-0044, issue #40): none anywhere in the workspace, on any edge, in any feature set, on either target ==="
+# The sections above check only some crates and only `-e normal`, which would pass a `[dev-dependencies] sqlx` or one in a
+# crate not named above (adapters-postgres, -cloudflare, -selfhosted, the roots). This one asks the whole workspace:
+# `--workspace`, `-e all` (normal, build and dev edges), `--all-features` (an optional dependency behind a feature) and
+# `--target all`. cargo-deny's `[bans]` (deny.toml) is the second guard.
+# Three answers: absent; present (the tree starts with the crate); or cargo could not answer (offline, a stale lock, a
+# manifest error), which is NOT "absent" and fails with its own message so it is never misread as either of the others.
+ORM_FORBIDDEN="sqlx sea-orm diesel diesel-async"
+for bad in $ORM_FORBIDDEN; do
+  out="$("$ROOT/scripts/rs" cargo tree --manifest-path "$MANIFEST" --workspace --all-features -e all --target all -i "$bad" 2>&1)"
+  case "$out" in
+    *"did not match any packages"*|*"nothing to print"*|"") echo "ok: $bad is not in the workspace graph" ;;
+    *"$bad v"*) echo "FORBIDDEN: $bad is in the workspace graph (ADR-0044)"; echo "$out" | head -8; STATUS=1 ;;
+    *) echo "ERROR: cargo tree could not say whether $bad is in the workspace graph:"; echo "$out" | head -8; STATUS=1 ;;
+  esac
+done
+
+echo
 echo "=== who pulls tokio into the Worker bundle (wasm32, thrust-worker, cloudflare set only) ==="
 "$ROOT/scripts/rs" cargo tree --manifest-path "$MANIFEST" -p thrust-worker --no-default-features --target wasm32-unknown-unknown -e normal -i tokio 2>&1 | head -30
 
@@ -82,7 +103,7 @@ echo
 echo "=== proof minting (issues #35, #44): Scope::mint only in authorize_with_role (which authorize is), WorkspaceScope::mint only in authorize_workspace, SystemScope::mint only in the composition roots ==="
 # thrust-core's unit-test module and the integration tests (crates/*/tests) may mint either; comment lines (doctests
 # included) are skipped. A call spelled through an alias or a qualified path is not caught: the complete check is
-# clippy's disallowed-methods, once the clippy job exists (issue #40).
+# clippy's disallowed-methods. The `lint` job (issue #40) runs clippy, but `disallowed-methods` is not configured yet.
 MINT='(^|[^A-Za-z0-9_])(Scope|SystemScope|WorkspaceScope)::mint\('
 hits="$(
   awk -v f="crates/thrust-core/src/lib.rs" '

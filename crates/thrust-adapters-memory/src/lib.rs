@@ -9,6 +9,22 @@ use async_trait::async_trait;
 use thrust_contracts::*;
 use thrust_ports::*;
 
+/// `Mutex::lock` that takes the guard even when another thread panicked while holding the lock (the mutex is "poisoned").
+///
+/// ADR-0006 denies `unwrap` in adapters, and a poisoned lock must not turn one panic into a panic on every later call. This adapter
+/// is in-memory state for tests and local runs. On the Worker (`panic=abort`) a mutex cannot be poisoned; the native server unwinds
+/// under `CatchPanicLayer`, and carrying on with the state as the panicking call left it is the choice `parking_lot` makes (it has
+/// no poisoning at all).
+trait LockUnpoisoned<T> {
+    fn lock_unpoisoned(&self) -> std::sync::MutexGuard<'_, T>;
+}
+
+impl<T> LockUnpoisoned<T> for Mutex<T> {
+    fn lock_unpoisoned(&self) -> std::sync::MutexGuard<'_, T> {
+        self.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+}
+
 // ---------------------------------------------------------------------------------------------
 // Database
 // ---------------------------------------------------------------------------------------------
@@ -194,7 +210,7 @@ fn is_visible(w: &WorkItem) -> bool {
 #[async_trait]
 impl Database for MemoryDatabase {
     async fn membership(&self, slug: &WorkspaceSlug, project: ProjectId, user: UserId) -> Result<Membership, DbError> {
-        let s = self.state.lock().unwrap();
+        let s = self.state.lock_unpoisoned();
         // The workspace the caller may act in: the slug names it, the caller belongs to it and the
         // project is in it (the three inner joins of the Postgres query).
         // MUTANT (control run only): forget the tenant predicates and trust the project's own
@@ -215,7 +231,7 @@ impl Database for MemoryDatabase {
     }
 
     async fn session(&self, hash: &TokenHash, now: Timestamp) -> Result<Option<LiveSession>, DbError> {
-        let s = self.state.lock().unwrap();
+        let s = self.state.lock_unpoisoned();
         // MUTANT (control run only): a revoked session still resolves. The revocation test must catch it.
         #[cfg(feature = "mutant_ignore_revoked")]
         let revoked = |_: &SessionRow| false;
@@ -228,21 +244,21 @@ impl Database for MemoryDatabase {
     }
 
     async fn touch_session(&self, hash: &TokenHash, at: Timestamp) -> Result<(), DbError> {
-        if let Some(r) = self.state.lock().unwrap().sessions.get_mut(hash) {
+        if let Some(r) = self.state.lock_unpoisoned().sessions.get_mut(hash) {
             r.last_seen_at = at;
         }
         Ok(())
     }
 
     async fn revoke_session(&self, hash: &TokenHash, at: Timestamp) -> Result<(), DbError> {
-        if let Some(r) = self.state.lock().unwrap().sessions.get_mut(hash) {
+        if let Some(r) = self.state.lock_unpoisoned().sessions.get_mut(hash) {
             r.revoked_at.get_or_insert(at);
         }
         Ok(())
     }
 
     async fn insert_session(&self, new: &NewSession) -> Result<(), DbError> {
-        self.state.lock().unwrap().sessions.entry(new.token_hash).or_insert(SessionRow {
+        self.state.lock_unpoisoned().sessions.entry(new.token_hash).or_insert(SessionRow {
             user_id: new.user_id,
             expires_at: new.expires_at,
             revoked_at: None,
@@ -252,7 +268,7 @@ impl Database for MemoryDatabase {
     }
 
     async fn revoke_user_sessions(&self, user: UserId, at: Timestamp) -> Result<u64, DbError> {
-        let mut s = self.state.lock().unwrap();
+        let mut s = self.state.lock_unpoisoned();
         let mut n = 0;
         for r in s.sessions.values_mut().filter(|r| r.user_id == user && r.revoked_at.is_none()) {
             r.revoked_at = Some(at);
@@ -262,12 +278,12 @@ impl Database for MemoryDatabase {
     }
 
     async fn user_by_email(&self, email: &str) -> Result<Option<UserRecord>, DbError> {
-        let s = self.state.lock().unwrap();
+        let s = self.state.lock_unpoisoned();
         Ok(s.users.values().find(|u| u.email.as_deref() == Some(email)).cloned())
     }
 
     async fn insert_workspace(&self, w: &NewWorkspace) -> Result<(), DbError> {
-        let mut s = self.state.lock().unwrap();
+        let mut s = self.state.lock_unpoisoned();
         let ws = &w.workspace;
         // the constraints of the two INSERTs, checked before either row is written (a transaction that fails leaves nothing)
         if s.workspace_rows.contains_key(&ws.id) {
@@ -290,15 +306,15 @@ impl Database for MemoryDatabase {
     }
 
     async fn workspace_slug_taken(&self, slug: &str) -> Result<bool, DbError> {
-        Ok(self.state.lock().unwrap().workspaces.contains_key(&WorkspaceSlug::new(slug)))
+        Ok(self.state.lock_unpoisoned().workspaces.contains_key(&WorkspaceSlug::new(slug)))
     }
 
     async fn any_workspace(&self) -> Result<bool, DbError> {
-        Ok(!self.state.lock().unwrap().workspace_rows.is_empty())
+        Ok(!self.state.lock_unpoisoned().workspace_rows.is_empty())
     }
 
     async fn workspaces_of(&self, user: UserId) -> Result<Vec<WorkspaceListing>, DbError> {
-        let s = self.state.lock().unwrap();
+        let s = self.state.lock_unpoisoned();
         let mut out: Vec<WorkspaceListing> = s
             .workspace_members
             .values()
@@ -310,12 +326,12 @@ impl Database for MemoryDatabase {
                 Some(WorkspaceListing { workspace, role: m.role, total_members: total as u64 })
             })
             .collect();
-        out.sort_by(|a, b| (b.workspace.created_at, b.workspace.id.0).cmp(&(a.workspace.created_at, a.workspace.id.0)));
+        out.sort_by_key(|a| std::cmp::Reverse((a.workspace.created_at, a.workspace.id.0)));
         Ok(out)
     }
 
     async fn workspace_access(&self, slug: &WorkspaceSlug, user: UserId) -> Result<Option<WorkspaceAccess>, DbError> {
-        let s = self.state.lock().unwrap();
+        let s = self.state.lock_unpoisoned();
         let Some(ws) = s.workspaces.get(slug).copied() else { return Ok(None) };
         Ok(s.workspace_members
             .get(&(ws, user))
@@ -324,7 +340,12 @@ impl Database for MemoryDatabase {
     }
 
     async fn is_workspace_member(&self, scope: &WorkspaceScope, user: UserId) -> Result<bool, DbError> {
-        Ok(self.state.lock().unwrap().workspace_members.get(&(scope.workspace_id(), user)).is_some_and(|m| m.is_active))
+        Ok(self
+            .state
+            .lock_unpoisoned()
+            .workspace_members
+            .get(&(scope.workspace_id(), user))
+            .is_some_and(|m| m.is_active))
     }
 
     async fn set_workspace_member_active(
@@ -334,7 +355,7 @@ impl Database for MemoryDatabase {
         user: UserId,
         active: bool,
     ) -> Result<bool, DbError> {
-        let mut s = self.state.lock().unwrap();
+        let mut s = self.state.lock_unpoisoned();
         Ok(match s.workspace_members.get_mut(&(workspace, user)) {
             Some(m) => {
                 m.is_active = active;
@@ -345,23 +366,23 @@ impl Database for MemoryDatabase {
     }
 
     async fn workspace_member(&self, scope: &WorkspaceScope) -> Result<Option<WorkspaceMember>, DbError> {
-        Ok(self.state.lock().unwrap().workspace_members.get(&(scope.workspace_id(), scope.user_id())).cloned())
+        Ok(self.state.lock_unpoisoned().workspace_members.get(&(scope.workspace_id(), scope.user_id())).cloned())
     }
 
     async fn workspace_members(&self, scope: &WorkspaceScope) -> Result<Vec<MemberWithUser>, DbError> {
-        let s = self.state.lock().unwrap();
+        let s = self.state.lock_unpoisoned();
         let mut out: Vec<MemberWithUser> = s
             .workspace_members
             .values()
             .filter(|m| m.workspace_id == scope.workspace_id())
             .map(|m| MemberWithUser { member: m.clone(), user: member_user(&s, m.user_id) })
             .collect();
-        out.sort_by(|a, b| (b.member.created_at, b.member.id).cmp(&(a.member.created_at, a.member.id)));
+        out.sort_by_key(|a| std::cmp::Reverse((a.member.created_at, a.member.id)));
         Ok(out)
     }
 
     async fn project_roles(&self, scope: &WorkspaceScope) -> Result<Vec<(ProjectId, Role)>, DbError> {
-        let s = self.state.lock().unwrap();
+        let s = self.state.lock_unpoisoned();
         let mut out: Vec<(ProjectId, Role)> = s
             .memberships
             .iter()
@@ -379,7 +400,7 @@ impl Database for MemoryDatabase {
 
     async fn workspace_projects(&self, scope: &WorkspaceScope) -> Result<Vec<ProjectListing>, DbError> {
         let (ws, user) = (scope.workspace_id(), scope.user_id());
-        let s = self.state.lock().unwrap();
+        let s = self.state.lock_unpoisoned();
         let mut out: Vec<ProjectListing> = s
             .project_rows
             .values()
@@ -407,7 +428,7 @@ impl Database for MemoryDatabase {
         _at: Timestamp,
     ) -> Result<Vec<SidebarPreference>, DbError> {
         let (ws, user) = (scope.workspace_id(), scope.user_id());
-        let mut s = self.state.lock().unwrap();
+        let mut s = self.state.lock_unpoisoned();
         for d in defaults {
             s.sidebar_preferences.entry((ws, user, d.key.clone())).or_insert((d.is_pinned, d.sort_order));
         }
@@ -431,7 +452,7 @@ impl Database for MemoryDatabase {
         defaults: &[HomePreference],
     ) -> Result<Vec<HomePreference>, DbError> {
         let (ws, user) = (scope.workspace_id(), scope.user_id());
-        let mut s = self.state.lock().unwrap();
+        let mut s = self.state.lock_unpoisoned();
         for d in defaults {
             s.home_preferences.entry((ws, user, d.key.clone())).or_insert_with(|| d.clone());
         }
@@ -446,14 +467,14 @@ impl Database for MemoryDatabase {
         scope: &WorkspaceScope,
         new: &UserProperties,
     ) -> Result<UserProperties, DbError> {
-        let mut s = self.state.lock().unwrap();
+        let mut s = self.state.lock_unpoisoned();
         let row = s.user_properties.entry((scope.workspace_id(), scope.user_id())).or_insert_with(|| new.clone());
         Ok(row.clone())
     }
 
     async fn insert_project(&self, scope: &WorkspaceScope, p: &NewProject) -> Result<(), DbError> {
         let ws = scope.workspace_id();
-        let mut s = self.state.lock().unwrap();
+        let mut s = self.state.lock_unpoisoned();
         let row = &p.project;
         if row.workspace_id != ws {
             return Err(DbError::Backend("project is not in this workspace".into()));
@@ -519,7 +540,7 @@ impl Database for MemoryDatabase {
         identifier: Option<&str>,
         except: Option<ProjectId>,
     ) -> Result<ProjectClashes, DbError> {
-        let s = self.state.lock().unwrap();
+        let s = self.state.lock_unpoisoned();
         let others =
             || s.project_rows.values().filter(|r| r.workspace_id == scope.workspace_id() && Some(r.id) != except);
         Ok(ProjectClashes {
@@ -530,7 +551,7 @@ impl Database for MemoryDatabase {
 
     async fn update_project(&self, scope: &WorkspaceScope, row: &ProjectRow) -> Result<bool, DbError> {
         let ws = scope.workspace_id();
-        let mut s = self.state.lock().unwrap();
+        let mut s = self.state.lock_unpoisoned();
         let Some(current) = s.project_rows.get(&row.id).filter(|r| r.workspace_id == ws).cloned() else {
             return Ok(false);
         };
@@ -560,11 +581,11 @@ impl Database for MemoryDatabase {
 
     async fn project_detail(&self, scope: &WorkspaceScope, id: ProjectId) -> Result<Option<ProjectDetail>, DbError> {
         let (ws, user) = (scope.workspace_id(), scope.user_id());
-        let s = self.state.lock().unwrap();
+        let s = self.state.lock_unpoisoned();
         let Some(project) = s.project_rows.get(&id).filter(|r| r.workspace_id == ws).cloned() else { return Ok(None) };
         let mut rows: Vec<&ProjectMemberRow> =
             s.memberships.values().filter(|m| m.project_id == id && m.workspace_id == ws).collect();
-        rows.sort_by(|a, b| (b.created_at, b.id).cmp(&(a.created_at, a.id)));
+        rows.sort_by_key(|a| std::cmp::Reverse((a.created_at, a.id)));
         Ok(Some(ProjectDetail {
             listing: ProjectListing {
                 project,
@@ -582,7 +603,7 @@ impl Database for MemoryDatabase {
         project: ProjectId,
     ) -> Result<Option<ProjectMemberWithUser>, DbError> {
         let (ws, user) = (scope.workspace_id(), scope.user_id());
-        let s = self.state.lock().unwrap();
+        let s = self.state.lock_unpoisoned();
         let (Some(row), Some(workspace)) =
             (s.project_rows.get(&project).filter(|r| r.workspace_id == ws), s.workspace_rows.get(&ws))
         else {
@@ -598,7 +619,7 @@ impl Database for MemoryDatabase {
 
     async fn project_members(&self, scope: &Scope) -> Result<Vec<ProjectMemberRow>, DbError> {
         let (ws, project) = (scope.workspace_id(), scope.project_id());
-        let s = self.state.lock().unwrap();
+        let s = self.state.lock_unpoisoned();
         let mut out: Vec<ProjectMemberRow> = s
             .memberships
             .values()
@@ -606,7 +627,7 @@ impl Database for MemoryDatabase {
             .filter(|m| s.workspace_members.get(&(ws, m.user_id)).is_some_and(|w| w.is_active))
             .cloned()
             .collect();
-        out.sort_by(|a, b| (b.created_at, b.id).cmp(&(a.created_at, a.id)));
+        out.sort_by_key(|a| std::cmp::Reverse((a.created_at, a.id)));
         Ok(out)
     }
 
@@ -616,7 +637,7 @@ impl Database for MemoryDatabase {
         new: &ProjectUserProperties,
     ) -> Result<ProjectUserProperties, DbError> {
         let (ws, project, user) = (scope.workspace_id(), scope.project_id(), scope.user_id());
-        let mut s = self.state.lock().unwrap();
+        let mut s = self.state.lock_unpoisoned();
         if s.projects.get(&project) != Some(&ws) {
             return Err(DbError::Backend("project is not in this workspace".into()));
         }
@@ -631,7 +652,7 @@ impl Database for MemoryDatabase {
 
     async fn project_labels(&self, scope: &Scope) -> Result<Vec<LabelRow>, DbError> {
         let (ws, project) = (scope.workspace_id(), scope.project_id());
-        let s = self.state.lock().unwrap();
+        let s = self.state.lock_unpoisoned();
         let mut out: Vec<LabelRow> =
             s.labels.iter().filter(|l| l.project_id == project && l.workspace_id == ws).cloned().collect();
         out.sort_by(|a, b| a.sort_order.total_cmp(&b.sort_order).then(a.id.cmp(&b.id)));
@@ -640,7 +661,7 @@ impl Database for MemoryDatabase {
 
     async fn project_states(&self, scope: &Scope) -> Result<Vec<StateRow>, DbError> {
         let (ws, project) = (scope.workspace_id(), scope.project_id());
-        let s = self.state.lock().unwrap();
+        let s = self.state.lock_unpoisoned();
         let mut out: Vec<StateRow> = s
             .states
             .iter()
@@ -653,7 +674,7 @@ impl Database for MemoryDatabase {
 
     async fn workspace_states(&self, scope: &WorkspaceScope) -> Result<Vec<StateRow>, DbError> {
         let (ws, user) = (scope.workspace_id(), scope.user_id());
-        let s = self.state.lock().unwrap();
+        let s = self.state.lock_unpoisoned();
         let mut out: Vec<StateRow> = s
             .states
             .iter()
@@ -673,7 +694,7 @@ impl Database for MemoryDatabase {
 
     async fn triage_state(&self, scope: &Scope) -> Result<Option<StateRow>, DbError> {
         let (ws, project) = (scope.workspace_id(), scope.project_id());
-        let s = self.state.lock().unwrap();
+        let s = self.state.lock_unpoisoned();
         let mut found: Vec<&StateRow> = s
             .states
             .iter()
@@ -689,13 +710,13 @@ impl Database for MemoryDatabase {
         only: Option<&[ProjectId]>,
     ) -> Result<Vec<ProjectStat>, DbError> {
         let ws = scope.workspace_id();
-        let s = self.state.lock().unwrap();
+        let s = self.state.lock_unpoisoned();
         let mut projects: Vec<&ProjectRow> = s
             .project_rows
             .values()
-            .filter(|p| p.workspace_id == ws && only.map_or(true, |ids| ids.contains(&p.id)))
+            .filter(|p| p.workspace_id == ws && only.is_none_or(|ids| ids.contains(&p.id)))
             .collect();
-        projects.sort_by(|a, b| (b.created_at, b.id).cmp(&(a.created_at, a.id)));
+        projects.sort_by_key(|a| std::cmp::Reverse((a.created_at, a.id)));
         Ok(projects
             .iter()
             .map(|p| ProjectStat {
@@ -716,11 +737,11 @@ impl Database for MemoryDatabase {
     }
 
     async fn user_by_id(&self, id: UserId) -> Result<Option<UserRecord>, DbError> {
-        Ok(self.state.lock().unwrap().users.get(&id).cloned())
+        Ok(self.state.lock_unpoisoned().users.get(&id).cloned())
     }
 
     async fn insert_profile(&self, profile: &UserProfile) -> Result<bool, DbError> {
-        let mut s = self.state.lock().unwrap();
+        let mut s = self.state.lock_unpoisoned();
         // the FOREIGN KEY on `user_profiles.user_id`, then the PRIMARY KEY, then the UNIQUE indexes on `id` and `username`
         if !s.users.contains_key(&profile.user_id) {
             // Postgres reports a foreign key violation as a backend error, not a `Conflict`
@@ -740,7 +761,7 @@ impl Database for MemoryDatabase {
     }
 
     async fn profile(&self, user: UserId) -> Result<Option<UserProfile>, DbError> {
-        Ok(self.state.lock().unwrap().profiles.get(&user).cloned())
+        Ok(self.state.lock_unpoisoned().profiles.get(&user).cloned())
     }
 
     async fn update_profile(
@@ -749,7 +770,7 @@ impl Database for MemoryDatabase {
         patch: &ProfilePatch,
         at: Timestamp,
     ) -> Result<Option<UserProfile>, DbError> {
-        let mut s = self.state.lock().unwrap();
+        let mut s = self.state.lock_unpoisoned();
         let Some(p) = s.profiles.get_mut(&user) else { return Ok(None) };
         if let Some(v) = &patch.first_name {
             p.first_name = v.clone();
@@ -797,7 +818,7 @@ impl Database for MemoryDatabase {
     }
 
     async fn insert_user(&self, user: &UserRecord) -> Result<(), DbError> {
-        let mut s = self.state.lock().unwrap();
+        let mut s = self.state.lock_unpoisoned();
         // the PRIMARY KEY on `users.id` and the UNIQUE index on `users.email`, in that order, as Postgres reports them
         if s.users.contains_key(&user.id) {
             return Err(DbError::Conflict("users_pkey".into()));
@@ -810,13 +831,13 @@ impl Database for MemoryDatabase {
     }
 
     async fn user_for_account(&self, provider: &str, provider_account_id: &str) -> Result<Option<UserRecord>, DbError> {
-        let s = self.state.lock().unwrap();
+        let s = self.state.lock_unpoisoned();
         let key = (provider.to_string(), provider_account_id.to_string());
         Ok(s.accounts.get(&key).and_then(|u| s.users.get(u)).cloned())
     }
 
     async fn link_account(&self, a: &NewAccount) -> Result<(), DbError> {
-        let mut s = self.state.lock().unwrap();
+        let mut s = self.state.lock_unpoisoned();
         if !s.users.contains_key(&a.user_id) {
             // the foreign key of Postgres
             return Err(DbError::Backend("account of a user that does not exist".into()));
@@ -826,7 +847,7 @@ impl Database for MemoryDatabase {
     }
 
     async fn insert_api_key(&self, k: &NewApiKey) -> Result<(), DbError> {
-        let mut s = self.state.lock().unwrap();
+        let mut s = self.state.lock_unpoisoned();
         if !s.users.contains_key(&k.user_id) {
             return Err(DbError::Backend("api key of a user that does not exist".into()));
         }
@@ -842,7 +863,7 @@ impl Database for MemoryDatabase {
     }
 
     async fn api_key(&self, hash: &TokenHash, now: Timestamp) -> Result<Option<LiveApiKey>, DbError> {
-        let s = self.state.lock().unwrap();
+        let s = self.state.lock_unpoisoned();
         // MUTANT (control run only): a revoked key still resolves. The revocation test must catch it.
         #[cfg(feature = "mutant_ignore_revoked")]
         let revoked = |_: &ApiKeyRow| false;
@@ -861,7 +882,7 @@ impl Database for MemoryDatabase {
     }
 
     async fn touch_api_key(&self, id: ApiKeyId, at: Timestamp) -> Result<(), DbError> {
-        let mut s = self.state.lock().unwrap();
+        let mut s = self.state.lock_unpoisoned();
         if let Some(r) = s.api_keys.iter_mut().find(|r| r.key.id == id) {
             r.last_used_at = Some(at);
         }
@@ -875,7 +896,7 @@ impl Database for MemoryDatabase {
         new_hash: &TokenHash,
         new_version: i16,
     ) -> Result<bool, DbError> {
-        let mut s = self.state.lock().unwrap();
+        let mut s = self.state.lock_unpoisoned();
         // `UPDATE ... WHERE id = $1 AND hash_version = $2`: a row that does not match is not touched, so neither
         // constraint below is looked at for it
         let Some(at) = s.api_keys.iter().position(|r| r.key.id == id && r.key.hash_version == from_version) else {
@@ -889,6 +910,10 @@ impl Database for MemoryDatabase {
         if s.api_keys.iter().any(|r| r.key.id != id && r.key.token_hash == *new_hash) {
             return Err(DbError::Conflict("api key already exists".into()));
         }
+        #[allow(
+            clippy::indexing_slicing,
+            reason = "`at` is a position in `s.api_keys` found above, and nothing removes a row between there and here"
+        )]
         let row = &mut s.api_keys[at];
         row.key.token_hash = *new_hash;
         row.key.hash_version = new_version;
@@ -896,7 +921,7 @@ impl Database for MemoryDatabase {
     }
 
     async fn list_api_keys(&self, user: UserId) -> Result<Vec<ApiKeyInfo>, DbError> {
-        let s = self.state.lock().unwrap();
+        let s = self.state.lock_unpoisoned();
         let mut v: Vec<ApiKeyInfo> = s
             .api_keys
             .iter()
@@ -916,7 +941,7 @@ impl Database for MemoryDatabase {
     }
 
     async fn revoke_api_key(&self, user: UserId, id: ApiKeyId, at: Timestamp) -> Result<bool, DbError> {
-        let mut s = self.state.lock().unwrap();
+        let mut s = self.state.lock_unpoisoned();
         match s.api_keys.iter_mut().find(|r| r.key.id == id && r.key.user_id == user) {
             Some(r) => {
                 r.revoked_at.get_or_insert(at);
@@ -927,7 +952,7 @@ impl Database for MemoryDatabase {
     }
 
     async fn insert_oidc_login(&self, l: &NewOidcLogin) -> Result<(), DbError> {
-        let mut s = self.state.lock().unwrap();
+        let mut s = self.state.lock_unpoisoned();
         s.oidc_logins.retain(|_, v| v.expires_at > l.created_at);
         if s.oidc_logins.contains_key(&l.state_hash) {
             return Err(DbError::Conflict("oidc login already exists".into()));
@@ -940,11 +965,11 @@ impl Database for MemoryDatabase {
     }
 
     async fn take_oidc_login(&self, state: &TokenHash) -> Result<Option<OidcLogin>, DbError> {
-        Ok(self.state.lock().unwrap().oidc_logins.remove(state))
+        Ok(self.state.lock_unpoisoned().oidc_logins.remove(state))
     }
 
     async fn set_user_active(&self, _sys: &SystemScope, user: UserId, active: bool) -> Result<bool, DbError> {
-        match self.state.lock().unwrap().users.get_mut(&user) {
+        match self.state.lock_unpoisoned().users.get_mut(&user) {
             Some(u) => {
                 u.is_active = active;
                 Ok(true)
@@ -954,7 +979,7 @@ impl Database for MemoryDatabase {
     }
 
     async fn seed_users(&self, _sys: &SystemScope, users: &[UserRecord]) -> Result<(), DbError> {
-        let mut s = self.state.lock().unwrap();
+        let mut s = self.state.lock_unpoisoned();
         for u in users {
             // the UNIQUE index on `users.email`
             if u.email.is_some() && s.users.values().any(|o| o.id != u.id && o.email == u.email) {
@@ -977,7 +1002,7 @@ impl Database for MemoryDatabase {
 
     async fn list_work_items(&self, scope: &Scope, vis: Visibility) -> Result<Vec<WorkItem>, DbError> {
         let (ws, project) = (scope.workspace_id(), scope.project_id());
-        let s = self.state.lock().unwrap();
+        let s = self.state.lock_unpoisoned();
         let mut v: Vec<WorkItem> = s
             .work_items
             .iter()
@@ -991,7 +1016,7 @@ impl Database for MemoryDatabase {
 
     async fn get_work_item(&self, scope: &Scope, id: WorkItemId, vis: Visibility) -> Result<Option<WorkItem>, DbError> {
         let (ws, project) = (scope.workspace_id(), scope.project_id());
-        let s = self.state.lock().unwrap();
+        let s = self.state.lock_unpoisoned();
         Ok(s.work_items
             .iter()
             .find(|w| {
@@ -1006,14 +1031,14 @@ impl Database for MemoryDatabase {
     /// The reference implementation of search: a scan, `to_lowercase` and `contains` (Plane's `icontains`).
     async fn work_item_page(&self, scope: &Scope, q: &WorkItemQuery) -> Result<WorkItemPage, DbError> {
         let (ws, project) = (scope.workspace_id(), scope.project_id());
-        let s = self.state.lock().unwrap();
+        let s = self.state.lock_unpoisoned();
         let mut rows: Vec<WorkItemRow> = s
             .work_items
             .iter()
             .filter(|w| w.workspace_id == ws && w.project_id == project && is_visible(w))
             .map(|w| s.work_item_row_of(w))
-            .filter(|r| q.updated_after.map_or(true, |t| r.attrs.updated_at > t))
-            .filter(|r| q.created_by.map_or(true, |u| r.item.created_by == u))
+            .filter(|r| q.updated_after.is_none_or(|t| r.attrs.updated_at > t))
+            .filter(|r| q.created_by.is_none_or(|u| r.item.created_by == u))
             .collect();
         rows.sort_by(|a, b| compare_work_items(a, b, q.order, &s));
         let total = rows.len() as u64;
@@ -1026,7 +1051,7 @@ impl Database for MemoryDatabase {
 
     async fn work_item_row(&self, scope: &Scope, id: WorkItemId) -> Result<Option<WorkItemRow>, DbError> {
         let (ws, project) = (scope.workspace_id(), scope.project_id());
-        let s = self.state.lock().unwrap();
+        let s = self.state.lock_unpoisoned();
         Ok(s.work_items
             .iter()
             .find(|w| w.workspace_id == ws && w.project_id == project && w.id == id && is_visible(w))
@@ -1035,7 +1060,7 @@ impl Database for MemoryDatabase {
 
     async fn max_work_item_sort_order(&self, scope: &Scope, state: Option<Uuid>) -> Result<Option<i64>, DbError> {
         let (ws, project) = (scope.workspace_id(), scope.project_id());
-        let s = self.state.lock().unwrap();
+        let s = self.state.lock_unpoisoned();
         Ok(s.work_items
             .iter()
             .filter(|w| w.workspace_id == ws && w.project_id == project && w.deleted_at.is_none())
@@ -1053,7 +1078,7 @@ impl Database for MemoryDatabase {
         #[cfg(not(feature = "mutant_search_case_sensitive"))]
         let fold = |t: &str| t.to_lowercase();
         let q = fold(query);
-        let s = self.state.lock().unwrap();
+        let s = self.state.lock_unpoisoned();
         let mut v: Vec<WorkItem> = s
             .work_items
             .iter()
@@ -1073,7 +1098,7 @@ impl Database for MemoryDatabase {
         project: ProjectId,
         items: &[SeedWorkItem],
     ) -> Result<i64, DbError> {
-        let mut s = self.state.lock().unwrap();
+        let mut s = self.state.lock_unpoisoned();
         if s.projects.get(&project) != Some(&workspace) {
             return Err(DbError::Backend("project is not in this workspace".into()));
         }
@@ -1105,7 +1130,7 @@ impl Database for MemoryDatabase {
     }
 
     async fn insert_activity(&self, _sys: &SystemScope, a: &Activity) -> Result<bool, DbError> {
-        let mut s = self.state.lock().unwrap();
+        let mut s = self.state.lock_unpoisoned();
         // MUTANT (control run only): no idempotency on event_id. The redelivery test must catch it.
         #[cfg(feature = "mutant_no_activity_dedupe")]
         let duplicate = false;
@@ -1120,12 +1145,12 @@ impl Database for MemoryDatabase {
 
     async fn list_activity(&self, scope: &Scope, entity: Option<WorkItemId>) -> Result<Vec<Activity>, DbError> {
         let (ws, project) = (scope.workspace_id(), scope.project_id());
-        let s = self.state.lock().unwrap();
+        let s = self.state.lock_unpoisoned();
         let mut v: Vec<Activity> = s
             .activity
             .iter()
             .filter(|a| a.workspace_id == ws && a.project_id == project)
-            .filter(|a| entity.map_or(true, |e| a.entity_id == e.as_uuid()))
+            .filter(|a| entity.is_none_or(|e| a.entity_id == e.as_uuid()))
             .cloned()
             .collect();
         v.sort_by_key(|a| a.created_at);
@@ -1133,12 +1158,12 @@ impl Database for MemoryDatabase {
     }
 
     async fn undispatched_outbox(&self, _sys: &SystemScope, limit: u32) -> Result<Vec<OutboxRow>, DbError> {
-        let s = self.state.lock().unwrap();
+        let s = self.state.lock_unpoisoned();
         Ok(s.outbox.iter().filter(|r| r.dispatched_at.is_none()).take(limit as usize).cloned().collect())
     }
 
     async fn mark_outbox_dispatched(&self, _sys: &SystemScope, event: EventId, at: Timestamp) -> Result<(), DbError> {
-        let mut s = self.state.lock().unwrap();
+        let mut s = self.state.lock_unpoisoned();
         for r in s.outbox.iter_mut().filter(|r| r.envelope.event_id == event) {
             r.dispatched_at = Some(at);
             r.attempts += 1;
@@ -1147,18 +1172,18 @@ impl Database for MemoryDatabase {
     }
 
     async fn outbox_depth(&self, _sys: &SystemScope) -> Result<u64, DbError> {
-        let s = self.state.lock().unwrap();
+        let s = self.state.lock_unpoisoned();
         Ok(s.outbox.iter().filter(|r| r.dispatched_at.is_none()).count() as u64)
     }
 
     async fn seed(&self, _sys: &SystemScope, f: &SeedFixture) -> Result<(), DbError> {
-        let mut s = self.state.lock().unwrap();
+        let mut s = self.state.lock_unpoisoned();
         for u in &f.users {
             // a user that exists already (with an email, say) is left as it is
             s.users.entry(*u).or_insert(UserRecord { id: *u, email: None, password_hash: None, is_active: true });
         }
         // a seeded workspace is named after its slug and has no owner; one that exists keeps everything but its slug
-        let epoch = thrust_contracts::chrono::DateTime::from_timestamp(0, 0).expect("the epoch");
+        let epoch = thrust_contracts::chrono::DateTime::UNIX_EPOCH;
         for w in &f.workspaces {
             s.workspaces.insert(w.slug.clone(), w.id);
             s.workspace_rows.entry(w.id).and_modify(|row| row.slug = w.slug.clone()).or_insert_with(|| Workspace {
@@ -1313,7 +1338,7 @@ impl Tx for MemoryTx {
     /// makes it. `authorize` never mints one; a test can.
     async fn allocate(&mut self, scope: &Scope) -> Result<Allocation, DbError> {
         let (ws, project) = (scope.workspace_id(), scope.project_id());
-        let mut s = self.state.lock().unwrap();
+        let mut s = self.state.lock_unpoisoned();
         if s.projects.get(&project) != Some(&ws) {
             return Err(DbError::Backend("project is not in this workspace".into()));
         }
@@ -1333,7 +1358,7 @@ impl Tx for MemoryTx {
 
     async fn insert_work_item(&mut self, scope: &Scope, item: &WorkItem) -> Result<(), DbError> {
         check_tenant(scope, item.workspace_id, Some(item.project_id))?;
-        let s = self.state.lock().unwrap();
+        let s = self.state.lock_unpoisoned();
         let clash_pending = self.pending_items.iter().any(|w| {
             w.project_id == item.project_id
                 && item.external_id.is_some()
@@ -1362,7 +1387,7 @@ impl Tx for MemoryTx {
                 "work item attributes for a work item this transaction did not insert".into(),
             ));
         }
-        let s = self.state.lock().unwrap();
+        let s = self.state.lock_unpoisoned();
         if attrs.state_id.is_some_and(|st| !s.states.iter().any(|x| x.id == st)) {
             return Err(DbError::Backend("work_items_state_fkey".into()));
         }
@@ -1387,7 +1412,7 @@ impl Tx for MemoryTx {
 
     async fn soft_delete_work_item(&mut self, scope: &Scope, id: WorkItemId, at: Timestamp) -> Result<bool, DbError> {
         let (ws, project) = (scope.workspace_id(), scope.project_id());
-        let s = self.state.lock().unwrap();
+        let s = self.state.lock_unpoisoned();
         let exists = s
             .work_items
             .iter()
@@ -1407,7 +1432,7 @@ impl Tx for MemoryTx {
 
     async fn commit(self: Box<Self>) -> Result<(), DbError> {
         let this = *self;
-        let mut s = this.state.lock().unwrap();
+        let mut s = this.state.lock_unpoisoned();
         // Re-check uniqueness under the lock (the check at insert time raced other commits).
         for item in &this.pending_items {
             if s.unique_violation(item) {
@@ -1455,14 +1480,14 @@ impl MemoryQueue {
     }
 
     pub fn sent_count(&self) -> usize {
-        self.sent.lock().unwrap().len()
+        self.sent.lock_unpoisoned().len()
     }
 }
 
 #[async_trait]
 impl Queue for MemoryQueue {
     async fn send(&self, _topic: &str, msg: &Envelope, _opts: SendOpts) -> Result<(), QueueError> {
-        self.sent.lock().unwrap().push(msg.clone());
+        self.sent.lock_unpoisoned().push(msg.clone());
         if let Some(c) = self.consumer.get().cloned() {
             let env = msg.clone();
             self.background.spawn(Box::pin(async move {
@@ -1491,18 +1516,18 @@ impl MemoryBlobStore {
 #[async_trait]
 impl BlobStore for MemoryBlobStore {
     async fn put(&self, key: &str, bytes: Vec<u8>, content_type: Option<String>) -> Result<(), BlobError> {
-        self.map.lock().unwrap().insert(key.to_string(), Blob { bytes, content_type });
+        self.map.lock_unpoisoned().insert(key.to_string(), Blob { bytes, content_type });
         Ok(())
     }
     async fn get(&self, key: &str) -> Result<Option<Blob>, BlobError> {
-        Ok(self.map.lock().unwrap().get(key).cloned())
+        Ok(self.map.lock_unpoisoned().get(key).cloned())
     }
     async fn delete(&self, key: &str) -> Result<(), BlobError> {
-        self.map.lock().unwrap().remove(key);
+        self.map.lock_unpoisoned().remove(key);
         Ok(())
     }
     async fn list(&self, prefix: &str) -> Result<Vec<String>, BlobError> {
-        Ok(self.map.lock().unwrap().keys().filter(|k| k.starts_with(prefix)).cloned().collect())
+        Ok(self.map.lock_unpoisoned().keys().filter(|k| k.starts_with(prefix)).cloned().collect())
     }
 }
 
@@ -1524,7 +1549,7 @@ impl RateLimiter for MemoryRateLimiter {
         let now = self.clock.now().timestamp();
         let w = window_secs.max(1) as i64;
         let start = now - now.rem_euclid(w);
-        let mut m = self.map.lock().unwrap();
+        let mut m = self.map.lock_unpoisoned();
         let e = m.entry(key.to_string()).or_insert((start, 0));
         if e.0 != start {
             *e = (start, 0);

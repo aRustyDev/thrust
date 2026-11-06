@@ -6,6 +6,13 @@
 //! it is numbered from the project's counter, put where the pin puts it, given the default state, assigned as the pin assigns, and
 //! its `work_item.created` event is written with it; and a guest of a project that does not show them everything reads only what
 //! they made.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test fails, and clippy.toml exempts only #[test] functions and #[cfg(test)] modules, not the helpers around them"
+)]
 
 mod common;
 
@@ -120,8 +127,8 @@ fn who_may_make_and_who_may_read(
 
 // --- making one ----------------------------------------------------------------------------------------------------------------
 
-/// Spec: a work item is numbered from 1 and put at 65535 and 10000 further for each one after (the pin's places), by whoever makes
-/// it, and what comes back is what a read finds. Its `work_item.created` event is in the outbox with it.
+// Spec: a work item is numbered from 1 and put at 65535 and 10000 further for each one after (the pin's places), by whoever makes
+// it, and what comes back is what a read finds. Its `work_item.created` event is in the outbox with it.
 proptest! {
     #![proptest_config(proptest_config(48))]
 

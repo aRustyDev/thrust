@@ -3,6 +3,13 @@
 //! not count; `allocate` refuses a project outside the workspace it is asked under. The Postgres adapter is held to
 //! the same answers by the generated sequences in `thrust-adapters-selfhosted/tests/model`. Exhaustive over the
 //! fixture's finite domain: every project, the slug named for it, and every user.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test fails, and clippy.toml exempts only #[test] functions and #[cfg(test)] modules, not the helpers around them"
+)]
 
 use futures_executor::block_on;
 use rstest::rstest;

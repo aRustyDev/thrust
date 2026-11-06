@@ -6,6 +6,9 @@ version.workspace = true
 license.workspace = true
 publish.workspace = true
 
+[lints]
+workspace = true
+
 [features]
 default = []
 # Only for the `migrate` binary and the testcontainers tests. NEVER enabled for wasm32.

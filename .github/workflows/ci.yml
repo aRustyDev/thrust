@@ -117,6 +117,61 @@ jobs:
       - name: Dependency-graph guard
         run: scripts/check-deps.sh
 
+  # rustfmt and clippy (issue #40). Clippy runs with `-D warnings`, so the four lints `Cargo.toml` denies in core, ports and the
+  # adapters (ADR-0006's panic policy: unwrap, expect, panic, indexing) and every other warning fail it. The second clippy run is
+  # the Worker as it ships: wasm32, no default features, so the `memory` adapter set is out of it. The clippy steps run even when
+  # rustfmt failed, so one push reports everything.
+  lint:
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-rust
+        with:
+          components: clippy, rustfmt
+          targets: wasm32-unknown-unknown
+          cache-key: lint
+          save-cache: ${{ github.ref == 'refs/heads/main' }}
+      - name: rustfmt
+        run: scripts/rs cargo fmt --all --check
+      - name: clippy (native, every target)
+        if: ${{ !cancelled() }}
+        run: scripts/rs cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: clippy (the Worker, wasm32)
+        if: ${{ !cancelled() }}
+        run: scripts/rs cargo clippy -p thrust-worker --no-default-features --target wasm32-unknown-unknown --locked -- -D warnings
+
+  # cargo-deny (issue #40; ADR-0100 and ADR-0101 require a Rust supply-chain gate), configured by `deny.toml`: advisories (RustSec),
+  # licences, bans (sqlx, sea-orm, diesel: ADR-0044) and sources (crates.io only). It fetches the advisory database on every run, so
+  # a new advisory can turn it red with no change to the code: fix it by upgrading, and read the note above the one ignore in
+  # `deny.toml` before adding another.
+  deny:
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-rust
+        with:
+          cache-key: deny
+          save-cache: ${{ github.ref == 'refs/heads/main' }}
+      - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
+        with:
+          tool: cargo-deny@0.20.2
+      - name: cargo deny check
+        run: scripts/rs cargo deny --locked check
+
   # The hermetic loop: the default nextest profile (no Docker, Node, wrangler or running target) under the `ci`
   # profile, plus the doctests nextest cannot run. `oracle_` tests need the TypeScript oracle's generated output
   # and are excluded by the profile's default filter, not here.
@@ -208,7 +263,7 @@ jobs:
   gate:
     name: gate
     if: always()
-    needs: [changes, plan, ci-scripts, deps, hermetic, pg-adapter, contract, mutants]
+    needs: [changes, plan, ci-scripts, deps, lint, deny, hermetic, pg-adapter, contract, mutants]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:

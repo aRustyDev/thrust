@@ -6,6 +6,9 @@ version.workspace = true
 license.workspace = true
 publish.workspace = true
 
+[lints]
+workspace = true
+
 [features]
 # Control-run mutant (scripts/mutants.sh): recycle a connection that is still inside a transaction.
 mutant_discard_noop = []
@@ -29,6 +32,6 @@ deadpool-postgres = { version = "0.14", default-features = false, features = ["r
 # tests/model: generated Database/Tx call sequences against a reference model (gap G-9).
 proptest = "1"
 serde_json = { workspace = true }
-testcontainers = "0.23"
-testcontainers-modules = { version = "0.11", features = ["postgres"] }
+testcontainers = "0.27"
+testcontainers-modules = { version = "0.15", features = ["postgres"] }
 tokio = { version = "1", default-features = false, features = ["rt-multi-thread", "macros", "time"] }

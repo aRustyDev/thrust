@@ -12,6 +12,13 @@
 //! `expect` is the spec for one step and `apply` its effect on the model; the test runs them against the use-cases,
 //! and `model_strategy_reaches_every_step_class` replays sampled sequences through them alone (the generator coverage
 //! control, Rule 8).
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test fails, and clippy.toml exempts only #[test] functions and #[cfg(test)] modules, not the helpers around them"
+)]
 
 mod common;
 

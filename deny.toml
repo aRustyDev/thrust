@@ -1,0 +1,72 @@
+# cargo-deny (issue #40; ADR-0100 and ADR-0101 require a Rust supply-chain gate). CI runs `cargo deny --locked check` in the `deny`
+# job, and so can you: `cargo deny check`. Four checks: advisories (RustSec), licenses, bans, sources.
+#
+# The graph is every feature of every member: an optional dependency behind a feature (`sanitize`, the `mutant_*` switches) is
+# still a dependency. Dev-dependencies are audited too, because they run in CI.
+[graph]
+all-features = true
+
+[advisories]
+# A crate nobody maintains is reported when the workspace names it itself, not when it is only somebody else's dependency
+# (`smallstr`, under `yrs`, has no fix to adopt: RUSTSEC-2026-0215). A vulnerability is reported wherever it is.
+unmaintained = "workspace"
+# THE ONLY IGNORE. Anything else that fails the check is fixed by upgrading, not ignored here.
+ignore = [
+    { id = "RUSTSEC-2023-0071", reason = "rsa timing leak (Marvin Attack): no patched version, and Thrust holds no rsa private key an attacker can time. See the note above this table." },
+]
+# RUSTSEC-2023-0071: the `rsa` crate's private-key operations are not constant-time (CVE-2023-49092), so timing observable over a
+# network can leak a private key. No patched version exists: `rsa` 0.9.10 (the locked version) and 0.10.0-rc.18 were both still
+# affected on the advisory's 2026-09-12 note.
+#
+# Why it does not apply here: the flaw needs a private-key operation whose timing an attacker can see, and Thrust has none.
+#   - `rsa` enters through `openidconnect`, which uses it to VERIFY an RS256 ID-token signature with the issuer's PUBLIC key
+#     (`verify_rsa_signature`, `RsaPublicKey::verify`). Thrust's only call is `id_token.claims(..)` in `thrust-adapters-oidc`.
+#     (`openidconnect` also ships `CoreRsaPrivateSigningKey`, which signs with an `RsaPrivateKey`. Thrust never constructs it.)
+#   - and through `thrust-contract-tests`: its mock IdP signs with a throwaway key on 127.0.0.1, inside the test process.
+#
+# Re-check this whenever `rsa` or `openidconnect` is updated, and whenever the advisory gains a patched version. Remove the ignore
+# once a patched `rsa` is adopted (upstream closed RustCrypto/RSA#626 on 2026-11-01 and `rsa` 0.10.0-rc.21 exists, but
+# `openidconnect` 4.1.0 still requires `rsa ^0.9`). Revisit it if any code path ever signs or decrypts with an `rsa` private key
+# where an attacker can time it: constructing `CoreRsaPrivateSigningKey` is the tripwire.
+#
+# Do not avoid RS256 to get rid of the finding (owner decision, 2026-10-24): Zitadel signs with it.
+
+[licenses]
+# The licences of the dependency graph, as it stands: each one is needed by at least one crate, and none is copyleft (the
+# `OR` expressions that name LGPL, BSL or Unlicense are satisfied by their MIT or Apache-2.0 alternative). The workspace's own
+# crates are AGPL-3.0-only and `publish = false`, which `private` below skips, so AGPL is not on this list for anybody else.
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-3.0",
+    "Zlib",
+    "MPL-2.0",
+    "CDLA-Permissive-2.0",
+]
+
+[licenses.private]
+ignore = true
+
+[bans]
+# 28 crates appear in two or three versions (the old and new RustCrypto lines, `rand`, `getrandom`, `base64`); making that an
+# error would block every dependency update for no gain, so it is a warning.
+multiple-versions = "warn"
+wildcards = "deny"
+# `thrust-*` path dependencies carry no version requirement.
+allow-wildcard-paths = true
+# ADR-0044: hand SQL on `tokio-postgres`, because through Hyperdrive prepared statements work only as `pg` and `postgres.js`
+# implement them, and an ORM relies on them. The second guard: `scripts/check-deps.sh` is the first.
+deny = [
+    { crate = "sqlx", reason = "ADR-0044: hand SQL on tokio-postgres; an ORM relies on named prepared statements, which Hyperdrive does not give it" },
+    { crate = "sea-orm", reason = "ADR-0044: hand SQL on tokio-postgres" },
+    { crate = "diesel", reason = "ADR-0044: hand SQL on tokio-postgres" },
+    { crate = "diesel-async", reason = "ADR-0044: hand SQL on tokio-postgres" },
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

@@ -80,6 +80,7 @@ Where those docs and the rules below disagree, the rules win; record the disagre
 | One category | `cargo nextest run -E 'test(/\bprop_/)'` |
 | Doctests | `cargo test --doc --workspace` |
 | CI | `cargo nextest run --profile ci --workspace`, then the doctests |
+| Format, lint and audit (CI jobs `lint` and `deny`; clippy denies `unwrap`, `expect`, `panic!` and indexing in core, ports and the adapters) | `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo deny check` |
 | Long randomized run (includes `oracle_`) | `PROPTEST_CASES=4096 cargo nextest run --profile deep` |
 | Comparison with the TypeScript oracle (needs Node, or its output from `tools/spike-0006/gen-all.sh`) | `cargo nextest run --profile oracle` |
 | Postgres adapter tests through nextest (needs Docker) | `cargo nextest run --ignore-default-filter -E 'binary(pg_adapter)'` |

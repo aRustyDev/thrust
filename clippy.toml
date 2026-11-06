@@ -1,0 +1,11 @@
+# Clippy's configuration (issue #40). The four lints it relaxes are the ones `[workspace.lints.clippy]` denies in thrust-core,
+# thrust-ports and the adapters (ADR-0006's panic policy: request-derived data can never panic).
+#
+# A test fails by panicking, so `unwrap`, `expect`, `panic!` and indexing are the idiom there. These four settings exempt code that
+# is `#[test]` or inside a `#[cfg(test)]` module. They do NOT cover a helper function in a `tests/*.rs` integration test that has
+# no `#[test]` of its own (`fn make(..)`, `fn signed_up(..)`), nor an example: such a file says so itself, with an
+# `#![allow(..., reason = "...")]` at its top.
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+allow-panic-in-tests = true
+allow-indexing-slicing-in-tests = true

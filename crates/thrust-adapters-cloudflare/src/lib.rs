@@ -22,6 +22,12 @@ use worker::send::SendFuture;
 pub struct JsClock;
 
 impl Clock for JsClock {
+    #[allow(
+        clippy::expect_used,
+        reason = "the JS clock is always inside chrono's range (about 262,000 years either side of 1970), and the port returns no \
+                  error. A fallback such as the epoch would make every session expiry look far off, so a clock that cannot be \
+                  read fails the request instead of answering wrongly"
+    )]
     fn now(&self) -> Timestamp {
         let ms = worker::Date::now().as_millis() as i64;
         DateTime::from_timestamp_millis(ms).expect("valid epoch millis")
@@ -249,7 +255,7 @@ impl HyperdriveConnector {
         SendFuture::new(async move {
             let socket = hd.connect().map_err(|e| be(format!("hyperdrive connect: {e}")))?;
             let mut cfg = tokio_postgres::Config::new();
-            cfg.host(&hd.host()).port(hd.port()).user(&hd.user()).password(hd.password()).dbname(&hd.database());
+            cfg.host(hd.host()).port(hd.port()).user(hd.user()).password(hd.password()).dbname(hd.database());
             let (client, conn) = cfg
                 .connect_raw(socket, tokio_postgres::NoTls)
                 .await
@@ -270,11 +276,13 @@ impl Connector for HyperdriveConnector {
         if exclusive {
             return Ok(Box::new(Arc::new(self.connect().await?)));
         }
-        if let Some(c) = self.shared.lock().unwrap().clone() {
+        // A Worker isolate is single-threaded and `panic=abort`, so this mutex is never poisoned; if it ever were, the slot is
+        // an `Option<Arc<Client>>` that no panic can leave half-written, and carrying on is right.
+        if let Some(c) = self.shared.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone() {
             return Ok(Box::new(c));
         }
         let fresh = Arc::new(self.connect().await?);
-        let mut slot = self.shared.lock().unwrap();
+        let mut slot = self.shared.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         // Two first callers can race; keep the first connection, the loser is dropped (closed).
         let keep = slot.get_or_insert_with(|| fresh.clone()).clone();
         Ok(Box::new(keep))
