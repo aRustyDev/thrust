@@ -68,13 +68,21 @@ pub(super) fn stand_in_digest(token: &str) -> TokenHash {
 /// reproduce, or it is a hash of its own and proves nothing about a keyed one.
 #[rstest]
 #[case::rfc4231_case_1(&[0x0b; 20], b"Hi There", "b0344c61d8db38535ca8afceaf0bf12b881dc200c9833da726e9376c2e32cff7")]
-#[case::rfc4231_case_2(b"Jefe", b"what do ya want for nothing?", "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843")]
+#[case::rfc4231_case_2(
+    b"Jefe",
+    b"what do ya want for nothing?",
+    "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843"
+)]
 #[case::rfc4231_case_6(
     &[0xaa; 131],
     b"Test Using Larger Than Block-Size Key - Hash Key First",
     "60e431591ee0b67f0d8a26aacbf5b77f8e0bc6213728c5140546040f0ee37f54"
 )]
-fn parity_the_stand_in_hmac_reproduces_the_rfc_4231_vectors(#[case] key: &[u8], #[case] msg: &[u8], #[case] want: &str) {
+fn parity_the_stand_in_hmac_reproduces_the_rfc_4231_vectors(
+    #[case] key: &[u8],
+    #[case] msg: &[u8],
+    #[case] want: &str,
+) {
     assert_eq!(hex(&hmac_sha256(key, msg)), want);
 }
 
@@ -135,7 +143,11 @@ fn lookup_versions_are_the_current_one_first_then_the_supported_ones_once_each(
     #[values(1i16, 2, 3)] current: i16,
 ) {
     let supported: Vec<i16> = (1..=3).filter(|v| mask & (1 << (v - 1)) != 0).collect();
-    let cfg = CoreConfig { api_key_hash_current: current, api_key_hash_supported: supported.clone(), ..CoreConfig::default() };
+    let cfg = CoreConfig {
+        api_key_hash_current: current,
+        api_key_hash_supported: supported.clone(),
+        ..CoreConfig::default()
+    };
     let got = api_key_lookup_versions(&cfg);
     let want_set: BTreeSet<i16> = supported.iter().copied().chain([current]).collect();
     assert_eq!(got.first(), Some(&current), "{supported:?} current={current}");
@@ -394,7 +406,10 @@ fn a_failed_move_is_ignored_and_the_key_keeps_working() {
     let app = Cfg::V2ReadingBoth.app(&w);
     assert!(block_on(w.db.revoke_api_key(owner, ApiKeyId(Uuid::from_u128(0xDEC0)), w.app.ports.clock.now())).unwrap());
     let a = use_key(&app, TOKEN).unwrap();
-    assert!(matches!(a.via, Via::ApiKey(id) if id == ApiKeyId(Uuid::from_u128(0xC0DE_0001))), "the real key, not the decoy");
+    assert!(
+        matches!(a.via, Via::ApiKey(id) if id == ApiKeyId(Uuid::from_u128(0xC0DE_0001))),
+        "the real key, not the decoy"
+    );
     assert_eq!(background.run_all(), 1);
     assert_eq!(stored_versions(&w, TOKEN), vec![1], "the move failed, the key is where it was");
     use_key(&app, TOKEN).unwrap();
@@ -479,11 +494,19 @@ const KEYS: usize = 3;
 #[derive(Debug, Clone, Copy)]
 enum Op {
     /// Create key `key` under the process's current configuration (a no-op when it exists already).
-    Create { key: usize },
+    Create {
+        key: usize,
+    },
     /// Restart the process with this configuration.
-    Restart { cfg: Cfg },
-    Use { key: usize },
-    Revoke { key: usize },
+    Restart {
+        cfg: Cfg,
+    },
+    Use {
+        key: usize,
+    },
+    Revoke {
+        key: usize,
+    },
     /// Run the background work that requests have spawned so far.
     Background,
 }

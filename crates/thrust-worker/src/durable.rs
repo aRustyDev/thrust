@@ -31,10 +31,10 @@ pub struct RateLimiterDo {
 impl DurableObject for RateLimiterDo {
     fn new(state: State, _env: Env) -> Self {
         // Constructor is synchronous; SQLite DDL is synchronous too. IF NOT EXISTS keeps it idempotent.
-        let _ = state.storage().sql().exec(
-            "CREATE TABLE IF NOT EXISTS hits (window_start INTEGER PRIMARY KEY, count INTEGER NOT NULL)",
-            None,
-        );
+        let _ = state
+            .storage()
+            .sql()
+            .exec("CREATE TABLE IF NOT EXISTS hits (window_start INTEGER PRIMARY KEY, count INTEGER NOT NULL)", None);
         Self { state }
     }
 
@@ -95,12 +95,8 @@ impl DurableObject for RoomDo {
     async fn fetch(&self, req: Request) -> Result<Response> {
         let path = req.path();
         if path.ends_with("/history") {
-            let rows: Vec<serde_json::Value> = self
-                .state
-                .storage()
-                .sql()
-                .exec("SELECT id, body FROM messages ORDER BY id", None)?
-                .to_array()?;
+            let rows: Vec<serde_json::Value> =
+                self.state.storage().sql().exec("SELECT id, body FROM messages ORDER BY id", None)?.to_array()?;
             return Response::from_json(&json!({ "instance": self.instance, "messages": rows }));
         }
         if req.headers().get("Upgrade")?.as_deref() != Some("websocket") {
@@ -162,7 +158,9 @@ pub async fn room_route(req: web_sys::Request, env: &Env, path: &str) -> Result<
     let want = text(env, "THRUST_ADMIN_TOKEN");
     let ok = test_routes
         && match (want, given) {
-            (Some(w), Some(g)) => w.len() == g.len() && w.bytes().zip(g.bytes()).fold(0u8, |a, (x, y)| a | (x ^ y)) == 0,
+            (Some(w), Some(g)) => {
+                w.len() == g.len() && w.bytes().zip(g.bytes()).fold(0u8, |a, (x, y)| a | (x ^ y)) == 0
+            }
             _ => false,
         };
     if !ok {

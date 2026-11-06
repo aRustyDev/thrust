@@ -71,7 +71,11 @@ fn start_stores_state_nonce_and_verifier_and_hands_them_to_the_provider() {
     let started = provider.started.lock().unwrap().clone();
     assert_eq!(started.len(), 2);
     let (state, nonce, verifier) = &started[0];
-    assert_eq!(url, format!("{}/authorize?state={state}", ScriptedOidc::ISSUER), "the provider's URL is what the caller gets");
+    assert_eq!(
+        url,
+        format!("{}/authorize?state={state}", ScriptedOidc::ISSUER),
+        "the provider's URL is what the caller gets"
+    );
     // 256 random bits each, and three different values (a PKCE verifier is 43 to 128 characters)
     assert!(is_hex64(state) && is_hex64(nonce) && is_hex64(verifier), "{started:?}");
     assert!(state != nonce && nonce != verifier && state != verifier);
@@ -213,7 +217,10 @@ fn a_login_by_email_links_the_subject_and_the_link_then_decides() {
         let state = provider.started.lock().unwrap().last().unwrap().0.clone();
         block_on(oidc_callback(app, "c", &state))
     };
-    assert!(block_on(app.ports.db.user_for_account(ScriptedOidc::ISSUER, "sub-new")).unwrap().is_none(), "not linked yet");
+    assert!(
+        block_on(app.ports.db.user_for_account(ScriptedOidc::ISSUER, "sub-new")).unwrap().is_none(),
+        "not linked yet"
+    );
     assert_eq!(login(&app).unwrap().user_id, BY_EMAIL);
     let linked = block_on(app.ports.db.user_for_account(ScriptedOidc::ISSUER, "sub-new")).unwrap();
     assert_eq!(linked.map(|u| u.id), Some(BY_EMAIL), "the subject is linked after the first login");

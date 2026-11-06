@@ -20,13 +20,23 @@ fn setup() -> (World, WorkItemId) {
     let queue = Arc::new(MemoryQueue::new(background.clone(), ConsumerSlot::default()));
     let cfg = CoreConfig { outbox_fastpath: false, max_attachment_bytes: LIMIT, ..CoreConfig::default() };
     let w = world_with(cfg, queue, background);
-    let req = CreateWorkItemRequest { name: "item".into(), description: None, external_source: None, external_id: None };
+    let req =
+        CreateWorkItemRequest { name: "item".into(), description: None, external_source: None, external_id: None };
     let item = block_on(create_work_item(&w.app, &w.principal(Actor::MemberA), &w.slug_a, w.project_a, req)).unwrap();
     (w, item.id)
 }
 
 fn put(w: &World, a: Actor, item: WorkItemId, name: &str, bytes: &[u8]) -> Result<(), CoreError> {
-    block_on(put_attachment(&w.app, &w.principal(a), &w.slug_a, w.project_a, item, name, bytes.to_vec(), Some("text/plain".into())))
+    block_on(put_attachment(
+        &w.app,
+        &w.principal(a),
+        &w.slug_a,
+        w.project_a,
+        item,
+        name,
+        bytes.to_vec(),
+        Some("text/plain".into()),
+    ))
 }
 
 fn get(w: &World, a: Actor, item: WorkItemId, name: &str) -> Result<Blob, CoreError> {
@@ -40,7 +50,8 @@ fn an_attachment_round_trips_and_delete_removes_it() {
     let blob = get(&w, Actor::GuestA, item, "notes.txt").unwrap();
     assert_eq!(blob, Blob { bytes: b"hello".to_vec(), content_type: Some("text/plain".into()) });
 
-    block_on(delete_attachment(&w.app, &w.principal(Actor::MemberA), &w.slug_a, w.project_a, item, "notes.txt")).unwrap();
+    block_on(delete_attachment(&w.app, &w.principal(Actor::MemberA), &w.slug_a, w.project_a, item, "notes.txt"))
+        .unwrap();
     assert_eq!(outcome(&get(&w, Actor::GuestA, item, "notes.txt")), Outcome::NotFound);
 }
 
@@ -61,7 +72,11 @@ fn an_attachment_needs_a_live_work_item() {
     assert_eq!(outcome(&put(&w, Actor::MemberA, unknown, "f", b"x")), Outcome::NotFound);
 
     block_on(delete_work_item(&w.app, &w.principal(Actor::MemberA), &w.slug_a, w.project_a, item)).unwrap();
-    assert_eq!(outcome(&put(&w, Actor::MemberA, item, "f", b"x")), Outcome::NotFound, "deleted items take no attachments");
+    assert_eq!(
+        outcome(&put(&w, Actor::MemberA, item, "f", b"x")),
+        Outcome::NotFound,
+        "deleted items take no attachments"
+    );
 }
 
 #[rstest]

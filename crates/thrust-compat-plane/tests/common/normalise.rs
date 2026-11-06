@@ -127,7 +127,9 @@ impl Ids {
                 // for it, the same each time, and the normaliser then numbers it where the recording did.
                 let id = match n.checked_sub(1).and_then(|k| self.seen.get(k)) {
                     Some(seen) => seen.clone(),
-                    None => Uuid::from_u128(0xF0F0_0000_0000_0000_0000_0000_0000_0000 + n as u128).hyphenated().to_string(),
+                    None => {
+                        Uuid::from_u128(0xF0F0_0000_0000_0000_0000_0000_0000_0000 + n as u128).hyphenated().to_string()
+                    }
                 };
                 out.push_str(&rest[..i]);
                 out.push_str(&id);
@@ -208,9 +210,15 @@ pub fn value_with(rules: &Rules, ids: &mut Ids, v: &Value, path: &str, keep_time
                 let token = rules.opaque.get(&p).or_else(|| rules.opaque_keys.get(k));
                 let normalised = if let (Some(token), false) = (token, child.is_null()) {
                     Value::String(token.clone())
-                } else if !keep_times && child.as_str().is_some_and(|s| key_matches(k, &rules.dt_suffixes, &rules.dt_exact) && is_datetime(s)) {
+                } else if !keep_times
+                    && child
+                        .as_str()
+                        .is_some_and(|s| key_matches(k, &rules.dt_suffixes, &rules.dt_exact) && is_datetime(s))
+                {
                     Value::String(rules.dt_token.clone())
-                } else if !keep_times && child.as_str().is_some_and(|s| key_matches(k, &rules.date_suffixes, &[]) && is_date(s)) {
+                } else if !keep_times
+                    && child.as_str().is_some_and(|s| key_matches(k, &rules.date_suffixes, &[]) && is_date(s))
+                {
                     Value::String(rules.date_token.clone())
                 } else {
                     value_with(rules, ids, child, &p, keep_times)
@@ -219,7 +227,9 @@ pub fn value_with(rules: &Rules, ids: &mut Ids, v: &Value, path: &str, keep_time
             }
             Value::Object(out)
         }
-        Value::Array(a) => Value::Array(a.iter().map(|x| value_with(rules, ids, x, &format!("{path}[]"), keep_times)).collect()),
+        Value::Array(a) => {
+            Value::Array(a.iter().map(|x| value_with(rules, ids, x, &format!("{path}[]"), keep_times)).collect())
+        }
         Value::String(s) => Value::String(ids.scrub(s)),
         other => other.clone(),
     }
@@ -247,7 +257,9 @@ fn headers(rules: &Rules, hs: Option<&Value>) -> Value {
                 continue;
             }
             let value = match v.as_str() {
-                Some(s) if rules.origin_headers.contains(&lower) => Value::String(replace_origin(s, &rules.origin_token)),
+                Some(s) if rules.origin_headers.contains(&lower) => {
+                    Value::String(replace_origin(s, &rules.origin_token))
+                }
                 _ => v.clone(),
             };
             out.insert(lower, value);

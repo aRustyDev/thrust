@@ -25,7 +25,11 @@ fn secs(n: i64) -> TimeDelta {
 /// a background that only collects the work (the stamp has a test of its own).
 fn quiet_world() -> World {
     let queue: Arc<dyn Queue> = Arc::new(RecordingQueue::default());
-    world_with(CoreConfig { outbox_fastpath: false, ..CoreConfig::default() }, queue, Arc::new(DeferredBackground::default()))
+    world_with(
+        CoreConfig { outbox_fastpath: false, ..CoreConfig::default() },
+        queue,
+        Arc::new(DeferredBackground::default()),
+    )
 }
 
 fn key_credentials(key: Option<&str>) -> Credentials<'_> {
@@ -122,10 +126,18 @@ fn credential_precedence_is_bearer_then_key_then_cookie() {
     let via = |c: Credentials<'_>| block_on(authenticate_request(&w.app, &c));
     let both = via(Credentials { bearer: Some("sess"), api_key: Some(token), ..Credentials::default() }).unwrap();
     assert_eq!((both.principal.clone(), matches!(both.via, Via::Session(_))), (who.clone(), true), "the bearer wins");
-    let key_and_cookie =
-        via(Credentials { api_key: Some(token), session_cookie: Some("sess"), mutating: true, ..Credentials::default() })
-            .unwrap();
-    assert_eq!(key_and_cookie.principal, w.principal(OWNER), "the key wins over the cookie, and a mutation needs no CSRF token");
+    let key_and_cookie = via(Credentials {
+        api_key: Some(token),
+        session_cookie: Some("sess"),
+        mutating: true,
+        ..Credentials::default()
+    })
+    .unwrap();
+    assert_eq!(
+        key_and_cookie.principal,
+        w.principal(OWNER),
+        "the key wins over the cookie, and a mutation needs no CSRF token"
+    );
     assert!(matches!(key_and_cookie.via, Via::ApiKey(_)));
     let bad_key_good_cookie =
         via(Credentials { api_key: Some("nope"), session_cookie: Some("sess"), ..Credentials::default() });
@@ -138,7 +150,8 @@ fn credential_precedence_is_bearer_then_key_then_cookie() {
 fn a_new_key_is_256_random_bits_with_a_visible_prefix_and_only_its_digest_is_stored() {
     let w = quiet_world();
     let who = w.principal(OWNER);
-    let a = block_on(create_api_key(&w.app, &who, CreateApiKeyRequest { label: Some("ci".into()), expires_at: None })).unwrap();
+    let a = block_on(create_api_key(&w.app, &who, CreateApiKeyRequest { label: Some("ci".into()), expires_at: None }))
+        .unwrap();
     let b = block_on(create_api_key(&w.app, &who, CreateApiKeyRequest::default())).unwrap();
     assert_ne!(a.token, b.token);
     assert_ne!(a.id, b.id);

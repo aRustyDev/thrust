@@ -31,7 +31,13 @@ fn uuid(n: u128) -> Uuid {
 /// group), two labels; project B's state and label.
 fn seeded() -> World {
     let w = world();
-    let state = |project: ProjectId, ws: WorkspaceId, id: u128, name: &str, group: StateGroup, sequence: f64, is_default: bool| SeedState {
+    let state = |project: ProjectId,
+                 ws: WorkspaceId,
+                 id: u128,
+                 name: &str,
+                 group: StateGroup,
+                 sequence: f64,
+                 is_default: bool| SeedState {
         id: uuid(id),
         project_id: project,
         workspace_id: ws,
@@ -96,7 +102,9 @@ fn user(w: &World, who: Actor) -> UserId {
 /// Spec (the pin's `IssueViewSet`): an admin or a member of the project makes a work item and a guest does not; any member, a guest
 /// too, reads them; someone who is no member of the project (in its workspace or not) does neither, and is told the same.
 #[rstest]
-fn who_may_make_and_who_may_read(#[values(Actor::AdminA, Actor::MemberA, Actor::GuestA, Actor::OutsiderA, Actor::MemberB, Actor::Dual)] who: Actor) {
+fn who_may_make_and_who_may_read(
+    #[values(Actor::AdminA, Actor::MemberA, Actor::GuestA, Actor::OutsiderA, Actor::MemberB, Actor::Dual)] who: Actor,
+) {
     let w = seeded();
     let writes = matches!(who, Actor::AdminA | Actor::MemberA | Actor::Dual);
     let reads = writes || who == Actor::GuestA;
@@ -136,14 +144,28 @@ proptest! {
 /// Spec: the work item takes the project's default state when it names none, and has `completed_at` when its state is of the
 /// completed group (and only then); the priority is `none`, the description the empty paragraph, nobody updated it.
 #[rstest]
-fn a_new_work_item_has_a_state_a_priority_and_a_description_the_pins_defaults(#[values(None, Some(STATE_BACKLOG), Some(STATE_TODO), Some(STATE_DONE))] state: Option<u128>) {
+fn a_new_work_item_has_a_state_a_priority_and_a_description_the_pins_defaults(
+    #[values(None, Some(STATE_BACKLOG), Some(STATE_TODO), Some(STATE_DONE))] state: Option<u128>,
+) {
     let w = seeded();
     let row = made(&w, Actor::MemberA, IssueDraft { state_id: state.map(uuid), ..draft("n") }).unwrap();
     let want = state.unwrap_or(STATE_BACKLOG);
     assert_eq!(row.attrs.state_id, Some(uuid(want)));
-    assert_eq!(row.state_group, Some(if want == STATE_DONE { StateGroup::Completed } else if want == STATE_TODO { StateGroup::Unstarted } else { StateGroup::Backlog }));
+    assert_eq!(
+        row.state_group,
+        Some(if want == STATE_DONE {
+            StateGroup::Completed
+        } else if want == STATE_TODO {
+            StateGroup::Unstarted
+        } else {
+            StateGroup::Backlog
+        })
+    );
     assert_eq!(row.attrs.completed_at.is_some(), want == STATE_DONE, "completed_at follows the completed group");
-    assert_eq!((row.attrs.priority, row.attrs.description_html.as_str(), row.attrs.updated_by), (Priority::None, "<p></p>", None));
+    assert_eq!(
+        (row.attrs.priority, row.attrs.description_html.as_str(), row.attrs.updated_by),
+        (Priority::None, "<p></p>", None)
+    );
     assert_eq!(row.attrs.updated_at, row.item.created_at);
     assert_eq!(row.item.name, "n");
 }
@@ -162,7 +184,10 @@ fn what_a_creation_names_is_kept() {
     let row = made(&w, Actor::MemberA, d).unwrap();
     assert_eq!(row.item.name, "padded");
     assert_eq!((row.attrs.description_html.as_str(), row.attrs.priority), ("<p>hi</p>", Priority::Urgent));
-    assert_eq!((row.attrs.start_date, row.attrs.target_date), (NaiveDate::from_ymd_opt(2026, 11, 1), NaiveDate::from_ymd_opt(2026, 11, 1)));
+    assert_eq!(
+        (row.attrs.start_date, row.attrs.target_date),
+        (NaiveDate::from_ymd_opt(2026, 11, 1), NaiveDate::from_ymd_opt(2026, 11, 1))
+    );
 }
 
 /// Spec (`validate`): a start date after the target date is refused, the same day is not, and a refused creation writes nothing.
@@ -193,7 +218,14 @@ fn what_a_creation_names_must_be_there_and_every_problem_is_found() {
     let Err(IssueError::Fields(problems)) = made(&w, Actor::MemberA, d) else { panic!("not refused as fields") };
     assert_eq!(
         problems,
-        vec![FieldProblem::State, FieldProblem::Parent, FieldProblem::Assignee(1), FieldProblem::Assignee(2), FieldProblem::Label(0), FieldProblem::Label(2)]
+        vec![
+            FieldProblem::State,
+            FieldProblem::Parent,
+            FieldProblem::Assignee(1),
+            FieldProblem::Assignee(2),
+            FieldProblem::Label(0),
+            FieldProblem::Label(2)
+        ]
     );
     assert_eq!(page(&w, Actor::AdminA).unwrap().total, 0, "a refused creation makes nothing");
     assert_eq!(block_on(outbox_depth(&w.app)).unwrap(), 0);
@@ -215,8 +247,14 @@ fn a_parent_that_exists_is_refused_as_not_supported() {
 #[test]
 fn assignees_are_the_named_who_may_be_and_else_the_default_assignee() {
     let w = seeded();
-    let (member, admin, guest, outsider) = (user(&w, Actor::MemberA), user(&w, Actor::AdminA), user(&w, Actor::GuestA), user(&w, Actor::OutsiderA));
-    let row = made(&w, Actor::MemberA, IssueDraft { assignee_ids: vec![admin, guest, outsider, member, admin], ..draft("a") }).unwrap();
+    let (member, admin, guest, outsider) =
+        (user(&w, Actor::MemberA), user(&w, Actor::AdminA), user(&w, Actor::GuestA), user(&w, Actor::OutsiderA));
+    let row = made(
+        &w,
+        Actor::MemberA,
+        IssueDraft { assignee_ids: vec![admin, guest, outsider, member, admin], ..draft("a") },
+    )
+    .unwrap();
     let mut want = vec![admin, member];
     want.sort();
     assert_eq!(row.attrs.assignee_ids, want, "the guest and the outsider are left out, each once, in id order");
@@ -224,7 +262,13 @@ fn assignees_are_the_named_who_may_be_and_else_the_default_assignee() {
     // nobody left: the project's default assignee, when they may be assigned
     let admin_scope = WorkspaceScope::mint(w.ws_a, admin, Role::Admin);
     let set_default = |who: Option<UserId>| {
-        block_on(update_project(&w.app, &admin_scope, w.project_a, ProjectPatch { default_assignee: Some(who), ..ProjectPatch::default() })).unwrap();
+        block_on(update_project(
+            &w.app,
+            &admin_scope,
+            w.project_a,
+            ProjectPatch { default_assignee: Some(who), ..ProjectPatch::default() },
+        ))
+        .unwrap();
     };
     set_default(Some(member));
     let none_left = made(&w, Actor::MemberA, IssueDraft { assignee_ids: vec![guest, outsider], ..draft("b") }).unwrap();
@@ -239,7 +283,12 @@ fn assignees_are_the_named_who_may_be_and_else_the_default_assignee() {
     set_default(None);
     assert_eq!(made(&w, Actor::MemberA, draft("f")).unwrap().attrs.assignee_ids, vec![]);
 
-    let labelled = made(&w, Actor::MemberA, IssueDraft { label_ids: vec![uuid(0x7002), uuid(0x7001), uuid(0x7002)], ..draft("g") }).unwrap();
+    let labelled = made(
+        &w,
+        Actor::MemberA,
+        IssueDraft { label_ids: vec![uuid(0x7002), uuid(0x7001), uuid(0x7002)], ..draft("g") },
+    )
+    .unwrap();
     assert_eq!(labelled.attrs.label_ids, vec![uuid(0x7001), uuid(0x7002)]);
 }
 
@@ -249,13 +298,21 @@ fn assignees_are_the_named_who_may_be_and_else_the_default_assignee() {
 /// others, and one they did not make is `NotAllowedToView` (a work item that is not there is `NotFound` to them as to anyone);
 /// once the project shows guests everything, they read all; a member reads all either way.
 #[rstest]
-fn a_guest_reads_only_what_they_made_unless_the_project_shows_them_everything(#[values(false, true)] guests_see_all: bool) {
+fn a_guest_reads_only_what_they_made_unless_the_project_shows_them_everything(
+    #[values(false, true)] guests_see_all: bool,
+) {
     let w = seeded();
     let admins = made(&w, Actor::AdminA, draft("by the admin")).unwrap();
     let members = made(&w, Actor::MemberA, draft("by a member")).unwrap();
     if guests_see_all {
         let admin_scope = WorkspaceScope::mint(w.ws_a, user(&w, Actor::AdminA), Role::Admin);
-        block_on(update_project(&w.app, &admin_scope, w.project_a, ProjectPatch { guest_view_all_features: Some(true), ..ProjectPatch::default() })).unwrap();
+        block_on(update_project(
+            &w.app,
+            &admin_scope,
+            w.project_a,
+            ProjectPatch { guest_view_all_features: Some(true), ..ProjectPatch::default() },
+        ))
+        .unwrap();
     }
     let ids = |who: Actor| page(&w, who).unwrap().rows.iter().map(|r| r.item.id).collect::<Vec<_>>();
     assert_eq!(ids(Actor::MemberA), vec![admins.item.id, members.item.id], "a member reads all");
@@ -278,7 +335,9 @@ fn a_guest_reads_the_work_item_they_made() {
     let w = seeded();
     let guest = user(&w, Actor::GuestA);
     // the guest's own item: inserted as the guest, through the port, as the slice would have if it let a guest write
-    let scope = block_on(authorize(&w.app, &w.principal(Actor::GuestA), &w.slug_a, w.project_a, Permission::ReadWorkItems)).unwrap();
+    let scope =
+        block_on(authorize(&w.app, &w.principal(Actor::GuestA), &w.slug_a, w.project_a, Permission::ReadWorkItems))
+            .unwrap();
     let mut tx = block_on(w.app.ports.db.begin(&scope)).unwrap();
     let alloc = block_on(tx.allocate(&scope)).unwrap();
     let item = WorkItem {

@@ -83,14 +83,20 @@ fn refusal(row: Row, who: Caller, secret: bool) -> Option<(u16, Value)> {
         // a permission class that lets in every member of the workspace and lists only what the caller is in
         Row::S38 if !ws => Some((403, by_class())),
         Row::S42 if !project => Some((403, by_class())),
-        Row::S37 | Row::S39 | Row::S40 | Row::S41 | Row::S43 | Row::S45 | Row::S46 if !project => Some((403, by_decorator())),
+        Row::S37 | Row::S39 | Row::S40 | Row::S41 | Row::S43 | Row::S45 | Row::S46 if !project => {
+            Some((403, by_decorator()))
+        }
         _ => None,
     }
 }
 
 #[rstest]
 fn each_row_answers_each_kind_of_caller_as_the_pins_guard_does(
-    #[values(Row::S34, Row::S35, Row::S36, Row::S37, Row::S38, Row::S39, Row::S40, Row::S41, Row::S42, Row::S43, Row::S44, Row::S45, Row::S46)] row: Row,
+    #[values(
+        Row::S34, Row::S35, Row::S36, Row::S37, Row::S38, Row::S39, Row::S40, Row::S41, Row::S42, Row::S43, Row::S44,
+        Row::S45, Row::S46
+    )]
+    row: Row,
     #[values(
         Caller::Anonymous,
         Caller::Stranger,
@@ -112,7 +118,11 @@ fn each_row_answers_each_kind_of_caller_as_the_pins_guard_does(
     }
     let r = c.call(who, "GET", &row.path(), Value::Null);
     match refusal(row, who, secret) {
-        Some((status, body)) => assert_eq!((r["status"].clone(), r["body"].clone()), (json!(status), body), "{row:?} {who:?} secret={secret}"),
+        Some((status, body)) => assert_eq!(
+            (r["status"].clone(), r["body"].clone()),
+            (json!(status), body),
+            "{row:?} {who:?} secret={secret}"
+        ),
         None => {
             assert_eq!(r["status"], 200, "{row:?} {who:?}: {r}");
             // a member of the workspace who is not in the project is shown none of the project's labels
@@ -126,7 +136,10 @@ fn each_row_answers_each_kind_of_caller_as_the_pins_guard_does(
 /// A project that is not there: the refusals a member of the workspace who is not in it gets, and a 404 for S34 and S36.
 #[rstest]
 fn a_project_that_is_not_there_is_refused_as_one_the_caller_is_not_in(
-    #[values(Row::S34, Row::S36, Row::S37, Row::S38, Row::S39, Row::S40, Row::S41, Row::S42, Row::S43, Row::S45, Row::S46)] row: Row,
+    #[values(
+        Row::S34, Row::S36, Row::S37, Row::S38, Row::S39, Row::S40, Row::S41, Row::S42, Row::S43, Row::S45, Row::S46
+    )]
+    row: Row,
 ) {
     let c = cast();
     let path = row.path().replace(&Uuid::from_u128(PROJECT).to_string(), &Uuid::from_u128(0xBAD).to_string());
@@ -170,11 +183,16 @@ fn who_may_make_a_project(
     let r = c.call(who, "POST", &projects_path(), body("New One", "NEW"));
     match who {
         Caller::Anonymous => assert_eq!(r["status"], 401),
-        Caller::Stranger | Caller::WsGuest | Caller::ProjectGuest => assert_eq!((r["status"].clone(), r["body"].clone()), (json!(403), by_decorator())),
+        Caller::Stranger | Caller::WsGuest | Caller::ProjectGuest => {
+            assert_eq!((r["status"].clone(), r["body"].clone()), (json!(403), by_decorator()))
+        }
         _ => {
             assert_eq!(r["status"], 201, "{r}");
             // the maker is the project's admin, and the only one in it
-            assert_eq!((r["body"]["member_role"].clone(), r["body"]["members"].clone()), (json!(20), json!([c.user(who).0])));
+            assert_eq!(
+                (r["body"]["member_role"].clone(), r["body"]["members"].clone()),
+                (json!(20), json!([c.user(who).0]))
+            );
         }
     }
     let listed = c.call(Caller::WsAdmin, "GET", &projects_path(), Value::Null);
@@ -183,11 +201,50 @@ fn who_may_make_a_project(
 
 /// The 44 keys of the pin's `ProjectListSerializer` (the answer to a creation, an update and an opening), spelled out.
 const PROJECT_KEYS: [&str; 44] = [
-    "anchor", "archive_in", "archived_at", "close_in", "cover_image", "cover_image_asset", "cover_image_url", "created_at", "created_by",
-    "cycle_view", "default_assignee", "default_state", "deleted_at", "description", "description_html", "description_text", "emoji", "estimate",
-    "external_id", "external_source", "guest_view_all_features", "icon_prop", "id", "identifier", "inbox_view", "intake_view", "is_favorite",
-    "is_issue_type_enabled", "is_time_tracking_enabled", "issue_views_view", "logo_props", "member_role", "members", "module_view", "name",
-    "network", "next_work_item_sequence", "page_view", "project_lead", "sort_order", "timezone", "updated_at", "updated_by", "workspace",
+    "anchor",
+    "archive_in",
+    "archived_at",
+    "close_in",
+    "cover_image",
+    "cover_image_asset",
+    "cover_image_url",
+    "created_at",
+    "created_by",
+    "cycle_view",
+    "default_assignee",
+    "default_state",
+    "deleted_at",
+    "description",
+    "description_html",
+    "description_text",
+    "emoji",
+    "estimate",
+    "external_id",
+    "external_source",
+    "guest_view_all_features",
+    "icon_prop",
+    "id",
+    "identifier",
+    "inbox_view",
+    "intake_view",
+    "is_favorite",
+    "is_issue_type_enabled",
+    "is_time_tracking_enabled",
+    "issue_views_view",
+    "logo_props",
+    "member_role",
+    "members",
+    "module_view",
+    "name",
+    "network",
+    "next_work_item_sequence",
+    "page_view",
+    "project_lead",
+    "sort_order",
+    "timezone",
+    "updated_at",
+    "updated_by",
+    "workspace",
 ];
 
 #[test]
@@ -200,7 +257,8 @@ fn a_project_is_answered_with_the_44_keys_of_the_pins_list_serializer_on_creatio
     let mut keys = PROJECT_KEYS.to_vec();
     keys.sort_unstable();
     for (what, r) in [("created", &made), ("updated", &updated), ("opened", &opened)] {
-        let mut got: Vec<&str> = r["body"].as_object().unwrap_or_else(|| panic!("{what}: {r}")).keys().map(String::as_str).collect();
+        let mut got: Vec<&str> =
+            r["body"].as_object().unwrap_or_else(|| panic!("{what}: {r}")).keys().map(String::as_str).collect();
         got.sort_unstable();
         assert_eq!(got, keys, "{what}");
     }
@@ -220,7 +278,14 @@ fn a_lead_who_is_someone_else_is_made_an_admin_and_the_places_follow_the_lowest_
     assert_eq!(made["status"], 201, "{made}");
     let (maker, id) = (c.user(Caller::WsAdmin), made["body"]["id"].as_str().unwrap().to_string());
     assert_eq!(made["body"]["members"], json!([lead.0, maker.0]));
-    assert_eq!((made["body"]["project_lead"].clone(), made["body"]["cover_image"].clone(), made["body"]["cover_image_url"].clone()), (json!(lead.0), Value::Null, Value::Null));
+    assert_eq!(
+        (
+            made["body"]["project_lead"].clone(),
+            made["body"]["cover_image"].clone(),
+            made["body"]["cover_image_url"].clone()
+        ),
+        (json!(lead.0), Value::Null, Value::Null)
+    );
     // the lead is in it, as an admin
     let me = c.call(Caller::WsMember, "GET", &format!("{}{id}/project-members/me/", projects_path()), Value::Null);
     assert_eq!((me["status"].clone(), me["body"]["role"].clone()), (json!(200), json!(20)), "{me}");
@@ -246,15 +311,25 @@ fn a_lead_who_is_no_member_of_the_workspace_is_a_field_error_and_changes_nothing
     let all = c.call(Caller::WsAdmin, "GET", &projects_path(), Value::Null);
     assert_eq!(all["body"].as_array().unwrap().len(), 1, "a refused creation makes nothing: {all}");
 
-    let changed = c.call(Caller::ProjectAdmin, "PATCH", &project_path(""), json!({"project_lead": c.user(Caller::Stranger).0}));
+    let changed =
+        c.call(Caller::ProjectAdmin, "PATCH", &project_path(""), json!({"project_lead": c.user(Caller::Stranger).0}));
     assert_eq!((changed["status"].clone(), changed["body"].clone()), (json!(400), want), "{changed}");
     let kept = c.call(Caller::ProjectAdmin, "GET", &project_path(""), Value::Null);
     assert_eq!(kept["body"]["project_lead"], Value::Null, "{kept}");
 
-    let ok = c.call(Caller::ProjectAdmin, "PATCH", &project_path(""), json!({"project_lead": c.user(Caller::WsMember).0}));
-    assert_eq!((ok["status"].clone(), ok["body"]["project_lead"].clone()), (json!(200), json!(c.user(Caller::WsMember).0)), "{ok}");
+    let ok =
+        c.call(Caller::ProjectAdmin, "PATCH", &project_path(""), json!({"project_lead": c.user(Caller::WsMember).0}));
+    assert_eq!(
+        (ok["status"].clone(), ok["body"]["project_lead"].clone()),
+        (json!(200), json!(c.user(Caller::WsMember).0)),
+        "{ok}"
+    );
     let untouched = c.call(Caller::ProjectAdmin, "PATCH", &project_path(""), json!({"description": "d"}));
-    assert_eq!((untouched["status"].clone(), untouched["body"]["project_lead"].clone()), (json!(200), json!(c.user(Caller::WsMember).0)), "{untouched}");
+    assert_eq!(
+        (untouched["status"].clone(), untouched["body"]["project_lead"].clone()),
+        (json!(200), json!(c.user(Caller::WsMember).0)),
+        "{untouched}"
+    );
 }
 
 /// How a number of months is written in a request: the forms the pin's `IntegerField` reads (fixture S32 records the odd ones).
@@ -401,7 +476,11 @@ fn a_logo_that_is_not_an_object_is_a_field_error(#[case] logo: Value, #[case] st
     let r = c.call(Caller::ProjectAdmin, "PATCH", &project_path(""), json!({"logo_props": logo}));
     assert_eq!((r["status"].clone(), r["body"].clone()), (json!(status), json!({"logo_props": [message]})), "{r}");
     let ok = c.call(Caller::ProjectAdmin, "PATCH", &project_path(""), json!({"logo_props": {"in_use": "emoji"}}));
-    assert_eq!((ok["status"].clone(), ok["body"]["logo_props"].clone()), (json!(200), json!({"in_use": "emoji"})), "{ok}");
+    assert_eq!(
+        (ok["status"].clone(), ok["body"]["logo_props"].clone()),
+        (json!(200), json!({"in_use": "emoji"})),
+        "{ok}"
+    );
 }
 
 fn name_strategy() -> impl Strategy<Value = String> {
@@ -454,12 +533,25 @@ proptest! {
 /// `{"error"}` is the view's own), and nobody else in the workspace does.
 #[rstest]
 fn who_may_change_a_project(
-    #[values(Caller::Stranger, Caller::WsAdmin, Caller::WsMember, Caller::WsGuest, Caller::ProjectAdmin, Caller::ProjectMember, Caller::ProjectGuest)] who: Caller,
+    #[values(
+        Caller::Stranger,
+        Caller::WsAdmin,
+        Caller::WsMember,
+        Caller::WsGuest,
+        Caller::ProjectAdmin,
+        Caller::ProjectMember,
+        Caller::ProjectGuest
+    )]
+    who: Caller,
 ) {
     let c = cast();
     let r = c.call(who, "PATCH", &project_path(""), json!({"description": "changed by someone"}));
     if matches!(who, Caller::WsAdmin | Caller::ProjectAdmin) {
-        assert_eq!((r["status"].clone(), r["body"]["description"].clone(), r["body"]["updated_by"].clone()), (json!(200), json!("changed by someone"), json!(c.user(who).0)), "{r}");
+        assert_eq!(
+            (r["status"].clone(), r["body"]["description"].clone(), r["body"]["updated_by"].clone()),
+            (json!(200), json!("changed by someone"), json!(c.user(who).0)),
+            "{r}"
+        );
     } else {
         assert_eq!((r["status"].clone(), r["body"].clone()), (json!(403), by_decorator()), "{who:?}");
         let after = c.call(Caller::ProjectAdmin, "GET", &project_path(""), Value::Null);
@@ -477,7 +569,10 @@ fn an_archived_project_is_not_changed_or_opened_and_is_still_listed() {
     c.save(&row);
     for patch in [json!({}), json!({"description": "x"}), json!({"name": "bad.name"})] {
         let r = c.call(Caller::ProjectAdmin, "PATCH", &project_path(""), patch);
-        assert_eq!((r["status"].clone(), r["body"].clone()), (json!(400), json!({"error": "Archived projects cannot be updated"})));
+        assert_eq!(
+            (r["status"].clone(), r["body"].clone()),
+            (json!(400), json!({"error": "Archived projects cannot be updated"}))
+        );
     }
     let r = c.call(Caller::ProjectAdmin, "GET", &project_path(""), Value::Null);
     assert_eq!((r["status"].clone(), r["body"].clone()), (json!(404), json!({"error": "Project does not exist"})));
@@ -499,12 +594,20 @@ fn a_patch_sets_what_it_names_and_the_inbox_view_is_the_intake_view() {
     );
     assert_eq!(r["status"], 200, "{r}");
     let b = &r["body"];
-    assert_eq!((b["name"].clone(), b["network"].clone(), b["intake_view"].clone(), b["inbox_view"].clone()), (json!("Renamed"), json!(0), json!(true), json!(true)));
-    assert_eq!((b["page_view"].clone(), b["archive_in"].clone(), b["timezone"].clone(), b["logo_props"].clone()), (json!(false), json!(6), json!("Asia/Tokyo"), json!({"in_use": "icon"})));
+    assert_eq!(
+        (b["name"].clone(), b["network"].clone(), b["intake_view"].clone(), b["inbox_view"].clone()),
+        (json!("Renamed"), json!(0), json!(true), json!(true))
+    );
+    assert_eq!(
+        (b["page_view"].clone(), b["archive_in"].clone(), b["timezone"].clone(), b["logo_props"].clone()),
+        (json!(false), json!(6), json!("Asia/Tokyo"), json!({"in_use": "icon"}))
+    );
     assert_eq!(b["id"], json!(Uuid::from_u128(PROJECT)), "a patch does not move a project");
-    let made = c.call(Caller::WsAdmin, "POST", &projects_path(), json!({"name": "A", "identifier": "A", "inbox_view": true}));
+    let made =
+        c.call(Caller::WsAdmin, "POST", &projects_path(), json!({"name": "A", "identifier": "A", "inbox_view": true}));
     assert_eq!(made["body"]["intake_view"], json!(false));
-    let made = c.call(Caller::WsAdmin, "POST", &projects_path(), json!({"name": "B", "identifier": "B", "intake_view": true}));
+    let made =
+        c.call(Caller::WsAdmin, "POST", &projects_path(), json!({"name": "B", "identifier": "B", "intake_view": true}));
     assert_eq!(made["body"]["intake_view"], json!(true));
 }
 
@@ -519,7 +622,10 @@ fn the_members_states_and_settings_of_a_project_are_the_pins() {
     // S39: the one admin, whose row names them as member and role 20 both ways
     let members = c.call(Caller::WsMember, "GET", &p("members/"), Value::Null);
     assert_eq!(members["body"][0]["member"], json!(c.user(Caller::WsMember).0), "{members}");
-    assert_eq!((members["body"][0]["role"].clone(), members["body"][0]["original_role"].clone()), (json!(20), json!(20)));
+    assert_eq!(
+        (members["body"][0]["role"].clone(), members["body"][0]["original_role"].clone()),
+        (json!(20), json!(20))
+    );
     // S40: the five states, by sequence, each the only one of its group (so `order` is 1), and not the intake state
     let states = c.call(Caller::WsMember, "GET", &p("states/"), Value::Null);
     let names: Vec<&str> = states["body"].as_array().unwrap().iter().map(|s| s["name"].as_str().unwrap()).collect();
@@ -528,17 +634,31 @@ fn the_members_states_and_settings_of_a_project_are_the_pins() {
     assert_eq!(states["body"][0]["default"], json!(true));
     // S41: the intake state, which has no `order`
     let triage = c.call(Caller::WsMember, "GET", &p("intake-state/"), Value::Null);
-    assert_eq!((triage["body"]["group"].clone(), triage["body"]["sequence"].clone(), triage["body"].get("order").is_none()), (json!("triage"), json!(65000.0), true), "{triage}");
+    assert_eq!(
+        (triage["body"]["group"].clone(), triage["body"]["sequence"].clone(), triage["body"].get("order").is_none()),
+        (json!("triage"), json!(65000.0), true),
+        "{triage}"
+    );
     // S36: the row with its settings filled in with the pin's defaults
     let me = c.call(Caller::WsMember, "GET", &p("project-members/me/"), Value::Null);
     assert_eq!(me["body"]["view_props"]["display_filters"]["layout"], json!("list"), "{me}");
     assert_eq!(me["body"]["preferences"]["navigation"]["default_tab"], json!("work_items"));
-    assert_eq!((me["body"]["workspace"]["slug"].clone(), me["body"]["project"]["identifier"].clone(), me["body"]["is_active"].clone()), (json!(SLUG), json!("NEW"), json!(true)));
+    assert_eq!(
+        (
+            me["body"]["workspace"]["slug"].clone(),
+            me["body"]["project"]["identifier"].clone(),
+            me["body"]["is_active"].clone()
+        ),
+        (json!(SLUG), json!("NEW"), json!(true))
+    );
     assert_eq!(me["body"]["member"]["id"], json!(c.user(Caller::WsMember).0));
     // S37: the creator's settings are there from the start and asking again is the same row
     let props = c.call(Caller::WsMember, "GET", &p("user-properties/"), Value::Null);
     assert_eq!(c.call(Caller::WsMember, "GET", &p("user-properties/"), Value::Null)["body"], props["body"]);
-    assert_eq!((props["body"]["sort_order"].clone(), props["body"]["user"].clone()), (json!(65535.0), json!(c.user(Caller::WsMember).0)));
+    assert_eq!(
+        (props["body"]["sort_order"].clone(), props["body"]["user"].clone()),
+        (json!(65535.0), json!(c.user(Caller::WsMember).0))
+    );
 }
 
 /// A member of the seeded project has no settings row until they ask, and then has the pin's defaults, made once.
@@ -546,9 +666,16 @@ fn the_members_states_and_settings_of_a_project_are_the_pins() {
 fn a_member_with_no_settings_row_gets_one_on_asking() {
     let c = cast();
     let first = c.call(Caller::ProjectMember, "GET", &project_path("user-properties/"), Value::Null);
-    assert_eq!((first["status"].clone(), first["body"]["sort_order"].clone(), first["body"]["filters"]["state"].clone()), (json!(200), json!(65535.0), Value::Null), "{first}");
+    assert_eq!(
+        (first["status"].clone(), first["body"]["sort_order"].clone(), first["body"]["filters"]["state"].clone()),
+        (json!(200), json!(65535.0), Value::Null),
+        "{first}"
+    );
     assert_eq!(first["body"]["display_filters"]["layout"], json!("list"));
-    assert_eq!(c.call(Caller::ProjectMember, "GET", &project_path("user-properties/"), Value::Null)["body"], first["body"]);
+    assert_eq!(
+        c.call(Caller::ProjectMember, "GET", &project_path("user-properties/"), Value::Null)["body"],
+        first["body"]
+    );
 }
 
 /// The intake state of a project that has none is the pin's 404 (a project made here always has one).
@@ -560,7 +687,12 @@ fn a_project_with_no_intake_state_is_a_404() {
         &c.db,
         SeedFixture {
             projects: vec![SeedProject { id: bare, workspace_id: ws, name: "Bare".into() }],
-            memberships: vec![SeedMembership { project_id: bare, workspace_id: ws, user_id: c.user(Caller::ProjectMember), role: Role::Member }],
+            memberships: vec![SeedMembership {
+                project_id: bare,
+                workspace_id: ws,
+                user_id: c.user(Caller::ProjectMember),
+                role: Role::Member,
+            }],
             ..SeedFixture::default()
         },
     );
@@ -585,7 +717,8 @@ fn the_workspaces_states_count_every_project_the_caller_is_in_for_their_order() 
     let seqs: Vec<f64> = list.iter().map(|s| s["sequence"].as_f64().unwrap()).collect();
     assert!(seqs.windows(2).all(|w| w[0] <= w[1]), "{seqs:?}");
     // three projects have a backlog state, so its three are a third, two thirds and all of them; the others are alone in theirs
-    let mut orders: Vec<f64> = list.iter().filter(|s| s["group"] == "backlog").map(|s| s["order"].as_f64().unwrap()).collect();
+    let mut orders: Vec<f64> =
+        list.iter().filter(|s| s["group"] == "backlog").map(|s| s["order"].as_f64().unwrap()).collect();
     orders.sort_by(f64::total_cmp);
     assert_eq!(orders, [1.0 / 3.0, 2.0 / 3.0, 3.0 / 3.0]);
     assert!(list.iter().filter(|s| s["group"] == "started").all(|s| s["order"].as_f64().unwrap() <= 1.0));
@@ -606,7 +739,12 @@ fn the_project_counts_name_every_project_and_the_fields_and_ids_asked_for() {
         assert_eq!(all["body"].as_array().unwrap().len(), 2, "{who:?}");
         assert_eq!(all["body"][0].as_object().unwrap().len(), 6, "an id and the five counts");
     }
-    let one = c.call(Caller::WsGuest, "GET", &format!("{path}?project_ids={}&fields=total_members,nothing", Uuid::from_u128(PROJECT)), Value::Null);
+    let one = c.call(
+        Caller::WsGuest,
+        "GET",
+        &format!("{path}?project_ids={}&fields=total_members,nothing", Uuid::from_u128(PROJECT)),
+        Value::Null,
+    );
     assert_eq!(one["body"], json!([{"id": Uuid::from_u128(PROJECT), "total_members": 3}]), "{one}");
     // the work items it holds are counted (two live ones), and completed ones, cycles and modules are none yet (D-021)
     let item = |n: u128| SeedWorkItem {
@@ -616,8 +754,15 @@ fn the_project_counts_name_every_project_and_the_fields_and_ids_asked_for() {
         created_by: c.user(Caller::WsAdmin),
         created_at: thrust_contracts::chrono::DateTime::from_timestamp(1_760_000_000, 0).unwrap(),
     };
-    futures_executor::block_on(c.db.seed_work_items(&SystemScope::mint(), WorkspaceId(Uuid::from_u128(WS)), ProjectId(Uuid::from_u128(PROJECT)), &[item(1), item(2)])).unwrap();
-    let counted = c.call(Caller::WsGuest, "GET", &format!("{path}?project_ids={}", Uuid::from_u128(PROJECT)), Value::Null);
+    futures_executor::block_on(c.db.seed_work_items(
+        &SystemScope::mint(),
+        WorkspaceId(Uuid::from_u128(WS)),
+        ProjectId(Uuid::from_u128(PROJECT)),
+        &[item(1), item(2)],
+    ))
+    .unwrap();
+    let counted =
+        c.call(Caller::WsGuest, "GET", &format!("{path}?project_ids={}", Uuid::from_u128(PROJECT)), Value::Null);
     assert_eq!(
         counted["body"],
         json!([{"id": Uuid::from_u128(PROJECT), "total_issues": 2, "completed_issues": 0, "total_members": 3, "total_cycles": 0, "total_modules": 0}]),
@@ -626,7 +771,10 @@ fn the_project_counts_name_every_project_and_the_fields_and_ids_asked_for() {
     let none = c.call(Caller::WsGuest, "GET", &format!("{path}?fields=nothing"), Value::Null);
     assert_eq!(none["body"][0].as_object().unwrap().len(), 6, "fields that are no count mean all of them");
     let bad = c.call(Caller::WsGuest, "GET", &format!("{path}?project_ids=nope"), Value::Null);
-    assert_eq!((bad["status"].clone(), bad["body"].clone()), (json!(400), json!({"error": "Please provide valid detail"})));
+    assert_eq!(
+        (bad["status"].clone(), bad["body"].clone()),
+        (json!(400), json!({"error": "Please provide valid detail"}))
+    );
 }
 
 /// S38: the labels of a project, by `sort_order`, for its members; a member of the workspace who is not in it is told `[]`.
@@ -643,10 +791,16 @@ fn a_projects_labels_are_listed_by_sort_order_to_its_members_only() {
         parent_id: None,
         sort_order,
     };
-    seed(&c.db, SeedFixture { labels: vec![label(1, "later", 20.0), label(2, "first", 10.0)], ..SeedFixture::default() });
+    seed(
+        &c.db,
+        SeedFixture { labels: vec![label(1, "later", 20.0), label(2, "first", 10.0)], ..SeedFixture::default() },
+    );
     let mine = c.call(Caller::ProjectGuest, "GET", &project_path("issue-labels/"), Value::Null);
     let names: Vec<&str> = mine["body"].as_array().unwrap().iter().map(|l| l["name"].as_str().unwrap()).collect();
     assert_eq!(names, ["first", "later"]);
-    assert_eq!(mine["body"][0], json!({"id": Uuid::from_u128(2), "project_id": project.0, "workspace_id": ws.0, "parent": null, "name": "first", "color": "#fff", "sort_order": 10.0}));
+    assert_eq!(
+        mine["body"][0],
+        json!({"id": Uuid::from_u128(2), "project_id": project.0, "workspace_id": ws.0, "parent": null, "name": "first", "color": "#fff", "sort_order": 10.0})
+    );
     assert_eq!(c.call(Caller::WsMember, "GET", &project_path("issue-labels/"), Value::Null)["body"], json!([]));
 }

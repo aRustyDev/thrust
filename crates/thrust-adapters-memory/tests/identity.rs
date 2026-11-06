@@ -62,8 +62,13 @@ fn a_session_needs_an_existing_active_user(
 ) {
     let db = with_user(who);
     let expires_at = if expired { now() - secs(1) } else { now() + secs(60) };
-    block_on(db.insert_session(&NewSession { token_hash: hash(1), user_id: OWNER, created_at: now() - secs(9), expires_at }))
-        .unwrap();
+    block_on(db.insert_session(&NewSession {
+        token_hash: hash(1),
+        user_id: OWNER,
+        created_at: now() - secs(9),
+        expires_at,
+    }))
+    .unwrap();
     if revoked {
         block_on(db.revoke_session(&hash(1), now() - secs(5))).unwrap();
     }
@@ -101,7 +106,12 @@ fn revoke_user_sessions_reaches_every_session_of_that_user_and_no_other(
 ) {
     let db = MemoryDatabase::new();
     block_on(db.seed(&sys(), &SeedFixture { users: vec![OWNER, OTHER], ..SeedFixture::default() })).unwrap();
-    let new = |n: u8, user| NewSession { token_hash: hash(n), user_id: user, created_at: now(), expires_at: now() + secs(60) };
+    let new = |n: u8, user| NewSession {
+        token_hash: hash(n),
+        user_id: user,
+        created_at: now(),
+        expires_at: now() + secs(60),
+    };
     for n in 0..mine {
         block_on(db.insert_session(&new(n + 1, OWNER))).unwrap();
     }
@@ -432,7 +442,10 @@ const STRANGER: UserId = UserId(Uuid::from_u128(99));
 #[test]
 fn user_by_id_finds_a_user_active_or_not_and_nothing_for_a_stranger() {
     let db = MemoryDatabase::new();
-    block_on(db.seed_users(&sys(), &[user(OWNER, Some("o@example.test"), true), user(OTHER, Some("x@example.test"), false)])).unwrap();
+    block_on(
+        db.seed_users(&sys(), &[user(OWNER, Some("o@example.test"), true), user(OTHER, Some("x@example.test"), false)]),
+    )
+    .unwrap();
     assert_eq!(block_on(db.user_by_id(OWNER)).unwrap().unwrap().email.as_deref(), Some("o@example.test"));
     assert!(!block_on(db.user_by_id(OTHER)).unwrap().unwrap().is_active, "an inactive user is found too");
     assert!(block_on(db.user_by_id(STRANGER)).unwrap().is_none());
@@ -449,7 +462,10 @@ fn insert_profile_for_every_combination_of_user_id_and_username(
     #[values(true, false)] username_taken: bool,
 ) {
     let db = MemoryDatabase::new();
-    block_on(db.seed_users(&sys(), &[user(OWNER, Some("o@example.test"), true), user(OTHER, Some("x@example.test"), true)])).unwrap();
+    block_on(
+        db.seed_users(&sys(), &[user(OWNER, Some("o@example.test"), true), user(OTHER, Some("x@example.test"), true)]),
+    )
+    .unwrap();
     let held = profile(OWNER, 1);
     assert!(block_on(db.insert_profile(&held)).unwrap());
 
@@ -505,18 +521,42 @@ fn update_profile_changes_the_field_the_patch_names_and_no_other(#[case] patch: 
     // what the patch names is what it says; everything else is as it was
     let mut want = before.clone();
     want.updated_at = at;
-    if let Some(v) = &patch.first_name { want.first_name = v.clone(); }
-    if let Some(v) = &patch.last_name { want.last_name = v.clone(); }
-    if let Some(v) = &patch.display_name { want.display_name = v.clone(); }
-    if let Some(v) = &patch.avatar { want.avatar = v.clone(); }
-    if let Some(v) = &patch.cover_image { want.cover_image = v.clone(); }
-    if let Some(v) = &patch.timezone { want.timezone = v.clone(); }
-    if let Some(v) = patch.last_login_at { want.last_login_at = Some(v); }
-    if let Some(v) = patch.is_onboarded { want.is_onboarded = v; }
-    if let Some(v) = patch.is_tour_completed { want.is_tour_completed = v; }
-    if let Some(v) = patch.last_workspace_id { want.last_workspace_id = v; }
-    if let Some(v) = &patch.onboarding_step { want.onboarding_step = v.clone(); }
-    if !patch.preferences.is_empty() { want.preferences = serde_json::json!({"k": 1, "j": 2}); }
+    if let Some(v) = &patch.first_name {
+        want.first_name = v.clone();
+    }
+    if let Some(v) = &patch.last_name {
+        want.last_name = v.clone();
+    }
+    if let Some(v) = &patch.display_name {
+        want.display_name = v.clone();
+    }
+    if let Some(v) = &patch.avatar {
+        want.avatar = v.clone();
+    }
+    if let Some(v) = &patch.cover_image {
+        want.cover_image = v.clone();
+    }
+    if let Some(v) = &patch.timezone {
+        want.timezone = v.clone();
+    }
+    if let Some(v) = patch.last_login_at {
+        want.last_login_at = Some(v);
+    }
+    if let Some(v) = patch.is_onboarded {
+        want.is_onboarded = v;
+    }
+    if let Some(v) = patch.is_tour_completed {
+        want.is_tour_completed = v;
+    }
+    if let Some(v) = patch.last_workspace_id {
+        want.last_workspace_id = v;
+    }
+    if let Some(v) = &patch.onboarding_step {
+        want.onboarding_step = v.clone();
+    }
+    if !patch.preferences.is_empty() {
+        want.preferences = serde_json::json!({"k": 1, "j": 2});
+    }
     assert_eq!(after, want);
 }
 
@@ -546,8 +586,10 @@ fn an_account_resolves_its_user_by_provider_and_subject_and_a_link_is_never_repl
     #[values("sub-1", "sub-2")] sub: &str,
 ) {
     let db = MemoryDatabase::new();
-    block_on(db.seed_users(&sys(), &[user(OWNER, Some("o@example.test"), true), user(OTHER, Some("x@example.test"), false)]))
-        .unwrap();
+    block_on(
+        db.seed_users(&sys(), &[user(OWNER, Some("o@example.test"), true), user(OTHER, Some("x@example.test"), false)]),
+    )
+    .unwrap();
     block_on(db.link_account(&account(OWNER, "sub-1"))).unwrap();
     // linking the same subject to someone else leaves the first link
     block_on(db.link_account(&account(OTHER, "sub-1"))).unwrap();

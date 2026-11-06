@@ -28,16 +28,13 @@ fn atom() -> impl Strategy<Value = String> {
 
 fn label() -> impl Strategy<Value = String> {
     // inner hyphens allowed, never at an end
-    ("[a-z0-9]", prop::option::of("[a-z0-9-]{0,10}[a-z0-9]")).prop_map(|(a, rest)| format!("{a}{}", rest.unwrap_or_default()))
+    ("[a-z0-9]", prop::option::of("[a-z0-9-]{0,10}[a-z0-9]"))
+        .prop_map(|(a, rest)| format!("{a}{}", rest.unwrap_or_default()))
 }
 
 /// A valid, normalised email: dot-separated atoms, labels, and an alphabetic top-level domain.
 fn valid_email() -> impl Strategy<Value = String> {
-    (
-        prop::collection::vec(atom(), 1..4),
-        prop::collection::vec(label(), 1..3),
-        "[a-z]{2,6}",
-    )
+    (prop::collection::vec(atom(), 1..4), prop::collection::vec(label(), 1..3), "[a-z]{2,6}")
         .prop_map(|(local, labels, tld)| format!("{}@{}.{}", local.join("."), labels.join("."), tld))
 }
 
@@ -110,7 +107,12 @@ fn prop_forbidden_character_insertion_reaches_both_halves_and_every_character() 
         seen.insert(bad);
     }
     assert!(in_local && in_domain, "insertion points: local {in_local}, domain {in_domain}");
-    assert_eq!(seen.len(), bad_chars.len(), "characters never inserted: {:?}", bad_chars.iter().filter(|c| !seen.contains(c)).collect::<Vec<_>>());
+    assert_eq!(
+        seen.len(),
+        bad_chars.len(),
+        "characters never inserted: {:?}",
+        bad_chars.iter().filter(|c| !seen.contains(c)).collect::<Vec<_>>()
+    );
 }
 
 /// Spec examples (Django's `validate_email` and RFC 5321 limits), each one boundary of the rule.
@@ -268,7 +270,10 @@ fn sign_up_makes_one_user_who_is_signed_in_and_can_sign_in_again() {
         assert!(block_on(email_exists(&w.app, spelling)).unwrap(), "{spelling}");
     }
     // control: the wrong password does not
-    assert!(matches!(block_on(sign_in(&w.app, "new.user@example.test", "not the password")), Err(CoreError::Unauthenticated)));
+    assert!(matches!(
+        block_on(sign_in(&w.app, "new.user@example.test", "not the password")),
+        Err(CoreError::Unauthenticated)
+    ));
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -281,7 +286,8 @@ enum Refusal {
 
 #[rstest]
 fn a_refused_sign_up_changes_nothing_and_does_no_hash_work(
-    #[values(Refusal::BadEmail, Refusal::WeakPassword, Refusal::TakenEmail, Refusal::TakenEmailOtherSpelling)] why: Refusal,
+    #[values(Refusal::BadEmail, Refusal::WeakPassword, Refusal::TakenEmail, Refusal::TakenEmailOtherSpelling)]
+    why: Refusal,
 ) {
     let w = fresh();
     let first = block_on(sign_up(&w.app, "taken@example.test", PASSWORD)).unwrap();

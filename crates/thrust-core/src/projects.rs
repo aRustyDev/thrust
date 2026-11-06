@@ -97,9 +97,31 @@ impl ProjectPatch {
             };
         }
         set!(
-            name, identifier, description, description_text, description_html, emoji, icon_prop, network, logo_props, project_lead,
-            default_assignee, cycle_view, issue_views_view, module_view, page_view, intake_view, guest_view_all_features,
-            is_time_tracking_enabled, is_issue_type_enabled, cover_image, archive_in, close_in, timezone, external_source, external_id
+            name,
+            identifier,
+            description,
+            description_text,
+            description_html,
+            emoji,
+            icon_prop,
+            network,
+            logo_props,
+            project_lead,
+            default_assignee,
+            cycle_view,
+            issue_views_view,
+            module_view,
+            page_view,
+            intake_view,
+            guest_view_all_features,
+            is_time_tracking_enabled,
+            is_issue_type_enabled,
+            cover_image,
+            archive_in,
+            close_in,
+            timezone,
+            external_source,
+            external_id
         );
     }
 }
@@ -111,7 +133,10 @@ fn check_project(row: &ProjectRow) -> Result<(), CoreError> {
     if row.name.is_empty() || row.name.chars().count() > MAX_PROJECT_NAME || has_forbidden_project_chars(&row.name) {
         return bad("a project name is 1 to 255 characters without &+,:;$^}{*=?@#|'<>.()%!-");
     }
-    if row.identifier.is_empty() || row.identifier.chars().count() > MAX_PROJECT_IDENTIFIER || has_forbidden_project_chars(&row.identifier) {
+    if row.identifier.is_empty()
+        || row.identifier.chars().count() > MAX_PROJECT_IDENTIFIER
+        || has_forbidden_project_chars(&row.identifier)
+    {
         return bad("a project key is 1 to 12 characters without &+,:;$^}{*=?@#|'<>.()%!-");
     }
     if !crate::is_known_timezone(&row.timezone) {
@@ -162,7 +187,13 @@ pub const DEFAULT_STATES: [(&str, &str, f64, StateGroup, bool); 6] = [
 
 /// The work-item list settings a person starts with in a project: the pin's defaults for its `ProjectUserProperty` (flat, unlike
 /// the workspace's, which holds two of them one level deeper), and its preferences.
-fn default_project_properties(app: &App, project: ProjectId, workspace: WorkspaceId, user: UserId, at: Timestamp) -> ProjectUserProperties {
+fn default_project_properties(
+    app: &App,
+    project: ProjectId,
+    workspace: WorkspaceId,
+    user: UserId,
+    at: Timestamp,
+) -> ProjectUserProperties {
     ProjectUserProperties {
         id: app.ports.ids.new_uuid(),
         project_id: project,
@@ -207,14 +238,19 @@ pub async fn project_clashes(
 /// pin's five states and the intake one, and its members each a settings row. A name or key that is taken is `Conflict`, decided by
 /// the database's unique indexes so that two creations racing for one name cannot both win; a rule a project must satisfy is
 /// `Invalid`.
-pub async fn create_project(app: &App, scope: &WorkspaceScope, patch: ProjectPatch) -> Result<ProjectDetail, ProjectError> {
+pub async fn create_project(
+    app: &App,
+    scope: &WorkspaceScope,
+    patch: ProjectPatch,
+) -> Result<ProjectDetail, ProjectError> {
     if scope.role() == Role::Guest {
         return Err(ProjectError::Forbidden);
     }
     let (Some(name), Some(identifier)) = (patch.name.clone(), patch.identifier.clone()) else {
         return Err(CoreError::Invalid("a project needs a name and a key".into()).into());
     };
-    let (now, id, ws, me) = (app.ports.clock.now(), ProjectId(app.ports.ids.new_uuid()), scope.workspace_id(), scope.user_id());
+    let (now, id, ws, me) =
+        (app.ports.clock.now(), ProjectId(app.ports.ids.new_uuid()), scope.workspace_id(), scope.user_id());
     let mut row = ProjectRow::bare(id, ws, name, now);
     row.identifier = identifier;
     row.created_by = Some(me);
@@ -271,13 +307,21 @@ pub async fn create_project(app: &App, scope: &WorkspaceScope, patch: ProjectPat
         })
         .collect();
     app.ports.db.insert_project(scope, &NewProject { project: row, members, states }).await?;
-    app.ports.db.project_detail(scope, id).await?.ok_or_else(|| CoreError::Internal("a project that was just made is not there".into()).into())
+    app.ports
+        .db
+        .project_detail(scope, id)
+        .await?
+        .ok_or_else(|| CoreError::Internal("a project that was just made is not there".into()).into())
 }
 
 /// The project as it is, when the caller may change it: the checks of [`update_project`] that come before it looks at what the
 /// request says (the pin answers these first, so a caller who may not, or a project that is archived, is told so before the
 /// request's fields are found wrong).
-pub async fn updatable_project(app: &App, scope: &WorkspaceScope, id: ProjectId) -> Result<ProjectDetail, ProjectError> {
+pub async fn updatable_project(
+    app: &App,
+    scope: &WorkspaceScope,
+    id: ProjectId,
+) -> Result<ProjectDetail, ProjectError> {
     let Some(detail) = app.ports.db.project_detail(scope, id).await? else {
         return Err(if scope.role() == Role::Admin { ProjectError::NotFound } else { ProjectError::Forbidden });
     };
@@ -293,7 +337,12 @@ pub async fn updatable_project(app: &App, scope: &WorkspaceScope, id: ProjectId)
 /// Change a project. The workspace's admins and the project's own admins may (anyone else in the workspace is `Forbidden`, also
 /// for a project that is not there; a workspace admin gets `NotFound` for it), and not while the project is archived. What the
 /// patch names is set, and the project is saved whole, as the pin saves it, with the caller as the one who changed it and the time.
-pub async fn update_project(app: &App, scope: &WorkspaceScope, id: ProjectId, patch: ProjectPatch) -> Result<ProjectDetail, ProjectError> {
+pub async fn update_project(
+    app: &App,
+    scope: &WorkspaceScope,
+    id: ProjectId,
+    patch: ProjectPatch,
+) -> Result<ProjectDetail, ProjectError> {
     let detail = updatable_project(app, scope, id).await?;
     let mut row = detail.listing.project;
     patch.apply(&mut row);
@@ -310,15 +359,29 @@ pub async fn update_project(app: &App, scope: &WorkspaceScope, id: ProjectId, pa
 /// Open a project. A project that is not there or is archived is `NotFound`; a member of it gets it; anyone else in the workspace
 /// is told it is `Secret` or that they are `NotAMember`, whatever their role in the workspace.
 pub async fn open_project(app: &App, scope: &WorkspaceScope, id: ProjectId) -> Result<ProjectDetail, ProjectError> {
-    let detail = app.ports.db.project_detail(scope, id).await?.filter(|d| d.listing.project.archived_at.is_none()).ok_or(ProjectError::NotFound)?;
+    let detail = app
+        .ports
+        .db
+        .project_detail(scope, id)
+        .await?
+        .filter(|d| d.listing.project.archived_at.is_none())
+        .ok_or(ProjectError::NotFound)?;
     if detail.members.contains(&scope.user_id()) {
         return Ok(detail);
     }
-    Err(if detail.listing.project.network == ProjectNetwork::Secret { ProjectError::Secret } else { ProjectError::NotAMember })
+    Err(if detail.listing.project.network == ProjectNetwork::Secret {
+        ProjectError::Secret
+    } else {
+        ProjectError::NotAMember
+    })
 }
 
 /// The caller's own row in a project with who they are, or `None` when they have none.
-pub async fn my_project_member(app: &App, scope: &WorkspaceScope, project: ProjectId) -> Result<Option<ProjectMemberWithUser>, CoreError> {
+pub async fn my_project_member(
+    app: &App,
+    scope: &WorkspaceScope,
+    project: ProjectId,
+) -> Result<Option<ProjectMemberWithUser>, CoreError> {
     Ok(app.ports.db.project_member(scope, project).await?)
 }
 
@@ -329,7 +392,13 @@ pub async fn project_members(app: &App, scope: &Scope) -> Result<Vec<ProjectMemb
 
 /// The caller's work-item list settings for the project: made, with the pin's defaults, if their joining did not.
 pub async fn project_properties(app: &App, scope: &Scope) -> Result<ProjectUserProperties, CoreError> {
-    let new = default_project_properties(app, scope.project_id(), scope.workspace_id(), scope.user_id(), app.ports.clock.now());
+    let new = default_project_properties(
+        app,
+        scope.project_id(),
+        scope.workspace_id(),
+        scope.user_id(),
+        app.ports.clock.now(),
+    );
     Ok(app.ports.db.ensure_project_user_properties(scope, &new).await?)
 }
 
@@ -354,6 +423,10 @@ pub async fn intake_state(app: &App, scope: &Scope) -> Result<StateRow, CoreErro
 }
 
 /// Counts for the projects of the workspace (all of them, or those in `only`), newest first, whoever asks.
-pub async fn project_stats(app: &App, scope: &WorkspaceScope, only: Option<&[ProjectId]>) -> Result<Vec<ProjectStat>, CoreError> {
+pub async fn project_stats(
+    app: &App,
+    scope: &WorkspaceScope,
+    only: Option<&[ProjectId]>,
+) -> Result<Vec<ProjectStat>, CoreError> {
     Ok(app.ports.db.project_stats(scope, only).await?)
 }

@@ -89,7 +89,11 @@ fn prop_next_path_strategies_reach_every_input_class() {
         dotted |= p.contains('.');
         dashed |= p.contains('-');
     }
-    assert!(one_segment && four_segments && dotted && dashed, "[one segment, four, dotted, dashed]: {:?}", [one_segment, four_segments, dotted, dashed]);
+    assert!(
+        one_segment && four_segments && dotted && dashed,
+        "[one segment, four, dotted, dashed]: {:?}",
+        [one_segment, four_segments, dotted, dashed]
+    );
 }
 
 /// Spec examples from the contract the stock app relies on: characters that would end or corrupt the query are encoded,
@@ -116,7 +120,8 @@ fn the_length_limit_is_exact() {
 fn no_next_path_and_an_empty_one_both_go_to_the_root() {
     // a fresh world per call: the same email signs up once
     let go = |body: Value| {
-        let raw = send(&app(), &json!("n"), &json!({"method": "POST", "path": "/auth/sign-up/", "body": body}), &Jar::new());
+        let raw =
+            send(&app(), &json!("n"), &json!({"method": "POST", "path": "/auth/sign-up/", "body": body}), &Jar::new());
         raw["response"]["body"]["redirect_path"].as_str().unwrap().to_string()
     };
     assert_eq!(go(json!({"email": "a@example.test", "password": STRONG})), "/");

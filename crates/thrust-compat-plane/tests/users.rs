@@ -18,7 +18,12 @@ const STRONG: &str = "Users-Sample-Pa55word-Zebra-81";
 fn world_with(email: &str) -> (Router, Jar) {
     let router = app();
     let mut jar = Jar::new();
-    let raw = send(&router, &json!("sign-up"), &json!({"method": "POST", "path": "/auth/sign-up/", "body": {"email": email, "password": STRONG}}), &jar);
+    let raw = send(
+        &router,
+        &json!("sign-up"),
+        &json!({"method": "POST", "path": "/auth/sign-up/", "body": {"email": email, "password": STRONG}}),
+        &jar,
+    );
     assert_eq!(raw["response"]["status"], 200, "{raw}");
     jar.insert(jar_key(email), session_token(&raw).expect("a session"));
     (router, jar)
@@ -72,7 +77,14 @@ proptest! {
 fn clearing_the_cover_image_clears_its_url_and_the_avatar_survives_it() {
     let (router, jar) = world_with("clear@example.test");
     let who = "clear@example.test";
-    call(&router, &jar, who, "PATCH", "/api/users/me/", json!({"avatar": "a.png", "cover_image": "https://example.test/c"}));
+    call(
+        &router,
+        &jar,
+        who,
+        "PATCH",
+        "/api/users/me/",
+        json!({"avatar": "a.png", "cover_image": "https://example.test/c"}),
+    );
     let r = call(&router, &jar, who, "PATCH", "/api/users/me/", json!({"cover_image": null}));
     assert_eq!(r["status"], 200);
     let user = me(&router, &jar, who);
@@ -84,7 +96,15 @@ fn clearing_the_cover_image_clears_its_url_and_the_avatar_survives_it() {
 fn the_short_user_and_the_long_user_agree_on_what_they_share() {
     let (router, jar) = world_with("share@example.test");
     let who = "share@example.test";
-    let long = call(&router, &jar, who, "PATCH", "/api/users/me/", json!({"first_name": "Sam", "last_name": "Q", "user_timezone": "Asia/Kolkata"}))["body"].clone();
+    let long = call(
+        &router,
+        &jar,
+        who,
+        "PATCH",
+        "/api/users/me/",
+        json!({"first_name": "Sam", "last_name": "Q", "user_timezone": "Asia/Kolkata"}),
+    )["body"]
+        .clone();
     let short = me(&router, &jar, who);
     for key in short.as_object().unwrap().keys() {
         if let Some(l) = long.get(key) {
@@ -100,7 +120,12 @@ fn the_short_user_and_the_long_user_agree_on_what_they_share() {
 fn a_user_is_the_callers_own() {
     let (router, mut jar) = world_with("one@example.test");
     // a second account in the same world
-    let raw = send(&router, &json!("sign-up"), &json!({"method": "POST", "path": "/auth/sign-up/", "body": {"email": "two@example.test", "password": STRONG}}), &jar);
+    let raw = send(
+        &router,
+        &json!("sign-up"),
+        &json!({"method": "POST", "path": "/auth/sign-up/", "body": {"email": "two@example.test", "password": STRONG}}),
+        &jar,
+    );
     jar.insert(jar_key("two@example.test"), session_token(&raw).unwrap());
     call(&router, &jar, "one@example.test", "PATCH", "/api/users/me/", json!({"first_name": "One"}));
     call(&router, &jar, "one@example.test", "PATCH", "/api/users/me/profile/", json!({"role": "designer"}));

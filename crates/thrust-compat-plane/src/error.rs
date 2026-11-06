@@ -143,13 +143,14 @@ impl IntoResponse for PlaneError {
     fn into_response(self) -> Response<Body> {
         match self {
             // The body DRF gives (fixture S02).
-            PlaneError::Unauthenticated => (
-                StatusCode::UNAUTHORIZED,
-                Json(json!({"detail": "Authentication credentials were not provided."})),
-            )
-                .into_response(),
+            PlaneError::Unauthenticated => {
+                (StatusCode::UNAUTHORIZED, Json(json!({"detail": "Authentication credentials were not provided."})))
+                    .into_response()
+            }
             PlaneError::BadRequest(body) => (StatusCode::BAD_REQUEST, Json(body)).into_response(),
-            PlaneError::Fields(errors) => (StatusCode::BAD_REQUEST, Json(serde_json::Value::Object(errors))).into_response(),
+            PlaneError::Fields(errors) => {
+                (StatusCode::BAD_REQUEST, Json(serde_json::Value::Object(errors))).into_response()
+            }
             PlaneError::Forbidden(body) => (StatusCode::FORBIDDEN, Json(body)).into_response(),
             PlaneError::Conflict(body) => (StatusCode::CONFLICT, Json(body)).into_response(),
             PlaneError::NotFound(body) => (StatusCode::NOT_FOUND, Json(body)).into_response(),

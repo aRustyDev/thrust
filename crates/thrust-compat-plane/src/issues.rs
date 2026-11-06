@@ -101,7 +101,9 @@ fn refusal(e: IssueError) -> PlaneError {
     match e {
         IssueError::Forbidden => refused_by_decorator(),
         IssueError::NotFound => missing_object(),
-        IssueError::NotAllowedToView => PlaneError::Forbidden(json!({"error": "You are not allowed to view this issue"})),
+        IssueError::NotAllowedToView => {
+            PlaneError::Forbidden(json!({"error": "You are not allowed to view this issue"}))
+        }
         IssueError::StartAfterTarget => {
             let mut errors = FieldErrors::new();
             fail(&mut errors, "non_field_errors", "Start date cannot exceed target date");
@@ -133,15 +135,19 @@ fn py_type_name(v: &Value) -> &'static str {
 /// around it, no time after it, a day that exists, a year from 1 to 9999. (Python 3.11's `date.fromisoformat` reads more spellings
 /// of a week, and digits of other scripts; neither is read here.)
 fn parse_date(s: &str) -> Option<NaiveDate> {
-    let digits = |t: &str, min: usize, max: usize| (min..=max).contains(&t.len()) && t.bytes().all(|b| b.is_ascii_digit());
+    let digits =
+        |t: &str, min: usize, max: usize| (min..=max).contains(&t.len()) && t.bytes().all(|b| b.is_ascii_digit());
     let number = |t: &str| t.parse::<u32>().ok();
-    let ymd = |y: u32, m: u32, d: u32| NaiveDate::from_ymd_opt(i32::try_from(y).ok().filter(|y| (1..=9999).contains(y))?, m, d);
+    let ymd = |y: u32, m: u32, d: u32| {
+        NaiveDate::from_ymd_opt(i32::try_from(y).ok().filter(|y| (1..=9999).contains(y))?, m, d)
+    };
     let parts: Vec<&str> = s.split('-').collect();
     match parts.as_slice() {
         [y, m, d] if digits(y, 4, 4) && digits(m, 1, 2) && digits(d, 1, 2) => ymd(number(y)?, number(m)?, number(d)?),
         [y, w, d] if digits(y, 4, 4) && digits(d, 1, 1) && w.strip_prefix('W').is_some_and(|n| digits(n, 2, 2)) => {
             let year = i32::try_from(number(y)?).ok().filter(|y| (1..=9999).contains(y))?;
-            let weekday = thrust_contracts::chrono::Weekday::try_from(u8::try_from(number(d)?.checked_sub(1)?).ok()?).ok()?;
+            let weekday =
+                thrust_contracts::chrono::Weekday::try_from(u8::try_from(number(d)?.checked_sub(1)?).ok()?).ok()?;
             NaiveDate::from_isoywd_opt(year, number(&w[1..])?, weekday)
         }
         [whole] if digits(whole, 8, 8) => ymd(number(&whole[..4])?, number(&whole[4..6])?, number(&whole[6..])?),
@@ -153,7 +159,9 @@ fn parse_date(s: &str) -> Option<NaiveDate> {
 fn date_field(v: &Value) -> Result<Option<NaiveDate>, String> {
     match v {
         Value::Null => Ok(None),
-        Value::String(s) => parse_date(s).map(Some).ok_or_else(|| "Date has wrong format. Use one of these formats instead: YYYY-MM-DD.".to_string()),
+        Value::String(s) => parse_date(s)
+            .map(Some)
+            .ok_or_else(|| "Date has wrong format. Use one of these formats instead: YYYY-MM-DD.".to_string()),
         _ => Err("Date has wrong format. Use one of these formats instead: YYYY-MM-DD.".into()),
     }
 }
@@ -227,7 +235,9 @@ fn issue_draft(b: &Map<String, Value>) -> Result<(IssueDraft, Texts), FieldError
             Err(m) => fail(&mut errors, "priority", m),
         }
     }
-    for (field, keep_text, slot) in [("state_id", true, &mut draft.state_id), ("parent_id", false, &mut draft.parent_id)] {
+    for (field, keep_text, slot) in
+        [("state_id", true, &mut draft.state_id), ("parent_id", false, &mut draft.parent_id)]
+    {
         if let Some(v) = b.get(field) {
             match key_field(v) {
                 Ok(Some((text, id))) => {
@@ -421,9 +431,29 @@ fn datetime(raw: &str) -> Option<Timestamp> {
 /// has no parent here, so `sub_issue=false` leaves out nothing).
 fn unsupported(q: &HashMap<String, String>) -> Result<(), PlaneError> {
     const FILTERS: [&str; 23] = [
-        "assignees", "completed_at", "created_at", "created_by", "cycle", "estimate_point", "inbox_status", "intake_status", "labels",
-        "logged_by", "mentions", "module", "name", "parent", "priority", "project", "start_date", "start_target_date", "state",
-        "state_group", "subscriber", "target_date", "type",
+        "assignees",
+        "completed_at",
+        "created_at",
+        "created_by",
+        "cycle",
+        "estimate_point",
+        "inbox_status",
+        "intake_status",
+        "labels",
+        "logged_by",
+        "mentions",
+        "module",
+        "name",
+        "parent",
+        "priority",
+        "project",
+        "start_date",
+        "start_target_date",
+        "state",
+        "state_group",
+        "subscriber",
+        "target_date",
+        "type",
     ];
     let given = |k: &str| q.get(k).is_some_and(|v| !v.is_empty());
     if given("group_by") || given("sub_group_by") {
@@ -435,9 +465,13 @@ fn unsupported(q: &HashMap<String, String>) -> Result<(), PlaneError> {
     if let Some(raw) = q.get("filters").filter(|v| !v.is_empty()) {
         match serde_json::from_str::<Value>(raw) {
             Ok(Value::Object(m)) if m.is_empty() => {}
-            Ok(Value::Object(_)) => return Err(PlaneError::BadRequest(json!({"error": "Filtering work items is not supported yet."}))),
+            Ok(Value::Object(_)) => {
+                return Err(PlaneError::BadRequest(json!({"error": "Filtering work items is not supported yet."})))
+            }
             _ => {
-                return Err(PlaneError::BadRequest(json!({"message": "Invalid JSON for 'filter'. Expected a valid JSON object.", "code": "invalid_json"})))
+                return Err(PlaneError::BadRequest(
+                    json!({"message": "Invalid JSON for 'filter'. Expected a valid JSON object.", "code": "invalid_json"}),
+                ))
             }
         }
     }
@@ -459,11 +493,15 @@ pub(crate) async fn list(
     let limit = per_page(&q)?;
     let page = page(&q)?;
     let updated_after = match q.get("updated_at__gt") {
-        Some(raw) => Some(datetime(raw).ok_or_else(|| PlaneError::BadRequest(json!({"error": "Please provide valid detail"})))?),
+        Some(raw) => {
+            Some(datetime(raw).ok_or_else(|| PlaneError::BadRequest(json!({"error": "Please provide valid detail"})))?)
+        }
         None => None,
     };
     unsupported(&q)?;
-    let got = thrust_core::list_issues(&app, &access, IssueListQuery { order: order(&q), limit, page, updated_after }).await.map_err(refusal)?;
+    let got = thrust_core::list_issues(&app, &access, IssueListQuery { order: order(&q), limit, page, updated_after })
+        .await
+        .map_err(refusal)?;
     let total = got.total;
     Ok(Json(json!({
         "grouped_by": null,

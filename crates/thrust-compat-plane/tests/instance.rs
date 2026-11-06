@@ -82,6 +82,10 @@ fn prop_instance_strategies_reach_every_input_class() {
 #[case::empty(Some("thrust.example.test"), Some(""), "http://thrust.example.test")]
 #[case::no_host(None, Some("https"), "https://localhost")]
 #[case::no_host_no_proto(None, None, "http://localhost")]
-fn the_forwarded_scheme_and_the_host_make_the_origin(#[case] host: Option<&str>, #[case] proto: Option<&str>, #[case] want: &str) {
+fn the_forwarded_scheme_and_the_host_make_the_origin(
+    #[case] host: Option<&str>,
+    #[case] proto: Option<&str>,
+    #[case] want: &str,
+) {
     assert_eq!(base_urls(host, proto), [want, want, want].map(String::from));
 }

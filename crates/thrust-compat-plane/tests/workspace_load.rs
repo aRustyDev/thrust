@@ -67,7 +67,9 @@ impl Row {
             Row::S17 | Row::S19 | Row::S20 | Row::S25 | Row::S26 => body == &json!([]),
             Row::S21 => body.as_object().is_some_and(|o| o.len() == 7),
             Row::S22 => body["filters"].is_object() && body["display_filters"]["display_filters"].is_object(),
-            Row::S23 => body == &json!({"total_unread_notifications_count": 0, "mention_unread_notifications_count": 0}),
+            Row::S23 => {
+                body == &json!({"total_unread_notifications_count": 0, "mention_unread_notifications_count": 0})
+            }
             Row::S24 => body.as_array().is_some_and(|a| a.len() == 3),
         }
     }
@@ -98,15 +100,29 @@ fn expected(row: Row, caller: Caller) -> Option<(u16, Value)> {
 #[rstest]
 fn who_may_ask_a_workspace_load_row_and_what_the_pin_answers_the_rest(
     #[values(Row::S17, Row::S19, Row::S20, Row::S21, Row::S22, Row::S23, Row::S24, Row::S25, Row::S26)] row: Row,
-    #[values(Caller::Anonymous, Caller::Stranger, Caller::Deactivated, Caller::Guest, Caller::Member, Caller::Admin)] caller: Caller,
+    #[values(Caller::Anonymous, Caller::Stranger, Caller::Deactivated, Caller::Guest, Caller::Member, Caller::Admin)]
+    caller: Caller,
 ) {
-    let emails = ["owner@example.test", "stranger@example.test", "deactivated@example.test", "guest@example.test", "member@example.test", "admin@example.test"];
+    let emails = [
+        "owner@example.test",
+        "stranger@example.test",
+        "deactivated@example.test",
+        "guest@example.test",
+        "member@example.test",
+        "admin@example.test",
+    ];
     let (router, db, jar) = world(&emails);
     let id = |e: &str| user_id(&db, e);
     // a workspace for each way of being in one, and one that only its owner is in
     make_workspace(&db, 0xA0, "owned", id(emails[0]), Role::Admin);
     make_workspace(&db, 0xA1, "deactivated-in", id(emails[2]), Role::Member);
-    futures_executor::block_on(db.set_workspace_member_active(&SystemScope::mint(), WorkspaceId(Uuid::from_u128(0xA1)), id(emails[2]), false)).unwrap();
+    futures_executor::block_on(db.set_workspace_member_active(
+        &SystemScope::mint(),
+        WorkspaceId(Uuid::from_u128(0xA1)),
+        id(emails[2]),
+        false,
+    ))
+    .unwrap();
     make_workspace(&db, 0xA2, "guest-in", id(emails[3]), Role::Guest);
     make_workspace(&db, 0xA3, "member-in", id(emails[4]), Role::Member);
     make_workspace(&db, 0xA4, "admin-in", id(emails[5]), Role::Admin);
@@ -121,7 +137,9 @@ fn who_may_ask_a_workspace_load_row_and_what_the_pin_answers_the_rest(
     };
     let r = call(&router, &jar, who, "GET", &row.path(slug), Value::Null);
     match expected(row, caller) {
-        Some((status, body)) => assert_eq!((r["status"].clone(), r["body"].clone()), (json!(status), body), "{row:?} {caller:?}"),
+        Some((status, body)) => {
+            assert_eq!((r["status"].clone(), r["body"].clone()), (json!(status), body), "{row:?} {caller:?}")
+        }
         None => {
             assert_eq!(r["status"], 200, "{row:?} {caller:?}: {r}");
             assert!(row.shape_holds(&r["body"]), "{row:?} {caller:?}: {}", r["body"]);
@@ -130,7 +148,11 @@ fn who_may_ask_a_workspace_load_row_and_what_the_pin_answers_the_rest(
     // a workspace that is not there is what a stranger gets
     if caller == Caller::Member {
         let r = call(&router, &jar, who, "GET", &row.path("no-such-workspace"), Value::Null);
-        assert_eq!((r["status"].clone(), r["body"].clone()), (json!(403), row.refusal()), "{row:?} in a workspace that does not exist");
+        assert_eq!(
+            (r["status"].clone(), r["body"].clone()),
+            (json!(403), row.refusal()),
+            "{row:?} in a workspace that does not exist"
+        );
     }
 }
 
@@ -161,8 +183,17 @@ fn a_project_is_listed_with_the_21_keys_of_the_pins_values_query() {
                 created_at: Some(at(5)),
                 ..SeedProjectDetails::of(project)
             }],
-            memberships: vec![SeedMembership { project_id: project, workspace_id: ws, user_id: admin, role: Role::Member }],
-            project_sort_orders: vec![SeedProjectSortOrder { project_id: project, user_id: admin, sort_order: 65535.0 }],
+            memberships: vec![SeedMembership {
+                project_id: project,
+                workspace_id: ws,
+                user_id: admin,
+                role: Role::Member,
+            }],
+            project_sort_orders: vec![SeedProjectSortOrder {
+                project_id: project,
+                user_id: admin,
+                sort_order: 65535.0,
+            }],
             ..SeedFixture::default()
         },
     );
@@ -202,10 +233,24 @@ fn a_project_the_caller_is_not_in_has_no_role_and_no_sort_order() {
     let (router, db, jar) = world(&["admin@example.test"]);
     let admin = user_id(&db, "admin@example.test");
     let ws = make_workspace(&db, 0xA, "listed", admin, Role::Admin);
-    seed(&db, SeedFixture { projects: vec![SeedProject { id: ProjectId(Uuid::from_u128(1)), workspace_id: ws, name: "Not mine".into() }], ..SeedFixture::default() });
+    seed(
+        &db,
+        SeedFixture {
+            projects: vec![SeedProject {
+                id: ProjectId(Uuid::from_u128(1)),
+                workspace_id: ws,
+                name: "Not mine".into(),
+            }],
+            ..SeedFixture::default()
+        },
+    );
     let r = call(&router, &jar, "admin@example.test", "GET", "/api/workspaces/listed/projects/", Value::Null);
     let p = &r["body"][0];
-    assert_eq!((p["member_role"].clone(), p["sort_order"].clone(), p["network"].clone()), (Value::Null, Value::Null, json!(2)), "{r}");
+    assert_eq!(
+        (p["member_role"].clone(), p["sort_order"].clone(), p["network"].clone()),
+        (Value::Null, Value::Null, json!(2)),
+        "{r}"
+    );
 }
 
 fn any_role() -> impl Strategy<Value = Role> {
@@ -280,14 +325,24 @@ fn a_second_visit_is_answered_what_the_first_was(#[values(Row::S21, Row::S22, Ro
     let (one, two) = (user_id(&db, "one@example.test"), user_id(&db, "two@example.test"));
     let ws = make_workspace(&db, 0xA, "visited", one, Role::Admin);
     make_workspace(&db, 0xB, "elsewhere", one, Role::Admin);
-    seed(&db, SeedFixture { users: vec![two], workspace_members: vec![SeedWorkspaceMember { workspace_id: ws, user_id: two }], ..SeedFixture::default() });
+    seed(
+        &db,
+        SeedFixture {
+            users: vec![two],
+            workspace_members: vec![SeedWorkspaceMember { workspace_id: ws, user_id: two }],
+            ..SeedFixture::default()
+        },
+    );
     let ask = |who: &str, slug: &str| call(&router, &jar, who, "GET", &row.path(slug), Value::Null)["body"].clone();
 
     let first = ask("one@example.test", "visited");
     assert_eq!(ask("one@example.test", "visited"), first, "the second visit differs from the first");
     if row == Row::S22 {
         // the settings row has an id of its own, a creator and an owner, and they are the caller and the workspace
-        assert_eq!((first["user"].clone(), first["created_by"].clone(), first["workspace"].clone()), (json!(one.0), json!(one.0), json!(ws.0)));
+        assert_eq!(
+            (first["user"].clone(), first["created_by"].clone(), first["workspace"].clone()),
+            (json!(one.0), json!(one.0), json!(ws.0))
+        );
         assert_eq!((first["updated_by"].clone(), first["deleted_at"].clone()), (Value::Null, Value::Null));
         let other_member = ask("two@example.test", "visited");
         let other_workspace = ask("one@example.test", "elsewhere");

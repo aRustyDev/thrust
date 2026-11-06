@@ -139,7 +139,8 @@ async fn make_creds(t: &Target, f: &Fixture, ghost: &User) -> Creds {
     };
     let live_key = create_key_ok(t, &f.member_a, json!({})).await.token;
     let revoked = (revoked, create_key_ok(t, &f.member_a, json!({})).await);
-    let r = t.http.delete(format!("{}/{}", keys_url(t), revoked.1.id)).bearer_auth(&f.member_a.token).send().await.unwrap();
+    let r =
+        t.http.delete(format!("{}/{}", keys_url(t), revoked.1.id)).bearer_auth(&f.member_a.token).send().await.unwrap();
     assert_eq!(r.status(), 204, "revoke the key that is to be revoked");
     let inactive_key = create_key_ok(t, ghost, json!({})).await.token;
     let expired_key = format!("thrk_expired-{}", uuid::Uuid::new_v4().simple());
@@ -244,7 +245,8 @@ async fn run_table(enforce: bool) {
             }
         }
     }
-    let combinations: usize = [Kind::Nothing, Kind::Bearer, Kind::Cookie, Kind::ApiKey].iter().map(|k| states(*k).len() * 9).sum();
+    let combinations: usize =
+        [Kind::Nothing, Kind::Bearer, Kind::Cookie, Kind::ApiKey].iter().map(|k| states(*k).len() * 9).sum();
     assert_eq!(checked, combinations, "the matrix did not run");
     assert_eq!(combinations, 126);
 
@@ -274,7 +276,9 @@ async fn run_table(enforce: bool) {
         .iter()
         .flat_map(|k| states(*k).iter().map(move |s| (*k, *s)))
         .flat_map(|(k, s)| [M::List, M::Create, M::Delete].into_iter().map(move |m| (k, s, m)))
-        .flat_map(|(k, s, m)| [Tok::Matching, Tok::Absent, Tok::Wrong].into_iter().map(move |t| expected(k, s, m, t, enforce)))
+        .flat_map(|(k, s, m)| {
+            [Tok::Matching, Tok::Absent, Tok::Wrong].into_iter().map(move |t| expected(k, s, m, t, enforce))
+        })
         .collect();
     assert_eq!(outcomes, [200, 201, 204, 401, 403].into_iter().collect());
 }

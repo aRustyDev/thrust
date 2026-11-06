@@ -147,7 +147,10 @@ fn py_repr(v: &Value) -> String {
     match v {
         Value::String(s) => py_string(s),
         Value::Array(a) => format!("[{}]", a.iter().map(py_repr).collect::<Vec<_>>().join(", ")),
-        Value::Object(m) => format!("{{{}}}", m.iter().map(|(k, v)| format!("{}: {}", py_string(k), py_repr(v))).collect::<Vec<_>>().join(", ")),
+        Value::Object(m) => format!(
+            "{{{}}}",
+            m.iter().map(|(k, v)| format!("{}: {}", py_string(k), py_repr(v))).collect::<Vec<_>>().join(", ")
+        ),
         other => py_str(other),
     }
 }
@@ -278,7 +281,11 @@ pub(crate) async fn project_patch(
         }
     };
     let name = checked("name", thrust_core::MAX_PROJECT_NAME, "PROJECT_NAME_CANNOT_CONTAIN_SPECIAL_CHARACTERS");
-    let identifier = checked("identifier", thrust_core::MAX_PROJECT_IDENTIFIER, "PROJECT_IDENTIFIER_CANNOT_CONTAIN_SPECIAL_CHARACTERS");
+    let identifier = checked(
+        "identifier",
+        thrust_core::MAX_PROJECT_IDENTIFIER,
+        "PROJECT_IDENTIFIER_CANNOT_CONTAIN_SPECIAL_CHARACTERS",
+    );
     if name.is_some() || identifier.is_some() {
         match thrust_core::project_clashes(app, scope, name.as_deref(), identifier.as_deref(), except).await {
             Ok(c) => {
@@ -318,7 +325,11 @@ pub(crate) async fn project_patch(
     text!("external_source", p.external_source, Some(255), true);
     text!("external_id", p.external_id, Some(255), true);
 
-    for (field, slot) in [("description_text", &mut p.description_text), ("description_html", &mut p.description_html), ("icon_prop", &mut p.icon_prop)] {
+    for (field, slot) in [
+        ("description_text", &mut p.description_text),
+        ("description_html", &mut p.description_html),
+        ("icon_prop", &mut p.icon_prop),
+    ] {
         if let Some(v) = b.get(field) {
             let v = if field == "description_html" { html_text(v) } else { v.clone() };
             match json_field(&v, true) {
@@ -330,7 +341,9 @@ pub(crate) async fn project_patch(
     if let Some(v) = b.get("logo_props") {
         match json_field(v, false) {
             // the pin stores any value; the column here holds an object, which is all the app ever sends (D-027)
-            Ok(Some(value)) if !value.is_object() => fail(&mut errors, "logo_props", "The logo of a project must be a JSON object."),
+            Ok(Some(value)) if !value.is_object() => {
+                fail(&mut errors, "logo_props", "The logo of a project must be a JSON object.")
+            }
             Ok(value) => p.logo_props = value,
             Err(m) => fail(&mut errors, "logo_props", m),
         }
@@ -345,7 +358,10 @@ pub(crate) async fn project_patch(
         if let Some(v) = b.get(field) {
             match user_field(app, v).await {
                 // D-026: the pin lets anyone lead a project; Thrust's project members are workspace members, so the lead must be one
-                Ok(Some(user)) if field == "project_lead" && !thrust_core::is_workspace_member(app, scope, user).await.unwrap_or(false) => {
+                Ok(Some(user))
+                    if field == "project_lead"
+                        && !thrust_core::is_workspace_member(app, scope, user).await.unwrap_or(false) =>
+                {
                     fail(&mut errors, field, "The lead of a project must be a member of its workspace.")
                 }
                 Ok(user) => *slot = Some(user),
@@ -493,7 +509,10 @@ pub(crate) async fn stats(
         Some(list) => Some(
             list.split(',')
                 // the pin's `ValidationError` for a value that is no id is answered with its own words (fixture S35)
-                .map(|id| id.parse::<ProjectId>().map_err(|_| PlaneError::BadRequest(json!({"error": "Please provide valid detail"}))))
+                .map(|id| {
+                    id.parse::<ProjectId>()
+                        .map_err(|_| PlaneError::BadRequest(json!({"error": "Please provide valid detail"})))
+                })
                 .collect::<Result<_, _>>()?,
         ),
     };
@@ -554,7 +573,9 @@ pub(crate) async fn member_me(
     Path((slug, project)): Path<(String, String)>,
 ) -> Result<Json<Value>, PlaneError> {
     let Some(scope) = scope(&app, &who, slug).await? else { return Err(missing_object()) };
-    let Some(m) = thrust_core::my_project_member(&app, &scope, project_id(&project)?).await? else { return Err(missing_object()) };
+    let Some(m) = thrust_core::my_project_member(&app, &scope, project_id(&project)?).await? else {
+        return Err(missing_object());
+    };
     let (row, u, p, w) = (&m.member, &m.user, &m.project, &m.workspace);
     Ok(Json(json!({
         "id": row.id,
@@ -753,7 +774,11 @@ pub(crate) async fn project_stub(
 }
 
 /// S44. The workspace's modules. A stub (D-021): there are none. Any active member of the workspace may ask.
-pub(crate) async fn workspace_modules(Caller(who): Caller, Extension(app): Extension<App>, Path(slug): Path<String>) -> Result<Json<Value>, PlaneError> {
+pub(crate) async fn workspace_modules(
+    Caller(who): Caller,
+    Extension(app): Extension<App>,
+    Path(slug): Path<String>,
+) -> Result<Json<Value>, PlaneError> {
     scope(&app, &who, slug).await?.ok_or_else(refused_by_class)?;
     Ok(Json(json!([])))
 }

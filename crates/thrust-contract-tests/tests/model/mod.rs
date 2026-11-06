@@ -295,18 +295,54 @@ impl Ctype {
 #[derive(Debug, Clone)]
 enum Op {
     /// `ext`: an external key from a small domain, so that keys collide.
-    Create { actor: Actor, proj: Proj, name: Name, ext: Option<u8> },
-    Delete { actor: Actor, proj: Proj, pick: Pick },
-    List { actor: Actor, proj: Proj, scope: Scope },
+    Create {
+        actor: Actor,
+        proj: Proj,
+        name: Name,
+        ext: Option<u8>,
+    },
+    Delete {
+        actor: Actor,
+        proj: Proj,
+        pick: Pick,
+    },
+    List {
+        actor: Actor,
+        proj: Proj,
+        scope: Scope,
+    },
     /// Put an envelope straight on the queue (`/internal/inject-event`), about one of the project's items.
-    Inject { proj: Proj, item: usize, verb: Verb, replay: Replay },
+    Inject {
+        proj: Proj,
+        item: usize,
+        verb: Verb,
+        replay: Replay,
+    },
     /// Run the outbox sweeper (`/internal/sweep`), what cron does.
     Sweep,
     /// Read both projects' activity and compare it with the model.
     Checkpoint,
-    PutAttachment { actor: Actor, proj: Proj, pick: Pick, name: BlobName, size: Size, seed: u8, ctype: Option<Ctype> },
-    GetAttachment { actor: Actor, proj: Proj, pick: Pick, name: BlobName },
-    DeleteAttachment { actor: Actor, proj: Proj, pick: Pick, name: BlobName },
+    PutAttachment {
+        actor: Actor,
+        proj: Proj,
+        pick: Pick,
+        name: BlobName,
+        size: Size,
+        seed: u8,
+        ctype: Option<Ctype>,
+    },
+    GetAttachment {
+        actor: Actor,
+        proj: Proj,
+        pick: Pick,
+        name: BlobName,
+    },
+    DeleteAttachment {
+        actor: Actor,
+        proj: Proj,
+        pick: Pick,
+        name: BlobName,
+    },
 }
 
 fn actor() -> impl Strategy<Value = Actor> {
@@ -588,17 +624,39 @@ fn slot(p: Proj) -> Option<usize> {
 enum Want {
     /// A rejection, checked on its status.
     Reject(u16),
-    Conflict { slot: usize, ext: u8 },
-    Create { slot: usize, name: String, ext: Option<u8>, actor: Actor },
-    Delete { slot: usize, row: usize, actor: Actor },
-    List { slot: usize, with_deleted: bool },
+    Conflict {
+        slot: usize,
+        ext: u8,
+    },
+    Create {
+        slot: usize,
+        name: String,
+        ext: Option<u8>,
+        actor: Actor,
+    },
+    Delete {
+        slot: usize,
+        row: usize,
+        actor: Actor,
+    },
+    List {
+        slot: usize,
+        with_deleted: bool,
+    },
     /// `202`; the new event, or `None` for a redelivery (which must add nothing).
     Inject(Option<Event>),
     Sweep,
     Checkpoint,
-    PutAttachment { slot: usize, key: (WorkItemId, String), stored: Stored },
+    PutAttachment {
+        slot: usize,
+        key: (WorkItemId, String),
+        stored: Stored,
+    },
     GetAttachment(Stored),
-    DeleteAttachment { slot: usize, key: (WorkItemId, String) },
+    DeleteAttachment {
+        slot: usize,
+        key: (WorkItemId, String),
+    },
 }
 
 /// One work-item request, in model terms; `World::send` turns it into ids.
@@ -619,7 +677,17 @@ struct Req {
 
 impl Req {
     fn bare(actor: Actor, method: Method, proj: Proj) -> Req {
-        Req { actor, method, proj, slug: Slug::Own, item: None, query: None, body: None, attachment: None, upload: None }
+        Req {
+            actor,
+            method,
+            proj,
+            slug: Slug::Own,
+            item: None,
+            query: None,
+            body: None,
+            attachment: None,
+            upload: None,
+        }
     }
 }
 
@@ -765,7 +833,9 @@ impl Model {
                     Replay::Observed(i) => earlier(false, i).map(|n| (n, Class::RedeliveredOutboxEvent)),
                 };
                 match again {
-                    Some((n, class)) => Plan { call: Call::Inject(self.events[n].clone()), want: Want::Inject(None), class },
+                    Some((n, class)) => {
+                        Plan { call: Call::Inject(self.events[n].clone()), want: Want::Inject(None), class }
+                    }
                     None => {
                         let rows = &self.projects[s].rows;
                         let entity =
@@ -1005,7 +1075,10 @@ impl Model {
                     }
                 }
                 Some(n) => {
-                    return Err(format!("event {} was recorded as {r:?}, the model sent {:?}", r.event_id, self.events[n]))
+                    return Err(format!(
+                        "event {} was recorded as {r:?}, the model sent {:?}",
+                        r.event_id, self.events[n]
+                    ))
                 }
                 None => {
                     return Err(format!(
@@ -1265,7 +1338,12 @@ async fn run_case(
                         prop_assert_eq!(status, 201, "{}; body {}", at, body);
                         let item: WorkItem = serde_json::from_slice(&resp.body).map_err(|e| fail(&at, e))?;
                         let p = &m.projects[slot];
-                        prop_assert_eq!((item.workspace_id, item.project_id), w.scope_of(slot), "{}: created outside its scope", at);
+                        prop_assert_eq!(
+                            (item.workspace_id, item.project_id),
+                            w.scope_of(slot),
+                            "{}: created outside its scope",
+                            at
+                        );
                         prop_assert_eq!(&item.name, &name, "{}: the stored name is the trimmed name", at);
                         prop_assert_eq!(Some(item.created_by), w.user(actor).map(|u| u.id), "{}", at);
                         prop_assert!(item.deleted_at.is_none(), "{}: a new item is live", at);
@@ -1279,7 +1357,13 @@ async fn run_case(
                             p.last_seq,
                             p.failed_since
                         );
-                        prop_assert!(item.sort_order > p.last_sort, "{}: sort_order {} after {}", at, item.sort_order, p.last_sort);
+                        prop_assert!(
+                            item.sort_order > p.last_sort,
+                            "{}: sort_order {} after {}",
+                            at,
+                            item.sort_order,
+                            p.last_sort
+                        );
                         let row = Row { id: item.id, seq: item.sequence_id, name: item.name, ext, deleted: false };
                         m.record_create(slot, row, item.sort_order, actor);
                     }
@@ -1291,7 +1375,12 @@ async fn run_case(
                         prop_assert_eq!(status, 200, "{}; body {}", at, body);
                         let items: Vec<WorkItem> = serde_json::from_slice(&resp.body).map_err(|e| fail(&at, e))?;
                         for i in &items {
-                            prop_assert_eq!((i.workspace_id, i.project_id), w.scope_of(slot), "{}: a row outside its scope", at);
+                            prop_assert_eq!(
+                                (i.workspace_id, i.project_id),
+                                w.scope_of(slot),
+                                "{}: a row outside its scope",
+                                at
+                            );
                         }
                         let got: Vec<(i64, String, bool)> =
                             items.iter().map(|i| (i.sequence_id, i.name.clone(), i.deleted_at.is_some())).collect();
@@ -1330,7 +1419,12 @@ async fn run_case(
                     let rep: Value = serde_json::from_str(&body).map_err(|e| fail(&at, e))?;
                     let waiting = leftover + m.pending() as u64;
                     let got = (rep["found"].as_u64(), rep["published"].as_u64(), rep["failed"].as_u64());
-                    prop_assert_eq!(got, (Some(waiting), Some(waiting), Some(0)), "{}: the sweep must publish every waiting row", at);
+                    prop_assert_eq!(
+                        got,
+                        (Some(waiting), Some(waiting), Some(0)),
+                        "{}: the sweep must publish every waiting row",
+                        at
+                    );
                     leftover = 0;
                 }
                 m.publish_all();
@@ -1341,7 +1435,12 @@ async fn run_case(
                     loop {
                         let rows = w.activity(s).await.map_err(|e| fail(&at, e))?;
                         for r in &rows {
-                            prop_assert_eq!((r.workspace_id, r.project_id), w.scope_of(s), "{}: activity outside its scope", at);
+                            prop_assert_eq!(
+                                (r.workspace_id, r.project_id),
+                                w.scope_of(s),
+                                "{}: activity outside its scope",
+                                at
+                            );
                         }
                         match m.match_activity(s, &rows, |a| w.user(a).map(|u| u.id)) {
                             Err(e) => return Err(fail(&at, format!("project {s}: {e}"))),
@@ -1360,7 +1459,12 @@ async fn run_case(
                 }
                 if !fastpath {
                     let depth = t.outbox_depth().await;
-                    prop_assert_eq!(depth, leftover + m.pending() as u64, "{}: outbox depth is the number of waiting events", at);
+                    prop_assert_eq!(
+                        depth,
+                        leftover + m.pending() as u64,
+                        "{}: outbox depth is the number of waiting events",
+                        at
+                    );
                 }
             }
             (call, want) => unreachable!("planned {call:?} with {want:?}"),
@@ -1368,8 +1472,12 @@ async fn run_case(
     }
     let mut late = settle.lock().unwrap();
     for s in 0..2 {
-        let mut event_ids: Vec<EventId> =
-            m.events.iter().filter(|e| e.slot == s).map(|e| e.id.expect("the last checkpoint matched every event")).collect();
+        let mut event_ids: Vec<EventId> = m
+            .events
+            .iter()
+            .filter(|e| e.slot == s)
+            .map(|e| e.id.expect("the last checkpoint matched every event"))
+            .collect();
         event_ids.sort();
         let token = w.user(admin_of(s)).unwrap().token.clone();
         late.push(Settle { at: w.at_slot(s).clone(), token, event_ids });
@@ -1418,7 +1526,10 @@ fn run_model(fastpath: bool, default_cases: u32) {
     if let Err(e) = result {
         panic!("{e}");
     }
-    assert!(cases >= want_cases && requests >= cases, "the generated sequences did not run: {cases} cases, {requests} steps");
+    assert!(
+        cases >= want_cases && requests >= cases,
+        "the generated sequences did not run: {cases} cases, {requests} steps"
+    );
 
     // A redelivery that lands after a checkpoint matched would slip past it: wait once for the whole run, then
     // read every case's activity again.

@@ -76,7 +76,9 @@ fn line_has_url(s: &[char]) -> bool {
 fn has_ipv4(s: &[char]) -> bool {
     let text: String = s.iter().collect();
     let parts: Vec<&str> = text.split('.').collect();
-    let octet = |p: &str| (1..=3).contains(&p.len()) && p.chars().all(|c| c.is_ascii_digit()) && p.parse::<u16>().is_ok_and(|n| n <= 255);
+    let octet = |p: &str| {
+        (1..=3).contains(&p.len()) && p.chars().all(|c| c.is_ascii_digit()) && p.parse::<u16>().is_ok_and(|n| n <= 255)
+    };
     parts.windows(4).any(|w| {
         w[0].chars().last().is_some_and(|c| c.is_ascii_digit())
             && octet(w[1])
@@ -122,7 +124,11 @@ async fn profile_of(app: &App, user: &UserRecord) -> Result<UserProfile, CoreErr
         return Ok(p);
     }
     app.ports.db.insert_profile(&new_profile(app, user.id, user.email.as_deref())).await?;
-    app.ports.db.profile(user.id).await?.ok_or_else(|| CoreError::Internal("a profile that was just made is not there".into()))
+    app.ports
+        .db
+        .profile(user.id)
+        .await?
+        .ok_or_else(|| CoreError::Internal("a profile that was just made is not there".into()))
 }
 
 async fn user_of(app: &App, who: &Principal) -> Result<UserRecord, CoreError> {

@@ -21,21 +21,14 @@ fn allow_list_preservation_of_editor_html() {
     let mut changed: Vec<String> = vec![];
     let mut causes: std::collections::BTreeMap<String, usize> = Default::default();
     for d in c["docs"].as_array().unwrap() {
-        let Some(h) = d
-            .get("html_in")
-            .and_then(|x| x.as_str())
-            .or_else(|| d.get("html").and_then(|x| x.as_str()))
+        let Some(h) = d.get("html_in").and_then(|x| x.as_str()).or_else(|| d.get("html").and_then(|x| x.as_str()))
         else {
             continue;
         };
         if h.is_empty() || d["kind"] == "foreign" {
             continue; // foreign html is deliberately hostile/odd: measured separately by the XSS corpus
         }
-        let variant = if d["variant"] == "rich" {
-            Variant::Rich
-        } else {
-            Variant::Document
-        };
+        let variant = if d["variant"] == "rich" { Variant::Rich } else { Variant::Document };
         let schema = Schema::new(variant);
         let before = domparse::html_to_doc(&schema, h).to_json(&schema);
         let clean = s.clean(h);
@@ -53,10 +46,7 @@ fn allow_list_preservation_of_editor_html() {
         }
     }
     eprintln!("sanitiser preserves the parsed document for {same}/{n} editor-generated HTML documents; hardened output byte-identical to plain for {hard_same}/{n}");
-    eprintln!(
-        "documents whose parsed content changes through Plane's allow-list: {}",
-        changed.len()
-    );
+    eprintln!("documents whose parsed content changes through Plane's allow-list: {}", changed.len());
     eprintln!("first differing construct per changed document (kind -> count):");
     for (k, v) in &causes {
         eprintln!("  {v:3}  {k}");
@@ -105,9 +95,7 @@ fn diff_kind(a: &Value, b: &Value) -> String {
                             }
                         }
                         (Some(p), None) => return Some(format!("{ctx}: child {} lost", p["type"])),
-                        (None, Some(q)) => {
-                            return Some(format!("{ctx}: child {} added", q["type"]))
-                        }
+                        (None, Some(q)) => return Some(format!("{ctx}: child {} added", q["type"])),
                         _ => {}
                     }
                 }
@@ -126,20 +114,13 @@ fn diff_kind(a: &Value, b: &Value) -> String {
 #[test]
 fn oracle_v1_write_with_sanitiser_matches_python_plus_js() {
     use thrust_editor_doc::{html, ydoc};
-    let p = concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../../target/spike-0006/sanitised-converted.json"
-    );
+    let p = concat!(env!("CARGO_MANIFEST_DIR"), "/../../target/spike-0006/sanitised-converted.json");
     let s = std::fs::read_to_string(p).unwrap_or_else(|e| {
         panic!("{p}: {e} (generate it with tools/spike-0006/sanitize/run-all.sh, then the convert-sanitised oracle)")
     });
     let oracle: Value = serde_json::from_str(&s).unwrap();
     let xss: Value = serde_json::from_str(
-        &std::fs::read_to_string(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/tests/corpus/xss-corpus.json"
-        ))
-        .unwrap(),
+        &std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/corpus/xss-corpus.json")).unwrap(),
     )
     .unwrap();
     let corpus = load();
@@ -147,19 +128,10 @@ fn oracle_v1_write_with_sanitiser_matches_python_plus_js() {
         .as_array()
         .unwrap()
         .iter()
-        .map(|p| {
-            (
-                p["id"].as_str().unwrap().into(),
-                p["html"].as_str().unwrap().into(),
-            )
-        })
+        .map(|p| (p["id"].as_str().unwrap().into(), p["html"].as_str().unwrap().into()))
         .collect();
     for d in corpus["docs"].as_array().unwrap() {
-        if let Some(h) = d
-            .get("html_in")
-            .and_then(|x| x.as_str())
-            .or_else(|| d.get("html").and_then(|x| x.as_str()))
-        {
+        if let Some(h) = d.get("html_in").and_then(|x| x.as_str()).or_else(|| d.get("html").and_then(|x| x.as_str())) {
             if !h.is_empty() {
                 inputs.push((format!("doc:{}", d["id"].as_str().unwrap()), h.into()));
             }
@@ -173,11 +145,7 @@ fn oracle_v1_write_with_sanitiser_matches_python_plus_js() {
         if want.get("error").is_some() {
             continue;
         }
-        let variant = if want["variant"] == "rich" {
-            Variant::Rich
-        } else {
-            Variant::Document
-        };
+        let variant = if want["variant"] == "rich" { Variant::Rich } else { Variant::Document };
         let schema = Schema::new(variant);
         let clean = san.clean(&h);
         let doc = domparse::html_to_doc(&schema, &clean);
@@ -192,14 +160,13 @@ fn oracle_v1_write_with_sanitiser_matches_python_plus_js() {
             fails.push(k);
         }
     }
-    eprintln!("v1 write path with sanitiser, Rust vs (nh3 + real JS conversion): {ok}/{n} identical; differing: {fails:?}");
+    eprintln!(
+        "v1 write path with sanitiser, Rust vs (nh3 + real JS conversion): {ok}/{n} identical; differing: {fails:?}"
+    );
     assert!(n > 0, "{p} matched no inputs: nothing was compared");
     // the only differences are svg/math payloads that ammonia 4.2.x removes entirely and 4.0.0 (inside nh3) leaves behind
     for f in &fails {
-        assert!(
-            ["owasp-tag-080", "owasp-tag-083", "mxss-118"].contains(&f.as_str()),
-            "unexpected difference: {f}"
-        );
+        assert!(["owasp-tag-080", "owasp-tag-083", "mxss-118"].contains(&f.as_str()), "unexpected difference: {f}");
     }
 }
 
@@ -207,14 +174,8 @@ fn oracle_v1_write_with_sanitiser_matches_python_plus_js() {
 fn validate_html_content_semantics() {
     assert_eq!(sanitize::validate_html_content(""), Ok(None));
     let big = "a".repeat(sanitize::MAX_SIZE + 1);
-    assert_eq!(
-        sanitize::validate_html_content(&big),
-        Err(sanitize::SanitizeError::TooLarge)
-    );
-    assert!(sanitize::validate_html_content("<p>x</p>")
-        .unwrap()
-        .unwrap()
-        .contains("<p>x</p>"));
+    assert_eq!(sanitize::validate_html_content(&big), Err(sanitize::SanitizeError::TooLarge));
+    assert!(sanitize::validate_html_content("<p>x</p>").unwrap().unwrap().contains("<p>x</p>"));
     assert!(sanitize::validate_binary_data(b"<script>alert(1)</script> padding padding").is_err());
     assert!(sanitize::validate_binary_data(&[1, 2]).is_err());
     assert!(sanitize::validate_binary_data(&[1, 2, 3, 4, 5]).is_ok());
@@ -225,11 +186,7 @@ fn validate_html_content_semantics() {
 #[test]
 fn unsanitised_payload_is_caught() {
     let s = sanitize::Sanitizer::default();
-    for p in [
-        "<img src=x onerror=alert(1)>",
-        "<script>alert(1)</script>",
-        "<a href=\"javascript:alert(1)\">x</a>",
-    ] {
+    for p in ["<img src=x onerror=alert(1)>", "<script>alert(1)</script>", "<a href=\"javascript:alert(1)\">x</a>"] {
         let out = s.clean(p);
         assert!(
             !out.contains("onerror") && !out.contains("<script") && !out.contains("javascript:"),

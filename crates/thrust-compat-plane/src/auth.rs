@@ -72,8 +72,22 @@ pub(crate) async fn email_check(Extension(app): Extension<App>, body: Bytes) -> 
 
 /// What Plane's `_contains_suspicious_patterns` looks for in a `next_path` (compared lower case).
 const SUSPICIOUS: &[&str] = &[
-    "javascript:", "data:", "vbscript:", "file:", "ftp:", "%2e%2e", "%2f%2f", "%5c%5c", "<script", "<iframe", "<object",
-    "<embed", "<form", "onload=", "onerror=", "onclick=",
+    "javascript:",
+    "data:",
+    "vbscript:",
+    "file:",
+    "ftp:",
+    "%2e%2e",
+    "%2f%2f",
+    "%5c%5c",
+    "<script",
+    "<iframe",
+    "<object",
+    "<embed",
+    "<form",
+    "onload=",
+    "onerror=",
+    "onclick=",
 ];
 
 /// A relative path the browser may be sent to: one slash first and no second, no backslash or control character, no
@@ -126,7 +140,9 @@ fn signed_in(app: &App, s: &thrust_core::SignedIn, next_path: &Option<String>) -
 pub(crate) async fn sign_up(Extension(app): Extension<App>, body: Bytes) -> Result<Response, PlaneError> {
     let b = parse(&body);
     if !present(&b.email) || !present(&b.password) {
-        return Ok(AuthError::bad_request(Code::RequiredEmailPasswordSignUp).with_email(payload_email(&b.email)).into_response());
+        return Ok(AuthError::bad_request(Code::RequiredEmailPasswordSignUp)
+            .with_email(payload_email(&b.email))
+            .into_response());
     }
     let email = thrust_core::normalize_email(b.email.as_deref().unwrap_or_default());
     let password = b.password.as_deref().unwrap_or_default();
@@ -142,7 +158,9 @@ pub(crate) async fn sign_up(Extension(app): Extension<App>, body: Bytes) -> Resu
     match thrust_core::sign_up(&app, &email, password).await {
         Ok(s) => Ok(signed_in(&app, &s, &b.next_path)),
         // two sign-ups racing for one email: the unique index decided, and this one lost
-        Err(CoreError::Conflict(_)) => Ok(AuthError::bad_request(Code::UserAlreadyExist).with_email(email).into_response()),
+        Err(CoreError::Conflict(_)) => {
+            Ok(AuthError::bad_request(Code::UserAlreadyExist).with_email(email).into_response())
+        }
         Err(e) => Err(e.into()),
     }
 }
@@ -152,7 +170,9 @@ pub(crate) async fn sign_up(Extension(app): Extension<App>, body: Bytes) -> Resu
 pub(crate) async fn sign_in(Extension(app): Extension<App>, body: Bytes) -> Result<Response, PlaneError> {
     let b = parse(&body);
     if !present(&b.email) || !present(&b.password) {
-        return Ok(AuthError::bad_request(Code::RequiredEmailPasswordSignIn).with_email(payload_email(&b.email)).into_response());
+        return Ok(AuthError::bad_request(Code::RequiredEmailPasswordSignIn)
+            .with_email(payload_email(&b.email))
+            .into_response());
     }
     let email = thrust_core::normalize_email(b.email.as_deref().unwrap_or_default());
     let password = b.password.as_deref().unwrap_or_default();

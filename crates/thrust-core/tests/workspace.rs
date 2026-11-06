@@ -46,7 +46,13 @@ fn signed_up(app: &App, email: &str) -> Principal {
 }
 
 fn request(name: &str, slug: &str) -> NewWorkspaceRequest {
-    NewWorkspaceRequest { name: name.into(), slug: slug.into(), organization_size: None, company_role: None, timezone: None }
+    NewWorkspaceRequest {
+        name: name.into(),
+        slug: slug.into(),
+        organization_size: None,
+        company_role: None,
+        timezone: None,
+    }
 }
 
 fn make(app: &App, who: &Principal, name: &str, slug: &str) -> WorkspaceListing {
@@ -58,7 +64,8 @@ fn make(app: &App, who: &Principal, name: &str, slug: &str) -> WorkspaceListing 
 const SLUG_CHARS: &str = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_";
 
 fn slug() -> impl Strategy<Value = String> {
-    prop::collection::vec(prop::sample::select(SLUG_CHARS.chars().collect::<Vec<_>>()), 1..=48).prop_map(|cs| cs.into_iter().collect())
+    prop::collection::vec(prop::sample::select(SLUG_CHARS.chars().collect::<Vec<_>>()), 1..=48)
+        .prop_map(|cs| cs.into_iter().collect())
 }
 
 proptest! {
@@ -100,7 +107,8 @@ fn prop_slug_strategy_reaches_every_input_class() {
     use proptest::strategy::ValueTree;
     use proptest::test_runner::TestRunner;
     let mut runner = TestRunner::deterministic();
-    let (mut one, mut long, mut hyphen, mut underscore, mut digit, mut upper) = (false, false, false, false, false, false);
+    let (mut one, mut long, mut hyphen, mut underscore, mut digit, mut upper) =
+        (false, false, false, false, false, false);
     for _ in 0..512 {
         let s = slug().new_tree(&mut runner).unwrap().current();
         one |= s.len() == 1;
@@ -110,7 +118,11 @@ fn prop_slug_strategy_reaches_every_input_class() {
         digit |= s.chars().any(|c| c.is_ascii_digit());
         upper |= s.chars().any(|c| c.is_ascii_uppercase());
     }
-    assert!([one, long, hyphen, underscore, digit, upper].iter().all(|r| *r), "[one, long, hyphen, underscore, digit, upper]: {:?}", [one, long, hyphen, underscore, digit, upper]);
+    assert!(
+        [one, long, hyphen, underscore, digit, upper].iter().all(|r| *r),
+        "[one, long, hyphen, underscore, digit, upper]: {:?}",
+        [one, long, hyphen, underscore, digit, upper]
+    );
 }
 
 /// Spec examples: the reserved names the fixtures use, and what is not reserved.
@@ -159,7 +171,10 @@ fn the_creator_is_the_admin_and_the_only_member_and_the_slug_is_then_taken() {
     .unwrap();
     assert_eq!((made.role, made.total_members), (Role::Admin, 1));
     let w = &made.workspace;
-    assert_eq!((w.name.as_str(), w.slug.as_str(), w.owner_id, w.organization_size.as_deref(), w.timezone.as_str()), ("Acme", "acme", Some(who.user_id), Some("2-10"), "Asia/Kolkata"));
+    assert_eq!(
+        (w.name.as_str(), w.slug.as_str(), w.owner_id, w.organization_size.as_deref(), w.timezone.as_str()),
+        ("Acme", "acme", Some(who.user_id), Some("2-10"), "Asia/Kolkata")
+    );
     assert!(w.background_color.starts_with('#') && w.background_color.len() == 7, "{}", w.background_color);
     // it is in the creator's list with the same role, and the creator's scope sees themselves as the only member
     let mine = block_on(my_workspaces(&app, &who)).unwrap();
@@ -167,7 +182,10 @@ fn the_creator_is_the_admin_and_the_only_member_and_the_slug_is_then_taken() {
     let scope = block_on(authorize_workspace(&app, &who, &WorkspaceSlug::new("acme"))).unwrap();
     assert_eq!(scope.role(), Role::Admin);
     let me = block_on(my_membership(&app, &scope)).unwrap();
-    assert_eq!((me.user_id, me.role, me.is_active, me.company_role.as_deref()), (who.user_id, Role::Admin, true, Some("engineer")));
+    assert_eq!(
+        (me.user_id, me.role, me.is_active, me.company_role.as_deref()),
+        (who.user_id, Role::Admin, true, Some("engineer"))
+    );
     let all = block_on(members(&app, &scope)).unwrap();
     assert_eq!(all.len(), 1);
     assert_eq!(all[0].user.email.as_deref(), Some("w@example.test"));
@@ -193,8 +211,16 @@ enum Refusal {
 #[rstest]
 fn a_refused_creation_writes_nothing(
     #[values(
-        Refusal::EmptyName, Refusal::LongName, Refusal::UrlInName, Refusal::SymbolsOnlyName, Refusal::EmptySlug,
-        Refusal::LongSlug, Refusal::SlugWithSpace, Refusal::ReservedSlug, Refusal::LongSize, Refusal::UnknownZone
+        Refusal::EmptyName,
+        Refusal::LongName,
+        Refusal::UrlInName,
+        Refusal::SymbolsOnlyName,
+        Refusal::EmptySlug,
+        Refusal::LongSlug,
+        Refusal::SlugWithSpace,
+        Refusal::ReservedSlug,
+        Refusal::LongSize,
+        Refusal::UnknownZone
     )]
     why: Refusal,
 ) {
@@ -216,7 +242,10 @@ fn a_refused_creation_writes_nothing(
     assert!(matches!(block_on(create_workspace(&app, &who, r)), Err(CoreError::Invalid(_))), "{why:?}");
     assert!(block_on(my_workspaces(&app, &who)).unwrap().is_empty(), "{why:?}: nothing was made");
     if !slug.is_empty() && !is_reserved_slug(&slug) {
-        assert!(block_on(slug_available(&app, &slug)).unwrap() || slug.contains(' '), "{why:?}: the slug is still free");
+        assert!(
+            block_on(slug_available(&app, &slug)).unwrap() || slug.contains(' '),
+            "{why:?}: the slug is still free"
+        );
     }
     // control: the same request with the fault taken out is accepted
     assert!(block_on(create_workspace(&app, &who, request("Fine", "fine-slug"))).is_ok());
@@ -261,7 +290,10 @@ fn a_slug_that_is_taken_is_a_conflict_and_the_first_workspace_is_untouched() {
 fn a_caller_whose_user_is_gone_cannot_make_a_workspace() {
     let (_w, app, _who) = ticking();
     let ghost = Principal { user_id: UserId(Uuid::from_u128(0xDEAD)) };
-    assert!(matches!(block_on(create_workspace(&app, &ghost, request("Ghost", "ghost"))), Err(CoreError::Unauthenticated)));
+    assert!(matches!(
+        block_on(create_workspace(&app, &ghost, request("Ghost", "ghost"))),
+        Err(CoreError::Unauthenticated)
+    ));
     assert!(block_on(slug_available(&app, "ghost")).unwrap(), "nothing was made for them: the slug is still free");
 }
 
@@ -275,7 +307,9 @@ fn the_list_is_newest_first_and_each_person_sees_only_their_own() {
         make(&app, &who, name, slug);
     }
     make(&app, &other, "Theirs", "theirs");
-    let slugs = |p: &Principal| block_on(my_workspaces(&app, p)).unwrap().into_iter().map(|l| l.workspace.slug.to_string()).collect::<Vec<_>>();
+    let slugs = |p: &Principal| {
+        block_on(my_workspaces(&app, p)).unwrap().into_iter().map(|l| l.workspace.slug.to_string()).collect::<Vec<_>>()
+    };
     assert_eq!(slugs(&who), ["gamma", "beta", "alpha"]);
     assert_eq!(slugs(&other), ["theirs"]);
 }
@@ -389,8 +423,13 @@ fn the_reads_behind_a_scope_show_that_workspace_and_no_other() {
     let admin_a = w.principal(Actor::AdminA);
     let scope_a = block_on(authorize_workspace(&w.app, &admin_a, &w.slug_a)).unwrap();
     // a member list holds exactly workspace A's people
-    let people: std::collections::BTreeSet<UserId> = block_on(members(&w.app, &scope_a)).unwrap().iter().map(|r| r.member.user_id).collect();
-    let want_a: std::collections::BTreeSet<UserId> = [Actor::AdminA, Actor::MemberA, Actor::GuestA, Actor::OutsiderA, Actor::Dual].iter().map(|a| w.principal(*a).user_id).collect();
+    let people: std::collections::BTreeSet<UserId> =
+        block_on(members(&w.app, &scope_a)).unwrap().iter().map(|r| r.member.user_id).collect();
+    let want_a: std::collections::BTreeSet<UserId> =
+        [Actor::AdminA, Actor::MemberA, Actor::GuestA, Actor::OutsiderA, Actor::Dual]
+            .iter()
+            .map(|a| w.principal(*a).user_id)
+            .collect();
     assert_eq!(people, want_a);
     assert!(!people.contains(&w.principal(Actor::MemberB).user_id), "workspace B's member is not in A's list");
     // the caller's own roles are the roles in THIS workspace's projects: Dual is a member of A's project and a guest of B's

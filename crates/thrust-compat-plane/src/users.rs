@@ -194,18 +194,29 @@ pub(crate) async fn get_me(Caller(who): Caller, Extension(app): Extension<App>) 
 
 /// S10. The fields of `UserSerializer` that Thrust keeps are changed, the rest are ignored (including every read-only
 /// field the pin names), and the answer is the long user.
-pub(crate) async fn patch_me(Caller(who): Caller, Extension(app): Extension<App>, body: Bytes) -> Result<Json<Value>, PlaneError> {
+pub(crate) async fn patch_me(
+    Caller(who): Caller,
+    Extension(app): Extension<App>,
+    body: Bytes,
+) -> Result<Json<Value>, PlaneError> {
     let patch = user_patch(&object_body(&body)?).map_err(PlaneError::Fields)?;
     Ok(Json(user_full(&thrust_core::update_me(&app, &who, patch).await?)))
 }
 
 /// S07.
-pub(crate) async fn get_profile(Caller(who): Caller, Extension(app): Extension<App>) -> Result<Json<Value>, PlaneError> {
+pub(crate) async fn get_profile(
+    Caller(who): Caller,
+    Extension(app): Extension<App>,
+) -> Result<Json<Value>, PlaneError> {
     Ok(Json(profile_json(&thrust_core::me(&app, &who).await?)))
 }
 
 /// S11. Every writable column of `ProfileSerializer`; the keys the body does not name keep their values.
-pub(crate) async fn patch_profile(Caller(who): Caller, Extension(app): Extension<App>, body: Bytes) -> Result<Json<Value>, PlaneError> {
+pub(crate) async fn patch_profile(
+    Caller(who): Caller,
+    Extension(app): Extension<App>,
+    body: Bytes,
+) -> Result<Json<Value>, PlaneError> {
     let patch = profile_patch(&object_body(&body)?).map_err(PlaneError::Fields)?;
     Ok(Json(profile_json(&thrust_core::update_me(&app, &who, patch).await?)))
 }
@@ -213,20 +224,40 @@ pub(crate) async fn patch_profile(Caller(who): Caller, Extension(app): Extension
 /// One flag of the profile set from a body key the way the pin does it: `request.data.get(key, False)` straight onto the
 /// column, so a missing key is `false`, Django's booleans are booleans and anything else (`null` too) is a 400 with the
 /// pin's one message.
-async fn set_flag(app: &App, who: &Principal, body: &Bytes, key: &str, patch: impl FnOnce(bool) -> ProfilePatch) -> Result<Json<Value>, PlaneError> {
+async fn set_flag(
+    app: &App,
+    who: &Principal,
+    body: &Bytes,
+    key: &str,
+    patch: impl FnOnce(bool) -> ProfilePatch,
+) -> Result<Json<Value>, PlaneError> {
     let body = object_body(body)?;
-    let value = django_bool(body.get(key)).map_err(|()| PlaneError::BadRequest(json!({"error": "Please provide valid detail"})))?;
+    let value = django_bool(body.get(key))
+        .map_err(|()| PlaneError::BadRequest(json!({"error": "Please provide valid detail"})))?;
     thrust_core::update_me(app, who, patch(value)).await?;
     Ok(Json(json!({"message": "Updated successfully"})))
 }
 
 /// S27: the tour on the home page is done.
-pub(crate) async fn patch_tour_completed(Caller(who): Caller, Extension(app): Extension<App>, body: Bytes) -> Result<Json<Value>, PlaneError> {
-    set_flag(&app, &who, &body, "is_tour_completed", |b| ProfilePatch { is_tour_completed: Some(b), ..ProfilePatch::default() }).await
+pub(crate) async fn patch_tour_completed(
+    Caller(who): Caller,
+    Extension(app): Extension<App>,
+    body: Bytes,
+) -> Result<Json<Value>, PlaneError> {
+    set_flag(&app, &who, &body, "is_tour_completed", |b| ProfilePatch {
+        is_tour_completed: Some(b),
+        ..ProfilePatch::default()
+    })
+    .await
 }
 
 /// X04: the last request of the stock onboarding. Not one of the inventory's 48 rows, but `finishUserOnboarding` awaits it,
 /// and a 404 would stop the page from finishing.
-pub(crate) async fn patch_onboard(Caller(who): Caller, Extension(app): Extension<App>, body: Bytes) -> Result<Json<Value>, PlaneError> {
-    set_flag(&app, &who, &body, "is_onboarded", |b| ProfilePatch { is_onboarded: Some(b), ..ProfilePatch::default() }).await
+pub(crate) async fn patch_onboard(
+    Caller(who): Caller,
+    Extension(app): Extension<App>,
+    body: Bytes,
+) -> Result<Json<Value>, PlaneError> {
+    set_flag(&app, &who, &body, "is_onboarded", |b| ProfilePatch { is_onboarded: Some(b), ..ProfilePatch::default() })
+        .await
 }

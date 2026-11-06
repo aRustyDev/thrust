@@ -22,10 +22,25 @@ use serde_json::json;
 use thrust_contract_tests::*;
 use thrust_contracts::*;
 
-const VERBS: &[&str] = &["Fix", "Add", "Remove", "Refactor", "Document", "Investigate", "Migrate", "Review", "Rename", "Test"];
+const VERBS: &[&str] =
+    &["Fix", "Add", "Remove", "Refactor", "Document", "Investigate", "Migrate", "Review", "Rename", "Test"];
 const NOUNS: &[&str] = &[
-    "login flow", "billing page", "search index", "queue consumer", "retry policy", "cycle view", "module board", "export job",
-    "webhook handler", "email digest", "rate limiter", "audit log", "session cookie", "api key", "import wizard", "kanban column",
+    "login flow",
+    "billing page",
+    "search index",
+    "queue consumer",
+    "retry policy",
+    "cycle view",
+    "module board",
+    "export job",
+    "webhook handler",
+    "email digest",
+    "rate limiter",
+    "audit log",
+    "session cookie",
+    "api key",
+    "import wizard",
+    "kanban column",
 ];
 
 fn pct(sorted: &[Duration], p: f64) -> Duration {
@@ -107,13 +122,22 @@ async fn main() {
     let uid = || uuid::Uuid::new_v4();
     let ws = WorkspaceId(uid());
     let slug = format!("scale-{}", uid().simple());
-    let admin = User { id: UserId(uid()), token: format!("tok-{}", uid().simple()), email: String::new(), password: String::new() };
+    let admin = User {
+        id: UserId(uid()),
+        token: format!("tok-{}", uid().simple()),
+        email: String::new(),
+        password: String::new(),
+    };
     let project_ids: Vec<ProjectId> = (0..projects + 1).map(|_| ProjectId(uid())).collect();
     let fixture = SeedFixture {
         workspaces: vec![SeedWorkspace { id: ws, slug: WorkspaceSlug::new(&slug) }],
         users: vec![admin.id],
         workspace_members: vec![SeedWorkspaceMember { workspace_id: ws, user_id: admin.id }],
-        projects: project_ids.iter().enumerate().map(|(i, p)| SeedProject { id: *p, workspace_id: ws, name: format!("scale {i}") }).collect(),
+        projects: project_ids
+            .iter()
+            .enumerate()
+            .map(|(i, p)| SeedProject { id: *p, workspace_id: ws, name: format!("scale {i}") })
+            .collect(),
         memberships: project_ids
             .iter()
             .map(|p| SeedMembership { project_id: *p, workspace_id: ws, user_id: admin.id, role: Role::Admin })
@@ -133,8 +157,10 @@ async fn main() {
             let started = Instant::now();
             while rows < n {
                 let chunk = 5_000.min(n - rows);
-                let items: Vec<SeedWorkItemSpec> =
-                    (0..chunk).map(|k| item(base + rows + k)).map(|(name, description)| SeedWorkItemSpec { name, description }).collect();
+                let items: Vec<SeedWorkItemSpec> = (0..chunk)
+                    .map(|k| item(base + rows + k))
+                    .map(|(name, description)| SeedWorkItemSpec { name, description })
+                    .collect();
                 let req = SeedWorkItemsRequest { workspace_id: ws, project_id: project, created_by: admin, items };
                 let r = t.admin_post("/internal/seed-work-items", &serde_json::to_value(&req).unwrap()).await;
                 assert_eq!(r.status(), 200, "seed-work-items: {:?}", r.text().await);
@@ -157,7 +183,11 @@ async fn main() {
     );
     let big_project = project_ids[projects];
     let big_elapsed = seed_into(big_project, big, 0).await;
-    println!("seeded the big project ({big} items): {:.1}s, {:.0} rows/s", big_elapsed.as_secs_f64(), big as f64 / big_elapsed.as_secs_f64());
+    println!(
+        "seeded the big project ({big} items): {:.1}s, {:.0} rows/s",
+        big_elapsed.as_secs_f64(),
+        big as f64 / big_elapsed.as_secs_f64()
+    );
 
     let at = |p: ProjectId| At { slug: slug.clone(), project: p };
     let small = at(project_ids[0]);
@@ -214,7 +244,12 @@ async fn main() {
                 users: vec![id],
                 workspace_members: vec![SeedWorkspaceMember { workspace_id: ws, user_id: id }],
                 projects: vec![],
-                memberships: vec![SeedMembership { project_id: project_ids[0], workspace_id: ws, user_id: id, role: Role::Member }],
+                memberships: vec![SeedMembership {
+                    project_id: project_ids[0],
+                    workspace_id: ws,
+                    user_id: id,
+                    role: Role::Member,
+                }],
                 sessions: vec![SeedSession { token: token.clone(), user_id: id }],
                 ..SeedFixture::default()
             };

@@ -29,7 +29,12 @@ pub(crate) fn py_str(v: &Value) -> String {
 
 /// DRF `CharField` (and `TextField`): trims, refuses blank and null unless the column allows them, accepts a number as its
 /// text, refuses a bool, a list and an object, and counts the length in characters after trimming.
-pub(crate) fn char_field(v: &Value, max: Option<usize>, allow_blank: bool, allow_null: bool) -> Result<Option<String>, String> {
+pub(crate) fn char_field(
+    v: &Value,
+    max: Option<usize>,
+    allow_blank: bool,
+    allow_null: bool,
+) -> Result<Option<String>, String> {
     let text = match v {
         Value::Null if allow_null => return Ok(None),
         Value::Null => return Err("This field may not be null.".into()),
@@ -105,7 +110,12 @@ fn url_field(v: &Value, max: usize) -> Result<Option<String>, String> {
 pub(crate) fn user_patch(body: &Map<String, Value>) -> Result<ProfilePatch, FieldErrors> {
     let mut errors = FieldErrors::new();
     let mut patch = ProfilePatch::default();
-    for (field, max, blank) in [("display_name", Some(255), false), ("first_name", Some(255), true), ("last_name", Some(255), true), ("avatar", None, true)] {
+    for (field, max, blank) in [
+        ("display_name", Some(255), false),
+        ("first_name", Some(255), true),
+        ("last_name", Some(255), true),
+        ("avatar", None, true),
+    ] {
         let Some(v) = body.get(field) else { continue };
         match char_field(v, max, blank, false) {
             Err(m) => fail(&mut errors, field, m),
@@ -164,7 +174,11 @@ enum Kind {
     /// Any JSON value, null allowed (`billing_address`).
     JsonOrNull,
     /// `max` characters; blank and null as the column allows.
-    Text { max: Option<usize>, blank: bool, null: bool },
+    Text {
+        max: Option<usize>,
+        blank: bool,
+        null: bool,
+    },
     Choice(&'static [&'static str]),
 }
 
@@ -203,7 +217,9 @@ pub(crate) fn profile_patch(body: &Map<String, Value>) -> Result<ProfilePatch, F
             Kind::Bool => bool_field(v).map(Value::Bool),
             Kind::Json if v.is_null() => Err("This field may not be null.".into()),
             Kind::Json | Kind::JsonOrNull => Ok(v.clone()),
-            Kind::Text { max, blank, null } => char_field(v, *max, *blank, *null).map(|s| s.map_or(Value::Null, Value::String)),
+            Kind::Text { max, blank, null } => {
+                char_field(v, *max, *blank, *null).map(|s| s.map_or(Value::Null, Value::String))
+            }
             Kind::Choice(choices) => choice_field(v, choices).map(|c| match *field {
                 // an integer choice is stored as the integer
                 "start_of_the_week" => json!(c.parse::<u8>().unwrap_or(0)),

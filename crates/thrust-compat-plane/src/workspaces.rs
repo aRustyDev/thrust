@@ -84,7 +84,10 @@ fn member_props(m: &WorkspaceMember) -> [(&'static str, Value); 6] {
     [
         ("view_props", set("view_props", default_view_props())),
         ("default_props", set("default_props", default_view_props())),
-        ("issue_props", set("issue_props", json!({"subscribed": true, "assigned": true, "created": true, "all_issues": true}))),
+        (
+            "issue_props",
+            set("issue_props", json!({"subscribed": true, "assigned": true, "created": true, "all_issues": true})),
+        ),
         ("getting_started_checklist", set("getting_started_checklist", json!({}))),
         ("tips", set("tips", json!({}))),
         ("explored_features", set("explored_features", json!({}))),
@@ -117,7 +120,10 @@ pub(crate) async fn invitations(Caller(_): Caller) -> Json<Value> {
 }
 
 /// S09. The workspaces the caller is an active member of, newest first.
-pub(crate) async fn my_workspaces(Caller(who): Caller, Extension(app): Extension<App>) -> Result<Json<Value>, PlaneError> {
+pub(crate) async fn my_workspaces(
+    Caller(who): Caller,
+    Extension(app): Extension<App>,
+) -> Result<Json<Value>, PlaneError> {
     let list = thrust_core::my_workspaces(&app, &who).await?;
     Ok(Json(Value::Array(list.iter().map(workspace_json).collect())))
 }
@@ -176,14 +182,19 @@ fn truthy(v: Option<&Value>) -> bool {
 /// S14. Make a workspace. The pin checks in two stages and says so in the shape of its refusals: the view's own checks answer
 /// `{"error": ...}` (both fields given, their lengths, a URL in the name), then the serializer's answer
 /// `{field: [message]}` for everything it finds wrong at once. The same order is kept.
-pub(crate) async fn create(Caller(who): Caller, Extension(app): Extension<App>, body: Bytes) -> Result<(StatusCode, Json<Value>), PlaneError> {
+pub(crate) async fn create(
+    Caller(who): Caller,
+    Extension(app): Extension<App>,
+    body: Bytes,
+) -> Result<(StatusCode, Json<Value>), PlaneError> {
     let b = object_body(&body)?;
     let error = |message: &str| PlaneError::BadRequest(json!({ "error": message }));
     if !truthy(b.get("name")) || !truthy(b.get("slug")) {
         return Err(error("Both name and slug are required"));
     }
     let (name, slug) = (py_str(&b["name"]), py_str(&b["slug"]));
-    if name.chars().count() > thrust_core::MAX_WORKSPACE_NAME || slug.chars().count() > thrust_core::MAX_WORKSPACE_SLUG {
+    if name.chars().count() > thrust_core::MAX_WORKSPACE_NAME || slug.chars().count() > thrust_core::MAX_WORKSPACE_SLUG
+    {
         return Err(error("The maximum length for name is 80 and for slug is 48"));
     }
     if thrust_core::contains_url(&name) {
@@ -246,7 +257,9 @@ pub(crate) async fn create(Caller(who): Caller, Extension(app): Extension<App>, 
     match thrust_core::create_workspace(&app, &who, request).await {
         Ok(listing) => Ok((StatusCode::CREATED, Json(workspace_json(&listing)))),
         // another request took the slug between the check and the insert: the unique index decided
-        Err(CoreError::Conflict(_)) => Err(PlaneError::Conflict(json!({"slug": "The workspace with the slug already exists"}))),
+        Err(CoreError::Conflict(_)) => {
+            Err(PlaneError::Conflict(json!({"slug": "The workspace with the slug already exists"})))
+        }
         Err(e) => Err(e.into()),
     }
 }
@@ -272,7 +285,11 @@ fn blank_member() -> Value {
 }
 
 /// S15. The caller's own membership: their role (which every permission check in the app reads) and their settings.
-pub(crate) async fn member_me(Caller(who): Caller, Extension(app): Extension<App>, Path(slug): Path<String>) -> Result<Json<Value>, PlaneError> {
+pub(crate) async fn member_me(
+    Caller(who): Caller,
+    Extension(app): Extension<App>,
+    Path(slug): Path<String>,
+) -> Result<Json<Value>, PlaneError> {
     let Some(scope) = scope(&app, &who, slug).await? else { return Ok(Json(blank_member())) };
     let m = thrust_core::my_membership(&app, &scope).await?;
     let mut row = member_json(&m);
@@ -283,7 +300,11 @@ pub(crate) async fn member_me(Caller(who): Caller, Extension(app): Extension<App
 }
 
 /// S16. The caller's role in each project of the workspace, by project id.
-pub(crate) async fn project_roles(Caller(who): Caller, Extension(app): Extension<App>, Path(slug): Path<String>) -> Result<Json<Value>, PlaneError> {
+pub(crate) async fn project_roles(
+    Caller(who): Caller,
+    Extension(app): Extension<App>,
+    Path(slug): Path<String>,
+) -> Result<Json<Value>, PlaneError> {
     let Some(scope) = scope(&app, &who, slug).await? else {
         return Err(PlaneError::Forbidden(json!({"detail": "You do not have permission to perform this action."})));
     };
@@ -293,7 +314,11 @@ pub(crate) async fn project_roles(Caller(who): Caller, Extension(app): Extension
 
 /// S18. Everyone in the workspace, deactivated members too (the app shows them as suspended). A guest sees the people
 /// without their email and sign-in method.
-pub(crate) async fn members(Caller(who): Caller, Extension(app): Extension<App>, Path(slug): Path<String>) -> Result<Json<Value>, PlaneError> {
+pub(crate) async fn members(
+    Caller(who): Caller,
+    Extension(app): Extension<App>,
+    Path(slug): Path<String>,
+) -> Result<Json<Value>, PlaneError> {
     let Some(scope) = scope(&app, &who, slug).await? else {
         return Err(PlaneError::Forbidden(json!({"error": "You don't have the required permissions."})));
     };

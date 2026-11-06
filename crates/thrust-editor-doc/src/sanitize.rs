@@ -43,52 +43,11 @@ const GENERIC: &[&str] = &[
 
 const PER_TAG: &[(&str, &[&str])] = &[
     ("a", &["href", "target"]),
-    (
-        "image-component",
-        &[
-            "id",
-            "width",
-            "height",
-            "aspectRatio",
-            "aspectratio",
-            "src",
-            "alignment",
-            "status",
-        ],
-    ),
-    (
-        "img",
-        &[
-            "width",
-            "height",
-            "aspectRatio",
-            "aspectratio",
-            "alignment",
-            "src",
-            "alt",
-            "title",
-        ],
-    ),
-    (
-        "mention-component",
-        &["id", "entity_identifier", "entity_name"],
-    ),
-    (
-        "th",
-        &["colspan", "rowspan", "colwidth", "background", "style"],
-    ),
-    (
-        "td",
-        &[
-            "colspan",
-            "rowspan",
-            "colwidth",
-            "background",
-            "textColor",
-            "textcolor",
-            "style",
-        ],
-    ),
+    ("image-component", &["id", "width", "height", "aspectRatio", "aspectratio", "src", "alignment", "status"]),
+    ("img", &["width", "height", "aspectRatio", "aspectratio", "alignment", "src", "alt", "title"]),
+    ("mention-component", &["id", "entity_identifier", "entity_name"]),
+    ("th", &["colspan", "rowspan", "colwidth", "background", "style"]),
+    ("td", &["colspan", "rowspan", "colwidth", "background", "textColor", "textcolor", "style"]),
     ("tr", &["background", "textColor", "textcolor", "style"]),
     ("pre", &["language"]),
     ("code", &["language", "spellcheck"]),
@@ -104,10 +63,8 @@ pub fn plane_builder() -> ammonia::Builder<'static> {
     tags.extend(CUSTOM_TAGS.iter().copied());
     b.tags(tags);
     b.generic_attributes(GENERIC.iter().copied().collect());
-    let map: HashMap<&'static str, HashSet<&'static str>> = PER_TAG
-        .iter()
-        .map(|(t, a)| (*t, a.iter().copied().collect()))
-        .collect();
+    let map: HashMap<&'static str, HashSet<&'static str>> =
+        PER_TAG.iter().map(|(t, a)| (*t, a.iter().copied().collect())).collect();
     b.tag_attributes(map);
     b.url_schemes(SAFE_PROTOCOLS.iter().copied().collect());
     // nh3 leaves strip_comments=true and link_rel="noopener noreferrer" at their defaults, which are ammonia's.
@@ -129,11 +86,7 @@ fn css_is_dangerous(v: &str) -> bool {
         }
     }
     s.push_str(rest);
-    let s: String = s
-        .chars()
-        .filter(|c| !c.is_whitespace() && *c != '\\')
-        .flat_map(|c| c.to_lowercase())
-        .collect();
+    let s: String = s.chars().filter(|c| !c.is_whitespace() && *c != '\\').flat_map(|c| c.to_lowercase()).collect();
     [
         "expression(",
         "javascript:",
@@ -153,11 +106,8 @@ fn css_is_dangerous(v: &str) -> bool {
 }
 
 fn url_ok(v: &str) -> bool {
-    let n: String = v
-        .chars()
-        .filter(|c| !c.is_control() && !c.is_whitespace())
-        .flat_map(|c| c.to_lowercase())
-        .collect();
+    let n: String =
+        v.chars().filter(|c| !c.is_control() && !c.is_whitespace()).flat_map(|c| c.to_lowercase()).collect();
     match n.find([':', '/', '?', '#']) {
         Some(i) if n.as_bytes()[i] == b':' => matches!(&n[..i], "http" | "https"),
         _ => true, // relative reference
@@ -217,14 +167,7 @@ pub fn validate_binary_data(data: &[u8]) -> Result<(), &'static str> {
         return Err("Binary data too short to be valid document format");
     }
     let head = String::from_utf8_lossy(&data[..data.len().min(200)]).to_lowercase();
-    for p in [
-        "<html",
-        "<!doctype",
-        "<script",
-        "javascript:",
-        "data:",
-        "<iframe",
-    ] {
+    for p in ["<html", "<!doctype", "<script", "javascript:", "data:", "<iframe"] {
         if head.contains(p) {
             return Err("Binary data contains suspicious content patterns");
         }
@@ -263,10 +206,7 @@ fn strip_once(s: &str) -> String {
                             i = b.len();
                         }
                     }
-                } else if rest.starts_with("<![")
-                    || rest.starts_with("<!")
-                    || rest.starts_with("<?")
-                {
+                } else if rest.starts_with("<![") || rest.starts_with("<!") || rest.starts_with("<?") {
                     match rest.find('>') {
                         Some(e) => i += e + 1,
                         None => {
@@ -274,9 +214,7 @@ fn strip_once(s: &str) -> String {
                             i = b.len();
                         }
                     }
-                } else if rest.len() > 1
-                    && (rest.as_bytes()[1].is_ascii_alphabetic() || rest.as_bytes()[1] == b'/')
-                {
+                } else if rest.len() > 1 && (rest.as_bytes()[1].is_ascii_alphabetic() || rest.as_bytes()[1] == b'/') {
                     match tag_end(rest) {
                         Some(e) => i += e + 1,
                         None => {
@@ -298,21 +236,9 @@ fn strip_once(s: &str) -> String {
                     };
                     let n = body
                         .bytes()
-                        .take_while(|c| {
-                            if hex {
-                                c.is_ascii_hexdigit()
-                            } else {
-                                c.is_ascii_digit()
-                            }
-                        })
+                        .take_while(|c| if hex { c.is_ascii_hexdigit() } else { c.is_ascii_digit() })
                         .count();
-                    if n > 0
-                        && body
-                            .as_bytes()
-                            .get(n)
-                            .map(|c| !c.is_ascii_hexdigit())
-                            .unwrap_or(false)
-                    {
+                    if n > 0 && body.as_bytes().get(n).map(|c| !c.is_ascii_hexdigit()).unwrap_or(false) {
                         out.push_str(&s[i..i + 2 + usize::from(hex) + n]);
                         out.push(';');
                         i += 2 + usize::from(hex) + n;
@@ -322,17 +248,10 @@ fn strip_once(s: &str) -> String {
                         continue;
                     }
                 } else {
-                    let n = rest
-                        .bytes()
-                        .take_while(|c| c.is_ascii_alphanumeric() || *c == b'-' || *c == b'.')
-                        .count();
+                    let n = rest.bytes().take_while(|c| c.is_ascii_alphanumeric() || *c == b'-' || *c == b'.').count();
                     if n > 0
                         && rest.as_bytes()[0].is_ascii_alphabetic()
-                        && rest
-                            .as_bytes()
-                            .get(n)
-                            .map(|c| !c.is_ascii_alphanumeric())
-                            .unwrap_or(false)
+                        && rest.as_bytes().get(n).map(|c| !c.is_ascii_alphanumeric()).unwrap_or(false)
                     {
                         out.push('&');
                         out.push_str(&rest[..n]);

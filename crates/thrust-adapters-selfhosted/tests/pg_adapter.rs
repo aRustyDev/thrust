@@ -81,15 +81,18 @@ async fn seeded(env: &Env) -> (WorkspaceId, WorkspaceId, ProjectId, UserId) {
     let p = ProjectId(new_id());
     let u = UserId(new_id());
     env.db
-        .seed(&SystemScope::mint(), &SeedFixture {
-            workspaces: vec![SeedWorkspace { id: ws, slug: slug_of(ws) }],
-            users: vec![u],
-            workspace_members: vec![SeedWorkspaceMember { workspace_id: ws, user_id: u }],
-            projects: vec![SeedProject { id: p, workspace_id: ws, name: "p".into() }],
-            memberships: vec![SeedMembership { project_id: p, workspace_id: ws, user_id: u, role: Role::Member }],
-            sessions: vec![],
-            ..SeedFixture::default()
-        })
+        .seed(
+            &SystemScope::mint(),
+            &SeedFixture {
+                workspaces: vec![SeedWorkspace { id: ws, slug: slug_of(ws) }],
+                users: vec![u],
+                workspace_members: vec![SeedWorkspaceMember { workspace_id: ws, user_id: u }],
+                projects: vec![SeedProject { id: p, workspace_id: ws, name: "p".into() }],
+                memberships: vec![SeedMembership { project_id: p, workspace_id: ws, user_id: u, role: Role::Member }],
+                sessions: vec![],
+                ..SeedFixture::default()
+            },
+        )
         .await
         .unwrap();
     (ws, other_ws, p, u)
@@ -108,14 +111,17 @@ async fn membership_distinguishes_member_non_member_and_other_tenant() {
     // and a second, real workspace that `u` also belongs to, in which the project does not exist
     let v = UserId(new_id());
     env.db
-        .seed(&SystemScope::mint(), &SeedFixture {
-            workspaces: vec![SeedWorkspace { id: other_ws, slug: slug_of(other_ws) }],
-            workspace_members: vec![
-                SeedWorkspaceMember { workspace_id: ws, user_id: v },
-                SeedWorkspaceMember { workspace_id: other_ws, user_id: u },
-            ],
-            ..SeedFixture::default()
-        })
+        .seed(
+            &SystemScope::mint(),
+            &SeedFixture {
+                workspaces: vec![SeedWorkspace { id: other_ws, slug: slug_of(other_ws) }],
+                workspace_members: vec![
+                    SeedWorkspaceMember { workspace_id: ws, user_id: v },
+                    SeedWorkspaceMember { workspace_id: other_ws, user_id: u },
+                ],
+                ..SeedFixture::default()
+            },
+        )
         .await
         .unwrap();
     assert_eq!(env.db.membership(&slug, p, v).await.unwrap(), Membership::NotAMember);
@@ -372,35 +378,37 @@ async fn migration_0007_gives_existing_keys_version_1_and_is_idempotent() {
         let user = user.0;
         async move {
             match version {
-                None => raw
-                    .execute(
+                None => {
+                    raw.execute(
                         "INSERT INTO api_keys (id, user_id, token_hash, prefix, label, created_at) \
                          VALUES ($1, $2, $3, 'thrk_x', '', now())",
                         &[&new_id(), &user, &vec![digest; 32]],
                     )
-                    .await,
-                Some(v) => raw
-                    .execute(
+                    .await
+                }
+                Some(v) => {
+                    raw.execute(
                         "INSERT INTO api_keys (id, user_id, token_hash, hash_version, prefix, label, created_at) \
                          VALUES ($1, $2, $3, $4, 'thrk_x', '', now())",
                         &[&new_id(), &user, &vec![digest; 32], &v],
                     )
-                    .await,
+                    .await
+                }
             }
         }
     };
     insert(10, None).await.expect("the default");
     assert_eq!(
-        raw.query_one("SELECT hash_version FROM api_keys WHERE token_hash = $1", &[&vec![10u8; 32]]).await.unwrap().get::<_, i16>(0),
+        raw.query_one("SELECT hash_version FROM api_keys WHERE token_hash = $1", &[&vec![10u8; 32]])
+            .await
+            .unwrap()
+            .get::<_, i16>(0),
         1
     );
     insert(11, Some(i16::MAX)).await.expect("the largest version");
     assert!(insert(12, Some(0)).await.is_err(), "zero is not a version");
     assert!(insert(13, Some(-1)).await.is_err(), "a negative one is not either");
-    assert!(
-        raw.execute("UPDATE api_keys SET hash_version = NULL WHERE id = $1", &[&a]).await.is_err(),
-        "NOT NULL"
-    );
+    assert!(raw.execute("UPDATE api_keys SET hash_version = NULL WHERE id = $1", &[&a]).await.is_err(), "NOT NULL");
     // idempotent in the schema too: one CHECK on the version, not one per run
     let checks = raw
         .query_one(
@@ -456,7 +464,12 @@ fn profile_for(user: UserId) -> UserProfile {
 async fn user_with_profile(env: &Env) -> UserId {
     let user = UserId(new_id());
     env.db
-        .insert_user(&UserRecord { id: user, email: Some(format!("{}@example.test", user.0.simple())), password_hash: None, is_active: true })
+        .insert_user(&UserRecord {
+            id: user,
+            email: Some(format!("{}@example.test", user.0.simple())),
+            password_hash: None,
+            is_active: true,
+        })
         .await
         .unwrap();
     assert!(env.db.insert_profile(&profile_for(user)).await.unwrap());
@@ -530,13 +543,17 @@ async fn the_profile_table_has_the_columns_it_says_and_the_constraints_that_keep
     assert!(matches!(env.db.insert_profile(&same_name).await, Err(DbError::Conflict(_))));
     assert!(env.db.profile(other).await.unwrap().is_none());
     // the JSON columns hold objects: a scalar or an array is refused by the database itself
-    for (column, bad) in [("onboarding_step", "[]"), ("onboarding_step", "1"), ("preferences", "[]"), ("preferences", "\"x\"")] {
+    for (column, bad) in
+        [("onboarding_step", "[]"), ("onboarding_step", "1"), ("preferences", "[]"), ("preferences", "\"x\"")]
+    {
         let sql = format!("UPDATE user_profiles SET {column} = $2::jsonb WHERE user_id = $1");
         let refused = raw.execute(&sql, &[&user.0, &bad]).await;
         assert!(refused.is_err(), "{column} = {bad}");
     }
     // control: an object is accepted
-    raw.execute("UPDATE user_profiles SET preferences = '{\"k\": 1}'::jsonb WHERE user_id = $1", &[&user.0]).await.unwrap();
+    raw.execute("UPDATE user_profiles SET preferences = '{\"k\": 1}'::jsonb WHERE user_id = $1", &[&user.0])
+        .await
+        .unwrap();
 }
 
 #[tokio::test]
@@ -544,7 +561,11 @@ async fn migration_0008_is_idempotent_and_keeps_its_rows() {
     let env = env().await;
     let user = user_with_profile(&env).await;
     env.db
-        .update_profile(user, &ProfilePatch { first_name: Some("Kept".into()), ..ProfilePatch::default() }, Utc.timestamp_opt(1_800_000_100, 0).unwrap())
+        .update_profile(
+            user,
+            &ProfilePatch { first_name: Some("Kept".into()), ..ProfilePatch::default() },
+            Utc.timestamp_opt(1_800_000_100, 0).unwrap(),
+        )
         .await
         .unwrap();
     let raw = env.conn.raw().await.unwrap();
@@ -645,13 +666,23 @@ async fn the_workspace_tables_have_the_columns_they_say_and_the_constraints_that
     env.db.insert_workspace(&w).await.unwrap();
     let (ws, id) = (w.workspace.id.0, w.owner.id);
     // a role outside the three, and view settings that are not an object, are refused by the database itself
-    for (set, why) in [("role = 'owner'", "role"), ("props = '[]'::jsonb", "props array"), ("props = '1'::jsonb", "props scalar")] {
+    for (set, why) in
+        [("role = 'owner'", "role"), ("props = '[]'::jsonb", "props array"), ("props = '1'::jsonb", "props scalar")]
+    {
         let refused = raw.execute(&format!("UPDATE workspace_members SET {set} WHERE workspace_id = $1"), &[&ws]).await;
         assert!(refused.is_err(), "{why}");
     }
     // control: a role from the three and an object are accepted
-    raw.execute("UPDATE workspace_members SET role = 'guest', props = '{\"k\": 1}'::jsonb WHERE workspace_id = $1", &[&ws]).await.unwrap();
-    assert_eq!(env.db.workspace_member(&WorkspaceScope::mint(w.workspace.id, owner, Role::Guest)).await.unwrap().unwrap().role, Role::Guest);
+    raw.execute(
+        "UPDATE workspace_members SET role = 'guest', props = '{\"k\": 1}'::jsonb WHERE workspace_id = $1",
+        &[&ws],
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        env.db.workspace_member(&WorkspaceScope::mint(w.workspace.id, owner, Role::Guest)).await.unwrap().unwrap().role,
+        Role::Guest
+    );
     // a workspace has a name
     assert!(raw.execute("UPDATE workspaces SET name = NULL WHERE id = $1", &[&ws]).await.is_err());
     // a membership id is unique, and a taken one is a conflict that takes its workspace back with it
@@ -691,12 +722,16 @@ async fn migration_0009_upgrades_a_database_that_has_workspaces_and_members() {
     }
     let (ws, u1, u2) = (new_id(), new_id(), new_id());
     raw.execute("INSERT INTO workspaces (id, slug) VALUES ($1, 'legacy-space')", &[&ws]).await.unwrap();
-    raw.execute("INSERT INTO workspace_members (workspace_id, user_id) VALUES ($1, $2), ($1, $3)", &[&ws, &u1, &u2]).await.unwrap();
+    raw.execute("INSERT INTO workspace_members (workspace_id, user_id) VALUES ($1, $2), ($1, $3)", &[&ws, &u1, &u2])
+        .await
+        .unwrap();
     thrust_adapters_postgres::migrate(&raw).await.unwrap();
     let first = raw.query("SELECT user_id, id FROM workspace_members ORDER BY user_id", &[]).await.unwrap();
     thrust_adapters_postgres::migrate(&raw).await.unwrap();
     let again = raw.query("SELECT user_id, id FROM workspace_members ORDER BY user_id", &[]).await.unwrap();
-    let ids = |rows: &[tokio_postgres::Row]| rows.iter().map(|r| (r.get::<_, Uuid>(0), r.get::<_, Uuid>(1))).collect::<Vec<_>>();
+    let ids = |rows: &[tokio_postgres::Row]| {
+        rows.iter().map(|r| (r.get::<_, Uuid>(0), r.get::<_, Uuid>(1))).collect::<Vec<_>>()
+    };
     assert_eq!(ids(&first), ids(&again), "a second run gave the members new ids");
     assert_ne!(ids(&first)[0].1, ids(&first)[1].1, "two members share an id");
 
@@ -705,10 +740,17 @@ async fn migration_0009_upgrades_a_database_that_has_workspaces_and_members() {
     let listed = db.workspaces_of(UserId(u1)).await.unwrap();
     assert_eq!(listed.len(), 1);
     let (w, role, total) = (&listed[0].workspace, listed[0].role, listed[0].total_members);
-    assert_eq!((w.id, w.slug.as_str(), w.name.as_str(), w.owner_id), (WorkspaceId(ws), "legacy-space", "legacy-space", None));
-    assert_eq!((w.timezone.as_str(), w.background_color.as_str(), w.organization_size.clone()), ("UTC", "#808080", None));
+    assert_eq!(
+        (w.id, w.slug.as_str(), w.name.as_str(), w.owner_id),
+        (WorkspaceId(ws), "legacy-space", "legacy-space", None)
+    );
+    assert_eq!(
+        (w.timezone.as_str(), w.background_color.as_str(), w.organization_size.clone()),
+        ("UTC", "#808080", None)
+    );
     assert_eq!((role, total), (Role::Member, 2));
-    let m = db.workspace_member(&WorkspaceScope::mint(WorkspaceId(ws), UserId(u2), Role::Member)).await.unwrap().unwrap();
+    let m =
+        db.workspace_member(&WorkspaceScope::mint(WorkspaceId(ws), UserId(u2), Role::Member)).await.unwrap().unwrap();
     assert_eq!((m.is_active, m.company_role.clone(), m.props.clone()), (true, None, serde_json::json!({})));
     assert!(db.workspace_access(&WorkspaceSlug::new("legacy-space"), UserId(u1)).await.unwrap().is_some());
 }
@@ -817,15 +859,29 @@ async fn the_project_and_first_visit_tables_have_the_columns_they_say_and_the_co
     env.db.insert_workspace(&w).await.unwrap();
     let ws = w.workspace.id.0;
     let project = new_id();
-    raw.execute("INSERT INTO projects (id, workspace_id, name, identifier) VALUES ($1, $2, 'p', 'P')", &[&project, &ws]).await.unwrap();
+    raw.execute(
+        "INSERT INTO projects (id, workspace_id, name, identifier) VALUES ($1, $2, 'p', 'P')",
+        &[&project, &ws],
+    )
+    .await
+    .unwrap();
     // a network outside the two words, and a logo that is not an object, are refused by the database itself
-    for (set, why) in [("network = 'private'", "network"), ("logo_props = '[]'::jsonb", "logo array"), ("logo_props = '1'::jsonb", "logo scalar")] {
+    for (set, why) in [
+        ("network = 'private'", "network"),
+        ("logo_props = '[]'::jsonb", "logo array"),
+        ("logo_props = '1'::jsonb", "logo scalar"),
+    ] {
         assert!(raw.execute(&format!("UPDATE projects SET {set} WHERE id = $1"), &[&project]).await.is_err(), "{why}");
     }
     // a project has an identifier
     assert!(raw.execute("UPDATE projects SET identifier = NULL WHERE id = $1", &[&project]).await.is_err());
     // control: the two networks and an object are accepted
-    raw.execute("UPDATE projects SET network = 'secret', logo_props = '{\"in_use\": \"emoji\"}'::jsonb WHERE id = $1", &[&project]).await.unwrap();
+    raw.execute(
+        "UPDATE projects SET network = 'secret', logo_props = '{\"in_use\": \"emoji\"}'::jsonb WHERE id = $1",
+        &[&project],
+    )
+    .await
+    .unwrap();
 
     // the first-visit rows belong to a workspace and a user that exist
     let stranger = new_id();
@@ -837,16 +893,28 @@ async fn the_project_and_first_visit_tables_have_the_columns_they_say_and_the_co
     assert!(raw.execute(pref, &[&ws, &owner.0]).await.is_err(), "two rows for one key");
     let home = "INSERT INTO workspace_home_preferences (workspace_id, user_id, key, is_enabled, config, sort_order, created_at, updated_at) \
                 VALUES ($1, $2, 'k', true, $3, 1, now(), now())";
-    assert!(raw.execute(home, &[&ws, &owner.0, &serde_json::json!([])]).await.is_err(), "a widget config that is not an object");
+    assert!(
+        raw.execute(home, &[&ws, &owner.0, &serde_json::json!([])]).await.is_err(),
+        "a widget config that is not an object"
+    );
     raw.execute(home, &[&ws, &owner.0, &serde_json::json!({"a": 1})]).await.unwrap();
     let props = "INSERT INTO workspace_user_properties (id, workspace_id, user_id, filters, display_filters, display_properties, \
                    rich_filters, navigation_project_limit, navigation_control_preference, created_at, updated_at) \
                  VALUES ($1, $2, $3, $4, '{}', '{}', '{}', 10, $5, now(), now())";
     let object = serde_json::json!({});
-    assert!(raw.execute(props, &[&new_id(), &ws, &owner.0, &serde_json::json!([]), &"ACCORDION"]).await.is_err(), "filters that are no object");
-    assert!(raw.execute(props, &[&new_id(), &ws, &owner.0, &object, &"SIDEWAYS"]).await.is_err(), "a navigation control of another word");
+    assert!(
+        raw.execute(props, &[&new_id(), &ws, &owner.0, &serde_json::json!([]), &"ACCORDION"]).await.is_err(),
+        "filters that are no object"
+    );
+    assert!(
+        raw.execute(props, &[&new_id(), &ws, &owner.0, &object, &"SIDEWAYS"]).await.is_err(),
+        "a navigation control of another word"
+    );
     raw.execute(props, &[&new_id(), &ws, &owner.0, &object, &"TABBED"]).await.unwrap();
-    assert!(raw.execute(props, &[&new_id(), &ws, &owner.0, &object, &"TABBED"]).await.is_err(), "two settings rows for one member");
+    assert!(
+        raw.execute(props, &[&new_id(), &ws, &owner.0, &object, &"TABBED"]).await.is_err(),
+        "two settings rows for one member"
+    );
 }
 
 /// A database created before migration 0010 has projects that are an id, a workspace and a name, and 0011 adds tables beside
@@ -877,13 +945,23 @@ async fn migrations_0010_and_0011_upgrade_a_database_that_has_projects() {
     // ids that differ only in their first group, as random ones do, and ones that differ only in their last
     let projects = [new_id(), Uuid::from_u128(0xAB), Uuid::from_u128(0xCD)];
     raw.execute("INSERT INTO users (id) VALUES ($1)", &[&user]).await.unwrap();
-    raw.execute("INSERT INTO workspaces (id, slug, name) VALUES ($1, 'legacy-projects', 'Legacy')", &[&ws]).await.unwrap();
+    raw.execute("INSERT INTO workspaces (id, slug, name) VALUES ($1, 'legacy-projects', 'Legacy')", &[&ws])
+        .await
+        .unwrap();
     raw.execute("INSERT INTO workspace_members (workspace_id, user_id) VALUES ($1, $2)", &[&ws, &user]).await.unwrap();
     for p in projects {
-        raw.execute("INSERT INTO projects (id, workspace_id, name) VALUES ($1, $2, $3)", &[&p, &ws, &format!("legacy {p}")]).await.unwrap();
-        raw.execute("INSERT INTO project_members (project_id, workspace_id, user_id, role) VALUES ($1, $2, $3, 'member')", &[&p, &ws, &user])
-            .await
-            .unwrap();
+        raw.execute(
+            "INSERT INTO projects (id, workspace_id, name) VALUES ($1, $2, $3)",
+            &[&p, &ws, &format!("legacy {p}")],
+        )
+        .await
+        .unwrap();
+        raw.execute(
+            "INSERT INTO project_members (project_id, workspace_id, user_id, role) VALUES ($1, $2, $3, 'member')",
+            &[&p, &ws, &user],
+        )
+        .await
+        .unwrap();
     }
     thrust_adapters_postgres::migrate(&raw).await.unwrap();
     async fn state(raw: &tokio_postgres::Client) -> Vec<(Uuid, String, String, Timestamp)> {
@@ -905,12 +983,19 @@ async fn migrations_0010_and_0011_upgrade_a_database_that_has_projects() {
 
     drop(raw);
     let db = PgDatabase::new(conn);
-    let listed = db.workspace_projects(&WorkspaceScope::mint(WorkspaceId(ws), UserId(user), Role::Member)).await.unwrap();
+    let listed =
+        db.workspace_projects(&WorkspaceScope::mint(WorkspaceId(ws), UserId(user), Role::Member)).await.unwrap();
     assert_eq!(listed.len(), 3);
     for l in &listed {
         let p = &l.project;
-        assert_eq!((p.network, p.archived_at, p.logo_props.clone(), p.project_lead, p.created_by), (ProjectNetwork::Public, None, serde_json::json!({}), None, None));
-        assert_eq!((p.cycle_view, p.issue_views_view, p.module_view, p.page_view, p.intake_view, p.guest_view_all_features), (false, false, false, true, false, false));
+        assert_eq!(
+            (p.network, p.archived_at, p.logo_props.clone(), p.project_lead, p.created_by),
+            (ProjectNetwork::Public, None, serde_json::json!({}), None, None)
+        );
+        assert_eq!(
+            (p.cycle_view, p.issue_views_view, p.module_view, p.page_view, p.intake_view, p.guest_view_all_features),
+            (false, false, false, true, false, false)
+        );
         assert_eq!((l.role, l.sort_order), (Some(Role::Member), None));
     }
 }
@@ -926,10 +1011,21 @@ async fn first_visits_racing_make_each_row_once_and_every_visit_sees_all_of_them
     env.db.insert_workspace(&w).await.unwrap();
     let scope = WorkspaceScope::mint(w.workspace.id, owner, Role::Admin);
     let now = Utc.timestamp_opt(1_800_000_300, 0).unwrap();
-    let sidebar: Vec<SidebarPreference> =
-        (0..7).map(|i| SidebarPreference { key: format!("key{i}"), is_pinned: i % 2 == 0, sort_order: 65535.0 + 10000.0 * f64::from(i) }).collect();
+    let sidebar: Vec<SidebarPreference> = (0..7)
+        .map(|i| SidebarPreference {
+            key: format!("key{i}"),
+            is_pinned: i % 2 == 0,
+            sort_order: 65535.0 + 10000.0 * f64::from(i),
+        })
+        .collect();
     let home: Vec<HomePreference> = (0..3)
-        .map(|i| HomePreference { key: format!("widget{i}"), is_enabled: true, config: serde_json::json!({}), sort_order: 999.0 - f64::from(i), created_at: now })
+        .map(|i| HomePreference {
+            key: format!("widget{i}"),
+            is_enabled: true,
+            config: serde_json::json!({}),
+            sort_order: 999.0 - f64::from(i),
+            created_at: now,
+        })
         .collect();
     let mut handles = Vec::new();
     for task in 0..16u128 {
@@ -961,7 +1057,9 @@ async fn first_visits_racing_make_each_row_once_and_every_visit_sees_all_of_them
     }
     assert_eq!(ids.len(), 1, "the settings were made more than once, or the visits saw different rows");
     let raw = env.conn.raw().await.unwrap();
-    for (table, want) in [("workspace_user_preferences", 7i64), ("workspace_home_preferences", 3), ("workspace_user_properties", 1)] {
+    for (table, want) in
+        [("workspace_user_preferences", 7i64), ("workspace_home_preferences", 3), ("workspace_user_properties", 1)]
+    {
         let n: i64 = raw
             .query_one(&format!("SELECT count(*) FROM {table} WHERE workspace_id = $1"), &[&w.workspace.id.0])
             .await
@@ -1024,7 +1122,10 @@ fn project_for(ws: WorkspaceId, owner: UserId, name: &str, identifier: &str) -> 
                 updated_at: now,
             },
         }],
-        states: vec![state("Backlog", 15000.0, StateGroup::Backlog, true), state("Triage", 65000.0, StateGroup::Triage, false)],
+        states: vec![
+            state("Backlog", 15000.0, StateGroup::Backlog, true),
+            state("Triage", 65000.0, StateGroup::Triage, false),
+        ],
         project,
     }
 }
@@ -1172,44 +1273,98 @@ async fn the_project_tables_have_the_columns_they_say_and_the_constraints_that_k
     env.db.insert_project(&scope(&w1), &first).await.unwrap();
     let project = first.project.id.0;
     // months from 0 to 12
-    for (set, ok) in [("archive_in = 12", true), ("archive_in = 0", true), ("archive_in = 13", false), ("close_in = -1", false)] {
-        assert_eq!(raw.execute(&format!("UPDATE projects SET {set} WHERE id = $1"), &[&project]).await.is_ok(), ok, "{set}");
+    for (set, ok) in
+        [("archive_in = 12", true), ("archive_in = 0", true), ("archive_in = 13", false), ("close_in = -1", false)]
+    {
+        assert_eq!(
+            raw.execute(&format!("UPDATE projects SET {set} WHERE id = $1"), &[&project]).await.is_ok(),
+            ok,
+            "{set}"
+        );
     }
     // a name and a key are each unique in their workspace, and free in another
     let clash = |name: &str, identifier: &str| project_for(w1.workspace.id, owner, name, identifier);
-    assert!(matches!(env.db.insert_project(&scope(&w1), &clash("First", "OTH")).await, Err(DbError::Conflict(_))), "the name");
-    assert!(matches!(env.db.insert_project(&scope(&w1), &clash("Other", "FST")).await, Err(DbError::Conflict(_))), "the key");
+    assert!(
+        matches!(env.db.insert_project(&scope(&w1), &clash("First", "OTH")).await, Err(DbError::Conflict(_))),
+        "the name"
+    );
+    assert!(
+        matches!(env.db.insert_project(&scope(&w1), &clash("Other", "FST")).await, Err(DbError::Conflict(_))),
+        "the key"
+    );
     env.db.insert_project(&scope(&w2), &project_for(w2.workspace.id, owner, "First", "FST")).await.unwrap();
     // the users a project names are users
     let nobody = new_id();
     for column in ["created_by", "updated_by", "project_lead", "default_assignee"] {
-        assert!(raw.execute(&format!("UPDATE projects SET {column} = $2 WHERE id = $1"), &[&project, &nobody]).await.is_err(), "{column}");
+        assert!(
+            raw.execute(&format!("UPDATE projects SET {column} = $2 WHERE id = $1"), &[&project, &nobody])
+                .await
+                .is_err(),
+            "{column}"
+        );
     }
     // settings are objects
     for set in ["view_props = '[]'::jsonb", "default_props = '1'::jsonb", "preferences = 'null'::jsonb"] {
-        assert!(raw.execute(&format!("UPDATE project_members SET {set} WHERE project_id = $1"), &[&project]).await.is_err(), "{set}");
+        assert!(
+            raw.execute(&format!("UPDATE project_members SET {set} WHERE project_id = $1"), &[&project]).await.is_err(),
+            "{set}"
+        );
     }
-    for set in ["filters = '[]'::jsonb", "display_filters = '1'::jsonb", "display_properties = '\"x\"'::jsonb", "rich_filters = '[]'::jsonb", "preferences = '1'::jsonb"] {
-        assert!(raw.execute(&format!("UPDATE project_user_properties SET {set} WHERE project_id = $1"), &[&project]).await.is_err(), "{set}");
+    for set in [
+        "filters = '[]'::jsonb",
+        "display_filters = '1'::jsonb",
+        "display_properties = '\"x\"'::jsonb",
+        "rich_filters = '[]'::jsonb",
+        "preferences = '1'::jsonb",
+    ] {
+        assert!(
+            raw.execute(&format!("UPDATE project_user_properties SET {set} WHERE project_id = $1"), &[&project])
+                .await
+                .is_err(),
+            "{set}"
+        );
     }
     // control: objects are accepted
-    raw.execute("UPDATE project_members SET view_props = '{\"a\": 1}'::jsonb WHERE project_id = $1", &[&project]).await.unwrap();
+    raw.execute("UPDATE project_members SET view_props = '{\"a\": 1}'::jsonb WHERE project_id = $1", &[&project])
+        .await
+        .unwrap();
     // a state: a group from the six, a name once per project, one default, a project of its own workspace
     let state = "INSERT INTO states (id, workspace_id, project_id, name, color, sequence, state_group, is_default, created_at, updated_at) \
                  VALUES ($1, $2, $3, $4, '#fff', 1, $5, $6, now(), now())";
     let ws1 = w1.workspace.id.0;
-    assert!(raw.execute(state, &[&new_id(), &ws1, &project, &"Review", &"reviewing", &false]).await.is_err(), "a group of its own");
-    assert!(raw.execute(state, &[&new_id(), &ws1, &project, &"Backlog", &"backlog", &false]).await.is_err(), "a name twice");
-    assert!(raw.execute(state, &[&new_id(), &ws1, &project, &"Second default", &"started", &true]).await.is_err(), "two default states");
-    assert!(raw.execute(state, &[&new_id(), &w2.workspace.id.0, &project, &"Elsewhere", &"started", &false]).await.is_err(), "a state in another workspace than its project's");
+    assert!(
+        raw.execute(state, &[&new_id(), &ws1, &project, &"Review", &"reviewing", &false]).await.is_err(),
+        "a group of its own"
+    );
+    assert!(
+        raw.execute(state, &[&new_id(), &ws1, &project, &"Backlog", &"backlog", &false]).await.is_err(),
+        "a name twice"
+    );
+    assert!(
+        raw.execute(state, &[&new_id(), &ws1, &project, &"Second default", &"started", &true]).await.is_err(),
+        "two default states"
+    );
+    assert!(
+        raw.execute(state, &[&new_id(), &w2.workspace.id.0, &project, &"Elsewhere", &"started", &false]).await.is_err(),
+        "a state in another workspace than its project's"
+    );
     raw.execute(state, &[&new_id(), &ws1, &project, &"Review", &"started", &false]).await.unwrap();
     // a label: a name once per project, a parent that exists, a project of its own workspace
     let label = "INSERT INTO labels (id, workspace_id, project_id, parent_id, name, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, now(), now())";
     let parent = new_id();
     raw.execute(label, &[&parent, &ws1, &project, &None::<Uuid>, &"bug"]).await.unwrap();
-    assert!(raw.execute(label, &[&new_id(), &ws1, &project, &None::<Uuid>, &"bug"]).await.is_err(), "a label name twice");
-    assert!(raw.execute(label, &[&new_id(), &ws1, &project, &Some(new_id()), &"child"]).await.is_err(), "a parent that is no label");
-    assert!(raw.execute(label, &[&new_id(), &w2.workspace.id.0, &project, &None::<Uuid>, &"x"]).await.is_err(), "a label in another workspace than its project's");
+    assert!(
+        raw.execute(label, &[&new_id(), &ws1, &project, &None::<Uuid>, &"bug"]).await.is_err(),
+        "a label name twice"
+    );
+    assert!(
+        raw.execute(label, &[&new_id(), &ws1, &project, &Some(new_id()), &"child"]).await.is_err(),
+        "a parent that is no label"
+    );
+    assert!(
+        raw.execute(label, &[&new_id(), &w2.workspace.id.0, &project, &None::<Uuid>, &"x"]).await.is_err(),
+        "a label in another workspace than its project's"
+    );
     raw.execute(label, &[&new_id(), &ws1, &project, &Some(parent), &"child"]).await.unwrap();
 }
 
@@ -1243,18 +1398,43 @@ async fn migration_0012_upgrades_a_database_that_has_projects_members_and_settin
     for u in [u1, u2] {
         raw.execute("INSERT INTO users (id) VALUES ($1)", &[&u]).await.unwrap();
     }
-    raw.execute("INSERT INTO workspaces (id, slug, name) VALUES ($1, 'legacy-members', 'Legacy')", &[&ws]).await.unwrap();
-    raw.execute("INSERT INTO workspace_members (workspace_id, user_id) VALUES ($1, $2), ($1, $3)", &[&ws, &u1, &u2]).await.unwrap();
-    raw.execute("INSERT INTO projects (id, workspace_id, name, identifier) VALUES ($1, $2, 'Legacy project', 'LEG')", &[&project, &ws]).await.unwrap();
+    raw.execute("INSERT INTO workspaces (id, slug, name) VALUES ($1, 'legacy-members', 'Legacy')", &[&ws])
+        .await
+        .unwrap();
+    raw.execute("INSERT INTO workspace_members (workspace_id, user_id) VALUES ($1, $2), ($1, $3)", &[&ws, &u1, &u2])
+        .await
+        .unwrap();
+    raw.execute(
+        "INSERT INTO projects (id, workspace_id, name, identifier) VALUES ($1, $2, 'Legacy project', 'LEG')",
+        &[&project, &ws],
+    )
+    .await
+    .unwrap();
     for u in [u1, u2] {
-        raw.execute("INSERT INTO project_members (project_id, workspace_id, user_id, role) VALUES ($1, $2, $3, 'member')", &[&project, &ws, &u]).await.unwrap();
+        raw.execute(
+            "INSERT INTO project_members (project_id, workspace_id, user_id, role) VALUES ($1, $2, $3, 'member')",
+            &[&project, &ws, &u],
+        )
+        .await
+        .unwrap();
     }
-    raw.execute("INSERT INTO project_user_properties (project_id, user_id, sort_order) VALUES ($1, $2, 7.5)", &[&project, &u1]).await.unwrap();
+    raw.execute(
+        "INSERT INTO project_user_properties (project_id, user_id, sort_order) VALUES ($1, $2, 7.5)",
+        &[&project, &u1],
+    )
+    .await
+    .unwrap();
 
     thrust_adapters_postgres::migrate(&raw).await.unwrap();
     async fn state(raw: &tokio_postgres::Client) -> (Vec<(Uuid, Uuid)>, Vec<(Uuid, Uuid, f64, serde_json::Value)>) {
         let members = raw.query("SELECT user_id, id FROM project_members ORDER BY user_id", &[]).await.unwrap();
-        let props = raw.query("SELECT user_id, workspace_id, sort_order, filters FROM project_user_properties ORDER BY user_id", &[]).await.unwrap();
+        let props = raw
+            .query(
+                "SELECT user_id, workspace_id, sort_order, filters FROM project_user_properties ORDER BY user_id",
+                &[],
+            )
+            .await
+            .unwrap();
         (
             members.iter().map(|r| (r.get(0), r.get(1))).collect(),
             props.iter().map(|r| (r.get(0), r.get(1), r.get(2), r.get(3))).collect(),
@@ -1264,17 +1444,30 @@ async fn migration_0012_upgrades_a_database_that_has_projects_members_and_settin
     thrust_adapters_postgres::migrate(&raw).await.unwrap();
     assert_eq!(first, state(&raw).await, "a second run changed the members or their settings");
     assert_ne!(first.0[0].1, first.0[1].1, "two members share an id");
-    assert_eq!(first.1, vec![(u1, ws, 7.5, serde_json::json!({}))], "a settings row has the workspace of its project and the empty object");
+    assert_eq!(
+        first.1,
+        vec![(u1, ws, 7.5, serde_json::json!({}))],
+        "a settings row has the workspace of its project and the empty object"
+    );
 
     drop(raw);
     let db = PgDatabase::new(conn);
     let scope = WorkspaceScope::mint(WorkspaceId(ws), UserId(u1), Role::Member);
     let d = db.project_detail(&scope, ProjectId(project)).await.unwrap().unwrap();
-    assert_eq!((d.listing.role, d.listing.sort_order, d.members.len(), d.next_sequence), (Some(Role::Member), Some(7.5), 2, 1));
-    assert_eq!((d.listing.project.description.as_str(), d.listing.project.timezone.as_str(), d.listing.project.archive_in), ("", "UTC", 0));
+    assert_eq!(
+        (d.listing.role, d.listing.sort_order, d.members.len(), d.next_sequence),
+        (Some(Role::Member), Some(7.5), 2, 1)
+    );
+    assert_eq!(
+        (d.listing.project.description.as_str(), d.listing.project.timezone.as_str(), d.listing.project.archive_in),
+        ("", "UTC", 0)
+    );
     // a member who has no settings row yet gets one on their first ask, and the one that was there is kept
     let m = db.project_member(&scope, ProjectId(project)).await.unwrap().unwrap();
-    assert_eq!((m.member.role, m.member.sort_order, m.member.view_props.clone()), (Role::Member, 65535.0, serde_json::json!({})));
+    assert_eq!(
+        (m.member.role, m.member.sort_order, m.member.view_props.clone()),
+        (Role::Member, 65535.0, serde_json::json!({}))
+    );
 }
 
 /// Two creations racing for one name cannot both win, and the loser leaves nothing behind: the unique index decides, not a
@@ -1332,7 +1525,13 @@ async fn project_counts_leave_out_drafts_archived_and_deleted_work_items_and_cou
 
     let gone = Utc.timestamp_opt(1_800_000_500, 0).unwrap();
     // project one: two live items, a draft and a deleted one; project two: an archived one
-    for (project, draft, archived, deleted) in [(p1, false, false, false), (p1, true, false, false), (p1, false, false, false), (p1, false, false, true), (p2, false, true, false)] {
+    for (project, draft, archived, deleted) in [
+        (p1, false, false, false),
+        (p1, true, false, false),
+        (p1, false, false, false),
+        (p1, false, false, true),
+        (p2, false, true, false),
+    ] {
         let s = scope_of(project);
         let mut tx = env.db.begin(&s).await.unwrap();
         let a = tx.allocate(&s).await.unwrap();
@@ -1408,11 +1607,23 @@ async fn the_work_item_tables_have_the_columns_they_say_and_the_constraints_that
     );
     assert_eq!(
         columns("work_item_assignees").await,
-        pairs(vec![("created_at", ts), ("project_id", uuid), ("user_id", uuid), ("work_item_id", uuid), ("workspace_id", uuid)])
+        pairs(vec![
+            ("created_at", ts),
+            ("project_id", uuid),
+            ("user_id", uuid),
+            ("work_item_id", uuid),
+            ("workspace_id", uuid)
+        ])
     );
     assert_eq!(
         columns("work_item_labels").await,
-        pairs(vec![("created_at", ts), ("label_id", uuid), ("project_id", uuid), ("work_item_id", uuid), ("workspace_id", uuid)])
+        pairs(vec![
+            ("created_at", ts),
+            ("label_id", uuid),
+            ("project_id", uuid),
+            ("work_item_id", uuid),
+            ("workspace_id", uuid)
+        ])
     );
 
     let owner = user_without_login(&env).await;
@@ -1433,10 +1644,32 @@ async fn the_work_item_tables_have_the_columns_they_say_and_the_constraints_that
     let id = w.id.0;
     // what a work item has when nothing says otherwise: the defaults a slice-made item reads as
     let row = raw.query_one("SELECT priority, description_html, state_id IS NULL, start_date IS NULL, updated_at IS NOT NULL FROM work_items WHERE id = $1", &[&id]).await.unwrap();
-    assert_eq!((row.get::<_, String>(0), row.get::<_, String>(1), row.get::<_, bool>(2), row.get::<_, bool>(3), row.get::<_, bool>(4)), ("none".into(), "<p></p>".into(), true, true, true));
+    assert_eq!(
+        (
+            row.get::<_, String>(0),
+            row.get::<_, String>(1),
+            row.get::<_, bool>(2),
+            row.get::<_, bool>(3),
+            row.get::<_, bool>(4)
+        ),
+        ("none".into(), "<p></p>".into(), true, true, true)
+    );
     // a priority from the five
-    for (priority, ok) in [("urgent", true), ("high", true), ("medium", true), ("low", true), ("none", true), ("huge", false), ("", false), ("High", false)] {
-        assert_eq!(raw.execute("UPDATE work_items SET priority = $2 WHERE id = $1", &[&id, &priority]).await.is_ok(), ok, "{priority:?}");
+    for (priority, ok) in [
+        ("urgent", true),
+        ("high", true),
+        ("medium", true),
+        ("low", true),
+        ("none", true),
+        ("huge", false),
+        ("", false),
+        ("High", false),
+    ] {
+        assert_eq!(
+            raw.execute("UPDATE work_items SET priority = $2 WHERE id = $1", &[&id, &priority]).await.is_ok(),
+            ok,
+            "{priority:?}"
+        );
     }
     // a start that is not after the target, or either missing
     for (set, ok) in [
@@ -1446,13 +1679,23 @@ async fn the_work_item_tables_have_the_columns_they_say_and_the_constraints_that
         ("start_date = '2026-11-03', target_date = NULL", true),
         ("start_date = NULL, target_date = '2026-01-01'", true),
     ] {
-        assert_eq!(raw.execute(&format!("UPDATE work_items SET {set} WHERE id = $1"), &[&id]).await.is_ok(), ok, "{set}");
+        assert_eq!(
+            raw.execute(&format!("UPDATE work_items SET {set} WHERE id = $1"), &[&id]).await.is_ok(),
+            ok,
+            "{set}"
+        );
     }
     // a state that exists, whatever project it is of (the foreign key is to the state)
     let state = first.states[0].id;
     assert!(raw.execute("UPDATE work_items SET state_id = $2 WHERE id = $1", &[&id, &state]).await.is_ok());
-    assert!(raw.execute("UPDATE work_items SET state_id = $2 WHERE id = $1", &[&id, &second.states[0].id]).await.is_ok(), "the key is to the state, as the core's rule is");
-    assert!(raw.execute("UPDATE work_items SET state_id = $2 WHERE id = $1", &[&id, &new_id()]).await.is_err(), "a state that is not there");
+    assert!(
+        raw.execute("UPDATE work_items SET state_id = $2 WHERE id = $1", &[&id, &second.states[0].id]).await.is_ok(),
+        "the key is to the state, as the core's rule is"
+    );
+    assert!(
+        raw.execute("UPDATE work_items SET state_id = $2 WHERE id = $1", &[&id, &new_id()]).await.is_err(),
+        "a state that is not there"
+    );
     // who changed it is a user
     assert!(raw.execute("UPDATE work_items SET updated_by = $2 WHERE id = $1", &[&id, &owner.0]).await.is_ok());
     assert!(raw.execute("UPDATE work_items SET updated_by = $2 WHERE id = $1", &[&id, &new_id()]).await.is_err());
@@ -1461,8 +1704,14 @@ async fn the_work_item_tables_have_the_columns_they_say_and_the_constraints_that
     raw.execute(assign, &[&id, &ws.0, &project.0, &owner.0]).await.unwrap();
     assert!(raw.execute(assign, &[&id, &ws.0, &project.0, &owner.0]).await.is_err(), "a person twice");
     assert!(raw.execute(assign, &[&id, &ws.0, &project.0, &new_id()]).await.is_err(), "a person who is no user");
-    assert!(raw.execute(assign, &[&id, &w2.workspace.id.0, &project.0, &owner.0]).await.is_err(), "another workspace than the project's");
-    assert!(raw.execute(assign, &[&new_id(), &ws.0, &project.0, &owner.0]).await.is_err(), "a work item that is not there");
+    assert!(
+        raw.execute(assign, &[&id, &w2.workspace.id.0, &project.0, &owner.0]).await.is_err(),
+        "another workspace than the project's"
+    );
+    assert!(
+        raw.execute(assign, &[&new_id(), &ws.0, &project.0, &owner.0]).await.is_err(),
+        "a work item that is not there"
+    );
     // a label, once, that exists
     let label_id = new_id();
     raw.execute("INSERT INTO labels (id, workspace_id, project_id, name, created_at, updated_at) VALUES ($1, $2, $3, 'bug', now(), now())", &[&label_id, &ws.0, &project.0]).await.unwrap();
@@ -1503,8 +1752,18 @@ async fn migration_0013_upgrades_a_database_that_has_work_items() {
     raw.execute("INSERT INTO users (id) VALUES ($1)", &[&user]).await.unwrap();
     raw.execute("INSERT INTO workspaces (id, slug, name) VALUES ($1, 'legacy-items', 'Legacy')", &[&ws]).await.unwrap();
     raw.execute("INSERT INTO workspace_members (workspace_id, user_id) VALUES ($1, $2)", &[&ws, &user]).await.unwrap();
-    raw.execute("INSERT INTO projects (id, workspace_id, name, identifier) VALUES ($1, $2, 'Legacy project', 'LEG')", &[&project, &ws]).await.unwrap();
-    raw.execute("INSERT INTO project_members (project_id, workspace_id, user_id, role) VALUES ($1, $2, $3, 'member')", &[&project, &ws, &user]).await.unwrap();
+    raw.execute(
+        "INSERT INTO projects (id, workspace_id, name, identifier) VALUES ($1, $2, 'Legacy project', 'LEG')",
+        &[&project, &ws],
+    )
+    .await
+    .unwrap();
+    raw.execute(
+        "INSERT INTO project_members (project_id, workspace_id, user_id, role) VALUES ($1, $2, $3, 'member')",
+        &[&project, &ws, &user],
+    )
+    .await
+    .unwrap();
     let made = Utc.timestamp_opt(1_700_000_000, 0).unwrap();
     raw.execute(
         "INSERT INTO work_items (id, workspace_id, project_id, sequence_id, sort_order, name, created_by, created_at) VALUES ($1, $2, $3, 1, 10000, 'Legacy item', $4, $5)",
@@ -1529,7 +1788,11 @@ async fn migration_0013_upgrades_a_database_that_has_work_items() {
     thrust_adapters_postgres::migrate(&raw).await.unwrap();
     assert_eq!(first, state(&raw).await, "a second run changed the work item");
     assert_eq!(&first[..6], ["none", "<p></p>", "NULL", "NULL", "NULL", "NULL"]);
-    assert_eq!(first[6], raw.query_one("SELECT created_at::text FROM work_items", &[]).await.unwrap().get::<_, String>(0), "changed when it was made");
+    assert_eq!(
+        first[6],
+        raw.query_one("SELECT created_at::text FROM work_items", &[]).await.unwrap().get::<_, String>(0),
+        "changed when it was made"
+    );
 
     drop(raw);
     let db = PgDatabase::new(conn);
@@ -1540,7 +1803,12 @@ async fn migration_0013_upgrades_a_database_that_has_work_items() {
 }
 
 /// A work item of the scope's project with these attributes, in the open transaction.
-async fn insert_with_attrs(tx: &mut Box<dyn Tx>, s: Scope, a: Allocation, attrs: &WorkItemAttrs) -> Result<WorkItemId, DbError> {
+async fn insert_with_attrs(
+    tx: &mut Box<dyn Tx>,
+    s: Scope,
+    a: Allocation,
+    attrs: &WorkItemAttrs,
+) -> Result<WorkItemId, DbError> {
     let w = item(s.workspace_id(), s.project_id(), a, "with attributes", None);
     tx.insert_work_item(&s, &w).await?;
     tx.insert_work_item_attrs(&s, w.id, attrs).await?;
@@ -1621,7 +1889,23 @@ async fn a_work_item_and_its_attributes_are_one_transaction() {
         assert!(matches!(got, Err(DbError::Backend(_))), "{refused:?}: {got:?}");
         let _ = tx.rollback().await;
     }
-    assert_eq!(env.db.work_item_page(&s, &WorkItemQuery { order: WorkItemOrder { field: WorkItemOrderField::SequenceId, descending: false }, limit: 10, page: 0, updated_after: None, created_by: None }).await.unwrap().total, 1);
+    assert_eq!(
+        env.db
+            .work_item_page(
+                &s,
+                &WorkItemQuery {
+                    order: WorkItemOrder { field: WorkItemOrderField::SequenceId, descending: false },
+                    limit: 10,
+                    page: 0,
+                    updated_after: None,
+                    created_by: None
+                }
+            )
+            .await
+            .unwrap()
+            .total,
+        1
+    );
 }
 
 /// The place a new work item takes is read from the greatest in its state: one per state (and one for the items with none), a deleted
@@ -1664,9 +1948,21 @@ async fn the_greatest_place_in_a_state_is_read_from_the_live_rows_of_that_state(
     let mut tx = env.db.begin(&s).await.unwrap();
     assert!(tx.soft_delete_work_item(&s, gone, Utc.timestamp_opt(1_800_000_001, 0).unwrap()).await.unwrap());
     tx.commit().await.unwrap();
-    assert_eq!(env.db.max_work_item_sort_order(&s, Some(a)).await.unwrap(), Some(75_535), "the deleted one is not counted");
-    assert_eq!(env.db.max_work_item_sort_order(&s, Some(b)).await.unwrap(), Some(95_535), "an archived one and a draft are");
-    assert_eq!(env.db.max_work_item_sort_order(&s, None).await.unwrap(), Some(10_000), "items with no state are their own run");
+    assert_eq!(
+        env.db.max_work_item_sort_order(&s, Some(a)).await.unwrap(),
+        Some(75_535),
+        "the deleted one is not counted"
+    );
+    assert_eq!(
+        env.db.max_work_item_sort_order(&s, Some(b)).await.unwrap(),
+        Some(95_535),
+        "an archived one and a draft are"
+    );
+    assert_eq!(
+        env.db.max_work_item_sort_order(&s, None).await.unwrap(),
+        Some(10_000),
+        "items with no state are their own run"
+    );
     assert_eq!(env.db.max_work_item_sort_order(&s, Some(new_id())).await.unwrap(), None);
 }
 
@@ -1778,7 +2074,11 @@ async fn an_abandoned_transaction_does_not_poison_the_pool() {
         tx.insert_work_item(&s, &item(ws, p, a, "kept", None)).await.unwrap();
         tx.commit().await.unwrap();
         let rows = env.db.list_work_items(&s, Visibility::WithDeleted).await.unwrap();
-        assert_eq!(rows.iter().map(|r| r.name.as_str()).collect::<Vec<_>>(), ["kept"], "abandoned transactions must roll back");
+        assert_eq!(
+            rows.iter().map(|r| r.name.as_str()).collect::<Vec<_>>(),
+            ["kept"],
+            "abandoned transactions must roll back"
+        );
     })
     .await
     .expect("abandoned transactions wedged the pool");
@@ -1864,7 +2164,10 @@ async fn outbox_is_atomic_with_the_entity_and_dispatch_is_recorded() {
     let rows = env.db.undispatched_outbox(&sys, 10).await.unwrap();
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].envelope, row.envelope);
-    env.db.mark_outbox_dispatched(&sys, row.envelope.event_id, Utc.timestamp_opt(1_800_000_001, 0).unwrap()).await.unwrap();
+    env.db
+        .mark_outbox_dispatched(&sys, row.envelope.event_id, Utc.timestamp_opt(1_800_000_001, 0).unwrap())
+        .await
+        .unwrap();
     assert_eq!(env.db.outbox_depth(&sys).await.unwrap(), 0);
 
     // activity projection is idempotent on event_id

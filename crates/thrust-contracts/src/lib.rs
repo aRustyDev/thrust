@@ -3,9 +3,9 @@
 //! Dependency rule (checked by `scripts/check-deps.sh`): this crate depends on serde, uuid and
 //! chrono only. No tokio, no wasm-bindgen, no driver.
 
+pub use chrono;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-pub use chrono;
 pub use uuid::Uuid;
 
 pub type Timestamp = DateTime<Utc>;
@@ -315,10 +315,7 @@ pub struct Envelope {
 
 impl Envelope {
     pub fn project_id(&self) -> Option<ProjectId> {
-        self.payload
-            .get("project_id")
-            .and_then(|v| v.as_str())
-            .and_then(|s| s.parse().ok())
+        self.payload.get("project_id").and_then(|v| v.as_str()).and_then(|s| s.parse().ok())
     }
 }
 

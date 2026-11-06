@@ -87,78 +87,93 @@ async fn every_actor_project_and_route_gets_the_status_of_the_access_table() {
     let mut mismatches = Vec::new();
     let mut checked = 0;
     for actor in ALL_ACTORS {
-      for slug in ALL_SLUGS {
-        for proj in ALL_PROJECTS {
-            for route in ALL_ROUTES {
-                let label = format!("{actor:?} {route:?} on {proj:?} via {slug:?}");
-                let allowed = rejection(actor, slug, proj, min_role(route)).is_none();
-                let mut victim = None;
-                let req = match route {
-                    Route::Create => Some(Req { body: Some(json!({ "name": label })), slug, ..Req::bare(actor, Method::POST, proj) }),
-                    Route::List | Route::ListWithDeleted => Some(Req {
-                        query: matches!(route, Route::ListWithDeleted).then_some("with_deleted"),
-                        slug,
-                        ..Req::bare(actor, Method::GET, proj)
-                    }),
-                    Route::Delete => {
-                        let item = match slot(proj) {
-                            Some(s) if slug == Slug::Own => {
-                                let v = create_ok(&t, admin(s), w.at_slot(s), &format!("victim of {label}")).await;
-                                victim = Some(s);
-                                v.id
-                            }
-                            Some(s) => shared_victim[s],
-                            None => unknown_item(checked),
-                        };
-                        Some(Req { item: Some(item), slug, ..Req::bare(actor, Method::DELETE, proj) })
-                    }
-                    Route::PutAttachment | Route::GetAttachment | Route::DeleteAttachment => {
-                        let name = format!("m{checked}.txt");
-                        let item = slot(proj).map_or(unknown_item(checked), |s| host[s]);
-                        let at = |actor, method, slug| Req { item: Some(item), attachment: Some(name.clone()), slug, ..Req::bare(actor, method, proj) };
-                        if let Some(s) = slot(proj) {
-                            if !matches!(route, Route::PutAttachment) {
-                                // the setup is always the admin, through the project's own workspace
-                                let put = Req { upload: Some(Stored { size: Size::Small(16), seed: 1, content_type: None }), ..at(admin_of(s), Method::PUT, Slug::Own) };
-                                assert_eq!(w.send(&put).await.status, 204, "{label}: the admin's setup put");
-                            }
-                            let exists = match route {
-                                Route::PutAttachment => allowed,
-                                Route::DeleteAttachment => !allowed,
-                                _ => true,
+        for slug in ALL_SLUGS {
+            for proj in ALL_PROJECTS {
+                for route in ALL_ROUTES {
+                    let label = format!("{actor:?} {route:?} on {proj:?} via {slug:?}");
+                    let allowed = rejection(actor, slug, proj, min_role(route)).is_none();
+                    let mut victim = None;
+                    let req = match route {
+                        Route::Create => Some(Req {
+                            body: Some(json!({ "name": label })),
+                            slug,
+                            ..Req::bare(actor, Method::POST, proj)
+                        }),
+                        Route::List | Route::ListWithDeleted => Some(Req {
+                            query: matches!(route, Route::ListWithDeleted).then_some("with_deleted"),
+                            slug,
+                            ..Req::bare(actor, Method::GET, proj)
+                        }),
+                        Route::Delete => {
+                            let item = match slot(proj) {
+                                Some(s) if slug == Slug::Own => {
+                                    let v = create_ok(&t, admin(s), w.at_slot(s), &format!("victim of {label}")).await;
+                                    victim = Some(s);
+                                    v.id
+                                }
+                                Some(s) => shared_victim[s],
+                                None => unknown_item(checked),
                             };
-                            want_blobs[s].push((name.clone(), exists));
+                            Some(Req { item: Some(item), slug, ..Req::bare(actor, Method::DELETE, proj) })
                         }
-                        Some(match route {
-                            Route::PutAttachment => Req { upload: Some(Stored { size: Size::Small(8), seed: 2, content_type: None }), ..at(actor, Method::PUT, slug) },
-                            Route::GetAttachment => at(actor, Method::GET, slug),
-                            _ => at(actor, Method::DELETE, slug),
-                        })
+                        Route::PutAttachment | Route::GetAttachment | Route::DeleteAttachment => {
+                            let name = format!("m{checked}.txt");
+                            let item = slot(proj).map_or(unknown_item(checked), |s| host[s]);
+                            let at = |actor, method, slug| Req {
+                                item: Some(item),
+                                attachment: Some(name.clone()),
+                                slug,
+                                ..Req::bare(actor, method, proj)
+                            };
+                            if let Some(s) = slot(proj) {
+                                if !matches!(route, Route::PutAttachment) {
+                                    // the setup is always the admin, through the project's own workspace
+                                    let put = Req {
+                                        upload: Some(Stored { size: Size::Small(16), seed: 1, content_type: None }),
+                                        ..at(admin_of(s), Method::PUT, Slug::Own)
+                                    };
+                                    assert_eq!(w.send(&put).await.status, 204, "{label}: the admin's setup put");
+                                }
+                                let exists = match route {
+                                    Route::PutAttachment => allowed,
+                                    Route::DeleteAttachment => !allowed,
+                                    _ => true,
+                                };
+                                want_blobs[s].push((name.clone(), exists));
+                            }
+                            Some(match route {
+                                Route::PutAttachment => Req {
+                                    upload: Some(Stored { size: Size::Small(8), seed: 2, content_type: None }),
+                                    ..at(actor, Method::PUT, slug)
+                                },
+                                Route::GetAttachment => at(actor, Method::GET, slug),
+                                _ => at(actor, Method::DELETE, slug),
+                            })
+                        }
+                        // not a work-item path, so not a `Req`
+                        Route::Activity => None,
+                    };
+                    let status = match req {
+                        Some(req) => w.send(&req).await.status,
+                        None => {
+                            let url = t.url(&format!("{}/activity", project_path(&w.at(proj, slug))));
+                            w.as_actor(t.http.get(url), actor).send().await.unwrap().status().as_u16()
+                        }
+                    };
+                    let want = rejection(actor, slug, proj, min_role(route)).unwrap_or(success_status(route));
+                    if status != want {
+                        mismatches.push(format!("{label}: got {status}, the table says {want}"));
                     }
-                    // not a work-item path, so not a `Req`
-                    Route::Activity => None,
-                };
-                let status = match req {
-                    Some(req) => w.send(&req).await.status,
-                    None => {
-                        let url = t.url(&format!("{}/activity", project_path(&w.at(proj, slug))));
-                        w.as_actor(t.http.get(url), actor).send().await.unwrap().status().as_u16()
+                    if let Some(s) = victim {
+                        want_rows[s].push((format!("victim of {label}"), allowed));
                     }
-                };
-                let want = rejection(actor, slug, proj, min_role(route)).unwrap_or(success_status(route));
-                if status != want {
-                    mismatches.push(format!("{label}: got {status}, the table says {want}"));
+                    if matches!(route, Route::Create) && allowed {
+                        want_rows[slot(proj).unwrap()].push((label.clone(), false));
+                    }
+                    checked += 1;
                 }
-                if let Some(s) = victim {
-                    want_rows[s].push((format!("victim of {label}"), allowed));
-                }
-                if matches!(route, Route::Create) && allowed {
-                    want_rows[slot(proj).unwrap()].push((label.clone(), false));
-                }
-                checked += 1;
             }
         }
-      }
     }
     assert_eq!(
         checked,
@@ -166,8 +181,7 @@ async fn every_actor_project_and_route_gets_the_status_of_the_access_table() {
         "the matrix did not run"
     );
     for (s, want) in want_rows.iter_mut().enumerate() {
-        let items: Vec<WorkItem> =
-            list(&t, admin(s), w.at_slot(s), Some("with_deleted")).await.json().await.unwrap();
+        let items: Vec<WorkItem> = list(&t, admin(s), w.at_slot(s), Some("with_deleted")).await.json().await.unwrap();
         let mut got: Vec<(String, bool)> = items.iter().map(|i| (i.name.clone(), i.deleted_at.is_some())).collect();
         got.sort();
         want.sort();
@@ -178,7 +192,11 @@ async fn every_actor_project_and_route_gets_the_status_of_the_access_table() {
     for (s, blobs) in want_blobs.iter().enumerate() {
         for (name, exists) in blobs {
             let proj = [Proj::A, Proj::B][s];
-            let get = Req { item: Some(host[s]), attachment: Some(name.clone()), ..Req::bare(admin_of(s), Method::GET, proj) };
+            let get = Req {
+                item: Some(host[s]),
+                attachment: Some(name.clone()),
+                ..Req::bare(admin_of(s), Method::GET, proj)
+            };
             let status = w.send(&get).await.status;
             let want = if *exists { 200 } else { 404 };
             if status != want {

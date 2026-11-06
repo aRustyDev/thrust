@@ -8,10 +8,7 @@ use proptest::test_runner::{Config, FailurePersistence, FileFailurePersistence};
 /// * Counterexamples are saved beside the test file (`tests/<file>.proptest-regressions`).
 /// * `PROPTEST_DISABLE_FAILURE_PERSISTENCE=1` turns saving off (use it for mutation runs).
 pub fn proptest_config(default_cases: u32) -> Config {
-    let cases = std::env::var("PROPTEST_CASES")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(default_cases);
+    let cases = std::env::var("PROPTEST_CASES").ok().and_then(|v| v.parse().ok()).unwrap_or(default_cases);
     let failure_persistence: Option<Box<dyn FailurePersistence>> =
         if std::env::var_os("PROPTEST_DISABLE_FAILURE_PERSISTENCE").is_some() {
             None

@@ -125,7 +125,11 @@ fn sign_in_succeeds_exactly_for_an_active_user_with_the_right_password_and_costs
     };
     assert_eq!(outcome(&got), want, "{label}");
     let work = if matches!(pw, Pw::Empty) { 0 } else { 1 };
-    assert_eq!(w.hasher.count(), work, "{label}: units of hash work (an unknown email must cost what a wrong password does)");
+    assert_eq!(
+        w.hasher.count(),
+        work,
+        "{label}: units of hash work (an unknown email must cost what a wrong password does)"
+    );
     if let Ok(s) = got {
         assert_eq!(s.user_id, ACTIVE, "{label}");
     }
@@ -209,7 +213,11 @@ fn a_random_source_that_fails_makes_no_session_and_is_not_an_authentication_answ
 fn sign_out_reaches_one_session_and_sign_out_everywhere_all_of_a_users_and_nobody_elses() {
     let w = auth_world();
     let login = |email: &str, pw: &str| block_on(sign_in(&w.app, email, pw)).unwrap();
-    let (a1, a2, a3) = (login("active@example.test", PASSWORD), login("active@example.test", PASSWORD), login("active@example.test", PASSWORD));
+    let (a1, a2, a3) = (
+        login("active@example.test", PASSWORD),
+        login("active@example.test", PASSWORD),
+        login("active@example.test", PASSWORD),
+    );
     let o1 = login("other@example.test", "another password");
     let live = |s: &SignedIn| block_on(authenticate(&w.app, &s.token)).is_ok();
     assert!([&a1, &a2, &a3, &o1].into_iter().all(live), "all four are live to start with");
@@ -223,7 +231,11 @@ fn sign_out_reaches_one_session_and_sign_out_everywhere_all_of_a_users_and_nobod
 
     let revoked = block_on(sign_out_everywhere(&w.app, &Principal { user_id: ACTIVE })).unwrap();
     assert_eq!(revoked, 2, "the two sessions that were still live");
-    assert_eq!([live(&a1), live(&a2), live(&a3), live(&o1)], [false, false, false, true], "the other user is untouched");
+    assert_eq!(
+        [live(&a1), live(&a2), live(&a3), live(&o1)],
+        [false, false, false, true],
+        "the other user is untouched"
+    );
     assert_eq!(block_on(sign_out_everywhere(&w.app, &Principal { user_id: ACTIVE })).unwrap(), 0);
     // control: signing in again after sign-out-everywhere works, and the new session is live
     assert!(live(&login("active@example.test", PASSWORD)));

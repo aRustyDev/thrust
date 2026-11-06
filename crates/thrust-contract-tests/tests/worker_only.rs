@@ -48,7 +48,9 @@ async fn worker_room_do_websocket_hibernation_api_and_sqlite_storage() {
     for (what, token) in [("unauthenticated", None), ("wrong token", Some("wrong"))] {
         match ws_connect(&t, &room, token).await {
             Ok(_) => panic!("{what} websocket upgrade must fail"),
-            Err(e) => assert!(e.starts_with("HTTP error: 4"), "{what}: refusal must be an HTTP 4xx from the Worker, got: {e}"),
+            Err(e) => {
+                assert!(e.starts_with("HTTP error: 4"), "{what}: refusal must be an HTTP 4xx from the Worker, got: {e}")
+            }
         }
     }
 
@@ -85,7 +87,8 @@ async fn worker_room_do_websocket_hibernation_api_and_sqlite_storage() {
         .json()
         .await
         .unwrap();
-    let bodies: Vec<_> = hist["messages"].as_array().unwrap().iter().map(|m| m["body"].as_str().unwrap().to_string()).collect();
+    let bodies: Vec<_> =
+        hist["messages"].as_array().unwrap().iter().map(|m| m["body"].as_str().unwrap().to_string()).collect();
     assert_eq!(bodies, ["hello", "from-b"]);
 
     // Hibernation: workerd evicts an idle hibernatable DO after ~10 s; the socket stays open and the
@@ -244,7 +247,10 @@ async fn stage2_cron_real_trigger_runs_the_sweeper() {
         assert!(start.elapsed() < Duration::from_secs(180), "no delivery within 180 s: the cron trigger did not sweep");
         tokio::time::sleep(Duration::from_secs(1)).await;
     };
-    eprintln!("CRON-OBSERVATION: delivered {} s after the 2 s empty check (cron `* * * * *`)", start.elapsed().as_secs());
+    eprintln!(
+        "CRON-OBSERVATION: delivered {} s after the 2 s empty check (cron `* * * * *`)",
+        start.elapsed().as_secs()
+    );
     assert_eq!(acts.len(), 1);
     assert_eq!(acts[0].verb, "created");
 }

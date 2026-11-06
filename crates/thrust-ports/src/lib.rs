@@ -673,12 +673,7 @@ pub trait Database: Send + Sync {
     /// the caller's membership of that workspace and of the project in one query (ADR-0051 round
     /// 29). Every other method takes a [`Scope`], from which the adapter reads the tenant key, or a
     /// [`SystemScope`]; none takes bare ids.
-    async fn membership(
-        &self,
-        slug: &WorkspaceSlug,
-        project: ProjectId,
-        user: UserId,
-    ) -> Result<Membership, DbError>;
+    async fn membership(&self, slug: &WorkspaceSlug, project: ProjectId, user: UserId) -> Result<Membership, DbError>;
 
     // --- Sessions: a directory table (ADR-0041), so no call here carries a tenant key. Like
     // `membership`, they run before a `Scope` exists, and take no proof type: the token is the
@@ -720,7 +715,12 @@ pub trait Database: Send + Sync {
 
     /// Apply `patch` to the user's profile at `at` (`updated_at`), atomically, and return the row as it is after. `None`
     /// when the user has no profile.
-    async fn update_profile(&self, user: UserId, patch: &ProfilePatch, at: Timestamp) -> Result<Option<UserProfile>, DbError>;
+    async fn update_profile(
+        &self,
+        user: UserId,
+        patch: &ProfilePatch,
+        at: Timestamp,
+    ) -> Result<Option<UserProfile>, DbError>;
 
     // --- Workspaces (issue #44). The first four run before there is a `WorkspaceScope` (they are how one is made, or they
     // are about the caller's own workspaces), the rest take one.
@@ -783,11 +783,19 @@ pub trait Database: Send + Sync {
 
     /// As [`Database::ensure_sidebar_preferences`], for the home page's widgets: a row made here keeps the `created_at` of
     /// its default, and the rows come back by key.
-    async fn ensure_home_preferences(&self, scope: &WorkspaceScope, defaults: &[HomePreference]) -> Result<Vec<HomePreference>, DbError>;
+    async fn ensure_home_preferences(
+        &self,
+        scope: &WorkspaceScope,
+        defaults: &[HomePreference],
+    ) -> Result<Vec<HomePreference>, DbError>;
 
     /// The caller's work-item list settings for this workspace: `new` is stored (at its own time) if there is no row yet, and
     /// whichever row is there is returned. A row that exists is left exactly as it is.
-    async fn ensure_user_properties(&self, scope: &WorkspaceScope, new: &UserProperties) -> Result<UserProperties, DbError>;
+    async fn ensure_user_properties(
+        &self,
+        scope: &WorkspaceScope,
+        new: &UserProperties,
+    ) -> Result<UserProperties, DbError>;
 
     // --- Projects (issue #44, the project stage). The writes take the workspace's scope: who may make or change a project is
     // the core's to decide (it reads the caller's roles), and the adapter writes under the workspace the scope names.
@@ -818,14 +826,22 @@ pub trait Database: Send + Sync {
 
     /// The caller's own row in the project, with who they are; `None` when they have none (also for a project of another
     /// workspace, a row that names another workspace than the project's is no row).
-    async fn project_member(&self, scope: &WorkspaceScope, project: ProjectId) -> Result<Option<ProjectMemberWithUser>, DbError>;
+    async fn project_member(
+        &self,
+        scope: &WorkspaceScope,
+        project: ProjectId,
+    ) -> Result<Option<ProjectMemberWithUser>, DbError>;
 
     /// The people in the project who are active members of its workspace, newest row first (ties by id).
     async fn project_members(&self, scope: &Scope) -> Result<Vec<ProjectMemberRow>, DbError>;
 
     /// The caller's settings for the project: `new` is stored if they have none (a row the project's creation did not make), and
     /// whichever row is there is returned. A row that exists is left exactly as it is.
-    async fn ensure_project_user_properties(&self, scope: &Scope, new: &ProjectUserProperties) -> Result<ProjectUserProperties, DbError>;
+    async fn ensure_project_user_properties(
+        &self,
+        scope: &Scope,
+        new: &ProjectUserProperties,
+    ) -> Result<ProjectUserProperties, DbError>;
 
     /// The project's labels by `sort_order` (ties by id).
     async fn project_labels(&self, scope: &Scope) -> Result<Vec<LabelRow>, DbError>;
@@ -842,18 +858,18 @@ pub trait Database: Send + Sync {
 
     /// Counts for the projects of the scope's workspace (all of them, or those in `only`), newest first (ties by id), whoever the
     /// caller is in them.
-    async fn project_stats(&self, scope: &WorkspaceScope, only: Option<&[ProjectId]>) -> Result<Vec<ProjectStat>, DbError>;
+    async fn project_stats(
+        &self,
+        scope: &WorkspaceScope,
+        only: Option<&[ProjectId]>,
+    ) -> Result<Vec<ProjectStat>, DbError>;
 
     /// Create a user (sign-up, issue #44). A taken email is `DbError::Conflict`, raised by the UNIQUE index, so two
     /// sign-ups racing for one email cannot both win. An id that exists is the caller's bug, and also a `Conflict`.
     async fn insert_user(&self, user: &UserRecord) -> Result<(), DbError>;
 
     /// The user an identity provider's subject is linked to, active or not.
-    async fn user_for_account(
-        &self,
-        provider: &str,
-        provider_account_id: &str,
-    ) -> Result<Option<UserRecord>, DbError>;
+    async fn user_for_account(&self, provider: &str, provider_account_id: &str) -> Result<Option<UserRecord>, DbError>;
 
     /// Link a provider subject to a user. A link that exists is left as it is.
     async fn link_account(&self, a: &NewAccount) -> Result<(), DbError>;
@@ -910,12 +926,7 @@ pub trait Database: Send + Sync {
 
     async fn list_work_items(&self, scope: &Scope, vis: Visibility) -> Result<Vec<WorkItem>, DbError>;
 
-    async fn get_work_item(
-        &self,
-        scope: &Scope,
-        id: WorkItemId,
-        vis: Visibility,
-    ) -> Result<Option<WorkItem>, DbError>;
+    async fn get_work_item(&self, scope: &Scope, id: WorkItemId, vis: Visibility) -> Result<Option<WorkItem>, DbError>;
 
     /// One page of the project's live work items (not deleted, archived or a draft) with their compat attributes, in the order
     /// `q` names, `q.limit` of them from page `q.page` (a page number, not a row offset), and whether another page follows
@@ -951,21 +962,12 @@ pub trait Database: Send + Sync {
     /// The queue consumer's write: its tenant is the one the envelope carries (ADR-0141).
     async fn insert_activity(&self, sys: &SystemScope, a: &Activity) -> Result<bool, DbError>;
 
-    async fn list_activity(
-        &self,
-        scope: &Scope,
-        entity: Option<WorkItemId>,
-    ) -> Result<Vec<Activity>, DbError>;
+    async fn list_activity(&self, scope: &Scope, entity: Option<WorkItemId>) -> Result<Vec<Activity>, DbError>;
 
     /// Rows with `dispatched_at IS NULL`, oldest first. Used by the cron sweeper.
     async fn undispatched_outbox(&self, sys: &SystemScope, limit: u32) -> Result<Vec<OutboxRow>, DbError>;
 
-    async fn mark_outbox_dispatched(
-        &self,
-        sys: &SystemScope,
-        event: EventId,
-        at: Timestamp,
-    ) -> Result<(), DbError>;
+    async fn mark_outbox_dispatched(&self, sys: &SystemScope, event: EventId, at: Timestamp) -> Result<(), DbError>;
 
     async fn outbox_depth(&self, sys: &SystemScope) -> Result<u64, DbError>;
 
@@ -983,13 +985,13 @@ pub trait Tx: Send {
     async fn insert_work_item(&mut self, scope: &Scope, item: &WorkItem) -> Result<(), DbError>;
     /// Give a work item this transaction has just inserted its compat attributes (state, priority, dates, description, who it
     /// is assigned to and its labels). The item is of the scope's project, or the call is refused.
-    async fn insert_work_item_attrs(&mut self, scope: &Scope, id: WorkItemId, attrs: &WorkItemAttrs) -> Result<(), DbError>;
-    async fn soft_delete_work_item(
+    async fn insert_work_item_attrs(
         &mut self,
         scope: &Scope,
         id: WorkItemId,
-        at: Timestamp,
-    ) -> Result<bool, DbError>;
+        attrs: &WorkItemAttrs,
+    ) -> Result<(), DbError>;
+    async fn soft_delete_work_item(&mut self, scope: &Scope, id: WorkItemId, at: Timestamp) -> Result<bool, DbError>;
     async fn insert_outbox(&mut self, scope: &Scope, row: &OutboxRow) -> Result<(), DbError>;
     async fn commit(self: Box<Self>) -> Result<(), DbError>;
     async fn rollback(self: Box<Self>) -> Result<(), DbError>;
@@ -1067,11 +1069,7 @@ pub struct WorkItemPage {
 
 /// What every adapter checks before a `Tx` write: the row belongs to the scope it is written
 /// under (its workspace, and its project when the row has one).
-pub fn check_tenant(
-    scope: &Scope,
-    workspace_id: WorkspaceId,
-    project_id: Option<ProjectId>,
-) -> Result<(), DbError> {
+pub fn check_tenant(scope: &Scope, workspace_id: WorkspaceId, project_id: Option<ProjectId>) -> Result<(), DbError> {
     if workspace_id != scope.workspace_id() || project_id.is_some_and(|p| p != scope.project_id()) {
         return Err(DbError::Backend("row is outside the scope it is written under".into()));
     }

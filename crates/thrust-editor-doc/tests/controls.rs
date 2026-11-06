@@ -48,15 +48,8 @@ fn failing_docs(mk: &dyn Fn(Variant) -> Schema, c: &Value) -> Vec<String> {
         if let Ok(node) = Node::from_json(&schema, &d["json"]) {
             fail |= html::to_html(&schema, &node) != d["html"].as_str().unwrap();
         }
-        let h = d
-            .get("html_in")
-            .and_then(|x| x.as_str())
-            .or_else(|| d["html"].as_str())
-            .unwrap();
-        fail |= !same(
-            &domparse::html_to_doc(&schema, h).to_json(&schema),
-            &d["html_in_json"],
-        );
+        let h = d.get("html_in").and_then(|x| x.as_str()).or_else(|| d["html"].as_str()).unwrap();
+        fail |= !same(&domparse::html_to_doc(&schema, h).to_json(&schema), &d["html_in_json"]);
         if fail {
             bad.push(d["id"].as_str().unwrap().to_string());
         }
@@ -68,21 +61,11 @@ fn failing_docs(mk: &dyn Fn(Variant) -> Schema, c: &Value) -> Vec<String> {
 fn baseline_has_zero_failures_and_no_schema_drift() {
     let c = load();
     let bad = failing_docs(&|v| Schema::new(v), &c);
-    assert!(
-        bad.is_empty(),
-        "unmutated Rust implementation disagrees with the oracle on {bad:?}"
-    );
+    assert!(bad.is_empty(), "unmutated Rust implementation disagrees with the oracle on {bad:?}");
     for v in [Variant::Rich, Variant::Document] {
-        let key = if v == Variant::Rich {
-            "rich"
-        } else {
-            "document"
-        };
+        let key = if v == Variant::Rich { "rich" } else { "document" };
         let drift = Schema::new(v).diff_against_dump(&dump()[key]);
-        assert!(
-            drift.is_empty(),
-            "schema drift against the real dump ({key}): {drift:?}"
-        );
+        assert!(drift.is_empty(), "schema drift against the real dump ({key}): {drift:?}");
     }
 }
 
@@ -105,19 +88,11 @@ fn mutated(v: Variant, which: &(&str, &str, &str)) -> Schema {
     let new: Value = serde_json::from_str(which.2).unwrap();
     if let Some(m) = which.0.strip_prefix("mark:") {
         let t = s.mark_type(m).unwrap();
-        let a = s.marks[t]
-            .attrs
-            .iter_mut()
-            .find(|a| a.name == which.1)
-            .unwrap();
+        let a = s.marks[t].attrs.iter_mut().find(|a| a.name == which.1).unwrap();
         a.default = AttrDefault::Val(new);
     } else {
         let t = s.node_type(which.0).unwrap();
-        let a = s.nodes[t]
-            .attrs
-            .iter_mut()
-            .find(|a| a.name == which.1)
-            .unwrap();
+        let a = s.nodes[t].attrs.iter_mut().find(|a| a.name == which.1).unwrap();
         a.default = AttrDefault::Val(new);
     }
     s
@@ -138,14 +113,8 @@ fn mutated_schema_is_detected_by_the_corpus_and_by_the_dump_diff() {
             bad.len(),
             drift.len()
         ));
-        assert!(
-            !drift.is_empty(),
-            "mutant {m:?} was NOT detected by the schema dump diff"
-        );
-        assert!(
-            !bad.is_empty() || !drift.is_empty(),
-            "mutant {m:?} was NOT detected at all"
-        );
+        assert!(!drift.is_empty(), "mutant {m:?} was NOT detected by the schema dump diff");
+        assert!(!bad.is_empty() || !drift.is_empty(), "mutant {m:?} was NOT detected at all");
         if !bad.is_empty() {
             by_corpus += 1;
         }
@@ -163,21 +132,15 @@ fn mutated_schema_is_detected_by_the_corpus_and_by_the_dump_diff() {
 fn comparator_discriminates_between_different_documents() {
     // decode(binary of doc i) compared with the JSON of a DIFFERENT doc must not be equal
     let c = load();
-    let docs: Vec<&Value> = c["docs"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .filter(|d| d.get("binary").is_some() && d["kind"] != "foreign")
-        .collect();
+    let docs: Vec<&Value> =
+        c["docs"].as_array().unwrap().iter().filter(|d| d.get("binary").is_some() && d["kind"] != "foreign").collect();
     let (mut checked, mut equal) = (0, 0);
     for w in docs.windows(2) {
         if same(&w[0]["json"], &w[1]["json"]) {
             continue; // identical documents are legitimately equal
         }
         let schema = Schema::new(Variant::Document);
-        let got = ydoc::decode(&schema, &b64d(w[0]["binary"].as_str().unwrap()), "default")
-            .unwrap()
-            .to_json(&schema);
+        let got = ydoc::decode(&schema, &b64d(w[0]["binary"].as_str().unwrap()), "default").unwrap().to_json(&schema);
         checked += 1;
         if same(&got, &w[1]["json"]) {
             equal += 1;
@@ -213,8 +176,7 @@ fn corruptions(bin: &[u8], salt: usize) -> Vec<(&'static str, Vec<u8>)> {
 fn corrupted_binaries_are_detected() {
     let c = load();
     let schema = Schema::new(Variant::Document);
-    let mut stats: std::collections::BTreeMap<&str, (usize, usize, usize, usize)> =
-        Default::default(); // total, err, differs, undetected
+    let mut stats: std::collections::BTreeMap<&str, (usize, usize, usize, usize)> = Default::default(); // total, err, differs, undetected
     let mut records = vec![];
     for (i, d) in c["docs"].as_array().unwrap().iter().enumerate() {
         let Some(bs) = d.get("binary").and_then(|b| b.as_str()) else {
@@ -255,17 +217,10 @@ fn corrupted_binaries_are_detected() {
     if let Some(dir) = std::env::var_os("SPIKE0006_OUT") {
         let dir = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../..")).join(dir);
         std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(
-            dir.join("corrupt.json"),
-            serde_json::to_string(&records).unwrap(),
-        )
-        .unwrap();
+        std::fs::write(dir.join("corrupt.json"), serde_json::to_string(&records).unwrap()).unwrap();
     }
     // structural corruption (truncation, garbage, empty) must never decode to the original document
     for k in ["truncate-50%", "garbage", "empty"] {
-        assert_eq!(
-            stats[k].3, 0,
-            "{k}: a corrupted binary decoded to the ORIGINAL document"
-        );
+        assert_eq!(stats[k].3, 0, "{k}: a corrupted binary decoded to the ORIGINAL document");
     }
 }

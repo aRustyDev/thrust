@@ -129,7 +129,8 @@ fn the_activity_consumer_records_events_and_rejects_bad_ones() {
     let mut env = block_on(w.app.ports.db.undispatched_outbox(&SystemScope::mint(), 10)).unwrap().remove(0).envelope;
 
     block_on(consumer.handle(&env)).unwrap();
-    let rows = block_on(list_activity(&w.app, &w.principal(Actor::GuestA), &w.slug_a, w.project_a, Some(item.id))).unwrap();
+    let rows =
+        block_on(list_activity(&w.app, &w.principal(Actor::GuestA), &w.slug_a, w.project_a, Some(item.id))).unwrap();
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].verb, "created");
 

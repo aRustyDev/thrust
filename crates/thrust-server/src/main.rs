@@ -12,7 +12,7 @@ use thrust_adapters_memory::*;
 use thrust_adapters_oidc::{OidcConfig, OpenIdProvider};
 use thrust_adapters_selfhosted::*;
 use thrust_api::{ApiConfig, InternalErrorDetail};
-use thrust_core::{ActivityConsumer, Argon2Params, Argon2idHasher, App, CoreConfig, Ports, SystemScope};
+use thrust_core::{ActivityConsumer, App, Argon2Params, Argon2idHasher, CoreConfig, Ports, SystemScope};
 use thrust_ports::*;
 use tower_http::catch_panic::CatchPanicLayer;
 
@@ -79,8 +79,9 @@ async fn main() {
         "postgres" => {
             // the URL carries the password: environment only
             let url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set for THRUST_ADAPTERS=postgres");
-            let connector = thrust_adapters_selfhosted::pg::PoolConnector::from_url(&url, env_num("THRUST_PG_POOL", 16))
-                .expect("pool");
+            let connector =
+                thrust_adapters_selfhosted::pg::PoolConnector::from_url(&url, env_num("THRUST_PG_POOL", 16))
+                    .expect("pool");
             Arc::new(thrust_adapters_postgres::PgDatabase::new(Arc::new(connector)))
         }
         other => panic!("unknown THRUST_ADAPTERS '{other}' (this build supports: memory, postgres)"),

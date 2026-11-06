@@ -72,34 +72,42 @@ fn user(u: U) -> UserId {
 
 fn seeded() -> MemoryDatabase {
     let db = MemoryDatabase::new();
-    let m = |project, workspace_id, u| SeedMembership { project_id: PROJECT[project], workspace_id, user_id: user(u), role: Role::Admin };
+    let m = |project, workspace_id, u| SeedMembership {
+        project_id: PROJECT[project],
+        workspace_id,
+        user_id: user(u),
+        role: Role::Admin,
+    };
     let in_ws = |ws: usize, u| SeedWorkspaceMember { workspace_id: WS[ws], user_id: user(u) };
-    block_on(db.seed(&SystemScope::mint(), &SeedFixture {
-        workspaces: (0..2).map(|i| SeedWorkspace { id: WS[i], slug: WorkspaceSlug::new(SLUG[i]) }).collect(),
-        users: [U::AdminA, U::OutsiderA, U::AdminB, U::StrayB, U::Dual].map(user).to_vec(),
-        workspace_members: vec![
-            in_ws(0, U::AdminA),
-            in_ws(0, U::OutsiderA),
-            in_ws(1, U::AdminB),
-            in_ws(0, U::StrayB),
-            in_ws(1, U::StrayB),
-            in_ws(0, U::Dual),
-            in_ws(1, U::Dual),
-        ],
-        projects: vec![
-            SeedProject { id: PROJECT[0], workspace_id: WS[0], name: "A".into() },
-            SeedProject { id: PROJECT[1], workspace_id: WS[1], name: "B".into() },
-        ],
-        memberships: vec![
-            m(0, WS[0], U::AdminA),
-            m(1, WS[1], U::AdminB),
-            m(0, WS[1], U::StrayB),
-            m(0, WS[0], U::Dual),
-            m(1, WS[1], U::Dual),
-        ],
-        sessions: vec![],
-        ..SeedFixture::default()
-    }))
+    block_on(db.seed(
+        &SystemScope::mint(),
+        &SeedFixture {
+            workspaces: (0..2).map(|i| SeedWorkspace { id: WS[i], slug: WorkspaceSlug::new(SLUG[i]) }).collect(),
+            users: [U::AdminA, U::OutsiderA, U::AdminB, U::StrayB, U::Dual].map(user).to_vec(),
+            workspace_members: vec![
+                in_ws(0, U::AdminA),
+                in_ws(0, U::OutsiderA),
+                in_ws(1, U::AdminB),
+                in_ws(0, U::StrayB),
+                in_ws(1, U::StrayB),
+                in_ws(0, U::Dual),
+                in_ws(1, U::Dual),
+            ],
+            projects: vec![
+                SeedProject { id: PROJECT[0], workspace_id: WS[0], name: "A".into() },
+                SeedProject { id: PROJECT[1], workspace_id: WS[1], name: "B".into() },
+            ],
+            memberships: vec![
+                m(0, WS[0], U::AdminA),
+                m(1, WS[1], U::AdminB),
+                m(0, WS[1], U::StrayB),
+                m(0, WS[0], U::Dual),
+                m(1, WS[1], U::Dual),
+            ],
+            sessions: vec![],
+            ..SeedFixture::default()
+        },
+    ))
     .unwrap();
     db
 }

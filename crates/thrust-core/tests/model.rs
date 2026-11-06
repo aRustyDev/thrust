@@ -27,10 +27,25 @@ use thrust_core::*;
 
 #[derive(Debug, Clone)]
 enum Op {
-    Create { actor: Actor, slug: Slug, proj: Proj, valid_name: bool },
+    Create {
+        actor: Actor,
+        slug: Slug,
+        proj: Proj,
+        valid_name: bool,
+    },
     /// `pick` chooses one of the project's items (live or deleted); with none, a random unknown id.
-    Delete { actor: Actor, slug: Slug, proj: Proj, pick: usize },
-    List { actor: Actor, slug: Slug, proj: Proj, with_deleted: bool },
+    Delete {
+        actor: Actor,
+        slug: Slug,
+        proj: Proj,
+        pick: usize,
+    },
+    List {
+        actor: Actor,
+        slug: Slug,
+        proj: Proj,
+        with_deleted: bool,
+    },
 }
 
 fn actor() -> impl Strategy<Value = Actor> {
@@ -236,7 +251,8 @@ fn run(ops: &[Op]) -> Result<(), TestCaseError> {
             Op::Create { actor, slug, proj, valid_name } => {
                 let name = if valid_name { format!("item {step}") } else { "   ".to_string() };
                 let req = CreateWorkItemRequest { name, description: None, external_source: None, external_id: None };
-                let got = block_on(create_work_item(&w.app, &w.principal(actor), &w.slug(proj, slug), w.project(proj), req));
+                let got =
+                    block_on(create_work_item(&w.app, &w.principal(actor), &w.slug(proj, slug), w.project(proj), req));
                 prop_assert_eq!(outcome(&got), e.want.clone(), "step {}: {:?}", step, op);
                 if let Ok(item) = got {
                     let s = slot(proj);
@@ -248,20 +264,27 @@ fn run(ops: &[Op]) -> Result<(), TestCaseError> {
             Op::Delete { actor, slug, proj, pick } => {
                 let s = slot(proj);
                 let id = e.target.map_or(WorkItemId(Uuid::from_u128(0xBAD0 + pick as u128)), |i| m.items[s][i].id);
-                let got = block_on(delete_work_item(&w.app, &w.principal(actor), &w.slug(proj, slug), w.project(proj), id));
+                let got =
+                    block_on(delete_work_item(&w.app, &w.principal(actor), &w.slug(proj, slug), w.project(proj), id));
                 prop_assert_eq!(outcome(&got), e.want.clone(), "step {}: {:?}", step, op);
             }
             Op::List { actor, slug, proj, with_deleted } => {
                 let vis = if with_deleted { Visibility::WithDeleted } else { Visibility::Visible };
-                let got = block_on(list_work_items(&w.app, &w.principal(actor), &w.slug(proj, slug), w.project(proj), vis));
+                let got =
+                    block_on(list_work_items(&w.app, &w.principal(actor), &w.slug(proj, slug), w.project(proj), vis));
                 prop_assert_eq!(outcome(&got), e.want.clone(), "step {}: {:?}", step, op);
                 if let Ok(rows) = got {
                     for r in &rows {
-                        prop_assert_eq!((r.workspace_id, r.project_id), (w.workspace_of(proj), w.project(proj)),
-                            "step {}: a list returned a row outside its scope", step);
+                        prop_assert_eq!(
+                            (r.workspace_id, r.project_id),
+                            (w.workspace_of(proj), w.project(proj)),
+                            "step {}: a list returned a row outside its scope",
+                            step
+                        );
                     }
                     let seqs: Vec<i64> = rows.iter().map(|r| r.sequence_id).collect();
-                    let want: Vec<i64> = m.items[slot(proj)].iter().filter(|i| with_deleted || !i.deleted).map(|i| i.seq).collect();
+                    let want: Vec<i64> =
+                        m.items[slot(proj)].iter().filter(|i| with_deleted || !i.deleted).map(|i| i.seq).collect();
                     prop_assert_eq!(seqs, want, "step {}: {:?}", step, op);
                 }
             }

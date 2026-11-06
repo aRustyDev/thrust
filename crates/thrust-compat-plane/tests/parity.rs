@@ -168,7 +168,12 @@ fn parity_control_a_recorded_success_that_thrust_refuses_is_a_divergence() {
 #[test]
 fn parity_control_a_next_path_that_is_not_kept_is_a_divergence() {
     let d = mutated("S06", |f| {
-        let ex = f["exchanges"].as_array_mut().unwrap().iter_mut().find(|e| e["name"] == "sign in with a next_path").unwrap();
+        let ex = f["exchanges"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|e| e["name"] == "sign in with a next_path")
+            .unwrap();
         ex["response"]["headers"]["location"] = json!("<base_url>/?next_path=/elsewhere");
     });
     assert!(!d.is_empty());
@@ -240,8 +245,12 @@ fn parity_projection_of_the_pins_redirects() {
     );
 
     // an error on a request that had a next_path: the path is the client's own and is not part of the error
-    let r = redirect("<base_url>/?next_path=/dashboard&error_code=5065&error_message=AUTHENTICATION_FAILED_SIGN_IN&email=");
-    assert_eq!(r["response"]["body"], json!({"error_code": 5065, "error_message": "AUTHENTICATION_FAILED_SIGN_IN", "email": ""}));
+    let r =
+        redirect("<base_url>/?next_path=/dashboard&error_code=5065&error_message=AUTHENTICATION_FAILED_SIGN_IN&email=");
+    assert_eq!(
+        r["response"]["body"],
+        json!({"error_code": 5065, "error_message": "AUTHENTICATION_FAILED_SIGN_IN", "email": ""})
+    );
 
     // the pin's throttle is a 429
     assert_eq!(redirect("<base_url>/?error_code=5900&error_message=RATE_LIMIT_EXCEEDED")["response"]["status"], 429);
@@ -256,7 +265,8 @@ fn parity_normaliser_cases() {
     assert!(!cases.is_empty());
     for case in cases {
         let mut ids = normalise::Ids::new(&rules);
-        let got: Vec<Value> = case["input"].as_array().unwrap().iter().map(|ex| normalise::exchange(&rules, &mut ids, ex)).collect();
+        let got: Vec<Value> =
+            case["input"].as_array().unwrap().iter().map(|ex| normalise::exchange(&rules, &mut ids, ex)).collect();
         assert_eq!(Value::Array(got), case["expected"], "case: {}", case["name"]);
     }
 }
