@@ -32,7 +32,7 @@ A pass means something only if the gate can fail. The pages in the last column s
 others. The book's own pages write down no control for its checks. The `mdbook` skill's reference does: a stray page
 is reported by the orphan check, and a broken `{{#include}}` gives an `ERROR` line while `mdbook build` exits 0.
 
-The `lint` and `deny` gates were shown to fail on 2026-11-05 `[verified 9640f91]`. A deliberate `.unwrap()` in non-test
+The `lint` and `deny` gates were shown to fail on 2026-11-05 `[verified 7d0074f]`. A deliberate `.unwrap()` in non-test
 `thrust-core` stops clippy with `used unwrap() on an Option value` (`unwrap_used`); a mis-formatted line makes
 `cargo fmt --all --check` exit 1 with the diff; deleting the RUSTSEC-2023-0071 entry from `deny.toml` makes
 `cargo deny check advisories` fail and name it (`rsa v0.9.10`), which also shows that the ignore is what lets `main`

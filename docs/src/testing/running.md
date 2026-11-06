@@ -92,10 +92,10 @@ toolchain, and the last needs `cargo-deny` 0.20 on `PATH` (installing it is your
 advisory database, so it needs the network.
 
 ```sh
-scripts/rs cargo fmt --all --check                                       # [verified 2026-11-05 14f28db: exit 0]
-scripts/rs cargo clippy --workspace --all-targets --locked -- -D warnings   # [verified 2026-11-05 14f28db: exit 0]
-scripts/rs cargo clippy -p thrust-worker --no-default-features --target wasm32-unknown-unknown --locked -- -D warnings   # [verified 2026-11-05 14f28db: exit 0]
-scripts/rs cargo deny --locked check                                     # [verified 2026-11-05 14f28db: advisories, bans, licenses, sources ok]
+scripts/rs cargo fmt --all --check                                       # [verified 2026-11-05 7d0074f: exit 0]
+scripts/rs cargo clippy --workspace --all-targets --locked -- -D warnings   # [verified 2026-11-05 7d0074f: exit 0]
+scripts/rs cargo clippy -p thrust-worker --no-default-features --target wasm32-unknown-unknown --locked -- -D warnings   # [verified 2026-11-05 7d0074f: exit 0]
+scripts/rs cargo deny --locked check                                     # [verified 2026-11-05 7d0074f: advisories, bans, licenses, sources ok]
 ```
 
 `scripts/rs cargo fmt --all` fixes what the first one finds. The panic lints that clippy denies, and the `#[allow]` that

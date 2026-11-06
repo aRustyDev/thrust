@@ -39,11 +39,11 @@ forbidden crate (for example `worker`) to `crates/thrust-core/Cargo.toml` and ex
 The ORM check has its own control. Temporarily add `sea-orm` as a dependency of `crates/thrust-adapters-postgres`, a
 crate the older sections do not name, and run the script: it exits 1, prints `FORBIDDEN: sea-orm is in the workspace
 graph (ADR-0044)`, and the tree under it starts at `sea-orm v1.1.20` and names `thrust-adapters-postgres`
-`[verified 2026-11-05 26d72a2]`. Two variants show why the flags are what they are. With `sea-orm` as a
+`[verified 2026-11-05 7d0074f]`. Two variants show why the flags are what they are. With `sea-orm` as a
 `[dev-dependencies]` entry, the script's own query (`-e all`) finds it, and the same query with `-e normal` printed
 `nothing to print`, which the script's case arm reads as absent, so `-e normal` alone would have passed it `[verified
-2026-11-05 26d72a2]`. With `sea-orm` as an optional dependency behind a feature that nothing enables, the script
-fails, because of `--all-features`, and so does `cargo deny check bans` `[verified 2026-11-05 39fa3e9]`. Cargo needs
+2026-11-05 7d0074f]`. With `sea-orm` as an optional dependency behind a feature that nothing enables, the script
+fails, because of `--all-features`, and so does `cargo deny check bans` `[verified 2026-11-05 7d0074f]`. Cargo needs
 the network for this to resolve; offline, the script reports its `ERROR` line, not a hit.
 
 ## Owning skill
