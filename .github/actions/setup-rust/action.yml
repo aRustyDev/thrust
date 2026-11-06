@@ -6,6 +6,10 @@ inputs:
     description: Comma-separated rustup targets, e.g. wasm32-unknown-unknown
     required: false
     default: ""
+  components:
+    description: Comma-separated rustup components to add to the toolchain, e.g. clippy, rustfmt (the toolchain is installed without them)
+    required: false
+    default: ""
   cache-key:
     description: rust-cache shared-key; one per family of jobs that can reuse each other's build output
     required: true
@@ -33,6 +37,7 @@ runs:
       with:
         toolchain: stable
         targets: ${{ inputs.targets }}
+        components: ${{ inputs.components }}
 
     # Restores always; saves only when the caller says so, so many PR cells cannot evict each other's
     # entries from the repository's cache budget. It caches ~/.cargo (including binaries installed AFTER this
