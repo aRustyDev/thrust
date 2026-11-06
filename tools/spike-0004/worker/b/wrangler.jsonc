@@ -1,0 +1,9 @@
+{
+  // Spike 0004 throwaway Worker B (service-binding target). Resource prefix: spike-0004-
+  "name": "spike-0004-b",
+  "main": "src/index.js",
+  "compatibility_date": "2026-08-18",
+  // No public surface: only reachable through a service binding.
+  "workers_dev": false,
+  "preview_urls": false
+}

@@ -1,0 +1,16 @@
+# OpenTofu: local state holds the service-token secret; provider binaries are huge
+tofu/.terraform/
+tofu/*.tfstate
+tofu/*.tfstate.*
+tofu/terraform.tfvars
+tofu/*.auto.tfvars
+tofu/crash.log
+# wrangler
+.wrangler/
+.dev.vars
+node_modules/
+worker/**/.wrangler/
+# harness output may include response bodies from the real platform
+tests/__pycache__/
+tests/*.report.json
+tests/out/
