@@ -85,6 +85,22 @@ scripts/rs cargo nextest run --workspace --profile oracle    # the 4 oracle_ tes
 `corrupted_binaries_are_detected` writes `corrupt.json` (evidence for `tools/spike-0006/oracle/verify-rust-out.ts`)
 only when `SPIKE0006_OUT=<dir>` is set, relative to the workspace root.
 
+## Format, lint and the dependency audit
+
+The commands of the `lint` and `deny` jobs. The first two need the `clippy` and `rustfmt` components of the stable
+toolchain, and the last needs `cargo-deny` 0.20 on `PATH` (installing it is your decision); it fetches the RustSec
+advisory database, so it needs the network.
+
+```sh
+scripts/rs cargo fmt --all --check                                       # [verified 2026-11-05 14f28db: exit 0]
+scripts/rs cargo clippy --workspace --all-targets --locked -- -D warnings   # [verified 2026-11-05 14f28db: exit 0]
+scripts/rs cargo clippy -p thrust-worker --no-default-features --target wasm32-unknown-unknown --locked -- -D warnings   # [verified 2026-11-05 14f28db: exit 0]
+scripts/rs cargo deny --locked check                                     # [verified 2026-11-05 14f28db: advisories, bans, licenses, sources ok]
+```
+
+`scripts/rs cargo fmt --all` fixes what the first one finds. The panic lints that clippy denies, and the `#[allow]` that
+says why a site keeps its own, are on [Standards and their gates](../contributing/standards.md).
+
 ## CI
 
 `.github/workflows/ci.yml` runs on every pull request, merge-queue entry and push to `main`. Each job runs the
@@ -96,6 +112,8 @@ same script you would run locally, so a red job reproduces with the command in i
 | `plan` | derives the contract cells from the `run <target> <pass>` lines of `scripts/contract-all.sh` |
 | `ci-scripts` | the tests of the CI helper scripts themselves (`.github/scripts/tests/`) |
 | `deps` | `scripts/check-deps.sh` |
+| `lint` | `cargo fmt --all --check`, then `cargo clippy --workspace --all-targets --locked -- -D warnings`, then the same clippy for `thrust-worker` with `--no-default-features --target wasm32-unknown-unknown` (the clippy steps run even if rustfmt failed) |
+| `deny` | `cargo deny --locked check`: advisories, licences, bans and sources, from `deny.toml` |
 | `hermetic` | `cargo nextest run --profile ci --workspace`, then `cargo test --doc --workspace` |
 | `pg-adapter` | `cargo test -p thrust-adapters-selfhosted --test pg_adapter` |
 | `contract` | one job per cell (`.github/workflows/contract-cell.yml`): `scripts/contract.sh <target> <pass>` |

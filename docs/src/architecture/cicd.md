@@ -13,7 +13,7 @@ required check guarantees. The jobs and the command each runs are in the CI sect
 | `.github/workflows/ci.yml` (`ci`) | The pipeline. Runs on pull requests, merge-queue entries, pushes to `main` and manual dispatch |
 | `.github/workflows/contract-cell.yml` | A reusable workflow that runs one contract cell on its own runner |
 | `.github/workflows/flake-hunt.yml` | Repeats one cell 1 to 50 times (5 by default), by hand or every Monday at 03:17 UTC. It passes only if `scripts/flake-hunt.sh` prints `failures: 0 / N`, because the script ends with an `echo`, so its exit status does not say whether an iteration failed |
-| `.github/actions/setup-rust` | A composite action: the stable toolchain, the rustup targets, a keyed `rust-cache`, and optionally `worker-build` 0.8.7 and wrangler 4.151.2 |
+| `.github/actions/setup-rust` | A composite action: the stable toolchain, the rustup targets and components, a keyed `rust-cache`, and optionally `worker-build` 0.8.7 and wrangler 4.151.2 |
 | `.github/scripts/` | The pipeline's own logic: `classify-changes.sh`, `plan-cells.sh`, `assert-gate.sh`, and `assert-required-contexts.sh`. The `ci-scripts` job tests them with `.github/scripts/tests/` |
 
 ## One required check
@@ -36,13 +36,16 @@ its base branch. Nothing calls it, so it is a tool to run by hand.
 
 - **Path classification.** The `changes` job sorts the changed files. The Rust jobs run only if one of them is under
   `crates/`, `scripts/`, `probes/`, `.cargo/`, `.config/`, `.github/workflows/`, `.github/actions/` or
-  `.github/scripts/`, or is `Cargo.toml`, `Cargo.lock` or a `rust-toolchain` file. The job fails open: with no usable
+  `.github/scripts/`, or is `Cargo.toml`, `Cargo.lock`, `deny.toml`, `clippy.toml`, `rustfmt.toml` or a `rust-toolchain`
+  file (the last three are read by the `deny` and `lint` jobs, so a change to only one of them must still run those
+  jobs `[verified 2026-11-05 26d72a2]` by the three cases in `.github/scripts/tests/test-ci-scripts.sh`). The job fails open: with no usable
   base commit, or an empty list, it runs everything. A pull request that changes only `docs/`, `AGENTS.md`,
   `.agents/` or `tools/` runs no tests, and `gate` passes. Run on sample lists, the classifier answers `rust=false`
   for `docs/`, `AGENTS.md`, `.agents/`, `tools/` and `.github/config/`, and `rust=true` for a file under `crates/`,
   for `.config/nextest.toml`, for a workflow file and for an empty list `[verified 2026-10-19 fa4bd6c]`. On a pull
   request that touches only `docs/`, `changes` passes, `plan`, `ci-scripts`, `deps`, `hermetic`, `pg-adapter`,
-  `mutants` and `contract` are skipped, and `gate` passes `[verified 2026-10-19 051b849]`. **The book is not built in
+  `mutants` and `contract` are skipped, and `gate` passes `[verified 2026-10-19 051b849]`. `lint` and `deny`, added
+  later, have the same `if` as `deps`, so a change to only `docs/` skips them too `[derived]`. **The book is not built in
   CI at all.**
 - **The matrix.** The `plan` job reads the `run <target> <pass>` lines of `scripts/contract-all.sh`, so no second
   list can drift. It fails if the number of cells it parsed differs from the number of lines that start with `run`,
@@ -56,12 +59,17 @@ its base branch. Nothing calls it, so it is a tool to run by hand.
 
 ## Permissions and supply chain
 
-- All 18 external action references are pinned to a full commit SHA with the version in a comment `[verified
-  2026-10-19 fa4bd6c]`. The Rust toolchain is `stable`, not pinned. `cargo-nextest` is 0.9.140, installed by
+- All 21 external action references are pinned to a full commit SHA with the version in a comment `[verified
+  2026-11-05 14f28db]`. The Rust toolchain is `stable`, not pinned, so a new clippy or rustfmt release can fail `lint`
+  with no change to the code. `cargo-nextest` is 0.9.140 and `cargo-deny` is 0.20.2, both installed by
   `taiki-e/install-action`.
-- `permissions: {}` at the top of each workflow, and `contents: read` and nothing else on each job. All 10 checkouts
+- `permissions: {}` at the top of each workflow, and `contents: read` and nothing else on each job. All 12 checkouts
   set `persist-credentials: false`. Reusable-workflow inputs reach the script through `env`, not through
   interpolation into the script text.
+- `deny.toml` configures the `deny` job: advisories, licences, bans (`sqlx`, `sea-orm`, `diesel`, `diesel-async`) and
+  sources (crates.io only). Its one advisory ignore is RUSTSEC-2023-0071 (`rsa`), with the reason and when to re-check
+  it written beside it; any other advisory is fixed by upgrading. The job fetches the advisory database on every run,
+  so a new advisory can turn it red, and `gate` with it, with no change to the code.
 - Caches are saved only on `main`. Pull-request runs restore and never save, so many cells cannot evict each other.
 
 ## Measured
@@ -76,7 +84,7 @@ every one succeeded `[verified 2026-10-19 fa4bd6c]` with `gh run view`.
   Cloudflare resources.
 - `scripts/verify-all.sh`. CI runs its steps as separate jobs, except the probes, which it does not run.
 - The `blast` and `bench` contract passes, which are not in `contract-all.sh`.
-- The book build and its checks, `cargo fmt`, `cargo clippy` and any licence or dependency audit.
+- The book build and its checks.
 - Any deploy. There is no workflow for it.
 
 ## Against the ADRs
@@ -87,11 +95,13 @@ ADR-0100, ADR-0101 and ADR-0110 are accepted, in `.agents/plans/contrail/adrs/`.
   Cloudflare-set contract tests and the oracle schema check, with the full matrix and the differential oracle
   nightly. It also asks for one aggregate job as the only required context, which asserts that every expected leg
   ran, and for a periodic job that diffs the ruleset's required contexts against those reported. In place: the full
-  matrix on every pull request that changes a Rust-relevant path, and the aggregate job, as `gate`. Not in place: a
-  lint step, a nightly run (only the weekly flake hunt), the oracle schema check and the periodic diff, which is
-  `assert-required-contexts.sh` and is run by hand.
+  matrix on every pull request that changes a Rust-relevant path, a lint step (`lint`: rustfmt and clippy), and the
+  aggregate job, as `gate`. Not in place: a nightly run (only the weekly flake hunt), the oracle schema check and the
+  periodic diff, which is `assert-required-contexts.sh` and is run by hand.
 - **ADR-0101 (supply chain)** asks for SHA pinning, Scorecard, attestation and trivy, plus Worker-bundle
   attestation, GitHub OIDC for deploys, and Rust gates (`cargo-deny`, `cargo-vet` or `cargo audit`). In place: SHA
-  pinning. Not in place: the rest. Of those, OIDC and bundle attestation depend on a deploy, and the others do not.
+  pinning, and one of the Rust gates, `cargo-deny` (`deny`). Not in place: the rest, including `cargo-vet` and
+  `cargo audit`, which the ADR offers as alternatives. Of those, OIDC and bundle attestation depend on a deploy, and
+  the others do not.
 - **ADR-0110 (the deploy pipeline)** describes a gradual rollout with measured gates and automatic rollback. Nothing
   implements it.

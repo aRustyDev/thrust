@@ -24,18 +24,19 @@ depend on one another is on [Application architecture](../architecture/app.md); 
 platform crate. `scripts/check-deps.sh` checks that for exactly the crates named in its `CLEAN_CRATES` variable, and
 checks `thrust-adapters-memory` separately. A new crate that has to stay portable is not covered until you add it to
 that list, and CI's `deps` job runs the same script, so it does not cover that crate either. The check is also a second list: it looks only for the 17 crate names in its `FORBIDDEN` variable, in
-normal dependencies, so a platform crate that is not on it passes. How the check works and how to prove it can fail
+normal dependencies, so a platform crate that is not on it passes. The ORM crates are the exception: the script asks
+the whole workspace for them, on every kind of edge. How the check works and how to prove it can fail
 are on [Architecture gates](../testing/techniques/architecture-gates.md).
 
 ## Adding a crate
 
-1. Create `crates/<name>/Cargo.toml`. All 13 existing crates take `edition`, `version`, `license` and `publish` from
+1. Create `crates/<name>/Cargo.toml`. All 15 existing crates take `edition`, `version`, `license` and `publish` from
    the workspace (`edition.workspace = true` and so on), so the licence (`AGPL-3.0-only`) and `publish = false`
    stay in one place.
 2. Add the path to `members` in the root `Cargo.toml`. The list is explicit, with no glob.
 3. If another crate will depend on it, add `<name> = { path = "crates/<name>" }` under `[workspace.dependencies]`
-   and depend on it with `{ workspace = true }`. Eight crates are declared that way: contracts, ports, core, api and
-   the four adapter crates. The two roots and `thrust-contract-tests` are not, because nothing depends on them.
+   and depend on it with `{ workspace = true }`. Ten crates are declared that way: contracts, ports, core, api,
+   compat-plane and the five adapter crates. The two roots and `thrust-contract-tests` are not, because nothing depends on them.
    The editor crates are not either: `thrust-editor-worker` depends on `thrust-editor-doc` by path.
 4. Put the crate's tests in the crate. cargo-mutants runs only the mutated package's own tests, and
    `cargo nextest run -p <crate>` selects nothing, and exits 4, for a crate with no tests of its own. The reasoning is
@@ -44,6 +45,9 @@ are on [Architecture gates](../testing/techniques/architecture-gates.md).
 6. A crate that builds for wasm32 as a Worker is a `cdylib`, as `thrust-worker` and `thrust-editor-worker` are, and
    is built by `worker-build` through `scripts/rs`, which puts rustup's toolchain (with the wasm32 standard
    library) ahead of Homebrew's `rustc`. The comment in `crates/thrust-worker/wrangler.toml` says so.
+7. If the crate is `thrust-core`, `thrust-ports` or an adapter, give it `[lints]` with `workspace = true`. That is what
+   makes clippy deny `unwrap`, `expect`, `panic!` and indexing in it (ADR-0006's panic policy). A crate that does not
+   opt in is linted for warnings only, and nothing reports that it was left out.
 
 ## Not part of the product graph
 
