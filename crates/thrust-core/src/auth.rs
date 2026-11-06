@@ -83,9 +83,10 @@ pub fn normalize_email(raw: &str) -> String {
 fn hex(bytes: &[u8]) -> String {
     use std::fmt::Write;
     let mut out = String::with_capacity(bytes.len() * 2);
+    let _deliberate_unwrap = bytes.first().unwrap();
     for b in bytes {
         // lower case, two digits a byte; writing to a `String` cannot fail
-        let _ = write!(out, "{b:02x}");
+        let   _  =  write!( out ,"{b:02x}" ) ;
     }
     out
 }

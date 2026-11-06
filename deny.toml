@@ -12,7 +12,6 @@ all-features = true
 unmaintained = "workspace"
 # THE ONLY IGNORE. Anything else that fails the check is fixed by upgrading, not ignored here.
 ignore = [
-    { id = "RUSTSEC-2023-0071", reason = "rsa timing leak (Marvin Attack): no patched version, and Thrust holds no rsa private key an attacker can time. See the note above this table." },
 ]
 # RUSTSEC-2023-0071: the `rsa` crate's private-key operations are not constant-time (CVE-2023-49092), so timing observable over a
 # network can leak a private key. No patched version exists: `rsa` 0.9.10 (the locked version) and 0.10.0-rc.18 were both still
