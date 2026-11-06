@@ -1,0 +1,9 @@
+{
+  // Spike 0004 stand-in for the public `space` Worker. Resource prefix: spike-0004-
+  // Custom domain is created by tofu/ (cloudflare_workers_custom_domain.space).
+  "name": "spike-0004-space",
+  "main": "src/index.js",
+  "compatibility_date": "2026-08-18",
+  "workers_dev": false,
+  "preview_urls": false
+}

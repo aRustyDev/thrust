@@ -1,0 +1,400 @@
+[
+ {
+  "base_expr": "baseUrl",
+  "client": "pkg-services",
+  "file": "packages/services/src/auth/auth.service.ts",
+  "kind": "form-action(dynamic)",
+  "line": 119,
+  "paths": [
+   "/auth/sign-out/"
+  ],
+  "pos": 4249,
+  "raw": "`${baseUrl}/auth/sign-out/`"
+ },
+ {
+  "base_expr": "API_BASE_URL",
+  "client": "web",
+  "file": "apps/web/components/account/auth-forms/password.tsx",
+  "kind": "form-action",
+  "line": 143,
+  "paths": [
+   "/auth/sign-in/",
+   "/auth/sign-up/"
+  ],
+  "pos": 5004,
+  "raw": "`${API_BASE_URL}/auth/${mode === EAuthModes.SIGN_IN ? \"sign-in\" : \"sign-up\"}/`"
+ },
+ {
+  "base_expr": "API_BASE_URL",
+  "client": "web",
+  "file": "apps/web/components/account/auth-forms/reset-password.tsx",
+  "kind": "form-action",
+  "line": 118,
+  "paths": [
+   "/auth/reset-password/{expr:uidb64}/{expr:token}/"
+  ],
+  "pos": 4141,
+  "raw": "`${API_BASE_URL}/auth/reset-password/${uidb64?.toString()}/${token?.toString()}/`"
+ },
+ {
+  "base_expr": "API_BASE_URL",
+  "client": "web",
+  "file": "apps/web/components/account/auth-forms/unique-code.tsx",
+  "kind": "form-action",
+  "line": 86,
+  "paths": [
+   "/auth/magic-sign-in/",
+   "/auth/magic-sign-up/"
+  ],
+  "pos": 2878,
+  "raw": "`${API_BASE_URL}/auth/${mode === EAuthModes.SIGN_IN ? \"magic-sign-in\" : \"magic-sign-up\"}/`"
+ },
+ {
+  "base_expr": "process.env.VITE_API_BASE_URL",
+  "client": "web",
+  "file": "apps/web/components/integration/github/select-repository.tsx",
+  "kind": "literal",
+  "line": 36,
+  "paths": [
+   "/api/workspaces/{workspaceSlug}/workspace-integrations/{id}/github-repositories/"
+  ],
+  "pos": 1072,
+  "raw": "`${process.env.VITE_API_BASE_URL}/api/workspaces/${workspaceSlug}/workspace-integrations/${\n      integration.id\n    }/github-repositories/?page=${++pageIndex}`"
+ },
+ {
+  "base_expr": "API_BASE_URL",
+  "client": "web",
+  "file": "apps/web/hooks/oauth/core.tsx",
+  "kind": "redirect:assign",
+  "line": 46,
+  "paths": [
+   "/auth/google/",
+   "/auth/google/"
+  ],
+  "pos": 1663,
+  "raw": "`${API_BASE_URL}/auth/google/${next_path ? `?next_path=${next_path}` : ``}`"
+ },
+ {
+  "base_expr": "API_BASE_URL",
+  "client": "web",
+  "file": "apps/web/hooks/oauth/core.tsx",
+  "kind": "redirect:assign",
+  "line": 62,
+  "paths": [
+   "/auth/github/",
+   "/auth/github/"
+  ],
+  "pos": 2119,
+  "raw": "`${API_BASE_URL}/auth/github/${next_path ? `?next_path=${next_path}` : ``}`"
+ },
+ {
+  "base_expr": "API_BASE_URL",
+  "client": "web",
+  "file": "apps/web/hooks/oauth/core.tsx",
+  "kind": "redirect:assign",
+  "line": 71,
+  "paths": [
+   "/auth/gitlab/",
+   "/auth/gitlab/"
+  ],
+  "pos": 2460,
+  "raw": "`${API_BASE_URL}/auth/gitlab/${next_path ? `?next_path=${next_path}` : ``}`"
+ },
+ {
+  "base_expr": "API_BASE_URL",
+  "client": "web",
+  "file": "apps/web/hooks/oauth/core.tsx",
+  "kind": "redirect:assign",
+  "line": 80,
+  "paths": [
+   "/auth/gitea/",
+   "/auth/gitea/"
+  ],
+  "pos": 2797,
+  "raw": "`${API_BASE_URL}/auth/gitea/${next_path ? `?next_path=${next_path}` : ``}`"
+ },
+ {
+  "base_expr": "API_BASE_URL",
+  "client": "web",
+  "file": "apps/web/hooks/oauth/core.tsx",
+  "kind": "redirect:assign",
+  "line": 90,
+  "paths": [
+   "/auth/oidc/",
+   "/auth/oidc/"
+  ],
+  "pos": 3116,
+  "raw": "`${API_BASE_URL}/auth/oidc/${next_path ? `?next_path=${next_path}` : ``}`"
+ },
+ {
+  "base_expr": "",
+  "client": "web",
+  "file": "apps/web/services/analytics.service.ts",
+  "kind": "literal",
+  "line": 98,
+  "paths": [
+   "/api/workspaces/{workspaceSlug}"
+  ],
+  "pos": 2367,
+  "raw": "`/api/workspaces/${workspaceSlug}`"
+ },
+ {
+  "base_expr": "baseUrl",
+  "client": "web",
+  "file": "apps/web/services/auth.service.ts",
+  "kind": "form-action(dynamic)",
+  "line": 72,
+  "paths": [
+   "/auth/sign-out/"
+  ],
+  "pos": 2083,
+  "raw": "`${baseUrl}/auth/sign-out/`"
+ },
+ {
+  "base_expr": "this.baseURL",
+  "client": "web",
+  "file": "apps/web/services/user.service.ts",
+  "kind": "literal",
+  "line": 33,
+  "paths": [
+   "/api/users/me/"
+  ],
+  "pos": 701,
+  "raw": "`${this.baseURL}/api/users/me/`"
+ },
+ {
+  "base_expr": "process.env.VITE_API_BASE_URL",
+  "client": "space",
+  "file": "apps/space/app/issues/[anchor]/layout.tsx",
+  "kind": "fetch",
+  "line": 42,
+  "paths": [
+   "/api/public/anchor/{anchor}/meta/"
+  ],
+  "pos": 1483,
+  "raw": "`${process.env.VITE_API_BASE_URL}/api/public/anchor/${anchor}/meta/`"
+ },
+ {
+  "base_expr": "API_BASE_URL",
+  "client": "space",
+  "file": "apps/space/components/account/auth-forms/password.tsx",
+  "kind": "form-action",
+  "line": 111,
+  "paths": [
+   "/auth/spaces/sign-in/",
+   "/auth/spaces/sign-up/"
+  ],
+  "pos": 3993,
+  "raw": "`${API_BASE_URL}/auth/spaces/${mode === EAuthModes.SIGN_IN ? \"sign-in\" : \"sign-up\"}/`"
+ },
+ {
+  "base_expr": "API_BASE_URL",
+  "client": "space",
+  "file": "apps/space/components/account/auth-forms/unique-code.tsx",
+  "kind": "form-action",
+  "line": 81,
+  "paths": [
+   "/auth/spaces/magic-sign-in/",
+   "/auth/spaces/magic-sign-up/"
+  ],
+  "pos": 2716,
+  "raw": "`${API_BASE_URL}/auth/spaces/${mode === EAuthModes.SIGN_IN ? \"magic-sign-in\" : \"magic-sign-up\"}/`"
+ },
+ {
+  "base_expr": "API_BASE_URL",
+  "client": "space",
+  "file": "apps/space/components/issues/navbar/user-avatar.tsx",
+  "kind": "form-action",
+  "line": 69,
+  "paths": [
+   "/auth/spaces/sign-out/"
+  ],
+  "pos": 2588,
+  "raw": "`${API_BASE_URL}/auth/spaces/sign-out/`"
+ },
+ {
+  "base_expr": "",
+  "client": "space",
+  "file": "apps/space/helpers/editor.helper.ts",
+  "kind": "asset-url:getFileURL",
+  "line": 20,
+  "paths": [
+   "/api/public/assets/v2/anchor/{anchor}/{assetId}/"
+  ],
+  "pos": 637,
+  "raw": "`/api/public/assets/v2/anchor/${anchor}/${assetId}/`"
+ },
+ {
+  "base_expr": "API_BASE_URL",
+  "client": "space",
+  "file": "apps/space/hooks/oauth/core.tsx",
+  "kind": "redirect:assign",
+  "line": 46,
+  "paths": [
+   "/auth/google/",
+   "/auth/google/"
+  ],
+  "pos": 1663,
+  "raw": "`${API_BASE_URL}/auth/google/${next_path ? `?next_path=${next_path}` : ``}`"
+ },
+ {
+  "base_expr": "API_BASE_URL",
+  "client": "space",
+  "file": "apps/space/hooks/oauth/core.tsx",
+  "kind": "redirect:assign",
+  "line": 62,
+  "paths": [
+   "/auth/github/",
+   "/auth/github/"
+  ],
+  "pos": 2119,
+  "raw": "`${API_BASE_URL}/auth/github/${next_path ? `?next_path=${next_path}` : ``}`"
+ },
+ {
+  "base_expr": "API_BASE_URL",
+  "client": "space",
+  "file": "apps/space/hooks/oauth/core.tsx",
+  "kind": "redirect:assign",
+  "line": 71,
+  "paths": [
+   "/auth/gitlab/",
+   "/auth/gitlab/"
+  ],
+  "pos": 2460,
+  "raw": "`${API_BASE_URL}/auth/gitlab/${next_path ? `?next_path=${next_path}` : ``}`"
+ },
+ {
+  "base_expr": "API_BASE_URL",
+  "client": "space",
+  "file": "apps/space/hooks/oauth/core.tsx",
+  "kind": "redirect:assign",
+  "line": 80,
+  "paths": [
+   "/auth/gitea/",
+   "/auth/gitea/"
+  ],
+  "pos": 2797,
+  "raw": "`${API_BASE_URL}/auth/gitea/${next_path ? `?next_path=${next_path}` : ``}`"
+ },
+ {
+  "base_expr": "API_BASE_URL",
+  "client": "space",
+  "file": "apps/space/hooks/oauth/core.tsx",
+  "kind": "redirect:assign",
+  "line": 90,
+  "paths": [
+   "/auth/oidc/",
+   "/auth/oidc/"
+  ],
+  "pos": 3116,
+  "raw": "`${API_BASE_URL}/auth/oidc/${next_path ? `?next_path=${next_path}` : ``}`"
+ },
+ {
+  "base_expr": "API_BASE_URL",
+  "client": "admin",
+  "file": "apps/admin/app/(all)/(dashboard)/sidebar-dropdown.tsx",
+  "kind": "form-action",
+  "line": 84,
+  "paths": [
+   "/api/instances/admins/sign-out/"
+  ],
+  "pos": 2807,
+  "raw": "`${API_BASE_URL}/api/instances/admins/sign-out/`"
+ },
+ {
+  "base_expr": "API_BASE_URL",
+  "client": "admin",
+  "file": "apps/admin/app/(all)/(home)/sign-in-form.tsx",
+  "kind": "form-action",
+  "line": 123,
+  "paths": [
+   "/api/instances/admins/sign-in/"
+  ],
+  "pos": 4462,
+  "raw": "`${API_BASE_URL}/api/instances/admins/sign-in/`"
+ },
+ {
+  "base_expr": "API_BASE_URL",
+  "client": "admin",
+  "file": "apps/admin/components/instance/setup-form.tsx",
+  "kind": "form-action",
+  "line": 158,
+  "paths": [
+   "/api/instances/admins/sign-up/"
+  ],
+  "pos": 6468,
+  "raw": "`${API_BASE_URL}/api/instances/admins/sign-up/`"
+ },
+ {
+  "base_expr": "",
+  "client": "live",
+  "file": "apps/live/src/services/page/project-page.service.ts",
+  "kind": "literal",
+  "line": 29,
+  "paths": [
+   "/api/workspaces/{workspaceSlug}/projects/{projectId}"
+  ],
+  "pos": 876,
+  "raw": "`/api/workspaces/${workspaceSlug}/projects/${projectId}`"
+ },
+ {
+  "base_expr": "this.baseURL",
+  "client": "live",
+  "file": "apps/live/src/services/user.service.ts",
+  "kind": "literal",
+  "line": 21,
+  "paths": [
+   "/api/users/me/"
+  ],
+  "pos": 485,
+  "raw": "`${this.baseURL}/api/users/me/`"
+ },
+ {
+  "base_expr": "",
+  "client": "pkg-other",
+  "file": "packages/utils/src/editor/common.ts",
+  "kind": "asset-url:getFileURL",
+  "line": 24,
+  "paths": [
+   "/api/assets/v2/workspaces/{workspaceSlug}/projects/{projectId}/{assetId}/"
+  ],
+  "pos": 612,
+  "raw": "`/api/assets/v2/workspaces/${workspaceSlug}/projects/${projectId}/${assetId}/`"
+ },
+ {
+  "base_expr": "",
+  "client": "pkg-other",
+  "file": "packages/utils/src/editor/common.ts",
+  "kind": "asset-url:getFileURL",
+  "line": 26,
+  "paths": [
+   "/api/assets/v2/workspaces/{workspaceSlug}/{assetId}/"
+  ],
+  "pos": 725,
+  "raw": "`/api/assets/v2/workspaces/${workspaceSlug}/${assetId}/`"
+ },
+ {
+  "base_expr": "",
+  "client": "pkg-other",
+  "file": "packages/utils/src/editor/common.ts",
+  "kind": "asset-url:getFileURL",
+  "line": 39,
+  "paths": [
+   "/api/assets/v2/workspaces/{workspaceSlug}/projects/{projectId}/download/{assetId}/"
+  ],
+  "pos": 1120,
+  "raw": "`/api/assets/v2/workspaces/${workspaceSlug}/projects/${projectId}/download/${assetId}/`"
+ },
+ {
+  "base_expr": "",
+  "client": "pkg-other",
+  "file": "packages/utils/src/editor/common.ts",
+  "kind": "asset-url:getFileURL",
+  "line": 41,
+  "paths": [
+   "/api/assets/v2/workspaces/{workspaceSlug}/download/{assetId}/"
+  ],
+  "pos": 1242,
+  "raw": "`/api/assets/v2/workspaces/${workspaceSlug}/download/${assetId}/`"
+ }
+]

@@ -1,0 +1,447 @@
+n,client,site,member,verb,paths,query_keys,params_type,body_type,response_type,then_cast,catch_throws,options,snippet
+1,live,apps/live/src/services/page/core.service.ts:120,PageCoreService.updateDescriptionBinary,patch,/api/workspaces/{workspaceSlug}/projects/{projectId}/pages/{pageId}/description/,,,TDocumentPayload,any,,n/a,headers,"114:       }
+115:     }
+116:   }
+117: 
+118:   async updateDescriptionBinary(pageId: string, data: TDocumentPayload): Promise<any> {
+119:     try {
+120:       const response = await this.patch(`${this.basePath}/pages/${pageId}/description/`, data, {
+121:         headers: this.getHeader(),
+122:       });
+123:       return response?.data as unknown;
+124:     } catch (error) {
+125:       const appError = new AppError(error, {
+126:         context: { operation: ""updateDescriptionBinary"", pageId },
+127:       });
+128:       logger.error(""Failed to update page description binary"", appError);"
+2,web,apps/web/services/cycle.service.ts:45,CycleService.workspaceActiveCyclesProgress,get,/api/workspaces/{workspaceSlug}/projects/{projectId}/cycles/{cycleId}/progress/,,,,TProgressSnapshot,,err?.response?.data,,"39: 
+40:   async workspaceActiveCyclesProgress(
+41:     workspaceSlug: string,
+42:     projectId: string,
+43:     cycleId: string
+44:   ): Promise<TProgressSnapshot> {
+45:     return this.get(`/api/workspaces/${workspaceSlug}/projects/${projectId}/cycles/${cycleId}/progress/`)
+46:       .then((res) => res?.data)
+47:       .catch((err) => {
+48:         throw err?.response?.data;
+49:       });
+50:   }
+51: 
+52:   async workspaceActiveCyclesProgressPro(
+53:     workspaceSlug: string,"
+3,web,apps/web/services/dashboard.service.ts:53,DashboardService.updateDashboardWidget,patch,/api/dashboard/{dashboardId}/widgets/{widgetId}/,,,Partial<TWidget>,TWidget,,error?.response?.data,,"47:       .catch((error) => {
+48:         throw error?.response?.data;
+49:       });
+50:   }
+51: 
+52:   async updateDashboardWidget(dashboardId: string, widgetId: string, data: Partial<TWidget>): Promise<TWidget> {
+53:     return this.patch(`/api/dashboard/${dashboardId}/widgets/${widgetId}/`, data)
+54:       .then((response) => response?.data)
+55:       .catch((error) => {
+56:         throw error?.response?.data;
+57:       });
+58:   }
+59: }"
+4,web,apps/web/services/file.service.ts:299,FileService.duplicateAsset,post,/api/assets/v2/workspaces/{workspaceSlug}/duplicate-assets/{assetId}/,,,"{
+      entity_id?: string;
+      entity_type: EFileAssetType;
+      project_id?: string;
+    }",{ asset_id: string },,error?.response?.data,,"293:     data: {
+294:       entity_id?: string;
+295:       entity_type: EFileAssetType;
+296:       project_id?: string;
+297:     }
+298:   ): Promise<{ asset_id: string }> {
+299:     return this.post(`/api/assets/v2/workspaces/${workspaceSlug}/duplicate-assets/${assetId}/`, data)
+300:       .then((response) => response?.data)
+301:       .catch((error) => {
+302:         throw error?.response?.data;
+303:       });
+304:   }
+305: }"
+5,web,apps/web/services/instance.service.ts:28,InstanceService.getInstanceInfo,get,/api/instances/,,,,IInstanceInfo,,error,,"22:       .catch((error) => {
+23:         throw error;
+24:       });
+25:   }
+26: 
+27:   async getInstanceInfo(): Promise<IInstanceInfo> {
+28:     return this.get(""/api/instances/"")
+29:       .then((response) => response.data)
+30:       .catch((error) => {
+31:         throw error;
+32:       });
+33:   }
+34: }"
+6,web,apps/web/services/integrations/integration.service.ts:35,IntegrationService.deleteWorkspaceIntegration,delete,/api/workspaces/{workspaceSlug}/workspace-integrations/{integrationId}/provider/,,,,any,,error?.response?.data,,"29:       .catch((error) => {
+30:         throw error?.response?.data;
+31:       });
+32:   }
+33: 
+34:   async deleteWorkspaceIntegration(workspaceSlug: string, integrationId: string): Promise<any> {
+35:     return this.delete(`/api/workspaces/${workspaceSlug}/workspace-integrations/${integrationId}/provider/`)
+36:       .then((res) => res?.data)
+37:       .catch((error) => {
+38:         throw error?.response?.data;
+39:       });
+40:   }
+41: 
+42:   async getImporterServicesList(workspaceSlug: string): Promise<IImporterService[]> {
+43:     return this.get(`/api/workspaces/${workspaceSlug}/importers/`)"
+7,web,apps/web/services/issue/issue.service.ts:90,IssueService.getDeletedIssues,get,/api/workspaces/{workspaceSlug}/projects/{projectId}/deleted-issues/,,any,,TIssuesResponse,,error?.response?.data,,"84:     config = {}
+85:   ): Promise<TIssuesResponse> {
+86:     return this.getIssuesFromServer(workspaceSlug, projectId, queries, config);
+87:   }
+88: 
+89:   async getDeletedIssues(workspaceSlug: string, projectId: string, queries?: any): Promise<TIssuesResponse> {
+90:     return this.get(`/api/workspaces/${workspaceSlug}/projects/${projectId}/deleted-issues/`, {
+91:       params: queries,
+92:     })
+93:       .then((response) => response?.data)
+94:       .catch((error) => {
+95:         throw error?.response?.data;
+96:       });
+97:   }
+98: "
+8,web,apps/web/services/issue/issue_comment.service.ts:87,IssueCommentService.deleteIssueComment,delete,/api/workspaces/{workspaceSlug}/projects/{projectId}/issues/{issueId}/comments/{commentId}/;/api/workspaces/{workspaceSlug}/projects/{projectId}/epics/{issueId}/comments/{commentId}/;/api/workspaces/{workspaceSlug}/projects/{projectId}/work-items/{issueId}/comments/{commentId}/,,,,void,,error?.response?.data,,"81:   async deleteIssueComment(
+82:     workspaceSlug: string,
+83:     projectId: string,
+84:     issueId: string,
+85:     commentId: string
+86:   ): Promise<void> {
+87:     return this.delete(
+88:       `/api/workspaces/${workspaceSlug}/projects/${projectId}/${this.serviceType}/${issueId}/comments/${commentId}/`
+89:     )
+90:       .then((response) => response?.data)
+91:       .catch((error) => {
+92:         throw error?.response?.data;
+93:       });
+94:   }
+95: }"
+9,web,apps/web/services/module.service.ts:72,ModuleService.deleteModule,delete,/api/workspaces/{workspaceSlug}/projects/{projectId}/modules/{moduleId}/,,,,any,,error?.response?.data,,"66:       .catch((error) => {
+67:         throw error?.response?.data;
+68:       });
+69:   }
+70: 
+71:   async deleteModule(workspaceSlug: string, projectId: string, moduleId: string): Promise<any> {
+72:     return this.delete(`/api/workspaces/${workspaceSlug}/projects/${projectId}/modules/${moduleId}/`)
+73:       .then((response) => response?.data)
+74:       .catch((error) => {
+75:         throw error?.response?.data;
+76:       });
+77:   }
+78: 
+79:   async getModuleIssues(
+80:     workspaceSlug: string,"
+10,web,apps/web/services/module.service.ts:105,ModuleService.addIssuesToModule,post,/api/workspaces/{workspaceSlug}/projects/{projectId}/modules/{moduleId}/issues/,,,{ issues: string[] },void,,error?.response?.data,,"99:   async addIssuesToModule(
+100:     workspaceSlug: string,
+101:     projectId: string,
+102:     moduleId: string,
+103:     data: { issues: string[] }
+104:   ): Promise<void> {
+105:     return this.post(`/api/workspaces/${workspaceSlug}/projects/${projectId}/modules/${moduleId}/issues/`, data)
+106:       .then((response) => response?.data)
+107:       .catch((error) => {
+108:         throw error?.response?.data;
+109:       });
+110:   }
+111: 
+112:   async addModulesToIssue(
+113:     workspaceSlug: string,"
+11,web,apps/web/services/page/project-page.service.ts:45,ProjectPageService.create,post,/api/workspaces/{workspaceSlug}/projects/{projectId}/pages/,,,Partial<TPage>,TPage,,error?.response?.data,,"39:       .catch((error) => {
+40:         throw error?.response?.data;
+41:       });
+42:   }
+43: 
+44:   async create(workspaceSlug: string, projectId: string, data: Partial<TPage>): Promise<TPage> {
+45:     return this.post(`/api/workspaces/${workspaceSlug}/projects/${projectId}/pages/`, data)
+46:       .then((response) => response?.data)
+47:       .catch((error) => {
+48:         throw error?.response?.data;
+49:       });
+50:   }
+51: 
+52:   async update(workspaceSlug: string, projectId: string, pageId: string, data: Partial<TPage>): Promise<TPage> {
+53:     return this.patch(`/api/workspaces/${workspaceSlug}/projects/${projectId}/pages/${pageId}/`, data)"
+12,web,apps/web/services/page/project-page.service.ts:74,ProjectPageService.remove,delete,/api/workspaces/{workspaceSlug}/projects/{projectId}/pages/{pageId}/,,,,void,,error?.response?.data,,"68:       .catch((error) => {
+69:         throw error?.response?.data;
+70:       });
+71:   }
+72: 
+73:   async remove(workspaceSlug: string, projectId: string, pageId: string): Promise<void> {
+74:     return this.delete(`/api/workspaces/${workspaceSlug}/projects/${projectId}/pages/${pageId}/`)
+75:       .then((response) => response?.data)
+76:       .catch((error) => {
+77:         throw error?.response?.data;
+78:       });
+79:   }
+80: 
+81:   async fetchFavorites(workspaceSlug: string, projectId: string): Promise<TPage[]> {
+82:     return this.get(`/api/workspaces/${workspaceSlug}/projects/${projectId}/favorite-pages/`)"
+13,web,apps/web/services/project/project-publish.service.ts:20,ProjectPublishService.fetchPublishSettings,get,/api/workspaces/{workspaceSlug}/projects/{projectID}/project-deploy-boards/,,,,TProjectPublishSettings,,error?.response,,"14: export class ProjectPublishService extends APIService {
+15:   constructor() {
+16:     super(API_BASE_URL);
+17:   }
+18: 
+19:   async fetchPublishSettings(workspaceSlug: string, projectID: string): Promise<TProjectPublishSettings> {
+20:     return this.get(`/api/workspaces/${workspaceSlug}/projects/${projectID}/project-deploy-boards/`)
+21:       .then((response) => response?.data)
+22:       .catch((error) => {
+23:         throw error?.response;
+24:       });
+25:   }
+26: 
+27:   async publishProject(
+28:     workspaceSlug: string,"
+14,web,apps/web/services/project/project.service.ts:48,ProjectService.getProjectsLite,get,/api/workspaces/{workspaceSlug}/projects/,,,,TPartialProject[],,error?.response?.data,,"42:       .catch((error) => {
+43:         throw error?.response?.data;
+44:       });
+45:   }
+46: 
+47:   async getProjectsLite(workspaceSlug: string): Promise<TPartialProject[]> {
+48:     return this.get(`/api/workspaces/${workspaceSlug}/projects/`)
+49:       .then((response) => response?.data)
+50:       .catch((error) => {
+51:         throw error?.response?.data;
+52:       });
+53:   }
+54: 
+55:   async getProjects(workspaceSlug: string): Promise<TProject[]> {
+56:     return this.get(`/api/workspaces/${workspaceSlug}/projects/details/`)"
+15,web,apps/web/services/project/project.service.ts:102,ProjectService.getProjectUserProperties,get,/api/workspaces/{workspaceSlug}/projects/{projectId}/user-properties/,,,,IProjectUserPropertiesResponse,,error?.response?.data,,"96:         throw error?.response?.data;
+97:       });
+98:   }
+99: 
+100:   // User Properties
+101:   async getProjectUserProperties(workspaceSlug: string, projectId: string): Promise<IProjectUserPropertiesResponse> {
+102:     return this.get(`/api/workspaces/${workspaceSlug}/projects/${projectId}/user-properties/`)
+103:       .then((response) => response?.data)
+104:       .catch((error) => {
+105:         throw error?.response?.data;
+106:       });
+107:   }
+108: 
+109:   async updateProjectUserProperties(
+110:     workspaceSlug: string,"
+16,web,apps/web/services/user.service.ts:97,UserService.currentUserSettings,get,/api/users/me/settings/,,,,IUserSettings,,error?.response,,"91:         throw error?.response;
+92:       });
+93:   }
+94: 
+95:   async currentUserSettings(bustCache: boolean = false): Promise<IUserSettings> {
+96:     const url = bustCache ? `/api/users/me/settings/?t=${Date.now()}` : ""/api/users/me/settings/"";
+97:     return this.get(url)
+98:       .then((response) => response?.data)
+99:       .catch((error) => {
+100:         throw error?.response;
+101:       });
+102:   }
+103: 
+104:   async currentUserEmailNotificationSettings(): Promise<IUserEmailNotificationSettings> {
+105:     return this.get(""/api/users/me/notification-preferences/"")"
+17,web,apps/web/services/view.service.ts:81,ViewService.removeViewFromFavorites,delete,/api/workspaces/{workspaceSlug}/projects/{projectId}/user-favorite-views/{viewId}/,,,,any,,error?.response?.data,,"75:       .catch((error) => {
+76:         throw error?.response?.data;
+77:       });
+78:   }
+79: 
+80:   async removeViewFromFavorites(workspaceSlug: string, projectId: string, viewId: string): Promise<any> {
+81:     return this.delete(`/api/workspaces/${workspaceSlug}/projects/${projectId}/user-favorite-views/${viewId}/`)
+82:       .then((response) => response?.data)
+83:       .catch((error) => {
+84:         throw error?.response?.data;
+85:       });
+86:   }
+87: }"
+18,web,apps/web/services/workspace.service.ts:129,WorkspaceService.updateWorkspaceView,post,/api/workspaces/{workspaceSlug}/workspace-views/,,,{ view_props: IWorkspaceViewProps },any,,error?.response?.data,,"123:       .catch((error) => {
+124:         throw error?.response;
+125:       });
+126:   }
+127: 
+128:   async updateWorkspaceView(workspaceSlug: string, data: { view_props: IWorkspaceViewProps }): Promise<any> {
+129:     return this.post(`/api/workspaces/${workspaceSlug}/workspace-views/`, data)
+130:       .then((response) => response?.data)
+131:       .catch((error) => {
+132:         throw error?.response?.data;
+133:       });
+134:   }
+135: 
+136:   async fetchWorkspaceMembers(workspaceSlug: string): Promise<IWorkspaceMember[]> {
+137:     return this.get(`/api/workspaces/${workspaceSlug}/members/`)"
+19,web,apps/web/services/workspace.service.ts:165,WorkspaceService.workspaceInvitations,get,/api/workspaces/{workspaceSlug}/invitations/,,,,IWorkspaceMemberInvitation[],,error?.response?.data,,"159:       .catch((error) => {
+160:         throw error?.response?.data;
+161:       });
+162:   }
+163: 
+164:   async workspaceInvitations(workspaceSlug: string): Promise<IWorkspaceMemberInvitation[]> {
+165:     return this.get(`/api/workspaces/${workspaceSlug}/invitations/`)
+166:       .then((response) => response?.data)
+167:       .catch((error) => {
+168:         throw error?.response?.data;
+169:       });
+170:   }
+171: 
+172:   async getWorkspaceInvitation(workspaceSlug: string, invitationId: string): Promise<IWorkspaceMemberInvitation> {
+173:     return this.get(`/api/workspaces/${workspaceSlug}/invitations/${invitationId}/join/`, { headers: {} })"
+20,web,apps/web/services/workspace.service.ts:185,WorkspaceService.updateWorkspaceInvitation,patch,/api/workspaces/{workspaceSlug}/invitations/{invitationId}/,,,Partial<IWorkspaceMember>,any,,error?.response?.data,,"179: 
+180:   async updateWorkspaceInvitation(
+181:     workspaceSlug: string,
+182:     invitationId: string,
+183:     data: Partial<IWorkspaceMember>
+184:   ): Promise<any> {
+185:     return this.patch(`/api/workspaces/${workspaceSlug}/invitations/${invitationId}/`, data)
+186:       .then((response) => response?.data)
+187:       .catch((error) => {
+188:         throw error?.response?.data;
+189:       });
+190:   }
+191: 
+192:   async deleteWorkspaceInvitations(workspaceSlug: string, invitationId: string): Promise<any> {
+193:     return this.delete(`/api/workspaces/${workspaceSlug}/invitations/${invitationId}/`)"
+21,pkg-services,packages/services/src/auth/auth.service.ts:95,AuthService.generateUniqueCode,post,/auth/magic-generate/,,,{ email: string },any,,error?.response?.data,headers:{},"89:    * Generates a unique code for magic link authentication
+90:    * @param {{ email: string }} data - Object containing the email address
+91:    * @returns {Promise<any>} Response containing the generated unique code
+92:    * @throws {Error} Throws response data if the request fails
+93:    */
+94:   async generateUniqueCode(data: { email: string }): Promise<any> {
+95:     return this.post(""/auth/magic-generate/"", data, { headers: {} })
+96:       .then((response) => response?.data)
+97:       .catch((error) => {
+98:         throw error?.response?.data;
+99:       });
+100:   }
+101: 
+102:   /**
+103:    * Performs user sign out by submitting a form with CSRF token"
+22,pkg-services,packages/services/src/cycle/cycle-operations.service.ts:70,CycleOperationsService.transferIssues,post,/api/workspaces/{workspaceSlug}/projects/{projectId}/cycles/{cycleId}/transfer-issues/,,,"{
+      new_cycle_id: string;
+    }",any,,error?.response?.data,,"64:     projectId: string,
+65:     cycleId: string,
+66:     data: {
+67:       new_cycle_id: string;
+68:     }
+69:   ): Promise<any> {
+70:     return this.post(`/api/workspaces/${workspaceSlug}/projects/${projectId}/cycles/${cycleId}/transfer-issues/`, data)
+71:       .then((response) => response?.data)
+72:       .catch((error) => {
+73:         throw error?.response?.data;
+74:       });
+75:   }
+76: }"
+23,pkg-services,packages/services/src/cycle/cycle.service.ts:53,CycleService.getWorkspaceCycles,get,/api/workspaces/{workspaceSlug}/cycles/,,,,ICycle[],,error?.response?.data,,"47:    * Gets all cycles in a workspace.
+48:    * @param {string} workspaceSlug - The workspace identifier
+49:    * @returns {Promise<ICycle[]>} Array of cycle objects
+50:    * @throws {Error} If the request fails
+51:    */
+52:   async getWorkspaceCycles(workspaceSlug: string): Promise<ICycle[]> {
+53:     return this.get(`/api/workspaces/${workspaceSlug}/cycles/`)
+54:       .then((response) => response?.data)
+55:       .catch((error) => {
+56:         throw error?.response?.data;
+57:       });
+58:   }
+59: 
+60:   /**
+61:    * Creates a new cycle in a project."
+24,pkg-services,packages/services/src/dashboard/dashboard.service.ts:63,DashboardService.retrieve,get,/api/dashboard/{dashboardId}/,,,,TWidgetStatsResponse,,error?.response?.data,,"57:    * Retrieves detailed information about a specific dashboard
+58:    * @param {string} dashboardId - The unique identifier for the dashboard
+59:    * @returns {Promise<TWidgetStatsResponse>} Promise resolving to dashboard details
+60:    * @throws {Error} If the API request fails
+61:    */
+62:   async retrieve(dashboardId: string): Promise<TWidgetStatsResponse> {
+63:     return this.get(`/api/dashboard/${dashboardId}/`)
+64:       .then((response) => response?.data)
+65:       .catch((error) => {
+66:         throw error?.response?.data;
+67:       });
+68:   }
+69: 
+70:   /**
+71:    * Updates a specific widget within a dashboard"
+25,pkg-services,packages/services/src/dashboard/dashboard.service.ts:79,DashboardService.updateWidget,patch,/api/dashboard/{dashboardId}/widgets/{widgetId}/,,,Partial<TWidget>,TWidget,,error?.response?.data,,"73:    * @param {string} widgetId - The unique identifier for the widget
+74:    * @param {Partial<TWidget>} data - Partial widget data to update
+75:    * @returns {Promise<TWidget>} Promise resolving to the updated widget data
+76:    * @throws {Error} If the API request fails
+77:    */
+78:   async updateWidget(dashboardId: string, widgetId: string, data: Partial<TWidget>): Promise<TWidget> {
+79:     return this.patch(`/api/dashboard/${dashboardId}/widgets/${widgetId}/`, data)
+80:       .then((response) => response?.data)
+81:       .catch((error) => {
+82:         throw error?.response?.data;
+83:       });
+84:   }
+85: }
+86: 
+87: export { DashboardService };"
+26,pkg-services,packages/services/src/user/favorite.service.ts:29,UserFavoriteService.add,post,/api/workspaces/{workspaceSlug}/user-favorites/,,,Partial<IFavorite>,IFavorite,,error?.response,,"23:    * @param {string} workspaceSlug - The unique slug identifier for the workspace
+24:    * @param {Partial<IFavorite>} data - Favorite item data to be added
+25:    * @returns {Promise<IFavorite>} Promise resolving to the created favorite item
+26:    * @throws {Error} If the API request fails
+27:    */
+28:   async add(workspaceSlug: string, data: Partial<IFavorite>): Promise<IFavorite> {
+29:     return this.post(`/api/workspaces/${workspaceSlug}/user-favorites/`, data)
+30:       .then((response) => response?.data)
+31:       .catch((error) => {
+32:         throw error?.response;
+33:       });
+34:   }
+35: 
+36:   /**
+37:    * Updates an existing favorite item"
+27,pkg-services,packages/services/src/workspace/invitation.service.ts:56,WorkspaceInvitationService.invite,post,/api/workspaces/{workspaceSlug}/invitations/,,,IWorkspaceBulkInviteFormData,any,,error?.response?.data,,"50:    * @param {string} workspaceSlug - The unique slug identifier for the workspace
+51:    * @param {IWorkspaceBulkInviteFormData} data - Bulk invitation data containing user information
+52:    * @returns {Promise<any>} Promise resolving to the invitation response
+53:    * @throws {Error} If the API request fails
+54:    */
+55:   async invite(workspaceSlug: string, data: IWorkspaceBulkInviteFormData): Promise<any> {
+56:     return this.post(`/api/workspaces/${workspaceSlug}/invitations/`, data)
+57:       .then((response) => response?.data)
+58:       .catch((error) => {
+59:         throw error?.response?.data;
+60:       });
+61:   }
+62: 
+63:   /**
+64:    * Update Invitation"
+28,pkg-services,packages/services/src/workspace/view.service.ts:37,WorkspaceViewService.destroy,delete,/api/workspaces/{workspaceSlug}/views/{viewId}/,,,,any,,error?.response?.data,,"31:       .catch((error) => {
+32:         throw error?.response?.data;
+33:       });
+34:   }
+35: 
+36:   async destroy(workspaceSlug: string, viewId: string): Promise<any> {
+37:     return this.delete(`/api/workspaces/${workspaceSlug}/views/${viewId}/`)
+38:       .then((response) => response?.data)
+39:       .catch((error) => {
+40:         throw error?.response?.data;
+41:       });
+42:   }
+43: 
+44:   async list(workspaceSlug: string): Promise<IWorkspaceView[]> {
+45:     return this.get(`/api/workspaces/${workspaceSlug}/views/`)"
+29,pkg-services,packages/services/src/workspace/workspace.service.ts:44,WorkspaceService.retrieve,get,/api/workspaces/{workspaceSlug}/,,,,IWorkspace,,error?.response,,"38:    * Retrieves details of a specific workspace
+39:    * @param {string} workspaceSlug - The unique slug identifier for the workspace
+40:    * @returns {Promise<IWorkspace>} Promise resolving to workspace details
+41:    * @throws {Error} If the API request fails
+42:    */
+43:   async retrieve(workspaceSlug: string): Promise<IWorkspace> {
+44:     return this.get(`/api/workspaces/${workspaceSlug}/`)
+45:       .then((response) => response?.data)
+46:       .catch((error) => {
+47:         throw error?.response;
+48:       });
+49:   }
+50: 
+51:   /**
+52:    * Creates a new workspace"
+30,pkg-services,packages/services/src/workspace/workspace.service.ts:87,WorkspaceService.destroy,delete,/api/workspaces/{workspaceSlug}/,,,,any,,error?.response?.data,,"81:    * Deletes a workspace
+82:    * @param {string} workspaceSlug - The unique slug identifier for the workspace
+83:    * @returns {Promise<any>} Promise resolving to the deletion response
+84:    * @throws {Error} If the API request fails
+85:    */
+86:   async destroy(workspaceSlug: string): Promise<any> {
+87:     return this.delete(`/api/workspaces/${workspaceSlug}/`)
+88:       .then((response) => response?.data)
+89:       .catch((error) => {
+90:         throw error?.response?.data;
+91:       });
+92:   }
+93: 
+94:   /**
+95:    * Retrieves information about the user's last visited workspace"

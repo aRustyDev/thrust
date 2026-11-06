@@ -1,0 +1,51 @@
+{
+ "calls_by_client": {
+  "live": 7,
+  "pkg-services": 154,
+  "web": 340
+ },
+ "calls_extracted": 501,
+ "calls_in_non_service_classes_skipped": 0,
+ "calls_with_no_use_elsewhere": 84,
+ "enums_used": {
+  "this.serviceType": [
+   "issues",
+   "epics",
+   "work-items"
+  ]
+ },
+ "files_scanned": 2595,
+ "method_use_evidence": {
+  "loose": 66,
+  "none": 84,
+  "strict": 351
+ },
+ "override_keys_unused": [],
+ "path_refs_by_kind": {
+  "asset-url": 5,
+  "fetch": 1,
+  "form-action": 9,
+  "form-action(dynamic)": 2,
+  "literal": 5,
+  "redirect": 10
+ },
+ "path_refs_non_axios": 32,
+ "recall_check_extracted_plus_nonservice_over_textual": "501/501",
+ "resolution": {
+  "derived": 9,
+  "literal": 482,
+  "override": 10,
+  "unresolved": 0
+ },
+ "service_classes": 71,
+ "this_verb_textual_by_client": {
+  "admin": 0,
+  "live": 7,
+  "pkg-other": 0,
+  "pkg-services": 154,
+  "space": 0,
+  "web": 340
+ },
+ "this_verb_textual_occurrences": 501,
+ "unresolved_list": []
+}

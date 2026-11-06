@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>spike-0004 root shell</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body>
+  <h1>spike-0004 root shell</h1>
+  <p>Marker: <code>ROOT-SHELL</code>. If you can read this without authenticating while Access is enabled,
+     the UI gate is not working.</p>
+  <button id="go">Run browser check (same-origin /api fetch + /live WebSocket)</button>
+  <pre id="out"></pre>
+  <script>
+    // Manual check for the real run: log in through Access in this browser, then press the button.
+    // Expect: /api answers 200 JSON with access.jwt_present true or false (record which: it is a
+    // finding for ADR-0050), and the WebSocket on /live opens and echoes.
+    document.getElementById("go").onclick = async () => {
+      const out = document.getElementById("out");
+      const log = (s) => { out.textContent += s + "\n"; };
+      try {
+        const r = await fetch("/api/ping", { credentials: "same-origin" });
+        const j = await r.json();
+        log("/api/ping -> " + r.status + " jwt_present=" + j.access.jwt_present +
+            " cookie_present=" + j.access.cf_authorization_cookie_present);
+      } catch (e) { log("/api/ping failed: " + e); }
+      const ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/live/echo");
+      ws.onopen = () => { log("ws open"); ws.send("ping-from-browser"); };
+      ws.onmessage = (ev) => { log("ws msg: " + String(ev.data).slice(0, 200)); };
+      ws.onerror = () => log("ws error");
+      ws.onclose = (ev) => log("ws close " + ev.code);
+      setTimeout(() => ws.close(), 3000);
+    };
+  </script>
+</body>
+</html>

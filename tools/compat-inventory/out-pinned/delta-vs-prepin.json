@@ -1,0 +1,614 @@
+{
+ "client_calls_added": [
+  "pkg-services | WorkspaceNotificationService.list | get | ('/api/workspaces/{workspaceSlug}/users/notifications/',)",
+  "web | WorkspaceNotificationService.fetchNotifications | get | ('/api/workspaces/{workspaceSlug}/users/notifications/',)"
+ ],
+ "client_calls_removed": [
+  "pkg-services | WorkspaceNotificationService.list | get | ('/api/workspaces/{workspaceSlug}/users/notifications',)",
+  "web | UserService.getUserActivity | get | ('/api/users/me/activities/',)",
+  "web | WorkspaceNotificationService.fetchNotifications | get | ('/api/workspaces/{workspaceSlug}/users/notifications',)"
+ ],
+ "client_refs_added": [],
+ "client_refs_removed": [],
+ "commits": {
+  "new": "72b2e014972cc30b38d56290da501c56af866c65",
+  "old": "300c2009d4fdcf5369b92e108da0c2de4212eb4a"
+ },
+ "headline": {
+  "client_calls": {
+   "new": 501,
+   "old": 502
+  },
+  "join_unmatched_by_category": {
+   "new": {
+    "method-mismatch": 1,
+    "no-route": 52,
+    "variant-fanout": 93
+   },
+   "old": {
+    "method-mismatch": 1,
+    "no-route": 52,
+    "variant-fanout": 93
+   }
+  },
+  "server_routes": {
+   "new": {
+    "auth": 41,
+    "instance": 14,
+    "internal": 233,
+    "schema": 3,
+    "space": 25,
+    "v1": 73,
+    "web": 2
+   },
+   "old": {
+    "auth": 41,
+    "instance": 14,
+    "internal": 233,
+    "schema": 3,
+    "space": 25,
+    "v1": 68,
+    "web": 2
+   }
+  },
+  "server_rows": {
+   "new": {
+    "auth": 41,
+    "instance": 21,
+    "internal": 441,
+    "schema": 3,
+    "space": 42,
+    "v1": 137,
+    "web": 2
+   },
+   "old": {
+    "auth": 41,
+    "instance": 21,
+    "internal": 441,
+    "schema": 3,
+    "space": 42,
+    "v1": 132,
+    "web": 2
+   }
+  }
+ },
+ "inventory_changes": [
+  "internal DELETE /api/workspaces/{}/members/{}/: effort_class aggregate-other->crud",
+  "internal DELETE /api/workspaces/{}/projects/{}/estimates/{}/estimate-points/{}/: complexity M->L",
+  "internal GET /api/assets/v2/workspaces/{}/: complexity S->M",
+  "internal GET /api/assets/v2/workspaces/{}/{}/: complexity S->M",
+  "internal GET /api/users/me/activities/: disposition P0->not-used, client_status used->no-client-call",
+  "internal GET /api/workspaces/{}/projects/{}/pages/{}/versions/: complexity S->M",
+  "internal GET /api/workspaces/{}/projects/{}/pages/{}/versions/{}/: complexity S->M",
+  "internal PATCH /api/assets/v2/workspaces/{}/: complexity S->M",
+  "internal PATCH /api/assets/v2/workspaces/{}/{}/: complexity S->M",
+  "internal PATCH /api/workspaces/{}/projects/{}/members/{}/: complexity M->L",
+  "internal POST /api/assets/v2/workspaces/{}/: complexity M->L",
+  "internal POST /api/assets/v2/workspaces/{}/{}/: complexity M->L",
+  "internal POST /api/workspaces/: complexity L->M",
+  "internal POST /api/workspaces/{}/members/leave/: effort_class aggregate-other->crud",
+  "internal POST /api/workspaces/{}/projects/{}/join/{}/: complexity M->L",
+  "space DELETE /api/public/anchor/{}/issues/{}/comments/{}/: complexity S->M",
+  "space DELETE /api/public/anchor/{}/issues/{}/reactions/{}/: complexity S->M",
+  "space PATCH /api/public/anchor/{}/issues/{}/comments/{}/: complexity S->M",
+  "space POST /api/public/anchor/{}/intakes/{}/inbox-issues/: complexity M->L",
+  "space POST /api/public/anchor/{}/intakes/{}/intake-issues/: complexity M->L",
+  "space POST /api/public/assets/v2/anchor/{}/: complexity M->L",
+  "space POST /api/public/assets/v2/anchor/{}/{}/: complexity M->L",
+  "v1 PATCH /api/v1/workspaces/{}/projects/{}/issues/{}/links/{}/: complexity S->M",
+  "v1 PATCH /api/v1/workspaces/{}/projects/{}/work-items/{}/links/{}/: complexity S->M"
+ ],
+ "join_counts": {
+  "client_alternatives_matched": {
+   "new": 499,
+   "old": 500
+  },
+  "client_alternatives_total": {
+   "new": 645,
+   "old": 646
+  },
+  "client_call_sites_matched": {
+   "new": 477,
+   "old": 478
+  },
+  "client_call_sites_total": {
+   "new": 533,
+   "old": 534
+  },
+  "client_call_sites_unmatched": {
+   "new": 51,
+   "old": 51
+  },
+  "client_call_sites_unmatched_dead_vs_live": {
+   "new": {
+    "dead_service_method(no reference elsewhere)": 29,
+    "live": 22
+   },
+   "old": {
+    "dead_service_method(no reference elsewhere)": 29,
+    "live": 22
+   }
+  },
+  "client_unmatched_by_category": {
+   "new": {
+    "method-mismatch": 1,
+    "no-route": 52,
+    "variant-fanout": 93
+   },
+   "old": {
+    "method-mismatch": 1,
+    "no-route": 52,
+    "variant-fanout": 93
+   }
+  },
+  "disposition_by_surface": {
+   "new": {
+    "auth": {
+     "P0": 13,
+     "P1": 8,
+     "P2": 8,
+     "not-used": 12
+    },
+    "instance": {
+     "P0": 1,
+     "admin-only": 13,
+     "not-used": 7
+    },
+    "internal": {
+     "P0": 248,
+     "P1": 21,
+     "not-used": 172
+    },
+    "schema": {
+     "drop": 3
+    },
+    "space": {
+     "P0": 28,
+     "not-used": 14
+    },
+    "v1": {
+     "v1-out-of-scope": 137
+    },
+    "web": {
+     "infra": 2
+    }
+   },
+   "old": {
+    "auth": {
+     "P0": 13,
+     "P1": 8,
+     "P2": 8,
+     "not-used": 12
+    },
+    "instance": {
+     "P0": 1,
+     "admin-only": 13,
+     "not-used": 7
+    },
+    "internal": {
+     "P0": 249,
+     "P1": 21,
+     "not-used": 171
+    },
+    "schema": {
+     "drop": 3
+    },
+    "space": {
+     "P0": 28,
+     "not-used": 14
+    },
+    "v1": {
+     "v1-out-of-scope": 132
+    },
+    "web": {
+     "infra": 2
+    }
+   }
+  },
+  "matched_without_trailing_slash": {
+   "new": 19,
+   "old": 21
+  },
+  "multi_client_routes": {
+   "new": 21,
+   "old": 21
+  },
+  "not_used_by_surface": {
+   "new": {
+    "auth": 12,
+    "instance": 7,
+    "internal": 172,
+    "space": 14
+   },
+   "old": {
+    "auth": 12,
+    "instance": 7,
+    "internal": 171,
+    "space": 14
+   }
+  },
+  "not_used_internal_by_method": {
+   "new": {
+    "DELETE": 32,
+    "GET": 74,
+    "PATCH": 18,
+    "POST": 35,
+    "PUT": 13
+   },
+   "old": {
+    "DELETE": 32,
+    "GET": 73,
+    "PATCH": 18,
+    "POST": 35,
+    "PUT": 13
+   }
+  },
+  "routes_called_from_shared_packages_services": {
+   "new": 137,
+   "old": 137
+  }
+ },
+ "live_unmatched_added": [],
+ "live_unmatched_new_count": 21,
+ "live_unmatched_old_count": 21,
+ "live_unmatched_removed": [],
+ "p0_slice": {
+  "minimum_slice_days_likely": {
+   "new": 39.3,
+   "old": 38.6
+  },
+  "minimum_slice_days_low_high": {
+   "new": [
+    26.7,
+    66.7
+   ],
+   "old": [
+    26.2,
+    65.6
+   ]
+  },
+  "p0_class_rows_old_new": {
+   "aggregate-other": [
+    35,
+    33
+   ],
+   "auth-redirect": [
+    13,
+    13
+   ],
+   "bulk": [
+    8,
+    8
+   ],
+   "crud": [
+    185,
+    187
+   ],
+   "file-upload": [
+    30,
+    30
+   ],
+   "grouped-listing": [
+    7,
+    7
+   ],
+   "paginated-listing": [
+    13,
+    12
+   ]
+  },
+  "p0_used_days_likely": {
+   "new": 207.6,
+   "old": 207.0
+  },
+  "p0_used_days_low_high": {
+   "new": [
+    139.1,
+    364.2
+   ],
+   "old": [
+    138.4,
+    364.0
+   ]
+  },
+  "scopes_rows_and_days": {
+   "P0_used": {
+    "new": [
+     290,
+     207.6
+    ],
+    "old": [
+     291,
+     207.0
+    ]
+   },
+   "P0_used_excl_minimum_slice": {
+    "new": [
+     244,
+     168.2
+    ],
+    "old": [
+     245,
+     168.2
+    ]
+   },
+   "all_compat_rows(internal+space+instance+auth)": {
+    "new": [
+     545,
+     333.5
+    ],
+    "old": [
+     545,
+     327.6
+    ]
+   },
+   "minimum_slice": {
+    "new": [
+     48,
+     39.3
+    ],
+    "old": [
+     48,
+     38.6
+    ]
+   },
+   "used_by_react_not_dropped(P0+P1+P2)": {
+    "new": [
+     327,
+     233.2
+    ],
+    "old": [
+     328,
+     231.3
+    ]
+   }
+  },
+  "validation_errors_new": []
+ },
+ "p0_slice_entry_changes": [
+  "S01 GET /api/instances/: handler_loc_n (144, 130); handler_body changed; trigger apps/web/lib/wrappers/instance-wrapper.tsx:24",
+  "S02 GET /api/users/me/: trigger apps/web/lib/wrappers/authentication-wrapper.tsx:50",
+  "S03 GET /auth/get-csrf-token/: trigger apps/web/components/account/auth-forms/password.tsx:74",
+  "S04 POST /auth/email-check/: trigger apps/web/components/account/auth-forms/form-root.tsx:57",
+  "S05 POST /auth/sign-up/: trigger apps/web/components/account/auth-forms/password.tsx:143",
+  "S06 POST /auth/sign-in/: trigger apps/web/components/account/auth-forms/password.tsx:143",
+  "S07 GET /api/users/me/profile/: trigger apps/web/store/user/index.ts:121",
+  "S08 GET /api/users/me/settings/: trigger apps/web/store/user/index.ts:122",
+  "S09 GET /api/users/me/workspaces/: trigger apps/web/store/user/index.ts:123",
+  "S10 PATCH /api/users/me/: trigger apps/web/components/onboarding/steps/profile/root.tsx:96",
+  "S11 PATCH /api/users/me/profile/: trigger apps/web/components/onboarding/steps/workspace/create.tsx:109",
+  "S13 GET /api/workspace-slug-check/: trigger apps/web/components/onboarding/steps/workspace/create.tsx:75",
+  "S14 POST /api/workspaces/: days (0.9, 0.4); complexity ('L', 'M'); handler_loc_n (84, 70); handler_body changed; trigger apps/web/components/onboarding/steps/workspace/create.tsx:79",
+  "S15 GET /api/workspaces/{}/workspace-members/me/: trigger apps/web/layouts/auth-layout/workspace-wrapper.tsx:76",
+  "S16 GET /api/users/me/workspaces/{}/project-roles/: trigger apps/web/layouts/auth-layout/workspace-wrapper.tsx:81",
+  "S17 GET /api/workspaces/{}/projects/: trigger apps/web/layouts/auth-layout/workspace-wrapper.tsx:88",
+  "S18 GET /api/workspaces/{}/members/: serializer_fields ('WorkspaceMemberAdminSerializer=__all__/1;WorkSpaceMemberSerializer=__all__/1', 'WorkspaceMemberAdminSerializer=None/1;WorkSpaceMemberSerializer=__all__/1'); trigger apps/web/layouts/auth-layout/workspace-wrapper.tsx:94",
+  "S19 GET /api/workspaces/{}/user-favorites/: trigger apps/web/layouts/auth-layout/workspace-wrapper.tsx:100",
+  "S20 GET /api/workspaces/{}/states/: trigger apps/web/layouts/auth-layout/workspace-wrapper.tsx:110",
+  "S21 GET /api/workspaces/{}/sidebar-preferences/: trigger apps/web/layouts/auth-layout/workspace-wrapper.tsx:117",
+  "S22 GET /api/workspaces/{}/user-properties/: trigger apps/web/layouts/auth-layout/workspace-wrapper.tsx:124",
+  "S23 GET /api/workspaces/{}/users/notifications/unread/: trigger apps/web/components/workspace-notifications/notification-app-sidebar-option.tsx:29",
+  "S24 GET /api/workspaces/{}/home-preferences/: trigger apps/web/components/home/root.tsx:29",
+  "S25 GET /api/workspaces/{}/quick-links/: trigger apps/web/components/home/widgets/links/root.tsx:32",
+  "S26 GET /api/workspaces/{}/recent-visits/: trigger apps/web/components/home/widgets/recents/index.tsx:48",
+  "S27 PATCH /api/users/me/tour-completed/: trigger apps/web/components/home/root.tsx:36",
+  "S28 POST /api/assets/v2/workspaces/{}/: days (0.8, 1.2); complexity ('M', 'L'); handler_loc_n (64, 75); handler_body changed; trigger apps/web/components/projects/create/root.tsx:74",
+  "S29 PATCH /api/assets/v2/workspaces/{}/{}/: days (0.4, 0.8); complexity ('S', 'M'); handler_loc_n (20, 26); handler_body changed; trigger apps/web/services/file.service.ts:92",
+  "S30 POST /api/workspaces/{}/projects/: trigger apps/web/components/projects/create/root.tsx:96",
+  "S31 POST /api/assets/v2/workspaces/{}/projects/{}/{}/bulk/: handler_loc_n (52, 63); handler_body changed; trigger apps/web/components/project/create-project-modal.tsx:57",
+  "S32 PATCH /api/workspaces/{}/projects/{}/: handler_body changed; trigger apps/web/components/projects/create/root.tsx:100",
+  "S33 GET /api/assets/v2/workspaces/{}/{}/: days (0.4, 0.8); complexity ('S', 'M'); handler_loc_n (21, 27); handler_body changed",
+  "S34 GET /api/workspaces/{}/projects/{}/: trigger apps/web/layouts/auth-layout/project-wrapper.tsx:83",
+  "S35 GET /api/workspaces/{}/project-stats/: trigger apps/web/store/project/project.store.ts:388",
+  "S36 GET /api/workspaces/{}/projects/{}/project-members/me/: trigger apps/web/layouts/auth-layout/project-wrapper.tsx:88",
+  "S37 GET /api/workspaces/{}/projects/{}/user-properties/: trigger apps/web/layouts/auth-layout/project-wrapper.tsx:90",
+  "S38 GET /api/workspaces/{}/projects/{}/issue-labels/: trigger apps/web/layouts/auth-layout/project-wrapper.tsx:96",
+  "S39 GET /api/workspaces/{}/projects/{}/members/: trigger apps/web/layouts/auth-layout/project-wrapper.tsx:101",
+  "S40 GET /api/workspaces/{}/projects/{}/states/: trigger apps/web/layouts/auth-layout/project-wrapper.tsx:106",
+  "S41 GET /api/workspaces/{}/projects/{}/intake-state/: trigger apps/web/layouts/auth-layout/project-wrapper.tsx:111",
+  "S42 GET /api/workspaces/{}/projects/{}/estimates/: trigger apps/web/layouts/auth-layout/project-wrapper.tsx:116",
+  "S43 GET /api/workspaces/{}/projects/{}/cycles/: trigger apps/web/layouts/auth-layout/project-wrapper.tsx:121",
+  "S44 GET /api/workspaces/{}/modules/: handler_loc_n (90, 108); handler_body changed; trigger apps/web/layouts/auth-layout/project-wrapper.tsx:129",
+  "S45 GET /api/workspaces/{}/projects/{}/modules/: trigger apps/web/layouts/auth-layout/project-wrapper.tsx:129",
+  "S46 GET /api/workspaces/{}/projects/{}/views/: trigger apps/web/layouts/auth-layout/project-wrapper.tsx:134",
+  "S47 GET /api/workspaces/{}/projects/{}/issues/: trigger apps/web/store/issue/project/issue.store.ts:117",
+  "S48 POST /api/workspaces/{}/projects/{}/issues/: trigger apps/web/store/issue/helpers/base-issues.store.ts:534",
+  "X01 GET /api/workspaces/{}/projects/{}/issues/{}/: trigger apps/web/components/issues/peek-overview/root.tsx:220",
+  "X02 GET /api/workspaces/{}/projects/{}/issues/{}/history/: handler_loc_n (57, 60); handler_body changed; trigger apps/web/services/issue/issue_comment.service.ts:36",
+  "X03 PATCH /api/workspaces/{}/projects/{}/issues/{}/: trigger apps/web/services/issue/issue.service.ts:227"
+ ],
+ "serializer_shape_changed": [
+  "internal GET /api/workspaces/{}/invitations/{}/join/: 'WorkSpaceMemberInviteSerializer=__all__/2' -> 'WorkSpaceMemberInvitePublicSerializer=10/1'",
+  "internal GET /api/workspaces/{}/members/: 'WorkspaceMemberAdminSerializer=__all__/1;WorkSpaceMemberSerializer=__all__/1' -> 'WorkspaceMemberAdminSerializer=None/1;WorkSpaceMemberSerializer=__all__/1'",
+  "internal GET /api/workspaces/{}/members/{}/: 'WorkspaceMemberAdminSerializer=__all__/1;WorkSpaceMemberSerializer=__all__/1' -> 'WorkspaceMemberAdminSerializer=None/1;WorkSpaceMemberSerializer=__all__/1'",
+  "internal GET /api/workspaces/{}/projects/{}/join/{}/: 'ProjectMemberInviteSerializer=__all__/2' -> 'ProjectMemberInvitePublicSerializer=7/2'",
+  "internal PATCH /api/workspaces/{}/invitations/{}/: '' -> 'WorkSpaceMemberInviteSerializer=__all__/2'"
+ ],
+ "server_contract_changed": [
+  "auth POST /auth/magic-sign-in/: decorators ''->'throttle_auth_redirect(is_app=True)'",
+  "auth POST /auth/magic-sign-up/: decorators ''->'throttle_auth_redirect(is_app=True)'",
+  "auth POST /auth/sign-in/: decorators ''->'throttle_auth_redirect(is_app=True)'",
+  "auth POST /auth/sign-up/: decorators ''->'throttle_auth_redirect(is_app=True)'",
+  "auth POST /auth/spaces/magic-sign-in/: decorators ''->'throttle_auth_redirect(is_space=True)'",
+  "auth POST /auth/spaces/magic-sign-up/: decorators ''->'throttle_auth_redirect(is_space=True)'",
+  "auth POST /auth/spaces/sign-in/: decorators ''->'throttle_auth_redirect(is_space=True)'",
+  "auth POST /auth/spaces/sign-up/: decorators ''->'throttle_auth_redirect(is_space=True)'",
+  "internal DELETE /api/workspaces/file-assets/{}/{}/: permission_classes '[IsAuthenticated]'->'[IsAuthenticated, WorkspaceMemberPermission]'",
+  "internal DELETE /api/workspaces/{}/file-assets/: permission_classes '[IsAuthenticated]'->'[IsAuthenticated, WorkspaceMemberPermission]'",
+  "internal GET /api/workspaces/file-assets/{}/{}/: permission_classes '[IsAuthenticated]'->'[IsAuthenticated, WorkspaceMemberPermission]'",
+  "internal GET /api/workspaces/{}/entity-search/: permission_classes '[IsAuthenticated]'->'(WorkspaceUserPermission,)'",
+  "internal GET /api/workspaces/{}/file-assets/: permission_classes '[IsAuthenticated]'->'[IsAuthenticated, WorkspaceMemberPermission]'",
+  "internal GET /api/workspaces/{}/invitations/{}/join/: serializers 'WorkSpaceMemberInviteSerializer'->'WorkSpaceMemberInvitePublicSerializer'",
+  "internal GET /api/workspaces/{}/projects/{}/join/{}/: serializers 'ProjectMemberInviteSerializer'->'ProjectMemberInvitePublicSerializer'",
+  "internal PATCH /api/workspaces/{}/invitations/{}/: serializers ''->'WorkSpaceMemberInviteSerializer'; drf_default True->False",
+  "internal PATCH /api/workspaces/{}/projects/{}/states/{}/: decorators 'allow_permission([ROLE.ADMIN, ROLE.MEMBER, ROLE.GUEST])'->'allow_permission([ROLE.ADMIN])'",
+  "internal POST /api/workspaces/file-assets/{}/{}/: permission_classes '[IsAuthenticated]'->'[IsAuthenticated, WorkspaceMemberPermission]'",
+  "internal POST /api/workspaces/file-assets/{}/{}/restore/: permission_classes '[IsAuthenticated]'->'[IsAuthenticated, WorkspaceMemberPermission]'",
+  "internal POST /api/workspaces/{}/file-assets/: permission_classes '[IsAuthenticated]'->'[IsAuthenticated, WorkspaceMemberPermission]'",
+  "v1 GET /api/v1/workspaces/{}/assets/{}/: permission_classes '[IsAuthenticated]'->'[WorkspaceUserPermission]'",
+  "v1 PATCH /api/v1/workspaces/{}/assets/{}/: permission_classes '[IsAuthenticated]'->'[WorkspaceUserPermission]'",
+  "v1 POST /api/v1/workspaces/{}/assets/: permission_classes '[IsAuthenticated]'->'[WorkspaceUserPermission]'"
+ ],
+ "server_handler_body_changed": [
+  "auth POST /auth/change-password/ @ apps/api/plane/authentication/views/common.py:48",
+  "auth POST /auth/reset-password/{}/{}/ @ apps/api/plane/authentication/views/app/password_management.py:100",
+  "auth POST /auth/set-password/ @ apps/api/plane/authentication/views/common.py:100",
+  "auth POST /auth/spaces/reset-password/{}/{}/ @ apps/api/plane/authentication/views/space/password_management.py:112",
+  "instance GET /api/instances/ @ apps/api/plane/license/api/views/instance.py:36",
+  "instance POST /api/instances/admins/sign-in/ @ apps/api/plane/license/api/views/admin.py:272",
+  "instance POST /api/instances/admins/sign-up/ @ apps/api/plane/license/api/views/admin.py:94",
+  "internal DELETE /api/assets/v2/workspaces/{}/ @ apps/api/plane/app/views/asset/v2.py:446",
+  "internal DELETE /api/assets/v2/workspaces/{}/projects/{}/issues/{}/attachments/ @ apps/api/plane/app/views/issue/attachment.py:150",
+  "internal DELETE /api/assets/v2/workspaces/{}/projects/{}/issues/{}/attachments/{}/ @ apps/api/plane/app/views/issue/attachment.py:150",
+  "internal DELETE /api/assets/v2/workspaces/{}/{}/ @ apps/api/plane/app/views/asset/v2.py:446",
+  "internal DELETE /api/users/api-tokens/ @ apps/api/plane/app/views/api.py:51",
+  "internal DELETE /api/users/api-tokens/{}/ @ apps/api/plane/app/views/api.py:51",
+  "internal DELETE /api/workspaces/{}/ @ apps/api/plane/app/views/workspace/base.py:168",
+  "internal DELETE /api/workspaces/{}/members/{}/ @ apps/api/plane/app/views/workspace/member.py:138",
+  "internal DELETE /api/workspaces/{}/projects/{}/bulk-delete-issues/ @ apps/api/plane/app/views/issue/base.py:775",
+  "internal DELETE /api/workspaces/{}/projects/{}/estimates/{}/estimate-points/{}/ @ apps/api/plane/app/views/estimate/base.py:197",
+  "internal DELETE /api/workspaces/{}/projects/{}/modules/{}/issues/{}/ @ apps/api/plane/app/views/module/issue.py:326",
+  "internal GET /api/assets/v2/static/{}/ @ apps/api/plane/app/views/asset/v2.py:496",
+  "internal GET /api/assets/v2/workspaces/{}/ @ apps/api/plane/app/views/asset/v2.py:462",
+  "internal GET /api/assets/v2/workspaces/{}/projects/{}/issues/{}/attachments/ @ apps/api/plane/app/views/issue/attachment.py:173",
+  "internal GET /api/assets/v2/workspaces/{}/projects/{}/issues/{}/attachments/{}/ @ apps/api/plane/app/views/issue/attachment.py:173",
+  "internal GET /api/assets/v2/workspaces/{}/{}/ @ apps/api/plane/app/views/asset/v2.py:462",
+  "internal GET /api/users/api-tokens/ @ apps/api/plane/app/views/api.py:41",
+  "internal GET /api/users/api-tokens/{}/ @ apps/api/plane/app/views/api.py:41",
+  "internal GET /api/users/me/activities/ @ apps/api/plane/app/views/user/base.py:382",
+  "internal GET /api/workspaces/{}/analytics/ @ apps/api/plane/app/views/analytic/base.py:39",
+  "internal GET /api/workspaces/{}/cycles/ @ apps/api/plane/app/views/workspace/cycle.py:22",
+  "internal GET /api/workspaces/{}/default-analytics/ @ apps/api/plane/app/views/analytic/base.py:265",
+  "internal GET /api/workspaces/{}/entity-search/ @ apps/api/plane/app/views/search/base.py:308",
+  "internal GET /api/workspaces/{}/invitations/{}/join/ @ apps/api/plane/app/views/workspace/invite.py:250",
+  "internal GET /api/workspaces/{}/modules/ @ apps/api/plane/app/views/workspace/module.py:25",
+  "internal GET /api/workspaces/{}/projects/details/ @ apps/api/plane/app/views/project/base.py:102",
+  "internal GET /api/workspaces/{}/projects/{}/archived-cycles/ @ apps/api/plane/app/views/cycle/archive.py:272",
+  "internal GET /api/workspaces/{}/projects/{}/archived-cycles/{}/ @ apps/api/plane/app/views/cycle/archive.py:272",
+  "internal GET /api/workspaces/{}/projects/{}/archived-modules/ @ apps/api/plane/app/views/module/archive.py:258",
+  "internal GET /api/workspaces/{}/projects/{}/archived-modules/{}/ @ apps/api/plane/app/views/module/archive.py:258",
+  "internal GET /api/workspaces/{}/projects/{}/cycles/{}/analytics/ @ apps/api/plane/app/views/cycle/base.py:788",
+  "internal GET /api/workspaces/{}/projects/{}/cycles/{}/archive/ @ apps/api/plane/app/views/cycle/archive.py:272",
+  "internal GET /api/workspaces/{}/projects/{}/inbox-issues/ @ apps/api/plane/app/views/intake/base.py:178",
+  "internal GET /api/workspaces/{}/projects/{}/intake-issues/ @ apps/api/plane/app/views/intake/base.py:178",
+  "internal GET /api/workspaces/{}/projects/{}/issues/list/ @ apps/api/plane/app/views/issue/base.py:85",
+  "internal GET /api/workspaces/{}/projects/{}/issues/{}/history/ @ apps/api/plane/app/views/issue/activity.py:30",
+  "internal GET /api/workspaces/{}/projects/{}/issues/{}/issue-relation/ @ apps/api/plane/app/views/issue/relation.py:61",
+  "internal GET /api/workspaces/{}/projects/{}/issues/{}/sub-issues/ @ apps/api/plane/app/views/issue/sub_issue.py:37",
+  "internal GET /api/workspaces/{}/projects/{}/join/{}/ @ apps/api/plane/app/views/project/invite.py:291",
+  "internal GET /api/workspaces/{}/projects/{}/modules/{}/ @ apps/api/plane/app/views/module/base.py:396",
+  "internal GET /api/workspaces/{}/projects/{}/modules/{}/archive/ @ apps/api/plane/app/views/module/archive.py:258",
+  "internal GET /api/workspaces/{}/projects/{}/pages/{}/ @ apps/api/plane/app/views/page/base.py:217",
+  "internal GET /api/workspaces/{}/projects/{}/pages/{}/versions/ @ apps/api/plane/app/views/page/version.py:19",
+  "internal GET /api/workspaces/{}/projects/{}/pages/{}/versions/{}/ @ apps/api/plane/app/views/page/version.py:19",
+  "internal GET /api/workspaces/{}/saved-analytic-view/{}/ @ apps/api/plane/app/views/analytic/base.py:197",
+  "internal GET /api/workspaces/{}/user-activity/{}/ @ apps/api/plane/app/views/workspace/user.py:378",
+  "internal GET /api/workspaces/{}/user-profile/{}/ @ apps/api/plane/app/views/workspace/user.py:281",
+  "internal GET /api/workspaces/{}/users/notifications/ @ apps/api/plane/app/views/notification/base.py:49",
+  "internal PATCH /api/assets/v2/workspaces/{}/ @ apps/api/plane/app/views/asset/v2.py:418",
+  "internal PATCH /api/assets/v2/workspaces/{}/projects/{}/issues/{}/attachments/ @ apps/api/plane/app/views/issue/attachment.py:206",
+  "internal PATCH /api/assets/v2/workspaces/{}/projects/{}/issues/{}/attachments/{}/ @ apps/api/plane/app/views/issue/attachment.py:206",
+  "internal PATCH /api/assets/v2/workspaces/{}/{}/ @ apps/api/plane/app/views/asset/v2.py:418",
+  "internal PATCH /api/workspaces/{}/invitations/{}/ @ apps/api/plane/app/views/workspace/invite.py:130",
+  "internal PATCH /api/workspaces/{}/members/{}/ @ apps/api/plane/app/views/workspace/member.py:93",
+  "internal PATCH /api/workspaces/{}/projects/{}/ @ apps/api/plane/app/views/project/base.py:314",
+  "internal PATCH /api/workspaces/{}/projects/{}/estimates/{}/ @ apps/api/plane/app/views/estimate/base.py:109",
+  "internal PATCH /api/workspaces/{}/projects/{}/issues/{}/issue-links/{}/ @ apps/api/plane/app/views/issue/link.py:71",
+  "internal PATCH /api/workspaces/{}/projects/{}/members/{}/ @ apps/api/plane/app/views/project/member.py:206",
+  "internal PATCH /api/workspaces/{}/projects/{}/states/{}/ @ apps/api/plane/app/views/state/base.py:64",
+  "internal PATCH /api/workspaces/{}/sidebar-preferences/ @ apps/api/plane/app/views/workspace/user_preference.py:82",
+  "internal PATCH /api/workspaces/{}/webhooks/ @ apps/api/plane/app/views/webhook/base.py:82",
+  "internal PATCH /api/workspaces/{}/webhooks/{}/ @ apps/api/plane/app/views/webhook/base.py:82",
+  "internal POST /api/assets/v2/workspaces/{}/ @ apps/api/plane/app/views/asset/v2.py:341",
+  "internal POST /api/assets/v2/workspaces/{}/duplicate-assets/{}/ @ apps/api/plane/app/views/asset/v2.py:813",
+  "internal POST /api/assets/v2/workspaces/{}/projects/{}/{}/bulk/ @ apps/api/plane/app/views/asset/v2.py:702",
+  "internal POST /api/assets/v2/workspaces/{}/{}/ @ apps/api/plane/app/views/asset/v2.py:341",
+  "internal POST /api/users/me/workspaces/invitations/ @ apps/api/plane/app/views/workspace/invite.py:270",
+  "internal POST /api/users/me/workspaces/{}/projects/invitations/ @ apps/api/plane/app/views/project/invite.py:131",
+  "internal POST /api/workspaces/ @ apps/api/plane/app/views/workspace/base.py:81",
+  "internal POST /api/workspaces/file-assets/{}/{}/ @ apps/api/plane/app/views/asset/base.py:38",
+  "internal POST /api/workspaces/{}/draft-to-issue/{}/ @ apps/api/plane/app/views/workspace/draft.py:206",
+  "internal POST /api/workspaces/{}/export-analytics/ @ apps/api/plane/app/views/analytic/base.py:236",
+  "internal POST /api/workspaces/{}/file-assets/ @ apps/api/plane/app/views/asset/base.py:38",
+  "internal POST /api/workspaces/{}/invitations/ @ apps/api/plane/app/views/workspace/invite.py:52",
+  "internal POST /api/workspaces/{}/invitations/{}/join/ @ apps/api/plane/app/views/workspace/invite.py:172",
+  "internal POST /api/workspaces/{}/members/leave/ @ apps/api/plane/app/views/workspace/member.py:187",
+  "internal POST /api/workspaces/{}/projects/{}/archived-cycles/ @ apps/api/plane/app/views/cycle/archive.py:587",
+  "internal POST /api/workspaces/{}/projects/{}/archived-cycles/{}/ @ apps/api/plane/app/views/cycle/archive.py:587",
+  "internal POST /api/workspaces/{}/projects/{}/cycles/{}/archive/ @ apps/api/plane/app/views/cycle/archive.py:587",
+  "internal POST /api/workspaces/{}/projects/{}/cycles/{}/cycle-issues/ @ apps/api/plane/app/views/cycle/issue.py:224",
+  "internal POST /api/workspaces/{}/projects/{}/estimates/{}/estimate-points/ @ apps/api/plane/app/views/estimate/base.py:155",
+  "internal POST /api/workspaces/{}/projects/{}/issues/{}/comments/ @ apps/api/plane/app/views/issue/comment.py:64",
+  "internal POST /api/workspaces/{}/projects/{}/issues/{}/issue-relation/ @ apps/api/plane/app/views/issue/relation.py:240",
+  "internal POST /api/workspaces/{}/projects/{}/issues/{}/remove-relation/ @ apps/api/plane/app/views/issue/relation.py:309",
+  "internal POST /api/workspaces/{}/projects/{}/issues/{}/sub-issues/ @ apps/api/plane/app/views/issue/sub_issue.py:210",
+  "internal POST /api/workspaces/{}/projects/{}/join/{}/ @ apps/api/plane/app/views/project/invite.py:194",
+  "internal POST /api/workspaces/{}/projects/{}/modules/{}/issues/ @ apps/api/plane/app/views/module/issue.py:211",
+  "internal POST /api/workspaces/{}/projects/{}/project-deploy-boards/ @ apps/api/plane/app/views/project/base.py:548",
+  "internal POST /api/workspaces/{}/projects/{}/states/ @ apps/api/plane/app/views/state/base.py:48",
+  "internal POST /api/workspaces/{}/projects/{}/states/{}/mark-default/ @ apps/api/plane/app/views/state/base.py:109",
+  "internal POST /api/workspaces/{}/views/ @ apps/api/plane/app/views/view/base.py:60 (get_queryset)",
+  "internal POST /api/workspaces/{}/webhooks/ @ apps/api/plane/app/views/webhook/base.py:22",
+  "internal POST /api/workspaces/{}/webhooks/{}/ @ apps/api/plane/app/views/webhook/base.py:22",
+  "internal POST /api/workspaces/{}/webhooks/{}/regenerate/ @ apps/api/plane/app/views/webhook/base.py:116",
+  "internal PUT /api/workspaces/{}/views/{}/ @ apps/api/plane/app/views/view/base.py:60 (get_queryset)",
+  "space DELETE /api/public/anchor/{}/comments/{}/reactions/{}/ @ apps/api/plane/space/views/issue.py:558",
+  "space DELETE /api/public/anchor/{}/issues/{}/comments/{}/ @ apps/api/plane/space/views/issue.py:360",
+  "space DELETE /api/public/anchor/{}/issues/{}/reactions/{}/ @ apps/api/plane/space/views/issue.py:455",
+  "space GET /api/public/anchor/{}/comments/{}/reactions/ @ apps/api/plane/space/views/issue.py:490 (get_queryset)",
+  "space GET /api/public/anchor/{}/issues/{}/ @ apps/api/plane/space/views/issue.py:681",
+  "space GET /api/public/anchor/{}/issues/{}/comments/ @ apps/api/plane/space/views/issue.py:255 (get_queryset)",
+  "space GET /api/public/anchor/{}/issues/{}/comments/{}/ @ apps/api/plane/space/views/issue.py:255 (get_queryset)",
+  "space GET /api/public/assets/v2/anchor/{}/ @ apps/api/plane/space/views/asset.py:35",
+  "space GET /api/public/assets/v2/anchor/{}/{}/ @ apps/api/plane/space/views/asset.py:35",
+  "space PATCH /api/public/anchor/{}/issues/{}/comments/{}/ @ apps/api/plane/space/views/issue.py:328",
+  "space PATCH /api/public/assets/v2/anchor/{}/ @ apps/api/plane/space/views/asset.py:154",
+  "space PATCH /api/public/assets/v2/anchor/{}/{}/ @ apps/api/plane/space/views/asset.py:154",
+  "space POST /api/public/anchor/{}/comments/{}/reactions/ @ apps/api/plane/space/views/issue.py:511",
+  "space POST /api/public/anchor/{}/intakes/{}/inbox-issues/ @ apps/api/plane/space/views/intake.py:108",
+  "space POST /api/public/anchor/{}/intakes/{}/intake-issues/ @ apps/api/plane/space/views/intake.py:108",
+  "space POST /api/public/anchor/{}/issues/{}/comments/ @ apps/api/plane/space/views/issue.py:285",
+  "space POST /api/public/anchor/{}/issues/{}/reactions/ @ apps/api/plane/space/views/issue.py:414",
+  "space POST /api/public/anchor/{}/issues/{}/votes/ @ apps/api/plane/space/views/issue.py:616",
+  "space POST /api/public/assets/v2/anchor/{}/ @ apps/api/plane/space/views/asset.py:76",
+  "space POST /api/public/assets/v2/anchor/{}/restore/{}/ @ apps/api/plane/space/views/asset.py:194",
+  "space POST /api/public/assets/v2/anchor/{}/{}/ @ apps/api/plane/space/views/asset.py:76"
+ ],
+ "server_handler_body_changed_by_surface": {
+  "auth": 4,
+  "instance": 3,
+  "internal": 95,
+  "space": 21,
+  "v1": 29
+ },
+ "server_handler_body_changed_rows_without_project_handler (not compared)": {
+  "auth": 0,
+  "instance": 0,
+  "internal": 0,
+  "schema": 3,
+  "space": 0,
+  "v1": 1,
+  "web": 0
+ },
+ "server_handler_loc_changed (count)": 118,
+ "server_rows_added": [
+  "v1 GET /api/v1/workspaces/{}/members-lite/",
+  "v1 GET /api/v1/workspaces/{}/projects-lite/",
+  "v1 GET /api/v1/workspaces/{}/projects/{}/cycles-lite/",
+  "v1 GET /api/v1/workspaces/{}/projects/{}/modules-lite/",
+  "v1 GET /api/v1/workspaces/{}/projects/{}/project-members-lite/"
+ ],
+ "server_rows_removed": [],
+ "shapes_changed": [
+  "~ /cookies_csrf_session/client_axios_withCredentials_and_401_redirect: [{\"text\": \"withCredentials: true,\"}, {\"text\": \"if (error.response && error.response.status === 401) {\"}, {\"text\": \"window.location.replace(`/${currentPath ? `?next_path=${currentPath}` : ``}`);\"}]  ->  [{\"text\": \"withCredentials: true,\"}, {\"text\": \"if (error.response && error.response.status === 401) {\"}, {\"text\": \"window.location.replace(`/${currentPath ? `?next_path=${encodeURIComponent(currentPath)}` : ``}`);\"}]",
+  "~ /error_bodies/app_views_response_body_shapes/Response(serializer.errors): 49  ->  50",
+  "~ /error_bodies/app_views_response_body_shapes/Response({'error': ...}): 185  ->  209",
+  "~ /error_bodies/auth_error_code_count: 59  ->  60",
+  "+ /error_bodies/auth_error_codes/BOT_USER_LOGIN_FORBIDDEN: 5017",
+  "~ /other_quirks/asset_handlers_returning_302_redirect: [\"apps/api/plane/app/views/asset/v2.py:414 WorkspaceFileAssetEndpoint.get\", \"apps/api/plane/app/views/asset/v2.py:442 StaticFileAssetEndpoint.get\", \"apps/api/plane/app/views/asset/v2.py:612 ProjectAssetEndpoint.get\", \"apps/api/plane/app/vie  ->  [\"apps/api/plane/app/views/asset/v2.py:462 WorkspaceFileAssetEndpoint.get\", \"apps/api/plane/app/views/asset/v2.py:496 StaticFileAssetEndpoint.get\", \"apps/api/plane/app/views/asset/v2.py:672 ProjectAssetEndpoint.get\", \"apps/api/plane/app/vie",
+  "~ /paginate_call_sites/by_surface/api: 21  ->  26",
+  "~ /paginate_call_sites/default_per_page/None: 47  ->  52",
+  "~ /paginate_call_sites/paginator_cls/None: 37  ->  42",
+  "~ /paginate_call_sites/total: 49  ->  54"
+ ]
+}

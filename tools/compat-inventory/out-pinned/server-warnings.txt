@@ -1,0 +1,2 @@
+<root>/apps/api/plane/urls.py:46: include() of non-project object skipped: debug_toolbar.urls
+<root>/apps/api/plane/urls.py:46: re_path used (^__debug__/)

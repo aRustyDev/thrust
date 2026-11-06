@@ -1,6 +1,6 @@
 # Research 0006 — Spike 0004, public half: Worker topology, path-scoped Access, WebSocket
 
-Date: 2026-10-18 · Spike: `spikes/0004-topology-and-woven-tunnel.md` (bead `plane-byd.2`, wave 1) · Code: `scripts/spike-0004/`
+Date: 2026-10-18 · Spike: `spikes/0004-topology-and-woven-tunnel.md` (bead `plane-byd.2`, wave 1) · Code: `tools/spike-0004/`
 Status: **public half RUN on the real platform (run 2, 2026-10-18, §13) and torn down (§14); `.woven` half remains a desk recipe (§7).**
 History: §0-§9 are the pre-run write-up (originally tagged before any platform access). Run 1 (§10) deployed and created custom domains but the Access policy POST
 returned `403 auth.forbidden` (token lacked "Access: Apps and Policies Edit"), so it was halted and torn down by the coordinator (§11). A first attempt at run 2 was blocked by a
@@ -57,7 +57,7 @@ Spike method step → state:
 | 6 public `space` host bypasses narrowly | **tested (SP1, SP2)**: the space host serves none of the product host's gated routes; SNI/Host mismatch is 403 |
 | 7 static assets under prefixes (Q-0011.1) | answered by docs, local runs and the platform (S1-S5, §4.4, §13) |
 
-## 1. What was built (`scripts/spike-0004/`)
+## 1. What was built (`tools/spike-0004/`)
 
 ```
 dev.sh                  local-only wrangler dev (ROLE=edge|space); no credentials, isolated config dir
@@ -293,7 +293,7 @@ Tools on the runner: `op`, `wrangler` (4.123.0 tested), `tofu`, `uv`.
 
 ### 6.2 Commands, in order, with expected outcomes
 
-Run from `scripts/spike-0004/` after exporting the env above (none of it is a secret). The token is read by `op read` inside the script and never printed or put on argv.
+Run from `tools/spike-0004/` after exporting the env above (none of it is a secret). The token is read by `op read` inside the script and never printed or put on argv.
 
 | Step | Command | Expect |
 |---|---|---|

@@ -1,0 +1,13 @@
+# Copy to terraform.tfvars (gitignored) and fill in once the owner names the sandbox account/zone.
+# No secrets belong here: the API token comes from the CLOUDFLARE_API_TOKEN environment variable.
+account_id          = "REPLACE_WITH_SANDBOX_ACCOUNT_ID"
+zone_id             = "REPLACE_WITH_SANDBOX_ZONE_ID"
+zone_name           = "REPLACE.with.sandbox.zone"
+test_identity_email = "REPLACE@with.test.identity"
+
+# hostname_prefix           = "spike-0004"   # must start with spike-0004
+# space_hostname_prefix     = "spike-0004-space"
+# space_worker_name         = "spike-0004-space"
+# edge_worker_name          = "spike-0004-edge"
+# service_token_duration    = "168h"
+# enable_overlap_experiment = true

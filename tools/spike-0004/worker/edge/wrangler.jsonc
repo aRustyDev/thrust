@@ -1,0 +1,47 @@
+{
+  // Spike 0004 throwaway edge Worker. Resource prefix: spike-0004-
+  // Teardown: `wrangler delete --name spike-0004-edge` (after `tofu destroy`), then spike-0004-b.
+  "name": "spike-0004-edge",
+  "main": "src/index.js",
+  "compatibility_date": "2026-08-18",
+
+  // SECURITY: a Worker is also reachable on <name>.<account>.workers.dev. Hostname-based Access apps
+  // protect ONLY the exact hostname (Workers docs: configuration/cloudflare-access), so leaving
+  // workers.dev / preview URLs on would bypass every Access app defined in tofu/. Keep both off.
+  "workers_dev": false,
+  "preview_urls": false,
+
+  // No `routes` here on purpose: the custom domain is created by tofu/ (cloudflare_workers_custom_domain)
+  // so the whole public surface is one reviewable IaC root. `wrangler deploy` uploads code + assets only.
+
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    // One SPA fallback per Worker (serves the ROOT /index.html). Fine for `/`; /spaces/* is handled in code.
+    "not_found_handling": "single-page-application",
+    // Paths that MUST reach the Worker even for browser navigations (Sec-Fetch-Mode: navigate).
+    // Without this, a navigation to /auth/callback is answered with index.html and never reaches the Worker
+    // (docs: workers/static-assets/routing/single-page-application, "Navigation requests").
+    // Exact-path forms (/api) are listed separately because `/api/*` does not match `/api`.
+    "run_worker_first": [
+      "/api", "/api/*",
+      "/auth", "/auth/*",
+      "/live", "/live/*",
+      "/internal/*",
+      "/spaces", "/spaces/*",
+      "!/spaces/assets/*"
+    ]
+  },
+
+  "services": [
+    { "binding": "B", "service": "spike-0004-b", "entrypoint": "Compute" }
+  ],
+
+  // Not secrets. Filled for the real run (team domain + the UI app's AUD tag) so /internal/whoami can
+  // verify the Access JWT. JWKS_URL is a test-only override used by the local verifier test.
+  "vars": {
+    "TEAM_DOMAIN": "",
+    "POLICY_AUD": "",
+    "JWKS_URL": ""
+  }
+}

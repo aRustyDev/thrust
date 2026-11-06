@@ -1,0 +1,326 @@
+{
+ "_duplicate_method_path": {
+  "v1 GET /api/v1/workspaces/{}/": [
+   "apps/api/plane/api/urls/invite.py:17",
+   "apps/api/plane/api/urls/sticky.py:12"
+  ]
+ },
+ "_facts": {
+  "allow_permission_rows_compat": 235,
+  "allow_permission_with_creator_rows_compat": 26,
+  "bg_task_rows_compat (.delay in handler body)": 95,
+  "cache_response_rows_compat": 6,
+  "class_permission_rows_compat": 310,
+  "drf_default_rows_all": 76,
+  "drf_default_rows_compat": 72,
+  "group_by_rows_compat": 11,
+  "gzip_page_rows_compat": 8,
+  "invalidate_cache_rows_compat": 23,
+  "paginate_rows_compat": 25,
+  "rows_all_surfaces": 687,
+  "rows_compat_surfaces": 545,
+  "view_kind_all_rows": {
+   "apiview": 415,
+   "drf-router-detail": 8,
+   "drf-router-list": 4,
+   "drf-router-root": 2,
+   "function-view": 2,
+   "viewset-map": 256
+  }
+ },
+ "_reconciliation": {
+  "per_dir": {
+   "apps/api/plane/api/urls": {
+    "files_never_reached": [
+     "estimate.py",
+     "schema.py"
+    ],
+    "raw_path_lines": 75,
+    "reachable_entries": 73
+   },
+   "apps/api/plane/app/urls": {
+    "files_never_reached": [],
+    "raw_path_lines": 233,
+    "reachable_entries": 233
+   },
+   "apps/api/plane/authentication/urls.py": {
+    "files_never_reached": [],
+    "raw_path_lines": 41,
+    "reachable_entries": 41
+   },
+   "apps/api/plane/license/urls.py": {
+    "files_never_reached": [],
+    "raw_path_lines": 14,
+    "reachable_entries": 14
+   },
+   "apps/api/plane/space/urls": {
+    "files_never_reached": [],
+    "raw_path_lines": 25,
+    "reachable_entries": 25
+   },
+   "apps/api/plane/urls.py": {
+    "files_never_reached": [],
+    "raw_path_lines": 9,
+    "reachable_entries": 3
+   },
+   "apps/api/plane/web/urls.py": {
+    "files_never_reached": [],
+    "raw_path_lines": 0,
+    "reachable_entries": 2
+   }
+  },
+  "per_file": {
+   "apps/api/plane/api/urls/__init__.py": {
+    "raw_path_lines": 0,
+    "reachable_entries": 0
+   },
+   "apps/api/plane/api/urls/asset.py": {
+    "raw_path_lines": 6,
+    "reachable_entries": 6
+   },
+   "apps/api/plane/api/urls/cycle.py": {
+    "raw_path_lines": 9,
+    "reachable_entries": 9
+   },
+   "apps/api/plane/api/urls/estimate.py": {
+    "raw_path_lines": 3,
+    "reachable_entries": 0
+   },
+   "apps/api/plane/api/urls/intake.py": {
+    "raw_path_lines": 2,
+    "reachable_entries": 2
+   },
+   "apps/api/plane/api/urls/invite.py": {
+    "raw_path_lines": 1,
+    "reachable_entries": 3
+   },
+   "apps/api/plane/api/urls/label.py": {
+    "raw_path_lines": 2,
+    "reachable_entries": 2
+   },
+   "apps/api/plane/api/urls/member.py": {
+    "raw_path_lines": 7,
+    "reachable_entries": 7
+   },
+   "apps/api/plane/api/urls/module.py": {
+    "raw_path_lines": 8,
+    "reachable_entries": 8
+   },
+   "apps/api/plane/api/urls/project.py": {
+    "raw_path_lines": 5,
+    "reachable_entries": 5
+   },
+   "apps/api/plane/api/urls/schema.py": {
+    "raw_path_lines": 3,
+    "reachable_entries": 0
+   },
+   "apps/api/plane/api/urls/state.py": {
+    "raw_path_lines": 2,
+    "reachable_entries": 2
+   },
+   "apps/api/plane/api/urls/sticky.py": {
+    "raw_path_lines": 1,
+    "reachable_entries": 3
+   },
+   "apps/api/plane/api/urls/user.py": {
+    "raw_path_lines": 1,
+    "reachable_entries": 1
+   },
+   "apps/api/plane/api/urls/work_item.py": {
+    "raw_path_lines": 25,
+    "reachable_entries": 25
+   },
+   "apps/api/plane/app/urls/__init__.py": {
+    "raw_path_lines": 0,
+    "reachable_entries": 0
+   },
+   "apps/api/plane/app/urls/analytic.py": {
+    "raw_path_lines": 13,
+    "reachable_entries": 13
+   },
+   "apps/api/plane/app/urls/api.py": {
+    "raw_path_lines": 2,
+    "reachable_entries": 2
+   },
+   "apps/api/plane/app/urls/asset.py": {
+    "raw_path_lines": 18,
+    "reachable_entries": 18
+   },
+   "apps/api/plane/app/urls/cycle.py": {
+    "raw_path_lines": 14,
+    "reachable_entries": 14
+   },
+   "apps/api/plane/app/urls/estimate.py": {
+    "raw_path_lines": 5,
+    "reachable_entries": 5
+   },
+   "apps/api/plane/app/urls/exporter.py": {
+    "raw_path_lines": 1,
+    "reachable_entries": 1
+   },
+   "apps/api/plane/app/urls/external.py": {
+    "raw_path_lines": 3,
+    "reachable_entries": 3
+   },
+   "apps/api/plane/app/urls/intake.py": {
+    "raw_path_lines": 10,
+    "reachable_entries": 10
+   },
+   "apps/api/plane/app/urls/issue.py": {
+    "raw_path_lines": 40,
+    "reachable_entries": 40
+   },
+   "apps/api/plane/app/urls/module.py": {
+    "raw_path_lines": 13,
+    "reachable_entries": 13
+   },
+   "apps/api/plane/app/urls/notification.py": {
+    "raw_path_lines": 7,
+    "reachable_entries": 7
+   },
+   "apps/api/plane/app/urls/page.py": {
+    "raw_path_lines": 11,
+    "reachable_entries": 11
+   },
+   "apps/api/plane/app/urls/project.py": {
+    "raw_path_lines": 20,
+    "reachable_entries": 20
+   },
+   "apps/api/plane/app/urls/search.py": {
+    "raw_path_lines": 3,
+    "reachable_entries": 3
+   },
+   "apps/api/plane/app/urls/state.py": {
+    "raw_path_lines": 4,
+    "reachable_entries": 4
+   },
+   "apps/api/plane/app/urls/timezone.py": {
+    "raw_path_lines": 1,
+    "reachable_entries": 1
+   },
+   "apps/api/plane/app/urls/user.py": {
+    "raw_path_lines": 16,
+    "reachable_entries": 16
+   },
+   "apps/api/plane/app/urls/views.py": {
+    "raw_path_lines": 7,
+    "reachable_entries": 7
+   },
+   "apps/api/plane/app/urls/webhook.py": {
+    "raw_path_lines": 4,
+    "reachable_entries": 4
+   },
+   "apps/api/plane/app/urls/workspace.py": {
+    "raw_path_lines": 41,
+    "reachable_entries": 41
+   },
+   "apps/api/plane/authentication/urls.py": {
+    "raw_path_lines": 41,
+    "reachable_entries": 41
+   },
+   "apps/api/plane/license/urls.py": {
+    "raw_path_lines": 14,
+    "reachable_entries": 14
+   },
+   "apps/api/plane/space/urls/__init__.py": {
+    "raw_path_lines": 0,
+    "reachable_entries": 0
+   },
+   "apps/api/plane/space/urls/asset.py": {
+    "raw_path_lines": 4,
+    "reachable_entries": 4
+   },
+   "apps/api/plane/space/urls/intake.py": {
+    "raw_path_lines": 4,
+    "reachable_entries": 4
+   },
+   "apps/api/plane/space/urls/issue.py": {
+    "raw_path_lines": 8,
+    "reachable_entries": 8
+   },
+   "apps/api/plane/space/urls/project.py": {
+    "raw_path_lines": 9,
+    "reachable_entries": 9
+   },
+   "apps/api/plane/urls.py": {
+    "raw_path_lines": 9,
+    "reachable_entries": 3
+   },
+   "apps/api/plane/web/urls.py": {
+    "raw_path_lines": 0,
+    "reachable_entries": 2
+   }
+  }
+ },
+ "auth": {
+  "by_method": {
+   "GET": 21,
+   "POST": 20
+  },
+  "distinct_norm_paths": 41,
+  "endpoint_rows_method_x_path": 41,
+  "route_entries": 41
+ },
+ "instance": {
+  "by_method": {
+   "DELETE": 3,
+   "GET": 8,
+   "PATCH": 2,
+   "POST": 8
+  },
+  "distinct_norm_paths": 14,
+  "endpoint_rows_method_x_path": 21,
+  "route_entries": 14
+ },
+ "internal": {
+  "by_method": {
+   "DELETE": 78,
+   "GET": 186,
+   "PATCH": 60,
+   "POST": 104,
+   "PUT": 13
+  },
+  "distinct_norm_paths": 233,
+  "endpoint_rows_method_x_path": 441,
+  "route_entries": 233
+ },
+ "schema": {
+  "by_method": {
+   "GET": 3
+  },
+  "distinct_norm_paths": 3,
+  "endpoint_rows_method_x_path": 3,
+  "route_entries": 3
+ },
+ "space": {
+  "by_method": {
+   "DELETE": 7,
+   "GET": 21,
+   "PATCH": 4,
+   "POST": 10
+  },
+  "distinct_norm_paths": 25,
+  "endpoint_rows_method_x_path": 42,
+  "route_entries": 25
+ },
+ "v1": {
+  "by_method": {
+   "DELETE": 25,
+   "GET": 61,
+   "PATCH": 21,
+   "POST": 28,
+   "PUT": 2
+  },
+  "distinct_norm_paths": 72,
+  "endpoint_rows_method_x_path": 137,
+  "route_entries": 73
+ },
+ "web": {
+  "by_method": {
+   "ANY": 2
+  },
+  "distinct_norm_paths": 2,
+  "endpoint_rows_method_x_path": 2,
+  "route_entries": 2
+ }
+}

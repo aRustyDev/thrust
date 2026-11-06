@@ -62,3 +62,8 @@ tests, which are opt-in.
   none is a member of the root workspace, and each has a `run.sh`.
 - **`tools/spike-0006/`.** The TypeScript and Python oracle, corpus generators and benchmarks for the editor spike.
   How it is used is on [Differential](../testing/techniques/differential.md).
+- **`tools/compat-inventory/`.** The static inventory of Plane's internal API for spike 0009: stdlib-only Python,
+  run through `uv`. Its pinned output is the F-X13 acceptance list. Its README gives the source of the copy and the
+  command that reproduces that output.
+- **`tools/spike-0004/`.** The harness for spike 0004: three throwaway JavaScript Workers, an OpenTofu root and a
+  Python assertion suite. Its `run_platform.sh` creates real Cloudflare resources, so read its README first.

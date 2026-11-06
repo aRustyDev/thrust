@@ -2,16 +2,16 @@
 
 > **desk half. Two runs of the same scripts:**
 > - **pre-pin, source commit `300c2009d4fdcf5369b92e108da0c2de4212eb4a`** (`v1.4.3-7-g300c2009d4`, branch `docs/plane-on-cloudflare-spec`,
->   apps/ and packages/ clean): sections 1-14, output in `scripts/compat-inventory/out/`.
+>   apps/ and packages/ clean): sections 1-14, output in `tools/compat-inventory/out/` (not committed; section 2 regenerates it).
 > - **pinned, source commit `ba85d4d3d332b5380bebca4b9e0143b1127de907`** (tag `oracle/v1-pin-20261018`, upstream preview `879ce8b5c6`; the fork
->   merged with 220 upstream commits; bead `plane-b6a`): section 15, output in `scripts/compat-inventory/out-pinned/`. The scanned worktree's
+>   merged with 220 upstream commits; bead `plane-b6a`): section 15, output in `tools/compat-inventory/out-pinned/`. The scanned worktree's
 >   HEAD is `72b2e01497` (the pin plus oracle-harness commits); its `apps/api` tree is proven identical to the pin (section 15.1).
 >
 > Sections 1-14 are the **pre-pin** numbers and are left as first written (one correction: four slice trigger line numbers, section 15.1).
 > **Section 15 holds the pinned numbers, every delta, and what moved in the estimates; the pinned run is the one that describes the oracle.**
 > Everything comes from source; no system was run, no HAR exists, no call frequency is known.
 >
-> Gates ADR-0034, F-X13. Inputs to Q-0010.1, Q-0011.1, Q-0009.1, Q-R2 (section 12). Nothing outside `scripts/compat-inventory/`
+> Gates ADR-0034, F-X13. Inputs to Q-0010.1, Q-0011.1, Q-0009.1, Q-R2 (section 12). Nothing outside `tools/compat-inventory/`
 > and this file was written; the Plane trees were only read.
 >
 > **Corrections (round 27, from `research/0007` "Corrections" 6 to 10):** the pinned React client appends `/` to every API URL (`normalizeAPIRequestURL` in `apps/web/services/api.service.ts`), so the slashless-call concern in sections 5 and 9 row 4 is moot for the stock UI; at the pin the 401 interceptor skips `/` and URL-encodes the path, and `?t=` survives only on `users/me/settings/` (sections 7.5 and 9); the pinned tree has 55 `self.paginate(` sites and 28 `order_by` sanitiser call sites. These do not change the slice or the estimates.
@@ -19,7 +19,7 @@
 > Evidence tags: **[computed]** = reproduced by the scripts; **[inferred]** = my judgement from computed facts (unit costs, liveness,
 > defaults); **[unverified]** = could not be checked from source. Untagged numbers are [computed]. In section 15, **[diff]** = found by reading
 > a plain `diff` of two source files by hand (not produced by the scripts, so it will not reappear on the next re-run unless someone repeats it).
-> Every table below is regenerated into `scripts/compat-inventory/out/tables.md` (pinned: `out-pinned/tables.md`) by `run_all.py`; counts quoted in prose come from
+> Every table below is regenerated into `tools/compat-inventory/out/tables.md` (not committed; pinned: `out-pinned/tables.md`) by `run_all.py`; counts quoted in prose come from
 > `server-summary.json` (`_facts`, `_reconciliation`), `client-scan-stats.json`, `join-report.json`, `effort-summary.json` (`facts`) and
 > `shapes-anchors.json`, all in the same output directory.
 
@@ -57,10 +57,10 @@
 
 ## 2. Reproduce, and re-run after the pin
 
-Tooling is stdlib-only Python through `uv run` (about 14 s for the whole run). Layout: `scripts/compat-inventory/`.
+Tooling is stdlib-only Python through `uv run` (about 14 s for the whole run). Layout: `tools/compat-inventory/`.
 
 ```sh
-cd .agents/plans/contrail/scripts/compat-inventory
+cd tools/compat-inventory
 uv run run_all.py --root <plane tree root> --out out        # everything below; exit 2 if the P0 slice or tag table is stale
 uv run server_routes.py --root <root> --out <dir>            # step 1 alone (also client_calls.py, join_tag.py, shapes_probe.py, ...)
 # flags: --vcs files (default: stamp the commit by reading <root>/.git, never runs git) | git (rev-parse/describe/status)
@@ -86,8 +86,8 @@ its reason), `p0_slice.py` (the slice, each entry with trigger `file:line`), `ef
 **Re-run after the pin, and after the next upstream sync** (this is exactly what produced `out-pinned/`; do it in this order):
 
 ```sh
-cd .agents/plans/contrail/scripts/compat-inventory
-# 1. the previous result is the baseline: out/ (pre-pin, commit 300c2009d4) and out-pinned/ (pin ba85d4d3d3) are both kept in the repo
+cd tools/compat-inventory
+# 1. the previous result is the baseline: out-pinned/ (pin ba85d4d3d3) is kept in the repo; out/ (pre-pin, commit 300c2009d4) is not committed, regenerate it first with run_all.py --root <pre-pin tree> --out out
 # 2. run against the new tree. --vcs files (default) never runs git against it; the trailing flags are optional
 uv run run_all.py --root <new tree> --out out-<label> --label '<pin tag -> sha>' --verdicts handcheck-verdicts-<label>.csv > run.log 2>&1
 uv run verify_api_tree.py --root <new tree> --out out-<label>/pin-verify.json     # only when the tree has oracle/PIN
@@ -177,7 +177,7 @@ the service-method liveness evidence. `${this.serviceType}` is expanded from `EI
 |---|---|
 | call-site recall: independent `this\.(get\|post\|put\|patch\|delete\|request)\(` regex over raw text vs extracted | **502 / 502** [computed] |
 | literal recall: independent regex for every quoted `/api/...` or `/auth/...` literal (498 occurrences, 262 distinct normalised paths) vs every extracted path | **261 / 262 = 99.6%**; the miss is `issue.service.ts:261`, a template whose `${...}` contains quotes (the *regex* cannot parse it; the scanner did extract that call) |
-| precision: 30 seeded random call sites (seed 9, from the 492 literal/derived ones) read against the source by hand, field by field | **30 / 30 correct** on verb, path, query, body, response, plus 29 / 29 on the catch shape (1 is try/catch, n/a). Rule-of-three upper bound on the error rate at 95% confidence: about 10% [computed]. The hand check was done by the author, not independently; verdicts are in `scripts/compat-inventory/handcheck-verdicts.csv` with the reasons for the notable rows |
+| precision: 30 seeded random call sites (seed 9, from the 492 literal/derived ones) read against the source by hand, field by field | **30 / 30 correct** on verb, path, query, body, response, plus 29 / 29 on the catch shape (1 is try/catch, n/a). Rule-of-three upper bound on the error rate at 95% confidence: about 10% [computed]. The hand check was done by the author, not independently; verdicts are in `tools/compat-inventory/handcheck-verdicts.csv` with the reasons for the notable rows |
 | path precision for the 10 hand-resolved sites | by construction (each override cites the code it was read from) |
 
 **Service-method liveness (is a method ever called?)** is a heuristic and the only part of the scan that is not exact [inferred]. Three
@@ -439,7 +439,7 @@ paginated-listing 13 rows 10.0; auth-redirect 13 rows 12.4; bulk 8 rows 6.8. Ful
 ### 8.1 The minimum P0 slice (exact endpoints)
 
 Journey through the unmodified UI: instance info -> sign up -> onboarding (profile, workspace) -> workspace home -> create project (default cover upload)
--> open project -> create work item -> see it in the list. Each row names the trigger; `scripts/compat-inventory/p0_slice.py` is validated against the
+-> open project -> create work item -> see it in the list. Each row names the trigger; `tools/compat-inventory/p0_slice.py` is validated against the
 join on every run. `kind = min`: needed; `ext`: needed only to open the created item.
 
 | id | stage | kind | method | server path (positional) | class / size | pd | features | triggered at |
@@ -608,15 +608,15 @@ can hide tokens on that line for the non-axios literal scan (recall was still 99
 
 ## 14. Files
 
-All under `.agents/plans/contrail/`, uncommitted:
+Committed. This file is under `.agents/plans/contrail/`; the scripts and their outputs are under `tools/compat-inventory/` (imported from `aRustyDev/plane`, issue #55; provenance in its README):
 - `research/0003-compat-plane-inventory.md` (this file)
-- `scripts/compat-inventory/`: `run_all.py`, `layout.py`, `verify_api_tree.py`, `server_routes.py`, `pyindex.py`, `client_calls.py`, `ts_lex.py`, `client_overrides.py`, `join_tag.py`,
+- `tools/compat-inventory/`: `run_all.py`, `layout.py`, `verify_api_tree.py`, `server_routes.py`, `pyindex.py`, `client_calls.py`, `ts_lex.py`, `client_overrides.py`, `join_tag.py`,
   `feature_rules.py`, `effort_model.py`, `p0_slice.py`, `effort_report.py`, `shapes_probe.py`, `precision_recall.py`, `compare_runs.py`, `render_tables.py`,
   `handcheck-verdicts.csv` (pre-pin), `handcheck-verdicts-pinned.csv` (pinned: 30 rows, all ok, re-read against the pinned files)
-- `scripts/compat-inventory/out/` (pre-pin, commit `300c2009d4`): `endpoint-inventory.csv + .json`, `server-routes.csv + .json`, `server-route-entries.json`, `server-summary.json`, `client-calls.csv + .json`,
+- `tools/compat-inventory/out/` (pre-pin, commit `300c2009d4`; **not committed**, regenerate it with `run_all.py --root <pre-pin tree> --out out`), holding `endpoint-inventory.csv + .json`, `server-routes.csv + .json`, `server-route-entries.json`, `server-summary.json`, `client-calls.csv + .json`,
   `client-refs.csv + .json`, `client-scan-stats.json`, `join-matches.csv`, `join-report.json`, `join-unmatched.json`, `effort-summary.json`, `shapes-anchors.json`,
   `precision-recall.json`, `handcheck-sample.csv`, `tables.md`, `RUN.json`, `server-warnings.txt`, `client-unresolved.json`, `layout-report.json`
-- `scripts/compat-inventory/out-pinned/` (pinned, commit `ba85d4d3d3`): the same file set, plus `delta-vs-prepin.json` (`compare_runs.py --old out --new out-pinned`, section 15)
+- `tools/compat-inventory/out-pinned/` (pinned, commit `ba85d4d3d3`): the same file set, plus `delta-vs-prepin.json` (`compare_runs.py --old out --new out-pinned`, section 15)
   and `pin-verify.json` (`verify_api_tree.py`)
 
 ## 15. Post-pin re-run (pinned `ba85d4d3d3`)
