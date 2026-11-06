@@ -46,6 +46,12 @@ expect "classify: a workflow change" 0 "rust=true" classify '.github/workflows/c
 expect "classify: a helper script change" 0 "rust=true" classify '.github/scripts/assert-gate.sh\n'
 expect "classify: an empty list fails open" 0 "rust=true" classify ''
 expect "classify: a look-alike path is not a crate" 0 "rust=false" classify 'crates-notes.md\n'
+# The lint and deny jobs read these three files, so a change to only one of them must still run the Rust jobs (issue #40):
+# classified as docs, `lint` and `deny` would be skipped and the gate would pass without running them.
+expect "classify: deny.toml" 0 "rust=true" classify 'deny.toml\n'
+expect "classify: clippy.toml" 0 "rust=true" classify 'clippy.toml\n'
+expect "classify: rustfmt.toml" 0 "rust=true" classify 'rustfmt.toml\n'
+expect "classify: a config look-alike or a nested copy is not the root config" 0 "rust=false" classify 'deny.toml.md\ndocs/clippy.toml\ndocs/src/rustfmt.toml\n'
 
 # ---- assert-gate.sh ------------------------------------------------------------------------------
 gate() { # gate <dir> <needs-json> <rust> <planned-json> <reported markers...>
@@ -74,5 +80,9 @@ CANC='{"changes":{"result":"success"},"plan":{"result":"success"},"deps":{"resul
 expect "gate: matrix cancelled" 1 "contract cancelled" gate g11 "$CANC" true "$P" "native-memory main" "worker-cf bindings"
 HERF='{"changes":{"result":"success"},"plan":{"result":"success"},"deps":{"result":"success"},"hermetic":{"result":"failure"},"contract":{"result":"success"}}'
 expect "gate: hermetic tests failed though every cell passed" 1 "hermetic failure" gate g12 "$HERF" true "$P" "native-memory main" "worker-cf bindings"
+LINTF='{"changes":{"result":"success"},"plan":{"result":"success"},"deps":{"result":"success"},"lint":{"result":"failure"},"deny":{"result":"success"},"contract":{"result":"success"}}'
+expect "gate: lint failed though every cell passed" 1 "lint failure" gate g13 "$LINTF" true "$P" "native-memory main" "worker-cf bindings"
+DENYSK='{"changes":{"result":"success"},"plan":{"result":"success"},"deps":{"result":"success"},"lint":{"result":"success"},"deny":{"result":"skipped"},"contract":{"result":"success"}}'
+expect "gate: rust changed but deny SKIPPED (vacuous)" 1 "deny skipped" gate g14 "$DENYSK" true "$P" "native-memory main" "worker-cf bindings"
 echo "passed=$pass bad=$failn"
 [ "$failn" -eq 0 ]

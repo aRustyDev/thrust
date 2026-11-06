@@ -17,8 +17,9 @@ if [ ! -s "$tmp" ]; then
 fi
 
 # Anything that can change what the Rust jobs build, test or run (.config/ holds nextest.toml, which decides
-# what the test jobs select).
-if grep -qE '^(crates/|scripts/|probes/|Cargo\.(toml|lock)$|rust-toolchain|\.cargo/|\.config/|\.github/(workflows|actions|scripts)/)' "$tmp"; then
+# what the test jobs select; deny.toml, clippy.toml and rustfmt.toml are read by the `deny` and `lint` jobs, so a change
+# to one of them alone must run those jobs, not be skipped as docs).
+if grep -qE '^(crates/|scripts/|probes/|Cargo\.(toml|lock)$|rust-toolchain|\.cargo/|\.config/|\.github/(workflows|actions|scripts)/|deny\.toml$|\.?(clippy|rustfmt)\.toml$)' "$tmp"; then
   echo "rust=true"
 else
   echo "rust=false"
