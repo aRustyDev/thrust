@@ -38,7 +38,7 @@ its base branch. Nothing calls it, so it is a tool to run by hand.
   `crates/`, `scripts/`, `probes/`, `.cargo/`, `.config/`, `.github/workflows/`, `.github/actions/` or
   `.github/scripts/`, or is `Cargo.toml`, `Cargo.lock`, `deny.toml`, `clippy.toml`, `rustfmt.toml` or a `rust-toolchain`
   file (the last three are read by the `deny` and `lint` jobs, so a change to only one of them must still run those
-  jobs `[verified 2026-11-05 26d72a2]` by the three cases in `.github/scripts/tests/test-ci-scripts.sh`). The job fails open: with no usable
+  jobs `[verified 2026-11-05 7d0074f]` by the three cases in `.github/scripts/tests/test-ci-scripts.sh`). The job fails open: with no usable
   base commit, or an empty list, it runs everything. A pull request that changes only `docs/`, `AGENTS.md`,
   `.agents/` or `tools/` runs no tests, and `gate` passes. Run on sample lists, the classifier answers `rust=false`
   for `docs/`, `AGENTS.md`, `.agents/`, `tools/` and `.github/config/`, and `rust=true` for a file under `crates/`,
@@ -60,7 +60,7 @@ its base branch. Nothing calls it, so it is a tool to run by hand.
 ## Permissions and supply chain
 
 - All 21 external action references are pinned to a full commit SHA with the version in a comment `[verified
-  2026-11-05 14f28db]`. The Rust toolchain is `stable`, not pinned, so a new clippy or rustfmt release can fail `lint`
+  2026-11-05 7d0074f]`. The Rust toolchain is `stable`, not pinned, so a new clippy or rustfmt release can fail `lint`
   with no change to the code. `cargo-nextest` is 0.9.140 and `cargo-deny` is 0.20.2, both installed by
   `taiki-e/install-action`.
 - `permissions: {}` at the top of each workflow, and `contents: read` and nothing else on each job. All 12 checkouts
