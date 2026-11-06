@@ -164,7 +164,7 @@ Subjects are shortened from the handoff's Track B table (`reviews/2026-10-19-fab
 | #52 | compat DTOs out of `thrust-contracts`; `check-deps.sh` rule | M1 | #44 | FR-20 | |
 | #53 | permanent versus transient consumer errors; DLQ for undecodable messages; `dead_letters` table | M2 | #43 | FR-21 | |
 | #54 | one `yrs` room hosted on a Durable Object and on axum | M5 | #46 | FR-05, FR-15 | |
-| #55 | the compat-inventory and spike-0004 Python scripts into `tools/` (`uv`) | M0 | | FR-15 | |
+| #55 | the compat-inventory and spike-0004 Python scripts into `tools/` (`uv`) (done on `chore/import-inventory-scripts`: `tools/compat-inventory/` and `tools/spike-0004/`, each with a provenance README) | M0 | | FR-15 | |
 | #56 | exports and seeding as queue jobs with a `jobs` table | M3 | #43 #46 | FR-05 | |
 | #57 | per-PR schema sweep owner and CI wiring for preview environments | M1 | | Q-0094.7 (FR-10) | `plane-byd.4` |
 | #58 | `/api/v1` projects, states, labels and work items with the oracle gate | M1 | #35 #36 #47 | FR-01 | |
