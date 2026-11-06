@@ -37,7 +37,11 @@ pub async fn sidebar_preferences(app: &App, scope: &WorkspaceScope) -> Result<Ve
     let defaults: Vec<SidebarPreference> = SIDEBAR_KEYS
         .iter()
         .enumerate()
-        .map(|(i, (key, pinned))| SidebarPreference { key: (*key).to_string(), is_pinned: *pinned, sort_order: 65535.0 + 10000.0 * i as f64 })
+        .map(|(i, (key, pinned))| SidebarPreference {
+            key: (*key).to_string(),
+            is_pinned: *pinned,
+            sort_order: 65535.0 + 10000.0 * i as f64,
+        })
         .collect();
     Ok(app.ports.db.ensure_sidebar_preferences(scope, &defaults, app.ports.clock.now()).await?)
 }

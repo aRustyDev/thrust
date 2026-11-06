@@ -70,9 +70,13 @@ fn a_new_members_sidebar_is_the_pins_seven_entries_with_its_pins_and_places() {
 fn a_new_members_home_page_is_the_pins_three_widgets_the_one_made_last_first() {
     let w = world();
     let rows = block_on(home_preferences(&w.app, &scope_of(&w, Actor::AdminA, Proj::A))).unwrap();
-    let got: Vec<(&str, bool, &serde_json::Value, f64)> = rows.iter().map(|r| (r.key.as_str(), r.is_enabled, &r.config, r.sort_order)).collect();
+    let got: Vec<(&str, bool, &serde_json::Value, f64)> =
+        rows.iter().map(|r| (r.key.as_str(), r.is_enabled, &r.config, r.sort_order)).collect();
     let empty = json!({});
-    assert_eq!(got, [("my_stickies", true, &empty, 997.0), ("recents", true, &empty, 998.0), ("quick_links", true, &empty, 999.0)]);
+    assert_eq!(
+        got,
+        [("my_stickies", true, &empty, 997.0), ("recents", true, &empty, 998.0), ("quick_links", true, &empty, 999.0)]
+    );
 }
 
 /// Spec: the pin's `WorkspaceUserProperties` defaults (`apps/api/plane/db/models/workspace.py`): flat filters, display filters and
@@ -94,7 +98,10 @@ fn a_new_members_list_settings_are_the_pins_defaults() {
         p.display_properties,
         json!({"display_properties": {"assignee": true, "attachment_count": true, "created_on": true, "due_date": true, "estimate": true, "key": true, "labels": true, "link": true, "priority": true, "start_date": true, "state": true, "sub_issue_count": true, "updated_on": true}})
     );
-    assert_eq!((p.rich_filters, p.navigation_project_limit, p.navigation_control_preference.as_str()), (json!({}), 10, "ACCORDION"));
+    assert_eq!(
+        (p.rich_filters, p.navigation_project_limit, p.navigation_control_preference.as_str()),
+        (json!({}), 10, "ACCORDION")
+    );
 }
 
 // --- once, and for one member of one workspace --------------------------------------------------------------------------------
@@ -193,7 +200,8 @@ fn the_project_list_is_the_scopes_workspace_with_the_callers_own_role(
         None => assert!(matches!(scope, Err(CoreError::NotFound)), "{who:?} in {proj:?}"),
         Some(role) => {
             let listed = block_on(workspace_projects(&w.app, &scope.unwrap())).unwrap();
-            let got: Vec<(ProjectId, WorkspaceId, Option<Role>)> = listed.iter().map(|l| (l.project.id, l.project.workspace_id, l.role)).collect();
+            let got: Vec<(ProjectId, WorkspaceId, Option<Role>)> =
+                listed.iter().map(|l| (l.project.id, l.project.workspace_id, l.role)).collect();
             assert_eq!(got, [(w.project(proj), w.workspace_of(proj), role)], "{who:?} in {proj:?}");
         }
     }

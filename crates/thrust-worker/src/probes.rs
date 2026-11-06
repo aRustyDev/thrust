@@ -19,7 +19,9 @@ fn admin_ok(req: &web_sys::Request, env: &Env) -> bool {
     let test_routes = matches!(text(env, "THRUST_TEST_ROUTES").as_deref(), Some("1") | Some("true") | Some("on"));
     let given = req.headers().get("x-admin-token").ok().flatten();
     match (test_routes, text(env, "THRUST_ADMIN_TOKEN"), given) {
-        (true, Some(w), Some(g)) => w.len() == g.len() && w.bytes().zip(g.bytes()).fold(0u8, |a, (x, y)| a | (x ^ y)) == 0,
+        (true, Some(w), Some(g)) => {
+            w.len() == g.len() && w.bytes().zip(g.bytes()).fold(0u8, |a, (x, y)| a | (x ^ y)) == 0
+        }
         _ => false,
     }
 }
@@ -79,10 +81,7 @@ async fn email(env: &Env) -> Result<Value> {
     let msg = worker::SendEmailBuilder::builder("noreply@example.com", "someone@example.com", "spike 0001 probe")
         .text("probe body")
         .build();
-    let res = sender
-        .send_with_builder(&msg)
-        .await
-        .map_err(|e| Error::RustError(format!("{e:?}")))?;
+    let res = sender.send_with_builder(&msg).await.map_err(|e| Error::RustError(format!("{e:?}")))?;
     Ok(json!({ "message_id_len": res.message_id().len() }))
 }
 
@@ -92,7 +91,9 @@ async fn email(env: &Env) -> Result<Value> {
 async fn email_refused(env: &Env) -> Result<Value> {
     let sender = env.send_email("EMAIL")?;
     let to = text(env, "THRUST_EMAIL_TO").ok_or_else(|| Error::RustError("THRUST_EMAIL_TO is not set".into()))?;
-    let msg = worker::SendEmailBuilder::builder("noreply@example.com", &to, "spike 0002 control: must be refused").text("must not be delivered").build();
+    let msg = worker::SendEmailBuilder::builder("noreply@example.com", &to, "spike 0002 control: must be refused")
+        .text("must not be delivered")
+        .build();
     let res = sender.send_with_builder(&msg).await.map_err(|e| Error::RustError(format!("{e:?}")))?;
     // reaching here means the binding accepted an unowned sender: report it as a failure of the control
     Ok(json!({ "accepted_unowned_sender": true, "message_id": res.message_id() }))
@@ -145,17 +146,15 @@ async fn workflow(env: &Env) -> Result<Value> {
     let params = Object::new();
     Reflect::set(&params, &"n".into(), &JsValue::from(21)).map_err(js_err)?;
     Reflect::set(&opts, &"params".into(), &params).map_err(js_err)?;
-    let instance = JsFuture::from(Promise::from(call(&binding, "create", Some(&opts)).map_err(js_err)?))
-        .await
-        .map_err(js_err)?;
+    let instance =
+        JsFuture::from(Promise::from(call(&binding, "create", Some(&opts)).map_err(js_err)?)).await.map_err(js_err)?;
     let id = Reflect::get(&instance, &"id".into()).map_err(js_err)?.as_string().unwrap_or_default();
 
     // poll status() until the instance completes (it is durable and runs in the background)
     let mut last = JsValue::UNDEFINED;
     for _ in 0..40 {
-        let st = JsFuture::from(Promise::from(call(&instance, "status", None).map_err(js_err)?))
-            .await
-            .map_err(js_err)?;
+        let st =
+            JsFuture::from(Promise::from(call(&instance, "status", None).map_err(js_err)?)).await.map_err(js_err)?;
         let status = Reflect::get(&st, &"status".into()).map_err(js_err)?.as_string().unwrap_or_default();
         last = st;
         if status == "complete" || status == "errored" || status == "terminated" {

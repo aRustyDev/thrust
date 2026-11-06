@@ -123,7 +123,8 @@ impl MockIdp {
             std::thread::Builder::new()
                 .name("mock-idp".into())
                 .spawn(move || {
-                    let rt = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build().unwrap();
+                    let rt =
+                        tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build().unwrap();
                     rt.block_on(async move {
                         let listener = tokio::net::TcpListener::bind(("127.0.0.1", port))
                             .await
@@ -166,7 +167,8 @@ impl MockIdp {
             "the browser must be sent to the provider's authorization endpoint"
         );
         let q: HashMap<String, String> = url.query_pairs().map(|(k, v)| (k.into_owned(), v.into_owned())).collect();
-        let get = |k: &str| q.get(k).unwrap_or_else(|| panic!("the authorization request has no `{k}`: {authorization_url}"));
+        let get =
+            |k: &str| q.get(k).unwrap_or_else(|| panic!("the authorization request has no `{k}`: {authorization_url}"));
         assert_eq!(get("response_type"), "code");
         assert_eq!(get("client_id"), &self.inner.client_id);
         assert_eq!(get("redirect_uri"), &self.inner.redirect_uri, "the registered redirect URI, exactly");

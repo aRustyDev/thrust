@@ -93,14 +93,26 @@ impl IssueAccess {
 }
 
 /// May the caller read the project's work items: an admin, a member or a guest of the project (`Forbidden` for anyone else).
-pub async fn issue_reader(app: &App, who: &Principal, slug: &WorkspaceSlug, project: ProjectId) -> Result<IssueAccess, IssueError> {
-    let (scope, role) = authorize_with_role(app, who, slug, project, Permission::ReadWorkItems).await.map_err(denied)?;
+pub async fn issue_reader(
+    app: &App,
+    who: &Principal,
+    slug: &WorkspaceSlug,
+    project: ProjectId,
+) -> Result<IssueAccess, IssueError> {
+    let (scope, role) =
+        authorize_with_role(app, who, slug, project, Permission::ReadWorkItems).await.map_err(denied)?;
     Ok(IssueAccess { scope, role, who: who.clone(), slug: slug.clone() })
 }
 
 /// May the caller make work items in the project: an admin or a member (`Forbidden` for a guest and for anyone else).
-pub async fn issue_writer(app: &App, who: &Principal, slug: &WorkspaceSlug, project: ProjectId) -> Result<IssueAccess, IssueError> {
-    let (scope, role) = authorize_with_role(app, who, slug, project, Permission::CreateWorkItem).await.map_err(denied)?;
+pub async fn issue_writer(
+    app: &App,
+    who: &Principal,
+    slug: &WorkspaceSlug,
+    project: ProjectId,
+) -> Result<IssueAccess, IssueError> {
+    let (scope, role) =
+        authorize_with_role(app, who, slug, project, Permission::CreateWorkItem).await.map_err(denied)?;
     Ok(IssueAccess { scope, role, who: who.clone(), slug: slug.clone() })
 }
 
@@ -135,7 +147,12 @@ pub struct IssueListQuery {
 /// Whether a guest of the project sees work items they did not make: the project's `guest_view_all_features`.
 async fn guest_sees_all(app: &App, access: &IssueAccess) -> Result<bool, CoreError> {
     let workspace = authorize_workspace(app, &access.who, &access.slug).await?;
-    Ok(app.ports.db.project_detail(&workspace, access.scope.project_id()).await?.is_some_and(|d| d.listing.project.guest_view_all_features))
+    Ok(app
+        .ports
+        .db
+        .project_detail(&workspace, access.scope.project_id())
+        .await?
+        .is_some_and(|d| d.listing.project.guest_view_all_features))
 }
 
 /// Make a work item (the caller got [`issue_writer`]'s access). What the draft names is
@@ -153,7 +170,11 @@ pub async fn create_issue(app: &App, access: &IssueAccess, draft: IssueDraft) ->
         problems.push(FieldProblem::State);
     }
     if let Some(parent) = draft.parent_id {
-        problems.push(if db.work_item_row(&scope, WorkItemId(parent)).await?.is_some() { FieldProblem::ParentNotSupported } else { FieldProblem::Parent });
+        problems.push(if db.work_item_row(&scope, WorkItemId(parent)).await?.is_some() {
+            FieldProblem::ParentNotSupported
+        } else {
+            FieldProblem::Parent
+        });
     }
     for (i, user) in draft.assignee_ids.iter().enumerate() {
         if db.user_by_id(*user).await?.is_none() {
@@ -182,7 +203,8 @@ pub async fn create_issue(app: &App, access: &IssueAccess, draft: IssueDraft) ->
     let mut assignees: Vec<UserId> = draft.assignee_ids.iter().copied().filter(|u| assignable(*u)).collect();
     if assignees.is_empty() {
         let workspace = authorize_workspace(app, &access.who, &access.slug).await?;
-        let default = db.project_detail(&workspace, scope.project_id()).await?.and_then(|d| d.listing.project.default_assignee);
+        let default =
+            db.project_detail(&workspace, scope.project_id()).await?.and_then(|d| d.listing.project.default_assignee);
         assignees.extend(default.filter(|u| assignable(*u)));
     }
     assignees.sort();
@@ -191,7 +213,10 @@ pub async fn create_issue(app: &App, access: &IssueAccess, draft: IssueDraft) ->
     labels.sort();
     labels.dedup();
 
-    let state = draft.state_id.and_then(|id| states.iter().find(|s| s.id == id)).or_else(|| states.iter().find(|s| s.is_default));
+    let state = draft
+        .state_id
+        .and_then(|id| states.iter().find(|s| s.id == id))
+        .or_else(|| states.iter().find(|s| s.is_default));
     let now = app.ports.clock.now();
     let attrs = WorkItemAttrs {
         state_id: state.map(|s| s.id),
@@ -206,7 +231,10 @@ pub async fn create_issue(app: &App, access: &IssueAccess, draft: IssueDraft) ->
         label_ids: labels,
     };
 
-    let sort_order = db.max_work_item_sort_order(&scope, attrs.state_id).await?.map_or(FIRST_SORT_ORDER, |greatest| greatest + SORT_ORDER_STEP);
+    let sort_order = db
+        .max_work_item_sort_order(&scope, attrs.state_id)
+        .await?
+        .map_or(FIRST_SORT_ORDER, |greatest| greatest + SORT_ORDER_STEP);
 
     let mut tx = db.begin(&scope).await?;
     let work = async {
@@ -262,8 +290,10 @@ pub async fn create_issue(app: &App, access: &IssueAccess, draft: IssueDraft) ->
 /// project does not show guests everything. The page is at most five statements with the caller's membership: a guest's
 /// workspace access and the project's flag, and the page (and its count when the page is empty).
 pub async fn list_issues(app: &App, access: &IssueAccess, q: IssueListQuery) -> Result<WorkItemPage, IssueError> {
-    let created_by = if access.role == Role::Guest && !guest_sees_all(app, access).await? { Some(access.who.user_id) } else { None };
-    let query = WorkItemQuery { order: q.order, limit: q.limit, page: q.page, updated_after: q.updated_after, created_by };
+    let created_by =
+        if access.role == Role::Guest && !guest_sees_all(app, access).await? { Some(access.who.user_id) } else { None };
+    let query =
+        WorkItemQuery { order: q.order, limit: q.limit, page: q.page, updated_after: q.updated_after, created_by };
     Ok(app.ports.db.work_item_page(&access.scope, &query).await?)
 }
 

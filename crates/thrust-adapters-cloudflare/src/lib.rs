@@ -180,10 +180,7 @@ impl Queue for CfQueue {
             if let Some(d) = delay {
                 b = b.delay_seconds(d.as_secs().min(86_400) as u32);
             }
-            self.0
-                .send_raw(b.build_with_content_type(worker::QueueContentType::Text))
-                .await
-                .map_err(q_err)
+            self.0.send_raw(b.build_with_content_type(worker::QueueContentType::Text)).await.map_err(q_err)
         })
         .await
     }

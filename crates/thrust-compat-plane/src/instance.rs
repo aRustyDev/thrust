@@ -93,7 +93,10 @@ fn origin(headers: &HeaderMap) -> String {
 
 /// S01. Always `is_setup_done: true`: there is no instance-admin setup step to wait for (research/0003 section 9,
 /// row 3), and a `false` would send the visitor to Plane's god-mode setup.
-pub(crate) async fn get_instance(Extension(app): Extension<App>, headers: HeaderMap) -> Result<Json<InstanceResponse>, PlaneError> {
+pub(crate) async fn get_instance(
+    Extension(app): Extension<App>,
+    headers: HeaderMap,
+) -> Result<Json<InstanceResponse>, PlaneError> {
     let now = app.ports.clock.now().to_rfc3339_opts(SecondsFormat::Micros, true);
     let origin = origin(&headers);
     let workspaces_exist = thrust_core::any_workspace_exists(&app).await?;

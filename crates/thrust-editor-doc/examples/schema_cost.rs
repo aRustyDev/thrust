@@ -12,5 +12,8 @@ fn main() {
         std::hint::black_box(Schema::new(Variant::Document));
     }
     let per = t.elapsed().as_secs_f64() * 1e6 / n as f64;
-    println!("Schema::new(Document): {per:.1} us each ({}) -- build once per isolate", if cfg!(debug_assertions) { "debug build" } else { "release build" });
+    println!(
+        "Schema::new(Document): {per:.1} us each ({}) -- build once per isolate",
+        if cfg!(debug_assertions) { "debug build" } else { "release build" }
+    );
 }

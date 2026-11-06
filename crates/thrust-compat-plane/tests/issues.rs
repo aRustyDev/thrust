@@ -113,7 +113,9 @@ fn each_row_answers_each_kind_of_caller_as_the_pins_guard_does(
         (Caller::ProjectAdmin | Caller::ProjectMember, _) => assert_eq!(status, 200, "{body}"),
         // a guest reads what they made: the page is empty, and the admin's work item is not theirs to open
         (Caller::ProjectGuest, Row::S47) => assert_eq!((status, body["results"].clone()), (200, json!([]))),
-        (Caller::ProjectGuest, Row::X01) => assert_eq!((status, body), (403, json!({"error": "You are not allowed to view this issue"}))),
+        (Caller::ProjectGuest, Row::X01) => {
+            assert_eq!((status, body), (403, json!({"error": "You are not allowed to view this issue"})))
+        }
         _ => assert_eq!((status, body), (403, by_decorator()), "{who:?} {row:?}"),
     }
 }
@@ -127,7 +129,8 @@ fn a_guest_reads_their_own_and_the_others_only_when_the_project_shows_them(#[val
     let others = make(&c, Caller::ProjectMember, json!({"name": "a member's"}));
     let own = seed_item_by(&c, Caller::ProjectGuest, "the guest's");
     let page = c.call(Caller::ProjectGuest, "GET", &issues_path(), Value::Null);
-    let ids: Vec<&str> = page["body"]["results"].as_array().unwrap().iter().map(|r| r["id"].as_str().unwrap()).collect();
+    let ids: Vec<&str> =
+        page["body"]["results"].as_array().unwrap().iter().map(|r| r["id"].as_str().unwrap()).collect();
     assert_eq!(ids.len(), if shows_all { 2 } else { 1 });
     assert!(ids.contains(&own.as_str()));
     assert_eq!(page["body"]["total_count"], ids.len());
@@ -136,7 +139,10 @@ fn a_guest_reads_their_own_and_the_others_only_when_the_project_shows_them(#[val
     assert_eq!(theirs["status"], if shows_all { 200 } else { 403 }, "{theirs}");
     // a work item that is not there is a 404 to them as to anyone
     let gone = c.call(Caller::ProjectGuest, "GET", &issue_path("00000000-0000-4000-8000-000000000bad"), Value::Null);
-    assert_eq!((gone["status"].clone(), gone["body"].clone()), (json!(404), json!({"error": "The required object does not exist."})));
+    assert_eq!(
+        (gone["status"].clone(), gone["body"].clone()),
+        (json!(404), json!({"error": "The required object does not exist."}))
+    );
 }
 
 // --- making one ----------------------------------------------------------------------------------------------------------------
@@ -294,13 +300,22 @@ fn what_the_pin_sets_itself_is_ignored_and_what_has_nothing_behind_it_is_refused
     });
     let r = c.call(Caller::ProjectMember, "POST", &issues_path(), body);
     assert_eq!(r["status"], 201, "{r}");
-    assert_eq!((r["body"]["sequence_id"].clone(), r["body"]["sort_order"].clone(), r["body"]["is_draft"].clone()), (json!(1), json!(65535.0), json!(false)));
-    assert_eq!((r["body"]["completed_at"].clone(), r["body"]["archived_at"].clone(), r["body"]["cycle_id"].clone()), (Value::Null, Value::Null, Value::Null));
+    assert_eq!(
+        (r["body"]["sequence_id"].clone(), r["body"]["sort_order"].clone(), r["body"]["is_draft"].clone()),
+        (json!(1), json!(65535.0), json!(false))
+    );
+    assert_eq!(
+        (r["body"]["completed_at"].clone(), r["body"]["archived_at"].clone(), r["body"]["cycle_id"].clone()),
+        (Value::Null, Value::Null, Value::Null)
+    );
     assert_ne!(r["body"]["created_by"], json!(nobody));
     // a parent that is a work item is told as not supported yet, in Thrust's words; one that is none is as DRF says
     let parent = r["body"]["id"].as_str().unwrap();
     let r = c.call(Caller::ProjectMember, "POST", &issues_path(), with("parent_id", json!(parent)));
-    assert_eq!((r["status"].clone(), r["body"].clone()), (json!(400), json!({"parent_id": ["Sub-work items are not supported yet."]})));
+    assert_eq!(
+        (r["status"].clone(), r["body"].clone()),
+        (json!(400), json!({"parent_id": ["Sub-work items are not supported yet."]}))
+    );
     let r = c.call(Caller::ProjectMember, "POST", &issues_path(), with("parent_id", json!(nobody)));
     assert_eq!(r["body"], json!({"parent_id": [format!("Invalid pk \"{nobody}\" - object does not exist.")]}));
     let r = c.call(Caller::ProjectMember, "POST", &issues_path(), with("estimate_point", json!(nobody)));
@@ -312,7 +327,9 @@ fn what_the_pin_sets_itself_is_ignored_and_what_has_nothing_behind_it_is_refused
 #[test]
 fn places_run_in_steps_of_ten_thousand_within_a_state() {
     let c = cast();
-    let place = |c: &Cast, body: Value| c.call(Caller::ProjectMember, "POST", &issues_path(), body)["body"]["sort_order"].clone();
+    let place = |c: &Cast, body: Value| {
+        c.call(Caller::ProjectMember, "POST", &issues_path(), body)["body"]["sort_order"].clone()
+    };
     // the cast's project has one state besides the intake one, so a second is added for the test
     seed(
         &c.db,
@@ -366,7 +383,10 @@ fn a_date_at_the_edge_is_read_as_python_reads_it(#[case] text: &str, #[case] acc
     let r = c.call(Caller::ProjectMember, "POST", &issues_path(), with("start_date", json!(text)));
     assert_eq!(r["status"] == 201, accepted, "{text}: {r}");
     if !accepted {
-        assert_eq!(r["body"], json!({"start_date": ["Date has wrong format. Use one of these formats instead: YYYY-MM-DD."]}));
+        assert_eq!(
+            r["body"],
+            json!({"start_date": ["Date has wrong format. Use one of these formats instead: YYYY-MM-DD."]})
+        );
     }
 }
 
@@ -384,7 +404,11 @@ fn a_date_at_the_edge_is_read_as_python_reads_it(#[case] text: &str, #[case] acc
 #[case::words("many", 400, Some("Invalid per_page parameter."))]
 #[case::zero("0", 400, Some("Invalid per_page parameter."))]
 #[case::negative("-1", 400, Some("Invalid per_page parameter."))]
-fn a_page_size_is_a_whole_number_from_one_to_the_cap(#[case] size: &str, #[case] status: u64, #[case] message: Option<&str>) {
+fn a_page_size_is_a_whole_number_from_one_to_the_cap(
+    #[case] size: &str,
+    #[case] status: u64,
+    #[case] message: Option<&str>,
+) {
     let c = cast();
     make(&c, Caller::ProjectMember, json!({"name": "w"}));
     let r = c.call(Caller::ProjectAdmin, "GET", &format!("{}?per_page={size}", issues_path()), Value::Null);
@@ -458,7 +482,11 @@ proptest! {
 #[case::filters_that_are_no_json("filters=nonsense", 400, json!({"message": "Invalid JSON for 'filter'. Expected a valid JSON object.", "code": "invalid_json"}))]
 #[case::the_apps_own_parameters("sub_issue=false&layout=list&filters=%7B%7D&order_by=-created_at", 200, Value::Null)]
 #[case::empty_values("priority=&group_by=&filters=", 200, Value::Null)]
-fn what_a_list_does_not_answer_is_refused_in_its_own_words(#[case] query: &str, #[case] status: u64, #[case] body: Value) {
+fn what_a_list_does_not_answer_is_refused_in_its_own_words(
+    #[case] query: &str,
+    #[case] status: u64,
+    #[case] body: Value,
+) {
     let c = cast();
     let r = c.call(Caller::ProjectAdmin, "GET", &format!("{}?{query}", issues_path()), Value::Null);
     assert_eq!(r["status"], status, "{r}");
@@ -479,7 +507,10 @@ fn updated_at_gt_keeps_what_changed_after_it() {
     assert_eq!(count("updated_at__gt=2001-01-01T00:00:00Z")["body"]["count"], 1);
     assert_eq!(count("updated_at__gt=2001-01-01%2000:00:00")["body"]["count"], 1);
     let bad = count("updated_at__gt=nonsense");
-    assert_eq!((bad["status"].clone(), bad["body"].clone()), (json!(400), json!({"error": "Please provide valid detail"})));
+    assert_eq!(
+        (bad["status"].clone(), bad["body"].clone()),
+        (json!(400), json!({"error": "Please provide valid detail"}))
+    );
 }
 
 // --- opening one ---------------------------------------------------------------------------------------------------------------
@@ -494,7 +525,13 @@ fn what_the_app_asks_to_expand_is_added_as_nothing() {
     for key in ["issue_reactions", "issue_attachments", "issue_link", "parent"] {
         assert!(plain.get(key).is_none(), "{key}");
     }
-    let expanded = c.call(Caller::ProjectMember, "GET", &format!("{}?expand=issue_reactions,issue_attachments,issue_link,parent,nonsense", issue_path(&id)), Value::Null)["body"].clone();
+    let expanded = c.call(
+        Caller::ProjectMember,
+        "GET",
+        &format!("{}?expand=issue_reactions,issue_attachments,issue_link,parent,nonsense", issue_path(&id)),
+        Value::Null,
+    )["body"]
+        .clone();
     for key in ["issue_reactions", "issue_attachments", "issue_link"] {
         assert_eq!(expanded[key], json!([]), "{key}");
     }
@@ -506,7 +543,11 @@ fn what_the_app_asks_to_expand_is_added_as_nothing() {
     }
     assert_eq!(Value::Object(without), plain, "the expansion adds keys and changes none");
     // and the detail has the description and the subscription that the list's rows lack, and no state group
-    assert!(plain.get("description_html").is_some() && plain.get("is_subscribed").is_some() && plain.get("state__group").is_none());
+    assert!(
+        plain.get("description_html").is_some()
+            && plain.get("is_subscribed").is_some()
+            && plain.get("state__group").is_none()
+    );
 }
 
 /// Spec: an id in the path that is no id is Django's 404 for a path no route has; one that is an id and no work item is the view's.
@@ -514,7 +555,14 @@ fn what_the_app_asks_to_expand_is_added_as_nothing() {
 fn an_id_that_is_no_work_item_is_a_404() {
     let c = cast();
     let not_an_id = c.call(Caller::ProjectMember, "GET", &issue_path("nope"), Value::Null);
-    assert_eq!((not_an_id["status"].clone(), not_an_id["body"].clone()), (json!(404), json!({"error": "Page not found."})));
-    let missing = c.call(Caller::ProjectMember, "GET", &issue_path("00000000-0000-4000-8000-000000000bad"), Value::Null);
-    assert_eq!((missing["status"].clone(), missing["body"].clone()), (json!(404), json!({"error": "The required object does not exist."})));
+    assert_eq!(
+        (not_an_id["status"].clone(), not_an_id["body"].clone()),
+        (json!(404), json!({"error": "Page not found."}))
+    );
+    let missing =
+        c.call(Caller::ProjectMember, "GET", &issue_path("00000000-0000-4000-8000-000000000bad"), Value::Null);
+    assert_eq!(
+        (missing["status"].clone(), missing["body"].clone()),
+        (json!(404), json!({"error": "The required object does not exist."}))
+    );
 }

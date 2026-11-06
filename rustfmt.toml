@@ -1,0 +1,4 @@
+# The workspace is formatted with stable rustfmt only (`scripts/rs cargo fmt --all`). The code was hand-wrapped to about
+# 120 columns, so the width is 120 and short expressions (struct literals, call arguments) stay on one line up to that width.
+max_width = 120
+use_small_heuristics = "Max"

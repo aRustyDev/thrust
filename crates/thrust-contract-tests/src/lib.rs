@@ -20,11 +20,7 @@ impl Target {
     pub fn from_env() -> Target {
         let base = std::env::var("THRUST_BASE_URL").expect("THRUST_BASE_URL must be set (see scripts/contract.sh)");
         let admin_token = std::env::var("THRUST_ADMIN_TOKEN").expect("THRUST_ADMIN_TOKEN must be set");
-        let http = reqwest::Client::builder()
-            .timeout(Duration::from_secs(30))
-            .no_proxy()
-            .build()
-            .unwrap();
+        let http = reqwest::Client::builder().timeout(Duration::from_secs(30)).no_proxy().build().unwrap();
         Target { base: base.trim_end_matches('/').to_string(), admin_token, http }
     }
 
@@ -52,13 +48,7 @@ impl Target {
     }
 
     pub async fn admin_post(&self, path: &str, body: &Value) -> reqwest::Response {
-        self.http
-            .post(self.url(path))
-            .header("x-admin-token", &self.admin_token)
-            .json(body)
-            .send()
-            .await
-            .unwrap()
+        self.http.post(self.url(path)).header("x-admin-token", &self.admin_token).json(body).send().await.unwrap()
     }
 
     pub async fn admin_get(&self, path: &str) -> reqwest::Response {
@@ -102,11 +92,21 @@ pub struct User {
 impl User {
     fn new() -> User {
         let n = uid().simple();
-        User { id: UserId(uid()), token: format!("tok-{}", uid().simple()), email: format!("user-{n}@example.test"), password: format!("pw-{}", uid().simple()) }
+        User {
+            id: UserId(uid()),
+            token: format!("tok-{}", uid().simple()),
+            email: format!("user-{n}@example.test"),
+            password: format!("pw-{}", uid().simple()),
+        }
     }
 
     fn login(&self) -> SeedLogin {
-        SeedLogin { user_id: self.id, email: self.email.clone(), password: Some(self.password.clone()), is_active: true }
+        SeedLogin {
+            user_id: self.id,
+            email: self.email.clone(),
+            password: Some(self.password.clone()),
+            is_active: true,
+        }
     }
 }
 
@@ -324,13 +324,7 @@ pub fn wi_path(at: &At) -> String {
 }
 
 pub async fn create(t: &Target, who: &User, at: &At, body: Value) -> reqwest::Response {
-    t.http
-        .post(t.url(&wi_path(at)))
-        .bearer_auth(&who.token)
-        .json(&body)
-        .send()
-        .await
-        .unwrap()
+    t.http.post(t.url(&wi_path(at))).bearer_auth(&who.token).json(&body).send().await.unwrap()
 }
 
 pub async fn create_ok(t: &Target, who: &User, at: &At, name: &str) -> WorkItem {
@@ -362,7 +356,10 @@ pub async fn seed_work_items(
         workspace_id,
         project_id: at.project,
         created_by,
-        items: items.iter().map(|(name, description)| SeedWorkItemSpec { name: name.clone(), description: description.clone() }).collect(),
+        items: items
+            .iter()
+            .map(|(name, description)| SeedWorkItemSpec { name: name.clone(), description: description.clone() })
+            .collect(),
     };
     let r = t.admin_post("/internal/seed-work-items", &serde_json::to_value(&req).unwrap()).await;
     assert_eq!(r.status(), 200, "seed-work-items failed: {:?}", r.text().await);
@@ -378,13 +375,8 @@ pub async fn list(t: &Target, who: &User, at: &At, scope: Option<&str>) -> reqwe
 }
 
 pub async fn activity(t: &Target, who: &User, at: &At, item: WorkItemId) -> Vec<Activity> {
-    let r = t
-        .http
-        .get(t.url(&format!("{}/{}/activity", wi_path(at), item)))
-        .bearer_auth(&who.token)
-        .send()
-        .await
-        .unwrap();
+    let r =
+        t.http.get(t.url(&format!("{}/{}/activity", wi_path(at), item))).bearer_auth(&who.token).send().await.unwrap();
     assert_eq!(r.status(), 200, "activity");
     r.json::<Vec<Activity>>().await.unwrap()
 }

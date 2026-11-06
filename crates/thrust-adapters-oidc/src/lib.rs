@@ -48,7 +48,8 @@ impl OpenIdProvider {
 
     /// Fetch the provider's discovery document and key set.
     async fn metadata(&self) -> Result<CoreProviderMetadata, OidcError> {
-        let issuer = IssuerUrl::new(self.cfg.issuer.clone()).map_err(|e| OidcError::Provider(format!("issuer: {e}")))?;
+        let issuer =
+            IssuerUrl::new(self.cfg.issuer.clone()).map_err(|e| OidcError::Provider(format!("issuer: {e}")))?;
         CoreProviderMetadata::discover_async(issuer, &self.http)
             .await
             .map_err(|e| OidcError::Provider(format!("discovery: {e}")))
@@ -76,11 +77,7 @@ impl OidcProvider for OpenIdProvider {
         let (state, nonce) = (CsrfToken::new(state.to_string()), Nonce::new(nonce.to_string()));
         let challenge = PkceCodeChallenge::from_code_verifier_sha256(&PkceCodeVerifier::new(code_verifier.to_string()));
         let (url, _, _) = client
-            .authorize_url(
-                AuthenticationFlow::<CoreResponseType>::AuthorizationCode,
-                move || state,
-                move || nonce,
-            )
+            .authorize_url(AuthenticationFlow::<CoreResponseType>::AuthorizationCode, move || state, move || nonce)
             .add_scope(Scope::new("email".to_string()))
             .add_scope(Scope::new("profile".to_string()))
             .set_pkce_challenge(challenge)

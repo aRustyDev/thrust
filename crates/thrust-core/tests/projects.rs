@@ -32,7 +32,9 @@ fn made(w: &World, who: Actor, role: Role, p: ProjectPatch) -> Result<ProjectDet
 
 /// Spec: Plane makes a project for an admin or a member of the workspace, and not for a guest.
 #[rstest]
-fn only_an_admin_or_a_member_of_the_workspace_makes_a_project(#[values(Role::Guest, Role::Member, Role::Admin)] role: Role) {
+fn only_an_admin_or_a_member_of_the_workspace_makes_a_project(
+    #[values(Role::Guest, Role::Member, Role::Admin)] role: Role,
+) {
     let w = world();
     let got = made(&w, Actor::OutsiderA, role, patch("New", "NEW"));
     match role {
@@ -40,7 +42,9 @@ fn only_an_admin_or_a_member_of_the_workspace_makes_a_project(#[values(Role::Gue
         _ => assert!(got.is_ok(), "{got:?}"),
     }
     // a refusal writes nothing
-    let clashes = block_on(project_clashes(&w.app, &wscope(&w, Actor::OutsiderA, Role::Admin), Some("New"), Some("NEW"), None)).unwrap();
+    let clashes =
+        block_on(project_clashes(&w.app, &wscope(&w, Actor::OutsiderA, Role::Admin), Some("New"), Some("NEW"), None))
+            .unwrap();
     assert_eq!((clashes.name, clashes.identifier), (role != Role::Guest, role != Role::Guest));
 }
 
@@ -52,15 +56,28 @@ fn a_new_project_has_its_creator_and_lead_as_admins_the_pins_states_and_each_per
     let w = world();
     let lead = w.principal(Actor::MemberA).user_id;
     let creator = w.principal(Actor::OutsiderA).user_id;
-    let d = made(&w, Actor::OutsiderA, Role::Member, ProjectPatch { project_lead: Some(Some(lead)), ..patch("New", "NEW") }).unwrap();
+    let d = made(
+        &w,
+        Actor::OutsiderA,
+        Role::Member,
+        ProjectPatch { project_lead: Some(Some(lead)), ..patch("New", "NEW") },
+    )
+    .unwrap();
     assert_eq!((d.listing.role, d.listing.sort_order), (Some(Role::Admin), Some(65535.0)));
     assert_eq!(d.members, vec![lead, creator], "the lead's row is the newer");
-    assert_eq!((d.listing.project.created_by, d.listing.project.project_lead, d.next_sequence), (Some(creator), Some(lead), 1));
+    assert_eq!(
+        (d.listing.project.created_by, d.listing.project.project_lead, d.next_sequence),
+        (Some(creator), Some(lead), 1)
+    );
     let id = d.listing.project.id;
-    let scope = block_on(authorize(&w.app, &w.principal(Actor::OutsiderA), &w.slug_a, id, Permission::ReadProject)).unwrap();
+    let scope =
+        block_on(authorize(&w.app, &w.principal(Actor::OutsiderA), &w.slug_a, id, Permission::ReadProject)).unwrap();
 
-    let states: Vec<(String, String, f64, StateGroup, bool)> =
-        block_on(project_states(&w.app, &scope)).unwrap().into_iter().map(|s| (s.name, s.color, s.sequence, s.group, s.is_default)).collect();
+    let states: Vec<(String, String, f64, StateGroup, bool)> = block_on(project_states(&w.app, &scope))
+        .unwrap()
+        .into_iter()
+        .map(|s| (s.name, s.color, s.sequence, s.group, s.is_default))
+        .collect();
     let spec = [
         ("Backlog", "#60646C", 15000.0, StateGroup::Backlog, true),
         ("Todo", "#60646C", 25000.0, StateGroup::Unstarted, false),
@@ -70,7 +87,10 @@ fn a_new_project_has_its_creator_and_lead_as_admins_the_pins_states_and_each_per
     ];
     assert_eq!(states, spec.map(|(n, c, s, g, d)| (n.to_string(), c.to_string(), s, g, d)));
     let triage = block_on(intake_state(&w.app, &scope)).unwrap();
-    assert_eq!((triage.name.as_str(), triage.color.as_str(), triage.sequence, triage.group), ("Triage", "#4E5355", 65000.0, StateGroup::Triage));
+    assert_eq!(
+        (triage.name.as_str(), triage.color.as_str(), triage.sequence, triage.group),
+        ("Triage", "#4E5355", 65000.0, StateGroup::Triage)
+    );
 
     // the creator's settings are there from the start, with the pin's defaults; the lead's are theirs
     let props = block_on(project_properties(&w.app, &scope)).unwrap();
@@ -78,7 +98,10 @@ fn a_new_project_has_its_creator_and_lead_as_admins_the_pins_states_and_each_per
     assert_eq!(props.display_filters["layout"], "list");
     assert_eq!(props.preferences["navigation"]["default_tab"], "work_items");
     let members = block_on(project_members(&w.app, &scope)).unwrap();
-    assert_eq!(members.iter().map(|m| (m.user_id, m.role)).collect::<Vec<_>>(), vec![(lead, Role::Admin), (creator, Role::Admin)]);
+    assert_eq!(
+        members.iter().map(|m| (m.user_id, m.role)).collect::<Vec<_>>(),
+        vec![(lead, Role::Admin), (creator, Role::Admin)]
+    );
 }
 
 /// The lead who is the creator is one member, not two.
@@ -86,7 +109,9 @@ fn a_new_project_has_its_creator_and_lead_as_admins_the_pins_states_and_each_per
 fn a_lead_who_is_the_creator_is_one_member() {
     let w = world();
     let me = w.principal(Actor::OutsiderA).user_id;
-    let d = made(&w, Actor::OutsiderA, Role::Member, ProjectPatch { project_lead: Some(Some(me)), ..patch("New", "NEW") }).unwrap();
+    let d =
+        made(&w, Actor::OutsiderA, Role::Member, ProjectPatch { project_lead: Some(Some(me)), ..patch("New", "NEW") })
+            .unwrap();
     assert_eq!(d.members, vec![me]);
 }
 
@@ -108,13 +133,22 @@ fn a_name_and_a_key_that_are_taken_are_a_conflict_and_a_project_in_another_works
 /// The pin's `FORBIDDEN_IDENTIFIER_CHARS_PATTERN` characters, each one, in a name and in a key.
 #[rstest]
 fn each_forbidden_character_refuses_a_name_and_a_key(
-    #[values('&', '+', ',', ':', ';', '$', '^', '}', '{', '*', '=', '?', '@', '#', '|', '\'', '<', '>', '.', '(', ')', '%', '!', '-')] c: char,
+    #[values(
+        '&', '+', ',', ':', ';', '$', '^', '}', '{', '*', '=', '?', '@', '#', '|', '\'', '<', '>', '.', '(', ')', '%',
+        '!', '-'
+    )]
+    c: char,
     #[values(true, false)] in_name: bool,
 ) {
     let w = world();
-    let (name, key) = if in_name { (format!("a{c}b"), "OK".to_string()) } else { ("Fine".to_string(), format!("A{c}B")) };
+    let (name, key) =
+        if in_name { (format!("a{c}b"), "OK".to_string()) } else { ("Fine".to_string(), format!("A{c}B")) };
     let got = made(&w, Actor::OutsiderA, Role::Member, patch(&name, &key));
-    assert!(matches!(got, Err(ProjectError::Core(CoreError::Invalid(_)))), "{c:?} in {}: {got:?}", if in_name { "the name" } else { "the key" });
+    assert!(
+        matches!(got, Err(ProjectError::Core(CoreError::Invalid(_)))),
+        "{c:?} in {}: {got:?}",
+        if in_name { "the name" } else { "the key" }
+    );
 }
 
 proptest! {
@@ -181,20 +215,42 @@ fn a_project_must_satisfy_the_pins_other_rules(#[case] p: ProjectPatch, #[case] 
 fn a_lead_must_be_a_user() {
     let w = world();
     let nobody = UserId(Uuid::from_u128(0xDEAD));
-    let got = made(&w, Actor::OutsiderA, Role::Member, ProjectPatch { project_lead: Some(Some(nobody)), ..patch("New", "NEW") });
+    let got = made(
+        &w,
+        Actor::OutsiderA,
+        Role::Member,
+        ProjectPatch { project_lead: Some(Some(nobody)), ..patch("New", "NEW") },
+    );
     assert!(matches!(got, Err(ProjectError::Core(CoreError::Invalid(_)))), "{got:?}");
-    let got = made(&w, Actor::OutsiderA, Role::Member, ProjectPatch { default_assignee: Some(Some(nobody)), ..patch("New", "NEW") });
+    let got = made(
+        &w,
+        Actor::OutsiderA,
+        Role::Member,
+        ProjectPatch { default_assignee: Some(Some(nobody)), ..patch("New", "NEW") },
+    );
     assert!(matches!(got, Err(ProjectError::Core(CoreError::Invalid(_)))), "{got:?}");
-    assert!(block_on(project_clashes(&w.app, &wscope(&w, Actor::OutsiderA, Role::Admin), Some("New"), None, None)).unwrap().name == false);
+    assert!(
+        block_on(project_clashes(&w.app, &wscope(&w, Actor::OutsiderA, Role::Admin), Some("New"), None, None))
+            .unwrap()
+            .name
+            == false
+    );
 }
 
 /// Deviation D-026: the pin lets any user lead a project, Thrust's project members are workspace members, so a lead who is not an
 /// active member of the project's workspace is refused (`Invalid`) and nothing is written. Every actor of the world is named lead
 /// once: the members of workspace A are accepted, and so is the creator; the member of workspace B only is not.
 #[rstest]
-fn a_lead_must_be_a_member_of_the_workspace(#[values(Actor::AdminA, Actor::MemberA, Actor::GuestA, Actor::OutsiderA, Actor::MemberB, Actor::Dual)] lead: Actor) {
+fn a_lead_must_be_a_member_of_the_workspace(
+    #[values(Actor::AdminA, Actor::MemberA, Actor::GuestA, Actor::OutsiderA, Actor::MemberB, Actor::Dual)] lead: Actor,
+) {
     let w = world();
-    let got = made(&w, Actor::OutsiderA, Role::Member, ProjectPatch { project_lead: Some(Some(w.principal(lead).user_id)), ..patch("New", "NEW") });
+    let got = made(
+        &w,
+        Actor::OutsiderA,
+        Role::Member,
+        ProjectPatch { project_lead: Some(Some(w.principal(lead).user_id)), ..patch("New", "NEW") },
+    );
     if lead == Actor::MemberB {
         assert!(matches!(got, Err(ProjectError::Core(CoreError::Invalid(_)))), "{got:?}");
         let admin = wscope(&w, Actor::AdminA, Role::Admin);
@@ -211,7 +267,12 @@ fn a_lead_who_has_left_the_workspace_is_refused() {
     let w = world();
     let gone = w.principal(Actor::MemberA).user_id;
     assert!(block_on(w.app.ports.db.set_workspace_member_active(&SystemScope::mint(), w.ws_a, gone, false)).unwrap());
-    let got = made(&w, Actor::OutsiderA, Role::Member, ProjectPatch { project_lead: Some(Some(gone)), ..patch("New", "NEW") });
+    let got = made(
+        &w,
+        Actor::OutsiderA,
+        Role::Member,
+        ProjectPatch { project_lead: Some(Some(gone)), ..patch("New", "NEW") },
+    );
     assert!(matches!(got, Err(ProjectError::Core(CoreError::Invalid(_)))), "{got:?}");
 }
 
@@ -222,18 +283,41 @@ fn a_change_that_names_a_lead_outside_the_workspace_is_refused_and_one_that_name
     let w = world();
     let admin = wscope(&w, Actor::AdminA, Role::Admin);
     let stranger = w.principal(Actor::MemberB).user_id;
-    let got = block_on(update_project(&w.app, &admin, w.project_a, ProjectPatch { project_lead: Some(Some(stranger)), ..ProjectPatch::default() }));
+    let got = block_on(update_project(
+        &w.app,
+        &admin,
+        w.project_a,
+        ProjectPatch { project_lead: Some(Some(stranger)), ..ProjectPatch::default() },
+    ));
     assert!(matches!(got, Err(ProjectError::Core(CoreError::Invalid(_)))), "{got:?}");
     let kept = block_on(open_project(&w.app, &admin, w.project_a)).unwrap();
     assert_eq!(kept.listing.project.project_lead, None);
     let member = w.principal(Actor::MemberA).user_id;
-    let got = block_on(update_project(&w.app, &admin, w.project_a, ProjectPatch { project_lead: Some(Some(member)), ..ProjectPatch::default() })).unwrap();
+    let got = block_on(update_project(
+        &w.app,
+        &admin,
+        w.project_a,
+        ProjectPatch { project_lead: Some(Some(member)), ..ProjectPatch::default() },
+    ))
+    .unwrap();
     assert_eq!(got.listing.project.project_lead, Some(member));
-    let got = block_on(update_project(&w.app, &admin, w.project_a, ProjectPatch { description: Some("x".into()), ..ProjectPatch::default() })).unwrap();
+    let got = block_on(update_project(
+        &w.app,
+        &admin,
+        w.project_a,
+        ProjectPatch { description: Some("x".into()), ..ProjectPatch::default() },
+    ))
+    .unwrap();
     assert_eq!(got.listing.project.project_lead, Some(member));
     // the lead leaves the workspace: a change that names no lead still goes through, and the project keeps its lead
     assert!(block_on(w.app.ports.db.set_workspace_member_active(&SystemScope::mint(), w.ws_a, member, false)).unwrap());
-    let got = block_on(update_project(&w.app, &admin, w.project_a, ProjectPatch { description: Some("y".into()), ..ProjectPatch::default() })).unwrap();
+    let got = block_on(update_project(
+        &w.app,
+        &admin,
+        w.project_a,
+        ProjectPatch { description: Some("y".into()), ..ProjectPatch::default() },
+    ))
+    .unwrap();
     assert_eq!((got.listing.project.description.as_str(), got.listing.project.project_lead), ("y", Some(member)));
 }
 
@@ -257,14 +341,32 @@ fn anyone_is_asked_whether_they_are_an_active_member_of_the_workspace(
 /// A project's logo is an object (the column holds one, which the pin does not require): the core refuses anything else, whoever
 /// asks, on a creation and on a change.
 #[rstest]
-fn a_logo_that_is_not_an_object_is_invalid(#[values(serde_json::json!("x"), serde_json::json!([1]), serde_json::json!(5), serde_json::json!(null))] logo: serde_json::Value) {
+fn a_logo_that_is_not_an_object_is_invalid(
+    #[values(serde_json::json!("x"), serde_json::json!([1]), serde_json::json!(5), serde_json::json!(null))]
+    logo: serde_json::Value,
+) {
     let w = world();
-    let got = made(&w, Actor::OutsiderA, Role::Member, ProjectPatch { logo_props: Some(logo.clone()), ..patch("New", "NEW") });
+    let got = made(
+        &w,
+        Actor::OutsiderA,
+        Role::Member,
+        ProjectPatch { logo_props: Some(logo.clone()), ..patch("New", "NEW") },
+    );
     assert!(matches!(got, Err(ProjectError::Core(CoreError::Invalid(_)))), "{logo}: {got:?}");
     let admin = wscope(&w, Actor::AdminA, Role::Admin);
-    let got = block_on(update_project(&w.app, &admin, w.project_a, ProjectPatch { logo_props: Some(logo.clone()), ..ProjectPatch::default() }));
+    let got = block_on(update_project(
+        &w.app,
+        &admin,
+        w.project_a,
+        ProjectPatch { logo_props: Some(logo.clone()), ..ProjectPatch::default() },
+    ));
     assert!(matches!(got, Err(ProjectError::Core(CoreError::Invalid(_)))), "{logo}: {got:?}");
-    let ok = made(&w, Actor::OutsiderA, Role::Member, ProjectPatch { logo_props: Some(serde_json::json!({"in_use": "emoji"})), ..patch("Fine", "FIN") });
+    let ok = made(
+        &w,
+        Actor::OutsiderA,
+        Role::Member,
+        ProjectPatch { logo_props: Some(serde_json::json!({"in_use": "emoji"})), ..patch("Fine", "FIN") },
+    );
     assert_eq!(ok.unwrap().listing.project.logo_props, serde_json::json!({"in_use": "emoji"}));
 }
 
@@ -276,7 +378,12 @@ fn the_workspaces_states_are_those_of_the_projects_the_caller_is_in() {
     let d = made(&w, Actor::OutsiderA, Role::Member, patch("New", "NEW")).unwrap();
     let id = d.listing.project.id;
     let of = |who: Actor| -> Vec<String> {
-        block_on(workspace_states(&w.app, &wscope(&w, who, Role::Member))).unwrap().into_iter().filter(|s| s.project_id == id).map(|s| s.name).collect()
+        block_on(workspace_states(&w.app, &wscope(&w, who, Role::Member)))
+            .unwrap()
+            .into_iter()
+            .filter(|s| s.project_id == id)
+            .map(|s| s.name)
+            .collect()
     };
     assert_eq!(of(Actor::OutsiderA), ["Backlog", "Todo", "In Progress", "Done", "Cancelled"]);
     assert!(of(Actor::MemberA).is_empty());
@@ -295,8 +402,14 @@ fn a_projects_labels_are_listed_by_sort_order() {
         parent_id: None,
         sort_order,
     };
-    block_on(w.app.ports.db.seed(&SystemScope::mint(), &SeedFixture { labels: vec![label(1, "later", 20.0), label(2, "first", 10.0)], ..SeedFixture::default() })).unwrap();
-    let scope = block_on(authorize(&w.app, &w.principal(Actor::AdminA), &w.slug_a, w.project_a, Permission::ReadProject)).unwrap();
+    block_on(w.app.ports.db.seed(
+        &SystemScope::mint(),
+        &SeedFixture { labels: vec![label(1, "later", 20.0), label(2, "first", 10.0)], ..SeedFixture::default() },
+    ))
+    .unwrap();
+    let scope =
+        block_on(authorize(&w.app, &w.principal(Actor::AdminA), &w.slug_a, w.project_a, Permission::ReadProject))
+            .unwrap();
     let names: Vec<String> = block_on(project_labels(&w.app, &scope)).unwrap().into_iter().map(|l| l.name).collect();
     assert_eq!(names, ["first", "later"]);
 }
@@ -313,7 +426,12 @@ fn who_may_change_a_project(
     let w = world();
     let project_admin = who == Actor::AdminA;
     let allowed = role == Role::Admin || project_admin;
-    let got = block_on(update_project(&w.app, &wscope(&w, who, role), w.project_a, ProjectPatch { description: Some("changed".into()), ..ProjectPatch::default() }));
+    let got = block_on(update_project(
+        &w.app,
+        &wscope(&w, who, role),
+        w.project_a,
+        ProjectPatch { description: Some("changed".into()), ..ProjectPatch::default() },
+    ));
     match (allowed, &got) {
         (true, Ok(d)) => assert_eq!(d.listing.project.description, "changed"),
         (false, Err(ProjectError::Forbidden)) => {}
@@ -328,7 +446,12 @@ fn who_may_change_a_project(
 #[rstest]
 fn a_project_that_is_not_there_cannot_be_changed(#[values(Role::Guest, Role::Member, Role::Admin)] role: Role) {
     let w = world();
-    let got = block_on(update_project(&w.app, &wscope(&w, Actor::AdminA, role), ProjectId(Uuid::from_u128(0xBAD)), ProjectPatch::default()));
+    let got = block_on(update_project(
+        &w.app,
+        &wscope(&w, Actor::AdminA, role),
+        ProjectId(Uuid::from_u128(0xBAD)),
+        ProjectPatch::default(),
+    ));
     match role {
         Role::Admin => assert!(matches!(got, Err(ProjectError::NotFound)), "{got:?}"),
         _ => assert!(matches!(got, Err(ProjectError::Forbidden)), "{got:?}"),
@@ -342,22 +465,43 @@ fn a_change_sets_what_it_names_saves_who_and_when_and_refuses_an_archived_projec
     let w = world();
     let admin = wscope(&w, Actor::AdminA, Role::Admin);
     let before = block_on(open_project(&w.app, &admin, w.project_a)).unwrap().listing.project;
-    let p = ProjectPatch { name: Some("Renamed".into()), network: Some(ProjectNetwork::Secret), page_view: Some(false), emoji: Some(Some("🙂".into())), ..ProjectPatch::default() };
+    let p = ProjectPatch {
+        name: Some("Renamed".into()),
+        network: Some(ProjectNetwork::Secret),
+        page_view: Some(false),
+        emoji: Some(Some("🙂".into())),
+        ..ProjectPatch::default()
+    };
     let d = block_on(update_project(&w.app, &admin, w.project_a, p)).unwrap().listing.project;
-    assert_eq!((d.name.as_str(), d.network, d.page_view, d.emoji.as_deref()), ("Renamed", ProjectNetwork::Secret, false, Some("🙂")));
+    assert_eq!(
+        (d.name.as_str(), d.network, d.page_view, d.emoji.as_deref()),
+        ("Renamed", ProjectNetwork::Secret, false, Some("🙂"))
+    );
     assert_eq!((d.updated_by, d.updated_at), (Some(w.principal(Actor::AdminA).user_id), w.app.ports.clock.now()));
-    assert_eq!((d.created_by, d.created_at, d.identifier.as_str()), (before.created_by, before.created_at, before.identifier.as_str()));
+    assert_eq!(
+        (d.created_by, d.created_at, d.identifier.as_str()),
+        (before.created_by, before.created_at, before.identifier.as_str())
+    );
     // an empty patch still saves: the time and who changed it move (the pin's `save()` writes every column)
     assert!(block_on(update_project(&w.app, &admin, w.project_a, ProjectPatch::default())).is_ok());
     // the name of another project of the workspace
     made(&w, Actor::OutsiderA, Role::Member, patch("Other", "OTH")).unwrap();
-    let got = block_on(update_project(&w.app, &admin, w.project_a, ProjectPatch { name: Some("Other".into()), ..ProjectPatch::default() }));
+    let got = block_on(update_project(
+        &w.app,
+        &admin,
+        w.project_a,
+        ProjectPatch { name: Some("Other".into()), ..ProjectPatch::default() },
+    ));
     assert!(matches!(got, Err(ProjectError::Core(CoreError::Conflict(_)))), "{got:?}");
     // archived
     let mut row = block_on(open_project(&w.app, &admin, w.project_a)).unwrap().listing.project;
     row.archived_at = Some(w.app.ports.clock.now());
     assert!(block_on(w.app.ports.db.update_project(&admin, &row)).unwrap());
-    for patch in [ProjectPatch::default(), ProjectPatch { name: Some("x".into()), ..ProjectPatch::default() }, ProjectPatch { name: Some("bad.name".into()), ..ProjectPatch::default() }] {
+    for patch in [
+        ProjectPatch::default(),
+        ProjectPatch { name: Some("x".into()), ..ProjectPatch::default() },
+        ProjectPatch { name: Some("bad.name".into()), ..ProjectPatch::default() },
+    ] {
         let got = block_on(update_project(&w.app, &admin, w.project_a, patch));
         assert!(matches!(got, Err(ProjectError::Archived)), "{got:?}");
     }
@@ -395,7 +539,10 @@ fn a_project_is_opened_by_its_members_and_refused_to_everyone_else_in_three_ways
 fn a_project_that_is_not_there_or_is_of_another_workspace_is_not_found() {
     let w = world();
     let admin = wscope(&w, Actor::AdminA, Role::Admin);
-    assert!(matches!(block_on(open_project(&w.app, &admin, ProjectId(Uuid::from_u128(0xBAD)))), Err(ProjectError::NotFound)));
+    assert!(matches!(
+        block_on(open_project(&w.app, &admin, ProjectId(Uuid::from_u128(0xBAD)))),
+        Err(ProjectError::NotFound)
+    ));
     assert!(matches!(block_on(open_project(&w.app, &admin, w.project_b)), Err(ProjectError::NotFound)));
 }
 

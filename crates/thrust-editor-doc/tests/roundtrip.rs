@@ -57,13 +57,25 @@ type Item = (Vec<Inline>, Vec<Block>);
 
 #[derive(Debug, Clone)]
 enum Block {
-    Paragraph { align: Option<u8>, inline: Vec<Inline> },
-    Heading { level: u8, inline: Vec<Inline> },
+    Paragraph {
+        align: Option<u8>,
+        inline: Vec<Inline>,
+    },
+    Heading {
+        level: u8,
+        inline: Vec<Inline>,
+    },
     Bullet(Vec<Item>),
-    Ordered { start: u8, items: Vec<Item> },
+    Ordered {
+        start: u8,
+        items: Vec<Item>,
+    },
     Tasks(Vec<(bool, Item)>),
     Quote(Vec<Block>),
-    Code { lang: Option<u8>, text: String },
+    Code {
+        lang: Option<u8>,
+        text: String,
+    },
     Rule,
     /// Rows of cells; a cell is a header or not, with its blocks.
     Table(Vec<Vec<(bool, Vec<Block>)>>),
@@ -169,16 +181,16 @@ fn block(schema: &Schema, b: &Block) -> Node {
     const ALIGN: [&str; 3] = ["left", "center", "right"];
     const LANG: [&str; 2] = ["rust", "typescript"];
     match b {
-        Block::Paragraph { align, inline } => node(
-            schema,
-            "paragraph",
-            json!({ "textAlign": align.map(|a| ALIGN[a as usize]) }),
-            inlines(schema, inline),
-        ),
-        Block::Heading { level, inline } => node(schema, "heading", json!({ "level": level }), inlines(schema, inline)),
-        Block::Bullet(items) => {
-            node(schema, "bulletList", json!({}), items.iter().map(|i| item(schema, "listItem", json!({}), i)).collect())
+        Block::Paragraph { align, inline } => {
+            node(schema, "paragraph", json!({ "textAlign": align.map(|a| ALIGN[a as usize]) }), inlines(schema, inline))
         }
+        Block::Heading { level, inline } => node(schema, "heading", json!({ "level": level }), inlines(schema, inline)),
+        Block::Bullet(items) => node(
+            schema,
+            "bulletList",
+            json!({}),
+            items.iter().map(|i| item(schema, "listItem", json!({}), i)).collect(),
+        ),
         Block::Ordered { start, items } => node(
             schema,
             "orderedList",
@@ -478,9 +490,29 @@ fn kinds(bs: &[Block], seen: &mut BTreeSet<String>) {
 #[test]
 fn generated_documents_reach_every_kind() {
     const ALL: [&str; 24] = [
-        "paragraph", "empty paragraph", "heading", "bulletList", "orderedList", "taskList", "blockquote", "codeBlock",
-        "multi-line codeBlock", "horizontalRule", "table", "tableHeader", "tableCell", "text", "hardBreak", "Bold",
-        "Italic", "Strike", "Underline", "Code", "Link", "several marks", "nested block in a list item",
+        "paragraph",
+        "empty paragraph",
+        "heading",
+        "bulletList",
+        "orderedList",
+        "taskList",
+        "blockquote",
+        "codeBlock",
+        "multi-line codeBlock",
+        "horizontalRule",
+        "table",
+        "tableHeader",
+        "tableCell",
+        "text",
+        "hardBreak",
+        "Bold",
+        "Italic",
+        "Strike",
+        "Underline",
+        "Code",
+        "Link",
+        "several marks",
+        "nested block in a list item",
         // a document nests at least one container in another
         "deep",
     ];
@@ -507,8 +539,8 @@ fn generated_documents_reach_every_kind() {
 
 /// What browsers skip before a URL scheme: JavaScript whitespace and the C0 controls (`isDangerousHref`).
 const SKIPPED: [char; 16] = [
-    ' ', '\t', '\n', '\r', '\u{b}', '\u{c}', '\u{a0}', '\u{feff}', '\u{3000}', '\u{0}', '\u{1}', '\u{8}', '\u{e}', '\u{1f}',
-    '\u{2028}', '\u{200a}',
+    ' ', '\t', '\n', '\r', '\u{b}', '\u{c}', '\u{a0}', '\u{feff}', '\u{3000}', '\u{0}', '\u{1}', '\u{8}', '\u{e}',
+    '\u{1f}', '\u{2028}', '\u{200a}',
 ];
 
 /// A `javascript:`, `data:` or `vbscript:` URL disguised the ways an attacker would: mixed case, skipped characters

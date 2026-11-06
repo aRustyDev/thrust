@@ -51,17 +51,30 @@ fn err_body(code: &str, message: String) -> Json<ApiErrorBody> {
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response<Body> {
         let (status, code, msg, detail) = match &self.0 {
-            CoreError::Unauthenticated => (StatusCode::UNAUTHORIZED, "unauthenticated", "missing or invalid credentials".to_string(), None),
+            CoreError::Unauthenticated => {
+                (StatusCode::UNAUTHORIZED, "unauthenticated", "missing or invalid credentials".to_string(), None)
+            }
             CoreError::Forbidden => (StatusCode::FORBIDDEN, "forbidden", "insufficient role".to_string(), None),
-            CoreError::InvalidApiKey => (StatusCode::FORBIDDEN, "invalid_api_key", "Given API token is not valid".to_string(), None),
+            CoreError::InvalidApiKey => {
+                (StatusCode::FORBIDDEN, "invalid_api_key", "Given API token is not valid".to_string(), None)
+            }
             CoreError::Csrf => (StatusCode::FORBIDDEN, "csrf_failed", "csrf token missing or wrong".to_string(), None),
             CoreError::NotFound => (StatusCode::NOT_FOUND, "not_found", "not found".to_string(), None),
             CoreError::Conflict(m) => (StatusCode::CONFLICT, "conflict", m.clone(), None),
-            CoreError::RateLimited { .. } => (StatusCode::TOO_MANY_REQUESTS, "rate_limited", "too many requests".to_string(), None),
+            CoreError::RateLimited { .. } => {
+                (StatusCode::TOO_MANY_REQUESTS, "rate_limited", "too many requests".to_string(), None)
+            }
             CoreError::Invalid(m) => (StatusCode::BAD_REQUEST, "invalid", m.clone(), None),
             CoreError::TooLarge => (StatusCode::PAYLOAD_TOO_LARGE, "too_large", "payload too large".to_string(), None),
-            CoreError::Upstream(m) => (StatusCode::BAD_GATEWAY, "bad_gateway", "the identity provider is unavailable".to_string(), Some(m.clone())),
-            CoreError::Internal(m) => (StatusCode::INTERNAL_SERVER_ERROR, "internal", "internal error".to_string(), Some(m.clone())),
+            CoreError::Upstream(m) => (
+                StatusCode::BAD_GATEWAY,
+                "bad_gateway",
+                "the identity provider is unavailable".to_string(),
+                Some(m.clone()),
+            ),
+            CoreError::Internal(m) => {
+                (StatusCode::INTERNAL_SERVER_ERROR, "internal", "internal error".to_string(), Some(m.clone()))
+            }
         };
         let mut resp = (status, err_body(code, msg)).into_response();
         if let CoreError::RateLimited { retry_after_secs } = self.0 {
@@ -184,11 +197,16 @@ async fn healthz() -> &'static str {
 /// What the target says it is: its kind, its adapter set, and whether it enforces the CSRF token on cookie mutations
 /// (`CoreConfig::csrf_enforce`). The contract script reads it before any test runs and refuses a target that is not what
 /// the pass claims to test: the main pass needs `csrf_enforce: true`, the `csrfoff` pass `false`.
-async fn info(Extension(cfg): Extension<ApiConfig>, Extension(app): Extension<App>) -> ApiResult<Json<serde_json::Value>> {
+async fn info(
+    Extension(cfg): Extension<ApiConfig>,
+    Extension(app): Extension<App>,
+) -> ApiResult<Json<serde_json::Value>> {
     if !cfg.test_routes {
         return Err(ApiError(CoreError::NotFound));
     }
-    Ok(Json(serde_json::json!({ "target": cfg.target, "adapters": cfg.adapters, "csrf_enforce": app.cfg.csrf_enforce })))
+    Ok(Json(
+        serde_json::json!({ "target": cfg.target, "adapters": cfg.adapters, "csrf_enforce": app.cfg.csrf_enforce }),
+    ))
 }
 
 async fn panic_route(Extension(cfg): Extension<ApiConfig>) -> ApiResult<&'static str> {
@@ -210,7 +228,11 @@ struct RevokeSession {
 
 /// Test support until sign-out exists (#38): revoke the session behind a bearer token. Idempotent, like the use
 /// case: a token that is unknown or already revoked is a 204 too.
-async fn revoke_session(_: Admin, Extension(app): Extension<App>, Json(b): Json<RevokeSession>) -> ApiResult<StatusCode> {
+async fn revoke_session(
+    _: Admin,
+    Extension(app): Extension<App>,
+    Json(b): Json<RevokeSession>,
+) -> ApiResult<StatusCode> {
     thrust_core::revoke_session(&app, &b.token).await?;
     Ok(StatusCode::NO_CONTENT)
 }
@@ -232,7 +254,11 @@ struct SetUserActive {
 
 /// Test support until deactivation exists (ADR-0053): deactivate or reactivate a user. 404 for a user that does not
 /// exist, so a typo in a test is not a silent success.
-async fn set_user_active(_: Admin, Extension(app): Extension<App>, Json(b): Json<SetUserActive>) -> ApiResult<StatusCode> {
+async fn set_user_active(
+    _: Admin,
+    Extension(app): Extension<App>,
+    Json(b): Json<SetUserActive>,
+) -> ApiResult<StatusCode> {
     if thrust_core::set_user_active(&app, b.user_id, b.active).await? {
         Ok(StatusCode::NO_CONTENT)
     } else {
@@ -315,7 +341,8 @@ async fn csrf(Extension(app): Extension<App>) -> ApiResult<Response<Body>> {
 /// Begin the OIDC login: a 302 to the provider's authorization endpoint (ADR-0050). 404 when no provider is configured.
 async fn oidc_start(Extension(app): Extension<App>) -> ApiResult<Response<Body>> {
     let url = thrust_core::oidc_start(&app).await?;
-    let location = HeaderValue::from_str(&url).map_err(|e| ApiError(CoreError::Upstream(format!("authorization url: {e}"))))?;
+    let location =
+        HeaderValue::from_str(&url).map_err(|e| ApiError(CoreError::Upstream(format!("authorization url: {e}"))))?;
     let mut resp = StatusCode::FOUND.into_response();
     resp.headers_mut().insert(LOCATION, location);
     resp.headers_mut().insert(CACHE_CONTROL, HeaderValue::from_static("no-store"));
@@ -332,7 +359,10 @@ struct OidcCallbackQuery {
 
 /// The provider sends the browser back here. On success: the same session and CSRF cookies as a password sign-in, and a
 /// 303 to the application root. The `state` must be one this server started and has not seen before.
-async fn oidc_callback(Extension(app): Extension<App>, Query(q): Query<OidcCallbackQuery>) -> ApiResult<Response<Body>> {
+async fn oidc_callback(
+    Extension(app): Extension<App>,
+    Query(q): Query<OidcCallbackQuery>,
+) -> ApiResult<Response<Body>> {
     if q.error.is_some() {
         // the user refused, or the provider failed: no code to exchange, no session, and the stored state expires on its own
         return Err(ApiError(CoreError::Unauthenticated));

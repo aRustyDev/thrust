@@ -72,17 +72,12 @@ impl Sel {
         let tag = &dom.nodes[el].tag;
         match *self {
             Sel::Tag(t) => tag.eq_ignore_ascii_case(t),
-            Sel::TagAttrEq(t, a, v) => {
-                tag.eq_ignore_ascii_case(t) && dom.get_attribute(el, a).as_deref() == Some(v)
-            }
+            Sel::TagAttrEq(t, a, v) => tag.eq_ignore_ascii_case(t) && dom.get_attribute(el, a).as_deref() == Some(v),
             Sel::TagAttrExists(t, a) => tag.eq_ignore_ascii_case(t) && dom.has_attribute(el, a),
             Sel::ImgSrcNotData => {
                 tag.eq_ignore_ascii_case("img")
                     && dom.has_attribute(el, "src")
-                    && !dom
-                        .get_attribute(el, "src")
-                        .map(|s| s.starts_with("data:"))
-                        .unwrap_or(false)
+                    && !dom.get_attribute(el, "src").map(|s| s.starts_with("data:")).unwrap_or(false)
             }
         }
     }
@@ -186,47 +181,23 @@ fn build_rules(schema: &Schema) -> (Vec<TagRule>, Vec<StyleRule>, Vec<&'static s
     };
 
     // marks first (schema.marks order), then nodes (schema.nodes order) — then stable-sorted by priority
-    tags.push(tr(
-        Sel::TagAttrExists("a", "href"),
-        Target::Mark(m("link")),
-        Some(ga_link),
-    ));
-    tags.push(tr(
-        Sel::Tag("span"),
-        Target::Mark(m("textStyle")),
-        Some(ga_textstyle),
-    ));
+    tags.push(tr(Sel::TagAttrExists("a", "href"), Target::Mark(m("link")), Some(ga_link)));
+    tags.push(tr(Sel::Tag("span"), Target::Mark(m("textStyle")), Some(ga_textstyle)));
     tags.push(tr(Sel::Tag("strong"), Target::Mark(m("bold")), None));
     tags.push(tr(Sel::Tag("b"), Target::Mark(m("bold")), Some(ga_bold_b)));
     tags.push(tr(Sel::Tag("em"), Target::Mark(m("italic")), None));
-    tags.push(tr(
-        Sel::Tag("i"),
-        Target::Mark(m("italic")),
-        Some(ga_italic_i),
-    ));
+    tags.push(tr(Sel::Tag("i"), Target::Mark(m("italic")), Some(ga_italic_i)));
     tags.push(tr(Sel::Tag("s"), Target::Mark(m("strike")), None));
     tags.push(tr(Sel::Tag("del"), Target::Mark(m("strike")), None));
     tags.push(tr(Sel::Tag("strike"), Target::Mark(m("strike")), None));
     tags.push(tr(Sel::Tag("u"), Target::Mark(m("underline")), None));
     tags.push(tr(Sel::Tag("code"), Target::Mark(m("code")), None));
     // customColor: `node.getAttribute("data-text-color") && null` can never be `false`: matches EVERY span
-    tags.push(tr(
-        Sel::Tag("span"),
-        Target::Mark(m("customColor")),
-        Some(ga_always),
-    ));
-    tags.push(tr(
-        Sel::Tag("span"),
-        Target::Mark(m("customColor")),
-        Some(ga_always),
-    ));
+    tags.push(tr(Sel::Tag("span"), Target::Mark(m("customColor")), Some(ga_always)));
+    tags.push(tr(Sel::Tag("span"), Target::Mark(m("customColor")), Some(ga_always)));
 
     tags.push(tr(Sel::Tag("p"), Target::Node(n("paragraph")), None));
-    tags.push(tr(
-        Sel::Tag("mention-component"),
-        Target::Node(n("mention")),
-        None,
-    ));
+    tags.push(tr(Sel::Tag("mention-component"), Target::Node(n("mention")), None));
     tags.push(tr(Sel::Tag("ul"), Target::Node(n("bulletList")), None));
     tags.push(tr(Sel::Tag("br"), Target::Node(n("hardBreak")), None));
     for (i, h) in ["h1", "h2", "h3", "h4", "h5", "h6"].iter().enumerate() {
@@ -238,28 +209,12 @@ fn build_rules(schema: &Schema) -> (Vec<TagRule>, Vec<StyleRule>, Vec<&'static s
     }
     tags.push(tr(Sel::Tag("li"), Target::Node(n("listItem")), None));
     tags.push(tr(Sel::Tag("ol"), Target::Node(n("orderedList")), None));
-    tags.push(tr(
-        Sel::TagAttrEq("span", "data-type", "emoji"),
-        Target::Node(n("emoji")),
-        None,
-    ));
-    tags.push(tr(
-        Sel::Tag("blockquote"),
-        Target::Node(n("blockquote")),
-        None,
-    ));
-    tags.push(tr(
-        Sel::TagAttrEq("div", "data-type", "horizontalRule"),
-        Target::Node(n("horizontalRule")),
-        None,
-    ));
+    tags.push(tr(Sel::TagAttrEq("span", "data-type", "emoji"), Target::Node(n("emoji")), None));
+    tags.push(tr(Sel::Tag("blockquote"), Target::Node(n("blockquote")), None));
+    tags.push(tr(Sel::TagAttrEq("div", "data-type", "horizontalRule"), Target::Node(n("horizontalRule")), None));
     tags.push(tr(Sel::Tag("hr"), Target::Node(n("horizontalRule")), None));
     tags.push(tr(Sel::ImgSrcNotData, Target::Node(n("image")), None));
-    tags.push(tr(
-        Sel::Tag("image-component"),
-        Target::Node(n("imageComponent")),
-        None,
-    ));
+    tags.push(tr(Sel::Tag("image-component"), Target::Node(n("imageComponent")), None));
     let mut pre = tr(Sel::Tag("pre"), Target::Node(n("codeBlock")), None);
     pre.preserve_ws = Some(true);
     pre.preserve_full = true;
@@ -280,17 +235,9 @@ fn build_rules(schema: &Schema) -> (Vec<TagRule>, Vec<StyleRule>, Vec<&'static s
     let mut p51 = vec![];
     let mut rest = vec![];
     // task rules are declared on the nodes: they are inserted at their schema position with priority 51
-    let mut tl = tr(
-        Sel::TagAttrEq("ul", "data-type", "taskList"),
-        Target::Node(n("taskList")),
-        None,
-    );
+    let mut tl = tr(Sel::TagAttrEq("ul", "data-type", "taskList"), Target::Node(n("taskList")), None);
     tl.priority = 51;
-    let mut ti = tr(
-        Sel::TagAttrEq("li", "data-type", "taskItem"),
-        Target::Node(n("taskItem")),
-        None,
-    );
+    let mut ti = tr(Sel::TagAttrEq("li", "data-type", "taskItem"), Target::Node(n("taskItem")), None);
     ti.priority = 51;
     p51.push(tl);
     p51.push(ti);
@@ -299,13 +246,7 @@ fn build_rules(schema: &Schema) -> (Vec<TagRule>, Vec<StyleRule>, Vec<&'static s
     let tags = p51;
 
     let styles = vec![
-        StyleRule {
-            style: "font-weight=400",
-            mark: m("bold"),
-            clear_mark: true,
-            consuming: true,
-            get_attrs: None,
-        },
+        StyleRule { style: "font-weight=400", mark: m("bold"), clear_mark: true, consuming: true, get_attrs: None },
         StyleRule {
             style: "font-weight",
             mark: m("bold"),
@@ -313,13 +254,7 @@ fn build_rules(schema: &Schema) -> (Vec<TagRule>, Vec<StyleRule>, Vec<&'static s
             consuming: true,
             get_attrs: Some(sga_bold_weight),
         },
-        StyleRule {
-            style: "font-style=normal",
-            mark: m("italic"),
-            clear_mark: true,
-            consuming: true,
-            get_attrs: None,
-        },
+        StyleRule { style: "font-style=normal", mark: m("italic"), clear_mark: true, consuming: true, get_attrs: None },
         StyleRule {
             style: "font-style=italic",
             mark: m("italic"),
@@ -380,11 +315,7 @@ fn from_string(s: &str) -> Value {
     };
     if numeric {
         if let Ok(f) = s.parse::<f64>() {
-            return crate::pm::norm_num(
-                serde_json::Number::from_f64(f)
-                    .map(Value::Number)
-                    .unwrap_or(Value::Null),
-            );
+            return crate::pm::norm_num(serde_json::Number::from_f64(f).map(Value::Number).unwrap_or(Value::Null));
         }
     }
     match s {
@@ -425,9 +356,7 @@ fn js_parse_int(s: &str) -> Option<i64> {
 
 fn run_ext(dom: &Dom, el: usize, e: Ext) -> Option<(String, Value)> {
     match e {
-        Ext::Default(name) => dom
-            .get_attribute(el, name)
-            .map(|s| (name.to_string(), from_string(&s))),
+        Ext::Default(name) => dom.get_attribute(el, name).map(|s| (name.to_string(), from_string(&s))),
         Ext::TextAlign => {
             let st = dom.style(el);
             let a = st.get("textAlign").unwrap_or("");
@@ -448,15 +377,10 @@ fn run_ext(dom: &Dom, el: usize, e: Ext) -> Option<(String, Value)> {
             };
             Some(("start".into(), v))
         }
-        Ext::OlType => dom
-            .get_attribute(el, "type")
-            .map(|s| ("type".to_string(), Value::String(s))),
+        Ext::OlType => dom.get_attribute(el, "type").map(|s| ("type".to_string(), Value::String(s))),
         Ext::TaskChecked => {
             let d = dom.get_attribute(el, "data-checked");
-            Some((
-                "checked".into(),
-                Value::Bool(d.as_deref() == Some("") || d.as_deref() == Some("true")),
-            ))
+            Some(("checked".into(), Value::Bool(d.as_deref() == Some("") || d.as_deref() == Some("true"))))
         }
         Ext::EmojiName => match dom.dataset(el, "name") {
             Some(AttrV::Str(s)) => Some(("name".into(), Value::String(s))),
@@ -479,12 +403,10 @@ fn run_ext(dom: &Dom, el: usize, e: Ext) -> Option<(String, Value)> {
                 _ => None,
             }
         }
-        Ext::ColorText => dom
-            .get_attribute(el, "data-text-color")
-            .map(|s| ("color".to_string(), Value::String(s))),
-        Ext::ColorBg => dom
-            .get_attribute(el, "data-background-color")
-            .map(|s| ("backgroundColor".to_string(), Value::String(s))),
+        Ext::ColorText => dom.get_attribute(el, "data-text-color").map(|s| ("color".to_string(), Value::String(s))),
+        Ext::ColorBg => {
+            dom.get_attribute(el, "data-background-color").map(|s| ("backgroundColor".to_string(), Value::String(s)))
+        }
     }
 }
 
@@ -492,12 +414,7 @@ fn ext_attrs(schema: &Schema, t: Target) -> Vec<Ext> {
     use Ext::*;
     match t {
         Target::Mark(m) => match schema.marks[m].name {
-            "link" => vec![
-                Default("href"),
-                Default("target"),
-                Default("rel"),
-                Default("class"),
-            ],
+            "link" => vec![Default("href"), Default("target"), Default("rel"), Default("class")],
             "customColor" => vec![ColorText, ColorBg],
             _ => vec![],
         },
@@ -526,27 +443,14 @@ fn ext_attrs(schema: &Schema, t: Target) -> Vec<Ext> {
                 Default("alignment"),
                 Default("status"),
             ],
-            "mention" => vec![
-                Default("id"),
-                Default("entity_identifier"),
-                Default("entity_name"),
-            ],
+            "mention" => vec![Default("id"), Default("entity_identifier"), Default("entity_name")],
             "emoji" => vec![EmojiName],
             "codeBlock" => vec![CodeLanguage],
             "tableRow" => vec![Default("background"), Default("textColor")],
-            "tableHeader" => vec![
-                Default("colspan"),
-                Default("rowspan"),
-                ColWidth,
-                Default("background"),
-            ],
-            "tableCell" => vec![
-                Default("colspan"),
-                Default("rowspan"),
-                ColWidth,
-                Default("background"),
-                Default("textColor"),
-            ],
+            "tableHeader" => vec![Default("colspan"), Default("rowspan"), ColWidth, Default("background")],
+            "tableCell" => {
+                vec![Default("colspan"), Default("rowspan"), ColWidth, Default("background"), Default("textColor")]
+            }
             "calloutComponent" => vec![
                 Default("id"),
                 Default("data-icon-color"),
@@ -599,15 +503,9 @@ struct Parser<'a> {
     next_id: u32,
 }
 
-fn ws_options_for(
-    schema: &Schema,
-    ty: Option<TypeId>,
-    preserve: Option<(bool, bool)>,
-    base: u8,
-) -> u8 {
+fn ws_options_for(schema: &Schema, ty: Option<TypeId>, preserve: Option<(bool, bool)>, base: u8) -> u8 {
     if let Some((p, full)) = preserve {
-        return (if p { OPT_PRESERVE_WS } else { 0 })
-            | (if full { OPT_PRESERVE_WS_FULL } else { 0 });
+        return (if p { OPT_PRESERVE_WS } else { 0 }) | (if full { OPT_PRESERVE_WS_FULL } else { 0 });
     }
     let _ = (schema, ty);
     // no node type in this schema has `whitespace: "pre"`
@@ -630,16 +528,7 @@ impl<'a> Parser<'a> {
             (None, Some(t)) if options & OPT_OPEN_LEFT == 0 => self.schema.nodes[t].content_match,
             _ => None,
         };
-        NodeContext {
-            id: self.next_id,
-            ty,
-            attrs,
-            marks,
-            solid,
-            matcher: m,
-            content: vec![],
-            options,
-        }
+        NodeContext { id: self.next_id, ty, attrs, marks, solid, matcher: m, content: vec![], options }
     }
 
     fn top(&self) -> &NodeContext {
@@ -738,12 +627,8 @@ impl<'a> Parser<'a> {
         let mut value = self.dom.nodes[dom_node].text.clone();
         let top_opts = self.top().options;
         let preserve_ws_full = top_opts & OPT_PRESERVE_WS_FULL != 0;
-        let preserve_ws =
-            preserve_ws_full || self.local_preserve_ws || top_opts & OPT_PRESERVE_WS != 0;
-        if preserve_ws_full
-            || self.inline_context(self.open, dom_node)
-            || value.chars().any(|c| !is_ws(c))
-        {
+        let preserve_ws = preserve_ws_full || self.local_preserve_ws || top_opts & OPT_PRESERVE_WS != 0;
+        if preserve_ws_full || self.inline_context(self.open, dom_node) || value.chars().any(|c| !is_ws(c)) {
             if !preserve_ws {
                 // value.replace(/[ \t\r\n\u000c]+/g, " ")
                 let mut out = String::with_capacity(value.len());
@@ -763,19 +648,10 @@ impl<'a> Parser<'a> {
                 if value.starts_with(is_ws) && self.open == self.nodes.len() - 1 {
                     let node_before = self.top().content.last();
                     let dom_before = self.dom.previous_sibling(dom_node);
-                    let before_is_br = dom_before
-                        .map(|d| self.dom.nodes[d].tag == "BR")
-                        .unwrap_or(false);
+                    let before_is_br = dom_before.map(|d| self.dom.nodes[d].tag == "BR").unwrap_or(false);
                     let strip = match node_before {
                         None => true,
-                        Some(nb) => {
-                            before_is_br
-                                || nb
-                                    .text
-                                    .as_deref()
-                                    .map(|t| t.ends_with(is_ws))
-                                    .unwrap_or(false)
-                        }
+                        Some(nb) => before_is_br || nb.text.as_deref().map(|t| t.ends_with(is_ws)).unwrap_or(false),
                     };
                     if strip {
                         value = value[1..].to_string();
@@ -850,14 +726,7 @@ impl<'a> Parser<'a> {
         let top_depth = self.open;
         let top_id = self.nodes[top_depth].id;
         let tag_upper = self.dom.nodes[el].tag.clone();
-        if tag_upper == "PRE"
-            || self
-                .dom
-                .style(el)
-                .get("whiteSpace")
-                .map(|w| w.contains("pre"))
-                .unwrap_or(false)
-        {
+        if tag_upper == "PRE" || self.dom.style(el).get("whiteSpace").map(|w| w.contains("pre")).unwrap_or(false) {
             self.local_preserve_ws = true;
         }
         let name = tag_upper.to_lowercase();
@@ -874,10 +743,7 @@ impl<'a> Parser<'a> {
             let mut top_id_eff = top_id;
             if BLOCK_TAGS.contains(&name.as_str()) {
                 let top = &self.nodes[top_depth];
-                if !top.content.is_empty()
-                    && schema.nodes[top.content[0].ty].inline
-                    && self.open > 0
-                {
+                if !top.content.is_empty() && schema.nodes[top.content[0].ty].inline && self.open > 0 {
                     self.open -= 1;
                     top_id_eff = self.nodes[self.open].id;
                 }
@@ -908,10 +774,7 @@ impl<'a> Parser<'a> {
     }
 
     fn open_for_id(&self, id: u32) -> usize {
-        self.nodes
-            .iter()
-            .position(|n| n.id == id)
-            .unwrap_or(self.open)
+        self.nodes.iter().position(|n| n.id == id).unwrap_or(self.open)
     }
 
     fn leaf_fallback(&mut self, el: usize, marks: &[Mark]) {
@@ -936,13 +799,7 @@ impl<'a> Parser<'a> {
     }
 
     fn ignore_fallback(&mut self, el: usize, marks: &[Mark]) {
-        if self.dom.nodes[el].tag == "BR"
-            && self
-                .top()
-                .ty
-                .map(|t| !self.schema.inline_content(t))
-                .unwrap_or(true)
-        {
+        if self.dom.nodes[el].tag == "BR" && self.top().ty.map(|t| !self.schema.inline_content(t)).unwrap_or(true) {
             if let Ok(t) = Node::text(self.schema, "-", vec![]) {
                 self.find_place(&t, marks, true);
             }
@@ -971,8 +828,7 @@ impl<'a> Parser<'a> {
                             continue;
                         }
                         if r.style.len() > name.len()
-                            && (r.style.as_bytes()[name.len()] != b'='
-                                || &r.style[name.len() + 1..] != value)
+                            && (r.style.as_bytes()[name.len()] != b'=' || &r.style[name.len() + 1..] != value)
                         {
                             continue;
                         }
@@ -991,11 +847,7 @@ impl<'a> Parser<'a> {
                     if rule.clear_mark {
                         marks.retain(|m| m.ty != rule.mark);
                     } else {
-                        marks.push(Mark::create(
-                            self.schema,
-                            rule.mark,
-                            &attrs.unwrap_or_default(),
-                        ));
+                        marks.push(Mark::create(self.schema, rule.mark, &attrs.unwrap_or_default()));
                     }
                     if !rule.consuming {
                         after = Some(ri);
@@ -1008,13 +860,7 @@ impl<'a> Parser<'a> {
         Some(marks)
     }
 
-    fn add_element_by_rule(
-        &mut self,
-        el: usize,
-        rule: &TagRule,
-        rule_attrs: Attrs,
-        mut marks: Vec<Mark>,
-    ) {
+    fn add_element_by_rule(&mut self, el: usize, rule: &TagRule, rule_attrs: Attrs, mut marks: Vec<Mark>) {
         let schema = self.schema;
         let mut sync = false;
         let mut leaf = false;
@@ -1058,11 +904,7 @@ impl<'a> Parser<'a> {
             let d = depth as usize;
             let found = self.ctx_find_wrapping(d, node.ty);
             if let Some(f) = found {
-                if route
-                    .as_ref()
-                    .map(|r| r.len() > f.len() + penalty)
-                    .unwrap_or(true)
-                {
+                if route.as_ref().map(|r| r.len() > f.len() + penalty).unwrap_or(true) {
                     let done = f.is_empty();
                     route = Some(f);
                     sync_depth = Some(d);
@@ -1133,10 +975,7 @@ impl<'a> Parser<'a> {
             self.nodes[self.open].matcher = schema.match_type(m, node.ty);
         }
         let mut node_marks: Vec<Mark> = vec![];
-        let all: Vec<Mark> = inner
-            .into_iter()
-            .chain(node.marks.iter().cloned())
-            .collect();
+        let all: Vec<Mark> = inner.into_iter().chain(node.marks.iter().cloned()).collect();
         for m in all {
             let ok = match top_ty {
                 Some(t) => schema.allows_mark_type(t, m.ty),
@@ -1281,14 +1120,7 @@ pub fn parse(schema: &Schema, dom: &mut Dom) -> Node {
         local_preserve_ws: false,
         next_id: 0,
     };
-    let top = p.new_ctx(
-        Some(schema.top),
-        Attrs::new(),
-        vec![],
-        true,
-        None,
-        ws_options_for(schema, None, None, 0),
-    );
+    let top = p.new_ctx(Some(schema.top), Attrs::new(), vec![], true, None, ws_options_for(schema, None, None, 0));
     p.nodes.push(top);
     p.add_all(0, &[]);
     p.finish()

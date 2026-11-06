@@ -8,7 +8,10 @@
 use reqwest::StatusCode;
 use serde_json::{json, Value};
 use thrust_contract_tests::*;
-use thrust_contracts::{default_project_identifier, ProjectId, ProjectNetwork, Role, SeedFixture, SeedMembership, SeedProject, SeedProjectDetails, SeedState, SeedWorkspace, SeedWorkspaceRole, StateGroup, WorkspaceId, WorkspaceSlug};
+use thrust_contracts::{
+    default_project_identifier, ProjectId, ProjectNetwork, Role, SeedFixture, SeedMembership, SeedProject,
+    SeedProjectDetails, SeedState, SeedWorkspace, SeedWorkspaceRole, StateGroup, WorkspaceId, WorkspaceSlug,
+};
 
 use super::t;
 
@@ -105,18 +108,47 @@ async fn compat_a_user_patch_changes_names_and_zone_and_refuses_urls_unknown_zon
     assert_eq!((me["first_name"].as_str(), me["user_timezone"].as_str()), (Some(""), Some("UTC")));
     assert!(me["id"].is_string() && me["username"].as_str().is_some_and(|u| u.len() == 32), "{me}");
 
-    let r = patch(&t, &token, "/api/users/me/", &json!({"first_name": "  Journey ", "last_name": "Tester", "user_timezone": "Asia/Kolkata"})).await;
+    let r = patch(
+        &t,
+        &token,
+        "/api/users/me/",
+        &json!({"first_name": "  Journey ", "last_name": "Tester", "user_timezone": "Asia/Kolkata"}),
+    )
+    .await;
     assert_eq!(r.status(), 200);
     let long: Value = r.json().await.unwrap();
-    assert_eq!((long["first_name"].as_str(), long["last_name"].as_str(), long["user_timezone"].as_str()), (Some("Journey"), Some("Tester"), Some("Asia/Kolkata")), "{long}");
-    assert_eq!(long.as_object().unwrap().len(), 39, "the long user has every column of the pin's User but the password");
+    assert_eq!(
+        (long["first_name"].as_str(), long["last_name"].as_str(), long["user_timezone"].as_str()),
+        (Some("Journey"), Some("Tester"), Some("Asia/Kolkata")),
+        "{long}"
+    );
+    assert_eq!(
+        long.as_object().unwrap().len(),
+        39,
+        "the long user has every column of the pin's User but the password"
+    );
     assert!(long.get("avatar_url").is_none(), "the long user has no avatar_url (that is the short user's)");
 
     for (what, body, field, message) in [
-        ("a URL in the first name", json!({"first_name": "see example.com"}), "first_name", "First name cannot contain a URL."),
-        ("a URL in the last name", json!({"last_name": "http://example.test"}), "last_name", "Last name cannot contain a URL."),
+        (
+            "a URL in the first name",
+            json!({"first_name": "see example.com"}),
+            "first_name",
+            "First name cannot contain a URL.",
+        ),
+        (
+            "a URL in the last name",
+            json!({"last_name": "http://example.test"}),
+            "last_name",
+            "Last name cannot contain a URL.",
+        ),
         ("a blank display name", json!({"display_name": ""}), "display_name", "This field may not be blank."),
-        ("an unknown zone", json!({"user_timezone": "Mars/Olympus"}), "user_timezone", "\"Mars/Olympus\" is not a valid choice."),
+        (
+            "an unknown zone",
+            json!({"user_timezone": "Mars/Olympus"}),
+            "user_timezone",
+            "\"Mars/Olympus\" is not a valid choice.",
+        ),
     ] {
         // a good field travels with the bad one, and must not land either
         let mut with_good = body.clone();
@@ -128,10 +160,20 @@ async fn compat_a_user_patch_changes_names_and_zone_and_refuses_urls_unknown_zon
     }
     let after = get(&t, &token, "/api/users/me/").await;
     assert_eq!(after["avatar"], "", "a refused patch wrote nothing");
-    assert_eq!((after["first_name"].as_str(), after["user_timezone"].as_str()), (Some("Journey"), Some("Asia/Kolkata")), "and left what was there");
+    assert_eq!(
+        (after["first_name"].as_str(), after["user_timezone"].as_str()),
+        (Some("Journey"), Some("Asia/Kolkata")),
+        "and left what was there"
+    );
 
     // the pin ignores the fields it marks read only, instead of refusing them
-    let r = patch(&t, &token, "/api/users/me/", &json!({"email": "someone@else.test", "is_bot": true, "username": "chosen"})).await;
+    let r = patch(
+        &t,
+        &token,
+        "/api/users/me/",
+        &json!({"email": "someone@else.test", "is_bot": true, "username": "chosen"}),
+    )
+    .await;
     assert_eq!(r.status(), 200);
     let kept: Value = r.json().await.unwrap();
     assert_eq!((kept["email"].as_str(), kept["is_bot"].as_bool()), (Some(email.as_str()), Some(false)), "{kept}");
@@ -151,22 +193,53 @@ async fn compat_a_profile_has_the_defaults_and_a_patch_changes_only_what_it_name
     let (_, other) = signed_up(&t).await;
     let p = get(&t, &token, "/api/users/me/profile/").await;
     assert_eq!(p.as_object().unwrap().len(), 29, "{p}");
-    assert_eq!((p["is_onboarded"].as_bool(), p["language"].as_str(), p["start_of_the_week"].as_i64()), (Some(false), Some("en"), Some(0)), "{p}");
-    assert_eq!(p["onboarding_step"], json!({"profile_complete": false, "workspace_create": false, "workspace_invite": false, "workspace_join": false}));
+    assert_eq!(
+        (p["is_onboarded"].as_bool(), p["language"].as_str(), p["start_of_the_week"].as_i64()),
+        (Some(false), Some("en"), Some(0)),
+        "{p}"
+    );
+    assert_eq!(
+        p["onboarding_step"],
+        json!({"profile_complete": false, "workspace_create": false, "workspace_invite": false, "workspace_join": false})
+    );
     assert!(p["last_workspace_id"].is_null() && p["role"].is_null());
 
     let r = patch(&t, &token, "/api/users/me/profile/", &json!({"role": "developer"})).await;
     assert_eq!(r.status(), 200);
-    let r = patch(&t, &token, "/api/users/me/profile/", &json!({"use_case": "Plan work", "start_of_the_week": "2", "has_marketing_email_consent": "yes"})).await;
+    let r = patch(
+        &t,
+        &token,
+        "/api/users/me/profile/",
+        &json!({"use_case": "Plan work", "start_of_the_week": "2", "has_marketing_email_consent": "yes"}),
+    )
+    .await;
     assert_eq!(r.status(), 200);
     let after = get(&t, &token, "/api/users/me/profile/").await;
-    assert_eq!((after["role"].as_str(), after["use_case"].as_str()), (Some("developer"), Some("Plan work")), "the second patch kept the first's role: {after}");
-    assert_eq!((after["start_of_the_week"].as_i64(), after["has_marketing_email_consent"].as_bool()), (Some(2), Some(true)), "DRF's choice and boolean spellings");
+    assert_eq!(
+        (after["role"].as_str(), after["use_case"].as_str()),
+        (Some("developer"), Some("Plan work")),
+        "the second patch kept the first's role: {after}"
+    );
+    assert_eq!(
+        (after["start_of_the_week"].as_i64(), after["has_marketing_email_consent"].as_bool()),
+        (Some(2), Some(true)),
+        "DRF's choice and boolean spellings"
+    );
 
     for (what, body, field, message) in [
-        ("a start of the week out of range", json!({"start_of_the_week": 9}), "start_of_the_week", "\"9\" is not a valid choice."),
+        (
+            "a start of the week out of range",
+            json!({"start_of_the_week": 9}),
+            "start_of_the_week",
+            "\"9\" is not a valid choice.",
+        ),
         ("a boolean that is not one", json!({"is_onboarded": "maybe"}), "is_onboarded", "Must be a valid boolean."),
-        ("a last workspace that is not an id", json!({"last_workspace_id": "nope"}), "last_workspace_id", "Must be a valid UUID."),
+        (
+            "a last workspace that is not an id",
+            json!({"last_workspace_id": "nope"}),
+            "last_workspace_id",
+            "Must be a valid UUID.",
+        ),
         ("a null theme", json!({"theme": null}), "theme", "This field may not be null."),
     ] {
         let mut with_good = body.clone();
@@ -207,7 +280,11 @@ async fn compat_the_tour_and_onboarded_flags_follow_the_pins_rules() {
             assert_eq!(r.status(), 400, "{path} {bad}");
             assert_eq!(r.json::<Value>().await.unwrap(), json!({"error": "Please provide valid detail"}));
         }
-        assert_eq!(get(&t, &token, "/api/users/me/profile/").await[flag], true, "{path}: a refused body does not change it");
+        assert_eq!(
+            get(&t, &token, "/api/users/me/profile/").await[flag],
+            true,
+            "{path}: a refused body does not change it"
+        );
 
         // a missing key is false; Django's own spellings are booleans
         assert_eq!(set(json!({})).await.status(), 200);
@@ -301,7 +378,11 @@ async fn compat_sign_up_makes_an_account_that_is_signed_in_and_refuses_a_taken_e
         ("the same email again", json!({"email": email, "password": STRONG}), 5030),
         ("the same email in capitals", json!({"email": email.to_uppercase(), "password": STRONG}), 5030),
         ("a weak password", json!({"email": new_email(), "password": "password"}), 5021),
-        ("a taken email and a weak password (taken is checked first)", json!({"email": email, "password": "password"}), 5030),
+        (
+            "a taken email and a weak password (taken is checked first)",
+            json!({"email": email, "password": "password"}),
+            5030,
+        ),
         ("not an email", json!({"email": "nope", "password": STRONG}), 5045),
         ("no fields", json!({}), 5040),
         ("an empty password", json!({"email": new_email(), "password": ""}), 5040),
@@ -329,7 +410,9 @@ async fn compat_sign_in_signs_a_seeded_user_in_and_refuses_everyone_else_with_pl
     let f = Fixture::seed(&t).await;
     let u = &f.member_a;
 
-    for (what, email) in [("the seeded email", u.email.clone()), ("another spelling", format!(" {} ", u.email.to_uppercase()))] {
+    for (what, email) in
+        [("the seeded email", u.email.clone()), ("another spelling", format!(" {} ", u.email.to_uppercase()))]
+    {
         let r = post(&t, "/auth/sign-in/", &json!({"email": email, "password": u.password})).await;
         assert_eq!(r.status(), 200, "{what}");
         let token = session_cookie(&r).unwrap_or_else(|| panic!("{what}: no session cookie"));
@@ -347,7 +430,11 @@ async fn compat_sign_in_signs_a_seeded_user_in_and_refuses_everyone_else_with_pl
         ("not an email", json!({"email": "nope", "password": STRONG}), 5075),
         ("no fields", json!({}), 5070),
         ("an empty email", json!({"email": "", "password": STRONG}), 5070),
-        ("a deactivated user with the right password", json!({"email": inactive.email, "password": inactive.password}), 5065),
+        (
+            "a deactivated user with the right password",
+            json!({"email": inactive.email, "password": inactive.password}),
+            5065,
+        ),
     ] {
         let r = post(&t, "/auth/sign-in/", &body).await;
         assert_eq!(r.status(), StatusCode::BAD_REQUEST, "{what}");
@@ -410,15 +497,33 @@ async fn compat_a_workspace_is_made_by_its_creator_who_is_its_admin_and_no_one_e
     assert_eq!(get(&t, &token, "/api/users/me/workspaces/invitations/").await, json!([]));
     assert_eq!(get(&t, &token, "/api/users/me/workspaces/").await, json!([]));
     let settings = get(&t, &token, "/api/users/me/settings/").await;
-    assert_eq!((settings["workspace"]["fallback_workspace_slug"].clone(), settings["workspace"]["invites"].clone()), (Value::Null, json!(0)), "{settings}");
+    assert_eq!(
+        (settings["workspace"]["fallback_workspace_slug"].clone(), settings["workspace"]["invites"].clone()),
+        (Value::Null, json!(0)),
+        "{settings}"
+    );
     assert!(slug_is_free(&t, &token, &slug).await);
 
-    let r = post_as(&t, &token, "/api/workspaces/", &json!({"name": "Contract Workspace", "slug": slug, "organization_size": "2-10"})).await;
+    let r = post_as(
+        &t,
+        &token,
+        "/api/workspaces/",
+        &json!({"name": "Contract Workspace", "slug": slug, "organization_size": "2-10"}),
+    )
+    .await;
     assert_eq!(r.status(), 201);
     let made: Value = r.json().await.unwrap();
     assert_eq!(made.as_object().unwrap().len(), 17, "{made}");
-    assert_eq!((made["slug"].as_str(), made["name"].as_str(), made["role"].as_i64(), made["total_members"].as_i64()), (Some(slug.as_str()), Some("Contract Workspace"), Some(20), Some(1)), "{made}");
-    assert_eq!((made["owner"].clone(), made["created_by"].clone(), made["organization_size"].clone()), (me["id"].clone(), me["id"].clone(), json!("2-10")), "{made}");
+    assert_eq!(
+        (made["slug"].as_str(), made["name"].as_str(), made["role"].as_i64(), made["total_members"].as_i64()),
+        (Some(slug.as_str()), Some("Contract Workspace"), Some(20), Some(1)),
+        "{made}"
+    );
+    assert_eq!(
+        (made["owner"].clone(), made["created_by"].clone(), made["organization_size"].clone()),
+        (me["id"].clone(), me["id"].clone(), json!("2-10")),
+        "{made}"
+    );
 
     // theirs: listed, taken, the first one to open
     let listed = get(&t, &token, "/api/users/me/workspaces/").await;
@@ -427,26 +532,55 @@ async fn compat_a_workspace_is_made_by_its_creator_who_is_its_admin_and_no_one_e
     assert!(!slug_is_free(&t, &token, &slug).await, "a made workspace's slug is taken");
     let settings = get(&t, &token, "/api/users/me/settings/").await;
     assert_eq!(settings["workspace"]["fallback_workspace_slug"], json!(slug), "{settings}");
-    assert_eq!(get(&t, &token, "/api/instances/").await["instance"]["workspaces_exist"], true, "S01 after the first workspace");
+    assert_eq!(
+        get(&t, &token, "/api/instances/").await["instance"]["workspaces_exist"],
+        true,
+        "S01 after the first workspace"
+    );
 
     // what it says about its creator
     let member = get(&t, &token, &format!("/api/workspaces/{slug}/workspace-members/me/")).await;
-    assert_eq!((member["role"].as_i64(), member["is_active"].as_bool(), member["company_role"].as_str()), (Some(20), Some(true), Some("")), "{member}");
+    assert_eq!(
+        (member["role"].as_i64(), member["is_active"].as_bool(), member["company_role"].as_str()),
+        (Some(20), Some(true), Some("")),
+        "{member}"
+    );
     let members = get(&t, &token, &format!("/api/workspaces/{slug}/members/")).await;
     assert_eq!(members.as_array().unwrap().len(), 1, "{members}");
-    assert_eq!((members[0]["role"].clone(), members[0]["member"]["id"].clone(), members[0]["member"]["email"].clone()), (json!(20), me["id"].clone(), json!(email)), "{members}");
-    assert_eq!(get(&t, &token, &format!("/api/users/me/workspaces/{slug}/project-roles/")).await, json!({}), "a new workspace has no project");
+    assert_eq!(
+        (members[0]["role"].clone(), members[0]["member"]["id"].clone(), members[0]["member"]["email"].clone()),
+        (json!(20), me["id"].clone(), json!(email)),
+        "{members}"
+    );
+    assert_eq!(
+        get(&t, &token, &format!("/api/users/me/workspaces/{slug}/project-roles/")).await,
+        json!({}),
+        "a new workspace has no project"
+    );
 
     // not theirs: nothing listed, nothing readable, nothing to take
     assert_eq!(get(&t, &other, "/api/users/me/workspaces/").await, json!([]));
     let r = t.http.get(t.url(&format!("/api/workspaces/{slug}/members/"))).bearer_auth(&other).send().await.unwrap();
     assert_eq!(r.status(), 403);
     assert_eq!(r.json::<Value>().await.unwrap(), json!({"error": "You don't have the required permissions."}));
-    let r = t.http.get(t.url(&format!("/api/users/me/workspaces/{slug}/project-roles/"))).bearer_auth(&other).send().await.unwrap();
+    let r = t
+        .http
+        .get(t.url(&format!("/api/users/me/workspaces/{slug}/project-roles/")))
+        .bearer_auth(&other)
+        .send()
+        .await
+        .unwrap();
     assert_eq!(r.status(), 403);
-    assert_eq!(r.json::<Value>().await.unwrap(), json!({"detail": "You do not have permission to perform this action."}));
+    assert_eq!(
+        r.json::<Value>().await.unwrap(),
+        json!({"detail": "You do not have permission to perform this action."})
+    );
     let blank = get(&t, &other, &format!("/api/workspaces/{slug}/workspace-members/me/")).await;
-    assert_eq!((blank["is_active"].clone(), blank["member"].clone(), blank["role"].clone()), (json!(false), Value::Null, Value::Null), "{blank}");
+    assert_eq!(
+        (blank["is_active"].clone(), blank["member"].clone(), blank["role"].clone()),
+        (json!(false), Value::Null, Value::Null),
+        "{blank}"
+    );
     let r = post_as(&t, &other, "/api/workspaces/", &json!({"name": "Mine now", "slug": slug})).await;
     assert_eq!(r.status(), 400);
     assert_eq!(r.json::<Value>().await.unwrap(), json!({"slug": ["Workspace with this slug already exists."]}));
@@ -465,7 +599,8 @@ async fn compat_a_workspace_is_made_by_its_creator_who_is_its_admin_and_no_one_e
         let r = t.http.get(t.url(&path)).send().await.unwrap();
         assert_eq!(r.status(), 401, "GET {path}");
     }
-    let r = t.http.post(t.url("/api/workspaces/")).json(&json!({"name": "x", "slug": new_slug()})).send().await.unwrap();
+    let r =
+        t.http.post(t.url("/api/workspaces/")).json(&json!({"name": "x", "slug": new_slug()})).send().await.unwrap();
     assert_eq!(r.status(), 401);
 }
 
@@ -481,12 +616,42 @@ async fn compat_a_workspace_that_breaks_a_rule_is_refused_with_planes_message_an
     for (what, body, status, want) in [
         ("no fields", json!({}), 400, json!({"error": "Both name and slug are required"})),
         ("no slug", json!({"name": "No Slug"}), 400, json!({"error": "Both name and slug are required"})),
-        ("a name that is too long", json!({"name": "x".repeat(81), "slug": new_slug()}), 400, json!({"error": "The maximum length for name is 80 and for slug is 48"})),
-        ("a slug that is too long", json!({"name": "Long Slug", "slug": "s".repeat(49)}), 400, json!({"error": "The maximum length for name is 80 and for slug is 48"})),
-        ("a URL in the name", json!({"name": "see example.com", "slug": url_name}), 400, json!({"error": "Name cannot contain a URL"})),
-        ("a name with no letter or number", json!({"name": "!!!", "slug": no_alnum}), 400, json!({"name": ["Name must contain at least one letter or number"]})),
-        ("a reserved slug", json!({"name": "Reserved", "slug": "onboarding"}), 400, json!({"slug": ["Slug is not valid"]})),
-        ("a slug with a space", json!({"name": "Spaced", "slug": "a b"}), 400, json!({"slug": ["Enter a valid \"slug\" consisting of letters, numbers, underscores or hyphens."]})),
+        (
+            "a name that is too long",
+            json!({"name": "x".repeat(81), "slug": new_slug()}),
+            400,
+            json!({"error": "The maximum length for name is 80 and for slug is 48"}),
+        ),
+        (
+            "a slug that is too long",
+            json!({"name": "Long Slug", "slug": "s".repeat(49)}),
+            400,
+            json!({"error": "The maximum length for name is 80 and for slug is 48"}),
+        ),
+        (
+            "a URL in the name",
+            json!({"name": "see example.com", "slug": url_name}),
+            400,
+            json!({"error": "Name cannot contain a URL"}),
+        ),
+        (
+            "a name with no letter or number",
+            json!({"name": "!!!", "slug": no_alnum}),
+            400,
+            json!({"name": ["Name must contain at least one letter or number"]}),
+        ),
+        (
+            "a reserved slug",
+            json!({"name": "Reserved", "slug": "onboarding"}),
+            400,
+            json!({"slug": ["Slug is not valid"]}),
+        ),
+        (
+            "a slug with a space",
+            json!({"name": "Spaced", "slug": "a b"}),
+            400,
+            json!({"slug": ["Enter a valid \"slug\" consisting of letters, numbers, underscores or hyphens."]}),
+        ),
     ] {
         let r = post_as(&t, &token, "/api/workspaces/", &body).await;
         assert_eq!(r.status(), status, "{what}");
@@ -525,7 +690,8 @@ const OPENING_ROUTES: [(&str, bool); 9] = [
 /// (the list settings keep their id), and a second member of the workspace's own rows are not the first's. Controls: a stranger
 /// is refused every row with the body Plane's guard gives it, and nobody without a session is let in.
 #[tokio::test]
-async fn compat_opening_a_workspace_reads_the_sidebar_the_home_page_and_the_list_settings_once_and_refuses_everyone_else() {
+async fn compat_opening_a_workspace_reads_the_sidebar_the_home_page_and_the_list_settings_once_and_refuses_everyone_else(
+) {
     let t = t();
     let (_, token) = signed_up(&t).await;
     let (_, stranger) = signed_up(&t).await;
@@ -535,7 +701,14 @@ async fn compat_opening_a_workspace_reads_the_sidebar_the_home_page_and_the_list
     let made: Value = made.json().await.unwrap();
     let path = |tail: &str| format!("/api/workspaces/{slug}/{tail}");
 
-    for tail in ["projects/", "user-favorites/", "states/", "quick-links/", "recent-visits/", "recent-visits/?entity_name=project"] {
+    for tail in [
+        "projects/",
+        "user-favorites/",
+        "states/",
+        "quick-links/",
+        "recent-visits/",
+        "recent-visits/?entity_name=project",
+    ] {
         assert_eq!(get(&t, &token, &path(tail)).await, json!([]), "{tail}");
     }
     assert_eq!(
@@ -545,30 +718,59 @@ async fn compat_opening_a_workspace_reads_the_sidebar_the_home_page_and_the_list
 
     let sidebar = get(&t, &token, &path("sidebar-preferences/")).await;
     let pins: Vec<(String, bool, f64)> = {
-        let mut v: Vec<_> = sidebar.as_object().unwrap().iter().map(|(k, p)| (k.clone(), p["is_pinned"].as_bool().unwrap(), p["sort_order"].as_f64().unwrap())).collect();
+        let mut v: Vec<_> = sidebar
+            .as_object()
+            .unwrap()
+            .iter()
+            .map(|(k, p)| (k.clone(), p["is_pinned"].as_bool().unwrap(), p["sort_order"].as_f64().unwrap()))
+            .collect();
         v.sort_by(|a, b| a.2.total_cmp(&b.2));
         v
     };
-    let want: Vec<(String, bool, f64)> =
-        [("views", false), ("active_cycles", false), ("analytics", false), ("drafts", true), ("your_work", true), ("archives", false), ("stickies", true)]
-            .iter()
-            .enumerate()
-            .map(|(i, (k, pinned))| ((*k).to_string(), *pinned, 65535.0 + 10000.0 * i as f64))
-            .collect();
+    let want: Vec<(String, bool, f64)> = [
+        ("views", false),
+        ("active_cycles", false),
+        ("analytics", false),
+        ("drafts", true),
+        ("your_work", true),
+        ("archives", false),
+        ("stickies", true),
+    ]
+    .iter()
+    .enumerate()
+    .map(|(i, (k, pinned))| ((*k).to_string(), *pinned, 65535.0 + 10000.0 * i as f64))
+    .collect();
     assert_eq!(pins, want, "{sidebar}");
 
     let home = get(&t, &token, &path("home-preferences/")).await;
-    let widgets: Vec<(&str, f64)> = home.as_array().unwrap().iter().map(|w| (w["key"].as_str().unwrap(), w["sort_order"].as_f64().unwrap())).collect();
+    let widgets: Vec<(&str, f64)> = home
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|w| (w["key"].as_str().unwrap(), w["sort_order"].as_f64().unwrap()))
+        .collect();
     assert_eq!(widgets, [("my_stickies", 997.0), ("recents", 998.0), ("quick_links", 999.0)], "{home}");
 
     let props = get(&t, &token, &path("user-properties/")).await;
-    assert_eq!((props["workspace"].clone(), props["navigation_project_limit"].clone(), props["navigation_control_preference"].clone()), (made["id"].clone(), json!(10), json!("ACCORDION")), "{props}");
+    assert_eq!(
+        (
+            props["workspace"].clone(),
+            props["navigation_project_limit"].clone(),
+            props["navigation_control_preference"].clone()
+        ),
+        (made["id"].clone(), json!(10), json!("ACCORDION")),
+        "{props}"
+    );
     assert_eq!(props["display_filters"]["display_filters"]["layout"], "list", "{props}");
 
     // again: the same rows, not new ones
     assert_eq!(get(&t, &token, &path("sidebar-preferences/")).await, sidebar);
     assert_eq!(get(&t, &token, &path("home-preferences/")).await, home);
-    assert_eq!(get(&t, &token, &path("user-properties/")).await["id"], props["id"], "the list settings were made again");
+    assert_eq!(
+        get(&t, &token, &path("user-properties/")).await["id"],
+        props["id"],
+        "the list settings were made again"
+    );
 
     // a stranger is refused every row, each with its own guard's body; nobody without a session is let in
     for (tail, class) in OPENING_ROUTES {
@@ -606,20 +808,46 @@ async fn compat_a_project_is_made_by_its_creator_who_is_its_admin_and_the_app_re
     assert_eq!(r.status(), 201);
     let made: Value = r.json().await.unwrap();
     assert_eq!(made.as_object().unwrap().len(), 44, "{made}");
-    assert_eq!((made["member_role"].clone(), made["members"].clone(), made["sort_order"].clone(), made["next_work_item_sequence"].clone()), (json!(20), json!([me]), json!(65535.0), json!(1)), "{made}");
+    assert_eq!(
+        (
+            made["member_role"].clone(),
+            made["members"].clone(),
+            made["sort_order"].clone(),
+            made["next_work_item_sequence"].clone()
+        ),
+        (json!(20), json!([me]), json!(65535.0), json!(1)),
+        "{made}"
+    );
     let id = made["id"].as_str().unwrap().to_string();
     let p = |tail: &str| format!("{projects}{id}/{tail}");
 
     // what the app reads when it opens the project
     assert_eq!(get(&t, &token, &p("")).await["identifier"], "JRN");
     let row = get(&t, &token, &p("project-members/me/")).await;
-    assert_eq!((row["role"].clone(), row["member"]["id"].clone(), row["project"]["identifier"].clone(), row["workspace"]["slug"].clone()), (json!(20), me.clone(), json!("JRN"), json!(slug)), "{row}");
+    assert_eq!(
+        (
+            row["role"].clone(),
+            row["member"]["id"].clone(),
+            row["project"]["identifier"].clone(),
+            row["workspace"]["slug"].clone()
+        ),
+        (json!(20), me.clone(), json!("JRN"), json!(slug)),
+        "{row}"
+    );
     let props = get(&t, &token, &p("user-properties/")).await;
-    assert_eq!((props["user"].clone(), props["sort_order"].clone(), props["display_filters"]["layout"].clone()), (me.clone(), json!(65535.0), json!("list")), "{props}");
+    assert_eq!(
+        (props["user"].clone(), props["sort_order"].clone(), props["display_filters"]["layout"].clone()),
+        (me.clone(), json!(65535.0), json!("list")),
+        "{props}"
+    );
     assert_eq!(get(&t, &token, &p("user-properties/")).await["id"], props["id"], "asking again made another row");
     assert_eq!(get(&t, &token, &p("issue-labels/")).await, json!([]));
     let members = get(&t, &token, &p("members/")).await;
-    assert_eq!((members.as_array().unwrap().len(), members[0]["member"].clone(), members[0]["role"].clone()), (1, me.clone(), json!(20)), "{members}");
+    assert_eq!(
+        (members.as_array().unwrap().len(), members[0]["member"].clone(), members[0]["role"].clone()),
+        (1, me.clone(), json!(20)),
+        "{members}"
+    );
     let states = get(&t, &token, &p("states/")).await;
     let names: Vec<&str> = states.as_array().unwrap().iter().map(|s| s["name"].as_str().unwrap()).collect();
     assert_eq!(names, ["Backlog", "Todo", "In Progress", "Done", "Cancelled"], "{states}");
@@ -631,9 +859,21 @@ async fn compat_a_project_is_made_by_its_creator_who_is_its_admin_and_the_app_re
     }
     assert_eq!(get(&t, &token, &format!("/api/workspaces/{slug}/modules/")).await, json!([]));
     let stats = get(&t, &token, &format!("/api/workspaces/{slug}/project-stats/")).await;
-    assert_eq!(stats, json!([{"id": id, "total_issues": 0, "completed_issues": 0, "total_members": 1, "total_cycles": 0, "total_modules": 0}]));
+    assert_eq!(
+        stats,
+        json!([{"id": id, "total_issues": 0, "completed_issues": 0, "total_members": 1, "total_cycles": 0, "total_modules": 0}])
+    );
     let listed = get(&t, &token, &projects).await;
-    assert_eq!((listed.as_array().unwrap().len(), listed[0]["member_role"].clone(), listed[0]["sort_order"].clone(), listed[0]["name"].clone()), (1, json!(20), json!(65535.0), json!("Journey Project")), "{listed}");
+    assert_eq!(
+        (
+            listed.as_array().unwrap().len(),
+            listed[0]["member_role"].clone(),
+            listed[0]["sort_order"].clone(),
+            listed[0]["name"].clone()
+        ),
+        (1, json!(20), json!(65535.0), json!("Journey Project")),
+        "{listed}"
+    );
 
     // changing it: the app sends the cover image after the upload, which changes nothing but who and when
     let patch = |who: &str, body: Value| {
@@ -650,11 +890,31 @@ async fn compat_a_project_is_made_by_its_creator_who_is_its_admin_and_the_app_re
 
     // refusals make nothing, and say why in the pin's words
     for (what, body, want) in [
-        ("a name that is taken", json!({"name": "Renamed", "identifier": "NEW"}), json!({"name": ["PROJECT_NAME_ALREADY_EXIST"]})),
-        ("a key that is taken", json!({"name": "Another", "identifier": "JRN"}), json!({"identifier": ["PROJECT_IDENTIFIER_ALREADY_EXIST"]})),
-        ("no fields", json!({}), json!({"name": ["This field is required."], "identifier": ["This field is required."]})),
-        ("a forbidden character", json!({"name": "A.B", "identifier": "AB"}), json!({"name": ["PROJECT_NAME_CANNOT_CONTAIN_SPECIAL_CHARACTERS"]})),
-        ("a network that is not one of the two", json!({"name": "Net", "identifier": "NET", "network": 3}), json!({"network": ["\"3\" is not a valid choice."]})),
+        (
+            "a name that is taken",
+            json!({"name": "Renamed", "identifier": "NEW"}),
+            json!({"name": ["PROJECT_NAME_ALREADY_EXIST"]}),
+        ),
+        (
+            "a key that is taken",
+            json!({"name": "Another", "identifier": "JRN"}),
+            json!({"identifier": ["PROJECT_IDENTIFIER_ALREADY_EXIST"]}),
+        ),
+        (
+            "no fields",
+            json!({}),
+            json!({"name": ["This field is required."], "identifier": ["This field is required."]}),
+        ),
+        (
+            "a forbidden character",
+            json!({"name": "A.B", "identifier": "AB"}),
+            json!({"name": ["PROJECT_NAME_CANNOT_CONTAIN_SPECIAL_CHARACTERS"]}),
+        ),
+        (
+            "a network that is not one of the two",
+            json!({"name": "Net", "identifier": "NET", "network": 3}),
+            json!({"network": ["\"3\" is not a valid choice."]}),
+        ),
     ] {
         let r = post_as(&t, &token, &projects, &body).await;
         assert_eq!(r.status(), 400, "{what}");
@@ -663,16 +923,34 @@ async fn compat_a_project_is_made_by_its_creator_who_is_its_admin_and_the_app_re
     assert_eq!(get(&t, &token, &projects).await.as_array().unwrap().len(), 1, "a refused project was made");
 
     // the second account: no member of the workspace, so each read is refused with its own guard's body, and nothing is changed
-    for (tail, class) in [("", false), ("user-properties/", false), ("members/", false), ("states/", false), ("intake-state/", false), ("estimates/", true), ("issue-labels/", true)] {
+    for (tail, class) in [
+        ("", false),
+        ("user-properties/", false),
+        ("members/", false),
+        ("states/", false),
+        ("intake-state/", false),
+        ("estimates/", true),
+        ("issue-labels/", true),
+    ] {
         let r = t.http.get(t.url(&p(tail))).bearer_auth(&other).send().await.unwrap();
         assert_eq!(r.status(), 403, "a stranger on {tail}");
-        let want = if class { json!({"detail": "You do not have permission to perform this action."}) } else { json!({"error": "You don't have the required permissions."}) };
+        let want = if class {
+            json!({"detail": "You do not have permission to perform this action."})
+        } else {
+            json!({"error": "You don't have the required permissions."})
+        };
         assert_eq!(r.json::<Value>().await.unwrap(), want, "a stranger on {tail}");
     }
     let r = t.http.get(t.url(&p("project-members/me/"))).bearer_auth(&other).send().await.unwrap();
-    assert_eq!((r.status().as_u16(), r.json::<Value>().await.unwrap()), (404, json!({"error": "The required object does not exist."})));
+    assert_eq!(
+        (r.status().as_u16(), r.json::<Value>().await.unwrap()),
+        (404, json!({"error": "The required object does not exist."}))
+    );
     let r = patch(&other, json!({"name": "Mine now"})).await;
-    assert_eq!((r.status().as_u16(), r.json::<Value>().await.unwrap()), (403, json!({"error": "You don't have the required permissions."})));
+    assert_eq!(
+        (r.status().as_u16(), r.json::<Value>().await.unwrap()),
+        (403, json!({"error": "You don't have the required permissions."}))
+    );
     assert_eq!(get(&t, &token, &p("")).await["name"], "Renamed", "a refused change changed the project");
     let r = t.http.get(t.url(&p(""))).send().await.unwrap();
     assert_eq!(r.status(), 401);
@@ -691,7 +969,12 @@ async fn compat_a_project_is_opened_by_its_members_and_refused_to_the_rest_of_th
         workspace_roles: vec![SeedWorkspaceRole { workspace_id: f.ws_a, user_id: f.guest_a.id, role: Role::Guest }],
         projects: vec![SeedProject { id: secret, workspace_id: f.ws_a, name: format!("Secret {}", secret.0.simple()) }],
         project_details: vec![SeedProjectDetails { network: ProjectNetwork::Secret, ..SeedProjectDetails::of(secret) }],
-        memberships: vec![SeedMembership { project_id: secret, workspace_id: f.ws_a, user_id: f.member_a.id, role: Role::Member }],
+        memberships: vec![SeedMembership {
+            project_id: secret,
+            workspace_id: f.ws_a,
+            user_id: f.member_a.id,
+            role: Role::Member,
+        }],
         ..SeedFixture::default()
     };
     assert_eq!(t.admin_post("/internal/seed", &serde_json::to_value(&seeded).unwrap()).await.status(), 204);
@@ -712,11 +995,24 @@ async fn compat_a_project_is_opened_by_its_members_and_refused_to_the_rest_of_th
     assert_eq!(open(&f.outsider_a, f.a.project).await, (409, json!({"error": "You are not a member of this project"})));
     assert_eq!(open(&f.outsider_a, secret).await, (403, json!({"error": "You do not have permission"})));
     assert_eq!(open(&f.member_a, secret).await.0, 200);
-    assert_eq!(open(&f.admin_a, secret).await, (403, json!({"error": "You do not have permission"})), "an admin of the project A is not in the secret one");
-    assert_eq!(open(&f.member_a, ProjectId(uuid::Uuid::new_v4())).await, (404, json!({"error": "Project does not exist"})));
+    assert_eq!(
+        open(&f.admin_a, secret).await,
+        (403, json!({"error": "You do not have permission"})),
+        "an admin of the project A is not in the secret one"
+    );
+    assert_eq!(
+        open(&f.member_a, ProjectId(uuid::Uuid::new_v4())).await,
+        (404, json!({"error": "Project does not exist"}))
+    );
     // the guest of the workspace may not make a project; a member may, and is its admin
     let projects = format!("/api/workspaces/{}/projects/", f.a.slug);
-    let r = post_as(&t, &f.guest_a.token, &projects, &json!({"name": format!("G {}", secret.0.simple()), "identifier": "GST"})).await;
+    let r = post_as(
+        &t,
+        &f.guest_a.token,
+        &projects,
+        &json!({"name": format!("G {}", secret.0.simple()), "identifier": "GST"}),
+    )
+    .await;
     assert_eq!(r.status(), 403);
     assert_eq!(r.json::<Value>().await.unwrap(), json!({"error": "You don't have the required permissions."}));
     let r = post_as(&t, &f.member_a.token, &projects, &json!({"name": format!("M {}", secret.0.simple()), "identifier": format!("M{}", &secret.0.simple().to_string()[..8])})).await;
@@ -736,20 +1032,29 @@ async fn compat_a_workspace_admin_lists_every_project_and_a_member_only_their_ow
     // the admin: made the workspace, so is its admin, and a secret project that nobody is in is in it
     let (_, admin) = signed_up(&t).await;
     let slug = new_slug();
-    let made: Value = post_as(&t, &admin, "/api/workspaces/", &json!({"name": "Listed", "slug": slug})).await.json().await.unwrap();
+    let made: Value =
+        post_as(&t, &admin, "/api/workspaces/", &json!({"name": "Listed", "slug": slug})).await.json().await.unwrap();
     let ws = WorkspaceId(made["id"].as_str().unwrap().parse().unwrap());
     let secret = ProjectId(uuid::Uuid::new_v4());
     let seeded = SeedFixture {
         workspaces: vec![SeedWorkspace { id: ws, slug: WorkspaceSlug::new(&slug) }],
         projects: vec![SeedProject { id: secret, workspace_id: ws, name: "Secret".into() }],
-        project_details: vec![SeedProjectDetails { identifier: Some("SEC".into()), network: ProjectNetwork::Secret, ..SeedProjectDetails::of(secret) }],
+        project_details: vec![SeedProjectDetails {
+            identifier: Some("SEC".into()),
+            network: ProjectNetwork::Secret,
+            ..SeedProjectDetails::of(secret)
+        }],
         ..SeedFixture::default()
     };
     assert_eq!(t.admin_post("/internal/seed", &serde_json::to_value(&seeded).unwrap()).await.status(), 204);
     let listed = get(&t, &admin, &format!("/api/workspaces/{slug}/projects/")).await;
     assert_eq!(listed.as_array().unwrap().len(), 1, "{listed}");
     let p = &listed[0];
-    assert_eq!((p["id"].clone(), p["identifier"].clone(), p["network"].clone(), p["member_role"].clone()), (json!(secret.0), json!("SEC"), json!(0), Value::Null), "{p}");
+    assert_eq!(
+        (p["id"].clone(), p["identifier"].clone(), p["network"].clone(), p["member_role"].clone()),
+        (json!(secret.0), json!("SEC"), json!(0), Value::Null),
+        "{p}"
+    );
     assert_eq!(p.as_object().unwrap().len(), 21, "{p}");
 
     // the members: a seeded workspace whose members are all members of it, one project they are in and the secret one they are not
@@ -759,7 +1064,12 @@ async fn compat_a_workspace_admin_lists_every_project_and_a_member_only_their_ow
         workspaces: vec![SeedWorkspace { id: f.ws_a, slug: WorkspaceSlug::new(&f.a.slug) }],
         projects: vec![SeedProject { id: hidden, workspace_id: f.ws_a, name: "Hidden".into() }],
         project_details: vec![SeedProjectDetails { network: ProjectNetwork::Secret, ..SeedProjectDetails::of(hidden) }],
-        memberships: vec![SeedMembership { project_id: hidden, workspace_id: f.ws_a, user_id: f.admin_a.id, role: Role::Admin }],
+        memberships: vec![SeedMembership {
+            project_id: hidden,
+            workspace_id: f.ws_a,
+            user_id: f.admin_a.id,
+            role: Role::Admin,
+        }],
         ..SeedFixture::default()
     };
     assert_eq!(t.admin_post("/internal/seed", &serde_json::to_value(&seeded).unwrap()).await.status(), 204);
@@ -777,7 +1087,11 @@ async fn compat_a_workspace_admin_lists_every_project_and_a_member_only_their_ow
     // a member of the workspace who is in no project still sees the public one, with no role
     let outsider = get(&t, &f.outsider_a.token, &path).await;
     assert_eq!(outsider.as_array().unwrap().len(), 1, "{outsider}");
-    assert_eq!((outsider[0]["name"].clone(), outsider[0]["member_role"].clone()), (json!("A"), Value::Null), "{outsider}");
+    assert_eq!(
+        (outsider[0]["name"].clone(), outsider[0]["member_role"].clone()),
+        (json!("A"), Value::Null),
+        "{outsider}"
+    );
 }
 
 /// S48, S47 and X01 on every target. A member of the project makes a work item (201, in the pin's 26 keys, numbered 1 and put at
@@ -808,33 +1122,67 @@ async fn compat_a_member_makes_a_work_item_the_project_lists_it_and_the_app_open
     let by_decorator = json!({"error": "You don't have the required permissions."});
 
     // a member makes one; a guest of the project and a member of the workspace who is not in it are refused
-    let r = post_as(&t, &f.member_a.token, &issues, &json!({"name": "  The first  ", "priority": "high", "description_html": "<p>hi</p><script>x()</script>"})).await;
+    let r = post_as(
+        &t,
+        &f.member_a.token,
+        &issues,
+        &json!({"name": "  The first  ", "priority": "high", "description_html": "<p>hi</p><script>x()</script>"}),
+    )
+    .await;
     assert_eq!(r.status(), 201);
     let made: Value = r.json().await.unwrap();
-    assert_eq!((made["name"].clone(), made["priority"].clone(), made["sequence_id"].clone(), made["sort_order"].clone()), (json!("The first"), json!("high"), json!(1), json!(65535.0)), "{made}");
-    assert_eq!((made["state_id"].clone(), made["created_by"].clone()), (json!(state), json!(f.member_a.id.0)), "{made}");
+    assert_eq!(
+        (made["name"].clone(), made["priority"].clone(), made["sequence_id"].clone(), made["sort_order"].clone()),
+        (json!("The first"), json!("high"), json!(1), json!(65535.0)),
+        "{made}"
+    );
+    assert_eq!(
+        (made["state_id"].clone(), made["created_by"].clone()),
+        (json!(state), json!(f.member_a.id.0)),
+        "{made}"
+    );
     assert_eq!(made.as_object().unwrap().len(), 26, "{made}");
     for who in [&f.guest_a, &f.outsider_a] {
         let r = post_as(&t, &who.token, &issues, &json!({"name": "no"})).await;
         assert_eq!((r.status().as_u16(), r.json::<Value>().await.unwrap()), (403, by_decorator.clone()));
     }
-    let second: Value = post_as(&t, &f.admin_a.token, &issues, &json!({"name": "The second"})).await.json().await.unwrap();
+    let second: Value =
+        post_as(&t, &f.admin_a.token, &issues, &json!({"name": "The second"})).await.json().await.unwrap();
     assert_eq!((second["sequence_id"].clone(), second["sort_order"].clone()), (json!(2), json!(75535.0)), "{second}");
 
     // the project lists them, newest first, in the pin's envelope; a member sees both, the guest only what they made (none)
     let first_page = "?cursor=100:0:0&per_page=100&order_by=-created_at&sub_issue=true&layout=list&filters=%7B%7D";
     let listed = get(&t, &f.admin_a.token, &format!("{issues}{first_page}")).await;
     assert_eq!(listed.as_object().unwrap().len(), 12, "{listed}");
-    assert_eq!((listed["count"].clone(), listed["total_count"].clone(), listed["next_cursor"].clone(), listed["prev_cursor"].clone()), (json!(2), json!(2), json!("100:1:0"), json!("100:-1:1")), "{listed}");
+    assert_eq!(
+        (
+            listed["count"].clone(),
+            listed["total_count"].clone(),
+            listed["next_cursor"].clone(),
+            listed["prev_cursor"].clone()
+        ),
+        (json!(2), json!(2), json!("100:1:0"), json!("100:-1:1")),
+        "{listed}"
+    );
     let names: Vec<&str> = listed["results"].as_array().unwrap().iter().map(|r| r["name"].as_str().unwrap()).collect();
     assert_eq!(names, ["The second", "The first"]);
-    assert_eq!(listed["results"][0].as_object().unwrap().len(), 26, "the 22 columns, the three arrays and the state's group: {}", listed["results"][0]);
+    assert_eq!(
+        listed["results"][0].as_object().unwrap().len(),
+        26,
+        "the 22 columns, the three arrays and the state's group: {}",
+        listed["results"][0]
+    );
     let guest = get(&t, &f.guest_a.token, &format!("{issues}{first_page}")).await;
     assert_eq!((guest["count"].clone(), guest["results"].clone()), (json!(0), json!([])), "{guest}");
     // a page of one, and what is refused
     let paged = get(&t, &f.admin_a.token, &format!("{issues}?per_page=1&cursor=1:1:0&order_by=sequence_id")).await;
-    assert_eq!((paged["results"][0]["name"].clone(), paged["next_page_results"].clone(), paged["prev_page_results"].clone()), (json!("The second"), json!(false), json!(true)), "{paged}");
-    let r = t.http.get(t.url(&format!("{issues}?group_by=priority"))).bearer_auth(&f.admin_a.token).send().await.unwrap();
+    assert_eq!(
+        (paged["results"][0]["name"].clone(), paged["next_page_results"].clone(), paged["prev_page_results"].clone()),
+        (json!("The second"), json!(false), json!(true)),
+        "{paged}"
+    );
+    let r =
+        t.http.get(t.url(&format!("{issues}?group_by=priority"))).bearer_auth(&f.admin_a.token).send().await.unwrap();
     assert_eq!(r.status(), 400);
     let r = t.http.get(t.url(&format!("{issues}{first_page}"))).bearer_auth(&f.outsider_a.token).send().await.unwrap();
     assert_eq!((r.status().as_u16(), r.json::<Value>().await.unwrap()), (403, by_decorator.clone()));
@@ -843,11 +1191,32 @@ async fn compat_a_member_makes_a_work_item_the_project_lists_it_and_the_app_open
     let id = made["id"].as_str().unwrap();
     let open = format!("{issues}{id}/?expand=issue_reactions,issue_attachments,issue_link,parent");
     let opened = get(&t, &f.member_a.token, &open).await;
-    assert_eq!((opened["description_html"].clone(), opened["is_subscribed"].clone(), opened["issue_link"].clone(), opened["parent"].clone()), (json!("<p>hi</p>"), json!(false), json!([]), Value::Null), "the script is gone: {opened}");
+    assert_eq!(
+        (
+            opened["description_html"].clone(),
+            opened["is_subscribed"].clone(),
+            opened["issue_link"].clone(),
+            opened["parent"].clone()
+        ),
+        (json!("<p>hi</p>"), json!(false), json!([]), Value::Null),
+        "the script is gone: {opened}"
+    );
     let r = t.http.get(t.url(&open)).bearer_auth(&f.guest_a.token).send().await.unwrap();
-    assert_eq!((r.status().as_u16(), r.json::<Value>().await.unwrap()), (403, json!({"error": "You are not allowed to view this issue"})));
+    assert_eq!(
+        (r.status().as_u16(), r.json::<Value>().await.unwrap()),
+        (403, json!({"error": "You are not allowed to view this issue"}))
+    );
     let r = t.http.get(t.url(&open)).bearer_auth(&f.outsider_a.token).send().await.unwrap();
     assert_eq!((r.status().as_u16(), r.json::<Value>().await.unwrap()), (403, by_decorator));
-    let r = t.http.get(t.url(&format!("{issues}{}/", uuid::Uuid::new_v4()))).bearer_auth(&f.member_a.token).send().await.unwrap();
-    assert_eq!((r.status().as_u16(), r.json::<Value>().await.unwrap()), (404, json!({"error": "The required object does not exist."})));
+    let r = t
+        .http
+        .get(t.url(&format!("{issues}{}/", uuid::Uuid::new_v4())))
+        .bearer_auth(&f.member_a.token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        (r.status().as_u16(), r.json::<Value>().await.unwrap()),
+        (404, json!({"error": "The required object does not exist."}))
+    );
 }

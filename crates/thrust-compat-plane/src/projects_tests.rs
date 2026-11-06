@@ -21,7 +21,10 @@ fn fields(e: PlaneError) -> serde_json::Value {
 #[rstest]
 #[case::the_name_index("projects_workspace_name_key", json!({"name": ["PROJECT_NAME_ALREADY_EXIST"]}))]
 #[case::the_key_index("projects_workspace_identifier_key", json!({"identifier": ["PROJECT_IDENTIFIER_ALREADY_EXIST"]}))]
-fn a_name_or_key_another_request_took_first_is_the_field_error_of_the_index_that_refused(#[case] constraint: &str, #[case] want: serde_json::Value) {
+fn a_name_or_key_another_request_took_first_is_the_field_error_of_the_index_that_refused(
+    #[case] constraint: &str,
+    #[case] want: serde_json::Value,
+) {
     let got = saved(ProjectError::Core(CoreError::Conflict(constraint.into())));
     assert_eq!(fields(got), want);
 }

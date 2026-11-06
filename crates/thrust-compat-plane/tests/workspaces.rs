@@ -26,7 +26,13 @@ fn members_seen_by(role: Role) -> Value {
     let (router, db, jar) = world(&["caller@example.test", "other@example.test"]);
     let (caller, other) = (user_id(&db, "caller@example.test"), user_id(&db, "other@example.test"));
     let ws = make_workspace(&db, 0xA1, "seen-by", caller, role);
-    seed(&db, SeedFixture { workspace_members: vec![SeedWorkspaceMember { workspace_id: ws, user_id: other }], ..SeedFixture::default() });
+    seed(
+        &db,
+        SeedFixture {
+            workspace_members: vec![SeedWorkspaceMember { workspace_id: ws, user_id: other }],
+            ..SeedFixture::default()
+        },
+    );
     let r = call(&router, &jar, "caller@example.test", "GET", "/api/workspaces/seen-by/members/", Value::Null);
     assert_eq!(r["status"], 200, "{r}");
     r["body"].clone()
@@ -51,7 +57,11 @@ fn the_member_list_names_roles_with_plane_numbers_and_hides_contact_details_from
     for row in rows {
         let person = row["member"].as_object().expect("the person");
         assert_eq!(person.contains_key("email"), shows_contact_details(caller), "email for a {caller:?}: {person:?}");
-        assert_eq!(person.contains_key("last_login_medium"), shows_contact_details(caller), "medium for a {caller:?}: {person:?}");
+        assert_eq!(
+            person.contains_key("last_login_medium"),
+            shows_contact_details(caller),
+            "medium for a {caller:?}: {person:?}"
+        );
         // what everyone sees
         for key in ["id", "first_name", "last_name", "avatar", "avatar_url", "display_name", "is_bot"] {
             assert!(person.contains_key(key), "{key} for a {caller:?}: {person:?}");
@@ -122,7 +132,11 @@ fn the_both_required_check_follows_pythons_truthiness(
 ) {
     let (value, given) = field;
     let (router, _, jar) = world(&["truthy@example.test"]);
-    let body = if in_name { json!({"name": value, "slug": "truthy-slug"}) } else { json!({"name": "Truthy name", "slug": value}) };
+    let body = if in_name {
+        json!({"name": value, "slug": "truthy-slug"})
+    } else {
+        json!({"name": "Truthy name", "slug": value})
+    };
     let r = call(&router, &jar, "truthy@example.test", "POST", "/api/workspaces/", body);
     let refused_as_missing = r["status"] == 400 && r["body"] == json!({"error": BOTH_REQUIRED});
     assert_eq!(refused_as_missing, !given, "{value} in the {}: {r}", if in_name { "name" } else { "slug" });
@@ -140,7 +154,11 @@ fn the_name_and_slug_lengths_are_limited_to_80_and_48_characters(
     let body = json!({"name": letter.repeat(name_len), "slug": "a".repeat(slug_len)});
     let r = call(&router, &jar, "limits@example.test", "POST", "/api/workspaces/", body);
     if name_len > 80 || slug_len > 48 {
-        assert_eq!((&r["status"], &r["body"]), (&json!(400), &json!({"error": "The maximum length for name is 80 and for slug is 48"})), "{r}");
+        assert_eq!(
+            (&r["status"], &r["body"]),
+            (&json!(400), &json!({"error": "The maximum length for name is 80 and for slug is 48"})),
+            "{r}"
+        );
     } else {
         assert_eq!(r["status"], 201, "{r}");
     }
@@ -154,11 +172,21 @@ fn a_deactivated_member_is_listed_as_suspended_and_loses_the_workspace() {
     let (router, db, jar) = world(&["admin@example.test", "gone@example.test"]);
     let (admin, gone) = (user_id(&db, "admin@example.test"), user_id(&db, "gone@example.test"));
     let ws = make_workspace(&db, 0xD1, "suspend", admin, Role::Admin);
-    seed(&db, SeedFixture { workspace_members: vec![SeedWorkspaceMember { workspace_id: ws, user_id: gone }], ..SeedFixture::default() });
+    seed(
+        &db,
+        SeedFixture {
+            workspace_members: vec![SeedWorkspaceMember { workspace_id: ws, user_id: gone }],
+            ..SeedFixture::default()
+        },
+    );
     let get = |who: &str, path: &str| call(&router, &jar, who, "GET", path, Value::Null);
     let listed = |who: &str| get(who, "/api/users/me/workspaces/")["body"].as_array().unwrap().len();
     assert_eq!(listed("gone@example.test"), 1, "control: before the change the member has the workspace");
-    assert_eq!(get("gone@example.test", "/api/workspaces/suspend/members/")["status"], 200, "control: and its member list");
+    assert_eq!(
+        get("gone@example.test", "/api/workspaces/suspend/members/")["status"],
+        200,
+        "control: and its member list"
+    );
 
     assert!(futures_executor::block_on(db.set_workspace_member_active(&SystemScope::mint(), ws, gone, false)).unwrap());
 
@@ -169,7 +197,11 @@ fn a_deactivated_member_is_listed_as_suspended_and_loses_the_workspace() {
     let refused = get("gone@example.test", "/api/users/me/workspaces/suspend/project-roles/");
     assert_eq!(refused["status"], 403, "{refused}");
     let blank = get("gone@example.test", "/api/workspaces/suspend/workspace-members/me/");
-    assert_eq!((&blank["status"], &blank["body"]["is_active"], &blank["body"]["member"]), (&json!(200), &json!(false), &Value::Null), "{blank}");
+    assert_eq!(
+        (&blank["status"], &blank["body"]["is_active"], &blank["body"]["member"]),
+        (&json!(200), &json!(false), &Value::Null),
+        "{blank}"
+    );
 
     let seen = get("admin@example.test", "/api/workspaces/suspend/members/");
     let rows = seen["body"].as_array().unwrap();

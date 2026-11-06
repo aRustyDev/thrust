@@ -101,9 +101,7 @@ fn authenticate_resolves_a_live_session_and_nothing_else(
 /// `last_seen_at` is written lazily: only when it is at least an hour old (the spec's number, written out rather
 /// than read from `CoreConfig`). A fresh session costs a request no write.
 #[rstest]
-fn authenticate_touches_a_session_only_when_it_is_stale(
-    #[values(0, 3_599, 3_600, 86_400)] age_secs: i64,
-) {
+fn authenticate_touches_a_session_only_when_it_is_stale(#[values(0, 3_599, 3_600, 86_400)] age_secs: i64) {
     let w = world();
     let who = w.principal(Actor::MemberA);
     insert_session(&w, "tok-1", &who, age_secs, 3_600_000);
@@ -141,7 +139,8 @@ fn hash_token_is_sha256() {
 #[test]
 fn a_workspace_member_outside_the_project_is_forbidden() {
     let w = world();
-    let got = block_on(authorize(&w.app, &w.principal(Actor::OutsiderA), &w.slug_a, w.project_a, Permission::ReadWorkItems));
+    let got =
+        block_on(authorize(&w.app, &w.principal(Actor::OutsiderA), &w.slug_a, w.project_a, Permission::ReadWorkItems));
     assert_eq!(outcome(&got), Outcome::Forbidden);
 }
 
@@ -152,7 +151,8 @@ fn another_tenants_project_is_not_found(
 ) {
     let w = world();
     let cross = block_on(authorize(&w.app, &w.principal(Actor::MemberB), &w.slug_a, w.project_a, perm));
-    let missing = block_on(authorize(&w.app, &w.principal(Actor::MemberB), &w.slug_b, ProjectId(Uuid::from_u128(0xDEAD)), perm));
+    let missing =
+        block_on(authorize(&w.app, &w.principal(Actor::MemberB), &w.slug_b, ProjectId(Uuid::from_u128(0xDEAD)), perm));
     assert_eq!(outcome(&cross), Outcome::NotFound);
     assert_eq!(outcome(&missing), Outcome::NotFound);
 }

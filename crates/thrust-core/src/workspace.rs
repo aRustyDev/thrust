@@ -48,7 +48,11 @@ pub struct NewWorkspaceRequest {
 /// Make a workspace and its first member, the caller, who is its admin. `Invalid` for what breaks a rule above, `Conflict`
 /// for a slug that is taken (also when another request took it between the check and the insert: the unique index decides),
 /// and nothing is written then. The workspace's colour is made here from the random source.
-pub async fn create_workspace(app: &App, who: &Principal, req: NewWorkspaceRequest) -> Result<WorkspaceListing, CoreError> {
+pub async fn create_workspace(
+    app: &App,
+    who: &Principal,
+    req: NewWorkspaceRequest,
+) -> Result<WorkspaceListing, CoreError> {
     let bad = |what: &str| Err(CoreError::Invalid(what.to_string()));
     if req.name.is_empty() || req.name.chars().count() > MAX_WORKSPACE_NAME {
         return bad("a workspace name is 1 to 80 characters");
@@ -136,9 +140,8 @@ pub async fn workspace_choice(app: &App, me: &Me) -> Result<WorkspaceChoice, Cor
         .last_workspace_id
         .and_then(|id| mine.iter().find(|l| l.workspace.id == id))
         .map(|l| l.workspace.clone());
-    let fallback = last.clone().or_else(|| {
-        mine.iter().map(|l| &l.workspace).min_by_key(|w| (w.created_at, w.id.0)).cloned()
-    });
+    let fallback =
+        last.clone().or_else(|| mine.iter().map(|l| &l.workspace).min_by_key(|w| (w.created_at, w.id.0)).cloned());
     Ok(WorkspaceChoice { last, fallback })
 }
 

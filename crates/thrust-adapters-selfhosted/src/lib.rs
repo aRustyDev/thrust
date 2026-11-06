@@ -1,9 +1,9 @@
 //! Self-hosted (native) adapters: clock, ids and the `Background` executor on tokio.
 //! The Postgres connection pool lives here too (added with the Postgres stage).
 
+use async_trait::async_trait;
 use chrono::Utc;
 use thrust_contracts::{Timestamp, Uuid};
-use async_trait::async_trait;
 use thrust_ports::{
     Background, BoxFuture, Clock, Fetch, FetchError, FetchRequest, FetchResponse, IdGen, Rng, RngError,
 };

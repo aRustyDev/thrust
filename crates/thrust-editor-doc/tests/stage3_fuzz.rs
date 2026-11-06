@@ -19,8 +19,8 @@ fn same(a: &Value, b: &Value) -> bool {
 #[test]
 fn oracle_stage3_fuzz_html() {
     let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../target/spike-0006");
-    let rd = std::fs::read_dir(dir)
-        .unwrap_or_else(|e| panic!("{dir}: {e} (generate it with tools/spike-0006/gen-all.sh)"));
+    let rd =
+        std::fs::read_dir(dir).unwrap_or_else(|e| panic!("{dir}: {e} (generate it with tools/spike-0006/gen-all.sh)"));
     let mut files: Vec<_> = rd
         .filter_map(|e| e.ok())
         .map(|e| e.path())
@@ -32,10 +32,7 @@ fn oracle_stage3_fuzz_html() {
         })
         .collect();
     files.sort();
-    assert!(
-        !files.is_empty(),
-        "no fuzz-html*.json in {dir} (generate them with tools/spike-0006/gen-all.sh)"
-    );
+    assert!(!files.is_empty(), "no fuzz-html*.json in {dir} (generate them with tools/spike-0006/gen-all.sh)");
     let mut tot = [0usize; 6];
     let mut tot_n = [0usize; 6];
     for p in files {
@@ -49,11 +46,7 @@ fn oracle_stage3_fuzz_html() {
                 skipped += 1;
                 continue;
             };
-            let variant = if d["variant"] == "rich" {
-                Variant::Rich
-            } else {
-                Variant::Document
-            };
+            let variant = if d["variant"] == "rich" { Variant::Rich } else { Variant::Document };
             let schema = Schema::new(variant);
             let html_in = d["html"].as_str().unwrap();
             let parsed = domparse::html_to_doc(&schema, html_in);
@@ -72,54 +65,47 @@ fn oracle_stage3_fuzz_html() {
             let bin = ydoc::encode(&schema, &node, None, Some(1234));
             let back = ydoc::decode(&schema, &bin, "default").map(|x| x.to_json(&schema));
             let stored = &d["stored_json"];
-            check(
-                1,
-                matches!(&back, Ok(b) if same(b, stored)),
-                "D1 json->bin->json",
-                &mut fails,
-            );
+            check(1, matches!(&back, Ok(b) if same(b, stored)), "D1 json->bin->json", &mut fails);
             check(
                 2,
-                ydoc::struct_dump(&bin, "default")
-                    .map(|s| same(&s, &d["ystruct"]))
-                    .unwrap_or(false),
+                ydoc::struct_dump(&bin, "default").map(|s| same(&s, &d["ystruct"])).unwrap_or(false),
                 "D1s yjs structure",
                 &mut fails,
             );
-            let ob = base64::engine::general_purpose::STANDARD
-                .decode(d["binary"].as_str().unwrap())
-                .unwrap();
+            let ob = base64::engine::general_purpose::STANDARD.decode(d["binary"].as_str().unwrap()).unwrap();
             check(
                 3,
-                ydoc::decode(&schema, &ob, "default")
-                    .map(|x| same(&x.to_json(&schema), stored))
-                    .unwrap_or(false),
+                ydoc::decode(&schema, &ob, "default").map(|x| same(&x.to_json(&schema), stored)).unwrap_or(false),
                 "D2 binary->json",
                 &mut fails,
             );
             let snode = Node::from_json(&schema, stored).unwrap();
-            check(
-                4,
-                html::to_html(&schema, &snode) == d["stored_html"].as_str().unwrap(),
-                "D3 json->html",
-                &mut fails,
-            );
+            check(4, html::to_html(&schema, &snode) == d["stored_html"].as_str().unwrap(), "D3 json->html", &mut fails);
             // the v1 write pipeline end to end
-            let rt = ydoc::decode(
-                &schema,
-                &ydoc::encode(&schema, &parsed, None, Some(77)),
-                "default",
-            )
-            .unwrap();
+            let rt = ydoc::decode(&schema, &ydoc::encode(&schema, &parsed, None, Some(77)), "default").unwrap();
             check(
                 5,
-                same(&rt.to_json(&schema), stored)
-                    && html::to_html(&schema, &rt) == d["stored_html"].as_str().unwrap(),
+                same(&rt.to_json(&schema), stored) && html::to_html(&schema, &rt) == d["stored_html"].as_str().unwrap(),
                 "D5 html->all formats",
                 &mut fails,
             );
         }
-        eprintln!("fuzz {:?} (oracle threw on {skipped}): D4 {}/{} D1 {}/{} D1s {}/{} D2 {}/{} D3 {}/{} D5 {}/{}", p.file_name().unwrap(), ok[0], n[0], ok[1], n[1], ok[2], n[2], ok[3], n[3], ok[4], n[4], ok[5], n[5]);
+        eprintln!(
+            "fuzz {:?} (oracle threw on {skipped}): D4 {}/{} D1 {}/{} D1s {}/{} D2 {}/{} D3 {}/{} D5 {}/{}",
+            p.file_name().unwrap(),
+            ok[0],
+            n[0],
+            ok[1],
+            n[1],
+            ok[2],
+            n[2],
+            ok[3],
+            n[3],
+            ok[4],
+            n[4],
+            ok[5],
+            n[5]
+        );
         for f in fails.iter().take(12) {
             eprintln!("FAIL {f}");
         }
@@ -131,21 +117,7 @@ fn oracle_stage3_fuzz_html() {
     }
     eprintln!(
         "fuzz TOTAL: D4 {}/{} D1 {}/{} D1s {}/{} D2 {}/{} D3 {}/{} D5 {}/{}",
-        tot[0],
-        tot_n[0],
-        tot[1],
-        tot_n[1],
-        tot[2],
-        tot_n[2],
-        tot[3],
-        tot_n[3],
-        tot[4],
-        tot_n[4],
-        tot[5],
-        tot_n[5]
+        tot[0], tot_n[0], tot[1], tot_n[1], tot[2], tot_n[2], tot[3], tot_n[3], tot[4], tot_n[4], tot[5], tot_n[5]
     );
-    assert!(
-        tot_n.iter().all(|&n| n > 0),
-        "a fidelity direction compared nothing: {tot_n:?}"
-    );
+    assert!(tot_n.iter().all(|&n| n > 0), "a fidelity direction compared nothing: {tot_n:?}");
 }

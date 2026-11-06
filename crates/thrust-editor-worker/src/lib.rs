@@ -42,20 +42,13 @@ mod sanitize {
 }
 
 fn variant(url: &Url) -> Variant {
-    match url
-        .query_pairs()
-        .find(|(k, _)| k == "variant")
-        .map(|(_, v)| v.to_string())
-        .as_deref()
-    {
+    match url.query_pairs().find(|(k, _)| k == "variant").map(|(_, v)| v.to_string()).as_deref() {
         Some("document") => Variant::Document,
         _ => Variant::Rich,
     }
 }
 fn q(url: &Url, k: &str) -> Option<String> {
-    url.query_pairs()
-        .find(|(kk, _)| kk == k)
-        .map(|(_, v)| v.to_string())
+    url.query_pairs().find(|(kk, _)| kk == k).map(|(_, v)| v.to_string())
 }
 
 #[event(fetch)]
@@ -79,14 +72,9 @@ pub async fn main(mut req: Request, _env: Env, _ctx: Context) -> Result<Response
                 let clean = if lean { body.clone() } else { san.clean(&body) };
                 let doc = domparse::html_to_doc(&schema, &clean);
                 let bin = ydoc::encode(&schema, &doc, None, Some(1));
-                let back = ydoc::decode(&schema, &bin, "default")
-                    .map_err(|e| Error::RustError(e.to_string()))?;
+                let back = ydoc::decode(&schema, &bin, "default").map_err(|e| Error::RustError(e.to_string()))?;
                 let h = html::to_html(&schema, &back);
-                let stripped = if lean {
-                    String::new()
-                } else {
-                    sanitize::strip_tags(&h)
-                };
+                let stripped = if lean { String::new() } else { sanitize::strip_tags(&h) };
                 last = (back.to_json(&schema).to_string(), h, bin, stripped);
             }
             if full {
@@ -104,33 +92,16 @@ pub async fn main(mut req: Request, _env: Env, _ctx: Context) -> Result<Response
             let depth: usize = q(&url, "depth").and_then(|v| v.parse().ok()).unwrap_or(10);
             let shape = q(&url, "shape").unwrap_or_else(|| "blockquote".into());
             let body = match shape.as_str() {
-                "list" => format!(
-                    "{}x{}",
-                    "<ul><li>".repeat(depth),
-                    "</li></ul>".repeat(depth)
-                ),
-                "div" => format!(
-                    "{}<p>x</p>{}",
-                    "<div>".repeat(depth),
-                    "</div>".repeat(depth)
-                ),
-                "inline" => format!(
-                    "<p>{}x{}</p>",
-                    "<strong><em>".repeat(depth),
-                    "</em></strong>".repeat(depth)
-                ),
-                _ => format!(
-                    "{}<p>x</p>{}",
-                    "<blockquote>".repeat(depth),
-                    "</blockquote>".repeat(depth)
-                ),
+                "list" => format!("{}x{}", "<ul><li>".repeat(depth), "</li></ul>".repeat(depth)),
+                "div" => format!("{}<p>x</p>{}", "<div>".repeat(depth), "</div>".repeat(depth)),
+                "inline" => format!("<p>{}x{}</p>", "<strong><em>".repeat(depth), "</em></strong>".repeat(depth)),
+                _ => format!("{}<p>x</p>{}", "<blockquote>".repeat(depth), "</blockquote>".repeat(depth)),
             };
             let schema = Schema::new(Variant::Rich);
             let clean = sanitize::Sanitizer::default().clean(&body);
             let doc = domparse::html_to_doc(&schema, &clean);
             let bin = ydoc::encode(&schema, &doc, None, Some(1));
-            let back = ydoc::decode(&schema, &bin, "default")
-                .map_err(|e| Error::RustError(e.to_string()))?;
+            let back = ydoc::decode(&schema, &bin, "default").map_err(|e| Error::RustError(e.to_string()))?;
             let h = html::to_html(&schema, &back);
             let j = back.to_json(&schema);
             Response::from_json(
@@ -145,30 +116,22 @@ pub async fn main(mut req: Request, _env: Env, _ctx: Context) -> Result<Response
             let schema = Schema::new(variant(&url));
             let mut last = (String::new(), String::new());
             for _ in 0..n {
-                let doc = ydoc::decode(&schema, &bin, "default")
-                    .map_err(|e| Error::RustError(e.to_string()))?;
-                last = (
-                    doc.to_json(&schema).to_string(),
-                    html::to_html(&schema, &doc),
-                );
+                let doc = ydoc::decode(&schema, &bin, "default").map_err(|e| Error::RustError(e.to_string()))?;
+                last = (doc.to_json(&schema).to_string(), html::to_html(&schema, &doc));
             }
             if full {
                 Response::from_json(&json!({"json": last.0, "html": last.1}))
             } else {
-                Response::from_json(
-                    &json!({"json_bytes": last.0.len(), "html_bytes": last.1.len(), "n": n}),
-                )
+                Response::from_json(&json!({"json_bytes": last.0.len(), "html_bytes": last.1.len(), "n": n}))
             }
         }
         (Method::Post, "/json-to-binary") => {
             let body = req.text().await?;
             let schema = Schema::new(variant(&url));
-            let v: serde_json::Value =
-                serde_json::from_str(&body).map_err(|e| Error::RustError(e.to_string()))?;
+            let v: serde_json::Value = serde_json::from_str(&body).map_err(|e| Error::RustError(e.to_string()))?;
             let mut last = Vec::new();
             for _ in 0..n {
-                let node =
-                    Node::from_json(&schema, &v).map_err(|e| Error::RustError(e.to_string()))?;
+                let node = Node::from_json(&schema, &v).map_err(|e| Error::RustError(e.to_string()))?;
                 last = ydoc::encode(&schema, &node, None, Some(1));
             }
             if full {
@@ -181,11 +144,7 @@ pub async fn main(mut req: Request, _env: Env, _ctx: Context) -> Result<Response
         (Method::Post, "/sanitize") => {
             let body = req.text().await?;
             let hardened = q(&url, "hardened").as_deref() == Some("1");
-            let b = if hardened {
-                sanitize::hardened_builder()
-            } else {
-                sanitize::plane_builder()
-            };
+            let b = if hardened { sanitize::hardened_builder() } else { sanitize::plane_builder() };
             let mut last = String::new();
             for _ in 0..n {
                 last = b.clean(&body).to_string();

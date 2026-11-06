@@ -213,9 +213,7 @@ impl Permission {
     fn min_role(self) -> Role {
         match self {
             Permission::ReadProject | Permission::ReadWorkItems | Permission::ReadAttachment => Role::Guest,
-            Permission::CreateWorkItem | Permission::DeleteWorkItem | Permission::WriteAttachment => {
-                Role::Member
-            }
+            Permission::CreateWorkItem | Permission::DeleteWorkItem | Permission::WriteAttachment => Role::Member,
             Permission::ReadDeleted => Role::Admin,
         }
     }
@@ -305,7 +303,11 @@ pub async fn authorize_with_role(
 ///
 /// This is the only place a [`WorkspaceScope`] is minted; `scripts/check-deps.sh` rejects a call to
 /// `WorkspaceScope::mint` anywhere else.
-pub async fn authorize_workspace(app: &App, who: &Principal, slug: &WorkspaceSlug) -> Result<WorkspaceScope, CoreError> {
+pub async fn authorize_workspace(
+    app: &App,
+    who: &Principal,
+    slug: &WorkspaceSlug,
+) -> Result<WorkspaceScope, CoreError> {
     match app.ports.db.workspace_access(slug, who.user_id).await? {
         Some(a) => Ok(WorkspaceScope::mint(a.workspace_id, who.user_id, a.role)),
         None => Err(CoreError::NotFound),
@@ -393,11 +395,7 @@ pub async fn create_work_item(
     let decision = app
         .ports
         .limiter
-        .hit(
-            &format!("create:{}", who.user_id),
-            app.cfg.create_rate_limit,
-            app.cfg.rate_window_secs,
-        )
+        .hit(&format!("create:{}", who.user_id), app.cfg.create_rate_limit, app.cfg.rate_window_secs)
         .await?;
     if let RateDecision::Limited { retry_after_secs } = decision {
         return Err(CoreError::RateLimited { retry_after_secs });
@@ -566,10 +564,7 @@ pub async fn dispatch(app: &App, row: &OutboxRow) -> Result<(), CoreError> {
             },
         )
         .await?;
-    app.ports
-        .db
-        .mark_outbox_dispatched(&app.system, row.envelope.event_id, app.ports.clock.now())
-        .await?;
+    app.ports.db.mark_outbox_dispatched(&app.system, row.envelope.event_id, app.ports.clock.now()).await?;
     Ok(())
 }
 
@@ -654,12 +649,7 @@ pub async fn process_event(app: &App, env: &Envelope) -> Result<bool, CoreError>
     let Some(project_id) = env.project_id() else {
         return Err(CoreError::Invalid("event without project_id".into()));
     };
-    let verb = env
-        .event_type
-        .rsplit('.')
-        .next()
-        .unwrap_or(env.event_type.as_str())
-        .to_string();
+    let verb = env.event_type.rsplit('.').next().unwrap_or(env.event_type.as_str()).to_string();
     let a = Activity {
         id: ActivityId(app.ports.ids.new_uuid()),
         event_id: env.event_id,
@@ -704,15 +694,8 @@ pub async fn put_attachment(
         return Err(CoreError::TooLarge);
     }
     let scope = authorize(app, who, slug, project, Permission::WriteAttachment).await?;
-    app.ports
-        .db
-        .get_work_item(&scope, item, Visibility::Visible)
-        .await?
-        .ok_or(CoreError::NotFound)?;
-    app.ports
-        .blobs
-        .put(&blob_key(&scope, item, name), bytes, content_type)
-        .await?;
+    app.ports.db.get_work_item(&scope, item, Visibility::Visible).await?.ok_or(CoreError::NotFound)?;
+    app.ports.blobs.put(&blob_key(&scope, item, name), bytes, content_type).await?;
     Ok(())
 }
 
@@ -726,11 +709,7 @@ pub async fn get_attachment(
 ) -> Result<Blob, CoreError> {
     validate_blob_name(name)?;
     let scope = authorize(app, who, slug, project, Permission::ReadAttachment).await?;
-    app.ports
-        .blobs
-        .get(&blob_key(&scope, item, name))
-        .await?
-        .ok_or(CoreError::NotFound)
+    app.ports.blobs.get(&blob_key(&scope, item, name)).await?.ok_or(CoreError::NotFound)
 }
 
 pub async fn delete_attachment(
@@ -806,11 +785,7 @@ mod tests {
     }
 
     fn scope() -> Scope {
-        Scope::mint(
-            WorkspaceId(Uuid::from_u128(1)),
-            ProjectId(Uuid::from_u128(2)),
-            UserId(Uuid::from_u128(3)),
-        )
+        Scope::mint(WorkspaceId(Uuid::from_u128(1)), ProjectId(Uuid::from_u128(2)), UserId(Uuid::from_u128(3)))
     }
 
     /// Names built from mostly ordinary characters with the occasional `.` or multi-byte character, never `/`
@@ -953,10 +928,24 @@ mod tests {
         }
 
         let all = [
-            "name: empty", "name: only whitespace", "name: valid", "name: exactly 255", "name: over 255", "visible: 1",
-            "visible: 255", "visible: multi-byte", "visible: 256", "blob: bare dot", "blob: dot dot",
-            "blob: rejected for ..", "blob accepted: one character", "blob accepted: with a dot",
-            "blob accepted: multi-byte", "slash: leading", "slash: trailing", "slash: inside",
+            "name: empty",
+            "name: only whitespace",
+            "name: valid",
+            "name: exactly 255",
+            "name: over 255",
+            "visible: 1",
+            "visible: 255",
+            "visible: multi-byte",
+            "visible: 256",
+            "blob: bare dot",
+            "blob: dot dot",
+            "blob: rejected for ..",
+            "blob accepted: one character",
+            "blob accepted: with a dot",
+            "blob accepted: multi-byte",
+            "slash: leading",
+            "slash: trailing",
+            "slash: inside",
         ];
         let missing: Vec<_> = all.iter().filter(|c| !seen.contains(*c)).collect();
         assert!(missing.is_empty(), "never generated: {missing:?}");

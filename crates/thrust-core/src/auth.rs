@@ -113,7 +113,12 @@ pub(crate) async fn mint_session(app: &App, user: UserId) -> Result<SignedIn, Co
     let expires_at = now + thrust_contracts::chrono::TimeDelta::seconds(app.cfg.session_ttl_secs);
     app.ports
         .db
-        .insert_session(&NewSession { token_hash: crate::hash_token(&token), user_id: user, created_at: now, expires_at })
+        .insert_session(&NewSession {
+            token_hash: crate::hash_token(&token),
+            user_id: user,
+            created_at: now,
+            expires_at,
+        })
         .await?;
     // When they last signed in is bookkeeping, like a session's `last_seen_at`: failing to write it, or an account with no
     // profile yet, must not fail a sign-in that is authentic.
@@ -198,10 +203,48 @@ const MIN_DISTINCT_CHARS: usize = 5;
 /// The passwords people pick most, compared lower case with the digits and symbols around the letters stripped (so
 /// `Password123!` is `password`).
 const COMMON_PASSWORDS: &[&str] = &[
-    "password", "passw0rd", "qwerty", "qwertyuiop", "letmein", "welcome", "admin", "administrator", "iloveyou", "monkey",
-    "dragon", "football", "baseball", "master", "login", "trustno", "sunshine", "princess", "starwars", "whatever",
-    "freedom", "shadow", "superman", "michael", "jordan", "hello", "charlie", "donald", "hunter", "abc", "abcdef",
-    "asdfgh", "asdfghjkl", "zxcvbn", "zxcvbnm", "plane", "thrust", "changeme", "secret", "default", "test", "guest",
+    "password",
+    "passw0rd",
+    "qwerty",
+    "qwertyuiop",
+    "letmein",
+    "welcome",
+    "admin",
+    "administrator",
+    "iloveyou",
+    "monkey",
+    "dragon",
+    "football",
+    "baseball",
+    "master",
+    "login",
+    "trustno",
+    "sunshine",
+    "princess",
+    "starwars",
+    "whatever",
+    "freedom",
+    "shadow",
+    "superman",
+    "michael",
+    "jordan",
+    "hello",
+    "charlie",
+    "donald",
+    "hunter",
+    "abc",
+    "abcdef",
+    "asdfgh",
+    "asdfghjkl",
+    "zxcvbn",
+    "zxcvbnm",
+    "plane",
+    "thrust",
+    "changeme",
+    "secret",
+    "default",
+    "test",
+    "guest",
 ];
 
 /// Whether `password` is acceptable for a new account. A deliberately modest rule in place of Plane's zxcvbn score of
@@ -256,7 +299,12 @@ pub async fn sign_up(app: &App, email: &str, password: &str) -> Result<SignedIn,
     let id = UserId(app.ports.ids.new_uuid());
     app.ports
         .db
-        .insert_user(&UserRecord { id, email: Some(email.clone()), password_hash: Some(password_hash), is_active: true })
+        .insert_user(&UserRecord {
+            id,
+            email: Some(email.clone()),
+            password_hash: Some(password_hash),
+            is_active: true,
+        })
         .await?;
     app.ports.db.insert_profile(&crate::profile::new_profile(app, id, Some(&email))).await?;
     mint_session(app, id).await
@@ -285,9 +333,9 @@ pub(crate) async fn seed_identities(app: &App, f: &SeedFixture) -> Result<(), Co
     let mut users = Vec::with_capacity(f.logins.len());
     for l in &f.logins {
         let password_hash = match &l.password {
-            Some(pw) => Some(
-                app.ports.hasher.hash(pw, &random_salt(app)?).map_err(|e| CoreError::Internal(e.to_string()))?,
-            ),
+            Some(pw) => {
+                Some(app.ports.hasher.hash(pw, &random_salt(app)?).map_err(|e| CoreError::Internal(e.to_string()))?)
+            }
             None => None,
         };
         users.push(UserRecord {

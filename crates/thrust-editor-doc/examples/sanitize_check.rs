@@ -17,19 +17,10 @@ fn main() {
         .as_array()
         .unwrap()
         .iter()
-        .map(|p| {
-            (
-                p["id"].as_str().unwrap().to_string(),
-                p["html"].as_str().unwrap().to_string(),
-            )
-        })
+        .map(|p| (p["id"].as_str().unwrap().to_string(), p["html"].as_str().unwrap().to_string()))
         .collect();
     for d in corpus["docs"].as_array().unwrap() {
-        if let Some(h) = d
-            .get("html_in")
-            .and_then(|h| h.as_str())
-            .or_else(|| d.get("html").and_then(|h| h.as_str()))
-        {
+        if let Some(h) = d.get("html_in").and_then(|h| h.as_str()).or_else(|| d.get("html").and_then(|h| h.as_str())) {
             if !h.is_empty() {
                 inputs.push((format!("doc:{}", d["id"].as_str().unwrap()), h.to_string()));
             }
@@ -40,19 +31,12 @@ fn main() {
     for (id, html) in &inputs {
         let clean = s.clean(html);
         let stripped = sanitize::strip_tags(&clean);
-        out.insert(
-            id.clone(),
-            json!({"clean": clean, "stripped": stripped, "hardened": hard.clean(html).to_string()}),
-        );
+        out.insert(id.clone(), json!({"clean": clean, "stripped": stripped, "hardened": hard.clean(html).to_string()}));
     }
     eprintln!(
         "sanitised {} inputs in {:?} (ammonia latest 4.x; the 4.0.0 build is probes/ammonia-400)",
         inputs.len(),
         t0.elapsed()
     );
-    std::fs::write(
-        &args[3],
-        serde_json::to_string(&Value::Object(out)).unwrap(),
-    )
-    .unwrap();
+    std::fs::write(&args[3], serde_json::to_string(&Value::Object(out)).unwrap()).unwrap();
 }

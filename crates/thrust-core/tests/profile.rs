@@ -107,7 +107,8 @@ fn contains_url_at_the_edges_of_its_two_limits() {
 fn prop_contains_url_strategy_reaches_every_alternative_and_the_misses() {
     use proptest::strategy::ValueTree;
     use proptest::test_runner::TestRunner;
-    let alternatives: Vec<regex::Regex> = ALTERNATIVES.iter().map(|a| regex::Regex::new(&format!("(?i)(?:{a})")).unwrap()).collect();
+    let alternatives: Vec<regex::Regex> =
+        ALTERNATIVES.iter().map(|a| regex::Regex::new(&format!("(?i)(?:{a})")).unwrap()).collect();
     let mut runner = TestRunner::deterministic();
     let mut only = [false; 4];
     let (mut any, mut none) = (false, false);
@@ -159,7 +160,15 @@ fn contains_url_on_the_cases_that_matter(#[case] value: &str, #[case] url: bool)
 
 #[test]
 fn the_time_zones_the_fixtures_use() {
-    for (tz, known) in [("UTC", true), ("Asia/Kolkata", true), ("America/New_York", true), ("utc", false), ("Mars/Olympus", false), ("", false), ("Asia/Kolkata ", false)] {
+    for (tz, known) in [
+        ("UTC", true),
+        ("Asia/Kolkata", true),
+        ("America/New_York", true),
+        ("utc", false),
+        ("Mars/Olympus", false),
+        ("", false),
+        ("Asia/Kolkata ", false),
+    ] {
         assert_eq!(is_known_timezone(tz), known, "{tz:?}");
     }
 }
@@ -184,7 +193,10 @@ fn an_account_has_a_profile_from_sign_up_with_the_defaults() {
     assert_eq!(me.profile.username.len(), 32);
     assert!(me.profile.username.chars().all(|c| c.is_ascii_hexdigit()));
     assert_ne!(me.profile.id, s.user_id.0, "the profile has its own id");
-    assert_eq!((me.profile.first_name.as_str(), me.profile.last_name.as_str(), me.profile.timezone.as_str()), ("", "", "UTC"));
+    assert_eq!(
+        (me.profile.first_name.as_str(), me.profile.last_name.as_str(), me.profile.timezone.as_str()),
+        ("", "", "UTC")
+    );
     assert!(!me.profile.is_onboarded && !me.profile.is_tour_completed);
     assert_eq!(me.profile.last_workspace_id, None);
     assert_eq!(me.profile.onboarding_step["profile_complete"], false);
@@ -199,7 +211,13 @@ fn an_account_older_than_profiles_gets_one_on_first_read_and_keeps_it() {
     let w = world();
     // a user a test seeded: a row in `users` and nothing else, so no profile
     let id = UserId(Uuid::from_u128(0xABCD));
-    block_on(w.db.insert_user(&UserRecord { id, email: Some("old@example.test".into()), password_hash: None, is_active: true })).unwrap();
+    block_on(w.db.insert_user(&UserRecord {
+        id,
+        email: Some("old@example.test".into()),
+        password_hash: None,
+        is_active: true,
+    }))
+    .unwrap();
     assert!(block_on(w.db.profile(id)).unwrap().is_none());
     let who = Principal { user_id: id };
     let first = block_on(thrust_core::me(&w.app, &who)).unwrap();
@@ -234,15 +252,24 @@ fn a_change_sets_the_fields_it_names_and_leaves_the_rest() {
         ..ProfilePatch::default()
     };
     let after = block_on(update_me(&w.app, &who, patch)).unwrap().profile;
-    assert_eq!((after.first_name.as_str(), after.last_name.as_str(), after.timezone.as_str()), ("Pat", "Q", "Asia/Kolkata"));
+    assert_eq!(
+        (after.first_name.as_str(), after.last_name.as_str(), after.timezone.as_str()),
+        ("Pat", "Q", "Asia/Kolkata")
+    );
     assert!(after.is_onboarded);
     assert_eq!(after.last_workspace_id, Some(ws));
     assert_eq!(after.onboarding_step, serde_json::json!({"profile_complete": true}), "replaced whole, not merged");
     assert_eq!(after.cover_image.as_deref(), Some("https://example.test/c.png"));
     assert_eq!(after.preferences, serde_json::json!({"role": "developer", "theme": {"theme": "dark"}}));
     // what the patch did not name is as it was
-    assert_eq!((after.display_name.as_str(), after.avatar.as_str(), after.is_tour_completed), (before.display_name.as_str(), "", false));
-    assert_eq!((after.id, after.username.as_str(), after.date_joined), (before.id, before.username.as_str(), before.date_joined));
+    assert_eq!(
+        (after.display_name.as_str(), after.avatar.as_str(), after.is_tour_completed),
+        (before.display_name.as_str(), "", false)
+    );
+    assert_eq!(
+        (after.id, after.username.as_str(), after.date_joined),
+        (before.id, before.username.as_str(), before.date_joined)
+    );
     assert!(after.updated_at >= before.updated_at);
     // a later patch of ONE preference keeps the others (jsonb `||`), and a field can be cleared
     let later = ProfilePatch {
@@ -263,7 +290,10 @@ fn two_changes_to_different_fields_both_survive() {
     let w = world();
     let (who, _) = signed_up(&w, "q@example.test");
     let names = ProfilePatch { first_name: Some("A".into()), ..ProfilePatch::default() };
-    let consent = ProfilePatch { preferences: serde_json::json!({"has_marketing_email_consent": true}).as_object().unwrap().clone(), ..ProfilePatch::default() };
+    let consent = ProfilePatch {
+        preferences: serde_json::json!({"has_marketing_email_consent": true}).as_object().unwrap().clone(),
+        ..ProfilePatch::default()
+    };
     block_on(update_me(&w.app, &who, names)).unwrap();
     block_on(update_me(&w.app, &who, consent)).unwrap();
     let p = block_on(thrust_core::me(&w.app, &who)).unwrap().profile;
@@ -279,7 +309,9 @@ enum Refused {
 }
 
 #[rstest]
-fn a_refused_change_writes_nothing(#[values(Refused::UrlInFirstName, Refused::UrlInLastName, Refused::UnknownTimezone)] why: Refused) {
+fn a_refused_change_writes_nothing(
+    #[values(Refused::UrlInFirstName, Refused::UrlInLastName, Refused::UnknownTimezone)] why: Refused,
+) {
     let w = world();
     let (who, _) = signed_up(&w, "r@example.test");
     let before = block_on(thrust_core::me(&w.app, &who)).unwrap().profile;
@@ -302,7 +334,10 @@ fn signing_in_records_when_and_a_failed_sign_in_does_not() {
     let w = world();
     let (who, _) = signed_up(&w, "s@example.test");
     // move the clock's reading of "last login" to something else, then sign in again: the field is rewritten
-    let stale = ProfilePatch { last_login_at: Some(w.app.ports.clock.now() - thrust_contracts::chrono::TimeDelta::days(30)), ..ProfilePatch::default() };
+    let stale = ProfilePatch {
+        last_login_at: Some(w.app.ports.clock.now() - thrust_contracts::chrono::TimeDelta::days(30)),
+        ..ProfilePatch::default()
+    };
     block_on(w.db.update_profile(who.user_id, &stale, w.app.ports.clock.now())).unwrap();
     assert_ne!(block_on(thrust_core::me(&w.app, &who)).unwrap().profile.last_login_at, Some(w.app.ports.clock.now()));
     assert!(block_on(sign_in(&w.app, "s@example.test", "not the password")).is_err());

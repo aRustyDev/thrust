@@ -79,7 +79,12 @@ fn db_err(e: tokio_postgres::Error) -> DbError {
     }
     // `Display` of a database error is just "db error": the server's own words say which statement and constraint
     DbError::Backend(match e.as_db_error() {
-        Some(d) => format!("{} ({}{})", d.message(), d.code().code(), d.constraint().map(|c| format!(", constraint {c}")).unwrap_or_default()),
+        Some(d) => format!(
+            "{} ({}{})",
+            d.message(),
+            d.code().code(),
+            d.constraint().map(|c| format!(", constraint {c}")).unwrap_or_default()
+        ),
         None => e.to_string(),
     })
 }
@@ -249,7 +254,8 @@ fn work_item_row(r: &Row) -> Result<WorkItemRow, DbError> {
         item: work_item(r),
         attrs: WorkItemAttrs {
             state_id: r.get("state_id"),
-            priority: Priority::parse(&priority).ok_or_else(|| DbError::Backend(format!("priority holds '{priority}', which is no priority")))?,
+            priority: Priority::parse(&priority)
+                .ok_or_else(|| DbError::Backend(format!("priority holds '{priority}', which is no priority")))?,
             start_date: r.get("start_date"),
             target_date: r.get("target_date"),
             completed_at: r.get("completed_at"),
@@ -260,7 +266,10 @@ fn work_item_row(r: &Row) -> Result<WorkItemRow, DbError> {
             label_ids: r.get("label_ids"),
         },
         state_group: group
-            .map(|g| StateGroup::parse(&g).ok_or_else(|| DbError::Backend(format!("a state's group holds '{g}', which is no group"))))
+            .map(|g| {
+                StateGroup::parse(&g)
+                    .ok_or_else(|| DbError::Backend(format!("a state's group holds '{g}', which is no group")))
+            })
             .transpose()?,
     })
 }
@@ -317,7 +326,8 @@ fn user_record(r: &Row) -> UserRecord {
     }
 }
 
-const PROFILE_COLS: &str = "user_id, id, username, first_name, last_name, display_name, avatar, cover_image, timezone, \
+const PROFILE_COLS: &str =
+    "user_id, id, username, first_name, last_name, display_name, avatar, cover_image, timezone, \
     date_joined, last_login_at, is_onboarded, is_tour_completed, last_workspace_id, onboarding_step, preferences, \
     created_at, updated_at";
 
@@ -409,7 +419,8 @@ fn project_of(r: &Row) -> Result<ProjectRow, DbError> {
         workspace_id: WorkspaceId(r.get("p_workspace_id")),
         name: r.get("p_name"),
         identifier: r.get("p_identifier"),
-        network: ProjectNetwork::parse(&network).ok_or_else(|| DbError::Backend(format!("p_network holds '{network}', which is no network")))?,
+        network: ProjectNetwork::parse(&network)
+            .ok_or_else(|| DbError::Backend(format!("p_network holds '{network}', which is no network")))?,
         logo_props: r.get("p_logo_props"),
         archived_at: r.get("p_archived_at"),
         cycle_view: r.get("p_cycle_view"),
@@ -546,7 +557,8 @@ fn state_of(r: &Row) -> Result<StateRow, DbError> {
         description: r.get("st_description"),
         color: r.get("st_color"),
         sequence: r.get("st_sequence"),
-        group: StateGroup::parse(&group).ok_or_else(|| DbError::Backend(format!("st_state_group holds '{group}', which is no state group")))?,
+        group: StateGroup::parse(&group)
+            .ok_or_else(|| DbError::Backend(format!("st_state_group holds '{group}', which is no state group")))?,
         is_default: r.get("st_is_default"),
         created_by: r.get::<_, Option<Uuid>>("st_created_by").map(UserId),
         created_at: r.get("st_created_at"),
@@ -555,7 +567,8 @@ fn state_of(r: &Row) -> Result<StateRow, DbError> {
 }
 
 /// The columns of `project_user_properties` the port's `ProjectUserProperties` is made of (unaliased).
-const PUP_COLS: &str = "id, project_id, workspace_id, user_id, filters, display_filters, display_properties, rich_filters, \
+const PUP_COLS: &str =
+    "id, project_id, workspace_id, user_id, filters, display_filters, display_properties, rich_filters, \
     preferences, sort_order, created_at, updated_at";
 
 fn project_user_properties_of(r: &Row) -> ProjectUserProperties {
@@ -604,12 +617,7 @@ fn activity(r: &Row) -> Activity {
 
 #[async_trait]
 impl Database for PgDatabase {
-    async fn membership(
-        &self,
-        slug: &WorkspaceSlug,
-        project: ProjectId,
-        user: UserId,
-    ) -> Result<Membership, DbError> {
+    async fn membership(&self, slug: &WorkspaceSlug, project: ProjectId, user: UserId) -> Result<Membership, DbError> {
         let c = self.conn().await?;
         // One query: the slug, the caller's workspace membership (inner join), the project in that
         // workspace (inner join) and the caller's project row (left join, same workspace). No row
@@ -685,10 +693,7 @@ impl Database for PgDatabase {
     async fn revoke_user_sessions(&self, user: UserId, at: Timestamp) -> Result<u64, DbError> {
         let c = self.conn().await?;
         Pg(c.client())
-            .execute(
-                "UPDATE sessions SET revoked_at = $2 WHERE user_id = $1 AND revoked_at IS NULL",
-                &[&user.0, &at],
-            )
+            .execute("UPDATE sessions SET revoked_at = $2 WHERE user_id = $1 AND revoked_at IS NULL", &[&user.0, &at])
             .await
             .map_err(db_err)
     }
@@ -768,7 +773,8 @@ impl Database for PgDatabase {
 
     async fn any_workspace(&self) -> Result<bool, DbError> {
         let c = self.conn().await?;
-        let row = Pg(c.client()).query_one("SELECT EXISTS (SELECT 1 FROM workspaces) AS any", &[]).await.map_err(db_err)?;
+        let row =
+            Pg(c.client()).query_one("SELECT EXISTS (SELECT 1 FROM workspaces) AS any", &[]).await.map_err(db_err)?;
         Ok(row.get("any"))
     }
 
@@ -808,7 +814,10 @@ impl Database for PgDatabase {
             )
             .await
             .map_err(db_err)?;
-        row.map(|r| Ok(WorkspaceAccess { workspace_id: WorkspaceId(r.get("workspace_id")), role: role_of(&r, "role")? })).transpose()
+        row.map(|r| {
+            Ok(WorkspaceAccess { workspace_id: WorkspaceId(r.get("workspace_id")), role: role_of(&r, "role")? })
+        })
+        .transpose()
     }
 
     async fn is_workspace_member(&self, scope: &WorkspaceScope, user: UserId) -> Result<bool, DbError> {
@@ -845,7 +854,9 @@ impl Database for PgDatabase {
         let c = self.conn().await?;
         let row = Pg(c.client())
             .query_opt(
-                &format!("SELECT {MEMBER_COLS} FROM workspace_members wm WHERE wm.workspace_id = $1 AND wm.user_id = $2"),
+                &format!(
+                    "SELECT {MEMBER_COLS} FROM workspace_members wm WHERE wm.workspace_id = $1 AND wm.user_id = $2"
+                ),
                 &[&scope.workspace_id().0, &scope.user_id().0],
             )
             .await
@@ -925,7 +936,10 @@ impl Database for PgDatabase {
                 Ok(ProjectListing {
                     project: project_of(r)?,
                     role: role
-                        .map(|s| Role::parse(&s).ok_or_else(|| DbError::Backend(format!("m_role holds '{s}', which is no role"))))
+                        .map(|s| {
+                            Role::parse(&s)
+                                .ok_or_else(|| DbError::Backend(format!("m_role holds '{s}', which is no role")))
+                        })
                         .transpose()?,
                     sort_order: r.get("up_sort_order"),
                 })
@@ -965,11 +979,19 @@ impl Database for PgDatabase {
             .map_err(db_err)?;
         Ok(rows
             .iter()
-            .map(|r| SidebarPreference { key: r.get("key"), is_pinned: r.get("is_pinned"), sort_order: r.get("sort_order") })
+            .map(|r| SidebarPreference {
+                key: r.get("key"),
+                is_pinned: r.get("is_pinned"),
+                sort_order: r.get("sort_order"),
+            })
             .collect())
     }
 
-    async fn ensure_home_preferences(&self, scope: &WorkspaceScope, defaults: &[HomePreference]) -> Result<Vec<HomePreference>, DbError> {
+    async fn ensure_home_preferences(
+        &self,
+        scope: &WorkspaceScope,
+        defaults: &[HomePreference],
+    ) -> Result<Vec<HomePreference>, DbError> {
         let keys: Vec<&str> = defaults.iter().map(|d| d.key.as_str()).collect();
         let enabled: Vec<bool> = defaults.iter().map(|d| d.is_enabled).collect();
         let configs: Vec<serde_json::Value> = defaults.iter().map(|d| d.config.clone()).collect();
@@ -1007,7 +1029,11 @@ impl Database for PgDatabase {
             .collect())
     }
 
-    async fn ensure_user_properties(&self, scope: &WorkspaceScope, new: &UserProperties) -> Result<UserProperties, DbError> {
+    async fn ensure_user_properties(
+        &self,
+        scope: &WorkspaceScope,
+        new: &UserProperties,
+    ) -> Result<UserProperties, DbError> {
         let c = self.conn().await?;
         let cl = Pg(c.client());
         cl.execute(
@@ -1206,7 +1232,12 @@ impl Database for PgDatabase {
             Ok(ProjectDetail {
                 listing: ProjectListing {
                     project: project_of(&r)?,
-                    role: role.map(|s| Role::parse(&s).ok_or_else(|| DbError::Backend(format!("m_role holds '{s}', which is no role")))).transpose()?,
+                    role: role
+                        .map(|s| {
+                            Role::parse(&s)
+                                .ok_or_else(|| DbError::Backend(format!("m_role holds '{s}', which is no role")))
+                        })
+                        .transpose()?,
                     sort_order: r.get("up_sort_order"),
                 },
                 members: r.get::<_, Vec<Uuid>>("member_ids").into_iter().map(UserId).collect(),
@@ -1216,7 +1247,11 @@ impl Database for PgDatabase {
         .transpose()
     }
 
-    async fn project_member(&self, scope: &WorkspaceScope, project: ProjectId) -> Result<Option<ProjectMemberWithUser>, DbError> {
+    async fn project_member(
+        &self,
+        scope: &WorkspaceScope,
+        project: ProjectId,
+    ) -> Result<Option<ProjectMemberWithUser>, DbError> {
         let c = self.conn().await?;
         let row = Pg(c.client())
             .query_opt(
@@ -1266,7 +1301,11 @@ impl Database for PgDatabase {
         rows.iter().map(pmember_of).collect()
     }
 
-    async fn ensure_project_user_properties(&self, scope: &Scope, new: &ProjectUserProperties) -> Result<ProjectUserProperties, DbError> {
+    async fn ensure_project_user_properties(
+        &self,
+        scope: &Scope,
+        new: &ProjectUserProperties,
+    ) -> Result<ProjectUserProperties, DbError> {
         let c = self.conn().await?;
         let cl = Pg(c.client());
         // from `projects`, so a project that is not in the scope's workspace makes no row (and the SELECT below finds none)
@@ -1377,7 +1416,11 @@ impl Database for PgDatabase {
         row.as_ref().map(state_of).transpose()
     }
 
-    async fn project_stats(&self, scope: &WorkspaceScope, only: Option<&[ProjectId]>) -> Result<Vec<ProjectStat>, DbError> {
+    async fn project_stats(
+        &self,
+        scope: &WorkspaceScope,
+        only: Option<&[ProjectId]>,
+    ) -> Result<Vec<ProjectStat>, DbError> {
         let only: Option<Vec<Uuid>> = only.map(|ids| ids.iter().map(|p| p.0).collect());
         let c = self.conn().await?;
         let rows = Pg(c.client())
@@ -1396,7 +1439,11 @@ impl Database for PgDatabase {
             .map_err(db_err)?;
         Ok(rows
             .iter()
-            .map(|r| ProjectStat { id: ProjectId(r.get("id")), total_issues: r.get("total_issues"), total_members: r.get("total_members") })
+            .map(|r| ProjectStat {
+                id: ProjectId(r.get("id")),
+                total_issues: r.get("total_issues"),
+                total_members: r.get("total_members"),
+            })
             .collect())
     }
 
@@ -1454,7 +1501,12 @@ impl Database for PgDatabase {
         Ok(row.as_ref().map(user_profile))
     }
 
-    async fn update_profile(&self, user: UserId, patch: &ProfilePatch, at: Timestamp) -> Result<Option<UserProfile>, DbError> {
+    async fn update_profile(
+        &self,
+        user: UserId,
+        patch: &ProfilePatch,
+        at: Timestamp,
+    ) -> Result<Option<UserProfile>, DbError> {
         // ONE statement: every column the patch does not name keeps its value, and the preferences are merged by jsonb `||`
         // inside the row lock, so two requests that change different fields cannot overwrite each other.
         let set_cover = patch.cover_image.is_some();
@@ -1514,11 +1566,7 @@ impl Database for PgDatabase {
         Ok(())
     }
 
-    async fn user_for_account(
-        &self,
-        provider: &str,
-        provider_account_id: &str,
-    ) -> Result<Option<UserRecord>, DbError> {
+    async fn user_for_account(&self, provider: &str, provider_account_id: &str) -> Result<Option<UserRecord>, DbError> {
         let c = self.conn().await?;
         let row = Pg(c.client())
             .query_opt(
@@ -1537,7 +1585,13 @@ impl Database for PgDatabase {
             .execute(
                 "INSERT INTO accounts (provider, provider_account_id, user_id, email, created_at) \
                  VALUES ($1, $2, $3, $4, $5) ON CONFLICT (provider, provider_account_id) DO NOTHING",
-                &[&a.provider.as_str(), &a.provider_account_id.as_str(), &a.user_id.0, &a.email.as_deref(), &a.created_at],
+                &[
+                    &a.provider.as_str(),
+                    &a.provider_account_id.as_str(),
+                    &a.user_id.0,
+                    &a.email.as_deref(),
+                    &a.created_at,
+                ],
             )
             .await
             .map_err(db_err)?;
@@ -1741,20 +1795,14 @@ impl Database for PgDatabase {
         Ok(rows.iter().map(work_item).collect())
     }
 
-    async fn get_work_item(
-        &self,
-        scope: &Scope,
-        id: WorkItemId,
-        vis: Visibility,
-    ) -> Result<Option<WorkItem>, DbError> {
+    async fn get_work_item(&self, scope: &Scope, id: WorkItemId, vis: Visibility) -> Result<Option<WorkItem>, DbError> {
         let (ws, project) = (scope.workspace_id(), scope.project_id());
         let hidden = match vis {
             Visibility::Visible => " AND deleted_at IS NULL AND archived_at IS NULL AND is_draft = false",
             Visibility::WithDeleted => "",
         };
-        let sql = format!(
-            "SELECT {WI_COLS} FROM work_items WHERE workspace_id = $1 AND project_id = $2 AND id = $3{hidden}"
-        );
+        let sql =
+            format!("SELECT {WI_COLS} FROM work_items WHERE workspace_id = $1 AND project_id = $2 AND id = $3{hidden}");
         let c = self.conn().await?;
         let row = Pg(c.client()).query_opt(&sql, &[&ws.0, &project.0, &id.0]).await.map_err(db_err)?;
         Ok(row.as_ref().map(work_item))
@@ -2163,7 +2211,8 @@ impl Tx for PgTx {
     /// transaction already (a second `allocate` in one create), another connection takes the number, because on this
     /// one the upsert would join the transaction and keep the lock until it ends.
     async fn allocate(&mut self, scope: &Scope) -> Result<Allocation, DbError> {
-        const UPSERT: &str = "INSERT INTO project_sequences (workspace_id, project_id, last_sequence_id, last_sort_order) \
+        const UPSERT: &str =
+            "INSERT INTO project_sequences (workspace_id, project_id, last_sequence_id, last_sort_order) \
              VALUES ($1, $2, 1, 10000) \
              ON CONFLICT (workspace_id, project_id) DO UPDATE SET \
                last_sequence_id = project_sequences.last_sequence_id + 1, \
@@ -2213,7 +2262,12 @@ impl Tx for PgTx {
         Ok(())
     }
 
-    async fn insert_work_item_attrs(&mut self, scope: &Scope, id: WorkItemId, attrs: &WorkItemAttrs) -> Result<(), DbError> {
+    async fn insert_work_item_attrs(
+        &mut self,
+        scope: &Scope,
+        id: WorkItemId,
+        attrs: &WorkItemAttrs,
+    ) -> Result<(), DbError> {
         let (ws, project) = (scope.workspace_id(), scope.project_id());
         self.ensure_tx().await?;
         let priority = attrs.priority.as_str();
@@ -2280,12 +2334,7 @@ impl Tx for PgTx {
     async fn insert_outbox(&mut self, scope: &Scope, row: &OutboxRow) -> Result<(), DbError> {
         check_tenant(scope, row.envelope.workspace_id, row.envelope.project_id())?;
         let envelope = serde_json::to_value(&row.envelope).map_err(|e| DbError::Backend(e.to_string()))?;
-        let params: Params = &[
-            &row.envelope.event_id.0,
-            &row.envelope.workspace_id.0,
-            &envelope,
-            &row.created_at,
-        ];
+        let params: Params = &[&row.envelope.event_id.0, &row.envelope.workspace_id.0, &envelope, &row.created_at];
         self.ensure_tx().await?;
         self.client()
             .execute(

@@ -20,17 +20,9 @@ fn parity_stage3_html_to_json() {
         let Some(want) = d.get("html_in_json") else {
             continue;
         };
-        let variant = if d["variant"] == "rich" {
-            Variant::Rich
-        } else {
-            Variant::Document
-        };
+        let variant = if d["variant"] == "rich" { Variant::Rich } else { Variant::Document };
         let schema = Schema::new(variant);
-        let html = d
-            .get("html_in")
-            .or_else(|| d.get("html"))
-            .and_then(|h| h.as_str())
-            .unwrap_or("");
+        let html = d.get("html_in").or_else(|| d.get("html")).and_then(|h| h.as_str()).unwrap_or("");
         let doc = domparse::html_to_doc(&schema, html);
         let got = doc.to_json(&schema);
         n += 1;
@@ -61,17 +53,9 @@ fn stage3_not_vacuous() {
         let Some(want) = d.get("html_in_json") else {
             continue;
         };
-        let variant = if d["variant"] == "rich" {
-            Variant::Rich
-        } else {
-            Variant::Document
-        };
+        let variant = if d["variant"] == "rich" { Variant::Rich } else { Variant::Document };
         let schema = Schema::new(variant);
-        let html = d
-            .get("html_in")
-            .or_else(|| d.get("html"))
-            .and_then(|h| h.as_str())
-            .unwrap_or("");
+        let html = d.get("html_in").or_else(|| d.get("html")).and_then(|h| h.as_str()).unwrap_or("");
         let got = domparse::html_to_doc(&schema, html).to_json(&schema);
         assert_eq!(norm_num(got.clone()), norm_num(want.clone()), "{}", d["id"]);
         bytes += got.to_string().len();

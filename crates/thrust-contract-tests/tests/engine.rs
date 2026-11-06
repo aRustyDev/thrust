@@ -31,7 +31,13 @@ async fn make_writers(t: &Target, f: &Fixture) -> Arc<Vec<User>> {
 
 /// `WRITERS` bounded tasks, each making `per_writer` creates one after the other in project A. Stops every writer at the
 /// first create that is not a 201 (a broken engine would otherwise spend the whole budget on errors), and reports it.
-async fn write_in_parallel(t: &Arc<Target>, f: &Arc<Fixture>, users: &Arc<Vec<User>>, per_writer: usize, tag: &str) -> Vec<WorkItem> {
+async fn write_in_parallel(
+    t: &Arc<Target>,
+    f: &Arc<Fixture>,
+    users: &Arc<Vec<User>>,
+    per_writer: usize,
+    tag: &str,
+) -> Vec<WorkItem> {
     let stop = Arc::new(AtomicBool::new(false));
     let tasks: Vec<_> = (0..WRITERS)
         .map(|w| {
@@ -46,7 +52,10 @@ async fn write_in_parallel(t: &Arc<Target>, f: &Arc<Fixture>, users: &Arc<Vec<Us
                     let status = r.status();
                     if status != 201 {
                         stop.store(true, Ordering::Relaxed);
-                        return Err(format!("writer {w}, create {i}: HTTP {status}: {}", r.text().await.unwrap_or_default()));
+                        return Err(format!(
+                            "writer {w}, create {i}: HTTP {status}: {}",
+                            r.text().await.unwrap_or_default()
+                        ));
                     }
                     match r.json::<WorkItem>().await {
                         Ok(item) => made.push(item),
@@ -111,7 +120,8 @@ async fn engine_fifty_writers_ten_thousand_creates_never_duplicate_a_sequence_id
     // 2. soft-delete every 7th number, from 50 tasks at once
     let doomed: Vec<WorkItem> = items.iter().filter(|w| w.sequence_id % 7 == 0).cloned().collect();
     let deleted_numbers: BTreeSet<i64> = doomed.iter().map(|w| w.sequence_id).collect();
-    let chunks: Vec<Vec<WorkItem>> = (0..WRITERS).map(|w| doomed.iter().skip(w).step_by(WRITERS).cloned().collect()).collect();
+    let chunks: Vec<Vec<WorkItem>> =
+        (0..WRITERS).map(|w| doomed.iter().skip(w).step_by(WRITERS).cloned().collect()).collect();
     let tasks: Vec<_> = chunks
         .into_iter()
         .enumerate()
@@ -158,7 +168,10 @@ async fn engine_fifty_writers_ten_thousand_creates_never_duplicate_a_sequence_id
     let grand_total = total + WRITERS * PER_WRITER_AFTER;
     assert_eq!(all.len(), grand_total);
     assert_eq!(all.iter().map(|w| w.sequence_id).collect::<Vec<_>>(), (1..=grand_total as i64).collect::<Vec<_>>());
-    assert!(all.windows(2).all(|p| p[0].sort_order < p[1].sort_order), "sort_order is not increasing in sequence order");
+    assert!(
+        all.windows(2).all(|p| p[0].sort_order < p[1].sort_order),
+        "sort_order is not increasing in sequence order"
+    );
     let tombstones: BTreeSet<i64> = all.iter().filter(|w| w.deleted_at.is_some()).map(|w| w.sequence_id).collect();
     assert_eq!(tombstones, deleted_numbers, "the deleted rows are not exactly the ones deleted");
     let visible: Vec<WorkItem> = list(&t, &f.guest_a, &f.a, None).await.json().await.unwrap();
@@ -183,8 +196,34 @@ fn icontains(item: &(String, Option<String>), q: &str) -> bool {
 /// phrase would mistake for syntax (`%`, `_`, `\`, quotes). ASCII only: the engines fold case through different
 /// locale rules beyond it, and that is reported separately below, not folded into the parity claim.
 const WORDS: &[&str] = &[
-    "fix", "Fix", "FIX", "login", "Login", "logout", "bug", "BUG", "debug", "timeout", "time", "Time", "queue", "Queue",
-    "100%", "a_b", "a%b", "back\\slash", "it's", "say\"hi\"", "x", "ab", "abc", "ABC", "api", "API", "v2", "retry-after",
+    "fix",
+    "Fix",
+    "FIX",
+    "login",
+    "Login",
+    "logout",
+    "bug",
+    "BUG",
+    "debug",
+    "timeout",
+    "time",
+    "Time",
+    "queue",
+    "Queue",
+    "100%",
+    "a_b",
+    "a%b",
+    "back\\slash",
+    "it's",
+    "say\"hi\"",
+    "x",
+    "ab",
+    "abc",
+    "ABC",
+    "api",
+    "API",
+    "v2",
+    "retry-after",
 ];
 
 fn words() -> impl Strategy<Value = String> {
@@ -204,10 +243,20 @@ fn queries(items: Vec<(String, Option<String>)>) -> impl Strategy<Value = String
         let chars: Vec<char> = texts[i].chars().collect();
         let start = at % chars.len();
         let piece: String = chars[start..(start + len).min(chars.len())].iter().collect();
-        if flip { piece.chars().map(|c| if c.is_lowercase() { c.to_ascii_uppercase() } else { c.to_ascii_lowercase() }).collect() } else { piece }
+        if flip {
+            piece
+                .chars()
+                .map(|c| if c.is_lowercase() { c.to_ascii_uppercase() } else { c.to_ascii_lowercase() })
+                .collect()
+        } else {
+            piece
+        }
     });
-    let arbitrary = prop::collection::vec(prop::sample::select(&['a', 'b', 'c', 'x', '%', '_', '\\', '\'', '"', ' ', '-', '1', '0'][..]), 1..=5)
-        .prop_map(|c| c.into_iter().collect::<String>());
+    let arbitrary = prop::collection::vec(
+        prop::sample::select(&['a', 'b', 'c', 'x', '%', '_', '\\', '\'', '"', ' ', '-', '1', '0'][..]),
+        1..=5,
+    )
+    .prop_map(|c| c.into_iter().collect::<String>());
     // a blank query is refused (400), so the generator makes none; a leading or trailing space is a real query
     prop_oneof![7 => from_item, 3 => arbitrary].prop_filter("not blank", |q| !q.trim().is_empty())
 }
@@ -242,11 +291,22 @@ async fn engine_search_matches_icontains_on_a_generated_seed() {
 
     // the project as the API shows it: the seeded rows, in sequence order, with their ids
     let mut rows: Vec<WorkItem> = list(&t, &f.guest_a, &f.a, None).await.json().await.unwrap();
-    assert_eq!(rows.iter().map(|w| (w.name.clone(), w.description.clone())).collect::<Vec<_>>(), seed, "the seed route changed what it was given");
+    assert_eq!(
+        rows.iter().map(|w| (w.name.clone(), w.description.clone())).collect::<Vec<_>>(),
+        seed,
+        "the seed route changed what it was given"
+    );
     // delete 20 of them: their text must stop matching
-    let mut alive: Vec<(i64, (String, Option<String>))> = rows.iter().map(|w| (w.sequence_id, (w.name.clone(), w.description.clone()))).collect();
+    let mut alive: Vec<(i64, (String, Option<String>))> =
+        rows.iter().map(|w| (w.sequence_id, (w.name.clone(), w.description.clone()))).collect();
     for n in (0..seed.len()).step_by(15).take(20) {
-        let r = t.http.delete(t.url(&format!("{}/{}", wi_path(&f.a), rows[n].id))).bearer_auth(&f.member_a.token).send().await.unwrap();
+        let r = t
+            .http
+            .delete(t.url(&format!("{}/{}", wi_path(&f.a), rows[n].id)))
+            .bearer_auth(&f.member_a.token)
+            .send()
+            .await
+            .unwrap();
         assert_eq!(r.status(), 204);
         alive.retain(|(seq, _)| *seq != rows[n].sequence_id);
     }
@@ -260,14 +320,28 @@ async fn engine_search_matches_icontains_on_a_generated_seed() {
     let strategy = queries(seed.clone());
     for _ in 0..400 {
         let q = strategy.new_tree(&mut runner).unwrap().current();
-        let want: Vec<i64> = alive.iter().filter(|(_, item)| icontains(item, &q)).map(|(seq, _)| *seq).take(SEARCH_LIMIT).collect();
+        let want: Vec<i64> =
+            alive.iter().filter(|(_, item)| icontains(item, &q)).map(|(seq, _)| *seq).take(SEARCH_LIMIT).collect();
         let got = search_ids(&t, &f.guest_a, &f.a, &q).await;
         assert_eq!(got, want, "search for {q:?} disagrees with icontains");
         hits_total += want.len();
         empty += want.is_empty() as usize;
         capped += (want.len() == SEARCH_LIMIT) as usize;
-        let wrong_case: Vec<i64> = alive.iter().filter(|(_, (n, d))| n.contains(&q) || d.as_deref().is_some_and(|d| d.contains(&q))).map(|(s, _)| *s).take(SEARCH_LIMIT).collect();
-        let wrong_prefix: Vec<i64> = alive.iter().filter(|(_, (n, d))| n.to_lowercase().starts_with(&q.to_lowercase()) || d.as_deref().is_some_and(|d| d.to_lowercase().starts_with(&q.to_lowercase()))).map(|(s, _)| *s).take(SEARCH_LIMIT).collect();
+        let wrong_case: Vec<i64> = alive
+            .iter()
+            .filter(|(_, (n, d))| n.contains(&q) || d.as_deref().is_some_and(|d| d.contains(&q)))
+            .map(|(s, _)| *s)
+            .take(SEARCH_LIMIT)
+            .collect();
+        let wrong_prefix: Vec<i64> = alive
+            .iter()
+            .filter(|(_, (n, d))| {
+                n.to_lowercase().starts_with(&q.to_lowercase())
+                    || d.as_deref().is_some_and(|d| d.to_lowercase().starts_with(&q.to_lowercase()))
+            })
+            .map(|(s, _)| *s)
+            .take(SEARCH_LIMIT)
+            .collect();
         differ_from_case_sensitive += (wrong_case != want) as usize;
         differ_from_prefix += (wrong_prefix != want) as usize;
     }
@@ -291,17 +365,41 @@ async fn engine_search_is_fresh_literal_and_scoped() {
 
     // fresh: found at once after the create (the bound is 60 s; nothing here waits), gone at once after the delete
     assert!(search_ids(&t, &f.guest_a, &f.a, &needle).await.is_empty(), "found before it exists");
-    let item = create(&t, &f.member_a, &f.a, json!({ "name": format!("A {needle} b"), "description": "plain" })).await.json::<WorkItem>().await.unwrap();
-    assert_eq!(search_ids(&t, &f.guest_a, &f.a, &needle).await, [item.sequence_id], "not searchable right after the create");
+    let item = create(&t, &f.member_a, &f.a, json!({ "name": format!("A {needle} b"), "description": "plain" }))
+        .await
+        .json::<WorkItem>()
+        .await
+        .unwrap();
+    assert_eq!(
+        search_ids(&t, &f.guest_a, &f.a, &needle).await,
+        [item.sequence_id],
+        "not searchable right after the create"
+    );
     assert_eq!(search_ids(&t, &f.guest_a, &f.a, &needle.to_uppercase()).await, [item.sequence_id], "case matters");
-    let r = t.http.delete(t.url(&format!("{}/{}", wi_path(&f.a), item.id))).bearer_auth(&f.member_a.token).send().await.unwrap();
+    let r = t
+        .http
+        .delete(t.url(&format!("{}/{}", wi_path(&f.a), item.id)))
+        .bearer_auth(&f.member_a.token)
+        .send()
+        .await
+        .unwrap();
     assert_eq!(r.status(), 204);
     assert!(search_ids(&t, &f.guest_a, &f.a, &needle).await.is_empty(), "a deleted item is still searchable");
 
     // a description is searched too, and a name and a description of one item are one hit
-    let both = create(&t, &f.member_a, &f.a, json!({ "name": format!("n-{needle}"), "description": format!("d-{needle}") })).await.json::<WorkItem>().await.unwrap();
+    let both =
+        create(&t, &f.member_a, &f.a, json!({ "name": format!("n-{needle}"), "description": format!("d-{needle}") }))
+            .await
+            .json::<WorkItem>()
+            .await
+            .unwrap();
     assert_eq!(search_ids(&t, &f.guest_a, &f.a, &needle).await, [both.sequence_id]);
-    let only_desc = create(&t, &f.member_a, &f.a, json!({ "name": "no match here", "description": format!("see {needle}2") })).await.json::<WorkItem>().await.unwrap();
+    let only_desc =
+        create(&t, &f.member_a, &f.a, json!({ "name": "no match here", "description": format!("see {needle}2") }))
+            .await
+            .json::<WorkItem>()
+            .await
+            .unwrap();
     assert_eq!(search_ids(&t, &f.guest_a, &f.a, &format!("{needle}2")).await, [only_desc.sequence_id]);
 
     // `%`, `_` and `\` are literal characters, not pattern syntax
@@ -315,7 +413,11 @@ async fn engine_search_is_fresh_literal_and_scoped() {
     }
 
     // tenant and role lines: B has an item with the same text, and A's search must not return it
-    let other = create(&t, &f.admin_b, &f.b, json!({ "name": format!("tenant b {needle}") })).await.json::<WorkItem>().await.unwrap();
+    let other = create(&t, &f.admin_b, &f.b, json!({ "name": format!("tenant b {needle}") }))
+        .await
+        .json::<WorkItem>()
+        .await
+        .unwrap();
     assert_eq!(
         search_ids(&t, &f.guest_a, &f.a, &needle).await,
         [both.sequence_id, only_desc.sequence_id],
@@ -323,7 +425,11 @@ async fn engine_search_is_fresh_literal_and_scoped() {
     );
     assert_eq!(search_ids(&t, &f.admin_b, &f.b, &needle).await, [other.sequence_id], "B does not find its own item");
     assert_eq!(search(&t, &f.admin_b, &f.a, &needle).await.status(), 404, "cross-tenant search");
-    assert_eq!(search(&t, &f.outsider_a, &f.a, &needle).await.status(), 403, "a workspace member who is not in the project");
+    assert_eq!(
+        search(&t, &f.outsider_a, &f.a, &needle).await.status(),
+        403,
+        "a workspace member who is not in the project"
+    );
     let r = t.http.get(t.url(&search_path(&f.a))).query(&[("q", needle.as_str())]).send().await.unwrap();
     assert_eq!(r.status(), 401, "unauthenticated search");
     for bad in ["", "   ", &"x".repeat(101)] {
@@ -343,7 +449,8 @@ async fn engine_seed_work_items_numbers_from_the_projects_counter() {
     for n in ["one", "two", "three"] {
         create_ok(&t, &f.member_a, &f.a, n).await;
     }
-    let batch: Vec<(String, Option<String>)> = (0..50).map(|i| (format!("seeded {i}"), (i % 2 == 0).then(|| format!("desc {i}")))).collect();
+    let batch: Vec<(String, Option<String>)> =
+        (0..50).map(|i| (format!("seeded {i}"), (i % 2 == 0).then(|| format!("desc {i}")))).collect();
     let report = seed_work_items(&t, &f, &f.a, f.admin_a.id, &batch).await;
     assert_eq!((report.first_sequence_id, report.count), (4, 50));
     // a second batch continues after the first
@@ -358,7 +465,9 @@ async fn engine_seed_work_items_numbers_from_the_projects_counter() {
     assert_eq!(rows[3].name, "seeded 0");
     assert_eq!(rows[3].description.as_deref(), Some("desc 0"));
     assert_eq!(rows[4].description, None);
-    assert!(rows[3..53].iter().all(|w| w.created_by == f.admin_a.id && w.workspace_id == f.ws_a && w.deleted_at.is_none() && !w.is_draft));
+    assert!(rows[3..53]
+        .iter()
+        .all(|w| w.created_by == f.admin_a.id && w.workspace_id == f.ws_a && w.deleted_at.is_none() && !w.is_draft));
     // the other project is untouched: its counter is its own
     assert_eq!(create_ok(&t, &f.admin_b, &f.b, "b").await.sequence_id, 1);
     // control: the route is a test route, closed without the admin token

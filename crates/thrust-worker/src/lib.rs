@@ -8,22 +8,22 @@
 use std::sync::Arc;
 
 use axum::body::Body;
+use http_body_util::BodyExt;
 use thrust_adapters_cloudflare::*;
 use thrust_adapters_oidc::{OidcConfig, OpenIdProvider};
 use thrust_adapters_postgres::PgDatabase;
 use thrust_api::{ApiConfig, InternalErrorDetail};
 use thrust_contracts::Envelope;
-use thrust_core::{ActivityConsumer, Argon2Params, Argon2idHasher, App, CoreConfig, Ports, SystemScope};
+use thrust_core::{ActivityConsumer, App, Argon2Params, Argon2idHasher, CoreConfig, Ports, SystemScope};
 use thrust_ports::{Background, Clock, EventConsumer, IdGen, OidcProvider, PasswordHasher, Rng};
-use http_body_util::BodyExt;
 use tower_service::Service;
 use worker::worker_sys::web_sys;
 use worker::*;
 
 mod durable;
-mod probes;
 #[cfg(feature = "memory")]
 mod memory;
+mod probes;
 
 static ROUTER: std::sync::OnceLock<axum::Router> = std::sync::OnceLock::new();
 
@@ -40,10 +40,7 @@ const MAX_REQUEST_BODY: usize = 8 * 1024 * 1024;
 // ---------------------------------------------------------------------------------------------
 
 pub(crate) fn text(env: &Env, name: &str) -> Option<String> {
-    env.secret(name)
-        .ok()
-        .map(|s| s.to_string())
-        .or_else(|| env.var(name).ok().map(|v| v.to_string()))
+    env.secret(name).ok().map(|s| s.to_string()).or_else(|| env.var(name).ok().map(|v| v.to_string()))
 }
 
 fn flag(env: &Env, name: &str, default: bool) -> bool {

@@ -130,7 +130,8 @@ async fn a_cookie_authenticated_mutation_needs_the_csrf_token() {
     let t = t();
     let f = Fixture::seed(&t).await;
     let s = t.sign_in(&f.member_a).await;
-    let create = |csrf| as_browser(&t, Method::POST, t.url(&wi_path(&f.a)), &s, csrf).json(&json!({"name": "from a cookie"}));
+    let create =
+        |csrf| as_browser(&t, Method::POST, t.url(&wi_path(&f.a)), &s, csrf).json(&json!({"name": "from a cookie"}));
 
     for (what, csrf) in [
         ("no token", Csrf::Absent),
@@ -182,7 +183,8 @@ async fn csrf_off_a_cookie_authenticated_mutation_needs_no_token() {
     let t = t();
     let f = Fixture::seed(&t).await;
     let s = t.sign_in(&f.member_a).await;
-    let create = |csrf| as_browser(&t, Method::POST, t.url(&wi_path(&f.a)), &s, csrf).json(&json!({"name": "from a cookie"}));
+    let create =
+        |csrf| as_browser(&t, Method::POST, t.url(&wi_path(&f.a)), &s, csrf).json(&json!({"name": "from a cookie"}));
 
     let mut created = Vec::new();
     for (what, csrf) in [
@@ -201,7 +203,8 @@ async fn csrf_off_a_cookie_authenticated_mutation_needs_no_token() {
     let rows: Vec<WorkItem> = list(&t, &f.member_a, &f.a, None).await.json().await.unwrap();
     assert_eq!(rows.len(), created.len(), "every one of them created a row");
     // a delete is a mutation too
-    let del = |id: WorkItemId, csrf| as_browser(&t, Method::DELETE, t.url(&format!("{}/{}", wi_path(&f.a), id)), &s, csrf);
+    let del =
+        |id: WorkItemId, csrf| as_browser(&t, Method::DELETE, t.url(&format!("{}/{}", wi_path(&f.a), id)), &s, csrf);
     assert_eq!(del(created[0], Csrf::Absent).send().await.unwrap().status(), 204, "a delete without the token");
     assert_eq!(del(created[1], Csrf::Wrong("ffffffffffffffffffffffffffffffff")).send().await.unwrap().status(), 204);
 
@@ -229,11 +232,16 @@ async fn csrf_off_identity_routes_take_the_cookie_without_a_token() {
     let other = t.sign_in(&f.member_a).await;
 
     // make a key with the cookie alone, list it, revoke it
-    let made = as_browser(&t, Method::POST, keys_url(&t), &s, Csrf::Absent).json(&json!({"label": "no token"})).send().await.unwrap();
+    let made = as_browser(&t, Method::POST, keys_url(&t), &s, Csrf::Absent)
+        .json(&json!({"label": "no token"}))
+        .send()
+        .await
+        .unwrap();
     assert_eq!(made.status(), 201, "an API key made with the cookie and no token");
     let key: CreatedApiKey = made.json().await.unwrap();
     assert_eq!(list_with_key(&t, &f.a, Some(&key.token)).await, 200, "the key works");
-    let revoked = as_browser(&t, Method::DELETE, format!("{}/{}", keys_url(&t), key.id), &s, Csrf::Absent).send().await.unwrap();
+    let revoked =
+        as_browser(&t, Method::DELETE, format!("{}/{}", keys_url(&t), key.id), &s, Csrf::Absent).send().await.unwrap();
     assert_eq!(revoked.status(), 204, "revoked with the cookie and no token");
     assert_eq!(list_with_key(&t, &f.a, Some(&key.token)).await, 403, "and it is revoked");
 
@@ -340,7 +348,8 @@ async fn sign_out_ends_that_session_only() {
 async fn sign_out_everywhere_ends_every_session_of_the_user_and_no_one_elses() {
     let t = t();
     let f = Fixture::seed(&t).await;
-    let mine: Vec<Session> = vec![t.sign_in(&f.member_a).await, t.sign_in(&f.member_a).await, t.sign_in(&f.member_a).await];
+    let mine: Vec<Session> =
+        vec![t.sign_in(&f.member_a).await, t.sign_in(&f.member_a).await, t.sign_in(&f.member_a).await];
     let other = t.sign_in(&f.guest_a).await;
     let status = |token: &str, who: &User| {
         let u = User { token: token.to_string(), ..clone_user(who) };
@@ -395,7 +404,9 @@ async fn a_deactivated_users_session_is_rejected() {
     assert_eq!(list(&t, &who(&s.token), &f.a, None).await.status(), 200, "reactivated");
     assert_eq!(t.sign_in_raw(&f.member_a.email, &f.member_a.password).await.status(), 200);
     // a typo in a test is not a silent success
-    let r = t.admin_post("/internal/set-user-active", &json!({ "user_id": UserId(uuid::Uuid::new_v4()), "active": false })).await;
+    let r = t
+        .admin_post("/internal/set-user-active", &json!({ "user_id": UserId(uuid::Uuid::new_v4()), "active": false }))
+        .await;
     assert_eq!(r.status(), 404);
 }
 
@@ -452,14 +463,31 @@ async fn an_api_key_is_shown_once_and_authenticates_as_x_api_key() {
 
     // it authenticates, for a read and for a mutation (no CSRF token: a key is not an ambient credential), as its owner
     assert_eq!(list_with_key(&t, &f.a, Some(&key.token)).await, 200);
-    let r = t.http.post(t.url(&wi_path(&f.a))).header(API_KEY_HEADER, &key.token).json(&json!({"name": "by key"})).send().await.unwrap();
+    let r = t
+        .http
+        .post(t.url(&wi_path(&f.a)))
+        .header(API_KEY_HEADER, &key.token)
+        .json(&json!({"name": "by key"}))
+        .send()
+        .await
+        .unwrap();
     assert_eq!(r.status(), 201);
     assert_eq!(r.json::<WorkItem>().await.unwrap().created_by, f.member_a.id);
     let me = t.http.get(auth_url(&t, "/session")).header(API_KEY_HEADER, &key.token).send().await.unwrap();
-    assert_eq!(me.json::<SessionInfo>().await.unwrap(), SessionInfo { user_id: f.member_a.id, credential: CredentialKind::ApiKey });
+    assert_eq!(
+        me.json::<SessionInfo>().await.unwrap(),
+        SessionInfo { user_id: f.member_a.id, credential: CredentialKind::ApiKey }
+    );
     // it carries its owner's rights and no more: a guest's key cannot write
     let guest_key = create_key_ok(&t, &f.guest_a, json!({})).await;
-    let r = t.http.post(t.url(&wi_path(&f.a))).header(API_KEY_HEADER, &guest_key.token).json(&json!({"name": "x"})).send().await.unwrap();
+    let r = t
+        .http
+        .post(t.url(&wi_path(&f.a)))
+        .header(API_KEY_HEADER, &guest_key.token)
+        .json(&json!({"name": "x"}))
+        .send()
+        .await
+        .unwrap();
     assert_eq!(r.status(), 403, "a guest's key is a guest");
     assert_eq!(list_with_key(&t, &f.a, Some(&guest_key.token)).await, 200);
 
@@ -470,7 +498,10 @@ async fn an_api_key_is_shown_once_and_authenticates_as_x_api_key() {
     assert!(!text.contains(secret) && !text.contains(&key.token), "the listing shows the token: {text}");
     let listed: Vec<ApiKeyInfo> = serde_json::from_str(&text).unwrap();
     assert_eq!(listed.len(), 1);
-    assert_eq!((listed[0].id, listed[0].prefix.as_str(), listed[0].label.as_str()), (key.id, key.prefix.as_str(), "ci"));
+    assert_eq!(
+        (listed[0].id, listed[0].prefix.as_str(), listed[0].label.as_str()),
+        (key.id, key.prefix.as_str(), "ci")
+    );
     eventually("the key's last use is recorded", std::time::Duration::from_secs(15), || async {
         let r = t.http.get(keys_url(&t)).bearer_auth(&f.member_a.token).send().await.unwrap();
         let keys: Vec<ApiKeyInfo> = r.json().await.unwrap();
@@ -478,7 +509,8 @@ async fn an_api_key_is_shown_once_and_authenticates_as_x_api_key() {
     })
     .await;
     // another user's listing has none of it
-    let theirs: Vec<ApiKeyInfo> = t.http.get(keys_url(&t)).bearer_auth(&f.admin_a.token).send().await.unwrap().json().await.unwrap();
+    let theirs: Vec<ApiKeyInfo> =
+        t.http.get(keys_url(&t)).bearer_auth(&f.admin_a.token).send().await.unwrap().json().await.unwrap();
     assert!(theirs.is_empty());
 
     // controls: a missing key is the only 401; an unknown one, and an empty header, are not what they look like
@@ -487,7 +519,11 @@ async fn an_api_key_is_shown_once_and_authenticates_as_x_api_key() {
     assert_eq!(list_with_key(&t, &f.a, Some("thrk_not-a-key")).await, 403, "an unknown key");
     // control: a key manages nothing: it cannot mint keys, list them, or end the owner's sessions
     let with_key = |m: Method, url: String| t.http.request(m, url).header(API_KEY_HEADER, &key.token);
-    assert_eq!(with_key(Method::POST, keys_url(&t)).json(&json!({})).send().await.unwrap().status(), 401, "a key mints no key");
+    assert_eq!(
+        with_key(Method::POST, keys_url(&t)).json(&json!({})).send().await.unwrap().status(),
+        401,
+        "a key mints no key"
+    );
     assert_eq!(with_key(Method::GET, keys_url(&t)).send().await.unwrap().status(), 401);
     assert_eq!(with_key(Method::POST, auth_url(&t, "/sign-out-all")).send().await.unwrap().status(), 401);
     assert_eq!(list(&t, &f.member_a, &f.a, None).await.status(), 200, "the owner's session was not ended");
@@ -498,9 +534,17 @@ async fn an_api_key_is_shown_once_and_authenticates_as_x_api_key() {
     let r = as_browser(&t, Method::POST, keys_url(&t), &s, Csrf::Matching).json(&json!({})).send().await.unwrap();
     assert_eq!(r.status(), 201);
     // a bad request is a 400, not a key
-    let past = serde_json::to_value(CreateApiKeyRequest { label: None, expires_at: Some(thrust_contracts::chrono::DateTime::from_timestamp(1_000_000_000, 0).unwrap()) }).unwrap();
+    let past = serde_json::to_value(CreateApiKeyRequest {
+        label: None,
+        expires_at: Some(thrust_contracts::chrono::DateTime::from_timestamp(1_000_000_000, 0).unwrap()),
+    })
+    .unwrap();
     assert_eq!(create_key(&t, &f.member_a, past).await.status(), 400, "an expiry in the past");
-    assert_eq!(create_key(&t, &f.member_a, json!({ "label": "y".repeat(101) })).await.status(), 400, "a label of 101 characters");
+    assert_eq!(
+        create_key(&t, &f.member_a, json!({ "label": "y".repeat(101) })).await.status(),
+        400,
+        "a label of 101 characters"
+    );
 }
 
 /// ADR-0052 (Tests) with the status corrected by this issue: a revoked key is rejected on the NEXT request with Plane's
@@ -527,7 +571,14 @@ async fn a_revoked_key_is_rejected_on_the_next_request_with_403() {
     // the owner revokes it: 403 from the next request on, with Plane's status and not 401
     assert_eq!(delete(&f.member_a, a.id).await, 204);
     assert_eq!(list_with_key(&t, &f.a, Some(&a.token)).await, 403, "the revoked key");
-    let r = t.http.post(t.url(&wi_path(&f.a))).header(API_KEY_HEADER, &a.token).json(&json!({"name": "x"})).send().await.unwrap();
+    let r = t
+        .http
+        .post(t.url(&wi_path(&f.a)))
+        .header(API_KEY_HEADER, &a.token)
+        .json(&json!({"name": "x"}))
+        .send()
+        .await
+        .unwrap();
     assert_eq!(r.status(), 403, "a mutation with it");
     assert_eq!(error_code(r).await, "invalid_api_key");
     // controls: the owner's other key and another user's key are unaffected (so the 403 is the revoke, not the route)
@@ -535,8 +586,12 @@ async fn a_revoked_key_is_rejected_on_the_next_request_with_403() {
     assert_eq!(list_with_key(&t, &f.a, Some(&theirs.token)).await, 200, "another user's key");
     // revoking again is a 204, and the listing shows both keys with the first revocation
     assert_eq!(delete(&f.member_a, a.id).await, 204);
-    let listed: Vec<ApiKeyInfo> = t.http.get(keys_url(&t)).bearer_auth(&f.member_a.token).send().await.unwrap().json().await.unwrap();
-    assert_eq!(listed.iter().map(|k| (k.id, k.revoked_at.is_some())).collect::<Vec<_>>(), [(a.id, true), (b.id, false)]);
+    let listed: Vec<ApiKeyInfo> =
+        t.http.get(keys_url(&t)).bearer_auth(&f.member_a.token).send().await.unwrap().json().await.unwrap();
+    assert_eq!(
+        listed.iter().map(|k| (k.id, k.revoked_at.is_some())).collect::<Vec<_>>(),
+        [(a.id, true), (b.id, false)]
+    );
     // the key's own request did not revive anything: still 403
     assert_eq!(list_with_key(&t, &f.a, Some(&a.token)).await, 403);
 }
@@ -547,10 +602,17 @@ async fn an_expired_key_and_a_deactivated_users_key_are_rejected_with_403() {
     let t = t();
     let f = Fixture::seed(&t).await;
     let token = |n: &str| format!("thrk_{n}-{}", uuid::Uuid::new_v4().simple());
-    let (expired, live, forever, inactive_owner) = (token("expired"), token("live"), token("forever"), token("inactive"));
+    let (expired, live, forever, inactive_owner) =
+        (token("expired"), token("live"), token("forever"), token("inactive"));
     let in_a_day = thrust_contracts::chrono::DateTime::from_timestamp(4_000_000_000, 0).unwrap();
     let in_the_past = thrust_contracts::chrono::DateTime::from_timestamp(1_000_000_000, 0).unwrap();
-    let key = |token: &String, user: &User, expires_at| SeedApiKey { token: token.clone(), user_id: user.id, label: "seeded".into(), expires_at, revoked: false };
+    let key = |token: &String, user: &User, expires_at| SeedApiKey {
+        token: token.clone(),
+        user_id: user.id,
+        label: "seeded".into(),
+        expires_at,
+        revoked: false,
+    };
     seed_keys(
         &t,
         vec![
@@ -615,7 +677,12 @@ async fn assert_logged_in(t: &Target, r: reqwest::Response, who: UserId) -> Sess
     assert!(is_hex(&session.value, 64) && is_hex(&csrf.value, 32));
     for c in [session, csrf] {
         assert!(c.has_attr("Secure") && c.has_attr("HttpOnly") && c.attr("SameSite") == Some("Lax"), "{}", c.name);
-        assert_eq!((c.attr("Path"), c.attr("Domain"), c.attr("Max-Age")), (Some("/"), None, Some("2592000")), "{}", c.name);
+        assert_eq!(
+            (c.attr("Path"), c.attr("Domain"), c.attr("Max-Age")),
+            (Some("/"), None, Some("2592000")),
+            "{}",
+            c.name
+        );
     }
     let s = Session { user_id: who, token: session.value.clone(), csrf: csrf.value.clone() };
     let me = as_browser(t, Method::GET, auth_url(t, "/session"), &s, Csrf::Absent).send().await.unwrap();
@@ -651,7 +718,9 @@ async fn oidc_login_completes_and_ends_in_the_same_session_as_a_password_sign_in
     let cb = begin(&t, Identity::verified(&unique_sub(), &f.admin_a.email), Tamper::None).await;
     assert_logged_in(&t, finish(&t, &cb).await, f.admin_a.id).await;
     // the email is matched like a password sign-in's: case and padding do not matter
-    let cb = begin(&t, Identity::verified(&unique_sub(), &format!(" {} ", f.guest_a.email.to_uppercase())), Tamper::None).await;
+    let cb =
+        begin(&t, Identity::verified(&unique_sub(), &format!(" {} ", f.guest_a.email.to_uppercase())), Tamper::None)
+            .await;
     assert_logged_in(&t, finish(&t, &cb).await, f.guest_a.id).await;
 
     // control for the mock itself (rule 8): it refuses an exchange whose PKCE verifier is not the challenge's. Without
@@ -675,7 +744,12 @@ async fn oidc_a_tampered_state_is_rejected() {
     assert_refused(finish(&t, &unknown).await, 400, "a state nobody issued").await;
     let none = t.no_redirect().get(t.url(&format!("{SLICE_PREFIX}/auth/oidc/callback"))).send().await.unwrap();
     assert_refused(none, 400, "no code and no state").await;
-    let denied = t.no_redirect().get(format!("{}?error=access_denied&state={}", cb.redirect_uri, cb.state)).send().await.unwrap();
+    let denied = t
+        .no_redirect()
+        .get(format!("{}?error=access_denied&state={}", cb.redirect_uri, cb.state))
+        .send()
+        .await
+        .unwrap();
     assert_refused(denied, 401, "the provider reports an error").await;
     // control: none of that used the login up; the genuine callback completes
     assert_logged_in(&t, finish(&t, &cb).await, f.member_a.id).await;
@@ -701,7 +775,9 @@ async fn oidc_a_replayed_callback_is_rejected() {
 async fn oidc_an_id_token_that_does_not_verify_is_rejected() {
     let t = t();
     let f = Fixture::seed(&t).await;
-    for tamper in [Tamper::WrongNonce, Tamper::WrongAudience, Tamper::WrongIssuer, Tamper::Expired, Tamper::BadSignature] {
+    for tamper in
+        [Tamper::WrongNonce, Tamper::WrongAudience, Tamper::WrongIssuer, Tamper::Expired, Tamper::BadSignature]
+    {
         let cb = begin(&t, Identity::verified(&unique_sub(), &f.member_a.email), tamper).await;
         assert_refused(finish(&t, &cb).await, 401, &format!("{tamper:?}")).await;
     }
@@ -718,7 +794,10 @@ async fn oidc_an_unverified_or_missing_email_is_rejected() {
     let f = Fixture::seed(&t).await;
     let email = f.member_a.email.clone();
     for (what, identity) in [
-        ("email_verified false", Identity { sub: unique_sub(), email: Some(email.clone()), email_verified: Some(false) }),
+        (
+            "email_verified false",
+            Identity { sub: unique_sub(), email: Some(email.clone()), email_verified: Some(false) },
+        ),
         ("email_verified absent", Identity { sub: unique_sub(), email: Some(email.clone()), email_verified: None }),
         ("no email", Identity { sub: unique_sub(), email: None, email_verified: Some(true) }),
     ] {

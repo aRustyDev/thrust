@@ -94,7 +94,10 @@ fn world() -> MemoryDatabase {
         block_on(db.insert_workspace(&NewWorkspace { workspace, owner: member })).unwrap();
     }
     let f = SeedFixture {
-        workspace_members: [A, B].iter().flat_map(|w| (2..=8).map(move |u| SeedWorkspaceMember { workspace_id: wid(*w), user_id: uid(u) })).collect(),
+        workspace_members: [A, B]
+            .iter()
+            .flat_map(|w| (2..=8).map(move |u| SeedWorkspaceMember { workspace_id: wid(*w), user_id: uid(u) }))
+            .collect(),
         ..SeedFixture::default()
     };
     block_on(db.seed(&sys(), &f)).unwrap();
@@ -252,7 +255,10 @@ fn a_creation_makes_the_project_its_members_and_its_states_together_or_not_at_al
         Clash::Id | Clash::Identifier | Clash::Name | Clash::StateNameTwice | Clash::TwoDefaultStates => {
             assert!(matches!(got, Err(DbError::Conflict(_))), "{clash:?}: {got:?}")
         }
-        Clash::CreatorIsNoUser | Clash::LeadIsNoUser | Clash::MemberIsNoUser | Clash::MemberIsNoMemberOfTheWorkspace => {
+        Clash::CreatorIsNoUser
+        | Clash::LeadIsNoUser
+        | Clash::MemberIsNoUser
+        | Clash::MemberIsNoMemberOfTheWorkspace => {
             assert!(matches!(got, Err(DbError::Backend(_))), "{clash:?}: {got:?}")
         }
     }
@@ -265,7 +271,11 @@ fn a_creation_makes_the_project_its_members_and_its_states_together_or_not_at_al
         // nothing of the refused project is left: not the project, not its members' rows, not its states
         assert!(made.is_none(), "{clash:?}: a refused project is there");
         assert!(states.is_empty(), "{clash:?}: its states are there");
-        assert_eq!(block_on(db.project_members(&pscope(ws, 11, 3))).unwrap(), vec![], "{clash:?}: its members are there");
+        assert_eq!(
+            block_on(db.project_members(&pscope(ws, 11, 3))).unwrap(),
+            vec![],
+            "{clash:?}: its members are there"
+        );
     }
     // the first project is as it was
     let original = block_on(db.project_detail(&wscope(A, 2, Role::Admin), first.project.id)).unwrap().unwrap();
@@ -286,7 +296,10 @@ fn a_members_place_is_ten_thousand_below_the_lowest_they_hold_in_the_workspace()
         block_on(db.project_detail(&wscope(ws, user, Role::Member), pid(project))).unwrap().unwrap().listing.sort_order
     };
     // user 2: 65535, then 55535, then 45535 in workspace A, and 65535 again in B; user 3: 65535, then (not in 11) 55535 in 12
-    assert_eq!([place(A, 10, 2), place(A, 11, 2), place(A, 12, 2), place(B, 13, 2)], [Some(65535.0), Some(55535.0), Some(45535.0), Some(65535.0)]);
+    assert_eq!(
+        [place(A, 10, 2), place(A, 11, 2), place(A, 12, 2), place(B, 13, 2)],
+        [Some(65535.0), Some(55535.0), Some(45535.0), Some(65535.0)]
+    );
     assert_eq!([place(A, 10, 3), place(A, 11, 3), place(A, 12, 3)], [Some(65535.0), None, Some(55535.0)]);
 }
 
@@ -335,7 +348,8 @@ fn a_name_or_key_clashes_only_when_it_is_exactly_another_projects(
 ) {
     let db = world();
     make(&db, &new_project(A, 10, 2, &[], 0));
-    let got = block_on(db.project_clashes(&wscope(A, 2, Role::Admin), Some(name), identifier, except.map(pid))).unwrap();
+    let got =
+        block_on(db.project_clashes(&wscope(A, 2, Role::Admin), Some(name), identifier, except.map(pid))).unwrap();
     assert_eq!(got, ProjectClashes { name: name_clash, identifier: identifier_clash });
     // the other workspace has no such project
     let other = block_on(db.project_clashes(&wscope(B, 2, Role::Admin), Some(name), identifier, None)).unwrap();
@@ -361,7 +375,10 @@ fn an_update_replaces_what_can_change_and_keeps_the_id_the_workspace_and_the_cre
     row.workspace_id = wid(B);
     assert!(block_on(db.update_project(&scope, &row)).unwrap());
     let got = block_on(db.project_detail(&scope, pid(10))).unwrap().unwrap().listing.project;
-    assert_eq!((got.name.as_str(), got.identifier.as_str(), got.network, got.description.as_str()), ("renamed", "NEW", ProjectNetwork::Secret, "d"));
+    assert_eq!(
+        (got.name.as_str(), got.identifier.as_str(), got.network, got.description.as_str()),
+        ("renamed", "NEW", ProjectNetwork::Secret, "d")
+    );
     assert_eq!((got.updated_by, got.updated_at), (Some(uid(3)), at(50)));
     assert_eq!((got.created_at, got.created_by, got.workspace_id), (at(0), Some(uid(2)), wid(A)));
     // its own name and key are not a clash, another project's are
@@ -394,7 +411,12 @@ fn a_project_says_the_callers_role_who_is_in_it_newest_first_and_the_next_number
     block_on(db.seed(
         &sys(),
         &SeedFixture {
-            memberships: vec![SeedMembership { project_id: pid(10), workspace_id: wid(B), user_id: uid(5), role: Role::Admin }],
+            memberships: vec![SeedMembership {
+                project_id: pid(10),
+                workspace_id: wid(B),
+                user_id: uid(5),
+                role: Role::Admin,
+            }],
             project_sort_orders: vec![SeedProjectSortOrder { project_id: pid(10), user_id: uid(5), sort_order: 7.0 }],
             ..SeedFixture::default()
         },
@@ -426,7 +448,15 @@ fn a_members_own_row_names_the_person_the_project_and_the_workspace() {
     make(&db, &new_project(A, 10, 2, &[], 0));
     block_on(db.seed(
         &sys(),
-        &SeedFixture { memberships: vec![SeedMembership { project_id: pid(10), workspace_id: wid(B), user_id: uid(5), role: Role::Admin }], ..SeedFixture::default() },
+        &SeedFixture {
+            memberships: vec![SeedMembership {
+                project_id: pid(10),
+                workspace_id: wid(B),
+                user_id: uid(5),
+                role: Role::Admin,
+            }],
+            ..SeedFixture::default()
+        },
     ))
     .unwrap();
     let got = block_on(db.project_member(&wscope(A, 2, Role::Member), pid(10))).unwrap().unwrap();
@@ -445,7 +475,15 @@ fn the_member_list_leaves_out_people_who_left_the_workspace_and_stray_rows() {
     make(&db, &new_project(A, 10, 2, &[3, 4], 0));
     block_on(db.seed(
         &sys(),
-        &SeedFixture { memberships: vec![SeedMembership { project_id: pid(10), workspace_id: wid(B), user_id: uid(5), role: Role::Member }], ..SeedFixture::default() },
+        &SeedFixture {
+            memberships: vec![SeedMembership {
+                project_id: pid(10),
+                workspace_id: wid(B),
+                user_id: uid(5),
+                role: Role::Member,
+            }],
+            ..SeedFixture::default()
+        },
     ))
     .unwrap();
     let ids = || block_on(db.project_members(&pscope(A, 10, 2))).unwrap().iter().map(|m| m.user_id).collect::<Vec<_>>();
@@ -486,9 +524,15 @@ fn a_members_settings_are_made_once_and_are_theirs() {
     // scope and the project's own row too)
     let stray = ProjectUserProperties { project_id: pid(11), workspace_id: wid(B), user_id: uid(8), ..props(6, 6) };
     let theirs = block_on(db.ensure_project_user_properties(&pscope(A, 10, 7), &stray)).unwrap();
-    assert_eq!((theirs.project_id, theirs.workspace_id, theirs.user_id, theirs.id), (pid(10), wid(A), uid(7), Uuid::from_u128(0x9006)));
+    assert_eq!(
+        (theirs.project_id, theirs.workspace_id, theirs.user_id, theirs.id),
+        (pid(10), wid(A), uid(7), Uuid::from_u128(0x9006))
+    );
     // a project that is not in the scope's workspace has none to make
-    assert!(matches!(block_on(db.ensure_project_user_properties(&pscope(B, 10, 6), &props(5, 6))), Err(DbError::Backend(_))));
+    assert!(matches!(
+        block_on(db.ensure_project_user_properties(&pscope(B, 10, 6), &props(5, 6))),
+        Err(DbError::Backend(_))
+    ));
 }
 
 /// `is_workspace_member` is about anyone, not the scope's own user: an active member is one, a member who has left is not, nor is a
@@ -496,7 +540,8 @@ fn a_members_settings_are_made_once_and_are_theirs() {
 #[test]
 fn anyone_is_asked_whether_they_are_an_active_member_of_the_workspace() {
     let db = world();
-    let asked = |ws: u128, user: u128| block_on(db.is_workspace_member(&wscope(ws, 1, Role::Admin), uid(user))).unwrap();
+    let asked =
+        |ws: u128, user: u128| block_on(db.is_workspace_member(&wscope(ws, 1, Role::Admin), uid(user))).unwrap();
     assert!(asked(A, 1) && asked(A, 5) && asked(B, 5));
     assert!(block_on(db.set_workspace_member_active(&sys(), wid(A), uid(5), false)).unwrap());
     assert!(!asked(A, 5), "a member who has left is no member");
@@ -577,11 +622,17 @@ fn the_state_lists_leave_out_the_intake_state_and_follow_sequence() {
     // index 0 is now the intake state; index 1 (Cancelled) shares Todo's sequence
     p.states[1].sequence = 25000.0;
     make(&db, &p);
-    let names: Vec<(String, f64)> = block_on(db.project_states(&pscope(A, 10, 2))).unwrap().iter().map(|s| (s.name.clone(), s.sequence)).collect();
+    let names: Vec<(String, f64)> =
+        block_on(db.project_states(&pscope(A, 10, 2))).unwrap().iter().map(|s| (s.name.clone(), s.sequence)).collect();
     assert!(names.windows(2).all(|w| w[0].1 <= w[1].1), "{names:?}");
     assert_eq!(names.len(), 5);
     assert!(names.iter().all(|(n, _)| n != "Triage"));
-    let tie: Vec<Uuid> = block_on(db.project_states(&pscope(A, 10, 2))).unwrap().iter().filter(|s| s.sequence == 25000.0).map(|s| s.id).collect();
+    let tie: Vec<Uuid> = block_on(db.project_states(&pscope(A, 10, 2)))
+        .unwrap()
+        .iter()
+        .filter(|s| s.sequence == 25000.0)
+        .map(|s| s.id)
+        .collect();
     assert_eq!(tie.len(), 2);
     assert!(tie[0] < tie[1], "ties are broken by id");
     // the intake state is its own
@@ -601,8 +652,11 @@ fn the_workspaces_states_are_those_of_the_projects_the_caller_is_in_that_are_not
     make(&db, &new_project(A, 12, 2, &[], 2));
     make(&db, &new_project(B, 13, 2, &[], 3));
     let projects_of = |user: u128| -> Vec<Uuid> {
-        let all: std::collections::BTreeSet<Uuid> =
-            block_on(db.workspace_states(&wscope(A, user, Role::Member))).unwrap().iter().map(|s| s.project_id.0).collect();
+        let all: std::collections::BTreeSet<Uuid> = block_on(db.workspace_states(&wscope(A, user, Role::Member)))
+            .unwrap()
+            .iter()
+            .map(|s| s.project_id.0)
+            .collect();
         all.into_iter().collect()
     };
     // 2 is in 10 and 12, 3 in 10 and 11, 4 in none; every state of those projects, five each, and none of workspace B's
@@ -611,7 +665,8 @@ fn the_workspaces_states_are_those_of_the_projects_the_caller_is_in_that_are_not
     assert_eq!(projects_of(3), vec![pid(10).0, pid(11).0]);
     assert!(projects_of(4).is_empty());
     // by sequence, projects with one sequence side by side
-    let seqs: Vec<f64> = block_on(db.workspace_states(&wscope(A, 2, Role::Member))).unwrap().iter().map(|s| s.sequence).collect();
+    let seqs: Vec<f64> =
+        block_on(db.workspace_states(&wscope(A, 2, Role::Member))).unwrap().iter().map(|s| s.sequence).collect();
     assert!(seqs.windows(2).all(|w| w[0] <= w[1]), "{seqs:?}");
     // an archived project's states are not listed
     let mut row = block_on(db.project_detail(&wscope(A, 2, Role::Admin), pid(12))).unwrap().unwrap().listing.project;
@@ -634,8 +689,16 @@ fn a_projects_labels_are_its_own_by_sort_order_then_id() {
         parent_id: None,
         sort_order,
     };
-    block_on(db.seed(&sys(), &SeedFixture { labels: vec![label(5, 10, 3.0), label(4, 10, 1.0), label(3, 10, 3.0), label(9, 11, 0.5)], ..SeedFixture::default() })).unwrap();
-    let ids: Vec<u128> = block_on(db.project_labels(&pscope(A, 10, 2))).unwrap().iter().map(|l| l.id.as_u128()).collect();
+    block_on(db.seed(
+        &sys(),
+        &SeedFixture {
+            labels: vec![label(5, 10, 3.0), label(4, 10, 1.0), label(3, 10, 3.0), label(9, 11, 0.5)],
+            ..SeedFixture::default()
+        },
+    ))
+    .unwrap();
+    let ids: Vec<u128> =
+        block_on(db.project_labels(&pscope(A, 10, 2))).unwrap().iter().map(|l| l.id.as_u128()).collect();
     assert_eq!(ids, vec![4, 3, 5]);
     assert_eq!(block_on(db.project_labels(&pscope(A, 11, 2))).unwrap().len(), 1);
     assert!(block_on(db.project_labels(&pscope(B, 10, 2))).unwrap().is_empty());
@@ -664,7 +727,9 @@ fn the_workspaces_counts_cover_every_project_whoever_asks_newest_first() {
         is_draft: draft,
         deleted_at: None,
     };
-    for (n, project, draft, archived) in [(1, 10, false, false), (2, 10, true, false), (3, 10, false, false), (4, 11, false, true)] {
+    for (n, project, draft, archived) in
+        [(1, 10, false, false), (2, 10, true, false), (3, 10, false, false), (4, 11, false, true)]
+    {
         let scope = pscope(A, project, 2);
         let mut tx = block_on(db.begin(&scope)).unwrap();
         block_on(tx.insert_work_item(&scope, &item(n, project, draft, archived))).unwrap();
@@ -672,8 +737,11 @@ fn the_workspaces_counts_cover_every_project_whoever_asks_newest_first() {
     }
     // a person who is in neither project, and a person who is in one of them, are told the same
     for user in [6u128, 2, 3] {
-        let got: Vec<(ProjectId, i64, i64)> =
-            block_on(db.project_stats(&wscope(A, user, Role::Guest), None)).unwrap().iter().map(|s| (s.id, s.total_issues, s.total_members)).collect();
+        let got: Vec<(ProjectId, i64, i64)> = block_on(db.project_stats(&wscope(A, user, Role::Guest), None))
+            .unwrap()
+            .iter()
+            .map(|s| (s.id, s.total_issues, s.total_members))
+            .collect();
         assert_eq!(got, vec![(pid(11), 0, 1), (pid(10), 2, 2)], "user {user}");
     }
     // only the projects asked for, and one of another workspace is not there

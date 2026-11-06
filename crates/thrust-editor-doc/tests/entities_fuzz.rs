@@ -6,10 +6,7 @@ use thrust_editor_doc::vdom::unescape_html;
 /// and `deep` nextest profiles, and fails when the input is missing rather than passing with nothing compared.
 #[test]
 fn oracle_entities_match_zeed_dom() {
-    let p = concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../../target/spike-0006/entities-fuzz.json"
-    );
+    let p = concat!(env!("CARGO_MANIFEST_DIR"), "/../../target/spike-0006/entities-fuzz.json");
     let s = std::fs::read_to_string(p)
         .unwrap_or_else(|e| panic!("{p}: {e} (generate it with tools/spike-0006/gen-all.sh)"));
     let c: Value = serde_json::from_str(&s).unwrap();

@@ -20,11 +20,7 @@ fn parity_stage2_json_to_html() {
         if d.get("json").is_none() {
             continue;
         }
-        let variant = if d["variant"] == "rich" {
-            Variant::Rich
-        } else {
-            Variant::Document
-        };
+        let variant = if d["variant"] == "rich" { Variant::Rich } else { Variant::Document };
         let schema = Schema::new(variant);
         let node = Node::from_json(&schema, &d["json"]).unwrap();
         let got = html::to_html(&schema, &node);
@@ -33,11 +29,7 @@ fn parity_stage2_json_to_html() {
         if got == want {
             ok += 1;
         } else {
-            let at = got
-                .bytes()
-                .zip(want.bytes())
-                .position(|(a, b)| a != b)
-                .unwrap_or(got.len().min(want.len()));
+            let at = got.bytes().zip(want.bytes()).position(|(a, b)| a != b).unwrap_or(got.len().min(want.len()));
             let lo = at.saturating_sub(60);
             fails.push(format!(
                 "{id}: first diff at byte {at}\n   got : {}\n   want: {}",

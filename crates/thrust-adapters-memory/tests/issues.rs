@@ -144,7 +144,15 @@ struct Spec {
 
 impl Spec {
     fn plain() -> Spec {
-        Spec { priority: Priority::None, state: None, start: None, target: None, completed: None, created: 0, updated: 0 }
+        Spec {
+            priority: Priority::None,
+            state: None,
+            start: None,
+            target: None,
+            completed: None,
+            created: 0,
+            updated: 0,
+        }
     }
 
     fn attrs(&self, by: u128) -> WorkItemAttrs {
@@ -346,7 +354,10 @@ fn attributes_are_for_an_item_the_transaction_inserted_in_the_scopes_project() {
         deleted_at: None,
     };
     block_on(tx.insert_work_item(&scope(OTHER, 1), &elsewhere)).unwrap();
-    assert!(matches!(block_on(tx.insert_work_item_attrs(&s, elsewhere.id, &Spec::plain().attrs(1))), Err(DbError::Backend(_))));
+    assert!(matches!(
+        block_on(tx.insert_work_item_attrs(&s, elsewhere.id, &Spec::plain().attrs(1))),
+        Err(DbError::Backend(_))
+    ));
 }
 
 /// A person assigned to an item shows while they are an active member of the workspace and in the project, and not when either
@@ -397,7 +408,13 @@ fn oracle(items: &[Made], field: WorkItemOrderField, descending: bool) -> Vec<i6
     // dates and times: the ones that are null go after the others, whichever way it runs
     fn nulls_last<K: Ord + Copy>(v: &mut [Made], key: impl Fn(&Made) -> Option<K>, descending: bool) {
         v.sort_by(|a, b| match (key(a), key(b)) {
-            (Some(x), Some(y)) => if descending { y.cmp(&x) } else { x.cmp(&y) },
+            (Some(x), Some(y)) => {
+                if descending {
+                    y.cmp(&x)
+                } else {
+                    x.cmp(&y)
+                }
+            }
             (Some(_), None) => std::cmp::Ordering::Less,
             (None, Some(_)) => std::cmp::Ordering::Greater,
             (None, None) => std::cmp::Ordering::Equal,
@@ -416,12 +433,24 @@ fn oracle(items: &[Made], field: WorkItemOrderField, descending: bool) -> Vec<i6
         WorkItemOrderField::ArchivedAt => {}
         WorkItemOrderField::Priority => {
             // descending runs from urgent (rank 0); ascending from none (rank 4)
-            v.sort_by_key(|m| if descending { i32::from(m.spec.priority.rank()) } else { -i32::from(m.spec.priority.rank()) });
+            v.sort_by_key(|m| {
+                if descending {
+                    i32::from(m.spec.priority.rank())
+                } else {
+                    -i32::from(m.spec.priority.rank())
+                }
+            });
         }
         WorkItemOrderField::StateName => nulls_last(&mut v, |m| state_name(m), descending),
         WorkItemOrderField::StateGroup => v.sort_by_key(group_rank),
     }
-    let by_key_only = matches!(field, WorkItemOrderField::CreatedAt | WorkItemOrderField::UpdatedAt | WorkItemOrderField::SequenceId | WorkItemOrderField::SortOrder);
+    let by_key_only = matches!(
+        field,
+        WorkItemOrderField::CreatedAt
+            | WorkItemOrderField::UpdatedAt
+            | WorkItemOrderField::SequenceId
+            | WorkItemOrderField::SortOrder
+    );
     let mut seqs: Vec<i64> = v.iter().map(|m| m.seq).collect();
     if by_key_only && descending {
         seqs.reverse();
@@ -523,7 +552,10 @@ fn a_page_holds_only_the_live_items_of_the_project() {
     assert_eq!(page.rows.iter().map(|r| r.item.id).collect::<Vec<_>>(), vec![live]);
     assert_eq!(page.total, 1);
     assert!(block_on(db.work_item_row(&s, gone)).unwrap().is_none());
-    assert!(block_on(db.work_item_row(&s, elsewhere)).unwrap().is_none(), "another project's item is not this project's");
+    assert!(
+        block_on(db.work_item_row(&s, elsewhere)).unwrap().is_none(),
+        "another project's item is not this project's"
+    );
     assert!(block_on(db.work_item_row(&scope(OTHER, 1), elsewhere)).unwrap().is_some());
 }
 

@@ -131,7 +131,9 @@ fn compare_work_items(a: &WorkItemRow, b: &WorkItemRow, order: WorkItemOrder, s:
             (None, None) => Ordering::Equal,
         }
     }
-    let state_name = |r: &WorkItemRow| r.attrs.state_id.and_then(|id| s.states.iter().find(|st| st.id == id)).map(|st| st.name.clone());
+    let state_name = |r: &WorkItemRow| {
+        r.attrs.state_id.and_then(|id| s.states.iter().find(|st| st.id == id)).map(|st| st.name.clone())
+    };
     let group_rank = |r: &WorkItemRow| match r.state_group {
         Some(StateGroup::Backlog) => 0,
         Some(StateGroup::Unstarted) => 1,
@@ -141,20 +143,34 @@ fn compare_work_items(a: &WorkItemRow, b: &WorkItemRow, order: WorkItemOrder, s:
         Some(StateGroup::Triage) | None => 5,
     };
     match order.field {
-        WorkItemOrderField::CreatedAt => run(a.item.created_at.cmp(&b.item.created_at).then(a.item.sequence_id.cmp(&b.item.sequence_id))),
-        WorkItemOrderField::UpdatedAt => run(a.attrs.updated_at.cmp(&b.attrs.updated_at).then(a.item.sequence_id.cmp(&b.item.sequence_id))),
+        WorkItemOrderField::CreatedAt => {
+            run(a.item.created_at.cmp(&b.item.created_at).then(a.item.sequence_id.cmp(&b.item.sequence_id)))
+        }
+        WorkItemOrderField::UpdatedAt => {
+            run(a.attrs.updated_at.cmp(&b.attrs.updated_at).then(a.item.sequence_id.cmp(&b.item.sequence_id)))
+        }
         WorkItemOrderField::SequenceId => run(a.item.sequence_id.cmp(&b.item.sequence_id)),
         WorkItemOrderField::SortOrder => run(a.item.sort_order.cmp(&b.item.sort_order)).then_with(newest_first),
-        WorkItemOrderField::TargetDate => nulls_last(a.attrs.target_date, b.attrs.target_date, order.descending).then_with(newest_first),
-        WorkItemOrderField::StartDate => nulls_last(a.attrs.start_date, b.attrs.start_date, order.descending).then_with(newest_first),
-        WorkItemOrderField::CompletedAt => nulls_last(a.attrs.completed_at, b.attrs.completed_at, order.descending).then_with(newest_first),
-        WorkItemOrderField::ArchivedAt => nulls_last(a.item.archived_at, b.item.archived_at, order.descending).then_with(newest_first),
+        WorkItemOrderField::TargetDate => {
+            nulls_last(a.attrs.target_date, b.attrs.target_date, order.descending).then_with(newest_first)
+        }
+        WorkItemOrderField::StartDate => {
+            nulls_last(a.attrs.start_date, b.attrs.start_date, order.descending).then_with(newest_first)
+        }
+        WorkItemOrderField::CompletedAt => {
+            nulls_last(a.attrs.completed_at, b.attrs.completed_at, order.descending).then_with(newest_first)
+        }
+        WorkItemOrderField::ArchivedAt => {
+            nulls_last(a.item.archived_at, b.item.archived_at, order.descending).then_with(newest_first)
+        }
         // the pin sorts on the inverse of the rank it computed, so ascending runs from `none` to `urgent`
         WorkItemOrderField::Priority => {
             let by_rank = a.attrs.priority.rank().cmp(&b.attrs.priority.rank());
             (if order.descending { by_rank } else { by_rank.reverse() }).then_with(newest_first)
         }
-        WorkItemOrderField::StateName => nulls_last(state_name(a), state_name(b), order.descending).then_with(newest_first),
+        WorkItemOrderField::StateName => {
+            nulls_last(state_name(a), state_name(b), order.descending).then_with(newest_first)
+        }
         // however it is asked, as the pin's own code has it
         WorkItemOrderField::StateGroup => group_rank(a).cmp(&group_rank(b)).then_with(newest_first),
     }
@@ -177,12 +193,7 @@ fn is_visible(w: &WorkItem) -> bool {
 
 #[async_trait]
 impl Database for MemoryDatabase {
-    async fn membership(
-        &self,
-        slug: &WorkspaceSlug,
-        project: ProjectId,
-        user: UserId,
-    ) -> Result<Membership, DbError> {
+    async fn membership(&self, slug: &WorkspaceSlug, project: ProjectId, user: UserId) -> Result<Membership, DbError> {
         let s = self.state.lock().unwrap();
         // The workspace the caller may act in: the slug names it, the caller belongs to it and the
         // project is in it (the three inner joins of the Postgres query).
@@ -191,13 +202,9 @@ impl Database for MemoryDatabase {
         #[cfg(feature = "mutant_ignore_tenant")]
         let resolved = s.projects.get(&project).copied();
         #[cfg(not(feature = "mutant_ignore_tenant"))]
-        let resolved = s
-            .workspaces
-            .get(slug)
-            .copied()
-            .filter(|ws| {
-                s.workspace_members.get(&(*ws, user)).is_some_and(|m| m.is_active) && s.projects.get(&project) == Some(ws)
-            });
+        let resolved = s.workspaces.get(slug).copied().filter(|ws| {
+            s.workspace_members.get(&(*ws, user)).is_some_and(|m| m.is_active) && s.projects.get(&project) == Some(ws)
+        });
         let Some(ws) = resolved else {
             return Ok(Membership::NoSuchProject);
         };
@@ -298,7 +305,8 @@ impl Database for MemoryDatabase {
             .filter(|m| m.user_id == user && m.is_active)
             .filter_map(|m| {
                 let workspace = s.workspace_rows.get(&m.workspace_id)?.clone();
-                let total = s.workspace_members.values().filter(|n| n.workspace_id == m.workspace_id && n.is_active).count();
+                let total =
+                    s.workspace_members.values().filter(|n| n.workspace_id == m.workspace_id && n.is_active).count();
                 Some(WorkspaceListing { workspace, role: m.role, total_members: total as u64 })
             })
             .collect();
@@ -359,7 +367,9 @@ impl Database for MemoryDatabase {
             .iter()
             // the project must really be in the workspace the member row names (the join on `projects` in Postgres)
             .filter(|((project, user), m)| {
-                *user == scope.user_id() && m.workspace_id == scope.workspace_id() && s.projects.get(project) == Some(&m.workspace_id)
+                *user == scope.user_id()
+                    && m.workspace_id == scope.workspace_id()
+                    && s.projects.get(project) == Some(&m.workspace_id)
             })
             .map(|((project, _), m)| (*project, m.role))
             .collect();
@@ -405,13 +415,21 @@ impl Database for MemoryDatabase {
             .sidebar_preferences
             .iter()
             .filter(|((w, u, _), _)| *w == ws && *u == user)
-            .map(|((_, _, key), (is_pinned, sort_order))| SidebarPreference { key: key.clone(), is_pinned: *is_pinned, sort_order: *sort_order })
+            .map(|((_, _, key), (is_pinned, sort_order))| SidebarPreference {
+                key: key.clone(),
+                is_pinned: *is_pinned,
+                sort_order: *sort_order,
+            })
             .collect();
         out.sort_by(|a, b| a.sort_order.total_cmp(&b.sort_order).then_with(|| a.key.cmp(&b.key)));
         Ok(out)
     }
 
-    async fn ensure_home_preferences(&self, scope: &WorkspaceScope, defaults: &[HomePreference]) -> Result<Vec<HomePreference>, DbError> {
+    async fn ensure_home_preferences(
+        &self,
+        scope: &WorkspaceScope,
+        defaults: &[HomePreference],
+    ) -> Result<Vec<HomePreference>, DbError> {
         let (ws, user) = (scope.workspace_id(), scope.user_id());
         let mut s = self.state.lock().unwrap();
         for d in defaults {
@@ -423,7 +441,11 @@ impl Database for MemoryDatabase {
         Ok(out)
     }
 
-    async fn ensure_user_properties(&self, scope: &WorkspaceScope, new: &UserProperties) -> Result<UserProperties, DbError> {
+    async fn ensure_user_properties(
+        &self,
+        scope: &WorkspaceScope,
+        new: &UserProperties,
+    ) -> Result<UserProperties, DbError> {
         let mut s = self.state.lock().unwrap();
         let row = s.user_properties.entry((scope.workspace_id(), scope.user_id())).or_insert_with(|| new.clone());
         Ok(row.clone())
@@ -447,7 +469,12 @@ impl Database for MemoryDatabase {
         if s.project_rows.values().any(|o| o.workspace_id == ws && o.name == row.name) {
             return Err(DbError::Conflict("projects_workspace_name_key".into()));
         }
-        for (column, user) in [("created_by", row.created_by), ("updated_by", row.updated_by), ("project_lead", row.project_lead), ("default_assignee", row.default_assignee)] {
+        for (column, user) in [
+            ("created_by", row.created_by),
+            ("updated_by", row.updated_by),
+            ("project_lead", row.project_lead),
+            ("default_assignee", row.default_assignee),
+        ] {
             if user.is_some_and(|u| !s.users.contains_key(&u)) {
                 return Err(DbError::Backend(format!("projects_{column}_fkey")));
             }
@@ -493,7 +520,8 @@ impl Database for MemoryDatabase {
         except: Option<ProjectId>,
     ) -> Result<ProjectClashes, DbError> {
         let s = self.state.lock().unwrap();
-        let others = || s.project_rows.values().filter(|r| r.workspace_id == scope.workspace_id() && Some(r.id) != except);
+        let others =
+            || s.project_rows.values().filter(|r| r.workspace_id == scope.workspace_id() && Some(r.id) != except);
         Ok(ProjectClashes {
             name: name.is_some_and(|n| others().any(|r| r.name == n)),
             identifier: identifier.is_some_and(|i| others().any(|r| r.identifier == i)),
@@ -503,7 +531,9 @@ impl Database for MemoryDatabase {
     async fn update_project(&self, scope: &WorkspaceScope, row: &ProjectRow) -> Result<bool, DbError> {
         let ws = scope.workspace_id();
         let mut s = self.state.lock().unwrap();
-        let Some(current) = s.project_rows.get(&row.id).filter(|r| r.workspace_id == ws).cloned() else { return Ok(false) };
+        let Some(current) = s.project_rows.get(&row.id).filter(|r| r.workspace_id == ws).cloned() else {
+            return Ok(false);
+        };
         let others = || s.project_rows.values().filter(|r| r.workspace_id == ws && r.id != row.id);
         if others().any(|r| r.identifier == row.identifier) {
             return Err(DbError::Conflict("projects_workspace_identifier_key".into()));
@@ -511,7 +541,11 @@ impl Database for MemoryDatabase {
         if others().any(|r| r.name == row.name) {
             return Err(DbError::Conflict("projects_workspace_name_key".into()));
         }
-        for (column, user) in [("updated_by", row.updated_by), ("project_lead", row.project_lead), ("default_assignee", row.default_assignee)] {
+        for (column, user) in [
+            ("updated_by", row.updated_by),
+            ("project_lead", row.project_lead),
+            ("default_assignee", row.default_assignee),
+        ] {
             if user.is_some_and(|u| !s.users.contains_key(&u)) {
                 return Err(DbError::Backend(format!("projects_{column}_fkey")));
             }
@@ -528,7 +562,8 @@ impl Database for MemoryDatabase {
         let (ws, user) = (scope.workspace_id(), scope.user_id());
         let s = self.state.lock().unwrap();
         let Some(project) = s.project_rows.get(&id).filter(|r| r.workspace_id == ws).cloned() else { return Ok(None) };
-        let mut rows: Vec<&ProjectMemberRow> = s.memberships.values().filter(|m| m.project_id == id && m.workspace_id == ws).collect();
+        let mut rows: Vec<&ProjectMemberRow> =
+            s.memberships.values().filter(|m| m.project_id == id && m.workspace_id == ws).collect();
         rows.sort_by(|a, b| (b.created_at, b.id).cmp(&(a.created_at, a.id)));
         Ok(Some(ProjectDetail {
             listing: ProjectListing {
@@ -541,10 +576,16 @@ impl Database for MemoryDatabase {
         }))
     }
 
-    async fn project_member(&self, scope: &WorkspaceScope, project: ProjectId) -> Result<Option<ProjectMemberWithUser>, DbError> {
+    async fn project_member(
+        &self,
+        scope: &WorkspaceScope,
+        project: ProjectId,
+    ) -> Result<Option<ProjectMemberWithUser>, DbError> {
         let (ws, user) = (scope.workspace_id(), scope.user_id());
         let s = self.state.lock().unwrap();
-        let (Some(row), Some(workspace)) = (s.project_rows.get(&project).filter(|r| r.workspace_id == ws), s.workspace_rows.get(&ws)) else {
+        let (Some(row), Some(workspace)) =
+            (s.project_rows.get(&project).filter(|r| r.workspace_id == ws), s.workspace_rows.get(&ws))
+        else {
             return Ok(None);
         };
         Ok(s.memberships.get(&(project, user)).filter(|m| m.workspace_id == ws).map(|m| ProjectMemberWithUser {
@@ -569,7 +610,11 @@ impl Database for MemoryDatabase {
         Ok(out)
     }
 
-    async fn ensure_project_user_properties(&self, scope: &Scope, new: &ProjectUserProperties) -> Result<ProjectUserProperties, DbError> {
+    async fn ensure_project_user_properties(
+        &self,
+        scope: &Scope,
+        new: &ProjectUserProperties,
+    ) -> Result<ProjectUserProperties, DbError> {
         let (ws, project, user) = (scope.workspace_id(), scope.project_id(), scope.user_id());
         let mut s = self.state.lock().unwrap();
         if s.projects.get(&project) != Some(&ws) {
@@ -587,7 +632,8 @@ impl Database for MemoryDatabase {
     async fn project_labels(&self, scope: &Scope) -> Result<Vec<LabelRow>, DbError> {
         let (ws, project) = (scope.workspace_id(), scope.project_id());
         let s = self.state.lock().unwrap();
-        let mut out: Vec<LabelRow> = s.labels.iter().filter(|l| l.project_id == project && l.workspace_id == ws).cloned().collect();
+        let mut out: Vec<LabelRow> =
+            s.labels.iter().filter(|l| l.project_id == project && l.workspace_id == ws).cloned().collect();
         out.sort_by(|a, b| a.sort_order.total_cmp(&b.sort_order).then(a.id.cmp(&b.id)));
         Ok(out)
     }
@@ -595,8 +641,12 @@ impl Database for MemoryDatabase {
     async fn project_states(&self, scope: &Scope) -> Result<Vec<StateRow>, DbError> {
         let (ws, project) = (scope.workspace_id(), scope.project_id());
         let s = self.state.lock().unwrap();
-        let mut out: Vec<StateRow> =
-            s.states.iter().filter(|st| st.project_id == project && st.workspace_id == ws && st.group != StateGroup::Triage).cloned().collect();
+        let mut out: Vec<StateRow> = s
+            .states
+            .iter()
+            .filter(|st| st.project_id == project && st.workspace_id == ws && st.group != StateGroup::Triage)
+            .cloned()
+            .collect();
         out.sort_by(|a, b| a.sequence.total_cmp(&b.sequence).then(a.id.cmp(&b.id)));
         Ok(out)
     }
@@ -609,28 +659,42 @@ impl Database for MemoryDatabase {
             .iter()
             .filter(|st| st.workspace_id == ws && st.group != StateGroup::Triage)
             // a project of this workspace that is not archived, and that the caller is in (their row names the project's workspace)
-            .filter(|st| s.project_rows.get(&st.project_id).is_some_and(|p| p.workspace_id == ws && p.archived_at.is_none()))
+            .filter(|st| {
+                s.project_rows.get(&st.project_id).is_some_and(|p| p.workspace_id == ws && p.archived_at.is_none())
+            })
             .filter(|st| s.memberships.get(&(st.project_id, user)).is_some_and(|m| m.workspace_id == ws))
             .cloned()
             .collect();
-        out.sort_by(|a, b| a.sequence.total_cmp(&b.sequence).then(a.project_id.0.cmp(&b.project_id.0)).then(a.id.cmp(&b.id)));
+        out.sort_by(|a, b| {
+            a.sequence.total_cmp(&b.sequence).then(a.project_id.0.cmp(&b.project_id.0)).then(a.id.cmp(&b.id))
+        });
         Ok(out)
     }
 
     async fn triage_state(&self, scope: &Scope) -> Result<Option<StateRow>, DbError> {
         let (ws, project) = (scope.workspace_id(), scope.project_id());
         let s = self.state.lock().unwrap();
-        let mut found: Vec<&StateRow> =
-            s.states.iter().filter(|st| st.project_id == project && st.workspace_id == ws && st.group == StateGroup::Triage).collect();
+        let mut found: Vec<&StateRow> = s
+            .states
+            .iter()
+            .filter(|st| st.project_id == project && st.workspace_id == ws && st.group == StateGroup::Triage)
+            .collect();
         found.sort_by(|a, b| a.sequence.total_cmp(&b.sequence).then(a.id.cmp(&b.id)));
         Ok(found.first().map(|st| (*st).clone()))
     }
 
-    async fn project_stats(&self, scope: &WorkspaceScope, only: Option<&[ProjectId]>) -> Result<Vec<ProjectStat>, DbError> {
+    async fn project_stats(
+        &self,
+        scope: &WorkspaceScope,
+        only: Option<&[ProjectId]>,
+    ) -> Result<Vec<ProjectStat>, DbError> {
         let ws = scope.workspace_id();
         let s = self.state.lock().unwrap();
-        let mut projects: Vec<&ProjectRow> =
-            s.project_rows.values().filter(|p| p.workspace_id == ws && only.map_or(true, |ids| ids.contains(&p.id))).collect();
+        let mut projects: Vec<&ProjectRow> = s
+            .project_rows
+            .values()
+            .filter(|p| p.workspace_id == ws && only.map_or(true, |ids| ids.contains(&p.id)))
+            .collect();
         projects.sort_by(|a, b| (b.created_at, b.id).cmp(&(a.created_at, a.id)));
         Ok(projects
             .iter()
@@ -640,9 +704,13 @@ impl Database for MemoryDatabase {
                 total_issues: if p.archived_at.is_some() {
                     0
                 } else {
-                    s.work_items.iter().filter(|w| w.workspace_id == ws && w.project_id == p.id && is_visible(w)).count() as i64
+                    s.work_items
+                        .iter()
+                        .filter(|w| w.workspace_id == ws && w.project_id == p.id && is_visible(w))
+                        .count() as i64
                 },
-                total_members: s.memberships.values().filter(|m| m.project_id == p.id && m.workspace_id == ws).count() as i64,
+                total_members: s.memberships.values().filter(|m| m.project_id == p.id && m.workspace_id == ws).count()
+                    as i64,
             })
             .collect())
     }
@@ -675,7 +743,12 @@ impl Database for MemoryDatabase {
         Ok(self.state.lock().unwrap().profiles.get(&user).cloned())
     }
 
-    async fn update_profile(&self, user: UserId, patch: &ProfilePatch, at: Timestamp) -> Result<Option<UserProfile>, DbError> {
+    async fn update_profile(
+        &self,
+        user: UserId,
+        patch: &ProfilePatch,
+        at: Timestamp,
+    ) -> Result<Option<UserProfile>, DbError> {
         let mut s = self.state.lock().unwrap();
         let Some(p) = s.profiles.get_mut(&user) else { return Ok(None) };
         if let Some(v) = &patch.first_name {
@@ -748,9 +821,7 @@ impl Database for MemoryDatabase {
             // the foreign key of Postgres
             return Err(DbError::Backend("account of a user that does not exist".into()));
         }
-        s.accounts
-            .entry((a.provider.clone(), a.provider_account_id.clone()))
-            .or_insert(a.user_id);
+        s.accounts.entry((a.provider.clone(), a.provider_account_id.clone())).or_insert(a.user_id);
         Ok(())
     }
 
@@ -918,12 +989,7 @@ impl Database for MemoryDatabase {
         Ok(v)
     }
 
-    async fn get_work_item(
-        &self,
-        scope: &Scope,
-        id: WorkItemId,
-        vis: Visibility,
-    ) -> Result<Option<WorkItem>, DbError> {
+    async fn get_work_item(&self, scope: &Scope, id: WorkItemId, vis: Visibility) -> Result<Option<WorkItem>, DbError> {
         let (ws, project) = (scope.workspace_id(), scope.project_id());
         let s = self.state.lock().unwrap();
         Ok(s.work_items
@@ -961,7 +1027,10 @@ impl Database for MemoryDatabase {
     async fn work_item_row(&self, scope: &Scope, id: WorkItemId) -> Result<Option<WorkItemRow>, DbError> {
         let (ws, project) = (scope.workspace_id(), scope.project_id());
         let s = self.state.lock().unwrap();
-        Ok(s.work_items.iter().find(|w| w.workspace_id == ws && w.project_id == project && w.id == id && is_visible(w)).map(|w| s.work_item_row_of(w)))
+        Ok(s.work_items
+            .iter()
+            .find(|w| w.workspace_id == ws && w.project_id == project && w.id == id && is_visible(w))
+            .map(|w| s.work_item_row_of(w)))
     }
 
     async fn max_work_item_sort_order(&self, scope: &Scope, state: Option<Uuid>) -> Result<Option<i64>, DbError> {
@@ -1065,12 +1134,7 @@ impl Database for MemoryDatabase {
 
     async fn undispatched_outbox(&self, _sys: &SystemScope, limit: u32) -> Result<Vec<OutboxRow>, DbError> {
         let s = self.state.lock().unwrap();
-        Ok(s.outbox
-            .iter()
-            .filter(|r| r.dispatched_at.is_none())
-            .take(limit as usize)
-            .cloned()
-            .collect())
+        Ok(s.outbox.iter().filter(|r| r.dispatched_at.is_none()).take(limit as usize).cloned().collect())
     }
 
     async fn mark_outbox_dispatched(&self, _sys: &SystemScope, event: EventId, at: Timestamp) -> Result<(), DbError> {
@@ -1097,20 +1161,17 @@ impl Database for MemoryDatabase {
         let epoch = thrust_contracts::chrono::DateTime::from_timestamp(0, 0).expect("the epoch");
         for w in &f.workspaces {
             s.workspaces.insert(w.slug.clone(), w.id);
-            s.workspace_rows
-                .entry(w.id)
-                .and_modify(|row| row.slug = w.slug.clone())
-                .or_insert_with(|| Workspace {
-                    id: w.id,
-                    slug: w.slug.clone(),
-                    name: w.slug.to_string(),
-                    owner_id: None,
-                    organization_size: None,
-                    timezone: "UTC".into(),
-                    background_color: "#808080".into(),
-                    created_at: epoch,
-                    updated_at: epoch,
-                });
+            s.workspace_rows.entry(w.id).and_modify(|row| row.slug = w.slug.clone()).or_insert_with(|| Workspace {
+                id: w.id,
+                slug: w.slug.clone(),
+                name: w.slug.to_string(),
+                owner_id: None,
+                organization_size: None,
+                timezone: "UTC".into(),
+                background_color: "#808080".into(),
+                created_at: epoch,
+                updated_at: epoch,
+            });
         }
         // a seeded membership is an active `member` with no company role; one that exists is left as it is
         let seeded_member = |workspace_id: WorkspaceId, user_id: UserId| WorkspaceMember {
@@ -1125,16 +1186,26 @@ impl Database for MemoryDatabase {
             updated_at: epoch,
         };
         for m in &f.workspace_members {
-            s.workspace_members.entry((m.workspace_id, m.user_id)).or_insert_with(|| seeded_member(m.workspace_id, m.user_id));
+            s.workspace_members
+                .entry((m.workspace_id, m.user_id))
+                .or_insert_with(|| seeded_member(m.workspace_id, m.user_id));
         }
         // the role of a member the seed names, made when the seed did not have them
         for r in &f.workspace_roles {
-            s.workspace_members.entry((r.workspace_id, r.user_id)).or_insert_with(|| seeded_member(r.workspace_id, r.user_id)).role = r.role;
+            s.workspace_members
+                .entry((r.workspace_id, r.user_id))
+                .or_insert_with(|| seeded_member(r.workspace_id, r.user_id))
+                .role = r.role;
         }
         for p in &f.projects {
             s.projects.insert(p.id, p.workspace_id);
             // a project with no `project_details` entry is what a project made with no options is
-            let details = f.project_details.iter().find(|d| d.project_id == p.id).cloned().unwrap_or_else(|| SeedProjectDetails::of(p.id));
+            let details = f
+                .project_details
+                .iter()
+                .find(|d| d.project_id == p.id)
+                .cloned()
+                .unwrap_or_else(|| SeedProjectDetails::of(p.id));
             let created_at = details.created_at.unwrap_or(epoch);
             let mut row = ProjectRow::bare(p.id, p.workspace_id, p.name.clone(), created_at);
             row.identifier = details.identifier.unwrap_or_else(|| default_project_identifier(p.id));
@@ -1168,7 +1239,11 @@ impl Database for MemoryDatabase {
         }
         for o in &f.project_sort_orders {
             // the settings row names the project's workspace; one for a project that is not seeded is the test's bug
-            let workspace_id = s.projects.get(&o.project_id).copied().ok_or_else(|| DbError::Backend("project_user_properties_project_id_fkey".into()))?;
+            let workspace_id = s
+                .projects
+                .get(&o.project_id)
+                .copied()
+                .ok_or_else(|| DbError::Backend("project_user_properties_project_id_fkey".into()))?;
             s.project_user_props.insert(
                 (o.project_id, o.user_id),
                 ProjectUserProperties {
@@ -1275,10 +1350,17 @@ impl Tx for MemoryTx {
 
     /// The Postgres constraints, checked before anything is written: the item is one this transaction inserted for the scope's
     /// project, the state, the people and the labels exist (their foreign keys), and the start is not after the target.
-    async fn insert_work_item_attrs(&mut self, scope: &Scope, id: WorkItemId, attrs: &WorkItemAttrs) -> Result<(), DbError> {
+    async fn insert_work_item_attrs(
+        &mut self,
+        scope: &Scope,
+        id: WorkItemId,
+        attrs: &WorkItemAttrs,
+    ) -> Result<(), DbError> {
         let (ws, project) = (scope.workspace_id(), scope.project_id());
         if !self.pending_items.iter().any(|w| w.id == id && w.workspace_id == ws && w.project_id == project) {
-            return Err(DbError::Backend("work item attributes for a work item this transaction did not insert".into()));
+            return Err(DbError::Backend(
+                "work item attributes for a work item this transaction did not insert".into(),
+            ));
         }
         let s = self.state.lock().unwrap();
         if attrs.state_id.is_some_and(|st| !s.states.iter().any(|x| x.id == st)) {
@@ -1339,10 +1421,8 @@ impl Tx for MemoryTx {
             s.work_item_attrs.insert(id, attrs);
         }
         for (project, id, at) in this.pending_deletes {
-            if let Some(w) = s
-                .work_items
-                .iter_mut()
-                .find(|w| w.project_id == project && w.id == id && w.deleted_at.is_none())
+            if let Some(w) =
+                s.work_items.iter_mut().find(|w| w.project_id == project && w.id == id && w.deleted_at.is_none())
             {
                 w.deleted_at = Some(at);
             }
@@ -1422,14 +1502,7 @@ impl BlobStore for MemoryBlobStore {
         Ok(())
     }
     async fn list(&self, prefix: &str) -> Result<Vec<String>, BlobError> {
-        Ok(self
-            .map
-            .lock()
-            .unwrap()
-            .keys()
-            .filter(|k| k.starts_with(prefix))
-            .cloned()
-            .collect())
+        Ok(self.map.lock().unwrap().keys().filter(|k| k.starts_with(prefix)).cloned().collect())
     }
 }
 

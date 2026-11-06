@@ -132,12 +132,18 @@ fn a_creation_makes_a_workspace_and_its_member_together_or_not_at_all(
         // nothing of the loser's: not its member row, not its slug
         assert_eq!(block_on(db.workspace_member(&scope(second.workspace.id, OTHER))).unwrap(), None);
         if clash != Clash::Slug {
-            assert!(!block_on(db.workspace_slug_taken(second.workspace.slug.as_str())).unwrap(), "{clash:?}: the loser's slug is taken");
+            assert!(
+                !block_on(db.workspace_slug_taken(second.workspace.slug.as_str())).unwrap(),
+                "{clash:?}: the loser's slug is taken"
+            );
         }
     }
     // the winner is as it was
     let mine = block_on(db.workspaces_of(OWNER)).unwrap();
-    assert_eq!(mine, vec![WorkspaceListing { workspace: first.workspace.clone(), role: Role::Admin, total_members: 1 }]);
+    assert_eq!(
+        mine,
+        vec![WorkspaceListing { workspace: first.workspace.clone(), role: Role::Admin, total_members: 1 }]
+    );
     assert_eq!(block_on(db.workspace_member(&scope(first.workspace.id, OWNER))).unwrap(), Some(first.owner));
 }
 
@@ -149,12 +155,17 @@ enum How {
 }
 
 #[rstest]
-fn any_workspace_is_true_once_one_exists_however_it_was_made(#[values(How::Nothing, How::Seeded, How::Inserted)] how: How) {
+fn any_workspace_is_true_once_one_exists_however_it_was_made(
+    #[values(How::Nothing, How::Seeded, How::Inserted)] how: How,
+) {
     let db = db_with_users(&[OWNER]);
     match how {
         How::Nothing => {}
         How::Seeded => {
-            let f = SeedFixture { workspaces: vec![SeedWorkspace { id: wid(1), slug: WorkspaceSlug::new("seeded") }], ..SeedFixture::default() };
+            let f = SeedFixture {
+                workspaces: vec![SeedWorkspace { id: wid(1), slug: WorkspaceSlug::new("seeded") }],
+                ..SeedFixture::default()
+            };
             block_on(db.seed(&sys(), &f)).unwrap();
         }
         How::Inserted => block_on(db.insert_workspace(&new_ws(1, OWNER, Role::Admin, 0))).unwrap(),
@@ -173,7 +184,9 @@ enum Probe {
 
 /// The slug check is exact: not case-insensitive, not a prefix, not trimmed.
 #[rstest]
-fn the_slug_check_is_exact(#[values(Probe::Exact, Probe::Upper, Probe::Prefix, Probe::Padded, Probe::Other)] probe: Probe) {
+fn the_slug_check_is_exact(
+    #[values(Probe::Exact, Probe::Upper, Probe::Prefix, Probe::Padded, Probe::Other)] probe: Probe,
+) {
     let db = db_with_users(&[OWNER]);
     block_on(db.insert_workspace(&new_ws(7, OWNER, Role::Admin, 0))).unwrap();
     let slug = match probe {
@@ -211,28 +224,30 @@ fn only_an_active_member_has_the_workspace_by_slug_and_in_their_list(
         assert!(block_on(db.set_workspace_member_active(&sys(), wid(10), OTHER, false)).unwrap());
     }
     let slug = WorkspaceSlug::new(if slug_known { "ws-10" } else { "ws-11" });
-    let want_access = (slug_known && state == State::Active).then_some(WorkspaceAccess { workspace_id: wid(10), role: Role::Member });
+    let want_access =
+        (slug_known && state == State::Active).then_some(WorkspaceAccess { workspace_id: wid(10), role: Role::Member });
     assert_eq!(block_on(db.workspace_access(&slug, OTHER)).unwrap(), want_access);
 
     let listed: Vec<WorkspaceId> = block_on(db.workspaces_of(OTHER)).unwrap().iter().map(|l| l.workspace.id).collect();
     assert_eq!(listed, if state == State::Active { vec![wid(10)] } else { vec![] });
 
     let row = block_on(db.workspace_member(&scope(wid(10), OTHER))).unwrap();
-    assert_eq!(row.as_ref().map(|m| m.is_active), match state {
-        State::Active => Some(true),
-        State::Deactivated => Some(false),
-        State::NotAMember => None,
-    });
-    let in_list = block_on(db.workspace_members(&scope(wid(10), OWNER))).unwrap().iter().any(|m| m.member.user_id == OTHER);
+    assert_eq!(
+        row.as_ref().map(|m| m.is_active),
+        match state {
+            State::Active => Some(true),
+            State::Deactivated => Some(false),
+            State::NotAMember => None,
+        }
+    );
+    let in_list =
+        block_on(db.workspace_members(&scope(wid(10), OWNER))).unwrap().iter().any(|m| m.member.user_id == OTHER);
     assert_eq!(in_list, state != State::NotAMember, "the member list shows a deactivated member and not a stranger");
 }
 
 /// `set_workspace_member_active` answers whether the membership exists, for each way it might not.
 #[rstest]
-fn deactivating_answers_whether_the_membership_exists(
-    #[values(10, 11)] workspace: u128,
-    #[values(1, 2)] user: u128,
-) {
+fn deactivating_answers_whether_the_membership_exists(#[values(10, 11)] workspace: u128, #[values(1, 2)] user: u128) {
     let db = db_with_users(&[OWNER, OTHER]);
     block_on(db.insert_workspace(&new_ws(10, OWNER, Role::Admin, 0))).unwrap();
     block_on(db.insert_workspace(&new_ws(11, OTHER, Role::Admin, 1))).unwrap();
@@ -256,19 +271,26 @@ fn the_member_count_is_the_active_members(#[values(0, 1, 2, 3)] deactivated: usi
     assert_eq!((mine[0].total_members, mine[0].role), (4 - deactivated as u64, Role::Guest));
     // an active member sees the same count
     let theirs = block_on(db.workspaces_of(others[2])).unwrap();
-    assert_eq!(theirs.iter().map(|l| l.total_members).collect::<Vec<_>>(), if deactivated == 3 { vec![] } else { vec![4 - deactivated as u64] });
+    assert_eq!(
+        theirs.iter().map(|l| l.total_members).collect::<Vec<_>>(),
+        if deactivated == 3 { vec![] } else { vec![4 - deactivated as u64] }
+    );
 }
 
 // --- order ------------------------------------------------------------------------------------------------------
 
 /// The list of workspaces is newest first, and two made in the same second are ordered by id, the larger first.
 #[rstest]
-fn workspaces_are_listed_newest_first_with_ties_by_id(#[values(-1, 0, 1)] second_after: i64, #[values(false, true)] second_id_larger: bool) {
+fn workspaces_are_listed_newest_first_with_ties_by_id(
+    #[values(-1, 0, 1)] second_after: i64,
+    #[values(false, true)] second_id_larger: bool,
+) {
     let db = db_with_users(&[OWNER]);
     let (first_id, second_id) = if second_id_larger { (10, 20) } else { (20, 10) };
     block_on(db.insert_workspace(&new_ws(first_id, OWNER, Role::Admin, 100))).unwrap();
     block_on(db.insert_workspace(&new_ws(second_id, OWNER, Role::Admin, 100 + second_after))).unwrap();
-    let got: Vec<u128> = block_on(db.workspaces_of(OWNER)).unwrap().iter().map(|l| l.workspace.id.0.as_u128()).collect();
+    let got: Vec<u128> =
+        block_on(db.workspaces_of(OWNER)).unwrap().iter().map(|l| l.workspace.id.0.as_u128()).collect();
     let want = match second_after {
         1 => vec![second_id, first_id],
         -1 => vec![first_id, second_id],
@@ -289,7 +311,8 @@ fn the_member_list_is_newest_first_with_ties_by_membership_id_and_shows_the_pers
 
     let listed = block_on(db.workspace_members(&scope(wid(10), OWNER))).unwrap();
     let ids: Vec<Uuid> = listed.iter().map(|m| m.member.id).collect();
-    let mut seeded: Vec<Uuid> = others.iter().map(|u| block_on(db.workspace_member(&scope(wid(10), *u))).unwrap().unwrap().id).collect();
+    let mut seeded: Vec<Uuid> =
+        others.iter().map(|u| block_on(db.workspace_member(&scope(wid(10), *u))).unwrap().unwrap().id).collect();
     seeded.sort_by(|a, b| b.cmp(a));
     let want: Vec<Uuid> = std::iter::once(Uuid::from_u128(0x1000 + 10)).chain(seeded).collect();
     assert_eq!(ids, want);

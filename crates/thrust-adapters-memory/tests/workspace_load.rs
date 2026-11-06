@@ -82,7 +82,10 @@ fn world(projects: &[Proj]) -> MemoryDatabase {
             SeedWorkspaceMember { workspace_id: HERE, user_id: CALLER },
             SeedWorkspaceMember { workspace_id: THERE, user_id: CALLER },
         ],
-        projects: projects.iter().map(|p| SeedProject { id: pid(p.id), workspace_id: p.ws, name: format!("p{}", p.id) }).collect(),
+        projects: projects
+            .iter()
+            .map(|p| SeedProject { id: pid(p.id), workspace_id: p.ws, name: format!("p{}", p.id) })
+            .collect(),
         project_details: projects
             .iter()
             .map(|p| SeedProjectDetails {
@@ -94,11 +97,24 @@ fn world(projects: &[Proj]) -> MemoryDatabase {
             .collect(),
         memberships: projects
             .iter()
-            .filter_map(|p| p.member.map(|(role, ws)| SeedMembership { project_id: pid(p.id), workspace_id: ws, user_id: CALLER, role }))
+            .filter_map(|p| {
+                p.member.map(|(role, ws)| SeedMembership {
+                    project_id: pid(p.id),
+                    workspace_id: ws,
+                    user_id: CALLER,
+                    role,
+                })
+            })
             .collect(),
         project_sort_orders: projects
             .iter()
-            .filter_map(|p| p.sort_order.map(|sort_order| SeedProjectSortOrder { project_id: pid(p.id), user_id: CALLER, sort_order }))
+            .filter_map(|p| {
+                p.sort_order.map(|sort_order| SeedProjectSortOrder {
+                    project_id: pid(p.id),
+                    user_id: CALLER,
+                    sort_order,
+                })
+            })
             .collect(),
         ..SeedFixture::default()
     };
@@ -128,7 +144,8 @@ fn a_project_is_seen_as_the_workspace_role_and_the_network_allow(
     #[values(None, Some(Role::Guest), Some(Role::Member), Some(Role::Admin))] theirs: Option<Role>,
     #[values(false, true)] archived: bool,
 ) {
-    let p = Proj { id: 1, ws: HERE, network, archived, created: 0, member: theirs.map(|r| (r, HERE)), sort_order: None };
+    let p =
+        Proj { id: 1, ws: HERE, network, archived, created: 0, member: theirs.map(|r| (r, HERE)), sort_order: None };
     let got = listed(&world(&[p]), HERE, role);
     assert_eq!(!got.is_empty(), sees(role, network, theirs), "{role:?} {network:?} {theirs:?} archived={archived}");
     for l in &got {
@@ -146,7 +163,15 @@ fn a_member_row_of_another_workspace_gives_no_role_and_no_access(
     #[values(Role::Guest, Role::Member, Role::Admin)] role: Role,
     #[values(ProjectNetwork::Secret, ProjectNetwork::Public)] network: ProjectNetwork,
 ) {
-    let p = Proj { id: 1, ws: HERE, network, archived: false, created: 0, member: Some((Role::Admin, THERE)), sort_order: None };
+    let p = Proj {
+        id: 1,
+        ws: HERE,
+        network,
+        archived: false,
+        created: 0,
+        member: Some((Role::Admin, THERE)),
+        sort_order: None,
+    };
     let got = listed(&world(&[p]), HERE, role);
     assert_eq!(!got.is_empty(), sees(role, network, None), "{role:?} {network:?}");
     assert!(got.iter().all(|l| l.role.is_none()), "{got:?}");
@@ -154,7 +179,15 @@ fn a_member_row_of_another_workspace_gives_no_role_and_no_access(
 
 #[test]
 fn the_callers_sort_order_is_shown_only_where_they_have_one() {
-    let with = Proj { id: 1, ws: HERE, network: ProjectNetwork::Public, archived: false, created: 0, member: None, sort_order: Some(65535.0) };
+    let with = Proj {
+        id: 1,
+        ws: HERE,
+        network: ProjectNetwork::Public,
+        archived: false,
+        created: 0,
+        member: None,
+        sort_order: Some(65535.0),
+    };
     let without = Proj { id: 2, sort_order: None, ..with.clone() };
     let got = listed(&world(&[with, without]), HERE, Role::Admin);
     let order = |id: u128| got.iter().find(|l| l.project.id == pid(id)).unwrap().sort_order;
@@ -168,10 +201,21 @@ fn any_proj() -> impl Strategy<Value = Proj> {
         any::<bool>(),
         // few values, so that creation times tie
         0..4i64,
-        prop::option::of((prop_oneof![Just(Role::Guest), Just(Role::Member), Just(Role::Admin)], prop_oneof![Just(HERE), Just(THERE)])),
+        prop::option::of((
+            prop_oneof![Just(Role::Guest), Just(Role::Member), Just(Role::Admin)],
+            prop_oneof![Just(HERE), Just(THERE)],
+        )),
         prop::option::of(prop_oneof![Just(0.0), Just(65535.0), Just(-1.5), Just(1e9)]),
     )
-        .prop_map(|(ws, network, archived, created, member, sort_order)| Proj { id: 0, ws, network, archived, created, member, sort_order })
+        .prop_map(|(ws, network, archived, created, member, sort_order)| Proj {
+            id: 0,
+            ws,
+            network,
+            archived,
+            created,
+            member,
+            sort_order,
+        })
 }
 
 proptest! {
@@ -279,7 +323,11 @@ fn sidebar_defaults(mask: u8, salt: u8) -> Vec<SidebarPreference> {
     (0..5)
         .filter(|i| mask & (1 << i) != 0)
         // sort orders collide on purpose (two keys at one order), and are fractional
-        .map(|i| SidebarPreference { key: KEYS[i].to_string(), is_pinned: (i as u8 + salt) % 2 == 0, sort_order: f64::from((i as u8 + salt) % 3) + 0.5 })
+        .map(|i| SidebarPreference {
+            key: KEYS[i].to_string(),
+            is_pinned: (i as u8 + salt) % 2 == 0,
+            sort_order: f64::from((i as u8 + salt) % 3) + 0.5,
+        })
         .collect()
 }
 

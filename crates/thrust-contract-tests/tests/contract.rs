@@ -247,11 +247,7 @@ async fn cross_tenant_access_is_rejected_and_has_no_effect() {
     let r = create(&t, &f.admin_b, &f.a, json!({"name": "intruder"})).await;
     assert_eq!(r.status(), 404, "cross-tenant create must be 404");
     assert_eq!(list(&t, &f.admin_b, &f.a, None).await.status(), 404, "cross-tenant list");
-    assert_eq!(
-        list(&t, &f.admin_b, &f.a, Some("with_deleted")).await.status(),
-        404,
-        "cross-tenant with_deleted list"
-    );
+    assert_eq!(list(&t, &f.admin_b, &f.a, Some("with_deleted")).await.status(), 404, "cross-tenant with_deleted list");
     // control: the rejected create left nothing behind in tenant A ...
     let items: Vec<WorkItem> = list(&t, &f.admin_a, &f.a, None).await.json().await.unwrap();
     assert!(items.is_empty(), "cross-tenant create leaked a row");
@@ -647,12 +643,7 @@ async fn blast_radius_of_one_panic() {
         let (t, f, stop, ok, bad) = (t.clone(), f.clone(), stop.clone(), ok.clone(), bad.clone());
         tasks.push(tokio::spawn(async move {
             while !stop.load(Ordering::Relaxed) {
-                let r = t
-                    .http
-                    .get(t.url(&wi_path(&f.a)))
-                    .bearer_auth(&f.member_a.token)
-                    .send()
-                    .await;
+                let r = t.http.get(t.url(&wi_path(&f.a))).bearer_auth(&f.member_a.token).send().await;
                 match r {
                     Ok(r) if r.status() == 200 => ok.fetch_add(1, Ordering::Relaxed),
                     _ => bad.fetch_add(1, Ordering::Relaxed),

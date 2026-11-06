@@ -192,7 +192,8 @@ pub fn project(ex: &Value) -> Value {
     }
     if ex["response"]["status"] == 302 {
         let loc = ex["response"]["headers"]["location"].as_str().expect("a 302 with a location").to_string();
-        let rest = loc.strip_prefix("<base_url>").unwrap_or_else(|| panic!("location {loc:?} must start with <base_url>"));
+        let rest =
+            loc.strip_prefix("<base_url>").unwrap_or_else(|| panic!("location {loc:?} must start with <base_url>"));
         let query = rest.split_once('?').map_or("", |(_, q)| q);
         let pairs = query_pairs(query);
         let (status, body) = match pairs.iter().find(|(k, _)| k == "error_code") {
@@ -238,20 +239,23 @@ pub fn send(router: &Router, name: &Value, req: &Value, jar: &Jar) -> Value {
     let method: Method = req["method"].as_str().expect("method").parse().expect("method");
     let mut builder = Request::builder().method(method).uri(req["path"].as_str().expect("path"));
     if let Some(who) = req.get("as").and_then(Value::as_str) {
-        let token = jar
-            .get(&jar_key(who))
-            .unwrap_or_else(|| panic!("{name}: no session for {who}: an earlier step of the journey must sign them in"));
+        let token = jar.get(&jar_key(who)).unwrap_or_else(|| {
+            panic!("{name}: no session for {who}: an earlier step of the journey must sign them in")
+        });
         builder = builder.header("cookie", format!("__Host-thrust_session={token}"));
     }
     let body = match req.get("body").filter(|b| !b.is_null()) {
-        Some(b) if b.get("form").is_some() => panic!("a form body must be projected before it is sent; found one in {name}"),
+        Some(b) if b.get("form").is_some() => {
+            panic!("a form body must be projected before it is sent; found one in {name}")
+        }
         Some(b) => {
             builder = builder.header("content-type", "application/json");
             Body::from(b.to_string())
         }
         None => Body::empty(),
     };
-    let resp = futures_executor::block_on(router.clone().oneshot(builder.body(body).expect("request"))).expect("infallible");
+    let resp =
+        futures_executor::block_on(router.clone().oneshot(builder.body(body).expect("request"))).expect("infallible");
     let status = resp.status().as_u16();
     let mut headers = Map::new();
     for (k, v) in resp.headers() {
@@ -315,7 +319,9 @@ pub fn divergences_with(router: &Router, fixture: &Value, jar: &mut Jar) -> Vec<
     let mut ids = normalise::Ids::new(&rules);
     // the ids an earlier fixture made that this one's requests name: the recorder numbered them first, in this order
     for name in fixture["uses"].as_array().into_iter().flatten().map(|n| n.as_str().expect("a name")) {
-        let id = jar.get(&format!("bind:{name}")).unwrap_or_else(|| panic!("the fixture uses {name:?}, which no earlier fixture binds"));
+        let id = jar
+            .get(&format!("bind:{name}"))
+            .unwrap_or_else(|| panic!("the fixture uses {name:?}, which no earlier fixture binds"));
         ids.preseed(id);
     }
     let mut out = Vec::new();
@@ -415,7 +421,12 @@ pub fn world(emails: &[&str]) -> (Router, Arc<MemoryDatabase>, Jar) {
     let (router, db) = app_with_db();
     let mut jar = Jar::new();
     for email in emails {
-        let raw = send(&router, &json!("sign-up"), &json!({"method": "POST", "path": "/auth/sign-up/", "body": {"email": email, "password": STRONG}}), &jar);
+        let raw = send(
+            &router,
+            &json!("sign-up"),
+            &json!({"method": "POST", "path": "/auth/sign-up/", "body": {"email": email, "password": STRONG}}),
+            &jar,
+        );
         assert_eq!(raw["response"]["status"], 200, "{raw}");
         jar.insert(jar_key(email), session_token(&raw).expect("a session"));
     }
@@ -566,7 +577,11 @@ impl Cast {
     }
     /// The seeded project as the table holds it, and a way to save a changed copy.
     pub fn project_row(&self) -> ProjectRow {
-        futures_executor::block_on(self.db.project_detail(&self.workspace_scope(), ProjectId(Uuid::from_u128(PROJECT)))).unwrap().unwrap().listing.project
+        futures_executor::block_on(self.db.project_detail(&self.workspace_scope(), ProjectId(Uuid::from_u128(PROJECT))))
+            .unwrap()
+            .unwrap()
+            .listing
+            .project
     }
     pub fn save(&self, row: &ProjectRow) {
         assert!(futures_executor::block_on(self.db.update_project(&self.workspace_scope(), row)).unwrap());
@@ -591,25 +606,36 @@ pub fn cast() -> Cast {
                 .map(|x| SeedWorkspaceRole { workspace_id: ws, user_id: c.user(*x), role: x.workspace_role().unwrap() })
                 .collect(),
             projects: vec![SeedProject { id: project, workspace_id: ws, name: "Cast Project".into() }],
-            project_details: vec![SeedProjectDetails { identifier: Some("PRJ".into()), created_at: Some(at(1)), ..SeedProjectDetails::of(project) }],
+            project_details: vec![SeedProjectDetails {
+                identifier: Some("PRJ".into()),
+                created_at: Some(at(1)),
+                ..SeedProjectDetails::of(project)
+            }],
             // a default state and the intake state: the project has been made as the pin makes one, in short
-            states: [(0x5001, "Backlog", 15000.0, StateGroup::Backlog, true), (0x5002, "Triage", 65000.0, StateGroup::Triage, false)]
-                .iter()
-                .map(|(n, name, sequence, group, is_default)| SeedState {
-                    id: Uuid::from_u128(*n),
-                    project_id: project,
-                    workspace_id: ws,
-                    name: (*name).into(),
-                    color: "#000000".into(),
-                    sequence: *sequence,
-                    group: *group,
-                    is_default: *is_default,
-                })
-                .collect(),
-            memberships: [(Caller::ProjectAdmin, Role::Admin), (Caller::ProjectMember, Role::Member), (Caller::ProjectGuest, Role::Guest)]
-                .iter()
-                .map(|(x, role)| SeedMembership { project_id: project, workspace_id: ws, user_id: c.user(*x), role: *role })
-                .collect(),
+            states: [
+                (0x5001, "Backlog", 15000.0, StateGroup::Backlog, true),
+                (0x5002, "Triage", 65000.0, StateGroup::Triage, false),
+            ]
+            .iter()
+            .map(|(n, name, sequence, group, is_default)| SeedState {
+                id: Uuid::from_u128(*n),
+                project_id: project,
+                workspace_id: ws,
+                name: (*name).into(),
+                color: "#000000".into(),
+                sequence: *sequence,
+                group: *group,
+                is_default: *is_default,
+            })
+            .collect(),
+            memberships: [
+                (Caller::ProjectAdmin, Role::Admin),
+                (Caller::ProjectMember, Role::Member),
+                (Caller::ProjectGuest, Role::Guest),
+            ]
+            .iter()
+            .map(|(x, role)| SeedMembership { project_id: project, workspace_id: ws, user_id: c.user(*x), role: *role })
+            .collect(),
             ..SeedFixture::default()
         },
     );
@@ -624,4 +650,3 @@ pub fn projects_path() -> String {
 pub fn project_path(tail: &str) -> String {
     format!("{}{}/{tail}", projects_path(), Uuid::from_u128(PROJECT))
 }
-

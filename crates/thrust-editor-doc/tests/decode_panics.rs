@@ -62,7 +62,9 @@ fn mutated_binaries_never_panic() {
                 }
             }
             total += 1;
-            match catch_unwind(AssertUnwindSafe(|| ydoc::decode(&schema, &m, "default").map(|n| html::to_html(&schema, &n)))) {
+            match catch_unwind(AssertUnwindSafe(|| {
+                ydoc::decode(&schema, &m, "default").map(|n| html::to_html(&schema, &n))
+            })) {
                 Ok(Ok(_)) => oks += 1,
                 Ok(Err(_)) => errs += 1,
                 Err(e) => {
