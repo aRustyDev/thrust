@@ -363,7 +363,7 @@ def report(res: dict) -> dict:
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--out", required=True, type=Path)
-    ap.add_argument("--features", type=Path, default=Path(__file__).resolve().parents[2] / "FEATURES.md")
+    ap.add_argument("--features", type=Path, default=Path(__file__).resolve().parents[2] / ".agents" / "plans" / "contrail" / "FEATURES.md")
     a = ap.parse_args()
     res = run(a.out, a.features)
     write(a.out, res)

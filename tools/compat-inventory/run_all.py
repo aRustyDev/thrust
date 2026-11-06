@@ -93,7 +93,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--root", required=True, type=Path, help="Plane tree root (contains apps/ and packages/)")
     ap.add_argument("--out", type=Path, default=HERE / "out")
-    ap.add_argument("--features", type=Path, default=HERE.parents[1] / "FEATURES.md")
+    ap.add_argument("--features", type=Path, default=HERE.parents[1] / ".agents" / "plans" / "contrail" / "FEATURES.md")
     ap.add_argument("--vcs", choices=("files", "git"), default="files", help="how to stamp the tree commit (default: plain file reads, no git)")
     ap.add_argument("--verdicts", type=Path, default=None, help="hand-check verdicts CSV for this tree (default: handcheck-verdicts.csv next to the scripts)")
     ap.add_argument("--label", default=None, help="free-text label recorded as tree_label (e.g. the pin tag)")
