@@ -1,0 +1,181 @@
+# Plane v1 oracle stack (spike 0008 / bead plane-b6a).
+#
+# The PINNED fork (oracle/PIN) running API-only: api + worker + beat + migrator over
+# Postgres, Valkey, RabbitMQ and an S3-compatible store. No web/admin/space/live frontends:
+# the v1 oracle is `/api/v1` plus its drf-spectacular schema, neither of which needs them.
+#
+# Usage (from the repo root):
+#   docker compose -f oracle/compose.oracle.yml --env-file oracle/.env.oracle up -d --build
+# or just `oracle/scripts/run-all.sh` which also seeds, runs the harness and tears down.
+#
+# Everything is SYNTHETIC: credentials here are throwaway, bound to loopback, never real.
+# Host ports are deliberately off the defaults so this coexists with a local Plane/Postgres:
+#   api 18080 (+ api-ratelimit 18081 under --profile ratelimit), postgres 15432, valkey 16379,
+#   rabbitmq 15673/15672, object store 19000/19090.
+name: plane-oracle
+
+x-api: &api
+  image: plane-oracle-api:local
+  env_file:
+    - .env.oracle
+  networks:
+    - oracle
+  volumes:
+    # Read-only: the seed script is executed *inside* the api image via `manage.py shell`.
+    - ./scripts:/oracle:ro
+
+services:
+  plane-db:
+    image: postgres:15.7-alpine
+    restart: "no"
+    command: postgres -c 'max_connections=300'
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      PGDATA: /var/lib/postgresql/data
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:15432:5432"
+    networks: [oracle]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  plane-redis:
+    image: valkey/valkey:7.2.11-alpine
+    restart: "no"
+    volumes:
+      - redisdata:/data
+    ports:
+      - "127.0.0.1:16379:6379"
+    networks: [oracle]
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  plane-mq:
+    image: rabbitmq:3.13.6-management-alpine
+    restart: "no"
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+      RABBITMQ_DEFAULT_VHOST: ${RABBITMQ_VHOST}
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    ports:
+      - "127.0.0.1:15673:5672"
+      - "127.0.0.1:15672:15672"
+    networks: [oracle]
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 10s
+      retries: 30
+
+  # Plane's own compose files ship this MinIO-compatible fork as the object store; use the
+  # same image so the stack matches what Plane actually runs.
+  plane-minio:
+    image: docker.io/pgsty/silo:RELEASE.2026-09-16T00-00-00Z
+    restart: "no"
+    command: server /export --console-address ":9090"
+    environment:
+      MINIO_ROOT_USER: ${AWS_ACCESS_KEY_ID}
+      MINIO_ROOT_PASSWORD: ${AWS_SECRET_ACCESS_KEY}
+    volumes:
+      - uploads:/export
+    ports:
+      - "127.0.0.1:19000:9000"
+      - "127.0.0.1:19090:9090"
+    networks: [oracle]
+
+  migrator:
+    <<: *api
+    # The only service with a build section: the other api-image services reuse the tag.
+    build:
+      context: ../apps/api
+      dockerfile: Dockerfile.api
+    restart: "no"
+    command: ./bin/docker-entrypoint-migrator.sh
+    depends_on:
+      plane-db:
+        condition: service_healthy
+      plane-redis:
+        condition: service_healthy
+
+  api:
+    <<: *api
+    restart: "no"
+    command: ./bin/docker-entrypoint-api.sh
+    ports:
+      - "127.0.0.1:18080:8000"
+    depends_on:
+      migrator:
+        condition: service_completed_successfully
+      plane-db:
+        condition: service_healthy
+      plane-redis:
+        condition: service_healthy
+      plane-mq:
+        condition: service_healthy
+      plane-minio:
+        condition: service_started
+    healthcheck:
+      # The schema route exists only when ENABLE_DRF_SPECTACULAR=1, so this doubles as a check
+      # that the flag took effect. 200 means gunicorn is serving and the URL conf imported.
+      test:
+        - "CMD"
+        - "python"
+        - "-c"
+        - "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/schema/', timeout=20).status == 200 else 1)"
+      interval: 5s
+      timeout: 30s
+      start_period: 30s
+      retries: 40
+
+  worker:
+    <<: *api
+    restart: "no"
+    command: ./bin/docker-entrypoint-worker.sh
+    depends_on:
+      api:
+        condition: service_healthy
+
+  beat-worker:
+    <<: *api
+    restart: "no"
+    command: ./bin/docker-entrypoint-beat.sh
+    depends_on:
+      api:
+        condition: service_healthy
+
+  # Same image and database as `api`, but with a deliberately tiny API-key rate limit, used only
+  # to record the 429 / Retry-After corpus entries. The main `api` runs with a huge limit so the
+  # conformance harness is not throttled. Opt in with `--profile ratelimit`.
+  api-ratelimit:
+    <<: *api
+    profiles: ["ratelimit"]
+    restart: "no"
+    command: gunicorn -w 1 -k uvicorn.workers.UvicornWorker plane.asgi:application --bind 0.0.0.0:8000
+    environment:
+      API_KEY_RATE_LIMIT: "5/minute"
+    ports:
+      - "127.0.0.1:18081:8000"
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  redisdata:
+  rabbitmq_data:
+  uploads:
+
+networks:
+  oracle:
+    driver: bridge

@@ -1,0 +1,1609 @@
+{
+ "exchanges": [
+  {
+   "expect": [
+    200
+   ],
+   "name": "list",
+   "request": {
+    "auth": "owner",
+    "body": null,
+    "content_type": null,
+    "method": "GET",
+    "path": "/api/v1/workspaces/oracle-ws/projects/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "count": 2,
+     "extra_stats": null,
+     "grouped_by": null,
+     "next_cursor": "1000:1:0",
+     "next_page_results": false,
+     "prev_cursor": "1000:-1:1",
+     "prev_page_results": false,
+     "results": [
+      {
+       "archive_in": 0,
+       "archived_at": null,
+       "close_in": 0,
+       "cover_image": null,
+       "cover_image_asset": null,
+       "cover_image_url": null,
+       "created_at": "<ts>",
+       "created_by": null,
+       "cycle_view": false,
+       "default_assignee": null,
+       "default_state": "<state:alpha:Backlog>",
+       "deleted_at": null,
+       "description": "Synthetic project Oracle Alpha for the v1 oracle.",
+       "description_html": null,
+       "description_text": null,
+       "emoji": null,
+       "estimate": null,
+       "external_id": null,
+       "external_source": null,
+       "guest_view_all_features": false,
+       "icon_prop": null,
+       "id": "<project:alpha>",
+       "identifier": "ORA",
+       "intake_view": false,
+       "is_deployed": false,
+       "is_issue_type_enabled": false,
+       "is_member": true,
+       "is_time_tracking_enabled": false,
+       "issue_views_view": false,
+       "logo_props": {},
+       "member_role": 20,
+       "module_view": false,
+       "name": "Oracle Alpha",
+       "network": 2,
+       "page_view": true,
+       "project_lead": "<user:owner>",
+       "sort_order": 65535.0,
+       "timezone": "UTC",
+       "total_cycles": 1,
+       "total_members": 3,
+       "total_modules": 1,
+       "updated_at": "<ts>",
+       "updated_by": null,
+       "workspace": "<workspace:oracle>"
+      },
+      {
+       "archive_in": 0,
+       "archived_at": null,
+       "close_in": 0,
+       "cover_image": null,
+       "cover_image_asset": null,
+       "cover_image_url": null,
+       "created_at": "<ts>",
+       "created_by": null,
+       "cycle_view": false,
+       "default_assignee": null,
+       "default_state": "<state:beta:Backlog>",
+       "deleted_at": null,
+       "description": "Synthetic project Oracle Beta for the v1 oracle.",
+       "description_html": null,
+       "description_text": null,
+       "emoji": null,
+       "estimate": null,
+       "external_id": null,
+       "external_source": null,
+       "guest_view_all_features": false,
+       "icon_prop": null,
+       "id": "<project:beta>",
+       "identifier": "ORB",
+       "intake_view": false,
+       "is_deployed": false,
+       "is_issue_type_enabled": false,
+       "is_member": true,
+       "is_time_tracking_enabled": false,
+       "issue_views_view": false,
+       "logo_props": {},
+       "member_role": 20,
+       "module_view": false,
+       "name": "Oracle Beta",
+       "network": 0,
+       "page_view": true,
+       "project_lead": "<user:owner>",
+       "sort_order": 65535.0,
+       "timezone": "UTC",
+       "total_cycles": 0,
+       "total_members": 1,
+       "total_modules": 0,
+       "updated_at": "<ts>",
+       "updated_by": null,
+       "workspace": "<workspace:oracle>"
+      }
+     ],
+     "sub_grouped_by": null,
+     "total_count": 2,
+     "total_pages": 1,
+     "total_results": 2
+    },
+    "headers": {
+     "allow": "GET, POST",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 200
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    200
+   ],
+   "name": "list-per-page-1",
+   "request": {
+    "auth": "owner",
+    "body": null,
+    "content_type": null,
+    "method": "GET",
+    "path": "/api/v1/workspaces/oracle-ws/projects/",
+    "query": {
+     "per_page": 1
+    }
+   },
+   "response": {
+    "body": {
+     "count": 1,
+     "extra_stats": null,
+     "grouped_by": null,
+     "next_cursor": "1:1:0",
+     "next_page_results": true,
+     "prev_cursor": "1:-1:1",
+     "prev_page_results": false,
+     "results": [
+      {
+       "archive_in": 0,
+       "archived_at": null,
+       "close_in": 0,
+       "cover_image": null,
+       "cover_image_asset": null,
+       "cover_image_url": null,
+       "created_at": "<ts>",
+       "created_by": null,
+       "cycle_view": false,
+       "default_assignee": null,
+       "default_state": "<state:alpha:Backlog>",
+       "deleted_at": null,
+       "description": "Synthetic project Oracle Alpha for the v1 oracle.",
+       "description_html": null,
+       "description_text": null,
+       "emoji": null,
+       "estimate": null,
+       "external_id": null,
+       "external_source": null,
+       "guest_view_all_features": false,
+       "icon_prop": null,
+       "id": "<project:alpha>",
+       "identifier": "ORA",
+       "intake_view": false,
+       "is_deployed": false,
+       "is_issue_type_enabled": false,
+       "is_member": true,
+       "is_time_tracking_enabled": false,
+       "issue_views_view": false,
+       "logo_props": {},
+       "member_role": 20,
+       "module_view": false,
+       "name": "Oracle Alpha",
+       "network": 2,
+       "page_view": true,
+       "project_lead": "<user:owner>",
+       "sort_order": 65535.0,
+       "timezone": "UTC",
+       "total_cycles": 1,
+       "total_members": 3,
+       "total_modules": 1,
+       "updated_at": "<ts>",
+       "updated_by": null,
+       "workspace": "<workspace:oracle>"
+      }
+     ],
+     "sub_grouped_by": null,
+     "total_count": 2,
+     "total_pages": 2,
+     "total_results": 2
+    },
+    "headers": {
+     "allow": "GET, POST",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 200
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    200
+   ],
+   "name": "list-second-page",
+   "request": {
+    "auth": "owner",
+    "body": null,
+    "content_type": null,
+    "method": "GET",
+    "path": "/api/v1/workspaces/oracle-ws/projects/",
+    "query": {
+     "cursor": "1:1:0",
+     "per_page": 1
+    }
+   },
+   "response": {
+    "body": {
+     "count": 1,
+     "extra_stats": null,
+     "grouped_by": null,
+     "next_cursor": "1:2:0",
+     "next_page_results": false,
+     "prev_cursor": "1:0:1",
+     "prev_page_results": true,
+     "results": [
+      {
+       "archive_in": 0,
+       "archived_at": null,
+       "close_in": 0,
+       "cover_image": null,
+       "cover_image_asset": null,
+       "cover_image_url": null,
+       "created_at": "<ts>",
+       "created_by": null,
+       "cycle_view": false,
+       "default_assignee": null,
+       "default_state": "<state:beta:Backlog>",
+       "deleted_at": null,
+       "description": "Synthetic project Oracle Beta for the v1 oracle.",
+       "description_html": null,
+       "description_text": null,
+       "emoji": null,
+       "estimate": null,
+       "external_id": null,
+       "external_source": null,
+       "guest_view_all_features": false,
+       "icon_prop": null,
+       "id": "<project:beta>",
+       "identifier": "ORB",
+       "intake_view": false,
+       "is_deployed": false,
+       "is_issue_type_enabled": false,
+       "is_member": true,
+       "is_time_tracking_enabled": false,
+       "issue_views_view": false,
+       "logo_props": {},
+       "member_role": 20,
+       "module_view": false,
+       "name": "Oracle Beta",
+       "network": 0,
+       "page_view": true,
+       "project_lead": "<user:owner>",
+       "sort_order": 65535.0,
+       "timezone": "UTC",
+       "total_cycles": 0,
+       "total_members": 1,
+       "total_modules": 0,
+       "updated_at": "<ts>",
+       "updated_by": null,
+       "workspace": "<workspace:oracle>"
+      }
+     ],
+     "sub_grouped_by": null,
+     "total_count": 2,
+     "total_pages": 2,
+     "total_results": 2
+    },
+    "headers": {
+     "allow": "GET, POST",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 200
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    200
+   ],
+   "name": "list-order-by-name",
+   "request": {
+    "auth": "owner",
+    "body": null,
+    "content_type": null,
+    "method": "GET",
+    "path": "/api/v1/workspaces/oracle-ws/projects/",
+    "query": {
+     "order_by": "name"
+    }
+   },
+   "response": {
+    "body": {
+     "count": 2,
+     "extra_stats": null,
+     "grouped_by": null,
+     "next_cursor": "1000:1:0",
+     "next_page_results": false,
+     "prev_cursor": "1000:-1:1",
+     "prev_page_results": false,
+     "results": [
+      {
+       "archive_in": 0,
+       "archived_at": null,
+       "close_in": 0,
+       "cover_image": null,
+       "cover_image_asset": null,
+       "cover_image_url": null,
+       "created_at": "<ts>",
+       "created_by": null,
+       "cycle_view": false,
+       "default_assignee": null,
+       "default_state": "<state:alpha:Backlog>",
+       "deleted_at": null,
+       "description": "Synthetic project Oracle Alpha for the v1 oracle.",
+       "description_html": null,
+       "description_text": null,
+       "emoji": null,
+       "estimate": null,
+       "external_id": null,
+       "external_source": null,
+       "guest_view_all_features": false,
+       "icon_prop": null,
+       "id": "<project:alpha>",
+       "identifier": "ORA",
+       "intake_view": false,
+       "is_deployed": false,
+       "is_issue_type_enabled": false,
+       "is_member": true,
+       "is_time_tracking_enabled": false,
+       "issue_views_view": false,
+       "logo_props": {},
+       "member_role": 20,
+       "module_view": false,
+       "name": "Oracle Alpha",
+       "network": 2,
+       "page_view": true,
+       "project_lead": "<user:owner>",
+       "sort_order": 65535.0,
+       "timezone": "UTC",
+       "total_cycles": 1,
+       "total_members": 3,
+       "total_modules": 1,
+       "updated_at": "<ts>",
+       "updated_by": null,
+       "workspace": "<workspace:oracle>"
+      },
+      {
+       "archive_in": 0,
+       "archived_at": null,
+       "close_in": 0,
+       "cover_image": null,
+       "cover_image_asset": null,
+       "cover_image_url": null,
+       "created_at": "<ts>",
+       "created_by": null,
+       "cycle_view": false,
+       "default_assignee": null,
+       "default_state": "<state:beta:Backlog>",
+       "deleted_at": null,
+       "description": "Synthetic project Oracle Beta for the v1 oracle.",
+       "description_html": null,
+       "description_text": null,
+       "emoji": null,
+       "estimate": null,
+       "external_id": null,
+       "external_source": null,
+       "guest_view_all_features": false,
+       "icon_prop": null,
+       "id": "<project:beta>",
+       "identifier": "ORB",
+       "intake_view": false,
+       "is_deployed": false,
+       "is_issue_type_enabled": false,
+       "is_member": true,
+       "is_time_tracking_enabled": false,
+       "issue_views_view": false,
+       "logo_props": {},
+       "member_role": 20,
+       "module_view": false,
+       "name": "Oracle Beta",
+       "network": 0,
+       "page_view": true,
+       "project_lead": "<user:owner>",
+       "sort_order": 65535.0,
+       "timezone": "UTC",
+       "total_cycles": 0,
+       "total_members": 1,
+       "total_modules": 0,
+       "updated_at": "<ts>",
+       "updated_by": null,
+       "workspace": "<workspace:oracle>"
+      }
+     ],
+     "sub_grouped_by": null,
+     "total_count": 2,
+     "total_pages": 1,
+     "total_results": 2
+    },
+    "headers": {
+     "allow": "GET, POST",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 200
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    200
+   ],
+   "name": "list-fields-projection",
+   "request": {
+    "auth": "owner",
+    "body": null,
+    "content_type": null,
+    "method": "GET",
+    "path": "/api/v1/workspaces/oracle-ws/projects/",
+    "query": {
+     "fields": "id,name,identifier"
+    }
+   },
+   "response": {
+    "body": {
+     "count": 2,
+     "extra_stats": null,
+     "grouped_by": null,
+     "next_cursor": "1000:1:0",
+     "next_page_results": false,
+     "prev_cursor": "1000:-1:1",
+     "prev_page_results": false,
+     "results": [
+      {
+       "id": "<project:alpha>",
+       "identifier": "ORA",
+       "name": "Oracle Alpha"
+      },
+      {
+       "id": "<project:beta>",
+       "identifier": "ORB",
+       "name": "Oracle Beta"
+      }
+     ],
+     "sub_grouped_by": null,
+     "total_count": 2,
+     "total_pages": 1,
+     "total_results": 2
+    },
+    "headers": {
+     "allow": "GET, POST",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 200
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    200
+   ],
+   "name": "list-lite",
+   "request": {
+    "auth": "owner",
+    "body": null,
+    "content_type": null,
+    "method": "GET",
+    "path": "/api/v1/workspaces/oracle-ws/projects-lite/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "count": 2,
+     "extra_stats": null,
+     "grouped_by": null,
+     "next_cursor": "1000:1:0",
+     "next_page_results": false,
+     "prev_cursor": "1000:-1:1",
+     "prev_page_results": false,
+     "results": [
+      {
+       "archived_at": null,
+       "cover_image": null,
+       "cover_image_url": null,
+       "description": "Synthetic project Oracle Beta for the v1 oracle.",
+       "emoji": null,
+       "icon_prop": null,
+       "id": "<project:beta>",
+       "identifier": "ORB",
+       "name": "Oracle Beta"
+      },
+      {
+       "archived_at": null,
+       "cover_image": null,
+       "cover_image_url": null,
+       "description": "Synthetic project Oracle Alpha for the v1 oracle.",
+       "emoji": null,
+       "icon_prop": null,
+       "id": "<project:alpha>",
+       "identifier": "ORA",
+       "name": "Oracle Alpha"
+      }
+     ],
+     "sub_grouped_by": null,
+     "total_count": 2,
+     "total_pages": 1,
+     "total_results": 2
+    },
+    "headers": {
+     "allow": "GET",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 200
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    200
+   ],
+   "name": "detail",
+   "request": {
+    "auth": "owner",
+    "body": null,
+    "content_type": null,
+    "method": "GET",
+    "path": "/api/v1/workspaces/oracle-ws/projects/<project:alpha>/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "archive_in": 0,
+     "archived_at": null,
+     "close_in": 0,
+     "cover_image": null,
+     "cover_image_asset": null,
+     "cover_image_url": null,
+     "created_at": "<ts>",
+     "created_by": null,
+     "cycle_view": false,
+     "default_assignee": null,
+     "default_state": "<state:alpha:Backlog>",
+     "deleted_at": null,
+     "description": "Synthetic project Oracle Alpha for the v1 oracle.",
+     "description_html": null,
+     "description_text": null,
+     "emoji": null,
+     "estimate": null,
+     "external_id": null,
+     "external_source": null,
+     "guest_view_all_features": false,
+     "icon_prop": null,
+     "id": "<project:alpha>",
+     "identifier": "ORA",
+     "intake_view": false,
+     "is_deployed": false,
+     "is_issue_type_enabled": false,
+     "is_member": true,
+     "is_time_tracking_enabled": false,
+     "issue_views_view": false,
+     "logo_props": {},
+     "member_role": 20,
+     "module_view": false,
+     "name": "Oracle Alpha",
+     "network": 2,
+     "page_view": true,
+     "project_lead": "<user:owner>",
+     "timezone": "UTC",
+     "total_cycles": 1,
+     "total_members": 3,
+     "total_modules": 1,
+     "updated_at": "<ts>",
+     "updated_by": null,
+     "workspace": "<workspace:oracle>"
+    },
+    "headers": {
+     "allow": "GET, PATCH, DELETE",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 200
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    200
+   ],
+   "name": "detail-by-pk-route",
+   "request": {
+    "auth": "owner",
+    "body": null,
+    "content_type": null,
+    "method": "GET",
+    "path": "/api/v1/workspaces/oracle-ws/projects/<project:alpha>/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "archive_in": 0,
+     "archived_at": null,
+     "close_in": 0,
+     "cover_image": null,
+     "cover_image_asset": null,
+     "cover_image_url": null,
+     "created_at": "<ts>",
+     "created_by": null,
+     "cycle_view": false,
+     "default_assignee": null,
+     "default_state": "<state:alpha:Backlog>",
+     "deleted_at": null,
+     "description": "Synthetic project Oracle Alpha for the v1 oracle.",
+     "description_html": null,
+     "description_text": null,
+     "emoji": null,
+     "estimate": null,
+     "external_id": null,
+     "external_source": null,
+     "guest_view_all_features": false,
+     "icon_prop": null,
+     "id": "<project:alpha>",
+     "identifier": "ORA",
+     "intake_view": false,
+     "is_deployed": false,
+     "is_issue_type_enabled": false,
+     "is_member": true,
+     "is_time_tracking_enabled": false,
+     "issue_views_view": false,
+     "logo_props": {},
+     "member_role": 20,
+     "module_view": false,
+     "name": "Oracle Alpha",
+     "network": 2,
+     "page_view": true,
+     "project_lead": "<user:owner>",
+     "timezone": "UTC",
+     "total_cycles": 1,
+     "total_members": 3,
+     "total_modules": 1,
+     "updated_at": "<ts>",
+     "updated_by": null,
+     "workspace": "<workspace:oracle>"
+    },
+    "headers": {
+     "allow": "GET, PATCH, DELETE",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 200
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    404
+   ],
+   "name": "detail-unknown",
+   "request": {
+    "auth": "owner",
+    "body": null,
+    "content_type": null,
+    "method": "GET",
+    "path": "/api/v1/workspaces/oracle-ws/projects/<uuid:1>/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "error": "The requested resource does not exist."
+    },
+    "headers": {
+     "allow": "GET, PATCH, DELETE",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 404
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    200,
+    404
+   ],
+   "name": "summary",
+   "request": {
+    "auth": "owner",
+    "body": null,
+    "content_type": null,
+    "method": "GET",
+    "path": "/api/v1/workspaces/oracle-ws/projects/<project:alpha>/summary/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "counts": {
+      "cycles": 1,
+      "intakes": 0,
+      "issues": 9,
+      "labels": 3,
+      "members": 3,
+      "modules": 1,
+      "pages": 0,
+      "states": 5
+     },
+     "id": "<project:alpha>",
+     "identifier": "ORA",
+     "name": "Oracle Alpha"
+    },
+    "headers": {
+     "allow": "GET",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 200
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    201
+   ],
+   "name": "create-scratch",
+   "request": {
+    "auth": "owner",
+    "body": {
+     "description": "scratch project",
+     "identifier": "SCR",
+     "name": "Oracle Scratch"
+    },
+    "content_type": "application/json",
+    "method": "POST",
+    "path": "/api/v1/workspaces/oracle-ws/projects/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "archive_in": 0,
+     "archived_at": null,
+     "close_in": 0,
+     "cover_image": null,
+     "cover_image_asset": null,
+     "cover_image_url": null,
+     "created_at": "<ts>",
+     "created_by": "<user:owner>",
+     "cycle_view": false,
+     "default_assignee": null,
+     "default_state": null,
+     "deleted_at": null,
+     "description": "scratch project",
+     "description_html": null,
+     "description_text": null,
+     "emoji": null,
+     "estimate": null,
+     "external_id": null,
+     "external_source": null,
+     "guest_view_all_features": false,
+     "icon_prop": null,
+     "id": "<uuid:2>",
+     "identifier": "SCR",
+     "intake_view": false,
+     "is_deployed": false,
+     "is_issue_type_enabled": false,
+     "is_member": true,
+     "is_time_tracking_enabled": false,
+     "issue_views_view": false,
+     "logo_props": {
+      "icon": {
+       "color": "<random>",
+       "name": "<random>"
+      },
+      "in_use": "icon"
+     },
+     "member_role": 20,
+     "module_view": false,
+     "name": "Oracle Scratch",
+     "network": 2,
+     "page_view": true,
+     "project_lead": null,
+     "timezone": "UTC",
+     "total_cycles": 0,
+     "total_members": 1,
+     "total_modules": 0,
+     "updated_at": "<ts>",
+     "updated_by": null,
+     "workspace": "<workspace:oracle>"
+    },
+    "headers": {
+     "allow": "GET, POST",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 201
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    409
+   ],
+   "name": "create-duplicate-identifier",
+   "request": {
+    "auth": "owner",
+    "body": {
+     "identifier": "SCR",
+     "name": "Oracle Scratch Two"
+    },
+    "content_type": "application/json",
+    "method": "POST",
+    "path": "/api/v1/workspaces/oracle-ws/projects/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "name": "The project name is already taken"
+    },
+    "headers": {
+     "allow": "GET, POST",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 409
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    409
+   ],
+   "name": "create-duplicate-name",
+   "request": {
+    "auth": "owner",
+    "body": {
+     "identifier": "SCT",
+     "name": "Oracle Scratch"
+    },
+    "content_type": "application/json",
+    "method": "POST",
+    "path": "/api/v1/workspaces/oracle-ws/projects/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "name": "The project name is already taken"
+    },
+    "headers": {
+     "allow": "GET, POST",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 409
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    400
+   ],
+   "name": "create-missing-name",
+   "request": {
+    "auth": "owner",
+    "body": {
+     "identifier": "NON"
+    },
+    "content_type": "application/json",
+    "method": "POST",
+    "path": "/api/v1/workspaces/oracle-ws/projects/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "name": [
+      "This field is required."
+     ]
+    },
+    "headers": {
+     "allow": "GET, POST",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 400
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    400
+   ],
+   "name": "create-identifier-too-long",
+   "request": {
+    "auth": "owner",
+    "body": {
+     "identifier": "ABCDEFGHIJKLMNOP",
+     "name": "Long Ident"
+    },
+    "content_type": "application/json",
+    "method": "POST",
+    "path": "/api/v1/workspaces/oracle-ws/projects/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "identifier": [
+      "Ensure this field has no more than 12 characters."
+     ]
+    },
+    "headers": {
+     "allow": "GET, POST",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 400
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    400
+   ],
+   "name": "create-wrong-type",
+   "request": {
+    "auth": "owner",
+    "body": {
+     "identifier": "WTY",
+     "name": 123
+    },
+    "content_type": "application/json",
+    "method": "POST",
+    "path": "/api/v1/workspaces/oracle-ws/projects/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "archive_in": 0,
+     "archived_at": null,
+     "close_in": 0,
+     "cover_image": null,
+     "cover_image_asset": null,
+     "cover_image_url": null,
+     "created_at": "<ts>",
+     "created_by": "<user:owner>",
+     "cycle_view": false,
+     "default_assignee": null,
+     "default_state": null,
+     "deleted_at": null,
+     "description": "",
+     "description_html": null,
+     "description_text": null,
+     "emoji": null,
+     "estimate": null,
+     "external_id": null,
+     "external_source": null,
+     "guest_view_all_features": false,
+     "icon_prop": null,
+     "id": "<uuid:3>",
+     "identifier": "WTY",
+     "intake_view": false,
+     "is_deployed": false,
+     "is_issue_type_enabled": false,
+     "is_member": true,
+     "is_time_tracking_enabled": false,
+     "issue_views_view": false,
+     "logo_props": {
+      "icon": {
+       "color": "<random>",
+       "name": "<random>"
+      },
+      "in_use": "icon"
+     },
+     "member_role": 20,
+     "module_view": false,
+     "name": "123",
+     "network": 2,
+     "page_view": true,
+     "project_lead": null,
+     "timezone": "UTC",
+     "total_cycles": 0,
+     "total_members": 1,
+     "total_modules": 0,
+     "updated_at": "<ts>",
+     "updated_by": null,
+     "workspace": "<workspace:oracle>"
+    },
+    "headers": {
+     "allow": "GET, POST",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 201
+   },
+   "surprise": true
+  },
+  {
+   "expect": [
+    200
+   ],
+   "name": "patch-scratch",
+   "request": {
+    "auth": "owner",
+    "body": {
+     "description": "patched"
+    },
+    "content_type": "application/json",
+    "method": "PATCH",
+    "path": "/api/v1/workspaces/oracle-ws/projects/<uuid:2>/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "archive_in": 0,
+     "archived_at": null,
+     "close_in": 0,
+     "cover_image": null,
+     "cover_image_asset": null,
+     "cover_image_url": null,
+     "created_at": "<ts>",
+     "created_by": "<user:owner>",
+     "cycle_view": false,
+     "default_assignee": null,
+     "default_state": null,
+     "deleted_at": null,
+     "description": "patched",
+     "description_html": null,
+     "description_text": null,
+     "emoji": null,
+     "estimate": null,
+     "external_id": null,
+     "external_source": null,
+     "guest_view_all_features": false,
+     "icon_prop": null,
+     "id": "<uuid:2>",
+     "identifier": "SCR",
+     "intake_view": false,
+     "is_deployed": false,
+     "is_issue_type_enabled": false,
+     "is_member": true,
+     "is_time_tracking_enabled": false,
+     "issue_views_view": false,
+     "logo_props": {
+      "icon": {
+       "color": "<random>",
+       "name": "<random>"
+      },
+      "in_use": "icon"
+     },
+     "member_role": 20,
+     "module_view": false,
+     "name": "Oracle Scratch",
+     "network": 2,
+     "page_view": true,
+     "project_lead": null,
+     "timezone": "UTC",
+     "total_cycles": 0,
+     "total_members": 1,
+     "total_modules": 0,
+     "updated_at": "<ts>",
+     "updated_by": "<user:owner>",
+     "workspace": "<workspace:oracle>"
+    },
+    "headers": {
+     "allow": "GET, PATCH, DELETE",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 200
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    400,
+    200
+   ],
+   "name": "patch-scratch-invalid-network",
+   "request": {
+    "auth": "owner",
+    "body": {
+     "network": 99
+    },
+    "content_type": "application/json",
+    "method": "PATCH",
+    "path": "/api/v1/workspaces/oracle-ws/projects/<uuid:2>/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "archive_in": 0,
+     "archived_at": null,
+     "close_in": 0,
+     "cover_image": null,
+     "cover_image_asset": null,
+     "cover_image_url": null,
+     "created_at": "<ts>",
+     "created_by": "<user:owner>",
+     "cycle_view": false,
+     "default_assignee": null,
+     "default_state": null,
+     "deleted_at": null,
+     "description": "patched",
+     "description_html": null,
+     "description_text": null,
+     "emoji": null,
+     "estimate": null,
+     "external_id": null,
+     "external_source": null,
+     "guest_view_all_features": false,
+     "icon_prop": null,
+     "id": "<uuid:2>",
+     "identifier": "SCR",
+     "intake_view": false,
+     "is_deployed": false,
+     "is_issue_type_enabled": false,
+     "is_member": true,
+     "is_time_tracking_enabled": false,
+     "issue_views_view": false,
+     "logo_props": {
+      "icon": {
+       "color": "<random>",
+       "name": "<random>"
+      },
+      "in_use": "icon"
+     },
+     "member_role": 20,
+     "module_view": false,
+     "name": "Oracle Scratch",
+     "network": 2,
+     "page_view": true,
+     "project_lead": null,
+     "timezone": "UTC",
+     "total_cycles": 0,
+     "total_members": 1,
+     "total_modules": 0,
+     "updated_at": "<ts>",
+     "updated_by": "<user:owner>",
+     "workspace": "<workspace:oracle>"
+    },
+    "headers": {
+     "allow": "GET, PATCH, DELETE",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 200
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    404
+   ],
+   "name": "patch-unknown",
+   "request": {
+    "auth": "owner",
+    "body": {
+     "description": "x"
+    },
+    "content_type": "application/json",
+    "method": "PATCH",
+    "path": "/api/v1/workspaces/oracle-ws/projects/<uuid:1>/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "detail": "You do not have permission to perform this action."
+    },
+    "headers": {
+     "allow": "GET, PATCH, DELETE",
+     "content-type": "application/json"
+    },
+    "status": 403
+   },
+   "surprise": true
+  },
+  {
+   "expect": [
+    204
+   ],
+   "name": "archive-scratch",
+   "request": {
+    "auth": "owner",
+    "body": null,
+    "content_type": null,
+    "method": "POST",
+    "path": "/api/v1/workspaces/oracle-ws/projects/<uuid:2>/archive/",
+    "query": null
+   },
+   "response": {
+    "body": null,
+    "headers": {
+     "allow": "POST, DELETE",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 204
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    200
+   ],
+   "name": "list-archived-visible",
+   "request": {
+    "auth": "owner",
+    "body": null,
+    "content_type": null,
+    "method": "GET",
+    "path": "/api/v1/workspaces/oracle-ws/projects/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "count": 4,
+     "extra_stats": null,
+     "grouped_by": null,
+     "next_cursor": "1000:1:0",
+     "next_page_results": false,
+     "prev_cursor": "1000:-1:1",
+     "prev_page_results": false,
+     "results": [
+      {
+       "archive_in": 0,
+       "archived_at": null,
+       "close_in": 0,
+       "cover_image": null,
+       "cover_image_asset": null,
+       "cover_image_url": null,
+       "created_at": "<ts>",
+       "created_by": null,
+       "cycle_view": false,
+       "default_assignee": null,
+       "default_state": "<state:alpha:Backlog>",
+       "deleted_at": null,
+       "description": "Synthetic project Oracle Alpha for the v1 oracle.",
+       "description_html": null,
+       "description_text": null,
+       "emoji": null,
+       "estimate": null,
+       "external_id": null,
+       "external_source": null,
+       "guest_view_all_features": false,
+       "icon_prop": null,
+       "id": "<project:alpha>",
+       "identifier": "ORA",
+       "intake_view": false,
+       "is_deployed": false,
+       "is_issue_type_enabled": false,
+       "is_member": true,
+       "is_time_tracking_enabled": false,
+       "issue_views_view": false,
+       "logo_props": {},
+       "member_role": 20,
+       "module_view": false,
+       "name": "Oracle Alpha",
+       "network": 2,
+       "page_view": true,
+       "project_lead": "<user:owner>",
+       "sort_order": 65535.0,
+       "timezone": "UTC",
+       "total_cycles": 1,
+       "total_members": 3,
+       "total_modules": 1,
+       "updated_at": "<ts>",
+       "updated_by": null,
+       "workspace": "<workspace:oracle>"
+      },
+      {
+       "archive_in": 0,
+       "archived_at": null,
+       "close_in": 0,
+       "cover_image": null,
+       "cover_image_asset": null,
+       "cover_image_url": null,
+       "created_at": "<ts>",
+       "created_by": null,
+       "cycle_view": false,
+       "default_assignee": null,
+       "default_state": "<state:beta:Backlog>",
+       "deleted_at": null,
+       "description": "Synthetic project Oracle Beta for the v1 oracle.",
+       "description_html": null,
+       "description_text": null,
+       "emoji": null,
+       "estimate": null,
+       "external_id": null,
+       "external_source": null,
+       "guest_view_all_features": false,
+       "icon_prop": null,
+       "id": "<project:beta>",
+       "identifier": "ORB",
+       "intake_view": false,
+       "is_deployed": false,
+       "is_issue_type_enabled": false,
+       "is_member": true,
+       "is_time_tracking_enabled": false,
+       "issue_views_view": false,
+       "logo_props": {},
+       "member_role": 20,
+       "module_view": false,
+       "name": "Oracle Beta",
+       "network": 0,
+       "page_view": true,
+       "project_lead": "<user:owner>",
+       "sort_order": 65535.0,
+       "timezone": "UTC",
+       "total_cycles": 0,
+       "total_members": 1,
+       "total_modules": 0,
+       "updated_at": "<ts>",
+       "updated_by": null,
+       "workspace": "<workspace:oracle>"
+      },
+      {
+       "archive_in": 0,
+       "archived_at": "<ts>",
+       "close_in": 0,
+       "cover_image": null,
+       "cover_image_asset": null,
+       "cover_image_url": null,
+       "created_at": "<ts>",
+       "created_by": "<user:owner>",
+       "cycle_view": false,
+       "default_assignee": null,
+       "default_state": null,
+       "deleted_at": null,
+       "description": "patched",
+       "description_html": null,
+       "description_text": null,
+       "emoji": null,
+       "estimate": null,
+       "external_id": null,
+       "external_source": null,
+       "guest_view_all_features": false,
+       "icon_prop": null,
+       "id": "<uuid:2>",
+       "identifier": "SCR",
+       "intake_view": false,
+       "is_deployed": false,
+       "is_issue_type_enabled": false,
+       "is_member": true,
+       "is_time_tracking_enabled": false,
+       "issue_views_view": false,
+       "logo_props": {
+        "icon": {
+         "color": "<random>",
+         "name": "<random>"
+        },
+        "in_use": "icon"
+       },
+       "member_role": 20,
+       "module_view": false,
+       "name": "Oracle Scratch",
+       "network": 2,
+       "page_view": true,
+       "project_lead": null,
+       "sort_order": 65535.0,
+       "timezone": "UTC",
+       "total_cycles": 0,
+       "total_members": 1,
+       "total_modules": 0,
+       "updated_at": "<ts>",
+       "updated_by": "<user:owner>",
+       "workspace": "<workspace:oracle>"
+      },
+      {
+       "archive_in": 0,
+       "archived_at": null,
+       "close_in": 0,
+       "cover_image": null,
+       "cover_image_asset": null,
+       "cover_image_url": null,
+       "created_at": "<ts>",
+       "created_by": "<user:owner>",
+       "cycle_view": false,
+       "default_assignee": null,
+       "default_state": null,
+       "deleted_at": null,
+       "description": "",
+       "description_html": null,
+       "description_text": null,
+       "emoji": null,
+       "estimate": null,
+       "external_id": null,
+       "external_source": null,
+       "guest_view_all_features": false,
+       "icon_prop": null,
+       "id": "<uuid:3>",
+       "identifier": "WTY",
+       "intake_view": false,
+       "is_deployed": false,
+       "is_issue_type_enabled": false,
+       "is_member": true,
+       "is_time_tracking_enabled": false,
+       "issue_views_view": false,
+       "logo_props": {
+        "icon": {
+         "color": "<random>",
+         "name": "<random>"
+        },
+        "in_use": "icon"
+       },
+       "member_role": 20,
+       "module_view": false,
+       "name": "123",
+       "network": 2,
+       "page_view": true,
+       "project_lead": null,
+       "sort_order": 65535.0,
+       "timezone": "UTC",
+       "total_cycles": 0,
+       "total_members": 1,
+       "total_modules": 0,
+       "updated_at": "<ts>",
+       "updated_by": null,
+       "workspace": "<workspace:oracle>"
+      }
+     ],
+     "sub_grouped_by": null,
+     "total_count": 4,
+     "total_pages": 1,
+     "total_results": 4
+    },
+    "headers": {
+     "allow": "GET, POST",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 200
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    204
+   ],
+   "name": "unarchive-scratch",
+   "request": {
+    "auth": "owner",
+    "body": null,
+    "content_type": null,
+    "method": "DELETE",
+    "path": "/api/v1/workspaces/oracle-ws/projects/<uuid:2>/archive/",
+    "query": null
+   },
+   "response": {
+    "body": null,
+    "headers": {
+     "allow": "POST, DELETE",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 204
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    204
+   ],
+   "name": "delete-scratch",
+   "request": {
+    "auth": "owner",
+    "body": null,
+    "content_type": null,
+    "method": "DELETE",
+    "path": "/api/v1/workspaces/oracle-ws/projects/<uuid:2>/",
+    "query": null
+   },
+   "response": {
+    "body": null,
+    "headers": {
+     "allow": "GET, PATCH, DELETE",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 204
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    404
+   ],
+   "name": "detail-after-delete",
+   "request": {
+    "auth": "owner",
+    "body": null,
+    "content_type": null,
+    "method": "GET",
+    "path": "/api/v1/workspaces/oracle-ws/projects/<uuid:2>/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "error": "The requested resource does not exist."
+    },
+    "headers": {
+     "allow": "GET, PATCH, DELETE",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 404
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    404
+   ],
+   "name": "delete-again",
+   "request": {
+    "auth": "owner",
+    "body": null,
+    "content_type": null,
+    "method": "DELETE",
+    "path": "/api/v1/workspaces/oracle-ws/projects/<uuid:2>/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "detail": "You do not have permission to perform this action."
+    },
+    "headers": {
+     "allow": "GET, PATCH, DELETE",
+     "content-type": "application/json"
+    },
+    "status": 403
+   },
+   "surprise": true
+  },
+  {
+   "expect": [
+    403
+   ],
+   "name": "member-forbidden-delete-public-project",
+   "request": {
+    "auth": "member",
+    "body": null,
+    "content_type": null,
+    "method": "DELETE",
+    "path": "/api/v1/workspaces/oracle-ws/projects/<project:alpha>/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "detail": "You do not have permission to perform this action."
+    },
+    "headers": {
+     "allow": "GET, PATCH, DELETE",
+     "content-type": "application/json"
+    },
+    "status": 403
+   },
+   "surprise": false
+  }
+ ],
+ "normalisation": "oracle/normalise.yaml",
+ "pinned_commit": "ba85d4d3d332b5380bebca4b9e0143b1127de907",
+ "resource": "projects"
+}

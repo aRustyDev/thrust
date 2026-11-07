@@ -1,0 +1,423 @@
+{
+ "exchanges": [
+  {
+   "expect": [
+    401
+   ],
+   "name": "no-api-key",
+   "request": {
+    "auth": "none",
+    "body": null,
+    "content_type": null,
+    "method": "GET",
+    "path": "/api/v1/users/me/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "detail": "Authentication credentials were not provided."
+    },
+    "headers": {
+     "allow": "GET",
+     "content-type": "application/json"
+    },
+    "status": 401
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    401
+   ],
+   "name": "bogus-api-key",
+   "request": {
+    "auth": "bogus",
+    "body": null,
+    "content_type": null,
+    "method": "GET",
+    "path": "/api/v1/users/me/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "detail": "Given API token is not valid"
+    },
+    "headers": {
+     "allow": "GET",
+     "content-type": "application/json"
+    },
+    "status": 403
+   },
+   "surprise": true
+  },
+  {
+   "expect": [
+    401
+   ],
+   "name": "expired-api-key",
+   "request": {
+    "auth": "expired",
+    "body": null,
+    "content_type": null,
+    "method": "GET",
+    "path": "/api/v1/users/me/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "detail": "Given API token is not valid"
+    },
+    "headers": {
+     "allow": "GET",
+     "content-type": "application/json"
+    },
+    "status": 403
+   },
+   "surprise": true
+  },
+  {
+   "expect": [
+    401
+   ],
+   "name": "inactive-api-key",
+   "request": {
+    "auth": "inactive",
+    "body": null,
+    "content_type": null,
+    "method": "GET",
+    "path": "/api/v1/users/me/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "detail": "Given API token is not valid"
+    },
+    "headers": {
+     "allow": "GET",
+     "content-type": "application/json"
+    },
+    "status": 403
+   },
+   "surprise": true
+  },
+  {
+   "expect": [
+    403
+   ],
+   "name": "outsider-lists-workspace-projects",
+   "request": {
+    "auth": "outsider",
+    "body": null,
+    "content_type": null,
+    "method": "GET",
+    "path": "/api/v1/workspaces/oracle-ws/projects/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "detail": "You do not have permission to perform this action."
+    },
+    "headers": {
+     "allow": "GET, POST",
+     "content-type": "application/json"
+    },
+    "status": 403
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    403,
+    404
+   ],
+   "name": "outsider-reads-public-project",
+   "request": {
+    "auth": "outsider",
+    "body": null,
+    "content_type": null,
+    "method": "GET",
+    "path": "/api/v1/workspaces/oracle-ws/projects/<project:alpha>/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "detail": "You do not have permission to perform this action."
+    },
+    "headers": {
+     "allow": "GET, PATCH, DELETE",
+     "content-type": "application/json"
+    },
+    "status": 403
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    403,
+    404
+   ],
+   "name": "member-reads-secret-project",
+   "request": {
+    "auth": "member",
+    "body": null,
+    "content_type": null,
+    "method": "GET",
+    "path": "/api/v1/workspaces/oracle-ws/projects/<project:beta>/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "error": "The requested resource does not exist."
+    },
+    "headers": {
+     "allow": "GET, PATCH, DELETE",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 404
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    403
+   ],
+   "name": "guest-creates-project",
+   "request": {
+    "auth": "guest",
+    "body": {
+     "identifier": "GST",
+     "name": "Guest Project"
+    },
+    "content_type": "application/json",
+    "method": "POST",
+    "path": "/api/v1/workspaces/oracle-ws/projects/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "detail": "You do not have permission to perform this action."
+    },
+    "headers": {
+     "allow": "GET, POST",
+     "content-type": "application/json"
+    },
+    "status": 403
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    403
+   ],
+   "name": "guest-creates-work-item",
+   "request": {
+    "auth": "guest",
+    "body": {
+     "name": "guest item"
+    },
+    "content_type": "application/json",
+    "method": "POST",
+    "path": "/api/v1/workspaces/oracle-ws/projects/<project:alpha>/work-items/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "detail": "You do not have permission to perform this action."
+    },
+    "headers": {
+     "allow": "GET, POST",
+     "content-type": "application/json"
+    },
+    "status": 403
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    403,
+    404
+   ],
+   "name": "unknown-workspace-slug",
+   "request": {
+    "auth": "owner",
+    "body": null,
+    "content_type": null,
+    "method": "GET",
+    "path": "/api/v1/workspaces/no-such-workspace/projects/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "detail": "You do not have permission to perform this action."
+    },
+    "headers": {
+     "allow": "GET, POST",
+     "content-type": "application/json"
+    },
+    "status": 403
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    405
+   ],
+   "name": "wrong-method-delete-users-me",
+   "request": {
+    "auth": "owner",
+    "body": null,
+    "content_type": null,
+    "method": "DELETE",
+    "path": "/api/v1/users/me/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "detail": "Method \"DELETE\" not allowed."
+    },
+    "headers": {
+     "allow": "GET",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 405
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    404
+   ],
+   "name": "malformed-uuid-in-path",
+   "request": {
+    "auth": "owner",
+    "body": null,
+    "content_type": null,
+    "method": "GET",
+    "path": "/api/v1/workspaces/oracle-ws/projects/not-a-uuid/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "error": "Page not found."
+    },
+    "headers": {
+     "content-type": "application/json"
+    },
+    "status": 404
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    400
+   ],
+   "name": "invalid-json-body",
+   "request": {
+    "auth": "owner",
+    "body": "{bad json",
+    "content_type": "application/json",
+    "method": "POST",
+    "path": "/api/v1/workspaces/oracle-ws/projects/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "detail": "JSON parse error - Expecting property name enclosed in double quotes: line 1 column 2 (char 1)"
+    },
+    "headers": {
+     "allow": "GET, POST",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 400
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    415
+   ],
+   "name": "wrong-content-type",
+   "request": {
+    "auth": "owner",
+    "body": "name=x",
+    "content_type": "text/plain",
+    "method": "POST",
+    "path": "/api/v1/workspaces/oracle-ws/projects/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "detail": "Unsupported media type \"text/plain\" in request."
+    },
+    "headers": {
+     "allow": "GET, POST",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 415
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    400
+   ],
+   "name": "scalar-json-body",
+   "request": {
+    "auth": "owner",
+    "body": "\"just a string\"",
+    "content_type": "application/json",
+    "method": "POST",
+    "path": "/api/v1/workspaces/oracle-ws/projects/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "detail": "Request body must be a JSON object or array."
+    },
+    "headers": {
+     "allow": "GET, POST",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 400
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    404
+   ],
+   "name": "unknown-route",
+   "request": {
+    "auth": "owner",
+    "body": null,
+    "content_type": null,
+    "method": "GET",
+    "path": "/api/v1/this-route-does-not-exist/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "error": "Page not found."
+    },
+    "headers": {
+     "content-type": "application/json"
+    },
+    "status": 404
+   },
+   "surprise": false
+  }
+ ],
+ "normalisation": "oracle/normalise.yaml",
+ "pinned_commit": "ba85d4d3d332b5380bebca4b9e0143b1127de907",
+ "resource": "errors"
+}

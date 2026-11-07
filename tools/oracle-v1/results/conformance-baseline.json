@@ -1,0 +1,685 @@
+{
+ "label": "gate",
+ "base_url": "http://127.0.0.1:18080",
+ "schemathesis_exit": 1,
+ "operations_tested": 102,
+ "operations_with_2xx": 78,
+ "cases": 590,
+ "failures_total": 67,
+ "accepted": 0,
+ "unaccepted": [
+  {
+   "label": "POST /api/v1/workspaces/{slug}/invitations/",
+   "method": "POST",
+   "path": "/api/v1/workspaces/{slug}/invitations/",
+   "check": "status_code_conformance",
+   "type": "UndefinedStatusCode",
+   "message": "Received: 400\nDocumented: 201",
+   "status": 400,
+   "kind": "failure"
+  },
+  {
+   "label": "POST /api/v1/workspaces/{slug}/stickies/",
+   "method": "POST",
+   "path": "/api/v1/workspaces/{slug}/stickies/",
+   "check": "response_schema_conformance",
+   "type": "JsonSchemaError",
+   "message": "\"count\" is a required property\n\nValidated against the response schema for status code 201.\n\nSchema at /components/schemas/Sticky:\n\n    {\n        \"required\": [\n            \"count\",\n            \"extra_stats\",\n            \"grouped_by\",\n            \"next_cursor\",\n            \"next_page_results\",\n            \"prev_cursor\",\n            \"prev_page_results\",\n            \"results\",\n            \"sub_grouped_by\",\n            \"total_count\",\n            \"total_pages\",\n            \"total_results\"\n        ],\n        \"type\": \"object\",\n        \"properties\": {\n            \"grouped_by\": {\n                \"anyOf\": [\n        // Output truncated...\n    }\n\nValue:\n\n    {\n        \"background_color\": null,\n        \"color\": null,\n        \"created_at\": \"2026-10-18T06:34:11.389687Z\",\n        \"created_by\": \"787e49cb-0616-5783-93de-5cb4534c40b3\",\n        \"deleted_at\": null,\n        \"description\": {},\n        \"description_binary\": null,\n        \"description_html\": \"<p></p>\",\n        \"description_stripped\": \"\",\n        \"id\": \"df04a064-eccf-4cc3-923b-8b9517623969\",\n        \"logo_props\": {},\n        \"name\": null,\n        \"owner\": \"787e49cb-0616-5783-93de-5cb4534c40b3\",\n        \"sort_order\": 65535.0,\n        \"updated_at\": \"2026-10-18T06:34:11.389695Z\",\n        \"updated_by\": null,\n        \"workspace\": \"6e1def4d-f7e0-5d3d-a39f-838dfcfdc845\"\n    }",
+   "status": 201,
+   "kind": "failure"
+  },
+  {
+   "label": "GET /api/v1/users/me/",
+   "method": "GET",
+   "path": "/api/v1/users/me/",
+   "check": "response_schema_conformance",
+   "type": "JsonSchemaError",
+   "message": "null is not of type \"string\"\n\nValidated against the response schema for status code 200.\n\nSchema at /properties/avatar_url:\n\n    {\n        \"type\": \"string\",\n        \"readOnly\": true,\n        \"description\": \"Avatar URL\"\n    }\n\nValue:\n\n    null",
+   "status": 200,
+   "kind": "failure"
+  },
+  {
+   "label": "GET /api/v1/workspaces/{slug}/members-lite/",
+   "method": "GET",
+   "path": "/api/v1/workspaces/{slug}/members-lite/",
+   "check": "not_a_server_error",
+   "type": "ServerError",
+   "message": "",
+   "status": 500,
+   "kind": "failure"
+  },
+  {
+   "label": "GET /api/v1/workspaces/{slug}/members-lite/",
+   "method": "GET",
+   "path": "/api/v1/workspaces/{slug}/members-lite/",
+   "check": "status_code_conformance",
+   "type": "UndefinedStatusCode",
+   "message": "Received: 500\nDocumented: 200, 401, 403, 404",
+   "status": 500,
+   "kind": "failure"
+  },
+  {
+   "label": "GET /api/v1/workspaces/{slug}/members/",
+   "method": "GET",
+   "path": "/api/v1/workspaces/{slug}/members/",
+   "check": "response_schema_conformance",
+   "type": "JsonSchemaError",
+   "message": "null is not of type \"string\"\n\nValidated against the response schema for status code 200.\n\nSchema at /components/schemas/UserLite/properties/avatar_url:\n\n    {\n        \"type\": \"string\",\n        \"readOnly\": true,\n        \"description\": \"Avatar URL\"\n    }\n\nValue:\n\n    null",
+   "status": 200,
+   "kind": "failure"
+  },
+  {
+   "label": "GET /api/v1/workspaces/{slug}/projects-lite/",
+   "method": "GET",
+   "path": "/api/v1/workspaces/{slug}/projects-lite/",
+   "check": "response_schema_conformance",
+   "type": "JsonSchemaError",
+   "message": "null is not of type \"string\"\n\nValidated against the response schema for status code 200.\n\nSchema at /components/schemas/ProjectLite/properties/cover_image_url:\n\n    {\n        \"type\": \"string\",\n        \"readOnly\": true\n    }\n\nValue:\n\n    null",
+   "status": 200,
+   "kind": "failure"
+  },
+  {
+   "label": "GET /api/v1/workspaces/{slug}/projects/",
+   "method": "GET",
+   "path": "/api/v1/workspaces/{slug}/projects/",
+   "check": "response_schema_conformance",
+   "type": "JsonSchemaError",
+   "message": "null is not of type \"string\"\n\nValidated against the response schema for status code 200.\n\nSchema at /components/schemas/Project/properties/cover_image_url:\n\n    {\n        \"type\": \"string\",\n        \"readOnly\": true\n    }\n\nValue:\n\n    null",
+   "status": 200,
+   "kind": "failure"
+  },
+  {
+   "label": "GET /api/v1/workspaces/{slug}/stickies/",
+   "method": "GET",
+   "path": "/api/v1/workspaces/{slug}/stickies/",
+   "check": "response_schema_conformance",
+   "type": "JsonSchemaError",
+   "message": "{\"count\":1,\"extra_stats\":null,\"grouped_by\":null,\"next_cursor\":\"20:1:0\",\"next_page_results\":false,\"prev_cursor\":\"20:-1:1\",\"prev_page_results\":false,\"results\":[{\"background_color\":null,\"color\":null,\"created_at\":\"2026-10-18T06:34:11.389687Z\",\"created_by\":\"787e49cb-0616-5783-93de-5cb4534c40b3\",\"deleted_at\":null,\"description\":{},\"description_binary\":null,\"description_html\":\"<p></p>\",\"description_stripped\":\"\",\"id\":\"df04a064-eccf-4cc3-923b-8b9517623969\",\"logo_props\":{},\"name\":null,\"owner\":\"787e49cb-0616-5783-93de-5cb4534c40b3\",\"sort_order\":65535.0,\"updated_at\":\"2026-10-18T06:34:11.389695Z\",\"updated_by\":null,\"workspace\":\"6e1def4d-f7e0-5d3d-a39f-838dfcfdc845\"}],\"sub_grouped_by\":null,\"total_count\":1,\"total_pages\":1,\"total_results\":1} is not of type \"array\"\n\nValidated against the response schema for status code 200.\n\nSchema:\n\n    {\n        \"type\": \"array\",\n        \"items\": {\n            \"$ref\": \"#/components/schemas/Sticky\"\n        },\n        \"components\": {\n            \"schemas\": {\n                \"Sticky\": {\n                    \"type\": \"object\",\n                    \"properties\": {\n                        \"grouped_by\": {\n                            \"anyOf\": [\n                                {\n                                    \"type\": \"string\"\n                                },\n                                {\n                                    \"type\": \"null\"\n                                }\n                            ]\n        // Output truncated...\n    }\n\nValue:\n\n    {\n        \"count\": 1,\n        \"extra_stats\": null,\n        \"grouped_by\": null,\n        \"next_cursor\": \"20:1:0\",\n        \"next_page_results\": false,\n        \"prev_cursor\": \"20:-1:1\",\n        \"prev_page_results\": false,\n        \"results\": [\n            {\n                \"background_color\": null,\n                \"color\": null,\n                \"created_at\": \"2026-10-18T06:34:11.389687Z\",\n                \"created_by\": \"787e49cb-0616-5783-93de-5cb4534c40b3\",\n                \"deleted_at\": null,\n                \"description\": {},\n                \"description_binary\": null,\n                \"description_html\": \"<p></p>\",\n                \"description_stripped\": \"\",\n        // Output truncated...\n    }",
+   "status": 200,
+   "kind": "failure"
+  },
+  {
+   "label": "PATCH /api/v1/assets/user-assets/{asset_id}/",
+   "method": "PATCH",
+   "path": "/api/v1/assets/user-assets/{asset_id}/",
+   "check": "status_code_conformance",
+   "type": "UndefinedStatusCode",
+   "message": "Received: 400\nDocumented: 401, 403, 204, 404",
+   "status": 400,
+   "kind": "failure"
+  },
+  {
+   "label": "POST /api/v1/workspaces/{slug}/assets/",
+   "method": "POST",
+   "path": "/api/v1/workspaces/{slug}/assets/",
+   "check": "not_a_server_error",
+   "type": "ServerError",
+   "message": "",
+   "status": 500,
+   "kind": "failure"
+  },
+  {
+   "label": "POST /api/v1/workspaces/{slug}/assets/",
+   "method": "POST",
+   "path": "/api/v1/workspaces/{slug}/assets/",
+   "check": "status_code_conformance",
+   "type": "UndefinedStatusCode",
+   "message": "Received: 500\nDocumented: 401, 403, 200, 400, 404, 409",
+   "status": 500,
+   "kind": "failure"
+  },
+  {
+   "label": "POST /api/v1/workspaces/{slug}/projects/",
+   "method": "POST",
+   "path": "/api/v1/workspaces/{slug}/projects/",
+   "check": "status_code_conformance",
+   "type": "UndefinedStatusCode",
+   "message": "Received: 400\nDocumented: 401, 403, 404, 201, 409",
+   "status": 400,
+   "kind": "failure"
+  },
+  {
+   "label": "POST /api/v1/workspaces/{slug}/projects/{project_id}/cycles/",
+   "method": "POST",
+   "path": "/api/v1/workspaces/{slug}/projects/{project_id}/cycles/",
+   "check": "status_code_conformance",
+   "type": "UndefinedStatusCode",
+   "message": "Received: 400\nDocumented: 401, 403, 404, 201",
+   "status": 400,
+   "kind": "failure"
+  },
+  {
+   "label": "POST /api/v1/workspaces/{slug}/projects/{project_id}/cycles/{cycle_id}/cycle-issues/",
+   "method": "POST",
+   "path": "/api/v1/workspaces/{slug}/projects/{project_id}/cycles/{cycle_id}/cycle-issues/",
+   "check": "response_schema_conformance",
+   "type": "JsonSchemaError",
+   "message": "[{\"created_at\":\"2026-10-18T06:33:53.409248Z\",\"created_by\":null,\"cycle\":\"486f6de6-1680-5564-bf90-d4acfbe13bd4\",\"deleted_at\":null,\"id\":\"409c58d0-01be-542f-8140-4cf18d8bfbcd\",\"issue\":\"34317382-ae0d-533c-abd8-85abc9e48d85\",\"project\":\"af77c157-a476-525a-a3c0-ffe11dcb05f5\",\"sub_issues_count\":1,\"updated_at\":\"2026-10-18T06:33:53.409253Z\",\"updated_by\":null,\"workspace\":\"6e1def4d-f7e0-5d3d-a39f-838dfcfdc845\"},{\"created_at\":\"2026-10-18T06:33:53.407256Z\",\"created_by\":null,\"cycle\":\"486f6de6-1680-5564-bf90-d4acfbe13bd4\",\"deleted_at\":null,\"id\":\"f4020952-bea1-5941-ac63-333744315bdc\",\"issue\":\"b260c543-dbc6-5547-b6a6-b001212db360\",\"project\":\"af77c157-a476-525a-a3c0-ffe11dcb05f5\",\"sub_issues_count\":0,\"updated_at\":\"2026-10-18T06:33:53.407262Z\",\"updated_by\":null,\"workspace\":\"6e1def4d-f7e0-5d3d-a39f-838dfcfdc845\"}] is not of type \"object\"\n\nValidated against the response schema for status code 200.\n\nSchema:\n\n    {\n        \"type\": \"object\",\n        \"description\": \"Serializer for cycle-issue relationships with sub-issue c...\n        \"properties\": {\n            \"id\": {\n                \"type\": \"string\",\n                \"format\": \"uuid\",\n                \"readOnly\": true\n            },\n            \"sub_issues_count\": {\n                \"type\": \"integer\",\n                \"readOnly\": true\n            },\n            \"created_at\": {\n                \"type\": \"string\",\n                \"format\": \"date-time\",\n                \"readOnly\": true\n            },\n            \"updated_at\": {\n        // Output truncated...\n    }\n\nValue:\n\n    [\n        {\n            \"created_at\": \"2026-10-18T06:33:53.409248Z\",\n            \"created_by\": null,\n            \"cycle\": \"486f6de6-1680-5564-bf90-d4acfbe13bd4\",\n            \"deleted_at\": null,\n            \"id\": \"409c58d0-01be-542f-8140-4cf18d8bfbcd\",\n            \"issue\": \"34317382-ae0d-533c-abd8-85abc9e48d85\",\n            \"project\": \"af77c157-a476-525a-a3c0-ffe11dcb05f5\",\n            \"sub_issues_count\": 1,\n            \"updated_at\": \"2026-10-18T06:33:53.409253Z\",\n            \"updated_by\": null,\n            \"workspace\": \"6e1def4d-f7e0-5d3d-a39f-838dfcfdc845\"\n        },\n        {\n            \"created_at\": \"2026-10-18T06:33:53.407256Z\",\n            \"created_by\": null,\n            \"cycle\": \"486f6de6-1680-5564-bf90-d4acfbe13bd4\",\n            \"deleted_at\": null,\n        // Output truncated...\n    ]",
+   "status": 200,
+   "kind": "failure"
+  },
+  {
+   "label": "POST /api/v1/workspaces/{slug}/projects/{project_id}/intake-issues/",
+   "method": "POST",
+   "path": "/api/v1/workspaces/{slug}/projects/{project_id}/intake-issues/",
+   "check": "not_a_server_error",
+   "type": "ServerError",
+   "message": "",
+   "status": 500,
+   "kind": "failure"
+  },
+  {
+   "label": "POST /api/v1/workspaces/{slug}/projects/{project_id}/intake-issues/",
+   "method": "POST",
+   "path": "/api/v1/workspaces/{slug}/projects/{project_id}/intake-issues/",
+   "check": "status_code_conformance",
+   "type": "UndefinedStatusCode",
+   "message": "Received: 500\nDocumented: 401, 403, 404, 201, 400",
+   "status": 500,
+   "kind": "failure"
+  },
+  {
+   "label": "POST /api/v1/workspaces/{slug}/projects/{project_id}/issues/",
+   "method": "POST",
+   "path": "/api/v1/workspaces/{slug}/projects/{project_id}/issues/",
+   "check": "not_a_server_error",
+   "type": "ServerError",
+   "message": "",
+   "status": 500,
+   "kind": "failure"
+  },
+  {
+   "label": "POST /api/v1/workspaces/{slug}/projects/{project_id}/issues/",
+   "method": "POST",
+   "path": "/api/v1/workspaces/{slug}/projects/{project_id}/issues/",
+   "check": "status_code_conformance",
+   "type": "UndefinedStatusCode",
+   "message": "Received: 500\nDocumented: 401, 403, 404, 201, 400, 409",
+   "status": 500,
+   "kind": "failure"
+  },
+  {
+   "label": "POST /api/v1/workspaces/{slug}/projects/{project_id}/members/",
+   "method": "POST",
+   "path": "/api/v1/workspaces/{slug}/projects/{project_id}/members/",
+   "check": "status_code_conformance",
+   "type": "UndefinedStatusCode",
+   "message": "Received: 400\nDocumented: 201",
+   "status": 400,
+   "kind": "failure"
+  },
+  {
+   "label": "POST /api/v1/workspaces/{slug}/projects/{project_id}/modules/{module_id}/module-issues/",
+   "method": "POST",
+   "path": "/api/v1/workspaces/{slug}/projects/{project_id}/modules/{module_id}/module-issues/",
+   "check": "response_schema_conformance",
+   "type": "JsonSchemaError",
+   "message": "[{\"created_at\":\"2026-10-18T06:33:53.411696Z\",\"created_by\":null,\"deleted_at\":null,\"id\":\"f14f9c1d-77f8-5649-ab63-b385da7af83f\",\"issue\":\"34317382-ae0d-533c-abd8-85abc9e48d85\",\"module\":\"c2292daf-3cef-5227-84e0-efa4fe50f6cc\",\"project\":\"af77c157-a476-525a-a3c0-ffe11dcb05f5\",\"sub_issues_count\":1,\"updated_at\":\"2026-10-18T06:33:53.411701Z\",\"updated_by\":null,\"workspace\":\"6e1def4d-f7e0-5d3d-a39f-838dfcfdc845\"}] is not of type \"object\"\n\nValidated against the response schema for status code 200.\n\nSchema:\n\n    {\n        \"type\": \"object\",\n        \"description\": \"Serializer for module-work item relationships with sub-it...\n        \"properties\": {\n            \"id\": {\n                \"type\": \"string\",\n                \"format\": \"uuid\",\n                \"readOnly\": true\n            },\n            \"sub_issues_count\": {\n                \"type\": \"integer\",\n                \"readOnly\": true\n            },\n            \"created_at\": {\n                \"type\": \"string\",\n                \"format\": \"date-time\",\n                \"readOnly\": true\n            },\n            \"updated_at\": {\n        // Output truncated...\n    }\n\nValue:\n\n    [\n        {\n            \"created_at\": \"2026-10-18T06:33:53.411696Z\",\n            \"created_by\": null,\n            \"deleted_at\": null,\n            \"id\": \"f14f9c1d-77f8-5649-ab63-b385da7af83f\",\n            \"issue\": \"34317382-ae0d-533c-abd8-85abc9e48d85\",\n            \"module\": \"c2292daf-3cef-5227-84e0-efa4fe50f6cc\",\n            \"project\": \"af77c157-a476-525a-a3c0-ffe11dcb05f5\",\n            \"sub_issues_count\": 1,\n            \"updated_at\": \"2026-10-18T06:33:53.411701Z\",\n            \"updated_by\": null,\n            \"workspace\": \"6e1def4d-f7e0-5d3d-a39f-838dfcfdc845\"\n        }\n    ]",
+   "status": 200,
+   "kind": "failure"
+  },
+  {
+   "label": "POST /api/v1/workspaces/{slug}/projects/{project_id}/project-members/",
+   "method": "POST",
+   "path": "/api/v1/workspaces/{slug}/projects/{project_id}/project-members/",
+   "check": "status_code_conformance",
+   "type": "UndefinedStatusCode",
+   "message": "Received: 400\nDocumented: 201",
+   "status": 400,
+   "kind": "failure"
+  },
+  {
+   "label": "POST /api/v1/workspaces/{slug}/projects/{project_id}/work-items/",
+   "method": "POST",
+   "path": "/api/v1/workspaces/{slug}/projects/{project_id}/work-items/",
+   "check": "not_a_server_error",
+   "type": "ServerError",
+   "message": "",
+   "status": 500,
+   "kind": "failure"
+  },
+  {
+   "label": "POST /api/v1/workspaces/{slug}/projects/{project_id}/work-items/",
+   "method": "POST",
+   "path": "/api/v1/workspaces/{slug}/projects/{project_id}/work-items/",
+   "check": "status_code_conformance",
+   "type": "UndefinedStatusCode",
+   "message": "Received: 500\nDocumented: 401, 403, 404, 201, 400, 409",
+   "status": 500,
+   "kind": "failure"
+  },
+  {
+   "label": "GET /api/v1/workspaces/{slug}/invitations/{pk}/",
+   "method": "GET",
+   "path": "/api/v1/workspaces/{slug}/invitations/{pk}/",
+   "check": "status_code_conformance",
+   "type": "UndefinedStatusCode",
+   "message": "Received: 404\nDocumented: 200",
+   "status": 404,
+   "kind": "failure"
+  },
+  {
+   "label": "GET /api/v1/workspaces/{slug}/issues/search/",
+   "method": "GET",
+   "path": "/api/v1/workspaces/{slug}/issues/search/",
+   "check": "response_schema_conformance",
+   "type": "JsonSchemaError",
+   "message": "\"id\" is a required property\n\nValidated against the response schema for status code 200.\n\nSchema:\n\n    {\n        \"required\": [\n            \"id\",\n            \"name\",\n            \"project__identifier\",\n            \"project_id\",\n            \"sequence_id\",\n            \"workspace__slug\"\n        ],\n        \"type\": \"object\",\n        \"description\": \"Serializer for work item search result data formatting.\\n...\n        \"properties\": {\n            \"id\": {\n                \"type\": \"string\",\n                \"description\": \"Issue ID\"\n            },\n            \"name\": {\n                \"type\": \"string\",\n                \"description\": \"Issue name\"\n        // Output truncated...\n    }\n\nValue:\n\n    {\n        \"issues\": []\n    }",
+   "status": 200,
+   "kind": "failure"
+  },
+  {
+   "label": "GET /api/v1/workspaces/{slug}/projects/{pk}/",
+   "method": "GET",
+   "path": "/api/v1/workspaces/{slug}/projects/{pk}/",
+   "check": "response_schema_conformance",
+   "type": "JsonSchemaError",
+   "message": "null is not of type \"string\"\n\nValidated against the response schema for status code 200.\n\nSchema at /components/schemas/Project/properties/cover_image_url:\n\n    {\n        \"type\": \"string\",\n        \"readOnly\": true\n    }\n\nValue:\n\n    null",
+   "status": 200,
+   "kind": "failure"
+  },
+  {
+   "label": "GET /api/v1/workspaces/{slug}/projects/{project_id}/archived-cycles/",
+   "method": "GET",
+   "path": "/api/v1/workspaces/{slug}/projects/{project_id}/archived-cycles/",
+   "check": "status_code_conformance",
+   "type": "UndefinedStatusCode",
+   "message": "Received: 400\nDocumented: 401, 403, 404, 200",
+   "status": 400,
+   "kind": "failure"
+  },
+  {
+   "label": "GET /api/v1/workspaces/{slug}/projects/{project_id}/archived-modules/",
+   "method": "GET",
+   "path": "/api/v1/workspaces/{slug}/projects/{project_id}/archived-modules/",
+   "check": "status_code_conformance",
+   "type": "UndefinedStatusCode",
+   "message": "Received: 400\nDocumented: 401, 403, 404, 200",
+   "status": 400,
+   "kind": "failure"
+  },
+  {
+   "label": "GET /api/v1/workspaces/{slug}/projects/{project_id}/cycles-lite/",
+   "method": "GET",
+   "path": "/api/v1/workspaces/{slug}/projects/{project_id}/cycles-lite/",
+   "check": "status_code_conformance",
+   "type": "UndefinedStatusCode",
+   "message": "Received: 400\nDocumented: 401, 403, 404, 200",
+   "status": 400,
+   "kind": "failure"
+  },
+  {
+   "label": "GET /api/v1/workspaces/{slug}/projects/{project_id}/cycles/",
+   "method": "GET",
+   "path": "/api/v1/workspaces/{slug}/projects/{project_id}/cycles/",
+   "check": "status_code_conformance",
+   "type": "UndefinedStatusCode",
+   "message": "Received: 400\nDocumented: 401, 403, 404, 200",
+   "status": 400,
+   "kind": "failure"
+  },
+  {
+   "label": "GET /api/v1/workspaces/{slug}/projects/{project_id}/cycles/{cycle_id}/cycle-issues/",
+   "method": "GET",
+   "path": "/api/v1/workspaces/{slug}/projects/{project_id}/cycles/{cycle_id}/cycle-issues/",
+   "check": "status_code_conformance",
+   "type": "UndefinedStatusCode",
+   "message": "Received: 400\nDocumented: 401, 403, 404, 200",
+   "status": 400,
+   "kind": "failure"
+  },
+  {
+   "label": "GET /api/v1/workspaces/{slug}/projects/{project_id}/intake-issues/",
+   "method": "GET",
+   "path": "/api/v1/workspaces/{slug}/projects/{project_id}/intake-issues/",
+   "check": "status_code_conformance",
+   "type": "UndefinedStatusCode",
+   "message": "Received: 400\nDocumented: 401, 403, 404, 200",
+   "status": 400,
+   "kind": "failure"
+  },
+  {
+   "label": "GET /api/v1/workspaces/{slug}/projects/{project_id}/issues/{issue_id}/activities/",
+   "method": "GET",
+   "path": "/api/v1/workspaces/{slug}/projects/{project_id}/issues/{issue_id}/activities/",
+   "check": "response_schema_conformance",
+   "type": "JsonSchemaError",
+   "message": "\"project\" is a required property\n\nValidated against the response schema for status code 200.\n\nSchema at /components/schemas/IssueActivity:\n\n    {\n        \"required\": [\n            \"project\",\n            \"workspace\"\n        ],\n        \"type\": \"object\",\n        \"description\": \"Serializer for work item activity and change history.\\n\\n...\n        \"properties\": {\n            \"id\": {\n                \"type\": \"string\",\n                \"format\": \"uuid\",\n                \"readOnly\": true\n            },\n            \"created_at\": {\n                \"type\": \"string\",\n                \"format\": \"date-time\",\n                \"readOnly\": true\n            },\n            \"updated_at\": {\n        // Output truncated...\n    }\n\nValue:\n\n    {\n        \"id\": \"fd3029ce-396d-5c9a-9777-51e0498ed513\"\n    }",
+   "status": 200,
+   "kind": "failure"
+  },
+  {
+   "label": "GET /api/v1/workspaces/{slug}/projects/{project_id}/issues/{issue_id}/activities/{pk}/",
+   "method": "GET",
+   "path": "/api/v1/workspaces/{slug}/projects/{project_id}/issues/{issue_id}/activities/{pk}/",
+   "check": "response_schema_conformance",
+   "type": "JsonSchemaError",
+   "message": "\"count\" is a required property\n\nValidated against the response schema for status code 200.\n\nSchema at /components/schemas/PaginatedIssueActivityDetailResponse:\n\n    {\n        \"required\": [\n            \"count\",\n            \"extra_stats\",\n            \"grouped_by\",\n            \"next_cursor\",\n            \"next_page_results\",\n            \"prev_cursor\",\n            \"prev_page_results\",\n            \"results\",\n            \"sub_grouped_by\",\n            \"total_count\",\n            \"total_pages\",\n            \"total_results\"\n        ],\n        \"type\": \"object\",\n        \"properties\": {\n            \"grouped_by\": {\n                \"anyOf\": [\n        // Output truncated...\n    }\n\nValue:\n\n    {\n        \"actor\": \"787e49cb-0616-5783-93de-5cb4534c40b3\",\n        \"attachments\": [],\n        \"comment\": \"synthetic activity 1\",\n        \"created_at\": \"2026-10-18T06:33:53.414143Z\",\n        \"deleted_at\": null,\n        \"epoch\": null,\n        \"field\": null,\n        \"id\": \"fd3029ce-396d-5c9a-9777-51e0498ed513\",\n        \"issue\": \"34317382-ae0d-533c-abd8-85abc9e48d85\",\n        \"issue_comment\": null,\n        \"new_identifier\": null,\n        \"new_value\": null,\n        \"old_identifier\": null,\n        \"old_value\": null,\n        \"project\": \"af77c157-a476-525a-a3c0-ffe11dcb05f5\",\n        \"updated_at\": \"2026-10-18T06:33:53.414148Z\",\n        \"verb\": \"created\",\n        \"workspace\": \"6e1def4d-f7e0-5d3d-a39f-838dfcfdc845\"\n    }",
+   "status": 200,
+   "kind": "failure"
+  },
+  {
+   "label": "GET /api/v1/workspaces/{slug}/projects/{project_id}/issues/{issue_id}/comments/",
+   "method": "GET",
+   "path": "/api/v1/workspaces/{slug}/projects/{project_id}/issues/{issue_id}/comments/",
+   "check": "status_code_conformance",
+   "type": "UndefinedStatusCode",
+   "message": "Received: 400\nDocumented: 401, 403, 404, 200",
+   "status": 400,
+   "kind": "failure"
+  },
+  {
+   "label": "GET /api/v1/workspaces/{slug}/projects/{project_id}/issues/{issue_id}/issue-attachments/",
+   "method": "GET",
+   "path": "/api/v1/workspaces/{slug}/projects/{project_id}/issues/{issue_id}/issue-attachments/",
+   "check": "response_schema_conformance",
+   "type": "JsonSchemaError",
+   "message": "[] is not of type \"object\"\n\nValidated against the response schema for status code 200.\n\nSchema:\n\n    {\n        \"type\": \"object\",\n        \"description\": \"Serializer for work item file attachments.\\n\\nManages fil...\n        \"properties\": {\n            \"id\": {\n                \"type\": \"string\",\n                \"format\": \"uuid\",\n                \"readOnly\": true\n            },\n            \"created_at\": {\n                \"type\": \"string\",\n                \"format\": \"date-time\",\n                \"readOnly\": true\n            },\n            \"updated_at\": {\n                \"type\": \"string\",\n                \"format\": \"date-time\",\n                \"readOnly\": true,\n                \"title\": \"Last Modified At\"\n        // Output truncated...\n    }\n\nValue:\n\n    []",
+   "status": 200,
+   "kind": "failure"
+  },
+  {
+   "label": "GET /api/v1/workspaces/{slug}/projects/{project_id}/issues/{issue_id}/links/",
+   "method": "GET",
+   "path": "/api/v1/workspaces/{slug}/projects/{project_id}/issues/{issue_id}/links/",
+   "check": "response_schema_conformance",
+   "type": "JsonSchemaError",
+   "message": "\"url\" is a required property\n\nValidated against the response schema for status code 200.\n\nSchema at /components/schemas/IssueLink:\n\n    {\n        \"required\": [\n            \"url\"\n        ],\n        \"type\": \"object\",\n        \"description\": \"Full serializer for work item external links.\\n\\nProvides...\n        \"properties\": {\n            \"id\": {\n                \"type\": \"string\",\n                \"format\": \"uuid\",\n                \"readOnly\": true\n            },\n            \"created_at\": {\n                \"type\": \"string\",\n                \"format\": \"date-time\",\n                \"readOnly\": true\n            },\n            \"updated_at\": {\n                \"type\": \"string\",\n        // Output truncated...\n    }\n\nValue:\n\n    {}",
+   "status": 200,
+   "kind": "failure"
+  },
+  {
+   "label": "GET /api/v1/workspaces/{slug}/projects/{project_id}/issues/{issue_id}/links/{pk}/",
+   "method": "GET",
+   "path": "/api/v1/workspaces/{slug}/projects/{project_id}/issues/{issue_id}/links/{pk}/",
+   "check": "response_schema_conformance",
+   "type": "JsonSchemaError",
+   "message": "\"count\" is a required property\n\nValidated against the response schema for status code 200.\n\nSchema at /components/schemas/PaginatedIssueLinkDetailResponse:\n\n    {\n        \"required\": [\n            \"count\",\n            \"extra_stats\",\n            \"grouped_by\",\n            \"next_cursor\",\n            \"next_page_results\",\n            \"prev_cursor\",\n            \"prev_page_results\",\n            \"results\",\n            \"sub_grouped_by\",\n            \"total_count\",\n            \"total_pages\",\n            \"total_results\"\n        ],\n        \"type\": \"object\",\n        \"properties\": {\n            \"grouped_by\": {\n                \"anyOf\": [\n        // Output truncated...\n    }\n\nValue:\n\n    {\n        \"created_at\": \"2026-10-18T06:33:53.398351Z\",\n        \"created_by\": null,\n        \"deleted_at\": null,\n        \"id\": \"641c5df5-5249-58ca-b7a5-21c542a50c09\",\n        \"issue\": \"34317382-ae0d-533c-abd8-85abc9e48d85\",\n        \"metadata\": {},\n        \"project\": \"af77c157-a476-525a-a3c0-ffe11dcb05f5\",\n        \"title\": \"Synthetic link\",\n        \"updated_at\": \"2026-10-18T06:33:53.398355Z\",\n        \"updated_by\": null,\n        \"url\": \"https://example.test/oracle\",\n        \"workspace\": \"6e1def4d-f7e0-5d3d-a39f-838dfcfdc845\"\n    }",
+   "status": 200,
+   "kind": "failure"
+  },
+  {
+   "label": "GET /api/v1/workspaces/{slug}/projects/{project_id}/issues/{pk}/",
+   "method": "GET",
+   "path": "/api/v1/workspaces/{slug}/projects/{project_id}/issues/{pk}/",
+   "check": "response_schema_conformance",
+   "type": "JsonSchemaError",
+   "message": "\"name\" is a required property\n\nValidated against the response schema for status code 200.\n\nSchema at /components/schemas/Issue:\n\n    {\n        \"required\": [\n            \"name\"\n        ],\n        \"type\": \"object\",\n        \"description\": \"Comprehensive work item serializer with full relationship...\n        \"properties\": {\n            \"id\": {\n                \"type\": \"string\",\n                \"format\": \"uuid\",\n                \"readOnly\": true\n            },\n            \"type_id\": {\n                \"anyOf\": [\n                    {\n                        \"type\": \"string\",\n                        \"format\": \"uuid\"\n                    },\n                    {\n        // Output truncated...\n    }\n\nValue:\n\n    {}",
+   "status": 200,
+   "kind": "failure"
+  },
+  {
+   "label": "GET /api/v1/workspaces/{slug}/projects/{project_id}/members/",
+   "method": "GET",
+   "path": "/api/v1/workspaces/{slug}/projects/{project_id}/members/",
+   "check": "response_schema_conformance",
+   "type": "JsonSchemaError",
+   "message": "[{\"avatar\":\"\",\"avatar_url\":null,\"display_name\":\"oracle_guest\",\"email\":\"oracle-guest@example.test\",\"first_name\":\"Gwen\",\"id\":\"d8b2853d-973d-538d-a2c4-dfdc57770d70\",\"last_name\":\"Guest\"},{\"avatar\":\"\",\"avatar_url\":null,\"display_name\":\"oracle_member\",\"email\":\"oracle-member@example.test\",\"first_name\":\"Milo\",\"id\":\"9405a630-5f87-5e16-b641-708f38bed978\",\"last_name\":\"Member\"},{\"avatar\":\"\",\"avatar_url\":null,\"display_name\":\"oracle_owner\",\"email\":\"oracle-owner@example.test\",\"first_name\":\"Olive\",\"id\":\"787e49cb-0616-5783-93de-5cb4534c40b3\",\"last_name\":\"Owner\"}] is not of type \"object\"\n\nValidated against the response schema for status code 200.\n\nSchema:\n\n    {\n        \"type\": \"object\",\n        \"description\": \"Lightweight user serializer for minimal data transfer.\\n\\...\n        \"properties\": {\n            \"id\": {\n                \"type\": \"string\",\n                \"format\": \"uuid\",\n                \"readOnly\": true\n            },\n            \"first_name\": {\n                \"type\": \"string\",\n                \"readOnly\": true\n            },\n            \"last_name\": {\n                \"type\": \"string\",\n                \"readOnly\": true\n            },\n            \"email\": {\n                \"anyOf\": [\n        // Output truncated...\n    }\n\nValue:\n\n    [\n        {\n            \"avatar\": \"\",\n            \"avatar_url\": null,\n            \"display_name\": \"oracle_guest\",\n            \"email\": \"oracle-guest@example.test\",\n            \"first_name\": \"Gwen\",\n            \"id\": \"d8b2853d-973d-538d-a2c4-dfdc57770d70\",\n            \"last_name\": \"Guest\"\n        },\n        {\n            \"avatar\": \"\",\n            \"avatar_url\": null,\n            \"display_name\": \"oracle_member\",\n            \"email\": \"oracle-member@example.test\",\n            \"first_name\": \"Milo\",\n            \"id\": \"9405a630-5f87-5e16-b641-708f38bed978\",\n            \"last_name\": \"Member\"\n        },\n        // Output truncated...\n    ]",
+   "status": 200,
+   "kind": "failure"
+  },
+  {
+   "label": "GET /api/v1/workspaces/{slug}/projects/{project_id}/members/{pk}/",
+   "method": "GET",
+   "path": "/api/v1/workspaces/{slug}/projects/{project_id}/members/{pk}/",
+   "check": "response_schema_conformance",
+   "type": "JsonSchemaError",
+   "message": "\"member\" is a required property\n\nValidated against the response schema for status code 200.\n\nSchema at /components/schemas/ProjectMember:\n\n    {\n        \"required\": [\n            \"member\"\n        ],\n        \"type\": \"object\",\n        \"description\": \"Serializer for project members.\",\n        \"properties\": {\n            \"id\": {\n                \"type\": \"string\",\n                \"format\": \"uuid\",\n                \"readOnly\": true\n            },\n            \"member\": {\n                \"type\": \"string\",\n                \"format\": \"uuid\"\n            },\n            \"role\": {\n                \"allOf\": [\n                    {\n        // Output truncated...\n    }\n\nValue:\n\n    {\n        \"avatar\": \"\",\n        \"avatar_url\": null,\n        \"display_name\": \"oracle_member\",\n        \"email\": \"oracle-member@example.test\",\n        \"first_name\": \"Milo\",\n        \"id\": \"9405a630-5f87-5e16-b641-708f38bed978\",\n        \"last_name\": \"Member\"\n    }",
+   "status": 200,
+   "kind": "failure"
+  },
+  {
+   "label": "GET /api/v1/workspaces/{slug}/projects/{project_id}/modules-lite/",
+   "method": "GET",
+   "path": "/api/v1/workspaces/{slug}/projects/{project_id}/modules-lite/",
+   "check": "status_code_conformance",
+   "type": "UndefinedStatusCode",
+   "message": "Received: 400\nDocumented: 401, 403, 404, 200",
+   "status": 400,
+   "kind": "failure"
+  },
+  {
+   "label": "GET /api/v1/workspaces/{slug}/projects/{project_id}/modules/",
+   "method": "GET",
+   "path": "/api/v1/workspaces/{slug}/projects/{project_id}/modules/",
+   "check": "status_code_conformance",
+   "type": "UndefinedStatusCode",
+   "message": "Received: 400\nDocumented: 401, 403, 404, 200",
+   "status": 400,
+   "kind": "failure"
+  },
+  {
+   "label": "GET /api/v1/workspaces/{slug}/projects/{project_id}/modules/{module_id}/module-issues/",
+   "method": "GET",
+   "path": "/api/v1/workspaces/{slug}/projects/{project_id}/modules/{module_id}/module-issues/",
+   "check": "status_code_conformance",
+   "type": "UndefinedStatusCode",
+   "message": "Received: 400\nDocumented: 401, 403, 404, 200",
+   "status": 400,
+   "kind": "failure"
+  },
+  {
+   "label": "GET /api/v1/workspaces/{slug}/projects/{project_id}/project-members-lite/",
+   "method": "GET",
+   "path": "/api/v1/workspaces/{slug}/projects/{project_id}/project-members-lite/",
+   "check": "not_a_server_error",
+   "type": "ServerError",
+   "message": "",
+   "status": 500,
+   "kind": "failure"
+  },
+  {
+   "label": "GET /api/v1/workspaces/{slug}/projects/{project_id}/project-members-lite/",
+   "method": "GET",
+   "path": "/api/v1/workspaces/{slug}/projects/{project_id}/project-members-lite/",
+   "check": "status_code_conformance",
+   "type": "UndefinedStatusCode",
+   "message": "Received: 500\nDocumented: 200, 401, 403, 404",
+   "status": 500,
+   "kind": "failure"
+  },
+  {
+   "label": "GET /api/v1/workspaces/{slug}/projects/{project_id}/project-members/",
+   "method": "GET",
+   "path": "/api/v1/workspaces/{slug}/projects/{project_id}/project-members/",
+   "check": "response_schema_conformance",
+   "type": "JsonSchemaError",
+   "message": "[{\"avatar\":\"\",\"avatar_url\":null,\"display_name\":\"oracle_guest\",\"email\":\"oracle-guest@example.test\",\"first_name\":\"Gwen\",\"id\":\"d8b2853d-973d-538d-a2c4-dfdc57770d70\",\"last_name\":\"Guest\"},{\"avatar\":\"\",\"avatar_url\":null,\"display_name\":\"oracle_member\",\"email\":\"oracle-member@example.test\",\"first_name\":\"Milo\",\"id\":\"9405a630-5f87-5e16-b641-708f38bed978\",\"last_name\":\"Member\"},{\"avatar\":\"\",\"avatar_url\":null,\"display_name\":\"oracle_owner\",\"email\":\"oracle-owner@example.test\",\"first_name\":\"Olive\",\"id\":\"787e49cb-0616-5783-93de-5cb4534c40b3\",\"last_name\":\"Owner\"}] is not of type \"object\"\n\nValidated against the response schema for status code 200.\n\nSchema:\n\n    {\n        \"type\": \"object\",\n        \"description\": \"Lightweight user serializer for minimal data transfer.\\n\\...\n        \"properties\": {\n            \"id\": {\n                \"type\": \"string\",\n                \"format\": \"uuid\",\n                \"readOnly\": true\n            },\n            \"first_name\": {\n                \"type\": \"string\",\n                \"readOnly\": true\n            },\n            \"last_name\": {\n                \"type\": \"string\",\n                \"readOnly\": true\n            },\n            \"email\": {\n                \"anyOf\": [\n        // Output truncated...\n    }\n\nValue:\n\n    [\n        {\n            \"avatar\": \"\",\n            \"avatar_url\": null,\n            \"display_name\": \"oracle_guest\",\n            \"email\": \"oracle-guest@example.test\",\n            \"first_name\": \"Gwen\",\n            \"id\": \"d8b2853d-973d-538d-a2c4-dfdc57770d70\",\n            \"last_name\": \"Guest\"\n        },\n        {\n            \"avatar\": \"\",\n            \"avatar_url\": null,\n            \"display_name\": \"oracle_member\",\n            \"email\": \"oracle-member@example.test\",\n            \"first_name\": \"Milo\",\n            \"id\": \"9405a630-5f87-5e16-b641-708f38bed978\",\n            \"last_name\": \"Member\"\n        },\n        // Output truncated...\n    ]",
+   "status": 200,
+   "kind": "failure"
+  },
+  {
+   "label": "GET /api/v1/workspaces/{slug}/projects/{project_id}/project-members/{pk}/",
+   "method": "GET",
+   "path": "/api/v1/workspaces/{slug}/projects/{project_id}/project-members/{pk}/",
+   "check": "response_schema_conformance",
+   "type": "JsonSchemaError",
+   "message": "\"member\" is a required property\n\nValidated against the response schema for status code 200.\n\nSchema at /components/schemas/ProjectMember:\n\n    {\n        \"required\": [\n            \"member\"\n        ],\n        \"type\": \"object\",\n        \"description\": \"Serializer for project members.\",\n        \"properties\": {\n            \"id\": {\n                \"type\": \"string\",\n                \"format\": \"uuid\",\n                \"readOnly\": true\n            },\n            \"member\": {\n                \"type\": \"string\",\n                \"format\": \"uuid\"\n            },\n            \"role\": {\n                \"allOf\": [\n                    {\n        // Output truncated...\n    }\n\nValue:\n\n    {\n        \"avatar\": \"\",\n        \"avatar_url\": null,\n        \"display_name\": \"oracle_member\",\n        \"email\": \"oracle-member@example.test\",\n        \"first_name\": \"Milo\",\n        \"id\": \"9405a630-5f87-5e16-b641-708f38bed978\",\n        \"last_name\": \"Member\"\n    }",
+   "status": 200,
+   "kind": "failure"
+  },
+  {
+   "label": "GET /api/v1/workspaces/{slug}/projects/{project_id}/states/",
+   "method": "GET",
+   "path": "/api/v1/workspaces/{slug}/projects/{project_id}/states/",
+   "check": "status_code_conformance",
+   "type": "UndefinedStatusCode",
+   "message": "Received: 400\nDocumented: 401, 403, 404, 200",
+   "status": 400,
+   "kind": "failure"
+  },
+  {
+   "label": "GET /api/v1/workspaces/{slug}/projects/{project_id}/work-items/",
+   "method": "GET",
+   "path": "/api/v1/workspaces/{slug}/projects/{project_id}/work-items/",
+   "check": "not_a_server_error",
+   "type": "ServerError",
+   "message": "",
+   "status": 500,
+   "kind": "failure"
+  },
+  {
+   "label": "GET /api/v1/workspaces/{slug}/projects/{project_id}/work-items/",
+   "method": "GET",
+   "path": "/api/v1/workspaces/{slug}/projects/{project_id}/work-items/",
+   "check": "status_code_conformance",
+   "type": "UndefinedStatusCode",
+   "message": "Received: 500\nDocumented: 401, 403, 404, 200, 400",
+   "status": 500,
+   "kind": "failure"
+  },
+  {
+   "label": "GET /api/v1/workspaces/{slug}/projects/{project_id}/work-items/{issue_id}/activities/{pk}/",
+   "method": "GET",
+   "path": "/api/v1/workspaces/{slug}/projects/{project_id}/work-items/{issue_id}/activities/{pk}/",
+   "check": "response_schema_conformance",
+   "type": "JsonSchemaError",
+   "message": "\"count\" is a required property\n\nValidated against the response schema for status code 200.\n\nSchema at /components/schemas/PaginatedIssueActivityDetailResponse:\n\n    {\n        \"required\": [\n            \"count\",\n            \"extra_stats\",\n            \"grouped_by\",\n            \"next_cursor\",\n            \"next_page_results\",\n            \"prev_cursor\",\n            \"prev_page_results\",\n            \"results\",\n            \"sub_grouped_by\",\n            \"total_count\",\n            \"total_pages\",\n            \"total_results\"\n        ],\n        \"type\": \"object\",\n        \"properties\": {\n            \"grouped_by\": {\n                \"anyOf\": [\n        // Output truncated...\n    }\n\nValue:\n\n    {\n        \"actor\": \"787e49cb-0616-5783-93de-5cb4534c40b3\",\n        \"attachments\": [],\n        \"comment\": \"synthetic activity 1\",\n        \"created_at\": \"2026-10-18T06:33:53.414143Z\",\n        \"deleted_at\": null,\n        \"epoch\": null,\n        \"field\": null,\n        \"id\": \"fd3029ce-396d-5c9a-9777-51e0498ed513\",\n        \"issue\": \"34317382-ae0d-533c-abd8-85abc9e48d85\",\n        \"issue_comment\": null,\n        \"new_identifier\": null,\n        \"new_value\": null,\n        \"old_identifier\": null,\n        \"old_value\": null,\n        \"project\": \"af77c157-a476-525a-a3c0-ffe11dcb05f5\",\n        \"updated_at\": \"2026-10-18T06:33:53.414148Z\",\n        \"verb\": \"created\",\n        \"workspace\": \"6e1def4d-f7e0-5d3d-a39f-838dfcfdc845\"\n    }",
+   "status": 200,
+   "kind": "failure"
+  },
+  {
+   "label": "GET /api/v1/workspaces/{slug}/projects/{project_id}/work-items/{issue_id}/attachments/",
+   "method": "GET",
+   "path": "/api/v1/workspaces/{slug}/projects/{project_id}/work-items/{issue_id}/attachments/",
+   "check": "response_schema_conformance",
+   "type": "JsonSchemaError",
+   "message": "[] is not of type \"object\"\n\nValidated against the response schema for status code 200.\n\nSchema:\n\n    {\n        \"type\": \"object\",\n        \"description\": \"Serializer for work item file attachments.\\n\\nManages fil...\n        \"properties\": {\n            \"id\": {\n                \"type\": \"string\",\n                \"format\": \"uuid\",\n                \"readOnly\": true\n            },\n            \"created_at\": {\n                \"type\": \"string\",\n                \"format\": \"date-time\",\n                \"readOnly\": true\n            },\n            \"updated_at\": {\n                \"type\": \"string\",\n                \"format\": \"date-time\",\n                \"readOnly\": true,\n                \"title\": \"Last Modified At\"\n        // Output truncated...\n    }\n\nValue:\n\n    []",
+   "status": 200,
+   "kind": "failure"
+  },
+  {
+   "label": "GET /api/v1/workspaces/{slug}/projects/{project_id}/work-items/{issue_id}/comments/",
+   "method": "GET",
+   "path": "/api/v1/workspaces/{slug}/projects/{project_id}/work-items/{issue_id}/comments/",
+   "check": "not_a_server_error",
+   "type": "ServerError",
+   "message": "",
+   "status": 500,
+   "kind": "failure"
+  },
+  {
+   "label": "GET /api/v1/workspaces/{slug}/projects/{project_id}/work-items/{issue_id}/comments/",
+   "method": "GET",
+   "path": "/api/v1/workspaces/{slug}/projects/{project_id}/work-items/{issue_id}/comments/",
+   "check": "status_code_conformance",
+   "type": "UndefinedStatusCode",
+   "message": "Received: 500\nDocumented: 401, 403, 404, 200",
+   "status": 500,
+   "kind": "failure"
+  },
+  {
+   "label": "GET /api/v1/workspaces/{slug}/projects/{project_id}/work-items/{issue_id}/links/",
+   "method": "GET",
+   "path": "/api/v1/workspaces/{slug}/projects/{project_id}/work-items/{issue_id}/links/",
+   "check": "response_schema_conformance",
+   "type": "JsonSchemaError",
+   "message": "\"url\" is a required property\n\nValidated against the response schema for status code 200.\n\nSchema at /components/schemas/IssueLink:\n\n    {\n        \"required\": [\n            \"url\"\n        ],\n        \"type\": \"object\",\n        \"description\": \"Full serializer for work item external links.\\n\\nProvides...\n        \"properties\": {\n            \"id\": {\n                \"type\": \"string\",\n                \"format\": \"uuid\",\n                \"readOnly\": true\n            },\n            \"created_at\": {\n                \"type\": \"string\",\n                \"format\": \"date-time\",\n                \"readOnly\": true\n            },\n            \"updated_at\": {\n                \"type\": \"string\",\n        // Output truncated...\n    }\n\nValue:\n\n    {}",
+   "status": 200,
+   "kind": "failure"
+  },
+  {
+   "label": "GET /api/v1/workspaces/{slug}/projects/{project_id}/work-items/{issue_id}/links/{pk}/",
+   "method": "GET",
+   "path": "/api/v1/workspaces/{slug}/projects/{project_id}/work-items/{issue_id}/links/{pk}/",
+   "check": "response_schema_conformance",
+   "type": "JsonSchemaError",
+   "message": "\"count\" is a required property\n\nValidated against the response schema for status code 200.\n\nSchema at /components/schemas/PaginatedIssueLinkDetailResponse:\n\n    {\n        \"required\": [\n            \"count\",\n            \"extra_stats\",\n            \"grouped_by\",\n            \"next_cursor\",\n            \"next_page_results\",\n            \"prev_cursor\",\n            \"prev_page_results\",\n            \"results\",\n            \"sub_grouped_by\",\n            \"total_count\",\n            \"total_pages\",\n            \"total_results\"\n        ],\n        \"type\": \"object\",\n        \"properties\": {\n            \"grouped_by\": {\n                \"anyOf\": [\n        // Output truncated...\n    }\n\nValue:\n\n    {\n        \"created_at\": \"2026-10-18T06:33:53.398351Z\",\n        \"created_by\": null,\n        \"deleted_at\": null,\n        \"id\": \"641c5df5-5249-58ca-b7a5-21c542a50c09\",\n        \"issue\": \"34317382-ae0d-533c-abd8-85abc9e48d85\",\n        \"metadata\": {},\n        \"project\": \"af77c157-a476-525a-a3c0-ffe11dcb05f5\",\n        \"title\": \"Synthetic link\",\n        \"updated_at\": \"2026-10-18T06:33:53.398355Z\",\n        \"updated_by\": null,\n        \"url\": \"https://example.test/oracle\",\n        \"workspace\": \"6e1def4d-f7e0-5d3d-a39f-838dfcfdc845\"\n    }",
+   "status": 200,
+   "kind": "failure"
+  },
+  {
+   "label": "GET /api/v1/workspaces/{slug}/projects/{project_id}/work-items/{pk}/",
+   "method": "GET",
+   "path": "/api/v1/workspaces/{slug}/projects/{project_id}/work-items/{pk}/",
+   "check": "response_schema_conformance",
+   "type": "JsonSchemaError",
+   "message": "\"name\" is a required property\n\nValidated against the response schema for status code 200.\n\nSchema at /components/schemas/Issue:\n\n    {\n        \"required\": [\n            \"name\"\n        ],\n        \"type\": \"object\",\n        \"description\": \"Comprehensive work item serializer with full relationship...\n        \"properties\": {\n            \"id\": {\n                \"type\": \"string\",\n                \"format\": \"uuid\",\n                \"readOnly\": true\n            },\n            \"type_id\": {\n                \"anyOf\": [\n                    {\n                        \"type\": \"string\",\n                        \"format\": \"uuid\"\n                    },\n                    {\n        // Output truncated...\n    }\n\nValue:\n\n    {}",
+   "status": 200,
+   "kind": "failure"
+  },
+  {
+   "label": "GET /api/v1/workspaces/{slug}/work-items/search/",
+   "method": "GET",
+   "path": "/api/v1/workspaces/{slug}/work-items/search/",
+   "check": "response_schema_conformance",
+   "type": "JsonSchemaError",
+   "message": "\"id\" is a required property\n\nValidated against the response schema for status code 200.\n\nSchema:\n\n    {\n        \"required\": [\n            \"id\",\n            \"name\",\n            \"project__identifier\",\n            \"project_id\",\n            \"sequence_id\",\n            \"workspace__slug\"\n        ],\n        \"type\": \"object\",\n        \"description\": \"Serializer for work item search result data formatting.\\n...\n        \"properties\": {\n            \"id\": {\n                \"type\": \"string\",\n                \"description\": \"Issue ID\"\n            },\n            \"name\": {\n                \"type\": \"string\",\n                \"description\": \"Issue name\"\n        // Output truncated...\n    }\n\nValue:\n\n    {\n        \"issues\": []\n    }",
+   "status": 200,
+   "kind": "failure"
+  },
+  {
+   "label": "PATCH /api/v1/workspaces/{slug}/invitations/{pk}/",
+   "method": "PATCH",
+   "path": "/api/v1/workspaces/{slug}/invitations/{pk}/",
+   "check": "status_code_conformance",
+   "type": "UndefinedStatusCode",
+   "message": "Received: 404\nDocumented: 200",
+   "status": 404,
+   "kind": "failure"
+  },
+  {
+   "label": "PATCH /api/v1/workspaces/{slug}/projects/{pk}/",
+   "method": "PATCH",
+   "path": "/api/v1/workspaces/{slug}/projects/{pk}/",
+   "check": "response_schema_conformance",
+   "type": "JsonSchemaError",
+   "message": "null is not of type \"string\"\n\nValidated against the response schema for status code 200.\n\nSchema at /components/schemas/Project/properties/cover_image_url:\n\n    {\n        \"type\": \"string\",\n        \"readOnly\": true\n    }\n\nValue:\n\n    null",
+   "status": 200,
+   "kind": "failure"
+  },
+  {
+   "label": "PATCH /api/v1/workspaces/{slug}/projects/{project_id}/cycles/{pk}/",
+   "method": "PATCH",
+   "path": "/api/v1/workspaces/{slug}/projects/{project_id}/cycles/{pk}/",
+   "check": "status_code_conformance",
+   "type": "UndefinedStatusCode",
+   "message": "Received: 400\nDocumented: 401, 403, 404, 200",
+   "status": 400,
+   "kind": "failure"
+  },
+  {
+   "label": "PATCH /api/v1/workspaces/{slug}/projects/{project_id}/members/{pk}/",
+   "method": "PATCH",
+   "path": "/api/v1/workspaces/{slug}/projects/{project_id}/members/{pk}/",
+   "check": "status_code_conformance",
+   "type": "UndefinedStatusCode",
+   "message": "Received: 400\nDocumented: 200",
+   "status": 400,
+   "kind": "failure"
+  },
+  {
+   "label": "PATCH /api/v1/workspaces/{slug}/projects/{project_id}/modules/{pk}/",
+   "method": "PATCH",
+   "path": "/api/v1/workspaces/{slug}/projects/{project_id}/modules/{pk}/",
+   "check": "response_schema_conformance",
+   "type": "JsonSchemaError",
+   "message": "\"name\" is a required property\n\nValidated against the response schema for status code 400.\n\nSchema at /components/schemas/Module:\n\n    {\n        \"required\": [\n            \"name\"\n        ],\n        \"type\": \"object\",\n        \"description\": \"Comprehensive module serializer with work item metrics an...\n        \"properties\": {\n            \"id\": {\n                \"type\": \"string\",\n                \"format\": \"uuid\",\n                \"readOnly\": true\n            },\n            \"total_issues\": {\n                \"type\": \"integer\",\n                \"readOnly\": true\n            },\n            \"cancelled_issues\": {\n                \"type\": \"integer\",\n                \"readOnly\": true\n        // Output truncated...\n    }\n\nValue:\n\n    {\n        \"non_field_errors\": [\n            \"Modules are not enabled for this project\"\n        ]\n    }",
+   "status": 400,
+   "kind": "failure"
+  },
+  {
+   "label": "PATCH /api/v1/workspaces/{slug}/projects/{project_id}/project-members/{pk}/",
+   "method": "PATCH",
+   "path": "/api/v1/workspaces/{slug}/projects/{project_id}/project-members/{pk}/",
+   "check": "status_code_conformance",
+   "type": "UndefinedStatusCode",
+   "message": "Received: 400\nDocumented: 200",
+   "status": 400,
+   "kind": "failure"
+  },
+  {
+   "label": "PATCH /api/v1/workspaces/{slug}/stickies/{pk}/",
+   "method": "PATCH",
+   "path": "/api/v1/workspaces/{slug}/stickies/{pk}/",
+   "check": "status_code_conformance",
+   "type": "UndefinedStatusCode",
+   "message": "Received: 400\nDocumented: 401, 403, 404, 200",
+   "status": 400,
+   "kind": "failure"
+  }
+ ],
+ "stale_entries": [],
+ "vacuous": [],
+ "accepted_by_entry": {}
+}

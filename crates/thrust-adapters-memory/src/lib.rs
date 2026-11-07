@@ -49,6 +49,9 @@ struct DbState {
     projects: HashMap<ProjectId, WorkspaceId>,
     /// The `projects` table's other columns (migration 0010); `projects` above is its id-to-workspace index.
     project_rows: HashMap<ProjectId, ProjectRow>,
+    /// The projects that were deleted (migration 0015), with the time: a deleted project leaves `projects` and `project_rows`, which
+    /// every read goes through, as `deleted_at IS NULL` does in Postgres, and its id stays taken (the primary key).
+    deleted_projects: HashMap<ProjectId, (ProjectRow, Timestamp)>,
     /// `project_user_properties` (migrations 0010 and 0012): a member's own settings for a project, and where their list puts it.
     project_user_props: HashMap<(ProjectId, UserId), ProjectUserProperties>,
     /// `states` and `labels` (migration 0012), in the order they were written.
@@ -106,6 +109,22 @@ fn member_user(s: &DbState, user: UserId) -> MemberUser {
 impl DbState {
     fn user_is_active(&self, user: UserId) -> bool {
         self.users.get(&user).is_some_and(|u| u.is_active)
+    }
+
+    /// Every live project of the scope's workspace with the caller's role and place in it, unfiltered and unordered: the two
+    /// project listings choose who sees what, and in which order.
+    fn listings(&self, scope: &WorkspaceScope) -> Vec<ProjectListing> {
+        let (ws, user) = (scope.workspace_id(), scope.user_id());
+        self.project_rows
+            .values()
+            .filter(|p| p.workspace_id == ws)
+            .map(|p| ProjectListing {
+                project: p.clone(),
+                // the member row must name the project's own workspace (the join on `m.workspace_id` in Postgres)
+                role: self.memberships.get(&(p.id, user)).filter(|m| m.workspace_id == ws).map(|m| m.role),
+                sort_order: self.project_user_props.get(&(p.id, user)).map(|up| up.sort_order),
+            })
+            .collect()
     }
 }
 
@@ -403,18 +422,10 @@ impl Database for MemoryDatabase {
     }
 
     async fn workspace_projects(&self, scope: &WorkspaceScope) -> Result<Vec<ProjectListing>, DbError> {
-        let (ws, user) = (scope.workspace_id(), scope.user_id());
         let s = self.state.lock_unpoisoned();
         let mut out: Vec<ProjectListing> = s
-            .project_rows
-            .values()
-            .filter(|p| p.workspace_id == ws)
-            .map(|p| ProjectListing {
-                project: p.clone(),
-                // the member row must name the project's own workspace (the join on `m.workspace_id` in Postgres)
-                role: s.memberships.get(&(p.id, user)).filter(|m| m.workspace_id == ws).map(|m| m.role),
-                sort_order: s.project_user_props.get(&(p.id, user)).map(|up| up.sort_order),
-            })
+            .listings(scope)
+            .into_iter()
             .filter(|l| match scope.role() {
                 Role::Admin => true,
                 Role::Member => l.role.is_some() || l.project.network == ProjectNetwork::Public,
@@ -423,6 +434,30 @@ impl Database for MemoryDatabase {
             .collect();
         out.sort_by(|a, b| b.project.created_at.cmp(&a.project.created_at).then(b.project.id.cmp(&a.project.id)));
         Ok(out)
+    }
+
+    async fn visible_projects(&self, scope: &WorkspaceScope) -> Result<Vec<ProjectListing>, DbError> {
+        let s = self.state.lock_unpoisoned();
+        let mut out: Vec<ProjectListing> = s
+            .listings(scope)
+            .into_iter()
+            .filter(|l| l.role.is_some() || l.project.network == ProjectNetwork::Public)
+            .collect();
+        out.sort_by(|a, b| a.project.created_at.cmp(&b.project.created_at).then(a.project.id.cmp(&b.project.id)));
+        Ok(out)
+    }
+
+    async fn delete_project(&self, scope: &WorkspaceScope, id: ProjectId, at: Timestamp) -> Result<bool, DbError> {
+        let mut s = self.state.lock_unpoisoned();
+        if s.projects.get(&id) != Some(&scope.workspace_id()) {
+            return Ok(false);
+        }
+        // the row leaves the two places every read goes through
+        s.projects.remove(&id);
+        if let Some(row) = s.project_rows.remove(&id) {
+            s.deleted_projects.insert(id, (row, at));
+        }
+        Ok(true)
     }
 
     async fn ensure_sidebar_preferences(
@@ -485,7 +520,7 @@ impl Database for MemoryDatabase {
         }
         // the primary key and the two unique indexes (in the order Postgres creates them), then the foreign keys of the users the
         // rows name, then the states' own unique indexes: all of it checked before anything is written, as a transaction is
-        if s.projects.contains_key(&row.id) {
+        if s.projects.contains_key(&row.id) || s.deleted_projects.contains_key(&row.id) {
             return Err(DbError::Conflict("projects_pkey".into()));
         }
         if s.project_rows.values().any(|o| o.workspace_id == ws && o.identifier == row.identifier) {

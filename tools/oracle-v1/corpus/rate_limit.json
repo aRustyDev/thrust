@@ -1,0 +1,226 @@
+{
+ "exchanges": [
+  {
+   "expect": [
+    200
+   ],
+   "name": "call-1",
+   "request": {
+    "auth": "ratelimit",
+    "body": null,
+    "content_type": null,
+    "method": "GET",
+    "path": "/api/v1/users/me/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "avatar": "",
+     "avatar_url": null,
+     "display_name": "oracle_owner",
+     "email": "oracle-owner@example.test",
+     "first_name": "Olive",
+     "id": "<user:owner>",
+     "last_name": "Owner"
+    },
+    "headers": {
+     "allow": "GET",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "4",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 200
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    200
+   ],
+   "name": "call-2",
+   "request": {
+    "auth": "ratelimit",
+    "body": null,
+    "content_type": null,
+    "method": "GET",
+    "path": "/api/v1/users/me/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "avatar": "",
+     "avatar_url": null,
+     "display_name": "oracle_owner",
+     "email": "oracle-owner@example.test",
+     "first_name": "Olive",
+     "id": "<user:owner>",
+     "last_name": "Owner"
+    },
+    "headers": {
+     "allow": "GET",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "3",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 200
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    200
+   ],
+   "name": "call-3",
+   "request": {
+    "auth": "ratelimit",
+    "body": null,
+    "content_type": null,
+    "method": "GET",
+    "path": "/api/v1/users/me/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "avatar": "",
+     "avatar_url": null,
+     "display_name": "oracle_owner",
+     "email": "oracle-owner@example.test",
+     "first_name": "Olive",
+     "id": "<user:owner>",
+     "last_name": "Owner"
+    },
+    "headers": {
+     "allow": "GET",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "2",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 200
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    200
+   ],
+   "name": "call-4",
+   "request": {
+    "auth": "ratelimit",
+    "body": null,
+    "content_type": null,
+    "method": "GET",
+    "path": "/api/v1/users/me/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "avatar": "",
+     "avatar_url": null,
+     "display_name": "oracle_owner",
+     "email": "oracle-owner@example.test",
+     "first_name": "Olive",
+     "id": "<user:owner>",
+     "last_name": "Owner"
+    },
+    "headers": {
+     "allow": "GET",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "1",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 200
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    200
+   ],
+   "name": "call-5",
+   "request": {
+    "auth": "ratelimit",
+    "body": null,
+    "content_type": null,
+    "method": "GET",
+    "path": "/api/v1/users/me/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "avatar": "",
+     "avatar_url": null,
+     "display_name": "oracle_owner",
+     "email": "oracle-owner@example.test",
+     "first_name": "Olive",
+     "id": "<user:owner>",
+     "last_name": "Owner"
+    },
+    "headers": {
+     "allow": "GET",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "0",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 200
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    429
+   ],
+   "name": "call-6",
+   "request": {
+    "auth": "ratelimit",
+    "body": null,
+    "content_type": null,
+    "method": "GET",
+    "path": "/api/v1/users/me/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "error_code": 5900,
+     "error_message": "RATE_LIMIT_EXCEEDED"
+    },
+    "headers": {
+     "allow": "GET",
+     "content-type": "application/json",
+     "retry-after": "<int>"
+    },
+    "status": 429
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    429
+   ],
+   "name": "call-7",
+   "request": {
+    "auth": "ratelimit",
+    "body": null,
+    "content_type": null,
+    "method": "GET",
+    "path": "/api/v1/users/me/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "error_code": 5900,
+     "error_message": "RATE_LIMIT_EXCEEDED"
+    },
+    "headers": {
+     "allow": "GET",
+     "content-type": "application/json",
+     "retry-after": "<int>"
+    },
+    "status": 429
+   },
+   "surprise": false
+  }
+ ],
+ "normalisation": "oracle/normalise.yaml",
+ "pinned_commit": "ba85d4d3d332b5380bebca4b9e0143b1127de907",
+ "resource": "rate_limit"
+}

@@ -771,6 +771,17 @@ pub trait Database: Send + Sync {
     /// project's own workspace, as in `project_roles`.
     async fn workspace_projects(&self, scope: &WorkspaceScope) -> Result<Vec<ProjectListing>, DbError>;
 
+    /// The projects of the workspace the caller sees by Plane's v1 rule, which does not look at their role in the workspace: the
+    /// ones they are a member of, and the public ones (so a guest sees a public project they are not in, and an admin does not
+    /// see a secret one they are not in). Archived ones are in; deleted ones never are. Oldest first (ties by id): the caller
+    /// orders them as the request asks. One statement.
+    async fn visible_projects(&self, scope: &WorkspaceScope) -> Result<Vec<ProjectListing>, DbError>;
+
+    /// Delete the project of the scope's workspace, as Plane does: the row stays, marked with `at`, and every read leaves it out
+    /// (a name and a key it held are free again). Its work items, states, labels and history are kept. `false` when the workspace
+    /// has no such project, or it is already deleted.
+    async fn delete_project(&self, scope: &WorkspaceScope, id: ProjectId, at: Timestamp) -> Result<bool, DbError>;
+
     /// Make the caller's sidebar rows for this workspace that are not there yet, from `defaults` (at time `at`), and return
     /// all of them: by `sort_order`, ties by key. A row that exists is left exactly as it is, so two first visits at once
     /// make one row each.

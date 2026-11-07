@@ -44,9 +44,10 @@ ALTER TABLE projects ADD CONSTRAINT projects_project_lead_fkey FOREIGN KEY (proj
 ALTER TABLE projects DROP CONSTRAINT IF EXISTS projects_default_assignee_fkey;
 ALTER TABLE projects ADD CONSTRAINT projects_default_assignee_fkey FOREIGN KEY (default_assignee) REFERENCES users (id);
 
--- a project's name and its key are each unique in its workspace (exact match: `Plane` and `plane` are two names)
-CREATE UNIQUE INDEX IF NOT EXISTS projects_workspace_identifier_key ON projects (workspace_id, identifier);
-CREATE UNIQUE INDEX IF NOT EXISTS projects_workspace_name_key ON projects (workspace_id, name);
+-- A project's name and its key are each unique in its workspace (exact match: `Plane` and `plane` are two names). The two unique
+-- indexes (`projects_workspace_identifier_key`, `projects_workspace_name_key`) are made by 0015, which adds soft deletion and makes
+-- them unique among the projects that are not deleted. They are not made here: `migrate` runs every file on every start, so this
+-- file would make the plain unique index again after 0015 dropped it, and that fails once a deleted project's name is used again.
 
 -- A person's row in a project: an id of its own, their view settings, a place in the project's own member list, who made it and
 -- when. The three settings are objects; the app reads the pin's defaults for a key a row does not set (the compat layer fills

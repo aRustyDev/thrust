@@ -1,0 +1,130 @@
+{
+  "activities": {
+    "i3:1": "fd3029ce-396d-5c9a-9777-51e0498ed513",
+    "i3:2": "b5c07cbf-dd0d-5fae-919d-5cb92169b6db"
+  },
+  "comments": {
+    "i3:1": "2be7009f-ed90-5440-8302-d36e6b17f934",
+    "i3:2": "aadec035-c1ef-5314-a4ea-1413c2762a41"
+  },
+  "cycle": "486f6de6-1680-5564-bf90-d4acfbe13bd4",
+  "issues": {
+    "b1": {
+      "id": "54611501-5eef-5396-ad54-49ba3ffed4fc",
+      "sequence_id": 1
+    },
+    "b2": {
+      "id": "6bc0d69b-4667-5b0a-a6e1-aee96bd5a26d",
+      "sequence_id": 2
+    },
+    "i1": {
+      "id": "b102151f-b2ed-5c06-9e49-c0a9bdea422a",
+      "sequence_id": 1
+    },
+    "i2": {
+      "id": "b260c543-dbc6-5547-b6a6-b001212db360",
+      "sequence_id": 2
+    },
+    "i3": {
+      "id": "34317382-ae0d-533c-abd8-85abc9e48d85",
+      "sequence_id": 3
+    },
+    "i4": {
+      "id": "60c4e970-daed-5ee2-bb7e-408abcf5da44",
+      "sequence_id": 4
+    },
+    "i5": {
+      "id": "a750e900-e135-5e78-959f-07f1472f5341",
+      "sequence_id": 5
+    },
+    "i6": {
+      "id": "a7338e44-cf47-5616-9f61-3fc85f09a2b0",
+      "sequence_id": 6
+    },
+    "i7": {
+      "id": "2effdc31-8730-537a-ab13-684df4b81b80",
+      "sequence_id": 7
+    },
+    "i8": {
+      "id": "63512d33-347e-5bd0-a3f6-01ef6ee44839",
+      "sequence_id": 8
+    },
+    "i9": {
+      "id": "1d86b369-a61d-56c4-911c-2f375cd13806",
+      "sequence_id": 9
+    }
+  },
+  "labels": {
+    "alpha:bug": "814053c2-86e3-5623-8b0a-11805bdac1f3",
+    "alpha:docs": "a5ff889a-03d9-5a15-9aff-4e45a84ad797",
+    "alpha:feature": "fd987583-7d3e-5608-a6e8-f19a8372b252",
+    "beta:bug": "11e75990-621d-5316-b38d-401bcff6633f",
+    "beta:docs": "725ff877-46c6-511e-8838-469e8032ded5",
+    "beta:feature": "a728837c-9ddc-56b5-b487-cd9b39e482da"
+  },
+  "links": {
+    "i3:1": "641c5df5-5249-58ca-b7a5-21c542a50c09"
+  },
+  "module": "c2292daf-3cef-5227-84e0-efa4fe50f6cc",
+  "project_members": {
+    "alpha:guest": "12a30930-1a9d-5319-837e-71209441531c",
+    "alpha:member": "ec48bf06-55e4-53bc-bd07-211d52fcff44",
+    "alpha:owner": "2ef0f684-e731-583e-a23b-4c9733a96f58",
+    "beta:owner": "45e99d71-1b53-55ba-940d-17013a6a0c31"
+  },
+  "projects": {
+    "alpha": {
+      "id": "af77c157-a476-525a-a3c0-ffe11dcb05f5",
+      "identifier": "ORA"
+    },
+    "beta": {
+      "id": "64593161-20cf-56d1-9603-bc3cf00b8190",
+      "identifier": "ORB"
+    }
+  },
+  "states": {
+    "alpha:Backlog": "15a21a84-5fe1-561f-a113-cceab7307d0f",
+    "alpha:Cancelled": "f7fd976c-c898-59e6-8869-c2228f8ac269",
+    "alpha:Done": "8bb723b1-7b78-5f53-bd71-d8985008848a",
+    "alpha:In Progress": "293c6f2b-cf49-576b-8b72-9a1d237a99c8",
+    "alpha:Todo": "1deb4c60-fc1b-5151-bfc7-82c52b7be20e",
+    "alpha:Triage": "7910b0e1-70f3-52d3-b732-e6b9ce1ab66a",
+    "beta:Backlog": "1a49e020-21b1-560d-b770-797a3c89e81c",
+    "beta:Cancelled": "1354ee91-4197-5656-98d4-c06c2d943f19",
+    "beta:Done": "62237ef4-5593-5ee3-bf2d-86c49c014a0d",
+    "beta:In Progress": "de1462a2-4d46-5be1-8a20-94b82ecf21d6",
+    "beta:Todo": "7e30bd23-1fbc-517b-9b61-f481a2630de3",
+    "beta:Triage": "519b162b-f933-5cea-9ece-1ea75d635dd2"
+  },
+  "tokens": {
+    "expired": "plane_api_oracle_expired_00000000000000000006",
+    "guest": "plane_api_oracle_guest_00000000000000000003",
+    "inactive": "plane_api_oracle_inactive_0000000000000000007",
+    "member": "plane_api_oracle_member_0000000000000000002",
+    "outsider": "plane_api_oracle_outsider_000000000000004",
+    "owner": "plane_api_oracle_owner_00000000000000000001",
+    "ratelimit": "plane_api_oracle_ratelimit_000000000000005"
+  },
+  "users": {
+    "guest": {
+      "email": "oracle-guest@example.test",
+      "id": "d8b2853d-973d-538d-a2c4-dfdc57770d70"
+    },
+    "member": {
+      "email": "oracle-member@example.test",
+      "id": "9405a630-5f87-5e16-b641-708f38bed978"
+    },
+    "outsider": {
+      "email": "oracle-outsider@example.test",
+      "id": "4d18703b-d6e8-51ac-aad0-7d6d587c2329"
+    },
+    "owner": {
+      "email": "oracle-owner@example.test",
+      "id": "787e49cb-0616-5783-93de-5cb4534c40b3"
+    }
+  },
+  "workspace": {
+    "id": "6e1def4d-f7e0-5d3d-a39f-838dfcfdc845",
+    "slug": "oracle-ws"
+  }
+}

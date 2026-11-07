@@ -1,0 +1,27 @@
+# Plane v1 oracle pin -- spike 0008 / bead plane-b6a.
+# Machine-readable: KEY=VALUE, one per line, '#' comments. Parsed by oracle/scripts/verify-pin.sh.
+#
+# The pinned Plane code is the MERGE COMMIT below (fork main + upstream preview). The oracle/
+# harness commits that follow it must not touch apps/api; apps_api_tree lets anyone prove that.
+
+pin_tag=oracle/v1-pin-20261018
+pin_tag_object=f9b363ac6d715c3219d136b887aba9b53e0f353e
+pinned_commit=ba85d4d3d332b5380bebca4b9e0143b1127de907
+apps_api_tree=5827f6f67f5c00fc7815332808c89bb9d6080914
+date=2026-10-18
+
+# What was merged (git merge, not rebase).
+fork_base_commit=300c2009d4fdcf5369b92e108da0c2de4212eb4a
+fork_base_ref=origin/main (aRustyDev/plane)
+upstream_remote=https://github.com/makeplane/plane.git
+upstream_ref=preview
+upstream_sha=879ce8b5c6b4fe21efff4789a7062747f46d6383
+upstream_commit_date=2026-10-17
+upstream_version=1.4.2
+upstream_describe=v1.4.2-rc1-111-g879ce8b5c6
+
+# Fork version label (release-please owns it); NOT the upstream version.
+fork_package_version=1.4.3
+
+# Pushed? No. The branch and the tag are local only.
+pushed=false

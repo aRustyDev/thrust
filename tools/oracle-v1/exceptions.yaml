@@ -1,0 +1,303 @@
+# Exception register for the Plane v1 oracle (Q-0122.2). Format documented in oracle/NORMALISATION.md.
+#
+# One file, three jobs:
+#   gate              -- how the conformance gate is configured (so the gate is reproducible)
+#   scope_exclusions  -- operations the gate does NOT exercise, and what covers them instead
+#   entries           -- known, justified failures the gate ACCEPTS (each one is a recorded difference)
+#
+# Nothing is accepted silently: an entry needs a reason and a rust_expectation, an unmatched failure
+# fails the gate, and a non-optional entry that matches nothing is STALE and also fails the gate.
+format_version: 1
+
+gate:
+  schemathesis: "4.31.1"          # pinned; bump deliberately, results are tool-version dependent
+  checks: [not_a_server_error, status_code_conformance, content_type_conformance, response_schema_conformance]
+  phases: [fuzzing]               # the `examples` phase uses schema literals (slug "my-workspace") and bypasses the seeded-id hook
+  seed: 1
+  deterministic: true
+  max_examples: 10
+  workers: 1                      # one worker: parallel PATCH/POST interleavings would make the failure set order-dependent
+  # Vacuity guard. A run that never reached the handlers proves nothing, so these floors are part
+  # of the gate. Measured on the pin, then rounded down; raise them if the schema grows.
+  min_operations_tested: 100
+  min_operations_with_2xx: 40
+
+scope_exclusions:
+  - id: SX-001
+    method: DELETE
+    reason: >
+      Deleting the seeded project/work items/labels mid-run would turn every later request into a 404
+      and make the rest of the run vacuous. Destructive operations are exercised on SCRATCH entities
+      created by the corpus recorder instead.
+    covered_by:
+      - "harness/record_corpus.py: create-then-delete of SCRATCH projects, states, labels, work items, comments, links, members and a user asset (the P0 resources)"
+      - "NOT covered by anything yet [unverified]: DELETE on cycles, modules, intake, stickies, invitations, relations, attachments of a seeded item. Wave-2 work."
+  - id: SX-002
+    path_regex: "/(archive|unarchive|transfer-work-items|transfer-issues)/$"
+    reason: >
+      State transitions on the seeded project/cycle/module (archive, unarchive, transfer) change what
+      every other operation can see, and are not idempotent under fuzzing.
+    covered_by:
+      - "harness/record_corpus.py: archive/unarchive of a SCRATCH project only"
+      - "NOT covered by anything yet [unverified]: cycle and module archive/unarchive, cycle/work-item transfer. Cycles and modules are outside the P0 resource list of spike 0008."
+
+entries:
+- id: EX-001
+  kind: upstream-bug
+  applies_to: conformance
+  status: active
+  optional: false
+  match:
+    check: not_a_server_error
+    failure_type: ServerError
+    operations:
+    - GET /api/v1/workspaces/{slug}/members-lite/
+    - GET /api/v1/workspaces/{slug}/projects/{project_id}/project-members-lite/
+    - GET /api/v1/workspaces/{slug}/projects/{project_id}/work-items/
+    - GET /api/v1/workspaces/{slug}/projects/{project_id}/work-items/{issue_id}/comments/
+    - POST /api/v1/workspaces/{slug}/assets/
+    - POST /api/v1/workspaces/{slug}/projects/{project_id}/intake-issues/
+    - POST /api/v1/workspaces/{slug}/projects/{project_id}/issues/
+    - POST /api/v1/workspaces/{slug}/projects/{project_id}/work-items/
+  reason: 'Unhandled exceptions return HTTP 500. Root causes seen: per_page=0 -> ZeroDivisionError and per_page<0
+    -> ''Negative indexing'' in utils/paginator.py; invalid fields/expand/payload shapes; and POST /workspaces/{slug}/assets/
+    raises TypeError because api/views/asset.py calls S3Storage(request=..., is_server=True) while S3Storage.__init__(self,
+    request=None) has no such parameter (present on upstream preview 879ce8b5c6, so not a fork or merge artefact).
+    Incomplete (research/0005, round 27): other 500 sources exist, a `deleted_at` body on work-item create (PQ-404),
+    a non-object `issue` on intake create (PQ-405), array bodies (PQ-406) and two more `is_server` sites (PQ-401).
+    Owner decision, round 27 (Q-0033.2, Q-0122.3, ADR-0031): reproduce all of them, as a HANDLED error with the same
+    status and body, never a crash of the process.'
+  evidence: gate run on a fresh seed, pinned commit ba85d4d3d3, schemathesis 4.31.1, seed 1, deterministic (oracle/results/conformance-baseline.json)
+  rust_expectation: reproduce
+  deviation_ref: null
+- id: EX-002
+  kind: upstream-bug
+  applies_to: conformance
+  status: active
+  optional: false
+  match:
+    check: status_code_conformance
+    operations:
+    - GET /api/v1/workspaces/{slug}/members-lite/
+    - GET /api/v1/workspaces/{slug}/projects/{project_id}/project-members-lite/
+    - GET /api/v1/workspaces/{slug}/projects/{project_id}/work-items/
+    - GET /api/v1/workspaces/{slug}/projects/{project_id}/work-items/{issue_id}/comments/
+    - POST /api/v1/workspaces/{slug}/assets/
+    - POST /api/v1/workspaces/{slug}/projects/{project_id}/intake-issues/
+    - POST /api/v1/workspaces/{slug}/projects/{project_id}/issues/
+    - POST /api/v1/workspaces/{slug}/projects/{project_id}/work-items/
+    message_regex: 'Received: 500'
+  reason: 'Same operations and causes as EX-001, seen through the status-code check: 500 is not a documented response.
+    Reproduced as a handled 500 (round 27, Q-0033.2), like EX-001.'
+  evidence: gate run on a fresh seed, pinned commit ba85d4d3d3, schemathesis 4.31.1, seed 1, deterministic (oracle/results/conformance-baseline.json)
+  rust_expectation: reproduce
+  deviation_ref: null
+- id: EX-003
+  kind: upstream-schema-defect
+  applies_to: conformance
+  status: active
+  optional: false
+  match:
+    check: status_code_conformance
+    methods:
+    - GET
+    operations:
+    - GET /api/v1/workspaces/{slug}/projects/{project_id}/archived-cycles/
+    - GET /api/v1/workspaces/{slug}/projects/{project_id}/archived-modules/
+    - GET /api/v1/workspaces/{slug}/projects/{project_id}/cycles-lite/
+    - GET /api/v1/workspaces/{slug}/projects/{project_id}/cycles/
+    - GET /api/v1/workspaces/{slug}/projects/{project_id}/cycles/{cycle_id}/cycle-issues/
+    - GET /api/v1/workspaces/{slug}/projects/{project_id}/intake-issues/
+    - GET /api/v1/workspaces/{slug}/projects/{project_id}/issues/{issue_id}/comments/
+    - GET /api/v1/workspaces/{slug}/projects/{project_id}/modules-lite/
+    - GET /api/v1/workspaces/{slug}/projects/{project_id}/modules/
+    - GET /api/v1/workspaces/{slug}/projects/{project_id}/modules/{module_id}/module-issues/
+    - GET /api/v1/workspaces/{slug}/projects/{project_id}/states/
+    message_regex: 'Received: 400'
+  reason: Invalid query parameters (cursor, per_page, order_by, ...) are rejected with 400, which the schema does
+    not list for these list operations (it documents 200/401/403/404 only). The status code IS the behaviour.
+    Partly measures the fixture (research/0005, PQ-056, PQ-314) because the seeded projects have cycle_view, module_view
+    and intake_view switched off, so the cycle, module and intake operations always answer 400 `non_field_errors`.
+  evidence: gate run on a fresh seed, pinned commit ba85d4d3d3, schemathesis 4.31.1, seed 1, deterministic (oracle/results/conformance-baseline.json)
+  rust_expectation: reproduce
+  deviation_ref: null
+- id: EX-004
+  kind: upstream-schema-defect
+  applies_to: conformance
+  status: active
+  optional: false
+  match:
+    check: status_code_conformance
+    methods:
+    - POST
+    - PATCH
+    operations:
+    - PATCH /api/v1/assets/user-assets/{asset_id}/
+    - PATCH /api/v1/workspaces/{slug}/projects/{project_id}/cycles/{pk}/
+    - PATCH /api/v1/workspaces/{slug}/projects/{project_id}/members/{pk}/
+    - PATCH /api/v1/workspaces/{slug}/projects/{project_id}/project-members/{pk}/
+    - PATCH /api/v1/workspaces/{slug}/stickies/{pk}/
+    - POST /api/v1/workspaces/{slug}/invitations/
+    - POST /api/v1/workspaces/{slug}/projects/
+    - POST /api/v1/workspaces/{slug}/projects/{project_id}/cycles/
+    - POST /api/v1/workspaces/{slug}/projects/{project_id}/members/
+    - POST /api/v1/workspaces/{slug}/projects/{project_id}/project-members/
+    message_regex: 'Received: 400'
+  reason: Invalid request bodies return 400, which the schema does not list for these create/update operations.
+    Partly measures the fixture (research/0005, PQ-056, PQ-314) because the seeded projects have cycle_view switched
+    off, so every cycle create or PATCH answers the same 400 `non_field_errors` and those success shapes were never exercised.
+  evidence: gate run on a fresh seed, pinned commit ba85d4d3d3, schemathesis 4.31.1, seed 1, deterministic (oracle/results/conformance-baseline.json)
+  rust_expectation: reproduce
+  deviation_ref: null
+- id: EX-005
+  kind: upstream-schema-defect
+  applies_to: conformance
+  status: active
+  optional: false
+  match:
+    check: status_code_conformance
+    operations:
+    - GET /api/v1/workspaces/{slug}/invitations/{pk}/
+    - PATCH /api/v1/workspaces/{slug}/invitations/{pk}/
+    message_regex: 'Received: 404'
+  reason: Invitations detail/update return 404 for an unknown id; the schema documents only 200 (these viewset routes
+    are undecorated).
+  evidence: gate run on a fresh seed, pinned commit ba85d4d3d3, schemathesis 4.31.1, seed 1, deterministic (oracle/results/conformance-baseline.json)
+  rust_expectation: reproduce
+  deviation_ref: null
+- id: EX-006
+  kind: upstream-schema-defect
+  applies_to: conformance
+  status: active
+  optional: false
+  match:
+    check: response_schema_conformance
+    failure_type: JsonSchemaError
+    operations:
+    - GET /api/v1/users/me/
+    - GET /api/v1/workspaces/{slug}/members/
+    - GET /api/v1/workspaces/{slug}/projects-lite/
+    - GET /api/v1/workspaces/{slug}/projects/
+    - GET /api/v1/workspaces/{slug}/projects/{pk}/
+    - PATCH /api/v1/workspaces/{slug}/projects/{pk}/
+    message_regex: null is not of type
+  reason: 'Responses contain null for fields the schema declares as a non-nullable string (e.g. avatar_url, cover_image_url).
+    A client built from the schema would reject real responses. If the Rust schema declares these nullable, the
+    oasdiff gate will report a break: reproduce the BEHAVIOUR and record a schema-diff exception.'
+  evidence: gate run on a fresh seed, pinned commit ba85d4d3d3, schemathesis 4.31.1, seed 1, deterministic (oracle/results/conformance-baseline.json)
+  rust_expectation: reproduce
+  deviation_ref: null
+- id: EX-007
+  kind: upstream-schema-defect
+  applies_to: conformance
+  status: active
+  optional: false
+  match:
+    check: response_schema_conformance
+    failure_type: JsonSchemaError
+    operations:
+    - GET /api/v1/workspaces/{slug}/projects/{project_id}/issues/{issue_id}/activities/
+    - GET /api/v1/workspaces/{slug}/projects/{project_id}/issues/{issue_id}/links/
+    - GET /api/v1/workspaces/{slug}/projects/{project_id}/issues/{pk}/
+    - GET /api/v1/workspaces/{slug}/projects/{project_id}/work-items/{issue_id}/links/
+    - GET /api/v1/workspaces/{slug}/projects/{project_id}/work-items/{pk}/
+    message_regex: is a required property
+  reason: The `fields` (and `expand`) query parameters project the response, so required properties are legitimately
+    absent. The schema does not model projection. Seen on work-item detail and the activities/links sub-resources.
+  evidence: gate run on a fresh seed, pinned commit ba85d4d3d3, schemathesis 4.31.1, seed 1, deterministic (oracle/results/conformance-baseline.json)
+  rust_expectation: reproduce
+  deviation_ref: null
+- id: EX-008
+  kind: upstream-schema-defect
+  applies_to: conformance
+  status: active
+  optional: false
+  match:
+    check: response_schema_conformance
+    failure_type: JsonSchemaError
+    operations:
+    - GET /api/v1/workspaces/{slug}/projects/{project_id}/members/{pk}/
+    - GET /api/v1/workspaces/{slug}/projects/{project_id}/project-members/{pk}/
+    message_regex: '"member" is a required property'
+  reason: 'Project-member detail responses (no query parameters) lack the `member` property that the schema marks
+    required: the schema describes a different shape from what is served.'
+  evidence: gate run on a fresh seed, pinned commit ba85d4d3d3, schemathesis 4.31.1, seed 1, deterministic (oracle/results/conformance-baseline.json)
+  rust_expectation: reproduce
+  deviation_ref: null
+- id: EX-009
+  kind: upstream-schema-defect
+  applies_to: conformance
+  status: active
+  optional: false
+  match:
+    check: response_schema_conformance
+    failure_type: JsonSchemaError
+    operations:
+    - GET /api/v1/workspaces/{slug}/projects/{project_id}/issues/{issue_id}/issue-attachments/
+    - GET /api/v1/workspaces/{slug}/projects/{project_id}/members/
+    - GET /api/v1/workspaces/{slug}/projects/{project_id}/project-members/
+    - GET /api/v1/workspaces/{slug}/projects/{project_id}/work-items/{issue_id}/attachments/
+    - POST /api/v1/workspaces/{slug}/projects/{project_id}/cycles/{cycle_id}/cycle-issues/
+    - POST /api/v1/workspaces/{slug}/projects/{project_id}/modules/{module_id}/module-issues/
+    message_regex: is not of type \"object\"
+  reason: Plane returns a bare JSON array where the schema documents an object (project members lists, attachments
+    lists, cycle-issues / module-issues add). A new implementation must return an array, not the documented object.
+  evidence: gate run on a fresh seed, pinned commit ba85d4d3d3, schemathesis 4.31.1, seed 1, deterministic (oracle/results/conformance-baseline.json)
+  rust_expectation: reproduce
+  deviation_ref: null
+- id: EX-010
+  kind: upstream-schema-defect
+  applies_to: conformance
+  status: active
+  optional: false
+  match:
+    check: response_schema_conformance
+    failure_type: JsonSchemaError
+    operations:
+    - GET /api/v1/workspaces/{slug}/projects/{project_id}/issues/{issue_id}/activities/{pk}/
+    - GET /api/v1/workspaces/{slug}/projects/{project_id}/issues/{issue_id}/links/{pk}/
+    - GET /api/v1/workspaces/{slug}/projects/{project_id}/work-items/{issue_id}/activities/{pk}/
+    - GET /api/v1/workspaces/{slug}/projects/{project_id}/work-items/{issue_id}/links/{pk}/
+    - GET /api/v1/workspaces/{slug}/stickies/
+    - POST /api/v1/workspaces/{slug}/stickies/
+  reason: The schema documents a Paginated* envelope where Plane returns a single object (links/{pk}, activities/{pk})
+    and the sticky list/create bodies do not match their documented schema. Causes (research/0005, PQ-307, PQ-308) are
+    a drf-spectacular component-name collision on `Sticky` for the sticky mismatch, and a decorator documenting a dead
+    `pk is None` branch for the link and activity detail mismatch.
+  evidence: gate run on a fresh seed, pinned commit ba85d4d3d3, schemathesis 4.31.1, seed 1, deterministic (oracle/results/conformance-baseline.json)
+  rust_expectation: reproduce
+  deviation_ref: null
+- id: EX-011
+  kind: upstream-schema-defect
+  applies_to: conformance
+  status: active
+  optional: false
+  match:
+    check: response_schema_conformance
+    failure_type: JsonSchemaError
+    operations:
+    - GET /api/v1/workspaces/{slug}/issues/search/
+    - GET /api/v1/workspaces/{slug}/work-items/search/
+    message_regex: '"id" is a required property'
+  reason: The schema documents a flat `IssueSearch` whose items require `id`, but the body is an object wrapping the
+    results under an `issues` key (PQ-309). The results DO carry `id` (corpus work_items.json#search), so the failure is
+    the wrapper and not a missing key. Corrected in round 27 (research/0005), which had said the results omit `id`.
+  evidence: gate run on a fresh seed, pinned commit ba85d4d3d3, schemathesis 4.31.1, seed 1, deterministic (oracle/results/conformance-baseline.json)
+  rust_expectation: reproduce
+  deviation_ref: null
+- id: EX-012
+  kind: upstream-schema-defect
+  applies_to: conformance
+  status: active
+  optional: false
+  match:
+    check: response_schema_conformance
+    failure_type: JsonSchemaError
+    operations:
+    - PATCH /api/v1/workspaces/{slug}/projects/{project_id}/modules/{pk}/
+    message_regex: Validated against the response schema for status code 400
+  reason: 'The documented 400 response of module PATCH references the Module resource schema, so a real error body
+    ({"error": ...}) can never validate against it.'
+  evidence: gate run on a fresh seed, pinned commit ba85d4d3d3, schemathesis 4.31.1, seed 1, deterministic (oracle/results/conformance-baseline.json)
+  rust_expectation: reproduce
+  deviation_ref: null
