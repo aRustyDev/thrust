@@ -149,12 +149,12 @@ The plan records decisions and work about infrastructure that is not in this rep
   which repository holds the Cloudflare OpenTofu root (Q-0093.1). Nothing for either is here.
 - **Postgres hosting.** ADR-0094 (accepted) chooses Hyperdrive through Workers VPC and a tunnel to a CloudNativePG
   cluster, and its updates record that cluster as live on 2026-10-18, provisioned from the infrastructure
-  repository. The Hyperdrive hop is encrypted. Whether the database is authenticated depends on the cluster:
-  `thrust-pg-dev` serves a Cloudflare Origin CA server certificate and its VPC service verifies the chain
-  (`verify_ca`, measured on 2026-11-06), which does not tell Thrust's database from any other holder of an Origin
-  CA certificate, while `thrust-pg` still serves CNPG's private CA and runs with verification disabled, so its
-  database is not authenticated. The ADR names switching `thrust-pg` over as a condition for holding real data
-  (Q-0094.9). This repository contains only the adapter side (`HyperdriveConnector`).
+  repository. The Hyperdrive hop is encrypted, and both clusters serve a Cloudflare Origin CA server certificate
+  whose chain both VPC services verify (`verify_ca`; `thrust-pg-dev` since 2026-11-06, `thrust-pg` since
+  2026-11-07, measured). That check does not tell Thrust's database from any other holder of an Origin CA
+  certificate, so it narrows who can terminate the hop rather than proving the peer. The ADR named closing this as
+  a condition for holding real data (Q-0094.9); the infrastructure side is done. This repository contains only the
+  adapter side (`HyperdriveConnector`).
 - **The self-hosted twin and the Cloudflare topology** (ADR-0091 and ADR-0090) are only proposed.
 
 The ADRs are in `.agents/plans/contrail/adrs/infra/` and `.agents/plans/contrail/adrs/cd/`.
