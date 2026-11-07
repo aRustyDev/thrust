@@ -37,6 +37,7 @@ pub const MIGRATION_0011: &str = include_str!("../migrations/0011_workspace_user
 pub const MIGRATION_0012: &str = include_str!("../migrations/0012_projects.sql");
 pub const MIGRATION_0013: &str = include_str!("../migrations/0013_work_item_details.sql");
 pub const MIGRATION_0014: &str = include_str!("../migrations/0014_work_item_history.sql");
+pub const MIGRATION_0015: &str = include_str!("../migrations/0015_v1_surface.sql");
 
 pub async fn migrate(client: &Client) -> Result<(), tokio_postgres::Error> {
     client.batch_execute(MIGRATION_0001).await?;
@@ -52,7 +53,8 @@ pub async fn migrate(client: &Client) -> Result<(), tokio_postgres::Error> {
     client.batch_execute(MIGRATION_0011).await?;
     client.batch_execute(MIGRATION_0012).await?;
     client.batch_execute(MIGRATION_0013).await?;
-    client.batch_execute(MIGRATION_0014).await
+    client.batch_execute(MIGRATION_0014).await?;
+    client.batch_execute(MIGRATION_0015).await
 }
 
 pub trait ClientHandle: Send {
@@ -654,6 +656,18 @@ fn work_item_activity(r: &Row) -> WorkItemActivity {
     }
 }
 
+/// A project row of a listing query (`PROJECT_COLS`, the caller's `m_role` and their `up_sort_order`).
+fn listing_of(r: &Row) -> Result<ProjectListing, DbError> {
+    let role: Option<String> = r.get("m_role");
+    Ok(ProjectListing {
+        project: project_of(r)?,
+        role: role
+            .map(|s| Role::parse(&s).ok_or_else(|| DbError::Backend(format!("m_role holds '{s}', which is no role"))))
+            .transpose()?,
+        sort_order: r.get("up_sort_order"),
+    })
+}
+
 #[async_trait]
 impl Database for PgDatabase {
     async fn membership(&self, slug: &WorkspaceSlug, project: ProjectId, user: UserId) -> Result<Membership, DbError> {
@@ -665,7 +679,7 @@ impl Database for PgDatabase {
             .query_opt(
                 "SELECT w.id AS workspace_id, m.role AS role FROM workspaces w \
                  JOIN workspace_members wm ON wm.workspace_id = w.id AND wm.user_id = $3 AND wm.is_active \
-                 JOIN projects p ON p.workspace_id = w.id AND p.id = $2 \
+                 JOIN projects p ON p.workspace_id = w.id AND p.id = $2 AND p.deleted_at IS NULL \
                  LEFT JOIN project_members m \
                    ON m.project_id = p.id AND m.workspace_id = p.workspace_id AND m.user_id = $3 \
                  WHERE w.slug = $1",
@@ -941,7 +955,7 @@ impl Database for PgDatabase {
             .query(
                 // the project must really be in the workspace the member row names: a row that says otherwise is not a role
                 "SELECT m.project_id AS project_id, m.role AS role FROM project_members m \
-                 JOIN projects p ON p.id = m.project_id AND p.workspace_id = m.workspace_id \
+                 JOIN projects p ON p.id = m.project_id AND p.workspace_id = m.workspace_id AND p.deleted_at IS NULL \
                  WHERE m.workspace_id = $1 AND m.user_id = $2 ORDER BY m.project_id",
                 &[&scope.workspace_id().0, &scope.user_id().0],
             )
@@ -962,28 +976,48 @@ impl Database for PgDatabase {
                      LEFT JOIN project_members m \
                        ON m.project_id = p.id AND m.workspace_id = p.workspace_id AND m.user_id = $2 \
                      LEFT JOIN project_user_properties up ON up.project_id = p.id AND up.user_id = $2 \
-                     WHERE p.workspace_id = $1 AND ($3 OR m.role IS NOT NULL OR ($4 AND p.network = 'public')) \
+                     WHERE p.workspace_id = $1 AND p.deleted_at IS NULL \
+                       AND ($3 OR m.role IS NOT NULL OR ($4 AND p.network = 'public')) \
                      ORDER BY p.created_at DESC, p.id DESC"
                 ),
                 &[&scope.workspace_id().0, &scope.user_id().0, &all, &public],
             )
             .await
             .map_err(db_err)?;
-        rows.iter()
-            .map(|r| {
-                let role: Option<String> = r.get("m_role");
-                Ok(ProjectListing {
-                    project: project_of(r)?,
-                    role: role
-                        .map(|s| {
-                            Role::parse(&s)
-                                .ok_or_else(|| DbError::Backend(format!("m_role holds '{s}', which is no role")))
-                        })
-                        .transpose()?,
-                    sort_order: r.get("up_sort_order"),
-                })
-            })
-            .collect()
+        rows.iter().map(listing_of).collect()
+    }
+
+    async fn visible_projects(&self, scope: &WorkspaceScope) -> Result<Vec<ProjectListing>, DbError> {
+        // Plane's v1 rule, whatever the caller's role in the workspace: the projects they are in, and the public ones (a guest sees a
+        // public project they are not in, an admin does not see a secret one they are not in).
+        let c = self.conn().await?;
+        let rows = Pg(c.client())
+            .query(
+                &format!(
+                    "SELECT {PROJECT_COLS}, m.role AS m_role, up.sort_order AS up_sort_order FROM projects p \
+                     LEFT JOIN project_members m \
+                       ON m.project_id = p.id AND m.workspace_id = p.workspace_id AND m.user_id = $2 \
+                     LEFT JOIN project_user_properties up ON up.project_id = p.id AND up.user_id = $2 \
+                     WHERE p.workspace_id = $1 AND p.deleted_at IS NULL AND (m.role IS NOT NULL OR p.network = 'public') \
+                     ORDER BY p.created_at, p.id"
+                ),
+                &[&scope.workspace_id().0, &scope.user_id().0],
+            )
+            .await
+            .map_err(db_err)?;
+        rows.iter().map(listing_of).collect()
+    }
+
+    async fn delete_project(&self, scope: &WorkspaceScope, id: ProjectId, at: Timestamp) -> Result<bool, DbError> {
+        let c = self.conn().await?;
+        let n = Pg(c.client())
+            .execute(
+                "UPDATE projects SET deleted_at = $3 WHERE id = $1 AND workspace_id = $2 AND deleted_at IS NULL",
+                &[&id.0, &scope.workspace_id().0, &at],
+            )
+            .await
+            .map_err(db_err)?;
+        Ok(n == 1)
     }
 
     async fn ensure_sidebar_preferences(
@@ -1223,8 +1257,8 @@ impl Database for PgDatabase {
         let row = Pg(c.client())
             .query_one(
                 "SELECT \
-                   EXISTS (SELECT 1 FROM projects WHERE workspace_id = $1 AND name = $2 AND ($4::uuid IS NULL OR id <> $4)) AS name_taken, \
-                   EXISTS (SELECT 1 FROM projects WHERE workspace_id = $1 AND identifier = $3 AND ($4::uuid IS NULL OR id <> $4)) AS identifier_taken",
+                   EXISTS (SELECT 1 FROM projects WHERE workspace_id = $1 AND name = $2 AND deleted_at IS NULL AND ($4::uuid IS NULL OR id <> $4)) AS name_taken, \
+                   EXISTS (SELECT 1 FROM projects WHERE workspace_id = $1 AND identifier = $3 AND deleted_at IS NULL AND ($4::uuid IS NULL OR id <> $4)) AS identifier_taken",
                 &[&scope.workspace_id().0, &name, &identifier, &except],
             )
             .await
@@ -1243,7 +1277,13 @@ impl Database for PgDatabase {
         params.extend(replaced.iter().map(|c| c.1));
         let c = self.conn().await?;
         let n = Pg(c.client())
-            .execute(&format!("UPDATE projects SET {} WHERE id = $1 AND workspace_id = $2", set.join(", ")), &params)
+            .execute(
+                &format!(
+                    "UPDATE projects SET {} WHERE id = $1 AND workspace_id = $2 AND deleted_at IS NULL",
+                    set.join(", ")
+                ),
+                &params,
+            )
             .await
             .map_err(db_err)?;
         Ok(n == 1)
@@ -1261,7 +1301,7 @@ impl Database for PgDatabase {
                      FROM projects p \
                      LEFT JOIN project_members m ON m.project_id = p.id AND m.workspace_id = p.workspace_id AND m.user_id = $2 \
                      LEFT JOIN project_user_properties up ON up.project_id = p.id AND up.user_id = $2 \
-                     WHERE p.id = $3 AND p.workspace_id = $1"
+                     WHERE p.id = $3 AND p.workspace_id = $1 AND p.deleted_at IS NULL"
                 ),
                 &[&scope.workspace_id().0, &scope.user_id().0, &id.0],
             )
@@ -1300,7 +1340,7 @@ impl Database for PgDatabase {
                        COALESCE(pr.first_name, '') AS u_first_name, COALESCE(pr.last_name, '') AS u_last_name, \
                        COALESCE(pr.display_name, '') AS u_display_name, COALESCE(pr.avatar, '') AS u_avatar \
                      FROM project_members pm \
-                       JOIN projects p ON p.id = pm.project_id AND p.workspace_id = pm.workspace_id \
+                       JOIN projects p ON p.id = pm.project_id AND p.workspace_id = pm.workspace_id AND p.deleted_at IS NULL \
                        JOIN workspaces w ON w.id = p.workspace_id \
                        LEFT JOIN users u ON u.id = pm.user_id LEFT JOIN user_profiles pr ON pr.user_id = pm.user_id \
                      WHERE pm.workspace_id = $1 AND pm.project_id = $2 AND pm.user_id = $3"
@@ -1330,7 +1370,7 @@ impl Database for PgDatabase {
             .query(
                 &format!(
                     "SELECT {PMEMBER_COLS} FROM project_members pm \
-                       JOIN projects p ON p.id = pm.project_id AND p.workspace_id = pm.workspace_id \
+                       JOIN projects p ON p.id = pm.project_id AND p.workspace_id = pm.workspace_id AND p.deleted_at IS NULL \
                        JOIN workspace_members wm ON wm.workspace_id = pm.workspace_id AND wm.user_id = pm.user_id AND wm.is_active \
                      WHERE pm.workspace_id = $1 AND pm.project_id = $2 ORDER BY pm.created_at DESC, pm.id DESC"
                 ),
@@ -1352,7 +1392,7 @@ impl Database for PgDatabase {
         cl.execute(
             "INSERT INTO project_user_properties (id, project_id, workspace_id, user_id, filters, display_filters, display_properties, \
                rich_filters, preferences, sort_order, created_at, updated_at) \
-             SELECT $1, p.id, p.workspace_id, $4, $5, $6, $7, $8, $9, $10, $11, $12 FROM projects p WHERE p.id = $2 AND p.workspace_id = $3 \
+             SELECT $1, p.id, p.workspace_id, $4, $5, $6, $7, $8, $9, $10, $11, $12 FROM projects p WHERE p.id = $2 AND p.workspace_id = $3 AND p.deleted_at IS NULL \
              ON CONFLICT (project_id, user_id) DO NOTHING",
             &[
                 &new.id,
@@ -1430,7 +1470,7 @@ impl Database for PgDatabase {
             .query(
                 &format!(
                     "SELECT {STATE_COLS} FROM states st \
-                       JOIN projects p ON p.id = st.project_id AND p.workspace_id = st.workspace_id AND p.archived_at IS NULL \
+                       JOIN projects p ON p.id = st.project_id AND p.workspace_id = st.workspace_id AND p.archived_at IS NULL AND p.deleted_at IS NULL \
                        JOIN project_members m ON m.project_id = p.id AND m.workspace_id = p.workspace_id AND m.user_id = $2 \
                      WHERE st.workspace_id = $1 AND st.state_group <> 'triage' ORDER BY st.sequence, st.project_id, st.id"
                 ),
@@ -1471,7 +1511,7 @@ impl Database for PgDatabase {
                         AND w.deleted_at IS NULL AND w.archived_at IS NULL AND NOT w.is_draft) \
                    ELSE 0 END AS total_issues, \
                    (SELECT count(*) FROM project_members m WHERE m.project_id = p.id AND m.workspace_id = p.workspace_id) AS total_members \
-                 FROM projects p WHERE p.workspace_id = $1 AND ($2::uuid[] IS NULL OR p.id = ANY($2)) \
+                 FROM projects p WHERE p.workspace_id = $1 AND p.deleted_at IS NULL AND ($2::uuid[] IS NULL OR p.id = ANY($2)) \
                  ORDER BY p.created_at DESC, p.id DESC",
                 &[&scope.workspace_id().0, &only],
             )
