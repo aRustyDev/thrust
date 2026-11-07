@@ -64,7 +64,20 @@
 //!   `mark_outbox_dispatched` takes a row out of it (an unknown id is a no-op); `outbox_depth` counts what is left;
 //! * `insert_activity` is `true` for a new `event_id` and `false` for one already projected, in any project;
 //!   `list_activity` returns the project's rows in insertion order, optionally for one entity, and nothing through
-//!   another workspace.
+//!   another workspace;
+//! * `update_work_item` (issue #44, migration 0014) writes the name, the state, the priority, the dates, the completion time, the
+//!   description and the editor it carries to a work item of the scope's workspace and project that a read of live items finds (not
+//!   deleted, archived or a draft), and replaces the people and the labels (once each, in id order) only when it names them; an item that
+//!   is not there, or is the other tenant's, is `false` and the payload is not looked at; a state, an editor, a person or a label that
+//!   does not exist and a start after the target are refused (`Backend`) and write nothing (Postgres then holds the transaction aborted,
+//!   so the model rolls it back); an update is read after its transaction commits and not if it rolls back or is dropped, and an item the
+//!   transaction itself inserted can be updated in it;
+//! * `insert_work_item_activities` writes the history rows whose (event, ordinal) is new (the first of two rows of one batch with one key,
+//!   and nothing of a key that is there) and says how many; a row whose work item is not in the workspace and project it names, or
+//!   whose actor is no user, refuses the whole batch (a key that is there included); `work_item_history` is the rows of one work item of
+//!   the scope's workspace and project by time and then in the order they were written, only those strictly after `after` when it is
+//!   given; `latest_work_item_activity` is the last of them; `touch_work_item_activity` moves one row's time and nothing else (its
+//!   place in the order written stays), and is `false` for a row that is not there.
 //!
 //! Every case seeds its own workspaces and projects on one container. The outbox is global, so a case starts by
 //! marking any rows an earlier (failed) case left behind as dispatched and ends by marking its own; timestamps come
@@ -164,7 +177,7 @@ enum Step {
     },
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum End {
     Commit,
     Rollback,
@@ -303,11 +316,209 @@ fn day(n: i64) -> NaiveDate {
     NaiveDate::from_ymd_opt(2026, 11, 1).unwrap() + TimeDelta::days(n)
 }
 
+/// How an item `Op::ItemUpdates` makes is hidden from the reads that find live items: not at all, deleted, archived, or a draft. A hidden
+/// item is made hidden (the columns are written with the row), as there is no port call that hides one that exists but the soft delete.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Hide {
+    Live,
+    Deleted,
+    Archived,
+    Draft,
+}
+
+/// Which workspace and project a call names for an item of project `proj`: its own, the other workspace's with its own project, the
+/// other project (in the other workspace), or the secret project of workspace A (which is `proj`'s own workspace's sibling for project A,
+/// and a project of the wrong workspace for project B).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Via {
+    Own,
+    OtherWorkspace,
+    OtherProject,
+    Sibling,
+}
+
+fn via() -> impl Strategy<Value = Via> {
+    prop_oneof![8 => Just(Via::Own), 1 => Just(Via::OtherWorkspace), 1 => Just(Via::OtherProject), 1 => Just(Via::Sibling)]
+}
+
+/// One update `Op::ItemUpdates` makes. The indexes pick among what the project has, as `AttrSpec`'s do.
+#[derive(Debug, Clone, Copy)]
+struct UpdSpec {
+    /// One of the project's work items counted from the newest (any: live, deleted, archived, a draft), or none: an id that names nothing.
+    pick: Option<usize>,
+    via: Via,
+    /// Which name, from a short list that has the awkward ones in it.
+    name: u8,
+    state: Option<usize>,
+    /// A state that does not exist, instead of `state`.
+    bad_state: bool,
+    priority: usize,
+    /// 0 neither date, 1 a start, 2 a target, 3 both in order, 4 both on one day, 5 a start after the target (refused); `day_of` moves them.
+    dates: u8,
+    day_of: i64,
+    completed: Option<i64>,
+    /// One of the seven seeded users, or (7) nobody who exists.
+    editor: u8,
+    description: u8,
+    /// `Some`: the people it names, as a mask: bit i the project's i-th person, bit 4 a user who is in no project of it, bit 5 someone
+    /// who is no user (refused).
+    people: Option<u8>,
+    /// `Some`: the labels it names: bit i the project's i-th label, bit 3 one that does not exist (refused).
+    labels: Option<u8>,
+    /// The people and the labels it names are given out of order, and one of them twice.
+    shuffled: bool,
+}
+
+fn upd_spec() -> impl Strategy<Value = UpdSpec> {
+    (
+        // mostly the newest items, which are the ones the op itself has just made
+        (
+            prop::option::weighted(0.9, prop_oneof![3 => 0..2usize, 1 => 0..6usize]),
+            via(),
+            0..6u8,
+            prop::option::weighted(0.7, 0..3usize),
+            prop::bool::weighted(0.1),
+            0..5usize,
+        ),
+        (
+            prop_oneof![1 => Just(0u8), 2 => Just(1u8), 2 => Just(2u8), 5 => Just(3u8), 2 => Just(4u8), 1 => Just(5u8)],
+            0..4i64,
+            prop::option::of(0..3i64),
+        ),
+        (prop_oneof![14 => 0..7u8, 1 => Just(7u8)], 0..4u8),
+        (
+            prop::option::weighted(0.6, prop_oneof![12 => 0..32u8, 1 => 32..64u8]),
+            prop::option::weighted(0.6, prop_oneof![10 => 0..8u8, 1 => 8..16u8]),
+            any::<bool>(),
+        ),
+    )
+        .prop_map(
+            |(
+                (pick, via, name, state, bad_state, priority),
+                (dates, day_of, completed),
+                (editor, description),
+                (people, labels, shuffled),
+            )| UpdSpec {
+                pick,
+                via,
+                name,
+                state,
+                bad_state,
+                priority,
+                dates,
+                day_of,
+                completed,
+                editor,
+                description,
+                people,
+                labels,
+                shuffled,
+            },
+        )
+}
+
+/// The names an update gives: awkward ones (empty, quotes, a backslash, a percent, non-ASCII, a line break) among them.
+const NAMES: [&str; 6] = ["renamed", "", "it's \"quoted\" \\ back", "100% _ like", "ünï-cødé 日本語 🦀", "two\nlines"];
+
+/// One row of a work item's history `Op::HistoryLife` writes.
+#[derive(Debug, Clone, Copy)]
+struct HistRow {
+    /// One of the project's work items counted from the newest (any, a deleted one too).
+    item: usize,
+    created: bool,
+    field: Option<u8>,
+    old: Option<u8>,
+    new: Option<u8>,
+    comment: u8,
+    old_id: bool,
+    new_id: bool,
+    /// One of the seven seeded users, or none.
+    actor: Option<u8>,
+    /// Seconds after one time, from a small domain: rows tie, and the order of the writes has to break it.
+    time: i64,
+}
+
+fn hist_row() -> impl Strategy<Value = HistRow> {
+    (
+        0..4usize,
+        any::<bool>(),
+        prop::option::of(0..4u8),
+        prop::option::of(0..6u8),
+        prop::option::of(0..6u8),
+        0..3u8,
+        any::<bool>(),
+        any::<bool>(),
+        prop::option::weighted(0.8, 0..7u8),
+        0..4i64,
+    )
+        .prop_map(|(item, created, field, old, new, comment, old_id, new_id, actor, time)| HistRow {
+            item,
+            created,
+            field,
+            old,
+            new,
+            comment,
+            old_id,
+            new_id,
+            actor,
+            time,
+        })
+}
+
+/// Values of a history row's fields: the empty string is not a missing value, and a value can hold what a query might not like.
+const HIST_VALUES: [&str; 6] = ["", "x", "it's \"quoted\" \\ back", "100% _ like", "ünï-cødé 日本語 🦀", "NULL"];
+const HIST_FIELDS: [&str; 4] = ["name", "state", "priority", "assignees"];
+const HIST_COMMENTS: [&str; 3] = ["updated the name to", "", "created the work item"];
+
+/// The row a batch of `Op::HistoryLife` holds that the adapter must refuse, by what is wrong with it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Stray {
+    No,
+    /// The row names the work item's own workspace and project and the id of an item of the other project.
+    ItemOfOtherProject,
+    UnknownItem,
+    /// The work item is the project's, the row names the other workspace and its project.
+    NamesOtherTenant,
+    /// The work item is the project's, the row names the other workspace and the project's own id.
+    NamesOtherWorkspace,
+    /// The work item is the project's, the row names workspace A's secret project.
+    NamesSibling,
+    UnknownActor,
+}
+
 #[derive(Debug, Clone)]
 enum Op {
     Tx {
         steps: Vec<Step>,
         end: End,
+    },
+    /// Make work items (a live one with its attributes, or one that is deleted, archived or a draft from the start), in a transaction each or
+    /// all in the one that then updates them; update work items (live, hidden, unknown, or through another workspace's or project's scope:
+    /// false) with updates of every shape (what the constraints refuse among them), and end that transaction; then read the project's work
+    /// items back: the rows, a page in an order, the list and each work item named.
+    ItemUpdates {
+        proj: P,
+        made: Vec<(AttrSpec, Hide)>,
+        same_tx: bool,
+        updates: Vec<UpdSpec>,
+        end: End,
+        field: usize,
+        descending: bool,
+    },
+    /// Write the history of work items: events of rows (one call each), one delivered again (with a row more, or none), a batch with a
+    /// duplicate key, a batch with a row that must be refused (and the rows around it, which must not be written, and then are); read each
+    /// history (all of it, after a row's time, from another workspace's or project's scope), the newest row, touch a row (or one that is
+    /// not there) and read again.
+    HistoryLife {
+        proj: P,
+        fresh: usize,
+        events: Vec<Vec<HistRow>>,
+        dup: bool,
+        redeliver: Option<(usize, bool)>,
+        stray: Stray,
+        stray_at: usize,
+        probe: usize,
+        touch: Option<(usize, i64)>,
     },
     /// Make work items with their compat attributes (a transaction each), then read the project's work items in an order, a page at a
     /// time, with the cuts a page can have, one row at a time, and the greatest place in each state.
@@ -616,9 +827,40 @@ fn patch_sel() -> impl Strategy<Value = PatchSel> {
     ]
 }
 
+fn hide() -> impl Strategy<Value = Hide> {
+    // often hidden: an update that finds a hidden item is the case a sample of 32 sequences must still reach
+    prop_oneof![4 => Just(Hide::Live), 2 => Just(Hide::Deleted), 2 => Just(Hide::Archived), 2 => Just(Hide::Draft)]
+}
+
+fn stray() -> impl Strategy<Value = Stray> {
+    prop_oneof![
+        8 => Just(Stray::No),
+        1 => Just(Stray::ItemOfOtherProject),
+        1 => Just(Stray::UnknownItem),
+        1 => Just(Stray::NamesOtherTenant),
+        1 => Just(Stray::NamesOtherWorkspace),
+        1 => Just(Stray::NamesSibling),
+        1 => Just(Stray::UnknownActor),
+    ]
+}
+
 fn op() -> impl Strategy<Value = Op> {
     prop_oneof![
         6 => (prop::collection::vec(step(), 1..5), end()).prop_map(|(steps, end)| Op::Tx { steps, end }),
+        4 => (proj(), prop::collection::vec((attr_spec(), hide()), 0..3), any::<bool>(), prop::collection::vec(upd_spec(), 1..4), end(), 0..11usize, any::<bool>())
+            .prop_map(|(proj, made, same_tx, updates, end, field, descending)| Op::ItemUpdates { proj, made, same_tx, updates, end, field, descending }),
+        4 => (
+            proj(),
+            1..3usize,
+            prop::collection::vec(prop::collection::vec(hist_row(), 1..4), 1..4),
+            any::<bool>(),
+            prop::option::weighted(0.5, (0..4usize, any::<bool>())),
+            stray(),
+            0..3usize,
+            0..8usize,
+            prop::option::weighted(0.6, (0..16usize, 0..6i64)),
+        )
+            .prop_map(|(proj, fresh, events, dup, redeliver, stray, stray_at, probe, touch)| Op::HistoryLife { proj, fresh, events, dup, redeliver, stray, stray_at, probe, touch }),
         3 => (proj(), prop::collection::vec(attr_spec(), 0..5), 0..11usize, any::<bool>(), 1..4u32)
             .prop_map(|(proj, specs, field, descending, limit)| Op::ItemPages { proj, specs, field, descending, limit }),
         2 => (proj(), ws(), any::<bool>()).prop_map(|(proj, ws, with_deleted)| Op::List { proj, ws, with_deleted }),
@@ -922,10 +1164,88 @@ enum Class {
     /// The greatest place among the items of a state that has some, and of one that has none.
     SortOrderMax,
     SortOrderNone,
+    /// A work item made deleted, archived or a draft, which no read of live items finds.
+    ItemMadeHidden,
+    /// A live work item updated, and the transaction committed.
+    ItemUpdated,
+    /// An item the same transaction inserted, updated in it.
+    ItemUpdatedInOwnTx,
+    /// Updates that were made and then rolled back or dropped: the reads find the items as they were.
+    ItemUpdateRolledBack,
+    /// `update_work_item` that answers `false`: an id that names nothing, an item that is deleted, archived or a draft, one asked for through
+    /// another workspace's scope, another project's, or the secret project of workspace A.
+    ItemUpdateMissing,
+    ItemUpdateDeleted,
+    ItemUpdateArchived,
+    ItemUpdateDraft,
+    ItemUpdateOtherWorkspace,
+    ItemUpdateOtherProject,
+    ItemUpdateSiblingProject,
+    /// A `false` whose payload the constraints would have refused: the item is looked for first.
+    ItemUpdateFalseBeatsRefusal,
+    /// An update the constraints refuse, one for each of them, and the transaction rolled back with the item as it was.
+    ItemUpdateRefusedState,
+    ItemUpdateRefusedEditor,
+    ItemUpdateRefusedPerson,
+    ItemUpdateRefusedLabel,
+    ItemUpdateRefusedDates,
+    ItemUpdateStateSet,
+    ItemUpdateStateCleared,
+    /// The people it names replace the item's, none replace them with none, and none named leave them (an item that has people).
+    ItemUpdatePeopleReplaced,
+    ItemUpdatePeopleCleared,
+    ItemUpdatePeopleKept,
+    /// A person named who is no member of the project: written, and never read.
+    ItemUpdatePeopleHidden,
+    ItemUpdateLabelsReplaced,
+    ItemUpdateLabelsCleared,
+    ItemUpdateLabelsKept,
+    /// Both dates on one day.
+    ItemUpdateStartOnTarget,
+    /// Two updates of one item in one transaction.
+    ItemUpdateTwice,
+    /// The item an update changed, read back by `work_item_row`, `get_work_item`, a page and the list.
+    ItemUpdateReadBack,
+    /// Rows of the history written: a first delivery, with a row twice in one batch, delivered again, delivered again with a row more.
+    HistoryWritten,
+    HistoryDuplicateInBatch,
+    HistoryRedelivered,
+    HistoryRedeliveredExtended,
+    /// A batch with a row that must be refused (one class for each way a row is wrong), and nothing of it written.
+    HistoryRefusedOtherProjectItem,
+    HistoryRefusedUnknownItem,
+    HistoryRefusedNamesOtherTenant,
+    HistoryRefusedNamesOtherWorkspace,
+    HistoryRefusedNamesSibling,
+    HistoryRefusedUnknownActor,
+    /// The rows of a refused batch that were valid, written by themselves afterwards: none of them had been.
+    HistoryWrittenAfterRefusal,
+    /// Rows for a work item that is deleted, archived or a draft: the history is there.
+    HistoryOfHiddenItem,
+    /// `work_item_history` with no `after`: rows, or none; rows that tie in time; after a row's time (that row and its ties are out), just
+    /// before it (they are in) and after the newest (none); through another workspace's or project's scope (none).
+    HistoryReadAll,
+    HistoryReadEmpty,
+    HistoryReadTied,
+    HistoryReadAfterRow,
+    HistoryReadBeforeRow,
+    HistoryReadAfterAll,
+    HistoryOtherScopeEmpty,
+    /// `latest_work_item_activity`: a row; none; the newest of rows that tie (the one written last); none through another tenant.
+    HistoryLatest,
+    HistoryLatestNone,
+    HistoryLatestTie,
+    HistoryLatestOtherScopeNone,
+    /// `touch_work_item_activity` of a row (`true`), of one that is not there (`false`), a touch that changes the order of a history, and
+    /// one that moves a row to the time another has.
+    HistoryTouched,
+    HistoryTouchUnknown,
+    HistoryTouchReordered,
+    HistoryTouchedToTie,
 }
 
 impl Class {
-    const ALL: [Class; 156] = [
+    const ALL: [Class; 212] = [
         Class::Created,
         Class::ExternalKeyFreed,
         Class::Conflict,
@@ -1082,6 +1402,62 @@ impl Class {
         Class::ItemRowMissing,
         Class::SortOrderMax,
         Class::SortOrderNone,
+        Class::ItemMadeHidden,
+        Class::ItemUpdated,
+        Class::ItemUpdatedInOwnTx,
+        Class::ItemUpdateRolledBack,
+        Class::ItemUpdateMissing,
+        Class::ItemUpdateDeleted,
+        Class::ItemUpdateArchived,
+        Class::ItemUpdateDraft,
+        Class::ItemUpdateOtherWorkspace,
+        Class::ItemUpdateOtherProject,
+        Class::ItemUpdateSiblingProject,
+        Class::ItemUpdateFalseBeatsRefusal,
+        Class::ItemUpdateRefusedState,
+        Class::ItemUpdateRefusedEditor,
+        Class::ItemUpdateRefusedPerson,
+        Class::ItemUpdateRefusedLabel,
+        Class::ItemUpdateRefusedDates,
+        Class::ItemUpdateStateSet,
+        Class::ItemUpdateStateCleared,
+        Class::ItemUpdatePeopleReplaced,
+        Class::ItemUpdatePeopleCleared,
+        Class::ItemUpdatePeopleKept,
+        Class::ItemUpdatePeopleHidden,
+        Class::ItemUpdateLabelsReplaced,
+        Class::ItemUpdateLabelsCleared,
+        Class::ItemUpdateLabelsKept,
+        Class::ItemUpdateStartOnTarget,
+        Class::ItemUpdateTwice,
+        Class::ItemUpdateReadBack,
+        Class::HistoryWritten,
+        Class::HistoryDuplicateInBatch,
+        Class::HistoryRedelivered,
+        Class::HistoryRedeliveredExtended,
+        Class::HistoryRefusedOtherProjectItem,
+        Class::HistoryRefusedUnknownItem,
+        Class::HistoryRefusedNamesOtherTenant,
+        Class::HistoryRefusedNamesOtherWorkspace,
+        Class::HistoryRefusedNamesSibling,
+        Class::HistoryRefusedUnknownActor,
+        Class::HistoryWrittenAfterRefusal,
+        Class::HistoryOfHiddenItem,
+        Class::HistoryReadAll,
+        Class::HistoryReadEmpty,
+        Class::HistoryReadTied,
+        Class::HistoryReadAfterRow,
+        Class::HistoryReadBeforeRow,
+        Class::HistoryReadAfterAll,
+        Class::HistoryOtherScopeEmpty,
+        Class::HistoryLatest,
+        Class::HistoryLatestNone,
+        Class::HistoryLatestTie,
+        Class::HistoryLatestOtherScopeNone,
+        Class::HistoryTouched,
+        Class::HistoryTouchUnknown,
+        Class::HistoryTouchReordered,
+        Class::HistoryTouchedToTie,
     ];
 }
 
@@ -1107,6 +1483,43 @@ enum Call {
         item: WorkItem,
         attrs: WorkItemAttrs,
         alloc: Allocation,
+    },
+    /// In the open transaction: give an item it inserted its attributes.
+    InsertItemAttrs {
+        ws: WorkspaceId,
+        p: ProjectId,
+        id: WorkItemId,
+        attrs: WorkItemAttrs,
+    },
+    /// In the open transaction: `update_work_item`, and what it must answer.
+    UpdateItem {
+        ws: WorkspaceId,
+        p: ProjectId,
+        id: WorkItemId,
+        update: WorkItemUpdate,
+        want: ItemUpdateWant,
+    },
+    InsertHistory {
+        rows: Vec<WorkItemActivity>,
+        want: HistoryWrite,
+    },
+    HistoryOf {
+        ws: WorkspaceId,
+        p: ProjectId,
+        id: WorkItemId,
+        after: Option<Timestamp>,
+        want: Vec<WorkItemActivity>,
+    },
+    LatestHistoryOf {
+        ws: WorkspaceId,
+        p: ProjectId,
+        id: WorkItemId,
+        want: Option<WorkItemActivity>,
+    },
+    TouchHistory {
+        id: ActivityId,
+        at: Timestamp,
+        want: bool,
     },
     WorkItemPageOf {
         ws: WorkspaceId,
@@ -1425,6 +1838,24 @@ enum Call {
         entity: Option<WorkItemId>,
         want: Vec<Activity>,
     },
+}
+
+/// What `update_work_item` must answer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ItemUpdateWant {
+    /// `Ok(found)`.
+    Found(bool),
+    /// `Err(DbError::Backend)`: a constraint refuses it. Postgres holds the transaction aborted after that, so the plan rolls it back.
+    Refused,
+}
+
+/// What `insert_work_item_activities` must answer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HistoryWrite {
+    /// `Ok(n)`: how many rows it wrote.
+    Written(u64),
+    /// `Err(DbError::Backend)`, and no row written.
+    Refused,
 }
 
 /// What `update_project` must answer.
@@ -2050,8 +2481,12 @@ struct Model {
     project_props: BTreeMap<(usize, usize), ProjectUserProperties>,
     /// Committed rows per project, in sequence order.
     rows: [Vec<WorkItem>; 2],
-    /// The compat attributes of the work items an `ItemPages` op made (the others have the pin's defaults), as they were written.
+    /// The compat attributes of the work items an `ItemPages` or an `ItemUpdates` op made (the others have the pin's defaults), as they
+    /// were written, and as the updates since left them.
     attrs: BTreeMap<WorkItemId, WorkItemAttrs>,
+    /// The rows of the work items' history this case has written, in the order they were written (what `seq` is in Postgres), their
+    /// times as the touches left them.
+    history: Vec<WorkItemActivity>,
     counter: [i64; 2],
     /// This case's committed outbox rows, and whether they are dispatched.
     outbox: Vec<(OutboxRow, bool)>,
@@ -2188,6 +2623,11 @@ fn item(ws: WorkspaceId, p: ProjectId, a: Allocation, ext: Option<u8>) -> WorkIt
         is_draft: false,
         deleted_at: None,
     }
+}
+
+/// Whether the reads of live work items find it: not deleted, archived or a draft (the port's `Visibility::Visible`).
+fn is_visible(w: &WorkItem) -> bool {
+    w.deleted_at.is_none() && w.archived_at.is_none() && !w.is_draft
 }
 
 /// The order a page of work items is documented to have (`WorkItemOrder`), written as a stable sort on top of the newest first order, so
@@ -2334,6 +2774,7 @@ impl Model {
             project_props,
             rows: [Vec::new(), Vec::new()],
             attrs: BTreeMap::new(),
+            history: Vec::new(),
             counter: [0, 0],
             outbox: Vec::new(),
             activity: Vec::new(),
@@ -2404,11 +2845,36 @@ impl Model {
             Op::ItemPages { proj, specs, field, descending, limit } => {
                 self.plan_item_pages(*proj, specs, *field, *descending, *limit, &mut calls, &mut classes)
             }
+            Op::ItemUpdates { proj, made, same_tx, updates, end, field, descending } => self.plan_item_updates(
+                *proj,
+                made,
+                *same_tx,
+                updates,
+                *end,
+                *field,
+                *descending,
+                &mut calls,
+                &mut classes,
+            ),
+            Op::HistoryLife { proj, fresh, events, dup, redeliver, stray, stray_at, probe, touch } => self
+                .plan_history(
+                    *proj,
+                    *fresh,
+                    events,
+                    *dup,
+                    *redeliver,
+                    *stray,
+                    *stray_at,
+                    *probe,
+                    *touch,
+                    &mut calls,
+                    &mut classes,
+                ),
             &Op::List { proj, ws, with_deleted } => {
                 let s = slot(proj);
                 let want = if ws == Ws::Own {
                     classes.push(if with_deleted { Class::ListedWithDeleted } else { Class::ListedVisible });
-                    self.rows[s].iter().filter(|r| with_deleted || r.deleted_at.is_none()).cloned().collect()
+                    self.rows[s].iter().filter(|r| with_deleted || is_visible(r)).cloned().collect()
                 } else {
                     classes.push(Class::ListedWrongWorkspace);
                     Vec::new()
@@ -2425,7 +2891,7 @@ impl Model {
                     (Ws::Other, _) => (None, Class::GotWrongWorkspace),
                     (Ws::Own, None) => (None, Class::GotUnknown),
                     (Ws::Own, Some(r)) if with_deleted => (Some(r), Class::GotWithDeleted),
-                    (Ws::Own, Some(r)) if r.deleted_at.is_some() => (None, Class::GotDeletedHidden),
+                    (Ws::Own, Some(r)) if !is_visible(&r) => (None, Class::GotDeletedHidden),
                     (Ws::Own, Some(r)) => (Some(r), Class::GotLive),
                 };
                 classes.push(class);
@@ -3638,6 +4104,45 @@ impl Model {
         WorkItemRow { item: w.clone(), attrs, state_group }
     }
 
+    /// The attributes `spec` gives a work item it makes: the people and labels it names are of the project's (`people`, `labels`) and of a
+    /// stranger to it, in id order.
+    fn attrs_for(
+        &self,
+        spec: &AttrSpec,
+        it: &WorkItem,
+        states: &[StateRow],
+        labels: &[LabelRow],
+        people: &[UserId],
+        stranger: UserId,
+    ) -> WorkItemAttrs {
+        let mut assignees: Vec<UserId> =
+            people.iter().enumerate().filter(|(i, _)| spec.people & (1 << i) != 0).map(|(_, u)| *u).collect();
+        if spec.people & 16 != 0 {
+            assignees.push(stranger);
+        }
+        assignees.sort();
+        let mut label_ids: Vec<Uuid> =
+            labels.iter().enumerate().filter(|(i, _)| spec.labels & (1 << i) != 0).map(|(_, l)| l.id).collect();
+        label_ids.sort();
+        let target = match (spec.start, spec.extra) {
+            (Some(a), Some(e)) => Some(day(a + e)),
+            (None, Some(e)) => Some(day(e)),
+            _ => None,
+        };
+        WorkItemAttrs {
+            state_id: spec.state.map(|i| states[i % states.len()].id),
+            priority: Priority::ALL[spec.priority],
+            start_date: spec.start.map(day),
+            target_date: target,
+            completed_at: spec.completed.map(|d| Utc.timestamp_opt(1_800_100_000 + d, 0).unwrap()),
+            updated_at: it.created_at + TimeDelta::seconds(spec.updated),
+            updated_by: Some(self.fix.users[0]),
+            description_html: format!("<p>{}</p>", it.sequence_id),
+            assignee_ids: assignees,
+            label_ids,
+        }
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn plan_item_pages(
         &mut self,
@@ -3663,32 +4168,7 @@ impl Model {
             let a = Allocation { sequence_id: self.counter[s], sort_order: self.counter[s] * 10_000 };
             let mut it = item(ws, p, a, None);
             it.created_at = Utc.timestamp_opt(1_800_000_000 + spec.created, 0).unwrap();
-            let mut assignees: Vec<UserId> =
-                people.iter().enumerate().filter(|(i, _)| spec.people & (1 << i) != 0).map(|(_, u)| *u).collect();
-            if spec.people & 16 != 0 {
-                assignees.push(stranger);
-            }
-            assignees.sort();
-            let mut label_ids: Vec<Uuid> =
-                labels.iter().enumerate().filter(|(i, _)| spec.labels & (1 << i) != 0).map(|(_, l)| l.id).collect();
-            label_ids.sort();
-            let target = match (spec.start, spec.extra) {
-                (Some(a), Some(e)) => Some(day(a + e)),
-                (None, Some(e)) => Some(day(e)),
-                _ => None,
-            };
-            let attrs = WorkItemAttrs {
-                state_id: spec.state.map(|i| states[i % states.len()].id),
-                priority: Priority::ALL[spec.priority],
-                start_date: spec.start.map(day),
-                target_date: target,
-                completed_at: spec.completed.map(|d| Utc.timestamp_opt(1_800_100_000 + d, 0).unwrap()),
-                updated_at: it.created_at + TimeDelta::seconds(spec.updated),
-                updated_by: Some(self.fix.users[0]),
-                description_html: format!("<p>{}</p>", a.sequence_id),
-                assignee_ids: assignees,
-                label_ids,
-            };
+            let attrs = self.attrs_for(spec, &it, &states, &labels, &people, stranger);
             classes.push(Class::ItemWithAttrs);
             calls.push(Call::CreateWithAttrs { item: it.clone(), attrs: attrs.clone(), alloc: a });
             self.attrs.insert(it.id, attrs);
@@ -3697,7 +4177,7 @@ impl Model {
 
         let live: Vec<WorkItemRow> = self.rows[s]
             .iter()
-            .filter(|w| w.deleted_at.is_none())
+            .filter(|w| is_visible(w))
             .map(|w| self.expected_row(s, w, &proj_spec, &all_states))
             .collect();
         let order = WorkItemOrder { field: WorkItemOrderField::ALL[field], descending };
@@ -3759,6 +4239,583 @@ impl Model {
             let want = place(state);
             classes.push(if want.is_some() { Class::SortOrderMax } else { Class::SortOrderNone });
             calls.push(Call::MaxSortOrderOf { ws, p, state, want });
+        }
+    }
+
+    /// The workspace and project a call names for an item of project slot `s` (see [`Via`]).
+    fn scope_via(&self, s: usize, via: Via) -> (WorkspaceId, ProjectId) {
+        match via {
+            Via::Own => (self.fix.ws[s], self.fix.p[s]),
+            Via::OtherWorkspace => (self.fix.ws[1 - s], self.fix.p[s]),
+            Via::OtherProject => (self.fix.ws[1 - s], self.fix.p[1 - s]),
+            Via::Sibling => (self.fix.ws[s], self.fix.extra[0]),
+        }
+    }
+
+    /// A live work item of project slot `s` with no options, made in a transaction of its own: the calls, and the model's rows.
+    fn make_bare_item(&mut self, s: usize, calls: &mut Vec<Call>, classes: &mut Vec<Class>) -> WorkItemId {
+        let (ws, p) = (self.fix.ws[s], self.fix.p[s]);
+        self.counter[s] += 1;
+        let a = Allocation { sequence_id: self.counter[s], sort_order: self.counter[s] * 10_000 };
+        let it = item(ws, p, a, None);
+        let attrs = WorkItemAttrs::bare(it.created_at);
+        classes.push(Class::ItemWithAttrs);
+        calls.push(Call::CreateWithAttrs { item: it.clone(), attrs: attrs.clone(), alloc: a });
+        self.attrs.insert(it.id, attrs);
+        let id = it.id;
+        self.rows[s].push(it);
+        id
+    }
+
+    /// `Op::ItemUpdates`. The spec of an update, written from the port's documentation: a work item of the scope's project that a read of
+    /// live items finds takes the name and every attribute the update carries and its editor; the people and the labels it names replace
+    /// the item's (sorted, once each) and those it does not name stay; an item that is not there is `false`, whatever the payload; a
+    /// payload that breaks a constraint (a state, an editor, a person or a label that does not exist; a start after a target) on an item
+    /// that is there is refused, and Postgres leaves the transaction aborted, so the plan rolls it back (the memory adapter would leave it
+    /// usable; nothing written is the same). What the updates did is read back only when the transaction committed.
+    #[allow(clippy::too_many_arguments)]
+    fn plan_item_updates(
+        &mut self,
+        proj: P,
+        made: &[(AttrSpec, Hide)],
+        same_tx: bool,
+        updates: &[UpdSpec],
+        end: End,
+        field: usize,
+        descending: bool,
+        calls: &mut Vec<Call>,
+        classes: &mut Vec<Class>,
+    ) {
+        let s = slot(proj);
+        let (ws, p) = (self.fix.ws[s], self.fix.p[s]);
+        let proj_spec = self.fix.specs().remove(s);
+        let all_states = proj_spec.state_rows(ws);
+        let states: Vec<StateRow> = all_states.iter().filter(|st| st.group != StateGroup::Triage).cloned().collect();
+        let labels = proj_spec.label_rows(ws);
+        let people: Vec<UserId> = proj_spec.members.iter().filter(|m| m.2 == s).map(|m| self.fix.user(m.0)).collect();
+        // a user who is in none of the project's people: named, written, and never shown
+        let stranger = self.fix.user(U::OutsiderA);
+
+        // The items it makes, each in a transaction of its own before the one that updates, or inside that one.
+        let mut inside: Vec<(WorkItem, WorkItemAttrs, Allocation)> = Vec::new();
+        for (spec, hide) in made {
+            self.counter[s] += 1;
+            let a = Allocation { sequence_id: self.counter[s], sort_order: self.counter[s] * 10_000 };
+            let mut it = item(ws, p, a, None);
+            it.created_at = Utc.timestamp_opt(1_800_000_000 + spec.created, 0).unwrap();
+            match hide {
+                Hide::Live => {}
+                Hide::Deleted => it.deleted_at = Some(tick()),
+                Hide::Archived => it.archived_at = Some(tick()),
+                Hide::Draft => it.is_draft = true,
+            }
+            if *hide != Hide::Live {
+                classes.push(Class::ItemMadeHidden);
+            }
+            let attrs = self.attrs_for(spec, &it, &states, &labels, &people, stranger);
+            if same_tx {
+                inside.push((it, attrs, a));
+            } else {
+                classes.push(Class::ItemWithAttrs);
+                calls.push(Call::CreateWithAttrs { item: it.clone(), attrs: attrs.clone(), alloc: a });
+                self.attrs.insert(it.id, attrs);
+                self.rows[s].push(it);
+            }
+        }
+
+        // The transaction that updates: what it sees is the committed rows, the rows it inserted itself, and its own earlier updates.
+        calls.push(Call::Begin { ws: self.fix.ws[0], p: self.fix.p[0] });
+        let mut rows = self.rows[s].clone();
+        let mut attrs_of = self.attrs.clone();
+        for (it, attrs, a) in &inside {
+            calls.push(Call::Allocate { ws, p, want: Some(*a) });
+            calls.push(Call::Insert { item: it.clone(), conflict: false });
+            calls.push(Call::InsertItemAttrs { ws, p, id: it.id, attrs: attrs.clone() });
+            rows.push(it.clone());
+            attrs_of.insert(it.id, attrs.clone());
+        }
+        let (mut aborted, mut found_any) = (false, false);
+        let mut named: Vec<WorkItemId> = Vec::new();
+        let mut updated: Vec<WorkItemId> = Vec::new();
+        let mut updated_inside = false;
+        for upd in updates {
+            let target = upd.pick.filter(|_| !rows.is_empty()).map(|i| rows[rows.len() - 1 - i % rows.len()].clone());
+            let id = target.as_ref().map_or(WorkItemId(new_id()), |w| w.id);
+            let (uws, up) = self.scope_via(s, upd.via);
+            let found = upd.via == Via::Own && target.as_ref().is_some_and(is_visible);
+
+            // the payload
+            let state_id = if upd.bad_state { Some(new_id()) } else { upd.state.map(|i| states[i % states.len()].id) };
+            let d = upd.day_of;
+            let (start_date, target_date) = match upd.dates {
+                0 => (None, None),
+                1 => (Some(day(d)), None),
+                2 => (None, Some(day(d + 1))),
+                3 => (Some(day(d)), Some(day(d + 2))),
+                4 => (Some(day(d)), Some(day(d))),
+                _ => (Some(day(d + 2)), Some(day(d))),
+            };
+            let editor = if upd.editor >= 7 { UserId(new_id()) } else { self.fix.users[usize::from(upd.editor)] };
+            let people_named: Option<Vec<UserId>> = upd.people.map(|m| {
+                let mut v: Vec<UserId> =
+                    people.iter().enumerate().filter(|(i, _)| m & (1 << i) != 0).map(|(_, u)| *u).collect();
+                if m & 16 != 0 {
+                    v.push(stranger);
+                }
+                if m & 32 != 0 {
+                    v.push(UserId(new_id()));
+                }
+                if upd.shuffled {
+                    v.reverse();
+                    v.extend(v.first().copied());
+                }
+                v
+            });
+            let labels_named: Option<Vec<Uuid>> = upd.labels.map(|m| {
+                let mut v: Vec<Uuid> =
+                    labels.iter().enumerate().filter(|(i, _)| m & (1 << i) != 0).map(|(_, l)| l.id).collect();
+                if m & 8 != 0 {
+                    v.push(new_id());
+                }
+                if upd.shuffled {
+                    v.reverse();
+                    v.extend(v.first().copied());
+                }
+                v
+            });
+            let update = WorkItemUpdate {
+                name: NAMES[usize::from(upd.name) % NAMES.len()].to_string(),
+                state_id,
+                priority: Priority::ALL[upd.priority],
+                start_date,
+                target_date,
+                completed_at: upd.completed.map(|c| Utc.timestamp_opt(1_800_100_000 + c, 0).unwrap()),
+                updated_at: tick(),
+                updated_by: editor,
+                description_html: ["<p></p>", "<p>a &amp; b</p>", "<p>日本語 — it's</p>", "<p>\"x\"</p>"]
+                    [usize::from(upd.description) % 4]
+                    .to_string(),
+                assignee_ids: people_named.clone(),
+                label_ids: labels_named.clone(),
+            };
+            let (bad_person, bad_label) =
+                (upd.people.is_some_and(|m| m & 32 != 0), upd.labels.is_some_and(|m| m & 8 != 0));
+            let (bad_editor, bad_dates) = (upd.editor >= 7, upd.dates == 5);
+            let refusable = upd.bad_state || bad_person || bad_label || bad_editor || bad_dates;
+            named.push(id);
+
+            if !found {
+                classes.push(match (&target, upd.via) {
+                    (None, _) => Class::ItemUpdateMissing,
+                    (Some(_), Via::OtherWorkspace) => Class::ItemUpdateOtherWorkspace,
+                    (Some(_), Via::OtherProject) => Class::ItemUpdateOtherProject,
+                    (Some(_), Via::Sibling) => Class::ItemUpdateSiblingProject,
+                    (Some(w), Via::Own) if w.deleted_at.is_some() => Class::ItemUpdateDeleted,
+                    (Some(w), Via::Own) if w.archived_at.is_some() => Class::ItemUpdateArchived,
+                    (Some(_), Via::Own) => Class::ItemUpdateDraft,
+                });
+                if refusable {
+                    classes.push(Class::ItemUpdateFalseBeatsRefusal);
+                }
+                calls.push(Call::UpdateItem { ws: uws, p: up, id, update, want: ItemUpdateWant::Found(false) });
+                continue;
+            }
+            if refusable {
+                for (is, class) in [
+                    (upd.bad_state, Class::ItemUpdateRefusedState),
+                    (bad_editor, Class::ItemUpdateRefusedEditor),
+                    (bad_person, Class::ItemUpdateRefusedPerson),
+                    (bad_label, Class::ItemUpdateRefusedLabel),
+                    (bad_dates, Class::ItemUpdateRefusedDates),
+                ] {
+                    if is {
+                        classes.push(class);
+                    }
+                }
+                calls.push(Call::UpdateItem { ws: uws, p: up, id, update, want: ItemUpdateWant::Refused });
+                calls.push(Call::Rollback);
+                aborted = true;
+                break;
+            }
+
+            // an update the constraints accept: what the item has afterwards
+            let w = rows.iter_mut().find(|w| w.id == id).expect("the target is one of the rows");
+            w.name = update.name.clone();
+            let mut a = attrs_of.get(&id).cloned().unwrap_or_else(|| WorkItemAttrs::bare(w.created_at));
+            classes.push(if update.state_id.is_some() {
+                Class::ItemUpdateStateSet
+            } else {
+                Class::ItemUpdateStateCleared
+            });
+            match &update.assignee_ids {
+                Some(v) if v.is_empty() => classes.push(Class::ItemUpdatePeopleCleared),
+                Some(_) => classes.push(Class::ItemUpdatePeopleReplaced),
+                None if !a.assignee_ids.is_empty() => classes.push(Class::ItemUpdatePeopleKept),
+                None => {}
+            }
+            if upd.people.is_some_and(|m| m & 16 != 0) {
+                classes.push(Class::ItemUpdatePeopleHidden);
+            }
+            match &update.label_ids {
+                Some(v) if v.is_empty() => classes.push(Class::ItemUpdateLabelsCleared),
+                Some(_) => classes.push(Class::ItemUpdateLabelsReplaced),
+                None if !a.label_ids.is_empty() => classes.push(Class::ItemUpdateLabelsKept),
+                None => {}
+            }
+            if upd.dates == 4 {
+                classes.push(Class::ItemUpdateStartOnTarget);
+            }
+            if updated.contains(&id) {
+                classes.push(Class::ItemUpdateTwice);
+            }
+            updated_inside |= inside.iter().any(|(it, _, _)| it.id == id);
+            updated.push(id);
+            found_any = true;
+            a.state_id = update.state_id;
+            a.priority = update.priority;
+            a.start_date = update.start_date;
+            a.target_date = update.target_date;
+            a.completed_at = update.completed_at;
+            a.updated_at = update.updated_at;
+            a.updated_by = Some(update.updated_by);
+            a.description_html = update.description_html.clone();
+            if let Some(v) = &update.assignee_ids {
+                a.assignee_ids = v.iter().copied().collect::<BTreeSet<_>>().into_iter().collect();
+            }
+            if let Some(v) = &update.label_ids {
+                a.label_ids = v.iter().copied().collect::<BTreeSet<_>>().into_iter().collect();
+            }
+            attrs_of.insert(id, a);
+            calls.push(Call::UpdateItem { ws: uws, p: up, id, update, want: ItemUpdateWant::Found(true) });
+        }
+
+        // The end of the transaction: only a commit keeps what it did (and the items it inserted); the numbers it took stay taken.
+        if !aborted {
+            match end {
+                End::Commit => {
+                    calls.push(Call::Commit);
+                    classes.push(Class::Committed);
+                    if found_any {
+                        classes.push(Class::ItemUpdated);
+                    }
+                    if updated_inside {
+                        classes.push(Class::ItemUpdatedInOwnTx);
+                    }
+                    self.rows[s] = rows;
+                    self.attrs = attrs_of;
+                }
+                End::Rollback | End::Abandon => {
+                    classes.push(if end == End::Rollback { Class::RolledBack } else { Class::Abandoned });
+                    if found_any {
+                        classes.push(Class::ItemUpdateRolledBack);
+                    }
+                    calls.push(if end == End::Rollback { Call::Rollback } else { Call::Abandon });
+                }
+            }
+        }
+
+        // What the reads find now, from each side: every item the updates named (an id that names nothing included), the page in an order
+        // (all of the project's live items, so every update's place in it shows) and the list.
+        let row_of = |this: &Model, id: WorkItemId| this.rows[s].iter().find(|w| w.id == id).cloned();
+        let mut seen = BTreeSet::new();
+        for id in named.into_iter().filter(|id| seen.insert(*id)) {
+            let w = row_of(self, id);
+            let want = w.as_ref().filter(|w| is_visible(w)).map(|w| self.expected_row(s, w, &proj_spec, &all_states));
+            calls.push(Call::WorkItemRowOf { ws, p, id, want });
+            calls.push(Call::Get { ws, p, id, vis: Visibility::WithDeleted, want: w });
+            if found_any {
+                classes.push(Class::ItemUpdateReadBack);
+            }
+        }
+        let live: Vec<WorkItemRow> = self.rows[s]
+            .iter()
+            .filter(|w| is_visible(w))
+            .map(|w| self.expected_row(s, w, &proj_spec, &all_states))
+            .collect();
+        let order = WorkItemOrder { field: WorkItemOrderField::ALL[field], descending };
+        let ordered = order_oracle(&live, order, &all_states);
+        let total = ordered.len() as u64;
+        calls.push(Call::WorkItemPageOf {
+            ws,
+            p,
+            q: WorkItemQuery { order, limit: 1000, page: 0, updated_after: None, created_by: None },
+            want: WorkItemPage { rows: ordered, has_next: false, total },
+        });
+        calls.push(Call::List {
+            ws,
+            p,
+            vis: Visibility::Visible,
+            want: self.rows[s].iter().filter(|w| is_visible(w)).cloned().collect(),
+        });
+    }
+
+    /// The history of work item `id` of project slot `s` as a read finds it: its rows by time, and the rows of one time by the order they
+    /// were written in (strictly after `after`, if given). Written as a sort on that pair, of the case's rows.
+    fn expected_history(&self, s: usize, id: WorkItemId, after: Option<Timestamp>) -> Vec<WorkItemActivity> {
+        let (ws, p) = (self.fix.ws[s], self.fix.p[s]);
+        let mut v: Vec<(usize, &WorkItemActivity)> = self
+            .history
+            .iter()
+            .enumerate()
+            .filter(|(_, a)| {
+                a.workspace_id == ws
+                    && a.project_id == p
+                    && a.work_item_id == id
+                    && after.is_none_or(|t| a.created_at > t)
+            })
+            .collect();
+        v.sort_by_key(|(place, a)| (a.created_at, *place));
+        v.into_iter().map(|(_, a)| a.clone()).collect()
+    }
+
+    /// Read the history of each item in `items` (of project slot `s`): the whole of it, after a row's time (that row and the rows that tie
+    /// with it are out), just before it (they are in) and after the newest row (none); the newest row; and what the other tenants' scopes
+    /// find of an item that has rows: nothing.
+    fn plan_history_reads(
+        &self,
+        s: usize,
+        items: &[WorkItemId],
+        probe: usize,
+        calls: &mut Vec<Call>,
+        classes: &mut Vec<Class>,
+    ) {
+        let (ws, p) = (self.fix.ws[s], self.fix.p[s]);
+        for &id in items {
+            let all = self.expected_history(s, id, None);
+            classes.push(if all.is_empty() { Class::HistoryReadEmpty } else { Class::HistoryReadAll });
+            calls.push(Call::HistoryOf { ws, p, id, after: None, want: all.clone() });
+            if let Some(newest) = all.last() {
+                if all.windows(2).any(|w| w[0].created_at == w[1].created_at) {
+                    classes.push(Class::HistoryReadTied);
+                }
+                let t = all[probe % all.len()].created_at;
+                for (after, class) in [
+                    (t, Class::HistoryReadAfterRow),
+                    (t - TimeDelta::seconds(1), Class::HistoryReadBeforeRow),
+                    (newest.created_at, Class::HistoryReadAfterAll),
+                ] {
+                    classes.push(class);
+                    calls.push(Call::HistoryOf {
+                        ws,
+                        p,
+                        id,
+                        after: Some(after),
+                        want: self.expected_history(s, id, Some(after)),
+                    });
+                }
+                for via in [Via::OtherWorkspace, Via::OtherProject, Via::Sibling] {
+                    let (w2, p2) = self.scope_via(s, via);
+                    classes.extend([Class::HistoryOtherScopeEmpty, Class::HistoryLatestOtherScopeNone]);
+                    calls.push(Call::HistoryOf { ws: w2, p: p2, id, after: None, want: vec![] });
+                    calls.push(Call::LatestHistoryOf { ws: w2, p: p2, id, want: None });
+                }
+            }
+            if all.len() >= 2 && all[all.len() - 1].created_at == all[all.len() - 2].created_at {
+                classes.push(Class::HistoryLatestTie);
+            }
+            classes.push(if all.is_empty() { Class::HistoryLatestNone } else { Class::HistoryLatest });
+            calls.push(Call::LatestHistoryOf { ws, p, id, want: all.last().cloned() });
+        }
+    }
+
+    /// `Op::HistoryLife`. The spec, from the port's documentation: `insert_work_item_activities` writes the rows whose (event, ordinal)
+    /// is new (a key the batch itself holds twice counts once, the first row) and says how many; a row whose work item is not in the
+    /// workspace and project it names, or whose actor is no user, refuses the whole batch; `work_item_history` is the rows of one work
+    /// item of the scope's workspace and project by time and then by the order written, after a time (strictly); `latest_*` is the last of
+    /// those; `touch_*` moves one row's time and nothing else.
+    #[allow(clippy::too_many_arguments)]
+    fn plan_history(
+        &mut self,
+        proj: P,
+        fresh: usize,
+        events: &[Vec<HistRow>],
+        dup: bool,
+        redeliver: Option<(usize, bool)>,
+        stray: Stray,
+        stray_at: usize,
+        probe: usize,
+        touch: Option<(usize, i64)>,
+        calls: &mut Vec<Call>,
+        classes: &mut Vec<Class>,
+    ) {
+        let s = slot(proj);
+        let (ws, p) = (self.fix.ws[s], self.fix.p[s]);
+        for _ in 0..fresh {
+            self.make_bare_item(s, calls, classes);
+        }
+        let other_item = (stray == Stray::ItemOfOtherProject).then(|| self.make_bare_item(1 - s, calls, classes));
+        // the project's newest work items, the ones the rows name (a deleted or archived one too)
+        let recent: Vec<WorkItem> = self.rows[s].iter().rev().take(4).cloned().collect();
+        let item_of = |i: usize| recent[i % recent.len()].id;
+        let hidden = |id: WorkItemId| recent.iter().any(|w| w.id == id && !is_visible(w));
+
+        let t0 = 1_800_300_000;
+        let at = |secs: i64| Utc.timestamp_opt(t0 + secs, 0).unwrap();
+        let users = self.fix.users;
+        let build = |r: &HistRow, item: WorkItemId, event: EventId, ordinal: i32| WorkItemActivity {
+            id: ActivityId(new_id()),
+            event_id: event,
+            ordinal,
+            workspace_id: ws,
+            project_id: p,
+            work_item_id: item,
+            actor_id: r.actor.map(|u| users[usize::from(u) % users.len()]),
+            verb: if r.created { "created" } else { "updated" }.to_string(),
+            field: r.field.map(|f| HIST_FIELDS[usize::from(f) % HIST_FIELDS.len()].to_string()),
+            old_value: r.old.map(|v| HIST_VALUES[usize::from(v) % HIST_VALUES.len()].to_string()),
+            new_value: r.new.map(|v| HIST_VALUES[usize::from(v) % HIST_VALUES.len()].to_string()),
+            comment: HIST_COMMENTS[usize::from(r.comment) % HIST_COMMENTS.len()].to_string(),
+            old_identifier: r.old_id.then(new_id),
+            new_identifier: r.new_id.then(new_id),
+            epoch: t0 + r.time,
+            created_at: at(r.time),
+        };
+
+        // each event is a batch of its own: the rows are written, in the order given
+        let mut event_rows: Vec<Vec<WorkItemActivity>> = Vec::new();
+        let mut items: Vec<WorkItemId> = Vec::new();
+        for (e, spec) in events.iter().enumerate() {
+            let event = EventId(new_id());
+            let written: Vec<WorkItemActivity> =
+                spec.iter().enumerate().map(|(o, r)| build(r, item_of(r.item), event, o as i32)).collect();
+            let mut batch = written.clone();
+            if dup && e == 0 {
+                // a second row with the first's key, in the same batch: it is not written
+                let mut second = written[0].clone();
+                second.id = ActivityId(new_id());
+                second.comment = "a second row with the key".into();
+                batch.push(second);
+                classes.push(Class::HistoryDuplicateInBatch);
+            }
+            classes.push(Class::HistoryWritten);
+            if written.iter().any(|r| hidden(r.work_item_id)) {
+                classes.push(Class::HistoryOfHiddenItem);
+            }
+            calls.push(Call::InsertHistory { rows: batch, want: HistoryWrite::Written(written.len() as u64) });
+            items.extend(written.iter().map(|r| r.work_item_id));
+            self.history.extend(written.iter().cloned());
+            event_rows.push(written);
+        }
+
+        // an event delivered again: whatever the second delivery says (other ids, a value, a time) nothing is written; if it also holds a
+        // place the first did not, that row alone is
+        if let Some((i, extend)) = redeliver {
+            let src = &event_rows[i % event_rows.len()];
+            let mut again: Vec<WorkItemActivity> = src
+                .iter()
+                .map(|r| WorkItemActivity {
+                    id: ActivityId(new_id()),
+                    new_value: Some("again".into()),
+                    created_at: at(9),
+                    ..r.clone()
+                })
+                .collect();
+            let mut want = 0;
+            if extend {
+                let mut more = src[0].clone();
+                more.id = ActivityId(new_id());
+                more.ordinal = src.len() as i32;
+                more.comment = "a row more".into();
+                more.created_at = at(1 + (i as i64 % 3));
+                again.push(more.clone());
+                self.history.push(more);
+                want = 1;
+            }
+            classes.push(if extend { Class::HistoryRedeliveredExtended } else { Class::HistoryRedelivered });
+            calls.push(Call::InsertHistory { rows: again, want: HistoryWrite::Written(want) });
+        }
+
+        // a batch with a row that must be refused: all of it is, and the rows that were valid are new afterwards
+        if stray != Stray::No {
+            let item0 = item_of(0);
+            let first = HistRow {
+                item: 0,
+                created: false,
+                field: Some(0),
+                old: Some(1),
+                new: Some(2),
+                comment: 0,
+                old_id: false,
+                new_id: true,
+                actor: Some(0),
+                time: 1,
+            };
+            let event = EventId(new_id());
+            let valid = [build(&first, item0, event, 0), build(&HistRow { time: 2, ..first }, item0, event, 1)];
+            let mut bad = build(&HistRow { time: 3, ..first }, item0, EventId(new_id()), 0);
+            let class = match stray {
+                Stray::No => unreachable!("tested above"),
+                Stray::ItemOfOtherProject => {
+                    bad.work_item_id = other_item.expect("made above");
+                    Class::HistoryRefusedOtherProjectItem
+                }
+                Stray::UnknownItem => {
+                    bad.work_item_id = WorkItemId(new_id());
+                    Class::HistoryRefusedUnknownItem
+                }
+                Stray::NamesOtherTenant => {
+                    (bad.workspace_id, bad.project_id) = (self.fix.ws[1 - s], self.fix.p[1 - s]);
+                    Class::HistoryRefusedNamesOtherTenant
+                }
+                Stray::NamesOtherWorkspace => {
+                    bad.workspace_id = self.fix.ws[1 - s];
+                    Class::HistoryRefusedNamesOtherWorkspace
+                }
+                Stray::NamesSibling => {
+                    bad.project_id = self.fix.extra[0];
+                    Class::HistoryRefusedNamesSibling
+                }
+                Stray::UnknownActor => {
+                    bad.actor_id = Some(UserId(new_id()));
+                    Class::HistoryRefusedUnknownActor
+                }
+            };
+            let mut batch = valid.to_vec();
+            batch.insert(stray_at % 3, bad);
+            classes.push(class);
+            calls.push(Call::InsertHistory { rows: batch, want: HistoryWrite::Refused });
+            classes.push(Class::HistoryWrittenAfterRefusal);
+            calls.push(Call::InsertHistory { rows: valid.to_vec(), want: HistoryWrite::Written(2) });
+            items.push(item0);
+            self.history.extend(valid);
+        }
+
+        // what the reads find: each item named (and the newest, which may have no rows)
+        let mut seen = BTreeSet::new();
+        let mut read: Vec<WorkItemId> = items.into_iter().filter(|id| seen.insert(*id)).collect();
+        if seen.insert(item_of(0)) {
+            read.push(item_of(0));
+        }
+        self.plan_history_reads(s, &read, probe, calls, classes);
+
+        // a touch of a row of this case's (or of one that is not there): its time moves and nothing else, so the order the history is
+        // read in follows the time and, among rows of one time, the order they were written in
+        if let Some((pick, secs)) = touch {
+            let n = self.history.len();
+            let k = pick % (n + 1);
+            if k == n {
+                classes.push(Class::HistoryTouchUnknown);
+                calls.push(Call::TouchHistory { id: ActivityId(new_id()), at: at(secs), want: false });
+            } else {
+                let (id, item) = (self.history[k].id, self.history[k].work_item_id);
+                let slot_of = if self.history[k].workspace_id == self.fix.ws[0] { 0 } else { 1 };
+                let before: Vec<ActivityId> = self.expected_history(slot_of, item, None).iter().map(|a| a.id).collect();
+                calls.push(Call::TouchHistory { id, at: at(secs), want: true });
+                self.history[k].created_at = at(secs);
+                classes.push(Class::HistoryTouched);
+                if self.expected_history(slot_of, item, None).iter().map(|a| a.id).collect::<Vec<_>>() != before {
+                    classes.push(Class::HistoryTouchReordered);
+                }
+                if self
+                    .history
+                    .iter()
+                    .enumerate()
+                    .any(|(i, a)| i != k && a.work_item_id == item && a.created_at == at(secs))
+                {
+                    classes.push(Class::HistoryTouchedToTie);
+                }
+                self.plan_history_reads(slot_of, &[item], probe, calls, classes);
+            }
         }
     }
 
@@ -3983,6 +5040,42 @@ async fn execute(db: &dyn Database, tx: &mut Option<Box<dyn Tx>>, call: Call, at
             bounded(at, t.insert_work_item(&s, &item)).await?;
             bounded(at, t.insert_work_item_attrs(&s, item.id, &attrs)).await?;
             bounded(at, t.commit()).await?;
+        }
+        Call::InsertItemAttrs { ws, p, id, attrs } => {
+            bounded(at, open(tx)?.insert_work_item_attrs(&scope(ws, p), id, &attrs)).await?
+        }
+        Call::UpdateItem { ws, p, id, update, want } => {
+            let got =
+                tokio::time::timeout(Duration::from_secs(20), open(tx)?.update_work_item(&scope(ws, p), id, &update))
+                    .await
+                    .map_err(|_| fail(at, "timed out after 20 s"))?;
+            match (got, want) {
+                (Ok(found), ItemUpdateWant::Found(w)) if found == w => {}
+                (Err(DbError::Backend(_)), ItemUpdateWant::Refused) => {}
+                (got, want) => return Err(fail(at, format!("update work item: got {got:?}, want {want:?}"))),
+            }
+        }
+        Call::InsertHistory { rows, want } => {
+            let got = tokio::time::timeout(Duration::from_secs(20), db.insert_work_item_activities(&sys, &rows))
+                .await
+                .map_err(|_| fail(at, "timed out after 20 s"))?;
+            match (got, want) {
+                (Ok(n), HistoryWrite::Written(w)) if n == w => {}
+                (Err(DbError::Backend(_)), HistoryWrite::Refused) => {}
+                (got, want) => return Err(fail(at, format!("insert history rows: got {got:?}, want {want:?}"))),
+            }
+        }
+        Call::HistoryOf { ws, p, id, after, want } => {
+            let got = bounded(at, db.work_item_history(&scope(ws, p), id, after)).await?;
+            prop_assert_eq!(got, want, "{}: work item history (after {:?})", at, after);
+        }
+        Call::LatestHistoryOf { ws, p, id, want } => {
+            let got = bounded(at, db.latest_work_item_activity(&sys, ws, p, id)).await?;
+            prop_assert_eq!(got, want, "{}: latest history row", at);
+        }
+        Call::TouchHistory { id, at: when, want } => {
+            let got = bounded(at, db.touch_work_item_activity(&sys, id, when)).await?;
+            prop_assert_eq!(got, want, "{}: touch history row (true = the row exists)", at);
         }
         Call::WorkItemPageOf { ws, p, q, want } => {
             let got = bounded(at, db.work_item_page(&scope(ws, p), &q)).await?;

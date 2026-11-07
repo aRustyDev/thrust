@@ -22,7 +22,10 @@ use thrust_ports::NewSession;
 fn allowed(role: Role, perm: Permission) -> bool {
     match perm {
         Permission::ReadProject | Permission::ReadWorkItems | Permission::ReadAttachment => true,
-        Permission::CreateWorkItem | Permission::DeleteWorkItem | Permission::WriteAttachment => role != Role::Guest,
+        Permission::CreateWorkItem
+        | Permission::UpdateWorkItem
+        | Permission::DeleteWorkItem
+        | Permission::WriteAttachment => role != Role::Guest,
         Permission::ReadDeleted => role == Role::Admin,
     }
 }
@@ -35,6 +38,7 @@ fn authorize_follows_the_role_table(
         Permission::ReadWorkItems,
         Permission::ReadDeleted,
         Permission::CreateWorkItem,
+        Permission::UpdateWorkItem,
         Permission::DeleteWorkItem,
         Permission::ReadAttachment,
         Permission::WriteAttachment

@@ -1022,6 +1022,239 @@ def step_x01(base, pacer):
     ]
 
 
+def issue_path(issue, project=None, slug=WS_ONE):
+    return f"{issues_path(project, slug)}{issue}/"
+
+
+def oracle_docker(*args):
+    """A `docker` command against the oracle stack's containers; its output, or an exit saying what failed."""
+    done = subprocess.run(["docker", *args], capture_output=True, text=True)
+    if done.returncode != 0:
+        raise SystemExit(f"docker {' '.join(args)} failed: {done.stdout!r} {done.stderr!r}")
+    return done.stdout
+
+
+def start_worker():
+    """Start the pin's Celery worker, which `fresh-oracle.sh` leaves stopped (so the workspace is not seeded and nothing is
+    written behind the recording's back). Everything the API sent it since is waiting in the broker and runs now, the workspace's
+    seed among it. `ORACLE_DIR` is the oracle/ directory of the Plane fork checkout on the pin, as for `fresh-oracle.sh`."""
+    oracle = os.environ.get("ORACLE_DIR")
+    if not oracle:
+        raise SystemExit("set ORACLE_DIR to the oracle/ directory of the Plane fork checkout on the pin: the history rows are written by its worker")
+    oracle_docker("compose", "-f", f"{oracle}/compose.oracle.yml", "--env-file", f"{oracle}/.env.oracle", "start", "worker")
+
+
+def drain_worker(timeout=300):
+    """Wait until the worker has run everything it was sent: nothing waiting in the broker, nothing reserved by the worker, nothing
+    running, on two looks a second apart (a task can send another). The pin writes a work item's history on this worker, so a read
+    of it is only the answer once this returns. `ORACLE_MQ` and `ORACLE_WORKER` name the containers."""
+    mq = os.environ.get("ORACLE_MQ", "plane-oracle-plane-mq-1")
+    worker = os.environ.get("ORACLE_WORKER", "plane-oracle-worker-1")
+    deadline = time.time() + timeout
+    clear = 0
+    while time.time() < deadline:
+        queues = oracle_docker("exec", mq, "rabbitmqctl", "list_queues", "-p", "plane", "name", "messages", "messages_unacknowledged")
+        rows = [line.split("\t") for line in queues.splitlines() if line.startswith("celery\t")]
+        waiting = bool(rows) and (rows[0][1] != "0" or rows[0][2] != "0")
+        inspected = subprocess.run(["docker", "exec", worker, "celery", "-A", "plane", "inspect", "active", "--json", "--timeout", "5"], capture_output=True, text=True)
+        try:
+            running = any(json.loads(inspected.stdout).values())
+        except ValueError:
+            running = True  # the worker has not answered yet: it is still starting
+        clear = clear + 1 if (rows and not waiting and not running) else 0
+        if clear >= 2:
+            return
+        time.sleep(1)
+    raise SystemExit(f"the oracle's worker did not drain its queue within {timeout} seconds")
+
+
+def step_x03(base, pacer):
+    """PATCH .../projects/{id}/issues/{id}/ : every refusal, then each kind of change, each followed by a read of the work item (the
+    detail route) to show what it did. Recorded with the pin's worker stopped, as the rows before it: nothing it would run (the
+    history, the subscription of whoever made or was assigned the work item) has happened yet."""
+    patch = lambda who, issue, body, project=None: api(base, pacer, who, "PATCH", issue_path(issue, project), body)  # noqa: E731
+    read = lambda issue=None: api(base, pacer, J, "GET", f"{issue_path(issue or CTX['issue'])}?{OPEN_ISSUE}")  # noqa: E731
+    first = CTX["issue"]
+    states = api(base, pacer, J, "GET", f"{projects_path()}{CTX['project']}/states/")
+    by_name = {s["name"]: s["id"] for s in states["response"]["body"]}
+    me = api(base, pacer, J, "GET", ME)
+    second = api(base, pacer, SECOND_EMAIL, "GET", ME)
+    me_id, second_id = me["response"]["body"]["id"], second["response"]["body"]["id"]
+    out = [
+        ("no session", patch(NOT_SIGNED_IN, first, {"name": "x"})),
+        ("not a member of the workspace", patch(SECOND_EMAIL, first, {"name": "x"})),
+        # (not the journey's work item in a project that is not its own: the pin's decorator lets the work item's maker through before it
+        # looks at the project, and then says 404; Thrust cannot, since a project it does not know gives no proof of a place in it, D-029)
+        ("a project and a work item that do not exist", patch(J, NO_SUCH_PROJECT, {"name": "x"}, NO_SUCH_PROJECT)),
+        ("a work item that does not exist", patch(J, NO_SUCH_PROJECT, {"name": "x"})),
+        ("an id that is not an id", patch(J, "nope", {"name": "x"})),
+        ("the states of the project", states),
+        ("the signed-in user", me),
+        ("the other user", second),
+        ("a blank name", patch(J, first, {"name": ""})),
+        ("a name of spaces", patch(J, first, {"name": "   "})),
+        ("a name that is too long", patch(J, first, {"name": "n" * 256})),
+        ("a name that is null", patch(J, first, {"name": None})),
+        ("a name that is a list", patch(J, first, {"name": ["x"]})),
+        ("a priority that is not one", patch(J, first, {"priority": "huge"})),
+        ("a priority that is null", patch(J, first, {"priority": None})),
+        ("a priority that is empty", patch(J, first, {"priority": ""})),
+        ("a state that does not exist", patch(J, first, {"state_id": NO_SUCH_PROJECT})),
+        ("a state that is not an id", patch(J, first, {"state_id": "nope"})),
+        ("a parent that does not exist", patch(J, first, {"parent_id": NO_SUCH_PROJECT})),
+        ("an estimate that does not exist", patch(J, first, {"estimate_point": NO_SUCH_PROJECT})),
+        ("a date that is not a date", patch(J, first, {"start_date": "yesterday"})),
+        ("a date with a time", patch(J, first, {"target_date": "2026-11-01T10:00:00Z"})),
+        ("a date that is a number", patch(J, first, {"start_date": 20260105})),
+        ("assignees that are not a list", patch(J, first, {"assignee_ids": me_id})),
+        ("an assignee that does not exist", patch(J, first, {"assignee_ids": [NO_SUCH_USER]})),
+        ("assignees that are null", patch(J, first, {"assignee_ids": None})),
+        ("labels that are not a list", patch(J, first, {"label_ids": "x"})),
+        ("a label that does not exist", patch(J, first, {"label_ids": [NO_SUCH_USER]})),
+        ("labels that are null", patch(J, first, {"label_ids": None})),
+        ("a description that is null", patch(J, first, {"description_html": None})),
+        ("a description that is a list", patch(J, first, {"description_html": ["a"]})),
+        ("a start and a target in the wrong order", patch(J, first, {"start_date": "2027-01-01", "target_date": "2026-01-01"})),
+        ("the work item before any change", read()),
+        ("an empty body", patch(J, first, {})),
+        ("after an empty body: it says who changed it", read()),
+        ("a name", patch(J, first, {"name": "Renamed"})),
+        ("after a name", read()),
+        ("the same name again", patch(J, first, {"name": "Renamed"})),
+        ("a name with spaces around it", patch(J, first, {"name": "  Padded  "})),
+        ("after a padded name", read()),
+        ("a name that is a number", patch(J, first, {"name": 5})),
+        ("after a number for a name", read()),
+        ("a priority", patch(J, first, {"priority": "high"})),
+        ("after a priority", read()),
+        ("a state of the done group", patch(J, first, {"state_id": by_name["Done"]})),
+        ("after the done state: completed", read()),
+        ("a state of the unstarted group", patch(J, first, {"state_id": by_name["Todo"]})),
+        ("after the todo state: no longer completed", read()),
+        ("a state that is null: the project's default", patch(J, first, {"state_id": None})),
+        ("after a null state", read()),
+        ("a state that is empty", patch(J, first, {"state_id": ""})),
+        ("dates", patch(J, first, {"start_date": "2026-11-01", "target_date": "2026-11-15"})),
+        ("after the dates", read()),
+        ("a target date alone", patch(J, first, {"target_date": "2026-12-31"})),
+        ("after a target date alone", read()),
+        ("dates cleared", patch(J, first, {"start_date": None, "target_date": None})),
+        ("after the dates are cleared", read()),
+        ("an assignee", patch(J, first, {"assignee_ids": [me_id]})),
+        ("after an assignee", read()),
+        ("an assignee who is not in the project", patch(J, first, {"assignee_ids": [second_id]})),
+        ("after an assignee who is not in the project: nobody is assigned", read()),
+        ("assignees cleared", patch(J, first, {"assignee_ids": []})),
+        ("a description", patch(J, first, {"description_html": "<p>hello</p>"})),
+        ("after a description", read()),
+        ("a description with markup the pin cleans", patch(J, first, {"description_html": "<script>alert(1)</script><p onclick='x()'>y</p>"})),
+        ("after a description with markup", read()),
+        ("a description that is empty", patch(J, first, {"description_html": ""})),
+        ("after an empty description", read()),
+        ("a description that is a number", patch(J, first, {"description_html": 5})),
+        ("a description kept out of the history", patch(J, first, {"skip_activity": True, "description_html": "<p>kept quiet</p>"})),
+        ("after a description kept out of the history", read()),
+        ("several things at once", patch(J, first, {"target_date": "2026-12-01", "state_id": by_name["In Progress"], "name": "Several", "priority": "low", "assignee_ids": [me_id]})),
+        ("after several things", read()),
+        ("members the pin does not take from this request", patch(J, first, {"cycle_id": NO_SUCH_USER, "module_ids": [NO_SUCH_USER], "type_id": NO_SUCH_USER, "bogus": 1})),
+        ("members the pin keeps for itself", patch(J, first, {"id": NO_SUCH_USER, "completed_at": "2026-01-01T00:00:00Z", "created_by": NO_SUCH_USER, "updated_by": NO_SUCH_USER, "created_at": "2026-01-01T00:00:00Z", "project_id": NO_SUCH_PROJECT, "workspace_id": NO_SUCH_PROJECT})),
+        ("after members the pin does not take", read()),
+    ]
+    return out
+
+
+def step_x02(base, pacer):
+    """GET .../projects/{id}/issues/{id}/history/ : who may ask, and the history of a work item made and changed in front of it.
+    The pin writes the history on its worker, which is started here and drained after each write, so the rows come in the order
+    of the writes (the worker runs tasks side by side, and a backlog would be written in any order). The calls the work item's page
+    makes besides (the sub work items and the relations) are recorded here too. Recorded after X03, whose own work items the worker
+    runs at last, which no row below reads."""
+    start_worker()
+    drain_worker()
+    history = lambda issue, query="", who=J, project=None: api(base, pacer, who, "GET", issue_path(issue, project) + "history/" + (f"?{query}" if query else ""))  # noqa: E731
+    patch = lambda body, issue=None: api(base, pacer, J, "PATCH", issue_path(issue or CTX["history_issue"]), body)  # noqa: E731
+    states = api(base, pacer, J, "GET", f"{projects_path()}{CTX['project']}/states/")
+    by_name = {s["name"]: s["id"] for s in states["response"]["body"]}
+    me = api(base, pacer, J, "GET", ME)
+    second = api(base, pacer, SECOND_EMAIL, "GET", ME)
+    me_id, second_id = me["response"]["body"]["id"], second["response"]["body"]["id"]
+    made = api(base, pacer, J, "POST", issues_path(), {"name": "History", "state_id": by_name["Backlog"], "assignee_ids": [me_id]})
+    CTX["history_issue"] = made["response"]["body"]["id"]
+    drain_worker()
+    w = CTX["history_issue"]
+    property_rows = "activity_type=issue-property"
+    # the work item comes first in the fixture: a request that names an id must come after the response that made it
+    out = [
+        ("the states of the project", states),
+        ("the signed-in user", me),
+        ("the other user", second),
+        ("a work item made with an assignee", made),
+        ("no session", history(w, property_rows, NOT_SIGNED_IN)),
+        ("not a member of the workspace", history(w, property_rows, SECOND_EMAIL)),
+        ("a project that does not exist", history(w, property_rows, J, NO_SUCH_PROJECT)),
+        ("an id that is not an id", history("nope", property_rows)),
+        ("a work item that does not exist", history(NO_SUCH_PROJECT, property_rows)),
+        ("its history: made, and assigned", history(w, property_rows)),
+        ("its comments: there are none", history(w, "activity_type=issue-comment")),
+        ("its history with no kind asked for", history(w)),
+        ("a kind the pin does not know", history(w, "activity_type=bogus")),
+    ]
+
+    def changed(name, body):
+        out.append((name, patch(body)))
+        drain_worker()
+
+    changed("a name", {"name": "Renamed"})
+    changed("the same name again", {"name": "Renamed"})
+    changed("a name with spaces around it", {"name": "  Padded  "})
+    # the keys are in alphabetical order because a fixture keeps its request bodies with their keys sorted, so a replay sends them in
+    # this order too; the pin lists a request's changes in the order the request names them, which tests/issue_updates.rs holds apart
+    changed("several things at once", {"name": "Ordered", "priority": "high", "state_id": by_name["Done"]})
+    changed("the state it has again", {"state_id": by_name["Done"]})
+    changed("a state that is null: the project's default", {"state_id": None})
+    changed("dates", {"start_date": "2026-11-01", "target_date": "2026-11-15"})
+    changed("a target date in another spelling of the same day", {"target_date": "20261115"})
+    changed("dates cleared", {"start_date": None, "target_date": None})
+    changed("the assignee dropped", {"assignee_ids": []})
+    changed("an assignee who is not in the project", {"assignee_ids": [second_id]})
+    changed("assignees cleared again", {"assignee_ids": []})
+    out.append(("the history so far", history(w, property_rows)))
+    changed("a description", {"description_html": "<p>hello</p>"})
+    changed("the description again, by the same person: one change", {"description_html": "<p>hello world</p>"})
+    changed("a name between", {"name": "Between"})
+    changed("a description after another change: a change of its own", {"description_html": "<p>third</p>"})
+    changed("a description kept out of the history", {"skip_activity": True, "description_html": "<p>quiet</p>"})
+    changed("a name, with a skip_activity that does not apply to it", {"skip_activity": True, "name": "Last"})
+    changed("a description with a skip_activity of the text false", {"skip_activity": "false", "description_html": "<p>false is text</p>"})
+    changed("a description with a skip_activity of zero", {"skip_activity": 0, "description_html": "<p>zero is not</p>"})
+    changed("nothing at all", {})
+    out += [
+        ("the history now", history(w, property_rows)),
+        ("everything made after a date long ago", history(w, f"{property_rows}&created_at__gt=2001-01-01")),
+        ("everything made after a date far ahead", history(w, f"{property_rows}&created_at__gt=2099-01-01")),
+        ("after a time that is not one", history(w, f"{property_rows}&created_at__gt=nonsense")),
+        ("after an empty time", history(w, f"{property_rows}&created_at__gt=")),
+        ("the comments after a date far ahead", history(w, "activity_type=issue-comment&created_at__gt=2099-01-01")),
+    ]
+    sub = lambda issue, who=J, project=None: api(base, pacer, who, "GET", issue_path(issue, project) + "sub-issues/")  # noqa: E731
+    relation = lambda issue, who=J, project=None: api(base, pacer, who, "GET", issue_path(issue, project) + "issue-relation/")  # noqa: E731
+    out += [
+        ("sub work items: no session", sub(w, NOT_SIGNED_IN)),
+        ("sub work items: not a member of the workspace", sub(w, SECOND_EMAIL)),
+        ("sub work items: a project that does not exist", sub(w, J, NO_SUCH_PROJECT)),
+        ("sub work items: an id that is not an id", sub("nope")),
+        ("the sub work items of a work item", sub(w)),
+        ("the sub work items of one that does not exist", sub(NO_SUCH_PROJECT)),
+        ("relations: no session", relation(w, NOT_SIGNED_IN)),
+        ("relations: not a member of the workspace", relation(w, SECOND_EMAIL)),
+        ("relations: a project that does not exist", relation(w, J, NO_SUCH_PROJECT)),
+        ("relations: an id that is not an id", relation("nope")),
+        ("the relations of a work item", relation(w)),
+        ("the relations of one that does not exist", relation(NO_SUCH_PROJECT)),
+    ]
+    return out
+
+
 # Which fixtures make an id that later ones use (`binds`), and which name one in their requests (`uses`).
 USES_PROJECT = {"uses": ["project"]}
 FIXTURE_META = {
@@ -1049,6 +1282,8 @@ FIXTURE_META = {
     },
     "S47": USES_PROJECT,
     "X01": {"uses": ["project", "issue", "full_issue", "html_issue"]},
+    "X03": {"uses": ["project", "issue"]},
+    "X02": {"uses": ["project"], "binds": {"history_issue": {"exchange": "a work item made with an assignee", "path": ["id"]}}},
 }
 
 
@@ -1109,6 +1344,8 @@ STEPS = [
     ("S48", step_s48),
     ("S47", step_s47),
     ("X01", step_x01),
+    ("X03", step_x03),
+    ("X02", step_x02),
 ]
 
 

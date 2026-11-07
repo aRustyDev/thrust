@@ -25,58 +25,6 @@ use thrust_contracts::*;
 use thrust_core::*;
 use thrust_ports::*;
 
-const STATE_BACKLOG: u128 = 0x5001;
-const STATE_TODO: u128 = 0x5002;
-const STATE_DONE: u128 = 0x5003;
-const STATE_OF_B: u128 = 0x5101;
-
-fn uuid(n: u128) -> Uuid {
-    Uuid::from_u128(n)
-}
-
-/// The world with states and labels for both projects: project A's `Backlog` (the default), `Todo` and `Done` (of the completed
-/// group), two labels; project B's state and label.
-fn seeded() -> World {
-    let w = world();
-    let state = |project: ProjectId,
-                 ws: WorkspaceId,
-                 id: u128,
-                 name: &str,
-                 group: StateGroup,
-                 sequence: f64,
-                 is_default: bool| SeedState {
-        id: uuid(id),
-        project_id: project,
-        workspace_id: ws,
-        name: name.into(),
-        color: "#000000".into(),
-        sequence,
-        group,
-        is_default,
-    };
-    let label = |project: ProjectId, ws: WorkspaceId, n: u128| SeedLabel {
-        id: uuid(0x7000 + n),
-        project_id: project,
-        workspace_id: ws,
-        name: format!("l{n}"),
-        color: "#fff".into(),
-        parent_id: None,
-        sort_order: n as f64,
-    };
-    let f = SeedFixture {
-        states: vec![
-            state(w.project_a, w.ws_a, STATE_BACKLOG, "Backlog", StateGroup::Backlog, 10_000.0, true),
-            state(w.project_a, w.ws_a, STATE_TODO, "Todo", StateGroup::Unstarted, 20_000.0, false),
-            state(w.project_a, w.ws_a, STATE_DONE, "Done", StateGroup::Completed, 30_000.0, false),
-            state(w.project_b, w.ws_b, STATE_OF_B, "Backlog", StateGroup::Backlog, 10_000.0, true),
-        ],
-        labels: vec![label(w.project_a, w.ws_a, 1), label(w.project_a, w.ws_a, 2), label(w.project_b, w.ws_b, 3)],
-        ..SeedFixture::default()
-    };
-    block_on(w.app.ports.db.seed(&SystemScope::mint(), &f)).unwrap();
-    w
-}
-
 fn draft(name: &str) -> IssueDraft {
     IssueDraft { name: name.into(), ..IssueDraft::default() }
 }

@@ -36,6 +36,7 @@ pub const MIGRATION_0010: &str = include_str!("../migrations/0010_project_detail
 pub const MIGRATION_0011: &str = include_str!("../migrations/0011_workspace_user_settings.sql");
 pub const MIGRATION_0012: &str = include_str!("../migrations/0012_projects.sql");
 pub const MIGRATION_0013: &str = include_str!("../migrations/0013_work_item_details.sql");
+pub const MIGRATION_0014: &str = include_str!("../migrations/0014_work_item_history.sql");
 
 pub async fn migrate(client: &Client) -> Result<(), tokio_postgres::Error> {
     client.batch_execute(MIGRATION_0001).await?;
@@ -50,7 +51,8 @@ pub async fn migrate(client: &Client) -> Result<(), tokio_postgres::Error> {
     client.batch_execute(MIGRATION_0010).await?;
     client.batch_execute(MIGRATION_0011).await?;
     client.batch_execute(MIGRATION_0012).await?;
-    client.batch_execute(MIGRATION_0013).await
+    client.batch_execute(MIGRATION_0013).await?;
+    client.batch_execute(MIGRATION_0014).await
 }
 
 pub trait ClientHandle: Send {
@@ -126,6 +128,16 @@ pg_type!(
 /// Whole columns at once, for the bulk seed's `unnest`.
 impl PgType for Vec<Uuid> {
     const TY: Type = Type::UUID_ARRAY;
+}
+/// A column that may be null (`work_item_activities.actor_id`).
+impl PgType for Vec<Option<Uuid>> {
+    const TY: Type = Type::UUID_ARRAY;
+}
+impl PgType for Vec<i32> {
+    const TY: Type = Type::INT4_ARRAY;
+}
+impl PgType for Vec<i64> {
+    const TY: Type = Type::INT8_ARRAY;
 }
 impl PgType for Vec<String> {
     const TY: Type = Type::TEXT_ARRAY;
@@ -611,6 +623,33 @@ fn activity(r: &Row) -> Activity {
         entity_id: r.get("entity_id"),
         verb: r.get("verb"),
         actor_id: r.get::<_, Option<Uuid>>("actor_id").map(UserId),
+        created_at: r.get("created_at"),
+    }
+}
+
+/// The columns of a row of a work item's history (`work_item_activities`, migration 0014), `seq` (the order the rows were written in)
+/// left out: it is only ever sorted on.
+const WIA_COLS: &str =
+    "id, event_id, ordinal, workspace_id, project_id, work_item_id, actor_id, verb, field, old_value, new_value, \
+    comment, old_identifier, new_identifier, epoch, created_at";
+
+fn work_item_activity(r: &Row) -> WorkItemActivity {
+    WorkItemActivity {
+        id: ActivityId(r.get("id")),
+        event_id: EventId(r.get("event_id")),
+        ordinal: r.get("ordinal"),
+        workspace_id: WorkspaceId(r.get("workspace_id")),
+        project_id: ProjectId(r.get("project_id")),
+        work_item_id: WorkItemId(r.get("work_item_id")),
+        actor_id: r.get::<_, Option<Uuid>>("actor_id").map(UserId),
+        verb: r.get("verb"),
+        field: r.get("field"),
+        old_value: r.get("old_value"),
+        new_value: r.get("new_value"),
+        comment: r.get("comment"),
+        old_identifier: r.get("old_identifier"),
+        new_identifier: r.get("new_identifier"),
+        epoch: r.get("epoch"),
         created_at: r.get("created_at"),
     }
 }
@@ -1987,6 +2026,133 @@ impl Database for PgDatabase {
         Ok(rows.iter().map(activity).collect())
     }
 
+    /// Oldest first by time, then in the order the rows were written (`seq`, which `touch_work_item_activity` never moves). The row
+    /// carries the workspace and project it was written for, so another scope's read finds none.
+    async fn work_item_history(
+        &self,
+        scope: &Scope,
+        id: WorkItemId,
+        after: Option<Timestamp>,
+    ) -> Result<Vec<WorkItemActivity>, DbError> {
+        let c = self.conn().await?;
+        let rows = Pg(c.client())
+            .query(
+                &format!(
+                    "SELECT {WIA_COLS} FROM work_item_activities \
+                     WHERE workspace_id = $1 AND project_id = $2 AND work_item_id = $3 AND ($4::timestamptz IS NULL OR created_at > $4) \
+                     ORDER BY created_at, seq"
+                ),
+                &[&scope.workspace_id().0, &scope.project_id().0, &id.0, &after],
+            )
+            .await
+            .map_err(db_err)?;
+        Ok(rows.iter().map(work_item_activity).collect())
+    }
+
+    async fn latest_work_item_activity(
+        &self,
+        _sys: &SystemScope,
+        workspace: WorkspaceId,
+        project: ProjectId,
+        id: WorkItemId,
+    ) -> Result<Option<WorkItemActivity>, DbError> {
+        let c = self.conn().await?;
+        let row = Pg(c.client())
+            .query_opt(
+                &format!(
+                    "SELECT {WIA_COLS} FROM work_item_activities \
+                     WHERE workspace_id = $1 AND project_id = $2 AND work_item_id = $3 ORDER BY created_at DESC, seq DESC LIMIT 1"
+                ),
+                &[&workspace.0, &project.0, &id.0],
+            )
+            .await
+            .map_err(db_err)?;
+        Ok(row.as_ref().map(work_item_activity))
+    }
+
+    async fn touch_work_item_activity(
+        &self,
+        _sys: &SystemScope,
+        id: ActivityId,
+        at: Timestamp,
+    ) -> Result<bool, DbError> {
+        let c = self.conn().await?;
+        let n = Pg(c.client())
+            .execute("UPDATE work_item_activities SET created_at = $2 WHERE id = $1", &[&id.0, &at])
+            .await
+            .map_err(db_err)?;
+        Ok(n == 1)
+    }
+
+    /// ONE statement, so all of the rows or none: the rows go in as columns (`unnest`, in the order given, which is the order of
+    /// `seq`), a row whose key (`event_id`, `ordinal`) is there is skipped (`ON CONFLICT DO NOTHING`, which also skips the second of two
+    /// rows of one batch with one key), and the statement answers how many rows it refused and how many it wrote. A row is refused when
+    /// its work item is not in the workspace and project it names, or its actor is no user; the first the foreign keys cannot say (the
+    /// item's key is its id alone) and the second they would not see on a row that is skipped, so both are asked of every row before
+    /// any is written, as the memory adapter asks them.
+    async fn insert_work_item_activities(&self, _sys: &SystemScope, rows: &[WorkItemActivity]) -> Result<u64, DbError> {
+        if rows.is_empty() {
+            return Ok(0);
+        }
+        let ids: Vec<Uuid> = rows.iter().map(|r| r.id.0).collect();
+        let events: Vec<Uuid> = rows.iter().map(|r| r.event_id.0).collect();
+        let ordinals: Vec<i32> = rows.iter().map(|r| r.ordinal).collect();
+        let workspaces: Vec<Uuid> = rows.iter().map(|r| r.workspace_id.0).collect();
+        let projects: Vec<Uuid> = rows.iter().map(|r| r.project_id.0).collect();
+        let items: Vec<Uuid> = rows.iter().map(|r| r.work_item_id.0).collect();
+        let actors: Vec<Option<Uuid>> = rows.iter().map(|r| r.actor_id.map(|u| u.0)).collect();
+        let verbs: Vec<String> = rows.iter().map(|r| r.verb.clone()).collect();
+        let fields: Vec<Option<String>> = rows.iter().map(|r| r.field.clone()).collect();
+        let olds: Vec<Option<String>> = rows.iter().map(|r| r.old_value.clone()).collect();
+        let news: Vec<Option<String>> = rows.iter().map(|r| r.new_value.clone()).collect();
+        let comments: Vec<String> = rows.iter().map(|r| r.comment.clone()).collect();
+        let old_ids: Vec<Option<Uuid>> = rows.iter().map(|r| r.old_identifier).collect();
+        let new_ids: Vec<Option<Uuid>> = rows.iter().map(|r| r.new_identifier).collect();
+        let epochs: Vec<i64> = rows.iter().map(|r| r.epoch).collect();
+        let times: Vec<Timestamp> = rows.iter().map(|r| r.created_at).collect();
+        let c = self.conn().await?;
+        let r = Pg(c.client())
+            .query_one(
+                "WITH input AS ( \
+                   SELECT * FROM unnest($1::uuid[], $2::uuid[], $3::int4[], $4::uuid[], $5::uuid[], $6::uuid[], $7::uuid[], $8::text[], $9::text[], \
+                                        $10::text[], $11::text[], $12::text[], $13::uuid[], $14::uuid[], $15::int8[], $16::timestamptz[]) \
+                     WITH ORDINALITY AS t(id, event_id, ordinal, workspace_id, project_id, work_item_id, actor_id, verb, field, old_value, \
+                                          new_value, comment, old_identifier, new_identifier, epoch, created_at, place) \
+                 ), refused AS ( \
+                   SELECT count(*) FILTER (WHERE NOT EXISTS ( \
+                            SELECT 1 FROM work_items w WHERE w.id = i.work_item_id AND w.workspace_id = i.workspace_id AND w.project_id = i.project_id)) AS strays, \
+                          count(*) FILTER (WHERE i.actor_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM users u WHERE u.id = i.actor_id)) AS unknown_actors \
+                   FROM input i \
+                 ), written AS ( \
+                   INSERT INTO work_item_activities (id, event_id, ordinal, workspace_id, project_id, work_item_id, actor_id, verb, field, old_value, \
+                                                     new_value, comment, old_identifier, new_identifier, epoch, created_at) \
+                   SELECT i.id, i.event_id, i.ordinal, i.workspace_id, i.project_id, i.work_item_id, i.actor_id, i.verb, i.field, i.old_value, \
+                          i.new_value, i.comment, i.old_identifier, i.new_identifier, i.epoch, i.created_at \
+                   FROM input i WHERE (SELECT strays + unknown_actors FROM refused) = 0 ORDER BY i.place \
+                   ON CONFLICT (event_id, ordinal) DO NOTHING \
+                   RETURNING 1 \
+                 ) \
+                 SELECT (SELECT strays FROM refused) AS strays, (SELECT unknown_actors FROM refused) AS unknown_actors, (SELECT count(*) FROM written) AS written",
+                &[
+                    &ids, &events, &ordinals, &workspaces, &projects, &items, &actors, &verbs, &fields, &olds, &news, &comments, &old_ids,
+                    &new_ids, &epochs, &times,
+                ],
+            )
+            .await
+            .map_err(db_err)?;
+        let (strays, unknown_actors, written): (i64, i64, i64) =
+            (r.get("strays"), r.get("unknown_actors"), r.get("written"));
+        if strays > 0 {
+            return Err(DbError::Backend(format!("{strays} history row(s) name a work item that is not in the workspace and project they name (work_item_activities_work_item_fkey)")));
+        }
+        if unknown_actors > 0 {
+            return Err(DbError::Backend(format!(
+                "{unknown_actors} history row(s) name an actor who is no user (work_item_activities_actor_id_fkey)"
+            )));
+        }
+        Ok(written as u64)
+    }
+
     async fn undispatched_outbox(&self, _sys: &SystemScope, limit: u32) -> Result<Vec<OutboxRow>, DbError> {
         let c = self.conn().await?;
         let rows = Pg(c.client())
@@ -2322,6 +2488,79 @@ impl Tx for PgTx {
             .await
             .map_err(db_err)?;
         Ok(())
+    }
+
+    /// The row is the one a read finds (`work_item_row`: not deleted, archived or a draft), and none is `Ok(false)` with nothing else
+    /// written: the update of the columns is the first statement and the people and labels follow only when it changed a row. What
+    /// the constraints refuse (a state, an editor, a person or a label that is not there; a start after a target) is a `Backend`
+    /// error, as for [`Tx::insert_work_item_attrs`], and Postgres then holds the whole transaction aborted until it is rolled back.
+    /// The people and the labels, when named, are replaced: every row of the item goes, those of people who have left the project
+    /// too, and the named ones are written once each.
+    async fn update_work_item(
+        &mut self,
+        scope: &Scope,
+        id: WorkItemId,
+        update: &WorkItemUpdate,
+    ) -> Result<bool, DbError> {
+        let (ws, project) = (scope.workspace_id(), scope.project_id());
+        self.ensure_tx().await?;
+        let priority = update.priority.as_str();
+        let n = self
+            .client()?
+            .execute(
+                "UPDATE work_items SET name = $4, state_id = $5, priority = $6, start_date = $7, target_date = $8, completed_at = $9, \
+                   updated_at = $10, updated_by = $11, description_html = $12 \
+                 WHERE workspace_id = $1 AND project_id = $2 AND id = $3 AND deleted_at IS NULL AND archived_at IS NULL AND is_draft = false",
+                &[
+                    &ws.0,
+                    &project.0,
+                    &id.0,
+                    &update.name,
+                    &update.state_id,
+                    &priority,
+                    &update.start_date,
+                    &update.target_date,
+                    &update.completed_at,
+                    &update.updated_at,
+                    &update.updated_by.0,
+                    &update.description_html,
+                ],
+            )
+            .await
+            .map_err(db_err)?;
+        if n != 1 {
+            return Ok(false);
+        }
+        if let Some(people) = &update.assignee_ids {
+            let people: Vec<Uuid> = people.iter().map(|u| u.0).collect();
+            self.client()?
+                .execute("DELETE FROM work_item_assignees WHERE work_item_id = $1", &[&id.0])
+                .await
+                .map_err(db_err)?;
+            self.client()?
+                .execute(
+                    "INSERT INTO work_item_assignees (work_item_id, workspace_id, project_id, user_id, created_at) \
+                     SELECT $1, $2, $3, t.user_id, $5 FROM unnest($4::uuid[]) AS t(user_id) ON CONFLICT (work_item_id, user_id) DO NOTHING",
+                    &[&id.0, &ws.0, &project.0, &people, &update.updated_at],
+                )
+                .await
+                .map_err(db_err)?;
+        }
+        if let Some(labels) = &update.label_ids {
+            self.client()?
+                .execute("DELETE FROM work_item_labels WHERE work_item_id = $1", &[&id.0])
+                .await
+                .map_err(db_err)?;
+            self.client()?
+                .execute(
+                    "INSERT INTO work_item_labels (work_item_id, workspace_id, project_id, label_id, created_at) \
+                     SELECT $1, $2, $3, t.label_id, $5 FROM unnest($4::uuid[]) AS t(label_id) ON CONFLICT (work_item_id, label_id) DO NOTHING",
+                    &[&id.0, &ws.0, &project.0, labels, &update.updated_at],
+                )
+                .await
+                .map_err(db_err)?;
+        }
+        Ok(true)
     }
 
     async fn soft_delete_work_item(&mut self, scope: &Scope, id: WorkItemId, at: Timestamp) -> Result<bool, DbError> {

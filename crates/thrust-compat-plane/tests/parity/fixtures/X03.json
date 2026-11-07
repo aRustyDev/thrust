@@ -1,0 +1,2147 @@
+{
+  "exchanges": [
+    {
+      "name": "no session",
+      "request": {
+        "body": {
+          "name": "x"
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:2>/"
+      },
+      "response": {
+        "body": {
+          "detail": "Authentication credentials were not provided."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 401
+      }
+    },
+    {
+      "name": "not a member of the workspace",
+      "request": {
+        "as": "second@example.test",
+        "body": {
+          "name": "x"
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:2>/"
+      },
+      "response": {
+        "body": {
+          "error": "You don't have the required permissions."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 403
+      }
+    },
+    {
+      "name": "a project and a work item that do not exist",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "name": "x"
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:3>/issues/<uuid:3>/"
+      },
+      "response": {
+        "body": {
+          "error": "You don't have the required permissions."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 403
+      }
+    },
+    {
+      "name": "a work item that does not exist",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "name": "x"
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:3>/"
+      },
+      "response": {
+        "body": {
+          "error": "Issue not found"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 404
+      }
+    },
+    {
+      "name": "an id that is not an id",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "name": "x"
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/nope/"
+      },
+      "response": {
+        "body": {
+          "error": "Page not found."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 404
+      }
+    },
+    {
+      "name": "the states of the project",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/states/"
+      },
+      "response": {
+        "body": [
+          {
+            "color": "#60646C",
+            "default": true,
+            "description": "",
+            "group": "backlog",
+            "id": "<uuid:4>",
+            "name": "Backlog",
+            "order": 1.0,
+            "project_id": "<uuid:1>",
+            "sequence": 15000.0,
+            "workspace_id": "<uuid:5>"
+          },
+          {
+            "color": "#60646C",
+            "default": false,
+            "description": "",
+            "group": "unstarted",
+            "id": "<uuid:6>",
+            "name": "Todo",
+            "order": 1.0,
+            "project_id": "<uuid:1>",
+            "sequence": 25000.0,
+            "workspace_id": "<uuid:5>"
+          },
+          {
+            "color": "#F59E0B",
+            "default": false,
+            "description": "",
+            "group": "started",
+            "id": "<uuid:7>",
+            "name": "In Progress",
+            "order": 1.0,
+            "project_id": "<uuid:1>",
+            "sequence": 35000.0,
+            "workspace_id": "<uuid:5>"
+          },
+          {
+            "color": "#46A758",
+            "default": false,
+            "description": "",
+            "group": "completed",
+            "id": "<uuid:8>",
+            "name": "Done",
+            "order": 1.0,
+            "project_id": "<uuid:1>",
+            "sequence": 45000.0,
+            "workspace_id": "<uuid:5>"
+          },
+          {
+            "color": "#9AA4BC",
+            "default": false,
+            "description": "",
+            "group": "cancelled",
+            "id": "<uuid:9>",
+            "name": "Cancelled",
+            "order": 1.0,
+            "project_id": "<uuid:1>",
+            "sequence": 55000.0,
+            "workspace_id": "<uuid:5>"
+          }
+        ],
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "the signed-in user",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/users/me/"
+      },
+      "response": {
+        "body": {
+          "avatar": "",
+          "avatar_url": null,
+          "cover_image": null,
+          "cover_image_url": null,
+          "date_joined": "<ts>",
+          "display_name": "Journey T.",
+          "email": "journey@example.test",
+          "first_name": "Journey",
+          "id": "<uuid:10>",
+          "is_active": true,
+          "is_bot": false,
+          "is_email_verified": false,
+          "is_password_autoset": false,
+          "last_login_medium": "email",
+          "last_login_time": "<ts>",
+          "last_name": "Tester",
+          "user_timezone": "UTC",
+          "username": "<uuid:11>"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "the other user",
+      "request": {
+        "as": "second@example.test",
+        "method": "GET",
+        "path": "/api/users/me/"
+      },
+      "response": {
+        "body": {
+          "avatar": "",
+          "avatar_url": null,
+          "cover_image": null,
+          "cover_image_url": null,
+          "date_joined": "<ts>",
+          "display_name": "second",
+          "email": "second@example.test",
+          "first_name": "",
+          "id": "<uuid:12>",
+          "is_active": true,
+          "is_bot": false,
+          "is_email_verified": false,
+          "is_password_autoset": false,
+          "last_login_medium": "email",
+          "last_login_time": "<ts>",
+          "last_name": "",
+          "user_timezone": "UTC",
+          "username": "<uuid:13>"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "a blank name",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "name": ""
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:2>/"
+      },
+      "response": {
+        "body": {
+          "name": [
+            "This field may not be blank."
+          ]
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "a name of spaces",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "name": "   "
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:2>/"
+      },
+      "response": {
+        "body": {
+          "name": [
+            "This field may not be blank."
+          ]
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "a name that is too long",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "name": "nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn"
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:2>/"
+      },
+      "response": {
+        "body": {
+          "name": [
+            "Ensure this field has no more than 255 characters."
+          ]
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "a name that is null",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "name": null
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:2>/"
+      },
+      "response": {
+        "body": {
+          "name": [
+            "This field may not be null."
+          ]
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "a name that is a list",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "name": [
+            "x"
+          ]
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:2>/"
+      },
+      "response": {
+        "body": {
+          "name": [
+            "Not a valid string."
+          ]
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "a priority that is not one",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "priority": "huge"
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:2>/"
+      },
+      "response": {
+        "body": {
+          "priority": [
+            "\"huge\" is not a valid choice."
+          ]
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "a priority that is null",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "priority": null
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:2>/"
+      },
+      "response": {
+        "body": {
+          "priority": [
+            "This field may not be null."
+          ]
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "a priority that is empty",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "priority": ""
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:2>/"
+      },
+      "response": {
+        "body": {
+          "priority": [
+            "\"\" is not a valid choice."
+          ]
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "a state that does not exist",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "state_id": "<uuid:3>"
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:2>/"
+      },
+      "response": {
+        "body": {
+          "state_id": [
+            "Invalid pk \"<uuid:3>\" - object does not exist."
+          ]
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "a state that is not an id",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "state_id": "nope"
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:2>/"
+      },
+      "response": {
+        "body": {
+          "state_id": [
+            "\u201cnope\u201d is not a valid UUID."
+          ]
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "a parent that does not exist",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "parent_id": "<uuid:3>"
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:2>/"
+      },
+      "response": {
+        "body": {
+          "parent_id": [
+            "Invalid pk \"<uuid:3>\" - object does not exist."
+          ]
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "an estimate that does not exist",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "estimate_point": "<uuid:3>"
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:2>/"
+      },
+      "response": {
+        "body": {
+          "estimate_point": [
+            "Invalid pk \"<uuid:3>\" - object does not exist."
+          ]
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "a date that is not a date",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "start_date": "yesterday"
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:2>/"
+      },
+      "response": {
+        "body": {
+          "start_date": [
+            "Date has wrong format. Use one of these formats instead: YYYY-MM-DD."
+          ]
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "a date with a time",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "target_date": "2026-11-01T10:00:00Z"
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:2>/"
+      },
+      "response": {
+        "body": {
+          "target_date": [
+            "Date has wrong format. Use one of these formats instead: YYYY-MM-DD."
+          ]
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "a date that is a number",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "start_date": 20260105
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:2>/"
+      },
+      "response": {
+        "body": {
+          "start_date": [
+            "Date has wrong format. Use one of these formats instead: YYYY-MM-DD."
+          ]
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "assignees that are not a list",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "assignee_ids": "<uuid:10>"
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:2>/"
+      },
+      "response": {
+        "body": {
+          "assignee_ids": [
+            "Expected a list of items but got type \"str\"."
+          ]
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "an assignee that does not exist",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "assignee_ids": [
+            "<uuid:14>"
+          ]
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:2>/"
+      },
+      "response": {
+        "body": {
+          "assignee_ids": {
+            "0": [
+              "Invalid pk \"<uuid:14>\" - object does not exist."
+            ]
+          }
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "assignees that are null",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "assignee_ids": null
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:2>/"
+      },
+      "response": {
+        "body": {
+          "assignee_ids": [
+            "This field may not be null."
+          ]
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "labels that are not a list",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "label_ids": "x"
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:2>/"
+      },
+      "response": {
+        "body": {
+          "label_ids": [
+            "Expected a list of items but got type \"str\"."
+          ]
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "a label that does not exist",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "label_ids": [
+            "<uuid:14>"
+          ]
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:2>/"
+      },
+      "response": {
+        "body": {
+          "label_ids": {
+            "0": [
+              "Invalid pk \"<uuid:14>\" - object does not exist."
+            ]
+          }
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "labels that are null",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "label_ids": null
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:2>/"
+      },
+      "response": {
+        "body": {
+          "label_ids": [
+            "This field may not be null."
+          ]
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "a description that is null",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "description_html": null
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:2>/"
+      },
+      "response": {
+        "body": {
+          "description_html": [
+            "This field may not be null."
+          ]
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "a description that is a list",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "description_html": [
+            "a"
+          ]
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:2>/"
+      },
+      "response": {
+        "body": {
+          "description_html": [
+            "Not a valid string."
+          ]
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "a start and a target in the wrong order",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "start_date": "2027-01-01",
+          "target_date": "2026-01-01"
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:2>/"
+      },
+      "response": {
+        "body": {
+          "non_field_errors": [
+            "Start date cannot exceed target date"
+          ]
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "the work item before any change",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:2>/?expand=issue_reactions,issue_attachments,issue_link,parent"
+      },
+      "response": {
+        "body": {
+          "archived_at": null,
+          "assignee_ids": [],
+          "attachment_count": null,
+          "completed_at": null,
+          "created_at": "<ts>",
+          "created_by": "<uuid:10>",
+          "cycle_id": null,
+          "description_html": "<p>The first work item</p>",
+          "estimate_point": null,
+          "id": "<uuid:2>",
+          "is_draft": false,
+          "is_subscribed": false,
+          "issue_attachments": [],
+          "issue_link": [],
+          "issue_reactions": [],
+          "label_ids": [],
+          "link_count": null,
+          "module_ids": [],
+          "name": "Journey work item",
+          "parent": null,
+          "parent_id": null,
+          "priority": "none",
+          "project_id": "<uuid:1>",
+          "sequence_id": 1,
+          "sort_order": 65535.0,
+          "start_date": null,
+          "state_id": "<uuid:4>",
+          "sub_issues_count": null,
+          "target_date": null,
+          "updated_at": "<ts>",
+          "updated_by": null
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "an empty body",
+      "request": {
+        "as": "journey@example.test",
+        "body": {},
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:2>/"
+      },
+      "response": {
+        "body": null,
+        "headers": {},
+        "status": 204
+      }
+    },
+    {
+      "name": "after an empty body: it says who changed it",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:2>/?expand=issue_reactions,issue_attachments,issue_link,parent"
+      },
+      "response": {
+        "body": {
+          "archived_at": null,
+          "assignee_ids": [],
+          "attachment_count": null,
+          "completed_at": null,
+          "created_at": "<ts>",
+          "created_by": "<uuid:10>",
+          "cycle_id": null,
+          "description_html": "<p>The first work item</p>",
+          "estimate_point": null,
+          "id": "<uuid:2>",
+          "is_draft": false,
+          "is_subscribed": false,
+          "issue_attachments": [],
+          "issue_link": [],
+          "issue_reactions": [],
+          "label_ids": [],
+          "link_count": null,
+          "module_ids": [],
+          "name": "Journey work item",
+          "parent": null,
+          "parent_id": null,
+          "priority": "none",
+          "project_id": "<uuid:1>",
+          "sequence_id": 1,
+          "sort_order": 65535.0,
+          "start_date": null,
+          "state_id": "<uuid:4>",
+          "sub_issues_count": null,
+          "target_date": null,
+          "updated_at": "<ts>",
+          "updated_by": "<uuid:10>"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "a name",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "name": "Renamed"
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:2>/"
+      },
+      "response": {
+        "body": null,
+        "headers": {},
+        "status": 204
+      }
+    },
+    {
+      "name": "after a name",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:2>/?expand=issue_reactions,issue_attachments,issue_link,parent"
+      },
+      "response": {
+        "body": {
+          "archived_at": null,
+          "assignee_ids": [],
+          "attachment_count": null,
+          "completed_at": null,
+          "created_at": "<ts>",
+          "created_by": "<uuid:10>",
+          "cycle_id": null,
+          "description_html": "<p>The first work item</p>",
+          "estimate_point": null,
+          "id": "<uuid:2>",
+          "is_draft": false,
+          "is_subscribed": false,
+          "issue_attachments": [],
+          "issue_link": [],
+          "issue_reactions": [],
+          "label_ids": [],
+          "link_count": null,
+          "module_ids": [],
+          "name": "Renamed",
+          "parent": null,
+          "parent_id": null,
+          "priority": "none",
+          "project_id": "<uuid:1>",
+          "sequence_id": 1,
+          "sort_order": 65535.0,
+          "start_date": null,
+          "state_id": "<uuid:4>",
+          "sub_issues_count": null,
+          "target_date": null,
+          "updated_at": "<ts>",
+          "updated_by": "<uuid:10>"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "the same name again",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "name": "Renamed"
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:2>/"
+      },
+      "response": {
+        "body": null,
+        "headers": {},
+        "status": 204
+      }
+    },
+    {
+      "name": "a name with spaces around it",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "name": "  Padded  "
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:2>/"
+      },
+      "response": {
+        "body": null,
+        "headers": {},
+        "status": 204
+      }
+    },
+    {
+      "name": "after a padded name",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:2>/?expand=issue_reactions,issue_attachments,issue_link,parent"
+      },
+      "response": {
+        "body": {
+          "archived_at": null,
+          "assignee_ids": [],
+          "attachment_count": null,
+          "completed_at": null,
+          "created_at": "<ts>",
+          "created_by": "<uuid:10>",
+          "cycle_id": null,
+          "description_html": "<p>The first work item</p>",
+          "estimate_point": null,
+          "id": "<uuid:2>",
+          "is_draft": false,
+          "is_subscribed": false,
+          "issue_attachments": [],
+          "issue_link": [],
+          "issue_reactions": [],
+          "label_ids": [],
+          "link_count": null,
+          "module_ids": [],
+          "name": "Padded",
+          "parent": null,
+          "parent_id": null,
+          "priority": "none",
+          "project_id": "<uuid:1>",
+          "sequence_id": 1,
+          "sort_order": 65535.0,
+          "start_date": null,
+          "state_id": "<uuid:4>",
+          "sub_issues_count": null,
+          "target_date": null,
+          "updated_at": "<ts>",
+          "updated_by": "<uuid:10>"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "a name that is a number",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "name": 5
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:2>/"
+      },
+      "response": {
+        "body": null,
+        "headers": {},
+        "status": 204
+      }
+    },
+    {
+      "name": "after a number for a name",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:2>/?expand=issue_reactions,issue_attachments,issue_link,parent"
+      },
+      "response": {
+        "body": {
+          "archived_at": null,
+          "assignee_ids": [],
+          "attachment_count": null,
+          "completed_at": null,
+          "created_at": "<ts>",
+          "created_by": "<uuid:10>",
+          "cycle_id": null,
+          "description_html": "<p>The first work item</p>",
+          "estimate_point": null,
+          "id": "<uuid:2>",
+          "is_draft": false,
+          "is_subscribed": false,
+          "issue_attachments": [],
+          "issue_link": [],
+          "issue_reactions": [],
+          "label_ids": [],
+          "link_count": null,
+          "module_ids": [],
+          "name": "5",
+          "parent": null,
+          "parent_id": null,
+          "priority": "none",
+          "project_id": "<uuid:1>",
+          "sequence_id": 1,
+          "sort_order": 65535.0,
+          "start_date": null,
+          "state_id": "<uuid:4>",
+          "sub_issues_count": null,
+          "target_date": null,
+          "updated_at": "<ts>",
+          "updated_by": "<uuid:10>"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "a priority",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "priority": "high"
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:2>/"
+      },
+      "response": {
+        "body": null,
+        "headers": {},
+        "status": 204
+      }
+    },
+    {
+      "name": "after a priority",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:2>/?expand=issue_reactions,issue_attachments,issue_link,parent"
+      },
+      "response": {
+        "body": {
+          "archived_at": null,
+          "assignee_ids": [],
+          "attachment_count": null,
+          "completed_at": null,
+          "created_at": "<ts>",
+          "created_by": "<uuid:10>",
+          "cycle_id": null,
+          "description_html": "<p>The first work item</p>",
+          "estimate_point": null,
+          "id": "<uuid:2>",
+          "is_draft": false,
+          "is_subscribed": false,
+          "issue_attachments": [],
+          "issue_link": [],
+          "issue_reactions": [],
+          "label_ids": [],
+          "link_count": null,
+          "module_ids": [],
+          "name": "5",
+          "parent": null,
+          "parent_id": null,
+          "priority": "high",
+          "project_id": "<uuid:1>",
+          "sequence_id": 1,
+          "sort_order": 65535.0,
+          "start_date": null,
+          "state_id": "<uuid:4>",
+          "sub_issues_count": null,
+          "target_date": null,
+          "updated_at": "<ts>",
+          "updated_by": "<uuid:10>"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "a state of the done group",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "state_id": "<uuid:8>"
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:2>/"
+      },
+      "response": {
+        "body": null,
+        "headers": {},
+        "status": 204
+      }
+    },
+    {
+      "name": "after the done state: completed",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:2>/?expand=issue_reactions,issue_attachments,issue_link,parent"
+      },
+      "response": {
+        "body": {
+          "archived_at": null,
+          "assignee_ids": [],
+          "attachment_count": null,
+          "completed_at": "<ts>",
+          "created_at": "<ts>",
+          "created_by": "<uuid:10>",
+          "cycle_id": null,
+          "description_html": "<p>The first work item</p>",
+          "estimate_point": null,
+          "id": "<uuid:2>",
+          "is_draft": false,
+          "is_subscribed": false,
+          "issue_attachments": [],
+          "issue_link": [],
+          "issue_reactions": [],
+          "label_ids": [],
+          "link_count": null,
+          "module_ids": [],
+          "name": "5",
+          "parent": null,
+          "parent_id": null,
+          "priority": "high",
+          "project_id": "<uuid:1>",
+          "sequence_id": 1,
+          "sort_order": 65535.0,
+          "start_date": null,
+          "state_id": "<uuid:8>",
+          "sub_issues_count": null,
+          "target_date": null,
+          "updated_at": "<ts>",
+          "updated_by": "<uuid:10>"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "a state of the unstarted group",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "state_id": "<uuid:6>"
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:2>/"
+      },
+      "response": {
+        "body": null,
+        "headers": {},
+        "status": 204
+      }
+    },
+    {
+      "name": "after the todo state: no longer completed",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:2>/?expand=issue_reactions,issue_attachments,issue_link,parent"
+      },
+      "response": {
+        "body": {
+          "archived_at": null,
+          "assignee_ids": [],
+          "attachment_count": null,
+          "completed_at": null,
+          "created_at": "<ts>",
+          "created_by": "<uuid:10>",
+          "cycle_id": null,
+          "description_html": "<p>The first work item</p>",
+          "estimate_point": null,
+          "id": "<uuid:2>",
+          "is_draft": false,
+          "is_subscribed": false,
+          "issue_attachments": [],
+          "issue_link": [],
+          "issue_reactions": [],
+          "label_ids": [],
+          "link_count": null,
+          "module_ids": [],
+          "name": "5",
+          "parent": null,
+          "parent_id": null,
+          "priority": "high",
+          "project_id": "<uuid:1>",
+          "sequence_id": 1,
+          "sort_order": 65535.0,
+          "start_date": null,
+          "state_id": "<uuid:6>",
+          "sub_issues_count": null,
+          "target_date": null,
+          "updated_at": "<ts>",
+          "updated_by": "<uuid:10>"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "a state that is null: the project's default",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "state_id": null
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:2>/"
+      },
+      "response": {
+        "body": null,
+        "headers": {},
+        "status": 204
+      }
+    },
+    {
+      "name": "after a null state",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:2>/?expand=issue_reactions,issue_attachments,issue_link,parent"
+      },
+      "response": {
+        "body": {
+          "archived_at": null,
+          "assignee_ids": [],
+          "attachment_count": null,
+          "completed_at": null,
+          "created_at": "<ts>",
+          "created_by": "<uuid:10>",
+          "cycle_id": null,
+          "description_html": "<p>The first work item</p>",
+          "estimate_point": null,
+          "id": "<uuid:2>",
+          "is_draft": false,
+          "is_subscribed": false,
+          "issue_attachments": [],
+          "issue_link": [],
+          "issue_reactions": [],
+          "label_ids": [],
+          "link_count": null,
+          "module_ids": [],
+          "name": "5",
+          "parent": null,
+          "parent_id": null,
+          "priority": "high",
+          "project_id": "<uuid:1>",
+          "sequence_id": 1,
+          "sort_order": 65535.0,
+          "start_date": null,
+          "state_id": "<uuid:4>",
+          "sub_issues_count": null,
+          "target_date": null,
+          "updated_at": "<ts>",
+          "updated_by": "<uuid:10>"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "a state that is empty",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "state_id": ""
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:2>/"
+      },
+      "response": {
+        "body": null,
+        "headers": {},
+        "status": 204
+      }
+    },
+    {
+      "name": "dates",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "start_date": "2026-11-01",
+          "target_date": "2026-11-15"
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:2>/"
+      },
+      "response": {
+        "body": null,
+        "headers": {},
+        "status": 204
+      }
+    },
+    {
+      "name": "after the dates",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:2>/?expand=issue_reactions,issue_attachments,issue_link,parent"
+      },
+      "response": {
+        "body": {
+          "archived_at": null,
+          "assignee_ids": [],
+          "attachment_count": null,
+          "completed_at": null,
+          "created_at": "<ts>",
+          "created_by": "<uuid:10>",
+          "cycle_id": null,
+          "description_html": "<p>The first work item</p>",
+          "estimate_point": null,
+          "id": "<uuid:2>",
+          "is_draft": false,
+          "is_subscribed": false,
+          "issue_attachments": [],
+          "issue_link": [],
+          "issue_reactions": [],
+          "label_ids": [],
+          "link_count": null,
+          "module_ids": [],
+          "name": "5",
+          "parent": null,
+          "parent_id": null,
+          "priority": "high",
+          "project_id": "<uuid:1>",
+          "sequence_id": 1,
+          "sort_order": 65535.0,
+          "start_date": "<date>",
+          "state_id": "<uuid:4>",
+          "sub_issues_count": null,
+          "target_date": "<date>",
+          "updated_at": "<ts>",
+          "updated_by": "<uuid:10>"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "a target date alone",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "target_date": "2026-12-31"
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:2>/"
+      },
+      "response": {
+        "body": null,
+        "headers": {},
+        "status": 204
+      }
+    },
+    {
+      "name": "after a target date alone",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:2>/?expand=issue_reactions,issue_attachments,issue_link,parent"
+      },
+      "response": {
+        "body": {
+          "archived_at": null,
+          "assignee_ids": [],
+          "attachment_count": null,
+          "completed_at": null,
+          "created_at": "<ts>",
+          "created_by": "<uuid:10>",
+          "cycle_id": null,
+          "description_html": "<p>The first work item</p>",
+          "estimate_point": null,
+          "id": "<uuid:2>",
+          "is_draft": false,
+          "is_subscribed": false,
+          "issue_attachments": [],
+          "issue_link": [],
+          "issue_reactions": [],
+          "label_ids": [],
+          "link_count": null,
+          "module_ids": [],
+          "name": "5",
+          "parent": null,
+          "parent_id": null,
+          "priority": "high",
+          "project_id": "<uuid:1>",
+          "sequence_id": 1,
+          "sort_order": 65535.0,
+          "start_date": "<date>",
+          "state_id": "<uuid:4>",
+          "sub_issues_count": null,
+          "target_date": "<date>",
+          "updated_at": "<ts>",
+          "updated_by": "<uuid:10>"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "dates cleared",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "start_date": null,
+          "target_date": null
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:2>/"
+      },
+      "response": {
+        "body": null,
+        "headers": {},
+        "status": 204
+      }
+    },
+    {
+      "name": "after the dates are cleared",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:2>/?expand=issue_reactions,issue_attachments,issue_link,parent"
+      },
+      "response": {
+        "body": {
+          "archived_at": null,
+          "assignee_ids": [],
+          "attachment_count": null,
+          "completed_at": null,
+          "created_at": "<ts>",
+          "created_by": "<uuid:10>",
+          "cycle_id": null,
+          "description_html": "<p>The first work item</p>",
+          "estimate_point": null,
+          "id": "<uuid:2>",
+          "is_draft": false,
+          "is_subscribed": false,
+          "issue_attachments": [],
+          "issue_link": [],
+          "issue_reactions": [],
+          "label_ids": [],
+          "link_count": null,
+          "module_ids": [],
+          "name": "5",
+          "parent": null,
+          "parent_id": null,
+          "priority": "high",
+          "project_id": "<uuid:1>",
+          "sequence_id": 1,
+          "sort_order": 65535.0,
+          "start_date": null,
+          "state_id": "<uuid:4>",
+          "sub_issues_count": null,
+          "target_date": null,
+          "updated_at": "<ts>",
+          "updated_by": "<uuid:10>"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "an assignee",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "assignee_ids": [
+            "<uuid:10>"
+          ]
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:2>/"
+      },
+      "response": {
+        "body": null,
+        "headers": {},
+        "status": 204
+      }
+    },
+    {
+      "name": "after an assignee",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:2>/?expand=issue_reactions,issue_attachments,issue_link,parent"
+      },
+      "response": {
+        "body": {
+          "archived_at": null,
+          "assignee_ids": [
+            "<uuid:10>"
+          ],
+          "attachment_count": null,
+          "completed_at": null,
+          "created_at": "<ts>",
+          "created_by": "<uuid:10>",
+          "cycle_id": null,
+          "description_html": "<p>The first work item</p>",
+          "estimate_point": null,
+          "id": "<uuid:2>",
+          "is_draft": false,
+          "is_subscribed": false,
+          "issue_attachments": [],
+          "issue_link": [],
+          "issue_reactions": [],
+          "label_ids": [],
+          "link_count": null,
+          "module_ids": [],
+          "name": "5",
+          "parent": null,
+          "parent_id": null,
+          "priority": "high",
+          "project_id": "<uuid:1>",
+          "sequence_id": 1,
+          "sort_order": 65535.0,
+          "start_date": null,
+          "state_id": "<uuid:4>",
+          "sub_issues_count": null,
+          "target_date": null,
+          "updated_at": "<ts>",
+          "updated_by": "<uuid:10>"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "an assignee who is not in the project",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "assignee_ids": [
+            "<uuid:12>"
+          ]
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:2>/"
+      },
+      "response": {
+        "body": null,
+        "headers": {},
+        "status": 204
+      }
+    },
+    {
+      "name": "after an assignee who is not in the project: nobody is assigned",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:2>/?expand=issue_reactions,issue_attachments,issue_link,parent"
+      },
+      "response": {
+        "body": {
+          "archived_at": null,
+          "assignee_ids": [],
+          "attachment_count": null,
+          "completed_at": null,
+          "created_at": "<ts>",
+          "created_by": "<uuid:10>",
+          "cycle_id": null,
+          "description_html": "<p>The first work item</p>",
+          "estimate_point": null,
+          "id": "<uuid:2>",
+          "is_draft": false,
+          "is_subscribed": false,
+          "issue_attachments": [],
+          "issue_link": [],
+          "issue_reactions": [],
+          "label_ids": [],
+          "link_count": null,
+          "module_ids": [],
+          "name": "5",
+          "parent": null,
+          "parent_id": null,
+          "priority": "high",
+          "project_id": "<uuid:1>",
+          "sequence_id": 1,
+          "sort_order": 65535.0,
+          "start_date": null,
+          "state_id": "<uuid:4>",
+          "sub_issues_count": null,
+          "target_date": null,
+          "updated_at": "<ts>",
+          "updated_by": "<uuid:10>"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "assignees cleared",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "assignee_ids": []
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:2>/"
+      },
+      "response": {
+        "body": null,
+        "headers": {},
+        "status": 204
+      }
+    },
+    {
+      "name": "a description",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "description_html": "<p>hello</p>"
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:2>/"
+      },
+      "response": {
+        "body": null,
+        "headers": {},
+        "status": 204
+      }
+    },
+    {
+      "name": "after a description",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:2>/?expand=issue_reactions,issue_attachments,issue_link,parent"
+      },
+      "response": {
+        "body": {
+          "archived_at": null,
+          "assignee_ids": [],
+          "attachment_count": null,
+          "completed_at": null,
+          "created_at": "<ts>",
+          "created_by": "<uuid:10>",
+          "cycle_id": null,
+          "description_html": "<p>hello</p>",
+          "estimate_point": null,
+          "id": "<uuid:2>",
+          "is_draft": false,
+          "is_subscribed": false,
+          "issue_attachments": [],
+          "issue_link": [],
+          "issue_reactions": [],
+          "label_ids": [],
+          "link_count": null,
+          "module_ids": [],
+          "name": "5",
+          "parent": null,
+          "parent_id": null,
+          "priority": "high",
+          "project_id": "<uuid:1>",
+          "sequence_id": 1,
+          "sort_order": 65535.0,
+          "start_date": null,
+          "state_id": "<uuid:4>",
+          "sub_issues_count": null,
+          "target_date": null,
+          "updated_at": "<ts>",
+          "updated_by": "<uuid:10>"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "a description with markup the pin cleans",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "description_html": "<script>alert(1)</script><p onclick='x()'>y</p>"
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:2>/"
+      },
+      "response": {
+        "body": null,
+        "headers": {},
+        "status": 204
+      }
+    },
+    {
+      "name": "after a description with markup",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:2>/?expand=issue_reactions,issue_attachments,issue_link,parent"
+      },
+      "response": {
+        "body": {
+          "archived_at": null,
+          "assignee_ids": [],
+          "attachment_count": null,
+          "completed_at": null,
+          "created_at": "<ts>",
+          "created_by": "<uuid:10>",
+          "cycle_id": null,
+          "description_html": "<p>y</p>",
+          "estimate_point": null,
+          "id": "<uuid:2>",
+          "is_draft": false,
+          "is_subscribed": false,
+          "issue_attachments": [],
+          "issue_link": [],
+          "issue_reactions": [],
+          "label_ids": [],
+          "link_count": null,
+          "module_ids": [],
+          "name": "5",
+          "parent": null,
+          "parent_id": null,
+          "priority": "high",
+          "project_id": "<uuid:1>",
+          "sequence_id": 1,
+          "sort_order": 65535.0,
+          "start_date": null,
+          "state_id": "<uuid:4>",
+          "sub_issues_count": null,
+          "target_date": null,
+          "updated_at": "<ts>",
+          "updated_by": "<uuid:10>"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "a description that is empty",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "description_html": ""
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:2>/"
+      },
+      "response": {
+        "body": null,
+        "headers": {},
+        "status": 204
+      }
+    },
+    {
+      "name": "after an empty description",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:2>/?expand=issue_reactions,issue_attachments,issue_link,parent"
+      },
+      "response": {
+        "body": {
+          "archived_at": null,
+          "assignee_ids": [],
+          "attachment_count": null,
+          "completed_at": null,
+          "created_at": "<ts>",
+          "created_by": "<uuid:10>",
+          "cycle_id": null,
+          "description_html": "",
+          "estimate_point": null,
+          "id": "<uuid:2>",
+          "is_draft": false,
+          "is_subscribed": false,
+          "issue_attachments": [],
+          "issue_link": [],
+          "issue_reactions": [],
+          "label_ids": [],
+          "link_count": null,
+          "module_ids": [],
+          "name": "5",
+          "parent": null,
+          "parent_id": null,
+          "priority": "high",
+          "project_id": "<uuid:1>",
+          "sequence_id": 1,
+          "sort_order": 65535.0,
+          "start_date": null,
+          "state_id": "<uuid:4>",
+          "sub_issues_count": null,
+          "target_date": null,
+          "updated_at": "<ts>",
+          "updated_by": "<uuid:10>"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "a description that is a number",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "description_html": 5
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:2>/"
+      },
+      "response": {
+        "body": null,
+        "headers": {},
+        "status": 204
+      }
+    },
+    {
+      "name": "a description kept out of the history",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "description_html": "<p>kept quiet</p>",
+          "skip_activity": true
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:2>/"
+      },
+      "response": {
+        "body": null,
+        "headers": {},
+        "status": 204
+      }
+    },
+    {
+      "name": "after a description kept out of the history",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:2>/?expand=issue_reactions,issue_attachments,issue_link,parent"
+      },
+      "response": {
+        "body": {
+          "archived_at": null,
+          "assignee_ids": [],
+          "attachment_count": null,
+          "completed_at": null,
+          "created_at": "<ts>",
+          "created_by": "<uuid:10>",
+          "cycle_id": null,
+          "description_html": "<p>kept quiet</p>",
+          "estimate_point": null,
+          "id": "<uuid:2>",
+          "is_draft": false,
+          "is_subscribed": false,
+          "issue_attachments": [],
+          "issue_link": [],
+          "issue_reactions": [],
+          "label_ids": [],
+          "link_count": null,
+          "module_ids": [],
+          "name": "5",
+          "parent": null,
+          "parent_id": null,
+          "priority": "high",
+          "project_id": "<uuid:1>",
+          "sequence_id": 1,
+          "sort_order": 65535.0,
+          "start_date": null,
+          "state_id": "<uuid:4>",
+          "sub_issues_count": null,
+          "target_date": null,
+          "updated_at": "<ts>",
+          "updated_by": "<uuid:10>"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "several things at once",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "assignee_ids": [
+            "<uuid:10>"
+          ],
+          "name": "Several",
+          "priority": "low",
+          "state_id": "<uuid:7>",
+          "target_date": "2026-12-01"
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:2>/"
+      },
+      "response": {
+        "body": null,
+        "headers": {},
+        "status": 204
+      }
+    },
+    {
+      "name": "after several things",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:2>/?expand=issue_reactions,issue_attachments,issue_link,parent"
+      },
+      "response": {
+        "body": {
+          "archived_at": null,
+          "assignee_ids": [
+            "<uuid:10>"
+          ],
+          "attachment_count": null,
+          "completed_at": null,
+          "created_at": "<ts>",
+          "created_by": "<uuid:10>",
+          "cycle_id": null,
+          "description_html": "<p>kept quiet</p>",
+          "estimate_point": null,
+          "id": "<uuid:2>",
+          "is_draft": false,
+          "is_subscribed": false,
+          "issue_attachments": [],
+          "issue_link": [],
+          "issue_reactions": [],
+          "label_ids": [],
+          "link_count": null,
+          "module_ids": [],
+          "name": "Several",
+          "parent": null,
+          "parent_id": null,
+          "priority": "low",
+          "project_id": "<uuid:1>",
+          "sequence_id": 1,
+          "sort_order": 65535.0,
+          "start_date": null,
+          "state_id": "<uuid:7>",
+          "sub_issues_count": null,
+          "target_date": "<date>",
+          "updated_at": "<ts>",
+          "updated_by": "<uuid:10>"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "members the pin does not take from this request",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "bogus": 1,
+          "cycle_id": "<uuid:14>",
+          "module_ids": [
+            "<uuid:14>"
+          ],
+          "type_id": "<uuid:14>"
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:2>/"
+      },
+      "response": {
+        "body": null,
+        "headers": {},
+        "status": 204
+      }
+    },
+    {
+      "name": "members the pin keeps for itself",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "completed_at": "2026-01-01T00:00:00Z",
+          "created_at": "2026-01-01T00:00:00Z",
+          "created_by": "<uuid:14>",
+          "id": "<uuid:14>",
+          "project_id": "<uuid:3>",
+          "updated_by": "<uuid:14>",
+          "workspace_id": "<uuid:3>"
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:2>/"
+      },
+      "response": {
+        "body": null,
+        "headers": {},
+        "status": 204
+      }
+    },
+    {
+      "name": "after members the pin does not take",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:2>/?expand=issue_reactions,issue_attachments,issue_link,parent"
+      },
+      "response": {
+        "body": {
+          "archived_at": null,
+          "assignee_ids": [
+            "<uuid:10>"
+          ],
+          "attachment_count": null,
+          "completed_at": null,
+          "created_at": "<ts>",
+          "created_by": "<uuid:10>",
+          "cycle_id": null,
+          "description_html": "<p>kept quiet</p>",
+          "estimate_point": null,
+          "id": "<uuid:2>",
+          "is_draft": false,
+          "is_subscribed": false,
+          "issue_attachments": [],
+          "issue_link": [],
+          "issue_reactions": [],
+          "label_ids": [],
+          "link_count": null,
+          "module_ids": [],
+          "name": "Several",
+          "parent": null,
+          "parent_id": null,
+          "priority": "low",
+          "project_id": "<uuid:1>",
+          "sequence_id": 1,
+          "sort_order": 65535.0,
+          "start_date": null,
+          "state_id": "<uuid:7>",
+          "sub_issues_count": null,
+          "target_date": "<date>",
+          "updated_at": "<ts>",
+          "updated_by": "<uuid:10>"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    }
+  ],
+  "format_version": 1,
+  "recorded_from": "ba85d4d3d3",
+  "row": "X03",
+  "uses": [
+    "project",
+    "issue"
+  ]
+}

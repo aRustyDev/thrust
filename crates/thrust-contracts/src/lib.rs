@@ -279,6 +279,53 @@ pub struct WorkItemRow {
     pub state_group: Option<StateGroup>,
 }
 
+/// What an update of a work item writes (issue #44, X03). The use-case reads the row, applies what the request names and hands
+/// back every column of it that can change, so the update is whole; the people and the labels are replaced only when the request
+/// named them.
+#[derive(Debug, Clone, PartialEq)]
+pub struct WorkItemUpdate {
+    pub name: String,
+    pub state_id: Option<Uuid>,
+    pub priority: Priority,
+    pub start_date: Option<chrono::NaiveDate>,
+    pub target_date: Option<chrono::NaiveDate>,
+    pub completed_at: Option<Timestamp>,
+    pub updated_at: Timestamp,
+    pub updated_by: UserId,
+    pub description_html: String,
+    /// `Some` replaces the people assigned, every row of them (those of people who have left the project too); `None` leaves them.
+    pub assignee_ids: Option<Vec<UserId>>,
+    /// `Some` replaces the labels; `None` leaves them.
+    pub label_ids: Option<Vec<Uuid>>,
+}
+
+/// One row of a work item's history (the pin's `IssueActivity`): a change made to it. The activity consumer writes the rows an
+/// event names in its payload's `history`, one per change, and no row twice (the key is the event and the place of the row in it).
+#[derive(Debug, Clone, PartialEq)]
+pub struct WorkItemActivity {
+    pub id: ActivityId,
+    pub event_id: EventId,
+    /// The place of the row among those the event made, from 0.
+    pub ordinal: i32,
+    pub workspace_id: WorkspaceId,
+    pub project_id: ProjectId,
+    pub work_item_id: WorkItemId,
+    pub actor_id: Option<UserId>,
+    /// `created` or `updated`.
+    pub verb: String,
+    /// What changed (`name`, `state`, ...); none for the creation.
+    pub field: Option<String>,
+    pub old_value: Option<String>,
+    pub new_value: Option<String>,
+    /// What the app says before the new value ("updated the name to").
+    pub comment: String,
+    pub old_identifier: Option<Uuid>,
+    pub new_identifier: Option<Uuid>,
+    /// The second of the request that made the change (the pin's `epoch`).
+    pub epoch: i64,
+    pub created_at: Timestamp,
+}
+
 /// Which hidden-row classes a read includes (ADR-0043 C1 named scopes).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

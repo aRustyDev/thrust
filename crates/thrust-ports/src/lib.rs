@@ -964,6 +964,34 @@ pub trait Database: Send + Sync {
 
     async fn list_activity(&self, scope: &Scope, entity: Option<WorkItemId>) -> Result<Vec<Activity>, DbError>;
 
+    /// A work item's history, oldest first (by time, then in the order the consumer wrote the rows), only the rows made after
+    /// `after` when it is given (strictly). A work item that is not there, or is not the scope's, has none.
+    async fn work_item_history(
+        &self,
+        scope: &Scope,
+        id: WorkItemId,
+        after: Option<Timestamp>,
+    ) -> Result<Vec<WorkItemActivity>, DbError>;
+
+    /// The newest row of a work item's history (the latest by time, then the one written last), which the consumer looks at to
+    /// join a description edit to the one before it. The consumer's own read: its tenant is the one the envelope carries.
+    async fn latest_work_item_activity(
+        &self,
+        sys: &SystemScope,
+        workspace: WorkspaceId,
+        project: ProjectId,
+        id: WorkItemId,
+    ) -> Result<Option<WorkItemActivity>, DbError>;
+
+    /// Move a history row to `at` and nothing else; `false` when there is no such row.
+    async fn touch_work_item_activity(&self, sys: &SystemScope, id: ActivityId, at: Timestamp)
+        -> Result<bool, DbError>;
+
+    /// The consumer's write of history rows. Idempotent on (`event_id`, `ordinal`): a row whose key is there is left as it is.
+    /// Returns how many rows were written. A row for a work item that is not there, or not in the workspace and project it names,
+    /// is refused (`Backend`) and nothing is written.
+    async fn insert_work_item_activities(&self, sys: &SystemScope, rows: &[WorkItemActivity]) -> Result<u64, DbError>;
+
     /// Rows with `dispatched_at IS NULL`, oldest first. Used by the cron sweeper.
     async fn undispatched_outbox(&self, sys: &SystemScope, limit: u32) -> Result<Vec<OutboxRow>, DbError>;
 
@@ -991,6 +1019,15 @@ pub trait Tx: Send {
         id: WorkItemId,
         attrs: &WorkItemAttrs,
     ) -> Result<(), DbError>;
+    /// Write what an update names to a live work item of the scope's project (not deleted, archived or a draft, as
+    /// [`Database::work_item_row`] finds it): `false` when there is none. The state, the people and the labels it names must exist and the start must not be after the target, as
+    /// for [`Tx::insert_work_item_attrs`], or the call is refused (`Backend`) and nothing is written.
+    async fn update_work_item(
+        &mut self,
+        scope: &Scope,
+        id: WorkItemId,
+        update: &WorkItemUpdate,
+    ) -> Result<bool, DbError>;
     async fn soft_delete_work_item(&mut self, scope: &Scope, id: WorkItemId, at: Timestamp) -> Result<bool, DbError>;
     async fn insert_outbox(&mut self, scope: &Scope, row: &OutboxRow) -> Result<(), DbError>;
     async fn commit(self: Box<Self>) -> Result<(), DbError>;

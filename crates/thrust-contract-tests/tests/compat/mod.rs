@@ -1220,3 +1220,144 @@ async fn compat_a_member_makes_a_work_item_the_project_lists_it_and_the_app_open
         (404, json!({"error": "The required object does not exist."}))
     );
 }
+
+/// X03, X02 and what the work item's page asks besides, on every target. A member makes a work item with an assignee and changes it
+/// (the name, the priority and the state, in one request): 204 and no body, and the work item is what was asked, completed because
+/// the state is of the completed group. The history is written by the activity consumer, which every target runs apart from the
+/// request (a task on a worker, a queue message), so it is read until it shows what was done: the creation, the assignee, then the
+/// three changes in the order the request named them. A guest may not change another's work item, someone outside the project
+/// may not change or read anything, a time that is no time is a 400 and the sub work items and relations are the empty answers.
+/// Controls: the refusals are on the same routes as the successes, and the history read again by someone else is the same five rows.
+#[tokio::test]
+async fn compat_a_member_changes_a_work_item_and_its_history_shows_it() {
+    let t = t();
+    let f = Fixture::seed(&t).await;
+    let (backlog, done) = (uuid::Uuid::new_v4(), uuid::Uuid::new_v4());
+    let state = |id: uuid::Uuid, name: &str, sequence: f64, group: StateGroup, is_default: bool| SeedState {
+        id,
+        project_id: f.a.project,
+        workspace_id: f.ws_a,
+        name: name.into(),
+        color: "#60646C".into(),
+        sequence,
+        group,
+        is_default,
+    };
+    let seeded = SeedFixture {
+        states: vec![
+            state(backlog, "Backlog", 15000.0, StateGroup::Backlog, true),
+            state(done, "Done", 30000.0, StateGroup::Completed, false),
+        ],
+        ..SeedFixture::default()
+    };
+    assert_eq!(t.admin_post("/internal/seed", &serde_json::to_value(&seeded).unwrap()).await.status(), 204);
+    let issues = format!("/api/workspaces/{}/projects/{}/issues/", f.a.slug, f.a.project.0);
+    let by_decorator = json!({"error": "You don't have the required permissions."});
+    let by_class = json!({"detail": "You do not have permission to perform this action."});
+
+    let made: Value =
+        post_as(&t, &f.member_a.token, &issues, &json!({"name": "The first", "assignee_ids": [f.member_a.id.0]}))
+            .await
+            .json()
+            .await
+            .unwrap();
+    let id = made["id"].as_str().unwrap().to_string();
+    let item = format!("{issues}{id}/");
+    let patch = |token: &str, path: String, body: Value| {
+        let (http, url, token) = (t.http.clone(), t.url(&path), token.to_string());
+        async move { http.patch(url).bearer_auth(token).json(&body).send().await.unwrap() }
+    };
+
+    // the change: 204 and no body, and the work item is as asked
+    let r =
+        patch(&f.member_a.token, item.clone(), json!({"name": "Renamed", "priority": "high", "state_id": done})).await;
+    assert_eq!((r.status().as_u16(), r.bytes().await.unwrap().len()), (204, 0));
+    let opened =
+        get(&t, &f.member_a.token, &format!("{item}?expand=issue_reactions,issue_attachments,issue_link,parent")).await;
+    assert_eq!(
+        (opened["name"].clone(), opened["priority"].clone(), opened["state_id"].clone(), opened["updated_by"].clone()),
+        (json!("Renamed"), json!("high"), json!(done), json!(f.member_a.id.0)),
+        "{opened}"
+    );
+    assert!(opened["completed_at"].is_string(), "the state is of the completed group: {opened}");
+
+    // the history, once the consumer has written it
+    let history_path = format!("{item}history/?activity_type=issue-property");
+    let rows = eventually(
+        "the creation, the assignee and the three changes in the history",
+        std::time::Duration::from_secs(20),
+        || async {
+            let rows = get(&t, &f.member_a.token, &history_path).await;
+            (rows.as_array().unwrap().len() == 5).then_some(rows)
+        },
+    )
+    .await;
+    let fields: Vec<Value> = rows.as_array().unwrap().iter().map(|r| r["field"].clone()).collect();
+    assert_eq!(
+        fields,
+        vec![Value::Null, json!("assignees"), json!("name"), json!("priority"), json!("state")],
+        "{rows}"
+    );
+    assert_eq!(
+        (rows[2]["old_value"].clone(), rows[2]["new_value"].clone(), rows[2]["comment"].clone()),
+        (json!("The first"), json!("Renamed"), json!("updated the name to")),
+        "{rows}"
+    );
+    assert_eq!(
+        (rows[4]["old_value"].clone(), rows[4]["new_value"].clone(), rows[4]["new_identifier"].clone()),
+        (json!("Backlog"), json!("Done"), json!(done)),
+        "{rows}"
+    );
+    assert_eq!(rows[0]["issue_detail"]["name"], "Renamed", "the work item as it is now");
+    // read again, by a guest (who may read any work item's history), it is the same
+    let again = get(&t, &f.guest_a.token, &history_path).await;
+    assert_eq!(again.as_array().unwrap().len(), 5, "{again}");
+
+    // who may not: a guest changes no work item they did not make, and someone outside the project neither changes nor reads
+    for (who, label) in [(&f.guest_a, "a guest"), (&f.outsider_a, "an outsider")] {
+        let r = patch(&who.token, item.clone(), json!({"name": "no"})).await;
+        assert_eq!((r.status().as_u16(), r.json::<Value>().await.unwrap()), (403, by_decorator.clone()), "{label}");
+    }
+    for tail in ["history/", "sub-issues/", "issue-relation/"] {
+        let r = t.http.get(t.url(&format!("{item}{tail}"))).bearer_auth(&f.outsider_a.token).send().await.unwrap();
+        assert_eq!((r.status().as_u16(), r.json::<Value>().await.unwrap()), (403, by_class.clone()), "{tail}");
+    }
+    assert_eq!(
+        get(&t, &f.member_a.token, &format!("{issues}{id}/")).await["name"],
+        "Renamed",
+        "a refused change changed nothing"
+    );
+    let r = patch(&f.member_a.token, format!("{issues}{}/", uuid::Uuid::new_v4()), json!({})).await;
+    assert_eq!((r.status().as_u16(), r.json::<Value>().await.unwrap()), (404, json!({"error": "Issue not found"})));
+    let r = patch(&f.member_a.token, item.clone(), json!({"start_date": "yesterday"})).await;
+    assert_eq!(
+        (r.status().as_u16(), r.json::<Value>().await.unwrap()),
+        (400, json!({"start_date": ["Date has wrong format. Use one of these formats instead: YYYY-MM-DD."]}))
+    );
+
+    // a time that is no time, a date far ahead, the comments, and the calls the page makes besides
+    let r = t
+        .http
+        .get(t.url(&format!("{item}history/?created_at__gt=nonsense")))
+        .bearer_auth(&f.member_a.token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        (r.status().as_u16(), r.json::<Value>().await.unwrap()),
+        (400, json!({"error": "Please provide valid detail"}))
+    );
+    assert_eq!(
+        get(&t, &f.member_a.token, &format!("{item}history/?activity_type=issue-property&created_at__gt=2099-01-01"))
+            .await,
+        json!([])
+    );
+    assert_eq!(get(&t, &f.member_a.token, &format!("{item}history/?activity_type=issue-comment")).await, json!([]));
+    assert_eq!(
+        get(&t, &f.guest_a.token, &format!("{item}sub-issues/")).await,
+        json!({"sub_issues": [], "state_distribution": {}})
+    );
+    let relations = get(&t, &f.guest_a.token, &format!("{item}issue-relation/")).await;
+    assert_eq!(relations.as_object().unwrap().len(), 8, "{relations}");
+    assert!(relations.as_object().unwrap().values().all(|v| v == &json!([])), "{relations}");
+}

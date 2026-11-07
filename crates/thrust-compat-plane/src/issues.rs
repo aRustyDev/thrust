@@ -1,4 +1,5 @@
-//! Work items: made (S48), listed a page at a time (S47) and opened (X01).
+//! Work items: made (S48), listed a page at a time (S47), opened (X01) and changed (X03). Their history (X02) and the other calls
+//! the work item's page makes are in `issue_history`.
 //!
 //! The shapes are the pin's, field for field. A work item has three: the one a list holds (23 columns and the people, labels and
 //! modules, with the group of its state), the one a creation answers (the same without the group, with `deleted_at`), and the one
@@ -20,10 +21,11 @@ use axum::body::Bytes;
 use axum::extract::{Path, Query};
 use axum::http::StatusCode;
 use axum::{Extension, Json};
+use serde::de::{Deserialize, Deserializer, MapAccess, Visitor};
 use serde_json::{json, Map, Value};
 use thrust_contracts::chrono::{DateTime, NaiveDate, NaiveDateTime, Utc};
 use thrust_contracts::*;
-use thrust_core::{App, FieldProblem, IssueDraft, IssueError, IssueListQuery};
+use thrust_core::{App, Ask, FieldProblem, IssueDraft, IssueError, IssueListQuery, IssueUpdate};
 use thrust_ports::*;
 
 use crate::fields::{char_field, choice_field, fail, FieldErrors};
@@ -45,7 +47,7 @@ enum Shape {
     Detail,
 }
 
-fn date_or_null(d: Option<NaiveDate>) -> Value {
+pub(crate) fn date_or_null(d: Option<NaiveDate>) -> Value {
     d.map_or(Value::Null, |d| json!(d.format("%Y-%m-%d").to_string()))
 }
 
@@ -113,6 +115,16 @@ fn refusal(e: IssueError) -> PlaneError {
         IssueError::Fields(_) => PlaneError::BadRequest(json!({"error": "The payload is not valid"})),
         IssueError::Core(e) => e.into(),
     }
+}
+
+/// The 404 of a work item that is not there, as the pin's update and relation views say it.
+pub(crate) fn issue_not_found() -> PlaneError {
+    PlaneError::NotFound(json!({"error": "Issue not found"}))
+}
+
+/// A work item's id in a route, or the 404 Django gives a path that no route matches (the pin's URLs take `<uuid:pk>`).
+pub(crate) fn issue_id(raw: &str) -> Result<WorkItemId, PlaneError> {
+    raw.parse().map_err(|_| PlaneError::NotFound(json!({"error": "Page not found."})))
 }
 
 // --- reading a creation the way DRF does -----------------------------------------------------------------------------------
@@ -413,7 +425,7 @@ fn order(q: &HashMap<String, String>) -> WorkItemOrder {
 
 /// A time as Django's `DateTimeField` reads it from a query: RFC 3339, the same with a space for the `T` and no zone (UTC), or a
 /// date (midnight).
-fn datetime(raw: &str) -> Option<Timestamp> {
+pub(crate) fn datetime(raw: &str) -> Option<Timestamp> {
     let raw = raw.trim();
     if let Ok(t) = DateTime::parse_from_rfc3339(raw) {
         return Some(t.with_timezone(&Utc));
@@ -530,7 +542,7 @@ pub(crate) async fn retrieve(
     Query(q): Query<HashMap<String, String>>,
 ) -> Result<Json<Value>, PlaneError> {
     let project = project_id(&project)?;
-    let issue: WorkItemId = issue.parse().map_err(|_| PlaneError::NotFound(json!({"error": "Page not found."})))?;
+    let issue = issue_id(&issue)?;
     let access = thrust_core::issue_reader(&app, &who, &WorkspaceSlug(slug), project).await.map_err(refusal)?;
     let row = thrust_core::get_issue(&app, &access, issue).await.map_err(refusal)?;
     let mut out = issue_json(&row, Shape::Detail);
@@ -547,4 +559,201 @@ pub(crate) async fn retrieve(
         }
     }
     Ok(Json(out))
+}
+
+// --- X03 ----------------------------------------------------------------------------------------------------------------
+
+/// The members of a JSON object in the order the request has them, which is the order the pin lists what it records of them in
+/// (Python's dictionaries keep the order of the text; `serde_json`'s maps do not). A key given twice keeps its first place and
+/// its last value, as a Python dictionary does.
+struct Members(Vec<(String, Value)>);
+
+impl<'de> Deserialize<'de> for Members {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        struct Ordered;
+        impl<'de> Visitor<'de> for Ordered {
+            type Value = Members;
+
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                f.write_str("a JSON object")
+            }
+
+            fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Members, A::Error> {
+                let mut out: Vec<(String, Value)> = Vec::new();
+                while let Some((key, value)) = map.next_entry::<String, Value>()? {
+                    match out.iter_mut().find(|(have, _)| *have == key) {
+                        Some(slot) => slot.1 = value,
+                        None => out.push((key, value)),
+                    }
+                }
+                Ok(Members(out))
+            }
+        }
+        d.deserialize_map(Ordered)
+    }
+}
+
+/// The body of a request as a JSON object, its members in the order it names them. As [`object_body`]: an empty body is an empty
+/// object, and a body that is not an object is refused.
+fn ordered_body(bytes: &Bytes) -> Result<Vec<(String, Value)>, PlaneError> {
+    if bytes.iter().all(u8::is_ascii_whitespace) {
+        return Ok(Vec::new());
+    }
+    serde_json::from_slice::<Members>(bytes)
+        .map(|m| m.0)
+        .map_err(|_| PlaneError::BadRequest(json!({"detail": "The request body must be a JSON object."})))
+}
+
+/// Python's truth of a JSON value: what `if skip_activity` makes of what the request had (`"false"` is true, `0` and `[]` are not).
+fn truthy(v: &Value) -> bool {
+    match v {
+        Value::Null => false,
+        Value::Bool(b) => *b,
+        Value::Number(n) => n.as_f64() != Some(0.0),
+        Value::String(s) => !s.is_empty(),
+        Value::Array(a) => !a.is_empty(),
+        Value::Object(o) => !o.is_empty(),
+    }
+}
+
+/// Python's `str()` of a value `char_field` accepted, which the pin's history quotes: the text as it came, a number as a number.
+fn sent_text(v: &Value) -> String {
+    match v {
+        Value::String(s) => s.clone(),
+        other => other.to_string(),
+    }
+}
+
+/// What `IssueCreateSerializer` makes of a partial update, every member at once: only the members the request names are checked.
+/// The members it names that the pin's serializer does not know (`cycle_id`, `module_ids`, `type_id`) or that it keeps for itself
+/// (the times, who made the work item) are ignored; so are the ones it accepts but no app sends (`sequence_id`, `point`,
+/// `external_source`, `external_id`, `is_draft`, `archived_at`, `state`, `parent`, `closed_to`), which Thrust does not apply
+/// (deviation D-029). A place in the list (`sort_order`) is refused. `skip_activity` is read first, as the pin pops it.
+fn issue_update(members: &[(String, Value)]) -> Result<(IssueUpdate, Texts), FieldErrors> {
+    let mut errors = FieldErrors::new();
+    let mut update = IssueUpdate::default();
+    let mut texts = Texts::default();
+    let (mut skip, mut describes) = (false, false);
+    for (field, v) in members {
+        match field.as_str() {
+            "skip_activity" => skip = truthy(v),
+            "name" => match char_field(v, Some(255), false, false) {
+                Ok(name) => update.asks.push(Ask::Name { sent: sent_text(v), name: name.unwrap_or_default() }),
+                Err(m) => fail(&mut errors, "name", m),
+            },
+            "description_html" => {
+                describes = !v.is_null();
+                match char_field(v, None, true, false) {
+                    // the pin cleans what it stores; an empty text stays empty (the cleaner answers none for it)
+                    Ok(text) => {
+                        match thrust_editor_doc::sanitize::validate_html_content(text.as_deref().unwrap_or_default()) {
+                            Ok(clean) => update.asks.push(Ask::Description(clean.or(text).unwrap_or_default())),
+                            Err(_) => fail(&mut errors, "error", "html content is not valid"),
+                        }
+                    }
+                    Err(m) => fail(&mut errors, "description_html", m),
+                }
+            }
+            "priority" => match choice_field(v, &["urgent", "high", "medium", "low", "none"]) {
+                Ok(p) => update.asks.extend(Priority::parse(p).map(Ask::Priority)),
+                Err(m) => fail(&mut errors, "priority", m),
+            },
+            "state_id" => match key_field(v) {
+                Ok(Some((text, id))) => {
+                    texts.state = text;
+                    update.asks.push(Ask::State(Some(id)));
+                }
+                Ok(None) => update.asks.push(Ask::State(None)),
+                Err(m) => fail(&mut errors, "state_id", m),
+            },
+            "parent_id" => match key_field(v) {
+                Ok(Some((text, id))) => {
+                    texts.parent = text;
+                    update.asks.push(Ask::Parent(id));
+                }
+                // no parent now and none asked for: nothing to say
+                Ok(None) => {}
+                Err(m) => fail(&mut errors, "parent_id", m),
+            },
+            "estimate_point" => {
+                if let Err(m) = nothing_field(v) {
+                    fail(&mut errors, "estimate_point", m);
+                }
+            }
+            "start_date" | "target_date" => match date_field(v) {
+                Ok(date) => {
+                    let sent = v.as_str().map(str::to_string);
+                    update.asks.push(if field == "start_date" {
+                        Ask::Start { sent, date }
+                    } else {
+                        Ask::Target { sent, date }
+                    });
+                }
+                Err(m) => fail(&mut errors, field, m),
+            },
+            "assignee_ids" => match key_list(v) {
+                Ok(keys) => {
+                    update.asks.push(Ask::Assignees(keys.iter().map(|(_, id)| UserId(*id)).collect()));
+                    texts.assignees = keys.into_iter().map(|(t, _)| t).collect();
+                }
+                Err(e) => {
+                    errors.insert("assignee_ids".into(), e);
+                }
+            },
+            "label_ids" => match key_list(v) {
+                Ok(keys) => {
+                    update.asks.push(Ask::Labels(keys.iter().map(|(_, id)| *id).collect()));
+                    texts.labels = keys.into_iter().map(|(t, _)| t).collect();
+                }
+                Err(e) => {
+                    errors.insert("label_ids".into(), e);
+                }
+            },
+            // a float field: null is refused, a number or a numeric text is a place, and a place is not supported yet
+            "sort_order" => match v {
+                Value::Null => fail(&mut errors, "sort_order", "This field may not be null."),
+                Value::Number(_) => fail(&mut errors, "sort_order", "Moving work items is not supported yet."),
+                Value::String(t) if t.trim().parse::<f64>().is_ok() => {
+                    fail(&mut errors, "sort_order", "Moving work items is not supported yet.")
+                }
+                _ => fail(&mut errors, "sort_order", "A valid number is required."),
+            },
+            _ => {}
+        }
+    }
+    if !errors.is_empty() {
+        return Err(errors);
+    }
+    update.silent = skip && describes;
+    Ok((update, texts))
+}
+
+/// The refusal of a change, in the pin's words: what a creation says, but a work item that is not there is its own message.
+fn update_refusal(e: IssueError) -> PlaneError {
+    match e {
+        IssueError::NotFound => issue_not_found(),
+        other => refusal(other),
+    }
+}
+
+/// X03. Change a work item: answers 204 and no body. An admin or a member of the project may change any, and whoever made a work
+/// item may change theirs; anyone else, the project missing and a stranger to the workspace are the decorator's 403, a work item that
+/// is not there is 404 (ahead of the body, which is read after). What the request names is read as DRF reads a partial update.
+pub(crate) async fn update(
+    Caller(who): Caller,
+    Extension(app): Extension<App>,
+    Path((slug, project, issue)): Path<(String, String, String)>,
+    body: Bytes,
+) -> Result<StatusCode, PlaneError> {
+    let project = project_id(&project)?;
+    let issue = issue_id(&issue)?;
+    let (access, before) =
+        thrust_core::issue_to_update(&app, &who, &WorkspaceSlug(slug), project, issue).await.map_err(update_refusal)?;
+    let members = ordered_body(&body)?;
+    let (update, texts) = issue_update(&members).map_err(PlaneError::Fields)?;
+    match thrust_core::update_issue(&app, &access, before, update).await {
+        Ok(()) => Ok(StatusCode::NO_CONTENT),
+        Err(IssueError::Fields(problems)) => Err(PlaneError::Fields(problems_to_errors(&problems, &texts))),
+        Err(e) => Err(update_refusal(e)),
+    }
 }
