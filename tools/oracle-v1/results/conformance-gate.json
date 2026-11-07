@@ -1,0 +1,27 @@
+{
+ "label": "gate",
+ "base_url": "http://127.0.0.1:18080",
+ "schemathesis_exit": 1,
+ "operations_tested": 102,
+ "operations_with_2xx": 78,
+ "cases": 590,
+ "failures_total": 67,
+ "accepted": 67,
+ "unaccepted": [],
+ "stale_entries": [],
+ "vacuous": [],
+ "accepted_by_entry": {
+  "EX-004": 10,
+  "EX-010": 6,
+  "EX-006": 6,
+  "EX-001": 8,
+  "EX-002": 8,
+  "EX-009": 6,
+  "EX-005": 2,
+  "EX-011": 2,
+  "EX-003": 11,
+  "EX-007": 5,
+  "EX-008": 2,
+  "EX-012": 1
+ }
+}

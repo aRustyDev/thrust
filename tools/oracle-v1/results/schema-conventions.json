@@ -1,0 +1,370 @@
+{
+ "components": {
+  "names": [
+   "AccessEnum",
+   "Cycle",
+   "CycleCreateRequest",
+   "CycleIssue",
+   "CycleIssueRequestRequest",
+   "CycleLite",
+   "EntityTypeEnum",
+   "GenericAssetUploadRequest",
+   "GroupEnum",
+   "IntakeIssue",
+   "IntakeIssueCreateRequest",
+   "IntakeWorkItemStatusEnum",
+   "Issue",
+   "IssueActivity",
+   "IssueAttachment",
+   "IssueAttachmentUploadRequest",
+   "IssueComment",
+   "IssueCommentCreateRequest",
+   "IssueExpand",
+   "IssueForIntakeRequest",
+   "IssueLink",
+   "IssueLinkCreateRequest",
+   "IssueRelation",
+   "IssueRelationCreateRequest",
+   "IssueRelationRef",
+   "IssueRelationResponse",
+   "IssueRequest",
+   "IssueSearch",
+   "Label",
+   "LabelCreateUpdateRequest",
+   "Module",
+   "ModuleCreateRequest",
+   "ModuleIssue",
+   "ModuleIssueRequestRequest",
+   "ModuleLite",
+   "ModuleStatusEnum",
+   "NetworkEnum",
+   "PaginatedArchivedCycleResponse",
+   "PaginatedArchivedModuleResponse",
+   "PaginatedCycleIssueResponse",
+   "PaginatedCycleLiteResponse",
+   "PaginatedCycleResponse",
+   "PaginatedIntakeIssueResponse",
+   "PaginatedIssueActivityDetailResponse",
+   "PaginatedIssueActivityResponse",
+   "PaginatedIssueCommentResponse",
+   "PaginatedIssueLinkDetailResponse",
+   "PaginatedIssueLinkResponse",
+   "PaginatedLabelResponse",
+   "PaginatedModuleIssueResponse",
+   "PaginatedModuleLiteResponse",
+   "PaginatedModuleResponse",
+   "PaginatedProjectLiteResponse",
+   "PaginatedProjectMemberLite",
+   "PaginatedProjectResponse",
+   "PaginatedStateResponse",
+   "PaginatedWorkItemResponse",
+   "PaginatedWorkspaceMemberLite",
+   "PatchedAssetUpdateRequest",
+   "PatchedCycleUpdateRequest",
+   "PatchedGenericAssetUpdateRequest",
+   "PatchedIntakeIssueUpdateRequest",
+   "PatchedIssueCommentCreateRequest",
+   "PatchedIssueLinkUpdateRequest",
+   "PatchedIssueRequest",
+   "PatchedLabelCreateUpdateRequest",
+   "PatchedModuleUpdateRequest",
+   "PatchedProjectMemberRequest",
+   "PatchedProjectUpdateRequest",
+   "PatchedStateRequest",
+   "PatchedStickyRequest",
+   "PatchedWorkspaceInviteRequest",
+   "PriorityEnum",
+   "Project",
+   "ProjectCreateRequest",
+   "ProjectLite",
+   "ProjectMember",
+   "ProjectMemberLiteAPI",
+   "ProjectMemberRequest",
+   "RelationTypeEnum",
+   "RoleEnum",
+   "State",
+   "StateLite",
+   "StateRequest",
+   "Sticky",
+   "StickyRequest",
+   "TimezoneEnum",
+   "TransferCycleIssueRequestRequest",
+   "TypeEnum",
+   "UserAssetUploadRequest",
+   "UserLite",
+   "WorkspaceInvite",
+   "WorkspaceInviteRequest",
+   "WorkspaceMemberLiteAPI"
+  ],
+  "other_kinds": {
+   "securitySchemes": [
+    "ApiKeyAuthentication"
+   ]
+  },
+  "paginated_wrappers": [
+   "PaginatedArchivedCycleResponse",
+   "PaginatedArchivedModuleResponse",
+   "PaginatedCycleIssueResponse",
+   "PaginatedCycleLiteResponse",
+   "PaginatedCycleResponse",
+   "PaginatedIntakeIssueResponse",
+   "PaginatedIssueActivityDetailResponse",
+   "PaginatedIssueActivityResponse",
+   "PaginatedIssueCommentResponse",
+   "PaginatedIssueLinkDetailResponse",
+   "PaginatedIssueLinkResponse",
+   "PaginatedLabelResponse",
+   "PaginatedModuleIssueResponse",
+   "PaginatedModuleLiteResponse",
+   "PaginatedModuleResponse",
+   "PaginatedProjectLiteResponse",
+   "PaginatedProjectMemberLite",
+   "PaginatedProjectResponse",
+   "PaginatedStateResponse",
+   "PaginatedWorkItemResponse",
+   "PaginatedWorkspaceMemberLite"
+  ],
+  "schema_count": 94,
+  "suffix_counts": {
+   "Enum": 11,
+   "Request": 34,
+   "Response": 20
+  }
+ },
+ "info": {
+  "title": "The Plane REST API",
+  "version": "0.0.1"
+ },
+ "openapi": "3.0.3",
+ "operationId": {
+  "all_present": true,
+  "all_snake_case": true,
+  "duplicates": [],
+  "examples": [
+   "add_cycle_work_items",
+   "add_module_work_items",
+   "archive_cycle",
+   "archive_module",
+   "archive_project",
+   "create_cycle",
+   "create_generic_asset_upload",
+   "create_intake_work_item",
+   "create_label",
+   "create_module",
+   "create_project",
+   "create_project_member"
+  ],
+  "leading_verb_counts": {
+   "add": 2,
+   "archive": 3,
+   "create": 20,
+   "delete": 20,
+   "get": 13,
+   "list": 24,
+   "retrieve": 17,
+   "search": 2,
+   "transfer": 1,
+   "unarchive": 3,
+   "update": 17,
+   "upload": 2,
+   "workspaces": 6
+  },
+  "missing": [],
+  "non_snake_case": [],
+  "unique": true
+ },
+ "operation_count": 130,
+ "parameters_by_use": [
+  {
+   "in": "path",
+   "name": "slug",
+   "uses": 126
+  },
+  {
+   "in": "path",
+   "name": "project_id",
+   "uses": 101
+  },
+  {
+   "in": "path",
+   "name": "pk",
+   "uses": 52
+  },
+  {
+   "in": "path",
+   "name": "issue_id",
+   "uses": 42
+  },
+  {
+   "in": "query",
+   "name": "cursor",
+   "uses": 28
+  },
+  {
+   "in": "query",
+   "name": "per_page",
+   "uses": 28
+  },
+  {
+   "in": "query",
+   "name": "expand",
+   "uses": 23
+  },
+  {
+   "in": "query",
+   "name": "fields",
+   "uses": 23
+  },
+  {
+   "in": "query",
+   "name": "order_by",
+   "uses": 22
+  },
+  {
+   "in": "path",
+   "name": "cycle_id",
+   "uses": 7
+  },
+  {
+   "in": "path",
+   "name": "asset_id",
+   "uses": 4
+  },
+  {
+   "in": "query",
+   "name": "external_id",
+   "uses": 4
+  },
+  {
+   "in": "query",
+   "name": "external_source",
+   "uses": 4
+  },
+  {
+   "in": "path",
+   "name": "module_id",
+   "uses": 3
+  },
+  {
+   "in": "path",
+   "name": "state_id",
+   "uses": 3
+  },
+  {
+   "in": "path",
+   "name": "issue_identifier",
+   "uses": 2
+  },
+  {
+   "in": "path",
+   "name": "project_identifier",
+   "uses": 2
+  },
+  {
+   "in": "query",
+   "name": "limit",
+   "uses": 2
+  },
+  {
+   "in": "query",
+   "name": "project_id",
+   "uses": 2
+  },
+  {
+   "in": "query",
+   "name": "search",
+   "uses": 2
+  },
+  {
+   "in": "query",
+   "name": "workspace_search",
+   "uses": 2
+  },
+  {
+   "in": "query",
+   "name": "include_archived",
+   "uses": 1
+  },
+  {
+   "in": "query",
+   "name": "cycle_view",
+   "uses": 1
+  }
+ ],
+ "response_status_counts": {
+  "200": 81,
+  "201": 16,
+  "204": 31,
+  "302": 2,
+  "400": 54,
+  "401": 116,
+  "403": 115,
+  "404": 116,
+  "409": 17
+ },
+ "security": {
+  "global": null,
+  "schemes": {
+   "ApiKeyAuthentication": {
+    "description": "API key authentication. Provide your API key in the X-API-Key header.",
+    "in": "header",
+    "name": "X-API-Key",
+    "type": "apiKey"
+   }
+  }
+ },
+ "servers": [
+  {
+   "description": "Local",
+   "url": "http://localhost:8000"
+  },
+  {
+   "description": "Production",
+   "url": "https://api.plane.so"
+  }
+ ],
+ "tags": {
+  "declared": [
+   "Assets",
+   "Cycles",
+   "Intake",
+   "Labels",
+   "Members",
+   "Modules",
+   "Projects",
+   "States",
+   "Users",
+   "Work Item Activity",
+   "Work Item Attachments",
+   "Work Item Comments",
+   "Work Item Links",
+   "Work Items"
+  ],
+  "declared_but_unused": [],
+  "untagged_operations": [],
+  "used_but_undeclared": [
+   "Stickies",
+   "Work Item Relations",
+   "workspaces"
+  ],
+  "used_counts": {
+   "Assets": 6,
+   "Cycles": 14,
+   "Intake": 5,
+   "Labels": 5,
+   "Members": 13,
+   "Modules": 12,
+   "Projects": 8,
+   "States": 5,
+   "Stickies": 5,
+   "Users": 1,
+   "Work Item Activity": 4,
+   "Work Item Attachments": 10,
+   "Work Item Comments": 10,
+   "Work Item Links": 10,
+   "Work Item Relations": 2,
+   "Work Items": 14,
+   "workspaces": 6
+  }
+ }
+}

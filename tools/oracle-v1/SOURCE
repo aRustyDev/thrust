@@ -1,0 +1,21 @@
+# Provenance of tools/oracle-v1/. Every file here is byte-identical to source_path at source_commit,
+# except this file, README.md, and the edits listed in README.md ("Edits after the import"), each its own commit.
+# Machine-readable: KEY=VALUE, one per line, '#' comments (same shape as PIN).
+#
+# Imported by thrust issue #58, which resolves Q-0122.4 as "vendor, do not push the fork branch".
+
+source_repository=aRustyDev/plane
+source_branch=feat/plane-b6a-upstream-sync-oracle
+source_commit=72b2e014972cc30b38d56290da501c56af866c65
+source_path=oracle/
+source_tree=dda199cc2a796937a5964d36cb949e5123e44e74
+source_files=50
+
+# The Plane code the oracle was recorded against (the same values are in PIN).
+pin_tag=oracle/v1-pin-20261018
+pin_commit=ba85d4d3d332b5380bebca4b9e0143b1127de907
+
+# The branch and the tag exist only in the fork's local clone (PIN: pushed=false). The fork's ruleset requires
+# `Copy Right Check` on every tracked *.py, and none of these files carry the Plane header, so the branch cannot
+# simply be merged there. This directory is therefore the second copy of the only copy.
+pushed=false

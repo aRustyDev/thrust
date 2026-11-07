@@ -1,0 +1,7 @@
+# Local run artefacts; the committed evidence lives in corpus/, schema/ and results/.
+.timings.log
+.work/
+.work-*
+__pycache__/
+*.pyc
+.venv/

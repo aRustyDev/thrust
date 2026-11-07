@@ -1,0 +1,73 @@
+{
+ "exchanges": [
+  {
+   "expect": [
+    200
+   ],
+   "name": "me",
+   "request": {
+    "auth": "owner",
+    "body": null,
+    "content_type": null,
+    "method": "GET",
+    "path": "/api/v1/users/me/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "avatar": "",
+     "avatar_url": null,
+     "display_name": "oracle_owner",
+     "email": "oracle-owner@example.test",
+     "first_name": "Olive",
+     "id": "<user:owner>",
+     "last_name": "Owner"
+    },
+    "headers": {
+     "allow": "GET",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 200
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    200
+   ],
+   "name": "me-as-member",
+   "request": {
+    "auth": "member",
+    "body": null,
+    "content_type": null,
+    "method": "GET",
+    "path": "/api/v1/users/me/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "avatar": "",
+     "avatar_url": null,
+     "display_name": "oracle_member",
+     "email": "oracle-member@example.test",
+     "first_name": "Milo",
+     "id": "<user:member>",
+     "last_name": "Member"
+    },
+    "headers": {
+     "allow": "GET",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 200
+   },
+   "surprise": false
+  }
+ ],
+ "normalisation": "oracle/normalise.yaml",
+ "pinned_commit": "ba85d4d3d332b5380bebca4b9e0143b1127de907",
+ "resource": "users"
+}

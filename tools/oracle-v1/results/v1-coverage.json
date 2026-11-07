@@ -1,0 +1,147 @@
+{
+ "covered": 130,
+ "excluded_from_operation_count": {
+  "phantom": [],
+  "router-format": [
+   {
+    "method": "DELETE",
+    "path": "/api/v1/workspaces/{slug}/invitations/{pk}\\.{format}/",
+    "view": "WorkspaceInvitationsViewset",
+    "why": "router-format"
+   },
+   {
+    "method": "GET",
+    "path": "/api/v1/workspaces/{slug}/invitations/{pk}\\.{format}/",
+    "view": "WorkspaceInvitationsViewset",
+    "why": "router-format"
+   },
+   {
+    "method": "PATCH",
+    "path": "/api/v1/workspaces/{slug}/invitations/{pk}\\.{format}/",
+    "view": "WorkspaceInvitationsViewset",
+    "why": "router-format"
+   },
+   {
+    "method": "PUT",
+    "path": "/api/v1/workspaces/{slug}/invitations/{pk}\\.{format}/",
+    "view": "WorkspaceInvitationsViewset",
+    "why": "router-format"
+   },
+   {
+    "method": "GET",
+    "path": "/api/v1/workspaces/{slug}/invitations\\.{format}/",
+    "view": "WorkspaceInvitationsViewset",
+    "why": "router-format"
+   },
+   {
+    "method": "POST",
+    "path": "/api/v1/workspaces/{slug}/invitations\\.{format}/",
+    "view": "WorkspaceInvitationsViewset",
+    "why": "router-format"
+   },
+   {
+    "method": "DELETE",
+    "path": "/api/v1/workspaces/{slug}/stickies/{pk}\\.{format}/",
+    "view": "StickyViewSet",
+    "why": "router-format"
+   },
+   {
+    "method": "GET",
+    "path": "/api/v1/workspaces/{slug}/stickies/{pk}\\.{format}/",
+    "view": "StickyViewSet",
+    "why": "router-format"
+   },
+   {
+    "method": "PATCH",
+    "path": "/api/v1/workspaces/{slug}/stickies/{pk}\\.{format}/",
+    "view": "StickyViewSet",
+    "why": "router-format"
+   },
+   {
+    "method": "PUT",
+    "path": "/api/v1/workspaces/{slug}/stickies/{pk}\\.{format}/",
+    "view": "StickyViewSet",
+    "why": "router-format"
+   },
+   {
+    "method": "GET",
+    "path": "/api/v1/workspaces/{slug}/stickies\\.{format}/",
+    "view": "StickyViewSet",
+    "why": "router-format"
+   },
+   {
+    "method": "POST",
+    "path": "/api/v1/workspaces/{slug}/stickies\\.{format}/",
+    "view": "StickyViewSet",
+    "why": "router-format"
+   }
+  ],
+  "router-root": [
+   {
+    "method": "GET",
+    "path": "/api/v1/workspaces/{slug}/",
+    "view": "APIRootView",
+    "why": "router-root"
+   },
+   {
+    "method": "GET",
+    "path": "/api/v1/workspaces/{slug}/",
+    "view": "APIRootView",
+    "why": "router-root"
+   },
+   {
+    "method": "GET",
+    "path": "/api/v1/workspaces/{slug}/{format}",
+    "view": "APIRootView",
+    "why": "router-root"
+   },
+   {
+    "method": "GET",
+    "path": "/api/v1/workspaces/{slug}/{format}",
+    "view": "APIRootView",
+    "why": "router-root"
+   }
+  ]
+ },
+ "gap_by_class": {
+  "put-filtered": 2,
+  "server-filtered": 3
+ },
+ "gap_total": 5,
+ "gaps": [
+  {
+   "class": "server-filtered",
+   "method": "DELETE",
+   "path": "/api/v1/assets/user-assets/{asset_id}/server/",
+   "view": "plane.api.views.asset.UserServerAssetEndpoint"
+  },
+  {
+   "class": "server-filtered",
+   "method": "PATCH",
+   "path": "/api/v1/assets/user-assets/{asset_id}/server/",
+   "view": "plane.api.views.asset.UserServerAssetEndpoint"
+  },
+  {
+   "class": "server-filtered",
+   "method": "POST",
+   "path": "/api/v1/assets/user-assets/server/",
+   "view": "plane.api.views.asset.UserServerAssetEndpoint"
+  },
+  {
+   "class": "put-filtered",
+   "method": "PUT",
+   "path": "/api/v1/workspaces/{slug}/invitations/{pk}/",
+   "view": "plane.api.views.invite.WorkspaceInvitationsViewset"
+  },
+  {
+   "class": "put-filtered",
+   "method": "PUT",
+   "path": "/api/v1/workspaces/{slug}/stickies/{pk}/",
+   "view": "plane.api.views.sticky.StickyViewSet"
+  }
+ ],
+ "in_schema_not_in_urlconf": [],
+ "param_name_differences": [],
+ "schema_operations": 130,
+ "urlconf_operations": 135
+}

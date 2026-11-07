@@ -1,0 +1,626 @@
+{
+ "exchanges": [
+  {
+   "expect": [
+    200
+   ],
+   "name": "list",
+   "request": {
+    "auth": "owner",
+    "body": null,
+    "content_type": null,
+    "method": "GET",
+    "path": "/api/v1/workspaces/oracle-ws/projects/<project:alpha>/states/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "count": 5,
+     "extra_stats": null,
+     "grouped_by": null,
+     "next_cursor": "1000:1:0",
+     "next_page_results": false,
+     "prev_cursor": "1000:-1:1",
+     "prev_page_results": false,
+     "results": [
+      {
+       "color": "#60646C",
+       "created_at": "<ts>",
+       "created_by": null,
+       "default": true,
+       "deleted_at": null,
+       "description": "",
+       "external_id": null,
+       "external_source": null,
+       "group": "backlog",
+       "id": "<state:alpha:Backlog>",
+       "is_triage": false,
+       "name": "Backlog",
+       "project": "<project:alpha>",
+       "sequence": 15000.0,
+       "slug": "backlog",
+       "updated_at": "<ts>",
+       "updated_by": null,
+       "workspace": "<workspace:oracle>"
+      },
+      {
+       "color": "#60646C",
+       "created_at": "<ts>",
+       "created_by": null,
+       "default": false,
+       "deleted_at": null,
+       "description": "",
+       "external_id": null,
+       "external_source": null,
+       "group": "unstarted",
+       "id": "<state:alpha:Todo>",
+       "is_triage": false,
+       "name": "Todo",
+       "project": "<project:alpha>",
+       "sequence": 30000.0,
+       "slug": "todo",
+       "updated_at": "<ts>",
+       "updated_by": null,
+       "workspace": "<workspace:oracle>"
+      },
+      {
+       "color": "#F59E0B",
+       "created_at": "<ts>",
+       "created_by": null,
+       "default": false,
+       "deleted_at": null,
+       "description": "",
+       "external_id": null,
+       "external_source": null,
+       "group": "started",
+       "id": "<state:alpha:In Progress>",
+       "is_triage": false,
+       "name": "In Progress",
+       "project": "<project:alpha>",
+       "sequence": 45000.0,
+       "slug": "in-progress",
+       "updated_at": "<ts>",
+       "updated_by": null,
+       "workspace": "<workspace:oracle>"
+      },
+      {
+       "color": "#46A758",
+       "created_at": "<ts>",
+       "created_by": null,
+       "default": false,
+       "deleted_at": null,
+       "description": "",
+       "external_id": null,
+       "external_source": null,
+       "group": "completed",
+       "id": "<state:alpha:Done>",
+       "is_triage": false,
+       "name": "Done",
+       "project": "<project:alpha>",
+       "sequence": 60000.0,
+       "slug": "done",
+       "updated_at": "<ts>",
+       "updated_by": null,
+       "workspace": "<workspace:oracle>"
+      },
+      {
+       "color": "#9AA4BC",
+       "created_at": "<ts>",
+       "created_by": null,
+       "default": false,
+       "deleted_at": null,
+       "description": "",
+       "external_id": null,
+       "external_source": null,
+       "group": "cancelled",
+       "id": "<state:alpha:Cancelled>",
+       "is_triage": false,
+       "name": "Cancelled",
+       "project": "<project:alpha>",
+       "sequence": 75000.0,
+       "slug": "cancelled",
+       "updated_at": "<ts>",
+       "updated_by": null,
+       "workspace": "<workspace:oracle>"
+      }
+     ],
+     "sub_grouped_by": null,
+     "total_count": 5,
+     "total_pages": 1,
+     "total_results": 5
+    },
+    "headers": {
+     "allow": "GET, POST",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 200
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    200
+   ],
+   "name": "list-per-page-2",
+   "request": {
+    "auth": "owner",
+    "body": null,
+    "content_type": null,
+    "method": "GET",
+    "path": "/api/v1/workspaces/oracle-ws/projects/<project:alpha>/states/",
+    "query": {
+     "per_page": 2
+    }
+   },
+   "response": {
+    "body": {
+     "count": 2,
+     "extra_stats": null,
+     "grouped_by": null,
+     "next_cursor": "2:1:0",
+     "next_page_results": true,
+     "prev_cursor": "2:-1:1",
+     "prev_page_results": false,
+     "results": [
+      {
+       "color": "#60646C",
+       "created_at": "<ts>",
+       "created_by": null,
+       "default": true,
+       "deleted_at": null,
+       "description": "",
+       "external_id": null,
+       "external_source": null,
+       "group": "backlog",
+       "id": "<state:alpha:Backlog>",
+       "is_triage": false,
+       "name": "Backlog",
+       "project": "<project:alpha>",
+       "sequence": 15000.0,
+       "slug": "backlog",
+       "updated_at": "<ts>",
+       "updated_by": null,
+       "workspace": "<workspace:oracle>"
+      },
+      {
+       "color": "#60646C",
+       "created_at": "<ts>",
+       "created_by": null,
+       "default": false,
+       "deleted_at": null,
+       "description": "",
+       "external_id": null,
+       "external_source": null,
+       "group": "unstarted",
+       "id": "<state:alpha:Todo>",
+       "is_triage": false,
+       "name": "Todo",
+       "project": "<project:alpha>",
+       "sequence": 30000.0,
+       "slug": "todo",
+       "updated_at": "<ts>",
+       "updated_by": null,
+       "workspace": "<workspace:oracle>"
+      }
+     ],
+     "sub_grouped_by": null,
+     "total_count": 5,
+     "total_pages": 3,
+     "total_results": 5
+    },
+    "headers": {
+     "allow": "GET, POST",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 200
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    200
+   ],
+   "name": "detail",
+   "request": {
+    "auth": "owner",
+    "body": null,
+    "content_type": null,
+    "method": "GET",
+    "path": "/api/v1/workspaces/oracle-ws/projects/<project:alpha>/states/<state:alpha:Todo>/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "color": "#60646C",
+     "created_at": "<ts>",
+     "created_by": null,
+     "default": false,
+     "deleted_at": null,
+     "description": "",
+     "external_id": null,
+     "external_source": null,
+     "group": "unstarted",
+     "id": "<state:alpha:Todo>",
+     "is_triage": false,
+     "name": "Todo",
+     "project": "<project:alpha>",
+     "sequence": 30000.0,
+     "slug": "todo",
+     "updated_at": "<ts>",
+     "updated_by": null,
+     "workspace": "<workspace:oracle>"
+    },
+    "headers": {
+     "allow": "GET, PATCH, DELETE",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 200
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    404
+   ],
+   "name": "detail-unknown",
+   "request": {
+    "auth": "owner",
+    "body": null,
+    "content_type": null,
+    "method": "GET",
+    "path": "/api/v1/workspaces/oracle-ws/projects/<project:alpha>/states/<uuid:1>/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "error": "The requested resource does not exist."
+    },
+    "headers": {
+     "allow": "GET, PATCH, DELETE",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 404
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    201
+   ],
+   "name": "create",
+   "request": {
+    "auth": "owner",
+    "body": {
+     "color": "#123456",
+     "group": "started",
+     "name": "Oracle Review"
+    },
+    "content_type": "application/json",
+    "method": "POST",
+    "path": "/api/v1/workspaces/oracle-ws/projects/<project:alpha>/states/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "color": "#123456",
+     "created_at": "<ts>",
+     "created_by": "<user:owner>",
+     "default": false,
+     "deleted_at": null,
+     "description": "",
+     "external_id": null,
+     "external_source": null,
+     "group": "started",
+     "id": "<uuid:2>",
+     "is_triage": false,
+     "name": "Oracle Review",
+     "project": "<project:alpha>",
+     "sequence": 90000.0,
+     "slug": "oracle-review",
+     "updated_at": "<ts>",
+     "updated_by": null,
+     "workspace": "<workspace:oracle>"
+    },
+    "headers": {
+     "allow": "GET, POST",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 200
+   },
+   "surprise": true
+  },
+  {
+   "expect": [
+    409,
+    400
+   ],
+   "name": "create-duplicate-name",
+   "request": {
+    "auth": "owner",
+    "body": {
+     "color": "#123456",
+     "group": "started",
+     "name": "Oracle Review"
+    },
+    "content_type": "application/json",
+    "method": "POST",
+    "path": "/api/v1/workspaces/oracle-ws/projects/<project:alpha>/states/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "error": "State with the same name already exists in the project",
+     "id": "<uuid:2>"
+    },
+    "headers": {
+     "allow": "GET, POST",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 409
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    400
+   ],
+   "name": "create-invalid-group",
+   "request": {
+    "auth": "owner",
+    "body": {
+     "color": "#123456",
+     "group": "nope",
+     "name": "Bad Group"
+    },
+    "content_type": "application/json",
+    "method": "POST",
+    "path": "/api/v1/workspaces/oracle-ws/projects/<project:alpha>/states/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "group": [
+      "\"nope\" is not a valid choice."
+     ]
+    },
+    "headers": {
+     "allow": "GET, POST",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 400
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    400
+   ],
+   "name": "create-missing-color",
+   "request": {
+    "auth": "owner",
+    "body": {
+     "name": "No Colour"
+    },
+    "content_type": "application/json",
+    "method": "POST",
+    "path": "/api/v1/workspaces/oracle-ws/projects/<project:alpha>/states/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "color": [
+      "This field is required."
+     ]
+    },
+    "headers": {
+     "allow": "GET, POST",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 400
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    200
+   ],
+   "name": "patch",
+   "request": {
+    "auth": "owner",
+    "body": {
+     "name": "Oracle Review 2"
+    },
+    "content_type": "application/json",
+    "method": "PATCH",
+    "path": "/api/v1/workspaces/oracle-ws/projects/<project:alpha>/states/<uuid:2>/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "color": "#123456",
+     "created_at": "<ts>",
+     "created_by": "<user:owner>",
+     "default": false,
+     "deleted_at": null,
+     "description": "",
+     "external_id": null,
+     "external_source": null,
+     "group": "started",
+     "id": "<uuid:2>",
+     "is_triage": false,
+     "name": "Oracle Review 2",
+     "project": "<project:alpha>",
+     "sequence": 90000.0,
+     "slug": "oracle-review-2",
+     "updated_at": "<ts>",
+     "updated_by": "<user:owner>",
+     "workspace": "<workspace:oracle>"
+    },
+    "headers": {
+     "allow": "GET, PATCH, DELETE",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 200
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    400
+   ],
+   "name": "patch-invalid-group",
+   "request": {
+    "auth": "owner",
+    "body": {
+     "group": "nope"
+    },
+    "content_type": "application/json",
+    "method": "PATCH",
+    "path": "/api/v1/workspaces/oracle-ws/projects/<project:alpha>/states/<uuid:2>/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "group": [
+      "\"nope\" is not a valid choice."
+     ]
+    },
+    "headers": {
+     "allow": "GET, PATCH, DELETE",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 400
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    400
+   ],
+   "name": "delete-default-state",
+   "request": {
+    "auth": "owner",
+    "body": null,
+    "content_type": null,
+    "method": "DELETE",
+    "path": "/api/v1/workspaces/oracle-ws/projects/<project:alpha>/states/<state:alpha:Backlog>/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "error": "Default state cannot be deleted"
+    },
+    "headers": {
+     "allow": "GET, PATCH, DELETE",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 400
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    204
+   ],
+   "name": "delete",
+   "request": {
+    "auth": "owner",
+    "body": null,
+    "content_type": null,
+    "method": "DELETE",
+    "path": "/api/v1/workspaces/oracle-ws/projects/<project:alpha>/states/<uuid:2>/",
+    "query": null
+   },
+   "response": {
+    "body": null,
+    "headers": {
+     "allow": "GET, PATCH, DELETE",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 204
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    404
+   ],
+   "name": "detail-after-delete",
+   "request": {
+    "auth": "owner",
+    "body": null,
+    "content_type": null,
+    "method": "GET",
+    "path": "/api/v1/workspaces/oracle-ws/projects/<project:alpha>/states/<uuid:2>/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "error": "The requested resource does not exist."
+    },
+    "headers": {
+     "allow": "GET, PATCH, DELETE",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 404
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    403
+   ],
+   "name": "guest-cannot-create",
+   "request": {
+    "auth": "guest",
+    "body": {
+     "color": "#000000",
+     "name": "G"
+    },
+    "content_type": "application/json",
+    "method": "POST",
+    "path": "/api/v1/workspaces/oracle-ws/projects/<project:alpha>/states/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "detail": "You do not have permission to perform this action."
+    },
+    "headers": {
+     "allow": "GET, POST",
+     "content-type": "application/json"
+    },
+    "status": 403
+   },
+   "surprise": false
+  }
+ ],
+ "normalisation": "oracle/normalise.yaml",
+ "pinned_commit": "ba85d4d3d332b5380bebca4b9e0143b1127de907",
+ "resource": "states"
+}

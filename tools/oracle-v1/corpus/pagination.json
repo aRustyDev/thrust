@@ -1,0 +1,903 @@
+{
+ "exchanges": [
+  {
+   "expect": [
+    200
+   ],
+   "name": "first-page",
+   "request": {
+    "auth": "owner",
+    "body": null,
+    "content_type": null,
+    "method": "GET",
+    "path": "/api/v1/workspaces/oracle-ws/projects/<project:alpha>/work-items/",
+    "query": {
+     "per_page": 3
+    }
+   },
+   "response": {
+    "body": {
+     "count": 3,
+     "extra_stats": null,
+     "grouped_by": null,
+     "next_cursor": "3:1:0",
+     "next_page_results": true,
+     "prev_cursor": "3:-1:1",
+     "prev_page_results": false,
+     "results": [
+      {
+       "archived_at": null,
+       "assignees": [],
+       "completed_at": null,
+       "created_at": "<ts>",
+       "created_by": null,
+       "deleted_at": null,
+       "description_binary": null,
+       "description_html": "<p>Synthetic description for Oracle item nine.</p>",
+       "estimate_point": null,
+       "external_id": null,
+       "external_source": null,
+       "id": "<issue:i9>",
+       "is_draft": false,
+       "labels": [],
+       "name": "Oracle item nine",
+       "parent": null,
+       "point": null,
+       "priority": "none",
+       "project": "<project:alpha>",
+       "sequence_id": 9,
+       "sort_order": 75535.0,
+       "start_date": null,
+       "state": "<state:alpha:In Progress>",
+       "target_date": null,
+       "type": null,
+       "type_id": null,
+       "updated_at": "<ts>",
+       "updated_by": null,
+       "workspace": "<workspace:oracle>"
+      },
+      {
+       "archived_at": null,
+       "assignees": [
+        "<user:owner>"
+       ],
+       "completed_at": null,
+       "created_at": "<ts>",
+       "created_by": null,
+       "deleted_at": null,
+       "description_binary": null,
+       "description_html": "<p>Synthetic description for Oracle item eight.</p>",
+       "estimate_point": null,
+       "external_id": null,
+       "external_source": null,
+       "id": "<issue:i8>",
+       "is_draft": false,
+       "labels": [
+        "<label:alpha:feature>"
+       ],
+       "name": "Oracle item eight",
+       "parent": null,
+       "point": null,
+       "priority": "medium",
+       "project": "<project:alpha>",
+       "sequence_id": 8,
+       "sort_order": 85535.0,
+       "start_date": "<date>",
+       "state": "<state:alpha:Todo>",
+       "target_date": "<date>",
+       "type": null,
+       "type_id": null,
+       "updated_at": "<ts>",
+       "updated_by": null,
+       "workspace": "<workspace:oracle>"
+      },
+      {
+       "archived_at": null,
+       "assignees": [],
+       "completed_at": null,
+       "created_at": "<ts>",
+       "created_by": null,
+       "deleted_at": null,
+       "description_binary": null,
+       "description_html": "<p>Synthetic description for Oracle item seven.</p>",
+       "estimate_point": null,
+       "external_id": null,
+       "external_source": null,
+       "id": "<issue:i7>",
+       "is_draft": false,
+       "labels": [
+        "<label:alpha:docs>"
+       ],
+       "name": "Oracle item seven",
+       "parent": null,
+       "point": null,
+       "priority": "low",
+       "project": "<project:alpha>",
+       "sequence_id": 7,
+       "sort_order": 75535.0,
+       "start_date": null,
+       "state": "<state:alpha:Backlog>",
+       "target_date": null,
+       "type": null,
+       "type_id": null,
+       "updated_at": "<ts>",
+       "updated_by": null,
+       "workspace": "<workspace:oracle>"
+      }
+     ],
+     "sub_grouped_by": null,
+     "total_count": 9,
+     "total_pages": 3,
+     "total_results": 9
+    },
+    "headers": {
+     "allow": "GET, POST",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 200
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    200
+   ],
+   "name": "next-page",
+   "request": {
+    "auth": "owner",
+    "body": null,
+    "content_type": null,
+    "method": "GET",
+    "path": "/api/v1/workspaces/oracle-ws/projects/<project:alpha>/work-items/",
+    "query": {
+     "cursor": "3:1:0",
+     "per_page": 3
+    }
+   },
+   "response": {
+    "body": {
+     "count": 3,
+     "extra_stats": null,
+     "grouped_by": null,
+     "next_cursor": "3:2:0",
+     "next_page_results": true,
+     "prev_cursor": "3:0:1",
+     "prev_page_results": true,
+     "results": [
+      {
+       "archived_at": null,
+       "assignees": [
+        "<user:member>"
+       ],
+       "completed_at": null,
+       "created_at": "<ts>",
+       "created_by": null,
+       "deleted_at": null,
+       "description_binary": null,
+       "description_html": "<p>Synthetic description for Oracle sub-item of three.</p>",
+       "estimate_point": null,
+       "external_id": null,
+       "external_source": null,
+       "id": "<issue:i6>",
+       "is_draft": false,
+       "labels": [],
+       "name": "Oracle sub-item of three",
+       "parent": "<issue:i3>",
+       "point": null,
+       "priority": "none",
+       "project": "<project:alpha>",
+       "sequence_id": 6,
+       "sort_order": 75535.0,
+       "start_date": "<date>",
+       "state": "<state:alpha:Todo>",
+       "target_date": "<date>",
+       "type": null,
+       "type_id": null,
+       "updated_at": "<ts>",
+       "updated_by": null,
+       "workspace": "<workspace:oracle>"
+      },
+      {
+       "archived_at": null,
+       "assignees": [],
+       "completed_at": null,
+       "created_at": "<ts>",
+       "created_by": null,
+       "deleted_at": null,
+       "description_binary": null,
+       "description_html": "<p>Synthetic description for Oracle item five.</p>",
+       "estimate_point": null,
+       "external_id": null,
+       "external_source": null,
+       "id": "<issue:i5>",
+       "is_draft": false,
+       "labels": [
+        "<label:alpha:bug>"
+       ],
+       "name": "Oracle item five",
+       "parent": null,
+       "point": null,
+       "priority": "urgent",
+       "project": "<project:alpha>",
+       "sequence_id": 5,
+       "sort_order": 65535.0,
+       "start_date": null,
+       "state": "<state:alpha:Cancelled>",
+       "target_date": null,
+       "type": null,
+       "type_id": null,
+       "updated_at": "<ts>",
+       "updated_by": null,
+       "workspace": "<workspace:oracle>"
+      },
+      {
+       "archived_at": null,
+       "assignees": [
+        "<user:member>",
+        "<user:owner>"
+       ],
+       "completed_at": "<ts>",
+       "created_at": "<ts>",
+       "created_by": null,
+       "deleted_at": null,
+       "description_binary": null,
+       "description_html": "<p>Synthetic description for Oracle item four.</p>",
+       "estimate_point": null,
+       "external_id": null,
+       "external_source": null,
+       "id": "<issue:i4>",
+       "is_draft": false,
+       "labels": [],
+       "name": "Oracle item four",
+       "parent": null,
+       "point": null,
+       "priority": "low",
+       "project": "<project:alpha>",
+       "sequence_id": 4,
+       "sort_order": 65535.0,
+       "start_date": "<date>",
+       "state": "<state:alpha:Done>",
+       "target_date": "<date>",
+       "type": null,
+       "type_id": null,
+       "updated_at": "<ts>",
+       "updated_by": null,
+       "workspace": "<workspace:oracle>"
+      }
+     ],
+     "sub_grouped_by": null,
+     "total_count": 9,
+     "total_pages": 3,
+     "total_results": 9
+    },
+    "headers": {
+     "allow": "GET, POST",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 200
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    200
+   ],
+   "name": "third-page",
+   "request": {
+    "auth": "owner",
+    "body": null,
+    "content_type": null,
+    "method": "GET",
+    "path": "/api/v1/workspaces/oracle-ws/projects/<project:alpha>/work-items/",
+    "query": {
+     "cursor": "3:2:0",
+     "per_page": 3
+    }
+   },
+   "response": {
+    "body": {
+     "count": 3,
+     "extra_stats": null,
+     "grouped_by": null,
+     "next_cursor": "3:3:0",
+     "next_page_results": false,
+     "prev_cursor": "3:1:1",
+     "prev_page_results": true,
+     "results": [
+      {
+       "archived_at": null,
+       "assignees": [
+        "<user:owner>"
+       ],
+       "completed_at": null,
+       "created_at": "<ts>",
+       "created_by": null,
+       "deleted_at": null,
+       "description_binary": null,
+       "description_html": "<p>Synthetic description for Oracle item three.</p>",
+       "estimate_point": null,
+       "external_id": null,
+       "external_source": null,
+       "id": "<issue:i3>",
+       "is_draft": false,
+       "labels": [
+        "<label:alpha:docs>",
+        "<label:alpha:feature>"
+       ],
+       "name": "Oracle item three",
+       "parent": null,
+       "point": null,
+       "priority": "high",
+       "project": "<project:alpha>",
+       "sequence_id": 3,
+       "sort_order": 65535.0,
+       "start_date": "<date>",
+       "state": "<state:alpha:In Progress>",
+       "target_date": "<date>",
+       "type": null,
+       "type_id": null,
+       "updated_at": "<ts>",
+       "updated_by": null,
+       "workspace": "<workspace:oracle>"
+      },
+      {
+       "archived_at": null,
+       "assignees": [
+        "<user:member>"
+       ],
+       "completed_at": null,
+       "created_at": "<ts>",
+       "created_by": null,
+       "deleted_at": null,
+       "description_binary": null,
+       "description_html": "<p>Synthetic description for Oracle item two.</p>",
+       "estimate_point": null,
+       "external_id": null,
+       "external_source": null,
+       "id": "<issue:i2>",
+       "is_draft": false,
+       "labels": [
+        "<label:alpha:bug>"
+       ],
+       "name": "Oracle item two",
+       "parent": null,
+       "point": null,
+       "priority": "medium",
+       "project": "<project:alpha>",
+       "sequence_id": 2,
+       "sort_order": 65535.0,
+       "start_date": "<date>",
+       "state": "<state:alpha:Todo>",
+       "target_date": "<date>",
+       "type": null,
+       "type_id": null,
+       "updated_at": "<ts>",
+       "updated_by": null,
+       "workspace": "<workspace:oracle>"
+      },
+      {
+       "archived_at": null,
+       "assignees": [],
+       "completed_at": null,
+       "created_at": "<ts>",
+       "created_by": null,
+       "deleted_at": null,
+       "description_binary": null,
+       "description_html": "<p>Synthetic description for Oracle item one.</p>",
+       "estimate_point": null,
+       "external_id": null,
+       "external_source": null,
+       "id": "<issue:i1>",
+       "is_draft": false,
+       "labels": [],
+       "name": "Oracle item one",
+       "parent": null,
+       "point": null,
+       "priority": "none",
+       "project": "<project:alpha>",
+       "sequence_id": 1,
+       "sort_order": 65535.0,
+       "start_date": null,
+       "state": "<state:alpha:Backlog>",
+       "target_date": null,
+       "type": null,
+       "type_id": null,
+       "updated_at": "<ts>",
+       "updated_by": null,
+       "workspace": "<workspace:oracle>"
+      }
+     ],
+     "sub_grouped_by": null,
+     "total_count": 9,
+     "total_pages": 3,
+     "total_results": 9
+    },
+    "headers": {
+     "allow": "GET, POST",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 200
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    200
+   ],
+   "name": "back-to-previous",
+   "request": {
+    "auth": "owner",
+    "body": null,
+    "content_type": null,
+    "method": "GET",
+    "path": "/api/v1/workspaces/oracle-ws/projects/<project:alpha>/work-items/",
+    "query": {
+     "cursor": "3:0:1",
+     "per_page": 3
+    }
+   },
+   "response": {
+    "body": {
+     "count": 3,
+     "extra_stats": null,
+     "grouped_by": null,
+     "next_cursor": "3:1:0",
+     "next_page_results": true,
+     "prev_cursor": "3:-1:1",
+     "prev_page_results": false,
+     "results": [
+      {
+       "archived_at": null,
+       "assignees": [],
+       "completed_at": null,
+       "created_at": "<ts>",
+       "created_by": null,
+       "deleted_at": null,
+       "description_binary": null,
+       "description_html": "<p>Synthetic description for Oracle item nine.</p>",
+       "estimate_point": null,
+       "external_id": null,
+       "external_source": null,
+       "id": "<issue:i9>",
+       "is_draft": false,
+       "labels": [],
+       "name": "Oracle item nine",
+       "parent": null,
+       "point": null,
+       "priority": "none",
+       "project": "<project:alpha>",
+       "sequence_id": 9,
+       "sort_order": 75535.0,
+       "start_date": null,
+       "state": "<state:alpha:In Progress>",
+       "target_date": null,
+       "type": null,
+       "type_id": null,
+       "updated_at": "<ts>",
+       "updated_by": null,
+       "workspace": "<workspace:oracle>"
+      },
+      {
+       "archived_at": null,
+       "assignees": [
+        "<user:owner>"
+       ],
+       "completed_at": null,
+       "created_at": "<ts>",
+       "created_by": null,
+       "deleted_at": null,
+       "description_binary": null,
+       "description_html": "<p>Synthetic description for Oracle item eight.</p>",
+       "estimate_point": null,
+       "external_id": null,
+       "external_source": null,
+       "id": "<issue:i8>",
+       "is_draft": false,
+       "labels": [
+        "<label:alpha:feature>"
+       ],
+       "name": "Oracle item eight",
+       "parent": null,
+       "point": null,
+       "priority": "medium",
+       "project": "<project:alpha>",
+       "sequence_id": 8,
+       "sort_order": 85535.0,
+       "start_date": "<date>",
+       "state": "<state:alpha:Todo>",
+       "target_date": "<date>",
+       "type": null,
+       "type_id": null,
+       "updated_at": "<ts>",
+       "updated_by": null,
+       "workspace": "<workspace:oracle>"
+      },
+      {
+       "archived_at": null,
+       "assignees": [],
+       "completed_at": null,
+       "created_at": "<ts>",
+       "created_by": null,
+       "deleted_at": null,
+       "description_binary": null,
+       "description_html": "<p>Synthetic description for Oracle item seven.</p>",
+       "estimate_point": null,
+       "external_id": null,
+       "external_source": null,
+       "id": "<issue:i7>",
+       "is_draft": false,
+       "labels": [
+        "<label:alpha:docs>"
+       ],
+       "name": "Oracle item seven",
+       "parent": null,
+       "point": null,
+       "priority": "low",
+       "project": "<project:alpha>",
+       "sequence_id": 7,
+       "sort_order": 75535.0,
+       "start_date": null,
+       "state": "<state:alpha:Backlog>",
+       "target_date": null,
+       "type": null,
+       "type_id": null,
+       "updated_at": "<ts>",
+       "updated_by": null,
+       "workspace": "<workspace:oracle>"
+      }
+     ],
+     "sub_grouped_by": null,
+     "total_count": 9,
+     "total_pages": 3,
+     "total_results": 9
+    },
+    "headers": {
+     "allow": "GET, POST",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 200
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    200
+   ],
+   "name": "per-page-over-max",
+   "request": {
+    "auth": "owner",
+    "body": null,
+    "content_type": null,
+    "method": "GET",
+    "path": "/api/v1/workspaces/oracle-ws/projects/<project:alpha>/work-items/",
+    "query": {
+     "per_page": 100000
+    }
+   },
+   "response": {
+    "body": {
+     "detail": "Invalid per_page value. Cannot exceed 1000."
+    },
+    "headers": {
+     "allow": "GET, POST",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 400
+   },
+   "surprise": true
+  },
+  {
+   "expect": [
+    200,
+    400
+   ],
+   "name": "per-page-zero",
+   "request": {
+    "auth": "owner",
+    "body": null,
+    "content_type": null,
+    "method": "GET",
+    "path": "/api/v1/workspaces/oracle-ws/projects/<project:alpha>/work-items/",
+    "query": {
+     "per_page": 0
+    }
+   },
+   "response": {
+    "body": {
+     "error": "Something went wrong please try again later"
+    },
+    "headers": {
+     "allow": "GET, POST",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 500
+   },
+   "surprise": true
+  },
+  {
+   "expect": [
+    200,
+    400,
+    500
+   ],
+   "name": "per-page-negative",
+   "request": {
+    "auth": "owner",
+    "body": null,
+    "content_type": null,
+    "method": "GET",
+    "path": "/api/v1/workspaces/oracle-ws/projects/<project:alpha>/work-items/",
+    "query": {
+     "per_page": -1
+    }
+   },
+   "response": {
+    "body": {
+     "error": "Something went wrong please try again later"
+    },
+    "headers": {
+     "allow": "GET, POST",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 500
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    200,
+    400
+   ],
+   "name": "per-page-not-a-number",
+   "request": {
+    "auth": "owner",
+    "body": null,
+    "content_type": null,
+    "method": "GET",
+    "path": "/api/v1/workspaces/oracle-ws/projects/<project:alpha>/work-items/",
+    "query": {
+     "per_page": "abc"
+    }
+   },
+   "response": {
+    "body": {
+     "detail": "Invalid per_page parameter."
+    },
+    "headers": {
+     "allow": "GET, POST",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 400
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    400
+   ],
+   "name": "garbage-cursor",
+   "request": {
+    "auth": "owner",
+    "body": null,
+    "content_type": null,
+    "method": "GET",
+    "path": "/api/v1/workspaces/oracle-ws/projects/<project:alpha>/work-items/",
+    "query": {
+     "cursor": "garbage"
+    }
+   },
+   "response": {
+    "body": {
+     "detail": "Invalid cursor parameter."
+    },
+    "headers": {
+     "allow": "GET, POST",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 400
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    200
+   ],
+   "name": "beyond-last-page",
+   "request": {
+    "auth": "owner",
+    "body": null,
+    "content_type": null,
+    "method": "GET",
+    "path": "/api/v1/workspaces/oracle-ws/projects/<project:alpha>/work-items/",
+    "query": {
+     "cursor": "3:50:0",
+     "per_page": 3
+    }
+   },
+   "response": {
+    "body": {
+     "count": 0,
+     "extra_stats": null,
+     "grouped_by": null,
+     "next_cursor": "3:51:0",
+     "next_page_results": false,
+     "prev_cursor": "3:49:1",
+     "prev_page_results": true,
+     "results": [],
+     "sub_grouped_by": null,
+     "total_count": 9,
+     "total_pages": 3,
+     "total_results": 9
+    },
+    "headers": {
+     "allow": "GET, POST",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 200
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    200
+   ],
+   "name": "states-first-page",
+   "request": {
+    "auth": "owner",
+    "body": null,
+    "content_type": null,
+    "method": "GET",
+    "path": "/api/v1/workspaces/oracle-ws/projects/<project:alpha>/states/",
+    "query": {
+     "per_page": 2
+    }
+   },
+   "response": {
+    "body": {
+     "count": 2,
+     "extra_stats": null,
+     "grouped_by": null,
+     "next_cursor": "2:1:0",
+     "next_page_results": true,
+     "prev_cursor": "2:-1:1",
+     "prev_page_results": false,
+     "results": [
+      {
+       "color": "#60646C",
+       "created_at": "<ts>",
+       "created_by": null,
+       "default": true,
+       "deleted_at": null,
+       "description": "",
+       "external_id": null,
+       "external_source": null,
+       "group": "backlog",
+       "id": "<state:alpha:Backlog>",
+       "is_triage": false,
+       "name": "Backlog",
+       "project": "<project:alpha>",
+       "sequence": 15000.0,
+       "slug": "backlog",
+       "updated_at": "<ts>",
+       "updated_by": null,
+       "workspace": "<workspace:oracle>"
+      },
+      {
+       "color": "#60646C",
+       "created_at": "<ts>",
+       "created_by": null,
+       "default": false,
+       "deleted_at": null,
+       "description": "",
+       "external_id": null,
+       "external_source": null,
+       "group": "unstarted",
+       "id": "<state:alpha:Todo>",
+       "is_triage": false,
+       "name": "Todo",
+       "project": "<project:alpha>",
+       "sequence": 30000.0,
+       "slug": "todo",
+       "updated_at": "<ts>",
+       "updated_by": null,
+       "workspace": "<workspace:oracle>"
+      }
+     ],
+     "sub_grouped_by": null,
+     "total_count": 5,
+     "total_pages": 3,
+     "total_results": 5
+    },
+    "headers": {
+     "allow": "GET, POST",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 200
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    200
+   ],
+   "name": "labels-first-page",
+   "request": {
+    "auth": "owner",
+    "body": null,
+    "content_type": null,
+    "method": "GET",
+    "path": "/api/v1/workspaces/oracle-ws/projects/<project:alpha>/labels/",
+    "query": {
+     "per_page": 1
+    }
+   },
+   "response": {
+    "body": {
+     "count": 1,
+     "extra_stats": null,
+     "grouped_by": null,
+     "next_cursor": "1:1:0",
+     "next_page_results": true,
+     "prev_cursor": "1:-1:1",
+     "prev_page_results": false,
+     "results": [
+      {
+       "color": "#30A46C",
+       "created_at": "<ts>",
+       "created_by": null,
+       "deleted_at": null,
+       "description": "",
+       "external_id": null,
+       "external_source": null,
+       "id": "<label:alpha:docs>",
+       "name": "docs",
+       "parent": null,
+       "project": "<project:alpha>",
+       "sort_order": 85535.0,
+       "updated_at": "<ts>",
+       "updated_by": null,
+       "workspace": "<workspace:oracle>"
+      }
+     ],
+     "sub_grouped_by": null,
+     "total_count": 3,
+     "total_pages": 3,
+     "total_results": 3
+    },
+    "headers": {
+     "allow": "GET, POST",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 200
+   },
+   "surprise": false
+  }
+ ],
+ "normalisation": "oracle/normalise.yaml",
+ "pinned_commit": "ba85d4d3d332b5380bebca4b9e0143b1127de907",
+ "resource": "pagination"
+}

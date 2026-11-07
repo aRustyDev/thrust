@@ -1,0 +1,93 @@
+{
+ "controls": [
+  {
+   "expect": "PASS",
+   "field": "name",
+   "gate_exit": 0,
+   "id": "C0-passthrough",
+   "last_mutation": null,
+   "mode": "passthrough",
+   "proxy_mutated_responses": 0,
+   "unaccepted_failures": 0,
+   "verdict": "OK",
+   "why": "gate passed through the unmodified proxy"
+  },
+  {
+   "evidence": "12345 is not of type \"string\"",
+   "expect": "FAIL",
+   "failed_on_target": true,
+   "field": "name",
+   "gate_exit": 1,
+   "id": "C1-type",
+   "last_mutation": {
+    "change": "results[0].name: 'Backlog' -> 12345",
+    "request": "GET /api/v1/workspaces/oracle-ws/projects/af77c157-a476-525a-a3c0-ffe11dcb05f5/states/"
+   },
+   "mode": "type",
+   "proxy_mutated_responses": 1,
+   "unaccepted_failures": 1,
+   "verdict": "OK",
+   "why": "gate FAILED on the mutated operation for the expected reason"
+  },
+  {
+   "evidence": "\"not-a-valid-enum-member\" is not one of \"backlog\", \"unstarted\" or 4 other candidates",
+   "expect": "FAIL",
+   "failed_on_target": true,
+   "field": "group",
+   "gate_exit": 1,
+   "id": "C2-value",
+   "last_mutation": {
+    "change": "results[0].group: 'backlog' -> 'not-a-valid-enum-member'",
+    "request": "GET /api/v1/workspaces/oracle-ws/projects/af77c157-a476-525a-a3c0-ffe11dcb05f5/states/"
+   },
+   "mode": "value",
+   "proxy_mutated_responses": 1,
+   "unaccepted_failures": 1,
+   "verdict": "OK",
+   "why": "gate FAILED on the mutated operation for the expected reason"
+  },
+  {
+   "evidence": "\"name\" is a required property",
+   "expect": "FAIL",
+   "failed_on_target": true,
+   "field": "name",
+   "gate_exit": 1,
+   "id": "C3-drop-required",
+   "last_mutation": {
+    "change": "results[0].name: 'Backlog' -> '<removed>'",
+    "request": "GET /api/v1/workspaces/oracle-ws/projects/af77c157-a476-525a-a3c0-ffe11dcb05f5/states/"
+   },
+   "mode": "drop",
+   "proxy_mutated_responses": 1,
+   "unaccepted_failures": 1,
+   "verdict": "OK",
+   "why": "gate FAILED on the mutated operation for the expected reason"
+  },
+  {
+   "expect": "BLIND-SPOT",
+   "field": "id",
+   "gate_exit": 0,
+   "id": "C4-blind-spot-drop-id",
+   "last_mutation": {
+    "change": "results[0].id: '15a21a84-5fe1-561f-a113-cceab7307d0f' -> '<removed>'",
+    "request": "GET /api/v1/workspaces/oracle-ws/projects/af77c157-a476-525a-a3c0-ffe11dcb05f5/states/"
+   },
+   "mode": "drop",
+   "proxy_mutated_responses": 2,
+   "unaccepted_failures": 0,
+   "verdict": "GAP-CONFIRMED",
+   "why": "gate passed although a response lost `id`: schema conformance is blind to it (State.required is only [color, name]); the golden corpus must catch this"
+  }
+ ],
+ "harness_valid": true,
+ "summary": {
+  "baseline_passes_through_proxy": true,
+  "documented_detection_gap": "GAP-CONFIRMED",
+  "mutation_controls_failed_as_required": [
+   "C1-type",
+   "C2-value",
+   "C3-drop-required"
+  ],
+  "void_or_bad": []
+ }
+}
