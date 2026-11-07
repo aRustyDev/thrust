@@ -47,6 +47,9 @@ pub enum ProjectError {
     /// Changing a project that is archived.
     #[error("the project is archived")]
     Archived,
+    /// A default state that is not one of the project's own (the triage state is not one: it is the intake's).
+    #[error("not a state of the project")]
+    NotAState,
     #[error(transparent)]
     Core(#[from] CoreError),
 }
@@ -86,6 +89,8 @@ pub struct ProjectPatch {
     pub timezone: Option<String>,
     pub external_source: Option<Option<String>>,
     pub external_id: Option<Option<String>>,
+    /// The state a work item made with none gets. A change that names one is `NotAState` unless it is a state of the project.
+    pub default_state: Option<Option<Uuid>>,
 }
 
 impl ProjectPatch {
@@ -121,7 +126,8 @@ impl ProjectPatch {
             close_in,
             timezone,
             external_source,
-            external_id
+            external_id,
+            default_state
         );
     }
 }
@@ -344,6 +350,25 @@ pub async fn update_project(
     patch: ProjectPatch,
 ) -> Result<ProjectDetail, ProjectError> {
     let detail = updatable_project(app, scope, id).await?;
+    save_patch(app, scope, detail, patch).await
+}
+
+/// What both ways of changing a project do once the caller is let in and the project is not archived: set what the patch names,
+/// check the whole row, and save it as the pin does, with the caller as the one who changed it and the time.
+async fn save_patch(
+    app: &App,
+    scope: &WorkspaceScope,
+    detail: ProjectDetail,
+    patch: ProjectPatch,
+) -> Result<ProjectDetail, ProjectError> {
+    let id = detail.listing.project.id;
+    if let Some(Some(state)) = patch.default_state {
+        // the states of the project the caller is in, the triage one left out (it is the intake's, as `State.objects` has it)
+        let states = app.ports.db.workspace_states(scope).await?;
+        if !states.iter().any(|s| s.project_id == id && s.id == state) {
+            return Err(ProjectError::NotAState);
+        }
+    }
     let mut row = detail.listing.project;
     patch.apply(&mut row);
     row.updated_by = Some(scope.user_id());
@@ -354,6 +379,68 @@ pub async fn update_project(
         return Err(ProjectError::NotFound);
     }
     app.ports.db.project_detail(scope, id).await?.ok_or(ProjectError::NotFound)
+}
+
+/// Plane's v1 permission for a write on one project (a change, a deletion, archiving and unarchiving): a project admin, or a member
+/// of the project who is an admin of the workspace (`ProjectBasePermission`). Everyone else is `Forbidden`, and so is a project that
+/// is not there: the pin looks for the caller's membership and finds none. (The internal API lets a workspace admin who is not in
+/// the project change it, [`updatable_project`]; v1 does not.)
+pub async fn project_writer(app: &App, scope: &WorkspaceScope, id: ProjectId) -> Result<ProjectDetail, ProjectError> {
+    let detail = app.ports.db.project_detail(scope, id).await?.ok_or(ProjectError::Forbidden)?;
+    let role = detail.listing.role;
+    if role == Some(Role::Admin) || (role.is_some() && scope.role() == Role::Admin) {
+        Ok(detail)
+    } else {
+        Err(ProjectError::Forbidden)
+    }
+}
+
+/// Change a project as v1 does: the caller is a [`project_writer`], the project is not archived, and the rest is [`update_project`]'s.
+pub async fn change_project(
+    app: &App,
+    scope: &WorkspaceScope,
+    id: ProjectId,
+    patch: ProjectPatch,
+) -> Result<ProjectDetail, ProjectError> {
+    let detail = project_writer(app, scope, id).await?;
+    if detail.listing.project.archived_at.is_some() {
+        return Err(ProjectError::Archived);
+    }
+    save_patch(app, scope, detail, patch).await
+}
+
+/// Archive a project, or unarchive it (`archived`), for a [`project_writer`]. Archiving an archived project archives it again, at
+/// the new time, as the pin does.
+pub async fn set_project_archived(
+    app: &App,
+    scope: &WorkspaceScope,
+    id: ProjectId,
+    archived: bool,
+) -> Result<(), ProjectError> {
+    let detail = project_writer(app, scope, id).await?;
+    let mut row = detail.listing.project;
+    let now = app.ports.clock.now();
+    row.archived_at = archived.then_some(now);
+    row.updated_by = Some(scope.user_id());
+    row.updated_at = now;
+    if !app.ports.db.update_project(scope, &row).await? {
+        return Err(ProjectError::NotFound);
+    }
+    Ok(())
+}
+
+/// Delete a project, for a [`project_writer`]: it leaves every read, and its name and key are free again.
+pub async fn delete_project(app: &App, scope: &WorkspaceScope, id: ProjectId) -> Result<(), ProjectError> {
+    project_writer(app, scope, id).await?;
+    if !app.ports.db.delete_project(scope, id, app.ports.clock.now()).await? {
+        return Err(ProjectError::NotFound);
+    }
+    Ok(())
+}
+
+/// The projects the caller sees by v1's rule (their own, and the public ones, whatever their role in the workspace), oldest first.
+pub async fn visible_projects(app: &App, scope: &WorkspaceScope) -> Result<Vec<ProjectListing>, CoreError> {
+    Ok(app.ports.db.visible_projects(scope).await?)
 }
 
 /// Open a project. A project that is not there or is archived is `NotFound`; a member of it gets it; anyone else in the workspace
@@ -374,6 +461,18 @@ pub async fn open_project(app: &App, scope: &WorkspaceScope, id: ProjectId) -> R
     } else {
         ProjectError::NotAMember
     })
+}
+
+/// A project as v1's queryset finds it: one the caller is a member of, or a public one, archived ones included (the internal API's
+/// [`open_project`] hides them). `NotFound` for every other project, a secret one the caller is not in as much as one that is not
+/// there: the pin's queryset leaves it out, so the object is not found.
+pub async fn visible_project(app: &App, scope: &WorkspaceScope, id: ProjectId) -> Result<ProjectDetail, ProjectError> {
+    let detail = app.ports.db.project_detail(scope, id).await?.ok_or(ProjectError::NotFound)?;
+    if detail.listing.role.is_some() || detail.listing.project.network == ProjectNetwork::Public {
+        Ok(detail)
+    } else {
+        Err(ProjectError::NotFound)
+    }
 }
 
 /// The caller's own row in a project with who they are, or `None` when they have none.
