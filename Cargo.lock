@@ -3539,6 +3539,7 @@ name = "thrust-api-v1"
 version = "0.0.0"
 dependencies = [
  "axum",
+ "form_urlencoded",
  "futures-executor",
  "proptest",
  "rstest",
@@ -3666,6 +3667,7 @@ dependencies = [
  "thrust-adapters-postgres",
  "thrust-adapters-selfhosted",
  "thrust-api",
+ "thrust-api-v1",
  "thrust-compat-plane",
  "thrust-contracts",
  "thrust-core",
@@ -3689,6 +3691,7 @@ dependencies = [
  "thrust-adapters-oidc",
  "thrust-adapters-postgres",
  "thrust-api",
+ "thrust-api-v1",
  "thrust-compat-plane",
  "thrust-contracts",
  "thrust-core",

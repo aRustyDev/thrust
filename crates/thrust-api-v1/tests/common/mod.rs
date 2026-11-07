@@ -1,5 +1,6 @@
 //! A small seeded world for the v1 tests: one workspace, one project, a caller of every role with an API key, and the keys the
 //! pin refuses (expired, revoked, a user who is no longer active). Time and ids are injected (AGENTS.md testing rule 6).
+#![allow(dead_code, reason = "each test crate compiles this module and uses some of its helpers")]
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -75,6 +76,9 @@ impl Background for DiscardBackground {
 pub const SLUG: &str = "cast";
 pub const WS: u128 = 0xA0;
 pub const PROJECT: u128 = 0xA1;
+pub const STATE_BACKLOG: u128 = 0x5001;
+pub const STATE_TODO: u128 = 0x5002;
+pub const STATE_TRIAGE: u128 = 0x5003;
 
 /// The people of the world. Each has an API key of the same name (`key-admin`, ...), except `Outsider`, who is in no
 /// workspace, and `Inactive`, whose account was switched off after the key was made.
@@ -122,13 +126,26 @@ impl Who {
 }
 
 pub struct World {
+    pub app: App,
     pub router: Router,
 }
 
 /// The v1 routes over a seeded memory world, with `routes` mounted beside them and `cfg` as the rate limit.
 pub fn world(routes: Router, cfg: V1Config) -> World {
-    let router = thrust_api_v1::assemble(routes).layer(Extension(app())).layer(Extension(cfg));
-    World { router }
+    let app = app();
+    let router = thrust_api_v1::assemble(routes).layer(Extension(app.clone())).layer(Extension(cfg));
+    World { app, router }
+}
+
+/// The crate's own routes (`router()`) over the seeded world, with an allowance big enough that no test meets it.
+pub fn real_world() -> World {
+    real_world_with(V1Config { rate_limit: 100_000, rate_window_secs: 60 })
+}
+
+pub fn real_world_with(cfg: V1Config) -> World {
+    let app = app();
+    let router = thrust_api_v1::router().layer(Extension(app.clone())).layer(Extension(cfg));
+    World { app, router }
 }
 
 /// The seeded `App` alone, for a test that mounts the crate's own `router()`.
@@ -195,6 +212,24 @@ async fn seed(app: &App) -> Result<(), CoreError> {
                 w.role().map(|role| SeedMembership { project_id: project, workspace_id: ws, user_id: w.id(), role })
             })
             .collect(),
+        // the project's states: a default, one more, and the intake one (which a list of states leaves out)
+        states: [
+            (STATE_BACKLOG, "Backlog", 15000.0, StateGroup::Backlog, true),
+            (STATE_TODO, "Todo", 30000.0, StateGroup::Unstarted, false),
+            (STATE_TRIAGE, "Triage", 90000.0, StateGroup::Triage, false),
+        ]
+        .iter()
+        .map(|(n, name, sequence, group, is_default)| SeedState {
+            id: Uuid::from_u128(*n),
+            project_id: project,
+            workspace_id: ws,
+            name: (*name).into(),
+            color: "#000000".into(),
+            sequence: *sequence,
+            group: *group,
+            is_default: *is_default,
+        })
+        .collect(),
         api_keys: vec![
             key("key-admin", Who::Admin, None, false),
             key("key-member", Who::Member, None, false),
@@ -234,11 +269,16 @@ impl Reply {
 
 /// One request through the router, in process. `headers` are sent as given.
 pub fn send(router: &Router, method: &str, uri: &str, headers: &[(&str, &str)]) -> Reply {
+    send_raw(router, method, uri, headers, Vec::new())
+}
+
+/// [`send`] with a body, as given.
+pub fn send_raw(router: &Router, method: &str, uri: &str, headers: &[(&str, &str)], body: Vec<u8>) -> Reply {
     let mut req = Request::builder().method(Method::from_bytes(method.as_bytes()).expect("a method")).uri(uri);
     for (name, value) in headers {
         req = req.header(*name, *value);
     }
-    let req = req.body(Body::empty()).expect("a request");
+    let req = req.body(Body::from(body)).expect("a request");
     futures_executor::block_on(async {
         let resp = router.clone().oneshot(req).await.expect("the router answers");
         let (parts, body) = resp.into_parts();
@@ -251,4 +291,10 @@ pub fn send(router: &Router, method: &str, uri: &str, headers: &[(&str, &str)]) 
 /// A request that carries `key` as the API key.
 pub fn send_as(router: &Router, key: &str, method: &str, uri: &str) -> Reply {
     send(router, method, uri, &[("x-api-key", key)])
+}
+
+/// A request that carries `key` and a JSON body.
+pub fn send_json(router: &Router, key: &str, method: &str, uri: &str, body: &Value) -> Reply {
+    let headers = [("x-api-key", key), ("content-type", "application/json")];
+    send_raw(router, method, uri, &headers, serde_json::to_vec(body).expect("a body"))
 }

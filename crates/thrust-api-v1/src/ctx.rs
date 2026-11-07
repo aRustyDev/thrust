@@ -15,7 +15,7 @@ use axum::middleware::Next;
 use axum::response::Response;
 use serde::de::DeserializeOwned;
 use serde::Deserialize;
-use thrust_contracts::{ApiKeyId, Principal, ProjectId, Uuid, WorkspaceSlug};
+use thrust_contracts::{ApiKeyId, Principal, ProjectId, Role, Uuid, WorkspaceSlug};
 use thrust_core::{App, CoreError, Credentials, Permission, Via};
 use thrust_ports::{RateDecision, Scope, WorkspaceScope};
 
@@ -35,6 +35,24 @@ pub struct V1Config {
 impl Default for V1Config {
     fn default() -> Self {
         Self { rate_limit: 60, rate_window_secs: 60 }
+    }
+}
+
+impl V1Config {
+    /// Plane's spelling of `API_KEY_RATE_LIMIT` (DRF's): `N/period`, where the period is read from its first letter (`s`econd,
+    /// `m`inute, `h`our, `d`ay), as in `100000/minute`; a bare `N` is per minute.
+    pub fn parse(spec: &str) -> Result<Self, String> {
+        let spec = spec.trim();
+        let (count, period) = spec.split_once('/').unwrap_or((spec, "minute"));
+        let rate_limit = count.trim().parse::<u32>().map_err(|_| format!("\"{count}\" is not a number of requests"))?;
+        let rate_window_secs = match period.trim().chars().next() {
+            Some('s') => 1,
+            Some('m') => 60,
+            Some('h') => 3600,
+            Some('d') => 86_400,
+            _ => return Err(format!("\"{period}\" is not a period (second, minute, hour or day)")),
+        };
+        Ok(Self { rate_limit, rate_window_secs })
     }
 }
 
@@ -131,14 +149,21 @@ impl Ctx {
         Ok(scope)
     }
 
-    /// The caller's membership of a workspace (the routes of projects), then the throttle. A workspace that is not there, or one
-    /// the caller is not in, is a 403.
-    pub async fn workspace_scope(&self, slug: &str) -> Result<WorkspaceScope, V1Error> {
-        let scope = thrust_core::authorize_workspace(&self.app, &self.principal, &WorkspaceSlug::new(slug))
-            .await
-            .map_err(denied)?;
+    /// The caller's membership of a workspace with at least `min` as their role there (the routes of projects), then the throttle.
+    /// A workspace that is not there, one the caller is not in, and a role that is not enough are all a 403, and none is counted.
+    pub async fn workspace_scope(&self, slug: &str, min: Role) -> Result<WorkspaceScope, V1Error> {
+        let scope = self.workspace_access(slug).await?;
+        if scope.role() < min {
+            return Err(V1Error::PermissionDenied);
+        }
         self.throttle().await?;
         Ok(scope)
+    }
+
+    /// The caller's membership of a workspace, with no throttle: for a route whose permission is more than a role (a project's
+    /// writers, which core decides), so that the route counts the request itself once the permission has passed.
+    pub async fn workspace_access(&self, slug: &str) -> Result<WorkspaceScope, V1Error> {
+        thrust_core::authorize_workspace(&self.app, &self.principal, &WorkspaceSlug::new(slug)).await.map_err(denied)
     }
 
     /// Count this request against the key. The key is its own allowance: two keys of one user do not share one.

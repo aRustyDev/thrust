@@ -49,7 +49,7 @@ async fn gone(V1Path((slug, project)): V1Path<(String, PlaneUuid)>, ctx: Ctx) ->
 }
 
 async fn workspace(V1Path(slug): V1Path<String>, ctx: Ctx) -> Result<Json<Value>, V1Error> {
-    ctx.workspace_scope(&slug).await?;
+    ctx.workspace_scope(&slug, Role::Guest).await?;
     Ok(Json(json!({ "ok": true })))
 }
 
@@ -71,6 +71,42 @@ fn read_uri() -> String {
 
 fn big_allowance() -> V1Config {
     V1Config { rate_limit: 10_000, rate_window_secs: 60 }
+}
+
+// --- the allowance's setting --------------------------------------------------------------------------------------------------
+
+/// Plane's `API_KEY_RATE_LIMIT` spelling: its own default, the oracle's (`100000/minute`), each period by its first letter, and a bare
+/// number (a minute). The default allowance is Plane's `60/minute`.
+#[rstest]
+#[case("60/minute", 60, 60)]
+#[case("100000/minute", 100_000, 60)]
+#[case("5/min", 5, 60)]
+#[case("10/second", 10, 1)]
+#[case("1/s", 1, 1)]
+#[case("3/hour", 3, 3600)]
+#[case("2/day", 2, 86_400)]
+#[case("7", 7, 60)]
+#[case(" 8 / minute ", 8, 60)]
+#[case("0/minute", 0, 60)]
+fn the_allowance_is_read_as_plane_writes_it(#[case] spec: &str, #[case] limit: u32, #[case] window: u64) {
+    assert_eq!(V1Config::parse(spec), Ok(V1Config { rate_limit: limit, rate_window_secs: window }), "{spec}");
+}
+
+#[rstest]
+#[case("")]
+#[case("x/minute")]
+#[case("-1/minute")]
+#[case("5/week")]
+#[case("5/")]
+#[case("/minute")]
+#[case("5.5/minute")]
+fn an_allowance_that_is_not_one_is_refused(#[case] spec: &str) {
+    assert!(V1Config::parse(spec).is_err(), "{spec}");
+}
+
+#[test]
+fn the_default_allowance_is_planes() {
+    assert_eq!(V1Config::default(), V1Config { rate_limit: 60, rate_window_secs: 60 });
 }
 
 // --- authentication -----------------------------------------------------------------------------------------------------

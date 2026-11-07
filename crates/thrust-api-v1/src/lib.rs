@@ -11,8 +11,15 @@
 //! A route takes [`V1Path`] first (a path that does not match is the URLconf's 404, answered before a credential is read), then
 //! [`Ctx`] (the API key, the permission, the throttle), and answers `Result<_, V1Error>`.
 
+// `json!` of a project's 43 keys is more than the macro's default depth
+#![recursion_limit = "256"]
+
 mod ctx;
 mod error;
+pub mod fields;
+pub mod pagination;
+mod projects;
+pub mod request;
 
 use axum::routing::any;
 use axum::{middleware, Router};
@@ -23,7 +30,7 @@ pub use error::{plane_500, V1Error, PLANE_500_MESSAGE};
 /// The routes of `/api/v1`, for the composition roots to merge. Each needs the `App` in the request's extensions, as
 /// `thrust-api`'s do.
 pub fn router() -> Router {
-    assemble(Router::new())
+    assemble(projects::routes())
 }
 
 /// Finish a set of v1 routes: anything under `/api/v1` that none of them answers is Plane's 404 for an unknown path, and every
