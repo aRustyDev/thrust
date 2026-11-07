@@ -42,4 +42,11 @@ time with `uvx --from schemathesis==4.31.1`. `oasdiff` runs from an image pinned
 
 ## Edits after the import
 
-None yet. Each edit to a vendored file is its own commit and is listed here with the reason.
+Each edit to a vendored file is its own commit and is listed here with the reason.
+
+1. `exceptions.yaml`, the round-27 corrections that the source commit never received (ADR-0031 round 27,
+   `research/0005` "Corrections"). EX-001 and EX-002 change from `rust_expectation: fix` to `reproduce` (owner
+   decision Q-0033.2: reproduce every Plane quirk, including the 500s, as a handled error, never a crash). The `reason`
+   of EX-011 said search results omit `id`; they do not, the body is the `issues` wrapper. EX-003, EX-004 and EX-010
+   gain the fixture and component-collision notes. Only `reason` and `rust_expectation` change; `match`, `gate` and
+   `scope_exclusions` are untouched, so no failure is newly accepted or rejected.

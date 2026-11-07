@@ -63,9 +63,12 @@ entries:
     -> ''Negative indexing'' in utils/paginator.py; invalid fields/expand/payload shapes; and POST /workspaces/{slug}/assets/
     raises TypeError because api/views/asset.py calls S3Storage(request=..., is_server=True) while S3Storage.__init__(self,
     request=None) has no such parameter (present on upstream preview 879ce8b5c6, so not a fork or merge artefact).
-    A behaviour-faithful port must NOT reproduce a crash.'
+    Incomplete (research/0005, round 27): other 500 sources exist, a `deleted_at` body on work-item create (PQ-404),
+    a non-object `issue` on intake create (PQ-405), array bodies (PQ-406) and two more `is_server` sites (PQ-401).
+    Owner decision, round 27 (Q-0033.2, Q-0122.3, ADR-0031): reproduce all of them, as a HANDLED error with the same
+    status and body, never a crash of the process.'
   evidence: gate run on a fresh seed, pinned commit ba85d4d3d3, schemathesis 4.31.1, seed 1, deterministic (oracle/results/conformance-baseline.json)
-  rust_expectation: fix
+  rust_expectation: reproduce
   deviation_ref: null
 - id: EX-002
   kind: upstream-bug
@@ -84,9 +87,10 @@ entries:
     - POST /api/v1/workspaces/{slug}/projects/{project_id}/issues/
     - POST /api/v1/workspaces/{slug}/projects/{project_id}/work-items/
     message_regex: 'Received: 500'
-  reason: 'Same operations and causes as EX-001, seen through the status-code check: 500 is not a documented response.'
+  reason: 'Same operations and causes as EX-001, seen through the status-code check: 500 is not a documented response.
+    Reproduced as a handled 500 (round 27, Q-0033.2), like EX-001.'
   evidence: gate run on a fresh seed, pinned commit ba85d4d3d3, schemathesis 4.31.1, seed 1, deterministic (oracle/results/conformance-baseline.json)
-  rust_expectation: fix
+  rust_expectation: reproduce
   deviation_ref: null
 - id: EX-003
   kind: upstream-schema-defect
@@ -112,6 +116,8 @@ entries:
     message_regex: 'Received: 400'
   reason: Invalid query parameters (cursor, per_page, order_by, ...) are rejected with 400, which the schema does
     not list for these list operations (it documents 200/401/403/404 only). The status code IS the behaviour.
+    Partly measures the fixture (research/0005, PQ-056, PQ-314) because the seeded projects have cycle_view, module_view
+    and intake_view switched off, so the cycle, module and intake operations always answer 400 `non_field_errors`.
   evidence: gate run on a fresh seed, pinned commit ba85d4d3d3, schemathesis 4.31.1, seed 1, deterministic (oracle/results/conformance-baseline.json)
   rust_expectation: reproduce
   deviation_ref: null
@@ -138,6 +144,8 @@ entries:
     - POST /api/v1/workspaces/{slug}/projects/{project_id}/project-members/
     message_regex: 'Received: 400'
   reason: Invalid request bodies return 400, which the schema does not list for these create/update operations.
+    Partly measures the fixture (research/0005, PQ-056, PQ-314) because the seeded projects have cycle_view switched
+    off, so every cycle create or PATCH answers the same 400 `non_field_errors` and those success shapes were never exercised.
   evidence: gate run on a fresh seed, pinned commit ba85d4d3d3, schemathesis 4.31.1, seed 1, deterministic (oracle/results/conformance-baseline.json)
   rust_expectation: reproduce
   deviation_ref: null
@@ -253,7 +261,9 @@ entries:
     - GET /api/v1/workspaces/{slug}/stickies/
     - POST /api/v1/workspaces/{slug}/stickies/
   reason: The schema documents a Paginated* envelope where Plane returns a single object (links/{pk}, activities/{pk})
-    and the sticky list/create bodies do not match their documented schema.
+    and the sticky list/create bodies do not match their documented schema. Causes (research/0005, PQ-307, PQ-308) are
+    a drf-spectacular component-name collision on `Sticky` for the sticky mismatch, and a decorator documenting a dead
+    `pk is None` branch for the link and activity detail mismatch.
   evidence: gate run on a fresh seed, pinned commit ba85d4d3d3, schemathesis 4.31.1, seed 1, deterministic (oracle/results/conformance-baseline.json)
   rust_expectation: reproduce
   deviation_ref: null
@@ -269,7 +279,9 @@ entries:
     - GET /api/v1/workspaces/{slug}/issues/search/
     - GET /api/v1/workspaces/{slug}/work-items/search/
     message_regex: '"id" is a required property'
-  reason: Search results omit `id`, which the schema marks required for the result items.
+  reason: The schema documents a flat `IssueSearch` whose items require `id`, but the body is an object wrapping the
+    results under an `issues` key (PQ-309). The results DO carry `id` (corpus work_items.json#search), so the failure is
+    the wrapper and not a missing key. Corrected in round 27 (research/0005), which had said the results omit `id`.
   evidence: gate run on a fresh seed, pinned commit ba85d4d3d3, schemathesis 4.31.1, seed 1, deterministic (oracle/results/conformance-baseline.json)
   rust_expectation: reproduce
   deviation_ref: null
