@@ -83,6 +83,8 @@ rows! {
     parity_s48_create_work_item => "S48",
     parity_s47_list_work_items => "S47",
     parity_x01_open_work_item => "X01",
+    parity_x03_change_a_work_item => "X03",
+    parity_x02_work_item_history => "X02",
 }
 
 /// A fixture without a test would pass unseen, and a test without a fixture is `load_fixture` panicking: hold the two

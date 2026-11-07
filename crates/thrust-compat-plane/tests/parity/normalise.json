@@ -28,7 +28,8 @@
     "token": "<opaque>",
     "background_color": "<opaque>",
     "last_login_ip": "<ip>",
-    "last_login_uagent": "<ua>"
+    "last_login_uagent": "<ua>",
+    "epoch": "<epoch>"
   },
   "headers_keep": ["content-type", "location", "www-authenticate", "retry-after"],
   "header_origin_rewrite": {

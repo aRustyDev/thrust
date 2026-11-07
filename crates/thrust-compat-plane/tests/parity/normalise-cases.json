@@ -267,6 +267,31 @@
       ]
     },
     {
+      "name": "a number under an opaque key is replaced like a string (a history row's `epoch` is the second of the request); null stays null",
+      "input": [
+        {
+          "name": "epoch",
+          "request": {"method": "GET", "path": "/h/"},
+          "response": {
+            "status": 200,
+            "headers": {},
+            "body": [{"epoch": 1792981730.0, "verb": "created"}, {"epoch": null, "verb": "updated"}, {"epochs": 1792981731, "verb": "kept"}]
+          }
+        }
+      ],
+      "expected": [
+        {
+          "name": "epoch",
+          "request": {"method": "GET", "path": "/h/"},
+          "response": {
+            "status": 200,
+            "headers": {},
+            "body": [{"epoch": "<epoch>", "verb": "created"}, {"epoch": null, "verb": "updated"}, {"epochs": 1792981731, "verb": "kept"}]
+          }
+        }
+      ]
+    },
+    {
       "name": "a date or a timestamp in a request body is the client's own and is kept (a replay sends it); the same keys in a response are replaced",
       "input": [
         {

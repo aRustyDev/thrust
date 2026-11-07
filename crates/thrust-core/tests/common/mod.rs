@@ -317,6 +317,16 @@ pub fn world_config(cfg: CoreConfig) -> World {
 /// The same world with a chosen config, queue and background (keep your own `Arc` to inspect them).
 pub fn world_with(cfg: CoreConfig, queue: Arc<dyn Queue>, background: Arc<dyn Background>) -> World {
     let clock: Arc<dyn Clock> = Arc::new(FixedClock(DateTime::from_timestamp(1_760_000_000, 0).unwrap()));
+    world_built(cfg, queue, background, clock)
+}
+
+/// [`world_with`] with a clock of the test's own (one that moves, for a test of what changed and when).
+pub fn world_built(
+    cfg: CoreConfig,
+    queue: Arc<dyn Queue>,
+    background: Arc<dyn Background>,
+    clock: Arc<dyn Clock>,
+) -> World {
     let db = MemoryDatabase::new();
     let hasher = Arc::new(CountingHasher::new());
     let app = App::new(
@@ -409,4 +419,64 @@ pub fn outcome<T>(r: &Result<T, CoreError>) -> Outcome {
         Err(CoreError::TooLarge) => Outcome::TooLarge,
         Err(e) => Outcome::Other(e.to_string()),
     }
+}
+
+// ---------------------------------------------------------------------------------------------------------------------------------
+// Work items (issue #44, the work item stage): a world with the states and labels they name.
+// ---------------------------------------------------------------------------------------------------------------------------------
+
+pub const STATE_BACKLOG: u128 = 0x5001;
+pub const STATE_TODO: u128 = 0x5002;
+pub const STATE_DONE: u128 = 0x5003;
+pub const STATE_OF_B: u128 = 0x5101;
+
+pub fn uuid(n: u128) -> Uuid {
+    Uuid::from_u128(n)
+}
+
+/// The world with states and labels for both projects: project A's `Backlog` (the default), `Todo` and `Done` (of the completed
+/// group), two labels; project B's state and label.
+pub fn seeded() -> World {
+    seeded_in(world())
+}
+
+/// [`seeded`] in a world the test built (one with a clock that moves, say).
+pub fn seeded_in(w: World) -> World {
+    let state = |project: ProjectId,
+                 ws: WorkspaceId,
+                 id: u128,
+                 name: &str,
+                 group: StateGroup,
+                 sequence: f64,
+                 is_default: bool| SeedState {
+        id: uuid(id),
+        project_id: project,
+        workspace_id: ws,
+        name: name.into(),
+        color: "#000000".into(),
+        sequence,
+        group,
+        is_default,
+    };
+    let label = |project: ProjectId, ws: WorkspaceId, n: u128| SeedLabel {
+        id: uuid(0x7000 + n),
+        project_id: project,
+        workspace_id: ws,
+        name: format!("l{n}"),
+        color: "#fff".into(),
+        parent_id: None,
+        sort_order: n as f64,
+    };
+    let f = SeedFixture {
+        states: vec![
+            state(w.project_a, w.ws_a, STATE_BACKLOG, "Backlog", StateGroup::Backlog, 10_000.0, true),
+            state(w.project_a, w.ws_a, STATE_TODO, "Todo", StateGroup::Unstarted, 20_000.0, false),
+            state(w.project_a, w.ws_a, STATE_DONE, "Done", StateGroup::Completed, 30_000.0, false),
+            state(w.project_b, w.ws_b, STATE_OF_B, "Backlog", StateGroup::Backlog, 10_000.0, true),
+        ],
+        labels: vec![label(w.project_a, w.ws_a, 1), label(w.project_a, w.ws_a, 2), label(w.project_b, w.ws_b, 3)],
+        ..SeedFixture::default()
+    };
+    futures_executor::block_on(w.app.ports.db.seed(&SystemScope::mint(), &f)).unwrap();
+    w
 }

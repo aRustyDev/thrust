@@ -29,6 +29,7 @@ mod fields;
 #[cfg(test)]
 mod fields_tests;
 mod instance;
+mod issue_history;
 mod issues;
 mod projects;
 #[cfg(test)]
@@ -70,7 +71,13 @@ pub fn routes() -> Router {
         .route("/api/workspaces/{slug}/projects/{project}/modules/", get(projects::project_stub)) // S45
         .route("/api/workspaces/{slug}/projects/{project}/views/", get(projects::project_stub)) // S46
         .route("/api/workspaces/{slug}/projects/{project}/issues/", get(issues::list).post(issues::create)) // S47, S48
-        .route("/api/workspaces/{slug}/projects/{project}/issues/{issue}/", get(issues::retrieve)) // X01
+        .route("/api/workspaces/{slug}/projects/{project}/issues/{issue}/", get(issues::retrieve).patch(issues::update)) // X01, X03
+        .route("/api/workspaces/{slug}/projects/{project}/issues/{issue}/history/", get(issue_history::history)) // X02
+        .route("/api/workspaces/{slug}/projects/{project}/issues/{issue}/sub-issues/", get(issue_history::sub_issues)) // D-021
+        .route(
+            "/api/workspaces/{slug}/projects/{project}/issues/{issue}/issue-relation/",
+            get(issue_history::relations),
+        ) // D-021
         .route("/api/workspaces/{slug}/members/", get(workspaces::members)) // S18
         .route("/api/workspaces/{slug}/user-favorites/", get(workspace_load::favorites)) // S19
         .route("/api/workspaces/{slug}/states/", get(workspace_load::states)) // S20

@@ -1,4 +1,5 @@
-//! Work items as the compat plane serves them (issue #44, the work item stage): made, listed a page at a time, and opened.
+//! Work items as the compat plane serves them (issue #44, the work item stage): made, listed a page at a time, opened, changed, and
+//! their history read.
 //!
 //! The rules are the pin's. A work item is made by an admin or a member of the project; a page of them and one of them are read
 //! by any member, a guest too, except that a guest of a project that does not show guests everything sees only what they made. What
@@ -7,7 +8,16 @@
 //!
 //! A parent, an estimate, a cycle and a module are not built (deviation D-028): a work item has none of them, and a parent that a
 //! request names is refused.
+//!
+//! A work item is changed by its creator or by an admin or a member of the project. What the change records of itself (the history
+//! the app shows under the work item) is worked out here, from the row as it was and what the request named, and travels in the
+//! payload of the `work_item.updated` event; the activity consumer ([`process_event`](crate::process_event)) writes the rows from
+//! it, so the history is a projection that lags the change as the pin's does (a task on its worker), and is written once however
+//! often the event is delivered.
 
+use std::collections::{BTreeMap, BTreeSet};
+
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use thrust_contracts::chrono::NaiveDate;
 use thrust_contracts::*;
@@ -116,6 +126,34 @@ pub async fn issue_writer(
     Ok(IssueAccess { scope, role, who: who.clone(), slug: slug.clone() })
 }
 
+/// The work item the caller asked to change, with the proof that they may: an admin or a member of the project may change any, and
+/// whoever made a work item may change it, whatever their role (the pin's decorator lets the creator through before it looks at the
+/// role). A creator who has left the project is not let in (deviation D-029); a stranger, the project missing and a guest who is not
+/// the creator are `Forbidden`, the work item missing is `NotFound` (after the guard, as the pin answers it).
+pub async fn issue_to_update(
+    app: &App,
+    who: &Principal,
+    slug: &WorkspaceSlug,
+    project: ProjectId,
+    id: WorkItemId,
+) -> Result<(IssueAccess, WorkItemRow), IssueError> {
+    let access = match authorize_with_role(app, who, slug, project, Permission::UpdateWorkItem).await {
+        Ok((scope, role)) => IssueAccess { scope, role, who: who.clone(), slug: slug.clone() },
+        Err(e) => match denied(e) {
+            IssueError::Forbidden => issue_reader(app, who, slug, project).await?,
+            other => return Err(other),
+        },
+    };
+    let row = app.ports.db.work_item_row(&access.scope, id).await?;
+    match row {
+        // a guest is let in for the work items they made, and for no other (nor for one that is not there: the decorator has
+        // nothing to say they made)
+        Some(row) if access.role >= Role::Member || row.item.created_by == who.user_id => Ok((access, row)),
+        None if access.role >= Role::Member => Err(IssueError::NotFound),
+        _ => Err(IssueError::Forbidden),
+    }
+}
+
 /// What a request to make a work item names, read and checked as far as the request alone allows (the compat layer's DRF
 /// fields); the core looks up the rest.
 #[derive(Debug, Clone, Default)]
@@ -144,6 +182,45 @@ pub struct IssueListQuery {
     pub updated_after: Option<Timestamp>,
 }
 
+/// What a request names that is not there, in the order the pin's serializer would find it: the state, the parent (one that exists
+/// is not supported yet), each assignee and each label.
+async fn find_problems(
+    app: &App,
+    scope: &Scope,
+    states: &[StateRow],
+    state: Option<Uuid>,
+    parent: Option<Uuid>,
+    assignees: &[UserId],
+    labels: &[Uuid],
+) -> Result<Vec<FieldProblem>, DbError> {
+    let db = &app.ports.db;
+    let mut problems = Vec::new();
+    if state.is_some_and(|id| !states.iter().any(|s| s.id == id)) {
+        problems.push(FieldProblem::State);
+    }
+    if let Some(parent) = parent {
+        problems.push(if db.work_item_row(scope, WorkItemId(parent)).await?.is_some() {
+            FieldProblem::ParentNotSupported
+        } else {
+            FieldProblem::Parent
+        });
+    }
+    for (i, user) in assignees.iter().enumerate() {
+        if db.user_by_id(*user).await?.is_none() {
+            problems.push(FieldProblem::Assignee(i));
+        }
+    }
+    if !labels.is_empty() {
+        let known = db.project_labels(scope).await?;
+        for (i, label) in labels.iter().enumerate() {
+            if !known.iter().any(|l| l.id == *label) {
+                problems.push(FieldProblem::Label(i));
+            }
+        }
+    }
+    Ok(problems)
+}
+
 /// Whether a guest of the project sees work items they did not make: the project's `guest_view_all_features`.
 async fn guest_sees_all(app: &App, access: &IssueAccess) -> Result<bool, CoreError> {
     let workspace = authorize_workspace(app, &access.who, &access.slug).await?;
@@ -165,30 +242,9 @@ pub async fn create_issue(app: &App, access: &IssueAccess, draft: IssueDraft) ->
     let db = &app.ports.db;
 
     let states = db.project_states(&scope).await?;
-    let mut problems = Vec::new();
-    if draft.state_id.is_some_and(|id| !states.iter().any(|s| s.id == id)) {
-        problems.push(FieldProblem::State);
-    }
-    if let Some(parent) = draft.parent_id {
-        problems.push(if db.work_item_row(&scope, WorkItemId(parent)).await?.is_some() {
-            FieldProblem::ParentNotSupported
-        } else {
-            FieldProblem::Parent
-        });
-    }
-    for (i, user) in draft.assignee_ids.iter().enumerate() {
-        if db.user_by_id(*user).await?.is_none() {
-            problems.push(FieldProblem::Assignee(i));
-        }
-    }
-    if !draft.label_ids.is_empty() {
-        let labels = db.project_labels(&scope).await?;
-        for (i, label) in draft.label_ids.iter().enumerate() {
-            if !labels.iter().any(|l| l.id == *label) {
-                problems.push(FieldProblem::Label(i));
-            }
-        }
-    }
+    let problems =
+        find_problems(app, &scope, &states, draft.state_id, draft.parent_id, &draft.assignee_ids, &draft.label_ids)
+            .await?;
     if !problems.is_empty() {
         return Err(IssueError::Fields(problems));
     }
@@ -235,6 +291,13 @@ pub async fn create_issue(app: &App, access: &IssueAccess, draft: IssueDraft) ->
         .max_work_item_sort_order(&scope, attrs.state_id)
         .await?
         .map_or(FIRST_SORT_ORDER, |greatest| greatest + SORT_ORDER_STEP);
+    // what the history says of the creation: the item, and each person the request named (not the default assignee, and those the
+    // item does not keep as well: the pin records what was asked)
+    let mut asked: Vec<UserId> = draft.assignee_ids.clone();
+    asked.sort();
+    asked.dedup();
+    let names = Names::of(app, &states, &[], &asked).await?;
+    let history = created_history(&asked, &names);
 
     let mut tx = db.begin(&scope).await?;
     let work = async {
@@ -267,6 +330,8 @@ pub async fn create_issue(app: &App, access: &IssueAccess, draft: IssueDraft) ->
                 "project_id": item.project_id,
                 "sequence_id": item.sequence_id,
                 "changed_fields": ["name"],
+                "history": history,
+                "epoch": now.timestamp(),
             }),
         );
         tx.insert_outbox(&scope, &row).await?;
@@ -305,4 +370,515 @@ pub async fn get_issue(app: &App, access: &IssueAccess, id: WorkItemId) -> Resul
         return Err(IssueError::NotAllowedToView);
     }
     Ok(row)
+}
+
+// --- changing a work item (X03) ------------------------------------------------------------------------------------------------
+
+/// One thing a request to change a work item names, read and checked as far as the request alone allows (the compat layer's DRF
+/// fields). A request is these in the order it names them, which is the order its history lists them in.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Ask {
+    /// `sent` is the text the request had (the pin's history quotes it as it came, padding and all); `name` is what is kept of it:
+    /// trimmed, 1 to 255 characters.
+    Name {
+        sent: String,
+        name: String,
+    },
+    /// Already cleaned of what must not be stored.
+    Description(String),
+    Priority(Priority),
+    /// `None` is the project's default state (the pin gives a work item the default when it would have none).
+    State(Option<Uuid>),
+    /// `sent` is the text the request had (`None` for null): the pin compares it, as text, with the date the work item has.
+    Start {
+        sent: Option<String>,
+        date: Option<NaiveDate>,
+    },
+    Target {
+        sent: Option<String>,
+        date: Option<NaiveDate>,
+    },
+    /// Another work item as the parent: one of the project's is not supported yet (deviation D-028), one that is not there is a
+    /// [`FieldProblem`].
+    Parent(Uuid),
+    /// The people to assign. Those the project does not have as members (guests too) are not assigned, and the history says they
+    /// were: the pin records what was asked.
+    Assignees(Vec<UserId>),
+    Labels(Vec<Uuid>),
+}
+
+impl Ask {
+    /// The field of the request this is, which the event lists in its `changed_fields`.
+    fn field(&self) -> &'static str {
+        match self {
+            Ask::Name { .. } => "name",
+            Ask::Description(_) => "description_html",
+            Ask::Priority(_) => "priority",
+            Ask::State(_) => "state_id",
+            Ask::Start { .. } => "start_date",
+            Ask::Target { .. } => "target_date",
+            Ask::Parent(_) => "parent_id",
+            Ask::Assignees(_) => "assignee_ids",
+            Ask::Labels(_) => "label_ids",
+        }
+    }
+}
+
+/// A request to change a work item.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct IssueUpdate {
+    pub asks: Vec<Ask>,
+    /// A description written by a migration (the request said `skip_activity` and named a description): the pin records nothing of
+    /// it, no history and no event.
+    pub silent: bool,
+}
+
+/// One change a work item's history records, as the `history` of an event's payload carries it: the pin's `IssueActivity` without
+/// the actor, the time and the place, which the envelope and the order of the list give.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct HistoryChange {
+    /// `created` or `updated`.
+    pub verb: String,
+    pub field: Option<String>,
+    pub old_value: Option<String>,
+    pub new_value: Option<String>,
+    pub comment: String,
+    pub old_identifier: Option<Uuid>,
+    pub new_identifier: Option<Uuid>,
+}
+
+/// The most of a value (a name, a description, a date) that a history row keeps. The event that carries the row must stay under
+/// the queue's message limit (128 KB, ADR-0070), and the app shows none of a description (deviation D-029).
+const HISTORY_VALUE_LIMIT: usize = 16 * 1024;
+
+fn capped(mut text: String) -> String {
+    // the last character boundary at or before the limit (the whole text when it is shorter)
+    text.truncate(text.floor_char_boundary(HISTORY_VALUE_LIMIT));
+    text
+}
+
+/// The names the history quotes: states, labels and people, by what they are called when the change is made.
+#[derive(Debug, Default)]
+pub struct Names {
+    states: BTreeMap<Uuid, String>,
+    labels: BTreeMap<Uuid, String>,
+    people: BTreeMap<UserId, String>,
+}
+
+impl Names {
+    /// The names given: of states, labels and people (a state, label or person not named here is called nothing).
+    pub fn new(
+        states: impl IntoIterator<Item = (Uuid, String)>,
+        labels: impl IntoIterator<Item = (Uuid, String)>,
+        people: impl IntoIterator<Item = (UserId, String)>,
+    ) -> Names {
+        Names {
+            states: states.into_iter().collect(),
+            labels: labels.into_iter().collect(),
+            people: people.into_iter().collect(),
+        }
+    }
+
+    /// The names of the states and labels given and of `people` (their display names; a person with no profile is called nothing).
+    async fn of(app: &App, states: &[StateRow], labels: &[LabelRow], people: &[UserId]) -> Result<Names, DbError> {
+        let mut names = Names::new(
+            states.iter().map(|s| (s.id, s.name.clone())),
+            labels.iter().map(|l| (l.id, l.name.clone())),
+            [],
+        );
+        for user in people {
+            let shown = app.ports.db.profile(*user).await?.map(|p| p.display_name).unwrap_or_default();
+            names.people.insert(*user, shown);
+        }
+        Ok(names)
+    }
+
+    fn state(&self, id: Option<Uuid>) -> Option<String> {
+        id.and_then(|id| self.states.get(&id).cloned())
+    }
+
+    fn label(&self, id: Uuid) -> String {
+        self.labels.get(&id).cloned().unwrap_or_default()
+    }
+
+    fn person(&self, id: UserId) -> String {
+        self.people.get(&id).cloned().unwrap_or_default()
+    }
+}
+
+fn updated(field: &str, comment: &str, old: Option<String>, new: Option<String>) -> HistoryChange {
+    HistoryChange {
+        verb: "updated".into(),
+        field: Some(field.into()),
+        old_value: old.map(capped),
+        new_value: new.map(capped),
+        comment: comment.into(),
+        old_identifier: None,
+        new_identifier: None,
+    }
+}
+
+fn added_person(user: UserId, names: &Names) -> HistoryChange {
+    HistoryChange {
+        new_identifier: Some(user.0),
+        ..updated("assignees", "added assignee ", Some(String::new()), Some(names.person(user)))
+    }
+}
+
+/// What the history says of a work item's creation: that it was made, and that each person the request named was assigned.
+fn created_history(asked: &[UserId], names: &Names) -> Vec<HistoryChange> {
+    let made = HistoryChange {
+        verb: "created".into(),
+        field: None,
+        old_value: None,
+        new_value: None,
+        comment: "created the issue".into(),
+        old_identifier: None,
+        new_identifier: None,
+    };
+    std::iter::once(made).chain(asked.iter().map(|u| added_person(*u, names))).collect()
+}
+
+fn iso(d: Option<NaiveDate>) -> Option<String> {
+    d.map(|d| d.format("%Y-%m-%d").to_string())
+}
+
+/// What the pin's history records of a change (`issue_activities_task.update_issue_activity`): for each thing the request names,
+/// in the order it names them, a row if what it asks differs from what the work item has (the name, the description, the priority,
+/// the state, the dates as text), and for the people and the labels a row for each one added and each one dropped, in the order
+/// of their ids. The comparison is with what was *asked*, not what was kept: a person the project does not have as a member is
+/// recorded as added though they are not, and a date asked in another spelling than the one the work item has is a change.
+pub fn update_history(before: &WorkItemRow, asks: &[Ask], names: &Names) -> Vec<HistoryChange> {
+    let (item, have) = (&before.item, &before.attrs);
+    let mut out = Vec::new();
+    for ask in asks {
+        match ask {
+            Ask::Name { sent, .. } if *sent != item.name => {
+                out.push(updated("name", "updated the name to", Some(item.name.clone()), Some(sent.clone())))
+            }
+            Ask::Description(html) if *html != have.description_html => out.push(updated(
+                "description",
+                "updated the description to",
+                Some(have.description_html.clone()),
+                Some(html.clone()),
+            )),
+            Ask::Priority(p) if *p != have.priority => out.push(updated(
+                "priority",
+                "updated the priority to",
+                Some(have.priority.as_str().into()),
+                Some(p.as_str().into()),
+            )),
+            Ask::State(now) if *now != have.state_id => out.push(HistoryChange {
+                old_identifier: have.state_id,
+                new_identifier: *now,
+                ..updated("state", "updated the state to", names.state(have.state_id), names.state(*now))
+            }),
+            Ask::Start { sent, .. } if *sent != iso(have.start_date) => out.push(updated(
+                "start_date",
+                "updated the start date to ",
+                Some(iso(have.start_date).unwrap_or_default()),
+                Some(sent.clone().unwrap_or_default()),
+            )),
+            Ask::Target { sent, .. } if *sent != iso(have.target_date) => out.push(updated(
+                "target_date",
+                "updated the target date to",
+                Some(iso(have.target_date).unwrap_or_default()),
+                Some(sent.clone().unwrap_or_default()),
+            )),
+            Ask::Assignees(asked) => {
+                let want: BTreeSet<UserId> = asked.iter().copied().collect();
+                let had: BTreeSet<UserId> = have.assignee_ids.iter().copied().collect();
+                out.extend(want.difference(&had).map(|u| added_person(*u, names)));
+                out.extend(had.difference(&want).map(|u| HistoryChange {
+                    old_identifier: Some(u.0),
+                    ..updated("assignees", "removed assignee ", Some(names.person(*u)), Some(String::new()))
+                }));
+            }
+            Ask::Labels(asked) => {
+                let want: BTreeSet<Uuid> = asked.iter().copied().collect();
+                let had: BTreeSet<Uuid> = have.label_ids.iter().copied().collect();
+                out.extend(want.difference(&had).map(|l| HistoryChange {
+                    new_identifier: Some(*l),
+                    ..updated("labels", "added label ", Some(String::new()), Some(names.label(*l)))
+                }));
+                out.extend(had.difference(&want).map(|l| HistoryChange {
+                    old_identifier: Some(*l),
+                    ..updated("labels", "removed label ", Some(names.label(*l)), Some(String::new()))
+                }));
+            }
+            _ => {}
+        }
+    }
+    out
+}
+
+/// Change a work item (the caller got [`issue_to_update`]'s access and row). What the request names must be there ([`FieldProblem`]),
+/// and the start must not be after the target, counting the date the work item has when the request names one only (the pin
+/// accepts an inverted pair then; deviation D-029). The state, when named, is changed to; a work item that would have none gets the
+/// project's default (`Issue.save`); `completed_at` is set when the state changes to one of the `completed` group and cleared when
+/// it changes to another. The people are those the request names who are members of the project, not guests, replacing whoever
+/// was assigned. The change, and the event that carries its history, are one transaction.
+pub async fn update_issue(
+    app: &App,
+    access: &IssueAccess,
+    before: WorkItemRow,
+    update: IssueUpdate,
+) -> Result<(), IssueError> {
+    let scope = access.scope;
+    let db = &app.ports.db;
+    let id = before.item.id;
+
+    let mut name = before.item.name.clone();
+    let mut html = before.attrs.description_html.clone();
+    let mut priority = before.attrs.priority;
+    let (mut start, mut target) = (before.attrs.start_date, before.attrs.target_date);
+    let (mut state_asked, mut parent): (Option<Option<Uuid>>, Option<Uuid>) = (None, None);
+    let (mut assignees, mut labels): (Option<Vec<UserId>>, Option<Vec<Uuid>>) = (None, None);
+    for ask in &update.asks {
+        match ask {
+            Ask::Name { name: kept, .. } => name = kept.clone(),
+            Ask::Description(h) => html = h.clone(),
+            Ask::Priority(p) => priority = *p,
+            Ask::State(s) => state_asked = Some(*s),
+            Ask::Start { date, .. } => start = *date,
+            Ask::Target { date, .. } => target = *date,
+            Ask::Parent(p) => parent = Some(*p),
+            Ask::Assignees(a) => assignees = Some(a.clone()),
+            Ask::Labels(l) => labels = Some(l.clone()),
+        }
+    }
+    crate::validate_name(&name)?;
+
+    let states = db.project_states(&scope).await?;
+    let problems = find_problems(
+        app,
+        &scope,
+        &states,
+        state_asked.flatten(),
+        parent,
+        assignees.as_deref().unwrap_or_default(),
+        labels.as_deref().unwrap_or_default(),
+    )
+    .await?;
+    if !problems.is_empty() {
+        return Err(IssueError::Fields(problems));
+    }
+    if matches!((start, target), (Some(a), Some(b)) if a > b) {
+        return Err(IssueError::StartAfterTarget);
+    }
+
+    let wanted = state_asked.unwrap_or(before.attrs.state_id);
+    let state = match wanted {
+        Some(id) => states.iter().find(|s| s.id == id),
+        None => states.iter().find(|s| s.is_default).or_else(|| states.first()),
+    };
+    let state_id = state.map(|s| s.id);
+    let now = app.ports.clock.now();
+    let completed_at = if state_id != before.attrs.state_id {
+        state.filter(|s| s.group == StateGroup::Completed).map(|_| now)
+    } else {
+        before.attrs.completed_at
+    };
+
+    let assignees = match assignees {
+        Some(asked) => {
+            let members = db.project_members(&scope).await?;
+            let mut kept: Vec<UserId> = asked
+                .iter()
+                .copied()
+                .filter(|u| members.iter().any(|m| m.user_id == *u && m.role >= Role::Member))
+                .collect();
+            kept.sort();
+            kept.dedup();
+            Some(kept)
+        }
+        None => None,
+    };
+    let kept_labels = labels.clone().map(|mut l| {
+        l.sort();
+        l.dedup();
+        l
+    });
+
+    // what the history says, worked out from the row as it was (not when the request said not to keep one)
+    let history = if update.silent {
+        None
+    } else {
+        let mut people: BTreeSet<UserId> = BTreeSet::new();
+        for ask in &update.asks {
+            if let Ask::Assignees(asked) = ask {
+                people.extend(asked.iter().copied());
+                people.extend(before.attrs.assignee_ids.iter().copied());
+            }
+        }
+        let known_labels = if labels.is_some() { db.project_labels(&scope).await? } else { Vec::new() };
+        let people: Vec<UserId> = people.into_iter().collect();
+        let names = Names::of(app, &states, &known_labels, &people).await?;
+        Some(update_history(&before, &update.asks, &names))
+    };
+
+    let change = WorkItemUpdate {
+        name,
+        state_id,
+        priority,
+        start_date: start,
+        target_date: target,
+        completed_at,
+        updated_at: now,
+        updated_by: access.who.user_id,
+        description_html: html,
+        assignee_ids: assignees,
+        label_ids: kept_labels,
+    };
+    let mut tx = db.begin(&scope).await?;
+    let work = async {
+        if !tx.update_work_item(&scope, id, &change).await? {
+            return Ok(None);
+        }
+        let row = match &history {
+            Some(history) => {
+                let row = event(
+                    app,
+                    scope.workspace_id(),
+                    scope.user_id(),
+                    "work_item.updated",
+                    id,
+                    serde_json::json!({
+                        "project_id": scope.project_id(),
+                        "sequence_id": before.item.sequence_id,
+                        "changed_fields": update.asks.iter().map(Ask::field).collect::<Vec<_>>(),
+                        "history": history,
+                        "epoch": now.timestamp(),
+                    }),
+                );
+                tx.insert_outbox(&scope, &row).await?;
+                Some(row)
+            }
+            None => None,
+        };
+        Ok::<_, DbError>(Some(row))
+    }
+    .await;
+    match work {
+        Ok(Some(row)) => {
+            tx.commit().await?;
+            if let Some(row) = row {
+                relay_after_commit(app, row);
+            }
+            Ok(())
+        }
+        // the work item went between the read and the write
+        Ok(None) => {
+            let _ = tx.rollback().await;
+            Err(IssueError::NotFound)
+        }
+        Err(e) => {
+            // Roll back explicitly: a pooled connection must not be returned mid-transaction.
+            let _ = tx.rollback().await;
+            Err(e.into())
+        }
+    }
+}
+
+// --- the history (X02) ------------------------------------------------------------------------------------------------------------
+
+/// The consumer's half: write the rows of the `history` an event carries (a `work_item.created` or `work_item.updated` event that
+/// names none writes none). A change to a description is not a row of its own when the work item's newest row is a change to its
+/// description by the same person: the pin moves that row's time instead, so typing in the editor is one change, not hundreds.
+/// Idempotent: a row is written once per (event, place), and a redelivery moves the same row to the same time.
+pub(crate) async fn project_history(app: &App, env: &Envelope) -> Result<(), CoreError> {
+    if env.entity_type != "work_item" {
+        return Ok(());
+    }
+    let (Some(project), Some(history)) = (env.project_id(), env.payload.get("history")) else { return Ok(()) };
+    // an event this code wrote always parses; one that does not is no history rather than a message that is retried for ever
+    let Ok(changes) = serde_json::from_value::<Vec<HistoryChange>>(history.clone()) else { return Ok(()) };
+    let db = &app.ports.db;
+    let item = WorkItemId(env.entity_id);
+    let epoch =
+        env.payload.get("epoch").and_then(serde_json::Value::as_i64).unwrap_or_else(|| env.occurred_at.timestamp());
+    let mut rows = Vec::new();
+    for (place, change) in changes.into_iter().enumerate() {
+        if change.field.as_deref() == Some("description") {
+            if let Some(last) = db.latest_work_item_activity(&app.system, env.workspace_id, project, item).await? {
+                if last.field.as_deref() == Some("description") && last.actor_id == env.actor_id {
+                    db.touch_work_item_activity(&app.system, last.id, env.occurred_at).await?;
+                    continue;
+                }
+            }
+        }
+        rows.push(WorkItemActivity {
+            id: ActivityId(app.ports.ids.new_uuid()),
+            event_id: env.event_id,
+            ordinal: place as i32,
+            workspace_id: env.workspace_id,
+            project_id: project,
+            work_item_id: item,
+            actor_id: env.actor_id,
+            verb: change.verb,
+            field: change.field,
+            old_value: change.old_value,
+            new_value: change.new_value,
+            comment: change.comment,
+            old_identifier: change.old_identifier,
+            new_identifier: change.new_identifier,
+            epoch,
+            created_at: env.occurred_at,
+        });
+    }
+    if !rows.is_empty() {
+        db.insert_work_item_activities(&app.system, &rows).await?;
+    }
+    Ok(())
+}
+
+/// A work item's history as the app asks for it: the rows, oldest first, with the work item as it is now and the people who made
+/// the changes.
+#[derive(Debug, Clone)]
+pub struct History {
+    pub rows: Vec<WorkItemActivity>,
+    /// The work item as it is now. Rows are only returned for a work item that is there.
+    pub item: Option<WorkItemRow>,
+    pub people: BTreeMap<UserId, UserProfile>,
+    /// The project and the workspace the rows are in, which each row of the app's answer repeats.
+    pub project: Option<ProjectRow>,
+    pub workspace: Option<Workspace>,
+}
+
+/// The history of a work item (the caller got [`issue_reader`]'s access), those rows made after `after` when it is given. A work
+/// item that is not there has none (the pin answers an empty list, not a 404): any member of the project may read any work item's
+/// history, a guest too and whether or not the project shows guests everything, as the pin lets them.
+pub async fn issue_history(
+    app: &App,
+    access: &IssueAccess,
+    id: WorkItemId,
+    after: Option<Timestamp>,
+) -> Result<History, IssueError> {
+    let db = &app.ports.db;
+    let rows = db.work_item_history(&access.scope, id, after).await?;
+    let empty = History { rows: Vec::new(), item: None, people: BTreeMap::new(), project: None, workspace: None };
+    if rows.is_empty() {
+        return Ok(empty);
+    }
+    let Some(item) = db.work_item_row(&access.scope, id).await? else { return Ok(empty) };
+    let mut people = BTreeMap::new();
+    for actor in rows.iter().filter_map(|r| r.actor_id).collect::<BTreeSet<_>>() {
+        if let Some(profile) = db.profile(actor).await? {
+            people.insert(actor, profile);
+        }
+    }
+    let workspace_scope = authorize_workspace(app, &access.who, &access.slug).await?;
+    let project = db.project_detail(&workspace_scope, access.scope.project_id()).await?.map(|d| d.listing.project);
+    let workspace = db
+        .workspaces_of(access.who.user_id)
+        .await?
+        .into_iter()
+        .map(|l| l.workspace)
+        .find(|w| w.id == access.scope.workspace_id());
+    Ok(History { rows, item: Some(item), people, project, workspace })
+}
+
+/// Whether the work item is there (live, in the project), for a route that answers a 404 for one that is not and shows nothing of it.
+pub async fn issue_there(app: &App, access: &IssueAccess, id: WorkItemId) -> Result<bool, IssueError> {
+    Ok(app.ports.db.work_item_row(&access.scope, id).await?.is_some())
 }

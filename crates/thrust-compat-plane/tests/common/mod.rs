@@ -116,7 +116,31 @@ pub fn app_with_db() -> (Router, Arc<MemoryDatabase>) {
         cfg,
         SystemScope::mint(),
     );
-    (thrust_compat_plane::routes().layer(Extension(app)), db)
+    // The activity consumer is what writes a work item's history, on a worker the pin runs side by side with the API. Here it runs
+    // when a test says so: `send` asks for the outbox to be drained before each request (a recording is made with the worker caught
+    // up before each read, so every read finds the writes before it), and a test that needs the rows without a request calls
+    // [`drain`] itself.
+    let drain = Router::new().route("/__drain", axum::routing::post(drain_route)).layer(Extension(app.clone()));
+    (drain.merge(thrust_compat_plane::routes().layer(Extension(app))), db)
+}
+
+async fn drain_route(Extension(app): Extension<App>) {
+    drain(&app).await;
+}
+
+/// Deliver every event of the outbox to the activity consumer, as the queue does, and mark it dispatched: the worker catching up.
+pub async fn drain(app: &App) {
+    for row in app.ports.db.undispatched_outbox(&SystemScope::mint(), 10_000).await.expect("the outbox") {
+        // an event with no project (none is made today) has no activity to project
+        if row.envelope.project_id().is_some() {
+            process_event(app, &row.envelope).await.expect("the consumer projects the event");
+        }
+        app.ports
+            .db
+            .mark_outbox_dispatched(&SystemScope::mint(), row.envelope.event_id, app.ports.clock.now())
+            .await
+            .expect("dispatched");
+    }
 }
 
 fn fixtures_dir() -> PathBuf {
@@ -254,6 +278,11 @@ pub fn send(router: &Router, name: &Value, req: &Value, jar: &Jar) -> Value {
         }
         None => Body::empty(),
     };
+    let caught_up = futures_executor::block_on(
+        router.clone().oneshot(Request::post("/__drain").body(Body::empty()).expect("request")),
+    )
+    .expect("infallible");
+    assert!(caught_up.status().is_success(), "the consumer must catch up: {}", caught_up.status());
     let resp =
         futures_executor::block_on(router.clone().oneshot(builder.body(body).expect("request"))).expect("infallible");
     let status = resp.status().as_u16();
@@ -445,6 +474,35 @@ pub fn call(router: &Router, jar: &Jar, who: &str, method: &str, path: &str, bod
     send(router, &json!("call"), &req, jar)["response"].clone()
 }
 
+/// One request as `who` with the body as the text given, its members in the order written (a `Value` keeps its keys sorted, and the
+/// pin lists what it records of a request in the order the request names it). The response as `status` and `body`.
+pub fn call_raw(router: &Router, jar: &Jar, who: &str, method: &str, path: &str, raw: &str) -> Value {
+    let caught_up = futures_executor::block_on(
+        router.clone().oneshot(Request::post("/__drain").body(Body::empty()).expect("request")),
+    )
+    .expect("infallible");
+    assert!(caught_up.status().is_success());
+    let mut builder = Request::builder()
+        .method(method.parse::<Method>().expect("method"))
+        .uri(path)
+        .header("content-type", "application/json");
+    if !who.is_empty() {
+        let token = jar.get(&jar_key(who)).unwrap_or_else(|| panic!("no session for {who}"));
+        builder = builder.header("cookie", format!("__Host-thrust_session={token}"));
+    }
+    let resp =
+        futures_executor::block_on(router.clone().oneshot(builder.body(Body::from(raw.to_string())).expect("request")))
+            .expect("infallible");
+    let status = resp.status().as_u16();
+    let bytes = futures_executor::block_on(axum::body::to_bytes(resp.into_body(), usize::MAX)).expect("body");
+    let body = if bytes.is_empty() {
+        Value::Null
+    } else {
+        serde_json::from_slice(&bytes).unwrap_or_else(|_| Value::String(String::from_utf8_lossy(&bytes).into_owned()))
+    };
+    json!({"status": status, "body": body})
+}
+
 pub fn user_id(db: &MemoryDatabase, email: &str) -> UserId {
     futures_executor::block_on(db.user_by_email(email)).unwrap().expect("the account exists").id
 }
@@ -568,6 +626,9 @@ pub struct Cast {
 impl Cast {
     pub fn call(&self, who: Caller, method: &str, path: &str, body: Value) -> Value {
         call(&self.router, &self.jar, who.email(), method, path, body)
+    }
+    pub fn call_raw(&self, who: Caller, method: &str, path: &str, raw: &str) -> Value {
+        call_raw(&self.router, &self.jar, who.email(), method, path, raw)
     }
     pub fn user(&self, who: Caller) -> UserId {
         user_id(&self.db, who.email())

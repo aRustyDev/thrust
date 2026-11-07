@@ -1,0 +1,4929 @@
+{
+  "binds": {
+    "history_issue": {
+      "exchange": "a work item made with an assignee",
+      "path": [
+        "id"
+      ]
+    }
+  },
+  "exchanges": [
+    {
+      "name": "the states of the project",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/states/"
+      },
+      "response": {
+        "body": [
+          {
+            "color": "#60646C",
+            "default": true,
+            "description": "",
+            "group": "backlog",
+            "id": "<uuid:2>",
+            "name": "Backlog",
+            "order": 1.0,
+            "project_id": "<uuid:1>",
+            "sequence": 15000.0,
+            "workspace_id": "<uuid:3>"
+          },
+          {
+            "color": "#60646C",
+            "default": false,
+            "description": "",
+            "group": "unstarted",
+            "id": "<uuid:4>",
+            "name": "Todo",
+            "order": 1.0,
+            "project_id": "<uuid:1>",
+            "sequence": 25000.0,
+            "workspace_id": "<uuid:3>"
+          },
+          {
+            "color": "#F59E0B",
+            "default": false,
+            "description": "",
+            "group": "started",
+            "id": "<uuid:5>",
+            "name": "In Progress",
+            "order": 1.0,
+            "project_id": "<uuid:1>",
+            "sequence": 35000.0,
+            "workspace_id": "<uuid:3>"
+          },
+          {
+            "color": "#46A758",
+            "default": false,
+            "description": "",
+            "group": "completed",
+            "id": "<uuid:6>",
+            "name": "Done",
+            "order": 1.0,
+            "project_id": "<uuid:1>",
+            "sequence": 45000.0,
+            "workspace_id": "<uuid:3>"
+          },
+          {
+            "color": "#9AA4BC",
+            "default": false,
+            "description": "",
+            "group": "cancelled",
+            "id": "<uuid:7>",
+            "name": "Cancelled",
+            "order": 1.0,
+            "project_id": "<uuid:1>",
+            "sequence": 55000.0,
+            "workspace_id": "<uuid:3>"
+          }
+        ],
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "the signed-in user",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/users/me/"
+      },
+      "response": {
+        "body": {
+          "avatar": "",
+          "avatar_url": null,
+          "cover_image": null,
+          "cover_image_url": null,
+          "date_joined": "<ts>",
+          "display_name": "Journey T.",
+          "email": "journey@example.test",
+          "first_name": "Journey",
+          "id": "<uuid:8>",
+          "is_active": true,
+          "is_bot": false,
+          "is_email_verified": false,
+          "is_password_autoset": false,
+          "last_login_medium": "email",
+          "last_login_time": "<ts>",
+          "last_name": "Tester",
+          "user_timezone": "UTC",
+          "username": "<uuid:9>"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "the other user",
+      "request": {
+        "as": "second@example.test",
+        "method": "GET",
+        "path": "/api/users/me/"
+      },
+      "response": {
+        "body": {
+          "avatar": "",
+          "avatar_url": null,
+          "cover_image": null,
+          "cover_image_url": null,
+          "date_joined": "<ts>",
+          "display_name": "second",
+          "email": "second@example.test",
+          "first_name": "",
+          "id": "<uuid:10>",
+          "is_active": true,
+          "is_bot": false,
+          "is_email_verified": false,
+          "is_password_autoset": false,
+          "last_login_medium": "email",
+          "last_login_time": "<ts>",
+          "last_name": "",
+          "user_timezone": "UTC",
+          "username": "<uuid:11>"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "a work item made with an assignee",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "assignee_ids": [
+            "<uuid:8>"
+          ],
+          "name": "History",
+          "state_id": "<uuid:2>"
+        },
+        "method": "POST",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/"
+      },
+      "response": {
+        "body": {
+          "archived_at": null,
+          "assignee_ids": [
+            "<uuid:8>"
+          ],
+          "attachment_count": null,
+          "completed_at": null,
+          "created_at": "<ts>",
+          "created_by": "<uuid:8>",
+          "cycle_id": null,
+          "deleted_at": null,
+          "estimate_point": null,
+          "id": "<uuid:12>",
+          "is_draft": false,
+          "label_ids": [],
+          "link_count": null,
+          "module_ids": [],
+          "name": "History",
+          "parent_id": null,
+          "priority": "none",
+          "project_id": "<uuid:1>",
+          "sequence_id": 19,
+          "sort_order": 205535.0,
+          "start_date": null,
+          "state_id": "<uuid:2>",
+          "sub_issues_count": null,
+          "target_date": null,
+          "updated_at": "<ts>",
+          "updated_by": null
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 201
+      }
+    },
+    {
+      "name": "no session",
+      "request": {
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:12>/history/?activity_type=issue-property"
+      },
+      "response": {
+        "body": {
+          "detail": "Authentication credentials were not provided."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 401
+      }
+    },
+    {
+      "name": "not a member of the workspace",
+      "request": {
+        "as": "second@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:12>/history/?activity_type=issue-property"
+      },
+      "response": {
+        "body": {
+          "detail": "You do not have permission to perform this action."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 403
+      }
+    },
+    {
+      "name": "a project that does not exist",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:13>/issues/<uuid:12>/history/?activity_type=issue-property"
+      },
+      "response": {
+        "body": {
+          "detail": "You do not have permission to perform this action."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 403
+      }
+    },
+    {
+      "name": "an id that is not an id",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/nope/history/?activity_type=issue-property"
+      },
+      "response": {
+        "body": {
+          "error": "Page not found."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 404
+      }
+    },
+    {
+      "name": "a work item that does not exist",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:13>/history/?activity_type=issue-property"
+      },
+      "response": {
+        "body": [],
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "its history: made, and assigned",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:12>/history/?activity_type=issue-property"
+      },
+      "response": {
+        "body": [
+          {
+            "actor": "<uuid:8>",
+            "actor_detail": {
+              "avatar": "",
+              "avatar_url": null,
+              "display_name": "Journey T.",
+              "first_name": "Journey",
+              "id": "<uuid:8>",
+              "is_bot": false,
+              "last_name": "Tester"
+            },
+            "attachments": [],
+            "comment": "created the issue",
+            "created_at": "<ts>",
+            "created_by": null,
+            "deleted_at": null,
+            "epoch": "<epoch>",
+            "field": null,
+            "id": "<uuid:14>",
+            "issue": "<uuid:12>",
+            "issue_comment": null,
+            "issue_detail": {
+              "description_html": "<p></p>",
+              "description_json": {},
+              "id": "<uuid:12>",
+              "is_draft": false,
+              "name": "History",
+              "priority": "none",
+              "sequence_id": 19,
+              "sort_order": 205535.0,
+              "start_date": null,
+              "target_date": null
+            },
+            "new_identifier": null,
+            "new_value": null,
+            "old_identifier": null,
+            "old_value": null,
+            "project": "<uuid:1>",
+            "project_detail": {
+              "cover_image": null,
+              "cover_image_url": null,
+              "description": "",
+              "id": "<uuid:1>",
+              "identifier": "JRN",
+              "logo_props": {
+                "emoji": {
+                  "value": "128512"
+                },
+                "in_use": "emoji"
+              },
+              "name": "Journey Project"
+            },
+            "source_data": null,
+            "updated_at": "<ts>",
+            "updated_by": null,
+            "verb": "created",
+            "workspace": "<uuid:3>",
+            "workspace_detail": {
+              "id": "<uuid:3>",
+              "logo_url": null,
+              "name": "Journey Workspace",
+              "slug": "journey-ws"
+            }
+          },
+          {
+            "actor": "<uuid:8>",
+            "actor_detail": {
+              "avatar": "",
+              "avatar_url": null,
+              "display_name": "Journey T.",
+              "first_name": "Journey",
+              "id": "<uuid:8>",
+              "is_bot": false,
+              "last_name": "Tester"
+            },
+            "attachments": [],
+            "comment": "added assignee ",
+            "created_at": "<ts>",
+            "created_by": null,
+            "deleted_at": null,
+            "epoch": "<epoch>",
+            "field": "assignees",
+            "id": "<uuid:15>",
+            "issue": "<uuid:12>",
+            "issue_comment": null,
+            "issue_detail": {
+              "description_html": "<p></p>",
+              "description_json": {},
+              "id": "<uuid:12>",
+              "is_draft": false,
+              "name": "History",
+              "priority": "none",
+              "sequence_id": 19,
+              "sort_order": 205535.0,
+              "start_date": null,
+              "target_date": null
+            },
+            "new_identifier": "<uuid:8>",
+            "new_value": "Journey T.",
+            "old_identifier": null,
+            "old_value": "",
+            "project": "<uuid:1>",
+            "project_detail": {
+              "cover_image": null,
+              "cover_image_url": null,
+              "description": "",
+              "id": "<uuid:1>",
+              "identifier": "JRN",
+              "logo_props": {
+                "emoji": {
+                  "value": "128512"
+                },
+                "in_use": "emoji"
+              },
+              "name": "Journey Project"
+            },
+            "source_data": null,
+            "updated_at": "<ts>",
+            "updated_by": null,
+            "verb": "updated",
+            "workspace": "<uuid:3>",
+            "workspace_detail": {
+              "id": "<uuid:3>",
+              "logo_url": null,
+              "name": "Journey Workspace",
+              "slug": "journey-ws"
+            }
+          }
+        ],
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "its comments: there are none",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:12>/history/?activity_type=issue-comment"
+      },
+      "response": {
+        "body": [],
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "its history with no kind asked for",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:12>/history/"
+      },
+      "response": {
+        "body": [
+          {
+            "actor": "<uuid:8>",
+            "actor_detail": {
+              "avatar": "",
+              "avatar_url": null,
+              "display_name": "Journey T.",
+              "first_name": "Journey",
+              "id": "<uuid:8>",
+              "is_bot": false,
+              "last_name": "Tester"
+            },
+            "attachments": [],
+            "comment": "created the issue",
+            "created_at": "<ts>",
+            "created_by": null,
+            "deleted_at": null,
+            "epoch": "<epoch>",
+            "field": null,
+            "id": "<uuid:14>",
+            "issue": "<uuid:12>",
+            "issue_comment": null,
+            "issue_detail": {
+              "description_html": "<p></p>",
+              "description_json": {},
+              "id": "<uuid:12>",
+              "is_draft": false,
+              "name": "History",
+              "priority": "none",
+              "sequence_id": 19,
+              "sort_order": 205535.0,
+              "start_date": null,
+              "target_date": null
+            },
+            "new_identifier": null,
+            "new_value": null,
+            "old_identifier": null,
+            "old_value": null,
+            "project": "<uuid:1>",
+            "project_detail": {
+              "cover_image": null,
+              "cover_image_url": null,
+              "description": "",
+              "id": "<uuid:1>",
+              "identifier": "JRN",
+              "logo_props": {
+                "emoji": {
+                  "value": "128512"
+                },
+                "in_use": "emoji"
+              },
+              "name": "Journey Project"
+            },
+            "source_data": null,
+            "updated_at": "<ts>",
+            "updated_by": null,
+            "verb": "created",
+            "workspace": "<uuid:3>",
+            "workspace_detail": {
+              "id": "<uuid:3>",
+              "logo_url": null,
+              "name": "Journey Workspace",
+              "slug": "journey-ws"
+            }
+          },
+          {
+            "actor": "<uuid:8>",
+            "actor_detail": {
+              "avatar": "",
+              "avatar_url": null,
+              "display_name": "Journey T.",
+              "first_name": "Journey",
+              "id": "<uuid:8>",
+              "is_bot": false,
+              "last_name": "Tester"
+            },
+            "attachments": [],
+            "comment": "added assignee ",
+            "created_at": "<ts>",
+            "created_by": null,
+            "deleted_at": null,
+            "epoch": "<epoch>",
+            "field": "assignees",
+            "id": "<uuid:15>",
+            "issue": "<uuid:12>",
+            "issue_comment": null,
+            "issue_detail": {
+              "description_html": "<p></p>",
+              "description_json": {},
+              "id": "<uuid:12>",
+              "is_draft": false,
+              "name": "History",
+              "priority": "none",
+              "sequence_id": 19,
+              "sort_order": 205535.0,
+              "start_date": null,
+              "target_date": null
+            },
+            "new_identifier": "<uuid:8>",
+            "new_value": "Journey T.",
+            "old_identifier": null,
+            "old_value": "",
+            "project": "<uuid:1>",
+            "project_detail": {
+              "cover_image": null,
+              "cover_image_url": null,
+              "description": "",
+              "id": "<uuid:1>",
+              "identifier": "JRN",
+              "logo_props": {
+                "emoji": {
+                  "value": "128512"
+                },
+                "in_use": "emoji"
+              },
+              "name": "Journey Project"
+            },
+            "source_data": null,
+            "updated_at": "<ts>",
+            "updated_by": null,
+            "verb": "updated",
+            "workspace": "<uuid:3>",
+            "workspace_detail": {
+              "id": "<uuid:3>",
+              "logo_url": null,
+              "name": "Journey Workspace",
+              "slug": "journey-ws"
+            }
+          }
+        ],
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "a kind the pin does not know",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:12>/history/?activity_type=bogus"
+      },
+      "response": {
+        "body": [
+          {
+            "actor": "<uuid:8>",
+            "actor_detail": {
+              "avatar": "",
+              "avatar_url": null,
+              "display_name": "Journey T.",
+              "first_name": "Journey",
+              "id": "<uuid:8>",
+              "is_bot": false,
+              "last_name": "Tester"
+            },
+            "attachments": [],
+            "comment": "created the issue",
+            "created_at": "<ts>",
+            "created_by": null,
+            "deleted_at": null,
+            "epoch": "<epoch>",
+            "field": null,
+            "id": "<uuid:14>",
+            "issue": "<uuid:12>",
+            "issue_comment": null,
+            "issue_detail": {
+              "description_html": "<p></p>",
+              "description_json": {},
+              "id": "<uuid:12>",
+              "is_draft": false,
+              "name": "History",
+              "priority": "none",
+              "sequence_id": 19,
+              "sort_order": 205535.0,
+              "start_date": null,
+              "target_date": null
+            },
+            "new_identifier": null,
+            "new_value": null,
+            "old_identifier": null,
+            "old_value": null,
+            "project": "<uuid:1>",
+            "project_detail": {
+              "cover_image": null,
+              "cover_image_url": null,
+              "description": "",
+              "id": "<uuid:1>",
+              "identifier": "JRN",
+              "logo_props": {
+                "emoji": {
+                  "value": "128512"
+                },
+                "in_use": "emoji"
+              },
+              "name": "Journey Project"
+            },
+            "source_data": null,
+            "updated_at": "<ts>",
+            "updated_by": null,
+            "verb": "created",
+            "workspace": "<uuid:3>",
+            "workspace_detail": {
+              "id": "<uuid:3>",
+              "logo_url": null,
+              "name": "Journey Workspace",
+              "slug": "journey-ws"
+            }
+          },
+          {
+            "actor": "<uuid:8>",
+            "actor_detail": {
+              "avatar": "",
+              "avatar_url": null,
+              "display_name": "Journey T.",
+              "first_name": "Journey",
+              "id": "<uuid:8>",
+              "is_bot": false,
+              "last_name": "Tester"
+            },
+            "attachments": [],
+            "comment": "added assignee ",
+            "created_at": "<ts>",
+            "created_by": null,
+            "deleted_at": null,
+            "epoch": "<epoch>",
+            "field": "assignees",
+            "id": "<uuid:15>",
+            "issue": "<uuid:12>",
+            "issue_comment": null,
+            "issue_detail": {
+              "description_html": "<p></p>",
+              "description_json": {},
+              "id": "<uuid:12>",
+              "is_draft": false,
+              "name": "History",
+              "priority": "none",
+              "sequence_id": 19,
+              "sort_order": 205535.0,
+              "start_date": null,
+              "target_date": null
+            },
+            "new_identifier": "<uuid:8>",
+            "new_value": "Journey T.",
+            "old_identifier": null,
+            "old_value": "",
+            "project": "<uuid:1>",
+            "project_detail": {
+              "cover_image": null,
+              "cover_image_url": null,
+              "description": "",
+              "id": "<uuid:1>",
+              "identifier": "JRN",
+              "logo_props": {
+                "emoji": {
+                  "value": "128512"
+                },
+                "in_use": "emoji"
+              },
+              "name": "Journey Project"
+            },
+            "source_data": null,
+            "updated_at": "<ts>",
+            "updated_by": null,
+            "verb": "updated",
+            "workspace": "<uuid:3>",
+            "workspace_detail": {
+              "id": "<uuid:3>",
+              "logo_url": null,
+              "name": "Journey Workspace",
+              "slug": "journey-ws"
+            }
+          }
+        ],
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "a name",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "name": "Renamed"
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:12>/"
+      },
+      "response": {
+        "body": null,
+        "headers": {},
+        "status": 204
+      }
+    },
+    {
+      "name": "the same name again",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "name": "Renamed"
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:12>/"
+      },
+      "response": {
+        "body": null,
+        "headers": {},
+        "status": 204
+      }
+    },
+    {
+      "name": "a name with spaces around it",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "name": "  Padded  "
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:12>/"
+      },
+      "response": {
+        "body": null,
+        "headers": {},
+        "status": 204
+      }
+    },
+    {
+      "name": "several things at once",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "name": "Ordered",
+          "priority": "high",
+          "state_id": "<uuid:6>"
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:12>/"
+      },
+      "response": {
+        "body": null,
+        "headers": {},
+        "status": 204
+      }
+    },
+    {
+      "name": "the state it has again",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "state_id": "<uuid:6>"
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:12>/"
+      },
+      "response": {
+        "body": null,
+        "headers": {},
+        "status": 204
+      }
+    },
+    {
+      "name": "a state that is null: the project's default",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "state_id": null
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:12>/"
+      },
+      "response": {
+        "body": null,
+        "headers": {},
+        "status": 204
+      }
+    },
+    {
+      "name": "dates",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "start_date": "2026-11-01",
+          "target_date": "2026-11-15"
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:12>/"
+      },
+      "response": {
+        "body": null,
+        "headers": {},
+        "status": 204
+      }
+    },
+    {
+      "name": "a target date in another spelling of the same day",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "target_date": "20261115"
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:12>/"
+      },
+      "response": {
+        "body": null,
+        "headers": {},
+        "status": 204
+      }
+    },
+    {
+      "name": "dates cleared",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "start_date": null,
+          "target_date": null
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:12>/"
+      },
+      "response": {
+        "body": null,
+        "headers": {},
+        "status": 204
+      }
+    },
+    {
+      "name": "the assignee dropped",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "assignee_ids": []
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:12>/"
+      },
+      "response": {
+        "body": null,
+        "headers": {},
+        "status": 204
+      }
+    },
+    {
+      "name": "an assignee who is not in the project",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "assignee_ids": [
+            "<uuid:10>"
+          ]
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:12>/"
+      },
+      "response": {
+        "body": null,
+        "headers": {},
+        "status": 204
+      }
+    },
+    {
+      "name": "assignees cleared again",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "assignee_ids": []
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:12>/"
+      },
+      "response": {
+        "body": null,
+        "headers": {},
+        "status": 204
+      }
+    },
+    {
+      "name": "the history so far",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:12>/history/?activity_type=issue-property"
+      },
+      "response": {
+        "body": [
+          {
+            "actor": "<uuid:8>",
+            "actor_detail": {
+              "avatar": "",
+              "avatar_url": null,
+              "display_name": "Journey T.",
+              "first_name": "Journey",
+              "id": "<uuid:8>",
+              "is_bot": false,
+              "last_name": "Tester"
+            },
+            "attachments": [],
+            "comment": "created the issue",
+            "created_at": "<ts>",
+            "created_by": null,
+            "deleted_at": null,
+            "epoch": "<epoch>",
+            "field": null,
+            "id": "<uuid:14>",
+            "issue": "<uuid:12>",
+            "issue_comment": null,
+            "issue_detail": {
+              "description_html": "<p></p>",
+              "description_json": {},
+              "id": "<uuid:12>",
+              "is_draft": false,
+              "name": "Ordered",
+              "priority": "high",
+              "sequence_id": 19,
+              "sort_order": 205535.0,
+              "start_date": null,
+              "target_date": null
+            },
+            "new_identifier": null,
+            "new_value": null,
+            "old_identifier": null,
+            "old_value": null,
+            "project": "<uuid:1>",
+            "project_detail": {
+              "cover_image": null,
+              "cover_image_url": null,
+              "description": "",
+              "id": "<uuid:1>",
+              "identifier": "JRN",
+              "logo_props": {
+                "emoji": {
+                  "value": "128512"
+                },
+                "in_use": "emoji"
+              },
+              "name": "Journey Project"
+            },
+            "source_data": null,
+            "updated_at": "<ts>",
+            "updated_by": null,
+            "verb": "created",
+            "workspace": "<uuid:3>",
+            "workspace_detail": {
+              "id": "<uuid:3>",
+              "logo_url": null,
+              "name": "Journey Workspace",
+              "slug": "journey-ws"
+            }
+          },
+          {
+            "actor": "<uuid:8>",
+            "actor_detail": {
+              "avatar": "",
+              "avatar_url": null,
+              "display_name": "Journey T.",
+              "first_name": "Journey",
+              "id": "<uuid:8>",
+              "is_bot": false,
+              "last_name": "Tester"
+            },
+            "attachments": [],
+            "comment": "added assignee ",
+            "created_at": "<ts>",
+            "created_by": null,
+            "deleted_at": null,
+            "epoch": "<epoch>",
+            "field": "assignees",
+            "id": "<uuid:15>",
+            "issue": "<uuid:12>",
+            "issue_comment": null,
+            "issue_detail": {
+              "description_html": "<p></p>",
+              "description_json": {},
+              "id": "<uuid:12>",
+              "is_draft": false,
+              "name": "Ordered",
+              "priority": "high",
+              "sequence_id": 19,
+              "sort_order": 205535.0,
+              "start_date": null,
+              "target_date": null
+            },
+            "new_identifier": "<uuid:8>",
+            "new_value": "Journey T.",
+            "old_identifier": null,
+            "old_value": "",
+            "project": "<uuid:1>",
+            "project_detail": {
+              "cover_image": null,
+              "cover_image_url": null,
+              "description": "",
+              "id": "<uuid:1>",
+              "identifier": "JRN",
+              "logo_props": {
+                "emoji": {
+                  "value": "128512"
+                },
+                "in_use": "emoji"
+              },
+              "name": "Journey Project"
+            },
+            "source_data": null,
+            "updated_at": "<ts>",
+            "updated_by": null,
+            "verb": "updated",
+            "workspace": "<uuid:3>",
+            "workspace_detail": {
+              "id": "<uuid:3>",
+              "logo_url": null,
+              "name": "Journey Workspace",
+              "slug": "journey-ws"
+            }
+          },
+          {
+            "actor": "<uuid:8>",
+            "actor_detail": {
+              "avatar": "",
+              "avatar_url": null,
+              "display_name": "Journey T.",
+              "first_name": "Journey",
+              "id": "<uuid:8>",
+              "is_bot": false,
+              "last_name": "Tester"
+            },
+            "attachments": [],
+            "comment": "updated the name to",
+            "created_at": "<ts>",
+            "created_by": null,
+            "deleted_at": null,
+            "epoch": "<epoch>",
+            "field": "name",
+            "id": "<uuid:16>",
+            "issue": "<uuid:12>",
+            "issue_comment": null,
+            "issue_detail": {
+              "description_html": "<p></p>",
+              "description_json": {},
+              "id": "<uuid:12>",
+              "is_draft": false,
+              "name": "Ordered",
+              "priority": "high",
+              "sequence_id": 19,
+              "sort_order": 205535.0,
+              "start_date": null,
+              "target_date": null
+            },
+            "new_identifier": null,
+            "new_value": "Renamed",
+            "old_identifier": null,
+            "old_value": "History",
+            "project": "<uuid:1>",
+            "project_detail": {
+              "cover_image": null,
+              "cover_image_url": null,
+              "description": "",
+              "id": "<uuid:1>",
+              "identifier": "JRN",
+              "logo_props": {
+                "emoji": {
+                  "value": "128512"
+                },
+                "in_use": "emoji"
+              },
+              "name": "Journey Project"
+            },
+            "source_data": null,
+            "updated_at": "<ts>",
+            "updated_by": null,
+            "verb": "updated",
+            "workspace": "<uuid:3>",
+            "workspace_detail": {
+              "id": "<uuid:3>",
+              "logo_url": null,
+              "name": "Journey Workspace",
+              "slug": "journey-ws"
+            }
+          },
+          {
+            "actor": "<uuid:8>",
+            "actor_detail": {
+              "avatar": "",
+              "avatar_url": null,
+              "display_name": "Journey T.",
+              "first_name": "Journey",
+              "id": "<uuid:8>",
+              "is_bot": false,
+              "last_name": "Tester"
+            },
+            "attachments": [],
+            "comment": "updated the name to",
+            "created_at": "<ts>",
+            "created_by": null,
+            "deleted_at": null,
+            "epoch": "<epoch>",
+            "field": "name",
+            "id": "<uuid:17>",
+            "issue": "<uuid:12>",
+            "issue_comment": null,
+            "issue_detail": {
+              "description_html": "<p></p>",
+              "description_json": {},
+              "id": "<uuid:12>",
+              "is_draft": false,
+              "name": "Ordered",
+              "priority": "high",
+              "sequence_id": 19,
+              "sort_order": 205535.0,
+              "start_date": null,
+              "target_date": null
+            },
+            "new_identifier": null,
+            "new_value": "  Padded  ",
+            "old_identifier": null,
+            "old_value": "Renamed",
+            "project": "<uuid:1>",
+            "project_detail": {
+              "cover_image": null,
+              "cover_image_url": null,
+              "description": "",
+              "id": "<uuid:1>",
+              "identifier": "JRN",
+              "logo_props": {
+                "emoji": {
+                  "value": "128512"
+                },
+                "in_use": "emoji"
+              },
+              "name": "Journey Project"
+            },
+            "source_data": null,
+            "updated_at": "<ts>",
+            "updated_by": null,
+            "verb": "updated",
+            "workspace": "<uuid:3>",
+            "workspace_detail": {
+              "id": "<uuid:3>",
+              "logo_url": null,
+              "name": "Journey Workspace",
+              "slug": "journey-ws"
+            }
+          },
+          {
+            "actor": "<uuid:8>",
+            "actor_detail": {
+              "avatar": "",
+              "avatar_url": null,
+              "display_name": "Journey T.",
+              "first_name": "Journey",
+              "id": "<uuid:8>",
+              "is_bot": false,
+              "last_name": "Tester"
+            },
+            "attachments": [],
+            "comment": "updated the name to",
+            "created_at": "<ts>",
+            "created_by": null,
+            "deleted_at": null,
+            "epoch": "<epoch>",
+            "field": "name",
+            "id": "<uuid:18>",
+            "issue": "<uuid:12>",
+            "issue_comment": null,
+            "issue_detail": {
+              "description_html": "<p></p>",
+              "description_json": {},
+              "id": "<uuid:12>",
+              "is_draft": false,
+              "name": "Ordered",
+              "priority": "high",
+              "sequence_id": 19,
+              "sort_order": 205535.0,
+              "start_date": null,
+              "target_date": null
+            },
+            "new_identifier": null,
+            "new_value": "Ordered",
+            "old_identifier": null,
+            "old_value": "Padded",
+            "project": "<uuid:1>",
+            "project_detail": {
+              "cover_image": null,
+              "cover_image_url": null,
+              "description": "",
+              "id": "<uuid:1>",
+              "identifier": "JRN",
+              "logo_props": {
+                "emoji": {
+                  "value": "128512"
+                },
+                "in_use": "emoji"
+              },
+              "name": "Journey Project"
+            },
+            "source_data": null,
+            "updated_at": "<ts>",
+            "updated_by": null,
+            "verb": "updated",
+            "workspace": "<uuid:3>",
+            "workspace_detail": {
+              "id": "<uuid:3>",
+              "logo_url": null,
+              "name": "Journey Workspace",
+              "slug": "journey-ws"
+            }
+          },
+          {
+            "actor": "<uuid:8>",
+            "actor_detail": {
+              "avatar": "",
+              "avatar_url": null,
+              "display_name": "Journey T.",
+              "first_name": "Journey",
+              "id": "<uuid:8>",
+              "is_bot": false,
+              "last_name": "Tester"
+            },
+            "attachments": [],
+            "comment": "updated the priority to",
+            "created_at": "<ts>",
+            "created_by": null,
+            "deleted_at": null,
+            "epoch": "<epoch>",
+            "field": "priority",
+            "id": "<uuid:19>",
+            "issue": "<uuid:12>",
+            "issue_comment": null,
+            "issue_detail": {
+              "description_html": "<p></p>",
+              "description_json": {},
+              "id": "<uuid:12>",
+              "is_draft": false,
+              "name": "Ordered",
+              "priority": "high",
+              "sequence_id": 19,
+              "sort_order": 205535.0,
+              "start_date": null,
+              "target_date": null
+            },
+            "new_identifier": null,
+            "new_value": "high",
+            "old_identifier": null,
+            "old_value": "none",
+            "project": "<uuid:1>",
+            "project_detail": {
+              "cover_image": null,
+              "cover_image_url": null,
+              "description": "",
+              "id": "<uuid:1>",
+              "identifier": "JRN",
+              "logo_props": {
+                "emoji": {
+                  "value": "128512"
+                },
+                "in_use": "emoji"
+              },
+              "name": "Journey Project"
+            },
+            "source_data": null,
+            "updated_at": "<ts>",
+            "updated_by": null,
+            "verb": "updated",
+            "workspace": "<uuid:3>",
+            "workspace_detail": {
+              "id": "<uuid:3>",
+              "logo_url": null,
+              "name": "Journey Workspace",
+              "slug": "journey-ws"
+            }
+          },
+          {
+            "actor": "<uuid:8>",
+            "actor_detail": {
+              "avatar": "",
+              "avatar_url": null,
+              "display_name": "Journey T.",
+              "first_name": "Journey",
+              "id": "<uuid:8>",
+              "is_bot": false,
+              "last_name": "Tester"
+            },
+            "attachments": [],
+            "comment": "updated the state to",
+            "created_at": "<ts>",
+            "created_by": null,
+            "deleted_at": null,
+            "epoch": "<epoch>",
+            "field": "state",
+            "id": "<uuid:20>",
+            "issue": "<uuid:12>",
+            "issue_comment": null,
+            "issue_detail": {
+              "description_html": "<p></p>",
+              "description_json": {},
+              "id": "<uuid:12>",
+              "is_draft": false,
+              "name": "Ordered",
+              "priority": "high",
+              "sequence_id": 19,
+              "sort_order": 205535.0,
+              "start_date": null,
+              "target_date": null
+            },
+            "new_identifier": "<uuid:6>",
+            "new_value": "Done",
+            "old_identifier": "<uuid:2>",
+            "old_value": "Backlog",
+            "project": "<uuid:1>",
+            "project_detail": {
+              "cover_image": null,
+              "cover_image_url": null,
+              "description": "",
+              "id": "<uuid:1>",
+              "identifier": "JRN",
+              "logo_props": {
+                "emoji": {
+                  "value": "128512"
+                },
+                "in_use": "emoji"
+              },
+              "name": "Journey Project"
+            },
+            "source_data": null,
+            "updated_at": "<ts>",
+            "updated_by": null,
+            "verb": "updated",
+            "workspace": "<uuid:3>",
+            "workspace_detail": {
+              "id": "<uuid:3>",
+              "logo_url": null,
+              "name": "Journey Workspace",
+              "slug": "journey-ws"
+            }
+          },
+          {
+            "actor": "<uuid:8>",
+            "actor_detail": {
+              "avatar": "",
+              "avatar_url": null,
+              "display_name": "Journey T.",
+              "first_name": "Journey",
+              "id": "<uuid:8>",
+              "is_bot": false,
+              "last_name": "Tester"
+            },
+            "attachments": [],
+            "comment": "updated the state to",
+            "created_at": "<ts>",
+            "created_by": null,
+            "deleted_at": null,
+            "epoch": "<epoch>",
+            "field": "state",
+            "id": "<uuid:21>",
+            "issue": "<uuid:12>",
+            "issue_comment": null,
+            "issue_detail": {
+              "description_html": "<p></p>",
+              "description_json": {},
+              "id": "<uuid:12>",
+              "is_draft": false,
+              "name": "Ordered",
+              "priority": "high",
+              "sequence_id": 19,
+              "sort_order": 205535.0,
+              "start_date": null,
+              "target_date": null
+            },
+            "new_identifier": null,
+            "new_value": null,
+            "old_identifier": "<uuid:6>",
+            "old_value": "Done",
+            "project": "<uuid:1>",
+            "project_detail": {
+              "cover_image": null,
+              "cover_image_url": null,
+              "description": "",
+              "id": "<uuid:1>",
+              "identifier": "JRN",
+              "logo_props": {
+                "emoji": {
+                  "value": "128512"
+                },
+                "in_use": "emoji"
+              },
+              "name": "Journey Project"
+            },
+            "source_data": null,
+            "updated_at": "<ts>",
+            "updated_by": null,
+            "verb": "updated",
+            "workspace": "<uuid:3>",
+            "workspace_detail": {
+              "id": "<uuid:3>",
+              "logo_url": null,
+              "name": "Journey Workspace",
+              "slug": "journey-ws"
+            }
+          },
+          {
+            "actor": "<uuid:8>",
+            "actor_detail": {
+              "avatar": "",
+              "avatar_url": null,
+              "display_name": "Journey T.",
+              "first_name": "Journey",
+              "id": "<uuid:8>",
+              "is_bot": false,
+              "last_name": "Tester"
+            },
+            "attachments": [],
+            "comment": "updated the start date to ",
+            "created_at": "<ts>",
+            "created_by": null,
+            "deleted_at": null,
+            "epoch": "<epoch>",
+            "field": "start_date",
+            "id": "<uuid:22>",
+            "issue": "<uuid:12>",
+            "issue_comment": null,
+            "issue_detail": {
+              "description_html": "<p></p>",
+              "description_json": {},
+              "id": "<uuid:12>",
+              "is_draft": false,
+              "name": "Ordered",
+              "priority": "high",
+              "sequence_id": 19,
+              "sort_order": 205535.0,
+              "start_date": null,
+              "target_date": null
+            },
+            "new_identifier": null,
+            "new_value": "2026-11-01",
+            "old_identifier": null,
+            "old_value": "",
+            "project": "<uuid:1>",
+            "project_detail": {
+              "cover_image": null,
+              "cover_image_url": null,
+              "description": "",
+              "id": "<uuid:1>",
+              "identifier": "JRN",
+              "logo_props": {
+                "emoji": {
+                  "value": "128512"
+                },
+                "in_use": "emoji"
+              },
+              "name": "Journey Project"
+            },
+            "source_data": null,
+            "updated_at": "<ts>",
+            "updated_by": null,
+            "verb": "updated",
+            "workspace": "<uuid:3>",
+            "workspace_detail": {
+              "id": "<uuid:3>",
+              "logo_url": null,
+              "name": "Journey Workspace",
+              "slug": "journey-ws"
+            }
+          },
+          {
+            "actor": "<uuid:8>",
+            "actor_detail": {
+              "avatar": "",
+              "avatar_url": null,
+              "display_name": "Journey T.",
+              "first_name": "Journey",
+              "id": "<uuid:8>",
+              "is_bot": false,
+              "last_name": "Tester"
+            },
+            "attachments": [],
+            "comment": "updated the target date to",
+            "created_at": "<ts>",
+            "created_by": null,
+            "deleted_at": null,
+            "epoch": "<epoch>",
+            "field": "target_date",
+            "id": "<uuid:23>",
+            "issue": "<uuid:12>",
+            "issue_comment": null,
+            "issue_detail": {
+              "description_html": "<p></p>",
+              "description_json": {},
+              "id": "<uuid:12>",
+              "is_draft": false,
+              "name": "Ordered",
+              "priority": "high",
+              "sequence_id": 19,
+              "sort_order": 205535.0,
+              "start_date": null,
+              "target_date": null
+            },
+            "new_identifier": null,
+            "new_value": "2026-11-15",
+            "old_identifier": null,
+            "old_value": "",
+            "project": "<uuid:1>",
+            "project_detail": {
+              "cover_image": null,
+              "cover_image_url": null,
+              "description": "",
+              "id": "<uuid:1>",
+              "identifier": "JRN",
+              "logo_props": {
+                "emoji": {
+                  "value": "128512"
+                },
+                "in_use": "emoji"
+              },
+              "name": "Journey Project"
+            },
+            "source_data": null,
+            "updated_at": "<ts>",
+            "updated_by": null,
+            "verb": "updated",
+            "workspace": "<uuid:3>",
+            "workspace_detail": {
+              "id": "<uuid:3>",
+              "logo_url": null,
+              "name": "Journey Workspace",
+              "slug": "journey-ws"
+            }
+          },
+          {
+            "actor": "<uuid:8>",
+            "actor_detail": {
+              "avatar": "",
+              "avatar_url": null,
+              "display_name": "Journey T.",
+              "first_name": "Journey",
+              "id": "<uuid:8>",
+              "is_bot": false,
+              "last_name": "Tester"
+            },
+            "attachments": [],
+            "comment": "updated the target date to",
+            "created_at": "<ts>",
+            "created_by": null,
+            "deleted_at": null,
+            "epoch": "<epoch>",
+            "field": "target_date",
+            "id": "<uuid:24>",
+            "issue": "<uuid:12>",
+            "issue_comment": null,
+            "issue_detail": {
+              "description_html": "<p></p>",
+              "description_json": {},
+              "id": "<uuid:12>",
+              "is_draft": false,
+              "name": "Ordered",
+              "priority": "high",
+              "sequence_id": 19,
+              "sort_order": 205535.0,
+              "start_date": null,
+              "target_date": null
+            },
+            "new_identifier": null,
+            "new_value": "20261115",
+            "old_identifier": null,
+            "old_value": "2026-11-15",
+            "project": "<uuid:1>",
+            "project_detail": {
+              "cover_image": null,
+              "cover_image_url": null,
+              "description": "",
+              "id": "<uuid:1>",
+              "identifier": "JRN",
+              "logo_props": {
+                "emoji": {
+                  "value": "128512"
+                },
+                "in_use": "emoji"
+              },
+              "name": "Journey Project"
+            },
+            "source_data": null,
+            "updated_at": "<ts>",
+            "updated_by": null,
+            "verb": "updated",
+            "workspace": "<uuid:3>",
+            "workspace_detail": {
+              "id": "<uuid:3>",
+              "logo_url": null,
+              "name": "Journey Workspace",
+              "slug": "journey-ws"
+            }
+          },
+          {
+            "actor": "<uuid:8>",
+            "actor_detail": {
+              "avatar": "",
+              "avatar_url": null,
+              "display_name": "Journey T.",
+              "first_name": "Journey",
+              "id": "<uuid:8>",
+              "is_bot": false,
+              "last_name": "Tester"
+            },
+            "attachments": [],
+            "comment": "updated the start date to ",
+            "created_at": "<ts>",
+            "created_by": null,
+            "deleted_at": null,
+            "epoch": "<epoch>",
+            "field": "start_date",
+            "id": "<uuid:25>",
+            "issue": "<uuid:12>",
+            "issue_comment": null,
+            "issue_detail": {
+              "description_html": "<p></p>",
+              "description_json": {},
+              "id": "<uuid:12>",
+              "is_draft": false,
+              "name": "Ordered",
+              "priority": "high",
+              "sequence_id": 19,
+              "sort_order": 205535.0,
+              "start_date": null,
+              "target_date": null
+            },
+            "new_identifier": null,
+            "new_value": "",
+            "old_identifier": null,
+            "old_value": "2026-11-01",
+            "project": "<uuid:1>",
+            "project_detail": {
+              "cover_image": null,
+              "cover_image_url": null,
+              "description": "",
+              "id": "<uuid:1>",
+              "identifier": "JRN",
+              "logo_props": {
+                "emoji": {
+                  "value": "128512"
+                },
+                "in_use": "emoji"
+              },
+              "name": "Journey Project"
+            },
+            "source_data": null,
+            "updated_at": "<ts>",
+            "updated_by": null,
+            "verb": "updated",
+            "workspace": "<uuid:3>",
+            "workspace_detail": {
+              "id": "<uuid:3>",
+              "logo_url": null,
+              "name": "Journey Workspace",
+              "slug": "journey-ws"
+            }
+          },
+          {
+            "actor": "<uuid:8>",
+            "actor_detail": {
+              "avatar": "",
+              "avatar_url": null,
+              "display_name": "Journey T.",
+              "first_name": "Journey",
+              "id": "<uuid:8>",
+              "is_bot": false,
+              "last_name": "Tester"
+            },
+            "attachments": [],
+            "comment": "updated the target date to",
+            "created_at": "<ts>",
+            "created_by": null,
+            "deleted_at": null,
+            "epoch": "<epoch>",
+            "field": "target_date",
+            "id": "<uuid:26>",
+            "issue": "<uuid:12>",
+            "issue_comment": null,
+            "issue_detail": {
+              "description_html": "<p></p>",
+              "description_json": {},
+              "id": "<uuid:12>",
+              "is_draft": false,
+              "name": "Ordered",
+              "priority": "high",
+              "sequence_id": 19,
+              "sort_order": 205535.0,
+              "start_date": null,
+              "target_date": null
+            },
+            "new_identifier": null,
+            "new_value": "",
+            "old_identifier": null,
+            "old_value": "2026-11-15",
+            "project": "<uuid:1>",
+            "project_detail": {
+              "cover_image": null,
+              "cover_image_url": null,
+              "description": "",
+              "id": "<uuid:1>",
+              "identifier": "JRN",
+              "logo_props": {
+                "emoji": {
+                  "value": "128512"
+                },
+                "in_use": "emoji"
+              },
+              "name": "Journey Project"
+            },
+            "source_data": null,
+            "updated_at": "<ts>",
+            "updated_by": null,
+            "verb": "updated",
+            "workspace": "<uuid:3>",
+            "workspace_detail": {
+              "id": "<uuid:3>",
+              "logo_url": null,
+              "name": "Journey Workspace",
+              "slug": "journey-ws"
+            }
+          },
+          {
+            "actor": "<uuid:8>",
+            "actor_detail": {
+              "avatar": "",
+              "avatar_url": null,
+              "display_name": "Journey T.",
+              "first_name": "Journey",
+              "id": "<uuid:8>",
+              "is_bot": false,
+              "last_name": "Tester"
+            },
+            "attachments": [],
+            "comment": "removed assignee ",
+            "created_at": "<ts>",
+            "created_by": null,
+            "deleted_at": null,
+            "epoch": "<epoch>",
+            "field": "assignees",
+            "id": "<uuid:27>",
+            "issue": "<uuid:12>",
+            "issue_comment": null,
+            "issue_detail": {
+              "description_html": "<p></p>",
+              "description_json": {},
+              "id": "<uuid:12>",
+              "is_draft": false,
+              "name": "Ordered",
+              "priority": "high",
+              "sequence_id": 19,
+              "sort_order": 205535.0,
+              "start_date": null,
+              "target_date": null
+            },
+            "new_identifier": null,
+            "new_value": "",
+            "old_identifier": "<uuid:8>",
+            "old_value": "Journey T.",
+            "project": "<uuid:1>",
+            "project_detail": {
+              "cover_image": null,
+              "cover_image_url": null,
+              "description": "",
+              "id": "<uuid:1>",
+              "identifier": "JRN",
+              "logo_props": {
+                "emoji": {
+                  "value": "128512"
+                },
+                "in_use": "emoji"
+              },
+              "name": "Journey Project"
+            },
+            "source_data": null,
+            "updated_at": "<ts>",
+            "updated_by": null,
+            "verb": "updated",
+            "workspace": "<uuid:3>",
+            "workspace_detail": {
+              "id": "<uuid:3>",
+              "logo_url": null,
+              "name": "Journey Workspace",
+              "slug": "journey-ws"
+            }
+          },
+          {
+            "actor": "<uuid:8>",
+            "actor_detail": {
+              "avatar": "",
+              "avatar_url": null,
+              "display_name": "Journey T.",
+              "first_name": "Journey",
+              "id": "<uuid:8>",
+              "is_bot": false,
+              "last_name": "Tester"
+            },
+            "attachments": [],
+            "comment": "added assignee ",
+            "created_at": "<ts>",
+            "created_by": null,
+            "deleted_at": null,
+            "epoch": "<epoch>",
+            "field": "assignees",
+            "id": "<uuid:28>",
+            "issue": "<uuid:12>",
+            "issue_comment": null,
+            "issue_detail": {
+              "description_html": "<p></p>",
+              "description_json": {},
+              "id": "<uuid:12>",
+              "is_draft": false,
+              "name": "Ordered",
+              "priority": "high",
+              "sequence_id": 19,
+              "sort_order": 205535.0,
+              "start_date": null,
+              "target_date": null
+            },
+            "new_identifier": "<uuid:10>",
+            "new_value": "second",
+            "old_identifier": null,
+            "old_value": "",
+            "project": "<uuid:1>",
+            "project_detail": {
+              "cover_image": null,
+              "cover_image_url": null,
+              "description": "",
+              "id": "<uuid:1>",
+              "identifier": "JRN",
+              "logo_props": {
+                "emoji": {
+                  "value": "128512"
+                },
+                "in_use": "emoji"
+              },
+              "name": "Journey Project"
+            },
+            "source_data": null,
+            "updated_at": "<ts>",
+            "updated_by": null,
+            "verb": "updated",
+            "workspace": "<uuid:3>",
+            "workspace_detail": {
+              "id": "<uuid:3>",
+              "logo_url": null,
+              "name": "Journey Workspace",
+              "slug": "journey-ws"
+            }
+          }
+        ],
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "a description",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "description_html": "<p>hello</p>"
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:12>/"
+      },
+      "response": {
+        "body": null,
+        "headers": {},
+        "status": 204
+      }
+    },
+    {
+      "name": "the description again, by the same person: one change",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "description_html": "<p>hello world</p>"
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:12>/"
+      },
+      "response": {
+        "body": null,
+        "headers": {},
+        "status": 204
+      }
+    },
+    {
+      "name": "a name between",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "name": "Between"
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:12>/"
+      },
+      "response": {
+        "body": null,
+        "headers": {},
+        "status": 204
+      }
+    },
+    {
+      "name": "a description after another change: a change of its own",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "description_html": "<p>third</p>"
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:12>/"
+      },
+      "response": {
+        "body": null,
+        "headers": {},
+        "status": 204
+      }
+    },
+    {
+      "name": "a description kept out of the history",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "description_html": "<p>quiet</p>",
+          "skip_activity": true
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:12>/"
+      },
+      "response": {
+        "body": null,
+        "headers": {},
+        "status": 204
+      }
+    },
+    {
+      "name": "a name, with a skip_activity that does not apply to it",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "name": "Last",
+          "skip_activity": true
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:12>/"
+      },
+      "response": {
+        "body": null,
+        "headers": {},
+        "status": 204
+      }
+    },
+    {
+      "name": "a description with a skip_activity of the text false",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "description_html": "<p>false is text</p>",
+          "skip_activity": "false"
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:12>/"
+      },
+      "response": {
+        "body": null,
+        "headers": {},
+        "status": 204
+      }
+    },
+    {
+      "name": "a description with a skip_activity of zero",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "description_html": "<p>zero is not</p>",
+          "skip_activity": 0
+        },
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:12>/"
+      },
+      "response": {
+        "body": null,
+        "headers": {},
+        "status": 204
+      }
+    },
+    {
+      "name": "nothing at all",
+      "request": {
+        "as": "journey@example.test",
+        "body": {},
+        "method": "PATCH",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:12>/"
+      },
+      "response": {
+        "body": null,
+        "headers": {},
+        "status": 204
+      }
+    },
+    {
+      "name": "the history now",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:12>/history/?activity_type=issue-property"
+      },
+      "response": {
+        "body": [
+          {
+            "actor": "<uuid:8>",
+            "actor_detail": {
+              "avatar": "",
+              "avatar_url": null,
+              "display_name": "Journey T.",
+              "first_name": "Journey",
+              "id": "<uuid:8>",
+              "is_bot": false,
+              "last_name": "Tester"
+            },
+            "attachments": [],
+            "comment": "created the issue",
+            "created_at": "<ts>",
+            "created_by": null,
+            "deleted_at": null,
+            "epoch": "<epoch>",
+            "field": null,
+            "id": "<uuid:14>",
+            "issue": "<uuid:12>",
+            "issue_comment": null,
+            "issue_detail": {
+              "description_html": "<p>zero is not</p>",
+              "description_json": {},
+              "id": "<uuid:12>",
+              "is_draft": false,
+              "name": "Last",
+              "priority": "high",
+              "sequence_id": 19,
+              "sort_order": 205535.0,
+              "start_date": null,
+              "target_date": null
+            },
+            "new_identifier": null,
+            "new_value": null,
+            "old_identifier": null,
+            "old_value": null,
+            "project": "<uuid:1>",
+            "project_detail": {
+              "cover_image": null,
+              "cover_image_url": null,
+              "description": "",
+              "id": "<uuid:1>",
+              "identifier": "JRN",
+              "logo_props": {
+                "emoji": {
+                  "value": "128512"
+                },
+                "in_use": "emoji"
+              },
+              "name": "Journey Project"
+            },
+            "source_data": null,
+            "updated_at": "<ts>",
+            "updated_by": null,
+            "verb": "created",
+            "workspace": "<uuid:3>",
+            "workspace_detail": {
+              "id": "<uuid:3>",
+              "logo_url": null,
+              "name": "Journey Workspace",
+              "slug": "journey-ws"
+            }
+          },
+          {
+            "actor": "<uuid:8>",
+            "actor_detail": {
+              "avatar": "",
+              "avatar_url": null,
+              "display_name": "Journey T.",
+              "first_name": "Journey",
+              "id": "<uuid:8>",
+              "is_bot": false,
+              "last_name": "Tester"
+            },
+            "attachments": [],
+            "comment": "added assignee ",
+            "created_at": "<ts>",
+            "created_by": null,
+            "deleted_at": null,
+            "epoch": "<epoch>",
+            "field": "assignees",
+            "id": "<uuid:15>",
+            "issue": "<uuid:12>",
+            "issue_comment": null,
+            "issue_detail": {
+              "description_html": "<p>zero is not</p>",
+              "description_json": {},
+              "id": "<uuid:12>",
+              "is_draft": false,
+              "name": "Last",
+              "priority": "high",
+              "sequence_id": 19,
+              "sort_order": 205535.0,
+              "start_date": null,
+              "target_date": null
+            },
+            "new_identifier": "<uuid:8>",
+            "new_value": "Journey T.",
+            "old_identifier": null,
+            "old_value": "",
+            "project": "<uuid:1>",
+            "project_detail": {
+              "cover_image": null,
+              "cover_image_url": null,
+              "description": "",
+              "id": "<uuid:1>",
+              "identifier": "JRN",
+              "logo_props": {
+                "emoji": {
+                  "value": "128512"
+                },
+                "in_use": "emoji"
+              },
+              "name": "Journey Project"
+            },
+            "source_data": null,
+            "updated_at": "<ts>",
+            "updated_by": null,
+            "verb": "updated",
+            "workspace": "<uuid:3>",
+            "workspace_detail": {
+              "id": "<uuid:3>",
+              "logo_url": null,
+              "name": "Journey Workspace",
+              "slug": "journey-ws"
+            }
+          },
+          {
+            "actor": "<uuid:8>",
+            "actor_detail": {
+              "avatar": "",
+              "avatar_url": null,
+              "display_name": "Journey T.",
+              "first_name": "Journey",
+              "id": "<uuid:8>",
+              "is_bot": false,
+              "last_name": "Tester"
+            },
+            "attachments": [],
+            "comment": "updated the name to",
+            "created_at": "<ts>",
+            "created_by": null,
+            "deleted_at": null,
+            "epoch": "<epoch>",
+            "field": "name",
+            "id": "<uuid:16>",
+            "issue": "<uuid:12>",
+            "issue_comment": null,
+            "issue_detail": {
+              "description_html": "<p>zero is not</p>",
+              "description_json": {},
+              "id": "<uuid:12>",
+              "is_draft": false,
+              "name": "Last",
+              "priority": "high",
+              "sequence_id": 19,
+              "sort_order": 205535.0,
+              "start_date": null,
+              "target_date": null
+            },
+            "new_identifier": null,
+            "new_value": "Renamed",
+            "old_identifier": null,
+            "old_value": "History",
+            "project": "<uuid:1>",
+            "project_detail": {
+              "cover_image": null,
+              "cover_image_url": null,
+              "description": "",
+              "id": "<uuid:1>",
+              "identifier": "JRN",
+              "logo_props": {
+                "emoji": {
+                  "value": "128512"
+                },
+                "in_use": "emoji"
+              },
+              "name": "Journey Project"
+            },
+            "source_data": null,
+            "updated_at": "<ts>",
+            "updated_by": null,
+            "verb": "updated",
+            "workspace": "<uuid:3>",
+            "workspace_detail": {
+              "id": "<uuid:3>",
+              "logo_url": null,
+              "name": "Journey Workspace",
+              "slug": "journey-ws"
+            }
+          },
+          {
+            "actor": "<uuid:8>",
+            "actor_detail": {
+              "avatar": "",
+              "avatar_url": null,
+              "display_name": "Journey T.",
+              "first_name": "Journey",
+              "id": "<uuid:8>",
+              "is_bot": false,
+              "last_name": "Tester"
+            },
+            "attachments": [],
+            "comment": "updated the name to",
+            "created_at": "<ts>",
+            "created_by": null,
+            "deleted_at": null,
+            "epoch": "<epoch>",
+            "field": "name",
+            "id": "<uuid:17>",
+            "issue": "<uuid:12>",
+            "issue_comment": null,
+            "issue_detail": {
+              "description_html": "<p>zero is not</p>",
+              "description_json": {},
+              "id": "<uuid:12>",
+              "is_draft": false,
+              "name": "Last",
+              "priority": "high",
+              "sequence_id": 19,
+              "sort_order": 205535.0,
+              "start_date": null,
+              "target_date": null
+            },
+            "new_identifier": null,
+            "new_value": "  Padded  ",
+            "old_identifier": null,
+            "old_value": "Renamed",
+            "project": "<uuid:1>",
+            "project_detail": {
+              "cover_image": null,
+              "cover_image_url": null,
+              "description": "",
+              "id": "<uuid:1>",
+              "identifier": "JRN",
+              "logo_props": {
+                "emoji": {
+                  "value": "128512"
+                },
+                "in_use": "emoji"
+              },
+              "name": "Journey Project"
+            },
+            "source_data": null,
+            "updated_at": "<ts>",
+            "updated_by": null,
+            "verb": "updated",
+            "workspace": "<uuid:3>",
+            "workspace_detail": {
+              "id": "<uuid:3>",
+              "logo_url": null,
+              "name": "Journey Workspace",
+              "slug": "journey-ws"
+            }
+          },
+          {
+            "actor": "<uuid:8>",
+            "actor_detail": {
+              "avatar": "",
+              "avatar_url": null,
+              "display_name": "Journey T.",
+              "first_name": "Journey",
+              "id": "<uuid:8>",
+              "is_bot": false,
+              "last_name": "Tester"
+            },
+            "attachments": [],
+            "comment": "updated the name to",
+            "created_at": "<ts>",
+            "created_by": null,
+            "deleted_at": null,
+            "epoch": "<epoch>",
+            "field": "name",
+            "id": "<uuid:18>",
+            "issue": "<uuid:12>",
+            "issue_comment": null,
+            "issue_detail": {
+              "description_html": "<p>zero is not</p>",
+              "description_json": {},
+              "id": "<uuid:12>",
+              "is_draft": false,
+              "name": "Last",
+              "priority": "high",
+              "sequence_id": 19,
+              "sort_order": 205535.0,
+              "start_date": null,
+              "target_date": null
+            },
+            "new_identifier": null,
+            "new_value": "Ordered",
+            "old_identifier": null,
+            "old_value": "Padded",
+            "project": "<uuid:1>",
+            "project_detail": {
+              "cover_image": null,
+              "cover_image_url": null,
+              "description": "",
+              "id": "<uuid:1>",
+              "identifier": "JRN",
+              "logo_props": {
+                "emoji": {
+                  "value": "128512"
+                },
+                "in_use": "emoji"
+              },
+              "name": "Journey Project"
+            },
+            "source_data": null,
+            "updated_at": "<ts>",
+            "updated_by": null,
+            "verb": "updated",
+            "workspace": "<uuid:3>",
+            "workspace_detail": {
+              "id": "<uuid:3>",
+              "logo_url": null,
+              "name": "Journey Workspace",
+              "slug": "journey-ws"
+            }
+          },
+          {
+            "actor": "<uuid:8>",
+            "actor_detail": {
+              "avatar": "",
+              "avatar_url": null,
+              "display_name": "Journey T.",
+              "first_name": "Journey",
+              "id": "<uuid:8>",
+              "is_bot": false,
+              "last_name": "Tester"
+            },
+            "attachments": [],
+            "comment": "updated the priority to",
+            "created_at": "<ts>",
+            "created_by": null,
+            "deleted_at": null,
+            "epoch": "<epoch>",
+            "field": "priority",
+            "id": "<uuid:19>",
+            "issue": "<uuid:12>",
+            "issue_comment": null,
+            "issue_detail": {
+              "description_html": "<p>zero is not</p>",
+              "description_json": {},
+              "id": "<uuid:12>",
+              "is_draft": false,
+              "name": "Last",
+              "priority": "high",
+              "sequence_id": 19,
+              "sort_order": 205535.0,
+              "start_date": null,
+              "target_date": null
+            },
+            "new_identifier": null,
+            "new_value": "high",
+            "old_identifier": null,
+            "old_value": "none",
+            "project": "<uuid:1>",
+            "project_detail": {
+              "cover_image": null,
+              "cover_image_url": null,
+              "description": "",
+              "id": "<uuid:1>",
+              "identifier": "JRN",
+              "logo_props": {
+                "emoji": {
+                  "value": "128512"
+                },
+                "in_use": "emoji"
+              },
+              "name": "Journey Project"
+            },
+            "source_data": null,
+            "updated_at": "<ts>",
+            "updated_by": null,
+            "verb": "updated",
+            "workspace": "<uuid:3>",
+            "workspace_detail": {
+              "id": "<uuid:3>",
+              "logo_url": null,
+              "name": "Journey Workspace",
+              "slug": "journey-ws"
+            }
+          },
+          {
+            "actor": "<uuid:8>",
+            "actor_detail": {
+              "avatar": "",
+              "avatar_url": null,
+              "display_name": "Journey T.",
+              "first_name": "Journey",
+              "id": "<uuid:8>",
+              "is_bot": false,
+              "last_name": "Tester"
+            },
+            "attachments": [],
+            "comment": "updated the state to",
+            "created_at": "<ts>",
+            "created_by": null,
+            "deleted_at": null,
+            "epoch": "<epoch>",
+            "field": "state",
+            "id": "<uuid:20>",
+            "issue": "<uuid:12>",
+            "issue_comment": null,
+            "issue_detail": {
+              "description_html": "<p>zero is not</p>",
+              "description_json": {},
+              "id": "<uuid:12>",
+              "is_draft": false,
+              "name": "Last",
+              "priority": "high",
+              "sequence_id": 19,
+              "sort_order": 205535.0,
+              "start_date": null,
+              "target_date": null
+            },
+            "new_identifier": "<uuid:6>",
+            "new_value": "Done",
+            "old_identifier": "<uuid:2>",
+            "old_value": "Backlog",
+            "project": "<uuid:1>",
+            "project_detail": {
+              "cover_image": null,
+              "cover_image_url": null,
+              "description": "",
+              "id": "<uuid:1>",
+              "identifier": "JRN",
+              "logo_props": {
+                "emoji": {
+                  "value": "128512"
+                },
+                "in_use": "emoji"
+              },
+              "name": "Journey Project"
+            },
+            "source_data": null,
+            "updated_at": "<ts>",
+            "updated_by": null,
+            "verb": "updated",
+            "workspace": "<uuid:3>",
+            "workspace_detail": {
+              "id": "<uuid:3>",
+              "logo_url": null,
+              "name": "Journey Workspace",
+              "slug": "journey-ws"
+            }
+          },
+          {
+            "actor": "<uuid:8>",
+            "actor_detail": {
+              "avatar": "",
+              "avatar_url": null,
+              "display_name": "Journey T.",
+              "first_name": "Journey",
+              "id": "<uuid:8>",
+              "is_bot": false,
+              "last_name": "Tester"
+            },
+            "attachments": [],
+            "comment": "updated the state to",
+            "created_at": "<ts>",
+            "created_by": null,
+            "deleted_at": null,
+            "epoch": "<epoch>",
+            "field": "state",
+            "id": "<uuid:21>",
+            "issue": "<uuid:12>",
+            "issue_comment": null,
+            "issue_detail": {
+              "description_html": "<p>zero is not</p>",
+              "description_json": {},
+              "id": "<uuid:12>",
+              "is_draft": false,
+              "name": "Last",
+              "priority": "high",
+              "sequence_id": 19,
+              "sort_order": 205535.0,
+              "start_date": null,
+              "target_date": null
+            },
+            "new_identifier": null,
+            "new_value": null,
+            "old_identifier": "<uuid:6>",
+            "old_value": "Done",
+            "project": "<uuid:1>",
+            "project_detail": {
+              "cover_image": null,
+              "cover_image_url": null,
+              "description": "",
+              "id": "<uuid:1>",
+              "identifier": "JRN",
+              "logo_props": {
+                "emoji": {
+                  "value": "128512"
+                },
+                "in_use": "emoji"
+              },
+              "name": "Journey Project"
+            },
+            "source_data": null,
+            "updated_at": "<ts>",
+            "updated_by": null,
+            "verb": "updated",
+            "workspace": "<uuid:3>",
+            "workspace_detail": {
+              "id": "<uuid:3>",
+              "logo_url": null,
+              "name": "Journey Workspace",
+              "slug": "journey-ws"
+            }
+          },
+          {
+            "actor": "<uuid:8>",
+            "actor_detail": {
+              "avatar": "",
+              "avatar_url": null,
+              "display_name": "Journey T.",
+              "first_name": "Journey",
+              "id": "<uuid:8>",
+              "is_bot": false,
+              "last_name": "Tester"
+            },
+            "attachments": [],
+            "comment": "updated the start date to ",
+            "created_at": "<ts>",
+            "created_by": null,
+            "deleted_at": null,
+            "epoch": "<epoch>",
+            "field": "start_date",
+            "id": "<uuid:22>",
+            "issue": "<uuid:12>",
+            "issue_comment": null,
+            "issue_detail": {
+              "description_html": "<p>zero is not</p>",
+              "description_json": {},
+              "id": "<uuid:12>",
+              "is_draft": false,
+              "name": "Last",
+              "priority": "high",
+              "sequence_id": 19,
+              "sort_order": 205535.0,
+              "start_date": null,
+              "target_date": null
+            },
+            "new_identifier": null,
+            "new_value": "2026-11-01",
+            "old_identifier": null,
+            "old_value": "",
+            "project": "<uuid:1>",
+            "project_detail": {
+              "cover_image": null,
+              "cover_image_url": null,
+              "description": "",
+              "id": "<uuid:1>",
+              "identifier": "JRN",
+              "logo_props": {
+                "emoji": {
+                  "value": "128512"
+                },
+                "in_use": "emoji"
+              },
+              "name": "Journey Project"
+            },
+            "source_data": null,
+            "updated_at": "<ts>",
+            "updated_by": null,
+            "verb": "updated",
+            "workspace": "<uuid:3>",
+            "workspace_detail": {
+              "id": "<uuid:3>",
+              "logo_url": null,
+              "name": "Journey Workspace",
+              "slug": "journey-ws"
+            }
+          },
+          {
+            "actor": "<uuid:8>",
+            "actor_detail": {
+              "avatar": "",
+              "avatar_url": null,
+              "display_name": "Journey T.",
+              "first_name": "Journey",
+              "id": "<uuid:8>",
+              "is_bot": false,
+              "last_name": "Tester"
+            },
+            "attachments": [],
+            "comment": "updated the target date to",
+            "created_at": "<ts>",
+            "created_by": null,
+            "deleted_at": null,
+            "epoch": "<epoch>",
+            "field": "target_date",
+            "id": "<uuid:23>",
+            "issue": "<uuid:12>",
+            "issue_comment": null,
+            "issue_detail": {
+              "description_html": "<p>zero is not</p>",
+              "description_json": {},
+              "id": "<uuid:12>",
+              "is_draft": false,
+              "name": "Last",
+              "priority": "high",
+              "sequence_id": 19,
+              "sort_order": 205535.0,
+              "start_date": null,
+              "target_date": null
+            },
+            "new_identifier": null,
+            "new_value": "2026-11-15",
+            "old_identifier": null,
+            "old_value": "",
+            "project": "<uuid:1>",
+            "project_detail": {
+              "cover_image": null,
+              "cover_image_url": null,
+              "description": "",
+              "id": "<uuid:1>",
+              "identifier": "JRN",
+              "logo_props": {
+                "emoji": {
+                  "value": "128512"
+                },
+                "in_use": "emoji"
+              },
+              "name": "Journey Project"
+            },
+            "source_data": null,
+            "updated_at": "<ts>",
+            "updated_by": null,
+            "verb": "updated",
+            "workspace": "<uuid:3>",
+            "workspace_detail": {
+              "id": "<uuid:3>",
+              "logo_url": null,
+              "name": "Journey Workspace",
+              "slug": "journey-ws"
+            }
+          },
+          {
+            "actor": "<uuid:8>",
+            "actor_detail": {
+              "avatar": "",
+              "avatar_url": null,
+              "display_name": "Journey T.",
+              "first_name": "Journey",
+              "id": "<uuid:8>",
+              "is_bot": false,
+              "last_name": "Tester"
+            },
+            "attachments": [],
+            "comment": "updated the target date to",
+            "created_at": "<ts>",
+            "created_by": null,
+            "deleted_at": null,
+            "epoch": "<epoch>",
+            "field": "target_date",
+            "id": "<uuid:24>",
+            "issue": "<uuid:12>",
+            "issue_comment": null,
+            "issue_detail": {
+              "description_html": "<p>zero is not</p>",
+              "description_json": {},
+              "id": "<uuid:12>",
+              "is_draft": false,
+              "name": "Last",
+              "priority": "high",
+              "sequence_id": 19,
+              "sort_order": 205535.0,
+              "start_date": null,
+              "target_date": null
+            },
+            "new_identifier": null,
+            "new_value": "20261115",
+            "old_identifier": null,
+            "old_value": "2026-11-15",
+            "project": "<uuid:1>",
+            "project_detail": {
+              "cover_image": null,
+              "cover_image_url": null,
+              "description": "",
+              "id": "<uuid:1>",
+              "identifier": "JRN",
+              "logo_props": {
+                "emoji": {
+                  "value": "128512"
+                },
+                "in_use": "emoji"
+              },
+              "name": "Journey Project"
+            },
+            "source_data": null,
+            "updated_at": "<ts>",
+            "updated_by": null,
+            "verb": "updated",
+            "workspace": "<uuid:3>",
+            "workspace_detail": {
+              "id": "<uuid:3>",
+              "logo_url": null,
+              "name": "Journey Workspace",
+              "slug": "journey-ws"
+            }
+          },
+          {
+            "actor": "<uuid:8>",
+            "actor_detail": {
+              "avatar": "",
+              "avatar_url": null,
+              "display_name": "Journey T.",
+              "first_name": "Journey",
+              "id": "<uuid:8>",
+              "is_bot": false,
+              "last_name": "Tester"
+            },
+            "attachments": [],
+            "comment": "updated the start date to ",
+            "created_at": "<ts>",
+            "created_by": null,
+            "deleted_at": null,
+            "epoch": "<epoch>",
+            "field": "start_date",
+            "id": "<uuid:25>",
+            "issue": "<uuid:12>",
+            "issue_comment": null,
+            "issue_detail": {
+              "description_html": "<p>zero is not</p>",
+              "description_json": {},
+              "id": "<uuid:12>",
+              "is_draft": false,
+              "name": "Last",
+              "priority": "high",
+              "sequence_id": 19,
+              "sort_order": 205535.0,
+              "start_date": null,
+              "target_date": null
+            },
+            "new_identifier": null,
+            "new_value": "",
+            "old_identifier": null,
+            "old_value": "2026-11-01",
+            "project": "<uuid:1>",
+            "project_detail": {
+              "cover_image": null,
+              "cover_image_url": null,
+              "description": "",
+              "id": "<uuid:1>",
+              "identifier": "JRN",
+              "logo_props": {
+                "emoji": {
+                  "value": "128512"
+                },
+                "in_use": "emoji"
+              },
+              "name": "Journey Project"
+            },
+            "source_data": null,
+            "updated_at": "<ts>",
+            "updated_by": null,
+            "verb": "updated",
+            "workspace": "<uuid:3>",
+            "workspace_detail": {
+              "id": "<uuid:3>",
+              "logo_url": null,
+              "name": "Journey Workspace",
+              "slug": "journey-ws"
+            }
+          },
+          {
+            "actor": "<uuid:8>",
+            "actor_detail": {
+              "avatar": "",
+              "avatar_url": null,
+              "display_name": "Journey T.",
+              "first_name": "Journey",
+              "id": "<uuid:8>",
+              "is_bot": false,
+              "last_name": "Tester"
+            },
+            "attachments": [],
+            "comment": "updated the target date to",
+            "created_at": "<ts>",
+            "created_by": null,
+            "deleted_at": null,
+            "epoch": "<epoch>",
+            "field": "target_date",
+            "id": "<uuid:26>",
+            "issue": "<uuid:12>",
+            "issue_comment": null,
+            "issue_detail": {
+              "description_html": "<p>zero is not</p>",
+              "description_json": {},
+              "id": "<uuid:12>",
+              "is_draft": false,
+              "name": "Last",
+              "priority": "high",
+              "sequence_id": 19,
+              "sort_order": 205535.0,
+              "start_date": null,
+              "target_date": null
+            },
+            "new_identifier": null,
+            "new_value": "",
+            "old_identifier": null,
+            "old_value": "2026-11-15",
+            "project": "<uuid:1>",
+            "project_detail": {
+              "cover_image": null,
+              "cover_image_url": null,
+              "description": "",
+              "id": "<uuid:1>",
+              "identifier": "JRN",
+              "logo_props": {
+                "emoji": {
+                  "value": "128512"
+                },
+                "in_use": "emoji"
+              },
+              "name": "Journey Project"
+            },
+            "source_data": null,
+            "updated_at": "<ts>",
+            "updated_by": null,
+            "verb": "updated",
+            "workspace": "<uuid:3>",
+            "workspace_detail": {
+              "id": "<uuid:3>",
+              "logo_url": null,
+              "name": "Journey Workspace",
+              "slug": "journey-ws"
+            }
+          },
+          {
+            "actor": "<uuid:8>",
+            "actor_detail": {
+              "avatar": "",
+              "avatar_url": null,
+              "display_name": "Journey T.",
+              "first_name": "Journey",
+              "id": "<uuid:8>",
+              "is_bot": false,
+              "last_name": "Tester"
+            },
+            "attachments": [],
+            "comment": "removed assignee ",
+            "created_at": "<ts>",
+            "created_by": null,
+            "deleted_at": null,
+            "epoch": "<epoch>",
+            "field": "assignees",
+            "id": "<uuid:27>",
+            "issue": "<uuid:12>",
+            "issue_comment": null,
+            "issue_detail": {
+              "description_html": "<p>zero is not</p>",
+              "description_json": {},
+              "id": "<uuid:12>",
+              "is_draft": false,
+              "name": "Last",
+              "priority": "high",
+              "sequence_id": 19,
+              "sort_order": 205535.0,
+              "start_date": null,
+              "target_date": null
+            },
+            "new_identifier": null,
+            "new_value": "",
+            "old_identifier": "<uuid:8>",
+            "old_value": "Journey T.",
+            "project": "<uuid:1>",
+            "project_detail": {
+              "cover_image": null,
+              "cover_image_url": null,
+              "description": "",
+              "id": "<uuid:1>",
+              "identifier": "JRN",
+              "logo_props": {
+                "emoji": {
+                  "value": "128512"
+                },
+                "in_use": "emoji"
+              },
+              "name": "Journey Project"
+            },
+            "source_data": null,
+            "updated_at": "<ts>",
+            "updated_by": null,
+            "verb": "updated",
+            "workspace": "<uuid:3>",
+            "workspace_detail": {
+              "id": "<uuid:3>",
+              "logo_url": null,
+              "name": "Journey Workspace",
+              "slug": "journey-ws"
+            }
+          },
+          {
+            "actor": "<uuid:8>",
+            "actor_detail": {
+              "avatar": "",
+              "avatar_url": null,
+              "display_name": "Journey T.",
+              "first_name": "Journey",
+              "id": "<uuid:8>",
+              "is_bot": false,
+              "last_name": "Tester"
+            },
+            "attachments": [],
+            "comment": "added assignee ",
+            "created_at": "<ts>",
+            "created_by": null,
+            "deleted_at": null,
+            "epoch": "<epoch>",
+            "field": "assignees",
+            "id": "<uuid:28>",
+            "issue": "<uuid:12>",
+            "issue_comment": null,
+            "issue_detail": {
+              "description_html": "<p>zero is not</p>",
+              "description_json": {},
+              "id": "<uuid:12>",
+              "is_draft": false,
+              "name": "Last",
+              "priority": "high",
+              "sequence_id": 19,
+              "sort_order": 205535.0,
+              "start_date": null,
+              "target_date": null
+            },
+            "new_identifier": "<uuid:10>",
+            "new_value": "second",
+            "old_identifier": null,
+            "old_value": "",
+            "project": "<uuid:1>",
+            "project_detail": {
+              "cover_image": null,
+              "cover_image_url": null,
+              "description": "",
+              "id": "<uuid:1>",
+              "identifier": "JRN",
+              "logo_props": {
+                "emoji": {
+                  "value": "128512"
+                },
+                "in_use": "emoji"
+              },
+              "name": "Journey Project"
+            },
+            "source_data": null,
+            "updated_at": "<ts>",
+            "updated_by": null,
+            "verb": "updated",
+            "workspace": "<uuid:3>",
+            "workspace_detail": {
+              "id": "<uuid:3>",
+              "logo_url": null,
+              "name": "Journey Workspace",
+              "slug": "journey-ws"
+            }
+          },
+          {
+            "actor": "<uuid:8>",
+            "actor_detail": {
+              "avatar": "",
+              "avatar_url": null,
+              "display_name": "Journey T.",
+              "first_name": "Journey",
+              "id": "<uuid:8>",
+              "is_bot": false,
+              "last_name": "Tester"
+            },
+            "attachments": [],
+            "comment": "updated the description to",
+            "created_at": "<ts>",
+            "created_by": null,
+            "deleted_at": null,
+            "epoch": "<epoch>",
+            "field": "description",
+            "id": "<uuid:29>",
+            "issue": "<uuid:12>",
+            "issue_comment": null,
+            "issue_detail": {
+              "description_html": "<p>zero is not</p>",
+              "description_json": {},
+              "id": "<uuid:12>",
+              "is_draft": false,
+              "name": "Last",
+              "priority": "high",
+              "sequence_id": 19,
+              "sort_order": 205535.0,
+              "start_date": null,
+              "target_date": null
+            },
+            "new_identifier": null,
+            "new_value": "<p>hello</p>",
+            "old_identifier": null,
+            "old_value": "<p></p>",
+            "project": "<uuid:1>",
+            "project_detail": {
+              "cover_image": null,
+              "cover_image_url": null,
+              "description": "",
+              "id": "<uuid:1>",
+              "identifier": "JRN",
+              "logo_props": {
+                "emoji": {
+                  "value": "128512"
+                },
+                "in_use": "emoji"
+              },
+              "name": "Journey Project"
+            },
+            "source_data": null,
+            "updated_at": "<ts>",
+            "updated_by": null,
+            "verb": "updated",
+            "workspace": "<uuid:3>",
+            "workspace_detail": {
+              "id": "<uuid:3>",
+              "logo_url": null,
+              "name": "Journey Workspace",
+              "slug": "journey-ws"
+            }
+          },
+          {
+            "actor": "<uuid:8>",
+            "actor_detail": {
+              "avatar": "",
+              "avatar_url": null,
+              "display_name": "Journey T.",
+              "first_name": "Journey",
+              "id": "<uuid:8>",
+              "is_bot": false,
+              "last_name": "Tester"
+            },
+            "attachments": [],
+            "comment": "updated the name to",
+            "created_at": "<ts>",
+            "created_by": null,
+            "deleted_at": null,
+            "epoch": "<epoch>",
+            "field": "name",
+            "id": "<uuid:30>",
+            "issue": "<uuid:12>",
+            "issue_comment": null,
+            "issue_detail": {
+              "description_html": "<p>zero is not</p>",
+              "description_json": {},
+              "id": "<uuid:12>",
+              "is_draft": false,
+              "name": "Last",
+              "priority": "high",
+              "sequence_id": 19,
+              "sort_order": 205535.0,
+              "start_date": null,
+              "target_date": null
+            },
+            "new_identifier": null,
+            "new_value": "Between",
+            "old_identifier": null,
+            "old_value": "Ordered",
+            "project": "<uuid:1>",
+            "project_detail": {
+              "cover_image": null,
+              "cover_image_url": null,
+              "description": "",
+              "id": "<uuid:1>",
+              "identifier": "JRN",
+              "logo_props": {
+                "emoji": {
+                  "value": "128512"
+                },
+                "in_use": "emoji"
+              },
+              "name": "Journey Project"
+            },
+            "source_data": null,
+            "updated_at": "<ts>",
+            "updated_by": null,
+            "verb": "updated",
+            "workspace": "<uuid:3>",
+            "workspace_detail": {
+              "id": "<uuid:3>",
+              "logo_url": null,
+              "name": "Journey Workspace",
+              "slug": "journey-ws"
+            }
+          },
+          {
+            "actor": "<uuid:8>",
+            "actor_detail": {
+              "avatar": "",
+              "avatar_url": null,
+              "display_name": "Journey T.",
+              "first_name": "Journey",
+              "id": "<uuid:8>",
+              "is_bot": false,
+              "last_name": "Tester"
+            },
+            "attachments": [],
+            "comment": "updated the description to",
+            "created_at": "<ts>",
+            "created_by": null,
+            "deleted_at": null,
+            "epoch": "<epoch>",
+            "field": "description",
+            "id": "<uuid:31>",
+            "issue": "<uuid:12>",
+            "issue_comment": null,
+            "issue_detail": {
+              "description_html": "<p>zero is not</p>",
+              "description_json": {},
+              "id": "<uuid:12>",
+              "is_draft": false,
+              "name": "Last",
+              "priority": "high",
+              "sequence_id": 19,
+              "sort_order": 205535.0,
+              "start_date": null,
+              "target_date": null
+            },
+            "new_identifier": null,
+            "new_value": "<p>third</p>",
+            "old_identifier": null,
+            "old_value": "<p>hello world</p>",
+            "project": "<uuid:1>",
+            "project_detail": {
+              "cover_image": null,
+              "cover_image_url": null,
+              "description": "",
+              "id": "<uuid:1>",
+              "identifier": "JRN",
+              "logo_props": {
+                "emoji": {
+                  "value": "128512"
+                },
+                "in_use": "emoji"
+              },
+              "name": "Journey Project"
+            },
+            "source_data": null,
+            "updated_at": "<ts>",
+            "updated_by": null,
+            "verb": "updated",
+            "workspace": "<uuid:3>",
+            "workspace_detail": {
+              "id": "<uuid:3>",
+              "logo_url": null,
+              "name": "Journey Workspace",
+              "slug": "journey-ws"
+            }
+          },
+          {
+            "actor": "<uuid:8>",
+            "actor_detail": {
+              "avatar": "",
+              "avatar_url": null,
+              "display_name": "Journey T.",
+              "first_name": "Journey",
+              "id": "<uuid:8>",
+              "is_bot": false,
+              "last_name": "Tester"
+            },
+            "attachments": [],
+            "comment": "updated the name to",
+            "created_at": "<ts>",
+            "created_by": null,
+            "deleted_at": null,
+            "epoch": "<epoch>",
+            "field": "name",
+            "id": "<uuid:32>",
+            "issue": "<uuid:12>",
+            "issue_comment": null,
+            "issue_detail": {
+              "description_html": "<p>zero is not</p>",
+              "description_json": {},
+              "id": "<uuid:12>",
+              "is_draft": false,
+              "name": "Last",
+              "priority": "high",
+              "sequence_id": 19,
+              "sort_order": 205535.0,
+              "start_date": null,
+              "target_date": null
+            },
+            "new_identifier": null,
+            "new_value": "Last",
+            "old_identifier": null,
+            "old_value": "Between",
+            "project": "<uuid:1>",
+            "project_detail": {
+              "cover_image": null,
+              "cover_image_url": null,
+              "description": "",
+              "id": "<uuid:1>",
+              "identifier": "JRN",
+              "logo_props": {
+                "emoji": {
+                  "value": "128512"
+                },
+                "in_use": "emoji"
+              },
+              "name": "Journey Project"
+            },
+            "source_data": null,
+            "updated_at": "<ts>",
+            "updated_by": null,
+            "verb": "updated",
+            "workspace": "<uuid:3>",
+            "workspace_detail": {
+              "id": "<uuid:3>",
+              "logo_url": null,
+              "name": "Journey Workspace",
+              "slug": "journey-ws"
+            }
+          },
+          {
+            "actor": "<uuid:8>",
+            "actor_detail": {
+              "avatar": "",
+              "avatar_url": null,
+              "display_name": "Journey T.",
+              "first_name": "Journey",
+              "id": "<uuid:8>",
+              "is_bot": false,
+              "last_name": "Tester"
+            },
+            "attachments": [],
+            "comment": "updated the description to",
+            "created_at": "<ts>",
+            "created_by": null,
+            "deleted_at": null,
+            "epoch": "<epoch>",
+            "field": "description",
+            "id": "<uuid:33>",
+            "issue": "<uuid:12>",
+            "issue_comment": null,
+            "issue_detail": {
+              "description_html": "<p>zero is not</p>",
+              "description_json": {},
+              "id": "<uuid:12>",
+              "is_draft": false,
+              "name": "Last",
+              "priority": "high",
+              "sequence_id": 19,
+              "sort_order": 205535.0,
+              "start_date": null,
+              "target_date": null
+            },
+            "new_identifier": null,
+            "new_value": "<p>zero is not</p>",
+            "old_identifier": null,
+            "old_value": "<p>false is text</p>",
+            "project": "<uuid:1>",
+            "project_detail": {
+              "cover_image": null,
+              "cover_image_url": null,
+              "description": "",
+              "id": "<uuid:1>",
+              "identifier": "JRN",
+              "logo_props": {
+                "emoji": {
+                  "value": "128512"
+                },
+                "in_use": "emoji"
+              },
+              "name": "Journey Project"
+            },
+            "source_data": null,
+            "updated_at": "<ts>",
+            "updated_by": null,
+            "verb": "updated",
+            "workspace": "<uuid:3>",
+            "workspace_detail": {
+              "id": "<uuid:3>",
+              "logo_url": null,
+              "name": "Journey Workspace",
+              "slug": "journey-ws"
+            }
+          }
+        ],
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "everything made after a date long ago",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:12>/history/?activity_type=issue-property&created_at__gt=2001-01-01"
+      },
+      "response": {
+        "body": [
+          {
+            "actor": "<uuid:8>",
+            "actor_detail": {
+              "avatar": "",
+              "avatar_url": null,
+              "display_name": "Journey T.",
+              "first_name": "Journey",
+              "id": "<uuid:8>",
+              "is_bot": false,
+              "last_name": "Tester"
+            },
+            "attachments": [],
+            "comment": "created the issue",
+            "created_at": "<ts>",
+            "created_by": null,
+            "deleted_at": null,
+            "epoch": "<epoch>",
+            "field": null,
+            "id": "<uuid:14>",
+            "issue": "<uuid:12>",
+            "issue_comment": null,
+            "issue_detail": {
+              "description_html": "<p>zero is not</p>",
+              "description_json": {},
+              "id": "<uuid:12>",
+              "is_draft": false,
+              "name": "Last",
+              "priority": "high",
+              "sequence_id": 19,
+              "sort_order": 205535.0,
+              "start_date": null,
+              "target_date": null
+            },
+            "new_identifier": null,
+            "new_value": null,
+            "old_identifier": null,
+            "old_value": null,
+            "project": "<uuid:1>",
+            "project_detail": {
+              "cover_image": null,
+              "cover_image_url": null,
+              "description": "",
+              "id": "<uuid:1>",
+              "identifier": "JRN",
+              "logo_props": {
+                "emoji": {
+                  "value": "128512"
+                },
+                "in_use": "emoji"
+              },
+              "name": "Journey Project"
+            },
+            "source_data": null,
+            "updated_at": "<ts>",
+            "updated_by": null,
+            "verb": "created",
+            "workspace": "<uuid:3>",
+            "workspace_detail": {
+              "id": "<uuid:3>",
+              "logo_url": null,
+              "name": "Journey Workspace",
+              "slug": "journey-ws"
+            }
+          },
+          {
+            "actor": "<uuid:8>",
+            "actor_detail": {
+              "avatar": "",
+              "avatar_url": null,
+              "display_name": "Journey T.",
+              "first_name": "Journey",
+              "id": "<uuid:8>",
+              "is_bot": false,
+              "last_name": "Tester"
+            },
+            "attachments": [],
+            "comment": "added assignee ",
+            "created_at": "<ts>",
+            "created_by": null,
+            "deleted_at": null,
+            "epoch": "<epoch>",
+            "field": "assignees",
+            "id": "<uuid:15>",
+            "issue": "<uuid:12>",
+            "issue_comment": null,
+            "issue_detail": {
+              "description_html": "<p>zero is not</p>",
+              "description_json": {},
+              "id": "<uuid:12>",
+              "is_draft": false,
+              "name": "Last",
+              "priority": "high",
+              "sequence_id": 19,
+              "sort_order": 205535.0,
+              "start_date": null,
+              "target_date": null
+            },
+            "new_identifier": "<uuid:8>",
+            "new_value": "Journey T.",
+            "old_identifier": null,
+            "old_value": "",
+            "project": "<uuid:1>",
+            "project_detail": {
+              "cover_image": null,
+              "cover_image_url": null,
+              "description": "",
+              "id": "<uuid:1>",
+              "identifier": "JRN",
+              "logo_props": {
+                "emoji": {
+                  "value": "128512"
+                },
+                "in_use": "emoji"
+              },
+              "name": "Journey Project"
+            },
+            "source_data": null,
+            "updated_at": "<ts>",
+            "updated_by": null,
+            "verb": "updated",
+            "workspace": "<uuid:3>",
+            "workspace_detail": {
+              "id": "<uuid:3>",
+              "logo_url": null,
+              "name": "Journey Workspace",
+              "slug": "journey-ws"
+            }
+          },
+          {
+            "actor": "<uuid:8>",
+            "actor_detail": {
+              "avatar": "",
+              "avatar_url": null,
+              "display_name": "Journey T.",
+              "first_name": "Journey",
+              "id": "<uuid:8>",
+              "is_bot": false,
+              "last_name": "Tester"
+            },
+            "attachments": [],
+            "comment": "updated the name to",
+            "created_at": "<ts>",
+            "created_by": null,
+            "deleted_at": null,
+            "epoch": "<epoch>",
+            "field": "name",
+            "id": "<uuid:16>",
+            "issue": "<uuid:12>",
+            "issue_comment": null,
+            "issue_detail": {
+              "description_html": "<p>zero is not</p>",
+              "description_json": {},
+              "id": "<uuid:12>",
+              "is_draft": false,
+              "name": "Last",
+              "priority": "high",
+              "sequence_id": 19,
+              "sort_order": 205535.0,
+              "start_date": null,
+              "target_date": null
+            },
+            "new_identifier": null,
+            "new_value": "Renamed",
+            "old_identifier": null,
+            "old_value": "History",
+            "project": "<uuid:1>",
+            "project_detail": {
+              "cover_image": null,
+              "cover_image_url": null,
+              "description": "",
+              "id": "<uuid:1>",
+              "identifier": "JRN",
+              "logo_props": {
+                "emoji": {
+                  "value": "128512"
+                },
+                "in_use": "emoji"
+              },
+              "name": "Journey Project"
+            },
+            "source_data": null,
+            "updated_at": "<ts>",
+            "updated_by": null,
+            "verb": "updated",
+            "workspace": "<uuid:3>",
+            "workspace_detail": {
+              "id": "<uuid:3>",
+              "logo_url": null,
+              "name": "Journey Workspace",
+              "slug": "journey-ws"
+            }
+          },
+          {
+            "actor": "<uuid:8>",
+            "actor_detail": {
+              "avatar": "",
+              "avatar_url": null,
+              "display_name": "Journey T.",
+              "first_name": "Journey",
+              "id": "<uuid:8>",
+              "is_bot": false,
+              "last_name": "Tester"
+            },
+            "attachments": [],
+            "comment": "updated the name to",
+            "created_at": "<ts>",
+            "created_by": null,
+            "deleted_at": null,
+            "epoch": "<epoch>",
+            "field": "name",
+            "id": "<uuid:17>",
+            "issue": "<uuid:12>",
+            "issue_comment": null,
+            "issue_detail": {
+              "description_html": "<p>zero is not</p>",
+              "description_json": {},
+              "id": "<uuid:12>",
+              "is_draft": false,
+              "name": "Last",
+              "priority": "high",
+              "sequence_id": 19,
+              "sort_order": 205535.0,
+              "start_date": null,
+              "target_date": null
+            },
+            "new_identifier": null,
+            "new_value": "  Padded  ",
+            "old_identifier": null,
+            "old_value": "Renamed",
+            "project": "<uuid:1>",
+            "project_detail": {
+              "cover_image": null,
+              "cover_image_url": null,
+              "description": "",
+              "id": "<uuid:1>",
+              "identifier": "JRN",
+              "logo_props": {
+                "emoji": {
+                  "value": "128512"
+                },
+                "in_use": "emoji"
+              },
+              "name": "Journey Project"
+            },
+            "source_data": null,
+            "updated_at": "<ts>",
+            "updated_by": null,
+            "verb": "updated",
+            "workspace": "<uuid:3>",
+            "workspace_detail": {
+              "id": "<uuid:3>",
+              "logo_url": null,
+              "name": "Journey Workspace",
+              "slug": "journey-ws"
+            }
+          },
+          {
+            "actor": "<uuid:8>",
+            "actor_detail": {
+              "avatar": "",
+              "avatar_url": null,
+              "display_name": "Journey T.",
+              "first_name": "Journey",
+              "id": "<uuid:8>",
+              "is_bot": false,
+              "last_name": "Tester"
+            },
+            "attachments": [],
+            "comment": "updated the name to",
+            "created_at": "<ts>",
+            "created_by": null,
+            "deleted_at": null,
+            "epoch": "<epoch>",
+            "field": "name",
+            "id": "<uuid:18>",
+            "issue": "<uuid:12>",
+            "issue_comment": null,
+            "issue_detail": {
+              "description_html": "<p>zero is not</p>",
+              "description_json": {},
+              "id": "<uuid:12>",
+              "is_draft": false,
+              "name": "Last",
+              "priority": "high",
+              "sequence_id": 19,
+              "sort_order": 205535.0,
+              "start_date": null,
+              "target_date": null
+            },
+            "new_identifier": null,
+            "new_value": "Ordered",
+            "old_identifier": null,
+            "old_value": "Padded",
+            "project": "<uuid:1>",
+            "project_detail": {
+              "cover_image": null,
+              "cover_image_url": null,
+              "description": "",
+              "id": "<uuid:1>",
+              "identifier": "JRN",
+              "logo_props": {
+                "emoji": {
+                  "value": "128512"
+                },
+                "in_use": "emoji"
+              },
+              "name": "Journey Project"
+            },
+            "source_data": null,
+            "updated_at": "<ts>",
+            "updated_by": null,
+            "verb": "updated",
+            "workspace": "<uuid:3>",
+            "workspace_detail": {
+              "id": "<uuid:3>",
+              "logo_url": null,
+              "name": "Journey Workspace",
+              "slug": "journey-ws"
+            }
+          },
+          {
+            "actor": "<uuid:8>",
+            "actor_detail": {
+              "avatar": "",
+              "avatar_url": null,
+              "display_name": "Journey T.",
+              "first_name": "Journey",
+              "id": "<uuid:8>",
+              "is_bot": false,
+              "last_name": "Tester"
+            },
+            "attachments": [],
+            "comment": "updated the priority to",
+            "created_at": "<ts>",
+            "created_by": null,
+            "deleted_at": null,
+            "epoch": "<epoch>",
+            "field": "priority",
+            "id": "<uuid:19>",
+            "issue": "<uuid:12>",
+            "issue_comment": null,
+            "issue_detail": {
+              "description_html": "<p>zero is not</p>",
+              "description_json": {},
+              "id": "<uuid:12>",
+              "is_draft": false,
+              "name": "Last",
+              "priority": "high",
+              "sequence_id": 19,
+              "sort_order": 205535.0,
+              "start_date": null,
+              "target_date": null
+            },
+            "new_identifier": null,
+            "new_value": "high",
+            "old_identifier": null,
+            "old_value": "none",
+            "project": "<uuid:1>",
+            "project_detail": {
+              "cover_image": null,
+              "cover_image_url": null,
+              "description": "",
+              "id": "<uuid:1>",
+              "identifier": "JRN",
+              "logo_props": {
+                "emoji": {
+                  "value": "128512"
+                },
+                "in_use": "emoji"
+              },
+              "name": "Journey Project"
+            },
+            "source_data": null,
+            "updated_at": "<ts>",
+            "updated_by": null,
+            "verb": "updated",
+            "workspace": "<uuid:3>",
+            "workspace_detail": {
+              "id": "<uuid:3>",
+              "logo_url": null,
+              "name": "Journey Workspace",
+              "slug": "journey-ws"
+            }
+          },
+          {
+            "actor": "<uuid:8>",
+            "actor_detail": {
+              "avatar": "",
+              "avatar_url": null,
+              "display_name": "Journey T.",
+              "first_name": "Journey",
+              "id": "<uuid:8>",
+              "is_bot": false,
+              "last_name": "Tester"
+            },
+            "attachments": [],
+            "comment": "updated the state to",
+            "created_at": "<ts>",
+            "created_by": null,
+            "deleted_at": null,
+            "epoch": "<epoch>",
+            "field": "state",
+            "id": "<uuid:20>",
+            "issue": "<uuid:12>",
+            "issue_comment": null,
+            "issue_detail": {
+              "description_html": "<p>zero is not</p>",
+              "description_json": {},
+              "id": "<uuid:12>",
+              "is_draft": false,
+              "name": "Last",
+              "priority": "high",
+              "sequence_id": 19,
+              "sort_order": 205535.0,
+              "start_date": null,
+              "target_date": null
+            },
+            "new_identifier": "<uuid:6>",
+            "new_value": "Done",
+            "old_identifier": "<uuid:2>",
+            "old_value": "Backlog",
+            "project": "<uuid:1>",
+            "project_detail": {
+              "cover_image": null,
+              "cover_image_url": null,
+              "description": "",
+              "id": "<uuid:1>",
+              "identifier": "JRN",
+              "logo_props": {
+                "emoji": {
+                  "value": "128512"
+                },
+                "in_use": "emoji"
+              },
+              "name": "Journey Project"
+            },
+            "source_data": null,
+            "updated_at": "<ts>",
+            "updated_by": null,
+            "verb": "updated",
+            "workspace": "<uuid:3>",
+            "workspace_detail": {
+              "id": "<uuid:3>",
+              "logo_url": null,
+              "name": "Journey Workspace",
+              "slug": "journey-ws"
+            }
+          },
+          {
+            "actor": "<uuid:8>",
+            "actor_detail": {
+              "avatar": "",
+              "avatar_url": null,
+              "display_name": "Journey T.",
+              "first_name": "Journey",
+              "id": "<uuid:8>",
+              "is_bot": false,
+              "last_name": "Tester"
+            },
+            "attachments": [],
+            "comment": "updated the state to",
+            "created_at": "<ts>",
+            "created_by": null,
+            "deleted_at": null,
+            "epoch": "<epoch>",
+            "field": "state",
+            "id": "<uuid:21>",
+            "issue": "<uuid:12>",
+            "issue_comment": null,
+            "issue_detail": {
+              "description_html": "<p>zero is not</p>",
+              "description_json": {},
+              "id": "<uuid:12>",
+              "is_draft": false,
+              "name": "Last",
+              "priority": "high",
+              "sequence_id": 19,
+              "sort_order": 205535.0,
+              "start_date": null,
+              "target_date": null
+            },
+            "new_identifier": null,
+            "new_value": null,
+            "old_identifier": "<uuid:6>",
+            "old_value": "Done",
+            "project": "<uuid:1>",
+            "project_detail": {
+              "cover_image": null,
+              "cover_image_url": null,
+              "description": "",
+              "id": "<uuid:1>",
+              "identifier": "JRN",
+              "logo_props": {
+                "emoji": {
+                  "value": "128512"
+                },
+                "in_use": "emoji"
+              },
+              "name": "Journey Project"
+            },
+            "source_data": null,
+            "updated_at": "<ts>",
+            "updated_by": null,
+            "verb": "updated",
+            "workspace": "<uuid:3>",
+            "workspace_detail": {
+              "id": "<uuid:3>",
+              "logo_url": null,
+              "name": "Journey Workspace",
+              "slug": "journey-ws"
+            }
+          },
+          {
+            "actor": "<uuid:8>",
+            "actor_detail": {
+              "avatar": "",
+              "avatar_url": null,
+              "display_name": "Journey T.",
+              "first_name": "Journey",
+              "id": "<uuid:8>",
+              "is_bot": false,
+              "last_name": "Tester"
+            },
+            "attachments": [],
+            "comment": "updated the start date to ",
+            "created_at": "<ts>",
+            "created_by": null,
+            "deleted_at": null,
+            "epoch": "<epoch>",
+            "field": "start_date",
+            "id": "<uuid:22>",
+            "issue": "<uuid:12>",
+            "issue_comment": null,
+            "issue_detail": {
+              "description_html": "<p>zero is not</p>",
+              "description_json": {},
+              "id": "<uuid:12>",
+              "is_draft": false,
+              "name": "Last",
+              "priority": "high",
+              "sequence_id": 19,
+              "sort_order": 205535.0,
+              "start_date": null,
+              "target_date": null
+            },
+            "new_identifier": null,
+            "new_value": "2026-11-01",
+            "old_identifier": null,
+            "old_value": "",
+            "project": "<uuid:1>",
+            "project_detail": {
+              "cover_image": null,
+              "cover_image_url": null,
+              "description": "",
+              "id": "<uuid:1>",
+              "identifier": "JRN",
+              "logo_props": {
+                "emoji": {
+                  "value": "128512"
+                },
+                "in_use": "emoji"
+              },
+              "name": "Journey Project"
+            },
+            "source_data": null,
+            "updated_at": "<ts>",
+            "updated_by": null,
+            "verb": "updated",
+            "workspace": "<uuid:3>",
+            "workspace_detail": {
+              "id": "<uuid:3>",
+              "logo_url": null,
+              "name": "Journey Workspace",
+              "slug": "journey-ws"
+            }
+          },
+          {
+            "actor": "<uuid:8>",
+            "actor_detail": {
+              "avatar": "",
+              "avatar_url": null,
+              "display_name": "Journey T.",
+              "first_name": "Journey",
+              "id": "<uuid:8>",
+              "is_bot": false,
+              "last_name": "Tester"
+            },
+            "attachments": [],
+            "comment": "updated the target date to",
+            "created_at": "<ts>",
+            "created_by": null,
+            "deleted_at": null,
+            "epoch": "<epoch>",
+            "field": "target_date",
+            "id": "<uuid:23>",
+            "issue": "<uuid:12>",
+            "issue_comment": null,
+            "issue_detail": {
+              "description_html": "<p>zero is not</p>",
+              "description_json": {},
+              "id": "<uuid:12>",
+              "is_draft": false,
+              "name": "Last",
+              "priority": "high",
+              "sequence_id": 19,
+              "sort_order": 205535.0,
+              "start_date": null,
+              "target_date": null
+            },
+            "new_identifier": null,
+            "new_value": "2026-11-15",
+            "old_identifier": null,
+            "old_value": "",
+            "project": "<uuid:1>",
+            "project_detail": {
+              "cover_image": null,
+              "cover_image_url": null,
+              "description": "",
+              "id": "<uuid:1>",
+              "identifier": "JRN",
+              "logo_props": {
+                "emoji": {
+                  "value": "128512"
+                },
+                "in_use": "emoji"
+              },
+              "name": "Journey Project"
+            },
+            "source_data": null,
+            "updated_at": "<ts>",
+            "updated_by": null,
+            "verb": "updated",
+            "workspace": "<uuid:3>",
+            "workspace_detail": {
+              "id": "<uuid:3>",
+              "logo_url": null,
+              "name": "Journey Workspace",
+              "slug": "journey-ws"
+            }
+          },
+          {
+            "actor": "<uuid:8>",
+            "actor_detail": {
+              "avatar": "",
+              "avatar_url": null,
+              "display_name": "Journey T.",
+              "first_name": "Journey",
+              "id": "<uuid:8>",
+              "is_bot": false,
+              "last_name": "Tester"
+            },
+            "attachments": [],
+            "comment": "updated the target date to",
+            "created_at": "<ts>",
+            "created_by": null,
+            "deleted_at": null,
+            "epoch": "<epoch>",
+            "field": "target_date",
+            "id": "<uuid:24>",
+            "issue": "<uuid:12>",
+            "issue_comment": null,
+            "issue_detail": {
+              "description_html": "<p>zero is not</p>",
+              "description_json": {},
+              "id": "<uuid:12>",
+              "is_draft": false,
+              "name": "Last",
+              "priority": "high",
+              "sequence_id": 19,
+              "sort_order": 205535.0,
+              "start_date": null,
+              "target_date": null
+            },
+            "new_identifier": null,
+            "new_value": "20261115",
+            "old_identifier": null,
+            "old_value": "2026-11-15",
+            "project": "<uuid:1>",
+            "project_detail": {
+              "cover_image": null,
+              "cover_image_url": null,
+              "description": "",
+              "id": "<uuid:1>",
+              "identifier": "JRN",
+              "logo_props": {
+                "emoji": {
+                  "value": "128512"
+                },
+                "in_use": "emoji"
+              },
+              "name": "Journey Project"
+            },
+            "source_data": null,
+            "updated_at": "<ts>",
+            "updated_by": null,
+            "verb": "updated",
+            "workspace": "<uuid:3>",
+            "workspace_detail": {
+              "id": "<uuid:3>",
+              "logo_url": null,
+              "name": "Journey Workspace",
+              "slug": "journey-ws"
+            }
+          },
+          {
+            "actor": "<uuid:8>",
+            "actor_detail": {
+              "avatar": "",
+              "avatar_url": null,
+              "display_name": "Journey T.",
+              "first_name": "Journey",
+              "id": "<uuid:8>",
+              "is_bot": false,
+              "last_name": "Tester"
+            },
+            "attachments": [],
+            "comment": "updated the start date to ",
+            "created_at": "<ts>",
+            "created_by": null,
+            "deleted_at": null,
+            "epoch": "<epoch>",
+            "field": "start_date",
+            "id": "<uuid:25>",
+            "issue": "<uuid:12>",
+            "issue_comment": null,
+            "issue_detail": {
+              "description_html": "<p>zero is not</p>",
+              "description_json": {},
+              "id": "<uuid:12>",
+              "is_draft": false,
+              "name": "Last",
+              "priority": "high",
+              "sequence_id": 19,
+              "sort_order": 205535.0,
+              "start_date": null,
+              "target_date": null
+            },
+            "new_identifier": null,
+            "new_value": "",
+            "old_identifier": null,
+            "old_value": "2026-11-01",
+            "project": "<uuid:1>",
+            "project_detail": {
+              "cover_image": null,
+              "cover_image_url": null,
+              "description": "",
+              "id": "<uuid:1>",
+              "identifier": "JRN",
+              "logo_props": {
+                "emoji": {
+                  "value": "128512"
+                },
+                "in_use": "emoji"
+              },
+              "name": "Journey Project"
+            },
+            "source_data": null,
+            "updated_at": "<ts>",
+            "updated_by": null,
+            "verb": "updated",
+            "workspace": "<uuid:3>",
+            "workspace_detail": {
+              "id": "<uuid:3>",
+              "logo_url": null,
+              "name": "Journey Workspace",
+              "slug": "journey-ws"
+            }
+          },
+          {
+            "actor": "<uuid:8>",
+            "actor_detail": {
+              "avatar": "",
+              "avatar_url": null,
+              "display_name": "Journey T.",
+              "first_name": "Journey",
+              "id": "<uuid:8>",
+              "is_bot": false,
+              "last_name": "Tester"
+            },
+            "attachments": [],
+            "comment": "updated the target date to",
+            "created_at": "<ts>",
+            "created_by": null,
+            "deleted_at": null,
+            "epoch": "<epoch>",
+            "field": "target_date",
+            "id": "<uuid:26>",
+            "issue": "<uuid:12>",
+            "issue_comment": null,
+            "issue_detail": {
+              "description_html": "<p>zero is not</p>",
+              "description_json": {},
+              "id": "<uuid:12>",
+              "is_draft": false,
+              "name": "Last",
+              "priority": "high",
+              "sequence_id": 19,
+              "sort_order": 205535.0,
+              "start_date": null,
+              "target_date": null
+            },
+            "new_identifier": null,
+            "new_value": "",
+            "old_identifier": null,
+            "old_value": "2026-11-15",
+            "project": "<uuid:1>",
+            "project_detail": {
+              "cover_image": null,
+              "cover_image_url": null,
+              "description": "",
+              "id": "<uuid:1>",
+              "identifier": "JRN",
+              "logo_props": {
+                "emoji": {
+                  "value": "128512"
+                },
+                "in_use": "emoji"
+              },
+              "name": "Journey Project"
+            },
+            "source_data": null,
+            "updated_at": "<ts>",
+            "updated_by": null,
+            "verb": "updated",
+            "workspace": "<uuid:3>",
+            "workspace_detail": {
+              "id": "<uuid:3>",
+              "logo_url": null,
+              "name": "Journey Workspace",
+              "slug": "journey-ws"
+            }
+          },
+          {
+            "actor": "<uuid:8>",
+            "actor_detail": {
+              "avatar": "",
+              "avatar_url": null,
+              "display_name": "Journey T.",
+              "first_name": "Journey",
+              "id": "<uuid:8>",
+              "is_bot": false,
+              "last_name": "Tester"
+            },
+            "attachments": [],
+            "comment": "removed assignee ",
+            "created_at": "<ts>",
+            "created_by": null,
+            "deleted_at": null,
+            "epoch": "<epoch>",
+            "field": "assignees",
+            "id": "<uuid:27>",
+            "issue": "<uuid:12>",
+            "issue_comment": null,
+            "issue_detail": {
+              "description_html": "<p>zero is not</p>",
+              "description_json": {},
+              "id": "<uuid:12>",
+              "is_draft": false,
+              "name": "Last",
+              "priority": "high",
+              "sequence_id": 19,
+              "sort_order": 205535.0,
+              "start_date": null,
+              "target_date": null
+            },
+            "new_identifier": null,
+            "new_value": "",
+            "old_identifier": "<uuid:8>",
+            "old_value": "Journey T.",
+            "project": "<uuid:1>",
+            "project_detail": {
+              "cover_image": null,
+              "cover_image_url": null,
+              "description": "",
+              "id": "<uuid:1>",
+              "identifier": "JRN",
+              "logo_props": {
+                "emoji": {
+                  "value": "128512"
+                },
+                "in_use": "emoji"
+              },
+              "name": "Journey Project"
+            },
+            "source_data": null,
+            "updated_at": "<ts>",
+            "updated_by": null,
+            "verb": "updated",
+            "workspace": "<uuid:3>",
+            "workspace_detail": {
+              "id": "<uuid:3>",
+              "logo_url": null,
+              "name": "Journey Workspace",
+              "slug": "journey-ws"
+            }
+          },
+          {
+            "actor": "<uuid:8>",
+            "actor_detail": {
+              "avatar": "",
+              "avatar_url": null,
+              "display_name": "Journey T.",
+              "first_name": "Journey",
+              "id": "<uuid:8>",
+              "is_bot": false,
+              "last_name": "Tester"
+            },
+            "attachments": [],
+            "comment": "added assignee ",
+            "created_at": "<ts>",
+            "created_by": null,
+            "deleted_at": null,
+            "epoch": "<epoch>",
+            "field": "assignees",
+            "id": "<uuid:28>",
+            "issue": "<uuid:12>",
+            "issue_comment": null,
+            "issue_detail": {
+              "description_html": "<p>zero is not</p>",
+              "description_json": {},
+              "id": "<uuid:12>",
+              "is_draft": false,
+              "name": "Last",
+              "priority": "high",
+              "sequence_id": 19,
+              "sort_order": 205535.0,
+              "start_date": null,
+              "target_date": null
+            },
+            "new_identifier": "<uuid:10>",
+            "new_value": "second",
+            "old_identifier": null,
+            "old_value": "",
+            "project": "<uuid:1>",
+            "project_detail": {
+              "cover_image": null,
+              "cover_image_url": null,
+              "description": "",
+              "id": "<uuid:1>",
+              "identifier": "JRN",
+              "logo_props": {
+                "emoji": {
+                  "value": "128512"
+                },
+                "in_use": "emoji"
+              },
+              "name": "Journey Project"
+            },
+            "source_data": null,
+            "updated_at": "<ts>",
+            "updated_by": null,
+            "verb": "updated",
+            "workspace": "<uuid:3>",
+            "workspace_detail": {
+              "id": "<uuid:3>",
+              "logo_url": null,
+              "name": "Journey Workspace",
+              "slug": "journey-ws"
+            }
+          },
+          {
+            "actor": "<uuid:8>",
+            "actor_detail": {
+              "avatar": "",
+              "avatar_url": null,
+              "display_name": "Journey T.",
+              "first_name": "Journey",
+              "id": "<uuid:8>",
+              "is_bot": false,
+              "last_name": "Tester"
+            },
+            "attachments": [],
+            "comment": "updated the description to",
+            "created_at": "<ts>",
+            "created_by": null,
+            "deleted_at": null,
+            "epoch": "<epoch>",
+            "field": "description",
+            "id": "<uuid:29>",
+            "issue": "<uuid:12>",
+            "issue_comment": null,
+            "issue_detail": {
+              "description_html": "<p>zero is not</p>",
+              "description_json": {},
+              "id": "<uuid:12>",
+              "is_draft": false,
+              "name": "Last",
+              "priority": "high",
+              "sequence_id": 19,
+              "sort_order": 205535.0,
+              "start_date": null,
+              "target_date": null
+            },
+            "new_identifier": null,
+            "new_value": "<p>hello</p>",
+            "old_identifier": null,
+            "old_value": "<p></p>",
+            "project": "<uuid:1>",
+            "project_detail": {
+              "cover_image": null,
+              "cover_image_url": null,
+              "description": "",
+              "id": "<uuid:1>",
+              "identifier": "JRN",
+              "logo_props": {
+                "emoji": {
+                  "value": "128512"
+                },
+                "in_use": "emoji"
+              },
+              "name": "Journey Project"
+            },
+            "source_data": null,
+            "updated_at": "<ts>",
+            "updated_by": null,
+            "verb": "updated",
+            "workspace": "<uuid:3>",
+            "workspace_detail": {
+              "id": "<uuid:3>",
+              "logo_url": null,
+              "name": "Journey Workspace",
+              "slug": "journey-ws"
+            }
+          },
+          {
+            "actor": "<uuid:8>",
+            "actor_detail": {
+              "avatar": "",
+              "avatar_url": null,
+              "display_name": "Journey T.",
+              "first_name": "Journey",
+              "id": "<uuid:8>",
+              "is_bot": false,
+              "last_name": "Tester"
+            },
+            "attachments": [],
+            "comment": "updated the name to",
+            "created_at": "<ts>",
+            "created_by": null,
+            "deleted_at": null,
+            "epoch": "<epoch>",
+            "field": "name",
+            "id": "<uuid:30>",
+            "issue": "<uuid:12>",
+            "issue_comment": null,
+            "issue_detail": {
+              "description_html": "<p>zero is not</p>",
+              "description_json": {},
+              "id": "<uuid:12>",
+              "is_draft": false,
+              "name": "Last",
+              "priority": "high",
+              "sequence_id": 19,
+              "sort_order": 205535.0,
+              "start_date": null,
+              "target_date": null
+            },
+            "new_identifier": null,
+            "new_value": "Between",
+            "old_identifier": null,
+            "old_value": "Ordered",
+            "project": "<uuid:1>",
+            "project_detail": {
+              "cover_image": null,
+              "cover_image_url": null,
+              "description": "",
+              "id": "<uuid:1>",
+              "identifier": "JRN",
+              "logo_props": {
+                "emoji": {
+                  "value": "128512"
+                },
+                "in_use": "emoji"
+              },
+              "name": "Journey Project"
+            },
+            "source_data": null,
+            "updated_at": "<ts>",
+            "updated_by": null,
+            "verb": "updated",
+            "workspace": "<uuid:3>",
+            "workspace_detail": {
+              "id": "<uuid:3>",
+              "logo_url": null,
+              "name": "Journey Workspace",
+              "slug": "journey-ws"
+            }
+          },
+          {
+            "actor": "<uuid:8>",
+            "actor_detail": {
+              "avatar": "",
+              "avatar_url": null,
+              "display_name": "Journey T.",
+              "first_name": "Journey",
+              "id": "<uuid:8>",
+              "is_bot": false,
+              "last_name": "Tester"
+            },
+            "attachments": [],
+            "comment": "updated the description to",
+            "created_at": "<ts>",
+            "created_by": null,
+            "deleted_at": null,
+            "epoch": "<epoch>",
+            "field": "description",
+            "id": "<uuid:31>",
+            "issue": "<uuid:12>",
+            "issue_comment": null,
+            "issue_detail": {
+              "description_html": "<p>zero is not</p>",
+              "description_json": {},
+              "id": "<uuid:12>",
+              "is_draft": false,
+              "name": "Last",
+              "priority": "high",
+              "sequence_id": 19,
+              "sort_order": 205535.0,
+              "start_date": null,
+              "target_date": null
+            },
+            "new_identifier": null,
+            "new_value": "<p>third</p>",
+            "old_identifier": null,
+            "old_value": "<p>hello world</p>",
+            "project": "<uuid:1>",
+            "project_detail": {
+              "cover_image": null,
+              "cover_image_url": null,
+              "description": "",
+              "id": "<uuid:1>",
+              "identifier": "JRN",
+              "logo_props": {
+                "emoji": {
+                  "value": "128512"
+                },
+                "in_use": "emoji"
+              },
+              "name": "Journey Project"
+            },
+            "source_data": null,
+            "updated_at": "<ts>",
+            "updated_by": null,
+            "verb": "updated",
+            "workspace": "<uuid:3>",
+            "workspace_detail": {
+              "id": "<uuid:3>",
+              "logo_url": null,
+              "name": "Journey Workspace",
+              "slug": "journey-ws"
+            }
+          },
+          {
+            "actor": "<uuid:8>",
+            "actor_detail": {
+              "avatar": "",
+              "avatar_url": null,
+              "display_name": "Journey T.",
+              "first_name": "Journey",
+              "id": "<uuid:8>",
+              "is_bot": false,
+              "last_name": "Tester"
+            },
+            "attachments": [],
+            "comment": "updated the name to",
+            "created_at": "<ts>",
+            "created_by": null,
+            "deleted_at": null,
+            "epoch": "<epoch>",
+            "field": "name",
+            "id": "<uuid:32>",
+            "issue": "<uuid:12>",
+            "issue_comment": null,
+            "issue_detail": {
+              "description_html": "<p>zero is not</p>",
+              "description_json": {},
+              "id": "<uuid:12>",
+              "is_draft": false,
+              "name": "Last",
+              "priority": "high",
+              "sequence_id": 19,
+              "sort_order": 205535.0,
+              "start_date": null,
+              "target_date": null
+            },
+            "new_identifier": null,
+            "new_value": "Last",
+            "old_identifier": null,
+            "old_value": "Between",
+            "project": "<uuid:1>",
+            "project_detail": {
+              "cover_image": null,
+              "cover_image_url": null,
+              "description": "",
+              "id": "<uuid:1>",
+              "identifier": "JRN",
+              "logo_props": {
+                "emoji": {
+                  "value": "128512"
+                },
+                "in_use": "emoji"
+              },
+              "name": "Journey Project"
+            },
+            "source_data": null,
+            "updated_at": "<ts>",
+            "updated_by": null,
+            "verb": "updated",
+            "workspace": "<uuid:3>",
+            "workspace_detail": {
+              "id": "<uuid:3>",
+              "logo_url": null,
+              "name": "Journey Workspace",
+              "slug": "journey-ws"
+            }
+          },
+          {
+            "actor": "<uuid:8>",
+            "actor_detail": {
+              "avatar": "",
+              "avatar_url": null,
+              "display_name": "Journey T.",
+              "first_name": "Journey",
+              "id": "<uuid:8>",
+              "is_bot": false,
+              "last_name": "Tester"
+            },
+            "attachments": [],
+            "comment": "updated the description to",
+            "created_at": "<ts>",
+            "created_by": null,
+            "deleted_at": null,
+            "epoch": "<epoch>",
+            "field": "description",
+            "id": "<uuid:33>",
+            "issue": "<uuid:12>",
+            "issue_comment": null,
+            "issue_detail": {
+              "description_html": "<p>zero is not</p>",
+              "description_json": {},
+              "id": "<uuid:12>",
+              "is_draft": false,
+              "name": "Last",
+              "priority": "high",
+              "sequence_id": 19,
+              "sort_order": 205535.0,
+              "start_date": null,
+              "target_date": null
+            },
+            "new_identifier": null,
+            "new_value": "<p>zero is not</p>",
+            "old_identifier": null,
+            "old_value": "<p>false is text</p>",
+            "project": "<uuid:1>",
+            "project_detail": {
+              "cover_image": null,
+              "cover_image_url": null,
+              "description": "",
+              "id": "<uuid:1>",
+              "identifier": "JRN",
+              "logo_props": {
+                "emoji": {
+                  "value": "128512"
+                },
+                "in_use": "emoji"
+              },
+              "name": "Journey Project"
+            },
+            "source_data": null,
+            "updated_at": "<ts>",
+            "updated_by": null,
+            "verb": "updated",
+            "workspace": "<uuid:3>",
+            "workspace_detail": {
+              "id": "<uuid:3>",
+              "logo_url": null,
+              "name": "Journey Workspace",
+              "slug": "journey-ws"
+            }
+          }
+        ],
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "everything made after a date far ahead",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:12>/history/?activity_type=issue-property&created_at__gt=2099-01-01"
+      },
+      "response": {
+        "body": [],
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "after a time that is not one",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:12>/history/?activity_type=issue-property&created_at__gt=nonsense"
+      },
+      "response": {
+        "body": {
+          "error": "Please provide valid detail"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "after an empty time",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:12>/history/?activity_type=issue-property&created_at__gt="
+      },
+      "response": {
+        "body": {
+          "error": "Please provide valid detail"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "the comments after a date far ahead",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:12>/history/?activity_type=issue-comment&created_at__gt=2099-01-01"
+      },
+      "response": {
+        "body": [],
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "sub work items: no session",
+      "request": {
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:12>/sub-issues/"
+      },
+      "response": {
+        "body": {
+          "detail": "Authentication credentials were not provided."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 401
+      }
+    },
+    {
+      "name": "sub work items: not a member of the workspace",
+      "request": {
+        "as": "second@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:12>/sub-issues/"
+      },
+      "response": {
+        "body": {
+          "detail": "You do not have permission to perform this action."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 403
+      }
+    },
+    {
+      "name": "sub work items: a project that does not exist",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:13>/issues/<uuid:12>/sub-issues/"
+      },
+      "response": {
+        "body": {
+          "detail": "You do not have permission to perform this action."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 403
+      }
+    },
+    {
+      "name": "sub work items: an id that is not an id",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/nope/sub-issues/"
+      },
+      "response": {
+        "body": {
+          "error": "Page not found."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 404
+      }
+    },
+    {
+      "name": "the sub work items of a work item",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:12>/sub-issues/"
+      },
+      "response": {
+        "body": {
+          "state_distribution": {},
+          "sub_issues": []
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "the sub work items of one that does not exist",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:13>/sub-issues/"
+      },
+      "response": {
+        "body": {
+          "state_distribution": {},
+          "sub_issues": []
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "relations: no session",
+      "request": {
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:12>/issue-relation/"
+      },
+      "response": {
+        "body": {
+          "detail": "Authentication credentials were not provided."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 401
+      }
+    },
+    {
+      "name": "relations: not a member of the workspace",
+      "request": {
+        "as": "second@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:12>/issue-relation/"
+      },
+      "response": {
+        "body": {
+          "detail": "You do not have permission to perform this action."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 403
+      }
+    },
+    {
+      "name": "relations: a project that does not exist",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:13>/issues/<uuid:12>/issue-relation/"
+      },
+      "response": {
+        "body": {
+          "detail": "You do not have permission to perform this action."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 403
+      }
+    },
+    {
+      "name": "relations: an id that is not an id",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/nope/issue-relation/"
+      },
+      "response": {
+        "body": {
+          "error": "Page not found."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 404
+      }
+    },
+    {
+      "name": "the relations of a work item",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:12>/issue-relation/"
+      },
+      "response": {
+        "body": {
+          "blocked_by": [],
+          "blocking": [],
+          "duplicate": [],
+          "finish_after": [],
+          "finish_before": [],
+          "relates_to": [],
+          "start_after": [],
+          "start_before": []
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "the relations of one that does not exist",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/<uuid:13>/issue-relation/"
+      },
+      "response": {
+        "body": {
+          "error": "Issue not found"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 404
+      }
+    }
+  ],
+  "format_version": 1,
+  "recorded_from": "ba85d4d3d3",
+  "row": "X02",
+  "uses": [
+    "project"
+  ]
+}

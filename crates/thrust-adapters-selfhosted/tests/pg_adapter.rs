@@ -2194,3 +2194,712 @@ async fn outbox_is_atomic_with_the_entity_and_dispatch_is_recorded() {
     assert!(!env.db.insert_activity(&sys, &again).await.unwrap(), "redelivery must not insert");
     assert_eq!(env.db.list_activity(&s, Some(w.id)).await.unwrap().len(), 1);
 }
+
+// ---------------------------------------------------------------------------------------------------------------------------------
+// Issue #44, stage 6b: a work item's history (migration 0014) and the update of a work item. The generated sequences in `model` hold the
+// adapter to the reference model; these are the examples a model that sees only the port cannot state: the table's shape and what its
+// constraints refuse, the upgrade of a database that has data, the order of rows in the one second they tie, an all-or-nothing batch
+// counted in the table itself, deliveries that race, and the rows an update leaves in the join tables.
+// ---------------------------------------------------------------------------------------------------------------------------------
+
+/// A workspace and project of its own, an owner who is a user, and `n` live work items of the project: what a history row can name.
+async fn tenant_with_items(env: &Env, tag: &str, n: usize) -> (Scope, UserId, Vec<WorkItemId>) {
+    let owner = user_without_login(env).await;
+    let w = workspace_for(owner, tag);
+    env.db.insert_workspace(&w).await.unwrap();
+    let ws = w.workspace.id;
+    let new_project = project_for(ws, owner, tag, "HIS");
+    env.db.insert_project(&WorkspaceScope::mint(ws, owner, Role::Admin), &new_project).await.unwrap();
+    let s = Scope::mint(ws, new_project.project.id, owner);
+    let mut ids = Vec::new();
+    for i in 0..n {
+        let mut tx = env.db.begin(&s).await.unwrap();
+        let a = tx.allocate(&s).await.unwrap();
+        let w = item(ws, s.project_id(), a, &format!("item {i}"), None);
+        tx.insert_work_item(&s, &w).await.unwrap();
+        tx.commit().await.unwrap();
+        ids.push(w.id);
+    }
+    (s, owner, ids)
+}
+
+fn at(secs: i64) -> Timestamp {
+    Utc.timestamp_opt(1_800_000_000 + secs, 0).unwrap()
+}
+
+/// A history row of the tenant `s` for `item`, in event `event` at place `ordinal`, made `secs` after one time.
+fn hrow(s: &Scope, item: WorkItemId, event: Uuid, ordinal: i32, secs: i64, actor: Option<UserId>) -> WorkItemActivity {
+    WorkItemActivity {
+        id: ActivityId(new_id()),
+        event_id: EventId(event),
+        ordinal,
+        workspace_id: s.workspace_id(),
+        project_id: s.project_id(),
+        work_item_id: item,
+        actor_id: actor,
+        verb: "updated".into(),
+        field: Some("name".into()),
+        old_value: Some("old".into()),
+        new_value: Some("new".into()),
+        comment: "updated the name to".into(),
+        old_identifier: None,
+        new_identifier: None,
+        epoch: 1_800_000_000 + secs,
+        created_at: at(secs),
+    }
+}
+
+/// How many rows of history the table holds for these work items.
+async fn history_rows(env: &Env, items: &[WorkItemId]) -> i64 {
+    let raw = env.conn.raw().await.unwrap();
+    let ids: Vec<Uuid> = items.iter().map(|i| i.0).collect();
+    raw.query_one("SELECT count(*) FROM work_item_activities WHERE work_item_id = ANY($1)", &[&ids])
+        .await
+        .unwrap()
+        .get(0)
+}
+
+/// The SQLSTATE and the constraint a statement that fails names.
+async fn refusal(
+    raw: &tokio_postgres::Client,
+    sql: &str,
+    params: &[&(dyn tokio_postgres::types::ToSql + Sync)],
+) -> (String, Option<String>) {
+    let e = raw.execute(sql, params).await.expect_err("the statement was refused");
+    let db = e.as_db_error().expect("a database error");
+    (db.code().code().to_string(), db.constraint().map(str::to_string))
+}
+
+/// A database created before migration 0014 has work items and no history. `migrate` makes the table, empty, and applying it again
+/// changes nothing: the rows written in between are there as they were, in the order they were written, and the table's constraints
+/// are not added a second time. A pinned regression for the upgrade path of a database that has data, as 0013's.
+#[tokio::test]
+async fn migration_0014_adds_the_history_table_to_a_database_that_has_work_items_and_a_second_run_changes_nothing() {
+    let container = Postgres::default().start().await.expect("start postgres container");
+    let port = container.get_host_port_ipv4(5432).await.expect("mapped port");
+    let url = format!("postgres://postgres:postgres@127.0.0.1:{port}/postgres");
+    let conn = Arc::new(PoolConnector::from_url(&url, 4).unwrap());
+    let raw = conn.raw().await.unwrap();
+    for sql in [
+        thrust_adapters_postgres::MIGRATION_0001,
+        thrust_adapters_postgres::MIGRATION_0002,
+        thrust_adapters_postgres::MIGRATION_0003,
+        thrust_adapters_postgres::MIGRATION_0004,
+        thrust_adapters_postgres::MIGRATION_0005,
+        thrust_adapters_postgres::MIGRATION_0006,
+        thrust_adapters_postgres::MIGRATION_0007,
+        thrust_adapters_postgres::MIGRATION_0008,
+        thrust_adapters_postgres::MIGRATION_0009,
+        thrust_adapters_postgres::MIGRATION_0010,
+        thrust_adapters_postgres::MIGRATION_0011,
+        thrust_adapters_postgres::MIGRATION_0012,
+        thrust_adapters_postgres::MIGRATION_0013,
+    ] {
+        raw.batch_execute(sql).await.unwrap();
+    }
+    let (ws, project, user, item) = (new_id(), new_id(), new_id(), new_id());
+    raw.execute("INSERT INTO users (id) VALUES ($1)", &[&user]).await.unwrap();
+    raw.execute("INSERT INTO workspaces (id, slug, name) VALUES ($1, 'legacy-history', 'Legacy')", &[&ws])
+        .await
+        .unwrap();
+    raw.execute("INSERT INTO workspace_members (workspace_id, user_id) VALUES ($1, $2)", &[&ws, &user]).await.unwrap();
+    raw.execute(
+        "INSERT INTO projects (id, workspace_id, name, identifier) VALUES ($1, $2, 'Legacy project', 'LEG')",
+        &[&project, &ws],
+    )
+    .await
+    .unwrap();
+    raw.execute(
+        "INSERT INTO project_members (project_id, workspace_id, user_id, role) VALUES ($1, $2, $3, 'member')",
+        &[&project, &ws, &user],
+    )
+    .await
+    .unwrap();
+    let made = Utc.timestamp_opt(1_700_000_000, 0).unwrap();
+    raw.execute(
+        "INSERT INTO work_items (id, workspace_id, project_id, sequence_id, sort_order, name, created_by, created_at) VALUES ($1, $2, $3, 1, 10000, 'Legacy item', $4, $5)",
+        &[&item, &ws, &project, &user, &made],
+    )
+    .await
+    .unwrap();
+    assert!(
+        raw.query_one("SELECT to_regclass('work_item_activities')::text", &[])
+            .await
+            .unwrap()
+            .get::<_, Option<String>>(0)
+            .is_none(),
+        "no history table yet"
+    );
+
+    thrust_adapters_postgres::migrate(&raw).await.unwrap();
+    async fn rows(raw: &tokio_postgres::Client) -> Vec<String> {
+        let rows = raw.query("SELECT seq, id::text, event_id::text, ordinal, created_at::text FROM work_item_activities ORDER BY seq", &[]).await.unwrap();
+        rows.iter()
+            .map(|r| {
+                format!(
+                    "{}|{}|{}|{}|{}",
+                    r.get::<_, i64>(0),
+                    r.get::<_, String>(1),
+                    r.get::<_, String>(2),
+                    r.get::<_, i32>(3),
+                    r.get::<_, String>(4)
+                )
+            })
+            .collect()
+    }
+    assert_eq!(rows(&raw).await, Vec::<String>::new(), "made empty");
+    drop(raw);
+
+    let db = PgDatabase::new(conn.clone());
+    let s = Scope::mint(WorkspaceId(ws), ProjectId(project), UserId(user));
+    let event = new_id();
+    let (first, second) =
+        (hrow(&s, WorkItemId(item), event, 0, 7, Some(UserId(user))), hrow(&s, WorkItemId(item), event, 1, 3, None));
+    assert_eq!(
+        db.insert_work_item_activities(&SystemScope::mint(), &[first.clone(), second.clone()]).await.unwrap(),
+        2
+    );
+    let raw = conn.raw().await.unwrap();
+    let written = rows(&raw).await;
+    assert_eq!(written.len(), 2);
+    thrust_adapters_postgres::migrate(&raw).await.unwrap();
+    thrust_adapters_postgres::migrate(&raw).await.unwrap();
+    assert_eq!(rows(&raw).await, written, "a second run changed the rows");
+    let kinds = raw
+        .query(
+            "SELECT contype::text, count(*) FROM pg_constraint WHERE conrelid = 'work_item_activities'::regclass AND contype IN ('p', 'u', 'f') GROUP BY contype ORDER BY contype",
+            &[],
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        kinds.iter().map(|r| (r.get::<_, String>(0), r.get::<_, i64>(1))).collect::<Vec<_>>(),
+        [("f".into(), 3), ("p".into(), 1), ("u".into(), 1)],
+        "a second run added a constraint"
+    );
+    drop(raw);
+    // read back through the adapter: the later time is the later row
+    assert_eq!(db.work_item_history(&s, WorkItemId(item), None).await.unwrap(), vec![second, first]);
+}
+
+/// The history table's columns are written out, so a column added later has to be argued for, and the constraints that keep a row well
+/// formed are exercised: a key of event and place that is unique (and an id), a work item, an actor and a project that exist, columns that
+/// cannot be missing, and an order of writing that cannot be given.
+#[tokio::test]
+async fn the_history_table_has_the_columns_it_says_and_the_constraints_that_keep_a_row_well_formed() {
+    let env = env().await;
+    let raw = env.conn.raw().await.unwrap();
+    let q = |sql: &'static str| {
+        let raw = &raw;
+        async move {
+            raw.query(sql, &[])
+                .await
+                .unwrap()
+                .iter()
+                .map(|r| (r.get::<_, String>(0), r.get::<_, String>(1)))
+                .collect::<Vec<_>>()
+        }
+    };
+    let pairs = |v: Vec<(&str, &str)>| v.into_iter().map(|(n, t)| (n.to_string(), t.to_string())).collect::<Vec<_>>();
+    let (ts, text, uuid, bigint, int) = ("timestamp with time zone", "text", "uuid", "bigint", "integer");
+    assert_eq!(
+        q("SELECT column_name::text, data_type::text FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'work_item_activities' ORDER BY column_name").await,
+        pairs(vec![
+            ("actor_id", uuid),
+            ("comment", text),
+            ("created_at", ts),
+            ("epoch", bigint),
+            ("event_id", uuid),
+            ("field", text),
+            ("id", uuid),
+            ("new_identifier", uuid),
+            ("new_value", text),
+            ("old_identifier", uuid),
+            ("old_value", text),
+            ("ordinal", int),
+            ("project_id", uuid),
+            ("seq", bigint),
+            ("verb", text),
+            ("work_item_id", uuid),
+            ("workspace_id", uuid),
+        ])
+    );
+    // what may be missing: the actor, what changed and its two values and identifiers; the rest may not
+    let mut nullable = q("SELECT column_name::text, is_nullable::text FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'work_item_activities' AND is_nullable = 'YES'").await;
+    nullable.sort();
+    assert_eq!(
+        nullable,
+        pairs(vec![
+            ("actor_id", "YES"),
+            ("field", "YES"),
+            ("new_identifier", "YES"),
+            ("new_value", "YES"),
+            ("old_identifier", "YES"),
+            ("old_value", "YES")
+        ])
+    );
+    // the order of writing is the database's: `seq` is generated, and cannot be given
+    assert_eq!(
+        q("SELECT is_identity::text, identity_generation::text FROM information_schema.columns WHERE table_name = 'work_item_activities' AND column_name = 'seq'").await,
+        pairs(vec![("YES", "ALWAYS")])
+    );
+    let mut constraints = q("SELECT contype::text, pg_get_constraintdef(oid)::text FROM pg_constraint WHERE conrelid = 'work_item_activities'::regclass AND contype IN ('p', 'u', 'f')").await;
+    constraints.sort();
+    assert_eq!(
+        constraints,
+        pairs(vec![
+            ("f", "FOREIGN KEY (actor_id) REFERENCES users(id)"),
+            ("f", "FOREIGN KEY (work_item_id) REFERENCES work_items(id)"),
+            ("f", "FOREIGN KEY (workspace_id, project_id) REFERENCES projects(workspace_id, id)"),
+            ("p", "PRIMARY KEY (id)"),
+            ("u", "UNIQUE (event_id, ordinal)"),
+        ])
+    );
+    let index = q("SELECT indexname::text, indexdef::text FROM pg_indexes WHERE tablename = 'work_item_activities' AND indexname = 'work_item_activities_by_item'").await;
+    assert_eq!(index.len(), 1, "the index a history is read by");
+    assert!(index[0].1.ends_with("(work_item_id, created_at)"), "{}", index[0].1);
+
+    // what the constraints refuse
+    let (s, owner, items) = tenant_with_items(&env, "hist-shape", 1).await;
+    let (ws, project, item) = (s.workspace_id().0, s.project_id().0, items[0].0);
+    let insert = "INSERT INTO work_item_activities (id, event_id, ordinal, workspace_id, project_id, work_item_id, actor_id, verb, comment, epoch, created_at) \
+                  VALUES ($1, $2, $3, $4, $5, $6, $7, 'updated', '', 0, now())";
+    let event = new_id();
+    raw.execute(insert, &[&new_id(), &event, &0i32, &ws, &project, &item, &None::<Uuid>]).await.unwrap();
+    // an event and a place once; the same place in another event and another place in the same event are two rows
+    let (code, constraint) =
+        refusal(&raw, insert, &[&new_id(), &event, &0i32, &ws, &project, &item, &None::<Uuid>]).await;
+    assert_eq!((code.as_str(), constraint.as_deref()), ("23505", Some("work_item_activities_event_key")));
+    raw.execute(insert, &[&new_id(), &event, &1i32, &ws, &project, &item, &None::<Uuid>]).await.unwrap();
+    raw.execute(insert, &[&new_id(), &new_id(), &0i32, &ws, &project, &item, &Some(owner.0)]).await.unwrap();
+    // an id once
+    let id = new_id();
+    raw.execute(insert, &[&id, &new_id(), &0i32, &ws, &project, &item, &None::<Uuid>]).await.unwrap();
+    let (code, constraint) = refusal(&raw, insert, &[&id, &new_id(), &0i32, &ws, &project, &item, &None::<Uuid>]).await;
+    assert_eq!((code.as_str(), constraint.as_deref()), ("23505", Some("work_item_activities_pkey")));
+    // a work item, an actor and a project that are there
+    let (code, constraint) =
+        refusal(&raw, insert, &[&new_id(), &new_id(), &0i32, &ws, &project, &new_id(), &None::<Uuid>]).await;
+    assert_eq!((code.as_str(), constraint.as_deref()), ("23503", Some("work_item_activities_work_item_id_fkey")));
+    let (code, constraint) =
+        refusal(&raw, insert, &[&new_id(), &new_id(), &0i32, &ws, &project, &item, &Some(new_id())]).await;
+    assert_eq!((code.as_str(), constraint.as_deref()), ("23503", Some("work_item_activities_actor_id_fkey")));
+    let (code, constraint) =
+        refusal(&raw, insert, &[&new_id(), &new_id(), &0i32, &new_id(), &project, &item, &None::<Uuid>]).await;
+    assert_eq!((code.as_str(), constraint.as_deref()), ("23503", Some("work_item_activities_tenant_fkey")));
+    let (code, constraint) =
+        refusal(&raw, insert, &[&new_id(), &new_id(), &0i32, &ws, &new_id(), &item, &None::<Uuid>]).await;
+    assert_eq!((code.as_str(), constraint.as_deref()), ("23503", Some("work_item_activities_tenant_fkey")));
+    // the order of writing cannot be given
+    let (code, _) = refusal(
+        &raw,
+        "INSERT INTO work_item_activities (seq, id, event_id, ordinal, workspace_id, project_id, work_item_id, verb, comment, epoch, created_at) VALUES (1, $1, $2, 0, $3, $4, $5, 'updated', '', 0, now())",
+        &[&new_id(), &new_id(), &ws, &project, &item],
+    )
+    .await;
+    assert_eq!(code, "428C9");
+    // a row of the tenant the work item is not in satisfies the keys the table has (the adapter refuses it: see the test of the batch)
+    assert_eq!(history_rows(&env, &items).await, 4);
+}
+
+/// Rows of one time are read in the order they were written. The ids, the events and the places of these run backwards, so that a read
+/// that ordered by any of them would be reversed; `seq` is what puts them right. A touch moves the time alone: the row keeps its `seq`,
+/// every other column, and its place among rows of its new time (the first written is first among those that tie with it).
+#[tokio::test]
+async fn rows_of_one_time_come_back_in_the_order_they_were_written_and_a_touch_moves_the_time_alone() {
+    let env = env().await;
+    let (s, owner, items) = tenant_with_items(&env, "hist-ties", 1).await;
+    let item = items[0];
+    let sys = SystemScope::mint();
+    let row = |k: u128, event: u128, ordinal: i32| WorkItemActivity {
+        id: ActivityId(Uuid::from_u128(u128::MAX - k)),
+        ..hrow(&s, item, Uuid::from_u128(u128::MAX - event), ordinal, 5, Some(owner))
+    };
+    let batches = vec![vec![row(0, 0, 9), row(1, 0, 8)], vec![row(2, 1, 7)], vec![row(3, 2, 6), row(4, 2, 5)]];
+    for b in &batches {
+        assert_eq!(env.db.insert_work_item_activities(&sys, b).await.unwrap(), b.len() as u64);
+    }
+    let written: Vec<WorkItemActivity> = batches.concat();
+    assert_eq!(env.db.work_item_history(&s, item, None).await.unwrap(), written);
+    assert_eq!(
+        env.db.latest_work_item_activity(&sys, s.workspace_id(), s.project_id(), item).await.unwrap().as_ref(),
+        written.last()
+    );
+    let raw = env.conn.raw().await.unwrap();
+    let seq_order = || {
+        let raw = &raw;
+        async move {
+            raw.query("SELECT id FROM work_item_activities WHERE work_item_id = $1 ORDER BY seq", &[&item.0])
+                .await
+                .unwrap()
+                .iter()
+                .map(|r| ActivityId(r.get(0)))
+                .collect::<Vec<_>>()
+        }
+    };
+    let ids: Vec<ActivityId> = written.iter().map(|r| r.id).collect();
+    assert_eq!(seq_order().await, ids, "written in this order");
+
+    // the first written, touched to a later time: the newest, whatever was written after it, and the others as they were
+    assert!(env.db.touch_work_item_activity(&sys, written[0].id, at(9)).await.unwrap());
+    let moved = WorkItemActivity { created_at: at(9), ..written[0].clone() };
+    let mut want: Vec<WorkItemActivity> = written[1..].to_vec();
+    want.push(moved.clone());
+    assert_eq!(env.db.work_item_history(&s, item, None).await.unwrap(), want);
+    assert_eq!(
+        env.db.latest_work_item_activity(&sys, s.workspace_id(), s.project_id(), item).await.unwrap(),
+        Some(moved.clone())
+    );
+    assert_eq!(seq_order().await, ids, "a touch does not move a row in the order written");
+    // the same row moved back to the others' time is the first of them again, and one moved before them all is first, whatever its place
+    assert!(env.db.touch_work_item_activity(&sys, written[0].id, at(5)).await.unwrap());
+    assert_eq!(env.db.work_item_history(&s, item, None).await.unwrap(), written);
+    assert!(env.db.touch_work_item_activity(&sys, written[4].id, at(1)).await.unwrap());
+    let early = WorkItemActivity { created_at: at(1), ..written[4].clone() };
+    let mut want = vec![early.clone()];
+    want.extend(written[..4].iter().cloned());
+    assert_eq!(env.db.work_item_history(&s, item, None).await.unwrap(), want);
+    assert_eq!(
+        env.db.latest_work_item_activity(&sys, s.workspace_id(), s.project_id(), item).await.unwrap().as_ref(),
+        written.get(3)
+    );
+    // after a time is strict: the rows that tie with it are out
+    assert_eq!(env.db.work_item_history(&s, item, Some(at(1))).await.unwrap(), written[..4].to_vec());
+    assert_eq!(env.db.work_item_history(&s, item, Some(at(5))).await.unwrap(), Vec::<WorkItemActivity>::new());
+    assert_eq!(env.db.work_item_history(&s, item, Some(at(4))).await.unwrap(), written[..4].to_vec());
+    // a row that is not there is not touched
+    assert!(!env.db.touch_work_item_activity(&sys, ActivityId(new_id()), at(7)).await.unwrap());
+    assert_eq!(seq_order().await, ids);
+}
+
+/// A batch that holds a row the adapter refuses writes none of its rows, whichever place that row has in it: counted in the table, which
+/// is where a row that was written and then lost to a rollback would show, and the rows that were valid are new afterwards. A key that is
+/// there is refused all the same when the row naming it is wrong.
+#[tokio::test]
+async fn a_batch_with_a_row_the_adapter_refuses_writes_none_of_its_rows() {
+    let env = env().await;
+    let sys = SystemScope::mint();
+    let (s, owner, items) = tenant_with_items(&env, "hist-refused", 1).await;
+    let (other, _other_owner, others) = tenant_with_items(&env, "hist-refused-other", 1).await;
+    let (item, other_item) = (items[0], others[0]);
+    let mut expected = 0;
+    // (what is wrong with the row, the row)
+    type Break = Box<dyn Fn(WorkItemActivity) -> WorkItemActivity>;
+    let strays: Vec<(&str, Break)> = vec![
+        (
+            "an item of another tenant, named with this one's workspace and project",
+            Box::new(move |r| WorkItemActivity { work_item_id: other_item, ..r }),
+        ),
+        ("an item that is not there", Box::new(|r| WorkItemActivity { work_item_id: WorkItemId(new_id()), ..r })),
+        (
+            "this tenant's item, named with the other's workspace and project",
+            Box::new(move |r| WorkItemActivity {
+                workspace_id: other.workspace_id(),
+                project_id: other.project_id(),
+                ..r
+            }),
+        ),
+        (
+            "this tenant's item, named with the other's workspace",
+            Box::new(move |r| WorkItemActivity { workspace_id: other.workspace_id(), ..r }),
+        ),
+        (
+            "this tenant's item, named with the other's project",
+            Box::new(move |r| WorkItemActivity { project_id: other.project_id(), ..r }),
+        ),
+        ("an actor who is no user", Box::new(|r| WorkItemActivity { actor_id: Some(UserId(new_id())), ..r })),
+    ];
+    for (wrong, make) in &strays {
+        for place in 0..3 {
+            let event = new_id();
+            let valid = [hrow(&s, item, event, 0, 1, Some(owner)), hrow(&s, item, event, 1, 2, None)];
+            let mut batch = valid.to_vec();
+            batch.insert(place, make(hrow(&s, item, new_id(), 0, 3, Some(owner))));
+            let got = env.db.insert_work_item_activities(&sys, &batch).await;
+            assert!(matches!(got, Err(DbError::Backend(_))), "{wrong}, at {place}: {got:?}");
+            assert_eq!(
+                history_rows(&env, &[item, other_item]).await,
+                expected,
+                "{wrong}, at {place}: a row of the refused batch was written"
+            );
+            assert_eq!(
+                env.db.insert_work_item_activities(&sys, &valid).await.unwrap(),
+                2,
+                "{wrong}, at {place}: the valid rows were not new"
+            );
+            expected += 2;
+        }
+        // a row whose key is there, and which is wrong, is refused as well, and the row that holds the key is as it was
+        let held = hrow(&s, item, new_id(), 0, 4, Some(owner));
+        assert_eq!(env.db.insert_work_item_activities(&sys, std::slice::from_ref(&held)).await.unwrap(), 1);
+        expected += 1;
+        let again = make(WorkItemActivity { id: ActivityId(new_id()), ..held.clone() });
+        let got = env.db.insert_work_item_activities(&sys, &[again]).await;
+        assert!(matches!(got, Err(DbError::Backend(_))), "{wrong}, key held: {got:?}");
+        assert_eq!(history_rows(&env, &[item, other_item]).await, expected);
+    }
+    assert_eq!(
+        env.db.work_item_history(&s, item, None).await.unwrap().len() as i64,
+        expected,
+        "every row written is read back"
+    );
+    assert_eq!(
+        env.db.work_item_history(&other, other_item, None).await.unwrap(),
+        Vec::<WorkItemActivity>::new(),
+        "nothing was written for the other tenant"
+    );
+}
+
+/// A history that is delivered at least once is written once: sixteen consumers write overlapping windows of one event's rows, each
+/// window in order, with an id of its own for every row, at the same time. Each key is written by exactly one of them, none of them is
+/// refused, and no row is lost or doubled.
+#[tokio::test]
+async fn deliveries_of_the_rows_of_one_event_that_race_write_each_row_once() {
+    let env = env().await;
+    let (s, owner, items) = tenant_with_items(&env, "hist-race", 1).await;
+    let item = items[0];
+    let event = new_id();
+    let mut handles = Vec::new();
+    for i in 0..16 {
+        let db = env.db.clone();
+        handles.push(tokio::spawn(async move {
+            let start = i % 4;
+            let rows: Vec<WorkItemActivity> =
+                (start..start + 4).map(|o| hrow(&s, item, event, o, 0, Some(owner))).collect();
+            tokio::time::timeout(
+                std::time::Duration::from_secs(30),
+                db.insert_work_item_activities(&SystemScope::mint(), &rows),
+            )
+            .await
+            .expect("no deadlock")
+            .unwrap()
+        }));
+    }
+    let mut written = 0;
+    for h in handles {
+        written += h.await.unwrap();
+    }
+    // the windows start at 0 to 3 and hold 4 places: places 0 to 6, once each
+    assert_eq!(written, 7);
+    let history = env.db.work_item_history(&s, item, None).await.unwrap();
+    let mut places: Vec<i32> = history.iter().map(|r| r.ordinal).collect();
+    places.sort();
+    assert_eq!(places, (0..7).collect::<Vec<_>>());
+}
+
+/// An update that names people or labels replaces the rows of the item in the join tables, all of them (those of people who are not in
+/// the project, which no read shows, too) and no row of another item; one that names none leaves the rows; naming none at all (an empty
+/// list) leaves no row.
+#[tokio::test]
+async fn an_update_replaces_the_join_rows_of_the_people_and_labels_it_names_and_leaves_the_rest() {
+    let env = env().await;
+    let (s, owner, items) = tenant_with_items(&env, "upd-rows", 2).await;
+    let (a, b) = (items[0], items[1]);
+    let (u2, u3) = (user_without_login(&env).await, user_without_login(&env).await);
+    let (l1, l2) = (new_id(), new_id());
+    let raw = env.conn.raw().await.unwrap();
+    for l in [l1, l2] {
+        raw.execute("INSERT INTO labels (id, workspace_id, project_id, name, created_at, updated_at) VALUES ($1, $2, $3, $4, now(), now())", &[&l, &s.workspace_id().0, &s.project_id().0, &format!("l-{l}")])
+            .await
+            .unwrap();
+    }
+    let people = |id: WorkItemId| {
+        let raw = &raw;
+        async move {
+            raw.query("SELECT user_id FROM work_item_assignees WHERE work_item_id = $1 ORDER BY user_id", &[&id.0])
+                .await
+                .unwrap()
+                .iter()
+                .map(|r| UserId(r.get(0)))
+                .collect::<Vec<_>>()
+        }
+    };
+    let labels = |id: WorkItemId| {
+        let raw = &raw;
+        async move {
+            raw.query("SELECT label_id FROM work_item_labels WHERE work_item_id = $1 ORDER BY label_id", &[&id.0])
+                .await
+                .unwrap()
+                .iter()
+                .map(|r| r.get::<_, Uuid>(0))
+                .collect::<Vec<_>>()
+        }
+    };
+    let update = |people: Option<Vec<UserId>>, labels: Option<Vec<Uuid>>| WorkItemUpdate {
+        name: "named".into(),
+        state_id: None,
+        priority: Priority::None,
+        start_date: None,
+        target_date: None,
+        completed_at: None,
+        updated_at: at(10),
+        updated_by: owner,
+        description_html: "<p></p>".into(),
+        assignee_ids: people,
+        label_ids: labels,
+    };
+    let run = |id: WorkItemId, u: WorkItemUpdate| {
+        let env = &env;
+        async move {
+            let mut tx = env.db.begin(&s).await.unwrap();
+            let found = tx.update_work_item(&s, id, &u).await.unwrap();
+            tx.commit().await.unwrap();
+            found
+        }
+    };
+    let sorted = |mut v: Vec<UserId>| {
+        v.sort();
+        v
+    };
+    let all = vec![owner, u2, u3, u3];
+    let mut ls = vec![l1, l2];
+    ls.sort();
+    for id in [a, b] {
+        assert!(run(id, update(Some(all.clone()), Some(ls.clone()))).await);
+        assert_eq!(people(id).await, sorted(vec![owner, u2, u3]), "once each, those who are not in the project too");
+        assert_eq!(labels(id).await, ls);
+    }
+    // one item is given other people and labels: every row of it is replaced, and no row of the other
+    assert!(run(a, update(Some(vec![u2]), Some(vec![l2]))).await);
+    assert_eq!((people(a).await, labels(a).await), (vec![u2], vec![l2]));
+    assert_eq!((people(b).await, labels(b).await), (sorted(vec![owner, u2, u3]), ls.clone()), "the other item's rows");
+    // none named: the rows stay
+    assert!(run(a, update(None, None)).await);
+    assert_eq!((people(a).await, labels(a).await), (vec![u2], vec![l2]));
+    // an empty list: no row
+    assert!(run(a, update(Some(vec![]), Some(vec![]))).await);
+    assert_eq!((people(a).await, labels(a).await), (vec![], vec![]));
+    assert_eq!((people(b).await.len(), labels(b).await.len()), (3, 2));
+}
+
+/// An update sees what its own transaction wrote: an item it inserted can be updated in it, and one it soft-deleted is not there for the
+/// update that follows (`false`, nothing written), as the port says of an item that is not live.
+#[tokio::test]
+async fn an_update_sees_what_its_own_transaction_wrote() {
+    let env = env().await;
+    let (s, owner, items) = tenant_with_items(&env, "upd-own-tx", 1).await;
+    let update = |name: &str| WorkItemUpdate {
+        name: name.into(),
+        state_id: None,
+        priority: Priority::High,
+        start_date: None,
+        target_date: None,
+        completed_at: None,
+        updated_at: at(10),
+        updated_by: owner,
+        description_html: "<p>x</p>".into(),
+        assignee_ids: Some(vec![owner]),
+        label_ids: None,
+    };
+    // inserted and updated in one transaction
+    let mut tx = env.db.begin(&s).await.unwrap();
+    let a = tx.allocate(&s).await.unwrap();
+    let w = item(s.workspace_id(), s.project_id(), a, "inserted", None);
+    tx.insert_work_item(&s, &w).await.unwrap();
+    assert!(tx.update_work_item(&s, w.id, &update("updated in its own transaction")).await.unwrap());
+    tx.commit().await.unwrap();
+    let row = env.db.work_item_row(&s, w.id).await.unwrap().expect("committed");
+    assert_eq!(
+        (row.item.name.as_str(), row.attrs.priority, row.attrs.assignee_ids),
+        ("updated in its own transaction", Priority::High, vec![owner])
+    );
+    // soft-deleted and then updated in one transaction
+    let mut tx = env.db.begin(&s).await.unwrap();
+    assert!(tx.soft_delete_work_item(&s, items[0], at(11)).await.unwrap());
+    assert!(
+        !tx.update_work_item(&s, items[0], &update("never written")).await.unwrap(),
+        "an item deleted in this transaction is not live"
+    );
+    tx.commit().await.unwrap();
+    let gone =
+        env.db.get_work_item(&s, items[0], Visibility::WithDeleted).await.unwrap().expect("soft-deleted rows stay");
+    assert_eq!((gone.name.as_str(), gone.deleted_at), ("item 0", Some(at(11))));
+}
+
+/// Only a live work item of the scope's own workspace and project is updated: one that is deleted, archived or a draft, one of another
+/// project or another workspace, and one that is not there answer `false` and write nothing (not the columns, not the people). The port
+/// names these cases; the generated sequences reach them too, and this is the pin that does not depend on the sample.
+#[tokio::test]
+async fn an_update_finds_a_live_work_item_of_the_scopes_own_project_alone() {
+    let env = env().await;
+    let (s, owner, _) = tenant_with_items(&env, "upd-live", 0).await;
+    let (other, _, _) = tenant_with_items(&env, "upd-live-other", 0).await;
+    // another project of the same workspace
+    let sibling_project = project_for(s.workspace_id(), owner, "Sibling", "SIB");
+    env.db.insert_project(&WorkspaceScope::mint(s.workspace_id(), owner, Role::Admin), &sibling_project).await.unwrap();
+    let sibling = Scope::mint(s.workspace_id(), sibling_project.project.id, owner);
+    // one item of each kind, inserted as it is (a work item is hidden by its columns, and only a soft delete hides one that exists)
+    let make = |scope: Scope, edit: &dyn Fn(&mut WorkItem)| {
+        let env = &env;
+        let mut w = item(
+            scope.workspace_id(),
+            scope.project_id(),
+            Allocation { sequence_id: 0, sort_order: 0 },
+            "before",
+            None,
+        );
+        edit(&mut w);
+        async move {
+            let mut tx = env.db.begin(&scope).await.unwrap();
+            w.sequence_id = tx.allocate(&scope).await.unwrap().sequence_id;
+            tx.insert_work_item(&scope, &w).await.unwrap();
+            tx.commit().await.unwrap();
+            w.id
+        }
+    };
+    let live = make(s, &|_| {}).await;
+    let deleted = make(s, &|w| w.deleted_at = Some(at(1))).await;
+    let archived = make(s, &|w| w.archived_at = Some(at(1))).await;
+    let draft = make(s, &|w| w.is_draft = true).await;
+    let of_other = make(other, &|_| {}).await;
+    let update = WorkItemUpdate {
+        name: "after".into(),
+        state_id: None,
+        priority: Priority::Urgent,
+        start_date: None,
+        target_date: None,
+        completed_at: None,
+        updated_at: at(10),
+        updated_by: owner,
+        description_html: "<p>after</p>".into(),
+        assignee_ids: Some(vec![owner]),
+        label_ids: None,
+    };
+    let try_update = |scope: Scope, id: WorkItemId| {
+        let (env, update) = (&env, &update);
+        async move {
+            let mut tx = env.db.begin(&scope).await.unwrap();
+            let found = tx.update_work_item(&scope, id, update).await.unwrap();
+            tx.commit().await.unwrap();
+            found
+        }
+    };
+    for (what, scope, id) in [
+        ("deleted", s, deleted),
+        ("archived", s, archived),
+        ("a draft", s, draft),
+        ("one that is not there", s, WorkItemId(new_id())),
+        ("an item of another workspace", s, of_other),
+        ("the live item through another tenant's scope", other, live),
+        ("the live item through another project's scope in the same workspace", sibling, live),
+    ] {
+        assert!(!try_update(scope, id).await, "{what}");
+    }
+    // nothing of it was written: every item has the name it had, and none has the person
+    let raw = env.conn.raw().await.unwrap();
+    for id in [live, deleted, archived, draft, of_other] {
+        let r = raw.query_one("SELECT name, priority, (SELECT count(*) FROM work_item_assignees a WHERE a.work_item_id = w.id) FROM work_items w WHERE w.id = $1", &[&id.0]).await.unwrap();
+        assert_eq!(
+            (r.get::<_, String>(0), r.get::<_, String>(1), r.get::<_, i64>(2)),
+            ("before".into(), "none".into(), 0),
+            "{id:?}"
+        );
+    }
+    // and the live item is found through its own scope, written whole
+    assert!(try_update(s, live).await);
+    let row = env.db.work_item_row(&s, live).await.unwrap().expect("live");
+    assert_eq!(
+        (row.item.name.as_str(), row.attrs.priority, row.attrs.assignee_ids),
+        ("after", Priority::Urgent, vec![owner])
+    );
+}

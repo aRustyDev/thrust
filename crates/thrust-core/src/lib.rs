@@ -204,6 +204,8 @@ pub enum Permission {
     ReadWorkItems,
     ReadDeleted,
     CreateWorkItem,
+    /// Change a work item's name, state, priority, dates, people, labels or description (issue #44, X03).
+    UpdateWorkItem,
     DeleteWorkItem,
     ReadAttachment,
     WriteAttachment,
@@ -213,7 +215,10 @@ impl Permission {
     fn min_role(self) -> Role {
         match self {
             Permission::ReadProject | Permission::ReadWorkItems | Permission::ReadAttachment => Role::Guest,
-            Permission::CreateWorkItem | Permission::DeleteWorkItem | Permission::WriteAttachment => Role::Member,
+            Permission::CreateWorkItem
+            | Permission::UpdateWorkItem
+            | Permission::DeleteWorkItem
+            | Permission::WriteAttachment => Role::Member,
             Permission::ReadDeleted => Role::Admin,
         }
     }
@@ -660,7 +665,11 @@ pub async fn process_event(app: &App, env: &Envelope) -> Result<bool, CoreError>
         actor_id: env.actor_id,
         created_at: app.ports.clock.now(),
     };
-    Ok(app.ports.db.insert_activity(&app.system, &a).await?)
+    let inserted = app.ports.db.insert_activity(&app.system, &a).await?;
+    // The history rows an event names are written whether or not the event was seen before: the write is idempotent on the event and
+    // the place of the row in it, and an event whose first delivery failed half way must still finish.
+    issues::project_history(app, env).await?;
+    Ok(inserted)
 }
 
 // --- attachments (BlobStore) ----------------------------------------------------------------

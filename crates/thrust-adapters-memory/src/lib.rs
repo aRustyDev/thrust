@@ -71,6 +71,10 @@ struct DbState {
     outbox: Vec<OutboxRow>,
     activity: Vec<Activity>,
     activity_events: HashSet<EventId>,
+    /// `work_item_activities` (migration 0014): the rows of the work items' history in the order they were written, and the
+    /// (event, place) key that makes a write idempotent.
+    history: Vec<WorkItemActivity>,
+    history_keys: HashSet<(EventId, i32)>,
 }
 
 struct SessionRow {
@@ -997,6 +1001,7 @@ impl Database for MemoryDatabase {
             pending_attrs: Vec::new(),
             pending_outbox: Vec::new(),
             pending_deletes: Vec::new(),
+            pending_updates: Vec::new(),
         }))
     }
 
@@ -1155,6 +1160,84 @@ impl Database for MemoryDatabase {
             .collect();
         v.sort_by_key(|a| a.created_at);
         Ok(v)
+    }
+
+    async fn work_item_history(
+        &self,
+        scope: &Scope,
+        id: WorkItemId,
+        after: Option<Timestamp>,
+    ) -> Result<Vec<WorkItemActivity>, DbError> {
+        let (ws, project) = (scope.workspace_id(), scope.project_id());
+        let s = self.state.lock_unpoisoned();
+        let mut v: Vec<WorkItemActivity> = s
+            .history
+            .iter()
+            .filter(|a| a.workspace_id == ws && a.project_id == project && a.work_item_id == id)
+            .filter(|a| after.is_none_or(|t| a.created_at > t))
+            .cloned()
+            .collect();
+        // oldest first; the sort is stable, so rows of one time stay in the order they were written
+        v.sort_by_key(|a| a.created_at);
+        Ok(v)
+    }
+
+    async fn latest_work_item_activity(
+        &self,
+        _sys: &SystemScope,
+        workspace: WorkspaceId,
+        project: ProjectId,
+        id: WorkItemId,
+    ) -> Result<Option<WorkItemActivity>, DbError> {
+        let s = self.state.lock_unpoisoned();
+        // `max_by_key` returns the last of rows that are equally the newest, which is the one written last
+        Ok(s.history
+            .iter()
+            .filter(|a| a.workspace_id == workspace && a.project_id == project && a.work_item_id == id)
+            .max_by_key(|a| a.created_at)
+            .cloned())
+    }
+
+    async fn touch_work_item_activity(
+        &self,
+        _sys: &SystemScope,
+        id: ActivityId,
+        at: Timestamp,
+    ) -> Result<bool, DbError> {
+        let mut s = self.state.lock_unpoisoned();
+        match s.history.iter_mut().find(|a| a.id == id) {
+            Some(row) => {
+                row.created_at = at;
+                Ok(true)
+            }
+            None => Ok(false),
+        }
+    }
+
+    /// The Postgres foreign keys are checked before anything is written: the work item is in the workspace and project the row names
+    /// (deleted or not), and the actor is a user.
+    async fn insert_work_item_activities(&self, _sys: &SystemScope, rows: &[WorkItemActivity]) -> Result<u64, DbError> {
+        let mut s = self.state.lock_unpoisoned();
+        for r in rows {
+            if !s
+                .work_items
+                .iter()
+                .any(|w| w.id == r.work_item_id && w.workspace_id == r.workspace_id && w.project_id == r.project_id)
+            {
+                return Err(DbError::Backend("work_item_activities_work_item_fkey".into()));
+            }
+            if r.actor_id.is_some_and(|u| !s.users.contains_key(&u)) {
+                return Err(DbError::Backend("work_item_activities_actor_fkey".into()));
+            }
+        }
+        let mut written = 0;
+        for r in rows {
+            if s.history_keys.insert((r.event_id, r.ordinal)) {
+                s.history.push(r.clone());
+                written += 1;
+            }
+        }
+        Ok(written)
     }
 
     async fn undispatched_outbox(&self, _sys: &SystemScope, limit: u32) -> Result<Vec<OutboxRow>, DbError> {
@@ -1330,6 +1413,7 @@ struct MemoryTx {
     pending_attrs: Vec<(WorkItemId, WorkItemAttrs)>,
     pending_outbox: Vec<OutboxRow>,
     pending_deletes: Vec<(ProjectId, WorkItemId, Timestamp)>,
+    pending_updates: Vec<(WorkItemId, WorkItemUpdate)>,
 }
 
 #[async_trait]
@@ -1410,6 +1494,51 @@ impl Tx for MemoryTx {
         Ok(())
     }
 
+    /// The same checks as [`Tx::insert_work_item_attrs`] (the Postgres constraints), on an item this transaction inserted or one that
+    /// is there and live; an item that is not is `false`.
+    async fn update_work_item(
+        &mut self,
+        scope: &Scope,
+        id: WorkItemId,
+        update: &WorkItemUpdate,
+    ) -> Result<bool, DbError> {
+        let (ws, project) = (scope.workspace_id(), scope.project_id());
+        let s = self.state.lock_unpoisoned();
+        let ours = |w: &WorkItem| w.workspace_id == ws && w.project_id == project && w.id == id && is_visible(w);
+        // one this transaction has deleted is no longer there, as Postgres sees its own writes
+        let deleted_here = self.pending_deletes.iter().any(|(p, i, _)| *p == project && *i == id);
+        if deleted_here || (!s.work_items.iter().any(ours) && !self.pending_items.iter().any(ours)) {
+            return Ok(false);
+        }
+        if update.state_id.is_some_and(|st| !s.states.iter().any(|x| x.id == st)) {
+            return Err(DbError::Backend("work_items_state_fkey".into()));
+        }
+        if !s.users.contains_key(&update.updated_by) {
+            return Err(DbError::Backend("work_items_updated_by_fkey".into()));
+        }
+        if update.assignee_ids.iter().flatten().any(|u| !s.users.contains_key(u)) {
+            return Err(DbError::Backend("work_item_assignees_user_id_fkey".into()));
+        }
+        if update.label_ids.iter().flatten().any(|l| !s.labels.iter().any(|x| x.id == *l)) {
+            return Err(DbError::Backend("work_item_labels_label_id_fkey".into()));
+        }
+        if matches!((update.start_date, update.target_date), (Some(a), Some(b)) if a > b) {
+            return Err(DbError::Backend("work_items_dates_ordered".into()));
+        }
+        drop(s);
+        let mut update = update.clone();
+        for people in update.assignee_ids.iter_mut() {
+            people.sort();
+            people.dedup();
+        }
+        for labels in update.label_ids.iter_mut() {
+            labels.sort();
+            labels.dedup();
+        }
+        self.pending_updates.push((id, update));
+        Ok(true)
+    }
+
     async fn soft_delete_work_item(&mut self, scope: &Scope, id: WorkItemId, at: Timestamp) -> Result<bool, DbError> {
         let (ws, project) = (scope.workspace_id(), scope.project_id());
         let s = self.state.lock_unpoisoned();
@@ -1444,6 +1573,26 @@ impl Tx for MemoryTx {
         }
         for (id, attrs) in this.pending_attrs {
             s.work_item_attrs.insert(id, attrs);
+        }
+        for (id, update) in this.pending_updates {
+            let Some(item) = s.work_items.iter_mut().find(|w| w.id == id) else { continue };
+            item.name = update.name.clone();
+            let created_at = item.created_at;
+            let attrs = s.work_item_attrs.entry(id).or_insert_with(|| WorkItemAttrs::bare(created_at));
+            attrs.state_id = update.state_id;
+            attrs.priority = update.priority;
+            attrs.start_date = update.start_date;
+            attrs.target_date = update.target_date;
+            attrs.completed_at = update.completed_at;
+            attrs.updated_at = update.updated_at;
+            attrs.updated_by = Some(update.updated_by);
+            attrs.description_html = update.description_html;
+            if let Some(people) = update.assignee_ids {
+                attrs.assignee_ids = people;
+            }
+            if let Some(labels) = update.label_ids {
+                attrs.label_ids = labels;
+            }
         }
         for (project, id, at) in this.pending_deletes {
             if let Some(w) =
