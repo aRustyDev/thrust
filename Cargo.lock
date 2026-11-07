@@ -3535,6 +3535,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "thrust-api-v1"
+version = "0.0.0"
+dependencies = [
+ "axum",
+ "futures-executor",
+ "proptest",
+ "rstest",
+ "serde",
+ "serde_json",
+ "thrust-adapters-memory",
+ "thrust-api",
+ "thrust-contracts",
+ "thrust-core",
+ "thrust-ports",
+ "tower",
+]
+
+[[package]]
 name = "thrust-compat-plane"
 version = "0.0.0"
 dependencies = [
