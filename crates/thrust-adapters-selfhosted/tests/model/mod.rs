@@ -1997,6 +1997,9 @@ impl ProjSpec {
                 created_by: None,
                 created_at: epoch,
                 updated_at: epoch,
+                external_source: None,
+                external_id: None,
+                updated_by: None,
             })
             .collect()
     }

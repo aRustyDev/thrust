@@ -584,6 +584,30 @@ fn state_of(r: &Row) -> Result<StateRow, DbError> {
     })
 }
 
+/// The columns of `labels` the port's `LabelRow` is made of (unaliased).
+const LABEL_COLS: &str =
+    "id, workspace_id, project_id, parent_id, name, description, color, sort_order, created_by, created_at, \
+    updated_at, external_source, external_id, updated_by";
+
+fn label_of(r: &Row) -> LabelRow {
+    LabelRow {
+        id: r.get("id"),
+        workspace_id: WorkspaceId(r.get("workspace_id")),
+        project_id: ProjectId(r.get("project_id")),
+        parent_id: r.get("parent_id"),
+        name: r.get("name"),
+        description: r.get("description"),
+        color: r.get("color"),
+        sort_order: r.get("sort_order"),
+        created_by: r.get::<_, Option<Uuid>>("created_by").map(UserId),
+        created_at: r.get("created_at"),
+        updated_at: r.get("updated_at"),
+        external_source: r.get("external_source"),
+        external_id: r.get("external_id"),
+        updated_by: r.get::<_, Option<Uuid>>("updated_by").map(UserId),
+    }
+}
+
 /// The columns of `project_user_properties` the port's `ProjectUserProperties` is made of (unaliased).
 const PUP_COLS: &str =
     "id, project_id, workspace_id, user_id, filters, display_filters, display_properties, rich_filters, \
@@ -1433,28 +1457,106 @@ impl Database for PgDatabase {
         let c = self.conn().await?;
         let rows = Pg(c.client())
             .query(
-                "SELECT id, workspace_id, project_id, parent_id, name, description, color, sort_order, created_by, created_at, updated_at \
-                 FROM labels WHERE workspace_id = $1 AND project_id = $2 ORDER BY sort_order, id",
+                &format!(
+                    "SELECT {LABEL_COLS} FROM labels \
+                     WHERE workspace_id = $1 AND project_id = $2 AND deleted_at IS NULL ORDER BY sort_order, id"
+                ),
                 &[&scope.workspace_id().0, &scope.project_id().0],
             )
             .await
             .map_err(db_err)?;
-        Ok(rows
-            .iter()
-            .map(|r| LabelRow {
-                id: r.get("id"),
-                workspace_id: WorkspaceId(r.get("workspace_id")),
-                project_id: ProjectId(r.get("project_id")),
-                parent_id: r.get("parent_id"),
-                name: r.get("name"),
-                description: r.get("description"),
-                color: r.get("color"),
-                sort_order: r.get("sort_order"),
-                created_by: r.get::<_, Option<Uuid>>("created_by").map(UserId),
-                created_at: r.get("created_at"),
-                updated_at: r.get("updated_at"),
-            })
-            .collect())
+        Ok(rows.iter().map(label_of).collect())
+    }
+
+    async fn insert_label(&self, scope: &Scope, l: &LabelRow) -> Result<LabelRow, DbError> {
+        if l.workspace_id != scope.workspace_id() || l.project_id != scope.project_id() {
+            return Err(DbError::Backend("label is not in this project".into()));
+        }
+        // The row goes in with a place of Plane's making, in one statement. A taken name is a unique violation, which `db_err` makes a
+        // `Conflict`.
+        let c = self.conn().await?;
+        let (created_by, updated_by) = (l.created_by.map(|u| u.0), l.updated_by.map(|u| u.0));
+        let row = Pg(c.client())
+            .query_one(
+                &format!(
+                    "INSERT INTO labels (id, workspace_id, project_id, parent_id, name, description, color, sort_order, \
+                       external_source, external_id, created_by, updated_by, created_at, updated_at) \
+                     VALUES ($1, $2, $3, $4, $5, $6, $7, \
+                       COALESCE((SELECT max(o.sort_order) FROM labels o WHERE o.project_id = $3 AND o.deleted_at IS NULL) + 10000, $8), \
+                       $9, $10, $11, $12, $13, $14) \
+                     RETURNING {LABEL_COLS}"
+                ),
+                &[
+                    &l.id,
+                    &l.workspace_id.0,
+                    &l.project_id.0,
+                    &l.parent_id,
+                    &l.name,
+                    &l.description,
+                    &l.color,
+                    &l.sort_order,
+                    &l.external_source,
+                    &l.external_id,
+                    &created_by,
+                    &updated_by,
+                    &l.created_at,
+                    &l.updated_at,
+                ],
+            )
+            .await
+            .map_err(db_err)?;
+        Ok(label_of(&row))
+    }
+
+    async fn update_label(&self, scope: &Scope, l: &LabelRow) -> Result<bool, DbError> {
+        let c = self.conn().await?;
+        let updated_by = l.updated_by.map(|u| u.0);
+        let n = Pg(c.client())
+            .execute(
+                "UPDATE labels SET parent_id = $4, name = $5, description = $6, color = $7, sort_order = $8, \
+                   external_source = $9, external_id = $10, updated_by = $11, updated_at = $12 \
+                 WHERE id = $1 AND project_id = $2 AND workspace_id = $3 AND deleted_at IS NULL",
+                &[
+                    &l.id,
+                    &scope.project_id().0,
+                    &scope.workspace_id().0,
+                    &l.parent_id,
+                    &l.name,
+                    &l.description,
+                    &l.color,
+                    &l.sort_order,
+                    &l.external_source,
+                    &l.external_id,
+                    &updated_by,
+                    &l.updated_at,
+                ],
+            )
+            .await
+            .map_err(db_err)?;
+        Ok(n == 1)
+    }
+
+    async fn delete_label(&self, scope: &Scope, id: Uuid, at: Timestamp) -> Result<bool, DbError> {
+        // One statement, so a label, the live labels under it and the work items' hold on every one of them go together or not at all.
+        // The walk is a UNION (not UNION ALL), which drops a row it has met: the pin lets a label be its own parent, and a loop of
+        // labels must end the walk, not feed it.
+        let c = self.conn().await?;
+        let row = Pg(c.client())
+            .query_one(
+                "WITH RECURSIVE tree AS ( \
+                     SELECT id FROM labels WHERE id = $1 AND project_id = $2 AND workspace_id = $3 AND deleted_at IS NULL \
+                   UNION \
+                     SELECT c.id FROM labels c JOIN tree t ON c.parent_id = t.id \
+                     WHERE c.workspace_id = $3 AND c.deleted_at IS NULL \
+                 ), \
+                 unassigned AS (DELETE FROM work_item_labels WHERE label_id IN (SELECT id FROM tree)), \
+                 gone AS (UPDATE labels SET deleted_at = $4 WHERE id IN (SELECT id FROM tree) RETURNING id) \
+                 SELECT EXISTS (SELECT 1 FROM gone WHERE id = $1) AS deleted",
+                &[&id, &scope.project_id().0, &scope.workspace_id().0, &at],
+            )
+            .await
+            .map_err(db_err)?;
+        Ok(row.get("deleted"))
     }
 
     async fn project_states(&self, scope: &Scope) -> Result<Vec<StateRow>, DbError> {

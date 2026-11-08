@@ -1071,3 +1071,278 @@ fn a_project_is_archived_when_it_says_so() {
     assert!(block_on(db.update_project(&admin, &row)).unwrap());
     assert!(!block_on(db.project_is_archived(&pscope(A, 10, 2))).unwrap());
 }
+
+// --- labels (migration 0015) -------------------------------------------------------------------------------------------------
+
+fn label_id(project: u128, k: u128) -> Uuid {
+    Uuid::from_u128((project << 48) | (0x200 + k))
+}
+
+/// A label of project `project`, made by user 2, with the place `sort_order` (which `insert_label` replaces unless it is the first).
+fn new_label(project: u128, k: u128, name: &str, sort_order: f64) -> LabelRow {
+    LabelRow {
+        id: label_id(project, k),
+        workspace_id: wid(A),
+        project_id: pid(project),
+        parent_id: None,
+        name: name.into(),
+        description: String::new(),
+        color: "#abcdef".into(),
+        sort_order,
+        created_by: Some(uid(2)),
+        created_at: at(10),
+        updated_at: at(10),
+        external_source: None,
+        external_id: None,
+        updated_by: None,
+    }
+}
+
+fn labels(db: &MemoryDatabase, project: u128) -> Vec<LabelRow> {
+    block_on(db.project_labels(&pscope(A, project, 2))).unwrap()
+}
+
+fn label_names(db: &MemoryDatabase, project: u128) -> Vec<String> {
+    labels(db, project).into_iter().map(|l| l.name).collect()
+}
+
+fn insert_label(db: &MemoryDatabase, project: u128, row: &LabelRow) -> LabelRow {
+    block_on(db.insert_label(&pscope(A, project, 2), row)).unwrap()
+}
+
+/// A work item `n` of project 10 that carries `labels`, written with its attributes in one transaction.
+fn work_item_with(db: &MemoryDatabase, n: u128, labels: &[Uuid]) -> WorkItem {
+    let item = WorkItem {
+        id: WorkItemId(Uuid::from_u128(n)),
+        workspace_id: wid(A),
+        project_id: pid(10),
+        sequence_id: n as i64,
+        sort_order: 1,
+        name: format!("w{n}"),
+        description: None,
+        external_source: None,
+        external_id: None,
+        created_by: uid(2),
+        created_at: at(0),
+        archived_at: None,
+        is_draft: false,
+        deleted_at: None,
+    };
+    let scope = pscope(A, 10, 2);
+    let mut tx = block_on(db.begin(&scope)).unwrap();
+    block_on(tx.insert_work_item(&scope, &item)).unwrap();
+    let attrs = WorkItemAttrs { label_ids: labels.to_vec(), ..WorkItemAttrs::bare(at(0)) };
+    block_on(tx.insert_work_item_attrs(&scope, item.id, &attrs)).unwrap();
+    block_on(tx.commit()).unwrap();
+    item
+}
+
+fn labels_of_item(db: &MemoryDatabase, item: &WorkItem) -> Vec<Uuid> {
+    block_on(db.work_item_row(&pscope(A, 10, 2), item.id)).unwrap().unwrap().attrs.label_ids
+}
+
+#[test]
+fn a_new_label_goes_after_the_greatest_live_one_by_ten_thousand() {
+    let db = world();
+    make(&db, &new_project(A, 10, 2, &[3], 0));
+    let scope = pscope(A, 10, 2);
+    // the first label of a project keeps the place it asked for
+    let first = insert_label(&db, 10, &new_label(10, 1, "bug", 65535.0));
+    assert_eq!(first.sort_order, 65535.0);
+    // what is returned is what is stored
+    assert_eq!(labels(&db, 10), vec![first.clone()]);
+    // the next goes after it, whatever it asked for
+    assert_eq!(insert_label(&db, 10, &new_label(10, 2, "feature", 1.0)).sort_order, 75535.0);
+    let last = insert_label(&db, 10, &new_label(10, 3, "docs", 9e9));
+    assert_eq!(last.sort_order, 85535.0);
+    // a deleted label is not counted: the next goes where the deleted one went
+    assert!(block_on(db.delete_label(&scope, last.id, at(11))).unwrap());
+    assert_eq!(insert_label(&db, 10, &new_label(10, 4, "ops", 0.0)).sort_order, 85535.0);
+    // another project's labels do not count: its own first keeps its place, and its second goes after that
+    make(&db, &new_project(A, 11, 2, &[], 1));
+    assert_eq!(insert_label(&db, 11, &new_label(11, 1, "bug", 7.0)).sort_order, 7.0);
+    assert_eq!(insert_label(&db, 11, &new_label(11, 2, "feature", 0.0)).sort_order, 10007.0);
+}
+
+#[test]
+fn a_label_name_is_taken_by_a_live_label_of_the_project_and_by_no_other() {
+    let db = world();
+    make(&db, &new_project(A, 10, 2, &[], 0));
+    make(&db, &new_project(A, 11, 2, &[], 1));
+    let scope = pscope(A, 10, 2);
+    let bug = insert_label(&db, 10, &new_label(10, 1, "bug", 1.0));
+    // the same name is refused, whatever else the row says
+    let clash = block_on(db.insert_label(&scope, &new_label(10, 2, "bug", 1.0)));
+    assert!(matches!(clash, Err(DbError::Conflict(_))), "{clash:?}");
+    assert_eq!(label_names(&db, 10), ["bug"], "nothing was written");
+    // the name is exact (`Bug` is another name), and another project may have it
+    insert_label(&db, 10, &new_label(10, 3, "Bug", 1.0));
+    insert_label(&db, 11, &new_label(11, 1, "bug", 1.0));
+    // a deleted label's name is free again, and the new label is another row
+    assert!(block_on(db.delete_label(&scope, bug.id, at(11))).unwrap());
+    insert_label(&db, 10, &new_label(10, 4, "bug", 1.0));
+    assert_eq!(label_names(&db, 10), ["Bug", "bug"]);
+    // an id that is taken, a label of another project and a user who is not there are refused
+    assert!(matches!(block_on(db.insert_label(&scope, &new_label(10, 4, "other", 1.0))), Err(DbError::Conflict(_))));
+    assert!(matches!(block_on(db.insert_label(&scope, &new_label(11, 9, "x", 1.0))), Err(DbError::Backend(_))));
+    let ghost = LabelRow { created_by: Some(uid(99)), ..new_label(10, 5, "ghost", 1.0) };
+    assert!(matches!(block_on(db.insert_label(&scope, &ghost)), Err(DbError::Backend(_))));
+    let orphan = LabelRow { parent_id: Some(label_id(10, 99)), ..new_label(10, 6, "orphan", 1.0) };
+    assert!(matches!(block_on(db.insert_label(&scope, &orphan)), Err(DbError::Backend(_))));
+}
+
+#[test]
+fn a_label_change_replaces_what_it_names_keeps_the_rest_and_finds_only_live_labels_of_the_project() {
+    let db = world();
+    make(&db, &new_project(A, 10, 2, &[], 0));
+    make(&db, &new_project(A, 11, 2, &[], 1));
+    let scope = pscope(A, 10, 2);
+    let a = insert_label(&db, 10, &new_label(10, 1, "bug", 1.0));
+    let b = insert_label(&db, 10, &new_label(10, 2, "feature", 1.0));
+    let mut asked = LabelRow {
+        parent_id: Some(b.id),
+        name: "defect".into(),
+        description: "d".into(),
+        color: "#000".into(),
+        sort_order: 1.5,
+        external_source: Some("gh".into()),
+        external_id: Some("7".into()),
+        updated_by: Some(uid(3)),
+        updated_at: at(20),
+        ..a.clone()
+    };
+    // who made the label, and when, are not for a change to rewrite
+    asked.created_by = Some(uid(4));
+    asked.created_at = at(99);
+    assert!(block_on(db.update_label(&scope, &asked)).unwrap());
+    let stored = labels(&db, 10).into_iter().find(|l| l.id == a.id).unwrap();
+    assert_eq!(stored, LabelRow { created_by: a.created_by, created_at: a.created_at, ..asked.clone() });
+    // a name that another live label has is a conflict and changes nothing; the label's own name is not
+    let onto = LabelRow { name: "defect".into(), ..b.clone() };
+    assert!(matches!(block_on(db.update_label(&scope, &onto)), Err(DbError::Conflict(_))));
+    assert_eq!(labels(&db, 10).into_iter().find(|l| l.id == b.id).unwrap(), b);
+    assert!(block_on(db.update_label(&scope, &LabelRow { color: "#111".into(), ..b.clone() })).unwrap());
+    // a parent that is no label, and an editor who is no user, are refused and change nothing
+    let orphan = LabelRow { parent_id: Some(label_id(10, 99)), ..b.clone() };
+    assert!(matches!(block_on(db.update_label(&scope, &orphan)), Err(DbError::Backend(_))));
+    let ghost = LabelRow { updated_by: Some(uid(99)), ..b.clone() };
+    assert!(matches!(block_on(db.update_label(&scope, &ghost)), Err(DbError::Backend(_))));
+    assert_eq!(labels(&db, 10).into_iter().find(|l| l.id == b.id).unwrap().color, "#111");
+    // a label of another project, one that is nowhere and a deleted one are not there to change
+    let other = insert_label(&db, 11, &new_label(11, 1, "bug", 1.0));
+    assert!(!block_on(db.update_label(&scope, &LabelRow { project_id: pid(10), ..other.clone() })).unwrap());
+    assert!(!block_on(db.update_label(&scope, &LabelRow { id: label_id(10, 98), ..b.clone() })).unwrap());
+    assert!(block_on(db.delete_label(&scope, b.id, at(30))).unwrap());
+    assert!(!block_on(db.update_label(&scope, &b)).unwrap());
+    assert_eq!(labels(&db, 11), vec![other], "another project's label is untouched");
+}
+
+#[test]
+fn a_deleted_label_takes_the_labels_under_it_and_the_hold_of_every_work_item_on_all_of_them() {
+    let db = world();
+    make(&db, &new_project(A, 10, 2, &[], 0));
+    make(&db, &new_project(A, 11, 2, &[], 1));
+    let scope = pscope(A, 10, 2);
+    let parent = insert_label(&db, 10, &new_label(10, 1, "parent", 1.0));
+    let child = insert_label(&db, 10, &LabelRow { parent_id: Some(parent.id), ..new_label(10, 2, "child", 1.0) });
+    let grandchild =
+        insert_label(&db, 10, &LabelRow { parent_id: Some(child.id), ..new_label(10, 3, "grandchild", 1.0) });
+    let sibling = insert_label(&db, 10, &new_label(10, 4, "sibling", 1.0));
+    let other = insert_label(&db, 11, &new_label(11, 1, "parent", 1.0));
+    let both = work_item_with(&db, 1, &[parent.id, sibling.id]);
+    let deep = work_item_with(&db, 2, &[grandchild.id, sibling.id]);
+    let kept = work_item_with(&db, 3, &[sibling.id]);
+    let none = work_item_with(&db, 4, &[]);
+
+    // the child alone: it and what is under it go, the parent and the sibling stay
+    assert!(block_on(db.delete_label(&scope, child.id, at(20))).unwrap());
+    assert_eq!(label_names(&db, 10), ["parent", "sibling"]);
+    assert_eq!(labels_of_item(&db, &deep), [sibling.id]);
+    assert_eq!(labels_of_item(&db, &both), [parent.id, sibling.id]);
+
+    // then the parent, which has nothing under it now
+    assert!(block_on(db.delete_label(&scope, parent.id, at(21))).unwrap());
+    assert_eq!(label_names(&db, 10), ["sibling"]);
+    assert_eq!(labels_of_item(&db, &both), [sibling.id]);
+    assert_eq!(labels_of_item(&db, &kept), [sibling.id]);
+    assert!(labels_of_item(&db, &none).is_empty());
+    // a label of another project that has the name is not touched
+    assert_eq!(labels(&db, 11), vec![other.clone()]);
+
+    // a second deletion, another project's label and a label that is nowhere are not there
+    assert!(!block_on(db.delete_label(&scope, parent.id, at(22))).unwrap());
+    assert!(!block_on(db.delete_label(&scope, other.id, at(22))).unwrap());
+    assert!(!block_on(db.delete_label(&scope, label_id(10, 99), at(22))).unwrap());
+    // the names of the deleted are free
+    insert_label(&db, 10, &new_label(10, 5, "parent", 1.0));
+    insert_label(&db, 10, &new_label(10, 6, "child", 1.0));
+}
+
+/// The pin lets a label be its own parent, and two labels each other's: the walk down a deleted label must end, and take the whole loop.
+#[test]
+fn a_label_that_is_its_own_parent_or_in_a_loop_is_deleted_with_what_is_in_it() {
+    let db = world();
+    make(&db, &new_project(A, 10, 2, &[], 0));
+    let scope = pscope(A, 10, 2);
+    let a = insert_label(&db, 10, &new_label(10, 1, "a", 1.0));
+    let b = insert_label(&db, 10, &new_label(10, 2, "b", 1.0));
+    let c = insert_label(&db, 10, &new_label(10, 3, "c", 1.0));
+    let alone = insert_label(&db, 10, &new_label(10, 4, "alone", 1.0));
+    // a is its own parent; b and c are each other's
+    assert!(block_on(db.update_label(&scope, &LabelRow { parent_id: Some(a.id), ..a.clone() })).unwrap());
+    assert!(block_on(db.update_label(&scope, &LabelRow { parent_id: Some(c.id), ..b.clone() })).unwrap());
+    assert!(block_on(db.update_label(&scope, &LabelRow { parent_id: Some(b.id), ..c.clone() })).unwrap());
+    let item = work_item_with(&db, 1, &[a.id, b.id, c.id, alone.id]);
+    assert!(block_on(db.delete_label(&scope, a.id, at(20))).unwrap());
+    assert_eq!(label_names(&db, 10), ["b", "c", "alone"]);
+    assert!(block_on(db.delete_label(&scope, c.id, at(21))).unwrap());
+    assert_eq!(label_names(&db, 10), ["alone"], "the loop goes whole, from either end");
+    assert_eq!(labels_of_item(&db, &item), [alone.id]);
+}
+
+proptest! {
+    #![proptest_config(proptest_config(128))]
+
+    /// In any forest of labels (a parent may be any label, itself and a loop included), deleting one deletes exactly the labels that
+    /// reach it by parents, and every work item that held labels keeps exactly the survivors. The model is the closure, computed here.
+    #[test]
+    fn prop_deleting_a_label_deletes_exactly_what_reaches_it_by_parents(
+        (parents, victim) in (1usize..9).prop_flat_map(|n| (prop::collection::vec(prop::option::of(0..n), n), 0..n)),
+    ) {
+        let db = world();
+        make(&db, &new_project(A, 10, 2, &[], 0));
+        let scope = pscope(A, 10, 2);
+        let rows: Vec<LabelRow> =
+            (0..parents.len()).map(|i| insert_label(&db, 10, &new_label(10, i as u128, &format!("l{i}"), 1.0))).collect();
+        for (row, parent) in rows.iter().zip(&parents) {
+            let parent_id = parent.map(|p| rows[p].id);
+            let changed = block_on(db.update_label(&scope, &LabelRow { parent_id, ..row.clone() })).unwrap();
+            prop_assert!(changed);
+        }
+        let all: Vec<Uuid> = rows.iter().map(|r| r.id).collect();
+        let item = work_item_with(&db, 1, &all);
+
+        // the model: the victim, and every label whose chain of parents meets a label already in the set
+        let mut gone = std::collections::BTreeSet::from([victim]);
+        loop {
+            let before = gone.len();
+            for (i, parent) in parents.iter().enumerate() {
+                if parent.is_some_and(|p| gone.contains(&p)) {
+                    gone.insert(i);
+                }
+            }
+            if gone.len() == before {
+                break;
+            }
+        }
+        prop_assert!(block_on(db.delete_label(&scope, rows[victim].id, at(20))).unwrap());
+        let mut want: Vec<Uuid> = (0..rows.len()).filter(|i| !gone.contains(i)).map(|i| rows[i].id).collect();
+        want.sort();
+        let mut live: Vec<Uuid> = labels(&db, 10).into_iter().map(|l| l.id).collect();
+        live.sort();
+        prop_assert_eq!(live, want.clone());
+        let mut held = labels_of_item(&db, &item);
+        held.sort();
+        prop_assert_eq!(held, want);
+    }
+}

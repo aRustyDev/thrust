@@ -561,6 +561,11 @@ pub struct LabelRow {
     pub created_by: Option<UserId>,
     pub created_at: Timestamp,
     pub updated_at: Timestamp,
+    /// The key an integration gave the label (migration 0015); the pair of them is unique among a project's labels by Plane's own
+    /// check, not by the database.
+    pub external_source: Option<String>,
+    pub external_id: Option<String>,
+    pub updated_by: Option<UserId>,
 }
 
 /// A person to add to a project that is being made, with their own settings row. The adapter replaces
@@ -859,8 +864,24 @@ pub trait Database: Send + Sync {
         new: &ProjectUserProperties,
     ) -> Result<ProjectUserProperties, DbError>;
 
-    /// The project's labels by `sort_order` (ties by id).
+    /// The project's labels by `sort_order` (ties by id), the deleted ones left out.
     async fn project_labels(&self, scope: &Scope) -> Result<Vec<LabelRow>, DbError>;
+
+    /// Make a label of the scope's project, and return it as stored. Its `sort_order` is Plane's: when the project has other live
+    /// labels, the greatest of theirs plus 10000, whatever `l.sort_order` says (it is the place of the first, when there is none). A
+    /// name that a live label of the project has is `DbError::Conflict`; an id that exists, or a label of another project, is the
+    /// caller's bug.
+    async fn insert_label(&self, scope: &Scope, l: &LabelRow) -> Result<LabelRow, DbError>;
+
+    /// Replace the name, description, colour, place, parent, external key, editor and time of the live label `l.id` of the scope's
+    /// project (the id, the project and who made it are kept). `false`, and nothing changed, when the project has no such live label;
+    /// a name another live label has is `DbError::Conflict`.
+    async fn update_label(&self, scope: &Scope, l: &LabelRow) -> Result<bool, DbError>;
+
+    /// Delete a label, as Plane does and its background task finishes: the row stays, marked with `at`, and so does the row of every
+    /// live label under it (each one's children in turn); none is in a list any longer, and each one's name is free again. A work
+    /// item that carried any of them no longer does. All in one statement. `false` when the project has no such live label.
+    async fn delete_label(&self, scope: &Scope, id: Uuid, at: Timestamp) -> Result<bool, DbError>;
 
     /// The project's states, the intake one left out and the deleted ones too, by `sequence` (ties by id).
     async fn project_states(&self, scope: &Scope) -> Result<Vec<StateRow>, DbError>;
