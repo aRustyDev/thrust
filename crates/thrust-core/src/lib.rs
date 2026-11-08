@@ -29,6 +29,8 @@ mod projects;
 pub use projects::*;
 mod issues;
 pub use issues::*;
+mod states;
+pub use states::*;
 #[cfg(test)]
 mod timezones_tests;
 use thrust_contracts::chrono::TimeDelta;
@@ -209,6 +211,9 @@ pub enum Permission {
     DeleteWorkItem,
     ReadAttachment,
     WriteAttachment,
+    /// Make, change or delete a state of a project (issue #58): for a project admin only, as Plane's `ProjectAdminPermission` has it.
+    /// A member of the project is refused, and so is a workspace admin who is not in it.
+    WriteState,
 }
 
 impl Permission {
@@ -219,7 +224,7 @@ impl Permission {
             | Permission::UpdateWorkItem
             | Permission::DeleteWorkItem
             | Permission::WriteAttachment => Role::Member,
-            Permission::ReadDeleted => Role::Admin,
+            Permission::ReadDeleted | Permission::WriteState => Role::Admin,
         }
     }
 }
