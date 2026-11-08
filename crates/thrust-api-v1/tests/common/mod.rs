@@ -79,6 +79,10 @@ pub const PROJECT: u128 = 0xA1;
 pub const STATE_BACKLOG: u128 = 0x5001;
 pub const STATE_TODO: u128 = 0x5002;
 pub const STATE_TRIAGE: u128 = 0x5003;
+/// The project's labels, as the oracle's seed has them: made in this order, so the newest is `docs`.
+pub const LABEL_BUG: u128 = 0x6001;
+pub const LABEL_FEATURE: u128 = 0x6002;
+pub const LABEL_DOCS: u128 = 0x6003;
 
 /// The people of the world. Each has an API key of the same name (`key-admin`, ...), except `Outsider`, who is in no
 /// workspace, and `Inactive`, whose account was switched off after the key was made.
@@ -228,6 +232,23 @@ async fn seed(app: &App) -> Result<(), CoreError> {
             sequence: *sequence,
             group: *group,
             is_default: *is_default,
+        })
+        .collect(),
+        // the project's labels, at the places the oracle's seed gives them
+        labels: [
+            (LABEL_BUG, "bug", "#E5484D", 65535.0),
+            (LABEL_FEATURE, "feature", "#3E63DD", 75535.0),
+            (LABEL_DOCS, "docs", "#30A46C", 85535.0),
+        ]
+        .iter()
+        .map(|(n, name, color, sort_order)| SeedLabel {
+            id: Uuid::from_u128(*n),
+            project_id: project,
+            workspace_id: ws,
+            name: (*name).into(),
+            color: (*color).into(),
+            parent_id: None,
+            sort_order: *sort_order,
         })
         .collect(),
         api_keys: vec![

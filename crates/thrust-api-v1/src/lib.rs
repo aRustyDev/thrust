@@ -17,6 +17,7 @@
 mod ctx;
 mod error;
 pub mod fields;
+mod labels;
 pub mod pagination;
 mod projects;
 pub mod request;
@@ -32,7 +33,7 @@ pub use states::slugify;
 /// The routes of `/api/v1`, for the composition roots to merge. Each needs the `App` in the request's extensions, as
 /// `thrust-api`'s do.
 pub fn router() -> Router {
-    assemble(projects::routes().merge(states::routes()))
+    assemble(projects::routes().merge(states::routes()).merge(labels::routes()))
 }
 
 /// Finish a set of v1 routes: anything under `/api/v1` that none of them answers is Plane's 404 for an unknown path, and every

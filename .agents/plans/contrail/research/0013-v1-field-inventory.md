@@ -57,12 +57,29 @@ The `sort_order` of a work item is a `bigint` here and a float in v1 (`75535.0`)
   **Admin**. A project Member is refused, as is a workspace admin who is not in the project. A read needs an active
   project membership. A refused write is 403 `{"detail":"You do not have permission to perform this action."}` with
   no rate headers. The earlier text here (a write by Admin or Member) was wrong for states. Labels use
-  `ProjectMemberPermission`, whose `PATCH`/`DELETE` branch has a comment that says "only Project Admins" next to a
-  role list that includes Member; confirm that branch against a member's label `PATCH`, which the corpus does not
-  do. **[unverified, labels slice]**
-- **Label rules.** Create is 201; a duplicate name 409 `{"error":"Label with the same name already exists in the
-  project","id":"<id>"}`; renaming onto an existing name 400 `{"error":"The payload is not valid"}`; a repeated
-  delete 404 `{"error":"The requested resource does not exist."}`.
+  `ProjectMemberPermission`: a read needs an active project membership, and **create, change and delete need a project
+  role of Admin or Member** (the comment on its last branch says "only Project Admins", but the code it sits on lists
+  `ROLE.ADMIN` and `ROLE.MEMBER`; resolved by reading `app/permissions/project.py` in the labels stage). A guest, a
+  stranger and a workspace admin who is not in the project are refused.
+- **Label rules** (the views are in `api/views/issue.py`, not in a file of their own).
+  - Create is 201; a duplicate name 409 `{"error":"Label with the same name already exists in the project","id":"<id>"}`;
+    renaming onto an existing name 400 `{"error":"The payload is not valid"}`; a repeated delete 404
+    `{"error":"The requested resource does not exist."}`.
+  - **One queryset serves a read, a change and a deletion**: live labels of the project, the caller an active member, the
+    project **not archived**. A change or a deletion of a label of an archived project is a 404 (a state's is not).
+  - A creation looks the clashing label up by the name **as sent**, which DRF trimmed: a name with spaces round it that
+    clashes finds no row, and the view raises (500). The same is true of the state view.
+  - The list has no `order_by` of its own (the view orders by a URL keyword that no route has): `-created_at`. The detail
+    read passes neither `fields` nor `expand` to its serializer.
+  - A new label's `sort_order` is the greatest live one in the project plus **10000** (a state's is 15000), the client's value
+    ignored; the first keeps its own or 65535.
+  - `parent` is a `PrimaryKeyRelatedField` over every label: a value Django cannot read as a UUID raises a Django
+    `ValidationError` that no DRF field catches, so the base view answers `{"error":"Please provide valid detail"}` and
+    nothing else is reported (D-032 keeps the answers, and narrows the field to the project's own labels).
+  - `label.delete()` marks the row and hands the labels under it (the `parent` foreign key cascades) and the work items'
+    join rows to a background task; Thrust does all of it in one statement.
+  - The body of every v1 view is read before the handler runs (`BaseAPIView.initial` reads `request.data`), so a body that
+    cannot be parsed is refused before any lookup; this corrects the first stage's states, which looked first.
 - **Work-item responses carry 29 keys, not the schema's 27**: `assignees` and `labels` (uuid lists) are in every
   body and absent from the `Issue` schema.
 - **`expand`**: `state` becomes `{color, group, id, name}`; `assignees` becomes user briefs `{avatar, avatar_url,
