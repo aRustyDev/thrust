@@ -1096,6 +1096,9 @@ fn project_for(ws: WorkspaceId, owner: UserId, name: &str, identifier: &str) -> 
         created_by: Some(owner),
         created_at: now,
         updated_at: now,
+        external_source: None,
+        external_id: None,
+        updated_by: None,
     };
     NewProject {
         members: vec![NewProjectMember {
@@ -1244,7 +1247,10 @@ async fn the_project_tables_have_the_columns_they_say_and_the_constraints_that_k
             ("color", text),
             ("created_at", ts),
             ("created_by", uuid),
+            ("deleted_at", ts),
             ("description", text),
+            ("external_id", text),
+            ("external_source", text),
             ("id", uuid),
             ("is_default", boolean),
             ("name", text),
@@ -1252,6 +1258,7 @@ async fn the_project_tables_have_the_columns_they_say_and_the_constraints_that_k
             ("sequence", double),
             ("state_group", text),
             ("updated_at", ts),
+            ("updated_by", uuid),
             ("workspace_id", uuid),
         ])
     );
@@ -1675,6 +1682,235 @@ async fn migration_0015_makes_the_unique_indexes_partial_once_and_a_restart_keep
     for name in indexes {
         assert!(def(name).await.contains("deleted_at IS NULL"), "{name} lost its condition after a restart");
     }
+}
+
+// --- states (issue #58, migration 0015) ---------------------------------------------------------------------------------------
+// The memory adapter is held to the same answers by `tests/projects.rs` in its own crate.
+
+/// A project of its own with the two states `project_for` gives it (Backlog at 15000, the default, and the intake Triage at 65000).
+async fn project_with_states(env: &Env, tag: &str) -> (WorkspaceId, ProjectId, UserId, Scope) {
+    let owner = user_without_login(env).await;
+    let w = workspace_for(owner, tag);
+    env.db.insert_workspace(&w).await.unwrap();
+    let ws = w.workspace.id;
+    let p = project_for(ws, owner, "States", "STA");
+    env.db.insert_project(&WorkspaceScope::mint(ws, owner, Role::Admin), &p).await.unwrap();
+    (ws, p.project.id, owner, Scope::mint(ws, p.project.id, owner))
+}
+
+fn state_for(
+    ws: WorkspaceId,
+    project: ProjectId,
+    owner: UserId,
+    name: &str,
+    sequence: f64,
+    is_default: bool,
+) -> StateRow {
+    let now = Utc.timestamp_opt(1_800_000_700, 0).unwrap();
+    StateRow {
+        id: new_id(),
+        workspace_id: ws,
+        project_id: project,
+        name: name.into(),
+        description: String::new(),
+        color: "#123456".into(),
+        sequence,
+        group: StateGroup::Started,
+        is_default,
+        created_by: Some(owner),
+        created_at: now,
+        updated_at: now,
+        external_source: None,
+        external_id: None,
+        updated_by: None,
+    }
+}
+
+async fn default_names(env: &Env, s: &Scope) -> Vec<String> {
+    env.db.project_states(s).await.unwrap().into_iter().filter(|x| x.is_default).map(|x| x.name).collect()
+}
+
+/// A new state goes after the greatest live one that is not the intake state, by 15000, whatever it asked for; the default moves to a
+/// state that becomes it, in the same transaction (the one-default index would refuse otherwise), and a change that finds no state, or
+/// is refused, leaves the default where it was.
+#[tokio::test]
+async fn a_new_state_is_placed_as_plane_places_it_and_the_default_moves_with_a_state() {
+    let env = env().await;
+    let (ws, project, owner, s) = project_with_states(&env, "state-place").await;
+    let new = |name: &str, sequence: f64, default: bool| state_for(ws, project, owner, name, sequence, default);
+
+    // Backlog is at 15000, and the intake state at 65000 does not count
+    let review = env.db.insert_state(&s, &new("Review", 1.0, false)).await.unwrap();
+    assert_eq!(review.sequence, 30000.0);
+    assert_eq!(env.db.project_states(&s).await.unwrap().iter().find(|x| x.id == review.id), Some(&review));
+    let qa = env.db.insert_state(&s, &new("QA", 9e9, false)).await.unwrap();
+    assert_eq!(qa.sequence, 45000.0);
+    // a deleted state is not counted
+    assert!(env.db.delete_state(&s, qa.id, Utc.timestamp_opt(1_800_000_800, 0).unwrap()).await.unwrap());
+    assert_eq!(env.db.insert_state(&s, &new("Ops", 0.0, false)).await.unwrap().sequence, 45000.0);
+
+    // the default
+    assert_eq!(default_names(&env, &s).await, ["Backlog"]);
+    env.db.insert_state(&s, &new("Plan", 0.0, true)).await.unwrap();
+    assert_eq!(default_names(&env, &s).await, ["Plan"]);
+    let backlog = env.db.project_states(&s).await.unwrap().into_iter().find(|x| x.name == "Backlog").unwrap();
+    assert!(env.db.update_state(&s, &StateRow { is_default: true, ..backlog.clone() }).await.unwrap());
+    assert_eq!(default_names(&env, &s).await, ["Backlog"]);
+    // a change that finds no state takes the default from no one
+    let nowhere = new("Nowhere", 0.0, true);
+    assert!(!env.db.update_state(&s, &nowhere).await.unwrap());
+    assert_eq!(default_names(&env, &s).await, ["Backlog"]);
+    // and one that is refused gives the default back: the name is a live state's, and the default it would take stays
+    let refused = StateRow {
+        name: "Review".into(),
+        is_default: true,
+        ..env.db.project_states(&s).await.unwrap().into_iter().find(|x| x.name == "Plan").unwrap()
+    };
+    let got = env.db.update_state(&s, &refused).await;
+    assert!(matches!(got, Err(DbError::Conflict(_))), "{got:?}");
+    assert_eq!(default_names(&env, &s).await, ["Backlog"]);
+}
+
+/// A state's name is unique among the live states of its project: another case is another name, another project's states do not
+/// count, and a deleted state's name is free.
+#[tokio::test]
+async fn a_state_name_is_unique_among_the_live_states_of_its_project() {
+    let env = env().await;
+    let (ws, project, owner, s) = project_with_states(&env, "state-names").await;
+    let new = |name: &str| state_for(ws, project, owner, name, 0.0, false);
+    let taken = |r: Result<StateRow, DbError>| matches!(r, Err(DbError::Conflict(c)) if c.contains("states_project_id_name_key"));
+    let first = env.db.insert_state(&s, &new("Review")).await.unwrap();
+    assert!(taken(env.db.insert_state(&s, &new("Review")).await));
+    env.db.insert_state(&s, &new("review")).await.unwrap();
+    // another project may have a state of the same name
+    let (ws2, project2, owner2, s2) = project_with_states(&env, "state-names-2").await;
+    env.db.insert_state(&s2, &state_for(ws2, project2, owner2, "Review", 0.0, false)).await.unwrap();
+    // a deleted state's name is free, and its id is not
+    assert!(env.db.delete_state(&s, first.id, Utc.timestamp_opt(1_800_000_800, 0).unwrap()).await.unwrap());
+    env.db.insert_state(&s, &new("Review")).await.unwrap();
+    // a change cannot take a live name
+    let backlog = env.db.project_states(&s).await.unwrap().into_iter().find(|x| x.name == "Backlog").unwrap();
+    let got = env.db.update_state(&s, &StateRow { name: "review".into(), ..backlog.clone() }).await;
+    assert!(matches!(got, Err(DbError::Conflict(_))), "{got:?}");
+    assert!(env.db.update_state(&s, &backlog).await.unwrap(), "and its own name is not another's");
+}
+
+/// A deleted state is marked and not removed: the lists leave it out, a second deletion and a state of another project are not there,
+/// and a work item that names it still reads its group. What counts as a work item in a state is the pin's `Issue.objects`: a draft,
+/// an archived one and a deleted one do not, and nothing in an archived project does.
+#[tokio::test]
+async fn a_deleted_state_leaves_the_lists_and_work_items_in_a_state_count_as_the_pin_counts_them() {
+    let env = env().await;
+    let (ws, project, owner, s) = project_with_states(&env, "state-delete").await;
+    let at = Utc.timestamp_opt(1_800_000_800, 0).unwrap();
+    let mut states = Vec::new();
+    for name in ["Live", "Draft", "Archived", "Deleted", "Empty"] {
+        states.push(env.db.insert_state(&s, &state_for(ws, project, owner, name, 0.0, false)).await.unwrap());
+    }
+    // a work item in each of the first four, and then the draft, the archived and the deleted marked as such
+    let mut items = Vec::new();
+    for st in &states[..4] {
+        let attrs = WorkItemAttrs { state_id: Some(st.id), ..WorkItemAttrs::bare(at) };
+        let mut tx = env.db.begin(&s).await.unwrap();
+        let a = tx.allocate(&s).await.unwrap();
+        items.push(insert_with_attrs(&mut tx, s, a, &attrs).await.unwrap());
+        tx.commit().await.unwrap();
+    }
+    let raw = env.conn.raw().await.unwrap();
+    raw.execute("UPDATE work_items SET is_draft = true WHERE id = $1", &[&items[1].0]).await.unwrap();
+    raw.execute("UPDATE work_items SET archived_at = now() WHERE id = $1", &[&items[2].0]).await.unwrap();
+    raw.execute("UPDATE work_items SET deleted_at = now() WHERE id = $1", &[&items[3].0]).await.unwrap();
+    for (st, counts) in states.iter().zip([true, false, false, false, false]) {
+        assert_eq!(env.db.state_has_work_items(&s, st.id).await.unwrap(), counts, "{}", st.name);
+    }
+    assert!(!env.db.state_has_work_items(&s, new_id()).await.unwrap());
+
+    // the live item's state is deleted, and the item still reads its group
+    let live = &states[0];
+    assert_eq!(env.db.work_item_row(&s, items[0]).await.unwrap().unwrap().state_group, Some(StateGroup::Started));
+    assert!(env.db.delete_state(&s, live.id, at).await.unwrap());
+    assert!(env.db.project_states(&s).await.unwrap().iter().all(|x| x.id != live.id));
+    let admin = WorkspaceScope::mint(ws, owner, Role::Admin);
+    assert!(env.db.workspace_states(&admin).await.unwrap().iter().all(|x| x.id != live.id));
+    let row = env.db.work_item_row(&s, items[0]).await.unwrap().unwrap();
+    assert_eq!((row.attrs.state_id, row.state_group), (Some(live.id), Some(StateGroup::Started)));
+    // the row is kept, with the time
+    let when: Option<Timestamp> =
+        raw.query_one("SELECT deleted_at FROM states WHERE id = $1", &[&live.id]).await.unwrap().get(0);
+    assert_eq!(when, Some(at));
+
+    // the intake state can be deleted, and then there is none; a second deletion and another project's state are not there
+    let triage = env.db.triage_state(&s).await.unwrap().unwrap();
+    assert!(env.db.delete_state(&s, triage.id, at).await.unwrap());
+    assert!(env.db.triage_state(&s).await.unwrap().is_none());
+    assert!(!env.db.delete_state(&s, live.id, at).await.unwrap());
+    let (_, _, _, other) = project_with_states(&env, "state-delete-2").await;
+    let others_state = env.db.project_states(&other).await.unwrap().remove(0);
+    assert!(!env.db.delete_state(&s, others_state.id, at).await.unwrap());
+
+    // and once the project is archived none of its work items counts, nor is the project archived before
+    assert!(!env.db.project_is_archived(&s).await.unwrap());
+    let mut detail = env.db.project_detail(&admin, project).await.unwrap().unwrap().listing.project;
+    detail.archived_at = Some(at);
+    assert!(env.db.update_project(&admin, &detail).await.unwrap());
+    assert!(env.db.project_is_archived(&s).await.unwrap());
+    assert!(!env.db.state_has_work_items(&s, states[1].id).await.unwrap());
+    assert!(!env.db.state_has_work_items(&s, states[0].id).await.unwrap());
+}
+
+/// Issue #58, migration 0015: the name of a state is unique among the live ones by an index that took the place of 0012's table
+/// constraint, and a start does it once. A database from before 0015 has the constraint; migrating replaces it with the index of the
+/// same name, and a restart (0012 again, 0015 again) leaves that index as it is, the same object, with no constraint made again.
+#[tokio::test]
+async fn migration_0015_replaces_the_state_name_constraint_once_and_a_restart_keeps_the_index() {
+    let env = env().await;
+    let raw = env.conn.raw().await.unwrap();
+    let name = "states_project_id_name_key";
+    let index_def = || {
+        let raw = &raw;
+        async move {
+            raw.query_one("SELECT indexdef FROM pg_indexes WHERE schemaname = 'public' AND tablename = 'states' AND indexname = $1", &[&name])
+                .await
+                .unwrap()
+                .get::<_, String>(0)
+        }
+    };
+    let constraints = || {
+        let raw = &raw;
+        async move {
+            raw.query_one("SELECT count(*) FROM pg_constraint WHERE conname = $1", &[&name])
+                .await
+                .unwrap()
+                .get::<_, i64>(0)
+        }
+    };
+    let oid = || {
+        let raw = &raw;
+        async move {
+            raw.query_one("SELECT oid::int8 FROM pg_class WHERE relname = $1", &[&name]).await.unwrap().get::<_, i64>(0)
+        }
+    };
+    assert!(index_def().await.contains("deleted_at IS NULL"));
+    assert_eq!(constraints().await, 0, "after migrating there is the index and no constraint");
+
+    // a database from before 0015: the table constraint 0012 made
+    raw.batch_execute(&format!(
+        "DROP INDEX {name}; ALTER TABLE states ADD CONSTRAINT {name} UNIQUE (project_id, name);"
+    ))
+    .await
+    .unwrap();
+    assert_eq!(constraints().await, 1);
+    assert!(!index_def().await.contains("deleted_at"));
+    thrust_adapters_postgres::migrate(&raw).await.unwrap();
+    assert!(index_def().await.contains("deleted_at IS NULL"), "the constraint was not replaced");
+    assert_eq!(constraints().await, 0);
+
+    // a restart makes nothing again
+    let before = oid().await;
+    thrust_adapters_postgres::migrate(&raw).await.unwrap();
+    raw.batch_execute(thrust_adapters_postgres::MIGRATION_0012).await.unwrap();
+    assert_eq!(oid().await, before, "a restart made the index again");
+    assert_eq!(constraints().await, 0, "a restart made the constraint again");
 }
 
 /// `project_stats` counts a project's live work items (not a draft, an archived or a deleted one) and every member row, for each

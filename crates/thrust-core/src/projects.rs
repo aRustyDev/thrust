@@ -310,6 +310,9 @@ pub async fn create_project(
             created_by: Some(me),
             created_at: now,
             updated_at: now,
+            external_source: None,
+            external_id: None,
+            updated_by: None,
         })
         .collect();
     app.ports.db.insert_project(scope, &NewProject { project: row, members, states }).await?;

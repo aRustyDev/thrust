@@ -56,6 +56,9 @@ struct DbState {
     project_user_props: HashMap<(ProjectId, UserId), ProjectUserProperties>,
     /// `states` and `labels` (migration 0012), in the order they were written.
     states: Vec<StateRow>,
+    /// The states that were deleted (migration 0015), with the time. A deleted state stays in `states`, as its row stays in Postgres,
+    /// because the work items that name it still read it; the three lists of states leave it out.
+    deleted_states: HashMap<Uuid, Timestamp>,
     labels: Vec<LabelRow>,
     /// `workspace_user_preferences`, `workspace_home_preferences` and `workspace_user_properties` (migration 0011): rows
     /// a member's first visit to a workspace makes.
@@ -109,6 +112,21 @@ fn member_user(s: &DbState, user: UserId) -> MemberUser {
 impl DbState {
     fn user_is_active(&self, user: UserId) -> bool {
         self.users.get(&user).is_some_and(|u| u.is_active)
+    }
+
+    /// The states of a project that were not deleted (the intake one included), in the order they were written.
+    fn live_states(&self, project: ProjectId) -> impl Iterator<Item = &StateRow> {
+        self.states.iter().filter(move |o| o.project_id == project && !self.deleted_states.contains_key(&o.id))
+    }
+
+    /// A state becomes the project's default: no other live state of it is (Postgres has an index that allows one).
+    fn take_default_from_others(&mut self, project: ProjectId, keep: Uuid) {
+        let deleted = &self.deleted_states;
+        for o in
+            self.states.iter_mut().filter(|o| o.project_id == project && o.id != keep && !deleted.contains_key(&o.id))
+        {
+            o.is_default = false;
+        }
     }
 
     /// Every live project of the scope's workspace with the caller's role and place in it, unfiltered and unordered: the two
@@ -705,10 +723,107 @@ impl Database for MemoryDatabase {
             .states
             .iter()
             .filter(|st| st.project_id == project && st.workspace_id == ws && st.group != StateGroup::Triage)
+            .filter(|st| !s.deleted_states.contains_key(&st.id))
             .cloned()
             .collect();
         out.sort_by(|a, b| a.sequence.total_cmp(&b.sequence).then(a.id.cmp(&b.id)));
         Ok(out)
+    }
+
+    async fn project_is_archived(&self, scope: &Scope) -> Result<bool, DbError> {
+        let s = self.state.lock_unpoisoned();
+        Ok(s.project_rows
+            .get(&scope.project_id())
+            .is_some_and(|p| p.workspace_id == scope.workspace_id() && p.archived_at.is_some()))
+    }
+
+    async fn insert_state(&self, scope: &Scope, st: &StateRow) -> Result<StateRow, DbError> {
+        let (ws, project) = (scope.workspace_id(), scope.project_id());
+        if st.workspace_id != ws || st.project_id != project {
+            return Err(DbError::Backend("state is not in this project".into()));
+        }
+        let mut s = self.state.lock_unpoisoned();
+        // the primary key, the name's unique index, then the foreign keys, as Postgres checks them, all before anything is written
+        if s.states.iter().any(|o| o.id == st.id) {
+            return Err(DbError::Conflict("states_pkey".into()));
+        }
+        if s.live_states(project).any(|o| o.name == st.name) {
+            return Err(DbError::Conflict("states_project_id_name_key".into()));
+        }
+        if s.projects.get(&project) != Some(&ws) {
+            return Err(DbError::Backend("states_workspace_id_project_id_fkey".into()));
+        }
+        for (column, user) in [("created_by", st.created_by), ("updated_by", st.updated_by)] {
+            if user.is_some_and(|u| !s.users.contains_key(&u)) {
+                return Err(DbError::Backend(format!("states_{column}_fkey")));
+            }
+        }
+        let mut row = st.clone();
+        // Plane's place: after the greatest of the project's other states, the intake one not counted
+        let greatest =
+            s.live_states(project).filter(|o| o.group != StateGroup::Triage).map(|o| o.sequence).reduce(f64::max);
+        if let Some(greatest) = greatest {
+            row.sequence = greatest + 15000.0;
+        }
+        if row.is_default {
+            s.take_default_from_others(project, row.id);
+        }
+        s.states.push(row.clone());
+        Ok(row)
+    }
+
+    async fn update_state(&self, scope: &Scope, st: &StateRow) -> Result<bool, DbError> {
+        let (ws, project) = (scope.workspace_id(), scope.project_id());
+        let mut s = self.state.lock_unpoisoned();
+        if !s.live_states(project).any(|o| o.id == st.id && o.workspace_id == ws) {
+            return Ok(false);
+        }
+        if s.live_states(project).any(|o| o.id != st.id && o.name == st.name) {
+            return Err(DbError::Conflict("states_project_id_name_key".into()));
+        }
+        if st.updated_by.is_some_and(|u| !s.users.contains_key(&u)) {
+            return Err(DbError::Backend("states_updated_by_fkey".into()));
+        }
+        if st.is_default {
+            s.take_default_from_others(project, st.id);
+        }
+        if let Some(cur) = s.states.iter_mut().find(|o| o.id == st.id) {
+            cur.name.clone_from(&st.name);
+            cur.description.clone_from(&st.description);
+            cur.color.clone_from(&st.color);
+            cur.sequence = st.sequence;
+            cur.group = st.group;
+            cur.is_default = st.is_default;
+            cur.external_source.clone_from(&st.external_source);
+            cur.external_id.clone_from(&st.external_id);
+            cur.updated_by = st.updated_by;
+            cur.updated_at = st.updated_at;
+        }
+        Ok(true)
+    }
+
+    async fn delete_state(&self, scope: &Scope, id: Uuid, at: Timestamp) -> Result<bool, DbError> {
+        let (ws, project) = (scope.workspace_id(), scope.project_id());
+        let mut s = self.state.lock_unpoisoned();
+        if !s.live_states(project).any(|o| o.id == id && o.workspace_id == ws) {
+            return Ok(false);
+        }
+        s.deleted_states.insert(id, at);
+        Ok(true)
+    }
+
+    async fn state_has_work_items(&self, scope: &Scope, id: Uuid) -> Result<bool, DbError> {
+        let (ws, project) = (scope.workspace_id(), scope.project_id());
+        let s = self.state.lock_unpoisoned();
+        // a project that is archived, or one that is not there, counts none of its work items
+        let counts = s.project_rows.get(&project).is_some_and(|p| p.workspace_id == ws && p.archived_at.is_none());
+        Ok(counts
+            && s.work_items.iter().any(|w| {
+                w.workspace_id == ws
+                    && w.project_id == project
+                    && is_visible(w)
+                    && s.work_item_attrs.get(&w.id).and_then(|a| a.state_id) == Some(id)
+            }))
     }
 
     async fn workspace_states(&self, scope: &WorkspaceScope) -> Result<Vec<StateRow>, DbError> {
@@ -718,6 +833,7 @@ impl Database for MemoryDatabase {
             .states
             .iter()
             .filter(|st| st.workspace_id == ws && st.group != StateGroup::Triage)
+            .filter(|st| !s.deleted_states.contains_key(&st.id))
             // a project of this workspace that is not archived, and that the caller is in (their row names the project's workspace)
             .filter(|st| {
                 s.project_rows.get(&st.project_id).is_some_and(|p| p.workspace_id == ws && p.archived_at.is_none())
@@ -738,6 +854,7 @@ impl Database for MemoryDatabase {
             .states
             .iter()
             .filter(|st| st.project_id == project && st.workspace_id == ws && st.group == StateGroup::Triage)
+            .filter(|st| !s.deleted_states.contains_key(&st.id))
             .collect();
         found.sort_by(|a, b| a.sequence.total_cmp(&b.sequence).then(a.id.cmp(&b.id)));
         Ok(found.first().map(|st| (*st).clone()))
@@ -1419,6 +1536,9 @@ impl Database for MemoryDatabase {
                 created_by: None,
                 created_at: epoch,
                 updated_at: epoch,
+                external_source: None,
+                external_id: None,
+                updated_by: None,
             });
         }
         for l in &f.labels {

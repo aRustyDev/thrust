@@ -559,7 +559,8 @@ fn pmember_of(r: &Row) -> Result<ProjectMemberRow, DbError> {
 /// The columns of `states` the port's `StateRow` is made of (aliased `st`).
 const STATE_COLS: &str = "st.id AS st_id, st.workspace_id AS st_workspace_id, st.project_id AS st_project_id, st.name AS st_name, \
     st.description AS st_description, st.color AS st_color, st.sequence AS st_sequence, st.state_group AS st_state_group, \
-    st.is_default AS st_is_default, st.created_by AS st_created_by, st.created_at AS st_created_at, st.updated_at AS st_updated_at";
+    st.is_default AS st_is_default, st.created_by AS st_created_by, st.created_at AS st_created_at, st.updated_at AS st_updated_at, \
+    st.external_source AS st_external_source, st.external_id AS st_external_id, st.updated_by AS st_updated_by";
 
 fn state_of(r: &Row) -> Result<StateRow, DbError> {
     let group: String = r.get("st_state_group");
@@ -577,6 +578,9 @@ fn state_of(r: &Row) -> Result<StateRow, DbError> {
         created_by: r.get::<_, Option<Uuid>>("st_created_by").map(UserId),
         created_at: r.get("st_created_at"),
         updated_at: r.get("st_updated_at"),
+        external_source: r.get("st_external_source"),
+        external_id: r.get("st_external_id"),
+        updated_by: r.get::<_, Option<Uuid>>("st_updated_by").map(UserId),
     })
 }
 
@@ -655,6 +659,10 @@ fn work_item_activity(r: &Row) -> WorkItemActivity {
         created_at: r.get("created_at"),
     }
 }
+
+/// Take the default from the project's other live states ($1 the project, $2 the state that becomes the default).
+const CLEAR_OTHER_DEFAULTS: &str =
+    "UPDATE states SET is_default = false WHERE project_id = $1 AND id <> $2 AND is_default AND deleted_at IS NULL";
 
 /// A project row of a listing query (`PROJECT_COLS`, the caller's `m_role` and their `up_sort_order`).
 fn listing_of(r: &Row) -> Result<ProjectListing, DbError> {
@@ -1455,7 +1463,7 @@ impl Database for PgDatabase {
             .query(
                 &format!(
                     "SELECT {STATE_COLS} FROM states st WHERE st.workspace_id = $1 AND st.project_id = $2 AND st.state_group <> 'triage' \
-                     ORDER BY st.sequence, st.id"
+                       AND st.deleted_at IS NULL ORDER BY st.sequence, st.id"
                 ),
                 &[&scope.workspace_id().0, &scope.project_id().0],
             )
@@ -1472,7 +1480,8 @@ impl Database for PgDatabase {
                     "SELECT {STATE_COLS} FROM states st \
                        JOIN projects p ON p.id = st.project_id AND p.workspace_id = st.workspace_id AND p.archived_at IS NULL AND p.deleted_at IS NULL \
                        JOIN project_members m ON m.project_id = p.id AND m.workspace_id = p.workspace_id AND m.user_id = $2 \
-                     WHERE st.workspace_id = $1 AND st.state_group <> 'triage' ORDER BY st.sequence, st.project_id, st.id"
+                     WHERE st.workspace_id = $1 AND st.state_group <> 'triage' AND st.deleted_at IS NULL \
+                     ORDER BY st.sequence, st.project_id, st.id"
                 ),
                 &[&scope.workspace_id().0, &scope.user_id().0],
             )
@@ -1487,13 +1496,161 @@ impl Database for PgDatabase {
             .query_opt(
                 &format!(
                     "SELECT {STATE_COLS} FROM states st WHERE st.workspace_id = $1 AND st.project_id = $2 AND st.state_group = 'triage' \
-                     ORDER BY st.sequence, st.id LIMIT 1"
+                       AND st.deleted_at IS NULL ORDER BY st.sequence, st.id LIMIT 1"
                 ),
                 &[&scope.workspace_id().0, &scope.project_id().0],
             )
             .await
             .map_err(db_err)?;
         row.as_ref().map(state_of).transpose()
+    }
+
+    async fn project_is_archived(&self, scope: &Scope) -> Result<bool, DbError> {
+        let c = self.conn().await?;
+        let row = Pg(c.client())
+            .query_opt(
+                "SELECT archived_at IS NOT NULL AS archived FROM projects \
+                 WHERE id = $1 AND workspace_id = $2 AND deleted_at IS NULL",
+                &[&scope.project_id().0, &scope.workspace_id().0],
+            )
+            .await
+            .map_err(db_err)?;
+        Ok(row.is_some_and(|r| r.get::<_, bool>("archived")))
+    }
+
+    async fn insert_state(&self, scope: &Scope, st: &StateRow) -> Result<StateRow, DbError> {
+        if st.workspace_id != scope.workspace_id() || st.project_id != scope.project_id() {
+            return Err(DbError::Backend("state is not in this project".into()));
+        }
+        // A new default state takes the default from the project's other states, and the row goes in with a place of Plane's
+        // making, in one transaction: the one-default index would refuse the row while another still held the flag. A taken name is a
+        // unique violation, which `db_err` makes a `Conflict`.
+        let c = self.connector.checkout(true).await?;
+        let cl = Pg(c.client());
+        cl.batch_execute("BEGIN").await.map_err(db_err)?;
+        let res: Result<StateRow, DbError> = async {
+            if st.is_default {
+                cl.execute(CLEAR_OTHER_DEFAULTS, &[&st.project_id.0, &st.id]).await.map_err(db_err)?;
+            }
+            let (group, created_by, updated_by) =
+                (st.group.as_str(), st.created_by.map(|u| u.0), st.updated_by.map(|u| u.0));
+            let row = cl
+                .query_one(
+                    &format!(
+                        "INSERT INTO states AS st (id, workspace_id, project_id, name, description, color, sequence, state_group, \
+                           is_default, external_source, external_id, created_by, updated_by, created_at, updated_at) \
+                         VALUES ($1, $2, $3, $4, $5, $6, \
+                           COALESCE((SELECT max(o.sequence) FROM states o WHERE o.project_id = $3 AND o.state_group <> 'triage' \
+                                       AND o.deleted_at IS NULL) + 15000, $7), \
+                           $8, $9, $10, $11, $12, $13, $14, $15) \
+                         RETURNING {STATE_COLS}"
+                    ),
+                    &[
+                        &st.id,
+                        &st.workspace_id.0,
+                        &st.project_id.0,
+                        &st.name,
+                        &st.description,
+                        &st.color,
+                        &st.sequence,
+                        &group,
+                        &st.is_default,
+                        &st.external_source,
+                        &st.external_id,
+                        &created_by,
+                        &updated_by,
+                        &st.created_at,
+                        &st.updated_at,
+                    ],
+                )
+                .await
+                .map_err(db_err)?;
+            state_of(&row)
+        }
+        .await;
+        match res {
+            Ok(row) => cl.batch_execute("COMMIT").await.map_err(db_err).map(|()| row),
+            Err(e) => {
+                let _ = cl.batch_execute("ROLLBACK").await;
+                Err(e)
+            }
+        }
+    }
+
+    async fn update_state(&self, scope: &Scope, st: &StateRow) -> Result<bool, DbError> {
+        let c = self.connector.checkout(true).await?;
+        let cl = Pg(c.client());
+        cl.batch_execute("BEGIN").await.map_err(db_err)?;
+        let res: Result<bool, DbError> = async {
+            if st.is_default {
+                cl.execute(CLEAR_OTHER_DEFAULTS, &[&scope.project_id().0, &st.id]).await.map_err(db_err)?;
+            }
+            let (group, updated_by) = (st.group.as_str(), st.updated_by.map(|u| u.0));
+            let n = cl
+                .execute(
+                    "UPDATE states SET name = $4, description = $5, color = $6, sequence = $7, state_group = $8, is_default = $9, \
+                       external_source = $10, external_id = $11, updated_by = $12, updated_at = $13 \
+                     WHERE id = $1 AND project_id = $2 AND workspace_id = $3 AND deleted_at IS NULL",
+                    &[
+                        &st.id,
+                        &scope.project_id().0,
+                        &scope.workspace_id().0,
+                        &st.name,
+                        &st.description,
+                        &st.color,
+                        &st.sequence,
+                        &group,
+                        &st.is_default,
+                        &st.external_source,
+                        &st.external_id,
+                        &updated_by,
+                        &st.updated_at,
+                    ],
+                )
+                .await
+                .map_err(db_err)?;
+            Ok(n == 1)
+        }
+        .await;
+        match res {
+            Ok(true) => cl.batch_execute("COMMIT").await.map_err(db_err).map(|()| true),
+            // no such state: nothing changed, and the default that was taken from the others is given back
+            Ok(false) => cl.batch_execute("ROLLBACK").await.map_err(db_err).map(|()| false),
+            Err(e) => {
+                let _ = cl.batch_execute("ROLLBACK").await;
+                Err(e)
+            }
+        }
+    }
+
+    async fn delete_state(&self, scope: &Scope, id: Uuid, at: Timestamp) -> Result<bool, DbError> {
+        let c = self.conn().await?;
+        let n = Pg(c.client())
+            .execute(
+                "UPDATE states SET deleted_at = $4 \
+                 WHERE id = $1 AND project_id = $2 AND workspace_id = $3 AND deleted_at IS NULL",
+                &[&id, &scope.project_id().0, &scope.workspace_id().0, &at],
+            )
+            .await
+            .map_err(db_err)?;
+        Ok(n == 1)
+    }
+
+    async fn state_has_work_items(&self, scope: &Scope, id: Uuid) -> Result<bool, DbError> {
+        // The pin's `Issue.objects`, which leaves out what is archived, a draft or deleted, and everything in an archived project.
+        let c = self.conn().await?;
+        let row = Pg(c.client())
+            .query_one(
+                "SELECT EXISTS (SELECT 1 FROM work_items w \
+                   JOIN projects p ON p.id = w.project_id AND p.workspace_id = w.workspace_id \
+                     AND p.archived_at IS NULL AND p.deleted_at IS NULL \
+                   WHERE w.state_id = $1 AND w.workspace_id = $2 AND w.project_id = $3 \
+                     AND w.deleted_at IS NULL AND w.archived_at IS NULL AND NOT w.is_draft) AS present",
+                &[&id, &scope.workspace_id().0, &scope.project_id().0],
+            )
+            .await
+            .map_err(db_err)?;
+        Ok(row.get("present"))
     }
 
     async fn project_stats(

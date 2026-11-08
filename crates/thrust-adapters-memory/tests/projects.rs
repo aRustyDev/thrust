@@ -182,6 +182,9 @@ fn new_project(ws: u128, n: u128, creator: u128, others: &[u128], created: i64) 
         created_by: Some(uid(creator)),
         created_at: at(created),
         updated_at: at(created),
+        external_source: None,
+        external_id: None,
+        updated_by: None,
     })
     .collect();
     NewProject { project, members, states }
@@ -755,4 +758,316 @@ fn the_workspaces_counts_cover_every_project_whoever_asks_newest_first() {
     let got = block_on(db.project_stats(&wscope(A, 2, Role::Member), Some(&[pid(10), pid(13)]))).unwrap();
     assert_eq!(got.iter().map(|s| s.id).collect::<Vec<_>>(), vec![pid(10)]);
     assert!(block_on(db.project_stats(&wscope(A, 2, Role::Member), Some(&[]))).unwrap().is_empty());
+}
+
+// --- states (issue #58, migration 0015) ---------------------------------------------------------------------------------------
+//
+// The rules, written out:
+//
+// * `insert_state` gives a state Plane's place: after the greatest of the project's other live states that are not the intake one,
+//   by 15000, whatever place the row asked for; the first such state keeps the place it asked for. A state that is the default takes
+//   the default from the others. A name a live state of the project has is a conflict; one a deleted state had, or another project's
+//   state has, is not.
+// * `update_state` replaces name, description, colour, place, group, default flag, external key, editor and time, keeps the rest, and
+//   finds only a live state of the scope's project; a state that becomes the default takes it from the others, and a change that finds
+//   no state changes nothing.
+// * `delete_state` marks the state: the three lists leave it out and its name is free, while a work item that names it still reads its
+//   group. `state_has_work_items` counts what the pin's `Issue.objects` counts: not a draft, not archived, not deleted, and nothing in
+//   a project that is archived.
+
+fn state_id(project: u128, k: u128) -> Uuid {
+    Uuid::from_u128((project << 48) | (0x100 + k))
+}
+
+/// A state of project `project`, made by user 2, with the place `sequence` (which `insert_state` replaces unless it is the first).
+fn new_state(project: u128, k: u128, name: &str, sequence: f64) -> StateRow {
+    StateRow {
+        id: state_id(project, k),
+        workspace_id: wid(A),
+        project_id: pid(project),
+        name: name.into(),
+        description: String::new(),
+        color: "#123456".into(),
+        sequence,
+        group: StateGroup::Started,
+        is_default: false,
+        created_by: Some(uid(2)),
+        created_at: at(10),
+        updated_at: at(10),
+        external_source: None,
+        external_id: None,
+        updated_by: None,
+    }
+}
+
+fn states(db: &MemoryDatabase, project: u128) -> Vec<StateRow> {
+    block_on(db.project_states(&pscope(A, project, 2))).unwrap()
+}
+
+fn named(db: &MemoryDatabase, project: u128, name: &str) -> StateRow {
+    states(db, project).into_iter().find(|s| s.name == name).unwrap_or_else(|| panic!("no state {name}"))
+}
+
+fn defaults(db: &MemoryDatabase, project: u128) -> Vec<String> {
+    states(db, project).into_iter().filter(|s| s.is_default).map(|s| s.name).collect()
+}
+
+/// A work item `n` of project 10 in `state`, written with its attributes in one transaction.
+fn work_item_in(db: &MemoryDatabase, n: u128, state: Uuid, draft: bool, archived: bool, deleted: bool) -> WorkItem {
+    let item = WorkItem {
+        id: WorkItemId(Uuid::from_u128(n)),
+        workspace_id: wid(A),
+        project_id: pid(10),
+        sequence_id: n as i64,
+        sort_order: 1,
+        name: format!("w{n}"),
+        description: None,
+        external_source: None,
+        external_id: None,
+        created_by: uid(2),
+        created_at: at(0),
+        archived_at: archived.then(|| at(1)),
+        is_draft: draft,
+        deleted_at: deleted.then(|| at(1)),
+    };
+    let scope = pscope(A, 10, 2);
+    let mut tx = block_on(db.begin(&scope)).unwrap();
+    block_on(tx.insert_work_item(&scope, &item)).unwrap();
+    let attrs = WorkItemAttrs { state_id: Some(state), ..WorkItemAttrs::bare(at(0)) };
+    block_on(tx.insert_work_item_attrs(&scope, item.id, &attrs)).unwrap();
+    block_on(tx.commit()).unwrap();
+    item
+}
+
+#[test]
+fn a_new_state_goes_after_the_greatest_live_one_and_the_intake_state_does_not_count() {
+    let db = world();
+    make(&db, &new_project(A, 10, 2, &[3], 0));
+    let scope = pscope(A, 10, 2);
+    // the project has 15000 to 55000, and an intake state at 65000 that does not count: 55000 + 15000
+    let a = block_on(db.insert_state(&scope, &new_state(10, 1, "Review", 1.0))).unwrap();
+    assert_eq!(a.sequence, 70000.0);
+    // what is returned is what is stored
+    assert_eq!(named(&db, 10, "Review"), a);
+    // and the next goes after that one, whatever it asked for
+    assert_eq!(block_on(db.insert_state(&scope, &new_state(10, 2, "QA", 9e9))).unwrap().sequence, 85000.0);
+    let last = block_on(db.insert_state(&scope, &new_state(10, 3, "Ops", 0.0))).unwrap();
+    assert_eq!(last.sequence, 100_000.0);
+    // a deleted state is not counted: the next goes where the deleted one went
+    assert!(block_on(db.delete_state(&scope, last.id, at(11))).unwrap());
+    assert_eq!(block_on(db.insert_state(&scope, &new_state(10, 4, "Ops2", 0.0))).unwrap().sequence, 100_000.0);
+    // another project's states do not count
+    make(&db, &new_project(A, 11, 2, &[], 1));
+    assert_eq!(
+        block_on(db.insert_state(&pscope(A, 11, 2), &new_state(11, 1, "Review", 0.0))).unwrap().sequence,
+        70000.0
+    );
+}
+
+#[test]
+fn the_first_state_of_a_project_keeps_the_place_it_asked_for() {
+    let db = world();
+    make(&db, &new_project(A, 10, 2, &[], 0));
+    let scope = pscope(A, 10, 2);
+    for s in states(&db, 10) {
+        assert!(block_on(db.delete_state(&scope, s.id, at(11))).unwrap(), "{}", s.name);
+    }
+    // only the intake state is left, and it is not one that counts
+    let first = block_on(db.insert_state(&scope, &new_state(10, 1, "Only", 777.0))).unwrap();
+    assert_eq!(first.sequence, 777.0);
+    assert_eq!(block_on(db.insert_state(&scope, &new_state(10, 2, "Next", 5.0))).unwrap().sequence, 15_777.0);
+}
+
+#[test]
+fn a_state_that_becomes_the_default_takes_it_from_the_others_and_a_change_that_finds_nothing_changes_nothing() {
+    let db = world();
+    make(&db, &new_project(A, 10, 2, &[], 0));
+    let scope = pscope(A, 10, 2);
+    assert_eq!(defaults(&db, 10), ["Backlog"]);
+    // a state that is not the default leaves it where it is
+    block_on(db.insert_state(&scope, &new_state(10, 1, "Plain", 0.0))).unwrap();
+    assert_eq!(defaults(&db, 10), ["Backlog"]);
+    // a new one that is, takes it
+    let review = StateRow { is_default: true, ..new_state(10, 2, "Review", 0.0) };
+    block_on(db.insert_state(&scope, &review)).unwrap();
+    assert_eq!(defaults(&db, 10), ["Review"]);
+    // a change that makes another the default takes it from that one
+    let todo = StateRow { is_default: true, ..named(&db, 10, "Todo") };
+    assert!(block_on(db.update_state(&scope, &todo)).unwrap());
+    assert_eq!(defaults(&db, 10), ["Todo"]);
+    // a state that is the default and is changed to be none leaves the project with none
+    let off = StateRow { is_default: false, ..named(&db, 10, "Todo") };
+    assert!(block_on(db.update_state(&scope, &off)).unwrap());
+    assert!(defaults(&db, 10).is_empty());
+    // and one that is not there takes the default from no one
+    assert!(block_on(db.update_state(&scope, &StateRow { is_default: true, ..named(&db, 10, "Review") })).unwrap());
+    let nowhere = StateRow { is_default: true, ..new_state(10, 99, "Nowhere", 0.0) };
+    assert!(!block_on(db.update_state(&scope, &nowhere)).unwrap());
+    assert_eq!(defaults(&db, 10), ["Review"]);
+    // the other project's default is its own
+    make(&db, &new_project(A, 11, 2, &[], 1));
+    assert_eq!(defaults(&db, 11), ["Backlog"]);
+}
+
+#[test]
+fn a_name_is_taken_by_a_live_state_of_the_project_and_by_no_other() {
+    let db = world();
+    make(&db, &new_project(A, 10, 2, &[], 0));
+    make(&db, &new_project(A, 11, 2, &[], 1));
+    let scope = pscope(A, 10, 2);
+    let taken =
+        |r: Result<StateRow, DbError>| matches!(r, Err(DbError::Conflict(c)) if c == "states_project_id_name_key");
+    assert!(taken(block_on(db.insert_state(&scope, &new_state(10, 1, "Todo", 0.0)))));
+    // exact: another case is another name
+    block_on(db.insert_state(&scope, &new_state(10, 2, "todo", 0.0))).unwrap();
+    // another project's state may have the name
+    block_on(db.insert_state(&pscope(A, 11, 2), &new_state(11, 1, "Mine", 0.0))).unwrap();
+    block_on(db.insert_state(&scope, &new_state(10, 3, "Mine", 0.0))).unwrap();
+    // a deleted state's name is free
+    let todo = named(&db, 10, "Todo");
+    assert!(block_on(db.delete_state(&scope, todo.id, at(11))).unwrap());
+    block_on(db.insert_state(&scope, &new_state(10, 4, "Todo", 0.0))).unwrap();
+    // a change cannot take a live name, and can keep its own
+    let clash = StateRow { name: "Cancelled".into(), ..named(&db, 10, "Done") };
+    assert!(matches!(block_on(db.update_state(&scope, &clash)), Err(DbError::Conflict(_))));
+    assert!(block_on(db.update_state(&scope, &named(&db, 10, "Done"))).unwrap());
+    // and the same id twice is a primary key
+    let again = new_state(10, 4, "Another", 0.0);
+    assert!(matches!(block_on(db.insert_state(&scope, &again)), Err(DbError::Conflict(c)) if c == "states_pkey"));
+}
+
+#[test]
+fn a_change_replaces_what_it_names_keeps_the_rest_and_finds_only_live_states_of_the_project() {
+    let db = world();
+    make(&db, &new_project(A, 10, 2, &[], 0));
+    make(&db, &new_project(A, 11, 2, &[], 1));
+    let scope = pscope(A, 10, 2);
+    let before = named(&db, 10, "Todo");
+    let changed = StateRow {
+        name: "Renamed".into(),
+        description: "d".into(),
+        color: "#abcdef".into(),
+        sequence: 123.5,
+        group: StateGroup::Completed,
+        is_default: false,
+        external_source: Some("gh".into()),
+        external_id: Some("42".into()),
+        updated_by: Some(uid(3)),
+        updated_at: at(20),
+        // what a change cannot move: the row is found by its id, in the scope's project
+        created_by: Some(uid(7)),
+        created_at: at(99),
+        ..before.clone()
+    };
+    assert!(block_on(db.update_state(&scope, &changed)).unwrap());
+    let after = named(&db, 10, "Renamed");
+    assert_eq!(
+        (&after.description, &after.color, after.sequence, after.group, &after.external_source, &after.external_id),
+        (
+            &"d".to_string(),
+            &"#abcdef".to_string(),
+            123.5,
+            StateGroup::Completed,
+            &Some("gh".to_string()),
+            &Some("42".to_string())
+        )
+    );
+    assert_eq!((after.updated_by, after.updated_at), (Some(uid(3)), at(20)));
+    assert_eq!(
+        (after.id, after.project_id, after.created_by, after.created_at),
+        (before.id, before.project_id, before.created_by, before.created_at)
+    );
+
+    // a user who does not exist cannot be the editor, and nothing changes
+    let ghost = StateRow { updated_by: Some(uid(99)), ..after.clone() };
+    assert!(matches!(block_on(db.update_state(&scope, &ghost)), Err(DbError::Backend(_))));
+    // a state of another project, one that is deleted and one that is nowhere are not there
+    assert!(!block_on(db.update_state(&scope, &named(&db, 11, "Todo"))).unwrap());
+    assert!(block_on(db.delete_state(&scope, after.id, at(21))).unwrap());
+    assert!(!block_on(db.update_state(&scope, &after)).unwrap());
+    assert!(!block_on(db.update_state(&scope, &new_state(10, 99, "Nowhere", 0.0))).unwrap());
+}
+
+#[test]
+fn a_deleted_state_leaves_the_lists_and_is_still_read_by_its_work_items() {
+    let db = world();
+    make(&db, &new_project(A, 10, 2, &[], 0));
+    make(&db, &new_project(A, 11, 2, &[], 1));
+    let scope = pscope(A, 10, 2);
+    let in_progress = named(&db, 10, "In Progress");
+    let item = work_item_in(&db, 1, in_progress.id, false, false, false);
+    let group = |db: &MemoryDatabase| block_on(db.work_item_row(&scope, item.id)).unwrap().unwrap().state_group;
+    assert_eq!(group(&db), Some(StateGroup::Started));
+
+    assert!(block_on(db.delete_state(&scope, in_progress.id, at(5))).unwrap());
+    assert!(states(&db, 10).iter().all(|s| s.id != in_progress.id));
+    let member = wscope(A, 1, Role::Admin);
+    assert!(block_on(db.workspace_states(&member)).unwrap().iter().all(|s| s.id != in_progress.id));
+    // the work item still names it, and reads its group
+    assert_eq!(group(&db), Some(StateGroup::Started));
+    assert_eq!(block_on(db.work_item_row(&scope, item.id)).unwrap().unwrap().attrs.state_id, Some(in_progress.id));
+
+    // the intake state is deletable too, and `triage_state` then finds none
+    let triage = block_on(db.triage_state(&scope)).unwrap().unwrap();
+    assert!(block_on(db.delete_state(&scope, triage.id, at(6))).unwrap());
+    assert!(block_on(db.triage_state(&scope)).unwrap().is_none());
+
+    // a second deletion, another project's state and a state that is nowhere are not there
+    assert!(!block_on(db.delete_state(&scope, in_progress.id, at(7))).unwrap());
+    assert!(!block_on(db.delete_state(&scope, named(&db, 11, "Todo").id, at(7))).unwrap());
+    assert!(!block_on(db.delete_state(&scope, state_id(10, 99), at(7))).unwrap());
+}
+
+/// The pin's `Issue.objects`: a work item counts unless it is a draft, archived or deleted, and none of a project that is archived
+/// counts. Every kind of item in a state of its own, and the project archived last.
+#[test]
+fn work_items_in_a_state_count_as_the_pin_counts_them() {
+    let db = world();
+    make(&db, &new_project(A, 10, 2, &[], 0));
+    let scope = pscope(A, 10, 2);
+    let ids: Vec<Uuid> = states(&db, 10).iter().map(|s| s.id).collect();
+    // (the work item, its state, a draft, archived, deleted, whether it counts)
+    let kinds = [
+        (1u128, ids[0], false, false, false, true),
+        (2, ids[1], true, false, false, false),
+        (3, ids[2], false, true, false, false),
+        (4, ids[3], false, false, true, false),
+    ];
+    for (n, state, draft, archived, deleted, _) in kinds {
+        work_item_in(&db, n, state, draft, archived, deleted);
+    }
+    for (n, state, draft, archived, deleted, counts) in kinds {
+        let got = block_on(db.state_has_work_items(&scope, state)).unwrap();
+        assert_eq!(got, counts, "item {n} (draft {draft}, archived {archived}, deleted {deleted})");
+    }
+    // a state with nothing in it, and a state that is nowhere
+    assert!(!block_on(db.state_has_work_items(&scope, ids[4])).unwrap());
+    assert!(!block_on(db.state_has_work_items(&scope, state_id(10, 99))).unwrap());
+    // another project's scope does not see these states' items
+    make(&db, &new_project(A, 11, 2, &[], 1));
+    assert!(!block_on(db.state_has_work_items(&pscope(A, 11, 2), ids[0])).unwrap());
+    // and once the project is archived none of its work items counts
+    let admin = wscope(A, 1, Role::Admin);
+    let mut row = block_on(db.project_detail(&admin, pid(10))).unwrap().unwrap().listing.project;
+    row.archived_at = Some(at(30));
+    assert!(block_on(db.update_project(&admin, &row)).unwrap());
+    assert!(!block_on(db.state_has_work_items(&scope, ids[0])).unwrap());
+}
+
+#[test]
+fn a_project_is_archived_when_it_says_so() {
+    let db = world();
+    make(&db, &new_project(A, 10, 2, &[], 0));
+    let admin = wscope(A, 1, Role::Admin);
+    assert!(!block_on(db.project_is_archived(&pscope(A, 10, 2))).unwrap());
+    let mut row = block_on(db.project_detail(&admin, pid(10))).unwrap().unwrap().listing.project;
+    row.archived_at = Some(at(5));
+    assert!(block_on(db.update_project(&admin, &row)).unwrap());
+    assert!(block_on(db.project_is_archived(&pscope(A, 10, 2))).unwrap());
+    // a project that is not there, or is in another workspace, is not archived
+    assert!(!block_on(db.project_is_archived(&pscope(A, 99, 2))).unwrap());
+    assert!(!block_on(db.project_is_archived(&pscope(B, 10, 2))).unwrap());
+    row.archived_at = None;
+    assert!(block_on(db.update_project(&admin, &row)).unwrap());
+    assert!(!block_on(db.project_is_archived(&pscope(A, 10, 2))).unwrap());
 }

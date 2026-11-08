@@ -540,6 +540,11 @@ pub struct StateRow {
     pub created_by: Option<UserId>,
     pub created_at: Timestamp,
     pub updated_at: Timestamp,
+    /// The key an integration gave the state (migration 0015); the pair of them is unique among a project's states by Plane's own
+    /// check, not by the database.
+    pub external_source: Option<String>,
+    pub external_id: Option<String>,
+    pub updated_by: Option<UserId>,
 }
 
 /// A label of a project.
@@ -857,8 +862,31 @@ pub trait Database: Send + Sync {
     /// The project's labels by `sort_order` (ties by id).
     async fn project_labels(&self, scope: &Scope) -> Result<Vec<LabelRow>, DbError>;
 
-    /// The project's states, the intake one left out, by `sequence` (ties by id).
+    /// The project's states, the intake one left out and the deleted ones too, by `sequence` (ties by id).
     async fn project_states(&self, scope: &Scope) -> Result<Vec<StateRow>, DbError>;
+
+    /// Whether the scope's project is archived (a project that is not there is not).
+    async fn project_is_archived(&self, scope: &Scope) -> Result<bool, DbError>;
+
+    /// Make a state of the scope's project, and return it as stored. Its `sequence` is Plane's: when the project has other live
+    /// states that are not the intake one, the greatest of theirs plus 15000, whatever `st.sequence` says (it is the place of the
+    /// first, when there is none). A state that is the default takes the default from the others, in the same transaction. A name that
+    /// a live state of the project has is `DbError::Conflict`; an id that exists, or a state of another project, is the caller's bug.
+    async fn insert_state(&self, scope: &Scope, st: &StateRow) -> Result<StateRow, DbError>;
+
+    /// Replace the name, description, colour, place, group, default flag, external key, editor and time of the live state `st.id` of
+    /// the scope's project (the id, the project and who made it are kept). A state that becomes the default takes the default from
+    /// the others, in the same transaction. `false`, and nothing changed, when the project has no such live state; a name another
+    /// live state has is `DbError::Conflict`.
+    async fn update_state(&self, scope: &Scope, st: &StateRow) -> Result<bool, DbError>;
+
+    /// Delete a state, as Plane does: the row stays, marked with `at`, and the three lists leave it out (the work items that name it
+    /// still read it, and its name is free again). `false` when the project has no such live state.
+    async fn delete_state(&self, scope: &Scope, id: Uuid, at: Timestamp) -> Result<bool, DbError>;
+
+    /// Whether any work item that counts is in the state: not deleted, not archived, not a draft, and in a project that is neither
+    /// archived nor deleted (Plane's `Issue.objects`, which the check before a state is deleted reads).
+    async fn state_has_work_items(&self, scope: &Scope, id: Uuid) -> Result<bool, DbError>;
 
     /// The states of every project of the workspace that the caller is in and that is not archived, the intake ones left out, by
     /// `sequence` (ties by project, then id).
