@@ -29,6 +29,8 @@ mod projects;
 pub use projects::*;
 mod issues;
 pub use issues::*;
+mod labels;
+pub use labels::*;
 mod states;
 pub use states::*;
 #[cfg(test)]
@@ -214,6 +216,10 @@ pub enum Permission {
     /// Make, change or delete a state of a project (issue #58): for a project admin only, as Plane's `ProjectAdminPermission` has it.
     /// A member of the project is refused, and so is a workspace admin who is not in it.
     WriteState,
+    /// Make, change or delete a label of a project (issue #58): for a project admin or member, as Plane's `ProjectMemberPermission`
+    /// has it (its comment says "only Project Admins" next to a role list that holds the member too). A guest is refused, and so is
+    /// a workspace admin who is not in the project.
+    WriteLabel,
 }
 
 impl Permission {
@@ -223,7 +229,8 @@ impl Permission {
             Permission::CreateWorkItem
             | Permission::UpdateWorkItem
             | Permission::DeleteWorkItem
-            | Permission::WriteAttachment => Role::Member,
+            | Permission::WriteAttachment
+            | Permission::WriteLabel => Role::Member,
             Permission::ReadDeleted | Permission::WriteState => Role::Admin,
         }
     }
