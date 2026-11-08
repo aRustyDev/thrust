@@ -79,6 +79,13 @@ pub fn char_field(
     Ok(Some(text))
 }
 
+/// Whether the body's `name` is text that DRF trimmed to something else (`validated` is what it made of it). The pin's creations look
+/// the row that has a taken name up by `request.data.get("name")`, the text as it was sent, so a name with spaces round it clashes
+/// in the database and then finds no row to name in the 409: the view raises, and the base view answers 500.
+pub fn name_was_padded(body: &Map<String, Value>, validated: Option<&str>) -> bool {
+    matches!((body.get("name"), validated), (Some(Value::String(sent)), Some(kept)) if sent != kept)
+}
+
 /// DRF `BooleanField`: a real bool, or one of its spellings (`"yes"`, `"off"`, `1`, ...). Anything else is refused.
 pub fn bool_field(v: &Value) -> Result<bool, String> {
     const TRUE: &[&str] = &["t", "T", "y", "Y", "yes", "Yes", "YES", "true", "True", "TRUE", "on", "On", "ON", "1"];
@@ -172,17 +179,56 @@ pub fn float_field(v: &Value) -> Result<f64, String> {
 pub fn uuid_field(v: &Value) -> Result<Option<Uuid>, String> {
     match v {
         Value::Null => Ok(None),
-        Value::String(s) => {
-            let hex: String = s.replace("urn:", "").replace("uuid:", "").trim_matches(['{', '}']).replace('-', "");
-            Uuid::parse_str(&hex).map(Some).map_err(|_| "Must be a valid UUID.".to_string())
-        }
+        Value::String(s) => uuid_hex(s).map(Some).ok_or_else(|| "Must be a valid UUID.".to_string()),
         _ => Err("Must be a valid UUID.".into()),
+    }
+}
+
+/// Python's `uuid.UUID(hex=s)`: `urn:` and `uuid:` and the braces and hyphens are dropped, and what is left must be 32 hex digits.
+fn uuid_hex(s: &str) -> Option<Uuid> {
+    let hex: String = s.replace("urn:", "").replace("uuid:", "").trim_matches(['{', '}']).replace('-', "");
+    Uuid::parse_str(&hex).ok()
+}
+
+/// What DRF's `PrimaryKeyRelatedField` makes of a body's value for a model whose key is a UUID. It looks the row up with
+/// `queryset.get(pk=value)`, and that is where the kinds part: a value the key column cannot read makes Django raise its own
+/// `ValidationError`, which the field does not catch (it catches only a missing row, a `TypeError` and a `ValueError`).
+#[derive(Debug, PartialEq, Eq)]
+pub enum PkRead {
+    /// `null`, or the empty string, which a relation reads as none.
+    Null,
+    /// A key a row may have. `shown` is the value as DRF prints it: `Invalid pk "<shown>" - object does not exist.`
+    Key { id: Uuid, shown: String },
+    /// DRF's own refusal, filed under the field's name.
+    Refused(String),
+    /// Django's `ValidationError`, which no serializer field answers: the base view makes it a 400 `{"error": "Please provide valid
+    /// detail"}`, and the fields after this one are not read.
+    Raises,
+}
+
+pub fn pk_field(v: &Value) -> PkRead {
+    match v {
+        Value::Null => PkRead::Null,
+        Value::String(s) if s.is_empty() => PkRead::Null,
+        // `get(pk=True)` is a TypeError in DRF's own check
+        Value::Bool(_) => PkRead::Refused("Incorrect type. Expected pk value, received bool.".into()),
+        Value::String(s) => uuid_hex(s).map_or(PkRead::Raises, |id| PkRead::Key { id, shown: s.clone() }),
+        // an integer is read as the number of the key (`UUID(int=n)`); a float, a list and an object are no key at all
+        Value::Number(n) => n
+            .as_u64()
+            .map_or(PkRead::Raises, |n| PkRead::Key { id: Uuid::from_u128(u128::from(n)), shown: n.to_string() }),
+        Value::Array(_) | Value::Object(_) => PkRead::Raises,
     }
 }
 
 /// DRF `PrimaryKeyRelatedField`'s message for a key that names no row.
 pub fn no_such_pk(id: Uuid) -> String {
-    format!("Invalid pk \"{id}\" - object does not exist.")
+    no_such_pk_shown(&id.to_string())
+}
+
+/// The same message for a key as the request spelled it (DRF prints the value it was given, not the UUID it made of it).
+pub fn no_such_pk_shown(shown: &str) -> String {
+    format!("Invalid pk \"{shown}\" - object does not exist.")
 }
 
 /// Python's `int()` of a query parameter: optional spaces, an optional sign, digits with single underscores between them.

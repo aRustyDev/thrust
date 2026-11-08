@@ -353,6 +353,13 @@ fn a_name_that_is_taken_gets_three_different_answers() {
         (r.status, r.body),
         (409, json!({"error": "State with the same name already exists in the project", "id": todo}))
     );
+    // the pin looks the clash up by the name as it was sent, which DRF had trimmed: spaces round a taken name find nothing to name
+    let padded = call(&w, Who::Admin, "POST", &states(), &json!({"name": " Todo ", "color": "#fff"}));
+    assert_eq!((padded.status, padded.body.clone()), (500, json!({"error": PLANE_500})));
+    assert!(padded.has_rate_headers());
+    // spaces round a name that is free are trimmed away, and the state has the trimmed name
+    let made = call(&w, Who::Admin, "POST", &states(), &json!({"name": "  Padded  ", "color": "#fff"}));
+    assert_eq!((made.status, made.body["name"].clone()), (200, json!("Padded")));
     // another case is another name, and a deleted state's name is free
     assert_eq!(call(&w, Who::Admin, "POST", &states(), &json!({"name": "todo", "color": "#fff"})).status, 200);
     let r = call(&w, Who::Admin, "POST", &states(), &json!({"name": "Triage", "color": "#fff"}));
@@ -483,10 +490,11 @@ fn a_change_sets_what_it_names_and_records_who_changed_it() {
     assert_eq!(call(&w, Who::Admin, "PATCH", &state(&todo), &json!({})).status, 200);
 }
 
-/// The pin finds the state first and only then reads the body: a state that is not there is a 404 even for a body that cannot be read,
-/// and one that is there gets the body's own refusal. The intake state is not found.
+/// The base view parses the body before the handler runs (`BaseAPIView.initial` reads `request.data`), so a body that cannot be parsed
+/// is refused whether or not the state is there; the handler then finds the state, and only then does the serializer read what the
+/// parsed body says: a list, or a field that is wrong, comes after the 404. The intake state is not found.
 #[test]
-fn a_change_finds_its_state_before_it_reads_the_body() {
+fn a_change_parses_the_body_then_finds_its_state_then_reads_what_it_says() {
     let w = real_world();
     let todo = id(STATE_TODO).hyphenated().to_string();
     let nowhere = state(id(0xBAD).hyphenated());
@@ -499,12 +507,24 @@ fn a_change_finds_its_state_before_it_reads_the_body() {
             body.as_bytes().to_vec(),
         )
     };
-    let r = patch(&nowhere, "text/plain", "x");
+    // parse-level refusals come first, for a state that is not there as for one that is
+    for uri in [&nowhere, &state(&todo)] {
+        assert_eq!(patch(uri, "text/plain", "x").status, 415, "{uri}");
+        let bad = patch(uri, "application/json", "{bad");
+        assert_eq!(bad.status, 400, "{uri}");
+        assert!(bad.body["detail"].as_str().unwrap().starts_with("JSON parse error - "), "{uri}");
+        let scalar = patch(uri, "application/json", "\"s\"");
+        assert_eq!(scalar.body, json!({"detail": "Request body must be a JSON object or array."}), "{uri}");
+    }
+    // a list parses, so the state is looked for before the serializer refuses it
+    let r = patch(&nowhere, "application/json", "[1]");
     assert_eq!((r.status, r.body), (404, json!({ "error": NOT_FOUND })));
-    assert_eq!(patch(&state(&todo), "text/plain", "x").status, 415);
-    assert_eq!(patch(&nowhere, "application/json", "[1]").status, 404);
     let r = patch(&state(&todo), "application/json", "[1]");
     assert_eq!(r.body, json!({"non_field_errors": ["Invalid data. Expected a dictionary, but got list."]}));
+    // so is a field that is wrong, and an empty body is no data at all
+    let r = patch(&nowhere, "application/json", "{\"group\": \"nope\"}");
+    assert_eq!((r.status, r.body), (404, json!({ "error": NOT_FOUND })));
+    assert_eq!(patch(&nowhere, "text/plain", "").status, 404, "an empty body is read as no data, whatever its type");
     // the intake state is not found, and a field that is wrong on a state that is there is a 400
     let intake = state(id(STATE_TRIAGE).hyphenated());
     assert_eq!(call(&w, Who::Admin, "PATCH", &intake, &json!({"name": "x"})).status, 404);

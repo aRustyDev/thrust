@@ -15,8 +15,8 @@ use proptest::prelude::*;
 use rstest::rstest;
 use serde_json::{json, Map, Value};
 use thrust_api_v1::fields::{
-    bool_field, char_field, choice_field, float_field, int_field, no_such_pk, not_a_dictionary, read, uuid_field,
-    FieldErrors,
+    bool_field, char_field, choice_field, float_field, int_field, name_was_padded, no_such_pk, no_such_pk_shown,
+    not_a_dictionary, pk_field, read, uuid_field, FieldErrors, PkRead,
 };
 use thrust_api_v1::{slugify, V1Error};
 use thrust_contracts::Uuid;
@@ -229,6 +229,67 @@ fn a_body_that_is_a_list_is_not_a_dictionary() {
         }
         other => panic!("{other:?}"),
     }
+}
+
+// --- a name that DRF trimmed --------------------------------------------------------------------------------------------------
+
+/// A name is "padded" when the body's text differs from what the serializer kept, which is what the pin's clash lookup (by the text as
+/// sent) cannot find. Only text can be padded: a number is kept as its own text, and a name that was not sent or was refused is not.
+#[rstest]
+#[case(Some(json!("Todo")), Some("Todo"), false)]
+#[case(Some(json!(" Todo")), Some("Todo"), true)]
+#[case(Some(json!("Todo ")), Some("Todo"), true)]
+#[case(Some(json!("\tTodo\n")), Some("Todo"), true)]
+#[case(Some(json!(" ")), Some(""), true)]
+#[case(Some(json!("To do")), Some("To do"), false)]
+#[case(Some(json!(5)), Some("5"), false)]
+#[case(Some(json!("Todo")), None, false)]
+#[case(None, Some("Todo"), false)]
+#[case(None, None, false)]
+fn a_name_is_padded_when_the_text_sent_is_not_the_text_kept(
+    #[case] sent: Option<Value>,
+    #[case] kept: Option<&str>,
+    #[case] padded: bool,
+) {
+    let body: Map<String, Value> = sent.into_iter().map(|v| ("name".to_string(), v)).collect();
+    assert_eq!(name_was_padded(&body, kept), padded);
+}
+
+// --- PrimaryKeyRelatedField ---------------------------------------------------------------------------------------------------
+
+const KEY: &str = "5a1b3c4d-0000-4000-8000-000000000001";
+
+/// What DRF's relation makes of each kind of value for a model keyed by a UUID: none, a key (shown as it was spelled), its own
+/// refusal for a bool, and Django's `ValidationError` (which no field catches) for what the key column cannot read.
+#[rstest]
+#[case::null(json!(null), PkRead::Null)]
+#[case::empty_text(json!(""), PkRead::Null)]
+#[case::a_key(json!(KEY), PkRead::Key { id: KEY.parse().unwrap(), shown: KEY.into() })]
+#[case::without_hyphens(json!("5a1b3c4d000040008000000000000001"), PkRead::Key { id: KEY.parse().unwrap(), shown: "5a1b3c4d000040008000000000000001".into() })]
+#[case::in_braces(json!("{5A1B3C4D-0000-4000-8000-000000000001}"), PkRead::Key { id: KEY.parse().unwrap(), shown: "{5A1B3C4D-0000-4000-8000-000000000001}".into() })]
+#[case::urn(json!("urn:uuid:5a1b3c4d-0000-4000-8000-000000000001"), PkRead::Key { id: KEY.parse().unwrap(), shown: "urn:uuid:5a1b3c4d-0000-4000-8000-000000000001".into() })]
+#[case::an_integer(json!(7), PkRead::Key { id: Uuid::from_u128(7), shown: "7".into() })]
+#[case::zero(json!(0), PkRead::Key { id: Uuid::nil(), shown: "0".into() })]
+#[case::true_is_a_type_error(json!(true), PkRead::Refused("Incorrect type. Expected pk value, received bool.".into()))]
+#[case::false_is_too(json!(false), PkRead::Refused("Incorrect type. Expected pk value, received bool.".into()))]
+#[case::text_that_is_no_key(json!("nope"), PkRead::Raises)]
+#[case::too_short(json!("5a1b3c4d"), PkRead::Raises)]
+#[case::non_hex(json!("zzzzzzzz-0000-4000-8000-000000000001"), PkRead::Raises)]
+#[case::a_negative_integer(json!(-1), PkRead::Raises)]
+#[case::a_float(json!(1.5), PkRead::Raises)]
+#[case::a_whole_float(json!(1.0), PkRead::Raises)]
+#[case::a_list(json!([KEY]), PkRead::Raises)]
+#[case::an_object(json!({"id": KEY}), PkRead::Raises)]
+fn a_relation_reads_a_value_as_drfs_primary_key_field_does(#[case] v: Value, #[case] want: PkRead) {
+    assert_eq!(pk_field(&v), want);
+}
+
+#[test]
+fn a_key_that_names_no_row_is_quoted_as_it_was_spelled() {
+    assert_eq!(no_such_pk_shown("{ABC}"), "Invalid pk \"{ABC}\" - object does not exist.");
+    // the canonical form is the key's own text
+    let id: Uuid = KEY.parse().unwrap();
+    assert_eq!(no_such_pk(id), no_such_pk_shown(KEY));
 }
 
 // --- slugify ------------------------------------------------------------------------------------------------------------------

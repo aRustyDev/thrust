@@ -16,7 +16,8 @@ use thrust_core::{Permission, StateError, StatePatch};
 use thrust_ports::StateRow;
 
 use crate::fields::{
-    bool_field, char_field, choice_field, float_field, not_a_dictionary, read, refuse_if_any, FieldErrors,
+    bool_field, char_field, choice_field, float_field, name_was_padded, not_a_dictionary, read, refuse_if_any,
+    FieldErrors,
 };
 use crate::pagination::PageRequest;
 use crate::projects::ts;
@@ -177,8 +178,13 @@ async fn create(
         Body::Array => return Err(not_a_dictionary()),
     };
     let patch = state_patch(&map, false)?;
-    let state = thrust_core::create_state(&ctx.app, &scope, patch).await.map_err(|e| state_error(e, false))?;
-    Ok(Json(Value::Object(state_body(&state))))
+    let padded = name_was_padded(&map, patch.name.as_deref());
+    match thrust_core::create_state(&ctx.app, &scope, patch).await {
+        // the pin looks the state that has the name up by the text as it was sent, which DRF trimmed before the database saw it: a
+        // name sent with spaces round it finds nothing, and the view's `state.id` raises
+        Err(StateError::NameTaken { .. }) if padded => Err(crate::plane_500()),
+        made => Ok(Json(Value::Object(state_body(&made.map_err(|e| state_error(e, false))?)))),
+    }
 }
 
 /// `GET .../states/{id}/`.
@@ -192,8 +198,10 @@ async fn retrieve(
     Ok(Json(pick_fields(state_body(&state), &query_map(raw.as_deref()))))
 }
 
-/// `PATCH .../states/{id}/`: change a state. The pin finds the state before it reads the body, so a state that is not there is a 404
-/// even for a body that cannot be read.
+/// `PATCH .../states/{id}/`: change a state. The base view reads the body before the handler runs (`BaseAPIView.initial`), so a body
+/// that cannot be parsed (a media type it has no parser for, JSON that does not parse, a value that is no object or list) is refused
+/// before the state is looked for; the handler then finds the state, and only then does the serializer read what the body says, so
+/// a list, or a field that is wrong, comes after the 404.
 async fn update(
     V1Path((slug, project, state)): V1Path<(String, PlaneUuid, PlaneUuid)>,
     ctx: Ctx,
@@ -201,9 +209,9 @@ async fn update(
     body: Bytes,
 ) -> Result<Json<Value>, V1Error> {
     let scope = ctx.project_scope(&slug, ProjectId(project.0), Permission::WriteState).await?;
-    let parsed = json_body(&headers, &body);
+    let parsed = json_body(&headers, &body)?;
     thrust_core::find_state(&ctx.app, &scope, state.0).await.map_err(|e| state_error(e, true))?;
-    let map = match parsed? {
+    let map = match parsed {
         Body::Object(map) => map,
         Body::Array => return Err(not_a_dictionary()),
     };
