@@ -20,6 +20,30 @@ pub fn fail(errors: &mut FieldErrors, field: &str, message: impl Into<String>) {
     errors.insert(field.to_string(), json!([message.into()]));
 }
 
+/// Read a field if the body names it, and file what is wrong with it under its name. `None` is "not named", or "named and wrong".
+pub fn read<T>(
+    errors: &mut FieldErrors,
+    body: &Map<String, Value>,
+    field: &str,
+    f: impl FnOnce(&Value) -> Result<T, String>,
+) -> Option<T> {
+    let v = body.get(field)?;
+    match f(v) {
+        Ok(x) => Some(x),
+        Err(message) => {
+            fail(errors, field, message);
+            None
+        }
+    }
+}
+
+/// What DRF answers when a body that should be an object is a list.
+pub fn not_a_dictionary() -> V1Error {
+    let mut errors = FieldErrors::new();
+    errors.insert("non_field_errors".into(), json!(["Invalid data. Expected a dictionary, but got list."]));
+    V1Error::Fields(errors)
+}
+
 /// A 400 for the fields that failed, or nothing when none did.
 pub fn refuse_if_any(errors: FieldErrors) -> Result<(), V1Error> {
     if errors.is_empty() {
@@ -101,6 +125,45 @@ pub fn int_field(v: &Value, min: i64, max: i64) -> Result<i64, String> {
         Err(format!("Ensure this value is greater than or equal to {min}."))
     } else {
         i64::try_from(n).map_err(|_| "A valid integer is required.".to_string())
+    }
+}
+
+/// Python's `str()` of a JSON value, which DRF puts into "is not a valid choice".
+pub fn py_str(v: &Value) -> String {
+    match v {
+        Value::String(s) => s.clone(),
+        Value::Bool(true) => "True".into(),
+        Value::Bool(false) => "False".into(),
+        Value::Null => "None".into(),
+        other => other.to_string(),
+    }
+}
+
+/// DRF `ChoiceField`: the value's text must be one of the choices; the choice is returned.
+pub fn choice_field<'a>(v: &Value, choices: &'a [&'a str]) -> Result<&'a str, String> {
+    if v.is_null() {
+        return Err("This field may not be null.".into());
+    }
+    let text = py_str(v);
+    choices.iter().find(|c| **c == text).copied().ok_or_else(|| format!("\"{text}\" is not a valid choice."))
+}
+
+/// DRF `FloatField`: Python's `float()` of the value. A number is itself, a bool is 0 or 1 (Python's `float(True)`), a string is read
+/// after trimming, and anything else is no number. A value that is not finite is refused here (the pin keeps a NaN, which no JSON
+/// can say back).
+pub fn float_field(v: &Value) -> Result<f64, String> {
+    let invalid = || "A valid number is required.".to_string();
+    let n = match v {
+        Value::Null => return Err("This field may not be null.".into()),
+        Value::Number(n) => n.as_f64().ok_or_else(invalid)?,
+        Value::Bool(b) => f64::from(u8::from(*b)),
+        Value::String(s) => s.trim().parse::<f64>().map_err(|_| invalid())?,
+        _ => return Err(invalid()),
+    };
+    if n.is_finite() {
+        Ok(n)
+    } else {
+        Err(invalid())
     }
 }
 

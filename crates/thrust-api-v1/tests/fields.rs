@@ -11,9 +11,14 @@
     reason = "test code: a panic is how a test fails, and clippy.toml exempts only #[test] functions and #[cfg(test)] modules, not the helpers around them"
 )]
 
+use proptest::prelude::*;
 use rstest::rstest;
-use serde_json::{json, Value};
-use thrust_api_v1::fields::{bool_field, char_field, int_field, no_such_pk, uuid_field};
+use serde_json::{json, Map, Value};
+use thrust_api_v1::fields::{
+    bool_field, char_field, choice_field, float_field, int_field, no_such_pk, not_a_dictionary, read, uuid_field,
+    FieldErrors,
+};
+use thrust_api_v1::{slugify, V1Error};
 use thrust_contracts::Uuid;
 
 // --- BooleanField -------------------------------------------------------------------------------------------------------------
@@ -141,6 +146,130 @@ fn a_column_that_allows_blank_and_null_keeps_both() {
         char_field(&json!("a".repeat(100_000)), None, true, true).map(|t| t.map(|s| s.len())),
         Ok(Some(100_000))
     );
+}
+
+// --- ChoiceField --------------------------------------------------------------------------------------------------------------
+
+/// A choice is its text, and what is not one is refused with the text DRF quotes: Python's `str()` of the value (so a bool is
+/// `True` and `False`, and a number is its digits). Null has its own message, and the corpus records the first (`"nope" is not a valid
+/// choice.`).
+#[rstest]
+#[case(json!("backlog"), Ok("backlog"))]
+#[case(json!("started"), Ok("started"))]
+#[case(json!("nope"), Err("\"nope\" is not a valid choice.".to_string()))]
+#[case(json!(""), Err("\"\" is not a valid choice.".to_string()))]
+#[case(json!("Backlog"), Err("\"Backlog\" is not a valid choice.".to_string()))]
+#[case(json!(true), Err("\"True\" is not a valid choice.".to_string()))]
+#[case(json!(false), Err("\"False\" is not a valid choice.".to_string()))]
+#[case(json!(5), Err("\"5\" is not a valid choice.".to_string()))]
+#[case(json!(1.5), Err("\"1.5\" is not a valid choice.".to_string()))]
+#[case(Value::Null, Err("This field may not be null.".to_string()))]
+fn a_choice_is_one_of_the_choices(#[case] v: Value, #[case] want: Result<&str, String>) {
+    assert_eq!(choice_field(&v, &["backlog", "started"]), want, "{v}");
+}
+
+/// A choice whose text is a number or a bool in Python is found by that text.
+#[test]
+fn a_choice_that_reads_as_a_python_value_is_found_by_its_text() {
+    assert_eq!(choice_field(&json!(true), &["True"]), Ok("True"));
+    assert_eq!(choice_field(&json!(false), &["False", "True"]), Ok("False"));
+    assert_eq!(choice_field(&json!(7), &["7"]), Ok("7"));
+}
+
+// --- FloatField ---------------------------------------------------------------------------------------------------------------
+
+const NUMBER: &str = "A valid number is required.";
+
+/// A place as `sequence` takes it: Python's `float()`: a number, a string that reads as one (spaces and exponents included), a bool
+/// as 0 or 1; anything else is no number, and so is a value that is not finite.
+#[rstest]
+#[case(json!(1), Ok(1.0))]
+#[case(json!(90000.0), Ok(90000.0))]
+#[case(json!(-1.5), Ok(-1.5))]
+#[case(json!("2.5"), Ok(2.5))]
+#[case(json!(" 2.5 "), Ok(2.5))]
+#[case(json!("1e3"), Ok(1000.0))]
+#[case(json!(true), Ok(1.0))]
+#[case(json!(false), Ok(0.0))]
+#[case(json!("abc"), Err(NUMBER.to_string()))]
+#[case(json!(""), Err(NUMBER.to_string()))]
+#[case(json!("nan"), Err(NUMBER.to_string()))]
+#[case(json!("inf"), Err(NUMBER.to_string()))]
+#[case(json!("-infinity"), Err(NUMBER.to_string()))]
+#[case(json!([1]), Err(NUMBER.to_string()))]
+#[case(json!({"a": 1}), Err(NUMBER.to_string()))]
+#[case(Value::Null, Err("This field may not be null.".to_string()))]
+fn a_number_is_read_as_python_reads_a_float(#[case] v: Value, #[case] want: Result<f64, String>) {
+    assert_eq!(float_field(&v), want, "{v}");
+}
+
+// --- reading a field of a body ------------------------------------------------------------------------------------------------
+
+#[test]
+fn a_field_is_read_when_the_body_names_it_and_what_is_wrong_is_filed_under_its_name() {
+    let body: Map<String, Value> = json!({"good": 5, "bad": "x"}).as_object().unwrap().clone();
+    let mut errors = FieldErrors::new();
+    let int = |v: &Value| int_field(v, 0, 12);
+    assert_eq!(read(&mut errors, &body, "good", int), Some(5));
+    assert!(errors.is_empty(), "a field that reads files nothing");
+    assert_eq!(read(&mut errors, &body, "absent", int), None);
+    assert!(errors.is_empty(), "a field the body does not name is not an error here");
+    assert_eq!(read(&mut errors, &body, "bad", int), None);
+    assert_eq!(Value::Object(errors), json!({"bad": ["A valid integer is required."]}));
+}
+
+#[test]
+fn a_body_that_is_a_list_is_not_a_dictionary() {
+    match not_a_dictionary() {
+        V1Error::Fields(errors) => {
+            assert_eq!(
+                Value::Object(errors),
+                json!({"non_field_errors": ["Invalid data. Expected a dictionary, but got list."]})
+            );
+        }
+        other => panic!("{other:?}"),
+    }
+}
+
+// --- slugify ------------------------------------------------------------------------------------------------------------------
+
+/// Django's `slugify` of what a state is called: the corpus records two (`Oracle Review` is `oracle-review`, and the renamed one
+/// `oracle-review-2`). An accent is dropped, where Django folds it to its letter.
+#[rstest]
+#[case("Oracle Review", "oracle-review")]
+#[case("Oracle Review 2", "oracle-review-2")]
+#[case("In Progress", "in-progress")]
+#[case("  Spaces   everywhere  ", "spaces-everywhere")]
+#[case("a--b", "a-b")]
+#[case("a - b", "a-b")]
+#[case("a & b", "a-b")]
+#[case("a-&-b", "a-b")]
+#[case("-_x_-", "x")]
+#[case("UPPER_case", "upper_case")]
+#[case("Done!", "done")]
+#[case("x_y", "x_y")]
+#[case("123", "123")]
+#[case("tab\tand\nnewline", "tab-and-newline")]
+#[case("Café", "caf")]
+#[case("日本", "")]
+#[case("", "")]
+#[case("---", "")]
+#[case("_", "")]
+fn a_name_is_slugified_as_django_does(#[case] name: &str, #[case] slug: &str) {
+    assert_eq!(slugify(name), slug, "{name:?}");
+}
+
+proptest! {
+    /// Whatever the name: a slug is lower-case letters, digits, underscores and single hyphens, begins and ends with a letter or a
+    /// digit (or is empty), and slugifying it again changes nothing.
+    #[test]
+    fn prop_a_slug_is_clean_and_stable(name in any::<String>()) {
+        let slug = slugify(&name);
+        prop_assert!(slug.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-'), "{}", slug);
+        prop_assert!(!slug.contains("--"), "{}", slug);
+        prop_assert!(!slug.starts_with(['-', '_']) && !slug.ends_with(['-', '_']), "{}", slug);
+        prop_assert_eq!(slugify(&slug), slug);
+    }
 }
 
 // --- the key of a row ---------------------------------------------------------------------------------------------------------

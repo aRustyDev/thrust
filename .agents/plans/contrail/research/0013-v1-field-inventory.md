@@ -22,7 +22,7 @@ recorder's output; the ones that matter for the code are in section 3.
 | Project | `deleted_at` | add; the `(workspace_id, identifier)` and `(workspace_id, name)` uniques become partial `WHERE deleted_at IS NULL`, as Plane's are |
 | Project | `total_members`, `total_cycles`, `total_modules`, `is_member`, `member_role`, `sort_order`, `is_deployed`, `cover_image_url` | derived, no column. `member_role` is the caller's `project_members.role` as 5/15/20, `sort_order` the caller's `project_members.sort_order`, `is_deployed` false |
 | Project | alpha has `total_cycles: 1`, `total_modules: 1` | Thrust has no cycles or modules: corpus exception plus a DEVIATIONS entry, not a column |
-| State | `is_triage`, `external_source`, `external_id`, `updated_by`, `deleted_at` | add. `is_triage` is stored, as in Plane, because a client may send it. `slug` is derived (`slugify(name)`, recomputed on every save in Plane). `UNIQUE (project_id, name)` becomes partial on `deleted_at IS NULL` |
+| State | `is_triage`, `external_source`, `external_id`, `updated_by`, `deleted_at` | add the three integration/audit columns and `deleted_at`. **Correction (built):** `is_triage` is not a column here: it is whether the group is `triage` (a client's `is_triage` is read and dropped; D-031). `slug` is derived (`slugify(name)`, recomputed on every save in Plane). `UNIQUE (project_id, name)` becomes partial on `deleted_at IS NULL` |
 | Label | `external_source`, `external_id`, `updated_by`, `deleted_at` | add; same partial unique |
 | Work item | `parent_id` (self reference), `point` (integer) | add. D-028 refused a parent; v1 accepts one (same project, not itself) and the fixture needs i6 under i3 |
 | Work item | `type`/`type_id`, `estimate_point`, `description_binary` | no column. Thrust has no issue types or estimates, so reads return `null` and a non-null write gets Plane's own 400 for a missing object (`Invalid pk "<id>" - object does not exist.`). Unobservable by the oracle, recorded as a deviation |
@@ -52,13 +52,14 @@ The `sort_order` of a work item is a `bigint` here and a float in v1 (`75535.0`)
   check is `Issue.objects.filter(state=..)`, and `Issue.objects` is a manager that **excludes** archived items, drafts,
   items in a triage state and items of an archived project. So a state whose only items are archived or drafts is
   deletable in Plane, which leaves those items pointing at a deleted state (reproduce it, record it as a quirk).
-- **Permissions.** States use `ProjectEntityPermission` and labels `ProjectMemberPermission`. For the operations
-  in scope they come to the same rule: a read needs an active **project** membership; a write needs an active
-  project membership with role Admin or Member (project level, not workspace level). A guest's state create is 403
-  `{"detail":"You do not have permission to perform this action."}` with no rate headers. (Read to
-  `ProjectMemberPermission`'s `PATCH`/`DELETE` branch, whose comment says "only Project Admins" next to a role list
-  that includes Member; confirm that branch against a member's label `PATCH`, which the corpus does not do.
-  **[unverified]**)
+- **Permissions (correction, read from the pin's `state.py` while building the states).** The v1 state views use
+  `ProjectAdminPermission` for **every write** (create, change, delete): an active **project** membership with role
+  **Admin**. A project Member is refused, as is a workspace admin who is not in the project. A read needs an active
+  project membership. A refused write is 403 `{"detail":"You do not have permission to perform this action."}` with
+  no rate headers. The earlier text here (a write by Admin or Member) was wrong for states. Labels use
+  `ProjectMemberPermission`, whose `PATCH`/`DELETE` branch has a comment that says "only Project Admins" next to a
+  role list that includes Member; confirm that branch against a member's label `PATCH`, which the corpus does not
+  do. **[unverified, labels slice]**
 - **Label rules.** Create is 201; a duplicate name 409 `{"error":"Label with the same name already exists in the
   project","id":"<id>"}`; renaming onto an existing name 400 `{"error":"The payload is not valid"}`; a repeated
   delete 404 `{"error":"The requested resource does not exist."}`.

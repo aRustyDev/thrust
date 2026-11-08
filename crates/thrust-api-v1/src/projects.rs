@@ -20,9 +20,11 @@ use thrust_contracts::{ProjectId, ProjectNetwork, Role, Timestamp, UserId, Uuid}
 use thrust_core::{CoreError, ProjectError, ProjectPatch};
 use thrust_ports::{ProjectListing, ProjectRow, WorkspaceScope};
 
-use crate::fields::{bool_field, char_field, fail, int_field, no_such_pk, refuse_if_any, uuid_field, FieldErrors};
+use crate::fields::{
+    bool_field, char_field, fail, int_field, no_such_pk, read, refuse_if_any, uuid_field, FieldErrors,
+};
 use crate::pagination::PageRequest;
-use crate::request::{json_body, query_map, Body};
+use crate::request::{json_body, pick_fields, query_map, Body};
 use crate::{Ctx, PlaneUuid, V1Error, V1Path};
 
 /// The orders a project list takes (`PROJECT_ORDER_BY_ALLOWLIST`), each with an optional `-`; anything else is the default.
@@ -39,7 +41,7 @@ pub(crate) fn routes() -> Router {
 // --- the wire shape -----------------------------------------------------------------------------------------------------------
 
 /// A DRF datetime: UTC, microseconds, `Z`.
-fn ts(t: Timestamp) -> String {
+pub(crate) fn ts(t: Timestamp) -> String {
     t.to_rfc3339_opts(SecondsFormat::Micros, true)
 }
 
@@ -133,16 +135,6 @@ fn lite_body(p: &ProjectRow) -> Value {
     })
 }
 
-/// `fields=a,b`: the body keeps only those keys (the pin's `BaseSerializer`); a name it has no key for is ignored. No `fields` is all.
-fn project_fields(body: Map<String, Value>, q: &HashMap<String, String>) -> Value {
-    let wanted: Vec<&str> =
-        q.get("fields").map(|f| f.split(',').filter(|s| !s.is_empty()).collect()).unwrap_or_default();
-    if wanted.is_empty() {
-        return Value::Object(body);
-    }
-    Value::Object(body.into_iter().filter(|(k, _)| wanted.contains(&k.as_str())).collect())
-}
-
 // --- the order ----------------------------------------------------------------------------------------------------------------
 
 /// `sanitize_order_by`: the requested order if its key (without any `-`) is allowed, else the default. Returns the key and whether
@@ -226,22 +218,6 @@ async fn project_patch(
     let mut errors = FieldErrors::new();
     let mut p = ProjectPatch::default();
 
-    // reads a field if the body names it, and files what is wrong with it
-    fn read<T>(
-        errors: &mut FieldErrors,
-        b: &Map<String, Value>,
-        field: &str,
-        f: impl FnOnce(&Value) -> Result<T, String>,
-    ) -> Option<T> {
-        let v = b.get(field)?;
-        match f(v) {
-            Ok(x) => Some(x),
-            Err(m) => {
-                fail(errors, field, m);
-                None
-            }
-        }
-    }
     let text = |max: usize, blank: bool, null: bool| move |v: &Value| char_field(v, Some(max), blank, null);
 
     // the two a creation must have
@@ -359,7 +335,7 @@ async fn list(V1Path(slug): V1Path<String>, ctx: Ctx, RawQuery(raw): RawQuery) -
         .collect();
     let results = page
         .iter()
-        .map(|l| project_fields(project_body(l, members.get(&l.project.id).copied().unwrap_or(0), true), &q))
+        .map(|l| pick_fields(project_body(l, members.get(&l.project.id).copied().unwrap_or(0), true), &q))
         .collect();
     Ok(Json(plan.envelope(results, total)))
 }
@@ -412,7 +388,7 @@ async fn retrieve(
         other => project_error(other, None),
     })?;
     let members = i64::try_from(detail.members.len()).unwrap_or(i64::MAX);
-    Ok(Json(project_fields(project_body(&detail.listing, members, false), &query_map(raw.as_deref()))))
+    Ok(Json(pick_fields(project_body(&detail.listing, members, false), &query_map(raw.as_deref()))))
 }
 
 /// `PATCH .../projects/{id}/`: change a project, for a writer. The pin reads the body first, then refuses an archived project, then

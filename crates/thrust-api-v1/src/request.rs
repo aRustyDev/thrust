@@ -14,6 +14,17 @@ pub fn query_map(raw: Option<&str>) -> HashMap<String, String> {
     form_urlencoded::parse(raw.unwrap_or_default().as_bytes()).map(|(k, v)| (k.into_owned(), v.into_owned())).collect()
 }
 
+/// `fields=a,b`: the body keeps only those keys (the pin's `BaseSerializer`); a name it has no key for is ignored. No `fields`, or an
+/// empty one, is all of them.
+pub fn pick_fields(body: Map<String, Value>, q: &HashMap<String, String>) -> Value {
+    let wanted: Vec<&str> =
+        q.get("fields").map(|f| f.split(',').filter(|s| !s.is_empty()).collect()).unwrap_or_default();
+    if wanted.is_empty() {
+        return Value::Object(body);
+    }
+    Value::Object(body.into_iter().filter(|(k, _)| wanted.contains(&k.as_str())).collect())
+}
+
 /// A request's JSON body, as DRF reads `request.data`.
 #[derive(Debug)]
 pub enum Body {
