@@ -19,6 +19,10 @@ that only one adapter has (`worker_only.rs` holds the Worker-only tests, and ada
 `crates/thrust-contract-tests`. The suite only sees `THRUST_BASE_URL` and `THRUST_ADMIN_TOKEN`; it never learns
 which target it runs on. Fixtures are created through `POST /internal/seed`, the same route on every target
 (`crates/thrust-contract-tests/src/lib.rs`), which is mounted only when `thrust-api` is built with `test_routes`.
+The suite never calls `POST /internal/reset` (issue #58), which deletes every row: its tests run in parallel against one
+target and each owns only the fixture it made. It checks the route's gate (`reset_requires_the_admin_token_and_a_refused_call_deletes_nothing`,
+with a fixture made first as the control) and nothing more; the positive path is tested in the adapters and by
+`scripts/oracle-v1-reset.sh`.
 
 - `crates/thrust-contract-tests/tests/contract.rs`: the portable suite.
 - `crates/thrust-contract-tests/tests/model/mod.rs`: its generated part, compiled into the same binary and run in the

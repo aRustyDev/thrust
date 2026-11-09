@@ -1080,6 +1080,11 @@ pub trait Database: Send + Sync {
 
     /// Test support: insert fixture rows (workspaces, workspace members, projects, project members).
     async fn seed(&self, sys: &SystemScope, fixture: &SeedFixture) -> Result<(), DbError>;
+
+    /// Test support behind `/internal/reset` (issue #58): delete every row of every table, so that a fixture can be loaded
+    /// again into what a database has just been made as. The schema stays. The counters go with the rows, so a project made after
+    /// a reset is numbered from 1 again. All or nothing: a failure leaves the rows as they were.
+    async fn reset(&self, sys: &SystemScope) -> Result<(), DbError>;
 }
 
 /// One transaction. Dropped without `commit` == rolled back (adapters must guarantee this;

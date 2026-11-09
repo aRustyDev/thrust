@@ -221,6 +221,13 @@ async fn seed(_: Admin, Extension(app): Extension<App>, Json(f): Json<SeedFixtur
     Ok(StatusCode::NO_CONTENT)
 }
 
+/// Test support (issue #58): delete every row, so that `/internal/seed` can load a fixture into an empty database. Not for any
+/// target that has data worth keeping: it is behind `test_routes` and the admin token, as `seed` is, and nothing else.
+async fn reset(_: Admin, Extension(app): Extension<App>) -> ApiResult<StatusCode> {
+    thrust_core::reset(&app).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
 #[derive(Deserialize)]
 struct RevokeSession {
     token: String,
@@ -559,6 +566,7 @@ pub fn router() -> Router {
         .route("/_info", get(info))
         .route("/_test/panic", get(panic_route))
         .route("/internal/seed", post(seed))
+        .route("/internal/reset", post(reset))
         .route("/internal/sweep", post(sweep))
         .route("/internal/revoke-session", post(revoke_session))
         .route("/internal/seed-work-items", post(seed_work_items))

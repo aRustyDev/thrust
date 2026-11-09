@@ -162,6 +162,30 @@ async fn internal_routes_require_the_admin_token() {
     assert_eq!(r.status(), 401, "wrong admin token");
 }
 
+/// `/internal/reset` (issue #58) deletes every row, so this is the one internal route whose gate matters most, and the one this
+/// suite cannot call with the token: it runs in parallel against one shared target, and a reset would take the other tests' rows.
+/// (The positive path is tested where it cannot hurt anything: the adapters' own tests, and `scripts/oracle-v1-reset.sh`.) A refused
+/// call deletes nothing, which is the control: a fixture made before the calls still answers after them.
+#[tokio::test]
+async fn reset_requires_the_admin_token_and_a_refused_call_deletes_nothing() {
+    let t = t();
+    let f = Fixture::seed(&t).await;
+    let before: Vec<WorkItem> = list(&t, &f.admin_a, &f.a, None).await.json().await.unwrap();
+    let made = create_ok(&t, &f.member_a, &f.a, "must survive a refused reset").await;
+
+    let r = t.http.post(t.url("/internal/reset")).send().await.unwrap();
+    assert_eq!(r.status(), 401, "no admin token");
+    let r = t.http.post(t.url("/internal/reset")).header("x-admin-token", "wrong").send().await.unwrap();
+    assert_eq!(r.status(), 401, "wrong admin token");
+    // only POST: a GET with the right token finds no such route (or refuses the method), and deletes nothing either
+    let r = t.admin_get("/internal/reset").await;
+    assert!(matches!(r.status().as_u16(), 404 | 405), "a GET is not a reset: {}", r.status());
+
+    let after: Vec<WorkItem> = list(&t, &f.admin_a, &f.a, None).await.json().await.unwrap();
+    assert_eq!(after.len(), before.len() + 1, "the item made before the refused calls is still there");
+    assert!(after.iter().any(|w| w.id == made.id));
+}
+
 #[tokio::test]
 async fn create_allocates_monotonic_sequence_and_sort_order() {
     let t = t();

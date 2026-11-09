@@ -443,6 +443,65 @@ pub struct SeedFixture {
     /// API keys with a known token (the database only ever sees its hash), optionally already revoked or expired.
     #[serde(default)]
     pub api_keys: Vec<SeedApiKey>,
+    /// What some users call themselves (issue #58): the names a work item's expanded assignees show. A user with no entry has
+    /// no profile row, or the one that something else made.
+    #[serde(default)]
+    pub profiles: Vec<SeedProfile>,
+    /// Work items that are as a user left them, with their number, place, state, priority, people, labels, parent and dates
+    /// (issue #58): what the oracle's seed gives the v1 API to show. The bulk seed (`/internal/seed-work-items`) is for rows that
+    /// need only a name. Each project's counters carry on from the largest number and place given here.
+    #[serde(default)]
+    pub work_items: Vec<SeedIssue>,
+}
+
+/// The names of a seeded user (the fixture's `profiles`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SeedProfile {
+    pub user_id: UserId,
+    #[serde(default)]
+    pub first_name: String,
+    #[serde(default)]
+    pub last_name: String,
+    #[serde(default)]
+    pub display_name: String,
+}
+
+/// A work item a test seeds whole (the fixture's `work_items`): the row, and what a compat or v1 request would have given it.
+/// The number and the place are the caller's, so that a fixture can reproduce what another system numbered; the database
+/// refuses a number a project has already (its unique key) and a state, person, label or parent that is not there (its foreign
+/// keys), as it refuses them from a request.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SeedIssue {
+    pub id: WorkItemId,
+    pub workspace_id: WorkspaceId,
+    pub project_id: ProjectId,
+    pub sequence_id: i64,
+    pub sort_order: i64,
+    pub name: String,
+    /// The text of the description with no markup (what a search reads).
+    #[serde(default)]
+    pub description: Option<String>,
+    pub description_html: String,
+    #[serde(default)]
+    pub state_id: Option<Uuid>,
+    pub priority: Priority,
+    #[serde(default)]
+    pub parent_id: Option<Uuid>,
+    #[serde(default)]
+    pub start_date: Option<chrono::NaiveDate>,
+    #[serde(default)]
+    pub target_date: Option<chrono::NaiveDate>,
+    /// When it entered a state of the `completed` group: the seed does not work it out from the state.
+    #[serde(default)]
+    pub completed_at: Option<Timestamp>,
+    #[serde(default)]
+    pub assignee_ids: Vec<UserId>,
+    #[serde(default)]
+    pub label_ids: Vec<Uuid>,
+    /// None for an item that nobody made (what the oracle's seed leaves).
+    #[serde(default)]
+    pub created_by: Option<UserId>,
+    pub created_at: Timestamp,
 }
 
 fn yes() -> bool {
@@ -526,6 +585,13 @@ pub struct SeedProjectDetails {
     /// When it was made; the epoch in memory and the database's `now()` in Postgres when none is given.
     #[serde(default)]
     pub created_at: Option<Timestamp>,
+    /// Its plain description (issue #58); empty, as a project made with no options has.
+    #[serde(default)]
+    pub description: String,
+    /// The state that a work item gets when its request names none (the project's own column, issue #58). A seeded state that is
+    /// `is_default` is a different flag: the state's own, which the project does not read.
+    #[serde(default)]
+    pub default_state: Option<Uuid>,
 }
 
 impl SeedProjectDetails {
@@ -539,6 +605,8 @@ impl SeedProjectDetails {
             project_lead: None,
             created_by: None,
             created_at: None,
+            description: String::new(),
+            default_state: None,
         }
     }
 }
