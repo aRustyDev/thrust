@@ -1,0 +1,74 @@
+# Normalisation rules for oracle recordings and differential comparison (Q-0122.2).
+# LOADED BY CODE (oracle/harness/normalise.py), not just documented: the rules below are the rules.
+# Rationale and the exception-register format: oracle/NORMALISATION.md.
+#
+# Goal: two independent runs against the same pinned Plane (or Plane vs the Rust v1 slice) must be
+# byte-identical after normalisation, and a REAL behavioural difference must survive it.
+format_version: 1
+
+uuid:
+  regex: '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}'
+  # Seeded ids are deterministic (uuid5) and are replaced by SYMBOLIC names taken from the seed
+  # manifest, e.g. <project:alpha>, <issue:i3>, <user:owner>.
+  known: symbolic
+  # Any other uuid (created during the run, so random) becomes <uuid:N>, N = order of first
+  # appearance WITHIN ONE RECORDING. Scenario order is therefore part of the contract.
+  unknown: ordinal
+  # Dashless 32-hex ids: Plane builds storage keys as `<uuid4().hex>-<filename>`. Found by the
+  # CHECK-mode diff (two fresh-stack recordings differed here). Same numbering as dashed uuids;
+  # a hex32 is canonicalised to dashed form first, so the same id written both ways is one id.
+  hex32_regex: '(?<![0-9a-fA-F])[0-9a-fA-F]{32}(?![0-9a-fA-F])'
+
+# Values the SERVER picks at random when the client does not supply one. The contract is the shape
+# (an icon with a name and a colour), not the value. Found by the same CHECK-mode diff: every created
+# project gets a random default logo icon.
+random_defaults:
+  json_paths_regex:
+    - '(^|\.)logo_props\.icon\.(name|color)$'
+  token: '<random>'
+
+timestamps:
+  # A value is replaced only when BOTH hold: its key matches `key_regex` AND it parses as the
+  # corresponding shape. null stays null: "unset" vs "set" is semantic, the instant is not.
+  datetime_key_regex: '(_at|_on)$|^(last_used|last_active|date_joined|last_login_time|expired_at)$'
+  datetime_value_regex: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})?$'
+  datetime_token: '<ts>'
+  # Date-only fields are seeded relative to "today" (offsets), so they move every day.
+  date_key_regex: '_date$'
+  date_value_regex: '^\d{4}-\d{2}-\d{2}$'
+  date_token: '<date>'
+
+# Fields that are NEVER normalised, because a mismatch is a real parity failure.
+#   sequence_id: per-project counter assigned at insert. ADR-0120 names "sequence ids" as behaviour a
+#   schema cannot express. Scenario order is fixed, so the value is reproducible; compare verbatim.
+verbatim_keys: [sequence_id, sort_order, next_cursor, prev_cursor, total_count, count, total_pages, total_results]
+
+# Opaque, per-request values that cannot be reproduced and carry no contract beyond "present".
+opaque:
+  # presigned upload data (signature, policy, credential, date, key) -- shape is kept, values are not
+  json_paths_regex:
+    - '^upload_data\.fields\.(?!Content-Type$|method$)'
+    - '^upload_data\.url$'
+    - '^asset_url$'
+  token: '<opaque>'
+
+# Response headers kept in the corpus, lower-cased. Everything else (date, server, content-length,
+# cookies, x-frame-options, ...) is transport noise from the stack, not from the API contract.
+headers:
+  keep: [content-type, allow, www-authenticate, location, retry-after, x-ratelimit-remaining, x-ratelimit-reset, cache-control]
+  # value normalisation for kept headers (regex over the header NAME)
+  epoch_regex: '^x-ratelimit-reset$'
+  epoch_token: '<epoch>'
+  # remaining/retry-after depend on how many requests were made in the window, not on the contract...
+  int_regex: '^(x-ratelimit-remaining|retry-after)$'
+  int_token: '<int>'
+  # ...EXCEPT in the dedicated rate_limit scenario, which uses a fresh token and strictly sequential
+  # calls, so `x-ratelimit-remaining` MUST count down 4,3,2,1 and that countdown IS the contract.
+  # (retry-after stays tokenised there: it is wall-clock dependent.)
+  verbatim_in_resources:
+    x-ratelimit-remaining: [rate_limit]
+
+# Arrays are compared IN API ORDER. Reordering would hide real ordering bugs (default
+# order_by / sort_order is behaviour). Arrays whose order is genuinely unspecified are listed in
+# oracle/exceptions.yaml as `kind: ordering` entries, not silently sorted here.
+ordering: strict

@@ -25,8 +25,11 @@ fn allowed(role: Role, perm: Permission) -> bool {
         Permission::CreateWorkItem
         | Permission::UpdateWorkItem
         | Permission::DeleteWorkItem
-        | Permission::WriteAttachment => role != Role::Guest,
-        Permission::ReadDeleted => role == Role::Admin,
+        | Permission::WriteAttachment
+        // a label is made, changed and deleted by a project admin or member (issue #58): `ProjectMemberPermission`
+        | Permission::WriteLabel => role != Role::Guest,
+        // a state is made, changed and deleted by a project admin only: not by a member of the project (issue #58)
+        Permission::ReadDeleted | Permission::WriteState => role == Role::Admin,
     }
 }
 
@@ -41,7 +44,9 @@ fn authorize_follows_the_role_table(
         Permission::UpdateWorkItem,
         Permission::DeleteWorkItem,
         Permission::ReadAttachment,
-        Permission::WriteAttachment
+        Permission::WriteAttachment,
+        Permission::WriteState,
+        Permission::WriteLabel
     )]
     perm: Permission,
 ) {

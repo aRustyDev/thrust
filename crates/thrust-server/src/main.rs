@@ -147,11 +147,20 @@ async fn main() {
         adapters: adapters.clone(),
     };
 
+    // Plane's `API_KEY_RATE_LIMIT` for `/api/v1` (a key's allowance), in its own spelling: `100000/minute`. Unset is Plane's `60/minute`.
+    let v1_cfg = match std::env::var("THRUST_V1_RATE_LIMIT") {
+        Ok(spec) => thrust_api_v1::V1Config::parse(&spec)
+            .expect("THRUST_V1_RATE_LIMIT is a rate such as 100000/minute (second, minute, hour or day)"),
+        Err(_) => thrust_api_v1::V1Config::default(),
+    };
+
     let router = thrust_api::router()
         .merge(thrust_compat_plane::routes())
+        .merge(thrust_api_v1::router())
         .layer(axum::middleware::from_fn(log_internal_errors))
         .layer(Extension(app))
         .layer(Extension(api_cfg))
+        .layer(Extension(v1_cfg))
         .layer(CatchPanicLayer::custom(panic_response));
 
     let listener = tokio::net::TcpListener::bind(listen).await.expect("bind");

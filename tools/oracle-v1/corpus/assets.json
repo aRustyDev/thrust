@@ -1,0 +1,600 @@
+{
+ "exchanges": [
+  {
+   "expect": [
+    200,
+    201
+   ],
+   "name": "user-asset-upload",
+   "request": {
+    "auth": "owner",
+    "body": {
+     "entity_type": "USER_AVATAR",
+     "name": "avatar.png",
+     "size": 1024,
+     "type": "image/png"
+    },
+    "content_type": "application/json",
+    "method": "POST",
+    "path": "/api/v1/assets/user-assets/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "asset_id": "<uuid:1>",
+     "asset_url": "<opaque>",
+     "upload_data": {
+      "fields": {
+       "Content-Type": "image/png",
+       "key": "<opaque>",
+       "policy": "<opaque>",
+       "x-amz-algorithm": "<opaque>",
+       "x-amz-credential": "<opaque>",
+       "x-amz-date": "<opaque>",
+       "x-amz-signature": "<opaque>"
+      },
+      "method": "POST",
+      "url": "<opaque>"
+     }
+    },
+    "headers": {
+     "allow": "POST",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 200
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    400
+   ],
+   "name": "user-asset-upload-missing-name",
+   "request": {
+    "auth": "owner",
+    "body": {
+     "entity_type": "USER_AVATAR",
+     "size": 1024,
+     "type": "image/png"
+    },
+    "content_type": "application/json",
+    "method": "POST",
+    "path": "/api/v1/assets/user-assets/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "asset_id": "<uuid:2>",
+     "asset_url": "<opaque>",
+     "upload_data": {
+      "fields": {
+       "Content-Type": "image/png",
+       "key": "<opaque>",
+       "policy": "<opaque>",
+       "x-amz-algorithm": "<opaque>",
+       "x-amz-credential": "<opaque>",
+       "x-amz-date": "<opaque>",
+       "x-amz-signature": "<opaque>"
+      },
+      "method": "POST",
+      "url": "<opaque>"
+     }
+    },
+    "headers": {
+     "allow": "POST",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 200
+   },
+   "surprise": true
+  },
+  {
+   "expect": [
+    400
+   ],
+   "name": "user-asset-upload-bad-entity-type",
+   "request": {
+    "auth": "owner",
+    "body": {
+     "entity_type": "NOPE",
+     "name": "a.png",
+     "size": 1,
+     "type": "image/png"
+    },
+    "content_type": "application/json",
+    "method": "POST",
+    "path": "/api/v1/assets/user-assets/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "error": "Invalid entity type.",
+     "status": false
+    },
+    "headers": {
+     "allow": "POST",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 400
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    400
+   ],
+   "name": "user-asset-upload-bad-mime",
+   "request": {
+    "auth": "owner",
+    "body": {
+     "entity_type": "USER_AVATAR",
+     "name": "a.exe",
+     "size": 1,
+     "type": "application/x-msdownload"
+    },
+    "content_type": "application/json",
+    "method": "POST",
+    "path": "/api/v1/assets/user-assets/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "error": "Invalid file type. Only JPEG and PNG files are allowed.",
+     "status": false
+    },
+    "headers": {
+     "allow": "POST",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 400
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    204
+   ],
+   "name": "user-asset-patch",
+   "request": {
+    "auth": "owner",
+    "body": {
+     "attributes": {}
+    },
+    "content_type": "application/json",
+    "method": "PATCH",
+    "path": "/api/v1/assets/user-assets/<uuid:1>/",
+    "query": null
+   },
+   "response": {
+    "body": null,
+    "headers": {
+     "allow": "PATCH, DELETE",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 204
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    204
+   ],
+   "name": "user-asset-delete",
+   "request": {
+    "auth": "owner",
+    "body": null,
+    "content_type": null,
+    "method": "DELETE",
+    "path": "/api/v1/assets/user-assets/<uuid:1>/",
+    "query": null
+   },
+   "response": {
+    "body": null,
+    "headers": {
+     "allow": "PATCH, DELETE",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 204
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    200,
+    201
+   ],
+   "name": "workspace-asset-upload",
+   "request": {
+    "auth": "owner",
+    "body": {
+     "name": "doc.png",
+     "project_id": "<project:alpha>",
+     "size": 2048,
+     "type": "image/png"
+    },
+    "content_type": "application/json",
+    "method": "POST",
+    "path": "/api/v1/workspaces/oracle-ws/assets/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "error": "Something went wrong please try again later"
+    },
+    "headers": {
+     "allow": "POST",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 500
+   },
+   "surprise": true
+  },
+  {
+   "expect": [
+    200,
+    201,
+    400
+   ],
+   "name": "workspace-asset-upload-oversize",
+   "request": {
+    "auth": "owner",
+    "body": {
+     "name": "big.png",
+     "project_id": "<project:alpha>",
+     "size": 99999999,
+     "type": "image/png"
+    },
+    "content_type": "application/json",
+    "method": "POST",
+    "path": "/api/v1/workspaces/oracle-ws/assets/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "error": "Something went wrong please try again later"
+    },
+    "headers": {
+     "allow": "POST",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 500
+   },
+   "surprise": true
+  },
+  {
+   "expect": [
+    400
+   ],
+   "name": "workspace-asset-upload-missing-size",
+   "request": {
+    "auth": "owner",
+    "body": {
+     "name": "x.png"
+    },
+    "content_type": "application/json",
+    "method": "POST",
+    "path": "/api/v1/workspaces/oracle-ws/assets/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "error": "Invalid file type.",
+     "status": false
+    },
+    "headers": {
+     "allow": "POST",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 400
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    400,
+    404,
+    200,
+    302
+   ],
+   "name": "workspace-asset-get-not-uploaded",
+   "request": {
+    "auth": "owner",
+    "body": null,
+    "content_type": null,
+    "method": "GET",
+    "path": "/api/v1/workspaces/oracle-ws/assets/MISSING-cap.wa/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "error": "Page not found."
+    },
+    "headers": {
+     "content-type": "application/json"
+    },
+    "status": 404
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    204
+   ],
+   "name": "workspace-asset-mark-uploaded",
+   "request": {
+    "auth": "owner",
+    "body": {
+     "is_uploaded": true
+    },
+    "content_type": "application/json",
+    "method": "PATCH",
+    "path": "/api/v1/workspaces/oracle-ws/assets/MISSING-cap.wa/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "error": "Page not found."
+    },
+    "headers": {
+     "content-type": "application/json"
+    },
+    "status": 404
+   },
+   "surprise": true
+  },
+  {
+   "expect": [
+    200,
+    302,
+    404
+   ],
+   "name": "workspace-asset-get-uploaded",
+   "request": {
+    "auth": "owner",
+    "body": null,
+    "content_type": null,
+    "method": "GET",
+    "path": "/api/v1/workspaces/oracle-ws/assets/MISSING-cap.wa/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "error": "Page not found."
+    },
+    "headers": {
+     "content-type": "application/json"
+    },
+    "status": 404
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    404
+   ],
+   "name": "workspace-asset-get-unknown",
+   "request": {
+    "auth": "owner",
+    "body": null,
+    "content_type": null,
+    "method": "GET",
+    "path": "/api/v1/workspaces/oracle-ws/assets/<uuid:3>/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "error": "Asset not found"
+    },
+    "headers": {
+     "allow": "GET, PATCH",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 404
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    200,
+    201
+   ],
+   "name": "work-item-attachment-upload",
+   "request": {
+    "auth": "owner",
+    "body": {
+     "name": "file.png",
+     "size": 4096,
+     "type": "image/png"
+    },
+    "content_type": "application/json",
+    "method": "POST",
+    "path": "/api/v1/workspaces/oracle-ws/projects/<project:alpha>/work-items/<issue:i3>/attachments/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "asset_id": "<uuid:4>",
+     "asset_url": "<opaque>",
+     "attachment": {
+      "asset": "<workspace:oracle>/<uuid:5>-file.png",
+      "attributes": {
+       "name": "file.png",
+       "size": 4096,
+       "type": "image/png"
+      },
+      "comment": null,
+      "created_at": "<ts>",
+      "created_by": "<user:owner>",
+      "deleted_at": null,
+      "draft_issue": null,
+      "entity_identifier": null,
+      "entity_type": "ISSUE_ATTACHMENT",
+      "external_id": null,
+      "external_source": null,
+      "id": "<uuid:4>",
+      "is_archived": false,
+      "is_deleted": false,
+      "is_uploaded": false,
+      "issue": "<issue:i3>",
+      "page": null,
+      "project": "<project:alpha>",
+      "size": 4096.0,
+      "storage_metadata": {},
+      "updated_at": "<ts>",
+      "updated_by": null,
+      "user": null,
+      "workspace": "<workspace:oracle>"
+     },
+     "upload_data": {
+      "fields": {
+       "Content-Type": "image/png",
+       "key": "<opaque>",
+       "policy": "<opaque>",
+       "x-amz-algorithm": "<opaque>",
+       "x-amz-credential": "<opaque>",
+       "x-amz-date": "<opaque>",
+       "x-amz-signature": "<opaque>"
+      },
+      "method": "POST",
+      "url": "<opaque>"
+     }
+    },
+    "headers": {
+     "allow": "GET, POST",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 200
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    400
+   ],
+   "name": "work-item-attachment-upload-missing-name",
+   "request": {
+    "auth": "owner",
+    "body": {
+     "size": 4096
+    },
+    "content_type": "application/json",
+    "method": "POST",
+    "path": "/api/v1/workspaces/oracle-ws/projects/<project:alpha>/work-items/<issue:i3>/attachments/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "error": "Invalid request.",
+     "status": false
+    },
+    "headers": {
+     "allow": "GET, POST",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 400
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    200
+   ],
+   "name": "work-item-attachments-list",
+   "request": {
+    "auth": "owner",
+    "body": null,
+    "content_type": null,
+    "method": "GET",
+    "path": "/api/v1/workspaces/oracle-ws/projects/<project:alpha>/work-items/<issue:i3>/attachments/",
+    "query": null
+   },
+   "response": {
+    "body": [],
+    "headers": {
+     "allow": "GET, POST",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 200
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    204,
+    400
+   ],
+   "name": "work-item-attachment-mark-uploaded",
+   "request": {
+    "auth": "owner",
+    "body": {
+     "is_uploaded": true
+    },
+    "content_type": "application/json",
+    "method": "PATCH",
+    "path": "/api/v1/workspaces/oracle-ws/projects/<project:alpha>/work-items/<issue:i3>/attachments/<uuid:4>/",
+    "query": null
+   },
+   "response": {
+    "body": null,
+    "headers": {
+     "allow": "GET, PATCH, DELETE",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 204
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    204
+   ],
+   "name": "work-item-attachment-delete",
+   "request": {
+    "auth": "owner",
+    "body": null,
+    "content_type": null,
+    "method": "DELETE",
+    "path": "/api/v1/workspaces/oracle-ws/projects/<project:alpha>/work-items/<issue:i3>/attachments/<uuid:4>/",
+    "query": null
+   },
+   "response": {
+    "body": null,
+    "headers": {
+     "allow": "GET, PATCH, DELETE",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 204
+   },
+   "surprise": false
+  }
+ ],
+ "normalisation": "oracle/normalise.yaml",
+ "pinned_commit": "ba85d4d3d332b5380bebca4b9e0143b1127de907",
+ "resource": "assets"
+}

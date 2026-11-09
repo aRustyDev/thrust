@@ -1,0 +1,567 @@
+{
+ "exchanges": [
+  {
+   "expect": [
+    200
+   ],
+   "name": "workspace-members",
+   "request": {
+    "auth": "owner",
+    "body": null,
+    "content_type": null,
+    "method": "GET",
+    "path": "/api/v1/workspaces/oracle-ws/members/",
+    "query": null
+   },
+   "response": {
+    "body": [
+     {
+      "avatar": "",
+      "avatar_url": null,
+      "display_name": "oracle_guest",
+      "email": "oracle-guest@example.test",
+      "first_name": "Gwen",
+      "id": "<user:guest>",
+      "last_name": "Guest",
+      "role": 5
+     },
+     {
+      "avatar": "",
+      "avatar_url": null,
+      "display_name": "oracle_member",
+      "email": "oracle-member@example.test",
+      "first_name": "Milo",
+      "id": "<user:member>",
+      "last_name": "Member",
+      "role": 15
+     },
+     {
+      "avatar": "",
+      "avatar_url": null,
+      "display_name": "oracle_owner",
+      "email": "oracle-owner@example.test",
+      "first_name": "Olive",
+      "id": "<user:owner>",
+      "last_name": "Owner",
+      "role": 20
+     }
+    ],
+    "headers": {
+     "allow": "GET",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 200
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    200
+   ],
+   "name": "project-members",
+   "request": {
+    "auth": "owner",
+    "body": null,
+    "content_type": null,
+    "method": "GET",
+    "path": "/api/v1/workspaces/oracle-ws/projects/<project:alpha>/members/",
+    "query": null
+   },
+   "response": {
+    "body": [
+     {
+      "avatar": "",
+      "avatar_url": null,
+      "display_name": "oracle_guest",
+      "email": "oracle-guest@example.test",
+      "first_name": "Gwen",
+      "id": "<user:guest>",
+      "last_name": "Guest"
+     },
+     {
+      "avatar": "",
+      "avatar_url": null,
+      "display_name": "oracle_member",
+      "email": "oracle-member@example.test",
+      "first_name": "Milo",
+      "id": "<user:member>",
+      "last_name": "Member"
+     },
+     {
+      "avatar": "",
+      "avatar_url": null,
+      "display_name": "oracle_owner",
+      "email": "oracle-owner@example.test",
+      "first_name": "Olive",
+      "id": "<user:owner>",
+      "last_name": "Owner"
+     }
+    ],
+    "headers": {
+     "allow": "GET, POST",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 200
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    200
+   ],
+   "name": "project-members-alias-route",
+   "request": {
+    "auth": "owner",
+    "body": null,
+    "content_type": null,
+    "method": "GET",
+    "path": "/api/v1/workspaces/oracle-ws/projects/<project:alpha>/project-members/",
+    "query": null
+   },
+   "response": {
+    "body": [
+     {
+      "avatar": "",
+      "avatar_url": null,
+      "display_name": "oracle_guest",
+      "email": "oracle-guest@example.test",
+      "first_name": "Gwen",
+      "id": "<user:guest>",
+      "last_name": "Guest"
+     },
+     {
+      "avatar": "",
+      "avatar_url": null,
+      "display_name": "oracle_member",
+      "email": "oracle-member@example.test",
+      "first_name": "Milo",
+      "id": "<user:member>",
+      "last_name": "Member"
+     },
+     {
+      "avatar": "",
+      "avatar_url": null,
+      "display_name": "oracle_owner",
+      "email": "oracle-owner@example.test",
+      "first_name": "Olive",
+      "id": "<user:owner>",
+      "last_name": "Owner"
+     }
+    ],
+    "headers": {
+     "allow": "GET, POST",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 200
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    200
+   ],
+   "name": "project-members-lite",
+   "request": {
+    "auth": "owner",
+    "body": null,
+    "content_type": null,
+    "method": "GET",
+    "path": "/api/v1/workspaces/oracle-ws/projects/<project:alpha>/project-members-lite/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "count": 3,
+     "extra_stats": null,
+     "grouped_by": null,
+     "next_cursor": "1000:1:0",
+     "next_page_results": false,
+     "prev_cursor": "1000:-1:1",
+     "prev_page_results": false,
+     "results": [
+      {
+       "avatar": "",
+       "avatar_url": null,
+       "display_name": "oracle_guest",
+       "email": "oracle-guest@example.test",
+       "first_name": "Gwen",
+       "id": "<user:guest>",
+       "is_active": true,
+       "is_bot": false,
+       "last_name": "Guest",
+       "role": 5
+      },
+      {
+       "avatar": "",
+       "avatar_url": null,
+       "display_name": "oracle_member",
+       "email": "oracle-member@example.test",
+       "first_name": "Milo",
+       "id": "<user:member>",
+       "is_active": true,
+       "is_bot": false,
+       "last_name": "Member",
+       "role": 15
+      },
+      {
+       "avatar": "",
+       "avatar_url": null,
+       "display_name": "oracle_owner",
+       "email": "oracle-owner@example.test",
+       "first_name": "Olive",
+       "id": "<user:owner>",
+       "is_active": true,
+       "is_bot": false,
+       "last_name": "Owner",
+       "role": 20
+      }
+     ],
+     "sub_grouped_by": null,
+     "total_count": 3,
+     "total_pages": 1,
+     "total_results": 3
+    },
+    "headers": {
+     "allow": "GET",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 200
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    200
+   ],
+   "name": "project-member-detail",
+   "request": {
+    "auth": "owner",
+    "body": null,
+    "content_type": null,
+    "method": "GET",
+    "path": "/api/v1/workspaces/oracle-ws/projects/<project:alpha>/members/<pmember:alpha:member>/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "avatar": "",
+     "avatar_url": null,
+     "display_name": "oracle_member",
+     "email": "oracle-member@example.test",
+     "first_name": "Milo",
+     "id": "<user:member>",
+     "last_name": "Member"
+    },
+    "headers": {
+     "allow": "PATCH, DELETE, GET",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 200
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    404
+   ],
+   "name": "project-member-detail-by-user-id",
+   "request": {
+    "auth": "owner",
+    "body": null,
+    "content_type": null,
+    "method": "GET",
+    "path": "/api/v1/workspaces/oracle-ws/projects/<project:alpha>/members/<user:member>/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "error": "The requested resource does not exist."
+    },
+    "headers": {
+     "allow": "PATCH, DELETE, GET",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 404
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    404
+   ],
+   "name": "project-member-detail-unknown",
+   "request": {
+    "auth": "owner",
+    "body": null,
+    "content_type": null,
+    "method": "GET",
+    "path": "/api/v1/workspaces/oracle-ws/projects/<project:alpha>/members/<uuid:1>/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "error": "The requested resource does not exist."
+    },
+    "headers": {
+     "allow": "PATCH, DELETE, GET",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 404
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    201,
+    200
+   ],
+   "name": "add-member-to-secret-project",
+   "request": {
+    "auth": "owner",
+    "body": {
+     "member": "<user:member>",
+     "role": 15
+    },
+    "content_type": "application/json",
+    "method": "POST",
+    "path": "/api/v1/workspaces/oracle-ws/projects/<project:beta>/members/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "id": "<uuid:2>",
+     "member": "<user:member>",
+     "role": 15
+    },
+    "headers": {
+     "allow": "GET, POST",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 201
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    400,
+    409
+   ],
+   "name": "add-member-duplicate",
+   "request": {
+    "auth": "owner",
+    "body": {
+     "member": "<user:member>",
+     "role": 15
+    },
+    "content_type": "application/json",
+    "method": "POST",
+    "path": "/api/v1/workspaces/oracle-ws/projects/<project:beta>/members/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "error": "The payload is not valid"
+    },
+    "headers": {
+     "allow": "GET, POST",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 400
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    400
+   ],
+   "name": "add-member-invalid-role",
+   "request": {
+    "auth": "owner",
+    "body": {
+     "member": "<user:guest>",
+     "role": 77
+    },
+    "content_type": "application/json",
+    "method": "POST",
+    "path": "/api/v1/workspaces/oracle-ws/projects/<project:beta>/members/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "role": [
+      "\"77\" is not a valid choice."
+     ]
+    },
+    "headers": {
+     "allow": "GET, POST",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 400
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    400,
+    404
+   ],
+   "name": "add-non-workspace-user",
+   "request": {
+    "auth": "owner",
+    "body": {
+     "member": "<user:outsider>",
+     "role": 15
+    },
+    "content_type": "application/json",
+    "method": "POST",
+    "path": "/api/v1/workspaces/oracle-ws/projects/<project:beta>/members/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "member": [
+      "Member not found in workspace"
+     ]
+    },
+    "headers": {
+     "allow": "GET, POST",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 400
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    200
+   ],
+   "name": "patch-member-role",
+   "request": {
+    "auth": "owner",
+    "body": {
+     "role": 20
+    },
+    "content_type": "application/json",
+    "method": "PATCH",
+    "path": "/api/v1/workspaces/oracle-ws/projects/<project:beta>/members/<uuid:2>/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "id": "<uuid:2>",
+     "member": "<user:member>",
+     "role": 20
+    },
+    "headers": {
+     "allow": "PATCH, DELETE, GET",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 200
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    204
+   ],
+   "name": "delete-member",
+   "request": {
+    "auth": "owner",
+    "body": null,
+    "content_type": null,
+    "method": "DELETE",
+    "path": "/api/v1/workspaces/oracle-ws/projects/<project:beta>/members/<uuid:2>/",
+    "query": null
+   },
+   "response": {
+    "body": null,
+    "headers": {
+     "allow": "PATCH, DELETE, GET",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 204
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    404
+   ],
+   "name": "delete-member-again",
+   "request": {
+    "auth": "owner",
+    "body": null,
+    "content_type": null,
+    "method": "DELETE",
+    "path": "/api/v1/workspaces/oracle-ws/projects/<project:beta>/members/<uuid:2>/",
+    "query": null
+   },
+   "response": {
+    "body": null,
+    "headers": {
+     "allow": "PATCH, DELETE, GET",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 204
+   },
+   "surprise": true
+  },
+  {
+   "expect": [
+    403
+   ],
+   "name": "guest-cannot-add-member",
+   "request": {
+    "auth": "guest",
+    "body": {
+     "member": "<user:outsider>",
+     "role": 5
+    },
+    "content_type": "application/json",
+    "method": "POST",
+    "path": "/api/v1/workspaces/oracle-ws/projects/<project:alpha>/members/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "detail": "You do not have permission to perform this action."
+    },
+    "headers": {
+     "allow": "GET, POST",
+     "content-type": "application/json"
+    },
+    "status": 403
+   },
+   "surprise": false
+  }
+ ],
+ "normalisation": "oracle/normalise.yaml",
+ "pinned_commit": "ba85d4d3d332b5380bebca4b9e0143b1127de907",
+ "resource": "members"
+}

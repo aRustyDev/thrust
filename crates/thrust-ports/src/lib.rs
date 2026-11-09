@@ -540,6 +540,11 @@ pub struct StateRow {
     pub created_by: Option<UserId>,
     pub created_at: Timestamp,
     pub updated_at: Timestamp,
+    /// The key an integration gave the state (migration 0015); the pair of them is unique among a project's states by Plane's own
+    /// check, not by the database.
+    pub external_source: Option<String>,
+    pub external_id: Option<String>,
+    pub updated_by: Option<UserId>,
 }
 
 /// A label of a project.
@@ -556,6 +561,11 @@ pub struct LabelRow {
     pub created_by: Option<UserId>,
     pub created_at: Timestamp,
     pub updated_at: Timestamp,
+    /// The key an integration gave the label (migration 0015); the pair of them is unique among a project's labels by Plane's own
+    /// check, not by the database.
+    pub external_source: Option<String>,
+    pub external_id: Option<String>,
+    pub updated_by: Option<UserId>,
 }
 
 /// A person to add to a project that is being made, with their own settings row. The adapter replaces
@@ -771,6 +781,17 @@ pub trait Database: Send + Sync {
     /// project's own workspace, as in `project_roles`.
     async fn workspace_projects(&self, scope: &WorkspaceScope) -> Result<Vec<ProjectListing>, DbError>;
 
+    /// The projects of the workspace the caller sees by Plane's v1 rule, which does not look at their role in the workspace: the
+    /// ones they are a member of, and the public ones (so a guest sees a public project they are not in, and an admin does not
+    /// see a secret one they are not in). Archived ones are in; deleted ones never are. Oldest first (ties by id): the caller
+    /// orders them as the request asks. One statement.
+    async fn visible_projects(&self, scope: &WorkspaceScope) -> Result<Vec<ProjectListing>, DbError>;
+
+    /// Delete the project of the scope's workspace, as Plane does: the row stays, marked with `at`, and every read leaves it out
+    /// (a name and a key it held are free again). Its work items, states, labels and history are kept. `false` when the workspace
+    /// has no such project, or it is already deleted.
+    async fn delete_project(&self, scope: &WorkspaceScope, id: ProjectId, at: Timestamp) -> Result<bool, DbError>;
+
     /// Make the caller's sidebar rows for this workspace that are not there yet, from `defaults` (at time `at`), and return
     /// all of them: by `sort_order`, ties by key. A row that exists is left exactly as it is, so two first visits at once
     /// make one row each.
@@ -843,11 +864,50 @@ pub trait Database: Send + Sync {
         new: &ProjectUserProperties,
     ) -> Result<ProjectUserProperties, DbError>;
 
-    /// The project's labels by `sort_order` (ties by id).
+    /// The project's labels by `sort_order` (ties by id), the deleted ones left out.
     async fn project_labels(&self, scope: &Scope) -> Result<Vec<LabelRow>, DbError>;
 
-    /// The project's states, the intake one left out, by `sequence` (ties by id).
+    /// Make a label of the scope's project, and return it as stored. Its `sort_order` is Plane's: when the project has other live
+    /// labels, the greatest of theirs plus 10000, whatever `l.sort_order` says (it is the place of the first, when there is none). A
+    /// name that a live label of the project has is `DbError::Conflict`; an id that exists, or a label of another project, is the
+    /// caller's bug.
+    async fn insert_label(&self, scope: &Scope, l: &LabelRow) -> Result<LabelRow, DbError>;
+
+    /// Replace the name, description, colour, place, parent, external key, editor and time of the live label `l.id` of the scope's
+    /// project (the id, the project and who made it are kept). `false`, and nothing changed, when the project has no such live label;
+    /// a name another live label has is `DbError::Conflict`.
+    async fn update_label(&self, scope: &Scope, l: &LabelRow) -> Result<bool, DbError>;
+
+    /// Delete a label, as Plane does and its background task finishes: the row stays, marked with `at`, and so does the row of every
+    /// live label under it (each one's children in turn); none is in a list any longer, and each one's name is free again. A work
+    /// item that carried any of them no longer does. All in one statement. `false` when the project has no such live label.
+    async fn delete_label(&self, scope: &Scope, id: Uuid, at: Timestamp) -> Result<bool, DbError>;
+
+    /// The project's states, the intake one left out and the deleted ones too, by `sequence` (ties by id).
     async fn project_states(&self, scope: &Scope) -> Result<Vec<StateRow>, DbError>;
+
+    /// Whether the scope's project is archived (a project that is not there is not).
+    async fn project_is_archived(&self, scope: &Scope) -> Result<bool, DbError>;
+
+    /// Make a state of the scope's project, and return it as stored. Its `sequence` is Plane's: when the project has other live
+    /// states that are not the intake one, the greatest of theirs plus 15000, whatever `st.sequence` says (it is the place of the
+    /// first, when there is none). A state that is the default takes the default from the others, in the same transaction. A name that
+    /// a live state of the project has is `DbError::Conflict`; an id that exists, or a state of another project, is the caller's bug.
+    async fn insert_state(&self, scope: &Scope, st: &StateRow) -> Result<StateRow, DbError>;
+
+    /// Replace the name, description, colour, place, group, default flag, external key, editor and time of the live state `st.id` of
+    /// the scope's project (the id, the project and who made it are kept). A state that becomes the default takes the default from
+    /// the others, in the same transaction. `false`, and nothing changed, when the project has no such live state; a name another
+    /// live state has is `DbError::Conflict`.
+    async fn update_state(&self, scope: &Scope, st: &StateRow) -> Result<bool, DbError>;
+
+    /// Delete a state, as Plane does: the row stays, marked with `at`, and the three lists leave it out (the work items that name it
+    /// still read it, and its name is free again). `false` when the project has no such live state.
+    async fn delete_state(&self, scope: &Scope, id: Uuid, at: Timestamp) -> Result<bool, DbError>;
+
+    /// Whether any work item that counts is in the state: not deleted, not archived, not a draft, and in a project that is neither
+    /// archived nor deleted (Plane's `Issue.objects`, which the check before a state is deleted reads).
+    async fn state_has_work_items(&self, scope: &Scope, id: Uuid) -> Result<bool, DbError>;
 
     /// The states of every project of the workspace that the caller is in and that is not archived, the intake ones left out, by
     /// `sequence` (ties by project, then id).

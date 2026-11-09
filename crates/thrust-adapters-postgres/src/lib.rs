@@ -37,6 +37,7 @@ pub const MIGRATION_0011: &str = include_str!("../migrations/0011_workspace_user
 pub const MIGRATION_0012: &str = include_str!("../migrations/0012_projects.sql");
 pub const MIGRATION_0013: &str = include_str!("../migrations/0013_work_item_details.sql");
 pub const MIGRATION_0014: &str = include_str!("../migrations/0014_work_item_history.sql");
+pub const MIGRATION_0015: &str = include_str!("../migrations/0015_v1_surface.sql");
 
 pub async fn migrate(client: &Client) -> Result<(), tokio_postgres::Error> {
     client.batch_execute(MIGRATION_0001).await?;
@@ -52,7 +53,8 @@ pub async fn migrate(client: &Client) -> Result<(), tokio_postgres::Error> {
     client.batch_execute(MIGRATION_0011).await?;
     client.batch_execute(MIGRATION_0012).await?;
     client.batch_execute(MIGRATION_0013).await?;
-    client.batch_execute(MIGRATION_0014).await
+    client.batch_execute(MIGRATION_0014).await?;
+    client.batch_execute(MIGRATION_0015).await
 }
 
 pub trait ClientHandle: Send {
@@ -557,7 +559,8 @@ fn pmember_of(r: &Row) -> Result<ProjectMemberRow, DbError> {
 /// The columns of `states` the port's `StateRow` is made of (aliased `st`).
 const STATE_COLS: &str = "st.id AS st_id, st.workspace_id AS st_workspace_id, st.project_id AS st_project_id, st.name AS st_name, \
     st.description AS st_description, st.color AS st_color, st.sequence AS st_sequence, st.state_group AS st_state_group, \
-    st.is_default AS st_is_default, st.created_by AS st_created_by, st.created_at AS st_created_at, st.updated_at AS st_updated_at";
+    st.is_default AS st_is_default, st.created_by AS st_created_by, st.created_at AS st_created_at, st.updated_at AS st_updated_at, \
+    st.external_source AS st_external_source, st.external_id AS st_external_id, st.updated_by AS st_updated_by";
 
 fn state_of(r: &Row) -> Result<StateRow, DbError> {
     let group: String = r.get("st_state_group");
@@ -575,7 +578,34 @@ fn state_of(r: &Row) -> Result<StateRow, DbError> {
         created_by: r.get::<_, Option<Uuid>>("st_created_by").map(UserId),
         created_at: r.get("st_created_at"),
         updated_at: r.get("st_updated_at"),
+        external_source: r.get("st_external_source"),
+        external_id: r.get("st_external_id"),
+        updated_by: r.get::<_, Option<Uuid>>("st_updated_by").map(UserId),
     })
+}
+
+/// The columns of `labels` the port's `LabelRow` is made of (unaliased).
+const LABEL_COLS: &str =
+    "id, workspace_id, project_id, parent_id, name, description, color, sort_order, created_by, created_at, \
+    updated_at, external_source, external_id, updated_by";
+
+fn label_of(r: &Row) -> LabelRow {
+    LabelRow {
+        id: r.get("id"),
+        workspace_id: WorkspaceId(r.get("workspace_id")),
+        project_id: ProjectId(r.get("project_id")),
+        parent_id: r.get("parent_id"),
+        name: r.get("name"),
+        description: r.get("description"),
+        color: r.get("color"),
+        sort_order: r.get("sort_order"),
+        created_by: r.get::<_, Option<Uuid>>("created_by").map(UserId),
+        created_at: r.get("created_at"),
+        updated_at: r.get("updated_at"),
+        external_source: r.get("external_source"),
+        external_id: r.get("external_id"),
+        updated_by: r.get::<_, Option<Uuid>>("updated_by").map(UserId),
+    }
 }
 
 /// The columns of `project_user_properties` the port's `ProjectUserProperties` is made of (unaliased).
@@ -654,6 +684,22 @@ fn work_item_activity(r: &Row) -> WorkItemActivity {
     }
 }
 
+/// Take the default from the project's other live states ($1 the project, $2 the state that becomes the default).
+const CLEAR_OTHER_DEFAULTS: &str =
+    "UPDATE states SET is_default = false WHERE project_id = $1 AND id <> $2 AND is_default AND deleted_at IS NULL";
+
+/// A project row of a listing query (`PROJECT_COLS`, the caller's `m_role` and their `up_sort_order`).
+fn listing_of(r: &Row) -> Result<ProjectListing, DbError> {
+    let role: Option<String> = r.get("m_role");
+    Ok(ProjectListing {
+        project: project_of(r)?,
+        role: role
+            .map(|s| Role::parse(&s).ok_or_else(|| DbError::Backend(format!("m_role holds '{s}', which is no role"))))
+            .transpose()?,
+        sort_order: r.get("up_sort_order"),
+    })
+}
+
 #[async_trait]
 impl Database for PgDatabase {
     async fn membership(&self, slug: &WorkspaceSlug, project: ProjectId, user: UserId) -> Result<Membership, DbError> {
@@ -665,7 +711,7 @@ impl Database for PgDatabase {
             .query_opt(
                 "SELECT w.id AS workspace_id, m.role AS role FROM workspaces w \
                  JOIN workspace_members wm ON wm.workspace_id = w.id AND wm.user_id = $3 AND wm.is_active \
-                 JOIN projects p ON p.workspace_id = w.id AND p.id = $2 \
+                 JOIN projects p ON p.workspace_id = w.id AND p.id = $2 AND p.deleted_at IS NULL \
                  LEFT JOIN project_members m \
                    ON m.project_id = p.id AND m.workspace_id = p.workspace_id AND m.user_id = $3 \
                  WHERE w.slug = $1",
@@ -941,7 +987,7 @@ impl Database for PgDatabase {
             .query(
                 // the project must really be in the workspace the member row names: a row that says otherwise is not a role
                 "SELECT m.project_id AS project_id, m.role AS role FROM project_members m \
-                 JOIN projects p ON p.id = m.project_id AND p.workspace_id = m.workspace_id \
+                 JOIN projects p ON p.id = m.project_id AND p.workspace_id = m.workspace_id AND p.deleted_at IS NULL \
                  WHERE m.workspace_id = $1 AND m.user_id = $2 ORDER BY m.project_id",
                 &[&scope.workspace_id().0, &scope.user_id().0],
             )
@@ -962,28 +1008,48 @@ impl Database for PgDatabase {
                      LEFT JOIN project_members m \
                        ON m.project_id = p.id AND m.workspace_id = p.workspace_id AND m.user_id = $2 \
                      LEFT JOIN project_user_properties up ON up.project_id = p.id AND up.user_id = $2 \
-                     WHERE p.workspace_id = $1 AND ($3 OR m.role IS NOT NULL OR ($4 AND p.network = 'public')) \
+                     WHERE p.workspace_id = $1 AND p.deleted_at IS NULL \
+                       AND ($3 OR m.role IS NOT NULL OR ($4 AND p.network = 'public')) \
                      ORDER BY p.created_at DESC, p.id DESC"
                 ),
                 &[&scope.workspace_id().0, &scope.user_id().0, &all, &public],
             )
             .await
             .map_err(db_err)?;
-        rows.iter()
-            .map(|r| {
-                let role: Option<String> = r.get("m_role");
-                Ok(ProjectListing {
-                    project: project_of(r)?,
-                    role: role
-                        .map(|s| {
-                            Role::parse(&s)
-                                .ok_or_else(|| DbError::Backend(format!("m_role holds '{s}', which is no role")))
-                        })
-                        .transpose()?,
-                    sort_order: r.get("up_sort_order"),
-                })
-            })
-            .collect()
+        rows.iter().map(listing_of).collect()
+    }
+
+    async fn visible_projects(&self, scope: &WorkspaceScope) -> Result<Vec<ProjectListing>, DbError> {
+        // Plane's v1 rule, whatever the caller's role in the workspace: the projects they are in, and the public ones (a guest sees a
+        // public project they are not in, an admin does not see a secret one they are not in).
+        let c = self.conn().await?;
+        let rows = Pg(c.client())
+            .query(
+                &format!(
+                    "SELECT {PROJECT_COLS}, m.role AS m_role, up.sort_order AS up_sort_order FROM projects p \
+                     LEFT JOIN project_members m \
+                       ON m.project_id = p.id AND m.workspace_id = p.workspace_id AND m.user_id = $2 \
+                     LEFT JOIN project_user_properties up ON up.project_id = p.id AND up.user_id = $2 \
+                     WHERE p.workspace_id = $1 AND p.deleted_at IS NULL AND (m.role IS NOT NULL OR p.network = 'public') \
+                     ORDER BY p.created_at, p.id"
+                ),
+                &[&scope.workspace_id().0, &scope.user_id().0],
+            )
+            .await
+            .map_err(db_err)?;
+        rows.iter().map(listing_of).collect()
+    }
+
+    async fn delete_project(&self, scope: &WorkspaceScope, id: ProjectId, at: Timestamp) -> Result<bool, DbError> {
+        let c = self.conn().await?;
+        let n = Pg(c.client())
+            .execute(
+                "UPDATE projects SET deleted_at = $3 WHERE id = $1 AND workspace_id = $2 AND deleted_at IS NULL",
+                &[&id.0, &scope.workspace_id().0, &at],
+            )
+            .await
+            .map_err(db_err)?;
+        Ok(n == 1)
     }
 
     async fn ensure_sidebar_preferences(
@@ -1223,8 +1289,8 @@ impl Database for PgDatabase {
         let row = Pg(c.client())
             .query_one(
                 "SELECT \
-                   EXISTS (SELECT 1 FROM projects WHERE workspace_id = $1 AND name = $2 AND ($4::uuid IS NULL OR id <> $4)) AS name_taken, \
-                   EXISTS (SELECT 1 FROM projects WHERE workspace_id = $1 AND identifier = $3 AND ($4::uuid IS NULL OR id <> $4)) AS identifier_taken",
+                   EXISTS (SELECT 1 FROM projects WHERE workspace_id = $1 AND name = $2 AND deleted_at IS NULL AND ($4::uuid IS NULL OR id <> $4)) AS name_taken, \
+                   EXISTS (SELECT 1 FROM projects WHERE workspace_id = $1 AND identifier = $3 AND deleted_at IS NULL AND ($4::uuid IS NULL OR id <> $4)) AS identifier_taken",
                 &[&scope.workspace_id().0, &name, &identifier, &except],
             )
             .await
@@ -1243,7 +1309,13 @@ impl Database for PgDatabase {
         params.extend(replaced.iter().map(|c| c.1));
         let c = self.conn().await?;
         let n = Pg(c.client())
-            .execute(&format!("UPDATE projects SET {} WHERE id = $1 AND workspace_id = $2", set.join(", ")), &params)
+            .execute(
+                &format!(
+                    "UPDATE projects SET {} WHERE id = $1 AND workspace_id = $2 AND deleted_at IS NULL",
+                    set.join(", ")
+                ),
+                &params,
+            )
             .await
             .map_err(db_err)?;
         Ok(n == 1)
@@ -1261,7 +1333,7 @@ impl Database for PgDatabase {
                      FROM projects p \
                      LEFT JOIN project_members m ON m.project_id = p.id AND m.workspace_id = p.workspace_id AND m.user_id = $2 \
                      LEFT JOIN project_user_properties up ON up.project_id = p.id AND up.user_id = $2 \
-                     WHERE p.id = $3 AND p.workspace_id = $1"
+                     WHERE p.id = $3 AND p.workspace_id = $1 AND p.deleted_at IS NULL"
                 ),
                 &[&scope.workspace_id().0, &scope.user_id().0, &id.0],
             )
@@ -1300,7 +1372,7 @@ impl Database for PgDatabase {
                        COALESCE(pr.first_name, '') AS u_first_name, COALESCE(pr.last_name, '') AS u_last_name, \
                        COALESCE(pr.display_name, '') AS u_display_name, COALESCE(pr.avatar, '') AS u_avatar \
                      FROM project_members pm \
-                       JOIN projects p ON p.id = pm.project_id AND p.workspace_id = pm.workspace_id \
+                       JOIN projects p ON p.id = pm.project_id AND p.workspace_id = pm.workspace_id AND p.deleted_at IS NULL \
                        JOIN workspaces w ON w.id = p.workspace_id \
                        LEFT JOIN users u ON u.id = pm.user_id LEFT JOIN user_profiles pr ON pr.user_id = pm.user_id \
                      WHERE pm.workspace_id = $1 AND pm.project_id = $2 AND pm.user_id = $3"
@@ -1330,7 +1402,7 @@ impl Database for PgDatabase {
             .query(
                 &format!(
                     "SELECT {PMEMBER_COLS} FROM project_members pm \
-                       JOIN projects p ON p.id = pm.project_id AND p.workspace_id = pm.workspace_id \
+                       JOIN projects p ON p.id = pm.project_id AND p.workspace_id = pm.workspace_id AND p.deleted_at IS NULL \
                        JOIN workspace_members wm ON wm.workspace_id = pm.workspace_id AND wm.user_id = pm.user_id AND wm.is_active \
                      WHERE pm.workspace_id = $1 AND pm.project_id = $2 ORDER BY pm.created_at DESC, pm.id DESC"
                 ),
@@ -1352,7 +1424,7 @@ impl Database for PgDatabase {
         cl.execute(
             "INSERT INTO project_user_properties (id, project_id, workspace_id, user_id, filters, display_filters, display_properties, \
                rich_filters, preferences, sort_order, created_at, updated_at) \
-             SELECT $1, p.id, p.workspace_id, $4, $5, $6, $7, $8, $9, $10, $11, $12 FROM projects p WHERE p.id = $2 AND p.workspace_id = $3 \
+             SELECT $1, p.id, p.workspace_id, $4, $5, $6, $7, $8, $9, $10, $11, $12 FROM projects p WHERE p.id = $2 AND p.workspace_id = $3 AND p.deleted_at IS NULL \
              ON CONFLICT (project_id, user_id) DO NOTHING",
             &[
                 &new.id,
@@ -1385,28 +1457,106 @@ impl Database for PgDatabase {
         let c = self.conn().await?;
         let rows = Pg(c.client())
             .query(
-                "SELECT id, workspace_id, project_id, parent_id, name, description, color, sort_order, created_by, created_at, updated_at \
-                 FROM labels WHERE workspace_id = $1 AND project_id = $2 ORDER BY sort_order, id",
+                &format!(
+                    "SELECT {LABEL_COLS} FROM labels \
+                     WHERE workspace_id = $1 AND project_id = $2 AND deleted_at IS NULL ORDER BY sort_order, id"
+                ),
                 &[&scope.workspace_id().0, &scope.project_id().0],
             )
             .await
             .map_err(db_err)?;
-        Ok(rows
-            .iter()
-            .map(|r| LabelRow {
-                id: r.get("id"),
-                workspace_id: WorkspaceId(r.get("workspace_id")),
-                project_id: ProjectId(r.get("project_id")),
-                parent_id: r.get("parent_id"),
-                name: r.get("name"),
-                description: r.get("description"),
-                color: r.get("color"),
-                sort_order: r.get("sort_order"),
-                created_by: r.get::<_, Option<Uuid>>("created_by").map(UserId),
-                created_at: r.get("created_at"),
-                updated_at: r.get("updated_at"),
-            })
-            .collect())
+        Ok(rows.iter().map(label_of).collect())
+    }
+
+    async fn insert_label(&self, scope: &Scope, l: &LabelRow) -> Result<LabelRow, DbError> {
+        if l.workspace_id != scope.workspace_id() || l.project_id != scope.project_id() {
+            return Err(DbError::Backend("label is not in this project".into()));
+        }
+        // The row goes in with a place of Plane's making, in one statement. A taken name is a unique violation, which `db_err` makes a
+        // `Conflict`.
+        let c = self.conn().await?;
+        let (created_by, updated_by) = (l.created_by.map(|u| u.0), l.updated_by.map(|u| u.0));
+        let row = Pg(c.client())
+            .query_one(
+                &format!(
+                    "INSERT INTO labels (id, workspace_id, project_id, parent_id, name, description, color, sort_order, \
+                       external_source, external_id, created_by, updated_by, created_at, updated_at) \
+                     VALUES ($1, $2, $3, $4, $5, $6, $7, \
+                       COALESCE((SELECT max(o.sort_order) FROM labels o WHERE o.project_id = $3 AND o.deleted_at IS NULL) + 10000, $8), \
+                       $9, $10, $11, $12, $13, $14) \
+                     RETURNING {LABEL_COLS}"
+                ),
+                &[
+                    &l.id,
+                    &l.workspace_id.0,
+                    &l.project_id.0,
+                    &l.parent_id,
+                    &l.name,
+                    &l.description,
+                    &l.color,
+                    &l.sort_order,
+                    &l.external_source,
+                    &l.external_id,
+                    &created_by,
+                    &updated_by,
+                    &l.created_at,
+                    &l.updated_at,
+                ],
+            )
+            .await
+            .map_err(db_err)?;
+        Ok(label_of(&row))
+    }
+
+    async fn update_label(&self, scope: &Scope, l: &LabelRow) -> Result<bool, DbError> {
+        let c = self.conn().await?;
+        let updated_by = l.updated_by.map(|u| u.0);
+        let n = Pg(c.client())
+            .execute(
+                "UPDATE labels SET parent_id = $4, name = $5, description = $6, color = $7, sort_order = $8, \
+                   external_source = $9, external_id = $10, updated_by = $11, updated_at = $12 \
+                 WHERE id = $1 AND project_id = $2 AND workspace_id = $3 AND deleted_at IS NULL",
+                &[
+                    &l.id,
+                    &scope.project_id().0,
+                    &scope.workspace_id().0,
+                    &l.parent_id,
+                    &l.name,
+                    &l.description,
+                    &l.color,
+                    &l.sort_order,
+                    &l.external_source,
+                    &l.external_id,
+                    &updated_by,
+                    &l.updated_at,
+                ],
+            )
+            .await
+            .map_err(db_err)?;
+        Ok(n == 1)
+    }
+
+    async fn delete_label(&self, scope: &Scope, id: Uuid, at: Timestamp) -> Result<bool, DbError> {
+        // One statement, so a label, the live labels under it and the work items' hold on every one of them go together or not at all.
+        // The walk is a UNION (not UNION ALL), which drops a row it has met: the pin lets a label be its own parent, and a loop of
+        // labels must end the walk, not feed it.
+        let c = self.conn().await?;
+        let row = Pg(c.client())
+            .query_one(
+                "WITH RECURSIVE tree AS ( \
+                     SELECT id FROM labels WHERE id = $1 AND project_id = $2 AND workspace_id = $3 AND deleted_at IS NULL \
+                   UNION \
+                     SELECT c.id FROM labels c JOIN tree t ON c.parent_id = t.id \
+                     WHERE c.workspace_id = $3 AND c.deleted_at IS NULL \
+                 ), \
+                 unassigned AS (DELETE FROM work_item_labels WHERE label_id IN (SELECT id FROM tree)), \
+                 gone AS (UPDATE labels SET deleted_at = $4 WHERE id IN (SELECT id FROM tree) RETURNING id) \
+                 SELECT EXISTS (SELECT 1 FROM gone WHERE id = $1) AS deleted",
+                &[&id, &scope.project_id().0, &scope.workspace_id().0, &at],
+            )
+            .await
+            .map_err(db_err)?;
+        Ok(row.get("deleted"))
     }
 
     async fn project_states(&self, scope: &Scope) -> Result<Vec<StateRow>, DbError> {
@@ -1415,7 +1565,7 @@ impl Database for PgDatabase {
             .query(
                 &format!(
                     "SELECT {STATE_COLS} FROM states st WHERE st.workspace_id = $1 AND st.project_id = $2 AND st.state_group <> 'triage' \
-                     ORDER BY st.sequence, st.id"
+                       AND st.deleted_at IS NULL ORDER BY st.sequence, st.id"
                 ),
                 &[&scope.workspace_id().0, &scope.project_id().0],
             )
@@ -1430,9 +1580,10 @@ impl Database for PgDatabase {
             .query(
                 &format!(
                     "SELECT {STATE_COLS} FROM states st \
-                       JOIN projects p ON p.id = st.project_id AND p.workspace_id = st.workspace_id AND p.archived_at IS NULL \
+                       JOIN projects p ON p.id = st.project_id AND p.workspace_id = st.workspace_id AND p.archived_at IS NULL AND p.deleted_at IS NULL \
                        JOIN project_members m ON m.project_id = p.id AND m.workspace_id = p.workspace_id AND m.user_id = $2 \
-                     WHERE st.workspace_id = $1 AND st.state_group <> 'triage' ORDER BY st.sequence, st.project_id, st.id"
+                     WHERE st.workspace_id = $1 AND st.state_group <> 'triage' AND st.deleted_at IS NULL \
+                     ORDER BY st.sequence, st.project_id, st.id"
                 ),
                 &[&scope.workspace_id().0, &scope.user_id().0],
             )
@@ -1447,13 +1598,161 @@ impl Database for PgDatabase {
             .query_opt(
                 &format!(
                     "SELECT {STATE_COLS} FROM states st WHERE st.workspace_id = $1 AND st.project_id = $2 AND st.state_group = 'triage' \
-                     ORDER BY st.sequence, st.id LIMIT 1"
+                       AND st.deleted_at IS NULL ORDER BY st.sequence, st.id LIMIT 1"
                 ),
                 &[&scope.workspace_id().0, &scope.project_id().0],
             )
             .await
             .map_err(db_err)?;
         row.as_ref().map(state_of).transpose()
+    }
+
+    async fn project_is_archived(&self, scope: &Scope) -> Result<bool, DbError> {
+        let c = self.conn().await?;
+        let row = Pg(c.client())
+            .query_opt(
+                "SELECT archived_at IS NOT NULL AS archived FROM projects \
+                 WHERE id = $1 AND workspace_id = $2 AND deleted_at IS NULL",
+                &[&scope.project_id().0, &scope.workspace_id().0],
+            )
+            .await
+            .map_err(db_err)?;
+        Ok(row.is_some_and(|r| r.get::<_, bool>("archived")))
+    }
+
+    async fn insert_state(&self, scope: &Scope, st: &StateRow) -> Result<StateRow, DbError> {
+        if st.workspace_id != scope.workspace_id() || st.project_id != scope.project_id() {
+            return Err(DbError::Backend("state is not in this project".into()));
+        }
+        // A new default state takes the default from the project's other states, and the row goes in with a place of Plane's
+        // making, in one transaction: the one-default index would refuse the row while another still held the flag. A taken name is a
+        // unique violation, which `db_err` makes a `Conflict`.
+        let c = self.connector.checkout(true).await?;
+        let cl = Pg(c.client());
+        cl.batch_execute("BEGIN").await.map_err(db_err)?;
+        let res: Result<StateRow, DbError> = async {
+            if st.is_default {
+                cl.execute(CLEAR_OTHER_DEFAULTS, &[&st.project_id.0, &st.id]).await.map_err(db_err)?;
+            }
+            let (group, created_by, updated_by) =
+                (st.group.as_str(), st.created_by.map(|u| u.0), st.updated_by.map(|u| u.0));
+            let row = cl
+                .query_one(
+                    &format!(
+                        "INSERT INTO states AS st (id, workspace_id, project_id, name, description, color, sequence, state_group, \
+                           is_default, external_source, external_id, created_by, updated_by, created_at, updated_at) \
+                         VALUES ($1, $2, $3, $4, $5, $6, \
+                           COALESCE((SELECT max(o.sequence) FROM states o WHERE o.project_id = $3 AND o.state_group <> 'triage' \
+                                       AND o.deleted_at IS NULL) + 15000, $7), \
+                           $8, $9, $10, $11, $12, $13, $14, $15) \
+                         RETURNING {STATE_COLS}"
+                    ),
+                    &[
+                        &st.id,
+                        &st.workspace_id.0,
+                        &st.project_id.0,
+                        &st.name,
+                        &st.description,
+                        &st.color,
+                        &st.sequence,
+                        &group,
+                        &st.is_default,
+                        &st.external_source,
+                        &st.external_id,
+                        &created_by,
+                        &updated_by,
+                        &st.created_at,
+                        &st.updated_at,
+                    ],
+                )
+                .await
+                .map_err(db_err)?;
+            state_of(&row)
+        }
+        .await;
+        match res {
+            Ok(row) => cl.batch_execute("COMMIT").await.map_err(db_err).map(|()| row),
+            Err(e) => {
+                let _ = cl.batch_execute("ROLLBACK").await;
+                Err(e)
+            }
+        }
+    }
+
+    async fn update_state(&self, scope: &Scope, st: &StateRow) -> Result<bool, DbError> {
+        let c = self.connector.checkout(true).await?;
+        let cl = Pg(c.client());
+        cl.batch_execute("BEGIN").await.map_err(db_err)?;
+        let res: Result<bool, DbError> = async {
+            if st.is_default {
+                cl.execute(CLEAR_OTHER_DEFAULTS, &[&scope.project_id().0, &st.id]).await.map_err(db_err)?;
+            }
+            let (group, updated_by) = (st.group.as_str(), st.updated_by.map(|u| u.0));
+            let n = cl
+                .execute(
+                    "UPDATE states SET name = $4, description = $5, color = $6, sequence = $7, state_group = $8, is_default = $9, \
+                       external_source = $10, external_id = $11, updated_by = $12, updated_at = $13 \
+                     WHERE id = $1 AND project_id = $2 AND workspace_id = $3 AND deleted_at IS NULL",
+                    &[
+                        &st.id,
+                        &scope.project_id().0,
+                        &scope.workspace_id().0,
+                        &st.name,
+                        &st.description,
+                        &st.color,
+                        &st.sequence,
+                        &group,
+                        &st.is_default,
+                        &st.external_source,
+                        &st.external_id,
+                        &updated_by,
+                        &st.updated_at,
+                    ],
+                )
+                .await
+                .map_err(db_err)?;
+            Ok(n == 1)
+        }
+        .await;
+        match res {
+            Ok(true) => cl.batch_execute("COMMIT").await.map_err(db_err).map(|()| true),
+            // no such state: nothing changed, and the default that was taken from the others is given back
+            Ok(false) => cl.batch_execute("ROLLBACK").await.map_err(db_err).map(|()| false),
+            Err(e) => {
+                let _ = cl.batch_execute("ROLLBACK").await;
+                Err(e)
+            }
+        }
+    }
+
+    async fn delete_state(&self, scope: &Scope, id: Uuid, at: Timestamp) -> Result<bool, DbError> {
+        let c = self.conn().await?;
+        let n = Pg(c.client())
+            .execute(
+                "UPDATE states SET deleted_at = $4 \
+                 WHERE id = $1 AND project_id = $2 AND workspace_id = $3 AND deleted_at IS NULL",
+                &[&id, &scope.project_id().0, &scope.workspace_id().0, &at],
+            )
+            .await
+            .map_err(db_err)?;
+        Ok(n == 1)
+    }
+
+    async fn state_has_work_items(&self, scope: &Scope, id: Uuid) -> Result<bool, DbError> {
+        // The pin's `Issue.objects`, which leaves out what is archived, a draft or deleted, and everything in an archived project.
+        let c = self.conn().await?;
+        let row = Pg(c.client())
+            .query_one(
+                "SELECT EXISTS (SELECT 1 FROM work_items w \
+                   JOIN projects p ON p.id = w.project_id AND p.workspace_id = w.workspace_id \
+                     AND p.archived_at IS NULL AND p.deleted_at IS NULL \
+                   WHERE w.state_id = $1 AND w.workspace_id = $2 AND w.project_id = $3 \
+                     AND w.deleted_at IS NULL AND w.archived_at IS NULL AND NOT w.is_draft) AS present",
+                &[&id, &scope.workspace_id().0, &scope.project_id().0],
+            )
+            .await
+            .map_err(db_err)?;
+        Ok(row.get("present"))
     }
 
     async fn project_stats(
@@ -1471,7 +1770,7 @@ impl Database for PgDatabase {
                         AND w.deleted_at IS NULL AND w.archived_at IS NULL AND NOT w.is_draft) \
                    ELSE 0 END AS total_issues, \
                    (SELECT count(*) FROM project_members m WHERE m.project_id = p.id AND m.workspace_id = p.workspace_id) AS total_members \
-                 FROM projects p WHERE p.workspace_id = $1 AND ($2::uuid[] IS NULL OR p.id = ANY($2)) \
+                 FROM projects p WHERE p.workspace_id = $1 AND p.deleted_at IS NULL AND ($2::uuid[] IS NULL OR p.id = ANY($2)) \
                  ORDER BY p.created_at DESC, p.id DESC",
                 &[&scope.workspace_id().0, &only],
             )

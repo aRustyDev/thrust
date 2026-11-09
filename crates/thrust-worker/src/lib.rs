@@ -28,9 +28,22 @@ mod probes;
 
 static ROUTER: std::sync::OnceLock<axum::Router> = std::sync::OnceLock::new();
 
-/// The shared router with Plane's internal API (`/api/`, `/auth/`) mounted beside it (issue #44).
+/// The shared router with Plane's internal API (`/api/`, `/auth/`, issue #44) and its public one (`/api/v1`, issue #58) mounted
+/// beside it.
 fn router() -> axum::Router {
-    thrust_api::router().merge(thrust_compat_plane::routes())
+    thrust_api::router().merge(thrust_compat_plane::routes()).merge(thrust_api_v1::router())
+}
+
+/// A key's allowance on `/api/v1`: `THRUST_V1_RATE_LIMIT` in Plane's spelling (`100000/minute`), Plane's `60/minute` when it is not
+/// set. One that does not read is logged and not used: a misspelt setting must not take the whole Worker down.
+fn v1_config(env: &Env) -> thrust_api_v1::V1Config {
+    match text(env, "THRUST_V1_RATE_LIMIT") {
+        None => thrust_api_v1::V1Config::default(),
+        Some(spec) => thrust_api_v1::V1Config::parse(&spec).unwrap_or_else(|e| {
+            console_error!("THRUST_V1_RATE_LIMIT is not used: {e}");
+            thrust_api_v1::V1Config::default()
+        }),
+    }
 }
 
 /// Same ceiling as the router's `DefaultBodyLimit` (8 MiB).
@@ -187,6 +200,7 @@ async fn fetch(req: web_sys::Request, env: Env, ctx: Context) -> Result<web_sys:
     let mut http_req = axum::http::Request::from_parts(parts, Body::from(bytes));
     http_req.extensions_mut().insert(app);
     http_req.extensions_mut().insert(api_config(&env, &adapters));
+    http_req.extensions_mut().insert(v1_config(&env));
 
     let mut router = ROUTER.get_or_init(router).clone();
     let resp: axum::http::Response<Body> = match router.call(http_req).await {

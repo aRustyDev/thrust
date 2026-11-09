@@ -1,0 +1,421 @@
+{
+ "exchanges": [
+  {
+   "expect": [
+    200
+   ],
+   "name": "list",
+   "request": {
+    "auth": "owner",
+    "body": null,
+    "content_type": null,
+    "method": "GET",
+    "path": "/api/v1/workspaces/oracle-ws/projects/<project:alpha>/labels/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "count": 3,
+     "extra_stats": null,
+     "grouped_by": null,
+     "next_cursor": "1000:1:0",
+     "next_page_results": false,
+     "prev_cursor": "1000:-1:1",
+     "prev_page_results": false,
+     "results": [
+      {
+       "color": "#30A46C",
+       "created_at": "<ts>",
+       "created_by": null,
+       "deleted_at": null,
+       "description": "",
+       "external_id": null,
+       "external_source": null,
+       "id": "<label:alpha:docs>",
+       "name": "docs",
+       "parent": null,
+       "project": "<project:alpha>",
+       "sort_order": 85535.0,
+       "updated_at": "<ts>",
+       "updated_by": null,
+       "workspace": "<workspace:oracle>"
+      },
+      {
+       "color": "#3E63DD",
+       "created_at": "<ts>",
+       "created_by": null,
+       "deleted_at": null,
+       "description": "",
+       "external_id": null,
+       "external_source": null,
+       "id": "<label:alpha:feature>",
+       "name": "feature",
+       "parent": null,
+       "project": "<project:alpha>",
+       "sort_order": 75535.0,
+       "updated_at": "<ts>",
+       "updated_by": null,
+       "workspace": "<workspace:oracle>"
+      },
+      {
+       "color": "#E5484D",
+       "created_at": "<ts>",
+       "created_by": null,
+       "deleted_at": null,
+       "description": "",
+       "external_id": null,
+       "external_source": null,
+       "id": "<label:alpha:bug>",
+       "name": "bug",
+       "parent": null,
+       "project": "<project:alpha>",
+       "sort_order": 65535.0,
+       "updated_at": "<ts>",
+       "updated_by": null,
+       "workspace": "<workspace:oracle>"
+      }
+     ],
+     "sub_grouped_by": null,
+     "total_count": 3,
+     "total_pages": 1,
+     "total_results": 3
+    },
+    "headers": {
+     "allow": "GET, POST",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 200
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    200
+   ],
+   "name": "detail",
+   "request": {
+    "auth": "owner",
+    "body": null,
+    "content_type": null,
+    "method": "GET",
+    "path": "/api/v1/workspaces/oracle-ws/projects/<project:alpha>/labels/<label:alpha:bug>/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "color": "#E5484D",
+     "created_at": "<ts>",
+     "created_by": null,
+     "deleted_at": null,
+     "description": "",
+     "external_id": null,
+     "external_source": null,
+     "id": "<label:alpha:bug>",
+     "name": "bug",
+     "parent": null,
+     "project": "<project:alpha>",
+     "sort_order": 65535.0,
+     "updated_at": "<ts>",
+     "updated_by": null,
+     "workspace": "<workspace:oracle>"
+    },
+    "headers": {
+     "allow": "GET, PATCH, DELETE",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 200
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    404
+   ],
+   "name": "detail-unknown",
+   "request": {
+    "auth": "owner",
+    "body": null,
+    "content_type": null,
+    "method": "GET",
+    "path": "/api/v1/workspaces/oracle-ws/projects/<project:alpha>/labels/<uuid:1>/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "error": "The requested resource does not exist."
+    },
+    "headers": {
+     "allow": "GET, PATCH, DELETE",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 404
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    201
+   ],
+   "name": "create",
+   "request": {
+    "auth": "owner",
+    "body": {
+     "color": "#ff00ff",
+     "name": "oracle-scratch"
+    },
+    "content_type": "application/json",
+    "method": "POST",
+    "path": "/api/v1/workspaces/oracle-ws/projects/<project:alpha>/labels/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "color": "#ff00ff",
+     "created_at": "<ts>",
+     "created_by": "<user:owner>",
+     "deleted_at": null,
+     "description": "",
+     "external_id": null,
+     "external_source": null,
+     "id": "<uuid:2>",
+     "name": "oracle-scratch",
+     "parent": null,
+     "project": "<project:alpha>",
+     "sort_order": 95535.0,
+     "updated_at": "<ts>",
+     "updated_by": null,
+     "workspace": "<workspace:oracle>"
+    },
+    "headers": {
+     "allow": "GET, POST",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 201
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    409
+   ],
+   "name": "create-duplicate",
+   "request": {
+    "auth": "owner",
+    "body": {
+     "name": "oracle-scratch"
+    },
+    "content_type": "application/json",
+    "method": "POST",
+    "path": "/api/v1/workspaces/oracle-ws/projects/<project:alpha>/labels/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "error": "Label with the same name already exists in the project",
+     "id": "<uuid:2>"
+    },
+    "headers": {
+     "allow": "GET, POST",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 409
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    400
+   ],
+   "name": "create-missing-name",
+   "request": {
+    "auth": "owner",
+    "body": {
+     "color": "#000000"
+    },
+    "content_type": "application/json",
+    "method": "POST",
+    "path": "/api/v1/workspaces/oracle-ws/projects/<project:alpha>/labels/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "name": [
+      "This field is required."
+     ]
+    },
+    "headers": {
+     "allow": "GET, POST",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 400
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    200
+   ],
+   "name": "patch",
+   "request": {
+    "auth": "owner",
+    "body": {
+     "color": "#00ff00"
+    },
+    "content_type": "application/json",
+    "method": "PATCH",
+    "path": "/api/v1/workspaces/oracle-ws/projects/<project:alpha>/labels/<uuid:2>/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "color": "#00ff00",
+     "created_at": "<ts>",
+     "created_by": "<user:owner>",
+     "deleted_at": null,
+     "description": "",
+     "external_id": null,
+     "external_source": null,
+     "id": "<uuid:2>",
+     "name": "oracle-scratch",
+     "parent": null,
+     "project": "<project:alpha>",
+     "sort_order": 95535.0,
+     "updated_at": "<ts>",
+     "updated_by": "<user:owner>",
+     "workspace": "<workspace:oracle>"
+    },
+    "headers": {
+     "allow": "GET, PATCH, DELETE",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 200
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    409,
+    400
+   ],
+   "name": "patch-rename-to-existing",
+   "request": {
+    "auth": "owner",
+    "body": {
+     "name": "bug"
+    },
+    "content_type": "application/json",
+    "method": "PATCH",
+    "path": "/api/v1/workspaces/oracle-ws/projects/<project:alpha>/labels/<uuid:2>/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "error": "The payload is not valid"
+    },
+    "headers": {
+     "allow": "GET, PATCH, DELETE",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 400
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    204
+   ],
+   "name": "delete",
+   "request": {
+    "auth": "owner",
+    "body": null,
+    "content_type": null,
+    "method": "DELETE",
+    "path": "/api/v1/workspaces/oracle-ws/projects/<project:alpha>/labels/<uuid:2>/",
+    "query": null
+   },
+   "response": {
+    "body": null,
+    "headers": {
+     "allow": "GET, PATCH, DELETE",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 204
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    404
+   ],
+   "name": "detail-after-delete",
+   "request": {
+    "auth": "owner",
+    "body": null,
+    "content_type": null,
+    "method": "GET",
+    "path": "/api/v1/workspaces/oracle-ws/projects/<project:alpha>/labels/<uuid:2>/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "error": "The requested resource does not exist."
+    },
+    "headers": {
+     "allow": "GET, PATCH, DELETE",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 404
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    404
+   ],
+   "name": "delete-again",
+   "request": {
+    "auth": "owner",
+    "body": null,
+    "content_type": null,
+    "method": "DELETE",
+    "path": "/api/v1/workspaces/oracle-ws/projects/<project:alpha>/labels/<uuid:2>/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "error": "The requested resource does not exist."
+    },
+    "headers": {
+     "allow": "GET, PATCH, DELETE",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 404
+   },
+   "surprise": false
+  }
+ ],
+ "normalisation": "oracle/normalise.yaml",
+ "pinned_commit": "ba85d4d3d332b5380bebca4b9e0143b1127de907",
+ "resource": "labels"
+}

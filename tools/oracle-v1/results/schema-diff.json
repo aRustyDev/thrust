@@ -1,0 +1,57 @@
+{
+ "altered": {
+  "err_changes": 23,
+  "exit": 1,
+  "mutation_detected_by": {
+   "B1-remove-operation": [
+    "api-path-removed-without-deprecation"
+   ],
+   "B2-response-type-change": [
+    "response-property-type-changed"
+   ],
+   "B3-response-property-removed": [
+    "response-required-property-removed"
+   ],
+   "B4-request-property-required": [
+    "request-property-became-required"
+   ],
+   "B5-request-enum-member-removed": [
+    "request-property-enum-value-removed"
+   ],
+   "B6-new-required-parameter": [
+    "new-required-request-parameter"
+   ]
+  },
+  "rule_ids_seen": [
+   "api-path-removed-without-deprecation",
+   "new-required-request-parameter",
+   "request-property-became-required",
+   "request-property-enum-value-removed",
+   "response-property-max-length-unset",
+   "response-property-type-changed",
+   "response-required-property-removed"
+  ]
+ },
+ "benign": {
+  "changes": 0,
+  "err_changes": 0,
+  "exit": 0
+ },
+ "checks": {
+  "altered: every injected mutation detected": true,
+  "altered: exit non-zero": true,
+  "benign: exit 0": true,
+  "benign: no ERR-level change": true,
+  "self: exit 0": true,
+  "self: reports nothing": true
+ },
+ "not_done": [
+  "utoipa code-first generation check (needs the Rust v1 slice; wave 2)"
+ ],
+ "oasdiff": "tufin/oasdiff:v1.33.0@sha256:6263a96dd2ef0726c54e21fea9b8e1607eac4841add0079324b424c1f52b819c",
+ "self": {
+  "changes": 0,
+  "exit": 0
+ },
+ "verdict": "PASS"
+}

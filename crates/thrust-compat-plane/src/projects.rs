@@ -102,6 +102,10 @@ fn refusal(e: ProjectError) -> PlaneError {
         ProjectError::Secret => PlaneError::Forbidden(json!({"error": "You do not have permission"})),
         ProjectError::NotAMember => PlaneError::Conflict(json!({"error": "You are not a member of this project"})),
         ProjectError::Archived => PlaneError::BadRequest(json!({"error": "Archived projects cannot be updated"})),
+        // the internal API's request has no default state to name (the field is v1's), so no route reaches this
+        ProjectError::NotAState => {
+            PlaneError::BadRequest(json!({"error": "Default state should be a state in the project"}))
+        }
         ProjectError::Core(e) => e.into(),
     }
 }

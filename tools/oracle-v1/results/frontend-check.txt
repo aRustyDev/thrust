@@ -1,0 +1,9 @@
+# pnpm install --frozen-lockfile --ignore-scripts   (pnpm 11.10.0; passed in 19s: the regenerated pnpm-lock.yaml matches the merged manifests)
+# pnpm turbo run check:types check:lint --continue --filter=admin --filter=web --filter=space --filter=@plane/types --filter=@plane/services
+# NOT run: builds, unit tests of the frontend packages, rendering in a browser
+@plane/types:check:lint: Found 1 warning and 0 errors.
+@plane/services:check:lint: Found 4 warnings and 0 errors.
+admin:check:lint: Found 22 warnings and 0 errors.
+space:check:lint: Found 47 warnings and 0 errors.
+web:check:lint: Found 537 warnings and 0 errors.
+ Tasks:    19 successful, 19 total

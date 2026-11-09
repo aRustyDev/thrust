@@ -1,0 +1,81 @@
+# DRAFT -- NOT INSTALLED. This file lives under oracle/ci/, deliberately NOT under .github/workflows/.
+# It has NEVER RUN in CI. It was written from commands that were run locally (see the spike 0008 report);
+# the GitHub-hosted-runner behaviour (Docker, image pull time, amd64 build) is [unverified].
+#
+# What it is: the nightly Plane v1 oracle job (ADR-0120 Q-0120.3: "docker compose in CI, nightly";
+# Django CI kept ONLY as the oracle runner, Q-0100.2). To install: move to .github/workflows/ and
+# review the TODO-PIN / [unverified] notes below. Fork policy is SHA-pinned Actions.
+#
+# What it proves each night, against a fresh stack built from the PINNED commit (oracle/PIN):
+#   1. the checkout really is the pin (oracle/scripts/verify-pin.sh, plus its self-test control)
+#   2. the stack builds and cold-starts; the schema endpoint serves; seed is reproducible
+#   3. the served schema is byte-identical to the committed oracle/schema/openapi.v1.json
+#   4. schema-vs-URL-conf coverage (Q-0122.1) with its own must-detect control
+#   5. the golden corpus re-records byte-identical after normalisation (oracle is reproducible)
+#   6. the Schemathesis conformance gate PASSES against Plane, and FAILS on every must-fail control
+#   7. the oasdiff schema-diff job: clean on identity, detects all injected breaks, quiet on additive
+# NOT done here (wave 2, needs the Rust v1 slice): utoipa code-first schema generation + diff, and
+# the nightly differential run Rust-vs-oracle.
+name: v1-oracle-nightly
+
+on:
+  schedule:
+    - cron: "17 3 * * *" # nightly, off the hour
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: v1-oracle
+  cancel-in-progress: false
+
+jobs:
+  oracle:
+    runs-on: ubuntu-24.04 # [unverified] Docker + compose v2 are preinstalled on this image
+    timeout-minutes: 45 # local cold build+start was ~2.5 min on arm64; amd64 on a shared runner is [unverified]
+    steps:
+      - name: Checkout (full history: verify-pin needs ancestry)
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0 -- sha resolved via gh api 2026-10-18
+        with:
+          fetch-depth: 0
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7 (moving major tag; sha resolved via gh api 2026-10-18)
+
+      # The tag oracle/v1-pin-* is local-only and absent from a CI checkout, so do not --require-tag.
+      - name: Verify this checkout is the pinned Plane
+        run: oracle/scripts/verify-pin.sh && oracle/scripts/verify-pin.sh --self-test
+
+      # CHECK mode: regenerates every artefact into oracle/.work/ and diffs against the committed ones.
+      # Any difference, any unaccepted conformance failure, any stale exception, any control that
+      # does not fail, or any stage failure makes this step (and the job) fail.
+      - name: Run the oracle pipeline (fresh stack, check mode)
+        run: oracle/scripts/run-all.sh
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1 -- sha resolved via gh api 2026-10-18
+        with:
+          name: v1-oracle-evidence
+          retention-days: 14
+          if-no-files-found: warn
+          path: |
+            oracle/.work/logs/
+            oracle/.work/live/
+            oracle/.work/conformance/
+            oracle/.work/controls/
+            oracle/.timings.log
+
+      # Belt and braces: run-all.sh already tears down on success, but not when a stage fails.
+      - name: Tear down
+        if: always()
+        run: docker compose -f oracle/compose.oracle.yml --env-file oracle/.env.oracle --profile ratelimit down -v --remove-orphans
+
+# --- wave 2 (not drafted as steps because the inputs do not exist yet) ---------------------------
+#   * build the Rust v1 slice, emit its utoipa schema, run:
+#       oasdiff breaking oracle/schema/openapi.v1.json <rust-schema.json> --fail-on ERR
+#     (oracle/scripts/schema_diff.sh already proves the oasdiff invocation and its controls)
+#   * run run_conformance.py against the Rust server with the SAME oracle/exceptions.yaml: the
+#     failure set must equal the oracle's (no new failures; entries marked `reproduce`).
+#   * replay oracle/corpus/*.json against the Rust server and diff after normalisation.

@@ -1,0 +1,8 @@
+PASS instances: is_oidc_enabled is a boolean
+PASS instances: is_oidc_enabled is False by default
+PASS GET /auth/oidc/ -> 302 (view ran)
+PASS GET /auth/spaces/oidc/ -> 302 (view ran)
+PASS CONTROL: unmounted provider is NOT a 302 (no catch-all)
+  /auth/oidc/ -> 302 http://localhost:18080/?error_code=5000&error_message=INSTANCE_NOT_CONFIGURED
+  /auth/spaces/oidc/ -> 302 http://localhost:18080/spaces/?error_code=5000&error_message=INSTANCE_NOT_CONFIGURED
+  /auth/not-a-real-provider/ -> 404 None

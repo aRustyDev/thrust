@@ -49,11 +49,20 @@ struct DbState {
     projects: HashMap<ProjectId, WorkspaceId>,
     /// The `projects` table's other columns (migration 0010); `projects` above is its id-to-workspace index.
     project_rows: HashMap<ProjectId, ProjectRow>,
+    /// The projects that were deleted (migration 0015), with the time: a deleted project leaves `projects` and `project_rows`, which
+    /// every read goes through, as `deleted_at IS NULL` does in Postgres, and its id stays taken (the primary key).
+    deleted_projects: HashMap<ProjectId, (ProjectRow, Timestamp)>,
     /// `project_user_properties` (migrations 0010 and 0012): a member's own settings for a project, and where their list puts it.
     project_user_props: HashMap<(ProjectId, UserId), ProjectUserProperties>,
     /// `states` and `labels` (migration 0012), in the order they were written.
     states: Vec<StateRow>,
+    /// The states that were deleted (migration 0015), with the time. A deleted state stays in `states`, as its row stays in Postgres,
+    /// because the work items that name it still read it; the three lists of states leave it out.
+    deleted_states: HashMap<Uuid, Timestamp>,
     labels: Vec<LabelRow>,
+    /// The labels that were deleted (migration 0015), with the time. A deleted label stays in `labels`, as its row stays in Postgres,
+    /// and the list of labels leaves it out; the work items lose it (their `label_ids`), as Postgres deletes the rows that join them.
+    deleted_labels: HashMap<Uuid, Timestamp>,
     /// `workspace_user_preferences`, `workspace_home_preferences` and `workspace_user_properties` (migration 0011): rows
     /// a member's first visit to a workspace makes.
     sidebar_preferences: HashMap<(WorkspaceId, UserId, String), (bool, f64)>,
@@ -106,6 +115,42 @@ fn member_user(s: &DbState, user: UserId) -> MemberUser {
 impl DbState {
     fn user_is_active(&self, user: UserId) -> bool {
         self.users.get(&user).is_some_and(|u| u.is_active)
+    }
+
+    /// The states of a project that were not deleted (the intake one included), in the order they were written.
+    fn live_states(&self, project: ProjectId) -> impl Iterator<Item = &StateRow> {
+        self.states.iter().filter(move |o| o.project_id == project && !self.deleted_states.contains_key(&o.id))
+    }
+
+    /// The labels of a project that were not deleted, in the order they were written.
+    fn live_labels(&self, project: ProjectId) -> impl Iterator<Item = &LabelRow> {
+        self.labels.iter().filter(move |o| o.project_id == project && !self.deleted_labels.contains_key(&o.id))
+    }
+
+    /// A state becomes the project's default: no other live state of it is (Postgres has an index that allows one).
+    fn take_default_from_others(&mut self, project: ProjectId, keep: Uuid) {
+        let deleted = &self.deleted_states;
+        for o in
+            self.states.iter_mut().filter(|o| o.project_id == project && o.id != keep && !deleted.contains_key(&o.id))
+        {
+            o.is_default = false;
+        }
+    }
+
+    /// Every live project of the scope's workspace with the caller's role and place in it, unfiltered and unordered: the two
+    /// project listings choose who sees what, and in which order.
+    fn listings(&self, scope: &WorkspaceScope) -> Vec<ProjectListing> {
+        let (ws, user) = (scope.workspace_id(), scope.user_id());
+        self.project_rows
+            .values()
+            .filter(|p| p.workspace_id == ws)
+            .map(|p| ProjectListing {
+                project: p.clone(),
+                // the member row must name the project's own workspace (the join on `m.workspace_id` in Postgres)
+                role: self.memberships.get(&(p.id, user)).filter(|m| m.workspace_id == ws).map(|m| m.role),
+                sort_order: self.project_user_props.get(&(p.id, user)).map(|up| up.sort_order),
+            })
+            .collect()
     }
 }
 
@@ -403,18 +448,10 @@ impl Database for MemoryDatabase {
     }
 
     async fn workspace_projects(&self, scope: &WorkspaceScope) -> Result<Vec<ProjectListing>, DbError> {
-        let (ws, user) = (scope.workspace_id(), scope.user_id());
         let s = self.state.lock_unpoisoned();
         let mut out: Vec<ProjectListing> = s
-            .project_rows
-            .values()
-            .filter(|p| p.workspace_id == ws)
-            .map(|p| ProjectListing {
-                project: p.clone(),
-                // the member row must name the project's own workspace (the join on `m.workspace_id` in Postgres)
-                role: s.memberships.get(&(p.id, user)).filter(|m| m.workspace_id == ws).map(|m| m.role),
-                sort_order: s.project_user_props.get(&(p.id, user)).map(|up| up.sort_order),
-            })
+            .listings(scope)
+            .into_iter()
             .filter(|l| match scope.role() {
                 Role::Admin => true,
                 Role::Member => l.role.is_some() || l.project.network == ProjectNetwork::Public,
@@ -423,6 +460,30 @@ impl Database for MemoryDatabase {
             .collect();
         out.sort_by(|a, b| b.project.created_at.cmp(&a.project.created_at).then(b.project.id.cmp(&a.project.id)));
         Ok(out)
+    }
+
+    async fn visible_projects(&self, scope: &WorkspaceScope) -> Result<Vec<ProjectListing>, DbError> {
+        let s = self.state.lock_unpoisoned();
+        let mut out: Vec<ProjectListing> = s
+            .listings(scope)
+            .into_iter()
+            .filter(|l| l.role.is_some() || l.project.network == ProjectNetwork::Public)
+            .collect();
+        out.sort_by(|a, b| a.project.created_at.cmp(&b.project.created_at).then(a.project.id.cmp(&b.project.id)));
+        Ok(out)
+    }
+
+    async fn delete_project(&self, scope: &WorkspaceScope, id: ProjectId, at: Timestamp) -> Result<bool, DbError> {
+        let mut s = self.state.lock_unpoisoned();
+        if s.projects.get(&id) != Some(&scope.workspace_id()) {
+            return Ok(false);
+        }
+        // the row leaves the two places every read goes through
+        s.projects.remove(&id);
+        if let Some(row) = s.project_rows.remove(&id) {
+            s.deleted_projects.insert(id, (row, at));
+        }
+        Ok(true)
     }
 
     async fn ensure_sidebar_preferences(
@@ -485,7 +546,7 @@ impl Database for MemoryDatabase {
         }
         // the primary key and the two unique indexes (in the order Postgres creates them), then the foreign keys of the users the
         // rows name, then the states' own unique indexes: all of it checked before anything is written, as a transaction is
-        if s.projects.contains_key(&row.id) {
+        if s.projects.contains_key(&row.id) || s.deleted_projects.contains_key(&row.id) {
             return Err(DbError::Conflict("projects_pkey".into()));
         }
         if s.project_rows.values().any(|o| o.workspace_id == ws && o.identifier == row.identifier) {
@@ -657,10 +718,102 @@ impl Database for MemoryDatabase {
     async fn project_labels(&self, scope: &Scope) -> Result<Vec<LabelRow>, DbError> {
         let (ws, project) = (scope.workspace_id(), scope.project_id());
         let s = self.state.lock_unpoisoned();
-        let mut out: Vec<LabelRow> =
-            s.labels.iter().filter(|l| l.project_id == project && l.workspace_id == ws).cloned().collect();
+        let mut out: Vec<LabelRow> = s.live_labels(project).filter(|l| l.workspace_id == ws).cloned().collect();
         out.sort_by(|a, b| a.sort_order.total_cmp(&b.sort_order).then(a.id.cmp(&b.id)));
         Ok(out)
+    }
+
+    async fn insert_label(&self, scope: &Scope, l: &LabelRow) -> Result<LabelRow, DbError> {
+        let (ws, project) = (scope.workspace_id(), scope.project_id());
+        if l.workspace_id != ws || l.project_id != project {
+            return Err(DbError::Backend("label is not in this project".into()));
+        }
+        let mut s = self.state.lock_unpoisoned();
+        // the primary key, the name's unique index, then the foreign keys, as Postgres checks them, all before anything is written
+        if s.labels.iter().any(|o| o.id == l.id) {
+            return Err(DbError::Conflict("labels_pkey".into()));
+        }
+        if s.live_labels(project).any(|o| o.name == l.name) {
+            return Err(DbError::Conflict("labels_project_id_name_key".into()));
+        }
+        if s.projects.get(&project) != Some(&ws) {
+            return Err(DbError::Backend("labels_workspace_id_project_id_fkey".into()));
+        }
+        if l.parent_id.is_some_and(|p| !s.labels.iter().any(|o| o.id == p)) {
+            return Err(DbError::Backend("labels_parent_id_fkey".into()));
+        }
+        for (column, user) in [("created_by", l.created_by), ("updated_by", l.updated_by)] {
+            if user.is_some_and(|u| !s.users.contains_key(&u)) {
+                return Err(DbError::Backend(format!("labels_{column}_fkey")));
+            }
+        }
+        let mut row = l.clone();
+        // Plane's place: after the greatest of the project's live labels
+        if let Some(greatest) = s.live_labels(project).map(|o| o.sort_order).reduce(f64::max) {
+            row.sort_order = greatest + 10000.0;
+        }
+        s.labels.push(row.clone());
+        Ok(row)
+    }
+
+    async fn update_label(&self, scope: &Scope, l: &LabelRow) -> Result<bool, DbError> {
+        let (ws, project) = (scope.workspace_id(), scope.project_id());
+        let mut s = self.state.lock_unpoisoned();
+        if !s.live_labels(project).any(|o| o.id == l.id && o.workspace_id == ws) {
+            return Ok(false);
+        }
+        if s.live_labels(project).any(|o| o.id != l.id && o.name == l.name) {
+            return Err(DbError::Conflict("labels_project_id_name_key".into()));
+        }
+        if l.parent_id.is_some_and(|p| !s.labels.iter().any(|o| o.id == p)) {
+            return Err(DbError::Backend("labels_parent_id_fkey".into()));
+        }
+        if l.updated_by.is_some_and(|u| !s.users.contains_key(&u)) {
+            return Err(DbError::Backend("labels_updated_by_fkey".into()));
+        }
+        if let Some(cur) = s.labels.iter_mut().find(|o| o.id == l.id) {
+            cur.parent_id = l.parent_id;
+            cur.name.clone_from(&l.name);
+            cur.description.clone_from(&l.description);
+            cur.color.clone_from(&l.color);
+            cur.sort_order = l.sort_order;
+            cur.external_source.clone_from(&l.external_source);
+            cur.external_id.clone_from(&l.external_id);
+            cur.updated_by = l.updated_by;
+            cur.updated_at = l.updated_at;
+        }
+        Ok(true)
+    }
+
+    async fn delete_label(&self, scope: &Scope, id: Uuid, at: Timestamp) -> Result<bool, DbError> {
+        let (ws, project) = (scope.workspace_id(), scope.project_id());
+        let mut s = self.state.lock_unpoisoned();
+        if !s.live_labels(project).any(|o| o.id == id && o.workspace_id == ws) {
+            return Ok(false);
+        }
+        // the label and, in turn, the live labels under it; a label met twice (the pin lets one be its own parent) is not walked again
+        let mut gone: Vec<Uuid> = vec![id];
+        let mut frontier: Vec<Uuid> = vec![id];
+        while let Some(parent) = frontier.pop() {
+            let children: Vec<Uuid> = s
+                .labels
+                .iter()
+                .filter(|c| {
+                    c.workspace_id == ws && c.parent_id == Some(parent) && !s.deleted_labels.contains_key(&c.id)
+                })
+                .map(|c| c.id)
+                .filter(|c| !gone.contains(c))
+                .collect();
+            gone.extend(&children);
+            frontier.extend(children);
+        }
+        for label in &gone {
+            s.deleted_labels.insert(*label, at);
+        }
+        for attrs in s.work_item_attrs.values_mut() {
+            attrs.label_ids.retain(|l| !gone.contains(l));
+        }
+        Ok(true)
     }
 
     async fn project_states(&self, scope: &Scope) -> Result<Vec<StateRow>, DbError> {
@@ -670,10 +823,107 @@ impl Database for MemoryDatabase {
             .states
             .iter()
             .filter(|st| st.project_id == project && st.workspace_id == ws && st.group != StateGroup::Triage)
+            .filter(|st| !s.deleted_states.contains_key(&st.id))
             .cloned()
             .collect();
         out.sort_by(|a, b| a.sequence.total_cmp(&b.sequence).then(a.id.cmp(&b.id)));
         Ok(out)
+    }
+
+    async fn project_is_archived(&self, scope: &Scope) -> Result<bool, DbError> {
+        let s = self.state.lock_unpoisoned();
+        Ok(s.project_rows
+            .get(&scope.project_id())
+            .is_some_and(|p| p.workspace_id == scope.workspace_id() && p.archived_at.is_some()))
+    }
+
+    async fn insert_state(&self, scope: &Scope, st: &StateRow) -> Result<StateRow, DbError> {
+        let (ws, project) = (scope.workspace_id(), scope.project_id());
+        if st.workspace_id != ws || st.project_id != project {
+            return Err(DbError::Backend("state is not in this project".into()));
+        }
+        let mut s = self.state.lock_unpoisoned();
+        // the primary key, the name's unique index, then the foreign keys, as Postgres checks them, all before anything is written
+        if s.states.iter().any(|o| o.id == st.id) {
+            return Err(DbError::Conflict("states_pkey".into()));
+        }
+        if s.live_states(project).any(|o| o.name == st.name) {
+            return Err(DbError::Conflict("states_project_id_name_key".into()));
+        }
+        if s.projects.get(&project) != Some(&ws) {
+            return Err(DbError::Backend("states_workspace_id_project_id_fkey".into()));
+        }
+        for (column, user) in [("created_by", st.created_by), ("updated_by", st.updated_by)] {
+            if user.is_some_and(|u| !s.users.contains_key(&u)) {
+                return Err(DbError::Backend(format!("states_{column}_fkey")));
+            }
+        }
+        let mut row = st.clone();
+        // Plane's place: after the greatest of the project's other states, the intake one not counted
+        let greatest =
+            s.live_states(project).filter(|o| o.group != StateGroup::Triage).map(|o| o.sequence).reduce(f64::max);
+        if let Some(greatest) = greatest {
+            row.sequence = greatest + 15000.0;
+        }
+        if row.is_default {
+            s.take_default_from_others(project, row.id);
+        }
+        s.states.push(row.clone());
+        Ok(row)
+    }
+
+    async fn update_state(&self, scope: &Scope, st: &StateRow) -> Result<bool, DbError> {
+        let (ws, project) = (scope.workspace_id(), scope.project_id());
+        let mut s = self.state.lock_unpoisoned();
+        if !s.live_states(project).any(|o| o.id == st.id && o.workspace_id == ws) {
+            return Ok(false);
+        }
+        if s.live_states(project).any(|o| o.id != st.id && o.name == st.name) {
+            return Err(DbError::Conflict("states_project_id_name_key".into()));
+        }
+        if st.updated_by.is_some_and(|u| !s.users.contains_key(&u)) {
+            return Err(DbError::Backend("states_updated_by_fkey".into()));
+        }
+        if st.is_default {
+            s.take_default_from_others(project, st.id);
+        }
+        if let Some(cur) = s.states.iter_mut().find(|o| o.id == st.id) {
+            cur.name.clone_from(&st.name);
+            cur.description.clone_from(&st.description);
+            cur.color.clone_from(&st.color);
+            cur.sequence = st.sequence;
+            cur.group = st.group;
+            cur.is_default = st.is_default;
+            cur.external_source.clone_from(&st.external_source);
+            cur.external_id.clone_from(&st.external_id);
+            cur.updated_by = st.updated_by;
+            cur.updated_at = st.updated_at;
+        }
+        Ok(true)
+    }
+
+    async fn delete_state(&self, scope: &Scope, id: Uuid, at: Timestamp) -> Result<bool, DbError> {
+        let (ws, project) = (scope.workspace_id(), scope.project_id());
+        let mut s = self.state.lock_unpoisoned();
+        if !s.live_states(project).any(|o| o.id == id && o.workspace_id == ws) {
+            return Ok(false);
+        }
+        s.deleted_states.insert(id, at);
+        Ok(true)
+    }
+
+    async fn state_has_work_items(&self, scope: &Scope, id: Uuid) -> Result<bool, DbError> {
+        let (ws, project) = (scope.workspace_id(), scope.project_id());
+        let s = self.state.lock_unpoisoned();
+        // a project that is archived, or one that is not there, counts none of its work items
+        let counts = s.project_rows.get(&project).is_some_and(|p| p.workspace_id == ws && p.archived_at.is_none());
+        Ok(counts
+            && s.work_items.iter().any(|w| {
+                w.workspace_id == ws
+                    && w.project_id == project
+                    && is_visible(w)
+                    && s.work_item_attrs.get(&w.id).and_then(|a| a.state_id) == Some(id)
+            }))
     }
 
     async fn workspace_states(&self, scope: &WorkspaceScope) -> Result<Vec<StateRow>, DbError> {
@@ -683,6 +933,7 @@ impl Database for MemoryDatabase {
             .states
             .iter()
             .filter(|st| st.workspace_id == ws && st.group != StateGroup::Triage)
+            .filter(|st| !s.deleted_states.contains_key(&st.id))
             // a project of this workspace that is not archived, and that the caller is in (their row names the project's workspace)
             .filter(|st| {
                 s.project_rows.get(&st.project_id).is_some_and(|p| p.workspace_id == ws && p.archived_at.is_none())
@@ -703,6 +954,7 @@ impl Database for MemoryDatabase {
             .states
             .iter()
             .filter(|st| st.project_id == project && st.workspace_id == ws && st.group == StateGroup::Triage)
+            .filter(|st| !s.deleted_states.contains_key(&st.id))
             .collect();
         found.sort_by(|a, b| a.sequence.total_cmp(&b.sequence).then(a.id.cmp(&b.id)));
         Ok(found.first().map(|st| (*st).clone()))
@@ -1384,6 +1636,9 @@ impl Database for MemoryDatabase {
                 created_by: None,
                 created_at: epoch,
                 updated_at: epoch,
+                external_source: None,
+                external_id: None,
+                updated_by: None,
             });
         }
         for l in &f.labels {
@@ -1399,6 +1654,9 @@ impl Database for MemoryDatabase {
                 created_by: None,
                 created_at: epoch,
                 updated_at: epoch,
+                external_source: None,
+                external_id: None,
+                updated_by: None,
             });
         }
         Ok(())
