@@ -1345,7 +1345,7 @@ async fn run_case(
                             at
                         );
                         prop_assert_eq!(&item.name, &name, "{}: the stored name is the trimmed name", at);
-                        prop_assert_eq!(Some(item.created_by), w.user(actor).map(|u| u.id), "{}", at);
+                        prop_assert_eq!(item.created_by, w.user(actor).map(|u| u.id), "{}", at);
                         prop_assert!(item.deleted_at.is_none(), "{}: a new item is live", at);
                         prop_assert_eq!(item.external_id.clone(), ext.map(|k| format!("k{k}")), "{}", at);
                         prop_assert!(

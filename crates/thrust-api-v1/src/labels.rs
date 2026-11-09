@@ -38,7 +38,7 @@ pub(crate) fn routes() -> Router {
 // --- the wire shape -----------------------------------------------------------------------------------------------------------
 
 /// The pin's `LabelSerializer` (`fields = "__all__"`): 15 keys.
-fn label_body(l: &LabelRow) -> Map<String, Value> {
+pub(crate) fn label_body(l: &LabelRow) -> Map<String, Value> {
     let user = |u: Option<UserId>| u.map_or(Value::Null, |u| json!(u.0));
     let body = json!({
         "id": l.id,

@@ -171,7 +171,7 @@ async fn create_allocates_monotonic_sequence_and_sort_order() {
     assert_eq!((a.sequence_id, b.sequence_id), (1, 2));
     assert_eq!((a.sort_order, b.sort_order), (10_000, 20_000));
     assert_eq!(a.workspace_id, f.ws_a);
-    assert_eq!(a.created_by, f.member_a.id);
+    assert_eq!(a.created_by, Some(f.member_a.id));
     assert!(a.deleted_at.is_none());
     // control: a different project has its own counter (sequence is per project, not global)
     let c = create_ok(&t, &f.admin_b, &f.b, "other tenant").await;

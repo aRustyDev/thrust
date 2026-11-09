@@ -22,6 +22,7 @@ pub mod pagination;
 mod projects;
 pub mod request;
 mod states;
+mod work_items;
 
 use axum::routing::any;
 use axum::{middleware, Router};
@@ -33,7 +34,7 @@ pub use states::slugify;
 /// The routes of `/api/v1`, for the composition roots to merge. Each needs the `App` in the request's extensions, as
 /// `thrust-api`'s do.
 pub fn router() -> Router {
-    assemble(projects::routes().merge(states::routes()).merge(labels::routes()))
+    assemble(projects::routes().merge(states::routes()).merge(labels::routes()).merge(work_items::routes()))
 }
 
 /// Finish a set of v1 routes: anything under `/api/v1` that none of them answers is Plane's 404 for an unknown path, and every

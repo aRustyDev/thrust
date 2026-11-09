@@ -9,6 +9,7 @@
 //! records are exact; the rest are DRF's defaults, read from its source.
 
 use serde_json::{json, Map, Value};
+use thrust_contracts::chrono::{self, NaiveDate};
 use thrust_contracts::Uuid;
 
 use crate::V1Error;
@@ -229,6 +230,127 @@ pub fn no_such_pk(id: Uuid) -> String {
 /// The same message for a key as the request spelled it (DRF prints the value it was given, not the UUID it made of it).
 pub fn no_such_pk_shown(shown: &str) -> String {
     format!("Invalid pk \"{shown}\" - object does not exist.")
+}
+
+/// A UUID as Python's `uuid.UUID(hex=...)` reads one, which is how Django reads a query parameter that names a row's key: `None` is
+/// what makes Django raise its `ValidationError` (a bare 400, `Please provide valid detail`).
+pub fn parse_uuid_text(s: &str) -> Option<Uuid> {
+    uuid_hex(s)
+}
+
+/// The name Python gives the type of a JSON value, as DRF prints it in "got type".
+pub fn py_type_name(v: &Value) -> &'static str {
+    match v {
+        Value::Null => "NoneType",
+        Value::Bool(_) => "bool",
+        Value::Number(n) if n.is_f64() => "float",
+        Value::Number(_) => "int",
+        Value::String(_) => "str",
+        Value::Array(_) => "list",
+        Value::Object(_) => "dict",
+    }
+}
+
+const BAD_DATE: &str = "Date has wrong format. Use one of these formats instead: YYYY-MM-DD.";
+const BAD_DATETIME: &str =
+    "Datetime has wrong format. Use one of these formats instead: YYYY-MM-DDThh:mm[:ss[.uuuuuu]][+HH:MM|-HH:MM|Z].";
+
+/// A date as Django's `parse_date` reads it (what DRF's `DateField` calls), in the three forms probed against the pin and recorded
+/// (fixture S48): `YYYY-M-D` with one or two digits for the month and the day, `YYYYMMDD`, and the ISO week `YYYY-Www-D`. No space
+/// around it, no time after it, a day that exists, a year from 1 to 9999. (Python 3.11's `date.fromisoformat` reads more spellings
+/// of a week, and digits of other scripts; neither is read here.)
+fn parse_date(s: &str) -> Option<NaiveDate> {
+    let digits =
+        |t: &str, min: usize, max: usize| (min..=max).contains(&t.len()) && t.bytes().all(|b| b.is_ascii_digit());
+    let number = |t: &str| t.parse::<u32>().ok();
+    let ymd = |y: u32, m: u32, d: u32| {
+        NaiveDate::from_ymd_opt(i32::try_from(y).ok().filter(|y| (1..=9999).contains(y))?, m, d)
+    };
+    let parts: Vec<&str> = s.split('-').collect();
+    match parts.as_slice() {
+        [y, m, d] if digits(y, 4, 4) && digits(m, 1, 2) && digits(d, 1, 2) => ymd(number(y)?, number(m)?, number(d)?),
+        [y, w, d] if digits(y, 4, 4) && digits(d, 1, 1) && w.strip_prefix('W').is_some_and(|n| digits(n, 2, 2)) => {
+            let year = i32::try_from(number(y)?).ok().filter(|y| (1..=9999).contains(y))?;
+            let weekday = chrono::Weekday::try_from(u8::try_from(number(d)?.checked_sub(1)?).ok()?).ok()?;
+            NaiveDate::from_isoywd_opt(year, number(w.get(1..)?)?, weekday)
+        }
+        [whole] if digits(whole, 8, 8) => {
+            ymd(number(whole.get(..4)?)?, number(whole.get(4..6)?)?, number(whole.get(6..)?)?)
+        }
+        _ => None,
+    }
+}
+
+/// DRF `DateField` on a column that allows null: null, or a date as [`parse_date`] reads one (a time after it is refused).
+pub fn date_field(v: &Value) -> Result<Option<NaiveDate>, String> {
+    match v {
+        Value::Null => Ok(None),
+        Value::String(s) => parse_date(s).map(Some).ok_or_else(|| BAD_DATE.to_string()),
+        _ => Err(BAD_DATE.into()),
+    }
+}
+
+/// A date and time as Django's `parse_datetime` reads one: `YYYY-MM-DD`, `T` or a space, `HH:MM`, optionally `:SS` and a fraction of
+/// up to six digits, then optionally `Z` or an offset of `+HH`, `+HHMM` or `+HH:MM`.
+fn parse_datetime(s: &str) -> Option<()> {
+    let (date, rest) = s.split_once(['T', ' '])?;
+    parse_date(date).filter(|_| date.split('-').count() == 3)?;
+    let (clock, zone) = match rest.find(['Z', '+', '-']) {
+        Some(i) => (rest.get(..i)?, rest.get(i..)?),
+        None => (rest, ""),
+    };
+    let zone_ok = match zone {
+        "" | "Z" => true,
+        z => {
+            let digits = z.get(1..)?.replace(':', "");
+            (digits.len() == 2 || digits.len() == 4) && digits.bytes().all(|b| b.is_ascii_digit())
+        }
+    };
+    let (hm_s, fraction) = match clock.split_once(['.', ',']) {
+        Some((c, f)) => (c, Some(f)),
+        None => (clock, None),
+    };
+    let parts: Vec<&str> = hm_s.split(':').collect();
+    let (h, m, sec) = match parts.as_slice() {
+        [h, m] => (*h, *m, None),
+        [h, m, sec] => (*h, *m, Some(*sec)),
+        _ => return None,
+    };
+    let num = |t: &str, max: u32| {
+        (1..=2).contains(&t.len()) && t.bytes().all(|b| b.is_ascii_digit()) && t.parse::<u32>().is_ok_and(|n| n <= max)
+    };
+    let fraction_ok = fraction.is_none_or(|f| sec.is_some() && !f.is_empty() && f.bytes().all(|b| b.is_ascii_digit()));
+    (zone_ok && num(h, 23) && num(m, 59) && sec.is_none_or(|t| num(t, 59)) && fraction_ok).then_some(())
+}
+
+/// DRF `DateTimeField` on a column that allows null: null, or a date and time as [`parse_datetime`] reads one. Only whether it is
+/// one is told: the work item's `deleted_at` and the like are read and checked, not stored.
+pub fn datetime_field(v: &Value) -> Result<bool, String> {
+    match v {
+        Value::Null => Ok(false),
+        Value::String(s) if parse_datetime(s).is_some() => Ok(true),
+        _ => Err(BAD_DATETIME.into()),
+    }
+}
+
+/// The whole numbers in a text, as Python's `re.findall(r"\b\d+\b", text)` finds them: a run of digits with no letter, digit or
+/// underscore touching it on either side (a number too big to hold is not one).
+pub fn whole_numbers(text: &str) -> Vec<i64> {
+    let chars: Vec<char> = text.chars().collect();
+    let word = |c: &char| c.is_alphanumeric() || *c == '_';
+    // The text as runs of ASCII digits and runs of anything else: a run of digits is a number when what is on either side of it (the
+    // end of a run of other characters, which is no digit) is no word character.
+    let runs: Vec<&[char]> = chars.chunk_by(|a, b| a.is_ascii_digit() == b.is_ascii_digit()).collect();
+    runs.iter()
+        .enumerate()
+        .filter(|(_, run)| run.first().is_some_and(char::is_ascii_digit))
+        .filter(|(at, _)| {
+            let before = at.checked_sub(1).and_then(|j| runs.get(j)).and_then(|r| r.last());
+            let after = runs.get(at + 1).and_then(|r| r.first());
+            !before.is_some_and(word) && !after.is_some_and(word)
+        })
+        .filter_map(|(_, run)| run.iter().collect::<String>().parse::<i64>().ok())
+        .collect()
 }
 
 /// Python's `int()` of a query parameter: optional spaces, an optional sign, digits with single underscores between them.

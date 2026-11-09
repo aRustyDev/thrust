@@ -1295,7 +1295,7 @@ impl Database for MemoryDatabase {
             .filter(|w| w.workspace_id == ws && w.project_id == project && is_visible(w))
             .map(|w| s.work_item_row_of(w))
             .filter(|r| q.updated_after.is_none_or(|t| r.attrs.updated_at > t))
-            .filter(|r| q.created_by.is_none_or(|u| r.item.created_by == u))
+            .filter(|r| q.created_by.is_none_or(|u| r.item.created_by == Some(u)))
             .collect();
         rows.sort_by(|a, b| compare_work_items(a, b, q.order, &s));
         let total = rows.len() as u64;
@@ -1313,6 +1313,79 @@ impl Database for MemoryDatabase {
             .iter()
             .find(|w| w.workspace_id == ws && w.project_id == project && w.id == id && is_visible(w))
             .map(|w| s.work_item_row_of(w)))
+    }
+
+    async fn work_item_by_sequence(&self, scope: &Scope, sequence_id: i64) -> Result<Option<WorkItemRow>, DbError> {
+        let (ws, project) = (scope.workspace_id(), scope.project_id());
+        let s = self.state.lock_unpoisoned();
+        Ok(s.work_items
+            .iter()
+            .find(|w| w.workspace_id == ws && w.project_id == project && w.sequence_id == sequence_id && is_visible(w))
+            .map(|w| s.work_item_row_of(w)))
+    }
+
+    async fn work_item_by_external(
+        &self,
+        scope: &Scope,
+        source: &str,
+        id: &str,
+    ) -> Result<Option<WorkItemRow>, DbError> {
+        let (ws, project) = (scope.workspace_id(), scope.project_id());
+        let s = self.state.lock_unpoisoned();
+        Ok(s.work_items
+            .iter()
+            .find(|w| {
+                w.workspace_id == ws
+                    && w.project_id == project
+                    && is_visible(w)
+                    && w.external_source.as_deref() == Some(source)
+                    && w.external_id.as_deref() == Some(id)
+            })
+            .map(|w| s.work_item_row_of(w)))
+    }
+
+    async fn search_workspace_work_items(
+        &self,
+        scope: &WorkspaceScope,
+        q: &WorkspaceSearch,
+    ) -> Result<Vec<WorkItemHit>, DbError> {
+        let (ws, user) = (scope.workspace_id(), scope.user_id());
+        let text = q.text.to_lowercase();
+        let s = self.state.lock_unpoisoned();
+        let Some(slug) = s.workspace_rows.get(&ws).map(|w| w.slug.clone()) else { return Ok(Vec::new()) };
+        let mut found: Vec<(&WorkItem, &ProjectRow)> = s
+            .work_items
+            .iter()
+            .filter(|w| w.workspace_id == ws && is_visible(w) && q.project.is_none_or(|p| p == w.project_id))
+            // the caller's own projects that are not archived (a project that was deleted is not in `project_rows`)
+            .filter(|w| s.memberships.get(&(w.project_id, user)).is_some_and(|m| m.workspace_id == ws))
+            .filter_map(|w| {
+                s.project_rows
+                    .get(&w.project_id)
+                    .filter(|p| p.workspace_id == ws && p.archived_at.is_none())
+                    .map(|p| (w, p))
+            })
+            .filter(|(w, p)| {
+                w.name.to_lowercase().contains(&text)
+                    || p.identifier.to_lowercase().contains(&text)
+                    || q.numbers.contains(&w.sequence_id)
+            })
+            .collect();
+        found.sort_by(|(a, _), (b, _)| {
+            b.created_at.cmp(&a.created_at).then(b.sequence_id.cmp(&a.sequence_id)).then(a.id.0.cmp(&b.id.0))
+        });
+        found.truncate(q.limit as usize);
+        Ok(found
+            .into_iter()
+            .map(|(w, p)| WorkItemHit {
+                id: w.id,
+                name: w.name.clone(),
+                sequence_id: w.sequence_id,
+                project_id: w.project_id,
+                project_identifier: p.identifier.clone(),
+                workspace_slug: slug.clone(),
+            })
+            .collect())
     }
 
     async fn max_work_item_sort_order(&self, scope: &Scope, state: Option<Uuid>) -> Result<Option<i64>, DbError> {
@@ -1375,7 +1448,7 @@ impl Database for MemoryDatabase {
                 description: i.description.clone(),
                 external_source: None,
                 external_id: None,
-                created_by: i.created_by,
+                created_by: Some(i.created_by),
                 created_at: i.created_at,
                 archived_at: None,
                 is_draft: false,
@@ -1742,6 +1815,14 @@ impl Tx for MemoryTx {
         if matches!((attrs.start_date, attrs.target_date), (Some(a), Some(b)) if a > b) {
             return Err(DbError::Backend("work_items_dates_ordered".into()));
         }
+        if attrs.point.is_some_and(|p| !(0..=12).contains(&p)) {
+            return Err(DbError::Backend("work_items_point_valid".into()));
+        }
+        // a parent is a work item that is there, or one this transaction inserted (the item itself is the second)
+        let there = |w: &WorkItem| Some(w.id.0) == attrs.parent_id;
+        if attrs.parent_id.is_some() && !s.work_items.iter().any(there) && !self.pending_items.iter().any(there) {
+            return Err(DbError::Backend("work_items_parent_fkey".into()));
+        }
         drop(s);
         let mut attrs = attrs.clone();
         attrs.assignee_ids.sort();
@@ -1782,6 +1863,26 @@ impl Tx for MemoryTx {
         }
         if matches!((update.start_date, update.target_date), (Some(a), Some(b)) if a > b) {
             return Err(DbError::Backend("work_items_dates_ordered".into()));
+        }
+        if update.point.is_some_and(|p| !(0..=12).contains(&p)) {
+            return Err(DbError::Backend("work_items_point_valid".into()));
+        }
+        let there = |w: &WorkItem| Some(w.id.0) == update.parent_id;
+        if update.parent_id.is_some() && !s.work_items.iter().any(there) && !self.pending_items.iter().any(there) {
+            return Err(DbError::Backend("work_items_parent_fkey".into()));
+        }
+        // the integration key is unique among the project's live items (the partial index of migration 0001)
+        if let (Some(src), Some(ext)) = (&update.external_source, &update.external_id) {
+            let taken = |w: &WorkItem| {
+                w.project_id == project
+                    && w.id != id
+                    && w.deleted_at.is_none()
+                    && w.external_source.as_ref() == Some(src)
+                    && w.external_id.as_ref() == Some(ext)
+            };
+            if s.work_items.iter().any(taken) || self.pending_items.iter().any(taken) {
+                return Err(DbError::Conflict("work_items_external_live".into()));
+            }
         }
         drop(s);
         let mut update = update.clone();
@@ -1835,6 +1936,8 @@ impl Tx for MemoryTx {
         for (id, update) in this.pending_updates {
             let Some(item) = s.work_items.iter_mut().find(|w| w.id == id) else { continue };
             item.name = update.name.clone();
+            item.external_source = update.external_source.clone();
+            item.external_id = update.external_id.clone();
             let created_at = item.created_at;
             let attrs = s.work_item_attrs.entry(id).or_insert_with(|| WorkItemAttrs::bare(created_at));
             attrs.state_id = update.state_id;
@@ -1845,6 +1948,8 @@ impl Tx for MemoryTx {
             attrs.updated_at = update.updated_at;
             attrs.updated_by = Some(update.updated_by);
             attrs.description_html = update.description_html;
+            attrs.parent_id = update.parent_id;
+            attrs.point = update.point;
             if let Some(people) = update.assignee_ids {
                 attrs.assignee_ids = people;
             }
@@ -1853,9 +1958,26 @@ impl Tx for MemoryTx {
             }
         }
         for (project, id, at) in this.pending_deletes {
-            if let Some(w) =
-                s.work_items.iter_mut().find(|w| w.project_id == project && w.id == id && w.deleted_at.is_none())
-            {
+            // the item and, in turn, the live items under it; one met twice (the pin lets an item be its own parent) is not walked again
+            let mut gone: Vec<WorkItemId> = Vec::new();
+            if s.work_items.iter().any(|w| w.project_id == project && w.id == id && w.deleted_at.is_none()) {
+                gone.push(id);
+            }
+            let mut frontier = gone.clone();
+            while let Some(parent) = frontier.pop() {
+                let children: Vec<WorkItemId> = s
+                    .work_items
+                    .iter()
+                    .filter(|w| w.project_id == project)
+                    .filter(|w| w.deleted_at.is_none())
+                    .filter(|w| !gone.contains(&w.id))
+                    .filter(|w| s.work_item_attrs.get(&w.id).and_then(|a| a.parent_id) == Some(parent.0))
+                    .map(|w| w.id)
+                    .collect();
+                gone.extend(&children);
+                frontier.extend(children);
+            }
+            for w in s.work_items.iter_mut().filter(|w| gone.contains(&w.id)) {
                 w.deleted_at = Some(at);
             }
         }

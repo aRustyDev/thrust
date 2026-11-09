@@ -55,7 +55,7 @@ fn seed_item_by(c: &Cast, who: Caller, name: &str) -> String {
         description: None,
         external_source: None,
         external_id: None,
-        created_by: c.user(who),
+        created_by: Some(c.user(who)),
         created_at: at(1),
         archived_at: None,
         is_draft: false,
@@ -565,4 +565,42 @@ fn an_id_that_is_no_work_item_is_a_404() {
         (missing["status"].clone(), missing["body"].clone()),
         (json!(404), json!({"error": "The required object does not exist."}))
     );
+}
+
+/// The compat plane gives no work item a parent (D-028), but the v1 API does, and what is stored is what both show: `parent_id` is the
+/// parent a work item has, and null for one that has none.
+#[test]
+fn a_parent_that_the_v1_api_gave_is_shown() {
+    let c = cast();
+    let parent = seed_item_by(&c, Caller::ProjectAdmin, "the parent");
+    let (ws, project) = (WorkspaceId(Uuid::from_u128(WS)), ProjectId(Uuid::from_u128(PROJECT)));
+    let scope = Scope::mint(ws, project, c.user(Caller::ProjectAdmin));
+    // a child made as the v1 API makes one: its attributes name the parent
+    let mut tx = futures_executor::block_on(c.db.begin(&scope)).unwrap();
+    let alloc = futures_executor::block_on(tx.allocate(&scope)).unwrap();
+    let child = WorkItem {
+        id: WorkItemId(Uuid::from_u128(0x9000 + alloc.sequence_id as u128)),
+        workspace_id: ws,
+        project_id: project,
+        sequence_id: alloc.sequence_id,
+        sort_order: alloc.sort_order,
+        name: "the child".into(),
+        description: None,
+        external_source: None,
+        external_id: None,
+        created_by: Some(c.user(Caller::ProjectAdmin)),
+        created_at: at(1),
+        archived_at: None,
+        is_draft: false,
+        deleted_at: None,
+    };
+    let attrs = WorkItemAttrs { parent_id: parent.parse().ok(), ..WorkItemAttrs::bare(at(1)) };
+    futures_executor::block_on(tx.insert_work_item(&scope, &child)).unwrap();
+    futures_executor::block_on(tx.insert_work_item_attrs(&scope, child.id, &attrs)).unwrap();
+    futures_executor::block_on(tx.commit()).unwrap();
+
+    let shown =
+        |id: &str| c.call(Caller::ProjectAdmin, "GET", &issue_path(id), Value::Null)["body"]["parent_id"].clone();
+    assert_eq!(shown(&child.id.0.to_string()), json!(parent));
+    assert_eq!(shown(&parent), Value::Null, "one with no parent has none");
 }

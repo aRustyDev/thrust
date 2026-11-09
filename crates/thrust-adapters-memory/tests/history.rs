@@ -168,7 +168,7 @@ fn make_item(db: &MemoryDatabase, ws: u128, project: u128, edit: impl FnOnce(&mu
         description: None,
         external_source: None,
         external_id: None,
-        created_by: uid(1),
+        created_by: Some(uid(1)),
         created_at: at(0),
         archived_at: None,
         is_draft: false,
@@ -528,6 +528,8 @@ fn before() -> WorkItemAttrs {
         description_html: "<p>before</p>".into(),
         assignee_ids: vec![uid(1), uid(2)],
         label_ids: vec![label_id(1), label_id(2)],
+        parent_id: None,
+        point: Some(1),
     }
 }
 
@@ -546,7 +548,7 @@ fn made(db: &MemoryDatabase, edit: impl FnOnce(&mut WorkItem)) -> WorkItemId {
         description: Some("the slice's description".into()),
         external_source: None,
         external_id: None,
-        created_by: uid(1),
+        created_by: Some(uid(1)),
         created_at: at(0),
         archived_at: None,
         is_draft: false,
@@ -573,6 +575,10 @@ fn change() -> WorkItemUpdate {
         description_html: "<p>after</p>".into(),
         assignee_ids: Some(vec![uid(3)]),
         label_ids: Some(vec![label_id(3)]),
+        external_source: Some("gh".into()),
+        external_id: Some("7".into()),
+        parent_id: None,
+        point: Some(12),
     }
 }
 
@@ -608,6 +614,10 @@ fn after(row: &WorkItemRow, u: &WorkItemUpdate) -> WorkItemRow {
     r.attrs.updated_at = u.updated_at;
     r.attrs.updated_by = Some(u.updated_by);
     r.attrs.description_html = u.description_html.clone();
+    r.attrs.parent_id = u.parent_id;
+    r.attrs.point = u.point;
+    r.item.external_source = u.external_source.clone();
+    r.item.external_id = u.external_id.clone();
     if let Some(people) = &u.assignee_ids {
         r.attrs.assignee_ids = shown(people);
     }
@@ -651,6 +661,10 @@ fn any_update() -> impl Strategy<Value = WorkItemUpdate> {
                 description_html: html,
                 assignee_ids: people.map(|p| p.into_iter().map(uid).collect()),
                 label_ids: labels.map(|l| l.into_iter().map(label_id).collect()),
+                external_source: None,
+                external_id: None,
+                parent_id: None,
+                point: None,
             }
         })
 }
@@ -708,7 +722,7 @@ proptest! {
             description: None,
             external_source: None,
             external_id: None,
-            created_by: uid(1),
+            created_by: Some(uid(1)),
             created_at: at(0),
             archived_at: None,
             is_draft: false,

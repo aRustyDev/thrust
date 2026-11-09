@@ -2626,7 +2626,7 @@ fn item(ws: WorkspaceId, p: ProjectId, a: Allocation, ext: Option<u8>) -> WorkIt
         description: None,
         external_source: ext.map(|_| "gh".to_string()),
         external_id: ext.map(|k| format!("k{k}")),
-        created_by: UserId(new_id()),
+        created_by: Some(UserId(new_id())),
         created_at: Utc.timestamp_opt(1_800_000_000, 0).unwrap(),
         archived_at: None,
         is_draft: false,
@@ -4149,6 +4149,8 @@ impl Model {
             description_html: format!("<p>{}</p>", it.sequence_id),
             assignee_ids: assignees,
             label_ids,
+            parent_id: None,
+            point: None,
         }
     }
 
@@ -4219,7 +4221,7 @@ impl Model {
             let (after, by) = (first.attrs.updated_at, first.item.created_by);
             let kept: Vec<WorkItemRow> =
                 ordered.iter().filter(|r| r.attrs.updated_at > after && r.item.created_by == by).cloned().collect();
-            let q = WorkItemQuery { order, limit: 100, page: 0, updated_after: Some(after), created_by: Some(by) };
+            let q = WorkItemQuery { order, limit: 100, page: 0, updated_after: Some(after), created_by: by };
             classes.push(Class::ItemPageCut);
             calls.push(Call::WorkItemPageOf {
                 ws,
@@ -4406,6 +4408,11 @@ impl Model {
                     .to_string(),
                 assignee_ids: people_named.clone(),
                 label_ids: labels_named.clone(),
+                // the update is whole: the item keeps the key it has, and has no parent and no point to change
+                external_source: target.as_ref().and_then(|t| t.external_source.clone()),
+                external_id: target.as_ref().and_then(|t| t.external_id.clone()),
+                parent_id: None,
+                point: None,
             };
             let (bad_person, bad_label) =
                 (upd.people.is_some_and(|m| m & 32 != 0), upd.labels.is_some_and(|m| m & 8 != 0));
@@ -4488,6 +4495,10 @@ impl Model {
             a.updated_at = update.updated_at;
             a.updated_by = Some(update.updated_by);
             a.description_html = update.description_html.clone();
+            a.parent_id = update.parent_id;
+            a.point = update.point;
+            w.external_source = update.external_source.clone();
+            w.external_id = update.external_id.clone();
             if let Some(v) = &update.assignee_ids {
                 a.assignee_ids = v.iter().copied().collect::<BTreeSet<_>>().into_iter().collect();
             }

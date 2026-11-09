@@ -69,7 +69,7 @@ fn put_item(w: &World, scope: &Scope, n: u128, labels: &[Uuid]) -> WorkItemId {
         description: None,
         external_source: None,
         external_id: None,
-        created_by: scope.user_id(),
+        created_by: Some(scope.user_id()),
         created_at: now,
         archived_at: None,
         is_draft: false,

@@ -251,7 +251,7 @@ async fn run_table(enforce: bool) {
     // no refused request had an effect: the project holds the shared victim, exactly the rows the table let be created,
     // and exactly the victims it let be deleted (and they are the deleted ones)
     let rows: Vec<WorkItem> = list(&t, &f.admin_a, &f.a, Some("with_deleted")).await.json().await.unwrap();
-    let created = rows.iter().filter(|r| r.created_by == f.member_a.id).count();
+    let created = rows.iter().filter(|r| r.created_by == Some(f.member_a.id)).count();
     let deleted: Vec<WorkItemId> = rows.iter().filter(|r| r.deleted_at.is_some()).map(|r| r.id).collect();
     let live_victim = rows.iter().find(|r| r.id == shared_victim).expect("the shared victim");
     if created != want_created {

@@ -465,9 +465,10 @@ async fn engine_seed_work_items_numbers_from_the_projects_counter() {
     assert_eq!(rows[3].name, "seeded 0");
     assert_eq!(rows[3].description.as_deref(), Some("desc 0"));
     assert_eq!(rows[4].description, None);
-    assert!(rows[3..53]
-        .iter()
-        .all(|w| w.created_by == f.admin_a.id && w.workspace_id == f.ws_a && w.deleted_at.is_none() && !w.is_draft));
+    assert!(rows[3..53].iter().all(|w| w.created_by == Some(f.admin_a.id)
+        && w.workspace_id == f.ws_a
+        && w.deleted_at.is_none()
+        && !w.is_draft));
     // the other project is untouched: its counter is its own
     assert_eq!(create_ok(&t, &f.admin_b, &f.b, "b").await.sequence_id, 1);
     // control: the route is a test route, closed without the admin token

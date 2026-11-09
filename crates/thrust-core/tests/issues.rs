@@ -87,7 +87,7 @@ proptest! {
         for (i, who) in makers.iter().enumerate() {
             let row = made(&w, *who, draft(&format!("item {i}"))).unwrap();
             prop_assert_eq!((row.item.sequence_id, row.item.sort_order), (i as i64 + 1, 65_535 + 10_000 * i as i64));
-            prop_assert_eq!(row.item.created_by, user(&w, *who));
+            prop_assert_eq!(row.item.created_by, Some(user(&w, *who)));
             rows.push(row);
         }
         let got = page(&w, Actor::AdminA).unwrap();
@@ -305,7 +305,7 @@ fn a_guest_reads_the_work_item_they_made() {
         description: None,
         external_source: None,
         external_id: None,
-        created_by: guest,
+        created_by: Some(guest),
         created_at: w.app.ports.clock.now(),
         archived_at: None,
         is_draft: false,
