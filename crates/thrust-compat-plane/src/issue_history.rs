@@ -37,7 +37,9 @@ fn by_class(e: IssueError) -> PlaneError {
         | IssueError::NotFound
         | IssueError::NotAllowedToView
         | IssueError::Fields(_)
-        | IssueError::StartAfterTarget => refused_by_class(),
+        | IssueError::StartAfterTarget
+        // only the v1 API's deletion says this; the compat plane never meets it
+        | IssueError::OnlyAdminOrCreator => refused_by_class(),
     }
 }
 

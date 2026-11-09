@@ -81,7 +81,7 @@ fn seed_by(w: &World, who: Actor, n: u128, name: &str) -> WorkItemId {
         description: None,
         external_source: None,
         external_id: None,
-        created_by: user(w, who),
+        created_by: Some(user(w, who)),
         created_at: w.app.ports.clock.now(),
         archived_at: None,
         is_draft: false,
@@ -422,7 +422,7 @@ fn what_a_change_names_must_be_there_and_every_problem_is_found() {
     let asks = vec![
         Ask::Labels(vec![uuid(0x7003), uuid(0x7001), uuid(0xDEAD)]),
         Ask::Assignees(vec![user(&w, Actor::MemberA), nobody, nobody]),
-        Ask::Parent(uuid(0xBAD)),
+        Ask::Parent(Some(uuid(0xBAD))),
         Ask::State(Some(uuid(STATE_OF_B))),
         Ask::Priority(Priority::Urgent),
     ];
@@ -441,7 +441,7 @@ fn what_a_change_names_must_be_there_and_every_problem_is_found() {
     );
     assert_eq!(row(&w, id).attrs.priority, Priority::None, "a refused change writes nothing");
     assert_eq!(block_on(outbox_depth(&w.app)).unwrap(), events);
-    let got = update(&w, Actor::MemberA, id, ask(vec![Ask::Parent(other.0)]));
+    let got = update(&w, Actor::MemberA, id, ask(vec![Ask::Parent(Some(other.0))]));
     assert!(matches!(&got, Err(IssueError::Fields(p)) if *p == vec![FieldProblem::ParentNotSupported]), "{got:?}");
 }
 
@@ -513,7 +513,7 @@ fn some_row(spec: &Model) -> WorkItemRow {
             description: None,
             external_source: None,
             external_id: None,
-            created_by: user_n(1),
+            created_by: Some(user_n(1)),
             created_at: at,
             archived_at: None,
             is_draft: false,
@@ -530,6 +530,8 @@ fn some_row(spec: &Model) -> WorkItemRow {
             description_html: spec.description.clone(),
             assignee_ids: spec.assignees.iter().copied().collect(),
             label_ids: spec.labels.iter().copied().collect(),
+            parent_id: None,
+            point: None,
         },
         state_group: None,
     }

@@ -58,3 +58,17 @@ ALTER TABLE labels DROP CONSTRAINT IF EXISTS labels_project_id_name_key;
 CREATE UNIQUE INDEX IF NOT EXISTS labels_project_id_name_key ON labels (project_id, name) WHERE deleted_at IS NULL;
 -- the labels under a label, which a delete walks
 CREATE INDEX IF NOT EXISTS labels_by_parent ON labels (parent_id) WHERE parent_id IS NOT NULL;
+
+-- Work items (issue #58): who made an item is optional (Plane's column is nullable, and the oracle's seeded items have no maker); an
+-- item may be under another (a parent: the same project, which the use-case checks, as the pin's serializer does; the pin lets an
+-- item be its own parent, and so does this), and may have a `point`, a whole number from 0 to 12. Each is idempotent: a start runs
+-- the file again.
+ALTER TABLE work_items ALTER COLUMN created_by DROP NOT NULL;
+ALTER TABLE work_items ADD COLUMN IF NOT EXISTS parent_id uuid;
+ALTER TABLE work_items DROP CONSTRAINT IF EXISTS work_items_parent_fkey;
+ALTER TABLE work_items ADD CONSTRAINT work_items_parent_fkey FOREIGN KEY (parent_id) REFERENCES work_items (id);
+ALTER TABLE work_items ADD COLUMN IF NOT EXISTS point integer;
+ALTER TABLE work_items DROP CONSTRAINT IF EXISTS work_items_point_valid;
+ALTER TABLE work_items ADD CONSTRAINT work_items_point_valid CHECK (point IS NULL OR point BETWEEN 0 AND 12);
+-- the items under an item, which a delete walks
+CREATE INDEX IF NOT EXISTS work_items_by_parent ON work_items (parent_id) WHERE parent_id IS NOT NULL;

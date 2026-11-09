@@ -184,7 +184,9 @@ pub struct WorkItem {
     pub description: Option<String>,
     pub external_source: Option<String>,
     pub external_id: Option<String>,
-    pub created_by: UserId,
+    /// Who made the item; none for one that was seeded or imported with no maker (issue #58: Plane's column is nullable, and the
+    /// oracle's seeded items have none).
+    pub created_by: Option<UserId>,
     pub created_at: Timestamp,
     pub archived_at: Option<Timestamp>,
     pub is_draft: bool,
@@ -251,6 +253,11 @@ pub struct WorkItemAttrs {
     pub assignee_ids: Vec<UserId>,
     /// Ascending by id.
     pub label_ids: Vec<Uuid>,
+    /// The work item this one is under (migration 0015): one of its own project, which the use-case checks; the pin lets it be the
+    /// item itself, and a loop.
+    pub parent_id: Option<Uuid>,
+    /// Plane's `point`: a whole number from 0 to 12 (the database checks it).
+    pub point: Option<i32>,
 }
 
 impl WorkItemAttrs {
@@ -267,6 +274,8 @@ impl WorkItemAttrs {
             description_html: "<p></p>".to_string(),
             assignee_ids: Vec::new(),
             label_ids: Vec::new(),
+            parent_id: None,
+            point: None,
         }
     }
 }
@@ -297,6 +306,13 @@ pub struct WorkItemUpdate {
     pub assignee_ids: Option<Vec<UserId>>,
     /// `Some` replaces the labels; `None` leaves them.
     pub label_ids: Option<Vec<Uuid>>,
+    /// The integration key after the update (the row's own, when the request does not name it).
+    pub external_source: Option<String>,
+    pub external_id: Option<String>,
+    /// The parent after the update (the row's own, when the request does not name it).
+    pub parent_id: Option<Uuid>,
+    /// The point after the update (the row's own, when the request does not name it).
+    pub point: Option<i32>,
 }
 
 /// One row of a work item's history (the pin's `IssueActivity`): a change made to it. The activity consumer writes the rows an

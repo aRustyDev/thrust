@@ -240,7 +240,7 @@ fn work_item(r: &Row) -> WorkItem {
         description: r.get("description"),
         external_source: r.get("external_source"),
         external_id: r.get("external_id"),
-        created_by: UserId(r.get("created_by")),
+        created_by: r.get::<_, Option<Uuid>>("created_by").map(UserId),
         created_at: r.get("created_at"),
         archived_at: r.get("archived_at"),
         is_draft: r.get("is_draft"),
@@ -254,7 +254,7 @@ fn work_item(r: &Row) -> WorkItem {
 const WIR_COLS: &str = "w.id, w.workspace_id, w.project_id, w.sequence_id, w.sort_order, w.name, w.description, \
     w.external_source, w.external_id, w.created_by, w.created_at, w.archived_at, w.is_draft, w.deleted_at, \
     w.state_id, w.priority, w.start_date, w.target_date, w.completed_at, w.updated_at, w.updated_by, w.description_html, \
-    st.state_group AS st_group, \
+    w.parent_id, w.point, st.state_group AS st_group, \
     ARRAY(SELECT a.user_id FROM work_item_assignees a \
             JOIN project_members pm ON pm.project_id = a.project_id AND pm.workspace_id = a.workspace_id AND pm.user_id = a.user_id \
             JOIN workspace_members wm ON wm.workspace_id = a.workspace_id AND wm.user_id = a.user_id AND wm.is_active \
@@ -278,6 +278,8 @@ fn work_item_row(r: &Row) -> Result<WorkItemRow, DbError> {
             description_html: r.get("description_html"),
             assignee_ids: r.get::<_, Vec<Uuid>>("assignee_ids").into_iter().map(UserId).collect(),
             label_ids: r.get("label_ids"),
+            parent_id: r.get("parent_id"),
+            point: r.get("point"),
         },
         state_group: group
             .map(|g| {
@@ -2203,6 +2205,89 @@ impl Database for PgDatabase {
         row.as_ref().map(work_item_row).transpose()
     }
 
+    async fn work_item_by_sequence(&self, scope: &Scope, sequence_id: i64) -> Result<Option<WorkItemRow>, DbError> {
+        let c = self.conn().await?;
+        let row = Pg(c.client())
+            .query_opt(
+                &format!(
+                    "SELECT {WIR_COLS} FROM work_items w LEFT JOIN states st ON st.id = w.state_id \
+                     WHERE w.workspace_id = $1 AND w.project_id = $2 AND w.sequence_id = $3 \
+                       AND w.deleted_at IS NULL AND w.archived_at IS NULL AND NOT w.is_draft"
+                ),
+                &[&scope.workspace_id().0, &scope.project_id().0, &sequence_id],
+            )
+            .await
+            .map_err(db_err)?;
+        row.as_ref().map(work_item_row).transpose()
+    }
+
+    async fn work_item_by_external(
+        &self,
+        scope: &Scope,
+        source: &str,
+        id: &str,
+    ) -> Result<Option<WorkItemRow>, DbError> {
+        let c = self.conn().await?;
+        let row = Pg(c.client())
+            .query_opt(
+                &format!(
+                    "SELECT {WIR_COLS} FROM work_items w LEFT JOIN states st ON st.id = w.state_id \
+                     WHERE w.workspace_id = $1 AND w.project_id = $2 AND w.external_source = $3 AND w.external_id = $4 \
+                       AND w.deleted_at IS NULL AND w.archived_at IS NULL AND NOT w.is_draft"
+                ),
+                &[&scope.workspace_id().0, &scope.project_id().0, &source, &id],
+            )
+            .await
+            .map_err(db_err)?;
+        row.as_ref().map(work_item_row).transpose()
+    }
+
+    async fn search_workspace_work_items(
+        &self,
+        scope: &WorkspaceScope,
+        q: &WorkspaceSearch,
+    ) -> Result<Vec<WorkItemHit>, DbError> {
+        // `%`, `_` and `\` are literal in the text, so they are escaped for LIKE. The caller's own projects only (an active member
+        // row that names the workspace), none archived or deleted; what counts is what the project's lists show.
+        let pattern = like_pattern(&q.text);
+        let project: Option<Uuid> = q.project.map(|p| p.0);
+        let c = self.conn().await?;
+        let rows = Pg(c.client())
+            .query(
+                "SELECT w.id, w.name, w.sequence_id, w.project_id, p.identifier, ws.slug \
+                 FROM work_items w \
+                   JOIN projects p ON p.id = w.project_id AND p.workspace_id = w.workspace_id \
+                     AND p.archived_at IS NULL AND p.deleted_at IS NULL \
+                   JOIN workspaces ws ON ws.id = w.workspace_id \
+                   JOIN project_members pm ON pm.project_id = w.project_id AND pm.workspace_id = w.workspace_id AND pm.user_id = $2 \
+                 WHERE w.workspace_id = $1 AND w.deleted_at IS NULL AND w.archived_at IS NULL AND NOT w.is_draft \
+                   AND ($3::uuid IS NULL OR w.project_id = $3) \
+                   AND (w.name ILIKE $4 ESCAPE '\\' OR p.identifier ILIKE $4 ESCAPE '\\' OR w.sequence_id = ANY($5::bigint[])) \
+                 ORDER BY w.created_at DESC, w.sequence_id DESC, w.id LIMIT $6",
+                &[
+                    &scope.workspace_id().0,
+                    &scope.user_id().0,
+                    &project,
+                    &pattern,
+                    &q.numbers,
+                    &i64::from(q.limit),
+                ],
+            )
+            .await
+            .map_err(db_err)?;
+        Ok(rows
+            .iter()
+            .map(|r| WorkItemHit {
+                id: WorkItemId(r.get("id")),
+                name: r.get("name"),
+                sequence_id: r.get("sequence_id"),
+                project_id: ProjectId(r.get("project_id")),
+                project_identifier: r.get("identifier"),
+                workspace_slug: WorkspaceSlug::new(r.get::<_, String>("slug")),
+            })
+            .collect())
+    }
+
     async fn max_work_item_sort_order(&self, scope: &Scope, state: Option<Uuid>) -> Result<Option<i64>, DbError> {
         let c = self.conn().await?;
         let row = Pg(c.client())
@@ -2723,7 +2808,7 @@ impl Tx for PgTx {
                     &w.description,
                     &w.external_source,
                     &w.external_id,
-                    &w.created_by.0,
+                    &w.created_by.map(|u| u.0),
                     &w.created_at,
                     &w.archived_at,
                     &w.is_draft,
@@ -2748,7 +2833,7 @@ impl Tx for PgTx {
             .client()?
             .execute(
                 "UPDATE work_items SET state_id = $4, priority = $5, start_date = $6, target_date = $7, completed_at = $8, \
-                   updated_at = $9, updated_by = $10, description_html = $11 \
+                   updated_at = $9, updated_by = $10, description_html = $11, parent_id = $12, point = $13 \
                  WHERE workspace_id = $1 AND project_id = $2 AND id = $3",
                 &[
                     &ws.0,
@@ -2762,6 +2847,8 @@ impl Tx for PgTx {
                     &attrs.updated_at,
                     &attrs.updated_by.map(|u| u.0),
                     &attrs.description_html,
+                    &attrs.parent_id,
+                    &attrs.point,
                 ],
             )
             .await
@@ -2808,7 +2895,8 @@ impl Tx for PgTx {
             .client()?
             .execute(
                 "UPDATE work_items SET name = $4, state_id = $5, priority = $6, start_date = $7, target_date = $8, completed_at = $9, \
-                   updated_at = $10, updated_by = $11, description_html = $12 \
+                   updated_at = $10, updated_by = $11, description_html = $12, parent_id = $13, point = $14, \
+                   external_source = $15, external_id = $16 \
                  WHERE workspace_id = $1 AND project_id = $2 AND id = $3 AND deleted_at IS NULL AND archived_at IS NULL AND is_draft = false",
                 &[
                     &ws.0,
@@ -2823,6 +2911,10 @@ impl Tx for PgTx {
                     &update.updated_at,
                     &update.updated_by.0,
                     &update.description_html,
+                    &update.parent_id,
+                    &update.point,
+                    &update.external_source,
+                    &update.external_id,
                 ],
             )
             .await
@@ -2865,16 +2957,24 @@ impl Tx for PgTx {
     async fn soft_delete_work_item(&mut self, scope: &Scope, id: WorkItemId, at: Timestamp) -> Result<bool, DbError> {
         let (ws, project) = (scope.workspace_id(), scope.project_id());
         self.ensure_tx().await?;
-        let n = self
+        // The item and, in one statement, every live item under it. The walk is a UNION (not UNION ALL), which drops a row it has
+        // met: the pin lets an item be its own parent, and a loop must end the walk, not feed it.
+        let row = self
             .client()?
-            .execute(
-                "UPDATE work_items SET deleted_at = $4 \
-                 WHERE workspace_id = $1 AND project_id = $2 AND id = $3 AND deleted_at IS NULL",
+            .query_one(
+                "WITH RECURSIVE tree AS ( \
+                     SELECT id FROM work_items WHERE id = $3 AND workspace_id = $1 AND project_id = $2 AND deleted_at IS NULL \
+                   UNION \
+                     SELECT c.id FROM work_items c JOIN tree t ON c.parent_id = t.id \
+                     WHERE c.workspace_id = $1 AND c.project_id = $2 AND c.deleted_at IS NULL \
+                 ), \
+                 gone AS (UPDATE work_items SET deleted_at = $4 WHERE id IN (SELECT id FROM tree) RETURNING id) \
+                 SELECT EXISTS (SELECT 1 FROM gone WHERE id = $3) AS deleted",
                 &[&ws.0, &project.0, &id.0, &at],
             )
             .await
             .map_err(db_err)?;
-        Ok(n == 1)
+        Ok(row.get("deleted"))
     }
 
     async fn insert_outbox(&mut self, scope: &Scope, row: &OutboxRow) -> Result<(), DbError> {

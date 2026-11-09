@@ -66,6 +66,9 @@ pub enum IssueError {
     /// The start date is after the target date.
     #[error("start date cannot exceed target date")]
     StartAfterTarget,
+    /// A v1 deletion by someone who is neither a project admin nor the work item's maker.
+    #[error("only an admin or the creator can delete the work item")]
+    OnlyAdminOrCreator,
     #[error(transparent)]
     Core(#[from] CoreError),
 }
@@ -93,12 +96,27 @@ pub struct IssueAccess {
     role: Role,
     who: Principal,
     slug: WorkspaceSlug,
+    surface: Surface,
+}
+
+/// Which API a caller came through. The two differ in what a work item may be and who sees which (issue #58): the compat plane
+/// keeps D-028 (no parent) and hides from a guest what others made (unless the project shows guests everything); the public v1 API
+/// accepts a parent and shows every work item to every member of the project, as the pin's views do.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Surface {
+    Compat,
+    V1,
 }
 
 impl IssueAccess {
     /// The caller's role in the project.
     pub fn role(&self) -> Role {
         self.role
+    }
+
+    /// Whether this is a guest of the compat plane, who may be limited to what they made (see [`guest_sees_all`]).
+    fn is_limited_guest(&self) -> bool {
+        self.surface == Surface::Compat && self.role == Role::Guest
     }
 }
 
@@ -111,7 +129,33 @@ pub async fn issue_reader(
 ) -> Result<IssueAccess, IssueError> {
     let (scope, role) =
         authorize_with_role(app, who, slug, project, Permission::ReadWorkItems).await.map_err(denied)?;
-    Ok(IssueAccess { scope, role, who: who.clone(), slug: slug.clone() })
+    Ok(IssueAccess { scope, role, who: who.clone(), slug: slug.clone(), surface: Surface::Compat })
+}
+
+/// May the caller read the project's work items through the v1 API: any member of the project, a guest too (`Forbidden` for anyone
+/// else). Such an access sees every work item.
+pub async fn v1_issue_reader(
+    app: &App,
+    who: &Principal,
+    slug: &WorkspaceSlug,
+    project: ProjectId,
+) -> Result<IssueAccess, IssueError> {
+    let (scope, role) =
+        authorize_with_role(app, who, slug, project, Permission::ReadWorkItems).await.map_err(denied)?;
+    Ok(IssueAccess { scope, role, who: who.clone(), slug: slug.clone(), surface: Surface::V1 })
+}
+
+/// May the caller make, change and delete work items through the v1 API: an admin or a member of the project (`Forbidden` for a
+/// guest, whoever made the work item: the compat plane lets a guest change what they made, the pin's v1 views do not).
+pub async fn v1_issue_writer(
+    app: &App,
+    who: &Principal,
+    slug: &WorkspaceSlug,
+    project: ProjectId,
+) -> Result<IssueAccess, IssueError> {
+    let (scope, role) =
+        authorize_with_role(app, who, slug, project, Permission::CreateWorkItem).await.map_err(denied)?;
+    Ok(IssueAccess { scope, role, who: who.clone(), slug: slug.clone(), surface: Surface::V1 })
 }
 
 /// May the caller make work items in the project: an admin or a member (`Forbidden` for a guest and for anyone else).
@@ -123,7 +167,7 @@ pub async fn issue_writer(
 ) -> Result<IssueAccess, IssueError> {
     let (scope, role) =
         authorize_with_role(app, who, slug, project, Permission::CreateWorkItem).await.map_err(denied)?;
-    Ok(IssueAccess { scope, role, who: who.clone(), slug: slug.clone() })
+    Ok(IssueAccess { scope, role, who: who.clone(), slug: slug.clone(), surface: Surface::Compat })
 }
 
 /// The work item the caller asked to change, with the proof that they may: an admin or a member of the project may change any, and
@@ -138,7 +182,9 @@ pub async fn issue_to_update(
     id: WorkItemId,
 ) -> Result<(IssueAccess, WorkItemRow), IssueError> {
     let access = match authorize_with_role(app, who, slug, project, Permission::UpdateWorkItem).await {
-        Ok((scope, role)) => IssueAccess { scope, role, who: who.clone(), slug: slug.clone() },
+        Ok((scope, role)) => {
+            IssueAccess { scope, role, who: who.clone(), slug: slug.clone(), surface: Surface::Compat }
+        }
         Err(e) => match denied(e) {
             IssueError::Forbidden => issue_reader(app, who, slug, project).await?,
             other => return Err(other),
@@ -148,7 +194,7 @@ pub async fn issue_to_update(
     match row {
         // a guest is let in for the work items they made, and for no other (nor for one that is not there: the decorator has
         // nothing to say they made)
-        Some(row) if access.role >= Role::Member || row.item.created_by == who.user_id => Ok((access, row)),
+        Some(row) if access.role >= Role::Member || row.item.created_by == Some(who.user_id) => Ok((access, row)),
         None if access.role >= Role::Member => Err(IssueError::NotFound),
         _ => Err(IssueError::Forbidden),
     }
@@ -171,6 +217,12 @@ pub struct IssueDraft {
     pub target_date: Option<NaiveDate>,
     pub assignee_ids: Vec<UserId>,
     pub label_ids: Vec<Uuid>,
+    /// Plane's `point`, 0 to 12 (the request layer checks the range; the database does too).
+    pub point: Option<i32>,
+    /// The key an integration gave the item. The v1 API sets them (the request layer checks that no other item has the pair); the
+    /// compat plane does not.
+    pub external_source: Option<String>,
+    pub external_id: Option<String>,
 }
 
 /// What a page of the project's work items is asked for.
@@ -182,28 +234,37 @@ pub struct IssueListQuery {
     pub updated_after: Option<Timestamp>,
 }
 
+/// What a request names that has to be there: a state and a parent as ids, and the people and the labels.
+struct Named<'a> {
+    state: Option<Uuid>,
+    parent: Option<Uuid>,
+    assignees: &'a [UserId],
+    labels: &'a [Uuid],
+}
+
 /// What a request names that is not there, in the order the pin's serializer would find it: the state, the parent (one that exists
-/// is not supported yet), each assignee and each label.
+/// is not supported on the compat plane), each assignee and each label.
 async fn find_problems(
     app: &App,
     scope: &Scope,
+    surface: Surface,
     states: &[StateRow],
-    state: Option<Uuid>,
-    parent: Option<Uuid>,
-    assignees: &[UserId],
-    labels: &[Uuid],
+    named: Named<'_>,
 ) -> Result<Vec<FieldProblem>, DbError> {
+    let Named { state, parent, assignees, labels } = named;
     let db = &app.ports.db;
     let mut problems = Vec::new();
     if state.is_some_and(|id| !states.iter().any(|s| s.id == id)) {
         problems.push(FieldProblem::State);
     }
     if let Some(parent) = parent {
-        problems.push(if db.work_item_row(scope, WorkItemId(parent)).await?.is_some() {
-            FieldProblem::ParentNotSupported
-        } else {
-            FieldProblem::Parent
-        });
+        let there = db.work_item_row(scope, WorkItemId(parent)).await?.is_some();
+        // the compat plane has no parent to give (D-028); the v1 API accepts a work item of the project, itself included
+        if !there {
+            problems.push(FieldProblem::Parent);
+        } else if surface == Surface::Compat {
+            problems.push(FieldProblem::ParentNotSupported);
+        }
     }
     for (i, user) in assignees.iter().enumerate() {
         if db.user_by_id(*user).await?.is_none() {
@@ -242,9 +303,13 @@ pub async fn create_issue(app: &App, access: &IssueAccess, draft: IssueDraft) ->
     let db = &app.ports.db;
 
     let states = db.project_states(&scope).await?;
-    let problems =
-        find_problems(app, &scope, &states, draft.state_id, draft.parent_id, &draft.assignee_ids, &draft.label_ids)
-            .await?;
+    let named = Named {
+        state: draft.state_id,
+        parent: draft.parent_id,
+        assignees: &draft.assignee_ids,
+        labels: &draft.label_ids,
+    };
+    let problems = find_problems(app, &scope, access.surface, &states, named).await?;
     if !problems.is_empty() {
         return Err(IssueError::Fields(problems));
     }
@@ -285,6 +350,8 @@ pub async fn create_issue(app: &App, access: &IssueAccess, draft: IssueDraft) ->
         description_html: draft.description_html.clone().unwrap_or_else(|| "<p></p>".to_string()),
         assignee_ids: assignees,
         label_ids: labels,
+        parent_id: draft.parent_id,
+        point: draft.point,
     };
 
     let sort_order = db
@@ -310,9 +377,9 @@ pub async fn create_issue(app: &App, access: &IssueAccess, draft: IssueDraft) ->
             sort_order,
             name: draft.name.trim().to_string(),
             description: None,
-            external_source: None,
-            external_id: None,
-            created_by: scope.user_id(),
+            external_source: draft.external_source.clone(),
+            external_id: draft.external_id.clone(),
+            created_by: Some(scope.user_id()),
             created_at: now,
             archived_at: None,
             is_draft: false,
@@ -355,8 +422,12 @@ pub async fn create_issue(app: &App, access: &IssueAccess, draft: IssueDraft) ->
 /// project does not show guests everything. The page is at most five statements with the caller's membership: a guest's
 /// workspace access and the project's flag, and the page (and its count when the page is empty).
 pub async fn list_issues(app: &App, access: &IssueAccess, q: IssueListQuery) -> Result<WorkItemPage, IssueError> {
+    // the pin's v1 queryset leaves out a project that is archived; the compat plane's list does not
+    if access.surface == Surface::V1 && app.ports.db.project_is_archived(&access.scope).await? {
+        return Ok(WorkItemPage { rows: Vec::new(), has_next: false, total: 0 });
+    }
     let created_by =
-        if access.role == Role::Guest && !guest_sees_all(app, access).await? { Some(access.who.user_id) } else { None };
+        if access.is_limited_guest() && !guest_sees_all(app, access).await? { Some(access.who.user_id) } else { None };
     let query =
         WorkItemQuery { order: q.order, limit: q.limit, page: q.page, updated_after: q.updated_after, created_by };
     Ok(app.ports.db.work_item_page(&access.scope, &query).await?)
@@ -365,11 +436,100 @@ pub async fn list_issues(app: &App, access: &IssueAccess, q: IssueListQuery) -> 
 /// One work item (the caller got [`issue_reader`]'s access); a guest only for one they made when the project does not show guests
 /// everything (`NotAllowedToView`, after the item is found: a work item that is not there is `NotFound` to everyone).
 pub async fn get_issue(app: &App, access: &IssueAccess, id: WorkItemId) -> Result<WorkItemRow, IssueError> {
+    if access.surface == Surface::V1 && app.ports.db.project_is_archived(&access.scope).await? {
+        return Err(IssueError::NotFound);
+    }
     let row = app.ports.db.work_item_row(&access.scope, id).await?.ok_or(IssueError::NotFound)?;
-    if access.role == Role::Guest && row.item.created_by != access.who.user_id && !guest_sees_all(app, access).await? {
+    if access.is_limited_guest()
+        && row.item.created_by != Some(access.who.user_id)
+        && !guest_sees_all(app, access).await?
+    {
         return Err(IssueError::NotAllowedToView);
     }
     Ok(row)
+}
+
+// --- what only the v1 API asks of a work item (issue #58) -------------------------------------------------------------------------
+
+/// The work item of the project with this number, as the pin's `issue_objects` finds it (live, and none in an archived project).
+pub async fn issue_by_sequence(app: &App, access: &IssueAccess, sequence_id: i64) -> Result<WorkItemRow, IssueError> {
+    if app.ports.db.project_is_archived(&access.scope).await? {
+        return Err(IssueError::NotFound);
+    }
+    app.ports.db.work_item_by_sequence(&access.scope, sequence_id).await?.ok_or(IssueError::NotFound)
+}
+
+/// The work item of the project that an integration gave this key, as the pin's list answers a request that names both halves.
+pub async fn issue_by_external(
+    app: &App,
+    access: &IssueAccess,
+    source: &str,
+    id: &str,
+) -> Result<WorkItemRow, IssueError> {
+    app.ports.db.work_item_by_external(&access.scope, source, id).await?.ok_or(IssueError::NotFound)
+}
+
+/// The work item a change or a deletion names, as the pin's `Issue.objects` finds it: live, whatever the project's archive says.
+/// (An archived work item and a draft are found there too; this finds neither, which D-033 records.)
+pub async fn issue_to_change(app: &App, access: &IssueAccess, id: WorkItemId) -> Result<WorkItemRow, IssueError> {
+    app.ports.db.work_item_row(&access.scope, id).await?.ok_or(IssueError::NotFound)
+}
+
+/// Search the work items of the workspace's projects that the caller is in, the way the pin's search endpoint does. The text and the
+/// numbers it holds are the request layer's to work out; an empty text is no search.
+pub async fn search_issues(
+    app: &App,
+    scope: &WorkspaceScope,
+    search: WorkspaceSearch,
+) -> Result<Vec<WorkItemHit>, IssueError> {
+    if search.text.is_empty() {
+        return Ok(Vec::new());
+    }
+    Ok(app.ports.db.search_workspace_work_items(scope, &search).await?)
+}
+
+/// Delete a work item the v1 way: a project admin or the work item's maker (`OnlyAdminOrCreator` for anyone else the project lets
+/// write), and with it the work items under it. The deletion and its `work_item.deleted` event are one transaction.
+pub async fn delete_issue(app: &App, access: &IssueAccess, id: WorkItemId) -> Result<(), IssueError> {
+    let scope = access.scope;
+    let row = issue_to_change(app, access, id).await?;
+    if row.item.created_by != Some(access.who.user_id) && access.role != Role::Admin {
+        return Err(IssueError::OnlyAdminOrCreator);
+    }
+    let mut tx = app.ports.db.begin(&scope).await?;
+    let now = app.ports.clock.now();
+    let work = async {
+        if !tx.soft_delete_work_item(&scope, id, now).await? {
+            return Ok::<_, DbError>(None);
+        }
+        let row = event(
+            app,
+            scope.workspace_id(),
+            scope.user_id(),
+            "work_item.deleted",
+            id,
+            serde_json::json!({ "project_id": scope.project_id(), "changed_fields": ["deleted_at"] }),
+        );
+        tx.insert_outbox(&scope, &row).await?;
+        Ok(Some(row))
+    }
+    .await;
+    match work {
+        Ok(Some(row)) => {
+            tx.commit().await?;
+            relay_after_commit(app, row);
+            Ok(())
+        }
+        // the work item went between the read and the write
+        Ok(None) => {
+            let _ = tx.rollback().await;
+            Err(IssueError::NotFound)
+        }
+        Err(e) => {
+            let _ = tx.rollback().await;
+            Err(e.into())
+        }
+    }
 }
 
 // --- changing a work item (X03) ------------------------------------------------------------------------------------------------
@@ -398,9 +558,15 @@ pub enum Ask {
         sent: Option<String>,
         date: Option<NaiveDate>,
     },
-    /// Another work item as the parent: one of the project's is not supported yet (deviation D-028), one that is not there is a
-    /// [`FieldProblem`].
-    Parent(Uuid),
+    /// Another work item as the parent, or none (null). The compat plane has none to give (deviation D-028): a work item of the
+    /// project is refused as not supported yet there. Either way one that is not there is a [`FieldProblem`].
+    Parent(Option<Uuid>),
+    /// Plane's `point` (0 to 12), or none; the history records no row of it (D-033).
+    Point(Option<i32>),
+    /// The key an integration gave the item, a half at a time (the request names the halves it names); the history records no row
+    /// of it (D-033). The request layer has checked that no other item has the pair.
+    ExternalSource(Option<String>),
+    ExternalId(Option<String>),
     /// The people to assign. Those the project does not have as members (guests too) are not assigned, and the history says they
     /// were: the pin records what was asked.
     Assignees(Vec<UserId>),
@@ -418,6 +584,9 @@ impl Ask {
             Ask::Start { .. } => "start_date",
             Ask::Target { .. } => "target_date",
             Ask::Parent(_) => "parent_id",
+            Ask::Point(_) => "point",
+            Ask::ExternalSource(_) => "external_source",
+            Ask::ExternalId(_) => "external_id",
             Ask::Assignees(_) => "assignee_ids",
             Ask::Labels(_) => "label_ids",
         }
@@ -632,7 +801,10 @@ pub async fn update_issue(
     let mut html = before.attrs.description_html.clone();
     let mut priority = before.attrs.priority;
     let (mut start, mut target) = (before.attrs.start_date, before.attrs.target_date);
-    let (mut state_asked, mut parent): (Option<Option<Uuid>>, Option<Uuid>) = (None, None);
+    let mut state_asked: Option<Option<Uuid>> = None;
+    let (mut parent, mut point) = (before.attrs.parent_id, before.attrs.point);
+    let mut parent_asked: Option<Uuid> = None;
+    let (mut external_source, mut external_id) = (before.item.external_source.clone(), before.item.external_id.clone());
     let (mut assignees, mut labels): (Option<Vec<UserId>>, Option<Vec<Uuid>>) = (None, None);
     for ask in &update.asks {
         match ask {
@@ -642,7 +814,13 @@ pub async fn update_issue(
             Ask::State(s) => state_asked = Some(*s),
             Ask::Start { date, .. } => start = *date,
             Ask::Target { date, .. } => target = *date,
-            Ask::Parent(p) => parent = Some(*p),
+            Ask::Parent(p) => {
+                parent = *p;
+                parent_asked = *p;
+            }
+            Ask::Point(p) => point = *p,
+            Ask::ExternalSource(s) => external_source = s.clone(),
+            Ask::ExternalId(i) => external_id = i.clone(),
             Ask::Assignees(a) => assignees = Some(a.clone()),
             Ask::Labels(l) => labels = Some(l.clone()),
         }
@@ -650,16 +828,13 @@ pub async fn update_issue(
     crate::validate_name(&name)?;
 
     let states = db.project_states(&scope).await?;
-    let problems = find_problems(
-        app,
-        &scope,
-        &states,
-        state_asked.flatten(),
-        parent,
-        assignees.as_deref().unwrap_or_default(),
-        labels.as_deref().unwrap_or_default(),
-    )
-    .await?;
+    let named = Named {
+        state: state_asked.flatten(),
+        parent: parent_asked,
+        assignees: assignees.as_deref().unwrap_or_default(),
+        labels: labels.as_deref().unwrap_or_default(),
+    };
+    let problems = find_problems(app, &scope, access.surface, &states, named).await?;
     if !problems.is_empty() {
         return Err(IssueError::Fields(problems));
     }
@@ -729,6 +904,10 @@ pub async fn update_issue(
         description_html: html,
         assignee_ids: assignees,
         label_ids: kept_labels,
+        external_source,
+        external_id,
+        parent_id: parent,
+        point,
     };
     let mut tx = db.begin(&scope).await?;
     let work = async {

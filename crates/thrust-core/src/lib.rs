@@ -433,7 +433,7 @@ pub async fn create_work_item(
             description: req.description.clone(),
             external_source: req.external_source.clone(),
             external_id: req.external_id.clone(),
-            created_by: scope.user_id(),
+            created_by: Some(scope.user_id()),
             created_at: app.ports.clock.now(),
             archived_at: None,
             is_draft: false,

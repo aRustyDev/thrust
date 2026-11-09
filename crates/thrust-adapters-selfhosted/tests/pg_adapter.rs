@@ -64,7 +64,7 @@ fn item(ws: WorkspaceId, p: ProjectId, a: Allocation, name: &str, ext: Option<&s
         description: None,
         external_source: ext.map(|_| "gh".to_string()),
         external_id: ext.map(str::to_string),
-        created_by: UserId(new_id()),
+        created_by: Some(UserId(new_id())),
         created_at: Utc.timestamp_opt(1_800_000_000, 0).unwrap(),
         archived_at: None,
         is_draft: false,
@@ -2004,6 +2004,8 @@ async fn the_work_item_tables_have_the_columns_they_say_and_the_constraints_that
             ("id", uuid),
             ("is_draft", boolean),
             ("name", text),
+            ("parent_id", uuid),
+            ("point", "integer"),
             ("priority", text),
             ("project_id", uuid),
             ("sequence_id", bigint),
@@ -2130,6 +2132,32 @@ async fn the_work_item_tables_have_the_columns_they_say_and_the_constraints_that
     raw.execute(tag, &[&id, &ws.0, &project.0, &label_id]).await.unwrap();
     assert!(raw.execute(tag, &[&id, &ws.0, &project.0, &label_id]).await.is_err(), "a label twice");
     assert!(raw.execute(tag, &[&id, &ws.0, &project.0, &new_id()]).await.is_err(), "a label that is not there");
+    // a point from 0 to 12, or none (migration 0015)
+    for (point, ok) in [(Some(0), true), (Some(12), true), (None, true), (Some(13), false), (Some(-1), false)] {
+        assert_eq!(
+            raw.execute("UPDATE work_items SET point = $2 WHERE id = $1", &[&id, &point]).await.is_ok(),
+            ok,
+            "{point:?}"
+        );
+    }
+    // a parent is a work item that is there (itself too, as the pin allows), or none
+    let other = {
+        let mut tx = env.db.begin(&s).await.unwrap();
+        let a = tx.allocate(&s).await.unwrap();
+        let w = item(ws, project, a, "another", None);
+        tx.insert_work_item(&s, &w).await.unwrap();
+        tx.commit().await.unwrap();
+        w.id.0
+    };
+    for (parent, ok) in [(Some(other), true), (Some(id), true), (None, true), (Some(new_id()), false)] {
+        assert_eq!(
+            raw.execute("UPDATE work_items SET parent_id = $2 WHERE id = $1", &[&id, &parent]).await.is_ok(),
+            ok,
+            "{parent:?}"
+        );
+    }
+    // who made an item is optional (migration 0015)
+    assert!(raw.execute("UPDATE work_items SET created_by = NULL WHERE id = $1", &[&id]).await.is_ok());
 }
 
 /// A database created before migration 0013 has work items with a name, a number and a place. `migrate` gives each the pin's
@@ -2265,6 +2293,8 @@ async fn a_work_item_and_its_attributes_are_one_transaction() {
         description_html: "<p>Résumé &amp; more</p>".into(),
         assignee_ids: vec![owner, owner],
         label_ids: vec![label],
+        parent_id: None,
+        point: Some(7),
     };
     // committed: every attribute as written, the owner once, the group of the state
     let mut tx = env.db.begin(&s).await.unwrap();
@@ -3141,6 +3171,10 @@ async fn an_update_replaces_the_join_rows_of_the_people_and_labels_it_names_and_
         description_html: "<p></p>".into(),
         assignee_ids: people,
         label_ids: labels,
+        external_source: None,
+        external_id: None,
+        parent_id: None,
+        point: None,
     };
     let run = |id: WorkItemId, u: WorkItemUpdate| {
         let env = &env;
@@ -3194,6 +3228,10 @@ async fn an_update_sees_what_its_own_transaction_wrote() {
         description_html: "<p>x</p>".into(),
         assignee_ids: Some(vec![owner]),
         label_ids: None,
+        external_source: None,
+        external_id: None,
+        parent_id: None,
+        point: None,
     };
     // inserted and updated in one transaction
     let mut tx = env.db.begin(&s).await.unwrap();
@@ -3268,6 +3306,10 @@ async fn an_update_finds_a_live_work_item_of_the_scopes_own_project_alone() {
         description_html: "<p>after</p>".into(),
         assignee_ids: Some(vec![owner]),
         label_ids: None,
+        external_source: None,
+        external_id: None,
+        parent_id: None,
+        point: None,
     };
     let try_update = |scope: Scope, id: WorkItemId| {
         let (env, update) = (&env, &update);
@@ -3306,6 +3348,321 @@ async fn an_update_finds_a_live_work_item_of_the_scopes_own_project_alone() {
         (row.item.name.as_str(), row.attrs.priority, row.attrs.assignee_ids),
         ("after", Priority::Urgent, vec![owner])
     );
+}
+
+// --- work items of the v1 API (issue #58, migration 0015) ---------------------------------------------------------------------
+// The memory adapter is held to the same answers by `tests/work_items_v1.rs` in its own crate.
+
+/// A work item of the scope's project, numbered from its counter, with the attributes `edit` makes of the bare ones, committed.
+async fn put_item(
+    env: &Env,
+    s: Scope,
+    name: &str,
+    edit: impl FnOnce(&mut WorkItem, &mut WorkItemAttrs),
+) -> Result<WorkItemId, DbError> {
+    let mut tx = env.db.begin(&s).await.unwrap();
+    let a = tx.allocate(&s).await.unwrap();
+    let mut w = item(s.workspace_id(), s.project_id(), a, name, None);
+    w.created_at = Utc.timestamp_opt(1_800_000_000 + a.sequence_id * 100, 0).unwrap();
+    // made by the person the scope is for, as a creation is
+    w.created_by = Some(s.user_id());
+    let mut attrs = WorkItemAttrs::bare(w.created_at);
+    edit(&mut w, &mut attrs);
+    let id = w.id;
+    tx.insert_work_item(&s, &w).await.unwrap();
+    let put = tx.insert_work_item_attrs(&s, id, &attrs).await;
+    match put {
+        Ok(()) => {
+            tx.commit().await.unwrap();
+            Ok(id)
+        }
+        Err(e) => {
+            tx.rollback().await.unwrap();
+            Err(e)
+        }
+    }
+}
+
+/// The whole update of an item as it stands, with the v1 API's columns set as given.
+fn whole(
+    r: &WorkItemRow,
+    parent: Option<Uuid>,
+    point: Option<i32>,
+    key: Option<(&str, &str)>,
+    by: UserId,
+) -> WorkItemUpdate {
+    WorkItemUpdate {
+        name: r.item.name.clone(),
+        state_id: r.attrs.state_id,
+        priority: r.attrs.priority,
+        start_date: r.attrs.start_date,
+        target_date: r.attrs.target_date,
+        completed_at: r.attrs.completed_at,
+        updated_at: Utc.timestamp_opt(1_800_001_000, 0).unwrap(),
+        updated_by: by,
+        description_html: r.attrs.description_html.clone(),
+        assignee_ids: None,
+        label_ids: None,
+        external_source: key.map(|k| k.0.to_string()),
+        external_id: key.map(|k| k.1.to_string()),
+        parent_id: parent,
+        point,
+    }
+}
+
+/// `update_work_item` in a transaction of its own: committed when it answered, rolled back (as the core does) when it refused.
+async fn update_item(env: &Env, s: Scope, id: WorkItemId, u: &WorkItemUpdate) -> Result<bool, DbError> {
+    let mut tx = env.db.begin(&s).await.unwrap();
+    match tx.update_work_item(&s, id, u).await {
+        Ok(found) => {
+            tx.commit().await.unwrap();
+            Ok(found)
+        }
+        Err(e) => {
+            tx.rollback().await.unwrap();
+            Err(e)
+        }
+    }
+}
+
+async fn delete_item(env: &Env, s: Scope, id: WorkItemId) -> bool {
+    let mut tx = env.db.begin(&s).await.unwrap();
+    let found = tx.soft_delete_work_item(&s, id, Utc.timestamp_opt(1_800_002_000, 0).unwrap()).await.unwrap();
+    tx.commit().await.unwrap();
+    found
+}
+
+/// A parent, a point and a key are stored and read back; a maker may be missing; what the constraints refuse (a point outside 0 to
+/// 12, a parent that is no work item) is refused and writes nothing; a key that another live item has is a conflict, and one that a
+/// deleted item had is free.
+#[tokio::test]
+async fn a_work_item_has_a_parent_a_point_and_a_key_and_a_maker_that_may_be_missing() {
+    let env = env().await;
+    let (_, _, owner, s) = project_with_states(&env, "wi-attrs").await;
+    let parent = put_item(&env, s, "parent", |_, _| {}).await.unwrap();
+    let child = put_item(&env, s, "child", |w, a| {
+        a.parent_id = Some(parent.0);
+        a.point = Some(12);
+        w.external_source = Some("gh".into());
+        w.external_id = Some("7".into());
+    })
+    .await
+    .unwrap();
+    let r = env.db.work_item_row(&s, child).await.unwrap().unwrap();
+    assert_eq!((r.attrs.parent_id, r.attrs.point), (Some(parent.0), Some(12)));
+    assert_eq!((r.item.external_source.as_deref(), r.item.external_id.as_deref()), (Some("gh"), Some("7")));
+    // nobody made this one: it is stored and read, and it is no one person's for a page asked for by maker
+    let nobody = put_item(&env, s, "nobody's", |w, _| w.created_by = None).await.unwrap();
+    assert_eq!(env.db.work_item_row(&s, nobody).await.unwrap().unwrap().item.created_by, None);
+    let order = WorkItemOrder { field: WorkItemOrderField::SequenceId, descending: false };
+    let by_one = WorkItemQuery { order, limit: 10, page: 0, updated_after: None, created_by: Some(owner) };
+    let page = env.db.work_item_page(&s, &by_one).await.unwrap();
+    assert!(page.rows.iter().all(|r| r.item.created_by == Some(owner)) && page.total == 2, "{page:?}");
+
+    // refused, in a creation (the item is not left behind) and in an update
+    for (point, parent) in [(Some(13), None), (Some(-1), None), (None, Some(new_id()))] {
+        let got = put_item(&env, s, "refused", |_, a| {
+            a.point = point;
+            a.parent_id = parent;
+        })
+        .await;
+        assert!(got.is_err(), "{point:?} {parent:?}");
+        let got =
+            update_item(&env, s, child, &whole(&r, parent.or(r.attrs.parent_id), point.or(r.attrs.point), None, owner))
+                .await;
+        assert!(got.is_err(), "{point:?} {parent:?}");
+        assert_eq!(env.db.work_item_row(&s, child).await.unwrap().unwrap(), r, "nothing was written");
+    }
+    assert_eq!(env.db.list_work_items(&s, Visibility::Visible).await.unwrap().len(), 3);
+
+    // a key that another live item has is a conflict, and a key the item has is its own
+    let other = put_item(&env, s, "other", |_, _| {}).await.unwrap();
+    let o = env.db.work_item_row(&s, other).await.unwrap().unwrap();
+    let got = update_item(&env, s, other, &whole(&o, None, None, Some(("gh", "7")), owner)).await;
+    assert!(matches!(got, Err(DbError::Conflict(_))), "{got:?}");
+    assert!(update_item(&env, s, child, &whole(&r, Some(parent.0), Some(12), Some(("gh", "7")), owner)).await.unwrap());
+    // once the holder is deleted the key is free
+    assert!(delete_item(&env, s, child).await);
+    assert!(update_item(&env, s, other, &whole(&o, None, None, Some(("gh", "7")), owner)).await.unwrap());
+}
+
+/// A work item is found by its number and by its integration key when it is live and of the scope's own project, and by nothing else.
+#[tokio::test]
+async fn a_work_item_is_found_by_its_number_and_its_key_when_it_is_live_and_of_the_scopes_own_project() {
+    let env = env().await;
+    let (_, _, _, s) = project_with_states(&env, "wi-lookups").await;
+    let key = |source: &'static str, id: &'static str| {
+        move |w: &mut WorkItem, _: &mut WorkItemAttrs| {
+            w.external_source = Some(source.into());
+            w.external_id = Some(id.into());
+        }
+    };
+    let live = put_item(&env, s, "live", key("gh", "1")).await.unwrap();
+    let archived = put_item(&env, s, "archived", |w, _| {
+        w.archived_at = Some(Utc.timestamp_opt(1_800_000_050, 0).unwrap());
+        w.external_source = Some("gh".into());
+        w.external_id = Some("2".into());
+    })
+    .await
+    .unwrap();
+    let draft = put_item(&env, s, "draft", |w, _| {
+        w.is_draft = true;
+        w.external_source = Some("gh".into());
+        w.external_id = Some("3".into());
+    })
+    .await
+    .unwrap();
+    let deleted = put_item(&env, s, "deleted", key("gh", "4")).await.unwrap();
+    assert!(delete_item(&env, s, deleted).await);
+    let number = |id: WorkItemId| {
+        let env = &env;
+        async move { env.db.get_work_item(&s, id, Visibility::WithDeleted).await.unwrap().unwrap().sequence_id }
+    };
+    let by_number = |s: Scope, n: i64| {
+        let env = &env;
+        async move { env.db.work_item_by_sequence(&s, n).await.unwrap().map(|r| r.item.id) }
+    };
+    let by_key = |s: Scope, source: &'static str, id: &'static str| {
+        let env = &env;
+        async move { env.db.work_item_by_external(&s, source, id).await.unwrap().map(|r| r.item.id) }
+    };
+    assert_eq!(by_number(s, number(live).await).await, Some(live));
+    assert_eq!(by_key(s, "gh", "1").await, Some(live));
+    for (gone, i) in [(archived, "2"), (draft, "3"), (deleted, "4")] {
+        assert_eq!(by_number(s, number(gone).await).await, None, "{gone:?} is not live");
+        assert_eq!(by_key(s, "gh", i).await, None, "{gone:?} is not live");
+    }
+    assert_eq!((by_key(s, "GH", "1").await, by_key(s, "gh", "11").await, by_number(s, 999).await), (None, None, None));
+    // another project's scope finds neither
+    let (_, _, _, other) = project_with_states(&env, "wi-lookups-2").await;
+    assert_eq!((by_number(other, number(live).await).await, by_key(other, "gh", "1").await), (None, None));
+}
+
+/// A deleted work item is marked, and not removed, together with the live work items under it (the walk ends on a work item that is
+/// its own parent, and on a loop); an archived work item and a draft are there to delete, though a read does not find them; and
+/// nothing outside the project is touched.
+#[tokio::test]
+async fn a_deleted_work_item_takes_the_work_items_under_it_and_ends_on_a_loop() {
+    let env = env().await;
+    let (_, _, owner, s) = project_with_states(&env, "wi-delete").await;
+    let under = |p: WorkItemId| move |_: &mut WorkItem, a: &mut WorkItemAttrs| a.parent_id = Some(p.0);
+    let root = put_item(&env, s, "root", |_, _| {}).await.unwrap();
+    let child = put_item(&env, s, "child", under(root)).await.unwrap();
+    let grandchild = put_item(&env, s, "grandchild", under(child)).await.unwrap();
+    let sibling = put_item(&env, s, "sibling", |_, _| {}).await.unwrap();
+    let (_, _, _, elsewhere_scope) = project_with_states(&env, "wi-delete-2").await;
+    let elsewhere = put_item(&env, elsewhere_scope, "elsewhere", |_, _| {}).await.unwrap();
+    let there = |id: WorkItemId, s: Scope| {
+        let env = &env;
+        async move { env.db.work_item_row(&s, id).await.unwrap().is_some() }
+    };
+
+    assert!(delete_item(&env, s, child).await);
+    assert!(!there(child, s).await && !there(grandchild, s).await, "the child and what is under it go");
+    assert!(there(root, s).await && there(sibling, s).await && there(elsewhere, elsewhere_scope).await);
+    // the rows stay, marked, and a second deletion, another project's item and one that is nowhere are not there
+    let raw = env.conn.raw().await.unwrap();
+    let marked: i64 = raw
+        .query_one(
+            "SELECT count(*) FROM work_items WHERE project_id = $1 AND deleted_at IS NOT NULL",
+            &[&s.project_id().0],
+        )
+        .await
+        .unwrap()
+        .get(0);
+    assert_eq!(marked, 2);
+    assert!(!delete_item(&env, s, child).await);
+    assert!(!delete_item(&env, s, elsewhere).await);
+    assert!(!delete_item(&env, s, WorkItemId(new_id())).await);
+
+    // a work item that is its own parent, and two that are each other's: the walk ends, and takes the whole loop
+    let (a, b) = (put_item(&env, s, "a", |_, _| {}).await.unwrap(), put_item(&env, s, "b", |_, _| {}).await.unwrap());
+    let r = |id: WorkItemId| {
+        let env = &env;
+        async move { env.db.work_item_row(&s, id).await.unwrap().unwrap() }
+    };
+    assert!(update_item(&env, s, a, &whole(&r(a).await, Some(a.0), None, None, owner)).await.unwrap());
+    assert!(update_item(&env, s, b, &whole(&r(b).await, Some(a.0), None, None, owner)).await.unwrap());
+    assert!(update_item(&env, s, a, &whole(&r(a).await, Some(b.0), None, None, owner)).await.unwrap());
+    assert!(delete_item(&env, s, b).await);
+    assert!(!there(a, s).await && !there(b, s).await, "the loop goes whole, from either end");
+    assert!(there(root, s).await);
+
+    // an archived item and a draft are there to delete, though a read does not find them
+    let archived =
+        put_item(&env, s, "archived", |w, _| w.archived_at = Some(Utc.timestamp_opt(1_800_000_050, 0).unwrap()))
+            .await
+            .unwrap();
+    let draft = put_item(&env, s, "draft", |w, _| w.is_draft = true).await.unwrap();
+    assert!(delete_item(&env, s, archived).await && delete_item(&env, s, draft).await);
+    assert!(!delete_item(&env, s, archived).await);
+}
+
+/// The search finds, among the live work items of the workspace's projects that the caller is in and that are not archived, those
+/// whose name or project identifier contains the text in any case or whose number is asked for, newest first, with `%` and `_` as
+/// ordinary characters.
+#[tokio::test]
+async fn the_workspace_search_finds_what_a_name_an_identifier_or_a_number_says_in_the_callers_own_live_projects() {
+    let env = env().await;
+    let (ws, first, owner, s1) = project_with_states(&env, "wi-search").await;
+    let second = project_for(ws, owner, "Second", "SEC");
+    env.db.insert_project(&WorkspaceScope::mint(ws, owner, Role::Admin), &second).await.unwrap();
+    let s2 = Scope::mint(ws, second.project.id, owner);
+    put_item(&env, s1, "Alpha login", |_, _| {}).await.unwrap();
+    put_item(&env, s1, "Beta sign-up", |_, _| {}).await.unwrap();
+    put_item(&env, s1, "100% done_ish", |_, _| {}).await.unwrap();
+    put_item(&env, s1, "Archived login", |w, _| w.archived_at = Some(Utc.timestamp_opt(1_800_000_050, 0).unwrap()))
+        .await
+        .unwrap();
+    put_item(&env, s1, "Draft login", |w, _| w.is_draft = true).await.unwrap();
+    let gone = put_item(&env, s1, "Deleted login", |_, _| {}).await.unwrap();
+    assert!(delete_item(&env, s1, gone).await);
+    // made later than every item of the first project, so that "newest first" has no tie to break
+    put_item(&env, s2, "Second login", |w, _| w.created_at = Utc.timestamp_opt(1_800_005_000, 0).unwrap())
+        .await
+        .unwrap();
+
+    let ws_scope = |user: UserId| WorkspaceScope::mint(ws, user, Role::Member);
+    let search = |user: UserId, text: &str, numbers: Vec<i64>, project: Option<ProjectId>, limit: u32| {
+        let (env, text) = (&env, text.to_string());
+        async move {
+            let q = WorkspaceSearch { text, numbers, project, limit };
+            env.db.search_workspace_work_items(&ws_scope(user), &q).await.unwrap()
+        }
+    };
+    let names = |hits: Vec<WorkItemHit>| hits.into_iter().map(|h| h.name).collect::<Vec<_>>();
+    // a name, in any case; the second project's item was made later, so it is first
+    assert_eq!(names(search(owner, "LOGIN", vec![], None, 10).await), ["Second login", "Alpha login"]);
+    // a project narrows it, and one the caller is not in has no hits (a stranger is in no project)
+    assert_eq!(names(search(owner, "login", vec![], Some(first), 10).await), ["Alpha login"]);
+    let stranger = user_without_login(&env).await;
+    assert!(search(stranger, "login", vec![], None, 10).await.is_empty());
+    // a number is a work item's number in any project the caller is in
+    assert_eq!(names(search(owner, "no such text", vec![1], None, 10).await), ["Second login", "Alpha login"]);
+    // `%` and `_` are ordinary characters
+    assert_eq!(names(search(owner, "100%", vec![], None, 10).await), ["100% done_ish"]);
+    assert_eq!(names(search(owner, "done_ish", vec![], None, 10).await), ["100% done_ish"]);
+    assert!(search(owner, "a_b", vec![], None, 10).await.is_empty());
+    assert_eq!(search(owner, "login", vec![], None, 1).await.len(), 1);
+    // the identifier of a project is what a hit says, and what a search finds
+    let hits = search(owner, "sta", vec![], None, 10).await;
+    assert_eq!(hits.len(), 3, "every live item of the first project, whatever it is called");
+    let slug = w1_slug(&env, ws).await;
+    assert!(hits.iter().all(|h| h.project_identifier == "STA" && h.project_id == first && h.workspace_slug == slug));
+    // an archived project is not searched
+    let admin = WorkspaceScope::mint(ws, owner, Role::Admin);
+    let mut p = env.db.project_detail(&admin, second.project.id).await.unwrap().unwrap().listing.project;
+    p.archived_at = Some(Utc.timestamp_opt(1_800_000_900, 0).unwrap());
+    assert!(env.db.update_project(&admin, &p).await.unwrap());
+    assert_eq!(names(search(owner, "login", vec![], None, 10).await), ["Alpha login"]);
+}
+
+/// The slug a workspace was made with (a hit says it).
+async fn w1_slug(env: &Env, ws: WorkspaceId) -> WorkspaceSlug {
+    let raw = env.conn.raw().await.unwrap();
+    WorkspaceSlug::new(
+        raw.query_one("SELECT slug FROM workspaces WHERE id = $1", &[&ws.0]).await.unwrap().get::<_, String>(0),
+    )
 }
 
 // --- labels (issue #58, migration 0015) ---------------------------------------------------------------------------------------

@@ -62,7 +62,7 @@ fn put_item(w: &World, scope: &Scope, n: u128, state: Uuid, archived: bool) {
         description: None,
         external_source: None,
         external_id: None,
-        created_by: scope.user_id(),
+        created_by: Some(scope.user_id()),
         created_at: now,
         archived_at: archived.then_some(now),
         is_draft: false,

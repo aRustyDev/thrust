@@ -150,12 +150,12 @@ async fn a_cookie_authenticated_mutation_needs_the_csrf_token() {
     let ok = create(Csrf::Matching).send().await.unwrap();
     assert_eq!(ok.status(), 201, "the same mutation with the token");
     let created: WorkItem = ok.json().await.unwrap();
-    assert_eq!(created.created_by, f.member_a.id, "created as the session's user");
+    assert_eq!(created.created_by, Some(f.member_a.id), "created as the session's user");
 
     // controls: the token is only asked of a cookie-authenticated mutation. A bearer token is not an ambient credential,
     // so the same mutation without the token succeeds; a safe request with the cookie needs none.
     let bearer = create_ok(&t, &f.member_a, &f.a, "from a bearer token").await;
-    assert_eq!(bearer.created_by, f.member_a.id);
+    assert_eq!(bearer.created_by, Some(f.member_a.id));
     let safe = as_browser(&t, Method::GET, t.url(&wi_path(&f.a)), &s, Csrf::Absent).send().await.unwrap();
     assert_eq!(safe.status(), 200);
     // a delete is a mutation too
@@ -197,7 +197,7 @@ async fn csrf_off_a_cookie_authenticated_mutation_needs_no_token() {
         let r = create(csrf).send().await.unwrap();
         assert_eq!(r.status(), 201, "{what}");
         let item: WorkItem = r.json().await.unwrap();
-        assert_eq!(item.created_by, f.member_a.id, "created as the session's user ({what})");
+        assert_eq!(item.created_by, Some(f.member_a.id), "created as the session's user ({what})");
         created.push(item.id);
     }
     let rows: Vec<WorkItem> = list(&t, &f.member_a, &f.a, None).await.json().await.unwrap();
@@ -472,7 +472,7 @@ async fn an_api_key_is_shown_once_and_authenticates_as_x_api_key() {
         .await
         .unwrap();
     assert_eq!(r.status(), 201);
-    assert_eq!(r.json::<WorkItem>().await.unwrap().created_by, f.member_a.id);
+    assert_eq!(r.json::<WorkItem>().await.unwrap().created_by, Some(f.member_a.id));
     let me = t.http.get(auth_url(&t, "/session")).header(API_KEY_HEADER, &key.token).send().await.unwrap();
     assert_eq!(
         me.json::<SessionInfo>().await.unwrap(),

@@ -70,7 +70,8 @@ fn issue_json(r: &WorkItemRow, shape: Shape) -> Value {
     put("target_date", date_or_null(a.target_date));
     put("sequence_id", json!(i.sequence_id));
     put("project_id", json!(i.project_id.0));
-    put("parent_id", Value::Null);
+    // only the v1 API gives a work item a parent (the compat plane refuses one, D-028), and what it gave is what is shown
+    put("parent_id", json!(a.parent_id));
     put("cycle_id", Value::Null);
     put("module_ids", json!([]));
     put("label_ids", json!(a.label_ids));
@@ -78,7 +79,7 @@ fn issue_json(r: &WorkItemRow, shape: Shape) -> Value {
     put("sub_issues_count", Value::Null);
     put("created_at", json!(ts(i.created_at)));
     put("updated_at", json!(ts(a.updated_at)));
-    put("created_by", json!(i.created_by.0));
+    put("created_by", json!(i.created_by.map(|u| u.0)));
     put("updated_by", id_or_null(a.updated_by));
     put("attachment_count", Value::Null);
     put("link_count", Value::Null);
@@ -101,7 +102,8 @@ fn issue_json(r: &WorkItemRow, shape: Shape) -> Value {
 /// A refusal of a work item route, in the words of the pin's guard.
 fn refusal(e: IssueError) -> PlaneError {
     match e {
-        IssueError::Forbidden => refused_by_decorator(),
+        // (`OnlyAdminOrCreator` is only the v1 API's deletion; the compat plane never meets it)
+        IssueError::Forbidden | IssueError::OnlyAdminOrCreator => refused_by_decorator(),
         IssueError::NotFound => missing_object(),
         IssueError::NotAllowedToView => {
             PlaneError::Forbidden(json!({"error": "You are not allowed to view this issue"}))
@@ -669,7 +671,7 @@ fn issue_update(members: &[(String, Value)]) -> Result<(IssueUpdate, Texts), Fie
             "parent_id" => match key_field(v) {
                 Ok(Some((text, id))) => {
                     texts.parent = text;
-                    update.asks.push(Ask::Parent(id));
+                    update.asks.push(Ask::Parent(Some(id)));
                 }
                 // no parent now and none asked for: nothing to say
                 Ok(None) => {}

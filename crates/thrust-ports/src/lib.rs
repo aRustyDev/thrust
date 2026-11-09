@@ -1006,6 +1006,25 @@ pub trait Database: Send + Sync {
     /// are ordinary characters; it is not empty (the use-case refuses that). Spike 0002, ADR-0083.
     async fn search_work_items(&self, scope: &Scope, query: &str, limit: u32) -> Result<Vec<WorkItem>, DbError>;
 
+    /// The live work item (not deleted, archived or a draft) of the scope's project that has this number, with its attributes.
+    async fn work_item_by_sequence(&self, scope: &Scope, sequence_id: i64) -> Result<Option<WorkItemRow>, DbError>;
+
+    /// The live work item of the scope's project that an integration gave this key, with its attributes.
+    async fn work_item_by_external(
+        &self,
+        scope: &Scope,
+        source: &str,
+        id: &str,
+    ) -> Result<Option<WorkItemRow>, DbError>;
+
+    /// Search the work items of every project of the scope's workspace that the caller is an active member of and that is not
+    /// archived (Plane's `IssueSearchEndpoint`): newest first (by `created_at`, then number, descending), at most `q.limit`.
+    async fn search_workspace_work_items(
+        &self,
+        scope: &WorkspaceScope,
+        q: &WorkspaceSearch,
+    ) -> Result<Vec<WorkItemHit>, DbError>;
+
     /// Bulk path behind `/internal/seed-work-items` (test and bench support, like `seed`): insert `items` as live work
     /// items of one project, numbered from the project's own counter in one transaction, so the numbers continue after
     /// whatever is there and stay unique and never reused (ADR-0043: a bulk path calls the same allocator). Returns the
@@ -1088,6 +1107,9 @@ pub trait Tx: Send {
         id: WorkItemId,
         update: &WorkItemUpdate,
     ) -> Result<bool, DbError>;
+    /// Mark a live work item deleted, and with it every live work item under it (a work item may have a parent: the pin's background
+    /// task deletes the sub-issues with their parent, and a loop or a self-parent must end the walk). `false` when the scope's project
+    /// has no such live work item (an archived one or a draft is one that is there to delete, as the pin's `Issue.objects` has it).
     async fn soft_delete_work_item(&mut self, scope: &Scope, id: WorkItemId, at: Timestamp) -> Result<bool, DbError>;
     async fn insert_outbox(&mut self, scope: &Scope, row: &OutboxRow) -> Result<(), DbError>;
     async fn commit(self: Box<Self>) -> Result<(), DbError>;
@@ -1151,6 +1173,30 @@ pub struct WorkItemQuery {
     pub updated_after: Option<Timestamp>,
     /// Only the items this person made (a guest who may not see the others').
     pub created_by: Option<UserId>,
+}
+
+/// What a search of a workspace's work items asks (issue #58). A work item matches when its name, or the identifier of its project,
+/// contains `text` in any case, or its number is one of `numbers`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct WorkspaceSearch {
+    /// Literal text (a `%` or a `_` in it is an ordinary character); not empty.
+    pub text: String,
+    /// The whole numbers the text holds: the work item numbers that match.
+    pub numbers: Vec<i64>,
+    /// Only the work items of this project.
+    pub project: Option<ProjectId>,
+    pub limit: u32,
+}
+
+/// A work item a search found: what the pin's search answers with.
+#[derive(Debug, Clone, PartialEq)]
+pub struct WorkItemHit {
+    pub id: WorkItemId,
+    pub name: String,
+    pub sequence_id: i64,
+    pub project_id: ProjectId,
+    pub project_identifier: String,
+    pub workspace_slug: WorkspaceSlug,
 }
 
 /// One page of work items.

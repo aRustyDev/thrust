@@ -93,7 +93,7 @@ fn seed_item_by(c: &Cast, who: Caller, name: &str) -> String {
         description: None,
         external_source: None,
         external_id: None,
-        created_by: c.user(who),
+        created_by: Some(c.user(who)),
         created_at: at(1),
         archived_at: None,
         is_draft: false,
