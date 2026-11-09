@@ -153,8 +153,11 @@ The plan records decisions and work about infrastructure that is not in this rep
   whose chain both VPC services verify (`verify_ca`; `thrust-pg-dev` since 2026-11-06, `thrust-pg` since
   2026-11-07, measured). That check does not tell Thrust's database from any other holder of an Origin CA
   certificate, so it narrows who can terminate the hop rather than proving the peer. The ADR named closing this as
-  a condition for holding real data (Q-0094.9); the infrastructure side is done. This repository contains only the
-  adapter side (`HyperdriveConnector`).
+  a condition for holding real data (Q-0094.9); the infrastructure side is done, in that sense. On 2026-11-09 the
+  owner decided to keep `verify_ca` rather than move to `verify_full` (infrastructure ADR 0024), accepting that
+  residual for an internal tool. The decision is reopened when Thrust holds real customer data, among other
+  triggers listed in Q-0094.9, so that sense of "done" does not carry over to real data. This repository contains
+  only the adapter side (`HyperdriveConnector`).
 - **The self-hosted twin and the Cloudflare topology** (ADR-0091 and ADR-0090) are only proposed.
 
 The ADRs are in `.agents/plans/contrail/adrs/infra/` and `.agents/plans/contrail/adrs/cd/`.
