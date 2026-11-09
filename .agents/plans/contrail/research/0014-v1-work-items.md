@@ -3,7 +3,7 @@
 Source: the pin `oracle/v1-pin-20261018` (`apps/api/plane/api/views/issue.py`, `api/serializers/issue.py`, `db/models/issue.py`,
 `api/views/base.py`, `utils/paginator.py`, `utils/order_queryset.py`) and the corpus `tools/oracle-v1/corpus/work_items.json`. The
 states and labels notes are in 0013. This note is the second stacked PR's design: what the pin does, what is built on what exists, and
-what is a departure (D-033, to be proposed).
+what is a departure (D-033, confirmed by the owner 2026-11-09).
 
 ## 1. The 14 operations
 
@@ -80,17 +80,17 @@ parent, and is made by a v1 permission (a guest may not change an item they made
    `parent_id` (self reference, same project, checked by the use-case) and `point` (0 to 12, a check) are added. `WorkItem.created_by`
    is an `Option`, which touches the compat plane's reads.
 2. **Stored.** name, description, priority, state, parent, point, the two dates, assignees, labels and the external key. **Read and
-   checked as the serializer does, and not stored** (D-033, proposed): `created_at`, `created_by` (so a key cannot forge who made an
+   checked as the serializer does, and not stored** (D-033, confirmed): `created_at`, `created_by` (so a key cannot forge who made an
    item), `deleted_at`, `archived_at`, `is_draft`, `sequence_id`, `sort_order` on a creation, `type_id`, `estimate_point` (no such
    rows here: any value but null is the `Invalid pk` of a row that is not there).
 3. **Parents.** A work item may have a parent that is a work item of the same project (the pin allows archived and draft ones, and
    itself). The compat plane keeps refusing one (D-028 stays for its writes; its reads now show a parent that v1 set).
 4. **Order by `labels__name`, `assignees__first_name` and `issue_module__module__name`** are not offered by the compat adapters; a
-   request for one is ordered by `-created_at` (D-033, proposed) unless building them proves cheap.
+   request for one is ordered by `-created_at` (D-033, confirmed) unless building them proves cheap.
 5. **Sub-issues on delete.** The pin's background task deletes the sub-issues with their parent; here the items under a deleted
    item are deleted with it in the same transaction, as the labels' cascade is.
 6. **`expand`** is built for `state`, `assignees` and `labels` (the corpus has them); the base serializer's other expansions are
-   ignored (D-033, proposed), as for states and labels (D-032).
+   ignored (D-033, confirmed), as for states and labels (D-032).
 
 ## 5. Stages (one commit each, tests with each)
 
