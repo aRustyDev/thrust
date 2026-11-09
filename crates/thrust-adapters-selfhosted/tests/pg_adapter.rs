@@ -3903,3 +3903,203 @@ async fn migration_0015_replaces_the_label_name_constraint_once_and_a_restart_ke
     assert_eq!(oid().await, before, "a restart made the index again");
     assert_eq!(constraints().await, 0, "a restart made the constraint again");
 }
+
+// --- the oracle's seed and `reset` (issue #58) --------------------------------------------------------------------------------
+
+/// The oracle's seed (`thrust-oracle-fixture`), made at a fixed instant: two projects, their states and labels, eleven work items
+/// with people, labels, a parent and dates, and the numbers and places the oracle's Plane gave them.
+fn oracle_fixture() -> SeedFixture {
+    thrust_oracle_fixture::oracle_seed(Utc.timestamp_opt(1_800_000_000, 0).unwrap()).fixture
+}
+
+/// Each table of the `public` schema and how many rows it has, by name: the schema as the migrations made it, so that a table a later
+/// migration adds is counted without this test being told.
+async fn row_counts(raw: &tokio_postgres::Client) -> Vec<(String, i64)> {
+    let tables =
+        raw.query("SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename", &[]).await.unwrap();
+    let mut out = Vec::new();
+    for t in tables {
+        let name: String = t.get(0);
+        let n: i64 = raw.query_one(&format!("SELECT count(*) FROM \"{name}\""), &[]).await.unwrap().get(0);
+        out.push((name, n));
+    }
+    out
+}
+
+fn sorted_ids<T: Ord + Clone>(v: &[T]) -> Vec<T> {
+    let mut out = v.to_vec();
+    out.sort();
+    out.dedup();
+    out
+}
+
+/// A database turns the oracle's fixture into the rows it says: each work item with its number, place, text, time, state, priority,
+/// dates, people, labels and parent; each project with its key, description and default state; and each project's counters carry on
+/// from the largest number and place of its items (the project's next number is 10 and the next place after the largest, as the
+/// oracle's own next create was).
+#[tokio::test]
+async fn the_oracles_seed_is_stored_as_it_was_given() {
+    let env = env().await;
+    let f = oracle_fixture();
+    env.db.seed(&SystemScope::mint(), &f).await.unwrap();
+    for w in &f.work_items {
+        let s = scope(w.workspace_id, w.project_id);
+        let row = env.db.work_item_row(&s, w.id).await.unwrap().unwrap_or_else(|| panic!("{} is not there", w.name));
+        let which = &w.name;
+        assert_eq!(row.item.sequence_id, w.sequence_id, "{which}: number");
+        assert_eq!(row.item.sort_order, w.sort_order, "{which}: place");
+        assert_eq!(row.item.name, w.name);
+        assert_eq!(row.item.description, w.description, "{which}: description");
+        assert_eq!(row.item.created_by, w.created_by, "{which}: maker");
+        assert_eq!(row.item.created_at, w.created_at, "{which}: made at");
+        assert_eq!(row.attrs.state_id, w.state_id, "{which}: state");
+        assert_eq!(row.attrs.priority, w.priority, "{which}: priority");
+        assert_eq!(row.attrs.start_date, w.start_date, "{which}: start");
+        assert_eq!(row.attrs.target_date, w.target_date, "{which}: target");
+        assert_eq!(row.attrs.completed_at, w.completed_at, "{which}: completed at");
+        assert_eq!(row.attrs.description_html, w.description_html, "{which}: description_html");
+        assert_eq!(row.attrs.parent_id, w.parent_id, "{which}: parent");
+        assert_eq!(row.attrs.assignee_ids, sorted_ids(&w.assignee_ids), "{which}: people");
+        assert_eq!(row.attrs.label_ids, sorted_ids(&w.label_ids), "{which}: labels");
+        let group = w.state_id.and_then(|st| f.states.iter().find(|x| x.id == st)).map(|x| x.group);
+        assert_eq!(row.state_group, group, "{which}: the group of its state");
+    }
+
+    // the projects' own columns
+    let raw = env.conn.raw().await.unwrap();
+    for d in &f.project_details {
+        let r = raw
+            .query_one("SELECT description, default_state, identifier FROM projects WHERE id = $1", &[&d.project_id.0])
+            .await
+            .unwrap();
+        assert_eq!(r.get::<_, String>(0), d.description);
+        assert_eq!(r.get::<_, Option<Uuid>>(1), d.default_state);
+        assert_eq!(Some(r.get::<_, String>(2)), d.identifier);
+    }
+
+    // the counters: a project's next number is one past its largest, and the next place ten thousand past
+    for p in &f.projects {
+        let ours: Vec<&SeedIssue> = f.work_items.iter().filter(|w| w.project_id == p.id).collect();
+        let s = scope(p.workspace_id, p.id);
+        let mut tx = env.db.begin(&s).await.unwrap();
+        let next = tx.allocate(&s).await.unwrap();
+        assert_eq!(next.sequence_id, ours.iter().map(|w| w.sequence_id).max().unwrap() + 1, "{}: next number", p.name);
+        assert_eq!(
+            next.sort_order,
+            ours.iter().map(|w| w.sort_order).max().unwrap() + 10_000,
+            "{}: next place",
+            p.name
+        );
+        tx.rollback().await.unwrap();
+        // the largest place among the items of one state, which is what the pin puts a new item's place after
+        let backlog = f.states.iter().find(|x| x.project_id == p.id && x.is_default).unwrap().id;
+        let largest = ours.iter().filter(|w| w.state_id == Some(backlog)).map(|w| w.sort_order).max();
+        assert_eq!(env.db.max_work_item_sort_order(&s, Some(backlog)).await.unwrap(), largest);
+    }
+}
+
+/// `reset` empties every table of the database (counted from the schema, so a table that a later migration adds is counted too),
+/// leaves the tables, and what it emptied loads again to the same rows. The control is in the middle: before the reset the tables
+/// are not empty, so that "none has a row" is a result and not what a database nobody wrote to says.
+#[tokio::test]
+async fn a_reset_empties_every_table_and_the_same_fixture_loads_again() {
+    let env = env().await;
+    let raw = env.conn.raw().await.unwrap();
+    let sys = SystemScope::mint();
+    let fresh = row_counts(&raw).await;
+    assert!(fresh.len() > 20, "the schema has its tables: {fresh:?}");
+    assert!(fresh.iter().all(|(_, n)| *n == 0), "a database that was just made has no rows: {fresh:?}");
+
+    let f = oracle_fixture();
+    env.db.seed(&sys, &f).await.unwrap();
+    let loaded = row_counts(&raw).await;
+    let filled = loaded.iter().filter(|(_, n)| *n > 0).count();
+    assert!(
+        filled >= 10,
+        "the control: the oracle's fixture fills at least ten tables, and filled {filled}: {loaded:?}"
+    );
+
+    env.db.reset(&sys).await.unwrap();
+    let emptied = row_counts(&raw).await;
+    assert_eq!(
+        emptied.iter().map(|(t, _)| t).collect::<Vec<_>>(),
+        loaded.iter().map(|(t, _)| t).collect::<Vec<_>>(),
+        "the tables are all still there"
+    );
+    assert!(emptied.iter().all(|(_, n)| *n == 0), "a table still has rows: {emptied:?}");
+
+    // the same fixture, into what is left: no clash, the same rows, and the counters start from where the first load put them
+    env.db.seed(&sys, &f).await.unwrap();
+    assert_eq!(row_counts(&raw).await, loaded);
+    let p = &f.projects[0];
+    let s = scope(p.workspace_id, p.id);
+    let mut tx = env.db.begin(&s).await.unwrap();
+    let next = tx.allocate(&s).await.unwrap();
+    let largest = f.work_items.iter().filter(|w| w.project_id == p.id).map(|w| w.sequence_id).max().unwrap();
+    assert_eq!(next.sequence_id, largest + 1, "a reset left a counter behind, or took one");
+    tx.rollback().await.unwrap();
+
+    // a reset of what is already empty is no error
+    env.db.reset(&sys).await.unwrap();
+    env.db.reset(&sys).await.unwrap();
+}
+
+/// What a fixture can get wrong, one way at a time, is refused as a request would be, and a seed is all or nothing: after each
+/// refusal not one row of the fixture is left (the rows before the bad one were rolled back). Each case starts from a reset.
+#[tokio::test]
+async fn a_fixture_the_database_refuses_leaves_no_row_of_it() {
+    let env = env().await;
+    let raw = env.conn.raw().await.unwrap();
+    let sys = SystemScope::mint();
+    let nobody = Uuid::from_u128(0xDEAD_BEEF);
+    // each is: its name, what it does to the fixture, and whether the refusal is a unique key's (`Conflict`) or another constraint's
+    #[allow(clippy::type_complexity)]
+    let cases: Vec<(&str, Box<dyn Fn(&mut SeedFixture)>, bool)> = vec![
+        ("a number a project has", Box::new(|f| f.work_items[1].sequence_id = f.work_items[0].sequence_id), true),
+        ("a state that is not there", Box::new(move |f| f.work_items[0].state_id = Some(nobody)), false),
+        ("a person who is not there", Box::new(move |f| f.work_items[1].assignee_ids.push(UserId(nobody))), false),
+        ("a label that is not there", Box::new(move |f| f.work_items[1].label_ids.push(nobody)), false),
+        ("a parent that is not there", Box::new(move |f| f.work_items[0].parent_id = Some(nobody)), false),
+        ("a parent that comes after its child", Box::new(|f| f.work_items.swap(2, 5)), false),
+        (
+            "a start after the target",
+            Box::new(|f| {
+                let target = f.work_items[1].target_date.unwrap();
+                f.work_items[1].start_date = Some(target + thrust_contracts::chrono::Duration::days(1));
+            }),
+            false,
+        ),
+        (
+            "a project of another workspace",
+            Box::new(move |f| f.work_items[0].workspace_id = WorkspaceId(nobody)),
+            false,
+        ),
+        // The adapter's own refusal, not Postgres's: the transaction is not aborted when it is raised, so only a ROLLBACK undoes the
+        // rows the seed wrote before it. (When Postgres refuses, the transaction is aborted and a COMMIT would roll back by itself,
+        // so the cases above cannot tell a seed that rolls back from one that commits.)
+        (
+            "a sort order for a project that is not there",
+            Box::new(move |f| {
+                let user_id = f.users[0];
+                f.project_sort_orders.push(SeedProjectSortOrder {
+                    project_id: ProjectId(nobody),
+                    user_id,
+                    sort_order: 1.0,
+                });
+            }),
+            false,
+        ),
+    ];
+    for (name, corrupt, conflict) in cases {
+        env.db.reset(&sys).await.unwrap();
+        let mut f = oracle_fixture();
+        corrupt(&mut f);
+        let got = env.db.seed(&sys, &f).await;
+        match (&got, conflict) {
+            (Err(DbError::Conflict(_)), true) | (Err(DbError::Backend(_)), false) => {}
+            _ => panic!("{name}: expected the refusal of a constraint, got {got:?}"),
+        }
+        let left = row_counts(&raw).await;
+        assert!(left.iter().all(|(_, n)| *n == 0), "{name}: rows are left of a refused seed: {left:?}");
+    }
+}
