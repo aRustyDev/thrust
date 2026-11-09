@@ -114,6 +114,17 @@ impl IssueAccess {
         self.role
     }
 
+    /// The proof of the caller's way into the project, for the reads a surface makes beside the use-cases (the states and labels a
+    /// body names).
+    pub fn scope(&self) -> Scope {
+        self.scope
+    }
+
+    /// Who the caller is.
+    pub fn who(&self) -> &Principal {
+        &self.who
+    }
+
     /// Whether this is a guest of the compat plane, who may be limited to what they made (see [`guest_sees_all`]).
     fn is_limited_guest(&self) -> bool {
         self.surface == Surface::Compat && self.role == Role::Guest

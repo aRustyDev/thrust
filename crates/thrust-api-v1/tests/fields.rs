@@ -15,8 +15,9 @@ use proptest::prelude::*;
 use rstest::rstest;
 use serde_json::{json, Map, Value};
 use thrust_api_v1::fields::{
-    bool_field, char_field, choice_field, float_field, int_field, name_was_padded, no_such_pk, no_such_pk_shown,
-    not_a_dictionary, pk_field, read, uuid_field, FieldErrors, PkRead,
+    bool_field, char_field, choice_field, date_field, datetime_field, float_field, int_field, name_was_padded,
+    no_such_pk, no_such_pk_shown, not_a_dictionary, parse_uuid_text, pk_field, py_type_name, read, uuid_field,
+    whole_numbers, FieldErrors, PkRead,
 };
 use thrust_api_v1::{slugify, V1Error};
 use thrust_contracts::Uuid;
@@ -290,6 +291,199 @@ fn a_key_that_names_no_row_is_quoted_as_it_was_spelled() {
     // the canonical form is the key's own text
     let id: Uuid = KEY.parse().unwrap();
     assert_eq!(no_such_pk(id), no_such_pk_shown(KEY));
+}
+
+// --- dates --------------------------------------------------------------------------------------------------------------------
+
+const BAD_DATE: &str = "Date has wrong format. Use one of these formats instead: YYYY-MM-DD.";
+const BAD_DATETIME: &str =
+    "Datetime has wrong format. Use one of these formats instead: YYYY-MM-DDThh:mm[:ss[.uuuuuu]][+HH:MM|-HH:MM|Z].";
+
+/// DRF's `DateField`: the three spellings Django's `parse_date` reads (and the corpus recorded), null, and nothing else.
+#[rstest]
+#[case::iso(json!("2026-11-01"), Ok(Some("2026-11-01")))]
+#[case::short_month_and_day(json!("2026-1-9"), Ok(Some("2026-01-09")))]
+#[case::compact(json!("20261101"), Ok(Some("2026-11-01")))]
+#[case::an_iso_week(json!("2026-W44-7"), Ok(Some("2026-11-01")))]
+#[case::leap_day(json!("2028-02-29"), Ok(Some("2028-02-29")))]
+#[case::null(json!(null), Ok(None))]
+#[case::a_day_that_is_not(json!("2026-02-30"), Err(BAD_DATE))]
+#[case::not_a_leap_year(json!("2026-02-29"), Err(BAD_DATE))]
+#[case::a_month_that_is_not(json!("2026-13-01"), Err(BAD_DATE))]
+#[case::a_time_after_it(json!("2026-11-01T00:00:00"), Err(BAD_DATE))]
+#[case::space_round_it(json!(" 2026-11-01"), Err(BAD_DATE))]
+#[case::empty(json!(""), Err(BAD_DATE))]
+#[case::text(json!("tomorrow"), Err(BAD_DATE))]
+#[case::slashes(json!("2026/11/01"), Err(BAD_DATE))]
+#[case::a_number(json!(20261101), Err(BAD_DATE))]
+#[case::a_bool(json!(true), Err(BAD_DATE))]
+#[case::a_list(json!(["2026-11-01"]), Err(BAD_DATE))]
+fn a_date_is_read_as_drfs_date_field_reads_it(#[case] v: Value, #[case] want: Result<Option<&str>, &str>) {
+    let got = date_field(&v).map(|d| d.map(|d| d.to_string()));
+    assert_eq!(got, want.map(|d| d.map(str::to_string)).map_err(str::to_string));
+}
+
+/// What Django's `parse_date` reads, stated once more and apart from the code (fixture S48): `YYYY-M-D` with one or two digits for the
+/// month and the day, `YYYYMMDD`, and `YYYY-Www-D`; a year of four digits from 0001, a date that is on the calendar, nothing else. The
+/// signs and the letters of the text under test stand where a parse of the digits alone would take them.
+fn the_date_the_rule_reads(text: &str) -> Option<thrust_contracts::chrono::NaiveDate> {
+    use thrust_contracts::chrono::{NaiveDate, Weekday};
+    let digits =
+        |t: &str, least: usize, most: usize| (least..=most).contains(&t.len()) && t.chars().all(|c| c.is_ascii_digit());
+    let number = |t: &str| t.parse::<u32>().unwrap();
+    let year = |t: &str| i32::try_from(number(t)).ok().filter(|y| *y >= 1);
+    let parts: Vec<&str> = text.split('-').collect();
+    match parts.as_slice() {
+        [y, m, d] if digits(y, 4, 4) && digits(m, 1, 2) && digits(d, 1, 2) => {
+            NaiveDate::from_ymd_opt(year(y)?, number(m), number(d))
+        }
+        [y, w, d] if digits(y, 4, 4) && w.starts_with('W') && digits(&w[1..], 2, 2) && digits(d, 1, 1) => {
+            let day =
+                [Weekday::Mon, Weekday::Tue, Weekday::Wed, Weekday::Thu, Weekday::Fri, Weekday::Sat, Weekday::Sun]
+                    .get(usize::try_from(number(d)).unwrap().checked_sub(1)?)
+                    .copied()?;
+            NaiveDate::from_isoywd_opt(year(y)?, number(&w[1..]), day)
+        }
+        [whole] if digits(whole, 8, 8) => {
+            NaiveDate::from_ymd_opt(year(&whole[..4])?, number(&whole[4..6]), number(&whole[6..]))
+        }
+        _ => None,
+    }
+}
+
+/// A piece of a date as often right as wrong: the lengths, and the signs and letters that a parse of the digits alone would take.
+fn a_piece(right: &'static str, wrong: &'static str) -> BoxedStrategy<String> {
+    prop_oneof![3 => right, 1 => wrong].boxed()
+}
+
+fn some_date_text() -> impl Strategy<Value = String> {
+    let year = a_piece("[0-9]{4}", "[0-9+]{0,5}");
+    let month = a_piece("(0?[1-9]|1[0-2])", "[0-9+]{0,3}");
+    let day = a_piece("(0?[1-9]|[12][0-9]|3[01])", "[0-9+]{0,3}");
+    let week = a_piece("W(0[1-9]|[1-4][0-9]|5[0-3])", "[W0-9+X]{0,4}");
+    let weekday = a_piece("[1-7]", "[0-9+]{0,2}");
+    let compact = a_piece("[0-9]{4}(0[1-9]|1[0-2])(0[1-9]|[12][0-9]|3[01])", "[0-9+]{0,10}");
+    prop_oneof![
+        (year.clone(), month, day).prop_map(|(y, m, d)| format!("{y}-{m}-{d}")),
+        (year, week, weekday).prop_map(|(y, w, d)| format!("{y}-{w}-{d}")),
+        compact,
+    ]
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(1024))]
+
+    /// Every text of the three spellings, and of the lengths and signs that are not, is read as the rule says or refused.
+    #[test]
+    fn prop_a_date_is_read_as_the_rule_reads_it(text in some_date_text()) {
+        let got = date_field(&json!(text));
+        match the_date_the_rule_reads(&text) {
+            Some(date) => prop_assert_eq!(got, Ok(Some(date)), "{}", text),
+            None => prop_assert_eq!(got, Err(BAD_DATE.to_string()), "{}", text),
+        }
+    }
+}
+
+/// DRF's `DateTimeField` as far as it matters here (the value is checked, not kept): Django's `parse_datetime` spellings.
+#[rstest]
+#[case::zulu("2026-11-01T00:00:00Z", true)]
+#[case::a_space_for_the_t("2026-11-01 00:00", true)]
+#[case::minutes_only("2026-11-01T10:20", true)]
+#[case::microseconds_and_an_offset("2026-11-01T10:20:30.123456+05:30", true)]
+#[case::an_offset_without_a_colon("2026-11-01T10:20+0530", true)]
+#[case::an_hour_offset("2026-11-01T10:20-05", true)]
+#[case::a_comma_for_the_point("2026-11-01T10:20:30,5", true)]
+#[case::short_fields("2026-1-9T1:2", true)]
+#[case::the_last_minute("2026-11-01T23:59:59", true)]
+#[case::a_date_alone("2026-11-01", false)]
+#[case::text("yesterday", false)]
+#[case::hour_too_big("2026-11-01T24:00", false)]
+#[case::minute_too_big("2026-11-01T10:60", false)]
+#[case::second_too_big("2026-11-01T10:20:60", false)]
+#[case::an_hour_alone("2026-11-01T10", false)]
+#[case::a_fraction_without_seconds("2026-11-01T10:20.5", false)]
+#[case::an_empty_fraction("2026-11-01T10:20:30.", false)]
+#[case::a_bad_offset("2026-11-01T10:20+5", false)]
+#[case::a_bad_date("2026-13-01T10:20", false)]
+#[case::a_compact_date("20261101T10:20", false)]
+#[case::a_lower_case_t("2026-11-01t10:20", false)]
+#[case::empty("", false)]
+fn a_datetime_is_read_as_djangos_parse_datetime_reads_it(#[case] text: &str, #[case] ok: bool) {
+    let got = datetime_field(&json!(text));
+    assert_eq!(got, if ok { Ok(true) } else { Err(BAD_DATETIME.to_string()) }, "{text:?}");
+}
+
+#[test]
+fn a_datetime_that_is_null_is_no_value_and_one_that_is_not_text_is_refused() {
+    assert_eq!(datetime_field(&Value::Null), Ok(false));
+    for v in [json!(5), json!(true), json!(["2026-11-01T10:20"]), json!({"a": 1})] {
+        assert_eq!(datetime_field(&v), Err(BAD_DATETIME.to_string()), "{v}");
+    }
+}
+
+// --- Python's types, keys and whole numbers ------------------------------------------------------------------------------------
+
+#[rstest]
+#[case(json!(null), "NoneType")]
+#[case(json!(true), "bool")]
+#[case(json!(1), "int")]
+#[case(json!(-5), "int")]
+#[case(json!(1.5), "float")]
+#[case(json!(1.0), "float")]
+#[case(json!("s"), "str")]
+#[case(json!([1]), "list")]
+#[case(json!({"a": 1}), "dict")]
+fn the_name_of_a_values_type_is_pythons(#[case] v: Value, #[case] name: &str) {
+    assert_eq!(py_type_name(&v), name);
+}
+
+#[rstest]
+#[case("5a1b3c4d-0000-4000-8000-000000000001", true)]
+#[case("5A1B3C4D-0000-4000-8000-000000000001", true)]
+#[case("5a1b3c4d000040008000000000000001", true)]
+#[case("{5a1b3c4d-0000-4000-8000-000000000001}", true)]
+#[case("urn:uuid:5a1b3c4d-0000-4000-8000-000000000001", true)]
+#[case("", false)]
+#[case("nope", false)]
+#[case("5a1b3c4d-0000-4000-8000-00000000000", false)]
+#[case("5a1b3c4d-0000-4000-8000-0000000000012", false)]
+#[case("zzzzzzzz-0000-4000-8000-000000000001", false)]
+fn a_key_in_a_query_is_read_as_pythons_uuid_reads_it(#[case] text: &str, #[case] ok: bool) {
+    assert_eq!(parse_uuid_text(text).is_some(), ok, "{text:?}");
+}
+
+/// `\b\d+\b`: a run of digits that no letter, digit or underscore touches.
+#[rstest]
+#[case("2", &[2])]
+#[case("zzz 2", &[2])]
+#[case("item 12 and 7", &[12, 7])]
+#[case("abc123", &[])]
+#[case("123abc", &[])]
+#[case("a_1", &[])]
+#[case("1_a", &[])]
+#[case("x-5-y", &[5])]
+#[case("1.5", &[1, 5])]
+#[case("007", &[7])]
+#[case("PLATF-7", &[7])]
+#[case("99999999999999999999", &[])]
+#[case("٣ 3", &[3])]
+#[case("", &[])]
+fn whole_numbers_are_the_runs_of_digits_that_stand_alone(#[case] text: &str, #[case] want: &[i64]) {
+    assert_eq!(whole_numbers(text), want);
+}
+
+proptest! {
+    /// Against the plain statement of the rule: split the text at every character that is no letter, digit or underscore, and keep the
+    /// pieces that are nothing but digits.
+    #[test]
+    fn prop_whole_numbers_are_the_all_digit_words(text in "[a-z0-9_ .:,+-]{0,30}") {
+        let want: Vec<i64> = text
+            .split(|c: char| !(c.is_alphanumeric() || c == '_'))
+            .filter(|w| !w.is_empty() && w.bytes().all(|b| b.is_ascii_digit()))
+            .filter_map(|w| w.parse().ok())
+            .collect();
+        prop_assert_eq!(whole_numbers(&text), want);
+    }
 }
 
 // --- slugify ------------------------------------------------------------------------------------------------------------------

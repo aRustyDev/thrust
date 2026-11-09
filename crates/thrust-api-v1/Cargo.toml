@@ -15,6 +15,8 @@ thrust-contracts = { workspace = true }
 thrust-ports = { workspace = true }
 thrust-core = { workspace = true }
 thrust-api = { workspace = true }
+# What the pin does to a work item's description before it keeps it (`validate_html_content`); the compat plane has the same one.
+thrust-editor-doc = { path = "../thrust-editor-doc", default-features = false, features = ["sanitize"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 # The query string, as `axum`'s own `Query` reads it (already in the graph through axum): a name given twice keeps its last value.
