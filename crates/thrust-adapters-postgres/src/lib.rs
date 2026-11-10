@@ -2630,9 +2630,9 @@ impl Database for PgDatabase {
                 let identifier = details.identifier.unwrap_or_else(|| default_project_identifier(p.id));
                 cl.execute(
                     "INSERT INTO projects (id, workspace_id, name, identifier, network, archived_at, project_lead, created_by, \
-                       created_at, updated_at) \
+                       created_at, updated_at, description, default_state) \
                      VALUES ($1, $2, $3, $4, $5, CASE WHEN $6 THEN COALESCE($9, now()) END, $7, $8, COALESCE($9, now()), \
-                       COALESCE($9, now())) \
+                       COALESCE($9, now()), $10, $11) \
                      ON CONFLICT (id) DO NOTHING",
                     &[
                         &p.id.0,
@@ -2644,6 +2644,8 @@ impl Database for PgDatabase {
                         &details.project_lead.map(|u| u.0),
                         &details.created_by.map(|u| u.0),
                         &details.created_at,
+                        &details.description,
+                        &details.default_state,
                     ],
                 )
                 .await
@@ -2695,6 +2697,63 @@ impl Database for PgDatabase {
                 .await
                 .map_err(db_err)?;
             }
+            // Work items, in the order the fixture has them (a parent comes before its children: the foreign key is checked as
+            // each row goes in). The row, what a request would have given it and the project's counters are written together,
+            // so the number and the place a project hands out next come after the largest the fixture gave.
+            for w in &f.work_items {
+                let priority = w.priority.as_str();
+                cl.execute(
+                    "INSERT INTO work_items (id, workspace_id, project_id, sequence_id, sort_order, name, description, created_by, \
+                       created_at, updated_at, is_draft, state_id, priority, start_date, target_date, completed_at, \
+                       description_html, parent_id) \
+                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9, false, $10, $11, $12, $13, $14, $15, $16)",
+                    &[
+                        &w.id.0,
+                        &w.workspace_id.0,
+                        &w.project_id.0,
+                        &w.sequence_id,
+                        &w.sort_order,
+                        &w.name,
+                        &w.description,
+                        &w.created_by.map(|u| u.0),
+                        &w.created_at,
+                        &w.state_id,
+                        &priority,
+                        &w.start_date,
+                        &w.target_date,
+                        &w.completed_at,
+                        &w.description_html,
+                        &w.parent_id,
+                    ],
+                )
+                .await
+                .map_err(db_err)?;
+                let people: Vec<Uuid> = w.assignee_ids.iter().map(|u| u.0).collect();
+                cl.execute(
+                    "INSERT INTO work_item_assignees (work_item_id, workspace_id, project_id, user_id, created_at) \
+                     SELECT $1, $2, $3, t.user_id, $5 FROM unnest($4::uuid[]) AS t(user_id) ON CONFLICT (work_item_id, user_id) DO NOTHING",
+                    &[&w.id.0, &w.workspace_id.0, &w.project_id.0, &people, &w.created_at],
+                )
+                .await
+                .map_err(db_err)?;
+                cl.execute(
+                    "INSERT INTO work_item_labels (work_item_id, workspace_id, project_id, label_id, created_at) \
+                     SELECT $1, $2, $3, t.label_id, $5 FROM unnest($4::uuid[]) AS t(label_id) ON CONFLICT (work_item_id, label_id) DO NOTHING",
+                    &[&w.id.0, &w.workspace_id.0, &w.project_id.0, &w.label_ids, &w.created_at],
+                )
+                .await
+                .map_err(db_err)?;
+                cl.execute(
+                    "INSERT INTO project_sequences (workspace_id, project_id, last_sequence_id, last_sort_order) \
+                     VALUES ($1, $2, $3, $4) \
+                     ON CONFLICT (workspace_id, project_id) DO UPDATE SET \
+                       last_sequence_id = GREATEST(project_sequences.last_sequence_id, EXCLUDED.last_sequence_id), \
+                       last_sort_order  = GREATEST(project_sequences.last_sort_order, EXCLUDED.last_sort_order)",
+                    &[&w.workspace_id.0, &w.project_id.0, &w.sequence_id, &w.sort_order],
+                )
+                .await
+                .map_err(db_err)?;
+            }
             Ok(())
         }
         .await;
@@ -2705,6 +2764,23 @@ impl Database for PgDatabase {
                 Err(e)
             }
         }
+    }
+
+    async fn reset(&self, _sys: &SystemScope) -> Result<(), DbError> {
+        // One statement, so one transaction: either every table is empty or none is. The tables are looked up, not listed, so
+        // that a table a later migration adds is emptied without anyone remembering this function. The migrations are plain
+        // scripts that run again on every start and leave no bookkeeping table, and what they insert is a backfill of rows that
+        // are there already, so nothing here is something the schema needs to keep.
+        const RESET: &str = "DO $$ \
+            DECLARE tables text; \
+            BEGIN \
+              SELECT string_agg(format('%I.%I', schemaname, tablename), ', ') INTO tables FROM pg_tables WHERE schemaname = 'public'; \
+              IF tables IS NOT NULL THEN \
+                EXECUTE 'TRUNCATE TABLE ' || tables || ' RESTART IDENTITY CASCADE'; \
+              END IF; \
+            END $$";
+        let c = self.connector.checkout(true).await?;
+        Pg(c.client()).batch_execute(RESET).await.map_err(db_err)
     }
 }
 

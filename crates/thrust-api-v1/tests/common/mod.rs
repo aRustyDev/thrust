@@ -154,6 +154,13 @@ pub fn real_world_with(cfg: V1Config) -> World {
 
 /// The seeded `App` alone, for a test that mounts the crate's own `router()`.
 pub fn app() -> App {
+    let app = empty_app();
+    futures_executor::block_on(seed(&app)).expect("the world seeds");
+    app
+}
+
+/// An `App` over a database with nothing in it, for a test that loads a fixture of its own.
+pub fn empty_app() -> App {
     let db = Arc::new(MemoryDatabase::new());
     let background: Arc<dyn Background> = Arc::new(DiscardBackground);
     let queue: Arc<dyn Queue> = Arc::new(MemoryQueue::new(background.clone(), ConsumerSlot::default()));
@@ -166,7 +173,7 @@ pub fn app() -> App {
         ..CoreConfig::default()
     };
     let hasher = Arc::new(Argon2idHasher::new(core_cfg.argon2));
-    let app = App::new(
+    App::new(
         Ports {
             db: db.clone(),
             queue,
@@ -181,9 +188,7 @@ pub fn app() -> App {
         },
         core_cfg,
         SystemScope::mint(),
-    );
-    futures_executor::block_on(seed(&app)).expect("the world seeds");
-    app
+    )
 }
 
 async fn seed(app: &App) -> Result<(), CoreError> {

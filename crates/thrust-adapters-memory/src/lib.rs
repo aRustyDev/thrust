@@ -1642,6 +1642,8 @@ impl Database for MemoryDatabase {
             let created_at = details.created_at.unwrap_or(epoch);
             let mut row = ProjectRow::bare(p.id, p.workspace_id, p.name.clone(), created_at);
             row.identifier = details.identifier.unwrap_or_else(|| default_project_identifier(p.id));
+            row.description = details.description;
+            row.default_state = details.default_state;
             row.network = details.network;
             row.archived_at = details.archived.then_some(created_at);
             row.project_lead = details.project_lead;
@@ -1732,6 +1734,76 @@ impl Database for MemoryDatabase {
                 updated_by: None,
             });
         }
+        for w in &f.work_items {
+            // the constraints the database has on a work item and what hangs from it, checked before the row is kept
+            if s.projects.get(&w.project_id) != Some(&w.workspace_id) {
+                return Err(DbError::Backend("work_items_project_fkey".into()));
+            }
+            if s.work_items.iter().any(|o| o.project_id == w.project_id && o.sequence_id == w.sequence_id) {
+                return Err(DbError::Conflict("work_items_project_id_sequence_id_key".into()));
+            }
+            if w.state_id.is_some_and(|st| !s.states.iter().any(|x| x.id == st)) {
+                return Err(DbError::Backend("work_items_state_fkey".into()));
+            }
+            if w.assignee_ids.iter().any(|u| !s.users.contains_key(u)) {
+                return Err(DbError::Backend("work_item_assignees_user_id_fkey".into()));
+            }
+            if w.label_ids.iter().any(|l| !s.labels.iter().any(|x| x.id == *l)) {
+                return Err(DbError::Backend("work_item_labels_label_id_fkey".into()));
+            }
+            if matches!((w.start_date, w.target_date), (Some(a), Some(b)) if a > b) {
+                return Err(DbError::Backend("work_items_dates_ordered".into()));
+            }
+            // a parent is a work item that is there: the ones before it in the fixture are
+            if w.parent_id.is_some_and(|p| !s.work_items.iter().any(|o| o.id.0 == p)) {
+                return Err(DbError::Backend("work_items_parent_fkey".into()));
+            }
+            s.work_items.push(WorkItem {
+                id: w.id,
+                workspace_id: w.workspace_id,
+                project_id: w.project_id,
+                sequence_id: w.sequence_id,
+                sort_order: w.sort_order,
+                name: w.name.clone(),
+                description: w.description.clone(),
+                external_source: None,
+                external_id: None,
+                created_by: w.created_by,
+                created_at: w.created_at,
+                archived_at: None,
+                is_draft: false,
+                deleted_at: None,
+            });
+            let mut attrs = WorkItemAttrs {
+                state_id: w.state_id,
+                priority: w.priority,
+                start_date: w.start_date,
+                target_date: w.target_date,
+                completed_at: w.completed_at,
+                updated_at: w.created_at,
+                updated_by: None,
+                description_html: w.description_html.clone(),
+                assignee_ids: w.assignee_ids.clone(),
+                label_ids: w.label_ids.clone(),
+                parent_id: w.parent_id,
+                point: None,
+            };
+            attrs.assignee_ids.sort();
+            attrs.assignee_ids.dedup();
+            attrs.label_ids.sort();
+            attrs.label_ids.dedup();
+            s.work_item_attrs.insert(w.id, attrs);
+            // the project's next number and place come after the largest the fixture gave
+            let c = s.counters.entry((w.workspace_id, w.project_id)).or_insert((0, 0));
+            c.0 = c.0.max(w.sequence_id);
+            c.1 = c.1.max(w.sort_order);
+        }
+        Ok(())
+    }
+
+    async fn reset(&self, _sys: &SystemScope) -> Result<(), DbError> {
+        // every table at once: the state is replaced, so nothing of it is left behind (the counters included)
+        *self.state.lock_unpoisoned() = DbState::default();
         Ok(())
     }
 }

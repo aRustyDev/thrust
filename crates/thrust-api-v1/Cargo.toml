@@ -28,6 +28,8 @@ axum = { version = "0.8", default-features = false, features = ["json", "query",
 # port; the router is driven in process with `oneshot`, so no socket and no runtime beyond what the executor needs.
 [dev-dependencies]
 thrust-adapters-memory = { workspace = true }
+# The oracle's seed as a fixture (#58): loaded into the memory adapter and read through these routes in tests/oracle_seed.rs.
+thrust-oracle-fixture = { path = "../thrust-oracle-fixture" }
 tower = { version = "0.5", features = ["util"] }
 # The router future never yields to a reactor, so a plain executor drives it (as in thrust-core's tests).
 futures-executor = "0.3"

@@ -88,6 +88,28 @@ fn has_ipv4(s: &[char]) -> bool {
     })
 }
 
+/// Test support behind `/internal/seed` (issue #58): what the fixture's `profiles` call their users. A user with a profile
+/// already keeps it and has its three names set; one without gets the profile a new account has, with those names. Called by
+/// [`crate::seed`] after the users exist, which a profile's foreign key needs.
+pub(crate) async fn seed_profiles(app: &App, f: &SeedFixture) -> Result<(), CoreError> {
+    for p in &f.profiles {
+        let mut profile = new_profile(app, p.user_id, None);
+        profile.first_name = p.first_name.clone();
+        profile.last_name = p.last_name.clone();
+        profile.display_name = p.display_name.clone();
+        if !app.ports.db.insert_profile(&profile).await? {
+            let names = ProfilePatch {
+                first_name: Some(p.first_name.clone()),
+                last_name: Some(p.last_name.clone()),
+                display_name: Some(p.display_name.clone()),
+                ..ProfilePatch::default()
+            };
+            app.ports.db.update_profile(p.user_id, &names, app.ports.clock.now()).await?;
+        }
+    }
+    Ok(())
+}
+
 /// A profile for a new account, with the defaults every account starts from. The display name is the local part of the
 /// email (what Plane's `User.save` fills in), the username 32 hex digits from the id source (never shown as a name).
 pub(crate) fn new_profile(app: &App, user: UserId, email: Option<&str>) -> UserProfile {

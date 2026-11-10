@@ -636,6 +636,15 @@ pub async fn seed(app: &App, fixture: &SeedFixture) -> Result<(), CoreError> {
         };
         app.ports.db.insert_session(&session).await?;
     }
+    profile::seed_profiles(app, fixture).await?;
+    Ok(())
+}
+
+/// Test support behind `/internal/reset` (issue #58): empty the database, so that a fixture can be loaded into what it was when
+/// it was made. Only the database: the rate limiter's counters, the blob store and the queue are not touched, and a window that
+/// has begun runs out. The route that reaches this is the one that `seed` is behind, and is as dangerous as it sounds.
+pub async fn reset(app: &App) -> Result<(), CoreError> {
+    app.ports.db.reset(&app.system).await?;
     Ok(())
 }
 
