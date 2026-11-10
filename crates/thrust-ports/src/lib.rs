@@ -1276,8 +1276,10 @@ pub enum RateDecision {
     Limited { retry_after_secs: u64 },
 }
 
-/// Strongly-consistent fixed-window counter (KV is eventually consistent, so the Cloudflare
-/// adapter is a Durable Object; ADR-0082).
+/// A fixed-window counter per key. The self-hosted and in-isolate adapters count exactly (`MemoryRateLimiter`). The Cloudflare
+/// adapter is the Workers Rate Limiting binding, which counts per location and approximately, over a period of 10 s or 60 s
+/// that its own configuration fixes; there `limit` is not used and `remaining` is only an upper bound (ADR-0033, ADR-0082,
+/// D-007).
 #[async_trait]
 pub trait RateLimiter: Send + Sync {
     async fn hit(&self, key: &str, limit: u32, window_secs: u64) -> Result<RateDecision, RateError>;

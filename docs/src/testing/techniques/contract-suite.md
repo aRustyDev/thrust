@@ -24,7 +24,12 @@ target and each owns only the fixture it made. It checks the route's gate (`rese
 with a fixture made first as the control) and nothing more; the positive path is tested in the adapters and by
 `scripts/oracle-v1-reset.sh`.
 
-- `crates/thrust-contract-tests/tests/contract.rs`: the portable suite.
+- `crates/thrust-contract-tests/tests/contract.rs`: the portable suite. The create limit's test,
+  `create_is_rate_limited_per_user`, holds only what every limiter promises (the first `limit` creates pass, a 429 with a
+  `Retry-After` comes within `2 x limit + 1`, and the limit is per user), because the Cloudflare Worker's limiter is a
+  binding that counts approximately (D-007, [status](../status.md) D-18). The exact rule is tested where a limiter
+  promises it, on `MemoryRateLimiter`. On `worker-cf` the target's limit is the `RL_CREATE` binding's, which
+  `scripts/worker-dev.sh` writes into a throwaway copy of the config from the pass's `RATE_LIMIT`.
 - `crates/thrust-contract-tests/tests/model/mod.rs`: its generated part, compiled into the same binary and run in the
   `main` pass: random operation sequences, events included, against a reference [model](model-based.md), every
   caller × project × route against the access table, and the generator coverage control. Its

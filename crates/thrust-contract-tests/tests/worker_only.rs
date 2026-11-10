@@ -137,8 +137,9 @@ async fn worker_cron_scheduled_handler_runs_the_sweeper() {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Binding probes (pass `bindings`): one REAL operation per binding, through the Rust API where
-// workers-rs has a wrapper and through raw wasm-bindgen where it does not (Workflows).
+// Binding probes (pass `bindings`): one REAL operation per binding, through the Rust API of workers-rs. There is no probe for a
+// service binding or a Workflow: the Worker has neither (ADR-0090, FR-05, issue #43). The binding the app counts with
+// (`RL_CREATE`) is held by `create_is_rate_limited_per_user`; `RL` below is the probe's own.
 // ---------------------------------------------------------------------------------------------
 
 async fn probe(t: &Target, name: &str) -> (u16, Value) {
@@ -201,25 +202,6 @@ async fn worker_bindings_email_send_binding_simulated_locally() {
     let (st, v) = probe(&t, "email").await;
     assert_eq!(st, 200, "{v}");
     assert!(v["message_id_len"].as_u64().unwrap() > 0, "{v}");
-}
-
-#[tokio::test]
-async fn worker_bindings_service_binding() {
-    let t = Target::from_env();
-    let (st, v) = probe(&t, "service").await;
-    assert_eq!(st, 200, "{v}");
-    assert_eq!(v["status"], 200);
-}
-
-#[tokio::test]
-async fn worker_bindings_workflow_via_wasm_bindgen_and_js_shim() {
-    let t = Target::from_env();
-    let (st, v) = probe(&t, "workflow").await;
-    assert_eq!(st, 200, "{v}");
-    assert_eq!(v["status"], "complete", "{v}");
-    assert_eq!(v["output"]["doubled"], 42, "the workflow's step.do ran: {v}");
-    assert_eq!(v["output"]["health"]["status"], 200, "workflow -> service binding -> Rust Worker: {v}");
-    assert_eq!(v["output"]["health"]["body"], "ok");
 }
 
 /// Pass `crontrigger` of `scripts/stage2-contract.sh` (fast path OFF, DEPLOYED Worker only). The `stage2_` prefix is

@@ -89,7 +89,7 @@ needed" must be recorded before the row starts). "Test home" is where the accept
 | F-X04 | One-time import of existing Plane Postgres data | **drop** (round 5: start fresh) | dropped |  |  |
 | F-X05 | Contract-test harness (every port × every adapter) | P0 | 0121 | 0001 | self |
 | F-X06 | v1 oracle / parity test harness | P0 | 0122, 0120 | 0008 | self |
-| F-X07 | Observability (logs, traces, metrics) across Queue/Workflow/DO hops | P0 | 0130 | 0001 | integration |
+| F-X07 | Observability (logs, traces, metrics) across Queue/DO hops | P0 | 0130 | 0001 | integration |
 | F-X08 | AI: P0 API-based access (public API) · P1 MCP server · P2 AI assistant | P0 / P1 / P2 | 0084 |  | e2e |
 | F-X09 | Real-time push of work-item updates (beyond SWR polling) | P1 | 0034, 0060 |  |  |
 | F-X10 | Rust (Dioxus) clone of the Plane UI — web target | P2 (M4, screen by screen, once M2 holds the SLO 4 wks; round 29, FR-01) | 0013 | 0007 | the parity matrix below (the UI oracle) |

@@ -1,6 +1,7 @@
-//! Durable Object classes. ARCHITECTURE 2a reserves `thrust-collab-do` as the only crate that
-//! exports DO classes; the spike keeps them here because the wasm module that exports the classes
-//! must be the same module as the `fetch` handler.
+//! Durable Object classes: `RoomDo` only, the template of the P1 collab Durable Object (FR-05, issue #43). The rate limiter that
+//! used to be here is the Workers Rate Limiting binding now (ADR-0033). ARCHITECTURE 2a reserves `thrust-collab-do` as the only
+//! crate that exports DO classes; the spike keeps them here because the wasm module that exports the classes must be the same
+//! module as the `fetch` handler.
 
 use serde::Deserialize;
 use serde_json::json;
@@ -10,66 +11,8 @@ use worker::*;
 use crate::text;
 
 #[derive(Deserialize)]
-struct CountRow {
-    count: i64,
-}
-
-#[derive(Deserialize)]
 struct NRow {
     n: i64,
-}
-
-// ---------------------------------------------------------------------------------------------
-// RateLimiterDo: strongly consistent fixed-window counter on DO SQLite storage (ADR-0033/0082)
-// ---------------------------------------------------------------------------------------------
-
-#[durable_object]
-pub struct RateLimiterDo {
-    state: State,
-}
-
-impl DurableObject for RateLimiterDo {
-    fn new(state: State, _env: Env) -> Self {
-        // Constructor is synchronous; SQLite DDL is synchronous too. IF NOT EXISTS keeps it idempotent.
-        let _ = state
-            .storage()
-            .sql()
-            .exec("CREATE TABLE IF NOT EXISTS hits (window_start INTEGER PRIMARY KEY, count INTEGER NOT NULL)", None);
-        Self { state }
-    }
-
-    async fn fetch(&self, req: Request) -> Result<Response> {
-        let url = req.url()?;
-        let mut limit = 0u32;
-        let mut window = 60u64;
-        for (k, v) in url.query_pairs() {
-            match k.as_ref() {
-                "limit" => limit = v.parse().unwrap_or(0),
-                "window" => window = v.parse().unwrap_or(60),
-                _ => {}
-            }
-        }
-        let window = window.max(1) as i64;
-        let now = (Date::now().as_millis() / 1000) as i64;
-        let start = now - now.rem_euclid(window);
-        let sql = self.state.storage().sql();
-
-        sql.exec("DELETE FROM hits WHERE window_start < ?", vec![start.into()])?;
-        let cur: Vec<CountRow> =
-            sql.exec("SELECT count FROM hits WHERE window_start = ?", vec![start.into()])?.to_array()?;
-        let count = cur.first().map(|r| r.count).unwrap_or(0).max(0) as u32;
-        if count >= limit {
-            return Response::from_json(&json!({
-                "allowed": false, "remaining": 0, "retry_after_secs": (start + window - now).max(1)
-            }));
-        }
-        sql.exec(
-            "INSERT INTO hits (window_start, count) VALUES (?, 1) \
-             ON CONFLICT(window_start) DO UPDATE SET count = count + 1",
-            vec![start.into()],
-        )?;
-        Response::from_json(&json!({ "allowed": true, "remaining": limit - count - 1, "retry_after_secs": 0 }))
-    }
 }
 
 // ---------------------------------------------------------------------------------------------

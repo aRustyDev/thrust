@@ -3462,6 +3462,8 @@ version = "0.0.0"
 dependencies = [
  "async-trait",
  "getrandom 0.4.3",
+ "proptest",
+ "rstest",
  "serde",
  "serde_json",
  "thrust-adapters-postgres",
@@ -3703,7 +3705,6 @@ dependencies = [
  "console_error_panic_hook",
  "http-body-util",
  "serde",
- "serde-wasm-bindgen",
  "serde_json",
  "thrust-adapters-cloudflare",
  "thrust-adapters-memory",

@@ -88,6 +88,20 @@ Per FR-05 (`reviews/2026-10-19-fable-architecture-review.md`; the owner's decisi
 
 This supersedes the self-hosted half of the round-15 Decision ("the self-hosted adapter uses Valkey/Redis"), the round-25 note's Valkey reference, the round-26 note's Durable Object fixed-window counter as the Cloudflare limiter, and the round-28 statement in ADR-0006 that "the Durable Object limiter stays for exact limits". The Cloudflare half of the round-15 Decision (Option 1, the binding) and the supported subset of `API_KEY_RATE_LIMIT` (10 s or 60 s periods) stand. The Confirmation stands: the contract test asserts limits with a documented tolerance, because the binding is approximate (limit 3 allowed 4, review §4).
 
+## Update — issue #43 (2026-11-09)
+
+Issue #43 replaced the Durable Object limiter with the binding, and found that the round-29 note above predates two of the callers of the `RateLimiter` port. There are three kinds of key, and a binding has one fixed limit and period, so the Cloudflare adapter (`CfRateLimiter`, `crates/thrust-adapters-cloudflare`) is three bindings, chosen by the text before the first `:` of the key:
+
+| Key | Caller | Binding | Default |
+|---|---|---|---|
+| `create:<user>` | `create_work_item` in `thrust-core` | `RL_CREATE` | 1000 a minute |
+| `signin:<email>` | sign-in (`thrust-core`, issue #38) | `RL_SIGNIN` | 10 a minute |
+| `v1:<api key>` | the `/api/v1` routes (`thrust-api-v1`, issue #58): Plane's `API_KEY_RATE_LIMIT`, the use this ADR was written for | `RL_V1` | 60 a minute (Plane's `60/minute`) |
+
+A key of none of these is an error, not a free pass. On Cloudflare the binding's own `limit` and `period` are the allowance: `THRUST_CREATE_RATE_LIMIT`, `THRUST_SIGNIN_RATE_LIMIT` and the count of `THRUST_V1_RATE_LIMIT` are read by the in-isolate and native sets only. The "supported subset of `API_KEY_RATE_LIMIT`" paragraph above is now enforced at startup: the Worker refuses a `THRUST_RATE_WINDOW_SECS`, or a `THRUST_V1_RATE_LIMIT` period, of anything but 10 or 60 seconds (`check_binding_period`).
+
+Two consequences of D-007 that the binding makes visible, both in the adapter's doc comment. The binding answers only yes or no, so a refusal's `Retry-After` is one whole period, and `remaining` is not known: the adapter reports `limit - 1`, an upper bound that never tells a client its allowance is spent when it is not. `/api/v1` puts that number in `X-RateLimit-Remaining` on every answer, so on Cloudflare that header is an upper bound and not a count, where the oracle's is exact; this is D-007's approximation and is not a separate deviation, and the native server and the in-isolate Worker still count exactly (`MemoryRateLimiter`). The Confirmation's tolerance is `create_is_rate_limited_per_user`, which asserts a refusal within `2 x limit + 1` creates; the exact rule is held on `MemoryRateLimiter` by property tests.
+
 ## Open Questions
 
 * Q-0033 — limiter placement and semantics.
