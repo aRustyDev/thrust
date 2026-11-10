@@ -487,39 +487,45 @@ async fn redelivered_event_is_processed_once() {
     assert_eq!(verbs, ["created", "moved", "updated"], "the duplicated event must produce ONE activity row");
 }
 
-/// Every limiter is a fixed window aligned to multiples of the window length (`start = now - now % window`), so a
-/// burst that straddles a boundary legitimately gets up to twice the limit. Such a burst says nothing about the
-/// limit; the test notices it from its own clock (with 2 s of slack for clock skew between client and target) and
-/// runs one more burst with a fresh user. That burst starts right after the boundary, so it cannot reach the next
-/// one; a limiter that lets `limit + 1` creates through inside one window fails on whichever burst shows it.
+/// What every target's create limit has in common (issue #43, D-007). The limit is exact on the native server and on the
+/// in-isolate Worker, and approximate on the Cloudflare Worker, where it is a Workers Rate Limiting binding that counts per
+/// location (a binding of 3 has let 4 through). So the test holds only what is true of all of them:
+///
+/// * the first `limit` creates of a user pass;
+/// * a 429 with a `Retry-After` of at least a second comes within `2 x limit + 1` creates. A fixed window aligned to the
+///   clock lets a burst that straddles a boundary have up to twice the limit, and an approximate one a little more, so
+///   this is the latest a refusal can be owed however the burst falls on the windows, and the test needs no clock;
+/// * the limit is per user: another member's create is not refused.
+///
+/// It used to assert the exact rule (`limit` creates pass and the next one is refused, repeating a burst that crossed a
+/// window boundary), which the binding does not promise. The exact rule is held where a limiter does promise it, by the
+/// `prop_` tests of `MemoryRateLimiter` in `thrust-adapters-memory`. A limit that is never reached (the binding raised
+/// above `2 x limit + 1`) fails this test: that is its control.
 #[tokio::test]
 async fn create_is_rate_limited_per_user() {
     let t = t();
     let f = Fixture::seed(&t).await;
     let limit = Target::create_limit();
-    let window = Target::rate_window_secs();
-    let now = || std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
-    let mut over = None;
-    for attempt in 1..=2 {
-        let user = f.extra_member(&t).await;
-        let started = now();
-        for i in 0..limit {
-            let r = create(&t, &user, &f.a, json!({"name": format!("r{i}")})).await;
-            assert_eq!(r.status(), 201, "request {i} of {limit} must pass");
-        }
-        let r = create(&t, &user, &f.a, json!({"name": "over"})).await;
-        let ended = now();
-        let crossed = (started.saturating_sub(2)) / window != (ended + 2) / window;
-        if r.status() == 429 || !crossed {
-            over = Some(r);
+    let user = f.extra_member(&t).await;
+    for i in 0..limit {
+        let r = create(&t, &user, &f.a, json!({"name": format!("r{i}")})).await;
+        assert_eq!(r.status(), 201, "request {i} of {limit} must pass");
+    }
+    let mut refused = None;
+    for i in limit..=(2 * limit) {
+        let r = create(&t, &user, &f.a, json!({"name": format!("r{i}")})).await;
+        if r.status() == 429 {
+            refused = Some(r);
             break;
         }
-        assert!(attempt < 2, "both bursts crossed a {window}s window boundary: a burst is too slow to test the limit");
-        eprintln!("RATELIMIT-OBSERVATION: burst {attempt} crossed a window boundary ({started}..{ended}); repeating");
+        // anything but a pass or a refusal (a 500 from the limiter, say) is not "not limited yet"
+        assert_eq!(r.status(), 201, "request {i}: not limited yet, so it must be created");
     }
-    let r = over.expect("one burst stayed inside one window");
-    assert_eq!(r.status(), 429, "request {} must be limited", limit + 1);
-    assert!(r.headers().contains_key("retry-after"));
+    let r =
+        refused.unwrap_or_else(|| panic!("none of the first {} creates was limited (limit {limit})", 2 * limit + 1));
+    let retry_after = r.headers().get("retry-after").expect("a 429 carries Retry-After");
+    let secs: u64 = retry_after.to_str().unwrap().parse().expect("Retry-After is a number of seconds");
+    assert!(secs >= 1, "Retry-After must be at least a second, not {secs}");
     // control: the limit is per user, another member is unaffected
     let other = f.extra_member(&t).await;
     assert_eq!(create(&t, &other, &f.a, json!({"name": "fine"})).await.status(), 201);

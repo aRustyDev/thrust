@@ -154,6 +154,17 @@ This supersedes the leading hypothesis (Option 2) in the Decision Outcome and in
 
 **`space` is a route group of the one Worker** (FR-11; Q-0011.4, answered round 29 with FR-11's default). Public spaces keep their own public hostname (ADR-0022), and that hostname is routed to this Worker, which serves the `space` SPA, the Rust head-injection handler (ADR-0011, round 27) and the API on that same hostname. The browser therefore calls the API same-origin, and no CORS is needed (review §4, "`space` as an SPA with Rust head injection"). This closes the open point in the paragraph above and in the round-27 note ("route group of the main Worker or its own thin Worker"), and supersedes ADR-0022's "separate cached Worker" (ADR-0022, round 29). The Worker therefore answers two Custom Domains, the product hostname and the `space` hostname (Q-0090.2's answer, round 26). No other Worker is added at P0.
 
+## Update — issue #43 (2026-11-09)
+
+Issue #43 built what FR-11 and FR-05 decided. The round-29 note above gives the line numbers of the slice as it was on 2026-10-19 and says the Worker "exports `RateLimiterDo` and `RoomDo`"; the facts now, by symbol, since the line numbers drift:
+
+* **One Worker, in Rust, with nothing in front of it.** `crates/thrust-worker/src/lib.rs` has `#[event(fetch)]`, `#[event(queue)]` and `#[event(scheduled)]` and nothing else; `crates/thrust-worker/src/durable.rs` exports `RoomDo` only; `crates/thrust-worker/entry.mjs`, the Workflows shim, is deleted. Every `crates/thrust-worker/wrangler*.toml` has `main = "build/worker/shim.mjs"`, the file `worker-build` writes, and no `[[workflows]]` or `[[services]]` block (the `SELF` service binding and the `WORKFLOW` binding are gone, with the `service` and `workflow` binding probes and the `serde-wasm-bindgen` dependency that only the second used).
+* **It is held in CI.** `scripts/check-topology.sh`, run by the `deps` job, fails on a `[[workflows]]` or `[[services]]` block or on a `main` other than that, in any of those files; `scripts/check-topology.sh --self-test` runs it on fixtures it must refuse. Run on `origin/main` as it was before the change, it fails on `wrangler.toml`, `wrangler.stage2.toml` and `wrangler.pg.stage.toml`, the last of which (#77) the issue did not list.
+* **`RoomDo` is the only Durable Object class,** the template of the P1 `collab` Worker's room. No deployed Worker ever carried a migration with the rate limiter's class (the Stage 2 Worker was deleted on 2026-10-18 and `thrust-spike-pg` on 2026-10-24, with its Durable Object storage: `research/0011` section 11.2), so migration `v1` was edited to `new_sqlite_classes = ["RoomDo"]` and there is no `deleted_classes` migration.
+* **The rate limiter is the Workers Rate Limiting binding** (ADR-0033, issue #43 note), which removes the Durable Object round trip that every create paid.
+
+The reopen triggers stand as written: the bundle passing 20 MiB, or a Durable Object lifecycle change that has to ship with an API change.
+
 ## Open Questions
 
 * Q-0090 — topology choice. (answered round 29, FR-11)

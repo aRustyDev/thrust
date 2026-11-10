@@ -116,6 +116,12 @@ jobs:
           save-cache: ${{ github.ref == 'refs/heads/main' }}
       - name: Dependency-graph guard
         run: scripts/check-deps.sh
+      # One Worker, in Rust, with no Workflow and no service binding (ADR-0090, FR-05, FR-11, issue #43). The self-test is the
+      # control: the guard is run on configs it must refuse, so a guard that stopped looking would fail here and not pass.
+      - name: Topology guard (one Worker)
+        run: |
+          scripts/check-topology.sh
+          scripts/check-topology.sh --self-test
       # Issue #39: the Worker's two real configs carry `[placement] region = "aws:us-east-1"`. A step and not a job, so
       # the gate's required contexts do not change.
       - name: Placement guard

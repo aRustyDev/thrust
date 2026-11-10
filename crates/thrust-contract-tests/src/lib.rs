@@ -38,13 +38,10 @@ impl Target {
             .unwrap()
     }
 
+    /// The create limit the target was started with: `THRUST_CREATE_RATE_LIMIT` on the native server and the in-isolate Worker, and
+    /// the `RL_CREATE` binding's limit on the Cloudflare Worker (`scripts/worker-dev.sh` writes it into the config it starts from).
     pub fn create_limit() -> u32 {
         std::env::var("THRUST_EXPECT_CREATE_LIMIT").ok().and_then(|v| v.parse().ok()).unwrap_or(30)
-    }
-
-    /// The target's rate-limit window (`THRUST_RATE_WINDOW_SECS` on the server, 60 unless set).
-    pub fn rate_window_secs() -> u64 {
-        std::env::var("THRUST_EXPECT_RATE_WINDOW_SECS").ok().and_then(|v| v.parse().ok()).unwrap_or(60)
     }
 
     pub async fn admin_post(&self, path: &str, body: &Value) -> reqwest::Response {

@@ -4,7 +4,7 @@
 # fills in the Hyperdrive config id (and the placement block) into a throwaway copy. No ids and no credentials are in this file;
 # THRUST_ADMIN_TOKEN is a Worker secret, the database password lives only in the Hyperdrive config.
 name = "thrust-spike-pg"
-main = "entry.mjs"
+main = "build/worker/shim.mjs"
 compatibility_date = "2026-08-01"
 workers_dev = true
 
@@ -20,12 +20,12 @@ crons = ["* * * * *"]   # outbox sweeper (ADR-0046 / ADR-0072)
 THRUST_TEST_ROUTES = "1"            # spike only: exposes /internal/*, /_info and the probes to the contract suite
 THRUST_ADAPTERS = "cloudflare"
 THRUST_OUTBOX_FASTPATH = "on"
-THRUST_CREATE_RATE_LIMIT = "30"     # the main pass wants 30; the engine pass redeploys with `--var THRUST_CREATE_RATE_LIMIT:1000000`
 # The contract's CSRF tests need enforcement on (ADR-0052); `scripts/stage2-contract.sh` refuses a Worker that does not say
 # so in /_info (the `csrfoff` pass needs "off"). A deployed main pass also wants a cheap argon2id cost, or every fixture seeds
 # six passwords at the real cost: deploy with `--var THRUST_ARGON2_M_KIB:64 --var THRUST_ARGON2_T:1 --var THRUST_ARGON2_P:1`.
 THRUST_CSRF_ENFORCE = "on"
-THRUST_RATE_WINDOW_SECS = "3600"    # research/0004 F3
+# The rate limits are the `[[ratelimits]]` bindings below, not vars: THRUST_CREATE_RATE_LIMIT is not read on Cloudflare, and the
+# Worker refuses a THRUST_RATE_WINDOW_SECS other than 10 or 60.
 
 # Hyperdrive config `thrust-spike-pg` (caching disabled) or `thrust-spike-pg-cached` (caching enabled, the caching measurement):
 # role pr_<n>, schema pr_<n>, on thrust-pg-dev.
@@ -48,13 +48,30 @@ max_batch_timeout = 1
 max_retries = 3
 dead_letter_queue = "thrust-spike-pg-events-dlq"
 
-[[durable_objects.bindings]]
-name = "RATE_LIMITER"
-class_name = "RateLimiterDo"
-
+# `thrust-spike-pg` was deleted with its Durable Object storage (research/0011 section 11.2), so no deployed Worker carries the
+# rate limiter's class and `v1` is edited rather than followed by a `deleted_classes` migration. (`RoomDo` is exported by the
+# Worker and not bound here: this cell does not run the room tests.)
 [[migrations]]
 tag = "v1"
-new_sqlite_classes = ["RateLimiterDo", "RoomDo"]
+new_sqlite_classes = ["RoomDo"]
+
+# Rate Limiting bindings (ADR-0033, D-007); namespace_id is account-wide, and 92001 to 92003 are this template's. The main pass wants
+# 30 creates a minute; the engine pass wants a limit it never reaches: `scripts/spike-0002-pg.sh deploy --create-limit 1000000`
+# rewrites the number on the line that ends in `__CREATE_LIMIT__`. Sign-in and /api/v1 are at the app's defaults.
+[[ratelimits]]
+name = "RL_CREATE"
+namespace_id = "92001"
+simple = { limit = 30, period = 60 }   # __CREATE_LIMIT__
+
+[[ratelimits]]
+name = "RL_SIGNIN"
+namespace_id = "92002"
+simple = { limit = 10, period = 60 }
+
+[[ratelimits]]
+name = "RL_V1"
+namespace_id = "92003"
+simple = { limit = 60, period = 60 }
 
 # Email Service send binding: the one real send of the run (the account's enabled sender domain and a verified destination).
 [[send_email]]

@@ -16,7 +16,7 @@ flowchart LR
     w --> hd[(Hyperdrive to Postgres)]
     w --> r2[(R2: BLOBS)]
     w --> q[[Queue: EVENTS]]
-    w --> rl[RATE_LIMITER<br/>Durable Object]
+    w --> rl[RL_CREATE, RL_SIGNIN, RL_V1<br/>Rate Limiting bindings]
     cron[Cron every minute] --> w
     q --> w
   end
@@ -29,9 +29,11 @@ flowchart LR
 
 ## Cloudflare: `thrust-worker`
 
-One Worker handles HTTP (`fetch`), queue delivery (`queue`) and the cron trigger (`scheduled`). `entry.mjs` is a
-small JavaScript shim that re-exports the Rust Worker and adds the one thing workers-rs cannot define, a Workflow
-class (`ThrustWorkflow`); it holds no business logic.
+One Worker handles HTTP (`fetch`), queue delivery (`queue`) and the cron trigger (`scheduled`). It has no JavaScript,
+no Workflow and no service binding: `main` is `build/worker/shim.mjs`, the file `worker-build` writes. That is
+ADR-0090's Option 1, one Worker, until the P1 collab room is added as a Worker of its own, and the review's FR-05
+removed the Workflows shim (`entry.mjs`) that used to sit in front of it. `scripts/check-topology.sh` fails CI on a `[[workflows]]` or `[[services]]` block or a
+different `main` in any `crates/thrust-worker/wrangler*.toml`.
 
 The bindings in `crates/thrust-worker/wrangler.toml`:
 
@@ -40,18 +42,27 @@ The bindings in `crates/thrust-worker/wrangler.toml`:
 | `HYPERDRIVE` | Hyperdrive | `Database`, through `PgDatabase` and `HyperdriveConnector` |
 | `BLOBS` | R2 bucket | `BlobStore` |
 | `EVENTS` | Queue, producer and consumer (batch of 10, 1 s timeout, 3 retries) | `Queue` |
-| `RATE_LIMITER` | Durable Object `RateLimiterDo` (SQLite) | `RateLimiter` |
+| `RL_CREATE`, `RL_SIGNIN`, `RL_V1` | Workers Rate Limiting bindings, one per kind of key (work item creates per user, 1000 a minute; sign-ins per email, 10; `/api/v1` requests per API key, 60) | `RateLimiter`, through `CfRateLimiter` |
 | `ROOM` | Durable Object `RoomDo` (SQLite) | none: a WebSocket room, reachable only through `/_test/room/...`, which needs test routes and the admin token |
 | cron `* * * * *` | Cron trigger | runs the outbox sweeper |
 
-`RL`, `SS`, `EMAIL`, `SELF` and `WORKFLOW` (rate limiting, Secrets Store, email, a service binding to the Worker
-itself, and a Workflow) are binding probes. Only `probes.rs`, reached through `/_test/bindings/...`, and the
-Workflow shim in `entry.mjs`, which calls back through `SELF`, use them. No use-case does.
+`RL`, `SS` and `EMAIL` (a rate-limiting binding of its own, Secrets Store and email) are binding probes. Only
+`probes.rs`, reached through `/_test/bindings/...`, uses them. No use-case does. There is no probe for a service
+binding or a Workflow, because the Worker has neither.
 
 Behaviour worth knowing:
 
 - **Adapter set.** `wrangler.toml` builds with `--no-default-features`, so the bundle holds the Cloudflare set only.
   The default build also compiles an in-isolate `memory` set, which `wrangler.memory.toml` runs with no bindings.
+- **Rate limits.** On Cloudflare the allowance is the binding's own `limit` and `period` in the `[[ratelimits]]` block,
+  not a variable: `THRUST_CREATE_RATE_LIMIT`, `THRUST_SIGNIN_RATE_LIMIT` and the count in `THRUST_V1_RATE_LIMIT` are
+  read by the in-isolate and native sets only. A binding counts per Cloudflare location and approximately (one of 3 per
+  10 s has let 4 through), over 10 s or 60 s and nothing else (ADR-0033, D-007), so the Worker refuses to start with a
+  `THRUST_RATE_WINDOW_SECS` or a `THRUST_V1_RATE_LIMIT` period of any other length. The binding answers only yes or no.
+  A refusal is a 429 with `Retry-After` of one whole period, and an answer that lets a request through reports
+  `X-RateLimit-Remaining` on `/api/v1` as the limit less one, an upper bound and not a count. The native server and the
+  in-isolate Worker count exactly (`MemoryRateLimiter`). A key that belongs to none of the three bindings is an error,
+  not a free pass. Before issue #43 a Durable Object counted exactly, at a Durable Object round trip on every create.
 - **Placement.** `wrangler.toml` and `wrangler.stage2.toml` set `placement.region = "aws:us-east-1"`, where the
   database is (ADR-0094), so `fetch` runs in the Cloudflare data centre closest to that region. Placement covers
   `fetch` only: the `queue` and `scheduled` handlers and the Durable Objects are not placed. `region` excludes `mode`,
@@ -70,12 +81,12 @@ Behaviour worth knowing:
   that cannot be decoded is acknowledged and dropped, so it never reaches a dead-letter queue.
 - **Cron.** Each tick runs one outbox sweep of up to 100 rows.
 - **Configuration and secrets.** The config file holds no secret. The Hyperdrive and Secrets Store ids in it
-  are all-zero placeholders for local use; R2 and the queue are given by name, and the rate-limit namespace id is
-  `1001`. The Worker reads `THRUST_ADMIN_TOKEN` from its secrets or variables, and the local Postgres URL reaches
+  are all-zero placeholders for local use; R2 and the queue are given by name, and the rate-limit namespace ids are
+  `1001` (the probe's) to `1004`. The Worker reads `THRUST_ADMIN_TOKEN` from its secrets or variables, and the local Postgres URL reaches
   `wrangler dev` through an environment variable, never through the file.
 - **Stage 2.** `wrangler.stage2.toml` is the Worker as it ran on real Cloudflare resources. It is named
-  `thrust-spike-worker`, has `workers_dev` on, turns test routes on, sets a create limit of 30 with a one-hour
-  window, and gives the queue a dead-letter queue. Its header says its ids belonged to the 2026-10-18 run and were
+  `thrust-spike-worker`, has `workers_dev` on, turns test routes on, has an `RL_CREATE` binding of 30 a minute, and gives
+  the queue a dead-letter queue. Its header says its ids belonged to the 2026-10-18 run and were
   deleted at its end. The resources the run created start with `thrust-spike-`. The Secrets Store it names was the
   account's default store, which already existed, and only the probe secret in it was removed (research note 0004,
   section 10.7).
@@ -167,6 +178,9 @@ The plan records decisions and work about infrastructure that is not in this rep
   residual for an internal tool. The decision is reopened when Thrust holds real customer data, among other
   triggers listed in Q-0094.9, so that sense of "done" does not carry over to real data. This repository contains
   only the adapter side (`HyperdriveConnector`).
-- **The self-hosted twin and the Cloudflare topology** (ADR-0091 and ADR-0090) are only proposed.
+- **The self-hosted twin and the Cloudflare topology** (ADR-0091 and ADR-0090) are accepted. ADR-0090 chose one Worker
+  for P0 and the daily-use release, with a `collab` Worker added when the P1 room lands, and it is reopened if the bundle
+  passes 20 MiB or a Durable Object lifecycle change has to ship with an API change. This repository implements the one
+  Worker (issue #43).
 
 The ADRs are in `.agents/plans/contrail/adrs/infra/` and `.agents/plans/contrail/adrs/cd/`.

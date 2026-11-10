@@ -152,7 +152,7 @@ Subjects are shortened from the handoff's Track B table (`reviews/2026-10-19-fab
 | #40 | clippy deny list, `cargo fmt --check`, `cargo-deny`; forbid `sqlx`, `sea-orm`, `diesel` | M0 | | FR-07, ADR-0006 panic policy | |
 | #41 | authenticated TLS to CNPG through an Origin CA server certificate and `verify_ca` (done 2026-11-07: both clusters serve an Origin CA certificate and run `verify_ca`; infra PRs #1008, #1009 and #1010; `verify_full` deferred by the owner on 2026-11-09, infra ADR 0024, reopened by real customer data among other triggers, Q-0094.9) | M0 | #37 | FR-09 | `plane-byd.9`, `infra-qnyi` |
 | #42 | `GET /healthz?deep=1` and a `status.woven` probe; availability measured on it | M2 | #37 | FR-10 | |
-| #43 | single-Worker topology; remove the Workflow binding, `entry.mjs`, the DO rate limiter, `SELF` | M0 | | FR-05, FR-11 | |
+| #43 | single-Worker topology; remove the Workflow binding, `entry.mjs`, the DO rate limiter, `SELF` (built on `chore/single-worker-topology`, in review: the limiter is three Workers Rate Limiting bindings, not one, because sign-in (#38) and `/api/v1` (#58) use the port too; ADR-0090 and ADR-0033 have the issue notes) | M0 | | FR-05, FR-11 | |
 | #44 | the 48-route minimum slice with the auth-client JSON change | M1 | #35 #36 #37 #38 #47 | FR-01 | `plane-byd.3` |
 | #45 | Playwright journey suite on the stock React app (the UI oracle) | M1 | #44 | FR-01 | |
 | #46 | the M2 daily-use screens, every other route stubbed and recorded | M2 | #44 #45 | FR-01 | |

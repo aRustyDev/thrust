@@ -7,18 +7,19 @@
 #     scripts/stage2-contract.sh [main|worker|bindings|cron|sweeper|panic]
 #
 # main      31 tests: the portable contract minus the 6 `oidc_` tests (they need the mock IdP on 127.0.0.1, which a
-#           deployed Worker cannot reach) (the deployed Worker must have THRUST_CREATE_RATE_LIMIT=30, and a cheap
-#           argon2id cost, THRUST_ARGON2_M_KIB=64 THRUST_ARGON2_T=1 THRUST_ARGON2_P=1, or every fixture seeds six
-#           passwords at the real cost)
+#           deployed Worker cannot reach) (the deployed Worker's RL_CREATE binding must be 30 a minute, which
+#           wrangler.stage2.toml sets, and it needs a cheap argon2id cost, THRUST_ARGON2_M_KIB=64 THRUST_ARGON2_T=1
+#           THRUST_ARGON2_P=1, or every fixture seeds six passwords at the real cost)
 # worker     1 test : Durable Object WebSocket hibernation + SQLite
-# bindings   6 tests: one real operation per binding (rate limit, secrets store, email, service, workflow)
+# bindings   4 tests: the probe routes' admin gate, and one real operation per binding (rate limit, secrets store, email)
 # cron       1 test : needs the Worker deployed with THRUST_OUTBOX_FASTPATH=off
 # sweeper    2 tests: needs THRUST_OUTBOX_FASTPATH=off
 # panic      1 test : alone, against a Worker nobody else is using (a panic resets the isolate)
 # csrfoff    6 tests: needs the Worker deployed with THRUST_CSRF_ENFORCE=off (Q-0050.8, the production default while the
 #            stock frontend is in use). Every other pass needs it ON, which wrangler.stage2.toml sets; /_info is checked
 # engine     the engine pass (spike 0002, `contract.sh <target> engine`): the 50-writer test and the search tests.
-#            Needs a Worker deployed with a very high THRUST_CREATE_RATE_LIMIT (the 50-writer test makes ~10k creates).
+#            Needs a Worker whose RL_CREATE binding has a very high limit (the 50-writer test makes ~10k creates): a binding's
+#            limit is not a var, so it is set in the config the Worker is deployed from (`spike-0002-pg.sh deploy --create-limit`).
 # email      1 test : ONE real send through the EMAIL binding (a Worker deployed with THRUST_EMAIL_FROM and THRUST_EMAIL_TO);
 #            it sends a mail every time it is run
 #
@@ -62,7 +63,7 @@ case "$PASS" in
   # Email is skipped on purpose: a real send needs a sender domain owned by the account and a verified
   # destination; the deployed binding rejects `example.com` ("domain is not owned by the same account").
   # It is reported as NOT exercised, never as passed.
-  bindings) EXPECT=5;  "$RS" cargo test --manifest-path "$M" -p thrust-contract-tests --test worker_only -- worker_bindings_ --skip email_send --test-threads=1 --nocapture >"$LOG.test.log" 2>&1 ;;
+  bindings) EXPECT=3;  "$RS" cargo test --manifest-path "$M" -p thrust-contract-tests --test worker_only -- worker_bindings_ --skip email_send --test-threads=1 --nocapture >"$LOG.test.log" 2>&1 ;;
   cron)     EXPECT=1;  "$RS" cargo test --manifest-path "$M" -p thrust-contract-tests --test worker_only -- worker_cron_ --test-threads=1 --nocapture >"$LOG.test.log" 2>&1 ;;
   # crontrigger: the REAL every-minute trigger (the `cron` pass uses wrangler dev's /__scheduled, which a deployed Worker lacks)
   crontrigger) EXPECT=1; "$RS" cargo test --manifest-path "$M" -p thrust-contract-tests --test worker_only -- stage2_cron_real_trigger_ --test-threads=1 --nocapture >"$LOG.test.log" 2>&1 ;;

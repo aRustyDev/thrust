@@ -194,7 +194,8 @@ slice's own routes are not Plane-shaped: they are mounted under `/api/_slice` (`
 `crates/thrust-api/src/lib.rs`), outside the `/api/v1` prefix that is reserved for the wire-compatible
 `thrust-api-v1` routes (issue #47), and are deleted when #58 replaces them.
 `thrust-collab-do` is not a separate root until M5: the one Worker exports the DO classes, as the slice already does
-(`RateLimiterDo` and `RoomDo`, `crates/thrust-worker/src/durable.rs:26-86`). The `thrust-ports` and
+(`RoomDo`, `crates/thrust-worker/src/durable.rs`; the rate limiter's `RateLimiterDo` was removed in issue #43 for the Workers
+Rate Limiting binding). The `thrust-ports` and
 `thrust-adapters-selfhosted` lines follow the §1c list, and `kv` leaves the Cloudflare adapter line (FR-03; ADR-0082).
 
 ### 2b. Request flow (write path, any adapter set)
