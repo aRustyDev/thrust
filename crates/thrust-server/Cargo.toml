@@ -22,6 +22,9 @@ mutant_skip_csrf = ["thrust-core/mutant_skip_csrf"]
 mutant_csrf_never = ["thrust-core/mutant_csrf_never"]
 mutant_csrf_always = ["thrust-core/mutant_csrf_always"]
 mutant_unverified_email = ["thrust-core/mutant_unverified_email"]
+# Pass-through to thrust-adapters-postgres's control-run mutants (issue #39). They only mean something on `native-pg`.
+mutant_count_nothing = ["thrust-adapters-postgres/mutant_count_nothing"]
+mutant_extra_stmt_per_row = ["thrust-adapters-postgres/mutant_extra_stmt_per_row"]
 
 [dependencies]
 thrust-contracts = { workspace = true }

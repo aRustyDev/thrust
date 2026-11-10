@@ -35,6 +35,19 @@ kill_check() {
   fi
 }
 
+# A kill that also names its cause. `kill_check` counts any failure with exit 101 as a kill, and a run that never got as far as
+# the thing under test fails too: without Docker every `pg_adapter` test panics in its setup, which reads as KILLED. $4 is text
+# only the assertion the mutant is aimed at prints, so a log without it is not a kill.
+kill_check_msg() {
+  # $1 label, $2 exit status, $3 log file with test output, $4 text the failure must contain
+  if grep -qF -- "$4" "$3"; then
+    kill_check "$1" "$2" "$3"
+  else
+    printf '%-34s SURVIVED or did not run (the log never says: %s)\n' "$1" "$4" >>"$SUMMARY"
+    SURVIVED=1
+  fi
+}
+
 # name:feature:pass. The CSRF switch (Q-0050.8) has a mutant for each direction: ignored when on (the main pass, which runs
 # with enforcement on, must fail) and ignored when off (the `csrfoff` pass must fail).
 for triple in \
@@ -95,6 +108,30 @@ guard_check "guard: csrfoff pass, server on" "$status" "$OUT/guard-off-vs-on.out
   --features mutant_discard_noop --test pg_adapter -- an_abandoned_transaction model_postgres_adapter_matches >"$OUT/pg-discard.out" 2>&1
 status=$?
 kill_check "postgres adapter + discard-noop" "$status" "$OUT/pg-discard.out"
+
+# Postgres adapter mutant (issue #39): the round-trip counter counts nothing. The counting tests must notice, and the failure
+# must be a wrong count: "statements, the model says" is in the generated test's message and nowhere else, so a pool that never
+# started (no Docker) is not a kill.
+"$ROOT/scripts/rs" cargo test --manifest-path "$ROOT/Cargo.toml" -p thrust-adapters-selfhosted \
+  --features mutant_count_nothing --test pg_adapter -- counting >"$OUT/pg-count-nothing.out" 2>&1
+status=$?
+kill_check_msg "postgres adapter + count-nothing" "$status" "$OUT/pg-count-nothing.out" "statements, the model says"
+
+# The same counter's mutants at the server, on native-pg (issue #39): the budget test, alone (the `budget` pass), must fail on
+# each, and for the reason the mutant is for. `kill_check` alone would also count a run that never reached the test (Postgres
+# did not start, the build failed), so the log has to say what the mutant breaks: a page that sends a statement per row is
+# "over budget", a counter that counts nothing is "below floor".
+for triple in \
+  "extra-statement-per-row:mutant_extra_stmt_per_row:over budget" \
+  "count-nothing:mutant_count_nothing:below floor"; do
+  name="${triple%%:*}"
+  rest="${triple#*:}"
+  feature="${rest%%:*}"
+  needle="${rest#*:}"
+  THRUST_SERVER_FEATURES="$feature" THRUST_LOGDIR="$OUT/$name" "$ROOT/scripts/contract.sh" native-pg budget >"$OUT/$name.out" 2>&1
+  status=$?
+  kill_check_msg "native-pg budget + $name" "$status" "$OUT/$name/native-pg-budget.test.log" "$needle"
+done
 
 cat "$SUMMARY"
 exit "$SURVIVED"

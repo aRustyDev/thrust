@@ -14,6 +14,7 @@
 //! row and the commit as when the upsert was the first statement of the transaction. The price is a gap: a number taken
 //! by a create that then fails or is abandoned is not given back.
 
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -59,6 +60,15 @@ pub async fn migrate(client: &Client) -> Result<(), tokio_postgres::Error> {
 
 pub trait ClientHandle: Send {
     fn client(&self) -> &Client;
+    /// Where the statements sent through this handle are counted, if anywhere. Only the handles of a
+    /// [`CountingConnector`] say; the pool's and Hyperdrive's do not, and need no change.
+    fn round_trips(&self) -> Option<&RoundTrips> {
+        None
+    }
+    /// The way to send a statement: every statement of this adapter goes through the [`Pg`] this returns.
+    fn pg(&self) -> Pg<'_> {
+        Pg { client: self.client(), rt: self.round_trips() }
+    }
     /// A transaction was abandoned without COMMIT/ROLLBACK: the connection must not be reused.
     fn discard(self: Box<Self>) {}
 }
@@ -74,6 +84,49 @@ pub trait Connector: Send + Sync {
     /// `exclusive == true` -> a connection no other statement will touch until it is dropped
     /// (used by transactions). `false` -> may be shared.
     async fn checkout(&self, exclusive: bool) -> Result<Box<dyn ClientHandle>, DbError>;
+}
+
+/// A connector that counts. Its handles are those of `inner`, with their statements added to one [`RoundTrips`]. A request
+/// makes its own, so the count is that request's, on a process that serves many (the native server) as on an isolate that
+/// builds the connector per request (the Worker). It sits between [`PgDatabase`] and the real connector, which is the one
+/// place every checkout passes: `begin` and the second connection of `allocate` included, which `conn()` alone would miss.
+pub struct CountingConnector {
+    inner: Arc<dyn Connector>,
+    rt: RoundTrips,
+}
+
+impl CountingConnector {
+    pub fn new(inner: Arc<dyn Connector>, rt: RoundTrips) -> Self {
+        Self { inner, rt }
+    }
+}
+
+#[async_trait]
+impl Connector for CountingConnector {
+    async fn checkout(&self, exclusive: bool) -> Result<Box<dyn ClientHandle>, DbError> {
+        let inner = self.inner.checkout(exclusive).await?;
+        Ok(Box::new(Counted { inner, rt: self.rt.clone() }))
+    }
+}
+
+/// A checked-out handle with a counter on it. `discard` has to reach the inner handle: its own `discard` is what keeps a
+/// connection that is still inside a transaction out of the pool, and the trait's default would put it back.
+struct Counted {
+    inner: Box<dyn ClientHandle>,
+    rt: RoundTrips,
+}
+
+impl ClientHandle for Counted {
+    fn client(&self) -> &Client {
+        self.inner.client()
+    }
+    fn round_trips(&self) -> Option<&RoundTrips> {
+        Some(&self.rt)
+    }
+    fn discard(self: Box<Self>) {
+        let Counted { inner, .. } = *self;
+        inner.discard();
+    }
 }
 
 fn db_err(e: tokio_postgres::Error) -> DbError {
@@ -189,26 +242,72 @@ fn typed<'a>(p: Params<'a>) -> Vec<(&'a (dyn ToSql + Sync), Type)> {
     p.iter().map(|x| (*x as &(dyn ToSql + Sync), x.pg_type())).collect()
 }
 
-/// A connected client whose statements all go through the single-pipeline typed calls.
+/// A count of the statements sent through [`Pg`], shared by every handle one [`CountingConnector`] gives out (issue #39).
+///
+/// The unit is a statement, and a statement is one wire round trip because no code in the adapter, the core or the API
+/// crates puts two statements in flight on one client. It is not a count of connections: a Hyperdrive handshake is no
+/// statement. And it does not wait for what a request leaves running after its answer (the background touch of an API
+/// key or a session): that work is counted only if it runs before the count is read, so whoever needs a stable number
+/// has to keep such work out of the request they measure.
+#[derive(Clone, Debug, Default)]
+pub struct RoundTrips(Arc<AtomicU32>);
+
+impl RoundTrips {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// The statements counted so far.
+    pub fn get(&self) -> u32 {
+        self.0.load(Ordering::Relaxed)
+    }
+
+    /// One statement is about to be sent. It counts when it is sent and not when it succeeds: a statement that fails or is
+    /// cancelled still cost its round trip.
+    fn tick(&self) {
+        // MUTANT (control run only): with `mutant_count_nothing` the counter counts nothing, and the budget test must
+        // notice. Nothing but `scripts/mutants.sh` builds this.
+        #[cfg(not(feature = "mutant_count_nothing"))]
+        self.0.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
+/// A connected client whose statements all go through the single-pipeline typed calls, and are counted when the handle it
+/// came from keeps a [`RoundTrips`]. It is made by [`ClientHandle::pg`] and by nothing else (its fields are private), so a
+/// statement cannot reach the client without passing the counter.
 #[derive(Clone, Copy)]
-pub struct Pg<'a>(pub &'a Client);
+pub struct Pg<'a> {
+    client: &'a Client,
+    rt: Option<&'a RoundTrips>,
+}
 
 impl Pg<'_> {
+    fn sent(&self) {
+        if let Some(rt) = self.rt {
+            rt.tick();
+        }
+    }
+
     pub async fn query(&self, sql: &str, p: Params<'_>) -> Result<Vec<Row>, tokio_postgres::Error> {
-        self.0.query_typed(sql, &typed(p)).await
+        self.sent();
+        self.client.query_typed(sql, &typed(p)).await
     }
     pub async fn query_opt(&self, sql: &str, p: Params<'_>) -> Result<Option<Row>, tokio_postgres::Error> {
-        self.0.query_typed_opt(sql, &typed(p)).await
+        self.sent();
+        self.client.query_typed_opt(sql, &typed(p)).await
     }
     pub async fn query_one(&self, sql: &str, p: Params<'_>) -> Result<Row, tokio_postgres::Error> {
-        self.0.query_typed_one(sql, &typed(p)).await
+        self.sent();
+        self.client.query_typed_one(sql, &typed(p)).await
     }
     pub async fn execute(&self, sql: &str, p: Params<'_>) -> Result<u64, tokio_postgres::Error> {
-        self.0.execute_typed(sql, &typed(p)).await
+        self.sent();
+        self.client.execute_typed(sql, &typed(p)).await
     }
     /// Simple query protocol; no parameters (BEGIN / COMMIT / ROLLBACK).
     pub async fn batch_execute(&self, sql: &str) -> Result<(), tokio_postgres::Error> {
-        self.0.batch_execute(sql).await
+        self.sent();
+        self.client.batch_execute(sql).await
     }
 }
 
@@ -709,7 +808,8 @@ impl Database for PgDatabase {
         // One query: the slug, the caller's workspace membership (inner join), the project in that
         // workspace (inner join) and the caller's project row (left join, same workspace). No row
         // means the caller may not know the workspace or the project exists.
-        let row = Pg(c.client())
+        let row = c
+            .pg()
             .query_opt(
                 "SELECT w.id AS workspace_id, m.role AS role FROM workspaces w \
                  JOIN workspace_members wm ON wm.workspace_id = w.id AND wm.user_id = $3 AND wm.is_active \
@@ -732,7 +832,8 @@ impl Database for PgDatabase {
 
     async fn session(&self, hash: &TokenHash, now: Timestamp) -> Result<Option<LiveSession>, DbError> {
         let c = self.conn().await?;
-        let row = Pg(c.client())
+        let row = c
+            .pg()
             .query_opt(
                 "SELECT s.user_id, s.last_seen_at FROM sessions s JOIN users u ON u.id = s.user_id \
                  WHERE s.token_hash = $1 AND s.revoked_at IS NULL AND s.expires_at > $2 AND u.is_active",
@@ -745,7 +846,7 @@ impl Database for PgDatabase {
 
     async fn touch_session(&self, hash: &TokenHash, at: Timestamp) -> Result<(), DbError> {
         let c = self.conn().await?;
-        Pg(c.client())
+        c.pg()
             .execute("UPDATE sessions SET last_seen_at = $2 WHERE token_hash = $1", &[&&hash.0[..], &at])
             .await
             .map_err(db_err)?;
@@ -754,7 +855,7 @@ impl Database for PgDatabase {
 
     async fn revoke_session(&self, hash: &TokenHash, at: Timestamp) -> Result<(), DbError> {
         let c = self.conn().await?;
-        Pg(c.client())
+        c.pg()
             .execute(
                 "UPDATE sessions SET revoked_at = $2 WHERE token_hash = $1 AND revoked_at IS NULL",
                 &[&&hash.0[..], &at],
@@ -766,7 +867,7 @@ impl Database for PgDatabase {
 
     async fn insert_session(&self, s: &NewSession) -> Result<(), DbError> {
         let c = self.conn().await?;
-        Pg(c.client())
+        c.pg()
             .execute(
                 "INSERT INTO sessions (token_hash, user_id, created_at, expires_at, last_seen_at) \
                  VALUES ($1, $2, $3, $4, $3) ON CONFLICT (token_hash) DO NOTHING",
@@ -779,7 +880,7 @@ impl Database for PgDatabase {
 
     async fn revoke_user_sessions(&self, user: UserId, at: Timestamp) -> Result<u64, DbError> {
         let c = self.conn().await?;
-        Pg(c.client())
+        c.pg()
             .execute("UPDATE sessions SET revoked_at = $2 WHERE user_id = $1 AND revoked_at IS NULL", &[&user.0, &at])
             .await
             .map_err(db_err)
@@ -787,7 +888,8 @@ impl Database for PgDatabase {
 
     async fn user_by_email(&self, email: &str) -> Result<Option<UserRecord>, DbError> {
         let c = self.conn().await?;
-        let row = Pg(c.client())
+        let row = c
+            .pg()
             .query_opt(&format!("SELECT {USER_COLS} FROM users WHERE email = $1"), &[&email])
             .await
             .map_err(db_err)?;
@@ -798,7 +900,7 @@ impl Database for PgDatabase {
         // The workspace and its first member go in together or not at all: `Tx` only exposes slice operations, so this goes
         // through a connection of its own, as `seed` does. A taken slug is a unique violation, which `db_err` makes a `Conflict`.
         let c = self.connector.checkout(true).await?;
-        let cl = Pg(c.client());
+        let cl = c.pg();
         cl.batch_execute("BEGIN").await.map_err(db_err)?;
         let res: Result<(), DbError> = async {
             let ws = &w.workspace;
@@ -851,7 +953,8 @@ impl Database for PgDatabase {
 
     async fn workspace_slug_taken(&self, slug: &str) -> Result<bool, DbError> {
         let c = self.conn().await?;
-        let row = Pg(c.client())
+        let row = c
+            .pg()
             .query_one("SELECT EXISTS (SELECT 1 FROM workspaces WHERE slug = $1) AS taken", &[&slug])
             .await
             .map_err(db_err)?;
@@ -860,14 +963,13 @@ impl Database for PgDatabase {
 
     async fn any_workspace(&self) -> Result<bool, DbError> {
         let c = self.conn().await?;
-        let row =
-            Pg(c.client()).query_one("SELECT EXISTS (SELECT 1 FROM workspaces) AS any", &[]).await.map_err(db_err)?;
+        let row = c.pg().query_one("SELECT EXISTS (SELECT 1 FROM workspaces) AS any", &[]).await.map_err(db_err)?;
         Ok(row.get("any"))
     }
 
     async fn workspaces_of(&self, user: UserId) -> Result<Vec<WorkspaceListing>, DbError> {
         let c = self.conn().await?;
-        let rows = Pg(c.client())
+        let rows = c.pg()
             .query(
                 &format!(
                     "SELECT {WORKSPACE_COLS}, wm.role AS m_role, \
@@ -892,7 +994,8 @@ impl Database for PgDatabase {
 
     async fn workspace_access(&self, slug: &WorkspaceSlug, user: UserId) -> Result<Option<WorkspaceAccess>, DbError> {
         let c = self.conn().await?;
-        let row = Pg(c.client())
+        let row = c
+            .pg()
             .query_opt(
                 "SELECT w.id AS workspace_id, wm.role AS role FROM workspaces w \
                  JOIN workspace_members wm ON wm.workspace_id = w.id AND wm.user_id = $2 AND wm.is_active \
@@ -909,7 +1012,7 @@ impl Database for PgDatabase {
 
     async fn is_workspace_member(&self, scope: &WorkspaceScope, user: UserId) -> Result<bool, DbError> {
         let c = self.conn().await?;
-        let row = Pg(c.client())
+        let row = c.pg()
             .query_one(
                 "SELECT EXISTS (SELECT 1 FROM workspace_members WHERE workspace_id = $1 AND user_id = $2 AND is_active) AS is_member",
                 &[&scope.workspace_id().0, &user.0],
@@ -927,7 +1030,8 @@ impl Database for PgDatabase {
         active: bool,
     ) -> Result<bool, DbError> {
         let c = self.conn().await?;
-        let n = Pg(c.client())
+        let n = c
+            .pg()
             .execute(
                 "UPDATE workspace_members SET is_active = $3 WHERE workspace_id = $1 AND user_id = $2",
                 &[&workspace.0, &user.0, &active],
@@ -939,7 +1043,8 @@ impl Database for PgDatabase {
 
     async fn workspace_member(&self, scope: &WorkspaceScope) -> Result<Option<WorkspaceMember>, DbError> {
         let c = self.conn().await?;
-        let row = Pg(c.client())
+        let row = c
+            .pg()
             .query_opt(
                 &format!(
                     "SELECT {MEMBER_COLS} FROM workspace_members wm WHERE wm.workspace_id = $1 AND wm.user_id = $2"
@@ -953,7 +1058,8 @@ impl Database for PgDatabase {
 
     async fn workspace_members(&self, scope: &WorkspaceScope) -> Result<Vec<MemberWithUser>, DbError> {
         let c = self.conn().await?;
-        let rows = Pg(c.client())
+        let rows = c
+            .pg()
             .query(
                 &format!(
                     "SELECT {MEMBER_COLS}, u.email AS u_email, COALESCE(p.first_name, '') AS u_first_name, \
@@ -985,7 +1091,8 @@ impl Database for PgDatabase {
 
     async fn project_roles(&self, scope: &WorkspaceScope) -> Result<Vec<(ProjectId, Role)>, DbError> {
         let c = self.conn().await?;
-        let rows = Pg(c.client())
+        let rows = c
+            .pg()
             .query(
                 // the project must really be in the workspace the member row names: a row that says otherwise is not a role
                 "SELECT m.project_id AS project_id, m.role AS role FROM project_members m \
@@ -1003,7 +1110,8 @@ impl Database for PgDatabase {
         // admin sees every project, a member the ones they are in and the public ones, a guest only the ones they are in.
         let (all, public) = (scope.role() == Role::Admin, scope.role() == Role::Member);
         let c = self.conn().await?;
-        let rows = Pg(c.client())
+        let rows = c
+            .pg()
             .query(
                 &format!(
                     "SELECT {PROJECT_COLS}, m.role AS m_role, up.sort_order AS up_sort_order FROM projects p \
@@ -1025,7 +1133,7 @@ impl Database for PgDatabase {
         // Plane's v1 rule, whatever the caller's role in the workspace: the projects they are in, and the public ones (a guest sees a
         // public project they are not in, an admin does not see a secret one they are not in).
         let c = self.conn().await?;
-        let rows = Pg(c.client())
+        let rows = c.pg()
             .query(
                 &format!(
                     "SELECT {PROJECT_COLS}, m.role AS m_role, up.sort_order AS up_sort_order FROM projects p \
@@ -1044,7 +1152,8 @@ impl Database for PgDatabase {
 
     async fn delete_project(&self, scope: &WorkspaceScope, id: ProjectId, at: Timestamp) -> Result<bool, DbError> {
         let c = self.conn().await?;
-        let n = Pg(c.client())
+        let n = c
+            .pg()
             .execute(
                 "UPDATE projects SET deleted_at = $3 WHERE id = $1 AND workspace_id = $2 AND deleted_at IS NULL",
                 &[&id.0, &scope.workspace_id().0, &at],
@@ -1064,7 +1173,7 @@ impl Database for PgDatabase {
         let pinned: Vec<bool> = defaults.iter().map(|d| d.is_pinned).collect();
         let orders: Vec<f64> = defaults.iter().map(|d| d.sort_order).collect();
         let c = self.conn().await?;
-        let cl = Pg(c.client());
+        let cl = c.pg();
         // INSERT first, then SELECT: a first visit racing another waits on the other's row at the conflict, so its SELECT
         // (a new snapshot) sees every row
         cl.execute(
@@ -1105,7 +1214,7 @@ impl Database for PgDatabase {
         let orders: Vec<f64> = defaults.iter().map(|d| d.sort_order).collect();
         let made: Vec<Timestamp> = defaults.iter().map(|d| d.created_at).collect();
         let c = self.conn().await?;
-        let cl = Pg(c.client());
+        let cl = c.pg();
         cl.execute(
             "INSERT INTO workspace_home_preferences (workspace_id, user_id, key, is_enabled, config, sort_order, created_at, updated_at) \
              SELECT $1, $2, d.key, d.is_enabled, d.config, d.sort_order, d.created_at, d.created_at \
@@ -1142,7 +1251,7 @@ impl Database for PgDatabase {
         new: &UserProperties,
     ) -> Result<UserProperties, DbError> {
         let c = self.conn().await?;
-        let cl = Pg(c.client());
+        let cl = c.pg();
         cl.execute(
             "INSERT INTO workspace_user_properties (id, workspace_id, user_id, filters, display_filters, display_properties, \
                rich_filters, navigation_project_limit, navigation_control_preference, created_at, updated_at) \
@@ -1183,7 +1292,7 @@ impl Database for PgDatabase {
         // operations, so this goes through a connection of its own, as `insert_workspace` does. A taken name or key is a unique
         // violation, which `db_err` makes a `Conflict`.
         let c = self.connector.checkout(true).await?;
-        let cl = Pg(c.client());
+        let cl = c.pg();
         cl.batch_execute("BEGIN").await.map_err(db_err)?;
         let res: Result<(), DbError> = async {
             let temps = ProjectTemps::of(&p.project);
@@ -1288,7 +1397,7 @@ impl Database for PgDatabase {
     ) -> Result<ProjectClashes, DbError> {
         let except = except.map(|p| p.0);
         let c = self.conn().await?;
-        let row = Pg(c.client())
+        let row = c.pg()
             .query_one(
                 "SELECT \
                    EXISTS (SELECT 1 FROM projects WHERE workspace_id = $1 AND name = $2 AND deleted_at IS NULL AND ($4::uuid IS NULL OR id <> $4)) AS name_taken, \
@@ -1310,7 +1419,8 @@ impl Database for PgDatabase {
         let mut params: Vec<&dyn PgParam> = vec![&row.id.0, &workspace];
         params.extend(replaced.iter().map(|c| c.1));
         let c = self.conn().await?;
-        let n = Pg(c.client())
+        let n = c
+            .pg()
             .execute(
                 &format!(
                     "UPDATE projects SET {} WHERE id = $1 AND workspace_id = $2 AND deleted_at IS NULL",
@@ -1325,7 +1435,7 @@ impl Database for PgDatabase {
 
     async fn project_detail(&self, scope: &WorkspaceScope, id: ProjectId) -> Result<Option<ProjectDetail>, DbError> {
         let c = self.conn().await?;
-        let row = Pg(c.client())
+        let row = c.pg()
             .query_opt(
                 &format!(
                     "SELECT {PROJECT_COLS}, m.role AS m_role, up.sort_order AS up_sort_order, \
@@ -1367,7 +1477,7 @@ impl Database for PgDatabase {
         project: ProjectId,
     ) -> Result<Option<ProjectMemberWithUser>, DbError> {
         let c = self.conn().await?;
-        let row = Pg(c.client())
+        let row = c.pg()
             .query_opt(
                 &format!(
                     "SELECT {PMEMBER_COLS}, {PROJECT_COLS}, {WORKSPACE_COLS}, u.email AS u_email, \
@@ -1400,7 +1510,7 @@ impl Database for PgDatabase {
 
     async fn project_members(&self, scope: &Scope) -> Result<Vec<ProjectMemberRow>, DbError> {
         let c = self.conn().await?;
-        let rows = Pg(c.client())
+        let rows = c.pg()
             .query(
                 &format!(
                     "SELECT {PMEMBER_COLS} FROM project_members pm \
@@ -1421,7 +1531,7 @@ impl Database for PgDatabase {
         new: &ProjectUserProperties,
     ) -> Result<ProjectUserProperties, DbError> {
         let c = self.conn().await?;
-        let cl = Pg(c.client());
+        let cl = c.pg();
         // from `projects`, so a project that is not in the scope's workspace makes no row (and the SELECT below finds none)
         cl.execute(
             "INSERT INTO project_user_properties (id, project_id, workspace_id, user_id, filters, display_filters, display_properties, \
@@ -1457,7 +1567,8 @@ impl Database for PgDatabase {
 
     async fn project_labels(&self, scope: &Scope) -> Result<Vec<LabelRow>, DbError> {
         let c = self.conn().await?;
-        let rows = Pg(c.client())
+        let rows = c
+            .pg()
             .query(
                 &format!(
                     "SELECT {LABEL_COLS} FROM labels \
@@ -1478,7 +1589,7 @@ impl Database for PgDatabase {
         // `Conflict`.
         let c = self.conn().await?;
         let (created_by, updated_by) = (l.created_by.map(|u| u.0), l.updated_by.map(|u| u.0));
-        let row = Pg(c.client())
+        let row = c.pg()
             .query_one(
                 &format!(
                     "INSERT INTO labels (id, workspace_id, project_id, parent_id, name, description, color, sort_order, \
@@ -1513,7 +1624,8 @@ impl Database for PgDatabase {
     async fn update_label(&self, scope: &Scope, l: &LabelRow) -> Result<bool, DbError> {
         let c = self.conn().await?;
         let updated_by = l.updated_by.map(|u| u.0);
-        let n = Pg(c.client())
+        let n = c
+            .pg()
             .execute(
                 "UPDATE labels SET parent_id = $4, name = $5, description = $6, color = $7, sort_order = $8, \
                    external_source = $9, external_id = $10, updated_by = $11, updated_at = $12 \
@@ -1543,7 +1655,7 @@ impl Database for PgDatabase {
         // The walk is a UNION (not UNION ALL), which drops a row it has met: the pin lets a label be its own parent, and a loop of
         // labels must end the walk, not feed it.
         let c = self.conn().await?;
-        let row = Pg(c.client())
+        let row = c.pg()
             .query_one(
                 "WITH RECURSIVE tree AS ( \
                      SELECT id FROM labels WHERE id = $1 AND project_id = $2 AND workspace_id = $3 AND deleted_at IS NULL \
@@ -1563,7 +1675,7 @@ impl Database for PgDatabase {
 
     async fn project_states(&self, scope: &Scope) -> Result<Vec<StateRow>, DbError> {
         let c = self.conn().await?;
-        let rows = Pg(c.client())
+        let rows = c.pg()
             .query(
                 &format!(
                     "SELECT {STATE_COLS} FROM states st WHERE st.workspace_id = $1 AND st.project_id = $2 AND st.state_group <> 'triage' \
@@ -1578,7 +1690,7 @@ impl Database for PgDatabase {
 
     async fn workspace_states(&self, scope: &WorkspaceScope) -> Result<Vec<StateRow>, DbError> {
         let c = self.conn().await?;
-        let rows = Pg(c.client())
+        let rows = c.pg()
             .query(
                 &format!(
                     "SELECT {STATE_COLS} FROM states st \
@@ -1596,7 +1708,7 @@ impl Database for PgDatabase {
 
     async fn triage_state(&self, scope: &Scope) -> Result<Option<StateRow>, DbError> {
         let c = self.conn().await?;
-        let row = Pg(c.client())
+        let row = c.pg()
             .query_opt(
                 &format!(
                     "SELECT {STATE_COLS} FROM states st WHERE st.workspace_id = $1 AND st.project_id = $2 AND st.state_group = 'triage' \
@@ -1611,7 +1723,8 @@ impl Database for PgDatabase {
 
     async fn project_is_archived(&self, scope: &Scope) -> Result<bool, DbError> {
         let c = self.conn().await?;
-        let row = Pg(c.client())
+        let row = c
+            .pg()
             .query_opt(
                 "SELECT archived_at IS NOT NULL AS archived FROM projects \
                  WHERE id = $1 AND workspace_id = $2 AND deleted_at IS NULL",
@@ -1630,7 +1743,7 @@ impl Database for PgDatabase {
         // making, in one transaction: the one-default index would refuse the row while another still held the flag. A taken name is a
         // unique violation, which `db_err` makes a `Conflict`.
         let c = self.connector.checkout(true).await?;
-        let cl = Pg(c.client());
+        let cl = c.pg();
         cl.batch_execute("BEGIN").await.map_err(db_err)?;
         let res: Result<StateRow, DbError> = async {
             if st.is_default {
@@ -1683,7 +1796,7 @@ impl Database for PgDatabase {
 
     async fn update_state(&self, scope: &Scope, st: &StateRow) -> Result<bool, DbError> {
         let c = self.connector.checkout(true).await?;
-        let cl = Pg(c.client());
+        let cl = c.pg();
         cl.batch_execute("BEGIN").await.map_err(db_err)?;
         let res: Result<bool, DbError> = async {
             if st.is_default {
@@ -1729,7 +1842,8 @@ impl Database for PgDatabase {
 
     async fn delete_state(&self, scope: &Scope, id: Uuid, at: Timestamp) -> Result<bool, DbError> {
         let c = self.conn().await?;
-        let n = Pg(c.client())
+        let n = c
+            .pg()
             .execute(
                 "UPDATE states SET deleted_at = $4 \
                  WHERE id = $1 AND project_id = $2 AND workspace_id = $3 AND deleted_at IS NULL",
@@ -1743,7 +1857,8 @@ impl Database for PgDatabase {
     async fn state_has_work_items(&self, scope: &Scope, id: Uuid) -> Result<bool, DbError> {
         // The pin's `Issue.objects`, which leaves out what is archived, a draft or deleted, and everything in an archived project.
         let c = self.conn().await?;
-        let row = Pg(c.client())
+        let row = c
+            .pg()
             .query_one(
                 "SELECT EXISTS (SELECT 1 FROM work_items w \
                    JOIN projects p ON p.id = w.project_id AND p.workspace_id = w.workspace_id \
@@ -1764,7 +1879,7 @@ impl Database for PgDatabase {
     ) -> Result<Vec<ProjectStat>, DbError> {
         let only: Option<Vec<Uuid>> = only.map(|ids| ids.iter().map(|p| p.0).collect());
         let c = self.conn().await?;
-        let rows = Pg(c.client())
+        let rows = c.pg()
             .query(
                 "SELECT p.id AS id, \
                    CASE WHEN p.archived_at IS NULL THEN \
@@ -1790,7 +1905,8 @@ impl Database for PgDatabase {
 
     async fn user_by_id(&self, id: UserId) -> Result<Option<UserRecord>, DbError> {
         let c = self.conn().await?;
-        let row = Pg(c.client())
+        let row = c
+            .pg()
             .query_opt(&format!("SELECT {USER_COLS} FROM users WHERE id = $1"), &[&id.0])
             .await
             .map_err(db_err)?;
@@ -1800,7 +1916,8 @@ impl Database for PgDatabase {
     async fn insert_profile(&self, p: &UserProfile) -> Result<bool, DbError> {
         // ON CONFLICT on the user only: a taken `id` or `username` is a unique violation, which `db_err` makes a `Conflict`
         let c = self.conn().await?;
-        let n = Pg(c.client())
+        let n = c
+            .pg()
             .execute(
                 &format!(
                     "INSERT INTO user_profiles ({PROFILE_COLS}) VALUES \
@@ -1835,7 +1952,8 @@ impl Database for PgDatabase {
 
     async fn profile(&self, user: UserId) -> Result<Option<UserProfile>, DbError> {
         let c = self.conn().await?;
-        let row = Pg(c.client())
+        let row = c
+            .pg()
             .query_opt(&format!("SELECT {PROFILE_COLS} FROM user_profiles WHERE user_id = $1"), &[&user.0])
             .await
             .map_err(db_err)?;
@@ -1856,7 +1974,7 @@ impl Database for PgDatabase {
         let workspace: Option<Uuid> = patch.last_workspace_id.and_then(|w| w.map(|w| w.0));
         let preferences = serde_json::Value::Object(patch.preferences.clone());
         let c = self.conn().await?;
-        let row = Pg(c.client())
+        let row = c.pg()
             .query_opt(
                 &format!(
                     "UPDATE user_profiles SET \
@@ -1897,7 +2015,7 @@ impl Database for PgDatabase {
     async fn insert_user(&self, user: &UserRecord) -> Result<(), DbError> {
         // No ON CONFLICT: a taken id or email must fail, and `db_err` turns the unique violation into `Conflict`.
         let c = self.conn().await?;
-        Pg(c.client())
+        c.pg()
             .execute(
                 "INSERT INTO users (id, email, password_hash, is_active) VALUES ($1, $2, $3, $4)",
                 &[&user.id.0, &user.email.as_deref(), &user.password_hash.as_deref(), &user.is_active],
@@ -1909,7 +2027,8 @@ impl Database for PgDatabase {
 
     async fn user_for_account(&self, provider: &str, provider_account_id: &str) -> Result<Option<UserRecord>, DbError> {
         let c = self.conn().await?;
-        let row = Pg(c.client())
+        let row = c
+            .pg()
             .query_opt(
                 "SELECT u.id, u.email, u.password_hash, u.is_active FROM accounts a JOIN users u ON u.id = a.user_id \
                  WHERE a.provider = $1 AND a.provider_account_id = $2",
@@ -1922,7 +2041,7 @@ impl Database for PgDatabase {
 
     async fn link_account(&self, a: &NewAccount) -> Result<(), DbError> {
         let c = self.conn().await?;
-        Pg(c.client())
+        c.pg()
             .execute(
                 "INSERT INTO accounts (provider, provider_account_id, user_id, email, created_at) \
                  VALUES ($1, $2, $3, $4, $5) ON CONFLICT (provider, provider_account_id) DO NOTHING",
@@ -1941,7 +2060,7 @@ impl Database for PgDatabase {
 
     async fn insert_api_key(&self, k: &NewApiKey) -> Result<(), DbError> {
         let c = self.conn().await?;
-        Pg(c.client())
+        c.pg()
             .execute(
                 "INSERT INTO api_keys (id, user_id, token_hash, hash_version, prefix, label, created_at, expires_at) \
                  VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
@@ -1963,7 +2082,7 @@ impl Database for PgDatabase {
 
     async fn api_key(&self, hash: &TokenHash, now: Timestamp) -> Result<Option<LiveApiKey>, DbError> {
         let c = self.conn().await?;
-        let row = Pg(c.client())
+        let row = c.pg()
             .query_opt(
                 "SELECT k.id, k.user_id, k.last_used_at, k.hash_version FROM api_keys k JOIN users u ON u.id = k.user_id \
                  WHERE k.token_hash = $1 AND k.revoked_at IS NULL AND (k.expires_at IS NULL OR k.expires_at > $2) \
@@ -1982,10 +2101,7 @@ impl Database for PgDatabase {
 
     async fn touch_api_key(&self, id: ApiKeyId, at: Timestamp) -> Result<(), DbError> {
         let c = self.conn().await?;
-        Pg(c.client())
-            .execute("UPDATE api_keys SET last_used_at = $2 WHERE id = $1", &[&id.0, &at])
-            .await
-            .map_err(db_err)?;
+        c.pg().execute("UPDATE api_keys SET last_used_at = $2 WHERE id = $1", &[&id.0, &at]).await.map_err(db_err)?;
         Ok(())
     }
 
@@ -1999,7 +2115,8 @@ impl Database for PgDatabase {
         let c = self.conn().await?;
         // The compare-and-set is the WHERE clause: a row that is not (or no longer) at `from_version` is not touched,
         // and neither of its other constraints is looked at. Owner, expiry, revocation and last use stay.
-        let n = Pg(c.client())
+        let n = c
+            .pg()
             .execute(
                 "UPDATE api_keys SET token_hash = $3, hash_version = $4 WHERE id = $1 AND hash_version = $2",
                 &[&id.0, &from_version, &&new_hash.0[..], &new_version],
@@ -2011,7 +2128,8 @@ impl Database for PgDatabase {
 
     async fn list_api_keys(&self, user: UserId) -> Result<Vec<ApiKeyInfo>, DbError> {
         let c = self.conn().await?;
-        let rows = Pg(c.client())
+        let rows = c
+            .pg()
             .query(
                 "SELECT id, prefix, label, created_at, expires_at, revoked_at, last_used_at FROM api_keys \
                  WHERE user_id = $1 ORDER BY created_at, id",
@@ -2036,7 +2154,8 @@ impl Database for PgDatabase {
     async fn revoke_api_key(&self, user: UserId, id: ApiKeyId, at: Timestamp) -> Result<bool, DbError> {
         let c = self.conn().await?;
         // COALESCE keeps the first revocation time, so a second revoke changes nothing but still says "yours".
-        let n = Pg(c.client())
+        let n = c
+            .pg()
             .execute(
                 "UPDATE api_keys SET revoked_at = COALESCE(revoked_at, $3) WHERE id = $1 AND user_id = $2",
                 &[&id.0, &user.0, &at],
@@ -2048,7 +2167,7 @@ impl Database for PgDatabase {
 
     async fn insert_oidc_login(&self, l: &NewOidcLogin) -> Result<(), DbError> {
         let c = self.conn().await?;
-        let pg = Pg(c.client());
+        let pg = c.pg();
         pg.execute("DELETE FROM oidc_logins WHERE expires_at <= $1", &[&l.created_at]).await.map_err(db_err)?;
         pg.execute(
             "INSERT INTO oidc_logins (state_hash, nonce, code_verifier, created_at, expires_at) \
@@ -2063,7 +2182,8 @@ impl Database for PgDatabase {
     async fn take_oidc_login(&self, state: &TokenHash) -> Result<Option<OidcLogin>, DbError> {
         let c = self.conn().await?;
         // One statement: the row is returned to exactly one caller, and gone for the next.
-        let row = Pg(c.client())
+        let row = c
+            .pg()
             .query_opt(
                 "DELETE FROM oidc_logins WHERE state_hash = $1 RETURNING nonce, code_verifier, expires_at",
                 &[&&state.0[..]],
@@ -2079,7 +2199,8 @@ impl Database for PgDatabase {
 
     async fn set_user_active(&self, _sys: &SystemScope, user: UserId, active: bool) -> Result<bool, DbError> {
         let c = self.conn().await?;
-        let n = Pg(c.client())
+        let n = c
+            .pg()
             .execute("UPDATE users SET is_active = $2 WHERE id = $1", &[&user.0, &active])
             .await
             .map_err(db_err)?;
@@ -2088,7 +2209,7 @@ impl Database for PgDatabase {
 
     async fn seed_users(&self, _sys: &SystemScope, users: &[UserRecord]) -> Result<(), DbError> {
         let c = self.connector.checkout(true).await?;
-        let cl = Pg(c.client());
+        let cl = c.pg();
         cl.batch_execute("BEGIN").await.map_err(db_err)?;
         let res: Result<(), DbError> = async {
             for u in users {
@@ -2132,7 +2253,7 @@ impl Database for PgDatabase {
             ),
         };
         let c = self.conn().await?;
-        let rows = Pg(c.client()).query(&sql, &[&ws.0, &project.0]).await.map_err(db_err)?;
+        let rows = c.pg().query(&sql, &[&ws.0, &project.0]).await.map_err(db_err)?;
         Ok(rows.iter().map(work_item).collect())
     }
 
@@ -2145,7 +2266,7 @@ impl Database for PgDatabase {
         let sql =
             format!("SELECT {WI_COLS} FROM work_items WHERE workspace_id = $1 AND project_id = $2 AND id = $3{hidden}");
         let c = self.conn().await?;
-        let row = Pg(c.client()).query_opt(&sql, &[&ws.0, &project.0, &id.0]).await.map_err(db_err)?;
+        let row = c.pg().query_opt(&sql, &[&ws.0, &project.0, &id.0]).await.map_err(db_err)?;
         Ok(row.as_ref().map(work_item))
     }
 
@@ -2156,7 +2277,7 @@ impl Database for PgDatabase {
         let created_by = q.created_by.map(|u| u.0);
         let c = self.conn().await?;
         // one statement: the rows of the page and one more (is there a next page), and how many rows match, in each of them
-        let rows = Pg(c.client())
+        let rows = c.pg()
             .query(
                 &format!(
                     "SELECT {WIR_COLS}, count(*) OVER () AS total \
@@ -2170,10 +2291,16 @@ impl Database for PgDatabase {
             )
             .await
             .map_err(db_err)?;
+        // MUTANT (control run only, feature `mutant_extra_stmt_per_row`): one more statement for every row the page returns,
+        // the shape of Django's N+1. The budget test must notice (issue #39). Nothing but `scripts/mutants.sh` builds this.
+        #[cfg(feature = "mutant_extra_stmt_per_row")]
+        for _ in &rows {
+            c.pg().query_one("SELECT 1", &[]).await.map_err(db_err)?;
+        }
         let total: i64 = match rows.first() {
             Some(r) => r.get("total"),
             // a page past the end has no row to carry the count
-            None => Pg(c.client())
+            None => c.pg()
                 .query_one(
                     "SELECT count(*) FROM work_items w \
                      WHERE w.workspace_id = $1 AND w.project_id = $2 AND w.deleted_at IS NULL AND w.archived_at IS NULL AND NOT w.is_draft \
@@ -2191,7 +2318,8 @@ impl Database for PgDatabase {
 
     async fn work_item_row(&self, scope: &Scope, id: WorkItemId) -> Result<Option<WorkItemRow>, DbError> {
         let c = self.conn().await?;
-        let row = Pg(c.client())
+        let row = c
+            .pg()
             .query_opt(
                 &format!(
                     "SELECT {WIR_COLS} FROM work_items w LEFT JOIN states st ON st.id = w.state_id \
@@ -2207,7 +2335,8 @@ impl Database for PgDatabase {
 
     async fn work_item_by_sequence(&self, scope: &Scope, sequence_id: i64) -> Result<Option<WorkItemRow>, DbError> {
         let c = self.conn().await?;
-        let row = Pg(c.client())
+        let row = c
+            .pg()
             .query_opt(
                 &format!(
                     "SELECT {WIR_COLS} FROM work_items w LEFT JOIN states st ON st.id = w.state_id \
@@ -2228,7 +2357,8 @@ impl Database for PgDatabase {
         id: &str,
     ) -> Result<Option<WorkItemRow>, DbError> {
         let c = self.conn().await?;
-        let row = Pg(c.client())
+        let row = c
+            .pg()
             .query_opt(
                 &format!(
                     "SELECT {WIR_COLS} FROM work_items w LEFT JOIN states st ON st.id = w.state_id \
@@ -2252,7 +2382,7 @@ impl Database for PgDatabase {
         let pattern = like_pattern(&q.text);
         let project: Option<Uuid> = q.project.map(|p| p.0);
         let c = self.conn().await?;
-        let rows = Pg(c.client())
+        let rows = c.pg()
             .query(
                 "SELECT w.id, w.name, w.sequence_id, w.project_id, p.identifier, ws.slug \
                  FROM work_items w \
@@ -2290,7 +2420,7 @@ impl Database for PgDatabase {
 
     async fn max_work_item_sort_order(&self, scope: &Scope, state: Option<Uuid>) -> Result<Option<i64>, DbError> {
         let c = self.conn().await?;
-        let row = Pg(c.client())
+        let row = c.pg()
             .query_one(
                 "SELECT max(sort_order) FROM work_items \
                  WHERE workspace_id = $1 AND project_id = $2 AND deleted_at IS NULL AND state_id IS NOT DISTINCT FROM $3",
@@ -2306,7 +2436,8 @@ impl Database for PgDatabase {
         // `%`, `_` and `\` are literal in a query, so they are escaped for LIKE (the trigram GIN index serves `ILIKE`).
         let pattern = like_pattern(query);
         let c = self.conn().await?;
-        let rows = Pg(c.client())
+        let rows = c
+            .pg()
             .query(
                 &format!(
                     "SELECT {WI_COLS} FROM work_items WHERE workspace_id = $1 AND project_id = $2 \
@@ -2331,7 +2462,7 @@ impl Database for PgDatabase {
         // columns (`unnest`), so 5,000 of them are one round trip, which is what makes 100k seedable through Hyperdrive.
         let n = items.len() as i64;
         let c = self.connector.checkout(true).await?;
-        let cl = Pg(c.client());
+        let cl = c.pg();
         cl.batch_execute("BEGIN").await.map_err(db_err)?;
         let res: Result<i64, DbError> = async {
             let r = cl
@@ -2374,7 +2505,8 @@ impl Database for PgDatabase {
 
     async fn insert_activity(&self, _sys: &SystemScope, a: &Activity) -> Result<bool, DbError> {
         let c = self.conn().await?;
-        let n = Pg(c.client())
+        let n = c
+            .pg()
             .execute(
                 "INSERT INTO activity (id, event_id, workspace_id, project_id, entity_id, verb, actor_id, created_at) \
                  VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT (event_id) DO NOTHING",
@@ -2398,7 +2530,8 @@ impl Database for PgDatabase {
         let (ws, project) = (scope.workspace_id(), scope.project_id());
         let c = self.conn().await?;
         let entity: Option<Uuid> = entity.map(|e| e.0);
-        let rows = Pg(c.client())
+        let rows = c
+            .pg()
             .query(
                 "SELECT id, event_id, workspace_id, project_id, entity_id, verb, actor_id, created_at \
                  FROM activity WHERE workspace_id = $1 AND project_id = $2 \
@@ -2419,7 +2552,7 @@ impl Database for PgDatabase {
         after: Option<Timestamp>,
     ) -> Result<Vec<WorkItemActivity>, DbError> {
         let c = self.conn().await?;
-        let rows = Pg(c.client())
+        let rows = c.pg()
             .query(
                 &format!(
                     "SELECT {WIA_COLS} FROM work_item_activities \
@@ -2441,7 +2574,7 @@ impl Database for PgDatabase {
         id: WorkItemId,
     ) -> Result<Option<WorkItemActivity>, DbError> {
         let c = self.conn().await?;
-        let row = Pg(c.client())
+        let row = c.pg()
             .query_opt(
                 &format!(
                     "SELECT {WIA_COLS} FROM work_item_activities \
@@ -2461,7 +2594,8 @@ impl Database for PgDatabase {
         at: Timestamp,
     ) -> Result<bool, DbError> {
         let c = self.conn().await?;
-        let n = Pg(c.client())
+        let n = c
+            .pg()
             .execute("UPDATE work_item_activities SET created_at = $2 WHERE id = $1", &[&id.0, &at])
             .await
             .map_err(db_err)?;
@@ -2495,7 +2629,7 @@ impl Database for PgDatabase {
         let epochs: Vec<i64> = rows.iter().map(|r| r.epoch).collect();
         let times: Vec<Timestamp> = rows.iter().map(|r| r.created_at).collect();
         let c = self.conn().await?;
-        let r = Pg(c.client())
+        let r = c.pg()
             .query_one(
                 "WITH input AS ( \
                    SELECT * FROM unnest($1::uuid[], $2::uuid[], $3::int4[], $4::uuid[], $5::uuid[], $6::uuid[], $7::uuid[], $8::text[], $9::text[], \
@@ -2539,7 +2673,8 @@ impl Database for PgDatabase {
 
     async fn undispatched_outbox(&self, _sys: &SystemScope, limit: u32) -> Result<Vec<OutboxRow>, DbError> {
         let c = self.conn().await?;
-        let rows = Pg(c.client())
+        let rows = c
+            .pg()
             .query(
                 "SELECT envelope, created_at, attempts FROM outbox WHERE dispatched_at IS NULL \
                  ORDER BY created_at, event_id LIMIT $1",
@@ -2564,7 +2699,7 @@ impl Database for PgDatabase {
 
     async fn mark_outbox_dispatched(&self, _sys: &SystemScope, event: EventId, at: Timestamp) -> Result<(), DbError> {
         let c = self.conn().await?;
-        Pg(c.client())
+        c.pg()
             .execute(
                 "UPDATE outbox SET dispatched_at = $2, attempts = attempts + 1 WHERE event_id = $1",
                 &[&event.0, &at],
@@ -2576,7 +2711,8 @@ impl Database for PgDatabase {
 
     async fn outbox_depth(&self, _sys: &SystemScope) -> Result<u64, DbError> {
         let c = self.conn().await?;
-        let r = Pg(c.client())
+        let r = c
+            .pg()
             .query_one("SELECT count(*) AS n FROM outbox WHERE dispatched_at IS NULL", &[])
             .await
             .map_err(db_err)?;
@@ -2586,7 +2722,7 @@ impl Database for PgDatabase {
     async fn seed(&self, _sys: &SystemScope, f: &SeedFixture) -> Result<(), DbError> {
         // `Tx` only exposes slice operations, so the fixture goes through a connection directly.
         let c = self.connector.checkout(true).await?;
-        let cl = Pg(c.client());
+        let cl = c.pg();
         cl.batch_execute("BEGIN").await.map_err(db_err)?;
         let res: Result<(), DbError> = async {
             // users that exist by id only; a row that is there already (with an email, say) is left as it is
@@ -2780,7 +2916,7 @@ impl Database for PgDatabase {
               END IF; \
             END $$";
         let c = self.connector.checkout(true).await?;
-        Pg(c.client()).batch_execute(RESET).await.map_err(db_err)
+        c.pg().batch_execute(RESET).await.map_err(db_err)
     }
 }
 
@@ -2798,7 +2934,7 @@ const TX_HAS_NO_CONNECTION: &str = "transaction already finished: its connection
 impl PgTx {
     fn client(&self) -> Result<Pg<'_>, DbError> {
         match &self.conn {
-            Some(c) => Ok(Pg(c.client())),
+            Some(c) => Ok(c.pg()),
             None => Err(DbError::Backend(TX_HAS_NO_CONNECTION.into())),
         }
     }
@@ -2855,7 +2991,7 @@ impl Tx for PgTx {
         let (ws, project) = (scope.workspace_id(), scope.project_id());
         let r = if self.in_tx {
             let other = self.connector.checkout(true).await?;
-            let r = Pg(other.client()).query_one(UPSERT, &[&ws.0, &project.0]).await;
+            let r = other.pg().query_one(UPSERT, &[&ws.0, &project.0]).await;
             drop(other); // autocommit: nothing is open on it, it is clean
             r
         } else {
@@ -3080,7 +3216,7 @@ impl Tx for PgTx {
             // Nothing was written, so no transaction was opened: the connection is clean and goes back as it is.
             return Ok(());
         }
-        match conn.client().batch_execute("COMMIT").await {
+        match conn.pg().batch_execute("COMMIT").await {
             Ok(()) => Ok(()),
             Err(e) => {
                 conn.discard();
@@ -3099,7 +3235,7 @@ impl Tx for PgTx {
         if !in_tx {
             return Ok(());
         }
-        match conn.client().batch_execute("ROLLBACK").await {
+        match conn.pg().batch_execute("ROLLBACK").await {
             Ok(()) => Ok(()),
             Err(e) => {
                 conn.discard();
