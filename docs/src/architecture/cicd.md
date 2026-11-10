@@ -52,7 +52,7 @@ its base branch. Nothing calls it, so it is a tool to run by hand.
   CI at all.**
 - **The matrix.** The `plan` job reads the `run <target> <pass>` lines of `scripts/contract-all.sh`, so no second
   list can drift. It fails if the number of cells it parsed differs from the number of lines that start with `run`,
-  if there are none, or if one repeats. There are 21 cells `[derived: 18 contract cells and the 3 `oracle` cells below]`.
+  if there are none, or if one repeats. There are 21 cells: 18 contract cells and the 3 `oracle` cells below `[verified 2026-11-10 e591b29: PR #113's run had 21 cell jobs, all succeeded, and `gate` downloaded 21 markers; its planned-against-reported comparison did not run that time, because `hermetic` had failed and the script stops at the job check]`.
   Each runs on a fresh runner with its own checkout, which is why the shared-build-directory hazard that makes
   `contract-all.sh` run serially does not apply.
 - **A cell.** `contract-cell.yml` checks that `curl`, `openssl`, `lsof`, `pgrep` and `docker` exist, runs
@@ -65,7 +65,10 @@ its base branch. Nothing calls it, so it is a tool to run by hand.
   guard does not apply: success is the script's verdict, which exits 1 on any failing step. They need `uv`, so the
   workflow installs it for that pass only (`astral-sh/setup-uv`, uv 0.12.18) and the preflight checks for it. Schemathesis
   (4.31.1) and the Python dependencies of the harness's scripts are fetched from PyPI at run time. The oracle's logs go
-  to the cell's `logs-<target>-oracle` artifact.
+  to the cell's `logs-<target>-oracle` artifact. On hosted runners all three passed `[verified 2026-11-10 e591b29]`, so the
+  action installed uv, the preflight found it and `uvx` fetched Schemathesis there; as whole jobs, checkout, toolchain and
+  build included, they took 1m36s (`native-memory`), 2m11s (`native-pg`) and 4m00s (`worker-cf`), in parallel, against a
+  40 minute job timeout.
 - **Concurrency.** A new push cancels the older run of a pull request. Runs on `main` and in the merge queue are
   never cancelled.
 
