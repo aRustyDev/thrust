@@ -23,8 +23,10 @@
 #             bindings         (worker-cf only) the probe routes' admin gate, and one real operation per binding (rate limit,
 #                              secrets store, email)
 #             oracle           the v1 oracle's scoped gate and corpus comparison against the started target, with the /api/v1 rate
-#                              limit raised for the fuzzer; run through scripts/oracle-v1.sh <target> [controls]. Not in
-#                              contract-all.sh; success == its `VERDICT: PASS`
+#                              limit raised for the fuzzer, and (unless ORACLE_V1_WHAT is set, to '' for none) its must-fail
+#                              controls. In contract-all.sh, so a CI cell; needs `uv`. Success == its `VERDICT: PASS`, and its
+#                              logs go to target/contract-logs/<target>-oracle.oracle/. scripts/oracle-v1.sh <target> [controls]
+#                              is the way in by hand, and runs the controls only when asked
 #
 # Exit status is the status of `cargo test` itself (no pipes, no trailing echo). The suite's
 # pass count is also checked against the expected number so that a filter that selects zero
@@ -328,9 +330,12 @@ case "$PASS" in
     EXPECT=$EXPECT_ENGINE
     ;;
   oracle)
-    # The v1 oracle's scoped gate and corpus comparison against the target just started (scripts/oracle-v1.sh is the way in, and
-    # runs this pass). Not a test count: success == the script's verdict, which it prints as `VERDICT: PASS`.
-    "$ROOT/scripts/oracle-v1.sh" running
+    # The v1 oracle's scoped gate and corpus comparison against the target just started (scripts/oracle-v1.sh <target> runs this
+    # pass, with the label and the controls it was asked for; a cell reaches it directly and gets the target's name and the controls,
+    # which cost seconds on a Thrust target). Not a test count: success == the script's verdict, `VERDICT: PASS`. Its logs sit beside
+    # this pass's own, so that the cell's log artifact holds them.
+    ORACLE_V1_LABEL="${ORACLE_V1_LABEL:-$TARGET}" ORACLE_V1_WHAT="${ORACLE_V1_WHAT-controls}" ORACLE_V1_WORK="${ORACLE_V1_WORK:-$LOG.oracle}" \
+      "$ROOT/scripts/oracle-v1.sh" running
     TEST_STATUS=$?
     echo "[$TARGET/$PASS] oracle exit=$TEST_STATUS"
     exit "$TEST_STATUS"

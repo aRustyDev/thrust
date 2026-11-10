@@ -50,7 +50,7 @@ case "$TARGET" in
 esac
 
 RESULTS="$ORACLE/results/m1"
-WORK="$ORACLE/.work/m1-$LABEL"
+WORK="${ORACLE_V1_WORK:-$ORACLE/.work/m1-$LABEL}"
 mkdir -p "$RESULTS" "$WORK"
 rm -rf "$WORK/corpus" "$WORK/corpus-raw" "$WORK/conformance"
 
