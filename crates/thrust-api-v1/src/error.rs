@@ -68,6 +68,10 @@ fn error(status: StatusCode, message: &str) -> Response<Body> {
     (status, Json(json!({ "error": message }))).into_response()
 }
 
+/// Set on an answer that no view made (the URLconf's 404), which carries no `Allow` header.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct NoView;
+
 impl IntoResponse for V1Error {
     fn into_response(self) -> Response<Body> {
         match self {
@@ -79,7 +83,12 @@ impl IntoResponse for V1Error {
                 detail(StatusCode::FORBIDDEN, "You do not have permission to perform this action.")
             }
             V1Error::NotFound => error(StatusCode::NOT_FOUND, "The requested resource does not exist."),
-            V1Error::PageNotFound => error(StatusCode::NOT_FOUND, "Page not found."),
+            V1Error::PageNotFound => {
+                // no view answered it, so DRF added no `Allow` (`crate::with_allow` checks for this)
+                let mut resp = error(StatusCode::NOT_FOUND, "Page not found.");
+                resp.extensions_mut().insert(NoView);
+                resp
+            }
             V1Error::Detail(status, message) => detail(status, &message),
             V1Error::Error(status, body) => (status, Json(body)).into_response(),
             V1Error::Fields(fields) => (StatusCode::BAD_REQUEST, Json(Value::Object(fields))).into_response(),

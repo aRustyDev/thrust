@@ -83,6 +83,7 @@ Where those docs and the rules below disagree, the rules win; record the disagre
 | Format, lint and audit (CI jobs `lint` and `deny`; clippy denies `unwrap`, `expect`, `panic!` and indexing in core, ports and the adapters) | `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo deny check` |
 | Long randomized run (includes `oracle_`) | `PROPTEST_CASES=4096 cargo nextest run --profile deep` |
 | Comparison with the TypeScript oracle (needs Node, or its output from `tools/spike-0006/gen-all.sh`) | `cargo nextest run --profile oracle` |
+| `/api/v1` against the Plane v1 oracle: scoped gate, corpus comparison, controls (needs `uv`; Docker for `native-pg` and `worker-cf`) | `scripts/oracle-v1.sh native-memory controls` (`tools/oracle-v1/README.md`) |
 | Postgres adapter tests through nextest (needs Docker) | `cargo nextest run --ignore-default-filter -E 'binary(pg_adapter)'` |
 | Mutation testing, one file (the crate needs tests of its own) | `cargo mutants -f <path>` |
 

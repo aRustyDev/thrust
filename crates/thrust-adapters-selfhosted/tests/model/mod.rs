@@ -2045,6 +2045,8 @@ fn projects_listing(
             project: s.row(fix.ws[slot]),
             role: s.role_of(user),
             sort_order: props.get(&(*i, user as usize)).map(|p| p.sort_order),
+            // a seeded member row has the default place (65535); a person who is not in the project has none
+            member_sort_order: s.role_of(user).map(|_| 65535.0),
         })
         .collect()
 }
@@ -3554,6 +3556,7 @@ impl Model {
                         project: spec.row(ws),
                         role: spec.role_of(user),
                         sort_order: self.project_props.get(&(proj, u)).map(|p| p.sort_order),
+                        member_sort_order: spec.role_of(user).map(|_| 65535.0),
                     },
                     members: rows.iter().map(|r| r.0).collect(),
                     next_sequence,
@@ -3731,6 +3734,11 @@ impl Model {
                         project: p.project.clone(),
                         role: p.members.iter().any(|m| m.member.user_id == user).then_some(Role::Admin),
                         sort_order: place,
+                        member_sort_order: p
+                            .members
+                            .iter()
+                            .find(|m| m.member.user_id == user)
+                            .map(|m| m.member.sort_order),
                     },
                     members,
                     next_sequence: 1,

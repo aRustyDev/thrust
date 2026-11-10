@@ -235,9 +235,9 @@ fn a_project_made_now_has_the_times_the_pin_writes() {
 }
 
 /// The list takes `updated_at` as an order, in both directions. The clock is fixed, so the cast project is given a time of its own,
-/// earlier than the other's. A list that ignored the key would answer with the default order (the other first, as the member's own
-/// place puts it) for the ascending request and with its reverse for the descending one; the orders expected here are the opposite
-/// in each case, so ignoring the key shows in both.
+/// later than the other's. The default order is the member rows' places, which are all the same (65535), so the projects come in the
+/// order they were made: the cast project first. A list that ignored the key would answer that way for the ascending request, and the
+/// ascending order expected here is the opposite, so ignoring the key shows.
 #[test]
 fn the_list_is_ordered_by_when_a_project_was_changed() {
     let w = real_world();
@@ -248,13 +248,60 @@ fn the_list_is_ordered_by_when_a_project_was_changed() {
         .unwrap()
         .listing
         .project;
-    row.updated_at = thrust_contracts::chrono::DateTime::from_timestamp(NOW - 100, 0).unwrap();
+    row.updated_at = thrust_contracts::chrono::DateTime::from_timestamp(NOW + 100, 0).unwrap();
     assert!(block_on(w.app.ports.db.update_project(&admin, &row)).unwrap());
 
     let order = |q: &str| names(&get(&w, Who::Member, &format!("{}?order_by={q}", projects())));
-    assert_eq!(order("updated_at"), ["Cast Project", "Other"]);
-    assert_eq!(order("-updated_at"), ["Other", "Cast Project"]);
-    assert_eq!(order("sort_order"), ["Other", "Cast Project"], "the default, which the ascending request above is not");
+    assert_eq!(order("updated_at"), ["Other", "Cast Project"]);
+    assert_eq!(order("-updated_at"), ["Cast Project", "Other"]);
+    assert_eq!(
+        order("sort_order"),
+        ["Cast Project", "Other"],
+        "the default: equal places, so the order they were made in"
+    );
+}
+
+/// A new project has a random default icon and colour (the corpus's `create-scratch`: `logo_props` is `{in_use: "icon", icon:
+/// {name, color}}` with the two values erased). The name and the colour are drawn from the pin's lists, and a `logo_props` that the
+/// body gives is ignored, as the pin ignores it (measured with the emoji form and with null). Several creations show that the
+/// choice is drawn and not fixed, and that it stays within the lists.
+#[test]
+fn a_new_project_gets_a_default_icon_from_the_pins_lists_and_ignores_the_one_the_body_gives() {
+    use thrust_api_v1::{DEFAULT_COLORS, DEFAULT_ICONS};
+    let w = real_world();
+    let mut seen = std::collections::BTreeSet::new();
+    for n in 0..24 {
+        let given = if n % 2 == 0 { json!({"in_use": "emoji", "emoji": {"value": "128512"}}) } else { Value::Null };
+        let body = json!({"name": format!("Icon {n}"), "identifier": format!("IC{n}"), "logo_props": given});
+        let r = call(&w, Who::Member, "POST", &projects(), &body);
+        assert_eq!(r.status, 201, "{}", r.body);
+        let logo = &r.body["logo_props"];
+        assert_eq!(logo["in_use"], json!("icon"), "{logo}");
+        let (name, color) = (logo["icon"]["name"].as_str().unwrap(), logo["icon"]["color"].as_str().unwrap());
+        assert!(DEFAULT_ICONS.contains(&name), "{name} is not one of the pin's icons");
+        assert!(DEFAULT_COLORS.contains(&color), "{color} is not one of the pin's colours");
+        assert_eq!(logo.as_object().unwrap().len(), 2, "only `in_use` and `icon`");
+        seen.insert((name.to_string(), color.to_string()));
+    }
+    assert!(seen.len() > 1, "24 creations made the same icon: the choice is not drawn");
+}
+
+/// A project's `sort_order` in the list is the place of the CALLER'S MEMBER ROW (`project_members.sort_order`), which is 65535 for
+/// every member that nothing has moved, however old or new the project: the corpus's `list` and `list-archived-visible` show 65535.0
+/// for each project the owner is in, a project made in the middle of the run included, and list them in the order they were made.
+/// (The compat plane's sidebar keeps another place, in the person's own settings, which puts a new project first: it is not this.)
+#[test]
+fn a_projects_sort_order_is_the_place_of_the_callers_member_row() {
+    let w = real_world();
+    made(&w, Who::Member, "Other", "OTH", None);
+    let list = get(&w, Who::Member, &projects());
+    let places: Vec<(String, Value)> = list.body["results"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| (p["name"].as_str().unwrap().to_string(), p["sort_order"].clone()))
+        .collect();
+    assert_eq!(places, [("Cast Project".to_string(), json!(65535.0)), ("Other".to_string(), json!(65535.0))]);
 }
 
 // --- the list's order, projection and pages -----------------------------------------------------------------------------------

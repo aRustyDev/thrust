@@ -22,16 +22,21 @@ use crate::fields::{
 use crate::pagination::PageRequest;
 use crate::projects::ts;
 use crate::request::{json_body, pick_fields, query_map, Body};
-use crate::{Ctx, PlaneUuid, V1Error, V1Path};
+use crate::{with_allow, Ctx, PlaneUuid, V1Error, V1Path};
 
 /// The groups a state may be in (`StateGroup`), as DRF's choice field lists them.
 const GROUPS: [&str; 6] = ["backlog", "unstarted", "started", "completed", "cancelled", "triage"];
 
 pub(crate) fn routes() -> Router {
-    Router::new().route("/api/v1/workspaces/{slug}/projects/{project_id}/states/", get(list).post(create)).route(
-        "/api/v1/workspaces/{slug}/projects/{project_id}/states/{state_id}/",
-        get(retrieve).patch(update).delete(destroy),
-    )
+    Router::new()
+        .route(
+            "/api/v1/workspaces/{slug}/projects/{project_id}/states/",
+            with_allow("GET, POST", get(list).post(create)),
+        )
+        .route(
+            "/api/v1/workspaces/{slug}/projects/{project_id}/states/{state_id}/",
+            with_allow("GET, PATCH, DELETE", get(retrieve).patch(update).delete(destroy)),
+        )
 }
 
 // --- the wire shape -----------------------------------------------------------------------------------------------------------

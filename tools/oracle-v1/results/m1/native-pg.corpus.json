@@ -1,0 +1,39 @@
+{
+ "scope": "m1",
+ "target": "thrust",
+ "exchanges_compared": 108,
+ "by_resource": {
+  "projects": 25,
+  "states": 14,
+  "labels": 11,
+  "work_items": 36,
+  "pagination": 12,
+  "errors": 10
+ },
+ "out_of_scope_exchanges": {
+  "projects": 1,
+  "work_items": 13,
+  "errors": 6
+ },
+ "accepted": 13,
+ "unaccepted": [],
+ "stale_entries": [],
+ "vacuous": [],
+ "accepted_by_entry_and_exchange": {
+  "EX-C01 detail": 2,
+  "EX-C01 detail-by-pk-route": 2,
+  "EX-C01 list": 2,
+  "EX-C01 list-archived-visible": 2,
+  "EX-C01 list-order-by-name": 2,
+  "EX-C01 list-per-page-1": 2,
+  "EX-C02 invalid-json-body": 1,
+  "EX-C03 list-order-by-priority-desc": 1,
+  "EX-C04 list": 1,
+  "EX-C04 list-after-deletes": 1,
+  "EX-C04 list-expand-assignees-labels-state": 1,
+  "EX-C04 list-legacy-issues-path": 1,
+  "EX-C04 list-order-by-priority-desc": 1,
+  "EX-C04 list-order-by-sequence": 1,
+  "EX-C04 next-page": 1
+ }
+}

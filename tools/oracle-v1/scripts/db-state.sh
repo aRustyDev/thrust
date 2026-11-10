@@ -15,12 +15,14 @@
 # during gate/control runs so no asynchronous task mutates the database underneath the harness.
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-cd "$ROOT"
-DC=(docker compose -f oracle/compose.oracle.yml --env-file oracle/.env.oracle --profile ratelimit)
+ORACLE="$(cd "$(dirname "$0")/.." && pwd)"
+DC=(docker compose -f "$ORACLE/compose.oracle.yml" --env-file "$ORACLE/.env.oracle" --profile ratelimit)
 DUMP=/tmp/oracle-snapshot.dump
 PGU=plane
 DB=plane
+# What the seeded database holds, as labels/states/issues/projects rows (seed.py: 6 labels, 12 states, 11 work items, 2 projects).
+# A restore that does not give it is not the state the corpus was recorded from, and a gate run on it fails for that reason.
+SEED_COUNTS=6/12/11/2
 
 case "${1:-}" in
   snapshot)
@@ -38,6 +40,10 @@ case "${1:-}" in
     "${DC[@]}" exec -T plane-db pg_restore -U "$PGU" -d "$DB" --exit-on-error "$DUMP"
     "${DC[@]}" exec -T plane-redis valkey-cli FLUSHALL
     "${DC[@]}" up -d --wait --wait-timeout 180 api
+    got="$("${DC[@]}" exec -T plane-db psql -U "$PGU" -d "$DB" -At -c \
+      "select (select count(*) from labels)||'/'||(select count(*) from states)||'/'||(select count(*) from issues)||'/'||(select count(*) from projects)")"
+    echo "restored: labels/states/issues/projects = $got (the seed is $SEED_COUNTS)"
+    [ "$got" = "$SEED_COUNTS" ] || { echo "RESTORE DID NOT GIVE THE SEEDED DATABASE: snapshot a freshly seeded stack" >&2; exit 9; }
     ;;
   *)
     echo "usage: $0 snapshot|restore" >&2

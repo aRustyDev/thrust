@@ -261,7 +261,11 @@ fn a_name_is_padded_when_the_text_sent_is_not_the_text_kept(
 const KEY: &str = "5a1b3c4d-0000-4000-8000-000000000001";
 
 /// What DRF's relation makes of each kind of value for a model keyed by a UUID: none, a key (shown as it was spelled), its own
-/// refusal for a bool, and Django's `ValidationError` (which no field catches) for what the key column cannot read.
+/// refusal for a bool, and Django's `“x” is not a valid UUID.` (which the serializer files under the field) for what the key column
+/// cannot read, with the value as Python prints it. Every refusal below is the pinned Plane's own answer, measured on a running one
+/// (the oracle's `state` field of a work item); the value as Python prints it is the part that is easy to get wrong, so lists, dicts,
+/// quotes and floats are here. A whole number past 64 bits is a key on the pin (`UUID(int=n)`) and a float here (JSON parsing keeps no
+/// more): a known limit, not tested.
 #[rstest]
 #[case::null(json!(null), PkRead::Null)]
 #[case::empty_text(json!(""), PkRead::Null)]
@@ -273,16 +277,28 @@ const KEY: &str = "5a1b3c4d-0000-4000-8000-000000000001";
 #[case::zero(json!(0), PkRead::Key { id: Uuid::nil(), shown: "0".into() })]
 #[case::true_is_a_type_error(json!(true), PkRead::Refused("Incorrect type. Expected pk value, received bool.".into()))]
 #[case::false_is_too(json!(false), PkRead::Refused("Incorrect type. Expected pk value, received bool.".into()))]
-#[case::text_that_is_no_key(json!("nope"), PkRead::Raises)]
-#[case::too_short(json!("5a1b3c4d"), PkRead::Raises)]
-#[case::non_hex(json!("zzzzzzzz-0000-4000-8000-000000000001"), PkRead::Raises)]
-#[case::a_negative_integer(json!(-1), PkRead::Raises)]
-#[case::a_float(json!(1.5), PkRead::Raises)]
-#[case::a_whole_float(json!(1.0), PkRead::Raises)]
-#[case::a_list(json!([KEY]), PkRead::Raises)]
-#[case::an_object(json!({"id": KEY}), PkRead::Raises)]
+#[case::text_that_is_no_key(json!("nope"), refused("“nope” is not a valid UUID."))]
+#[case::too_short(json!("5a1b3c4d"), refused("“5a1b3c4d” is not a valid UUID."))]
+#[case::non_hex(json!("zzzzzzzz-0000-4000-8000-000000000001"), refused("“zzzzzzzz-0000-4000-8000-000000000001” is not a valid UUID."))]
+#[case::a_negative_integer(json!(-1), refused("“-1” is not a valid UUID."))]
+#[case::a_float(json!(1.5), refused("“1.5” is not a valid UUID."))]
+#[case::a_whole_float(json!(1.0), refused("“1.0” is not a valid UUID."))]
+#[case::text_with_a_quote(json!("it's"), refused("“it's” is not a valid UUID."))]
+#[case::a_list(json!([KEY]), refused("“['5a1b3c4d-0000-4000-8000-000000000001']” is not a valid UUID."))]
+#[case::an_object(json!({"id": KEY}), refused("“{'id': '5a1b3c4d-0000-4000-8000-000000000001'}” is not a valid UUID."))]
+#[case::a_list_of_a_text_with_a_quote(json!(["it's"]), refused("“[\"it's\"]” is not a valid UUID."))]
+#[case::a_list_of_a_text_with_double_quotes(json!(["say \"hi\""]), refused("“['say \"hi\"']” is not a valid UUID."))]
+#[case::a_list_of_a_text_with_both(json!(["it's \"both\""]), refused("“['it\\'s \"both\"']” is not a valid UUID."))]
+#[case::a_list_of_other_kinds(json!([true, null, 1.5, 1e22, 1e-7, -0.0]), refused("“[True, None, 1.5, 1e+22, 1e-07, -0.0]” is not a valid UUID."))]
+#[case::a_list_of_floats(json!([0.1, 100.0, 1e16, 12345678901234567.0, 0.0001, 0.00001]), refused("“[0.1, 100.0, 1e+16, 1.2345678901234568e+16, 0.0001, 1e-05]” is not a valid UUID."))]
+#[case::control_characters(json!(["a\nb\tc\\d"]), refused("“['a\\nb\\tc\\\\d']” is not a valid UUID."))]
+#[case::nested(json!({"k": [1, {"z": null}]}), refused("“{'k': [1, {'z': None}]}” is not a valid UUID."))]
 fn a_relation_reads_a_value_as_drfs_primary_key_field_does(#[case] v: Value, #[case] want: PkRead) {
     assert_eq!(pk_field(&v), want);
+}
+
+fn refused(message: &str) -> PkRead {
+    PkRead::Refused(message.into())
 }
 
 #[test]

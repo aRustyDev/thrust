@@ -59,6 +59,21 @@ PK_BY_SEGMENT = {
 }
 
 
+@schemathesis.hook
+def before_load_schema(context, raw_schema):
+    """A scope that sends JSON bodies only (`json_bodies_only` in the register; ORACLE_JSON_BODIES_ONLY=1) loses the schema's other
+    request media types, so the fuzzer never sends a form or a multipart body (thrust issue #58, deviation D-030 (5): the pin reads
+    them, Thrust answers 415 on purpose, so a gate that sent them could not compare the two)."""
+    if os.environ.get("ORACLE_JSON_BODIES_ONLY") != "1":
+        return
+    for item in (raw_schema.get("paths") or {}).values():
+        for op in item.values():
+            body = op.get("requestBody") if isinstance(op, dict) else None
+            content = body.get("content") if isinstance(body, dict) else None
+            if content and "application/json" in content:
+                body["content"] = {"application/json": content["application/json"]}
+
+
 def _pk_for(path_template):
     m = re.search(r"/([a-z-]+)/\{pk\}", path_template)
     return PK_BY_SEGMENT.get(m.group(1)) if m else None
