@@ -12,6 +12,8 @@ workspace = true
 [features]
 # Control-run mutant (scripts/mutants.sh): recycle a connection that is still inside a transaction.
 mutant_discard_noop = []
+# Control-run mutant (scripts/mutants.sh): the round-trip counter in thrust-adapters-postgres counts nothing (issue #39).
+mutant_count_nothing = ["thrust-adapters-postgres/mutant_count_nothing"]
 
 [dependencies]
 thrust-contracts = { workspace = true }

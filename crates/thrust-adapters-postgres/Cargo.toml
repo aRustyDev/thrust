@@ -13,6 +13,8 @@ workspace = true
 default = []
 # Only for the `migrate` binary and the testcontainers tests. NEVER enabled for wasm32.
 native = ["tokio-postgres/runtime", "dep:tokio"]
+# Control-run mutant (scripts/mutants.sh): the round-trip counter counts nothing. The budget test must notice (issue #39).
+mutant_count_nothing = []
 
 [[bin]]
 name = "migrate"
