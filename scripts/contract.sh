@@ -67,7 +67,8 @@ ARGON2_M_KIB=64
 ARGON2_T=1
 ARGON2_P=1
 SIGNIN_LIMIT=30
-EXPECT_MAIN=56
+EXPECT_MAIN=57
+EXPECT_BUDGET=1
 EXPECT_SWEEPER=2
 EXPECT_CSRFOFF=6
 EXPECT_PANIC=1
@@ -351,6 +352,13 @@ case "$PASS" in
     "$ROOT/scripts/rs" cargo test --manifest-path "$ROOT/Cargo.toml" -p thrust-contract-tests --test worker_only -- worker_cron_ --test-threads=1 --nocapture >"$LOG.test.log" 2>&1
     TEST_STATUS=$?
     EXPECT=$EXPECT_CRON
+    ;;
+  budget)
+    # Only the round-trip budget test (issue #39), which is also part of `main`: scripts/mutants.sh runs a mutant of the counter
+    # against this and not against the whole main pass. Not in contract-all.
+    "$ROOT/scripts/rs" cargo test --manifest-path "$ROOT/Cargo.toml" -p thrust-contract-tests --test contract -- list_endpoints_stay_within_five_db_round_trips --nocapture >"$LOG.test.log" 2>&1
+    TEST_STATUS=$?
+    EXPECT=$EXPECT_BUDGET
     ;;
   *)
     "$ROOT/scripts/rs" cargo test --manifest-path "$ROOT/Cargo.toml" -p thrust-contract-tests --test contract -- --skip sweeper_ --skip panic_ --skip blast_ --skip csrf_off_ >"$LOG.test.log" 2>&1

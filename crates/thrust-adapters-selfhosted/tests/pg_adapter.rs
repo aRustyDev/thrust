@@ -13,6 +13,7 @@
     reason = "test code: a panic is how a test fails, and clippy.toml exempts only #[test] functions and #[cfg(test)] modules, not the helpers around them"
 )]
 
+mod counting;
 mod model;
 
 use std::sync::Arc;

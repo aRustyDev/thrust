@@ -16,8 +16,8 @@ use axum::body::Body;
 use http_body_util::BodyExt;
 use thrust_adapters_cloudflare::*;
 use thrust_adapters_oidc::{OidcConfig, OpenIdProvider};
-use thrust_adapters_postgres::PgDatabase;
-use thrust_api::{ApiConfig, InternalErrorDetail};
+use thrust_adapters_postgres::{Connector, CountingConnector, PgDatabase, RoundTrips};
+use thrust_api::{set_db_round_trips, ApiConfig, InternalErrorDetail};
 use thrust_contracts::Envelope;
 use thrust_core::{ActivityConsumer, App, Argon2Params, Argon2idHasher, CoreConfig, Ports, SystemScope};
 use thrust_ports::{Background, Clock, EventConsumer, IdGen, OidcProvider, PasswordHasher, Rng};
@@ -142,7 +142,11 @@ fn api_config(env: &Env, adapters: &str) -> ApiConfig {
 
 /// Build the per-request `App`. Request-scoped because `ctx.waitUntil` and the Hyperdrive socket
 /// belong to one request in workerd.
-fn build_app(env: &Env, background: Arc<dyn Background>) -> Result<App> {
+///
+/// With test routes on, the Postgres set also comes back with the counter of the statements this `App` sends (issue #39).
+/// The set that wired it is the one that returns it, so a set that cannot count (`memory`) returns none and `fetch` sends
+/// no header, instead of a count of zero.
+fn build_app(env: &Env, background: Arc<dyn Background>) -> Result<(App, Option<RoundTrips>)> {
     let adapters = adapter_set(env);
     let clock: Arc<dyn Clock> = Arc::new(JsClock);
     let ids: Arc<dyn IdGen> = Arc::new(JsIdGen);
@@ -152,14 +156,24 @@ fn build_app(env: &Env, background: Arc<dyn Background>) -> Result<App> {
     let hasher: Arc<dyn PasswordHasher> = Arc::new(Argon2idHasher::new(cfg.argon2));
     let oidc = oidc_provider(env)?;
 
+    let mut round_trips = None;
     let app = match adapters.as_str() {
         "cloudflare" => {
             check_rate_windows(env, &cfg)?;
-            let connector = HyperdriveConnector::new(env.hyperdrive("HYPERDRIVE")?);
+            let connector: Arc<dyn Connector> = Arc::new(HyperdriveConnector::new(env.hyperdrive("HYPERDRIVE")?));
+            // The connector is built for this request, so the count is this request's. Only test routes ask for it: the count
+            // leaves in a response header that a real deployment does not send.
+            let connector: Arc<dyn Connector> = if flag(env, "THRUST_TEST_ROUTES", false) {
+                let rt = RoundTrips::new();
+                round_trips = Some(rt.clone());
+                Arc::new(CountingConnector::new(connector, rt))
+            } else {
+                connector
+            };
             // This composition root mints the proof for the relay, sweeper, consumer and seed.
             App::new(
                 Ports {
-                    db: Arc::new(PgDatabase::new(Arc::new(connector))),
+                    db: Arc::new(PgDatabase::new(connector)),
                     queue: Arc::new(CfQueue(env.queue("EVENTS")?)),
                     blobs: Arc::new(R2BlobStore(env.bucket("BLOBS")?)),
                     limiter: Arc::new(CfRateLimiter {
@@ -182,7 +196,7 @@ fn build_app(env: &Env, background: Arc<dyn Background>) -> Result<App> {
         "memory" => memory::app(clock, ids, background, rng, hasher, oidc, cfg),
         other => return Err(Error::RustError(format!("THRUST_ADAPTERS '{other}' is not compiled into this bundle"))),
     };
-    Ok(app)
+    Ok((app, round_trips))
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -203,7 +217,7 @@ async fn fetch(req: web_sys::Request, env: Env, ctx: Context) -> Result<web_sys:
         return probes::probe_route(req, &env, &path).await;
     }
 
-    let app = build_app(&env, Arc::new(WaitUntilBackground(Arc::new(ctx))))?;
+    let (app, round_trips) = build_app(&env, Arc::new(WaitUntilBackground(Arc::new(ctx))))?;
     let adapters = adapter_set(&env);
     let http_req = request_from_wasm(req)?;
 
@@ -229,12 +243,16 @@ async fn fetch(req: web_sys::Request, env: Env, ctx: Context) -> Result<web_sys:
     http_req.extensions_mut().insert(v1_config(&env));
 
     let mut router = ROUTER.get_or_init(router).clone();
-    let resp: axum::http::Response<Body> = match router.call(http_req).await {
+    let mut resp: axum::http::Response<Body> = match router.call(http_req).await {
         Ok(r) => r,
         Err(never) => match never {},
     };
     if let Some(InternalErrorDetail(d)) = resp.extensions().get::<InternalErrorDetail>() {
         console_error!("internal error: {d}");
+    }
+    // Test routes on a Postgres set only (`build_app`): how many statements this request had sent when the router answered.
+    if let Some(rt) = round_trips {
+        set_db_round_trips(&mut resp, rt.get());
     }
     response_to_wasm(resp)
 }
@@ -245,7 +263,7 @@ async fn fetch(req: web_sys::Request, env: Env, ctx: Context) -> Result<web_sys:
 
 #[event(queue)]
 async fn queue(batch: MessageBatch<String>, env: Env, _ctx: Context) -> Result<()> {
-    let app = build_app(&env, Arc::new(LocalBackground))?;
+    let (app, _) = build_app(&env, Arc::new(LocalBackground))?;
     let consumer = ActivityConsumer(app);
     for msg in batch.messages()? {
         match serde_json::from_str::<Envelope>(msg.body()) {
@@ -274,7 +292,7 @@ async fn queue(batch: MessageBatch<String>, env: Env, _ctx: Context) -> Result<(
 async fn scheduled(event: ScheduledEvent, env: Env, _ctx: ScheduleContext) {
     console_error_panic_hook::set_once();
     let app = match build_app(&env, Arc::new(LocalBackground)) {
-        Ok(v) => v,
+        Ok((v, _)) => v,
         Err(e) => {
             console_error!("scheduled: cannot build app: {e}");
             return;

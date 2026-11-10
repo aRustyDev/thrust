@@ -11,7 +11,7 @@ use axum::body::{Body, Bytes};
 use axum::extract::{DefaultBodyLimit, FromRequestParts, Path, Query};
 use axum::http::header::{AUTHORIZATION, CACHE_CONTROL, CONTENT_TYPE, COOKIE, LOCATION, RETRY_AFTER, SET_COOKIE};
 use axum::http::request::Parts;
-use axum::http::{HeaderMap, HeaderValue, Method, Response, StatusCode};
+use axum::http::{HeaderMap, HeaderName, HeaderValue, Method, Response, StatusCode};
 use axum::response::IntoResponse;
 use axum::routing::{delete, get, post, put};
 use axum::{Extension, Json, Router};
@@ -35,6 +35,17 @@ pub struct ApiConfig {
 /// without the body ever leaking it.
 #[derive(Debug, Clone)]
 pub struct InternalErrorDetail(pub String);
+
+/// The response header that says how many database statements a request had sent when it was answered (issue #39). A root
+/// puts it on a response only when `ApiConfig::test_routes` is on and its adapter set counts at all, which only the Postgres
+/// one does: a target that cannot count sends no header, and the contract suite reads that absence as "this target counts
+/// nothing" and not as a count of zero.
+pub const DB_ROUND_TRIPS_HEADER: HeaderName = HeaderName::from_static("x-thrust-db-round-trips");
+
+/// Put the statement count on a response. A root calls it once the router has answered, with what its connector kept.
+pub fn set_db_round_trips<B>(resp: &mut Response<B>, statements: u32) {
+    resp.headers_mut().insert(DB_ROUND_TRIPS_HEADER, HeaderValue::from(statements));
+}
 
 pub struct ApiError(pub CoreError);
 

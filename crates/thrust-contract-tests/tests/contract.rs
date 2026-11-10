@@ -9,6 +9,7 @@
 //! sequences against a reference model, and every caller × project × route against the access table.
 
 mod auth;
+mod budget;
 mod compat;
 mod model;
 
