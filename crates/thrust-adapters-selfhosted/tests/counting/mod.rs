@@ -33,7 +33,7 @@ use thrust_adapters_postgres::{CountingConnector, PgDatabase, RoundTrips};
 use thrust_contracts::*;
 use thrust_ports::*;
 
-use super::{env, item, scope, seeded, Env};
+use super::{env, item, new_id, project_with_states, put_item, scope, seeded, Env};
 
 const CALL: Duration = Duration::from_secs(20);
 
@@ -210,7 +210,7 @@ async fn run_case(env: &Env, steps: &[Step]) -> Result<(), TestCaseError> {
                     limit: *limit,
                     page: *page,
                     updated_after: None,
-                    created_by: None,
+                    limited_guest: None,
                 };
                 call("work_item_page", db.work_item_page(&s, &q)).await?;
             }
@@ -390,5 +390,31 @@ async fn counting_connectors_over_one_pool_count_separately() {
 async fn lists(db: &PgDatabase, s: Scope, n: usize) {
     for _ in 0..n {
         db.list_work_items(&s, Visibility::Visible).await.unwrap();
+    }
+}
+
+/// Pinned regression (issue #39): a limited guest's page costs what anyone's page costs. The project's flag is read by the page's
+/// own statement. Reading it first, in the use-case, was two statements more, which put an empty page of a guest at six, over the
+/// budget of five. A page with rows is one statement and a page with none is two (the second is the count), for everyone: the
+/// maker of the item, a guest who made nothing, and a caller who is no guest at all.
+#[tokio::test]
+async fn a_limited_guests_page_costs_what_anyones_page_costs() {
+    let env = env().await;
+    let (_, _, owner, s) = project_with_states(&env, "guest-cost").await;
+    put_item(&env, s, "one", |_, _| {}).await.unwrap();
+    let (db, rt) = counted(&env);
+    let order = WorkItemOrder { field: WorkItemOrderField::SequenceId, descending: false };
+    // (who asks, whether the one item is theirs to see)
+    let askers = [(None, true), (Some(owner), true), (Some(UserId(new_id())), false)];
+    for (who, sees_it) in askers {
+        for page in [0, 5] {
+            let q = WorkItemQuery { order, limit: 10, page, updated_after: None, limited_guest: who };
+            let before = rt.get();
+            let got = db.work_item_page(&s, &q).await.unwrap();
+            let statements = rt.get() - before;
+            let has_rows = page == 0 && sees_it;
+            assert_eq!(got.rows.is_empty(), !has_rows, "asker {who:?}, page {page}: {got:?}");
+            assert_eq!(statements, if has_rows { 1 } else { 2 }, "asker {who:?}, page {page}: {got:?}");
+        }
     }
 }

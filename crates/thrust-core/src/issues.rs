@@ -430,17 +430,18 @@ pub async fn create_issue(app: &App, access: &IssueAccess, draft: IssueDraft) ->
 }
 
 /// A page of the project's work items (the caller got [`issue_reader`]'s access). A guest sees only what they made when the
-/// project does not show guests everything. The page is at most five statements with the caller's membership: a guest's
-/// workspace access and the project's flag, and the page (and its count when the page is empty).
+/// project does not show guests everything. The project's flag is read by the statement that reads the page (the adapter's
+/// part of [`WorkItemQuery::limited_guest`]), so every caller costs the same: the page, and its count when the page is empty,
+/// on top of the membership that [`issue_reader`] checked. Reading the flag here first was two statements more for a guest
+/// (the workspace access and the project's detail), which put an empty page of a guest over the budget of five (issue #39).
 pub async fn list_issues(app: &App, access: &IssueAccess, q: IssueListQuery) -> Result<WorkItemPage, IssueError> {
     // the pin's v1 queryset leaves out a project that is archived; the compat plane's list does not
     if access.surface == Surface::V1 && app.ports.db.project_is_archived(&access.scope).await? {
         return Ok(WorkItemPage { rows: Vec::new(), has_next: false, total: 0 });
     }
-    let created_by =
-        if access.is_limited_guest() && !guest_sees_all(app, access).await? { Some(access.who.user_id) } else { None };
+    let limited_guest = access.is_limited_guest().then_some(access.who.user_id);
     let query =
-        WorkItemQuery { order: q.order, limit: q.limit, page: q.page, updated_after: q.updated_after, created_by };
+        WorkItemQuery { order: q.order, limit: q.limit, page: q.page, updated_after: q.updated_after, limited_guest };
     Ok(app.ports.db.work_item_page(&access.scope, &query).await?)
 }
 

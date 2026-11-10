@@ -1180,8 +1180,11 @@ pub struct WorkItemQuery {
     pub page: u32,
     /// Only the items changed after this time (`updated_at__gt`).
     pub updated_after: Option<Timestamp>,
-    /// Only the items this person made (a guest who may not see the others').
-    pub created_by: Option<UserId>,
+    /// Set when a limited guest of the compat plane asks: only the items this person made, unless the project shows its guests
+    /// everything (`guest_view_all_features`). The adapter reads that flag in the statement that reads the page, so a guest
+    /// costs what any other caller costs: looking the flag up first is two statements more (issue #39). `None` for everyone
+    /// else, who sees every item.
+    pub limited_guest: Option<UserId>,
 }
 
 /// What a search of a workspace's work items asks (issue #58). A work item matches when its name, or the identifier of its project,
