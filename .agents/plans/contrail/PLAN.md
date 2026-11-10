@@ -19,18 +19,17 @@ Sized for one owner working with agents: "pd" is person-days of the owner's atte
 | M5 Collab (P1) | not started | #54 | Waits for M2; spike 0005 runs first. |
 | M6 Identity and P1 features | not started | #50 | Waits for M3 or M4, whichever comes first. Carries the Workers VPC service to the issuer (Q-0050.9). |
 
-ADRs after round 29: 53 accepted, 5 proposed (0040, 0041, 0061, 0122, 0141), 2 superseded (`adrs/README.md`).
+ADRs (2026-11-10): 56 accepted, 2 proposed (0061, 0141), 2 superseded (`adrs/README.md`). Round 29 left 53 accepted and 5 proposed; ADR-0040 was accepted on 2026-10-24, and ADR-0041 and ADR-0122 on 2026-11-10.
+
+On 2026-11-10 the owner answered the six decisions that fell due on 2026-11-09: Q-0041, Q-0094.6, Q-0122, Q-R7 and Q-0053.1
+are answered, and Q-0061 got a trigger in place of its date. The answers are in `QUESTIONS.md`.
 
 Open decisions (text and owner in `QUESTIONS.md`; all owned by asmith):
 
-| Question | Decide by | Trigger |
+| Question | Decide | Trigger |
 |---|---|---|
-| Q-0041 | 2026-11-09 | the isolation strategy (spike 0002 decided the engine on 2026-10-24: Q-0040 and Q-0040.6 are answered, Postgres) |
-| Q-0094.6 | 2026-11-09 | recreating the `worker-pg` cell's Hyperdrive resources (spike 0002) |
-| Q-0122 | review by 2026-11-09 | M0 exit; decided with issue #58's oracle gate |
-| Q-R7 | review by 2026-11-09 | M0 exit |
-| Q-0061 | review by 2026-11-09 | M0 exit; decided with spike 0005 (M5) |
-| Q-0053.1 | review by 2026-11-09 | M0 exit; the question is P2 |
+| Q-0061 | when spike 0005 starts (M5 entry) | the collab persistence strategy; this trigger replaced the date of 2026-11-09 |
+| Q-0041.3 | when multi-tenant mode is first enabled (ADR-0003) | Postgres RLS as optional defence in depth; raised when Q-0041 was decided |
 
 ## Milestones
 
@@ -39,7 +38,7 @@ Open decisions (text and owner in `QUESTIONS.md`; all owned by asmith):
 | **M0 Foundations fixed** (2 to 3 weeks) | FR-02 and FR-03 port shapes (#35, #36); single Worker with `placement.region` (#43, #39); clippy deny list in CI, since ADR-0006's panic policy says "not yet enforced" (#40); spike 0002 with the Postgres cell and the FR-04 Durable Object cell (#37, decided 2026-10-24: Postgres); spike 0003 as the two-day auth slice (#38); the FR-09 TLS move, which stands because Postgres stays (#41); the round-29 ADR and question sweep (FR-17); `PLAN.md`. Also filed for M0: the slice's routes leave the `/api/v1` prefix (#47, FR-06) and the compat-inventory and spike-0004 scripts move into `tools/` (#55, FR-15). | Engine decided in ADR-0040; auth slice green on both targets; `gate` green with clippy; the 4 contract targets still green. |
 | **M1 Walking skeleton** (about 39 pd of compat plus the auth and workspace/project use-cases) | The 48-route minimum slice with the auth-client JSON change applied (#44); `/api/v1` for projects, states, labels and work items, with the oracle gate on those operations (#58); Playwright journey "sign in, create a workspace, project and work item, see it" (#45). Also filed for M1: the deploy pipeline per ADR-0110 round 29 (#49), one `plane_500()` helper and compat parity scoped to the acceptance list (#51), compat DTOs kept out of `thrust-contracts` (#52), the per-PR schema sweep (#57). | The owner does that journey on the production hostname through the stock React app. |
 | **M2 Daily-use release, "Contrail"** | The screens in [M2 screen list](#m2-screen-list) (#46); plain-save descriptions (FR-14, #48); outbox consumers for activity and notifications; retention cleanup F-D10 (#59); the `status.woven` deep probe (#42); Playwright journeys for every screen in scope. Also filed for M2: the queue failure policy (#53, FR-21). | The team uses it daily for four weeks inside the SLO; compat rows outside the list are stubs, listed in `DEVIATIONS.md`. |
-| **M3 Breadth** | Cycles, modules, views, estimates, intake, webhooks (with the SSRF guard), email digest, public spaces, API keys and the full P0 `/api/v1` resource list, exports as queue jobs (#56), workspace invites (Q-F7). | Oracle gate green for all P0 v1 operations; each new screen adds its Playwright journey. |
+| **M3 Breadth** | Cycles, modules, views, estimates, intake, webhooks (with the SSRF guard), email digest, public spaces, API keys and the full P0 `/api/v1` resource list, exports as queue jobs (#56), workspace invites (Q-F7). | Oracle gate green for all P0 v1 operations, and the nightly differential run of ADR-0122 built (decided 2026-11-10); each new screen adds its Playwright journey. |
 | **M4 Dioxus, screen by screen** (starts when M2's exit criterion holds; runs beside M3) | Spike 0007 go/no-go; the editor island decision (registered in ADR-0006 as a planned permanent exception, FR-15); the core OpenAPI surface generated from the use-cases (FR-06); the first screen ported with `clone-frontend`; the compat rows behind each ported screen deleted. **Flip CSRF enforcement** when the custom frontend replaces the stock one, that is, when no cookie-authenticated mutation is left to a client that does not send `X-CSRFToken`: set `THRUST_CSRF_ENFORCE=on` in the Worker's vars and the server's environment, no code change (Q-0050.8, ADR-0052's 2026-10-24 note; until then the production default is off and only `SameSite=Lax`, `HttpOnly`, `Secure` and the `__Host-` prefix protect the cookie, as in Plane). | First Dioxus screen in production behind a flag; compat row count falling. CSRF enforcement on in production when the last stock screen is retired. |
 | **M5 Collab (P1)** | Spike 0005; the `yrs` room on a Durable Object and on axum (#54); pages open collaboratively from the P0 HTML (the converter from spike 0006). The `collab` Worker is added here (FR-11). | 50-editor load test passes; P0 pages open unchanged. |
 | **M6 Identity and P1 features** | OIDC through Zitadel with JIT; Cloudflare Access on the UI paths (FR-13, #50); custom roles, guests, audit rows (FR-18); GitHub and Beads sync. **A Workers VPC service for the issuer:** a service over a tunnel that can reach `id.auth.woven` (Zitadel), the same pattern as CNPG (a tunnel plus a VPC service, ADR-0094), so that the Worker's `Fetch` port can reach a WARP-only issuer for discovery, the token exchange and the key set (Q-0050.9; the owner's lean on the pattern, not yet built), and the first login against Zitadel through it (K2, `research/0012` §9). | ADR-0050 end state reached. |

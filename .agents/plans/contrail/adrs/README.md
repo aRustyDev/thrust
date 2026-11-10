@@ -26,8 +26,8 @@ pending — linked to its `Q-<adr#>` row in `../QUESTIONS.md`. New ADRs take the
 | 0032 | api | [Versioning and OpenAPI](api/0032-versioning-and-openapi.md) | accepted | |
 | 0033 | api | [Rate limiting and API keys](api/0033-rate-limiting-and-api-keys.md) | accepted | |
 | 0034 | api | [Internal API: compat layer + core OpenAPI](api/0034-internal-api-compat-layer-and-core-openapi.md) | accepted | |
-| 0040 | data/base | [System-of-record database (+ spike)](data/base/0040-system-of-record-database.md) | proposed | Q-0040 |
-| 0041 | data/base | [Tenant isolation strategy](data/base/0041-tenant-isolation-strategy.md) | proposed | Q-0041 |
+| 0040 | data/base | [System-of-record database (+ spike)](data/base/0040-system-of-record-database.md) | accepted | |
+| 0041 | data/base | [Tenant isolation strategy](data/base/0041-tenant-isolation-strategy.md) | accepted | Q-0041.3 |
 | 0042 | data/schema | [Schema source and migrations](data/schema/0042-schema-source-and-migrations.md) | accepted | |
 | 0043 | data/schema | [IDs, sequencing, soft delete](data/schema/0043-ids-sequencing-and-soft-delete.md) | accepted | |
 | 0044 | data/layer | [Query layer / ORM](data/layer/0044-query-layer-orm.md) | accepted | |
@@ -55,17 +55,17 @@ pending — linked to its `Q-<adr#>` row in `../QUESTIONS.md`. New ADRs take the
 | 0091 | infra | [Self-hosted twin](infra/0091-self-hosted-twin.md) | accepted | |
 | 0092 | infra | [Secrets and environments](infra/0092-secrets-and-environments.md) | accepted | |
 | 0093 | infra | [IaC tooling](infra/0093-iac-tooling.md) | accepted | |
-| 0094 | infra | [Postgres hosting: CNPG in woven-o11y via Tunnel and Workers VPC](infra/0094-postgres-hosting-cnpg-tunnel-vpc.md) | accepted | Q-0094.6 |
+| 0094 | infra | [Postgres hosting: CNPG in woven-o11y via Tunnel and Workers VPC](infra/0094-postgres-hosting-cnpg-tunnel-vpc.md) | accepted | |
 | 0100 | ci | [Build matrix per adapter set](ci/0100-build-matrix-per-adapter-set.md) | accepted | |
 | 0101 | ci | [CI supply chain](ci/0101-ci-supply-chain.md) | accepted | |
 | 0110 | cd | [Deploy pipeline](cd/0110-deploy-pipeline.md) | accepted | |
 | 0120 | test/models | [Test model and oracle](test/models/0120-test-model-and-oracle.md) | accepted | |
 | 0121 | test/patterns | [Port contract tests: one suite, N adapters](test/patterns/0121-port-contract-tests-one-suite-n-adapters.md) | accepted | |
-| 0122 | test/patterns | [v1 oracle and parity tests](test/patterns/0122-v1-oracle-and-parity-tests.md) | proposed | Q-0122 |
+| 0122 | test/patterns | [v1 oracle and parity tests](test/patterns/0122-v1-oracle-and-parity-tests.md) | accepted | |
 | 0123 | test/standards | [Test standards and tooling](test/standards/0123-test-standards-and-tooling.md) | accepted | |
 | 0130 | observability | [Observability](observability/0130-observability.md) | accepted | |
 | 0140 | security | [Licensing (AGPL) and clean-room](security/0140-licensing-agpl-cleanroom.md) | accepted | |
 | 0141 | security | [Tenancy and threat model](security/0141-tenancy-and-threat-model.md) | proposed | Q-0141 |
 
-Status counts: 53 accepted · 5 proposed · 2 superseded (60 total). Several `proposed` ADRs carry dated "Update — interview round N"
+Status counts (2026-11-10): 56 accepted · 2 proposed · 2 superseded (60 total); round 29 left 53 and 5, and 0040 (2026-10-24), 0041 and 0122 (2026-11-10) were accepted since. Several `proposed` ADRs carry dated "Update — interview round N"
 notes recording partial owner direction; they stay `proposed` until the remaining question is answered.

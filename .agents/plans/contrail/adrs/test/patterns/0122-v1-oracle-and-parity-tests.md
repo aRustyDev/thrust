@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-10-17
 decision-makers: asmith
 consulted: []
@@ -30,8 +30,9 @@ work items, authenticated by `X-Api-Key` with a rate limit **[S]**. Schemas catc
 
 ## Decision Outcome
 
-Decision pending — see Q-0122. Leading hypothesis: **Option 1 as the PR gate, Option 2 for a curated scenario
-corpus, Option 3 nightly** (confidence: medium).
+**Decision (accepted, 2026-11-10, owner; Q-0122): Option 1 as the PR gate, Option 2 for a curated scenario
+corpus, Option 3 nightly.** The first two layers run now; the nightly differential run is not built and is due at
+M3's exit (see the 2026-11-10 update).
 
 ### Consequences
 
@@ -41,8 +42,10 @@ corpus, Option 3 nightly** (confidence: medium).
 
 ### Confirmation
 
-CI gate: schema conformance 100% on all v1 operations that are P0/P1; corpus replay diff-clean after normalisation;
-any intentional deviation requires a recorded exception in **`DEVIATIONS.md`** (id, reason; package root).
+CI gate: the schema-conformance failure set equals the committed exception register; corpus replay is diff-clean
+after normalisation; every intentional deviation has a **`DEVIATIONS.md`** entry (id, reason; package root). This is the
+round-26 recommended wording, which replaces "schema conformance 100% on all v1 operations that are P0/P1": Plane fails
+its own schema, so 100% could only ever have meant "equals the register".
 
 ## Pros and Cons of the Options
 
@@ -93,9 +96,17 @@ Owner decisions, round 27: **Q-0122.3** — every register entry stays `reproduc
 
 The quirks catalogue (`research/0007-plane-quirks-catalog.md`, 157 entries, bead `plane-byd.5`) corrects and extends the register: **EX-011** is a wrapper the schema omits, not a missing `id`; **EX-010** is a drf-spectacular component-name collision; **EX-003 and EX-004 partly measure the fixture** (the seeded projects have cycles, modules and intake switched off, so those families' success shapes were never exercised); and the 500 set is **larger than EX-001/002** (a `deleted_at` body on work-item create, a non-object `issue` on intake create, array bodies, two more `is_server` sites). "Reproduce all 500s" covers all of them. The corpus still does not cover cycles, modules, intake success paths, stickies, invitations, DELETEs of seeded entities, any non-UTC user, or any of `/auth`, `/api`, `/api/public`, `/api/instances`; extending the corpus to those is a follow-up for the dynamic half of spike 0009.
 
+## Update — decided (2026-11-10)
+
+The owner accepted the layered oracle (Q-0122), so this ADR is `accepted`, with the Confirmation wording above.
+
+**Two layers have run against Thrust.** Issue #58's scoped gate and corpus comparison were measured on 2026-11-10 (PR #107, `scripts/oracle-v1.sh <target> controls`): the pin (`plane`) and three Thrust targets (`native-memory`, `native-pg`, `worker-cf`) each end in `VERDICT: PASS` (the PR's prose says four targets; its committed results files are these three plus the pin), with the gate's controls C1 to C3 failing where they should and the comparison's own eight controls each failing it. The gate's blind spot (dropping a State's `id`) is the documented one; the corpus comparison catches it when the recording is made through the mutating proxy.
+
+**The third layer is not built.** The nightly differential run does not exist, and `oracle/ci/oracle.yml` has never run in CI. It is due at **M3's exit**, when the oracle gate must be green for all P0 `/api/v1` operations (`PLAN.md`); until then the ADR names it as the intent, not as something that holds.
+
 ## Open Questions
 
-* Q-0122 — oracle strategy.
+* Q-0122 — oracle strategy. (answered 2026-11-10, owner: accepted as above)
 * Q-0122.1 — Is the schema endpoint enabled on the reference instance, and does it cover all v1 operations (including those added by the fork)? **Answered (round 26): enabled by `ENABLE_DRF_SPECTACULAR=1`; 130 of 135 routed operations; the fork adds none.**
 * Q-0122.2 — Normalisation rules (uuid, `sequence_id`, timestamps, ordering) and the exception register format. **Answered (round 26): `oracle/NORMALISATION.md`, `oracle/exceptions.yaml`.**
 * Q-0122.3 — Which register entries become numbered deviations, and the `id` blind spot. **Answered (round 27): none; all `reproduce`.**
