@@ -117,5 +117,21 @@ kill_check "postgres adapter + discard-noop" "$status" "$OUT/pg-discard.out"
 status=$?
 kill_check_msg "postgres adapter + count-nothing" "$status" "$OUT/pg-count-nothing.out" "statements, the model says"
 
+# The same counter's mutants at the server, on native-pg (issue #39): the budget test, alone (the `budget` pass), must fail on
+# each, and for the reason the mutant is for. `kill_check` alone would also count a run that never reached the test (Postgres
+# did not start, the build failed), so the log has to say what the mutant breaks: a page that sends a statement per row is
+# "over budget", a counter that counts nothing is "below floor".
+for triple in \
+  "extra-statement-per-row:mutant_extra_stmt_per_row:over budget" \
+  "count-nothing:mutant_count_nothing:below floor"; do
+  name="${triple%%:*}"
+  rest="${triple#*:}"
+  feature="${rest%%:*}"
+  needle="${rest#*:}"
+  THRUST_SERVER_FEATURES="$feature" THRUST_LOGDIR="$OUT/$name" "$ROOT/scripts/contract.sh" native-pg budget >"$OUT/$name.out" 2>&1
+  status=$?
+  kill_check_msg "native-pg budget + $name" "$status" "$OUT/$name/native-pg-budget.test.log" "$needle"
+done
+
 cat "$SUMMARY"
 exit "$SURVIVED"

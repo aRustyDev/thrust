@@ -15,6 +15,8 @@ default = []
 native = ["tokio-postgres/runtime", "dep:tokio"]
 # Control-run mutant (scripts/mutants.sh): the round-trip counter counts nothing. The budget test must notice (issue #39).
 mutant_count_nothing = []
+# Control-run mutant (scripts/mutants.sh): a work item page sends one more statement for every row it returns (issue #39).
+mutant_extra_stmt_per_row = []
 
 [[bin]]
 name = "migrate"

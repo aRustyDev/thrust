@@ -2291,6 +2291,12 @@ impl Database for PgDatabase {
             )
             .await
             .map_err(db_err)?;
+        // MUTANT (control run only, feature `mutant_extra_stmt_per_row`): one more statement for every row the page returns,
+        // the shape of Django's N+1. The budget test must notice (issue #39). Nothing but `scripts/mutants.sh` builds this.
+        #[cfg(feature = "mutant_extra_stmt_per_row")]
+        for _ in &rows {
+            c.pg().query_one("SELECT 1", &[]).await.map_err(db_err)?;
+        }
         let total: i64 = match rows.first() {
             Some(r) => r.get("total"),
             // a page past the end has no row to carry the count
