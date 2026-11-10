@@ -205,12 +205,19 @@ The owner decided the question the previous updates left as "a separate decision
 
 **What this does to the earlier statement.** The sentence in the round-29 note above that `crates/thrust-worker/wrangler.toml` "sets no `placement` today" is out of date as of this update. The rest of that paragraph stands, and the budget it states is not enforced yet.
 
+## Update — Q-0094.6 answered: the credentials (2026-11-10)
+
+The record had already settled most of it. **Hyperdrive Write** is on the account-owned `thrust-spikes` token (added 2026-10-18; used for the `worker-pg` Hyperdrive configs on 2026-10-24 and for the creates through the dev and production VPC services on 2026-11-06 and 2026-11-07, above). The "role" of the question is a **permission group on an account-owned token**, which inherits no user role: changing a VPC service needs **Connectivity Directory Admin** (the 2026-11-07 `tofu apply` ran with no 403), and creating a Hyperdrive config on a VPC service needs **Connectivity Directory Bind** (the 2026-11-06 update).
+
+**Per-operator `op://` items** (owner, 2026-11-10): each operator keeps theirs in their own 1Password vault, and the repository ships placeholders only. The record calls the token `thrust-spikes` (October) and "the tunnels token" (November) without saying they are one token; that is unresolved and changes nothing still to be done.
+
 ## Open Questions
 
 * Q-0094.1 — CNPG layout: HA, environments, per-PR schemas, backup retention.
 * Q-0094.2 — TLS verification between Hyperdrive and CNPG.
 * Q-0094.3 — The tunnel and the VPC service: ownership, tooling, fallback.
 * Q-0094.4 — Availability coupling to `woven-o11y`. (answered round 29, FR-10)
+* Q-0094.6 — Credentials for the remaining apply. (answered 2026-11-10, owner)
 
 ## More Information
 

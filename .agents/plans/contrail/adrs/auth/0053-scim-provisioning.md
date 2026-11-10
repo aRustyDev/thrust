@@ -61,12 +61,18 @@ Accepted. **SCIM is P2 and only if the Zitadel deployment supports outbound SCIM
 
 Outcome rewritten to state the accepted decision; the earlier Option-2 hypothesis is kept as rationale.
 
+## Update — Q-0053.1 answered (2026-11-10)
+
+**Zitadel does not offer outbound SCIM, as far as its documentation shows** (owner, 2026-11-10). The deployment is Zitadel v4.15.3 (chart 10.0.4, the pin in the infrastructure repo's `products/agentic-platform/kube/variables.tf`; the live version was not read). [Zitadel's SCIM guide](https://zitadel.com/docs/guides/manage/user/scim2) describes only a SCIM v2 *service provider* (an external IdP provisions users into Zitadel), supports the User schema only, and says Group provisioning is not supported. It documents nothing that pushes users out, and it does not state outright that outbound SCIM is unsupported, so this is the likely answer, not a tested one.
+
+Thrust would be the SCIM server, so it would need Zitadel as an outbound client. The accepted condition ("SCIM is P2 and only if the Zitadel deployment supports outbound SCIM") is therefore **unmet**, and **Option 2 (JIT provisioning plus a reconcile job) stands**. Option 3 (Zitadel Actions calling the internal provisioning API) is the only push path and is **unverified**: the Actions v2 docs page was not read. Reopen this if Zitadel ships an outbound SCIM client; a look at the Zitadel console would confirm the answer before P2 work starts.
+
 ## Open Questions
 
 * Q-0053 — SCIM scope and tier.
 * Q-0050.1 — claims/group mapping; JIT vs SCIM.
 * Q-F2 — Open-EE feature priorities.
-* Q-0053.1 — Does Zitadel (this deployment) support outbound SCIM or only Actions/management API? Verify before choosing Option 1 vs 3.
+* Q-0053.1 — Does Zitadel (this deployment) support outbound SCIM or only Actions/management API? (answered 2026-11-10, owner: no, per its documentation; Option 2 stands, Option 3 unverified)
 
 ## More Information
 

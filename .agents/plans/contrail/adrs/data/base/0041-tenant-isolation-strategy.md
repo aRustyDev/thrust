@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-10-17
 decision-makers: asmith
 consulted: []
@@ -29,17 +29,17 @@ ADR-0003 (accepted) says: single-org first, multi-tenant-capable data layer. We 
 
 ## Decision Outcome
 
-Decision pending — see Q-0041. Leading hypothesis: **Option 1 with an Option-4 escape hatch**, confidence **medium**. Every tenant-scoped table carries `workspace_id`; repositories take a mandatory `TenantContext` and cannot issue a query without the predicate (type-enforced); Postgres RLS (`SET LOCAL app.workspace_id`) as defense in depth when the adapter supports it. Instance-level tables live in a separate logical "directory" namespace. This keeps the Plane schema shape (workspace FK already everywhere), eases data import, and leaves room to shard later.
+**Decision (accepted, 2026-11-10, owner; Q-0041): Option 1 with the Option-4 escape hatch.** Every tenant-scoped table carries `workspace_id`; repositories and `Tx` methods take a `&Scope` (the "mandatory `TenantContext`" of the round-29 note) and cannot issue a query without the predicate (type-enforced); a heavy tenant can later be promoted to its own database. **Postgres RLS is not part of this decision** (Q-0041.3). Instance-level tables live in a separate logical "directory" namespace. This keeps the Plane schema shape (workspace FK already everywhere), eases data import, and leaves room to shard later.
 
 ### Consequences
 
 * Good: minimal schema change from Plane; single migration stream; cross-workspace queries stay simple.
-* Bad: isolation relies on code + RLS discipline; noisy-neighbour risk; per-tenant backup/delete (GDPR erasure) needs a row-scoped procedure.
+* Bad: isolation relies on the `Scope` type and test discipline, with no RLS behind it (Q-0041.3); noisy-neighbour risk; per-tenant backup/delete (GDPR erasure) needs a row-scoped procedure.
 * Follow-ups: define which tables are "directory" (global) vs tenant; a lint/test that every new table declares its scope.
 
 ### Confirmation
 
-Contract test (ADR-0121): for every repository method, calling with tenant A never returns/mutates tenant-B rows (property test over a two-tenant fixture). CI lint: new tables must declare `scope: tenant|directory`. RLS enabled-check on Postgres adapter.
+Contract test (ADR-0121): for every repository method, calling with tenant A never returns/mutates tenant-B rows (property test over a two-tenant fixture). CI lint: new tables must declare `scope: tenant|directory`. (No RLS enabled-check: RLS is not part of the decision, Q-0041.3.)
 
 ## Pros and Cons of the Options
 
@@ -98,9 +98,18 @@ ADR-0040 is accepted: **Postgres is the system of record** (owner, 2026-10-24), 
 - The per-PR environments of the shared dev database (`pr-schema.sh`: a NOSUPERUSER role that owns its own schema, `search_path` set on the role) isolated the run from every other schema, as intended. Two findings for that tooling: an extension's operator class must be schema-qualified for a role whose `search_path` excludes `public` (`research/0011` section 5.4, the `pg_trgm` index), and the role's connection limit has to be sized with the Hyperdrive pool bound to it (section 10, item 7: one role cannot host two configs at a limit of 8).
 - The archived Durable Object cell would have made a tenant boundary inside the one object the `Scope` and nothing else, as on Postgres; a per-tenant object was not built.
 
+## Update — decided (2026-11-10)
+
+The owner decided Q-0041: **Option 1 with the Option 4 escape hatch**, and this ADR is `accepted`. The basis is the record above: ADR-0040 is accepted (Postgres); Q-0040.4, Q-0041.1 and Q-0041.2 are answered; and the `Scope` guard passes the cross-tenant tests and the generated two-tenant model test on the deployed `worker-pg` cell. SPEC R-S1 requires that no repository query runs without the tenant predicate, which the `Scope` type enforces; it does not require RLS.
+
+**Postgres RLS is out of this decision.** It was never built or measured, and it has catches to measure first (Q-0041.3): the app roles own their objects (the per-PR roles own their schemas; `thrust` owns the restored table in the restore drill), and a table owner bypasses RLS unless the table has `FORCE ROW LEVEL SECURITY`; Hyperdrive keeps no per-session state (Q-0006.4), so the setting would have to be a `SET LOCAL` inside the transaction it protects. The Decision Outcome, Consequences and Confirmation above were edited to match, which this ADR allowed because it was still `proposed`.
+
+**Still to do:** the `scope: tenant|directory` CI check is not built. Of the 23 `CREATE TABLE` statements in the Postgres migrations, 7 carry a marker (at 75d9729), and it needs an issue.
+
 ## Open Questions
 
-* Q-0041 — which strategy?
+* Q-0041 — which strategy? (answered 2026-11-10, owner: Option 1 with the Option 4 escape hatch)
+* Q-0041.3 — Postgres RLS as defence in depth: add it or not, and when? (open; decide when multi-tenant mode is first enabled, ADR-0003)
 * Q-0040.4 — cross-workspace query needs (drives Option 2 viability). (answered round 29, FR-17)
 * Q-G4 — scale targets. (answered round 29, owner)
 * Q-0041.1 — Which tables are instance-level "directory" tables (User, Profile, Account, Instance*) and how are they referenced from tenant data (FK across namespaces)? (answered round 29, FR-17)

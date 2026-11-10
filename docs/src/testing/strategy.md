@@ -78,9 +78,10 @@ and count guards in the scripts, planted mutants. New tests follow the same stan
 
 ## Decisions this strategy implements
 
-ADR-0120, ADR-0121 and ADR-0123 were accepted in round 29 of the plan, and ADR-0122 is still `status: proposed`
-(`.agents/plans/contrail/reviews/2026-10-19-fable-architecture-review.md`, FR-17). This chapter describes the parts
-that already exist and links the rest.
+ADR-0120, ADR-0121 and ADR-0123 were accepted in round 29 of the plan
+(`.agents/plans/contrail/reviews/2026-10-19-fable-architecture-review.md`, FR-17), and ADR-0122 on 2026-11-10. Two of
+ADR-0122's three layers exist (the conformance gate and the corpus comparison); the nightly differential run is not
+built and is due at M3's exit. This chapter describes the parts that already exist and links the rest.
 
 | ADR | In one line |
 |---|---|

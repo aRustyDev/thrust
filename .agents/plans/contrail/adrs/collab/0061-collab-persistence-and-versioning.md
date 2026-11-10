@@ -94,9 +94,13 @@ Spike 0006 (`research/0008-editor-conversions.md`): **Confirmation (d) is met fo
 
 Per FR-14 (`reviews/2026-10-19-fable-architecture-review.md`; the owner's decision is its §5 table: apply now, with FR-23), P0 persistence stores one form for work items and three only for pages. Work items store the sanitised `description_html` and `description_stripped` only; `thrust-editor-doc` derives JSON and binary lazily at P1, on the first collab open (html to binary, `research/0008` §8). Pages store the triple that the fallback path sends (`apps/web/hooks/use-page-fallback.ts:66-68`), with the HTML sanitised and the binary validated to decode with `yrs`, which is stricter than Plane's `validate_binary_data` (D-020; ADR-0012's round-29 note has the evidence). This supersedes, for work items, the round-11 note's "persist Yjs binary + html + json from day one" (Q-F5.1, reopened and answered in round 29) and the round-25 note's "forms stored verbatim". The round-11 optimistic version check (a stale save returns 409) is unchanged. The P1 move to collab still needs no data migration, because the Rust converter produces from HTML a binary that the real editor opens (`research/0008` §4.3). **Q-0061.4 is answered for P0**: there is no staleness window, because work items store one form and pages store the client's triple as sent, so the server projects nothing that could fall behind. The round-18 allowance (up to 5 s) and the round-27 evidence (synchronous projection is affordable) remain the record for P1, when the collab room projects html and json from the binary. The ADR stays `proposed`: the P1 strategy (Q-0061) is not decided here.
 
+## Update — the decision gets a trigger, not a date (2026-11-10)
+
+The review date of 2026-11-09 came due and the owner did not decide Q-0061 (2026-11-10). The strategy is to be decided **when spike 0005 starts** (M5 entry, after M2's exit). Spike 0005 is the only source of evidence for the P1 strategy, it has no owner yet and has not run, and M0's exit changes nothing it measures. The ADR stays `proposed`, and its leading hypothesis (Option 4) is unchanged.
+
 ## Open Questions
 
-* Q-0061 — choose the strategy (decision-pending).
+* Q-0061 — choose the strategy (decision-pending; decide when spike 0005 starts, M5).
 * Q-0061.1 — presence limits, max doc size, cold-start.
 * Q-0061.2 — Hocuspocus adapter reuse.
 * Q-0061.3 — version cadence: Plane's `track_page_version` triggers on each store; keep per-store, per-N-minutes, or on-explicit-save?
