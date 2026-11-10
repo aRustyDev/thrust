@@ -42,6 +42,8 @@ profile selects nothing. To reach the excluded integration suites through nextes
 scripts/contract.sh <target> [pass]
   target: native-memory | native-pg | worker-memory | worker-cf
   pass:   main | sweeper | panic | csrfoff | blast | bench | worker | cron | bindings
+          oracle                            (native-memory, native-pg, worker-cf: the v1 oracle's gate, corpus comparison and controls; needs `uv`.
+                                             In contract-all.sh, so a CI cell. By hand: `scripts/oracle-v1.sh <target> [controls]`)
           engine | scale                    (every target, opt-in: not in contract-all.sh. The engine-deciding tests; list, search and create at 100k items)
 ```
 
@@ -55,7 +57,7 @@ admin token and database password per run and keeps them out of files and argv.
 
 | Script | What it runs | Prerequisites |
 |---|---|---|
-| `scripts/contract-all.sh` | the 18-cell matrix serially, summary in `target/contract-logs/summary.txt` | Docker, wrangler |
+| `scripts/contract-all.sh` | the 21-cell matrix serially (18 contract cells and 3 `oracle` cells), summary in `target/contract-logs/summary.txt` | Docker, wrangler, `uv` |
 | `scripts/mutants.sh` | the planted mutants; every one must be KILLED | Docker |
 | `scripts/verify-all.sh` | the hermetic nextest run, matrix, mutants, `check-deps.sh`, `pg_adapter`, probes; summary in `target/verify/summary.txt` | Docker, wrangler |
 | `scripts/flake-hunt.sh <target> <pass> <iterations>` | one cell N times, keeping every log | as the cell |

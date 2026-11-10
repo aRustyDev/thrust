@@ -18,8 +18,9 @@ fi
 
 # Anything that can change what the Rust jobs build, test or run (.config/ holds nextest.toml, which decides
 # what the test jobs select; deny.toml, clippy.toml and rustfmt.toml are read by the `deny` and `lint` jobs, so a change
-# to one of them alone must run those jobs, not be skipped as docs).
-if grep -qE '^(crates/|scripts/|probes/|Cargo\.(toml|lock)$|rust-toolchain|\.cargo/|\.config/|\.github/(workflows|actions|scripts)/|deny\.toml$|\.?(clippy|rustfmt)\.toml$)' "$tmp"; then
+# to one of them alone must run those jobs, not be skipped as docs). tools/oracle-v1/ is the v1 oracle's harness, register, corpus
+# and results: the `oracle` cells of the contract matrix run it, so a change to it alone must run them, not be skipped.
+if grep -qE '^(crates/|scripts/|probes/|tools/oracle-v1/|Cargo\.(toml|lock)$|rust-toolchain|\.cargo/|\.config/|\.github/(workflows|actions|scripts)/|deny\.toml$|\.?(clippy|rustfmt)\.toml$)' "$tmp"; then
   echo "rust=true"
 else
   echo "rust=false"

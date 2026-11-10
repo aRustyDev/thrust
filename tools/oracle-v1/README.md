@@ -51,7 +51,9 @@ scripts/oracle-v1.sh plane                    # the pin, for the numbers the sco
 It starts the target as `scripts/contract.sh` does, then runs the scoped gate (`run_conformance.py --scope m1`), the
 corpus comparison (`record_corpus.py --only`, then `compare_corpus.py --scope m1`) and the comparison's own controls
 (`compare_corpus.py --self-test`), each from the oracle's seed, and ends in `VERDICT: PASS` or `VERDICT: FAIL`. The
-results are committed under `results/m1/`.
+results are committed under `results/m1/`. CI runs the same, controls included, as the `oracle` cells of the contract
+matrix (`native-memory`, `native-pg` and `worker-cf`; `scripts/contract.sh <target> oracle`), so a change here, to the
+register or to `/api/v1` that breaks the gate fails `gate`. Their logs are in the cell's `logs-<target>-oracle` artifact.
 
 Two things about the pin that a recording of it depends on. Plane soft-deletes what a deleted project holds in a
 Celery task, so a second `DELETE` of a project answers 404 until its worker has run and 403 after: the corpus records

@@ -23,9 +23,11 @@ run native-memory main
 run native-memory sweeper
 run native-memory panic
 run native-memory csrfoff
+run native-memory oracle
 run native-pg main
 run native-pg sweeper
 run native-pg panic
+run native-pg oracle
 run worker-memory main
 run worker-memory sweeper
 run worker-memory panic
@@ -37,6 +39,7 @@ run worker-cf panic
 run worker-cf cron
 run worker-cf worker
 run worker-cf bindings
+run worker-cf oracle
 
 cat "$SUMMARY"
 exit "$FAILED"

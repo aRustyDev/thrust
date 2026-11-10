@@ -40,27 +40,42 @@ its base branch. Nothing calls it, so it is a tool to run by hand.
   file (the last three are read by the `deny` and `lint` jobs, so a change to only one of them must still run those
   jobs `[verified 2026-11-05 7d0074f]` by the three cases in `.github/scripts/tests/test-ci-scripts.sh`). The job fails open: with no usable
   base commit, or an empty list, it runs everything. A pull request that changes only `docs/`, `AGENTS.md`,
-  `.agents/` or `tools/` runs no tests, and `gate` passes. Run on sample lists, the classifier answers `rust=false`
-  for `docs/`, `AGENTS.md`, `.agents/`, `tools/` and `.github/config/`, and `rust=true` for a file under `crates/`,
-  for `.config/nextest.toml`, for a workflow file and for an empty list `[verified 2026-10-19 fa4bd6c]`. On a pull
+  `.agents/` or `tools/` (but not `tools/oracle-v1/`, below) runs no tests, and `gate` passes. Run on sample lists, the
+  classifier answers `rust=false` for `docs/`, `AGENTS.md`, `.agents/`, `tools/` and `.github/config/`, and `rust=true`
+  for a file under `crates/`, for `.config/nextest.toml`, for a workflow file and for an empty list `[verified 2026-10-19
+  fa4bd6c]`. `tools/oracle-v1/` is the v1 oracle's harness, register, corpus and results, which the three `oracle` cells
+  run, so a change under it alone is `rust=true` (three cases in `test-ci-scripts.sh`, one of them a `tools/` look-alike
+  that stays `rust=false`) `[verified 2026-11-10]`. On a pull
   request that touches only `docs/`, `changes` passes, `plan`, `ci-scripts`, `deps`, `hermetic`, `pg-adapter`,
   `mutants` and `contract` are skipped, and `gate` passes `[verified 2026-10-19 051b849]`. `lint` and `deny`, added
   later, have the same `if` as `deps`, so a change to only `docs/` skips them too `[derived]`. **The book is not built in
   CI at all.**
 - **The matrix.** The `plan` job reads the `run <target> <pass>` lines of `scripts/contract-all.sh`, so no second
   list can drift. It fails if the number of cells it parsed differs from the number of lines that start with `run`,
-  if there are none, or if one repeats. There are 18 cells. Each runs on a fresh runner with its own checkout, which
-  is why the shared-build-directory hazard that makes `contract-all.sh` run serially does not apply.
+  if there are none, or if one repeats. There are 21 cells: 18 contract cells and the 3 `oracle` cells below `[verified 2026-11-10 43a17da: PR #113's run had 21 cell jobs, all succeeded, and `gate` printed `ok: 21 of 21 planned cells reported success`; on the run before (e591b29) `hermetic` had failed, so the script stopped at the job check and that comparison did not run]`.
+  Each runs on a fresh runner with its own checkout, which is why the shared-build-directory hazard that makes
+  `contract-all.sh` run serially does not apply.
 - **A cell.** `contract-cell.yml` checks that `curl`, `openssl`, `lsof`, `pgrep` and `docker` exist, runs
   `scripts/contract.sh <target> <pass>` with no pipe so the step's status is the script's, and uploads a marker named
   for the cell. The script's target guard and count guard apply as they do locally.
+- **The oracle cells.** `native-memory oracle`, `native-pg oracle` and `worker-cf oracle` run the v1 oracle (issue #58,
+  `tools/oracle-v1/README.md`) against the started target: the scoped Schemathesis gate, the corpus comparison, the
+  comparison's own controls and the must-fail controls C0 to C4, ending in `VERDICT: PASS`. They are `run` lines of
+  `contract-all.sh` like any cell, so the plan, the matrix, the pass marker and `gate` treat them as one, and the count
+  guard does not apply: success is the script's verdict, which exits 1 on any failing step. They need `uv`, so the
+  workflow installs it for that pass only (`astral-sh/setup-uv`, uv 0.12.18) and the preflight checks for it. Schemathesis
+  (4.31.1) and the Python dependencies of the harness's scripts are fetched from PyPI at run time. The oracle's logs go
+  to the cell's `logs-<target>-oracle` artifact. On hosted runners all three passed `[verified 2026-11-10 e591b29]`, so the
+  action installed uv, the preflight found it and `uvx` fetched Schemathesis there; as whole jobs, checkout, toolchain and
+  build included, they took 1m36s (`native-memory`), 2m11s (`native-pg`) and 4m00s (`worker-cf`), in parallel, against a
+  40 minute job timeout.
 - **Concurrency.** A new push cancels the older run of a pull request. Runs on `main` and in the merge queue are
   never cancelled.
 
 ## Permissions and supply chain
 
 - All 21 external action references are pinned to a full commit SHA with the version in a comment `[verified
-  2026-11-05 7d0074f]`. The Rust toolchain is `stable`, not pinned, so a new clippy or rustfmt release can fail `lint`
+  2026-11-05 7d0074f]`; `astral-sh/setup-uv` (v10.3.2, 19 days old when pinned) is the 22nd. The Rust toolchain is `stable`, not pinned, so a new clippy or rustfmt release can fail `lint`
   with no change to the code. `cargo-nextest` is 0.9.140 and `cargo-deny` is 0.20.2, both installed by
   `taiki-e/install-action`.
 - `permissions: {}` at the top of each workflow, and `contents: read` and nothing else on each job. All 12 checkouts

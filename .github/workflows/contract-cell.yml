@@ -13,7 +13,7 @@ on:
         type: string
         required: true
       pass:
-        description: main | sweeper | panic | cron | csrfoff | worker | bindings
+        description: main | sweeper | panic | cron | csrfoff | worker | bindings | oracle
         type: string
         required: true
 
@@ -42,10 +42,21 @@ jobs:
           cache-key: contract-${{ startsWith(inputs.target, 'worker') && 'wasm' || 'native' }}
           save-cache: ${{ github.ref == 'refs/heads/main' }}
 
+      # The oracle pass runs the v1 oracle's Python harness (scripts/oracle-v1.sh): every script is a `uv run --script` file and
+      # Schemathesis is fetched at its pinned version by `uvx`. Only that pass needs uv, and uv itself is pinned, as the action is.
+      - name: Install uv (oracle cells)
+        if: inputs.pass == 'oracle'
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          version: "0.12.18"
+          enable-cache: false
+
       - name: Preflight - host tools scripts/contract.sh relies on
         run: |
           missing=""
-          for tool in curl openssl lsof pgrep docker; do
+          tools="curl openssl lsof pgrep docker"
+          [ "$CELL_PASS" = oracle ] && tools="$tools uv"
+          for tool in $tools; do
             command -v "$tool" > /dev/null 2>&1 || missing="$missing $tool"
           done
           if [ -n "$missing" ]; then
