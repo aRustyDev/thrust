@@ -24,11 +24,15 @@ pub mod request;
 mod states;
 mod work_items;
 
-use axum::routing::any;
+use axum::http::header::ALLOW;
+use axum::http::HeaderValue;
+use axum::response::Response;
+use axum::routing::{any, MethodRouter};
 use axum::{middleware, Router};
 
 pub use ctx::{Ctx, PlaneUuid, RateInfo, V1Config, V1Path};
 pub use error::{plane_500, V1Error, PLANE_500_MESSAGE};
+pub use projects::{DEFAULT_COLORS, DEFAULT_ICONS};
 pub use states::slugify;
 
 /// The routes of `/api/v1`, for the composition roots to merge. Each needs the `App` in the request's extensions, as
@@ -46,4 +50,15 @@ pub fn assemble(routes: Router) -> Router {
 
 async fn page_not_found() -> V1Error {
     V1Error::PageNotFound
+}
+
+/// A route with the `Allow` header the pin's view puts on every answer it makes, errors and refusals included: its methods, in the
+/// order DRF lists them, joined by a comma and a space (`GET, POST`). An answer that no view made (the URLconf's 404) has none.
+pub(crate) fn with_allow(methods: &'static str, route: MethodRouter) -> MethodRouter {
+    route.layer(middleware::map_response(move |mut resp: Response| async move {
+        if resp.extensions().get::<error::NoView>().is_none() {
+            resp.headers_mut().insert(ALLOW, HeaderValue::from_static(methods));
+        }
+        resp
+    }))
 }

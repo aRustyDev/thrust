@@ -30,7 +30,7 @@ use crate::fields::{
 use crate::pagination::PageRequest;
 use crate::projects::ts;
 use crate::request::{json_body, pick_fields, query_map, Body};
-use crate::{Ctx, PlaneUuid, V1Error, V1Path};
+use crate::{with_allow, Ctx, PlaneUuid, V1Error, V1Path};
 
 const PRIORITIES: [&str; 5] = ["urgent", "high", "medium", "low", "none"];
 
@@ -38,14 +38,17 @@ pub(crate) fn routes() -> Router {
     let mut r = Router::new();
     for family in ["issues", "work-items"] {
         r = r
-            .route(&format!("/api/v1/workspaces/{{slug}}/projects/{{project_id}}/{family}/"), get(list).post(create))
+            .route(
+                &format!("/api/v1/workspaces/{{slug}}/projects/{{project_id}}/{family}/"),
+                with_allow("GET, POST", get(list).post(create)),
+            )
             .route(
                 &format!("/api/v1/workspaces/{{slug}}/projects/{{project_id}}/{family}/{{pk}}/"),
-                get(retrieve).patch(update).delete(destroy),
+                with_allow("GET, PATCH, DELETE", get(retrieve).patch(update).delete(destroy)),
             )
             // `search/` is a literal and wins over the identifier below, as Django's route order makes it
-            .route(&format!("/api/v1/workspaces/{{slug}}/{family}/search/"), get(search))
-            .route(&format!("/api/v1/workspaces/{{slug}}/{family}/{{ident}}/"), get(by_identifier));
+            .route(&format!("/api/v1/workspaces/{{slug}}/{family}/search/"), with_allow("GET", get(search)))
+            .route(&format!("/api/v1/workspaces/{{slug}}/{family}/{{ident}}/"), with_allow("GET", get(by_identifier)));
     }
     r
 }

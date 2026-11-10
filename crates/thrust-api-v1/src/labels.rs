@@ -26,13 +26,18 @@ use crate::fields::{
 use crate::pagination::PageRequest;
 use crate::projects::ts;
 use crate::request::{json_body, pick_fields, query_map, Body};
-use crate::{Ctx, PlaneUuid, V1Error, V1Path};
+use crate::{with_allow, Ctx, PlaneUuid, V1Error, V1Path};
 
 pub(crate) fn routes() -> Router {
-    Router::new().route("/api/v1/workspaces/{slug}/projects/{project_id}/labels/", get(list).post(create)).route(
-        "/api/v1/workspaces/{slug}/projects/{project_id}/labels/{label_id}/",
-        get(retrieve).patch(update).delete(destroy),
-    )
+    Router::new()
+        .route(
+            "/api/v1/workspaces/{slug}/projects/{project_id}/labels/",
+            with_allow("GET, POST", get(list).post(create)),
+        )
+        .route(
+            "/api/v1/workspaces/{slug}/projects/{project_id}/labels/{label_id}/",
+            with_allow("GET, PATCH, DELETE", get(retrieve).patch(update).delete(destroy)),
+        )
 }
 
 // --- the wire shape -----------------------------------------------------------------------------------------------------------
