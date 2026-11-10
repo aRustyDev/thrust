@@ -53,8 +53,9 @@ with a fixture made first as the control) and nothing more; the positive path is
   items. On a Postgres target (`native-pg`, `worker-cf`) each must send 3 to 5 statements; the floor is what stops a counter
   that counts nothing from passing. On a `memory` target it asserts the header is **absent**, which is what keeps the test from
   passing there without looking. It measures the second request of each list, after the API key's background first-use stamp
-  has landed. `/api/v1` work items with `?expand=assignees` are not covered: they send two statements per distinct assignee, a
-  known gap in [status](../status.md). The `budget` pass runs this test alone, for `scripts/mutants.sh`; it is not in
+  has landed. The caller is an admin, and two cases found over the budget are not covered (G-24 in [status](../status.md)):
+  `/api/v1` work items with `?expand=assignees`, which send two statements per distinct assignee, and a limited guest on
+  Plane's issues list (S47), which costs 6. The `budget` pass runs this test alone, for `scripts/mutants.sh`; it is not in
   `contract-all.sh`.
 - `crates/thrust-contract-tests/tests/worker_only.rs`: Durable Object, cron and binding tests for `worker-*` targets.
 

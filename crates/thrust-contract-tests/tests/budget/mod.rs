@@ -13,10 +13,14 @@
 //! What is measured is a steady-state request, after the first of each. The first use of an API key stamps `last_used_at` in
 //! the background (`thrust-core/src/auth.rs`), and it runs on the target's own schedule, so it is waited for and not counted.
 //!
-//! The lists are the six of FR-08 and #58, in the shape a client asks for them by default: the slice's work items, Plane's
-//! projects (S17) and work items (S47) over the internal API, and `/api/v1`'s projects, states, labels and work items. Out of
-//! scope on purpose, and a known gap (`docs/src/testing/status.md`): `/api/v1` work items with `?expand=assignees`, which
-//! sends two statements per distinct assignee.
+//! The lists are seven, in the shape a client asks for them by default and asked by an admin: the slice's work items,
+//! Plane's projects (S17) and work items (S47) over the internal API, and `/api/v1`'s projects, states, labels and work items.
+//!
+//! Out of scope, and known gaps (`docs/src/testing/status.md`, G-24), both found over the budget and neither fixed here:
+//! `/api/v1` work items with `?expand=assignees`, which send two statements per distinct assignee; and a **limited guest** on
+//! the compat issues list (S47), measured at 6 statements, with rows and on an empty page, because it adds a workspace-access
+//! and a project lookup. The caller here is an admin, so this test does not see that, and a guest request added to it would
+//! fail until the guest path is made cheaper.
 
 use std::time::Duration;
 
