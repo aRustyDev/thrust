@@ -4065,6 +4065,114 @@
     "status": 204
    },
    "surprise": false
+  },
+  {
+   "expect": [
+    201
+   ],
+   "name": "create-for-legacy-delete",
+   "request": {
+    "auth": "owner",
+    "body": {
+     "name": "Scratch item E"
+    },
+    "content_type": "application/json",
+    "method": "POST",
+    "path": "/api/v1/workspaces/oracle-ws/projects/<project:alpha>/issues/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "archived_at": null,
+     "assignees": [],
+     "completed_at": null,
+     "created_at": "<ts>",
+     "created_by": "<user:owner>",
+     "deleted_at": null,
+     "description_binary": null,
+     "description_html": "<p></p>",
+     "estimate_point": null,
+     "external_id": null,
+     "external_source": null,
+     "id": "<uuid:12>",
+     "is_draft": false,
+     "labels": [],
+     "name": "Scratch item E",
+     "parent": null,
+     "point": null,
+     "priority": "none",
+     "project": "<project:alpha>",
+     "sequence_id": 15,
+     "sort_order": 85535.0,
+     "start_date": null,
+     "state": "<state:alpha:Backlog>",
+     "target_date": null,
+     "type": null,
+     "type_id": null,
+     "updated_at": "<ts>",
+     "updated_by": null,
+     "workspace": "<workspace:oracle>"
+    },
+    "headers": {
+     "allow": "GET, POST",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 201
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    204
+   ],
+   "name": "delete-legacy-issues-path",
+   "request": {
+    "auth": "owner",
+    "body": null,
+    "content_type": null,
+    "method": "DELETE",
+    "path": "/api/v1/workspaces/oracle-ws/projects/<project:alpha>/issues/<uuid:12>/",
+    "query": null
+   },
+   "response": {
+    "body": null,
+    "headers": {
+     "allow": "GET, PATCH, DELETE",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 204
+   },
+   "surprise": false
+  },
+  {
+   "expect": [
+    404
+   ],
+   "name": "detail-after-legacy-delete",
+   "request": {
+    "auth": "owner",
+    "body": null,
+    "content_type": null,
+    "method": "GET",
+    "path": "/api/v1/workspaces/oracle-ws/projects/<project:alpha>/issues/<uuid:12>/",
+    "query": null
+   },
+   "response": {
+    "body": {
+     "error": "The requested resource does not exist."
+    },
+    "headers": {
+     "allow": "GET, PATCH, DELETE",
+     "content-type": "application/json",
+     "x-ratelimit-remaining": "<int>",
+     "x-ratelimit-reset": "<epoch>"
+    },
+    "status": 404
+   },
+   "surprise": false
   }
  ],
  "normalisation": "oracle/normalise.yaml",
