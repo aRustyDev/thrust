@@ -63,6 +63,15 @@ Behaviour worth knowing:
   `X-RateLimit-Remaining` on `/api/v1` as the limit less one, an upper bound and not a count. The native server and the
   in-isolate Worker count exactly (`MemoryRateLimiter`). A key that belongs to none of the three bindings is an error,
   not a free pass. Before issue #43 a Durable Object counted exactly, at a Durable Object round trip on every create.
+- **Placement.** `wrangler.toml` and `wrangler.stage2.toml` set `placement.region = "aws:us-east-1"`, where the
+  database is (ADR-0094), so `fetch` runs in the Cloudflare data centre closest to that region. Placement covers
+  `fetch` only: the `queue` and `scheduled` handlers and the Durable Objects are not placed. `region` excludes `mode`,
+  `host` and `hostname`. `wrangler.pg.stage.toml` carries no block of its own: `scripts/spike-0002-pg.sh` injects one at
+  its `# __PLACEMENT__` marker unless given `--no-placement`. `scripts/check-placement.sh`, a step of the `deps` CI
+  job, checks that text in all three files. It cannot show that Cloudflare accepted the hint: Cloudflare adds a
+  `cf-placement` header (`remote-XXX` or `local-XXX`) to a response when placement is on, and the Workers API reports
+  the Worker's placement. That the hint took effect on a deployed Worker is `[unverified: not run]`; it needs the
+  stage stack (issue #39).
 - **Request bodies are buffered.** The Worker reads the whole body (at most 8 MiB, the router's limit) before it
   routes, so there are no streaming uploads. The source comment records why: skipping this made a share of local
   runs fail with a request-stream error.

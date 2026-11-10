@@ -9,6 +9,12 @@ main = "build/worker/shim.mjs"
 compatibility_date = "2026-08-01"
 workers_dev = true
 
+# Same hint as wrangler.toml: `fetch` runs closest to AWS us-east-1, where the database is (ADR-0094). The numbers in
+# research/0004 section 10.3 were taken before this block existed, so a run with it is not comparable to them without
+# saying so.
+[placement]
+region = "aws:us-east-1"
+
 [build]
 command = "../../scripts/rs worker-build --release . --no-default-features"
 
