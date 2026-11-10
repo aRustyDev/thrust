@@ -116,6 +116,10 @@ jobs:
           save-cache: ${{ github.ref == 'refs/heads/main' }}
       - name: Dependency-graph guard
         run: scripts/check-deps.sh
+      # Issue #39: the Worker's two real configs carry `[placement] region = "aws:us-east-1"`. A step and not a job, so
+      # the gate's required contexts do not change.
+      - name: Placement guard
+        run: scripts/check-placement.sh
 
   # rustfmt and clippy (issue #40). Clippy runs with `-D warnings`, so the four lints `Cargo.toml` denies in core, ports and the
   # adapters (ADR-0006's panic policy: unwrap, expect, panic, indexing) and every other warning fail it. The second clippy run is
