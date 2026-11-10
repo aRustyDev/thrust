@@ -8,6 +8,8 @@
 #   THRUST_CREATE_RATE_LIMIT       per-user create limit per window
 #   THRUST_ARGON2_M_KIB / _T / _P  password hashing cost (default: OWASP's minimum)
 #   THRUST_SIGNIN_RATE_LIMIT       sign-in attempts per email per window
+#   THRUST_V1_RATE_LIMIT           a key's allowance on /api/v1, in Plane's spelling (`1000000/minute`); unset leaves the
+#                                  Worker's default, Plane's 60/minute
 #   THRUST_CSRF_ENFORCE            on | off | default: CSRF token on cookie mutations. Unset means ON here, unlike the
 #                                  production default of off, so the contract targets keep the meaning of their CSRF
 #                                  tests. `default` passes no setting at all, so the wrangler config's own [vars]
@@ -52,7 +54,7 @@ fi
 
 # Optional vars are passed only when set, so an unset one leaves the Worker's own default in force.
 set --
-for v in THRUST_ARGON2_M_KIB THRUST_ARGON2_T THRUST_ARGON2_P THRUST_SIGNIN_RATE_LIMIT; do
+for v in THRUST_ARGON2_M_KIB THRUST_ARGON2_T THRUST_ARGON2_P THRUST_SIGNIN_RATE_LIMIT THRUST_V1_RATE_LIMIT; do
   eval "val=\${$v:-}"
   [ -n "$val" ] && set -- "$@" --var "$v:$val"
 done

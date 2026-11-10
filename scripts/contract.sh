@@ -22,6 +22,9 @@
 #                              The target starts with a very high create rate limit. Opt-in: not in contract-all.sh.
 #             bindings         (worker-cf only) one real operation per binding (rate limit, secrets
 #                              store, email, service binding, workflow via JS shim)
+#             oracle           the v1 oracle's scoped gate and corpus comparison against the started target, with the /api/v1 rate
+#                              limit raised for the fuzzer; run through scripts/oracle-v1.sh <target> [controls]. Not in
+#                              contract-all.sh; success == its `VERDICT: PASS`
 #
 # Exit status is the status of `cargo test` itself (no pipes, no trailing echo). The suite's
 # pass count is also checked against the expected number so that a filter that selects zero
@@ -43,6 +46,13 @@ LOG="$LOGDIR/$TARGET-$PASS"
 RATE_LIMIT=30
 # The engine pass makes thousands of creates per user per window: the main pass's limit would refuse them.
 [ "${2:-main}" = "engine" ] && RATE_LIMIT=1000000
+# The oracle pass fuzzes /api/v1 with one key: Plane's default of 60 requests a minute would answer nearly all of them 429. The
+# other passes run with the default, as production does.
+if [ "${2:-main}" = "oracle" ]; then
+  export THRUST_V1_RATE_LIMIT=1000000/minute
+  # ... and its creates are far more than the main pass's per-user create limit allows
+  RATE_LIMIT=1000000
+fi
 # ... and 50 parallel writers hold up to ~100 Postgres connections at once on the Worker path (each request opens one for
 # its reads and one for its transaction; wrangler's local Hyperdrive emulation does not pool, a deployed Hyperdrive
 # does), which is the image's default `max_connections`. Measured: at 100, 1 of 50 writers got HTTP 500 ("postgres
@@ -311,6 +321,14 @@ case "$PASS" in
     "$ROOT/scripts/rs" cargo test --manifest-path "$ROOT/Cargo.toml" -p thrust-contract-tests --test engine -- --test-threads=1 --nocapture >"$LOG.test.log" 2>&1
     TEST_STATUS=$?
     EXPECT=$EXPECT_ENGINE
+    ;;
+  oracle)
+    # The v1 oracle's scoped gate and corpus comparison against the target just started (scripts/oracle-v1.sh is the way in, and
+    # runs this pass). Not a test count: success == the script's verdict, which it prints as `VERDICT: PASS`.
+    "$ROOT/scripts/oracle-v1.sh" running
+    TEST_STATUS=$?
+    echo "[$TARGET/$PASS] oracle exit=$TEST_STATUS"
+    exit "$TEST_STATUS"
     ;;
   scale)
     "$ROOT/scripts/rs" cargo run --quiet --release --manifest-path "$ROOT/Cargo.toml" -p thrust-contract-tests --bin bench_scale -- \
