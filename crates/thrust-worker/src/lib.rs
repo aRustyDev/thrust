@@ -1,8 +1,12 @@
 //! Cloudflare Worker composition root.
 //!
 //! Compile-time adapter set = this crate's dependency/feature list (ADR-0007):
-//!   * `cloudflare` (always): Hyperdrive/Postgres (sessions included), R2, Queues, Durable Objects
+//!   * `cloudflare` (always): Hyperdrive/Postgres (sessions included), R2, Queues, the Workers Rate Limiting bindings (one per
+//!     kind of key, ADR-0033), and the Durable Object classes (`RoomDo`, the P1 collab template)
 //!   * `memory` (default, dev/test only): in-isolate adapters
+//!
+//! One Worker (ADR-0090, FR-11): `fetch`, `queue` and `scheduled` in this module, and no other entrypoint, Workflow, service
+//! binding or JavaScript.
 //!
 //! `THRUST_ADAPTERS` only chooses between sets that were compiled in.
 
@@ -72,6 +76,9 @@ fn num<T: std::str::FromStr>(env: &Env, name: &str, default: T) -> T {
 fn core_config(env: &Env) -> CoreConfig {
     let defaults = CoreConfig::default();
     CoreConfig {
+        // The limits below are what the in-isolate (`memory`) set counts with. On the `cloudflare` set the allowance is the
+        // `[[ratelimits]]` binding's: its windows are checked against the bindings' periods (`check_rate_windows`), and its limits
+        // only give the upper bound that `CfRateLimiter` reports as `remaining`.
         create_rate_limit: num(env, "THRUST_CREATE_RATE_LIMIT", 1000),
         rate_window_secs: num(env, "THRUST_RATE_WINDOW_SECS", 60),
         outbox_fastpath: flag(env, "THRUST_OUTBOX_FASTPATH", true),
@@ -105,6 +112,20 @@ fn oidc_provider(env: &Env) -> Result<Option<Arc<dyn OidcProvider>>> {
     }
 }
 
+/// Refuse to start with a window the rate-limit bindings cannot count over (ADR-0033, D-007). A binding counts over 10 s or 60 s,
+/// its own `period` decides which, and the app reports the window it was configured with (`Retry-After`, `X-RateLimit-Reset`), so
+/// that window has to be one of the two. Three are in play: the create limit's (`THRUST_RATE_WINDOW_SECS`), sign-in's (a constant
+/// of the core's config) and the period of `THRUST_V1_RATE_LIMIT`, when it is set. A v1 setting that does not read is not checked:
+/// `v1_config` logs it and uses Plane's default, which is a minute.
+fn check_rate_windows(env: &Env, cfg: &CoreConfig) -> Result<()> {
+    check_binding_period("THRUST_RATE_WINDOW_SECS", cfg.rate_window_secs).map_err(Error::RustError)?;
+    check_binding_period("the sign-in rate window", cfg.sign_in_rate_window_secs).map_err(Error::RustError)?;
+    if let Some(v1) = text(env, "THRUST_V1_RATE_LIMIT").and_then(|spec| thrust_api_v1::V1Config::parse(&spec).ok()) {
+        check_binding_period("the period of THRUST_V1_RATE_LIMIT", v1.rate_window_secs).map_err(Error::RustError)?;
+    }
+    Ok(())
+}
+
 fn adapter_set(env: &Env) -> String {
     let default = if cfg!(feature = "memory") { "memory" } else { "cloudflare" };
     text(env, "THRUST_ADAPTERS").unwrap_or_else(|| default.into())
@@ -133,6 +154,7 @@ fn build_app(env: &Env, background: Arc<dyn Background>) -> Result<App> {
 
     let app = match adapters.as_str() {
         "cloudflare" => {
+            check_rate_windows(env, &cfg)?;
             let connector = HyperdriveConnector::new(env.hyperdrive("HYPERDRIVE")?);
             // This composition root mints the proof for the relay, sweeper, consumer and seed.
             App::new(
@@ -140,7 +162,11 @@ fn build_app(env: &Env, background: Arc<dyn Background>) -> Result<App> {
                     db: Arc::new(PgDatabase::new(Arc::new(connector))),
                     queue: Arc::new(CfQueue(env.queue("EVENTS")?)),
                     blobs: Arc::new(R2BlobStore(env.bucket("BLOBS")?)),
-                    limiter: Arc::new(DoRateLimiter(env.durable_object("RATE_LIMITER")?)),
+                    limiter: Arc::new(CfRateLimiter {
+                        create: env.rate_limiter("RL_CREATE")?,
+                        signin: env.rate_limiter("RL_SIGNIN")?,
+                        v1: env.rate_limiter("RL_V1")?,
+                    }),
                     clock,
                     ids,
                     background,

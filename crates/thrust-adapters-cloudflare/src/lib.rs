@@ -289,44 +289,6 @@ impl RateLimiter for CfRateLimiter {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Durable Object (SQLite storage) -> RateLimiter
-// ---------------------------------------------------------------------------------------------
-
-/// One DO instance per rate-limit key; the DO class lives in `thrust-worker` (the only crate
-/// that exports DO classes). Wire protocol: `GET /hit?limit=&window=` -> JSON.
-pub struct DoRateLimiter(pub worker::ObjectNamespace);
-
-#[derive(serde::Deserialize)]
-struct DoHit {
-    allowed: bool,
-    remaining: u32,
-    retry_after_secs: u64,
-}
-
-#[async_trait]
-impl RateLimiter for DoRateLimiter {
-    async fn hit(&self, key: &str, limit: u32, window_secs: u64) -> Result<RateDecision, RateError> {
-        let e = |x: worker::Error| RateError::Backend(x.to_string());
-        SendFuture::new(async move {
-            let stub = self.0.get_by_name(key).map_err(e)?;
-            let url = format!("https://rate-limiter.internal/hit?limit={limit}&window={window_secs}");
-            let req = worker::Request::new(&url, worker::Method::Get).map_err(e)?;
-            let mut resp = stub.fetch_with_request(req).await.map_err(e)?;
-            if resp.status_code() != 200 {
-                return Err(RateError::Backend(format!("rate-limiter DO answered {}", resp.status_code())));
-            }
-            let hit: DoHit = resp.json().await.map_err(e)?;
-            Ok(if hit.allowed {
-                RateDecision::Allowed { remaining: hit.remaining }
-            } else {
-                RateDecision::Limited { retry_after_secs: hit.retry_after_secs }
-            })
-        })
-        .await
-    }
-}
-
-// ---------------------------------------------------------------------------------------------
 // Hyperdrive -> Postgres connection strategy
 // ---------------------------------------------------------------------------------------------
 
