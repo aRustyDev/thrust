@@ -149,6 +149,11 @@ impl DbState {
                 // the member row must name the project's own workspace (the join on `m.workspace_id` in Postgres)
                 role: self.memberships.get(&(p.id, user)).filter(|m| m.workspace_id == ws).map(|m| m.role),
                 sort_order: self.project_user_props.get(&(p.id, user)).map(|up| up.sort_order),
+                member_sort_order: self
+                    .memberships
+                    .get(&(p.id, user))
+                    .filter(|m| m.workspace_id == ws)
+                    .map(|m| m.sort_order),
             })
             .collect()
     }
@@ -656,6 +661,11 @@ impl Database for MemoryDatabase {
                 project,
                 role: s.memberships.get(&(id, user)).filter(|m| m.workspace_id == ws).map(|m| m.role),
                 sort_order: s.project_user_props.get(&(id, user)).map(|up| up.sort_order),
+                member_sort_order: s
+                    .memberships
+                    .get(&(id, user))
+                    .filter(|m| m.workspace_id == ws)
+                    .map(|m| m.sort_order),
             },
             members: rows.iter().map(|m| m.user_id).collect(),
             next_sequence: s.counters.get(&(ws, id)).map_or(0, |c| c.0) + 1,

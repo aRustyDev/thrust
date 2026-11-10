@@ -1,0 +1,23 @@
+{
+ "scope": "m1",
+ "target": "plane",
+ "exchanges_compared": 108,
+ "by_resource": {
+  "projects": 25,
+  "states": 14,
+  "labels": 11,
+  "work_items": 36,
+  "pagination": 12,
+  "errors": 10
+ },
+ "out_of_scope_exchanges": {
+  "projects": 1,
+  "work_items": 13,
+  "errors": 6
+ },
+ "accepted": 0,
+ "unaccepted": [],
+ "stale_entries": [],
+ "vacuous": [],
+ "accepted_by_entry_and_exchange": {}
+}

@@ -12,6 +12,9 @@
 #                                  too is how a control shows that the suite fails when the binding is above what it expects
 #   THRUST_ARGON2_M_KIB / _T / _P  password hashing cost (default: OWASP's minimum)
 #   THRUST_SIGNIN_RATE_LIMIT       sign-in attempts per email per window (the `RL_SIGNIN` binding's limit on the Cloudflare set)
+#   THRUST_V1_RATE_LIMIT           a key's allowance on /api/v1, in Plane's spelling (`1000000/minute`); unset leaves the
+#                                  Worker's default, Plane's 60/minute. On the Cloudflare set its count is the `RL_V1` binding's
+#                                  limit (the period is the binding's 60 seconds, so `/minute`), written like the others
 #   THRUST_CSRF_ENFORCE            on | off | default: CSRF token on cookie mutations. Unset means ON here, unlike the
 #                                  production default of off, so the contract targets keep the meaning of their CSRF
 #                                  tests. `default` passes no setting at all, so the wrangler config's own [vars]
@@ -81,12 +84,20 @@ set_limit() {
 if [ "$CONFIG" = wrangler.toml ]; then
   CREATE_LIMIT="${THRUST_WORKER_CREATE_LIMIT:-${THRUST_CREATE_RATE_LIMIT:-}}"
   SIGNIN_LIMIT="${THRUST_SIGNIN_RATE_LIMIT:-}"
-  for limit in "$CREATE_LIMIT" "$SIGNIN_LIMIT"; do
+  # `1000000/minute`: the count is the binding's limit; the binding's period is 60 seconds, so another period is refused here
+  # rather than left to give a run a limit that is not the one asked for
+  V1_LIMIT=""
+  case "${THRUST_V1_RATE_LIMIT:-}" in
+    "") ;;
+    *[0-9]/minute) V1_LIMIT="${THRUST_V1_RATE_LIMIT%%/*}" ;;
+    *) echo "worker-dev: on the Cloudflare set THRUST_V1_RATE_LIMIT is <count>/minute (the RL_V1 binding's period is 60 seconds), not '$THRUST_V1_RATE_LIMIT'" >&2; exit 2 ;;
+  esac
+  for limit in "$CREATE_LIMIT" "$SIGNIN_LIMIT" "$V1_LIMIT"; do
     case "$limit" in
       *[!0-9]*) echo "worker-dev: a rate limit must be a number, not '$limit'" >&2; exit 2 ;;
     esac
   done
-  if [ -n "$CREATE_LIMIT" ] || [ -n "$SIGNIN_LIMIT" ]; then
+  if [ -n "$CREATE_LIMIT" ] || [ -n "$SIGNIN_LIMIT" ] || [ -n "$V1_LIMIT" ]; then
     cp "$CONFIG" "$STATE/config.toml"
     if [ -n "$CREATE_LIMIT" ]; then
       set_limit RL_CREATE "$CREATE_LIMIT" <"$STATE/config.toml" >"$STATE/config.next" ||
@@ -98,16 +109,21 @@ if [ "$CONFIG" = wrangler.toml ]; then
         { echo "worker-dev: $CONFIG has no [[ratelimits]] block named RL_SIGNIN" >&2; exit 3; }
       mv "$STATE/config.next" "$STATE/config.toml"
     fi
+    if [ -n "$V1_LIMIT" ]; then
+      set_limit RL_V1 "$V1_LIMIT" <"$STATE/config.toml" >"$STATE/config.next" ||
+        { echo "worker-dev: $CONFIG has no [[ratelimits]] block named RL_V1" >&2; exit 3; }
+      mv "$STATE/config.next" "$STATE/config.toml"
+    fi
     RUN_CONFIG=".wrangler.run-$$.toml"
     cp "$STATE/config.toml" "$RUN_CONFIG"
     CONFIG="$RUN_CONFIG"
-    echo "worker-dev: rate limit bindings from $CONFIG: RL_CREATE=${CREATE_LIMIT:-default} RL_SIGNIN=${SIGNIN_LIMIT:-default}"
+    echo "worker-dev: rate limit bindings from $CONFIG: RL_CREATE=${CREATE_LIMIT:-default} RL_SIGNIN=${SIGNIN_LIMIT:-default} RL_V1=${V1_LIMIT:-default}"
   fi
 fi
 
 # Optional vars are passed only when set, so an unset one leaves the Worker's own default in force.
 set --
-for v in THRUST_ARGON2_M_KIB THRUST_ARGON2_T THRUST_ARGON2_P THRUST_SIGNIN_RATE_LIMIT; do
+for v in THRUST_ARGON2_M_KIB THRUST_ARGON2_T THRUST_ARGON2_P THRUST_SIGNIN_RATE_LIMIT THRUST_V1_RATE_LIMIT; do
   eval "val=\${$v:-}"
   [ -n "$val" ] && set -- "$@" --var "$v:$val"
 done

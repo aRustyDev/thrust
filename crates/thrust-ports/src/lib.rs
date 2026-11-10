@@ -450,6 +450,10 @@ pub struct ProjectListing {
     pub project: ProjectRow,
     pub role: Option<Role>,
     pub sort_order: Option<f64>,
+    /// The `sort_order` of the caller's own member row (`project_members`), which is what the pin's v1 API reports as the project's
+    /// `sort_order` (issue #58): 65535 for a member that nothing has moved, none for a person who is not in the project. It is not
+    /// [`ProjectListing::sort_order`], the place in the person's own list that the compat plane's sidebar keeps.
+    pub member_sort_order: Option<f64>,
 }
 
 /// One entry of a member's sidebar for a workspace: whether it is pinned and where it goes.

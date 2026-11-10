@@ -25,17 +25,23 @@ use crate::fields::{
 };
 use crate::pagination::PageRequest;
 use crate::request::{json_body, pick_fields, query_map, Body};
-use crate::{Ctx, PlaneUuid, V1Error, V1Path};
+use crate::{with_allow, Ctx, PlaneUuid, V1Error, V1Path};
 
 /// The orders a project list takes (`PROJECT_ORDER_BY_ALLOWLIST`), each with an optional `-`; anything else is the default.
 const ORDER_BY: [&str; 5] = ["created_at", "updated_at", "name", "network", "sort_order"];
 
 pub(crate) fn routes() -> Router {
     Router::new()
-        .route("/api/v1/workspaces/{slug}/projects/", get(list).post(create))
-        .route("/api/v1/workspaces/{slug}/projects-lite/", get(list_lite))
-        .route("/api/v1/workspaces/{slug}/projects/{project_id}/", get(retrieve).patch(update).delete(destroy))
-        .route("/api/v1/workspaces/{slug}/projects/{project_id}/archive/", post(archive).delete(unarchive))
+        .route("/api/v1/workspaces/{slug}/projects/", with_allow("GET, POST", get(list).post(create)))
+        .route("/api/v1/workspaces/{slug}/projects-lite/", with_allow("GET", get(list_lite)))
+        .route(
+            "/api/v1/workspaces/{slug}/projects/{project_id}/",
+            with_allow("GET, PATCH, DELETE", get(retrieve).patch(update).delete(destroy)),
+        )
+        .route(
+            "/api/v1/workspaces/{slug}/projects/{project_id}/archive/",
+            with_allow("POST, DELETE", post(archive).delete(unarchive)),
+        )
 }
 
 // --- the wire shape -----------------------------------------------------------------------------------------------------------
@@ -112,7 +118,7 @@ fn project_body(l: &ProjectListing, total_members: i64, with_sort_order: bool) -
         "is_deployed": false,
     });
     if let (true, Some(map)) = (with_sort_order, body.as_object_mut()) {
-        map.insert("sort_order".into(), json!(l.sort_order));
+        map.insert("sort_order".into(), json!(l.member_sort_order));
     }
     match body {
         Value::Object(map) => map,
@@ -167,7 +173,7 @@ fn sort_projects(listings: &mut [ProjectListing], key: &str, descending: bool) {
             "updated_at" => a.project.updated_at.cmp(&b.project.updated_at),
             "name" => a.project.name.cmp(&b.project.name),
             "network" => network_number(a.project.network).cmp(&network_number(b.project.network)),
-            _ => place(a.sort_order, b.sort_order),
+            _ => place(a.member_sort_order, b.member_sort_order),
         };
         if descending {
             ordering.reverse()
@@ -370,10 +376,59 @@ async fn create(
         // `{**request.data}` of a list raises, and the view's catch-all answers it
         Body::Array => return Err(V1Error::error(StatusCode::INTERNAL_SERVER_ERROR, "An unexpected error occurred")),
     };
-    let patch = project_patch(&ctx, &scope, &map, false).await?;
+    let mut patch = project_patch(&ctx, &scope, &map, false).await?;
+    // the pin's serializer reads no `logo_props` from a creation (measured: one that is given, in the emoji form, is ignored, as null is)
+    // and gives the project a random icon and colour; the corpus erases the two values, so what is compared is the shape
+    patch.logo_props = Some(default_logo(&ctx));
     let detail = thrust_core::create_project(&ctx.app, &scope, patch).await.map_err(|e| project_error(e, None))?;
     let members = i64::try_from(detail.members.len()).unwrap_or(i64::MAX);
     Ok((StatusCode::CREATED, Json(Value::Object(project_body(&detail.listing, members, false)))))
+}
+
+/// The pin's `PROJECT_ICON_DEFAULT_ICONS` and `PROJECT_ICON_DEFAULT_COLORS` (`ProjectCreateSerializer`), the lists a new project's
+/// default icon is drawn from.
+pub const DEFAULT_ICONS: [&str; 28] = [
+    "home",
+    "apps",
+    "settings",
+    "star",
+    "favorite",
+    "done",
+    "check_circle",
+    "add_task",
+    "create_new_folder",
+    "dataset",
+    "terminal",
+    "key",
+    "rocket",
+    "public",
+    "quiz",
+    "mood",
+    "gavel",
+    "eco",
+    "diamond",
+    "forest",
+    "bolt",
+    "sync",
+    "cached",
+    "library_add",
+    "view_timeline",
+    "view_kanban",
+    "empty_dashboard",
+    "cycle",
+];
+pub const DEFAULT_COLORS: [&str; 8] =
+    ["#95999f", "#6d7b8a", "#5e6ad2", "#02b5ed", "#02b55c", "#f2be02", "#e57a00", "#f38e82"];
+
+/// A new project's default `logo_props`: an icon and a colour, each drawn from the pin's lists with the app's random source.
+fn default_logo(ctx: &Ctx) -> Value {
+    let mut draw = [0_u8; 2];
+    // a source that fails gives the first of each: the shape is what a client relies on, not the choice
+    let _ = ctx.app.ports.rng.fill(&mut draw);
+    let [icon, color] = draw;
+    let name = DEFAULT_ICONS.get(usize::from(icon) % DEFAULT_ICONS.len()).copied().unwrap_or("home");
+    let color = DEFAULT_COLORS.get(usize::from(color) % DEFAULT_COLORS.len()).copied().unwrap_or("#95999f");
+    json!({ "in_use": "icon", "icon": { "name": name, "color": color } })
 }
 
 /// `GET .../projects/{id}/`: a project the caller is in or a public one.

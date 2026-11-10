@@ -109,7 +109,10 @@ SCENARIOS["projects"] = [
     S("unarchive-scratch", "DELETE", WS + "/projects/{{cap.scratch}}/archive/", expect=[204]),
     S("delete-scratch", "DELETE", WS + "/projects/{{cap.scratch}}/", expect=[204]),
     S("detail-after-delete", "GET", WS + "/projects/{{cap.scratch}}/", expect=[404]),
-    S("delete-again", "DELETE", WS + "/projects/{{cap.scratch}}/", expect=[404]),
+    # The project's members are soft-deleted by a Celery task (`soft_delete_related_objects`), not by the request, so the pin answers
+    # a second DELETE 404 until its worker has run and 403 (no active membership) after. The corpus records the settled answer.
+    S("delete-again", "DELETE", WS + "/projects/{{cap.scratch}}/", expect=[404],
+      settle={"method": "PATCH", "path": WS + "/projects/{{cap.scratch}}/", "body": {}, "until": 403}),
     S("member-forbidden-delete-public-project", "DELETE", P + "/", auth="member", expect=[403]),
 ]
 
@@ -213,6 +216,11 @@ SCENARIOS["work_items"] = [
     S("create-after-deletes-sequence", "POST", P + "/work-items/", body={"name": "Scratch item D"}, expect=[201],
       cap={"wi5": "id"}),
     S("delete-wi5", "DELETE", P + "/work-items/{{cap.wi5}}/", expect=[204]),
+    # The one operation of the `issues/` family that no exchange above reached: DELETE .../issues/{pk}/. These come last so that no
+    # sequence_id or ordinal of an exchange recorded before them moves.
+    S("create-for-legacy-delete", "POST", P + "/issues/", body={"name": "Scratch item E"}, expect=[201], cap={"wi6": "id"}),
+    S("delete-legacy-issues-path", "DELETE", P + "/issues/{{cap.wi6}}/", expect=[204]),
+    S("detail-after-legacy-delete", "GET", P + "/issues/{{cap.wi6}}/", expect=[404]),
 ]
 
 SCENARIOS["members"] = [
@@ -387,9 +395,24 @@ class Recorder:
             "expect": step.get("expect"), "elapsed_s": round(time.time() - t0, 3),
         }
 
+    def settle(self, st):
+        """Before a step that depends on work the pin does in a Celery worker, repeat its `settle` probe (not recorded) until it answers
+        `until`. A probe that never does is reported and the step is recorded anyway: the corpus shows what the pin did, and the
+        comparison then says it differs from the committed one."""
+        probe = st["settle"]
+        step = {"name": st["name"] + "-settle", "auth": probe.get("auth"), **{k: probe[k] for k in ("method", "path", "body") if k in probe}}
+        deadline = time.time() + probe.get("timeout", 30)
+        while self.call(step)["status"] != probe["until"]:
+            if time.time() > deadline:
+                print(f"NOTE {st['name']}: the settle probe never answered {probe['until']} (is the worker running?)", file=sys.stderr)
+                return
+            time.sleep(0.1)
+
     def run(self, steps):
         out = []
         for st in steps:
+            if st.get("settle"):
+                self.settle(st)
             ex = self.call(st)
             for name, path in (st.get("cap") or {}).items():
                 self.ctx["cap"][name] = dotted(ex["body"], path)

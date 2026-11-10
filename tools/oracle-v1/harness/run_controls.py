@@ -80,7 +80,9 @@ def run_control(c, port, a, work):
         gate = subprocess.run(
             ["uv", "run", str(HERE / "run_conformance.py"), "--base-url", f"http://127.0.0.1:{port}",
              "--label", c["id"], "--schema", str(a.schema), "--manifest", str(a.manifest),
-             "--out-dir", str(work), "--no-strict-register"],
+             "--out-dir", str(work), "--no-strict-register",
+             # the same scope and target as the gate whose controls these are
+             *(["--scope", a.scope, "--target", a.target] if a.scope else [])],
             capture_output=True, text=True)
     finally:
         proxy.terminate()
@@ -124,12 +126,70 @@ def run_control(c, port, a, work):
     return out
 
 
+def run_corpus_control(port, a, work):
+    """C4 again, through the corpus comparison. The gate cannot see a State that has lost its `id` (the schema does not require it:
+    C4 above), so the corpus comparison has to. The same proxy drops `id` from every State, the target's corpus is recorded THROUGH
+    it, and that recording is compared with the committed one: the comparison must FAIL, on an `id`, in `states`. A comparison that
+    passes here, or a proxy that mutated nothing, makes the control VOID."""
+    import yaml
+    scope = yaml.safe_load(open(ORACLE / "exceptions.yaml"))["scopes"][a.scope]
+    resources = ",".join(scope["corpus"]["resources"])
+    cid = "C4-corpus-comparison"
+    rc = reset_state(a, work, cid)
+    if rc not in (None, 0):
+        return {"id": cid, "verdict": "VOID", "why": f"reset failed (exit {rc}); see {cid}.reset.log"}
+    stats_file = work / f"{cid}.proxy-stats.json"
+    recorded = work / f"{cid}.recorded"
+    proxy = subprocess.Popen(
+        ["uv", "run", str(HERE / "mutating_proxy.py"), "--listen-port", str(port), "--upstream", a.upstream,
+         "--mode", "drop", "--field", "id", "--stats-file", str(stats_file)],
+        stdout=open(work / f"{cid}.proxy.log", "w"), stderr=subprocess.STDOUT)
+    try:
+        if not wait_port(port):
+            return {"id": cid, "verdict": "VOID", "why": "proxy did not start"}
+        rec = subprocess.run(
+            ["uv", "run", "--script", str(HERE / "record_corpus.py"), "--base-url", f"http://127.0.0.1:{port}",
+             "--manifest", str(a.manifest), "--only", resources, "--out-dir", str(recorded),
+             "--raw-dir", str(work / f"{cid}.raw")], capture_output=True, text=True)
+    finally:
+        proxy.terminate()
+        proxy.wait(timeout=10)
+    stats = json.load(open(stats_file)) if stats_file.exists() else {"mutated": 0}
+    if rec.returncode != 0:
+        return {"id": cid, "verdict": "VOID", "why": f"the recording failed (exit {rec.returncode})",
+                "output": rec.stdout[-400:] + rec.stderr[-400:]}
+    if stats["mutated"] < 1:
+        return {"id": cid, "verdict": "VOID", "proxy_mutated_responses": 0,
+                "why": "the proxy mutated NOTHING, so this control proves nothing"}
+    result_path = work / f"{cid}.result.json"
+    cmp = subprocess.run(
+        ["uv", "run", "--script", str(HERE / "compare_corpus.py"), "--recorded", str(recorded), "--scope", a.scope,
+         "--target", a.target, "--out", str(result_path)], capture_output=True, text=True)
+    if not result_path.exists():
+        return {"id": cid, "verdict": "VOID", "why": f"the comparison crashed (exit {cmp.returncode})",
+                "output": cmp.stdout[-400:] + cmp.stderr[-400:]}
+    found = [d for d in json.load(open(result_path))["unaccepted"]
+             if d["resource"] == "states" and d["path"].endswith(".id")]
+    out = {"id": cid, "mode": "drop", "field": "id", "proxy_mutated_responses": stats["mutated"],
+           "comparison_exit": cmp.returncode, "differences_on_states_id": len(found), "expect": "FAIL"}
+    out["verdict"] = "OK" if cmp.returncode != 0 and found else "BAD"
+    out["why"] = ("the corpus comparison FAILED on the dropped `id` of a State, which the gate cannot see"
+                  if out["verdict"] == "OK" else
+                  "the corpus comparison did not fail on a dropped `id`: nothing sees this class of defect")
+    if found:
+        out["evidence"] = f"{found[0]['exchange']} {found[0]['path']}: committed={found[0]['committed']!r} recorded={found[0]['recorded']!r}"[:200]
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--upstream", required=True)
     ap.add_argument("--schema", type=Path, default=ORACLE / "schema" / "openapi.v1.json")
     ap.add_argument("--manifest", type=Path, default=ORACLE / "corpus" / "seed-manifest.json")
     ap.add_argument("--out", type=Path, default=ORACLE / "results" / "controls.json")
+    ap.add_argument("--scope", help="a scope of the register (`scopes.<name>`): run the controls' gate over just that part of the schema")
+    ap.add_argument("--target", choices=("plane", "thrust"), default="plane",
+                    help="what --upstream is; selects the register entries that apply to it (see run_conformance.py)")
     ap.add_argument("--base-port", type=int, default=18090)
     ap.add_argument("--reset-script", type=Path,
                     help="script run as `<script> restore` before EVERY control; without it, runs share a "
@@ -148,9 +208,19 @@ def main():
         if r.get("evidence"):
             print(f"{'':24} evidence: {r['evidence']}")
 
+    if a.scope:  # what the gate cannot see, the corpus comparison must: only a scope has a corpus comparison
+        r = run_corpus_control(a.base_port + len(CONTROLS), a, work)
+        results.append(r)
+        print(f"{r['id']:24} verdict={r['verdict']:14} mutated={r.get('proxy_mutated_responses', '-')} "
+              f"comparison_exit={r.get('comparison_exit', '-')} :: {r.get('why', '')}")
+        if r.get("evidence"):
+            print(f"{'':24} evidence: {r['evidence']}")
+
     must = [r for r in results if r["id"] != "C4-blind-spot-drop-id"]
     harness_ok = all(r["verdict"] == "OK" for r in must)
     doc = {
+        "scope": a.scope,
+        "target": a.target,
         "harness_valid": harness_ok,
         "controls": results,
         "summary": {
@@ -161,7 +231,7 @@ def main():
         },
     }
     json.dump(doc, open(a.out, "w"), indent=1, sort_keys=True)
-    print("HARNESS " + ("VALID: passes on Plane, fails on every must-fail control" if harness_ok
+    print("HARNESS " + (f"VALID: passes on the {a.target}, fails on every must-fail control" if harness_ok
                         else "VOID OR BROKEN: a control did not behave; do not trust a green gate"))
     return 0 if harness_ok else 1
 

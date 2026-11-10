@@ -798,6 +798,7 @@ fn listing_of(r: &Row) -> Result<ProjectListing, DbError> {
             .map(|s| Role::parse(&s).ok_or_else(|| DbError::Backend(format!("m_role holds '{s}', which is no role"))))
             .transpose()?,
         sort_order: r.get("up_sort_order"),
+        member_sort_order: r.get("m_sort_order"),
     })
 }
 
@@ -1114,7 +1115,7 @@ impl Database for PgDatabase {
             .pg()
             .query(
                 &format!(
-                    "SELECT {PROJECT_COLS}, m.role AS m_role, up.sort_order AS up_sort_order FROM projects p \
+                    "SELECT {PROJECT_COLS}, m.role AS m_role, m.sort_order AS m_sort_order, up.sort_order AS up_sort_order FROM projects p \
                      LEFT JOIN project_members m \
                        ON m.project_id = p.id AND m.workspace_id = p.workspace_id AND m.user_id = $2 \
                      LEFT JOIN project_user_properties up ON up.project_id = p.id AND up.user_id = $2 \
@@ -1136,7 +1137,7 @@ impl Database for PgDatabase {
         let rows = c.pg()
             .query(
                 &format!(
-                    "SELECT {PROJECT_COLS}, m.role AS m_role, up.sort_order AS up_sort_order FROM projects p \
+                    "SELECT {PROJECT_COLS}, m.role AS m_role, m.sort_order AS m_sort_order, up.sort_order AS up_sort_order FROM projects p \
                      LEFT JOIN project_members m \
                        ON m.project_id = p.id AND m.workspace_id = p.workspace_id AND m.user_id = $2 \
                      LEFT JOIN project_user_properties up ON up.project_id = p.id AND up.user_id = $2 \
@@ -1438,7 +1439,7 @@ impl Database for PgDatabase {
         let row = c.pg()
             .query_opt(
                 &format!(
-                    "SELECT {PROJECT_COLS}, m.role AS m_role, up.sort_order AS up_sort_order, \
+                    "SELECT {PROJECT_COLS}, m.role AS m_role, m.sort_order AS m_sort_order, up.sort_order AS up_sort_order, \
                        COALESCE((SELECT s.last_sequence_id FROM project_sequences s WHERE s.workspace_id = p.workspace_id AND s.project_id = p.id), 0) + 1 AS next_sequence, \
                        ARRAY(SELECT pm.user_id FROM project_members pm WHERE pm.project_id = p.id AND pm.workspace_id = p.workspace_id \
                              ORDER BY pm.created_at DESC, pm.id DESC) AS member_ids \
@@ -1463,6 +1464,7 @@ impl Database for PgDatabase {
                         })
                         .transpose()?,
                     sort_order: r.get("up_sort_order"),
+                    member_sort_order: r.get("m_sort_order"),
                 },
                 members: r.get::<_, Vec<Uuid>>("member_ids").into_iter().map(UserId).collect(),
                 next_sequence: r.get("next_sequence"),
