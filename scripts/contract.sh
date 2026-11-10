@@ -20,8 +20,8 @@
 #             engine           the tests that decide the database engine (spike 0002): the 50-writer, 10k-create test,
 #                              and the search tests. Own test binary (`--test engine`), so EXPECT_MAIN is untouched.
 #                              The target starts with a very high create rate limit. Opt-in: not in contract-all.sh.
-#             bindings         (worker-cf only) one real operation per binding (rate limit, secrets
-#                              store, email, service binding, workflow via JS shim)
+#             bindings         (worker-cf only) the probe routes' admin gate, and one real operation per binding (rate limit,
+#                              secrets store, email)
 #
 # Exit status is the status of `cargo test` itself (no pipes, no trailing echo). The suite's
 # pass count is also checked against the expected number so that a filter that selects zero
@@ -64,7 +64,7 @@ EXPECT_PANIC=1
 EXPECT_BLAST=1
 EXPECT_WORKER=1
 EXPECT_CRON=1
-EXPECT_BINDINGS=6
+EXPECT_BINDINGS=4
 EXPECT_ENGINE=4
 
 # A free port, chosen at random: fixed ports collide with OrbStack-published containers and
@@ -145,7 +145,11 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 # native-pg  = self-hosted set: Postgres (deadpool) + in-process stand-ins for queue/KV/blob/limiter
-# worker-cf  = Cloudflare set: Postgres via Hyperdrive, Queues, KV, R2, Durable Objects, cron
+# worker-cf  = Cloudflare set: Postgres via Hyperdrive, Queues, R2, the Workers Rate Limiting bindings, Durable Objects, cron.
+#              The create and sign-in limits are those bindings' limits, which scripts/worker-dev.sh writes from RATE_LIMIT and
+#              SIGNIN_LIMIT. The control for the create-limit test is THRUST_WORKER_CREATE_LIMIT=<above 2 x 30 + 1>, set in the
+#              environment of this script: the binding then lets more through than the suite expects, and
+#              `create_is_rate_limited_per_user` must fail (issue #43).
 case "$TARGET" in
   native-memory) KIND=native; ADAPTERS=memory ;;
   native-pg) KIND=native; ADAPTERS=postgres ;;

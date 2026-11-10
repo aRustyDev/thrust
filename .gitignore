@@ -31,6 +31,9 @@ docs/book/
 node_modules/
 crates/thrust-worker/build/
 crates/thrust-editor-worker/build/
+# throwaway copies of a wrangler config that a script writes limits or ids into (scripts/worker-dev.sh, scripts/spike-0002-pg.sh)
+crates/thrust-worker/.wrangler.run-*.toml
+crates/thrust-worker/.wrangler.pg.run.toml
 .dev.vars
 .dev.vars.*
 .env
