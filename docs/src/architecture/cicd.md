@@ -52,7 +52,7 @@ its base branch. Nothing calls it, so it is a tool to run by hand.
   CI at all.**
 - **The matrix.** The `plan` job reads the `run <target> <pass>` lines of `scripts/contract-all.sh`, so no second
   list can drift. It fails if the number of cells it parsed differs from the number of lines that start with `run`,
-  if there are none, or if one repeats. There are 21 cells: 18 contract cells and the 3 `oracle` cells below `[verified 2026-11-10 e591b29: PR #113's run had 21 cell jobs, all succeeded, and `gate` downloaded 21 markers; its planned-against-reported comparison did not run that time, because `hermetic` had failed and the script stops at the job check]`.
+  if there are none, or if one repeats. There are 21 cells: 18 contract cells and the 3 `oracle` cells below `[verified 2026-11-10 43a17da: PR #113's run had 21 cell jobs, all succeeded, and `gate` printed `ok: 21 of 21 planned cells reported success`; on the run before (e591b29) `hermetic` had failed, so the script stopped at the job check and that comparison did not run]`.
   Each runs on a fresh runner with its own checkout, which is why the shared-build-directory hazard that makes
   `contract-all.sh` run serially does not apply.
 - **A cell.** `contract-cell.yml` checks that `curl`, `openssl`, `lsof`, `pgrep` and `docker` exist, runs
