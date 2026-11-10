@@ -55,7 +55,7 @@ admin token and database password per run and keeps them out of files and argv.
 
 | Script | What it runs | Prerequisites |
 |---|---|---|
-| `scripts/contract-all.sh` | the 16-cell matrix serially, summary in `target/contract-logs/summary.txt` | Docker, wrangler |
+| `scripts/contract-all.sh` | the 18-cell matrix serially, summary in `target/contract-logs/summary.txt` | Docker, wrangler |
 | `scripts/mutants.sh` | the planted mutants; every one must be KILLED | Docker |
 | `scripts/verify-all.sh` | the hermetic nextest run, matrix, mutants, `check-deps.sh`, `pg_adapter`, probes; summary in `target/verify/summary.txt` | Docker, wrangler |
 | `scripts/flake-hunt.sh <target> <pass> <iterations>` | one cell N times, keeping every log | as the cell |
@@ -71,6 +71,8 @@ the first one's Worker (the header of `scripts/contract-all.sh` records this). C
 ```sh
 scripts/rs cargo nextest run --ignore-default-filter -E 'binary(pg_adapter)'   # needs Docker [unverified: not run]
 scripts/check-deps.sh                                                         # [verified 2026-10-19 dd093fa: exit 0]
+scripts/check-topology.sh                                                     # one Worker: no [[workflows]], no [[services]], main = build/worker/shim.mjs (issue #43)
+scripts/check-topology.sh --self-test                                         # the same check on fixtures it must refuse, so it cannot pass by looking at nothing
 ```
 
 The editor-doc differential inputs that are not committed are generated from the pinned Plane tree (tag
@@ -111,7 +113,7 @@ same script you would run locally, so a red job reproduces with the command in i
 | `changes` | decides whether anything Rust-relevant changed (`.github/scripts/classify-changes.sh`; fails open) |
 | `plan` | derives the contract cells from the `run <target> <pass>` lines of `scripts/contract-all.sh` |
 | `ci-scripts` | the tests of the CI helper scripts themselves (`.github/scripts/tests/`) |
-| `deps` | `scripts/check-deps.sh` |
+| `deps` | `scripts/check-deps.sh`, then `scripts/check-topology.sh` and `scripts/check-topology.sh --self-test` |
 | `lint` | `cargo fmt --all --check`, then `cargo clippy --workspace --all-targets --locked -- -D warnings`, then the same clippy for `thrust-worker` with `--no-default-features --target wasm32-unknown-unknown` (the clippy steps run even if rustfmt failed) |
 | `deny` | `cargo deny --locked check`: advisories, licences, bans and sources, from `deny.toml` |
 | `hermetic` | `cargo nextest run --profile ci --workspace`, then `cargo test --doc --workspace` |

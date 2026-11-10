@@ -135,7 +135,7 @@ From `woven/plan:.claude/plans/plane-fork/features/`. These are *requirements in
 | F-X04 | One-time import of existing Plane Postgres data | 0042 (Q-G3) | **drop** (round 5: start fresh) |
 | F-X05 | Contract-test harness (every port × every adapter) | 0121 | P0 |
 | F-X06 | v1 oracle / parity test harness | 0122 | P0 |
-| F-X07 | Observability (logs, traces, metrics) across Queue/Workflow/DO hops | 0130 | P0 |
+| F-X07 | Observability (logs, traces, metrics) across Queue/DO hops | 0130 | P0 |
 | F-X08 | AI: P0 API-based access (public API) · P1 MCP server · P2 AI assistant via AI Gateway (AI port) | 0084 | P0 / P1 / P2 |
 | F-X09 | Real-time push of work-item updates (beyond SWR polling) | 0034 | P1 |
 | F-X10 | Rust (Dioxus) clone of the Plane UI — web target | 0013 | P2 (round 29, FR-01: starts screen by screen at M4, once the M2 release has held the SLO for 4 weeks and its journey suite is green; it replaces the round-22 gate "P0+P1 shipped, SLO 4 wks, oracle clean"; Q-R3) |
