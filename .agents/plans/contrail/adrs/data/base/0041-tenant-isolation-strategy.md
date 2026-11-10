@@ -104,7 +104,7 @@ The owner decided Q-0041: **Option 1 with the Option 4 escape hatch**, and this 
 
 **Postgres RLS is out of this decision.** It was never built or measured, and it has catches to measure first (Q-0041.3): the app roles own their objects (the per-PR roles own their schemas; `thrust` owns the restored table in the restore drill), and a table owner bypasses RLS unless the table has `FORCE ROW LEVEL SECURITY`; Hyperdrive keeps no per-session state (Q-0006.4), so the setting would have to be a `SET LOCAL` inside the transaction it protects. The Decision Outcome, Consequences and Confirmation above were edited to match, which this ADR allowed because it was still `proposed`.
 
-**Still to do:** the `scope: tenant|directory` CI check is not built. Of the 23 `CREATE TABLE` statements in the Postgres migrations, 7 carry a marker (at 75d9729), and it needs an issue.
+**Still to do:** the `scope: tenant|directory` CI check is not built. Of the 23 `CREATE TABLE` statements in the Postgres migrations, 7 carry a marker (at 75d9729; the same at 368c5b3), and the check is tracked as issue #110.
 
 ## Open Questions
 
