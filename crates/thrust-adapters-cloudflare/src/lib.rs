@@ -193,6 +193,102 @@ impl Queue for CfQueue {
 }
 
 // ---------------------------------------------------------------------------------------------
+// Workers Rate Limiting binding -> RateLimiter
+// ---------------------------------------------------------------------------------------------
+
+/// The periods a Workers Rate Limiting binding counts over, in seconds. The binding takes no other (ADR-0033, D-007), so a window
+/// the app is configured with has to be one of these for the binding's own `period` to be the window the app reports.
+pub const BINDING_PERIODS_SECS: [u64; 2] = [10, 60];
+
+/// `Ok` when `secs` is a period the binding can count over, and the refusal to start with when it is not. `setting` names where
+/// the window came from, so the message says which variable to fix.
+pub fn check_binding_period(setting: &str, secs: u64) -> Result<(), String> {
+    if BINDING_PERIODS_SECS.contains(&secs) {
+        Ok(())
+    } else {
+        Err(format!(
+            "{setting} is a window of {secs} s, but a Workers Rate Limiting binding counts over 10 s or 60 s only (ADR-0033, D-007)"
+        ))
+    }
+}
+
+/// What a limiter key counts, which is the binding that holds its allowance. The core and the v1 routes build their keys as
+/// `create:<user>`, `signin:<email>` and `v1:<api key>`: the text before the first `:` is the class.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KeyClass {
+    /// Work item creates, per user.
+    Create,
+    /// Sign-in attempts, per email.
+    SignIn,
+    /// A request on `/api/v1`, per API key.
+    V1,
+}
+
+impl KeyClass {
+    /// The class of `key`, or `None` for a key no binding is configured for.
+    pub fn of(key: &str) -> Option<Self> {
+        match key.split_once(':')?.0 {
+            "create" => Some(Self::Create),
+            "signin" => Some(Self::SignIn),
+            "v1" => Some(Self::V1),
+            _ => None,
+        }
+    }
+}
+
+/// What the binding's answer means to the port.
+///
+/// The binding says only whether the request is let through. A refusal is `Limited`, and the caller is told to wait one whole
+/// period (`window_secs`): the binding reports no time left in its window, so the period is the one honest upper bound.
+///
+/// An allowance is `Allowed`, and `remaining` is `limit - 1`: the allowance as it stands if this were the first request of the
+/// window. The binding reports no count, so any number here is a guess. This one is an upper bound, so it never tells a client
+/// that its allowance is spent when it is not, and the client finds out it is by the 429 and its `Retry-After` (D-007).
+pub fn decision(success: bool, limit: u32, window_secs: u64) -> RateDecision {
+    if success {
+        RateDecision::Allowed { remaining: limit.saturating_sub(1) }
+    } else {
+        RateDecision::Limited { retry_after_secs: window_secs.max(1) }
+    }
+}
+
+/// The [`RateLimiter`] port on three Workers Rate Limiting bindings, one per [`KeyClass`].
+///
+/// A binding's limit and period are in its `[[ratelimits]]` block in the wrangler config, not in the request, so the binding is
+/// the source of truth for the allowance and the `limit` argument of [`RateLimiter::hit`] is not used here. Counting is per
+/// Cloudflare location and approximate (D-007): a limit of 3 has let 4 through. No `SendFuture` here: workers-rs wraps the JS
+/// future inside `RateLimiter::limit` itself, so the call is already `Send`.
+pub struct CfRateLimiter {
+    pub create: worker::RateLimiter,
+    pub signin: worker::RateLimiter,
+    pub v1: worker::RateLimiter,
+}
+
+impl CfRateLimiter {
+    fn binding(&self, class: KeyClass) -> &worker::RateLimiter {
+        match class {
+            KeyClass::Create => &self.create,
+            KeyClass::SignIn => &self.signin,
+            KeyClass::V1 => &self.v1,
+        }
+    }
+}
+
+#[async_trait]
+impl RateLimiter for CfRateLimiter {
+    async fn hit(&self, key: &str, limit: u32, window_secs: u64) -> Result<RateDecision, RateError> {
+        // A key of no class is a caller this adapter was not given a binding for: an error, and never a free pass. The key is not
+        // in the message, because a sign-in key holds an email address.
+        let class = KeyClass::of(key).ok_or_else(|| {
+            RateError::Backend("a rate-limit key must start with `create:`, `signin:` or `v1:`".to_string())
+        })?;
+        let outcome =
+            self.binding(class).limit(key.to_string()).await.map_err(|e| RateError::Backend(e.to_string()))?;
+        Ok(decision(outcome.success, limit, window_secs))
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
 // Durable Object (SQLite storage) -> RateLimiter
 // ---------------------------------------------------------------------------------------------
 
