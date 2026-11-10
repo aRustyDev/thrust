@@ -46,6 +46,16 @@ with a fixture made first as the control) and nothing more; the positive path is
   (`crates/thrust-contract-tests/src/mock_idp.rs`, RS256 signed with the `rsa` crate, so it shares no code with the
   `openidconnect` crate that verifies its tokens); a deployed Worker cannot reach it, so `scripts/stage2-contract.sh`
   skips them (31 tests there).
+- `crates/thrust-contract-tests/tests/budget/mod.rs`: the round-trip budget (issue #39), in the `main` pass.
+  `list_endpoints_stay_within_five_db_round_trips` reads the `x-thrust-db-round-trips` header (see
+  [the test routes](../../flows/app.md)) of seven lists, each seeded with six or more rows so that a statement per row would
+  show: the slice's work items, Plane's projects (S17) and issues (S47), and `/api/v1` projects, states, labels and work
+  items. On a Postgres target (`native-pg`, `worker-cf`) each must send 3 to 5 statements; the floor is what stops a counter
+  that counts nothing from passing. On a `memory` target it asserts the header is **absent**, which is what keeps the test from
+  passing there without looking. It measures the second request of each list, after the API key's background first-use stamp
+  has landed. `/api/v1` work items with `?expand=assignees` are not covered: they send two statements per distinct assignee, a
+  known gap in [status](../status.md). The `budget` pass runs this test alone, for `scripts/mutants.sh`; it is not in
+  `contract-all.sh`.
 - `crates/thrust-contract-tests/tests/worker_only.rs`: Durable Object, cron and binding tests for `worker-*` targets.
 
 A pass is selected by **test-name prefix** in `scripts/contract.sh`, not by nextest: `sweeper_`, `panic_`,

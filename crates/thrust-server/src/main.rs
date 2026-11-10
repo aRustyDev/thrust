@@ -6,12 +6,14 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use axum::body::Body;
+use axum::extract::State;
 use axum::http::{header, Response, StatusCode};
 use axum::Extension;
 use thrust_adapters_memory::*;
 use thrust_adapters_oidc::{OidcConfig, OpenIdProvider};
+use thrust_adapters_postgres::{Connector, CountingConnector, PgDatabase, RoundTrips};
 use thrust_adapters_selfhosted::*;
-use thrust_api::{ApiConfig, InternalErrorDetail};
+use thrust_api::{set_db_round_trips, ApiConfig, InternalErrorDetail};
 use thrust_core::{ActivityConsumer, App, Argon2Params, Argon2idHasher, CoreConfig, Ports, SystemScope};
 use thrust_ports::*;
 use tower_http::catch_panic::CatchPanicLayer;
@@ -74,6 +76,9 @@ async fn main() {
     let consumer_slot: ConsumerSlot = Default::default();
     let queue: Arc<dyn Queue> = Arc::new(MemoryQueue::new(background.clone(), consumer_slot.clone()));
 
+    // The pool, kept beside the database: with test routes on, each request counts its statements over a connector of its
+    // own (issue #39), because this one `PgDatabase` serves every request and a counter inside it would count them all.
+    let mut pool: Option<Arc<dyn Connector>> = None;
     let db: Arc<dyn Database> = match adapters.as_str() {
         "memory" => Arc::new(MemoryDatabase::new()),
         "postgres" => {
@@ -82,7 +87,9 @@ async fn main() {
             let connector =
                 thrust_adapters_selfhosted::pg::PoolConnector::from_url(&url, env_num("THRUST_PG_POOL", 16))
                     .expect("pool");
-            Arc::new(thrust_adapters_postgres::PgDatabase::new(Arc::new(connector)))
+            let connector: Arc<dyn Connector> = Arc::new(connector);
+            pool = Some(connector.clone());
+            Arc::new(PgDatabase::new(connector))
         }
         other => panic!("unknown THRUST_ADAPTERS '{other}' (this build supports: memory, postgres)"),
     };
@@ -157,7 +164,14 @@ async fn main() {
     let router = thrust_api::router()
         .merge(thrust_compat_plane::routes())
         .merge(thrust_api_v1::router())
-        .layer(axum::middleware::from_fn(log_internal_errors))
+        .layer(axum::middleware::from_fn(log_internal_errors));
+    // Where there is a Postgres to count and test routes ask for the count. The layer goes inside `Extension(app)`, so it runs
+    // after the extension is in the request and can swap it.
+    let router = match pool.filter(|_| api_cfg.test_routes) {
+        Some(pool) => router.layer(axum::middleware::from_fn_with_state(pool, count_round_trips)),
+        None => router,
+    };
+    let router = router
         .layer(Extension(app))
         .layer(Extension(api_cfg))
         .layer(Extension(v1_cfg))
@@ -171,6 +185,30 @@ async fn main() {
         })
         .await
         .expect("serve");
+}
+
+/// The test routes' statement counter (issue #39). The request gets a clone of the `App` whose database sends its statements
+/// through a connector of this request's own, over the shared pool, and the response says how many it had sent when the
+/// router answered. Background work a handler leaves running holds the same database and may count after that.
+async fn count_round_trips(
+    State(pool): State<Arc<dyn Connector>>,
+    mut req: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> Response<Body> {
+    let mut counted = None;
+    if let Some(app) = req.extensions().get::<App>() {
+        let rt = RoundTrips::new();
+        let mut app = app.clone();
+        app.ports.db = Arc::new(PgDatabase::new(Arc::new(CountingConnector::new(pool, rt.clone()))));
+        req.extensions_mut().insert(app);
+        counted = Some(rt);
+    }
+    let mut resp = next.run(req).await;
+    // no count without a swapped `App`: a request that was not counted has no header, not a zero
+    if let Some(rt) = counted {
+        set_db_round_trips(&mut resp, rt.get());
+    }
+    resp
 }
 
 async fn log_internal_errors(req: axum::extract::Request, next: axum::middleware::Next) -> Response<Body> {
