@@ -69,7 +69,8 @@ A pass is selected by **test-name prefix** in `scripts/contract.sh`, not by next
 scripts/contract.sh native-memory           # main pass, 37 tests [verified 2026-10-24: 37 passed]
 scripts/contract.sh native-memory csrfoff   # CSRF enforcement off, 6 tests [verified 2026-10-24: 6 passed]
 scripts/contract.sh worker-cf bindings      # [unverified: not run]
-scripts/contract-all.sh                     # the 18-cell matrix, serially [verified 2026-10-24: 18 of 18 PASS]
+scripts/contract.sh native-memory oracle    # the v1 oracle: scoped gate, corpus comparison, controls (not a test count: VERDICT: PASS)
+scripts/contract-all.sh                     # the 21-cell matrix, serially [verified 2026-10-24: 18 of 18 PASS, before the oracle cells]
 ```
 
 See [Running](../running.md#the-contract-suite) for targets, passes and prerequisites.
