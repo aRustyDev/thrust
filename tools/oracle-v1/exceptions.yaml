@@ -41,6 +41,69 @@ scope_exclusions:
       - "harness/record_corpus.py: archive/unarchive of a SCRATCH project only"
       - "NOT covered by anything yet [unverified]: cycle and module archive/unarchive, cycle/work-item transfer. Cycles and modules are outside the P0 resource list of spike 0008."
 
+# A part of the schema that a run covers, for a target that serves only a part of it (thrust issue #58):
+# `run_conformance.py --scope NAME`. See that script's doc for how a scoped run is stricter than the whole one.
+scopes:
+  m1:
+    description: the operations the M1 walking skeleton serves, in the four tags of the pinned schema (32 operations)
+    tags: [Projects, States, Labels, Work Items]
+    # NOT `--continue-on-failure`, on purpose. Without it Hypothesis stops generating for an operation once a case of it fails, so what
+    # is sent depends on what the target answered; but a target that behaves as the pin does is sent the same cases, and one that
+    # does not fails the gate anyway (an unaccepted failure, or an entry that no longer fires). With it, a scoped run on the PIN sends
+    # 250 cases instead of 162 and finds 23 more failure classes that the register has never recorded (500s and 400s of
+    # `projects-lite/` and `projects/` among them): the register under-approximates the pin at deeper exploration, which is a
+    # separate piece of work (thrust issue #58, recorded in the PR), not something this scope's baseline should absorb silently.
+    #
+    # The fuzzer sends JSON bodies only: the pin also reads form and multipart bodies and Thrust answers 415 to them, on purpose
+    # (DEVIATIONS D-030 (5), owner confirmed 2026-11-07), so a gate that sent them could not compare the two.
+    json_bodies_only: true
+    # Measured on the pin: a scoped run on a freshly seeded Plane (ba85d4d3d3, schemathesis 4.31.1, seed 1, deterministic), twice,
+    # with the same result both times: 25 operations run (32 less the six DELETEs and the archive POST that SX-001 and SX-002 keep out),
+    # 24 of them reaching a 2xx (`POST .../projects/` answers 400 and 409 to what the fuzzer sends). The run is deterministic, so
+    # these are the numbers, not rounded down as the whole schema's are.
+    min_operations_tested: 25
+    min_operations_with_2xx: 24
+    # The corpus comparison (`compare_corpus.py`): which recorded resources it compares, and the floor of exchanges that fall on this
+    # scope's operations.
+    corpus:
+      resources: [projects, states, labels, work_items, pagination, errors]
+      # the exchanges of those resources that fall on the 32 operations: 108 in the committed corpus. Issue #58 counted 105; the
+      # three more are the ones recorded on Plane for `DELETE .../issues/{pk}/` (create, delete, detail after), the one operation of
+      # the scope that the corpus had no exchange for.
+      min_exchanges_compared: 108
+    # Where each entry fires in a run of THIS scope on the pin, which REPLACES the entry's own `match.operations` for this scope.
+    # The fuzzer's cases depend on which operations a run holds, so the lists above (measured on the whole schema) are not those
+    # of a part of it: here the 500s of EX-001/EX-002 fall on the legacy `issues/` list and not on `work-items/` (one view serves
+    # both paths, so it is the cases that differ, not the code). An entry that fires nowhere in the scope is not listed, and an
+    # entry listed here must fire on every operation given, or the run fails as stale.
+    entry_operations:
+      EX-001: &ex500
+        - POST /api/v1/workspaces/{slug}/projects/{project_id}/issues/
+      EX-002: *ex500
+      EX-003:
+        - GET /api/v1/workspaces/{slug}/projects/{project_id}/states/
+      EX-004:
+        - POST /api/v1/workspaces/{slug}/projects/
+      EX-006:
+        - GET /api/v1/workspaces/{slug}/projects-lite/
+        - GET /api/v1/workspaces/{slug}/projects/
+        - GET /api/v1/workspaces/{slug}/projects/{pk}/
+        - PATCH /api/v1/workspaces/{slug}/projects/{pk}/
+      EX-007:
+        - GET /api/v1/workspaces/{slug}/projects/{project_id}/issues/{pk}/
+        - GET /api/v1/workspaces/{slug}/projects/{project_id}/work-items/{pk}/
+      EX-011:
+        - GET /api/v1/workspaces/{slug}/issues/search/
+        - GET /api/v1/workspaces/{slug}/work-items/search/
+      EX-013:
+        operations:
+          - GET /api/v1/workspaces/{slug}/projects/{project_id}/issues/
+        # the case that finds it asks for `expand=created_by,updated_by`; Thrust does not expand those two (D-033 (5)), so its
+        # answer is the ids the schema describes: fires on the pin only
+        absent_on_thrust: "D-033 (5): expand is built for state, assignees and labels only"
+      EX-014:
+        - PATCH /api/v1/workspaces/{slug}/projects/{project_id}/states/{state_id}/
+
 entries:
 - id: EX-001
   kind: upstream-bug
@@ -301,3 +364,120 @@ entries:
   evidence: gate run on a fresh seed, pinned commit ba85d4d3d3, schemathesis 4.31.1, seed 1, deterministic (oracle/results/conformance-baseline.json)
   rust_expectation: reproduce
   deviation_ref: null
+- id: EX-013
+  kind: upstream-schema-defect
+  applies_to: conformance
+  status: active
+  # Found by the scoped run (thrust issue #58), not by the whole-schema baseline, and it needs the fuzzer to send `expand`: fuzz luck
+  # in a whole-schema run, so optional there. A scope that lists it in `entry_operations` still requires it to fire.
+  optional: true
+  match:
+    check: response_schema_conformance
+    failure_type: JsonSchemaError
+    operations:
+    - GET /api/v1/workspaces/{slug}/projects/{project_id}/issues/
+    - GET /api/v1/workspaces/{slug}/projects/{project_id}/issues/{pk}/
+    - GET /api/v1/workspaces/{slug}/projects/{project_id}/work-items/
+    - GET /api/v1/workspaces/{slug}/projects/{project_id}/work-items/{pk}/
+    message_regex: is not valid under any of the schemas listed in the 'anyOf' keyword
+  reason: With `expand=assignees` (or `labels`, `state`) the response holds objects where the schema declares the ids
+    (an assignee as `{avatar, avatar_url, display_name, email, first_name, id, last_name}` against a uuid string). The schema does
+    not model expansion, as it does not model `fields` (EX-007). A client built from the schema would reject a response it asked for.
+  evidence: scoped run (m1) on a fresh seed, pinned commit ba85d4d3d3, schemathesis 4.31.1, seed 1, deterministic, 2026-11-10
+  rust_expectation: reproduce
+  deviation_ref: null
+- id: EX-014
+  kind: intentional-deviation
+  applies_to: conformance
+  # Thrust only: a run on the pin does not hold it (see `for_target` in harness/run_conformance.py). Optional in a whole-schema run,
+  # where it depends on the fuzzer sending a name made of characters that Django folds; a scope that lists it requires it to fire.
+  targets: [thrust]
+  status: active
+  optional: true
+  match:
+    check: response_schema_conformance
+    failure_type: JsonSchemaError
+    operations:
+    - GET /api/v1/workspaces/{slug}/projects/{project_id}/states/
+    - GET /api/v1/workspaces/{slug}/projects/{project_id}/states/{state_id}/
+    - PATCH /api/v1/workspaces/{slug}/projects/{project_id}/states/{state_id}/
+    - POST /api/v1/workspaces/{slug}/projects/{project_id}/states/
+    message_regex: '"" does not match "\^\[-a-zA-Z0-9_\]\+\$"'
+  reason: >-
+    A state's `slug` is made from its name, as Django's `slugify` makes it, which first folds a character to its ASCII
+    form under NFKD (`³` to `3`, `é` to `e`) and drops what is still not ASCII. Thrust drops non-ASCII characters without
+    folding (D-031 (2) named accents; the compatibility characters are the same gap), so a name whose only ASCII
+    is what Django would fold has an empty slug here, which the schema's pattern (`^[-a-zA-Z0-9_]+$`) refuses. A name with no
+    foldable character has an empty slug on the pin too, so the behaviour is the same and the set of names differs.
+  evidence: scoped run (m1) on Thrust native-memory, 2026-11-10 (a PATCH whose name held `³`; Plane's slug for it is `3`)
+  rust_expectation: n/a
+  deviation_ref: D-031
+
+# --- the corpus comparison (harness/compare_corpus.py): what a recording of Thrust may differ in from the committed corpus ----------
+# `match.resource` names a recorded resource (or a list of them), `exchanges` the exchanges (any when absent), and `path_regex` the JSON
+# path of a difference (`$.response.body...`). An entry of `kind: ordering` has an `array_path_regex` over the path with its array
+# indexes erased and accepts a REORDERING of such an array, and nothing else. All are Thrust's, so a recording of the pin does not hold them.
+- id: EX-C01
+  kind: intentional-deviation
+  applies_to: corpus
+  targets: [thrust]
+  status: active
+  optional: false
+  match:
+    resource: projects
+    exchanges: [list, list-per-page-1, list-order-by-name, detail, detail-by-pk-route, list-archived-visible]
+    path_regex: '\.total_(cycles|modules)$'
+  reason: >-
+    Thrust has no cycles and no modules, so a project has none (`total_cycles` and `total_modules` are 0); the oracle's seeded project
+    has one of each.
+  evidence: corpus comparison on Thrust native-memory, 2026-11-10
+  rust_expectation: n/a
+  deviation_ref: D-030
+- id: EX-C02
+  kind: intentional-deviation
+  applies_to: corpus
+  targets: [thrust]
+  status: active
+  optional: false
+  match:
+    resource: errors
+    exchanges: [invalid-json-body]
+    path_regex: '\.body\.detail$'
+  reason: >-
+    A body that is not JSON is refused as the pin refuses it (400, `JSON parse error - ...`), with the words of Rust's parser, which
+    are not Python's.
+  evidence: corpus comparison on Thrust native-memory, 2026-11-10
+  rust_expectation: n/a
+  deviation_ref: D-030
+- id: EX-C03
+  kind: ordering
+  applies_to: corpus
+  targets: [thrust]
+  status: active
+  optional: false
+  match:
+    resource: work_items
+    exchanges: [list-order-by-priority-desc]
+    array_path_regex: '^\$\.response\.body\.results$'
+  reason: >-
+    The work items that tie on the order asked for come newest first here and in the database's order on the pin (the corpus's
+    items one to nine are all of priority `none` in the part of the list that ties). The same items are listed, in another order.
+  evidence: corpus comparison on Thrust native-memory, 2026-11-10
+  rust_expectation: n/a
+  deviation_ref: D-033
+- id: EX-C04
+  kind: ordering
+  applies_to: corpus
+  targets: [thrust]
+  status: active
+  optional: false
+  match:
+    resource: [work_items, pagination]
+    array_path_regex: '^\$\.response\.body\.results\[\]\.(assignees|labels)$'
+  reason: >-
+    The people a work item is assigned to and its labels are listed by id here, and newest first on the pin (the corpus's item four has
+    `[member, owner]` and Thrust `[owner, member]`). The same people are listed, in another order. PROPOSED, not yet confirmed by the
+    owner (D-034).
+  evidence: corpus comparison on Thrust native-memory, 2026-11-10; the pin's models order users, labels and assignee links by `-created_at`
+  rust_expectation: fix
+  deviation_ref: D-034
