@@ -31,6 +31,17 @@ plan_real() { # every `run <target> <pass>` line of the real script must become 
     && echo "plan ok: every run line became a cell"
 }
 expect "plan: every run line of the real contract-all.sh becomes a cell" 0 "plan ok" plan_real
+# The v1 oracle is a CI cell on each Thrust target it was accepted on (#58). The control: the same plan without those lines must fail.
+plan_has_oracle() { # plan_has_oracle <cells.txt>
+  for t in native-memory native-pg worker-cf; do
+    grep -qx "$t oracle" "$1" || { echo "the plan lacks the $t oracle cell"; return 1; }
+  done
+  echo "plan ok: the oracle cells are planned"
+}
+expect "plan: the oracle cells are in the real plan" 0 "plan ok: the oracle cells" plan_has_oracle "$T/plan/cells.txt"
+mkdir -p "$T/plan2/scripts" && grep -v ' oracle$' "$HERE/scripts/contract-all.sh" > "$T/plan2/scripts/contract-all.sh"
+plan_in "$T/plan2" > /dev/null
+expect "plan: a plan without the oracle cells is refused" 1 "the plan lacks the native-memory oracle cell" plan_has_oracle "$T/plan2/cells.txt"
 mkdir -p "$T/plan0/scripts" && printf '#!/bin/sh\necho nothing\n' > "$T/plan0/scripts/contract-all.sh"
 expect "plan: a script with no run lines fails" 1 "parsed zero cells" plan_in "$T/plan0"
 mkdir -p "$T/plan1/scripts" && cp "$HERE/scripts/contract-all.sh" "$T/plan1/scripts/contract-all.sh" && printf 'run native-memory main extra\n' >> "$T/plan1/scripts/contract-all.sh"
@@ -46,6 +57,9 @@ expect "classify: a workflow change" 0 "rust=true" classify '.github/workflows/c
 expect "classify: a helper script change" 0 "rust=true" classify '.github/scripts/assert-gate.sh\n'
 expect "classify: an empty list fails open" 0 "rust=true" classify ''
 expect "classify: a look-alike path is not a crate" 0 "rust=false" classify 'crates-notes.md\n'
+expect "classify: the oracle's harness alone runs the oracle cells" 0 "rust=true" classify 'tools/oracle-v1/harness/run_conformance.py\n'
+expect "classify: the oracle's register alone" 0 "rust=true" classify 'tools/oracle-v1/exceptions.yaml\n'
+expect "classify: another tool's directory is not the oracle's" 0 "rust=false" classify 'tools/oracle-v1-notes.md\ntools/spike-0006/README.md\n'
 # The lint and deny jobs read these three files, so a change to only one of them must still run the Rust jobs (issue #40):
 # classified as docs, `lint` and `deny` would be skipped and the gate would pass without running them.
 expect "classify: deny.toml" 0 "rust=true" classify 'deny.toml\n'
