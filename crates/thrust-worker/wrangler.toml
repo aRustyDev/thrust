@@ -12,6 +12,13 @@ main = "entry.mjs"
 compatibility_date = "2026-08-01"
 workers_dev = false
 
+# Run `fetch` in the Cloudflare data centre closest to AWS us-east-1, where the database is (ADR-0094). Every statement
+# is one round trip and a request makes several, so each costs 1 to 3 ms from a placed Worker and 20 to 30 ms from a
+# distant region (Cloudflare, workers/configuration/placement). Only `fetch` is placed: not `queue`, `scheduled` or the
+# Durable Objects. `region` excludes `mode`, `host` and `hostname`; a `cf-placement` response header says whether it took.
+[placement]
+region = "aws:us-east-1"
+
 # The build is a plain command so wrangler never needs to know about Rust. scripts/rs puts the
 # rustup toolchain (with the wasm32 std) in front of Homebrew's rustc. `--no-default-features`
 # drops the in-memory adapter set: the bundle contains the Cloudflare set only (ADR-0007).

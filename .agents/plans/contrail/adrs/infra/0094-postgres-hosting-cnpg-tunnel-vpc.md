@@ -195,6 +195,16 @@ The owner decided the question the previous updates left as "a separate decision
 
 **What this does to the earlier statement.** The deadline from the PR #810 note, authenticated TLS before Thrust holds real data, is met on the infrastructure side only in the sense infra ADR 0023 defines: the chain is verified, and the peer is not proven to be Thrust's database. Trigger 1 is the point at which that sense stops being enough, so the check before real data is "re-read these triggers", not "the TLS item is done". The Origin CA root still expires 2029-08-15 (bead `infra-182d`, due 2029-06-01).
 
+## Update — the Worker is placed (2026-11-09, issue #39)
+
+`crates/thrust-worker/wrangler.toml` and `wrangler.stage2.toml` now set `[placement]` with `region = "aws:us-east-1"`: item (1) of FR-08 in the round-29 note above. This update is the placement half of issue #39 only.
+
+* **What is checked.** `scripts/check-placement.sh`, a step of the `deps` CI job, requires exactly that table in both files, and requires `wrangler.pg.stage.toml` to carry no literal table, because `scripts/spike-0002-pg.sh` replaces that file's `# __PLACEMENT__` marker with one. The script reads text. It does not show that wrangler or Cloudflare accepts the hint, and it does not show that the hint took effect on a deployed Worker: no such Worker exists, because `spike-0002-pg.sh down` removed the stage stack.
+* **What placement covers.** Cloudflare places `fetch` only; the Worker's `queue` and `scheduled` handlers and its Durable Objects are not placed. `region` excludes `mode`, `host` and `hostname`.
+* **Still open from FR-08.** The budget of 5 round trips and its counter in the contract suite (the rest of issue #39, a later change). The bench re-run with placement on, from the vantage point of `research/0004` §10.3, whose numbers were taken before this block existed. `research/0011` §6.8 to §6.10 hold the spike's own placement on and off runs from two vantage points; its §14 records that they were taken before the reconcile onto the auth slice and were not re-taken. The Workers API and `cf-placement` check of a deployed Worker.
+
+**What this does to the earlier statement.** The sentence in the round-29 note above that `crates/thrust-worker/wrangler.toml` "sets no `placement` today" is out of date as of this update. The rest of that paragraph stands, and the budget it states is not enforced yet.
+
 ## Open Questions
 
 * Q-0094.1 — CNPG layout: HA, environments, per-PR schemas, backup retention.
