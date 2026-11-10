@@ -136,14 +136,80 @@ pub fn int_field(v: &Value, min: i64, max: i64) -> Result<i64, String> {
     }
 }
 
-/// Python's `str()` of a JSON value, which DRF puts into "is not a valid choice".
+/// Python's `str()` of a JSON value, which DRF puts into "is not a valid choice" (and Django into "is not a valid UUID"). A list and a
+/// dict print as Python's `repr` of them (`['a', 1]`, `{'a': 1}`), as `str()` of those does.
 pub fn py_str(v: &Value) -> String {
     match v {
         Value::String(s) => s.clone(),
         Value::Bool(true) => "True".into(),
         Value::Bool(false) => "False".into(),
         Value::Null => "None".into(),
+        Value::Array(_) | Value::Object(_) => py_repr(v),
+        Value::Number(n) if n.is_f64() => py_float(n.as_f64().unwrap_or_default()),
         other => other.to_string(),
+    }
+}
+
+/// Python's `repr()` of a JSON value read as Python reads it: strings in quotes, `True`, `None`, floats as Python prints them.
+pub fn py_repr(v: &Value) -> String {
+    match v {
+        Value::String(s) => py_string_repr(s),
+        Value::Array(items) => format!("[{}]", items.iter().map(py_repr).collect::<Vec<_>>().join(", ")),
+        Value::Object(map) => {
+            let items: Vec<String> =
+                map.iter().map(|(k, v)| format!("{}: {}", py_string_repr(k), py_repr(v))).collect();
+            format!("{{{}}}", items.join(", "))
+        }
+        other => py_str(other),
+    }
+}
+
+/// A string as Python's `repr` writes it: single quotes unless the text has one and no double quote, a backslash before the quote and
+/// the backslash, `\n`, `\r`, `\t` and `\xNN` for the other control characters.
+fn py_string_repr(s: &str) -> String {
+    let quote = if s.contains('\'') && !s.contains('"') { '"' } else { '\'' };
+    let mut out = String::with_capacity(s.len() + 2);
+    out.push(quote);
+    for c in s.chars() {
+        match c {
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if c == quote => {
+                out.push('\\');
+                out.push(c);
+            }
+            c if u32::from(c) < 0x20 || u32::from(c) == 0x7f => out.push_str(&format!("\\x{:02x}", u32::from(c))),
+            c => out.push(c),
+        }
+    }
+    out.push(quote);
+    out
+}
+
+/// A float as Python's `repr` writes it: a point and a digit after it (`5.0`), an exponent with a sign and two digits from 1e16 up and
+/// below 1e-4 (`1e+16`, `1.5e-05`).
+fn py_float(f: f64) -> String {
+    if f == 0.0 {
+        return if f.is_sign_negative() { "-0.0".into() } else { "0.0".into() };
+    }
+    let magnitude = f.abs();
+    if !(1e-4..1e16).contains(&magnitude) {
+        let text = format!("{f:e}");
+        return match text.split_once('e') {
+            Some((mantissa, exponent)) => {
+                let (sign, digits) = exponent.strip_prefix('-').map_or(('+', exponent), |d| ('-', d));
+                format!("{mantissa}e{sign}{digits:0>2}")
+            }
+            None => text,
+        };
+    }
+    let text = format!("{f}");
+    if text.contains('.') {
+        text
+    } else {
+        format!("{text}.0")
     }
 }
 
@@ -192,19 +258,24 @@ fn uuid_hex(s: &str) -> Option<Uuid> {
 }
 
 /// What DRF's `PrimaryKeyRelatedField` makes of a body's value for a model whose key is a UUID. It looks the row up with
-/// `queryset.get(pk=value)`, and that is where the kinds part: a value the key column cannot read makes Django raise its own
-/// `ValidationError`, which the field does not catch (it catches only a missing row, a `TypeError` and a `ValueError`).
+/// `queryset.get(pk=value)`, and that is where the kinds part: a missing row, a value that is no kind of key (a bool), and a value the
+/// key column cannot read, for which Django raises its own `ValidationError` that the serializer then files under the field's name.
 #[derive(Debug, PartialEq, Eq)]
 pub enum PkRead {
     /// `null`, or the empty string, which a relation reads as none.
     Null,
     /// A key a row may have. `shown` is the value as DRF prints it: `Invalid pk "<shown>" - object does not exist.`
     Key { id: Uuid, shown: String },
-    /// DRF's own refusal, filed under the field's name.
+    /// A refusal filed under the field's name: DRF's own (a bool is no key), or Django's `ValidationError` from reading the value as
+    /// a UUID (`“nope” is not a valid UUID.`). The serializer catches the second, per field, as it does the first, so the other fields
+    /// are read and reported too. (Measured on the pinned Plane; reading the source suggested the error escapes the field and makes a
+    /// bare 400, which it does not.)
     Refused(String),
-    /// Django's `ValidationError`, which no serializer field answers: the base view makes it a 400 `{"error": "Please provide valid
-    /// detail"}`, and the fields after this one are not read.
-    Raises,
+}
+
+/// Django's message for a value that is no UUID, with the value as Python's `str()` prints it.
+fn not_a_uuid(shown: &str) -> PkRead {
+    PkRead::Refused(format!("\u{201c}{shown}\u{201d} is not a valid UUID."))
 }
 
 pub fn pk_field(v: &Value) -> PkRead {
@@ -213,12 +284,13 @@ pub fn pk_field(v: &Value) -> PkRead {
         Value::String(s) if s.is_empty() => PkRead::Null,
         // `get(pk=True)` is a TypeError in DRF's own check
         Value::Bool(_) => PkRead::Refused("Incorrect type. Expected pk value, received bool.".into()),
-        Value::String(s) => uuid_hex(s).map_or(PkRead::Raises, |id| PkRead::Key { id, shown: s.clone() }),
-        // an integer is read as the number of the key (`UUID(int=n)`); a float, a list and an object are no key at all
-        Value::Number(n) => n
-            .as_u64()
-            .map_or(PkRead::Raises, |n| PkRead::Key { id: Uuid::from_u128(u128::from(n)), shown: n.to_string() }),
-        Value::Array(_) | Value::Object(_) => PkRead::Raises,
+        Value::String(s) => uuid_hex(s).map_or_else(|| not_a_uuid(s), |id| PkRead::Key { id, shown: s.clone() }),
+        // an integer is read as the number of the key (`UUID(int=n)`); a negative one, a float, a list and an object are no key at all
+        Value::Number(n) => match n.as_u64() {
+            Some(n) => PkRead::Key { id: Uuid::from_u128(u128::from(n)), shown: n.to_string() },
+            None => not_a_uuid(&py_str(v)),
+        },
+        Value::Array(_) | Value::Object(_) => not_a_uuid(&py_str(v)),
     }
 }
 

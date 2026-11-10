@@ -74,8 +74,12 @@ The `sort_order` of a work item is a `bigint` here and a float in v1 (`75535.0`)
   - A new label's `sort_order` is the greatest live one in the project plus **10000** (a state's is 15000), the client's value
     ignored; the first keeps its own or 65535.
   - `parent` is a `PrimaryKeyRelatedField` over every label: a value Django cannot read as a UUID raises a Django
-    `ValidationError` that no DRF field catches, so the base view answers `{"error":"Please provide valid detail"}` and
-    nothing else is reported (D-032 keeps the answers, and narrows the field to the project's own labels).
+    `ValidationError`, and **the serializer catches it per field** and files `“x” is not a valid UUID.` under `parent`, with the
+    other fields' errors beside it. **Correction (2026-11-10, measured on a running pin by the conformance gate's stage):** this
+    note first read the source as saying the error escapes the field and the base view answers `{"error":"Please provide valid
+    detail"}`; it does not. That bare 400 is for a Django `ValidationError` raised by the VIEW (a query parameter that names a row
+    by a key Django cannot read, e.g. the search's `project_id`), not by a body's field (D-032 keeps the answers, and narrows the
+    field to the project's own labels).
   - `label.delete()` marks the row and hands the labels under it (the `parent` foreign key cascades) and the work items'
     join rows to a background task; Thrust does all of it in one statement.
   - The body of every v1 view is read before the handler runs (`BaseAPIView.initial` reads `request.data`), so a body that

@@ -258,6 +258,7 @@ fn states_uri() -> String {
 #[case::a_null_label(json!({"name": "x", "labels": [null]}), json!({"labels": {"0": ["This field may not be null."]}}))]
 #[case::unknown_assignee(json!({"name": "x", "assignees": ["5a1b3c4d-0000-4000-8000-000000000001"]}), json!({"assignees": {"0": ["Invalid pk \"5a1b3c4d-0000-4000-8000-000000000001\" - object does not exist."]}}))]
 #[case::a_type(json!({"name": "x", "type_id": "5a1b3c4d-0000-4000-8000-000000000001"}), json!({"type_id": ["Invalid pk \"5a1b3c4d-0000-4000-8000-000000000001\" - object does not exist."]}))]
+#[case::a_type_by_its_model_name(json!({"name": "x", "type": "5a1b3c4d-0000-4000-8000-000000000001"}), json!({"type": ["Invalid pk \"5a1b3c4d-0000-4000-8000-000000000001\" - object does not exist."]}))]
 #[case::an_estimate(json!({"name": "x", "estimate_point": "5a1b3c4d-0000-4000-8000-000000000001"}), json!({"estimate_point": ["Invalid pk \"5a1b3c4d-0000-4000-8000-000000000001\" - object does not exist."]}))]
 #[case::a_bad_date(json!({"name": "x", "start_date": "tomorrow"}), json!({"start_date": ["Date has wrong format. Use one of these formats instead: YYYY-MM-DD."]}))]
 #[case::a_datetime_as_a_date(json!({"name": "x", "target_date": "2026-11-01T00:00:00"}), json!({"target_date": ["Date has wrong format. Use one of these formats instead: YYYY-MM-DD."]}))]
@@ -350,20 +351,29 @@ fn a_start_date_may_be_the_target_date_but_not_a_later_day(#[values(-1, 0, 1)] d
     }
 }
 
-/// A key that a relation cannot read makes Django raise from inside the field: a bare 400, with nothing else reported.
+/// A key that a relation cannot read is `“x” is not a valid UUID.` under its own field, and the other fields' errors come beside it:
+/// DRF catches Django's `ValidationError` per field. Every answer here is the pinned Plane's, measured on a running one (reading the
+/// source had suggested the error escapes the field and makes a bare `Please provide valid detail`, which it does not).
 #[rstest]
-#[case::state(json!({"name": "x", "state": "nope"}))]
-#[case::parent(json!({"name": "x", "parent": 1.5}))]
-#[case::a_label(json!({"name": "x", "labels": ["nope"]}))]
-#[case::an_assignee(json!({"name": "x", "assignees": [["nope"]]}))]
-#[case::a_type(json!({"name": "x", "type_id": "nope"}))]
-#[case::the_maker(json!({"name": "x", "created_by": "nope"}))]
-fn a_key_the_column_cannot_read_is_a_bare_400_that_hides_the_other_fields(#[case] body: Value) {
+#[case::state(json!({"name": "x", "state": "nope"}), json!({"state": ["“nope” is not a valid UUID."]}))]
+#[case::parent(json!({"name": "x", "parent": 1.5}), json!({"parent": ["“1.5” is not a valid UUID."]}))]
+#[case::a_label(json!({"name": "x", "labels": ["nope"]}), json!({"labels": {"0": ["“nope” is not a valid UUID."]}}))]
+#[case::an_assignee(json!({"name": "x", "assignees": [["nope"]]}), json!({"assignees": {"0": ["“['nope']” is not a valid UUID."]}}))]
+#[case::a_type(json!({"name": "x", "type_id": "nope"}), json!({"type_id": ["“nope” is not a valid UUID."]}))]
+#[case::a_type_by_its_model_name(json!({"name": "x", "type": "nope"}), json!({"type": ["“nope” is not a valid UUID."]}))]
+#[case::an_estimate(json!({"name": "x", "estimate_point": "nope"}), json!({"estimate_point": ["“nope” is not a valid UUID."]}))]
+#[case::the_maker(json!({"name": "x", "created_by": "nope"}), json!({"created_by": ["“nope” is not a valid UUID."]}))]
+fn a_key_the_column_cannot_read_is_refused_under_its_field_beside_the_other_fields(
+    #[case] body: Value,
+    #[case] refusal: Value,
+) {
     let w = real_world();
     let mut b = body.as_object().unwrap().clone();
     b.insert("priority".into(), json!("wrong"));
+    let mut want = refusal.as_object().unwrap().clone();
+    want.insert("priority".into(), json!(["\"wrong\" is not a valid choice."]));
     let r = call(&w, Who::Admin, "POST", &items("work-items"), &Value::Object(b));
-    assert_eq!((r.status, r.body), (400, json!({"error": "Please provide valid detail"})));
+    assert_eq!((r.status, r.body), (400, Value::Object(want)));
     assert!(listed(&w).is_empty());
 }
 
@@ -1084,6 +1094,15 @@ fn a_change_with_a_wrong_field_or_for_nothing_is_refused_and_a_key_is_a_409_nami
     let one = item("work-items", id_of(&a));
     let r = call(&w, Who::Admin, "PATCH", &one, &json!({"priority": "super"}));
     assert_eq!((r.status, r.body), (400, json!({"priority": ["\"super\" is not a valid choice."]})));
+    // There are no types and no estimates: a key for one is a row that is not there, under the name it was sent as, on a change as on a
+    // creation. Found by the conformance gate (a fuzzed change that named a `type`: 400 on the pin, and a 200 here until the field
+    // was read); the pin reads the type under both `type` and `type_id`.
+    for field in ["type", "type_id", "estimate_point"] {
+        let key = "5a1b3c4d-0000-4000-8000-000000000001";
+        let r = call(&w, Who::Admin, "PATCH", &one, &json!({ field: key }));
+        let want = json!({ field: [format!("Invalid pk \"{key}\" - object does not exist.")] });
+        assert_eq!((r.status, r.body), (400, want), "{field}");
+    }
     let r = call(&w, Who::Admin, "PATCH", &item("work-items", id(0xBAD).hyphenated()), &json!({"name": "x"}));
     assert_eq!((r.status, r.body), (404, json!({"error": NOT_FOUND})));
     // a dates pair the other way about is `validate()`'s refusal when the body names both

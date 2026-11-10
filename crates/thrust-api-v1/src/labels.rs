@@ -91,9 +91,8 @@ fn label_error(e: LabelError, changing: bool) -> V1Error {
 // --- reading a body -----------------------------------------------------------------------------------------------------------
 
 /// What a body says of a label, as the pin's `LabelCreateUpdateSerializer` reads it, field by field in the order the serializer lists
-/// them (name, color, description, external_source, external_id, parent, sort_order): what is wrong is collected into one 400, except
-/// for a `parent` the key column cannot read, which makes Django raise from inside the field and is answered at once, with the
-/// earlier fields' messages dropped and the later fields not read (`pk_field`). A field it does not know is ignored.
+/// them (name, color, description, external_source, external_id, parent, sort_order): what is wrong is collected into one 400, a
+/// `parent` the key column cannot read (`“x” is not a valid UUID.`, measured on the pin) included. A field it does not know is ignored.
 async fn label_patch(
     ctx: &Ctx,
     scope: &thrust_core::Scope,
@@ -124,7 +123,6 @@ async fn label_patch(
                 }
             }
             PkRead::Refused(message) => fail(&mut errors, "parent", message),
-            PkRead::Raises => return Err(V1Error::error(StatusCode::BAD_REQUEST, "Please provide valid detail")),
         }
     }
     patch.sort_order = read(&mut errors, b, "sort_order", float_field);

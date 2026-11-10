@@ -352,26 +352,32 @@ fn a_creation_with_a_field_wrong_is_refused_with_drfs_message(#[case] body: Valu
     assert_eq!(listed(&w), ["docs", "feature", "bug"], "nothing was made");
 }
 
-/// A `parent` that the key column cannot read makes Django raise from inside the field: no DRF field catches it, so the answer is the
-/// base view's bare 400, the fields before it are not reported, and the fields after it are not read.
+/// A `parent` that the key column cannot read is `“x” is not a valid UUID.` under `parent`, and the other fields' errors are reported
+/// beside it, those before it and those after: DRF catches Django's `ValidationError` per field. Every body below is the pinned Plane's
+/// answer, measured on a running one (reading the source had suggested a bare 400 that hides the other fields, which it is not).
 #[rstest]
-#[case::text(json!("nope"))]
-#[case::too_short(json!("5a1b3c4d"))]
-#[case::a_float(json!(1.5))]
-#[case::a_negative_number(json!(-1))]
-#[case::a_list(json!(["5a1b3c4d-0000-4000-8000-000000000001"]))]
-#[case::an_object(json!({"id": "5a1b3c4d-0000-4000-8000-000000000001"}))]
-fn a_parent_the_key_cannot_read_is_a_bare_400_that_hides_the_other_fields(#[case] parent: Value) {
+#[case::text(json!("nope"), "“nope” is not a valid UUID.")]
+#[case::too_short(json!("5a1b3c4d"), "“5a1b3c4d” is not a valid UUID.")]
+#[case::a_float(json!(1.5), "“1.5” is not a valid UUID.")]
+#[case::a_negative_number(json!(-1), "“-1” is not a valid UUID.")]
+#[case::a_list(json!(["5a1b3c4d-0000-4000-8000-000000000001"]), "“['5a1b3c4d-0000-4000-8000-000000000001']” is not a valid UUID.")]
+#[case::an_object(json!({"id": "5a1b3c4d-0000-4000-8000-000000000001"}), "“{'id': '5a1b3c4d-0000-4000-8000-000000000001'}” is not a valid UUID.")]
+fn a_parent_the_key_cannot_read_is_refused_under_parent_beside_the_other_fields(
+    #[case] parent: Value,
+    #[case] message: &str,
+) {
     let w = real_world();
-    for (method, uri) in [("POST", labels()), ("PATCH", label(bug()))] {
-        // the name is missing on the creation and the place is wrong on both, and neither is reported
-        let r = call(&w, Who::Admin, method, &uri, &json!({"parent": parent, "sort_order": "x"}));
-        assert_eq!((r.status, r.body), (400, json!({"error": "Please provide valid detail"})), "{method}");
-    }
-    // a name the field before it refused is hidden too
+    // the name is missing on the creation and the place is wrong on both
+    let r = call(&w, Who::Admin, "POST", &labels(), &json!({"parent": parent, "sort_order": "x"}));
+    let want = json!({"name": ["This field is required."], "parent": [message], "sort_order": ["A valid number is required."]});
+    assert_eq!((r.status, r.body), (400, want), "POST");
+    let r = call(&w, Who::Admin, "PATCH", &label(bug()), &json!({"parent": parent, "sort_order": "x"}));
+    let want = json!({"parent": [message], "sort_order": ["A valid number is required."]});
+    assert_eq!((r.status, r.body), (400, want), "PATCH");
+    // a name the field before it refused is reported too
     let r = call(&w, Who::Admin, "POST", &labels(), &json!({"name": null, "parent": parent}));
-    assert_eq!(r.body, json!({"error": "Please provide valid detail"}));
-    assert_eq!(listed(&w), ["docs", "feature", "bug"]);
+    assert_eq!(r.body, json!({"name": ["This field may not be null."], "parent": [message]}));
+    assert_eq!(listed(&w), ["docs", "feature", "bug"], "nothing was made or changed");
 }
 
 /// The three answers to a name that is taken: a creation is a 409 naming the label that has it (the corpus's `create-duplicate`), a

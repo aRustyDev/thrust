@@ -246,21 +246,23 @@ struct Parsed {
     deleted_at: bool,
 }
 
-/// The pin's refusal when Django raises from inside a relation field (a key it cannot read): a bare 400 and nothing else.
+/// The pin's refusal when Django raises a `ValidationError` from the view itself, not from a serializer field (a query parameter that
+/// names a project by a key it cannot read): the base view's bare 400, and nothing else. A BODY's key is not this: the serializer
+/// catches that, per field (`PkRead::Refused`).
 fn raised() -> V1Error {
     V1Error::error(StatusCode::BAD_REQUEST, "Please provide valid detail")
 }
 
 /// A list of keys as DRF's `ListField` of related fields reads it: the keys with the text each was sent as, or what is wrong, by
-/// place. `Err(None)` is a key Django raises on.
-fn read_key_list(v: &Value) -> Result<Vec<(Uuid, String)>, Option<Value>> {
+/// place.
+fn read_key_list(v: &Value) -> Result<Vec<(Uuid, String)>, Value> {
     let Some(items) = v.as_array() else {
-        return Err(Some(match v {
+        return Err(match v {
             Value::Null => json!(["This field may not be null."]),
             other => json!([format!("Expected a list of items but got type \"{}\".", py_type_name(other))]),
-        }));
+        });
     };
-    let (mut keys, mut bad, mut raises) = (Vec::new(), Map::new(), false);
+    let (mut keys, mut bad) = (Vec::new(), Map::new());
     for (i, item) in items.iter().enumerate() {
         match pk_field(item) {
             PkRead::Key { id, shown } => keys.push((id, shown)),
@@ -270,13 +272,12 @@ fn read_key_list(v: &Value) -> Result<Vec<(Uuid, String)>, Option<Value>> {
             PkRead::Refused(m) => {
                 bad.insert(i.to_string(), json!([m]));
             }
-            PkRead::Raises => raises = true,
         }
     }
-    match (raises, bad.is_empty()) {
-        (true, _) => Err(None),
-        (false, true) => Ok(keys),
-        (false, false) => Err(Some(Value::Object(bad))),
+    if bad.is_empty() {
+        Ok(keys)
+    } else {
+        Err(Value::Object(bad))
     }
 }
 
@@ -287,13 +288,13 @@ fn uuid_list(ids: &[Uuid]) -> String {
 }
 
 /// Read a body the way the pin's `IssueSerializer` does: every field it knows is checked, and what is wrong is one 400 (the fields in
-/// the first place, then `validate()`'s refusals, one at a time); a key Django cannot read makes the whole answer a bare 400. A key
-/// that names a state, a label or a parent that is not one of the project's is "not there", as for a row that does not exist
-/// (D-033: the pin tells the two apart, which tells a caller what exists in projects it cannot see).
+/// the first place, then `validate()`'s refusals, one at a time); a key Django cannot read is `“x” is not a valid UUID.` under its
+/// field, with the other fields' errors beside it (measured on the pin). A key that names a state, a label or a parent that is not
+/// one of the project's is "not there", as for a row that does not exist (D-033: the pin tells the two apart, which tells a caller
+/// what exists in projects it cannot see).
 async fn read_item(ctx: &Ctx, access: &IssueAccess, b: &Map<String, Value>, partial: bool) -> Result<Parsed, V1Error> {
     let (scope, db) = (access.scope(), &ctx.app.ports.db);
     let mut errors = FieldErrors::new();
-    let mut raises = false;
     let mut p = Parsed::default();
     let text = |max: Option<usize>, blank: bool, null: bool| move |v: &Value| char_field(v, max, blank, null);
 
@@ -316,10 +317,9 @@ async fn read_item(ctx: &Ctx, access: &IssueAccess, b: &Map<String, Value>, part
                     errors.insert("assignees".into(), Value::Object(bad));
                 }
             }
-            Err(Some(e)) => {
+            Err(e) => {
                 errors.insert("assignees".into(), e);
             }
-            Err(None) => raises = true,
         }
     }
     if let Some(v) = b.get("labels") {
@@ -341,20 +341,19 @@ async fn read_item(ctx: &Ctx, access: &IssueAccess, b: &Map<String, Value>, part
                     errors.insert("labels".into(), Value::Object(bad));
                 }
             }
-            Err(Some(e)) => {
+            Err(e) => {
                 errors.insert("labels".into(), e);
             }
-            Err(None) => raises = true,
         }
     }
-    // there are no types and no estimate points here: a key names a row that is not there
-    for field in ["type_id", "estimate_point"] {
+    // there are no types and no estimate points here: a key names a row that is not there. The pin reads a type under two names, the
+    // model's own `type` and the serializer's `type_id` (both measured: each answers under its own name)
+    for field in ["type", "type_id", "estimate_point"] {
         if let Some(v) = b.get(field) {
             match pk_field(v) {
                 PkRead::Null => {}
                 PkRead::Key { shown, .. } => fail(&mut errors, field, no_such_pk_shown(&shown)),
                 PkRead::Refused(m) => fail(&mut errors, field, m),
-                PkRead::Raises => raises = true,
             }
         }
     }
@@ -443,7 +442,6 @@ async fn read_item(ctx: &Ctx, access: &IssueAccess, b: &Map<String, Value>, part
                 }
             }
             PkRead::Refused(m) => fail(&mut errors, "created_by", m),
-            PkRead::Raises => raises = true,
         }
     }
     // the work items and the states: of this project, or not there
@@ -458,7 +456,6 @@ async fn read_item(ctx: &Ctx, access: &IssueAccess, b: &Map<String, Value>, part
                 }
             }
             PkRead::Refused(m) => fail(&mut errors, "parent", m),
-            PkRead::Raises => raises = true,
         }
     }
     if let Some(v) = b.get("state") {
@@ -472,11 +469,7 @@ async fn read_item(ctx: &Ctx, access: &IssueAccess, b: &Map<String, Value>, part
                 }
             }
             PkRead::Refused(m) => fail(&mut errors, "state", m),
-            PkRead::Raises => raises = true,
         }
-    }
-    if raises {
-        return Err(raised());
     }
     refuse_if_any(errors)?;
 
