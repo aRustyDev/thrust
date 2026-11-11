@@ -505,7 +505,8 @@ proptest! {
 // --- slugify ------------------------------------------------------------------------------------------------------------------
 
 /// Django's `slugify` of what a state is called: the corpus records two (`Oracle Review` is `oracle-review`, and the renamed one
-/// `oracle-review-2`). An accent is dropped, where Django folds it to its letter.
+/// `oracle-review-2`); `Café` and `³` are the names D-031 (2) and EX-014 give as the ones that were wrong until the fold; the rest is
+/// what the stages found. Every scalar value against the pin's own answer is `slugify_parity.rs`.
 #[rstest]
 #[case("Oracle Review", "oracle-review")]
 #[case("Oracle Review 2", "oracle-review-2")]
@@ -521,7 +522,11 @@ proptest! {
 #[case("x_y", "x_y")]
 #[case("123", "123")]
 #[case("tab\tand\nnewline", "tab-and-newline")]
-#[case("Café", "caf")]
+#[case("Café", "cafe")]
+#[case("x³", "x3")]
+#[case("é", "e")]
+// NFKD splits an accent from its letter; it does not turn a letter into two (`ß`, `Ø`), which the pin drops as well
+#[case("Straße", "strae")]
 #[case("日本", "")]
 #[case("", "")]
 #[case("---", "")]
