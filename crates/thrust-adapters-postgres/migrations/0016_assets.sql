@@ -27,8 +27,8 @@ CREATE TABLE IF NOT EXISTS assets (
     created_at        timestamptz NOT NULL,
     uploaded_at       timestamptz,
     deleted_at        timestamptz,
-    -- a project of this workspace (a null project_id skips the check)
-    FOREIGN KEY (workspace_id, project_id) REFERENCES projects (workspace_id, id)
+    -- a project of this workspace (a null project_id skips the check); named, because the plain name is the other foreign key's
+    CONSTRAINT assets_workspace_project_fkey FOREIGN KEY (workspace_id, project_id) REFERENCES projects (workspace_id, id)
 );
 
 ALTER TABLE assets DROP CONSTRAINT IF EXISTS assets_entity_type_valid;
