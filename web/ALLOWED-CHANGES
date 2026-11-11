@@ -1,0 +1,9 @@
+# The files under web/apps/web and web/packages that differ from the oracle pin (web/SOURCE), and so the ledger of how the
+# stock React app departs from it. Paths are relative to web/, one per line; '#' starts a comment.
+#
+# Q-R2 allows a change only in: the auth client, the base URL and service layer, the collab provider, and branding.
+# scripts/check-web-diff.sh (the `web` job of ci.yml) fails when the set of differing files is not exactly this list:
+# a changed file that is not listed fails it, and so does a listed file that no longer differs. Say in the commit that
+# changes a file why it falls inside Q-R2.
+#
+# Empty: the import is byte-identical to the pin.

@@ -38,3 +38,11 @@ crates/thrust-worker/.wrangler.pg.run.toml
 .dev.vars.*
 .env
 __pycache__/
+
+# web/ (the stock React app, web/SOURCE): build output, tool caches, and the one source file the build generates
+# (the pin ignores it too, .gitignore:116 at oracle/v1-pin-20261018). Scoped to web/ so no Rust path is touched.
+web/**/build/
+web/**/dist/
+web/**/.turbo/
+web/**/.react-router/
+web/packages/i18n/src/types/keys.generated.ts

@@ -11,7 +11,10 @@
 # commit may adapt them (the lockfile is pruned to this workspace, and the husky hook is dropped), and says so.
 #
 # After the import, only the files that Q-R2 allows may change under web/apps/web and web/packages
-# (the auth client, the base URL and service layer, the collab provider, branding). scripts/check-web-diff.sh enforces it.
+# (the auth client, the base URL and service layer, the collab provider, branding). scripts/check-web-diff.sh enforces it,
+# without the pin (which is not pushed), from two files beside this one: PIN-MANIFEST (the mode and blob hash of every
+# file the pin has under apps/web and packages; it must rebuild the two tree hashes below) and ALLOWED-CHANGES (the files
+# that may differ from it, and so the ledger of the departures).
 
 source_repository=aRustyDev/plane
 source_branch=feat/plane-b6a-upstream-sync-oracle
