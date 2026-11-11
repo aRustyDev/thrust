@@ -484,6 +484,52 @@ pub async fn v1_delete(t: &Target, who: &User, at: &At, id: &str) -> reqwest::Re
     t.http.delete(t.url(&v1_item(at, id))).header(API_KEY_HEADER, &who.key).send().await.unwrap()
 }
 
+/// Every work item of a project, a thousand to a page (the most Plane allows) by its cursor (`limit:page:0`), in the order of the
+/// pin's list. For a project with more rows than one page: the engine tests make ten thousand.
+pub async fn v1_list_all(t: &Target, who: &User, at: &At) -> Vec<Issue> {
+    let mut all = Vec::new();
+    let mut cursor = "1000:0:0".to_string();
+    loop {
+        let r = t
+            .http
+            .get(t.url(&v1_items(at)))
+            .query(&[("per_page", "1000"), ("cursor", cursor.as_str())])
+            .header(API_KEY_HEADER, &who.key)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(r.status(), 200, "list page {cursor}");
+        let body: Value = r.json().await.unwrap();
+        all.extend(body["results"].as_array().expect("a list has `results`").iter().cloned().map(Issue));
+        if body["next_page_results"].as_bool() != Some(true) {
+            return all;
+        }
+        cursor = body["next_cursor"].as_str().expect("a page has a next_cursor").to_string();
+    }
+}
+
+/// `GET {V1_PREFIX}/workspaces/{slug}/issues/search/?search=q`: the work items of the caller's own projects in the workspace that a
+/// name, a project identifier or a number says, newest first, at most `limit` of them (the pin's default is ten).
+pub async fn v1_search(t: &Target, who: &User, slug: &str, q: &str, limit: u32) -> reqwest::Response {
+    t.http
+        .get(t.url(&format!("{V1_PREFIX}/workspaces/{slug}/issues/search/")))
+        .query(&[("search", q), ("limit", &limit.to_string())])
+        .header(API_KEY_HEADER, &who.key)
+        .send()
+        .await
+        .unwrap()
+}
+
+/// The hits of a search that must answer 200: Plane's `issues` (`name`, `id`, `sequence_id`, `project__identifier`, `project_id`,
+/// `workspace__slug`).
+pub async fn v1_search_hits(t: &Target, who: &User, slug: &str, q: &str, limit: u32) -> Vec<Value> {
+    let r = v1_search(t, who, slug, q, limit).await;
+    let status = r.status();
+    assert_eq!(status, 200, "search for {q:?}: HTTP {status}: {:?}", r.text().await);
+    let body: Value = r.json().await.unwrap();
+    body["issues"].as_array().unwrap_or_else(|| panic!("a search answers `issues`: {body}")).clone()
+}
+
 /// Poll until `pred` holds (queue consumers are asynchronous by design). Fails loudly on timeout.
 pub async fn eventually<F, Fut, T>(what: &str, timeout: Duration, mut f: F) -> T
 where

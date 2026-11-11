@@ -46,8 +46,12 @@ LOGDIR="${THRUST_LOGDIR:-$ROOT/target/contract-logs}"
 mkdir -p "$LOGDIR"
 LOG="$LOGDIR/$TARGET-$PASS"
 RATE_LIMIT=30
-# The engine pass makes thousands of creates per user per window: the main pass's limit would refuse them.
-[ "${2:-main}" = "engine" ] && RATE_LIMIT=1000000
+# The engine pass makes thousands of creates per user per window, and of `/api/v1` requests per key (it goes through `/api/v1`): the
+# main pass's limit and Plane's default of 60 a minute would refuse them.
+if [ "${2:-main}" = "engine" ]; then
+  RATE_LIMIT=1000000
+  export THRUST_V1_RATE_LIMIT=1000000/minute
+fi
 # The oracle pass fuzzes /api/v1 with one key: Plane's default of 60 requests a minute would answer nearly all of them 429. The
 # other passes run with the default, as production does.
 if [ "${2:-main}" = "oracle" ]; then
