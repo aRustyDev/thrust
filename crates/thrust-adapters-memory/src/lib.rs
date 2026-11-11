@@ -1299,13 +1299,16 @@ impl Database for MemoryDatabase {
     async fn work_item_page(&self, scope: &Scope, q: &WorkItemQuery) -> Result<WorkItemPage, DbError> {
         let (ws, project) = (scope.workspace_id(), scope.project_id());
         let s = self.state.lock_unpoisoned();
+        // a limited guest sees only what they made, unless the project shows its guests everything (a deleted project has no row)
+        let guests_see_all =
+            s.project_rows.get(&project).is_some_and(|p| p.workspace_id == ws && p.guest_view_all_features);
         let mut rows: Vec<WorkItemRow> = s
             .work_items
             .iter()
             .filter(|w| w.workspace_id == ws && w.project_id == project && is_visible(w))
             .map(|w| s.work_item_row_of(w))
             .filter(|r| q.updated_after.is_none_or(|t| r.attrs.updated_at > t))
-            .filter(|r| q.created_by.is_none_or(|u| r.item.created_by == Some(u)))
+            .filter(|r| q.limited_guest.is_none_or(|u| guests_see_all || r.item.created_by == Some(u)))
             .collect();
         rows.sort_by(|a, b| compare_work_items(a, b, q.order, &s));
         let total = rows.len() as u64;

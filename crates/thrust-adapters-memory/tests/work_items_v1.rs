@@ -195,7 +195,7 @@ fn a_parent_a_point_and_a_key_are_stored_and_read_back_and_a_maker_may_be_missin
     let nobody = item(&db, P, |w, _| w.created_by = None);
     assert_eq!(row(&db, P, nobody).unwrap().item.created_by, None);
     let order = WorkItemOrder { field: WorkItemOrderField::SequenceId, descending: false };
-    let by_one = WorkItemQuery { order, limit: 10, page: 0, updated_after: None, created_by: Some(uid(1)) };
+    let by_one = WorkItemQuery { order, limit: 10, page: 0, updated_after: None, limited_guest: Some(uid(1)) };
     let page = block_on(db.work_item_page(&scope(P), &by_one)).unwrap();
     assert_eq!(page.rows.iter().map(|r| r.item.id).collect::<Vec<_>>(), vec![parent, child]);
 }

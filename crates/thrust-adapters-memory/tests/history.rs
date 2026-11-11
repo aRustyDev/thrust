@@ -683,7 +683,7 @@ proptest! {
         prop_assert_eq!(update(&db, &scope(A, P), id, &u).unwrap(), true);
         prop_assert_eq!(row_of(&db, id), Some(after(&was, &u)));
         // the page reads the same row, so the order it keeps follows the update too
-        let page = block_on(db.work_item_page(&scope(A, P), &WorkItemQuery { order: WorkItemOrder { field: WorkItemOrderField::UpdatedAt, descending: true }, limit: 10, page: 0, updated_after: None, created_by: None })).unwrap();
+        let page = block_on(db.work_item_page(&scope(A, P), &WorkItemQuery { order: WorkItemOrder { field: WorkItemOrderField::UpdatedAt, descending: true }, limit: 10, page: 0, updated_after: None, limited_guest: None })).unwrap();
         prop_assert_eq!(page.rows, vec![after(&was, &u)]);
         // the item as the list reads it carries the name
         let listed = block_on(db.list_work_items(&scope(A, P), Visibility::Visible)).unwrap();

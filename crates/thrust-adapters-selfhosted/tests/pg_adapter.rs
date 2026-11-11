@@ -2340,7 +2340,7 @@ async fn a_work_item_and_its_attributes_are_one_transaction() {
                     limit: 10,
                     page: 0,
                     updated_after: None,
-                    created_by: None
+                    limited_guest: None
                 }
             )
             .await
@@ -3456,7 +3456,7 @@ async fn a_work_item_has_a_parent_a_point_and_a_key_and_a_maker_that_may_be_miss
     let nobody = put_item(&env, s, "nobody's", |w, _| w.created_by = None).await.unwrap();
     assert_eq!(env.db.work_item_row(&s, nobody).await.unwrap().unwrap().item.created_by, None);
     let order = WorkItemOrder { field: WorkItemOrderField::SequenceId, descending: false };
-    let by_one = WorkItemQuery { order, limit: 10, page: 0, updated_after: None, created_by: Some(owner) };
+    let by_one = WorkItemQuery { order, limit: 10, page: 0, updated_after: None, limited_guest: Some(owner) };
     let page = env.db.work_item_page(&s, &by_one).await.unwrap();
     assert!(page.rows.iter().all(|r| r.item.created_by == Some(owner)) && page.total == 2, "{page:?}");
 
@@ -3485,6 +3485,49 @@ async fn a_work_item_has_a_parent_a_point_and_a_key_and_a_maker_that_may_be_miss
     // once the holder is deleted the key is free
     assert!(delete_item(&env, s, child).await);
     assert!(update_item(&env, s, other, &whole(&o, None, None, Some(("gh", "7")), owner)).await.unwrap());
+}
+
+/// A limited guest's page is what they made, unless the project shows its guests everything (`guest_view_all_features`, which is
+/// Plane's own switch): the page's statement reads the flag (issue #39), and so does the count that stands in for an empty page's
+/// total, so the total a guest is told is the count of what they may see on every kind of page. Exhaustive over both values of the
+/// flag, and over the four askers and the three kinds of page; the in-memory adapter's own is the core's
+/// `a_guest_reads_only_what_they_made_unless_the_project_shows_them_everything`.
+#[tokio::test]
+async fn a_limited_guests_page_is_what_they_made_unless_the_project_shows_guests_everything() {
+    let env = env().await;
+    let (_, project, owner, s) = project_with_states(&env, "guest-flag").await;
+    let guest = UserId(new_id());
+    put_item(&env, s, "made by the guest", |w, _| w.created_by = Some(guest)).await.unwrap();
+    put_item(&env, s, "made by the owner", |_, _| {}).await.unwrap();
+    put_item(&env, s, "made by nobody", |w, _| w.created_by = None).await.unwrap();
+    let order = WorkItemOrder { field: WorkItemOrderField::SequenceId, descending: false };
+    let ask = |limited_guest, limit, page| WorkItemQuery { order, limit, page, updated_after: None, limited_guest };
+    let raw = env.conn.raw().await.unwrap();
+    for guests_see_all in [false, true] {
+        raw.execute("UPDATE projects SET guest_view_all_features = $1 WHERE id = $2", &[&guests_see_all, &project.0])
+            .await
+            .unwrap();
+        // who asks, and how many of the three items they may see: everyone sees all; a limited guest sees what they made (the
+        // guest one, the owner one, none for a stranger), or all three when the project shows its guests everything
+        let all = 3;
+        let askers = [
+            (None, all),
+            (Some(guest), if guests_see_all { all } else { 1 }),
+            (Some(owner), if guests_see_all { all } else { 1 }),
+            (Some(UserId(new_id())), if guests_see_all { all } else { 0 }),
+        ];
+        for (who, sees) in askers {
+            // a page of them all, one that cuts them, and one past the end (no row carries the total: the count statement does)
+            for (limit, page, rows) in [(10, 0, sees), (1, 0, sees.min(1)), (10, 5, 0)] {
+                let got = env.db.work_item_page(&s, &ask(who, limit, page)).await.unwrap();
+                assert_eq!(
+                    (got.rows.len() as u64, got.total),
+                    (rows, sees),
+                    "guests see all: {guests_see_all}; asker {who:?}; limit {limit} page {page}: {got:?}"
+                );
+            }
+        }
+    }
 }
 
 /// A work item is found by its number and by its integration key when it is live and of the scope's own project, and by nothing else.

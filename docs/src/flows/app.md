@@ -82,10 +82,11 @@ With test routes on, a target that counts its database statements also puts `x-t
 router answered. Only the Postgres adapter set counts, so `native-pg` and `worker-cf` send it and the `memory` targets do not,
 and the contract suite reads that absence as "counts nothing", not as zero. The unit is a statement, which is one wire round
 trip. It leaves out connection handshakes and the work a request leaves running after its answer, such as the stamp of an API
-key's first use. `list_endpoints_stay_within_five_db_round_trips` holds seven lists to at most 5 when an admin asks for them:
-measured on `native-pg` and `worker-cf` it is 3 for the slice's work items and Plane's projects and issues, and 4 for
-`/api/v1` projects, states, labels and work items. It does not hold a limited guest on Plane's issues list, which costs 6, or
-`/api/v1` work items with `?expand=assignees` (G-24 in [status](../testing/status.md)).
+key's first use. `list_endpoints_stay_within_five_db_round_trips` holds nine requests to at most 5: seven lists asked by an admin,
+and Plane's issues list asked by a limited guest who made some of the items and by one who made none. Measured on
+`native-pg` and `worker-cf` it is 3 for the slice's work items, Plane's projects and Plane's issues (also for the guest
+with items), and 4 for `/api/v1` projects, states, labels and work items (and for the guest with none). It does not
+hold `/api/v1` work items with `?expand=assignees` (G-24 in [status](../testing/status.md)).
 
 The Worker also serves `/_test/room/...` and `/_test/bindings/...`, which need test routes and the admin token and
 belong to the spike. They are on [Infrastructure](../architecture/infra.md).

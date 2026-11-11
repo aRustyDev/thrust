@@ -4213,7 +4213,7 @@ impl Model {
             } else {
                 Class::ItemPageLast
             });
-            let q = WorkItemQuery { order, limit, page: page as u32, updated_after: None, created_by: None };
+            let q = WorkItemQuery { order, limit, page: page as u32, updated_after: None, limited_guest: None };
             calls.push(Call::WorkItemPageOf { ws, p, q, want: WorkItemPage { rows, has_next, total } });
         }
         classes.push(Class::ItemPagePastEnd);
@@ -4221,7 +4221,7 @@ impl Model {
         calls.push(Call::WorkItemPageOf {
             ws,
             p,
-            q: WorkItemQuery { order, limit, page: past, updated_after: None, created_by: None },
+            q: WorkItemQuery { order, limit, page: past, updated_after: None, limited_guest: None },
             want: WorkItemPage { rows: vec![], has_next: false, total },
         });
         // a page cut by when the items changed and by who made them: the order is kept, and so is the count of what is left
@@ -4229,7 +4229,7 @@ impl Model {
             let (after, by) = (first.attrs.updated_at, first.item.created_by);
             let kept: Vec<WorkItemRow> =
                 ordered.iter().filter(|r| r.attrs.updated_at > after && r.item.created_by == by).cloned().collect();
-            let q = WorkItemQuery { order, limit: 100, page: 0, updated_after: Some(after), created_by: by };
+            let q = WorkItemQuery { order, limit: 100, page: 0, updated_after: Some(after), limited_guest: by };
             classes.push(Class::ItemPageCut);
             calls.push(Call::WorkItemPageOf {
                 ws,
@@ -4566,7 +4566,7 @@ impl Model {
         calls.push(Call::WorkItemPageOf {
             ws,
             p,
-            q: WorkItemQuery { order, limit: 1000, page: 0, updated_after: None, created_by: None },
+            q: WorkItemQuery { order, limit: 1000, page: 0, updated_after: None, limited_guest: None },
             want: WorkItemPage { rows: ordered, has_next: false, total },
         });
         calls.push(Call::List {

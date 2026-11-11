@@ -13,22 +13,23 @@
 //! What is measured is a steady-state request, after the first of each. The first use of an API key stamps `last_used_at` in
 //! the background (`thrust-core/src/auth.rs`), and it runs on the target's own schedule, so it is waited for and not counted.
 //!
-//! The lists are seven, in the shape a client asks for them by default and asked by an admin: the slice's work items,
+//! The lists are nine, in the shape a client asks for them by default. Seven are asked by an admin: the slice's work items,
 //! Plane's projects (S17) and work items (S47) over the internal API, and `/api/v1`'s projects, states, labels and work items.
+//! Two are Plane's work items asked by a **limited guest**, who sees only what they made unless the project shows its guests
+//! everything: one who made six of the items, and one who made none, whose page is empty and costs its count as well. That
+//! is the dearest list a guest can ask for, and it was 6 statements, one over the budget, while the page's statement did not
+//! read the project's flag itself (G-24).
 //!
-//! Out of scope, and known gaps (`docs/src/testing/status.md`, G-24), both found over the budget and neither fixed here:
-//! `/api/v1` work items with `?expand=assignees`, which send two statements per distinct assignee; and a **limited guest** on
-//! the compat issues list (S47), measured at 6 statements, with rows and on an empty page, because it adds a workspace-access
-//! and a project lookup. The caller here is an admin, so this test does not see that, and a guest request added to it would
-//! fail until the guest path is made cheaper.
+//! Out of scope, and a known gap (`docs/src/testing/status.md`, G-24): `/api/v1` work items with `?expand=assignees`, which
+//! send two statements per distinct assignee.
 
 use std::time::Duration;
 
 use serde_json::Value;
 use thrust_contract_tests::*;
 use thrust_contracts::{
-    ApiKeyInfo, ProjectId, Role, SeedApiKey, SeedFixture, SeedLabel, SeedMembership, SeedProject, SeedState,
-    SeedWorkspace, StateGroup, WorkspaceSlug,
+    ApiKeyInfo, ProjectId, Role, SeedApiKey, SeedFixture, SeedLabel, SeedMembership, SeedProject, SeedSession,
+    SeedState, SeedWorkspace, SeedWorkspaceMember, StateGroup, UserId, WorkspaceSlug,
 };
 use uuid::Uuid;
 
@@ -47,32 +48,77 @@ const FLOOR: u32 = 3;
 /// Rows in every list. Over a floor of 3, a statement per row is over the budget of 5 from the third row; this leaves margin.
 const ROWS: usize = 6;
 
-/// One list: where it is, and who asks (an API key for `/api/v1`, a session for the rest).
+/// Who asks: the project's admin by session, the admin's API key (`/api/v1` takes nothing else), or someone else by session.
+enum Auth {
+    Admin,
+    ApiKey,
+    Session(String),
+}
+
+/// What the list must answer with, so that a test of the budget is never a test of an empty list by accident.
+enum Rows {
+    /// At least this many: a statement per row would show.
+    AtLeast(usize),
+    /// None: the page is empty on purpose, which costs a statement more than a page with rows (its count).
+    Empty,
+}
+
+/// One list: where it is, who asks, and what it must answer with.
 struct Route {
     name: &'static str,
     path: String,
-    api_key: bool,
+    auth: Auth,
+    rows: Rows,
 }
 
-fn routes(f: &Fixture) -> Vec<Route> {
+/// The seven lists asked by an admin, and Plane's work items asked by two limited guests (a guest of the compat plane sees only
+/// what they made, unless the project shows its guests everything): `guest` made six of the project's items, and `quiet` made
+/// none, so the page of `quiet` is empty and costs its count as well, the dearest list a guest can ask for.
+fn routes(f: &Fixture, quiet: &User) -> Vec<Route> {
     let (slug, project) = (&f.a.slug, f.a.project.0);
     let v1 = format!("/api/v1/workspaces/{slug}");
     let compat = format!("/api/workspaces/{slug}");
+    let issues = format!("{compat}/projects/{project}/issues/");
+    let admin = |name, path, auth| Route { name, path, auth, rows: Rows::AtLeast(ROWS) };
     vec![
-        Route { name: "slice work items", path: wi_path(&f.a), api_key: false },
-        Route { name: "compat projects (S17)", path: format!("{compat}/projects/"), api_key: false },
-        Route { name: "compat issues (S47)", path: format!("{compat}/projects/{project}/issues/"), api_key: false },
-        Route { name: "v1 projects", path: format!("{v1}/projects/"), api_key: true },
-        Route { name: "v1 states", path: format!("{v1}/projects/{project}/states/"), api_key: true },
-        Route { name: "v1 labels", path: format!("{v1}/projects/{project}/labels/"), api_key: true },
-        Route { name: "v1 work items", path: format!("{v1}/projects/{project}/work-items/"), api_key: true },
+        admin("slice work items", wi_path(&f.a), Auth::Admin),
+        admin("compat projects (S17)", format!("{compat}/projects/"), Auth::Admin),
+        admin("compat issues (S47)", issues.clone(), Auth::Admin),
+        admin("v1 projects", format!("{v1}/projects/"), Auth::ApiKey),
+        admin("v1 states", format!("{v1}/projects/{project}/states/"), Auth::ApiKey),
+        admin("v1 labels", format!("{v1}/projects/{project}/labels/"), Auth::ApiKey),
+        admin("v1 work items", format!("{v1}/projects/{project}/work-items/"), Auth::ApiKey),
+        Route {
+            name: "compat issues (S47), guest with items",
+            path: issues.clone(),
+            auth: Auth::Session(f.guest_a.token.clone()),
+            rows: Rows::AtLeast(ROWS),
+        },
+        Route {
+            name: "compat issues (S47), guest with none",
+            path: issues,
+            auth: Auth::Session(quiet.token.clone()),
+            rows: Rows::Empty,
+        },
     ]
 }
 
-/// Rows, states, labels, projects and one API key: every list has `ROWS` or more, and the key is the admin's.
-async fn seed(t: &Target, f: &Fixture, key: &str) {
-    let items: Vec<(String, Option<String>)> = (0..ROWS).map(|n| (format!("budget item {n}"), None)).collect();
-    seed_work_items(t, f, &f.a, f.admin_a.id, &items).await;
+/// Rows, states, labels, projects and one API key: every list has `ROWS` or more, and the key is the admin's. Returns a guest
+/// of project A who made none of its work items.
+async fn seed(t: &Target, f: &Fixture, key: &str) -> User {
+    let items = |prefix: &str| -> Vec<(String, Option<String>)> {
+        (0..ROWS).map(|n| (format!("{prefix} {n}"), None)).collect()
+    };
+    seed_work_items(t, f, &f.a, f.admin_a.id, &items("budget item")).await;
+    // the guest `guest_a` made six of them too, so a limited guest asking for the list sees a page of their own
+    seed_work_items(t, f, &f.a, f.guest_a.id, &items("guest item")).await;
+    // and this guest made none: a limited guest sees only what they made, so their page is empty
+    let quiet = User {
+        id: UserId(Uuid::new_v4()),
+        token: format!("tok-{}", Uuid::new_v4().simple()),
+        email: format!("quiet-guest-{}@example.test", Uuid::new_v4().simple()),
+        password: "not used: this guest has a session and no login".into(),
+    };
 
     // The caller is in every extra project, and each one's identifier comes from its random id, so they cannot collide.
     let extra: Vec<SeedProject> = (0..ROWS)
@@ -85,6 +131,7 @@ async fn seed(t: &Target, f: &Fixture, key: &str) {
     let memberships = extra
         .iter()
         .map(|p| SeedMembership { project_id: p.id, workspace_id: f.ws_a, user_id: f.admin_a.id, role: Role::Admin })
+        .chain([SeedMembership { project_id: f.a.project, workspace_id: f.ws_a, user_id: quiet.id, role: Role::Guest }])
         .collect();
     let states = (0..ROWS)
         .map(|n| SeedState {
@@ -111,8 +158,11 @@ async fn seed(t: &Target, f: &Fixture, key: &str) {
         .collect();
     let fixture = SeedFixture {
         workspaces: vec![SeedWorkspace { id: f.ws_a, slug: WorkspaceSlug::new(&f.a.slug) }],
+        users: vec![quiet.id],
+        workspace_members: vec![SeedWorkspaceMember { workspace_id: f.ws_a, user_id: quiet.id }],
         projects: extra,
         memberships,
+        sessions: vec![SeedSession { token: quiet.token.clone(), user_id: quiet.id }],
         states,
         labels,
         api_keys: vec![SeedApiKey {
@@ -126,6 +176,7 @@ async fn seed(t: &Target, f: &Fixture, key: &str) {
     };
     let r = t.admin_post("/internal/seed", &serde_json::to_value(&fixture).unwrap()).await;
     assert_eq!(r.status(), 204, "seed the budget fixture: {:?}", r.text().await);
+    quiet
 }
 
 /// The first use of a key stamps `last_used_at` in the background. Use it once, and wait until the stamp is there, so that no
@@ -154,7 +205,11 @@ fn rows(body: &Value) -> usize {
 /// One request of a list: the statements the target says it sent (None when it sent no header) and the rows it answered with.
 async fn ask(t: &Target, f: &Fixture, key: &str, route: &Route) -> (Option<u32>, usize) {
     let req = t.http.get(t.url(&route.path));
-    let req = if route.api_key { req.header("x-api-key", key) } else { req.bearer_auth(&f.admin_a.token) };
+    let req = match &route.auth {
+        Auth::Admin => req.bearer_auth(&f.admin_a.token),
+        Auth::ApiKey => req.header("x-api-key", key),
+        Auth::Session(token) => req.bearer_auth(token),
+    };
     let r = req.send().await.unwrap();
     let status = r.status();
     let sent = r.headers().get(HEADER).map(|v| {
@@ -174,21 +229,27 @@ async fn list_endpoints_stay_within_five_db_round_trips() {
     let adapters = t.info().await["adapters"].as_str().expect("/_info names the adapter set").to_string();
     let f = Fixture::seed(&t).await;
     let key = format!("thrk_budget-{}", Uuid::new_v4().simple());
-    seed(&t, &f, &key).await;
-    let routes = routes(&f);
-    warm_the_key(&t, &f, &key, &routes[3]).await;
+    let quiet = seed(&t, &f, &key).await;
+    let routes = routes(&f, &quiet);
+    let first_with_the_key =
+        routes.iter().find(|r| matches!(r.auth, Auth::ApiKey)).expect("a route that takes the key");
+    warm_the_key(&t, &f, &key, first_with_the_key).await;
 
     let mut measured = Vec::new();
     for route in &routes {
         // the first request of a list may carry a one-off cost of its own; the budget is for the one after it
         ask(&t, &f, &key, route).await;
         let (sent, got) = ask(&t, &f, &key, route).await;
-        // a list over too few rows cannot show a statement per row, so a thin list is a failure of the test and not a pass
-        assert!(
-            got >= ROWS,
-            "{}: the list has {got} rows and the test seeded {ROWS}: it would not show a statement per row",
-            route.name
-        );
+        // A list over too few rows cannot show a statement per row, so a thin list is a failure of the test and not a pass; and
+        // the list that is empty on purpose has to be empty, or it is not measuring the page that costs its count.
+        match route.rows {
+            Rows::AtLeast(n) => assert!(
+                got >= n,
+                "{}: the list has {got} rows and the test needs {n}: it would not show a statement per row",
+                route.name
+            ),
+            Rows::Empty => assert_eq!(got, 0, "{}: the page was to be empty, and has {got} rows", route.name),
+        }
         measured.push((route.name, sent));
     }
     let report = measured.iter().map(|(name, n)| format!("{name}: {n:?}")).collect::<Vec<_>>().join(", ");

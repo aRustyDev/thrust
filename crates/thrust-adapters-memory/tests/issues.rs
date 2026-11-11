@@ -209,7 +209,7 @@ fn make(db: &MemoryDatabase, project: u128, spec: &Spec, attrs: Option<WorkItemA
 }
 
 fn query(order: WorkItemOrder, limit: u32, page: u32) -> WorkItemQuery {
-    WorkItemQuery { order, limit, page, updated_after: None, created_by: None }
+    WorkItemQuery { order, limit, page, updated_after: None, limited_guest: None }
 }
 
 fn newest_first() -> WorkItemOrder {
@@ -609,7 +609,7 @@ proptest! {
                 kept += 1;
             }
         }
-        let q = WorkItemQuery { order: newest_first(), limit: 100, page: 0, updated_after: after.map(at), created_by: by.map(uid) };
+        let q = WorkItemQuery { order: newest_first(), limit: 100, page: 0, updated_after: after.map(at), limited_guest: by.map(uid) };
         let p = block_on(db.work_item_page(&scope(P, 1), &q)).unwrap();
         prop_assert_eq!((p.rows.len() as u64, p.total), (kept, kept));
     }

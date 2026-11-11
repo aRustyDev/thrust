@@ -2276,7 +2276,13 @@ impl Database for PgDatabase {
         let (ws, project) = (scope.workspace_id(), scope.project_id());
         let limit = i64::from(q.limit);
         let offset = i64::from(q.page).saturating_mul(limit);
-        let created_by = q.created_by.map(|u| u.0);
+        let limited_guest = q.limited_guest.map(|u| u.0);
+        // A limited guest sees what they made, unless the project shows its guests everything. The project's flag is read here,
+        // in the statement, and not by a statement before it: that was two more for a guest (issue #39). It is one condition for
+        // both statements below, because the second gives the total when the first finds no row, and they must agree on what
+        // the guest may see. A project that is gone (`deleted_at`) shows nothing to a guest, as its detail read answers none.
+        const GUEST_MAY_SEE: &str = "($4::uuid IS NULL OR w.created_by = $4 OR (SELECT p.guest_view_all_features \
+             FROM projects p WHERE p.id = $2 AND p.workspace_id = $1 AND p.deleted_at IS NULL))";
         let c = self.conn().await?;
         // one statement: the rows of the page and one more (is there a next page), and how many rows match, in each of them
         let rows = c.pg()
@@ -2285,11 +2291,11 @@ impl Database for PgDatabase {
                     "SELECT {WIR_COLS}, count(*) OVER () AS total \
                      FROM work_items w LEFT JOIN states st ON st.id = w.state_id \
                      WHERE w.workspace_id = $1 AND w.project_id = $2 AND w.deleted_at IS NULL AND w.archived_at IS NULL AND NOT w.is_draft \
-                       AND ($3::timestamptz IS NULL OR w.updated_at > $3) AND ($4::uuid IS NULL OR w.created_by = $4) \
+                       AND ($3::timestamptz IS NULL OR w.updated_at > $3) AND {GUEST_MAY_SEE} \
                      ORDER BY {} LIMIT $5 OFFSET $6",
                     work_item_order_sql(q.order)
                 ),
-                &[&ws.0, &project.0, &q.updated_after, &created_by, &(limit + 1), &offset],
+                &[&ws.0, &project.0, &q.updated_after, &limited_guest, &(limit + 1), &offset],
             )
             .await
             .map_err(db_err)?;
@@ -2304,10 +2310,12 @@ impl Database for PgDatabase {
             // a page past the end has no row to carry the count
             None => c.pg()
                 .query_one(
-                    "SELECT count(*) FROM work_items w \
-                     WHERE w.workspace_id = $1 AND w.project_id = $2 AND w.deleted_at IS NULL AND w.archived_at IS NULL AND NOT w.is_draft \
-                       AND ($3::timestamptz IS NULL OR w.updated_at > $3) AND ($4::uuid IS NULL OR w.created_by = $4)",
-                    &[&ws.0, &project.0, &q.updated_after, &created_by],
+                    &format!(
+                        "SELECT count(*) FROM work_items w \
+                         WHERE w.workspace_id = $1 AND w.project_id = $2 AND w.deleted_at IS NULL AND w.archived_at IS NULL AND NOT w.is_draft \
+                           AND ($3::timestamptz IS NULL OR w.updated_at > $3) AND {GUEST_MAY_SEE}"
+                    ),
+                    &[&ws.0, &project.0, &q.updated_after, &limited_guest],
                 )
                 .await
                 .map_err(db_err)?
