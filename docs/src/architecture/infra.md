@@ -70,8 +70,10 @@ Behaviour worth knowing:
   its `# __PLACEMENT__` marker unless given `--no-placement`. `scripts/check-placement.sh`, a step of the `deps` CI
   job, checks that text in all three files. It cannot show that Cloudflare accepted the hint: Cloudflare adds a
   `cf-placement` header (`remote-XXX` or `local-XXX`) to a response when placement is on, and the Workers API reports
-  the Worker's placement. That the hint took effect on a deployed Worker is `[unverified: not run]`; it needs the
-  stage stack (issue #39).
+  the Worker's placement. That the hint takes effect on a deployed Worker was seen on 2026-11-11 `[verified 2026-11-11
+  1991731]` (issue #39): the Workers API returned `placement: {mode: "targeted", region: "aws:us-east-1"}`, a request
+  that entered at EWR answered `cf-placement: remote-IAD`, and requests from a laptop whose edge is IAD answered
+  `local-IAD`. The run is in research note 0004, section 10.3a; the stack it used was torn down afterwards.
 - **Request bodies are buffered.** The Worker reads the whole body (at most 8 MiB, the router's limit) before it
   routes, so there are no streaming uploads. The source comment records why: skipping this made a share of local
   runs fail with a request-stream error.
