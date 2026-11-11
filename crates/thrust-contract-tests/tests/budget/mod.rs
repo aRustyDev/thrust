@@ -116,6 +116,7 @@ async fn seed(t: &Target, f: &Fixture, key: &str) -> User {
     let quiet = User {
         id: UserId(Uuid::new_v4()),
         token: format!("tok-{}", Uuid::new_v4().simple()),
+        key: String::new(),
         email: format!("quiet-guest-{}@example.test", Uuid::new_v4().simple()),
         password: "not used: this guest has a session and no login".into(),
     };
