@@ -451,8 +451,8 @@ entries:
     array_path_regex: '^\$\.response\.body\.results\[\]\.(assignees|labels)$'
   reason: >-
     The people a work item is assigned to and its labels are listed by id here, and newest first on the pin (the corpus's item four has
-    `[member, owner]` and Thrust `[owner, member]`). The same people are listed, in another order. PROPOSED, not yet confirmed by the
-    owner (D-034).
+    `[member, owner]` and Thrust `[owner, member]`). The same people are listed, in another order. Confirmed by the owner as a
+    deviation, 2026-11-10 (D-034).
   evidence: corpus comparison on Thrust native-memory, 2026-11-10; the pin's models order users, labels and assignee links by `-created_at`
-  rust_expectation: fix
+  rust_expectation: n/a
   deviation_ref: D-034
