@@ -24,7 +24,12 @@ target and each owns only the fixture it made. It checks the route's gate (`rese
 with a fixture made first as the control) and nothing more; the positive path is tested in the adapters and by
 `scripts/oracle-v1-reset.sh`.
 
-- `crates/thrust-contract-tests/tests/contract.rs`: the portable suite. The create limit's test,
+- `crates/thrust-contract-tests/tests/contract.rs`: the portable suite. Its work-item tests (sequence and `sort_order`,
+  the list, soft delete, tenancy, the external key, concurrent creates, invalid input, the missing and the invalid key)
+  run over `/api/v1` and answer as Plane does: the fixture plants an API key for every user (`User.key`, sent as
+  `X-Api-Key`), a stranger is a 403, a list is newest first, and a member deletes only what they made. The tests of the
+  slice's own routes (sessions, the create limit, attachments, the outbox) still run over `/api/_slice`, until the
+  routes that replace them exist (G-26 in [status](../status.md)). The create limit's test,
   `create_is_rate_limited_per_user`, holds only what every limiter promises (the first `limit` creates pass, a 429 with a
   `Retry-After` comes within `2 x limit + 1`, and the limit is per user), because the Cloudflare Worker's limiter is a
   binding that counts approximately (D-007, [status](../status.md) D-18). The exact rule is tested where a limiter
