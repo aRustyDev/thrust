@@ -6,10 +6,11 @@
 #   THRUST_ADMIN_TOKEN_FILE=<0600 file holding the Worker's THRUST_ADMIN_TOKEN> \
 #     scripts/stage2-contract.sh [main|worker|bindings|cron|sweeper|panic]
 #
-# main      31 tests: the portable contract minus the 6 `oidc_` tests (they need the mock IdP on 127.0.0.1, which a
+# main      51 tests: the portable contract minus the 6 `oidc_` tests (they need the mock IdP on 127.0.0.1, which a
 #           deployed Worker cannot reach) (the deployed Worker's RL_CREATE binding must be 30 a minute, which
 #           wrangler.stage2.toml sets, and it needs a cheap argon2id cost, THRUST_ARGON2_M_KIB=64 THRUST_ARGON2_T=1
-#           THRUST_ARGON2_P=1, or every fixture seeds six passwords at the real cost)
+#           THRUST_ARGON2_P=1, or every fixture seeds six passwords at the real cost). It refuses a THRUST_EXPECT_CREATE_LIMIT
+#           above 1000: the rate-limit test would send millions of creates to a Worker whose binding was raised for the bench
 # worker     1 test : Durable Object WebSocket hibernation + SQLite
 # bindings   4 tests: the probe routes' admin gate, and one real operation per binding (rate limit, secrets store, email)
 # cron       1 test : needs the Worker deployed with THRUST_OUTBOX_FASTPATH=off
@@ -22,6 +23,9 @@
 #            limit is not a var, so it is set in the config the Worker is deployed from (`spike-0002-pg.sh deploy --create-limit`).
 # email      1 test : ONE real send through the EMAIL binding (a Worker deployed with THRUST_EMAIL_FROM and THRUST_EMAIL_TO);
 #            it sends a mail every time it is run
+# budget     1 test : the database round-trip budget of #39 (`contract.sh <target> budget`), alone, so it can be read against a
+#            deployed Postgres Worker. Needs test routes on and the Hyperdrive adapter set: the Worker's `x-thrust-db-round-trips`
+#            header is what it reads, and on any other Worker it fails rather than passing (a memory target must send none)
 #
 # The admin token is read from the file into THIS process's environment only: never on argv, never
 # printed. Exit status is cargo test's own (no pipe, no trailing echo); the passed count is checked
@@ -38,6 +42,17 @@ export THRUST_ADMIN_TOKEN
 export THRUST_BASE_URL="$BASE"
 export THRUST_EXPECT_CREATE_LIMIT="${THRUST_EXPECT_CREATE_LIMIT:-30}"
 export THRUST_STATE_SURVIVES_PANIC=1
+# `create_is_rate_limited_per_user` (in `main`, and alone as `ratelimit`) sends `limit` creates and then up to `limit + 1` more, one at
+# a time. Against a Worker whose binding was raised for the bench or the engine pass (1,000,000) it makes about two million requests and
+# does not end: it ran for 90 minutes on 2026-11-11 before it was stopped. Refuse a limit that large; those Workers need `main` run
+# without it, or a Worker deployed with the default 30.
+case "$PASS" in
+  main|ratelimit)
+    [ "$THRUST_EXPECT_CREATE_LIMIT" -le 1000 ] 2>/dev/null || {
+      echo "[stage2/$PASS] REFUSED: THRUST_EXPECT_CREATE_LIMIT=$THRUST_EXPECT_CREATE_LIMIT is not a number of at most 1000 (the rate-limit test sends up to 2 x limit + 1 creates); deploy the Worker with the default 30" >&2
+      exit 2
+    } ;;
+esac
 LOGDIR="${THRUST_LOGDIR:-$ROOT/target/stage2-logs}"
 mkdir -p "$LOGDIR"
 LOG="$LOGDIR/worker-cf-$PASS"
@@ -56,7 +71,7 @@ case "$INFO" in *"\"csrf_enforce\":$WANT_CSRF"*) ;; *) echo "[stage2/$PASS] VACU
 RS="$ROOT/scripts/rs"
 M="$ROOT/Cargo.toml"
 case "$PASS" in
-  main)     EXPECT=31; "$RS" cargo test --manifest-path "$M" -p thrust-contract-tests --test contract -- --skip sweeper_ --skip panic_ --skip blast_ --skip oidc_ --skip csrf_off_ >"$LOG.test.log" 2>&1 ;;
+  main)     EXPECT=51; "$RS" cargo test --manifest-path "$M" -p thrust-contract-tests --test contract -- --skip sweeper_ --skip panic_ --skip blast_ --skip oidc_ --skip csrf_off_ >"$LOG.test.log" 2>&1 ;;
   # the csrf_off_ tests that need nothing else the deployed Worker lacks (all six: none of them is an `oidc_` test)
   csrfoff)  EXPECT=6;  "$RS" cargo test --manifest-path "$M" -p thrust-contract-tests --test contract -- csrf_off_ >"$LOG.test.log" 2>&1 ;;
   worker)   EXPECT=1;  "$RS" cargo test --manifest-path "$M" -p thrust-contract-tests --test worker_only -- worker_room_ --test-threads=1 --nocapture >"$LOG.test.log" 2>&1 ;;
@@ -75,6 +90,8 @@ case "$PASS" in
   # Run it once: a second run sends a second mail.
   email)    EXPECT=1;  "$RS" cargo test --manifest-path "$M" -p thrust-contract-tests --test worker_only -- stage2_email_real_ --test-threads=1 --nocapture >"$LOG.test.log" 2>&1 ;;
   engine)   EXPECT=4;  "$RS" cargo test --manifest-path "$M" -p thrust-contract-tests --test engine -- --test-threads=1 --nocapture >"$LOG.test.log" 2>&1 ;;
+  # budget: the same test `contract.sh <target> budget` runs, against the deployed Worker (it is also one of the tests of `main`)
+  budget)   EXPECT=1;  "$RS" cargo test --manifest-path "$M" -p thrust-contract-tests --test contract -- list_endpoints_stay_within_five_db_round_trips --nocapture >"$LOG.test.log" 2>&1 ;;
   ratelimit) EXPECT=1; "$RS" cargo test --manifest-path "$M" -p thrust-contract-tests --test contract -- create_is_rate_limited_per_user --test-threads=1 --nocapture >"$LOG.test.log" 2>&1 ;;
   *) echo "unknown pass $PASS" >&2; exit 2 ;;
 esac
