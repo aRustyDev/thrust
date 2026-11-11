@@ -613,7 +613,9 @@ async fn create(
         }
     }
     if p.deleted_at {
-        return Err(crate::plane_500());
+        return Err(V1Error::internal(
+            "a deleted_at in the body: the pin creates the item soft-deleted, then raises (PQ-404)",
+        ));
     }
     let draft = IssueDraft {
         name: p.name.map(|(_, name)| name).unwrap_or_default(),
@@ -744,7 +746,11 @@ async fn search(V1Path(slug): V1Path<String>, ctx: Ctx, RawQuery(raw): RawQuery)
     // `int(limit)` raises on text, and a negative slice is refused by the ORM: both are the pin's 500
     let limit = match q.get("limit") {
         None => 10,
-        Some(s) => py_int(s).and_then(|n| u32::try_from(n).ok()).ok_or_else(crate::plane_500)?,
+        Some(s) => py_int(s).and_then(|n| u32::try_from(n).ok()).ok_or_else(|| {
+            V1Error::internal(
+                "search limit is not a non-negative integer: `int()` raises or the slice is negative (PQ-408)",
+            )
+        })?,
     };
     let workspace_search = q.get("workspace_search").map_or("false", String::as_str);
     let project = match q.get("project_id").filter(|p| !p.is_empty()) {

@@ -374,7 +374,9 @@ async fn create(
     let map = match json_body(&headers, &body)? {
         Body::Object(map) => map,
         // `{**request.data}` of a list raises, and the view's catch-all answers it
-        Body::Array => return Err(V1Error::error(StatusCode::INTERNAL_SERVER_ERROR, "An unexpected error occurred")),
+        Body::Array => {
+            return Err(V1Error::unexpected("a JSON array body to project create: `{**request.data}` raises (PQ-406)"))
+        }
     };
     let mut patch = project_patch(&ctx, &scope, &map, false).await?;
     // the pin's serializer reads no `logo_props` from a creation (measured: one that is given, in the emoji form, is ignored, as null is)
@@ -462,7 +464,9 @@ async fn update(
     let map = match json_body(&headers, &body)? {
         Body::Object(map) => map,
         // `{**request.data, ...}` of a list raises, and nothing in this view catches it
-        Body::Array => return Err(crate::plane_500()),
+        Body::Array => {
+            return Err(V1Error::internal("a JSON array body to project update: `{**request.data}` raises (PQ-406)"))
+        }
     };
     if before.listing.project.archived_at.is_some() {
         return Err(project_error(ProjectError::Archived, None));

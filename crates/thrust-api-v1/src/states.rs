@@ -207,7 +207,9 @@ async fn create(
     match thrust_core::create_state(&ctx.app, &scope, patch).await {
         // the pin looks the state that has the name up by the text as it was sent, which DRF trimmed before the database saw it: a
         // name sent with spaces round it finds nothing, and the view's `state.id` raises
-        Err(StateError::NameTaken { .. }) if padded => Err(crate::plane_500()),
+        Err(StateError::NameTaken { .. }) if padded => Err(V1Error::internal(
+            "a padded state name clashes: the pin looks it up untrimmed, finds nothing, and `state.id` raises",
+        )),
         made => Ok(Json(Value::Object(state_body(&made.map_err(|e| state_error(e, false))?)))),
     }
 }

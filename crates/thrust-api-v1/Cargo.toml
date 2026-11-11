@@ -15,6 +15,8 @@ thrust-contracts = { workspace = true }
 thrust-ports = { workspace = true }
 thrust-core = { workspace = true }
 thrust-api = { workspace = true }
+# The three 500 bodies of the pin and the one function that answers them, shared with the internal API (#51).
+thrust-plane-types = { workspace = true }
 # What the pin does to a work item's description before it keeps it (`validate_html_content`); the compat plane has the same one.
 thrust-editor-doc = { path = "../thrust-editor-doc", default-features = false, features = ["sanitize"] }
 serde = { workspace = true }
