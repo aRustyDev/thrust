@@ -1,0 +1,44 @@
+{
+  "exchanges": [
+    {
+      "name": "an asset of a project, by a member who is not in it",
+      "request": {
+        "as": "second@example.test",
+        "method": "GET",
+        "path": "/api/assets/v2/workspaces/journey-ws/<uuid:1>/"
+      },
+      "response": {
+        "body": {
+          "error": "You don't have access to this asset."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 403
+      }
+    },
+    {
+      "name": "the member's own asset, which the member marked uploaded",
+      "request": {
+        "as": "second@example.test",
+        "method": "GET",
+        "path": "/api/assets/v2/workspaces/journey-ws/<uuid:2>/"
+      },
+      "response": {
+        "body": null,
+        "headers": {
+          "content-type": "text/html; charset=utf-8",
+          "location": "<store_url>/uploads/<uuid:3>/<uuid:4>-cover.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=<credential>&X-Amz-Date=<amz_date>&X-Amz-Expires=<expires>&X-Amz-Signature=<signature>&X-Amz-SignedHeaders=host&response-content-disposition=attachment%3B%20filename%2A%3DUTF-8%27%27cover.png"
+        },
+        "status": 302
+      }
+    }
+  ],
+  "format_version": 1,
+  "recorded_from": "ba85d4d3d3",
+  "row": "S33-member",
+  "uses": [
+    "asset",
+    "second_asset"
+  ]
+}

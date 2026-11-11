@@ -1,0 +1,179 @@
+{
+  "exchanges": [
+    {
+      "name": "no session",
+      "request": {
+        "method": "GET",
+        "path": "/api/assets/v2/workspaces/journey-ws/<uuid:1>/"
+      },
+      "response": {
+        "body": {
+          "detail": "Authentication credentials were not provided."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 401
+      }
+    },
+    {
+      "name": "not a member of the workspace",
+      "request": {
+        "as": "second@example.test",
+        "method": "GET",
+        "path": "/api/assets/v2/workspaces/journey-ws/<uuid:1>/"
+      },
+      "response": {
+        "body": {
+          "error": "You don't have the required permissions."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 403
+      }
+    },
+    {
+      "name": "a workspace that does not exist",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/assets/v2/workspaces/no-such-workspace/<uuid:1>/"
+      },
+      "response": {
+        "body": {
+          "error": "You don't have the required permissions."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 403
+      }
+    },
+    {
+      "name": "the cover, uploaded: a redirect to the file",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/assets/v2/workspaces/journey-ws/<uuid:1>/"
+      },
+      "response": {
+        "body": null,
+        "headers": {
+          "content-type": "text/html; charset=utf-8",
+          "location": "<store_url>/uploads/<uuid:5>/<uuid:6>-cover.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=<credential>&X-Amz-Date=<amz_date>&X-Amz-Expires=<expires>&X-Amz-Signature=<signature>&X-Amz-SignedHeaders=host&response-content-disposition=attachment%3B%20filename%2A%3DUTF-8%27%27cover.png"
+        },
+        "status": 302
+      }
+    },
+    {
+      "name": "a file with a name that has a space and a letter outside ASCII",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/assets/v2/workspaces/journey-ws/<uuid:2>/"
+      },
+      "response": {
+        "body": null,
+        "headers": {
+          "content-type": "text/html; charset=utf-8",
+          "location": "<store_url>/uploads/<uuid:5>/<uuid:7>-my%20cover%20%C3%A9.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=<credential>&X-Amz-Date=<amz_date>&X-Amz-Expires=<expires>&X-Amz-Signature=<signature>&X-Amz-SignedHeaders=host&response-content-disposition=attachment%3B%20filename%2A%3DUTF-8%27%27my%2520cover%2520%25C3%25A9.png"
+        },
+        "status": 302
+      }
+    },
+    {
+      "name": "an asset that was never uploaded",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/assets/v2/workspaces/journey-ws/<uuid:3>/"
+      },
+      "response": {
+        "body": {
+          "error": "The requested asset could not be found."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 404
+      }
+    },
+    {
+      "name": "an asset that does not exist",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/assets/v2/workspaces/journey-ws/<uuid:8>/"
+      },
+      "response": {
+        "body": {
+          "error": "The required object does not exist."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 404
+      }
+    },
+    {
+      "name": "an id that is not an id",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/assets/v2/workspaces/journey-ws/nope/"
+      },
+      "response": {
+        "body": {
+          "error": "Page not found."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 404
+      }
+    },
+    {
+      "name": "an asset of another workspace",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/assets/v2/workspaces/journey-two/<uuid:1>/"
+      },
+      "response": {
+        "body": {
+          "error": "The required object does not exist."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 404
+      }
+    },
+    {
+      "name": "an asset in its own workspace, whose file was never uploaded",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/assets/v2/workspaces/journey-two/<uuid:4>/"
+      },
+      "response": {
+        "body": null,
+        "headers": {
+          "content-type": "text/html; charset=utf-8",
+          "location": "<store_url>/uploads/<uuid:9>/<uuid:10>-cover.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=<credential>&X-Amz-Date=<amz_date>&X-Amz-Expires=<expires>&X-Amz-Signature=<signature>&X-Amz-SignedHeaders=host&response-content-disposition=attachment%3B%20filename%2A%3DUTF-8%27%27cover.png"
+        },
+        "status": 302
+      }
+    }
+  ],
+  "format_version": 1,
+  "recorded_from": "ba85d4d3d3",
+  "row": "S33",
+  "uses": [
+    "asset",
+    "named",
+    "pending",
+    "other_asset"
+  ]
+}

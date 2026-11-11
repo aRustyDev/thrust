@@ -23,6 +23,17 @@ pub struct Rules {
     headers_keep: Vec<String>,
     origin_headers: Vec<String>,
     origin_token: String,
+    presigned: Presigned,
+}
+
+/// The `presigned_url` rule of normalise.json: what a URL of the object store looks like once what a correct implementation cannot
+/// reproduce is taken out of it.
+struct Presigned {
+    marker: String,
+    body_paths: Vec<String>,
+    headers: Vec<String>,
+    origin_token: String,
+    query_tokens: BTreeMap<String, String>,
 }
 
 fn strings(v: &Value) -> Vec<String> {
@@ -58,6 +69,18 @@ impl Rules {
             headers_keep: strings(&v["headers_keep"]),
             origin_headers: strings(&v["header_origin_rewrite"]["headers"]),
             origin_token: v["header_origin_rewrite"]["token"].as_str().expect("token").to_string(),
+            presigned: Presigned {
+                marker: v["presigned_url"]["marker"].as_str().expect("marker").to_string(),
+                body_paths: strings(&v["presigned_url"]["body_paths"]),
+                headers: strings(&v["presigned_url"]["headers"]),
+                origin_token: v["presigned_url"]["origin_token"].as_str().expect("origin_token").to_string(),
+                query_tokens: v["presigned_url"]["query_tokens"]
+                    .as_object()
+                    .expect("query_tokens")
+                    .iter()
+                    .map(|(k, t)| (k.clone(), t.as_str().expect("token").to_string()))
+                    .collect(),
+            },
         }
     }
 }
@@ -208,8 +231,15 @@ pub fn value_with(rules: &Rules, ids: &mut Ids, v: &Value, path: &str, keep_time
                 let p = if path.is_empty() { k.clone() } else { format!("{path}.{k}") };
                 let child = &m[k];
                 let token = rules.opaque.get(&p).or_else(|| rules.opaque_keys.get(k));
+                let presigned = child
+                    .as_str()
+                    .filter(|_| rules.presigned.body_paths.contains(&p))
+                    .and_then(|s| presigned_url(rules, s));
                 let normalised = if let (Some(token), false) = (token, child.is_null()) {
                     Value::String(token.clone())
+                } else if let Some(signed) = presigned {
+                    // the ids in the path (the workspace, the random part of the object key) are numbered with the others
+                    Value::String(ids.scrub(&signed))
                 } else if !keep_times
                     && child
                         .as_str()
@@ -248,16 +278,53 @@ fn replace_origin(v: &str, token: &str) -> String {
     v.to_string()
 }
 
-fn headers(rules: &Rules, hs: Option<&Value>) -> Value {
+/// A presigned object-store URL, normalised; `None` when `s` is not one (the Python half is `presigned_url` in normalise.py).
+///
+/// A URL is presigned when it has a query that holds the parameter named by the rule's `marker`. Then the scheme and authority are
+/// replaced by the rule's origin token, the value of each parameter the rule names is replaced by its token, and the parameters are
+/// put in order of name (a stable sort on the text before the first `=`). Names, the other values and their percent-encoding, the
+/// path and any fragment are kept. The caller numbers the ids in the result.
+fn presigned_url(rules: &Rules, s: &str) -> Option<String> {
+    let cfg = &rules.presigned;
+    let (base, rest) = s.split_once('?')?;
+    let (query, tail) = match rest.find('#') {
+        Some(i) => rest.split_at(i),
+        None => (rest, ""),
+    };
+    // the text before the first `=`, or all of it when there is none, as Python's `partition("=")[0]`
+    let name_of = |p: &str| p.split_once('=').map_or_else(|| p.to_string(), |(n, _)| n.to_string());
+    let params: Vec<&str> = query.split('&').collect();
+    if !params.iter().any(|p| name_of(p) == cfg.marker) {
+        return None;
+    }
+    let mut out: Vec<String> = params
+        .iter()
+        .map(|p| match (cfg.query_tokens.get(&name_of(p)), p.contains('=')) {
+            (Some(token), true) => format!("{}={token}", name_of(p)),
+            _ => (*p).to_string(),
+        })
+        .collect();
+    out.sort_by_key(|p| name_of(p));
+    Some(format!("{}?{}{tail}", replace_origin(base, &cfg.origin_token), out.join("&")))
+}
+
+/// The response headers that are contract. A header the presigned rule names that holds a presigned URL is normalised as one, with
+/// its ids numbered; any other `location` has its scheme and authority replaced. Visited in order of lower-cased name, as the
+/// Python half does, because that is the order ids are numbered in.
+fn headers(rules: &Rules, ids: &mut Ids, hs: Option<&Value>) -> Value {
     let mut out = Map::new();
     if let Some(Value::Object(m)) = hs {
-        for (k, v) in m {
-            let lower = k.to_lowercase();
+        let mut sorted: Vec<(String, &Value)> = m.iter().map(|(k, v)| (k.to_lowercase(), v)).collect();
+        sorted.sort_by(|a, b| a.0.cmp(&b.0));
+        for (lower, v) in sorted {
             if !rules.headers_keep.contains(&lower) {
                 continue;
             }
-            let value = match v.as_str() {
-                Some(s) if rules.origin_headers.contains(&lower) => {
+            let signed =
+                v.as_str().filter(|_| rules.presigned.headers.contains(&lower)).and_then(|s| presigned_url(rules, s));
+            let value = match (signed, v.as_str()) {
+                (Some(signed), _) => Value::String(ids.scrub(&signed)),
+                (None, Some(s)) if rules.origin_headers.contains(&lower) => {
                     Value::String(replace_origin(s, &rules.origin_token))
                 }
                 _ => v.clone(),
@@ -268,7 +335,8 @@ fn headers(rules: &Rules, hs: Option<&Value>) -> Value {
     Value::Object(out)
 }
 
-/// Normalise one exchange in the fixed traversal order: request path, request body, response body.
+/// Normalise one exchange in the fixed traversal order: request path, request body, response headers (only a presigned URL in one
+/// has ids to number), response body.
 pub fn exchange(rules: &Rules, ids: &mut Ids, ex: &Value) -> Value {
     let (req, resp) = (&ex["request"], &ex["response"]);
     let mut out_req = json!({"method": req["method"], "path": ids.scrub(req["path"].as_str().expect("request.path"))});
@@ -278,6 +346,7 @@ pub fn exchange(rules: &Rules, ids: &mut Ids, ex: &Value) -> Value {
     if let Some(body) = req.get("body").filter(|b| !b.is_null()) {
         out_req["body"] = value_with(rules, ids, body, "", true);
     }
+    let out_headers = headers(rules, ids, resp.get("headers"));
     let body = match resp.get("body").filter(|b| !b.is_null()) {
         Some(b) => value(rules, ids, b, ""),
         None => Value::Null,
@@ -285,6 +354,6 @@ pub fn exchange(rules: &Rules, ids: &mut Ids, ex: &Value) -> Value {
     json!({
         "name": ex["name"],
         "request": out_req,
-        "response": {"status": resp["status"], "headers": headers(rules, resp.get("headers")), "body": body},
+        "response": {"status": resp["status"], "headers": out_headers, "body": body},
     })
 }

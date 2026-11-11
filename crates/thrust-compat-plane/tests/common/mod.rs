@@ -214,7 +214,9 @@ pub fn project(ex: &Value) -> Value {
     if let Some(form) = ex["request"]["body"].get("form").cloned() {
         ex["request"]["body"] = form;
     }
-    if ex["response"]["status"] == 302 {
+    // (a redirect to the object store is the asset stage's, projected by `project_asset`)
+    let to_the_app = ex["response"]["headers"]["location"].as_str().is_some_and(|l| !l.starts_with(STORE));
+    if ex["response"]["status"] == 302 && to_the_app {
         let loc = ex["response"]["headers"]["location"].as_str().expect("a 302 with a location").to_string();
         let rest =
             loc.strip_prefix("<base_url>").unwrap_or_else(|| panic!("location {loc:?} must start with <base_url>"));
@@ -242,6 +244,206 @@ pub fn project(ex: &Value) -> Value {
         ex["response"] = json!({"status": status, "headers": {"content-type": "application/json"}, "body": body});
     }
     ex
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// The asset stage's projection (D-035). The pin presigns URLs of an object store the browser talks to; Thrust has none it can
+// reach, so its answers differ in the same few places, and the fixtures keep the pin's raw answer (nothing is edited). The recorded
+// fixture is projected onto Thrust's shape, by these rules and no others:
+//   S28's `upload_data.url`     a presigned URL of the store becomes `<upload_url>`; Thrust's own address of this API becomes the
+//                               same, when it names the asset the answer names and holds a token (`project_got`);
+//   S28 for a kind but a cover  a 200 becomes the 400 that says the kind is not built (D-035 (4)), and what that 200 numbered goes;
+//   302 to the store, S33       its `location` becomes `<object_route>`; Thrust's, when it is the object route of the asset the
+//                               request names, the same;
+//   302 to the store, the cover's own address
+//                               becomes a 200 with the type the URL pins and the body `<file>`, Thrust serves the picture itself;
+//   the cover's own address     an unknown asset, and an uploaded asset of another kind, are the one 404 Thrust gives (D-035 (3));
+//   three exchanges that exist only because the pin does not look at the object on S29 (D-035 (2)), by name in `LOOKS_AT_THE_OBJECT`.
+// The ids the dropped parts numbered (the workspace and the random part of a presigned key, the asset of a refused kind) are taken
+// out of the numbering, as Thrust never makes them (`compact_ids`).
+// ---------------------------------------------------------------------------------------------------------------------
+
+/// What a URL of the pin's object store starts with once normalised (`presigned_url.origin_token` in normalise.json).
+const STORE: &str = "<store_url>/";
+
+/// The exchanges of S29 and S33 whose pin answer comes from not looking at the object: the asset was made and never uploaded, and
+/// the pin marked it uploaded anyway. Thrust looks (D-035 (2)), so what it answers is what it answers to an asset that is not
+/// uploaded. (row, exchange, status, body).
+pub const LOOKS_AT_THE_OBJECT: &[(&str, &str, u16, &str)] = &[
+    // (a member's own cover, made and never uploaded, is one of these in S29 and S33 as well)
+    ("S29-member", "the member's own asset", 400, r#"{"error":"The file has not been uploaded."}"#),
+    (
+        "S33-member",
+        "the member's own asset, which the member marked uploaded",
+        404,
+        r#"{"error":"The requested asset could not be found."}"#,
+    ),
+    // an asset Thrust never made: it does not make an issue description
+    (
+        "S29",
+        "an issue description whose file was never uploaded: the pin does not look",
+        404,
+        r#"{"error":"The required object does not exist."}"#,
+    ),
+    (
+        "S29",
+        "an asset of the other workspace whose file was never uploaded",
+        400,
+        r#"{"error":"The file has not been uploaded."}"#,
+    ),
+    (
+        "S33",
+        "an asset in its own workspace, whose file was never uploaded",
+        404,
+        r#"{"error":"The requested asset could not be found."}"#,
+    ),
+];
+
+fn json_answer(status: u16, body: Value) -> Value {
+    json!({"status": status, "headers": {"content-type": "application/json"}, "body": body})
+}
+
+fn is_s28(method: &str, path: &str) -> bool {
+    method == "POST"
+        && path.strip_prefix("/api/assets/v2/workspaces/").is_some_and(|rest| !rest.trim_end_matches('/').contains('/'))
+}
+
+/// A recorded exchange of the asset stage as Thrust is expected to answer it (the rules above); any other is unchanged.
+fn project_asset(row: &str, ex: Value) -> Value {
+    let mut ex = ex;
+    let (method, path) = (
+        ex["request"]["method"].as_str().unwrap_or("").to_string(),
+        ex["request"]["path"].as_str().unwrap_or("").to_string(),
+    );
+    let status = ex["response"]["status"].as_u64().unwrap_or(0);
+    let name = ex["name"].as_str().unwrap_or("").to_string();
+    let static_route = path.starts_with("/api/assets/v2/static/");
+
+    if let Some((_, _, status, body)) = LOOKS_AT_THE_OBJECT.iter().find(|(r, n, _, _)| *r == row && *n == name) {
+        ex["response"] = json_answer(*status, serde_json::from_str(body).expect("a body"));
+    } else if is_s28(&method, &path) && status == 200 && ex["request"]["body"]["entity_type"] != "PROJECT_COVER" {
+        ex["response"] =
+            json_answer(400, json!({"error": "This kind of file cannot be uploaded yet.", "status": false}));
+    } else if is_s28(&method, &path) && status == 200 {
+        if ex["response"]["body"]["upload_data"]["url"].as_str().is_some_and(|u| u.starts_with(STORE)) {
+            ex["response"]["body"]["upload_data"]["url"] = json!("<upload_url>");
+        }
+    } else if status == 302 && ex["response"]["headers"]["location"].as_str().is_some_and(|l| l.starts_with(STORE)) {
+        if static_route {
+            // the type the pin pins on the picture it redirects to, as a parameter of the URL
+            let loc = ex["response"]["headers"]["location"].as_str().unwrap_or("").to_string();
+            let pinned = query_pairs(loc.split_once('?').map_or("", |(_, q)| q))
+                .into_iter()
+                .find(|(k, _)| k == "response-content-type")
+                .map(|(_, v)| v)
+                .unwrap_or_else(|| panic!("the pin pins the type of a picture it shows inline: {loc}"));
+            ex["response"] = json!({"status": 200, "headers": {"content-type": pinned}, "body": "<file>"});
+        } else {
+            ex["response"]["headers"]["location"] = json!("<object_route>");
+        }
+    } else if static_route && status == 404 && ex["response"]["body"]["error"] == "The required object does not exist."
+    {
+        ex["response"]["body"] = json!({"error": "The requested asset could not be found."});
+    } else if static_route && status == 400 && ex["response"]["body"]["error"] == "Invalid entity type." {
+        ex["response"] = json_answer(404, json!({"error": "The requested asset could not be found."}));
+    }
+    ex
+}
+
+/// Thrust's raw answer to an exchange of the asset stage, with what is its own to the API put in the shape `project_asset` gave the
+/// recording: each only when it is what it should be, so that a wrong address stays a divergence.
+fn project_got(raw: &mut Value) {
+    let id_of = |s: &str| s.parse::<Uuid>().ok();
+    let asked = raw["request"]["path"].as_str().unwrap_or("").to_string();
+    let (status, content_type) = (
+        raw["response"]["status"].as_u64().unwrap_or(0),
+        raw["response"]["headers"]["content-type"].as_str().unwrap_or("").to_string(),
+    );
+    // S28: the address of this API for the upload, which holds the asset it was made for and a token
+    if let (Some(url), Some(asset)) = (
+        raw["response"]["body"]["upload_data"]["url"].as_str(),
+        raw["response"]["body"]["asset_id"].as_str().and_then(id_of),
+    ) {
+        let token = url.strip_prefix(&format!("/api/assets/v2/upload/{asset}/")).and_then(|t| t.strip_suffix('/'));
+        if token.is_some_and(|t| t.len() == 64 && t.bytes().all(|b| b.is_ascii_hexdigit())) {
+            raw["response"]["body"]["upload_data"]["url"] = json!("<upload_url>");
+        }
+    }
+    // S33: the route that sends the bytes, of the asset the request names
+    if status == 302 {
+        let segments: Vec<&str> = asked.trim_end_matches('/').split('/').collect();
+        let (slug, asset) = (segments.get(segments.len().wrapping_sub(2)), segments.last());
+        if let (Some(slug), Some(asset), Some(location)) =
+            (slug, asset, raw["response"]["headers"]["location"].as_str())
+        {
+            if location == format!("/api/assets/v2/workspaces/{slug}/{asset}/object/") {
+                raw["response"]["headers"]["location"] = json!("<object_route>");
+            }
+        }
+    }
+    // the cover's own address: the picture
+    if status == 200 && content_type.starts_with("image/") {
+        raw["response"]["body"] = json!("<file>");
+    }
+}
+
+/// Take the ids that the projection left out of the numbering: every `<uuid:N>` of the exchanges is renumbered by its rank among the
+/// ids that are still there (the first `kept` ones, which are the ids the fixture `uses`, always stay), as Thrust, which makes none
+/// of the dropped ones, numbers them by first appearance.
+pub fn compact_ids(exchanges: Vec<Value>, kept: usize) -> Vec<Value> {
+    fn tokens(v: &Value, out: &mut std::collections::BTreeSet<usize>) {
+        match v {
+            Value::String(s) => {
+                let _ = rewrite(s, &mut |n| {
+                    out.insert(n);
+                    n
+                });
+            }
+            Value::Array(a) => a.iter().for_each(|x| tokens(x, out)),
+            Value::Object(m) => m.values().for_each(|x| tokens(x, out)),
+            _ => {}
+        }
+    }
+    /// Replace each `<uuid:N>` of `s` by `<uuid:f(N)>`; the returned text is the result.
+    fn rewrite(s: &str, f: &mut dyn FnMut(usize) -> usize) -> String {
+        let (mut out, mut rest) = (String::new(), s);
+        while let Some(i) = rest.find("<uuid:") {
+            let after = &rest[i + "<uuid:".len()..];
+            let digits: String = after.chars().take_while(char::is_ascii_digit).collect();
+            if !digits.is_empty() && after[digits.len()..].starts_with('>') {
+                out.push_str(&rest[..i]);
+                out.push_str(&format!("<uuid:{}>", f(digits.parse().expect("digits"))));
+                rest = &after[digits.len() + 1..];
+            } else {
+                out.push_str(&rest[..i + "<uuid:".len()]);
+                rest = after;
+            }
+        }
+        out.push_str(rest);
+        out
+    }
+    fn apply(v: &Value, f: &mut dyn FnMut(usize) -> usize) -> Value {
+        match v {
+            Value::String(s) => Value::String(rewrite(s, f)),
+            Value::Array(a) => Value::Array(a.iter().map(|x| apply(x, f)).collect()),
+            Value::Object(m) => Value::Object(m.iter().map(|(k, x)| (k.clone(), apply(x, f))).collect()),
+            other => other.clone(),
+        }
+    }
+    let mut present: std::collections::BTreeSet<usize> = (1..=kept).collect();
+    exchanges.iter().for_each(|e| tokens(e, &mut present));
+    let rank: Vec<usize> = present.into_iter().collect();
+    let renumber = |n: usize| rank.iter().position(|r| *r == n).map_or(n, |p| p + 1);
+    exchanges.iter().map(|e| apply(e, &mut |n| renumber(n))).collect()
+}
+
+/// A recorded fixture as Thrust is expected to answer it: each exchange projected (the sign-in redirects of D-022, the asset stage's
+/// of D-035) and the numbering of ids closed up over what was dropped.
+pub fn project_fixture(fixture: &Value) -> Vec<Value> {
+    let row = fixture["row"].as_str().unwrap_or("");
+    let projected: Vec<Value> =
+        fixture["exchanges"].as_array().expect("exchanges").iter().map(|ex| project_asset(row, project(ex))).collect();
+    compact_ids(projected, fixture["uses"].as_array().map_or(0, Vec::len))
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -353,10 +555,16 @@ pub fn divergences_with(router: &Router, fixture: &Value, jar: &mut Jar) -> Vec<
             .unwrap_or_else(|| panic!("the fixture uses {name:?}, which no earlier fixture binds"));
         ids.preseed(id);
     }
+    // what the recorder did before the first exchange that is not a request of the route: the browser's upload of the files S29 is
+    // told were put (`preconditions` says so in words; the rows that need it are named here)
+    if fixture["row"] == "S29" {
+        for name in ["asset", "named"] {
+            upload_bound_file(router, jar, name);
+        }
+    }
     let mut out = Vec::new();
-    for recorded in fixture["exchanges"].as_array().expect("exchanges") {
-        let want = project(recorded);
-        let raw = send(router, &want["name"], &resolve_ids(&want["request"], &ids), jar);
+    for want in project_fixture(fixture) {
+        let mut raw = send(router, &want["name"], &resolve_ids(&want["request"], &ids), jar);
         // an id this exchange made that later fixtures use (`binds`: {name: {"exchange": .., "path": [..]}})
         for (name, bind) in fixture["binds"].as_object().into_iter().flatten() {
             if bind["exchange"] == want["name"] {
@@ -364,11 +572,25 @@ pub fn divergences_with(router: &Router, fixture: &Value, jar: &mut Jar) -> Vec<
                 for key in bind["path"].as_array().expect("a path") {
                     at = &at[key.as_str().expect("a key")];
                 }
-                if let Some(id) = at.as_str() {
-                    jar.insert(format!("bind:{name}"), id.to_string());
+                match at.as_str() {
+                    Some(id) => {
+                        jar.insert(format!("bind:{name}"), id.to_string());
+                    }
+                    // Thrust refused to make what the pin made (D-035: it builds one kind of asset): a later row that names it
+                    // finds an id that no asset has, which is what the pin's own row for it would say of a refused one
+                    None => {
+                        let n = jar.keys().filter(|k| k.starts_with("bind:")).count() as u128;
+                        let nothing = Uuid::from_u128(0xBAD0_0000_0000_0000_0000_0000_0000_0000 + n);
+                        jar.insert(format!("bind:{name}"), nothing.to_string());
+                    }
+                }
+                // and where the browser sends the bytes of an asset this made
+                if let Some(upload) = raw["response"]["body"].get("upload_data") {
+                    jar.insert(format!("bind:{name}:upload"), upload.to_string());
                 }
             }
         }
+        project_got(&mut raw);
         let got = normalise::exchange(&rules, &mut ids, &raw);
         let mut lines = Vec::new();
         if got != want {
@@ -397,15 +619,67 @@ pub fn divergences_with(router: &Router, fixture: &Value, jar: &mut Jar) -> Vec<
     out
 }
 
+/// The browser's upload of the file an asset the journey made is for: to the address S28 answered, with the type it named, no
+/// session. The recorder put the 70 bytes of a PNG; any bytes of the size the asset was made for are as good, and Thrust is not asked
+/// what is in them.
+fn upload_bound_file(router: &Router, jar: &Jar, name: &str) {
+    let upload: Value =
+        serde_json::from_str(jar.get(&format!("bind:{name}:upload")).unwrap_or_else(|| panic!("no upload for {name}")))
+            .expect("upload_data");
+    let size: usize =
+        upload["headers"]["Content-Length"].as_str().and_then(|s| s.parse().ok()).expect("a Content-Length");
+    let content_type = upload["headers"]["Content-Type"].as_str().expect("a Content-Type");
+    let r = raw(
+        router,
+        jar,
+        "",
+        "PUT",
+        upload["url"].as_str().expect("a url"),
+        &[("content-type", content_type)],
+        vec![0x89; size],
+    );
+    assert_eq!(r.status, 200, "the upload of {name}: {:?}", String::from_utf8_lossy(&r.body));
+}
+
+/// The second account as a member of the journey's workspace, which is what the recorder made them by an invitation that they took.
+fn make_second_a_member(db: &MemoryDatabase) {
+    let (admin, second) = (user_id(db, "journey@example.test"), user_id(db, "second@example.test"));
+    let access = futures_executor::block_on(db.workspace_access(&WorkspaceSlug::new("journey-ws"), admin))
+        .unwrap()
+        .expect("the journey's workspace");
+    seed(
+        db,
+        SeedFixture {
+            workspace_roles: vec![SeedWorkspaceRole {
+                workspace_id: access.workspace_id,
+                user_id: second,
+                role: Role::Member,
+            }],
+            ..SeedFixture::default()
+        },
+    );
+}
+
 /// Replay the journey up to `target` on one world, so `target`'s requests find the state the recording had (a user made
 /// by an earlier step), then replay `target` itself, after `edit` has had its way with the recording. Only `target`'s
 /// divergences are returned: each earlier step has a test of its own.
 pub fn journey(rows: &[&str], target: &str, edit: impl FnOnce(&mut Value)) -> Vec<String> {
-    let router = app();
+    let (router, db) = app_with_db();
     let mut jar = Jar::new();
+    // the rows of a member who is not an admin: the recorder made the second user a member of the workspace (an invitation, taken)
+    // after every fixture that needs them outside it, and before the first of these, which earlier rows of the replay are
+    let mut member = false;
+    let mut become_member = |row: &str| {
+        if row.ends_with("-member") && !member {
+            make_second_a_member(&db);
+            member = true;
+        }
+    };
     for row in rows.iter().take_while(|r| **r != target) {
+        become_member(row);
         let _ = divergences_with(&router, &load_fixture(row), &mut jar);
     }
+    become_member(target);
     let mut fixture = load_fixture(target);
     edit(&mut fixture);
     divergences_with(&router, &fixture, &mut jar)

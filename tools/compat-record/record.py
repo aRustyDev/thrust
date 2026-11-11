@@ -14,9 +14,16 @@ harness (crates/thrust-compat-plane/tests/parity/normalise.json) and writes one 
     uv run tools/compat-record/record.py
     uv run tools/compat-record/record.py --self-test
 
+The asset rows (S28, S29, S31, S33, X05, the stage at the end of the journey) need the oracle's api to sign a PUT upload
+(`AWS_S3_UPLOAD_METHOD=put`, the fork's addition to settings/storage.py in the pin) and its object store reachable: the presigned
+URLs name `plane-minio:9000`, a host only the compose network resolves, so the recorder sends the browser's PUT, and follows the
+redirects the reads answer, to the port the oracle publishes (`--store-url`, 127.0.0.1:19000) with the Host header the URL was
+signed for. `tools/compat-record/fresh-oracle.sh` brings the stack up that way (it merges `oracle-assets.yml`). The PUT is not a
+Plane route and has no fixture; its raw exchange is in --raw-dir.
+
 THE STACK MUST BE FRESH. The journey creates users and the instance admin, so a second run against the same stack is
 refused with a message saying so; recreate it with `docker compose -f oracle/compose.oracle.yml --env-file
-oracle/.env.oracle down -v` and then `up -d --wait`. (Two recordings on two fresh stacks are byte-identical; that is the
+oracle/.env.oracle down -v` and then `up -d --wait` (or run fresh-oracle.sh, which does both and adds the asset override). (Two recordings on two fresh stacks are byte-identical; that is the
 reproducibility check.)
 
 The pin throttles sign-in, sign-up and email-check to 10 per minute per address, so the recorder paces itself and a full
@@ -25,7 +32,9 @@ written, never hand-edited. The CSRF token of a form post is transport, not cont
 """
 
 import argparse
+import base64
 import collections
+import hashlib
 import http.cookiejar
 import json
 import os
@@ -1026,9 +1035,18 @@ def issue_path(issue, project=None, slug=WS_ONE):
     return f"{issues_path(project, slug)}{issue}/"
 
 
-def oracle_docker(*args):
-    """A `docker` command against the oracle stack's containers; its output, or an exit saying what failed."""
-    done = subprocess.run(["docker", *args], capture_output=True, text=True)
+class OracleTimeout(Exception):
+    """A `docker` command against the oracle did not answer in time. The pin's RabbitMQ sometimes leaves a `rabbitmqctl` hanging for
+    good (seen once in a recording: a `list_queues` that never returned and stopped the run for ten minutes); asking again works."""
+
+
+def oracle_docker(*args, timeout=300):
+    """A `docker` command against the oracle stack's containers; its output, an `OracleTimeout` if it does not answer, or an exit
+    saying what failed."""
+    try:
+        done = subprocess.run(["docker", *args], capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        raise OracleTimeout(f"docker {' '.join(args)} did not answer in {timeout} seconds")
     if done.returncode != 0:
         raise SystemExit(f"docker {' '.join(args)} failed: {done.stdout!r} {done.stderr!r}")
     return done.stdout
@@ -1053,10 +1071,15 @@ def drain_worker(timeout=300):
     deadline = time.time() + timeout
     clear = 0
     while time.time() < deadline:
-        queues = oracle_docker("exec", mq, "rabbitmqctl", "list_queues", "-p", "plane", "name", "messages", "messages_unacknowledged")
+        try:
+            queues = oracle_docker("exec", mq, "rabbitmqctl", "list_queues", "-p", "plane", "name", "messages", "messages_unacknowledged", timeout=30)
+            inspected = subprocess.run(["docker", "exec", worker, "celery", "-A", "plane", "inspect", "active", "--json", "--timeout", "5"], capture_output=True, text=True, timeout=60)
+        except (OracleTimeout, subprocess.TimeoutExpired) as e:
+            print(f"  drain: {e}; looking again", flush=True)
+            clear = 0
+            continue
         rows = [line.split("\t") for line in queues.splitlines() if line.startswith("celery\t")]
         waiting = bool(rows) and (rows[0][1] != "0" or rows[0][2] != "0")
-        inspected = subprocess.run(["docker", "exec", worker, "celery", "-A", "plane", "inspect", "active", "--json", "--timeout", "5"], capture_output=True, text=True)
         try:
             running = any(json.loads(inspected.stdout).values())
         except ValueError:
@@ -1255,6 +1278,305 @@ def step_x02(base, pacer):
     return out
 
 
+# ---------------------------------------------------------------------------------------------------------------------
+# Assets (stage 6): the cover image of a project and what the stock app does around it. It runs at the END of the journey, after
+# every step that reads a project, because attaching a cover changes the project's answer and the fixtures before it must not move.
+# ---------------------------------------------------------------------------------------------------------------------
+
+# The file the journey uploads: a 1x1 PNG. The stock app sniffs the type from the bytes (`image/png`) and declares its length.
+COVER_PNG = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==")
+COVER = {"entity_identifier": "", "entity_type": "PROJECT_COVER", "name": "cover.png", "size": len(COVER_PNG), "type": "image/png"}
+NO_SUCH_ASSET = "2b8f4c6a-5d1e-4a39-b7c2-9e0f1a3d5c78"
+ENTITY_TYPES = [
+    "ISSUE_ATTACHMENT", "ISSUE_DESCRIPTION", "COMMENT_DESCRIPTION", "PAGE_DESCRIPTION", "USER_COVER", "USER_AVATAR",
+    "WORKSPACE_LOGO", "PROJECT_COVER", "DRAFT_ISSUE_ATTACHMENT", "DRAFT_ISSUE_DESCRIPTION",
+]  # FileAsset.EntityTypeContext in the pin, in its order
+STORE_URL = "http://127.0.0.1:19000"
+RAW_DIR = None
+
+
+def save_raw(name, obj):
+    """A raw (never committed) record of something that is not a fixture exchange: the upload, the prerequisites."""
+    RAW_DIR.mkdir(parents=True, exist_ok=True)
+    (RAW_DIR / f"{name}.raw.json").write_text(json.dumps(obj, indent=2, sort_keys=True) + "\n")
+
+
+def store_request(method, url, headers=None, body=None):
+    """One request to the object store as a browser makes it, to a URL the oracle signed: no cookies, no redirects followed, and the
+    URL's own Host header (what was signed) sent to `STORE_URL`, which is where the compose network's `plane-minio:9000` is
+    published on this host. Returns the raw record (for --raw-dir) and the bytes of the answer."""
+    parts = urllib.parse.urlsplit(url)
+    target = STORE_URL + parts.path + (f"?{parts.query}" if parts.query else "")
+    sent = {**(headers or {}), "Host": parts.netloc}
+    req = urllib.request.Request(target, data=body, method=method, headers=sent)
+    try:
+        resp = urllib.request.build_opener(NoRedirect).open(req, timeout=30)
+    except urllib.error.HTTPError as e:
+        resp = e
+    except urllib.error.URLError as e:
+        raise SystemExit(f"the object store did not answer at {STORE_URL} ({e.reason}): is the oracle up, and is --store-url the port it publishes for plane-minio?")
+    raw = resp.read()
+    status = getattr(resp, "status", None) or resp.code
+    return {
+        "request": {"method": method, "url": url, "sent_to": target, "headers": sent, "body_length": len(body or b"")},
+        "response": {
+            "status": status,
+            "headers": {k: v for k, v in resp.headers.items()},
+            "body_length": len(raw),
+            "body_sha256": hashlib.sha256(raw).hexdigest(),
+            "body_text": raw[:2000].decode("utf-8", "replace") if status >= 400 else None,
+        },
+    }, raw
+
+
+def upload_file(name, upload_data, payload=COVER_PNG):
+    """What the stock app does between the create and the PATCH: PUT the file to the presigned URL with the signed Content-Type (the
+    browser sets Content-Length from the body and the app does not send it), no cookies. A precondition of the PATCH, not a route:
+    its exchange goes to --raw-dir. Stops, and says what failed, if the object store does not take it."""
+    if upload_data.get("method") != "PUT":
+        raise SystemExit(f"the oracle signed a {upload_data.get('method')!r} upload, not a PUT: its api must run with AWS_S3_UPLOAD_METHOD=put (tools/compat-record/oracle-assets.yml; fresh-oracle.sh merges it)")
+    sendable = {k: v for k, v in upload_data["headers"].items() if k.lower() != "content-length"}
+    record, _ = store_request("PUT", upload_data["url"], sendable, payload)
+    save_raw(f"upload-{name}", record)
+    if record["response"]["status"] != 200:
+        raise SystemExit(f"the PUT of {name} to the object store was refused: {record['response']['status']} {record['response']['body_text']!r}")
+
+
+def follow_to_store(name, exchange, disposition, content_type=None):
+    """Prove that what a redirect says is what the store does with it: follow `Location` (as the browser does, with no cookie) and
+    check the bytes are the file, and that the store sends the disposition (and the pinned type) the URL asked for. The raw record
+    goes to --raw-dir."""
+    record, raw = store_request("GET", exchange["response"]["headers"]["Location"])
+    save_raw(f"follow-{name}", record)
+    got = {k.lower(): v for k, v in record["response"]["headers"].items()}
+    wrong = []
+    if record["response"]["status"] != 200:
+        wrong.append(f"status {record['response']['status']}")
+    if raw != COVER_PNG:
+        wrong.append("the bytes are not the file that was uploaded")
+    if not got.get("content-disposition", "").startswith(disposition + ";"):
+        wrong.append(f"content-disposition {got.get('content-disposition')!r}, not {disposition!r}")
+    if content_type and got.get("content-type") != content_type:
+        wrong.append(f"content-type {got.get('content-type')!r}, not {content_type!r}")
+    if wrong:
+        raise SystemExit(f"following the redirect of {name} to the object store: " + "; ".join(wrong))
+
+
+def assets_path(slug=WS_ONE):
+    return f"/api/assets/v2/workspaces/{slug}/"
+
+
+def bulk_path(project, slug=WS_ONE):
+    """The route of the stock create-project flow: the entity is the project itself."""
+    return f"{assets_path(slug)}projects/{project}/{project}/bulk/"
+
+
+def join_workspace(base, pacer, email, slug, role):
+    """Prerequisite, not a recorded step: make `email` a member of the workspace, the way the app does, by the invitation the
+    workspace's admin sends and the invitee accepts (the raw exchanges are in --raw-dir). It runs only at the end of the journey, so
+    that every step that needs `email` outside the workspace is done."""
+    sent = api(base, pacer, J, "POST", f"/api/workspaces/{slug}/invitations/", {"emails": [{"email": email, "role": role}]})
+    mine = api(base, pacer, email, "GET", INVITATIONS)
+    invitations = [i["id"] for i in mine["response"]["body"] if i["workspace"]["slug"] == slug]
+    accepted = api(base, pacer, email, "POST", INVITATIONS, {"invitations": invitations})
+    me = api(base, pacer, email, "GET", f"/api/workspaces/{slug}/workspace-members/me/")
+    save_raw(f"join-{slug}", {"invite": sent, "invitations": mine, "accept": accepted, "membership": me})
+    if len(invitations) != 1 or accepted["response"]["status"] != 204 or me["response"]["body"].get("role") != role:
+        raise SystemExit(f"could not make {email} a member of {slug} (role {role}): see {RAW_DIR}/join-{slug}.raw.json")
+
+
+def step_s28(base, pacer):
+    """POST .../assets/v2/workspaces/{slug}/ : what the app asks for before it uploads a file (the project cover of the create-project
+    flow), every refusal, each type of file and of entity, and the size the pin clamps. The oracle must hand out PUT uploads."""
+    post = lambda who, body, slug=WS_ONE: api(base, pacer, who, "POST", assets_path(slug), body)  # noqa: E731
+    out = [
+        ("no session", post(NOT_SIGNED_IN, COVER)),
+        ("not a member of the workspace", post(SECOND_EMAIL, COVER)),
+        ("a workspace that does not exist", post(J, COVER, "no-such-workspace")),
+        ("no fields", post(J, {})),
+        ("an entity type that is not one", post(J, {**COVER, "entity_type": "NOT_A_TYPE"})),
+        ("an entity type in small letters", post(J, {**COVER, "entity_type": "project_cover"})),
+        ("a file type that is not allowed", post(J, {**COVER, "type": "application/pdf"})),
+        ("an image type that is not allowed", post(J, {**COVER, "type": "image/svg+xml", "name": "cover.svg"})),
+        ("a file type that is blank", post(J, {**COVER, "type": ""})),
+        ("a file type that is null", post(J, {**COVER, "type": None})),
+        ("no entity identifier", post(J, {k: v for k, v in COVER.items() if k != "entity_identifier"})),
+        ("an entity identifier that is not an id", post(J, {**COVER, "entity_identifier": "not-an-id"})),
+    ]
+    spare = post(J, {"entity_identifier": "", "entity_type": "PROJECT_COVER"})
+    out.append(("no name, type or size: the defaults", spare))
+    cover = post(J, COVER)
+    if cover["response"]["status"] != 200 or cover["response"]["body"]["upload_data"].get("method") != "PUT":
+        raise SystemExit(f"the project cover was not answered with a PUT upload ({cover['response']['status']} {cover['response']['body']!r}): the oracle's api must run with AWS_S3_UPLOAD_METHOD=put (fresh-oracle.sh)")
+    out.append(("the project cover, as the app sends it", cover))
+    pending = post(J, COVER)
+    out.append(("a second cover, which is never uploaded", pending))
+    named = post(J, {**COVER, "name": "../my cover é.png"})
+    out.append(("a name with a directory, a space and a letter outside ASCII", named))
+    out += [
+        ("a size over the limit is clamped to it", post(J, {**COVER, "size": 6 * 1024 * 1024})),
+        ("a size of exactly the limit", post(J, {**COVER, "size": 5 * 1024 * 1024})),
+        ("a size one over the limit", post(J, {**COVER, "size": 5 * 1024 * 1024 + 1})),
+        ("a size sent as text", post(J, {**COVER, "size": "123"})),
+    ]
+    for kind in ("image/jpeg", "image/webp", "image/jpg", "image/gif"):
+        out.append((f"a file type of {kind}", post(J, {**COVER, "type": kind, "name": "cover." + kind.split("/")[1]})))
+    issue_desc = None
+    for kind in ENTITY_TYPES:
+        if kind == "PROJECT_COVER":
+            continue
+        ex = post(J, {**COVER, "entity_type": kind})
+        out.append((f"an entity type: {kind}", ex))
+        if kind == "ISSUE_DESCRIPTION":
+            issue_desc = ex
+    other = post(J, COVER, WS_TWO)
+    out.append(("a cover in the other workspace", other))
+    CTX["uploads"] = {"asset": cover["response"]["body"]["upload_data"], "named": named["response"]["body"]["upload_data"]}
+    for name, ex in (("asset", cover), ("pending", pending), ("named", named), ("spare", spare), ("issue_desc", issue_desc), ("other_asset", other)):
+        CTX[name] = ex["response"]["body"]["asset_id"]
+    return out
+
+
+def step_s29(base, pacer):
+    """PATCH .../assets/v2/workspaces/{slug}/{id}/ : the app tells the pin the file is uploaded. The files of the cover and of the
+    one with the odd name are PUT first (the app does that before it asks); the others never had a file, and the pin does not look."""
+    upload_file("asset", CTX["uploads"]["asset"])
+    upload_file("named", CTX["uploads"]["named"])
+    patch = lambda who, asset, slug=WS_ONE: api(base, pacer, who, "PATCH", f"{assets_path(slug)}{asset}/")  # noqa: E731
+    a = CTX["asset"]
+    return [
+        ("no session", patch(NOT_SIGNED_IN, a)),
+        ("not a member of the workspace", patch(SECOND_EMAIL, a)),
+        ("a workspace that does not exist", patch(J, a, "no-such-workspace")),
+        ("an asset that does not exist", patch(J, NO_SUCH_ASSET)),
+        ("an id that is not an id", patch(J, "nope")),
+        ("an asset of another workspace", patch(J, a, WS_TWO)),
+        ("the cover, once its file is uploaded", patch(J, a)),
+        ("the same again", patch(J, a)),
+        ("a file with a name the pin cleaned", patch(J, CTX["named"])),
+        ("an issue description whose file was never uploaded: the pin does not look", patch(J, CTX["issue_desc"])),
+        ("an asset of the other workspace whose file was never uploaded", patch(J, CTX["other_asset"], WS_TWO)),
+    ]
+
+
+def step_s31(base, pacer):
+    """POST .../projects/{id}/{entity}/bulk/ : the create-project flow's last call, after the project exists: the cover is attached to
+    the project. Then what it refuses, and the guard the pin put on it (only the caller's own assets of this workspace that are not
+    in another project). A second project in the workspace is made for the last of those."""
+    bulk = lambda who, ids, project=None: api(base, pacer, who, "POST", bulk_path(project or CTX["project"]), {} if ids is None else {"asset_ids": ids})  # noqa: E731
+    a = CTX["asset"]
+    out = [
+        ("no session", bulk(NOT_SIGNED_IN, [a])),
+        ("not a member of the workspace", bulk(SECOND_EMAIL, [a])),
+        ("a project that does not exist", bulk(J, [a], NO_SUCH_PROJECT)),
+        ("no asset ids", bulk(J, None)),
+        ("an empty list of asset ids", bulk(J, [])),
+        ("asset ids that are not a list", bulk(J, "x")),
+        ("an asset id that is not an id", bulk(J, ["nope"])),
+        ("an asset that does not exist", bulk(J, [NO_SUCH_ASSET])),
+        ("an asset of the other workspace", bulk(J, [CTX["other_asset"]])),
+        ("the cover of the journey's project", bulk(J, [a])),
+        ("the same again", bulk(J, [a])),
+        ("a list with an asset that does not exist and the cover", bulk(J, [NO_SUCH_ASSET, a])),
+    ]
+    second = api(base, pacer, J, "POST", projects_path(), {**PROJECT, "name": "Second Project", "identifier": "SEC"})
+    out.append(("a second project, in the journey's workspace", second))
+    CTX["second_project"] = second["response"]["body"]["id"]
+    out += [
+        ("the cover, which is in another project", bulk(J, [a], CTX["second_project"])),
+        ("an asset nobody has put in a project", bulk(J, [CTX["spare"]], CTX["second_project"])),
+    ]
+    return out
+
+
+def step_s34_after(base, pacer):
+    """GET .../projects/{id}/ once the cover is attached: `cover_image_url` is the asset's static path, `cover_image_asset` its id."""
+    return project_read(base, pacer, "/api/workspaces/{slug}/projects/{project}/")
+
+
+def step_s33(base, pacer):
+    """GET .../assets/v2/workspaces/{slug}/{id}/ : a redirect to the file in the object store, as a download. The recording does not
+    follow it (the client is told where to go); the recorder follows it once, apart, to check what it names."""
+    get = lambda who, asset, slug=WS_ONE: api(base, pacer, who, "GET", f"{assets_path(slug)}{asset}/")  # noqa: E731
+    a = CTX["asset"]
+    out = [
+        ("no session", get(NOT_SIGNED_IN, a)),
+        ("not a member of the workspace", get(SECOND_EMAIL, a)),
+        ("a workspace that does not exist", get(J, a, "no-such-workspace")),
+    ]
+    cover = get(J, a)
+    out.append(("the cover, uploaded: a redirect to the file", cover))
+    follow_to_store("S33-cover", cover, "attachment")
+    out += [
+        ("a file with a name that has a space and a letter outside ASCII", get(J, CTX["named"])),
+        ("an asset that was never uploaded", get(J, CTX["pending"])),
+        ("an asset that does not exist", get(J, NO_SUCH_ASSET)),
+        ("an id that is not an id", get(J, "nope")),
+        ("an asset of another workspace", get(J, a, WS_TWO)),
+        ("an asset in its own workspace, whose file was never uploaded", get(J, CTX["other_asset"], WS_TWO)),
+    ]
+    return out
+
+
+def step_x05(base, pacer):
+    """GET .../assets/v2/static/{id}/ : not one of the 48 rows, but what `cover_image_url` of a project points at. Public (the page
+    shows it with no more than the session it has), a redirect to the file shown inline, with its type pinned."""
+    get = lambda who, asset: api(base, pacer, who, "GET", f"/api/assets/v2/static/{asset}/")  # noqa: E731
+    a = CTX["asset"]
+    cover = get(NOT_SIGNED_IN, a)
+    follow_to_store("X05-cover", cover, "inline", "image/png")
+    return [
+        ("no session: the route is public", cover),
+        ("a member of the workspace", get(J, a)),
+        ("not a member of the workspace", get(SECOND_EMAIL, a)),
+        ("a file with a name that has a space and a letter outside ASCII", get(NOT_SIGNED_IN, CTX["named"])),
+        ("an asset that was never uploaded", get(NOT_SIGNED_IN, CTX["pending"])),
+        ("an asset that does not exist", get(NOT_SIGNED_IN, NO_SUCH_ASSET)),
+        ("an id that is not an id", get(NOT_SIGNED_IN, "nope")),
+        ("an uploaded asset of a kind this route does not serve", get(NOT_SIGNED_IN, CTX["issue_desc"])),
+    ]
+
+
+def step_s28_member(base, pacer):
+    """S28 for a member who is not an admin: the workspace's logo is the admin's, a cover is anyone's. The second user is made a
+    member of the journey's workspace here (role 15), which is why this and the three steps after it come last."""
+    join_workspace(base, pacer, SECOND_EMAIL, WS_ONE, 15)
+    post = lambda body: api(base, pacer, SECOND_EMAIL, "POST", assets_path(), body)  # noqa: E731
+    mine = post(COVER)
+    CTX["second_asset"] = mine["response"]["body"]["asset_id"]
+    return [
+        ("a workspace logo, by a member who is not an admin", post({**COVER, "entity_type": "WORKSPACE_LOGO"})),
+        ("a project cover, by a member", mine),
+    ]
+
+
+def step_s29_member(base, pacer):
+    """S29 for a member who is not in the project the asset belongs to, and for the member's own asset."""
+    patch = lambda asset: api(base, pacer, SECOND_EMAIL, "PATCH", f"{assets_path()}{asset}/")  # noqa: E731
+    return [
+        ("an asset of a project, by a member who is not in it", patch(CTX["asset"])),
+        ("the member's own asset", patch(CTX["second_asset"])),
+    ]
+
+
+def step_s31_member(base, pacer):
+    """S31 for the assets of someone else, and for a member who is not in the project."""
+    bulk = lambda who, ids: api(base, pacer, who, "POST", bulk_path(CTX["project"]), {"asset_ids": ids})  # noqa: E731
+    return [
+        ("an asset another user made, by the project's admin", bulk(J, [CTX["second_asset"]])),
+        ("a member who is not in the project, with their own asset", bulk(SECOND_EMAIL, [CTX["second_asset"]])),
+    ]
+
+
+def step_s33_member(base, pacer):
+    """S33 for a member who is not in the project the asset belongs to, and for the member's own asset."""
+    get = lambda asset: api(base, pacer, SECOND_EMAIL, "GET", f"{assets_path()}{asset}/")  # noqa: E731
+    return [
+        ("an asset of a project, by a member who is not in it", get(CTX["asset"])),
+        ("the member's own asset, which the member marked uploaded", get(CTX["second_asset"])),
+    ]
+
+
 # Which fixtures make an id that later ones use (`binds`), and which name one in their requests (`uses`).
 USES_PROJECT = {"uses": ["project"]}
 FIXTURE_META = {
@@ -1284,6 +1606,36 @@ FIXTURE_META = {
     "X01": {"uses": ["project", "issue", "full_issue", "html_issue"]},
     "X03": {"uses": ["project", "issue"]},
     "X02": {"uses": ["project"], "binds": {"history_issue": {"exchange": "a work item made with an assignee", "path": ["id"]}}},
+    # The assets. `preconditions` says what the recording did that is no exchange of the fixture (the file PUT to the object store, the
+    # second user's membership), so a replay can put its own world in the same state first.
+    "S28": {
+        "binds": {
+            "asset": {"exchange": "the project cover, as the app sends it", "path": ["asset_id"]},
+            "pending": {"exchange": "a second cover, which is never uploaded", "path": ["asset_id"]},
+            "named": {"exchange": "a name with a directory, a space and a letter outside ASCII", "path": ["asset_id"]},
+            "spare": {"exchange": "no name, type or size: the defaults", "path": ["asset_id"]},
+            "issue_desc": {"exchange": "an entity type: ISSUE_DESCRIPTION", "path": ["asset_id"]},
+            "other_asset": {"exchange": "a cover in the other workspace", "path": ["asset_id"]},
+        },
+    },
+    "S29": {
+        "uses": ["asset", "named", "issue_desc", "other_asset"],
+        "preconditions": ["before the first exchange the file (the 70 bytes of the PNG the recorder holds) was PUT to the upload_data.url of S28's `asset` and `named` assets, with the signed Content-Type and no cookie; no file was ever put for `issue_desc`, `other_asset` or `pending`"],
+    },
+    "S31": {
+        "uses": ["project", "asset", "other_asset", "spare"],
+        "binds": {"second_project": {"exchange": "a second project, in the journey's workspace", "path": ["id"]}},
+    },
+    "S34-after": {"uses": ["project", "asset"]},
+    "S33": {"uses": ["asset", "named", "pending", "other_asset"]},
+    "X05": {"uses": ["asset", "named", "pending", "issue_desc"]},
+    "S28-member": {
+        "preconditions": ["the second user (second@example.test) is a member, role 15, of journey-ws: it was invited by the workspace's admin and accepted, before the first exchange"],
+        "binds": {"second_asset": {"exchange": "a project cover, by a member", "path": ["asset_id"]}},
+    },
+    "S29-member": {"uses": ["asset", "second_asset"]},
+    "S31-member": {"uses": ["project", "second_asset"]},
+    "S33-member": {"uses": ["asset", "second_asset"]},
 }
 
 
@@ -1346,10 +1698,23 @@ STEPS = [
     ("X01", step_x01),
     ("X03", step_x03),
     ("X02", step_x02),
+    # the assets come last: attaching a cover changes the project's answer, and no fixture above may change
+    ("S28", step_s28),
+    ("S29", step_s29),
+    ("S31", step_s31),
+    ("S34-after", step_s34_after),
+    ("S33", step_s33),
+    ("X05", step_x05),
+    ("S28-member", step_s28_member),
+    ("S29-member", step_s29_member),
+    ("S31-member", step_s31_member),
+    ("S33-member", step_s33_member),
 ]
 
 
-def record(base, raw_dir):
+def record(base, raw_dir, store_url=STORE_URL):
+    global RAW_DIR, STORE_URL
+    RAW_DIR, STORE_URL = raw_dir, store_url
     rules = json.loads((PARITY / "normalise.json").read_text())
     out_dir = PARITY / "fixtures"
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -1397,11 +1762,12 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--base-url", default="http://127.0.0.1:18080")
     ap.add_argument("--raw-dir", type=Path, default=REPO / "target/compat-record/raw")
+    ap.add_argument("--store-url", default=STORE_URL, help="where the oracle's object store is reachable from here (the asset rows PUT to it and follow redirects to it)")
     ap.add_argument("--self-test", action="store_true")
     args = ap.parse_args()
     if args.self_test:
         return self_test()
-    record(args.base_url, args.raw_dir)
+    record(args.base_url, args.raw_dir, args.store_url.rstrip("/"))
 
 
 if __name__ == "__main__":

@@ -1,0 +1,182 @@
+{
+  "exchanges": [
+    {
+      "name": "no session",
+      "request": {
+        "method": "PATCH",
+        "path": "/api/assets/v2/workspaces/journey-ws/<uuid:1>/"
+      },
+      "response": {
+        "body": {
+          "detail": "Authentication credentials were not provided."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 401
+      }
+    },
+    {
+      "name": "not a member of the workspace",
+      "request": {
+        "as": "second@example.test",
+        "method": "PATCH",
+        "path": "/api/assets/v2/workspaces/journey-ws/<uuid:1>/"
+      },
+      "response": {
+        "body": {
+          "error": "You don't have the required permissions."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 403
+      }
+    },
+    {
+      "name": "a workspace that does not exist",
+      "request": {
+        "as": "journey@example.test",
+        "method": "PATCH",
+        "path": "/api/assets/v2/workspaces/no-such-workspace/<uuid:1>/"
+      },
+      "response": {
+        "body": {
+          "error": "You don't have the required permissions."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 403
+      }
+    },
+    {
+      "name": "an asset that does not exist",
+      "request": {
+        "as": "journey@example.test",
+        "method": "PATCH",
+        "path": "/api/assets/v2/workspaces/journey-ws/<uuid:5>/"
+      },
+      "response": {
+        "body": {
+          "error": "The required object does not exist."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 404
+      }
+    },
+    {
+      "name": "an id that is not an id",
+      "request": {
+        "as": "journey@example.test",
+        "method": "PATCH",
+        "path": "/api/assets/v2/workspaces/journey-ws/nope/"
+      },
+      "response": {
+        "body": {
+          "error": "Page not found."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 404
+      }
+    },
+    {
+      "name": "an asset of another workspace",
+      "request": {
+        "as": "journey@example.test",
+        "method": "PATCH",
+        "path": "/api/assets/v2/workspaces/journey-two/<uuid:1>/"
+      },
+      "response": {
+        "body": {
+          "error": "The required object does not exist."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 404
+      }
+    },
+    {
+      "name": "the cover, once its file is uploaded",
+      "request": {
+        "as": "journey@example.test",
+        "method": "PATCH",
+        "path": "/api/assets/v2/workspaces/journey-ws/<uuid:1>/"
+      },
+      "response": {
+        "body": null,
+        "headers": {},
+        "status": 204
+      }
+    },
+    {
+      "name": "the same again",
+      "request": {
+        "as": "journey@example.test",
+        "method": "PATCH",
+        "path": "/api/assets/v2/workspaces/journey-ws/<uuid:1>/"
+      },
+      "response": {
+        "body": null,
+        "headers": {},
+        "status": 204
+      }
+    },
+    {
+      "name": "a file with a name the pin cleaned",
+      "request": {
+        "as": "journey@example.test",
+        "method": "PATCH",
+        "path": "/api/assets/v2/workspaces/journey-ws/<uuid:2>/"
+      },
+      "response": {
+        "body": null,
+        "headers": {},
+        "status": 204
+      }
+    },
+    {
+      "name": "an issue description whose file was never uploaded: the pin does not look",
+      "request": {
+        "as": "journey@example.test",
+        "method": "PATCH",
+        "path": "/api/assets/v2/workspaces/journey-ws/<uuid:3>/"
+      },
+      "response": {
+        "body": null,
+        "headers": {},
+        "status": 204
+      }
+    },
+    {
+      "name": "an asset of the other workspace whose file was never uploaded",
+      "request": {
+        "as": "journey@example.test",
+        "method": "PATCH",
+        "path": "/api/assets/v2/workspaces/journey-two/<uuid:4>/"
+      },
+      "response": {
+        "body": null,
+        "headers": {},
+        "status": 204
+      }
+    }
+  ],
+  "format_version": 1,
+  "preconditions": [
+    "before the first exchange the file (the 70 bytes of the PNG the recorder holds) was PUT to the upload_data.url of S28's `asset` and `named` assets, with the signed Content-Type and no cookie; no file was ever put for `issue_desc`, `other_asset` or `pending`"
+  ],
+  "recorded_from": "ba85d4d3d3",
+  "row": "S29",
+  "uses": [
+    "asset",
+    "named",
+    "issue_desc",
+    "other_asset"
+  ]
+}
