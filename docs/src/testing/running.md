@@ -112,7 +112,7 @@ same script you would run locally, so a red job reproduces with the command in i
 
 | Job | Runs |
 |---|---|
-| `changes` | decides whether anything Rust-relevant changed (`.github/scripts/classify-changes.sh`; fails open) |
+| `changes` | decides whether anything Rust-relevant, or under `web/`, changed (`.github/scripts/classify-changes.sh`; fails open) |
 | `plan` | derives the contract cells from the `run <target> <pass>` lines of `scripts/contract-all.sh` |
 | `ci-scripts` | the tests of the CI helper scripts themselves (`.github/scripts/tests/`) |
 | `deps` | `scripts/check-deps.sh`, then `scripts/check-topology.sh` and `scripts/check-topology.sh --self-test` |
@@ -122,10 +122,11 @@ same script you would run locally, so a red job reproduces with the command in i
 | `pg-adapter` | `cargo test -p thrust-adapters-selfhosted --test pg_adapter` |
 | `contract` | one job per cell (`.github/workflows/contract-cell.yml`): `scripts/contract.sh <target> <pass>` |
 | `mutants` | `scripts/mutants.sh` |
+| `web` | when `web/` or a CI file changed: `scripts/check-web-diff.sh` (the Q-R2 gate: only the files in `web/ALLOWED-CHANGES` differ from the oracle pin), then `pnpm --dir web install --frozen-lockfile --ignore-scripts` and `pnpm --dir web exec turbo run build --filter=web` |
 | `gate` | `.github/scripts/assert-gate.sh`: every job succeeded **and** every planned cell uploaded its pass marker |
 
-`gate` is the one check to require: it fails on a skipped job when Rust changed and on a planned cell that never
-reported, so a pipeline that silently ran less cannot read as green. `.github/workflows/flake-hunt.yml` repeats one
+`gate` is the one check to require: it fails on a skipped job when Rust changed, on a skipped `web` job when `web/`
+changed, and on a planned cell that never reported, so a pipeline that silently ran less cannot read as green. `.github/workflows/flake-hunt.yml` repeats one
 cell on demand and weekly. Not in CI: the `oracle_` tests (they need the pinned Plane oracle's output) and stage 2.
 
 ## Don't

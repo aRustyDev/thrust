@@ -1,6 +1,6 @@
 #!/bin/sh
-# Reads changed file paths on stdin (one per line) and prints `rust=true` or `rust=false`.
-# Fails OPEN: an empty list (cannot tell what changed) is treated as "rust changed".
+# Reads changed file paths on stdin (one per line) and prints `rust=true|false` and `web=true|false`.
+# Fails OPEN: an empty list (cannot tell what changed) is treated as "rust and web changed".
 #
 #   git diff --name-only "$BASE" "$HEAD" > changed.txt
 #   .github/scripts/classify-changes.sh < changed.txt >> "$GITHUB_OUTPUT"
@@ -12,6 +12,7 @@ cat > "$tmp"
 
 if [ ! -s "$tmp" ]; then
   echo "rust=true"
+  echo "web=true"
   echo "classify: empty change list, failing open" >&2
   exit 0
 fi
@@ -24,4 +25,12 @@ if grep -qE '^(crates/|scripts/|probes/|tools/oracle-v1/|Cargo\.(toml|lock)$|rus
   echo "rust=true"
 else
   echo "rust=false"
+fi
+
+# The stock React app (web/, issue #44) has its own job: the Q-R2 gate and a build. A change to the CI files or to the gate
+# script runs it too, because they are what it runs. It is independent of `rust`: a web-only change is rust=false.
+if grep -qE '^(web/|scripts/check-web-diff\.sh$|\.github/(workflows|actions|scripts)/)' "$tmp"; then
+  echo "web=true"
+else
+  echo "web=false"
 fi

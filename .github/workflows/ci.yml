@@ -28,6 +28,7 @@ jobs:
       contents: read
     outputs:
       rust: ${{ steps.classify.outputs.rust }}
+      web: ${{ steps.classify.outputs.web }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -50,12 +51,14 @@ jobs:
           case "$base" in
             "" | 0000000000000000000000000000000000000000)
               echo "rust=true" >> "$GITHUB_OUTPUT"
+              echo "web=true" >> "$GITHUB_OUTPUT"
               echo "no usable base for '$EVENT'; failing open (run everything)"
               exit 0
               ;;
           esac
           if ! git diff --name-only "$base" "$HEAD_SHA" > changed.txt; then
             echo "rust=true" >> "$GITHUB_OUTPUT"
+            echo "web=true" >> "$GITHUB_OUTPUT"
             echo "cannot diff $base..$HEAD_SHA; failing open (run everything)"
             exit 0
           fi
@@ -97,6 +100,7 @@ jobs:
         run: |
           sh .github/scripts/tests/test-ci-scripts.sh
           sh .github/scripts/tests/test-required-contexts.sh
+          sh .github/scripts/tests/test-check-web-diff.sh
 
   deps:
     needs: changes
@@ -270,10 +274,47 @@ jobs:
       - name: Every mutant must be KILLED
         run: scripts/mutants.sh
 
+  # The stock React app (web/, issue #44, web/SOURCE). Runs when web/ or the CI files change (classify-changes.sh), not on
+  # `rust`. The Q-R2 gate first: only the files in web/ALLOWED-CHANGES may differ from the oracle pin. Then the install and the
+  # build, so an import or an edit that no longer builds fails here and not later. pnpm is the version web/package.json pins,
+  # read from it, so there is no second copy to drift; Node is web/.node-version. Dependency scripts are off (--ignore-scripts):
+  # 1,158 packages is no place to run arbitrary install hooks, and the build does not need them.
+  web:
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      TURBO_TELEMETRY_DISABLED: "1"
+      DO_NOT_TRACK: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Q-R2 gate (only the allowed files differ from the pin)
+        run: scripts/check-web-diff.sh
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: web/.node-version
+      - name: pnpm, at the version web/package.json pins
+        run: |
+          want="$(node -p "require('./web/package.json').packageManager.split('@')[1].split('+')[0]")"
+          npm install --global "pnpm@$want"
+          test "$(pnpm --dir web --version)" = "$want"
+      - name: Install (frozen lockfile, no dependency scripts)
+        run: pnpm --dir web install --frozen-lockfile --ignore-scripts
+      - name: Build the app and the packages it needs
+        run: pnpm --dir web exec turbo run build --filter=web
+      # The control against a vacuous build: a build that exits 0 and makes no SPA must not pass.
+      - name: The build made the SPA
+        run: test -s web/apps/web/build/client/index.html
+
   gate:
     name: gate
     if: always()
-    needs: [changes, plan, ci-scripts, deps, lint, deny, hermetic, pg-adapter, contract, mutants]
+    needs: [changes, plan, ci-scripts, deps, lint, deny, hermetic, pg-adapter, contract, mutants, web]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
@@ -296,6 +337,7 @@ jobs:
         env:
           NEEDS_JSON: ${{ toJSON(needs) }}
           RUST_CHANGED: ${{ needs.changes.outputs.rust }}
+          WEB_CHANGED: ${{ needs.changes.outputs.web }}
           PLANNED: ${{ needs.plan.outputs.cells || '[]' }}
           REPORTED_DIR: reported
         run: .github/scripts/assert-gate.sh
