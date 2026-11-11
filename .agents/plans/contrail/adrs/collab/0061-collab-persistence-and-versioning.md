@@ -98,6 +98,10 @@ Per FR-14 (`reviews/2026-10-19-fable-architecture-review.md`; the owner's decisi
 
 The review date of 2026-11-09 came due and the owner did not decide Q-0061 (2026-11-10). The strategy is to be decided **when spike 0005 starts** (M5 entry, after M2's exit). Spike 0005 is the only source of evidence for the P1 strategy, it has no owner yet and has not run, and M0's exit changes nothing it measures. The ADR stays `proposed`, and its leading hypothesis (Option 4) is unchanged.
 
+## Update — the owner's lean (2026-11-11)
+
+On Q-0061 the owner wrote "Snapshot periodically I think?" (2026-11-11): a tentative lean, not a decision. It is recorded as consistent with Option 4, the leading hypothesis since 2026-10-17, so that hypothesis stands and its confidence stays low to medium. The owner did not say whether a write-ahead log sits under the snapshots; that reading is the recorder's. Snapshots alone (Option 3) lose recent edits on failure, which fails the spike's exit criterion of no data loss on forced DO eviction, so if the lean means no log, that needs saying before the spike. The ADR stays `proposed` and Q-0061 stays open; the strategy is still decided when spike 0005 starts (M5).
+
 ## Open Questions
 
 * Q-0061 — choose the strategy (decision-pending; decide when spike 0005 starts, M5).
