@@ -125,6 +125,7 @@ async fn main() {
     let admin = User {
         id: UserId(uid()),
         token: format!("tok-{}", uid().simple()),
+        key: String::new(),
         email: String::new(),
         password: String::new(),
     };
@@ -255,7 +256,7 @@ async fn main() {
             };
             let r = t.admin_post("/internal/seed", &serde_json::to_value(&f).unwrap()).await;
             assert_eq!(r.status(), 204);
-            users.push(User { id, token, email: String::new(), password: String::new() });
+            users.push(User { id, token, key: String::new(), email: String::new(), password: String::new() });
         }
         let users = Arc::new(users);
         let (t2, small2) = (t.clone(), small.clone());
