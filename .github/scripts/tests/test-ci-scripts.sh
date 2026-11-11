@@ -68,10 +68,14 @@ expect "classify: rustfmt.toml" 0 "rust=true" classify 'rustfmt.toml\n'
 expect "classify: a config look-alike or a nested copy is not the root config" 0 "rust=false" classify 'deny.toml.md\ndocs/clippy.toml\ndocs/src/rustfmt.toml\n'
 
 # ---- assert-gate.sh ------------------------------------------------------------------------------
-gate() { # gate <dir> <needs-json> <rust> <planned-json> <reported markers...>
-  d="$T/gate/$1"; mkdir -p "$d/reported"; needs="$2"; rust="$3"; planned="$4"; shift 4
+gatew() { # gatew <dir> <needs-json> <rust> <web> <planned-json> <reported markers...>
+  d="$T/gate/$1"; mkdir -p "$d/reported"; needs="$2"; rust="$3"; web="$4"; planned="$5"; shift 5
   for m in "$@"; do printf '%s\n' "$m" > "$d/reported/$(echo "$m" | tr ' ' '-').ok"; done
-  ( cd "$d" && NEEDS_JSON="$needs" RUST_CHANGED="$rust" PLANNED="$planned" REPORTED_DIR="$d/reported" "$S/assert-gate.sh" )
+  ( cd "$d" && NEEDS_JSON="$needs" RUST_CHANGED="$rust" WEB_CHANGED="$web" PLANNED="$planned" REPORTED_DIR="$d/reported" "$S/assert-gate.sh" )
+}
+gate() { # gate <dir> <needs-json> <rust> <planned-json> <reported markers...>   (web/ unchanged: WEB_CHANGED=false)
+  gdir="$1"; gneeds="$2"; grust="$3"; shift 3
+  gatew "$gdir" "$gneeds" "$grust" false "$@"
 }
 OKN='{"changes":{"result":"success"},"plan":{"result":"success"},"deps":{"result":"success"},"contract":{"result":"success"}}'
 P='["native-memory main","worker-cf bindings"]'
@@ -98,5 +102,41 @@ LINTF='{"changes":{"result":"success"},"plan":{"result":"success"},"deps":{"resu
 expect "gate: lint failed though every cell passed" 1 "lint failure" gate g13 "$LINTF" true "$P" "native-memory main" "worker-cf bindings"
 DENYSK='{"changes":{"result":"success"},"plan":{"result":"success"},"deps":{"result":"success"},"lint":{"result":"success"},"deny":{"result":"skipped"},"contract":{"result":"success"}}'
 expect "gate: rust changed but deny SKIPPED (vacuous)" 1 "deny skipped" gate g14 "$DENYSK" true "$P" "native-memory main" "worker-cf bindings"
+
+# ---- the web job (issue #44): judged by WEB_CHANGED, apart from the Rust rules -----------------------------------
+WJ() { # WJ <web job result> <rust jobs result>: needs-json with the `web` job; the Rust jobs all <rust jobs result>
+  printf '{"changes":{"result":"success"},"plan":{"result":"%s"},"deps":{"result":"%s"},"contract":{"result":"%s"},"web":{"result":"%s"}}' "$2" "$2" "$2" "$1"
+}
+expect "gate: only web/ changed and the web job passed" 0 "legitimately skipped" gatew w1 "$(WJ success skipped)" false true "[]"
+expect "gate: web/ changed but the web job was SKIPPED (vacuous)" 1 "web changed but the web job result is 'skipped'" gatew w2 "$(WJ skipped skipped)" false true "[]"
+expect "gate: web/ changed and the web job failed" 1 "web changed but the web job result is 'failure'" gatew w3 "$(WJ failure skipped)" false true "[]"
+expect "gate: web/ changed and the web job was cancelled" 1 "web changed but the web job result is 'cancelled'" gatew w4 "$(WJ cancelled skipped)" false true "[]"
+expect "gate: web/ changed but the needs have no web job at all" 1 "web changed but the web job result is 'missing'" gatew w5 "$OKN" false true "[]"
+# The job is skipped when only Rust changed. Were that a failure, every Rust-only change would fail the gate.
+expect "gate: only rust changed, the web job skipped as it should be" 0 "2 of 2 planned cells reported success" gatew w6 "$(WJ skipped success)" true false "$P" "native-memory main" "worker-cf bindings"
+expect "gate: rust and web/ both changed and both passed" 0 "2 of 2 planned cells reported success" gatew w7 "$(WJ success success)" true true "$P" "native-memory main" "worker-cf bindings"
+expect "gate: web/ unchanged but the web job failed" 1 "the web job result is 'failure'" gatew w8 "$(WJ failure success)" true false "$P" "native-memory main" "worker-cf bindings"
+expect "gate: web/ unchanged and no rust change, the web job cancelled" 1 "the web job result is 'cancelled'" gatew w9 "$(WJ cancelled skipped)" false false "[]"
+expect "gate: rust changed, web/ changed, and the web job skipped" 1 "web changed but the web job result is 'skipped'" gatew w10 "$(WJ skipped success)" true true "$P" "native-memory main" "worker-cf bindings"
+no_web_env() { # the gate run without WEB_CHANGED at all: a workflow that does not pass it must fail, not read it as false
+  d="$T/gate/w11"; mkdir -p "$d/reported"
+  ( cd "$d" && env -u WEB_CHANGED NEEDS_JSON="$OKN" RUST_CHANGED=false PLANNED="[]" REPORTED_DIR="$d/reported" "$S/assert-gate.sh" )
+}
+expect "gate: a gate run that is not told WEB_CHANGED fails" 1 "WEB_CHANGED" no_web_env
+
+# ---- classify-changes.sh, the web output --------------------------------------------------------------------------
+classify_is() { # classify_is <paths> <want rust> <want web>: the whole output, in order
+  # (not `out` or `want`: `expect` keeps its own in globals, and a shell function has no locals)
+  cgot="$(printf '%b' "$1" | "$S/classify-changes.sh" 2> /dev/null)"
+  cexp="$(printf 'rust=%s\nweb=%s' "$2" "$3")"
+  if [ "$cgot" = "$cexp" ]; then echo "classify ok: rust=$2 web=$3"; else echo "classify gave '$cgot', wanted rust=$2 web=$3"; return 1; fi
+}
+expect "classify: web/ alone is a web change and not a rust change" 0 "classify ok: rust=false web=true" classify_is 'web/apps/web/components/account/auth-forms/password.tsx\n' false true
+expect "classify: a crate alone is not a web change" 0 "classify ok: rust=true web=false" classify_is 'crates/thrust-core/src/lib.rs\n' true false
+expect "classify: docs alone are neither" 0 "classify ok: rust=false web=false" classify_is 'docs/src/intro.md\n' false false
+expect "classify: an empty list fails open for both" 0 "classify ok: rust=true web=true" classify_is '' true true
+expect "classify: a workflow change runs both" 0 "classify ok: rust=true web=true" classify_is '.github/workflows/ci.yml\n' true true
+expect "classify: the Q-R2 gate script runs both" 0 "classify ok: rust=true web=true" classify_is 'scripts/check-web-diff.sh\n' true true
+expect "classify: a web look-alike is not web/" 0 "classify ok: rust=false web=false" classify_is 'web-notes.md\ndocs/web/x.md\nwebsite/index.html\n' false false
 echo "passed=$pass bad=$failn"
 [ "$failn" -eq 0 ]

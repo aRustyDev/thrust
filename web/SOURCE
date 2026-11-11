@@ -1,0 +1,36 @@
+# Provenance of web/. Machine-readable: KEY=VALUE, one per line, '#' comments (same shape as tools/oracle-v1/SOURCE).
+#
+# The stock React app and the @plane/* packages it needs, copied in as a pnpm workspace (ADR-0005, Q-R6; the frontend
+# moves into this repository, Q-0005.2, and the fork is frozen as the oracle). Imported by thrust issue #44.
+#
+# In the commit that adds this file, web/apps/web and web/packages are byte-identical to source_commit. The proof is a
+# tree-hash comparison, which does not depend on the path:
+#   git rev-parse <thrust commit>:web/apps/web   ==  source_tree_apps_web
+#   git rev-parse <thrust commit>:web/packages   ==  source_tree_packages
+# The files at the root of web/ (listed under source_root_files) are also copied as they are at source_commit; a later
+# commit may adapt them (the lockfile is pruned to this workspace, and the husky hook is dropped), and says so.
+#
+# After the import, only the files that Q-R2 allows may change under web/apps/web and web/packages
+# (the auth client, the base URL and service layer, the collab provider, branding). scripts/check-web-diff.sh enforces it,
+# without the pin (which is not pushed), from two files beside this one: PIN-MANIFEST (the mode and blob hash of every
+# file the pin has under apps/web and packages; it must rebuild the two tree hashes below) and ALLOWED-CHANGES (the files
+# that may differ from it, and so the ledger of the departures).
+
+source_repository=aRustyDev/plane
+source_branch=feat/plane-b6a-upstream-sync-oracle
+source_commit=ba85d4d332b5380bebca4b9e0143b1127de907
+source_tag=oracle/v1-pin-20261018
+source_tree_apps_web=707b4128f023f21c1f1cdb99e836e7631b449133
+source_tree_packages=7845782819dc98315f99afe074d582062ea1ee92
+source_root_files=.node-version .npmrc .oxfmtrc.json .oxlintrc.json COPYRIGHT.txt package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json
+source_files=3878
+
+# Not imported, on purpose: apps/admin, apps/space, apps/live, apps/api, apps/proxy and the other root files of the
+# fork (docker compose files, deployments, .github, .husky, docs). apps/web imports nothing from the other apps.
+# Plane's LICENSE.txt is the AGPL-3.0 text that this repository's LICENSE already is, so it is not copied; the per-file
+# SPDX-License-Identifier headers and COPYRIGHT.txt carry the attribution (ADR-0140). public/sw.js keeps its
+# Apache-2.0 header.
+
+# The branch and the tag exist only in the fork's local clone (tools/oracle-v1/SOURCE: pushed=false). This directory is
+# therefore a second copy of the only copy.
+pushed=false

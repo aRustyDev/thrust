@@ -15,6 +15,7 @@ required check guarantees. The jobs and the command each runs are in the CI sect
 | `.github/workflows/flake-hunt.yml` | Repeats one cell 1 to 50 times (5 by default), by hand or every Monday at 03:17 UTC. It passes only if `scripts/flake-hunt.sh` prints `failures: 0 / N`, because the script ends with an `echo`, so its exit status does not say whether an iteration failed |
 | `.github/actions/setup-rust` | A composite action: the stable toolchain, the rustup targets and components, a keyed `rust-cache`, and optionally `worker-build` 0.8.7 and wrangler 4.151.2 |
 | `.github/scripts/` | The pipeline's own logic: `classify-changes.sh`, `plan-cells.sh`, `assert-gate.sh`, and `assert-required-contexts.sh`. The `ci-scripts` job tests them with `.github/scripts/tests/` |
+| `scripts/check-web-diff.sh` | The Q-R2 gate for `web/` (the stock React app, imported from the oracle pin), run by the `web` job. Tested by `.github/scripts/tests/test-check-web-diff.sh` |
 
 ## One required check
 
@@ -26,6 +27,10 @@ decides:
 - If nothing Rust-relevant changed, no job may have failed or been cancelled, and skipped jobs are expected.
 - If something Rust-relevant changed, every needed job must be exactly `success`. A skipped job is a failure here,
   not a pass. The set of cells that uploaded a pass marker must also equal the planned set, which must not be empty.
+- The `web` job is judged apart from those two rules, by `WEB_CHANGED` (`web/` or a CI file changed). If it is true,
+  `web` must be exactly `success`, and a skipped `web` fails the gate. If it is false, `web` may be skipped, as it is on
+  a Rust-only change, but not failed or cancelled; a gate run that is not told `WEB_CHANGED` fails. Eleven cases in
+  `test-ci-scripts.sh` pin this `[derived: the web job has not run in CI yet]`.
 
 The point is that "nothing failed" is not accepted as "everything ran". A cell that never started leaves no check
 behind, and a required check that never reports blocks a pull request forever.
@@ -50,6 +55,15 @@ its base branch. Nothing calls it, so it is a tool to run by hand.
   `mutants` and `contract` are skipped, and `gate` passes `[verified 2026-10-19 051b849]`. `lint` and `deny`, added
   later, have the same `if` as `deps`, so a change to only `docs/` skips them too `[derived]`. **The book is not built in
   CI at all.**
+- **The web job.** `changes` also answers `web=true` when a file is under `web/`, is `scripts/check-web-diff.sh`, or is
+  under `.github/workflows/`, `.github/actions/` or `.github/scripts/`, and it fails open for `web` as it does for
+  `rust`. The two answers are independent: a change under `web/` alone is `rust=false` and `web=true`, so only `changes`
+  and `web` run and `gate` passes on them. The `web` job runs `scripts/check-web-diff.sh` (only the files in
+  `web/ALLOWED-CHANGES` may differ from the pin; `web/SOURCE` says where `web/` came from), then
+  `pnpm --dir web install --frozen-lockfile --ignore-scripts` and `pnpm --dir web exec turbo run build --filter=web`,
+  and checks that `web/apps/web/build/client/index.html` exists. Node is `web/.node-version`; pnpm is the version
+  `web/package.json` pins, read from it. That install and build ran on the import as it is, with pnpm 11.10.0, ten
+  tasks uncached from an empty `node_modules` `[verified 2026-11-11 locally; not yet in CI]`.
 - **The matrix.** The `plan` job reads the `run <target> <pass>` lines of `scripts/contract-all.sh`, so no second
   list can drift. It fails if the number of cells it parsed differs from the number of lines that start with `run`,
   if there are none, or if one repeats. There are 21 cells: 18 contract cells and the 3 `oracle` cells below `[verified 2026-11-10 43a17da: PR #113's run had 21 cell jobs, all succeeded, and `gate` printed `ok: 21 of 21 planned cells reported success`; on the run before (e591b29) `hermetic` had failed, so the script stopped at the job check and that comparison did not run]`.
