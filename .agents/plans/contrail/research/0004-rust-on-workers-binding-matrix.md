@@ -392,6 +392,38 @@ Client: one US-east laptop. `n` = requests. Provisional thresholds (proposed in 
   At c=8 create p95 is 559 ms: list and activity did not move, so the cost is in the create path, most likely waiting on the single `project_sequences` row all creates in one project update **[inferred, not isolated]**.
 - **CPU per invocation:** 6,852 invocations in the window: mean **8.35 ms**; successful ones p50 5.75 ms, p99 54.2 ms; 2 `scriptThrewException` (the two deliberate panics). §9 assumed about 10.3 ms (517 M CPU-ms per 50 M requests): in line.
 
+### 10.3a The same bench with placement on: the live run of issue #39 (2026-11-11) [tested-cf]
+
+Added beside 10.3, which stays as it was. Placement on and off, from two vantages, is in research note 0011 sections 6.8 and 6.9; the statement counts per request are in 0011 section 6.10. This run adds what those lacked: the placement hint seen taking effect on a deployed Worker, the round-trip budget test run against it, and the bench from 10.3 repeated three times.
+
+**The stack.** The spike Worker of `scripts/spike-0002-pg.sh` (`wrangler.pg.stage.toml`, `placement.region = "aws:us-east-1"`, Hyperdrive caching off, origin connection limit 8), built from commit `1991731` `[verified 2026-11-11 1991731]`, against a fresh schema on the dev Postgres. It is a later build than 10.3 measured: the schema had 6 tables then and 23 now, and the adapter and the API surface changed in between. The create rate-limit binding was raised to 1,000,000 (`deploy --create-limit`) so that 200 creates are not refused. The stack was torn down with `spike-0002-pg.sh down` and the teardown checked by listing: no Worker, queue, bucket, Hyperdrive config, role or schema was left.
+
+**Placement took effect** (the open item of ADR-0094 and `docs/src/architecture/infra.md`):
+
+- The Workers API returned `placement: {mode: "targeted", region: "aws:us-east-1"}` for the deployed Worker.
+- The first request after the deploy entered the network at **EWR** and the response carried `cf-placement: remote-IAD`: it was sent on to the colo beside the origin's region and ran there. That is the hint doing its work, and it is the observation that tells the two header values apart.
+- Every one of the 18 probes taken before the bench runs (three before each run) answered `cf-placement: local-IAD` with a `cf-ray` ending `-IAD`. The laptop's own edge is the placed colo (TCP connect 11.7 to 16.5 ms), so from this vantage placement moves nothing, which agrees with 0011 section 6.8.
+
+**Latency** (`bench 200 1` and `bench 200 8` from one laptop in Virginia, the vantage of 10.3; **three runs** each, alternating c=1 and c=8; each cell is the lowest to the highest of the three runs, ms):
+
+| Measure | c = 1 | c = 8 |
+|---|---|---|
+| POST create work item (n=200) | p50 109-120 · p95 **138-174** · p99 155-195 · max 162-293 | p50 180-237 · p95 **307-432** · p99 363-497 · max 439-660 |
+| GET list work items (n=100) | p50 69-75 · p95 85-106 · p99 101-133 | p50 75-108 · p95 103-175 · p99 127-224 |
+| GET activity (n=100) | p50 61-69 · p95 89-96 · p99 98-206 | p50 64-83 · p95 85-122 · p99 98-138 |
+| create → activity visible (n=40, fast path on) | p50 1,337-1,360 · p95 1,459-2,409 · max 2,729-5,947 | p50 1,361-1,391 · p95 1,528-1,586 · max 1,653-3,643 |
+| first create of the run | 346-400 | 398-451 |
+
+- Against the provisional thresholds of 10.3: create p95 at c=1 is 138 to 174 ms (under 300) and list p95 at c=1 is 85 to 106 ms (under 150) in all three runs. The delivery p95 is under 3 s at both concurrencies, and the maxima (up to 5.9 s at c=1 and 3.6 s at c=8) are over it, as the one 4.9 to 5.0 s outlier per run in 10.3 was. At c=8 the list p95 was 175 ms in the third run, above 150 (the threshold was not stated for c=8).
+- Against 10.3, one run each: create p95 296 → 138-174 at c=1 and 559 → 307-432 at c=8; list and activity p95 are the same within the spread. **The cause of the lower create latency is not isolated [unverified]**: this is a different build on a different stack, there is no placement-off arm in this run, and 0011 section 6.8 found no difference between placement on and off from this vantage. It is not evidence that placement made creates faster.
+- The third c=8 run is slower on every measure, list and activity included, which the create path alone would not explain; the spread between runs is as large as the differences read, so no ordering of the c=8 numbers is claimed.
+
+**The round-trip budget on the deployed Worker.** `scripts/stage2-contract.sh budget` (the `budget` pass added with this run) passed 1 of 1 against the placed Worker, reading the `x-thrust-db-round-trips` header it sends when test routes are on: the slice's work items 3, S17 projects 3, S47 issues 3, `/api/v1` projects, states, labels and work items 4 each, and S47 as a limited guest 3 with items and 4 with none. These are the nine counts `native-pg` gives (`docs/src/testing/status.md`, G-24), so the count does not change between the self-hosted and the Hyperdrive path. They are the statements sent through `Pg` before the response head, not a measure of time.
+
+**The main pass on the deployed Worker.** `scripts/stage2-contract.sh main` runs 51 tests (`cargo test -- --list` with the pass's filters); **50 passed and the 51st did not finish**. `create_is_rate_limited_per_user` sends `limit` creates and then up to `limit + 1` more, one at a time, and this Worker's limit was 1,000,000, so it would have made about two million requests; it was stopped after about 90 minutes without a result. It needs a Worker whose binding is 30 a minute (the header of the script says so). The pass is not reported as green.
+
+**Caveats.** Three runs of n=200, 100 and 40 from one laptop at one time of day; no placement-off arm, no second vantage and no cold or idle request in this run; the thresholds are the provisional ones of 10.3; the Worker's create limit was raised, which a default deploy does not do.
+
 ### 10.4 Findings
 
 **F1. Through Hyperdrive, tokio-postgres' default statement flow is unreliable; the single-pipeline typed flow is not.** The first suite run failed 13 of 15: every `/internal/seed` returned a masked 500, and `wrangler tail` showed the

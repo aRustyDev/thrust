@@ -132,26 +132,38 @@ async fn the_slice_routes_are_gone_from_the_reserved_v1_prefix() {
     assert_eq!(items.len(), 1, "a request through the retired prefix reached a use-case");
 }
 
+/// `/api/v1` authenticates by `X-Api-Key` and by nothing else, and answers as Plane does: only a missing key is a 401, and a key that
+/// is not valid is a 403 with Plane's words (ADR-0031, the issue's "Only a missing key gets 401").
 #[tokio::test]
 async fn unauthenticated_requests_are_rejected() {
     let t = t();
     let f = Fixture::seed(&t).await;
     // no credentials
-    let r = t.http.post(t.url(&wi_path(&f.a))).json(&json!({"name":"x"})).send().await.unwrap();
-    assert_eq!(r.status(), 401, "no token");
-    // unknown token
+    let r = t.http.post(t.url(&v1_items(&f.a))).json(&json!({"name":"x"})).send().await.unwrap();
+    assert_eq!(r.status(), 401, "no key");
+    // a key that is not one
     let r = t
         .http
-        .post(t.url(&wi_path(&f.a)))
-        .bearer_auth("not-a-session")
+        .post(t.url(&v1_items(&f.a)))
+        .header(API_KEY_HEADER, "not-a-key")
         .json(&json!({"name":"x"}))
         .send()
         .await
         .unwrap();
-    assert_eq!(r.status(), 401, "bad token");
+    assert_eq!(r.status(), 403, "bad key");
+    assert_eq!(r.json::<Value>().await.unwrap(), json!({"detail": "Given API token is not valid"}));
+    // a session is not a credential here: the route reads no cookie and no bearer token, so a live session token is a missing key
+    let r = t
+        .http
+        .post(t.url(&v1_items(&f.a)))
+        .bearer_auth(&f.member_a.token)
+        .json(&json!({"name":"x"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 401, "a session token is no key");
     // control: nothing was created by the rejected calls
-    let items: Vec<WorkItem> = list(&t, &f.admin_a, &f.a, None).await.json().await.unwrap();
-    assert!(items.is_empty());
+    assert!(v1_list_ok(&t, &f.admin_a, &f.a).await.is_empty());
 }
 
 #[tokio::test]
@@ -171,8 +183,8 @@ async fn internal_routes_require_the_admin_token() {
 async fn reset_requires_the_admin_token_and_a_refused_call_deletes_nothing() {
     let t = t();
     let f = Fixture::seed(&t).await;
-    let before: Vec<WorkItem> = list(&t, &f.admin_a, &f.a, None).await.json().await.unwrap();
-    let made = create_ok(&t, &f.member_a, &f.a, "must survive a refused reset").await;
+    let before = v1_list_ok(&t, &f.admin_a, &f.a).await;
+    let made = v1_create_ok(&t, &f.member_a, &f.a, "must survive a refused reset").await;
 
     let r = t.http.post(t.url("/internal/reset")).send().await.unwrap();
     assert_eq!(r.status(), 401, "no admin token");
@@ -182,108 +194,100 @@ async fn reset_requires_the_admin_token_and_a_refused_call_deletes_nothing() {
     let r = t.admin_get("/internal/reset").await;
     assert!(matches!(r.status().as_u16(), 404 | 405), "a GET is not a reset: {}", r.status());
 
-    let after: Vec<WorkItem> = list(&t, &f.admin_a, &f.a, None).await.json().await.unwrap();
+    let after = v1_list_ok(&t, &f.admin_a, &f.a).await;
     assert_eq!(after.len(), before.len() + 1, "the item made before the refused calls is still there");
-    assert!(after.iter().any(|w| w.id == made.id));
+    assert!(after.iter().any(|w| w.id() == made.id()));
 }
 
 #[tokio::test]
 async fn create_allocates_monotonic_sequence_and_sort_order() {
     let t = t();
     let f = Fixture::seed(&t).await;
-    let a = create_ok(&t, &f.member_a, &f.a, "first").await;
-    let b = create_ok(&t, &f.member_a, &f.a, "second").await;
-    assert_eq!((a.sequence_id, b.sequence_id), (1, 2));
-    assert_eq!((a.sort_order, b.sort_order), (10_000, 20_000));
-    assert_eq!(a.workspace_id, f.ws_a);
-    assert_eq!(a.created_by, Some(f.member_a.id));
-    assert!(a.deleted_at.is_none());
+    let a = v1_create_ok(&t, &f.member_a, &f.a, "first").await;
+    let b = v1_create_ok(&t, &f.member_a, &f.a, "second").await;
+    assert_eq!((a.sequence_id(), b.sequence_id()), (1, 2));
+    // the pin puts the first work item of a state at 65535 and each next one 10000 after the greatest there
+    assert_eq!((a.sort_order(), b.sort_order()), (65_535.0, 75_535.0));
+    assert_eq!(a.workspace(), Some(f.ws_a));
+    assert_eq!(a.created_by(), Some(f.member_a.id));
+    assert!(a.0["deleted_at"].is_null());
     // control: a different project has its own counter (sequence is per project, not global)
-    let c = create_ok(&t, &f.admin_b, &f.b, "other tenant").await;
-    assert_eq!(c.sequence_id, 1);
+    let c = v1_create_ok(&t, &f.admin_b, &f.b, "other tenant").await;
+    assert_eq!(c.sequence_id(), 1);
 }
 
+/// The pin's list is newest first; any member of the project reads it, a guest too.
 #[tokio::test]
-async fn list_returns_visible_items_in_sequence_order() {
+async fn list_returns_visible_items_newest_first() {
     let t = t();
     let f = Fixture::seed(&t).await;
     for n in ["a", "b", "c"] {
-        create_ok(&t, &f.member_a, &f.a, n).await;
+        v1_create_ok(&t, &f.member_a, &f.a, n).await;
     }
-    let items: Vec<WorkItem> = list(&t, &f.guest_a, &f.a, None).await.json().await.unwrap();
-    let names: Vec<_> = items.iter().map(|i| i.name.as_str()).collect();
-    assert_eq!(names, ["a", "b", "c"]);
-    assert_eq!(items.iter().map(|i| i.sequence_id).collect::<Vec<_>>(), [1, 2, 3]);
+    let items = v1_list_ok(&t, &f.guest_a, &f.a).await;
+    let names: Vec<_> = items.iter().map(Issue::name).collect();
+    assert_eq!(names, ["c", "b", "a"]);
+    assert_eq!(items.iter().map(Issue::sequence_id).collect::<Vec<_>>(), [3, 2, 1]);
 }
 
+/// A deleted work item is gone from the list and the detail, and its number is never used again (ADR-0043 B1). The pin lets a project
+/// admin delete any work item and a member only one they made, and a guest none; there is no view of a deleted row in `/api/v1`.
 #[tokio::test]
 async fn soft_delete_hides_rows_and_never_reuses_sequence_ids() {
     let t = t();
     let f = Fixture::seed(&t).await;
-    let _one = create_ok(&t, &f.member_a, &f.a, "one").await;
-    let two = create_ok(&t, &f.member_a, &f.a, "two").await;
-    let _three = create_ok(&t, &f.member_a, &f.a, "three").await;
+    let one = v1_create_ok(&t, &f.member_a, &f.a, "one").await;
+    let two = v1_create_ok(&t, &f.member_a, &f.a, "two").await;
+    let _three = v1_create_ok(&t, &f.member_a, &f.a, "three").await;
+    let admins = v1_create_ok(&t, &f.admin_a, &f.a, "the admin's").await;
 
-    let r = t
-        .http
-        .delete(t.url(&format!("{}/{}", wi_path(&f.a), two.id)))
-        .bearer_auth(&f.member_a.token)
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(r.status(), 204);
+    // control 1: a guest may not delete, and a member may not delete what the admin made; neither is deleted by being asked
+    assert_eq!(v1_delete(&t, &f.guest_a, &f.a, &one.id()).await.status(), 403, "a guest deletes nothing");
+    let r = v1_delete(&t, &f.member_a, &f.a, &admins.id()).await;
+    assert_eq!(r.status(), 403, "a member deletes only what they made");
+    assert_eq!(r.json::<Value>().await.unwrap(), json!({"error": "Only admin or creator can delete the work item"}));
+    assert_eq!(v1_list_ok(&t, &f.member_a, &f.a).await.len(), 4, "refused deletions deleted nothing");
 
-    // default scope hides the deleted row
-    let visible: Vec<WorkItem> = list(&t, &f.member_a, &f.a, None).await.json().await.unwrap();
-    assert_eq!(visible.iter().map(|i| i.sequence_id).collect::<Vec<_>>(), [1, 3]);
+    // a member deletes one they made
+    assert_eq!(v1_delete(&t, &f.member_a, &f.a, &two.id()).await.status(), 204);
+    // the list hides it, newest first
+    let visible = v1_list_ok(&t, &f.member_a, &f.a).await;
+    assert_eq!(visible.iter().map(Issue::sequence_id).collect::<Vec<_>>(), [4, 3, 1]);
+    // and so does the detail: it is a 404 now
+    let r = t.http.get(t.url(&v1_item(&f.a, &two.id()))).header(API_KEY_HEADER, &f.member_a.key).send().await.unwrap();
+    assert_eq!(r.status(), 404, "the detail of a deleted work item");
 
-    // control 1: a member may NOT ask for deleted rows
-    let r = list(&t, &f.member_a, &f.a, Some("with_deleted")).await;
-    assert_eq!(r.status(), 403, "member must not see deleted rows");
-    // control 2: unknown scope is a client error, not a silent default
-    assert_eq!(list(&t, &f.member_a, &f.a, Some("bogus")).await.status(), 400);
-
-    // an admin may, and sees the tombstone
-    let all: Vec<WorkItem> = list(&t, &f.admin_a, &f.a, Some("with_deleted")).await.json().await.unwrap();
-    assert_eq!(all.len(), 3);
-    let tomb = all.iter().find(|i| i.id == two.id).unwrap();
-    assert!(tomb.deleted_at.is_some());
+    // an admin deletes the one the member could not
+    assert_eq!(v1_delete(&t, &f.admin_a, &f.a, &admins.id()).await.status(), 204);
 
     // deleting twice is a 404, not a second success
-    let r = t
-        .http
-        .delete(t.url(&format!("{}/{}", wi_path(&f.a), two.id)))
-        .bearer_auth(&f.member_a.token)
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(r.status(), 404);
+    assert_eq!(v1_delete(&t, &f.member_a, &f.a, &two.id()).await.status(), 404);
 
-    // numbers are never reused: the next item is #4, not #2 or #3 (ADR-0043 B1)
-    let four = create_ok(&t, &f.member_a, &f.a, "four").await;
-    assert_eq!(four.sequence_id, 4);
+    // numbers are never reused: the next item is #5, not #2 or #4
+    let five = v1_create_ok(&t, &f.member_a, &f.a, "five").await;
+    assert_eq!(five.sequence_id(), 5);
 }
 
+/// Tenant B's admin reaches for tenant A's project and is refused, and nothing is made. The pin refuses a stranger with the 403 it gives
+/// anyone who is not a member of the project, and answers a project that is not there the same way (`ProjectEntityPermission`), so
+/// every one of the cases below is a 403: what tells them apart from a bad route is that tenant A's own admin is not refused.
 #[tokio::test]
 async fn cross_tenant_access_is_rejected_and_has_no_effect() {
     let t = t();
     let f = Fixture::seed(&t).await;
-    // Tenant B's admin targets tenant A's project: 404, indistinguishable from "no such project".
-    let r = create(&t, &f.admin_b, &f.a, json!({"name": "intruder"})).await;
-    assert_eq!(r.status(), 404, "cross-tenant create must be 404");
-    assert_eq!(list(&t, &f.admin_b, &f.a, None).await.status(), 404, "cross-tenant list");
-    assert_eq!(list(&t, &f.admin_b, &f.a, Some("with_deleted")).await.status(), 404, "cross-tenant with_deleted list");
+    let r = v1_create(&t, &f.admin_b, &f.a, json!({"name": "intruder"})).await;
+    assert_eq!(r.status(), 403, "cross-tenant create");
+    assert_eq!(v1_list(&t, &f.admin_b, &f.a).await.status(), 403, "cross-tenant list");
     // control: the rejected create left nothing behind in tenant A ...
-    let items: Vec<WorkItem> = list(&t, &f.admin_a, &f.a, None).await.json().await.unwrap();
-    assert!(items.is_empty(), "cross-tenant create leaked a row");
-    // ... and tenant A's own admin is NOT rejected on the same path (the 404 above is tenancy, not a bad route)
-    assert_eq!(list(&t, &f.admin_a, &f.a, None).await.status(), 200);
-    // The other URL form: tenant B's own slug with tenant A's project id. The project is not in the workspace the
-    // slug names, so it is 404 as well, and so is a slug that names no workspace at all.
-    assert_eq!(list(&t, &f.admin_b, &f.a.via(&f.b.slug), None).await.status(), 404, "A's project under B's slug");
-    assert_eq!(list(&t, &f.admin_a, &f.a.via("no-such-workspace"), None).await.status(), 404, "unknown slug");
-    // a workspace member who is not a member of the project is a different answer: 403 (see the next test)
-    assert_eq!(list(&t, &f.outsider_a, &f.a, None).await.status(), 403);
+    assert!(v1_list_ok(&t, &f.admin_a, &f.a).await.is_empty(), "cross-tenant create leaked a row");
+    // ... and tenant A's own admin is NOT refused on the same path (the 403 above is tenancy, not a bad route)
+    assert_eq!(v1_list(&t, &f.admin_a, &f.a).await.status(), 200);
+    // The other URL form: tenant B's own slug with tenant A's project id. The project is not in the workspace the slug names, so it is
+    // refused as well, and so is a slug that names no workspace at all.
+    assert_eq!(v1_list(&t, &f.admin_b, &f.a.via(&f.b.slug)).await.status(), 403, "A's project under B's slug");
+    assert_eq!(v1_list(&t, &f.admin_a, &f.a.via("no-such-workspace")).await.status(), 403, "unknown slug");
+    // a workspace member who is not a member of the project is refused in the same words
+    assert_eq!(v1_list(&t, &f.outsider_a, &f.a).await.status(), 403);
 }
 
 /// The session row is read on every request (ADR-0052 round 29), so a revocation is visible to the very next request,
@@ -329,42 +333,44 @@ async fn a_session_is_not_bound_to_a_workspace() {
 async fn non_members_and_guests_are_forbidden_to_write() {
     let t = t();
     let f = Fixture::seed(&t).await;
-    assert_eq!(create(&t, &f.outsider_a, &f.a, json!({"name":"x"})).await.status(), 403, "outsider create");
-    assert_eq!(list(&t, &f.outsider_a, &f.a, None).await.status(), 403, "outsider list");
-    assert_eq!(create(&t, &f.guest_a, &f.a, json!({"name":"x"})).await.status(), 403, "guest create");
+    assert_eq!(v1_create(&t, &f.outsider_a, &f.a, json!({"name":"x"})).await.status(), 403, "outsider create");
+    assert_eq!(v1_list(&t, &f.outsider_a, &f.a).await.status(), 403, "outsider list");
+    assert_eq!(v1_create(&t, &f.guest_a, &f.a, json!({"name":"x"})).await.status(), 403, "guest create");
     // control: guests can read, members can write
-    assert_eq!(list(&t, &f.guest_a, &f.a, None).await.status(), 200, "guest list");
-    assert_eq!(create(&t, &f.member_a, &f.a, json!({"name":"ok"})).await.status(), 201);
+    assert_eq!(v1_list(&t, &f.guest_a, &f.a).await.status(), 200, "guest list");
+    assert_eq!(v1_create(&t, &f.member_a, &f.a, json!({"name":"ok"})).await.status(), 201);
+    // and the refusals made nothing
+    assert_eq!(v1_list_ok(&t, &f.admin_a, &f.a).await.len(), 1);
 }
 
+/// The key is the pair (source, id): the same pair twice is the pin's 409 that names the work item that has it, and a different id, a
+/// different source, or one half alone is not a clash.
 #[tokio::test]
 async fn external_id_is_unique_among_live_rows_only() {
     let t = t();
     let f = Fixture::seed(&t).await;
     let body = |ext: &str| json!({"name": "imported", "external_source": "github", "external_id": ext});
-    let first = create(&t, &f.member_a, &f.a, body("42")).await;
+    let first = v1_create(&t, &f.member_a, &f.a, body("42")).await;
     assert_eq!(first.status(), 201);
-    let first: WorkItem = first.json().await.unwrap();
-    // duplicate live (source, id) -> 409 (the must-fail control for the unique constraint)
-    let dup = create(&t, &f.member_a, &f.a, body("42")).await;
+    let first = Issue(first.json().await.unwrap());
+    // duplicate live (source, id) -> 409 (the must-fail control for the unique constraint), naming the work item that has it
+    let dup = v1_create(&t, &f.member_a, &f.a, body("42")).await;
     assert_eq!(dup.status(), 409, "duplicate external_id must conflict");
+    assert_eq!(
+        dup.json::<Value>().await.unwrap(),
+        json!({"error": "Issue with the same external id and external source already exists", "id": first.id()})
+    );
     // control: a different id is fine
-    assert_eq!(create(&t, &f.member_a, &f.a, body("43")).await.status(), 201);
+    assert_eq!(v1_create(&t, &f.member_a, &f.a, body("43")).await.status(), 201);
     // the failed duplicate must not have burned a visible row
-    let n = list(&t, &f.member_a, &f.a, None).await.json::<Vec<WorkItem>>().await.unwrap().len();
-    assert_eq!(n, 2);
+    assert_eq!(v1_list_ok(&t, &f.member_a, &f.a).await.len(), 2);
     // after a soft delete the key is free again (partial unique index semantics)
-    let r = t
-        .http
-        .delete(t.url(&format!("{}/{}", wi_path(&f.a), first.id)))
-        .bearer_auth(&f.member_a.token)
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(r.status(), 204);
-    assert_eq!(create(&t, &f.member_a, &f.a, body("42")).await.status(), 201, "re-create after soft delete");
+    assert_eq!(v1_delete(&t, &f.member_a, &f.a, &first.id()).await.status(), 204);
+    assert_eq!(v1_create(&t, &f.member_a, &f.a, body("42")).await.status(), 201, "re-create after soft delete");
 }
 
+/// Twenty creates at once get twenty distinct numbers, with none missing. (The pin reads the greatest `sort_order` of a state before it
+/// inserts, so two creates at once can share a place in it; that is the pin's, and is not asserted.)
 #[tokio::test]
 async fn concurrent_creates_never_duplicate_a_sequence_id() {
     let t = t();
@@ -373,22 +379,17 @@ async fn concurrent_creates_never_duplicate_a_sequence_id() {
     let futs = (0..n).map(|i| {
         let t = &t;
         let f = &f;
-        async move { create(t, &f.member_a, &f.a, json!({"name": format!("c{i}")})).await }
+        async move { v1_create(t, &f.member_a, &f.a, json!({"name": format!("c{i}")})).await }
     });
     let resps = join_all(futs).await;
     let mut seqs = Vec::new();
-    let mut sorts = Vec::new();
     for r in resps {
         assert_eq!(r.status(), 201);
-        let w: WorkItem = r.json().await.unwrap();
-        seqs.push(w.sequence_id);
-        sorts.push(w.sort_order);
+        seqs.push(Issue(r.json().await.unwrap()).sequence_id());
     }
     seqs.sort();
-    sorts.sort();
     assert_eq!(seqs, (1..=n as i64).collect::<Vec<_>>(), "sequence ids must be unique and contiguous");
-    sorts.dedup();
-    assert_eq!(sorts.len(), n, "sort_order must be unique too");
+    assert_eq!(v1_list_ok(&t, &f.admin_a, &f.a).await.len(), n, "and every create is a work item of the list");
 }
 
 #[tokio::test]
@@ -581,28 +582,35 @@ async fn attachments_roundtrip_with_authz() {
     assert_eq!(t.http.get(t.url(&path)).bearer_auth(&f.guest_a.token).send().await.unwrap().status(), 404);
 }
 
+/// A body that is wrong is a 400 in DRF's words, field by field.
 #[tokio::test]
 async fn invalid_input_is_a_client_error() {
     let t = t();
     let f = Fixture::seed(&t).await;
-    let r = create(&t, &f.member_a, &f.a, json!({"name": "   "})).await;
+    let r = v1_create(&t, &f.member_a, &f.a, json!({"name": "   "})).await;
     assert_eq!(r.status(), 400);
-    let body: Value = r.json().await.unwrap();
-    assert_eq!(body["error"]["code"], "invalid");
+    assert_eq!(r.json::<Value>().await.unwrap(), json!({"name": ["This field may not be blank."]}));
     let long = "x".repeat(256);
-    assert_eq!(create(&t, &f.member_a, &f.a, json!({"name": long})).await.status(), 400);
+    let r = v1_create(&t, &f.member_a, &f.a, json!({"name": long})).await;
+    assert_eq!(r.status(), 400);
+    assert_eq!(
+        r.json::<Value>().await.unwrap(),
+        json!({"name": ["Ensure this field has no more than 255 characters."]})
+    );
     // not a uuid in the path
     let r = t
         .http
-        .post(t.url(&format!("{SLICE_PREFIX}/workspaces/{}/projects/not-a-uuid/work-items", f.a.slug)))
-        .bearer_auth(&f.member_a.token)
+        .post(t.url(&format!("{V1_PREFIX}/workspaces/{}/projects/not-a-uuid/issues/", f.a.slug)))
+        .header(API_KEY_HEADER, &f.member_a.key)
         .json(&json!({"name":"x"}))
         .send()
         .await
         .unwrap();
     assert!(r.status().is_client_error(), "got {}", r.status());
     // control: a 255-char name is accepted
-    assert_eq!(create(&t, &f.member_a, &f.a, json!({"name": "y".repeat(255)})).await.status(), 201);
+    assert_eq!(v1_create(&t, &f.member_a, &f.a, json!({"name": "y".repeat(255)})).await.status(), 201);
+    // and the refused bodies made nothing
+    assert_eq!(v1_list_ok(&t, &f.admin_a, &f.a).await.len(), 1);
 }
 
 /// Own pass (`panic_`): a panic under panic=abort resets the whole Worker isolate, which would

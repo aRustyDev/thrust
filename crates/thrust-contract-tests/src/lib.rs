@@ -76,12 +76,19 @@ fn uid() -> uuid::Uuid {
     uuid::Uuid::new_v4()
 }
 
-/// A seeded user: a session token the fixture planted (the legacy bearer credential of most tests), and an email and
-/// password that sign in through the real route.
+/// The label of the key that the fixture plants for every user. A test of the slice's key listing counts the keys it made and not
+/// this one (`GET /api-keys` shows it like any other).
+pub const FIXTURE_KEY_LABEL: &str = "contract";
+
+/// A seeded user: a session token the fixture planted (the legacy bearer credential of the slice's tests), an API key the
+/// fixture planted too (what `/api/v1` authenticates by), and an email and password that sign in through the real route.
 #[derive(Clone)]
 pub struct User {
     pub id: UserId,
     pub token: String,
+    /// The `X-Api-Key` of `/api/v1`. It is shown here because the fixture chose it; a key made through the slice's `/api-keys` is
+    /// a [`CreatedApiKey`] instead.
+    pub key: String,
     pub email: String,
     pub password: String,
 }
@@ -92,8 +99,19 @@ impl User {
         User {
             id: UserId(uid()),
             token: format!("tok-{}", uid().simple()),
+            key: format!("thrk_{}{}", uid().simple(), uid().simple()),
             email: format!("user-{n}@example.test"),
             password: format!("pw-{}", uid().simple()),
+        }
+    }
+
+    fn api_key(&self) -> SeedApiKey {
+        SeedApiKey {
+            token: self.key.clone(),
+            user_id: self.id,
+            label: FIXTURE_KEY_LABEL.into(),
+            expires_at: None,
+            revoked: false,
         }
     }
 
@@ -279,6 +297,7 @@ impl Fixture {
             ],
             sessions: all.iter().map(|u| SeedSession { token: u.token.clone(), user_id: u.id }).collect(),
             logins: all.iter().map(|u| u.login()).collect(),
+            api_keys: all.iter().map(|u| u.api_key()).collect(),
             ..SeedFixture::default()
         };
         let r = t.admin_post("/internal/seed", &serde_json::to_value(&fixture).unwrap()).await;
@@ -303,6 +322,7 @@ impl Fixture {
             }],
             sessions: vec![SeedSession { token, user_id: id }],
             logins: vec![who.login()],
+            api_keys: vec![who.api_key()],
             ..SeedFixture::default()
         };
         let r = t.admin_post("/internal/seed", &serde_json::to_value(&f).unwrap()).await;
@@ -376,6 +396,92 @@ pub async fn activity(t: &Target, who: &User, at: &At, item: WorkItemId) -> Vec<
         t.http.get(t.url(&format!("{}/{}/activity", wi_path(at), item))).bearer_auth(&who.token).send().await.unwrap();
     assert_eq!(r.status(), 200, "activity");
     r.json::<Vec<Activity>>().await.unwrap()
+}
+
+// --- `/api/v1`: Plane's wire shape, authenticated by API key --------------------------------------------------------------------
+
+/// Where Plane's v1 API is served (ADR-0031), and the header it authenticates by.
+pub const V1_PREFIX: &str = "/api/v1";
+pub const API_KEY_HEADER: &str = "x-api-key";
+
+/// The work items of a project through `/api/v1`: `{V1_PREFIX}/workspaces/{slug}/projects/{project}/issues/`.
+pub fn v1_items(at: &At) -> String {
+    format!("{V1_PREFIX}/workspaces/{}/projects/{}/issues/", at.slug, at.project)
+}
+
+/// One work item: `.../issues/{id}/`.
+pub fn v1_item(at: &At, id: &str) -> String {
+    format!("{}{id}/", v1_items(at))
+}
+
+/// A work item as `/api/v1` answers it: Plane's 29-key body, read for the few keys a contract test looks at. The rest of the body
+/// is the oracle's (`tools/oracle-v1`), not this suite's.
+#[derive(Debug, Clone)]
+pub struct Issue(pub Value);
+
+impl Issue {
+    pub fn id(&self) -> String {
+        self.0["id"].as_str().expect("a work item has an id").to_string()
+    }
+
+    pub fn name(&self) -> &str {
+        self.0["name"].as_str().expect("a work item has a name")
+    }
+
+    pub fn sequence_id(&self) -> i64 {
+        self.0["sequence_id"].as_i64().expect("a work item has a sequence_id")
+    }
+
+    /// Plane writes it as a float (`65535.0`).
+    pub fn sort_order(&self) -> f64 {
+        self.0["sort_order"].as_f64().expect("a work item has a sort_order")
+    }
+
+    pub fn workspace(&self) -> Option<WorkspaceId> {
+        self.0["workspace"].as_str().and_then(|s| uuid::Uuid::parse_str(s).ok()).map(WorkspaceId)
+    }
+
+    pub fn created_by(&self) -> Option<UserId> {
+        self.0["created_by"].as_str().and_then(|s| uuid::Uuid::parse_str(s).ok()).map(UserId)
+    }
+}
+
+/// `POST .../issues/` with `who`'s API key.
+pub async fn v1_create(t: &Target, who: &User, at: &At, body: Value) -> reqwest::Response {
+    t.http.post(t.url(&v1_items(at))).header(API_KEY_HEADER, &who.key).json(&body).send().await.unwrap()
+}
+
+/// A create that must answer 201 (Plane's own answer for a work item, the corpus's `create`).
+pub async fn v1_create_ok(t: &Target, who: &User, at: &At, name: &str) -> Issue {
+    let r = v1_create(t, who, at, json!({ "name": name })).await;
+    assert_eq!(r.status(), 201, "create '{name}' failed: {:?}", r.text().await);
+    Issue(r.json().await.unwrap())
+}
+
+/// `GET .../issues/` with `who`'s API key, a hundred to a page (more than any test of this suite makes).
+pub async fn v1_list(t: &Target, who: &User, at: &At) -> reqwest::Response {
+    t.http
+        .get(t.url(&v1_items(at)))
+        .query(&[("per_page", "100")])
+        .header(API_KEY_HEADER, &who.key)
+        .send()
+        .await
+        .unwrap()
+}
+
+/// The work items of a list that must answer 200, newest first (the order of the pin's list).
+pub async fn v1_list_ok(t: &Target, who: &User, at: &At) -> Vec<Issue> {
+    let r = v1_list(t, who, at).await;
+    assert_eq!(r.status(), 200, "list failed");
+    let body: Value = r.json().await.unwrap();
+    let results = body["results"].as_array().expect("a list has `results`");
+    assert_eq!(body["total_count"].as_u64(), Some(results.len() as u64), "one page holds the whole list: {body}");
+    results.iter().cloned().map(Issue).collect()
+}
+
+/// `DELETE .../issues/{id}/` with `who`'s API key.
+pub async fn v1_delete(t: &Target, who: &User, at: &At, id: &str) -> reqwest::Response {
+    t.http.delete(t.url(&v1_item(at, id))).header(API_KEY_HEADER, &who.key).send().await.unwrap()
 }
 
 /// Poll until `pred` holds (queue consumers are asynchronous by design). Fails loudly on timeout.

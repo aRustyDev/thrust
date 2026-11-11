@@ -119,7 +119,7 @@ async fn sign_in_cookies() {
 }
 
 fn clone_user(u: &User) -> User {
-    User { id: u.id, token: u.token.clone(), email: u.email.clone(), password: u.password.clone() }
+    User { id: u.id, token: u.token.clone(), key: u.key.clone(), email: u.email.clone(), password: u.password.clone() }
 }
 
 /// ADR-0052: a mutation authenticated by the cookie needs the double-submit token. This is also spike 0003's K3: the
@@ -440,6 +440,12 @@ async fn list_with_key(t: &Target, at: &At, key: Option<&str>) -> u16 {
     r.send().await.unwrap().status().as_u16()
 }
 
+/// The keys of a listing that a test made: the fixture plants one for every user too (`FIXTURE_KEY_LABEL`, the key `/api/v1` is
+/// called with), and `GET /api-keys` shows it like any other.
+fn made_here(listed: Vec<ApiKeyInfo>) -> Vec<ApiKeyInfo> {
+    listed.into_iter().filter(|k| k.label != FIXTURE_KEY_LABEL).collect()
+}
+
 async fn seed_keys(t: &Target, keys: Vec<SeedApiKey>) {
     let f = SeedFixture { api_keys: keys, ..SeedFixture::default() };
     let r = t.admin_post("/internal/seed", &serde_json::to_value(&f).unwrap()).await;
@@ -496,7 +502,7 @@ async fn an_api_key_is_shown_once_and_authenticates_as_x_api_key() {
     assert_eq!(r.status(), 200);
     let text = r.text().await.unwrap();
     assert!(!text.contains(secret) && !text.contains(&key.token), "the listing shows the token: {text}");
-    let listed: Vec<ApiKeyInfo> = serde_json::from_str(&text).unwrap();
+    let listed = made_here(serde_json::from_str(&text).unwrap());
     assert_eq!(listed.len(), 1);
     assert_eq!(
         (listed[0].id, listed[0].prefix.as_str(), listed[0].label.as_str()),
@@ -504,13 +510,13 @@ async fn an_api_key_is_shown_once_and_authenticates_as_x_api_key() {
     );
     eventually("the key's last use is recorded", std::time::Duration::from_secs(15), || async {
         let r = t.http.get(keys_url(&t)).bearer_auth(&f.member_a.token).send().await.unwrap();
-        let keys: Vec<ApiKeyInfo> = r.json().await.unwrap();
+        let keys = made_here(r.json().await.unwrap());
         keys[0].last_used_at.map(|_| ())
     })
     .await;
     // another user's listing has none of it
-    let theirs: Vec<ApiKeyInfo> =
-        t.http.get(keys_url(&t)).bearer_auth(&f.admin_a.token).send().await.unwrap().json().await.unwrap();
+    let theirs =
+        made_here(t.http.get(keys_url(&t)).bearer_auth(&f.admin_a.token).send().await.unwrap().json().await.unwrap());
     assert!(theirs.is_empty());
 
     // controls: a missing key is the only 401; an unknown one, and an empty header, are not what they look like
@@ -586,8 +592,8 @@ async fn a_revoked_key_is_rejected_on_the_next_request_with_403() {
     assert_eq!(list_with_key(&t, &f.a, Some(&theirs.token)).await, 200, "another user's key");
     // revoking again is a 204, and the listing shows both keys with the first revocation
     assert_eq!(delete(&f.member_a, a.id).await, 204);
-    let listed: Vec<ApiKeyInfo> =
-        t.http.get(keys_url(&t)).bearer_auth(&f.member_a.token).send().await.unwrap().json().await.unwrap();
+    let listed =
+        made_here(t.http.get(keys_url(&t)).bearer_auth(&f.member_a.token).send().await.unwrap().json().await.unwrap());
     assert_eq!(
         listed.iter().map(|k| (k.id, k.revoked_at.is_some())).collect::<Vec<_>>(),
         [(a.id, true), (b.id, false)]

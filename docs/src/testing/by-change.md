@@ -22,9 +22,10 @@ Two things that are easy to get wrong:
   `/api/v1`. Finding FR-06 of the architecture review
   (`.agents/plans/contrail/reviews/2026-10-19-fable-architecture-review.md`) reserves `/api/v1` for wire-compatible
   routes, and the slice's routes left it ([issue #47](https://github.com/aRustyDev/thrust/issues/47); see
-  [Application flow](../flows/app.md)). No route is served under `/api/v1` yet, so the v1 row below applies to the
-  routes of [issue #58](https://github.com/aRustyDev/thrust/issues/58) when they arrive, and a slice route is tested
-  through the contract suite like any other route. `/internal/*`, `/_info` and `/_test/*` exist only when the router
+  [Application flow](../flows/app.md)). `/api/v1` serves the 32 operations of
+  [issue #58](https://github.com/aRustyDev/thrust/issues/58), and the contract suite is moving its work-item tests
+  onto it, with API keys, in stages (G-26 in [status](status.md) says what has moved and what is left); a slice route
+  that nothing replaces yet is tested through the contract suite like any other route. `/internal/*`, `/_info` and `/_test/*` exist only when the router
   is built with `test_routes` and are test infrastructure, not API.
 
 The first test of a new kind may need a test-only dev-dependency (`proptest`, `rstest`, `insta`, `datatest-stable`):
