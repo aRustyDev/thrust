@@ -51,6 +51,10 @@ id_type!(WorkItemId);
 id_type!(EventId);
 id_type!(ActivityId);
 id_type!(ApiKeyId);
+id_type!(
+    /// A stored file's id (ADR-0047): the `asset_id` the browser is given, and the last segment of an asset's address.
+    AssetId
+);
 
 /// Project-level role. Plane: Guest 5 / Member 15 / Admin 20.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
