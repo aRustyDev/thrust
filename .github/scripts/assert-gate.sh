@@ -24,7 +24,13 @@ fail() {
   exit 1
 }
 
-: "${NEEDS_JSON:?}" "${RUST_CHANGED:?}" "${WEB_CHANGED:?}" "${PLANNED:?}" "${REPORTED_DIR:?}"
+# Every input must be set and non-empty. Not `: "${VAR:?}"`: the shell picks that exit status (1 in bash, which is macOS's
+# `sh`, but 2 in dash, which is Ubuntu's), and a gate that refuses must refuse the same way on every runner. The names
+# are literals, so the eval reads only them.
+for input in NEEDS_JSON RUST_CHANGED WEB_CHANGED PLANNED REPORTED_DIR; do
+  eval "value=\${$input:-}"
+  [ -n "$value" ] || fail "$input is not set"
+done
 
 printf '%s' "$NEEDS_JSON" | jq -r 'to_entries[] | "\(.key) \(.value.result)"' > needs.txt
 echo "needed jobs:"
