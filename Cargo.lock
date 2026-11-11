@@ -3562,6 +3562,7 @@ dependencies = [
  "thrust-oracle-fixture",
  "thrust-ports",
  "tower",
+ "unicode-normalization",
 ]
 
 [[package]]

@@ -14,6 +14,7 @@ use serde_json::{json, Map, Value};
 use thrust_contracts::{ProjectId, StateGroup, UserId};
 use thrust_core::{Permission, StateError, StatePatch};
 use thrust_ports::StateRow;
+use unicode_normalization::UnicodeNormalization;
 
 use crate::fields::{
     bool_field, char_field, choice_field, float_field, name_was_padded, not_a_dictionary, read, refuse_if_any,
@@ -41,14 +42,18 @@ pub(crate) fn routes() -> Router {
 
 // --- the wire shape -----------------------------------------------------------------------------------------------------------
 
-/// Django's `slugify` of an ASCII name: lower case, what is not a word character, a space or a hyphen dropped, runs of hyphens and
-/// spaces made one hyphen, and hyphens and underscores trimmed from the ends. Django first folds accents to ASCII (`é` to `e`);
-/// here a character that is not ASCII is dropped (the register carries that difference).
+/// The pin's `slugify` (`django.utils.text`, through `django.template.defaultfilters`), step for step: the name in NFKD (an accent
+/// is split from its letter, `é` into `e` and an accent; a compatibility character into what it stands for, `²` into `2`, `ﬃ` into
+/// `ffi`, a no-break space into a space), then only what is ASCII, lower case, what is not a word character, a space or a hyphen
+/// dropped, runs of hyphens and spaces made one hyphen, and hyphens and underscores trimmed from the ends.
+///
+/// NFKD is not transliteration: a letter it does not split (`ß`, `Ø`, `æ`) is dropped, as the pin drops it, and a name of CJK or
+/// emoji alone has an empty slug there too. `tests/slugify_parity.rs` holds this to the pin's answer for every scalar value.
 pub fn slugify(name: &str) -> String {
     let space = |c: char| matches!(c, ' ' | '\t' | '\n' | '\r' | '\x0b' | '\x0c' | '\x1c'..='\x1f');
     let mut out = String::new();
     let mut in_run = false;
-    for c in name.to_lowercase().chars() {
+    for c in name.nfkd().filter(char::is_ascii).map(|c| c.to_ascii_lowercase()) {
         if c == '-' || space(c) {
             if !in_run {
                 out.push('-');
