@@ -401,16 +401,23 @@ fn every_core_error_has_a_plane_answer() {
     }
 }
 
-/// The pin's 500 for a request it fails on purpose carries no cause; one that should not have happened carries the cause for the
-/// log, in a response extension and never in the body.
+/// A 500 always carries its cause for the log, in a response extension and never in the body: a request the pin fails on purpose
+/// names the rule (#51: the helper takes a cause, so the log says why), one that should not have happened says what went wrong.
+/// The project-create catch-all has its own text.
 #[test]
 fn a_500_keeps_its_cause_out_of_the_body() {
-    let (status, body, resp) = render(thrust_api_v1::plane_500());
+    let (status, body, resp) = render(V1Error::internal("per_page <= 0"));
     assert_eq!((status, &body), (500, &json!({ "error": thrust_api_v1::PLANE_500_MESSAGE })));
-    assert!(resp.extensions().get::<thrust_api::InternalErrorDetail>().is_none());
+    let cause = resp.extensions().get::<thrust_api::InternalErrorDetail>().expect("the cause is attached");
+    assert_eq!(cause.0, "per_page <= 0");
 
     let (status, body, resp) = render(V1Error::internal("connection reset by peer"));
     assert_eq!((status, &body), (500, &json!({ "error": thrust_api_v1::PLANE_500_MESSAGE })));
     let cause = resp.extensions().get::<thrust_api::InternalErrorDetail>().expect("the cause is attached");
     assert_eq!(cause.0, "connection reset by peer");
+
+    let (status, body, resp) = render(V1Error::unexpected("an array body"));
+    assert_eq!((status, &body), (500, &json!({ "error": "An unexpected error occurred" })));
+    let cause = resp.extensions().get::<thrust_api::InternalErrorDetail>().expect("the cause is attached");
+    assert_eq!(cause.0, "an array body");
 }

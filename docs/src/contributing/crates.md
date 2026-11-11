@@ -11,6 +11,7 @@ depend on one another is on [Application architecture](../architecture/app.md); 
 | A capability the core needs from outside: a store, a queue, time | a trait in `thrust-ports` | Every returned future is `Send`. [Patterns](patterns.md) has the steps |
 | A business rule, a use-case or a permission check | `thrust-core` | Reaches the outside only through the `Ports` bundle |
 | An HTTP route or its error mapping | `thrust-api` | The product handlers call a core use-case and never see a platform type. Only the test-route handlers reach `app.ports` directly |
+| The text of a reproduced Plane 500, or the function that answers it | `thrust-plane-types` | Both Plane-shaped crates (`thrust-api-v1`, `thrust-compat-plane`) answer a 500 through `plane_500` and write none of their own: `scripts/check-plane-500.sh` rejects `StatusCode::INTERNAL_SERVER_ERROR` and its spellings in either, and CI's `deps` job runs it. Depends on `thrust-api` and axum only |
 | SQL | `thrust-adapters-postgres` | Written once, against `tokio_postgres::Client`, behind a `Connector` |
 | Code that only runs natively | `thrust-adapters-selfhosted` | Never compiled into the Worker |
 | Code that uses a Workers binding (R2, Queues, Hyperdrive, a Durable Object client) | `thrust-adapters-cloudflare` | wasm32 only. The Durable Object classes themselves live in `thrust-worker`, because the Wasm module that exports them must also export `fetch` |
@@ -20,8 +21,8 @@ depend on one another is on [Application architecture](../architecture/app.md); 
 
 ## The portable crates are a list you maintain
 
-`thrust-contracts`, `thrust-ports`, `thrust-core` and `thrust-api` must not depend, even indirectly, on a runtime or
-platform crate. `scripts/check-deps.sh` checks that for exactly the crates named in its `CLEAN_CRATES` variable, and
+`thrust-contracts`, `thrust-ports`, `thrust-core`, `thrust-api`, `thrust-plane-types`, `thrust-api-v1` and
+`thrust-compat-plane` must not depend, even indirectly, on a runtime or platform crate. `scripts/check-deps.sh` checks that for exactly the crates named in its `CLEAN_CRATES` variable, and
 checks `thrust-adapters-memory` separately. A new crate that has to stay portable is not covered until you add it to
 that list, and CI's `deps` job runs the same script, so it does not cover that crate either. The check is also a second list: it looks only for the 17 crate names in its `FORBIDDEN` variable, in
 normal dependencies, so a platform crate that is not on it passes. The ORM crates are the exception: the script asks
@@ -30,13 +31,13 @@ are on [Architecture gates](../testing/techniques/architecture-gates.md).
 
 ## Adding a crate
 
-1. Create `crates/<name>/Cargo.toml`. All 15 existing crates take `edition`, `version`, `license` and `publish` from
+1. Create `crates/<name>/Cargo.toml`. All 18 existing crates take `edition`, `version`, `license` and `publish` from
    the workspace (`edition.workspace = true` and so on), so the licence (`AGPL-3.0-only`) and `publish = false`
    stay in one place.
 2. Add the path to `members` in the root `Cargo.toml`. The list is explicit, with no glob.
 3. If another crate will depend on it, add `<name> = { path = "crates/<name>" }` under `[workspace.dependencies]`
-   and depend on it with `{ workspace = true }`. Ten crates are declared that way: contracts, ports, core, api,
-   compat-plane and the five adapter crates. The two roots and `thrust-contract-tests` are not, because nothing depends on them.
+   and depend on it with `{ workspace = true }`. Twelve crates are declared that way: contracts, ports, core, api,
+   plane-types, api-v1, compat-plane and the five adapter crates. The two roots and `thrust-contract-tests` are not, because nothing depends on them.
    The editor crates are not either: `thrust-editor-worker` depends on `thrust-editor-doc` by path.
 4. Put the crate's tests in the crate. cargo-mutants runs only the mutated package's own tests, and
    `cargo nextest run -p <crate>` selects nothing, and exits 4, for a crate with no tests of its own. The reasoning is

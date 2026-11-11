@@ -79,7 +79,9 @@ fn label_error(e: LabelError, changing: bool) -> V1Error {
             json!({ "error": "Label with the same name already exists in the project", "id": id }),
         ),
         // the clash was with a label that is no longer there to name: the pin's view fails on the missing row
-        LabelError::NameTaken { id: None } => crate::plane_500(),
+        LabelError::NameTaken { id: None } => {
+            V1Error::internal("a label's name is taken by a row that is gone: the pin's view fails on the missing row")
+        }
         LabelError::ExternalTaken { id } => V1Error::Error(
             StatusCode::CONFLICT,
             json!({ "error": "Label with the same external id and external source already exists", "id": id }),
@@ -171,7 +173,9 @@ async fn create(
     match thrust_core::create_label(&ctx.app, &scope, patch).await {
         // the pin looks the label that has the name up by the text as it was sent, which DRF trimmed before the database saw it: a
         // name sent with spaces round it finds nothing, and the view's `label.id` raises
-        Err(LabelError::NameTaken { .. }) if padded => Err(crate::plane_500()),
+        Err(LabelError::NameTaken { .. }) if padded => Err(V1Error::internal(
+            "a padded label name clashes: the pin looks it up untrimmed, finds nothing, and `label.id` raises",
+        )),
         made => {
             let label = made.map_err(|e| label_error(e, false))?;
             Ok((StatusCode::CREATED, Json(Value::Object(label_body(&label)))))

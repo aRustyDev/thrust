@@ -126,6 +126,12 @@ jobs:
         run: |
           scripts/check-topology.sh
           scripts/check-topology.sh --self-test
+      # Issue #51: every reproduced Plane 500 is answered by `thrust_plane_types::plane_500`, so neither Plane-shaped crate writes a
+      # 500 of its own. The self-test is the control: the guard is run on trees it must refuse, and on empty ones it must not pass.
+      - name: Plane 500 guard
+        run: |
+          scripts/check-plane-500.sh
+          scripts/check-plane-500.sh --self-test
       # Issue #39: the Worker's two real configs carry `[placement] region = "aws:us-east-1"`. A step and not a job, so
       # the gate's required contexts do not change.
       - name: Placement guard

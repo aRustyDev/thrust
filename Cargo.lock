@@ -3560,6 +3560,7 @@ dependencies = [
  "thrust-core",
  "thrust-editor-doc",
  "thrust-oracle-fixture",
+ "thrust-plane-types",
  "thrust-ports",
  "tower",
  "unicode-normalization",
@@ -3665,6 +3666,18 @@ dependencies = [
  "serde_json",
  "thrust-contracts",
  "uuid",
+]
+
+[[package]]
+name = "thrust-plane-types"
+version = "0.0.0"
+dependencies = [
+ "axum",
+ "futures-executor",
+ "proptest",
+ "rstest",
+ "serde_json",
+ "thrust-api",
 ]
 
 [[package]]

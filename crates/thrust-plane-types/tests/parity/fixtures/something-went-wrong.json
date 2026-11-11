@@ -1,0 +1,8 @@
+{
+  "kind": "SomethingWentWrong",
+  "source": "tools/oracle-v1/corpus/assets.json#workspace-asset-upload (recorded on the pin: POST /api/v1/workspaces/{slug}/assets/ raises, PQ-401); apps/api/plane/api/views/base.py:107",
+  "status": 500,
+  "body": {
+    "error": "Something went wrong please try again later"
+  }
+}

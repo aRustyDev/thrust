@@ -12,11 +12,13 @@ use axum::response::IntoResponse;
 use axum::Json;
 use serde_json::{json, Map, Value};
 use thrust_core::CoreError;
+use thrust_plane_types::{plane_500, Plane500};
 
-/// What the pin answers when a handler raises: its error middleware turns every unhandled exception into this 500.
-/// Several requests reach it on purpose (a `per_page` of 0 or -1, a `deleted_at` in a work item's body: EX-001, EX-002), and the
-/// owner decided to reproduce them (Q-0033.2), as a handled response and never as a crash of the process (ADR-0031, ADR-0006).
-pub const PLANE_500_MESSAGE: &str = "Something went wrong please try again later";
+/// What the pin answers when a handler raises: its base handlers turn every unhandled exception into this 500. Several requests
+/// reach it on purpose (a `per_page` of 0 or -1, a `deleted_at` in a work item's body: EX-001, EX-002), and the owner decided to
+/// reproduce them (Q-0033.2), as a handled response and never as a crash of the process (ADR-0031, ADR-0006). The text, and the
+/// two other 500 texts the pin has, are `thrust-plane-types`'s, which answers every reproduced 500 of this crate (#51).
+pub const PLANE_500_MESSAGE: &str = Plane500::SomethingWentWrong.message();
 
 /// A v1 answer that is not a success.
 #[derive(Debug)]
@@ -39,19 +41,20 @@ pub enum V1Error {
     Fields(Map<String, Value>),
     /// 429 with `Retry-After`: the key's allowance for the window is spent.
     RateLimited { retry_after_secs: u64 },
-    /// 500, [`PLANE_500_MESSAGE`]. The cause, if there is one, is logged by the composition root and never sent.
-    Plane500(Option<String>),
-}
-
-/// The pin's 500, for a request it fails on purpose.
-pub fn plane_500() -> V1Error {
-    V1Error::Plane500(None)
+    /// 500, one of the pin's three texts ([`Plane500`]). The cause is logged by the composition root and never sent.
+    Plane500 { kind: Plane500, cause: String },
 }
 
 impl V1Error {
-    /// A 500 for something that should not have happened here: the cause goes to the log, the client gets the pin's body.
+    /// The pin's 500 for a request it fails on purpose, or for something that should not have happened here: the `cause` goes to
+    /// the log (name the rule, as "per_page <= 0"), the client gets the base handlers' body.
     pub fn internal(cause: impl Into<String>) -> Self {
-        V1Error::Plane500(Some(cause.into()))
+        V1Error::Plane500 { kind: Plane500::SomethingWentWrong, cause: cause.into() }
+    }
+
+    /// The 500 that only project create's own catch-all gives (`An unexpected error occurred`).
+    pub fn unexpected(cause: impl Into<String>) -> Self {
+        V1Error::Plane500 { kind: Plane500::UnexpectedError, cause: cause.into() }
     }
 
     /// Plane's `{"error": message}` with `status`.
@@ -98,13 +101,7 @@ impl IntoResponse for V1Error {
                 resp.headers_mut().insert(RETRY_AFTER, HeaderValue::from(retry_after_secs));
                 resp
             }
-            V1Error::Plane500(cause) => {
-                let mut resp = error(StatusCode::INTERNAL_SERVER_ERROR, PLANE_500_MESSAGE);
-                if let Some(cause) = cause {
-                    resp.extensions_mut().insert(thrust_api::InternalErrorDetail(cause));
-                }
-                resp
-            }
+            V1Error::Plane500 { kind, cause } => plane_500(kind, cause),
         }
     }
 }
@@ -122,7 +119,7 @@ impl From<CoreError> for V1Error {
             CoreError::Invalid(message) => V1Error::Detail(StatusCode::BAD_REQUEST, message),
             CoreError::Conflict(message) => V1Error::error(StatusCode::CONFLICT, &message),
             CoreError::TooLarge => V1Error::Detail(StatusCode::PAYLOAD_TOO_LARGE, "Request entity too large.".into()),
-            CoreError::Upstream(cause) | CoreError::Internal(cause) => V1Error::Plane500(Some(cause)),
+            CoreError::Upstream(cause) | CoreError::Internal(cause) => V1Error::internal(cause),
         }
     }
 }

@@ -5,8 +5,9 @@
 //! reading of the request into a core use-case and of its result into Plane's body; the rules are core's, and the same ones
 //! serve the internal API (`thrust-compat-plane`).
 //!
-//! Plane-shaped types (the bodies, the cursor envelope, the error shapes, `plane_500`) stay in this crate and out of
-//! `thrust-contracts` (#52). The crate is runtime-free, as `thrust-api` is: it compiles to wasm32 and runs under workerd.
+//! Plane-shaped types (the bodies, the cursor envelope, the error shapes) stay in this crate and out of `thrust-contracts` (#52);
+//! the three 500 texts, which the internal API answers too, are `thrust-plane-types`'s (#51). The crate is runtime-free, as
+//! `thrust-api` is: it compiles to wasm32 and runs under workerd.
 //!
 //! A route takes [`V1Path`] first (a path that does not match is the URLconf's 404, answered before a credential is read), then
 //! [`Ctx`] (the API key, the permission, the throttle), and answers `Result<_, V1Error>`.
@@ -31,7 +32,7 @@ use axum::routing::{any, MethodRouter};
 use axum::{middleware, Router};
 
 pub use ctx::{Ctx, PlaneUuid, RateInfo, V1Config, V1Path};
-pub use error::{plane_500, V1Error, PLANE_500_MESSAGE};
+pub use error::{V1Error, PLANE_500_MESSAGE};
 pub use projects::{DEFAULT_COLORS, DEFAULT_ICONS};
 pub use states::{slugify, NEWER_THAN_THE_PINS_UNICODE};
 
