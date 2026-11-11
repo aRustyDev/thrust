@@ -1363,7 +1363,13 @@ impl Database for MemoryDatabase {
         q: &WorkspaceSearch,
     ) -> Result<Vec<WorkItemHit>, DbError> {
         let (ws, user) = (scope.workspace_id(), scope.user_id());
-        let text = q.text.to_lowercase();
+        // MUTANT (control run only, feature `mutant_search_case_sensitive`): `contains` without folding case, as in `search_work_items`
+        // above. The engine pass goes through this search, so its `icontains` comparison must catch it here too.
+        #[cfg(feature = "mutant_search_case_sensitive")]
+        let fold = |t: &str| t.to_string();
+        #[cfg(not(feature = "mutant_search_case_sensitive"))]
+        let fold = |t: &str| t.to_lowercase();
+        let text = fold(&q.text);
         let s = self.state.lock_unpoisoned();
         let Some(slug) = s.workspace_rows.get(&ws).map(|w| w.slug.clone()) else { return Ok(Vec::new()) };
         let mut found: Vec<(&WorkItem, &ProjectRow)> = s
@@ -1379,8 +1385,8 @@ impl Database for MemoryDatabase {
                     .map(|p| (w, p))
             })
             .filter(|(w, p)| {
-                w.name.to_lowercase().contains(&text)
-                    || p.identifier.to_lowercase().contains(&text)
+                fold(&w.name).contains(&text)
+                    || fold(&p.identifier).contains(&text)
                     || q.numbers.contains(&w.sequence_id)
             })
             .collect();
