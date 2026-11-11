@@ -89,4 +89,11 @@ Each edit to a vendored file is its own commit and is listed here with the reaso
    had no exchange for. The 46 exchanges before them are byte-identical to the committed ones.
 6. `scripts/db-state.sh`: paths of this layout (it was written for the fork's `oracle/`), and `restore` checks the row
    counts of the seed.
+7. `exceptions.yaml`: EX-014 and its line in `scopes.m1.entry_operations` are removed (thrust issue #58, D-031 (2)). Thrust
+   made a state's slug without Django's first step, NFKD, so a name whose only ASCII is what Django folds (`³`) had an empty
+   slug, which the schema's pattern refuses; `slugify` folds now, and the gate no longer finds it, so a scope that still
+   listed the entry would fail as stale. The number is not reused. The committed gate results of the three Thrust targets
+   are the runs after it: 12 failures, all accepted, on each (13 before), and 162 cases (161 before); the scope's own note
+   says that Hypothesis stops generating for an operation once a case of it fails, which is the likely reason for the case
+   more, not something measured.
 New: `harness/compare_corpus.py` (the corpus comparison and its controls).

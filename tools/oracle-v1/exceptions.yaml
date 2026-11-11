@@ -101,8 +101,6 @@ scopes:
         # the case that finds it asks for `expand=created_by,updated_by`; Thrust does not expand those two (D-033 (5)), so its
         # answer is the ids the schema describes: fires on the pin only
         absent_on_thrust: "D-033 (5): expand is built for state, assignees and labels only"
-      EX-014:
-        - PATCH /api/v1/workspaces/{slug}/projects/{project_id}/states/{state_id}/
 
 entries:
 - id: EX-001
@@ -386,32 +384,9 @@ entries:
   evidence: scoped run (m1) on a fresh seed, pinned commit ba85d4d3d3, schemathesis 4.31.1, seed 1, deterministic, 2026-11-10
   rust_expectation: reproduce
   deviation_ref: null
-- id: EX-014
-  kind: intentional-deviation
-  applies_to: conformance
-  # Thrust only: a run on the pin does not hold it (see `for_target` in harness/run_conformance.py). Optional in a whole-schema run,
-  # where it depends on the fuzzer sending a name made of characters that Django folds; a scope that lists it requires it to fire.
-  targets: [thrust]
-  status: active
-  optional: true
-  match:
-    check: response_schema_conformance
-    failure_type: JsonSchemaError
-    operations:
-    - GET /api/v1/workspaces/{slug}/projects/{project_id}/states/
-    - GET /api/v1/workspaces/{slug}/projects/{project_id}/states/{state_id}/
-    - PATCH /api/v1/workspaces/{slug}/projects/{project_id}/states/{state_id}/
-    - POST /api/v1/workspaces/{slug}/projects/{project_id}/states/
-    message_regex: '"" does not match "\^\[-a-zA-Z0-9_\]\+\$"'
-  reason: >-
-    A state's `slug` is made from its name, as Django's `slugify` makes it, which first folds a character to its ASCII
-    form under NFKD (`³` to `3`, `é` to `e`) and drops what is still not ASCII. Thrust drops non-ASCII characters without
-    folding (D-031 (2) named accents; the compatibility characters are the same gap), so a name whose only ASCII
-    is what Django would fold has an empty slug here, which the schema's pattern (`^[-a-zA-Z0-9_]+$`) refuses. A name with no
-    foldable character has an empty slug on the pin too, so the behaviour is the same and the set of names differs.
-  evidence: scoped run (m1) on Thrust native-memory, 2026-11-10 (a PATCH whose name held `³`; Plane's slug for it is `3`)
-  rust_expectation: n/a
-  deviation_ref: D-031
+# EX-014 (Thrust-only: a slug that is empty because the fold was missing) was removed when `slugify` came to fold under NFKD as the pin's
+# does (D-031 (2), thrust issue #58). The number is not reused. A name with nothing foldable has an empty slug on the pin as well, and that
+# is the pin's, not a difference.
 
 # --- the corpus comparison (harness/compare_corpus.py): what a recording of Thrust may differ in from the committed corpus ----------
 # `match.resource` names a recorded resource (or a list of them), `exchanges` the exchanges (any when absent), and `path_regex` the JSON

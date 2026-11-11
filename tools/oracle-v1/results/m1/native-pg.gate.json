@@ -1,14 +1,14 @@
 {
  "label": "gate",
- "base_url": "http://127.0.0.1:41740",
+ "base_url": "http://127.0.0.1:26571",
  "schemathesis_exit": 1,
  "scope": "m1",
  "target": "thrust",
  "operations_tested": 25,
  "operations_with_2xx": 24,
- "cases": 161,
- "failures_total": 13,
- "accepted": 13,
+ "cases": 162,
+ "failures_total": 12,
+ "accepted": 12,
  "unaccepted": [],
  "stale_entries": [],
  "vacuous": [],
@@ -19,8 +19,7 @@
   "EX-002": 1,
   "EX-011": 2,
   "EX-007": 2,
-  "EX-003": 1,
-  "EX-014": 1
+  "EX-003": 1
  },
  "accepted_by_entry_and_operation": {
   "EX-001 POST /api/v1/workspaces/{slug}/projects/{project_id}/issues/": 1,
@@ -34,8 +33,7 @@
   "EX-007 GET /api/v1/workspaces/{slug}/projects/{project_id}/issues/{pk}/": 1,
   "EX-007 GET /api/v1/workspaces/{slug}/projects/{project_id}/work-items/{pk}/": 1,
   "EX-011 GET /api/v1/workspaces/{slug}/issues/search/": 1,
-  "EX-011 GET /api/v1/workspaces/{slug}/work-items/search/": 1,
-  "EX-014 PATCH /api/v1/workspaces/{slug}/projects/{project_id}/states/{state_id}/": 1
+  "EX-011 GET /api/v1/workspaces/{slug}/work-items/search/": 1
  },
  "operations_expected": [
   "GET /api/v1/workspaces/{slug}/issues/search/",
