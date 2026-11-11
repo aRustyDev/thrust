@@ -18,8 +18,9 @@ The fixture holds three things, none picked by hand except the pool the names ar
   * `between`: every scalar value `c` whose slug as `"a" + c + "b"` is not `"ab"`: what a character does between two letters, which
     is where a folded space (U+00A0 and the other Unicode spaces fold to U+0020) and a folded hyphen (U+FF0D) show.
   * `unassigned`: the ranges of scalar values that the pin's Unicode data has no character for (category `Cn`). The pin cannot fold
-    what its Python does not know, and a Rust crate on newer Unicode data folds some of them (U+209D, a subscript letter, is one);
-    the test lets a difference stand only inside these ranges, and fails any other.
+    what its Python does not know, and a Rust crate on newer Unicode data folds some of them (U+209D, which folds to `w`, is one);
+    Thrust drops those first (`NEWER_THAN_THE_PINS_UNICODE`), and a test holds that list to exactly the characters of these ranges
+    that the crate folds. No difference from the pin is allowed anywhere.
   * `names`: names of up to twelve characters drawn, from a fixed seed, out of a pool of ASCII, spaces, hyphens, underscores, accents,
     compatibility characters, characters nothing folds (`ß`, `Ø`, CJK, emoji) and combining marks, with the slug of each.
 

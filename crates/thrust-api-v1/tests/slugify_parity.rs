@@ -5,11 +5,11 @@
 //! drawn from a fixed seed. A character that Django folds under NFKD (`é`, `²`, `ﬃ`, a no-break space) and one that nothing folds
 //! (`ß`, `Ø`, CJK) are both in it, so a fold that is missing, is wrong, or folds something the pin does not, fails a row.
 //!
-//! One kind of difference stands, and no other: the crate's Unicode data is newer than the pin's (the message names both), so it folds
-//! a few characters that the pin's Python has not been taught (`unassigned` in the fixture lists what the pin's data has no character
-//! for: U+209D, a subscript letter, is one). Thrust folds them; the pin will when it moves to a newer Python, and a fold that waited
-//! for that would be a table of exceptions kept in step with a version. D-031 (2) says so. A difference at a character the pin knows
-//! is a failure, and so is one the pin's tables cannot explain.
+//! There is no difference to allow. The crate's Unicode data (18.0.0) is newer than the pin's (15.0.0), so the crate would fold
+//! characters that the pin's Python has no character for, and so drops; `NEWER_THAN_THE_PINS_UNICODE` drops them here first (owner,
+//! 2026-11-11: match the pin), and every row below is exact. `unassigned` in the fixture lists what the pin's data has no character
+//! for, and the last test holds that list to exactly the characters the crate folds out of them: a crate that learns more fails it
+//! and names them, and so does a pin that moves to a newer Python (the list is then emptied, D-031 (2)).
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,
@@ -18,10 +18,11 @@
     reason = "test code: a panic is how a test fails, and clippy.toml exempts only #[test] functions and #[cfg(test)] modules, not the helpers around them"
 )]
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde_json::Value;
-use thrust_api_v1::slugify;
+use thrust_api_v1::{slugify, NEWER_THAN_THE_PINS_UNICODE};
+use unicode_normalization::UnicodeNormalization;
 
 const FIXTURE: &str = include_str!("parity/fixtures/slugify.json");
 
@@ -59,22 +60,6 @@ fn unassigned(fixture: &Value) -> Vec<(u32, u32)> {
     fixture["unassigned"].as_array().unwrap().iter().map(|run| (hex(&run[0]), hex(&run[1]))).collect()
 }
 
-/// Whether the pin has no character at `c`, so that its `slugify` drops it whatever a newer Unicode makes of it.
-fn the_pin_has_no_character(runs: &[(u32, u32)], c: char) -> bool {
-    runs.iter().any(|&(first, last)| (first..=last).contains(&u32::from(c)))
-}
-
-/// What the run found of the one kind of difference that stands, for `--no-capture` to show.
-fn say_what_is_newer(newer: &[char], fixture: &Value) {
-    let list: Vec<String> = newer.iter().map(|c| format!("U+{:04X}", u32::from(*c))).collect();
-    eprintln!(
-        "{} scalar values are folded here and not by the pin, which has no character there ({}): {}",
-        newer.len(),
-        versions(fixture),
-        list.join(" ")
-    );
-}
-
 /// Every Unicode scalar value, as a name of its own: the slug is the pin's, and is empty for all that the fixture does not list.
 #[test]
 fn parity_slugify_of_every_scalar_value_is_the_pins() {
@@ -86,19 +71,13 @@ fn parity_slugify_of_every_scalar_value_is_the_pins() {
     assert_eq!(alone.get(&0xFB03).map(String::as_str), Some("ffi"), "the ffi ligature");
     assert!(alone.len() > 1_000, "{} entries", alone.len());
 
-    let unknown = unassigned(&fixture);
     let mut count = 0_u64;
-    let (mut wrong, mut newer) = (Vec::new(), Vec::new());
+    let mut wrong = Vec::new();
     for c in scalars() {
         count += 1;
         let want = alone.get(&u32::from(c)).map_or("", String::as_str);
         let got = slugify(&c.to_string());
-        if got == want {
-            continue;
-        }
-        if the_pin_has_no_character(&unknown, c) {
-            newer.push(c);
-        } else {
+        if got != want {
             wrong.push(format!("U+{:04X} gives {got:?}, the pin gives {want:?}", u32::from(c)));
         }
     }
@@ -107,7 +86,6 @@ fn parity_slugify_of_every_scalar_value_is_the_pins() {
         fixture["scalar_values"].as_u64().unwrap(),
         "the fixture and this loop cover the same scalar values"
     );
-    say_what_is_newer(&newer, &fixture);
     assert!(
         wrong.is_empty(),
         "{} of {count} differ ({}); the first twenty: {:#?}",
@@ -128,21 +106,14 @@ fn parity_slugify_of_every_scalar_value_between_two_letters_is_the_pins() {
     assert_eq!(between.get(&0xFF0D).map(String::as_str), Some("a-b"), "fullwidth hyphen-minus");
     assert!(between.len() > 1_000, "{} entries", between.len());
 
-    let unknown = unassigned(&fixture);
-    let (mut wrong, mut newer) = (Vec::new(), Vec::new());
+    let mut wrong = Vec::new();
     for c in scalars() {
         let want = between.get(&u32::from(c)).map_or("ab", String::as_str);
         let got = slugify(&format!("a{c}b"));
-        if got == want {
-            continue;
-        }
-        if the_pin_has_no_character(&unknown, c) {
-            newer.push(c);
-        } else {
+        if got != want {
             wrong.push(format!("a + U+{:04X} + b gives {got:?}, the pin gives {want:?}", u32::from(c)));
         }
     }
-    say_what_is_newer(&newer, &fixture);
     assert!(
         wrong.is_empty(),
         "{} differ ({}); the first twenty: {:#?}",
@@ -174,5 +145,29 @@ fn parity_slugify_of_drawn_names_is_the_pins() {
         names.len(),
         versions(&fixture),
         &wrong[..wrong.len().min(20)]
+    );
+}
+
+/// What `slugify` drops before it folds is exactly the scalar values that the pin has no character for and that the crate would fold
+/// to ASCII: not one fewer (a difference from the pin, which the tests above would show too, but not name), and not one more (a
+/// character left out of the fold that the pin may know).
+#[test]
+fn parity_slugify_drops_exactly_what_the_pin_lacks_and_the_crate_would_fold() {
+    let fixture = fixture();
+    let unknown = unassigned(&fixture);
+    let would_fold: BTreeSet<char> = unknown
+        .iter()
+        .flat_map(|&(first, last)| first..=last)
+        .filter_map(char::from_u32)
+        .filter(|c| c.to_string().nfkd().any(|d| d.is_ascii()))
+        .collect();
+    let dropped: BTreeSet<char> = NEWER_THAN_THE_PINS_UNICODE.iter().flat_map(Clone::clone).collect();
+    let hex = |set: Vec<&char>| set.iter().map(|c| format!("U+{:04X}", u32::from(**c))).collect::<Vec<_>>().join(" ");
+    assert!(
+        would_fold == dropped,
+        "NEWER_THAN_THE_PINS_UNICODE ({}) must be what the crate folds and the pin lacks; to add: [{}]; to remove: [{}]",
+        versions(&fixture),
+        hex(would_fold.difference(&dropped).collect()),
+        hex(dropped.difference(&would_fold).collect())
     );
 }

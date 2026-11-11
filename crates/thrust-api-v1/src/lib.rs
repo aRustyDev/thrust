@@ -33,7 +33,7 @@ use axum::{middleware, Router};
 pub use ctx::{Ctx, PlaneUuid, RateInfo, V1Config, V1Path};
 pub use error::{plane_500, V1Error, PLANE_500_MESSAGE};
 pub use projects::{DEFAULT_COLORS, DEFAULT_ICONS};
-pub use states::slugify;
+pub use states::{slugify, NEWER_THAN_THE_PINS_UNICODE};
 
 /// The routes of `/api/v1`, for the composition roots to merge. Each needs the `App` in the request's extensions, as
 /// `thrust-api`'s do.

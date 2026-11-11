@@ -5,6 +5,8 @@
 //! one, and none of an archived project. The rules are core's (`thrust_core::states`); this is the pin's wire shape over them: the
 //! 18-key body, DRF's field validation, a create that answers 200, and the three different answers to a name that is taken.
 
+use std::ops::RangeInclusive;
+
 use axum::body::Bytes;
 use axum::extract::RawQuery;
 use axum::http::{HeaderMap, StatusCode};
@@ -42,6 +44,14 @@ pub(crate) fn routes() -> Router {
 
 // --- the wire shape -----------------------------------------------------------------------------------------------------------
 
+/// The scalar values that `unicode-normalization` (Unicode 18.0.0) folds to ASCII and that the pin's Python 3.12 (Unicode 15.0.0)
+/// has no character for, so that its `slugify` leaves them as they are and drops them: U+209D to U+209F (which fold to `w`, `y`,
+/// `z`), U+A7F1 (`s`) and U+1CCD6 to U+1CCF9 (letters and digits, `a`, `b`, `c` and on). `slugify` drops them too, which is what the
+/// pin does today; the pin folds them when it moves to a Python with a newer Unicode, and then this list is emptied.
+/// `tests/slugify_parity.rs` holds it to exactly those characters, from the pin's own table of what it has no character for.
+pub const NEWER_THAN_THE_PINS_UNICODE: [RangeInclusive<char>; 3] =
+    ['\u{209D}'..='\u{209F}', '\u{A7F1}'..='\u{A7F1}', '\u{1CCD6}'..='\u{1CCF9}'];
+
 /// The pin's `slugify` (`django.utils.text`, through `django.template.defaultfilters`), step for step: the name in NFKD (an accent
 /// is split from its letter, `é` into `e` and an accent; a compatibility character into what it stands for, `²` into `2`, `ﬃ` into
 /// `ffi`, a no-break space into a space), then only what is ASCII, lower case, what is not a word character, a space or a hyphen
@@ -49,11 +59,16 @@ pub(crate) fn routes() -> Router {
 ///
 /// NFKD is not transliteration: a letter it does not split (`ß`, `Ø`, `æ`) is dropped, as the pin drops it, and a name of CJK or
 /// emoji alone has an empty slug there too. `tests/slugify_parity.rs` holds this to the pin's answer for every scalar value.
+///
+/// The pin's Python (3.12) has Unicode 15.0.0 and this crate has a newer one, so it would fold characters that the pin has no
+/// character for and so drops: [`NEWER_THAN_THE_PINS_UNICODE`] are dropped here first, and the slug is the pin's (owner,
+/// 2026-11-11). That list is a copy of a version gap; D-031 (2) says what ends it.
 pub fn slugify(name: &str) -> String {
     let space = |c: char| matches!(c, ' ' | '\t' | '\n' | '\r' | '\x0b' | '\x0c' | '\x1c'..='\x1f');
     let mut out = String::new();
     let mut in_run = false;
-    for c in name.nfkd().filter(char::is_ascii).map(|c| c.to_ascii_lowercase()) {
+    let known_to_the_pin = name.chars().filter(|c| !NEWER_THAN_THE_PINS_UNICODE.iter().any(|run| run.contains(c)));
+    for c in known_to_the_pin.nfkd().filter(char::is_ascii).map(|c| c.to_ascii_lowercase()) {
         if c == '-' || space(c) {
             if !in_run {
                 out.push('-');
