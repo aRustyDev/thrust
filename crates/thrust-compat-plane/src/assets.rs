@@ -4,7 +4,7 @@
 //! On the pin the browser uploads straight to the object store, to an address S28 presigns. Thrust has no store the browser can
 //! reach on every target, so S28 hands it an address of this API instead, with the same `upload_data` the app already reads for
 //! Cloudflare R2 (`method: "PUT"`, the headers it signed): `PUT /api/assets/v2/upload/{asset}/{token}/`. The browser sends that
-//! upload with no cookies (`withCredentials: false`), so the token in the address is the credential: one use, an hour (D-0xx).
+//! upload with no cookies (`withCredentials: false`), so the token in the address is the credential: one use, an hour (D-035).
 //!
 //! S33 answers 302 as the pin does, to `.../object/`, a route of the same workspace that checks the caller again and sends the
 //! bytes (the browser follows a redirect with its cookies, as the pin's presigned URL needed none). A project's cover is shown at
@@ -19,7 +19,7 @@ use axum::response::{IntoResponse, Response};
 use axum::{Extension, Json};
 use serde_json::{json, Value};
 use thrust_contracts::*;
-use thrust_core::{App, AssetError, CoreError, NewUpload, IMAGE_TYPES};
+use thrust_core::{App, AssetError, CoreError, NewUpload, Permission, IMAGE_TYPES};
 use thrust_ports::*;
 
 use crate::projects::missing_object;
@@ -46,9 +46,22 @@ pub(crate) fn static_url(id: impl std::fmt::Display) -> String {
     format!("/api/assets/v2/static/{id}/")
 }
 
-/// A route's asset id, or the 404 Django gives a path no route matches: the pin's URLs take `<uuid:asset_id>`.
+/// A route's asset id, or the 404 the pin gives a path no route matches: its URLs take `<uuid:asset_id>`, and the fixtures show the
+/// asset routes answering `{"error": "Page not found."}` (the project routes' `{"detail": "Not found."}` is another handler's).
 fn asset_id(raw: &str) -> Result<AssetId, PlaneError> {
-    raw.parse().map_err(|_| PlaneError::NotFound(json!({"detail": "Not found."})))
+    raw.parse().map_err(|_| PlaneError::NotFound(json!({"error": "Page not found."})))
+}
+
+/// Python's truthiness of a JSON value, which is how the pin tells "no ids" from ids.
+fn falsy(v: Option<&Value>) -> bool {
+    match v {
+        None | Some(Value::Null) | Some(Value::Bool(false)) => true,
+        Some(Value::String(s)) => s.is_empty(),
+        Some(Value::Array(a)) => a.is_empty(),
+        Some(Value::Object(o)) => o.is_empty(),
+        Some(Value::Number(n)) => n.as_f64() == Some(0.0),
+        Some(Value::Bool(true)) => false,
+    }
 }
 
 /// What each way an asset's routes refuse is on the pin, and where it is Thrust's own, the words Thrust uses.
@@ -138,19 +151,29 @@ pub(crate) async fn create(
     if !IMAGE_TYPES.contains(&content_type) {
         return Err(refusal(AssetError::BadType));
     }
-    // Only a project's cover is built (D-0xx); the pin makes the others, and nothing here would read them
+    // `entity_identifier` is the project a cover is for. The pin's default for a key that is not there is `False`, which its
+    // database refuses, and a text that is no id fails its validation: both are 400s (fixtures S28), whatever the kind. None is
+    // null or the empty text the app sends for a project that does not exist yet.
+    let names_a_project = match b.get("entity_identifier") {
+        None | Some(Value::Bool(false)) => {
+            return Err(PlaneError::BadRequest(json!({"error": "The payload is not valid"})))
+        }
+        Some(Value::Null) => false,
+        Some(Value::String(s)) if s.is_empty() => false,
+        Some(Value::String(s)) if s.parse::<Uuid>().is_ok() => true,
+        Some(_) => return Err(PlaneError::BadRequest(json!({"error": "Please provide valid detail"}))),
+    };
+    // Only a project's cover is built (D-035); the pin makes the others, and nothing here would read them
     let Some(entity) = AssetEntity::parse(entity_type) else {
         return Err(PlaneError::BadRequest(json!({
             "error": "This kind of file cannot be uploaded yet.",
             "status": false,
         })));
     };
-    // The pin takes the project the cover is for here and sets the cover when the upload is confirmed. Thrust attaches a cover with
-    // S31 (or S32's `cover_image_asset`), which is what the project's creation does; changing an existing project's cover through
-    // here is refused loudly rather than accepted and not applied (D-0xx).
-    if b.get("entity_identifier")
-        .is_some_and(|v| !matches!(v, Value::Null | Value::Bool(false)) && v.as_str() != Some(""))
-    {
+    // The pin attaches the cover of the project an identifier names when the upload is confirmed. Thrust attaches a cover with S31
+    // (or S32's `cover_image_asset`), which is what the project's creation does; changing an existing project's cover through
+    // here is refused loudly rather than accepted and not applied (D-035).
+    if names_a_project {
         return Err(PlaneError::BadRequest(json!({
             "error": "The cover of an existing project cannot be changed this way yet.",
             "status": false,
@@ -193,7 +216,7 @@ pub(crate) async fn upload(
     Ok(StatusCode::OK)
 }
 
-/// S29. The browser says the upload is done: 204. The pin takes its word; this looks at the object first (D-0xx).
+/// S29. The browser says the upload is done: 204. The pin takes its word; this looks at the object first (D-035).
 pub(crate) async fn confirm(
     Caller(who): Caller,
     Extension(app): Extension<App>,
@@ -214,20 +237,32 @@ pub(crate) async fn bulk(
 ) -> Result<StatusCode, PlaneError> {
     let project = crate::projects::project_id(&project)?;
     let b = object_body(&body)?;
-    // an id that is no id names nothing, as it would for the pin's `id__in` once it got past validation; it still counts as asked
-    let ids: Vec<AssetId> = b
-        .get("asset_ids")
-        .and_then(Value::as_array)
-        .map(|a| a.iter().map(|v| v.as_str().and_then(|s| s.parse().ok()).unwrap_or(AssetId(Uuid::nil()))).collect())
-        .unwrap_or_default();
-    thrust_core::attach_project_cover(&app, &who, &WorkspaceSlug::new(slug), project, &ids).await.map_err(
-        |e| match e {
-            AssetError::NotFound => PlaneError::NotFound(json!({"error": "The requested asset could not be found."})),
-            // the decorator answers a stranger and a non-member alike
-            AssetError::Core(CoreError::NotFound | CoreError::Forbidden) => refused_by_decorator(),
-            other => refusal(other),
-        },
-    )?;
+    let slug = WorkspaceSlug::new(slug);
+    // the decorator answers a stranger and a non-member alike
+    let by_decorator = |e: CoreError| match e {
+        CoreError::NotFound | CoreError::Forbidden => refused_by_decorator(),
+        other => other.into(),
+    };
+    // What the pin does with `asset_ids`, after its decorator: nothing that is truthy-empty (null, `[]`, `""`, none) is "No asset
+    // ids provided", and a value that is not a list of ids (a text, or a list with a text that is no id) fails the query's own
+    // validation, `Please provide valid detail`. Ids that no asset has are left out without a word.
+    let asked = b.get("asset_ids");
+    let ids: Option<Vec<AssetId>> = if falsy(asked) {
+        Some(vec![])
+    } else {
+        asked
+            .and_then(Value::as_array)
+            .and_then(|a| a.iter().map(|v| v.as_str().and_then(|s| s.parse().ok())).collect::<Option<Vec<AssetId>>>())
+    };
+    let Some(ids) = ids else {
+        thrust_core::authorize(&app, &who, &slug, project, Permission::ReadProject).await.map_err(by_decorator)?;
+        return Err(PlaneError::BadRequest(json!({"error": "Please provide valid detail"})));
+    };
+    thrust_core::attach_project_cover(&app, &who, &slug, project, &ids).await.map_err(|e| match e {
+        AssetError::NotFound => PlaneError::NotFound(json!({"error": "The requested asset could not be found."})),
+        AssetError::Core(e) => by_decorator(e),
+        other => refusal(other),
+    })?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -241,7 +276,12 @@ pub(crate) async fn redirect(
     let scope = decorated(&app, &who, slug.clone(), &ALL_ROLES).await?;
     let asset = thrust_core::open_asset(&app, &scope, asset_id(&asset)?).await.map_err(refusal)?;
     let location = format!("/api/assets/v2/workspaces/{slug}/{}/object/", asset.id);
-    Ok((StatusCode::FOUND, [(header::LOCATION, location)]).into_response())
+    // the redirect Django's `HttpResponseRedirect` makes, with the type it gives it (fixture S33)
+    Ok((
+        StatusCode::FOUND,
+        [(header::LOCATION, location), (header::CONTENT_TYPE, "text/html; charset=utf-8".to_string())],
+    )
+        .into_response())
 }
 
 /// What S33 sends the browser to: the asset's bytes, to be saved (`attachment`, with the file's name), for whoever may read it.

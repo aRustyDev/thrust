@@ -45,7 +45,7 @@ mod workspaces;
 pub use error::PlaneError;
 
 /// The route group. Row ids (`S01`...) are those of `research/0003` section 8.1; `X04` is a route the stock onboarding
-/// calls that the inventory does not list.
+/// calls that the inventory does not list, and `X05` is the address a project's cover is shown at.
 pub fn routes() -> Router {
     Router::new()
         .route("/api/instances/", get(instance::get_instance)) // S01
@@ -97,7 +97,7 @@ pub fn routes() -> Router {
         // Thrust's own, which the four above send the browser to: where S33 redirects, the address a cover is shown at, and the
         // address S28 gives for the upload (the pin presigns the object store's instead)
         .route("/api/assets/v2/workspaces/{slug}/{asset}/object/", get(assets::object))
-        .route("/api/assets/v2/static/{asset}/", get(assets::static_asset))
+        .route("/api/assets/v2/static/{asset}/", get(assets::static_asset)) // X05
         .route("/api/assets/v2/upload/{asset}/{token}/", put(assets::upload))
         .route("/auth/get-csrf-token/", get(auth::get_csrf_token)) // S03
         .route("/auth/email-check/", post(auth::email_check)) // S04

@@ -3,7 +3,7 @@
 //! The lifecycle is ADR-0047's: `create_asset` makes a pending asset and a one-time grant to upload its bytes (the browser sends
 //! the upload with no cookies, so the grant is a token in the address it is given); [`receive_upload`] spends the grant and
 //! stores the bytes; [`confirm_upload`] looks at the object and only then marks the asset uploaded, where the pin trusts the
-//! client (D-0xx); [`attach_project_cover`] gives an uploaded cover to the project it was made for; [`open_asset`] and
+//! client (D-035); [`attach_project_cover`] gives an uploaded cover to the project it was made for; [`open_asset`] and
 //! [`public_asset`] say who may read one.
 
 use thiserror::Error;

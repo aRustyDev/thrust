@@ -136,7 +136,7 @@ fn s28_refuses_what_the_pin_refuses_in_the_pins_words() {
         ),
         (
             "a type that is null",
-            json!({"type": null, "entity_type": "PROJECT_COVER"}),
+            json!({"type": null, "entity_type": "PROJECT_COVER", "entity_identifier": ""}),
             400,
             json!({"error": "Invalid file type. Only JPEG, PNG, WebP, JPG and GIF files are allowed.", "status": false}),
         ),
@@ -149,13 +149,13 @@ fn s28_refuses_what_the_pin_refuses_in_the_pins_words() {
 #[test]
 fn a_workspace_logo_is_for_admins_and_is_not_built_for_anyone_yet() {
     let c = cast();
-    let logo = json!({"type": PNG, "size": 4, "entity_type": "WORKSPACE_LOGO"});
+    let logo = json!({"type": PNG, "size": 4, "entity_type": "WORKSPACE_LOGO", "entity_identifier": ""});
     for who in [Caller::WsMember, Caller::WsGuest, Caller::ProjectAdmin, Caller::ProjectMember, Caller::ProjectGuest] {
         let r = s28(&c, who, logo.clone());
         assert_eq!(r["status"], 403, "{who:?}");
         assert_eq!(r["body"], json!({"error": "Only workspace admins can upload a workspace logo."}), "{who:?}");
     }
-    // an admin passes the pin's check; what the pin goes on to do is not built (D-0xx), and the answer says so
+    // an admin passes the pin's check; what the pin goes on to do is not built (D-035), and the answer says so
     let r = s28(&c, Caller::WsAdmin, logo);
     assert_eq!(r["status"], 400);
     assert_eq!(r["body"], json!({"error": "This kind of file cannot be uploaded yet.", "status": false}));
@@ -174,7 +174,8 @@ fn the_other_kinds_the_pin_makes_are_refused_not_made() {
         "DRAFT_ISSUE_ATTACHMENT",
         "DRAFT_ISSUE_DESCRIPTION",
     ] {
-        let r = s28(&c, Caller::WsMember, json!({"type": PNG, "size": 4, "entity_type": kind}));
+        let r =
+            s28(&c, Caller::WsMember, json!({"type": PNG, "size": 4, "entity_type": kind, "entity_identifier": ""}));
         assert_eq!(
             (r["status"].as_u64(), &r["body"]["error"]),
             (Some(400), &json!("This kind of file cannot be uploaded yet.")),
@@ -191,11 +192,47 @@ fn changing_an_existing_projects_cover_through_s28_is_refused_where_the_pin_woul
     let r = s28(&c, Caller::ProjectAdmin, body);
     assert_eq!(r["status"], 400);
     assert_eq!(r["body"]["error"], "The cover of an existing project cannot be changed this way yet.");
-    // what the stock app sends when a project is being made: an empty one, or none, or false
-    for none in [json!(""), json!(null), json!(false)] {
+    // what the stock app sends when a project is being made: an empty one; null is none as well
+    for none in [json!(""), json!(null)] {
         let mut body = cover_body("cover.png", PNG, 70);
         body["entity_identifier"] = none.clone();
         assert_eq!(s28(&c, Caller::ProjectAdmin, body)["status"], 200, "{none}");
+    }
+    // and the pin's refusals of what is not an identifier, which are its own (fixtures S28): none given, `false`, or a text that is no id
+    let mut without = cover_body("cover.png", PNG, 70);
+    without.as_object_mut().unwrap().remove("entity_identifier");
+    for (what, body, want) in [
+        ("none given", without, json!({"error": "The payload is not valid"})),
+        (
+            "false",
+            {
+                let mut b = cover_body("cover.png", PNG, 70);
+                b["entity_identifier"] = json!(false);
+                b
+            },
+            json!({"error": "The payload is not valid"}),
+        ),
+        (
+            "a text that is no id",
+            {
+                let mut b = cover_body("cover.png", PNG, 70);
+                b["entity_identifier"] = json!("nope");
+                b
+            },
+            json!({"error": "Please provide valid detail"}),
+        ),
+        (
+            "a number",
+            {
+                let mut b = cover_body("cover.png", PNG, 70);
+                b["entity_identifier"] = json!(7);
+                b
+            },
+            json!({"error": "Please provide valid detail"}),
+        ),
+    ] {
+        let r = s28(&c, Caller::ProjectAdmin, body);
+        assert_eq!((r["status"].as_u64(), &r["body"]), (Some(400), &want), "{what}");
     }
 }
 
@@ -210,14 +247,15 @@ fn the_size_is_clamped_in_silence_defaults_to_the_limit_and_must_be_a_positive_n
             r["body"].clone()
         }
     };
-    let typed = |size: Value| json!({"type": PNG, "entity_type": "PROJECT_COVER", "size": size});
+    let typed =
+        |size: Value| json!({"type": PNG, "entity_type": "PROJECT_COVER", "entity_identifier": "", "size": size});
     assert_eq!(length(typed(json!(100))), json!("100"));
     assert_eq!(length(typed(json!(LIMIT + 1))), json!(LIMIT.to_string()), "clamped, and the client is not told");
     assert_eq!(length(typed(json!(9_000_000_000_u64))), json!(LIMIT.to_string()));
     assert_eq!(length(typed(json!("1234"))), json!("1234"), "the pin's int() reads a string of digits");
     assert_eq!(length(typed(json!(12.9))), json!("12"), "and cuts a float");
     assert_eq!(
-        length(json!({"type": PNG, "entity_type": "PROJECT_COVER"})),
+        length(json!({"type": PNG, "entity_type": "PROJECT_COVER", "entity_identifier": ""})),
         json!(LIMIT.to_string()),
         "none is the limit"
     );
@@ -226,7 +264,7 @@ fn the_size_is_clamped_in_silence_defaults_to_the_limit_and_must_be_a_positive_n
         assert_eq!(length(typed(size.clone())), bad, "{size}");
     }
     // no type is the pin's default
-    let r = s28(&c, Caller::WsMember, json!({"entity_type": "PROJECT_COVER", "size": 4}));
+    let r = s28(&c, Caller::WsMember, json!({"entity_type": "PROJECT_COVER", "entity_identifier": "", "size": 4}));
     assert_eq!(r["body"]["upload_data"]["headers"]["Content-Type"], "image/jpeg");
 }
 
@@ -278,7 +316,7 @@ fn an_upload_address_names_its_asset_and_only_its_asset() {
     assert_eq!(put(&c, &wrong_token, PNG, vec![0; 4]).status, 403);
     // an id that is no id is a path no route matches
     let r = put(&c, &format!("/api/assets/v2/upload/not-an-id/{}/", token_of(&a)), PNG, vec![0; 4]);
-    assert_eq!((r.status, r.json()), (404, json!({"detail": "Not found."})));
+    assert_eq!((r.status, r.json()), (404, json!({"error": "Page not found."})));
     // and none of that touched the real one
     assert_eq!(put(&c, &a.url, PNG, vec![0; 4]).status, 200);
 }
@@ -331,7 +369,7 @@ fn s29_names_an_asset_that_is_there() {
         (Some(404), &json!({"error": "The required object does not exist."}))
     );
     let r = c.call(Caller::WsMember, "PATCH", &assets_path("not-an-id/"), Value::Null);
-    assert_eq!((r["status"].as_u64(), &r["body"]), (Some(404), &json!({"detail": "Not found."})));
+    assert_eq!((r["status"].as_u64(), &r["body"]), (Some(404), &json!({"error": "Page not found."})));
 }
 
 // --- S31 ---------------------------------------------------------------------------------------------------------------------
@@ -370,9 +408,30 @@ fn s31_attaches_a_cover_for_the_projects_people_and_the_app_reads_it_on_the_proj
 fn s31_refuses_an_empty_list_and_leaves_out_what_is_not_the_callers() {
     let c = cast();
     let nothing = json!({"error": "No asset ids provided."});
-    for ids in [json!([]), json!(null), json!("an-id"), json!({})] {
+    // what Python calls false is none; anything else that is no list of ids fails the pin's validation, after its decorator
+    for ids in [json!([]), json!(null), json!(""), json!({}), json!(0), json!(false)] {
         let r = bulk(&c, Caller::ProjectMember, ids.clone());
         assert_eq!((r["status"].as_u64(), &r["body"]), (Some(400), &nothing), "{ids}");
+    }
+    let invalid = json!({"error": "Please provide valid detail"});
+    for ids in [
+        json!("an-id"),
+        json!(["not-an-id"]),
+        json!([7]),
+        json!(5),
+        json!({"a": 1}),
+        json!([Uuid::from_u128(9).to_string(), "x"]),
+    ] {
+        let r = bulk(&c, Caller::ProjectMember, ids.clone());
+        assert_eq!((r["status"].as_u64(), &r["body"]), (Some(400), &invalid), "{ids}");
+        // and the decorator still comes first: a stranger and a member of the workspace who is not in the project are refused
+        for who in [Caller::Stranger, Caller::WsMember] {
+            assert_eq!(
+                (bulk(&c, who, ids.clone())["status"].as_u64(), bulk(&c, who, ids.clone())["body"].clone()),
+                (Some(403), by_decorator()),
+                "{who:?} {ids}"
+            );
+        }
     }
     let r = c.call(
         Caller::ProjectMember,
@@ -384,7 +443,7 @@ fn s31_refuses_an_empty_list_and_leaves_out_what_is_not_the_callers() {
 
     let theirs = uploaded(&c, Caller::ProjectGuest, "theirs.png", vec![1; 3]);
     let missing = json!({"error": "The requested asset could not be found."});
-    for ids in [json!([theirs]), json!(["not-an-id"]), json!([7])] {
+    for ids in [json!([theirs]), json!([Uuid::from_u128(0x404).to_string()])] {
         let r = bulk(&c, Caller::ProjectMember, ids.clone());
         assert_eq!((r["status"].as_u64(), &r["body"]), (Some(404), &missing), "{ids}");
     }
@@ -457,7 +516,7 @@ fn an_asset_is_not_read_before_it_is_uploaded_and_an_unknown_one_is_not_there() 
     // an id that is no id
     for path in [assets_path("nope/"), assets_path("nope/object/"), "/api/assets/v2/static/nope/".to_string()] {
         let r = get(&c, Caller::WsMember, &path);
-        assert_eq!((r.status, r.json()), (404, json!({"detail": "Not found."})), "{path}");
+        assert_eq!((r.status, r.json()), (404, json!({"error": "Page not found."})), "{path}");
     }
 }
 
