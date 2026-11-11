@@ -711,3 +711,48 @@ pub fn projects_path() -> String {
 pub fn project_path(tail: &str) -> String {
     format!("{}{}/{tail}", projects_path(), Uuid::from_u128(PROJECT))
 }
+
+/// What `raw` gets back: the status, the headers (names in lower case) and the body as bytes.
+pub struct Raw {
+    pub status: u16,
+    pub headers: std::collections::BTreeMap<String, String>,
+    pub body: Vec<u8>,
+}
+
+impl Raw {
+    /// The body as JSON, for an answer that is one.
+    pub fn json(&self) -> Value {
+        serde_json::from_slice(&self.body).unwrap_or_else(|e| panic!("not JSON ({e}): {:?}", self.body))
+    }
+    pub fn header(&self, name: &str) -> &str {
+        self.headers.get(name).map_or("", String::as_str)
+    }
+}
+
+/// One request of bytes: the headers the caller names, and the session cookie of `who` (`""` for none). `call` cannot send a body
+/// that is not JSON or read one back that is not, which an upload and a picture are.
+pub fn raw(
+    router: &Router,
+    jar: &Jar,
+    who: &str,
+    method: &str,
+    path: &str,
+    headers: &[(&str, &str)],
+    body: Vec<u8>,
+) -> Raw {
+    let mut builder = Request::builder().method(method.parse::<Method>().expect("method")).uri(path);
+    for (name, value) in headers {
+        builder = builder.header(*name, *value);
+    }
+    if !who.is_empty() {
+        let token = jar.get(&jar_key(who)).unwrap_or_else(|| panic!("no session for {who}"));
+        builder = builder.header("cookie", format!("__Host-thrust_session={token}"));
+    }
+    let resp = futures_executor::block_on(router.clone().oneshot(builder.body(Body::from(body)).expect("request")))
+        .expect("infallible");
+    let status = resp.status().as_u16();
+    let headers =
+        resp.headers().iter().map(|(k, v)| (k.as_str().to_string(), v.to_str().unwrap_or("").to_string())).collect();
+    let body = futures_executor::block_on(axum::body::to_bytes(resp.into_body(), usize::MAX)).expect("body").to_vec();
+    Raw { status, headers, body }
+}

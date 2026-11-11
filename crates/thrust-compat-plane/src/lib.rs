@@ -14,15 +14,19 @@
 //! and inject the same `App` and `ApiConfig` extensions the shared router reads. `/api/v1` (wire-compatible routes,
 //! issue #47) and `/api/_slice` belong to `thrust-api` and are not touched here.
 //!
+//! (S28, S29, S31 and S33 are the asset stage, `assets.rs`; they and the three routes around them are the only ones that are not
+//! the pin's alone.)
+//!
 //! Every row has a `parity_` test (`tests/parity.rs`) that replays a fixture recorded from the pinned Plane
 //! (`oracle/v1-pin-20261018`, `ba85d4d3d3`) with `tools/compat-record/record.py`.
 
 // a project's answer is one `json!` of 44 keys, which is more than the macro's default depth allows
 #![recursion_limit = "256"]
 
-use axum::routing::{get, patch, post};
+use axum::routing::{get, patch, post, put};
 use axum::Router;
 
+mod assets;
 mod auth;
 mod error;
 mod fields;
@@ -87,6 +91,14 @@ pub fn routes() -> Router {
         .route("/api/workspaces/{slug}/home-preferences/", get(workspace_load::home_preferences)) // S24
         .route("/api/workspaces/{slug}/quick-links/", get(workspace_load::quick_links)) // S25
         .route("/api/workspaces/{slug}/recent-visits/", get(workspace_load::recent_visits)) // S26
+        .route("/api/assets/v2/workspaces/{slug}/", post(assets::create)) // S28
+        .route("/api/assets/v2/workspaces/{slug}/{asset}/", patch(assets::confirm).get(assets::redirect)) // S29, S33
+        .route("/api/assets/v2/workspaces/{slug}/projects/{project}/{entity}/bulk/", post(assets::bulk)) // S31
+        // Thrust's own, which the four above send the browser to: where S33 redirects, the address a cover is shown at, and the
+        // address S28 gives for the upload (the pin presigns the object store's instead)
+        .route("/api/assets/v2/workspaces/{slug}/{asset}/object/", get(assets::object))
+        .route("/api/assets/v2/static/{asset}/", get(assets::static_asset))
+        .route("/api/assets/v2/upload/{asset}/{token}/", put(assets::upload))
         .route("/auth/get-csrf-token/", get(auth::get_csrf_token)) // S03
         .route("/auth/email-check/", post(auth::email_check)) // S04
         .route("/auth/sign-up/", post(auth::sign_up)) // S05

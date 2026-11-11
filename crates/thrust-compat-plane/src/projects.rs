@@ -41,6 +41,16 @@ pub(crate) fn project_id(raw: &str) -> Result<ProjectId, PlaneError> {
 
 // --- the project as the app shows it ---------------------------------------------------------------------------------------
 
+/// The pin's `Project.cover_image_url`: the address of the cover's asset when it has one, else the text the project holds, else
+/// null (an empty text is no cover).
+pub(crate) fn cover_image_url(p: &ProjectRow) -> Value {
+    match (&p.cover_image_asset, &p.cover_image) {
+        (Some(asset), _) => json!(crate::assets::static_url(asset)),
+        (None, Some(text)) if !text.is_empty() => json!(text),
+        _ => Value::Null,
+    }
+}
+
 /// A project as S30, S32 and S34 answer it: the pin's `ProjectListSerializer`, 44 keys.
 pub(crate) fn project_json(d: &ProjectDetail) -> Value {
     let (p, l) = (&d.listing.project, &d.listing);
@@ -57,8 +67,7 @@ pub(crate) fn project_json(d: &ProjectDetail) -> Value {
         "icon_prop": p.icon_prop,
         "logo_props": p.logo_props,
         "cover_image": p.cover_image,
-        // the cover image's asset, once there are assets, is its address; until then it is the text the project holds
-        "cover_image_url": p.cover_image,
+        "cover_image_url": cover_image_url(p),
         "cover_image_asset": p.cover_image_asset,
         "default_assignee": id_or_null(p.default_assignee),
         "project_lead": id_or_null(p.project_lead),
@@ -238,9 +247,25 @@ async fn user_field(app: &App, v: &Value) -> Result<Option<UserId>, String> {
     }
 }
 
-/// DRF `PrimaryKeyRelatedField` to a table that has no rows the app can name yet (the estimate, the default state, the cover
-/// image's asset): no row (null, or an empty string), or a key that names nothing. A `default_state` that names one of the
-/// project's own states is refused here, which the pin accepts (D-027).
+/// DRF `PrimaryKeyRelatedField` to the cover image's asset: no asset (null, or an empty string), or the key of an uploaded cover the
+/// caller may attach (`thrust_core::is_attachable_cover`; the pin accepts the key of any asset at all, D-027).
+async fn cover_asset_field(
+    app: &App,
+    scope: &WorkspaceScope,
+    v: &Value,
+    project: Option<ProjectId>,
+) -> Result<Option<Uuid>, String> {
+    let Some((text, id)) = key_field(v)? else { return Ok(None) };
+    match thrust_core::is_attachable_cover(app, scope, AssetId(id), project).await {
+        Ok(true) => Ok(Some(id)),
+        Ok(false) => Err(format!("Invalid pk \"{text}\" - object does not exist.")),
+        Err(_) => Err("Invalid pk - object does not exist.".into()),
+    }
+}
+
+/// DRF `PrimaryKeyRelatedField` to a table that has no rows the app can name yet (the estimate, the default state): no row (null,
+/// or an empty string), or a key that names nothing. A `default_state` that names one of the project's own states is refused here,
+/// which the pin accepts (D-027).
 pub(crate) fn nothing_field(v: &Value) -> Result<(), String> {
     match key_field(v)? {
         None => Ok(()),
@@ -373,9 +398,15 @@ pub(crate) async fn project_patch(
             }
         }
     }
-    for field in ["estimate", "default_state", "cover_image_asset"] {
+    for field in ["estimate", "default_state"] {
         if let Some(Err(m)) = b.get(field).map(nothing_field) {
             fail(&mut errors, field, m);
+        }
+    }
+    if let Some(v) = b.get("cover_image_asset") {
+        match cover_asset_field(app, scope, v, except).await {
+            Ok(asset) => p.cover_image_asset = Some(asset),
+            Err(m) => fail(&mut errors, "cover_image_asset", m),
         }
     }
     for (field, slot) in [
@@ -585,8 +616,8 @@ pub(crate) async fn member_me(
         "id": row.id,
         "workspace": {"id": w.id.0, "name": w.name, "slug": w.slug.as_str(), "logo_url": null},
         "project": {
-            "id": p.id.0, "identifier": p.identifier, "name": p.name, "cover_image": p.cover_image, "cover_image_url": p.cover_image,
-            "logo_props": p.logo_props, "description": p.description,
+            "id": p.id.0, "identifier": p.identifier, "name": p.name, "cover_image": p.cover_image,
+            "cover_image_url": cover_image_url(p), "logo_props": p.logo_props, "description": p.description,
         },
         "member": {
             "id": u.id.0, "first_name": u.first_name, "last_name": u.last_name, "avatar": u.avatar, "avatar_url": non_empty(&u.avatar),
