@@ -1,0 +1,50 @@
+# Compose override: the pinned Plane's stock web app beside its API on ONE origin, for the browser journeys (issue #45).
+#
+# It is merged after the oracle's own file by scripts/e2e.sh plane-oracle, through tools/compat-record/fresh-oracle.sh's
+# ORACLE_COMPOSE_EXTRA, after oracle-assets.yml:
+#
+#   docker compose -f "$ORACLE_DIR/compose.oracle.yml" -f tools/compat-record/oracle-assets.yml -f tools/e2e-plane/compose.ui.yml ...
+#
+# Two things it needs from its caller, both set by scripts/e2e.sh (the paths are absolute because compose resolves a relative path
+# against the directory of the FIRST file, which is the fork's oracle/, not this one):
+#   E2E_PLANE_DIR      this directory (the Caddyfile)
+#   E2E_PLANE_BUNDLE   the built stock app (tools/e2e-plane/build-pin-bundle.sh makes it)
+#
+# The browser's origin is http://localhost:18088, and the API must be told so. The oracle's .env.oracle names the API's own port
+# (18080) for WEB_URL, APP_BASE_URL and CORS_ALLOWED_ORIGINS, which is where the 302 after a sign-in goes and what CSRF_TRUSTED_ORIGINS
+# is made from (the pin's settings/common.py); left alone, a sign-in would land on the API's health check. It is `localhost`, not
+# 127.0.0.1, on purpose: the cookies are host-scoped, and the 302 goes to the name written here.
+#
+# Plane's own web image is not used: the bundle is built from Thrust's web/ with the Q-R2 ledger reverted to the pin (the build script
+# says why), and Caddy only serves it. Everything is SYNTHETIC and bound to loopback, as in the oracle's file.
+x-origin: &origin http://localhost:18088
+
+services:
+  api:
+    environment:
+      CORS_ALLOWED_ORIGINS: *origin
+      WEB_URL: *origin
+      APP_BASE_URL: *origin
+      ADMIN_BASE_URL: *origin
+      SPACE_BASE_URL: *origin
+      LIVE_BASE_URL: *origin
+      # Uploads from a browser. The project's cover is uploaded when a project is made, so the M1 journey needs this. The oracle's
+      # .env.oracle has USE_MINIO=0, which signs the upload URL for AWS_S3_ENDPOINT_URL, `plane-minio:9000`: a name only the compose
+      # network resolves. With USE_MINIO=1 the pin signs it for the host of the request (storage.py: `{scheme}://{request.get_host()}`),
+      # which is this origin, and Plane's own proxy sends /{bucket}/* on to the object store (the Caddyfile does the same). That is how
+      # Plane's self-hosted deployment is configured.
+      USE_MINIO: "1"
+
+  ui:
+    # Pinned by digest (the index of caddy:2-alpine, which was v2.11.9 when this was written)
+    image: caddy:2.11.9-alpine@sha256:78bd35025c7ba85961dd149ae670315129954e77abe2383ac47c89106b35ade9
+    restart: "no"
+    ports:
+      - "127.0.0.1:18088:8080"
+    volumes:
+      - ${E2E_PLANE_DIR:?scripts/e2e.sh plane-oracle sets E2E_PLANE_DIR}/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ${E2E_PLANE_BUNDLE:?scripts/e2e.sh plane-oracle sets E2E_PLANE_BUNDLE}:/srv:ro
+    networks: [oracle]
+    depends_on:
+      api:
+        condition: service_healthy

@@ -1866,12 +1866,22 @@ def main():
         help="print the name of every step this records, one per line, and exit: no oracle is needed. A step's name is its fixture's "
         "(S04-existing is row S04 again). scripts/check-acceptance-list.sh holds these to the acceptance list (#51)",
     )
+    ap.add_argument(
+        "--setup-instance",
+        action="store_true",
+        help="only the prerequisite of a recording, the instance admin (setup_instance_admin), and exit: a fresh pinned Plane sends every "
+        "visitor to the instance-admin setup until it is done, and scripts/e2e.sh plane-oracle needs the stock app to sign a user up. "
+        "Records nothing",
+    )
     args = ap.parse_args()
     if args.self_test:
         return self_test()
     if args.list_rows:
         for step, _ in STEPS:
             print(step)
+        return
+    if args.setup_instance:
+        setup_instance_admin(args.base_url)
         return
     record(args.base_url, args.raw_dir, args.store_url.rstrip("/"))
 

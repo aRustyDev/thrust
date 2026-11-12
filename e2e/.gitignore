@@ -1,4 +1,6 @@
 node_modules/
 test-results/
 playwright-report/
+# a run's network log is not committed; the scrubbed ones of the pinned Plane are, in har/ (tools/e2e-har/scrub.py writes them)
 *.har
+!har/*.har

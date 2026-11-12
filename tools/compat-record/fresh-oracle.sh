@@ -13,8 +13,17 @@ BASE="${BASE_URL:-http://127.0.0.1:18080}"
 # oracle-assets.yml (next to this script) sets AWS_S3_UPLOAD_METHOD=put on the api, for the asset rows.
 HERE="$(cd "$(dirname "$0")" && pwd)"
 
+# ORACLE_COMPOSE_EXTRA: more override files, space-separated, absolute paths without spaces, merged after oracle-assets.yml. Unset
+# (the recorder's case), nothing changes. scripts/e2e.sh plane-oracle adds tools/e2e-plane/compose.ui.yml: the stock web app beside
+# the API, which the browser journeys need and the recorder does not.
+EXTRA=""
+for extra_file in ${ORACLE_COMPOSE_EXTRA:-}; do
+  EXTRA="$EXTRA -f $extra_file"
+done
+
 dc() {
-  docker compose -f "$ORACLE_DIR/compose.oracle.yml" -f "$HERE/oracle-assets.yml" --env-file "$ORACLE_DIR/.env.oracle" "$@"
+  # $EXTRA is a list of -f arguments, so it is left unquoted on purpose
+  docker compose -f "$ORACLE_DIR/compose.oracle.yml" -f "$HERE/oracle-assets.yml" $EXTRA --env-file "$ORACLE_DIR/.env.oracle" "$@"
 }
 
 dc down -v --remove-orphans

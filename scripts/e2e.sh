@@ -1,8 +1,9 @@
 #!/bin/sh
-# The browser journeys (issue #44 built the first, issue #45 makes them a suite): the stock Plane app, built from web/, in a real
-# Chromium, against a Worker that serves it. Each journey is one spec in e2e/journeys/. The first signs a user up, onboards them, makes
-# a workspace, a project and a work item, and lists it, and fails on any 404 or 5xx in the network log (the specs and e2e/support/
-# say what else would make a journey pass without proving anything).
+# The browser journeys (issue #44 built the first, issue #45 makes them a suite): the stock Plane app in a real Chromium, against a
+# Worker that serves the app built from web/, and against the pinned Plane, the UI oracle, that serves the app built from the pin. Each
+# journey is one spec in e2e/journeys/. The first signs a user up, onboards them, makes a workspace, a project and a work item, and
+# lists it, and fails on any 404 or 5xx in the network log (the specs and e2e/support/ say what else would make a journey pass without
+# proving anything). Green on Plane and red on Thrust is a parity defect; red on Plane means the journey is wrong.
 #
 #   scripts/e2e.sh <target> [controls]
 #     target    worker-cf | worker-memory
@@ -11,12 +12,24 @@
 #                         does not serve the app yet (ADR-0011, round 29), so there is no native target
 #               running   a Worker that is already up and serves the app: THRUST_BASE_URL and THRUST_ADMIN_TOKEN. The journey makes
 #                         a user, a workspace and a project in it, and leaves them there
+#               plane-oracle
+#                         the pinned Plane (tools/oracle-v1, issue #45). LOCAL ONLY: the oracle builds from the fork checkout, which is not
+#                         pushed (Q-0122.4). ORACLE_DIR is the oracle/ directory of that checkout, as for tools/compat-record/fresh-oracle.sh.
+#                         It builds the pin's stock app (tools/e2e-plane/build-pin-bundle.sh: web/ with the Q-R2 ledger reverted to the pin),
+#                         brings the stack up FRESH beside it on one origin (http://localhost:18088; tools/e2e-plane/compose.ui.yml), does
+#                         the instance-admin setup the stock app needs, runs the journeys and takes the stack down. `down -v` drops the
+#                         stack's volumes, which includes the seeded snapshot that scripts/oracle-v1.sh plane needs: that must be
+#                         re-seeded after this. E2E_KEEP=1 leaves the stack up
 #     controls  also the controls, each a run of the journey that MUST fail, and fail by saying why (a pass proves nothing until its
 #               detectors have been shown to fire):
 #                 stickies-404  one route answers 404 in the browser; the journey must name that 404
 #                 empty-list    the browser empties the work-item list (S47); the journey must fail at "see it in the list"
 #                 skip          the journey skips itself, which Playwright counts as a pass; the count guard must refuse it
-#                 wrong target  the journey told it is on the other target (Plane, for a Thrust) must fail at the TARGET GUARD
+#                 wrong target  the journey told it is on the other target must fail at the TARGET GUARD (a Thrust told it is on Plane,
+#                               and the pinned Plane told it is a Thrust)
+#
+#   E2E_RECORD_HAR=1   after a passing run, scrub the network log of each journey (tools/e2e-har/scrub.py) into e2e/har/<journey>.<target>.har,
+#                      with the bodies of the /api/ and /auth/ calls: the input of spike 0009's replay harness. Commit what it writes
 #
 # The count guard: every run's own JSON report must say that every journey in e2e/journeys/ passed, and none was skipped or flaky
 # (e2e/support/check-report.mjs). The number of journeys is the number of files, so a filter or a skip cannot select fewer and pass.
@@ -32,7 +45,7 @@
 # command. POSIX sh: CI runs it under dash.
 set -u
 
-TARGET="${1:?usage: e2e.sh <worker-cf|worker-memory|running> [controls]}"
+TARGET="${1:?usage: e2e.sh <worker-cf|worker-memory|running|plane-oracle> [controls]}"
 WHAT="${2:-}"
 case "$WHAT" in "" | controls) ;; *) echo "e2e: the second argument is 'controls' or nothing, not '$WHAT'" >&2; exit 2 ;; esac
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -50,12 +63,23 @@ case "$TARGET" in
     export E2E_ASSETS_DIR="$APP" E2E_WHAT="$WHAT"
     exec "$ROOT/scripts/contract.sh" "$TARGET" e2e
     ;;
-  running) ;;
+  running | plane-oracle) ;;
   *) echo "e2e: unknown target '$TARGET'" >&2; exit 2 ;;
 esac
 
-: "${THRUST_BASE_URL:?e2e: running needs THRUST_BASE_URL}"
-: "${THRUST_ADMIN_TOKEN:?e2e: running needs THRUST_ADMIN_TOKEN}"
+if [ "$TARGET" = plane-oracle ]; then
+  # the pinned Plane is the one target the journeys are told is `plane`; its browser origin is what compose.ui.yml tells the API
+  # (WEB_URL and the others): `localhost`, not 127.0.0.1, because the cookies are host-scoped and the 302 after a sign-in goes to that name
+  case "${E2E_TARGET:-plane}" in plane) ;; *) echo "e2e: plane-oracle is the plane target, and E2E_TARGET is '$E2E_TARGET'" >&2; exit 2 ;; esac
+  E2E_TARGET=plane
+  THRUST_BASE_URL="http://localhost:18088"
+  # the pinned Plane has no admin token; the target guard sends this one in a header that Plane ignores
+  THRUST_ADMIN_TOKEN="${THRUST_ADMIN_TOKEN:-none}"
+  export E2E_TARGET
+else
+  : "${THRUST_BASE_URL:?e2e: running needs THRUST_BASE_URL}"
+  : "${THRUST_ADMIN_TOKEN:?e2e: running needs THRUST_ADMIN_TOKEN}"
+fi
 export THRUST_BASE_URL THRUST_ADMIN_TOKEN
 WHAT="${E2E_WHAT:-$WHAT}"
 # which target the journeys are told they are on: `thrust` here, and `plane` for the pinned oracle (issue #45)
@@ -80,10 +104,48 @@ pnpm --dir "$ROOT/e2e" install --frozen-lockfile --ignore-scripts > "$OUT/instal
 pnpm --dir "$ROOT/e2e" exec playwright install chromium > "$OUT/browser.log" 2>&1 ||
   { echo "e2e: could not install the browser; the end of $OUT/browser.log:" >&2; tail -8 "$OUT/browser.log" >&2; exit 2; }
 
-# one run of the journeys: `journey <label> [E2E_CONTROL] [E2E_TARGET]`; its status is the run's, its output is in $OUT/<label>.log and
-# its own report in $OUT/<label>.json
+# the HAR keeps the bodies of the API's calls only when it is to be committed (e2e/support/context.ts)
+if [ "${E2E_RECORD_HAR:-}" = 1 ]; then E2E_HAR_BODIES=1; else E2E_HAR_BODIES=""; fi
+export E2E_HAR_BODIES
+
+if [ "$TARGET" = plane-oracle ]; then
+  : "${ORACLE_DIR:?e2e: plane-oracle needs ORACLE_DIR, the oracle/ directory of the Plane fork checkout on the pin branch (as for tools/compat-record/fresh-oracle.sh)}"
+  [ -s "$ORACLE_DIR/compose.oracle.yml" ] ||
+    { echo "e2e: $ORACLE_DIR/compose.oracle.yml is missing: ORACLE_DIR is the oracle/ directory of the fork checkout" >&2; exit 2; }
+  ORACLE_DIR="$(cd "$ORACLE_DIR" && pwd)"
+  # the bundle is the pin's app; the checkout is only read, by `git show` (the script checks that it holds the pin)
+  BUNDLE="$("$ROOT/tools/e2e-plane/build-pin-bundle.sh" "$(cd "$ORACLE_DIR/.." && pwd)")" ||
+    { echo "e2e: could not build the pin's app (the messages are above)" >&2; exit 2; }
+  export E2E_PLANE_DIR="$ROOT/tools/e2e-plane" E2E_PLANE_BUNDLE="$BUNDLE" ORACLE_DIR
+
+  oracle_compose() {
+    docker compose -f "$ORACLE_DIR/compose.oracle.yml" -f "$ROOT/tools/compat-record/oracle-assets.yml" -f "$E2E_PLANE_DIR/compose.ui.yml" \
+      --env-file "$ORACLE_DIR/.env.oracle" "$@"
+  }
+  # the stack comes down however this ends (a trap keeps the status the script was ending with), unless it was asked to stay
+  oracle_down() {
+    if [ "${E2E_KEEP:-}" != 1 ]; then
+      oracle_compose down -v --remove-orphans > "$OUT/oracle-down.log" 2>&1
+    else
+      echo "e2e: E2E_KEEP=1: the oracle stack is left up (docker compose -p plane-oracle down -v to remove it)"
+    fi
+  }
+  trap oracle_down EXIT
+
+  echo "e2e: bringing the pinned Plane up fresh (log: $OUT/oracle-up.log)"
+  ORACLE_COMPOSE_EXTRA="$E2E_PLANE_DIR/compose.ui.yml" "$ROOT/tools/compat-record/fresh-oracle.sh" > "$OUT/oracle-up.log" 2>&1 ||
+    { echo "e2e: the oracle stack did not come up; the end of $OUT/oracle-up.log:" >&2; tail -15 "$OUT/oracle-up.log" >&2; exit 2; }
+  # a fresh pin sends every visitor to the instance-admin setup until it is done (the recorder does the same before it records)
+  uv run --script "$ROOT/tools/compat-record/record.py" --setup-instance --base-url http://127.0.0.1:18080 > "$OUT/instance-setup.log" 2>&1 ||
+    { echo "e2e: the instance-admin setup failed; the end of $OUT/instance-setup.log:" >&2; tail -8 "$OUT/instance-setup.log" >&2; exit 2; }
+fi
+
+# one run of the journeys: `journey <label> [E2E_CONTROL] [E2E_TARGET]`; its status is the run's, its output is in $OUT/<label>.log, its
+# own report in $OUT/<label>.json and its network log in $OUT/har-<label>/ (one directory per run, so that a control cannot overwrite it)
 journey() {
-  E2E_JSON="$OUT/$1.json" E2E_CONTROL="${2:-}" E2E_TARGET="${3:-$WANT}" pnpm --dir "$ROOT/e2e" exec playwright test > "$OUT/$1.log" 2>&1
+  mkdir -p "$OUT/har-$1"
+  E2E_JSON="$OUT/$1.json" E2E_HAR_DIR="$OUT/har-$1" E2E_CONTROL="${2:-}" E2E_TARGET="${3:-$WANT}" \
+    pnpm --dir "$ROOT/e2e" exec playwright test > "$OUT/$1.log" 2>&1
 }
 
 # the count guard on one run's report (it says why on stderr)
@@ -117,6 +179,25 @@ if [ "$STATUS" -ne 0 ]; then
 elif ! check_report main; then
   # exit 0 and still not every journey passed: skipped, or fewer than there are
   VERDICT=FAIL
+fi
+
+# the committed HAR: only of a run that passed, one per journey, scrubbed (tools/e2e-har/scrub.py refuses one that has nothing to scrub)
+if [ "$VERDICT" = PASS ] && [ "${E2E_RECORD_HAR:-}" = 1 ]; then
+  HARS=0
+  for har in "$OUT"/har-main/*.har; do
+    [ -e "$har" ] || continue
+    name="$(basename "$har" .har)"
+    if uv run --script "$ROOT/tools/e2e-har/scrub.py" --out "$ROOT/e2e/har/$name.$WANT.har" "$har"; then
+      HARS=$((HARS + 1))
+    else
+      echo "e2e: the scrub of $har failed" >&2
+      VERDICT=FAIL
+    fi
+  done
+  if [ "$HARS" -ne "$JOURNEYS" ]; then
+    echo "e2e: $HARS HAR(s) written for $JOURNEYS journey(s): there must be one each" >&2
+    VERDICT=FAIL
+  fi
 fi
 
 if [ "$WHAT" = controls ]; then
