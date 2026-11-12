@@ -315,6 +315,155 @@
           }
         }
       ]
+    },
+    {
+      "name": "a presigned upload URL at upload_data.url: origin, signature, signing time, credential and lifetime are replaced, parameters are sorted by name, ids in the path are numbered, everything else is kept",
+      "input": [
+        {
+          "name": "upload",
+          "request": {"method": "POST", "path": "/api/assets/v2/workspaces/ws/", "body": {"entity_type": "PROJECT_COVER", "size": 70}},
+          "response": {
+            "status": 200,
+            "headers": {"Content-Type": "application/json"},
+            "body": {
+              "asset_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+              "asset_url": "/api/assets/v2/static/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/",
+              "upload_data": {
+                "method": "PUT",
+                "fields": {},
+                "headers": {"Content-Type": "image/png", "Content-Length": "70"},
+                "url": "http://plane-minio:9000/uploads/bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb/0123456789abcdef0123456789abcdef-cover.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=key%2F20261111%2F%2Fs3%2Faws4_request&X-Amz-Date=20261111T222908Z&X-Amz-Expires=3600&X-Amz-SignedHeaders=content-length%3Bcontent-type%3Bhost&X-Amz-Signature=f91387f38c5dc1317102943cd4af0eda5a5de44c67a509e0fc1fcf81eb89553d"
+              }
+            }
+          }
+        }
+      ],
+      "expected": [
+        {
+          "name": "upload",
+          "request": {"method": "POST", "path": "/api/assets/v2/workspaces/ws/", "body": {"entity_type": "PROJECT_COVER", "size": 70}},
+          "response": {
+            "status": 200,
+            "headers": {"content-type": "application/json"},
+            "body": {
+              "asset_id": "<uuid:1>",
+              "asset_url": "/api/assets/v2/static/<uuid:1>/",
+              "upload_data": {
+                "fields": {},
+                "headers": {"Content-Length": "70", "Content-Type": "image/png"},
+                "method": "PUT",
+                "url": "<store_url>/uploads/<uuid:2>/<uuid:3>-cover.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=<credential>&X-Amz-Date=<amz_date>&X-Amz-Expires=<expires>&X-Amz-Signature=<signature>&X-Amz-SignedHeaders=content-length%3Bcontent-type%3Bhost"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "a presigned Location: normalised as a presigned URL (origin to <store_url>, ids numbered, parameters sorted so the lower-case response-* ones come last, the percent-encoding kept); the ids in a header are numbered after the request and before the body",
+      "input": [
+        {
+          "name": "redirect",
+          "request": {"method": "GET", "path": "/api/assets/v2/workspaces/ws/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/"},
+          "response": {
+            "status": 302,
+            "headers": {
+              "Content-Type": "text/html; charset=utf-8",
+              "Allow": "GET, POST",
+              "Location": "http://plane-minio:9000/uploads/bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb/0123456789abcdef0123456789abcdef-my%20cover.png?response-content-disposition=attachment%3B%20filename%2A%3DUTF-8%27%27my%2520cover.png&X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=key%2F20261111%2F%2Fs3%2Faws4_request&X-Amz-Date=20261111T222908Z&X-Amz-Expires=3600&X-Amz-SignedHeaders=host&X-Amz-Signature=85c733f6a131a853854b95806dad5a9bd52e31f883d0d9a9d8fc37691f49c939"
+            },
+            "body": {"other": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", "second": "dddddddd-dddd-4ddd-8ddd-dddddddddddd"}
+          }
+        }
+      ],
+      "expected": [
+        {
+          "name": "redirect",
+          "request": {"method": "GET", "path": "/api/assets/v2/workspaces/ws/<uuid:1>/"},
+          "response": {
+            "status": 302,
+            "headers": {
+              "content-type": "text/html; charset=utf-8",
+              "location": "<store_url>/uploads/<uuid:2>/<uuid:3>-my%20cover.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=<credential>&X-Amz-Date=<amz_date>&X-Amz-Expires=<expires>&X-Amz-Signature=<signature>&X-Amz-SignedHeaders=host&response-content-disposition=attachment%3B%20filename%2A%3DUTF-8%27%27my%2520cover.png"
+            },
+            "body": {"other": "<uuid:2>", "second": "<uuid:4>"}
+          }
+        }
+      ]
+    },
+    {
+      "name": "a URL with no signature parameter is not a presigned URL: a Location keeps its query order and gets only the origin rewrite, and a url that is not at a presigned body path is not touched even when it is signed",
+      "input": [
+        {
+          "name": "not presigned",
+          "request": {"method": "GET", "path": "/b/"},
+          "response": {
+            "status": 302,
+            "headers": {"Location": "http://localhost:18080/b?z=1&a=2"},
+            "body": {
+              "upload_data": {"url": "http://plane-minio:9000/uploads/x?b=1&a=2"},
+              "other": {"url": "http://plane-minio:9000/uploads/x?b=1&X-Amz-Signature=abc&X-Amz-Date=20261111T222908Z&a=2"}
+            }
+          }
+        }
+      ],
+      "expected": [
+        {
+          "name": "not presigned",
+          "request": {"method": "GET", "path": "/b/"},
+          "response": {
+            "status": 302,
+            "headers": {"location": "<base_url>/b?z=1&a=2"},
+            "body": {
+              "other": {"url": "http://plane-minio:9000/uploads/x?b=1&X-Amz-Signature=abc&X-Amz-Date=20261111T222908Z&a=2"},
+              "upload_data": {"url": "http://plane-minio:9000/uploads/x?b=1&a=2"}
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "presigned URL edges: the sort is stable for a repeated name and puts a name with no value by its text, a parameter with no `=` keeps no token, a fragment is kept after the query, a relative URL keeps its path",
+      "input": [
+        {
+          "name": "edges",
+          "request": {"method": "POST", "path": "/e/"},
+          "response": {
+            "status": 200,
+            "headers": {},
+            "body": {"upload_data": {"url": "https://store.example/k?b&a=2&X-Amz-Signature=s&a=1&X-Amz-Date#frag"}}
+          }
+        },
+        {
+          "name": "relative",
+          "request": {"method": "POST", "path": "/e/"},
+          "response": {
+            "status": 200,
+            "headers": {},
+            "body": {"upload_data": {"url": "/uploads/k?X-Amz-Signature=s&X-Amz-Expires=60"}}
+          }
+        }
+      ],
+      "expected": [
+        {
+          "name": "edges",
+          "request": {"method": "POST", "path": "/e/"},
+          "response": {
+            "status": 200,
+            "headers": {},
+            "body": {"upload_data": {"url": "<store_url>/k?X-Amz-Date&X-Amz-Signature=<signature>&a=2&a=1&b#frag"}}
+          }
+        },
+        {
+          "name": "relative",
+          "request": {"method": "POST", "path": "/e/"},
+          "response": {
+            "status": 200,
+            "headers": {},
+            "body": {"upload_data": {"url": "/uploads/k?X-Amz-Expires=<expires>&X-Amz-Signature=<signature>"}}
+          }
+        }
+      ]
     }
   ]
 }

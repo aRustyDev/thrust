@@ -1,0 +1,140 @@
+{
+  "exchanges": [
+    {
+      "name": "no session: the route is public",
+      "request": {
+        "method": "GET",
+        "path": "/api/assets/v2/static/<uuid:1>/"
+      },
+      "response": {
+        "body": null,
+        "headers": {
+          "content-type": "text/html; charset=utf-8",
+          "location": "<store_url>/uploads/<uuid:5>/<uuid:6>-cover.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=<credential>&X-Amz-Date=<amz_date>&X-Amz-Expires=<expires>&X-Amz-Signature=<signature>&X-Amz-SignedHeaders=host&response-content-disposition=inline%3B%20filename%2A%3DUTF-8%27%27cover.png&response-content-type=image%2Fpng"
+        },
+        "status": 302
+      }
+    },
+    {
+      "name": "a member of the workspace",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/assets/v2/static/<uuid:1>/"
+      },
+      "response": {
+        "body": null,
+        "headers": {
+          "content-type": "text/html; charset=utf-8",
+          "location": "<store_url>/uploads/<uuid:5>/<uuid:6>-cover.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=<credential>&X-Amz-Date=<amz_date>&X-Amz-Expires=<expires>&X-Amz-Signature=<signature>&X-Amz-SignedHeaders=host&response-content-disposition=inline%3B%20filename%2A%3DUTF-8%27%27cover.png&response-content-type=image%2Fpng"
+        },
+        "status": 302
+      }
+    },
+    {
+      "name": "not a member of the workspace",
+      "request": {
+        "as": "second@example.test",
+        "method": "GET",
+        "path": "/api/assets/v2/static/<uuid:1>/"
+      },
+      "response": {
+        "body": null,
+        "headers": {
+          "content-type": "text/html; charset=utf-8",
+          "location": "<store_url>/uploads/<uuid:5>/<uuid:6>-cover.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=<credential>&X-Amz-Date=<amz_date>&X-Amz-Expires=<expires>&X-Amz-Signature=<signature>&X-Amz-SignedHeaders=host&response-content-disposition=inline%3B%20filename%2A%3DUTF-8%27%27cover.png&response-content-type=image%2Fpng"
+        },
+        "status": 302
+      }
+    },
+    {
+      "name": "a file with a name that has a space and a letter outside ASCII",
+      "request": {
+        "method": "GET",
+        "path": "/api/assets/v2/static/<uuid:2>/"
+      },
+      "response": {
+        "body": null,
+        "headers": {
+          "content-type": "text/html; charset=utf-8",
+          "location": "<store_url>/uploads/<uuid:5>/<uuid:7>-my%20cover%20%C3%A9.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=<credential>&X-Amz-Date=<amz_date>&X-Amz-Expires=<expires>&X-Amz-Signature=<signature>&X-Amz-SignedHeaders=host&response-content-disposition=inline%3B%20filename%2A%3DUTF-8%27%27my%2520cover%2520%25C3%25A9.png&response-content-type=image%2Fpng"
+        },
+        "status": 302
+      }
+    },
+    {
+      "name": "an asset that was never uploaded",
+      "request": {
+        "method": "GET",
+        "path": "/api/assets/v2/static/<uuid:3>/"
+      },
+      "response": {
+        "body": {
+          "error": "The requested asset could not be found."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 404
+      }
+    },
+    {
+      "name": "an asset that does not exist",
+      "request": {
+        "method": "GET",
+        "path": "/api/assets/v2/static/<uuid:8>/"
+      },
+      "response": {
+        "body": {
+          "error": "The required object does not exist."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 404
+      }
+    },
+    {
+      "name": "an id that is not an id",
+      "request": {
+        "method": "GET",
+        "path": "/api/assets/v2/static/nope/"
+      },
+      "response": {
+        "body": {
+          "error": "Page not found."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 404
+      }
+    },
+    {
+      "name": "an uploaded asset of a kind this route does not serve",
+      "request": {
+        "method": "GET",
+        "path": "/api/assets/v2/static/<uuid:4>/"
+      },
+      "response": {
+        "body": {
+          "error": "Invalid entity type.",
+          "status": false
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    }
+  ],
+  "format_version": 1,
+  "recorded_from": "ba85d4d3d3",
+  "row": "X05",
+  "uses": [
+    "asset",
+    "named",
+    "pending",
+    "issue_desc"
+  ]
+}

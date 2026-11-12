@@ -41,6 +41,8 @@ struct DbState {
     accounts: HashMap<(String, String), UserId>,
     api_keys: Vec<ApiKeyRow>,
     oidc_logins: HashMap<TokenHash, OidcLogin>,
+    /// The `assets` table (migration 0016): by id, each row under the workspace it names.
+    assets: HashMap<AssetId, AssetRow>,
     /// Slug -> workspace (the `workspaces.slug` unique index).
     workspaces: HashMap<WorkspaceSlug, WorkspaceId>,
     /// The `workspaces` table by id (migration 0009); `workspaces` above is its slug index.
@@ -570,6 +572,9 @@ impl Database for MemoryDatabase {
                 return Err(DbError::Backend(format!("projects_{column}_fkey")));
             }
         }
+        if row.cover_image_asset.is_some_and(|a| !s.assets.contains_key(&AssetId(a))) {
+            return Err(DbError::Backend("projects_cover_image_asset_fkey".into()));
+        }
         if p.members.iter().any(|m| !s.users.contains_key(&m.member.user_id)) {
             return Err(DbError::Backend("project_user_properties_user_id_fkey".into()));
         }
@@ -640,6 +645,9 @@ impl Database for MemoryDatabase {
             if user.is_some_and(|u| !s.users.contains_key(&u)) {
                 return Err(DbError::Backend(format!("projects_{column}_fkey")));
             }
+        }
+        if row.cover_image_asset.is_some_and(|a| !s.assets.contains_key(&AssetId(a))) {
+            return Err(DbError::Backend("projects_cover_image_asset_fkey".into()));
         }
         let mut new = row.clone();
         new.workspace_id = current.workspace_id;
@@ -1232,6 +1240,109 @@ impl Database for MemoryDatabase {
 
     async fn take_oidc_login(&self, state: &TokenHash) -> Result<Option<OidcLogin>, DbError> {
         Ok(self.state.lock_unpoisoned().oidc_logins.remove(state))
+    }
+
+    async fn insert_asset(&self, scope: &WorkspaceScope, asset: &AssetRow) -> Result<(), DbError> {
+        if asset.workspace_id != scope.workspace_id() || asset.created_by != scope.user_id() {
+            return Err(DbError::Backend("asset is not the scope's".into()));
+        }
+        if asset.state != AssetState::Pending || asset.upload.is_none() || asset.uploaded_at.is_some() {
+            return Err(DbError::Backend("a new asset is pending, with its grant".into()));
+        }
+        let mut s = self.state.lock_unpoisoned();
+        if s.assets.contains_key(&asset.id) {
+            return Err(DbError::Conflict("assets_pkey".into()));
+        }
+        if !s.users.contains_key(&asset.created_by) {
+            return Err(DbError::Backend("assets_created_by_fkey".into()));
+        }
+        if asset.project_id.is_some_and(|p| s.projects.get(&p) != Some(&asset.workspace_id)) {
+            return Err(DbError::Backend("assets_project_id_fkey".into()));
+        }
+        s.assets.insert(asset.id, asset.clone());
+        Ok(())
+    }
+
+    async fn asset(&self, scope: &WorkspaceScope, id: AssetId) -> Result<Option<AssetRow>, DbError> {
+        let s = self.state.lock_unpoisoned();
+        Ok(s.assets.get(&id).filter(|a| a.workspace_id == scope.workspace_id() && a.deleted_at.is_none()).cloned())
+    }
+
+    async fn mark_asset_uploaded(&self, scope: &WorkspaceScope, id: AssetId, at: Timestamp) -> Result<bool, DbError> {
+        let mut s = self.state.lock_unpoisoned();
+        let Some(a) =
+            s.assets.get_mut(&id).filter(|a| a.workspace_id == scope.workspace_id() && a.deleted_at.is_none())
+        else {
+            return Ok(false);
+        };
+        if a.state == AssetState::Pending {
+            a.state = AssetState::Uploaded;
+            a.uploaded_at = Some(at);
+            a.upload = None;
+        }
+        Ok(true)
+    }
+
+    async fn attach_project_cover(
+        &self,
+        scope: &Scope,
+        ids: &[AssetId],
+        at: Timestamp,
+    ) -> Result<Option<AssetId>, DbError> {
+        let mut s = self.state.lock_unpoisoned();
+        let mut matched: Vec<(Timestamp, AssetId)> = s
+            .assets
+            .values()
+            .filter(|a| {
+                ids.contains(&a.id)
+                    && a.workspace_id == scope.workspace_id()
+                    && a.created_by == scope.user_id()
+                    && a.deleted_at.is_none()
+                    && a.project_id.is_none_or(|p| p == scope.project_id())
+                    && a.entity == AssetEntity::ProjectCover
+            })
+            .map(|a| (a.created_at, a.id))
+            .collect();
+        // the pin saves each in turn, newest first, so the oldest is the cover that stays
+        matched.sort();
+        let Some(&(_, cover)) = matched.first() else { return Ok(None) };
+        for (_, id) in &matched {
+            if let Some(a) = s.assets.get_mut(id) {
+                a.project_id = Some(scope.project_id());
+            }
+        }
+        let Some(project) =
+            s.project_rows.get_mut(&scope.project_id()).filter(|p| p.workspace_id == scope.workspace_id())
+        else {
+            return Err(DbError::Backend("assets_project_id_fkey".into()));
+        };
+        project.cover_image_asset = Some(cover.0);
+        project.updated_by = Some(scope.user_id());
+        project.updated_at = at;
+        Ok(Some(cover))
+    }
+
+    async fn take_upload_grant(
+        &self,
+        id: AssetId,
+        token: &TokenHash,
+        now: Timestamp,
+    ) -> Result<Option<AssetRow>, DbError> {
+        let mut s = self.state.lock_unpoisoned();
+        let Some(a) = s.assets.get_mut(&id).filter(|a| {
+            a.deleted_at.is_none()
+                && a.state == AssetState::Pending
+                && a.upload.is_some_and(|g| g.token_hash == *token && g.expires_at > now)
+        }) else {
+            return Ok(None);
+        };
+        a.upload = None;
+        Ok(Some(a.clone()))
+    }
+
+    async fn uploaded_asset(&self, id: AssetId) -> Result<Option<AssetRow>, DbError> {
+        let s = self.state.lock_unpoisoned();
+        Ok(s.assets.get(&id).filter(|a| a.state == AssetState::Uploaded && a.deleted_at.is_none()).cloned())
     }
 
     async fn set_user_active(&self, _sys: &SystemScope, user: UserId, active: bool) -> Result<bool, DbError> {
@@ -2138,6 +2249,13 @@ impl BlobStore for MemoryBlobStore {
     async fn put(&self, key: &str, bytes: Vec<u8>, content_type: Option<String>) -> Result<(), BlobError> {
         self.map.lock_unpoisoned().insert(key.to_string(), Blob { bytes, content_type });
         Ok(())
+    }
+    async fn head(&self, key: &str) -> Result<Option<BlobHead>, BlobError> {
+        Ok(self
+            .map
+            .lock_unpoisoned()
+            .get(key)
+            .map(|b| BlobHead { size: b.bytes.len() as u64, content_type: b.content_type.clone() }))
     }
     async fn get(&self, key: &str) -> Result<Option<Blob>, BlobError> {
         Ok(self.map.lock_unpoisoned().get(key).cloned())

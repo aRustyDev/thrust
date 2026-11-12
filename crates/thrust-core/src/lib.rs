@@ -25,6 +25,8 @@ mod workspace;
 pub use workspace::*;
 mod workspace_load;
 pub use workspace_load::*;
+mod assets;
+pub use assets::*;
 mod projects;
 pub use projects::*;
 mod issues;
@@ -99,6 +101,8 @@ pub struct CoreConfig {
     /// consulted for a cookie mutation. The cookie, `GET auth/csrf`, `csrf_ok`, and a bearer token or an API key (which
     /// never needed the token) are untouched.
     pub csrf_enforce: bool,
+    /// How long the address an asset's bytes are uploaded to keeps working (ADR-0047; the pin's `SIGNED_URL_EXPIRATION`, an hour).
+    pub asset_upload_ttl_secs: i64,
 }
 
 impl Default for CoreConfig {
@@ -117,6 +121,7 @@ impl Default for CoreConfig {
             api_key_hash_current: API_KEY_HASH_CURRENT,
             api_key_hash_supported: API_KEY_HASH_SUPPORTED.to_vec(),
             csrf_enforce: true,
+            asset_upload_ttl_secs: 60 * 60,
         }
     }
 }

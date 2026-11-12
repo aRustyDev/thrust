@@ -85,6 +85,16 @@ rows! {
     parity_x01_open_work_item => "X01",
     parity_x03_change_a_work_item => "X03",
     parity_x02_work_item_history => "X02",
+    parity_s28_upload_an_asset => "S28",
+    parity_s29_confirm_an_upload => "S29",
+    parity_s31_attach_assets_to_a_project => "S31",
+    parity_s34_open_project_once_it_has_a_cover => "S34-after",
+    parity_s33_read_an_asset => "S33",
+    parity_x05_a_covers_own_address => "X05",
+    parity_s28_upload_an_asset_as_a_member => "S28-member",
+    parity_s29_confirm_an_upload_as_a_member => "S29-member",
+    parity_s31_attach_assets_as_a_member => "S31-member",
+    parity_s33_read_an_asset_as_a_member => "S33-member",
 }
 
 /// A fixture without a test would pass unseen, and a test without a fixture is `load_fixture` panicking: hold the two
@@ -271,4 +281,110 @@ fn parity_normaliser_cases() {
             case["input"].as_array().unwrap().iter().map(|ex| normalise::exchange(&rules, &mut ids, ex)).collect();
         assert_eq!(Value::Array(got), case["expected"], "case: {}", case["name"]);
     }
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// The asset stage's controls (AGENTS.md rule 8). Its rows are compared through a projection (D-035, tests/common/mod.rs) that
+// drops what is the object store's and renumbers the ids it left out: each control makes one thing wrong in the recording and
+// requires the replay to see it, so that the projection is shown not to hide what it does not name.
+// ---------------------------------------------------------------------------------------------------------------------
+
+fn exchange_named<'a>(fixture: &'a mut Value, name: &str) -> &'a mut Value {
+    fixture["exchanges"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|e| e["name"] == name)
+        .unwrap_or_else(|| panic!("{name}"))
+}
+
+/// What the app reads of the upload (the method and the headers it must send) is compared, though the address is not.
+#[test]
+fn parity_control_s28_a_changed_upload_method_or_header_is_a_divergence() {
+    for (what, edit) in [
+        ("method", (|u: &mut Value| u["method"] = json!("POST")) as fn(&mut Value)),
+        ("content type", |u| u["headers"]["Content-Type"] = json!("image/gif")),
+        ("content length", |u| u["headers"]["Content-Length"] = json!("71")),
+        ("fields", |u| u["fields"] = json!({"key": "x"})),
+    ] {
+        let d = mutated("S28", |f| {
+            edit(&mut exchange_named(f, "the project cover, as the app sends it")["response"]["body"]["upload_data"])
+        });
+        assert_eq!(d.len(), 1, "{what}: {d:?}");
+    }
+}
+
+/// A recorded refusal that Thrust answers as a success, and the other way, is a divergence: the nine kinds it does not make are
+/// compared as the 400 it gives, and a cover is still compared as what the pin made.
+#[test]
+fn parity_control_s28_a_refusal_and_a_success_are_not_swapped() {
+    let d = mutated("S28", |f| exchange_named(f, "an entity type: USER_AVATAR")["response"]["status"] = json!(200));
+    // the projection turns that 200 into the 400, and Thrust gives it: no difference, which is the rule working
+    assert!(d.is_empty(), "{d:?}");
+    let d = mutated("S28", |f| {
+        let ex = exchange_named(f, "the project cover, as the app sends it");
+        ex["request"]["body"]["entity_type"] = json!("USER_AVATAR");
+    });
+    assert!(d.is_empty(), "{d:?}");
+    // a refusal of the pin that Thrust does not give is seen
+    let d = mutated("S28", |f| {
+        let ex = f["exchanges"].as_array_mut().unwrap().iter_mut().find(|e| e["response"]["status"] == 400).unwrap();
+        ex["response"]["status"] = json!(200);
+    });
+    assert!(!d.is_empty());
+}
+
+/// The address a cover is shown at is compared as the type the pin pins on the picture, which Thrust must serve with.
+#[test]
+fn parity_control_x05_the_type_pinned_on_a_picture_is_compared() {
+    let d = mutated("X05", |f| {
+        let ex = exchange_named(f, "no session: the route is public");
+        let loc = ex["response"]["headers"]["location"]
+            .as_str()
+            .unwrap()
+            .replace("response-content-type=image%2Fpng", "response-content-type=image%2Fgif");
+        ex["response"]["headers"]["location"] = json!(loc);
+    });
+    assert_eq!(d.len(), 1, "{d:?}");
+}
+
+/// S33's answers are compared past its redirect: a recorded success that is a refusal here, or a refusal that is a success, differs.
+#[test]
+fn parity_control_s33_a_member_outside_the_project_is_still_refused() {
+    let d = mutated("S33-member", |f| {
+        let ex = f["exchanges"].as_array_mut().unwrap().iter_mut().find(|e| e["response"]["status"] == 403).unwrap();
+        ex["response"]["status"] = json!(302);
+        ex["response"]["headers"]["location"] =
+            json!("<store_url>/uploads/<uuid:5>/<uuid:6>-cover.png?X-Amz-Signature=<signature>");
+    });
+    assert!(!d.is_empty());
+}
+
+/// An exception for the pin's not looking at the object must be one: the pin answers something other than what Thrust does there.
+/// An entry that names no exchange, or one the pin answers as Thrust does, would hide nothing and say a deviation that is not one.
+#[test]
+fn parity_every_looks_at_the_object_entry_names_an_exchange_the_pin_answers_differently() {
+    for (row, name, status, body) in LOOKS_AT_THE_OBJECT {
+        let mut fixture = load_fixture(row);
+        let recorded = exchange_named(&mut fixture, name)["response"].clone();
+        let thrust: Value = serde_json::from_str(body).unwrap();
+        assert_ne!(
+            (recorded["status"].as_u64(), &recorded["body"]),
+            (Some(u64::from(*status)), &thrust),
+            "{row}, {name}: the pin answers as Thrust does"
+        );
+    }
+}
+
+/// The ids a projection drops are taken out of the numbering, so the ones after them are numbered as Thrust, which makes none of
+/// them, numbers them: by their rank among those that remain, the first `kept` always among them.
+#[test]
+fn parity_control_the_numbering_closes_up_over_what_the_projection_drops() {
+    let ex = |path: &str, body: &str| json!({"request": {"path": path}, "response": {"body": body}});
+    let out = compact_ids(vec![ex("/x/<uuid:1>/", "<uuid:3> and <uuid:5>"), ex("/y/<uuid:5>", "<uuid:7> <uuid:3>")], 1);
+    assert_eq!(out[0], ex("/x/<uuid:1>/", "<uuid:2> and <uuid:3>"));
+    assert_eq!(out[1], ex("/y/<uuid:3>", "<uuid:4> <uuid:2>"));
+    // an id the fixture uses stays where it is even when nothing in it names it
+    let out = compact_ids(vec![ex("/z/", "<uuid:4>")], 3);
+    assert_eq!(out[0], ex("/z/", "<uuid:4>"));
 }

@@ -1,0 +1,18 @@
+# Compose override for the asset rows (S28, S29, S31, S33 and the static route): the pin's `api` hands the browser a presigned PUT
+# instead of a presigned POST, which is what the stock app sends to Thrust's store (Cloudflare R2 has no presigned POST).
+#
+# It is merged after the oracle's own file by tools/compat-record/fresh-oracle.sh:
+#
+#   docker compose -f "$ORACLE_DIR/compose.oracle.yml" -f tools/compat-record/oracle-assets.yml --env-file "$ORACLE_DIR/.env.oracle" ...
+#
+# `AWS_S3_UPLOAD_METHOD` is the fork's addition to apps/api/plane/settings/storage.py (in the pin): `post` is the default, `put`
+# makes `generate_presigned_upload` answer `{"method": "PUT", "url": .., "fields": {}, "headers": {"Content-Type": .., "Content-Length": ..}}`.
+# Only the api signs the upload URL; the worker's metadata task reads the object (a HEAD) and needs no change.
+#
+# Nothing else of the oracle changes: the object store stays at `plane-minio:9000` inside the compose network, which is the host the
+# presigned URLs name, and the recorder reaches it through the port the oracle publishes (127.0.0.1:19000, `--store-url`) while sending
+# the Host header the URL was signed for.
+services:
+  api:
+    environment:
+      AWS_S3_UPLOAD_METHOD: put

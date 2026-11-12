@@ -1,0 +1,55 @@
+{
+  "exchanges": [
+    {
+      "name": "an asset another user made, by the project's admin",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "asset_ids": [
+            "<uuid:2>"
+          ]
+        },
+        "method": "POST",
+        "path": "/api/assets/v2/workspaces/journey-ws/projects/<uuid:1>/<uuid:1>/bulk/"
+      },
+      "response": {
+        "body": {
+          "error": "The requested asset could not be found."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 404
+      }
+    },
+    {
+      "name": "a member who is not in the project, with their own asset",
+      "request": {
+        "as": "second@example.test",
+        "body": {
+          "asset_ids": [
+            "<uuid:2>"
+          ]
+        },
+        "method": "POST",
+        "path": "/api/assets/v2/workspaces/journey-ws/projects/<uuid:1>/<uuid:1>/bulk/"
+      },
+      "response": {
+        "body": {
+          "error": "You don't have the required permissions."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 403
+      }
+    }
+  ],
+  "format_version": 1,
+  "recorded_from": "ba85d4d3d3",
+  "row": "S31-member",
+  "uses": [
+    "project",
+    "second_asset"
+  ]
+}
