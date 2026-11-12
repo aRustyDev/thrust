@@ -61,7 +61,7 @@ admin token and database password per run and keeps them out of files and argv.
 | Script | What it runs | Prerequisites |
 |---|---|---|
 | `scripts/contract-all.sh` | the 22-cell matrix serially (18 contract cells, 3 `oracle` cells and the `e2e` journey), summary in `target/contract-logs/summary.txt` | Docker, wrangler, `uv`, Node and pnpm |
-| `scripts/e2e.sh <target> [controls]` | the first browser journey (`e2e/journey.spec.ts`): the built app in Chromium against a Worker that serves it; builds the app when it is not built | Docker (`worker-cf`), wrangler, Node, pnpm |
+| `scripts/e2e.sh <target> [controls]` | the browser journeys (one spec each in `e2e/journeys/`): the built app in Chromium against a Worker that serves it, then with `controls` their must-fail controls; builds the app when it is not built | Docker (`worker-cf`), wrangler, Node, pnpm |
 | `scripts/mutants.sh` | the planted mutants; every one must be KILLED | Docker |
 | `scripts/verify-all.sh` | the hermetic nextest run, matrix, mutants, `check-deps.sh`, `pg_adapter`, probes; summary in `target/verify/summary.txt` | Docker, wrangler |
 | `scripts/flake-hunt.sh <target> <pass> <iterations>` | one cell N times, keeping every log | as the cell |

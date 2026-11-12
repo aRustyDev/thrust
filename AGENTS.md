@@ -84,7 +84,7 @@ Where those docs and the rules below disagree, the rules win; record the disagre
 | Long randomized run (includes `oracle_`) | `PROPTEST_CASES=4096 cargo nextest run --profile deep` |
 | Comparison with the TypeScript oracle (needs Node, or its output from `tools/spike-0006/gen-all.sh`) | `cargo nextest run --profile oracle` |
 | `/api/v1` against the Plane v1 oracle: scoped gate, corpus comparison, controls (needs `uv`; Docker for `native-pg` and `worker-cf`) | `scripts/oracle-v1.sh native-memory controls` (`tools/oracle-v1/README.md`) |
-| The first browser journey: the stock app in Chromium against a Worker that serves it, no 404 in the network log, with its must-fail control (needs Docker, wrangler, Node, pnpm; builds the app when it is not built) | `scripts/e2e.sh worker-cf controls` (`e2e/journey.spec.ts`, `docs/src/testing/status.md` G-30) |
+| The browser journeys, one spec each in `e2e/journeys/`: the stock app in Chromium against a Worker that serves it, no 404 in the network log, with their must-fail controls and a count guard (needs Docker, wrangler, Node, pnpm; builds the app when it is not built) | `scripts/e2e.sh worker-cf controls` (`docs/src/testing/techniques/app-and-e2e.md`, `docs/src/testing/status.md` G-30, G-31) |
 | Postgres adapter tests through nextest (needs Docker) | `cargo nextest run --ignore-default-filter -E 'binary(pg_adapter)'` |
 | Mutation testing, one file (the crate needs tests of its own) | `cargo mutants -f <path>` |
 

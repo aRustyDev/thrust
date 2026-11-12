@@ -153,7 +153,7 @@ expect "classify: a workflow change runs both" 0 "classify ok: rust=true web=tru
 expect "classify: the Q-R2 gate script runs both" 0 "classify ok: rust=true web=true" classify_is 'scripts/check-web-diff.sh\n' true true
 expect "classify: a web look-alike is not web/" 0 "classify ok: rust=false web=false" classify_is 'web-notes.md\ndocs/web/x.md\nwebsite/index.html\n' false false
 # the browser journey's own files run the cell that runs it (a rust change, not a web one), and a look-alike does not
-expect "classify: e2e/ alone runs the journey's cell and is not a web change" 0 "classify ok: rust=true web=false" classify_is 'e2e/journey.spec.ts\n' true false
+expect "classify: e2e/ alone runs the journey's cell and is not a web change" 0 "classify ok: rust=true web=false" classify_is 'e2e/journeys/m1-sign-up-to-work-item.spec.ts\n' true false
 expect "classify: an e2e look-alike is not e2e/" 0 "classify ok: rust=false web=false" classify_is 'e2e-notes.md\ndocs/e2e/x.md\n' false false
 echo "passed=$pass bad=$failn"
 [ "$failn" -eq 0 ]

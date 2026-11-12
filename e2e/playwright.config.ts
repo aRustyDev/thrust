@@ -1,16 +1,21 @@
-// The first journey runs against a target that scripts/contract.sh (its `e2e` pass) has started and that serves the built app; the
-// address comes from THRUST_BASE_URL. One worker, no retries: a journey that passes on its second try is a journey that fails
-// sometimes (AGENTS.md testing rule 2 says the same of the Rust suites), and one browser on one database is not a thing to
-// parallelise.
-import { defineConfig } from "@playwright/test";
+// The journeys run against a target that scripts/e2e.sh has up and that serves the built app (a Worker started by scripts/contract.sh's
+// `e2e` pass, or the pinned Plane); the address comes from THRUST_BASE_URL and E2E_TARGET says which target it is. One spec per
+// journey, in journeys/; support/ holds what they share and is not matched as a spec. One worker, no retries: a journey that passes on
+// its second try is a journey that fails sometimes (AGENTS.md testing rule 2 says the same of the Rust suites), and one browser on one
+// database is not a thing to parallelise.
+import { defineConfig, type ReporterDescription } from "@playwright/test";
 
 const baseURL = process.env.THRUST_BASE_URL;
 if (!baseURL) {
   throw new Error("THRUST_BASE_URL is not set: start a target with scripts/e2e.sh <target>, which sets it");
 }
 
+// scripts/e2e.sh asks for the run's own report (E2E_JSON) and reads its counts: a journey that was skipped exits 0 here
+const reporter: ReporterDescription[] = [["list"]];
+if (process.env.E2E_JSON) reporter.push(["json", { outputFile: process.env.E2E_JSON }]);
+
 export default defineConfig({
-  testDir: ".",
+  testDir: "journeys",
   testMatch: "*.spec.ts",
   fullyParallel: false,
   workers: 1,
@@ -18,7 +23,7 @@ export default defineConfig({
   forbidOnly: true,
   timeout: 120_000,
   expect: { timeout: 30_000 },
-  reporter: [["list"]],
+  reporter,
   outputDir: process.env.E2E_OUT ? `${process.env.E2E_OUT}/test-results` : "test-results",
   use: {
     baseURL,
