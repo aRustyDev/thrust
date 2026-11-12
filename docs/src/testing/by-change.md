@@ -30,7 +30,8 @@ Two things that are easy to get wrong:
 
 The first test of a new kind may need a test-only dev-dependency (`proptest`, `rstest`, `insta`, `datatest-stable`):
 adding one to the crate under test is part of the change, so name it in the PR. Installing tools outside Cargo
-(a nightly toolchain, `cargo-fuzz`, Playwright) is the user's decision: propose it and wait, as the skills say.
+(a nightly toolchain, `cargo-fuzz`) is the user's decision: propose it and wait, as the skills say. (Playwright is already
+pinned in `e2e/pnpm-lock.yaml`; a new browser or a new dependency there is the same decision.)
 
 | You are changing... | Write | Controls | Defect classes |
 |---|---|---|---|
@@ -47,6 +48,7 @@ adding one to the crate under test is part of the change, so name it in the PR. 
 | **A Worker binding or platform behaviour** (`thrust-worker`, `thrust-adapters-cloudflare`) | a `worker_*` test in `worker_only.rs`; run the `worker`, `bindings` and `cron` passes on `worker-cf` | [target guard](evidence-and-controls.md#target-guard) | X8, X9 |
 | **A dependency or crate boundary** (any `Cargo.toml`) | run [the architecture gate](techniques/architecture-gates.md) `scripts/check-deps.sh` | it prints its evidence; a forbidden crate fails it | X10 |
 | **A Dioxus component** | an SSR [component test](techniques/app-and-e2e.md) selecting by `data-testid` *(gap: no UI crate yet)* | [broken-implementation](evidence-and-controls.md#broken-implementation) | X18 |
+| **A screen of the stock React app, or a route it calls** (`thrust-compat-plane`, `web/`) | a Playwright journey, one file in `e2e/journeys/`, run with `scripts/e2e.sh worker-cf controls` ([app and end-to-end](techniques/app-and-e2e.md)); the route keeps its `parity_` fixture | the controls `scripts/e2e.sh` runs (404, emptied list, skip, wrong target), and its [count guard](evidence-and-controls.md#count-guard) | X18, X14 |
 | **A port of TypeScript code** | freeze the TypeScript behaviour first with `ts-to-rust`, then [differential](techniques/differential.md) tests against it, with [golden](techniques/golden-fixtures.md) fixtures as their hermetic record | the port must fail its frozen suite before it is written | X11, X14 |
 | **A performance-sensitive path** (cold start, request latency) | measure with the [performance](techniques/performance.md) scripts before and after; record numbers in the PR | none yet: measurement only | X19 |
 

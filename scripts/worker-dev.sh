@@ -127,7 +127,7 @@ fi
 
 # The app's files (ADR-0011): one single-page app at `/`, every path the Worker handles run first, in both forms (a browser
 # navigation to `/auth` or `/api` is otherwise answered with index.html and never reaches the Worker). A missing hashed asset is
-# answered 200 text/html by the single-page fallback, so a check that files load must look at their type (e2e/journey.spec.ts).
+# answered 200 text/html by the single-page fallback, so a check that files load must look at their type (e2e/support/network.ts).
 if [ -n "${THRUST_ASSETS_DIR:-}" ]; then
   # absolute: this script is in the Worker's directory by now, so a relative path would mean a different place than the caller's
   case "$THRUST_ASSETS_DIR" in

@@ -18,12 +18,13 @@ Pick the lowest layer that can catch the bug: many router and component tests, o
 | rules across API call sequences | model test | `rust-test-logic` |
 | what a component renders per state | Dioxus SSR test, no browser | `references/dioxus-component-tests.md` |
 | something needs a real URL (SDK client, static build) | in-process harness | `references/harness.md` |
-| a user flow in a real browser | not covered here yet | none |
+| a user flow in a real browser, on the stock React app | the Playwright journeys in `e2e/`, not this skill | `docs/src/testing/techniques/app-and-e2e.md` |
+| a user flow in a real browser, on a Dioxus UI | not covered here yet | none |
 | desktop or mobile shell | not covered here yet | none |
 
 Templates to copy: `references/examples/`.
 
-Not covered yet: browser (playwright-rs) and desktop/mobile shells; prove them on your CI before relying on them.
+Not covered yet: browser tests of a Dioxus UI (playwright-rs) and desktop/mobile shells; prove them on your CI before relying on them.
 
 ## Ground rules
 - Run with cargo-nextest in crates written for it; a suite that parses plain `cargo test` output stays on it; doctests: `cargo test --doc`.

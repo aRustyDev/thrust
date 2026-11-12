@@ -14,7 +14,7 @@ legend is in the [chapter README](../README.md#status-legend).
 | [Real backends](real-backends.md) | live | none | none |
 | [Fuzz](fuzz.md) | live (replay without a fuzzer) | `fuzz_replay_` | `rust-test-fuzz` |
 | [Mutation](mutation.md) | live (planted; cargo-mutants on `thrust-core`) | n/a | `rust-test-mutation` |
-| [App and end-to-end](app-and-e2e.md) | template-only; browser planned | `e2e_` | `rust-test-app` |
+| [App and end-to-end](app-and-e2e.md) | browser journeys live (`e2e/`); the Rust layers template-only | `e2e_` (Rust); `e2e/journeys/*.spec.ts` | `rust-test-app` (Rust layers only) |
 | [Architecture gates](architecture-gates.md) | live | n/a | none |
 | [Performance](performance.md) | live, measurement only | n/a | none |
 
