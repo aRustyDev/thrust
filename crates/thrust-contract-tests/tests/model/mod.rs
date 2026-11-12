@@ -45,7 +45,8 @@
 //! Budget: `THRUST_MODEL_CASES` sequences per run (default 16 in `main`, 8 in `sweeper`), deliberately not
 //! `PROPTEST_CASES`, so a `deep` run's setting cannot turn one contract cell into thousands of round trips. Each case
 //! seeds its own fixture, so it starts from empty projects and fresh rate-limit buckets; `MAX_OPS` stays below the
-//! create limit so the limiter is never reached (`create_is_rate_limited_per_user` owns that rule).
+//! create limit so the limiter is never reached (no HTTP test holds the slice's create limit any more: `v1_requests_are_rate_limited_per_key`
+//! holds the allowance of an API key on `/api/v1`, which is Plane's, G-26).
 
 mod matrix;
 

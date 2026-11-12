@@ -1,8 +1,14 @@
-//! Local latency probe for the slice. Prints p50/p95/p99 for the three slice operations.
+//! Local latency probe for the work-item path. Prints p50/p95/p99 for a create and a list through `/api/v1` (what the app's
+//! API clients call), for the slice's activity feed, and for a create's whole way to a visible activity row.
 //! Usage: THRUST_BASE_URL=... THRUST_ADMIN_TOKEN=... bench [iterations] [concurrency]
 //!
 //! This measures the *local* path (localhost HTTP -> target -> adapters). It is not a
 //! production latency number: see Stage 2 in research/0004.
+//!
+//! The create and the list were the slice's until the vehicle tests moved (G-26), so a number from this probe is not comparable to
+//! one recorded before: a `/api/v1` create reads the project's states and members, takes a state, writes the item's attributes and
+//! a history, and its list is a page of at most a hundred. Each request counts against the key's allowance (Plane's 60 a minute,
+//! `Target::v1_limit`), so the probe takes a fresh member (a fresh key) every `limit - 5` requests, whatever the target's limit is.
 
 use std::time::{Duration, Instant};
 
@@ -40,10 +46,11 @@ async fn main() {
     // warm-up so isolate/connection start-up is not in the percentiles (reported separately)
     let w0 = Instant::now();
     let warm_user = f.extra_member(&t).await;
-    create_ok(&t, &warm_user, &f.a, "warmup").await;
+    v1_create_ok(&t, &warm_user, &f.a, "warmup").await;
     println!("first create (cold-ish): {:.2}ms", w0.elapsed().as_secs_f64() * 1000.0);
 
-    let per_user = (Target::create_limit() as usize).saturating_sub(5).max(1);
+    // a key's allowance is per minute, and the batches below may be a concurrent few: stay clear of it
+    let per_key = (Target::v1_limit() as usize).saturating_sub(5).max(conc.max(1));
     let mut creates = Vec::new();
     let mut lists = Vec::new();
     let mut activities = Vec::new();
@@ -55,7 +62,7 @@ async fn main() {
     let mut done = 0usize;
     while done < n {
         let batch = conc.min(n - done);
-        if used + batch > per_user {
+        if used + batch > per_key {
             user = f.extra_member(&t).await;
             used = 0;
         }
@@ -63,22 +70,15 @@ async fn main() {
         for i in 0..batch {
             let t = t.clone();
             let f = f.clone();
-            let tok = user.token.clone();
+            let who = user.clone();
             let name = format!("bench-{}", done + i);
             handles.push(tokio::spawn(async move {
                 let s = Instant::now();
-                let r = t
-                    .http
-                    .post(t.url(&wi_path(&f.a)))
-                    .bearer_auth(tok)
-                    .json(&json!({ "name": name }))
-                    .send()
-                    .await
-                    .unwrap();
+                let r = v1_create(&t, &who, &f.a, json!({ "name": name })).await;
                 let st = r.status();
                 let body = r.bytes().await.unwrap();
                 assert_eq!(st, 201, "{}", String::from_utf8_lossy(&body));
-                let item: thrust_contracts::WorkItem = serde_json::from_slice(&body).unwrap();
+                let item = Issue(serde_json::from_slice(&body).unwrap());
                 (s.elapsed(), item)
             }));
         }
@@ -91,17 +91,25 @@ async fn main() {
         done += batch;
     }
 
+    let mut lister = f.extra_member(&t).await;
+    let mut listed = 0usize;
     for _ in 0..n.min(100) {
+        if listed == per_key {
+            lister = f.extra_member(&t).await;
+            listed = 0;
+        }
         let s = Instant::now();
-        let r = list(&t, &f.guest_a, &f.a, None).await;
+        let r = v1_list(&t, &lister, &f.a).await;
         assert_eq!(r.status(), 200);
         let _ = r.bytes().await.unwrap();
         lists.push(s.elapsed());
+        listed += 1;
     }
     if let Some(item) = last_item {
+        // the slice's feed reads a session, and is not `/api/v1`'s: no key's allowance is spent here
         for _ in 0..n.min(100) {
             let s = Instant::now();
-            let _ = activity(&t, &f.guest_a, &f.a, item.id).await;
+            let _ = activity(&t, &f.guest_a, &f.a, item.work_item_id()).await;
             activities.push(s.elapsed());
         }
     }
@@ -112,14 +120,18 @@ async fn main() {
     let skip_delivery = std::env::var("THRUST_BENCH_SKIP_DELIVERY").is_ok();
     let mut delivery = Vec::new();
     let mut duser = f.extra_member(&t).await;
+    let mut dused = 0usize;
     for i in 0..(if skip_delivery { 0usize } else { 40usize }) {
-        if i % 20 == 0 {
+        if dused == per_key.min(20) {
             duser = f.extra_member(&t).await;
+            dused = 0;
         }
         let s = Instant::now();
-        let item = create_ok(&t, &duser, &f.a, &format!("delivery-{i}")).await;
+        let item = v1_create_ok(&t, &duser, &f.a, &format!("delivery-{i}")).await;
+        dused += 1;
+        let id = item.work_item_id();
         loop {
-            if !activity(&t, &f.guest_a, &f.a, item.id).await.is_empty() {
+            if !activity(&t, &f.guest_a, &f.a, id).await.is_empty() {
                 break;
             }
             assert!(s.elapsed() < Duration::from_secs(20), "activity never appeared");

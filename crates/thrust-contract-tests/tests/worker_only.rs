@@ -115,11 +115,12 @@ async fn worker_cron_scheduled_handler_runs_the_sweeper() {
     let t = Target::from_env();
     let f = Fixture::seed(&t).await;
     let before = t.outbox_depth().await;
-    let item = create_ok(&t, &f.member_a, &f.a, "cron-swept").await;
+    let item = v1_create_ok(&t, &f.member_a, &f.a, "cron-swept").await;
+    let id = item.work_item_id();
     assert_eq!(t.outbox_depth().await, before + 1);
     tokio::time::sleep(Duration::from_secs(2)).await;
     assert!(
-        activity(&t, &f.guest_a, &f.a, item.id).await.is_empty(),
+        activity(&t, &f.guest_a, &f.a, id).await.is_empty(),
         "activity exists before the cron ran: fast path is not off, test would be vacuous"
     );
 
@@ -127,7 +128,7 @@ async fn worker_cron_scheduled_handler_runs_the_sweeper() {
     assert_eq!(r.status(), 200, "scheduled endpoint");
 
     let acts = eventually("activity after the scheduled handler", Duration::from_secs(20), || async {
-        let a = activity(&t, &f.guest_a, &f.a, item.id).await;
+        let a = activity(&t, &f.guest_a, &f.a, id).await;
         (!a.is_empty()).then_some(a)
     })
     .await;
@@ -138,8 +139,8 @@ async fn worker_cron_scheduled_handler_runs_the_sweeper() {
 
 // ---------------------------------------------------------------------------------------------
 // Binding probes (pass `bindings`): one REAL operation per binding, through the Rust API of workers-rs. There is no probe for a
-// service binding or a Workflow: the Worker has neither (ADR-0090, FR-05, issue #43). The binding the app counts with
-// (`RL_CREATE`) is held by `create_is_rate_limited_per_user`; `RL` below is the probe's own.
+// service binding or a Workflow: the Worker has neither (ADR-0090, FR-05, issue #43). The binding `/api/v1` counts with
+// (`RL_V1`) is held by `v1_requests_are_rate_limited_per_key`; `RL` below is the probe's own.
 // ---------------------------------------------------------------------------------------------
 
 async fn probe(t: &Target, name: &str) -> (u16, Value) {
@@ -214,15 +215,16 @@ async fn worker_bindings_email_send_binding_simulated_locally() {
 async fn stage2_cron_real_trigger_runs_the_sweeper() {
     let t = Target::from_env();
     let f = Fixture::seed(&t).await;
-    let item = create_ok(&t, &f.member_a, &f.a, "cron-real-trigger").await;
+    let item = v1_create_ok(&t, &f.member_a, &f.a, "cron-real-trigger").await;
+    let id = item.work_item_id();
     tokio::time::sleep(Duration::from_secs(2)).await;
     assert!(
-        activity(&t, &f.guest_a, &f.a, item.id).await.is_empty(),
+        activity(&t, &f.guest_a, &f.a, id).await.is_empty(),
         "activity exists before any cron ran: fast path is not off, test would be vacuous"
     );
     let start = std::time::Instant::now();
     let acts = loop {
-        let a = activity(&t, &f.guest_a, &f.a, item.id).await;
+        let a = activity(&t, &f.guest_a, &f.a, id).await;
         if !a.is_empty() {
             break a;
         }
