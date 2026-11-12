@@ -192,7 +192,8 @@ pub(crate) async fn create(
     if !truthy(b.get("name")) || !truthy(b.get("slug")) {
         return Err(error("Both name and slug are required"));
     }
-    let (name, slug) = (py_str(&b["name"]), py_str(&b["slug"]));
+    // both are there: `truthy` above is false for a key that is missing
+    let (name, slug) = (py_str(b.get("name").unwrap_or(&Value::Null)), py_str(b.get("slug").unwrap_or(&Value::Null)));
     if name.chars().count() > thrust_core::MAX_WORKSPACE_NAME || slug.chars().count() > thrust_core::MAX_WORKSPACE_SLUG
     {
         return Err(error("The maximum length for name is 80 and for slug is 48"));

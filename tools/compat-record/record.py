@@ -1778,9 +1778,19 @@ def main():
     ap.add_argument("--raw-dir", type=Path, default=REPO / "target/compat-record/raw")
     ap.add_argument("--store-url", default=STORE_URL, help="where the oracle's object store is reachable from here (the asset rows PUT to it and follow redirects to it)")
     ap.add_argument("--self-test", action="store_true")
+    ap.add_argument(
+        "--list-rows",
+        action="store_true",
+        help="print the name of every step this records, one per line, and exit: no oracle is needed. A step's name is its fixture's "
+        "(S04-existing is row S04 again). scripts/check-acceptance-list.sh holds these to the acceptance list (#51)",
+    )
     args = ap.parse_args()
     if args.self_test:
         return self_test()
+    if args.list_rows:
+        for step, _ in STEPS:
+            print(step)
+        return
     record(args.base_url, args.raw_dir, args.store_url.rstrip("/"))
 
 

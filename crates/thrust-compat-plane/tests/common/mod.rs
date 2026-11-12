@@ -2,6 +2,13 @@
 //! every port), the in-process driver, the projection of what the pin answered onto what Thrust answers, and the replay
 //! of a recorded journey.
 #![allow(dead_code)]
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test fails, and clippy.toml exempts only #[test] functions and #[cfg(test)] modules, not the helpers around them"
+)]
 
 pub mod normalise;
 

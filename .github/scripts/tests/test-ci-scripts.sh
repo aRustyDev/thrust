@@ -60,6 +60,11 @@ expect "classify: a look-alike path is not a crate" 0 "rust=false" classify 'cra
 expect "classify: the oracle's harness alone runs the oracle cells" 0 "rust=true" classify 'tools/oracle-v1/harness/run_conformance.py\n'
 expect "classify: the oracle's register alone" 0 "rust=true" classify 'tools/oracle-v1/exceptions.yaml\n'
 expect "classify: another tool's directory is not the oracle's" 0 "rust=false" classify 'tools/oracle-v1-notes.md\ntools/spike-0006/README.md\n'
+# The acceptance-list guard (issue #51) compares the recorder, the table the list is generated from and the pinned route inventory:
+expect "classify: the compat recorder alone runs the acceptance-list guard" 0 "rust=true" classify 'tools/compat-record/record.py\n'
+expect "classify: the table the acceptance list is generated from, alone" 0 "rust=true" classify '.agents/plans/contrail/research/0003-compat-plane-inventory.md\n'
+expect "classify: the pinned route inventory, alone" 0 "rust=true" classify 'tools/compat-inventory/out-pinned/endpoint-inventory.csv\n'
+expect "classify: another research doc and the rest of the inventory's tool are docs" 0 "rust=false" classify '.agents/plans/contrail/research/0004-oracle-harness.md\ntools/compat-inventory/README.md\ntools/compat-record-notes.md\n'
 # The lint and deny jobs read these three files, so a change to only one of them must still run the Rust jobs (issue #40):
 # classified as docs, `lint` and `deny` would be skipped and the gate would pass without running them.
 expect "classify: deny.toml" 0 "rust=true" classify 'deny.toml\n'
