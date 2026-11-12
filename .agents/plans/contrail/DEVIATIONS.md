@@ -70,9 +70,11 @@ served, with the recorded empty shape and no table behind it, until a screen nee
 | `GET /api/workspaces/{slug}/projects/{project}/issues/{issue}/sub-issues/` | the work item's page | `{"sub_issues": [], "state_distribution": {}}` for a member of the project, whether or not the work item is there (the pin does not look) | the work item's page, when the app opens it |
 | `GET /api/workspaces/{slug}/projects/{project}/issues/{issue}/issue-relation/` | the work item's page | the eight empty lists (`blocking`, `blocked_by`, `duplicate`, `relates_to`, `start_after`, `start_before`, `finish_after`, `finish_before`) for a member of the project; 404 `{"error": "Issue not found"}` for a work item that is not there | the work item's page, when the app opens it |
 | `GET /api/workspaces/{slug}/projects/{project}/issue-labels/` | S38 | the project's labels, which no route can make yet (the table is real, the route that writes it is not built), so `[]` for every project made through the API | the label pickers |
+| `GET /api/workspaces/{slug}/stickies/` | X07 | the paginator's envelope over no rows (`results: []`, `total_pages: 0`, the cursors naming the page size, 20 unless `per_page` says, and the page `cursor` says) for an admin, a member or a guest; the pin's 401, its 403 (for a workspace that is not there too) and its 400s (a page size that is no number or is over 1000, a cursor that is no cursor) come first. `per_page=0` is the pin's 500, from S47's rule (probed on the pin, not recorded) | the home page's stickies and the sidebar's "Stickies", on the first journey |
+| `GET /api/unsplash/` | X08 | `[]` for any signed-in caller, whatever they search for: what the pin answers when no `UNSPLASH_ACCESS_KEY` is configured, and the oracle has none. Thrust has no such setting and calls no third party | the project form's cover picker, on the first journey |
 
 Each stub still asks who the caller is and answers the pin's 401 or 403 before its empty answer, so a stranger is not told
-a workspace exists (`tests/workspace_load.rs`, the matrix of nine rows by six kinds of caller).
+a workspace exists (`tests/workspace_load.rs`, the matrix of ten rows by six kinds of caller; X08 is not in a workspace, and is tested for a caller with a session and one with none).
 
 ## Oracle quirks (round 26 candidates; decided in round 27: reproduce all)
 
