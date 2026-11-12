@@ -129,8 +129,9 @@ The plan's `ARCHITECTURE.md` (draft v0, `.agents/plans/contrail/ARCHITECTURE.md`
 - **Crates:** `thrust-api-core` and `thrust-collab-do` do not exist. `thrust-api-v1` does (`/api/v1`: projects, states,
   labels and work items, issue #58). `thrust-compat-plane` serves the 48-route slice of issue #44 (S01 to S48 and X01 to
   X04), the four asset rows (S28, S29, S31 and S33) included, and three routes of its own around them: the address S28 hands
-  the browser for the upload, the route S33 redirects to, and the address a project's cover is shown at. Each composition
-  root mounts it beside `thrust-api`'s router.
+  the browser for the upload, the route S33 redirects to, and the address a project's cover is shown at (X05). Each composition
+  root mounts it beside `thrust-api`'s router. `thrust-plane-types` holds the pinned Plane's three 500 texts and the one function that
+  answers them; `thrust-api-v1` calls it, and the internal API does not yet (issue #51).
 - **Assets:** one kind of file is built, a project's cover (D-035), with the ADR-0047 lifecycle (`pending`, `uploaded`) over an
   `assets` table and `BlobStore::head`. The upload goes to this API, not to an object store the browser can reach, because no
   target has one: a one-time address, a token kept as a digest, the bytes in R2 on the Worker and in memory on the native

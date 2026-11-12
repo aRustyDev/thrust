@@ -1,0 +1,8 @@
+{
+  "kind": "InternalServerError",
+  "source": "the pinned source, not a recording (AGENTS.md testing rule 9b): apps/api/plane/api/views/asset.py:474, the blanket except of the generic asset GET (PQ-401, PQ-409). The harness never reached it.",
+  "status": 500,
+  "body": {
+    "error": "Internal server error"
+  }
+}

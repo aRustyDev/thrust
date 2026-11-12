@@ -1,0 +1,8 @@
+{
+  "kind": "UnexpectedError",
+  "source": "the pinned source, not a recording (AGENTS.md testing rule 9b): apps/api/plane/api/views/project.py:320,337, the catch-all of project create (PQ-018, PQ-406). The harness never reached it.",
+  "status": 500,
+  "body": {
+    "error": "An unexpected error occurred"
+  }
+}

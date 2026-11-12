@@ -20,7 +20,7 @@ use axum::http::StatusCode;
 use serde_json::{json, Value};
 
 use crate::fields::py_int;
-use crate::{plane_500, V1Error};
+use crate::V1Error;
 
 /// The most rows a page has, and how many it has when the request does not say.
 pub const MAX_PER_PAGE: i64 = 1000;
@@ -73,11 +73,18 @@ impl PageRequest {
         if offset < 0 {
             return Err(bad_request("Error in parsing"));
         }
-        if limit <= 0 || (self.is_prev && self.cursor_value != limit as f64) {
-            return Err(plane_500());
+        if limit <= 0 {
+            return Err(V1Error::internal(
+                "per_page <= 0: the pin's paginator divides by it or slices negatively (PQ-402)",
+            ));
+        }
+        if self.is_prev && self.cursor_value != limit as f64 {
+            return Err(V1Error::internal(
+                "a previous-page cursor whose size is not per_page: the pin slices negatively (PQ-403)",
+            ));
         }
         let (Ok(limit_rows), Ok(offset_rows)) = (usize::try_from(limit), usize::try_from(offset)) else {
-            return Err(plane_500());
+            return Err(V1Error::internal("the page window does not fit in a usize"));
         };
         Ok(Plan { limit: limit_rows, page: self.page, offset: offset_rows })
     }

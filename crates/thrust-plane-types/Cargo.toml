@@ -1,0 +1,25 @@
+[package]
+name = "thrust-plane-types"
+description = "What the Plane-shaped surfaces (/api/v1 and compat-plane) share: the three 500 bodies of the pinned Plane and the one function that answers them (#51)."
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+# ADR-0006's panic policy applies: a reproduced Plane 500 is a handled response, never a crash.
+[lints]
+workspace = true
+
+[dependencies]
+# `InternalErrorDetail`, the response extension a root logs the real cause from.
+thrust-api = { workspace = true }
+serde_json = { workspace = true }
+# Runtime-free, as in thrust-api: this crate compiles to wasm32 and runs under workerd.
+axum = { version = "0.8", default-features = false, features = ["json"] }
+
+# Test-only (scripts/check-deps.sh checks normal dependencies).
+[dev-dependencies]
+# The router future never yields to a reactor, so a plain executor drives the body read (as in thrust-api-v1's tests).
+futures-executor = "0.3"
+proptest = "1"
+rstest = "0.26"
