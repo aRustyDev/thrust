@@ -472,26 +472,77 @@ fn config() -> Config {
     Config { cases, max_shrink_iters: 256, max_shrink_time: 60_000, ..Config::default() }
 }
 
+/// Three sequences that between them get to every one of `SITUATIONS`, by construction. Rule 8's control for the model: it is run
+/// first, through the same `run_case` and against the same Postgres, so that the model's reach does not depend on a random draw. (It
+/// used to: the check at the end of the random run needed, say, a delete (one step in twenty) and then a mark of that very asset
+/// among 24 random sequences, and failed CI on a fair share of runs, each time for a different situation.) The indices are into the
+/// assets a sequence has inserted so far, in order; users 0 and 1 are in workspace A and user 2 is in workspace B.
+fn pinned() -> [Vec<Op>; 3] {
+    [
+        // an asset read through another workspace, not public until it is uploaded, uploaded twice, public, deleted, and then marked
+        vec![
+            Op::Insert { who: 0 },
+            Op::Insert { who: 0 },
+            Op::Insert { who: 2 },
+            Op::Get { idx: 0, other_workspace: true },
+            Op::Public { idx: 0 },
+            Op::Mark { idx: 0, other_workspace: false },
+            Op::Mark { idx: 0, other_workspace: false },
+            Op::Public { idx: 0 },
+            Op::Delete { idx: 0 },
+            Op::Mark { idx: 0, other_workspace: false },
+        ],
+        // a grant spent and asked for again; the wrong token; and an expiry equal to the time asked, which has expired
+        vec![
+            Op::Insert { who: 0 },
+            Op::Take { idx: 0, right_token: true, when: 0 },
+            Op::Take { idx: 0, right_token: true, when: 0 },
+            Op::Insert { who: 0 },
+            Op::Take { idx: 1, right_token: false, when: 0 },
+            Op::Take { idx: 1, right_token: true, when: 2 },
+        ],
+        // a cover named from another workspace's asset (none eligible), one named with an asset of someone else's (left out), and a
+        // cover replaced by the oldest eligible of another caller's
+        vec![
+            Op::Insert { who: 0 },
+            Op::Insert { who: 1 },
+            Op::Insert { who: 2 },
+            Op::Attach { who: 0, a: 2, b: 2 },
+            Op::Attach { who: 0, a: 0, b: 1 },
+            Op::Attach { who: 1, a: 1, b: 1 },
+        ],
+    ]
+}
+
 #[test]
 fn model_asset_methods_match_the_reference_against_postgres() {
     let rt = tokio::runtime::Builder::new_multi_thread().enable_all().build().unwrap();
     let env = rt.block_on(env());
     let seen = RefCell::new(BTreeSet::new());
+
+    // the pinned sequences first: each agrees with the model, and together they get to every situation
+    for ops in pinned() {
+        if let Err(e) = rt.block_on(run_case(&env, ops, &seen)) {
+            panic!("a pinned sequence disagrees with the model: {e}");
+        }
+    }
+    {
+        let seen = seen.borrow();
+        for s in SITUATIONS {
+            assert!(seen.contains(s), "no pinned sequence gets to {s:?}; they get to {seen:?}");
+        }
+    }
+
+    // then the random ones, which look for what no one thought to pin
     let config = config();
     assert!(config.cases > 0, "THRUST_MODEL_CASES=0 would check nothing");
-    let cases = config.cases;
     let mut runner = TestRunner::new(config);
     let result = runner.run(&ops(), |ops| rt.block_on(run_case(&env, ops, &seen)));
     rt.block_on(async move { drop(env) });
     if let Err(e) = result {
         panic!("{e}");
     }
-    if cases >= 16 {
-        let seen = seen.into_inner();
-        for s in SITUATIONS {
-            assert!(seen.contains(s), "no sequence got to {s:?}; they got to {seen:?}");
-        }
-    }
+    eprintln!("ASSET-MODEL-OBSERVATION: the pinned and the random sequences got to {:?}", seen.into_inner());
 }
 
 /// The strategy reaches every kind of step: a sequence that never deletes would pass on an adapter that gets deletion wrong.
