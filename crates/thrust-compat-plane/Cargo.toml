@@ -6,6 +6,11 @@ version.workspace = true
 license.workspace = true
 publish.workspace = true
 
+# ADR-0006's panic policy applies, as it does to `thrust-api-v1` (#51): request-derived data cannot make this crate panic, so a
+# reproduced Plane 500 is a handled response and never a crash. On the Worker (panic = abort) a panic fails its own request.
+[lints]
+workspace = true
+
 [dependencies]
 thrust-contracts = { workspace = true }
 thrust-ports = { workspace = true }

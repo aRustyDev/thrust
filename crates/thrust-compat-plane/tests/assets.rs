@@ -7,6 +7,13 @@
 //! decorator; an asset's upload is made once, to the address S28 gave, with the type and the size it was made for; a project's
 //! asset is read only by the project's people; a cover reaches a project through S31 (or S30 and S32's `cover_image_asset`), and
 //! what the app reads of the project says so.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test fails, and clippy.toml exempts only #[test] functions and #[cfg(test)] modules, not the helpers around them"
+)]
 
 mod common;
 

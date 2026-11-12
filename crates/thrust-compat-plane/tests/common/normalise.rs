@@ -5,6 +5,13 @@
 //! keys sorted, then per exchange the request path, the request body, the response body, numbering ids across the whole
 //! fixture. `parity_normaliser_cases` (tests/parity.rs) runs the cases both halves share. Change a rule in both, and add
 //! a case.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test fails, and clippy.toml exempts only #[test] functions and #[cfg(test)] modules, not the helpers around them"
+)]
 
 use std::collections::BTreeMap;
 

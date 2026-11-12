@@ -7,6 +7,13 @@
 //! the projects of THIS workspace, keyed by project id, whatever other workspaces and projects exist; and a deactivated
 //! member is listed as suspended to the others, finds the workspace gone from their own list, and is refused its members
 //! and its project roles.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test fails, and clippy.toml exempts only #[test] functions and #[cfg(test)] modules, not the helpers around them"
+)]
 
 mod common;
 

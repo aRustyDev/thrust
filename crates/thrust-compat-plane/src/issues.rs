@@ -321,10 +321,12 @@ fn problems_to_errors(problems: &[FieldProblem], texts: &Texts) -> FieldErrors {
             FieldProblem::Parent => fail(&mut errors, "parent_id", none(&texts.parent)),
             FieldProblem::ParentNotSupported => fail(&mut errors, "parent_id", "Sub-work items are not supported yet."),
             FieldProblem::Assignee(i) => {
-                nested.entry("assignee_ids").or_default().insert(i.to_string(), json!([none(&texts.assignees[*i])]));
+                let text = texts.assignees.get(*i).map(String::as_str).unwrap_or_default();
+                nested.entry("assignee_ids").or_default().insert(i.to_string(), json!([none(text)]));
             }
             FieldProblem::Label(i) => {
-                nested.entry("label_ids").or_default().insert(i.to_string(), json!([none(&texts.labels[*i])]));
+                let text = texts.labels.get(*i).map(String::as_str).unwrap_or_default();
+                nested.entry("label_ids").or_default().insert(i.to_string(), json!([none(text)]));
             }
         }
     }
@@ -574,16 +576,17 @@ pub(crate) async fn retrieve(
     let access = thrust_core::issue_reader(&app, &who, &WorkspaceSlug(slug), project).await.map_err(refusal)?;
     let row = thrust_core::get_issue(&app, &access, issue).await.map_err(refusal)?;
     let mut out = issue_json(&row, Shape::Detail);
-    let m = out.as_object_mut().expect("an object");
-    for name in q.get("expand").map(String::as_str).unwrap_or_default().split(',') {
-        match name {
-            "issue_reactions" | "issue_attachments" | "issue_link" => {
-                m.insert(name.to_string(), json!([]));
+    if let Some(m) = out.as_object_mut() {
+        for name in q.get("expand").map(String::as_str).unwrap_or_default().split(',') {
+            match name {
+                "issue_reactions" | "issue_attachments" | "issue_link" => {
+                    m.insert(name.to_string(), json!([]));
+                }
+                "parent" => {
+                    m.insert("parent".to_string(), Value::Null);
+                }
+                _ => {}
             }
-            "parent" => {
-                m.insert("parent".to_string(), Value::Null);
-            }
-            _ => {}
         }
     }
     Ok(Json(out))

@@ -4,6 +4,13 @@
 //! What must hold: `avatar_url` is the avatar when there is one and null when there is not, `cover_image_url` the cover
 //! image likewise; the short user (S02) and the long one (S10) agree on the fields they share; and the user is the
 //! caller's own, never another account's.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test fails, and clippy.toml exempts only #[test] functions and #[cfg(test)] modules, not the helpers around them"
+)]
 
 mod common;
 

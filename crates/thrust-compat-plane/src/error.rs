@@ -93,8 +93,8 @@ impl AuthError {
 impl IntoResponse for AuthError {
     fn into_response(self) -> Response<Body> {
         let mut body = json!({"error_code": self.code.number(), "error_message": self.code.message()});
-        if let Some(email) = self.email {
-            body["email"] = json!(email);
+        if let (Some(email), Some(members)) = (self.email, body.as_object_mut()) {
+            members.insert("email".to_string(), json!(email));
         }
         let mut resp = (self.status, Json(body)).into_response();
         if let Some(s) = self.retry_after_secs {

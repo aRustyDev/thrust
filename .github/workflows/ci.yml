@@ -132,6 +132,13 @@ jobs:
         run: |
           scripts/check-plane-500.sh
           scripts/check-plane-500.sh --self-test
+      # Issue #51: the compat replay's fixtures and the oracle recorder's steps are the rows of the F-X13 acceptance list (round 29),
+      # which is generated from research/0003 and joined with the pinned route inventory: `comm -3` of each pair prints nothing. The
+      # self-test is the control: lists with a missing, extra or pending row are refused, and an empty list is not a pass.
+      - name: Acceptance-list guard
+        run: |
+          scripts/check-acceptance-list.sh
+          scripts/check-acceptance-list.sh --self-test
       # Issue #39: the Worker's two real configs carry `[placement] region = "aws:us-east-1"`. A step and not a job, so
       # the gate's required contexts do not change.
       - name: Placement guard

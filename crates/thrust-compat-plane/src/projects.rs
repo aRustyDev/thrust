@@ -735,8 +735,8 @@ pub(crate) fn state_json(s: &StateRow, order: Option<f64>) -> Value {
         "description": s.description,
         "sequence": s.sequence,
     });
-    if let Some(order) = order {
-        row["order"] = json!(order);
+    if let (Some(order), Some(members)) = (order, row.as_object_mut()) {
+        members.insert("order".to_string(), json!(order));
     }
     row
 }
@@ -754,7 +754,8 @@ pub(crate) fn state_orders(states: &[StateRow]) -> Vec<f64> {
         .map(|s| {
             let i = seen.entry(s.group).or_default();
             *i += 1;
-            *i as f64 / count[&s.group] as f64
+            // every group of `states` was counted above, so the lookup finds it; a group it did not find would be alone (1)
+            *i as f64 / count.get(&s.group).copied().unwrap_or(1) as f64
         })
         .collect()
 }
