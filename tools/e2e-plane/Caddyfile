@@ -1,0 +1,35 @@
+# One origin for the pinned Plane's stock web app and its API, for the browser journeys (issue #45).
+#
+# The oracle stack (tools/oracle-v1/compose.oracle.yml) is API only: no web, no proxy. Plane's own proxy
+# (apps/proxy/Caddyfile.ce in the fork) routes /api/*, /auth/* and /static/* to the API and everything else to the web
+# container, which is Caddy with `try_files {path} /index.html` over the built single-page app. This is the same routing for the
+# paths a journey uses, in one container: the API for those three prefixes, the built bundle for the rest.
+#
+# Not routed, as in the Worker that the Thrust leg runs against: /god-mode (admin), /spaces (space) and /live (the collab server).
+# They fall through to the app's index.html. A journey that opens the work-item editor's collab provider needs /live (issue #46).
+{
+	admin off
+	auto_https off
+}
+
+:8080 {
+	@api path /api/* /auth/* /static/*
+	handle @api {
+		reverse_proxy api:8000
+	}
+
+	# The browser's uploads (the project cover, an attachment): the API, with USE_MINIO=1 (compose.ui.yml), signs the URL for this
+	# origin with the bucket as the first path segment (AWS_S3_BUCKET_NAME in .env.oracle: `uploads`), and the object store checks the
+	# signature against the Host header it is sent. reverse_proxy keeps the Host header it was given, so this works as it does in
+	# Plane's own proxy.
+	@store path /uploads/*
+	handle @store {
+		reverse_proxy plane-minio:9000
+	}
+
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+}

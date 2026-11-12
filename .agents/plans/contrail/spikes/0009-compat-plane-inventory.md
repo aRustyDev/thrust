@@ -36,3 +36,12 @@ ADR-0034 (option: adapt the React service layer instead).
 ## Result (round 26)
 
 **Desk half done**, on the pre-pin and the pinned trees. Findings: `research/0003-compat-plane-inventory.md`; ADR-0034 *Update* has the sizing. The HAR recording, call frequency and the replay harness are the dynamic half, next.
+
+## Dynamic half, first part (issue #45, 2026-11-12)
+
+The stock app, built from the pin, run against the pinned oracle in a real browser by the Playwright journey of M1 (`e2e/journeys/m1-sign-up-to-work-item.spec.ts`; `scripts/e2e.sh plane-oracle`, which says how: `tools/e2e-plane/README.md`), recorded as a HAR **with the bodies of the `/api/` and `/auth/` calls**:
+
+- **`e2e/har/m1-sign-up-to-work-item.plane.har`**: 90 entries (sign-up, onboarding, a workspace, a project and its cover, a work item and the list that shows it), 366 KB, from the pin `oracle/v1-pin-20261018`. `tools/e2e-har/scrub.py` took out the cookie, CSRF and password values, the presigned-URL signature and the volatile times; the URLs, statuses, other headers and bodies are as recorded, with the origin the run used (`http://localhost:18088`) and the ids not renumbered. What the check on it found and did not: G-31 in `docs/src/testing/status.md`.
+- It is the **M1 journey's** only. Each M2 screen's HAR is committed with its journey (#46), which is also how its acceptance list is derived (#46's proposal). The call frequency and the static-versus-dynamic diff (method step 2) are not done; **the replay harness that reads these is still to build**.
+
+To record again: `E2E_RECORD_HAR=1 ORACLE_DIR=<fork checkout>/oracle scripts/e2e.sh plane-oracle`. It takes the oracle stack (a fresh one, then down), so it drops the seeded snapshot that `scripts/oracle-v1.sh plane` needs.

@@ -28,8 +28,9 @@ Router and component tests in the crate they test. In-process e2e in a package n
 neither the package nor the `e2e` nextest profile exists yet (`.config/nextest.toml` says to add them from the
 template when the crate exists). The browser journeys are a different thing with the same word: the TypeScript package
 `e2e/` (Playwright, pinned by `e2e/pnpm-lock.yaml`), **one spec per journey** in `e2e/journeys/`, what they share in
-`e2e/support/`. They run against the Cloudflare set only (Q-0123.2) and are never part of the default nextest loop
-(`AGENTS.md`, testing rule 6).
+`e2e/support/`. Thrust runs on the Cloudflare set only (Q-0123.2), and every journey is also run against the pinned Plane, the
+UI oracle: green on Plane and red on Thrust is a parity defect, red on Plane means the journey is wrong. They are never part
+of the default nextest loop (`AGENTS.md`, testing rule 6).
 
 ## Run
 
@@ -37,10 +38,18 @@ template when the crate exists). The browser journeys are a different thing with
 scripts/rs cargo nextest run -p thrust-api      # no tests yet [derived]
 scripts/e2e.sh worker-cf controls               # the journeys, then their controls; needs Docker, node and pnpm
 scripts/e2e.sh running                          # against a Worker that is already up (THRUST_BASE_URL, THRUST_ADMIN_TOKEN)
+ORACLE_DIR=<fork checkout>/oracle scripts/e2e.sh plane-oracle controls    # the pinned Plane; local only
+E2E_RECORD_HAR=1 ORACLE_DIR=... scripts/e2e.sh plane-oracle               # and write the scrubbed HAR into e2e/har/
 ```
 
 `scripts/e2e.sh` builds `web/` if it is not built, starts the target as `scripts/contract.sh` does (its `e2e` pass), and
 ends in `VERDICT: PASS` or `VERDICT: FAIL`. The same run is the `worker-cf e2e` cell of the contract matrix.
+
+`plane-oracle` is **local only**: the oracle builds from the fork checkout, which is not pushed (Q-0122.4). It builds the
+pin's stock app (Thrust's `web/` with the Q-R2 ledger reverted to the pin, each file checked against `web/PIN-MANIFEST`),
+brings the oracle stack up fresh beside it on one origin, does the instance-admin setup, runs the journeys and takes the stack
+down. `down -v` drops the seeded snapshot that `scripts/oracle-v1.sh plane` needs, so re-seed after it. What it needs and
+what it leaves out: `tools/e2e-plane/README.md`.
 
 ## Required controls
 
@@ -51,9 +60,10 @@ A journey that passes proves nothing until its detectors have been shown to fire
 journey in ways that must fail, and requires the failure **and** the words it fails with: a 404 the browser is shown
 (`stickies-404`), a work-item list the browser empties (`empty-list`, must fail at "see it in the list"), a journey that
 skips itself (`skip`; Playwright reports a skip as a pass, so the **count guard** must refuse it), and a journey told it is
-on the other target (must fail at the `TARGET GUARD`). The count guard holds every run's report to one passed journey per
-file in `e2e/journeys/`. A new journey is a new file, and brings no control of its own unless it has a detector the others
-lack.
+on the other target (must fail at the `TARGET GUARD`; a Thrust told it is on Plane, and Plane told it is a Thrust). The count
+guard holds every run's report to one passed journey per file in `e2e/journeys/`. A new journey is a new file, and brings no
+control of its own unless it has a detector the others lack. The HAR that is committed (`e2e/har/`) comes from a passing run
+only, and `tools/e2e-har/scrub.py --self-test` shows its scrub removes planted secrets and that its check can fail.
 
 ## Owning skill
 
@@ -69,6 +79,5 @@ and controls in `e2e/support/`. For the Rust layers, none yet; templates are und
 
 ## Target
 
-The UI parity smoke set: ADR-0123 and the parity matrix in `.agents/plans/contrail/TRACEABILITY.md`. Left of issue #45:
-every journey also run against the pinned Plane, the committed HAR, and the schedule. The journeys for the M2 screens are
-issue #46's.
+The UI parity smoke set: ADR-0123 and the parity matrix in `.agents/plans/contrail/TRACEABILITY.md`. Left of issue #45: the
+schedule and the parity table. The journeys for the M2 screens are issue #46's.
