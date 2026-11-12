@@ -1,7 +1,7 @@
 # App and end-to-end
 
 Status: **live** (Playwright journeys over the stock React app, `e2e/`) · **template-only** (axum router tests, Dioxus
-SSR, in-process harness) · **planned** (desktop, mobile) · Gate: the `worker-cf e2e` cell of the contract matrix
+SSR, in-process harness) · **planned** (desktop, mobile) · Gate: the `worker-cf e2e` cell of the contract matrix (also run daily by `e2e-schedule.yml`, which gates nothing)
 
 ## Catches
 
@@ -79,5 +79,6 @@ and controls in `e2e/support/`. For the Rust layers, none yet; templates are und
 
 ## Target
 
-The UI parity smoke set: ADR-0123 and the parity matrix in `.agents/plans/contrail/TRACEABILITY.md`. Left of issue #45: the
-schedule and the parity table. The journeys for the M2 screens are issue #46's.
+The UI parity smoke set: ADR-0123 and the parity matrix in `.agents/plans/contrail/TRACEABILITY.md`, which tables each
+journey with its screens and where it passes. The journeys for the M2 screens are issue #46's; each is a new file in
+`e2e/journeys/`, passes on the pinned Plane and on `worker-cf`, and is a new row of that table.

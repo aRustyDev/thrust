@@ -1,0 +1,45 @@
+name: e2e-schedule
+
+# The browser journeys (scripts/e2e.sh, e2e/journeys/) on a Worker, every day and by hand (issue #45). It runs the `worker-cf e2e` cell
+# through the same reusable workflow as ci.yml (contract-cell.yml), so it is the same cell: the app built from web/ on the runner, a
+# Worker started the way scripts/contract.sh starts it, the journeys, and their controls.
+#
+# Why a schedule, when ci.yml already runs that cell on a pull request:
+#   - a change to web/ alone does not run it. classify-changes.sh keeps web/ out of `rust`, so the stock app is otherwise exercised
+#     only when a Rust change happens to land (G-30, known gap 2). Every day on main it is.
+#   - what drifts without a change of ours: the runner image, the browser Playwright installs, the packages the app resolves.
+#   - it is the run history the issue's "after two weeks green" asked for.
+# It is not a gate: nothing waits for it, and `gate` does not read it. A failure here is a notification, not a blocked merge.
+#
+# The pinned-Plane leg is not here: the oracle builds from the fork checkout, which is not pushed (Q-0122.4), so it cannot run on a
+# hosted runner. It is local (scripts/e2e.sh plane-oracle, tools/e2e-plane/README.md).
+#
+# Schedule: UTC, default branch only; GitHub disables scheduled workflows in a public repository after 60 days without repository
+# activity. The minute is off the hour on purpose, when the runners are busiest.
+on:
+  schedule:
+    - cron: "41 4 * * *"
+  workflow_dispatch:
+  # Only when this file changes: a reusable workflow called with the wrong permissions fails at startup, with no job and a message
+  # about "a workflow file issue", and only a run can show it. This lets the pull request that edits the call prove it. ci.yml runs the
+  # same cell for every other pull request, so nothing else needs a second one.
+  pull_request:
+    paths:
+      - .github/workflows/e2e-schedule.yml
+
+permissions: {}
+
+concurrency:
+  group: e2e-schedule-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  e2e:
+    uses: ./.github/workflows/contract-cell.yml
+    with:
+      target: worker-cf
+      pass: e2e
+    # the called workflow asks for `contents: read` of its own, and a caller that grants less makes the call fail at startup (ci.yml's
+    # `contract` job does the same)
+    permissions:
+      contents: read
