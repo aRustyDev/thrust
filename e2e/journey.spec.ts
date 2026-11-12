@@ -46,6 +46,7 @@ test("the stock app: sign up, onboard, make a workspace, a project and a work it
     recordHar: { path: `${process.env.E2E_OUT ?? "."}/journey.har`, content: "omit" },
   });
   const page = await context.newPage();
+  page.setDefaultTimeout(30_000);
 
   const seen: Seen[] = [];
   page.on("response", (r) => {
@@ -59,47 +60,54 @@ test("the stock app: sign up, onboard, make a workspace, a project and a work it
     await page.route("**/api/workspaces/*/stickies/**", (route) => route.fulfill({ status: 404, contentType: "application/json", body: "{}" }));
   }
 
-  // sign up
-  await page.goto("/");
-  await page.fill("input[name=email]", email);
-  await page.getByRole("button", { name: "Continue" }).click();
-  await expect(page.locator("input[type=password]").first()).toBeVisible();
-  for (const input of await page.locator("input[type=password]").all()) await input.fill(password);
-  await page.locator("button[type=submit]").click();
+  // The screen is walked inside a `try`, and the network log is judged before its outcome is: a route that is not mounted can break
+  // the page as well as show in the log, and then the 404 is the finding, not the click that timed out after it.
+  let walked: unknown;
+  try {
+    // sign up
+    await page.goto("/");
+    await page.fill("input[name=email]", email);
+    await page.getByRole("button", { name: "Continue" }).click();
+    await expect(page.locator("input[type=password]").first()).toBeVisible();
+    for (const input of await page.locator("input[type=password]").all()) await input.fill(password);
+    await page.locator("button[type=submit]").click();
 
-  // onboarding: the profile, then the workspace
-  await expect(page).toHaveURL(/\/onboarding\//);
-  await page.fill("input[name=first_name]", "Journey User");
-  await page.getByRole("button", { name: "Continue" }).click();
-  await page.fill("input[name=name]", "Journey Workspace");
-  await page.fill("input[name=slug]", workspaceSlug);
-  await page.getByRole("button", { name: "Just myself" }).click();
-  await page.getByRole("button", { name: "Create workspace" }).click();
+    // onboarding: the profile, then the workspace
+    await expect(page).toHaveURL(/\/onboarding\//);
+    await page.fill("input[name=first_name]", "Journey User");
+    await page.getByRole("button", { name: "Continue" }).click();
+    await page.fill("input[name=name]", "Journey Workspace");
+    await page.fill("input[name=slug]", workspaceSlug);
+    await page.getByRole("button", { name: "Just myself" }).click();
+    await page.getByRole("button", { name: "Create workspace" }).click();
 
-  // the workspace's home page, and the welcome tour that stands in front of it
-  await expect(page).toHaveURL(new RegExp(`/${workspaceSlug}/`));
-  await page.getByRole("button", { name: "No thanks, I will explore it myself" }).click();
+    // the workspace's home page, and the welcome tour that stands in front of it
+    await expect(page).toHaveURL(new RegExp(`/${workspaceSlug}/`));
+    await page.getByRole("button", { name: "No thanks, I will explore it myself" }).click();
 
-  // a project
-  // (the sidebar is rendered twice, so the entry is found twice: the first is the one on screen)
-  await page.getByText("Add project", { exact: true }).first().click();
-  await page.fill("input[name=name]", "Journey Project");
-  await page.fill("input[name=identifier]", "JRN");
-  await page.getByRole("button", { name: "Create project" }).click();
-  await page.getByText("Open project", { exact: true }).click();
-  await expect(page).toHaveURL(/\/projects\/[0-9a-f-]+\/issues\//);
+    // a project
+    // (the sidebar is rendered twice, so the entry is found twice: the first is the one on screen)
+    await page.getByText("Add project", { exact: true }).first().click();
+    await page.fill("input[name=name]", "Journey Project");
+    await page.fill("input[name=identifier]", "JRN");
+    await page.getByRole("button", { name: "Create project" }).click();
+    await page.getByText("Open project", { exact: true }).click();
+    await expect(page).toHaveURL(/\/projects\/[0-9a-f-]+\/issues\//);
 
-  // a work item, and the list that shows it
-  await page.getByRole("button", { name: "Add work item" }).click();
-  await page.fill("input[name=name]", title);
-  await page.getByRole("button", { name: "Save", exact: true }).click();
-  await expect(page.getByText(title).first()).toBeVisible();
-  // The app puts the new work item in its own store from the answer to the creation, so that it is on screen proves little of the
-  // server's list. A reload makes the page ask for the list again (S47), and the item must be in what comes back.
-  await page.reload();
-  await expect(page.getByText(title).first()).toBeVisible();
-  // everything the page asks for on the way has been answered
-  await page.waitForLoadState("networkidle");
+    // a work item, and the list that shows it
+    await page.getByRole("button", { name: "Add work item" }).click();
+    await page.fill("input[name=name]", title);
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(page.getByText(title).first()).toBeVisible();
+    // The app puts the new work item in its own store from the answer to the creation, so that it is on screen proves little of the
+    // server's list. A reload makes the page ask for the list again (S47), and the item must be in what comes back.
+    await page.reload();
+    await expect(page.getByText(title).first()).toBeVisible();
+    // everything the page asks for on the way has been answered
+    await page.waitForLoadState("networkidle");
+  } catch (error) {
+    walked = error;
+  }
 
   await context.close(); // writes the HAR
 
@@ -111,7 +119,13 @@ test("the stock app: sign up, onboard, make a workspace, a project and a work it
       (s.status === 404 || s.status >= 500) &&
       !ALLOWED_FAILURES.some((a) => a.method === s.method && a.pathPattern.test(s.path)),
   );
-  expect(failures.map((s) => `an unexpected ${s.status}: ${describe(s)}`), "the browser's network log must hold no 404 and no 5xx").toEqual([]);
+  const firstLine = (e: unknown) => String(e instanceof Error ? e.message : e).split("\n")[0];
+  // the screen failed and the log has nothing to say about why: that failure is the finding
+  if (walked !== undefined && failures.length === 0) throw walked;
+  expect(
+    failures.map((s) => `an unexpected ${s.status}: ${describe(s)}`),
+    `the browser's network log must hold no 404 and no 5xx${walked !== undefined ? ` (the screen also failed: ${firstLine(walked)})` : ""}`,
+  ).toEqual([]);
 
   // the app's own files are files: a missing hashed asset is the fallback page with a 200 (ADR-0011), which is no 404 and so is looked
   // for. (A 304 is the browser asking again for a file it has, and being told it is the same: an answer about a file.)
