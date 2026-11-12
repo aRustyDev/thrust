@@ -6,4 +6,12 @@
 # a changed file that is not listed fails it, and so does a listed file that no longer differs. Say in the commit that
 # changes a file why it falls inside Q-R2.
 #
-# Empty: the import is byte-identical to the pin.
+# The auth client posts JSON (issue #44, D-022, D-036), where the pin's posts a form and follows a 302. Both files are the auth client
+# (Q-R2). Not changed, and still the pin's: components/account/auth-forms/unique-code.tsx, reset-password.tsx and the OAuth hook (their
+# server routes are not built, so the form post they make has no JSON answer to read), and packages/services/src/auth/auth.service.ts,
+# the same form-post sign-out in a service this app does not use (`@/services/auth.service` is the one `store/user` calls).
+#
+# the password form: a sign-in or sign-up is a JSON post, and the answer is navigated to as the 302 would have been
+apps/web/components/account/auth-forms/password.tsx
+# the service the sign-out menu and the password form call: `passwordAuth` is new, and `signOut` posts JSON instead of a form
+apps/web/services/auth.service.ts

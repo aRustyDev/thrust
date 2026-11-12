@@ -150,7 +150,25 @@ export const AuthPasswordForm = observer(function AuthPasswordForm(props: Props)
               : true;
           if (isPasswordValid) {
             setIsSubmitting(true);
-            if (formRef.current) formRef.current.submit(); // Manually submit the form if the condition is met
+            // Thrust (Q-R2, D-022): post JSON, and go where the pin's 302 would have gone: the place it names on a success, and the
+            // page's own address with the error in its query on a refusal, which the sign-in page already reads
+            authService
+              .passwordAuth(mode === EAuthModes.SIGN_IN ? "sign-in" : "sign-up", {
+                email: passwordFormData.email,
+                password: passwordFormData.password,
+                ...(nextPath ? { next_path: nextPath } : {}),
+              })
+              .then(({ redirect_path }) => window.location.assign(redirect_path))
+              .catch((error) => {
+                // not an answer of the server's (a network failure, say): stay on the form
+                if (!error?.error_code) return setIsSubmitting(false);
+                const query = new URLSearchParams();
+                if (nextPath) query.set("next_path", nextPath);
+                query.set("error_code", String(error.error_code));
+                query.set("error_message", String(error.error_message ?? ""));
+                query.set("email", String(error.email ?? ""));
+                window.location.assign(`/?${query.toString()}`);
+              });
           } else {
             setBannerMessage(true);
           }
