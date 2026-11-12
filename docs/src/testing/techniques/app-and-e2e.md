@@ -63,8 +63,9 @@ skips itself (`skip`; Playwright reports a skip as a pass, so the **count guard*
 on the other target (must fail at the `TARGET GUARD`; a Thrust told it is on Plane, and Plane told it is a Thrust). One run is
 the other way round and must **pass**: `slow-page` slows the browser to a CI runner's pace and holds the profile answer the home
 page asks for, which the app applies over its own record of the answered welcome tour (the cell failed at "create a project"
-like that, G-31); a journey that answers the tour the moment it shows fails it, and one that lets the page settle first does
-not. It is only worth having because it was shown to fail the journey without that wait. The count
+like that, G-31); a journey that answers the tour once and goes on fails it, and one that looks that the tour stayed answered,
+and answers it again if not, does not. It is only worth having because it was shown to fail the journey without that; a first
+version of the journey that only waited for the page to go quiet passed it on a fast machine and failed it in CI. The count
 guard holds every run's report to one passed journey per file in `e2e/journeys/`. A new journey is a new file, and brings no
 control of its own unless it has a detector the others lack. The HAR that is committed (`e2e/har/`) comes from a passing run
 only, and `tools/e2e-har/scrub.py --self-test` shows its scrub removes planted secrets and that its check can fail.

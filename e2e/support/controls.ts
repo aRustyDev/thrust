@@ -10,8 +10,9 @@
 //                 workspace's home page makes as it mounts is slow as well. G-31 is the failure it stands for: the app marks the welcome
 //                 tour as done in its store at the click, and keeps what a profile fetch returns after that, so a profile answer made
 //                 before the click and landing after it puts the tour back for good, although the PATCH was answered 200. On a fast
-//                 machine the page does not make that fetch at all, which is why the slowness is part of the control. A journey that
-//                 answers the tour the moment it appears fails this run; one that lets the page settle first does not.
+//                 machine the page does not make that fetch at all, which is why the slowness is part of the control. The held answer
+//                 is the server's own, released when the tour's PATCH leaves the browser. A journey that answers the tour once and goes
+//                 on fails this run; one that looks that the tour stayed answered, and answers it again if it did not, does not.
 //
 // The wrong-target control is not here: it is E2E_TARGET set to the other target (support/target.ts).
 //
@@ -66,8 +67,8 @@ export async function installControl(
     const session = await page.context().newCDPSession(page);
     await session.send("Emulation.setCPUThrottlingRate", { rate: CPU_RATE });
     // and the first profile fetch from inside the workspace (the sign-in's and the onboarding's are made on other URLs) is held until the
-    // tour is answered, and then answered as it was before: so it lands in the moment between that click and the next. A journey that
-    // answers the tour only after the page has settled holds the answer past the click's moment, which is what LATE_MS is for
+    // tour is answered, and then released: so, made before the click, it lands in the moment between that click and the next. LATE_MS
+    // is the longest it is held, for a journey that waits for it before it clicks
     const answered = new Promise<void>((resolve) => {
       page.on("request", (r) => {
         if (r.method() === "PATCH" && /\/api\/users\/me\/tour-completed\/$/.test(new URL(r.url()).pathname)) resolve();
@@ -84,7 +85,9 @@ export async function installControl(
         return route.fulfill({ response });
       }
       delayed += 1;
-      return route.fulfill({ response, json: { ...body, is_tour_completed: false } });
+      // as the server gave it when it was asked, which is before the tour was answered: a fetch made after the click is answered
+      // `true`, as it would be, and is no stale answer
+      return route.fulfill({ response });
     });
   }
 

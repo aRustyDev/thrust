@@ -14,8 +14,8 @@
 //   - a 404 detector that cannot see, a journey that never looks at the server's list, and a journey that skips itself: the controls
 //     in support/controls.ts, each of which scripts/e2e.sh runs and requires to FAIL, and to fail by saying why; and its count guard
 //     (the report must say that every journey in e2e/journeys/ passed, none skipped);
-//   - a journey that is right on a fast machine only (it answered the welcome tour the moment it showed, and a CI runner's slower
-//     page put the tour back): the `slow-page` control, the one run that must PASS.
+//   - a journey that is right on a fast machine only (it answered the welcome tour once and went on, and a CI runner's slower page
+//     put the tour back in front of it): the `slow-page` control, the one run that must PASS.
 //
 // What is NOT asserted: that the app is pixel-faithful, or anything beyond the work item appearing in the list. Opening the work item
 // calls one more route that is not built (`.../work-items/{id}/description-versions/`, G-30); that is outside this journey.
@@ -79,12 +79,20 @@ test("the stock app: sign up, onboard, make a workspace, a project and a work it
       // The app marks the tour as done in its store at the click, and keeps whatever a profile fetch returns after that. The home page
       // fetches the profile as it mounts (on a slow machine, which is what CI is; a fast one may not), so an answer that was made
       // before the click and lands after it puts the tour back for good, although the click's own PATCH was answered 200 (G-31: the
-      // cell failed at "Add project" like that, on main). A person does not answer a screen the moment it appears: the journey lets what
-      // the page asked for on its way in be answered first, then answers the tour, then looks that it stayed answered.
+      // cell failed at "Add project" like that, on main). So the journey does what a person does: it lets what the page asked for on its
+      // way in be answered, answers the tour, waits for what was in flight at that moment, and looks that the tour stayed answered; if
+      // it did not, it answers it again (an answer that stale cannot come twice: nothing is in flight by then), and says so in the
+      // report. No fixed pause could do this alone: how long the app's own code waits between one request and the one it chains to
+      // depends on the machine (G-31).
+      const tour = page.getByRole("button", { name: NO_THANKS });
       await pending.quiet();
-      await page.getByRole("button", { name: NO_THANKS }).click();
-      await pending.quiet();
-      await expect(page.getByRole("button", { name: NO_THANKS }), "the welcome tour is in front of the page again after it was answered").toHaveCount(0);
+      for (let answered = 1; ; answered++) {
+        await tour.click();
+        await pending.quiet();
+        if ((await tour.count()) === 0) break;
+        expect(answered, "the welcome tour is in front of the page again after it was answered three times").toBeLessThan(3);
+        test.info().annotations.push({ type: "tour-came-back", description: `the tour was in front of the page again after answer ${answered}` });
+      }
     });
 
     await test.step("create a project", async () => {
