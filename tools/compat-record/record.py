@@ -996,6 +996,20 @@ def step_s47(base, pacer):
         ("a page size with spaces around it", get("per_page=%202%20")),
         ("a page size with a plus sign", get("per_page=%2B2")),
         ("a page size that is a decimal", get("per_page=1.0")),
+        # the pin has no lower bound on `per_page` (research/0007 PQ-402, from its source): zero divides, a negative size slices
+        # negatively. Recorded here so that the answer is the pin's and not a reading of its source (#51).
+        ("a page size of zero", get("per_page=0")),
+        ("a page size below zero", get("per_page=-1")),
+        ("a page size of zero with a cursor", get("cursor=3:0:0&per_page=0")),
+        # PQ-403, also from source only: a cursor to the previous page whose size is not the page size
+        ("a cursor to the previous page whose size is not the page size", get("cursor=5:1:1&per_page=3&order_by=-created_at")),
+        # which refusal comes first when more than one applies: the 500 is the last of the pin's checks, so each of these asks
+        # whether another check answers before it does
+        ("a page size of zero with a cursor that is not a cursor", get("cursor=abc&per_page=0")),
+        ("a page size below zero on a page after the first", get("cursor=3:1:0&per_page=-1")),
+        ("a page size of zero on a page before the first", get("cursor=3:-1:1&per_page=0")),
+        ("a page size of zero with a change date that is not a date", get("cursor=100:0:0&per_page=0&updated_at__gt=nonsense")),
+        ("a page size of zero with filters that are not JSON", get("cursor=100:0:0&per_page=0&filters=nonsense")),
         ("a cursor that is not a cursor", get("cursor=abc")),
         ("a cursor with two parts", get("cursor=3:0")),
         ("a cursor with a size that is not a number", get("cursor=x:0:0")),

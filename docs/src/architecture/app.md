@@ -130,7 +130,7 @@ The plan's `ARCHITECTURE.md` (draft v0, `.agents/plans/contrail/ARCHITECTURE.md`
   labels and work items, issue #58). `thrust-compat-plane` serves S01 to S27, S30, S32, S34 to S48 and X01 to X04, which is
   the 48-route slice of issue #44 but for its four asset rows (S28, S29, S31 and S33). Each composition root mounts it
   beside `thrust-api`'s router. `thrust-plane-types` holds the pinned Plane's three 500 texts and the one function that
-  answers them; `thrust-api-v1` calls it, and the internal API does not yet (issue #51).
+  answers them; `thrust-api-v1` and `thrust-compat-plane` both answer a reproduced 500 through it (issue #51).
 - **The web app:** `web/` holds the stock React app and the `@plane/*` packages it needs, imported from the oracle pin
   (`web/SOURCE`). Only the files in `web/ALLOWED-CHANGES` may differ from the pin, and the `web` job of CI checks it
   ([CI/CD](cicd.md)). Nothing serves the build yet, and no auth-client change has been made.

@@ -1221,6 +1221,54 @@ async fn compat_a_member_makes_a_work_item_the_project_lists_it_and_the_app_open
     );
 }
 
+/// S47 and issue #51, on every target. The pin has no lower bound on a page size, so a size of 0 or less, and a cursor to the
+/// previous page whose size is not the page size, end in its catch-all 500: status 500 and the body
+/// `{"error":"Something went wrong please try again later"}` exactly, with nothing of why in it (the cause goes to the log). It is
+/// a handled response and not a crash (ADR-0031, ADR-0006): the next request to the same target is answered, which on a Worker
+/// (panic = abort) is the difference between a 500 and a lost request. All four are recorded on the pin (the S47 fixture).
+/// Controls: a neighbouring size is a 200 on the same route; a size that is no number is the 400 and not the 500; a cursor that is
+/// no cursor beats the size, as it does on the pin; and the permission check still comes before the size is read.
+#[tokio::test]
+async fn compat_a_page_size_of_zero_or_less_is_the_pins_500_and_the_target_keeps_answering() {
+    let t = t();
+    let f = Fixture::seed(&t).await;
+    let issues = format!("/api/workspaces/{}/projects/{}/issues/", f.a.slug, f.a.project.0);
+    let planes_500 = r#"{"error":"Something went wrong please try again later"}"#;
+
+    for query in ["per_page=0", "per_page=-1", "cursor=3:0:0&per_page=0", "cursor=5:1:1&per_page=3"] {
+        let r = t.http.get(t.url(&format!("{issues}?{query}"))).bearer_auth(&f.admin_a.token).send().await.unwrap();
+        assert_eq!(r.status(), 500, "{query}");
+        let content_type = r.headers().get("content-type").and_then(|v| v.to_str().ok()).unwrap_or_default().to_owned();
+        assert!(content_type.starts_with("application/json"), "{query}: {content_type}");
+        let body = r.text().await.unwrap();
+        assert_eq!(body, planes_500, "{query}: the pin's body, byte for byte");
+        assert!(!body.contains("per_page") && !body.contains("paginator"), "{query}: the cause is for the log: {body}");
+
+        // the target is still there: the next request is answered, by the same route
+        let next = get(&t, &f.admin_a.token, &format!("{issues}?per_page=1")).await;
+        assert!(next["results"].is_array(), "{query}: {next}");
+    }
+
+    // controls: each of these is on the same route and is not the 500
+    for (what, query, status) in [
+        ("a neighbouring size", "per_page=1", 200),
+        ("a size that is no number", "per_page=abc", 400),
+        ("a size over the cap", "per_page=1001", 400),
+        ("a cursor that is no cursor, with a size of zero", "cursor=abc&per_page=0", 400),
+        ("a cursor to a page after the first, with a size below zero", "cursor=3:1:0&per_page=-1", 400),
+        ("a cursor to the previous page, of the page size", "cursor=3:1:1&per_page=3", 200),
+    ] {
+        let r = t.http.get(t.url(&format!("{issues}?{query}"))).bearer_auth(&f.admin_a.token).send().await.unwrap();
+        assert_eq!(r.status().as_u16(), status, "{what}: {query}");
+        assert_ne!(r.text().await.unwrap(), planes_500, "{what}: {query}");
+    }
+    // the decorator answers before it reads a parameter: someone outside the project, and no one at all, are refused and not 500
+    let r = t.http.get(t.url(&format!("{issues}?per_page=0"))).bearer_auth(&f.outsider_a.token).send().await.unwrap();
+    assert_eq!(r.status(), 403);
+    let r = t.http.get(t.url(&format!("{issues}?per_page=0"))).send().await.unwrap();
+    assert_eq!(r.status(), 401);
+}
+
 /// X03, X02 and what the work item's page asks besides, on every target. A member makes a work item with an assignee and changes it
 /// (the name, the priority and the state, in one request): 204 and no body, and the work item is what was asked, completed because
 /// the state is of the completed group. The history is written by the activity consumer, which every target runs apart from the
