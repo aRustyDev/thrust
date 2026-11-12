@@ -6,6 +6,13 @@
 //! What must hold: a safe path is kept, byte for byte, in the query; a path that is not one slash and then a path is
 //! dropped, whatever it holds; one forbidden thing anywhere in an otherwise safe path drops it; characters that would
 //! corrupt the query are percent-encoded (Plane writes them raw, which is a bug this does not copy).
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test fails, and clippy.toml exempts only #[test] functions and #[cfg(test)] modules, not the helpers around them"
+)]
 
 mod common;
 

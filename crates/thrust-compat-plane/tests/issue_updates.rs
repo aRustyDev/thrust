@@ -8,6 +8,13 @@
 //! ones it does not name left alone; a change records one row for each difference in the order the request names them, and none when
 //! `skip_activity` is true of a description; the history is read after a time strictly; and what Thrust does not do that the pin does
 //! (deviation D-029) it refuses or ignores as written down.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test fails, and clippy.toml exempts only #[test] functions and #[cfg(test)] modules, not the helpers around them"
+)]
 
 mod common;
 

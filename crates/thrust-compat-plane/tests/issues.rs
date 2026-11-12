@@ -7,6 +7,13 @@
 //! they open another's; a creation is read the way Django REST Framework reads it, each field in its own words; a page's envelope
 //! is arithmetic over the number of work items, the page size and the page; what the list does not answer (grouping, filtering) it
 //! refuses in its own words rather than answer wrongly.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test fails, and clippy.toml exempts only #[test] functions and #[cfg(test)] modules, not the helpers around them"
+)]
 
 mod common;
 
@@ -393,7 +400,8 @@ fn a_date_at_the_edge_is_read_as_python_reads_it(#[case] text: &str, #[case] acc
 // --- the list ------------------------------------------------------------------------------------------------------------------
 
 /// Spec (the pin's `get_per_page`, probed on the pin): a page size is a whole number that may have spaces or a plus sign, up to
-/// 1000; over the cap, no number (a decimal among them) and (Thrust's own answer, the pin's being a 500) zero and less are 400.
+/// 1000; over the cap and no number (a decimal among them) are 400. A size of zero or less is the pin's 500, not a 400: it is the
+/// pin's last check, in `the_pins_500_is_the_last_check_of_the_page` below (it was Thrust's own 400 until #51 recorded it).
 #[rstest]
 #[case::one("1", 200, None)]
 #[case::the_cap("1000", 200, None)]
@@ -402,8 +410,6 @@ fn a_date_at_the_edge_is_read_as_python_reads_it(#[case] text: &str, #[case] acc
 #[case::over_the_cap("1001", 400, Some("Invalid per_page value. Cannot exceed 1000."))]
 #[case::a_decimal("1.0", 400, Some("Invalid per_page parameter."))]
 #[case::words("many", 400, Some("Invalid per_page parameter."))]
-#[case::zero("0", 400, Some("Invalid per_page parameter."))]
-#[case::negative("-1", 400, Some("Invalid per_page parameter."))]
 fn a_page_size_is_a_whole_number_from_one_to_the_cap(
     #[case] size: &str,
     #[case] status: u64,
@@ -418,8 +424,51 @@ fn a_page_size_is_a_whole_number_from_one_to_the_cap(
     }
 }
 
+/// Spec (#51, recorded on the pin in the S47 fixture: every case below is an exchange in it): the pin has no lower bound on a page
+/// size, and a size of zero or less, or a cursor to the previous page whose size is not the page size, ends in its catch-all 500.
+/// The 500 is the last of the pin's checks: a cursor that is no cursor, a window that would start before the first row, a change
+/// date that is no date and filters that are not JSON are each refused first, with their own 400.
+#[rstest]
+#[case::zero("per_page=0", 500, json!({"error": "Something went wrong please try again later"}))]
+#[case::negative("per_page=-1", 500, json!({"error": "Something went wrong please try again later"}))]
+#[case::zero_with_a_cursor("cursor=3:0:0&per_page=0", 500, json!({"error": "Something went wrong please try again later"}))]
+#[case::back_with_another_size("cursor=5:1:1&per_page=3&order_by=-created_at", 500, json!({"error": "Something went wrong please try again later"}))]
+#[case::zero_on_a_page_before_the_first("cursor=3:-1:1&per_page=0", 500, json!({"error": "Something went wrong please try again later"}))]
+#[case::a_cursor_that_is_none_comes_first("cursor=abc&per_page=0", 400, json!({"detail": "Invalid cursor parameter."}))]
+#[case::a_window_before_the_first_row_comes_first("cursor=3:1:0&per_page=-1", 400, json!({"detail": "Error in parsing"}))]
+#[case::a_change_date_that_is_none_comes_first("cursor=100:0:0&per_page=0&updated_at__gt=nonsense", 400, json!({"error": "Please provide valid detail"}))]
+#[case::filters_that_are_not_json_come_first(
+    "cursor=100:0:0&per_page=0&filters=nonsense",
+    400,
+    json!({"code": "invalid_json", "message": "Invalid JSON for 'filter'. Expected a valid JSON object."})
+)]
+fn the_pins_500_is_the_last_check_of_the_page(#[case] query: &str, #[case] status: u64, #[case] body: Value) {
+    let c = cast();
+    make(&c, Caller::ProjectMember, json!({"name": "w"}));
+    let r = c.call(Caller::ProjectAdmin, "GET", &format!("{}?{query}", issues_path()), Value::Null);
+    assert_eq!((&r["status"], &r["body"]), (&json!(status), &body), "{query}: {r}");
+}
+
 proptest! {
     #![proptest_config(proptest_config(48))]
+
+    /// Spec (recorded: S47 holds 0 and -1): any page size of zero or less, with nothing before it to refuse the request, is the
+    /// pin's 500 with the pin's body.
+    #[test]
+    fn prop_a_page_size_of_zero_or_less_is_the_pins_500(size in -100_000i64..=0) {
+        let c = cast();
+        let r = c.call(Caller::ProjectAdmin, "GET", &format!("{}?per_page={size}", issues_path()), Value::Null);
+        prop_assert_eq!(&r["status"], &json!(500));
+        prop_assert_eq!(&r["body"], &json!({"error": "Something went wrong please try again later"}));
+    }
+
+    /// A page size from one to the cap is never the 500: the range the 500 is for ends at zero.
+    #[test]
+    fn prop_a_page_size_from_one_to_the_cap_is_never_the_500(size in 1i64..=1000) {
+        let c = cast();
+        let r = c.call(Caller::ProjectAdmin, "GET", &format!("{}?per_page={size}", issues_path()), Value::Null);
+        prop_assert_eq!(&r["status"], &json!(200));
+    }
 
     /// Spec (the pin's paginator): every key of the envelope is arithmetic over the number of work items, the page size and the
     /// page; the cursors name the page after and before; the rows are the page's.

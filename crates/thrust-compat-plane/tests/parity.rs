@@ -6,6 +6,13 @@
 //! The rows are one journey, in the order of `rows!` below: each test replays the earlier rows on the same world first,
 //! so a sign-in finds the user that the sign-up made, as it did on the pin. The sign-in and sign-up rows are compared
 //! through the projection of the pin's 302 onto Thrust's JSON (D-022), documented in tests/common/mod.rs.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test fails, and clippy.toml exempts only #[test] functions and #[cfg(test)] modules, not the helpers around them"
+)]
 
 mod common;
 
@@ -105,6 +112,73 @@ fn parity_every_fixture_has_a_test() {
     let mut rows: Vec<String> = ROWS.iter().map(|r| r.to_string()).collect();
     rows.sort();
     assert_eq!(fixture_rows(), rows, "tests/parity/fixtures/*.json and the rows! list must name the same rows");
+}
+
+/// The acceptance list (issue #51): the 48-route slice (S01 to S48), X01 to X03 and X04. It is `tests/parity/acceptance.csv`, written
+/// by tools/compat-record/gen-acceptance.py from research/0003 section 8.1, and `scripts/check-acceptance-list.sh` also holds the
+/// recorder to it. Its `state` column is data and not derived from the fixtures, so this compares two independent things.
+const ACCEPTANCE: &str = include_str!("parity/acceptance.csv");
+
+/// Where the list and the replay's rows (`S04-existing` is row `S04` again) disagree: a `served` row nothing replays, a replayed row
+/// that the list does not call served, and a `pending` row that is replayed (a row that is not served is not recorded).
+fn acceptance_divergences(csv: &str, rows: &[&str]) -> Vec<String> {
+    use std::collections::BTreeSet;
+    let (mut served, mut pending) = (BTreeSet::new(), BTreeSet::new());
+    for line in csv.lines().skip(1) {
+        let mut fields = line.split(',');
+        // row,method,path,state
+        let (Some(row), Some(state)) = (fields.next(), fields.nth(2)) else { continue };
+        let set = if state == "served" { &mut served } else { &mut pending };
+        set.insert(row.to_string());
+    }
+    let replayed: BTreeSet<String> = rows.iter().map(|r| r.split('-').next().unwrap_or(r).to_string()).collect();
+    let mut out = Vec::new();
+    if served.len() < 40 {
+        out.push(format!(
+            "{} served rows: a list that small is not the acceptance list, and the comparison would prove nothing",
+            served.len()
+        ));
+    }
+    out.extend(served.difference(&replayed).map(|r| format!("{r} is served and has no parity_ test")));
+    out.extend(
+        replayed.difference(&served).map(|r| format!("{r} has a parity_ test and the list does not call it served")),
+    );
+    out.extend(pending.intersection(&replayed).map(|r| format!("{r} is pending and has a parity_ test")));
+    out
+}
+
+#[test]
+fn parity_the_acceptance_list_and_the_replay_name_the_same_rows() {
+    let d = acceptance_divergences(ACCEPTANCE, ROWS);
+    assert!(d.is_empty(), "tests/parity/acceptance.csv and the rows! list disagree:\n{}", d.join("\n"));
+}
+
+/// Controls (AGENTS.md testing rule 8): the comparison can fail, each way it is for.
+#[test]
+fn parity_control_the_acceptance_list_can_disagree_with_the_replay() {
+    let edited = |f: &dyn Fn(&str) -> Option<String>| -> String {
+        ACCEPTANCE.lines().filter_map(f).map(|l| format!("{l}\n")).collect()
+    };
+    assert!(acceptance_divergences(ACCEPTANCE, ROWS).is_empty(), "the baseline");
+
+    let pending =
+        edited(&|l| Some(if l.starts_with("S45,") { l.replace(",served", ",pending-x") } else { l.to_string() }));
+    let d = acceptance_divergences(&pending, ROWS);
+    assert!(
+        d.iter().any(|m| m.starts_with("S45 has a parity_ test")) && d.iter().any(|m| m.starts_with("S45 is pending")),
+        "{d:?}"
+    );
+
+    let without = edited(&|l| (!l.starts_with("S45,")).then(|| l.to_string()));
+    let d = acceptance_divergences(&without, ROWS);
+    assert!(d.iter().any(|m| m.starts_with("S45 has a parity_ test")), "{d:?}");
+
+    let more = format!("{ACCEPTANCE}S99,GET,/api/nothing/,served\n");
+    let d = acceptance_divergences(&more, ROWS);
+    assert!(d.iter().any(|m| m.starts_with("S99 is served and has no parity_ test")), "{d:?}");
+
+    let d = acceptance_divergences("row,method,path,state\n", &[]);
+    assert!(d.iter().any(|m| m.contains("not the acceptance list")), "an empty list is not a pass: {d:?}");
 }
 
 // ---------------------------------------------------------------------------------------------------------------------

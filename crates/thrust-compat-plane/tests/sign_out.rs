@@ -6,6 +6,14 @@
 //! What must hold: the answer and the cleared cookies are the same for a request with no session, an unknown one, a live one and
 //! one that has ended; the live session ends (the next request with it is a 401) and nobody else's does.
 
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test fails, and clippy.toml exempts only #[test] functions and #[cfg(test)] modules, not the helpers around them"
+)]
+
 mod common;
 
 use common::*;

@@ -131,7 +131,7 @@ The plan's `ARCHITECTURE.md` (draft v0, `.agents/plans/contrail/ARCHITECTURE.md`
   X04, and X06, the sign-out the user menu calls: D-036), the four asset rows (S28, S29, S31 and S33) included, and three routes of its own around them: the address S28 hands
   the browser for the upload, the route S33 redirects to, and the address a project's cover is shown at (X05). Each composition
   root mounts it beside `thrust-api`'s router. `thrust-plane-types` holds the pinned Plane's three 500 texts and the one function that
-  answers them; `thrust-api-v1` calls it, and the internal API does not yet (issue #51).
+  answers them; `thrust-api-v1` and `thrust-compat-plane` both answer a reproduced 500 through it (issue #51).
 - **Assets:** one kind of file is built, a project's cover (D-035), with the ADR-0047 lifecycle (`pending`, `uploaded`) over an
   `assets` table and `BlobStore::head`. The upload goes to this API, not to an object store the browser can reach, because no
   target has one: a one-time address, a token kept as a digest, the bytes in R2 on the Worker and in memory on the native

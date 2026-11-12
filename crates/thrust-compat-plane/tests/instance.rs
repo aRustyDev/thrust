@@ -5,6 +5,13 @@
 //!
 //! What must hold: all three are that origin; a scheme other than `http` or `https` is not trusted and falls back to
 //! `http`; with a chain of proxies the first scheme counts; with no `Host` it is `localhost`.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test fails, and clippy.toml exempts only #[test] functions and #[cfg(test)] modules, not the helpers around them"
+)]
 
 mod common;
 

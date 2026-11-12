@@ -6,11 +6,18 @@ version.workspace = true
 license.workspace = true
 publish.workspace = true
 
+# ADR-0006's panic policy applies, as it does to `thrust-api-v1` (#51): request-derived data cannot make this crate panic, so a
+# reproduced Plane 500 is a handled response and never a crash. On the Worker (panic = abort) a panic fails its own request.
+[lints]
+workspace = true
+
 [dependencies]
 thrust-contracts = { workspace = true }
 thrust-ports = { workspace = true }
 thrust-core = { workspace = true }
 thrust-api = { workspace = true }
+# The three 500 bodies of the pin and the one function that answers them, shared with /api/v1 (#51).
+thrust-plane-types = { workspace = true }
 # Cleans the HTML of a work item's description as the pin does: the `sanitize` feature only. Not `yjs`, whose `yrs` reaches
 # getrandom and so wasm-bindgen and js-sys on wasm32, which scripts/check-deps.sh keeps out of this crate.
 thrust-editor-doc = { path = "../thrust-editor-doc", default-features = false, features = ["sanitize"] }
