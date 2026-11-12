@@ -365,36 +365,60 @@ fn invalid_detail(message: &str) -> PlaneError {
     PlaneError::BadRequest(json!({"detail": message}))
 }
 
-/// The page size: the request's `per_page`, or 1000; not more than 1000. (The pin answers 500 for a size of 0 or less; Thrust
-/// answers 400, as for a size that is no number.)
-fn per_page(q: &HashMap<String, String>) -> Result<u32, PlaneError> {
-    let Some(raw) = q.get("per_page") else { return Ok(DEFAULT_PER_PAGE) };
+/// The page size: the request's `per_page`, or 1000; not more than 1000. Only a size that is no number, or is over the cap, is
+/// refused here (a 400). A size of 0 or less is let through: the pin refuses it last, with its 500, in [`window`].
+fn per_page(q: &HashMap<String, String>) -> Result<i64, PlaneError> {
+    let Some(raw) = q.get("per_page") else { return Ok(i64::from(DEFAULT_PER_PAGE)) };
     let n: i64 = raw.trim().parse().map_err(|_| invalid_detail("Invalid per_page parameter."))?;
     if n > i64::from(DEFAULT_PER_PAGE) {
         return Err(invalid_detail("Invalid per_page value. Cannot exceed 1000."));
     }
-    u32::try_from(n).ok().filter(|n| *n > 0).ok_or_else(|| invalid_detail("Invalid per_page parameter."))
+    Ok(n)
 }
 
-/// The page asked for: a cursor is `size:page:previous`, all three numbers (the size may be a float), and only the page counts. No
-/// cursor is the first page.
-fn page(q: &HashMap<String, String>) -> Result<u32, PlaneError> {
-    let Some(raw) = q.get("cursor") else { return Ok(0) };
-    let parts: Vec<&str> = raw.split(':').collect();
+/// What a cursor says: `size:page:previous`, all three numbers (the size may be a float).
+struct Cursor {
+    /// The page size the cursor was made with. Only a cursor to the previous page is held to it.
+    size: f64,
+    page: i64,
+    previous: bool,
+}
+
+/// The cursor asked for. No cursor is the first page. A window that would start before the first row, which is a page before the
+/// first (or a negative size on a later one), is a 400 here, as it is on the pin, before the rest of the query is read.
+fn read_cursor(q: &HashMap<String, String>, limit: i64) -> Result<Cursor, PlaneError> {
+    let Some(raw) = q.get("cursor") else { return Ok(Cursor { size: 0.0, page: 0, previous: false }) };
     let invalid = || invalid_detail("Invalid cursor parameter.");
-    if parts.len() != 3 {
-        return Err(invalid());
-    }
-    let size_ok = parts[0].trim().parse::<i64>().is_ok() || parts[0].trim().parse::<f64>().is_ok_and(f64::is_finite);
-    let page: i64 = parts[1].trim().parse().map_err(|_| invalid())?;
-    let _previous: i64 = parts[2].trim().parse().map_err(|_| invalid())?;
-    if !size_ok {
-        return Err(invalid());
-    }
-    if page < 0 {
+    let parts: Vec<&str> = raw.split(':').collect();
+    let [size, page, previous] = parts.as_slice() else { return Err(invalid()) };
+    let size = match size.trim().parse::<i64>() {
+        Ok(n) => n as f64,
+        Err(_) => size.trim().parse::<f64>().ok().filter(|f| f.is_finite()).ok_or_else(invalid)?,
+    };
+    let page: i64 = page.trim().parse().map_err(|_| invalid())?;
+    let previous: i64 = previous.trim().parse().map_err(|_| invalid())?;
+    if page.saturating_mul(limit) < 0 {
         return Err(invalid_detail("Error in parsing"));
     }
-    Ok(u32::try_from(page).unwrap_or(u32::MAX))
+    Ok(Cursor { size, page, previous: previous != 0 })
+}
+
+/// The pin's last checks, which its paginator makes once everything else has been read, and which it answers with its catch-all 500
+/// (recorded in S47, in this order, after each 400 above): a size of 0 or less, which it divides by or slices with (PQ-402), and a
+/// cursor to the previous page whose size is not the page size, which it slices negatively (PQ-403). Gives the size and the page.
+fn window(limit: i64, cursor: &Cursor) -> Result<(u32, u32), PlaneError> {
+    if limit <= 0 {
+        return Err(PlaneError::internal(
+            "per_page <= 0: the pin's paginator divides by it or slices negatively (PQ-402)",
+        ));
+    }
+    if cursor.previous && cursor.size != limit as f64 {
+        return Err(PlaneError::internal(
+            "a previous-page cursor whose size is not per_page: the pin slices negatively (PQ-403)",
+        ));
+    }
+    let size = u32::try_from(limit).map_err(|_| PlaneError::internal("per_page does not fit a page size"))?;
+    Ok((size, u32::try_from(cursor.page).unwrap_or(u32::MAX)))
 }
 
 /// The order asked for, as the pin sanitises it: an unknown value, and one with two minus signs, is `-created_at`. The three it
@@ -505,7 +529,7 @@ pub(crate) async fn list(
     // the pin's decorator answers before it reads a parameter
     let access = thrust_core::issue_reader(&app, &who, &slug, project).await.map_err(refusal)?;
     let limit = per_page(&q)?;
-    let page = page(&q)?;
+    let cursor = read_cursor(&q, limit)?;
     let updated_after = match q.get("updated_at__gt") {
         Some(raw) => {
             Some(datetime(raw).ok_or_else(|| PlaneError::BadRequest(json!({"error": "Please provide valid detail"})))?)
@@ -513,6 +537,8 @@ pub(crate) async fn list(
         None => None,
     };
     unsupported(&q)?;
+    // the pin's paginator refuses last, and with its 500
+    let (limit, page) = window(limit, &cursor)?;
     let got = thrust_core::list_issues(&app, &access, IssueListQuery { order: order(&q), limit, page, updated_after })
         .await
         .map_err(refusal)?;
