@@ -53,7 +53,12 @@ with a fixture made first as the control) and nothing more; the positive path is
 - `crates/thrust-contract-tests/tests/auth/mod.rs` and `tests/auth/matrix.rs`: identity, in the `main` pass (issue #38):
   sign-in and the cookie attributes, the CSRF double-submit rule, sign-out and sign-out-everywhere, deactivation, API
   keys (`X-Api-Key`, shown once, revoked, expired, inactive owner) and one OIDC login, plus the generated matrix of every
-  credential kind × state × method × CSRF-token position against a status table (126 requests). The CSRF rule is a
+  credential kind × state × method × CSRF-token position against a status table (126 requests). Sign-in, the CSRF token
+  and sign-out are Plane's routes (`POST /auth/sign-in/`, `GET /auth/get-csrf-token/`, `POST /auth/sign-out/`), a session
+  is read back through `GET /api/users/me/`, and a cookie mutation is a work item made (S48) or changed (X03) through
+  Plane's routes, which authenticate through the extractor the slice's do, so the matrix is the credential layer's table
+  and not a route's; sign-out-everywhere, the API-key routes and the OIDC login are still the slice's, for want of a
+  Plane route (G-26). The CSRF rule is a
   switch (`THRUST_CSRF_ENFORCE`, Q-0050.8): the main pass runs with it on, and the `csrfoff` pass (the six `csrf_off_`
   tests, in these two files) runs the same table with it off, a cookie mutation with no token, and the identity routes
   with the cookie alone. The OIDC tests
