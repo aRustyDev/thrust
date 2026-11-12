@@ -72,6 +72,36 @@ _DATETIME = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}")
 _DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
+_ORIGIN = re.compile(r"^https?://[^/?#]+")
+
+
+def presigned_url(rules, s):
+    """A presigned object-store URL, normalised; `None` when `s` is not one.
+
+    A URL is presigned when it has a query that holds the parameter named by `presigned_url.marker` (`X-Amz-Signature`). Then: the
+    scheme and authority are replaced by `origin_token` (they name the object store of the deployment), each parameter in
+    `query_tokens` has its VALUE replaced by its token (the signature, the signing time, the credential and the lifetime are what a
+    correct implementation cannot reproduce), and the parameters are put in order of name (a stable sort on the text before the
+    first `=`; the order a signer writes them in is not the contract). Names, the other values and their percent-encoding are kept
+    as they are, and so are the path and any fragment. The ids in the path (the workspace, the random part of the object key) are
+    numbered by the caller with `Ids.scrub`, which is why this runs first."""
+    cfg = rules["presigned_url"]
+    base, question, rest = s.partition("?")
+    if not question:
+        return None
+    query, hash_, fragment = rest.partition("#")
+    params = query.split("&")
+    if cfg["marker"] not in (p.partition("=")[0] for p in params):
+        return None
+    out = []
+    for p in params:
+        name, eq, _ = p.partition("=")
+        token = cfg["query_tokens"].get(name)
+        out.append(f"{name}={token}" if token is not None and eq else p)
+    out.sort(key=lambda p: p.partition("=")[0])
+    return _ORIGIN.sub(cfg["origin_token"], base) + "?" + "&".join(out) + hash_ + fragment
+
+
 def _key_matches(key, suffixes, exact=()):
     return key in exact or any(key.endswith(s) for s in suffixes)
 
@@ -90,6 +120,8 @@ def value(rules, ids, v, path="", keep_times=False):
             dd = rules["date"]
             if token is not None and child is not None:
                 out[k] = token
+            elif isinstance(child, str) and p in rules["presigned_url"]["body_paths"] and presigned_url(rules, child) is not None:
+                out[k] = ids.scrub(presigned_url(rules, child))
             elif not keep_times and isinstance(child, str) and _key_matches(k, dt["key_suffixes"], dt["key_exact"]) and _DATETIME.match(child):
                 out[k] = dt["token"]
             elif not keep_times and isinstance(child, str) and _key_matches(k, dd["key_suffixes"]) and _DATE.match(child):
@@ -104,29 +136,34 @@ def value(rules, ids, v, path="", keep_times=False):
     return v
 
 
-_ORIGIN = re.compile(r"^https?://[^/?#]+")
-
-
-def headers(rules, hs):
+def headers(rules, ids, hs):
+    """The response headers that are contract. A header listed in `presigned_url.headers` that holds a presigned URL (the redirect
+    to the object store) is normalised as one, with its ids numbered; any other `Location` has the scheme and authority replaced."""
     keep = set(rules["headers_keep"])
     rewrite = rules["header_origin_rewrite"]
+    presigned = rules["presigned_url"]["headers"]
     out = {}
     for k, v in sorted(hs.items(), key=lambda kv: kv[0].lower()):
         name = k.lower()
         if name not in keep:
             continue
-        out[name] = _ORIGIN.sub(rewrite["token"], v) if name in rewrite["headers"] else v
+        signed = presigned_url(rules, v) if name in presigned else None
+        if signed is not None:
+            out[name] = ids.scrub(signed)
+        else:
+            out[name] = _ORIGIN.sub(rewrite["token"], v) if name in rewrite["headers"] else v
     return out
 
 
 def exchange(rules, ids, ex):
-    """Normalise one recorded exchange in the fixed traversal order: request path, request body, response body."""
+    """Normalise one recorded exchange in the fixed traversal order: request path, request body, response headers (only a presigned
+    URL in one has ids to number), response body."""
     req, resp = ex["request"], ex["response"]
     out_req = {"method": req["method"], "path": ids.scrub(req["path"])}
     if req.get("as") is not None:
         out_req["as"] = req["as"]  # whose session the request used: part of the contract, never scrubbed
     if req.get("body") is not None:
         out_req["body"] = value(rules, ids, req["body"], keep_times=True)
-    out_resp = {"status": resp["status"], "headers": headers(rules, resp.get("headers", {}))}
+    out_resp = {"status": resp["status"], "headers": headers(rules, ids, resp.get("headers", {}))}
     out_resp["body"] = value(rules, ids, resp["body"]) if resp.get("body") is not None else None
     return {"name": ex["name"], "request": out_req, "response": out_resp}

@@ -128,6 +128,17 @@ impl BlobStore for R2BlobStore {
         .await
     }
 
+    async fn head(&self, key: &str) -> Result<Option<BlobHead>, BlobError> {
+        let key = key.to_string();
+        SendFuture::new(async move {
+            let Some(obj) = self.0.head(key).await.map_err(r2_err)? else {
+                return Ok(None);
+            };
+            Ok(Some(BlobHead { size: obj.size(), content_type: obj.http_metadata().content_type }))
+        })
+        .await
+    }
+
     async fn get(&self, key: &str) -> Result<Option<Blob>, BlobError> {
         let key = key.to_string();
         SendFuture::new(async move {

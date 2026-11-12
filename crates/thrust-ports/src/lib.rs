@@ -680,6 +680,69 @@ pub struct OidcLogin {
     pub expires_at: Timestamp,
 }
 
+/// What a stored file is for (ADR-0047). Plane has ten (`FileAsset.EntityTypeContext`); only the one the stock app's project
+/// creation needs is built (issue #44, S28 to S33), and the others are refused where an asset is made until something reads them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum AssetEntity {
+    ProjectCover,
+}
+
+impl AssetEntity {
+    /// The name Plane gives it, which is also what the column holds.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            AssetEntity::ProjectCover => "PROJECT_COVER",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<AssetEntity> {
+        match s {
+            "PROJECT_COVER" => Some(AssetEntity::ProjectCover),
+            _ => None,
+        }
+    }
+}
+
+/// An asset's lifecycle (ADR-0047): made `Pending` with a grant to upload its bytes, `Uploaded` once the object is there and
+/// the owner has said so. (Deleted is a timestamp, not a state: a deleted asset is not read at all.)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AssetState {
+    Pending,
+    Uploaded,
+}
+
+/// The one-time permission to upload an asset's bytes with no session. The browser sends the upload with no cookies
+/// (`withCredentials: false`), so the address it is given carries a token and the row keeps only its digest, as for a session.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct UploadGrant {
+    pub token_hash: TokenHash,
+    pub expires_at: Timestamp,
+}
+
+/// A stored file. The bytes are in the [`BlobStore`] under `object_key`; the row says whose it is and where it stands.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AssetRow {
+    pub id: AssetId,
+    pub workspace_id: WorkspaceId,
+    /// Who asked for it. A project's cover can be attached only by the one who uploaded it.
+    pub created_by: UserId,
+    pub entity: AssetEntity,
+    /// The project it belongs to; none until it is attached (a cover is uploaded before its project exists).
+    pub project_id: Option<ProjectId>,
+    /// The file's name, sanitised: what a download is called.
+    pub name: String,
+    pub content_type: String,
+    /// The size the upload must have, in bytes: what was declared, held to the instance's limit.
+    pub size: i64,
+    pub object_key: String,
+    pub state: AssetState,
+    /// `Some` while the bytes may still be uploaded.
+    pub upload: Option<UploadGrant>,
+    pub created_at: Timestamp,
+    pub uploaded_at: Option<Timestamp>,
+    pub deleted_at: Option<Timestamp>,
+}
+
 #[async_trait]
 pub trait Database: Send + Sync {
     /// The one call that runs before a [`Scope`] exists: only `thrust_core::authorize` makes it,
@@ -1082,6 +1145,46 @@ pub trait Database: Send + Sync {
 
     async fn outbox_depth(&self, sys: &SystemScope) -> Result<u64, DbError>;
 
+    // --- Assets (issue #44, the asset stage; ADR-0047). The bytes are in the `BlobStore`; these are the rows that say whose they
+    // are and where they stand.
+
+    /// Store a new asset, which must be `Pending` with its grant and name the scope's workspace and user as its own.
+    async fn insert_asset(&self, scope: &WorkspaceScope, asset: &AssetRow) -> Result<(), DbError>;
+
+    /// The live asset of the scope's workspace; `None` when the workspace has none by that id (also for a deleted one, and for an
+    /// asset of another workspace).
+    async fn asset(&self, scope: &WorkspaceScope, id: AssetId) -> Result<Option<AssetRow>, DbError>;
+
+    /// Say the object is there: the live asset of the scope's workspace becomes `Uploaded` at `at` and loses its grant. An asset
+    /// that is already uploaded stays as it is (the pin's confirm is idempotent). `false` when the workspace has no such live asset.
+    async fn mark_asset_uploaded(&self, scope: &WorkspaceScope, id: AssetId, at: Timestamp) -> Result<bool, DbError>;
+
+    /// Attach the caller's own uploads to the scope's project: of `ids`, the live assets of the scope's workspace that the caller
+    /// made and that belong to no project or to this one (the pin's bulk rule; anything else is silently left out) get this
+    /// project, and the project's cover becomes the oldest of them (the pin saves each in turn, newest first, so the last one
+    /// wins). The project is stamped as changed by the caller at `at`, as the pin's `project.save()` does. `None` when none of
+    /// `ids` qualifies (and nothing is written); otherwise the asset that is now the cover.
+    async fn attach_project_cover(
+        &self,
+        scope: &Scope,
+        ids: &[AssetId],
+        at: Timestamp,
+    ) -> Result<Option<AssetId>, DbError>;
+
+    /// Spend an upload grant. Like `session` it runs before any scope exists: the token is the credential. The asset `id` that is
+    /// live, still `Pending`, whose grant holds `token` and has not expired at `now`, loses its grant and is returned. A wrong
+    /// token, a second use, an expired grant and an unknown asset all give `None`, and the caller cannot tell which.
+    async fn take_upload_grant(
+        &self,
+        id: AssetId,
+        token: &TokenHash,
+        now: Timestamp,
+    ) -> Result<Option<AssetRow>, DbError>;
+
+    /// A live, uploaded asset by its id alone, for the address a project's cover is shown at, which Plane answers without a
+    /// session (`AllowAny`). It runs before any scope exists, so the caller must check what the asset is for.
+    async fn uploaded_asset(&self, id: AssetId) -> Result<Option<AssetRow>, DbError>;
+
     /// Test support: insert fixture rows (workspaces, workspace members, projects, project members).
     async fn seed(&self, sys: &SystemScope, fixture: &SeedFixture) -> Result<(), DbError>;
 
@@ -1265,9 +1368,18 @@ pub struct Blob {
     pub content_type: Option<String>,
 }
 
+/// What a stored object is, without its bytes: what `confirmUpload` checks (ADR-0047).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BlobHead {
+    pub size: u64,
+    pub content_type: Option<String>,
+}
+
 #[async_trait]
 pub trait BlobStore: Send + Sync {
     async fn put(&self, key: &str, bytes: Vec<u8>, content_type: Option<String>) -> Result<(), BlobError>;
+    /// The object's size and type, or `None` when there is none at `key`. It does not read the bytes.
+    async fn head(&self, key: &str) -> Result<Option<BlobHead>, BlobError>;
     async fn get(&self, key: &str) -> Result<Option<Blob>, BlobError>;
     async fn delete(&self, key: &str) -> Result<(), BlobError>;
     async fn list(&self, prefix: &str) -> Result<Vec<String>, BlobError>;

@@ -1,0 +1,386 @@
+{
+  "binds": {
+    "second_project": {
+      "exchange": "a second project, in the journey's workspace",
+      "path": [
+        "id"
+      ]
+    }
+  },
+  "exchanges": [
+    {
+      "name": "no session",
+      "request": {
+        "body": {
+          "asset_ids": [
+            "<uuid:2>"
+          ]
+        },
+        "method": "POST",
+        "path": "/api/assets/v2/workspaces/journey-ws/projects/<uuid:1>/<uuid:1>/bulk/"
+      },
+      "response": {
+        "body": {
+          "detail": "Authentication credentials were not provided."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 401
+      }
+    },
+    {
+      "name": "not a member of the workspace",
+      "request": {
+        "as": "second@example.test",
+        "body": {
+          "asset_ids": [
+            "<uuid:2>"
+          ]
+        },
+        "method": "POST",
+        "path": "/api/assets/v2/workspaces/journey-ws/projects/<uuid:1>/<uuid:1>/bulk/"
+      },
+      "response": {
+        "body": {
+          "error": "You don't have the required permissions."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 403
+      }
+    },
+    {
+      "name": "a project that does not exist",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "asset_ids": [
+            "<uuid:2>"
+          ]
+        },
+        "method": "POST",
+        "path": "/api/assets/v2/workspaces/journey-ws/projects/<uuid:5>/<uuid:5>/bulk/"
+      },
+      "response": {
+        "body": {
+          "error": "You don't have the required permissions."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 403
+      }
+    },
+    {
+      "name": "no asset ids",
+      "request": {
+        "as": "journey@example.test",
+        "body": {},
+        "method": "POST",
+        "path": "/api/assets/v2/workspaces/journey-ws/projects/<uuid:1>/<uuid:1>/bulk/"
+      },
+      "response": {
+        "body": {
+          "error": "No asset ids provided."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "an empty list of asset ids",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "asset_ids": []
+        },
+        "method": "POST",
+        "path": "/api/assets/v2/workspaces/journey-ws/projects/<uuid:1>/<uuid:1>/bulk/"
+      },
+      "response": {
+        "body": {
+          "error": "No asset ids provided."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "asset ids that are not a list",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "asset_ids": "x"
+        },
+        "method": "POST",
+        "path": "/api/assets/v2/workspaces/journey-ws/projects/<uuid:1>/<uuid:1>/bulk/"
+      },
+      "response": {
+        "body": {
+          "error": "Please provide valid detail"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "an asset id that is not an id",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "asset_ids": [
+            "nope"
+          ]
+        },
+        "method": "POST",
+        "path": "/api/assets/v2/workspaces/journey-ws/projects/<uuid:1>/<uuid:1>/bulk/"
+      },
+      "response": {
+        "body": {
+          "error": "Please provide valid detail"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "an asset that does not exist",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "asset_ids": [
+            "<uuid:6>"
+          ]
+        },
+        "method": "POST",
+        "path": "/api/assets/v2/workspaces/journey-ws/projects/<uuid:1>/<uuid:1>/bulk/"
+      },
+      "response": {
+        "body": {
+          "error": "The requested asset could not be found."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 404
+      }
+    },
+    {
+      "name": "an asset of the other workspace",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "asset_ids": [
+            "<uuid:3>"
+          ]
+        },
+        "method": "POST",
+        "path": "/api/assets/v2/workspaces/journey-ws/projects/<uuid:1>/<uuid:1>/bulk/"
+      },
+      "response": {
+        "body": {
+          "error": "The requested asset could not be found."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 404
+      }
+    },
+    {
+      "name": "the cover of the journey's project",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "asset_ids": [
+            "<uuid:2>"
+          ]
+        },
+        "method": "POST",
+        "path": "/api/assets/v2/workspaces/journey-ws/projects/<uuid:1>/<uuid:1>/bulk/"
+      },
+      "response": {
+        "body": null,
+        "headers": {},
+        "status": 204
+      }
+    },
+    {
+      "name": "the same again",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "asset_ids": [
+            "<uuid:2>"
+          ]
+        },
+        "method": "POST",
+        "path": "/api/assets/v2/workspaces/journey-ws/projects/<uuid:1>/<uuid:1>/bulk/"
+      },
+      "response": {
+        "body": null,
+        "headers": {},
+        "status": 204
+      }
+    },
+    {
+      "name": "a list with an asset that does not exist and the cover",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "asset_ids": [
+            "<uuid:6>",
+            "<uuid:2>"
+          ]
+        },
+        "method": "POST",
+        "path": "/api/assets/v2/workspaces/journey-ws/projects/<uuid:1>/<uuid:1>/bulk/"
+      },
+      "response": {
+        "body": null,
+        "headers": {},
+        "status": 204
+      }
+    },
+    {
+      "name": "a second project, in the journey's workspace",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "cover_image_url": "/cover-images/image_5.webp",
+          "description": "",
+          "identifier": "SEC",
+          "logo_props": {
+            "emoji": {
+              "value": "128512"
+            },
+            "in_use": "emoji"
+          },
+          "name": "Second Project",
+          "network": 2,
+          "project_lead": null
+        },
+        "method": "POST",
+        "path": "/api/workspaces/journey-ws/projects/"
+      },
+      "response": {
+        "body": {
+          "anchor": null,
+          "archive_in": 0,
+          "archived_at": null,
+          "close_in": 0,
+          "cover_image": null,
+          "cover_image_asset": null,
+          "cover_image_url": null,
+          "created_at": "<ts>",
+          "created_by": "<uuid:7>",
+          "cycle_view": false,
+          "default_assignee": null,
+          "default_state": null,
+          "deleted_at": null,
+          "description": "",
+          "description_html": null,
+          "description_text": null,
+          "emoji": null,
+          "estimate": null,
+          "external_id": null,
+          "external_source": null,
+          "guest_view_all_features": false,
+          "icon_prop": null,
+          "id": "<uuid:8>",
+          "identifier": "SEC",
+          "inbox_view": false,
+          "intake_view": false,
+          "is_favorite": false,
+          "is_issue_type_enabled": false,
+          "is_time_tracking_enabled": false,
+          "issue_views_view": false,
+          "logo_props": {
+            "emoji": {
+              "value": "128512"
+            },
+            "in_use": "emoji"
+          },
+          "member_role": 20,
+          "members": [
+            "<uuid:7>"
+          ],
+          "module_view": false,
+          "name": "Second Project",
+          "network": 2,
+          "next_work_item_sequence": 1,
+          "page_view": true,
+          "project_lead": null,
+          "sort_order": 55535.0,
+          "timezone": "UTC",
+          "updated_at": "<ts>",
+          "updated_by": null,
+          "workspace": "<uuid:9>"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 201
+      }
+    },
+    {
+      "name": "the cover, which is in another project",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "asset_ids": [
+            "<uuid:2>"
+          ]
+        },
+        "method": "POST",
+        "path": "/api/assets/v2/workspaces/journey-ws/projects/<uuid:8>/<uuid:8>/bulk/"
+      },
+      "response": {
+        "body": {
+          "error": "The requested asset could not be found."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 404
+      }
+    },
+    {
+      "name": "an asset nobody has put in a project",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "asset_ids": [
+            "<uuid:4>"
+          ]
+        },
+        "method": "POST",
+        "path": "/api/assets/v2/workspaces/journey-ws/projects/<uuid:8>/<uuid:8>/bulk/"
+      },
+      "response": {
+        "body": null,
+        "headers": {},
+        "status": 204
+      }
+    }
+  ],
+  "format_version": 1,
+  "recorded_from": "ba85d4d3d3",
+  "row": "S31",
+  "uses": [
+    "project",
+    "asset",
+    "other_asset",
+    "spare"
+  ]
+}

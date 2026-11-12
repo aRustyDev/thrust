@@ -127,10 +127,17 @@ can fail are on
 The plan's `ARCHITECTURE.md` (draft v0, `.agents/plans/contrail/ARCHITECTURE.md`) describes more than exists:
 
 - **Crates:** `thrust-api-core` and `thrust-collab-do` do not exist. `thrust-api-v1` does (`/api/v1`: projects, states,
-  labels and work items, issue #58). `thrust-compat-plane` serves S01 to S27, S30, S32, S34 to S48 and X01 to X04, which is
-  the 48-route slice of issue #44 but for its four asset rows (S28, S29, S31 and S33). Each composition root mounts it
-  beside `thrust-api`'s router. `thrust-plane-types` holds the pinned Plane's three 500 texts and the one function that
+  labels and work items, issue #58). `thrust-compat-plane` serves the 48-route slice of issue #44 (S01 to S48 and X01 to
+  X04), the four asset rows (S28, S29, S31 and S33) included, and three routes of its own around them: the address S28 hands
+  the browser for the upload, the route S33 redirects to, and the address a project's cover is shown at (X05). Each composition
+  root mounts it beside `thrust-api`'s router. `thrust-plane-types` holds the pinned Plane's three 500 texts and the one function that
   answers them; `thrust-api-v1` and `thrust-compat-plane` both answer a reproduced 500 through it (issue #51).
+- **Assets:** one kind of file is built, a project's cover (D-035), with the ADR-0047 lifecycle (`pending`, `uploaded`) over an
+  `assets` table and `BlobStore::head`. The upload goes to this API, not to an object store the browser can reach, because no
+  target has one: a one-time address, a token kept as a digest, the bytes in R2 on the Worker and in memory on the native
+  server (so on `native-pg` a restart leaves cover rows whose bytes are gone: the disk blob adapter of ADR-0080 is not
+  built, and the native server has no other). The reaper of assets that were never uploaded, deletion, the other nine kinds Plane makes (an issue's attachments and
+  images, a user's avatar, a workspace logo) and an R2 presign that takes the bytes off the Worker are not built.
 - **The web app:** `web/` holds the stock React app and the `@plane/*` packages it needs, imported from the oracle pin
   (`web/SOURCE`). Only the files in `web/ALLOWED-CHANGES` may differ from the pin, and the `web` job of CI checks it
   ([CI/CD](cicd.md)). Nothing serves the build yet, and no auth-client change has been made.

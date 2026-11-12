@@ -37,5 +37,18 @@
     "headers": ["location"],
     "token": "<base_url>"
   },
-  "_headers_comment": "cache-control is not kept: the pin answers /api/instances/ with `private, max-age=<remaining TTL>`, which changes per request."
+  "_headers_comment": "cache-control is not kept: the pin answers /api/instances/ with `private, max-age=<remaining TTL>`, which changes per request.",
+  "presigned_url": {
+    "_comment": "A presigned object-store URL (the upload URL an asset create returns, the redirect an asset read answers) is a URL that has the `marker` parameter in its query. Such a value, at one of `body_paths` (a JSON path as in opaque_paths) or in one of `headers`, is normalised in this order: (1) the scheme and authority at its start are replaced by `origin_token` (the deployment's object store, not the API); (2) the value of each parameter named in `query_tokens` is replaced by its token (the signature, the signing time, the credential and the lifetime, which a correct implementation cannot reproduce); (3) the parameters are stable-sorted by the text before the first `=` (compared as bytes), because the order a signer writes them in is not the contract; (4) the ids in the result (the workspace and the random part of the object key) are numbered like any other string. Parameter names, the other values with their percent-encoding, the path and a fragment are kept. A value that has no such parameter is not touched by this rule, a Location included (it still gets header_origin_rewrite). Response headers are normalised after the request body and before the response body.",
+    "marker": "X-Amz-Signature",
+    "body_paths": ["upload_data.url"],
+    "headers": ["location"],
+    "origin_token": "<store_url>",
+    "query_tokens": {
+      "X-Amz-Credential": "<credential>",
+      "X-Amz-Date": "<amz_date>",
+      "X-Amz-Expires": "<expires>",
+      "X-Amz-Signature": "<signature>"
+    }
+  }
 }

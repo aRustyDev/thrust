@@ -10,8 +10,11 @@ set -eu
 : "${ORACLE_DIR:?set ORACLE_DIR to the oracle/ directory of the Plane fork checkout on the pin branch}"
 BASE="${BASE_URL:-http://127.0.0.1:18080}"
 
+# oracle-assets.yml (next to this script) sets AWS_S3_UPLOAD_METHOD=put on the api, for the asset rows.
+HERE="$(cd "$(dirname "$0")" && pwd)"
+
 dc() {
-  docker compose -f "$ORACLE_DIR/compose.oracle.yml" --env-file "$ORACLE_DIR/.env.oracle" "$@"
+  docker compose -f "$ORACLE_DIR/compose.oracle.yml" -f "$HERE/oracle-assets.yml" --env-file "$ORACLE_DIR/.env.oracle" "$@"
 }
 
 dc down -v --remove-orphans

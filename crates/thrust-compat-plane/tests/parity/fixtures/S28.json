@@ -1,0 +1,1077 @@
+{
+  "binds": {
+    "asset": {
+      "exchange": "the project cover, as the app sends it",
+      "path": [
+        "asset_id"
+      ]
+    },
+    "issue_desc": {
+      "exchange": "an entity type: ISSUE_DESCRIPTION",
+      "path": [
+        "asset_id"
+      ]
+    },
+    "named": {
+      "exchange": "a name with a directory, a space and a letter outside ASCII",
+      "path": [
+        "asset_id"
+      ]
+    },
+    "other_asset": {
+      "exchange": "a cover in the other workspace",
+      "path": [
+        "asset_id"
+      ]
+    },
+    "pending": {
+      "exchange": "a second cover, which is never uploaded",
+      "path": [
+        "asset_id"
+      ]
+    },
+    "spare": {
+      "exchange": "no name, type or size: the defaults",
+      "path": [
+        "asset_id"
+      ]
+    }
+  },
+  "exchanges": [
+    {
+      "name": "no session",
+      "request": {
+        "body": {
+          "entity_identifier": "",
+          "entity_type": "PROJECT_COVER",
+          "name": "cover.png",
+          "size": 70,
+          "type": "image/png"
+        },
+        "method": "POST",
+        "path": "/api/assets/v2/workspaces/journey-ws/"
+      },
+      "response": {
+        "body": {
+          "detail": "Authentication credentials were not provided."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 401
+      }
+    },
+    {
+      "name": "not a member of the workspace",
+      "request": {
+        "as": "second@example.test",
+        "body": {
+          "entity_identifier": "",
+          "entity_type": "PROJECT_COVER",
+          "name": "cover.png",
+          "size": 70,
+          "type": "image/png"
+        },
+        "method": "POST",
+        "path": "/api/assets/v2/workspaces/journey-ws/"
+      },
+      "response": {
+        "body": {
+          "error": "You don't have the required permissions."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 403
+      }
+    },
+    {
+      "name": "a workspace that does not exist",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "entity_identifier": "",
+          "entity_type": "PROJECT_COVER",
+          "name": "cover.png",
+          "size": 70,
+          "type": "image/png"
+        },
+        "method": "POST",
+        "path": "/api/assets/v2/workspaces/no-such-workspace/"
+      },
+      "response": {
+        "body": {
+          "error": "You don't have the required permissions."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 403
+      }
+    },
+    {
+      "name": "no fields",
+      "request": {
+        "as": "journey@example.test",
+        "body": {},
+        "method": "POST",
+        "path": "/api/assets/v2/workspaces/journey-ws/"
+      },
+      "response": {
+        "body": {
+          "error": "Invalid entity type.",
+          "status": false
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "an entity type that is not one",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "entity_identifier": "",
+          "entity_type": "NOT_A_TYPE",
+          "name": "cover.png",
+          "size": 70,
+          "type": "image/png"
+        },
+        "method": "POST",
+        "path": "/api/assets/v2/workspaces/journey-ws/"
+      },
+      "response": {
+        "body": {
+          "error": "Invalid entity type.",
+          "status": false
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "an entity type in small letters",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "entity_identifier": "",
+          "entity_type": "project_cover",
+          "name": "cover.png",
+          "size": 70,
+          "type": "image/png"
+        },
+        "method": "POST",
+        "path": "/api/assets/v2/workspaces/journey-ws/"
+      },
+      "response": {
+        "body": {
+          "error": "Invalid entity type.",
+          "status": false
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "a file type that is not allowed",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "entity_identifier": "",
+          "entity_type": "PROJECT_COVER",
+          "name": "cover.png",
+          "size": 70,
+          "type": "application/pdf"
+        },
+        "method": "POST",
+        "path": "/api/assets/v2/workspaces/journey-ws/"
+      },
+      "response": {
+        "body": {
+          "error": "Invalid file type. Only JPEG, PNG, WebP, JPG and GIF files are allowed.",
+          "status": false
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "an image type that is not allowed",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "entity_identifier": "",
+          "entity_type": "PROJECT_COVER",
+          "name": "cover.svg",
+          "size": 70,
+          "type": "image/svg+xml"
+        },
+        "method": "POST",
+        "path": "/api/assets/v2/workspaces/journey-ws/"
+      },
+      "response": {
+        "body": {
+          "error": "Invalid file type. Only JPEG, PNG, WebP, JPG and GIF files are allowed.",
+          "status": false
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "a file type that is blank",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "entity_identifier": "",
+          "entity_type": "PROJECT_COVER",
+          "name": "cover.png",
+          "size": 70,
+          "type": ""
+        },
+        "method": "POST",
+        "path": "/api/assets/v2/workspaces/journey-ws/"
+      },
+      "response": {
+        "body": {
+          "error": "Invalid file type. Only JPEG, PNG, WebP, JPG and GIF files are allowed.",
+          "status": false
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "a file type that is null",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "entity_identifier": "",
+          "entity_type": "PROJECT_COVER",
+          "name": "cover.png",
+          "size": 70,
+          "type": null
+        },
+        "method": "POST",
+        "path": "/api/assets/v2/workspaces/journey-ws/"
+      },
+      "response": {
+        "body": {
+          "error": "Invalid file type. Only JPEG, PNG, WebP, JPG and GIF files are allowed.",
+          "status": false
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "no entity identifier",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "entity_type": "PROJECT_COVER",
+          "name": "cover.png",
+          "size": 70,
+          "type": "image/png"
+        },
+        "method": "POST",
+        "path": "/api/assets/v2/workspaces/journey-ws/"
+      },
+      "response": {
+        "body": {
+          "error": "The payload is not valid"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "an entity identifier that is not an id",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "entity_identifier": "not-an-id",
+          "entity_type": "PROJECT_COVER",
+          "name": "cover.png",
+          "size": 70,
+          "type": "image/png"
+        },
+        "method": "POST",
+        "path": "/api/assets/v2/workspaces/journey-ws/"
+      },
+      "response": {
+        "body": {
+          "error": "Please provide valid detail"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "no name, type or size: the defaults",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "entity_identifier": "",
+          "entity_type": "PROJECT_COVER"
+        },
+        "method": "POST",
+        "path": "/api/assets/v2/workspaces/journey-ws/"
+      },
+      "response": {
+        "body": {
+          "asset_id": "<uuid:1>",
+          "asset_url": "/api/assets/v2/static/<uuid:1>/",
+          "upload_data": {
+            "fields": {},
+            "headers": {
+              "Content-Length": "5242880",
+              "Content-Type": "image/jpeg"
+            },
+            "method": "PUT",
+            "url": "<store_url>/uploads/<uuid:2>/<uuid:3>-unnamed?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=<credential>&X-Amz-Date=<amz_date>&X-Amz-Expires=<expires>&X-Amz-Signature=<signature>&X-Amz-SignedHeaders=content-length%3Bcontent-type%3Bhost"
+          }
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "the project cover, as the app sends it",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "entity_identifier": "",
+          "entity_type": "PROJECT_COVER",
+          "name": "cover.png",
+          "size": 70,
+          "type": "image/png"
+        },
+        "method": "POST",
+        "path": "/api/assets/v2/workspaces/journey-ws/"
+      },
+      "response": {
+        "body": {
+          "asset_id": "<uuid:4>",
+          "asset_url": "/api/assets/v2/static/<uuid:4>/",
+          "upload_data": {
+            "fields": {},
+            "headers": {
+              "Content-Length": "70",
+              "Content-Type": "image/png"
+            },
+            "method": "PUT",
+            "url": "<store_url>/uploads/<uuid:2>/<uuid:5>-cover.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=<credential>&X-Amz-Date=<amz_date>&X-Amz-Expires=<expires>&X-Amz-Signature=<signature>&X-Amz-SignedHeaders=content-length%3Bcontent-type%3Bhost"
+          }
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "a second cover, which is never uploaded",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "entity_identifier": "",
+          "entity_type": "PROJECT_COVER",
+          "name": "cover.png",
+          "size": 70,
+          "type": "image/png"
+        },
+        "method": "POST",
+        "path": "/api/assets/v2/workspaces/journey-ws/"
+      },
+      "response": {
+        "body": {
+          "asset_id": "<uuid:6>",
+          "asset_url": "/api/assets/v2/static/<uuid:6>/",
+          "upload_data": {
+            "fields": {},
+            "headers": {
+              "Content-Length": "70",
+              "Content-Type": "image/png"
+            },
+            "method": "PUT",
+            "url": "<store_url>/uploads/<uuid:2>/<uuid:7>-cover.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=<credential>&X-Amz-Date=<amz_date>&X-Amz-Expires=<expires>&X-Amz-Signature=<signature>&X-Amz-SignedHeaders=content-length%3Bcontent-type%3Bhost"
+          }
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "a name with a directory, a space and a letter outside ASCII",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "entity_identifier": "",
+          "entity_type": "PROJECT_COVER",
+          "name": "../my cover \u00e9.png",
+          "size": 70,
+          "type": "image/png"
+        },
+        "method": "POST",
+        "path": "/api/assets/v2/workspaces/journey-ws/"
+      },
+      "response": {
+        "body": {
+          "asset_id": "<uuid:8>",
+          "asset_url": "/api/assets/v2/static/<uuid:8>/",
+          "upload_data": {
+            "fields": {},
+            "headers": {
+              "Content-Length": "70",
+              "Content-Type": "image/png"
+            },
+            "method": "PUT",
+            "url": "<store_url>/uploads/<uuid:2>/<uuid:9>-my%20cover%20%C3%A9.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=<credential>&X-Amz-Date=<amz_date>&X-Amz-Expires=<expires>&X-Amz-Signature=<signature>&X-Amz-SignedHeaders=content-length%3Bcontent-type%3Bhost"
+          }
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "a size over the limit is clamped to it",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "entity_identifier": "",
+          "entity_type": "PROJECT_COVER",
+          "name": "cover.png",
+          "size": 6291456,
+          "type": "image/png"
+        },
+        "method": "POST",
+        "path": "/api/assets/v2/workspaces/journey-ws/"
+      },
+      "response": {
+        "body": {
+          "asset_id": "<uuid:10>",
+          "asset_url": "/api/assets/v2/static/<uuid:10>/",
+          "upload_data": {
+            "fields": {},
+            "headers": {
+              "Content-Length": "5242880",
+              "Content-Type": "image/png"
+            },
+            "method": "PUT",
+            "url": "<store_url>/uploads/<uuid:2>/<uuid:11>-cover.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=<credential>&X-Amz-Date=<amz_date>&X-Amz-Expires=<expires>&X-Amz-Signature=<signature>&X-Amz-SignedHeaders=content-length%3Bcontent-type%3Bhost"
+          }
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "a size of exactly the limit",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "entity_identifier": "",
+          "entity_type": "PROJECT_COVER",
+          "name": "cover.png",
+          "size": 5242880,
+          "type": "image/png"
+        },
+        "method": "POST",
+        "path": "/api/assets/v2/workspaces/journey-ws/"
+      },
+      "response": {
+        "body": {
+          "asset_id": "<uuid:12>",
+          "asset_url": "/api/assets/v2/static/<uuid:12>/",
+          "upload_data": {
+            "fields": {},
+            "headers": {
+              "Content-Length": "5242880",
+              "Content-Type": "image/png"
+            },
+            "method": "PUT",
+            "url": "<store_url>/uploads/<uuid:2>/<uuid:13>-cover.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=<credential>&X-Amz-Date=<amz_date>&X-Amz-Expires=<expires>&X-Amz-Signature=<signature>&X-Amz-SignedHeaders=content-length%3Bcontent-type%3Bhost"
+          }
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "a size one over the limit",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "entity_identifier": "",
+          "entity_type": "PROJECT_COVER",
+          "name": "cover.png",
+          "size": 5242881,
+          "type": "image/png"
+        },
+        "method": "POST",
+        "path": "/api/assets/v2/workspaces/journey-ws/"
+      },
+      "response": {
+        "body": {
+          "asset_id": "<uuid:14>",
+          "asset_url": "/api/assets/v2/static/<uuid:14>/",
+          "upload_data": {
+            "fields": {},
+            "headers": {
+              "Content-Length": "5242880",
+              "Content-Type": "image/png"
+            },
+            "method": "PUT",
+            "url": "<store_url>/uploads/<uuid:2>/<uuid:15>-cover.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=<credential>&X-Amz-Date=<amz_date>&X-Amz-Expires=<expires>&X-Amz-Signature=<signature>&X-Amz-SignedHeaders=content-length%3Bcontent-type%3Bhost"
+          }
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "a size sent as text",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "entity_identifier": "",
+          "entity_type": "PROJECT_COVER",
+          "name": "cover.png",
+          "size": "123",
+          "type": "image/png"
+        },
+        "method": "POST",
+        "path": "/api/assets/v2/workspaces/journey-ws/"
+      },
+      "response": {
+        "body": {
+          "asset_id": "<uuid:16>",
+          "asset_url": "/api/assets/v2/static/<uuid:16>/",
+          "upload_data": {
+            "fields": {},
+            "headers": {
+              "Content-Length": "123",
+              "Content-Type": "image/png"
+            },
+            "method": "PUT",
+            "url": "<store_url>/uploads/<uuid:2>/<uuid:17>-cover.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=<credential>&X-Amz-Date=<amz_date>&X-Amz-Expires=<expires>&X-Amz-Signature=<signature>&X-Amz-SignedHeaders=content-length%3Bcontent-type%3Bhost"
+          }
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "a file type of image/jpeg",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "entity_identifier": "",
+          "entity_type": "PROJECT_COVER",
+          "name": "cover.jpeg",
+          "size": 70,
+          "type": "image/jpeg"
+        },
+        "method": "POST",
+        "path": "/api/assets/v2/workspaces/journey-ws/"
+      },
+      "response": {
+        "body": {
+          "asset_id": "<uuid:18>",
+          "asset_url": "/api/assets/v2/static/<uuid:18>/",
+          "upload_data": {
+            "fields": {},
+            "headers": {
+              "Content-Length": "70",
+              "Content-Type": "image/jpeg"
+            },
+            "method": "PUT",
+            "url": "<store_url>/uploads/<uuid:2>/<uuid:19>-cover.jpeg?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=<credential>&X-Amz-Date=<amz_date>&X-Amz-Expires=<expires>&X-Amz-Signature=<signature>&X-Amz-SignedHeaders=content-length%3Bcontent-type%3Bhost"
+          }
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "a file type of image/webp",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "entity_identifier": "",
+          "entity_type": "PROJECT_COVER",
+          "name": "cover.webp",
+          "size": 70,
+          "type": "image/webp"
+        },
+        "method": "POST",
+        "path": "/api/assets/v2/workspaces/journey-ws/"
+      },
+      "response": {
+        "body": {
+          "asset_id": "<uuid:20>",
+          "asset_url": "/api/assets/v2/static/<uuid:20>/",
+          "upload_data": {
+            "fields": {},
+            "headers": {
+              "Content-Length": "70",
+              "Content-Type": "image/webp"
+            },
+            "method": "PUT",
+            "url": "<store_url>/uploads/<uuid:2>/<uuid:21>-cover.webp?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=<credential>&X-Amz-Date=<amz_date>&X-Amz-Expires=<expires>&X-Amz-Signature=<signature>&X-Amz-SignedHeaders=content-length%3Bcontent-type%3Bhost"
+          }
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "a file type of image/jpg",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "entity_identifier": "",
+          "entity_type": "PROJECT_COVER",
+          "name": "cover.jpg",
+          "size": 70,
+          "type": "image/jpg"
+        },
+        "method": "POST",
+        "path": "/api/assets/v2/workspaces/journey-ws/"
+      },
+      "response": {
+        "body": {
+          "asset_id": "<uuid:22>",
+          "asset_url": "/api/assets/v2/static/<uuid:22>/",
+          "upload_data": {
+            "fields": {},
+            "headers": {
+              "Content-Length": "70",
+              "Content-Type": "image/jpg"
+            },
+            "method": "PUT",
+            "url": "<store_url>/uploads/<uuid:2>/<uuid:23>-cover.jpg?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=<credential>&X-Amz-Date=<amz_date>&X-Amz-Expires=<expires>&X-Amz-Signature=<signature>&X-Amz-SignedHeaders=content-length%3Bcontent-type%3Bhost"
+          }
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "a file type of image/gif",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "entity_identifier": "",
+          "entity_type": "PROJECT_COVER",
+          "name": "cover.gif",
+          "size": 70,
+          "type": "image/gif"
+        },
+        "method": "POST",
+        "path": "/api/assets/v2/workspaces/journey-ws/"
+      },
+      "response": {
+        "body": {
+          "asset_id": "<uuid:24>",
+          "asset_url": "/api/assets/v2/static/<uuid:24>/",
+          "upload_data": {
+            "fields": {},
+            "headers": {
+              "Content-Length": "70",
+              "Content-Type": "image/gif"
+            },
+            "method": "PUT",
+            "url": "<store_url>/uploads/<uuid:2>/<uuid:25>-cover.gif?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=<credential>&X-Amz-Date=<amz_date>&X-Amz-Expires=<expires>&X-Amz-Signature=<signature>&X-Amz-SignedHeaders=content-length%3Bcontent-type%3Bhost"
+          }
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "an entity type: ISSUE_ATTACHMENT",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "entity_identifier": "",
+          "entity_type": "ISSUE_ATTACHMENT",
+          "name": "cover.png",
+          "size": 70,
+          "type": "image/png"
+        },
+        "method": "POST",
+        "path": "/api/assets/v2/workspaces/journey-ws/"
+      },
+      "response": {
+        "body": {
+          "asset_id": "<uuid:26>",
+          "asset_url": "/api/assets/v2/workspaces/journey-ws/projects/None/issues//attachments/<uuid:26>/",
+          "upload_data": {
+            "fields": {},
+            "headers": {
+              "Content-Length": "70",
+              "Content-Type": "image/png"
+            },
+            "method": "PUT",
+            "url": "<store_url>/uploads/<uuid:2>/<uuid:27>-cover.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=<credential>&X-Amz-Date=<amz_date>&X-Amz-Expires=<expires>&X-Amz-Signature=<signature>&X-Amz-SignedHeaders=content-length%3Bcontent-type%3Bhost"
+          }
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "an entity type: ISSUE_DESCRIPTION",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "entity_identifier": "",
+          "entity_type": "ISSUE_DESCRIPTION",
+          "name": "cover.png",
+          "size": 70,
+          "type": "image/png"
+        },
+        "method": "POST",
+        "path": "/api/assets/v2/workspaces/journey-ws/"
+      },
+      "response": {
+        "body": {
+          "asset_id": "<uuid:28>",
+          "asset_url": "/api/assets/v2/workspaces/journey-ws/projects/None/<uuid:28>/",
+          "upload_data": {
+            "fields": {},
+            "headers": {
+              "Content-Length": "70",
+              "Content-Type": "image/png"
+            },
+            "method": "PUT",
+            "url": "<store_url>/uploads/<uuid:2>/<uuid:29>-cover.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=<credential>&X-Amz-Date=<amz_date>&X-Amz-Expires=<expires>&X-Amz-Signature=<signature>&X-Amz-SignedHeaders=content-length%3Bcontent-type%3Bhost"
+          }
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "an entity type: COMMENT_DESCRIPTION",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "entity_identifier": "",
+          "entity_type": "COMMENT_DESCRIPTION",
+          "name": "cover.png",
+          "size": 70,
+          "type": "image/png"
+        },
+        "method": "POST",
+        "path": "/api/assets/v2/workspaces/journey-ws/"
+      },
+      "response": {
+        "body": {
+          "asset_id": "<uuid:30>",
+          "asset_url": "/api/assets/v2/workspaces/journey-ws/projects/None/<uuid:30>/",
+          "upload_data": {
+            "fields": {},
+            "headers": {
+              "Content-Length": "70",
+              "Content-Type": "image/png"
+            },
+            "method": "PUT",
+            "url": "<store_url>/uploads/<uuid:2>/<uuid:31>-cover.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=<credential>&X-Amz-Date=<amz_date>&X-Amz-Expires=<expires>&X-Amz-Signature=<signature>&X-Amz-SignedHeaders=content-length%3Bcontent-type%3Bhost"
+          }
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "an entity type: PAGE_DESCRIPTION",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "entity_identifier": "",
+          "entity_type": "PAGE_DESCRIPTION",
+          "name": "cover.png",
+          "size": 70,
+          "type": "image/png"
+        },
+        "method": "POST",
+        "path": "/api/assets/v2/workspaces/journey-ws/"
+      },
+      "response": {
+        "body": {
+          "asset_id": "<uuid:32>",
+          "asset_url": "/api/assets/v2/workspaces/journey-ws/projects/None/<uuid:32>/",
+          "upload_data": {
+            "fields": {},
+            "headers": {
+              "Content-Length": "70",
+              "Content-Type": "image/png"
+            },
+            "method": "PUT",
+            "url": "<store_url>/uploads/<uuid:2>/<uuid:33>-cover.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=<credential>&X-Amz-Date=<amz_date>&X-Amz-Expires=<expires>&X-Amz-Signature=<signature>&X-Amz-SignedHeaders=content-length%3Bcontent-type%3Bhost"
+          }
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "an entity type: USER_COVER",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "entity_identifier": "",
+          "entity_type": "USER_COVER",
+          "name": "cover.png",
+          "size": 70,
+          "type": "image/png"
+        },
+        "method": "POST",
+        "path": "/api/assets/v2/workspaces/journey-ws/"
+      },
+      "response": {
+        "body": {
+          "asset_id": "<uuid:34>",
+          "asset_url": "/api/assets/v2/static/<uuid:34>/",
+          "upload_data": {
+            "fields": {},
+            "headers": {
+              "Content-Length": "70",
+              "Content-Type": "image/png"
+            },
+            "method": "PUT",
+            "url": "<store_url>/uploads/<uuid:2>/<uuid:35>-cover.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=<credential>&X-Amz-Date=<amz_date>&X-Amz-Expires=<expires>&X-Amz-Signature=<signature>&X-Amz-SignedHeaders=content-length%3Bcontent-type%3Bhost"
+          }
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "an entity type: USER_AVATAR",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "entity_identifier": "",
+          "entity_type": "USER_AVATAR",
+          "name": "cover.png",
+          "size": 70,
+          "type": "image/png"
+        },
+        "method": "POST",
+        "path": "/api/assets/v2/workspaces/journey-ws/"
+      },
+      "response": {
+        "body": {
+          "asset_id": "<uuid:36>",
+          "asset_url": "/api/assets/v2/static/<uuid:36>/",
+          "upload_data": {
+            "fields": {},
+            "headers": {
+              "Content-Length": "70",
+              "Content-Type": "image/png"
+            },
+            "method": "PUT",
+            "url": "<store_url>/uploads/<uuid:2>/<uuid:37>-cover.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=<credential>&X-Amz-Date=<amz_date>&X-Amz-Expires=<expires>&X-Amz-Signature=<signature>&X-Amz-SignedHeaders=content-length%3Bcontent-type%3Bhost"
+          }
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "an entity type: WORKSPACE_LOGO",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "entity_identifier": "",
+          "entity_type": "WORKSPACE_LOGO",
+          "name": "cover.png",
+          "size": 70,
+          "type": "image/png"
+        },
+        "method": "POST",
+        "path": "/api/assets/v2/workspaces/journey-ws/"
+      },
+      "response": {
+        "body": {
+          "asset_id": "<uuid:38>",
+          "asset_url": "/api/assets/v2/static/<uuid:38>/",
+          "upload_data": {
+            "fields": {},
+            "headers": {
+              "Content-Length": "70",
+              "Content-Type": "image/png"
+            },
+            "method": "PUT",
+            "url": "<store_url>/uploads/<uuid:2>/<uuid:39>-cover.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=<credential>&X-Amz-Date=<amz_date>&X-Amz-Expires=<expires>&X-Amz-Signature=<signature>&X-Amz-SignedHeaders=content-length%3Bcontent-type%3Bhost"
+          }
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "an entity type: DRAFT_ISSUE_ATTACHMENT",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "entity_identifier": "",
+          "entity_type": "DRAFT_ISSUE_ATTACHMENT",
+          "name": "cover.png",
+          "size": 70,
+          "type": "image/png"
+        },
+        "method": "POST",
+        "path": "/api/assets/v2/workspaces/journey-ws/"
+      },
+      "response": {
+        "body": {
+          "asset_id": "<uuid:40>",
+          "asset_url": null,
+          "upload_data": {
+            "fields": {},
+            "headers": {
+              "Content-Length": "70",
+              "Content-Type": "image/png"
+            },
+            "method": "PUT",
+            "url": "<store_url>/uploads/<uuid:2>/<uuid:41>-cover.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=<credential>&X-Amz-Date=<amz_date>&X-Amz-Expires=<expires>&X-Amz-Signature=<signature>&X-Amz-SignedHeaders=content-length%3Bcontent-type%3Bhost"
+          }
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "an entity type: DRAFT_ISSUE_DESCRIPTION",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "entity_identifier": "",
+          "entity_type": "DRAFT_ISSUE_DESCRIPTION",
+          "name": "cover.png",
+          "size": 70,
+          "type": "image/png"
+        },
+        "method": "POST",
+        "path": "/api/assets/v2/workspaces/journey-ws/"
+      },
+      "response": {
+        "body": {
+          "asset_id": "<uuid:42>",
+          "asset_url": "/api/assets/v2/workspaces/journey-ws/projects/None/<uuid:42>/",
+          "upload_data": {
+            "fields": {},
+            "headers": {
+              "Content-Length": "70",
+              "Content-Type": "image/png"
+            },
+            "method": "PUT",
+            "url": "<store_url>/uploads/<uuid:2>/<uuid:43>-cover.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=<credential>&X-Amz-Date=<amz_date>&X-Amz-Expires=<expires>&X-Amz-Signature=<signature>&X-Amz-SignedHeaders=content-length%3Bcontent-type%3Bhost"
+          }
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "a cover in the other workspace",
+      "request": {
+        "as": "journey@example.test",
+        "body": {
+          "entity_identifier": "",
+          "entity_type": "PROJECT_COVER",
+          "name": "cover.png",
+          "size": 70,
+          "type": "image/png"
+        },
+        "method": "POST",
+        "path": "/api/assets/v2/workspaces/journey-two/"
+      },
+      "response": {
+        "body": {
+          "asset_id": "<uuid:44>",
+          "asset_url": "/api/assets/v2/static/<uuid:44>/",
+          "upload_data": {
+            "fields": {},
+            "headers": {
+              "Content-Length": "70",
+              "Content-Type": "image/png"
+            },
+            "method": "PUT",
+            "url": "<store_url>/uploads/<uuid:45>/<uuid:46>-cover.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=<credential>&X-Amz-Date=<amz_date>&X-Amz-Expires=<expires>&X-Amz-Signature=<signature>&X-Amz-SignedHeaders=content-length%3Bcontent-type%3Bhost"
+          }
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    }
+  ],
+  "format_version": 1,
+  "recorded_from": "ba85d4d3d3",
+  "row": "S28"
+}

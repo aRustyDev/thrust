@@ -39,6 +39,7 @@ pub const MIGRATION_0012: &str = include_str!("../migrations/0012_projects.sql")
 pub const MIGRATION_0013: &str = include_str!("../migrations/0013_work_item_details.sql");
 pub const MIGRATION_0014: &str = include_str!("../migrations/0014_work_item_history.sql");
 pub const MIGRATION_0015: &str = include_str!("../migrations/0015_v1_surface.sql");
+pub const MIGRATION_0016: &str = include_str!("../migrations/0016_assets.sql");
 
 pub async fn migrate(client: &Client) -> Result<(), tokio_postgres::Error> {
     client.batch_execute(MIGRATION_0001).await?;
@@ -55,7 +56,8 @@ pub async fn migrate(client: &Client) -> Result<(), tokio_postgres::Error> {
     client.batch_execute(MIGRATION_0012).await?;
     client.batch_execute(MIGRATION_0013).await?;
     client.batch_execute(MIGRATION_0014).await?;
-    client.batch_execute(MIGRATION_0015).await
+    client.batch_execute(MIGRATION_0015).await?;
+    client.batch_execute(MIGRATION_0016).await
 }
 
 pub trait ClientHandle: Send {
@@ -143,6 +145,50 @@ fn db_err(e: tokio_postgres::Error) -> DbError {
             d.constraint().map(|c| format!(", constraint {c}")).unwrap_or_default()
         ),
         None => e.to_string(),
+    })
+}
+
+/// The columns of an asset, in the order `asset_row` reads them by name.
+const ASSET_COLS: &str =
+    "id, workspace_id, created_by, entity_type, project_id, name, content_type, size, object_key, state, \
+    upload_token_hash, upload_expires_at, created_at, uploaded_at, deleted_at";
+
+/// An asset from a row of [`ASSET_COLS`]. A value the CHECKs would have refused is a backend error, not a panic.
+fn asset_row(r: &Row) -> Result<AssetRow, DbError> {
+    let entity_text: String = r.get("entity_type");
+    let entity = AssetEntity::parse(&entity_text)
+        .ok_or_else(|| DbError::Backend(format!("assets.entity_type '{entity_text}' is not one this build knows")))?;
+    let state_text: String = r.get("state");
+    let state = match state_text.as_str() {
+        "pending" => AssetState::Pending,
+        "uploaded" => AssetState::Uploaded,
+        other => return Err(DbError::Backend(format!("assets.state '{other}' is not one this build knows"))),
+    };
+    let token: Option<Vec<u8>> = r.get("upload_token_hash");
+    let expires: Option<Timestamp> = r.get("upload_expires_at");
+    let upload = match (token, expires) {
+        (Some(t), Some(expires_at)) => {
+            let hash: [u8; 32] =
+                t.try_into().map_err(|_| DbError::Backend("assets.upload_token_hash is not 32 bytes".into()))?;
+            Some(UploadGrant { token_hash: TokenHash(hash), expires_at })
+        }
+        _ => None,
+    };
+    Ok(AssetRow {
+        id: AssetId(r.get("id")),
+        workspace_id: WorkspaceId(r.get("workspace_id")),
+        created_by: UserId(r.get("created_by")),
+        entity,
+        project_id: r.get::<_, Option<Uuid>>("project_id").map(ProjectId),
+        name: r.get("name"),
+        content_type: r.get("content_type"),
+        size: r.get("size"),
+        object_key: r.get("object_key"),
+        state,
+        upload,
+        created_at: r.get("created_at"),
+        uploaded_at: r.get("uploaded_at"),
+        deleted_at: r.get("deleted_at"),
     })
 }
 
@@ -2197,6 +2243,137 @@ impl Database for PgDatabase {
             code_verifier: r.get("code_verifier"),
             expires_at: r.get("expires_at"),
         }))
+    }
+
+    async fn insert_asset(&self, scope: &WorkspaceScope, a: &AssetRow) -> Result<(), DbError> {
+        if a.workspace_id != scope.workspace_id() || a.created_by != scope.user_id() {
+            return Err(DbError::Backend("asset is not the scope's".into()));
+        }
+        let Some(grant) = a.upload.filter(|_| a.state == AssetState::Pending && a.uploaded_at.is_none()) else {
+            return Err(DbError::Backend("a new asset is pending, with its grant".into()));
+        };
+        let c = self.conn().await?;
+        c.pg()
+            .execute(
+                "INSERT INTO assets (id, workspace_id, created_by, entity_type, project_id, name, content_type, size, object_key, \
+                   state, upload_token_hash, upload_expires_at, created_at) \
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'pending', $10, $11, $12)",
+                &[
+                    &a.id.0,
+                    &a.workspace_id.0,
+                    &a.created_by.0,
+                    &a.entity.as_str(),
+                    &a.project_id.map(|p| p.0),
+                    &a.name.as_str(),
+                    &a.content_type.as_str(),
+                    &a.size,
+                    &a.object_key.as_str(),
+                    &&grant.token_hash.0[..],
+                    &grant.expires_at,
+                    &a.created_at,
+                ],
+            )
+            .await
+            .map_err(db_err)?;
+        Ok(())
+    }
+
+    async fn asset(&self, scope: &WorkspaceScope, id: AssetId) -> Result<Option<AssetRow>, DbError> {
+        let c = self.conn().await?;
+        let row = c
+            .pg()
+            .query_opt(
+                &format!("SELECT {ASSET_COLS} FROM assets WHERE id = $1 AND workspace_id = $2 AND deleted_at IS NULL"),
+                &[&id.0, &scope.workspace_id().0],
+            )
+            .await
+            .map_err(db_err)?;
+        row.as_ref().map(asset_row).transpose()
+    }
+
+    async fn mark_asset_uploaded(&self, scope: &WorkspaceScope, id: AssetId, at: Timestamp) -> Result<bool, DbError> {
+        let c = self.conn().await?;
+        // an asset that is uploaded already keeps its time (and has no grant to lose), so this is idempotent
+        let n = c
+            .pg()
+            .execute(
+                "UPDATE assets SET state = 'uploaded', uploaded_at = COALESCE(uploaded_at, $3), \
+                   upload_token_hash = NULL, upload_expires_at = NULL \
+                 WHERE id = $1 AND workspace_id = $2 AND deleted_at IS NULL",
+                &[&id.0, &scope.workspace_id().0, &at],
+            )
+            .await
+            .map_err(db_err)?;
+        Ok(n == 1)
+    }
+
+    async fn attach_project_cover(
+        &self,
+        scope: &Scope,
+        ids: &[AssetId],
+        at: Timestamp,
+    ) -> Result<Option<AssetId>, DbError> {
+        let asked: Vec<Uuid> = ids.iter().map(|i| i.0).collect();
+        let c = self.conn().await?;
+        // One statement, so one transaction: the assets that qualify get the project, and the oldest of them becomes its cover (the
+        // pin saves each in turn, newest first), or nothing is written when none qualifies.
+        let row = c
+            .pg()
+            .query_opt(
+                "WITH matched AS ( \
+                   UPDATE assets SET project_id = $2 \
+                   WHERE id = ANY($3) AND workspace_id = $1 AND created_by = $4 AND deleted_at IS NULL \
+                     AND (project_id IS NULL OR project_id = $2) AND entity_type = 'PROJECT_COVER' \
+                   RETURNING id, created_at \
+                 ), cover AS ( \
+                   SELECT id FROM matched ORDER BY created_at, id LIMIT 1 \
+                 ), changed AS ( \
+                   UPDATE projects SET cover_image_asset = (SELECT id FROM cover), updated_by = $4, updated_at = $5 \
+                   WHERE id = $2 AND workspace_id = $1 AND deleted_at IS NULL AND EXISTS (SELECT 1 FROM cover) \
+                   RETURNING id \
+                 ) \
+                 SELECT id FROM cover",
+                &[&scope.workspace_id().0, &scope.project_id().0, &asked, &scope.user_id().0, &at],
+            )
+            .await
+            .map_err(db_err)?;
+        Ok(row.map(|r| AssetId(r.get("id"))))
+    }
+
+    async fn take_upload_grant(
+        &self,
+        id: AssetId,
+        token: &TokenHash,
+        now: Timestamp,
+    ) -> Result<Option<AssetRow>, DbError> {
+        let c = self.conn().await?;
+        // One statement: the grant is spent by exactly one caller, and the next finds none
+        let row = c
+            .pg()
+            .query_opt(
+                &format!(
+                    "UPDATE assets SET upload_token_hash = NULL, upload_expires_at = NULL \
+                     WHERE id = $1 AND deleted_at IS NULL AND state = 'pending' AND upload_token_hash = $2 AND upload_expires_at > $3 \
+                     RETURNING {ASSET_COLS}"
+                ),
+                &[&id.0, &&token.0[..], &now],
+            )
+            .await
+            .map_err(db_err)?;
+        row.as_ref().map(asset_row).transpose()
+    }
+
+    async fn uploaded_asset(&self, id: AssetId) -> Result<Option<AssetRow>, DbError> {
+        let c = self.conn().await?;
+        let row = c
+            .pg()
+            .query_opt(
+                &format!("SELECT {ASSET_COLS} FROM assets WHERE id = $1 AND state = 'uploaded' AND deleted_at IS NULL"),
+                &[&id.0],
+            )
+            .await
+            .map_err(db_err)?;
+        row.as_ref().map(asset_row).transpose()
     }
 
     async fn set_user_active(&self, _sys: &SystemScope, user: UserId, active: bool) -> Result<bool, DbError> {

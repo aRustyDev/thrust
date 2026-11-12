@@ -1409,3 +1409,171 @@ async fn compat_a_member_changes_a_work_item_and_its_history_shows_it() {
     assert_eq!(relations.as_object().unwrap().len(), 8, "{relations}");
     assert!(relations.as_object().unwrap().values().all(|v| v == &json!([])), "{relations}");
 }
+
+// --- assets (issue #44, the asset stage: S28, S29, S31, S33) ----------------------------------------------------------------
+
+async fn patch_as(t: &Target, token: &str, path: &str) -> reqwest::Response {
+    t.http.patch(t.url(path)).bearer_auth(token).send().await.unwrap()
+}
+
+/// What S28 made: the asset's id and the address its bytes go to.
+async fn made_asset(t: &Target, token: &str, slug: &str, picture: &[u8]) -> (String, String) {
+    let body = json!({"name": "cover.png", "type": "image/png", "size": picture.len(), "entity_type": "PROJECT_COVER", "entity_identifier": ""});
+    let r = post_as(t, token, &format!("/api/assets/v2/workspaces/{slug}/"), &body).await;
+    assert_eq!(r.status(), 200);
+    let made: Value = r.json().await.unwrap();
+    let d = &made["upload_data"];
+    assert_eq!((&d["method"], &d["fields"]), (&json!("PUT"), &json!({})), "{made}");
+    assert_eq!(
+        d["headers"],
+        json!({"Content-Type": "image/png", "Content-Length": picture.len().to_string()}),
+        "{made}"
+    );
+    assert_eq!(made["asset_url"], format!("/api/assets/v2/static/{}/", made["asset_id"].as_str().unwrap()), "{made}");
+    (made["asset_id"].as_str().unwrap().to_string(), d["url"].as_str().unwrap().to_string())
+}
+
+/// What the browser does with the answer: the file to the address, with its type and no session at all.
+async fn browser_put(t: &Target, url: &str, content_type: &str, bytes: &[u8]) -> reqwest::Response {
+    t.http.put(t.url(url)).header("content-type", content_type).body(bytes.to_vec()).send().await.unwrap()
+}
+
+/// The stock app's project cover, S28 to S33, on every target: the upload goes to this API and lands in the target's blob store (R2 on
+/// the Worker), is confirmed by looking at it, is attached to the project that was made after it, and is shown to anyone at the
+/// address `cover_image_url` names. Each step has its refusal beside it: a second use of the address, a stranger's confirm, attach
+/// and read, a read before the bytes are confirmed, and the upload of an asset that was never made.
+#[tokio::test]
+async fn compat_a_cover_is_uploaded_confirmed_attached_and_shown_and_each_step_refuses_what_is_not_its_own() {
+    let t = t();
+    let (_, token) = signed_up(&t).await;
+    let (_, stranger) = signed_up(&t).await;
+    let slug = new_slug();
+    assert_eq!(post_as(&t, &token, "/api/workspaces/", &json!({"name": "Covers", "slug": slug})).await.status(), 201);
+    let picture: Vec<u8> = (0u8..120).rev().collect();
+    let assets = format!("/api/assets/v2/workspaces/{slug}/");
+
+    // S28 and the browser's upload, with no session
+    let (id, url) = made_asset(&t, &token, &slug, &picture).await;
+    assert_eq!(
+        patch_as(&t, &token, &format!("{assets}{id}/")).await.status(),
+        400,
+        "nothing is uploaded yet, and S29 looks"
+    );
+    assert_eq!(browser_put(&t, &url, "image/png", &picture).await.status(), 200);
+    assert_eq!(browser_put(&t, &url, "image/png", &picture).await.status(), 403, "the address is good for one upload");
+
+    // S29: a stranger to the workspace is refused, the maker confirms, and it is read for the workspace only after that
+    let (pending, pending_url) = made_asset(&t, &token, &slug, &picture).await;
+    assert_eq!(browser_put(&t, &pending_url, "image/png", &picture).await.status(), 200);
+    let noredirect = t.no_redirect();
+    let s33 = |token: &str, id: &str| {
+        let req = noredirect.get(t.url(&format!("{assets}{id}/"))).bearer_auth(token.to_string());
+        async move { req.send().await.unwrap() }
+    };
+    assert_eq!(s33(&token, &pending).await.status(), 404, "stored but not confirmed: nothing may read it");
+    assert_eq!(patch_as(&t, &stranger, &format!("{assets}{id}/")).await.status(), 403);
+    assert_eq!(patch_as(&t, &token, &format!("{assets}{id}/")).await.status(), 204);
+    assert_eq!(patch_as(&t, &token, &format!("{assets}{id}/")).await.status(), 204, "confirming again changes nothing");
+
+    // S33: a 302 to the route that sends the bytes, which asks who the caller is again
+    let r = s33(&token, &id).await;
+    assert_eq!(r.status(), 302);
+    let location = r.headers()["location"].to_str().unwrap().to_string();
+    assert_eq!(location, format!("{assets}{id}/object/"));
+    assert_eq!(s33(&stranger, &id).await.status(), 403);
+    let file = t.http.get(t.url(&location)).bearer_auth(&token).send().await.unwrap();
+    assert_eq!(file.status(), 200);
+    assert_eq!(file.headers()["content-type"], "image/png");
+    assert_eq!(file.headers()["content-disposition"], "attachment; filename*=UTF-8''cover.png");
+    assert_eq!(file.bytes().await.unwrap().as_ref(), picture.as_slice());
+    assert_eq!(t.http.get(t.url(&location)).send().await.unwrap().status(), 401, "and not without a session");
+
+    // S30 then S31: the project is made after the upload, and the cover reaches it by the bulk route
+    let projects = format!("/api/workspaces/{slug}/projects/");
+    let made: Value =
+        post_as(&t, &token, &projects, &json!({"name": "Covered", "identifier": "COV"})).await.json().await.unwrap();
+    let project = made["id"].as_str().unwrap().to_string();
+    assert_eq!(made["cover_image_url"], Value::Null, "{made}");
+    let bulk = format!("{assets}projects/{project}/{project}/bulk/");
+    assert_eq!(post_as(&t, &stranger, &bulk, &json!({"asset_ids": [id]})).await.status(), 403);
+    assert_eq!(post_as(&t, &token, &bulk, &json!({"asset_ids": []})).await.status(), 400);
+    assert_eq!(
+        post_as(&t, &token, &bulk, &json!({"asset_ids": [uuid::Uuid::new_v4().to_string()]})).await.status(),
+        404
+    );
+    assert_eq!(post_as(&t, &token, &bulk, &json!({"asset_ids": [id]})).await.status(), 204);
+
+    // S34, and the picture at the address it names: for anyone, inline, with its type pinned
+    let opened = get(&t, &token, &format!("{projects}{project}/")).await;
+    let shown = format!("/api/assets/v2/static/{id}/");
+    assert_eq!(
+        (opened["cover_image_url"].clone(), opened["cover_image_asset"].clone()),
+        (json!(shown), json!(id)),
+        "{opened}"
+    );
+    let r = t.http.get(t.url(&shown)).send().await.unwrap();
+    assert_eq!(r.status(), 200);
+    assert_eq!(r.headers()["content-type"], "image/png");
+    assert_eq!(r.headers()["content-disposition"], "inline; filename*=UTF-8''cover.png");
+    assert_eq!(r.headers()["x-content-type-options"], "nosniff");
+    assert_eq!(r.bytes().await.unwrap().as_ref(), picture.as_slice());
+    // the project's asset is read through the workspace route by its people only
+    assert_eq!(s33(&stranger, &id).await.status(), 403);
+    // and an asset that was never confirmed is not shown to anyone
+    assert_eq!(t.http.get(t.url(&format!("/api/assets/v2/static/{pending}/"))).send().await.unwrap().status(), 404);
+}
+
+/// The upload address is the credential of an upload and nothing else: it works for the file the asset was made for (its type and
+/// exactly its size), once, and a body over the limit is refused before it is spent. Controls: an address of another asset, one
+/// with a token that was never made, and an asset that does not exist all answer the same 403, and the right upload still works
+/// after them.
+#[tokio::test]
+async fn compat_an_upload_is_refused_unless_it_is_the_file_the_asset_was_made_for() {
+    let t = t();
+    let (_, token) = signed_up(&t).await;
+    let slug = new_slug();
+    assert_eq!(post_as(&t, &token, "/api/workspaces/", &json!({"name": "Uploads", "slug": slug})).await.status(), 201);
+    let picture = vec![7u8; 64];
+
+    for (what, content_type, bytes) in [
+        ("a type it was not made for", "image/gif", picture.clone()),
+        ("a byte too many", "image/png", vec![7u8; 65]),
+        ("a byte too few", "image/png", vec![7u8; 63]),
+    ] {
+        let (_, url) = made_asset(&t, &token, &slug, &picture).await;
+        let r = browser_put(&t, &url, content_type, &bytes).await;
+        assert_eq!(r.status(), 403, "{what}");
+        assert_eq!(
+            browser_put(&t, &url, "image/png", &picture).await.status(),
+            403,
+            "{what}: a refused upload spends the address"
+        );
+    }
+
+    let (id, url) = made_asset(&t, &token, &slug, &picture).await;
+    let (other_id, _) = made_asset(&t, &token, &slug, &picture).await;
+    let token_of_it = url.trim_end_matches('/').rsplit('/').next().unwrap().to_string();
+    for (what, address) in [
+        ("another asset's", format!("/api/assets/v2/upload/{other_id}/{token_of_it}/")),
+        ("a token that was never made", format!("/api/assets/v2/upload/{id}/{}/", "0".repeat(64))),
+        ("an asset that does not exist", format!("/api/assets/v2/upload/{}/{token_of_it}/", uuid::Uuid::new_v4())),
+    ] {
+        assert_eq!(browser_put(&t, &address, "image/png", &picture).await.status(), 403, "{what}");
+    }
+    assert_eq!(browser_put(&t, "/api/assets/v2/upload/not-an-id/x/", "image/png", &picture).await.status(), 404);
+
+    // one byte over the instance's 5 MiB is refused before the address is spent
+    let limit = 5 * 1024 * 1024;
+    let (_, big_url) = made_asset(&t, &token, &slug, &vec![0u8; limit]).await;
+    assert_eq!(browser_put(&t, &big_url, "image/png", &vec![0u8; limit + 1]).await.status(), 413);
+    assert_eq!(
+        browser_put(&t, &big_url, "image/png", &vec![0u8; limit]).await.status(),
+        200,
+        "the address still works"
+    );
+    assert_eq!(
+        browser_put(&t, &url, "image/png", &picture).await.status(),
+        200,
+        "and so does the first, after all that"
+    );
+}

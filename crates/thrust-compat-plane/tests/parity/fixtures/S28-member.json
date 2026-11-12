@@ -1,0 +1,76 @@
+{
+  "binds": {
+    "second_asset": {
+      "exchange": "a project cover, by a member",
+      "path": [
+        "asset_id"
+      ]
+    }
+  },
+  "exchanges": [
+    {
+      "name": "a workspace logo, by a member who is not an admin",
+      "request": {
+        "as": "second@example.test",
+        "body": {
+          "entity_identifier": "",
+          "entity_type": "WORKSPACE_LOGO",
+          "name": "cover.png",
+          "size": 70,
+          "type": "image/png"
+        },
+        "method": "POST",
+        "path": "/api/assets/v2/workspaces/journey-ws/"
+      },
+      "response": {
+        "body": {
+          "error": "Only workspace admins can upload a workspace logo."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 403
+      }
+    },
+    {
+      "name": "a project cover, by a member",
+      "request": {
+        "as": "second@example.test",
+        "body": {
+          "entity_identifier": "",
+          "entity_type": "PROJECT_COVER",
+          "name": "cover.png",
+          "size": 70,
+          "type": "image/png"
+        },
+        "method": "POST",
+        "path": "/api/assets/v2/workspaces/journey-ws/"
+      },
+      "response": {
+        "body": {
+          "asset_id": "<uuid:1>",
+          "asset_url": "/api/assets/v2/static/<uuid:1>/",
+          "upload_data": {
+            "fields": {},
+            "headers": {
+              "Content-Length": "70",
+              "Content-Type": "image/png"
+            },
+            "method": "PUT",
+            "url": "<store_url>/uploads/<uuid:2>/<uuid:3>-cover.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=<credential>&X-Amz-Date=<amz_date>&X-Amz-Expires=<expires>&X-Amz-Signature=<signature>&X-Amz-SignedHeaders=content-length%3Bcontent-type%3Bhost"
+          }
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    }
+  ],
+  "format_version": 1,
+  "preconditions": [
+    "the second user (second@example.test) is a member, role 15, of journey-ws: it was invited by the workspace's admin and accepted, before the first exchange"
+  ],
+  "recorded_from": "ba85d4d3d3",
+  "row": "S28-member"
+}

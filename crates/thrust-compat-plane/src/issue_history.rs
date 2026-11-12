@@ -90,7 +90,7 @@ fn activity_json(
             "identifier": project.identifier,
             "name": project.name,
             "cover_image": project.cover_image,
-            "cover_image_url": project.cover_image,
+            "cover_image_url": crate::projects::cover_image_url(project),
             "logo_props": project.logo_props,
             "description": project.description,
         },

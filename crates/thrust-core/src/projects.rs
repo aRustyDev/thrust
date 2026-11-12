@@ -84,6 +84,9 @@ pub struct ProjectPatch {
     pub is_time_tracking_enabled: Option<bool>,
     pub is_issue_type_enabled: Option<bool>,
     pub cover_image: Option<Option<String>>,
+    /// The asset that is the project's cover. The compat layer checks it with [`crate::is_attachable_cover`] before it is named
+    /// here; the foreign key refuses what that missed.
+    pub cover_image_asset: Option<Option<Uuid>>,
     pub archive_in: Option<i32>,
     pub close_in: Option<i32>,
     pub timezone: Option<String>,
@@ -122,6 +125,7 @@ impl ProjectPatch {
             is_time_tracking_enabled,
             is_issue_type_enabled,
             cover_image,
+            cover_image_asset,
             archive_in,
             close_in,
             timezone,
