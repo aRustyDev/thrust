@@ -6,7 +6,7 @@
 #   THRUST_ADMIN_TOKEN_FILE=<0600 file holding the Worker's THRUST_ADMIN_TOKEN> \
 #     scripts/stage2-contract.sh [main|worker|bindings|cron|sweeper|panic]
 #
-# main      51 tests: the portable contract minus the 6 `oidc_` tests (they need the mock IdP on 127.0.0.1, which a
+# main      59 tests: the portable contract minus the 6 `oidc_` tests (they need the mock IdP on 127.0.0.1, which a
 #           deployed Worker cannot reach) (the deployed Worker's RL_CREATE binding must be 30 a minute, which
 #           wrangler.stage2.toml sets, and it needs a cheap argon2id cost, THRUST_ARGON2_M_KIB=64 THRUST_ARGON2_T=1
 #           THRUST_ARGON2_P=1, or every fixture seeds six passwords at the real cost). It refuses a THRUST_EXPECT_CREATE_LIMIT
@@ -14,7 +14,7 @@
 # worker     1 test : Durable Object WebSocket hibernation + SQLite
 # bindings   4 tests: the probe routes' admin gate, and one real operation per binding (rate limit, secrets store, email)
 # cron       1 test : needs the Worker deployed with THRUST_OUTBOX_FASTPATH=off
-# sweeper    2 tests: needs THRUST_OUTBOX_FASTPATH=off
+# sweeper    3 tests: needs THRUST_OUTBOX_FASTPATH=off
 # panic      1 test : alone, against a Worker nobody else is using (a panic resets the isolate)
 # csrfoff    6 tests: needs the Worker deployed with THRUST_CSRF_ENFORCE=off (Q-0050.8, the production default while the
 #            stock frontend is in use). Every other pass needs it ON, which wrangler.stage2.toml sets; /_info is checked
@@ -71,7 +71,7 @@ case "$INFO" in *"\"csrf_enforce\":$WANT_CSRF"*) ;; *) echo "[stage2/$PASS] VACU
 RS="$ROOT/scripts/rs"
 M="$ROOT/Cargo.toml"
 case "$PASS" in
-  main)     EXPECT=51; "$RS" cargo test --manifest-path "$M" -p thrust-contract-tests --test contract -- --skip sweeper_ --skip panic_ --skip blast_ --skip oidc_ --skip csrf_off_ >"$LOG.test.log" 2>&1 ;;
+  main)     EXPECT=59; "$RS" cargo test --manifest-path "$M" -p thrust-contract-tests --test contract -- --skip sweeper_ --skip panic_ --skip blast_ --skip oidc_ --skip csrf_off_ >"$LOG.test.log" 2>&1 ;;
   # the csrf_off_ tests that need nothing else the deployed Worker lacks (all six: none of them is an `oidc_` test)
   csrfoff)  EXPECT=6;  "$RS" cargo test --manifest-path "$M" -p thrust-contract-tests --test contract -- csrf_off_ >"$LOG.test.log" 2>&1 ;;
   worker)   EXPECT=1;  "$RS" cargo test --manifest-path "$M" -p thrust-contract-tests --test worker_only -- worker_room_ --test-threads=1 --nocapture >"$LOG.test.log" 2>&1 ;;
@@ -82,7 +82,7 @@ case "$PASS" in
   cron)     EXPECT=1;  "$RS" cargo test --manifest-path "$M" -p thrust-contract-tests --test worker_only -- worker_cron_ --test-threads=1 --nocapture >"$LOG.test.log" 2>&1 ;;
   # crontrigger: the REAL every-minute trigger (the `cron` pass uses wrangler dev's /__scheduled, which a deployed Worker lacks)
   crontrigger) EXPECT=1; "$RS" cargo test --manifest-path "$M" -p thrust-contract-tests --test worker_only -- stage2_cron_real_trigger_ --test-threads=1 --nocapture >"$LOG.test.log" 2>&1 ;;
-  sweeper)  EXPECT=2;  "$RS" cargo test --manifest-path "$M" -p thrust-contract-tests --test contract -- sweeper_ --test-threads=1 --nocapture >"$LOG.test.log" 2>&1 ;;
+  sweeper)  EXPECT=3;  "$RS" cargo test --manifest-path "$M" -p thrust-contract-tests --test contract -- sweeper_ --test-threads=1 --nocapture >"$LOG.test.log" 2>&1 ;;
   panic)    EXPECT=1;  "$RS" cargo test --manifest-path "$M" -p thrust-contract-tests --test contract -- panic_ --test-threads=1 --nocapture >"$LOG.test.log" 2>&1 ;;
   # blast is OBSERVATIONAL: how many OTHER in-flight requests fail around one panic (a panic aborts the isolate)
   blast)    EXPECT=1;  "$RS" cargo test --manifest-path "$M" -p thrust-contract-tests --test contract -- blast_ --test-threads=1 --nocapture >"$LOG.test.log" 2>&1 ;;
