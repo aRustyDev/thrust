@@ -95,7 +95,7 @@ needed" must be recorded before the row starts). "Test home" is where the accept
 | F-X10 | Rust (Dioxus) clone of the Plane UI — web target | P2 (M4, screen by screen, once M2 holds the SLO 4 wks; round 29, FR-01) | 0013 | 0007 | the parity matrix below (the UI oracle) |
 | F-X11 | Dioxus desktop target | P2 (after v1 web; Q-0013.3) | 0013 | 0007 |  |
 | F-X12 | Dioxus mobile target | P2 (after v1 web; Q-0013.3) | 0013 | 0007 |  |
-| F-X13 | `compat-plane` internal API adapter for the React app (acceptance list = the slice plus the M2 screens; round 29, FR-01) | P0 | 0034 | 0009 | recorded-journey replay + the Playwright journey suite over the M2 screens (issue #45); stubs outside the list per D-021 |
+| F-X13 | `compat-plane` internal API adapter for the React app (acceptance list = the slice plus the M2 screens; round 29, FR-01) | P0 | 0034 | 0009 | recorded-journey replay + the Playwright journey suite over the M2 screens (issue #45, the table in the parity matrix below); stubs outside the list per D-021 |
 | F-X14 | SSRF-safe outbound fetch guard (webhooks, link unfurl; R-S3) | P0 | 0141, 0073 |  | SSRF test corpus |
 
 ## Requirements
@@ -108,7 +108,7 @@ needed" must be recorded before the row starts). "Test home" is where the accept
 | R-F4 page forms persisted consistently | 0012, 0061 | contract + XSS corpus (spike 0006) |
 | R-F5 /api/v1 matches pinned schema | 0031, 0032, 0122 | schema diff + response diff (spike 0008) |
 | R-F6 bgtasks mapped | 0073, 0072, 0071 | ADR-0073 table review; per-task contract tests |
-| R-F7 compat-plane + core API | 0034 | recorded-journey replay (spike 0009) and the Playwright journey suite over the M2 screens (issue #45); the core API is not built at P0 and is generated from the use-cases at M4 (round 29, FR-06) |
+| R-F7 compat-plane + core API | 0034 | recorded-journey replay (spike 0009) and the Playwright journey suite over the M2 screens (issue #45, the table in the parity matrix below); the core API is not built at P0 and is generated from the use-cases at M4 (round 29, FR-06) |
 | R-P1 no platform SDK outside adapters | 0002 | lint/`cargo deny` + CI |
 | R-P2/R-P5 adapter selection compile-time | 0007 | build matrix (ADR-0100) |
 | R-P3 P0 self-hosted set | 0007, 0091 | the `native-pg` contract cell (`scripts/contract-all.sh`; round 29, FR-19); after the FR-05 cut no P0 port is CF-only, so no row is `pending-adapter` |
@@ -131,6 +131,29 @@ settings; workspace members (no invites); in-app notifications; global search (Q
 in, create a workspace, project and work item, see it" on the stock React app; each screen M3 adds brings its own
 journey (`reviews/2026-10-19-fable-architecture-review.md` §3). The suite is the UI oracle for the Dioxus port: a
 screen moves to Dioxus once the M2 release has held the SLO for 4 weeks and the suite is green (ADR-0013, round 29).
+
+### The journeys (issue #45)
+
+One row per journey. A journey is a file, `e2e/journeys/<name>.spec.ts`, and one that is not written has none. A screen counts
+as covered when its journey passes on **both** targets: the pinned Plane, the UI oracle (local, `scripts/e2e.sh plane-oracle`,
+because the oracle builds from the unpushed fork), and `worker-cf` (CI: the `worker-cf e2e` cell on every Rust change, and
+`e2e-schedule.yml` every day, which also covers a change to `web/` alone). Green on Plane and red on Thrust is a parity
+defect; red on Plane means the journey is wrong. What guards a journey against passing without proving anything, and the
+controls that show it: `docs/src/testing/techniques/app-and-e2e.md`; what was measured: `docs/src/testing/status.md` G-31.
+
+| Journey | Screens it covers | Spec | Pinned Plane | `worker-cf` | HAR (the input of spike 0009's replay) |
+|---|---|---|---|---|---|
+| M1: sign up, make a workspace, a project and a work item, see it | sign-up; onboarding (profile, workspace); the welcome tour; workspace home; project create, with its cover; work-item create; work-item list | `m1-sign-up-to-work-item.spec.ts` | passes (G-31) | passes (cell and schedule) | `e2e/har/m1-sign-up-to-work-item.plane.har` |
+| M2: work-item list | group-by, filters, pagination | to be written with #46 | planned | planned | with its journey |
+| M2: work-item detail | description, comments, activity, attachments, labels, assignees, state, priority, dates | to be written with #46 | planned | planned | with its journey |
+| M2: project create and settings | project create and settings (M1 walks create only) | to be written with #46 | planned | planned | with its journey |
+| M2: workspace members | members, no invites | to be written with #46 | planned | planned | with its journey |
+| M2: in-app notifications | notifications | to be written with #46 | planned | planned | with its journey |
+| M2: global search | search (Q-R8) | to be written with #46 | planned | planned | with its journey |
+
+The M2 rows are the six screens of the F-X13 acceptance list, and #46 files each with its journey; each screen M3 adds is a row
+here when it is filed. The detail journey needs the collab server on the Plane leg (`/live`), and any journey that uploads
+needs the object store reachable from the browser: both are in `tools/e2e-plane/README.md`.
 
 ## Gaps to close
 
