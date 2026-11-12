@@ -44,6 +44,33 @@ impl Target {
         std::env::var("THRUST_EXPECT_CREATE_LIMIT").ok().and_then(|v| v.parse().ok()).unwrap_or(30)
     }
 
+    /// What one API key may do on `/api/v1` in a window of a minute: `THRUST_V1_RATE_LIMIT` on the native server and the in-isolate
+    /// Worker (Plane's default is 60 a minute), the `RL_V1` binding's limit on the Cloudflare Worker (`scripts/worker-dev.sh` writes it
+    /// into the config it starts from). `scripts/contract.sh` exports what it started the target with, as it does for the create
+    /// limit; the default is Plane's.
+    pub fn v1_limit() -> u32 {
+        std::env::var("THRUST_EXPECT_V1_LIMIT").ok().and_then(|v| v.parse().ok()).unwrap_or(60)
+    }
+
+    /// A second API key for a user who already has one (the fixture plants one per user), through the seed route. For the tests of what a
+    /// key is the unit of: its own allowance on `/api/v1`, and its own revocation.
+    pub async fn extra_key(&self, who: &User) -> User {
+        let key = format!("thrk_{}{}", uid().simple(), uid().simple());
+        let seeded = SeedFixture {
+            api_keys: vec![SeedApiKey {
+                token: key.clone(),
+                user_id: who.id,
+                label: "second".into(),
+                expires_at: None,
+                revoked: false,
+            }],
+            ..SeedFixture::default()
+        };
+        let r = self.admin_post("/internal/seed", &serde_json::to_value(&seeded).unwrap()).await;
+        assert_eq!(r.status(), 204, "seed a second key: {:?}", r.text().await);
+        User { key, ..who.clone() }
+    }
+
     pub async fn admin_post(&self, path: &str, body: &Value) -> reqwest::Response {
         self.http.post(self.url(path)).header("x-admin-token", &self.admin_token).json(body).send().await.unwrap()
     }
@@ -358,6 +385,26 @@ pub fn compat_issue(at: &At, id: &str) -> String {
     format!("{}{id}/", compat_issues(at))
 }
 
+/// `POST` a work item through Plane's internal route (S48) with `who`'s session as a bearer token. The tests that need a *session*
+/// as the credential (`/api/v1` takes API keys and nothing else) use it as their vehicle.
+pub async fn compat_create(t: &Target, who: &User, at: &At, body: Value) -> reqwest::Response {
+    t.http.post(t.url(&compat_issues(at))).bearer_auth(&who.token).json(&body).send().await.unwrap()
+}
+
+/// `GET` the project's work items through Plane's internal route (S47) with `who`'s session as a bearer token.
+pub async fn compat_list(t: &Target, who: &User, at: &At) -> reqwest::Response {
+    t.http.get(t.url(&compat_issues(at))).bearer_auth(&who.token).send().await.unwrap()
+}
+
+/// The names of a list that must answer 200 (S47's `results`), in the order Plane gives them.
+pub async fn compat_names(t: &Target, who: &User, at: &At) -> Vec<String> {
+    let r = compat_list(t, who, at).await;
+    assert_eq!(r.status(), 200, "list failed");
+    let body: Value = r.json().await.unwrap();
+    let results = body["results"].as_array().unwrap_or_else(|| panic!("a list has `results`: {body}"));
+    results.iter().map(|w| w["name"].as_str().expect("a work item has a name").to_string()).collect()
+}
+
 /// `{SLICE_PREFIX}/workspaces/{slug}/projects/{project}`.
 pub fn project_path(at: &At) -> String {
     format!("{SLICE_PREFIX}/workspaces/{}/projects/{}", at.slug, at.project)
@@ -418,6 +465,10 @@ pub async fn list(t: &Target, who: &User, at: &At, scope: Option<&str>) -> reqwe
     t.http.get(u).bearer_auth(&who.token).send().await.unwrap()
 }
 
+/// What the queue consumer wrote for a work item, through the slice's activity feed (a bearer session). It is how the outbox, redelivery,
+/// sweeper and cron tests see that an event was consumed, and nothing replaces it: `/api/v1` has no activity feed, and Plane's history
+/// (X02) holds only the rows an event names, which a `work_item.deleted` or an injected event names none of. The work item itself is
+/// made and deleted through `/api/v1`, which writes the same events.
 pub async fn activity(t: &Target, who: &User, at: &At, item: WorkItemId) -> Vec<Activity> {
     let r =
         t.http.get(t.url(&format!("{}/{}/activity", wi_path(at), item))).bearer_auth(&who.token).send().await.unwrap();
@@ -449,6 +500,11 @@ pub struct Issue(pub Value);
 impl Issue {
     pub fn id(&self) -> String {
         self.0["id"].as_str().expect("a work item has an id").to_string()
+    }
+
+    /// The id as the slice's types (the activity feed's) take it.
+    pub fn work_item_id(&self) -> WorkItemId {
+        WorkItemId(uuid::Uuid::parse_str(&self.id()).expect("a work item's id is a uuid"))
     }
 
     pub fn name(&self) -> &str {

@@ -7,10 +7,10 @@
 #     scripts/stage2-contract.sh [main|worker|bindings|cron|sweeper|panic]
 #
 # main      59 tests: the portable contract minus the 6 `oidc_` tests (they need the mock IdP on 127.0.0.1, which a
-#           deployed Worker cannot reach) (the deployed Worker's RL_CREATE binding must be 30 a minute, which
-#           wrangler.stage2.toml sets, and it needs a cheap argon2id cost, THRUST_ARGON2_M_KIB=64 THRUST_ARGON2_T=1
-#           THRUST_ARGON2_P=1, or every fixture seeds six passwords at the real cost). It refuses a THRUST_EXPECT_CREATE_LIMIT
-#           above 1000: the rate-limit test would send millions of creates to a Worker whose binding was raised for the bench
+#           deployed Worker cannot reach) (the deployed Worker's RL_CREATE binding must be 30 a minute and its RL_V1 binding 60,
+#           which wrangler.stage2.toml sets, and it needs a cheap argon2id cost, THRUST_ARGON2_M_KIB=64 THRUST_ARGON2_T=1
+#           THRUST_ARGON2_P=1, or every fixture seeds six passwords at the real cost). It refuses a THRUST_EXPECT_V1_LIMIT
+#           above 1000: the rate-limit test would send millions of creates to a Worker whose binding was raised for the engine pass
 # worker     1 test : Durable Object WebSocket hibernation + SQLite
 # bindings   4 tests: the probe routes' admin gate, and one real operation per binding (rate limit, secrets store, email)
 # cron       1 test : needs the Worker deployed with THRUST_OUTBOX_FASTPATH=off
@@ -41,15 +41,22 @@ THRUST_ADMIN_TOKEN="$(cat "$TOKEN_FILE")"
 export THRUST_ADMIN_TOKEN
 export THRUST_BASE_URL="$BASE"
 export THRUST_EXPECT_CREATE_LIMIT="${THRUST_EXPECT_CREATE_LIMIT:-30}"
+# What a key may do on /api/v1 in a minute: the RL_V1 binding's limit, which wrangler.stage2.toml sets to Plane's default of 60.
+export THRUST_EXPECT_V1_LIMIT="${THRUST_EXPECT_V1_LIMIT:-60}"
 export THRUST_STATE_SURVIVES_PANIC=1
-# `create_is_rate_limited_per_user` (in `main`, and alone as `ratelimit`) sends `limit` creates and then up to `limit + 1` more, one at
-# a time. Against a Worker whose binding was raised for the bench or the engine pass (1,000,000) it makes about two million requests and
-# does not end: it ran for 90 minutes on 2026-11-11 before it was stopped. Refuse a limit that large; those Workers need `main` run
-# without it, or a Worker deployed with the default 30.
+# `v1_requests_are_rate_limited_per_key` (in `main`, and alone as `ratelimit`) sends `limit` creates and then up to `limit + 1` more, one
+# at a time. Against a Worker whose binding was raised for the engine pass (1,000,000) it makes about two million requests and does not
+# end (the slice's create-limit test did the same on 2026-11-11: it ran for 90 minutes before it was stopped). Refuse a limit that
+# large; those Workers need `main` run without it, or a Worker deployed with the default 60. The slice's create limit (RL_CREATE) is
+# what the model tests' creates stay under, and is refused above 1000 for the same reason as before.
 case "$PASS" in
   main|ratelimit)
     [ "$THRUST_EXPECT_CREATE_LIMIT" -le 1000 ] 2>/dev/null || {
-      echo "[stage2/$PASS] REFUSED: THRUST_EXPECT_CREATE_LIMIT=$THRUST_EXPECT_CREATE_LIMIT is not a number of at most 1000 (the rate-limit test sends up to 2 x limit + 1 creates); deploy the Worker with the default 30" >&2
+      echo "[stage2/$PASS] REFUSED: THRUST_EXPECT_CREATE_LIMIT=$THRUST_EXPECT_CREATE_LIMIT is not a number of at most 1000; deploy the Worker with the default 30" >&2
+      exit 2
+    }
+    [ "$THRUST_EXPECT_V1_LIMIT" -le 1000 ] 2>/dev/null || {
+      echo "[stage2/$PASS] REFUSED: THRUST_EXPECT_V1_LIMIT=$THRUST_EXPECT_V1_LIMIT is not a number of at most 1000 (the rate-limit test sends up to 2 x limit + 1 creates); deploy the Worker with the default 60" >&2
       exit 2
     } ;;
 esac
@@ -92,7 +99,7 @@ case "$PASS" in
   engine)   EXPECT=4;  "$RS" cargo test --manifest-path "$M" -p thrust-contract-tests --test engine -- --test-threads=1 --nocapture >"$LOG.test.log" 2>&1 ;;
   # budget: the same test `contract.sh <target> budget` runs, against the deployed Worker (it is also one of the tests of `main`)
   budget)   EXPECT=1;  "$RS" cargo test --manifest-path "$M" -p thrust-contract-tests --test contract -- list_endpoints_stay_within_five_db_round_trips --nocapture >"$LOG.test.log" 2>&1 ;;
-  ratelimit) EXPECT=1; "$RS" cargo test --manifest-path "$M" -p thrust-contract-tests --test contract -- create_is_rate_limited_per_user --test-threads=1 --nocapture >"$LOG.test.log" 2>&1 ;;
+  ratelimit) EXPECT=1; "$RS" cargo test --manifest-path "$M" -p thrust-contract-tests --test contract -- v1_requests_are_rate_limited_per_key --test-threads=1 --nocapture >"$LOG.test.log" 2>&1 ;;
   *) echo "unknown pass $PASS" >&2; exit 2 ;;
 esac
 TEST_STATUS=$?

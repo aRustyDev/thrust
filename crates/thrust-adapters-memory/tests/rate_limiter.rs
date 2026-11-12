@@ -1,6 +1,7 @@
 //! `MemoryRateLimiter`, the limiter that counts exactly (issue #43). It is the native server's and the in-isolate Worker's
 //! limiter, and the exact one: the Cloudflare adapter is the Workers Rate Limiting binding, which is approximate (D-007), so the
-//! contract suite's `create_is_rate_limited_per_user` no longer asserts an exact limit and this is where the exact rule is held.
+//! contract suite's `v1_requests_are_rate_limited_per_key` (a key's allowance on `/api/v1`) does not assert an exact limit and this is
+//! where the exact rule is held.
 //!
 //! The rule, written out: time is cut into windows of `window_secs` seconds, aligned to the clock (window `n` is the seconds from
 //! `n * window_secs` up to but not including `(n + 1) * window_secs`). A key is allowed its first `limit` hits in a window, and

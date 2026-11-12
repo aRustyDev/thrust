@@ -293,41 +293,54 @@ async fn cross_tenant_access_is_rejected_and_has_no_effect() {
 
 /// The session row is read on every request (ADR-0052 round 29), so a revocation is visible to the very next request,
 /// on every target: there is no cache to wait out. The revocation goes through the test route until sign-out exists
-/// (#38).
+/// (#38). The session is a bearer token, which `/api/v1` does not take (it reads an API key and nothing else), so the requests are
+/// Plane's internal ones: its work items (S47, S48) and its "who am I" (S02).
 #[tokio::test]
 async fn a_revoked_session_is_rejected_on_the_next_request() {
     let t = t();
     let f = Fixture::seed(&t).await;
     let other = f.extra_member(&t).await;
-    assert_eq!(list(&t, &f.member_a, &f.a, None).await.status(), 200, "before the revoke");
+    assert_eq!(compat_list(&t, &f.member_a, &f.a).await.status(), 200, "before the revoke");
+    assert_eq!(t.me_status(&f.member_a.token).await, 200, "who am I, before the revoke");
     t.revoke_session(&f.member_a.token).await;
     // the next request, and every kind of route, not only the one used first
-    assert_eq!(list(&t, &f.member_a, &f.a, None).await.status(), 401, "list with the revoked token");
-    assert_eq!(create(&t, &f.member_a, &f.a, json!({"name": "x"})).await.status(), 401, "create with it");
+    assert_eq!(compat_list(&t, &f.member_a, &f.a).await.status(), 401, "list with the revoked token");
+    assert_eq!(compat_create(&t, &f.member_a, &f.a, json!({"name": "x"})).await.status(), 401, "create with it");
+    assert_eq!(t.me_status(&f.member_a.token).await, 401, "who am I, with it");
     // control: an unrevoked token on the same request still gets 200, so the 401 is the revoke, not the route
-    assert_eq!(list(&t, &other, &f.a, None).await.status(), 200, "an unrevoked token");
-    assert_eq!(list(&t, &f.admin_a, &f.a, None).await.status(), 200, "another unrevoked token");
+    assert_eq!(compat_list(&t, &other, &f.a).await.status(), 200, "an unrevoked token");
+    assert_eq!(compat_list(&t, &f.admin_a, &f.a).await.status(), 200, "another unrevoked token");
     // revoking again, or revoking a token that was never issued, changes nothing
     t.revoke_session(&f.member_a.token).await;
     t.revoke_session("never-issued").await;
-    assert_eq!(list(&t, &other, &f.a, None).await.status(), 200, "still unrevoked after the no-op revokes");
+    assert_eq!(compat_list(&t, &other, &f.a).await.status(), 200, "still unrevoked after the no-op revokes");
+    // and the refused create made nothing
+    assert!(compat_names(&t, &f.admin_a, &f.a).await.is_empty(), "a create with a revoked token made a work item");
 }
 
 /// A session belongs to a user, not to a workspace (ADR-0052 round 29): `dual` belongs to both workspaces and its one
-/// token works in each, with that workspace's project.
+/// token works in each, with that workspace's project. (Plane's internal routes: see the test above. Their answer to a caller who is
+/// not in the workspace is a 403, where the slice's was a 404.)
 #[tokio::test]
 async fn a_session_is_not_bound_to_a_workspace() {
     let t = t();
     let f = Fixture::seed(&t).await;
-    assert_eq!(list(&t, &f.dual, &f.a, None).await.status(), 200, "dual in workspace A");
-    assert_eq!(list(&t, &f.dual, &f.b, None).await.status(), 200, "dual in workspace B");
-    // the two workspaces stay two tenants: what dual creates in A is not in B
-    let item = create_ok(&t, &f.dual, &f.a, "from dual in A").await;
-    let in_b: Vec<WorkItem> = list(&t, &f.dual, &f.b, None).await.json().await.unwrap();
-    assert!(in_b.iter().all(|w| w.id != item.id), "an item of workspace A showed up in workspace B");
-    // control: a token of a user who belongs to one workspace only gets 404 on a project of the other
-    assert_eq!(list(&t, &f.admin_a, &f.b, None).await.status(), 404, "admin_a is not in workspace B");
-    assert_eq!(list(&t, &f.admin_b, &f.a, None).await.status(), 404, "admin_b is not in workspace A");
+    assert_eq!(compat_list(&t, &f.dual, &f.a).await.status(), 200, "dual in workspace A");
+    assert_eq!(compat_list(&t, &f.dual, &f.b).await.status(), 200, "dual in workspace B");
+    assert_eq!(
+        t.me_status(&f.dual.token).await,
+        200,
+        "the one token is one user's, whichever workspace is asked about"
+    );
+    // the two workspaces stay two tenants: what dual creates in A is in A, and not in B (B's own admin lists B's project, which sees
+    // every work item of it; dual is only a guest there)
+    let r = compat_create(&t, &f.dual, &f.a, json!({"name": "from dual in A"})).await;
+    assert_eq!(r.status(), 201, "dual is a member in A");
+    assert_eq!(compat_names(&t, &f.admin_a, &f.a).await, ["from dual in A"]);
+    assert!(compat_names(&t, &f.admin_b, &f.b).await.is_empty(), "an item of workspace A showed up in workspace B");
+    // control: a token of a user who belongs to one workspace only is refused on a project of the other
+    assert_eq!(compat_list(&t, &f.admin_a, &f.b).await.status(), 403, "admin_a is not in workspace B");
+    assert_eq!(compat_list(&t, &f.admin_b, &f.a).await.status(), 403, "admin_b is not in workspace A");
 }
 
 #[tokio::test]
@@ -393,39 +406,35 @@ async fn concurrent_creates_never_duplicate_a_sequence_id() {
     assert_eq!(v1_list_ok(&t, &f.admin_a, &f.a).await.len(), n, "and every create is a work item of the list");
 }
 
+/// A work item made and deleted through `/api/v1` puts one event each in the outbox, which reaches the queue consumer, which writes one
+/// activity row for each. The work item is `/api/v1`'s; what the consumer wrote is read from the slice's feed (see `activity`).
 #[tokio::test]
 async fn outbox_event_reaches_the_queue_consumer_exactly_once() {
     let t = t();
     let f = Fixture::seed(&t).await;
-    let item = create_ok(&t, &f.member_a, &f.a, "evented").await;
+    let item = v1_create_ok(&t, &f.member_a, &f.a, "evented").await;
+    let id = item.work_item_id();
 
     let acts = eventually("created activity row", Duration::from_secs(15), || async {
-        let a = activity(&t, &f.guest_a, &f.a, item.id).await;
+        let a = activity(&t, &f.guest_a, &f.a, id).await;
         (!a.is_empty()).then_some(a)
     })
     .await;
     assert_eq!(acts.len(), 1);
     assert_eq!(acts[0].verb, "created");
     assert_eq!(acts[0].actor_id, Some(f.member_a.id));
-    assert_eq!(acts[0].entity_id, item.id.as_uuid());
+    assert_eq!(acts[0].entity_id, id.as_uuid());
     assert_eq!(acts[0].workspace_id, f.ws_a);
 
     // delete -> second event -> second activity row; no duplicates of the first
-    let r = t
-        .http
-        .delete(t.url(&format!("{}/{}", wi_path(&f.a), item.id)))
-        .bearer_auth(&f.member_a.token)
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(r.status(), 204);
+    assert_eq!(v1_delete(&t, &f.member_a, &f.a, &item.id()).await.status(), 204);
     let acts = eventually("deleted activity row", Duration::from_secs(15), || async {
-        let a = activity(&t, &f.guest_a, &f.a, item.id).await;
+        let a = activity(&t, &f.guest_a, &f.a, id).await;
         (a.len() >= 2).then_some(a)
     })
     .await;
     tokio::time::sleep(Duration::from_millis(1500)).await;
-    let acts_later = activity(&t, &f.guest_a, &f.a, item.id).await;
+    let acts_later = activity(&t, &f.guest_a, &f.a, id).await;
     assert_eq!(acts.len(), 2);
     assert_eq!(acts_later.len(), 2, "redelivery must not duplicate activity rows");
     let mut verbs: Vec<_> = acts_later.iter().map(|a| a.verb.clone()).collect();
@@ -435,7 +444,7 @@ async fn outbox_event_reaches_the_queue_consumer_exactly_once() {
     // control: tenant B cannot read tenant A's activity
     let r = t
         .http
-        .get(t.url(&format!("{}/{}/activity", wi_path(&f.a), item.id)))
+        .get(t.url(&format!("{}/{}/activity", wi_path(&f.a), id)))
         .bearer_auth(&f.admin_b.token)
         .send()
         .await
@@ -450,9 +459,10 @@ async fn outbox_event_reaches_the_queue_consumer_exactly_once() {
 async fn redelivered_event_is_processed_once() {
     let t = t();
     let f = Fixture::seed(&t).await;
-    let item = create_ok(&t, &f.member_a, &f.a, "redelivery").await;
+    let item = v1_create_ok(&t, &f.member_a, &f.a, "redelivery").await;
+    let id = item.work_item_id();
     eventually("original activity row", Duration::from_secs(15), || async {
-        (activity(&t, &f.guest_a, &f.a, item.id).await.len() == 1).then_some(())
+        (activity(&t, &f.guest_a, &f.a, id).await.len() == 1).then_some(())
     })
     .await;
 
@@ -463,7 +473,7 @@ async fn redelivered_event_is_processed_once() {
             "workspace_id": f.ws_a,
             "event_type": format!("work_item.{verb}"),
             "entity_type": "work_item",
-            "entity_id": item.id,
+            "entity_id": id,
             "actor_id": f.member_a.id,
             "occurred_at": "2026-10-18T00:00:00Z",
             "payload": { "project_id": f.a.project, "changed_fields": ["name"] },
@@ -480,66 +490,83 @@ async fn redelivered_event_is_processed_once() {
     assert_eq!(r.status(), 202);
 
     eventually("both distinct injected events", Duration::from_secs(15), || async {
-        (activity(&t, &f.guest_a, &f.a, item.id).await.len() >= 3).then_some(())
+        (activity(&t, &f.guest_a, &f.a, id).await.len() >= 3).then_some(())
     })
     .await;
     tokio::time::sleep(Duration::from_millis(2000)).await; // give a (wrong) duplicate time to show up
-    let acts = activity(&t, &f.guest_a, &f.a, item.id).await;
+    let acts = activity(&t, &f.guest_a, &f.a, id).await;
     let mut verbs: Vec<_> = acts.iter().map(|a| a.verb.clone()).collect();
     verbs.sort();
     assert_eq!(verbs, ["created", "moved", "updated"], "the duplicated event must produce ONE activity row");
 }
 
-/// What every target's create limit has in common (issue #43, D-007). The limit is exact on the native server and on the
-/// in-isolate Worker, and approximate on the Cloudflare Worker, where it is a Workers Rate Limiting binding that counts per
-/// location (a binding of 3 has let 4 through). So the test holds only what is true of all of them:
+/// What every target's allowance for an API key on `/api/v1` has in common (D-007). A key may make so many requests a minute (Plane's
+/// default is 60, `THRUST_V1_RATE_LIMIT`; on the Cloudflare Worker it is the `RL_V1` binding's). The limit is exact on the native
+/// server and on the in-isolate Worker, and approximate on the Cloudflare Worker, where it is a Workers Rate Limiting binding that
+/// counts per location (a binding of 3 has let 4 through). So the test holds only what is true of all of them:
 ///
-/// * the first `limit` creates of a user pass;
+/// * the first `limit` creates with a key pass;
 /// * a 429 with a `Retry-After` of at least a second comes within `2 x limit + 1` creates. A fixed window aligned to the
 ///   clock lets a burst that straddles a boundary have up to twice the limit, and an approximate one a little more, so
 ///   this is the latest a refusal can be owed however the burst falls on the windows, and the test needs no clock;
-/// * the limit is per user: another member's create is not refused.
+/// * a refused create makes nothing: the work items of the project are the creates that passed, and no more;
+/// * the allowance is the key's: another user's key is not refused, and neither is a second key of the same user.
 ///
-/// It used to assert the exact rule (`limit` creates pass and the next one is refused, repeating a burst that crossed a
-/// window boundary), which the binding does not promise. The exact rule is held where a limiter does promise it, by the
-/// `prop_` tests of `MemoryRateLimiter` in `thrust-adapters-memory`. A limit that is never reached (the binding raised
-/// above `2 x limit + 1`) fails this test: that is its control.
+/// This was the slice's create limit (`RL_CREATE`: a count of a user's creates on the slice's route), which Plane does not have. Its
+/// throttle is the key's and counts every request, so the test moved to that one, and the slice's limit is no longer held over HTTP.
+/// The test used to assert the exact rule (`limit` creates pass and the next one is refused, repeating a burst that crossed a window
+/// boundary), which the binding does not promise. The exact rule is held where a limiter does promise it, by the `prop_` tests of
+/// `MemoryRateLimiter` in `thrust-adapters-memory`. A limit that is never reached (the binding raised above `2 x limit + 1`) fails
+/// this test: that is its control.
 #[tokio::test]
-async fn create_is_rate_limited_per_user() {
+async fn v1_requests_are_rate_limited_per_key() {
     let t = t();
     let f = Fixture::seed(&t).await;
-    let limit = Target::create_limit();
+    let limit = Target::v1_limit();
     let user = f.extra_member(&t).await;
+    let mut made = 0usize;
     for i in 0..limit {
-        let r = create(&t, &user, &f.a, json!({"name": format!("r{i}")})).await;
+        let r = v1_create(&t, &user, &f.a, json!({"name": format!("r{i}")})).await;
         assert_eq!(r.status(), 201, "request {i} of {limit} must pass");
+        made += 1;
     }
     let mut refused = None;
     for i in limit..=(2 * limit) {
-        let r = create(&t, &user, &f.a, json!({"name": format!("r{i}")})).await;
+        let r = v1_create(&t, &user, &f.a, json!({"name": format!("r{i}")})).await;
         if r.status() == 429 {
             refused = Some(r);
             break;
         }
         // anything but a pass or a refusal (a 500 from the limiter, say) is not "not limited yet"
         assert_eq!(r.status(), 201, "request {i}: not limited yet, so it must be created");
+        made += 1;
     }
     let r =
         refused.unwrap_or_else(|| panic!("none of the first {} creates was limited (limit {limit})", 2 * limit + 1));
     let retry_after = r.headers().get("retry-after").expect("a 429 carries Retry-After");
     let secs: u64 = retry_after.to_str().unwrap().parse().expect("Retry-After is a number of seconds");
     assert!(secs >= 1, "Retry-After must be at least a second, not {secs}");
-    // control: the limit is per user, another member is unaffected
+    // control: the refused create is not a work item
+    assert_eq!(v1_list_all(&t, &f.admin_a, &f.a).await.len(), made, "a refused create made a work item");
+    // control: the limit is the key's, so another user's key is unaffected ...
     let other = f.extra_member(&t).await;
-    assert_eq!(create(&t, &other, &f.a, json!({"name": "fine"})).await.status(), 201);
+    assert_eq!(v1_create(&t, &other, &f.a, json!({"name": "fine"})).await.status(), 201, "another user's key");
+    // ... and so is a second key of the user whose first one is spent: the allowance is not the user's
+    let second = t.extra_key(&user).await;
+    assert_eq!(
+        v1_create(&t, &second, &f.a, json!({"name": "also fine"})).await.status(),
+        201,
+        "the same user's other key"
+    );
 }
 
 #[tokio::test]
 async fn attachments_roundtrip_with_authz() {
     let t = t();
     let f = Fixture::seed(&t).await;
-    let item = create_ok(&t, &f.member_a, &f.a, "with file").await;
-    let path = format!("{}/{}/attachments/notes.txt", wi_path(&f.a), item.id);
+    // the attachments are the slice's (nothing replaces the route); the work item they are put on is `/api/v1`'s
+    let item = v1_create_ok(&t, &f.member_a, &f.a, "with file").await;
+    let path = format!("{}/{}/attachments/notes.txt", wi_path(&f.a), item.id());
     let payload = b"hello r2 \x00\x01\x02 binary-safe".to_vec();
 
     // guest cannot write (control)
@@ -562,12 +589,12 @@ async fn attachments_roundtrip_with_authz() {
     assert_eq!(r.headers().get("content-type").unwrap(), "application/x-thrust");
     assert_eq!(r.bytes().await.unwrap().to_vec(), payload);
     // unknown name -> 404 (control: the 200 above is not "always 200")
-    let other = format!("{}/{}/attachments/missing.txt", wi_path(&f.a), item.id);
+    let other = format!("{}/{}/attachments/missing.txt", wi_path(&f.a), item.id());
     assert_eq!(t.http.get(t.url(&other)).bearer_auth(&f.guest_a.token).send().await.unwrap().status(), 404);
     // other tenant cannot read it
     assert_eq!(t.http.get(t.url(&path)).bearer_auth(&f.admin_b.token).send().await.unwrap().status(), 404);
     // path traversal in the name is rejected
-    let evil = format!("{}/{}/attachments/..%2Fescape", wi_path(&f.a), item.id);
+    let evil = format!("{}/{}/attachments/..%2Fescape", wi_path(&f.a), item.id());
     let st = t.http.put(t.url(&evil)).bearer_auth(&f.member_a.token).body("x").send().await.unwrap().status();
     assert!(st == 400 || st == 404, "traversal name must not be accepted, got {st}");
     // oversize is rejected before touching storage (limit is 5 MiB)
@@ -625,7 +652,7 @@ async fn invalid_input_is_a_client_error() {
 async fn panic_is_contained_and_the_target_keeps_serving() {
     let t = t();
     let f = Fixture::seed(&t).await;
-    let before = create_ok(&t, &f.member_a, &f.a, "before-panic").await;
+    let before = v1_create_ok(&t, &f.member_a, &f.a, "before-panic").await;
 
     match t.http.get(t.url("/_test/panic")).send().await {
         Ok(r) => {
@@ -649,11 +676,12 @@ async fn panic_is_contained_and_the_target_keeps_serving() {
     assert!(ok, "target did not recover after a panic");
 
     let survives = std::env::var("THRUST_STATE_SURVIVES_PANIC").map(|v| v != "0").unwrap_or(true);
-    let r = list(&t, &f.member_a, &f.a, None).await;
+    let r = v1_list(&t, &f.member_a, &f.a).await;
     if survives {
         assert_eq!(r.status(), 200, "durable state must survive a panic");
-        let items: Vec<WorkItem> = r.json().await.unwrap();
-        assert!(items.iter().any(|i| i.id == before.id), "row written before the panic is gone");
+        let body: Value = r.json().await.unwrap();
+        let items = body["results"].as_array().expect("a list has `results`");
+        assert!(items.iter().any(|i| i["id"] == before.0["id"]), "row written before the panic is gone");
     } else {
         eprintln!(
             "PANIC-OBSERVATION: in-isolate state after the panic: HTTP {} (loss is expected for this target)",
@@ -668,6 +696,10 @@ async fn panic_is_contained_and_the_target_keeps_serving() {
 /// per request): none. Worker (panic=abort, whole isolate reset): suspended requests can fail,
 /// and on the in-isolate memory set all state is lost (401s afterwards).
 /// The numbers are printed as observations; the assertion is that the target recovers.
+///
+/// The request is Plane's internal list of a project's work items with a session as the bearer token, and not `/api/v1`'s: a key's
+/// allowance there is 60 requests a minute, which 16 clients spend within a second, and every request refused after that would count
+/// as a failure the panic did not cause.
 #[tokio::test]
 async fn blast_radius_of_one_panic() {
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -683,7 +715,7 @@ async fn blast_radius_of_one_panic() {
         let (t, f, stop, ok, bad) = (t.clone(), f.clone(), stop.clone(), ok.clone(), bad.clone());
         tasks.push(tokio::spawn(async move {
             while !stop.load(Ordering::Relaxed) {
-                let r = t.http.get(t.url(&wi_path(&f.a))).bearer_auth(&f.member_a.token).send().await;
+                let r = t.http.get(t.url(&compat_issues(&f.a))).bearer_auth(&f.member_a.token).send().await;
                 match r {
                     Ok(r) if r.status() == 200 => ok.fetch_add(1, Ordering::Relaxed),
                     _ => bad.fetch_add(1, Ordering::Relaxed),
@@ -724,12 +756,13 @@ async fn sweeper_publishes_rows_the_fast_path_did_not() {
     let t = t();
     let f = Fixture::seed(&t).await;
     let before = t.outbox_depth().await;
-    let item = create_ok(&t, &f.member_a, &f.a, "swept").await;
+    let item = v1_create_ok(&t, &f.member_a, &f.a, "swept").await;
+    let id = item.work_item_id();
     assert_eq!(t.outbox_depth().await, before + 1, "row must sit in the outbox");
     // control: with the fast path off nothing may have delivered the event yet
     tokio::time::sleep(Duration::from_secs(2)).await;
     assert!(
-        activity(&t, &f.guest_a, &f.a, item.id).await.is_empty(),
+        activity(&t, &f.guest_a, &f.a, id).await.is_empty(),
         "an activity row appeared without the sweeper: the fast path is not actually off, this test would be vacuous"
     );
     // run the sweeper (what cron does)
@@ -738,7 +771,7 @@ async fn sweeper_publishes_rows_the_fast_path_did_not() {
     let rep: Value = r.json().await.unwrap();
     assert!(rep["published"].as_u64().unwrap() >= 1, "sweeper published nothing: {rep}");
     let acts = eventually("activity after sweep", Duration::from_secs(15), || async {
-        let a = activity(&t, &f.guest_a, &f.a, item.id).await;
+        let a = activity(&t, &f.guest_a, &f.a, id).await;
         (!a.is_empty()).then_some(a)
     })
     .await;

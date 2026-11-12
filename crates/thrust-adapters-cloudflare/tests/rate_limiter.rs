@@ -2,7 +2,8 @@
 //! binding's answer means to the port, and which windows the binding can count over.
 //!
 //! The binding itself is a JS object, so `CfRateLimiter::hit` cannot run off wasm32; it runs in the `worker-cf` cells of the
-//! contract suite (`create_is_rate_limited_per_user` and every sign-in), which would fail if a key reached no binding. What is
+//! contract suite (`v1_requests_are_rate_limited_per_key`, for `RL_V1`, and every sign-in, for `RL_SIGNIN`), which would fail if a key
+//! reached no binding. The slice's create limit (`RL_CREATE`) is no longer held there (G-26 in `docs/src/testing/status.md`). What is
 //! here is what decides the answer once the binding has spoken.
 #![allow(
     clippy::unwrap_used,

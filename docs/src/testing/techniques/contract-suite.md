@@ -27,14 +27,20 @@ with a fixture made first as the control) and nothing more; the positive path is
 - `crates/thrust-contract-tests/tests/contract.rs`: the portable suite. Its work-item tests (sequence and `sort_order`,
   the list, soft delete, tenancy, the external key, concurrent creates, invalid input, the missing and the invalid key)
   run over `/api/v1` and answer as Plane does: the fixture plants an API key for every user (`User.key`, sent as
-  `X-Api-Key`), a stranger is a 403, a list is newest first, and a member deletes only what they made. The tests of the
-  slice's own routes (sessions, the create limit, attachments, the outbox) still run over `/api/_slice`, until the
-  routes that replace them exist (G-26 in [status](../status.md)). The create limit's test,
-  `create_is_rate_limited_per_user`, holds only what every limiter promises (the first `limit` creates pass, a 429 with a
-  `Retry-After` comes within `2 x limit + 1`, and the limit is per user), because the Cloudflare Worker's limiter is a
-  binding that counts approximately (D-007, [status](../status.md) D-18). The exact rule is tested where a limiter
-  promises it, on `MemoryRateLimiter`. On `worker-cf` the target's limit is the `RL_CREATE` binding's, which
-  `scripts/worker-dev.sh` writes into a throwaway copy of the config from the pass's `RATE_LIMIT`.
+  `X-Api-Key`), a stranger is a 403, a list is newest first, and a member deletes only what they made. The tests whose
+  subject is a slice-only behaviour (the slice's activity feed, attachments, the session routes that no Plane route
+  replaces) still run over `/api/_slice`, until the routes that replace them exist (G-26 in [status](../status.md)). The
+  tests that only need a work item as a vehicle (the outbox, redelivery, sweeper, cron, panic and blast-radius tests, the
+  key's allowance, the bench) make it through `/api/v1`, or through Plane's internal routes where the credential is a
+  session (the two session tests, the blast radius); what the queue consumer wrote is still read from the slice's feed.
+  The allowance's test, `v1_requests_are_rate_limited_per_key`, holds only what every limiter promises (the first `limit`
+  creates with a key pass, a 429 with a `Retry-After` comes within `2 x limit + 1`, a refused create makes nothing, and the
+  limit is the key's: another user's key and a second key of the same user are not limited), because the Cloudflare
+  Worker's limiter is a binding that counts approximately (D-007, [status](../status.md) D-18). The exact rule is tested
+  where a limiter promises it, on `MemoryRateLimiter`. On `worker-cf` the target's limit is the `RL_V1` binding's, which
+  `scripts/worker-dev.sh` writes into a throwaway copy of the config from `THRUST_V1_RATE_LIMIT`; `scripts/contract.sh`
+  tells the suite the limit it started the target with (`THRUST_EXPECT_V1_LIMIT`), so a target started with another one
+  fails the test: that is its control.
 - `crates/thrust-contract-tests/tests/model/mod.rs`: its generated part, compiled into the same binary and run in the
   `main` pass: random operation sequences, events included, against a reference [model](model-based.md), every
   caller × project × route against the access table, and the generator coverage control. Its

@@ -53,16 +53,23 @@ LOGDIR="${THRUST_LOGDIR:-$ROOT/target/contract-logs}"
 mkdir -p "$LOGDIR"
 LOG="$LOGDIR/$TARGET-$PASS"
 RATE_LIMIT=30
+# What a key may do on /api/v1 in a minute: Plane's default, which the target applies when THRUST_V1_RATE_LIMIT is not set. The suite is
+# told it as THRUST_EXPECT_V1_LIMIT, as it is told the create limit. A control run that starts the target with another
+# THRUST_V1_RATE_LIMIT in the environment, and not this script, makes `v1_requests_are_rate_limited_per_key` fail: the target then
+# lets more through than the suite expects.
+V1_LIMIT=60
 # The engine pass makes thousands of creates per user per window, and of `/api/v1` requests per key (it goes through `/api/v1`): the
 # main pass's limit and Plane's default of 60 a minute would refuse them.
 if [ "${2:-main}" = "engine" ]; then
   RATE_LIMIT=1000000
+  V1_LIMIT=1000000
   export THRUST_V1_RATE_LIMIT=1000000/minute
 fi
 # The oracle pass fuzzes /api/v1 with one key: Plane's default of 60 requests a minute would answer nearly all of them 429. The
 # other passes run with the default, as production does.
 if [ "${2:-main}" = "oracle" ]; then
   export THRUST_V1_RATE_LIMIT=1000000/minute
+  V1_LIMIT=1000000
   # ... and its creates are far more than the main pass's per-user create limit allows
   RATE_LIMIT=1000000
 fi
@@ -111,6 +118,7 @@ THRUST_ADMIN_TOKEN="$(openssl rand -hex 16)"
 export THRUST_ADMIN_TOKEN
 export THRUST_BASE_URL="http://127.0.0.1:$PORT"
 export THRUST_EXPECT_CREATE_LIMIT="$RATE_LIMIT"
+export THRUST_EXPECT_V1_LIMIT="$V1_LIMIT"
 export THRUST_ARGON2_M_KIB="$ARGON2_M_KIB" THRUST_ARGON2_T="$ARGON2_T" THRUST_ARGON2_P="$ARGON2_P"
 export THRUST_SIGNIN_RATE_LIMIT="$SIGNIN_LIMIT"
 # The mock OIDC identity provider: the suite serves it on 127.0.0.1:$THRUST_MOCK_IDP_PORT from the test process, and the
@@ -172,9 +180,10 @@ trap cleanup EXIT INT TERM
 # native-pg  = self-hosted set: Postgres (deadpool) + in-process stand-ins for queue/KV/blob/limiter
 # worker-cf  = Cloudflare set: Postgres via Hyperdrive, Queues, R2, the Workers Rate Limiting bindings, Durable Objects, cron.
 #              The create and sign-in limits are those bindings' limits, which scripts/worker-dev.sh writes from RATE_LIMIT and
-#              SIGNIN_LIMIT. The control for the create-limit test is THRUST_WORKER_CREATE_LIMIT=<above 2 x 30 + 1>, set in the
-#              environment of this script: the binding then lets more through than the suite expects, and
-#              `create_is_rate_limited_per_user` must fail (issue #43).
+#              SIGNIN_LIMIT, and `RL_V1`'s from THRUST_V1_RATE_LIMIT. The control for the key's-allowance test is
+#              THRUST_V1_RATE_LIMIT=<above 2 x 60 + 1>/minute, set in the environment of this script (it is not the one the suite
+#              is told, V1_LIMIT): the binding then lets more through than the suite expects, and
+#              `v1_requests_are_rate_limited_per_key` must fail (issue #43).
 case "$TARGET" in
   native-memory) KIND=native; ADAPTERS=memory ;;
   native-pg) KIND=native; ADAPTERS=postgres ;;

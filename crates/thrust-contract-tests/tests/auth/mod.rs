@@ -465,9 +465,11 @@ async fn create_key_ok(t: &Target, who: &User, body: Value) -> CreatedApiKey {
     r.json().await.unwrap()
 }
 
-/// The status of a work-item list made with `X-Api-Key: key` (a header value that is `None` sends no header).
+/// The status of a work-item list made with `X-Api-Key: key` (a header value that is `None` sends no header). It is Plane's internal
+/// route (S47), which takes a key through `thrust_api::Authed`, the extractor the slice's routes use: the keys are the slice's
+/// (`/api-keys`) and what they authenticate on is not.
 async fn list_with_key(t: &Target, at: &At, key: Option<&str>) -> u16 {
-    let mut r = t.http.get(t.url(&wi_path(at)));
+    let mut r = t.http.get(t.url(&compat_issues(at)));
     if let Some(k) = key {
         r = r.header(API_KEY_HEADER, k);
     }
@@ -505,14 +507,14 @@ async fn an_api_key_is_shown_once_and_authenticates_as_x_api_key() {
     assert_eq!(list_with_key(&t, &f.a, Some(&key.token)).await, 200);
     let r = t
         .http
-        .post(t.url(&wi_path(&f.a)))
+        .post(t.url(&compat_issues(&f.a)))
         .header(API_KEY_HEADER, &key.token)
         .json(&json!({"name": "by key"}))
         .send()
         .await
         .unwrap();
     assert_eq!(r.status(), 201);
-    assert_eq!(r.json::<WorkItem>().await.unwrap().created_by, Some(f.member_a.id));
+    assert_eq!(r.json::<Value>().await.unwrap()["created_by"], json!(f.member_a.id.0));
     let me = t.http.get(auth_url(&t, "/session")).header(API_KEY_HEADER, &key.token).send().await.unwrap();
     assert_eq!(
         me.json::<SessionInfo>().await.unwrap(),
@@ -522,7 +524,7 @@ async fn an_api_key_is_shown_once_and_authenticates_as_x_api_key() {
     let guest_key = create_key_ok(&t, &f.guest_a, json!({})).await;
     let r = t
         .http
-        .post(t.url(&wi_path(&f.a)))
+        .post(t.url(&compat_issues(&f.a)))
         .header(API_KEY_HEADER, &guest_key.token)
         .json(&json!({"name": "x"}))
         .send()
@@ -566,7 +568,7 @@ async fn an_api_key_is_shown_once_and_authenticates_as_x_api_key() {
     );
     assert_eq!(with_key(Method::GET, keys_url(&t)).send().await.unwrap().status(), 401);
     assert_eq!(with_key(Method::POST, auth_url(&t, "/sign-out-all")).send().await.unwrap().status(), 401);
-    assert_eq!(list(&t, &f.member_a, &f.a, None).await.status(), 200, "the owner's session was not ended");
+    assert_eq!(compat_list(&t, &f.member_a, &f.a).await.status(), 200, "the owner's session was not ended");
     // control: minting a key with the cookie is a mutation, so it needs the CSRF token
     let s = t.sign_in(&f.admin_a).await;
     let r = as_browser(&t, Method::POST, keys_url(&t), &s, Csrf::Absent).json(&json!({})).send().await.unwrap();
@@ -613,7 +615,7 @@ async fn a_revoked_key_is_rejected_on_the_next_request_with_403() {
     assert_eq!(list_with_key(&t, &f.a, Some(&a.token)).await, 403, "the revoked key");
     let r = t
         .http
-        .post(t.url(&wi_path(&f.a)))
+        .post(t.url(&compat_issues(&f.a)))
         .header(API_KEY_HEADER, &a.token)
         .json(&json!({"name": "x"}))
         .send()
