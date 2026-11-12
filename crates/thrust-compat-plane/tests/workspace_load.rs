@@ -1,4 +1,4 @@
-//! What the workspace-load and home routes (S17, S19 to S26) derive from rows and callers that the recorded journey never has: a
+//! What the workspace-load and home routes (S17, S19 to S26, and X07, the stickies) derive from rows and callers that the recorded journey never has: a
 //! guest, a member who has been deactivated, a stranger, a workspace with projects. The pin's answers for those come from its
 //! source (the journey has one admin and no project), so these tests state the rules instead of replaying a recording.
 //!
@@ -25,7 +25,7 @@ use thrust_contracts::chrono::SecondsFormat;
 use thrust_contracts::*;
 use thrust_ports::*;
 
-/// The nine routes, by the row of the inventory.
+/// The ten routes, by the row of the inventory (X07, the stickies, is one the 48 rows lack).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Row {
     S17,
@@ -37,6 +37,7 @@ enum Row {
     S24,
     S25,
     S26,
+    X07,
 }
 
 impl Row {
@@ -51,6 +52,7 @@ impl Row {
             Row::S24 => "home-preferences/",
             Row::S25 => "quick-links/",
             Row::S26 => "recent-visits/",
+            Row::X07 => "stickies/",
         };
         format!("/api/workspaces/{slug}/{tail}")
     }
@@ -78,6 +80,13 @@ impl Row {
                 body == &json!({"total_unread_notifications_count": 0, "mention_unread_notifications_count": 0})
             }
             Row::S24 => body.as_array().is_some_and(|a| a.len() == 3),
+            // a page with no rows: the paginator's whole envelope, which the fixture and the paging test below state
+            Row::X07 => {
+                body["results"] == json!([])
+                    && body["total_count"] == 0
+                    && body["count"] == 0
+                    && body["total_pages"] == 0
+            }
         }
     }
 }
@@ -106,7 +115,8 @@ fn expected(row: Row, caller: Caller) -> Option<(u16, Value)> {
 
 #[rstest]
 fn who_may_ask_a_workspace_load_row_and_what_the_pin_answers_the_rest(
-    #[values(Row::S17, Row::S19, Row::S20, Row::S21, Row::S22, Row::S23, Row::S24, Row::S25, Row::S26)] row: Row,
+    #[values(Row::S17, Row::S19, Row::S20, Row::S21, Row::S22, Row::S23, Row::S24, Row::S25, Row::S26, Row::X07)]
+    row: Row,
     #[values(Caller::Anonymous, Caller::Stranger, Caller::Deactivated, Caller::Guest, Caller::Member, Caller::Admin)]
     caller: Caller,
 ) {
@@ -361,4 +371,86 @@ fn a_second_visit_is_answered_what_the_first_was(#[values(Row::S21, Row::S22, Ro
         assert_eq!(ask("two@example.test", "visited"), first);
         assert_eq!(ask("one@example.test", "elsewhere"), first);
     }
+}
+
+// --- the stickies' paging and the cover pictures (X07, X08) ---------------------------------------------------------------------
+
+proptest! {
+    #![proptest_config(proptest_config(64))]
+
+    /// A page of stickies is the paginator's envelope over no rows, whatever size, page and search the request names: the cursors
+    /// name the size (the request's, or the pin's 20 for this list) and the pages before and after, there are no results and no
+    /// pages, and only a page after the first has a page before it. (`paginate`, `apps/api/plane/utils/paginator.py:655`.)
+    #[test]
+    fn prop_an_empty_page_of_stickies_names_the_pages_around_it(
+        size in prop::option::of(1i64..=1000),
+        page in prop::option::of(0i64..500),
+        query in prop::option::of("[a-z]{0,12}"),
+    ) {
+        let (router, db, jar) = world(&["caller@example.test"]);
+        let caller = user_id(&db, "caller@example.test");
+        make_workspace(&db, 0xA, "stuck", caller, Role::Member);
+        let want_size = size.unwrap_or(20);
+        let mut asked = Vec::new();
+        if let Some(s) = size {
+            asked.push(format!("per_page={s}"));
+        }
+        // a cursor names the size it was made with
+        if let Some(p) = page {
+            asked.push(format!("cursor={want_size}:{p}:0"));
+        }
+        if let Some(q) = &query {
+            asked.push(format!("query={q}"));
+        }
+        let r = call(&router, &jar, "caller@example.test", "GET", &format!("/api/workspaces/stuck/stickies/?{}", asked.join("&")), Value::Null);
+        prop_assert_eq!(&r["status"], &json!(200), "{}", r);
+        let at = page.unwrap_or(0);
+        prop_assert_eq!(&r["body"], &json!({
+            "grouped_by": null,
+            "sub_grouped_by": null,
+            "total_count": 0,
+            "next_cursor": format!("{want_size}:{}:0", at + 1),
+            "prev_cursor": format!("{want_size}:{}:1", at - 1),
+            "next_page_results": false,
+            "prev_page_results": at > 0,
+            "count": 0,
+            "total_pages": 0,
+            "total_results": 0,
+            "extra_stats": null,
+            "results": [],
+        }));
+    }
+}
+
+/// The pin's decorator answers before its paginator reads a parameter, so a caller who may not ask is refused, not told that the page
+/// they asked for is no page. (S47's own rule, which this list shares.)
+#[rstest]
+fn a_caller_who_may_not_ask_is_refused_before_the_page_is_read(
+    #[values("per_page=x", "per_page=1001", "per_page=0", "cursor=garbage", "cursor=20:-1:0")] asked: &str,
+    #[values(Caller::Anonymous, Caller::Stranger)] caller: Caller,
+) {
+    let (router, db, jar) = world(&["owner@example.test", "stranger@example.test"]);
+    make_workspace(&db, 0xA, "owned", user_id(&db, "owner@example.test"), Role::Admin);
+    let who = if caller == Caller::Anonymous { "" } else { "stranger@example.test" };
+    let r = call(&router, &jar, who, "GET", &format!("/api/workspaces/owned/stickies/?{asked}"), Value::Null);
+    let (status, body) = expected(Row::X07, caller).expect("a refusal");
+    assert_eq!((r["status"].clone(), r["body"].clone()), (json!(status), body), "{caller:?} {asked}");
+}
+
+/// X08 lists no pictures for anyone who is signed in, in a workspace or not, whatever they search for (the pin answers so before it
+/// reads a parameter when no Unsplash key is configured), and refuses a request with no session with the pin's 401.
+#[rstest]
+fn unsplash_lists_nothing_to_anyone_signed_in_and_is_refused_to_nobody_else(
+    #[values("", "?query=mountain&page=2&per_page=5", "?per_page=x")] asked: &str,
+    #[values(false, true)] signed_in: bool,
+) {
+    let (router, _db, jar) = world(&["someone@example.test"]);
+    let who = if signed_in { "someone@example.test" } else { "" };
+    let r = call(&router, &jar, who, "GET", &format!("/api/unsplash/{asked}"), Value::Null);
+    let want = if signed_in {
+        (json!(200), json!([]))
+    } else {
+        (json!(401), json!({"detail": "Authentication credentials were not provided."}))
+    };
+    assert_eq!((r["status"].clone(), r["body"].clone()), want, "{asked}");
 }

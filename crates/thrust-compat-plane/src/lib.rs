@@ -29,12 +29,14 @@ use axum::Router;
 mod assets;
 mod auth;
 mod error;
+mod external;
 mod fields;
 #[cfg(test)]
 mod fields_tests;
 mod instance;
 mod issue_history;
 mod issues;
+mod page;
 mod projects;
 #[cfg(test)]
 mod projects_tests;
@@ -45,7 +47,8 @@ mod workspaces;
 pub use error::PlaneError;
 
 /// The route group. Row ids (`S01`...) are those of `research/0003` section 8.1; `X04` is a route the stock onboarding
-/// calls that the inventory does not list, `X05` is the address a project's cover is shown at, and `X06` is sign-out.
+/// calls that the inventory does not list, `X05` is the address a project's cover is shown at, `X06` is sign-out, and `X07` and
+/// `X08` are the two stubs (D-021) the first journey's home page and project form call: the stickies list and the cover pictures.
 pub fn routes() -> Router {
     Router::new()
         .route("/api/instances/", get(instance::get_instance)) // S01
@@ -91,6 +94,8 @@ pub fn routes() -> Router {
         .route("/api/workspaces/{slug}/home-preferences/", get(workspace_load::home_preferences)) // S24
         .route("/api/workspaces/{slug}/quick-links/", get(workspace_load::quick_links)) // S25
         .route("/api/workspaces/{slug}/recent-visits/", get(workspace_load::recent_visits)) // S26
+        .route("/api/workspaces/{slug}/stickies/", get(workspace_load::stickies)) // X07
+        .route("/api/unsplash/", get(external::unsplash)) // X08
         .route("/api/assets/v2/workspaces/{slug}/", post(assets::create)) // S28
         .route("/api/assets/v2/workspaces/{slug}/{asset}/", patch(assets::confirm).get(assets::redirect)) // S29, S33
         .route("/api/assets/v2/workspaces/{slug}/projects/{project}/{entity}/bulk/", post(assets::bulk)) // S31

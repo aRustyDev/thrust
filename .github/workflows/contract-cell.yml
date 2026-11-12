@@ -13,7 +13,7 @@ on:
         type: string
         required: true
       pass:
-        description: main | sweeper | panic | cron | csrfoff | worker | bindings | oracle
+        description: main | sweeper | panic | cron | csrfoff | worker | bindings | oracle | e2e
         type: string
         required: true
 
@@ -51,11 +51,36 @@ jobs:
           version: "0.12.18"
           enable-cache: false
 
+      # The e2e pass drives the stock app in Chromium (scripts/e2e.sh): Node and pnpm at the versions web/ pins, the app built, the
+      # journey's own dependencies at their lockfile, and the browser with the system libraries it needs. Only that pass needs them.
+      # Dependency scripts stay off, as in the `web` job: the build does not need them.
+      - name: Node (e2e cell)
+        if: inputs.pass == 'e2e'
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: web/.node-version
+
+      - name: Build the app, and get the browser (e2e cell)
+        if: inputs.pass == 'e2e'
+        env:
+          TURBO_TELEMETRY_DISABLED: "1"
+          DO_NOT_TRACK: "1"
+        run: |
+          want="$(node -p "require('./web/package.json').packageManager.split('@')[1].split('+')[0]")"
+          npm install --global "pnpm@$want"
+          test "$(pnpm --dir web --version)" = "$want"
+          pnpm --dir web install --frozen-lockfile --ignore-scripts
+          pnpm --dir web exec turbo run build --filter=web
+          test -s web/apps/web/build/client/index.html
+          pnpm --dir e2e install --frozen-lockfile --ignore-scripts
+          pnpm --dir e2e exec playwright install --with-deps chromium
+
       - name: Preflight - host tools scripts/contract.sh relies on
         run: |
           missing=""
           tools="curl openssl lsof pgrep docker"
           [ "$CELL_PASS" = oracle ] && tools="$tools uv"
+          [ "$CELL_PASS" = e2e ] && tools="$tools node pnpm"
           for tool in $tools; do
             command -v "$tool" > /dev/null 2>&1 || missing="$missing $tool"
           done

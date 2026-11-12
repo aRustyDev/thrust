@@ -1629,6 +1629,37 @@ def step_x06(base, pacer):
     ]
 
 
+def step_x07(base, pacer):
+    """GET .../workspaces/{slug}/stickies/ : not one of the 48 rows, but what the workspace home page asks for. The caller's own sticky
+    notes, a page at a time (the pin's paginator, 20 to a page); the journey never makes one, so every page is empty and what is
+    recorded is the envelope, the paginator's own refusals, and who may ask. It runs before the second account joins the workspace."""
+    get = lambda who, query="", slug=WS_ONE: api(base, pacer, who, "GET", f"/api/workspaces/{slug}/stickies/{query}")  # noqa: E731
+    return [
+        ("the empty page", get(J)),
+        ("a page size", get(J, "?per_page=5")),
+        ("a search", get(J, "?query=anything")),
+        ("a cursor to a later page", get(J, "?cursor=20:1:0")),
+        ("a page size that is not a number", get(J, "?per_page=x")),
+        ("a page size over the cap", get(J, "?per_page=1001")),
+        ("a cursor that is not a cursor", get(J, "?cursor=garbage")),
+        ("no session", get(NOT_SIGNED_IN)),
+        ("not a member of the workspace", get(SECOND_EMAIL)),
+        ("a workspace that does not exist", get(J, slug="no-such-workspace")),
+    ]
+
+
+def step_x08(base, pacer):
+    """GET /api/unsplash/ : not one of the 48 rows, but what the project creation modal's image picker asks for. The oracle has no
+    UNSPLASH_ACCESS_KEY (neither in its environment nor in its instance configuration), so the pin answers an empty list and
+    proxies nothing, whatever the query: recorded with and without the parameters the picker sends."""
+    get = lambda who, query="": api(base, pacer, who, "GET", f"/api/unsplash/{query}")  # noqa: E731
+    return [
+        ("no parameters", get(J)),
+        ("a search, a page and a page size", get(J, "?query=mountain&page=2&per_page=5")),
+        ("no session", get(NOT_SIGNED_IN)),
+    ]
+
+
 # Which fixtures make an id that later ones use (`binds`), and which name one in their requests (`uses`).
 USES_PROJECT = {"uses": ["project"]}
 FIXTURE_META = {
@@ -1688,6 +1719,12 @@ FIXTURE_META = {
     "S29-member": {"uses": ["asset", "second_asset"]},
     "S31-member": {"uses": ["project", "second_asset"]},
     "S33-member": {"uses": ["asset", "second_asset"]},
+    "X07": {
+        "preconditions": ["the journey's first account (the admin of journey-ws) has no sticky note there: none is ever made; the second account is not yet a member of journey-ws"],
+    },
+    "X08": {
+        "preconditions": ["the instance has no Unsplash access key, as the oracle has none (S01 says has_unsplash_configured is false), so the pin proxies nothing"],
+    },
     "X06": {
         "preconditions": ["the second user (second@example.test) holds a live session before the first exchange; the second exchange sends the session cookie that user held before the first (the old value, by hand), not whatever the client kept"],
     },
@@ -1760,6 +1797,8 @@ STEPS = [
     ("S34-after", step_s34_after),
     ("S33", step_s33),
     ("X05", step_x05),
+    ("X07", step_x07),
+    ("X08", step_x08),
     ("S28-member", step_s28_member),
     ("S29-member", step_s29_member),
     ("S31-member", step_s31_member),

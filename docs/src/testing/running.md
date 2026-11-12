@@ -44,11 +44,14 @@ scripts/contract.sh <target> [pass]
   pass:   main | sweeper | panic | csrfoff | blast | bench | worker | cron | bindings
           oracle                            (native-memory, native-pg, worker-cf: the v1 oracle's gate, corpus comparison and controls; needs `uv`.
                                              In contract-all.sh, so a CI cell. By hand: `scripts/oracle-v1.sh <target> [controls]`)
+          e2e                               (worker-* only: the first browser journey, the stock app in Chromium against a Worker that serves it, with its must-fail
+                                             control; needs Node and pnpm, and the app built. In contract-all.sh as `worker-cf e2e`, so a CI cell. By hand: `scripts/e2e.sh <target> [controls]`)
           engine | scale                    (every target, opt-in: not in contract-all.sh. The engine-deciding tests; list, search and create at 100k items)
 ```
 
 `csrfoff` runs the six `csrf_off_` tests against a target started with no CSRF setting at all, so that it shows the
-composition roots' default (enforcement off, Q-0050.8); every other pass runs with it on, and the script refuses a pass whose
+composition roots' default (enforcement off, Q-0050.8); every other pass runs with it on, except `e2e`, which runs at that default
+too (the stock app sends the token only on its auth posts), and the script refuses a pass whose
 target's `/_info` says otherwise (exit 5).
 
 The header of `scripts/contract.sh` describes each pass and which targets accept it. Prerequisites: Docker (for
@@ -57,7 +60,8 @@ admin token and database password per run and keeps them out of files and argv.
 
 | Script | What it runs | Prerequisites |
 |---|---|---|
-| `scripts/contract-all.sh` | the 21-cell matrix serially (18 contract cells and 3 `oracle` cells), summary in `target/contract-logs/summary.txt` | Docker, wrangler, `uv` |
+| `scripts/contract-all.sh` | the 22-cell matrix serially (18 contract cells, 3 `oracle` cells and the `e2e` journey), summary in `target/contract-logs/summary.txt` | Docker, wrangler, `uv`, Node and pnpm |
+| `scripts/e2e.sh <target> [controls]` | the first browser journey (`e2e/journey.spec.ts`): the built app in Chromium against a Worker that serves it; builds the app when it is not built | Docker (`worker-cf`), wrangler, Node, pnpm |
 | `scripts/mutants.sh` | the planted mutants; every one must be KILLED | Docker |
 | `scripts/verify-all.sh` | the hermetic nextest run, matrix, mutants, `check-deps.sh`, `pg_adapter`, probes; summary in `target/verify/summary.txt` | Docker, wrangler |
 | `scripts/flake-hunt.sh <target> <pass> <iterations>` | one cell N times, keeping every log | as the cell |

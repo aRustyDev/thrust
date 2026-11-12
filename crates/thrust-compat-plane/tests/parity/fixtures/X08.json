@@ -1,0 +1,56 @@
+{
+  "exchanges": [
+    {
+      "name": "no parameters",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/unsplash/"
+      },
+      "response": {
+        "body": [],
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "a search, a page and a page size",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/unsplash/?query=mountain&page=2&per_page=5"
+      },
+      "response": {
+        "body": [],
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "no session",
+      "request": {
+        "method": "GET",
+        "path": "/api/unsplash/"
+      },
+      "response": {
+        "body": {
+          "detail": "Authentication credentials were not provided."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 401
+      }
+    }
+  ],
+  "format_version": 1,
+  "preconditions": [
+    "the instance has no Unsplash access key, as the oracle has none (S01 says has_unsplash_configured is false), so the pin proxies nothing"
+  ],
+  "recorded_from": "ba85d4d3d3",
+  "row": "X08"
+}
