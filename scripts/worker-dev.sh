@@ -21,6 +21,10 @@
 #                                  value applies (off): scripts/contract.sh uses it for the `csrfoff` pass
 #   THRUST_OIDC_ISSUER / _CLIENT_ID / _REDIRECT_URI, THRUST_OIDC_CLIENT_SECRET (env only, like the admin token)
 #                                  the one OIDC provider; all three of the first group or none
+#   THRUST_ASSETS_DIR              a directory of static files the Worker serves beside the API: the built app,
+#                                  `web/apps/web/build/client`. Written as an `[assets]` block into the throwaway copy of the config
+#                                  (see below), never into the shared wrangler.toml, which the contract cells use as they are. Unset
+#                                  serves no files. An absolute path, to a directory that holds an index.html (exit 2 otherwise)
 #   THRUST_ADMIN_TOKEN             (env only) gate for /internal/*
 #   DATABASE_URL                   (env only) Postgres URL for the *local* Hyperdrive binding
 #
@@ -119,6 +123,32 @@ if [ "$CONFIG" = wrangler.toml ]; then
     CONFIG="$RUN_CONFIG"
     echo "worker-dev: rate limit bindings from $CONFIG: RL_CREATE=${CREATE_LIMIT:-default} RL_SIGNIN=${SIGNIN_LIMIT:-default} RL_V1=${V1_LIMIT:-default}"
   fi
+fi
+
+# The app's files (ADR-0011): one single-page app at `/`, every path the Worker handles run first, in both forms (a browser
+# navigation to `/auth` or `/api` is otherwise answered with index.html and never reaches the Worker). A missing hashed asset is
+# answered 200 text/html by the single-page fallback, so a check that files load must look at their type (e2e/journey.spec.ts).
+if [ -n "${THRUST_ASSETS_DIR:-}" ]; then
+  # absolute: this script is in the Worker's directory by now, so a relative path would mean a different place than the caller's
+  case "$THRUST_ASSETS_DIR" in
+    /*) ;;
+    *) echo "worker-dev: THRUST_ASSETS_DIR must be an absolute path, not '$THRUST_ASSETS_DIR'" >&2; exit 2 ;;
+  esac
+  [ -f "$THRUST_ASSETS_DIR/index.html" ] ||
+    { echo "worker-dev: THRUST_ASSETS_DIR=$THRUST_ASSETS_DIR has no index.html (pnpm -C web --filter web build)" >&2; exit 2; }
+  ASSETS_DIR="$(cd "$THRUST_ASSETS_DIR" && pwd)"
+  if [ -z "$RUN_CONFIG" ]; then
+    RUN_CONFIG=".wrangler.run-$$.toml"
+    cp "$CONFIG" "$RUN_CONFIG"
+    CONFIG="$RUN_CONFIG"
+  fi
+  {
+    printf '\n[assets]\n'
+    printf 'directory = "%s"\n' "$ASSETS_DIR"
+    printf 'not_found_handling = "single-page-application"\n'
+    printf 'run_worker_first = ["/api", "/api/*", "/auth", "/auth/*", "/live", "/live/*", "/healthz", "/_info", "/internal", "/internal/*", "/_test/*"]\n'
+  } >>"$RUN_CONFIG"
+  echo "worker-dev: serving the files of $ASSETS_DIR from $CONFIG"
 fi
 
 # Optional vars are passed only when set, so an unset one leaves the Worker's own default in force.

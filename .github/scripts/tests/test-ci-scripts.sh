@@ -42,6 +42,15 @@ expect "plan: the oracle cells are in the real plan" 0 "plan ok: the oracle cell
 mkdir -p "$T/plan2/scripts" && grep -v ' oracle$' "$HERE/scripts/contract-all.sh" > "$T/plan2/scripts/contract-all.sh"
 plan_in "$T/plan2" > /dev/null
 expect "plan: a plan without the oracle cells is refused" 1 "the plan lacks the native-memory oracle cell" plan_has_oracle "$T/plan2/cells.txt"
+# The first browser journey is a CI cell on the Worker with the Cloudflare set (#44). The control: the same plan without that line must fail.
+plan_has_e2e() { # plan_has_e2e <cells.txt>
+  grep -qx "worker-cf e2e" "$1" || { echo "the plan lacks the worker-cf e2e cell"; return 1; }
+  echo "plan ok: the e2e cell is planned"
+}
+expect "plan: the e2e cell is in the real plan" 0 "plan ok: the e2e cell" plan_has_e2e "$T/plan/cells.txt"
+mkdir -p "$T/plan3/scripts" && grep -v ' e2e$' "$HERE/scripts/contract-all.sh" > "$T/plan3/scripts/contract-all.sh"
+plan_in "$T/plan3" > /dev/null
+expect "plan: a plan without the e2e cell is refused" 1 "the plan lacks the worker-cf e2e cell" plan_has_e2e "$T/plan3/cells.txt"
 mkdir -p "$T/plan0/scripts" && printf '#!/bin/sh\necho nothing\n' > "$T/plan0/scripts/contract-all.sh"
 expect "plan: a script with no run lines fails" 1 "parsed zero cells" plan_in "$T/plan0"
 mkdir -p "$T/plan1/scripts" && cp "$HERE/scripts/contract-all.sh" "$T/plan1/scripts/contract-all.sh" && printf 'run native-memory main extra\n' >> "$T/plan1/scripts/contract-all.sh"
@@ -143,5 +152,8 @@ expect "classify: an empty list fails open for both" 0 "classify ok: rust=true w
 expect "classify: a workflow change runs both" 0 "classify ok: rust=true web=true" classify_is '.github/workflows/ci.yml\n' true true
 expect "classify: the Q-R2 gate script runs both" 0 "classify ok: rust=true web=true" classify_is 'scripts/check-web-diff.sh\n' true true
 expect "classify: a web look-alike is not web/" 0 "classify ok: rust=false web=false" classify_is 'web-notes.md\ndocs/web/x.md\nwebsite/index.html\n' false false
+# the browser journey's own files run the cell that runs it (a rust change, not a web one), and a look-alike does not
+expect "classify: e2e/ alone runs the journey's cell and is not a web change" 0 "classify ok: rust=true web=false" classify_is 'e2e/journey.spec.ts\n' true false
+expect "classify: an e2e look-alike is not e2e/" 0 "classify ok: rust=false web=false" classify_is 'e2e-notes.md\ndocs/e2e/x.md\n' false false
 echo "passed=$pass bad=$failn"
 [ "$failn" -eq 0 ]

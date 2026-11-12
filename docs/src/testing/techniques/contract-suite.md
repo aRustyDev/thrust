@@ -76,7 +76,8 @@ scripts/contract.sh native-memory           # main pass, 37 tests [verified 2026
 scripts/contract.sh native-memory csrfoff   # CSRF enforcement off, 6 tests [verified 2026-10-24: 6 passed]
 scripts/contract.sh worker-cf bindings      # [unverified: not run]
 scripts/contract.sh native-memory oracle    # the v1 oracle: scoped gate, corpus comparison, controls (not a test count: VERDICT: PASS)
-scripts/contract-all.sh                     # the 21-cell matrix, serially [verified 2026-10-24: 18 of 18 PASS, before the oracle cells]
+scripts/e2e.sh worker-cf controls           # the first browser journey and its control (not a test count: VERDICT: PASS), `e2e` in contract-all.sh
+scripts/contract-all.sh                     # the 22-cell matrix, serially [verified 2026-10-24: 18 of 18 PASS, before the oracle and e2e cells]
 ```
 
 See [Running](../running.md#the-contract-suite) for targets, passes and prerequisites.

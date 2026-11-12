@@ -40,6 +40,7 @@ run worker-cf cron
 run worker-cf worker
 run worker-cf bindings
 run worker-cf oracle
+run worker-cf e2e
 
 cat "$SUMMARY"
 exit "$FAILED"

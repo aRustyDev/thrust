@@ -22,6 +22,13 @@
 #                              The target starts with a very high create rate limit. Opt-in: not in contract-all.sh.
 #             bindings         (worker-cf only) the probe routes' admin gate, and one real operation per binding (rate limit,
 #                              secrets store, email)
+#             e2e              (worker-* only) the first browser journey (issue #44): the stock app, built from web/, in Chromium against
+#                              the Worker started here, which serves the app's files (scripts/worker-dev.sh THRUST_ASSETS_DIR) with CSRF
+#                              enforcement at the Worker's own default, off, as production runs it while the stock app is in use. Needs
+#                              the app built (web/apps/web/build/client, or E2E_ASSETS_DIR) and node and pnpm; success == its
+#                              `VERDICT: PASS`, with its must-fail control unless E2E_WHAT is set to '' for none. In contract-all.sh, so a
+#                              CI cell. scripts/e2e.sh <target> [controls] is the way in by hand; its logs, and the network's HAR, go to
+#                              target/contract-logs/<target>-e2e.e2e/
 #             oracle           the v1 oracle's scoped gate and corpus comparison against the started target, with the /api/v1 rate
 #                              limit raised for the fuzzer, and (unless ORACLE_V1_WHAT is set, to '' for none) its must-fail
 #                              controls. In contract-all.sh, so a CI cell; needs `uv`. Success == its `VERDICT: PASS`, and its
@@ -128,8 +135,9 @@ esac
 # WANT_CSRF is what /_info must say; the vacuity guard below refuses a target that says otherwise.
 # THRUST_SERVER_CSRF_ENFORCE (on|off) is only ever set by scripts/mutants.sh (control runs): it starts the server with a
 # setting the pass does not expect, to show that the guard refuses it.
+# The e2e pass is the stock app's own journey, which sends the token on its auth posts only, so it too runs at the default (off).
 case "$PASS" in
-  csrfoff) CSRF=off; WANT_CSRF=false; CSRF_DEFAULT=default ;;
+  csrfoff | e2e) CSRF=off; WANT_CSRF=false; CSRF_DEFAULT=default ;;
   *) CSRF=on; WANT_CSRF=true; CSRF_DEFAULT=on ;;
 esac
 CSRF_SERVER="${THRUST_SERVER_CSRF_ENFORCE:-$CSRF_DEFAULT}"
@@ -174,6 +182,14 @@ case "$TARGET" in
   worker-cf) KIND=worker; ADAPTERS=cloudflare ;;
   *) echo "unknown target $TARGET" >&2; exit 2 ;;
 esac
+
+if [ "$PASS" = "e2e" ]; then
+  # Only a Worker serves the app (ADR-0011, round 29: the native server's static files are not built), and it must have the app to serve.
+  [ "$KIND" = worker ] || { echo "[$TARGET/$PASS] the native server does not serve the app yet: the e2e pass is for the worker targets" >&2; exit 2; }
+  E2E_ASSETS_DIR="${E2E_ASSETS_DIR:-$ROOT/web/apps/web/build/client}"
+  [ -s "$E2E_ASSETS_DIR/index.html" ] ||
+    { echo "[$TARGET/$PASS] the app is not built: $E2E_ASSETS_DIR/index.html is missing (scripts/e2e.sh $TARGET builds it)" >&2; exit 2; }
+fi
 
 if [ "$ADAPTERS" = "postgres" ] || [ "$ADAPTERS" = "cloudflare" ]; then
   PG_PORT="${THRUST_PG_PORT:-$(pick_port)}"
@@ -226,7 +242,8 @@ if [ "$KIND" = "native" ]; then
     "$ROOT/target/$BIN_DIR/thrust-server" >"$LOG.server.log" 2>&1 &
   SERVER_PID=$!
 else
-  # Worker: `wrangler dev` (local workerd). See scripts/worker-dev.sh.
+  # Worker: `wrangler dev` (local workerd). See scripts/worker-dev.sh. The e2e pass has it serve the app's files too.
+  if [ "$PASS" = "e2e" ]; then export THRUST_ASSETS_DIR="$E2E_ASSETS_DIR"; fi
   THRUST_PORT="$PORT" THRUST_ADAPTERS="$ADAPTERS" THRUST_OUTBOX_FASTPATH="$FASTPATH" THRUST_CREATE_RATE_LIMIT="$RATE_LIMIT" \
     THRUST_CSRF_ENFORCE="$CSRF_SERVER" \
     "$ROOT/scripts/worker-dev.sh" >"$LOG.server.log" 2>&1 &
@@ -342,6 +359,15 @@ case "$PASS" in
       "$ROOT/scripts/oracle-v1.sh" running
     TEST_STATUS=$?
     echo "[$TARGET/$PASS] oracle exit=$TEST_STATUS"
+    exit "$TEST_STATUS"
+    ;;
+  e2e)
+    # The first browser journey against the Worker just started (scripts/e2e.sh <target> runs this pass, with the controls it was asked
+    # for; a cell reaches it directly and gets them). Not a test count: success == the script's verdict, `VERDICT: PASS`. Its logs
+    # and the network's HAR sit beside this pass's own, so that the cell's log artifact holds them.
+    E2E_WHAT="${E2E_WHAT-controls}" E2E_OUT="${E2E_OUT:-$LOG.e2e}" "$ROOT/scripts/e2e.sh" running
+    TEST_STATUS=$?
+    echo "[$TARGET/$PASS] e2e exit=$TEST_STATUS"
     exit "$TEST_STATUS"
     ;;
   scale)
