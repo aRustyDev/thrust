@@ -101,6 +101,15 @@ class Pacer:
         self.calls.append(time.monotonic())
 
 
+def response_headers(resp):
+    """The response's headers as a dict; one that is sent more than once (`Set-Cookie`) is a list, in the order sent, so the raw
+    exchange keeps every cookie a response sets. (The normaliser drops the headers it does not keep before it reads a value.)"""
+    out = {}
+    for k, v in resp.headers.items():
+        out[k] = [*out[k], v] if isinstance(out.get(k), list) else ([out[k], v] if k in out else v)
+    return out
+
+
 class Client:
     """One browser-like session: a cookie jar, no redirects followed, CSRF on request."""
 
@@ -144,7 +153,7 @@ class Client:
             request["body"] = {"form": form}
         return {
             "request": request,
-            "response": {"status": status, "headers": {k: v for k, v in resp.headers.items()}, "body": parsed},
+            "response": {"status": status, "headers": response_headers(resp), "body": parsed},
         }
 
     def csrf(self):
@@ -1577,6 +1586,35 @@ def step_s33_member(base, pacer):
     ]
 
 
+SIGN_OUT = "/auth/sign-out/"
+
+
+def step_x06(base, pacer):
+    """POST /auth/sign-out/ : not one of the 48 rows, but what the sidebar's user menu does. The stock app asks for a CSRF token (S03)
+    and submits a form that holds only `csrfmiddlewaretoken`, so that is what is sent here (the cookie jar carries the CSRF cookie).
+    The journey's second account is signed out, last of all: nothing after it needs it. The read after it sends the cookie the account
+    held before, by hand, because a client that dropped the cookie would prove nothing about the session: it is the pin that must
+    have ended it. Before the sign-out the same hand-sent cookie is checked to be a live session, so the 401 afterwards can be nothing
+    but the end of it."""
+    account = session(base, pacer, SECOND_EMAIL)
+    held = [c for c in account.jar if c.name != "csrftoken"]
+    if len(held) != 1:
+        raise SystemExit(f"the second account holds {[c.name for c in held]} besides the CSRF cookie, not one session cookie")
+    stale = {"Cookie": f"{held[0].name}={held[0].value}"}
+    before = fresh(base).request("GET", ME, headers=stale)
+    if before["response"]["status"] != 200:
+        raise SystemExit(f"the session cookie sent by hand is not a live session before the sign-out ({before['response']['status']}): the recording would prove nothing")
+    live = account.request("POST", SIGN_OUT, form={}, hidden_form={"csrfmiddlewaretoken": account.csrf()}, as_email=SECOND_EMAIL)
+    over = fresh(base).request("GET", ME, headers=stale, as_email=SECOND_EMAIL)
+    anonymous = fresh(base)
+    nobody = anonymous.request("POST", SIGN_OUT, form={}, hidden_form={"csrfmiddlewaretoken": anonymous.csrf()})
+    return [
+        ("a live session", live),
+        ("the session is over", over),
+        ("no session", nobody),
+    ]
+
+
 # Which fixtures make an id that later ones use (`binds`), and which name one in their requests (`uses`).
 USES_PROJECT = {"uses": ["project"]}
 FIXTURE_META = {
@@ -1636,6 +1674,9 @@ FIXTURE_META = {
     "S29-member": {"uses": ["asset", "second_asset"]},
     "S31-member": {"uses": ["project", "second_asset"]},
     "S33-member": {"uses": ["asset", "second_asset"]},
+    "X06": {
+        "preconditions": ["the second user (second@example.test) holds a live session before the first exchange; the second exchange sends the session cookie that user held before the first (the old value, by hand), not whatever the client kept"],
+    },
 }
 
 
@@ -1709,6 +1750,8 @@ STEPS = [
     ("S29-member", step_s29_member),
     ("S31-member", step_s31_member),
     ("S33-member", step_s33_member),
+    # the last: it ends the second account's session
+    ("X06", step_x06),
 ]
 
 

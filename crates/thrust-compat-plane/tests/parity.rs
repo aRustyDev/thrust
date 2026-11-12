@@ -95,6 +95,7 @@ rows! {
     parity_s29_confirm_an_upload_as_a_member => "S29-member",
     parity_s31_attach_assets_as_a_member => "S31-member",
     parity_s33_read_an_asset_as_a_member => "S33-member",
+    parity_x06_sign_out => "X06",
 }
 
 /// A fixture without a test would pass unseen, and a test without a fixture is `load_fixture` panicking: hold the two
@@ -214,6 +215,52 @@ fn parity_control_a_sign_in_without_a_session_cookie_is_a_divergence() {
     let router = app().layer(strip);
     let d = divergences(&router, &load_fixture("S05"));
     assert!(d.iter().any(|m| m.contains("session cookie")), "{d:?}");
+}
+
+/// A sign-out clears both cookies (D-036), which the fixture drops with the other headers, so the replay checks it itself: the
+/// same replay through a router that strips the `Set-Cookie` headers of the sign-out's answers (and only those: the sign-ins before
+/// it need theirs for the journey to hold a session at all) must diverge at each sign-out.
+#[test]
+fn parity_control_a_sign_out_that_clears_no_cookie_is_a_divergence() {
+    use axum::{extract::Request, middleware::Next};
+    async fn strip_the_sign_outs_cookies(req: Request, next: Next) -> Response<Body> {
+        let signs_out = req.uri().path() == "/auth/sign-out/";
+        let mut resp = next.run(req).await;
+        if signs_out {
+            resp.headers_mut().remove("set-cookie");
+        }
+        resp
+    }
+    let d = journey_with(
+        |router| router.layer(axum::middleware::from_fn(strip_the_sign_outs_cookies)),
+        ROWS,
+        "X06",
+        |_| {},
+    );
+    let cookie_lines = d.iter().filter(|m| m.contains("cookies: a sign-out must clear")).count();
+    assert_eq!(cookie_lines, 2, "the two sign-outs that were answered, not the read between them: {d:?}");
+}
+
+/// The read after the first sign-out sends the session the account held before it, so its 401 is the end of that session and
+/// nothing else. A router whose sign-out answers as it should but ends nothing must therefore diverge at that read.
+#[test]
+fn parity_control_a_sign_out_that_ends_no_session_is_a_divergence() {
+    use axum::{extract::Request, http::StatusCode, middleware::Next};
+    async fn answer_without_doing(req: Request, next: Next) -> Response<Body> {
+        if req.uri().path() != "/auth/sign-out/" {
+            return next.run(req).await;
+        }
+        let mut resp = Response::new(Body::from(r#"{"redirect_path":"/"}"#));
+        *resp.status_mut() = StatusCode::OK;
+        resp.headers_mut().insert("content-type", "application/json".parse().unwrap());
+        for cookie in ["__Host-thrust_session=; Max-Age=0; Path=/", "__Host-thrust_csrf=; Max-Age=0; Path=/"] {
+            resp.headers_mut().append("set-cookie", cookie.parse().unwrap());
+        }
+        resp
+    }
+    let d = journey_with(|router| router.layer(axum::middleware::from_fn(answer_without_doing)), ROWS, "X06", |_| {});
+    assert!(d.iter().any(|m| m.contains("the session is over")), "{d:?}");
+    assert!(!d.iter().any(|m| m.contains("a live session")), "the sign-out's own answer is as recorded: {d:?}");
 }
 
 /// The normaliser could erase a real difference (the failure mode its rules exist to avoid): two answers that differ

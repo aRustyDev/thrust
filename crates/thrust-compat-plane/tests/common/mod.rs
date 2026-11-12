@@ -612,11 +612,30 @@ pub fn divergences_with(router: &Router, fixture: &Value, jar: &mut Jar) -> Vec<
                 jar.insert(jar_key(email), token);
             }
         }
+        // a sign-out answers a redirect for every request on the pin (D-036), and clears the two cookies, which the fixtures drop
+        if want["request"]["path"].as_str() == Some("/auth/sign-out/") && !both_cookies_cleared(&raw) {
+            lines.push(
+                "  cookies: a sign-out must clear both the session and the CSRF cookie, and this answer did not"
+                    .to_string(),
+            );
+        }
         if !lines.is_empty() {
             out.push(format!("exchange {}:\n{}", want["name"], lines.join("\n")));
         }
     }
     out
+}
+
+/// Whether a raw response clears both of Thrust's cookies: each set empty and expired at once.
+pub fn both_cookies_cleared(raw: &Value) -> bool {
+    let all: Vec<&str> = match &raw["response"]["headers"]["set-cookie"] {
+        Value::String(s) => vec![s.as_str()],
+        Value::Array(a) => a.iter().filter_map(Value::as_str).collect(),
+        _ => vec![],
+    };
+    ["__Host-thrust_session", "__Host-thrust_csrf"]
+        .iter()
+        .all(|name| all.iter().any(|c| c.starts_with(&format!("{name}=;")) && c.contains("Max-Age=0")))
 }
 
 /// The browser's upload of the file an asset the journey made is for: to the address S28 answered, with the type it named, no
@@ -664,7 +683,19 @@ fn make_second_a_member(db: &MemoryDatabase) {
 /// by an earlier step), then replay `target` itself, after `edit` has had its way with the recording. Only `target`'s
 /// divergences are returned: each earlier step has a test of its own.
 pub fn journey(rows: &[&str], target: &str, edit: impl FnOnce(&mut Value)) -> Vec<String> {
+    journey_with(|router| router, rows, target, edit)
+}
+
+/// [`journey`] through a router that `wrap` makes of the app's own: the controls that put a layer in front of it (one that strips
+/// a header, one that answers a route without doing what it does) to show the replay can see the difference.
+pub fn journey_with(
+    wrap: impl FnOnce(Router) -> Router,
+    rows: &[&str],
+    target: &str,
+    edit: impl FnOnce(&mut Value),
+) -> Vec<String> {
     let (router, db) = app_with_db();
+    let router = wrap(router);
     let mut jar = Jar::new();
     // the rows of a member who is not an admin: the recorder made the second user a member of the workspace (an invitation, taken)
     // after every fixture that needs them outside it, and before the first of these, which earlier rows of the replay are
