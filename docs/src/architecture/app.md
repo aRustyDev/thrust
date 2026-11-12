@@ -128,7 +128,7 @@ The plan's `ARCHITECTURE.md` (draft v0, `.agents/plans/contrail/ARCHITECTURE.md`
 
 - **Crates:** `thrust-api-core` and `thrust-collab-do` do not exist. `thrust-api-v1` does (`/api/v1`: projects, states,
   labels and work items, issue #58). `thrust-compat-plane` serves the 48-route slice of issue #44 (S01 to S48 and X01 to
-  X04), the four asset rows (S28, S29, S31 and S33) included, and three routes of its own around them: the address S28 hands
+  X04, and X06, the sign-out the user menu calls: D-036), the four asset rows (S28, S29, S31 and S33) included, and three routes of its own around them: the address S28 hands
   the browser for the upload, the route S33 redirects to, and the address a project's cover is shown at (X05). Each composition
   root mounts it beside `thrust-api`'s router. `thrust-plane-types` holds the pinned Plane's three 500 texts and the one function that
   answers them; `thrust-api-v1` calls it, and the internal API does not yet (issue #51).
@@ -140,7 +140,9 @@ The plan's `ARCHITECTURE.md` (draft v0, `.agents/plans/contrail/ARCHITECTURE.md`
   images, a user's avatar, a workspace logo) and an R2 presign that takes the bytes off the Worker are not built.
 - **The web app:** `web/` holds the stock React app and the `@plane/*` packages it needs, imported from the oracle pin
   (`web/SOURCE`). Only the files in `web/ALLOWED-CHANGES` may differ from the pin, and the `web` job of CI checks it
-  ([CI/CD](cicd.md)). Nothing serves the build yet, and no auth-client change has been made.
+  ([CI/CD](cicd.md)). Two files differ from it, the auth client's: `components/account/auth-forms/password.tsx` and
+  `services/auth.service.ts`, which post JSON where the pin posts a form (D-022, D-036). The other form posts (the unique code,
+  the password reset, OAuth) are the pin's, because their server routes are not built. Nothing serves the build yet.
 - **Ports:** Workflow, Scheduler, Collab, Search, Email, AI, Identity, Secrets, Telemetry and Flags have no trait.
   Scheduling today is a `scheduled` handler on the Worker and an optional timer in the server.
 - **Adapters:** the self-hosted set in the plan's diagrams (RabbitMQ, Valkey, S3) does not exist. See
