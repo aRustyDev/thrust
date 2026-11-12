@@ -310,7 +310,8 @@ pub fn session_cookies(token: &str, csrf: &str, max_age_secs: i64) -> [String; 2
     [set_cookie(SESSION_COOKIE, token, max_age_secs), set_cookie(CSRF_COOKIE, csrf, max_age_secs)]
 }
 
-fn cleared_cookies() -> [String; 2] {
+/// The two cookies, cleared: what a sign-out sets. Public so the compat routes spell their cookies the same way.
+pub fn cleared_cookies() -> [String; 2] {
     [set_cookie(SESSION_COOKIE, "", 0), set_cookie(CSRF_COOKIE, "", 0)]
 }
 
