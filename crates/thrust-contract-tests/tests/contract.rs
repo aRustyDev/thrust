@@ -564,8 +564,9 @@ async fn v1_requests_are_rate_limited_per_key() {
 async fn attachments_roundtrip_with_authz() {
     let t = t();
     let f = Fixture::seed(&t).await;
-    let item = create_ok(&t, &f.member_a, &f.a, "with file").await;
-    let path = format!("{}/{}/attachments/notes.txt", wi_path(&f.a), item.id);
+    // the attachments are the slice's (nothing replaces the route); the work item they are put on is `/api/v1`'s
+    let item = v1_create_ok(&t, &f.member_a, &f.a, "with file").await;
+    let path = format!("{}/{}/attachments/notes.txt", wi_path(&f.a), item.id());
     let payload = b"hello r2 \x00\x01\x02 binary-safe".to_vec();
 
     // guest cannot write (control)
@@ -588,12 +589,12 @@ async fn attachments_roundtrip_with_authz() {
     assert_eq!(r.headers().get("content-type").unwrap(), "application/x-thrust");
     assert_eq!(r.bytes().await.unwrap().to_vec(), payload);
     // unknown name -> 404 (control: the 200 above is not "always 200")
-    let other = format!("{}/{}/attachments/missing.txt", wi_path(&f.a), item.id);
+    let other = format!("{}/{}/attachments/missing.txt", wi_path(&f.a), item.id());
     assert_eq!(t.http.get(t.url(&other)).bearer_auth(&f.guest_a.token).send().await.unwrap().status(), 404);
     // other tenant cannot read it
     assert_eq!(t.http.get(t.url(&path)).bearer_auth(&f.admin_b.token).send().await.unwrap().status(), 404);
     // path traversal in the name is rejected
-    let evil = format!("{}/{}/attachments/..%2Fescape", wi_path(&f.a), item.id);
+    let evil = format!("{}/{}/attachments/..%2Fescape", wi_path(&f.a), item.id());
     let st = t.http.put(t.url(&evil)).bearer_auth(&f.member_a.token).body("x").send().await.unwrap().status();
     assert!(st == 400 || st == 404, "traversal name must not be accepted, got {st}");
     // oversize is rejected before touching storage (limit is 5 MiB)
