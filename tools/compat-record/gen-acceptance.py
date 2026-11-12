@@ -6,8 +6,8 @@
                                                                 # and every route in it is a route of the pinned Plane
 
 The acceptance list is the 48-route minimum slice (S01 to S48) and the three rows to open the created work item (X01 to X03), which
-are the table in research/0003 section 8.1, plus X04 and X05, two routes the 48 rows lack: one the stock onboarding calls and the
-address a project's cover is shown at (`crates/thrust-compat-plane/src/users.rs`, `assets.rs`, `lib.rs`). The compat replay (`tests/parity.rs`), its fixtures and the oracle recorder
+are the table in research/0003 section 8.1, plus X04, X05 and X06, three routes the 48 rows lack: one the stock onboarding calls, the
+address a project's cover is shown at, and the sign-out the user menu calls (`crates/thrust-compat-plane/src/users.rs`, `assets.rs`, `auth.rs`, `lib.rs`). The compat replay (`tests/parity.rs`), its fixtures and the oracle recorder
 (`record.py`) must each name exactly the rows of this list that are served; `scripts/check-acceptance-list.sh` holds them to it
 with `comm -3`. The M2 screens (issue #46) join the list when their rows are filed; until then a route outside it is not a test
 obligation.
@@ -33,8 +33,13 @@ INVENTORY = REPO / "tools/compat-inventory/out-pinned/endpoint-inventory.csv"
 OUT = REPO / "crates/thrust-compat-plane/tests/parity/acceptance.csv"
 
 # Not rows of the table, and so named here. Both are routes of the pin (the join below checks it) that the 48-row slice does not name:
-# X04, because `finishUserOnboarding` awaits it (users.rs); X05, the address a project's cover is shown at (assets.rs, D-035).
-EXTRA = [("X04", "PATCH", "/api/users/me/onboard/"), ("X05", "GET", "/api/assets/v2/static/{}/")]
+# X04, because `finishUserOnboarding` awaits it (users.rs); X05, the address a project's cover is shown at (assets.rs, D-035); X06, the
+# sign-out the sidebar's user menu calls (auth.rs, D-036).
+EXTRA = [
+    ("X04", "PATCH", "/api/users/me/onboard/"),
+    ("X05", "GET", "/api/assets/v2/static/{}/"),
+    ("X06", "POST", "/auth/sign-out/"),
+]
 
 # A row is pending while its route is not yet served and recorded; delete it from this set when it is. None is: the asset stage of
 # #44 (#124) served S28, S29, S31 and S33, and X05, and this was `{"S28", "S29", "S31", "S33"}` until then.
