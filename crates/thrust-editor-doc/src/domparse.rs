@@ -821,8 +821,7 @@ impl<'a> Parser<'a> {
                     // matchStyle(prop, value, ctx, after)
                     let mut found: Option<(usize, Option<Attrs>)> = None;
                     let start = after.map(|a| a + 1).unwrap_or(0);
-                    for i in start..self.styles.len() {
-                        let r = &self.styles[i];
+                    for (i, r) in self.styles.iter().enumerate().skip(start) {
                         if !r.style.starts_with(name) {
                             continue;
                         }
