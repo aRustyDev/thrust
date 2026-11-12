@@ -3,6 +3,11 @@
 //! disagreement reported, and afterwards the project holds exactly the rows the table predicts: no refused request had
 //! an effect.
 //!
+//! The requests are made on Plane's work-item routes (`thrust-compat-plane`: S47 list, S48 create, X03 change), which
+//! authenticate through the same extractor as every other route (`thrust_api::Authed`: a bearer session, an `X-Api-Key`, the
+//! session cookie, in that order), so the table is the credential layer's and not a route's. `/api/v1` takes an API key and
+//! nothing else, so its own table is `tests/v1_model/matrix.rs`'s.
+//!
 //! The table, written out:
 //!
 //! * no credential: 401;
@@ -43,7 +48,8 @@ enum St {
 enum M {
     List,
     Create,
-    Delete,
+    /// Rename a work item (X03): a mutation that answers 204 and has an effect to look for.
+    Change,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -62,7 +68,7 @@ fn success(m: M) -> u16 {
     match m {
         M::List => 200,
         M::Create => 201,
-        M::Delete => 204,
+        M::Change => 204,
     }
 }
 
@@ -180,39 +186,54 @@ async fn csrf_off_every_credential_state_method_and_csrf_position_gets_the_statu
     run_table(false).await;
 }
 
+/// A work item made through Plane's route (S48) with a bearer token: its id.
+async fn make_item(t: &Target, f: &Fixture, who: &User, name: &str) -> String {
+    let r = t
+        .http
+        .post(t.url(&compat_issues(&f.a)))
+        .bearer_auth(&who.token)
+        .json(&json!({ "name": name }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 201, "make '{name}': {:?}", r.text().await);
+    r.json::<Value>().await.unwrap()["id"].as_str().expect("an id").to_string()
+}
+
 async fn run_table(enforce: bool) {
     let t = t();
     let f = Fixture::seed(&t).await;
     let ghost = f.extra_member(&t).await;
     let creds = make_creds(&t, &f, &ghost).await;
-    let shared_victim = create_ok(&t, &f.admin_a, &f.a, "shared victim").await.id;
+    let shared_victim = make_item(&t, &f, &f.admin_a, "shared victim").await;
 
     let mut mismatches = Vec::new();
-    let (mut checked, mut want_created, mut want_deleted) = (0usize, 0usize, 0usize);
-    let mut victims_deleted = Vec::new();
+    let (mut checked, mut want_created) = (0usize, 0usize);
+    // every change that is expected to succeed renames a victim of its own to its label
+    let mut victims_changed: Vec<(String, String)> = Vec::new();
     for kind in [Kind::Nothing, Kind::Bearer, Kind::Cookie, Kind::ApiKey] {
         for &st in states(kind) {
-            for m in [M::List, M::Create, M::Delete] {
+            for m in [M::List, M::Create, M::Change] {
                 for tok in [Tok::Matching, Tok::Absent, Tok::Wrong] {
                     let want = expected(kind, st, m, tok, enforce);
                     let label = format!("{kind:?} {st:?} {m:?} csrf={tok:?} enforce={enforce}");
-                    // a delete that is expected to succeed gets a victim of its own; every refused one aims at the
-                    // shared victim, which must still be live at the end (the create limit is 30 a window per user)
+                    // a change that is expected to succeed gets a victim of its own; every refused one aims at the
+                    // shared victim, whose name must be what it was at the end
                     let victim = match (m, want) {
-                        (M::Delete, 204) => {
-                            let v = create_ok(&t, &f.admin_a, &f.a, &format!("victim of {label}")).await.id;
-                            victims_deleted.push(v);
+                        (M::Change, 204) => {
+                            let v = make_item(&t, &f, &f.admin_a, &format!("victim of {label}")).await;
+                            victims_changed.push((v.clone(), label.clone()));
                             v
                         }
-                        _ => shared_victim,
+                        _ => shared_victim.clone(),
                     };
                     let (method, url) = match m {
-                        M::List => (Method::GET, t.url(&wi_path(&f.a))),
-                        M::Create => (Method::POST, t.url(&wi_path(&f.a))),
-                        M::Delete => (Method::DELETE, t.url(&format!("{}/{victim}", wi_path(&f.a)))),
+                        M::List => (Method::GET, t.url(&compat_issues(&f.a))),
+                        M::Create => (Method::POST, t.url(&compat_issues(&f.a))),
+                        M::Change => (Method::PATCH, t.url(&compat_issue(&f.a, &victim))),
                     };
                     let mut r = t.http.request(method, url);
-                    if m == M::Create {
+                    if m != M::List {
                         r = r.json(&json!({ "name": label }));
                     }
                     // the CSRF cookie that goes with the credential, if there is a cookie at all
@@ -235,9 +256,6 @@ async fn run_table(enforce: bool) {
                     if m == M::Create && want == 201 {
                         want_created += 1;
                     }
-                    if m == M::Delete && want == 204 {
-                        want_deleted += 1;
-                    }
                     checked += 1;
                 }
             }
@@ -248,20 +266,34 @@ async fn run_table(enforce: bool) {
     assert_eq!(checked, combinations, "the matrix did not run");
     assert_eq!(combinations, 126);
 
-    // no refused request had an effect: the project holds the shared victim, exactly the rows the table let be created,
-    // and exactly the victims it let be deleted (and they are the deleted ones)
-    let rows: Vec<WorkItem> = list(&t, &f.admin_a, &f.a, Some("with_deleted")).await.json().await.unwrap();
-    let created = rows.iter().filter(|r| r.created_by == Some(f.member_a.id)).count();
-    let deleted: Vec<WorkItemId> = rows.iter().filter(|r| r.deleted_at.is_some()).map(|r| r.id).collect();
-    let live_victim = rows.iter().find(|r| r.id == shared_victim).expect("the shared victim");
+    // no refused request had an effect: the project holds the shared victim as it was, exactly the rows the table let be
+    // created, and the victims the table let be changed, each under the name its change gave it
+    let r = t.http.get(t.url(&compat_issues(&f.a))).bearer_auth(&f.admin_a.token).send().await.unwrap();
+    assert_eq!(r.status(), 200, "the project's list, to see what the requests did");
+    let page: Value = r.json().await.unwrap();
+    let rows = page["results"].as_array().expect("a page of rows");
+    let name_of =
+        |id: &str| rows.iter().find(|r| r["id"] == id).map(|r| r["name"].as_str().unwrap_or_default().to_string());
+    let created = rows.iter().filter(|r| r["created_by"] == json!(f.member_a.id.0)).count();
     if created != want_created {
         mismatches.push(format!("rows created by the acting user: {created}, the table lets {want_created}"));
     }
-    if deleted.len() != want_deleted || !victims_deleted.iter().all(|v| deleted.contains(v)) {
-        mismatches.push(format!("rows deleted: {}, the table lets {want_deleted}", deleted.len()));
+    if rows.len() != 1 + victims_changed.len() + want_created {
+        mismatches.push(format!(
+            "rows in the project: {}, the table lets {} (the shared victim, {} victims, {want_created} created)",
+            rows.len(),
+            1 + victims_changed.len() + want_created,
+            victims_changed.len()
+        ));
     }
-    if live_victim.deleted_at.is_some() {
-        mismatches.push("a refused delete deleted the shared victim".into());
+    for (id, label) in &victims_changed {
+        if name_of(id).as_deref() != Some(label.as_str()) {
+            mismatches
+                .push(format!("a change the table lets through did not take effect: {label} (now {:?})", name_of(id)));
+        }
+    }
+    if name_of(&shared_victim).as_deref() != Some("shared victim") {
+        mismatches.push(format!("a refused change renamed the shared victim: {:?}", name_of(&shared_victim)));
     }
     assert!(
         mismatches.is_empty(),
@@ -273,7 +305,7 @@ async fn run_table(enforce: bool) {
     let outcomes: std::collections::BTreeSet<u16> = [Kind::Nothing, Kind::Bearer, Kind::Cookie, Kind::ApiKey]
         .iter()
         .flat_map(|k| states(*k).iter().map(move |s| (*k, *s)))
-        .flat_map(|(k, s)| [M::List, M::Create, M::Delete].into_iter().map(move |m| (k, s, m)))
+        .flat_map(|(k, s)| [M::List, M::Create, M::Change].into_iter().map(move |m| (k, s, m)))
         .flat_map(|(k, s, m)| {
             [Tok::Matching, Tok::Absent, Tok::Wrong].into_iter().map(move |t| expected(k, s, m, t, enforce))
         })

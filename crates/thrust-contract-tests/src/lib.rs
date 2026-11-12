@@ -190,25 +190,40 @@ impl Session {
 }
 
 impl Target {
+    /// A sign-in through Plane's route, `POST /auth/sign-in/` (S06), which the stock app's auth client posts JSON to
+    /// (`thrust-compat-plane`, D-022). The slice's own sign-in (`{SLICE_PREFIX}/auth/sign-in/email`) is no longer called by the suite.
     pub async fn sign_in_raw(&self, email: &str, password: &str) -> reqwest::Response {
         self.http
-            .post(self.url(&format!("{SLICE_PREFIX}/auth/sign-in/email")))
+            .post(self.url("/auth/sign-in/"))
             .json(&json!({ "email": email, "password": password }))
             .send()
             .await
             .unwrap()
     }
 
-    /// Sign in through the real route and keep what the response set. Panics unless it is a 200 with both cookies.
+    /// Sign in through the real route and keep what the response set. Panics unless it is a 200 with both cookies. The answer does not
+    /// name the user (Plane's does not: it redirects), so the session is the caller's `who`.
     pub async fn sign_in(&self, who: &User) -> Session {
         let r = self.sign_in_raw(&who.email, &who.password).await;
         assert_eq!(r.status(), 200, "sign-in of a seeded user");
         let cookies = SetCookie::all(&r);
-        let body: SignInResponse = r.json().await.unwrap();
         let token = SetCookie::find(&cookies, SESSION_COOKIE).expect("a session cookie").value.clone();
         let csrf = SetCookie::find(&cookies, CSRF_COOKIE).expect("a csrf cookie").value.clone();
-        assert_eq!(body.csrf_token, csrf, "the body's csrf token is the cookie's");
-        Session { user_id: body.user_id, token, csrf }
+        Session { user_id: who.id, token, csrf }
+    }
+
+    /// The status of Plane's "who am I" (`GET /api/users/me/`, S02) for a request that carries `credentials`: the suite's probe of
+    /// whether a session is alive, on a route that is not the slice's. 200 for a live session, 401 for none.
+    pub async fn me(
+        &self,
+        credentials: impl FnOnce(reqwest::RequestBuilder) -> reqwest::RequestBuilder,
+    ) -> reqwest::Response {
+        credentials(self.http.get(self.url("/api/users/me/"))).send().await.unwrap()
+    }
+
+    /// `me` for a session held as a bearer token.
+    pub async fn me_status(&self, token: &str) -> u16 {
+        self.me(|r| r.bearer_auth(token)).await.status().as_u16()
     }
 
     /// Deactivate or reactivate a user through the test route.
@@ -329,6 +344,18 @@ impl Fixture {
         assert_eq!(r.status(), 204);
         who
     }
+}
+
+/// Plane's internal work-item routes (`thrust-compat-plane`: S47 list, S48 create): `/api/workspaces/{slug}/projects/{project}/issues/`.
+/// They take a bearer session, the session cookie and an API key through the same extractor the slice's routes use, which is why the
+/// credential tests use them as their vehicle.
+pub fn compat_issues(at: &At) -> String {
+    format!("/api/workspaces/{}/projects/{}/issues/", at.slug, at.project.0)
+}
+
+/// One work item of `compat_issues`: X01 reads it and X03 changes it (a 204 with no body).
+pub fn compat_issue(at: &At, id: &str) -> String {
+    format!("{}{id}/", compat_issues(at))
 }
 
 /// `{SLICE_PREFIX}/workspaces/{slug}/projects/{project}`.

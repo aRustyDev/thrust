@@ -1,6 +1,12 @@
 //! Identity over HTTP (issue #38; ADR-0050, ADR-0052): sign-in with an argon2id password, cookie sessions with CSRF
 //! double-submit, sign-out and sign-out-everywhere, deactivation. The same assertions run on every target.
 //!
+//! Sign-in, the CSRF token and sign-out go through **Plane's routes** (`POST /auth/sign-in/`, `GET /auth/get-csrf-token/`,
+//! `POST /auth/sign-out/`: `thrust-compat-plane`, issue #44, which is what the stock app calls), and a session is read back
+//! through `GET /api/users/me/`; a cookie mutation is made on Plane's work-item routes, which authenticate through the very
+//! extractor the slice's do. What is still the slice's, because no Plane route replaces it: sign-out-everywhere, the
+//! API-key routes and the OIDC login (G-26).
+//!
 //! Every test that asserts "X is accepted" is paired with a control asserting "the neighbouring Y is refused", and
 //! `scripts/mutants.sh` runs the suite against a build that skips the CSRF check and requires it to fail.
 
@@ -13,6 +19,7 @@ use super::t;
 
 mod matrix;
 
+/// A route of the slice that no Plane route replaces (`/auth/sign-out-all`, `/auth/session`).
 fn auth_url(t: &Target, tail: &str) -> String {
     t.url(&format!("{SLICE_PREFIX}/auth{tail}"))
 }
@@ -52,9 +59,28 @@ async fn error_code(r: reqwest::Response) -> String {
     r.json::<Value>().await.unwrap()["error"]["code"].as_str().unwrap_or_default().to_string()
 }
 
+/// The names of the work items project A lists (S47), as an admin of it sees them: all of them, newest first.
+async fn listed_names(t: &Target, f: &Fixture) -> Vec<String> {
+    let r = t.http.get(t.url(&compat_issues(&f.a))).bearer_auth(&f.admin_a.token).send().await.unwrap();
+    assert_eq!(r.status(), 200, "the project's list");
+    let page: Value = r.json().await.unwrap();
+    page["results"].as_array().unwrap().iter().map(|i| i["name"].as_str().unwrap().to_string()).collect()
+}
+
+/// The body of a work item a creation answered, and the id in it.
+async fn made(r: reqwest::Response) -> (Value, String) {
+    assert_eq!(r.status(), 201, "a creation");
+    let item: Value = r.json().await.unwrap();
+    let id = item["id"].as_str().expect("an id").to_string();
+    (item, id)
+}
+
 /// Sign-in answers 200 with two cookies carrying the attributes ADR-0052 asks for, and the session behind the cookie
-/// works; a wrong password and an unknown email get the same 401 with no cookie. (Spike 0003 step 2: the suite asserts
-/// the attributes on `Set-Cookie` itself, because the local targets serve plain HTTP.)
+/// works; a refused sign-in sets no cookie. (Spike 0003 step 2: the suite asserts the attributes on `Set-Cookie` itself,
+/// because the local targets serve plain HTTP.) Plane's answer names no user and holds no token, only where to go, and its
+/// refusals say which of the two was wrong (a wrong password and an unknown email are not one answer, as the slice's
+/// were: the pin's `USER_DOES_NOT_EXIST` and `AUTHENTICATION_FAILED_SIGN_IN`, G-16; the codes are
+/// `compat_sign_in_signs_a_seeded_user_in_and_refuses_everyone_else_with_planes_codes`'s).
 #[tokio::test]
 async fn sign_in_sets_http_only_cookies_and_the_session_works() {
     sign_in_cookies().await;
@@ -91,47 +117,44 @@ async fn sign_in_cookies() {
     }
     let text = r.text().await.unwrap();
     assert!(!text.contains(&session.value), "the session token must not be in the body");
-    let body: SignInResponse = serde_json::from_str(&text).unwrap();
-    assert_eq!((body.user_id, body.csrf_token.as_str()), (f.member_a.id, csrf.value.as_str()));
+    assert!(!text.contains(&csrf.value), "nor the CSRF token: the app asks `get-csrf-token` for that");
+    assert_eq!(serde_json::from_str::<Value>(&text).unwrap(), json!({"redirect_path": "/"}));
 
     // the cookie is a session: it authenticates a safe request, and so does its value as a bearer token
-    let s = Session { user_id: body.user_id, token: session.value.clone(), csrf: csrf.value.clone() };
-    let cookie_get = as_browser(&t, Method::GET, t.url(&wi_path(&f.a)), &s, Csrf::Absent).send().await.unwrap();
-    assert_eq!(cookie_get.status(), 200, "a safe request needs no CSRF token");
-    assert_eq!(list(&t, &User { token: s.token.clone(), ..clone_user(&f.member_a) }, &f.a, None).await.status(), 200);
-    let me = as_browser(&t, Method::GET, auth_url(&t, "/session"), &s, Csrf::Absent).send().await.unwrap();
-    assert_eq!(me.status(), 200);
-    let me: SessionInfo = me.json().await.unwrap();
-    assert_eq!(me, SessionInfo { user_id: f.member_a.id, credential: CredentialKind::Session });
+    let s = Session { user_id: f.member_a.id, token: session.value.clone(), csrf: csrf.value.clone() };
+    let me = t.me(|r| r.header("cookie", s.cookie_header())).await;
+    assert_eq!(me.status(), 200, "a safe request needs no CSRF token");
+    assert_eq!(
+        me.json::<Value>().await.unwrap()["id"],
+        json!(f.member_a.id.0),
+        "the session is the user's who signed in"
+    );
+    assert_eq!(t.me_status(&s.token).await, 200, "the cookie's value is a bearer token too");
 
-    // controls: a wrong password and an unknown email are the same refusal, and set no cookie
+    // controls: a wrong password and an unknown email are refused, and set no cookie
     let wrong = t.sign_in_raw(&f.member_a.email, "not the password").await;
     let unknown = t.sign_in_raw("nobody@example.test", &f.member_a.password).await;
-    assert_eq!((wrong.status().as_u16(), unknown.status().as_u16()), (401, 401));
+    assert_eq!((wrong.status().as_u16(), unknown.status().as_u16()), (400, 400));
     assert!(SetCookie::all(&wrong).is_empty() && SetCookie::all(&unknown).is_empty());
-    let (wrong, unknown) = (wrong.text().await.unwrap(), unknown.text().await.unwrap());
-    assert_eq!(wrong, unknown, "nothing in the answer says which one it was");
     // control: the email is matched case-insensitively and trimmed, so the same user signs in with another spelling
     let respelled = t.sign_in_raw(&format!(" {} ", f.member_a.email.to_uppercase()), &f.member_a.password).await;
     assert_eq!(respelled.status(), 200);
     // control: no credentials at all is still 401
-    assert_eq!(t.http.get(auth_url(&t, "/session")).send().await.unwrap().status(), 401);
-}
-
-fn clone_user(u: &User) -> User {
-    User { id: u.id, token: u.token.clone(), key: u.key.clone(), email: u.email.clone(), password: u.password.clone() }
+    assert_eq!(t.me(|r| r).await.status(), 401);
 }
 
 /// ADR-0052: a mutation authenticated by the cookie needs the double-submit token. This is also spike 0003's K3: the
 /// stock React app sends the token only on its auth form posts, so its JSON mutations would be refused here until its
-/// service layer sends it (recorded in the research note, not decided).
+/// service layer sends it (recorded in the research note, not decided). The mutations are Plane's: a work item made (S48)
+/// and changed (X03).
 #[tokio::test]
 async fn a_cookie_authenticated_mutation_needs_the_csrf_token() {
     let t = t();
     let f = Fixture::seed(&t).await;
     let s = t.sign_in(&f.member_a).await;
-    let create =
-        |csrf| as_browser(&t, Method::POST, t.url(&wi_path(&f.a)), &s, csrf).json(&json!({"name": "from a cookie"}));
+    let create = |csrf| {
+        as_browser(&t, Method::POST, t.url(&compat_issues(&f.a)), &s, csrf).json(&json!({"name": "from a cookie"}))
+    };
 
     for (what, csrf) in [
         ("no token", Csrf::Absent),
@@ -144,24 +167,32 @@ async fn a_cookie_authenticated_mutation_needs_the_csrf_token() {
         assert_eq!(error_code(r).await, "csrf_failed", "{what}");
     }
     // none of the refused requests did anything
-    let before: Vec<WorkItem> = list(&t, &f.member_a, &f.a, None).await.json().await.unwrap();
-    assert!(before.is_empty(), "a refused mutation created a row");
+    assert!(listed_names(&t, &f).await.is_empty(), "a refused mutation created a row");
     // the same request with the token succeeds
-    let ok = create(Csrf::Matching).send().await.unwrap();
-    assert_eq!(ok.status(), 201, "the same mutation with the token");
-    let created: WorkItem = ok.json().await.unwrap();
-    assert_eq!(created.created_by, Some(f.member_a.id), "created as the session's user");
+    let (item, id) = made(create(Csrf::Matching).send().await.unwrap()).await;
+    assert_eq!(item["created_by"], json!(f.member_a.id.0), "created as the session's user");
 
     // controls: the token is only asked of a cookie-authenticated mutation. A bearer token is not an ambient credential,
     // so the same mutation without the token succeeds; a safe request with the cookie needs none.
-    let bearer = create_ok(&t, &f.member_a, &f.a, "from a bearer token").await;
-    assert_eq!(bearer.created_by, Some(f.member_a.id));
-    let safe = as_browser(&t, Method::GET, t.url(&wi_path(&f.a)), &s, Csrf::Absent).send().await.unwrap();
+    let bearer = t
+        .http
+        .post(t.url(&compat_issues(&f.a)))
+        .bearer_auth(&f.member_a.token)
+        .json(&json!({"name": "from a bearer token"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(made(bearer).await.0["created_by"], json!(f.member_a.id.0));
+    let safe = as_browser(&t, Method::GET, t.url(&compat_issues(&f.a)), &s, Csrf::Absent).send().await.unwrap();
     assert_eq!(safe.status(), 200);
-    // a delete is a mutation too
-    let del = |csrf| as_browser(&t, Method::DELETE, t.url(&format!("{}/{}", wi_path(&f.a), created.id)), &s, csrf);
-    assert_eq!(del(Csrf::Absent).send().await.unwrap().status(), 403, "a delete without the token");
-    assert_eq!(del(Csrf::Matching).send().await.unwrap().status(), 204, "the same delete with it");
+    // a change is a mutation too
+    let change = |csrf| {
+        as_browser(&t, Method::PATCH, t.url(&compat_issue(&f.a, &id)), &s, csrf).json(&json!({"name": "changed"}))
+    };
+    assert_eq!(change(Csrf::Absent).send().await.unwrap().status(), 403, "a change without the token");
+    assert!(!listed_names(&t, &f).await.contains(&"changed".to_string()), "a refused change changed the row");
+    assert_eq!(change(Csrf::Matching).send().await.unwrap().status(), 204, "the same change with it");
+    assert!(listed_names(&t, &f).await.contains(&"changed".to_string()), "and it took effect");
 }
 
 /// Q-0050.8, the `csrfoff` pass: a target that does not enforce the token says so, and the main pass's server says the
@@ -183,8 +214,9 @@ async fn csrf_off_a_cookie_authenticated_mutation_needs_no_token() {
     let t = t();
     let f = Fixture::seed(&t).await;
     let s = t.sign_in(&f.member_a).await;
-    let create =
-        |csrf| as_browser(&t, Method::POST, t.url(&wi_path(&f.a)), &s, csrf).json(&json!({"name": "from a cookie"}));
+    let create = |csrf| {
+        as_browser(&t, Method::POST, t.url(&compat_issues(&f.a)), &s, csrf).json(&json!({"name": "from a cookie"}))
+    };
 
     let mut created = Vec::new();
     for (what, csrf) in [
@@ -194,36 +226,44 @@ async fn csrf_off_a_cookie_authenticated_mutation_needs_no_token() {
         ("a token and no CSRF cookie", Csrf::NoCookie),
         ("the token", Csrf::Matching),
     ] {
-        let r = create(csrf).send().await.unwrap();
-        assert_eq!(r.status(), 201, "{what}");
-        let item: WorkItem = r.json().await.unwrap();
-        assert_eq!(item.created_by, Some(f.member_a.id), "created as the session's user ({what})");
-        created.push(item.id);
+        let (item, id) = made(create(csrf).send().await.unwrap()).await;
+        assert_eq!(item["created_by"], json!(f.member_a.id.0), "created as the session's user ({what})");
+        created.push(id);
     }
-    let rows: Vec<WorkItem> = list(&t, &f.member_a, &f.a, None).await.json().await.unwrap();
-    assert_eq!(rows.len(), created.len(), "every one of them created a row");
-    // a delete is a mutation too
-    let del =
-        |id: WorkItemId, csrf| as_browser(&t, Method::DELETE, t.url(&format!("{}/{}", wi_path(&f.a), id)), &s, csrf);
-    assert_eq!(del(created[0], Csrf::Absent).send().await.unwrap().status(), 204, "a delete without the token");
-    assert_eq!(del(created[1], Csrf::Wrong("ffffffffffffffffffffffffffffffff")).send().await.unwrap().status(), 204);
+    assert_eq!(listed_names(&t, &f).await.len(), created.len(), "every one of them created a row");
+    // a change is a mutation too
+    let change = |id: &str, csrf, name: &str| {
+        as_browser(&t, Method::PATCH, t.url(&compat_issue(&f.a, id)), &s, csrf).json(&json!({ "name": name }))
+    };
+    assert_eq!(
+        change(&created[0], Csrf::Absent, "changed 1").send().await.unwrap().status(),
+        204,
+        "a change without the token"
+    );
+    let wrong = Csrf::Wrong("ffffffffffffffffffffffffffffffff");
+    assert_eq!(change(&created[1], wrong, "changed 2").send().await.unwrap().status(), 204);
+    let names = listed_names(&t, &f).await;
+    assert!(names.contains(&"changed 1".to_string()) && names.contains(&"changed 2".to_string()), "{names:?}");
 
     // controls: the credential is still checked. A dead cookie is 401 with or without a token, and no cookie at all is
     // 401, so this is "the token is not asked for", not "anything is accepted"
     let ghost = Session { token: "not-a-session".into(), ..s.clone() };
-    let dead = as_browser(&t, Method::POST, t.url(&wi_path(&f.a)), &ghost, Csrf::Matching).json(&json!({"name": "x"}));
+    let dead =
+        as_browser(&t, Method::POST, t.url(&compat_issues(&f.a)), &ghost, Csrf::Matching).json(&json!({"name": "x"}));
     assert_eq!(dead.send().await.unwrap().status(), 401, "a dead cookie");
-    let none = t.http.post(t.url(&wi_path(&f.a))).json(&json!({"name": "x"})).send().await.unwrap();
+    let none = t.http.post(t.url(&compat_issues(&f.a))).json(&json!({"name": "x"})).send().await.unwrap();
     assert_eq!(none.status(), 401, "no credential");
     // and a cookie of a user who cannot create is refused for that reason, not waved through
     let guest = t.sign_in(&f.guest_a).await;
-    let r = as_browser(&t, Method::POST, t.url(&wi_path(&f.a)), &guest, Csrf::Absent).json(&json!({"name": "x"}));
+    let r = as_browser(&t, Method::POST, t.url(&compat_issues(&f.a)), &guest, Csrf::Absent).json(&json!({"name": "x"}));
     assert_eq!(r.send().await.unwrap().status(), 403, "a guest still may not create");
+    assert_eq!(listed_names(&t, &f).await.len(), created.len(), "and the refusals made nothing");
 }
 
 /// Q-0050.8: the identity routes that need a session (sign-out, sign-out-everywhere, the three API-key routes) are
 /// cookie mutations like any other, so with enforcement off the cookie is enough for them too, and an API key is still
-/// not a session. (The stock app's sign-out, for one, is a cookie POST.)
+/// not a session. (The stock app's sign-out, for one, is a cookie POST: Plane's, `/auth/sign-out/`. The other four have
+/// no Plane route, and are the slice's.)
 #[tokio::test]
 async fn csrf_off_identity_routes_take_the_cookie_without_a_token() {
     let t = t();
@@ -251,21 +291,21 @@ async fn csrf_off_identity_routes_take_the_cookie_without_a_token() {
     assert_eq!(by_key.status(), 401, "a key cannot mint keys");
 
     // sign-out ends this session with the cookie alone, and clears both cookies; the other session lives on
-    let out = as_browser(&t, Method::POST, auth_url(&t, "/sign-out"), &s, Csrf::Absent).send().await.unwrap();
-    assert_eq!(out.status(), 204, "sign-out with the cookie and no token");
+    let out = as_browser(&t, Method::POST, t.url("/auth/sign-out/"), &s, Csrf::Absent).send().await.unwrap();
+    assert_eq!(out.status(), 200, "sign-out with the cookie and no token");
     assert!(SetCookie::all(&out).iter().all(|c| c.attr("Max-Age") == Some("0")), "both cookies cleared");
-    let after = as_browser(&t, Method::GET, auth_url(&t, "/session"), &s, Csrf::Absent).send().await.unwrap();
+    let after = t.me(|r| r.header("cookie", s.cookie_header())).await;
     assert_eq!(after.status(), 401, "the signed-out session is dead");
-    let still = as_browser(&t, Method::GET, auth_url(&t, "/session"), &other, Csrf::Absent).send().await.unwrap();
+    let still = t.me(|r| r.header("cookie", other.cookie_header())).await;
     assert_eq!(still.status(), 200, "control: the other session is not the one that was ended");
     // sign-out everywhere, likewise
     let all = as_browser(&t, Method::POST, auth_url(&t, "/sign-out-all"), &other, Csrf::Absent).send().await.unwrap();
     assert_eq!(all.status(), 200, "sign-out-everywhere with the cookie and no token");
-    let gone = as_browser(&t, Method::GET, auth_url(&t, "/session"), &other, Csrf::Absent).send().await.unwrap();
+    let gone = t.me(|r| r.header("cookie", other.cookie_header())).await;
     assert_eq!(gone.status(), 401);
 }
 
-/// `GET /auth/csrf` (Plane's `get-csrf-token`): a fresh token each time, in the JSON body and in the CSRF cookie, with
+/// `GET /auth/get-csrf-token/` (Plane's route, S03): a fresh token each time, in the JSON body and in the CSRF cookie, with
 /// the cookie's attributes, for a caller who has no session yet.
 #[tokio::test]
 async fn the_csrf_endpoint_hands_out_a_fresh_token_in_json_and_in_the_cookie() {
@@ -283,7 +323,7 @@ async fn csrf_endpoint() {
     let t = t();
     let mut seen = Vec::new();
     for _ in 0..2 {
-        let r = t.http.get(auth_url(&t, "/csrf")).send().await.unwrap();
+        let r = t.http.get(t.url("/auth/get-csrf-token/")).send().await.unwrap();
         assert_eq!(r.status(), 200);
         let cookies = SetCookie::all(&r);
         assert_eq!(cookies.len(), 1, "only the CSRF cookie: {cookies:?}");
@@ -300,50 +340,46 @@ async fn csrf_endpoint() {
     assert_ne!(seen[0], seen[1]);
 }
 
-/// Sign-out ends one session and clears both cookies; another session of the same user lives on. It is a
-/// cookie-authenticated mutation, so it needs the CSRF token too.
+/// Sign-out ends one session and clears both cookies; another session of the same user lives on, and so does another user's.
+/// (`POST /auth/sign-out/`, X06, D-036: 200 and where to go, and the same answer for a session that is already over. That it
+/// is refused without the CSRF token, and ends nothing then, is `compat_sign_out_ends_the_session_clears_both_cookies_and_needs_the_csrf_token_for_a_cookie`'s.)
 #[tokio::test]
 async fn sign_out_ends_that_session_only() {
     let t = t();
     let f = Fixture::seed(&t).await;
     let (s1, s2) = (t.sign_in(&f.member_a).await, t.sign_in(&f.member_a).await);
+    let other_user = t.sign_in(&f.guest_a).await;
     assert_ne!(s1.token, s2.token, "every sign-in is a new session");
-    let alive = |s: &Session| {
-        let (t, f) = (&t, &f);
-        let s = s.clone();
-        async move {
-            let u = User { token: s.token, ..clone_user(&f.member_a) };
-            list(t, &u, &f.a, None).await.status() == 200
-        }
-    };
-    assert!(alive(&s1).await && alive(&s2).await);
+    for s in [&s1, &s2, &other_user] {
+        assert_eq!(t.me_status(&s.token).await, 200);
+    }
 
-    // without the token it is refused, and the session is still there
-    let r = as_browser(&t, Method::POST, auth_url(&t, "/sign-out"), &s1, Csrf::Absent).send().await.unwrap();
-    assert_eq!(r.status(), 403);
-    assert!(alive(&s1).await, "a refused sign-out must not end the session");
-
-    // with it: 204, both cookies cleared, that session gone, the other not
-    let r = as_browser(&t, Method::POST, auth_url(&t, "/sign-out"), &s1, Csrf::Matching).send().await.unwrap();
-    assert_eq!(r.status(), 204);
+    // with the token: 200, both cookies cleared, that session gone, the others not
+    let r = as_browser(&t, Method::POST, t.url("/auth/sign-out/"), &s1, Csrf::Matching).send().await.unwrap();
+    assert_eq!(r.status(), 200);
     let cleared = SetCookie::all(&r);
     for name in [SESSION_COOKIE, CSRF_COOKIE] {
         let c = SetCookie::find(&cleared, name).unwrap_or_else(|| panic!("{name} not cleared: {cleared:?}"));
         assert_eq!((c.value.as_str(), c.attr("Max-Age")), ("", Some("0")), "{name}");
     }
-    assert!(!alive(&s1).await, "the session is revoked on the next request");
-    assert!(alive(&s2).await, "another session of the same user is not");
-    // signing out again, or with nothing, is a 401 (no session to end)
-    let again = as_browser(&t, Method::POST, auth_url(&t, "/sign-out"), &s1, Csrf::Matching).send().await.unwrap();
-    assert_eq!(again.status(), 401);
-    assert_eq!(t.http.post(auth_url(&t, "/sign-out")).send().await.unwrap().status(), 401);
+    assert_eq!(r.json::<Value>().await.unwrap(), json!({"redirect_path": "/"}));
+    assert_eq!(t.me_status(&s1.token).await, 401, "the session is revoked on the next request");
+    assert_eq!(t.me_status(&s2.token).await, 200, "another session of the same user is not");
+    assert_eq!(t.me_status(&other_user.token).await, 200, "nor is another user's");
+    // signing out again, or with nothing, is the same answer (nothing says whether there was a session to end), and ends no other
+    let again = as_browser(&t, Method::POST, t.url("/auth/sign-out/"), &s1, Csrf::Matching).send().await.unwrap();
+    assert_eq!(again.status(), 200);
+    assert_eq!(t.http.post(t.url("/auth/sign-out/")).send().await.unwrap().status(), 200);
+    assert_eq!(t.me_status(&s2.token).await, 200, "and neither ended the other session");
     // a bearer token signs out without the CSRF token (it is not an ambient credential)
-    let r = t.http.post(auth_url(&t, "/sign-out")).bearer_auth(&s2.token).send().await.unwrap();
-    assert_eq!(r.status(), 204);
-    assert!(!alive(&s2).await);
+    let r = t.http.post(t.url("/auth/sign-out/")).bearer_auth(&s2.token).send().await.unwrap();
+    assert_eq!(r.status(), 200);
+    assert_eq!(t.me_status(&s2.token).await, 401);
+    assert_eq!(t.me_status(&other_user.token).await, 200, "still not another user's");
 }
 
-/// Sign-out everywhere ends every session of the user (the fixture's own included) and nobody else's.
+/// Sign-out everywhere ends every session of the user (the fixture's own included) and nobody else's. No Plane route does it (the
+/// pin's app has no such menu item, G-29), so it is the slice's.
 #[tokio::test]
 async fn sign_out_everywhere_ends_every_session_of_the_user_and_no_one_elses() {
     let t = t();
@@ -351,19 +387,14 @@ async fn sign_out_everywhere_ends_every_session_of_the_user_and_no_one_elses() {
     let mine: Vec<Session> =
         vec![t.sign_in(&f.member_a).await, t.sign_in(&f.member_a).await, t.sign_in(&f.member_a).await];
     let other = t.sign_in(&f.guest_a).await;
-    let status = |token: &str, who: &User| {
-        let u = User { token: token.to_string(), ..clone_user(who) };
-        let (t, a) = (&t, &f.a);
-        async move { list(t, &u, a, None).await.status() }
-    };
     for s in &mine {
-        assert_eq!(status(&s.token, &f.member_a).await, 200);
+        assert_eq!(t.me_status(&s.token).await, 200);
     }
 
     // refused without the CSRF token, and nothing ends
     let r = as_browser(&t, Method::POST, auth_url(&t, "/sign-out-all"), &mine[0], Csrf::Absent).send().await.unwrap();
     assert_eq!(r.status(), 403);
-    assert_eq!(status(&mine[1].token, &f.member_a).await, 200);
+    assert_eq!(t.me_status(&mine[1].token).await, 200);
 
     let r = as_browser(&t, Method::POST, auth_url(&t, "/sign-out-all"), &mine[0], Csrf::Matching).send().await.unwrap();
     assert_eq!(r.status(), 200);
@@ -372,36 +403,39 @@ async fn sign_out_everywhere_ends_every_session_of_the_user_and_no_one_elses() {
     let body: Value = r.json().await.unwrap();
     assert_eq!(body["revoked"], 4, "three sign-ins and the fixture's own session");
     for s in &mine {
-        assert_eq!(status(&s.token, &f.member_a).await, 401, "a session of the user survived");
+        assert_eq!(t.me_status(&s.token).await, 401, "a session of the user survived");
     }
-    assert_eq!(status(&f.member_a.token, &f.member_a).await, 401, "the fixture's session too");
+    assert_eq!(t.me_status(&f.member_a.token).await, 401, "the fixture's session too");
     // controls: another user's sessions are untouched, and the user can sign in again
-    assert_eq!(status(&other.token, &f.guest_a).await, 200);
-    assert_eq!(status(&f.guest_a.token, &f.guest_a).await, 200);
+    assert_eq!(t.me_status(&other.token).await, 200);
+    assert_eq!(t.me_status(&f.guest_a.token).await, 200);
     let again = t.sign_in(&f.member_a).await;
-    assert_eq!(status(&again.token, &f.member_a).await, 200);
+    assert_eq!(t.me_status(&again.token).await, 200);
 }
 
 /// ADR-0052 (Tests): a deactivated user's session is rejected on the very next request, and they cannot sign in;
-/// reactivating brings the session back. (Deactivation is a test route until ADR-0053.)
+/// reactivating brings the session back. (Deactivation is a test route until ADR-0053.) A refused sign-in is Plane's 400
+/// with `AUTHENTICATION_FAILED_SIGN_IN` (5065), not the slice's 401.
 #[tokio::test]
 async fn a_deactivated_users_session_is_rejected() {
     let t = t();
     let f = Fixture::seed(&t).await;
     let s = t.sign_in(&f.member_a).await;
-    let who = |token: &str| User { token: token.to_string(), ..clone_user(&f.member_a) };
-    assert_eq!(list(&t, &who(&s.token), &f.a, None).await.status(), 200, "before");
+    assert_eq!(t.me_status(&s.token).await, 200, "before");
     t.set_user_active(f.member_a.id, false).await;
-    assert_eq!(list(&t, &who(&s.token), &f.a, None).await.status(), 401, "the signed-in session");
-    assert_eq!(list(&t, &f.member_a, &f.a, None).await.status(), 401, "the fixture's session");
-    let cookie = as_browser(&t, Method::GET, auth_url(&t, "/session"), &s, Csrf::Absent).send().await.unwrap();
+    assert_eq!(t.me_status(&s.token).await, 401, "the signed-in session");
+    assert_eq!(t.me_status(&f.member_a.token).await, 401, "the fixture's session");
+    let cookie = t.me(|r| r.header("cookie", s.cookie_header())).await;
     assert_eq!(cookie.status(), 401, "the cookie");
-    assert_eq!(t.sign_in_raw(&f.member_a.email, &f.member_a.password).await.status(), 401, "no new sign-in");
+    let refused = t.sign_in_raw(&f.member_a.email, &f.member_a.password).await;
+    assert_eq!(refused.status(), 400, "no new sign-in");
+    assert!(SetCookie::all(&refused).is_empty(), "and no session from it");
+    assert_eq!(refused.json::<Value>().await.unwrap()["error_code"], 5065);
     // controls: nobody else is affected, and reactivation undoes it
-    assert_eq!(list(&t, &f.admin_a, &f.a, None).await.status(), 200, "another user");
+    assert_eq!(t.me_status(&f.admin_a.token).await, 200, "another user");
     assert_eq!(t.sign_in_raw(&f.admin_a.email, &f.admin_a.password).await.status(), 200);
     t.set_user_active(f.member_a.id, true).await;
-    assert_eq!(list(&t, &who(&s.token), &f.a, None).await.status(), 200, "reactivated");
+    assert_eq!(t.me_status(&s.token).await, 200, "reactivated");
     assert_eq!(t.sign_in_raw(&f.member_a.email, &f.member_a.password).await.status(), 200);
     // a typo in a test is not a silent success
     let r = t
@@ -715,7 +749,7 @@ async fn oidc_login_completes_and_ends_in_the_same_session_as_a_password_sign_in
     // verified email of a user with no link yet: the subject is linked and the user is logged in
     let cb = begin(&t, Identity::verified(&sub, &f.member_a.email), Tamper::None).await;
     let s = assert_logged_in(&t, finish(&t, &cb).await, f.member_a.id).await;
-    assert_eq!(list(&t, &User { token: s.token.clone(), ..clone_user(&f.member_a) }, &f.a, None).await.status(), 200);
+    assert_eq!(t.me_status(&s.token).await, 200, "the session the login made is a session");
 
     // the link now decides: the same subject reporting another user's verified email is still the first user
     let cb = begin(&t, Identity::verified(&sub, &f.admin_a.email), Tamper::None).await;
@@ -830,7 +864,10 @@ async fn oidc_there_is_no_provisioning_and_a_deactivated_user_cannot_log_in() {
     let stranger = format!("stranger-{}@example.test", uuid::Uuid::new_v4().simple());
     let cb = begin(&t, Identity::verified(&unique_sub(), &stranger), Tamper::None).await;
     assert_refused(finish(&t, &cb).await, 403, "a verified email nobody has").await;
-    assert_eq!(t.sign_in_raw(&stranger, "anything").await.status(), 401, "and no user was made");
+    // and no user was made: Plane's sign-in names the reason, `USER_DOES_NOT_EXIST` (5060), where the slice's said 401
+    let r = t.sign_in_raw(&stranger, "anything").await;
+    assert_eq!(r.status(), 400, "and no user was made");
+    assert_eq!(r.json::<Value>().await.unwrap()["error_code"], 5060, "no such user");
 
     let sub = unique_sub();
     t.set_user_active(f.guest_a.id, false).await;
