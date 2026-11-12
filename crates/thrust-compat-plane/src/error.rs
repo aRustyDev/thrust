@@ -7,6 +7,7 @@ use axum::response::IntoResponse;
 use axum::Json;
 use serde_json::json;
 use thrust_core::CoreError;
+use thrust_plane_types::{plane_500, Plane500};
 
 /// The codes of Plane's `AUTHENTICATION_ERROR_CODES` that the routes here can answer (the pin's
 /// `apps/api/plane/authentication/adapter/error.py`), with the message Plane gives each.
@@ -120,8 +121,21 @@ pub enum PlaneError {
     Conflict(serde_json::Value),
     /// A 404 with a body the caller built (the pin gives a missing object, a missing project and a missing route different ones).
     NotFound(serde_json::Value),
-    /// Anything whose Plane shape has not been recorded yet.
+    /// A 500, one of the pin's three texts (`thrust_plane_types::Plane500`); the cause is logged by the composition root and never
+    /// sent. A request the pin fails on purpose is built with [`PlaneError::internal`].
+    Plane500 { kind: Plane500, cause: String },
+    /// Anything whose Plane shape has not been recorded yet. An internal failure and an unavailable identity provider are the
+    /// exception: the pin's base handlers turn every exception they do not map into the catch-all 500, so those two are answered
+    /// as it (`into_response`), whichever way the error was built.
     Other(CoreError),
+}
+
+impl PlaneError {
+    /// The pin's catch-all 500 (`Something went wrong please try again later`), for a request it fails on purpose or for something
+    /// that should not have happened here. Name the rule or the failure in `cause`: it is the log's, never the client's.
+    pub fn internal(cause: impl Into<String>) -> Self {
+        PlaneError::Plane500 { kind: Plane500::SomethingWentWrong, cause: cause.into() }
+    }
 }
 
 impl From<CoreError> for PlaneError {
@@ -154,6 +168,10 @@ impl IntoResponse for PlaneError {
             PlaneError::Forbidden(body) => (StatusCode::FORBIDDEN, Json(body)).into_response(),
             PlaneError::Conflict(body) => (StatusCode::CONFLICT, Json(body)).into_response(),
             PlaneError::NotFound(body) => (StatusCode::NOT_FOUND, Json(body)).into_response(),
+            PlaneError::Plane500 { kind, cause } => plane_500(kind, cause),
+            PlaneError::Other(CoreError::Internal(cause) | CoreError::Upstream(cause)) => {
+                plane_500(Plane500::SomethingWentWrong, cause)
+            }
             PlaneError::Other(e) => thrust_api::ApiError(e).into_response(),
         }
     }

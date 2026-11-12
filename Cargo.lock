@@ -3581,6 +3581,7 @@ dependencies = [
  "thrust-contracts",
  "thrust-core",
  "thrust-editor-doc",
+ "thrust-plane-types",
  "thrust-ports",
  "tower",
 ]

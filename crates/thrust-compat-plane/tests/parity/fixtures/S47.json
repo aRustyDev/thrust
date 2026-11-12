@@ -17305,6 +17305,160 @@
       }
     },
     {
+      "name": "a page size of zero",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/?per_page=0"
+      },
+      "response": {
+        "body": {
+          "error": "Something went wrong please try again later"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 500
+      }
+    },
+    {
+      "name": "a page size below zero",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/?per_page=-1"
+      },
+      "response": {
+        "body": {
+          "error": "Something went wrong please try again later"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 500
+      }
+    },
+    {
+      "name": "a page size of zero with a cursor",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/?cursor=3:0:0&per_page=0"
+      },
+      "response": {
+        "body": {
+          "error": "Something went wrong please try again later"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 500
+      }
+    },
+    {
+      "name": "a cursor to the previous page whose size is not the page size",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/?cursor=5:1:1&per_page=3&order_by=-created_at"
+      },
+      "response": {
+        "body": {
+          "error": "Something went wrong please try again later"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 500
+      }
+    },
+    {
+      "name": "a page size of zero with a cursor that is not a cursor",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/?cursor=abc&per_page=0"
+      },
+      "response": {
+        "body": {
+          "detail": "Invalid cursor parameter."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "a page size below zero on a page after the first",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/?cursor=3:1:0&per_page=-1"
+      },
+      "response": {
+        "body": {
+          "detail": "Error in parsing"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "a page size of zero on a page before the first",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/?cursor=3:-1:1&per_page=0"
+      },
+      "response": {
+        "body": {
+          "error": "Something went wrong please try again later"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 500
+      }
+    },
+    {
+      "name": "a page size of zero with a change date that is not a date",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/?cursor=100:0:0&per_page=0&updated_at__gt=nonsense"
+      },
+      "response": {
+        "body": {
+          "error": "Please provide valid detail"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "a page size of zero with filters that are not JSON",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/projects/<uuid:1>/issues/?cursor=100:0:0&per_page=0&filters=nonsense"
+      },
+      "response": {
+        "body": {
+          "code": "invalid_json",
+          "message": "Invalid JSON for 'filter'. Expected a valid JSON object."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
       "name": "a cursor that is not a cursor",
       "request": {
         "as": "journey@example.test",

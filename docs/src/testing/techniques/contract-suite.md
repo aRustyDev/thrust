@@ -60,7 +60,7 @@ with a fixture made first as the control) and nothing more; the positive path is
   (`oidc_` prefix) run against a mock identity provider that the suite serves on `127.0.0.1`
   (`crates/thrust-contract-tests/src/mock_idp.rs`, RS256 signed with the `rsa` crate, so it shares no code with the
   `openidconnect` crate that verifies its tokens); a deployed Worker cannot reach it, so `scripts/stage2-contract.sh`
-  skips them (56 tests there).
+  skips them (57 tests there).
 - `crates/thrust-contract-tests/tests/budget/mod.rs`: the round-trip budget (issue #39), in the `main` pass.
   `list_endpoints_stay_within_five_db_round_trips` reads the `x-thrust-db-round-trips` header (see
   [the test routes](../../flows/app.md)) of nine requests, each list seeded with six or more rows so that a statement per row
