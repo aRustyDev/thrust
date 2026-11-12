@@ -98,6 +98,8 @@ rows! {
     parity_s34_open_project_once_it_has_a_cover => "S34-after",
     parity_s33_read_an_asset => "S33",
     parity_x05_a_covers_own_address => "X05",
+    parity_x07_stickies => "X07",
+    parity_x08_unsplash => "X08",
     parity_s28_upload_an_asset_as_a_member => "S28-member",
     parity_s29_confirm_an_upload_as_a_member => "S29-member",
     parity_s31_attach_assets_as_a_member => "S31-member",

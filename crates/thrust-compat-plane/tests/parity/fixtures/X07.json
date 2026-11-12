@@ -1,0 +1,223 @@
+{
+  "exchanges": [
+    {
+      "name": "the empty page",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/stickies/"
+      },
+      "response": {
+        "body": {
+          "count": 0,
+          "extra_stats": null,
+          "grouped_by": null,
+          "next_cursor": "20:1:0",
+          "next_page_results": false,
+          "prev_cursor": "20:-1:1",
+          "prev_page_results": false,
+          "results": [],
+          "sub_grouped_by": null,
+          "total_count": 0,
+          "total_pages": 0,
+          "total_results": 0
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "a page size",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/stickies/?per_page=5"
+      },
+      "response": {
+        "body": {
+          "count": 0,
+          "extra_stats": null,
+          "grouped_by": null,
+          "next_cursor": "5:1:0",
+          "next_page_results": false,
+          "prev_cursor": "5:-1:1",
+          "prev_page_results": false,
+          "results": [],
+          "sub_grouped_by": null,
+          "total_count": 0,
+          "total_pages": 0,
+          "total_results": 0
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "a search",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/stickies/?query=anything"
+      },
+      "response": {
+        "body": {
+          "count": 0,
+          "extra_stats": null,
+          "grouped_by": null,
+          "next_cursor": "20:1:0",
+          "next_page_results": false,
+          "prev_cursor": "20:-1:1",
+          "prev_page_results": false,
+          "results": [],
+          "sub_grouped_by": null,
+          "total_count": 0,
+          "total_pages": 0,
+          "total_results": 0
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "a cursor to a later page",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/stickies/?cursor=20:1:0"
+      },
+      "response": {
+        "body": {
+          "count": 0,
+          "extra_stats": null,
+          "grouped_by": null,
+          "next_cursor": "20:2:0",
+          "next_page_results": false,
+          "prev_cursor": "20:0:1",
+          "prev_page_results": true,
+          "results": [],
+          "sub_grouped_by": null,
+          "total_count": 0,
+          "total_pages": 0,
+          "total_results": 0
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "a page size that is not a number",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/stickies/?per_page=x"
+      },
+      "response": {
+        "body": {
+          "detail": "Invalid per_page parameter."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "a page size over the cap",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/stickies/?per_page=1001"
+      },
+      "response": {
+        "body": {
+          "detail": "Invalid per_page value. Cannot exceed 1000."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "a cursor that is not a cursor",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/stickies/?cursor=garbage"
+      },
+      "response": {
+        "body": {
+          "detail": "Invalid cursor parameter."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "no session",
+      "request": {
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/stickies/"
+      },
+      "response": {
+        "body": {
+          "detail": "Authentication credentials were not provided."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 401
+      }
+    },
+    {
+      "name": "not a member of the workspace",
+      "request": {
+        "as": "second@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/journey-ws/stickies/"
+      },
+      "response": {
+        "body": {
+          "error": "You don't have the required permissions."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 403
+      }
+    },
+    {
+      "name": "a workspace that does not exist",
+      "request": {
+        "as": "journey@example.test",
+        "method": "GET",
+        "path": "/api/workspaces/no-such-workspace/stickies/"
+      },
+      "response": {
+        "body": {
+          "error": "You don't have the required permissions."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 403
+      }
+    }
+  ],
+  "format_version": 1,
+  "preconditions": [
+    "the journey's first account (the admin of journey-ws) has no sticky note there: none is ever made; the second account is not yet a member of journey-ws"
+  ],
+  "recorded_from": "ba85d4d3d3",
+  "row": "X07"
+}
