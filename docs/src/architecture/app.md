@@ -128,7 +128,7 @@ The plan's `ARCHITECTURE.md` (draft v0, `.agents/plans/contrail/ARCHITECTURE.md`
 
 - **Crates:** `thrust-api-core` and `thrust-collab-do` do not exist. `thrust-api-v1` does (`/api/v1`: projects, states,
   labels and work items, issue #58). `thrust-compat-plane` serves the 48-route slice of issue #44 (S01 to S48 and X01 to
-  X04, and X06, the sign-out the user menu calls: D-036), the four asset rows (S28, S29, S31 and S33) included, and three routes of its own around them: the address S28 hands
+  X04, X06, the sign-out the user menu calls: D-036, and X07 and X08, two stubs the first journey's pages call: D-021), the four asset rows (S28, S29, S31 and S33) included, and three routes of its own around them: the address S28 hands
   the browser for the upload, the route S33 redirects to, and the address a project's cover is shown at (X05). Each composition
   root mounts it beside `thrust-api`'s router. `thrust-plane-types` holds the pinned Plane's three 500 texts and the one function that
   answers them; `thrust-api-v1` and `thrust-compat-plane` both answer a reproduced 500 through it (issue #51).
@@ -142,7 +142,7 @@ The plan's `ARCHITECTURE.md` (draft v0, `.agents/plans/contrail/ARCHITECTURE.md`
   (`web/SOURCE`). Only the files in `web/ALLOWED-CHANGES` may differ from the pin, and the `web` job of CI checks it
   ([CI/CD](cicd.md)). Two files differ from it, the auth client's: `components/account/auth-forms/password.tsx` and
   `services/auth.service.ts`, which post JSON where the pin posts a form (D-022, D-036). The other form posts (the unique code,
-  the password reset, OAuth) are the pin's, because their server routes are not built. Nothing serves the build yet.
+  the password reset, OAuth) are the pin's, because their server routes are not built. The Worker serves the build only for the browser journey (the `e2e` pass of `scripts/contract.sh`: `scripts/worker-dev.sh` writes an `[assets]` block into a throwaway copy of the config when `THRUST_ASSETS_DIR` is set, one single-page app with every path the Worker handles run first, ADR-0011); the shared `wrangler.toml` has none, and the native server does not serve the build.
 - **Ports:** Workflow, Scheduler, Collab, Search, Email, AI, Identity, Secrets, Telemetry and Flags have no trait.
   Scheduling today is a `scheduled` handler on the Worker and an optional timer in the server.
 - **Adapters:** the self-hosted set in the plan's diagrams (RabbitMQ, Valkey, S3) does not exist. See

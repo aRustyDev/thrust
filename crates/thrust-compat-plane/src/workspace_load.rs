@@ -9,13 +9,16 @@
 //! visits), so they answer the empty list or the zero count the pin gives a member who has none. They still ask who the caller
 //! is, so a stranger gets the pin's refusal and not an empty list.
 
-use axum::extract::Path;
+use std::collections::HashMap;
+
+use axum::extract::{Path, Query};
 use axum::{Extension, Json};
 use serde_json::{json, Map, Value};
 use thrust_contracts::*;
 use thrust_core::App;
 use thrust_ports::*;
 
+use crate::page;
 use crate::users::{ts, ts_or_null, Caller};
 use crate::workspaces::{id_or_null, role_number, scope};
 use crate::PlaneError;
@@ -205,3 +208,22 @@ pub(crate) async fn recent_visits(
     decorated(&app, &who, slug, &ALL_ROLES).await?;
     Ok(Json(json!([])))
 }
+
+/// X07. A page of the caller's stickies, which the home page and the sidebar's "Stickies" entry list. A stub (D-021): nothing can
+/// make one yet, so every page is empty. The decorator answers before any parameter is read, then the pin's paginator (default page
+/// size 20) reads `per_page` and `cursor`; `query` filters what there is, which is nothing.
+pub(crate) async fn stickies(
+    Caller(who): Caller,
+    Extension(app): Extension<App>,
+    Path(slug): Path<String>,
+    Query(q): Query<HashMap<String, String>>,
+) -> Result<Json<Value>, PlaneError> {
+    decorated(&app, &who, slug, &ALL_ROLES).await?;
+    let limit = page::per_page(&q, STICKIES_PER_PAGE)?;
+    let cursor = page::read_cursor(&q, limit)?;
+    let (size, at) = page::window(limit, &cursor)?;
+    Ok(Json(page::envelope(0, size, at, false, Vec::new())))
+}
+
+/// The page size of the stickies list: `default_per_page=20` in the pin's `WorkspaceStickyViewSet.list`.
+const STICKIES_PER_PAGE: i64 = 20;

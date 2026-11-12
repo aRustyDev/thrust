@@ -53,3 +53,5 @@ X03,PATCH,/api/workspaces/{}/projects/{}/issues/{}/,served
 X04,PATCH,/api/users/me/onboard/,served
 X05,GET,/api/assets/v2/static/{}/,served
 X06,POST,/auth/sign-out/,served
+X07,GET,/api/workspaces/{}/stickies/,served
+X08,GET,/api/unsplash/,served
