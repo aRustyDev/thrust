@@ -1,4 +1,4 @@
-//! `/auth/...`: the routes the sign-up and sign-in pages call (S03 to S06).
+//! `/auth/...`: the routes the sign-up and sign-in pages call (S03 to S06), and the one the sign-out menu calls (X06).
 //!
 //! The pinned Plane answers its sign-up and sign-in form posts with a 302 whose `Location` carries `?error_code=` on a
 //! failure. Thrust's copy of the React auth client posts JSON to the same paths instead (issue #44, Q-0009.1, D-022):
@@ -133,6 +133,30 @@ fn signed_in(app: &App, s: &thrust_core::SignedIn, next_path: &Option<String>) -
     let mut resp = Json(json!({ "redirect_path": redirect_path(next_path) })).into_response();
     thrust_api::add_cookies(&mut resp, &thrust_api::session_cookies(&s.token, &s.csrf_token, app.cfg.session_ttl_secs));
     resp
+}
+
+/// X06. Sign out: end the session this request holds and clear both cookies. The pin's view (`SignOutAuthEndpoint`) logs the session
+/// out and redirects to the app's origin, and answers the same redirect when anything goes wrong, a request with no session
+/// included; so does this, as JSON like the sign-in (D-036): 200 `{"redirect_path": "/"}` for every request that is not refused for
+/// its CSRF token. A session that is expired, revoked or unknown has nothing to end, and an API key is no session: a leaked key
+/// must not end the user's sessions (as the shared router's `sign_out` says).
+pub(crate) async fn sign_out(
+    Extension(app): Extension<App>,
+    auth: Result<thrust_api::AuthedVia, thrust_api::ApiError>,
+) -> Result<Response, PlaneError> {
+    match auth {
+        Ok(thrust_api::AuthedVia(a)) => {
+            if let thrust_core::Via::Session(hash) = a.via {
+                thrust_core::sign_out(&app, &hash).await?;
+            }
+        }
+        // a cookie mutation without the CSRF token, where the deployment enforces it (ADR-0052), is refused as every one is
+        Err(thrust_api::ApiError(CoreError::Csrf)) => return Err(CoreError::Csrf.into()),
+        Err(_) => {}
+    }
+    let mut resp = Json(json!({ "redirect_path": "/" })).into_response();
+    thrust_api::add_cookies(&mut resp, &thrust_api::cleared_cookies());
+    Ok(resp)
 }
 
 /// S05. Make an account and sign it in. Plane's order: both fields present, a valid email, no account with it, a strong

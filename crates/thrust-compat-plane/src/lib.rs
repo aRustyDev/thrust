@@ -45,7 +45,7 @@ mod workspaces;
 pub use error::PlaneError;
 
 /// The route group. Row ids (`S01`...) are those of `research/0003` section 8.1; `X04` is a route the stock onboarding
-/// calls that the inventory does not list, and `X05` is the address a project's cover is shown at.
+/// calls that the inventory does not list, `X05` is the address a project's cover is shown at, and `X06` is sign-out.
 pub fn routes() -> Router {
     Router::new()
         .route("/api/instances/", get(instance::get_instance)) // S01
@@ -103,4 +103,5 @@ pub fn routes() -> Router {
         .route("/auth/email-check/", post(auth::email_check)) // S04
         .route("/auth/sign-up/", post(auth::sign_up)) // S05
         .route("/auth/sign-in/", post(auth::sign_in)) // S06
+        .route("/auth/sign-out/", post(auth::sign_out)) // X06
 }

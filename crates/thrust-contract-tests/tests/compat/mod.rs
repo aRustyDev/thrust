@@ -1577,3 +1577,93 @@ async fn compat_an_upload_is_refused_unless_it_is_the_file_the_asset_was_made_fo
         "and so does the first, after all that"
     );
 }
+
+// --- sign-out (issue #44, X06, D-036) ---------------------------------------------------------------------------------------
+
+/// Both cookies a response sets, cleared: empty and expired at once.
+fn assert_cookies_cleared(r: &reqwest::Response) {
+    let cookies = SetCookie::all(r);
+    for name in [SESSION_COOKIE, CSRF_COOKIE] {
+        let c = SetCookie::find(&cookies, name).unwrap_or_else(|| panic!("{name} is not cleared: {cookies:?}"));
+        assert!(c.value.is_empty() && c.has_attr("Max-Age=0"), "{c:?}");
+    }
+}
+
+/// The stock app's sign-out, on every target: a JSON post that ends the session and answers where to go. A cookie mutation needs the
+/// CSRF token wherever the deployment enforces it (the main pass does), and a sign-out that is refused ends nothing and clears
+/// nothing: the session is read again with the same cookies to show it.
+#[tokio::test]
+async fn compat_sign_out_ends_the_session_clears_both_cookies_and_needs_the_csrf_token_for_a_cookie() {
+    let t = t();
+    let r = post(&t, "/auth/sign-up/", &json!({"email": new_email(), "password": STRONG})).await;
+    assert_eq!(r.status(), 200);
+    let cookies = SetCookie::all(&r);
+    let session = SetCookie::find(&cookies, SESSION_COOKIE).expect("a session").value.clone();
+    let csrf = SetCookie::find(&cookies, CSRF_COOKIE).expect("a csrf cookie").value.clone();
+    let held = |req: reqwest::RequestBuilder| {
+        req.header("cookie", format!("{SESSION_COOKIE}={session}; {CSRF_COOKIE}={csrf}"))
+    };
+    let me = || async { held(t.http.get(t.url("/api/users/me/"))).send().await.unwrap().status() };
+    assert_eq!(me().await, 200);
+
+    // refused: the cookie without the token, and with another one
+    for (what, token) in [("no token", None), ("another token", Some("not-the-token"))] {
+        let mut req = held(t.http.post(t.url("/auth/sign-out/")));
+        if let Some(tok) = token {
+            req = req.header(CSRF_HEADER, tok);
+        }
+        let r = req.send().await.unwrap();
+        assert_eq!(r.status(), 403, "{what}");
+        assert!(SetCookie::all(&r).is_empty(), "{what}: a refusal clears nothing");
+        assert_eq!(me().await, 200, "{what}: and ends nothing");
+    }
+
+    // with the token the cookie holds, as the app sends it: ended, cleared, and told where to go
+    let r = held(t.http.post(t.url("/auth/sign-out/")).header(CSRF_HEADER, &csrf)).send().await.unwrap();
+    assert_eq!(r.status(), 200);
+    assert_cookies_cleared(&r);
+    assert_eq!(r.json::<Value>().await.unwrap(), json!({"redirect_path": "/"}));
+    assert_eq!(me().await, 401, "the session is over");
+
+    // and the same again for a session that has ended: the answer does not say what there was to end
+    let r = held(t.http.post(t.url("/auth/sign-out/")).header(CSRF_HEADER, &csrf)).send().await.unwrap();
+    assert_eq!(r.status(), 200);
+    assert_cookies_cleared(&r);
+}
+
+/// What else answers a sign-out, and what ends: a request with no credential gets the same answer as any other (the pin redirects
+/// whatever happens); a session held as a bearer token is ended (no CSRF token: a script's credential is not ambient); and an API
+/// key ends nothing, because a leaked key must not be able to end the user's sessions.
+#[tokio::test]
+async fn compat_sign_out_answers_one_way_ends_a_bearer_session_and_is_not_done_by_an_api_key() {
+    let t = t();
+    let r = post(&t, "/auth/sign-out/", &json!({})).await;
+    assert_eq!(r.status(), 200, "no credential at all");
+    assert_cookies_cleared(&r);
+    assert_eq!(r.json::<Value>().await.unwrap(), json!({"redirect_path": "/"}));
+
+    let (_, token) = signed_up(&t).await;
+    let key: thrust_contracts::CreatedApiKey = {
+        let r = t
+            .http
+            .post(t.url(&format!("{SLICE_PREFIX}/api-keys")))
+            .bearer_auth(&token)
+            .json(&json!({}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(r.status(), 201);
+        r.json().await.unwrap()
+    };
+    let me = |req: reqwest::RequestBuilder| async { req.send().await.unwrap().status() };
+    assert_eq!(me(t.http.get(t.url("/api/users/me/")).bearer_auth(&token)).await, 200);
+
+    let r = t.http.post(t.url("/auth/sign-out/")).header("x-api-key", &key.token).send().await.unwrap();
+    assert_eq!(r.status(), 200, "the answer is the same");
+    assert_eq!(me(t.http.get(t.url("/api/users/me/")).bearer_auth(&token)).await, 200, "but a key ends no session");
+
+    let r = t.http.post(t.url("/auth/sign-out/")).bearer_auth(&token).send().await.unwrap();
+    assert_eq!(r.status(), 200);
+    assert_cookies_cleared(&r);
+    assert_eq!(me(t.http.get(t.url("/api/users/me/")).bearer_auth(&token)).await, 401, "a bearer session is ended");
+}

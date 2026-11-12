@@ -7,6 +7,13 @@
 //! (S20, S22); S19 alone refuses a guest; the project list names its projects with the 21 keys of the pin's `.values()` query
 //! and, for each, the caller's role number, the network number, the archive time and the caller's own sort order, and lists
 //! exactly the projects the caller's workspace role lets them see; and a first visit's rows are the same on the second.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test fails, and clippy.toml exempts only #[test] functions and #[cfg(test)] modules, not the helpers around them"
+)]
 
 mod common;
 

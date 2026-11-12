@@ -46,7 +46,8 @@ are on [Architecture gates](../testing/techniques/architecture-gates.md).
 6. A crate that builds for wasm32 as a Worker is a `cdylib`, as `thrust-worker` and `thrust-editor-worker` are, and
    is built by `worker-build` through `scripts/rs`, which puts rustup's toolchain (with the wasm32 standard
    library) ahead of Homebrew's `rustc`. The comment in `crates/thrust-worker/wrangler.toml` says so.
-7. If the crate is `thrust-core`, `thrust-ports` or an adapter, give it `[lints]` with `workspace = true`. That is what
+7. If the crate is `thrust-core`, `thrust-ports`, an adapter or one of the Plane-shaped crates (`thrust-api-v1`,
+   `thrust-plane-types`, `thrust-compat-plane`), give it `[lints]` with `workspace = true`. That is what
    makes clippy deny `unwrap`, `expect`, `panic!` and indexing in it (ADR-0006's panic policy). A crate that does not
    opt in is linted for warnings only, and nothing reports that it was left out.
 
