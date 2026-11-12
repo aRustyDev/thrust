@@ -39,7 +39,17 @@ with a fixture made first as the control) and nothing more; the positive path is
   `main` pass: random operation sequences, events included, against a reference [model](model-based.md), every
   caller × project × route against the access table, and the generator coverage control. Its
   `sweeper_model_outbox_delivers_what_was_swept_and_nothing_more` runs the same model in the `sweeper` pass, with
-  the outbox fast path off.
+  the outbox fast path off. It is the model of the slice's routes.
+- `crates/thrust-contract-tests/tests/v1_model/mod.rs` and `tests/v1_model/matrix.rs`: the same kind of test for `/api/v1`'s
+  work items, over API keys, in the `main` pass: random sequences of create, delete, detail and list (a page of one to three
+  and the second page by its cursor) by every kind of caller, in two tenants, a project that does not exist and, now and
+  then, a slug that is not the project's workspace's, against a reference model written from the pin's rules (a stranger
+  and a guest who writes are one 403, a member deletes only what they made, `sort_order` is 65535 and then 10000 after the
+  greatest live one, a list is newest first, a 409 names the work item that has the key); the generator coverage control
+  (`model_v1_strategy_reaches_every_step_class`); and every caller × slug × project × route (315 requests) against the
+  access table. `sweeper_model_v1_outbox_holds_one_event_per_change_and_nothing_more` runs the sequences in the `sweeper`
+  pass and checks the outbox depth after every request, so a request that writes an event it should not, or none it
+  should, shows. `/api/v1` has no activity feed, so what the consumer does with an event stays with the slice's model.
 - `crates/thrust-contract-tests/tests/auth/mod.rs` and `tests/auth/matrix.rs`: identity, in the `main` pass (issue #38):
   sign-in and the cookie attributes, the CSRF double-submit rule, sign-out and sign-out-everywhere, deactivation, API
   keys (`X-Api-Key`, shown once, revoked, expired, inactive owner) and one OIDC login, plus the generated matrix of every
@@ -50,7 +60,7 @@ with a fixture made first as the control) and nothing more; the positive path is
   (`oidc_` prefix) run against a mock identity provider that the suite serves on `127.0.0.1`
   (`crates/thrust-contract-tests/src/mock_idp.rs`, RS256 signed with the `rsa` crate, so it shares no code with the
   `openidconnect` crate that verifies its tokens); a deployed Worker cannot reach it, so `scripts/stage2-contract.sh`
-  skips them (31 tests there).
+  skips them (56 tests there).
 - `crates/thrust-contract-tests/tests/budget/mod.rs`: the round-trip budget (issue #39), in the `main` pass.
   `list_endpoints_stay_within_five_db_round_trips` reads the `x-thrust-db-round-trips` header (see
   [the test routes](../../flows/app.md)) of nine requests, each list seeded with six or more rows so that a statement per row
