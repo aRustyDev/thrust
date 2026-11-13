@@ -1355,6 +1355,22 @@ impl Database for MemoryDatabase {
         }
     }
 
+    async fn set_password_hash(&self, _sys: &SystemScope, user: UserId, password_hash: &str) -> Result<bool, DbError> {
+        let mut s = self.state.lock_unpoisoned();
+        // MUTANT (control run only, feature `mutant_set_password_every_user`): the new hash goes to every user, not to this one.
+        #[cfg(feature = "mutant_set_password_every_user")]
+        for u in s.users.values_mut() {
+            u.password_hash = Some(password_hash.to_string());
+        }
+        match s.users.get_mut(&user) {
+            Some(u) => {
+                u.password_hash = Some(password_hash.to_string());
+                Ok(true)
+            }
+            None => Ok(false),
+        }
+    }
+
     async fn seed_users(&self, _sys: &SystemScope, users: &[UserRecord]) -> Result<(), DbError> {
         let mut s = self.state.lock_unpoisoned();
         for u in users {

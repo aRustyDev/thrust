@@ -15,18 +15,18 @@ use thrust_contracts::{
 
 use super::t;
 
-const STRONG: &str = "Contract-Sample-Pa55word-Zebra-81";
+pub(crate) const STRONG: &str = "Contract-Sample-Pa55word-Zebra-81";
 
-fn new_email() -> String {
+pub(crate) fn new_email() -> String {
     format!("signup-{}@example.test", uuid::Uuid::new_v4().simple())
 }
 
-async fn post(t: &Target, path: &str, body: &Value) -> reqwest::Response {
+pub(crate) async fn post(t: &Target, path: &str, body: &Value) -> reqwest::Response {
     t.http.post(t.url(path)).json(body).send().await.unwrap()
 }
 
 /// Whether the response sets a live session cookie (a value, not a clearing), with the attributes that make it safe.
-fn session_cookie(r: &reqwest::Response) -> Option<String> {
+pub(crate) fn session_cookie(r: &reqwest::Response) -> Option<String> {
     let cookies = SetCookie::all(r);
     let c = SetCookie::find(&cookies, SESSION_COOKIE)?;
     if c.value.is_empty() {
@@ -76,7 +76,7 @@ async fn compat_users_me_without_a_session_is_401_json_with_no_id() {
 }
 
 /// A new account, signed in through the compat sign-up: its email and the session token (accepted as a bearer token).
-async fn signed_up(t: &Target) -> (String, String) {
+pub(crate) async fn signed_up(t: &Target) -> (String, String) {
     let email = new_email();
     let r = post(t, "/auth/sign-up/", &json!({"email": email, "password": STRONG})).await;
     assert_eq!(r.status(), 200);

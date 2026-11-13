@@ -13,7 +13,7 @@ use thrust_adapters_memory::*;
 use thrust_adapters_oidc::{OidcConfig, OpenIdProvider};
 use thrust_adapters_postgres::{Connector, CountingConnector, PgDatabase, RoundTrips};
 use thrust_adapters_selfhosted::*;
-use thrust_api::{set_db_round_trips, ApiConfig, InternalErrorDetail};
+use thrust_api::{set_db_round_trips, ApiConfig, InternalErrorDetail, OperatorAudit};
 use thrust_core::{ActivityConsumer, App, Argon2Params, Argon2idHasher, CoreConfig, Ports, SystemScope};
 use thrust_ports::*;
 use tower_http::catch_panic::CatchPanicLayer;
@@ -150,6 +150,8 @@ async fn main() {
     let api_cfg = ApiConfig {
         test_routes: env_flag("THRUST_TEST_ROUTES", false),
         admin_token: std::env::var("THRUST_ADMIN_TOKEN").ok(),
+        operator_routes: env_flag("THRUST_OPERATOR_ROUTES", false),
+        operator_token: std::env::var("THRUST_OPERATOR_TOKEN").ok(),
         target: "native".into(),
         adapters: adapters.clone(),
     };
@@ -215,6 +217,9 @@ async fn log_internal_errors(req: axum::extract::Request, next: axum::middleware
     let resp = next.run(req).await;
     if let Some(InternalErrorDetail(d)) = resp.extensions().get::<InternalErrorDetail>() {
         eprintln!("internal error: {d}");
+    }
+    if let Some(OperatorAudit(line)) = resp.extensions().get::<OperatorAudit>() {
+        eprintln!("{line}");
     }
     resp
 }

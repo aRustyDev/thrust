@@ -26,6 +26,13 @@ pub struct ApiConfig {
     pub test_routes: bool,
     /// Shared secret for `/internal/*`. Supplied from the environment, never from a file.
     pub admin_token: Option<String>,
+    /// Mounts the operator's routes, `/internal/operator/*` (Q-F7): make an account, set a password. A door of its own, and
+    /// not the test routes: those can wipe every row (`/internal/reset`), and a real deployment never turns them on. Off unless
+    /// asked for.
+    pub operator_routes: bool,
+    /// Shared secret for the operator's routes, apart from `admin_token`. A token shorter than [`MIN_OPERATOR_TOKEN_LEN`] is
+    /// as good as none: every call is refused. Supplied from the environment, never from a file.
+    pub operator_token: Option<String>,
     /// Free-form label returned by `/_info` (e.g. "native" / "worker").
     pub target: String,
     pub adapters: String,
@@ -197,6 +204,50 @@ impl<S: Send + Sync> FromRequestParts<S> for Admin {
     }
 }
 
+/// The fewest bytes an operator token may have (a 128-bit secret in hex). The route does no work before the token matches and
+/// has no rate limiter, so the token has to be long enough that guessing it is not a plan: a shorter one is not accepted.
+pub const MIN_OPERATOR_TOKEN_LEN: usize = 32;
+
+/// The header the operator's token travels in. Not `x-admin-token`: the test routes' token opens nothing here.
+pub const OPERATOR_TOKEN_HEADER: &str = "x-operator-token";
+
+/// Gate for `/internal/operator/*`: 404 unless `operator_routes` is on, 401 unless the request carries the operator's token
+/// (compared in constant time), and 401 for every request while the deployment has no token or one that is too short.
+/// It reads nothing from `test_routes` or `admin_token`, so a deployment can run either door without the other.
+pub struct OperatorAdmin;
+
+impl<S: Send + Sync> FromRequestParts<S> for OperatorAdmin {
+    type Rejection = ApiError;
+
+    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
+        let cfg = parts.extensions.get::<ApiConfig>().cloned().ok_or_else(missing_app)?;
+        // MUTANT (control run only, feature `mutant_operator_ignores_flag`): the switch is ignored, and the door is always there.
+        #[cfg(not(feature = "mutant_operator_ignores_flag"))]
+        if !cfg.operator_routes {
+            return Err(ApiError(CoreError::NotFound));
+        }
+        let given = parts.headers.get(OPERATOR_TOKEN_HEADER).and_then(|v| v.to_str().ok());
+        // MUTANT (control run only, feature `mutant_operator_takes_admin_token`): the test routes' token opens this door too.
+        #[cfg(feature = "mutant_operator_takes_admin_token")]
+        if let (Some(want), Some(got)) =
+            (cfg.admin_token.as_deref(), parts.headers.get("x-admin-token").and_then(|v| v.to_str().ok()))
+        {
+            if token_eq(want, got) {
+                return Ok(OperatorAdmin);
+            }
+        }
+        match (cfg.operator_token.as_deref().filter(|t| t.len() >= MIN_OPERATOR_TOKEN_LEN), given) {
+            (Some(want), Some(got)) if token_eq(want, got) => Ok(OperatorAdmin),
+            _ => Err(ApiError(CoreError::Unauthenticated)),
+        }
+    }
+}
+
+/// What the operator's routes leave behind for the composition root to log (a response extension, like
+/// [`InternalErrorDetail`]): one line that says what was done and to which user, and never a password.
+#[derive(Debug, Clone)]
+pub struct OperatorAudit(pub String);
+
 // ---------------------------------------------------------------------------------------------
 // Handlers
 // ---------------------------------------------------------------------------------------------
@@ -282,6 +333,47 @@ async fn set_user_active(
     } else {
         Err(ApiError(CoreError::NotFound))
     }
+}
+
+// ---------------------------------------------------------------------------------------------
+// The operator's routes (Q-F7, issue #46): the way back in for a person who cannot sign in, until the reset by email exists.
+// Behind [`OperatorAdmin`]. The password is in the body, never in the path or query, and it is not in anything logged: the
+// request type has no `Debug`, and the audit line names the user and the action.
+// ---------------------------------------------------------------------------------------------
+
+#[derive(Deserialize)]
+struct OperatorAccount {
+    email: String,
+    password: String,
+}
+
+/// 204, with the audit line for the root to log.
+fn operator_done(what: &str, user: UserId) -> Response<Body> {
+    let mut resp = StatusCode::NO_CONTENT.into_response();
+    resp.extensions_mut().insert(OperatorAudit(format!("operator {what}: user {}", user.0)));
+    resp
+}
+
+/// Make an account with a temporary password. The same rules as sign-up (400 for an email or a password it refuses, 409 for an
+/// email that is taken), and nobody is signed in.
+async fn operator_create_user(
+    _: OperatorAdmin,
+    Extension(app): Extension<App>,
+    Json(b): Json<OperatorAccount>,
+) -> ApiResult<Response<Body>> {
+    let user = thrust_core::admin_create_user(&app, &b.email, &b.password).await?;
+    Ok(operator_done("created a user", user))
+}
+
+/// Set a new password for an account, and end every session it has. 400 for a password that is too weak, 404 for an email that
+/// has no account.
+async fn operator_set_password(
+    _: OperatorAdmin,
+    Extension(app): Extension<App>,
+    Json(b): Json<OperatorAccount>,
+) -> ApiResult<Response<Body>> {
+    let user = thrust_core::admin_set_password(&app, &b.email, &b.password).await?;
+    Ok(operator_done("set a password", user))
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -560,6 +652,8 @@ pub fn router() -> Router {
         .route("/internal/revoke-session", post(revoke_session))
         .route("/internal/seed-work-items", post(seed_work_items))
         .route("/internal/set-user-active", post(set_user_active))
+        .route("/internal/operator/users", post(operator_create_user))
+        .route("/internal/operator/users/password", post(operator_set_password))
         .route(&auth_path("/sign-out-all"), post(sign_out_all))
         .route(&auth_path("/session"), get(session_info))
         .route(&auth_path("/oidc/start"), get(oidc_start))

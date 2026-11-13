@@ -15,3 +15,9 @@ serde_json = { workspace = true }
 # default-features = false drops `tokio`, `http1`, `tracing`, `form`... — only the pure router
 # + extractors remain, which is what compiles to wasm32 and runs under workerd.
 axum = { version = "0.8", default-features = false, features = ["json", "query", "matched-path"] }
+
+[features]
+# Control-run mutants of the operator's door (scripts/mutants.sh, and the hermetic router test that shows the same: crates/thrust-compat-plane/tests/operator.rs).
+# Never enabled outside those; the server crate forwards them.
+mutant_operator_ignores_flag = []
+mutant_operator_takes_admin_token = []

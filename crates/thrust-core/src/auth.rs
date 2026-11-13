@@ -284,6 +284,15 @@ pub async fn email_exists(app: &App, email: &str) -> Result<bool, CoreError> {
 /// There is no limiter here, unlike [`sign_in`]'s per-email one: a per-address limit needs the caller's address, which
 /// core never sees, and a global one would let anyone lock everyone else out. Plane limits sign-up per IP; see gap G-16.
 pub async fn sign_up(app: &App, email: &str, password: &str) -> Result<SignedIn, CoreError> {
+    let id = create_account(app, email, password).await?;
+    mint_session(app, id).await
+}
+
+/// The part of making an account that sign-up and the operator's create-user share, so that the two cannot drift: the
+/// refusals, in order and with no hash work before the last one (a malformed email, a weak password: `Invalid`; an email
+/// that is taken: `Conflict`), then one hash, one user row (a race for the same email is the unique index's `Conflict`) and
+/// its profile. Returns the new user. No session: that is sign-up's step.
+async fn create_account(app: &App, email: &str, password: &str) -> Result<UserId, CoreError> {
     let email = normalize_email(email);
     if !is_valid_email(&email) {
         return Err(CoreError::Invalid("not a valid email".into()));
@@ -307,7 +316,44 @@ pub async fn sign_up(app: &App, email: &str, password: &str) -> Result<SignedIn,
         })
         .await?;
     app.ports.db.insert_profile(&crate::profile::new_profile(app, id, Some(&email))).await?;
-    mint_session(app, id).await
+    Ok(id)
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// The operator's way in (Q-F7, issue #46). There is no email to send a reset link with (ADR-0073's pipeline is after M2), so
+// the person who runs the deployment makes the account, or sets a new password for it, and tells the owner of the account
+// out of band. Both are behind `OperatorAdmin` in `thrust-api`, which is a door of its own and not the test routes.
+// ---------------------------------------------------------------------------------------------------------------------
+
+/// The operator makes an account with a temporary password: the same rules as [`sign_up`] (same checks, same refusals, the
+/// same single hash), but nobody is signed in, and the user is returned so the caller can say which account it made.
+pub async fn admin_create_user(app: &App, email: &str, password: &str) -> Result<UserId, CoreError> {
+    create_account(app, email, password).await
+}
+
+/// The operator sets a new password for the account with this email. In this order, with no hash work until the last
+/// decision: the password's strength (`Invalid`, nothing changed), whether the account exists (`NotFound`), then one hash,
+/// one write, and every session of that user ended (so a session that someone else holds stops working with the old
+/// password). The account's state is not touched: a deactivated user stays deactivated, and a password makes nobody active.
+/// Returns the user.
+pub async fn admin_set_password(app: &App, email: &str, password: &str) -> Result<UserId, CoreError> {
+    let email = normalize_email(email);
+    // MUTANT (control run only): no strength check on a reset. The contract suite's operator test must catch it.
+    #[cfg(not(feature = "mutant_operator_skips_strength"))]
+    if !password_is_strong(password) {
+        return Err(CoreError::Invalid("password too weak".into()));
+    }
+    let user = app.ports.db.user_by_email(&email).await?.ok_or(CoreError::NotFound)?;
+    let password_hash =
+        app.ports.hasher.hash(password, &random_salt(app)?).map_err(|e| CoreError::Internal(e.to_string()))?;
+    if !app.ports.db.set_password_hash(&app.system, user.id, &password_hash).await? {
+        // the account was removed between the lookup and the write
+        return Err(CoreError::NotFound);
+    }
+    // MUTANT (control run only): leave the user's sessions alive. The contract suite's operator test must catch it.
+    #[cfg(not(feature = "mutant_operator_keeps_sessions"))]
+    app.ports.db.revoke_user_sessions(user.id, app.ports.clock.now()).await?;
+    Ok(user.id)
 }
 
 /// Sign-out of one session, by the digest of its token. Idempotent.

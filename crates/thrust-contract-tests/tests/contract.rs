@@ -12,6 +12,7 @@ mod auth;
 mod budget;
 mod compat;
 mod model;
+mod operator;
 mod v1_model;
 
 use std::time::Duration;
