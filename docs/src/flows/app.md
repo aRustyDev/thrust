@@ -25,14 +25,13 @@ same on the Worker and on the native server. The crates involved are on
 
 The tenant routes above take any credential in [Authentication](#authentication-and-permission): a bearer token, the
 session cookie (a mutation then also needs the CSRF token, while [enforcement](#authentication-and-permission) is on) or an
-`X-Api-Key`. The identity routes, under the same prefix, are not tenant routes:
+`X-Api-Key`. The identity routes, under the same prefix, are not tenant routes. (Signing in, signing out and fetching a
+CSRF token are Plane's routes, `POST /auth/sign-in/`, `POST /auth/sign-out/` and `GET /auth/get-csrf-token/`, served by
+`thrust-compat-plane`; the slice's own three were deleted once no test called them.)
 
 | Method and path | Needs | Answers |
 |---|---|---|
-| `POST /api/_slice/auth/sign-in/email` | nothing; JSON `{email, password}` | 200 and `{user_id, csrf_token, expires_at}`, with two `Set-Cookie` headers. 401 for every refusal, with one body |
-| `POST /api/_slice/auth/sign-out` | a session (cookie, plus the CSRF token while enforcement is on, or bearer) | 204, ends that session and clears both cookies. An API key is a 401 here |
-| `POST /api/_slice/auth/sign-out-all` | a session, as above | 200 and `{revoked: n}`, ends every session of the user |
-| `GET /api/_slice/auth/csrf` | nothing | 200 and `{csrf_token}`, and the same value in the CSRF cookie (Plane's `get-csrf-token`) |
+| `POST /api/_slice/auth/sign-out-all` | a session (cookie, plus the CSRF token while enforcement is on, or bearer) | 200 and `{revoked: n}`, ends every session of the user. An API key is a 401 here |
 | `GET /api/_slice/auth/session` | any credential | 200 and `{user_id, credential}` (`session` or `api_key`) |
 | `POST /api/_slice/api-keys` | a session; JSON `{label?, expires_at?}` | 201 and the key with its `token`, once |
 | `GET /api/_slice/api-keys` | a session | 200 and the user's keys: id, prefix, label, dates, never the token |
@@ -118,7 +117,7 @@ session cookie must carry the token. The core's default is on, the rule ADR-0052
 **off**: the stock Plane frontend sends the token only on its auth form posts, so enforcing it on JSON mutations would break
 it. The flip is when the custom frontend replaces the stock one (PLAN.md, M4), with no code change. Off changes one thing:
 the token is not consulted for a cookie mutation, so one is accepted without it, whatever is sent in its place. The cookie,
-`GET auth/csrf`, a bearer token, an API key and the order of the checks (a dead session is 401 first) are as before. **While it
+`GET /auth/get-csrf-token/`, a bearer token, an API key and the order of the checks (a dead session is 401 first) are as before. **While it
 is off, the only cookie-side protection is `SameSite=Lax`, `HttpOnly`, `Secure` and the `__Host-` prefix**, the posture of
 Plane, whose REST API disables Django's CSRF check; `Lax` does not help against a request from the same site (a sibling
 subdomain) or in a browser without it. The contract targets run with it on.
@@ -133,7 +132,11 @@ The database holds only the digest, in a `sessions` table with no workspace colu
 default, `THRUST_SIGNIN_RATE_LIMIT`; over it is 429, before any hashing), looks the user up, and then does exactly one
 unit of argon2id work whether or not the email exists: a wrong password verifies against the stored hash, and an
 unknown email, or a user with no password, hashes the attempt and throws the result away. Every refusal (wrong
-password, unknown email, deactivated user, no password) is the same 401 with the same body. A success makes a new
+password, unknown email, deactivated user, no password) is the same error from the use-case, and costs the same one
+hash. Its one route is Plane's `POST /auth/sign-in/` (`thrust-compat-plane`; the slice's own sign-in route is gone),
+which looks the email up before it calls `sign_in` and so answers an unknown email with Plane's 400 (5060) without
+hashing, and every other refusal with Plane's 400 (5065) (a wrong password costs its one hash first; G-16,
+`testing/status.md`). The limiter's 429 is the route's too. A success makes a new
 session every time: 256 bits of token and 128 of CSRF token from the `Rng` port, hex, one row holding only the token's
 digest. The token goes to the client only in `Set-Cookie`, never in a body. Both cookies are `Secure; HttpOnly;
 SameSite=Lax; Path=/`, have no `Domain` (so the `__Host-` prefix applies) and live 30 days. Passwords are argon2id at
@@ -251,15 +254,15 @@ Errors raised by the use-cases and the router's own guards share one body,
 
 | Status | `code` | Raised when |
 |---|---|---|
-| 400 | `invalid` | A bad work item name or attachment name, or an unknown `scope`; a sign-in with an empty or over-long email or password; an API key label over 100 characters or an expiry in the past; an OIDC callback with no code or an unknown, used or expired `state` |
-| 401 | `unauthenticated` | No credential, a session that is unknown, revoked, expired or whose user is inactive, a refused sign-in or OIDC login, or a missing or wrong admin token |
+| 400 | `invalid` | A bad work item name or attachment name, or an unknown `scope`; an API key label over 100 characters or an expiry in the past; an OIDC callback with no code or an unknown, used or expired `state` |
+| 401 | `unauthenticated` | No credential, a session that is unknown, revoked, expired or whose user is inactive, a refused OIDC login, or a missing or wrong admin token |
 | 403 | `forbidden` | Not a member, a role that is too low, or an OIDC login without a verified email, without a matching user, or of a deactivated user |
 | 403 | `csrf_failed` | While CSRF enforcement is on: a mutation authenticated by the session cookie without an `X-CSRFToken` that equals the CSRF cookie |
 | 403 | `invalid_api_key` | An `X-Api-Key` that is unknown, revoked, expired or whose owner is inactive |
 | 404 | `not_found` | A slug that names no workspace, a workspace the caller is not in, a project that is not in it, no such item or attachment, or a test route that is switched off |
 | 409 | `conflict` | A uniqueness constraint failed, such as a live work item with the same external source and id |
 | 413 | `too_large` | An attachment over the size limit |
-| 429 | `rate_limited` | Over the create limit, or over the sign-in limit for an email. `Retry-After` carries the seconds |
+| 429 | `rate_limited` | Over the create limit. `Retry-After` carries the seconds |
 | 502 | `bad_gateway` | The OIDC provider cannot be reached or answered something unusable. The cause is logged, not returned |
 | 500 | `internal` | Anything else. The body says only `internal error`; the cause is logged by the root |
 

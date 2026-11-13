@@ -377,7 +377,9 @@ async fn operator_set_password(
 }
 
 // ---------------------------------------------------------------------------------------------
-// Authentication routes (issue #38). BetterAuth's HTTP shapes in spirit, Plane's `get-csrf-token` as JSON.
+// Authentication routes (issue #38) that no Plane route replaces: sign-out-everywhere, the session, OIDC and API keys.
+// Sign-in, sign-out and the CSRF token are `thrust-compat-plane`'s (`POST /auth/sign-in/`, `POST /auth/sign-out/`,
+// `GET /auth/get-csrf-token/`); the slice's own copies of those three are gone.
 // ---------------------------------------------------------------------------------------------
 
 /// `Max-Age` for both cookies: the session's lifetime. Public so the compat routes spell their cookies the same way.
@@ -407,16 +409,8 @@ pub fn cleared_cookies() -> [String; 2] {
     [set_cookie(SESSION_COOKIE, "", 0), set_cookie(CSRF_COOKIE, "", 0)]
 }
 
-async fn sign_in(Extension(app): Extension<App>, Json(req): Json<SignInRequest>) -> ApiResult<Response<Body>> {
-    let s = thrust_core::sign_in(&app, &req.email, &req.password).await?;
-    let body = SignInResponse { user_id: s.user_id, csrf_token: s.csrf_token.clone(), expires_at: s.expires_at };
-    let mut resp = Json(body).into_response();
-    add_cookies(&mut resp, &session_cookies(&s.token, &s.csrf_token, app.cfg.session_ttl_secs));
-    Ok(resp)
-}
-
-/// The routes that manage the account itself (sign-out, API keys) take a session, not an API key: a leaked key must not
-/// be able to end the user's sessions or mint more keys. A key presented there is as good as no credential.
+/// The routes that manage the account itself (sign-out-everywhere, API keys) take a session, not an API key: a leaked key
+/// must not be able to end the user's sessions or mint more keys. A key presented there is as good as no credential.
 fn require_session(a: &thrust_core::Authenticated) -> Result<thrust_ports::TokenHash, ApiError> {
     match a.via {
         thrust_core::Via::Session(hash) => Ok(hash),
@@ -424,28 +418,11 @@ fn require_session(a: &thrust_core::Authenticated) -> Result<thrust_ports::Token
     }
 }
 
-/// A session credential only: the cookie (with the CSRF token) or the bearer token. Signing out revokes that one session.
-async fn sign_out(AuthedVia(a): AuthedVia, Extension(app): Extension<App>) -> ApiResult<Response<Body>> {
-    let hash = require_session(&a)?;
-    thrust_core::sign_out(&app, &hash).await?;
-    let mut resp = StatusCode::NO_CONTENT.into_response();
-    add_cookies(&mut resp, &cleared_cookies());
-    Ok(resp)
-}
-
 async fn sign_out_all(AuthedVia(a): AuthedVia, Extension(app): Extension<App>) -> ApiResult<Response<Body>> {
     require_session(&a)?;
     let n = thrust_core::sign_out_everywhere(&app, &a.principal).await?;
     let mut resp = Json(serde_json::json!({ "revoked": n })).into_response();
     add_cookies(&mut resp, &cleared_cookies());
-    Ok(resp)
-}
-
-/// A fresh CSRF token, as JSON and as the CSRF cookie (Plane: `GET /auth/get-csrf-token/`).
-async fn csrf(Extension(app): Extension<App>) -> ApiResult<Response<Body>> {
-    let token = thrust_core::new_csrf_token(&app)?;
-    let mut resp = Json(CsrfResponse { csrf_token: token.clone() }).into_response();
-    add_cookies(&mut resp, &[set_cookie(CSRF_COOKIE, &token, app.cfg.session_ttl_secs)]);
     Ok(resp)
 }
 
@@ -677,10 +654,7 @@ pub fn router() -> Router {
         .route("/internal/set-user-active", post(set_user_active))
         .route("/internal/operator/users", post(operator_create_user))
         .route("/internal/operator/users/password", post(operator_set_password))
-        .route(&auth_path("/sign-in/email"), post(sign_in))
-        .route(&auth_path("/sign-out"), post(sign_out))
         .route(&auth_path("/sign-out-all"), post(sign_out_all))
-        .route(&auth_path("/csrf"), get(csrf))
         .route(&auth_path("/session"), get(session_info))
         .route(&auth_path("/oidc/start"), get(oidc_start))
         .route(&auth_path("/oidc/callback"), get(oidc_callback))

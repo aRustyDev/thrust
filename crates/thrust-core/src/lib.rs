@@ -98,7 +98,7 @@ pub struct CoreConfig {
     /// `THRUST_CSRF_ENFORCE` and default it to `false` while the stock Plane frontend is what talks to this server,
     /// because that app sends the token only on its auth form posts, so enforcing it would refuse its JSON mutations;
     /// the flip is to `true` when the custom frontend replaces it. Off changes exactly one thing: the token is not
-    /// consulted for a cookie mutation. The cookie, `GET auth/csrf`, `csrf_ok`, and a bearer token or an API key (which
+    /// consulted for a cookie mutation. The cookie, `GET /auth/get-csrf-token/`, `csrf_ok`, and a bearer token or an API key (which
     /// never needed the token) are untouched.
     pub csrf_enforce: bool,
     /// How long the address an asset's bytes are uploaded to keeps working (ADR-0047; the pin's `SIGNED_URL_EXPIRATION`, an hour).

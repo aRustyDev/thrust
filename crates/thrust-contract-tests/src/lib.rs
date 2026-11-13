@@ -246,7 +246,7 @@ impl Session {
 
 impl Target {
     /// A sign-in through Plane's route, `POST /auth/sign-in/` (S06), which the stock app's auth client posts JSON to
-    /// (`thrust-compat-plane`, D-022). The slice's own sign-in (`{SLICE_PREFIX}/auth/sign-in/email`) is no longer called by the suite.
+    /// (`thrust-compat-plane`, D-022). The slice's own sign-in route is gone.
     pub async fn sign_in_raw(&self, email: &str, password: &str) -> reqwest::Response {
         self.http
             .post(self.url("/auth/sign-in/"))
