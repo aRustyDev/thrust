@@ -3536,6 +3536,8 @@ name = "thrust-api"
 version = "0.0.0"
 dependencies = [
  "axum",
+ "proptest",
+ "rstest",
  "serde",
  "serde_json",
  "thrust-contracts",

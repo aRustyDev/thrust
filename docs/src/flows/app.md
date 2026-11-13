@@ -13,7 +13,7 @@ same on the Worker and on the native server. The crates involved are on
 
 | Method and path | Needs | Answers |
 |---|---|---|
-| `GET /healthz` | nothing | 200 `ok` |
+| `GET /healthz` | nothing | 200 `ok`. The Worker also sends `x-thrust-version` (on every response it routes), which the deploy's smoke compares with the commit it deployed; the native server sends none |
 | `POST /api/_slice/workspaces/{slug}/projects/{project_id}/work-items` | Bearer token, role Member | 201 and the work item |
 | `GET /api/_slice/workspaces/{slug}/projects/{project_id}/work-items` | Bearer token, role Guest | 200 and a list. `?scope=visible` (the default) or `?scope=with_deleted` (role Admin); any other scope is 400 |
 | `DELETE /api/_slice/workspaces/{slug}/projects/{project_id}/work-items/{id}` | Bearer token, role Member | 204 |

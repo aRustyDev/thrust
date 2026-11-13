@@ -17,7 +17,7 @@ use http_body_util::BodyExt;
 use thrust_adapters_cloudflare::*;
 use thrust_adapters_oidc::{OidcConfig, OpenIdProvider};
 use thrust_adapters_postgres::{Connector, CountingConnector, PgDatabase, RoundTrips};
-use thrust_api::{set_db_round_trips, ApiConfig, InternalErrorDetail, OperatorAudit};
+use thrust_api::{set_db_round_trips, set_version, ApiConfig, InternalErrorDetail, OperatorAudit};
 use thrust_contracts::Envelope;
 use thrust_core::{ActivityConsumer, App, Argon2Params, Argon2idHasher, CoreConfig, Ports, SystemScope};
 use thrust_ports::{Background, Clock, EventConsumer, IdGen, OidcProvider, PasswordHasher, Rng};
@@ -124,6 +124,15 @@ fn check_rate_windows(env: &Env, cfg: &CoreConfig) -> Result<()> {
         check_binding_period("the period of THRUST_V1_RATE_LIMIT", v1.rate_window_secs).map_err(Error::RustError)?;
     }
     Ok(())
+}
+
+/// The tag and the id of the version that is running, from the `CF_VERSION_METADATA` binding (`[version_metadata]` in the wrangler
+/// config). Both are empty when the binding is not declared, and `set_version` then sends no header (issue #49).
+///
+/// Local `wrangler dev` does declare it, with no tag and a random UUID for the id (measured with wrangler 4.123.0), so the header is
+/// that id there. A deploy made without `--tag` has the same shape: the id, not the commit, which the deploy's smoke refuses.
+fn version(env: &Env) -> (String, String) {
+    env.get_binding::<WorkerVersionMetadata>("CF_VERSION_METADATA").map(|v| (v.tag(), v.id())).unwrap_or_default()
 }
 
 fn adapter_set(env: &Env) -> String {
@@ -259,6 +268,9 @@ async fn fetch(req: web_sys::Request, env: Env, ctx: Context) -> Result<web_sys:
     if let Some(rt) = round_trips {
         set_db_round_trips(&mut resp, rt.get());
     }
+    // Always, so a handler cannot make the Worker report another build: the deploy's smoke compares this with what it deployed.
+    let (tag, id) = version(&env);
+    set_version(&mut resp, &tag, &id);
     response_to_wasm(resp)
 }
 

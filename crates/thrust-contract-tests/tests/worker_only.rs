@@ -205,6 +205,48 @@ async fn worker_bindings_email_send_binding_simulated_locally() {
     assert!(v["message_id_len"].as_u64().unwrap() > 0, "{v}");
 }
 
+/// The version metadata binding (issue #49, `[version_metadata]`). The deploy's smoke reads `x-thrust-version` from `/healthz` and
+/// compares it with the commit it deployed, so what has to hold on every target is that the header is THERE, is the same on every
+/// answer, and is on a response that is not `/healthz` too.
+///
+/// What it says differs. Local workerd (measured with wrangler 4.123.0) has no tag and a random UUID for the id, so the header is
+/// that id, and a deploy made without `--tag` looks the same: the smoke refuses it, because it is not the commit. A deployed Worker
+/// carries the tag it was given, passed here as THRUST_EXPECT_VERSION, as `THRUST_EXPECT_SECRET_LEN` is for the secrets binding.
+/// Removing the binding from the config, or the call from the Worker, takes the header away and fails the first assertion.
+#[tokio::test]
+async fn worker_bindings_version_metadata_header() {
+    let t = Target::from_env();
+    let version_of =
+        |r: &reqwest::Response| r.headers().get("x-thrust-version").map(|v| v.to_str().unwrap().to_string());
+
+    let r = t.http.get(t.url("/healthz")).send().await.unwrap();
+    assert_eq!(r.status(), 200);
+    let first = version_of(&r);
+    println!("VERSION-OBSERVATION header={first:?}");
+    let first = first.expect("`/healthz` must carry x-thrust-version: without it the deploy's smoke cannot tell the new version from the old");
+    assert!(
+        !first.is_empty() && first.bytes().all(|b| b.is_ascii_graphic()),
+        "a version a header can carry: {first:?}"
+    );
+    assert_eq!(
+        r.text().await.unwrap(),
+        "ok",
+        "the body is what `health_ok` pins and the native server sends: the version is a header"
+    );
+
+    // the same on the next answer (a Worker that made one up per request would pass the first check and fail the smoke), and on a
+    // response that is not /healthz: the Worker puts it on everything it routes
+    let r = t.http.get(t.url("/healthz")).send().await.unwrap();
+    assert_eq!(version_of(&r).as_deref(), Some(first.as_str()), "the version does not change between two answers");
+    let r = t.http.get(t.url("/api/no-such-route/")).send().await.unwrap();
+    assert_eq!(r.status(), 404);
+    assert_eq!(version_of(&r).as_deref(), Some(first.as_str()), "a 404 carries the version too");
+
+    if let Ok(want) = std::env::var("THRUST_EXPECT_VERSION") {
+        assert_eq!(first, want, "a deployed Worker reports the tag it was deployed with");
+    }
+}
+
 /// Pass `crontrigger` of `scripts/stage2-contract.sh` (fast path OFF, DEPLOYED Worker only). The `stage2_` prefix is
 /// load-bearing: the local `cron` pass filters on `worker_cron_`, and a local `wrangler dev` never fires a cron by
 /// itself, so a `worker_cron_*` name would make that pass wait 180 s and fail. Stage 2 twin of the `cron` test: a deployed
