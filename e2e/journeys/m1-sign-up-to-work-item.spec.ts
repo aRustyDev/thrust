@@ -13,19 +13,24 @@
 //     so must a minimum of /api/ responses;
 //   - a 404 detector that cannot see, a journey that never looks at the server's list, and a journey that skips itself: the controls
 //     in support/controls.ts, each of which scripts/e2e.sh runs and requires to FAIL, and to fail by saying why; and its count guard
-//     (the report must say that every journey in e2e/journeys/ passed, none skipped).
+//     (the report must say that every journey in e2e/journeys/ passed, none skipped);
+//   - a journey that is right on a fast machine only (it answered the welcome tour once and went on, and a CI runner's slower page
+//     put the tour back in front of it): the `slow-page` control, the one run that must PASS.
 //
 // What is NOT asserted: that the app is pixel-faithful, or anything beyond the work item appearing in the list. Opening the work item
 // calls one more route that is not built (`.../work-items/{id}/description-versions/`, G-30); that is outside this journey.
 import { expect, test } from "@playwright/test";
 import { control, installControl, STEP_LIST } from "../support/controls";
 import { openJourney } from "../support/context";
-import { judgeLog, watchResponses, type AllowedFailure } from "../support/network";
+import { judgeLog, watchPending, watchResponses, type AllowedFailure } from "../support/network";
 import { assertTarget, wantedTarget } from "../support/target";
 
 // None: the pin answers each route this journey calls, and Thrust does as well. The first run on the pinned Plane decides whether
 // this stays empty (issue #45); a route that the pin itself answers 404 or 5xx would be listed here with the reason.
 const ALLOWED_FAILURES: AllowedFailure[] = [];
+
+// the button that answers the welcome tour; it is on screen exactly while the tour is
+const NO_THANKS = "No thanks, I will explore it myself";
 
 test("the stock app: sign up, onboard, make a workspace, a project and a work item, and list it", async ({ browser, baseURL }) => {
   // the control that the count guard of scripts/e2e.sh must catch: Playwright reports a skipped test as a pass
@@ -43,7 +48,8 @@ test("the stock app: sign up, onboard, make a workspace, a project and a work it
 
   const { context, page } = await openJourney(browser, baseURL, "m1-sign-up-to-work-item");
   const seen = watchResponses(page, baseURL);
-  const controlled = await installControl(page);
+  const pending = watchPending(page);
+  const controlled = await installControl(page, { workspaceSlug });
 
   // The screen is walked inside a `try`, and the network log is judged before its outcome is: a route that is not mounted can break
   // the page as well as show in the log, and then the 404 is the finding, not the click that timed out after it.
@@ -70,7 +76,23 @@ test("the stock app: sign up, onboard, make a workspace, a project and a work it
 
     await test.step("the workspace's home page, and the welcome tour that stands in front of it", async () => {
       await expect(page).toHaveURL(new RegExp(`/${workspaceSlug}/`));
-      await page.getByRole("button", { name: "No thanks, I will explore it myself" }).click();
+      // The app marks the tour as done in its store at the click, and keeps whatever a profile fetch returns after that. The home page
+      // fetches the profile as it mounts (on a slow machine, which is what CI is; a fast one may not), so an answer that was made
+      // before the click and lands after it puts the tour back for good, although the click's own PATCH was answered 200 (G-31: the
+      // cell failed at "Add project" like that, on main). So the journey does what a person does: it lets what the page asked for on its
+      // way in be answered, answers the tour, waits for what was in flight at that moment, and looks that the tour stayed answered; if
+      // it did not, it answers it again (an answer that stale cannot come twice: nothing is in flight by then), and says so in the
+      // report. No fixed pause could do this alone: how long the app's own code waits between one request and the one it chains to
+      // depends on the machine (G-31).
+      const tour = page.getByRole("button", { name: NO_THANKS });
+      await pending.quiet();
+      for (let answered = 1; ; answered++) {
+        await tour.click();
+        await pending.quiet();
+        if ((await tour.count()) === 0) break;
+        expect(answered, "the welcome tour is in front of the page again after it was answered three times").toBeLessThan(3);
+        test.info().annotations.push({ type: "tour-came-back", description: `the tour was in front of the page again after answer ${answered}` });
+      }
     });
 
     await test.step("create a project", async () => {
@@ -118,4 +140,6 @@ test("the stock app: sign up, onboard, make a workspace, a project and a work it
 
   // a control that did nothing is no control: with `empty-list` the browser must have emptied a list that was not empty
   if (control === "empty-list") expect(controlled.emptied(), "CONTROL INERT: the empty-list control emptied no work-item list").toBeGreaterThan(0);
+  // ... and so is a slow-page run in which no profile answer was held (the slow machine makes the page ask for one; a fast one may not)
+  if (control === "slow-page") expect(controlled.delayed(), "CONTROL INERT: the slow-page control held no profile answer").toBeGreaterThan(0);
 });

@@ -2,7 +2,7 @@
 //
 // The log is judged BEFORE the screen's own outcome: a route that is not mounted can break the page as well as show in the log, and
 // then the 404 is the finding, not the click that timed out after it.
-import { expect, type Page } from "@playwright/test";
+import { expect, type Page, type Request } from "@playwright/test";
 
 export type Seen = { method: string; path: string; status: number; type: string };
 
@@ -22,6 +22,35 @@ export function watchResponses(page: Page, baseURL: string): Seen[] {
     seen.push({ method: r.request().method(), path: url.pathname, status: r.status(), type: r.headers()["content-type"] ?? "" });
   });
   return seen;
+}
+
+// What the page has asked for and not yet had answered, from the moment this is called (call it before the first navigation). A
+// `waitForLoadState("networkidle")` cannot stand in for it: it resolves at once on a page that is a single-page app, past its first
+// load, because that document reached the state long ago. `quiet` resolves when nothing has been in flight for `ms`, and says what
+// was when it is not so within `timeout`.
+export function watchPending(page: Page): { quiet: (ms?: number, timeout?: number) => Promise<void> } {
+  const pending = new Map<Request, string>();
+  let lastChange = Date.now();
+  page.on("request", (r) => {
+    pending.set(r, `${r.method()} ${new URL(r.url()).pathname}`);
+    lastChange = Date.now();
+  });
+  const done = (r: Request) => {
+    pending.delete(r);
+    lastChange = Date.now();
+  };
+  page.on("requestfinished", done);
+  page.on("requestfailed", done);
+  return {
+    async quiet(ms = 500, timeout = 15_000) {
+      const deadline = Date.now() + timeout;
+      while (Date.now() < deadline) {
+        if (pending.size === 0 && Date.now() - lastChange >= ms) return;
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      throw new Error(`the page was not quiet for ${ms} ms within ${timeout} ms; in flight: ${[...pending.values()].slice(0, 5).join(", ") || "nothing, but it kept asking"}`);
+    },
+  };
 }
 
 const firstLine = (e: unknown) => String(e instanceof Error ? e.message : e).split("\n")[0];

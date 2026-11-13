@@ -20,13 +20,16 @@
 #                         the instance-admin setup the stock app needs, runs the journeys and takes the stack down. `down -v` drops the
 #                         stack's volumes, which includes the seeded snapshot that scripts/oracle-v1.sh plane needs: that must be
 #                         re-seeded after this. E2E_KEEP=1 leaves the stack up
-#     controls  also the controls, each a run of the journey that MUST fail, and fail by saying why (a pass proves nothing until its
-#               detectors have been shown to fire):
+#     controls  also the controls: runs of the journey that MUST fail, and fail by saying why (a pass proves nothing until its
+#               detectors have been shown to fire), and one that MUST PASS (late-profile, below):
 #                 stickies-404  one route answers 404 in the browser; the journey must name that 404
 #                 empty-list    the browser empties the work-item list (S47); the journey must fail at "see it in the list"
 #                 skip          the journey skips itself, which Playwright counts as a pass; the count guard must refuse it
 #                 wrong target  the journey told it is on the other target must fail at the TARGET GUARD (a Thrust told it is on Plane,
 #                               and the pinned Plane told it is a Thrust)
+#                 slow-page     the one that must PASS: the browser is slowed to a CI runner's pace (CPU 6x, E2E_CPU_RATE) and the profile
+#                               answer that the home page asks for as it mounts is held for 2 s. A journey that is right on a fast
+#                               machine only, such as one that answers the welcome tour the moment it shows, fails it (G-31)
 #
 #   E2E_RECORD_HAR=1   after a passing run, scrub the network log of each journey (tools/e2e-har/scrub.py) into e2e/har/<journey>.<target>.har,
 #                      with the bodies of the /api/ and /auth/ calls: the input of spike 0009's replay harness. Commit what it writes
@@ -170,6 +173,21 @@ must_fail() {
   fi
 }
 
+# a run that must PASS although it is told something that makes a journey which is not robust fail: `must_pass <label> <what it was told> <control>`.
+# It is held to what the main run is held to: the exit status, and then the count guard (the control itself says CONTROL INERT if it did nothing)
+must_pass() {
+  journey "$1" "$3"
+  if [ "$?" -ne 0 ]; then
+    echo "e2e: CONTROL FAILED: the journey failed $2, and it must not; the end of its log:" >&2
+    tail -30 "$OUT/$1.log" >&2
+    VERDICT=FAIL
+  elif ! check_report "$1"; then
+    VERDICT=FAIL
+  else
+    echo "e2e: control ok: the journey passes $2 (log: $OUT/$1.log)"
+  fi
+}
+
 journey main
 STATUS=$?
 echo "e2e: the journey run exited $STATUS (log: $OUT/main.log)"
@@ -204,6 +222,7 @@ if [ "$WHAT" = controls ]; then
   must_fail control-stickies-404 "with the stickies list answering 404" "an unexpected 404: GET /api/workspaces/.*/stickies/ -> 404" stickies-404
   must_fail control-empty-list "with the work-item list emptied" "see it in the list:" empty-list
   must_fail control-wrong-target "told it is on $OTHER" "TARGET GUARD ($OTHER)" "" "$OTHER"
+  must_pass control-slow-page "with the browser slowed to a CI runner's pace and the profile answer of the home page late" slow-page
 
   # the skip control is the other way round: Playwright exits 0, and it is the count guard that must refuse the run
   journey control-skip skip
