@@ -6,6 +6,13 @@
 //   empty-list    the browser empties the work-item list (S47) that the server answers, keeping the envelope. The journey must fail at
 //                 "see it in the list": a journey that never looks at the server's list would pass with this.
 //   skip          the journey skips itself, which Playwright reports as a pass (exit 0). scripts/e2e.sh's count guard must catch it.
+//   slow-page     the odd one out: this run MUST PASS. The browser is slowed to a CI runner's pace, and the profile fetch that the
+//                 workspace's home page makes as it mounts is slow as well. G-31 is the failure it stands for: the app marks the welcome
+//                 tour as done in its store at the click, and keeps what a profile fetch returns after that, so a profile answer made
+//                 before the click and landing after it puts the tour back for good, although the PATCH was answered 200. On a fast
+//                 machine the page does not make that fetch at all, which is why the slowness is part of the control. The held answer
+//                 is the server's own, released when the tour's PATCH leaves the browser. A journey that answers the tour once and goes
+//                 on fails this run; one that looks that the tour stayed answered, and answers it again if it did not, does not.
 //
 // The wrong-target control is not here: it is E2E_TARGET set to the other target (support/target.ts).
 //
@@ -21,8 +28,20 @@ const WORK_ITEM_LIST = /\/api\/workspaces\/[^/]+\/projects\/[0-9a-f-]+\/issues\/
 
 export const STEP_LIST = "see it in the list";
 
-export async function installControl(page: Page): Promise<{ emptied: () => number }> {
+// how many times slower than this machine the browser runs under `slow-page` (E2E_CPU_RATE overrides it)
+const CPU_RATE = Number(process.env.E2E_CPU_RATE ?? "6");
+// the user's profile (GET), and how long at most the answer to the fetch from inside the workspace is held: more than a journey takes
+// to click what is on screen, little enough to be cheap
+const PROFILE = /\/api\/users\/me\/profile\/$/;
+const LATE_MS = 2_000;
+
+export async function installControl(
+  page: Page,
+  where: { workspaceSlug: string },
+): Promise<{ emptied: () => number; delayed: () => number }> {
   let emptied = 0;
+  let delayed = 0;
+  let taken = false;
 
   if (control === "stickies-404") {
     await page.route("**/api/workspaces/*/stickies/**", (route) => route.fulfill({ status: 404, contentType: "application/json", body: "{}" }));
@@ -43,5 +62,34 @@ export async function installControl(page: Page): Promise<{ emptied: () => numbe
     });
   }
 
-  return { emptied: () => emptied };
+  if (control === "slow-page") {
+    // Chromium's own throttle of the page's main thread (the DevTools "CPU: 6x slowdown"); it lasts as long as the page's session does
+    const session = await page.context().newCDPSession(page);
+    await session.send("Emulation.setCPUThrottlingRate", { rate: CPU_RATE });
+    // and the first profile fetch from inside the workspace (the sign-in's and the onboarding's are made on other URLs) is held until the
+    // tour is answered, and then released: so, made before the click, it lands in the moment between that click and the next. LATE_MS
+    // is the longest it is held, for a journey that waits for it before it clicks
+    const answered = new Promise<void>((resolve) => {
+      page.on("request", (r) => {
+        if (r.method() === "PATCH" && /\/api\/users\/me\/tour-completed\/$/.test(new URL(r.url()).pathname)) resolve();
+      });
+    });
+    await page.route(PROFILE, async (route) => {
+      const inWorkspace = new URL(route.request().frame().url()).pathname.startsWith(`/${where.workspaceSlug}/`);
+      if (route.request().method() !== "GET" || taken || !inWorkspace) return route.fallback();
+      taken = true;
+      const response = await route.fetch();
+      const body: unknown = await response.json().catch(() => undefined);
+      await Promise.race([answered, new Promise((resolve) => setTimeout(resolve, LATE_MS))]);
+      if (response.status() !== 200 || typeof body !== "object" || body === null || !("is_tour_completed" in body)) {
+        return route.fulfill({ response });
+      }
+      delayed += 1;
+      // as the server gave it when it was asked, which is before the tour was answered: a fetch made after the click is answered
+      // `true`, as it would be, and is no stale answer
+      return route.fulfill({ response });
+    });
+  }
+
+  return { emptied: () => emptied, delayed: () => delayed };
 }
