@@ -6,6 +6,9 @@
 //   empty-list    the browser empties the work-item list (S47) that the server answers, keeping the envelope. The journey must fail at
 //                 "see it in the list": a journey that never looks at the server's list would pass with this.
 //   skip          the journey skips itself, which Playwright reports as a pass (exit 0). scripts/e2e.sh's count guard must catch it.
+//   sso-on        the browser turns two sign-in providers on in the answer of `/api/instances/` (the flags the app draws its buttons from).
+//                 The sign-in journey must fail, saying "a sign-in method other than the password": a journey that cannot see a button
+//                 that Thrust has no route for would pass with it.
 //   slow-page     the odd one out: this run MUST PASS. The browser is slowed to a CI runner's pace, and the profile fetch that the
 //                 workspace's home page makes as it mounts is slow as well. G-31 is the failure it stands for: the app marks the welcome
 //                 tour as done in its store at the click, and keeps what a profile fetch returns after that, so a profile answer made
@@ -13,6 +16,7 @@
 //                 machine the page does not make that fetch at all, which is why the slowness is part of the control. The held answer
 //                 is the server's own, released when the tour's PATCH leaves the browser. A journey that answers the tour once and goes
 //                 on fails this run; one that looks that the tour stayed answered, and answers it again if it did not, does not.
+//                 A journey that has no workspace (the sign-in journey) is slowed and holds nothing.
 //
 // The wrong-target control is not here: it is E2E_TARGET set to the other target (support/target.ts).
 //
@@ -27,6 +31,8 @@ export const control = process.env.E2E_CONTROL ?? "";
 const WORK_ITEM_LIST = /\/api\/workspaces\/[^/]+\/projects\/[0-9a-f-]+\/issues\/(\?.*)?$/;
 
 export const STEP_LIST = "see it in the list";
+// the words the sign-in journey fails with when a method other than the password is on screen; scripts/e2e.sh's `sso-on` control greps for them
+export const STEP_METHODS = "a sign-in method other than the password";
 
 // how many times slower than this machine the browser runs under `slow-page` (E2E_CPU_RATE overrides it)
 const CPU_RATE = Number(process.env.E2E_CPU_RATE ?? "6");
@@ -35,13 +41,29 @@ const CPU_RATE = Number(process.env.E2E_CPU_RATE ?? "6");
 const PROFILE = /\/api\/users\/me\/profile\/$/;
 const LATE_MS = 2_000;
 
+// `where` names the workspace the journey made, for the control that looks at what happens inside it; a journey with none passes nothing
 export async function installControl(
   page: Page,
-  where: { workspaceSlug: string },
-): Promise<{ emptied: () => number; delayed: () => number }> {
+  where: { workspaceSlug?: string } = {},
+): Promise<{ emptied: () => number; delayed: () => number; providersTurnedOn: () => number }> {
   let emptied = 0;
   let delayed = 0;
+  let providersTurnedOn = 0;
   let taken = false;
+
+  if (control === "sso-on") {
+    await page.route("**/api/instances/", async (route) => {
+      const response = await route.fetch();
+      const body: unknown = await response.json().catch(() => undefined);
+      const config = typeof body === "object" && body !== null ? (body as { config?: unknown }).config : undefined;
+      if (response.status() !== 200 || typeof config !== "object" || config === null) return route.fulfill({ response });
+      providersTurnedOn += 1;
+      return route.fulfill({
+        response,
+        json: { ...(body as object), config: { ...config, is_oidc_enabled: true, is_google_enabled: true } },
+      });
+    });
+  }
 
   if (control === "stickies-404") {
     await page.route("**/api/workspaces/*/stickies/**", (route) => route.fulfill({ status: 404, contentType: "application/json", body: "{}" }));
@@ -75,7 +97,8 @@ export async function installControl(
       });
     });
     await page.route(PROFILE, async (route) => {
-      const inWorkspace = new URL(route.request().frame().url()).pathname.startsWith(`/${where.workspaceSlug}/`);
+      const inWorkspace =
+        where.workspaceSlug !== undefined && new URL(route.request().frame().url()).pathname.startsWith(`/${where.workspaceSlug}/`);
       if (route.request().method() !== "GET" || taken || !inWorkspace) return route.fallback();
       taken = true;
       const response = await route.fetch();
@@ -91,5 +114,5 @@ export async function installControl(
     });
   }
 
-  return { emptied: () => emptied, delayed: () => delayed };
+  return { emptied: () => emptied, delayed: () => delayed, providersTurnedOn: () => providersTurnedOn };
 }

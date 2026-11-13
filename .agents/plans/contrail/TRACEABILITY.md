@@ -9,7 +9,7 @@ needed" must be recorded before the row starts). "Test home" is where the accept
 |---|---|---|---|---|---|
 | F-A01 | OIDC SSO (Zitadel) login; JIT user provisioning | P1 | 0050, 0053 | 0003 | e2e vs Zitadel (mock) |
 | F-A02 | Cloudflare Access JWT validation (outer gate) | P1 | 0050, 0090 | 0004 | integration (Access JWT fixtures) |
-| F-A03 | Email + password sign-in/up, password reset | P0 | 0050, 0052, 0073 | 0003 | contract + e2e |
+| F-A03 | Email + password sign-in/up, password reset (the reset by email is after M2, D-037; until then an operator sets a password, Q-F7) | P0 | 0050, 0052, 0073 | 0003 | contract + e2e |
 | F-A04 | Magic-code (email OTP) sign-in | P1 | 0050, 0073 | 0003 | e2e |
 | F-A05 | OAuth: Google / GitHub / GitLab / Gitea | P2 | — GAP: ADR when scheduled (P2) |  |  |
 | F-A06 | API keys (`X-Api-Key`, `APIToken`), per-key rate limit, activity log | P0 | 0033, 0052 | 0003 | contract (X-Api-Key) + oracle |
@@ -144,6 +144,7 @@ controls that show it: `docs/src/testing/techniques/app-and-e2e.md`; what was me
 | Journey | Screens it covers | Spec | Pinned Plane | `worker-cf` | HAR (the input of spike 0009's replay) |
 |---|---|---|---|---|---|
 | M1: sign up, make a workspace, a project and a work item, see it | sign-up; onboarding (profile, workspace); the welcome tour; workspace home; project create, with its cover; work-item create; work-item list | `m1-sign-up-to-work-item.spec.ts` | passes (G-31) | passes (cell and schedule) | `e2e/har/m1-sign-up-to-work-item.plane.har` |
+| M2: sign in (the locked-out person): the password and no other method, and a forgot-password control that sends nothing | the sign-in page and its password step (D-037) | `m2-sign-in-methods.spec.ts` | not run yet | passes on `worker-memory` and on the `worker-cf` cell (#145, CI run 43478874902); its control `sso-on` fails it on both | not recorded yet |
 | M2: work-item list | group-by, filters, pagination | to be written with #46 | planned | planned | with its journey |
 | M2: work-item detail | description, comments, activity, attachments, labels, assignees, state, priority, dates | to be written with #46 | planned | planned | with its journey |
 | M2: project create and settings | project create and settings (M1 walks create only) | to be written with #46 | planned | planned | with its journey |
