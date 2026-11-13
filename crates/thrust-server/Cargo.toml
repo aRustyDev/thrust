@@ -26,6 +26,11 @@ mutant_unverified_email = ["thrust-core/mutant_unverified_email"]
 # accepted at its door, its switch ignored.
 mutant_operator_skips_strength = ["thrust-core/mutant_operator_skips_strength"]
 mutant_operator_keeps_sessions = ["thrust-core/mutant_operator_keeps_sessions"]
+# A person's change of their own password (D-039): the old password unchecked, no strength check, sessions left alive, an API key let in.
+mutant_change_password_skips_old = ["thrust-core/mutant_change_password_skips_old"]
+mutant_change_password_skips_strength = ["thrust-core/mutant_change_password_skips_strength"]
+mutant_change_password_keeps_sessions = ["thrust-core/mutant_change_password_keeps_sessions"]
+mutant_change_password_allows_api_key = ["thrust-compat-plane/mutant_change_password_allows_api_key"]
 mutant_set_password_every_user = ["thrust-adapters-memory/mutant_set_password_every_user"]
 mutant_operator_takes_admin_token = ["thrust-api/mutant_operator_takes_admin_token"]
 mutant_operator_ignores_flag = ["thrust-api/mutant_operator_ignores_flag"]

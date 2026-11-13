@@ -20,6 +20,10 @@ mutant_unverified_email = []
 # The operator's password reset: no strength check, and the user's sessions left alive.
 mutant_operator_skips_strength = []
 mutant_operator_keeps_sessions = []
+# A person's change of their own password: the old password unchecked, no strength check, the account's sessions left alive.
+mutant_change_password_skips_old = []
+mutant_change_password_skips_strength = []
+mutant_change_password_keeps_sessions = []
 
 [dependencies]
 thrust-contracts = { workspace = true }

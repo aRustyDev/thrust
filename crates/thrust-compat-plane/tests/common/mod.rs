@@ -610,7 +610,13 @@ pub fn divergences_with(router: &Router, fixture: &Value, jar: &mut Jar) -> Vec<
         if got != want {
             diff_paths(&want, &got, "", &mut lines);
         }
-        let signs_in = matches!(want["request"]["path"].as_str(), Some("/auth/sign-in/" | "/auth/sign-up/"));
+        // a password change makes a session too (the caller stays signed in, D-039): it sets one when it worked and none when it did not.
+        // It names no email in its body, so it never changes whose session the jar holds: the exchanges after it that name the account
+        // send the one it held before, which is the point of the read that follows it.
+        let signs_in = matches!(
+            want["request"]["path"].as_str(),
+            Some("/auth/sign-in/" | "/auth/sign-up/" | "/auth/change-password/")
+        );
         if signs_in {
             let expected = want["response"]["status"] == 200;
             let token = session_token(&raw);

@@ -109,4 +109,5 @@ pub fn routes() -> Router {
         .route("/auth/sign-up/", post(auth::sign_up)) // S05
         .route("/auth/sign-in/", post(auth::sign_in)) // S06
         .route("/auth/sign-out/", post(auth::sign_out)) // X06
+        .route("/auth/change-password/", post(auth::change_password)) // X09
 }

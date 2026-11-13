@@ -11,6 +11,10 @@ publish.workspace = true
 [lints]
 workspace = true
 
+[features]
+# Control-run mutant (scripts/mutants.sh), never enabled outside it; `thrust-server` forwards it: an API key may change the password.
+mutant_change_password_allows_api_key = []
+
 [dependencies]
 thrust-contracts = { workspace = true }
 thrust-ports = { workspace = true }

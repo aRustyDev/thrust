@@ -1,4 +1,5 @@
-//! `/auth/...`: the routes the sign-up and sign-in pages call (S03 to S06), and the one the sign-out menu calls (X06).
+//! `/auth/...`: the routes the sign-up and sign-in pages call (S03 to S06), the one the sign-out menu calls (X06), and the one
+//! Profile -> Security calls (X09).
 //!
 //! The pinned Plane answers its sign-up and sign-in form posts with a 302 whose `Location` carries `?error_code=` on a
 //! failure. Thrust's copy of the React auth client posts JSON to the same paths instead (issue #44, Q-0009.1, D-022):
@@ -157,6 +158,83 @@ pub(crate) async fn sign_out(
     let mut resp = Json(json!({ "redirect_path": "/" })).into_response();
     thrust_api::add_cookies(&mut resp, &thrust_api::cleared_cookies());
     Ok(resp)
+}
+
+/// What a body field is to Plane's `request.data.get(name, False)` followed by `if not value`: nothing (absent, `null`, `false`, an empty
+/// string, list or object, a zero), or text, or something else that is not nothing.
+enum Field<'a> {
+    Missing,
+    Text(&'a str),
+    NotText,
+}
+
+fn field<'a>(body: &'a serde_json::Value, name: &str) -> Field<'a> {
+    use serde_json::Value;
+    // `Value::get` is `None` for a body that is not an object (an array, a string, a number or `null`): the same as an empty one
+    match body.get(name) {
+        None | Some(Value::Null | Value::Bool(false)) => Field::Missing,
+        Some(Value::String(s)) if s.is_empty() => Field::Missing,
+        Some(Value::String(s)) => Field::Text(s),
+        Some(Value::Number(n)) if n.as_f64().is_some_and(|f| f == 0.0) => Field::Missing,
+        Some(Value::Array(a)) if a.is_empty() => Field::Missing,
+        Some(Value::Object(o)) if o.is_empty() => Field::Missing,
+        Some(_) => Field::NotText,
+    }
+}
+
+/// X09. Change the signed-in caller's own password (what Profile -> Security calls). Plane's order, which decides the code of a
+/// request with two faults: who is asking (401; a session cookie without the CSRF token is refused as every one is), the old
+/// password present, the new one present, the old one right, the new one strong. Success is 200 `{"message": ...}` and a new session
+/// in the cookies: the caller stays signed in and every other session of the account ends (D-039).
+///
+/// Only a session may do it: an API key is a script's credential, and a leaked one must not take the account over. The pin's
+/// internal API knows only sessions, so a key is nobody there, and a 401 here. A value that is not text is what the pin fails on
+/// (a 500 for the new password; a wrong old password for the old one): here a new password that is not text is a weak one, said after
+/// the old password has been checked, and a body that is not a JSON object is an empty one.
+pub(crate) async fn change_password(
+    Extension(app): Extension<App>,
+    auth: Result<thrust_api::AuthedVia, thrust_api::ApiError>,
+    body: Bytes,
+) -> Result<Response, PlaneError> {
+    let thrust_api::AuthedVia(caller) = auth?;
+    // MUTANT (control run only): an API key may change the password. The contract suite's change-password test must catch it.
+    #[cfg(not(feature = "mutant_change_password_allows_api_key"))]
+    if !matches!(caller.via, thrust_core::Via::Session(_)) {
+        return Err(PlaneError::Unauthenticated);
+    }
+    let body: serde_json::Value = serde_json::from_slice(&body).unwrap_or(serde_json::Value::Null);
+    let wrong_old = || AuthError::bad_request(Code::IncorrectOldPassword).with_error("Old password is not correct");
+    // Plane's order: both are looked at for being nothing before either is looked at for being right, so an old password that is not
+    // text (a wrong one, on the pin) is not heard until the new one has been found to be there
+    let old = field(&body, "old_password");
+    if matches!(old, Field::Missing) {
+        return Ok(AuthError::bad_request(Code::MissingPassword).with_error("Old password is missing").into_response());
+    }
+    let new = field(&body, "new_password");
+    if matches!(new, Field::Missing) {
+        return Ok(AuthError::bad_request(Code::MissingPassword)
+            .with_error("Old or new password is missing")
+            .into_response());
+    }
+    let Field::Text(old) = old else { return Ok(wrong_old().into_response()) };
+    // not text: refused as too weak, which is said after the old password is checked, as the pin would have
+    let new = if let Field::Text(new) = new { new } else { "" };
+    match thrust_core::change_password(&app, &caller.principal, old, new).await {
+        Ok(thrust_core::PasswordChange::Changed(s)) => {
+            let mut resp = Json(json!({ "message": "Password updated successfully" })).into_response();
+            thrust_api::add_cookies(
+                &mut resp,
+                &thrust_api::session_cookies(&s.token, &s.csrf_token, app.cfg.session_ttl_secs),
+            );
+            Ok(resp)
+        }
+        Ok(thrust_core::PasswordChange::WrongOldPassword) => Ok(wrong_old().into_response()),
+        Ok(thrust_core::PasswordChange::TooWeak) => Ok(AuthError::bad_request(Code::PasswordTooWeak).into_response()),
+        Err(CoreError::RateLimited { retry_after_secs }) => {
+            Ok(AuthError::rate_limited(retry_after_secs).into_response())
+        }
+        Err(e) => Err(e.into()),
+    }
 }
 
 /// S05. Make an account and sign it in. Plane's order: both fields present, a valid email, no account with it, a strong

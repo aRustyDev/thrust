@@ -128,7 +128,7 @@ The plan's `ARCHITECTURE.md` (draft v0, `.agents/plans/contrail/ARCHITECTURE.md`
 
 - **Crates:** `thrust-api-core` and `thrust-collab-do` do not exist. `thrust-api-v1` does (`/api/v1`: projects, states,
   labels and work items, issue #58). `thrust-compat-plane` serves the 48-route slice of issue #44 (S01 to S48 and X01 to
-  X04, X06, the sign-out the user menu calls: D-036, and X07 and X08, two stubs the first journey's pages call: D-021), the four asset rows (S28, S29, S31 and S33) included, and three routes of its own around them: the address S28 hands
+  X04, X06, the sign-out the user menu calls: D-036, X07 and X08, two stubs the first journey's pages call: D-021, and X09, the password change Profile -> Security calls: D-039), the four asset rows (S28, S29, S31 and S33) included, and three routes of its own around them: the address S28 hands
   the browser for the upload, the route S33 redirects to, and the address a project's cover is shown at (X05). Each composition
   root mounts it beside `thrust-api`'s router. `thrust-plane-types` holds the pinned Plane's three 500 texts and the one function that
   answers them; `thrust-api-v1` and `thrust-compat-plane` both answer a reproduced 500 through it (issue #51).

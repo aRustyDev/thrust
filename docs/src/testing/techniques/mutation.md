@@ -31,7 +31,10 @@ switch on: `crates/thrust-compat-plane/tests/operator.rs` kills it, run with `--
 `crates/thrust-core/Cargo.toml` (`mutant_skip_csrf`, `mutant_unverified_email`, `mutant_operator_skips_strength` and
 `mutant_operator_keeps_sessions`, which break the operator's password reset, and the two that break the CSRF enforcement switch,
 `mutant_csrf_never`, ignored when it is on, killed by the main pass, and `mutant_csrf_always`, ignored when it is off, killed by the
-`csrfoff` pass) and
+`csrfoff` pass; and `mutant_change_password_skips_old`, `mutant_change_password_skips_strength` and
+`mutant_change_password_keeps_sessions`, which break a person's change of their own password, killed by the main pass and by
+`crates/thrust-core/tests/change_password.rs`), `crates/thrust-compat-plane/Cargo.toml` (`mutant_change_password_allows_api_key`,
+which lets an API key change the password, killed by the main pass) and
 `crates/thrust-adapters-selfhosted` (`mutant_discard_noop`),
 gated with `#[cfg(feature = "mutant_…")]` at the line they break, passed through by `thrust-server`. Each is listed
 in `scripts/mutants.sh`. cargo-mutants: configured by `.cargo/mutants.toml` and the `mutants` nextest profile;

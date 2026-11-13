@@ -1660,6 +1660,79 @@ def step_x08(base, pacer):
     ]
 
 
+CHANGE_PASSWORD = "/auth/change-password/"
+CHANGER_EMAIL = "changer@example.test"
+CHANGER_NEW = "Another-Sample-Pa55word-Yak-27"
+
+
+def step_x09(base, pacer):
+    """POST /auth/change-password/ : not one of the 48 rows, but what Profile -> Security calls (`changePassword` in
+    `web/apps/web/services/user.service.ts`). A JSON body with `old_password` and `new_password`, from a signed-in person.
+
+    The account is made here, by the sign-up form post, and is the only one the step touches: the journey's own two keep their
+    passwords and their sessions. What is recorded is the pin's refusals in the order it makes them (no session; no old password; no
+    new one; a wrong old one, whatever else is wrong; a weak new one), the change itself, and what it did: the session held before
+    it is over (sent by hand, as X06 does, because a client that dropped the cookie would prove nothing), the old password no longer
+    signs in, the new one does, and changing to the password already held is not refused.
+
+    NOT recorded, because the format holds JSON bodies and no request headers: that the route enforces the CSRF token for a session
+    (403 `CSRF Failed: CSRF token missing.`, measured), that a `new_password` that is not text, and a body that is not a JSON object,
+    are the pin's 500 (an HTML page), that it takes a form-encoded body too, and that the change ends every other session of the
+    account too (measured with a second browser: its next read was a 401). D-039 says which of these Thrust matches."""
+    account = Client(base)
+    token = account.csrf()
+    pacer.wait()
+    made = account.request("POST", "/auth/sign-up/", form={"email": CHANGER_EMAIL, "password": STRONG}, headers={"X-CSRFToken": token}, hidden_form={"csrfmiddlewaretoken": token})
+    if made["response"]["status"] != 302 or "error_code" in made["response"]["headers"].get("Location", ""):
+        raise SystemExit(f"could not make {CHANGER_EMAIL} to change a password for: {made['response']['headers'].get('Location', '')}")
+    held = [c for c in account.jar if c.name != "csrftoken"]
+    if len(held) != 1:
+        raise SystemExit(f"the new account holds {[c.name for c in held]} besides the CSRF cookie, not one session cookie")
+    stale = {"Cookie": f"{held[0].name}={held[0].value}"}
+    live = fresh(base).request("GET", ME, headers=stale)
+    if live["response"]["status"] != 200:
+        raise SystemExit(f"the session cookie sent by hand is not a live session before the change ({live['response']['status']}): the recording would prove nothing")
+
+    def change(body, client=account):
+        return client.request("POST", CHANGE_PASSWORD, body=body, headers={"X-CSRFToken": client.csrf()}, as_email=CHANGER_EMAIL)
+
+    nobody = fresh(base)
+    no_session = nobody.request("POST", CHANGE_PASSWORD, body={"old_password": STRONG, "new_password": CHANGER_NEW}, headers={"X-CSRFToken": nobody.csrf()})
+    refusals = [
+        ("no session", no_session),
+        ("no old password", change({"new_password": CHANGER_NEW})),
+        ("no new password", change({"old_password": STRONG})),
+        ("an empty body", change({})),
+        ("an empty old password", change({"old_password": "", "new_password": CHANGER_NEW})),
+        ("a new password that is null", change({"old_password": STRONG, "new_password": None})),
+        ("a wrong old password", change({"old_password": WRONG, "new_password": CHANGER_NEW})),
+        ("an old password that is not text", change({"old_password": 12345, "new_password": CHANGER_NEW})),
+        ("a weak new password", change({"old_password": STRONG, "new_password": "password"})),
+        ("a wrong old password and a weak new one", change({"old_password": WRONG, "new_password": "password"})),
+        ("no old password and a weak new one", change({"new_password": "password"})),
+    ]
+    changed = change({"old_password": STRONG, "new_password": CHANGER_NEW})
+    over = fresh(base).request("GET", ME, headers=stale, as_email=CHANGER_EMAIL)
+    old_in = fresh(base)
+    old_token = old_in.csrf()
+    pacer.wait()
+    with_old = old_in.request("POST", "/auth/sign-in/", form={"email": CHANGER_EMAIL, "password": STRONG}, headers={"X-CSRFToken": old_token}, hidden_form={"csrfmiddlewaretoken": old_token})
+    new_in = Client(base)
+    new_token = new_in.csrf()
+    pacer.wait()
+    with_new = new_in.request("POST", "/auth/sign-in/", form={"email": CHANGER_EMAIL, "password": CHANGER_NEW}, headers={"X-CSRFToken": new_token}, hidden_form={"csrfmiddlewaretoken": new_token})
+    same = change({"old_password": CHANGER_NEW, "new_password": CHANGER_NEW}, client=new_in)
+    return [
+        ("an account to change the password of", made),
+        *refusals,
+        ("the change", changed),
+        ("the session held before the change", over),
+        ("sign in with the old password", with_old),
+        ("sign in with the new password", with_new),
+        ("the password held already, as the new one", same),
+    ]
+
+
 # Which fixtures make an id that later ones use (`binds`), and which name one in their requests (`uses`).
 USES_PROJECT = {"uses": ["project"]}
 FIXTURE_META = {
@@ -1727,6 +1800,12 @@ FIXTURE_META = {
     },
     "X06": {
         "preconditions": ["the second user (second@example.test) holds a live session before the first exchange; the second exchange sends the session cookie that user held before the first (the old value, by hand), not whatever the client kept"],
+    },
+    "X09": {
+        "preconditions": [
+            "the first exchange makes changer@example.test, an account of this fixture's own, and signs it in: every exchange that names it (`as`) sends that session, until `sign in with the new password` makes another",
+            "`the session held before the change` sends the session cookie the account held before `the change` (the old value, by hand), not whatever the client kept, and that cookie was checked to be a live session before the change",
+        ],
     },
 }
 
@@ -1803,8 +1882,9 @@ STEPS = [
     ("S29-member", step_s29_member),
     ("S31-member", step_s31_member),
     ("S33-member", step_s33_member),
-    # the last: it ends the second account's session
+    # X06 ends the second account's session, so nothing after it may use that account: X09 makes an account of its own
     ("X06", step_x06),
+    ("X09", step_x09),
 ]
 
 

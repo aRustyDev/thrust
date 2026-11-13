@@ -105,6 +105,7 @@ rows! {
     parity_s31_attach_assets_as_a_member => "S31-member",
     parity_s33_read_an_asset_as_a_member => "S33-member",
     parity_x06_sign_out => "X06",
+    parity_x09_change_password => "X09",
 }
 
 /// A fixture without a test would pass unseen, and a test without a fixture is `load_fixture` panicking: hold the two
@@ -337,6 +338,89 @@ fn parity_control_a_sign_out_that_ends_no_session_is_a_divergence() {
     let d = journey_with(|router| router.layer(axum::middleware::from_fn(answer_without_doing)), ROWS, "X06", |_| {});
     assert!(d.iter().any(|m| m.contains("the session is over")), "{d:?}");
     assert!(!d.iter().any(|m| m.contains("a live session")), "the sign-out's own answer is as recorded: {d:?}");
+}
+
+/// What the recorder (tools/compat-record/record.py, `step_x09`) sent to change a password: the old one the new account was made with,
+/// the new one, and a wrong one. A control that needs to find the successful change in a request, or the wrong guess, looks for them.
+const X09_OLD: &str = "Journey-Sample-Pa55word-Zebra-81";
+const X09_NEW: &str = "Another-Sample-Pa55word-Yak-27";
+const X09_WRONG: &str = "Wrong-Password-For-Journey-1";
+
+/// A change of password sets the caller's new session (D-039), which the fixture drops with the other headers, so the replay checks
+/// it itself: through a router that strips the `Set-Cookie` headers of the change's answers, each of the two that worked (the change,
+/// and the same password again) must diverge. A refusal has nothing to strip, so it does not.
+#[test]
+fn parity_control_a_change_that_sets_no_session_cookie_is_a_divergence() {
+    use axum::{extract::Request, middleware::Next};
+    async fn strip_the_changes_cookies(req: Request, next: Next) -> Response<Body> {
+        let changes = req.uri().path() == "/auth/change-password/";
+        let mut resp = next.run(req).await;
+        if changes {
+            resp.headers_mut().remove("set-cookie");
+        }
+        resp
+    }
+    let d =
+        journey_with(|router| router.layer(axum::middleware::from_fn(strip_the_changes_cookies)), ROWS, "X09", |_| {});
+    let cookie_lines = d.iter().filter(|m| m.contains("session cookie: the recording says it must be set")).count();
+    assert_eq!(cookie_lines, 2, "the two answers that changed the password: {d:?}");
+}
+
+/// The read after the change sends the session the account held before it, so its 401 is the end of that session and nothing else.
+/// A router whose change answers as it should, session cookie and all, but ends nothing must diverge at that read (and only the
+/// change that would have been made is answered so: the refusals before it are the handler's own).
+#[test]
+fn parity_control_a_change_that_ends_no_session_is_a_divergence() {
+    use axum::{extract::Request, http::StatusCode, middleware::Next};
+    async fn answer_without_doing(req: Request, next: Next) -> Response<Body> {
+        if req.uri().path() != "/auth/change-password/" {
+            return next.run(req).await;
+        }
+        let (parts, body) = req.into_parts();
+        let bytes = axum::body::to_bytes(body, usize::MAX).await.unwrap();
+        let text = String::from_utf8_lossy(&bytes).to_string();
+        let is_the_change = text.contains(&format!("\"old_password\":\"{X09_OLD}\""))
+            && text.contains(&format!("\"new_password\":\"{X09_NEW}\""));
+        if !is_the_change {
+            return next.run(Request::from_parts(parts, Body::from(bytes))).await;
+        }
+        let mut resp = Response::new(Body::from(r#"{"message":"Password updated successfully"}"#));
+        *resp.status_mut() = StatusCode::OK;
+        resp.headers_mut().insert("content-type", "application/json".parse().unwrap());
+        for cookie in ["__Host-thrust_session=made-up; Path=/", "__Host-thrust_csrf=made-up; Path=/"] {
+            resp.headers_mut().append("set-cookie", cookie.parse().unwrap());
+        }
+        resp
+    }
+    let d = journey_with(|router| router.layer(axum::middleware::from_fn(answer_without_doing)), ROWS, "X09", |_| {});
+    assert!(d.iter().any(|m| m.contains("the session held before the change")), "{d:?}");
+    assert!(!d.iter().any(|m| m.contains("exchange \"the change\":")), "the change's own answer is as recorded: {d:?}");
+}
+
+/// A wrong old password is refused (5135). A router that mistakes every wrong guess for the right one, which is what a handler that
+/// does not check the old password does, must diverge at the exchanges that send one: the recording says 400, and this one changes
+/// the password.
+#[test]
+fn parity_control_a_wrong_old_password_that_is_accepted_is_a_divergence() {
+    use axum::{extract::Request, middleware::Next};
+    async fn mistake_the_guess_for_the_password(req: Request, next: Next) -> Response<Body> {
+        if req.uri().path() != "/auth/change-password/" {
+            return next.run(req).await;
+        }
+        let (parts, body) = req.into_parts();
+        let bytes = axum::body::to_bytes(body, usize::MAX).await.unwrap();
+        let text = String::from_utf8_lossy(&bytes).replace(X09_WRONG, X09_OLD);
+        next.run(Request::from_parts(parts, Body::from(text))).await
+    }
+    let d = journey_with(
+        |router| router.layer(axum::middleware::from_fn(mistake_the_guess_for_the_password)),
+        ROWS,
+        "X09",
+        |_| {},
+    );
+    assert!(d.iter().any(|m| m.contains("exchange \"a wrong old password\":")), "{d:?}");
+    // control: the layer touches no other refusal's request, so the ones that name no wrong guess are as recorded
+    assert!(!d.iter().any(|m| m.contains("exchange \"no old password\":")), "{d:?}");
 }
 
 /// The normaliser could erase a real difference (the failure mode its rules exist to avoid): two answers that differ
