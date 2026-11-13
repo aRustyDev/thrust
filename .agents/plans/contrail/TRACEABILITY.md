@@ -144,7 +144,7 @@ controls that show it: `docs/src/testing/techniques/app-and-e2e.md`; what was me
 | Journey | Screens it covers | Spec | Pinned Plane | `worker-cf` | HAR (the input of spike 0009's replay) |
 |---|---|---|---|---|---|
 | M1: sign up, make a workspace, a project and a work item, see it | sign-up; onboarding (profile, workspace); the welcome tour; workspace home; project create, with its cover; work-item create; work-item list | `m1-sign-up-to-work-item.spec.ts` | passes (G-31) | passes (cell and schedule) | `e2e/har/m1-sign-up-to-work-item.plane.har` |
-| M2: sign in (the locked-out person): the password and no other method, and a forgot-password control that sends nothing | the sign-in page and its password step (D-037) | `m2-sign-in-methods.spec.ts` | not run yet | passes on `worker-memory` (its control `sso-on` fails it); the `worker-cf` cell has not run it | not recorded yet |
+| M2: sign in (the locked-out person): the password and no other method, and a forgot-password control that sends nothing | the sign-in page and its password step (D-037) | `m2-sign-in-methods.spec.ts` | not run yet | passes on `worker-memory` and on the `worker-cf` cell (#145, CI run 43478874902); its control `sso-on` fails it on both | not recorded yet |
 | M2: work-item list | group-by, filters, pagination | to be written with #46 | planned | planned | with its journey |
 | M2: work-item detail | description, comments, activity, attachments, labels, assignees, state, priority, dates | to be written with #46 | planned | planned | with its journey |
 | M2: project create and settings | project create and settings (M1 walks create only) | to be written with #46 | planned | planned | with its journey |
