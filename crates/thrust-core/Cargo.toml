@@ -17,6 +17,9 @@ mutant_skip_csrf = []
 mutant_csrf_never = []
 mutant_csrf_always = []
 mutant_unverified_email = []
+# The operator's password reset: no strength check, and the user's sessions left alive.
+mutant_operator_skips_strength = []
+mutant_operator_keeps_sessions = []
 
 [dependencies]
 thrust-contracts = { workspace = true }

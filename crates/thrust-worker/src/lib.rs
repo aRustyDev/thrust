@@ -17,7 +17,7 @@ use http_body_util::BodyExt;
 use thrust_adapters_cloudflare::*;
 use thrust_adapters_oidc::{OidcConfig, OpenIdProvider};
 use thrust_adapters_postgres::{Connector, CountingConnector, PgDatabase, RoundTrips};
-use thrust_api::{set_db_round_trips, ApiConfig, InternalErrorDetail};
+use thrust_api::{set_db_round_trips, ApiConfig, InternalErrorDetail, OperatorAudit};
 use thrust_contracts::Envelope;
 use thrust_core::{ActivityConsumer, App, Argon2Params, Argon2idHasher, CoreConfig, Ports, SystemScope};
 use thrust_ports::{Background, Clock, EventConsumer, IdGen, OidcProvider, PasswordHasher, Rng};
@@ -135,6 +135,8 @@ fn api_config(env: &Env, adapters: &str) -> ApiConfig {
     ApiConfig {
         test_routes: flag(env, "THRUST_TEST_ROUTES", false),
         admin_token: text(env, "THRUST_ADMIN_TOKEN"),
+        operator_routes: flag(env, "THRUST_OPERATOR_ROUTES", false),
+        operator_token: text(env, "THRUST_OPERATOR_TOKEN"),
         target: "worker".into(),
         adapters: adapters.to_string(),
     }
@@ -249,6 +251,9 @@ async fn fetch(req: web_sys::Request, env: Env, ctx: Context) -> Result<web_sys:
     };
     if let Some(InternalErrorDetail(d)) = resp.extensions().get::<InternalErrorDetail>() {
         console_error!("internal error: {d}");
+    }
+    if let Some(OperatorAudit(line)) = resp.extensions().get::<OperatorAudit>() {
+        console_log!("{line}");
     }
     // Test routes on a Postgres set only (`build_app`): how many statements this request had sent when the router answered.
     if let Some(rt) = round_trips {

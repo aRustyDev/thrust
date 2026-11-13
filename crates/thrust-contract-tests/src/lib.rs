@@ -13,6 +13,9 @@ use thrust_contracts::*;
 pub struct Target {
     pub base: String,
     pub admin_token: String,
+    /// The token of the operator's routes (`/internal/operator/*`), which the target was started with. Not set for a runner that
+    /// never calls them (the benches); the tests of those routes ask for it with [`Target::operator_token`].
+    operator_token: Option<String>,
     pub http: reqwest::Client,
 }
 
@@ -20,8 +23,33 @@ impl Target {
     pub fn from_env() -> Target {
         let base = std::env::var("THRUST_BASE_URL").expect("THRUST_BASE_URL must be set (see scripts/contract.sh)");
         let admin_token = std::env::var("THRUST_ADMIN_TOKEN").expect("THRUST_ADMIN_TOKEN must be set");
+        let operator_token = std::env::var("THRUST_OPERATOR_TOKEN").ok();
         let http = reqwest::Client::builder().timeout(Duration::from_secs(30)).no_proxy().build().unwrap();
-        Target { base: base.trim_end_matches('/').to_string(), admin_token, http }
+        Target { base: base.trim_end_matches('/').to_string(), admin_token, operator_token, http }
+    }
+
+    /// The operator's token. A test of the operator's routes that cannot get one fails, and does not skip: a pass that skipped them
+    /// would count as green.
+    pub fn operator_token(&self) -> &str {
+        self.operator_token
+            .as_deref()
+            .expect("THRUST_OPERATOR_TOKEN must be set, and the target started with THRUST_OPERATOR_ROUTES=1 (scripts/contract.sh does both)")
+    }
+
+    /// A POST to one of the operator's routes (`users`, `users/password`), with the operator's token in its header unless `token` is
+    /// `None`, and a JSON body of an email and a password.
+    pub async fn operator_post(
+        &self,
+        route: &str,
+        token: Option<&str>,
+        email: &str,
+        password: &str,
+    ) -> reqwest::Response {
+        let mut req = self.http.post(self.url(&format!("/internal/operator/{route}")));
+        if let Some(token) = token {
+            req = req.header("x-operator-token", token);
+        }
+        req.json(&json!({ "email": email, "password": password })).send().await.unwrap()
     }
 
     pub fn url(&self, path: &str) -> String {

@@ -2386,6 +2386,16 @@ impl Database for PgDatabase {
         Ok(n == 1)
     }
 
+    async fn set_password_hash(&self, _sys: &SystemScope, user: UserId, password_hash: &str) -> Result<bool, DbError> {
+        let c = self.conn().await?;
+        let n = c
+            .pg()
+            .execute("UPDATE users SET password_hash = $2 WHERE id = $1", &[&user.0, &password_hash])
+            .await
+            .map_err(db_err)?;
+        Ok(n == 1)
+    }
+
     async fn seed_users(&self, _sys: &SystemScope, users: &[UserRecord]) -> Result<(), DbError> {
         let c = self.connector.checkout(true).await?;
         let cl = c.pg();

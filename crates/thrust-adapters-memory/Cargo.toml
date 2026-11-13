@@ -17,6 +17,7 @@ mutant_dup_sequence = []
 mutant_no_activity_dedupe = []
 mutant_ignore_revoked = []
 mutant_search_case_sensitive = []
+mutant_set_password_every_user = []
 
 [dependencies]
 thrust-contracts = { workspace = true }

@@ -26,6 +26,9 @@
 #                                  (see below), never into the shared wrangler.toml, which the contract cells use as they are. Unset
 #                                  serves no files. An absolute path, to a directory that holds an index.html (exit 2 otherwise)
 #   THRUST_ADMIN_TOKEN             (env only) gate for /internal/*
+#   THRUST_OPERATOR_ROUTES         1 mounts the operator's routes, /internal/operator/* (Q-F7); unset leaves them off, the Worker's default
+#   THRUST_OPERATOR_TOKEN          (env only) the operator's token for those routes, apart from the admin token; at least 32 characters, or
+#                                  the routes refuse every call
 #   DATABASE_URL                   (env only) Postgres URL for the *local* Hyperdrive binding
 #
 # `wrangler dev` runs the [build] command from wrangler.toml (worker-build --release).
@@ -153,7 +156,7 @@ fi
 
 # Optional vars are passed only when set, so an unset one leaves the Worker's own default in force.
 set --
-for v in THRUST_ARGON2_M_KIB THRUST_ARGON2_T THRUST_ARGON2_P THRUST_SIGNIN_RATE_LIMIT THRUST_V1_RATE_LIMIT; do
+for v in THRUST_ARGON2_M_KIB THRUST_ARGON2_T THRUST_ARGON2_P THRUST_SIGNIN_RATE_LIMIT THRUST_V1_RATE_LIMIT THRUST_OPERATOR_ROUTES; do
   eval "val=\${$v:-}"
   [ -n "$val" ] && set -- "$@" --var "$v:$val"
 done
@@ -168,6 +171,7 @@ env -i \
   HOME="$HOME" PATH="$PATH" TMPDIR="${TMPDIR:-/tmp}" \
   CLOUDFLARE_INCLUDE_PROCESS_ENV=true WRANGLER_SEND_METRICS=false NO_COLOR=1 \
   THRUST_ADMIN_TOKEN="${THRUST_ADMIN_TOKEN:-}" \
+  THRUST_OPERATOR_TOKEN="${THRUST_OPERATOR_TOKEN:-}" \
   THRUST_OIDC_ISSUER="${THRUST_OIDC_ISSUER:-}" \
   THRUST_OIDC_CLIENT_ID="${THRUST_OIDC_CLIENT_ID:-}" \
   THRUST_OIDC_CLIENT_SECRET="${THRUST_OIDC_CLIENT_SECRET:-}" \

@@ -78,7 +78,9 @@ case "$INFO" in *"\"csrf_enforce\":$WANT_CSRF"*) ;; *) echo "[stage2/$PASS] VACU
 RS="$ROOT/scripts/rs"
 M="$ROOT/Cargo.toml"
 case "$PASS" in
-  main)     EXPECT=59; "$RS" cargo test --manifest-path "$M" -p thrust-contract-tests --test contract -- --skip sweeper_ --skip panic_ --skip blast_ --skip oidc_ --skip csrf_off_ >"$LOG.test.log" 2>&1 ;;
+  # The operator_ tests are skipped like the oidc_ ones: a deployed Worker is started without the operator's routes and without their token
+  # (they are the contract targets' own configuration, scripts/contract.sh), so the count stays what it was.
+  main)     EXPECT=59; "$RS" cargo test --manifest-path "$M" -p thrust-contract-tests --test contract -- --skip sweeper_ --skip panic_ --skip blast_ --skip oidc_ --skip operator_ --skip csrf_off_ >"$LOG.test.log" 2>&1 ;;
   # the csrf_off_ tests that need nothing else the deployed Worker lacks (all six: none of them is an `oidc_` test)
   csrfoff)  EXPECT=6;  "$RS" cargo test --manifest-path "$M" -p thrust-contract-tests --test contract -- csrf_off_ >"$LOG.test.log" 2>&1 ;;
   worker)   EXPECT=1;  "$RS" cargo test --manifest-path "$M" -p thrust-contract-tests --test worker_only -- worker_room_ --test-threads=1 --nocapture >"$LOG.test.log" 2>&1 ;;

@@ -1044,6 +1044,12 @@ pub trait Database: Send + Sync {
     /// Test support and deactivation until ADR-0053 provides the real one: set `is_active`. `true` if the user exists.
     async fn set_user_active(&self, sys: &SystemScope, user: UserId, active: bool) -> Result<bool, DbError>;
 
+    /// Replace a user's password hash (a PHC string) and nothing else of the user: `is_active` stays as it was, and the
+    /// user's sessions stay too, because ending them is the caller's step ([`Database::revoke_user_sessions`]). It sets the
+    /// hash of a user who has none as well (an account made by single sign-on). `true` if the user exists. The operator's
+    /// reset (Q-F7) is its only caller today.
+    async fn set_password_hash(&self, sys: &SystemScope, user: UserId, password_hash: &str) -> Result<bool, DbError>;
+
     /// Test support: upsert users with their email, password hash and state. The fixture's id-only users are created
     /// by [`Database::seed`].
     async fn seed_users(&self, sys: &SystemScope, users: &[UserRecord]) -> Result<(), DbError>;

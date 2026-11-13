@@ -56,6 +56,8 @@
 //!   its member and shows it again; `workspace_members` lists everyone, the inactive too, with the person's profile fields;
 //! * `project_roles` is the user's role in each project of the workspace whose member row names that workspace, and no other
 //!   (a row that names another workspace than its project's is no role);
+//! * `set_password_hash` replaces one user's hash and nothing else (not `is_active`, not another user's row): `user_by_email`
+//!   then returns the new hash, and `true`; for a user that does not exist it answers `false` and makes no row;
 //! * `insert_user` creates a login that `user_by_email` then finds; a taken email or a taken id is a `Conflict` that
 //!   changes nothing (the user that holds it is as it was, and the refused email names nobody);
 //! * a pending OIDC login is returned by `take_oidc_login` once, and deleted by it (a second take, a replayed
@@ -566,6 +568,12 @@ enum Op {
         who: usize,
         active: bool,
     },
+    /// Set a new password hash for one of the three seeded login users (0..3), or (3) for a user that does not exist. `version`
+    /// picks which hash (1..=3): the same one twice is a write of what is there.
+    SetPassword {
+        who: usize,
+        version: u8,
+    },
     /// Sign-out everywhere for one of the three seeded users.
     RevokeUserSessions {
         who: usize,
@@ -872,6 +880,7 @@ fn op() -> impl Strategy<Value = Op> {
         1 => (0..3usize).prop_map(|sess| Op::SessionRevoke { sess }),
         1 => (0..2usize).prop_map(|sess| Op::SessionReinsert { sess }),
         3 => (0..3usize, any::<bool>()).prop_map(|(who, active)| Op::SetActive { who, active }),
+        2 => (0..4usize, 1..=3u8).prop_map(|(who, version)| Op::SetPassword { who, version }),
         1 => (0..3usize).prop_map(|who| Op::RevokeUserSessions { who }),
         2 => (0..3usize, when()).prop_map(|(key, when)| Op::KeyLookup { key, when }),
         1 => (0..3usize).prop_map(|key| Op::KeyTouch { key }),
@@ -983,6 +992,10 @@ enum Class {
     SessionUserInactiveHidden,
     UserDeactivated,
     UserReactivated,
+    /// A new password hash for a seeded user: the row changes in that one field.
+    PasswordSet,
+    /// A new password hash for a user that does not exist: `false`, and no row appears.
+    PasswordSetUnknown,
     /// Sign-out everywhere that revoked at least one session.
     UserSessionsRevoked,
     /// Sign-out everywhere with nothing left to revoke.
@@ -1245,7 +1258,7 @@ enum Class {
 }
 
 impl Class {
-    const ALL: [Class; 212] = [
+    const ALL: [Class; 214] = [
         Class::Created,
         Class::ExternalKeyFreed,
         Class::Conflict,
@@ -1285,6 +1298,8 @@ impl Class {
         Class::SessionUserInactiveHidden,
         Class::UserDeactivated,
         Class::UserReactivated,
+        Class::PasswordSet,
+        Class::PasswordSetUnknown,
         Class::UserSessionsRevoked,
         Class::UserSessionsRevokedNone,
         Class::KeyLive,
@@ -1769,6 +1784,12 @@ enum Call {
     SetActive {
         user: UserId,
         active: bool,
+    },
+    /// `want`: whether the user exists.
+    SetPassword {
+        user: UserId,
+        hash: String,
+        want: bool,
     },
     RevokeUserSessions {
         user: UserId,
@@ -2475,6 +2496,8 @@ struct Model {
     sessions: Vec<SessModel>,
     /// Whether each of the three seeded login users (the first three of `Fix::users`) is active.
     active: [bool; 3],
+    /// Which password hash each of the three seeded login users has: 0 is the one the seed gave, 1..=3 are `SetPassword`'s.
+    password_version: [u8; 3],
     /// Keys 0 (no expiry) and 1 (expires 100 s after it was created, for user 1); key 2 does not exist.
     api_keys: Vec<KeyModel>,
     /// Every OIDC login ever inserted, with whether it is still pending (not taken, not swept).
@@ -2585,6 +2608,11 @@ fn patch_for(sel: PatchSel, workspace: WorkspaceId) -> ProfilePatch {
 
 /// The spec of `update_profile`, written from the port's documentation: what the patch names is set, the preferences are
 /// merged key by key, the onboarding steps are replaced whole, `Some(None)` clears, and `updated_at` is always the call's.
+/// The hash `Op::SetPassword` gives seeded user `i`. A stub, like the seed's: the adapter never looks inside a hash.
+fn password_hash(i: usize, version: u8) -> String {
+    format!("$argon2id$stub{i}-v{version}")
+}
+
 fn apply_patch(p: &mut UserProfile, patch: &ProfilePatch, at: Timestamp) {
     let ProfilePatch {
         first_name,
@@ -2775,6 +2803,7 @@ impl Model {
             fix,
             sessions,
             active: [true; 3],
+            password_version: [0; 3],
             api_keys,
             logins: Vec::new(),
             profiles: [None, None, None],
@@ -2804,7 +2833,11 @@ impl Model {
 
     /// What `user_by_email` and `user_for_account` must return for seeded user `i` now.
     fn user_record(&self, i: usize) -> UserRecord {
-        self.fix.login_user(i, self.active[i])
+        let mut u = self.fix.login_user(i, self.active[i]);
+        if self.password_version[i] > 0 {
+            u.password_hash = Some(password_hash(i, self.password_version[i]));
+        }
+        u
     }
 
     fn undispatched(&self) -> Vec<OutboxRow> {
@@ -2985,6 +3018,24 @@ impl Model {
                 classes.push(if active { Class::UserReactivated } else { Class::UserDeactivated });
                 self.active[who] = active;
                 calls.push(Call::SetActive { user: self.fix.users[who], active });
+            }
+            &Op::SetPassword { who, version } => {
+                let hash = password_hash(who, version);
+                if who < 3 {
+                    classes.push(Class::PasswordSet);
+                    self.password_version[who] = version;
+                    calls.push(Call::SetPassword { user: self.fix.users[who], hash, want: true });
+                } else {
+                    classes.push(Class::PasswordSetUnknown);
+                    // a user with no row: nothing is found, and the read-backs below show nobody else was written
+                    calls.push(Call::SetPassword { user: UserId(new_id()), hash, want: false });
+                }
+                // every seeded user is read back, so a hash written to the wrong row, or to every row, or a row's state changed with it
+                // (`is_active` is in the record), is seen at once and not whenever a later lookup happens to ask
+                for i in 0..3 {
+                    calls
+                        .push(Call::UserByEmail { email: self.fix.emails[i].clone(), want: Some(self.user_record(i)) });
+                }
             }
             &Op::RevokeUserSessions { who } => {
                 let at = tick();
@@ -5347,6 +5398,10 @@ async fn execute(db: &dyn Database, tx: &mut Option<Box<dyn Tx>>, call: Call, at
         Call::SetActive { user, active } => {
             let found = bounded(at, db.set_user_active(&sys, user, active)).await?;
             prop_assert!(found, "{}: the user exists", at);
+        }
+        Call::SetPassword { user, hash, want } => {
+            let found = bounded(at, db.set_password_hash(&sys, user, &hash)).await?;
+            prop_assert_eq!(found, want, "{}: set password hash (true = the user exists)", at);
         }
         Call::RevokeUserSessions { user, at: when, want } => {
             let got = bounded(at, db.revoke_user_sessions(user, when)).await?;

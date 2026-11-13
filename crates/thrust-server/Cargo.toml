@@ -22,6 +22,13 @@ mutant_skip_csrf = ["thrust-core/mutant_skip_csrf"]
 mutant_csrf_never = ["thrust-core/mutant_csrf_never"]
 mutant_csrf_always = ["thrust-core/mutant_csrf_always"]
 mutant_unverified_email = ["thrust-core/mutant_unverified_email"]
+# The operator's password reset (Q-F7): no strength check, sessions left alive, the hash written to every user, the test routes' token
+# accepted at its door, its switch ignored.
+mutant_operator_skips_strength = ["thrust-core/mutant_operator_skips_strength"]
+mutant_operator_keeps_sessions = ["thrust-core/mutant_operator_keeps_sessions"]
+mutant_set_password_every_user = ["thrust-adapters-memory/mutant_set_password_every_user"]
+mutant_operator_takes_admin_token = ["thrust-api/mutant_operator_takes_admin_token"]
+mutant_operator_ignores_flag = ["thrust-api/mutant_operator_ignores_flag"]
 # Pass-through to thrust-adapters-postgres's control-run mutants (issue #39). They only mean something on `native-pg`.
 mutant_count_nothing = ["thrust-adapters-postgres/mutant_count_nothing"]
 mutant_extra_stmt_per_row = ["thrust-adapters-postgres/mutant_extra_stmt_per_row"]
