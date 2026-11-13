@@ -95,6 +95,18 @@ pub fn app() -> Router {
 
 /// [`app`], and the memory database behind it, for a test that needs rows no route makes (a guest, a second project).
 pub fn app_with_db() -> (Router, Arc<MemoryDatabase>) {
+    let (app, db) = bare_world();
+    // The activity consumer is what writes a work item's history, on a worker the pin runs side by side with the API. Here it runs
+    // when a test says so: `send` asks for the outbox to be drained before each request (a recording is made with the worker caught
+    // up before each read, so every read finds the writes before it), and a test that needs the rows without a request calls
+    // [`drain`] itself.
+    let drain = Router::new().route("/__drain", axum::routing::post(drain_route)).layer(Extension(app.clone()));
+    (drain.merge(thrust_compat_plane::routes().layer(Extension(app))), db)
+}
+
+/// The `App` of [`app_with_db`] and its memory database, with no router: for a test that mounts routes of its own beside the compat
+/// ones (the operator's, which are `thrust-api`'s).
+pub fn bare_world() -> (App, Arc<MemoryDatabase>) {
     let db = Arc::new(MemoryDatabase::new());
     let background: Arc<dyn Background> = Arc::new(NoBackground);
     let queue: Arc<dyn Queue> = Arc::new(MemoryQueue::new(background.clone(), ConsumerSlot::default()));
@@ -123,12 +135,7 @@ pub fn app_with_db() -> (Router, Arc<MemoryDatabase>) {
         cfg,
         SystemScope::mint(),
     );
-    // The activity consumer is what writes a work item's history, on a worker the pin runs side by side with the API. Here it runs
-    // when a test says so: `send` asks for the outbox to be drained before each request (a recording is made with the worker caught
-    // up before each read, so every read finds the writes before it), and a test that needs the rows without a request calls
-    // [`drain`] itself.
-    let drain = Router::new().route("/__drain", axum::routing::post(drain_route)).layer(Extension(app.clone()));
-    (drain.merge(thrust_compat_plane::routes().layer(Extension(app))), db)
+    (app, db)
 }
 
 async fn drain_route(Extension(app): Extension<App>) {

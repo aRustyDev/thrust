@@ -87,7 +87,7 @@ ARGON2_M_KIB=64
 ARGON2_T=1
 ARGON2_P=1
 SIGNIN_LIMIT=30
-EXPECT_MAIN=65
+EXPECT_MAIN=68
 EXPECT_BUDGET=1
 EXPECT_SWEEPER=3
 EXPECT_CSRFOFF=6
@@ -116,6 +116,12 @@ pick_port() {
 PORT="${THRUST_PORT:-$(pick_port)}"
 THRUST_ADMIN_TOKEN="$(openssl rand -hex 16)"
 export THRUST_ADMIN_TOKEN
+# The operator's routes (/internal/operator/*, Q-F7) are a door of their own, with a token of their own: the target is started with
+# them on, as the tests of them need, and the test routes' token opens nothing there (a contract test says so). 32 hex digits is
+# the shortest token the door accepts.
+THRUST_OPERATOR_TOKEN="$(openssl rand -hex 16)"
+export THRUST_OPERATOR_TOKEN
+export THRUST_OPERATOR_ROUTES=1
 export THRUST_BASE_URL="http://127.0.0.1:$PORT"
 export THRUST_EXPECT_CREATE_LIMIT="$RATE_LIMIT"
 export THRUST_EXPECT_V1_LIMIT="$V1_LIMIT"
@@ -125,7 +131,7 @@ export THRUST_SIGNIN_RATE_LIMIT="$SIGNIN_LIMIT"
 # target is configured to trust it. Every run has its own client secret, which only ever lives in this process's
 # environment and its children's (the Worker gets it through `env -i` in worker-dev.sh, not on argv). A deployed Worker
 # cannot reach 127.0.0.1, so scripts/stage2-contract.sh skips the `oidc_` tests.
-THRUST_MOCK_IDP_PORT="$(pick_port)"
+THRUST_MOCK_IDP_PORT="${THRUST_MOCK_IDP_PORT:-$(pick_port)}"
 THRUST_OIDC_CLIENT_SECRET="$(openssl rand -hex 16)"
 export THRUST_MOCK_IDP_PORT THRUST_OIDC_CLIENT_SECRET
 export THRUST_OIDC_ISSUER="http://127.0.0.1:$THRUST_MOCK_IDP_PORT"

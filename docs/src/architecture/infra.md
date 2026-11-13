@@ -162,6 +162,70 @@ Neither the server nor the Worker applies the schema when it starts. `scripts/co
 a throwaway `postgres:16-alpine` container in Docker, with a generated password that lives only in the script's
 environment, and migrate it before the target starts.
 
+## Recover a locked-out user
+
+There is no reset by email yet (it comes after M2, D-037), so a person who has forgotten their password asks their admin, and
+the sign-in screen says so. The admin's tool is two routes that make an account or set a new password. They are `thrust-api`'s
+`OperatorAdmin` door and not the test routes: those can wipe every row (`/internal/reset`) and a deployment never turns them on.
+The deviation record is D-038.
+
+| Route (POST, JSON `{"email", "password"}`) | Does | Answers |
+|---|---|---|
+| `/internal/operator/users` | makes an account with that password; nobody is signed in | 204; 400 for an email or password the sign-up rules refuse; 409 for an email that is taken |
+| `/internal/operator/users/password` | sets that password on the account with that email, and ends every session of that account | 204; 400 for a password the rules refuse; 404 for an email with no account |
+
+Both answer 401 for a missing or wrong token and 404 while the switch is off, and neither has a body. The password has to pass
+the sign-up rule (at least 10 characters, at least 5 different ones, not a common password: D-023). A reset does not change
+whether the account is active, so a deactivated user stays deactivated; it gives an account that has no password (one single
+sign-on made) one; and it leaves every other account and session alone. Each success leaves one line in the logs
+(`operator set a password: user <id>`, or `created a user`): the action and the user's id, never the password or the email.
+
+**Turning it on.** The routes do not exist until `THRUST_OPERATOR_ROUTES` is `1` (a variable on the Worker, an environment
+variable on `thrust-server`) and they refuse every call until `THRUST_OPERATOR_TOKEN` (a Worker secret, never a file) is at least
+32 characters. `openssl rand -hex 16` makes one. The token is in its own header, `x-operator-token`; the test routes' token
+(`x-admin-token`) opens nothing here, the operator's opens no test route, and a person's session is no way in. Turn the switch on
+when you need the routes and off when you are done, and replace the token after use if it was ever on a screen. Locally,
+`scripts/worker-dev.sh` passes both through, and `scripts/contract.sh` sets both for the target it starts.
+
+**Doing it.** Read the token from the secret store into the environment, check its length and not its value, type the temporary
+password without it echoing, and send both without putting either on a command line (`ps` shows arguments). `--variable` and
+`--expand-header` need curl 8.3 or later, which this Mac's `/usr/bin/curl` is.
+
+```sh
+export THRUST_OPERATOR_TOKEN="$(op read 'op://<vault>/<item>/<field>')"   # the item is yours to make; do not print it
+echo "${#THRUST_OPERATOR_TOKEN}"                                          # at least 32, or every call is a 401
+BASE=https://<the product hostname>
+EMAIL=person@example.com
+read -rs OPERATOR_PW; export OPERATOR_PW EMAIL                             # the temporary password, not echoed
+jq -n '{email: env.EMAIL, password: env.OPERATOR_PW}' |
+  curl -sS -o /dev/null -w '%{http_code}\n' -X POST "$BASE/internal/operator/users/password" \
+    --variable '%THRUST_OPERATOR_TOKEN' --expand-header 'x-operator-token: {{THRUST_OPERATOR_TOKEN}}' \
+    -H 'content-type: application/json' --data-binary @-
+unset OPERATOR_PW THRUST_OPERATOR_TOKEN
+```
+
+For a new account use `/internal/operator/users` in place of `/internal/operator/users/password`. A `204` is done; `404` on a
+reset means the email has no account (use the create route), `409` on a create means it does (use the reset route), and `400`
+means the password was refused. Give the person the temporary password through a channel you trust, and not in the thread where
+they asked. They sign in with it. Until `POST /auth/change-password/` exists (the next change in the locked-out-recovery plan) the Profile,
+Security screen cannot change it, so the temporary password stays their password.
+
+What this does not have, and why:
+
+- **No rate limiter.** The Worker's limiter takes three key classes (`create:`, `signin:`, `v1:`), and the one that would fit,
+  `signin:`, is a namespace an anonymous sign-in can write to, so it would let anyone use up the operator's allowance. A fourth
+  class is a change to the adapter and a new binding. The route does no work before the token matches, and a token under 32
+  characters is refused, so guessing it is not a plan.
+- **No second gate.** The product hostname is public (Q-0090.3), so on the Worker the token is the only thing between the
+  internet and these routes until the Access phase puts a path-scoped service token in front (ADR-0050). Keep the switch off when
+  nobody is using it.
+- **`[unverified]` on a deployed Worker.** The routes are tested on the four contract targets (`scripts/contract.sh`), and the
+  commands above were run as written, with `op read` replaced by a generated token, against a local `thrust-server` on
+  2026-11-13 `[verified]`: create, reset, the old password refused and the new one accepted, and neither the token nor either
+  password on curl's command line (a wrapper wrote down its arguments) or in the server's log, nor the email. Nothing was run
+  against a deployed Worker. Its asset config must also send `/internal/operator/*` to the Worker: `scripts/worker-dev.sh` lists
+  `/internal` and `/internal/*` in `run_worker_first`, and the production config is not in this repository.
+
 ## Elsewhere and not built yet
 
 The plan records decisions and work about infrastructure that is not in this repository:

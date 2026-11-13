@@ -35,6 +35,9 @@ crons = ["* * * * *"]   # outbox sweeper (ADR-0046 / ADR-0072)
 # prefix, as in Plane. Set "on" when the custom frontend replaces the stock one (PLAN.md, M4). The contract targets and
 # Stage 2 run with it on (scripts/worker-dev.sh, wrangler.stage2.toml).
 THRUST_CSRF_ENFORCE = "off"
+# The operator's routes, /internal/operator/* (Q-F7, D-038): not set here, so they do not exist. To use them set
+# THRUST_OPERATOR_ROUTES = "1" and put THRUST_OPERATOR_TOKEN (at least 32 characters) in the Worker's secrets, never in this file.
+# The runbook is "Recover a locked-out user" in docs/src/architecture/infra.md.
 
 [[hyperdrive]]
 binding = "HYPERDRIVE"

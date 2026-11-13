@@ -105,6 +105,50 @@ fn deactivation_hides_a_session_and_reactivation_brings_it_back() {
     assert!(!block_on(db.set_user_active(&sys(), OTHER, false)).unwrap(), "an unknown user is not found");
 }
 
+/// Setting a password hash changes that user's hash and nothing else: not their state (a deactivated user stays deactivated), not
+/// their session (ending sessions is the caller's step), and not another user's row. An unknown user is `false`, and nothing
+/// changes. Exhaustive over the finite domain: whose row, whether it had a hash, whether it is active.
+#[rstest]
+fn set_password_hash_changes_one_users_hash_and_nothing_else(
+    #[values(true, false)] target_exists: bool,
+    #[values(true, false)] had_hash: bool,
+    #[values(true, false)] active: bool,
+) {
+    let db = MemoryDatabase::new();
+    let mine = UserRecord {
+        id: OWNER,
+        email: Some("o@example.test".into()),
+        password_hash: had_hash.then(|| "$argon2id$old".to_string()),
+        is_active: active,
+    };
+    let theirs = user(OTHER, Some("t@example.test"), true);
+    block_on(db.seed_users(&sys(), std::slice::from_ref(&theirs))).unwrap();
+    if target_exists {
+        block_on(db.seed_users(&sys(), std::slice::from_ref(&mine))).unwrap();
+        block_on(db.insert_session(&NewSession {
+            token_hash: hash(1),
+            user_id: OWNER,
+            created_at: now(),
+            expires_at: now() + secs(60),
+        }))
+        .unwrap();
+    }
+
+    let found = block_on(db.set_password_hash(&sys(), OWNER, "$argon2id$new")).unwrap();
+    assert_eq!(found, target_exists, "true exactly when the user exists");
+
+    let got = block_on(db.user_by_email("o@example.test")).unwrap();
+    if target_exists {
+        let want = UserRecord { password_hash: Some("$argon2id$new".into()), ..mine };
+        assert_eq!(got, Some(want), "the hash is the new one, the rest of the row is as it was");
+        // an active user's session is still live: the adapter ends nothing, and a deactivated user's is hidden as before
+        assert_eq!(block_on(db.session(&hash(1), now())).unwrap().is_some(), active, "the session is untouched");
+    } else {
+        assert_eq!(got, None, "an unknown user is not made");
+    }
+    assert_eq!(block_on(db.user_by_email("t@example.test")).unwrap(), Some(theirs), "another user's row");
+}
+
 /// Sign-out everywhere: every unrevoked session of the user, nobody else's, and a second call finds nothing left.
 #[rstest]
 fn revoke_user_sessions_reaches_every_session_of_that_user_and_no_other(

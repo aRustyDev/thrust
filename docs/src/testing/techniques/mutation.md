@@ -24,7 +24,12 @@ invariant the mutant broke.
 
 Planted mutants: features in `crates/thrust-adapters-memory/Cargo.toml` (`mutant_ignore_tenant`,
 `mutant_dup_sequence`, `mutant_no_activity_dedupe`, `mutant_ignore_revoked`, which makes a revoked session and a revoked
-API key resolve), `crates/thrust-core/Cargo.toml` (`mutant_skip_csrf`, `mutant_unverified_email`, and the two that break the CSRF enforcement switch,
+API key resolve, and `mutant_set_password_every_user`, which writes a new password hash to every user), `crates/thrust-api/Cargo.toml`
+(`mutant_operator_takes_admin_token`, which lets the test routes' token open the operator's routes, killed by the main pass, and
+`mutant_operator_ignores_flag`, which ignores their switch, which no contract target can show because each is started with the
+switch on: `crates/thrust-compat-plane/tests/operator.rs` kills it, run with `--features thrust-api/mutant_operator_ignores_flag`),
+`crates/thrust-core/Cargo.toml` (`mutant_skip_csrf`, `mutant_unverified_email`, `mutant_operator_skips_strength` and
+`mutant_operator_keeps_sessions`, which break the operator's password reset, and the two that break the CSRF enforcement switch,
 `mutant_csrf_never`, ignored when it is on, killed by the main pass, and `mutant_csrf_always`, ignored when it is off, killed by the
 `csrfoff` pass) and
 `crates/thrust-adapters-selfhosted` (`mutant_discard_noop`),

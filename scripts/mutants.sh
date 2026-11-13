@@ -58,7 +58,11 @@ for triple in \
   "skip-csrf:mutant_skip_csrf:main" \
   "csrf-switch-ignored-when-on:mutant_csrf_never:main" \
   "csrf-switch-ignored-when-off:mutant_csrf_always:csrfoff" \
-  "unverified-email:mutant_unverified_email:main"; do
+  "unverified-email:mutant_unverified_email:main" \
+  "operator-reset-skips-strength:mutant_operator_skips_strength:main" \
+  "operator-reset-keeps-sessions:mutant_operator_keeps_sessions:main" \
+  "operator-reset-hits-every-user:mutant_set_password_every_user:main" \
+  "operator-door-takes-admin-token:mutant_operator_takes_admin_token:main"; do
   name="${triple%%:*}"
   rest="${triple#*:}"
   feature="${rest%%:*}"
