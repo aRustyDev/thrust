@@ -17,8 +17,6 @@ import { useTranslation } from "@plane/i18n";
 import { Button } from "@makeplane/propel/components/button";
 import { PasswordStrengthIndicator } from "@plane/blocks/auth";
 import { getPasswordStrength } from "@plane/utils";
-// components
-import { ForgotPasswordPopover } from "@/components/account/auth-forms/forgot-password-popover";
 // constants
 // helpers
 import { EAuthModes, EAuthSteps } from "@/helpers/authentication.helper";
@@ -93,7 +91,11 @@ export const AuthPasswordForm = observer(function AuthPasswordForm(props: Props)
             {t("auth.common.forgot_password")}
           </Link>
         ) : (
-          <ForgotPasswordPopover />
+          // Thrust: no mail is sent, so the pin's popover ("your god hasn't enabled SMTP") would be a dead end. The way back in is the
+          // operator's: an admin sets a temporary password, and the person changes it under Profile, Security.
+          <p className="text-11 font-medium text-tertiary" data-testid="forgot-password-operator-hint">
+            Forgot your password? Ask your admin to reset it.
+          </p>
         )}
       </div>
     ) : (

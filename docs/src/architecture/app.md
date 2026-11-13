@@ -142,7 +142,9 @@ The plan's `ARCHITECTURE.md` (draft v0, `.agents/plans/contrail/ARCHITECTURE.md`
   (`web/SOURCE`). Only the files in `web/ALLOWED-CHANGES` may differ from the pin, and the `web` job of CI checks it
   ([CI/CD](cicd.md)). Two files differ from it, the auth client's: `components/account/auth-forms/password.tsx` and
   `services/auth.service.ts`, which post JSON where the pin posts a form (D-022, D-036). The other form posts (the unique code,
-  the password reset, OAuth) are the pin's, because their server routes are not built. The Worker serves the build only for the browser journey (the `e2e` pass of `scripts/contract.sh`: `scripts/worker-dev.sh` writes an `[assets]` block into a throwaway copy of the config when `THRUST_ASSETS_DIR` is set, one single-page app with every path the Worker handles run first, ADR-0011); the shared `wrangler.toml` has none, and the native server does not serve the build.
+  the password reset, OAuth) are the pin's, because their server routes are not built, and no screen reaches them: `/api/instances/`
+  answers each of those methods off, so the app draws no button or code step for them (D-037). The one control a reset would take,
+  the "Forgot your password?" popover, is a line in `password.tsx` that says to ask an admin. The Worker serves the build only for the browser journey (the `e2e` pass of `scripts/contract.sh`: `scripts/worker-dev.sh` writes an `[assets]` block into a throwaway copy of the config when `THRUST_ASSETS_DIR` is set, one single-page app with every path the Worker handles run first, ADR-0011); the shared `wrangler.toml` has none, and the native server does not serve the build.
 - **Ports:** Workflow, Scheduler, Collab, Search, Email, AI, Identity, Secrets, Telemetry and Flags have no trait.
   Scheduling today is a `scheduled` handler on the Worker and an optional timer in the server.
 - **Adapters:** the self-hosted set in the plan's diagrams (RabbitMQ, Valkey, S3) does not exist. See

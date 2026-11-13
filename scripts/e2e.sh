@@ -24,6 +24,8 @@
 #               detectors have been shown to fire), and one that MUST PASS (late-profile, below):
 #                 stickies-404  one route answers 404 in the browser; the journey must name that 404
 #                 empty-list    the browser empties the work-item list (S47); the journey must fail at "see it in the list"
+#                 sso-on        the browser turns two sign-in providers on (`/api/instances/`); the sign-in journey must fail at
+#                               "a sign-in method other than the password"
 #                 skip          the journey skips itself, which Playwright counts as a pass; the count guard must refuse it
 #                 wrong target  the journey told it is on the other target must fail at the TARGET GUARD (a Thrust told it is on Plane,
 #                               and the pinned Plane told it is a Thrust)
@@ -221,6 +223,7 @@ fi
 if [ "$WHAT" = controls ]; then
   must_fail control-stickies-404 "with the stickies list answering 404" "an unexpected 404: GET /api/workspaces/.*/stickies/ -> 404" stickies-404
   must_fail control-empty-list "with the work-item list emptied" "see it in the list:" empty-list
+  must_fail control-sso-on "with two sign-in providers turned on in the browser" "a sign-in method other than the password" sso-on
   must_fail control-wrong-target "told it is on $OTHER" "TARGET GUARD ($OTHER)" "" "$OTHER"
   must_pass control-slow-page "with the browser slowed to a CI runner's pace and the profile answer of the home page late" slow-page
 

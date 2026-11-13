@@ -58,7 +58,9 @@ and a value, not on a class name that a broken render could still contain.
 
 A journey that passes proves nothing until its detectors have been shown to fire, so `scripts/e2e.sh controls` runs the
 journey in ways that must fail, and requires the failure **and** the words it fails with: a 404 the browser is shown
-(`stickies-404`), a work-item list the browser empties (`empty-list`, must fail at "see it in the list"), a journey that
+(`stickies-404`), a work-item list the browser empties (`empty-list`, must fail at "see it in the list"), two sign-in providers
+the browser turns on (`sso-on`, the sign-in journey's own detector: it must fail at "a sign-in method other than the
+password"), a journey that
 skips itself (`skip`; Playwright reports a skip as a pass, so the **count guard** must refuse it), and a journey told it is
 on the other target (must fail at the `TARGET GUARD`; a Thrust told it is on Plane, and Plane told it is a Thrust). One run is
 the other way round and must **pass**: `slow-page` slows the browser to a CI runner's pace and holds the profile answer the home
