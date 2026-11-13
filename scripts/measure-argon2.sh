@@ -14,8 +14,17 @@
 #
 # One curl process per configuration sends the seed and every sign-in over one connection, which keeps them on one
 # isolate (the memory adapter's state is per isolate); the user is seeded again every 20 sign-ins in case the isolate
-# changed. A sign-in that finds no user is a 401 and costs the same one hash (that is the point of ADR-0050's
-# timing rule), so the CPU numbers hold either way; the `ok` column of the summary says how many found the user.
+# changed.
+#
+# The sign-in is Plane's, `POST /auth/sign-in/` (what the stock app calls; the slice's own route is going, issue #58). Plane's
+# route looks the email up before it hashes anything and answers an unknown one with a 400 (USER_DOES_NOT_EXIST), where the
+# slice's route hashed anyway (ADR-0050's timing rule, which core still keeps, and Plane's answer does not reach). So a sign-in
+# that does not find the user costs about a millisecond and says nothing about argon2: only the 200s are the measurement, and
+# the summary's CPU and wall columns count only them (its `200` column says how many that is). On a native server at
+# m=19456 t=2, 20 sign-ins each: right password 15.9 ms (200), wrong password 15.8 ms (400), unknown email 0.9 ms (400), and
+# the slice's unknown email, for comparison, 16.0 ms (401). The burst sends its sign-ins on separate connections, which the
+# platform may put on isolates that were never seeded: on the slice's route it found the user 1 time in 16, so expect a burst
+# of mostly cheap 400s here and a burst row with one or two sign-ins in it.
 set -u
 RUNS="${1:-100}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -97,7 +106,7 @@ for cfg in $CONFIGS; do
   }
   block_signin() {
     [ -s "$req" ] && echo next >>"$req"
-    printf 'url = "%s/api/_slice/auth/sign-in/email?run=%s-%s"\nrequest = "POST"\nheader = "content-type: application/json"\ndata = "%s"\noutput = "/dev/null"\nwrite-out = "%s-%s\\t%%{http_code}\\t%%{time_total}\\n"\n' \
+    printf 'url = "%s/auth/sign-in/?run=%s-%s"\nrequest = "POST"\nheader = "content-type: application/json"\ndata = "%s"\noutput = "/dev/null"\nwrite-out = "%s-%s\\t%%{http_code}\\t%%{time_total}\\n"\n' \
       "$URL" "$label" "$1" "$(esc "$signin")" "$label" "$1" >>"$req"
   }
   block_seed 0
@@ -118,7 +127,7 @@ for cfg in $CONFIGS; do
     while [ "$b" -lt "$BURST" ]; do
       b=$((b + 1))
       curl -sS --max-time 120 -o /dev/null -w "$label-burst$b\t%{http_code}\t%{time_total}\n" -X POST -H 'content-type: application/json' \
-        --data "$signin" "$URL/api/_slice/auth/sign-in/email?run=$label-burst$b" >>"$OUT/client.tsv" &
+        --data "$signin" "$URL/auth/sign-in/?run=$label-burst$b" >>"$OUT/client.tsv" &
       pids="$pids $!"
     done
     wait $pids
