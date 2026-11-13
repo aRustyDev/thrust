@@ -116,7 +116,7 @@ So a `postgres` server keeps its sessions across a restart, and a second process
 attachments when it restarts, and so does any event that was already handed to the in-process queue and not yet
 consumed. Outbox rows are in Postgres, so the sweeper delivers the rest later. Blobs and the rate limiter belong to
 one process, so a second process would not share them. The plan's RabbitMQ, Valkey and S3 adapters do not exist.
-A user signs in with an email and a password (`POST /api/_slice/auth/sign-in/email`) or through the one configured OIDC
+A user signs in with an email and a password (Plane's `POST /auth/sign-in/`) or through the one configured OIDC
 provider, and gets a session row and cookies; the test seed (`POST /internal/seed`, test routes only) also creates
 sessions, users, API keys and provider links directly. The full flow is on [Application flow](../flows/app.md).
 
