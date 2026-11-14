@@ -80,6 +80,35 @@ fn scope(ws: WorkspaceId, p: ProjectId) -> Scope {
     Scope::mint(ws, p, UserId(Uuid::nil()))
 }
 
+/// The names of every work item row of the scope's project, in sequence order, the deleted, archived and draft ones too: read
+/// with SQL on the table, because the port has no read that includes them (its `list_work_items` went with the slice's list, step
+/// 5c-3 of #58). It reads the table and not the adapter's code, so a row a failed write leaked cannot hide behind the adapter's
+/// own filter.
+async fn every_item_name(env: &Env, s: &Scope) -> Vec<String> {
+    let raw = env.conn.raw().await.unwrap();
+    let rows = raw
+        .query(
+            "SELECT name FROM work_items WHERE workspace_id = $1 AND project_id = $2 ORDER BY sequence_id",
+            &[&s.workspace_id().0, &s.project_id().0],
+        )
+        .await
+        .unwrap();
+    rows.iter().map(|r| r.get(0)).collect()
+}
+
+/// How many live work items (not deleted, archived or a draft) the scope's project has, read with SQL on the table.
+async fn live_item_count(env: &Env, s: &Scope) -> i64 {
+    let raw = env.conn.raw().await.unwrap();
+    raw.query_one(
+        "SELECT count(*) FROM work_items WHERE workspace_id = $1 AND project_id = $2 \
+         AND deleted_at IS NULL AND archived_at IS NULL AND is_draft = false",
+        &[&s.workspace_id().0, &s.project_id().0],
+    )
+    .await
+    .unwrap()
+    .get(0)
+}
+
 /// Slugs are unique in the database and one container serves every test, so each workspace's follows its id.
 fn slug_of(ws: WorkspaceId) -> WorkspaceSlug {
     WorkspaceSlug::new(format!("ws-{}", ws.0.simple()))
@@ -2487,8 +2516,7 @@ async fn rollback_is_atomic_and_unique_violation_is_a_conflict() {
     // number, which ADR-0043 accepts. Until FR-22 this asserted the opposite ("a rolled-back allocation must not leave a
     // gap", the counter row was transactional); the property was given up on purpose, in the commit that moved the
     // allocation, and `model_postgres_adapter_matches_the_reference_model` carries the same change.
-    let rows = env.db.list_work_items(&s, Visibility::WithDeleted).await.unwrap();
-    assert_eq!(rows.len(), 1);
+    assert_eq!(every_item_name(&env, &s).await.len(), 1);
     let mut tx = env.db.begin(&s).await.unwrap();
     assert_eq!(tx.allocate(&s).await.unwrap().sequence_id, 3, "a rolled-back create's number stays taken (gap, FR-22)");
     tx.rollback().await.unwrap();
@@ -2517,12 +2545,7 @@ async fn an_abandoned_transaction_does_not_poison_the_pool() {
         assert_eq!(a.sequence_id, 41, "the numbers of abandoned transactions are not given back (FR-22)");
         tx.insert_work_item(&s, &item(ws, p, a, "kept", None)).await.unwrap();
         tx.commit().await.unwrap();
-        let rows = env.db.list_work_items(&s, Visibility::WithDeleted).await.unwrap();
-        assert_eq!(
-            rows.iter().map(|r| r.name.as_str()).collect::<Vec<_>>(),
-            ["kept"],
-            "abandoned transactions must roll back"
-        );
+        assert_eq!(every_item_name(&env, &s).await, ["kept"], "abandoned transactions must roll back");
     })
     .await
     .expect("abandoned transactions wedged the pool");
@@ -2548,10 +2571,8 @@ async fn soft_delete_frees_the_external_key_but_not_the_sequence_number() {
     tx.insert_work_item(&s, &item(ws, p, a, "x again", Some("9"))).await.unwrap();
     tx.commit().await.unwrap();
 
-    let visible = env.db.list_work_items(&s, Visibility::Visible).await.unwrap();
-    assert_eq!(visible.len(), 1);
-    let all = env.db.list_work_items(&s, Visibility::WithDeleted).await.unwrap();
-    assert_eq!(all.len(), 2);
+    assert_eq!(live_item_count(&env, &s).await, 1);
+    assert_eq!(every_item_name(&env, &s).await.len(), 2);
 }
 
 trait NowForTest {
@@ -3476,7 +3497,7 @@ async fn a_work_item_has_a_parent_a_point_and_a_key_and_a_maker_that_may_be_miss
         assert!(got.is_err(), "{point:?} {parent:?}");
         assert_eq!(env.db.work_item_row(&s, child).await.unwrap().unwrap(), r, "nothing was written");
     }
-    assert_eq!(env.db.list_work_items(&s, Visibility::Visible).await.unwrap().len(), 3);
+    assert_eq!(live_item_count(&env, &s).await, 3);
 
     // a key that another live item has is a conflict, and a key the item has is its own
     let other = put_item(&env, s, "other", |_, _| {}).await.unwrap();

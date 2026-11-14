@@ -685,9 +685,6 @@ proptest! {
         // the page reads the same row, so the order it keeps follows the update too
         let page = block_on(db.work_item_page(&scope(A, P), &WorkItemQuery { order: WorkItemOrder { field: WorkItemOrderField::UpdatedAt, descending: true }, limit: 10, page: 0, updated_after: None, limited_guest: None })).unwrap();
         prop_assert_eq!(page.rows, vec![after(&was, &u)]);
-        // the item as the list reads it carries the name
-        let listed = block_on(db.list_work_items(&scope(A, P), Visibility::Visible)).unwrap();
-        prop_assert_eq!(listed.iter().map(|w| w.name.clone()).collect::<Vec<_>>(), vec![u.name.clone()]);
     }
 
     /// The updates of one transaction apply in order, the later over the earlier, and a later one that names no people or labels
@@ -861,9 +858,12 @@ fn an_item_that_is_not_there_is_false_and_nothing_is_written(
     let got = update(&db, &s, id, &u);
     assert!(matches!(got, Ok(false)), "{missing:?}: {got:?}");
     assert_eq!(row_of(&db, live), was, "{missing:?}: a live item moved");
-    // the item that was asked for is as it was: still hidden, still named as it was
-    let listed = block_on(db.list_work_items(&scope(A, P), Visibility::WithDeleted)).unwrap();
-    assert!(listed.iter().all(|w| w.name != u.name), "{missing:?}: the name was written");
+    // the item that was asked for is as it was: still hidden, still named as it was, and so is the project's other row (the two are
+    // every row the project has, whatever its state)
+    for row in [live, hidden] {
+        let w = block_on(db.get_work_item(&scope(A, P), row, Visibility::WithDeleted)).unwrap();
+        assert!(w.iter().all(|w| w.name != u.name), "{missing:?}: the name was written");
+    }
 }
 
 /// What becomes of an update when its transaction ends.

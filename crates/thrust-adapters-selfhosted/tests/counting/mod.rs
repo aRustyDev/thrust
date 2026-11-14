@@ -17,7 +17,7 @@
 //! * `commit` and `rollback` are one statement each when a write opened the transaction, and none otherwise;
 //! * a dropped transaction sends nothing: its connection is discarded, and the server rolls back what it held;
 //! * `work_item_page` is one statement for a page that has rows and two for one that has none (the second is the count);
-//! * `list_work_items` is one statement.
+//! * `get_work_item` is one statement, whether or not it finds the row.
 //!
 //! Budget: `THRUST_MODEL_CASES` cases (default 32), shared with the other model test. Every call has a 20 s timeout.
 
@@ -33,7 +33,7 @@ use thrust_adapters_postgres::{CountingConnector, PgDatabase, RoundTrips};
 use thrust_contracts::*;
 use thrust_ports::*;
 
-use super::{env, item, new_id, project_with_states, put_item, scope, seeded, Env};
+use super::{env, every_item_name, item, new_id, project_with_states, put_item, scope, seeded, Env};
 
 const CALL: Duration = Duration::from_secs(20);
 
@@ -69,8 +69,8 @@ enum Step {
         limit: u32,
         page: u32,
     },
-    /// `list_work_items`.
-    List,
+    /// `get_work_item` of an id nobody has.
+    Get,
 }
 
 fn steps() -> impl Strategy<Value = Vec<Step>> {
@@ -82,7 +82,7 @@ fn steps() -> impl Strategy<Value = Vec<Step>> {
             1 => Just(Step::Rollback),
             1 => Just(Step::Abandon),
             2 => (1u32..=3, 0u32..=3).prop_map(|(limit, page)| Step::Page { limit, page }),
-            1 => Just(Step::List),
+            1 => Just(Step::Get),
         ],
         1..24,
     )
@@ -103,7 +103,7 @@ enum Class {
     AbandonEmpty,
     PageWithRows,
     PageWithoutRows,
-    List,
+    Get,
 }
 
 impl Class {
@@ -120,7 +120,7 @@ impl Class {
         Class::AbandonEmpty,
         Class::PageWithRows,
         Class::PageWithoutRows,
-        Class::List,
+        Class::Get,
     ];
 }
 
@@ -181,7 +181,7 @@ impl Model {
                     (2, Class::PageWithoutRows)
                 }
             }
-            Step::List => (1, Class::List),
+            Step::Get => (1, Class::Get),
         }
     }
 
@@ -214,8 +214,8 @@ async fn run_case(env: &Env, steps: &[Step]) -> Result<(), TestCaseError> {
                 };
                 call("work_item_page", db.work_item_page(&s, &q)).await?;
             }
-            Step::List => {
-                call("list_work_items", db.list_work_items(&s, Visibility::Visible)).await?;
+            Step::Get => {
+                call("get_work_item", db.get_work_item(&s, WorkItemId(Uuid::nil()), Visibility::Visible)).await?;
             }
             _ => {
                 if tx.is_none() {
@@ -241,7 +241,7 @@ async fn run_case(env: &Env, steps: &[Step]) -> Result<(), TestCaseError> {
                         call("rollback", t.rollback()).await?;
                     }
                     Step::Abandon => drop(tx.take()),
-                    Step::Page { .. } | Step::List => {}
+                    Step::Page { .. } | Step::Get => {}
                 }
             }
         }
@@ -338,12 +338,7 @@ async fn an_abandoned_transaction_does_not_poison_the_pool_through_the_counting_
         assert_eq!(a.sequence_id, 41, "the numbers of abandoned transactions are not given back (FR-22)");
         tx.insert_work_item(&s, &item(ws, p, a, "kept", None)).await.unwrap();
         tx.commit().await.unwrap();
-        let rows = db.list_work_items(&s, Visibility::WithDeleted).await.unwrap();
-        assert_eq!(
-            rows.iter().map(|r| r.name.as_str()).collect::<Vec<_>>(),
-            ["kept"],
-            "abandoned transactions must roll back"
-        );
+        assert_eq!(every_item_name(&env, &s).await, ["kept"], "abandoned transactions must roll back");
     })
     .await
     .expect("abandoned transactions wedged the pool");
@@ -382,14 +377,14 @@ async fn counting_connectors_over_one_pool_count_separately() {
     let s = scope(ws, p);
     let (a, a_rt) = counted(&env);
     let (b, b_rt) = counted(&env);
-    tokio::join!(lists(&a, s, 5), lists(&b, s, 7), lists(env.db.as_ref(), s, 11));
+    tokio::join!(reads(&a, s, 5), reads(&b, s, 7), reads(env.db.as_ref(), s, 11));
     assert_eq!((a_rt.get(), b_rt.get()), (5, 7));
 }
 
-/// `n` lists of the project's work items, one statement each.
-async fn lists(db: &PgDatabase, s: Scope, n: usize) {
+/// `n` reads of a work item nobody has, one statement each.
+async fn reads(db: &PgDatabase, s: Scope, n: usize) {
     for _ in 0..n {
-        db.list_work_items(&s, Visibility::Visible).await.unwrap();
+        db.get_work_item(&s, WorkItemId(Uuid::nil()), Visibility::Visible).await.unwrap();
     }
 }
 

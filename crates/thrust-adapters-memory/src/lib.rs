@@ -1394,20 +1394,6 @@ impl Database for MemoryDatabase {
         }))
     }
 
-    async fn list_work_items(&self, scope: &Scope, vis: Visibility) -> Result<Vec<WorkItem>, DbError> {
-        let (ws, project) = (scope.workspace_id(), scope.project_id());
-        let s = self.state.lock_unpoisoned();
-        let mut v: Vec<WorkItem> = s
-            .work_items
-            .iter()
-            .filter(|w| w.workspace_id == ws && w.project_id == project)
-            .filter(|w| vis == Visibility::WithDeleted || is_visible(w))
-            .cloned()
-            .collect();
-        v.sort_by_key(|w| w.sequence_id);
-        Ok(v)
-    }
-
     async fn get_work_item(&self, scope: &Scope, id: WorkItemId, vis: Visibility) -> Result<Option<WorkItem>, DbError> {
         let (ws, project) = (scope.workspace_id(), scope.project_id());
         let s = self.state.lock_unpoisoned();
@@ -1490,8 +1476,8 @@ impl Database for MemoryDatabase {
         q: &WorkspaceSearch,
     ) -> Result<Vec<WorkItemHit>, DbError> {
         let (ws, user) = (scope.workspace_id(), scope.user_id());
-        // MUTANT (control run only, feature `mutant_search_case_sensitive`): `contains` without folding case, as in `search_work_items`
-        // above. The engine pass goes through this search, so its `icontains` comparison must catch it here too.
+        // MUTANT (control run only, feature `mutant_search_case_sensitive`): `contains` without folding case. The engine pass goes
+        // through this search, so its `icontains` comparison must catch it.
         #[cfg(feature = "mutant_search_case_sensitive")]
         let fold = |t: &str| t.to_string();
         #[cfg(not(feature = "mutant_search_case_sensitive"))]
@@ -1543,28 +1529,6 @@ impl Database for MemoryDatabase {
             .filter(|w| s.work_item_attrs.get(&w.id).and_then(|a| a.state_id) == state)
             .map(|w| w.sort_order)
             .max())
-    }
-
-    async fn search_work_items(&self, scope: &Scope, query: &str, limit: u32) -> Result<Vec<WorkItem>, DbError> {
-        let (ws, project) = (scope.workspace_id(), scope.project_id());
-        // MUTANT (control run only, feature `mutant_search_case_sensitive`): `contains` without folding case. The engine
-        // pass's `icontains` comparison must catch it.
-        #[cfg(feature = "mutant_search_case_sensitive")]
-        let fold = |t: &str| t.to_string();
-        #[cfg(not(feature = "mutant_search_case_sensitive"))]
-        let fold = |t: &str| t.to_lowercase();
-        let q = fold(query);
-        let s = self.state.lock_unpoisoned();
-        let mut v: Vec<WorkItem> = s
-            .work_items
-            .iter()
-            .filter(|w| w.workspace_id == ws && w.project_id == project && is_visible(w))
-            .filter(|w| fold(&w.name).contains(&q) || w.description.as_deref().is_some_and(|d| fold(d).contains(&q)))
-            .cloned()
-            .collect();
-        v.sort_by_key(|w| w.sequence_id);
-        v.truncate(limit as usize);
-        Ok(v)
     }
 
     async fn seed_work_items(

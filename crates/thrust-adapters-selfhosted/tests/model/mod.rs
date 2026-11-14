@@ -25,8 +25,10 @@
 //!   delete frees the external key;
 //! * nothing a transaction wrote (rows, deletes, outbox rows) is visible after a rollback or a drop, and all of it is
 //!   after a commit; a dropped transaction neither holds locks nor poisons the pool (`mutant_discard_noop`);
-//! * `list_work_items` returns exactly the project's rows in sequence order (live ones, or all with `WithDeleted`),
-//!   and nothing through another workspace; `get_work_item` likewise for one id;
+//! * the project's rows as the table holds them (the live ones, or all with `WithDeleted`) are exactly the model's, in sequence
+//!   order, read with SQL because the port has no read that includes the deleted rows (its `list_work_items` went with the slice's
+//!   list, step 5c-3 of #58): a row that a failed, rolled-back or abandoned write left behind shows up there. `get_work_item`
+//!   returns one id's row, and nothing through another workspace;
 //! * `session` returns a session exactly while its row exists, is not revoked and has `expires_at > now` (a lookup at
 //!   the expiry instant misses), with the user and the last time it was seen; `touch_session` moves `last_seen_at` and
 //!   nothing else; `revoke_session` makes the session miss from then on (a second revoke changes nothing);
@@ -93,6 +95,7 @@ use std::time::Duration;
 use proptest::prelude::*;
 use proptest::strategy::ValueTree;
 use proptest::test_runner::{Config, FailurePersistence, FileFailurePersistence, TestCaseError, TestRunner};
+use thrust_adapters_selfhosted::pg::PoolConnector;
 use thrust_contracts::chrono::{NaiveDate, TimeDelta, TimeZone, Utc};
 use thrust_contracts::*;
 use thrust_ports::*;
@@ -531,9 +534,9 @@ enum Op {
         descending: bool,
         limit: u32,
     },
-    List {
+    /// Read the project's rows from the table with SQL (not through the port): the live ones, or every row.
+    Table {
         proj: P,
-        ws: Ws,
         with_deleted: bool,
     },
     /// `pick`: one of the project's rows, or `None` for an unknown id.
@@ -871,7 +874,7 @@ fn op() -> impl Strategy<Value = Op> {
             .prop_map(|(proj, fresh, events, dup, redeliver, stray, stray_at, probe, touch)| Op::HistoryLife { proj, fresh, events, dup, redeliver, stray, stray_at, probe, touch }),
         3 => (proj(), prop::collection::vec(attr_spec(), 0..5), 0..11usize, any::<bool>(), 1..4u32)
             .prop_map(|(proj, specs, field, descending, limit)| Op::ItemPages { proj, specs, field, descending, limit }),
-        2 => (proj(), ws(), any::<bool>()).prop_map(|(proj, ws, with_deleted)| Op::List { proj, ws, with_deleted }),
+        2 => (proj(), any::<bool>()).prop_map(|(proj, with_deleted)| Op::Table { proj, with_deleted }),
         2 => (proj(), ws(), prop::option::weighted(0.85, 0..16usize), any::<bool>())
             .prop_map(|(proj, ws, pick, with_deleted)| Op::Get { proj, ws, pick, with_deleted }),
         2 => (proj(), sl(), user()).prop_map(|(proj, slug, user)| Op::Membership { proj, slug, user }),
@@ -959,9 +962,8 @@ enum Class {
     FailedAndRolledBack,
     /// A transaction that took sequence numbers and did not commit: the numbers stay taken (FR-22), the next one skips them.
     NumbersKeptAfterAbort,
-    ListedVisible,
-    ListedWithDeleted,
-    ListedWrongWorkspace,
+    TableVisible,
+    TableWithDeleted,
     GotLive,
     /// A visible get of a deleted row: `None`.
     GotDeletedHidden,
@@ -1258,7 +1260,7 @@ enum Class {
 }
 
 impl Class {
-    const ALL: [Class; 214] = [
+    const ALL: [Class; 213] = [
         Class::Created,
         Class::ExternalKeyFreed,
         Class::Conflict,
@@ -1274,9 +1276,8 @@ impl Class {
         Class::Abandoned,
         Class::FailedAndRolledBack,
         Class::NumbersKeptAfterAbort,
-        Class::ListedVisible,
-        Class::ListedWithDeleted,
-        Class::ListedWrongWorkspace,
+        Class::TableVisible,
+        Class::TableWithDeleted,
         Class::GotLive,
         Class::GotDeletedHidden,
         Class::GotWithDeleted,
@@ -1567,10 +1568,10 @@ enum Call {
     Commit,
     Rollback,
     Abandon,
-    List {
+    Table {
         ws: WorkspaceId,
         p: ProjectId,
-        vis: Visibility,
+        with_deleted: bool,
         want: Vec<WorkItem>,
     },
     Get {
@@ -2914,17 +2915,11 @@ impl Model {
                     &mut calls,
                     &mut classes,
                 ),
-            &Op::List { proj, ws, with_deleted } => {
+            &Op::Table { proj, with_deleted } => {
                 let s = slot(proj);
-                let want = if ws == Ws::Own {
-                    classes.push(if with_deleted { Class::ListedWithDeleted } else { Class::ListedVisible });
-                    self.rows[s].iter().filter(|r| with_deleted || is_visible(r)).cloned().collect()
-                } else {
-                    classes.push(Class::ListedWrongWorkspace);
-                    Vec::new()
-                };
-                let vis = if with_deleted { Visibility::WithDeleted } else { Visibility::Visible };
-                calls.push(Call::List { ws: self.fix.ws_for(proj, ws), p: self.fix.p[s], vis, want });
+                classes.push(if with_deleted { Class::TableWithDeleted } else { Class::TableVisible });
+                let want = self.rows[s].iter().filter(|r| with_deleted || is_visible(r)).cloned().collect();
+                calls.push(Call::Table { ws: self.fix.ws_for(proj, Ws::Own), p: self.fix.p[s], with_deleted, want });
             }
             &Op::Get { proj, ws, pick, with_deleted } => {
                 let s = slot(proj);
@@ -4594,7 +4589,7 @@ impl Model {
         }
 
         // What the reads find now, from each side: every item the updates named (an id that names nothing included), the page in an order
-        // (all of the project's live items, so every update's place in it shows) and the list.
+        // (all of the project's live items, so every update's place in it shows) and the project's live rows in the table.
         let row_of = |this: &Model, id: WorkItemId| this.rows[s].iter().find(|w| w.id == id).cloned();
         let mut seen = BTreeSet::new();
         for id in named.into_iter().filter(|id| seen.insert(*id)) {
@@ -4620,10 +4615,10 @@ impl Model {
             q: WorkItemQuery { order, limit: 1000, page: 0, updated_after: None, limited_guest: None },
             want: WorkItemPage { rows: ordered, has_next: false, total },
         });
-        calls.push(Call::List {
+        calls.push(Call::Table {
             ws,
             p,
-            vis: Visibility::Visible,
+            with_deleted: false,
             want: self.rows[s].iter().filter(|w| is_visible(w)).cloned().collect(),
         });
     }
@@ -5072,6 +5067,50 @@ async fn bounded<T>(at: &str, f: impl std::future::Future<Output = Result<T, DbE
     }
 }
 
+/// The project's work item rows as the table holds them, in sequence order: the live ones (not deleted, archived or a draft), or
+/// every row. Read with SQL on a connection of its own, and mapped column by column as the adapter maps a row, so this is the
+/// table's state and not the adapter's reading of it (the port has no read that includes the deleted rows).
+async fn table_rows(
+    conn: &PoolConnector,
+    ws: WorkspaceId,
+    p: ProjectId,
+    with_deleted: bool,
+) -> Result<Vec<WorkItem>, DbError> {
+    let backend = |e: &dyn std::fmt::Debug| DbError::Backend(format!("{e:?}"));
+    let raw = conn.raw().await.map_err(|e| backend(&e))?;
+    let live = if with_deleted { "" } else { " AND deleted_at IS NULL AND archived_at IS NULL AND is_draft = false" };
+    let rows = raw
+        .query(
+            &format!(
+                "SELECT id, workspace_id, project_id, sequence_id, sort_order, name, description, external_source, external_id, \
+                 created_by, created_at, archived_at, is_draft, deleted_at \
+                 FROM work_items WHERE workspace_id = $1 AND project_id = $2{live} ORDER BY sequence_id"
+            ),
+            &[&ws.0, &p.0],
+        )
+        .await
+        .map_err(|e| backend(&e))?;
+    Ok(rows
+        .iter()
+        .map(|r| WorkItem {
+            id: WorkItemId(r.get("id")),
+            workspace_id: WorkspaceId(r.get("workspace_id")),
+            project_id: ProjectId(r.get("project_id")),
+            sequence_id: r.get("sequence_id"),
+            sort_order: r.get("sort_order"),
+            name: r.get("name"),
+            description: r.get("description"),
+            external_source: r.get("external_source"),
+            external_id: r.get("external_id"),
+            created_by: r.get::<_, Option<Uuid>>("created_by").map(UserId),
+            created_at: r.get("created_at"),
+            archived_at: r.get("archived_at"),
+            is_draft: r.get("is_draft"),
+            deleted_at: r.get("deleted_at"),
+        })
+        .collect())
+}
+
 /// The proof a call passes. The adapter reads only the tenant key from it, so the user is a placeholder; the
 /// planner names the workspace itself, the other tenant's included, to reach the adapter's own checks.
 fn scope(ws: WorkspaceId, p: ProjectId) -> Scope {
@@ -5082,7 +5121,13 @@ fn open<'a>(tx: &'a mut Option<Box<dyn Tx>>, at: &str) -> Result<&'a mut (dyn Tx
     tx.as_deref_mut().ok_or_else(|| fail(at, "no open transaction"))
 }
 
-async fn execute(db: &dyn Database, tx: &mut Option<Box<dyn Tx>>, call: Call, at: &str) -> Result<(), TestCaseError> {
+async fn execute(
+    db: &dyn Database,
+    conn: &PoolConnector,
+    tx: &mut Option<Box<dyn Tx>>,
+    call: Call,
+    at: &str,
+) -> Result<(), TestCaseError> {
     let open = |tx| open(tx, at);
     let sys = SystemScope::mint();
     match call {
@@ -5179,9 +5224,9 @@ async fn execute(db: &dyn Database, tx: &mut Option<Box<dyn Tx>>, call: Call, at
         Call::Commit => bounded(at, tx.take().ok_or_else(|| fail(at, "no open transaction"))?.commit()).await?,
         Call::Rollback => bounded(at, tx.take().ok_or_else(|| fail(at, "no open transaction"))?.rollback()).await?,
         Call::Abandon => drop(tx.take()),
-        Call::List { ws, p, vis, want } => {
-            let got = bounded(at, db.list_work_items(&scope(ws, p), vis)).await?;
-            prop_assert_eq!(got, want, "{}: list", at);
+        Call::Table { ws, p, with_deleted, want } => {
+            let got = bounded(at, table_rows(conn, ws, p, with_deleted)).await?;
+            prop_assert_eq!(got, want, "{}: the project's rows in the table", at);
         }
         Call::Get { ws, p, id, vis, want } => {
             let got = bounded(at, db.get_work_item(&scope(ws, p), id, vis)).await?;
@@ -5471,24 +5516,26 @@ async fn run_case(env: &Env, ops: &[Op]) -> Result<(), TestCaseError> {
     let mut m = Model::new(fix);
     let mut tx: Option<Box<dyn Tx>> = None;
     for call in m.setup() {
-        execute(env.db.as_ref(), &mut tx, call, "seed the case's logins, sessions, keys and links").await?;
+        execute(env.db.as_ref(), env.conn.as_ref(), &mut tx, call, "seed the case's logins, sessions, keys and links")
+            .await?;
     }
     // A failed earlier case (shrinking runs many) may have left rows behind: take them out of the way first.
     let at = tick();
     for row in bounded("start", env.db.undispatched_outbox(&sys, 10_000)).await? {
         bounded("start", env.db.mark_outbox_dispatched(&sys, row.envelope.event_id, at)).await?;
     }
-    execute(env.db.as_ref(), &mut tx, Call::Depth { want: 0 }, "start: no undispatched rows left").await?;
+    execute(env.db.as_ref(), env.conn.as_ref(), &mut tx, Call::Depth { want: 0 }, "start: no undispatched rows left")
+        .await?;
     for (step, op) in ops.iter().enumerate() {
         let (calls, classes) = m.plan(op);
         for (n, call) in calls.into_iter().enumerate() {
             let at = format!("step {step}: {op:?} {classes:?}, call {n}: {call:?}");
-            execute(env.db.as_ref(), &mut tx, call, &at).await?;
+            execute(env.db.as_ref(), env.conn.as_ref(), &mut tx, call, &at).await?;
         }
     }
     for call in m.drain() {
         let at = format!("end of case: {call:?}");
-        execute(env.db.as_ref(), &mut tx, call, &at).await?;
+        execute(env.db.as_ref(), env.conn.as_ref(), &mut tx, call, &at).await?;
     }
     Ok(())
 }

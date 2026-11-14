@@ -131,6 +131,13 @@ fn make(
     Ok(id)
 }
 
+/// How many live work items the project has: the `total` of a page of them.
+fn live_count(db: &MemoryDatabase, project: u128) -> u64 {
+    let order = WorkItemOrder { field: WorkItemOrderField::SequenceId, descending: false };
+    let all = WorkItemQuery { order, limit: 100, page: 0, updated_after: None, limited_guest: None };
+    block_on(db.work_item_page(&scope(project), &all)).unwrap().total
+}
+
 fn item(db: &MemoryDatabase, project: u128, edit: impl FnOnce(&mut WorkItem, &mut WorkItemAttrs)) -> WorkItemId {
     make(db, project, edit).unwrap()
 }
@@ -217,7 +224,7 @@ fn what_the_database_would_refuse_is_refused_and_writes_nothing(
         a.parent_id = parent;
     });
     assert!(matches!(got, Err(DbError::Backend(_))), "{got:?}");
-    assert_eq!(block_on(db.list_work_items(&scope(P), Visibility::Visible)).unwrap().len(), 1);
+    assert_eq!(live_count(&db, P), 1);
     // an update
     let r = row(&db, P, id).unwrap();
     let got = update(&db, P, id, &whole(&r, parent, point, None));

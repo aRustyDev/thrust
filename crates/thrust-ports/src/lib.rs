@@ -1057,8 +1057,6 @@ pub trait Database: Send + Sync {
     /// `scope` is the proof that the caller was authorised to open a unit of work.
     async fn begin(&self, scope: &Scope) -> Result<Box<dyn Tx>, DbError>;
 
-    async fn list_work_items(&self, scope: &Scope, vis: Visibility) -> Result<Vec<WorkItem>, DbError>;
-
     async fn get_work_item(&self, scope: &Scope, id: WorkItemId, vis: Visibility) -> Result<Option<WorkItem>, DbError>;
 
     /// One page of the project's live work items (not deleted, archived or a draft) with their compat attributes, in the order
@@ -1073,11 +1071,6 @@ pub trait Database: Send + Sync {
     /// The greatest `sort_order` among the project's work items that are in `state` (`None`: that have no state), counting an
     /// archived item and a draft but not a deleted one, or `None` when there is not one: what the pin puts a new item's place after.
     async fn max_work_item_sort_order(&self, scope: &Scope, state: Option<Uuid>) -> Result<Option<i64>, DbError>;
-
-    /// The visible work items of the project (`Visibility::Visible`) whose name or description contains `query`, in any
-    /// case: Plane's `icontains`. In sequence order, at most `limit`. `query` is literal text, so `%`, `_` and `\`
-    /// are ordinary characters; it is not empty (the use-case refuses that). Spike 0002, ADR-0083.
-    async fn search_work_items(&self, scope: &Scope, query: &str, limit: u32) -> Result<Vec<WorkItem>, DbError>;
 
     /// The live work item (not deleted, archived or a draft) of the scope's project that has this number, with its attributes.
     async fn work_item_by_sequence(&self, scope: &Scope, sequence_id: i64) -> Result<Option<WorkItemRow>, DbError>;

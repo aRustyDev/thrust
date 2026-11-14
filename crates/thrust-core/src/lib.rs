@@ -259,18 +259,20 @@ pub use thrust_ports::{Scope, SystemScope, WorkspaceScope};
 /// let _ = Scope { workspace_id: ids.0, project_id: ids.1, user_id: ids.2 };
 /// ```
 ///
-/// and cannot reach a repository with bare ids:
+/// and cannot reach a repository with a bare id where the proof goes:
 ///
 /// ```compile_fail
 /// use thrust_contracts::*;
 /// use thrust_core::*;
-/// async fn use_case(app: &App, ws: WorkspaceId, project: ProjectId) {
-///     let _ = app.ports.db.list_work_items(ws, project, Visibility::Visible).await;
+/// async fn use_case(app: &App, ws: WorkspaceId, item: WorkItemId) {
+///     let _ = app.ports.db.get_work_item(ws, item, Visibility::Visible).await;
 /// }
 /// ```
 ///
-/// Control for both: the same imports and the same call, through `authorize`, compile. (The one
-/// remaining path, the `pub` constructor `Scope::mint`, is closed by `scripts/check-deps.sh`.)
+/// Control for both: the same imports and the same call, through `authorize`, compile. Rustdoc on stable does not check which
+/// error a `compile_fail` block gets, so the control is what shows the reason: its call is the failing one's, the same method with
+/// the same arguments, and it differs only in having the proof in the first place. The one remaining path, the `pub` constructor
+/// `Scope::mint`, is closed by `scripts/check-deps.sh`.
 ///
 /// ```
 /// use thrust_contracts::*;
@@ -280,10 +282,11 @@ pub use thrust_ports::{Scope, SystemScope, WorkspaceScope};
 ///     who: &Principal,
 ///     slug: &WorkspaceSlug,
 ///     project: ProjectId,
-/// ) -> Result<Vec<WorkItem>, CoreError> {
+///     item: WorkItemId,
+/// ) -> Result<Option<WorkItem>, CoreError> {
 ///     let scope = authorize(app, who, slug, project, Permission::ReadWorkItems).await?;
 ///     let _ids = (scope.workspace_id(), scope.project_id(), UserId(Uuid::nil()));
-///     Ok(app.ports.db.list_work_items(&scope, Visibility::Visible).await?)
+///     Ok(app.ports.db.get_work_item(&scope, item, Visibility::Visible).await?)
 /// }
 /// ```
 pub async fn authorize(
