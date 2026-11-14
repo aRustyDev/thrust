@@ -118,11 +118,13 @@ class Client:
         self.jar = http.cookiejar.CookieJar()
         self.opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(self.jar), NoRedirect)
 
-    def request(self, method, path, body=None, form=None, headers=None, hidden_form=None, as_email=None):
+    def request(self, method, path, body=None, form=None, headers=None, hidden_form=None, as_email=None, record_path=None):
         """Returns the exchange as the raw dict `normalise.exchange` takes (name added by the caller).
 
         `hidden_form` is sent with a form post but not recorded (the CSRF token). `as_email` is recorded as the request's
-        `as`: whose session this client holds, so the harness can send the request with that user's session."""
+        `as`: whose session this client holds, so the harness can send the request with that user's session. `record_path`
+        is what is recorded as the path when it must not be the one that was sent: a reset link's `uidb64` and `token` differ on
+        every stack, so the fixture says `{uidb64}` and `{token}` and the harness puts its own account's link there."""
         hs = dict(headers or {})
         data = None
         if body is not None:
@@ -144,7 +146,7 @@ class Client:
             if "json" not in ctype:
                 raise SystemExit(f"{method} {path}: {status} body is {ctype!r}, not JSON; extend the fixture format before recording it")
             parsed = json.loads(raw)
-        request = {"method": method, "path": path}
+        request = {"method": method, "path": record_path or path}
         if as_email is not None:
             request["as"] = as_email
         if body is not None:
@@ -1733,6 +1735,166 @@ def step_x09(base, pacer):
     ]
 
 
+FORGOT_PASSWORD = "/auth/forgot-password/"
+FORGOT_EMAIL = "forgetful@example.test"
+RESET_EMAIL = "resetter@example.test"
+RESET_NEW = "Resetter-New-Pa55word-Yak-27"
+# the uid of no account (base64url of the nil UUID's text), and one that is not text (base64url of two bytes that are not UTF-8)
+NOBODY_UID = base64.urlsafe_b64encode(b"00000000-0000-0000-0000-000000000000").decode().rstrip("=")
+NOT_TEXT_UID = base64.urlsafe_b64encode(b"\xff\xfe").decode().rstrip("=")
+
+
+def oracle_api_shell(code):
+    """Python run in the pin's Django shell (`manage.py shell -c`) inside its api container (`ORACLE_API` names it); the last line it
+    printed. Django prints a line saying how many objects it imported first, so the answer is the last one."""
+    container = os.environ.get("ORACLE_API", "plane-oracle-api-1")
+    lines = oracle_docker("exec", container, "python", "manage.py", "shell", "-c", code).strip().splitlines()
+    return lines[-1] if lines else ""
+
+
+def set_smtp(host):
+    """Give the pin an SMTP host (or take it away again with `None`) in its instance configuration, which it reads because `SKIP_ENV_VAR`
+    is on: that is the switch of `forgot-password`, which answers `SMTP_NOT_CONFIGURED` to everything until `EMAIL_HOST` is set. No mail goes
+    anywhere: its Celery worker is stopped, so the message waits in the broker. The instance cache is dropped, because `/api/instances/`
+    says `is_smtp_configured` and a recording made after this one must not see the answer a cache kept."""
+    if host:
+        oracle_api_shell(
+            "from plane.license.models import InstanceConfiguration as C\n"
+            f"C.objects.update_or_create(key='EMAIL_HOST', defaults={{'value': '{host}', 'category': 'SMTP', 'is_encrypted': False}})\n"
+            "print('set')"
+        )
+    else:
+        oracle_api_shell("from plane.license.models import InstanceConfiguration as C\nC.objects.filter(key='EMAIL_HOST').delete()\nprint('removed')")
+    drop_instance_cache()
+
+
+def mint_reset_token(email):
+    """The link the pin's mail would carry for `email`: `(uidb64, token)`, made by the same generator its `forgot-password` uses
+    (`generate_password_token`). Its token is stateless (a hash of the user, the password hash, `last_login` and the time), so it stays good
+    until the password changes or the person signs in again: nothing may sign this account in between making it and using it."""
+    out = oracle_api_shell(
+        "from plane.db.models import User\n"
+        "from django.contrib.auth.tokens import PasswordResetTokenGenerator as G\n"
+        "from django.utils.http import urlsafe_base64_encode\n"
+        "from django.utils.encoding import smart_bytes\n"
+        f"u = User.objects.get(email='{email}')\n"
+        "print(urlsafe_base64_encode(smart_bytes(u.id)), G().make_token(u))"
+    )
+    parts = out.split()
+    if len(parts) != 2:
+        raise SystemExit(f"could not make a reset link for {email}: {out!r}")
+    return parts[0], parts[1]
+
+
+def step_x10_dark(base, pacer):
+    """POST /auth/forgot-password/ on a pin with no SMTP host: the app's `forgot-password` page posts JSON `{email}` here, and the pin answers
+    `SMTP_NOT_CONFIGURED` (5025) to every request, whatever it asks, before it looks at the address at all. This is every Thrust deployment
+    until a mail service is wired (D-041). The configured rows are `X10`."""
+    return [
+        ("no SMTP, an address", post_json(base, pacer, FORGOT_PASSWORD, {"email": "someone@example.test"})),
+        ("no SMTP, a bad address", post_json(base, pacer, FORGOT_PASSWORD, {"email": "nope"})),
+        ("no SMTP, no address", post_json(base, pacer, FORGOT_PASSWORD, {})),
+    ]
+
+
+def step_x10(base, pacer):
+    """POST /auth/forgot-password/ on a pin that has an SMTP host (`set_smtp`, for these rows only, removed after): the order of its answers.
+    An address that is not one (a bad one, none, `null`) is `INVALID_EMAIL`, one nobody has is `USER_DOES_NOT_EXIST` (so the form says whether
+    an account exists, as the pin's email-check and sign-in do), and one an account has is `200 {"message": ...}`, with the mail queued on a
+    worker that is stopped.
+
+    NOT recorded, because the format holds JSON bodies and the harness posts JSON: that the route takes a form-encoded body too (measured:
+    the same 200), and that a request is throttled with sign-in (10 a minute per address)."""
+    account = Client(base)
+    token = account.csrf()
+    pacer.wait()
+    made = account.request("POST", "/auth/sign-up/", form={"email": FORGOT_EMAIL, "password": STRONG}, headers={"X-CSRFToken": token}, hidden_form={"csrfmiddlewaretoken": token})
+    if made["response"]["status"] != 302 or "error_code" in made["response"]["headers"].get("Location", ""):
+        raise SystemExit(f"could not make {FORGOT_EMAIL} to ask a reset link for: {made['response']['headers'].get('Location', '')}")
+    set_smtp("smtp.invalid")
+    try:
+        asked = [
+            ("an address an account has", post_json(base, pacer, FORGOT_PASSWORD, {"email": FORGOT_EMAIL})),
+            ("an address nobody has", post_json(base, pacer, FORGOT_PASSWORD, {"email": "nobody@example.test"})),
+            ("a bad address", post_json(base, pacer, FORGOT_PASSWORD, {"email": "nope"})),
+            ("no address", post_json(base, pacer, FORGOT_PASSWORD, {})),
+            ("a null address", post_json(base, pacer, FORGOT_PASSWORD, {"email": None})),
+        ]
+    finally:
+        set_smtp(None)
+    return [("an account to ask a link for", made), *asked]
+
+
+def step_x11(base, pacer):
+    """POST /auth/reset-password/<uidb64>/<token>/ : the reset page's form (`reset-password.tsx` is a native `<form method=POST>` to this path,
+    urlencoded with a `csrfmiddlewaretoken` field), answered, whatever it comes to, by a 302 to the app: `sign-in?success=True`, or
+    `accounts/reset-password?error_code=&error_message=`. A person is NOT signed in by it.
+
+    The account is made here by the sign-up form and its link is made in the pin (`mint_reset_token`): the fixture says `{uidb64}` and
+    `{token}` where that link goes, because they differ on every stack. What is recorded is the link's checks in the pin's order (a uid that
+    does not decode, the uid of no account, a uid that is not text, a wrong token: all `INVALID_PASSWORD_TOKEN`), then the password's (none,
+    empty, a JSON body, which the pin does not read: `INVALID_PASSWORD`; a weak one: `PASSWORD_TOO_WEAK`, after which the same link still
+    works), the reset itself, what it did (the link is used up, the session held before it is over, the old password no longer signs in and
+    the new one does).
+
+    The pin's token is stateless and Thrust's is stored; the observable behaviour is the same, which is what the rows say."""
+    account = Client(base)
+    token = account.csrf()
+    pacer.wait()
+    made = account.request("POST", "/auth/sign-up/", form={"email": RESET_EMAIL, "password": STRONG}, headers={"X-CSRFToken": token}, hidden_form={"csrfmiddlewaretoken": token})
+    if made["response"]["status"] != 302 or "error_code" in made["response"]["headers"].get("Location", ""):
+        raise SystemExit(f"could not make {RESET_EMAIL} to reset the password of: {made['response']['headers'].get('Location', '')}")
+    held = [c for c in account.jar if c.name != "csrftoken"]
+    if len(held) != 1:
+        raise SystemExit(f"the new account holds {[c.name for c in held]} besides the CSRF cookie, not one session cookie")
+    stale = {"Cookie": f"{held[0].name}={held[0].value}"}
+    live = fresh(base).request("GET", ME, headers=stale)
+    if live["response"]["status"] != 200:
+        raise SystemExit(f"the session cookie sent by hand is not a live session before the reset ({live['response']['status']}): the recording would prove nothing")
+    uid, link_token = mint_reset_token(RESET_EMAIL)
+
+    def post(path_uid, path_token, form=None, body=None, record_uid=None, record_token=None):
+        c = fresh(base)
+        csrf = c.csrf()
+        shown = f"/auth/reset-password/{record_uid or path_uid}/{record_token or path_token}/"
+        sent = f"/auth/reset-password/{path_uid}/{path_token}/"
+        if body is not None:
+            return c.request("POST", sent, body=body, headers={"X-CSRFToken": csrf}, record_path=shown)
+        return c.request("POST", sent, form=form, headers={"X-CSRFToken": csrf}, hidden_form={"csrfmiddlewaretoken": csrf}, record_path=shown)
+
+    good = dict(record_uid="{uidb64}", record_token="{token}")
+    refusals = [
+        ("a uid that does not decode", post("zzz", link_token, {"password": RESET_NEW}, record_token="{token}")),
+        ("the uid of no account", post(NOBODY_UID, link_token, {"password": RESET_NEW}, record_token="{token}")),
+        ("a uid that is not text", post(NOT_TEXT_UID, link_token, {"password": RESET_NEW}, record_token="{token}")),
+        ("a wrong token", post(uid, "abc-def", {"password": RESET_NEW}, record_uid="{uidb64}")),
+        ("no password", post(uid, link_token, {"email": RESET_EMAIL}, **good)),
+        ("an empty password", post(uid, link_token, {"password": ""}, **good)),
+        ("a password sent as JSON", post(uid, link_token, body={"password": RESET_NEW}, **good)),
+        ("a weak password", post(uid, link_token, {"password": "password"}, **good)),
+    ]
+    reset = post(uid, link_token, {"password": RESET_NEW}, **good)
+    again = post(uid, link_token, {"password": RESET_NEW + "x"}, **good)
+    over = fresh(base).request("GET", ME, headers=stale, as_email=RESET_EMAIL)
+    old_in = fresh(base)
+    old_token = old_in.csrf()
+    pacer.wait()
+    with_old = old_in.request("POST", "/auth/sign-in/", form={"email": RESET_EMAIL, "password": STRONG}, headers={"X-CSRFToken": old_token}, hidden_form={"csrfmiddlewaretoken": old_token})
+    new_in = Client(base)
+    new_token = new_in.csrf()
+    pacer.wait()
+    with_new = new_in.request("POST", "/auth/sign-in/", form={"email": RESET_EMAIL, "password": RESET_NEW}, headers={"X-CSRFToken": new_token}, hidden_form={"csrfmiddlewaretoken": new_token})
+    return [
+        ("an account to reset the password of", made),
+        *refusals,
+        ("the reset", reset),
+        ("the link again", again),
+        ("the session held before the reset", over),
+        ("sign in with the old password", with_old),
+        ("sign in with the new password", with_new),
+    ]
+
+
 # Which fixtures make an id that later ones use (`binds`), and which name one in their requests (`uses`).
 USES_PROJECT = {"uses": ["project"]}
 FIXTURE_META = {
@@ -1800,6 +1962,24 @@ FIXTURE_META = {
     },
     "X06": {
         "preconditions": ["the second user (second@example.test) holds a live session before the first exchange; the second exchange sends the session cookie that user held before the first (the old value, by hand), not whatever the client kept"],
+    },
+    "X10": {
+        "preconditions": [
+            "the pin has an SMTP host for these rows (its instance configuration key `EMAIL_HOST`, set for them and removed after): without one `forgot-password` answers `SMTP_NOT_CONFIGURED` to everything, which is `X10-dark`",
+            "the first exchange makes forgetful@example.test, whose address `an address an account has` asks for",
+        ],
+    },
+    "X10-dark": {
+        "preconditions": [
+            "the pin has NO SMTP host: every request is answered `SMTP_NOT_CONFIGURED`, whatever the address",
+        ],
+    },
+    "X11": {
+        "preconditions": [
+            "the first exchange makes resetter@example.test, an account of this fixture's own, and signs it in: `the session held before the reset` sends the session cookie the account held then (by hand), whatever the client kept afterwards",
+            "`{uidb64}` and `{token}` in a path stand for the reset link made for that account in the pin (`PasswordResetTokenGenerator`), which differs on every stack; the harness puts its own account's link there",
+            "a reset form is urlencoded, with a hidden CSRF field that is transport and not recorded; `a password sent as JSON` is a JSON body, which the pin does not read",
+        ],
     },
     "X09": {
         "preconditions": [
@@ -1885,6 +2065,10 @@ STEPS = [
     # X06 ends the second account's session, so nothing after it may use that account: X09 makes an account of its own
     ("X06", step_x06),
     ("X09", step_x09),
+    # the password reset by email: the dark rows first (no SMTP host), then the same route with one, then the form a link leads to
+    ("X10-dark", step_x10_dark),
+    ("X10", step_x10),
+    ("X11", step_x11),
 ]
 
 

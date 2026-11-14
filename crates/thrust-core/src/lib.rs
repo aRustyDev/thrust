@@ -15,6 +15,8 @@ extern crate self as thrust_core;
 
 mod auth;
 pub use auth::*;
+mod password_reset;
+pub use password_reset::*;
 mod profile;
 pub use profile::*;
 mod reserved_slugs;
@@ -61,6 +63,9 @@ pub struct Ports {
     /// The one OIDC provider, when the deployment configured one (ADR-0050; issue #38). `None`: the login routes are
     /// 404 and nothing else changes: passwords and API keys never involve it.
     pub oidc: Option<Arc<dyn OidcProvider>>,
+    /// The deployment's mail service, when it has one (ADR-0073, Q-0073.1; issue #46). `None`: nothing that needs mail is on, a
+    /// password reset included, and the app is told so (`is_smtp_configured`).
+    pub email: Option<Arc<dyn EmailSender>>,
 }
 
 #[derive(Debug, Clone)]
@@ -100,6 +105,14 @@ pub struct CoreConfig {
     pub csrf_enforce: bool,
     /// How long the address an asset's bytes are uploaded to keeps working (ADR-0047; the pin's `SIGNED_URL_EXPIRATION`, an hour).
     pub asset_upload_ttl_secs: i64,
+    /// The address the links in emails start with (`https://projects.example.com`), from the deployment's configuration and never
+    /// from a request's `Host` header, which a caller controls: with a forged one a reset mail would carry a working token to a
+    /// page that is not ours. `None`: no link can be made, so a password reset is off (D-041).
+    pub public_base_url: Option<String>,
+    /// How long a mailed password-reset link works: an hour, which is the pin's own (`PASSWORD_RESET_TIMEOUT = 3600`, D-041).
+    pub password_reset_ttl_secs: i64,
+    /// A request for an account whose link is younger than this makes and sends nothing: the form is not a way to mail someone over and over.
+    pub password_reset_cooldown_secs: i64,
 }
 
 impl Default for CoreConfig {
@@ -117,6 +130,9 @@ impl Default for CoreConfig {
             api_key_hash_supported: API_KEY_HASH_SUPPORTED.to_vec(),
             csrf_enforce: true,
             asset_upload_ttl_secs: 60 * 60,
+            public_base_url: None,
+            password_reset_ttl_secs: 60 * 60,
+            password_reset_cooldown_secs: 60,
         }
     }
 }

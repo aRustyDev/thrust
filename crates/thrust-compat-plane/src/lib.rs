@@ -41,6 +41,7 @@ mod page;
 mod projects;
 #[cfg(test)]
 mod projects_tests;
+mod reset;
 mod users;
 mod workspace_load;
 mod workspaces;
@@ -114,4 +115,8 @@ pub fn routes() -> Router {
         // X10: not on the acceptance list (a recording needs an identity provider, D-040); dark until a provider is configured
         .route("/auth/oidc/", get(oidc::start))
         .route("/auth/oidc/callback/", get(oidc::callback))
+        // X10 and X11: the password reset by email. Dark until a mail service and a base URL are configured (D-041), and recorded from the pin
+        .route("/auth/forgot-password/", post(reset::forgot_password)) // X10
+        .route("/auth/reset-password/{uidb64}/{token}/", post(reset::reset_password))
+    // X11
 }

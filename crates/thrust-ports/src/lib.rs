@@ -680,6 +680,23 @@ pub struct OidcLogin {
     pub expires_at: Timestamp,
 }
 
+/// One password-reset token that was mailed: written when the reset email is made, looked at by the reset form's checks,
+/// and taken (deleted) when the new password is accepted. The token is stored as its digest, like a session's, so a copy
+/// of the table is not a way into any account.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NewPasswordReset {
+    pub token_hash: TokenHash,
+    pub user_id: UserId,
+    pub created_at: Timestamp,
+    pub expires_at: Timestamp,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PasswordReset {
+    pub user_id: UserId,
+    pub expires_at: Timestamp,
+}
+
 /// What a stored file is for (ADR-0047). Plane has ten (`FileAsset.EntityTypeContext`); only the one the stock app's project
 /// creation needs is built (issue #44, S28 to S33), and the others are refused where an asset is made until something reads them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -1040,6 +1057,19 @@ pub trait Database: Send + Sync {
     /// Take a pending login: it is returned once and deleted by the same call, so a replayed callback finds nothing.
     /// Expiry is the caller's check (`expires_at` is returned).
     async fn take_oidc_login(&self, state: &TokenHash) -> Result<Option<OidcLogin>, DbError>;
+
+    /// Store a reset token for `r.user_id`, unless one was made for that user at or after `not_before` (the cooldown that
+    /// keeps a reset page from being a way to mail someone over and over): then nothing is stored and the answer is `false`.
+    /// A stored one replaces the user's earlier tokens (a user has at most one that works), and the call drops every token
+    /// that has expired by `r.created_at`.
+    async fn insert_password_reset(&self, r: &NewPasswordReset, not_before: Timestamp) -> Result<bool, DbError>;
+
+    /// A reset token's row, left in place: the checks of the reset form (the password's strength) come before the token is
+    /// used up, so a weak password does not burn it. Expiry is the caller's check (`expires_at` is returned).
+    async fn find_password_reset(&self, token: &TokenHash) -> Result<Option<PasswordReset>, DbError>;
+
+    /// Take a reset token: it is returned once and deleted by the same call, so one mailed token resets one password.
+    async fn take_password_reset(&self, token: &TokenHash) -> Result<Option<PasswordReset>, DbError>;
 
     /// Test support and deactivation until ADR-0053 provides the real one: set `is_active`. `true` if the user exists.
     async fn set_user_active(&self, sys: &SystemScope, user: UserId, active: bool) -> Result<bool, DbError>;
@@ -1464,4 +1494,34 @@ pub trait OidcProvider: Send + Sync {
     /// Exchange the authorization `code` (proving possession of `code_verifier`) and verify the ID token against
     /// `nonce`. Returns only what verification vouches for.
     async fn exchange(&self, code: &str, code_verifier: &str, nonce: &str) -> Result<OidcClaims, OidcError>;
+}
+
+/// One message to one recipient: plain text, and an HTML alternative when there is one. The sender's address is the
+/// adapter's configuration (a deployment owns one sending domain), not the caller's.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EmailMessage {
+    pub to: String,
+    pub subject: String,
+    pub text: String,
+    pub html: Option<String>,
+}
+
+#[derive(Debug, Error)]
+pub enum EmailError {
+    /// The mail service refused this message and would refuse it again (an address it will not send to, a sender it does not own).
+    #[error("email rejected: {0}")]
+    Rejected(String),
+    /// The mail service could not be reached or did not answer: the same message may be sent again later.
+    #[error("email service unavailable: {0}")]
+    Unavailable(String),
+}
+
+/// The deployment's mail service (ADR-0073, Q-0073.1): Cloudflare Email Sending behind the Worker's `send_email` binding on the
+/// Cloudflare adapter set, SMTP elsewhere. A deployment that has configured none passes `None` where the port is wanted, and the
+/// features that need mail (a password reset) are off: the app is told so, and draws nothing for them.
+#[async_trait]
+pub trait EmailSender: Send + Sync {
+    /// Hand one message to the mail service. Returns the service's id for it. Success means the service accepted the message,
+    /// not that it reached a mailbox.
+    async fn send(&self, message: &EmailMessage) -> Result<String, EmailError>;
 }

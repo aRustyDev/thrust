@@ -45,6 +45,7 @@ pub fn app(
             rng,
             hasher,
             oidc,
+            email: None,
         },
         cfg,
         SystemScope::mint(),

@@ -56,3 +56,5 @@ X06,POST,/auth/sign-out/,served
 X07,GET,/api/workspaces/{}/stickies/,served
 X08,GET,/api/unsplash/,served
 X09,POST,/auth/change-password/,served
+X10,POST,/auth/forgot-password/,served
+X11,POST,/auth/reset-password/{}/{}/,served

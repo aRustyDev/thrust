@@ -32,6 +32,10 @@ pub enum Code {
     SignupDisabled,
     OidcNotConfigured,
     OidcOauthProviderError,
+    /// Measured on the pin (2026-11-14, X10, X11), not read from source alone: the password reset by email (D-041).
+    InvalidPassword,
+    SmtpNotConfigured,
+    InvalidPasswordToken,
 }
 
 impl Code {
@@ -53,6 +57,9 @@ impl Code {
             Code::SignupDisabled => 5015,
             Code::OidcNotConfigured => 5300,
             Code::OidcOauthProviderError => 5301,
+            Code::InvalidPassword => 5020,
+            Code::SmtpNotConfigured => 5025,
+            Code::InvalidPasswordToken => 5125,
         }
     }
 
@@ -74,6 +81,9 @@ impl Code {
             Code::SignupDisabled => "SIGNUP_DISABLED",
             Code::OidcNotConfigured => "OIDC_NOT_CONFIGURED",
             Code::OidcOauthProviderError => "OIDC_OAUTH_PROVIDER_ERROR",
+            Code::InvalidPassword => "INVALID_PASSWORD",
+            Code::SmtpNotConfigured => "SMTP_NOT_CONFIGURED",
+            Code::InvalidPasswordToken => "INVALID_PASSWORD_TOKEN",
         }
     }
 }

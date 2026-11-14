@@ -476,6 +476,7 @@ fn empty_app() -> App {
             rng: Arc::new(CounterRng::default()),
             hasher: Arc::new(CountingHasher::new()),
             oidc: None,
+            email: None,
         },
         cfg,
         SystemScope::mint(),

@@ -6,9 +6,9 @@
                                                                 # and every route in it is a route of the pinned Plane
 
 The acceptance list is the 48-route minimum slice (S01 to S48) and the three rows to open the created work item (X01 to X03), which
-are the table in research/0003 section 8.1, plus X04 to X09, six routes the 48 rows lack: one the stock onboarding calls, the
+are the table in research/0003 section 8.1, plus X04 to X11, eight routes the 48 rows lack: one the stock onboarding calls, the
 address a project's cover is shown at, the sign-out the user menu calls, the stickies list and the cover pictures that the first browser
-journey's pages call, and the password change that Profile -> Security calls (`crates/thrust-compat-plane/src/users.rs`, `assets.rs`, `auth.rs`, `workspace_load.rs`, `external.rs`, `lib.rs`). The compat replay (`tests/parity.rs`), its fixtures and the oracle recorder
+journey's pages call, the password change that Profile -> Security calls, and the two routes of the password reset by email (`crates/thrust-compat-plane/src/users.rs`, `assets.rs`, `auth.rs`, `workspace_load.rs`, `external.rs`, `lib.rs`). The compat replay (`tests/parity.rs`), its fixtures and the oracle recorder
 (`record.py`) must each name exactly the rows of this list that are served; `scripts/check-acceptance-list.sh` holds them to it
 with `comm -3`. The M2 screens (issue #46) join the list when their rows are filed; until then a route outside it is not a test
 obligation.
@@ -37,7 +37,8 @@ OUT = REPO / "crates/thrust-compat-plane/tests/parity/acceptance.csv"
 # X04, because `finishUserOnboarding` awaits it (users.rs); X05, the address a project's cover is shown at (assets.rs, D-035); X06, the
 # sign-out the sidebar's user menu calls (auth.rs, D-036); X07 and X08, the two stubs (D-021) that the first browser journey's home page
 # and project form call, the stickies list (workspace_load.rs) and the cover pictures (external.rs); X09, the password change Profile ->
-# Security calls (auth.rs, D-039).
+# Security calls (auth.rs, D-039); X10 and X11, the two routes behind the "Forgot your password?" link, the request the forgot-password page posts
+# and the form the reset page submits (reset.rs, D-041).
 EXTRA = [
     ("X04", "PATCH", "/api/users/me/onboard/"),
     ("X05", "GET", "/api/assets/v2/static/{}/"),
@@ -45,6 +46,8 @@ EXTRA = [
     ("X07", "GET", "/api/workspaces/{}/stickies/"),
     ("X08", "GET", "/api/unsplash/"),
     ("X09", "POST", "/auth/change-password/"),
+    ("X10", "POST", "/auth/forgot-password/"),
+    ("X11", "POST", "/auth/reset-password/{}/{}/"),
 ]
 
 # A row is pending while its route is not yet served and recorded; delete it from this set when it is. None is: the asset stage of
