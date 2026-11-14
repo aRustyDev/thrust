@@ -95,7 +95,7 @@ EXPECT_PANIC=1
 EXPECT_BLAST=1
 EXPECT_WORKER=1
 EXPECT_CRON=1
-EXPECT_BINDINGS=4
+EXPECT_BINDINGS=5
 EXPECT_ENGINE=4
 
 # A free port, chosen at random: fixed ports collide with OrbStack-published containers and

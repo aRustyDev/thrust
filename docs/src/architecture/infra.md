@@ -43,6 +43,7 @@ The bindings in `crates/thrust-worker/wrangler.toml`:
 | `BLOBS` | R2 bucket | `BlobStore` |
 | `EVENTS` | Queue, producer and consumer (batch of 10, 1 s timeout, 3 retries) | `Queue` |
 | `RL_CREATE`, `RL_SIGNIN`, `RL_V1` | Workers Rate Limiting bindings, one per kind of key (work item creates per user, 1000 a minute; sign-ins per email, 10; `/api/v1` requests per API key, 60) | `RateLimiter`, through `CfRateLimiter` |
+| `CF_VERSION_METADATA` | Version metadata | none: the Worker sends the running version's tag (else its id) as the `x-thrust-version` header on every response it routes, and sends no header when it has neither. A deploy tags the version with the commit (`wrangler deploy --tag <sha>`) and the smoke compares the two (`scripts/smoke-deploy.sh`, issue #49). Local `wrangler dev` has no tag and a random UUID for the id, so the header there is that id (measured with wrangler 4.123.0) |
 | `ROOM` | Durable Object `RoomDo` (SQLite) | none: a WebSocket room, reachable only through `/_test/room/...`, which needs test routes and the admin token |
 | cron `* * * * *` | Cron trigger | runs the outbox sweeper |
 
@@ -53,7 +54,7 @@ binding or a Workflow, because the Worker has neither.
 Behaviour worth knowing:
 
 - **Adapter set.** `wrangler.toml` builds with `--no-default-features`, so the bundle holds the Cloudflare set only.
-  The default build also compiles an in-isolate `memory` set, which `wrangler.memory.toml` runs with no bindings.
+  The default build also compiles an in-isolate `memory` set, which `wrangler.memory.toml` runs with no binding but `CF_VERSION_METADATA`.
 - **Rate limits.** On Cloudflare the allowance is the binding's own `limit` and `period` in the `[[ratelimits]]` block,
   not a variable: `THRUST_CREATE_RATE_LIMIT`, `THRUST_SIGNIN_RATE_LIMIT` and the count in `THRUST_V1_RATE_LIMIT` are
   read by the in-isolate and native sets only. A binding counts per Cloudflare location and approximately (one of 3 per

@@ -16,6 +16,11 @@ serde_json = { workspace = true }
 # + extractors remain, which is what compiles to wasm32 and runs under workerd.
 axum = { version = "0.8", default-features = false, features = ["json", "query", "matched-path"] }
 
+# Test-only, the same pins as thrust-core's: `scripts/check-deps.sh` checks normal dependencies, so neither reaches the router's graph.
+[dev-dependencies]
+proptest = "1"
+rstest = "0.26"
+
 [features]
 # Control-run mutants of the operator's door (scripts/mutants.sh, and the hermetic router test that shows the same: crates/thrust-compat-plane/tests/operator.rs).
 # Never enabled outside those; the server crate forwards them.
