@@ -2002,3 +2002,205 @@ async fn compat_oidc_the_instance_offers_sso_when_the_target_has_a_provider() {
         assert_eq!(config[off], false, "{off}: {body}");
     }
 }
+
+// ---------------------------------------------------------------------------------------------------------------------------------
+// X10 and X11 (D-041): the password reset by email. No contract target has a mail service, so what these show on all four targets is
+// the dark state of `POST /auth/forgot-password/` (5025, as the pin answers without `EMAIL_HOST`) and the whole of the reset form
+// (`POST /auth/reset-password/<uidb64>/<token>/`) against each adapter's token table, with the token from the test seam
+// (`/internal/issue-password-reset`: the same token the mail would carry, with no mailbox). What the mail says is the hermetic tests'.
+// ---------------------------------------------------------------------------------------------------------------------------------
+
+const RESET_NEW: &str = "Reset-New-Pa55word-Yak-27-Contract";
+
+/// A reset token from the test seam for `email`, with a lifetime of `ttl_secs` (the deployment's when `None`): `(uidb64, token)`.
+async fn seam_token(t: &Target, email: &str, ttl_secs: Option<i64>) -> (String, String) {
+    let mut body = json!({ "email": email });
+    if let Some(ttl) = ttl_secs {
+        body["ttl_secs"] = json!(ttl);
+    }
+    let r = t.admin_post("/internal/issue-password-reset", &body).await;
+    assert_eq!(r.status(), 200, "the test seam made a token");
+    let v: Value = r.json().await.unwrap();
+    (v["uidb64"].as_str().unwrap().to_string(), v["token"].as_str().unwrap().to_string())
+}
+
+/// A reset form post as the app's page makes it: urlencoded, the answer a 302 that is not followed.
+async fn reset_form(t: &Target, uidb64: &str, token: &str, form: &str, content_type: &str) -> reqwest::Response {
+    t.no_redirect()
+        .post(t.url(&format!("/auth/reset-password/{uidb64}/{token}/")))
+        .header("content-type", content_type)
+        .body(form.to_string())
+        .send()
+        .await
+        .unwrap()
+}
+
+/// A reset that was answered the pin's way: a 302 to the reset page with the pin's code (`code` and `name`), or to the sign-in page when
+/// both are `None`, and in either case no cookie, because a reset signs nobody in.
+fn reset_answered(r: &reqwest::Response, to: Option<(u16, &str)>, what: &str) {
+    assert_eq!(r.status(), 302, "{what}");
+    let want = match to {
+        Some((code, name)) => format!("/accounts/reset-password?error_code={code}&error_message={name}"),
+        None => "/sign-in?success=True".to_string(),
+    };
+    assert_eq!(r.headers().get("location").and_then(|v| v.to_str().ok()), Some(want.as_str()), "{what}");
+    assert!(SetCookie::all(r).is_empty(), "{what}: a reset sets no cookie");
+}
+
+/// No target has a mail service, so the request route is the pin's answer without `EMAIL_HOST`: 5025 to every request whatever it
+/// asks, in JSON or a form, and the app is told mail is off. (When a target gets a mail service, this is the test that changes.)
+#[tokio::test]
+async fn compat_forgot_password_is_dark_on_a_target_with_no_mail_service() {
+    let t = t();
+    let (email, _) = signed_up(&t).await;
+    let dark = |v: &Value| {
+        v["error_code"] == 5025
+            && v["error_message"] == "SMTP_NOT_CONFIGURED"
+            && v.as_object().map(|o| o.len()) == Some(2)
+    };
+    for (what, body) in [
+        ("a known address", json!({"email": email})),
+        ("an unknown address", json!({"email": "nobody@example.test"})),
+        ("a bad address", json!({"email": "nope"})),
+        ("no address", json!({})),
+        ("null", json!({"email": null})),
+    ] {
+        let r = post(&t, "/auth/forgot-password/", &body).await;
+        assert_eq!(r.status(), 400, "{what}");
+        assert!(SetCookie::all(&r).is_empty(), "{what}");
+        let v: Value = r.json().await.unwrap();
+        assert!(dark(&v), "{what}: {v}");
+    }
+    let form = t
+        .http
+        .post(t.url("/auth/forgot-password/"))
+        .header("content-type", "application/x-www-form-urlencoded")
+        .body(format!("email={}", email.replace('@', "%40")))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(form.status(), 400, "a form post is refused the same way");
+    assert!(dark(&form.json::<Value>().await.unwrap()));
+    let instance: Value = t.http.get(t.url("/api/instances/")).send().await.unwrap().json().await.unwrap();
+    assert_eq!(instance["config"]["is_smtp_configured"], false, "{instance}");
+}
+
+/// The reset form against each target's token table: refusals first, in the pin's order and with its codes, each changing nothing (not the
+/// password, not a session) and leaving the link working; then the success, which sets the new password, ends every session of the account
+/// and no other account's, signs nobody in and uses the link up. A link that has expired is refused like an unknown one, and the seam
+/// itself refuses a stranger and an address no account has.
+#[tokio::test]
+async fn compat_reset_password_takes_the_link_once_and_ends_every_session() {
+    let t = t();
+    let (email, session) = signed_up(&t).await;
+    let (_, bystander) = signed_up(&t).await;
+    let (uid, token) = seam_token(&t, &email, None).await;
+    let urlencoded = "application/x-www-form-urlencoded";
+    let strong = RESET_NEW;
+
+    // refusals, in the pin's order: the link first, then the password
+    reset_answered(
+        &reset_form(&t, "zzz", &token, &format!("password={strong}"), urlencoded).await,
+        Some((5125, "INVALID_PASSWORD_TOKEN")),
+        "a uid that does not decode",
+    );
+    reset_answered(
+        &reset_form(&t, &uid, "abc-def", &format!("password={strong}"), urlencoded).await,
+        Some((5125, "INVALID_PASSWORD_TOKEN")),
+        "a wrong token",
+    );
+    reset_answered(
+        &reset_form(&t, &uid, &token, "email=x", urlencoded).await,
+        Some((5020, "INVALID_PASSWORD")),
+        "no password",
+    );
+    reset_answered(
+        &reset_form(&t, &uid, &token, "password=", urlencoded).await,
+        Some((5020, "INVALID_PASSWORD")),
+        "an empty password",
+    );
+    reset_answered(
+        &reset_form(&t, &uid, &token, &json!({"password": strong}).to_string(), "application/json").await,
+        Some((5020, "INVALID_PASSWORD")),
+        "a JSON body is no password: the pin reads only the form",
+    );
+    reset_answered(
+        &reset_form(&t, &uid, &token, "password=password123", urlencoded).await,
+        Some((5021, "PASSWORD_TOO_WEAK")),
+        "a weak password",
+    );
+    // none of that changed anything, and none of it used the link up
+    assert_eq!(sign_in_status(&t, &email, STRONG).await, 200, "the password is as it was");
+    assert_eq!(t.me_status(&session).await, 200, "no session ended");
+
+    // the success
+    reset_answered(&reset_form(&t, &uid, &token, &format!("password={strong}"), urlencoded).await, None, "the reset");
+    assert_eq!(t.me_status(&session).await, 401, "every session of the account ended");
+    assert_eq!(t.me_status(&bystander).await, 200, "another account's session did not");
+    assert_eq!(sign_in_status(&t, &email, STRONG).await, 400, "the old password is refused");
+    assert_eq!(sign_in_status(&t, &email, strong).await, 200, "and the new one signs in");
+    reset_answered(
+        &reset_form(&t, &uid, &token, "password=Another-Strong-Pa55word-3", urlencoded).await,
+        Some((5125, "INVALID_PASSWORD_TOKEN")),
+        "the link again",
+    );
+    assert_eq!(sign_in_status(&t, &email, "Another-Strong-Pa55word-3").await, 400, "a used link changes nothing");
+
+    // a link that has expired is an unknown one
+    let (uid2, expired) = seam_token(&t, &email, Some(-1)).await;
+    reset_answered(
+        &reset_form(&t, &uid2, &expired, "password=Expired-Link-Pa55word-5", urlencoded).await,
+        Some((5125, "INVALID_PASSWORD_TOKEN")),
+        "an expired link",
+    );
+    assert_eq!(sign_in_status(&t, &email, strong).await, 200, "an expired link changed nothing");
+
+    // the seam: an address with no account is a 404 (a typo is not a silent success), and a stranger is refused
+    let missing = t.admin_post("/internal/issue-password-reset", &json!({"email": "nobody@example.test"})).await;
+    assert_eq!(missing.status(), 404);
+    let stranger =
+        t.http.post(t.url("/internal/issue-password-reset")).json(&json!({"email": email})).send().await.unwrap();
+    assert!(
+        matches!(stranger.status().as_u16(), 401 | 403 | 404),
+        "the seam answered a caller with no admin token: {}",
+        stranger.status()
+    );
+}
+
+/// A token is for the account it was made for: B's `uidb64` with A's token is refused (and does not use A's token up), and a newer token
+/// of an account replaces its older one (the replaced link is refused, the new one works).
+#[tokio::test]
+async fn compat_reset_password_a_link_is_for_its_own_account_and_a_new_link_replaces_the_old() {
+    let t = t();
+    let (a_email, _) = signed_up(&t).await;
+    let (b_email, _) = signed_up(&t).await;
+    let urlencoded = "application/x-www-form-urlencoded";
+    let (a_uid, a_token) = seam_token(&t, &a_email, None).await;
+    let (b_uid, _b_token) = seam_token(&t, &b_email, None).await;
+    reset_answered(
+        &reset_form(&t, &b_uid, &a_token, "password=Cross-Account-Pa55word-7", urlencoded).await,
+        Some((5125, "INVALID_PASSWORD_TOKEN")),
+        "A's token with B's uid",
+    );
+    assert_eq!(
+        (sign_in_status(&t, &a_email, STRONG).await, sign_in_status(&t, &b_email, STRONG).await),
+        (StatusCode::OK, StatusCode::OK),
+        "neither password changed"
+    );
+
+    // A asks again: the first token is replaced, the second works; B's token is untouched
+    let (a_uid2, a_token2) = seam_token(&t, &a_email, None).await;
+    assert_eq!(a_uid, a_uid2, "the uidb64 names the account, so it is the same");
+    reset_answered(
+        &reset_form(&t, &a_uid, &a_token, "password=Replaced-Link-Pa55word-8", urlencoded).await,
+        Some((5125, "INVALID_PASSWORD_TOKEN")),
+        "the replaced link",
+    );
+    reset_answered(
+        &reset_form(&t, &a_uid2, &a_token2, "password=Replacing-Link-Pa55word-9", urlencoded).await,
+        None,
+        "the newer link",
+    );
+    assert_eq!(sign_in_status(&t, &a_email, "Replacing-Link-Pa55word-9").await, 200);
+    assert_eq!(sign_in_status(&t, &b_email, STRONG).await, 200, "B's password is as it was");
+}

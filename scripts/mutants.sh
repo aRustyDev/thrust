@@ -68,7 +68,15 @@ for triple in \
   "change-password-keeps-sessions:mutant_change_password_keeps_sessions:main" \
   "change-password-allows-api-key:mutant_change_password_allows_api_key:main" \
   "oidc-state-reusable:mutant_oidc_state_reusable:main" \
-  "oidc-refusal-without-error-code:mutant_oidc_failure_redirect_no_code:main"; do
+  "oidc-refusal-without-error-code:mutant_oidc_failure_redirect_no_code:main" \
+  "reset-token-reusable:mutant_reset_token_reusable:main" \
+  "reset-ignores-expiry:mutant_reset_ignores_expiry:main" \
+  "reset-uid-unchecked:mutant_reset_uid_unchecked:main" \
+  "reset-takes-token-first:mutant_reset_takes_token_first:main" \
+  "reset-skips-strength:mutant_reset_skips_strength:main" \
+  "reset-keeps-sessions:mutant_reset_keeps_sessions:main" \
+  "smtp-flag-always-on:mutant_smtp_flag_always_on:main" \
+  "reset-refusal-without-error-code:mutant_reset_redirect_without_code:main"; do
   name="${triple%%:*}"
   rest="${triple#*:}"
   feature="${rest%%:*}"

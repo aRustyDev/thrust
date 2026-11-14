@@ -318,6 +318,10 @@ async fn the_identity_tables_have_hashes_and_no_plaintext_and_no_workspace() {
             ("state_hash", "bytea"),
         ])
     );
+    assert_eq!(
+        columns("password_resets").await,
+        want(&[("created_at", ts), ("expires_at", ts), ("token_hash", "bytea"), ("user_id", "uuid")])
+    );
 
     // controls: each of these must be refused
     let user = UserId(new_id());
@@ -354,6 +358,16 @@ async fn the_identity_tables_have_hashes_and_no_plaintext_and_no_workspace() {
         .await
         .is_err(),
         "a pending login's key must be a 32-byte digest too"
+    );
+    assert!(
+        raw.execute(
+            "INSERT INTO password_resets (token_hash, user_id, created_at, expires_at) \
+             VALUES ('\\x7374617465'::bytea, $1, now(), now())",
+            &[&new_id()],
+        )
+        .await
+        .is_err(),
+        "a reset token's key must be a 32-byte digest too"
     );
 }
 

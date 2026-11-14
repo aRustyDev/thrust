@@ -185,6 +185,7 @@ pub fn empty_app() -> App {
             rng: Arc::new(CounterRng::default()),
             hasher,
             oidc: None,
+            email: None,
         },
         core_cfg,
         SystemScope::mint(),

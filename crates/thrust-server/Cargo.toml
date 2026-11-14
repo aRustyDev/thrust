@@ -33,8 +33,18 @@ mutant_change_password_keeps_sessions = ["thrust-core/mutant_change_password_kee
 mutant_change_password_allows_api_key = ["thrust-compat-plane/mutant_change_password_allows_api_key"]
 # OIDC through the compat routes (D-040): the login's state reusable, the dark switch ignoring the provider, a refusal with no error code.
 mutant_oidc_state_reusable = ["thrust-core/mutant_oidc_state_reusable"]
+# The password reset by email (D-041).
+mutant_reset_token_reusable = ["thrust-core/mutant_reset_token_reusable"]
+mutant_reset_ignores_expiry = ["thrust-core/mutant_reset_ignores_expiry"]
+mutant_reset_uid_unchecked = ["thrust-core/mutant_reset_uid_unchecked"]
+mutant_reset_takes_token_first = ["thrust-core/mutant_reset_takes_token_first"]
+mutant_reset_skips_strength = ["thrust-core/mutant_reset_skips_strength"]
+mutant_reset_keeps_sessions = ["thrust-core/mutant_reset_keeps_sessions"]
+mutant_reset_ignores_cooldown = ["thrust-core/mutant_reset_ignores_cooldown"]
 mutant_oidc_flag_always_on = ["thrust-compat-plane/mutant_oidc_flag_always_on"]
 mutant_oidc_failure_redirect_no_code = ["thrust-compat-plane/mutant_oidc_failure_redirect_no_code"]
+mutant_smtp_flag_always_on = ["thrust-compat-plane/mutant_smtp_flag_always_on"]
+mutant_reset_redirect_without_code = ["thrust-compat-plane/mutant_reset_redirect_without_code"]
 mutant_set_password_every_user = ["thrust-adapters-memory/mutant_set_password_every_user"]
 mutant_operator_takes_admin_token = ["thrust-api/mutant_operator_takes_admin_token"]
 mutant_operator_ignores_flag = ["thrust-api/mutant_operator_ignores_flag"]

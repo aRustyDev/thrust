@@ -365,6 +365,34 @@ async fn set_user_active(
     }
 }
 
+#[derive(Deserialize)]
+struct IssuePasswordReset {
+    email: String,
+    /// How long the token works, in seconds. The deployment's setting when absent; a negative one makes a token that has expired.
+    ttl_secs: Option<i64>,
+}
+
+/// Test support (D-041): a password-reset token for an account, without a mailbox, because a contract target cannot read the mail that
+/// the request route would send. It is the reset route's input and nothing else: the same token the mail would carry, never blocked by
+/// the cooldown, and returned in the body. 404 for an address no account has, so a typo in a test is not a silent success. It is as
+/// dangerous as `/internal/reset` is not: it opens any account, which is why it sits behind [`Admin`], that is behind `test_routes` and
+/// the admin token, which no deployment turns on.
+async fn issue_password_reset(
+    _: Admin,
+    Extension(app): Extension<App>,
+    Json(b): Json<IssuePasswordReset>,
+) -> ApiResult<Json<serde_json::Value>> {
+    let email = thrust_core::normalize_email(&b.email);
+    let user =
+        app.ports.db.user_by_email(&email).await.map_err(CoreError::from)?.ok_or(ApiError(CoreError::NotFound))?;
+    let ttl = b.ttl_secs.unwrap_or(app.cfg.password_reset_ttl_secs);
+    // a negative cooldown: no earlier token of the account blocks this one
+    let issued = thrust_core::issue_password_reset_with(&app, user.id, ttl, -1)
+        .await?
+        .ok_or(ApiError(CoreError::Conflict("a token was made at the same instant".into())))?;
+    Ok(Json(serde_json::json!({ "uidb64": issued.uidb64, "token": issued.token, "expires_at": issued.expires_at })))
+}
+
 // ---------------------------------------------------------------------------------------------
 // The operator's routes (Q-F7, issue #46): the way back in for a person who cannot sign in, until the reset by email exists.
 // Behind [`OperatorAdmin`]. The password is in the body, never in the path or query, and it is not in anything logged: the
@@ -627,6 +655,7 @@ pub fn router() -> Router {
         .route("/internal/revoke-session", post(revoke_session))
         .route("/internal/seed-work-items", post(seed_work_items))
         .route("/internal/set-user-active", post(set_user_active))
+        .route("/internal/issue-password-reset", post(issue_password_reset))
         .route("/internal/operator/users", post(operator_create_user))
         .route("/internal/operator/users/password", post(operator_set_password))
         .route(&auth_path("/sign-out-all"), post(sign_out_all))

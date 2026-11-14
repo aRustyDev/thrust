@@ -44,6 +44,7 @@ pub const MIGRATION_0013: &str = include_str!("../migrations/0013_work_item_deta
 pub const MIGRATION_0014: &str = include_str!("../migrations/0014_work_item_history.sql");
 pub const MIGRATION_0015: &str = include_str!("../migrations/0015_v1_surface.sql");
 pub const MIGRATION_0016: &str = include_str!("../migrations/0016_assets.sql");
+pub const MIGRATION_0017: &str = include_str!("../migrations/0017_password_resets.sql");
 
 pub async fn migrate(client: &Client) -> Result<(), tokio_postgres::Error> {
     client.batch_execute(MIGRATION_0001).await?;
@@ -61,7 +62,8 @@ pub async fn migrate(client: &Client) -> Result<(), tokio_postgres::Error> {
     client.batch_execute(MIGRATION_0013).await?;
     client.batch_execute(MIGRATION_0014).await?;
     client.batch_execute(MIGRATION_0015).await?;
-    client.batch_execute(MIGRATION_0016).await
+    client.batch_execute(MIGRATION_0016).await?;
+    client.batch_execute(MIGRATION_0017).await
 }
 
 pub trait ClientHandle: Send {
@@ -2247,6 +2249,55 @@ impl Database for PgDatabase {
             code_verifier: r.get("code_verifier"),
             expires_at: r.get("expires_at"),
         }))
+    }
+
+    async fn insert_password_reset(&self, r: &NewPasswordReset, not_before: Timestamp) -> Result<bool, DbError> {
+        let c = self.conn().await?;
+        let pg = c.pg();
+        pg.execute("DELETE FROM password_resets WHERE expires_at <= $1", &[&r.created_at]).await.map_err(db_err)?;
+        // One statement decides and writes. `gate` has a row only when no token of this user was made at or after the cooldown's start;
+        // the older tokens of the user go in the same statement (their delete reads the snapshot, so a request that races this one
+        // leaves both tokens working and neither deleted: two valid links in two emails, never none). The casts are the column types:
+        // a bare `$n` in an INSERT ... SELECT is resolved as text.
+        let n = pg
+            .execute(
+                "WITH gate AS (\
+                     SELECT 1 WHERE NOT EXISTS (\
+                         SELECT 1 FROM password_resets WHERE user_id = $2::uuid AND created_at >= $5::timestamptz)\
+                 ), older AS (\
+                     DELETE FROM password_resets WHERE user_id = $2::uuid AND EXISTS (SELECT 1 FROM gate)\
+                 ) \
+                 INSERT INTO password_resets (token_hash, user_id, created_at, expires_at) \
+                 SELECT $1::bytea, $2::uuid, $3::timestamptz, $4::timestamptz FROM gate",
+                &[&&r.token_hash.0[..], &r.user_id.0, &r.created_at, &r.expires_at, &not_before],
+            )
+            .await
+            .map_err(db_err)?;
+        Ok(n == 1)
+    }
+
+    async fn find_password_reset(&self, token: &TokenHash) -> Result<Option<PasswordReset>, DbError> {
+        let c = self.conn().await?;
+        let row = c
+            .pg()
+            .query_opt("SELECT user_id, expires_at FROM password_resets WHERE token_hash = $1", &[&&token.0[..]])
+            .await
+            .map_err(db_err)?;
+        Ok(row.map(|r| PasswordReset { user_id: UserId(r.get("user_id")), expires_at: r.get("expires_at") }))
+    }
+
+    async fn take_password_reset(&self, token: &TokenHash) -> Result<Option<PasswordReset>, DbError> {
+        let c = self.conn().await?;
+        // One statement: the row is returned to exactly one caller, and gone for the next.
+        let row = c
+            .pg()
+            .query_opt(
+                "DELETE FROM password_resets WHERE token_hash = $1 RETURNING user_id, expires_at",
+                &[&&token.0[..]],
+            )
+            .await
+            .map_err(db_err)?;
+        Ok(row.map(|r| PasswordReset { user_id: UserId(r.get("user_id")), expires_at: r.get("expires_at") }))
     }
 
     async fn insert_asset(&self, scope: &WorkspaceScope, a: &AssetRow) -> Result<(), DbError> {

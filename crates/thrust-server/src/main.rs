@@ -101,6 +101,16 @@ async fn main() {
         // OFF unless the environment says on: the stock Plane frontend sends the CSRF token only on its auth form posts, so
         // enforcing it on JSON mutations would break it (Q-0050.8). The flip is when the custom frontend replaces it.
         csrf_enforce: env_flag("THRUST_CSRF_ENFORCE", false),
+        // where the links in emails point (D-041): set, never taken from a request. Unset: no link can be made.
+        public_base_url: std::env::var("THRUST_PUBLIC_BASE_URL")
+            .ok()
+            .filter(|v| !v.is_empty())
+            .map(|v| v.trim_end_matches('/').to_string()),
+        password_reset_ttl_secs: env_num("THRUST_PASSWORD_RESET_TTL_SECS", defaults.password_reset_ttl_secs),
+        password_reset_cooldown_secs: env_num(
+            "THRUST_PASSWORD_RESET_COOLDOWN_SECS",
+            defaults.password_reset_cooldown_secs,
+        ),
         // OWASP's minimum unless the environment says otherwise (a test target sets a cheap cost)
         argon2: Argon2Params {
             m_cost_kib: env_num("THRUST_ARGON2_M_KIB", defaults.argon2.m_cost_kib),
@@ -124,6 +134,8 @@ async fn main() {
             rng: Arc::new(NativeRng),
             hasher,
             oidc: oidc_provider(),
+            // no mail service is built yet (E2: SMTP; the Cloudflare binding is the Worker's, E3): a deployment cannot send a reset
+            email: None,
         },
         cfg,
         SystemScope::mint(),
