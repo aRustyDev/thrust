@@ -97,7 +97,7 @@ their own 256 cases they never drew an empty or whitespace-only name or a one-ch
 those properties are about. Where a property discards inputs with `prop_assume!`, assert the share it keeps too.
 
 In-repo: `model_strategy_reaches_every_step_class` in `crates/thrust-contract-tests/tests/model/mod.rs` and in
-`crates/thrust-core/tests/model.rs` (over whole sequences), `model_postgres_strategy_reaches_every_step_class` in
+`crates/thrust-core/tests/assets.rs` (over whole sequences), `model_postgres_strategy_reaches_every_step_class` in
 `crates/thrust-adapters-selfhosted/tests/model/mod.rs`, `generated_documents_reach_every_kind` in
 `crates/thrust-editor-doc/tests/roundtrip.rs`, and `strategies_reach_every_input_class` in
 `crates/thrust-core/src/lib.rs`.

@@ -24,12 +24,11 @@ fn allowed(role: Role, perm: Permission) -> bool {
         Permission::ReadProject | Permission::ReadWorkItems | Permission::ReadAttachment => true,
         Permission::CreateWorkItem
         | Permission::UpdateWorkItem
-        | Permission::DeleteWorkItem
         | Permission::WriteAttachment
         // a label is made, changed and deleted by a project admin or member (issue #58): `ProjectMemberPermission`
         | Permission::WriteLabel => role != Role::Guest,
         // a state is made, changed and deleted by a project admin only: not by a member of the project (issue #58)
-        Permission::ReadDeleted | Permission::WriteState => role == Role::Admin,
+        Permission::WriteState => role == Role::Admin,
     }
 }
 
@@ -39,10 +38,8 @@ fn authorize_follows_the_role_table(
     #[values(
         Permission::ReadProject,
         Permission::ReadWorkItems,
-        Permission::ReadDeleted,
         Permission::CreateWorkItem,
         Permission::UpdateWorkItem,
-        Permission::DeleteWorkItem,
         Permission::ReadAttachment,
         Permission::WriteAttachment,
         Permission::WriteState,
@@ -163,7 +160,7 @@ fn a_workspace_member_outside_the_project_is_forbidden() {
 /// Cross-tenant probes learn nothing: another tenant's project looks exactly like a project that does not exist.
 #[rstest]
 fn another_tenants_project_is_not_found(
-    #[values(Permission::ReadWorkItems, Permission::CreateWorkItem, Permission::ReadDeleted)] perm: Permission,
+    #[values(Permission::ReadWorkItems, Permission::CreateWorkItem, Permission::WriteState)] perm: Permission,
 ) {
     let w = world();
     let cross = block_on(authorize(&w.app, &w.principal(Actor::MemberB), &w.slug_a, w.project_a, perm));

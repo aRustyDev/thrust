@@ -712,17 +712,6 @@ pub struct SeedWorkItem {
 // ---------------------------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CreateWorkItemRequest {
-    pub name: String,
-    #[serde(default)]
-    pub description: Option<String>,
-    #[serde(default)]
-    pub external_source: Option<String>,
-    #[serde(default)]
-    pub external_id: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ApiErrorBody {
     pub error: ApiErrorDetail,
 }

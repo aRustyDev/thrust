@@ -21,16 +21,20 @@ use thrust_ports::*;
 
 const LIMIT: usize = 8;
 
-/// A world with a small attachment limit and one live work item in project A.
+/// The access `/api/v1` gives a member who makes and deletes work items; the work items here are only what an attachment is put on.
+fn writer(w: &World) -> IssueAccess {
+    block_on(v1_issue_writer(&w.app, &w.principal(Actor::MemberA), &w.slug_a, w.project_a)).unwrap()
+}
+
+/// A world with a small attachment limit and one live work item in project A, made as `/api/v1` makes it.
 fn setup() -> (World, WorkItemId) {
     let background: Arc<dyn Background> = Arc::new(NoBackground);
     let queue = Arc::new(MemoryQueue::new(background.clone(), ConsumerSlot::default()));
     let cfg = CoreConfig { outbox_fastpath: false, max_attachment_bytes: LIMIT, ..CoreConfig::default() };
     let w = world_with(cfg, queue, background);
-    let req =
-        CreateWorkItemRequest { name: "item".into(), description: None, external_source: None, external_id: None };
-    let item = block_on(create_work_item(&w.app, &w.principal(Actor::MemberA), &w.slug_a, w.project_a, req)).unwrap();
-    (w, item.id)
+    let draft = IssueDraft { name: "item".into(), ..IssueDraft::default() };
+    let item = block_on(create_issue(&w.app, &writer(&w), draft)).unwrap();
+    (w, item.item.id)
 }
 
 fn put(w: &World, a: Actor, item: WorkItemId, name: &str, bytes: &[u8]) -> Result<(), CoreError> {
@@ -78,7 +82,7 @@ fn an_attachment_needs_a_live_work_item() {
     let unknown = WorkItemId(Uuid::from_u128(0xF00));
     assert_eq!(outcome(&put(&w, Actor::MemberA, unknown, "f", b"x")), Outcome::NotFound);
 
-    block_on(delete_work_item(&w.app, &w.principal(Actor::MemberA), &w.slug_a, w.project_a, item)).unwrap();
+    block_on(delete_issue(&w.app, &writer(&w), item)).unwrap();
     assert_eq!(
         outcome(&put(&w, Actor::MemberA, item, "f", b"x")),
         Outcome::NotFound,

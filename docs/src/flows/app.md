@@ -177,31 +177,30 @@ routes keep 404, which tells a probe less.
 
 Roles are ordered Guest, Member, Admin. On the slice's routes that are left, reading activity and attachments needs Guest
 and writing or deleting an attachment needs Member. Who may make, change, delete and read a work item is `/api/v1`'s role
-table (`tests/v1_model/`), not this one. (The core's `create_work_item`, `delete_work_item`, `list_work_items` and
-`search_work_items`, which the slice's routes called, are called by nothing but the core's own tests until step 5c-3
-removes them.)
+table (`tests/v1_model/`), not this one.
 
 ## Creating a work item
 
-This is the core's `create_work_item`, which the slice's create route called. That route was deleted in step 5c-2 of #58:
-work items are made through `/api/v1` now (its own limiter is the per-key allowance, `THRUST_V1_RATE_LIMIT`), so what follows
-describes code that only the core's tests call and that step 5c-3 removes.
+Work items are made through Plane's routes: `/api/v1` (an API key) and the compat plane (a session). The request layer is
+theirs: it authenticates the caller, checks what a request alone can show wrong (the name is 1 to 255 characters once
+trimmed) and answers in Plane's shapes, and `/api/v1` also applies its per-key allowance (`THRUST_V1_RATE_LIMIT`). The
+use-case they share is core's `create_issue`, which this section follows. (The slice's own create, `create_work_item`, with
+its own `create:<user id>` limiter, was deleted in steps 5c-2 and 5c-3 of #58.)
 
 ```mermaid
 sequenceDiagram
   participant C as Client
-  participant A as thrust-api
+  participant A as thrust-api-v1
   participant K as thrust-core
   participant D as Database port
   participant Q as Queue port
   participant E as Consumer
 
-  C->>A: POST .../work-items (the slice's route, deleted in step 5c-2)
-  A->>K: authenticate(token), create_work_item
-  K->>K: validate the name
-  K->>K: rate limit, then authorize (Member)
+  C->>A: POST /api/v1/workspaces/{slug}/projects/{id}/work-items/ (X-Api-Key)
+  A->>K: authenticate(key), v1_issue_writer (Member), create_issue
+  K->>D: read the states, people and labels the draft names
   K->>D: begin
-  K->>D: allocate sequence_id, insert work item, insert outbox row
+  K->>D: allocate sequence_id, insert work item and its attributes, insert outbox row
   K->>D: commit
   A-->>C: 201 and the work item
   K--)Q: after commit: publish the event, mark it dispatched
@@ -209,28 +208,29 @@ sequenceDiagram
   E->>D: insert activity row (idempotent on event_id)
 ```
 
-In order, `create_work_item` does the following:
+In order, `create_issue` does the following:
 
-1. **Validates the name.** After trimming, it must be 1 to 255 characters, or the request is 400.
-2. **Applies the rate limit.** The key is `create:<user id>`. The defaults are 1000 creates per 60 seconds
-   (`THRUST_CREATE_RATE_LIMIT`, `THRUST_RATE_WINDOW_SECS`). Over the limit is 429 with a `Retry-After` header.
-3. **Authorizes** with the Member permission.
-4. **Writes in one transaction.** It takes the next per-project sequence number and sort order from a counter row
-   that is never decremented, so a number is never reused. It inserts the work item and inserts the event as an
-   outbox row. On any error it rolls back explicitly, so a pooled connection never goes back mid-transaction.
-5. **Commits, then relays.** With the fast path on (`THRUST_OUTBOX_FASTPATH`, on by default), it asks the
+1. **Authorizes** with the Member permission: `v1_issue_writer` lets an admin or a member of the project through and refuses
+   anyone else (`Forbidden`).
+2. **Looks up what the draft names.** The state, the parent, the people and the labels must be there, or the request is
+   refused with the problems found (`Fields`); a start date after the target date is refused too.
+3. **Writes in one transaction.** It takes the next per-project sequence number from a counter row that is never
+   decremented, so a number is never reused, and puts the work item after the last one of its state. It inserts the work
+   item, its attributes and the event as an outbox row. On any error it rolls back explicitly, so a pooled connection never
+   goes back mid-transaction.
+4. **Commits, then relays.** With the fast path on (`THRUST_OUTBOX_FASTPATH`, on by default), it asks the
    `Background` port to publish the event and mark the outbox row dispatched, and the response does not wait for
    that. A publish failure is swallowed on purpose: the row stays undispatched and the sweeper picks it up.
 
-The event has `event_type` `work_item.created`. Its payload carries the `project_id`, the `sequence_id` and the
-changed fields. `dispatch` hands it to the `Queue` port on the `events` topic, with the event id as idempotency key
-and the workspace and entity ids as ordering key. No current adapter uses those keys: `MemoryQueue` ignores its
-options, and `CfQueue` ignores the topic (the `EVENTS` binding is its one queue) and sends the message with at most
-a delay. Duplicates are handled by the consumer, not the queue.
+The event has `event_type` `work_item.created`. Its payload carries the `project_id`, the `sequence_id`, the changed
+fields and the history rows the creation writes. `dispatch` hands it to the `Queue` port on the `events` topic, with the
+event id as idempotency key and the workspace and entity ids as ordering key. No current adapter uses those keys:
+`MemoryQueue` ignores its options, and `CfQueue` ignores the topic (the `EVENTS` binding is its one queue) and sends the
+message with at most a delay. Duplicates are handled by the consumer, not the queue.
 
-Deleting a work item follows the same path: authorize with Member, soft-delete the row in a transaction, write a
-`work_item.deleted` outbox row, commit, relay. A work item that is not there, or already deleted, is a 404 and the
-transaction rolls back.
+Deleting a work item (`delete_issue`) follows the same path: the caller is a project admin or the work item's maker, the row
+is soft-deleted in a transaction, a `work_item.deleted` outbox row is written, and the commit is followed by the relay. A work
+item that is not there, or already deleted, is not found, and the transaction rolls back.
 
 ## From event to activity
 
@@ -267,7 +267,7 @@ Errors raised by the use-cases and the router's own guards share one body,
 | 404 | `not_found` | A slug that names no workspace, a workspace the caller is not in, a project that is not in it, no such item or attachment, or a test route that is switched off |
 | 409 | `conflict` | A uniqueness constraint failed, such as the operator's create of an account whose email is taken |
 | 413 | `too_large` | An attachment over the size limit |
-| 429 | `rate_limited` | Over a limit. The create limit was the one a slice route raised, and its route is gone (step 5c-2): no slice route raises this now, and the mapping stays until step 5c-3 removes the limiter. `Retry-After` carries the seconds |
+| 429 | `rate_limited` | Over a limit. No slice route raises this now: the create limit's route and use-case are gone (steps 5c-2 and 5c-3), and sign-in and change-password are Plane's routes. `Retry-After` carries the seconds |
 | 502 | `bad_gateway` | The OIDC provider cannot be reached or answered something unusable. The cause is logged, not returned |
 | 500 | `internal` | Anything else. The body says only `internal error`; the cause is logged by the root |
 

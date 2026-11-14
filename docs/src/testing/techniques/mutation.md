@@ -64,9 +64,9 @@ one by copying an existing `mutant_*` feature: declare it in the adapter's `Carg
 ## In-repo examples
 
 - Planted: `mutant_ignore_tenant` in `crates/thrust-adapters-memory/src/lib.rs`, killed by the contract test
-  `cross_tenant_access_is_rejected_and_has_no_effect`, and by `thrust-core`'s `another_tenants_project_is_not_found`
-  and `model_work_items_match_the_reference_model` (enable it with
-  `--features thrust-adapters-memory/mutant_ignore_tenant`, a dev-dependency feature).
+  `cross_tenant_access_is_rejected_and_has_no_effect`, and by 40 of `thrust-core`'s tests, `another_tenants_project_is_not_found` and
+  `the_slug_decides_which_workspace_a_project_is_looked_up_in` among them (measured with `cargo nextest run -p thrust-core
+  --no-fail-fast --features thrust-adapters-memory/mutant_ignore_tenant`, a dev-dependency feature).
 - cargo-mutants: `cargo mutants -f crates/thrust-core/src/lib.rs` (run with `PROPTEST_DISABLE_FAILURE_PERSISTENCE=1`).
   The first run left 14 MISSED, all in code no test touched yet (outbox relay, attachments, the consumer entrypoint);
   `crates/thrust-core/tests/outbox.rs` and `attachments.rs` test that behaviour through the public API and the

@@ -211,11 +211,9 @@ pub enum Permission {
     /// What a member of a project may read about it (its people, states, labels and their own settings).
     ReadProject,
     ReadWorkItems,
-    ReadDeleted,
     CreateWorkItem,
     /// Change a work item's name, state, priority, dates, people, labels or description (issue #44, X03).
     UpdateWorkItem,
-    DeleteWorkItem,
     ReadAttachment,
     WriteAttachment,
     /// Make, change or delete a state of a project (issue #58): for a project admin only, as Plane's `ProjectAdminPermission` has it.
@@ -233,10 +231,9 @@ impl Permission {
             Permission::ReadProject | Permission::ReadWorkItems | Permission::ReadAttachment => Role::Guest,
             Permission::CreateWorkItem
             | Permission::UpdateWorkItem
-            | Permission::DeleteWorkItem
             | Permission::WriteAttachment
             | Permission::WriteLabel => Role::Member,
-            Permission::ReadDeleted | Permission::WriteState => Role::Admin,
+            Permission::WriteState => Role::Admin,
         }
     }
 }
@@ -401,162 +398,6 @@ fn event(
         dispatched_at: None,
         attempts: 0,
     }
-}
-
-/// create work item = rate limit -> authz -> [tx: sequence allocation -> insert -> outbox row]
-/// -> after-commit relay (queue publish) -> (consumer, elsewhere) writes the activity row.
-pub async fn create_work_item(
-    app: &App,
-    who: &Principal,
-    slug: &WorkspaceSlug,
-    project: ProjectId,
-    req: CreateWorkItemRequest,
-) -> Result<WorkItem, CoreError> {
-    validate_name(&req.name)?;
-
-    let decision = app
-        .ports
-        .limiter
-        .hit(&format!("create:{}", who.user_id), app.cfg.create_rate_limit, app.cfg.rate_window_secs)
-        .await?;
-    if let RateDecision::Limited { retry_after_secs } = decision {
-        return Err(CoreError::RateLimited { retry_after_secs });
-    }
-
-    let scope = authorize(app, who, slug, project, Permission::CreateWorkItem).await?;
-
-    let mut tx = app.ports.db.begin(&scope).await?;
-    let work = async {
-        let alloc = tx.allocate(&scope).await?;
-        let item = WorkItem {
-            id: WorkItemId(app.ports.ids.new_uuid()),
-            workspace_id: scope.workspace_id(),
-            project_id: scope.project_id(),
-            sequence_id: alloc.sequence_id,
-            sort_order: alloc.sort_order,
-            name: req.name.trim().to_string(),
-            description: req.description.clone(),
-            external_source: req.external_source.clone(),
-            external_id: req.external_id.clone(),
-            created_by: Some(scope.user_id()),
-            created_at: app.ports.clock.now(),
-            archived_at: None,
-            is_draft: false,
-            deleted_at: None,
-        };
-        tx.insert_work_item(&scope, &item).await?;
-        let row = event(
-            app,
-            item.workspace_id,
-            scope.user_id(),
-            "work_item.created",
-            item.id,
-            serde_json::json!({
-                "project_id": item.project_id,
-                "sequence_id": item.sequence_id,
-                "changed_fields": ["name"],
-            }),
-        );
-        tx.insert_outbox(&scope, &row).await?;
-        Ok::<_, DbError>((item, row))
-    }
-    .await;
-
-    let (item, row) = match work {
-        Ok(v) => v,
-        Err(e) => {
-            // Roll back explicitly: a pooled connection must not be returned mid-transaction.
-            let _ = tx.rollback().await;
-            return Err(e.into());
-        }
-    };
-    tx.commit().await?;
-
-    relay_after_commit(app, row);
-    Ok(item)
-}
-
-pub async fn delete_work_item(
-    app: &App,
-    who: &Principal,
-    slug: &WorkspaceSlug,
-    project: ProjectId,
-    id: WorkItemId,
-) -> Result<(), CoreError> {
-    let scope = authorize(app, who, slug, project, Permission::DeleteWorkItem).await?;
-    let mut tx = app.ports.db.begin(&scope).await?;
-    let now = app.ports.clock.now();
-    let work = async {
-        let deleted = tx.soft_delete_work_item(&scope, id, now).await?;
-        if !deleted {
-            return Ok::<_, DbError>(None);
-        }
-        let row = event(
-            app,
-            scope.workspace_id(),
-            scope.user_id(),
-            "work_item.deleted",
-            id,
-            serde_json::json!({ "project_id": scope.project_id(), "changed_fields": ["deleted_at"] }),
-        );
-        tx.insert_outbox(&scope, &row).await?;
-        Ok(Some(row))
-    }
-    .await;
-    match work {
-        Ok(Some(row)) => {
-            tx.commit().await?;
-            relay_after_commit(app, row);
-            Ok(())
-        }
-        Ok(None) => {
-            let _ = tx.rollback().await;
-            Err(CoreError::NotFound)
-        }
-        Err(e) => {
-            let _ = tx.rollback().await;
-            Err(e.into())
-        }
-    }
-}
-
-pub async fn list_work_items(
-    app: &App,
-    who: &Principal,
-    slug: &WorkspaceSlug,
-    project: ProjectId,
-    vis: Visibility,
-) -> Result<Vec<WorkItem>, CoreError> {
-    let perm = match vis {
-        Visibility::Visible => Permission::ReadWorkItems,
-        Visibility::WithDeleted => Permission::ReadDeleted,
-    };
-    let scope = authorize(app, who, slug, project, perm).await?;
-    Ok(app.ports.db.list_work_items(&scope, vis).await?)
-}
-
-/// How many work items a search returns at most, in sequence order. Plane's search is capped too; the cap also keeps one
-/// query from answering with a whole project.
-pub const SEARCH_LIMIT: u32 = 100;
-
-/// The longest query a search accepts, in characters.
-pub const SEARCH_QUERY_MAX: usize = 100;
-
-/// Work items of the project whose name or description contains `query`, any case (Plane's `icontains`), in sequence order.
-/// Needs the same permission as a listing.
-pub async fn search_work_items(
-    app: &App,
-    who: &Principal,
-    slug: &WorkspaceSlug,
-    project: ProjectId,
-    query: &str,
-) -> Result<Vec<WorkItem>, CoreError> {
-    // Blank is refused, but the query is NOT trimmed: `icontains` is exact about a leading or trailing space.
-    if query.trim().is_empty() || query.chars().count() > SEARCH_QUERY_MAX {
-        return Err(CoreError::Invalid(format!("q must be 1..={SEARCH_QUERY_MAX} characters, not blank")));
-    }
-    let scope = authorize(app, who, slug, project, Permission::ReadWorkItems).await?;
-    Ok(app.ports.db.search_work_items(&scope, query, SEARCH_LIMIT).await?)
 }
 
 pub async fn list_activity(
