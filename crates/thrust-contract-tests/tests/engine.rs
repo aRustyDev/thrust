@@ -2,9 +2,8 @@
 //! issue #37, ADR-0040) rather than the API's behaviour. They live in their own test binary, not in `contract.rs`, so
 //! the main pass and its expected count (`EXPECT_MAIN`) are untouched, and every test is named `engine_`.
 //!
-//! They go through `/api/v1`, with an API key per writer. The pass starts the target with a very high create rate limit and a
-//! very high `/api/v1` limit (the main pass's 30 creates per user per window and Plane's 60 requests a minute per key would
-//! refuse the requests below), and runs against every target that has an engine: `native-pg`, `worker-cf`, and the memory sets
+//! They go through `/api/v1`, with an API key per writer. The pass starts the target with a very high `/api/v1` limit (Plane's 60
+//! requests a minute per key would refuse the requests below), and runs against every target that has an engine: `native-pg`, `worker-cf`, and the memory sets
 //! as the reference. (`native-sqlite` and `worker-do` ran it too: that code is archived on the tag `spike/0002-worker-do`.)
 
 use std::collections::BTreeSet;

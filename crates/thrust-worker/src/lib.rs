@@ -76,11 +76,9 @@ fn num<T: std::str::FromStr>(env: &Env, name: &str, default: T) -> T {
 fn core_config(env: &Env) -> CoreConfig {
     let defaults = CoreConfig::default();
     CoreConfig {
-        // The limits below are what the in-isolate (`memory`) set counts with. On the `cloudflare` set the allowance is the
-        // `[[ratelimits]]` binding's: its windows are checked against the bindings' periods (`check_rate_windows`), and its limits
-        // only give the upper bound that `CfRateLimiter` reports as `remaining`.
-        create_rate_limit: num(env, "THRUST_CREATE_RATE_LIMIT", 1000),
-        rate_window_secs: num(env, "THRUST_RATE_WINDOW_SECS", 60),
+        // The sign-in limit below is what the in-isolate (`memory`) set counts with. On the `cloudflare` set the allowance is the
+        // `[[ratelimits]]` binding's: its window is checked against the bindings' periods (`check_rate_windows`), and its limit
+        // only gives the upper bound that `CfRateLimiter` reports as `remaining`.
         outbox_fastpath: flag(env, "THRUST_OUTBOX_FASTPATH", true),
         sign_in_rate_limit: num(env, "THRUST_SIGNIN_RATE_LIMIT", defaults.sign_in_rate_limit),
         // OFF unless a var says on, as in the native server (Q-0050.8): the stock frontend sends the CSRF token only on its
@@ -114,11 +112,10 @@ fn oidc_provider(env: &Env) -> Result<Option<Arc<dyn OidcProvider>>> {
 
 /// Refuse to start with a window the rate-limit bindings cannot count over (ADR-0033, D-007). A binding counts over 10 s or 60 s,
 /// its own `period` decides which, and the app reports the window it was configured with (`Retry-After`, `X-RateLimit-Reset`), so
-/// that window has to be one of the two. Three are in play: the create limit's (`THRUST_RATE_WINDOW_SECS`), sign-in's (a constant
-/// of the core's config) and the period of `THRUST_V1_RATE_LIMIT`, when it is set. A v1 setting that does not read is not checked:
+/// that window has to be one of the two. Two are in play: sign-in's (a constant of the core's config) and the period of
+/// `THRUST_V1_RATE_LIMIT`, when it is set. A v1 setting that does not read is not checked:
 /// `v1_config` logs it and uses Plane's default, which is a minute.
 fn check_rate_windows(env: &Env, cfg: &CoreConfig) -> Result<()> {
-    check_binding_period("THRUST_RATE_WINDOW_SECS", cfg.rate_window_secs).map_err(Error::RustError)?;
     check_binding_period("the sign-in rate window", cfg.sign_in_rate_window_secs).map_err(Error::RustError)?;
     if let Some(v1) = text(env, "THRUST_V1_RATE_LIMIT").and_then(|spec| thrust_api_v1::V1Config::parse(&spec).ok()) {
         check_binding_period("the period of THRUST_V1_RATE_LIMIT", v1.rate_window_secs).map_err(Error::RustError)?;
@@ -188,7 +185,6 @@ fn build_app(env: &Env, background: Arc<dyn Background>) -> Result<(App, Option<
                     queue: Arc::new(CfQueue(env.queue("EVENTS")?)),
                     blobs: Arc::new(R2BlobStore(env.bucket("BLOBS")?)),
                     limiter: Arc::new(CfRateLimiter {
-                        create: env.rate_limiter("RL_CREATE")?,
                         signin: env.rate_limiter("RL_SIGNIN")?,
                         v1: env.rate_limiter("RL_V1")?,
                     }),

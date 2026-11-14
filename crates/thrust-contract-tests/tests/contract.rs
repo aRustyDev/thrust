@@ -508,7 +508,8 @@ async fn redelivered_event_is_processed_once() {
 /// * the allowance is the key's: another user's key is not refused, and neither is a second key of the same user.
 ///
 /// This was the slice's create limit (`RL_CREATE`: a count of a user's creates on the slice's route), which Plane does not have. Its
-/// throttle is the key's and counts every request, so the test moved to that one, and the slice's limit is no longer held over HTTP.
+/// throttle is the key's and counts every request, so the test moved to that one; the slice's limit, with its route, use-case and
+/// binding, is gone (steps 5c-2 and 5c-3 of #58).
 /// The test used to assert the exact rule (`limit` creates pass and the next one is refused, repeating a burst that crossed a window
 /// boundary), which the binding does not promise. The exact rule is held where a limiter does promise it, by the `prop_` tests of
 /// `MemoryRateLimiter` in `thrust-adapters-memory`. A limit that is never reached (the binding raised above `2 x limit + 1`) fails

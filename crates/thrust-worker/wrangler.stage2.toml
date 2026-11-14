@@ -29,9 +29,10 @@ THRUST_OUTBOX_FASTPATH = "on"
 # say so in /_info. The `csrfoff` pass needs a Worker deployed with "off" instead. The production default is off
 # (wrangler.toml) until the custom frontend replaces the stock one.
 THRUST_CSRF_ENFORCE = "on"
-# The rate limits are the `[[ratelimits]]` bindings below, not vars: THRUST_CREATE_RATE_LIMIT is not read on Cloudflare, and the
-# Worker refuses a THRUST_RATE_WINDOW_SECS other than 10 or 60. (A window of 3600 used to be set here so the contract's rate-limit
-# test would not straddle a window boundary, research/0004 F3; the test now holds across a boundary, so no window is set.)
+# The rate limits are the `[[ratelimits]]` bindings below, not vars: THRUST_SIGNIN_RATE_LIMIT and the count in THRUST_V1_RATE_LIMIT
+# are not read on Cloudflare, and the Worker refuses a THRUST_V1_RATE_LIMIT period other than 10 or 60 seconds. (A window of 3600
+# used to be set here so the contract's rate-limit test would not straddle a window boundary, research/0004 F3; the test now holds
+# across a boundary, so no window is set.)
 
 # Hyperdrive config thrust-spike-pg: role pr_1001 (schema pr_1001) on thrust-pg-dev, caching disabled.
 [[hyperdrive]]
@@ -62,18 +63,13 @@ class_name = "RoomDo"
 tag = "v1"
 new_sqlite_classes = ["RoomDo"]
 
-# Rate Limiting bindings (ADR-0033, D-007). namespace_id is account-wide; 91001 to 91004 are unused by anything else here. The three
-# that the app counts with are at the contract's limits: 30 creates a minute (what `scripts/stage2-contract.sh` expects of a main
-# pass), and the app's own defaults for sign-in (10) and an API key on /api/v1 (60). `RL` is the binding probe's.
+# Rate Limiting bindings (ADR-0033, D-007). namespace_id is account-wide; 91001 to 91004 are unused by anything else here (91002 was
+# `RL_CREATE`'s, for the slice's creates, until step 5c-3 of #58). The two that the app counts with are at the app's own defaults, which
+# `scripts/stage2-contract.sh` expects of a main pass: sign-in (10) and an API key on /api/v1 (60). `RL` is the binding probe's.
 [[ratelimits]]
 name = "RL"
 namespace_id = "91001"
 simple = { limit = 3, period = 10 }
-
-[[ratelimits]]
-name = "RL_CREATE"
-namespace_id = "91002"
-simple = { limit = 30, period = 60 }
 
 [[ratelimits]]
 name = "RL_SIGNIN"

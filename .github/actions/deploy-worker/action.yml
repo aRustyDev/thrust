@@ -54,9 +54,6 @@ inputs:
   queue-dlq:
     description: "Its dead-letter queue"
     required: true
-  rl-create-id:
-    description: "Rate-limit namespace id"
-    required: true
   rl-signin-id:
     description: "Rate-limit namespace id"
     required: true
@@ -216,7 +213,6 @@ runs:
         THRUST_R2_BUCKET: ${{ inputs.r2-bucket }}
         THRUST_QUEUE: ${{ inputs.queue }}
         THRUST_QUEUE_DLQ: ${{ inputs.queue-dlq }}
-        THRUST_RL_CREATE_ID: ${{ inputs.rl-create-id }}
         THRUST_RL_SIGNIN_ID: ${{ inputs.rl-signin-id }}
         THRUST_RL_V1_ID: ${{ inputs.rl-v1-id }}
         THRUST_CSRF_ENFORCE: ${{ inputs.csrf-enforce }}

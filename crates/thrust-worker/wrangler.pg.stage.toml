@@ -24,8 +24,8 @@ THRUST_OUTBOX_FASTPATH = "on"
 # so in /_info (the `csrfoff` pass needs "off"). A deployed main pass also wants a cheap argon2id cost, or every fixture seeds
 # six passwords at the real cost: deploy with `--var THRUST_ARGON2_M_KIB:64 --var THRUST_ARGON2_T:1 --var THRUST_ARGON2_P:1`.
 THRUST_CSRF_ENFORCE = "on"
-# The rate limits are the `[[ratelimits]]` bindings below, not vars: THRUST_CREATE_RATE_LIMIT is not read on Cloudflare, and the
-# Worker refuses a THRUST_RATE_WINDOW_SECS other than 10 or 60.
+# The rate limits are the `[[ratelimits]]` bindings below, not vars: THRUST_SIGNIN_RATE_LIMIT and the count in THRUST_V1_RATE_LIMIT
+# are not read on Cloudflare, and the Worker refuses a THRUST_V1_RATE_LIMIT period other than 10 or 60 seconds.
 
 # Hyperdrive config `thrust-spike-pg` (caching disabled) or `thrust-spike-pg-cached` (caching enabled, the caching measurement):
 # role pr_<n>, schema pr_<n>, on thrust-pg-dev.
@@ -55,14 +55,10 @@ dead_letter_queue = "thrust-spike-pg-events-dlq"
 tag = "v1"
 new_sqlite_classes = ["RoomDo"]
 
-# Rate Limiting bindings (ADR-0033, D-007); namespace_id is account-wide, and 92001 to 92003 are this template's. The main pass wants
-# 30 creates a minute; the engine pass wants a limit it never reaches: `scripts/spike-0002-pg.sh deploy --create-limit 1000000`
-# rewrites the number on the line that ends in `__CREATE_LIMIT__`. Sign-in and /api/v1 are at the app's defaults.
-[[ratelimits]]
-name = "RL_CREATE"
-namespace_id = "92001"
-simple = { limit = 30, period = 60 }   # __CREATE_LIMIT__
-
+# Rate Limiting bindings (ADR-0033, D-007); namespace_id is account-wide, and 92001 to 92003 are this template's (92001 was
+# `RL_CREATE`'s, for the slice's creates, until step 5c-3 of #58). The main pass wants an API key at Plane's 60 a minute; the engine
+# pass wants a limit it never reaches: `scripts/spike-0002-pg.sh deploy --v1-limit 1000000` rewrites the number on the line that
+# ends in `__V1_LIMIT__`. Sign-in is at the app's default.
 [[ratelimits]]
 name = "RL_SIGNIN"
 namespace_id = "92002"
@@ -71,7 +67,7 @@ simple = { limit = 10, period = 60 }
 [[ratelimits]]
 name = "RL_V1"
 namespace_id = "92003"
-simple = { limit = 60, period = 60 }
+simple = { limit = 60, period = 60 }   # __V1_LIMIT__
 
 # Email Service send binding: the one real send of the run (the account's enabled sender domain and a verified destination).
 [[send_email]]

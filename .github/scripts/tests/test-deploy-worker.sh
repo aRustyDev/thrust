@@ -69,7 +69,7 @@ seed_none() { rm -f "$FAKE/state.json" "$FAKE/calls.log"; }
 
 GOOD="THRUST_BASE_URL=https://staging.example.test THRUST_WORKER_NAME=thrust-staging THRUST_HYPERDRIVE_ID=0123456789abcdef0123456789abcdef
 THRUST_R2_BUCKET=thrust-staging-blobs THRUST_QUEUE=thrust-staging-events THRUST_QUEUE_DLQ=thrust-staging-events-dlq
-THRUST_RL_CREATE_ID=2101 THRUST_RL_SIGNIN_ID=2102 THRUST_RL_V1_ID=2103 THRUST_CSRF_ENFORCE=off
+THRUST_RL_SIGNIN_ID=2102 THRUST_RL_V1_ID=2103 THRUST_CSRF_ENFORCE=off
 CLOUDFLARE_API_TOKEN=cf-secret-token CLOUDFLARE_ACCOUNT_ID=acct123 DATABASE_URL=postgres://u:pw@127.0.0.1:15432/thrust
 TUNNEL_SERVICE_TOKEN_ID=id.access TUNNEL_SERVICE_TOKEN_SECRET=tunnel-secret SMOKE_PASSWORD=smoke-password
 WRANGLER=$T/bin/wrangler SMOKE_SCRIPT=$T/bin/smoke MIGRATE_CI_SCRIPT=$T/bin/migrate DEPLOY_CONFIG_OUT=$T/rendered.toml FAKE_DIR=$FAKE"

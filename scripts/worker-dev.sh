@@ -5,11 +5,6 @@
 #   THRUST_PORT                    listen port
 #   THRUST_ADAPTERS                memory | postgres
 #   THRUST_OUTBOX_FASTPATH         on | off
-#   THRUST_CREATE_RATE_LIMIT       per-user create limit per window. On the Cloudflare set (THRUST_ADAPTERS=cloudflare) it is the
-#                                  `RL_CREATE` binding's limit, written into a throwaway copy of the config (see below)
-#   THRUST_WORKER_CREATE_LIMIT     the `RL_CREATE` binding's limit when it is not to be THRUST_CREATE_RATE_LIMIT. scripts/contract.sh
-#                                  sets only the latter, so the contract suite expects what the binding has; setting this one
-#                                  too is how a control shows that the suite fails when the binding is above what it expects
 #   THRUST_ARGON2_M_KIB / _T / _P  password hashing cost (default: OWASP's minimum)
 #   THRUST_SIGNIN_RATE_LIMIT       sign-in attempts per email per window (the `RL_SIGNIN` binding's limit on the Cloudflare set)
 #   THRUST_V1_RATE_LIMIT           a key's allowance on /api/v1, in Plane's spelling (`1000000/minute`); unset leaves the
@@ -34,7 +29,7 @@
 # `wrangler dev` runs the [build] command from wrangler.toml (worker-build --release).
 #
 # The Cloudflare set's rate limits are `[[ratelimits]]` bindings (ADR-0033), and a binding's limit is not a var: `--var` cannot set
-# it. So when the run wants a create or sign-in limit, this script writes them into a throwaway copy of wrangler.toml
+# it. So when the run wants a sign-in or /api/v1 limit, this script writes them into a throwaway copy of wrangler.toml
 # (`.wrangler.run-<pid>.toml`, beside the original so that its relative paths mean the same, ignored by git) and starts wrangler
 # from that, and removes it when it ends. It fails (exit 3) if the config has no block for a binding it was asked to set, so a
 # renamed binding cannot leave a run with a limit nobody chose. wrangler.toml itself keeps the app's defaults.
@@ -89,7 +84,6 @@ set_limit() {
 }
 
 if [ "$CONFIG" = wrangler.toml ]; then
-  CREATE_LIMIT="${THRUST_WORKER_CREATE_LIMIT:-${THRUST_CREATE_RATE_LIMIT:-}}"
   SIGNIN_LIMIT="${THRUST_SIGNIN_RATE_LIMIT:-}"
   # `1000000/minute`: the count is the binding's limit; the binding's period is 60 seconds, so another period is refused here
   # rather than left to give a run a limit that is not the one asked for
@@ -99,18 +93,13 @@ if [ "$CONFIG" = wrangler.toml ]; then
     *[0-9]/minute) V1_LIMIT="${THRUST_V1_RATE_LIMIT%%/*}" ;;
     *) echo "worker-dev: on the Cloudflare set THRUST_V1_RATE_LIMIT is <count>/minute (the RL_V1 binding's period is 60 seconds), not '$THRUST_V1_RATE_LIMIT'" >&2; exit 2 ;;
   esac
-  for limit in "$CREATE_LIMIT" "$SIGNIN_LIMIT" "$V1_LIMIT"; do
+  for limit in "$SIGNIN_LIMIT" "$V1_LIMIT"; do
     case "$limit" in
       *[!0-9]*) echo "worker-dev: a rate limit must be a number, not '$limit'" >&2; exit 2 ;;
     esac
   done
-  if [ -n "$CREATE_LIMIT" ] || [ -n "$SIGNIN_LIMIT" ] || [ -n "$V1_LIMIT" ]; then
+  if [ -n "$SIGNIN_LIMIT" ] || [ -n "$V1_LIMIT" ]; then
     cp "$CONFIG" "$STATE/config.toml"
-    if [ -n "$CREATE_LIMIT" ]; then
-      set_limit RL_CREATE "$CREATE_LIMIT" <"$STATE/config.toml" >"$STATE/config.next" ||
-        { echo "worker-dev: $CONFIG has no [[ratelimits]] block named RL_CREATE" >&2; exit 3; }
-      mv "$STATE/config.next" "$STATE/config.toml"
-    fi
     if [ -n "$SIGNIN_LIMIT" ]; then
       set_limit RL_SIGNIN "$SIGNIN_LIMIT" <"$STATE/config.toml" >"$STATE/config.next" ||
         { echo "worker-dev: $CONFIG has no [[ratelimits]] block named RL_SIGNIN" >&2; exit 3; }
@@ -124,7 +113,7 @@ if [ "$CONFIG" = wrangler.toml ]; then
     RUN_CONFIG=".wrangler.run-$$.toml"
     cp "$STATE/config.toml" "$RUN_CONFIG"
     CONFIG="$RUN_CONFIG"
-    echo "worker-dev: rate limit bindings from $CONFIG: RL_CREATE=${CREATE_LIMIT:-default} RL_SIGNIN=${SIGNIN_LIMIT:-default} RL_V1=${V1_LIMIT:-default}"
+    echo "worker-dev: rate limit bindings from $CONFIG: RL_SIGNIN=${SIGNIN_LIMIT:-default} RL_V1=${V1_LIMIT:-default}"
   fi
 fi
 
@@ -183,5 +172,4 @@ env -i \
     --var "THRUST_TEST_ROUTES:1" \
     --var "THRUST_ADAPTERS:${THRUST_ADAPTERS:-memory}" \
     --var "THRUST_OUTBOX_FASTPATH:${THRUST_OUTBOX_FASTPATH:-on}" \
-    --var "THRUST_CREATE_RATE_LIMIT:${THRUST_CREATE_RATE_LIMIT:-1000}" \
     "$@"

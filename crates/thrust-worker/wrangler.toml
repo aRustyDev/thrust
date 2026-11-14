@@ -76,16 +76,12 @@ new_sqlite_classes = ["RoomDo"]
 
 # --- rate limits (ADR-0033, D-007) -------------------------------------------------------------
 # One Workers Rate Limiting binding per kind of key, because a binding has one fixed limit and period. On Cloudflare the BINDING
-# is the source of truth for the allowance: THRUST_CREATE_RATE_LIMIT, THRUST_SIGNIN_RATE_LIMIT and the count in
-# THRUST_V1_RATE_LIMIT are not read by this adapter set. The period must be 10 or 60 seconds, and the Worker refuses to start when
-# THRUST_RATE_WINDOW_SECS or the period of THRUST_V1_RATE_LIMIT says otherwise. Counting is per location and approximate.
-# The numbers are the app's defaults: the core's create (1000 per minute) and sign-in (10 per minute) and Plane's `60/minute`
-# for an API key on /api/v1. The contract targets rewrite them per run (scripts/worker-dev.sh). `namespace_id` is account-wide.
-[[ratelimits]]
-name = "RL_CREATE"
-namespace_id = "1002"
-simple = { limit = 1000, period = 60 }
-
+# is the source of truth for the allowance: THRUST_SIGNIN_RATE_LIMIT and the count in THRUST_V1_RATE_LIMIT are not read by this
+# adapter set. The period must be 10 or 60 seconds, and the Worker refuses to start when the period of THRUST_V1_RATE_LIMIT says
+# otherwise. Counting is per location and approximate.
+# The numbers are the app's defaults: sign-in (10 per minute) and Plane's `60/minute` for an API key on /api/v1. The contract
+# targets rewrite them per run (scripts/worker-dev.sh). `namespace_id` is account-wide. (There was an `RL_CREATE` binding, 1000 a
+# minute, for the slice's work item creates; it went with them in step 5c-3 of #58.)
 [[ratelimits]]
 name = "RL_SIGNIN"
 namespace_id = "1003"
