@@ -12,7 +12,9 @@
 #           THRUST_ARGON2_P=1, or every fixture seeds six passwords at the real cost). It refuses a THRUST_EXPECT_V1_LIMIT
 #           above 1000: the rate-limit test would send millions of creates to a Worker whose binding was raised for the engine pass
 # worker     1 test : Durable Object WebSocket hibernation + SQLite
-# bindings   4 tests: the probe routes' admin gate, and one real operation per binding (rate limit, secrets store, email)
+# bindings   5 tests: the probe routes' admin gate, and one real operation per binding (rate limit, secrets store, email), and the
+#            version header. Here the last is skipped with email: wrangler.stage2.toml has no [version_metadata], and what a
+#            deployed Worker reports as its version is what scripts/smoke-deploy.sh checks (issue #49)
 # cron       1 test : needs the Worker deployed with THRUST_OUTBOX_FASTPATH=off
 # sweeper    3 tests: needs THRUST_OUTBOX_FASTPATH=off
 # panic      1 test : alone, against a Worker nobody else is using (a panic resets the isolate)
@@ -87,7 +89,7 @@ case "$PASS" in
   # Email is skipped on purpose: a real send needs a sender domain owned by the account and a verified
   # destination; the deployed binding rejects `example.com` ("domain is not owned by the same account").
   # It is reported as NOT exercised, never as passed.
-  bindings) EXPECT=3;  "$RS" cargo test --manifest-path "$M" -p thrust-contract-tests --test worker_only -- worker_bindings_ --skip email_send --test-threads=1 --nocapture >"$LOG.test.log" 2>&1 ;;
+  bindings) EXPECT=3;  "$RS" cargo test --manifest-path "$M" -p thrust-contract-tests --test worker_only -- worker_bindings_ --skip email_send --skip version_metadata --test-threads=1 --nocapture >"$LOG.test.log" 2>&1 ;;
   cron)     EXPECT=1;  "$RS" cargo test --manifest-path "$M" -p thrust-contract-tests --test worker_only -- worker_cron_ --test-threads=1 --nocapture >"$LOG.test.log" 2>&1 ;;
   # crontrigger: the REAL every-minute trigger (the `cron` pass uses wrangler dev's /__scheduled, which a deployed Worker lacks)
   crontrigger) EXPECT=1; "$RS" cargo test --manifest-path "$M" -p thrust-contract-tests --test worker_only -- stage2_cron_real_trigger_ --test-threads=1 --nocapture >"$LOG.test.log" 2>&1 ;;
