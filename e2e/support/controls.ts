@@ -18,6 +18,13 @@
 //                 on fails this run; one that looks that the tour stayed answered, and answers it again if it did not, does not.
 //                 A journey that has no workspace (the sign-in journey) is slowed and holds nothing.
 //
+//   change-refused  the browser answers the change of password (`POST /auth/change-password/`) with the pin's 5135, "Old password is not correct",
+//                 and sends it nowhere. The password journey must fail at "change the password": a journey that does not look at what the app
+//                 says about the change would go on to check a server that was never asked.
+//   change-dropped  the browser answers the change with the pin's 200 and sends it nowhere, so that the app says "Password changed
+//                 successfully." and the server has changed nothing. The password journey must fail at "the other browser is signed out":
+//                 a journey that stops at the toast, or at the 200 in its network log (which this leaves), would pass with it.
+//
 // The wrong-target control is not here: it is E2E_TARGET set to the other target (support/target.ts).
 //
 // These are browser-side on purpose: they need no second build of the server, and they run in every cell. The real server-side
@@ -33,6 +40,9 @@ const WORK_ITEM_LIST = /\/api\/workspaces\/[^/]+\/projects\/[0-9a-f-]+\/issues\/
 export const STEP_LIST = "see it in the list";
 // the words the sign-in journey fails with when a method other than the password is on screen; scripts/e2e.sh's `sso-on` control greps for them
 export const STEP_METHODS = "a sign-in method other than the password";
+// the password journey's two steps that the `change-refused` and `change-dropped` controls must fail at, by these words
+export const STEP_CHANGE = "change the password";
+export const STEP_OTHER = "the other browser is signed out";
 
 // how many times slower than this machine the browser runs under `slow-page` (E2E_CPU_RATE overrides it)
 const CPU_RATE = Number(process.env.E2E_CPU_RATE ?? "6");
@@ -45,10 +55,12 @@ const LATE_MS = 2_000;
 export async function installControl(
   page: Page,
   where: { workspaceSlug?: string } = {},
-): Promise<{ emptied: () => number; delayed: () => number; providersTurnedOn: () => number }> {
+): Promise<{ emptied: () => number; delayed: () => number; providersTurnedOn: () => number; refused: () => number; dropped: () => number }> {
   let emptied = 0;
   let delayed = 0;
   let providersTurnedOn = 0;
+  let refused = 0;
+  let dropped = 0;
   let taken = false;
 
   if (control === "sso-on") {
@@ -62,6 +74,23 @@ export async function installControl(
         response,
         json: { ...(body as object), config: { ...config, is_oidc_enabled: true, is_google_enabled: true } },
       });
+    });
+  }
+
+  if (control === "change-refused" || control === "change-dropped") {
+    // the change of password, which the app posts from Profile -> Security: answered here and never sent to the server
+    await page.route("**/auth/change-password/", async (route) => {
+      if (route.request().method() !== "POST") return route.fallback();
+      if (control === "change-refused") {
+        refused += 1;
+        return route.fulfill({
+          status: 400,
+          contentType: "application/json",
+          body: JSON.stringify({ error_code: 5135, error_message: "INCORRECT_OLD_PASSWORD", error: "Old password is not correct" }),
+        });
+      }
+      dropped += 1;
+      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ message: "Password updated successfully" }) });
     });
   }
 
@@ -114,5 +143,11 @@ export async function installControl(
     });
   }
 
-  return { emptied: () => emptied, delayed: () => delayed, providersTurnedOn: () => providersTurnedOn };
+  return {
+    emptied: () => emptied,
+    delayed: () => delayed,
+    providersTurnedOn: () => providersTurnedOn,
+    refused: () => refused,
+    dropped: () => dropped,
+  };
 }

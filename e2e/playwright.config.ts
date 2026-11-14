@@ -21,8 +21,9 @@ export default defineConfig({
   workers: 1,
   retries: 0,
   forbidOnly: true,
-  timeout: 120_000,
-  expect: { timeout: 30_000 },
+  // on the pinned Plane a throttled sign-in call can be held up to a minute (support/throttle.ts), and the page waits for its answer
+  timeout: process.env.E2E_TARGET === "plane" ? 240_000 : 120_000,
+  expect: { timeout: process.env.E2E_TARGET === "plane" ? 90_000 : 30_000 },
   reporter,
   outputDir: process.env.E2E_OUT ? `${process.env.E2E_OUT}/test-results` : "test-results",
   use: {

@@ -86,6 +86,10 @@ test("the stock app: the sign-in page offers the password and nothing else, and 
         // the pin: a popover that says SMTP is off
         await page.getByRole("button", { name: "Forgot your password?" }).click();
         await expect(page.getByText(/SMTP/)).toBeVisible();
+        // the popover is open over the form and takes the click meant for the submit button (the first run of this journey on the pin
+        // timed out there, 90 s, "subtree intercepts pointer events"): close it, and see that it is closed before going on
+        await page.keyboard.press("Escape");
+        await expect(page.getByText(/SMTP/)).toHaveCount(0);
       }
     });
 
