@@ -1813,3 +1813,192 @@ async fn compat_change_password_is_for_a_session_and_not_for_an_api_key() {
     assert_eq!(sign_in_status(&t, &email, NEW_STRONG).await, 200);
     assert_eq!(sign_in_status(&t, &email, STRONG).await, 400);
 }
+
+// ---------------------------------------------------------------------------------------------------------------------------------
+// X10 (D-040): OIDC through the routes the stock app's "Sign in with SSO" button uses, `GET /auth/oidc/` and `GET /auth/oidc/callback/`,
+// against the mock identity provider the suite serves on 127.0.0.1 (as the slice's own `oidc_` tests do, in `auth`). The mock registered one
+// redirect URI, and the target does not look at the path a callback arrives on, so the same code and state are sent to the app's callback.
+// A deployed Worker cannot reach 127.0.0.1: these `oidc_` tests are skipped by scripts/stage2-contract.sh.
+// ---------------------------------------------------------------------------------------------------------------------------------
+
+use thrust_contract_tests::mock_idp::{Callback, Identity, MockIdp, Tamper};
+
+fn oidc_sub() -> String {
+    format!("sub-{}", uuid::Uuid::new_v4().simple())
+}
+
+/// `GET /auth/oidc/` as the button does: a 302 to the provider, never cached. The app appends `?next_path=` when it has a place to go back to.
+async fn compat_oidc_start(t: &Target, query: &str) -> String {
+    let r = t.no_redirect().get(t.url(&format!("/auth/oidc/{query}"))).send().await.unwrap();
+    assert_eq!(r.status(), 302, "start answers a redirect");
+    assert_eq!(r.headers().get("cache-control").and_then(|v| v.to_str().ok()), Some("no-store"));
+    assert!(SetCookie::all(&r).is_empty(), "a start sets no cookie");
+    r.headers().get("location").and_then(|v| v.to_str().ok()).expect("a Location").to_string()
+}
+
+async fn compat_oidc_begin(t: &Target, identity: Identity, tamper: Tamper) -> Callback {
+    // the provider first: the target discovers it while it handles the start
+    let idp = MockIdp::shared();
+    let location = compat_oidc_start(t, "").await;
+    idp.authorize(&location, identity, tamper)
+}
+
+async fn compat_oidc_finish(t: &Target, cb: &Callback) -> reqwest::Response {
+    t.no_redirect()
+        .get(format!("{}?code={}&state={}", t.url("/auth/oidc/callback/"), cb.code, cb.state))
+        .send()
+        .await
+        .unwrap()
+}
+
+/// A callback that was refused: a 302 to the app's root with the code the app reads (the pin's, PQ-213) and no cookie.
+fn compat_oidc_refused(r: &reqwest::Response, code: u16, name: &str, what: &str) {
+    assert_eq!(r.status(), 302, "{what}");
+    let want = format!("/?error_code={code}&error_message={name}");
+    assert_eq!(r.headers().get("location").and_then(|v| v.to_str().ok()), Some(want.as_str()), "{what}");
+    assert!(SetCookie::all(r).is_empty(), "{what}: a refused login must not set a cookie");
+}
+
+/// The login the button starts completes, and ends in a session the rest of the app accepts: a 302 to the root with the session and CSRF cookies. Controls: the
+/// start does not read `?next_path=` (a caller's place is not the provider's URL), and the first login of an account links the provider's subject, so the
+/// subject decides afterwards (another account's verified email on the same subject is still the first account).
+#[tokio::test]
+async fn compat_oidc_login_completes_through_the_apps_routes_and_is_a_working_session() {
+    let t = t();
+    let f = Fixture::seed(&t).await;
+    let sub = oidc_sub();
+    // the place the app asked to come back to is not in the provider's URL
+    let with_place = compat_oidc_start(&t, "?next_path=/some-workspace/").await;
+    assert!(!with_place.contains("some-workspace"), "{with_place}");
+
+    let cb = compat_oidc_begin(&t, Identity::verified(&sub, &f.member_a.email), Tamper::None).await;
+    let r = compat_oidc_finish(&t, &cb).await;
+    assert_eq!(r.status(), 302);
+    assert_eq!(r.headers().get("location").and_then(|v| v.to_str().ok()), Some("/"));
+    assert_eq!(r.headers().get("cache-control").and_then(|v| v.to_str().ok()), Some("no-store"));
+    let token = session_cookie(&r).expect("a session cookie");
+    assert!(SetCookie::find(&SetCookie::all(&r), CSRF_COOKIE).is_some(), "a csrf cookie");
+    let me = t.http.get(t.url("/api/users/me/")).bearer_auth(&token).send().await.unwrap();
+    assert_eq!(me.status(), 200, "the cookie the callback set is a session");
+    assert_eq!(me.json::<Value>().await.unwrap()["email"], f.member_a.email);
+
+    // the link decides from now on: the same subject reporting another account's verified email is still the first account
+    let cb = compat_oidc_begin(&t, Identity::verified(&sub, &f.admin_a.email), Tamper::None).await;
+    let r = compat_oidc_finish(&t, &cb).await;
+    let token = session_cookie(&r).expect("a session cookie");
+    let me = t.http.get(t.url("/api/users/me/")).bearer_auth(&token).send().await.unwrap();
+    assert_eq!(
+        me.json::<Value>().await.unwrap()["email"],
+        f.member_a.email,
+        "the subject is linked to the first account"
+    );
+}
+
+/// Every way a login can be refused is a 302 to the root with the code the app reads, and no cookie: `SIGNUP_DISABLED` (5015) for an identity Thrust will not let in
+/// (no verified email, no account for it, a deactivated one: Thrust makes no account at a login, Q-0050.1), `OIDC_OAUTH_PROVIDER_ERROR` (5301) for a token that does not
+/// verify and for a state or code that is missing, unknown, used or refused by the person. Control: none of the refusals that did not use the login's state up
+/// stopped a genuine login from completing.
+#[tokio::test]
+async fn compat_oidc_every_refusal_is_a_redirect_with_the_code_the_app_reads() {
+    let t = t();
+    let f = Fixture::seed(&t).await;
+    let email = f.member_a.email.clone();
+    let stranger = format!("stranger-{}@example.test", uuid::Uuid::new_v4().simple());
+
+    // the identity is not let in: 5015
+    for (what, identity) in [
+        ("email_verified false", Identity { sub: oidc_sub(), email: Some(email.clone()), email_verified: Some(false) }),
+        ("email_verified absent", Identity { sub: oidc_sub(), email: Some(email.clone()), email_verified: None }),
+        ("no email", Identity { sub: oidc_sub(), email: None, email_verified: Some(true) }),
+        ("a verified email nobody has", Identity::verified(&oidc_sub(), &stranger)),
+    ] {
+        let cb = compat_oidc_begin(&t, identity, Tamper::None).await;
+        compat_oidc_refused(&compat_oidc_finish(&t, &cb).await, 5015, "SIGNUP_DISABLED", what);
+    }
+    // and no account was made for the stranger
+    assert_eq!(sign_in_status(&t, &stranger, "anything").await, 400, "no user was made");
+    // a deactivated user, by email and then by link
+    let sub = oidc_sub();
+    t.set_user_active(f.guest_a.id, false).await;
+    let cb = compat_oidc_begin(&t, Identity::verified(&sub, &f.guest_a.email), Tamper::None).await;
+    compat_oidc_refused(&compat_oidc_finish(&t, &cb).await, 5015, "SIGNUP_DISABLED", "a deactivated user, by email");
+    t.set_user_active(f.guest_a.id, true).await;
+    let cb = compat_oidc_begin(&t, Identity::verified(&sub, &f.guest_a.email), Tamper::None).await;
+    assert!(
+        session_cookie(&compat_oidc_finish(&t, &cb).await).is_some(),
+        "control: reactivated, the same login is accepted"
+    );
+    t.set_user_active(f.guest_a.id, false).await;
+    let cb = compat_oidc_begin(&t, Identity::verified(&sub, &f.guest_a.email), Tamper::None).await;
+    compat_oidc_refused(&compat_oidc_finish(&t, &cb).await, 5015, "SIGNUP_DISABLED", "a deactivated user, by link");
+    t.set_user_active(f.guest_a.id, true).await;
+
+    // the provider's answer does not authenticate: 5301
+    for tamper in
+        [Tamper::WrongNonce, Tamper::WrongAudience, Tamper::WrongIssuer, Tamper::Expired, Tamper::BadSignature]
+    {
+        let cb = compat_oidc_begin(&t, Identity::verified(&oidc_sub(), &email), tamper).await;
+        compat_oidc_refused(
+            &compat_oidc_finish(&t, &cb).await,
+            5301,
+            "OIDC_OAUTH_PROVIDER_ERROR",
+            &format!("{tamper:?}"),
+        );
+    }
+
+    // the state or the code is not good: 5301, and these use nothing up
+    let cb = compat_oidc_begin(&t, Identity::verified(&oidc_sub(), &email), Tamper::None).await;
+    let flipped = if cb.state.ends_with('0') { '1' } else { '0' };
+    let tampered = Callback { state: format!("{}{flipped}", &cb.state[..63]), ..cb.clone() };
+    compat_oidc_refused(
+        &compat_oidc_finish(&t, &tampered).await,
+        5301,
+        "OIDC_OAUTH_PROVIDER_ERROR",
+        "a state with one character changed",
+    );
+    let unknown = Callback { state: "f".repeat(64), ..cb.clone() };
+    compat_oidc_refused(
+        &compat_oidc_finish(&t, &unknown).await,
+        5301,
+        "OIDC_OAUTH_PROVIDER_ERROR",
+        "a state nobody issued",
+    );
+    let none = t.no_redirect().get(t.url("/auth/oidc/callback/")).send().await.unwrap();
+    compat_oidc_refused(&none, 5301, "OIDC_OAUTH_PROVIDER_ERROR", "no code and no state");
+    let denied = t
+        .no_redirect()
+        .get(format!("{}?error=access_denied&state={}", t.url("/auth/oidc/callback/"), cb.state))
+        .send()
+        .await
+        .unwrap();
+    compat_oidc_refused(&denied, 5301, "OIDC_OAUTH_PROVIDER_ERROR", "the provider reports an error");
+    // control: none of that used the login up; the genuine callback completes, and then the same callback again finds nothing
+    assert!(session_cookie(&compat_oidc_finish(&t, &cb).await).is_some(), "the genuine callback completes");
+    compat_oidc_refused(
+        &compat_oidc_finish(&t, &cb).await,
+        5301,
+        "OIDC_OAUTH_PROVIDER_ERROR",
+        "the same callback again",
+    );
+}
+
+/// The app draws the SSO button from `/api/instances/`: these targets have a provider configured, so it says so, and says no other method beyond the password is
+/// on (the sign-in journey holds that on a browser). A deployment with none says `false`: that half is the hermetic tests' and the e2e pass's, which runs with no provider.
+#[tokio::test]
+async fn compat_oidc_the_instance_offers_sso_when_the_target_has_a_provider() {
+    let t = t();
+    let body: Value = t.http.get(t.url("/api/instances/")).send().await.unwrap().json().await.unwrap();
+    let config = &body["config"];
+    assert_eq!(config["is_oidc_enabled"], true, "{body}");
+    assert_eq!(config["is_email_password_enabled"], true, "{body}");
+    for off in [
+        "is_google_enabled",
+        "is_github_enabled",
+        "is_gitlab_enabled",
+        "is_gitea_enabled",
+        "is_magic_login_enabled",
+        "is_smtp_configured",
+    ] {
+        assert_eq!(config[off], false, "{off}: {body}");
+    }
+}

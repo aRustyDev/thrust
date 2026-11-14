@@ -807,6 +807,18 @@ pub async fn oidc_callback(app: &App, code: &str, state: &str) -> Result<SignedI
         .await?
         .filter(|l| l.expires_at > now)
         .ok_or_else(|| CoreError::Invalid("unknown, used or expired login state".into()))?;
+    // MUTANT (control run only): put the login back, so that its state works a second time. The replayed-callback tests must catch it.
+    #[cfg(feature = "mutant_oidc_state_reusable")]
+    app.ports
+        .db
+        .insert_oidc_login(&NewOidcLogin {
+            state_hash: crate::hash_token(state),
+            nonce: login.nonce.clone(),
+            code_verifier: login.code_verifier.clone(),
+            created_at: now,
+            expires_at: login.expires_at,
+        })
+        .await?;
     let claims = oidc.exchange(code, &login.code_verifier, &login.nonce).await.map_err(oidc_error)?;
 
     // MUTANT (control run only): accept an unverified email. The contract suite's unverified-email test must catch it.
