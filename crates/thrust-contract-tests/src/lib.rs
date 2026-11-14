@@ -438,27 +438,11 @@ pub fn project_path(at: &At) -> String {
     format!("{SLICE_PREFIX}/workspaces/{}/projects/{}", at.slug, at.project)
 }
 
+/// `{project_path}/work-items`: the base of the slice's item routes, `.../work-items/{item}/activity` and
+/// `.../work-items/{item}/attachments/{name}`. The work-item routes themselves (create, list, search, delete) are gone:
+/// work items are made, listed and deleted through `/api/v1` (`v1_create`, `v1_list`, `v1_delete`).
 pub fn wi_path(at: &At) -> String {
     format!("{}/work-items", project_path(at))
-}
-
-pub async fn create(t: &Target, who: &User, at: &At, body: Value) -> reqwest::Response {
-    t.http.post(t.url(&wi_path(at))).bearer_auth(&who.token).json(&body).send().await.unwrap()
-}
-
-pub async fn create_ok(t: &Target, who: &User, at: &At, name: &str) -> WorkItem {
-    let r = create(t, who, at, json!({ "name": name })).await;
-    assert_eq!(r.status(), 201, "create '{name}' failed: {:?}", r.text().await);
-    r.json::<WorkItem>().await.unwrap()
-}
-
-/// `GET .../work-items/search?q=`: the work items of the project whose name or description contains `q`, any case.
-pub fn search_path(at: &At) -> String {
-    format!("{}/search", wi_path(at))
-}
-
-pub async fn search(t: &Target, who: &User, at: &At, q: &str) -> reqwest::Response {
-    t.http.get(t.url(&search_path(at))).query(&[("q", q)]).bearer_auth(&who.token).send().await.unwrap()
 }
 
 /// `POST /internal/seed-work-items`: bulk-insert live work items into a project, numbered from its counter (what the
@@ -483,14 +467,6 @@ pub async fn seed_work_items(
     let r = t.admin_post("/internal/seed-work-items", &serde_json::to_value(&req).unwrap()).await;
     assert_eq!(r.status(), 200, "seed-work-items failed: {:?}", r.text().await);
     r.json().await.unwrap()
-}
-
-pub async fn list(t: &Target, who: &User, at: &At, scope: Option<&str>) -> reqwest::Response {
-    let mut u = t.url(&wi_path(at));
-    if let Some(s) = scope {
-        u.push_str(&format!("?scope={s}"));
-    }
-    t.http.get(u).bearer_auth(&who.token).send().await.unwrap()
 }
 
 /// What the queue consumer wrote for a work item, through the slice's activity feed (a bearer session). It is how the outbox, redelivery,

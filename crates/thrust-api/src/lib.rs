@@ -549,61 +549,6 @@ async fn outbox_depth(_: Admin, Extension(app): Extension<App>) -> ApiResult<Jso
     Ok(Json(serde_json::json!({ "undispatched": n })))
 }
 
-async fn create_work_item(
-    Authed(who): Authed,
-    Extension(app): Extension<App>,
-    Path((slug, project)): Path<(WorkspaceSlug, ProjectId)>,
-    Json(req): Json<CreateWorkItemRequest>,
-) -> ApiResult<(StatusCode, Json<WorkItem>)> {
-    let item = thrust_core::create_work_item(&app, &who, &slug, project, req).await?;
-    Ok((StatusCode::CREATED, Json(item)))
-}
-
-#[derive(Deserialize)]
-struct ListQuery {
-    scope: Option<String>,
-}
-
-async fn list_work_items(
-    Authed(who): Authed,
-    Extension(app): Extension<App>,
-    Path((slug, project)): Path<(WorkspaceSlug, ProjectId)>,
-    Query(q): Query<ListQuery>,
-) -> ApiResult<Json<Vec<WorkItem>>> {
-    let vis = match q.scope.as_deref() {
-        None | Some("visible") => Visibility::Visible,
-        Some("with_deleted") => Visibility::WithDeleted,
-        Some(other) => {
-            return Err(ApiError(CoreError::Invalid(format!("unknown scope '{other}'"))));
-        }
-    };
-    Ok(Json(thrust_core::list_work_items(&app, &who, &slug, project, vis).await?))
-}
-
-#[derive(Deserialize)]
-struct SearchQuery {
-    q: Option<String>,
-}
-
-async fn search_work_items(
-    Authed(who): Authed,
-    Extension(app): Extension<App>,
-    Path((slug, project)): Path<(WorkspaceSlug, ProjectId)>,
-    Query(q): Query<SearchQuery>,
-) -> ApiResult<Json<Vec<WorkItem>>> {
-    let q = q.q.ok_or_else(|| ApiError(CoreError::Invalid("q is required".into())))?;
-    Ok(Json(thrust_core::search_work_items(&app, &who, &slug, project, &q).await?))
-}
-
-async fn delete_work_item(
-    Authed(who): Authed,
-    Extension(app): Extension<App>,
-    Path((slug, project, id)): Path<(WorkspaceSlug, ProjectId, WorkItemId)>,
-) -> ApiResult<StatusCode> {
-    thrust_core::delete_work_item(&app, &who, &slug, project, id).await?;
-    Ok(StatusCode::NO_CONTENT)
-}
-
 async fn list_activity_for_item(
     Authed(who): Authed,
     Extension(app): Extension<App>,
@@ -692,9 +637,8 @@ pub fn router() -> Router {
         .route(&format!("{SLICE_PREFIX}/api-keys/{{id}}"), delete(revoke_api_key))
         .route("/internal/outbox-depth", get(outbox_depth))
         .route("/internal/inject-event", post(inject_event))
-        .route(&slice_path("/work-items"), post(create_work_item).get(list_work_items))
-        .route(&slice_path("/work-items/search"), get(search_work_items))
-        .route(&slice_path("/work-items/{id}"), delete(delete_work_item))
+        // Work items are made, read, listed, searched and deleted through `/api/v1` and Plane's compat routes
+        // (`thrust-compat-plane`); what stays under the slice's prefix is what no Plane route replaces.
         .route(&slice_path("/work-items/{id}/activity"), get(list_activity_for_item))
         .route(&slice_path("/activity"), get(list_activity_for_project))
         .route(
