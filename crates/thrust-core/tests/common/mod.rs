@@ -327,6 +327,17 @@ pub fn world_built(
     background: Arc<dyn Background>,
     clock: Arc<dyn Clock>,
 ) -> World {
+    world_mailing(cfg, queue, background, clock, None)
+}
+
+/// [`world_built`] with a mail service (`None` is a deployment with none: every deployment until E2, D-041).
+pub fn world_mailing(
+    cfg: CoreConfig,
+    queue: Arc<dyn Queue>,
+    background: Arc<dyn Background>,
+    clock: Arc<dyn Clock>,
+    email: Option<Arc<dyn EmailSender>>,
+) -> World {
     let db = MemoryDatabase::new();
     let hasher = Arc::new(CountingHasher::new());
     let app = App::new(
@@ -341,6 +352,7 @@ pub fn world_built(
             rng: Arc::new(CounterRng::default()),
             hasher: hasher.clone(),
             oidc: None,
+            email,
         },
         cfg,
         SystemScope::mint(),

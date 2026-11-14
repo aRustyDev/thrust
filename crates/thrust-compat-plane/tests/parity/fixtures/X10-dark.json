@@ -1,0 +1,68 @@
+{
+  "exchanges": [
+    {
+      "name": "no SMTP, an address",
+      "request": {
+        "body": {
+          "email": "someone@example.test"
+        },
+        "method": "POST",
+        "path": "/auth/forgot-password/"
+      },
+      "response": {
+        "body": {
+          "error_code": 5025,
+          "error_message": "SMTP_NOT_CONFIGURED"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "no SMTP, a bad address",
+      "request": {
+        "body": {
+          "email": "nope"
+        },
+        "method": "POST",
+        "path": "/auth/forgot-password/"
+      },
+      "response": {
+        "body": {
+          "error_code": 5025,
+          "error_message": "SMTP_NOT_CONFIGURED"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "no SMTP, no address",
+      "request": {
+        "body": {},
+        "method": "POST",
+        "path": "/auth/forgot-password/"
+      },
+      "response": {
+        "body": {
+          "error_code": 5025,
+          "error_message": "SMTP_NOT_CONFIGURED"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    }
+  ],
+  "format_version": 1,
+  "preconditions": [
+    "the pin has NO SMTP host: every request is answered `SMTP_NOT_CONFIGURED`, whatever the address"
+  ],
+  "recorded_from": "ba85d4d3d3",
+  "row": "X10-dark"
+}

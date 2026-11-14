@@ -1,0 +1,290 @@
+{
+  "exchanges": [
+    {
+      "name": "an account to reset the password of",
+      "request": {
+        "body": {
+          "form": {
+            "email": "resetter@example.test",
+            "password": "Journey-Sample-Pa55word-Zebra-81"
+          }
+        },
+        "method": "POST",
+        "path": "/auth/sign-up/"
+      },
+      "response": {
+        "body": null,
+        "headers": {
+          "content-type": "text/html; charset=utf-8",
+          "location": "<base_url>"
+        },
+        "status": 302
+      }
+    },
+    {
+      "name": "a uid that does not decode",
+      "request": {
+        "body": {
+          "form": {
+            "password": "Resetter-New-Pa55word-Yak-27"
+          }
+        },
+        "method": "POST",
+        "path": "/auth/reset-password/zzz/{token}/"
+      },
+      "response": {
+        "body": null,
+        "headers": {
+          "content-type": "text/html; charset=utf-8",
+          "location": "<base_url>/accounts/reset-password?error_code=5125&error_message=INVALID_PASSWORD_TOKEN"
+        },
+        "status": 302
+      }
+    },
+    {
+      "name": "the uid of no account",
+      "request": {
+        "body": {
+          "form": {
+            "password": "Resetter-New-Pa55word-Yak-27"
+          }
+        },
+        "method": "POST",
+        "path": "/auth/reset-password/MDAwMDAwMDAtMDAwMC0wMDAwLTAwMDAtMDAwMDAwMDAwMDAw/{token}/"
+      },
+      "response": {
+        "body": null,
+        "headers": {
+          "content-type": "text/html; charset=utf-8",
+          "location": "<base_url>/accounts/reset-password?error_code=5125&error_message=INVALID_PASSWORD_TOKEN"
+        },
+        "status": 302
+      }
+    },
+    {
+      "name": "a uid that is not text",
+      "request": {
+        "body": {
+          "form": {
+            "password": "Resetter-New-Pa55word-Yak-27"
+          }
+        },
+        "method": "POST",
+        "path": "/auth/reset-password/__4/{token}/"
+      },
+      "response": {
+        "body": null,
+        "headers": {
+          "content-type": "text/html; charset=utf-8",
+          "location": "<base_url>/accounts/reset-password?error_code=5125&error_message=INVALID_PASSWORD_TOKEN"
+        },
+        "status": 302
+      }
+    },
+    {
+      "name": "a wrong token",
+      "request": {
+        "body": {
+          "form": {
+            "password": "Resetter-New-Pa55word-Yak-27"
+          }
+        },
+        "method": "POST",
+        "path": "/auth/reset-password/{uidb64}/abc-def/"
+      },
+      "response": {
+        "body": null,
+        "headers": {
+          "content-type": "text/html; charset=utf-8",
+          "location": "<base_url>/accounts/reset-password?error_code=5125&error_message=INVALID_PASSWORD_TOKEN"
+        },
+        "status": 302
+      }
+    },
+    {
+      "name": "no password",
+      "request": {
+        "body": {
+          "form": {
+            "email": "resetter@example.test"
+          }
+        },
+        "method": "POST",
+        "path": "/auth/reset-password/{uidb64}/{token}/"
+      },
+      "response": {
+        "body": null,
+        "headers": {
+          "content-type": "text/html; charset=utf-8",
+          "location": "<base_url>/accounts/reset-password?error_code=5020&error_message=INVALID_PASSWORD"
+        },
+        "status": 302
+      }
+    },
+    {
+      "name": "an empty password",
+      "request": {
+        "body": {
+          "form": {
+            "password": ""
+          }
+        },
+        "method": "POST",
+        "path": "/auth/reset-password/{uidb64}/{token}/"
+      },
+      "response": {
+        "body": null,
+        "headers": {
+          "content-type": "text/html; charset=utf-8",
+          "location": "<base_url>/accounts/reset-password?error_code=5020&error_message=INVALID_PASSWORD"
+        },
+        "status": 302
+      }
+    },
+    {
+      "name": "a password sent as JSON",
+      "request": {
+        "body": {
+          "password": "Resetter-New-Pa55word-Yak-27"
+        },
+        "method": "POST",
+        "path": "/auth/reset-password/{uidb64}/{token}/"
+      },
+      "response": {
+        "body": null,
+        "headers": {
+          "content-type": "text/html; charset=utf-8",
+          "location": "<base_url>/accounts/reset-password?error_code=5020&error_message=INVALID_PASSWORD"
+        },
+        "status": 302
+      }
+    },
+    {
+      "name": "a weak password",
+      "request": {
+        "body": {
+          "form": {
+            "password": "password"
+          }
+        },
+        "method": "POST",
+        "path": "/auth/reset-password/{uidb64}/{token}/"
+      },
+      "response": {
+        "body": null,
+        "headers": {
+          "content-type": "text/html; charset=utf-8",
+          "location": "<base_url>/accounts/reset-password?error_code=5021&error_message=PASSWORD_TOO_WEAK"
+        },
+        "status": 302
+      }
+    },
+    {
+      "name": "the reset",
+      "request": {
+        "body": {
+          "form": {
+            "password": "Resetter-New-Pa55word-Yak-27"
+          }
+        },
+        "method": "POST",
+        "path": "/auth/reset-password/{uidb64}/{token}/"
+      },
+      "response": {
+        "body": null,
+        "headers": {
+          "content-type": "text/html; charset=utf-8",
+          "location": "<base_url>/sign-in?success=True"
+        },
+        "status": 302
+      }
+    },
+    {
+      "name": "the link again",
+      "request": {
+        "body": {
+          "form": {
+            "password": "Resetter-New-Pa55word-Yak-27x"
+          }
+        },
+        "method": "POST",
+        "path": "/auth/reset-password/{uidb64}/{token}/"
+      },
+      "response": {
+        "body": null,
+        "headers": {
+          "content-type": "text/html; charset=utf-8",
+          "location": "<base_url>/accounts/reset-password?error_code=5125&error_message=INVALID_PASSWORD_TOKEN"
+        },
+        "status": 302
+      }
+    },
+    {
+      "name": "the session held before the reset",
+      "request": {
+        "as": "resetter@example.test",
+        "method": "GET",
+        "path": "/api/users/me/"
+      },
+      "response": {
+        "body": {
+          "detail": "Authentication credentials were not provided."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 401
+      }
+    },
+    {
+      "name": "sign in with the old password",
+      "request": {
+        "body": {
+          "form": {
+            "email": "resetter@example.test",
+            "password": "Journey-Sample-Pa55word-Zebra-81"
+          }
+        },
+        "method": "POST",
+        "path": "/auth/sign-in/"
+      },
+      "response": {
+        "body": null,
+        "headers": {
+          "content-type": "text/html; charset=utf-8",
+          "location": "<base_url>/?error_code=5065&error_message=AUTHENTICATION_FAILED_SIGN_IN&email=resetter%40example.test"
+        },
+        "status": 302
+      }
+    },
+    {
+      "name": "sign in with the new password",
+      "request": {
+        "body": {
+          "form": {
+            "email": "resetter@example.test",
+            "password": "Resetter-New-Pa55word-Yak-27"
+          }
+        },
+        "method": "POST",
+        "path": "/auth/sign-in/"
+      },
+      "response": {
+        "body": null,
+        "headers": {
+          "content-type": "text/html; charset=utf-8",
+          "location": "<base_url>"
+        },
+        "status": 302
+      }
+    }
+  ],
+  "format_version": 1,
+  "preconditions": [
+    "the first exchange makes resetter@example.test, an account of this fixture's own, and signs it in: `the session held before the reset` sends the session cookie the account held then (by hand), whatever the client kept afterwards",
+    "`{uidb64}` and `{token}` in a path stand for the reset link made for that account in the pin (`PasswordResetTokenGenerator`), which differs on every stack; the harness puts its own account's link there",
+    "a reset form is urlencoded, with a hidden CSRF field that is transport and not recorded; `a password sent as JSON` is a JSON body, which the pin does not read"
+  ],
+  "recorded_from": "ba85d4d3d3",
+  "row": "X11"
+}

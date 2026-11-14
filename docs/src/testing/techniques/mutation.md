@@ -38,7 +38,11 @@ main pass and by `crates/thrust-compat-plane/tests/oidc.rs`), `crates/thrust-com
 which lets an API key change the password, killed by the main pass; `mutant_oidc_failure_redirect_no_code`, which drops the `error_code` of a refused SSO
 login's redirect, killed by the main pass and by `tests/oidc.rs`; and `mutant_oidc_flag_always_on`, which says the SSO button is on although no provider is
 configured, which no contract target can show because each is started with a provider: `crates/thrust-compat-plane/tests/oidc.rs` kills it, run with
-`--features mutant_oidc_flag_always_on`, and it has no `scripts/mutants.sh` row) and
+`--features mutant_oidc_flag_always_on`, and it has no `scripts/mutants.sh` row; and `mutant_smtp_flag_always_on` and `mutant_reset_redirect_without_code`, which say mail is on
+although nothing can send it and drop the `error_code` of a refused reset's redirect, killed by the main pass and by `tests/reset.rs`), the password reset by email's
+`crates/thrust-core/Cargo.toml` mutants (`mutant_reset_token_reusable`, `_ignores_expiry`, `_uid_unchecked`, `_takes_token_first`, `_skips_strength` and `_keeps_sessions`,
+each killed by the main pass, with a `scripts/mutants.sh` row, and by `crates/thrust-core/tests/password_reset.rs`; and `_ignores_cooldown`, which no contract target can
+show because the test seam makes a token that the cooldown does not see, so only that file kills it) and
 `crates/thrust-adapters-selfhosted` (`mutant_discard_noop`),
 gated with `#[cfg(feature = "mutant_…")]` at the line they break, passed through by `thrust-server`. Each is listed
 in `scripts/mutants.sh`. cargo-mutants: configured by `.cargo/mutants.toml` and the `mutants` nextest profile;

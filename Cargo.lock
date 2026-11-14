@@ -3711,11 +3711,13 @@ version = "0.0.0"
 dependencies = [
  "async-trait",
  "axum",
+ "base64 0.22.1",
  "futures-executor",
  "proptest",
  "rstest",
  "serde",
  "serde_json",
+ "serde_urlencoded",
  "thrust-adapters-memory",
  "thrust-api",
  "thrust-contracts",
@@ -3761,6 +3763,7 @@ version = "0.0.0"
 dependencies = [
  "argon2",
  "async-trait",
+ "base64 0.22.1",
  "futures-executor",
  "proptest",
  "regex",

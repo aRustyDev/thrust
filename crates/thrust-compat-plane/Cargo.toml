@@ -18,6 +18,10 @@ mutant_change_password_allows_api_key = []
 # a refused login's redirect carries no `error_code` (the one thing the app reads from it).
 mutant_oidc_flag_always_on = []
 mutant_oidc_failure_redirect_no_code = []
+# The password reset by email (D-041): `/api/instances/` says mail is on although nothing can send it, and a refused reset's redirect carries
+# no `error_code`.
+mutant_smtp_flag_always_on = []
+mutant_reset_redirect_without_code = []
 
 [dependencies]
 thrust-contracts = { workspace = true }
@@ -31,6 +35,8 @@ thrust-plane-types = { workspace = true }
 thrust-editor-doc = { path = "../thrust-editor-doc", default-features = false, features = ["sanitize"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
+# The reset form is an urlencoded post, and the pin takes a forgot-password body in either form: axum's own form support, named.
+serde_urlencoded = "0.7"
 # Runtime-free, as in thrust-api: this crate compiles to wasm32 and runs under workerd.
 axum = { version = "0.8", default-features = false, features = ["json", "query", "matched-path"] }
 
@@ -45,3 +51,5 @@ proptest = "1"
 rstest = "0.26"
 # The scripted OIDC provider of tests/oidc.rs implements an `async_trait` port.
 async-trait = { workspace = true }
+# tests/reset.rs builds a link whose `uidb64` is not UTF-8.
+base64 = "0.22"

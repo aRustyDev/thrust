@@ -291,6 +291,37 @@ What switching it on takes, for the day Q-0050.9 is done, and why it is not a va
 Tested on the four contract targets against the mock identity provider (`scripts/contract.sh`) and never against Zitadel or a
 remote issuer `[unverified]`; the contract `e2e` pass starts its target with no provider, as the deployment is.
 
+## Reset by email (built, and dark)
+
+The stock sign-in screen draws "Forgot your password?" as a link to the reset page when `/api/instances/` says `is_smtp_configured`, and as the
+"ask your admin" line otherwise. Thrust has the two routes behind the link (`POST /auth/forgot-password/` and `POST
+/auth/reset-password/<uidb64>/<token>/`, D-041), but **no mail service is wired in any deployment yet**: every deployment answers the request
+with `SMTP_NOT_CONFIGURED` (the pin's own answer without `EMAIL_HOST`), says `is_smtp_configured: false`, and the way back in is still the
+operator's reset above.
+
+What switching it on takes, for the day a mail service exists:
+
+- **A mail service.** The SMTP adapter of the self-hosted set is E2 and the Worker's `send_email` binding is E3; neither is built. The binding
+  sends only from a domain the Cloudflare account owns and has Email Sending enabled for, and refuses any other (spike 0002 step 10 saw both:
+  one real message from an owned domain was accepted on 2026-10-24, and one from `example.com` was refused; whether the accepted one reached a
+  mailbox was not checked).
+- **`THRUST_PUBLIC_BASE_URL`**, the address a link starts with (`https://projects.example.com`), set by the deployment and never taken from a
+  request: a forged `Host` header would otherwise mail a victim a working token to someone else's page. Without it no link can be made, so
+  the feature stays off even with a mail service.
+- Optionally `THRUST_PASSWORD_RESET_TTL_SECS` (3600, which is the pin's) and `THRUST_PASSWORD_RESET_COOLDOWN_SECS` (60).
+
+What a request does. The link carries a 256-bit token that is shown once, in the mail, and stored only as its digest; it works once, for an
+hour, and for the account it names. An account has at most one that works: a new request replaces the old link, and a request while the last
+link is under a minute old (a link made exactly that long ago still counts) mails nothing and is answered as one that did. A deactivated account
+is mailed nothing and told it was. The form answers `USER_DOES_NOT_EXIST` for an address nobody has, as the pin's sign-in does, so it says
+whether an account exists. The mail is plain text. A weak new password leaves the link working; a reset ends every session of the account and
+signs nobody in.
+
+What it does not have. No per-address throttle on the route (the pin has 10 a minute; here the limit is per account, so a caller can still mail
+many different accounts quickly, which spends the mail budget: G-37), no HTML part, and not the email code (F-A04). `POST
+/internal/issue-password-reset` is a **test route** (behind `THRUST_TEST_ROUTES` and the admin token, which no deployment turns on): it returns a
+token for any account without a mailbox, which is how the contract suite exercises the reset on every target.
+
 ## Elsewhere and not built yet
 
 The plan records decisions and work about infrastructure that is not in this repository:

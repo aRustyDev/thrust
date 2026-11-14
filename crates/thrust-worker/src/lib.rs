@@ -84,6 +84,16 @@ fn core_config(env: &Env) -> CoreConfig {
         // OFF unless a var says on, as in the native server (Q-0050.8): the stock frontend sends the CSRF token only on its
         // auth form posts. The flip is when the custom frontend replaces it.
         csrf_enforce: flag(env, "THRUST_CSRF_ENFORCE", false),
+        // where the links in emails point (D-041): a var, never taken from a request. Unset: no link can be made.
+        public_base_url: text(env, "THRUST_PUBLIC_BASE_URL")
+            .filter(|v| !v.is_empty())
+            .map(|v| v.trim_end_matches('/').to_string()),
+        password_reset_ttl_secs: num(env, "THRUST_PASSWORD_RESET_TTL_SECS", defaults.password_reset_ttl_secs),
+        password_reset_cooldown_secs: num(
+            env,
+            "THRUST_PASSWORD_RESET_COOLDOWN_SECS",
+            defaults.password_reset_cooldown_secs,
+        ),
         // OWASP's minimum unless a var says otherwise (a test target sets a cheap cost)
         argon2: Argon2Params {
             m_cost_kib: num(env, "THRUST_ARGON2_M_KIB", defaults.argon2.m_cost_kib),
@@ -194,6 +204,8 @@ fn build_app(env: &Env, background: Arc<dyn Background>) -> Result<(App, Option<
                     rng,
                     hasher,
                     oidc,
+                    // the `send_email` binding is wired in E3, with a sender domain the account owns: until then no reset is offered
+                    email: None,
                 },
                 cfg,
                 SystemScope::mint(),

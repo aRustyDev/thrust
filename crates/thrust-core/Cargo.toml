@@ -26,6 +26,15 @@ mutant_change_password_skips_strength = []
 mutant_change_password_keeps_sessions = []
 # The OIDC login's `state` kept after it is used, so that a replayed callback finds it again (ADR-0050).
 mutant_oidc_state_reusable = []
+# The password reset by email (D-041): a link that works again after it was used, one that works after it expired, one that works for
+# another account, one that is used up by a weak password, a weak password accepted, the account's sessions left alive, and no cooldown.
+mutant_reset_token_reusable = []
+mutant_reset_ignores_expiry = []
+mutant_reset_uid_unchecked = []
+mutant_reset_takes_token_first = []
+mutant_reset_skips_strength = []
+mutant_reset_keeps_sessions = []
+mutant_reset_ignores_cooldown = []
 
 [dependencies]
 thrust-contracts = { workspace = true }
@@ -37,6 +46,8 @@ async-trait = { workspace = true }
 # Session tokens are stored hashed. Pure Rust, no platform crate; it is already in the Worker graph
 # through tokio-postgres' SCRAM, so the version matches and wasm32 is known to build it.
 sha2 = { version = "0.11", default-features = false }
+# The reset link's `uidb64`, the base64url of a user id (as the pin's mail carries it).
+base64 = "0.22"
 # argon2id for passwords (ADR-0050). Pure Rust and no platform crate, so core builds it for wasm32 and native alike (measured
 # in the issue #38 feasibility probe). No `getrandom` feature: the salt comes from the `Rng` port, not from the platform.
 argon2 = { version = "0.6", default-features = false, features = ["alloc", "password-hash"] }

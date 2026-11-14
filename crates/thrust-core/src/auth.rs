@@ -98,7 +98,7 @@ pub(crate) fn random_hex(app: &App, bytes: usize) -> Result<String, CoreError> {
     Ok(hex(&buf))
 }
 
-fn random_salt(app: &App) -> Result<[u8; SALT_LEN], CoreError> {
+pub(crate) fn random_salt(app: &App) -> Result<[u8; SALT_LEN], CoreError> {
     let mut salt = [0u8; SALT_LEN];
     app.ports.rng.fill(&mut salt).map_err(|e| CoreError::Internal(e.to_string()))?;
     Ok(salt)
@@ -248,7 +248,9 @@ const COMMON_PASSWORDS: &[&str] = &[
 ];
 
 /// Whether `password` is acceptable for a new account. A deliberately modest rule in place of Plane's zxcvbn score of
-/// at least 3, which would put a large frequency dictionary into the Worker bundle (its size was not measured): at
+/// at least 3. The `zxcvbn` crate would add about 2 MiB to the Worker bundle (measured, so size is not the obstacle) and
+/// declares `wasm-bindgen`, `web-sys` and `js-sys`, which this crate's graph may not hold (`scripts/check-deps.sh`), so it
+/// would need an adapter of its own (`research/0015-zxcvbn-worker-cost.md`). The rule is: at
 /// least [`MIN_PASSWORD_LEN`] characters, at least [`MIN_DISTINCT_CHARS`] different ones, and not one of the most
 /// common passwords once its decoration is stripped. It is stricter than zxcvbn about length and weaker about
 /// everything else, and the difference is deviation D-023.

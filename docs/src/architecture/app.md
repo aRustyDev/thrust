@@ -90,6 +90,7 @@ on it.
 | `PasswordHasher` | argon2id, as a port so that a test can count hash work (an unknown email must cost what a wrong password does) | `Argon2idHasher` (core); a counting wrapper in tests |
 | `Fetch` | Outbound HTTP, the only way the application reaches a server it does not own | `ReqwestFetch`; `WorkerFetch` |
 | `OidcProvider` | One OIDC provider as a relying party: the authorization URL, and the code exchange with ID-token verification. The `state`, `nonce` and verifier are core's, stored in a row, so the adapter holds nothing per login | `OpenIdProvider` (adapters-oidc) over `Fetch`; a scripted provider in tests |
+| `EmailSender` | The deployment's mail service (ADR-0073, Q-0073.1), optional like `OidcProvider`: one message to one recipient, text and an optional HTML part, answered with the service's id. Success means the service took it, not that it reached a mailbox. `None` is a deployment that cannot mail: a password reset is then off, and `is_smtp_configured` says so (D-041) | `MemoryEmail` (the reference, which keeps what it is given); SMTP on `lettre` for the self-hosted set (E2) and the Worker's `send_email` binding (E3) are not built |
 
 Every future a port returns is `Send`, on both targets, because the one shared axum router needs `Send` handlers.
 A Worker isolate is single-threaded, so the Cloudflare adapters wrap their JavaScript-backed futures in

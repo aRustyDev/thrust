@@ -29,6 +29,12 @@ impl<T> LockUnpoisoned<T> for Mutex<T> {
 // Database
 // ---------------------------------------------------------------------------------------------
 
+struct StoredPasswordReset {
+    user_id: UserId,
+    created_at: Timestamp,
+    expires_at: Timestamp,
+}
+
 #[derive(Default)]
 struct DbState {
     /// The `sessions` table: keyed by the token hash, no workspace (a directory table).
@@ -41,6 +47,8 @@ struct DbState {
     accounts: HashMap<(String, String), UserId>,
     api_keys: Vec<ApiKeyRow>,
     oidc_logins: HashMap<TokenHash, OidcLogin>,
+    /// The `password_resets` table (migration 0017): a mailed reset token's digest, with the user it is for and when it was made.
+    password_resets: HashMap<TokenHash, StoredPasswordReset>,
     /// The `assets` table (migration 0016): by id, each row under the workspace it names.
     assets: HashMap<AssetId, AssetRow>,
     /// Slug -> workspace (the `workspaces.slug` unique index).
@@ -1242,6 +1250,43 @@ impl Database for MemoryDatabase {
         Ok(self.state.lock_unpoisoned().oidc_logins.remove(state))
     }
 
+    async fn insert_password_reset(&self, r: &NewPasswordReset, not_before: Timestamp) -> Result<bool, DbError> {
+        let mut s = self.state.lock_unpoisoned();
+        s.password_resets.retain(|_, v| v.expires_at > r.created_at);
+        // the cooldown: a token made for this user at or after `not_before` is still the one that works, and nothing new is stored
+        if s.password_resets.values().any(|v| v.user_id == r.user_id && v.created_at >= not_before) {
+            return Ok(false);
+        }
+        if s.password_resets.contains_key(&r.token_hash) {
+            return Err(DbError::Conflict("password reset already exists".into()));
+        }
+        // a user has at most one token that works: the new one replaces the older ones
+        s.password_resets.retain(|_, v| v.user_id != r.user_id);
+        s.password_resets.insert(
+            r.token_hash,
+            StoredPasswordReset { user_id: r.user_id, created_at: r.created_at, expires_at: r.expires_at },
+        );
+        Ok(true)
+    }
+
+    async fn find_password_reset(&self, token: &TokenHash) -> Result<Option<PasswordReset>, DbError> {
+        Ok(self
+            .state
+            .lock_unpoisoned()
+            .password_resets
+            .get(token)
+            .map(|v| PasswordReset { user_id: v.user_id, expires_at: v.expires_at }))
+    }
+
+    async fn take_password_reset(&self, token: &TokenHash) -> Result<Option<PasswordReset>, DbError> {
+        Ok(self
+            .state
+            .lock_unpoisoned()
+            .password_resets
+            .remove(token)
+            .map(|v| PasswordReset { user_id: v.user_id, expires_at: v.expires_at }))
+    }
+
     async fn insert_asset(&self, scope: &WorkspaceScope, asset: &AssetRow) -> Result<(), DbError> {
         if asset.workspace_id != scope.workspace_id() || asset.created_by != scope.user_id() {
             return Err(DbError::Backend("asset is not the scope's".into()));
@@ -2246,6 +2291,60 @@ impl BlobStore for MemoryBlobStore {
     }
     async fn list(&self, prefix: &str) -> Result<Vec<String>, BlobError> {
         Ok(self.map.lock_unpoisoned().keys().filter(|k| k.starts_with(prefix)).cloned().collect())
+    }
+}
+
+/// What a [`MemoryEmail`] does with a message it is given.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EmailMode {
+    /// Keep it and say it was accepted.
+    Accept,
+    /// Refuse it for good ([`EmailError::Rejected`]); nothing is kept.
+    Reject,
+    /// Fail as a service that cannot be reached ([`EmailError::Unavailable`]); nothing is kept.
+    Unavailable,
+}
+
+/// An [`EmailSender`] that keeps what it was asked to send and sends nothing: the reference implementation of the port, and what the
+/// tests of every use-case that mails someone read.
+pub struct MemoryEmail {
+    mode: EmailMode,
+    sent: Mutex<Vec<EmailMessage>>,
+}
+
+impl MemoryEmail {
+    pub fn new() -> Self {
+        Self::with_mode(EmailMode::Accept)
+    }
+
+    pub fn with_mode(mode: EmailMode) -> Self {
+        Self { mode, sent: Mutex::new(Vec::new()) }
+    }
+
+    /// Every message accepted so far, oldest first.
+    pub fn sent(&self) -> Vec<EmailMessage> {
+        self.sent.lock_unpoisoned().clone()
+    }
+}
+
+impl Default for MemoryEmail {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[async_trait]
+impl EmailSender for MemoryEmail {
+    async fn send(&self, message: &EmailMessage) -> Result<String, EmailError> {
+        match self.mode {
+            EmailMode::Reject => Err(EmailError::Rejected("memory email: rejected".into())),
+            EmailMode::Unavailable => Err(EmailError::Unavailable("memory email: unavailable".into())),
+            EmailMode::Accept => {
+                let mut sent = self.sent.lock_unpoisoned();
+                sent.push(message.clone());
+                Ok(format!("memory-email-{}", sent.len()))
+            }
+        }
     }
 }
 
