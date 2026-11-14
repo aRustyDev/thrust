@@ -36,6 +36,7 @@ mod fields_tests;
 mod instance;
 mod issue_history;
 mod issues;
+mod oidc;
 mod page;
 mod projects;
 #[cfg(test)]
@@ -110,4 +111,7 @@ pub fn routes() -> Router {
         .route("/auth/sign-in/", post(auth::sign_in)) // S06
         .route("/auth/sign-out/", post(auth::sign_out)) // X06
         .route("/auth/change-password/", post(auth::change_password)) // X09
+        // X10: not on the acceptance list (a recording needs an identity provider, D-040); dark until a provider is configured
+        .route("/auth/oidc/", get(oidc::start))
+        .route("/auth/oidc/callback/", get(oidc::callback))
 }

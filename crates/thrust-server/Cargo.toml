@@ -31,6 +31,10 @@ mutant_change_password_skips_old = ["thrust-core/mutant_change_password_skips_ol
 mutant_change_password_skips_strength = ["thrust-core/mutant_change_password_skips_strength"]
 mutant_change_password_keeps_sessions = ["thrust-core/mutant_change_password_keeps_sessions"]
 mutant_change_password_allows_api_key = ["thrust-compat-plane/mutant_change_password_allows_api_key"]
+# OIDC through the compat routes (D-040): the login's state reusable, the dark switch ignoring the provider, a refusal with no error code.
+mutant_oidc_state_reusable = ["thrust-core/mutant_oidc_state_reusable"]
+mutant_oidc_flag_always_on = ["thrust-compat-plane/mutant_oidc_flag_always_on"]
+mutant_oidc_failure_redirect_no_code = ["thrust-compat-plane/mutant_oidc_failure_redirect_no_code"]
 mutant_set_password_every_user = ["thrust-adapters-memory/mutant_set_password_every_user"]
 mutant_operator_takes_admin_token = ["thrust-api/mutant_operator_takes_admin_token"]
 mutant_operator_ignores_flag = ["thrust-api/mutant_operator_ignores_flag"]

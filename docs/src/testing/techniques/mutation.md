@@ -33,8 +33,12 @@ switch on: `crates/thrust-compat-plane/tests/operator.rs` kills it, run with `--
 `mutant_csrf_never`, ignored when it is on, killed by the main pass, and `mutant_csrf_always`, ignored when it is off, killed by the
 `csrfoff` pass; and `mutant_change_password_skips_old`, `mutant_change_password_skips_strength` and
 `mutant_change_password_keeps_sessions`, which break a person's change of their own password, killed by the main pass and by
-`crates/thrust-core/tests/change_password.rs`), `crates/thrust-compat-plane/Cargo.toml` (`mutant_change_password_allows_api_key`,
-which lets an API key change the password, killed by the main pass) and
+`crates/thrust-core/tests/change_password.rs`; and `mutant_oidc_state_reusable`, which keeps an OIDC login's state after it is used, killed by the
+main pass and by `crates/thrust-compat-plane/tests/oidc.rs`), `crates/thrust-compat-plane/Cargo.toml` (`mutant_change_password_allows_api_key`,
+which lets an API key change the password, killed by the main pass; `mutant_oidc_failure_redirect_no_code`, which drops the `error_code` of a refused SSO
+login's redirect, killed by the main pass and by `tests/oidc.rs`; and `mutant_oidc_flag_always_on`, which says the SSO button is on although no provider is
+configured, which no contract target can show because each is started with a provider: `crates/thrust-compat-plane/tests/oidc.rs` kills it, run with
+`--features mutant_oidc_flag_always_on`, and it has no `scripts/mutants.sh` row) and
 `crates/thrust-adapters-selfhosted` (`mutant_discard_noop`),
 gated with `#[cfg(feature = "mutant_…")]` at the line they break, passed through by `thrust-server`. Each is listed
 in `scripts/mutants.sh`. cargo-mutants: configured by `.cargo/mutants.toml` and the `mutants` nextest profile;

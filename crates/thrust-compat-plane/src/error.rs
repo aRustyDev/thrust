@@ -26,6 +26,12 @@ pub enum Code {
     IncorrectOldPassword,
     MissingPassword,
     RateLimitExceeded,
+    /// Not recorded: the codes below are the pin's and the fork's, read from their source (PQ-213, research/0007), because a recording of an
+    /// OIDC login needs an identity provider. `SignupDisabled` is the pin's 5015, which the stock app has text for ("Sign up disabled.
+    /// Please contact your administrator."); the two OIDC codes it has none for (D-040).
+    SignupDisabled,
+    OidcNotConfigured,
+    OidcOauthProviderError,
 }
 
 impl Code {
@@ -44,6 +50,9 @@ impl Code {
             Code::IncorrectOldPassword => 5135,
             Code::MissingPassword => 5138,
             Code::RateLimitExceeded => 5900,
+            Code::SignupDisabled => 5015,
+            Code::OidcNotConfigured => 5300,
+            Code::OidcOauthProviderError => 5301,
         }
     }
 
@@ -62,6 +71,9 @@ impl Code {
             Code::IncorrectOldPassword => "INCORRECT_OLD_PASSWORD",
             Code::MissingPassword => "MISSING_PASSWORD",
             Code::RateLimitExceeded => "RATE_LIMIT_EXCEEDED",
+            Code::SignupDisabled => "SIGNUP_DISABLED",
+            Code::OidcNotConfigured => "OIDC_NOT_CONFIGURED",
+            Code::OidcOauthProviderError => "OIDC_OAUTH_PROVIDER_ERROR",
         }
     }
 }
