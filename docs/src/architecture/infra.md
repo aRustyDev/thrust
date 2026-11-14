@@ -143,8 +143,8 @@ logs the cause.
 
 ## Postgres
 
-`thrust-adapters-postgres` carries its own schema, in four files that `migrate` applies in order on every run, so each
-is idempotent:
+`thrust-adapters-postgres` carries its own schema, in sixteen files (`migrations/0001` to `0016`) that `migrate` applies in
+order on every run, so each is idempotent. The first four:
 
 | File | Adds |
 |---|---|
@@ -162,6 +162,25 @@ The `migrate` binary applies them. It needs the `native` feature and reads `DATA
 Neither the server nor the Worker applies the schema when it starts. `scripts/contract.sh native-pg` and `worker-cf` start
 a throwaway `postgres:16-alpine` container in Docker, with a generated password that lives only in the script's
 environment, and migrate it before the target starts.
+
+`migrate` takes its connection settings from the environment and never from argv, because the URL holds the password.
+`DATABASE_SSLMODE` is `disable` (the default, which is what the throwaway container above uses) or `verify-ca`; `require`
+and `verify-full` are refused, so a setting that cannot be honoured is an error and not a quiet downgrade.
+`DATABASE_SSLROOTCERT` names the PEM file of the CA to trust: `verify-ca` needs it and `disable` refuses it. `verify-ca`
+checks the server certificate's chain, signature and dates, and does not compare names, because the deploy reaches `thrust-pg`
+through a tunnel at `127.0.0.1` while the certificate names a host. It never falls back to plaintext: a server that answers no
+to TLS is an error (`thrust-pg` itself rejects non-TLS TCP, ADR-0094). The connector is `thrust_adapters_postgres::tls`, built
+with the `native` feature only and never into the Worker.
+
+`scripts/migrate-ci.sh` is the deploy's expand step (ADR-0110, issue #49). It starts `cloudflared access tcp` for the
+Access application in front of `thrust-pg` (`DB_ACCESS_HOSTNAME`, with the Access service token in
+`TUNNEL_SERVICE_TOKEN_ID` and `TUNNEL_SERVICE_TOKEN_SECRET`), waits for the local end, runs a built `migrate` under `verify-ca`
+(`MIGRATE_BIN`), and closes the tunnel. The token goes only to `cloudflared` and the database URL only to `migrate`. The
+script refuses a `DATABASE_URL` that does not point at the tunnel's local end. It cannot see a refused service token itself,
+because the local end accepts connections before the edge has judged the token: that shows up as `migrate` failing to connect,
+and the tail of `cloudflared`'s log is printed then. Nothing calls the script yet; the deploy workflow comes after it, and
+the tunnel route, Access application, service token and migration role on `thrust-pg` are infrastructure-repo work, so the
+route has not been run against the real database.
 
 ## Recover a locked-out user
 

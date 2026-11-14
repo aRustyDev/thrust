@@ -14,6 +14,10 @@
 //! row and the commit as when the upsert was the first statement of the transaction. The price is a gap: a number taken
 //! by a create that then fails or is abandoned is not given back.
 
+/// TLS for a native connection (`verify-ca`) and a `connect` that never goes on without it when it was asked for. Only `migrate` uses it.
+#[cfg(feature = "native")]
+pub mod tls;
+
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 
