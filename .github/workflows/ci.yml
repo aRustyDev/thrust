@@ -276,6 +276,10 @@ jobs:
           save-cache: ${{ github.ref == 'refs/heads/main' }}
       - name: Postgres adapter tests (testcontainers)
         run: scripts/rs cargo test -p thrust-adapters-selfhosted --test pg_adapter
+      # The SMTP adapter against Mailpit (a mail server nobody here wrote), in the same Docker job: STARTTLS, implicit TLS, a login, the
+      # server's own refusals, and the controls that make each of them able to fail. Its other suites are hermetic and run in `hermetic`.
+      - name: SMTP adapter tests (Mailpit, testcontainers)
+        run: scripts/rs cargo test -p thrust-adapters-selfhosted --test smtp_sink
 
   # One job per cell, each on a fresh runner with its own checkout, so the shared-build-directory
   # hazard that forces contract-all.sh to run serially on one machine does not apply here.

@@ -44,6 +44,8 @@ allow = [
     "Zlib",
     "MPL-2.0",
     "CDLA-Permissive-2.0",
+    # `quoted_printable`, under `lettre` (the SMTP adapter, E2 of the reset by email): the permissive licence with no attribution clause.
+    "0BSD",
 ]
 
 [licenses.private]

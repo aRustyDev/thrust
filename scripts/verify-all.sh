@@ -4,7 +4,7 @@
 #   1. the 16-cell contract matrix        (scripts/contract-all.sh)
 #   2. the mutation controls              (scripts/mutants.sh)   -> every mutant must be KILLED
 #   3. the dependency-graph check         (scripts/check-deps.sh)
-#   4. the testcontainers adapter tests   (thrust-adapters-selfhosted/tests/pg_adapter.rs)
+#   4. the testcontainers adapter tests   (thrust-adapters-selfhosted/tests/pg_adapter.rs, smtp_sink)
 #   5. the port-shape and sqlx probes     (probes/*/run.sh)
 # Serial on purpose (shared wrangler build dir, shared ports). Needs Docker.
 #
@@ -30,6 +30,7 @@ step contract-matrix "$ROOT/scripts/contract-all.sh"
 step mutants "$ROOT/scripts/mutants.sh"
 step check-deps "$ROOT/scripts/check-deps.sh"
 step pg-adapter-tests "$ROOT/scripts/rs" cargo test --manifest-path "$ROOT/Cargo.toml" -p thrust-adapters-selfhosted --test pg_adapter
+step smtp-adapter-tests "$ROOT/scripts/rs" cargo test --manifest-path "$ROOT/Cargo.toml" -p thrust-adapters-selfhosted --test smtp_sink
 step probe-send-shape "$ROOT/probes/send-shape/run.sh"
 # the sqlx probe is EXPECTED to fail to compile; the step only checks that the script ran
 "$ROOT/probes/sqlx-wasm/run.sh" >"$OUT/probe-sqlx-wasm.log" 2>&1
