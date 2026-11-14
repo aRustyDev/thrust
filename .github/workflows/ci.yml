@@ -102,6 +102,7 @@ jobs:
           sh .github/scripts/tests/test-required-contexts.sh
           sh .github/scripts/tests/test-check-web-diff.sh
           sh .github/scripts/tests/test-smoke-deploy.sh
+          sh .github/scripts/tests/test-migrate-ci.sh
 
   deps:
     needs: changes

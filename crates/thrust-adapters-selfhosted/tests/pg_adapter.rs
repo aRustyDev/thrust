@@ -16,6 +16,7 @@
 mod assets;
 mod counting;
 mod model;
+mod tls;
 
 use std::sync::Arc;
 

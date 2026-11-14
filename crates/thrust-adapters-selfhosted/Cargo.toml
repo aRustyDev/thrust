@@ -38,4 +38,6 @@ proptest = "1"
 serde_json = { workspace = true }
 testcontainers = "0.27"
 testcontainers-modules = { version = "0.15", features = ["postgres"] }
+# tests/tls: the certificates of a TLS-only Postgres (issue #49), made for each run. The same pin as thrust-adapters-postgres's.
+rcgen = { version = "0.14.10", default-features = false, features = ["ring", "pem"] }
 tokio = { version = "1", default-features = false, features = ["rt-multi-thread", "macros", "time"] }
