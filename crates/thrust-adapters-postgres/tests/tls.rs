@@ -497,3 +497,28 @@ fn an_error_that_shows_the_same_text_as_its_cause_is_printed_once() {
     let texts = ["same".to_string(), "same".to_string(), "deeper".to_string()];
     assert_eq!(error_chain(&layers(&texts)), "same: deeper");
 }
+
+// ---- the root the deploy trusts ----------------------------------------------------------------------------------------------
+
+/// The Cloudflare Origin CA root that signs `thrust-pg`'s server certificate and that the deploy hands to `migrate` as
+/// DATABASE_SSLROOTCERT (.github/deploy/README.md). The other tests make their own certificates; this one reads the real file, so a root
+/// that rustls would refuse (an unsupported feature, a damaged copy) is found here and not by a failed deploy. It shows the file is
+/// ACCEPTED as a trust anchor. Whether a real Origin CA certificate then verifies against it is for the first run against `thrust-pg`.
+const DEPLOY_ROOT: &[u8] = include_bytes!("../../../.github/deploy/cloudflare-origin-ca-rsa-root.pem");
+
+#[test]
+fn the_origin_ca_root_the_deploy_trusts_is_accepted_for_verify_ca() {
+    let tls = Tls::from_settings(Some("verify-ca"), Some(DEPLOY_ROOT))
+        .expect("rustls refuses the Origin CA root the deploy trusts");
+    assert_eq!(tls.mode(), "verify-ca");
+}
+
+#[test]
+fn the_same_check_refuses_a_damaged_copy_of_that_root() {
+    // the control for the test above: cut the PEM in half, and the very same call has to say no
+    let damaged = &DEPLOY_ROOT[..DEPLOY_ROOT.len() / 2];
+    assert!(
+        Tls::from_settings(Some("verify-ca"), Some(damaged)).is_err(),
+        "a half certificate must not be accepted as a root"
+    );
+}

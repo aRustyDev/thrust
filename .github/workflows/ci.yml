@@ -103,6 +103,15 @@ jobs:
           sh .github/scripts/tests/test-check-web-diff.sh
           sh .github/scripts/tests/test-smoke-deploy.sh
           sh .github/scripts/tests/test-migrate-ci.sh
+          sh .github/scripts/tests/test-deploy-template.sh
+          sh .github/scripts/tests/test-deploy-ca.sh
+          sh .github/scripts/tests/test-classify-deploy.sh
+          sh .github/scripts/tests/test-plan-deploy.sh
+          sh .github/scripts/tests/test-assert-sha-checks.sh
+          sh .github/scripts/tests/test-assert-gated-environments.sh
+          sh .github/scripts/tests/test-lint-workflow.sh
+          sh .github/scripts/tests/test-deploy-worker.sh
+          python3 -I .github/scripts/tests/test_active_version.py
 
   deps:
     needs: changes
@@ -145,6 +154,14 @@ jobs:
       # the gate's required contexts do not change.
       - name: Placement guard
         run: scripts/check-placement.sh
+      # Issue #49: the deployed Worker's configuration is a template, and the renderer refuses whatever is not whole. Its self-test is the
+      # control (a missing variable, an all-zero id, a thrust-spike name, an unknown marker are each refused), and it renders the real
+      # template too, so the two cannot drift apart. The workflow lint holds the deploy workflow to the rules of a workflow that has
+      # credentials: pinned actions, explicit permissions, no expression in a run, secrets only in the two gated jobs.
+      - name: Deploy configuration and workflow guards
+        run: |
+          scripts/render-wrangler.sh --self-test
+          .github/scripts/lint-workflow.sh .github/workflows/deploy.yml .github/actions/deploy-worker/action.yml
 
   # rustfmt and clippy (issue #40). Clippy runs with `-D warnings`, so the four lints `Cargo.toml` denies in core, ports and the
   # adapters (ADR-0006's panic policy: unwrap, expect, panic, indexing) and every other warning fail it. The second clippy run is
