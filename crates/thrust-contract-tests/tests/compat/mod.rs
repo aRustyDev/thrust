@@ -2004,10 +2004,12 @@ async fn compat_oidc_the_instance_offers_sso_when_the_target_has_a_provider() {
 }
 
 // ---------------------------------------------------------------------------------------------------------------------------------
-// X10 and X11 (D-041): the password reset by email. No contract target has a mail service, so what these show on all four targets is
-// the dark state of `POST /auth/forgot-password/` (5025, as the pin answers without `EMAIL_HOST`) and the whole of the reset form
+// X10 and X11 (D-041): the password reset by email. These passes start every target with no mail service, so what these show on all four
+// targets is the dark state of `POST /auth/forgot-password/` (5025, as the pin answers without `EMAIL_HOST`) and the whole of the reset form
 // (`POST /auth/reset-password/<uidb64>/<token>/`) against each adapter's token table, with the token from the test seam
-// (`/internal/issue-password-reset`: the same token the mail would carry, with no mailbox). What the mail says is the hermetic tests'.
+// (`/internal/issue-password-reset`: the same token the mail would carry, with no mailbox). What the mail says is the hermetic tests', and the
+// whole path through a real mail server is the `mail` pass's (`scripts/contract.sh native-memory mail`, `tests/mail.rs`: the native server,
+// the only one with an SMTP adapter yet, against Mailpit).
 // ---------------------------------------------------------------------------------------------------------------------------------
 
 const RESET_NEW: &str = "Reset-New-Pa55word-Yak-27-Contract";
@@ -2047,8 +2049,9 @@ fn reset_answered(r: &reqwest::Response, to: Option<(u16, &str)>, what: &str) {
     assert!(SetCookie::all(r).is_empty(), "{what}: a reset sets no cookie");
 }
 
-/// No target has a mail service, so the request route is the pin's answer without `EMAIL_HOST`: 5025 to every request whatever it
-/// asks, in JSON or a form, and the app is told mail is off. (When a target gets a mail service, this is the test that changes.)
+/// These passes start the target with no mail service (scripts/contract.sh unsets `THRUST_SMTP_*` and `THRUST_PUBLIC_BASE_URL`, and refuses to
+/// run against a target whose `/api/instances/` says otherwise), so the request route is the pin's answer without `EMAIL_HOST`: 5025 to every
+/// request whatever it asks, in JSON or a form, and the app is told mail is off. The `mail` pass is the same server with a relay.
 #[tokio::test]
 async fn compat_forgot_password_is_dark_on_a_target_with_no_mail_service() {
     let t = t();

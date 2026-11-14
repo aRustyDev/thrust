@@ -41,6 +41,8 @@ mutant_reset_takes_token_first = ["thrust-core/mutant_reset_takes_token_first"]
 mutant_reset_skips_strength = ["thrust-core/mutant_reset_skips_strength"]
 mutant_reset_keeps_sessions = ["thrust-core/mutant_reset_keeps_sessions"]
 mutant_reset_ignores_cooldown = ["thrust-core/mutant_reset_ignores_cooldown"]
+# The SMTP relay configured and then not handed to the app (the composition root's own wiring, E2).
+mutant_smtp_unwired = []
 mutant_oidc_flag_always_on = ["thrust-compat-plane/mutant_oidc_flag_always_on"]
 mutant_oidc_failure_redirect_no_code = ["thrust-compat-plane/mutant_oidc_failure_redirect_no_code"]
 mutant_smtp_flag_always_on = ["thrust-compat-plane/mutant_smtp_flag_always_on"]

@@ -51,6 +51,36 @@ fn oidc_provider() -> Option<Arc<dyn OidcProvider>> {
     }
 }
 
+/// The mail service, when `THRUST_SMTP_HOST` is set (the adapter's own documentation lists the rest: the sender, the TLS mode, a login, a CA, a
+/// deadline; the password is a secret, so only from the environment). None of them set is "no mail service": the password reset stays off, as
+/// before. A configuration that is half written, or a CA file that cannot be read, stops the server here and says which variable, for the reason
+/// the OIDC provider's does: a reset nobody notices is not on is worse than a server that does not come up.
+fn smtp_email(public_base_url: Option<&str>) -> Option<Arc<dyn EmailSender>> {
+    let cfg = match smtp::SmtpConfig::from_lookup(|name| std::env::var(name).ok()) {
+        Ok(None) => return None,
+        Ok(Some(cfg)) => cfg,
+        Err(e) => panic!("{e}"),
+    };
+    let email = smtp::SmtpEmail::new(&cfg).unwrap_or_else(|e| panic!("{e}"));
+    eprintln!(
+        "mail: SMTP relay {}:{}, tls={}, from {}, {}",
+        cfg.host,
+        cfg.port,
+        cfg.tls.name(),
+        cfg.from.email,
+        if cfg.credentials.is_some() { "with a login" } else { "no login" }
+    );
+    if public_base_url.is_none() {
+        eprintln!("mail: THRUST_PUBLIC_BASE_URL is not set, so no link can be made and the password reset stays off");
+    }
+    // MUTANT (control run only): the relay is configured and read, and then not handed to the app, as if the composition root had forgotten to.
+    // The `mail` pass must refuse to run against it (its vacuity guard: the app is told mail is off), and not pass.
+    #[cfg(feature = "mutant_smtp_unwired")]
+    return None;
+    #[cfg(not(feature = "mutant_smtp_unwired"))]
+    Some(Arc::new(email))
+}
+
 fn panic_response(err: Box<dyn std::any::Any + Send + 'static>) -> Response<Body> {
     let msg = err
         .downcast_ref::<&str>()
@@ -120,6 +150,7 @@ async fn main() {
         ..defaults
     };
     let hasher = Arc::new(Argon2idHasher::new(cfg.argon2));
+    let email = smtp_email(cfg.public_base_url.as_deref());
 
     // This composition root mints the proof for the relay, sweeper, consumer and seed.
     let app = App::new(
@@ -134,8 +165,8 @@ async fn main() {
             rng: Arc::new(NativeRng),
             hasher,
             oidc: oidc_provider(),
-            // no mail service is built yet (E2: SMTP; the Cloudflare binding is the Worker's, E3): a deployment cannot send a reset
-            email: None,
+            // the SMTP relay `THRUST_SMTP_*` names, or none (E2). The Cloudflare binding is the Worker's (E3), and has none yet.
+            email,
         },
         cfg,
         SystemScope::mint(),

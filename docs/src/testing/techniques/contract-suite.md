@@ -94,15 +94,23 @@ A pass is selected by **test-name prefix** in `scripts/contract.sh`, not by next
 `blast_`, `csrf_off_`, `worker_room_`, `worker_cron_`, `worker_bindings_`, `stage2_cron_real_trigger_`. Unprefixed tests in
 `contract.rs` form the `main` pass. A new test therefore picks its pass by its name.
 
+The `mail` pass is the exception: it is its own test binary (`tests/mail.rs`, run with `--test mail`), because it needs a target that has a mail
+service and every other pass needs one that has none. `scripts/contract.sh` starts a Mailpit container (a mail server written by someone else, so
+that what the server sends is read by a server that parses it for itself) and the native server with `THRUST_SMTP_*` pointing at it, and refuses to
+run when `/api/instances/` does not say `is_smtp_configured: true`. Every other pass refuses to run when it says anything but `false`, and unsets
+`THRUST_SMTP_*` and `THRUST_PUBLIC_BASE_URL` first, so a developer's shell cannot turn the dark test into a test of something else. Only the native
+targets have an SMTP adapter; the Worker's `send_email` binding is E3.
+
 ## Run
 
 ```sh
 scripts/contract.sh native-memory           # main pass, 37 tests [verified 2026-10-24: 37 passed]
 scripts/contract.sh native-memory csrfoff   # CSRF enforcement off, 6 tests [verified 2026-10-24: 6 passed]
+scripts/contract.sh native-memory mail      # the password reset by email through a real mail server (Mailpit), 3 tests [verified 2026-11-14: 3 passed]
 scripts/contract.sh worker-cf bindings      # [unverified: not run]
 scripts/contract.sh native-memory oracle    # the v1 oracle: scoped gate, corpus comparison, controls (not a test count: VERDICT: PASS)
 scripts/e2e.sh worker-cf controls           # the first browser journey and its control (not a test count: VERDICT: PASS), `e2e` in contract-all.sh
-scripts/contract-all.sh                     # the 22-cell matrix, serially [verified 2026-10-24: 18 of 18 PASS, before the oracle and e2e cells]
+scripts/contract-all.sh                     # the 23-cell matrix, serially [verified 2026-10-24: 18 of 18 PASS, before the oracle, e2e and mail cells]
 ```
 
 See [Running](../running.md#the-contract-suite) for targets, passes and prerequisites.
