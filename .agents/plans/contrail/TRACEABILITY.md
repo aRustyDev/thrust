@@ -9,7 +9,7 @@ needed" must be recorded before the row starts). "Test home" is where the accept
 |---|---|---|---|---|---|
 | F-A01 | OIDC SSO (Zitadel) login; JIT user provisioning (the login through the stock app's two routes, `/auth/oidc/` and its callback, is built and dark, D-040: no deployment has a provider until the Worker can reach the issuer, Q-0050.9; no provisioning at P0, Q-0050.1) | P1 | 0050, 0053 | 0003 | e2e vs Zitadel (mock) |
 | F-A02 | Cloudflare Access JWT validation (outer gate) | P1 | 0050, 0090 | 0004 | integration (Access JWT fixtures) |
-| F-A03 | Email + password sign-in/up, password reset (the reset by email is after M2, D-037; until then an operator sets a password, Q-F7, D-038, and the person changes it themselves in Profile, Security, D-039) | P0 | 0050, 0052, 0073 | 0003 | contract + e2e |
+| F-A03 | Email + password sign-in/up, password reset (the reset by email is built and dark, D-041: no mail service is wired yet, the SMTP adapter is E2 and the Cloudflare binding E3; until one is, an operator sets a password, Q-F7, D-038, and the person changes it themselves in Profile, Security, D-039) | P0 | 0050, 0052, 0073 | 0003 | contract + e2e |
 | F-A04 | Magic-code (email OTP) sign-in | P1 | 0050, 0073 | 0003 | e2e |
 | F-A05 | OAuth: Google / GitHub / GitLab / Gitea | P2 | — GAP: ADR when scheduled (P2) |  |  |
 | F-A06 | API keys (`X-Api-Key`, `APIToken`), per-key rate limit, activity log | P0 | 0033, 0052 | 0003 | contract (X-Api-Key) + oracle |

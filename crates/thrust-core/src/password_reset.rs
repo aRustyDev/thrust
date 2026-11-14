@@ -90,10 +90,21 @@ fn user_from_uidb64(s: &str) -> Option<UserId> {
 /// was made still works, and nothing new is stored. Used by [`request_password_reset`], and by the test seam that tests use to get a
 /// token without a mailbox.
 pub async fn issue_password_reset(app: &App, user: UserId) -> Result<Option<IssuedReset>, CoreError> {
+    issue_password_reset_with(app, user, app.cfg.password_reset_ttl_secs, app.cfg.password_reset_cooldown_secs).await
+}
+
+/// [`issue_password_reset`] with the lifetime and the cooldown given: what the test seam of a deployed target uses to make a token that
+/// expires in a second, or has expired already (a negative `ttl_secs`), or that no earlier token blocks (a negative `cooldown_secs`).
+pub async fn issue_password_reset_with(
+    app: &App,
+    user: UserId,
+    ttl_secs: i64,
+    cooldown_secs: i64,
+) -> Result<Option<IssuedReset>, CoreError> {
     let token = random_hex(app, TOKEN_BYTES)?;
     let now = app.ports.clock.now();
-    let expires_at = now + TimeDelta::seconds(app.cfg.password_reset_ttl_secs);
-    let not_before = now - TimeDelta::seconds(app.cfg.password_reset_cooldown_secs);
+    let expires_at = now + TimeDelta::seconds(ttl_secs);
+    let not_before = now - TimeDelta::seconds(cooldown_secs);
     // MUTANT (control run only): the cooldown is ignored, so a request mails the account every time. The cooldown tests must catch it.
     #[cfg(feature = "mutant_reset_ignores_cooldown")]
     let not_before = now + TimeDelta::days(3650);

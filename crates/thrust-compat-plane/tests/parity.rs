@@ -106,6 +106,9 @@ rows! {
     parity_s33_read_an_asset_as_a_member => "S33-member",
     parity_x06_sign_out => "X06",
     parity_x09_change_password => "X09",
+    parity_x10_forgot_password_without_smtp => "X10-dark",
+    parity_x10_forgot_password => "X10",
+    parity_x11_reset_password => "X11",
 }
 
 /// A fixture without a test would pass unseen, and a test without a fixture is `load_fixture` panicking: hold the two
@@ -594,4 +597,60 @@ fn parity_control_the_numbering_closes_up_over_what_the_projection_drops() {
     // an id the fixture uses stays where it is even when nothing in it names it
     let out = compact_ids(vec![ex("/z/", "<uuid:4>")], 3);
     assert_eq!(out[0], ex("/z/", "<uuid:4>"));
+}
+
+// --- controls for X10 and X11 (D-041): what the replay must be able to see ---------------------------------------------------------
+
+/// A reset signs nobody in, on the pin and here. A router that sets a session cookie on every answer of the reset form must diverge
+/// at each of them (the cookie is transport, which the normaliser drops, so the replay checks it itself).
+#[test]
+fn parity_control_a_reset_that_signs_somebody_in_is_a_divergence() {
+    use axum::{extract::Request, middleware::Next};
+    async fn sign_them_in(req: Request, next: Next) -> Response<Body> {
+        let reset = req.uri().path().starts_with("/auth/reset-password/");
+        let mut resp = next.run(req).await;
+        if reset {
+            resp.headers_mut().append("set-cookie", "__Host-thrust_session=made-up; Path=/".parse().unwrap());
+        }
+        resp
+    }
+    let d = journey_with(|router| router.layer(axum::middleware::from_fn(sign_them_in)), ROWS, "X11", |_| {});
+    let lines = d.iter().filter(|m| m.contains("a reset signs nobody in, and this answer set one")).count();
+    assert_eq!(lines, 10, "the eight refusals, the reset and the link again: {d:?}");
+}
+
+/// A refusal's redirect carries the code the page reads. A router that drops `error_code` from every redirect of the reset form must
+/// diverge at every refusal, and not at the success (which has none to drop).
+#[test]
+fn parity_control_a_refused_reset_without_its_code_is_a_divergence() {
+    use axum::{extract::Request, middleware::Next};
+    async fn drop_the_code(req: Request, next: Next) -> Response<Body> {
+        let reset = req.uri().path().starts_with("/auth/reset-password/");
+        let mut resp = next.run(req).await;
+        if reset {
+            if let Some(location) =
+                resp.headers().get("location").and_then(|v| v.to_str().ok()).map(|l| l.replace("error_code=", "code="))
+            {
+                resp.headers_mut().insert("location", location.parse().unwrap());
+            }
+        }
+        resp
+    }
+    let d = journey_with(|router| router.layer(axum::middleware::from_fn(drop_the_code)), ROWS, "X11", |_| {});
+    let diverged = d.iter().filter(|m| m.starts_with("exchange ")).count();
+    // the eight refusals and the link used again; not the reset, the session read, and the two sign-ins
+    assert_eq!(diverged, 9, "{d:?}");
+    assert!(!d.iter().any(|m| m.contains("exchange \"the reset\":")), "the success has no code to drop: {d:?}");
+}
+
+/// A recording that was changed must be seen to differ: the redirect of the second exchange (the uid of no account) is made to say it
+/// was refused for its password, and the replay must diverge there and nowhere else.
+#[test]
+fn parity_control_a_mutated_reset_recording_is_a_divergence() {
+    let d = journey(ROWS, "X11", |fixture| {
+        fixture["exchanges"][2]["response"]["headers"]["location"] =
+            json!("<base_url>/accounts/reset-password?error_code=5020&error_message=INVALID_PASSWORD");
+    });
+    assert_eq!(d.iter().filter(|m| m.starts_with("exchange ")).count(), 1, "{d:?}");
+    assert!(d[0].contains("the uid of no account"), "{d:?}");
 }

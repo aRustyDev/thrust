@@ -109,7 +109,7 @@ pub struct CoreConfig {
     /// from a request's `Host` header, which a caller controls: with a forged one a reset mail would carry a working token to a
     /// page that is not ours. `None`: no link can be made, so a password reset is off (D-041).
     pub public_base_url: Option<String>,
-    /// How long a mailed password-reset link works (the pin's is three days; an hour is what a person needs and less for a stolen mailbox).
+    /// How long a mailed password-reset link works: an hour, which is the pin's own (`PASSWORD_RESET_TIMEOUT = 3600`, D-041).
     pub password_reset_ttl_secs: i64,
     /// A request for an account whose link is younger than this makes and sends nothing: the form is not a way to mail someone over and over.
     pub password_reset_cooldown_secs: i64,

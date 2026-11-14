@@ -95,13 +95,26 @@ pub fn app() -> Router {
 
 /// [`app`], and the memory database behind it, for a test that needs rows no route makes (a guest, a second project).
 pub fn app_with_db() -> (Router, Arc<MemoryDatabase>) {
-    let (app, db) = bare_world();
+    let (router, db, _) = app_world(false);
+    (router, db)
+}
+
+/// [`app_with_db`] and the `App` behind it, for a test that makes something the routes do not (a reset link). `mailing` is a deployment that
+/// can send a reset (D-041): a mail service that keeps what it is given, and the address its link starts with. Every row but X10 is replayed on
+/// one that cannot, as every deployment is until a mail service is wired.
+pub fn app_world(mailing: bool) -> (Router, Arc<MemoryDatabase>, App) {
+    let email: Option<Arc<dyn EmailSender>> = mailing.then(|| Arc::new(MemoryEmail::new()) as Arc<dyn EmailSender>);
+    let (app, db) = bare_world_parts(None, email, |c| {
+        if mailing {
+            c.public_base_url = Some("https://projects.example.test".to_string());
+        }
+    });
     // The activity consumer is what writes a work item's history, on a worker the pin runs side by side with the API. Here it runs
     // when a test says so: `send` asks for the outbox to be drained before each request (a recording is made with the worker caught
     // up before each read, so every read finds the writes before it), and a test that needs the rows without a request calls
     // [`drain`] itself.
     let drain = Router::new().route("/__drain", axum::routing::post(drain_route)).layer(Extension(app.clone()));
-    (drain.merge(thrust_compat_plane::routes().layer(Extension(app))), db)
+    (drain.merge(thrust_compat_plane::routes().layer(Extension(app.clone()))), db, app)
 }
 
 /// The `App` of [`app_with_db`] and its memory database, with no router: for a test that mounts routes of its own beside the compat
@@ -242,6 +255,22 @@ fn query_pairs(q: &str) -> Vec<(String, String)> {
 /// A recorded exchange as Thrust is expected to answer it. Anything that is not a form request or a 302 is unchanged.
 pub fn project(ex: &Value) -> Value {
     let mut ex = ex.clone();
+    // D-041: the reset page's form is a native post, and Thrust answers it as the pin does, with the same 302, so it is NOT projected onto the JSON
+    // of the sign-in (D-022). The request keeps its form (as `urlencoded`, which `send` posts as one); the recorded redirect loses its origin, because
+    // the pin's is absolute and Thrust's is relative (the normaliser leaves a relative value alone), and is otherwise as recorded.
+    if ex["request"]["path"].as_str().is_some_and(|p| p.starts_with("/auth/reset-password/")) {
+        if let Some(form) = ex["request"]["body"].get("form").cloned() {
+            ex["request"]["body"] = json!({ "urlencoded": form });
+        }
+        if let Some(rest) = ex["response"]["headers"]["location"]
+            .as_str()
+            .and_then(|l| l.strip_prefix("<base_url>"))
+            .map(str::to_string)
+        {
+            ex["response"]["headers"]["location"] = json!(rest);
+        }
+        return ex;
+    }
     if let Some(form) = ex["request"]["body"].get("form").cloned() {
         ex["request"]["body"] = form;
     }
@@ -505,6 +534,10 @@ pub fn send(router: &Router, name: &Value, req: &Value, jar: &Jar) -> Value {
         Some(b) if b.get("form").is_some() => {
             panic!("a form body must be projected before it is sent; found one in {name}")
         }
+        Some(b) if b.get("urlencoded").is_some() => {
+            builder = builder.header("content-type", "application/x-www-form-urlencoded");
+            Body::from(serde_urlencoded::to_string(&b["urlencoded"]).expect("a form of strings"))
+        }
         Some(b) => {
             builder = builder.header("content-type", "application/json");
             Body::from(b.to_string())
@@ -649,6 +682,12 @@ pub fn divergences_with(router: &Router, fixture: &Value, jar: &mut Jar) -> Vec<
                 jar.insert(jar_key(email), token);
             }
         }
+        // a reset signs nobody in (D-041): the pin sets no session cookie on it, whatever it comes to, and neither may Thrust
+        if want["request"]["path"].as_str().is_some_and(|p| p.starts_with("/auth/reset-password/"))
+            && session_token(&raw).is_some()
+        {
+            lines.push("  session cookie: a reset signs nobody in, and this answer set one".to_string());
+        }
         // a sign-out answers a redirect for every request on the pin (D-036), and clears the two cookies, which the fixtures drop
         if want["request"]["path"].as_str() == Some("/auth/sign-out/") && !both_cookies_cleared(&raw) {
             lines.push(
@@ -731,7 +770,8 @@ pub fn journey_with(
     target: &str,
     edit: impl FnOnce(&mut Value),
 ) -> Vec<String> {
-    let (router, db) = app_with_db();
+    // X10 asks the route for a link on a deployment that can send one: the pin had an SMTP host for those rows (its dark ones are `X10-dark`)
+    let (router, db, app) = app_world(target == "X10");
     let router = wrap(router);
     let mut jar = Jar::new();
     // the rows of a member who is not an admin: the recorder made the second user a member of the workspace (an invitation, taken)
@@ -750,7 +790,41 @@ pub fn journey_with(
     become_member(target);
     let mut fixture = load_fixture(target);
     edit(&mut fixture);
+    if target == "X11" {
+        return reset_replay(&router, &db, &app, &fixture, &mut jar);
+    }
     divergences_with(&router, &fixture, &mut jar)
+}
+
+/// X11 (D-041): the fixture signs an account up and then posts the reset form with that account's link, which the pin made in its own
+/// shell and which differs on every stack, so the fixture says `{uidb64}` and `{token}` where it goes. Replay the sign-up, make the link
+/// the way a request does (`issue_password_reset`), put it in the paths of the rest, and replay those on the same jar.
+fn reset_replay(router: &Router, db: &MemoryDatabase, app: &App, fixture: &Value, jar: &mut Jar) -> Vec<String> {
+    let exchanges = fixture["exchanges"].as_array().expect("exchanges");
+    let email = exchanges[0]["request"]["body"]["form"]["email"]
+        .as_str()
+        .expect("the first exchange signs an account up")
+        .to_string();
+    let part = |from: usize, to: usize| {
+        let mut f = fixture.clone();
+        f["exchanges"] = Value::Array(exchanges[from..to].to_vec());
+        f
+    };
+    let mut out = divergences_with(router, &part(0, 1), jar);
+    let issued = futures_executor::block_on(issue_password_reset(app, user_id(db, &email)))
+        .expect("a link")
+        .expect("no earlier link");
+    let mut rest = part(1, exchanges.len());
+    for ex in rest["exchanges"].as_array_mut().expect("exchanges") {
+        let path = ex["request"]["path"]
+            .as_str()
+            .expect("path")
+            .replace("{uidb64}", &issued.uidb64)
+            .replace("{token}", &issued.token);
+        ex["request"]["path"] = json!(path);
+    }
+    out.extend(divergences_with(router, &rest, jar));
+    out
 }
 
 /// The JSON paths at which `recorded` and `answered` differ, one line each.

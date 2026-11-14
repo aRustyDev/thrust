@@ -31,6 +31,21 @@ fn oidc_enabled(app: &App) -> bool {
     app.ports.oidc.is_some()
 }
 
+/// Whether mail can be sent, which is what the app's `is_smtp_configured` says: a mail service, and the address that a link in it starts with.
+/// Both are what `request_password_reset` needs, so a deployment that says yes is one whose request is not `SMTP_NOT_CONFIGURED`.
+fn smtp_configured(app: &App) -> bool {
+    // MUTANT (control run only): the switch says mail is on although nothing can send it, so the app offers a link that answers 5025 (D-041).
+    #[cfg(feature = "mutant_smtp_flag_always_on")]
+    return {
+        let _ = app;
+        true
+    };
+    #[cfg(not(feature = "mutant_smtp_flag_always_on"))]
+    {
+        app.ports.email.is_some() && app.cfg.public_base_url.is_some()
+    }
+}
+
 /// Plane's `/api/instances/` answer. Field names and types are the pin's (fixture S01); `file_size_limit` is a float
 /// there, so it is one here.
 #[derive(Serialize)]
@@ -132,7 +147,9 @@ pub(crate) async fn get_instance(
             has_unsplash_configured: false,
             has_llm_configured: false,
             file_size_limit: 5_242_880.0,
-            is_smtp_configured: false,
+            // the reset by email is the one use of mail so far (D-041): drawn as the app's "Forgot your password?" link only while a mail service and
+            // the address its link starts with are both configured; a deployment with neither (every one until E2) shows the "ask your admin" line
+            is_smtp_configured: smtp_configured(&app),
             admin_base_url: origin.clone(),
             space_base_url: origin.clone(),
             app_base_url: origin,
