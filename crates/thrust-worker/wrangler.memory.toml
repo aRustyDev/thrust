@@ -1,8 +1,13 @@
-# In-isolate adapter set (dev/test only): no bindings at all. Proves the dual build.
+# In-isolate adapter set (dev/test only): no bindings to anything that holds data. Proves the dual build.
 name = "thrust-worker-memory"
 main = "build/worker/shim.mjs"
 compatibility_date = "2026-08-01"
 workers_dev = false
+
+# The one binding it has: the running version, which the Worker sends as `x-thrust-version` (issue #49), as the production-shaped config
+# does. It lets scripts/smoke-deploy.sh run against this Worker with no Docker, which is how the smoke is tried before it is deployed.
+[version_metadata]
+binding = "CF_VERSION_METADATA"
 
 [build]
 command = "../../scripts/rs worker-build --release"

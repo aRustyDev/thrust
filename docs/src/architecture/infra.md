@@ -43,6 +43,7 @@ The bindings in `crates/thrust-worker/wrangler.toml`:
 | `BLOBS` | R2 bucket | `BlobStore` |
 | `EVENTS` | Queue, producer and consumer (batch of 10, 1 s timeout, 3 retries) | `Queue` |
 | `RL_CREATE`, `RL_SIGNIN`, `RL_V1` | Workers Rate Limiting bindings, one per kind of key (work item creates per user, 1000 a minute; sign-ins per email, 10; `/api/v1` requests per API key, 60) | `RateLimiter`, through `CfRateLimiter` |
+| `CF_VERSION_METADATA` | Version metadata | none: the Worker sends the running version's tag (else its id) as the `x-thrust-version` header on every response it routes, and sends no header when it has neither. A deploy tags the version with the commit (`wrangler deploy --tag <sha>`) and the smoke compares the two (`scripts/smoke-deploy.sh`, issue #49). Local `wrangler dev` has no tag and a random UUID for the id, so the header there is that id (measured with wrangler 4.123.0) |
 | `ROOM` | Durable Object `RoomDo` (SQLite) | none: a WebSocket room, reachable only through `/_test/room/...`, which needs test routes and the admin token |
 | cron `* * * * *` | Cron trigger | runs the outbox sweeper |
 
@@ -53,7 +54,7 @@ binding or a Workflow, because the Worker has neither.
 Behaviour worth knowing:
 
 - **Adapter set.** `wrangler.toml` builds with `--no-default-features`, so the bundle holds the Cloudflare set only.
-  The default build also compiles an in-isolate `memory` set, which `wrangler.memory.toml` runs with no bindings.
+  The default build also compiles an in-isolate `memory` set, which `wrangler.memory.toml` runs with no binding but `CF_VERSION_METADATA`.
 - **Rate limits.** On Cloudflare the allowance is the binding's own `limit` and `period` in the `[[ratelimits]]` block,
   not a variable: `THRUST_CREATE_RATE_LIMIT`, `THRUST_SIGNIN_RATE_LIMIT` and the count in `THRUST_V1_RATE_LIMIT` are
   read by the in-isolate and native sets only. A binding counts per Cloudflare location and approximately (one of 3 per
@@ -142,8 +143,8 @@ logs the cause.
 
 ## Postgres
 
-`thrust-adapters-postgres` carries its own schema, in four files that `migrate` applies in order on every run, so each
-is idempotent:
+`thrust-adapters-postgres` carries its own schema, in sixteen files (`migrations/0001` to `0016`) that `migrate` applies in
+order on every run, so each is idempotent. The first four:
 
 | File | Adds |
 |---|---|
@@ -161,6 +162,25 @@ The `migrate` binary applies them. It needs the `native` feature and reads `DATA
 Neither the server nor the Worker applies the schema when it starts. `scripts/contract.sh native-pg` and `worker-cf` start
 a throwaway `postgres:16-alpine` container in Docker, with a generated password that lives only in the script's
 environment, and migrate it before the target starts.
+
+`migrate` takes its connection settings from the environment and never from argv, because the URL holds the password.
+`DATABASE_SSLMODE` is `disable` (the default, which is what the throwaway container above uses) or `verify-ca`; `require`
+and `verify-full` are refused, so a setting that cannot be honoured is an error and not a quiet downgrade.
+`DATABASE_SSLROOTCERT` names the PEM file of the CA to trust: `verify-ca` needs it and `disable` refuses it. `verify-ca`
+checks the server certificate's chain, signature and dates, and does not compare names, because the deploy reaches `thrust-pg`
+through a tunnel at `127.0.0.1` while the certificate names a host. It never falls back to plaintext: a server that answers no
+to TLS is an error (`thrust-pg` itself rejects non-TLS TCP, ADR-0094). The connector is `thrust_adapters_postgres::tls`, built
+with the `native` feature only and never into the Worker.
+
+`scripts/migrate-ci.sh` is the deploy's expand step (ADR-0110, issue #49). It starts `cloudflared access tcp` for the
+Access application in front of `thrust-pg` (`DB_ACCESS_HOSTNAME`, with the Access service token in
+`TUNNEL_SERVICE_TOKEN_ID` and `TUNNEL_SERVICE_TOKEN_SECRET`), waits for the local end, runs a built `migrate` under `verify-ca`
+(`MIGRATE_BIN`), and closes the tunnel. The token goes only to `cloudflared` and the database URL only to `migrate`. The
+script refuses a `DATABASE_URL` that does not point at the tunnel's local end. It cannot see a refused service token itself,
+because the local end accepts connections before the edge has judged the token: that shows up as `migrate` failing to connect,
+and the tail of `cloudflared`'s log is printed then. Nothing calls the script yet; the deploy workflow comes after it, and
+the tunnel route, Access application, service token and migration role on `thrust-pg` are infrastructure-repo work, so the
+route has not been run against the real database.
 
 ## Recover a locked-out user
 
@@ -207,8 +227,11 @@ unset OPERATOR_PW THRUST_OPERATOR_TOKEN
 For a new account use `/internal/operator/users` in place of `/internal/operator/users/password`. A `204` is done; `404` on a
 reset means the email has no account (use the create route), `409` on a create means it does (use the reset route), and `400`
 means the password was refused. Give the person the temporary password through a channel you trust, and not in the thread where
-they asked. They sign in with it. Until `POST /auth/change-password/` exists (the next change in the locked-out-recovery plan) the Profile,
-Security screen cannot change it, so the temporary password stays their password.
+they asked. They sign in with it, and then change it in Profile, Security: the screen asks for the temporary password as the old one
+(`POST /auth/change-password/`, D-039), and a change ends every session of the account and keeps them signed in on a new one, so tell
+them to do it at once. Wrong guesses at the old password count against the account's sign-in allowance, the same ten a minute as
+sign-in, so a person who mistypes it a few times is not locked out, and one who guesses it cannot. An account that single sign-on
+made has no password to give as the old one, and this reset is how it gets one.
 
 What this does not have, and why:
 

@@ -1,0 +1,376 @@
+{
+  "exchanges": [
+    {
+      "name": "an account to change the password of",
+      "request": {
+        "body": {
+          "form": {
+            "email": "changer@example.test",
+            "password": "Journey-Sample-Pa55word-Zebra-81"
+          }
+        },
+        "method": "POST",
+        "path": "/auth/sign-up/"
+      },
+      "response": {
+        "body": null,
+        "headers": {
+          "content-type": "text/html; charset=utf-8",
+          "location": "<base_url>"
+        },
+        "status": 302
+      }
+    },
+    {
+      "name": "no session",
+      "request": {
+        "body": {
+          "new_password": "Another-Sample-Pa55word-Yak-27",
+          "old_password": "Journey-Sample-Pa55word-Zebra-81"
+        },
+        "method": "POST",
+        "path": "/auth/change-password/"
+      },
+      "response": {
+        "body": {
+          "detail": "Authentication credentials were not provided."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 401
+      }
+    },
+    {
+      "name": "no old password",
+      "request": {
+        "as": "changer@example.test",
+        "body": {
+          "new_password": "Another-Sample-Pa55word-Yak-27"
+        },
+        "method": "POST",
+        "path": "/auth/change-password/"
+      },
+      "response": {
+        "body": {
+          "error": "Old password is missing",
+          "error_code": 5138,
+          "error_message": "MISSING_PASSWORD"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "no new password",
+      "request": {
+        "as": "changer@example.test",
+        "body": {
+          "old_password": "Journey-Sample-Pa55word-Zebra-81"
+        },
+        "method": "POST",
+        "path": "/auth/change-password/"
+      },
+      "response": {
+        "body": {
+          "error": "Old or new password is missing",
+          "error_code": 5138,
+          "error_message": "MISSING_PASSWORD"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "an empty body",
+      "request": {
+        "as": "changer@example.test",
+        "body": {},
+        "method": "POST",
+        "path": "/auth/change-password/"
+      },
+      "response": {
+        "body": {
+          "error": "Old password is missing",
+          "error_code": 5138,
+          "error_message": "MISSING_PASSWORD"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "an empty old password",
+      "request": {
+        "as": "changer@example.test",
+        "body": {
+          "new_password": "Another-Sample-Pa55word-Yak-27",
+          "old_password": ""
+        },
+        "method": "POST",
+        "path": "/auth/change-password/"
+      },
+      "response": {
+        "body": {
+          "error": "Old password is missing",
+          "error_code": 5138,
+          "error_message": "MISSING_PASSWORD"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "a new password that is null",
+      "request": {
+        "as": "changer@example.test",
+        "body": {
+          "new_password": null,
+          "old_password": "Journey-Sample-Pa55word-Zebra-81"
+        },
+        "method": "POST",
+        "path": "/auth/change-password/"
+      },
+      "response": {
+        "body": {
+          "error": "Old or new password is missing",
+          "error_code": 5138,
+          "error_message": "MISSING_PASSWORD"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "a wrong old password",
+      "request": {
+        "as": "changer@example.test",
+        "body": {
+          "new_password": "Another-Sample-Pa55word-Yak-27",
+          "old_password": "Wrong-Password-For-Journey-1"
+        },
+        "method": "POST",
+        "path": "/auth/change-password/"
+      },
+      "response": {
+        "body": {
+          "error": "Old password is not correct",
+          "error_code": 5135,
+          "error_message": "INCORRECT_OLD_PASSWORD"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "an old password that is not text",
+      "request": {
+        "as": "changer@example.test",
+        "body": {
+          "new_password": "Another-Sample-Pa55word-Yak-27",
+          "old_password": 12345
+        },
+        "method": "POST",
+        "path": "/auth/change-password/"
+      },
+      "response": {
+        "body": {
+          "error": "Old password is not correct",
+          "error_code": 5135,
+          "error_message": "INCORRECT_OLD_PASSWORD"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "a weak new password",
+      "request": {
+        "as": "changer@example.test",
+        "body": {
+          "new_password": "password",
+          "old_password": "Journey-Sample-Pa55word-Zebra-81"
+        },
+        "method": "POST",
+        "path": "/auth/change-password/"
+      },
+      "response": {
+        "body": {
+          "error_code": 5021,
+          "error_message": "PASSWORD_TOO_WEAK"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "a wrong old password and a weak new one",
+      "request": {
+        "as": "changer@example.test",
+        "body": {
+          "new_password": "password",
+          "old_password": "Wrong-Password-For-Journey-1"
+        },
+        "method": "POST",
+        "path": "/auth/change-password/"
+      },
+      "response": {
+        "body": {
+          "error": "Old password is not correct",
+          "error_code": 5135,
+          "error_message": "INCORRECT_OLD_PASSWORD"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "no old password and a weak new one",
+      "request": {
+        "as": "changer@example.test",
+        "body": {
+          "new_password": "password"
+        },
+        "method": "POST",
+        "path": "/auth/change-password/"
+      },
+      "response": {
+        "body": {
+          "error": "Old password is missing",
+          "error_code": 5138,
+          "error_message": "MISSING_PASSWORD"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "name": "the change",
+      "request": {
+        "as": "changer@example.test",
+        "body": {
+          "new_password": "Another-Sample-Pa55word-Yak-27",
+          "old_password": "Journey-Sample-Pa55word-Zebra-81"
+        },
+        "method": "POST",
+        "path": "/auth/change-password/"
+      },
+      "response": {
+        "body": {
+          "message": "Password updated successfully"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "the session held before the change",
+      "request": {
+        "as": "changer@example.test",
+        "method": "GET",
+        "path": "/api/users/me/"
+      },
+      "response": {
+        "body": {
+          "detail": "Authentication credentials were not provided."
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 401
+      }
+    },
+    {
+      "name": "sign in with the old password",
+      "request": {
+        "body": {
+          "form": {
+            "email": "changer@example.test",
+            "password": "Journey-Sample-Pa55word-Zebra-81"
+          }
+        },
+        "method": "POST",
+        "path": "/auth/sign-in/"
+      },
+      "response": {
+        "body": null,
+        "headers": {
+          "content-type": "text/html; charset=utf-8",
+          "location": "<base_url>/?error_code=5065&error_message=AUTHENTICATION_FAILED_SIGN_IN&email=changer%40example.test"
+        },
+        "status": 302
+      }
+    },
+    {
+      "name": "sign in with the new password",
+      "request": {
+        "body": {
+          "form": {
+            "email": "changer@example.test",
+            "password": "Another-Sample-Pa55word-Yak-27"
+          }
+        },
+        "method": "POST",
+        "path": "/auth/sign-in/"
+      },
+      "response": {
+        "body": null,
+        "headers": {
+          "content-type": "text/html; charset=utf-8",
+          "location": "<base_url>"
+        },
+        "status": 302
+      }
+    },
+    {
+      "name": "the password held already, as the new one",
+      "request": {
+        "as": "changer@example.test",
+        "body": {
+          "new_password": "Another-Sample-Pa55word-Yak-27",
+          "old_password": "Another-Sample-Pa55word-Yak-27"
+        },
+        "method": "POST",
+        "path": "/auth/change-password/"
+      },
+      "response": {
+        "body": {
+          "message": "Password updated successfully"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    }
+  ],
+  "format_version": 1,
+  "preconditions": [
+    "the first exchange makes changer@example.test, an account of this fixture's own, and signs it in: every exchange that names it (`as`) sends that session, until `sign in with the new password` makes another",
+    "`the session held before the change` sends the session cookie the account held before `the change` (the old value, by hand), not whatever the client kept, and that cookie was checked to be a live session before the change"
+  ],
+  "recorded_from": "ba85d4d3d3",
+  "row": "X09"
+}

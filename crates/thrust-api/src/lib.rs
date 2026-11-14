@@ -54,6 +54,36 @@ pub fn set_db_round_trips<B>(resp: &mut Response<B>, statements: u32) {
     resp.headers_mut().insert(DB_ROUND_TRIPS_HEADER, HeaderValue::from(statements));
 }
 
+/// The response header that says which build answered (issue #49). The Worker puts it on every response it routes. The deploy's
+/// smoke reads it from `/healthz` and compares it with the commit it has just deployed, so a Worker that still serves the version
+/// it replaced fails the smoke instead of passing it. The native server sends none: it has no deploy to tell apart.
+pub const VERSION_HEADER: HeaderName = HeaderName::from_static("x-thrust-version");
+
+/// What [`VERSION_HEADER`] says, from the Worker's version metadata: the tag the deploy gave it (the commit sha, `wrangler deploy
+/// --tag`), else the version id Cloudflare assigned, else nothing.
+///
+/// Nothing is not an empty value. `wrangler dev` and the memory set have no real version, and the smoke has to read that as
+/// "absent", which fails it, not as a string it could take for a value. A value that is there but is not visible ASCII is nothing
+/// too, because a header cannot carry it, and it does not fall through to the id: a mis-tagged deploy would then show a version id
+/// where the smoke expects a sha, and "absent" fails more plainly than "different".
+pub fn version_label(tag: &str, id: &str) -> Option<String> {
+    [tag, id]
+        .into_iter()
+        .map(str::trim)
+        .find(|s| !s.is_empty())
+        .filter(|s| s.bytes().all(|b| b.is_ascii_graphic()))
+        .map(str::to_owned)
+}
+
+/// Put the build's version on a response, or leave the header off when [`version_label`] has nothing. A header a handler already
+/// set is replaced: the Worker, not a handler, says which build this is.
+pub fn set_version<B>(resp: &mut Response<B>, tag: &str, id: &str) {
+    resp.headers_mut().remove(VERSION_HEADER);
+    if let Some(label) = version_label(tag, id).and_then(|l| HeaderValue::from_str(&l).ok()) {
+        resp.headers_mut().insert(VERSION_HEADER, label);
+    }
+}
+
 pub struct ApiError(pub CoreError);
 
 impl From<CoreError> for ApiError {
