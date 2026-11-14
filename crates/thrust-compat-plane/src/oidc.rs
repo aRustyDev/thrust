@@ -33,9 +33,9 @@ fn failure(code: Code) -> Response {
     // reload of the sign-in page. The contract suite's refusal tests must catch it.
     #[cfg(feature = "mutant_oidc_failure_redirect_no_code")]
     let location = format!("/?error_message={}", code.message());
-    let Ok(location) = HeaderValue::from_str(&location) else {
-        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
-    };
+    // The location is made of a number and a constant name, all printable ASCII, so this cannot fail; if it ever did, the browser goes to the
+    // root with no code and no cookie, which is a refused login that says nothing. (This crate writes no 500 of its own: scripts/check-plane-500.sh.)
+    let location = HeaderValue::from_str(&location).unwrap_or_else(|_| HeaderValue::from_static("/"));
     let mut resp = StatusCode::FOUND.into_response();
     resp.headers_mut().insert(LOCATION, location);
     resp.headers_mut().insert(CACHE_CONTROL, HeaderValue::from_static("no-store"));
