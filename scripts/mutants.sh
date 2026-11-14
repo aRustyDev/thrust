@@ -66,7 +66,9 @@ for triple in \
   "change-password-skips-old:mutant_change_password_skips_old:main" \
   "change-password-skips-strength:mutant_change_password_skips_strength:main" \
   "change-password-keeps-sessions:mutant_change_password_keeps_sessions:main" \
-  "change-password-allows-api-key:mutant_change_password_allows_api_key:main"; do
+  "change-password-allows-api-key:mutant_change_password_allows_api_key:main" \
+  "oidc-state-reusable:mutant_oidc_state_reusable:main" \
+  "oidc-refusal-without-error-code:mutant_oidc_failure_redirect_no_code:main"; do
   name="${triple%%:*}"
   rest="${triple#*:}"
   feature="${rest%%:*}"

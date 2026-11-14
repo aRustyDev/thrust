@@ -107,6 +107,11 @@ pub fn app_with_db() -> (Router, Arc<MemoryDatabase>) {
 /// The `App` of [`app_with_db`] and its memory database, with no router: for a test that mounts routes of its own beside the compat
 /// ones (the operator's, which are `thrust-api`'s).
 pub fn bare_world() -> (App, Arc<MemoryDatabase>) {
+    bare_world_with(None)
+}
+
+/// [`bare_world`] with an OIDC provider configured (`None` is a deployment with none: every deployment today, D-040).
+pub fn bare_world_with(oidc: Option<Arc<dyn OidcProvider>>) -> (App, Arc<MemoryDatabase>) {
     let db = Arc::new(MemoryDatabase::new());
     let background: Arc<dyn Background> = Arc::new(NoBackground);
     let queue: Arc<dyn Queue> = Arc::new(MemoryQueue::new(background.clone(), ConsumerSlot::default()));
@@ -130,7 +135,7 @@ pub fn bare_world() -> (App, Arc<MemoryDatabase>) {
             background,
             rng: Arc::new(CounterRng::default()),
             hasher,
-            oidc: None,
+            oidc,
         },
         cfg,
         SystemScope::mint(),

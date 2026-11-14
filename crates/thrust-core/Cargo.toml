@@ -24,6 +24,8 @@ mutant_operator_keeps_sessions = []
 mutant_change_password_skips_old = []
 mutant_change_password_skips_strength = []
 mutant_change_password_keeps_sessions = []
+# The OIDC login's `state` kept after it is used, so that a replayed callback finds it again (ADR-0050).
+mutant_oidc_state_reusable = []
 
 [dependencies]
 thrust-contracts = { workspace = true }

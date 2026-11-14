@@ -17,6 +17,20 @@ const INSTANCE_ID: &str = "7468727573740000000000a1";
 /// The pin's `instance_changelog_url`; a constant of the pinned Plane, not of a deployment.
 const CHANGELOG_URL: &str = "https://sites.plane.so/pages/691ef037bcfe416a902e48cb55f59891/";
 
+/// Whether the app should draw the SSO button: a provider is configured. This is the one place that ties the button to the routes
+/// behind it (`oidc.rs`), so a deployment with no provider is dark: the app shows the password alone and the routes answer
+/// `OIDC_NOT_CONFIGURED`. Fixture S01 stays the pin's because the default test app has none.
+fn oidc_enabled(app: &App) -> bool {
+    // MUTANT (control run only): the switch ignores the provider, so a deployment with none shows a button that goes nowhere (D-040).
+    #[cfg(feature = "mutant_oidc_flag_always_on")]
+    return {
+        let _ = app;
+        true
+    };
+    #[cfg(not(feature = "mutant_oidc_flag_always_on"))]
+    app.ports.oidc.is_some()
+}
+
 /// Plane's `/api/instances/` answer. Field names and types are the pin's (fixture S01); `file_size_limit` is a float
 /// there, so it is one here.
 #[derive(Serialize)]
@@ -108,7 +122,9 @@ pub(crate) async fn get_instance(
             is_github_enabled: false,
             is_gitlab_enabled: false,
             is_gitea_enabled: false,
-            is_oidc_enabled: false,
+            // the one method beyond the password that Thrust has a route for (`/auth/oidc/`, D-040), drawn as a button only while a
+            // provider is configured: a deployment with none (the Worker, until Q-0050.9) is dark, and the app shows the password alone
+            is_oidc_enabled: oidc_enabled(&app),
             is_magic_login_enabled: false,
             is_email_password_enabled: true,
             github_app_name: "",

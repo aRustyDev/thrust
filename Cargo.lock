@@ -3709,6 +3709,7 @@ dependencies = [
 name = "thrust-compat-plane"
 version = "0.0.0"
 dependencies = [
+ "async-trait",
  "axum",
  "futures-executor",
  "proptest",

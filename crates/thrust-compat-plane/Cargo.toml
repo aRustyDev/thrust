@@ -14,6 +14,10 @@ workspace = true
 [features]
 # Control-run mutant (scripts/mutants.sh), never enabled outside it; `thrust-server` forwards it: an API key may change the password.
 mutant_change_password_allows_api_key = []
+# The OIDC routes (D-040): `/api/instances/` says the provider is on although none is configured (the switch of a dark deployment), and
+# a refused login's redirect carries no `error_code` (the one thing the app reads from it).
+mutant_oidc_flag_always_on = []
+mutant_oidc_failure_redirect_no_code = []
 
 [dependencies]
 thrust-contracts = { workspace = true }
@@ -39,3 +43,5 @@ tower = { version = "0.5", features = ["util"] }
 futures-executor = "0.3"
 proptest = "1"
 rstest = "0.26"
+# The scripted OIDC provider of tests/oidc.rs implements an `async_trait` port.
+async-trait = { workspace = true }

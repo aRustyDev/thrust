@@ -247,6 +247,31 @@ What this does not have, and why:
   against a deployed Worker. Its asset config must also send `/internal/operator/*` to the Worker: `scripts/worker-dev.sh` lists
   `/internal` and `/internal/*` in `run_worker_first`, and the production config is not in this repository.
 
+## Sign in with SSO (built, and dark)
+
+The stock sign-in screen has a "Sign in with SSO" button, and Thrust has the two routes behind it (`GET /auth/oidc/`, `GET
+/auth/oidc/callback/`, D-040). **Nothing turns it on today.** The button is drawn only when `/api/instances/` says a provider is
+configured, and no deployment has one: the Worker cannot reach `id.auth.woven`, which is WARP-only, until the Workers VPC service to
+the issuer exists (Q-0050.9, M6). With no provider, the screen shows the password and nothing else, and the two routes answer
+`OIDC_NOT_CONFIGURED` to a visitor who types them in. The end of the way back in for a locked-out person is therefore still the
+operator's reset above.
+
+What switching it on takes, for the day Q-0050.9 is done, and why it is not a variable to set early:
+
+- `THRUST_OIDC_ISSUER`, `THRUST_OIDC_CLIENT_ID` and `THRUST_OIDC_REDIRECT_URI` (all three or none), and `THRUST_OIDC_CLIENT_SECRET`
+  as a secret (environment only, never a file; `scripts/worker-dev.sh` documents the group). The redirect URI registered at the provider and set here must be `<origin>/auth/oidc/callback/`: the
+  fork builds it from the request, Thrust takes it from the setting.
+- **Do not set them on a Worker that cannot reach the issuer.** The button is drawn as soon as they are set, and a login that cannot
+  reach the provider ends at the sign-in page with no words, because the stock app has no text for `OIDC_OAUTH_PROVIDER_ERROR`
+  (5301). That is the dead end this release removed, so the settings stay unset until a login has been seen to complete.
+- An account must exist first (the operator's create-user above): a login makes none (Q-0050.1), and an identity with no account
+  is told "Sign up disabled. Please contact your administrator." The first login of an account links the provider's subject by its
+  verified email; from then on the subject decides.
+- A person lands on `/` after a login, not on the page they were headed for (D-040, 1).
+
+Tested on the four contract targets against the mock identity provider (`scripts/contract.sh`) and never against Zitadel or a
+remote issuer `[unverified]`; the contract `e2e` pass starts its target with no provider, as the deployment is.
+
 ## Elsewhere and not built yet
 
 The plan records decisions and work about infrastructure that is not in this repository:
