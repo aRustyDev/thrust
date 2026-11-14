@@ -7,7 +7,7 @@
 #     scripts/stage2-contract.sh [main|worker|bindings|cron|sweeper|panic]
 #
 # main      59 tests: the portable contract minus the 6 `oidc_` tests (they need the mock IdP on 127.0.0.1, which a
-#           deployed Worker cannot reach) (the deployed Worker's RL_CREATE binding must be 30 a minute and its RL_V1 binding 60,
+#           deployed Worker cannot reach) (the deployed Worker's RL_V1 binding must be 60 a minute,
 #           which wrangler.stage2.toml sets, and it needs a cheap argon2id cost, THRUST_ARGON2_M_KIB=64 THRUST_ARGON2_T=1
 #           THRUST_ARGON2_P=1, or every fixture seeds six passwords at the real cost). It refuses a THRUST_EXPECT_V1_LIMIT
 #           above 1000: the rate-limit test would send millions of creates to a Worker whose binding was raised for the engine pass
@@ -21,8 +21,9 @@
 # csrfoff    6 tests: needs the Worker deployed with THRUST_CSRF_ENFORCE=off (Q-0050.8, the production default while the
 #            stock frontend is in use). Every other pass needs it ON, which wrangler.stage2.toml sets; /_info is checked
 # engine     the engine pass (spike 0002, `contract.sh <target> engine`): the 50-writer test and the search tests.
-#            Needs a Worker whose RL_CREATE binding has a very high limit (the 50-writer test makes ~10k creates): a binding's
-#            limit is not a var, so it is set in the config the Worker is deployed from (`spike-0002-pg.sh deploy --create-limit`).
+#            Needs a Worker whose RL_V1 binding has a very high limit (the 50-writer test makes ~10k creates, each a request on an API
+#            key): a binding's limit is not a var, so it is set in the config the Worker is deployed from
+#            (`spike-0002-pg.sh deploy --v1-limit`).
 # email      1 test : ONE real send through the EMAIL binding (a Worker deployed with THRUST_EMAIL_FROM and THRUST_EMAIL_TO);
 #            it sends a mail every time it is run
 # budget     1 test : the database round-trip budget of #39 (`contract.sh <target> budget`), alone, so it can be read against a
@@ -42,21 +43,15 @@ THRUST_ADMIN_TOKEN="$(cat "$TOKEN_FILE")"
 [ "${#THRUST_ADMIN_TOKEN}" -ge 32 ] || { echo "token file too short" >&2; exit 2; }
 export THRUST_ADMIN_TOKEN
 export THRUST_BASE_URL="$BASE"
-export THRUST_EXPECT_CREATE_LIMIT="${THRUST_EXPECT_CREATE_LIMIT:-30}"
 # What a key may do on /api/v1 in a minute: the RL_V1 binding's limit, which wrangler.stage2.toml sets to Plane's default of 60.
 export THRUST_EXPECT_V1_LIMIT="${THRUST_EXPECT_V1_LIMIT:-60}"
 export THRUST_STATE_SURVIVES_PANIC=1
 # `v1_requests_are_rate_limited_per_key` (in `main`, and alone as `ratelimit`) sends `limit` creates and then up to `limit + 1` more, one
 # at a time. Against a Worker whose binding was raised for the engine pass (1,000,000) it makes about two million requests and does not
 # end (the slice's create-limit test did the same on 2026-11-11: it ran for 90 minutes before it was stopped). Refuse a limit that
-# large; those Workers need `main` run without it, or a Worker deployed with the default 60. The slice's create limit (RL_CREATE) is
-# what the model tests' creates stay under, and is refused above 1000 for the same reason as before.
+# large; those Workers need `main` run without it, or a Worker deployed with the default 60.
 case "$PASS" in
   main|ratelimit)
-    [ "$THRUST_EXPECT_CREATE_LIMIT" -le 1000 ] 2>/dev/null || {
-      echo "[stage2/$PASS] REFUSED: THRUST_EXPECT_CREATE_LIMIT=$THRUST_EXPECT_CREATE_LIMIT is not a number of at most 1000; deploy the Worker with the default 30" >&2
-      exit 2
-    }
     [ "$THRUST_EXPECT_V1_LIMIT" -le 1000 ] 2>/dev/null || {
       echo "[stage2/$PASS] REFUSED: THRUST_EXPECT_V1_LIMIT=$THRUST_EXPECT_V1_LIMIT is not a number of at most 1000 (the rate-limit test sends up to 2 x limit + 1 creates); deploy the Worker with the default 60" >&2
       exit 2

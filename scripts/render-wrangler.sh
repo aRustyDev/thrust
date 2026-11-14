@@ -13,9 +13,9 @@
 #   THRUST_R2_BUCKET          __BLOBS_BUCKET__     the R2 bucket
 #   THRUST_QUEUE              __EVENTS_QUEUE__     the queue
 #   THRUST_QUEUE_DLQ          __EVENTS_DLQ__       its dead-letter queue, a different queue
-#   THRUST_RL_CREATE_ID, THRUST_RL_SIGNIN_ID, THRUST_RL_V1_ID
-#                             __RL_CREATE_ID__ ... three rate-limit namespace ids: positive whole numbers, different from one another
-#                                                  and from 1001-1004, which local runs use (the namespace is account-wide)
+#   THRUST_RL_SIGNIN_ID, THRUST_RL_V1_ID
+#                             __RL_SIGNIN_ID__, __RL_V1_ID__  the two rate-limit namespace ids: positive whole numbers, different from one
+#                                                  another and from 1001-1004, which local runs use (the namespace is account-wide)
 #   THRUST_CSRF_ENFORCE       __CSRF_ENFORCE__     `on` or `off`. No default: turning it on for production is a decision
 #
 # What it refuses, all at once (it lists every problem, not the first): a marker whose variable is unset or empty; a value of the wrong
@@ -42,7 +42,6 @@ __HYPERDRIVE_ID__:THRUST_HYPERDRIVE_ID:hex32
 __BLOBS_BUCKET__:THRUST_R2_BUCKET:name
 __EVENTS_QUEUE__:THRUST_QUEUE:name
 __EVENTS_DLQ__:THRUST_QUEUE_DLQ:name
-__RL_CREATE_ID__:THRUST_RL_CREATE_ID:nsid
 __RL_SIGNIN_ID__:THRUST_RL_SIGNIN_ID:nsid
 __RL_V1_ID__:THRUST_RL_V1_ID:nsid
 __CSRF_ENFORCE__:THRUST_CSRF_ENFORCE:onoff"
@@ -109,9 +108,9 @@ render() {
   done
 
   # relations between values
-  if [ -n "${THRUST_RL_CREATE_ID:-}" ] && [ -n "${THRUST_RL_SIGNIN_ID:-}" ] && [ -n "${THRUST_RL_V1_ID:-}" ]; then
-    if [ "$THRUST_RL_CREATE_ID" = "$THRUST_RL_SIGNIN_ID" ] || [ "$THRUST_RL_CREATE_ID" = "$THRUST_RL_V1_ID" ] || [ "$THRUST_RL_SIGNIN_ID" = "$THRUST_RL_V1_ID" ]; then
-      problem "the three rate-limit namespace ids must differ from one another (equal ids share one counter)"
+  if [ -n "${THRUST_RL_SIGNIN_ID:-}" ] && [ -n "${THRUST_RL_V1_ID:-}" ]; then
+    if [ "$THRUST_RL_SIGNIN_ID" = "$THRUST_RL_V1_ID" ]; then
+      problem "the two rate-limit namespace ids must differ from one another (equal ids share one counter)"
     fi
   fi
   if [ -n "${THRUST_QUEUE:-}" ] && [ "${THRUST_QUEUE:-}" = "${THRUST_QUEUE_DLQ:-}" ]; then
@@ -163,12 +162,11 @@ self_test() {
     THRUST_R2_BUCKET=thrust-staging-blobs
     THRUST_QUEUE=thrust-staging-events
     THRUST_QUEUE_DLQ=thrust-staging-events-dlq
-    THRUST_RL_CREATE_ID=2101
     THRUST_RL_SIGNIN_ID=2102
     THRUST_RL_V1_ID=2103
     THRUST_CSRF_ENFORCE=off
     export THRUST_WORKER_NAME THRUST_HYPERDRIVE_ID THRUST_R2_BUCKET THRUST_QUEUE THRUST_QUEUE_DLQ \
-      THRUST_RL_CREATE_ID THRUST_RL_SIGNIN_ID THRUST_RL_V1_ID THRUST_CSRF_ENFORCE
+      THRUST_RL_SIGNIN_ID THRUST_RL_V1_ID THRUST_CSRF_ENFORCE
   }
   # run <tmpl> <label> <want-exit> <want-fragment> '<snippet that changes the good environment>'
   run() {
@@ -195,7 +193,6 @@ id = "__HYPERDRIVE_ID__"
 bucket = "__BLOBS_BUCKET__"
 queue = "__EVENTS_QUEUE__"
 dlq = "__EVENTS_DLQ__"
-a = "__RL_CREATE_ID__"
 b = "__RL_SIGNIN_ID__"
 c = "__RL_V1_ID__"
 csrf = "__CSRF_ENFORCE__"
@@ -213,7 +210,7 @@ EOF
     || { bad=$((bad + 1)); echo "BAD  the rendered values are not where the markers were"; }
 
   # every variable, taken away, is refused, and the message names it
-  for v in THRUST_WORKER_NAME THRUST_HYPERDRIVE_ID THRUST_R2_BUCKET THRUST_QUEUE THRUST_QUEUE_DLQ THRUST_RL_CREATE_ID THRUST_RL_SIGNIN_ID THRUST_RL_V1_ID THRUST_CSRF_ENFORCE; do
+  for v in THRUST_WORKER_NAME THRUST_HYPERDRIVE_ID THRUST_R2_BUCKET THRUST_QUEUE THRUST_QUEUE_DLQ THRUST_RL_SIGNIN_ID THRUST_RL_V1_ID THRUST_CSRF_ENFORCE; do
     run "$T/mini.toml" "$v unset is refused" 1 "$v is not set" "unset $v"
     run "$T/mini.toml" "$v empty is refused" 1 "$v is not set" "$v="
   done
@@ -234,9 +231,12 @@ EOF
   run "$T/mini.toml" "a rate-limit id that is not a number is refused" 1 "positive whole number" 'THRUST_RL_V1_ID=abc'
   run "$T/mini.toml" "a rate-limit id with a leading zero is refused" 1 "positive whole number" 'THRUST_RL_V1_ID=0123'
   run "$T/mini.toml" "a rate-limit id that local runs use is refused" 1 "ids local runs use" 'THRUST_RL_V1_ID=1004'
-  run "$T/mini.toml" "equal rate-limit ids are refused (create = v1)" 1 "must differ from one another" 'THRUST_RL_V1_ID=2101'
   run "$T/mini.toml" "equal rate-limit ids are refused (sign-in = v1)" 1 "must differ from one another" 'THRUST_RL_V1_ID=2102'
-  run "$T/mini.toml" "equal rate-limit ids are refused (create = sign-in)" 1 "must differ from one another" 'THRUST_RL_SIGNIN_ID=2101'
+  # the marker of the binding that went with the slice's create limit (step 5c-3 of #58): a template that still has it is refused
+  # whatever the environment holds, so a stale template cannot be rendered into a config that declares a binding the Worker does not use
+  printf 'name = "__WORKER_NAME__"\nrl = "__RL_CREATE_ID__"\n' > "$T/retired.toml"
+  run "$T/retired.toml" "a template with the retired RL_CREATE marker is refused" 1 "__RL_CREATE_ID__, which this script does not know" ':'
+  run "$T/retired.toml" "...even when the environment still has THRUST_RL_CREATE_ID" 1 "which this script does not know" 'THRUST_RL_CREATE_ID=2101; export THRUST_RL_CREATE_ID'
   run "$T/mini.toml" "a CSRF value that is not on or off is refused" 1 "'on' or 'off'" 'THRUST_CSRF_ENFORCE=yes'
 
   # every problem at once, not only the first

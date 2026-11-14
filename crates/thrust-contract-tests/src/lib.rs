@@ -66,16 +66,9 @@ impl Target {
             .unwrap()
     }
 
-    /// The create limit the target was started with: `THRUST_CREATE_RATE_LIMIT` on the native server and the in-isolate Worker, and
-    /// the `RL_CREATE` binding's limit on the Cloudflare Worker (`scripts/worker-dev.sh` writes it into the config it starts from).
-    pub fn create_limit() -> u32 {
-        std::env::var("THRUST_EXPECT_CREATE_LIMIT").ok().and_then(|v| v.parse().ok()).unwrap_or(30)
-    }
-
     /// What one API key may do on `/api/v1` in a window of a minute: `THRUST_V1_RATE_LIMIT` on the native server and the in-isolate
     /// Worker (Plane's default is 60 a minute), the `RL_V1` binding's limit on the Cloudflare Worker (`scripts/worker-dev.sh` writes it
-    /// into the config it starts from). `scripts/contract.sh` exports what it started the target with, as it does for the create
-    /// limit; the default is Plane's.
+    /// into the config it starts from). `scripts/contract.sh` exports what it started the target with; the default is Plane's.
     pub fn v1_limit() -> u32 {
         std::env::var("THRUST_EXPECT_V1_LIMIT").ok().and_then(|v| v.parse().ok()).unwrap_or(60)
     }

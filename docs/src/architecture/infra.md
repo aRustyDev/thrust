@@ -20,7 +20,7 @@ flowchart LR
     w --> hd[(Hyperdrive to Postgres)]
     w --> r2[(R2: BLOBS)]
     w --> q[[Queue: EVENTS]]
-    w --> rl[RL_CREATE, RL_SIGNIN, RL_V1<br/>Rate Limiting bindings]
+    w --> rl[RL_SIGNIN, RL_V1<br/>Rate Limiting bindings]
     cron[Cron every minute] --> w
     q --> w
   end
@@ -46,7 +46,7 @@ The bindings in `crates/thrust-worker/wrangler.toml`:
 | `HYPERDRIVE` | Hyperdrive | `Database`, through `PgDatabase` and `HyperdriveConnector` |
 | `BLOBS` | R2 bucket | `BlobStore` |
 | `EVENTS` | Queue, producer and consumer (batch of 10, 1 s timeout, 3 retries) | `Queue` |
-| `RL_CREATE`, `RL_SIGNIN`, `RL_V1` | Workers Rate Limiting bindings, one per kind of key (work item creates per user, 1000 a minute; sign-ins per email, 10; `/api/v1` requests per API key, 60) | `RateLimiter`, through `CfRateLimiter` |
+| `RL_SIGNIN`, `RL_V1` | Workers Rate Limiting bindings, one per kind of key (sign-ins per email, 10; `/api/v1` requests per API key, 60) | `RateLimiter`, through `CfRateLimiter` |
 | `CF_VERSION_METADATA` | Version metadata | none: the Worker sends the running version's tag (else its id) as the `x-thrust-version` header on every response it routes, and sends no header when it has neither. A deploy tags the version with the commit (`wrangler deploy --tag <sha>`) and the smoke compares the two (`scripts/smoke-deploy.sh`, issue #49). Local `wrangler dev` has no tag and a random UUID for the id, so the header there is that id (measured with wrangler 4.123.0) |
 | `ROOM` | Durable Object `RoomDo` (SQLite) | none: a WebSocket room, reachable only through `/_test/room/...`, which needs test routes and the admin token |
 | cron `* * * * *` | Cron trigger | runs the outbox sweeper |
@@ -60,10 +60,10 @@ Behaviour worth knowing:
 - **Adapter set.** `wrangler.toml` builds with `--no-default-features`, so the bundle holds the Cloudflare set only.
   The default build also compiles an in-isolate `memory` set, which `wrangler.memory.toml` runs with no binding but `CF_VERSION_METADATA`.
 - **Rate limits.** On Cloudflare the allowance is the binding's own `limit` and `period` in the `[[ratelimits]]` block,
-  not a variable: `THRUST_CREATE_RATE_LIMIT`, `THRUST_SIGNIN_RATE_LIMIT` and the count in `THRUST_V1_RATE_LIMIT` are
+  not a variable: `THRUST_SIGNIN_RATE_LIMIT` and the count in `THRUST_V1_RATE_LIMIT` are
   read by the in-isolate and native sets only. A binding counts per Cloudflare location and approximately (one of 3 per
   10 s has let 4 through), over 10 s or 60 s and nothing else (ADR-0033, D-007), so the Worker refuses to start with a
-  `THRUST_RATE_WINDOW_SECS` or a `THRUST_V1_RATE_LIMIT` period of any other length. The binding answers only yes or no.
+  `THRUST_V1_RATE_LIMIT` period of any other length. The binding answers only yes or no.
   A refusal is a 429 with `Retry-After` of one whole period, and an answer that lets a request through reports
   `X-RateLimit-Remaining` on `/api/v1` as the limit less one, an upper bound and not a count. The native server and the
   in-isolate Worker count exactly (`MemoryRateLimiter`). A key that belongs to none of the three bindings is an error,
@@ -90,10 +90,10 @@ Behaviour worth knowing:
 - **Cron.** Each tick runs one outbox sweep of up to 100 rows.
 - **Configuration and secrets.** The config file holds no secret. The Hyperdrive and Secrets Store ids in it
   are all-zero placeholders for local use; R2 and the queue are given by name, and the rate-limit namespace ids are
-  `1001` (the probe's) to `1004`. The Worker reads `THRUST_ADMIN_TOKEN` from its secrets or variables, and the local Postgres URL reaches
+  `1001` (the probe's), `1003` and `1004` (`1002` was `RL_CREATE`'s). The Worker reads `THRUST_ADMIN_TOKEN` from its secrets or variables, and the local Postgres URL reaches
   `wrangler dev` through an environment variable, never through the file.
 - **Stage 2.** `wrangler.stage2.toml` is the Worker as it ran on real Cloudflare resources. It is named
-  `thrust-spike-worker`, has `workers_dev` on, turns test routes on, has an `RL_CREATE` binding of 30 a minute, and gives
+  `thrust-spike-worker`, has `workers_dev` on, turns test routes on, has `RL_SIGNIN` and `RL_V1` bindings at the app's defaults (10 and 60 a minute), and gives
   the queue a dead-letter queue. Its header says its ids belonged to the 2026-10-18 run and were
   deleted at its end. The resources the run created start with `thrust-spike-`. The Secrets Store it names was the
   account's default store, which already existed, and only the probe secret in it was removed (research note 0004,
@@ -145,14 +145,12 @@ Configuration is read from the environment, in `crates/thrust-server/src/main.rs
 | `THRUST_ADAPTERS` | `memory` | `memory` or `postgres` |
 | `DATABASE_URL` | none | Required for `postgres`. It carries the password, so it is read from the environment only |
 | `THRUST_PG_POOL` | `16` | Postgres pool size |
-| `THRUST_CREATE_RATE_LIMIT` | `1000` | Work-item creates per user per window |
-| `THRUST_RATE_WINDOW_SECS` | `60` | The window |
 | `THRUST_OUTBOX_FASTPATH` | on | Publish events right after commit; off leaves every event to the sweeper |
 | `THRUST_SWEEP_INTERVAL_SECS` | `0` | Interval of the in-process outbox sweeper; `0` turns it off |
 | `THRUST_TEST_ROUTES` | off | Turns on `/_info`, `/_test/panic` and `/internal/*`; with it off they answer 404 |
 | `THRUST_ADMIN_TOKEN` | none | The secret `/internal/*` requires, as the `x-admin-token` header |
 
-The Worker reads `THRUST_ADAPTERS`, `THRUST_CREATE_RATE_LIMIT`, `THRUST_RATE_WINDOW_SECS`,
+The Worker reads `THRUST_ADAPTERS`,
 `THRUST_OUTBOX_FASTPATH`, `THRUST_TEST_ROUTES` and `THRUST_ADMIN_TOKEN` from its own environment. Its database comes
 from the Hyperdrive binding, so it has no `DATABASE_URL`. The server turns a panic in a handler into a JSON 500 and
 logs the cause.

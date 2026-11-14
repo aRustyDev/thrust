@@ -23,7 +23,7 @@ name: deploy
 #
 # Environments, each with the SAME variables and secrets (so `staging` and `staging-do-lifecycle` hold copies of each other's):
 #   variables  CLOUDFLARE_ACCOUNT_ID THRUST_WORKER_NAME THRUST_BASE_URL THRUST_HYPERDRIVE_ID THRUST_R2_BUCKET THRUST_QUEUE
-#              THRUST_QUEUE_DLQ THRUST_RL_CREATE_ID THRUST_RL_SIGNIN_ID THRUST_RL_V1_ID THRUST_CSRF_ENFORCE DB_ACCESS_HOSTNAME
+#              THRUST_QUEUE_DLQ THRUST_RL_SIGNIN_ID THRUST_RL_V1_ID THRUST_CSRF_ENFORCE DB_ACCESS_HOSTNAME
 #              SMOKE_EMAIL SMOKE_WORKSPACE (SMOKE_PROJECT is optional)
 #   secrets    CLOUDFLARE_API_TOKEN TUNNEL_SERVICE_TOKEN_ID TUNNEL_SERVICE_TOKEN_SECRET DATABASE_URL SMOKE_PASSWORD
 # The resources behind them are the infrastructure repository's (ApiraTech/infrastructure #1015-#1017).
@@ -287,7 +287,6 @@ jobs:
           THRUST_R2_BUCKET: thrust-dry-run-blobs
           THRUST_QUEUE: thrust-dry-run-events
           THRUST_QUEUE_DLQ: thrust-dry-run-events-dlq
-          THRUST_RL_CREATE_ID: "9101"
           THRUST_RL_SIGNIN_ID: "9102"
           THRUST_RL_V1_ID: "9103"
           THRUST_CSRF_ENFORCE: "off"
@@ -341,7 +340,6 @@ jobs:
           r2-bucket: ${{ vars.THRUST_R2_BUCKET }}
           queue: ${{ vars.THRUST_QUEUE }}
           queue-dlq: ${{ vars.THRUST_QUEUE_DLQ }}
-          rl-create-id: ${{ vars.THRUST_RL_CREATE_ID }}
           rl-signin-id: ${{ vars.THRUST_RL_SIGNIN_ID }}
           rl-v1-id: ${{ vars.THRUST_RL_V1_ID }}
           csrf-enforce: ${{ vars.THRUST_CSRF_ENFORCE }}
@@ -394,7 +392,6 @@ jobs:
           r2-bucket: ${{ vars.THRUST_R2_BUCKET }}
           queue: ${{ vars.THRUST_QUEUE }}
           queue-dlq: ${{ vars.THRUST_QUEUE_DLQ }}
-          rl-create-id: ${{ vars.THRUST_RL_CREATE_ID }}
           rl-signin-id: ${{ vars.THRUST_RL_SIGNIN_ID }}
           rl-v1-id: ${{ vars.THRUST_RL_V1_ID }}
           csrf-enforce: ${{ vars.THRUST_CSRF_ENFORCE }}

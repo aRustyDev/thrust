@@ -19,7 +19,7 @@
 #             cron             (worker-* only) fast path OFF; the Worker `scheduled` handler sweeps
 #             engine           the tests that decide the database engine (spike 0002): the 50-writer, 10k-create test,
 #                              and the search tests. Own test binary (`--test engine`), so EXPECT_MAIN is untouched.
-#                              The target starts with a very high create rate limit. Opt-in: not in contract-all.sh.
+#                              The target starts with a very high `/api/v1` allowance per key. Opt-in: not in contract-all.sh.
 #             bindings         (worker-cf only) the probe routes' admin gate, and one real operation per binding (rate limit,
 #                              secrets store, email)
 #             e2e              (worker-* only) the first browser journey (issue #44): the stock app, built from web/, in Chromium against
@@ -52,16 +52,14 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 LOGDIR="${THRUST_LOGDIR:-$ROOT/target/contract-logs}"
 mkdir -p "$LOGDIR"
 LOG="$LOGDIR/$TARGET-$PASS"
-RATE_LIMIT=30
 # What a key may do on /api/v1 in a minute: Plane's default, which the target applies when THRUST_V1_RATE_LIMIT is not set. The suite is
-# told it as THRUST_EXPECT_V1_LIMIT, as it is told the create limit. A control run that starts the target with another
+# told it as THRUST_EXPECT_V1_LIMIT. A control run that starts the target with another
 # THRUST_V1_RATE_LIMIT in the environment, and not this script, makes `v1_requests_are_rate_limited_per_key` fail: the target then
 # lets more through than the suite expects.
 V1_LIMIT=60
-# The engine pass makes thousands of creates per user per window, and of `/api/v1` requests per key (it goes through `/api/v1`): the
-# main pass's limit and Plane's default of 60 a minute would refuse them.
+# The engine pass makes thousands of `/api/v1` requests per key (every create goes through `/api/v1`): Plane's default of 60 a minute
+# would refuse them.
 if [ "${2:-main}" = "engine" ]; then
-  RATE_LIMIT=1000000
   V1_LIMIT=1000000
   export THRUST_V1_RATE_LIMIT=1000000/minute
 fi
@@ -70,8 +68,6 @@ fi
 if [ "${2:-main}" = "oracle" ]; then
   export THRUST_V1_RATE_LIMIT=1000000/minute
   V1_LIMIT=1000000
-  # ... and its creates are far more than the main pass's per-user create limit allows
-  RATE_LIMIT=1000000
 fi
 # ... and 50 parallel writers hold up to ~100 Postgres connections at once on the Worker path (each request opens one for
 # its reads and one for its transaction; wrangler's local Hyperdrive emulation does not pool, a deployed Hyperdrive
@@ -123,7 +119,6 @@ THRUST_OPERATOR_TOKEN="$(openssl rand -hex 16)"
 export THRUST_OPERATOR_TOKEN
 export THRUST_OPERATOR_ROUTES=1
 export THRUST_BASE_URL="http://127.0.0.1:$PORT"
-export THRUST_EXPECT_CREATE_LIMIT="$RATE_LIMIT"
 export THRUST_EXPECT_V1_LIMIT="$V1_LIMIT"
 export THRUST_ARGON2_M_KIB="$ARGON2_M_KIB" THRUST_ARGON2_T="$ARGON2_T" THRUST_ARGON2_P="$ARGON2_P"
 export THRUST_SIGNIN_RATE_LIMIT="$SIGNIN_LIMIT"
@@ -191,8 +186,8 @@ trap cleanup EXIT INT TERM
 
 # native-pg  = self-hosted set: Postgres (deadpool) + in-process stand-ins for queue/KV/blob/limiter
 # worker-cf  = Cloudflare set: Postgres via Hyperdrive, Queues, R2, the Workers Rate Limiting bindings, Durable Objects, cron.
-#              The create and sign-in limits are those bindings' limits, which scripts/worker-dev.sh writes from RATE_LIMIT and
-#              SIGNIN_LIMIT, and `RL_V1`'s from THRUST_V1_RATE_LIMIT. The control for the key's-allowance test is
+#              The sign-in and `/api/v1` limits are those bindings' limits, which scripts/worker-dev.sh writes from SIGNIN_LIMIT and
+#              from THRUST_V1_RATE_LIMIT (`RL_SIGNIN` and `RL_V1`). The control for the key's-allowance test is
 #              THRUST_V1_RATE_LIMIT=<above 2 x 60 + 1>/minute, set in the environment of this script (it is not the one the suite
 #              is told, V1_LIMIT): the binding then lets more through than the suite expects, and
 #              `v1_requests_are_rate_limited_per_key` must fail (issue #43).
@@ -259,13 +254,13 @@ if [ "$KIND" = "native" ]; then
   # `default` sets nothing, so the server's own default decides
   [ "$CSRF_SERVER" = default ] || export THRUST_CSRF_ENFORCE="$CSRF_SERVER"
   THRUST_LISTEN="127.0.0.1:$PORT" THRUST_ADAPTERS="$ADAPTERS" THRUST_TEST_ROUTES=1 \
-    THRUST_CREATE_RATE_LIMIT="$RATE_LIMIT" THRUST_OUTBOX_FASTPATH="$FASTPATH" THRUST_SWEEP_INTERVAL_SECS=0 \
+    THRUST_OUTBOX_FASTPATH="$FASTPATH" THRUST_SWEEP_INTERVAL_SECS=0 \
     "$ROOT/target/$BIN_DIR/thrust-server" >"$LOG.server.log" 2>&1 &
   SERVER_PID=$!
 else
   # Worker: `wrangler dev` (local workerd). See scripts/worker-dev.sh. The e2e pass has it serve the app's files too.
   if [ "$PASS" = "e2e" ]; then export THRUST_ASSETS_DIR="$E2E_ASSETS_DIR"; fi
-  THRUST_PORT="$PORT" THRUST_ADAPTERS="$ADAPTERS" THRUST_OUTBOX_FASTPATH="$FASTPATH" THRUST_CREATE_RATE_LIMIT="$RATE_LIMIT" \
+  THRUST_PORT="$PORT" THRUST_ADAPTERS="$ADAPTERS" THRUST_OUTBOX_FASTPATH="$FASTPATH" \
     THRUST_CSRF_ENFORCE="$CSRF_SERVER" \
     "$ROOT/scripts/worker-dev.sh" >"$LOG.server.log" 2>&1 &
   SERVER_PID=$!

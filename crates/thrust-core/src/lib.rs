@@ -65,9 +65,6 @@ pub struct Ports {
 
 #[derive(Debug, Clone)]
 pub struct CoreConfig {
-    /// Per-user create limit inside `rate_window_secs`.
-    pub create_rate_limit: u32,
-    pub rate_window_secs: u64,
     /// ADR-0046 relay: publish right after commit (true) or leave every row to the cron sweeper.
     pub outbox_fastpath: bool,
     pub max_attachment_bytes: usize,
@@ -108,8 +105,6 @@ pub struct CoreConfig {
 impl Default for CoreConfig {
     fn default() -> Self {
         Self {
-            create_rate_limit: 1000,
-            rate_window_secs: 60,
             outbox_fastpath: true,
             max_attachment_bytes: 5 * 1024 * 1024,
             session_ttl_secs: 30 * 24 * 60 * 60,

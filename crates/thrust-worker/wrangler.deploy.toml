@@ -63,12 +63,8 @@ tag = "v1"
 new_sqlite_classes = ["RoomDo"]
 
 # One Workers Rate Limiting binding per kind of key (ADR-0033, D-007); on Cloudflare the binding is the source of truth for the
-# allowance. `namespace_id` is account-wide, so each environment has its own three, different from the 1001-1004 that local runs use.
-[[ratelimits]]
-name = "RL_CREATE"
-namespace_id = "__RL_CREATE_ID__"
-simple = { limit = 1000, period = 60 }
-
+# allowance. `namespace_id` is account-wide, so each environment has its own two, different from the 1001-1004 that local runs use.
+# (There was an `RL_CREATE` binding, for the slice's work item creates, until step 5c-3 of #58.)
 [[ratelimits]]
 name = "RL_SIGNIN"
 namespace_id = "__RL_SIGNIN_ID__"
