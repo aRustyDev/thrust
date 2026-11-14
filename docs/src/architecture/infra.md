@@ -1,13 +1,17 @@
 # Infrastructure
 
 This page describes the infrastructure the repository declares: what each adapter set is made of, what it is
-configured with, and how to run it. Nothing is deployed from here. The project has no deploy pipeline, Dockerfile,
-compose file, Helm chart or OpenTofu of its own. Its only workflows run tests ([CI/CD](cicd.md)). Examples of a
-Dockerfile, a chart and workflows are kept under `.agents/` as skill material, and they are not this project's files.
+configured with, and how to run it. The Worker has a deploy pipeline (`deploy.yml`, [CI/CD](cicd.md#the-deploy-pipeline),
+[Deploying the Worker](deploy.md)); the resources it deploys to (the Postgres clusters, the Hyperdrive configurations,
+the tunnel, the buckets and queues) are the infrastructure repository's, and are not declared here. The project has no
+Dockerfile, compose file, Helm chart or OpenTofu of its own. Its workflows run the tests and deploy the Worker; nothing
+publishes the self-hosted server. Examples of a Dockerfile, a chart and workflows are kept under `.agents/` as skill
+material, and they are not this project's files.
 
 The Worker configuration has run locally under `wrangler dev` and once against real Cloudflare resources (the
-2026-10-18 spike run, torn down afterwards). Nothing in the repository deploys the server. How the code is layered
-is on [Application architecture](app.md).
+2026-10-18 spike run, torn down afterwards). The configuration a deploy uses is a template (`wrangler.deploy.toml`,
+below); no environment has had a deploy through the pipeline yet. How the code is layered is on
+[Application architecture](app.md).
 
 ```mermaid
 flowchart LR
@@ -64,12 +68,12 @@ Behaviour worth knowing:
   `X-RateLimit-Remaining` on `/api/v1` as the limit less one, an upper bound and not a count. The native server and the
   in-isolate Worker count exactly (`MemoryRateLimiter`). A key that belongs to none of the three bindings is an error,
   not a free pass. Before issue #43 a Durable Object counted exactly, at a Durable Object round trip on every create.
-- **Placement.** `wrangler.toml` and `wrangler.stage2.toml` set `placement.region = "aws:us-east-1"`, where the
+- **Placement.** `wrangler.toml`, `wrangler.stage2.toml` and `wrangler.deploy.toml` set `placement.region = "aws:us-east-1"`, where the
   database is (ADR-0094), so `fetch` runs in the Cloudflare data centre closest to that region. Placement covers
   `fetch` only: the `queue` and `scheduled` handlers and the Durable Objects are not placed. `region` excludes `mode`,
   `host` and `hostname`. `wrangler.pg.stage.toml` carries no block of its own: `scripts/spike-0002-pg.sh` injects one at
   its `# __PLACEMENT__` marker unless given `--no-placement`. `scripts/check-placement.sh`, a step of the `deps` CI
-  job, checks that text in all three files. It cannot show that Cloudflare accepted the hint: Cloudflare adds a
+  job, checks that text in all four files. It cannot show that Cloudflare accepted the hint: Cloudflare adds a
   `cf-placement` header (`remote-XXX` or `local-XXX`) to a response when placement is on, and the Workers API reports
   the Worker's placement. That the hint takes effect on a deployed Worker was seen on 2026-11-11 `[verified 2026-11-11
   1991731]` (issue #39): the Workers API returned `placement: {mode: "targeted", region: "aws:us-east-1"}`, a request
@@ -80,7 +84,8 @@ Behaviour worth knowing:
   runs fail with a request-stream error.
 - **Queue consumer.** A message the consumer rejects is retried after 5 seconds, up to the queue's `max_retries`
   of 3, and then goes to the dead-letter queue if one is configured. `wrangler.toml` configures none. The Stage 2
-  config names one, and the spike run recorded a rejected event reaching it (research note 0004, S2-9). A message
+  config and the deploy template (`wrangler.deploy.toml`) name one, and the spike run recorded a rejected event reaching
+  it (research note 0004, S2-9). A message
   that cannot be decoded is acknowledged and dropped, so it never reaches a dead-letter queue.
 - **Cron.** Each tick runs one outbox sweep of up to 100 rows.
 - **Configuration and secrets.** The config file holds no secret. The Hyperdrive and Secrets Store ids in it
@@ -93,6 +98,17 @@ Behaviour worth knowing:
   deleted at its end. The resources the run created start with `thrust-spike-`. The Secrets Store it names was the
   account's default store, which already existed, and only the probe secret in it was removed (research note 0004,
   section 10.7).
+- **The deployed Worker.** `wrangler.deploy.toml` is the configuration a deploy uses (issue #49), `wrangler.toml`'s twin
+  with a few differences on purpose: markers where the ids and names go, filled from an environment's variables by
+  `scripts/render-wrangler.sh`, which refuses an unset variable, an all-zero id, a `thrust-spike` name and a marker it does
+  not know; no `[build]`, because the deploy job that holds the credentials builds nothing; a dead-letter queue on the
+  queue consumer; no probe-only bindings (`RL`, `SS`, `EMAIL`); and the web app as `[assets]`, with the same
+  `run_worker_first` list as `scripts/worker-dev.sh` writes for the contract cells (the `.assets` directory is made by the
+  deploy: this release's build of `web/` with the previous release's files under it, because a missing hashed file is
+  answered `200 text/html`, ADR-0011). `.github/scripts/tests/test-deploy-template.sh` compares its bindings, limits and
+  migrations with `wrangler.toml`'s, so a binding added to one cannot be forgotten in the other. `wrangler deploy
+  --dry-run` accepts it `[verified 2026-11-14: wrangler 4.123.0 locally and 4.151.2 in CI, against a Worker built by
+  worker-build]`. What a deploy does with it is on [Deploying the Worker](deploy.md).
 
 To run it locally, use `scripts/worker-dev.sh`. It starts `wrangler dev` (local workerd: no deploy, no login, no
 remote bindings) with a minimal explicit environment, because wrangler would otherwise turn the whole process
@@ -176,9 +192,12 @@ Access application in front of `thrust-pg` (`DB_ACCESS_HOSTNAME`, with the Acces
 (`MIGRATE_BIN`), and closes the tunnel. The token goes only to `cloudflared` and the database URL only to `migrate`. The
 script refuses a `DATABASE_URL` that does not point at the tunnel's local end. It cannot see a refused service token itself,
 because the local end accepts connections before the edge has judged the token: that shows up as `migrate` failing to connect,
-and the tail of `cloudflared`'s log is printed then. Nothing calls the script yet; the deploy workflow comes after it, and
-the tunnel route, Access application, service token and migration role on `thrust-pg` are infrastructure-repo work, so the
-route has not been run against the real database.
+and the tail of `cloudflared`'s log is printed then. `scripts/deploy-worker.sh` calls it, and only when migration files
+changed between the live version's commit and the new one. The CA that signs `thrust-pg`'s certificate is
+`.github/deploy/cloudflare-origin-ca-rsa-root.pem` (the Cloudflare Origin CA root, which expires on 2029-08-15), and
+`thrust-adapters-postgres`'s tests show rustls accepts that exact file as a `verify-ca` root. The tunnel route, Access
+application, service token and migration role on `thrust-pg-dev` are the infrastructure repository's work, so the route has
+not been run against the real database, and neither has `verify-ca` met a real Origin CA certificate.
 
 ## Recover a locked-out user
 
@@ -277,8 +296,12 @@ remote issuer `[unverified]`; the contract `e2e` pass starts its target with no 
 The plan records decisions and work about infrastructure that is not in this repository:
 
 - **Provisioning and deploy.** ADR-0093 (accepted) puts OpenTofu in the infrastructure repository and leaves
-  bundles, bindings and deploys to wrangler; ADR-0110 describes the deploy pipeline. ADR-0093 still lists as open
-  which repository holds the Cloudflare OpenTofu root (Q-0093.1). Nothing for either is here.
+  bundles, bindings and deploys to wrangler. The deploy is `deploy.yml` ([CI/CD](cicd.md#the-deploy-pipeline), ADR-0110);
+  what it deploys to is the infrastructure repository's: for an environment, the staging schema and role on
+  `thrust-pg-dev`, the Hyperdrive configuration, the bucket, the queue and its dead-letter queue, the rate-limit
+  namespaces, the Custom Domain (attached after the first deploy creates the Worker), and the tunnel, Access application
+  and service token the expand migration uses ([Deploying the Worker](deploy.md) lists them). ADR-0093 still lists as open
+  which repository holds the Cloudflare OpenTofu root (Q-0093.1). Nothing declaring those is here.
 - **Postgres hosting.** ADR-0094 (accepted) chooses Hyperdrive through Workers VPC and a tunnel to a CloudNativePG
   cluster, and its updates record that cluster as live on 2026-10-18, provisioned from the infrastructure
   repository. The Hyperdrive hop is encrypted, and both clusters serve a Cloudflare Origin CA server certificate

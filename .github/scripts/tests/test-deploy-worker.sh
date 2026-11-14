@@ -29,7 +29,7 @@ export GIT_CONFIG_GLOBAL GIT_CONFIG_SYSTEM
 R="$T/repo"
 mkdir -p "$R/scripts" "$R/.github/scripts" "$R/crates/thrust-worker" "$R/crates/thrust-adapters-postgres/migrations"
 cp "$SCRIPT_UNDER_TEST" "$R/scripts/deploy-worker.sh"
-cp "$HERE/scripts/render-wrangler.sh" "$R/scripts/render-wrangler.sh"
+cp "$HERE/scripts/render-wrangler.sh" "$HERE/scripts/merge-assets.sh" "$R/scripts/"
 cp "$HERE/.github/scripts/classify-deploy.sh" "$HERE/.github/scripts/active-version.py" "$R/.github/scripts/"
 cp "$HERE/crates/thrust-worker/wrangler.deploy.toml" "$R/crates/thrust-worker/wrangler.deploy.toml"
 cd "$R" || exit 1
@@ -51,9 +51,16 @@ for tool in wrangler smoke; do
   printf '#!/bin/sh\nexec python3 "%s" %s "$@"\n' "$FAKES" "$tool" > "$T/bin/$tool"
 done
 printf '#!/bin/sh\nexec python3 "%s" migrate "$@"\n' "$FAKES" > "$T/bin/migrate"
-chmod +x "$T/bin/wrangler" "$T/bin/smoke" "$T/bin/migrate"
+printf '#!/bin/sh\nexec python3 "%s" fetch "$@"\n' "$FAKES" > "$T/bin/fetch"
+printf '#!/bin/sh\nexec python3 "%s" assetcheck "$@"\n' "$FAKES" > "$T/bin/assetcheck"
+chmod +x "$T/bin/wrangler" "$T/bin/smoke" "$T/bin/migrate" "$T/bin/fetch" "$T/bin/assetcheck"
 FAKE="$T/fake"
 mkdir -p "$FAKE"
+# this commit's web build: the web/ of its bundle
+mkdir -p "$T/newweb/assets"
+printf '<html>new</html>' > "$T/newweb/index.html"
+printf '// the new app chunk\n' > "$T/newweb/assets/new-app.js"
+printf '// shared\n' > "$T/newweb/assets/shared.js"
 
 seed_live() { # seed_live <tag or empty>: the Worker exists, one version, live and served
   rm -f "$FAKE/state.json" "$FAKE/calls.log"
@@ -72,12 +79,14 @@ THRUST_R2_BUCKET=thrust-staging-blobs THRUST_QUEUE=thrust-staging-events THRUST_
 THRUST_RL_SIGNIN_ID=2102 THRUST_RL_V1_ID=2103 THRUST_CSRF_ENFORCE=off
 CLOUDFLARE_API_TOKEN=cf-secret-token CLOUDFLARE_ACCOUNT_ID=acct123 DATABASE_URL=postgres://u:pw@127.0.0.1:15432/thrust
 TUNNEL_SERVICE_TOKEN_ID=id.access TUNNEL_SERVICE_TOKEN_SECRET=tunnel-secret SMOKE_PASSWORD=smoke-password
-WRANGLER=$T/bin/wrangler SMOKE_SCRIPT=$T/bin/smoke MIGRATE_CI_SCRIPT=$T/bin/migrate DEPLOY_CONFIG_OUT=$T/rendered.toml FAKE_DIR=$FAKE"
+WRANGLER=$T/bin/wrangler SMOKE_SCRIPT=$T/bin/smoke MIGRATE_CI_SCRIPT=$T/bin/migrate DEPLOY_CONFIG_OUT=$T/rendered.toml FAKE_DIR=$FAKE
+NEW_ASSETS_DIR=$T/newweb ASSETS_OUT_DIR=$T/.assets FETCH_PREVIOUS_SCRIPT=$T/bin/fetch ASSET_CHECK_SCRIPT=$T/bin/assetcheck
+GH_TOKEN=gh-secret-token GITHUB_REPOSITORY=o/r FAKE_NEW_ASSETS_DIR=$T/newweb"
 
 # deploy <sha> [VAR=value ...]: run the script in a clean environment; RC is its status, $T/log its output, $T/outputs its outputs
 deploy() {
   sha="$1"; shift
-  rm -f "$FAKE/calls.log" "$T/outputs" "$T/summary.md" "$T/rendered.toml"
+  rm -rf "$FAKE/calls.log" "$T/outputs" "$T/summary.md" "$T/rendered.toml" "$T/.assets"
   # shellcheck disable=SC2086
   env -i PATH="$PATH" HOME="$T" GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null $GOOD DEPLOY_ENV=staging DEPLOY_SHA="$sha" \
     GITHUB_OUTPUT="$T/outputs" GITHUB_STEP_SUMMARY="$T/summary.md" "$@" sh "$R/scripts/deploy-worker.sh" > "$T/log" 2>&1
@@ -103,6 +112,7 @@ secrets_scoped() { # secrets_scoped <label>
       wrangler:SEES:CLOUDFLARE_API_TOKEN) ;;
       migrate:SEES:DATABASE_URL|migrate:SEES:TUNNEL_SERVICE_TOKEN_ID|migrate:SEES:TUNNEL_SERVICE_TOKEN_SECRET) ;;
       smoke:SEES:SMOKE_PASSWORD) ;;
+      fetch:SEES:GH_TOKEN) ;;
       *) bad="$bad $line" ;;
     esac
   done
@@ -329,6 +339,97 @@ check_call "a missing Hyperdrive id: wrangler was never called" "wrangler" no
 grep -q "THRUST_HYPERDRIVE_ID is not set" "$T/log" && pass=$((pass + 1)) || { failn=$((failn + 1)); echo "BAD  the missing variable is not named"; }
 deploy "$H4" THRUST_HYPERDRIVE_ID=00000000000000000000000000000000
 check "an all-zero Hyperdrive id: red, wrangler never called" "$RC/$(calls | grep -c wrangler)" "1/0"
+
+# =================================================================================================================================
+# S. the web files (ADR-0011): this release's, with the previous release's kept under them, so a tab still running the last release can
+# load its scripts. The fake edge serves exactly the files the deployed version carried, so a script that was dropped is missing there.
+serving_assets() { python3 -c 'import json,sys; s=json.load(open(sys.argv[1])); print("\n".join([v for v in s["versions"] if v["id"]==s["serving"]][0].get("assets") or []))' "$FAKE/state.json"; }
+OLD3="old-$(echo "$H3" | cut -c1-8).js"
+
+# S1. an ordinary deploy keeps the previous release's files: they reach wrangler, and the control finds them served
+seed_live "$H3"
+deploy "$H4"
+check "assets: an ordinary deploy: exit" "$RC" 0; [ "$RC" = 0 ] || dump
+check_call "assets: the previous release's bundle is fetched, by its commit" "fetch repo=o/r sha=$H3" yes
+check "assets: the new release's script is carried" "$(serving_assets | grep -c '^assets/new-app.js$')" 1
+check "assets: the previous release's script is carried too" "$(serving_assets | grep -c "^assets/$OLD3\$")" 1
+check "assets: the script both releases have is there once" "$(serving_assets | grep -c '^assets/shared.js$')" 1
+check "assets: wrangler was pointed at the directory that was made" "$(grep -c '^directory = ".assets"' "$T/rendered.toml")" 1
+check "assets: index.html in it is the NEW release's" "$(cat "$T/.assets/index.html")" "<html>new</html>"
+check_call "assets: the control looked for a script only the previous release had" "assetcheck RUN" yes
+check "assets: the summary says what was kept" "$(grep -c 'keeping the web files of the previous release' "$T/summary.md")" 1
+secrets_scoped "assets"
+
+# S2. a previous bundle from before the web app was part of it has nothing to keep: not an error, and the control has nothing to look at
+seed_live "$H3"
+deploy "$H4" FAKE_FETCH=ok-no-web
+check "assets: a previous bundle with no web files: exit" "$RC" 0
+check_call "assets: ...and no asset control (nothing to look for)" "assetcheck RUN" no
+check "assets: ...and the summary says it was not checked" "$(grep -c 'asset retention: not checked' "$T/summary.md")" 1
+
+# S3. the previous bundle cannot be found (expired, never uploaded): a person decides, at the manual gate
+seed_live "$H3"
+deploy "$H4" FAKE_FETCH=notfound
+check "assets: no previous bundle, no gate: deferred, not failed" "$RC/$(out_of deferred)/$(out_of deployed)" "0/true/false"
+check_call "assets: ...and nothing was deployed" "wrangler deploy tag=" no
+check_call "assets: ...and no expand step ran" "migrate RUN" no
+seed_live "$H3"
+deploy "$H4" FAKE_FETCH=notfound ALLOW_DO_LIFECYCLE=true
+check "assets: no previous bundle, through the gate: deployed without retention" "$RC/$(out_of deferred)/$(out_of deployed)" "0/false/true"
+check_call "assets: ...with no asset control" "assetcheck RUN" no
+grep -q "WARNING: the previous release's web files are not available" "$T/log" && pass=$((pass + 1)) || { failn=$((failn + 1)); echo "BAD  the dropped retention is not warned about"; }
+
+# S4. a bundle that was found and FAILED a check (forged, damaged) or GitHub not answering: no bypass, not even at the gate
+seed_live "$H3"
+deploy "$H4" FAKE_FETCH=refused
+check "assets: a bundle that failed a check: red" "$RC" 1
+check_call "assets: ...nothing deployed" "wrangler deploy tag=" no
+seed_live "$H3"
+deploy "$H4" FAKE_FETCH=refused ALLOW_DO_LIFECYCLE=true
+check "assets: a bundle that failed a check is red at the manual gate too" "$RC" 1
+check_call "assets: ...and nothing deployed there either" "wrangler deploy tag=" no
+
+# S5. where there is no previous release of this pipeline to keep files from, nothing is fetched
+seed_none
+deploy "$H4" ALLOW_DO_LIFECYCLE=true
+check "assets: the first deploy: exit" "$RC" 0
+check_call "assets: the first deploy fetches nothing" "fetch repo" no
+check_call "assets: ...and has no asset control" "assetcheck RUN" no
+seed_live "$H4"
+deploy "$H4"
+check "assets: the same commit again: exit" "$RC" 0
+check_call "assets: the same commit again fetches nothing" "fetch repo" no
+seed_live ""
+deploy "$H4" ALLOW_DO_LIFECYCLE=true
+check "assets: an untagged live version, through the gate: exit" "$RC" 0
+check_call "assets: an untagged live version fetches nothing" "fetch repo" no
+
+# S6. the edge does not carry the previous release's files: the control finds it, the deploy is rolled back, the run is red
+seed_live "$H3"
+deploy "$H4" FAKE_EDGE_DROPS_ASSETS=1
+check "assets: files dropped at the edge: red" "$RC" 1
+check "assets: ...rolled back" "$(out_of rolled_back)" yes
+check "assets: ...and the previous version is the one serving" "$(serving)" "$H3"
+grep -q "single-page fallback" "$T/log" && pass=$((pass + 1)) || { failn=$((failn + 1)); echo "BAD  the failure does not say what the browser would have been given"; }
+
+# S7. the web files cannot be assembled: nothing is deployed
+mkdir -p "$T/badweb"; printf '<html>' > "$T/badweb/index.html"; ln -sf /etc/passwd "$T/badweb/link"
+seed_live "$H3"
+deploy "$H4" NEW_ASSETS_DIR="$T/badweb"
+check "assets: a symlink in the new web build: red" "$RC" 1
+check_call "assets: ...nothing deployed" "wrangler deploy tag=" no
+
+# S8. refusals before anything is touched
+seed_live "$H3"
+deploy "$H4" NEW_ASSETS_DIR=
+check "assets: no web build named: refused" "$RC" 2
+deploy "$H4" NEW_ASSETS_DIR="$T/nothing-here"
+check "assets: a web build with no index.html: refused" "$RC" 2
+deploy "$H4" ASSETS_OUT_DIR="$T/elsewhere"
+check "assets: an output directory that is not where the configuration points: refused" "$RC" 2
+deploy "$H4" GITHUB_REPOSITORY=
+check "assets: no repository to find the previous bundle in: refused" "$RC" 2
+check_call "assets: ...and nothing was deployed" "wrangler deploy tag=" no
 
 echo "passed=$pass bad=$failn"
 [ "$failn" = 0 ]

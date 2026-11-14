@@ -111,7 +111,7 @@ runs:
       shell: bash
       run: |
         missing=""
-        for tool in git curl nc python3 tar sha256sum gh npm; do
+        for tool in git curl nc python3 tar sha256sum gh npm jq unzip; do
           command -v "$tool" > /dev/null 2>&1 || missing="$missing $tool"
         done
         if [ -n "$missing" ]; then
@@ -135,12 +135,7 @@ runs:
         GH_TOKEN: ${{ github.token }}
         REPO: ${{ github.repository }}
         BUNDLE_DIR: ${{ runner.temp }}/bundle-download
-      run: |
-        gh attestation verify "$BUNDLE_DIR/deploy-bundle.tar.gz" \
-          --repo "$REPO" \
-          --signer-workflow "$REPO/.github/workflows/deploy.yml" \
-          --source-ref refs/heads/main \
-          --deny-self-hosted-runners
+      run: .github/scripts/verify-bundle.sh "$BUNDLE_DIR/deploy-bundle.tar.gz" "$REPO"
 
     - name: Unpack the bundle
       shell: bash
@@ -151,20 +146,12 @@ runs:
         TOOLS_DIR: ${{ runner.temp }}/tools
       run: |
         set -eu
-        # a member with an absolute path or a `..` in it would write outside the directory
-        if tar -tzf "$BUNDLE_DIR/deploy-bundle.tar.gz" | grep -E '(^/|(^|/)\.\.(/|$))'; then
-          echo "::error::the bundle has a path that leaves its directory"
-          exit 1
-        fi
-        mkdir -p "$UNPACK_DIR" "$TOOLS_DIR"
-        tar -xzf "$BUNDLE_DIR/deploy-bundle.tar.gz" -C "$UNPACK_DIR"
-        built="$(cat "$UNPACK_DIR/BUILD_SHA")"
-        if [ "$built" != "$SHA" ]; then
-          echo "::error::the bundle was built from $built, not from $SHA"
-          exit 1
-        fi
-        # worker-build writes the whole of build/: the shim imports ../index.js, which imports index_bg.wasm, so all three have to be there
-        for f in build/worker/shim.mjs build/index.js build/index_bg.wasm; do
+        # plain files only, no path that leaves the directory, and BUILD_SHA equal to this commit (.github/scripts/unpack-bundle.sh)
+        mkdir -p "$TOOLS_DIR"
+        .github/scripts/unpack-bundle.sh "$BUNDLE_DIR/deploy-bundle.tar.gz" "$UNPACK_DIR" "$SHA"
+        # worker-build writes the whole of build/: the shim imports ../index.js, which imports index_bg.wasm, so all three have to be there;
+        # web/ is the build of the web app, which this deploy serves and whose last release's files it keeps (ADR-0011)
+        for f in build/worker/shim.mjs build/index.js build/index_bg.wasm web/index.html; do
           test -s "$UNPACK_DIR/$f" || { echo "::error::the bundle has no $f"; exit 1; }
         done
         test -x "$UNPACK_DIR/migrate" || { echo "::error::the bundle has no migrate binary"; exit 1; }
@@ -225,6 +212,10 @@ runs:
         DATABASE_URL: ${{ inputs.database-url }}
         DATABASE_SSLROOTCERT: ${{ github.workspace }}/.github/deploy/cloudflare-origin-ca-rsa-root.pem
         MIGRATE_BIN: ${{ runner.temp }}/tools/migrate
+        # the web app of this commit, and the token that finds and verifies the previous release's bundle (read-only: `actions: read`,
+        # `attestations: read`). GITHUB_REPOSITORY is the runner's own. scripts/deploy-worker.sh gives the token to that one step only.
+        NEW_ASSETS_DIR: ${{ runner.temp }}/bundle/web
+        GH_TOKEN: ${{ github.token }}
         # the smoke (scripts/smoke-deploy.sh)
         SMOKE_EMAIL: ${{ inputs.smoke-email }}
         SMOKE_PASSWORD: ${{ inputs.smoke-password }}

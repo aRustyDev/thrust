@@ -74,11 +74,33 @@ Accepted. **Carry over the fork's supply-chain gates (sha-pinning, scorecard, at
 
 Outcome rewritten to the accepted decision; artifact wording updated from npm packages to Rust crates plus the adopted npm packages.
 
+## Update — the deploy, round 30 (2026-11-14)
+
+The deploy pipeline (ADR-0110, issue #49) implements one half of this decision and **deviates from the other**.
+
+* **Worker-bundle attestation: in place.** The `build` job of `deploy.yml` attests the bundle (`actions/attest-build-provenance`,
+  SLSA provenance) and the deploy verifies it before using it, with `gh attestation verify --repo`, `--signer-workflow
+  <repo>/.github/workflows/deploy.yml`, `--source-ref refs/heads/main` and `--deny-self-hosted-runners`
+  (`.github/scripts/verify-bundle.sh`). The previous release's bundle, whose web files the new deploy keeps, goes through the same
+  check, because an artifact's name is not evidence of where it came from (a pull request from a fork can upload one under any
+  name). `--source-digest` is not asked for: on a `workflow_run` the workflow's own commit is the tip of `main`, not the commit
+  `ci` ran on, so the commit is bound by `BUILD_SHA` inside the attested file instead. The provenance is recorded as the
+  attestation, and the version carries the commit as its tag (Q-0101.1).
+* **GitHub OIDC for the deploy: not in place, by the owner's decision of 2026-11-13.** Cloudflare documents no OIDC federation
+  for wrangler, only an API token and the account id. Each environment (`staging`, `production` and their `-do-lifecycle`
+  twins) holds a **scoped Cloudflare API token** in its secrets; the job that holds it builds nothing, and wrangler is the only
+  process that sees it. This is a long-lived credential in CI, which this ADR's decision and Q-0101.2 set out to avoid. The
+  follow-up is to replace it when Cloudflare documents a federation; its scopes and how to rotate it are in
+  `docs/src/architecture/deploy.md`.
+* **Pinning is held by a check:** `.github/scripts/lint-workflow.sh` requires every `uses:` of `deploy.yml` and its composite
+  action to be a local action or a 40-digit commit, and keeps `secrets.`, `environment:` and `id-token: write` to the jobs that
+  need them.
+
 ## Open Questions
 
 * Q-0101 — gate carry-over.
-* Q-0101.1 — How is a Worker bundle's provenance recorded (version tag/message, R2 manifest, Rekor entry)?
-* Q-0101.2 — Does the Cloudflare account need a deploy identity bound to GitHub OIDC (no long-lived API token in CI)?
+* Q-0101.1 — How is a Worker bundle's provenance recorded (version tag/message, R2 manifest, Rekor entry)? Answered: an attestation, and the commit as the version's tag (round 30).
+* Q-0101.2 — Does the Cloudflare account need a deploy identity bound to GitHub OIDC (no long-lived API token in CI)? Answered yes in round 16; **not achieved in round 30**: a scoped API token stands in until Cloudflare documents a federation.
 
 ## More Information
 
