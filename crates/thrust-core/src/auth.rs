@@ -356,6 +356,88 @@ pub async fn admin_set_password(app: &App, email: &str, password: &str) -> Resul
     Ok(user.id)
 }
 
+// ---------------------------------------------------------------------------------------------------------------------
+// A person changes their own password (Q-F7, issue #46): what Profile -> Security does, and what a person given a temporary
+// password by the operator does first.
+// ---------------------------------------------------------------------------------------------------------------------
+
+/// What a change of password came to. A refusal is an answer, not a failure: the caller says which one, and nothing was changed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PasswordChange {
+    /// The account has the new password, every session it had is over, and this is the one made in their place.
+    Changed(SignedIn),
+    /// The old password is not the account's (or the account has none to match, or the guess is longer than a password may be).
+    WrongOldPassword,
+    /// The new password is refused by [`password_is_strong`] (D-023).
+    TooWeak,
+}
+
+/// The caller changes their own password. In this order, the order of Plane's `ChangePasswordEndpoint` (a wrong old password is
+/// answered before a weak new one, so the one with two faults gets the first code):
+///
+///  1. a password longer than a password may be is a wrong one, with no work and no limiter (it costs nothing and could be nothing);
+///  2. the per-email limiter, the same bucket [`sign_in`] counts in, because a guess at the old password is a guess at the password
+///     and a person should have one allowance for the two, counted before any hashing (a limited caller gets
+///     `RateLimited`); Plane does not limit a signed-in caller at all (D-039);
+///  3. the old password, with exactly one unit of hash work whether the account has a password or not (an account that single
+///     sign-on made has none, and its attempt is hashed and thrown away, as in [`sign_in`]);
+///  4. the new password's strength, which needs no work;
+///  5. one hash, the write, every session of the account ended (the one that asked included: a session held by someone who knew
+///     the old password must not outlive it, and Plane ends them all too), and one new session for the caller, so they stay in.
+///
+/// The old password is asked for whatever the account is: Thrust reports `is_password_autoset` as false for everyone, so the page
+/// always asks, and an account with no password cannot answer (the operator's reset gives it one, D-038).
+pub async fn change_password(app: &App, who: &Principal, old: &str, new: &str) -> Result<PasswordChange, CoreError> {
+    if old.len() > MAX_PASSWORD_LEN {
+        return Ok(PasswordChange::WrongOldPassword);
+    }
+    let user = app.ports.db.user_by_id(who.user_id).await?.ok_or(CoreError::Unauthenticated)?;
+    // a session of a deactivated user does not authenticate, so this is the window between that check and this read
+    if !user.is_active {
+        return Err(CoreError::Unauthenticated);
+    }
+    let bucket = user.email.clone().unwrap_or_else(|| user.id.0.to_string());
+    let decision = app
+        .ports
+        .limiter
+        .hit(&format!("signin:{bucket}"), app.cfg.sign_in_rate_limit, app.cfg.sign_in_rate_window_secs)
+        .await?;
+    if let RateDecision::Limited { retry_after_secs } = decision {
+        return Err(CoreError::RateLimited { retry_after_secs });
+    }
+    let old_is_right = match user.password_hash.as_deref() {
+        Some(phc) => app.ports.hasher.verify(old, phc),
+        None => {
+            app.ports.hasher.hash(old, &random_salt(app)?).map_err(|e| CoreError::Internal(e.to_string()))?;
+            false
+        }
+    };
+    // MUTANT (control run only): the old password is not checked. The contract suite's change-password test must catch it.
+    #[cfg(feature = "mutant_change_password_skips_old")]
+    let old_is_right = {
+        let _ = old_is_right;
+        true
+    };
+    if !old_is_right {
+        return Ok(PasswordChange::WrongOldPassword);
+    }
+    // MUTANT (control run only): no strength check on a change. The contract suite's change-password test must catch it.
+    #[cfg(not(feature = "mutant_change_password_skips_strength"))]
+    if !password_is_strong(new) {
+        return Ok(PasswordChange::TooWeak);
+    }
+    let password_hash =
+        app.ports.hasher.hash(new, &random_salt(app)?).map_err(|e| CoreError::Internal(e.to_string()))?;
+    if !app.ports.db.set_password_hash(&app.system, user.id, &password_hash).await? {
+        // the account was removed between the lookup and the write
+        return Err(CoreError::Unauthenticated);
+    }
+    // MUTANT (control run only): the account's other sessions are left alive. The contract suite's change-password test must catch it.
+    #[cfg(not(feature = "mutant_change_password_keeps_sessions"))]
+    app.ports.db.revoke_user_sessions(user.id, app.ports.clock.now()).await?;
+    Ok(PasswordChange::Changed(mint_session(app, user.id).await?))
+}
+
 /// Sign-out of one session, by the digest of its token. Idempotent.
 pub async fn sign_out(app: &App, session: &TokenHash) -> Result<(), CoreError> {
     Ok(app.ports.db.revoke_session(session, app.ports.clock.now()).await?)

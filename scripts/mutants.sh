@@ -62,7 +62,11 @@ for triple in \
   "operator-reset-skips-strength:mutant_operator_skips_strength:main" \
   "operator-reset-keeps-sessions:mutant_operator_keeps_sessions:main" \
   "operator-reset-hits-every-user:mutant_set_password_every_user:main" \
-  "operator-door-takes-admin-token:mutant_operator_takes_admin_token:main"; do
+  "operator-door-takes-admin-token:mutant_operator_takes_admin_token:main" \
+  "change-password-skips-old:mutant_change_password_skips_old:main" \
+  "change-password-skips-strength:mutant_change_password_skips_strength:main" \
+  "change-password-keeps-sessions:mutant_change_password_keeps_sessions:main" \
+  "change-password-allows-api-key:mutant_change_password_allows_api_key:main"; do
   name="${triple%%:*}"
   rest="${triple#*:}"
   feature="${rest%%:*}"

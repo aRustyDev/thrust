@@ -1667,3 +1667,149 @@ async fn compat_sign_out_answers_one_way_ends_a_bearer_session_and_is_not_done_b
     assert_cookies_cleared(&r);
     assert_eq!(me(t.http.get(t.url("/api/users/me/")).bearer_auth(&token)).await, 401, "a bearer session is ended");
 }
+
+// --- change password (X09, D-039) -------------------------------------------------------------------------------------------
+
+const NEW_STRONG: &str = "Contract-Another-Pa55word-Yak-27";
+
+fn change_body(old: Option<&str>, new: Option<&str>) -> Value {
+    let mut body = serde_json::Map::new();
+    if let Some(old) = old {
+        body.insert("old_password".into(), json!(old));
+    }
+    if let Some(new) = new {
+        body.insert("new_password".into(), json!(new));
+    }
+    Value::Object(body)
+}
+
+async fn sign_in_status(t: &Target, email: &str, password: &str) -> StatusCode {
+    post(t, "/auth/sign-in/", &json!({"email": email, "password": password})).await.status()
+}
+
+/// What Profile -> Security does, on every target: a JSON post of the old and the new password from a signed-in person. Refusals
+/// come in Plane's order with its codes and change nothing (not a password, not a session, no cookie); a change is the new
+/// password, every session of the account ended (the one that asked and another device's too) and one new session in the cookies,
+/// so the person stays in. A cookie mutation needs the CSRF token wherever the deployment enforces it (the main pass does).
+#[tokio::test]
+async fn compat_change_password_refuses_in_planes_order_changes_nothing_then_swaps_it_and_ends_every_session() {
+    let t = t();
+    let email = new_email();
+    let r = post(&t, "/auth/sign-up/", &json!({"email": email, "password": STRONG})).await;
+    assert_eq!(r.status(), 200);
+    let cookies = SetCookie::all(&r);
+    let session = SetCookie::find(&cookies, SESSION_COOKIE).expect("a session").value.clone();
+    let csrf = SetCookie::find(&cookies, CSRF_COOKIE).expect("a csrf cookie").value.clone();
+    // another device: a second session of the same account
+    let r = post(&t, "/auth/sign-in/", &json!({"email": email, "password": STRONG})).await;
+    assert_eq!(r.status(), 200);
+    let other = session_cookie(&r).expect("a second session");
+    assert_ne!(other, session);
+
+    let me = |token: &str| {
+        let req = t.http.get(t.url("/api/users/me/")).bearer_auth(token);
+        async move { req.send().await.unwrap().status() }
+    };
+    assert_eq!(
+        (me(&session).await, me(&other).await),
+        (StatusCode::OK, StatusCode::OK),
+        "control: both sessions are live"
+    );
+    let change = |body: Value, token: Option<&str>| {
+        let mut req = t
+            .http
+            .post(t.url("/auth/change-password/"))
+            .header("cookie", format!("{SESSION_COOKIE}={session}; {CSRF_COOKIE}={csrf}"))
+            .json(&body);
+        if let Some(tok) = token {
+            req = req.header(CSRF_HEADER, tok);
+        }
+        async move { req.send().await.unwrap() }
+    };
+
+    // refused for want of the token, as every cookie mutation is: nothing is looked at, so a right body changes nothing either
+    for (what, tok) in [("no token", None), ("another token", Some("not-the-token"))] {
+        let r = change(change_body(Some(STRONG), Some(NEW_STRONG)), tok).await;
+        assert_eq!(r.status(), 403, "{what}");
+        assert!(SetCookie::all(&r).is_empty(), "{what}");
+    }
+
+    // refused for the body, in the order of the pin, and each one says so in its code
+    let missing = |text: &str| json!({"error_code": 5138, "error_message": "MISSING_PASSWORD", "error": text});
+    let wrong =
+        json!({"error_code": 5135, "error_message": "INCORRECT_OLD_PASSWORD", "error": "Old password is not correct"});
+    let weak = json!({"error_code": 5021, "error_message": "PASSWORD_TOO_WEAK"});
+    for (what, body, expected) in [
+        ("no old password", change_body(None, Some(NEW_STRONG)), missing("Old password is missing")),
+        ("no new password", change_body(Some(STRONG), None), missing("Old or new password is missing")),
+        ("no old password and a weak new one", change_body(None, Some("password")), missing("Old password is missing")),
+        ("a wrong old password", change_body(Some("not the password"), Some(NEW_STRONG)), wrong.clone()),
+        ("a wrong old password and a weak new one", change_body(Some("not the password"), Some("password")), wrong),
+        ("a weak new password", change_body(Some(STRONG), Some("password")), weak),
+    ] {
+        let r = change(body, Some(&csrf)).await;
+        assert_eq!(r.status(), 400, "{what}");
+        assert!(SetCookie::all(&r).is_empty(), "{what}: a refusal sets no cookie");
+        assert_eq!(r.json::<Value>().await.unwrap(), expected, "{what}");
+    }
+    assert_eq!((me(&session).await, me(&other).await), (StatusCode::OK, StatusCode::OK), "a refusal ends no session");
+    assert_eq!(sign_in_status(&t, &email, STRONG).await, 200, "and changes no password");
+    assert_eq!(sign_in_status(&t, &email, NEW_STRONG).await, 400);
+
+    // the change: answered as the pin answers, and the caller holds a session of the account in the cookies it sets
+    let r = change(change_body(Some(STRONG), Some(NEW_STRONG)), Some(&csrf)).await;
+    assert_eq!(r.status(), 200);
+    let made = session_cookie(&r).expect("a change sets the caller's new session");
+    assert!(
+        SetCookie::find(&SetCookie::all(&r), CSRF_COOKIE).is_some_and(|c| !c.value.is_empty()),
+        "and its CSRF cookie"
+    );
+    assert_eq!(r.json::<Value>().await.unwrap(), json!({"message": "Password updated successfully"}));
+
+    assert_eq!(me(&made).await, 200, "the caller stays signed in, on the session the change made");
+    assert_eq!(me(&session).await, 401, "the session that asked is over");
+    assert_eq!(me(&other).await, 401, "and so is every other session of the account");
+    assert_eq!(sign_in_status(&t, &email, STRONG).await, 400, "the old password no longer signs in");
+    assert_eq!(sign_in_status(&t, &email, NEW_STRONG).await, 200, "the new one does");
+}
+
+/// Who may do it: a session, and nothing else. A request with no credential or an unknown one is a 401; an API key is a script's
+/// credential, and a leaked one must not take the account over, so it is a 401 too and changes nothing. Control: the same body
+/// with the account's own session (a bearer token, which needs no CSRF token) is a change, so the 401s are not the route's constant
+/// answer.
+#[tokio::test]
+async fn compat_change_password_is_for_a_session_and_not_for_an_api_key() {
+    let t = t();
+    let (email, token) = signed_up(&t).await;
+    let key: thrust_contracts::CreatedApiKey = {
+        let r = t
+            .http
+            .post(t.url(&format!("{SLICE_PREFIX}/api-keys")))
+            .bearer_auth(&token)
+            .json(&json!({}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(r.status(), 201);
+        r.json().await.unwrap()
+    };
+    let body = change_body(Some(STRONG), Some(NEW_STRONG));
+    let send = |req: reqwest::RequestBuilder| async { req.json(&body).send().await.unwrap() };
+    for (what, req) in [
+        ("no credential", t.http.post(t.url("/auth/change-password/"))),
+        ("an unknown bearer token", t.http.post(t.url("/auth/change-password/")).bearer_auth("not-a-session-token")),
+        ("an API key", t.http.post(t.url("/auth/change-password/")).header("x-api-key", &key.token)),
+        ("an API key as a bearer token", t.http.post(t.url("/auth/change-password/")).bearer_auth(&key.token)),
+    ] {
+        let r = send(req).await;
+        assert_eq!(r.status(), 401, "{what}");
+        assert!(SetCookie::all(&r).is_empty(), "{what}");
+    }
+    assert_eq!(sign_in_status(&t, &email, STRONG).await, 200, "nothing was changed");
+    assert_eq!(sign_in_status(&t, &email, NEW_STRONG).await, 400);
+
+    let r = send(t.http.post(t.url("/auth/change-password/")).bearer_auth(&token)).await;
+    assert_eq!(r.status(), 200, "control: the account's own session changes it");
+    assert_eq!(sign_in_status(&t, &email, NEW_STRONG).await, 200);
+    assert_eq!(sign_in_status(&t, &email, STRONG).await, 400);
+}

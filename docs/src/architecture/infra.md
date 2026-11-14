@@ -208,8 +208,11 @@ unset OPERATOR_PW THRUST_OPERATOR_TOKEN
 For a new account use `/internal/operator/users` in place of `/internal/operator/users/password`. A `204` is done; `404` on a
 reset means the email has no account (use the create route), `409` on a create means it does (use the reset route), and `400`
 means the password was refused. Give the person the temporary password through a channel you trust, and not in the thread where
-they asked. They sign in with it. Until `POST /auth/change-password/` exists (the next change in the locked-out-recovery plan) the Profile,
-Security screen cannot change it, so the temporary password stays their password.
+they asked. They sign in with it, and then change it in Profile, Security: the screen asks for the temporary password as the old one
+(`POST /auth/change-password/`, D-039), and a change ends every session of the account and keeps them signed in on a new one, so tell
+them to do it at once. Wrong guesses at the old password count against the account's sign-in allowance, the same ten a minute as
+sign-in, so a person who mistypes it a few times is not locked out, and one who guesses it cannot. An account that single sign-on
+made has no password to give as the old one, and this reset is how it gets one.
 
 What this does not have, and why:
 

@@ -23,6 +23,8 @@ pub enum Code {
     AuthenticationFailedSignIn,
     RequiredEmailPasswordSignIn,
     InvalidEmailSignIn,
+    IncorrectOldPassword,
+    MissingPassword,
     RateLimitExceeded,
 }
 
@@ -39,6 +41,8 @@ impl Code {
             Code::AuthenticationFailedSignIn => 5065,
             Code::RequiredEmailPasswordSignIn => 5070,
             Code::InvalidEmailSignIn => 5075,
+            Code::IncorrectOldPassword => 5135,
+            Code::MissingPassword => 5138,
             Code::RateLimitExceeded => 5900,
         }
     }
@@ -55,6 +59,8 @@ impl Code {
             Code::AuthenticationFailedSignIn => "AUTHENTICATION_FAILED_SIGN_IN",
             Code::RequiredEmailPasswordSignIn => "REQUIRED_EMAIL_PASSWORD_SIGN_IN",
             Code::InvalidEmailSignIn => "INVALID_EMAIL_SIGN_IN",
+            Code::IncorrectOldPassword => "INCORRECT_OLD_PASSWORD",
+            Code::MissingPassword => "MISSING_PASSWORD",
             Code::RateLimitExceeded => "RATE_LIMIT_EXCEEDED",
         }
     }
@@ -66,12 +72,14 @@ pub struct AuthError {
     status: StatusCode,
     code: Code,
     email: Option<String>,
+    /// The free-text `error` of the payload, which Plane's password-management views add to some codes.
+    error: Option<&'static str>,
     retry_after_secs: Option<u64>,
 }
 
 impl AuthError {
     pub fn bad_request(code: Code) -> Self {
-        Self { status: StatusCode::BAD_REQUEST, code, email: None, retry_after_secs: None }
+        Self { status: StatusCode::BAD_REQUEST, code, email: None, error: None, retry_after_secs: None }
     }
 
     pub fn rate_limited(retry_after_secs: u64) -> Self {
@@ -79,6 +87,7 @@ impl AuthError {
             status: StatusCode::TOO_MANY_REQUESTS,
             code: Code::RateLimitExceeded,
             email: None,
+            error: None,
             retry_after_secs: Some(retry_after_secs),
         }
     }
@@ -88,13 +97,25 @@ impl AuthError {
         self.email = Some(email);
         self
     }
+
+    /// The `error` text of the payload (`{"error": "Old password is missing"}` on the pin's change-password), after the code and
+    /// message and before the email.
+    pub fn with_error(mut self, error: &'static str) -> Self {
+        self.error = Some(error);
+        self
+    }
 }
 
 impl IntoResponse for AuthError {
     fn into_response(self) -> Response<Body> {
         let mut body = json!({"error_code": self.code.number(), "error_message": self.code.message()});
-        if let (Some(email), Some(members)) = (self.email, body.as_object_mut()) {
-            members.insert("email".to_string(), json!(email));
+        if let Some(members) = body.as_object_mut() {
+            if let Some(error) = self.error {
+                members.insert("error".to_string(), json!(error));
+            }
+            if let Some(email) = self.email {
+                members.insert("email".to_string(), json!(email));
+            }
         }
         let mut resp = (self.status, Json(body)).into_response();
         if let Some(s) = self.retry_after_secs {
