@@ -60,7 +60,10 @@ A journey that passes proves nothing until its detectors have been shown to fire
 journey in ways that must fail, and requires the failure **and** the words it fails with: a 404 the browser is shown
 (`stickies-404`), a work-item list the browser empties (`empty-list`, must fail at "see it in the list"), two sign-in providers
 the browser turns on (`sso-on`, the sign-in journey's own detector: it must fail at "a sign-in method other than the
-password"), a journey that
+password"), a change of password the browser answers as refused (`change-refused`: the password journey must fail at "change the
+password") and one it answers as done and never sends (`change-dropped`: the app says "Password changed successfully." and the
+server has changed nothing, so the journey must fail at "the other browser is signed out", which is the detector that makes the
+journey look at the server's state and not at the toast or the 200 in its own network log), a journey that
 skips itself (`skip`; Playwright reports a skip as a pass, so the **count guard** must refuse it), and a journey told it is
 on the other target (must fail at the `TARGET GUARD`; a Thrust told it is on Plane, and Plane told it is a Thrust). One run is
 the other way round and must **pass**: `slow-page` slows the browser to a CI runner's pace and holds the profile answer the home

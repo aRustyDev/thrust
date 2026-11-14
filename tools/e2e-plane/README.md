@@ -35,6 +35,11 @@ written. The input is the committed `web/` at HEAD (`git archive`), not the work
 - Ports `18080` (the API) and `18088` (the app, `http://localhost:18088`) on loopback.
 - `scripts/e2e.sh plane-oracle` brings the stack up **fresh** (`down -v`, as the recorder does) and takes it down after, so it **drops
   the seeded snapshot** that `scripts/oracle-v1.sh plane` needs. Re-seed after it. `E2E_KEEP=1` leaves the stack up.
+- The pin **throttles** `/auth/email-check/`, `/auth/sign-in/` and `/auth/sign-up/` to 10 a minute per address and counts the refused
+  calls (`AuthenticationThrottle`); the journeys make about 14 of them between them. `e2e/support/throttle.ts` holds those three calls
+  in the browser until the last minute has room, on this leg only, so a run takes about a minute longer than the Thrust leg and one
+  click can wait most of a minute (`playwright.config.ts` and `support/context.ts` allow for it with longer timeouts here). Without it
+  the third journey is answered `429` on its first call (measured, G-34).
 
 ## Limits (left for issue #46)
 

@@ -26,6 +26,10 @@
 #                 empty-list    the browser empties the work-item list (S47); the journey must fail at "see it in the list"
 #                 sso-on        the browser turns two sign-in providers on (`/api/instances/`); the sign-in journey must fail at
 #                               "a sign-in method other than the password"
+#                 change-refused  the browser answers the change of password as refused and sends it nowhere; the password journey must fail at
+#                                 "change the password"
+#                 change-dropped  the browser answers the change as done and sends it nowhere (the app says so, and the server has changed
+#                                 nothing); the password journey must fail at "the other browser is signed out"
 #                 skip          the journey skips itself, which Playwright counts as a pass; the count guard must refuse it
 #                 wrong target  the journey told it is on the other target must fail at the TARGET GUARD (a Thrust told it is on Plane,
 #                               and the pinned Plane told it is a Thrust)
@@ -224,6 +228,8 @@ if [ "$WHAT" = controls ]; then
   must_fail control-stickies-404 "with the stickies list answering 404" "an unexpected 404: GET /api/workspaces/.*/stickies/ -> 404" stickies-404
   must_fail control-empty-list "with the work-item list emptied" "see it in the list:" empty-list
   must_fail control-sso-on "with two sign-in providers turned on in the browser" "a sign-in method other than the password" sso-on
+  must_fail control-change-refused "with the change of password answered as refused in the browser" "change the password:" change-refused
+  must_fail control-change-dropped "with the change of password answered as done in the browser and never sent" "the other browser is signed out:" change-dropped
   must_fail control-wrong-target "told it is on $OTHER" "TARGET GUARD ($OTHER)" "" "$OTHER"
   must_pass control-slow-page "with the browser slowed to a CI runner's pace and the profile answer of the home page late" slow-page
 

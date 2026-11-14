@@ -1,5 +1,6 @@
 // The browser context every journey runs in, and the one place its recording is configured.
 import type { Browser, BrowserContext, Page } from "@playwright/test";
+import { ACTION_TIMEOUT_MS, paceThePin } from "./throttle";
 
 // The API's own calls: what spike 0009's replay harness reads. The app's JS, CSS and fonts are megabytes and say nothing a replay needs.
 const API_CALLS = /\/(api|auth)\//;
@@ -21,7 +22,9 @@ export async function openJourney(browser: Browser, baseURL: string, name: strin
       ...(bodies ? { content: "embed" as const, mode: "full" as const, urlFilter: API_CALLS } : { content: "omit" as const }),
     },
   });
+  // on the pinned Plane, no more of the throttled sign-in calls than it lets through in a minute (support/throttle.ts)
+  await paceThePin(context);
   const page = await context.newPage();
-  page.setDefaultTimeout(30_000);
+  page.setDefaultTimeout(ACTION_TIMEOUT_MS);
   return { context, page };
 }
