@@ -6,8 +6,8 @@
 #   THRUST_ADMIN_TOKEN_FILE=<0600 file holding the Worker's THRUST_ADMIN_TOKEN> \
 #     scripts/stage2-contract.sh [main|worker|bindings|cron|sweeper|panic]
 #
-# main      59 tests: the portable contract minus the 6 `oidc_` tests (they need the mock IdP on 127.0.0.1, which a
-#           deployed Worker cannot reach) (the deployed Worker's RL_V1 binding must be 60 a minute,
+# main      59 tests: the portable contract minus the 3 `oidc_` tests (the `compat_oidc_` ones: they need the mock IdP on
+#           127.0.0.1, which a deployed Worker cannot reach) (the deployed Worker's RL_V1 binding must be 60 a minute,
 #           which wrangler.stage2.toml sets, and it needs a cheap argon2id cost, THRUST_ARGON2_M_KIB=64 THRUST_ARGON2_T=1
 #           THRUST_ARGON2_P=1, or every fixture seeds six passwords at the real cost). It refuses a THRUST_EXPECT_V1_LIMIT
 #           above 1000: the rate-limit test would send millions of creates to a Worker whose binding was raised for the engine pass

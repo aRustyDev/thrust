@@ -1816,8 +1816,10 @@ async fn compat_change_password_is_for_a_session_and_not_for_an_api_key() {
 
 // ---------------------------------------------------------------------------------------------------------------------------------
 // X10 (D-040): OIDC through the routes the stock app's "Sign in with SSO" button uses, `GET /auth/oidc/` and `GET /auth/oidc/callback/`,
-// against the mock identity provider the suite serves on 127.0.0.1 (as the slice's own `oidc_` tests do, in `auth`). The mock registered one
-// redirect URI, and the target does not look at the path a callback arrives on, so the same code and state are sent to the app's callback.
+// against the mock identity provider the suite serves on 127.0.0.1. The mock registered one redirect URI, the app's callback
+// (`scripts/contract.sh` sets `THRUST_OIDC_REDIRECT_URI` to `<origin>/auth/oidc/callback/`, as a deployment must), so the provider's own redirect
+// lands on the route the app uses. These were the slice's `oidc_` tests in `auth` until step 5d of #58 deleted the slice's pair; what they asserted
+// that these did not is in them now.
 // A deployed Worker cannot reach 127.0.0.1: these `oidc_` tests are skipped by scripts/stage2-contract.sh.
 // ---------------------------------------------------------------------------------------------------------------------------------
 
@@ -1843,12 +1845,10 @@ async fn compat_oidc_begin(t: &Target, identity: Identity, tamper: Tamper) -> Ca
     idp.authorize(&location, identity, tamper)
 }
 
+/// The browser comes back to the redirect URI the provider registered, which is the app's callback: the URL is the mock's, not one built here.
 async fn compat_oidc_finish(t: &Target, cb: &Callback) -> reqwest::Response {
-    t.no_redirect()
-        .get(format!("{}?code={}&state={}", t.url("/auth/oidc/callback/"), cb.code, cb.state))
-        .send()
-        .await
-        .unwrap()
+    assert_eq!(cb.redirect_uri, t.url("/auth/oidc/callback/"), "the registered redirect URI is the app's callback");
+    t.no_redirect().get(cb.url()).send().await.unwrap()
 }
 
 /// A callback that was refused: a 302 to the app's root with the code the app reads (the pin's, PQ-213) and no cookie.
@@ -1929,8 +1929,9 @@ async fn compat_oidc_login_completes_through_the_apps_routes_and_is_a_working_se
 
 /// Every way a login can be refused is a 302 to the root with the code the app reads, and no cookie: `SIGNUP_DISABLED` (5015) for an identity Thrust will not let in
 /// (no verified email, also for a subject that is already linked; no account for it; a deactivated one: Thrust makes no account at a login, Q-0050.1),
-/// `OIDC_OAUTH_PROVIDER_ERROR` (5301) for a token that does not verify and for a state or code that is missing, unknown, used or refused by the person.
-/// Control: none of the refusals that did not use the login's state up stopped a genuine login from completing.
+/// `OIDC_OAUTH_PROVIDER_ERROR` (5301) for a token that does not verify and for a state or code that is missing, unknown, used or refused by the person,
+/// also a fresh code that comes with a state already used. Control: none of the refusals that did not use the login's state up stopped a genuine login
+/// from completing.
 #[tokio::test]
 async fn compat_oidc_every_refusal_is_a_redirect_with_the_code_the_app_reads() {
     let t = t();
@@ -2027,6 +2028,21 @@ async fn compat_oidc_every_refusal_is_a_redirect_with_the_code_the_app_reads() {
         5301,
         "OIDC_OAUTH_PROVIDER_ERROR",
         "the same callback again",
+    );
+
+    // A state is good once, whatever code comes with it. The same callback again is also refused by the provider, for a reused code, and shows nothing of the
+    // state; so a second, fresh code for the same login (one the provider would accept) is what only a used state can refuse. This is what kills
+    // `mutant_oidc_state_reusable` over HTTP.
+    let idp = MockIdp::shared();
+    let location = compat_oidc_start(&t, "").await;
+    let first = idp.authorize(&location, Identity::verified(&oidc_sub(), &email), Tamper::None);
+    let second = idp.authorize(&location, Identity::verified(&oidc_sub(), &email), Tamper::None);
+    assert!(session_cookie(&compat_oidc_finish(&t, &first).await).is_some(), "the first code completes the login");
+    compat_oidc_refused(
+        &compat_oidc_finish(&t, &second).await,
+        5301,
+        "OIDC_OAUTH_PROVIDER_ERROR",
+        "a fresh code for a state that is used",
     );
 }
 

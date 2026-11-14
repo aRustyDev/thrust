@@ -83,7 +83,7 @@ ARGON2_M_KIB=64
 ARGON2_T=1
 ARGON2_P=1
 SIGNIN_LIMIT=30
-EXPECT_MAIN=73
+EXPECT_MAIN=67
 EXPECT_BUDGET=1
 EXPECT_SWEEPER=3
 EXPECT_CSRFOFF=6
@@ -131,7 +131,8 @@ THRUST_OIDC_CLIENT_SECRET="$(openssl rand -hex 16)"
 export THRUST_MOCK_IDP_PORT THRUST_OIDC_CLIENT_SECRET
 export THRUST_OIDC_ISSUER="http://127.0.0.1:$THRUST_MOCK_IDP_PORT"
 export THRUST_OIDC_CLIENT_ID="thrust-contract"
-export THRUST_OIDC_REDIRECT_URI="$THRUST_BASE_URL/api/_slice/auth/oidc/callback"
+# The redirect URI is the stock app's callback, the one a deployment registers at its provider (D-040: `<origin>/auth/oidc/callback/`).
+export THRUST_OIDC_REDIRECT_URI="$THRUST_BASE_URL/auth/oidc/callback/"
 # The e2e pass is the stock app in a browser, and the app draws an SSO button when `/api/instances/` says a provider is configured (D-040). The deployed
 # Worker has none (it cannot reach a WARP-only issuer until Q-0050.9), and the sign-in journey holds that the page shows the password and nothing else, so
 # that pass starts its target as the deployment runs: with no provider. (worker-dev.sh passes an empty setting on, which is none.)
