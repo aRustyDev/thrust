@@ -112,17 +112,28 @@ pub fn bare_world() -> (App, Arc<MemoryDatabase>) {
 
 /// [`bare_world`] with an OIDC provider configured (`None` is a deployment with none: every deployment today, D-040).
 pub fn bare_world_with(oidc: Option<Arc<dyn OidcProvider>>) -> (App, Arc<MemoryDatabase>) {
+    bare_world_parts(oidc, None, |_| {})
+}
+
+/// [`bare_world`] with everything a test may set: the OIDC provider, the mail service (`None` is a deployment with none: every
+/// deployment until E2, D-041), and an edit of the configuration (the link's base URL, the reset's timings).
+pub fn bare_world_parts(
+    oidc: Option<Arc<dyn OidcProvider>>,
+    email: Option<Arc<dyn EmailSender>>,
+    edit: impl FnOnce(&mut CoreConfig),
+) -> (App, Arc<MemoryDatabase>) {
     let db = Arc::new(MemoryDatabase::new());
     let background: Arc<dyn Background> = Arc::new(NoBackground);
     let queue: Arc<dyn Queue> = Arc::new(MemoryQueue::new(background.clone(), ConsumerSlot::default()));
     let clock: Arc<dyn Clock> = Arc::new(FixedClock(DateTime::from_timestamp(1_760_000_000, 0).unwrap()));
-    let cfg = CoreConfig {
+    let mut cfg = CoreConfig {
         outbox_fastpath: false,
         csrf_enforce: false,
         // a cheap argon2id: the cost is pinned by a core test, not by these
         argon2: Argon2Params { m_cost_kib: 32, t_cost: 1, p_cost: 1 },
         ..CoreConfig::default()
     };
+    edit(&mut cfg);
     let hasher = Arc::new(Argon2idHasher::new(cfg.argon2));
     let app = App::new(
         Ports {
@@ -136,6 +147,7 @@ pub fn bare_world_with(oidc: Option<Arc<dyn OidcProvider>>) -> (App, Arc<MemoryD
             rng: Arc::new(CounterRng::default()),
             hasher,
             oidc,
+            email,
         },
         cfg,
         SystemScope::mint(),

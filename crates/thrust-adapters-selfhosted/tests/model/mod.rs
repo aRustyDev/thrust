@@ -64,6 +64,10 @@
 //!   changes nothing (the user that holds it is as it was, and the refused email names nobody);
 //! * a pending OIDC login is returned by `take_oidc_login` once, and deleted by it (a second take, a replayed
 //!   callback, finds nothing); an insert drops the logins whose `expires_at` is not after its `created_at`;
+//! * a password-reset token (a user's, mailed once) is returned by `find_password_reset` without being taken, and by
+//!   `take_password_reset` once, which deletes it; an insert first drops the tokens whose `expires_at` is not after its
+//!   `created_at`, then refuses (`false`, nothing stored) when a token of the same user made at or after `not_before` still
+//!   works (the cooldown), and otherwise replaces the user's older tokens (a user has at most one that works);
 //! * `undispatched_outbox(n)` returns the first `n` undispatched rows by `(created_at, event_id)`, unchanged;
 //!   `mark_outbox_dispatched` takes a row out of it (an unknown id is a no-op); `outbox_depth` counts what is left;
 //! * `insert_activity` is `true` for a new `event_id` and `false` for one already projected, in any project;
@@ -739,6 +743,29 @@ enum Op {
     OidcTake {
         pick: Option<usize>,
     },
+    /// A reset token for `who` is stored with a lifetime of `ttl` s; a token of the same user made at or after `gap` s ago refuses it.
+    ResetInsert {
+        who: U,
+        ttl: u8,
+        gap: u8,
+    },
+    /// `pick`: one of the tokens ever stored (found, taken, swept or replaced), or `None` for a token never stored.
+    ResetFind {
+        pick: Option<usize>,
+    },
+    ResetTake {
+        pick: Option<usize>,
+    },
+    /// The cooldown and the replacement: a token is stored, a second request inside the cooldown (and one exactly on its boundary)
+    /// is refused, a third with no cooldown replaces the first; then the live one is found, the replaced one is not, the live one is taken, taken again.
+    ResetCooldown {
+        who: U,
+    },
+    /// The expiry: a token that expires (5 s) is followed, 6 ticks later, by an insert that sweeps it; the swept one is found
+    /// and taken (nothing), the new one is taken, and taken again.
+    ResetLife {
+        who: U,
+    },
     Undispatched {
         limit: u32,
     },
@@ -922,6 +949,12 @@ fn op() -> impl Strategy<Value = Op> {
         2 => Just(Op::OidcExpiry),
         3 => prop_oneof![Just(5u8), Just(100u8)].prop_map(|ttl| Op::OidcInsert { ttl }),
         4 => prop::option::weighted(0.85, 0..8usize).prop_map(|pick| Op::OidcTake { pick }),
+        3 => (user(), prop_oneof![Just(5u8), Just(100u8)], prop_oneof![Just(0u8), Just(1u8), Just(3u8), Just(100u8)])
+            .prop_map(|(who, ttl, gap)| Op::ResetInsert { who, ttl, gap }),
+        2 => prop::option::weighted(0.85, 0..8usize).prop_map(|pick| Op::ResetFind { pick }),
+        3 => prop::option::weighted(0.85, 0..8usize).prop_map(|pick| Op::ResetTake { pick }),
+        2 => user().prop_map(|who| Op::ResetCooldown { who }),
+        2 => user().prop_map(|who| Op::ResetLife { who }),
         1 => (1..6u32).prop_map(|limit| Op::Undispatched { limit }),
         1 => prop::option::weighted(0.85, 0..16usize).prop_map(|pick| Op::Mark { pick }),
         1 => Just(Op::Depth),
@@ -1150,6 +1183,22 @@ enum Class {
     /// A take of a login that an insert swept away: nothing.
     OidcSweptHidden,
     OidcUnknown,
+    ResetInserted,
+    /// An insert refused by the cooldown: nothing stored.
+    ResetBlocked,
+    /// An insert that replaced the user's older token.
+    ResetReplaced,
+    /// An insert that dropped an expired token.
+    ResetSwept,
+    ResetFound,
+    ResetTaken,
+    /// A find or take of a token that was taken already: nothing.
+    ResetReplayHidden,
+    /// A find or take of a token that an insert swept away: nothing.
+    ResetSweptHidden,
+    /// A find or take of a token that a later one replaced: nothing.
+    ResetReplacedHidden,
+    ResetUnknown,
     UndispatchedSome,
     Marked,
     MarkedAgain,
@@ -1260,7 +1309,7 @@ enum Class {
 }
 
 impl Class {
-    const ALL: [Class; 213] = [
+    const ALL: [Class; 223] = [
         Class::Created,
         Class::ExternalKeyFreed,
         Class::Conflict,
@@ -1396,6 +1445,16 @@ impl Class {
         Class::OidcReplayHidden,
         Class::OidcSweptHidden,
         Class::OidcUnknown,
+        Class::ResetInserted,
+        Class::ResetBlocked,
+        Class::ResetReplaced,
+        Class::ResetSwept,
+        Class::ResetFound,
+        Class::ResetTaken,
+        Class::ResetReplayHidden,
+        Class::ResetSweptHidden,
+        Class::ResetReplacedHidden,
+        Class::ResetUnknown,
         Class::UndispatchedSome,
         Class::Marked,
         Class::MarkedAgain,
@@ -1838,6 +1897,19 @@ enum Call {
     TakeOidcLogin {
         state: TokenHash,
         want: Option<OidcLogin>,
+    },
+    InsertPasswordReset {
+        r: NewPasswordReset,
+        not_before: Timestamp,
+        want: bool,
+    },
+    FindPasswordReset {
+        token: TokenHash,
+        want: Option<PasswordReset>,
+    },
+    TakePasswordReset {
+        token: TokenHash,
+        want: Option<PasswordReset>,
     },
     Undispatched {
         limit: u32,
@@ -2482,6 +2554,15 @@ enum LoginState {
     Swept,
 }
 
+/// Where a stored reset token stands: still the one that works, used up, dropped as expired, or replaced by a newer one of its user.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ResetState {
+    Pending,
+    Taken,
+    Swept,
+    Replaced,
+}
+
 /// A seeded session as the model knows it.
 #[derive(Debug, Clone)]
 struct SessModel {
@@ -2503,6 +2584,8 @@ struct Model {
     api_keys: Vec<KeyModel>,
     /// Every OIDC login ever inserted, with whether it is still pending (not taken, not swept).
     logins: Vec<(NewOidcLogin, LoginState)>,
+    /// Every reset token ever stored, with where it stands.
+    resets: Vec<(NewPasswordReset, ResetState)>,
     /// The profile of each of the three seeded login users, once an op has made it.
     profiles: [Option<UserProfile>; 3],
     /// Whether each seeded user's membership of each seeded workspace is active (it is for users who are not members).
@@ -2807,6 +2890,7 @@ impl Model {
             password_version: [0; 3],
             api_keys,
             logins: Vec::new(),
+            resets: Vec::new(),
             profiles: [None, None, None],
             member_active: [[true; 2]; 7],
             sidebar: BTreeMap::new(),
@@ -3226,6 +3310,50 @@ impl Model {
                 let second = self.logins.len() - 1;
                 self.plan_all(
                     &[Op::OidcTake { pick: Some(first) }, Op::OidcTake { pick: Some(second) }],
+                    &mut calls,
+                    &mut classes,
+                );
+            }
+            &Op::ResetCooldown { who } => {
+                self.plan_all(
+                    &[
+                        Op::ResetInsert { who, ttl: 100, gap: 100 },
+                        // exactly on the boundary: the first token was made 1 s before this one and the cooldown is 1 s, and a
+                        // token made at the cooldown's start still blocks (the comparison is `>=`)
+                        Op::ResetInsert { who, ttl: 100, gap: 1 },
+                        Op::ResetInsert { who, ttl: 100, gap: 0 },
+                    ],
+                    &mut calls,
+                    &mut classes,
+                );
+                // the third is never refused (no token is made at or after its own `created_at`), so a row exists
+                let last = self.resets.len() - 1;
+                self.plan_all(
+                    &[
+                        Op::ResetFind { pick: Some(last) },
+                        Op::ResetFind { pick: Some(last.saturating_sub(1)) },
+                        Op::ResetTake { pick: Some(last) },
+                        Op::ResetTake { pick: Some(last) },
+                    ],
+                    &mut calls,
+                    &mut classes,
+                );
+            }
+            &Op::ResetLife { who } => {
+                self.plan_all(&[Op::ResetInsert { who, ttl: 5, gap: 0 }], &mut calls, &mut classes);
+                let first = self.resets.len() - 1;
+                // each of these ticks the clock once (and touches nothing that matters here)
+                let ticks: Vec<Op> = (0..6).map(|_| Op::KeyTouch { key: 2 }).collect();
+                self.plan_all(&ticks, &mut calls, &mut classes);
+                self.plan_all(&[Op::ResetInsert { who, ttl: 100, gap: 0 }], &mut calls, &mut classes);
+                let second = self.resets.len() - 1;
+                self.plan_all(
+                    &[
+                        Op::ResetFind { pick: Some(first) },
+                        Op::ResetTake { pick: Some(first) },
+                        Op::ResetTake { pick: Some(second) },
+                        Op::ResetTake { pick: Some(second) },
+                    ],
                     &mut calls,
                     &mut classes,
                 );
@@ -4066,6 +4194,97 @@ impl Model {
                     None => {
                         classes.push(Class::OidcUnknown);
                         calls.push(Call::TakeOidcLogin { state: token_hash(), want: None });
+                    }
+                }
+            }
+            &Op::ResetInsert { who, ttl, gap } => {
+                let created_at = tick();
+                let user_id = self.fix.user(who);
+                let r = NewPasswordReset {
+                    token_hash: token_hash(),
+                    user_id,
+                    created_at,
+                    expires_at: created_at + TimeDelta::seconds(i64::from(ttl)),
+                };
+                let not_before = created_at - TimeDelta::seconds(i64::from(gap));
+                // the sweep comes first, as in the adapters: an expired token neither blocks nor survives
+                let mut swept = false;
+                for (old, state) in &mut self.resets {
+                    if *state == ResetState::Pending && old.expires_at <= created_at {
+                        *state = ResetState::Swept;
+                        swept = true;
+                    }
+                }
+                if swept {
+                    classes.push(Class::ResetSwept);
+                }
+                let blocked = self.resets.iter().any(|(old, state)| {
+                    *state == ResetState::Pending && old.user_id == user_id && old.created_at >= not_before
+                });
+                if blocked {
+                    classes.push(Class::ResetBlocked);
+                } else {
+                    let mut replaced = false;
+                    for (old, state) in &mut self.resets {
+                        if *state == ResetState::Pending && old.user_id == user_id {
+                            *state = ResetState::Replaced;
+                            replaced = true;
+                        }
+                    }
+                    classes.push(Class::ResetInserted);
+                    if replaced {
+                        classes.push(Class::ResetReplaced);
+                    }
+                    self.resets.push((r.clone(), ResetState::Pending));
+                }
+                calls.push(Call::InsertPasswordReset { r, not_before, want: !blocked });
+            }
+            &Op::ResetFind { pick } => {
+                let n = self.resets.len();
+                match pick.filter(|_| n > 0).map(|i| i % n) {
+                    Some(i) => {
+                        let (r, state) = &self.resets[i];
+                        let (want, class) = match *state {
+                            ResetState::Pending => (
+                                Some(PasswordReset { user_id: r.user_id, expires_at: r.expires_at }),
+                                Class::ResetFound,
+                            ),
+                            ResetState::Taken => (None, Class::ResetReplayHidden),
+                            ResetState::Swept => (None, Class::ResetSweptHidden),
+                            ResetState::Replaced => (None, Class::ResetReplacedHidden),
+                        };
+                        classes.push(class);
+                        calls.push(Call::FindPasswordReset { token: r.token_hash, want });
+                    }
+                    None => {
+                        classes.push(Class::ResetUnknown);
+                        calls.push(Call::FindPasswordReset { token: token_hash(), want: None });
+                    }
+                }
+            }
+            &Op::ResetTake { pick } => {
+                let n = self.resets.len();
+                match pick.filter(|_| n > 0).map(|i| i % n) {
+                    Some(i) => {
+                        let (r, state) = &mut self.resets[i];
+                        let (want, class) = match *state {
+                            ResetState::Pending => (
+                                Some(PasswordReset { user_id: r.user_id, expires_at: r.expires_at }),
+                                Class::ResetTaken,
+                            ),
+                            ResetState::Taken => (None, Class::ResetReplayHidden),
+                            ResetState::Swept => (None, Class::ResetSweptHidden),
+                            ResetState::Replaced => (None, Class::ResetReplacedHidden),
+                        };
+                        if *state == ResetState::Pending {
+                            *state = ResetState::Taken;
+                        }
+                        classes.push(class);
+                        calls.push(Call::TakePasswordReset { token: r.token_hash, want });
+                    }
+                    None => {
+                        classes.push(Class::ResetUnknown);
+                        calls.push(Call::TakePasswordReset { token: token_hash(), want: None });
                     }
                 }
             }
@@ -5487,6 +5706,18 @@ async fn execute(
         Call::TakeOidcLogin { state, want } => {
             let got = bounded(at, db.take_oidc_login(&state)).await?;
             prop_assert_eq!(got, want, "{}: take oidc login", at);
+        }
+        Call::InsertPasswordReset { r, not_before, want } => {
+            let got = bounded(at, db.insert_password_reset(&r, not_before)).await?;
+            prop_assert_eq!(got, want, "{}: insert password reset", at);
+        }
+        Call::FindPasswordReset { token, want } => {
+            let got = bounded(at, db.find_password_reset(&token)).await?;
+            prop_assert_eq!(got, want, "{}: find password reset", at);
+        }
+        Call::TakePasswordReset { token, want } => {
+            let got = bounded(at, db.take_password_reset(&token)).await?;
+            prop_assert_eq!(got, want, "{}: take password reset", at);
         }
         Call::Undispatched { limit, want } => {
             let got = bounded(at, db.undispatched_outbox(&sys, limit)).await?;

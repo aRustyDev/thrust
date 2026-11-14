@@ -98,7 +98,7 @@ pub(crate) fn random_hex(app: &App, bytes: usize) -> Result<String, CoreError> {
     Ok(hex(&buf))
 }
 
-fn random_salt(app: &App) -> Result<[u8; SALT_LEN], CoreError> {
+pub(crate) fn random_salt(app: &App) -> Result<[u8; SALT_LEN], CoreError> {
     let mut salt = [0u8; SALT_LEN];
     app.ports.rng.fill(&mut salt).map_err(|e| CoreError::Internal(e.to_string()))?;
     Ok(salt)
