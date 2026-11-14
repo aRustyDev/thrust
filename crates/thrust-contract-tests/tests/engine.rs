@@ -170,7 +170,8 @@ async fn engine_fifty_writers_ten_thousand_creates_never_duplicate_a_sequence_id
 // Search (spike 0002 exit criterion 2, ADR-0083): substring queries return what Plane's `icontains` returns.
 // ---------------------------------------------------------------------------------------------------------------------
 
-/// How many hits a search is asked for: the cap the old project search had (`thrust_core::SEARCH_LIMIT`). The pin's default is ten.
+/// How many hits a search is asked for: the cap the slice's project search had (100; its core function and constant are gone).
+/// The pin's default is ten.
 const SEARCH_LIMIT: usize = 100;
 
 /// The whole numbers in a text as Python's `re.findall(r"\b\d+\b", text)` finds them: a run of ASCII digits with no letter, digit or

@@ -6,10 +6,11 @@ cited by path and symbol, not pasted, so a pattern stays correct when its code m
 
 ## The patterns
 
-**A use-case is a function of `&App` and a `Principal`.** `create_work_item` validates its input, applies the rate
-limit, authorizes, runs one transaction, and relays the event after the commit. `delete_work_item` authorizes, runs a
-transaction and relays. The `list_*` use-cases authorize and read, with no transaction and no event. Shown by those
-functions in `crates/thrust-core/src/lib.rs`.
+**A use-case is a function of `&App` and a `Principal`.** `create_issue` (once `v1_issue_writer` or `issue_writer` has
+authorized the caller) looks up what the draft names, runs one transaction and relays the event after the commit.
+`delete_issue` checks who may, runs a transaction and relays. The list use-cases (`list_issues`, `list_activity`) authorize
+and read, with no transaction and no event. Shown by those functions in `crates/thrust-core/src/issues.rs` and
+`crates/thrust-core/src/lib.rs`.
 
 **Authorize in the core, and carry the proof.** `authorize` returns a `Scope`, the proof that the user may act in
 that workspace and project, and the use-case passes it to every repository call. The workspace comes from the route's
@@ -55,7 +56,7 @@ publishes up to `limit` undispatched rows per call, oldest first (the roots pass
 `insert_activity` returns `false` for an event id it has seen, and the `activity` table has a unique `event_id`.
 Shown by `dispatch`, `sweep_outbox` and `process_event` in `thrust-core`.
 
-**Roll back explicitly, and never return a mid-transaction connection to the pool.** `create_work_item` calls
+**Roll back explicitly, and never return a mid-transaction connection to the pool.** `create_issue` calls
 `tx.rollback()` on error. `PgTx` implements `Drop`, so a transaction abandoned without a commit (a cancelled request)
 makes the connection `discard` itself, and `PoolConnector` removes it from the pool instead of recycling it. The
 planted bug `mutant_discard_noop` breaks exactly this.

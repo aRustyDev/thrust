@@ -19,16 +19,14 @@ use thrust_contracts::*;
 use thrust_core::*;
 use thrust_ports::*;
 
-fn create(w: &World, n: usize) -> Vec<WorkItem> {
+/// Work items for the relay to publish events about, made as `/api/v1` makes them: `create_issue` writes the item and its
+/// `work_item.created` outbox row in one transaction and relays after the commit. The subject here is the relay, not the use-case.
+fn create(w: &World, n: usize) -> Vec<WorkItemRow> {
+    let access = block_on(v1_issue_writer(&w.app, &w.principal(Actor::MemberA), &w.slug_a, w.project_a)).unwrap();
     (0..n)
         .map(|i| {
-            let req = CreateWorkItemRequest {
-                name: format!("item {i}"),
-                description: None,
-                external_source: None,
-                external_id: None,
-            };
-            block_on(create_work_item(&w.app, &w.principal(Actor::MemberA), &w.slug_a, w.project_a, req)).unwrap()
+            let draft = IssueDraft { name: format!("item {i}"), ..IssueDraft::default() };
+            block_on(create_issue(&w.app, &access, draft)).unwrap()
         })
         .collect()
 }
@@ -56,7 +54,7 @@ fn the_sweeper_publishes_every_waiting_row_exactly_once() {
     assert_eq!((depth(&w), queue.sent_len()), (0, 3), "every row is published and marked dispatched");
 
     let sent: Vec<_> = queue.sent.lock().unwrap().iter().map(|(_, e, _)| e.entity_id).collect();
-    let want: Vec<_> = items.iter().map(|i| i.id.as_uuid()).collect();
+    let want: Vec<_> = items.iter().map(|i| i.item.id.as_uuid()).collect();
     assert_eq!(sent, want, "one event per created item, oldest first");
 
     let again = block_on(sweep_outbox(&w.app, 100)).unwrap();
@@ -91,7 +89,7 @@ fn the_relay_sends_dedupe_and_ordering_keys() {
     assert_eq!(topic, EVENTS_TOPIC);
     assert_eq!(env.event_type, "work_item.created");
     assert_eq!(opts.idempotency_key.as_deref(), Some(env.event_id.to_string().as_str()));
-    assert_eq!(opts.ordering_key.as_deref(), Some(format!("{}:{}", w.ws_a, item.id).as_str()));
+    assert_eq!(opts.ordering_key.as_deref(), Some(format!("{}:{}", w.ws_a, item.item.id).as_str()));
 }
 
 /// With the fast path on, the row is published by the after-commit task, not left for the sweeper.
@@ -136,8 +134,8 @@ fn the_activity_consumer_records_events_and_rejects_bad_ones() {
     let mut env = block_on(w.app.ports.db.undispatched_outbox(&SystemScope::mint(), 10)).unwrap().remove(0).envelope;
 
     block_on(consumer.handle(&env)).unwrap();
-    let rows =
-        block_on(list_activity(&w.app, &w.principal(Actor::GuestA), &w.slug_a, w.project_a, Some(item.id))).unwrap();
+    let rows = block_on(list_activity(&w.app, &w.principal(Actor::GuestA), &w.slug_a, w.project_a, Some(item.item.id)))
+        .unwrap();
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].verb, "created");
 
