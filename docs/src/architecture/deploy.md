@@ -29,7 +29,7 @@ a copy that is missing a value fails its job with the name of the value.)
   start a deploy if they are missing, because GitHub creates an unprotected environment when a job names one that does not
   exist, which would silently open the manual gate. Restricting deployment branches to `main` is worth setting too.
 - **Variables** (none is secret): `CLOUDFLARE_ACCOUNT_ID`, `THRUST_WORKER_NAME`, `THRUST_BASE_URL` (`https://<hostname>`),
-  `THRUST_HYPERDRIVE_ID`, `THRUST_R2_BUCKET`, `THRUST_QUEUE`, `THRUST_QUEUE_DLQ`, `THRUST_RL_CREATE_ID`,
+  `THRUST_HYPERDRIVE_ID`, `THRUST_R2_BUCKET`, `THRUST_QUEUE`, `THRUST_QUEUE_DLQ`,
   `THRUST_RL_SIGNIN_ID`, `THRUST_RL_V1_ID`, `THRUST_CSRF_ENFORCE` (`on` or `off`, no default, so turning it on for
   production is a decision), `DB_ACCESS_HOSTNAME`, `SMOKE_EMAIL`, `SMOKE_WORKSPACE`, and optionally `SMOKE_PROJECT`
   (default `smoke`). `scripts/render-wrangler.sh` checks each one's shape and refuses an all-zero id and a `thrust-spike`
@@ -45,8 +45,8 @@ a copy that is missing a value fails its job with the name of the value.)
   push to `main` on when it is `true`. Until then a push plans `skip` and nothing else runs. Manual runs do not need it.
 - **What is behind the variables**, in the infrastructure repository: for staging, a schema and a login role on
   `thrust-pg-dev` (with `pg_trgm` installed in `public` by an administrator, which migration `0006` needs and a schema-only
-  role cannot do), a Hyperdrive configuration for that role, an R2 bucket, a queue and its dead-letter queue, three
-  rate-limit namespace ids that are not `1001` to `1004`, the Custom Domain, and the tunnel, Access application and service
+  role cannot do), a Hyperdrive configuration for that role, an R2 bucket, a queue and its dead-letter queue, two
+  rate-limit namespace ids (sign-in and `/api/v1`) that differ from each other and are not `1001` to `1004`, the Custom Domain, and the tunnel, Access application and service
   token that `scripts/migrate-ci.sh` uses. The CA that signs `thrust-pg`'s certificate is in the repository
   (`.github/deploy/`, expires 2029-08-15).
 - **The smoke account**, once per environment and by hand, after the hostname answers:
