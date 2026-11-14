@@ -1,7 +1,8 @@
 #!/bin/sh
 # Placement guard (issue #39): the Worker runs next to its database.
 #
-# `wrangler.toml` and `wrangler.stage2.toml` must each carry exactly one `[placement]` table that holds exactly
+# `wrangler.toml`, `wrangler.stage2.toml` and `wrangler.deploy.toml` (the deployed Worker's template, issue #49) must each carry
+# exactly one `[placement]` table that holds exactly
 # `region = "aws:us-east-1"` (ADR-0094). Cloudflare makes `region` exclusive with `mode`, `host` and `hostname`, so the
 # whole table is compared and not only the `region` line.
 #
@@ -31,7 +32,7 @@ table_count() {
   grep -c '^\[placement\]' "$1"
 }
 
-for f in wrangler.toml wrangler.stage2.toml; do
+for f in wrangler.toml wrangler.stage2.toml wrangler.deploy.toml; do
   file="$DIR/$f"
   if [ ! -f "$file" ]; then
     echo "FAIL: $f is missing"

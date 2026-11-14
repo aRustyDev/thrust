@@ -1,0 +1,80 @@
+# The DEPLOYED Worker's configuration (issue #49, ADR-0110 round 29): a template. `scripts/render-wrangler.sh` fills every
+# double-underscore marker from the deploy environment's variables and writes `.wrangler.deploy.run.toml` (ignored by git), which is
+# what `wrangler deploy` reads. (No comment in this file may contain a marker-shaped word: the renderer reads comments too.)
+# It fails on a marker with no value, on an all-zero id, on a name that still says `thrust-spike`, so nothing here can reach Cloudflare
+# half-filled. Nothing secret is in this file or in the variables: the database password lives only in the Hyperdrive config.
+#
+# It is wrangler.toml's twin and not its copy. What differs, on purpose:
+#   * no `[build]`: the deploy job that holds the credentials builds nothing, the build job made `build/worker/` and attested it;
+#   * the ids and names are markers, one set per environment (staging, production);
+#   * the probe-only bindings (`SS` Secrets Store, `EMAIL` send_email, `RL` rate limit) are left out: only the probe routes read them;
+#   * the queue consumer names a dead-letter queue, which wrangler.toml does not: a message that fails its retries is kept, not dropped.
+# `.github/scripts/tests/test-render-wrangler.sh` compares the binding sets of the two files, so a binding added to one cannot be
+# forgotten in the other.
+name = "__WORKER_NAME__"
+main = "build/worker/shim.mjs"
+compatibility_date = "2026-08-01"
+workers_dev = false
+
+# Run `fetch` in the data centre closest to AWS us-east-1, where the database is (ADR-0094; scripts/check-placement.sh compares this).
+[placement]
+region = "aws:us-east-1"
+
+# The tag is the commit sha (`wrangler deploy --tag`); the Worker sends it back as `x-thrust-version`, and the smoke compares.
+[version_metadata]
+binding = "CF_VERSION_METADATA"
+
+[triggers]
+crons = ["* * * * *"]   # outbox sweeper (ADR-0046 / ADR-0072)
+
+[vars]
+# Whether a mutation authenticated by the session cookie must carry the CSRF token (ADR-0052, Q-0050.8). "off" while the stock Plane
+# frontend talks to this Worker. It is a variable of each environment, with no default, so that turning it on for production is a
+# decision somebody made and not a copy of staging's value.
+THRUST_CSRF_ENFORCE = "__CSRF_ENFORCE__"
+
+[[hyperdrive]]
+binding = "HYPERDRIVE"
+id = "__HYPERDRIVE_ID__"
+
+[[r2_buckets]]
+binding = "BLOBS"
+bucket_name = "__BLOBS_BUCKET__"
+
+[[queues.producers]]
+binding = "EVENTS"
+queue = "__EVENTS_QUEUE__"
+
+[[queues.consumers]]
+queue = "__EVENTS_QUEUE__"
+max_batch_size = 10
+max_batch_timeout = 1
+max_retries = 3
+dead_letter_queue = "__EVENTS_DLQ__"
+
+# The P1 collab template (ARCHITECTURE 2a): the only Durable Object class. A change to anything under [[migrations]] is a Durable Object
+# lifecycle change: it cannot be rolled back across, so the deploy sends it through its own manual-gated job (deploy.yml, `deploy-do`).
+[[durable_objects.bindings]]
+name = "ROOM"
+class_name = "RoomDo"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["RoomDo"]
+
+# One Workers Rate Limiting binding per kind of key (ADR-0033, D-007); on Cloudflare the binding is the source of truth for the
+# allowance. `namespace_id` is account-wide, so each environment has its own three, different from the 1001-1004 that local runs use.
+[[ratelimits]]
+name = "RL_CREATE"
+namespace_id = "__RL_CREATE_ID__"
+simple = { limit = 1000, period = 60 }
+
+[[ratelimits]]
+name = "RL_SIGNIN"
+namespace_id = "__RL_SIGNIN_ID__"
+simple = { limit = 10, period = 60 }
+
+[[ratelimits]]
+name = "RL_V1"
+namespace_id = "__RL_V1_ID__"
+simple = { limit = 60, period = 60 }

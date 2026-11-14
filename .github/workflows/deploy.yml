@@ -1,0 +1,374 @@
+name: deploy
+
+# The deploy pipeline (issue #49, ADR-0110 round 29): expand migration, `wrangler deploy` at 100 %, the smoke against the live hostname,
+# and an automatic `wrangler rollback` when it fails. There are no stages: at about two requests a second a 10 % slice is a hundred
+# requests, mostly the owner's, so the smoke is the gate.
+#
+#   * A push to main deploys STAGING, after `ci` succeeded for it, and only while the repository variable THRUST_DEPLOY_ENABLED is
+#     `true` (the switch that keeps this workflow quiet until an environment exists).
+#   * A manual run deploys `staging` or `production`, a commit of main, from main. `production` waits for the environment's reviewers.
+#   * A pull request that touches the deploy files runs `dry-run`: build the bundle and check the rendered configuration with
+#     `wrangler deploy --dry-run`. It uses no environment and no secret, and it is what proves, before the merge, that this file starts.
+#
+# Who holds what. `plan` and `build` hold NO secret: the code of a commit is built before anything that could be hurt by it runs, and the
+# bundle is attested (SLSA provenance, ADR-0101). `deploy` holds the environment's secrets and builds nothing: it verifies the
+# attestation, then runs scripts/deploy-worker.sh. The Cloudflare token is a scoped API token in the environment's secrets, which DEVIATES
+# from ADR-0101 and ADR-0110 ("OIDC, no long-lived token"): Cloudflare documents no OIDC federation for wrangler, so the deviation is
+# recorded in the ADR and OIDC stays a follow-up.
+#
+# The manual gate. A deploy that cannot be rolled back across (the first deploy to an environment, which carries the Durable Object
+# migration; any change to `[[migrations]]`; a live state this cannot read) is not made by `deploy`. `deploy` finds that out FIRST and
+# deploys nothing (`deferred`), and `deploy-do` then waits for the reviewers of the `<environment>-do-lifecycle` environment and
+# deploys, without an automatic rollback.
+#
+# Environments, each with the SAME variables and secrets (so `staging` and `staging-do-lifecycle` hold copies of each other's):
+#   variables  CLOUDFLARE_ACCOUNT_ID THRUST_WORKER_NAME THRUST_BASE_URL THRUST_HYPERDRIVE_ID THRUST_R2_BUCKET THRUST_QUEUE
+#              THRUST_QUEUE_DLQ THRUST_RL_CREATE_ID THRUST_RL_SIGNIN_ID THRUST_RL_V1_ID THRUST_CSRF_ENFORCE DB_ACCESS_HOSTNAME
+#              SMOKE_EMAIL SMOKE_WORKSPACE (SMOKE_PROJECT is optional)
+#   secrets    CLOUDFLARE_API_TOKEN TUNNEL_SERVICE_TOKEN_ID TUNNEL_SERVICE_TOKEN_SECRET DATABASE_URL SMOKE_PASSWORD
+# The resources behind them are the infrastructure repository's (ApiraTech/infrastructure #1015-#1017).
+on:
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: The environment to deploy to
+        type: choice
+        options: [staging, production]
+        required: true
+      ref:
+        description: A commit of main to deploy (default main)
+        type: string
+        required: false
+        default: main
+      inject_smoke_failure:
+        description: Make the smoke fail on purpose after it passed, to prove the rollback (staging only)
+        type: boolean
+        default: false
+      first_deploy_skip_smoke:
+        description: Deploy without the smoke. Only for the FIRST deploy of an environment, before its hostname is attached
+        type: boolean
+        default: false
+  # Only when a file of the deploy changes: a workflow with the wrong permissions fails at startup, with no job and a message about "a
+  # workflow file issue", and only a run can show it. ci.yml runs for every pull request, so nothing else needs a second one.
+  pull_request:
+    paths:
+      - .github/workflows/deploy.yml
+      - .github/actions/deploy-worker/**
+      - .github/deploy/**
+      - .github/scripts/plan-deploy.sh
+      - .github/scripts/classify-deploy.sh
+      - .github/scripts/active-version.py
+      - .github/scripts/assert-sha-checks.sh
+      - scripts/deploy-worker.sh
+      - scripts/render-wrangler.sh
+      - scripts/migrate-ci.sh
+      - scripts/smoke-deploy.sh
+      - crates/thrust-worker/wrangler.deploy.toml
+
+permissions: {}
+
+jobs:
+  # What does this run do, and to which commit? .github/scripts/plan-deploy.sh decides (it has a test over every combination), and the
+  # commit's own `gate` has to have passed: asked of GitHub by name, so a `ci` that never ran cannot be read as one that passed.
+  plan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      checks: read
+    outputs:
+      mode: ${{ steps.plan.outputs.mode }}
+      environment: ${{ steps.plan.outputs.environment }}
+      sha: ${{ steps.plan.outputs.sha }}
+      inject: ${{ steps.plan.outputs.inject }}
+      skip_smoke: ${{ steps.plan.outputs.skip_smoke }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - id: plan
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          RUN_REF: ${{ github.ref }}
+          RUN_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          RUN_EVENT: ${{ github.event.workflow_run.event }}
+          RUN_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+          RUN_HEAD_REPO: ${{ github.event.workflow_run.head_repository.full_name }}
+          REPO: ${{ github.repository }}
+          DEPLOY_ENABLED: ${{ vars.THRUST_DEPLOY_ENABLED }}
+          DISPATCH_ENV: ${{ inputs.environment }}
+          DISPATCH_REF: ${{ inputs.ref }}
+          DISPATCH_INJECT: ${{ inputs.inject_smoke_failure }}
+          DISPATCH_SKIP_SMOKE: ${{ inputs.first_deploy_skip_smoke }}
+        run: |
+          .github/scripts/plan-deploy.sh > plan.out
+          cat plan.out
+          cat plan.out >> "$GITHUB_OUTPUT"
+      - name: Preflight - the tools the certifier needs
+        if: steps.plan.outputs.mode == 'deploy'
+        run: |
+          for tool in gh jq; do
+            command -v "$tool" > /dev/null 2>&1 || { echo "::error::runner image lacks $tool"; exit 1; }
+          done
+      - name: The commit's own gate passed (asked by name, by set)
+        if: steps.plan.outputs.mode == 'deploy'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ steps.plan.outputs.sha }}
+        run: .github/scripts/assert-sha-checks.sh "$REPO" "$SHA" gate
+      # GitHub creates an environment, with no reviewers, the first time a job names one that does not exist: a renamed or deleted
+      # `...-do-lifecycle` would silently open the manual gate. So the gates are asked for by name before anything starts.
+      - name: The environments that gate this deploy have required reviewers
+        if: steps.plan.outputs.mode == 'deploy'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TARGET: ${{ steps.plan.outputs.environment }}
+        run: |
+          case "$TARGET" in
+            production) .github/scripts/assert-gated-environments.sh "$REPO" production production-do-lifecycle ;;
+            staging) .github/scripts/assert-gated-environments.sh "$REPO" staging-do-lifecycle ;;
+            *) echo "::error::unknown environment '$TARGET'"; exit 1 ;;
+          esac
+      - name: Summary
+        env:
+          MODE: ${{ steps.plan.outputs.mode }}
+          TARGET: ${{ steps.plan.outputs.environment }}
+          SHA: ${{ steps.plan.outputs.sha }}
+          REASON: ${{ steps.plan.outputs.reason }}
+        run: |
+          {
+            echo "### deploy plan"
+            echo "- mode: \`$MODE\`"
+            echo "- environment: \`${TARGET:-none}\`"
+            echo "- commit: \`${SHA:-none}\`"
+            echo "- $REASON"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # Build the bundle of the commit, with no secret anywhere in the job: the Worker (worker-build) and the `migrate` binary. The bundle
+  # is one file, and in a deploy it is attested. `id-token` and `attestations` are what the attestation needs and nothing else uses.
+  build:
+    needs: plan
+    if: needs.plan.outputs.mode != 'skip'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup-rust
+        with:
+          targets: wasm32-unknown-unknown
+          worker-tools: "true"
+          cache-key: deploy-release
+          save-cache: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Build the migrate binary
+        run: scripts/rs cargo build --release --locked -p thrust-adapters-postgres --features native --bin migrate
+
+      - name: Build the Worker
+        working-directory: crates/thrust-worker
+        run: ../../scripts/rs worker-build --release . --no-default-features
+
+      # One file, the same bytes for the same inputs: sorted names, no timestamps, no owners, no gzip header time.
+      - name: Make the bundle
+        env:
+          SHA: ${{ needs.plan.outputs.sha }}
+        run: |
+          set -eu
+          test -s crates/thrust-worker/build/worker/shim.mjs
+          test -s crates/thrust-worker/build/index.js
+          test -s crates/thrust-worker/build/index_bg.wasm
+          test -x target/release/migrate
+          mkdir -p bundle
+          cp -R crates/thrust-worker/build bundle/build
+          cp target/release/migrate bundle/migrate
+          printf '%s\n' "$SHA" > bundle/BUILD_SHA
+          (cd bundle && tar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner -cf - .) | gzip -n > deploy-bundle.tar.gz
+          sha256sum deploy-bundle.tar.gz
+
+      - name: Upload the bundle
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: deploy-bundle-${{ needs.plan.outputs.sha }}
+          path: deploy-bundle.tar.gz
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Attest the bundle (a deploy only)
+        if: needs.plan.outputs.mode == 'deploy'
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: deploy-bundle.tar.gz
+
+  # A pull request: does the rendered configuration pass wrangler, against the bundle this commit builds? No credential, no
+  # environment, nothing deployed. The values are made up, and they are the only way to see the template render in CI.
+  dry-run:
+    needs: [plan, build]
+    if: needs.plan.outputs.mode == 'dry-run'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: deploy-bundle-${{ needs.plan.outputs.sha }}
+          path: ${{ runner.temp }}/bundle-download
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: web/.node-version
+      - name: Install wrangler (the version the pipeline deploys with)
+        run: |
+          want="$(sed -n 's/^    default: "\(4\.[0-9.]*\)"$/\1/p' .github/actions/deploy-worker/action.yml | head -1)"
+          test -n "$want"
+          npm install --global "wrangler@$want"
+      - name: Unpack the bundle where wrangler expects it
+        env:
+          DOWNLOAD: ${{ runner.temp }}/bundle-download
+        run: |
+          set -eu
+          mkdir -p "$RUNNER_TEMP/bundle"
+          tar -xzf "$DOWNLOAD/deploy-bundle.tar.gz" -C "$RUNNER_TEMP/bundle"
+          rm -rf crates/thrust-worker/build
+          cp -R "$RUNNER_TEMP/bundle/build" crates/thrust-worker/build
+      - name: Render the configuration (made-up values) and let wrangler check it
+        env:
+          THRUST_WORKER_NAME: thrust-dry-run
+          THRUST_HYPERDRIVE_ID: 0123456789abcdef0123456789abcdef
+          THRUST_R2_BUCKET: thrust-dry-run-blobs
+          THRUST_QUEUE: thrust-dry-run-events
+          THRUST_QUEUE_DLQ: thrust-dry-run-events-dlq
+          THRUST_RL_CREATE_ID: "9101"
+          THRUST_RL_SIGNIN_ID: "9102"
+          THRUST_RL_V1_ID: "9103"
+          THRUST_CSRF_ENFORCE: "off"
+        run: |
+          set -eu
+          scripts/render-wrangler.sh
+          cd crates/thrust-worker
+          wrangler deploy -c .wrangler.deploy.run.toml --dry-run --outdir "$RUNNER_TEMP/dry-run-out"
+
+  # The deploy. It waits for the environment's reviewers where there are any (production). It classifies first, and when this deploy
+  # needs the manual gate it deploys NOTHING and says so (`deferred`), which starts `deploy-do`.
+  deploy:
+    needs: [plan, build]
+    if: needs.plan.outputs.mode == 'deploy'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: ${{ needs.plan.outputs.environment }}
+    concurrency:
+      # one deploy per environment at a time, and a queued one is never cancelled for the running one: `migrate` has no lock
+      group: deploy-${{ needs.plan.outputs.environment }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      attestations: read
+    outputs:
+      deferred: ${{ steps.deploy.outputs.deferred }}
+      deployed: ${{ steps.deploy.outputs.deployed }}
+      rolled_back: ${{ steps.deploy.outputs.rolled_back }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: web/.node-version
+      - id: deploy
+        uses: ./.github/actions/deploy-worker
+        with:
+          environment: ${{ needs.plan.outputs.environment }}
+          sha: ${{ needs.plan.outputs.sha }}
+          inject-smoke-failure: ${{ needs.plan.outputs.inject }}
+          skip-smoke: ${{ needs.plan.outputs.skip_smoke }}
+          cloudflare-account-id: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          worker-name: ${{ vars.THRUST_WORKER_NAME }}
+          base-url: ${{ vars.THRUST_BASE_URL }}
+          hyperdrive-id: ${{ vars.THRUST_HYPERDRIVE_ID }}
+          r2-bucket: ${{ vars.THRUST_R2_BUCKET }}
+          queue: ${{ vars.THRUST_QUEUE }}
+          queue-dlq: ${{ vars.THRUST_QUEUE_DLQ }}
+          rl-create-id: ${{ vars.THRUST_RL_CREATE_ID }}
+          rl-signin-id: ${{ vars.THRUST_RL_SIGNIN_ID }}
+          rl-v1-id: ${{ vars.THRUST_RL_V1_ID }}
+          csrf-enforce: ${{ vars.THRUST_CSRF_ENFORCE }}
+          db-access-hostname: ${{ vars.DB_ACCESS_HOSTNAME }}
+          smoke-email: ${{ vars.SMOKE_EMAIL }}
+          smoke-workspace: ${{ vars.SMOKE_WORKSPACE }}
+          smoke-project: ${{ vars.SMOKE_PROJECT || 'smoke' }}
+          cloudflare-api-token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          tunnel-service-token-id: ${{ secrets.TUNNEL_SERVICE_TOKEN_ID }}
+          tunnel-service-token-secret: ${{ secrets.TUNNEL_SERVICE_TOKEN_SECRET }}
+          database-url: ${{ secrets.DATABASE_URL }}
+          smoke-password: ${{ secrets.SMOKE_PASSWORD }}
+
+  # The same deploy, behind the reviewers of `<environment>-do-lifecycle`, for what `deploy` deferred. It never rolls back by itself:
+  # a rollback is refused across a Durable Object lifecycle change, and the first deploy has nothing to go back to.
+  deploy-do:
+    needs: [plan, build, deploy]
+    if: needs.deploy.outputs.deferred == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: ${{ needs.plan.outputs.environment }}-do-lifecycle
+    concurrency:
+      group: deploy-${{ needs.plan.outputs.environment }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      attestations: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: web/.node-version
+      - uses: ./.github/actions/deploy-worker
+        with:
+          environment: ${{ needs.plan.outputs.environment }}
+          sha: ${{ needs.plan.outputs.sha }}
+          allow-do-lifecycle: "true"
+          inject-smoke-failure: ${{ needs.plan.outputs.inject }}
+          skip-smoke: ${{ needs.plan.outputs.skip_smoke }}
+          cloudflare-account-id: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          worker-name: ${{ vars.THRUST_WORKER_NAME }}
+          base-url: ${{ vars.THRUST_BASE_URL }}
+          hyperdrive-id: ${{ vars.THRUST_HYPERDRIVE_ID }}
+          r2-bucket: ${{ vars.THRUST_R2_BUCKET }}
+          queue: ${{ vars.THRUST_QUEUE }}
+          queue-dlq: ${{ vars.THRUST_QUEUE_DLQ }}
+          rl-create-id: ${{ vars.THRUST_RL_CREATE_ID }}
+          rl-signin-id: ${{ vars.THRUST_RL_SIGNIN_ID }}
+          rl-v1-id: ${{ vars.THRUST_RL_V1_ID }}
+          csrf-enforce: ${{ vars.THRUST_CSRF_ENFORCE }}
+          db-access-hostname: ${{ vars.DB_ACCESS_HOSTNAME }}
+          smoke-email: ${{ vars.SMOKE_EMAIL }}
+          smoke-workspace: ${{ vars.SMOKE_WORKSPACE }}
+          smoke-project: ${{ vars.SMOKE_PROJECT || 'smoke' }}
+          cloudflare-api-token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          tunnel-service-token-id: ${{ secrets.TUNNEL_SERVICE_TOKEN_ID }}
+          tunnel-service-token-secret: ${{ secrets.TUNNEL_SERVICE_TOKEN_SECRET }}
+          database-url: ${{ secrets.DATABASE_URL }}
+          smoke-password: ${{ secrets.SMOKE_PASSWORD }}

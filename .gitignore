@@ -34,6 +34,8 @@ crates/thrust-editor-worker/build/
 # throwaway copies of a wrangler config that a script writes limits or ids into (scripts/worker-dev.sh, scripts/spike-0002-pg.sh)
 crates/thrust-worker/.wrangler.run-*.toml
 crates/thrust-worker/.wrangler.pg.run.toml
+# what scripts/render-wrangler.sh makes from wrangler.deploy.toml: ids of a real environment, never committed
+crates/thrust-worker/.wrangler.deploy.run.toml
 .dev.vars
 .dev.vars.*
 .env
