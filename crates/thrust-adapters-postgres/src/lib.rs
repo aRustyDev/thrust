@@ -2434,22 +2434,6 @@ impl Database for PgDatabase {
         Ok(Box::new(PgTx { conn: Some(conn), in_tx: false, connector: self.connector.clone() }))
     }
 
-    async fn list_work_items(&self, scope: &Scope, vis: Visibility) -> Result<Vec<WorkItem>, DbError> {
-        let (ws, project) = (scope.workspace_id(), scope.project_id());
-        let sql = match vis {
-            Visibility::Visible => format!(
-                "SELECT {WI_COLS} FROM work_items WHERE workspace_id = $1 AND project_id = $2 \
-                 AND deleted_at IS NULL AND archived_at IS NULL AND is_draft = false ORDER BY sequence_id"
-            ),
-            Visibility::WithDeleted => format!(
-                "SELECT {WI_COLS} FROM work_items WHERE workspace_id = $1 AND project_id = $2 ORDER BY sequence_id"
-            ),
-        };
-        let c = self.conn().await?;
-        let rows = c.pg().query(&sql, &[&ws.0, &project.0]).await.map_err(db_err)?;
-        Ok(rows.iter().map(work_item).collect())
-    }
-
     async fn get_work_item(&self, scope: &Scope, id: WorkItemId, vis: Visibility) -> Result<Option<WorkItem>, DbError> {
         let (ws, project) = (scope.workspace_id(), scope.project_id());
         let hidden = match vis {
@@ -2630,26 +2614,6 @@ impl Database for PgDatabase {
             .await
             .map_err(db_err)?;
         Ok(row.get(0))
-    }
-
-    async fn search_work_items(&self, scope: &Scope, query: &str, limit: u32) -> Result<Vec<WorkItem>, DbError> {
-        let (ws, project) = (scope.workspace_id(), scope.project_id());
-        // `%`, `_` and `\` are literal in a query, so they are escaped for LIKE (the trigram GIN index serves `ILIKE`).
-        let pattern = like_pattern(query);
-        let c = self.conn().await?;
-        let rows = c
-            .pg()
-            .query(
-                &format!(
-                    "SELECT {WI_COLS} FROM work_items WHERE workspace_id = $1 AND project_id = $2 \
-                     AND deleted_at IS NULL AND archived_at IS NULL AND is_draft = false \
-                     AND (name ILIKE $3 ESCAPE '\\' OR description ILIKE $3 ESCAPE '\\') ORDER BY sequence_id LIMIT $4"
-                ),
-                &[&ws.0, &project.0, &pattern, &i64::from(limit)],
-            )
-            .await
-            .map_err(db_err)?;
-        Ok(rows.iter().map(work_item).collect())
     }
 
     async fn seed_work_items(

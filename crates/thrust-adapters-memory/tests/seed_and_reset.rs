@@ -261,8 +261,10 @@ proptest! {
         let db = MemoryDatabase::new();
         block_on(db.seed(&sys(), &f)).unwrap();
         block_on(db.reset(&sys())).unwrap();
-        // no row of any table that a seed fills
-        prop_assert!(block_on(db.list_work_items(&scope(), Visibility::Visible)).unwrap().is_empty());
+        // no row of any table that a seed fills (a work item in no state either: the deleted, archived and draft ones count)
+        for w in &f.work_items {
+            prop_assert!(block_on(db.get_work_item(&scope(), w.id, Visibility::WithDeleted)).unwrap().is_none());
+        }
         prop_assert!(block_on(db.project_states(&scope())).unwrap().is_empty());
         prop_assert!(block_on(db.project_labels(&scope())).unwrap().is_empty());
         prop_assert!(block_on(db.user_by_id(user(1))).unwrap().is_none());
