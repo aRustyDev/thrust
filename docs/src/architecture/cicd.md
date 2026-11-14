@@ -1,9 +1,12 @@
 # CI/CD
 
-The repository has a CI pipeline and no CD. One workflow, `ci.yml`, runs the test suites on every pull request. It
-calls a second workflow once per contract cell, and a third repeats a cell on demand and weekly. Nothing deploys: no
-workflow publishes a Worker or a server image. This page is about how the pipeline is built and what its one
-required check guarantees. The jobs and the command each runs are in the CI section of
+The repository has a CI pipeline and a deploy pipeline. One workflow, `ci.yml`, runs the test suites on every pull
+request. It calls a second workflow once per contract cell, a third repeats a cell on demand and weekly, and a fourth
+runs the browser journeys every day. A fifth, `deploy.yml`, deploys the Worker: to staging after a push to `main`, once
+the repository variable `THRUST_DEPLOY_ENABLED` is `true`, and to either environment by hand. No workflow publishes a
+server image. The first half of this page is how CI is built and what its one required check guarantees; [The deploy
+pipeline](#the-deploy-pipeline) is how the Worker gets to an environment, and the steps to run it are on [Deploying the
+Worker](deploy.md). The jobs and the command each CI job runs are in the CI section of
 [Running the suites](../testing/running.md#ci), and are not repeated here.
 
 ## What exists
@@ -14,8 +17,12 @@ required check guarantees. The jobs and the command each runs are in the CI sect
 | `.github/workflows/contract-cell.yml` | A reusable workflow that runs one contract cell on its own runner |
 | `.github/workflows/flake-hunt.yml` | Repeats one cell 1 to 50 times (5 by default), by hand or every Monday at 03:17 UTC. It passes only if `scripts/flake-hunt.sh` prints `failures: 0 / N`, because the script ends with an `echo`, so its exit status does not say whether an iteration failed |
 | `.github/workflows/e2e-schedule.yml` | Runs the `worker-cf e2e` cell (through `contract-cell.yml`) every day at 04:41 UTC and by hand, and on a pull request that edits the file, so that the call is proved valid before it merges. It covers what the `ci` cell does not: a change to `web/` alone (`classify-changes.sh` keeps it out of `rust`) and drift in the runner, the browser and the packages. Not a gate: nothing waits for it and `gate` does not read it. The pinned-Plane leg is not here, because the oracle builds from an unpushed fork (`scripts/e2e.sh plane-oracle`, local) |
+| `.github/workflows/deploy.yml` (`deploy`) | The deploy pipeline: plan, build and attest a bundle, deploy it to an environment and prove it, roll back by itself when the smoke fails. Runs after `ci` on a push to `main`, by hand, and on a pull request that edits its files (a dry run that touches no environment). See [The deploy pipeline](#the-deploy-pipeline) |
 | `.github/actions/setup-rust` | A composite action: the stable toolchain, the rustup targets and components, a keyed `rust-cache`, and optionally `worker-build` 0.8.7 and wrangler 4.151.2 |
-| `.github/scripts/` | The pipeline's own logic: `classify-changes.sh`, `plan-cells.sh`, `assert-gate.sh`, and `assert-required-contexts.sh`. The `ci-scripts` job tests them with `.github/scripts/tests/` |
+| `.github/actions/deploy-worker` | A composite action: verify the bundle's attestation, unpack it, install wrangler (the same version as `setup-rust`, kept equal by a test) and `cloudflared` at pinned versions, and run `scripts/deploy-worker.sh` |
+| `.github/scripts/` | The pipeline's own logic: `classify-changes.sh`, `plan-cells.sh`, `assert-gate.sh`, and `assert-required-contexts.sh`; and the deploy's: `plan-deploy.sh`, `classify-deploy.sh`, `active-version.py`, `assert-sha-checks.sh`, `assert-gated-environments.sh`, `verify-bundle.sh`, `unpack-bundle.sh`, `fetch-previous-assets.sh` and `lint-workflow.sh`. The `ci-scripts` job tests them with `.github/scripts/tests/` |
+| `.github/deploy/` | What the deploy trusts: the Cloudflare Origin CA root that signs `thrust-pg`'s certificate, with its fingerprint pinned by a test |
+| `scripts/deploy-worker.sh` and its parts | The deploy itself (render, classify, expand migration, `wrangler deploy`, smoke, rollback), run by the composite action: `render-wrangler.sh` (with the template `crates/thrust-worker/wrangler.deploy.toml`), `migrate-ci.sh`, `smoke-deploy.sh`, `smoke-bootstrap.sh`, `merge-assets.sh` and `check-asset-retention.sh` |
 | `scripts/check-web-diff.sh` | The Q-R2 gate for `web/` (the stock React app, imported from the oracle pin), run by the `web` job. Tested by `.github/scripts/tests/test-check-web-diff.sh` |
 
 ## One required check
@@ -41,8 +48,8 @@ its base branch. Nothing calls it, so it is a tool to run by hand.
 ## What runs when
 
 - **Path classification.** The `changes` job sorts the changed files. The Rust jobs run only if one of them is under
-  `crates/`, `scripts/`, `probes/`, `.cargo/`, `.config/`, `.github/workflows/`, `.github/actions/` or
-  `.github/scripts/`, or is `Cargo.toml`, `Cargo.lock`, `deny.toml`, `clippy.toml`, `rustfmt.toml` or a `rust-toolchain`
+  `crates/`, `scripts/`, `probes/`, `.cargo/`, `.config/`, `.github/workflows/`, `.github/actions/`,
+  `.github/scripts/` or `.github/deploy/`, or is `Cargo.toml`, `Cargo.lock`, `deny.toml`, `clippy.toml`, `rustfmt.toml` or a `rust-toolchain`
   file (the last three are read by the `deny` and `lint` jobs, so a change to only one of them must still run those
   jobs `[verified 2026-11-05 7d0074f]` by the three cases in `.github/scripts/tests/test-ci-scripts.sh`). The job fails open: with no usable
   base commit, or an empty list, it runs everything. A pull request that changes only `docs/`, `AGENTS.md`,
@@ -67,7 +74,9 @@ its base branch. Nothing calls it, so it is a tool to run by hand.
   tasks uncached from an empty `node_modules` `[verified 2026-11-11 locally; not yet in CI]`.
 - **The matrix.** The `plan` job reads the `run <target> <pass>` lines of `scripts/contract-all.sh`, so no second
   list can drift. It fails if the number of cells it parsed differs from the number of lines that start with `run`,
-  if there are none, or if one repeats. There are 21 cells: 18 contract cells and the 3 `oracle` cells below `[verified 2026-11-10 43a17da: PR #113's run had 21 cell jobs, all succeeded, and `gate` printed `ok: 21 of 21 planned cells reported success`; on the run before (e591b29) `hermetic` had failed, so the script stopped at the job check and that comparison did not run]`.
+  if there are none, or if one repeats. There are 22 cells: 19 contract cells (the browser journeys' `worker-cf e2e`
+  among them) and the 3 `oracle` cells below `[verified 2026-11-14: PR #154's check list had 22 contract jobs, all
+  success; the 21 of PR #113 (2026-11-10) were before the e2e cell]`.
   Each runs on a fresh runner with its own checkout, which is why the shared-build-directory hazard that makes
   `contract-all.sh` run serially does not apply.
 - **A cell.** `contract-cell.yml` checks that `curl`, `openssl`, `lsof`, `pgrep` and `docker` exist, runs
@@ -85,17 +94,70 @@ its base branch. Nothing calls it, so it is a tool to run by hand.
   build included, they took 1m36s (`native-memory`), 2m11s (`native-pg`) and 4m00s (`worker-cf`), in parallel, against a
   40 minute job timeout.
 - **Concurrency.** A new push cancels the older run of a pull request. Runs on `main` and in the merge queue are
-  never cancelled.
+  never cancelled. `deploy.yml` does the opposite on purpose: one deploy per environment at a time, and a queued deploy is
+  never cancelled for the running one, because `migrate` has no lock.
+
+## The deploy pipeline
+
+`deploy.yml` is ADR-0110's round-29 pipeline: expand migration, `wrangler deploy` at 100 %, the smoke against the live
+hostname, and an automatic `wrangler rollback` when it fails. There are no stages: at about two requests a second a 10 %
+slice is a hundred requests, mostly the owner's, so the smoke is the gate. The steps to set an environment up and to
+operate it are on [Deploying the Worker](deploy.md); this section is how it is built.
+
+| Job | Holds | Does |
+|---|---|---|
+| `plan` | no secret | Which event and which commit (`plan-deploy.sh`, tested over every combination of its inputs). A push to `main` deploys staging after `ci` passed, and only while `THRUST_DEPLOY_ENABLED` is `true`. A manual run names `staging` or `production` and a commit of `main`, and must itself run from `main`. A pull request is a dry run. The commit's own `gate` must have passed, asked for by name on that commit (`assert-sha-checks.sh`), and the environments that gate the deploy must have required reviewers (`assert-gated-environments.sh`: GitHub creates an unprotected environment when a job names one that does not exist) |
+| `build` | no secret | The Worker, the `migrate` binary and the web app (`web/`), into one bundle, attested (SLSA provenance) in a deploy |
+| `dry-run` | none | For a pull request that edits the deploy files: the bundle is built and `wrangler deploy --dry-run` checks the rendered configuration. No environment, no secret |
+| `deploy` | the environment's secrets | Verify the attestation, render the configuration, read what is live, classify the change, run the expand migration only if migration files changed, keep the previous release's web files, `wrangler deploy --tag <sha>`, the smoke, and its controls. It defers, deploying nothing, whatever cannot be rolled back across |
+| `deploy-do` | the same secrets, behind reviewers | What `deploy` deferred: the first deploy to an environment, any change to `[[migrations]]`, a live state that cannot be read, a previous release's web files that cannot be found. No automatic rollback |
+
+The controls, each with a test that makes it fail:
+
+- **The smoke and its control.** `scripts/smoke-deploy.sh` needs the version that answers (`x-thrust-version`) to be the commit
+  just deployed, and a real read to work. The same smoke is then asked for a version nobody deployed and must refuse it: a
+  smoke that passes that cannot tell one version from another, and the run fails on it.
+- **Rollback.** When either fails and a rollback is possible, `wrangler rollback <previous version>` runs and the
+  unauthenticated probe must show the previous version answering. The run stays red either way, and the database keeps the
+  expanded schema (expand/contract: the previous code runs on it).
+- **The manual gate.** The first deploy carries `[[migrations]] v1`, and a Durable Object lifecycle change can be neither
+  gradual nor rolled back across. They go through `deploy-do`.
+- **The previous release's web files.** A hashed file the new release dropped is answered `200 text/html`, the single-page
+  fallback, not 404 (ADR-0011, Q-0011.1), and a 100 % deploy has no version affinity to hide it. So the deploy puts the
+  previous release's files under its own (`merge-assets.sh`; the previous release's own build, so one release back), taken
+  from that release's attested bundle, and afterwards asks the live hostname for a script only the previous release had
+  and requires it to be served as that script (`check-asset-retention.sh`).
+- **Secrets reach only what needs them.** wrangler gets the Cloudflare token; the expand step gets the database's and the
+  tunnel's; the smoke gets its own account; the GitHub token reaches only the step that fetches the previous bundle.
+  `test-deploy-worker.sh` has each fake report what it could see.
+
+Its tests run in `ci-scripts` and `deps`, under dash: `deploy-worker.sh` runs against a fake Cloudflare that keeps state
+(what the edge serves), so a rollback verifies only if it really made the previous version answer. Each script's own test
+has a case that must fail beside each that must pass, and each script was also broken by hand, one way at a time, to see
+its test fail.
+
+**Not yet run for real.** No environment has had a deploy through it. The shapes of `wrangler deployments list --json` and
+`versions list --json` are the documented ones (the parser sends any other shape to the manual gate, never to an automatic
+rollback), and the token's scopes, the queue consumer with a dead-letter queue, and the attestation flow end to end have
+not run. The pull-request dry run and the first two `workflow_run` events have `[verified 2026-11-14]`: on PR #165's run
+`plan`, `build` and `dry-run` succeeded and wrangler 4.151.2 accepted the rendered template against the bundle CI built; on
+`main`, the run after a failed `ci` planned `skip` ("ci did not succeed") and the run after a green one planned `skip`
+("automatic deploys are off").
 
 ## Permissions and supply chain
 
-- All 21 external action references are pinned to a full commit SHA with the version in a comment `[verified
-  2026-11-05 7d0074f]`; `astral-sh/setup-uv` (v10.3.2, 19 days old when pinned) is the 22nd. The Rust toolchain is `stable`, not pinned, so a new clippy or rustfmt release can fail `lint`
+- All 38 external action references, of nine actions, are pinned to a full commit SHA with the version in a comment
+  `[verified 2026-11-14 by counting the uses lines of the workflows and actions]`; `.github/scripts/lint-workflow.sh` holds
+  `deploy.yml` and its action to it. The Rust toolchain is `stable`, not pinned, so a new clippy or rustfmt release can fail `lint`
   with no change to the code. `cargo-nextest` is 0.9.140 and `cargo-deny` is 0.20.2, both installed by
-  `taiki-e/install-action`.
-- `permissions: {}` at the top of each workflow, and `contents: read` and nothing else on each job. All 12 checkouts
-  set `persist-credentials: false`. Reusable-workflow inputs reach the script through `env`, not through
-  interpolation into the script text.
+  `taiki-e/install-action`. `cloudflared` in the deploy is a release binary pinned by version and by SHA-256.
+- `permissions: {}` at the top of each workflow, and `contents: read` and nothing else on each job of `ci.yml` and the
+  workflows it calls. `deploy.yml` asks for more, per job: `checks: read` (`plan` reads the commit's checks),
+  `id-token: write` and `attestations: write` (`build` only, for the attestation), `attestations: read` and
+  `actions: read` (the two deploy jobs: verify a bundle, fetch the previous release's). `lint-workflow.sh` enforces where
+  `secrets.`, `environment:` and `id-token: write` may appear. All 18 checkouts set `persist-credentials: false`.
+  Reusable-workflow and composite-action inputs reach the script through `env`, not through interpolation into the script
+  text, which `lint-workflow.sh` checks for `deploy.yml` and its action.
 - `deny.toml` configures the `deny` job: advisories, licences, bans (`sqlx`, `sea-orm`, `diesel`, `diesel-async`) and
   sources (crates.io only). Its one advisory ignore is RUSTSEC-2023-0071 (`rsa`), with the reason and when to re-check
   it written beside it; any other advisory is fixed by upgrading. The job fetches the advisory database on every run,
@@ -115,7 +177,8 @@ every one succeeded `[verified 2026-10-19 fa4bd6c]` with `gh run view`.
 - `scripts/verify-all.sh`. CI runs its steps as separate jobs, except the probes, which it does not run.
 - The `blast` and `bench` contract passes, which are not in `contract-all.sh`.
 - The book build and its checks.
-- Any deploy. There is no workflow for it.
+- A deploy that has run against Cloudflare. `deploy.yml` is tested against a fake Cloudflare, by its pull-request dry run
+  and by `wrangler deploy --dry-run`; no environment has had a deploy through it yet (see [Deploying the Worker](deploy.md)).
 
 ## Against the ADRs
 
@@ -130,8 +193,13 @@ ADR-0100, ADR-0101 and ADR-0110 are accepted, in `.agents/plans/contrail/adrs/`.
   periodic diff, which is `assert-required-contexts.sh` and is run by hand.
 - **ADR-0101 (supply chain)** asks for SHA pinning, Scorecard, attestation and trivy, plus Worker-bundle
   attestation, GitHub OIDC for deploys, and Rust gates (`cargo-deny`, `cargo-vet` or `cargo audit`). In place: SHA
-  pinning, and one of the Rust gates, `cargo-deny` (`deny`). Not in place: the rest, including `cargo-vet` and
-  `cargo audit`, which the ADR offers as alternatives. Of those, OIDC and bundle attestation depend on a deploy, and
-  the others do not.
-- **ADR-0110 (the deploy pipeline)** describes a gradual rollout with measured gates and automatic rollback. Nothing
-  implements it.
+  pinning, one of the Rust gates, `cargo-deny` (`deny`), and the Worker bundle's attestation (SLSA provenance, which the
+  deploy verifies before it uses the bundle, and verifies again on the previous release's bundle). **Deviation, by the
+  owner's decision of 2026-11-13: the deploy does not use GitHub OIDC.** Cloudflare documents no OIDC federation for
+  wrangler, only an API token and the account id, so each environment holds a scoped API token in its secrets, and OIDC
+  stays a follow-up (recorded in ADR-0101's round-30 note). Not in place: Scorecard, trivy, and `cargo-vet` and
+  `cargo audit`, which the ADR offers as alternatives.
+- **ADR-0110 (the deploy pipeline)** is implemented as its round-29 update says: expand migration, `wrangler deploy` at
+  100 %, the smoke, automatic rollback, with the Durable Object lifecycle rule and expand/contract discipline kept. The
+  round-24 gradual rollout, with measured gates, was superseded by round 29 and is not built. What the implementation
+  adds is in the round-30 note: the route to the database, where the first deploy stops, and how old web files are kept.

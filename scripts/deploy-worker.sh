@@ -14,11 +14,16 @@
 #      Durable Object lifecycle change? A lifecycle change cannot be rolled back across, and the first deploy to an environment is one.
 #      Without ALLOW_DO_LIFECYCLE=true such a deploy, and any deploy over a live state this cannot read, STOPS here and deploys nothing:
 #      `deferred=true`, which sends the run to the job whose environment has required reviewers;
+#  3b. the web files (ADR-0011): this release's build of web/ with the previous release's files kept under it, so that a tab still
+#      running the last release can load its scripts (scripts/merge-assets.sh). The previous release's files come from its own attested
+#      bundle (.github/scripts/fetch-previous-assets.sh). If that bundle cannot be found the deploy is deferred to the manual gate; if it
+#      is found and fails a check, or GitHub cannot be asked, the run fails, with no bypass;
 #   4. the expand migration (scripts/migrate-ci.sh), only when migration files changed, and before the new code: a failure ends the run;
 #   5. `wrangler deploy --tag <sha>`: 100 % at once (there are no stages, ADR-0110 round 29);
 #   6. the smoke (scripts/smoke-deploy.sh): the version that answers must be the one just deployed, and a real read must work;
 #   7. the smoke's own control: the same smoke asked for a version nobody deployed MUST fail. A smoke that passes that cannot tell one
-#      version from another, so the run fails on it;
+#      version from another, so the run fails on it. And the asset control (scripts/check-asset-retention.sh): a script only the previous
+#      release had must still be served, as itself and not as the HTML fallback;
 #   8. when 6 or 7 fails, and a rollback is possible (AUTO_ROLLBACK=true, a live version was there to go back to, no lifecycle change):
 #      `wrangler rollback <previous version>`, then the unauthenticated probe must show the previous version answering. The run stays
 #      RED either way: a rollback is a repair, not a success. The database keeps the expanded schema (expand/contract: N-1 code runs on it).
@@ -29,10 +34,15 @@
 #   INJECT_SMOKE_FAILURE true makes the smoke fail on purpose after it has passed, to prove the rollback; staging only
 #   SKIP_SMOKE           true to deploy without the smoke: the FIRST deploy of an environment only (no domain is attached to a Worker
 #                        that did not exist), refused for any other, and refused together with INJECT_SMOKE_FAILURE
+#   NEW_ASSETS_DIR       the web build of this commit (the web/ of its bundle), with an index.html. Required: a deploy without the web app
+#                        would serve the API and a blank page, and drop the last release's files as well
+#   GH_TOKEN, GITHUB_REPOSITORY   how the previous release's bundle is listed, downloaded and verified (`actions: read`,
+#                        `attestations: read`); only that step sees the token
 #   CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID                 wrangler's own
 #   the renderer's variables (scripts/render-wrangler.sh)
 #   the expand step's (scripts/migrate-ci.sh) and the smoke's (scripts/smoke-deploy.sh): used only when they run
-# Test hooks: WRANGLER, SMOKE_SCRIPT, MIGRATE_CI_SCRIPT (default wrangler and the scripts of this repository)
+# Test hooks: WRANGLER, SMOKE_SCRIPT, MIGRATE_CI_SCRIPT, MERGE_ASSETS_SCRIPT, FETCH_PREVIOUS_SCRIPT, ASSET_CHECK_SCRIPT, ASSETS_OUT_DIR
+# (default wrangler and the scripts of this repository; the last must be `.assets` beside the rendered configuration)
 #
 # Outputs (to $GITHUB_OUTPUT when it is set, else to stdout): deferred, deployed, rolled_back (no|yes|failed|unverified), previous_version,
 # previous_tag, migrations_changed, do_lifecycle, state. A summary goes to $GITHUB_STEP_SUMMARY.
@@ -50,6 +60,11 @@ CLASSIFY="$ROOT/.github/scripts/classify-deploy.sh"
 ACTIVE="$ROOT/.github/scripts/active-version.py"
 CONFIG="${DEPLOY_CONFIG_OUT:-$ROOT/crates/thrust-worker/.wrangler.deploy.run.toml}"
 PYTHON="${PYTHON:-python3}"
+MERGE_ASSETS="${MERGE_ASSETS_SCRIPT:-$ROOT/scripts/merge-assets.sh}"
+FETCH_PREVIOUS="${FETCH_PREVIOUS_SCRIPT:-$ROOT/.github/scripts/fetch-previous-assets.sh}"
+ASSET_CHECK="${ASSET_CHECK_SCRIPT:-$ROOT/scripts/check-asset-retention.sh}"
+# where the web files are put for wrangler: the `directory` of the template's [assets], which is relative to the rendered configuration
+ASSETS_OUT="${ASSETS_OUT_DIR:-$ROOT/crates/thrust-worker/.assets}"
 
 WORK="$(mktemp -d)" || { echo "deploy-worker: cannot make a temporary directory" >&2; exit 2; }
 trap 'rm -rf "$WORK"' EXIT INT TERM
@@ -84,19 +99,27 @@ done
 BASE="$THRUST_BASE_URL"
 NAME="$THRUST_WORKER_NAME"
 SHA="$DEPLOY_SHA"
+# the web app of THIS commit is not optional: a deploy without it would serve the API and a blank page, and would drop the previous
+# release's files too. (It is the `web/` of the attested bundle, which deploy-worker's caller unpacks.)
+[ -n "${NEW_ASSETS_DIR:-}" ] || usage "NEW_ASSETS_DIR is not set (the web build of this commit, with an index.html)"
+[ -f "$NEW_ASSETS_DIR/index.html" ] || usage "NEW_ASSETS_DIR=$NEW_ASSETS_DIR has no index.html"
+# the rendered configuration says `directory = ".assets"`, relative to ITSELF: the files have to be put exactly there
+[ "$ASSETS_OUT" = "$(dirname "$CONFIG")/.assets" ] || usage "ASSETS_OUT_DIR ($ASSETS_OUT) is not .assets beside the rendered configuration ($CONFIG), which is where its [assets] directory points"
 
 # Each secret reaches only the process that needs it. The environment this script is started in holds all of them, so every child is
 # started through one of these, which takes the others away: wrangler gets the Cloudflare token and neither the database URL, the
 # tunnel's service token nor the smoke account's password; the expand step gets the database's and the tunnel's and not the Cloudflare
 # token; the smoke gets only its own account. (`test-deploy-worker.sh` has each fake report what it could see.)
-plain() { env -u CLOUDFLARE_API_TOKEN -u DATABASE_URL -u TUNNEL_SERVICE_TOKEN_ID -u TUNNEL_SERVICE_TOKEN_SECRET -u SMOKE_PASSWORD "$@"; }  # no secret at all
-wr() { env -u DATABASE_URL -u TUNNEL_SERVICE_TOKEN_ID -u TUNNEL_SERVICE_TOKEN_SECRET -u SMOKE_PASSWORD "$WRANGLER" "$@"; }
-migrate_step() { env -u CLOUDFLARE_API_TOKEN -u SMOKE_PASSWORD sh "$MIGRATE_CI"; }
+plain() { env -u CLOUDFLARE_API_TOKEN -u DATABASE_URL -u TUNNEL_SERVICE_TOKEN_ID -u TUNNEL_SERVICE_TOKEN_SECRET -u SMOKE_PASSWORD -u GH_TOKEN "$@"; }  # no secret at all
+wr() { env -u DATABASE_URL -u TUNNEL_SERVICE_TOKEN_ID -u TUNNEL_SERVICE_TOKEN_SECRET -u SMOKE_PASSWORD -u GH_TOKEN "$WRANGLER" "$@"; }
+migrate_step() { env -u CLOUDFLARE_API_TOKEN -u SMOKE_PASSWORD -u GH_TOKEN sh "$MIGRATE_CI"; }
 smoke() { # smoke <extra VAR=value words, or empty> <base> <expected version>
   extra="$1"; shift
   # $extra is deliberately split: it is only ever `NAME=value` words written in this file
-  env -u CLOUDFLARE_API_TOKEN -u DATABASE_URL -u TUNNEL_SERVICE_TOKEN_ID -u TUNNEL_SERVICE_TOKEN_SECRET $extra sh "$SMOKE" "$@"
+  env -u CLOUDFLARE_API_TOKEN -u DATABASE_URL -u TUNNEL_SERVICE_TOKEN_ID -u TUNNEL_SERVICE_TOKEN_SECRET -u GH_TOKEN $extra sh "$SMOKE" "$@"
 }
+# the one process that gets the GitHub token: it lists and downloads the previous release's bundle, and verifies its attestation
+fetch_step() { env -u CLOUDFLARE_API_TOKEN -u DATABASE_URL -u TUNNEL_SERVICE_TOKEN_ID -u TUNNEL_SERVICE_TOKEN_SECRET -u SMOKE_PASSWORD sh "$FETCH_PREVIOUS" "$@"; }
 
 summary "### Deploy of \`$SHA\` to \`$DEPLOY_ENV\`"
 
@@ -154,6 +177,55 @@ if [ "$LIFECYCLE" = true ] && [ "$ALLOW" != true ]; then
   summary "- **deferred to the manual-approval job**: nothing was deployed"
   exit 0
 fi
+
+# ---- 3b. the web files: this release's, with the previous release's kept under them -----------------------------------------------
+# A hashed file the new release dropped is answered `200 text/html` by the single-page fallback (ADR-0011), so a tab still running the
+# previous release would be given HTML where it asked for a script. scripts/merge-assets.sh keeps one release back. The previous
+# release's files come from ITS bundle, found by the live version's tag (that is its commit) and verified as this release's is. There is
+# nothing to keep when there is no such release: the first deploy, a live version this pipeline did not deploy, the same commit again.
+is_sha() { case "$1" in *[!0-9a-f]*|'') return 1 ;; esac; [ "${#1}" -eq 40 ]; }
+PREV_ASSETS=""
+RETAIN_NOTE=""
+if [ "$STATE" = none ]; then
+  RETAIN_NOTE="the first deploy: no previous release's files to keep"
+elif [ "$STATE" = single ] && is_sha "$PREV_TAG" && [ "$PREV_TAG" = "$SHA" ]; then
+  RETAIN_NOTE="the same commit is being deployed again: no older release to keep files from"
+elif [ "$STATE" = single ] && is_sha "$PREV_TAG"; then
+  [ -n "${GITHUB_REPOSITORY:-}" ] || usage "GITHUB_REPOSITORY is not set (it is how the previous release's bundle is found)"
+  fetch_step "$GITHUB_REPOSITORY" "$PREV_TAG" "$WORK/previous" > "$WORK/fetch.out" 2> "$WORK/fetch.err"
+  fetch_rc=$?
+  case "$fetch_rc" in
+    0)
+      if grep -qx 'web=true' "$WORK/fetch.out"; then
+        PREV_ASSETS="$WORK/previous/bundle/web"
+        RETAIN_NOTE="keeping the web files of the previous release ($PREV_TAG)"
+      else
+        RETAIN_NOTE="the previous release's bundle ($PREV_TAG) has no web files: it was made before the web app was part of it"
+      fi ;;
+    3)
+      sed 's/^/  fetch: /' "$WORK/fetch.err" >&2
+      if [ "$ALLOW" != true ]; then
+        out deferred true; out deployed false; out rolled_back no
+        say "DEFERRED: the previous release's web files are not available ($PREV_TAG), so this deploy would drop what its open tabs still load. A person has to decide. Nothing was deployed."
+        summary "- **deferred to the manual-approval job**: the previous release's web files are not available"
+        exit 0
+      fi
+      RETAIN_NOTE="WARNING: the previous release's web files are not available ($PREV_TAG): its open tabs may break until they reload (accepted at the manual gate)"
+      say "$RETAIN_NOTE" ;;
+    *)
+      # found and failed a check (a forged or damaged bundle), or GitHub could not be asked: no bypass, not even at the manual gate
+      sed 's/^/  fetch: /' "$WORK/fetch.err" >&2
+      die "the previous release's bundle ($PREV_TAG) failed a check, or GitHub could not be asked; nothing was deployed" ;;
+  esac
+else
+  RETAIN_NOTE="no previous release of this pipeline to keep files from (the live version is '$STATE', tag '${PREV_TAG:-none}')"
+fi
+say "web files: $RETAIN_NOTE"
+rm -rf "$ASSETS_OUT"
+plain sh "$MERGE_ASSETS" "$NEW_ASSETS_DIR" "${PREV_ASSETS:--}" "$ASSETS_OUT" > "$WORK/merge.out" 2> "$WORK/merge.err" \
+  || { sed 's/^/  merge: /' "$WORK/merge.err" >&2; die "the web files could not be assembled; nothing was deployed"; }
+say "$(cat "$WORK/merge.out")"
+summary "- web files: $RETAIN_NOTE ($(sed 's/^merge-assets: //' "$WORK/merge.out"))"
 out deferred false
 
 # a rollback is possible when there is a single live version to go back to and the change does not cross a lifecycle change
@@ -232,6 +304,22 @@ if [ "$control_rc" -ne 1 ]; then
   die "the smoke accepted a version that was never deployed (exit $control_rc): it cannot tell one version from another"
 fi
 summary "- smoke control: the smoke refuses a version nobody deployed"
+
+# a file only the previous release had must still be served, as that file (issue #49 acceptance 5): the live proof of what step 3b did
+if [ -n "$PREV_ASSETS" ]; then
+  say "control: a script only the previous release had must still be served as itself"
+  plain sh "$ASSET_CHECK" "$BASE" "$PREV_ASSETS" "$NEW_ASSETS_DIR" > "$WORK/assets.out" 2>&1
+  assets_rc=$?
+  if [ "$assets_rc" -ne 0 ]; then
+    sed 's/^/  assets: /' "$WORK/assets.out" >&2
+    summary "- asset retention: **FAILED**: $(tail -1 "$WORK/assets.out")"
+    rollback "a file of the previous release is not served, so its open tabs would break"
+    die "the previous release's files are not served after the deploy: $(tail -1 "$WORK/assets.out")"
+  fi
+  summary "- asset retention: $(tail -1 "$WORK/assets.out")"
+else
+  summary "- asset retention: not checked ($RETAIN_NOTE)"
+fi
 
 out rolled_back no
 say "deployed and proved: $SHA is live on $DEPLOY_ENV"

@@ -36,6 +36,8 @@ crates/thrust-worker/.wrangler.run-*.toml
 crates/thrust-worker/.wrangler.pg.run.toml
 # what scripts/render-wrangler.sh makes from wrangler.deploy.toml: ids of a real environment, never committed
 crates/thrust-worker/.wrangler.deploy.run.toml
+# the files the deploy uploads as the web app: this release's build with the previous release's added (scripts/merge-assets.sh)
+crates/thrust-worker/.assets/
 .dev.vars
 .dev.vars.*
 .env

@@ -78,3 +78,14 @@ simple = { limit = 10, period = 60 }
 name = "RL_V1"
 namespace_id = "__RL_V1_ID__"
 simple = { limit = 60, period = 60 }
+
+# The web app the Worker serves beside the API (ADR-0011). `.assets` is made by the deploy job: this release's build of web/ with the
+# PREVIOUS release's files added under it (scripts/merge-assets.sh). A hashed file that is not there is answered `200 text/html`, the
+# single-page fallback, and not 404, so a tab still running the last release would be given HTML for a script it asked for. Keeping
+# the last release's files until its tabs age out is the cure, now that a 100 % deploy has no version affinity (ADR-0110 round 29).
+# `run_worker_first` lists both forms of every path the Worker answers, the same list scripts/worker-dev.sh writes for the contract
+# cells (test-deploy-template.sh compares the two): a browser navigation to /auth/callback would otherwise get index.html.
+[assets]
+directory = ".assets"
+not_found_handling = "single-page-application"
+run_worker_first = ["/api", "/api/*", "/auth", "/auth/*", "/live", "/live/*", "/healthz", "/_info", "/internal", "/internal/*", "/_test/*"]

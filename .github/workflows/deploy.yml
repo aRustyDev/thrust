@@ -63,8 +63,14 @@ on:
       - .github/scripts/classify-deploy.sh
       - .github/scripts/active-version.py
       - .github/scripts/assert-sha-checks.sh
+      - .github/scripts/assert-gated-environments.sh
+      - .github/scripts/verify-bundle.sh
+      - .github/scripts/unpack-bundle.sh
+      - .github/scripts/fetch-previous-assets.sh
       - scripts/deploy-worker.sh
       - scripts/render-wrangler.sh
+      - scripts/merge-assets.sh
+      - scripts/check-asset-retention.sh
       - scripts/migrate-ci.sh
       - scripts/smoke-deploy.sh
       - crates/thrust-worker/wrangler.deploy.toml
@@ -183,6 +189,25 @@ jobs:
         working-directory: crates/thrust-worker
         run: ../../scripts/rs worker-build --release . --no-default-features
 
+      # The web app the Worker serves (ADR-0011), built as the `web` job and the e2e cell build it: Node and pnpm at the versions web/
+      # pins, a frozen lockfile, no dependency scripts. It goes into the bundle, so it is attested with the Worker, and so the NEXT deploy
+      # can take this release's files from this bundle and keep them under its own (scripts/merge-assets.sh).
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: web/.node-version
+      - name: Build the web app
+        env:
+          TURBO_TELEMETRY_DISABLED: "1"
+          DO_NOT_TRACK: "1"
+        run: |
+          set -eu
+          want="$(node -p "require('./web/package.json').packageManager.split('@')[1].split('+')[0]")"
+          npm install --global "pnpm@$want"
+          test "$(pnpm --dir web --version)" = "$want"
+          pnpm --dir web install --frozen-lockfile --ignore-scripts
+          pnpm --dir web exec turbo run build --filter=web
+          test -s web/apps/web/build/client/index.html
+
       # One file, the same bytes for the same inputs: sorted names, no timestamps, no owners, no gzip header time.
       - name: Make the bundle
         env:
@@ -192,9 +217,11 @@ jobs:
           test -s crates/thrust-worker/build/worker/shim.mjs
           test -s crates/thrust-worker/build/index.js
           test -s crates/thrust-worker/build/index_bg.wasm
+          test -s web/apps/web/build/client/index.html
           test -x target/release/migrate
           mkdir -p bundle
           cp -R crates/thrust-worker/build bundle/build
+          cp -R web/apps/web/build/client bundle/web
           cp target/release/migrate bundle/migrate
           printf '%s\n' "$SHA" > bundle/BUILD_SHA
           (cd bundle && tar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner -cf - .) | gzip -n > deploy-bundle.tar.gz
@@ -206,7 +233,9 @@ jobs:
           name: deploy-bundle-${{ needs.plan.outputs.sha }}
           path: deploy-bundle.tar.gz
           if-no-files-found: error
-          retention-days: 7
+          # A bundle that was deployed is kept as long as GitHub keeps anything (90 days): the next deploy takes this release's web files
+          # from it, and an expired one sends that deploy to the manual gate. A pull request's dry-run bundle is not needed for a week.
+          retention-days: ${{ needs.plan.outputs.mode == 'deploy' && 90 || 7 }}
 
       - name: Attest the bundle (a deploy only)
         if: needs.plan.outputs.mode == 'deploy'
@@ -243,12 +272,14 @@ jobs:
       - name: Unpack the bundle where wrangler expects it
         env:
           DOWNLOAD: ${{ runner.temp }}/bundle-download
+          SHA: ${{ needs.plan.outputs.sha }}
         run: |
           set -eu
-          mkdir -p "$RUNNER_TEMP/bundle"
-          tar -xzf "$DOWNLOAD/deploy-bundle.tar.gz" -C "$RUNNER_TEMP/bundle"
+          .github/scripts/unpack-bundle.sh "$DOWNLOAD/deploy-bundle.tar.gz" "$RUNNER_TEMP/bundle" "$SHA"
           rm -rf crates/thrust-worker/build
           cp -R "$RUNNER_TEMP/bundle/build" crates/thrust-worker/build
+          # the web files, assembled as a deploy assembles them (a first release: nothing from a previous one)
+          scripts/merge-assets.sh "$RUNNER_TEMP/bundle/web" - crates/thrust-worker/.assets
       - name: Render the configuration (made-up values) and let wrangler check it
         env:
           THRUST_WORKER_NAME: thrust-dry-run
@@ -281,6 +312,8 @@ jobs:
     permissions:
       contents: read
       attestations: read
+      # to list and download the PREVIOUS release's bundle (an artifact of an earlier run: .github/scripts/fetch-previous-assets.sh)
+      actions: read
     outputs:
       deferred: ${{ steps.deploy.outputs.deferred }}
       deployed: ${{ steps.deploy.outputs.deployed }}
@@ -336,6 +369,8 @@ jobs:
     permissions:
       contents: read
       attestations: read
+      # to list and download the PREVIOUS release's bundle (an artifact of an earlier run: .github/scripts/fetch-previous-assets.sh)
+      actions: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

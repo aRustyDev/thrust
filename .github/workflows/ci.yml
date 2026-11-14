@@ -112,6 +112,11 @@ jobs:
           sh .github/scripts/tests/test-lint-workflow.sh
           sh .github/scripts/tests/test-deploy-worker.sh
           python3 -I .github/scripts/tests/test_active_version.py
+          sh .github/scripts/tests/test-unpack-bundle.sh
+          sh .github/scripts/tests/test-verify-bundle.sh
+          sh .github/scripts/tests/test-fetch-previous-assets.sh
+          sh .github/scripts/tests/test-check-asset-retention.sh
+          python3 -I .github/scripts/tests/test_merge_assets.py
 
   deps:
     needs: changes

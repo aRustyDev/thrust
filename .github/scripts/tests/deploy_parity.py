@@ -1,6 +1,6 @@
 """Compare the deployed Worker's template (wrangler.deploy.toml) with the config every other run uses (wrangler.toml).
 
-    deploy_parity.py <wrangler.toml> <wrangler.deploy.toml>
+    deploy_parity.py <wrangler.toml> <wrangler.deploy.toml> [scripts/worker-dev.sh]
 
 Exit 0 when they agree on everything that is not a deliberate difference, 1 with the differences listed, 2 when a file is not usable.
 
@@ -9,11 +9,15 @@ The deliberate differences, and nothing else:
     routes read them;
   * ids and names are markers in the template (checked by what they are called, not by their value);
   * the queue consumer in the template has a `dead_letter_queue`;
-  * wrangler.toml has `[build]` (the deploy job builds nothing), and the template has no `[build]`.
+  * wrangler.toml has `[build]` (the deploy job builds nothing), and the template has no `[build]`;
+  * the template has `[assets]` (the web app, ADR-0011) and wrangler.toml has none: the contract cells add one to a throwaway copy
+    (scripts/worker-dev.sh), so a shared wrangler.toml with one would change what they test. The template's `run_worker_first` must be
+    the list worker-dev.sh writes, when worker-dev.sh is given.
 
 Run from `test-deploy-template.sh`, which also runs it on copies it has broken, to show it can fail.
 """
 
+import re
 import sys
 import tomllib
 
@@ -62,8 +66,23 @@ def shape(cfg, *, deploy):
     return out
 
 
+def worker_dev_list(path):
+    """The `run_worker_first` list scripts/worker-dev.sh writes into the throwaway config of a contract cell."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            text = f.read()
+    except OSError as e:
+        print(f"deploy_parity: cannot read {path}: {e}")
+        sys.exit(2)
+    m = re.search(r"run_worker_first = (\[[^\]]*\])", text)
+    if not m:
+        print(f"deploy_parity: {path} has no run_worker_first list to compare with")
+        sys.exit(2)
+    return tomllib.loads("x = " + m.group(1))["x"]
+
+
 def main(argv):
-    if len(argv) != 3:
+    if len(argv) not in (3, 4):
         print(__doc__)
         return 2
     base = load(argv[1])
@@ -99,6 +118,22 @@ def main(argv):
             problems.append(f"ratelimit {r.get('name')} namespace_id is {r.get('namespace_id')!r}, not a marker")
     if not str(deploy.get("name", "")).startswith("__"):
         problems.append(f"name is {deploy.get('name')!r}, not a marker")
+
+    # the web app: in the template, not in wrangler.toml
+    if "assets" in base:
+        problems.append("wrangler.toml has an [assets] block: the contract cells add one to a throwaway copy, and a shared one changes what they test")
+    assets = deploy.get("assets")
+    if not isinstance(assets, dict):
+        problems.append("the deploy template has no [assets]: the Worker would not serve the web app")
+    else:
+        if assets.get("directory") != ".assets":
+            problems.append(f"assets.directory is {assets.get('directory')!r}, not '.assets' (where scripts/deploy-worker.sh puts the files)")
+        if assets.get("not_found_handling") != "single-page-application":
+            problems.append(f"assets.not_found_handling is {assets.get('not_found_handling')!r}, not 'single-page-application'")
+        if len(argv) == 4:
+            want = worker_dev_list(argv[3])
+            if assets.get("run_worker_first") != want:
+                problems.append(f"assets.run_worker_first is {assets.get('run_worker_first')!r}, but scripts/worker-dev.sh writes {want!r}")
 
     if problems:
         print("deploy_parity: the deploy template and wrangler.toml disagree:")

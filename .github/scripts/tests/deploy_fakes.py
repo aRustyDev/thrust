@@ -3,6 +3,8 @@
     deploy_fakes.py wrangler <args as wrangler's>
     deploy_fakes.py smoke <base-url> <expected-version>
     deploy_fakes.py migrate
+    deploy_fakes.py fetch <owner/repo> <previous-sha> <dest-dir>
+    deploy_fakes.py assetcheck <base-url> <previous-dir> <new-dir>
 
 They share one piece of state, $FAKE_DIR/state.json, which models the part of Cloudflare that matters: whether the Worker exists, the
 versions uploaded, the deployments made, and which version the edge is actually SERVING. The smoke is truthful about it: it passes only
@@ -24,14 +26,18 @@ Behaviour switches (environment variables of the test, read by the fakes):
   FAKE_ROLLBACK=fail     `wrangler rollback` fails
   FAKE_ROLLBACK_NOOP=1   `wrangler rollback` succeeds and the edge keeps serving what it served
   FAKE_MIGRATE=fail      the expand step fails
+  FAKE_FETCH=ok-no-web   the previous release's bundle is found and has no web files; =notfound exits 3; =refused exits 4; default: found, with files
+  FAKE_EDGE_DROPS_ASSETS=1  the deploy succeeds but the edge serves only the files of the NEW release (FAKE_NEW_ASSETS_DIR): the previous
+                         release's were not carried, which is the failure the asset check exists to catch
 """
 
 import json
 import os
+import re
 import sys
 
 D = os.environ.get("FAKE_DIR", "")
-SENSITIVE = ["CLOUDFLARE_API_TOKEN", "DATABASE_URL", "TUNNEL_SERVICE_TOKEN_ID", "TUNNEL_SERVICE_TOKEN_SECRET", "SMOKE_PASSWORD"]
+SENSITIVE = ["CLOUDFLARE_API_TOKEN", "DATABASE_URL", "TUNNEL_SERVICE_TOKEN_ID", "TUNNEL_SERVICE_TOKEN_SECRET", "SMOKE_PASSWORD", "GH_TOKEN"]
 
 
 def state_path():
@@ -132,7 +138,20 @@ def wrangler(argv):
             st = {"versions": [], "deployments": [], "serving": ""}
         n = len(st["versions"]) + 1
         vid = f"ver-{n}"
-        st["versions"].append({"id": vid, "tag": tag})
+        # the files this version carries as its web app: the `directory` of [assets], relative to the configuration, as wrangler reads it
+        assets = None
+        m = re.search(r"^\[assets\]\s*$(.*?)(?=^\[|\Z)", text, re.S | re.M)
+        if m:
+            d = re.search(r'^directory\s*=\s*"([^"]*)"', m.group(1), re.M)
+            if d:
+                root = os.path.join(os.path.dirname(config), d.group(1))
+                if os.environ.get("FAKE_EDGE_DROPS_ASSETS"):
+                    root = os.environ.get("FAKE_NEW_ASSETS_DIR", root)
+                if os.path.isdir(root):
+                    assets = sorted(os.path.relpath(os.path.join(dp, f), root) for dp, _ds, fs in os.walk(root) for f in fs)
+                else:
+                    assets = []
+        st["versions"].append({"id": vid, "tag": tag, "assets": assets})
         st["deployments"].append({"id": f"dep-{n}", "created_on": f"2026-11-14T{10 + n:02d}:00:00Z", "version": vid})
         if not os.environ.get("FAKE_SERVE_STICKY") or not st["serving"]:
             st["serving"] = vid
@@ -192,7 +211,65 @@ def migrate(_argv):
     return 0
 
 
+def fetch(argv):
+    """The previous release's bundle: verified and unpacked (here: made up), not found, or refused."""
+    sees("fetch")
+    repo, sha, dest = (argv + ["", "", ""])[:3]
+    log(f"fetch repo={repo} sha={sha}")
+    mode = os.environ.get("FAKE_FETCH", "ok")
+    if mode == "notfound":
+        print("fetch-previous-assets: no usable artifact: none", file=sys.stderr)
+        return 3
+    if mode == "refused":
+        print("fetch-previous-assets: refused: it did not verify", file=sys.stderr)
+        return 4
+    bundle = os.path.join(dest, "bundle")
+    os.makedirs(bundle, exist_ok=True)
+    if mode == "ok-no-web":
+        print(f"bundle={bundle}")
+        print("web=false")
+        return 0
+    web = os.path.join(bundle, "web", "assets")
+    os.makedirs(web, exist_ok=True)
+    with open(os.path.join(bundle, "web", "index.html"), "w") as f:
+        f.write("<html>previous</html>")
+    with open(os.path.join(web, f"old-{sha[:8]}.js"), "w") as f:
+        f.write(f"// the previous release {sha}\n")
+    with open(os.path.join(web, "shared.js"), "w") as f:
+        f.write("// shared\n")
+    print(f"bundle={bundle}")
+    print("web=true")
+    return 0
+
+
+def assetcheck(argv):
+    """The asset control, truthful about what the edge serves: every script only the previous release had must be among the files of
+    the version that is being served."""
+    sees("assetcheck")
+    _base, prev, new = (argv + ["", "", ""])[:3]
+    log("assetcheck RUN")
+    st = load()
+
+    def scripts(root):
+        return {os.path.relpath(os.path.join(dp, f), root) for dp, _ds, fs in os.walk(root) for f in fs if f.endswith(".js")}
+
+    retired = sorted(p for p in scripts(prev) - scripts(new) if p.startswith("assets/"))
+    if not retired:
+        print("check-asset-retention: nothing to look for")
+        return 0
+    served = set()
+    for v in st["versions"]:
+        if v["id"] == st["serving"]:
+            served = set(v.get("assets") or [])
+    missing = [p for p in retired if p not in served]
+    if missing:
+        print(f"check-asset-retention: FAIL: {missing[0]} answered 200 text/html: the single-page fallback", file=sys.stderr)
+        return 1
+    print(f"check-asset-retention: {len(retired)} script(s) of the previous release are still served as themselves")
+    return 0
+
+
 if __name__ == "__main__":
     tool = sys.argv[1] if len(sys.argv) > 1 else ""
     rest = sys.argv[2:]
-    sys.exit({"wrangler": wrangler, "smoke": smoke, "migrate": migrate}[tool](rest))
+    sys.exit({"wrangler": wrangler, "smoke": smoke, "migrate": migrate, "fetch": fetch, "assetcheck": assetcheck}[tool](rest))

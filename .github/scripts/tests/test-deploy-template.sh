@@ -8,6 +8,7 @@ HERE="$(cd "$(dirname "$0")/../../.." && pwd)"
 BASE="$HERE/crates/thrust-worker/wrangler.toml"
 DEPLOY="$HERE/crates/thrust-worker/wrangler.deploy.toml"
 PARITY="$HERE/.github/scripts/tests/deploy_parity.py"
+WORKER_DEV="$HERE/scripts/worker-dev.sh"
 T="$(mktemp -d)"
 trap 'rm -rf "$T"' EXIT INT TERM
 pass=0; failn=0
@@ -31,7 +32,7 @@ expect() {
     failn=$((failn + 1)); echo "BAD  $label: wanted exit $want + '$frag', got $got"; sed 's/^/     | /' "$T/last.out"
   fi
 }
-parity() { $PYRUN "$PARITY" "$1" "$2"; }
+parity() { $PYRUN "$PARITY" "$1" "$2" "${3:-$WORKER_DEV}"; }
 
 expect "the real template and wrangler.toml agree" 0 "deploy_parity: ok" parity "$BASE" "$DEPLOY"
 
@@ -82,6 +83,22 @@ expect "a probe-only binding in the template is found" 1 "probe-only bindings" p
 
 cp "$DEPLOY" "$T/build.toml"; printf '\n[build]\ncommand = "echo build"\n' >> "$T/build.toml"
 expect "a [build] in the template is found" 1 "builds nothing" parity "$BASE" "$T/build.toml"
+
+# the web app (ADR-0011): `[assets]` is in the template, with the list worker-dev.sh writes, and not in wrangler.toml
+mk no-live-route -e 's|"/live", "/live/\*", ||'
+expect "a Worker-first route dropped from the template is found" 1 "run_worker_first" parity "$BASE" "$T/no-live-route.toml"
+mk other-fallback -e 's/not_found_handling = "single-page-application"/not_found_handling = "404-page"/'
+expect "a different not-found handling is found" 1 "not_found_handling" parity "$BASE" "$T/other-fallback.toml"
+mk other-directory -e 's/^directory = ".assets"/directory = "dist"/'
+expect "a different assets directory is found" 1 "assets.directory" parity "$BASE" "$T/other-directory.toml"
+sed '/^\[assets\]/,$d' "$DEPLOY" > "$T/no-assets.toml"
+expect "a template without [assets] is found" 1 "no [assets]" parity "$BASE" "$T/no-assets.toml"
+cp "$BASE" "$T/base-assets.toml"; printf '\n[assets]\ndirectory = "x"\n' >> "$T/base-assets.toml"
+expect "an [assets] block in the shared wrangler.toml is found" 1 "wrangler.toml has an [assets] block" parity "$T/base-assets.toml" "$DEPLOY"
+sed 's|"/live", "/live/\*", ||' "$WORKER_DEV" > "$T/worker-dev-other.sh"
+expect "worker-dev.sh writing a different list is found" 1 "but scripts/worker-dev.sh writes" parity "$BASE" "$DEPLOY" "$T/worker-dev-other.sh"
+printf 'nothing here\n' > "$T/worker-dev-none.sh"
+expect "a worker-dev.sh with no list to compare is a usage error" 2 "no run_worker_first list" parity "$BASE" "$DEPLOY" "$T/worker-dev-none.sh"
 
 # and the other side: wrangler.toml gets a binding the template has not
 cp "$BASE" "$T/base-extra.toml"; printf '\n[[r2_buckets]]\nbinding = "MORE"\nbucket_name = "more"\n' >> "$T/base-extra.toml"
