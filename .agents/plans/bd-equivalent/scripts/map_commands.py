@@ -31,7 +31,7 @@ SELF_TEST = "--self-test" in sys.argv
 # ---- the proposed tree: path -> (audience, effect, what it does) ------------------------------
 # audience: human | agent | both | admin     effect: read | write | local (touches only this machine)
 NEW = {
-    "task create": ("both", "write", "Create a task under an issue (`--issue`), or a sub-task (`--parent`); `--from -` for many"),
+    "task create": ("both", "write", "Create a task under an issue (`--issue`), or a sub-task (`--parent`), in one request; `--key` makes a retry safe; `--from -` for many"),
     "task list": ("both", "read", "List tasks; one filter set (`--ready`, `--blocked`, `--stale`, `--parent`, `--query`, `--count`)"),
     "task update": ("both", "write", "Edit fields; `--if-status` / `--if-assignee` make it conditional"),
     "task close": ("both", "write", "Close, with the one close rule; `--duplicate-of`, `--superseded-by`"),
@@ -41,6 +41,9 @@ NEW = {
     "task lint": ("both", "read", "Report tasks missing required sections"),
     "issue list": ("both", "read", "List issues, epics included (`--epic`, `--in <module|project>`)"),
     "issue transition": ("both", "write", "Move an issue or epic to another state"),
+    "module list": ("both", "read", "List the modules of a project"),
+    "project list": ("both", "read", "List the projects the actor can see (`--in <initiative>`)"),
+    "initiative list": ("both", "read", "List initiatives"),
     "dep add": ("both", "write", "Add a dependency or a see-also link (`--type`)"),
     "dep remove": ("both", "write", "Remove a dependency or link"),
     "dep list": ("both", "read", "Dependencies and dependents of an ID"),
@@ -75,7 +78,7 @@ NEW = {
     "init": ("both", "local", "Link this directory to a workspace and project"),
     "auth login": ("both", "local", "Store a credential"),
     "auth logout": ("both", "local", "Remove the stored credential"),
-    "auth status": ("both", "read", "Server, actor, key scope and linked project"),
+    "auth status": ("both", "read", "Server, actor, the actor's project role and linked project"),
     "config get": ("both", "local", "Read a setting"),
     "config set": ("both", "local", "Write one or more settings"),
     "config unset": ("both", "local", "Remove a setting"),
@@ -105,6 +108,9 @@ GAPS = {
     "claim take": "in bd a claim is a flag (`update --claim`, `ready --claim`), not a command",
     "ask create": "in bd an agent adds the `human` label to an issue",
     "issue list": "bd has one level; an epic is an issue type",
+    "module list": "bd has one level; without a list, an ID above the issue cannot be found (research 0016)",
+    "project list": "as above; `init` needs it to link a directory without a prompt",
+    "initiative list": "as above",
 }
 
 # ---- disposition of every bd path -------------------------------------------------------------
@@ -351,8 +357,8 @@ for d, label in DISP.items():
 w("")
 
 w("## The proposed tree\n")
-w("Audience is who the command is for; a credential's scope enforces it, not the help text. Effect `local`")
-w("touches only this machine.\n")
+w("Audience is who the command is for. In v1 the server enforces only the actor's project role, which is coarser")
+w("than audience (SPEC-0001 rule 6). Effect `local` touches only this machine.\n")
 w("| Command | Audience | Effect | What it does | From bd |")
 w("|---|---|---|---|---|")
 for c, (aud, eff, what) in NEW.items():
