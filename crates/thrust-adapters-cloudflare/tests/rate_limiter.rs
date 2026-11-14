@@ -3,7 +3,7 @@
 //!
 //! The binding itself is a JS object, so `CfRateLimiter::hit` cannot run off wasm32; it runs in the `worker-cf` cells of the
 //! contract suite (`v1_requests_are_rate_limited_per_key`, for `RL_V1`, and every sign-in, for `RL_SIGNIN`), which would fail if a key
-//! reached no binding. The slice's create limit (`RL_CREATE`) is no longer held there (G-26 in `docs/src/testing/status.md`). What is
+//! reached no binding. (The slice's create limit and its `RL_CREATE` binding are gone, G-26 in `docs/src/testing/status.md`.) What is
 //! here is what decides the answer once the binding has spoken.
 #![allow(
     clippy::unwrap_used,
@@ -21,10 +21,9 @@ use rstest::rstest;
 use thrust_adapters_cloudflare::{check_binding_period, decision, KeyClass, BINDING_PERIODS_SECS};
 use thrust_ports::RateDecision;
 
-/// The three classes and the text the core and the v1 routes put before the `:` of their keys (`create:<user>` in
-/// `thrust-core/src/lib.rs`, `signin:<email>` in `thrust-core/src/auth.rs`, `v1:<api key>` in `thrust-api-v1/src/ctx.rs`).
-const CLASSES: [(&str, KeyClass); 3] =
-    [("create", KeyClass::Create), ("signin", KeyClass::SignIn), ("v1", KeyClass::V1)];
+/// The two classes and the text the core and the v1 routes put before the `:` of their keys (`signin:<email>` in
+/// `thrust-core/src/auth.rs`, `v1:<api key>` in `thrust-api-v1/src/ctx.rs`).
+const CLASSES: [(&str, KeyClass); 2] = [("signin", KeyClass::SignIn), ("v1", KeyClass::V1)];
 
 // ---------------------------------------------------------------------------------------------
 // KeyClass::of
@@ -34,7 +33,7 @@ const CLASSES: [(&str, KeyClass); 3] =
 /// is read from the text before the FIRST colon and nothing after it matters.
 #[rstest]
 fn a_key_of_a_known_class_is_routed_to_its_binding(
-    #[values(0, 1, 2)] class: usize,
+    #[values(0, 1)] class: usize,
     #[values("", "u", "0192f3a4-0000-7000-8000-000000000001", "a@example.test", "a:b", "::", " ", "create:", "v1:x")]
     rest: &str,
 ) {
@@ -51,6 +50,10 @@ fn a_key_of_no_class_is_routed_nowhere(
         "create",
         "signin",
         "v1",
+        // the class that went with the slice's create (step 5c-3 of #58): a key that starts with it reaches no binding now
+        "create:",
+        "create:x",
+        "create:0192f3a4-0000-7000-8000-000000000001",
         "Create:x",
         "CREATE:x",
         "creates:x",
@@ -77,7 +80,7 @@ fn a_key_of_no_class_is_routed_nowhere(
 proptest! {
     #![proptest_config(proptest_config(512))]
 
-    /// Over any text at all: a key has a class exactly when it starts with one of the three class names and a colon.
+    /// Over any text at all: a key has a class exactly when it starts with one of the two class names and a colon.
     #[test]
     fn prop_a_key_has_a_class_exactly_when_it_starts_with_a_class_and_a_colon(key in any::<String>()) {
         let starts = CLASSES.iter().any(|(p, _)| key.strip_prefix(p).is_some_and(|r| r.starts_with(':')));
@@ -86,7 +89,7 @@ proptest! {
 
     /// Over any text after the colon, a class's key keeps its class.
     #[test]
-    fn prop_what_follows_the_colon_never_changes_the_class(class in 0..3usize, rest in any::<String>()) {
+    fn prop_what_follows_the_colon_never_changes_the_class(class in 0..2usize, rest in any::<String>()) {
         let (prefix, want) = CLASSES[class];
         prop_assert_eq!(KeyClass::of(&format!("{prefix}:{rest}")), Some(want));
     }
@@ -145,7 +148,7 @@ proptest! {
 
 #[rstest]
 fn the_two_periods_the_binding_has_are_accepted(#[values(10, 60)] secs: u64) {
-    assert_eq!(check_binding_period("THRUST_RATE_WINDOW_SECS", secs), Ok(()));
+    assert_eq!(check_binding_period("the period of THRUST_V1_RATE_LIMIT", secs), Ok(()));
 }
 
 /// The neighbours of both periods, the period of the old Durable Object limiter's test setting, and Plane's other spellings
@@ -154,8 +157,8 @@ fn the_two_periods_the_binding_has_are_accepted(#[values(10, 60)] secs: u64) {
 fn any_other_period_is_refused_by_the_setting_that_named_it(
     #[values(0, 1, 9, 11, 59, 61, 600, 3600, 86_400, u64::MAX)] secs: u64,
 ) {
-    let err = check_binding_period("THRUST_RATE_WINDOW_SECS", secs).unwrap_err();
-    assert!(err.contains("THRUST_RATE_WINDOW_SECS"), "{err}");
+    let err = check_binding_period("the period of THRUST_V1_RATE_LIMIT", secs).unwrap_err();
+    assert!(err.contains("the period of THRUST_V1_RATE_LIMIT"), "{err}");
     assert!(err.contains(&format!("{secs} s")), "{err}");
 }
 

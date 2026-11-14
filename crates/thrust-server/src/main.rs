@@ -96,8 +96,6 @@ async fn main() {
 
     let defaults = CoreConfig::default();
     let cfg = CoreConfig {
-        create_rate_limit: env_num("THRUST_CREATE_RATE_LIMIT", 1000),
-        rate_window_secs: env_num("THRUST_RATE_WINDOW_SECS", 60),
         outbox_fastpath: env_flag("THRUST_OUTBOX_FASTPATH", true),
         sign_in_rate_limit: env_num("THRUST_SIGNIN_RATE_LIMIT", defaults.sign_in_rate_limit),
         // OFF unless the environment says on: the stock Plane frontend sends the CSRF token only on its auth form posts, so

@@ -6,7 +6,7 @@
 #   scripts/spike-0002-pg.sh migrate              apply crates/thrust-adapters-postgres/migrations/*.sql AS that role (a real password login)
 #   scripts/spike-0002-pg.sh hyperdrive           create the two Hyperdrive configs: thrust-spike-pg (caching off) and thrust-spike-pg-cached (on)
 #   scripts/spike-0002-pg.sh resources            create the R2 bucket and the two queues
-#   scripts/spike-0002-pg.sh deploy [--cached] [--no-placement] [--create-limit N] [--var NAME:VALUE ...]   deploy the Worker (the first deploy also puts the admin secret); --create-limit sets the RL_CREATE binding's limit per minute (default 30; the engine pass wants 1000000)
+#   scripts/spike-0002-pg.sh deploy [--cached] [--no-placement] [--v1-limit N] [--var NAME:VALUE ...]   deploy the Worker (the first deploy also puts the admin secret); --v1-limit sets the RL_V1 binding's limit per minute, what one API key may do on /api/v1 (default 60, Plane's; the engine pass wants 1000000)
 #   scripts/spike-0002-pg.sh sql                  run SQL from stdin on the primary as the postgres OS user (superuser, local socket): READ-ONLY use
 #   scripts/spike-0002-pg.sh status               what exists, and the ledger
 #   scripts/spike-0002-pg.sh down                 tear everything down: consumer, Worker, queues, bucket, Hyperdrive configs, role + schema
@@ -92,14 +92,14 @@ case "${1:-}" in
   deploy)
     shift
     : "${HYPERDRIVE_API_TOKEN:?set HYPERDRIVE_API_TOKEN (to look up the Hyperdrive config id)}"
-    which_hd="$HD"; placement=1; extra=""; names=""; create_limit=30
+    which_hd="$HD"; placement=1; extra=""; names=""; v1_limit=60
     while [ $# -gt 0 ]; do
       case "$1" in
         --cached) which_hd="$HD_CACHED" ;;
         --no-placement) placement=0 ;;
-        --create-limit)
-          case "${2:-}" in ''|*[!0-9]*) echo "--create-limit wants a number of creates per minute" >&2; exit 2 ;; esac
-          create_limit="$2"; shift ;;
+        --v1-limit)
+          case "${2:-}" in ''|*[!0-9]*) echo "--v1-limit wants a number of requests per API key per minute" >&2; exit 2 ;; esac
+          v1_limit="$2"; shift ;;
         --var) extra="$extra --var $2"; names="$names --var ${2%%:*}"; shift ;;
         *) echo "unknown option $1" >&2; exit 2 ;;
       esac
@@ -108,7 +108,7 @@ case "${1:-}" in
     id="$(hd_id "$which_hd")"
     [ -n "$id" ] || { echo "no hyperdrive config named $which_hd" >&2; exit 1; }
     if [ "$placement" = 1 ]; then PL='[placement]\nregion = "aws:us-east-1"'; else PL='# no placement'; fi
-    sed -e "s|__HYPERDRIVE_ID__|$id|" -e "s|# __PLACEMENT__|$PL|" -e "/__CREATE_LIMIT__/ s|limit = [0-9]*|limit = $create_limit|" "$WR/$TEMPLATE" >"$WR/$RUNCFG"
+    sed -e "s|__HYPERDRIVE_ID__|$id|" -e "s|# __PLACEMENT__|$PL|" -e "/__V1_LIMIT__/ s|limit = [0-9]*|limit = $v1_limit|" "$WR/$TEMPLATE" >"$WR/$RUNCFG"
     # shellcheck disable=SC2086
     (cd "$WR" && wrangler deploy -c "$RUNCFG" $extra)
     rc=$?
@@ -119,7 +119,7 @@ case "${1:-}" in
     fi
     drop_runcfg
     [ "$rc" = 0 ] || { note "FAILED: wrangler deploy"; exit 1; }
-    note "deployed worker $WORKER (hyperdrive $which_hd, placement=$placement, create-limit=$create_limit$names; var values are not logged)"
+    note "deployed worker $WORKER (hyperdrive $which_hd, placement=$placement, v1-limit=$v1_limit$names; var values are not logged)"
     ;;
   sql)
     pod="$(primary)" || exit 1

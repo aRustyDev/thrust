@@ -224,11 +224,10 @@ pub fn check_binding_period(setting: &str, secs: u64) -> Result<(), String> {
 }
 
 /// What a limiter key counts, which is the binding that holds its allowance. The core and the v1 routes build their keys as
-/// `create:<user>`, `signin:<email>` and `v1:<api key>`: the text before the first `:` is the class.
+/// `signin:<email>` and `v1:<api key>`: the text before the first `:` is the class. (A `create:<user>` class, the slice's work item
+/// creates, went with that use-case in step 5c-3 of #58: a key that starts with it is a key of no class now.)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum KeyClass {
-    /// Work item creates, per user.
-    Create,
     /// Sign-in attempts, per email.
     SignIn,
     /// A request on `/api/v1`, per API key.
@@ -239,7 +238,6 @@ impl KeyClass {
     /// The class of `key`, or `None` for a key no binding is configured for.
     pub fn of(key: &str) -> Option<Self> {
         match key.split_once(':')?.0 {
-            "create" => Some(Self::Create),
             "signin" => Some(Self::SignIn),
             "v1" => Some(Self::V1),
             _ => None,
@@ -263,14 +261,13 @@ pub fn decision(success: bool, limit: u32, window_secs: u64) -> RateDecision {
     }
 }
 
-/// The [`RateLimiter`] port on three Workers Rate Limiting bindings, one per [`KeyClass`].
+/// The [`RateLimiter`] port on two Workers Rate Limiting bindings, one per [`KeyClass`].
 ///
 /// A binding's limit and period are in its `[[ratelimits]]` block in the wrangler config, not in the request, so the binding is
 /// the source of truth for the allowance and the `limit` argument of [`RateLimiter::hit`] is not used here. Counting is per
 /// Cloudflare location and approximate (D-007): a limit of 3 has let 4 through. No `SendFuture` here: workers-rs wraps the JS
 /// future inside `RateLimiter::limit` itself, so the call is already `Send`.
 pub struct CfRateLimiter {
-    pub create: worker::RateLimiter,
     pub signin: worker::RateLimiter,
     pub v1: worker::RateLimiter,
 }
@@ -278,7 +275,6 @@ pub struct CfRateLimiter {
 impl CfRateLimiter {
     fn binding(&self, class: KeyClass) -> &worker::RateLimiter {
         match class {
-            KeyClass::Create => &self.create,
             KeyClass::SignIn => &self.signin,
             KeyClass::V1 => &self.v1,
         }
@@ -290,9 +286,8 @@ impl RateLimiter for CfRateLimiter {
     async fn hit(&self, key: &str, limit: u32, window_secs: u64) -> Result<RateDecision, RateError> {
         // A key of no class is a caller this adapter was not given a binding for: an error, and never a free pass. The key is not
         // in the message, because a sign-in key holds an email address.
-        let class = KeyClass::of(key).ok_or_else(|| {
-            RateError::Backend("a rate-limit key must start with `create:`, `signin:` or `v1:`".to_string())
-        })?;
+        let class = KeyClass::of(key)
+            .ok_or_else(|| RateError::Backend("a rate-limit key must start with `signin:` or `v1:`".to_string()))?;
         let outcome =
             self.binding(class).limit(key.to_string()).await.map_err(|e| RateError::Backend(e.to_string()))?;
         Ok(decision(outcome.success, limit, window_secs))
