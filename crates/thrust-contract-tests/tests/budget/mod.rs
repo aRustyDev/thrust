@@ -13,8 +13,9 @@
 //! What is measured is a steady-state request, after the first of each. The first use of an API key stamps `last_used_at` in
 //! the background (`thrust-core/src/auth.rs`), and it runs on the target's own schedule, so it is waited for and not counted.
 //!
-//! The lists are nine, in the shape a client asks for them by default. Seven are asked by an admin: the slice's work items,
-//! Plane's projects (S17) and work items (S47) over the internal API, and `/api/v1`'s projects, states, labels and work items.
+//! The lists are eight, in the shape a client asks for them by default. Six are asked by an admin: Plane's projects (S17) and
+//! work items (S47) over the internal API, and `/api/v1`'s projects, states, labels and work items. (The slice's own list of
+//! work items was a seventh until the slice's work-item routes went.)
 //! Two are Plane's work items asked by a **limited guest**, who sees only what they made unless the project shows its guests
 //! everything: one who made six of the items, and one who made none, whose page is empty and costs its count as well. That
 //! is the dearest list a guest can ask for, and it was 6 statements, one over the budget, while the page's statement did not
@@ -71,7 +72,7 @@ struct Route {
     rows: Rows,
 }
 
-/// The seven lists asked by an admin, and Plane's work items asked by two limited guests (a guest of the compat plane sees only
+/// The six lists asked by an admin, and Plane's work items asked by two limited guests (a guest of the compat plane sees only
 /// what they made, unless the project shows its guests everything): `guest` made six of the project's items, and `quiet` made
 /// none, so the page of `quiet` is empty and costs its count as well, the dearest list a guest can ask for.
 fn routes(f: &Fixture, quiet: &User) -> Vec<Route> {
@@ -81,7 +82,6 @@ fn routes(f: &Fixture, quiet: &User) -> Vec<Route> {
     let issues = format!("{compat}/projects/{project}/issues/");
     let admin = |name, path, auth| Route { name, path, auth, rows: Rows::AtLeast(ROWS) };
     vec![
-        admin("slice work items", wi_path(&f.a), Auth::Admin),
         admin("compat projects (S17)", format!("{compat}/projects/"), Auth::Admin),
         admin("compat issues (S47)", issues.clone(), Auth::Admin),
         admin("v1 projects", format!("{v1}/projects/"), Auth::ApiKey),

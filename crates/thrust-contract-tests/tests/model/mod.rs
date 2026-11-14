@@ -2,32 +2,28 @@
 //! every target through the same `THRUST_BASE_URL` client:
 //!
 //! * `model_work_items_over_http_match_the_reference_model` (`main` pass, outbox fast path on): random sequences of
-//!   create, delete and list by every kind of caller, in two tenants and a project that does not exist, mixed with
-//!   injected and redelivered events, sweeps and activity checkpoints, checked against a reference model;
+//!   attachment puts, gets and deletes by every kind of caller, in two tenants and a project that does not exist,
+//!   mixed with work items made and deleted through `/api/v1`, injected and redelivered events, sweeps and activity
+//!   checkpoints, checked against a reference model;
 //! * `sweeper_model_outbox_delivers_what_was_swept_and_nothing_more` (`sweeper` pass, fast path off): the same
 //!   sequences, where every event waits in the outbox until a sweep;
 //! * `model_strategy_reaches_every_step_class`: the generator coverage control for both (Rule 8). It replays sampled
 //!   sequences through the model alone and needs no target;
 //! * `matrix::every_actor_project_and_route_gets_the_status_of_the_access_table`: every caller × project × route.
 //!
-//! The model is the spec, written out; it shares no code with the server:
+//! What this file is for is what no Plane route replaces: the attachment routes and the activity feed, and what the queue
+//! consumer does with an event. The work items they are about are made and deleted through `/api/v1`, with an API key,
+//! as the vehicle (the slice's own create, list, search and delete routes are no longer called by anything); that
+//! route's own rules (names, external keys, sequence ids, the role table, the list) are the model of `v1_model`, and
+//! are not repeated here. The model is the spec, written out; it shares no code with the server:
 //!
 //! * a missing or unknown bearer token is `401` before anything else;
-//! * a create with a bad name (blank, or over 255 characters after trimming) is `400` before the rate limiter and
-//!   authorization, and a list with an unknown `scope` is `400` before authorization;
 //! * a project outside the caller's workspace, or one that does not exist, is `404`; a project the caller is not a
-//!   member of is `403`; create and delete need Member, list and activity need Guest, `scope=with_deleted` needs
-//!   Admin;
-//! * sequence ids per project start at 1, strictly increase and are never reused. A create that fails after the
-//!   number was allocated (a `409`) may leave a gap, at most one per failed create: ADR-0043 accepts gaps on
-//!   failure, and the adapters differ here (memory leaves the gap, Postgres rolls it back);
-//! * a live `(external_source, external_id)` is unique per project (`409`), and a soft delete frees it;
-//! * a delete is `204` for a live item of the path's project and `404` for a deleted item, an unknown id or another
-//!   project's item; a rejected request changes nothing (every later list checks that);
-//! * a list returns exactly the model's rows of that project, in sequence order, trimmed names, `deleted_at` set
-//!   exactly on deleted rows, and nothing outside the requested project (R-S1);
-//! * events (ADR-0046): every successful create and delete puts exactly one event in the outbox, and a rejected or
-//!   conflicting request puts none. With the fast path on the event is published at once; with it off it waits
+//!   member of is `403`; an attachment put or delete needs Member, a get and the activity feed need Guest;
+//! * a work item made through `/api/v1` by a writer of the project is `201`, and its project's admin deletes it with
+//!   `204`; deleting one that is already deleted, or an id that was never made, is `404`;
+//! * events (ADR-0046): every successful create and delete puts exactly one event in the outbox, and a rejected
+//!   request puts none. With the fast path on the event is published at once; with it off it waits
 //!   until a sweep, which publishes every waiting row (`found` = `published` = the outbox depth, nothing `failed`),
 //!   and the outbox depth is always the number of waiting events. An injected event is published at once;
 //! * a published event ends up as exactly one activity row in its project (verb, entity, actor), however often it
@@ -44,9 +40,9 @@
 //!
 //! Budget: `THRUST_MODEL_CASES` sequences per run (default 16 in `main`, 8 in `sweeper`), deliberately not
 //! `PROPTEST_CASES`, so a `deep` run's setting cannot turn one contract cell into thousands of round trips. Each case
-//! seeds its own fixture, so it starts from empty projects and fresh rate-limit buckets; `MAX_OPS` stays below the
-//! create limit so the limiter is never reached (no HTTP test holds the slice's create limit any more: `v1_requests_are_rate_limited_per_key`
-//! holds the allowance of an API key on `/api/v1`, which is Plane's, G-26).
+//! seeds its own fixture, so it starts from empty projects and fresh API keys (and so fresh rate-limit buckets);
+//! `MAX_OPS` stays below a key's allowance on `/api/v1` (`v1_requests_are_rate_limited_per_key` holds that allowance,
+//! which is Plane's, G-26) so the limiter is never reached, whoever makes every item.
 
 mod matrix;
 
@@ -163,26 +159,6 @@ fn admin_of(slot: usize) -> Actor {
 // ---------------------------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Copy)]
-enum Name {
-    Plain,
-    /// Leading and trailing spaces, stored trimmed.
-    Padded,
-    /// Exactly 255 characters, the longest valid name.
-    Longest,
-    Blank,
-    /// 256 characters.
-    TooLong,
-}
-
-#[derive(Debug, Clone, Copy)]
-enum Scope {
-    Default,
-    Visible,
-    WithDeleted,
-    Bogus,
-}
-
-#[derive(Debug, Clone, Copy)]
 enum Pick {
     /// One of the path project's items, live or deleted (an unknown id when it has none).
     Own(usize),
@@ -295,22 +271,16 @@ impl Ctype {
 
 #[derive(Debug, Clone)]
 enum Op {
-    /// `ext`: an external key from a small domain, so that keys collide.
+    /// Make a work item through `/api/v1`, as a writer of the project (`maker`).
     Create {
         actor: Actor,
         proj: Proj,
-        name: Name,
-        ext: Option<u8>,
     },
+    /// Delete one through `/api/v1`, as the project's admin: its `pick`th row (live or already deleted), or an id that
+    /// was never made when `None`.
     Delete {
-        actor: Actor,
         proj: Proj,
-        pick: Pick,
-    },
-    List {
-        actor: Actor,
-        proj: Proj,
-        scope: Scope,
+        pick: Option<usize>,
     },
     /// Put an envelope straight on the queue (`/internal/inject-event`), about one of the project's items.
     Inject {
@@ -379,18 +349,14 @@ fn seeded() -> impl Strategy<Value = Proj> {
     prop_oneof![2 => Just(Proj::A), 1 => Just(Proj::B)]
 }
 
-fn name() -> impl Strategy<Value = Name> {
+/// Who makes a work item, and where: a writer of a seeded project. Who else may, and what they are told, is `/api/v1`'s table
+/// (`v1_model`), not this file's.
+fn maker() -> impl Strategy<Value = (Actor, Proj)> {
     prop_oneof![
-        6 => Just(Name::Plain),
-        1 => Just(Name::Padded),
-        1 => Just(Name::Longest),
-        1 => Just(Name::Blank),
-        1 => Just(Name::TooLong),
+        2 => Just((Actor::AdminA, Proj::A)),
+        3 => Just((Actor::MemberA, Proj::A)),
+        3 => Just((Actor::AdminB, Proj::B)),
     ]
-}
-
-fn scope() -> impl Strategy<Value = Scope> {
-    prop_oneof![3 => Just(Scope::Default), 1 => Just(Scope::Visible), 3 => Just(Scope::WithDeleted), 1 => Just(Scope::Bogus)]
 }
 
 fn pick() -> impl Strategy<Value = Pick> {
@@ -426,10 +392,8 @@ fn ctype() -> impl Strategy<Value = Option<Ctype>> {
 
 fn op() -> impl Strategy<Value = Op> {
     prop_oneof![
-        5 => (caller(), name(), prop::option::weighted(0.4, 0..3u8))
-            .prop_map(|((actor, proj), name, ext)| Op::Create { actor, proj, name, ext }),
-        3 => (caller(), pick()).prop_map(|((actor, proj), pick)| Op::Delete { actor, proj, pick }),
-        1 => (caller(), scope()).prop_map(|((actor, proj), scope)| Op::List { actor, proj, scope }),
+        5 => maker().prop_map(|(actor, proj)| Op::Create { actor, proj }),
+        3 => (seeded(), prop::option::weighted(0.85, 0..16usize)).prop_map(|(proj, pick)| Op::Delete { proj, pick }),
         2 => (seeded(), 0..16usize, verb(), replay())
             .prop_map(|(proj, item, verb, replay)| Op::Inject { proj, item, verb, replay }),
         1 => Just(Op::Sweep),
@@ -456,24 +420,14 @@ fn ops() -> impl Strategy<Value = Vec<Op>> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum Class {
     Unauthenticated,
-    InvalidName,
-    BogusScope,
     CrossTenant,
     NoSuchProject,
     NotAMember,
     RoleTooLow,
     Created,
-    /// A create after a `409` in the same project: the place where a sequence gap may appear.
-    CreatedAfterFailure,
-    /// A create reusing the external key of a soft-deleted row.
-    ExternalKeyFreedByDelete,
-    Conflict,
     Deleted,
     DeleteAlreadyDeleted,
-    DeleteOtherProjectsItem,
     DeleteUnknownId,
-    Listed,
-    ListedWithDeleted,
     Injected,
     RedeliveredInjected,
     RedeliveredOutboxEvent,
@@ -503,24 +457,16 @@ enum Class {
 }
 
 impl Class {
-    const ALL: [Class; 37] = [
+    const ALL: [Class; 29] = [
         Class::Unauthenticated,
-        Class::InvalidName,
-        Class::BogusScope,
         Class::CrossTenant,
         Class::NoSuchProject,
         Class::NotAMember,
         Class::RoleTooLow,
         Class::Created,
-        Class::CreatedAfterFailure,
-        Class::ExternalKeyFreedByDelete,
-        Class::Conflict,
         Class::Deleted,
         Class::DeleteAlreadyDeleted,
-        Class::DeleteOtherProjectsItem,
         Class::DeleteUnknownId,
-        Class::Listed,
-        Class::ListedWithDeleted,
         Class::Injected,
         Class::RedeliveredInjected,
         Class::RedeliveredOutboxEvent,
@@ -547,22 +493,12 @@ impl Class {
 #[derive(Debug, Clone)]
 struct Row {
     id: WorkItemId,
-    seq: i64,
-    name: String,
-    ext: Option<u8>,
     deleted: bool,
 }
 
 #[derive(Debug, Clone, Default)]
 struct ProjectModel {
     rows: Vec<Row>,
-    /// Live external keys and the keys of deleted rows, by key.
-    live_ext: BTreeSet<u8>,
-    deleted_ext: BTreeSet<u8>,
-    last_seq: i64,
-    last_sort: i64,
-    /// `409`s since the last successful create: each may have used up a sequence number.
-    failed_since: i64,
     /// Stored attachments by (item, name).
     blobs: BTreeMap<(WorkItemId, String), Stored>,
 }
@@ -625,24 +561,14 @@ fn slot(p: Proj) -> Option<usize> {
 enum Want {
     /// A rejection, checked on its status.
     Reject(u16),
-    Conflict {
-        slot: usize,
-        ext: u8,
-    },
     Create {
         slot: usize,
-        name: String,
-        ext: Option<u8>,
         actor: Actor,
     },
     Delete {
         slot: usize,
         row: usize,
         actor: Actor,
-    },
-    List {
-        slot: usize,
-        with_deleted: bool,
     },
     /// `202`; the new event, or `None` for a redelivery (which must add nothing).
     Inject(Option<Event>),
@@ -660,7 +586,8 @@ enum Want {
     },
 }
 
-/// One work-item request, in model terms; `World::send` turns it into ids.
+/// One attachment request, in model terms; `World::send` turns it into ids. It goes through the slice's route
+/// `.../work-items/<item>/attachments/<name>`, with a bearer token.
 #[derive(Debug, Clone)]
 struct Req {
     actor: Actor,
@@ -668,8 +595,6 @@ struct Req {
     proj: Proj,
     slug: Slug,
     item: Option<WorkItemId>,
-    query: Option<&'static str>,
-    body: Option<Value>,
     /// `.../work-items/<item>/attachments/<name>`.
     attachment: Option<String>,
     /// The body and content type of an attachment put.
@@ -678,17 +603,7 @@ struct Req {
 
 impl Req {
     fn bare(actor: Actor, method: Method, proj: Proj) -> Req {
-        Req {
-            actor,
-            method,
-            proj,
-            slug: Slug::Own,
-            item: None,
-            query: None,
-            body: None,
-            attachment: None,
-            upload: None,
-        }
+        Req { actor, method, proj, slug: Slug::Own, item: None, attachment: None, upload: None }
     }
 }
 
@@ -708,7 +623,20 @@ impl Resp {
 
 #[derive(Debug, Clone)]
 enum Call {
+    /// An attachment request, through the slice's route.
     Api(Req),
+    /// `POST /api/v1/.../issues/` with `actor`'s API key, into the project in `slot`.
+    V1Create {
+        actor: Actor,
+        slot: usize,
+        name: String,
+    },
+    /// `DELETE /api/v1/.../issues/{item}/` with `actor`'s API key, in the project in `slot`.
+    V1Delete {
+        actor: Actor,
+        slot: usize,
+        item: WorkItemId,
+    },
     Inject(Event),
     Sweep,
     Checkpoint,
@@ -739,85 +667,27 @@ impl Model {
 
     fn plan(&self, step: usize, op: &Op) -> Plan {
         match *op {
-            Op::Create { actor, proj, name, ext } => {
-                let raw = match name {
-                    Name::Plain => format!("item {step}"),
-                    Name::Padded => format!("  item {step}  "),
-                    Name::Longest => format!("{step:03}{}", "y".repeat(252)),
-                    Name::Blank => "   ".to_string(),
-                    Name::TooLong => "x".repeat(256),
-                };
-                let mut body = json!({ "name": raw });
-                if let Some(k) = ext {
-                    body["external_source"] = json!("gh");
-                    body["external_id"] = json!(format!("k{k}"));
-                }
-                let call = Call::Api(Req { body: Some(body), ..Req::bare(actor, Method::POST, proj) });
-                let (want, class) = if matches!(standing(actor, proj), Standing::Unauthenticated) {
-                    (Want::Reject(401), Class::Unauthenticated)
-                } else if matches!(name, Name::Blank | Name::TooLong) {
-                    (Want::Reject(400), Class::InvalidName)
-                } else if let Some((status, class)) = gate(actor, proj, Role::Member) {
-                    (Want::Reject(status), class)
-                } else {
-                    let s = slot(proj).expect("an authorized project is a seeded one");
-                    let p = &self.projects[s];
-                    match ext {
-                        Some(k) if p.live_ext.contains(&k) => (Want::Conflict { slot: s, ext: k }, Class::Conflict),
-                        _ => {
-                            let class = if p.failed_since > 0 {
-                                Class::CreatedAfterFailure
-                            } else if ext.is_some_and(|k| p.deleted_ext.contains(&k)) {
-                                Class::ExternalKeyFreedByDelete
-                            } else {
-                                Class::Created
-                            };
-                            (Want::Create { slot: s, name: raw.trim().to_string(), ext, actor }, class)
+            Op::Create { actor, proj } => {
+                let s = slot(proj).expect("a work item is made in a seeded project");
+                let call = Call::V1Create { actor, slot: s, name: format!("item {step}") };
+                Plan { call, want: Want::Create { slot: s, actor }, class: Class::Created }
+            }
+            Op::Delete { proj, pick } => {
+                let s = slot(proj).expect("a work item is deleted in a seeded project");
+                let actor = admin_of(s);
+                let rows = &self.projects[s].rows;
+                let (item, want, class) = match pick {
+                    Some(i) if !rows.is_empty() => {
+                        let r = i % rows.len();
+                        if rows[r].deleted {
+                            (rows[r].id, Want::Reject(404), Class::DeleteAlreadyDeleted)
+                        } else {
+                            (rows[r].id, Want::Delete { slot: s, row: r, actor }, Class::Deleted)
                         }
                     }
+                    _ => (unknown_item(step), Want::Reject(404), Class::DeleteUnknownId),
                 };
-                Plan { call, want, class }
-            }
-            Op::Delete { actor, proj, pick } => {
-                let (item, target) = self.resolve(step, proj, pick);
-                let call = Call::Api(Req { item: Some(item), ..Req::bare(actor, Method::DELETE, proj) });
-                let (want, class) = if let Some((status, class)) = gate(actor, proj, Role::Member) {
-                    (Want::Reject(status), class)
-                } else {
-                    let s = slot(proj).expect("an authorized project is a seeded one");
-                    match target {
-                        ItemRef::Own(r) if !self.projects[s].rows[r].deleted => {
-                            (Want::Delete { slot: s, row: r, actor }, Class::Deleted)
-                        }
-                        ItemRef::Own(_) => (Want::Reject(404), Class::DeleteAlreadyDeleted),
-                        ItemRef::Other(_) => (Want::Reject(404), Class::DeleteOtherProjectsItem),
-                        ItemRef::Unknown => (Want::Reject(404), Class::DeleteUnknownId),
-                    }
-                };
-                Plan { call, want, class }
-            }
-            Op::List { actor, proj, scope } => {
-                let query = match scope {
-                    Scope::Default => None,
-                    Scope::Visible => Some("visible"),
-                    Scope::WithDeleted => Some("with_deleted"),
-                    Scope::Bogus => Some("bogus"),
-                };
-                let call = Call::Api(Req { query, ..Req::bare(actor, Method::GET, proj) });
-                let with_deleted = matches!(scope, Scope::WithDeleted);
-                let min = if with_deleted { Role::Admin } else { Role::Guest };
-                let (want, class) = if matches!(standing(actor, proj), Standing::Unauthenticated) {
-                    (Want::Reject(401), Class::Unauthenticated)
-                } else if matches!(scope, Scope::Bogus) {
-                    (Want::Reject(400), Class::BogusScope)
-                } else if let Some((status, class)) = gate(actor, proj, min) {
-                    (Want::Reject(status), class)
-                } else {
-                    let s = slot(proj).expect("an authorized project is a seeded one");
-                    let class = if with_deleted { Class::ListedWithDeleted } else { Class::Listed };
-                    (Want::List { slot: s, with_deleted }, class)
-                };
-                Plan { call, want, class }
+                Plan { call: Call::V1Delete { actor, slot: s, item }, want, class }
             }
             Op::Inject { proj, item, verb, replay } => {
                 let s = slot(proj).unwrap_or(0);
@@ -976,31 +846,15 @@ impl Model {
         }
     }
 
-    fn record_conflict(&mut self, slot: usize) {
-        self.projects[slot].failed_since += 1;
-    }
-
-    fn record_create(&mut self, slot: usize, row: Row, sort: i64, actor: Actor) {
+    fn record_create(&mut self, slot: usize, row: Row, actor: Actor) {
         let entity = row.id.as_uuid();
-        let p = &mut self.projects[slot];
-        p.last_seq = row.seq;
-        p.last_sort = sort;
-        p.failed_since = 0;
-        if let Some(k) = row.ext {
-            p.live_ext.insert(k);
-            p.deleted_ext.remove(&k);
-        }
-        p.rows.push(row);
+        self.projects[slot].rows.push(row);
         self.emit(slot, entity, "created", actor);
     }
 
     fn record_delete(&mut self, slot: usize, row: usize, actor: Actor) {
         let p = &mut self.projects[slot];
         p.rows[row].deleted = true;
-        if let Some(k) = p.rows[row].ext {
-            p.live_ext.remove(&k);
-            p.deleted_ext.insert(k);
-        }
         let entity = p.rows[row].id.as_uuid();
         self.emit(slot, entity, "deleted", actor);
     }
@@ -1031,16 +885,6 @@ impl Model {
         for e in &mut self.events {
             e.published = true;
         }
-    }
-
-    /// The rows a list of `slot` must return: (sequence id, name, deleted).
-    fn expected_rows(&self, slot: usize, with_deleted: bool) -> Vec<(i64, String, bool)> {
-        self.projects[slot]
-            .rows
-            .iter()
-            .filter(|r| with_deleted || !r.deleted)
-            .map(|r| (r.seq, r.name.clone(), r.deleted))
-            .collect()
     }
 
     /// Explains each activity row of `slot` by a distinct published event: by id where the model knows it, otherwise
@@ -1097,12 +941,10 @@ impl Model {
     /// Offline replay for the coverage control: apply the predicted effect with made-up ids.
     fn simulate(&mut self, step: usize, plan: &Plan) {
         match plan.want {
-            Want::Reject(_) | Want::List { .. } => {}
-            Want::Conflict { slot, .. } => self.record_conflict(slot),
-            Want::Create { slot, ref name, ext, actor } => {
+            Want::Reject(_) => {}
+            Want::Create { slot, actor } => {
                 let id = WorkItemId(Uuid::from_u128(step as u128 + 1));
-                let seq = self.projects[slot].last_seq + 1;
-                self.record_create(slot, Row { id, seq, name: name.clone(), ext, deleted: false }, seq * 10_000, actor);
+                self.record_create(slot, Row { id, deleted: false }, actor);
             }
             Want::Delete { slot, row, actor } => self.record_delete(slot, row, actor),
             Want::Inject(ref fresh) => self.events.extend(fresh.clone()),
@@ -1211,18 +1053,32 @@ impl<'a> World<'a> {
         if let Some(name) = &req.attachment {
             path.push_str(&format!("/attachments/{name}"));
         }
-        if let Some(q) = req.query {
-            path.push_str(&format!("?scope={q}"));
-        }
         let mut b = self.as_actor(self.t.http.request(req.method.clone(), self.t.url(&path)), req.actor);
-        if let Some(body) = &req.body {
-            b = b.json(body);
-        }
         if let Some(up) = &req.upload {
             b = b.body(up.bytes());
             if let Some(ct) = up.content_type {
                 b = b.header("content-type", ct);
             }
+        }
+        let r = b.send().await?;
+        let status = r.status().as_u16();
+        let content_type = r.headers().get("content-type").and_then(|v| v.to_str().ok()).map(str::to_string);
+        Ok(Resp { status, content_type, body: r.bytes().await.map(|b| b.to_vec()).unwrap_or_default() })
+    }
+
+    /// A request to `/api/v1`, with `actor`'s API key (the fixture plants one for each user). A transport failure is returned, not
+    /// raised, so the case reports which step it was.
+    async fn v1(
+        &self,
+        actor: Actor,
+        method: Method,
+        path: String,
+        body: Option<Value>,
+    ) -> Result<Resp, reqwest::Error> {
+        let who = self.user(actor).expect("only a caller with a user makes a work item through /api/v1");
+        let mut b = self.t.http.request(method, self.t.url(&path)).header(API_KEY_HEADER, &who.key);
+        if let Some(body) = &body {
+            b = b.json(body);
         }
         let r = b.send().await?;
         let status = r.status().as_u16();
@@ -1331,62 +1187,6 @@ async fn run_case(
                 let (status, body) = (resp.status, resp.text());
                 match want {
                     Want::Reject(want) => prop_assert_eq!(status, want, "{}; body {}", at, body),
-                    Want::Conflict { slot, ext } => {
-                        prop_assert_eq!(status, 409, "{}: external key k{} is live; body {}", at, ext, body);
-                        m.record_conflict(slot);
-                    }
-                    Want::Create { slot, name, ext, actor } => {
-                        prop_assert_eq!(status, 201, "{}; body {}", at, body);
-                        let item: WorkItem = serde_json::from_slice(&resp.body).map_err(|e| fail(&at, e))?;
-                        let p = &m.projects[slot];
-                        prop_assert_eq!(
-                            (item.workspace_id, item.project_id),
-                            w.scope_of(slot),
-                            "{}: created outside its scope",
-                            at
-                        );
-                        prop_assert_eq!(&item.name, &name, "{}: the stored name is the trimmed name", at);
-                        prop_assert_eq!(item.created_by, w.user(actor).map(|u| u.id), "{}", at);
-                        prop_assert!(item.deleted_at.is_none(), "{}: a new item is live", at);
-                        prop_assert_eq!(item.external_id.clone(), ext.map(|k| format!("k{k}")), "{}", at);
-                        prop_assert!(
-                            item.sequence_id > p.last_seq && item.sequence_id <= p.last_seq + 1 + p.failed_since,
-                            "{}: sequence id {} after {} with {} failed create(s) since: must increase, never repeat, \
-                             and skip at most one number per failed create",
-                            at,
-                            item.sequence_id,
-                            p.last_seq,
-                            p.failed_since
-                        );
-                        prop_assert!(
-                            item.sort_order > p.last_sort,
-                            "{}: sort_order {} after {}",
-                            at,
-                            item.sort_order,
-                            p.last_sort
-                        );
-                        let row = Row { id: item.id, seq: item.sequence_id, name: item.name, ext, deleted: false };
-                        m.record_create(slot, row, item.sort_order, actor);
-                    }
-                    Want::Delete { slot, row, actor } => {
-                        prop_assert_eq!(status, 204, "{}; body {}", at, body);
-                        m.record_delete(slot, row, actor);
-                    }
-                    Want::List { slot, with_deleted } => {
-                        prop_assert_eq!(status, 200, "{}; body {}", at, body);
-                        let items: Vec<WorkItem> = serde_json::from_slice(&resp.body).map_err(|e| fail(&at, e))?;
-                        for i in &items {
-                            prop_assert_eq!(
-                                (i.workspace_id, i.project_id),
-                                w.scope_of(slot),
-                                "{}: a row outside its scope",
-                                at
-                            );
-                        }
-                        let got: Vec<(i64, String, bool)> =
-                            items.iter().map(|i| (i.sequence_id, i.name.clone(), i.deleted_at.is_some())).collect();
-                        prop_assert_eq!(got, m.expected_rows(slot, with_deleted), "{}", at);
-                    }
                     Want::PutAttachment { slot, key, stored } => {
                         prop_assert_eq!(status, 204, "{}; body {}", at, body);
                         m.projects[slot].blobs.insert(key, stored);
@@ -1402,7 +1202,39 @@ async fn run_case(
                         prop_assert_eq!(status, 204, "{}; body {}", at, body);
                         m.projects[slot].blobs.remove(&key);
                     }
-                    other => unreachable!("a work-item request planned {other:?}"),
+                    other => unreachable!("an attachment request planned {other:?}"),
+                }
+            }
+            (Call::V1Create { actor, slot, name }, Want::Create { .. }) => {
+                let path = v1_items(w.at_slot(slot));
+                let resp =
+                    w.v1(actor, Method::POST, path, Some(json!({ "name": name }))).await.map_err(|e| fail(&at, e))?;
+                let (status, body) = (resp.status, resp.text());
+                prop_assert_eq!(status, 201, "{}; body {}", at, body);
+                let issue = Issue(serde_json::from_slice(&resp.body).map_err(|e| fail(&at, e))?);
+                let (ws, project) = w.scope_of(slot);
+                let project_id = project.0.to_string();
+                prop_assert_eq!(issue.workspace(), Some(ws), "{}: made outside its workspace", at);
+                prop_assert_eq!(
+                    issue.0["project"].as_str(),
+                    Some(project_id.as_str()),
+                    "{}: made outside its project",
+                    at
+                );
+                prop_assert_eq!(issue.created_by(), w.user(actor).map(|u| u.id), "{}", at);
+                m.record_create(slot, Row { id: issue.work_item_id(), deleted: false }, actor);
+            }
+            (Call::V1Delete { actor, slot, item }, want) => {
+                let path = v1_item(w.at_slot(slot), &item.to_string());
+                let resp = w.v1(actor, Method::DELETE, path, None).await.map_err(|e| fail(&at, e))?;
+                let (status, body) = (resp.status, resp.text());
+                match want {
+                    Want::Reject(want) => prop_assert_eq!(status, want, "{}; body {}", at, body),
+                    Want::Delete { slot, row, actor } => {
+                        prop_assert_eq!(status, 204, "{}; body {}", at, body);
+                        m.record_delete(slot, row, actor);
+                    }
+                    other => unreachable!("a delete planned {other:?}"),
                 }
             }
             (Call::Inject(ev), Want::Inject(fresh)) => {
@@ -1507,12 +1339,56 @@ fn config(default_cases: u32) -> Config {
     }
 }
 
+/// Sequences that were once counterexamples, run before the generated ones whatever the generator draws (a pinned
+/// regression, Rule 9a).
+///
+/// The one saved in `mod.proptest-regressions` while this file drove the slice's own work-item routes: a bearer token that
+/// is not a session puts a 5 MiB attachment (the server refuses it with a 401 before it reads the body, and may close the
+/// connection while the body is still being sent), among attachment puts and deletes by callers of every kind. The saved
+/// seed cannot replay against the strategy as it is now (the work items are made through `/api/v1`), so its attachment
+/// steps are pinned here; its three other steps were deletes through the slice's own route, which is gone.
+fn pinned() -> Vec<Vec<Op>> {
+    vec![vec![
+        Op::Checkpoint,
+        Op::PutAttachment {
+            actor: Actor::BadToken,
+            proj: Proj::A,
+            pick: Pick::Unknown,
+            name: BlobName::Data,
+            size: Size::OverLimit,
+            seed: 52,
+            ctype: None,
+        },
+        Op::PutAttachment {
+            actor: Actor::AdminB,
+            proj: Proj::Unknown,
+            pick: Pick::Own(6),
+            name: BlobName::Data,
+            size: Size::Small(40),
+            seed: 71,
+            ctype: Some(Ctype::Custom),
+        },
+        Op::DeleteAttachment { actor: Actor::AdminA, proj: Proj::A, pick: Pick::Own(5), name: BlobName::DoubleDot },
+        Op::DeleteAttachment { actor: Actor::AdminB, proj: Proj::B, pick: Pick::Own(11), name: BlobName::Data },
+        Op::PutAttachment {
+            actor: Actor::OutsiderA,
+            proj: Proj::B,
+            pick: Pick::Own(2),
+            name: BlobName::Notes,
+            size: Size::Small(60),
+            seed: 103,
+            ctype: None,
+        },
+        Op::Sweep,
+    ]]
+}
+
 fn run_model(fastpath: bool, default_cases: u32) {
     let t = Target::from_env();
     assert!(
-        MAX_OPS < Target::create_limit() as usize,
-        "a sequence must stay under the create rate limit ({}), or the model would need to predict 429s",
-        Target::create_limit()
+        MAX_OPS < Target::v1_limit() as usize,
+        "a sequence must stay under an API key's allowance on /api/v1 ({}), or the model would need to predict 429s",
+        Target::v1_limit()
     );
     let rt = tokio::runtime::Builder::new_multi_thread().enable_all().build().unwrap();
     let config = config(default_cases);
@@ -1520,15 +1396,24 @@ fn run_model(fastpath: bool, default_cases: u32) {
     assert!(want_cases > 0, "THRUST_MODEL_CASES=0 would check nothing");
     let counts = Counts::default();
     let settle = Mutex::new(Vec::new());
+    let pinned = pinned();
+    for ops in &pinned {
+        if let Err(e) = rt.block_on(run_case(&t, ops, fastpath, &counts, &settle)) {
+            panic!("a pinned sequence failed: {e}\n{ops:?}");
+        }
+    }
     let mut runner = TestRunner::new(config);
     let result = runner.run(&ops(), |ops| rt.block_on(run_case(&t, &ops, fastpath, &counts, &settle)));
     let (cases, requests) = (counts.cases.load(Ordering::Relaxed), counts.requests.load(Ordering::Relaxed));
-    eprintln!("MODEL-OBSERVATION: {cases} generated sequences, {requests} steps checked against the model");
+    eprintln!(
+        "MODEL-OBSERVATION: {cases} sequences ({} pinned), {requests} steps checked against the model",
+        pinned.len()
+    );
     if let Err(e) = result {
         panic!("{e}");
     }
     assert!(
-        cases >= want_cases && requests >= cases,
+        cases >= want_cases + pinned.len() && requests >= cases,
         "the generated sequences did not run: {cases} cases, {requests} steps"
     );
 

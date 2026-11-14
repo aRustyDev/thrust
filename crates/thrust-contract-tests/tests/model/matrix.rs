@@ -1,44 +1,30 @@
 //! Every actor × slug × project × route, once, against the access table in the parent module (`standing`, `gate`)
-//! and the slug rule below.
+//! and the slug rule below. The routes are the ones no Plane route replaces: the activity feed and the three attachment
+//! routes. (The work-item routes' own table, who may make, change, delete and read, is `/api/v1`'s: `v1_model::matrix`.)
 
 use super::*;
 
 #[derive(Debug, Clone, Copy)]
 enum Route {
-    Create,
-    List,
-    ListWithDeleted,
-    Delete,
     Activity,
     PutAttachment,
     GetAttachment,
     DeleteAttachment,
 }
 
-const ALL_ROUTES: [Route; 8] = [
-    Route::Create,
-    Route::List,
-    Route::ListWithDeleted,
-    Route::Delete,
-    Route::Activity,
-    Route::PutAttachment,
-    Route::GetAttachment,
-    Route::DeleteAttachment,
-];
+const ALL_ROUTES: [Route; 4] = [Route::Activity, Route::PutAttachment, Route::GetAttachment, Route::DeleteAttachment];
 
 fn min_role(r: Route) -> Role {
     match r {
-        Route::Create | Route::Delete | Route::PutAttachment | Route::DeleteAttachment => Role::Member,
-        Route::List | Route::Activity | Route::GetAttachment => Role::Guest,
-        Route::ListWithDeleted => Role::Admin,
+        Route::PutAttachment | Route::DeleteAttachment => Role::Member,
+        Route::Activity | Route::GetAttachment => Role::Guest,
     }
 }
 
 fn success_status(r: Route) -> u16 {
     match r {
-        Route::Create => 201,
-        Route::List | Route::ListWithDeleted | Route::Activity | Route::GetAttachment => 200,
-        Route::Delete | Route::PutAttachment | Route::DeleteAttachment => 204,
+        Route::Activity | Route::GetAttachment => 200,
+        Route::PutAttachment | Route::DeleteAttachment => 204,
     }
 }
 
@@ -53,37 +39,21 @@ fn rejection(actor: Actor, slug: Slug, proj: Proj, min: Role) -> Option<u16> {
     }
 }
 
-/// Every combination is checked (7 × 3 × 3 × 8 = 504) and every disagreement is reported, not only the first. A delete
-/// targets a fresh live item created by that project's admin, so an allowed delete and a rejected one are both
-/// observable. The attachment routes work on one live item per project under a name of their own; for a get or a
-/// delete the admin stores the object first. Afterwards both projects must hold exactly the rows and the objects the
-/// table predicts (no rejected request had an effect).
+/// Every combination is checked (7 × 3 × 3 × 4 = 252) and every disagreement is reported, not only the first. The
+/// attachment routes work on one live item per project (made through `/api/v1` by that project's admin) under a name
+/// of their own; for a get or a delete the admin stores the object first. Afterwards both projects must hold exactly
+/// the objects the table predicts (no rejected request had an effect).
 #[tokio::test]
 async fn every_actor_project_and_route_gets_the_status_of_the_access_table() {
     let t = Target::from_env();
     let w = World::seed(&t).await;
     let admin = |s: usize| if s == 0 { &w.f.admin_a } else { &w.f.admin_b };
-    // per project: (name, deleted) of every row the table says must exist at the end
-    let mut want_rows: [Vec<(String, bool)>; 2] = [Vec::new(), Vec::new()];
     // per project: (attachment name, whether it must exist at the end) on that project's host item
     let mut want_blobs: [Vec<(String, bool)>; 2] = [Vec::new(), Vec::new()];
     let host = [
-        create_ok(&t, admin(0), w.at_slot(0), "attachment host").await.id,
-        create_ok(&t, admin(1), w.at_slot(1), "attachment host").await.id,
+        v1_create_ok(&t, admin(0), w.at_slot(0), "attachment host").await.work_item_id(),
+        v1_create_ok(&t, admin(1), w.at_slot(1), "attachment host").await.work_item_id(),
     ];
-    for rows in &mut want_rows {
-        rows.push(("attachment host".to_string(), false));
-    }
-    // A request through a slug that is not the project's own can never reach a delete, so all of them aim at one live
-    // item per project: a fresh victim for each would be 42 creates by the two admins, and the create rate limit (30 a
-    // window per user, counted before authorization) would fail the setup. The item must still be live at the end.
-    let shared_victim = [
-        create_ok(&t, admin(0), w.at_slot(0), "shared victim").await.id,
-        create_ok(&t, admin(1), w.at_slot(1), "shared victim").await.id,
-    ];
-    for rows in &mut want_rows {
-        rows.push(("shared victim".to_string(), false));
-    }
     let mut mismatches = Vec::new();
     let mut checked = 0;
     for actor in ALL_ACTORS {
@@ -92,30 +62,7 @@ async fn every_actor_project_and_route_gets_the_status_of_the_access_table() {
                 for route in ALL_ROUTES {
                     let label = format!("{actor:?} {route:?} on {proj:?} via {slug:?}");
                     let allowed = rejection(actor, slug, proj, min_role(route)).is_none();
-                    let mut victim = None;
                     let req = match route {
-                        Route::Create => Some(Req {
-                            body: Some(json!({ "name": label })),
-                            slug,
-                            ..Req::bare(actor, Method::POST, proj)
-                        }),
-                        Route::List | Route::ListWithDeleted => Some(Req {
-                            query: matches!(route, Route::ListWithDeleted).then_some("with_deleted"),
-                            slug,
-                            ..Req::bare(actor, Method::GET, proj)
-                        }),
-                        Route::Delete => {
-                            let item = match slot(proj) {
-                                Some(s) if slug == Slug::Own => {
-                                    let v = create_ok(&t, admin(s), w.at_slot(s), &format!("victim of {label}")).await;
-                                    victim = Some(s);
-                                    v.id
-                                }
-                                Some(s) => shared_victim[s],
-                                None => unknown_item(checked),
-                            };
-                            Some(Req { item: Some(item), slug, ..Req::bare(actor, Method::DELETE, proj) })
-                        }
                         Route::PutAttachment | Route::GetAttachment | Route::DeleteAttachment => {
                             let name = format!("m{checked}.txt");
                             let item = slot(proj).map_or(unknown_item(checked), |s| host[s]);
@@ -164,12 +111,6 @@ async fn every_actor_project_and_route_gets_the_status_of_the_access_table() {
                     if status != want {
                         mismatches.push(format!("{label}: got {status}, the table says {want}"));
                     }
-                    if let Some(s) = victim {
-                        want_rows[s].push((format!("victim of {label}"), allowed));
-                    }
-                    if matches!(route, Route::Create) && allowed {
-                        want_rows[slot(proj).unwrap()].push((label.clone(), false));
-                    }
                     checked += 1;
                 }
             }
@@ -180,15 +121,6 @@ async fn every_actor_project_and_route_gets_the_status_of_the_access_table() {
         ALL_ACTORS.len() * ALL_SLUGS.len() * ALL_PROJECTS.len() * ALL_ROUTES.len(),
         "the matrix did not run"
     );
-    for (s, want) in want_rows.iter_mut().enumerate() {
-        let items: Vec<WorkItem> = list(&t, admin(s), w.at_slot(s), Some("with_deleted")).await.json().await.unwrap();
-        let mut got: Vec<(String, bool)> = items.iter().map(|i| (i.name.clone(), i.deleted_at.is_some())).collect();
-        got.sort();
-        want.sort();
-        if got != *want {
-            mismatches.push(format!("project {s}: rows after the matrix\n  got  {got:?}\n  want {want:?}"));
-        }
-    }
     for (s, blobs) in want_blobs.iter().enumerate() {
         for (name, exists) in blobs {
             let proj = [Proj::A, Proj::B][s];

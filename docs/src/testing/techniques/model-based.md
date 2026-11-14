@@ -49,14 +49,19 @@ The spec is a pure `expect` and `apply`, so `model_strategy_reaches_every_step_c
 sequences through them alone and require all 12 step classes. The shared world (fixed clock, counter ids, a `Background` that panics if used) is `crates/thrust-core/tests/common/mod.rs`.
 
 `crates/thrust-contract-tests/tests/model/mod.rs`: `model_work_items_over_http_match_the_reference_model`, the same idea
-over HTTP in the contract suite's `main` pass, so it runs unchanged against all four targets. Seven callers
-(including no token and a bad token), two tenants and a project that does not exist; create with valid, padded,
-longest, blank and too-long names and colliding external keys; delete of live, deleted, unknown and other-project
-items; list in every scope. The model writes down the order of the checks (`401`, then `400`, then tenancy and role),
-that a failed create may leave at most one sequence gap (ADR-0043: memory leaves one, Postgres does not), and that a
-soft delete frees an external key. `model_strategy_reaches_every_step_class` is its generator coverage control,
-classifying every step of 2000 fixed-seed sequences per outbox mode by replaying them through the model. It kills the planted
-`mutant_ignore_tenant` and `mutant_dup_sequence`, and a failure shrinks to the few requests that show it.
+over HTTP in the contract suite's `main` pass, so it runs unchanged against all four targets. It models what no Plane
+route replaces: attachments (ADR-0080: a name is one path segment, an upload over 5 MiB is refused, writers only, the item
+must be live to put, and a soft-deleted item's attachments stay readable), the activity feed, and what the queue consumer
+does with an event (injected, redelivered, swept). Seven callers (including no token and a bad token), two tenants and a
+project that does not exist. Its work items are only the vehicle, made and deleted through `/api/v1` with the actors' API
+keys (a delete of a live, an already deleted or an unknown item), because `/api/v1`'s own rules are `tests/v1_model/`'s.
+A `Checkpoint` step reads the feed as the project's admin and compares it with the events the model expects, and the
+feed is read once more after the run for late rows. `model_strategy_reaches_every_step_class` is its generator coverage
+control, classifying every step of 2000 fixed-seed sequences per outbox mode by replaying them through the model and
+requiring all 29 classes. It kills the planted `mutant_ignore_tenant` and `mutant_no_activity_dedupe` (`mutant_dup_sequence`
+is `v1_model`'s kill now), and a temporary change that let a put land on a soft-deleted item, which no other test in the
+`main` pass catches (measured at step 5c-1). A failure shrinks to the few requests that show it. The one counterexample the
+old model had saved is the pinned sequence `pinned()` in `mod.rs`, run first by both passes.
 
 The same sequences carry events (ADR-0046). Each committed create and delete is one event, and the model also
 injects events straight onto the queue, re-sends injected ones and real outbox events whose ids an earlier
