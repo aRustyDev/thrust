@@ -14,9 +14,6 @@ same on the Worker and on the native server. The crates involved are on
 | Method and path | Needs | Answers |
 |---|---|---|
 | `GET /healthz` | nothing | 200 `ok`. The Worker also sends `x-thrust-version` (on every response it routes), which the deploy's smoke compares with the commit it deployed; the native server sends none |
-| `POST /api/_slice/workspaces/{slug}/projects/{project_id}/work-items` | Bearer token, role Member | 201 and the work item |
-| `GET /api/_slice/workspaces/{slug}/projects/{project_id}/work-items` | Bearer token, role Guest | 200 and a list. `?scope=visible` (the default) or `?scope=with_deleted` (role Admin); any other scope is 400 |
-| `DELETE /api/_slice/workspaces/{slug}/projects/{project_id}/work-items/{id}` | Bearer token, role Member | 204 |
 | `GET /api/_slice/workspaces/{slug}/projects/{project_id}/work-items/{id}/activity` | Bearer token, role Guest | 200 and the item's activity |
 | `GET /api/_slice/workspaces/{slug}/projects/{project_id}/activity` | Bearer token, role Guest | 200 and the project's activity |
 | `PUT /api/_slice/workspaces/{slug}/projects/{project_id}/work-items/{id}/attachments/{name}` | Bearer token, role Member | 204 |
@@ -27,7 +24,7 @@ The tenant routes above take any credential in [Authentication](#authentication-
 session cookie (a mutation then also needs the CSRF token, while [enforcement](#authentication-and-permission) is on) or an
 `X-Api-Key`. The identity routes, under the same prefix, are not tenant routes. (Signing in, signing out and fetching a
 CSRF token are Plane's routes, `POST /auth/sign-in/`, `POST /auth/sign-out/` and `GET /auth/get-csrf-token/`, served by
-`thrust-compat-plane`; the slice's own three were deleted once no test called them.)
+`thrust-compat-plane`; the slice's own three were deleted once no test called them. Work items are made, listed, searched and deleted through `/api/v1` and Plane's compat routes: the slice's own four routes for that, create, list, search and delete, were deleted in step 5c-2 of #58, and what is left under `.../work-items/{id}` is the activity feed and the attachments.)
 
 | Method and path | Needs | Answers |
 |---|---|---|
@@ -55,7 +52,7 @@ It stays under `/api`, so the edge patterns planned for `/api/*` cover it (ADR-0
 
 The router builds every path from one constant, `SLICE_PREFIX` in `thrust-api`; the contract suite mirrors it in
 `thrust-contract-tests`, and the two must be equal or every request is a 404. The contract test
-`the_slice_routes_are_gone_from_the_reserved_v1_prefix` shows that each of these eight tenant routes and each of the ten
+`the_slice_routes_are_gone_from_the_reserved_v1_prefix` shows that each of these five tenant routes and each of the seven
 identity routes answers a routing 404 through `/api/v1` and is mounted through `/api/_slice`.
 
 These routes are temporary. [Issue #58](https://github.com/aRustyDev/thrust/issues/58) builds the Plane-shaped
@@ -178,10 +175,17 @@ Plane answers 403 for an unknown slug and for a non-member of the workspace (qui
 belongs to the wire-compatible routes of [issue #44](https://github.com/aRustyDev/thrust/issues/44); the slice's
 routes keep 404, which tells a probe less.
 
-Roles are ordered Guest, Member, Admin. Reading work items, activity and attachments needs Guest. Creating and
-deleting work items and writing or deleting attachments needs Member. Reading soft-deleted work items needs Admin.
+Roles are ordered Guest, Member, Admin. On the slice's routes that are left, reading activity and attachments needs Guest
+and writing or deleting an attachment needs Member. Who may make, change, delete and read a work item is `/api/v1`'s role
+table (`tests/v1_model/`), not this one. (The core's `create_work_item`, `delete_work_item`, `list_work_items` and
+`search_work_items`, which the slice's routes called, are called by nothing but the core's own tests until step 5c-3
+removes them.)
 
 ## Creating a work item
+
+This is the core's `create_work_item`, which the slice's create route called. That route was deleted in step 5c-2 of #58:
+work items are made through `/api/v1` now (its own limiter is the per-key allowance, `THRUST_V1_RATE_LIMIT`), so what follows
+describes code that only the core's tests call and that step 5c-3 removes.
 
 ```mermaid
 sequenceDiagram
@@ -192,7 +196,7 @@ sequenceDiagram
   participant Q as Queue port
   participant E as Consumer
 
-  C->>A: POST /api/_slice/workspaces/{slug}/projects/{id}/work-items
+  C->>A: POST .../work-items (the slice's route, deleted in step 5c-2)
   A->>K: authenticate(token), create_work_item
   K->>K: validate the name
   K->>K: rate limit, then authorize (Member)
@@ -255,15 +259,15 @@ Errors raised by the use-cases and the router's own guards share one body,
 
 | Status | `code` | Raised when |
 |---|---|---|
-| 400 | `invalid` | A bad work item name or attachment name, or an unknown `scope`; an API key label over 100 characters or an expiry in the past; an OIDC callback with no code or an unknown, used or expired `state` |
+| 400 | `invalid` | A bad attachment name; an API key label over 100 characters or an expiry in the past; an OIDC callback with no code or an unknown, used or expired `state` |
 | 401 | `unauthenticated` | No credential, a session that is unknown, revoked, expired or whose user is inactive, a refused OIDC login, or a missing or wrong admin token |
 | 403 | `forbidden` | Not a member, a role that is too low, or an OIDC login without a verified email, without a matching user, or of a deactivated user |
 | 403 | `csrf_failed` | While CSRF enforcement is on: a mutation authenticated by the session cookie without an `X-CSRFToken` that equals the CSRF cookie |
 | 403 | `invalid_api_key` | An `X-Api-Key` that is unknown, revoked, expired or whose owner is inactive |
 | 404 | `not_found` | A slug that names no workspace, a workspace the caller is not in, a project that is not in it, no such item or attachment, or a test route that is switched off |
-| 409 | `conflict` | A uniqueness constraint failed, such as a live work item with the same external source and id |
+| 409 | `conflict` | A uniqueness constraint failed, such as the operator's create of an account whose email is taken |
 | 413 | `too_large` | An attachment over the size limit |
-| 429 | `rate_limited` | Over the create limit. `Retry-After` carries the seconds |
+| 429 | `rate_limited` | Over a limit. The create limit was the one a slice route raised, and its route is gone (step 5c-2): no slice route raises this now, and the mapping stays until step 5c-3 removes the limiter. `Retry-After` carries the seconds |
 | 502 | `bad_gateway` | The OIDC provider cannot be reached or answered something unusable. The cause is logged, not returned |
 | 500 | `internal` | Anything else. The body says only `internal error`; the cause is logged by the root |
 

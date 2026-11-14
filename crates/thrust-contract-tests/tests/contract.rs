@@ -40,13 +40,10 @@ async fn health_ok() {
 const RETIRED_SLICE_PREFIX: &str = "/api/v1";
 
 /// Every slice route as a method and the part after `.../projects/{project_id}`, with `{item}` for a work item id.
-/// A route added to `thrust_api::router()` later must be added here.
-fn slice_routes() -> [(Method, &'static str); 9] {
+/// A route added to `thrust_api::router()` later must be added here. (The work items' own four, create, list, search
+/// and delete, left with step 5c-2 of #58: `/api/v1` replaces them.)
+fn slice_routes() -> [(Method, &'static str); 5] {
     [
-        (Method::POST, "/work-items"),
-        (Method::GET, "/work-items"),
-        (Method::GET, "/work-items/search"),
-        (Method::DELETE, "/work-items/{item}"),
         (Method::GET, "/work-items/{item}/activity"),
         (Method::GET, "/activity"),
         (Method::PUT, "/work-items/{item}/attachments/notes.txt"),
@@ -94,7 +91,6 @@ async fn the_slice_routes_are_gone_from_the_reserved_v1_prefix() {
             let url = t.url(&format!("{prefix}/workspaces/{}/projects/{}{tail}", f.a.slug, f.a.project));
             let req = t.http.request(method.clone(), url).bearer_auth(&f.admin_a.token);
             let req = match method {
-                Method::POST => req.json(&json!({"name": "x"})),
                 Method::PUT => req.body(b"x".to_vec()),
                 _ => req,
             };
@@ -126,9 +122,10 @@ async fn the_slice_routes_are_gone_from_the_reserved_v1_prefix() {
             }
         }
     }
-    // the retired-prefix calls had no effect: only the one create made through the live prefix is there
-    let items: Vec<WorkItem> = list(&t, &f.admin_a, &f.a, None).await.json().await.unwrap();
-    assert_eq!(items.len(), 1, "a request through the retired prefix reached a use-case");
+    // There is no "the retired-prefix calls had no effect" check any more: it read the slice's work-item list for the
+    // one item the live prefix's create made, and both went with their routes (step 5c-2). Each retired call above is
+    // asserted a ROUTING 404 (no handler ran: a handler answers with a body that has an error code, or a 2xx), so a
+    // retired route that was still mounted fails on its own line, whatever state it would have changed.
 }
 
 /// `/api/v1` authenticates by `X-Api-Key` and by nothing else, and answers as Plane does: only a missing key is a 401, and a key that
