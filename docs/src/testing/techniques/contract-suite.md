@@ -31,7 +31,7 @@ with a fixture made first as the control) and nothing more; the positive path is
   subject is a slice-only behaviour (the slice's activity feed, attachments, the session routes that no Plane route
   replaces) still run over `/api/_slice`, until the routes that replace them exist (G-26 in [status](../status.md)). The
   tests that only need a work item as a vehicle (the outbox, redelivery, sweeper, cron, panic and blast-radius tests, the
-  key's allowance, the bench) make it through `/api/v1`, or through Plane's internal routes where the credential is a
+  slice model's creates and deletes, the key's allowance, the bench) make it through `/api/v1`, or through Plane's internal routes where the credential is a
   session (the two session tests, the blast radius); what the queue consumer wrote is still read from the slice's feed.
   The allowance's test, `v1_requests_are_rate_limited_per_key`, holds only what every limiter promises (the first `limit`
   creates with a key pass, a 429 with a `Retry-After` comes within `2 x limit + 1`, a refused create makes nothing, and the
@@ -43,9 +43,13 @@ with a fixture made first as the control) and nothing more; the positive path is
   fails the test: that is its control.
 - `crates/thrust-contract-tests/tests/model/mod.rs`: its generated part, compiled into the same binary and run in the
   `main` pass: random operation sequences, events included, against a reference [model](model-based.md), every
-  caller × project × route against the access table, and the generator coverage control. Its
+  caller × project × route against the access table (252 requests: the activity feed and the three attachment routes),
+  and the generator coverage control. Its
   `sweeper_model_outbox_delivers_what_was_swept_and_nothing_more` runs the same model in the `sweeper` pass, with
-  the outbox fast path off. It is the model of the slice's routes.
+  the outbox fast path off. It is the model of what no Plane route replaces: attachments, the activity feed and what the
+  queue consumer does with an event. Its work items are made and deleted through `/api/v1` with the actors' API keys, as a
+  vehicle: `/api/v1`'s own rules (names, external keys, sequence ids, who may change what, the list) are
+  `tests/v1_model/`'s and are not repeated.
 - `crates/thrust-contract-tests/tests/v1_model/mod.rs` and `tests/v1_model/matrix.rs`: the same kind of test for `/api/v1`'s
   work items, over API keys, in the `main` pass: random sequences of create, delete, detail and list (a page of one to three
   and the second page by its cursor) by every kind of caller, in two tenants, a project that does not exist and, now and
@@ -74,8 +78,8 @@ with a fixture made first as the control) and nothing more; the positive path is
   skips them (59 tests there).
 - `crates/thrust-contract-tests/tests/budget/mod.rs`: the round-trip budget (issue #39), in the `main` pass.
   `list_endpoints_stay_within_five_db_round_trips` reads the `x-thrust-db-round-trips` header (see
-  [the test routes](../../flows/app.md)) of nine requests, each list seeded with six or more rows so that a statement per row
-  would show: the slice's work items, Plane's projects (S17) and issues (S47) asked by an admin, S47 asked by a limited
+  [the test routes](../../flows/app.md)) of eight requests, each list seeded with six or more rows so that a statement per row
+  would show: Plane's projects (S17) and issues (S47) asked by an admin, S47 asked by a limited
   guest who made six of the items and by one who made none, and `/api/v1` projects, states, labels and work items. On a Postgres target (`native-pg`, `worker-cf`) each must send 3 to 5 statements; the floor is what stops a counter
   that counts nothing from passing. On a `memory` target it asserts the header is **absent**, which is what keeps the test from
   passing there without looking. It measures the second request of each list, after the API key's background first-use stamp
