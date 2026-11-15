@@ -13,7 +13,7 @@
 set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 MANIFEST="$ROOT/Cargo.toml"
-FORBIDDEN="tokio tokio-util tokio-postgres mio socket2 hyper hyper-util tower-http worker worker-sys wasm-bindgen wasm-bindgen-futures js-sys web-sys deadpool-postgres lapin sqlx"
+FORBIDDEN="tokio tokio-util tokio-postgres mio socket2 hyper hyper-util tower-http worker worker-sys wasm-bindgen wasm-bindgen-futures js-sys web-sys deadpool-postgres lapin sqlx lettre"
 CLEAN_CRATES="thrust-contracts thrust-ports thrust-core thrust-api thrust-plane-types thrust-api-v1 thrust-compat-plane"
 STATUS=0
 
@@ -81,7 +81,7 @@ echo "=== who pulls tokio into the Worker bundle (wasm32, thrust-worker, cloudfl
 
 echo
 echo "=== native-only crates that must NOT be in the Worker bundle (wasm32 graph) ==="
-for bad in deadpool-postgres hyper hyper-util mio socket2 tower-http thrust-adapters-selfhosted thrust-server; do
+for bad in deadpool-postgres hyper hyper-util mio socket2 tower-http lettre thrust-adapters-selfhosted thrust-server; do
   out="$("$ROOT/scripts/rs" cargo tree --manifest-path "$MANIFEST" -p thrust-worker --no-default-features --target wasm32-unknown-unknown -e normal -i "$bad" 2>&1)"
   case "$out" in
     *"did not match any packages"*|*"nothing to print"*|"") echo "ok: $bad absent from the Worker graph" ;;

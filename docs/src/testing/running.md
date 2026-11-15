@@ -42,6 +42,9 @@ profile selects nothing. To reach the excluded integration suites through nextes
 scripts/contract.sh <target> [pass]
   target: native-memory | native-pg | worker-memory | worker-cf
   pass:   main | sweeper | panic | csrfoff | blast | bench | worker | cron | bindings
+          mail                              (native-* only: the password reset by email through a real mail server. A Mailpit container is started beside the target, the
+                                             target gets `THRUST_SMTP_*` and `THRUST_PUBLIC_BASE_URL`, and `--test mail` walks request, message, link and reset. Needs Docker and
+                                             `nc`. In contract-all.sh as `native-memory mail`, so a CI cell. Every other pass starts its target with no mail service)
           oracle                            (native-memory, native-pg, worker-cf: the v1 oracle's gate, corpus comparison and controls; needs `uv`.
                                              In contract-all.sh, so a CI cell. By hand: `scripts/oracle-v1.sh <target> [controls]`)
           e2e                               (worker-* only: the first browser journey, the stock app in Chromium against a Worker that serves it, with its must-fail
@@ -60,7 +63,7 @@ admin token and database password per run and keeps them out of files and argv.
 
 | Script | What it runs | Prerequisites |
 |---|---|---|
-| `scripts/contract-all.sh` | the 22-cell matrix serially (18 contract cells, 3 `oracle` cells and the `e2e` journey), summary in `target/contract-logs/summary.txt` | Docker, wrangler, `uv`, Node and pnpm |
+| `scripts/contract-all.sh` | the 23-cell matrix serially (19 contract cells, the `native-memory mail` cell among them, 3 `oracle` cells and the `e2e` journey), summary in `target/contract-logs/summary.txt` | Docker, wrangler, `uv`, Node, pnpm and `nc` |
 | `scripts/e2e.sh <target> [controls]` | the browser journeys (one spec each in `e2e/journeys/`): the built app in Chromium against a Worker that serves it, then with `controls` their must-fail controls; builds the app when it is not built. `plane-oracle` runs them on the pinned Plane instead (local only; `ORACLE_DIR`, and `E2E_RECORD_HAR=1` writes `e2e/har/`; `tools/e2e-plane/README.md`) | Docker (`worker-cf`, `plane-oracle`), wrangler, Node, pnpm, `uv` and the fork checkout (`plane-oracle`) |
 | `scripts/mutants.sh` | the planted mutants; every one must be KILLED | Docker |
 | `scripts/verify-all.sh` | the hermetic nextest run, matrix, mutants, `check-deps.sh`, `pg_adapter`, probes; summary in `target/verify/summary.txt` | Docker, wrangler |

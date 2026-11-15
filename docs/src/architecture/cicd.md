@@ -77,14 +77,18 @@ its base branch. Nothing calls it, so it is a tool to run by hand.
   tasks uncached from an empty `node_modules` `[verified 2026-11-11 locally; not yet in CI]`.
 - **The matrix.** The `plan` job reads the `run <target> <pass>` lines of `scripts/contract-all.sh`, so no second
   list can drift. It fails if the number of cells it parsed differs from the number of lines that start with `run`,
-  if there are none, or if one repeats. There are 22 cells: 19 contract cells (the browser journeys' `worker-cf e2e`
-  among them) and the 3 `oracle` cells below `[verified 2026-11-14: PR #154's check list had 22 contract jobs, all
-  success; the 21 of PR #113 (2026-11-10) were before the e2e cell]`.
+  if there are none, or if one repeats. There are 23 cells: 20 contract cells (the browser journeys' `worker-cf e2e`
+  and the password reset by email's `native-memory mail` among them) and the 3 `oracle` cells below `[verified 2026-11-14: PR #154's
+  check list had 22 contract jobs, all success, before the mail cell; the 21 of PR #113 (2026-11-10) were before the e2e cell]`.
   Each runs on a fresh runner with its own checkout, which is why the shared-build-directory hazard that makes
   `contract-all.sh` run serially does not apply.
-- **A cell.** `contract-cell.yml` checks that `curl`, `openssl`, `lsof`, `pgrep` and `docker` exist, runs
+- **A cell.** `contract-cell.yml` checks that `curl`, `openssl`, `lsof`, `pgrep` and `docker` exist (and `nc` for the `mail` pass), runs
   `scripts/contract.sh <target> <pass>` with no pipe so the step's status is the script's, and uploads a marker named
   for the cell. The script's target guard and count guard apply as they do locally.
+- **The mail cell.** `native-memory mail` starts a Mailpit container (pinned, pulled from Docker Hub as `postgres` is) beside the native server, which is
+  given `THRUST_SMTP_*` and `THRUST_PUBLIC_BASE_URL`, and runs `tests/mail.rs`: the password reset by email through a mail server written by someone else.
+  The `pg-adapter` job also runs the SMTP adapter's Docker suite (`--test smtp_sink`, Mailpit again, with TLS and a login); the adapter's other two suites
+  are hermetic and run in `hermetic`.
 - **The oracle cells.** `native-memory oracle`, `native-pg oracle` and `worker-cf oracle` run the v1 oracle (issue #58,
   `tools/oracle-v1/README.md`) against the started target: the scoped Schemathesis gate, the corpus comparison, the
   comparison's own controls and the must-fail controls C0 to C4, ending in `VERDICT: PASS`. They are `run` lines of
@@ -227,6 +231,23 @@ every one succeeded `[verified 2026-10-19 fa4bd6c]` with `gh run view`.
 - The book build and its checks.
 - A deploy that has run against Cloudflare. `deploy.yml` is tested against a fake Cloudflare, by its pull-request dry run
   and by `wrangler deploy --dry-run`; no environment has had a deploy through it yet (see [Deploying the Worker](deploy.md)).
+- A release. There is no changelog, version (the workspace is `0.0.0`), release tag, GitHub release or tag protection.
+- The upstream vitest files under `web/`, a fuzz target (there is no `fuzz/`), coverage, and `cargo mutants` (the
+  `mutants` job runs the planted mutants of `scripts/mutants.sh`, on `native-memory` and `native-pg` only).
+
+## Where the triggers are too wide or too narrow
+
+Found by the CI/CD review of 2026-11-14 (`.agents/plans/cicd-review/`), which also holds what to do about each.
+
+- **Too wide.** `rust=true` is all or nothing: one file under `scripts/` (a deploy-only script included), `probes/`
+  (which no job runs), `.github/deploy/`, a workflow that `ci` does not run (`flake-hunt.yml`, `e2e-schedule.yml`,
+  `deploy.yml`) or a results file under `tools/oracle-v1/` starts all 32 jobs (33 with `web`, which a CI file also starts): the 22
+  cells, `mutants`, `pg-adapter` and the rest. There is no narrowing by crate.
+- **Too narrow.** A change to `web/` alone does not run the `worker-cf e2e` cell, which serves that build (G-30).
+  `lint-workflow.sh` checks only `deploy.yml` and its action, not `ci.yml`, `contract-cell.yml`, `e2e-schedule.yml`,
+  `flake-hunt.yml` or `setup-rust`. `hermetic` and `pg-adapter` do not pass `--locked`. The toolchain floats on `stable`
+  and the advisory database is fetched live, and with no scheduled run of `ci` either surfaces only on the next
+  Rust-relevant pull request. `flake-hunt.yml` cannot select the `csrfoff`, `oracle` or `e2e` passes.
 
 ## Against the ADRs
 

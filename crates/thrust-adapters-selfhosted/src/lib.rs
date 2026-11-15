@@ -82,6 +82,7 @@ impl Fetch for ReqwestFetch {
 }
 
 pub mod pg;
+pub mod smtp;
 
 /// `Background` on the tokio runtime.
 pub struct TokioBackground;

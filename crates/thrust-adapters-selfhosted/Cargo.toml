@@ -14,6 +14,16 @@ workspace = true
 mutant_discard_noop = []
 # Control-run mutant (scripts/mutants.sh): the round-trip counter in thrust-adapters-postgres counts nothing (issue #39).
 mutant_count_nothing = ["thrust-adapters-postgres/mutant_count_nothing"]
+# Control-run mutants of the SMTP adapter (scripts/mutants.sh), one switch each, so the tests that must catch it are the ones that run:
+# a refusal read as an outage and an outage as a refusal; the sender's address taken from the recipient; the id returned for a message that
+# is not the id it carries; a relay's certificate accepted whoever signed it; a password allowed to go out unencrypted.
+mutant_smtp_swap_refusal_and_outage = []
+mutant_smtp_from_is_recipient = []
+mutant_smtp_wrong_message_id = []
+mutant_smtp_trust_any_certificate = []
+mutant_smtp_password_in_clear = []
+# ... and STARTTLS made a preference (upgrade if the relay offers it, carry on in the clear if not): the downgrade `starttls` exists to refuse.
+mutant_smtp_starttls_opportunistic = []
 
 [dependencies]
 thrust-contracts = { workspace = true }
@@ -24,6 +34,11 @@ chrono = { version = "0.4", default-features = false, features = ["clock", "std"
 uuid = { workspace = true, features = ["v7"] }
 # the operating system's generator, for the `Rng` port
 getrandom = "0.4"
+# SMTP for the `EmailSender` port (E2 of the password reset by email, D-041). No default features: no `native-tls` (the system's OpenSSL), no
+# connection pool (one connection per message is right for a reset mail), no `hostname` (the EHLO name is the sender's domain). TLS is rustls on
+# `ring`, as reqwest's is below, with the Mozilla roots (`webpki-roots`) unless a deployment names its own CA. The self-hosted set only: the
+# Worker sends through its `send_email` binding (E3), and `scripts/check-deps.sh` keeps this out of its graph.
+lettre = { version = "0.11", default-features = false, features = ["smtp-transport", "builder", "tokio1", "tokio1-rustls", "ring", "webpki-roots"] }
 # outbound HTTP for the `Fetch` port (an OIDC provider's discovery, token and key endpoints)
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
 tokio = { version = "1", default-features = false, features = ["rt", "time"] }
@@ -31,6 +46,8 @@ tokio-postgres = { version = "0.7", default-features = false, features = ["runti
 deadpool-postgres = { version = "0.14", default-features = false, features = ["rt_tokio_1"] }
 
 [dev-dependencies]
+# tests/smtp_wire: the addresses core accepts at sign-up (`is_valid_email`) are the ones the SMTP adapter must be able to send to.
+thrust-core = { workspace = true }
 # The oracle's seed as a fixture (#58): loaded into a real Postgres, emptied by `reset`, and loaded again (tests/pg_adapter.rs).
 thrust-oracle-fixture = { path = "../thrust-oracle-fixture" }
 # tests/model: generated Database/Tx call sequences against a reference model (gap G-9).
@@ -40,4 +57,8 @@ testcontainers = "0.27"
 testcontainers-modules = { version = "0.15", features = ["postgres"] }
 # tests/tls: the certificates of a TLS-only Postgres (issue #49), made for each run. The same pin as thrust-adapters-postgres's.
 rcgen = { version = "0.14.10", default-features = false, features = ["ring", "pem"] }
-tokio = { version = "1", default-features = false, features = ["rt-multi-thread", "macros", "time"] }
+# `net` and `io-util`: the scripted SMTP server of tests/smtp_wire, which listens on a loopback port in the test's own process.
+tokio = { version = "1", default-features = false, features = ["rt-multi-thread", "macros", "time", "net", "io-util"] }
+# tests/smtp_wire and tests/smtp_sink read what the adapter sent with a parser that is not `lettre`'s own (headers with their RFC 2047 words
+# decoded, bodies with their transfer encoding undone), so a message that round-trips was understood by someone else.
+mailparse = "0.18"

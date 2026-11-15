@@ -29,6 +29,11 @@
 #                              `VERDICT: PASS`, with its must-fail control unless E2E_WHAT is set to '' for none. In contract-all.sh, so a
 #                              CI cell. scripts/e2e.sh <target> [controls] is the way in by hand; its logs, and the network's HAR, go to
 #                              target/contract-logs/<target>-e2e.e2e/
+#             mail             (native-* only) the password reset by email on a server that has a mail service (E2, D-041): a Mailpit
+#                              container (Docker) is started beside the target, the target gets THRUST_SMTP_* pointing at it and a
+#                              THRUST_PUBLIC_BASE_URL, and `--test mail` walks the whole path: the request, the message the mail server
+#                              reads, the link in it, and the reset. Every other pass starts its target with no mail service, as the
+#                              deployments are, and holds that the route is dark there. In contract-all.sh, so a CI cell
 #             oracle           the v1 oracle's scoped gate and corpus comparison against the started target, with the /api/v1 rate
 #                              limit raised for the fuzzer, and (unless ORACLE_V1_WHAT is set, to '' for none) its must-fail
 #                              controls. In contract-all.sh, so a CI cell; needs `uv`. Success == its `VERDICT: PASS`, and its
@@ -93,6 +98,9 @@ EXPECT_WORKER=1
 EXPECT_CRON=1
 EXPECT_BINDINGS=5
 EXPECT_ENGINE=4
+EXPECT_MAIL=3
+# The mail pass's relay: Mailpit, pinned (the SMTP adapter's own tests, tests/smtp_sink, pin the same version).
+MAILPIT_IMAGE=axllent/mailpit:v1.33.1
 
 # A free port, chosen at random: fixed ports collide with OrbStack-published containers and
 # with other sessions' wrangler instances (measured: 18080 and 8787 were both taken).
@@ -139,6 +147,12 @@ export THRUST_OIDC_REDIRECT_URI="$THRUST_BASE_URL/auth/oidc/callback/"
 if [ "$PASS" = e2e ]; then
   unset THRUST_OIDC_ISSUER THRUST_OIDC_CLIENT_ID THRUST_OIDC_CLIENT_SECRET THRUST_OIDC_REDIRECT_URI
 fi
+# Mail: only the `mail` pass has a mail service. Every other pass starts its target the way the deployments are today, with none, and the main
+# pass holds that the route is dark there (`compat_forgot_password_is_dark_on_a_target_with_no_mail_service`), so a developer's own THRUST_SMTP_*
+# or THRUST_PUBLIC_BASE_URL in the shell must not reach it. The `mail` pass sets its own below, once its relay is up. THRUST_SMTP_PASSWORD is a
+# secret and stays out of the environment of any pass that does not use one.
+unset THRUST_SMTP_HOST THRUST_SMTP_PORT THRUST_SMTP_TLS THRUST_SMTP_USERNAME THRUST_SMTP_PASSWORD THRUST_SMTP_FROM THRUST_SMTP_CA_FILE \
+  THRUST_SMTP_TIMEOUT_SECS THRUST_PUBLIC_BASE_URL THRUST_MAIL_API_URL
 
 case "$PASS" in
   sweeper|cron) FASTPATH=off ;;
@@ -161,6 +175,7 @@ unset THRUST_CSRF_ENFORCE
 
 SERVER_PID=""
 PG_CONTAINER=""
+MAIL_CONTAINER=""
 PROXY_PID=""
 
 kill_tree() {
@@ -178,6 +193,9 @@ cleanup() {
   fi
   if [ -n "$PG_CONTAINER" ]; then
     docker rm -f "$PG_CONTAINER" >/dev/null 2>&1 || true
+  fi
+  if [ -n "$MAIL_CONTAINER" ]; then
+    docker rm -f "$MAIL_CONTAINER" >/dev/null 2>&1 || true
   fi
   if [ -n "$PROXY_PID" ]; then
     kill -TERM "$PROXY_PID" 2>/dev/null || true
@@ -243,6 +261,29 @@ if [ -n "${THRUST_PG_LATENCY_MS:-}" ] && [ -n "${PG_PORT:-}" ]; then
   kill -0 "$PROXY_PID" 2>/dev/null || { echo "delay proxy did not start, see $LOG.proxy.log" >&2; exit 3; }
   export DATABASE_URL="postgres://postgres:$PG_PASSWORD@127.0.0.1:$PROXY_PORT/thrust"
   echo "[$TARGET/$PASS] postgres behind a ${THRUST_PG_LATENCY_MS} ms one-way delay proxy (port $PROXY_PORT)"
+fi
+
+if [ "$PASS" = "mail" ]; then
+  # The relay: Mailpit, a mail server and sink written by someone else, so that what the server sends is read by a server that parses it for
+  # itself. Plain (no TLS, no login: the adapter's own tests, tests/smtp_sink, are where those are shown). Only the native server has an SMTP
+  # adapter; the Worker's `send_email` binding is E3.
+  [ "$KIND" = native ] || { echo "[$TARGET/$PASS] only the native server has a mail service yet (the Worker's is E3): the mail pass is for the native targets" >&2; exit 2; }
+  MAIL_SMTP_PORT="${THRUST_MAIL_SMTP_PORT:-$(pick_port)}"
+  MAIL_HTTP_PORT="${THRUST_MAIL_HTTP_PORT:-$(pick_port)}"
+  MAIL_CONTAINER="thrust-contract-mail-$$"
+  docker run -d --rm --name "$MAIL_CONTAINER" -p "127.0.0.1:$MAIL_SMTP_PORT:1025" -p "127.0.0.1:$MAIL_HTTP_PORT:8025" "$MAILPIT_IMAGE" \
+    >"$LOG.mail.log" 2>&1 || { echo "could not start the mail server" >&2; exit 3; }
+  # up is what a client sees: the API answers and the SMTP port says 220
+  i=0
+  until curl -fsS "http://127.0.0.1:$MAIL_HTTP_PORT/api/v1/info" >/dev/null 2>&1 &&
+    [ "$(printf 'QUIT\r\n' | nc -w 2 127.0.0.1 "$MAIL_SMTP_PORT" 2>/dev/null | head -n 1 | cut -c1-3)" = 220 ]; do
+    i=$((i + 1)); [ "$i" -gt 60 ] && { echo "the mail server did not come up" >&2; exit 3; }
+    sleep 1
+  done
+  export THRUST_SMTP_HOST=127.0.0.1 THRUST_SMTP_PORT="$MAIL_SMTP_PORT" THRUST_SMTP_TLS=none THRUST_SMTP_FROM="Thrust <no-reply@thrust.test>"
+  export THRUST_PUBLIC_BASE_URL="$THRUST_BASE_URL"
+  export THRUST_MAIL_API_URL="http://127.0.0.1:$MAIL_HTTP_PORT"
+  echo "[$TARGET/$PASS] mail server (Mailpit) up: smtp $MAIL_SMTP_PORT, api $MAIL_HTTP_PORT"
 fi
 
 if [ "$KIND" = "native" ]; then
@@ -313,6 +354,15 @@ esac
 case "$INFO" in
   *"\"csrf_enforce\":$WANT_CSRF"*) ;;
   *) echo "[$TARGET/$PASS] VACUITY GUARD: csrf_enforce is not $WANT_CSRF (pass '$PASS' needs enforcement $CSRF)" >&2; exit 5 ;;
+esac
+
+# The same guard for mail: the `mail` pass against a target with no mail service would fail its tests for the wrong reason (and every other
+# pass against one that has one would pass the dark test for none), so the app's own question, `/api/instances/`, must say what the pass needs.
+if [ "$PASS" = mail ]; then WANT_SMTP=true; else WANT_SMTP=false; fi
+INSTANCES="$(curl -fsS "$THRUST_BASE_URL/api/instances/" 2>/dev/null || true)"
+case "$INSTANCES" in
+  *"\"is_smtp_configured\":$WANT_SMTP"*) ;;
+  *) echo "[$TARGET/$PASS] VACUITY GUARD: is_smtp_configured is not $WANT_SMTP, which pass '$PASS' needs: $INSTANCES" >&2; exit 5 ;;
 esac
 
 if [ "$TARGET" = "worker-memory" ]; then
@@ -404,6 +454,13 @@ case "$PASS" in
     "$ROOT/scripts/rs" cargo test --manifest-path "$ROOT/Cargo.toml" -p thrust-contract-tests --test worker_only -- worker_cron_ --test-threads=1 --nocapture >"$LOG.test.log" 2>&1
     TEST_STATUS=$?
     EXPECT=$EXPECT_CRON
+    ;;
+  mail)
+    # The password reset by email through a real mail server (its own test binary, `--test mail`): not part of `main`, which holds that the
+    # route is dark on a target with no mail service.
+    "$ROOT/scripts/rs" cargo test --manifest-path "$ROOT/Cargo.toml" -p thrust-contract-tests --test mail -- --nocapture >"$LOG.test.log" 2>&1
+    TEST_STATUS=$?
+    EXPECT=$EXPECT_MAIL
     ;;
   budget)
     # Only the round-trip budget test (issue #39), which is also part of `main`: scripts/mutants.sh runs a mutant of the counter

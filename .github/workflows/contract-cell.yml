@@ -13,7 +13,7 @@ on:
         type: string
         required: true
       pass:
-        description: main | sweeper | panic | cron | csrfoff | worker | bindings | oracle | e2e
+        description: main | sweeper | panic | cron | csrfoff | worker | bindings | mail | oracle | e2e
         type: string
         required: true
 
@@ -81,6 +81,7 @@ jobs:
           tools="curl openssl lsof pgrep docker"
           [ "$CELL_PASS" = oracle ] && tools="$tools uv"
           [ "$CELL_PASS" = e2e ] && tools="$tools node pnpm"
+          [ "$CELL_PASS" = mail ] && tools="$tools nc"
           for tool in $tools; do
             command -v "$tool" > /dev/null 2>&1 || missing="$missing $tool"
           done
