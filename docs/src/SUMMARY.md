@@ -6,6 +6,7 @@
 - [Infrastructure](architecture/infra.md)
 - [CI/CD](architecture/cicd.md)
 - [Deploying the Worker](architecture/deploy.md)
+- [Releasing](architecture/release.md)
 
 # Flows
 

@@ -1,0 +1,212 @@
+name: release
+
+# A release's assets, attested, and the release published (the release flow; docs/src/architecture/release.md).
+#
+# release-plz (release-plz.yml) tags `vX.Y.Z` on the merge of a release-candidate pull request and creates the GitHub release as a
+# DRAFT (release-plz.toml, git_release_draft). Releases are immutable once published (a repository setting): the tag can no longer move
+# and the assets can no longer change. So the assets go on while it is a draft, and this workflow, started by the draft's creation:
+#
+#   build    builds the deploy bundle at the tag (.github/actions/build-bundle, the same build a staging deploy makes), makes an SBOM
+#            of the source (anchore/sbom-action: Cargo.lock, the web app's pnpm lockfile), and attests the bundle twice with GitHub's
+#            own actions: its build provenance (SLSA), and the SBOM as a statement about it. No secret, nothing written to the release.
+#   publish  attaches the bundle, the SBOM and SHA256SUMS to the draft and publishes it. GitHub then attests the immutable release and
+#            its assets itself (`gh release verify`, `gh release verify-asset`).
+#
+# Production deploys THAT bundle (deploy.yml, on the tag, after ci passes on the tagged commit and the reviewers approve): built once,
+# at the tag, by this file. verify-bundle.sh holds a release tag's bundle to release.yml as its signer.
+#
+# A pull request that changes this file or the build runs `build` without attesting or publishing anything: only a run shows that a
+# workflow starts, and the SBOM and the build are cheap to prove before the merge.
+on:
+  release:
+    types: [created]
+  pull_request:
+    paths:
+      - .github/workflows/release.yml
+      - .github/actions/build-bundle/**
+
+permissions: {}
+
+concurrency:
+  group: release-${{ github.event.release.tag_name || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # What is this run for? A draft release of a v<version> tag whose commit is on main (only the release App can make a v* tag, and
+  # release-plz makes it on main's merge commit); or a pull request's dry run. Anything else does nothing.
+  plan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      mode: ${{ steps.plan.outputs.mode }}
+      tag: ${{ steps.plan.outputs.tag }}
+      sha: ${{ steps.plan.outputs.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - id: plan
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          DRAFT: ${{ github.event.release.draft }}
+          TAG: ${{ github.event.release.tag_name }}
+          RUN_SHA: ${{ github.sha }}
+        run: |
+          set -eu
+          out() { printf 'mode=%s\ntag=%s\nsha=%s\n' "$1" "$2" "$3" | tee -a "$GITHUB_OUTPUT"; echo "$4" >> "$GITHUB_STEP_SUMMARY"; exit 0; }
+          case "$RUN_SHA" in *[!0-9a-f]*|'') echo "::error::'$RUN_SHA' is not a commit sha"; exit 1 ;; esac
+          case "$EVENT_NAME" in
+            pull_request) out dry-run "" "$RUN_SHA" "a pull request: build the bundle and the SBOM; attest and publish nothing" ;;
+            release) ;;
+            *) out skip "" "" "'$EVENT_NAME' does not release" ;;
+          esac
+          [ "$DRAFT" = true ] || out skip "" "" "the release $TAG was created published, not as a draft: its assets cannot be added (release-plz.toml sets git_release_draft)"
+          case "$TAG" in
+            v*/*|v) out skip "" "" "'$TAG' is not a release tag (v<version>)" ;;
+            v*) ;;
+            *) out skip "" "" "'$TAG' is not a release tag (v<version>)" ;;
+          esac
+          git merge-base --is-ancestor "$RUN_SHA" origin/main \
+            || { echo "::error::$TAG ($RUN_SHA) is not a commit of main: a release tag marks a merge"; exit 1; }
+          test "$(git rev-parse "refs/tags/$TAG^{commit}")" = "$RUN_SHA" \
+            || { echo "::error::the tag $TAG does not point at $RUN_SHA"; exit 1; }
+          out release "$TAG" "$RUN_SHA" "the release $TAG of $RUN_SHA: build, attest, attach, publish"
+
+  # The bundle and the SBOM, with no secret anywhere in the job. `id-token` and `attestations` are what the attestations need.
+  build:
+    needs: plan
+    if: needs.plan.outputs.mode == 'release' || needs.plan.outputs.mode == 'dry-run'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
+          persist-credentials: false
+
+      # Of the source as committed, before anything is built into the tree: the lockfiles say what goes into the bundle (Cargo.lock for
+      # the Worker and `migrate`, web/pnpm-lock.yaml for the web app). Nothing is uploaded by the action itself.
+      - name: SBOM of the source (SPDX)
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        with:
+          path: .
+          format: spdx-json
+          output-file: sbom.spdx.json
+          syft-version: v1.54.0
+          upload-artifact: "false"
+          upload-release-assets: "false"
+      - name: The SBOM lists the Rust and the web dependencies
+        run: |
+          set -eu
+          test -s sbom.spdx.json
+          jq -e '[.packages[] | select(.name == "serde")] | length > 0' sbom.spdx.json > /dev/null \
+            || { echo "::error::the SBOM has no Rust crates (Cargo.lock was not read)"; exit 1; }
+          jq -e '[.packages[] | select(.name == "react")] | length > 0' sbom.spdx.json > /dev/null \
+            || { echo "::error::the SBOM has no web packages (web/pnpm-lock.yaml was not read)"; exit 1; }
+          echo "SBOM: $(jq '.packages | length' sbom.spdx.json) packages"
+
+      - uses: ./.github/actions/build-bundle
+        with:
+          sha: ${{ needs.plan.outputs.sha }}
+
+      - name: Attest the bundle's build provenance
+        if: needs.plan.outputs.mode == 'release'
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: deploy-bundle.tar.gz
+      - name: Attest the SBOM, of the bundle
+        if: needs.plan.outputs.mode == 'release'
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: deploy-bundle.tar.gz
+          sbom-path: sbom.spdx.json
+
+      # deploy-bundle-<sha> is what the next production deploy looks for as "the previous release" (fetch-previous-assets.sh), as long
+      # as GitHub keeps an artifact (90 days); the release keeps the bundle for good.
+      - name: Upload the bundle (the previous release's web files, for the next deploy)
+        if: needs.plan.outputs.mode == 'release'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: deploy-bundle-${{ needs.plan.outputs.sha }}
+          path: deploy-bundle.tar.gz
+          if-no-files-found: error
+          retention-days: 90
+      - name: Upload the release's assets, for `publish`
+        if: needs.plan.outputs.mode == 'release'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-assets-${{ needs.plan.outputs.sha }}
+          path: |
+            deploy-bundle.tar.gz
+            sbom.spdx.json
+          if-no-files-found: error
+          retention-days: 7
+
+  # The only job that writes: the assets onto the draft, then the draft published. It checks again that the release is still the draft
+  # of this tag at this commit, since nothing else may have published or moved it in between.
+  publish:
+    needs: [plan, build]
+    if: needs.plan.outputs.mode == 'release'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      attestations: read
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-assets-${{ needs.plan.outputs.sha }}
+          path: ${{ runner.temp }}/assets
+      - name: Attach the assets to the draft and publish it
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ needs.plan.outputs.tag }}
+          SHA: ${{ needs.plan.outputs.sha }}
+          ASSETS: ${{ runner.temp }}/assets
+        run: |
+          set -eu
+          cd "$ASSETS"
+          test -s deploy-bundle.tar.gz && test -s sbom.spdx.json
+          sha256sum deploy-bundle.tar.gz sbom.spdx.json > SHA256SUMS
+          cat SHA256SUMS
+          gh release view "$TAG" --repo "$REPO" --json isDraft --jq .isDraft > draft.txt
+          test "$(cat draft.txt)" = true || { echo "::error::$TAG is no longer a draft: its assets can no longer be added"; exit 1; }
+          tagged="$(gh api "repos/$REPO/commits/$TAG" --jq .sha)"
+          test "$tagged" = "$SHA" || { echo "::error::$TAG now points at $tagged, not $SHA"; exit 1; }
+          gh release upload "$TAG" deploy-bundle.tar.gz sbom.spdx.json SHA256SUMS --repo "$REPO" --clobber
+          gh release edit "$TAG" --repo "$REPO" --draft=false
+          {
+            echo "### release $TAG"
+            echo "- commit \`$SHA\`"
+            echo '```'
+            cat SHA256SUMS
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: The release is immutable, and GitHub attests it
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ needs.plan.outputs.tag }}
+          ASSETS: ${{ runner.temp }}/assets
+        run: |
+          set -eu
+          imm="$(gh release view "$TAG" --repo "$REPO" --json isImmutable --jq .isImmutable)"
+          test "$imm" = true || { echo "::error::$TAG was published but is not immutable: turn immutable releases on"; exit 1; }
+          # GitHub writes the release's attestation when it is published; give it a moment before calling its absence a failure
+          for attempt in 1 2 3 4 5 6; do
+            if gh release verify "$TAG" --repo "$REPO" && gh release verify-asset "$TAG" "$ASSETS/deploy-bundle.tar.gz" --repo "$REPO"; then
+              exit 0
+            fi
+            echo "attempt $attempt: GitHub's attestation of $TAG does not verify yet"
+            sleep 10
+          done
+          echo "::error::$TAG is published, but GitHub's attestation of it or of its bundle does not verify"
+          exit 1

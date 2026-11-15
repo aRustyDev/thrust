@@ -3,15 +3,15 @@
 | Step | Status (2026-11-15) |
 |---|---|
 | PR 0: this review and the doc corrections | #177, merged |
-| Settings (owner) | applied 2026-11-15, except the staging environments' branch rule (after PR 2 merges) |
+| Settings (owner) | applied 2026-11-15, the staging environments' branch rule after PR 2 merged |
 | PR 1: git-cliff and the rc bot | #178, merged; replaced by PR 1b |
 | PR 1b: release-plz in place of the hand-written bot | #183, merged; first release-candidate PR #184 (`v0.1.0`), open |
-| PR 2: staging from `rc/*` | open |
-| PR 3: attestation of a release, production from the tag | not started, needs PR 2 |
+| PR 2: staging from `rc/*` | #185, merged |
+| PR 3: attestation of a release, production from the tag | open |
 | PR 4: run only the related checks | not started, independent |
 
-Order: PR 2, the staging branch rule, then PR 3. PR 4 can go any time. #184 waits for PR 3, so that `v0.1.0` gets its
-assets (immutable releases lock them on publish).
+Order: PR 3, then #184 (`v0.1.0`), which waits for PR 3 so that the release gets its assets (immutable releases lock them on
+publish). PR 4 can go any time.
 
 **The owner's rule (2026-11-15): use an existing public solution wherever one does the job; hand-write only where none
 reliably does.** PR 1 was hand-written around git-cliff, and duplicated what git-cliff already does (`--prepend`,
@@ -95,6 +95,28 @@ As built (it differs from the first sketch, which had `ci` run on a push to `rc/
   from its own ref, and every release candidate is a new branch).
 
 ## PR 3: attestation of a release, production from the tag (`feat/release-attest-deploy`)
+
+As built. The owner chose on 2026-11-15 to **build once at the tag** rather than promote staging's bundle (the sketch below
+had promotion): the tag points at `main`'s squash commit, not at the rc commit staging deployed, and the deploy uses the commit as
+the Worker's version and diffs it against the live one in git, so a promoted bundle would have deployed the rc commit, which
+nothing on `main` points at once its branch is deleted, and production would have waited on staging working.
+
+- `release-plz.toml`: `git_release_draft = true`. release-plz creates the tag through the API, then the release
+  (`create_git_tag_and_release` in its source), so the tag exists when the draft does.
+- `.github/actions/build-bundle`: the bundle build, out of `deploy.yml`, so `deploy.yml` and `release.yml` build it the same
+  way.
+- `release.yml` (new), on `release: created` for a draft of a `v<version>` tag on `main`: `build` (the bundle, an SPDX SBOM of
+  the source with `anchore/sbom-action`, both attested with `actions/attest-build-provenance` and `actions/attest`) and
+  `publish` (bundle, SBOM and `SHA256SUMS` onto the draft, then published; GitHub's own release attestation checked with
+  `gh release verify` and `verify-asset`). A pull request that edits it runs `build` as a dry run.
+- `deploy.yml`: `workflow_run` also on `main`; `plan-deploy.sh` plans a production `dispatch` on the tag when `ci` passed on
+  a push to `main` whose commit carries exactly one `v*` tag (`RUN_TAGS`, `git tag --points-at`). Production builds
+  nothing: the deploy action fetches the release's asset (`fetch-release-bundle.sh`: published, immutable, one bundle,
+  `gh release verify-asset`). `verify-bundle.sh` takes `release.yml` as the signer for a `v*` tag, `deploy.yml` for `rc/*`.
+- Docs: `docs/src/architecture/release.md` (the path, how to check a release, what to do when a step fails), `cicd.md`,
+  `deploy.md`; ADR-0110 gets a dated update (the repository's ADRs are amended by dated updates, not superseded by new ones).
+
+The first sketch, kept for the record:
 
 release-plz (PR 1b) already tags `vX.Y.Z` and publishes the GitHub release when an `rc/*` pull request merges. What is
 left, on the new tag (the App's token makes the tag start workflows):

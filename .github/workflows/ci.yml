@@ -131,6 +131,7 @@ jobs:
           python3 -I .github/scripts/tests/test_active_version.py
           sh .github/scripts/tests/test-unpack-bundle.sh
           sh .github/scripts/tests/test-verify-bundle.sh
+          sh .github/scripts/tests/test-fetch-release-bundle.sh
           sh .github/scripts/tests/test-fetch-previous-assets.sh
           sh .github/scripts/tests/test-check-asset-retention.sh
           python3 -I .github/scripts/tests/test_merge_assets.py
@@ -190,7 +191,8 @@ jobs:
       - name: Deploy configuration and workflow guards
         run: |
           scripts/render-wrangler.sh --self-test
-          .github/scripts/lint-workflow.sh .github/workflows/deploy.yml .github/actions/deploy-worker/action.yml
+          .github/scripts/lint-workflow.sh .github/workflows/deploy.yml .github/actions/deploy-worker/action.yml \
+            .github/workflows/release.yml .github/actions/build-bundle/action.yml
       # The release flow: release-plz.toml must list every workspace member in one version group with one tag (release-plz has no
       # workspace-level group and does not check this itself), and its workflow holds the release App's key only in its two jobs.
       - name: Release configuration and workflow guards

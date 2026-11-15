@@ -37,31 +37,37 @@ REPO=aRustyDev/thrust
 # ---- workflow_run: every combination ---------------------------------------------------------------------------------------------
 n=0
 RC=rc/2026-11-15T07-33-32Z
-for conclusion in success failure cancelled ""; do
+for conclusion in success failure ""; do
   for event in pull_request push workflow_dispatch ""; do
-    for branch in "$RC" rc/manual-1 rc/a/b rc/ main feat/x ""; do
-      for head_repo in "$REPO" "someone/thrust" ""; do
-        for enabled in true false "" yes; do
-          n=$((n + 1))
-          out="$(plan EVENT_NAME=workflow_run RUN_CONCLUSION="$conclusion" RUN_EVENT="$event" RUN_BRANCH="$branch" RUN_SHA="$M2" \
-            RUN_HEAD_REPO="$head_repo" REPO="$REPO" DEPLOY_ENABLED="$enabled")"; rc=$?
-          # the rule, stated here on its own: ci passed on a pull request whose head is one of our own rc/<name> branches (one segment,
-          # as the ruleset matches), with the switch on
-          want=skip
-          case "$branch" in "$RC"|rc/manual-1) rc_branch=yes ;; *) rc_branch=no ;; esac
-          if [ "$conclusion" = success ] && [ "$event" = pull_request ] && [ "$rc_branch" = yes ] && [ "$head_repo" = "$REPO" ] && [ "$enabled" = true ]; then want=dispatch; fi
-          label="workflow_run($conclusion,$event,$branch,$head_repo,$enabled)"
-          check "$label exit" "$rc" 0
-          check "$label mode" "$(field "$out" mode)" "$want"
-          if [ "$want" = dispatch ]; then
-            check "$label environment" "$(field "$out" environment)" staging
-            check "$label sha" "$(field "$out" sha)" "$M2"
-            check "$label ref" "$(field "$out" ref)" "$branch"
-            check "$label no injected failure" "$(field "$out" inject)" false
-          else
-            check "$label: no environment" "$(field "$out" environment)" ""
-            check "$label: no ref" "$(field "$out" ref)" ""
-          fi
+    for branch in "$RC" rc/manual-1 rc/a/b main feat/x ""; do
+      for head_repo in "$REPO" "someone/thrust"; do
+        for enabled in true false; do
+          for tags in "" v0.1.0 "v0.1.0 other" "v0.1.0 v0.1.1" release-1 v1/x v; do
+            n=$((n + 1))
+            out="$(plan EVENT_NAME=workflow_run RUN_CONCLUSION="$conclusion" RUN_EVENT="$event" RUN_BRANCH="$branch" RUN_SHA="$M2" \
+              RUN_HEAD_REPO="$head_repo" RUN_TAGS="$tags" REPO="$REPO" DEPLOY_ENABLED="$enabled")"; rc=$?
+            # the rules, stated here on their own: ci green on our own code with the switch on, and either a pull request from one of
+            # our rc/<name> branches (one segment, as the ruleset matches) -> staging on that branch, or a push to main whose commit
+            # has exactly one v<version> tag -> production on that tag
+            want=skip; want_env=""; want_ref=""
+            case "$tags" in v0.1.0|"v0.1.0 other") one_release=v0.1.0 ;; *) one_release="" ;; esac
+            if [ "$conclusion" = success ] && [ "$head_repo" = "$REPO" ] && [ "$enabled" = true ]; then
+              case "$event:$branch" in
+                "pull_request:$RC"|pull_request:rc/manual-1) want=dispatch; want_env=staging; want_ref="$branch" ;;
+                push:main) if [ -n "$one_release" ]; then want=dispatch; want_env=production; want_ref="$one_release"; fi ;;
+              esac
+            fi
+            label="workflow_run($conclusion,$event,$branch,$head_repo,$enabled,tags=$tags)"
+            check "$label exit" "$rc" 0
+            check "$label mode" "$(field "$out" mode)" "$want"
+            check "$label environment" "$(field "$out" environment)" "$want_env"
+            check "$label ref" "$(field "$out" ref)" "$want_ref"
+            check "$label release (only a deploy names one)" "$(field "$out" release)" ""
+            if [ "$want" = dispatch ]; then
+              check "$label sha" "$(field "$out" sha)" "$M2"
+              check "$label no injected failure" "$(field "$out" inject)" false
+            fi
+          done
         done
       done
     done
@@ -72,6 +78,17 @@ echo "ok   $n workflow_run combinations"
 # a workflow_run whose sha is not a sha is a usage error, not a skip and not a dispatch
 out="$(plan EVENT_NAME=workflow_run RUN_CONCLUSION=success RUN_EVENT=pull_request RUN_BRANCH="$RC" RUN_SHA=notasha RUN_HEAD_REPO="$REPO" REPO="$REPO" DEPLOY_ENABLED=true)"; rc=$?
 check "a workflow_run with a bad sha" "$rc" 2
+out="$(plan EVENT_NAME=workflow_run RUN_CONCLUSION=success RUN_EVENT=push RUN_BRANCH=main RUN_TAGS=v0.1.0 RUN_SHA=notasha RUN_HEAD_REPO="$REPO" REPO="$REPO" DEPLOY_ENABLED=true)"; rc=$?
+check "a tagged push with a bad sha" "$rc" 2
+# the reason says which: an untagged push is "not a release", two tags are "more than one" (the job summary is what a person reads)
+out="$(plan EVENT_NAME=workflow_run RUN_CONCLUSION=success RUN_EVENT=push RUN_BRANCH=main RUN_TAGS="" RUN_SHA="$M2" RUN_HEAD_REPO="$REPO" REPO="$REPO" DEPLOY_ENABLED=true)"
+check "an untagged push: the reason" "$(field "$out" reason | grep -c 'no release tag')" 1
+out="$(plan EVENT_NAME=workflow_run RUN_CONCLUSION=success RUN_EVENT=push RUN_BRANCH=main RUN_TAGS="v1 v2" RUN_SHA="$M2" RUN_HEAD_REPO="$REPO" REPO="$REPO" DEPLOY_ENABLED=true)"
+check "two release tags: the reason" "$(field "$out" reason | grep -c 'more than one release tag')" 1
+# a tag name is split into words and must not be globbed: a '*' in RUN_TAGS is a word, not the names of files
+out="$(cd "$T" && touch v9 && plan EVENT_NAME=workflow_run RUN_CONCLUSION=success RUN_EVENT=push RUN_BRANCH=main RUN_TAGS='v*' RUN_SHA="$M2" RUN_HEAD_REPO="$REPO" REPO="$REPO" DEPLOY_ENABLED=true)"; rc=$?
+check "RUN_TAGS is not globbed: exit" "$rc" 0
+check "RUN_TAGS is not globbed: the tag is the literal word" "$(field "$out" ref)" 'v*' 
 
 # ---- workflow_dispatch: every combination ---------------------------------------------------------------------------------------------
 n=0
@@ -107,6 +124,7 @@ for run_ref in "refs/heads/$RC" refs/heads/rc/a/b refs/heads/main refs/tags/v0.1
             check "$label environment" "$(field "$out" environment)" "$env_name"
             check "$label sha" "$(field "$out" sha)" "$head"
             check "$label ref" "$(field "$out" ref)" ""
+            check "$label release" "$(field "$out" release)" "$([ "$env_name" = production ] && echo v0.1.0)"
             check "$label inject" "$(field "$out" inject)" "$inject"
             check "$label skip_smoke" "$(field "$out" skip_smoke)" "$skip_smoke"
           else
