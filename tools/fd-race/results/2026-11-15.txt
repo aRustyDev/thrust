@@ -1,0 +1,13 @@
+fd-race, 2026-11-15. Every run, as printed. Program: tools/fd-race (commit of this file).
+Arguments of every run: 16 1500 8 400  (16 threads x 1500 children, one in 8 lives 400 ms; 20,992 short children measured per run)
+
+macOS 27.3 (Darwin 27.3.0, aarch64, 18 CPUs), rustc 1.99.0 (b940084d7 2026-09-28), release build
+  run 1: threads=16 per_thread=1500 long_every=8 long_ms=400: short children=20992 spawn/wait failures=0 with stdout EOF delayed >=100ms after exit=1 (worst 406 ms), 87.2s
+  run 2: threads=16 per_thread=1500 long_every=8 long_ms=400: short children=20992 spawn/wait failures=0 with stdout EOF delayed >=100ms after exit=4 (worst 408 ms), 87.8s
+  run 3: threads=16 per_thread=1500 long_every=8 long_ms=400: short children=20992 spawn/wait failures=0 with stdout EOF delayed >=100ms after exit=0 (worst 0 ms), 86.5s
+
+Linux 7.2.12-orbstack (aarch64), rustc 1.99.1 (58cf8f9c3 2026-10-13), image rust:1, release build
+  run 1: threads=16 per_thread=1500 long_every=8 long_ms=400: short children=20992 spawn/wait failures=0 with stdout EOF delayed >=100ms after exit=0 (worst 0 ms), 77.9s
+  run 2: threads=16 per_thread=1500 long_every=8 long_ms=400: short children=20992 spawn/wait failures=0 with stdout EOF delayed >=100ms after exit=0 (worst 0 ms), 77.3s
+
+totals: macOS 5 of 62,976 (worst 408 ms); Linux 0 of 41,984 (worst 0 ms)
