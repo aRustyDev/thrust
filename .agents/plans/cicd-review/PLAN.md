@@ -1,15 +1,21 @@
 # Plan
 
-| Step | Status (2026-11-14) |
+| Step | Status (2026-11-15) |
 |---|---|
-| PR 0: this review and the doc corrections | open |
+| PR 0: this review and the doc corrections | #177, merged |
 | Settings (owner) | not started |
-| PR 1: git-cliff and the rc bot | not started |
+| PR 1: git-cliff and the rc bot | #178, merged; replaced by PR 1b |
+| PR 1b: release-plz in place of the hand-written bot | open |
 | PR 2: staging from `rc/*` | not started, needs the settings |
-| PR 3: release on an rc merge, production from the tag | not started, needs the settings and PR 2 |
+| PR 3: attestation of a release, production from the tag | not started, needs the settings and PR 2 |
 | PR 4: run only the related checks | not started, independent |
 
-Order: PR 0, then the settings alongside PR 1, then PR 2, then PR 3. PR 4 can go any time after PR 0.
+Order: PR 1b, the settings, PR 2, then PR 3. PR 4 can go any time.
+
+**The owner's rule (2026-11-15): use an existing public solution wherever one does the job; hand-write only where none
+reliably does.** PR 1 was hand-written around git-cliff, and duplicated what git-cliff already does (`--prepend`,
+`[changelog] format = true`). The owner chose to replace it with release-plz, with the branch named `rc/<timestamp>`
+(release-plz takes only a prefix) instead of `rc/vX.Y.Z`, and a manual release for changes outside the crates.
 
 ## Settings (the owner applies them)
 
@@ -48,29 +54,41 @@ by an agent.
 - `test-release-pr.sh` (fake `gh`, a temporary repository; nothing to release, patch, minor, a version change, already
   current), under dash, in `ci-scripts`; `lint-workflow.sh` over the new workflow.
 
+## PR 1b: release-plz (`refactor/release-plz`)
+
+- Remove `cliff.toml`, `release-pr.yml`, `release-pr.sh` and its test.
+- `release-plz.toml`: `git_only`, one `version_group` over every crate, one `v{{ version }}` tag and GitHub release (on
+  `thrust-core`), one root `CHANGELOG.md` with every crate's commits, `release_always = false` with
+  `pr_branch_prefix = "rc/"`, `release_commits` (fixes, features, performance, refactors, reverts, breaking), the minor
+  bump for features in 0.x. Each setting checked on a copy of the workspace with release-plz 0.4.3.
+- `release-plz.yml`: the `release` and `release-pr` jobs with `release-plz/action`, both with the release App's token.
+- `.github/scripts/check-release-plz.py` (the one hand-written piece: release-plz has no workspace-level version group and
+  does not check that every crate is listed), tested in `ci-scripts` and run by `deps`.
+- The workspace version set to 0.1.0, so the first release is `v0.1.0` (release-plz releases an untagged package at the
+  version it holds).
+
 ## PR 2: staging from `rc/*` (`feat/deploy-from-rc`)
 
 - `ci.yml` also runs on a push to `rc/**`, always in full.
 - `deploy.yml`: `workflow_run` filtered to `rc/**`; a manual run takes staging with an `rc/*` ref, or production with a
   `v*` tag.
-- `plan-deploy.sh`: staging needs `refs/heads/rc/v*`, the branch tip, and `gate` green on it; decide whether
+- `plan-deploy.sh`: staging needs `refs/heads/rc/*` (release-plz names it `rc/<timestamp>`), the branch tip, and `gate`
+  green on it; decide whether
   `THRUST_DEPLOY_ENABLED` stays as an off switch. `test-plan-deploy.sh` over every combination.
 - `verify-bundle.sh`: the source ref `refs/heads/rc/*` for staging and `refs/tags/v*` for production; a must-fail case
   for a feature branch.
 - `cicd.md` and `deploy.md` rewritten for the new trigger.
 
-## PR 3: the release (`feat/release-on-rc-merge`)
+## PR 3: attestation of a release, production from the tag (`feat/release-attest-deploy`)
 
-- `.github/workflows/release.yml` on a merged pull request into `main` whose head is `rc/v*`:
-  1. read the version from the branch and check `Cargo.toml` on the merge commit agrees;
-  2. require the merge commit's tree to equal the rc tip's (true when the rc branch was current), else fail and let the
-     bot regenerate;
-  3. tag `vX.Y.Z` (annotated) with the App token;
-  4. build once, promote: fetch the staging bundle of the rc commit, verify it, attest it again for the tag, and make
-     and attest an SBOM, so production runs the bytes staging tested (the bundle's `BUILD_SHA` stays the rc commit,
-     and the release records it);
-  5. `gh release create` with that version's changelog, the bundle, the SBOM and `SHA256SUMS`;
-  6. dispatch `deploy.yml` for production with the tag; reviewers approve it.
+release-plz (PR 1b) already tags `vX.Y.Z` and publishes the GitHub release when an `rc/*` pull request merges. What is
+left, on the new tag (the App's token makes the tag start workflows):
+
+  1. build once, promote: fetch the staging bundle of the rc commit, verify it, attest it again for the tag, and make
+     and attest an SBOM (look for a public action first: `actions/attest-build-provenance`, `actions/attest-sbom`,
+     `anchore/sbom-action`), so production runs the bytes staging tested;
+  2. attach the bundle, the SBOM and `SHA256SUMS` to the release;
+  3. dispatch `deploy.yml` for production with the tag; reviewers approve it.
 - `plan-deploy.sh` resolves tag, then rc commit, then bundle, with tests.
 - `docs/src/architecture/release.md` (the flow and how to recover from a failed release), and an ADR for the branch
   and release model that supersedes ADR-0110's "a push to `main` deploys staging".
