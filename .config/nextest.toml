@@ -18,9 +18,10 @@ ts-oracle = { max-threads = 2 }  # a live oracle test runs a Node.js process
 # --- default: the fast, hermetic inner loop ----------------------------------------
 [profile.default]
 # Excluded from the hermetic loop: oracle_ tests need the oracle (Node, or its generated output); the contract suite panics without THRUST_BASE_URL and
-# THRUST_ADMIN_TOKEN (a running target); pg_adapter starts a Postgres container through Docker. The last two stay
-# on `cargo test` through scripts/contract.sh and scripts/verify-all.sh, which parse its output [derived: read, not run].
-default-filter = 'not (test(/\boracle_/) | package(thrust-contract-tests) | binary(pg_adapter))'
+# THRUST_ADMIN_TOKEN (a running target); pg_adapter starts a Postgres container through Docker, and smtp_sink a Mailpit one. The last
+# three stay on `cargo test` through scripts/contract.sh, scripts/verify-all.sh and the pg-adapter job, which parse its output [derived:
+# read, not run]. The SMTP adapter's other two suites (smtp_wire: a scripted server in the test's own process; smtp_config) are hermetic and run here.
+default-filter = 'not (test(/\boracle_/) | package(thrust-contract-tests) | binary(pg_adapter) | binary(smtp_sink))'
 retries = 0
 slow-timeout = { period = "30s", terminate-after = 4 }
 
@@ -53,7 +54,7 @@ path = "junit.xml"   # written to target/nextest/ci/junit.xml
 [profile.deep]
 # The prefix filter alone would also select the generated `model_` tests in the contract suite (they need a running
 # target) and in pg_adapter (it needs Docker); they run through scripts/contract.sh and the pg-adapter job instead.
-default-filter = 'test(/\b(prop|model|oracle)_/) & not (package(thrust-contract-tests) | binary(pg_adapter))'
+default-filter = 'test(/\b(prop|model|oracle)_/) & not (package(thrust-contract-tests) | binary(pg_adapter) | binary(smtp_sink))'
 fail-fast = false
 
 [[profile.deep.overrides]]

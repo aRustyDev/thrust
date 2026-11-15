@@ -23,6 +23,7 @@ run native-memory main
 run native-memory sweeper
 run native-memory panic
 run native-memory csrfoff
+run native-memory mail
 run native-memory oracle
 run native-pg main
 run native-pg sweeper

@@ -16,8 +16,20 @@ SUMMARY="$OUT/summary.txt"
 : >"$SUMMARY"
 SURVIVED=0
 
+# A row that was neither killed nor refused has not said why, and on a runner its output is thrown away with the job: the one thing the job log
+# then lacks is the reason. `contract.sh` says it when it stops (a server that exited early, one that never became healthy, a mail server that did not
+# come up, a build that failed), in the row's `$OUT/<name>.out`, so print the end of that file to the job log. $1 the file, $2 the label.
+show_why() {
+  if [ -n "${1:-}" ] && [ -f "$1" ]; then
+    echo "--- $2: not killed, and this is the end of what it said ($1)" >&2
+    tail -n 40 "$1" >&2
+    echo "--- end" >&2
+  fi
+  return 0
+}
+
 kill_check() {
-  # $1 label, $2 exit status, $3 log file with test output
+  # $1 label, $2 exit status, $3 log file with test output, $4 (optional) the row's own output file, for `show_why`
   label="$1"; status="$2"; log="$3"
   failed="$(grep -c '\.\.\. FAILED$' "$log")"
   # A pass run with --nocapture (the engine pass) prints `test x ... ` and the panic text, and only then `FAILED` on a
@@ -31,6 +43,7 @@ kill_check() {
     grep -E '\.\.\. FAILED$|^test .* \.\.\. $' "$log" | sed 's/^/    /' >>"$SUMMARY"
   else
     printf '%-34s SURVIVED or did not run (exit=%s, failed tests=%s)\n' "$label" "$status" "$failed" >>"$SUMMARY"
+    show_why "${4:-}" "$label"
     SURVIVED=1
   fi
 }
@@ -39,11 +52,12 @@ kill_check() {
 # the thing under test fails too: without Docker every `pg_adapter` test panics in its setup, which reads as KILLED. $4 is text
 # only the assertion the mutant is aimed at prints, so a log without it is not a kill.
 kill_check_msg() {
-  # $1 label, $2 exit status, $3 log file with test output, $4 text the failure must contain
+  # $1 label, $2 exit status, $3 log file with test output, $4 text the failure must contain, $5 (optional) the row's own output file
   if grep -qF -- "$4" "$3"; then
-    kill_check "$1" "$2" "$3"
+    kill_check "$1" "$2" "$3" "${5:-}"
   else
     printf '%-34s SURVIVED or did not run (the log never says: %s)\n' "$1" "$4" >>"$SUMMARY"
+    show_why "${5:-}" "$1"
     SURVIVED=1
   fi
 }
@@ -75,15 +89,16 @@ for triple in \
   "reset-takes-token-first:mutant_reset_takes_token_first:main" \
   "reset-skips-strength:mutant_reset_skips_strength:main" \
   "reset-keeps-sessions:mutant_reset_keeps_sessions:main" \
-  "smtp-flag-always-on:mutant_smtp_flag_always_on:main" \
-  "reset-refusal-without-error-code:mutant_reset_redirect_without_code:main"; do
+  "reset-refusal-without-error-code:mutant_reset_redirect_without_code:main" \
+  "mail-reset-ignores-cooldown:mutant_reset_ignores_cooldown:mail" \
+  "mail-reset-token-reusable:mutant_reset_token_reusable:mail"; do
   name="${triple%%:*}"
   rest="${triple#*:}"
   feature="${rest%%:*}"
   pass="${rest##*:}"
   THRUST_SERVER_FEATURES="$feature" THRUST_LOGDIR="$OUT/$name" "$ROOT/scripts/contract.sh" native-memory "$pass" >"$OUT/$name.out" 2>&1
   status=$?
-  kill_check "native-memory $pass + $name" "$status" "$OUT/$name/native-memory-$pass.test.log"
+  kill_check "native-memory $pass + $name" "$status" "$OUT/$name/native-memory-$pass.test.log" "$OUT/$name.out"
 done
 
 # The engine pass (spike 0002, `contract.sh <target> engine`): the 50-writer, 10k-create test against the duplicate-sequence
@@ -99,7 +114,7 @@ for spec in \
   feature="${rest##*:}"
   THRUST_SERVER_FEATURES="$feature" THRUST_LOGDIR="$OUT/engine-$target-$name" "$ROOT/scripts/contract.sh" "$target" engine >"$OUT/engine-$target-$name.out" 2>&1
   status=$?
-  kill_check "$target engine + $name" "$status" "$OUT/engine-$target-$name/$target-engine.test.log"
+  kill_check "$target engine + $name" "$status" "$OUT/engine-$target-$name/$target-engine.test.log" "$OUT/engine-$target-$name.out"
 done
 # The vacuity guard of the CSRF switch (Q-0050.8): a pass that is started against a server with the OTHER enforcement
 # setting must be refused before a test runs (exit 5, and the message says csrf_enforce). Not a build mutant: the server
@@ -110,7 +125,7 @@ guard_check() {
   if [ "$status" -eq 5 ] && grep -q 'VACUITY GUARD: csrf_enforce' "$out"; then
     printf '%-34s REFUSED  (exit 5, no test ran)\n' "$label" >>"$SUMMARY"
   else
-    printf '%-34s NOT REFUSED (exit=%s)\n' "$label" "$status" >>"$SUMMARY"
+    printf '%-34s NOT REFUSED (exit=%s)\n' "$label" "$status" >>"$SUMMARY" && show_why "$out" "$label"
     SURVIVED=1
   fi
 }
@@ -120,6 +135,29 @@ guard_check "guard: main pass, server off" "$status" "$OUT/guard-main-vs-off.out
 THRUST_SERVER_CSRF_ENFORCE=on THRUST_LOGDIR="$OUT/guard-off-vs-on" "$ROOT/scripts/contract.sh" native-memory csrfoff >"$OUT/guard-off-vs-on.out" 2>&1
 status=$?
 guard_check "guard: csrfoff pass, server on" "$status" "$OUT/guard-off-vs-on.out"
+
+# The vacuity guard of mail (E2): `scripts/contract.sh` asks the app's own question, `/api/instances/`, and refuses to run (exit 5, no test ran) a pass
+# whose target gives the wrong answer: `true` for the `mail` pass, `false` for every other. Two builds are refused by it, and each is a row here
+# rather than in the kill loop above, because the verdict is the refusal and not a failed test (`kill_check` wants exit 101):
+#   - a server whose composition root reads the relay and does not hand it to the app tells the app mail is off, and the `mail` pass must not pass
+#     for want of a test that looks;
+#   - a server that says mail is on though nothing can send it (`mutant_smtp_flag_always_on`, which the main pass used to kill with the dark test
+#     and still does in `crates/thrust-compat-plane/tests/reset.rs` and the recorded S01) is refused by the main pass before its first test.
+refusal_check() {
+  # $1 label, $2 feature, $3 pass, $4 the guard's message
+  label="$1"; feature="$2"; pass="$3"; msg="$4"
+  name="guard-$pass-$feature"
+  THRUST_SERVER_FEATURES="$feature" THRUST_LOGDIR="$OUT/$name" "$ROOT/scripts/contract.sh" native-memory "$pass" >"$OUT/$name.out" 2>&1
+  status=$?
+  if [ "$status" -eq 5 ] && grep -q "$msg" "$OUT/$name.out"; then
+    printf '%-34s REFUSED  (exit 5, no test ran)\n' "$label" >>"$SUMMARY"
+  else
+    printf '%-34s NOT REFUSED (exit=%s)\n' "$label" "$status" >>"$SUMMARY" && show_why "$OUT/$name.out" "$label"
+    SURVIVED=1
+  fi
+}
+refusal_check "guard: mail pass, relay not wired" mutant_smtp_unwired mail 'VACUITY GUARD: is_smtp_configured is not true'
+refusal_check "guard: main pass, mail flag on" mutant_smtp_flag_always_on main 'VACUITY GUARD: is_smtp_configured is not false'
 
 # Postgres adapter mutant: recycle a connection that is still inside an abandoned transaction.
 "$ROOT/scripts/rs" cargo test --manifest-path "$ROOT/Cargo.toml" -p thrust-adapters-selfhosted \
@@ -148,7 +186,31 @@ for triple in \
   needle="${rest#*:}"
   THRUST_SERVER_FEATURES="$feature" THRUST_LOGDIR="$OUT/$name" "$ROOT/scripts/contract.sh" native-pg budget >"$OUT/$name.out" 2>&1
   status=$?
-  kill_check_msg "native-pg budget + $name" "$status" "$OUT/$name/native-pg-budget.test.log" "$needle"
+  kill_check_msg "native-pg budget + $name" "$status" "$OUT/$name/native-pg-budget.test.log" "$needle" "$OUT/$name.out"
+done
+
+# The SMTP adapter's mutants (E2 of the reset by email, D-041): each is a deliberately broken build of thrust-adapters-selfhosted, run against the
+# suite aimed at it. `kill_check_msg`, so the log has to say what the mutant breaks and a run that never got that far (no Docker for `smtp_sink`,
+# a build that failed) is not a kill. binary:needle: a refusal read as an outage and the reverse (all 600 reply codes at the 5 steps); the sender's
+# address taken from the recipient; an id returned that the message does not carry; a password allowed over a connection in the clear; STARTTLS made
+# a preference, so a relay that cannot do TLS is used in the clear; a relay's certificate trusted whoever signed it (the three TLS tests, against Mailpit).
+for quad in \
+  "swap-refusal-and-outage:mutant_smtp_swap_refusal_and_outage:smtp_wire:were read the wrong way" \
+  "from-is-recipient:mutant_smtp_from_is_recipient:smtp_wire:the envelope sender" \
+  "wrong-message-id:mutant_smtp_wrong_message_id:smtp_wire:holds a message under the returned id" \
+  "password-in-clear:mutant_smtp_password_in_clear:smtp_config:combinations disagree with the reference" \
+  "starttls-opportunistic:mutant_smtp_starttls_opportunistic:smtp_wire:a message went to a relay that cannot do TLS" \
+  "trust-any-certificate:mutant_smtp_trust_any_certificate:smtp_sink:UNTRUSTED CERTIFICATE ACCEPTED"; do
+  name="${quad%%:*}"
+  rest="${quad#*:}"
+  feature="${rest%%:*}"
+  rest="${rest#*:}"
+  bin="${rest%%:*}"
+  needle="${rest#*:}"
+  "$ROOT/scripts/rs" cargo test --manifest-path "$ROOT/Cargo.toml" -p thrust-adapters-selfhosted --features "$feature" --test "$bin" \
+    >"$OUT/smtp-$name.out" 2>&1
+  status=$?
+  kill_check_msg "smtp adapter + $name" "$status" "$OUT/smtp-$name.out" "$needle"
 done
 
 cat "$SUMMARY"
