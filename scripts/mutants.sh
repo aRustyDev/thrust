@@ -16,8 +16,20 @@ SUMMARY="$OUT/summary.txt"
 : >"$SUMMARY"
 SURVIVED=0
 
+# A row that was neither killed nor refused has not said why, and on a runner its output is thrown away with the job: the one thing the job log
+# then lacks is the reason. `contract.sh` says it when it stops (a server that exited early, one that never became healthy, a mail server that did not
+# come up, a build that failed), in the row's `$OUT/<name>.out`, so print the end of that file to the job log. $1 the file, $2 the label.
+show_why() {
+  if [ -n "${1:-}" ] && [ -f "$1" ]; then
+    echo "--- $2: not killed, and this is the end of what it said ($1)" >&2
+    tail -n 40 "$1" >&2
+    echo "--- end" >&2
+  fi
+  return 0
+}
+
 kill_check() {
-  # $1 label, $2 exit status, $3 log file with test output
+  # $1 label, $2 exit status, $3 log file with test output, $4 (optional) the row's own output file, for `show_why`
   label="$1"; status="$2"; log="$3"
   failed="$(grep -c '\.\.\. FAILED$' "$log")"
   # A pass run with --nocapture (the engine pass) prints `test x ... ` and the panic text, and only then `FAILED` on a
@@ -31,6 +43,7 @@ kill_check() {
     grep -E '\.\.\. FAILED$|^test .* \.\.\. $' "$log" | sed 's/^/    /' >>"$SUMMARY"
   else
     printf '%-34s SURVIVED or did not run (exit=%s, failed tests=%s)\n' "$label" "$status" "$failed" >>"$SUMMARY"
+    show_why "${4:-}" "$label"
     SURVIVED=1
   fi
 }
@@ -39,11 +52,12 @@ kill_check() {
 # the thing under test fails too: without Docker every `pg_adapter` test panics in its setup, which reads as KILLED. $4 is text
 # only the assertion the mutant is aimed at prints, so a log without it is not a kill.
 kill_check_msg() {
-  # $1 label, $2 exit status, $3 log file with test output, $4 text the failure must contain
+  # $1 label, $2 exit status, $3 log file with test output, $4 text the failure must contain, $5 (optional) the row's own output file
   if grep -qF -- "$4" "$3"; then
-    kill_check "$1" "$2" "$3"
+    kill_check "$1" "$2" "$3" "${5:-}"
   else
     printf '%-34s SURVIVED or did not run (the log never says: %s)\n' "$1" "$4" >>"$SUMMARY"
+    show_why "${5:-}" "$1"
     SURVIVED=1
   fi
 }
@@ -84,7 +98,7 @@ for triple in \
   pass="${rest##*:}"
   THRUST_SERVER_FEATURES="$feature" THRUST_LOGDIR="$OUT/$name" "$ROOT/scripts/contract.sh" native-memory "$pass" >"$OUT/$name.out" 2>&1
   status=$?
-  kill_check "native-memory $pass + $name" "$status" "$OUT/$name/native-memory-$pass.test.log"
+  kill_check "native-memory $pass + $name" "$status" "$OUT/$name/native-memory-$pass.test.log" "$OUT/$name.out"
 done
 
 # The engine pass (spike 0002, `contract.sh <target> engine`): the 50-writer, 10k-create test against the duplicate-sequence
@@ -100,7 +114,7 @@ for spec in \
   feature="${rest##*:}"
   THRUST_SERVER_FEATURES="$feature" THRUST_LOGDIR="$OUT/engine-$target-$name" "$ROOT/scripts/contract.sh" "$target" engine >"$OUT/engine-$target-$name.out" 2>&1
   status=$?
-  kill_check "$target engine + $name" "$status" "$OUT/engine-$target-$name/$target-engine.test.log"
+  kill_check "$target engine + $name" "$status" "$OUT/engine-$target-$name/$target-engine.test.log" "$OUT/engine-$target-$name.out"
 done
 # The vacuity guard of the CSRF switch (Q-0050.8): a pass that is started against a server with the OTHER enforcement
 # setting must be refused before a test runs (exit 5, and the message says csrf_enforce). Not a build mutant: the server
@@ -111,7 +125,7 @@ guard_check() {
   if [ "$status" -eq 5 ] && grep -q 'VACUITY GUARD: csrf_enforce' "$out"; then
     printf '%-34s REFUSED  (exit 5, no test ran)\n' "$label" >>"$SUMMARY"
   else
-    printf '%-34s NOT REFUSED (exit=%s)\n' "$label" "$status" >>"$SUMMARY"
+    printf '%-34s NOT REFUSED (exit=%s)\n' "$label" "$status" >>"$SUMMARY" && show_why "$out" "$label"
     SURVIVED=1
   fi
 }
@@ -138,7 +152,7 @@ refusal_check() {
   if [ "$status" -eq 5 ] && grep -q "$msg" "$OUT/$name.out"; then
     printf '%-34s REFUSED  (exit 5, no test ran)\n' "$label" >>"$SUMMARY"
   else
-    printf '%-34s NOT REFUSED (exit=%s)\n' "$label" "$status" >>"$SUMMARY"
+    printf '%-34s NOT REFUSED (exit=%s)\n' "$label" "$status" >>"$SUMMARY" && show_why "$OUT/$name.out" "$label"
     SURVIVED=1
   fi
 }
@@ -172,7 +186,7 @@ for triple in \
   needle="${rest#*:}"
   THRUST_SERVER_FEATURES="$feature" THRUST_LOGDIR="$OUT/$name" "$ROOT/scripts/contract.sh" native-pg budget >"$OUT/$name.out" 2>&1
   status=$?
-  kill_check_msg "native-pg budget + $name" "$status" "$OUT/$name/native-pg-budget.test.log" "$needle"
+  kill_check_msg "native-pg budget + $name" "$status" "$OUT/$name/native-pg-budget.test.log" "$needle" "$OUT/$name.out"
 done
 
 # The SMTP adapter's mutants (E2 of the reset by email, D-041): each is a deliberately broken build of thrust-adapters-selfhosted, run against the
