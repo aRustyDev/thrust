@@ -42,9 +42,11 @@ asked() { # asked <label> <flag text that must be in the call>
 RC=refs/heads/rc/2026-11-15T07-33-32Z
 TAG=refs/tags/v0.1.0
 for ref in "$RC" refs/heads/rc/manual-1 "$TAG"; do
-  run "an attested bundle from $ref" 0 "is attested by o/r/.github/workflows/deploy.yml on $ref" "$T/good.tar.gz" o/r "$ref"
+  # a release candidate is built by deploy.yml, a release by release.yml
+  case "$ref" in refs/tags/*) signer=release.yml ;; *) signer=deploy.yml ;; esac
+  run "an attested bundle from $ref" 0 "is attested by o/r/.github/workflows/$signer on $ref" "$T/good.tar.gz" o/r "$ref"
   asked "this repository" "--repo o/r"
-  asked "this repository's deploy workflow as the signer" "--signer-workflow o/r/.github/workflows/deploy.yml"
+  asked "$signer as the signer of $ref" "--signer-workflow o/r/.github/workflows/$signer"
   asked "exactly $ref as the source ref" "--source-ref $ref"
   asked "no self-hosted runner" "--deny-self-hosted-runners"
   if grep -q -- "--source-digest" "$FIX/gh.calls"; then bad=$((bad + 1)); echo "BAD  it asked for --source-digest"; else pass=$((pass + 1)); echo "ok   it did not ask for --source-digest"; fi

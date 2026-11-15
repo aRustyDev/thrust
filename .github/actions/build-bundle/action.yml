@@ -1,0 +1,90 @@
+name: build-bundle
+description: >-
+  Build the deploy bundle of the checked-out commit: the Worker (worker-build), the `migrate` binary and the web app, in one
+  reproducible file, `deploy-bundle.tar.gz`, in the working directory. Holds no secret and attests nothing: the caller attests it.
+  Used by deploy.yml (a release candidate, for staging; a pull request's dry run) and release.yml (a release tag, for production
+  and the release's assets), so the two build it the same way.
+
+# The caller checks the commit out first (persist-credentials: false). `sha` is written into the bundle as BUILD_SHA, which
+# unpack-bundle.sh later holds to the commit being deployed.
+
+inputs:
+  sha:
+    description: The commit being built, 40 hex digits; it must be the one checked out
+    required: true
+  save-cache:
+    description: "'true' to save the Rust cache (only where a later run can read it: the default branch)"
+    required: false
+    default: "false"
+
+outputs:
+  path:
+    description: The bundle, relative to the working directory
+    value: deploy-bundle.tar.gz
+
+runs:
+  using: composite
+  steps:
+    - name: The checkout is the commit named
+      shell: bash
+      env:
+        SHA: ${{ inputs.sha }}
+      run: |
+        set -eu
+        test "$(git rev-parse HEAD)" = "$SHA" || { echo "::error::checked out $(git rev-parse HEAD), asked to build $SHA"; exit 1; }
+
+    - uses: ./.github/actions/setup-rust
+      with:
+        targets: wasm32-unknown-unknown
+        worker-tools: "true"
+        cache-key: deploy-release
+        save-cache: ${{ inputs.save-cache }}
+
+    - name: Build the migrate binary
+      shell: bash
+      run: scripts/rs cargo build --release --locked -p thrust-adapters-postgres --features native --bin migrate
+
+    - name: Build the Worker
+      shell: bash
+      working-directory: crates/thrust-worker
+      run: ../../scripts/rs worker-build --release . --no-default-features
+
+    # The web app the Worker serves (ADR-0011), built as the `web` job and the e2e cell build it: Node and pnpm at the versions web/
+    # pins, a frozen lockfile, no dependency scripts. It goes into the bundle, so it is attested with the Worker, and so the NEXT deploy
+    # can take this release's files from this bundle and keep them under its own (scripts/merge-assets.sh).
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      with:
+        node-version-file: web/.node-version
+    - name: Build the web app
+      shell: bash
+      env:
+        TURBO_TELEMETRY_DISABLED: "1"
+        DO_NOT_TRACK: "1"
+      run: |
+        set -eu
+        want="$(node -p "require('./web/package.json').packageManager.split('@')[1].split('+')[0]")"
+        npm install --global "pnpm@$want"
+        test "$(pnpm --dir web --version)" = "$want"
+        pnpm --dir web install --frozen-lockfile --ignore-scripts
+        pnpm --dir web exec turbo run build --filter=web
+        test -s web/apps/web/build/client/index.html
+
+    # One file, the same bytes for the same inputs: sorted names, no timestamps, no owners, no gzip header time.
+    - name: Make the bundle
+      shell: bash
+      env:
+        SHA: ${{ inputs.sha }}
+      run: |
+        set -eu
+        test -s crates/thrust-worker/build/worker/shim.mjs
+        test -s crates/thrust-worker/build/index.js
+        test -s crates/thrust-worker/build/index_bg.wasm
+        test -s web/apps/web/build/client/index.html
+        test -x target/release/migrate
+        mkdir -p bundle
+        cp -R crates/thrust-worker/build bundle/build
+        cp -R web/apps/web/build/client bundle/web
+        cp target/release/migrate bundle/migrate
+        printf '%s\n' "$SHA" > bundle/BUILD_SHA
+        (cd bundle && tar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner -cf - .) | gzip -n > deploy-bundle.tar.gz
+        sha256sum deploy-bundle.tar.gz

@@ -15,6 +15,10 @@
 # - release_always = false: a push to main releases only when it is the merge of a pull request from a branch starting with
 #   pr_branch_prefix (read in release-plz's source, release_plz_core/src/command/release.rs; its docs still say `release-plz-`).
 #   So an ordinary merge never tags, and the rc/* ruleset decides who can make such a branch.
+# - The release is a DRAFT. Releases are immutable once published (a repository setting), which locks their assets, so
+#   .github/workflows/release.yml, started by the draft's creation, attaches the bundle, its SBOM and SHA256SUMS, then publishes it.
+#   release-plz creates the tag through the API before the release (release_plz_core/src/command/release.rs,
+#   create_git_tag_and_release), so the tag exists when the draft does.
 
 [workspace]
 git_only = true
@@ -39,6 +43,7 @@ version_group = "thrust"
 git_tag_enable = true
 git_release_enable = true
 git_release_name = "v{{ version }}"
+git_release_draft = true
 changelog_update = true
 changelog_path = "./CHANGELOG.md"
 changelog_include = [

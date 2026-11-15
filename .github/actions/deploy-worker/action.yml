@@ -16,6 +16,12 @@ inputs:
   sha:
     description: The commit, 40 hex digits. The bundle it built is `deploy-bundle-<sha>`
     required: true
+  release-tag:
+    description: >-
+      Production: the release tag (v<version>) whose attached bundle is deployed, release.yml's build at the tag. Empty (staging): the
+      artifact `deploy-bundle-<sha>` that this run's `build` job made
+    required: false
+    default: ""
   allow-do-lifecycle:
     description: "'true' only in the manual-gated job: the first deploy and a Durable Object lifecycle change go through; no automatic rollback"
     required: false
@@ -119,16 +125,33 @@ runs:
           exit 1
         fi
 
-    - name: Fetch the bundle that was built and attested
+    - name: Fetch the bundle this run built and attested (staging)
+      if: inputs.release-tag == ''
       uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
       with:
         name: deploy-bundle-${{ inputs.sha }}
         path: ${{ runner.temp }}/bundle-download
 
-    # The attestation is the proof that this file came out of THIS repository's deploy workflow, on this run's own ref (an rc/* branch
-    # for staging, a v* tag for production: the `build` job of this same run made it), and was not put there by anything else that can
-    # write an artifact. The commit is bound another way: the bundle names the commit it was built from (BUILD_SHA, inside the attested
-    # file) and that is compared below.
+    # Production deploys what its release carries: published, immutable, and the very asset GitHub's release attestation names
+    # (.github/scripts/fetch-release-bundle.sh). The run is on the release's own tag (plan-deploy.sh), and the two must agree.
+    - name: Fetch the bundle of the release (production)
+      if: inputs.release-tag != ''
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        REPO: ${{ github.repository }}
+        TAG: ${{ inputs.release-tag }}
+        RUN_REF: ${{ github.ref }}
+        BUNDLE_DIR: ${{ runner.temp }}/bundle-download
+      run: |
+        set -eu
+        test "$RUN_REF" = "refs/tags/$TAG" || { echo "::error::the run is on $RUN_REF, not on the release tag $TAG"; exit 1; }
+        .github/scripts/fetch-release-bundle.sh "$REPO" "$TAG" "$BUNDLE_DIR"
+
+    # The attestation is the proof that this file was built by THIS repository's workflow for this run's own ref: deploy.yml's `build`
+    # job in this same run for an rc/* branch (staging), release.yml at the tag for a v* tag (production). Nothing else that can write an
+    # artifact or a release asset can make one. The commit is bound another way: the bundle names the commit it was built from
+    # (BUILD_SHA, inside the attested file) and that is compared below.
     - name: Verify the attestation
       shell: bash
       env:

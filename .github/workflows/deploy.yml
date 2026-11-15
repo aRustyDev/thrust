@@ -10,9 +10,12 @@ name: deploy
 #     an environment's branch rule is checked against the run's own ref, a `workflow_run` always runs on main, and `staging` only
 #     takes rc/*. Only while the repository variable THRUST_DEPLOY_ENABLED is `true` (the switch that keeps this quiet until staging
 #     works); main never deploys.
-#   * A manual run deploys the commit it is run FROM: `staging` from an rc/* branch, `production` from a v* release tag (which release-plz
-#     makes when an rc pull request merges). `production` waits for the environment's reviewers. Each environment's branch rule says
-#     the same, so a run from anywhere else cannot reach its secrets even if this file were wrong.
+#   * PRODUCTION is a release. When `ci` passes on a push to main whose commit carries a v* tag (release-plz tags the merge of an rc pull
+#     request; only the release App can make a v* tag), this workflow dispatches itself ON that tag, and the dispatched run waits for the
+#     `production` reviewers. It builds nothing: it deploys the bundle of the release, which release.yml built at the tag, attested and
+#     attached to the (immutable) release. Same switch, THRUST_DEPLOY_ENABLED.
+#   * A manual run deploys the commit it is run FROM: `staging` from an rc/* branch, `production` from a v* release tag. Each
+#     environment's branch rule says the same, so a run from anywhere else cannot reach its secrets even if this file were wrong.
 #   * A pull request that touches the deploy files runs `dry-run`: build the bundle and check the rendered configuration with
 #     `wrangler deploy --dry-run`. It uses no environment and no secret, and it is what proves, before the merge, that this file starts.
 #
@@ -37,8 +40,8 @@ on:
   workflow_run:
     workflows: [ci]
     types: [completed]
-    # ci's head branch; plan-deploy.sh holds the rest of the rule (a pull request's run, this repository's, rc/<name> with no slash)
-    branches: ["rc/**"]
+    # ci's head branch; plan-deploy.sh holds the rest of the rule (an rc/<name> pull request's run, or a push to main with a v* tag)
+    branches: ["rc/**", main]
   workflow_dispatch:
     inputs:
       environment:
@@ -65,6 +68,7 @@ on:
     paths:
       - .github/workflows/deploy.yml
       - .github/actions/deploy-worker/**
+      - .github/actions/build-bundle/**
       - .github/deploy/**
       - .github/scripts/plan-deploy.sh
       - .github/scripts/classify-deploy.sh
@@ -98,6 +102,7 @@ jobs:
       environment: ${{ steps.plan.outputs.environment }}
       sha: ${{ steps.plan.outputs.sha }}
       ref: ${{ steps.plan.outputs.ref }}
+      release: ${{ steps.plan.outputs.release }}
       inject: ${{ steps.plan.outputs.inject }}
       skip_smoke: ${{ steps.plan.outputs.skip_smoke }}
     steps:
@@ -121,6 +126,10 @@ jobs:
           DISPATCH_INJECT: ${{ inputs.inject_smoke_failure }}
           DISPATCH_SKIP_SMOKE: ${{ inputs.first_deploy_skip_smoke }}
         run: |
+          # the tags on ci's commit (a workflow_run only): a push to main that release-plz tagged is a release
+          RUN_TAGS=""
+          if [ -n "$RUN_SHA" ]; then RUN_TAGS="$(git tag --points-at="$RUN_SHA" 2> /dev/null | tr '\n' ' ' || true)"; fi
+          export RUN_TAGS
           .github/scripts/plan-deploy.sh > plan.out
           cat plan.out
           cat plan.out >> "$GITHUB_OUTPUT"
@@ -166,9 +175,10 @@ jobs:
             echo "- $REASON"
           } >> "$GITHUB_STEP_SUMMARY"
 
-  # ci passed on a release candidate: start this workflow again ON the rc/* branch, so the deploy runs on a ref that `staging`'s branch
-  # rule takes. A dispatch is one of the two events a workflow's own token may start a run with. The dispatched run checks everything
-  # again (plan-deploy.sh), including that the branch is still at this commit and that its `gate` passed. No checkout, no secret.
+  # ci passed on a release candidate or a release: start this workflow again ON the rc/* branch or the v* tag, so the deploy runs on a
+  # ref that the environment's branch rule takes. A dispatch is one of the two events a workflow's own token may start a run with. The
+  # dispatched run checks everything again (plan-deploy.sh), including that the ref is still at this commit and that its `gate` passed.
+  # No checkout, no secret.
   dispatch:
     needs: plan
     if: needs.plan.outputs.mode == 'dispatch'
@@ -178,21 +188,24 @@ jobs:
       actions: write
       contents: read
     steps:
-      - name: Dispatch the staging deploy on the release-candidate branch
+      - name: Dispatch the deploy on the release candidate's branch, or the release's tag
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           REF: ${{ needs.plan.outputs.ref }}
           SHA: ${{ needs.plan.outputs.sha }}
+          TARGET: ${{ needs.plan.outputs.environment }}
         run: |
-          gh workflow run deploy.yml --repo "$REPO" --ref "$REF" -f environment=staging -f sha="$SHA"
-          echo "dispatched deploy.yml on $REF for $SHA (staging)" >> "$GITHUB_STEP_SUMMARY"
+          gh workflow run deploy.yml --repo "$REPO" --ref "$REF" -f environment="$TARGET" -f sha="$SHA"
+          echo "dispatched deploy.yml on $REF for $SHA ($TARGET)" >> "$GITHUB_STEP_SUMMARY"
 
-  # Build the bundle of the commit, with no secret anywhere in the job: the Worker (worker-build) and the `migrate` binary. The bundle
-  # is one file, and in a deploy it is attested. `id-token` and `attestations` are what the attestation needs and nothing else uses.
+  # Build the bundle of the commit, with no secret anywhere in the job (.github/actions/build-bundle: the Worker, the `migrate` binary
+  # and the web app, in one file). In a deploy it is attested. `id-token` and `attestations` are what the attestation needs and nothing
+  # else uses. Staging and a pull request's dry run only: production deploys the bundle of its release, which release.yml built at
+  # the tag, attested and attached (the deploy job fetches it).
   build:
     needs: plan
-    if: needs.plan.outputs.mode == 'deploy' || needs.plan.outputs.mode == 'dry-run'
+    if: (needs.plan.outputs.mode == 'deploy' && needs.plan.outputs.environment == 'staging') || needs.plan.outputs.mode == 'dry-run'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     permissions:
@@ -205,59 +218,11 @@ jobs:
           ref: ${{ needs.plan.outputs.sha }}
           persist-credentials: false
 
-      - uses: ./.github/actions/setup-rust
+      # A deploy runs on an rc/* branch. A cache is readable only from its own ref (and the default branch's from all), and every
+      # release candidate is a new branch, so a cache saved here would never be read again: build-bundle saves none by default.
+      - uses: ./.github/actions/build-bundle
         with:
-          targets: wasm32-unknown-unknown
-          worker-tools: "true"
-          cache-key: deploy-release
-          # A deploy runs on an rc/* branch or a v* tag. A cache is readable only from its own ref (and the default branch's from all),
-          # and every release candidate is a new branch, so a cache saved here would never be read again.
-          save-cache: "false"
-
-      - name: Build the migrate binary
-        run: scripts/rs cargo build --release --locked -p thrust-adapters-postgres --features native --bin migrate
-
-      - name: Build the Worker
-        working-directory: crates/thrust-worker
-        run: ../../scripts/rs worker-build --release . --no-default-features
-
-      # The web app the Worker serves (ADR-0011), built as the `web` job and the e2e cell build it: Node and pnpm at the versions web/
-      # pins, a frozen lockfile, no dependency scripts. It goes into the bundle, so it is attested with the Worker, and so the NEXT deploy
-      # can take this release's files from this bundle and keep them under its own (scripts/merge-assets.sh).
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version-file: web/.node-version
-      - name: Build the web app
-        env:
-          TURBO_TELEMETRY_DISABLED: "1"
-          DO_NOT_TRACK: "1"
-        run: |
-          set -eu
-          want="$(node -p "require('./web/package.json').packageManager.split('@')[1].split('+')[0]")"
-          npm install --global "pnpm@$want"
-          test "$(pnpm --dir web --version)" = "$want"
-          pnpm --dir web install --frozen-lockfile --ignore-scripts
-          pnpm --dir web exec turbo run build --filter=web
-          test -s web/apps/web/build/client/index.html
-
-      # One file, the same bytes for the same inputs: sorted names, no timestamps, no owners, no gzip header time.
-      - name: Make the bundle
-        env:
-          SHA: ${{ needs.plan.outputs.sha }}
-        run: |
-          set -eu
-          test -s crates/thrust-worker/build/worker/shim.mjs
-          test -s crates/thrust-worker/build/index.js
-          test -s crates/thrust-worker/build/index_bg.wasm
-          test -s web/apps/web/build/client/index.html
-          test -x target/release/migrate
-          mkdir -p bundle
-          cp -R crates/thrust-worker/build bundle/build
-          cp -R web/apps/web/build/client bundle/web
-          cp target/release/migrate bundle/migrate
-          printf '%s\n' "$SHA" > bundle/BUILD_SHA
-          (cd bundle && tar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner -cf - .) | gzip -n > deploy-bundle.tar.gz
-          sha256sum deploy-bundle.tar.gz
+          sha: ${{ needs.plan.outputs.sha }}
 
       - name: Upload the bundle
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -332,7 +297,10 @@ jobs:
   # needs the manual gate it deploys NOTHING and says so (`deferred`), which starts `deploy-do`.
   deploy:
     needs: [plan, build]
-    if: needs.plan.outputs.mode == 'deploy'
+    # `build` runs for staging only; production takes its release's bundle, so for it a skipped `build` is the expected one.
+    if: >-
+      !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.mode == 'deploy'
+      && (needs.build.result == 'success' || (needs.build.result == 'skipped' && needs.plan.outputs.environment == 'production'))
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     environment: ${{ needs.plan.outputs.environment }}
@@ -363,6 +331,7 @@ jobs:
         with:
           environment: ${{ needs.plan.outputs.environment }}
           sha: ${{ needs.plan.outputs.sha }}
+          release-tag: ${{ needs.plan.outputs.release }}
           inject-smoke-failure: ${{ needs.plan.outputs.inject }}
           skip-smoke: ${{ needs.plan.outputs.skip_smoke }}
           cloudflare-account-id: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
@@ -389,7 +358,7 @@ jobs:
   # a rollback is refused across a Durable Object lifecycle change, and the first deploy has nothing to go back to.
   deploy-do:
     needs: [plan, build, deploy]
-    if: needs.deploy.outputs.deferred == 'true'
+    if: "!cancelled() && needs.deploy.result == 'success' && needs.deploy.outputs.deferred == 'true'"
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     environment: ${{ needs.plan.outputs.environment }}-do-lifecycle
@@ -414,6 +383,7 @@ jobs:
         with:
           environment: ${{ needs.plan.outputs.environment }}
           sha: ${{ needs.plan.outputs.sha }}
+          release-tag: ${{ needs.plan.outputs.release }}
           allow-do-lifecycle: "true"
           inject-smoke-failure: ${{ needs.plan.outputs.inject }}
           skip-smoke: ${{ needs.plan.outputs.skip_smoke }}

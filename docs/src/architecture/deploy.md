@@ -5,7 +5,7 @@ each control guarantees, is on [CI/CD](cicd.md#the-deploy-pipeline); this page i
 it are ADR-0110 (the pipeline and its round-29 and round-30 updates), ADR-0101 (the token that stands in for OIDC) and
 ADR-0011 (why old web files are kept). Staging is no longer "a push to `main`", as ADR-0110 has it: it is the release
 candidate on an `rc/*` branch, and production a `v*` release tag (the owner's decision of 2026-11-14,
-`.agents/plans/cicd-review/`); the ADR that supersedes that part comes with the release pull request (PR 3 there).
+`.agents/plans/cicd-review/`), recorded in ADR-0110's update of 2026-11-15.
 
 **No environment has had a deploy through this pipeline yet.** Everything below that says what a run does is what the
 scripts do against a fake Cloudflare, and what `wrangler deploy --dry-run` and two `workflow_run` events have shown. The
@@ -51,8 +51,9 @@ a copy that is missing a value fails its job with the name of the value.)
   permission: the Custom Domain is attached by the infrastructure repository. It deviates from ADR-0101's OIDC because
   Cloudflare documents no OIDC federation for wrangler.
 - **The repository variable `THRUST_DEPLOY_ENABLED`** (a repository variable, not an environment's) switches the automatic
-  staging deploy of a release candidate on when it is `true`. Until then a green `ci` on an `rc/*` pull request plans `skip`
-  and nothing else runs. Manual runs do not need it.
+  deploys on when it is `true`: staging for a release candidate, production for a release (which still waits for the
+  reviewers). Until then a green `ci` on an `rc/*` pull request or on a tagged push to `main` plans `skip` and nothing else
+  runs. Manual runs do not need it.
 - **What is behind the variables**, in the infrastructure repository: for staging, a schema and a login role on
   `thrust-pg-dev` (with `pg_trgm` installed in `public` by an administrator, which migration `0006` needs and a schema-only
   role cannot do), a Hyperdrive configuration for that role, an R2 bucket, a queue and its dead-letter queue, two
@@ -68,8 +69,8 @@ a copy that is missing a value fails its job with the name of the value.)
 
 The Worker does not exist yet, so nothing can be attached to a hostname and the smoke has nowhere to look.
 
-1. Run **deploy** by hand from the open release candidate's `rc/*` branch for staging, or from the `v*` tag for production
-   ("Use workflow from"), with the environment and `first_deploy_skip_smoke` ticked.
+1. Run **deploy** by hand from the open release candidate's `rc/*` branch for staging, or from a published release's `v*`
+   tag for production ("Use workflow from"), with the environment and `first_deploy_skip_smoke` ticked.
 2. `deploy` finds no live version, defers, and deploys nothing. Approve `deploy-do`. It runs the expand migration (the whole
    schema), creates the Worker with its Durable Object migration `v1`, and skips the smoke. There is no automatic rollback and
    nothing proves the version works yet; the run says so.
@@ -85,9 +86,13 @@ anything, and together with `inject_smoke_failure`.
 
 Staging: `ci` passing on the release-candidate pull request, once `THRUST_DEPLOY_ENABLED` is `true` (the workflow then
 dispatches itself on the `rc/*` branch for that commit, and the dispatched run deploys it; if release-plz has moved the branch
-since, that run skips and the newer commit's own `ci` run starts its own). Or **deploy** by hand from an `rc/*` branch. Production:
-**deploy** by hand from a `v*` tag, which waits for the reviewers. `main` never deploys. `plan` first checks that the commit's own `gate` passed (asked for by name on that commit) and that the environments are
-gated. Then `build` makes the bundle with no secret anywhere in the job, and attests it. `deploy` verifies the attestation,
+since, that run skips and the newer commit's own `ci` run starts its own). Or **deploy** by hand from an `rc/*` branch.
+Production: `ci` passing on the tagged merge commit of a release, with the same switch (the workflow dispatches itself on the
+tag), or **deploy** by hand from a `v*` tag; either waits for the reviewers. `main` never deploys. ([Releasing](release.md) is
+the whole path from a merge.) `plan` first checks that the commit's own `gate` passed (asked for by name on that commit) and
+that the environments are gated. For staging, `build` then makes the bundle with no secret anywhere in the job, and attests
+it; production builds nothing and takes the bundle its release carries, only from a published, immutable release and only the
+file GitHub's attestation of that release names. `deploy` verifies the build attestation,
 reads what is live, and runs the expand migration only if a file under `crates/thrust-adapters-postgres/migrations/` differs
 from the live version's commit. It puts the previous release's web files under this release's (below), deploys at 100 %, and
 proves it. The job summary has a line for each step.
