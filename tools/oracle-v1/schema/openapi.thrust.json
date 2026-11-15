@@ -1,0 +1,3178 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Thrust /api/v1",
+    "description": "Plane's public v1 API as Thrust serves it. Compared with the pinned Plane schema by `oasdiff`.",
+    "license": {
+      "name": "AGPL-3.0-only",
+      "identifier": "AGPL-3.0-only"
+    },
+    "version": "0.0.0"
+  },
+  "paths": {
+    "/api/v1/workspaces/{slug}/projects-lite/": {
+      "get": {
+        "tags": [
+          "Projects"
+        ],
+        "summary": "List projects (lite)",
+        "operationId": "list_projects_lite",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "include_archived",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "order_by",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "per_page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated list of projects with minimal fields",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_ProjectLiteDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication credentials were not provided or are invalid."
+          },
+          "403": {
+            "description": "Permission denied. User lacks required permissions."
+          },
+          "404": {
+            "description": "Workspace not found"
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuthentication": []
+          }
+        ]
+      }
+    },
+    "/api/v1/workspaces/{slug}/projects/": {
+      "get": {
+        "tags": [
+          "Projects"
+        ],
+        "summary": "List or retrieve projects",
+        "operationId": "list_projects",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "fields",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "order_by",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "per_page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated list of projects",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_ProjectDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication credentials were not provided or are invalid."
+          },
+          "403": {
+            "description": "Permission denied. User lacks required permissions."
+          },
+          "404": {
+            "description": "Project not found"
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuthentication": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "Projects"
+        ],
+        "summary": "Create project",
+        "operationId": "create_project",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Project created successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication credentials were not provided or are invalid."
+          },
+          "403": {
+            "description": "Permission denied. User lacks required permissions."
+          },
+          "404": {
+            "description": "Workspace not found"
+          },
+          "409": {
+            "description": "Project name already taken"
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuthentication": []
+          }
+        ]
+      }
+    },
+    "/api/v1/workspaces/{slug}/projects/{pk}/": {
+      "get": {
+        "tags": [
+          "Projects"
+        ],
+        "summary": "Retrieve project",
+        "operationId": "retrieve_project",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "pk",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Project details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication credentials were not provided or are invalid."
+          },
+          "403": {
+            "description": "Permission denied. User lacks required permissions."
+          },
+          "404": {
+            "description": "Project not found"
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuthentication": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "Projects"
+        ],
+        "summary": "Delete project",
+        "operationId": "delete_project",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "pk",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Resource deleted successfully"
+          },
+          "401": {
+            "description": "Authentication credentials were not provided or are invalid."
+          },
+          "403": {
+            "description": "Permission denied. User lacks required permissions."
+          },
+          "404": {
+            "description": "The requested resource was not found."
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuthentication": []
+          }
+        ]
+      },
+      "patch": {
+        "tags": [
+          "Projects"
+        ],
+        "summary": "Update project",
+        "operationId": "update_project",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "pk",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/PatchedProjectUpdateRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Project updated successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication credentials were not provided or are invalid."
+          },
+          "403": {
+            "description": "Permission denied. User lacks required permissions."
+          },
+          "404": {
+            "description": "Project not found"
+          },
+          "409": {
+            "description": "Project name already taken"
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuthentication": []
+          }
+        ]
+      }
+    },
+    "/api/v1/workspaces/{slug}/projects/{project_id}/archive/": {
+      "post": {
+        "tags": [
+          "Projects"
+        ],
+        "summary": "Archive project",
+        "operationId": "archive_project",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Resource archived successfully"
+          },
+          "401": {
+            "description": "Authentication credentials were not provided or are invalid."
+          },
+          "403": {
+            "description": "Permission denied. User lacks required permissions."
+          },
+          "404": {
+            "description": "The requested resource was not found."
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuthentication": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "Projects"
+        ],
+        "summary": "Unarchive project",
+        "operationId": "unarchive_project",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Resource unarchived successfully"
+          },
+          "401": {
+            "description": "Authentication credentials were not provided or are invalid."
+          },
+          "403": {
+            "description": "Permission denied. User lacks required permissions."
+          },
+          "404": {
+            "description": "The requested resource was not found."
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuthentication": []
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Page_ProjectDto": {
+        "type": "object",
+        "description": "The 12-key envelope of every v1 list (`BasePaginator`): the page's rows, how many there are in all, how many pages, and the\ncursors of the next and the previous page. The pin's schema has one per resource (`PaginatedProjectResponse`, ...), which differ\nonly in what `results` holds.",
+        "required": [
+          "grouped_by",
+          "sub_grouped_by",
+          "total_count",
+          "next_cursor",
+          "prev_cursor",
+          "next_page_results",
+          "prev_page_results",
+          "count",
+          "total_pages",
+          "total_results",
+          "extra_stats",
+          "results"
+        ],
+        "properties": {
+          "count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "extra_stats": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "grouped_by": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Always `null`: a v1 list is not grouped. The key is always there (`required`), whatever it holds."
+          },
+          "next_cursor": {
+            "type": "string"
+          },
+          "next_page_results": {
+            "type": "boolean"
+          },
+          "prev_cursor": {
+            "type": "string"
+          },
+          "prev_page_results": {
+            "type": "boolean"
+          },
+          "results": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "description": "The pin's `ProjectSerializer`: 43 keys, and `sort_order` besides when the caller's place in the list is part of the answer. The pin\ncounts cycles and modules; Thrust has neither, so both are 0 (a deviation the register carries, D-030 (1)), and no deploy board\nexists. A key whose value can be `null` here is `Option`, which is what the document says of it (the pin's schema calls some of\nthese non-nullable and sends `null` all the same: EX-006).",
+              "required": [
+                "id",
+                "workspace",
+                "name",
+                "identifier",
+                "description",
+                "network",
+                "logo_props",
+                "module_view",
+                "cycle_view",
+                "issue_views_view",
+                "page_view",
+                "intake_view",
+                "is_time_tracking_enabled",
+                "is_issue_type_enabled",
+                "guest_view_all_features",
+                "archive_in",
+                "close_in",
+                "timezone",
+                "created_at",
+                "updated_at",
+                "is_member",
+                "total_members",
+                "total_cycles",
+                "total_modules",
+                "is_deployed"
+              ],
+              "properties": {
+                "archive_in": {
+                  "type": "integer",
+                  "maximum": 12,
+                  "minimum": 0
+                },
+                "archived_at": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "date-time"
+                },
+                "close_in": {
+                  "type": "integer",
+                  "maximum": 12,
+                  "minimum": 0
+                },
+                "cover_image": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "cover_image_asset": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "uuid"
+                },
+                "cover_image_url": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "created_at": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "created_by": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "uuid"
+                },
+                "cycle_view": {
+                  "type": "boolean"
+                },
+                "default_assignee": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "uuid"
+                },
+                "default_state": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "uuid"
+                },
+                "deleted_at": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "date-time",
+                  "description": "Always `null`: a deleted project is not shown."
+                },
+                "description": {
+                  "type": "string"
+                },
+                "description_html": {},
+                "description_text": {},
+                "emoji": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "estimate": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "uuid"
+                },
+                "external_id": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "maxLength": 255
+                },
+                "external_source": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "maxLength": 255
+                },
+                "guest_view_all_features": {
+                  "type": "boolean"
+                },
+                "icon_prop": {},
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "identifier": {
+                  "type": "string",
+                  "maxLength": 12
+                },
+                "intake_view": {
+                  "type": "boolean"
+                },
+                "is_deployed": {
+                  "type": "boolean"
+                },
+                "is_issue_type_enabled": {
+                  "type": "boolean"
+                },
+                "is_member": {
+                  "type": "boolean"
+                },
+                "is_time_tracking_enabled": {
+                  "type": "boolean"
+                },
+                "issue_views_view": {
+                  "type": "boolean"
+                },
+                "logo_props": {},
+                "member_role": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "module_view": {
+                  "type": "boolean"
+                },
+                "name": {
+                  "type": "string",
+                  "maxLength": 255
+                },
+                "network": {
+                  "type": "integer",
+                  "enum": [
+                    0,
+                    2
+                  ]
+                },
+                "page_view": {
+                  "type": "boolean"
+                },
+                "project_lead": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "uuid"
+                },
+                "sort_order": {
+                  "type": [
+                    "number",
+                    "null"
+                  ],
+                  "format": "double",
+                  "description": "Present in a list and absent from one project: the caller's place among the project's members, `null` for a person who has\nnone (the outer `Option` is whether the key is there, the inner one what it holds)."
+                },
+                "timezone": {
+                  "type": "string",
+                  "enum": [
+                    "Africa/Abidjan",
+                    "Africa/Accra",
+                    "Africa/Addis_Ababa",
+                    "Africa/Algiers",
+                    "Africa/Asmara",
+                    "Africa/Bamako",
+                    "Africa/Bangui",
+                    "Africa/Banjul",
+                    "Africa/Bissau",
+                    "Africa/Blantyre",
+                    "Africa/Brazzaville",
+                    "Africa/Bujumbura",
+                    "Africa/Cairo",
+                    "Africa/Casablanca",
+                    "Africa/Ceuta",
+                    "Africa/Conakry",
+                    "Africa/Dakar",
+                    "Africa/Dar_es_Salaam",
+                    "Africa/Djibouti",
+                    "Africa/Douala",
+                    "Africa/El_Aaiun",
+                    "Africa/Freetown",
+                    "Africa/Gaborone",
+                    "Africa/Harare",
+                    "Africa/Johannesburg",
+                    "Africa/Juba",
+                    "Africa/Kampala",
+                    "Africa/Khartoum",
+                    "Africa/Kigali",
+                    "Africa/Kinshasa",
+                    "Africa/Lagos",
+                    "Africa/Libreville",
+                    "Africa/Lome",
+                    "Africa/Luanda",
+                    "Africa/Lubumbashi",
+                    "Africa/Lusaka",
+                    "Africa/Malabo",
+                    "Africa/Maputo",
+                    "Africa/Maseru",
+                    "Africa/Mbabane",
+                    "Africa/Mogadishu",
+                    "Africa/Monrovia",
+                    "Africa/Nairobi",
+                    "Africa/Ndjamena",
+                    "Africa/Niamey",
+                    "Africa/Nouakchott",
+                    "Africa/Ouagadougou",
+                    "Africa/Porto-Novo",
+                    "Africa/Sao_Tome",
+                    "Africa/Tripoli",
+                    "Africa/Tunis",
+                    "Africa/Windhoek",
+                    "America/Adak",
+                    "America/Anchorage",
+                    "America/Anguilla",
+                    "America/Antigua",
+                    "America/Araguaina",
+                    "America/Argentina/Buenos_Aires",
+                    "America/Argentina/Catamarca",
+                    "America/Argentina/Cordoba",
+                    "America/Argentina/Jujuy",
+                    "America/Argentina/La_Rioja",
+                    "America/Argentina/Mendoza",
+                    "America/Argentina/Rio_Gallegos",
+                    "America/Argentina/Salta",
+                    "America/Argentina/San_Juan",
+                    "America/Argentina/San_Luis",
+                    "America/Argentina/Tucuman",
+                    "America/Argentina/Ushuaia",
+                    "America/Aruba",
+                    "America/Asuncion",
+                    "America/Atikokan",
+                    "America/Bahia",
+                    "America/Bahia_Banderas",
+                    "America/Barbados",
+                    "America/Belem",
+                    "America/Belize",
+                    "America/Blanc-Sablon",
+                    "America/Boa_Vista",
+                    "America/Bogota",
+                    "America/Boise",
+                    "America/Cambridge_Bay",
+                    "America/Campo_Grande",
+                    "America/Cancun",
+                    "America/Caracas",
+                    "America/Cayenne",
+                    "America/Cayman",
+                    "America/Chicago",
+                    "America/Chihuahua",
+                    "America/Ciudad_Juarez",
+                    "America/Costa_Rica",
+                    "America/Creston",
+                    "America/Cuiaba",
+                    "America/Curacao",
+                    "America/Danmarkshavn",
+                    "America/Dawson",
+                    "America/Dawson_Creek",
+                    "America/Denver",
+                    "America/Detroit",
+                    "America/Dominica",
+                    "America/Edmonton",
+                    "America/Eirunepe",
+                    "America/El_Salvador",
+                    "America/Fort_Nelson",
+                    "America/Fortaleza",
+                    "America/Glace_Bay",
+                    "America/Goose_Bay",
+                    "America/Grand_Turk",
+                    "America/Grenada",
+                    "America/Guadeloupe",
+                    "America/Guatemala",
+                    "America/Guayaquil",
+                    "America/Guyana",
+                    "America/Halifax",
+                    "America/Havana",
+                    "America/Hermosillo",
+                    "America/Indiana/Indianapolis",
+                    "America/Indiana/Knox",
+                    "America/Indiana/Marengo",
+                    "America/Indiana/Petersburg",
+                    "America/Indiana/Tell_City",
+                    "America/Indiana/Vevay",
+                    "America/Indiana/Vincennes",
+                    "America/Indiana/Winamac",
+                    "America/Inuvik",
+                    "America/Iqaluit",
+                    "America/Jamaica",
+                    "America/Juneau",
+                    "America/Kentucky/Louisville",
+                    "America/Kentucky/Monticello",
+                    "America/Kralendijk",
+                    "America/La_Paz",
+                    "America/Lima",
+                    "America/Los_Angeles",
+                    "America/Lower_Princes",
+                    "America/Maceio",
+                    "America/Managua",
+                    "America/Manaus",
+                    "America/Marigot",
+                    "America/Martinique",
+                    "America/Matamoros",
+                    "America/Mazatlan",
+                    "America/Menominee",
+                    "America/Merida",
+                    "America/Metlakatla",
+                    "America/Mexico_City",
+                    "America/Miquelon",
+                    "America/Moncton",
+                    "America/Monterrey",
+                    "America/Montevideo",
+                    "America/Montserrat",
+                    "America/Nassau",
+                    "America/New_York",
+                    "America/Nome",
+                    "America/Noronha",
+                    "America/North_Dakota/Beulah",
+                    "America/North_Dakota/Center",
+                    "America/North_Dakota/New_Salem",
+                    "America/Nuuk",
+                    "America/Ojinaga",
+                    "America/Panama",
+                    "America/Paramaribo",
+                    "America/Phoenix",
+                    "America/Port-au-Prince",
+                    "America/Port_of_Spain",
+                    "America/Porto_Velho",
+                    "America/Puerto_Rico",
+                    "America/Punta_Arenas",
+                    "America/Rankin_Inlet",
+                    "America/Recife",
+                    "America/Regina",
+                    "America/Resolute",
+                    "America/Rio_Branco",
+                    "America/Santarem",
+                    "America/Santiago",
+                    "America/Santo_Domingo",
+                    "America/Sao_Paulo",
+                    "America/Scoresbysund",
+                    "America/Sitka",
+                    "America/St_Barthelemy",
+                    "America/St_Johns",
+                    "America/St_Kitts",
+                    "America/St_Lucia",
+                    "America/St_Thomas",
+                    "America/St_Vincent",
+                    "America/Swift_Current",
+                    "America/Tegucigalpa",
+                    "America/Thule",
+                    "America/Tijuana",
+                    "America/Toronto",
+                    "America/Tortola",
+                    "America/Vancouver",
+                    "America/Whitehorse",
+                    "America/Winnipeg",
+                    "America/Yakutat",
+                    "Antarctica/Casey",
+                    "Antarctica/Davis",
+                    "Antarctica/DumontDUrville",
+                    "Antarctica/Macquarie",
+                    "Antarctica/Mawson",
+                    "Antarctica/McMurdo",
+                    "Antarctica/Palmer",
+                    "Antarctica/Rothera",
+                    "Antarctica/Syowa",
+                    "Antarctica/Troll",
+                    "Antarctica/Vostok",
+                    "Arctic/Longyearbyen",
+                    "Asia/Aden",
+                    "Asia/Almaty",
+                    "Asia/Amman",
+                    "Asia/Anadyr",
+                    "Asia/Aqtau",
+                    "Asia/Aqtobe",
+                    "Asia/Ashgabat",
+                    "Asia/Atyrau",
+                    "Asia/Baghdad",
+                    "Asia/Bahrain",
+                    "Asia/Baku",
+                    "Asia/Bangkok",
+                    "Asia/Barnaul",
+                    "Asia/Beirut",
+                    "Asia/Bishkek",
+                    "Asia/Brunei",
+                    "Asia/Chita",
+                    "Asia/Choibalsan",
+                    "Asia/Colombo",
+                    "Asia/Damascus",
+                    "Asia/Dhaka",
+                    "Asia/Dili",
+                    "Asia/Dubai",
+                    "Asia/Dushanbe",
+                    "Asia/Famagusta",
+                    "Asia/Gaza",
+                    "Asia/Hebron",
+                    "Asia/Ho_Chi_Minh",
+                    "Asia/Hong_Kong",
+                    "Asia/Hovd",
+                    "Asia/Irkutsk",
+                    "Asia/Jakarta",
+                    "Asia/Jayapura",
+                    "Asia/Jerusalem",
+                    "Asia/Kabul",
+                    "Asia/Kamchatka",
+                    "Asia/Karachi",
+                    "Asia/Kathmandu",
+                    "Asia/Khandyga",
+                    "Asia/Kolkata",
+                    "Asia/Krasnoyarsk",
+                    "Asia/Kuala_Lumpur",
+                    "Asia/Kuching",
+                    "Asia/Kuwait",
+                    "Asia/Macau",
+                    "Asia/Magadan",
+                    "Asia/Makassar",
+                    "Asia/Manila",
+                    "Asia/Muscat",
+                    "Asia/Nicosia",
+                    "Asia/Novokuznetsk",
+                    "Asia/Novosibirsk",
+                    "Asia/Omsk",
+                    "Asia/Oral",
+                    "Asia/Phnom_Penh",
+                    "Asia/Pontianak",
+                    "Asia/Pyongyang",
+                    "Asia/Qatar",
+                    "Asia/Qostanay",
+                    "Asia/Qyzylorda",
+                    "Asia/Riyadh",
+                    "Asia/Sakhalin",
+                    "Asia/Samarkand",
+                    "Asia/Seoul",
+                    "Asia/Shanghai",
+                    "Asia/Singapore",
+                    "Asia/Srednekolymsk",
+                    "Asia/Taipei",
+                    "Asia/Tashkent",
+                    "Asia/Tbilisi",
+                    "Asia/Tehran",
+                    "Asia/Thimphu",
+                    "Asia/Tokyo",
+                    "Asia/Tomsk",
+                    "Asia/Ulaanbaatar",
+                    "Asia/Urumqi",
+                    "Asia/Ust-Nera",
+                    "Asia/Vientiane",
+                    "Asia/Vladivostok",
+                    "Asia/Yakutsk",
+                    "Asia/Yangon",
+                    "Asia/Yekaterinburg",
+                    "Asia/Yerevan",
+                    "Atlantic/Azores",
+                    "Atlantic/Bermuda",
+                    "Atlantic/Canary",
+                    "Atlantic/Cape_Verde",
+                    "Atlantic/Faroe",
+                    "Atlantic/Madeira",
+                    "Atlantic/Reykjavik",
+                    "Atlantic/South_Georgia",
+                    "Atlantic/St_Helena",
+                    "Atlantic/Stanley",
+                    "Australia/Adelaide",
+                    "Australia/Brisbane",
+                    "Australia/Broken_Hill",
+                    "Australia/Darwin",
+                    "Australia/Eucla",
+                    "Australia/Hobart",
+                    "Australia/Lindeman",
+                    "Australia/Lord_Howe",
+                    "Australia/Melbourne",
+                    "Australia/Perth",
+                    "Australia/Sydney",
+                    "Canada/Atlantic",
+                    "Canada/Central",
+                    "Canada/Eastern",
+                    "Canada/Mountain",
+                    "Canada/Newfoundland",
+                    "Canada/Pacific",
+                    "Europe/Amsterdam",
+                    "Europe/Andorra",
+                    "Europe/Astrakhan",
+                    "Europe/Athens",
+                    "Europe/Belgrade",
+                    "Europe/Berlin",
+                    "Europe/Bratislava",
+                    "Europe/Brussels",
+                    "Europe/Bucharest",
+                    "Europe/Budapest",
+                    "Europe/Busingen",
+                    "Europe/Chisinau",
+                    "Europe/Copenhagen",
+                    "Europe/Dublin",
+                    "Europe/Gibraltar",
+                    "Europe/Guernsey",
+                    "Europe/Helsinki",
+                    "Europe/Isle_of_Man",
+                    "Europe/Istanbul",
+                    "Europe/Jersey",
+                    "Europe/Kaliningrad",
+                    "Europe/Kirov",
+                    "Europe/Kyiv",
+                    "Europe/Lisbon",
+                    "Europe/Ljubljana",
+                    "Europe/London",
+                    "Europe/Luxembourg",
+                    "Europe/Madrid",
+                    "Europe/Malta",
+                    "Europe/Mariehamn",
+                    "Europe/Minsk",
+                    "Europe/Monaco",
+                    "Europe/Moscow",
+                    "Europe/Oslo",
+                    "Europe/Paris",
+                    "Europe/Podgorica",
+                    "Europe/Prague",
+                    "Europe/Riga",
+                    "Europe/Rome",
+                    "Europe/Samara",
+                    "Europe/San_Marino",
+                    "Europe/Sarajevo",
+                    "Europe/Saratov",
+                    "Europe/Simferopol",
+                    "Europe/Skopje",
+                    "Europe/Sofia",
+                    "Europe/Stockholm",
+                    "Europe/Tallinn",
+                    "Europe/Tirane",
+                    "Europe/Ulyanovsk",
+                    "Europe/Vaduz",
+                    "Europe/Vatican",
+                    "Europe/Vienna",
+                    "Europe/Vilnius",
+                    "Europe/Volgograd",
+                    "Europe/Warsaw",
+                    "Europe/Zagreb",
+                    "Europe/Zurich",
+                    "GMT",
+                    "Indian/Antananarivo",
+                    "Indian/Chagos",
+                    "Indian/Christmas",
+                    "Indian/Cocos",
+                    "Indian/Comoro",
+                    "Indian/Kerguelen",
+                    "Indian/Mahe",
+                    "Indian/Maldives",
+                    "Indian/Mauritius",
+                    "Indian/Mayotte",
+                    "Indian/Reunion",
+                    "Pacific/Apia",
+                    "Pacific/Auckland",
+                    "Pacific/Bougainville",
+                    "Pacific/Chatham",
+                    "Pacific/Chuuk",
+                    "Pacific/Easter",
+                    "Pacific/Efate",
+                    "Pacific/Fakaofo",
+                    "Pacific/Fiji",
+                    "Pacific/Funafuti",
+                    "Pacific/Galapagos",
+                    "Pacific/Gambier",
+                    "Pacific/Guadalcanal",
+                    "Pacific/Guam",
+                    "Pacific/Honolulu",
+                    "Pacific/Kanton",
+                    "Pacific/Kiritimati",
+                    "Pacific/Kosrae",
+                    "Pacific/Kwajalein",
+                    "Pacific/Majuro",
+                    "Pacific/Marquesas",
+                    "Pacific/Midway",
+                    "Pacific/Nauru",
+                    "Pacific/Niue",
+                    "Pacific/Norfolk",
+                    "Pacific/Noumea",
+                    "Pacific/Pago_Pago",
+                    "Pacific/Palau",
+                    "Pacific/Pitcairn",
+                    "Pacific/Pohnpei",
+                    "Pacific/Port_Moresby",
+                    "Pacific/Rarotonga",
+                    "Pacific/Saipan",
+                    "Pacific/Tahiti",
+                    "Pacific/Tarawa",
+                    "Pacific/Tongatapu",
+                    "Pacific/Wake",
+                    "Pacific/Wallis",
+                    "US/Alaska",
+                    "US/Arizona",
+                    "US/Central",
+                    "US/Eastern",
+                    "US/Hawaii",
+                    "US/Mountain",
+                    "US/Pacific",
+                    "UTC"
+                  ]
+                },
+                "total_cycles": {
+                  "type": "integer",
+                  "format": "int64"
+                },
+                "total_members": {
+                  "type": "integer",
+                  "format": "int64"
+                },
+                "total_modules": {
+                  "type": "integer",
+                  "format": "int64"
+                },
+                "updated_at": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "updated_by": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "uuid"
+                },
+                "workspace": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          },
+          "sub_grouped_by": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "total_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "total_pages": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "total_results": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "Page_ProjectLiteDto": {
+        "type": "object",
+        "description": "The 12-key envelope of every v1 list (`BasePaginator`): the page's rows, how many there are in all, how many pages, and the\ncursors of the next and the previous page. The pin's schema has one per resource (`PaginatedProjectResponse`, ...), which differ\nonly in what `results` holds.",
+        "required": [
+          "grouped_by",
+          "sub_grouped_by",
+          "total_count",
+          "next_cursor",
+          "prev_cursor",
+          "next_page_results",
+          "prev_page_results",
+          "count",
+          "total_pages",
+          "total_results",
+          "extra_stats",
+          "results"
+        ],
+        "properties": {
+          "count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "extra_stats": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "grouped_by": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Always `null`: a v1 list is not grouped. The key is always there (`required`), whatever it holds."
+          },
+          "next_cursor": {
+            "type": "string"
+          },
+          "next_page_results": {
+            "type": "boolean"
+          },
+          "prev_cursor": {
+            "type": "string"
+          },
+          "prev_page_results": {
+            "type": "boolean"
+          },
+          "results": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "description": "The pin's `ProjectLiteSerializer`: nine keys.",
+              "required": [
+                "id",
+                "identifier",
+                "name",
+                "description"
+              ],
+              "properties": {
+                "archived_at": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "date-time"
+                },
+                "cover_image": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "cover_image_url": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "description": {
+                  "type": "string"
+                },
+                "emoji": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "icon_prop": {},
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "identifier": {
+                  "type": "string",
+                  "maxLength": 12
+                },
+                "name": {
+                  "type": "string",
+                  "maxLength": 255
+                }
+              }
+            }
+          },
+          "sub_grouped_by": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "total_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "total_pages": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "total_results": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "PatchedProjectUpdateRequest": {
+        "type": "object",
+        "description": "What a project's change takes (the pin's `ProjectUpdateSerializer`): the creation's keys, none required, and the two ids that a\nchange can set.",
+        "properties": {
+          "archive_in": {
+            "type": "integer",
+            "maximum": 12,
+            "minimum": 0
+          },
+          "close_in": {
+            "type": "integer",
+            "maximum": 12,
+            "minimum": 0
+          },
+          "cover_image": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "cycle_view": {
+            "type": "boolean"
+          },
+          "default_assignee": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "default_state": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "description": {
+            "type": "string"
+          },
+          "emoji": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 255
+          },
+          "estimate": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "external_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 255
+          },
+          "external_source": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 255
+          },
+          "guest_view_all_features": {
+            "type": "boolean"
+          },
+          "icon_prop": {},
+          "identifier": {
+            "type": "string",
+            "maxLength": 12,
+            "minLength": 1
+          },
+          "intake_view": {
+            "type": "boolean"
+          },
+          "is_issue_type_enabled": {
+            "type": "boolean"
+          },
+          "is_time_tracking_enabled": {
+            "type": "boolean"
+          },
+          "issue_views_view": {
+            "type": "boolean"
+          },
+          "module_view": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1
+          },
+          "page_view": {
+            "type": "boolean"
+          },
+          "project_lead": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "timezone": {
+            "type": "string",
+            "enum": [
+              "Africa/Abidjan",
+              "Africa/Accra",
+              "Africa/Addis_Ababa",
+              "Africa/Algiers",
+              "Africa/Asmara",
+              "Africa/Bamako",
+              "Africa/Bangui",
+              "Africa/Banjul",
+              "Africa/Bissau",
+              "Africa/Blantyre",
+              "Africa/Brazzaville",
+              "Africa/Bujumbura",
+              "Africa/Cairo",
+              "Africa/Casablanca",
+              "Africa/Ceuta",
+              "Africa/Conakry",
+              "Africa/Dakar",
+              "Africa/Dar_es_Salaam",
+              "Africa/Djibouti",
+              "Africa/Douala",
+              "Africa/El_Aaiun",
+              "Africa/Freetown",
+              "Africa/Gaborone",
+              "Africa/Harare",
+              "Africa/Johannesburg",
+              "Africa/Juba",
+              "Africa/Kampala",
+              "Africa/Khartoum",
+              "Africa/Kigali",
+              "Africa/Kinshasa",
+              "Africa/Lagos",
+              "Africa/Libreville",
+              "Africa/Lome",
+              "Africa/Luanda",
+              "Africa/Lubumbashi",
+              "Africa/Lusaka",
+              "Africa/Malabo",
+              "Africa/Maputo",
+              "Africa/Maseru",
+              "Africa/Mbabane",
+              "Africa/Mogadishu",
+              "Africa/Monrovia",
+              "Africa/Nairobi",
+              "Africa/Ndjamena",
+              "Africa/Niamey",
+              "Africa/Nouakchott",
+              "Africa/Ouagadougou",
+              "Africa/Porto-Novo",
+              "Africa/Sao_Tome",
+              "Africa/Tripoli",
+              "Africa/Tunis",
+              "Africa/Windhoek",
+              "America/Adak",
+              "America/Anchorage",
+              "America/Anguilla",
+              "America/Antigua",
+              "America/Araguaina",
+              "America/Argentina/Buenos_Aires",
+              "America/Argentina/Catamarca",
+              "America/Argentina/Cordoba",
+              "America/Argentina/Jujuy",
+              "America/Argentina/La_Rioja",
+              "America/Argentina/Mendoza",
+              "America/Argentina/Rio_Gallegos",
+              "America/Argentina/Salta",
+              "America/Argentina/San_Juan",
+              "America/Argentina/San_Luis",
+              "America/Argentina/Tucuman",
+              "America/Argentina/Ushuaia",
+              "America/Aruba",
+              "America/Asuncion",
+              "America/Atikokan",
+              "America/Bahia",
+              "America/Bahia_Banderas",
+              "America/Barbados",
+              "America/Belem",
+              "America/Belize",
+              "America/Blanc-Sablon",
+              "America/Boa_Vista",
+              "America/Bogota",
+              "America/Boise",
+              "America/Cambridge_Bay",
+              "America/Campo_Grande",
+              "America/Cancun",
+              "America/Caracas",
+              "America/Cayenne",
+              "America/Cayman",
+              "America/Chicago",
+              "America/Chihuahua",
+              "America/Ciudad_Juarez",
+              "America/Costa_Rica",
+              "America/Creston",
+              "America/Cuiaba",
+              "America/Curacao",
+              "America/Danmarkshavn",
+              "America/Dawson",
+              "America/Dawson_Creek",
+              "America/Denver",
+              "America/Detroit",
+              "America/Dominica",
+              "America/Edmonton",
+              "America/Eirunepe",
+              "America/El_Salvador",
+              "America/Fort_Nelson",
+              "America/Fortaleza",
+              "America/Glace_Bay",
+              "America/Goose_Bay",
+              "America/Grand_Turk",
+              "America/Grenada",
+              "America/Guadeloupe",
+              "America/Guatemala",
+              "America/Guayaquil",
+              "America/Guyana",
+              "America/Halifax",
+              "America/Havana",
+              "America/Hermosillo",
+              "America/Indiana/Indianapolis",
+              "America/Indiana/Knox",
+              "America/Indiana/Marengo",
+              "America/Indiana/Petersburg",
+              "America/Indiana/Tell_City",
+              "America/Indiana/Vevay",
+              "America/Indiana/Vincennes",
+              "America/Indiana/Winamac",
+              "America/Inuvik",
+              "America/Iqaluit",
+              "America/Jamaica",
+              "America/Juneau",
+              "America/Kentucky/Louisville",
+              "America/Kentucky/Monticello",
+              "America/Kralendijk",
+              "America/La_Paz",
+              "America/Lima",
+              "America/Los_Angeles",
+              "America/Lower_Princes",
+              "America/Maceio",
+              "America/Managua",
+              "America/Manaus",
+              "America/Marigot",
+              "America/Martinique",
+              "America/Matamoros",
+              "America/Mazatlan",
+              "America/Menominee",
+              "America/Merida",
+              "America/Metlakatla",
+              "America/Mexico_City",
+              "America/Miquelon",
+              "America/Moncton",
+              "America/Monterrey",
+              "America/Montevideo",
+              "America/Montserrat",
+              "America/Nassau",
+              "America/New_York",
+              "America/Nome",
+              "America/Noronha",
+              "America/North_Dakota/Beulah",
+              "America/North_Dakota/Center",
+              "America/North_Dakota/New_Salem",
+              "America/Nuuk",
+              "America/Ojinaga",
+              "America/Panama",
+              "America/Paramaribo",
+              "America/Phoenix",
+              "America/Port-au-Prince",
+              "America/Port_of_Spain",
+              "America/Porto_Velho",
+              "America/Puerto_Rico",
+              "America/Punta_Arenas",
+              "America/Rankin_Inlet",
+              "America/Recife",
+              "America/Regina",
+              "America/Resolute",
+              "America/Rio_Branco",
+              "America/Santarem",
+              "America/Santiago",
+              "America/Santo_Domingo",
+              "America/Sao_Paulo",
+              "America/Scoresbysund",
+              "America/Sitka",
+              "America/St_Barthelemy",
+              "America/St_Johns",
+              "America/St_Kitts",
+              "America/St_Lucia",
+              "America/St_Thomas",
+              "America/St_Vincent",
+              "America/Swift_Current",
+              "America/Tegucigalpa",
+              "America/Thule",
+              "America/Tijuana",
+              "America/Toronto",
+              "America/Tortola",
+              "America/Vancouver",
+              "America/Whitehorse",
+              "America/Winnipeg",
+              "America/Yakutat",
+              "Antarctica/Casey",
+              "Antarctica/Davis",
+              "Antarctica/DumontDUrville",
+              "Antarctica/Macquarie",
+              "Antarctica/Mawson",
+              "Antarctica/McMurdo",
+              "Antarctica/Palmer",
+              "Antarctica/Rothera",
+              "Antarctica/Syowa",
+              "Antarctica/Troll",
+              "Antarctica/Vostok",
+              "Arctic/Longyearbyen",
+              "Asia/Aden",
+              "Asia/Almaty",
+              "Asia/Amman",
+              "Asia/Anadyr",
+              "Asia/Aqtau",
+              "Asia/Aqtobe",
+              "Asia/Ashgabat",
+              "Asia/Atyrau",
+              "Asia/Baghdad",
+              "Asia/Bahrain",
+              "Asia/Baku",
+              "Asia/Bangkok",
+              "Asia/Barnaul",
+              "Asia/Beirut",
+              "Asia/Bishkek",
+              "Asia/Brunei",
+              "Asia/Chita",
+              "Asia/Choibalsan",
+              "Asia/Colombo",
+              "Asia/Damascus",
+              "Asia/Dhaka",
+              "Asia/Dili",
+              "Asia/Dubai",
+              "Asia/Dushanbe",
+              "Asia/Famagusta",
+              "Asia/Gaza",
+              "Asia/Hebron",
+              "Asia/Ho_Chi_Minh",
+              "Asia/Hong_Kong",
+              "Asia/Hovd",
+              "Asia/Irkutsk",
+              "Asia/Jakarta",
+              "Asia/Jayapura",
+              "Asia/Jerusalem",
+              "Asia/Kabul",
+              "Asia/Kamchatka",
+              "Asia/Karachi",
+              "Asia/Kathmandu",
+              "Asia/Khandyga",
+              "Asia/Kolkata",
+              "Asia/Krasnoyarsk",
+              "Asia/Kuala_Lumpur",
+              "Asia/Kuching",
+              "Asia/Kuwait",
+              "Asia/Macau",
+              "Asia/Magadan",
+              "Asia/Makassar",
+              "Asia/Manila",
+              "Asia/Muscat",
+              "Asia/Nicosia",
+              "Asia/Novokuznetsk",
+              "Asia/Novosibirsk",
+              "Asia/Omsk",
+              "Asia/Oral",
+              "Asia/Phnom_Penh",
+              "Asia/Pontianak",
+              "Asia/Pyongyang",
+              "Asia/Qatar",
+              "Asia/Qostanay",
+              "Asia/Qyzylorda",
+              "Asia/Riyadh",
+              "Asia/Sakhalin",
+              "Asia/Samarkand",
+              "Asia/Seoul",
+              "Asia/Shanghai",
+              "Asia/Singapore",
+              "Asia/Srednekolymsk",
+              "Asia/Taipei",
+              "Asia/Tashkent",
+              "Asia/Tbilisi",
+              "Asia/Tehran",
+              "Asia/Thimphu",
+              "Asia/Tokyo",
+              "Asia/Tomsk",
+              "Asia/Ulaanbaatar",
+              "Asia/Urumqi",
+              "Asia/Ust-Nera",
+              "Asia/Vientiane",
+              "Asia/Vladivostok",
+              "Asia/Yakutsk",
+              "Asia/Yangon",
+              "Asia/Yekaterinburg",
+              "Asia/Yerevan",
+              "Atlantic/Azores",
+              "Atlantic/Bermuda",
+              "Atlantic/Canary",
+              "Atlantic/Cape_Verde",
+              "Atlantic/Faroe",
+              "Atlantic/Madeira",
+              "Atlantic/Reykjavik",
+              "Atlantic/South_Georgia",
+              "Atlantic/St_Helena",
+              "Atlantic/Stanley",
+              "Australia/Adelaide",
+              "Australia/Brisbane",
+              "Australia/Broken_Hill",
+              "Australia/Darwin",
+              "Australia/Eucla",
+              "Australia/Hobart",
+              "Australia/Lindeman",
+              "Australia/Lord_Howe",
+              "Australia/Melbourne",
+              "Australia/Perth",
+              "Australia/Sydney",
+              "Canada/Atlantic",
+              "Canada/Central",
+              "Canada/Eastern",
+              "Canada/Mountain",
+              "Canada/Newfoundland",
+              "Canada/Pacific",
+              "Europe/Amsterdam",
+              "Europe/Andorra",
+              "Europe/Astrakhan",
+              "Europe/Athens",
+              "Europe/Belgrade",
+              "Europe/Berlin",
+              "Europe/Bratislava",
+              "Europe/Brussels",
+              "Europe/Bucharest",
+              "Europe/Budapest",
+              "Europe/Busingen",
+              "Europe/Chisinau",
+              "Europe/Copenhagen",
+              "Europe/Dublin",
+              "Europe/Gibraltar",
+              "Europe/Guernsey",
+              "Europe/Helsinki",
+              "Europe/Isle_of_Man",
+              "Europe/Istanbul",
+              "Europe/Jersey",
+              "Europe/Kaliningrad",
+              "Europe/Kirov",
+              "Europe/Kyiv",
+              "Europe/Lisbon",
+              "Europe/Ljubljana",
+              "Europe/London",
+              "Europe/Luxembourg",
+              "Europe/Madrid",
+              "Europe/Malta",
+              "Europe/Mariehamn",
+              "Europe/Minsk",
+              "Europe/Monaco",
+              "Europe/Moscow",
+              "Europe/Oslo",
+              "Europe/Paris",
+              "Europe/Podgorica",
+              "Europe/Prague",
+              "Europe/Riga",
+              "Europe/Rome",
+              "Europe/Samara",
+              "Europe/San_Marino",
+              "Europe/Sarajevo",
+              "Europe/Saratov",
+              "Europe/Simferopol",
+              "Europe/Skopje",
+              "Europe/Sofia",
+              "Europe/Stockholm",
+              "Europe/Tallinn",
+              "Europe/Tirane",
+              "Europe/Ulyanovsk",
+              "Europe/Vaduz",
+              "Europe/Vatican",
+              "Europe/Vienna",
+              "Europe/Vilnius",
+              "Europe/Volgograd",
+              "Europe/Warsaw",
+              "Europe/Zagreb",
+              "Europe/Zurich",
+              "GMT",
+              "Indian/Antananarivo",
+              "Indian/Chagos",
+              "Indian/Christmas",
+              "Indian/Cocos",
+              "Indian/Comoro",
+              "Indian/Kerguelen",
+              "Indian/Mahe",
+              "Indian/Maldives",
+              "Indian/Mauritius",
+              "Indian/Mayotte",
+              "Indian/Reunion",
+              "Pacific/Apia",
+              "Pacific/Auckland",
+              "Pacific/Bougainville",
+              "Pacific/Chatham",
+              "Pacific/Chuuk",
+              "Pacific/Easter",
+              "Pacific/Efate",
+              "Pacific/Fakaofo",
+              "Pacific/Fiji",
+              "Pacific/Funafuti",
+              "Pacific/Galapagos",
+              "Pacific/Gambier",
+              "Pacific/Guadalcanal",
+              "Pacific/Guam",
+              "Pacific/Honolulu",
+              "Pacific/Kanton",
+              "Pacific/Kiritimati",
+              "Pacific/Kosrae",
+              "Pacific/Kwajalein",
+              "Pacific/Majuro",
+              "Pacific/Marquesas",
+              "Pacific/Midway",
+              "Pacific/Nauru",
+              "Pacific/Niue",
+              "Pacific/Norfolk",
+              "Pacific/Noumea",
+              "Pacific/Pago_Pago",
+              "Pacific/Palau",
+              "Pacific/Pitcairn",
+              "Pacific/Pohnpei",
+              "Pacific/Port_Moresby",
+              "Pacific/Rarotonga",
+              "Pacific/Saipan",
+              "Pacific/Tahiti",
+              "Pacific/Tarawa",
+              "Pacific/Tongatapu",
+              "Pacific/Wake",
+              "Pacific/Wallis",
+              "US/Alaska",
+              "US/Arizona",
+              "US/Central",
+              "US/Eastern",
+              "US/Hawaii",
+              "US/Mountain",
+              "US/Pacific",
+              "UTC"
+            ]
+          }
+        }
+      },
+      "ProjectCreateRequest": {
+        "type": "object",
+        "description": "What a project's creation takes (the pin's `ProjectCreateSerializer`). `description` and the two switches are optional and not\nnullable; the ids and the texts that can be `null` are `Option`.",
+        "required": [
+          "name",
+          "identifier"
+        ],
+        "properties": {
+          "archive_in": {
+            "type": "integer",
+            "maximum": 12,
+            "minimum": 0
+          },
+          "close_in": {
+            "type": "integer",
+            "maximum": 12,
+            "minimum": 0
+          },
+          "cover_image": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "cycle_view": {
+            "type": "boolean"
+          },
+          "default_assignee": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "description": {
+            "type": "string"
+          },
+          "emoji": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 255
+          },
+          "external_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 255
+          },
+          "external_source": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 255
+          },
+          "guest_view_all_features": {
+            "type": "boolean"
+          },
+          "icon_prop": {},
+          "identifier": {
+            "type": "string",
+            "maxLength": 12,
+            "minLength": 1
+          },
+          "intake_view": {
+            "type": "boolean"
+          },
+          "is_issue_type_enabled": {
+            "type": "boolean"
+          },
+          "is_time_tracking_enabled": {
+            "type": "boolean"
+          },
+          "issue_views_view": {
+            "type": "boolean"
+          },
+          "module_view": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1
+          },
+          "page_view": {
+            "type": "boolean"
+          },
+          "project_lead": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "timezone": {
+            "type": "string",
+            "enum": [
+              "Africa/Abidjan",
+              "Africa/Accra",
+              "Africa/Addis_Ababa",
+              "Africa/Algiers",
+              "Africa/Asmara",
+              "Africa/Bamako",
+              "Africa/Bangui",
+              "Africa/Banjul",
+              "Africa/Bissau",
+              "Africa/Blantyre",
+              "Africa/Brazzaville",
+              "Africa/Bujumbura",
+              "Africa/Cairo",
+              "Africa/Casablanca",
+              "Africa/Ceuta",
+              "Africa/Conakry",
+              "Africa/Dakar",
+              "Africa/Dar_es_Salaam",
+              "Africa/Djibouti",
+              "Africa/Douala",
+              "Africa/El_Aaiun",
+              "Africa/Freetown",
+              "Africa/Gaborone",
+              "Africa/Harare",
+              "Africa/Johannesburg",
+              "Africa/Juba",
+              "Africa/Kampala",
+              "Africa/Khartoum",
+              "Africa/Kigali",
+              "Africa/Kinshasa",
+              "Africa/Lagos",
+              "Africa/Libreville",
+              "Africa/Lome",
+              "Africa/Luanda",
+              "Africa/Lubumbashi",
+              "Africa/Lusaka",
+              "Africa/Malabo",
+              "Africa/Maputo",
+              "Africa/Maseru",
+              "Africa/Mbabane",
+              "Africa/Mogadishu",
+              "Africa/Monrovia",
+              "Africa/Nairobi",
+              "Africa/Ndjamena",
+              "Africa/Niamey",
+              "Africa/Nouakchott",
+              "Africa/Ouagadougou",
+              "Africa/Porto-Novo",
+              "Africa/Sao_Tome",
+              "Africa/Tripoli",
+              "Africa/Tunis",
+              "Africa/Windhoek",
+              "America/Adak",
+              "America/Anchorage",
+              "America/Anguilla",
+              "America/Antigua",
+              "America/Araguaina",
+              "America/Argentina/Buenos_Aires",
+              "America/Argentina/Catamarca",
+              "America/Argentina/Cordoba",
+              "America/Argentina/Jujuy",
+              "America/Argentina/La_Rioja",
+              "America/Argentina/Mendoza",
+              "America/Argentina/Rio_Gallegos",
+              "America/Argentina/Salta",
+              "America/Argentina/San_Juan",
+              "America/Argentina/San_Luis",
+              "America/Argentina/Tucuman",
+              "America/Argentina/Ushuaia",
+              "America/Aruba",
+              "America/Asuncion",
+              "America/Atikokan",
+              "America/Bahia",
+              "America/Bahia_Banderas",
+              "America/Barbados",
+              "America/Belem",
+              "America/Belize",
+              "America/Blanc-Sablon",
+              "America/Boa_Vista",
+              "America/Bogota",
+              "America/Boise",
+              "America/Cambridge_Bay",
+              "America/Campo_Grande",
+              "America/Cancun",
+              "America/Caracas",
+              "America/Cayenne",
+              "America/Cayman",
+              "America/Chicago",
+              "America/Chihuahua",
+              "America/Ciudad_Juarez",
+              "America/Costa_Rica",
+              "America/Creston",
+              "America/Cuiaba",
+              "America/Curacao",
+              "America/Danmarkshavn",
+              "America/Dawson",
+              "America/Dawson_Creek",
+              "America/Denver",
+              "America/Detroit",
+              "America/Dominica",
+              "America/Edmonton",
+              "America/Eirunepe",
+              "America/El_Salvador",
+              "America/Fort_Nelson",
+              "America/Fortaleza",
+              "America/Glace_Bay",
+              "America/Goose_Bay",
+              "America/Grand_Turk",
+              "America/Grenada",
+              "America/Guadeloupe",
+              "America/Guatemala",
+              "America/Guayaquil",
+              "America/Guyana",
+              "America/Halifax",
+              "America/Havana",
+              "America/Hermosillo",
+              "America/Indiana/Indianapolis",
+              "America/Indiana/Knox",
+              "America/Indiana/Marengo",
+              "America/Indiana/Petersburg",
+              "America/Indiana/Tell_City",
+              "America/Indiana/Vevay",
+              "America/Indiana/Vincennes",
+              "America/Indiana/Winamac",
+              "America/Inuvik",
+              "America/Iqaluit",
+              "America/Jamaica",
+              "America/Juneau",
+              "America/Kentucky/Louisville",
+              "America/Kentucky/Monticello",
+              "America/Kralendijk",
+              "America/La_Paz",
+              "America/Lima",
+              "America/Los_Angeles",
+              "America/Lower_Princes",
+              "America/Maceio",
+              "America/Managua",
+              "America/Manaus",
+              "America/Marigot",
+              "America/Martinique",
+              "America/Matamoros",
+              "America/Mazatlan",
+              "America/Menominee",
+              "America/Merida",
+              "America/Metlakatla",
+              "America/Mexico_City",
+              "America/Miquelon",
+              "America/Moncton",
+              "America/Monterrey",
+              "America/Montevideo",
+              "America/Montserrat",
+              "America/Nassau",
+              "America/New_York",
+              "America/Nome",
+              "America/Noronha",
+              "America/North_Dakota/Beulah",
+              "America/North_Dakota/Center",
+              "America/North_Dakota/New_Salem",
+              "America/Nuuk",
+              "America/Ojinaga",
+              "America/Panama",
+              "America/Paramaribo",
+              "America/Phoenix",
+              "America/Port-au-Prince",
+              "America/Port_of_Spain",
+              "America/Porto_Velho",
+              "America/Puerto_Rico",
+              "America/Punta_Arenas",
+              "America/Rankin_Inlet",
+              "America/Recife",
+              "America/Regina",
+              "America/Resolute",
+              "America/Rio_Branco",
+              "America/Santarem",
+              "America/Santiago",
+              "America/Santo_Domingo",
+              "America/Sao_Paulo",
+              "America/Scoresbysund",
+              "America/Sitka",
+              "America/St_Barthelemy",
+              "America/St_Johns",
+              "America/St_Kitts",
+              "America/St_Lucia",
+              "America/St_Thomas",
+              "America/St_Vincent",
+              "America/Swift_Current",
+              "America/Tegucigalpa",
+              "America/Thule",
+              "America/Tijuana",
+              "America/Toronto",
+              "America/Tortola",
+              "America/Vancouver",
+              "America/Whitehorse",
+              "America/Winnipeg",
+              "America/Yakutat",
+              "Antarctica/Casey",
+              "Antarctica/Davis",
+              "Antarctica/DumontDUrville",
+              "Antarctica/Macquarie",
+              "Antarctica/Mawson",
+              "Antarctica/McMurdo",
+              "Antarctica/Palmer",
+              "Antarctica/Rothera",
+              "Antarctica/Syowa",
+              "Antarctica/Troll",
+              "Antarctica/Vostok",
+              "Arctic/Longyearbyen",
+              "Asia/Aden",
+              "Asia/Almaty",
+              "Asia/Amman",
+              "Asia/Anadyr",
+              "Asia/Aqtau",
+              "Asia/Aqtobe",
+              "Asia/Ashgabat",
+              "Asia/Atyrau",
+              "Asia/Baghdad",
+              "Asia/Bahrain",
+              "Asia/Baku",
+              "Asia/Bangkok",
+              "Asia/Barnaul",
+              "Asia/Beirut",
+              "Asia/Bishkek",
+              "Asia/Brunei",
+              "Asia/Chita",
+              "Asia/Choibalsan",
+              "Asia/Colombo",
+              "Asia/Damascus",
+              "Asia/Dhaka",
+              "Asia/Dili",
+              "Asia/Dubai",
+              "Asia/Dushanbe",
+              "Asia/Famagusta",
+              "Asia/Gaza",
+              "Asia/Hebron",
+              "Asia/Ho_Chi_Minh",
+              "Asia/Hong_Kong",
+              "Asia/Hovd",
+              "Asia/Irkutsk",
+              "Asia/Jakarta",
+              "Asia/Jayapura",
+              "Asia/Jerusalem",
+              "Asia/Kabul",
+              "Asia/Kamchatka",
+              "Asia/Karachi",
+              "Asia/Kathmandu",
+              "Asia/Khandyga",
+              "Asia/Kolkata",
+              "Asia/Krasnoyarsk",
+              "Asia/Kuala_Lumpur",
+              "Asia/Kuching",
+              "Asia/Kuwait",
+              "Asia/Macau",
+              "Asia/Magadan",
+              "Asia/Makassar",
+              "Asia/Manila",
+              "Asia/Muscat",
+              "Asia/Nicosia",
+              "Asia/Novokuznetsk",
+              "Asia/Novosibirsk",
+              "Asia/Omsk",
+              "Asia/Oral",
+              "Asia/Phnom_Penh",
+              "Asia/Pontianak",
+              "Asia/Pyongyang",
+              "Asia/Qatar",
+              "Asia/Qostanay",
+              "Asia/Qyzylorda",
+              "Asia/Riyadh",
+              "Asia/Sakhalin",
+              "Asia/Samarkand",
+              "Asia/Seoul",
+              "Asia/Shanghai",
+              "Asia/Singapore",
+              "Asia/Srednekolymsk",
+              "Asia/Taipei",
+              "Asia/Tashkent",
+              "Asia/Tbilisi",
+              "Asia/Tehran",
+              "Asia/Thimphu",
+              "Asia/Tokyo",
+              "Asia/Tomsk",
+              "Asia/Ulaanbaatar",
+              "Asia/Urumqi",
+              "Asia/Ust-Nera",
+              "Asia/Vientiane",
+              "Asia/Vladivostok",
+              "Asia/Yakutsk",
+              "Asia/Yangon",
+              "Asia/Yekaterinburg",
+              "Asia/Yerevan",
+              "Atlantic/Azores",
+              "Atlantic/Bermuda",
+              "Atlantic/Canary",
+              "Atlantic/Cape_Verde",
+              "Atlantic/Faroe",
+              "Atlantic/Madeira",
+              "Atlantic/Reykjavik",
+              "Atlantic/South_Georgia",
+              "Atlantic/St_Helena",
+              "Atlantic/Stanley",
+              "Australia/Adelaide",
+              "Australia/Brisbane",
+              "Australia/Broken_Hill",
+              "Australia/Darwin",
+              "Australia/Eucla",
+              "Australia/Hobart",
+              "Australia/Lindeman",
+              "Australia/Lord_Howe",
+              "Australia/Melbourne",
+              "Australia/Perth",
+              "Australia/Sydney",
+              "Canada/Atlantic",
+              "Canada/Central",
+              "Canada/Eastern",
+              "Canada/Mountain",
+              "Canada/Newfoundland",
+              "Canada/Pacific",
+              "Europe/Amsterdam",
+              "Europe/Andorra",
+              "Europe/Astrakhan",
+              "Europe/Athens",
+              "Europe/Belgrade",
+              "Europe/Berlin",
+              "Europe/Bratislava",
+              "Europe/Brussels",
+              "Europe/Bucharest",
+              "Europe/Budapest",
+              "Europe/Busingen",
+              "Europe/Chisinau",
+              "Europe/Copenhagen",
+              "Europe/Dublin",
+              "Europe/Gibraltar",
+              "Europe/Guernsey",
+              "Europe/Helsinki",
+              "Europe/Isle_of_Man",
+              "Europe/Istanbul",
+              "Europe/Jersey",
+              "Europe/Kaliningrad",
+              "Europe/Kirov",
+              "Europe/Kyiv",
+              "Europe/Lisbon",
+              "Europe/Ljubljana",
+              "Europe/London",
+              "Europe/Luxembourg",
+              "Europe/Madrid",
+              "Europe/Malta",
+              "Europe/Mariehamn",
+              "Europe/Minsk",
+              "Europe/Monaco",
+              "Europe/Moscow",
+              "Europe/Oslo",
+              "Europe/Paris",
+              "Europe/Podgorica",
+              "Europe/Prague",
+              "Europe/Riga",
+              "Europe/Rome",
+              "Europe/Samara",
+              "Europe/San_Marino",
+              "Europe/Sarajevo",
+              "Europe/Saratov",
+              "Europe/Simferopol",
+              "Europe/Skopje",
+              "Europe/Sofia",
+              "Europe/Stockholm",
+              "Europe/Tallinn",
+              "Europe/Tirane",
+              "Europe/Ulyanovsk",
+              "Europe/Vaduz",
+              "Europe/Vatican",
+              "Europe/Vienna",
+              "Europe/Vilnius",
+              "Europe/Volgograd",
+              "Europe/Warsaw",
+              "Europe/Zagreb",
+              "Europe/Zurich",
+              "GMT",
+              "Indian/Antananarivo",
+              "Indian/Chagos",
+              "Indian/Christmas",
+              "Indian/Cocos",
+              "Indian/Comoro",
+              "Indian/Kerguelen",
+              "Indian/Mahe",
+              "Indian/Maldives",
+              "Indian/Mauritius",
+              "Indian/Mayotte",
+              "Indian/Reunion",
+              "Pacific/Apia",
+              "Pacific/Auckland",
+              "Pacific/Bougainville",
+              "Pacific/Chatham",
+              "Pacific/Chuuk",
+              "Pacific/Easter",
+              "Pacific/Efate",
+              "Pacific/Fakaofo",
+              "Pacific/Fiji",
+              "Pacific/Funafuti",
+              "Pacific/Galapagos",
+              "Pacific/Gambier",
+              "Pacific/Guadalcanal",
+              "Pacific/Guam",
+              "Pacific/Honolulu",
+              "Pacific/Kanton",
+              "Pacific/Kiritimati",
+              "Pacific/Kosrae",
+              "Pacific/Kwajalein",
+              "Pacific/Majuro",
+              "Pacific/Marquesas",
+              "Pacific/Midway",
+              "Pacific/Nauru",
+              "Pacific/Niue",
+              "Pacific/Norfolk",
+              "Pacific/Noumea",
+              "Pacific/Pago_Pago",
+              "Pacific/Palau",
+              "Pacific/Pitcairn",
+              "Pacific/Pohnpei",
+              "Pacific/Port_Moresby",
+              "Pacific/Rarotonga",
+              "Pacific/Saipan",
+              "Pacific/Tahiti",
+              "Pacific/Tarawa",
+              "Pacific/Tongatapu",
+              "Pacific/Wake",
+              "Pacific/Wallis",
+              "US/Alaska",
+              "US/Arizona",
+              "US/Central",
+              "US/Eastern",
+              "US/Hawaii",
+              "US/Mountain",
+              "US/Pacific",
+              "UTC"
+            ]
+          }
+        }
+      },
+      "ProjectDto": {
+        "type": "object",
+        "description": "The pin's `ProjectSerializer`: 43 keys, and `sort_order` besides when the caller's place in the list is part of the answer. The pin\ncounts cycles and modules; Thrust has neither, so both are 0 (a deviation the register carries, D-030 (1)), and no deploy board\nexists. A key whose value can be `null` here is `Option`, which is what the document says of it (the pin's schema calls some of\nthese non-nullable and sends `null` all the same: EX-006).",
+        "required": [
+          "id",
+          "workspace",
+          "name",
+          "identifier",
+          "description",
+          "network",
+          "logo_props",
+          "module_view",
+          "cycle_view",
+          "issue_views_view",
+          "page_view",
+          "intake_view",
+          "is_time_tracking_enabled",
+          "is_issue_type_enabled",
+          "guest_view_all_features",
+          "archive_in",
+          "close_in",
+          "timezone",
+          "created_at",
+          "updated_at",
+          "is_member",
+          "total_members",
+          "total_cycles",
+          "total_modules",
+          "is_deployed"
+        ],
+        "properties": {
+          "archive_in": {
+            "type": "integer",
+            "maximum": 12,
+            "minimum": 0
+          },
+          "archived_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "close_in": {
+            "type": "integer",
+            "maximum": 12,
+            "minimum": 0
+          },
+          "cover_image": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "cover_image_asset": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "cover_image_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "created_by": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "cycle_view": {
+            "type": "boolean"
+          },
+          "default_assignee": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "default_state": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "deleted_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "Always `null`: a deleted project is not shown."
+          },
+          "description": {
+            "type": "string"
+          },
+          "description_html": {},
+          "description_text": {},
+          "emoji": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "estimate": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "external_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 255
+          },
+          "external_source": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 255
+          },
+          "guest_view_all_features": {
+            "type": "boolean"
+          },
+          "icon_prop": {},
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "identifier": {
+            "type": "string",
+            "maxLength": 12
+          },
+          "intake_view": {
+            "type": "boolean"
+          },
+          "is_deployed": {
+            "type": "boolean"
+          },
+          "is_issue_type_enabled": {
+            "type": "boolean"
+          },
+          "is_member": {
+            "type": "boolean"
+          },
+          "is_time_tracking_enabled": {
+            "type": "boolean"
+          },
+          "issue_views_view": {
+            "type": "boolean"
+          },
+          "logo_props": {},
+          "member_role": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "module_view": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 255
+          },
+          "network": {
+            "type": "integer",
+            "enum": [
+              0,
+              2
+            ]
+          },
+          "page_view": {
+            "type": "boolean"
+          },
+          "project_lead": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "sort_order": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "Present in a list and absent from one project: the caller's place among the project's members, `null` for a person who has\nnone (the outer `Option` is whether the key is there, the inner one what it holds)."
+          },
+          "timezone": {
+            "type": "string",
+            "enum": [
+              "Africa/Abidjan",
+              "Africa/Accra",
+              "Africa/Addis_Ababa",
+              "Africa/Algiers",
+              "Africa/Asmara",
+              "Africa/Bamako",
+              "Africa/Bangui",
+              "Africa/Banjul",
+              "Africa/Bissau",
+              "Africa/Blantyre",
+              "Africa/Brazzaville",
+              "Africa/Bujumbura",
+              "Africa/Cairo",
+              "Africa/Casablanca",
+              "Africa/Ceuta",
+              "Africa/Conakry",
+              "Africa/Dakar",
+              "Africa/Dar_es_Salaam",
+              "Africa/Djibouti",
+              "Africa/Douala",
+              "Africa/El_Aaiun",
+              "Africa/Freetown",
+              "Africa/Gaborone",
+              "Africa/Harare",
+              "Africa/Johannesburg",
+              "Africa/Juba",
+              "Africa/Kampala",
+              "Africa/Khartoum",
+              "Africa/Kigali",
+              "Africa/Kinshasa",
+              "Africa/Lagos",
+              "Africa/Libreville",
+              "Africa/Lome",
+              "Africa/Luanda",
+              "Africa/Lubumbashi",
+              "Africa/Lusaka",
+              "Africa/Malabo",
+              "Africa/Maputo",
+              "Africa/Maseru",
+              "Africa/Mbabane",
+              "Africa/Mogadishu",
+              "Africa/Monrovia",
+              "Africa/Nairobi",
+              "Africa/Ndjamena",
+              "Africa/Niamey",
+              "Africa/Nouakchott",
+              "Africa/Ouagadougou",
+              "Africa/Porto-Novo",
+              "Africa/Sao_Tome",
+              "Africa/Tripoli",
+              "Africa/Tunis",
+              "Africa/Windhoek",
+              "America/Adak",
+              "America/Anchorage",
+              "America/Anguilla",
+              "America/Antigua",
+              "America/Araguaina",
+              "America/Argentina/Buenos_Aires",
+              "America/Argentina/Catamarca",
+              "America/Argentina/Cordoba",
+              "America/Argentina/Jujuy",
+              "America/Argentina/La_Rioja",
+              "America/Argentina/Mendoza",
+              "America/Argentina/Rio_Gallegos",
+              "America/Argentina/Salta",
+              "America/Argentina/San_Juan",
+              "America/Argentina/San_Luis",
+              "America/Argentina/Tucuman",
+              "America/Argentina/Ushuaia",
+              "America/Aruba",
+              "America/Asuncion",
+              "America/Atikokan",
+              "America/Bahia",
+              "America/Bahia_Banderas",
+              "America/Barbados",
+              "America/Belem",
+              "America/Belize",
+              "America/Blanc-Sablon",
+              "America/Boa_Vista",
+              "America/Bogota",
+              "America/Boise",
+              "America/Cambridge_Bay",
+              "America/Campo_Grande",
+              "America/Cancun",
+              "America/Caracas",
+              "America/Cayenne",
+              "America/Cayman",
+              "America/Chicago",
+              "America/Chihuahua",
+              "America/Ciudad_Juarez",
+              "America/Costa_Rica",
+              "America/Creston",
+              "America/Cuiaba",
+              "America/Curacao",
+              "America/Danmarkshavn",
+              "America/Dawson",
+              "America/Dawson_Creek",
+              "America/Denver",
+              "America/Detroit",
+              "America/Dominica",
+              "America/Edmonton",
+              "America/Eirunepe",
+              "America/El_Salvador",
+              "America/Fort_Nelson",
+              "America/Fortaleza",
+              "America/Glace_Bay",
+              "America/Goose_Bay",
+              "America/Grand_Turk",
+              "America/Grenada",
+              "America/Guadeloupe",
+              "America/Guatemala",
+              "America/Guayaquil",
+              "America/Guyana",
+              "America/Halifax",
+              "America/Havana",
+              "America/Hermosillo",
+              "America/Indiana/Indianapolis",
+              "America/Indiana/Knox",
+              "America/Indiana/Marengo",
+              "America/Indiana/Petersburg",
+              "America/Indiana/Tell_City",
+              "America/Indiana/Vevay",
+              "America/Indiana/Vincennes",
+              "America/Indiana/Winamac",
+              "America/Inuvik",
+              "America/Iqaluit",
+              "America/Jamaica",
+              "America/Juneau",
+              "America/Kentucky/Louisville",
+              "America/Kentucky/Monticello",
+              "America/Kralendijk",
+              "America/La_Paz",
+              "America/Lima",
+              "America/Los_Angeles",
+              "America/Lower_Princes",
+              "America/Maceio",
+              "America/Managua",
+              "America/Manaus",
+              "America/Marigot",
+              "America/Martinique",
+              "America/Matamoros",
+              "America/Mazatlan",
+              "America/Menominee",
+              "America/Merida",
+              "America/Metlakatla",
+              "America/Mexico_City",
+              "America/Miquelon",
+              "America/Moncton",
+              "America/Monterrey",
+              "America/Montevideo",
+              "America/Montserrat",
+              "America/Nassau",
+              "America/New_York",
+              "America/Nome",
+              "America/Noronha",
+              "America/North_Dakota/Beulah",
+              "America/North_Dakota/Center",
+              "America/North_Dakota/New_Salem",
+              "America/Nuuk",
+              "America/Ojinaga",
+              "America/Panama",
+              "America/Paramaribo",
+              "America/Phoenix",
+              "America/Port-au-Prince",
+              "America/Port_of_Spain",
+              "America/Porto_Velho",
+              "America/Puerto_Rico",
+              "America/Punta_Arenas",
+              "America/Rankin_Inlet",
+              "America/Recife",
+              "America/Regina",
+              "America/Resolute",
+              "America/Rio_Branco",
+              "America/Santarem",
+              "America/Santiago",
+              "America/Santo_Domingo",
+              "America/Sao_Paulo",
+              "America/Scoresbysund",
+              "America/Sitka",
+              "America/St_Barthelemy",
+              "America/St_Johns",
+              "America/St_Kitts",
+              "America/St_Lucia",
+              "America/St_Thomas",
+              "America/St_Vincent",
+              "America/Swift_Current",
+              "America/Tegucigalpa",
+              "America/Thule",
+              "America/Tijuana",
+              "America/Toronto",
+              "America/Tortola",
+              "America/Vancouver",
+              "America/Whitehorse",
+              "America/Winnipeg",
+              "America/Yakutat",
+              "Antarctica/Casey",
+              "Antarctica/Davis",
+              "Antarctica/DumontDUrville",
+              "Antarctica/Macquarie",
+              "Antarctica/Mawson",
+              "Antarctica/McMurdo",
+              "Antarctica/Palmer",
+              "Antarctica/Rothera",
+              "Antarctica/Syowa",
+              "Antarctica/Troll",
+              "Antarctica/Vostok",
+              "Arctic/Longyearbyen",
+              "Asia/Aden",
+              "Asia/Almaty",
+              "Asia/Amman",
+              "Asia/Anadyr",
+              "Asia/Aqtau",
+              "Asia/Aqtobe",
+              "Asia/Ashgabat",
+              "Asia/Atyrau",
+              "Asia/Baghdad",
+              "Asia/Bahrain",
+              "Asia/Baku",
+              "Asia/Bangkok",
+              "Asia/Barnaul",
+              "Asia/Beirut",
+              "Asia/Bishkek",
+              "Asia/Brunei",
+              "Asia/Chita",
+              "Asia/Choibalsan",
+              "Asia/Colombo",
+              "Asia/Damascus",
+              "Asia/Dhaka",
+              "Asia/Dili",
+              "Asia/Dubai",
+              "Asia/Dushanbe",
+              "Asia/Famagusta",
+              "Asia/Gaza",
+              "Asia/Hebron",
+              "Asia/Ho_Chi_Minh",
+              "Asia/Hong_Kong",
+              "Asia/Hovd",
+              "Asia/Irkutsk",
+              "Asia/Jakarta",
+              "Asia/Jayapura",
+              "Asia/Jerusalem",
+              "Asia/Kabul",
+              "Asia/Kamchatka",
+              "Asia/Karachi",
+              "Asia/Kathmandu",
+              "Asia/Khandyga",
+              "Asia/Kolkata",
+              "Asia/Krasnoyarsk",
+              "Asia/Kuala_Lumpur",
+              "Asia/Kuching",
+              "Asia/Kuwait",
+              "Asia/Macau",
+              "Asia/Magadan",
+              "Asia/Makassar",
+              "Asia/Manila",
+              "Asia/Muscat",
+              "Asia/Nicosia",
+              "Asia/Novokuznetsk",
+              "Asia/Novosibirsk",
+              "Asia/Omsk",
+              "Asia/Oral",
+              "Asia/Phnom_Penh",
+              "Asia/Pontianak",
+              "Asia/Pyongyang",
+              "Asia/Qatar",
+              "Asia/Qostanay",
+              "Asia/Qyzylorda",
+              "Asia/Riyadh",
+              "Asia/Sakhalin",
+              "Asia/Samarkand",
+              "Asia/Seoul",
+              "Asia/Shanghai",
+              "Asia/Singapore",
+              "Asia/Srednekolymsk",
+              "Asia/Taipei",
+              "Asia/Tashkent",
+              "Asia/Tbilisi",
+              "Asia/Tehran",
+              "Asia/Thimphu",
+              "Asia/Tokyo",
+              "Asia/Tomsk",
+              "Asia/Ulaanbaatar",
+              "Asia/Urumqi",
+              "Asia/Ust-Nera",
+              "Asia/Vientiane",
+              "Asia/Vladivostok",
+              "Asia/Yakutsk",
+              "Asia/Yangon",
+              "Asia/Yekaterinburg",
+              "Asia/Yerevan",
+              "Atlantic/Azores",
+              "Atlantic/Bermuda",
+              "Atlantic/Canary",
+              "Atlantic/Cape_Verde",
+              "Atlantic/Faroe",
+              "Atlantic/Madeira",
+              "Atlantic/Reykjavik",
+              "Atlantic/South_Georgia",
+              "Atlantic/St_Helena",
+              "Atlantic/Stanley",
+              "Australia/Adelaide",
+              "Australia/Brisbane",
+              "Australia/Broken_Hill",
+              "Australia/Darwin",
+              "Australia/Eucla",
+              "Australia/Hobart",
+              "Australia/Lindeman",
+              "Australia/Lord_Howe",
+              "Australia/Melbourne",
+              "Australia/Perth",
+              "Australia/Sydney",
+              "Canada/Atlantic",
+              "Canada/Central",
+              "Canada/Eastern",
+              "Canada/Mountain",
+              "Canada/Newfoundland",
+              "Canada/Pacific",
+              "Europe/Amsterdam",
+              "Europe/Andorra",
+              "Europe/Astrakhan",
+              "Europe/Athens",
+              "Europe/Belgrade",
+              "Europe/Berlin",
+              "Europe/Bratislava",
+              "Europe/Brussels",
+              "Europe/Bucharest",
+              "Europe/Budapest",
+              "Europe/Busingen",
+              "Europe/Chisinau",
+              "Europe/Copenhagen",
+              "Europe/Dublin",
+              "Europe/Gibraltar",
+              "Europe/Guernsey",
+              "Europe/Helsinki",
+              "Europe/Isle_of_Man",
+              "Europe/Istanbul",
+              "Europe/Jersey",
+              "Europe/Kaliningrad",
+              "Europe/Kirov",
+              "Europe/Kyiv",
+              "Europe/Lisbon",
+              "Europe/Ljubljana",
+              "Europe/London",
+              "Europe/Luxembourg",
+              "Europe/Madrid",
+              "Europe/Malta",
+              "Europe/Mariehamn",
+              "Europe/Minsk",
+              "Europe/Monaco",
+              "Europe/Moscow",
+              "Europe/Oslo",
+              "Europe/Paris",
+              "Europe/Podgorica",
+              "Europe/Prague",
+              "Europe/Riga",
+              "Europe/Rome",
+              "Europe/Samara",
+              "Europe/San_Marino",
+              "Europe/Sarajevo",
+              "Europe/Saratov",
+              "Europe/Simferopol",
+              "Europe/Skopje",
+              "Europe/Sofia",
+              "Europe/Stockholm",
+              "Europe/Tallinn",
+              "Europe/Tirane",
+              "Europe/Ulyanovsk",
+              "Europe/Vaduz",
+              "Europe/Vatican",
+              "Europe/Vienna",
+              "Europe/Vilnius",
+              "Europe/Volgograd",
+              "Europe/Warsaw",
+              "Europe/Zagreb",
+              "Europe/Zurich",
+              "GMT",
+              "Indian/Antananarivo",
+              "Indian/Chagos",
+              "Indian/Christmas",
+              "Indian/Cocos",
+              "Indian/Comoro",
+              "Indian/Kerguelen",
+              "Indian/Mahe",
+              "Indian/Maldives",
+              "Indian/Mauritius",
+              "Indian/Mayotte",
+              "Indian/Reunion",
+              "Pacific/Apia",
+              "Pacific/Auckland",
+              "Pacific/Bougainville",
+              "Pacific/Chatham",
+              "Pacific/Chuuk",
+              "Pacific/Easter",
+              "Pacific/Efate",
+              "Pacific/Fakaofo",
+              "Pacific/Fiji",
+              "Pacific/Funafuti",
+              "Pacific/Galapagos",
+              "Pacific/Gambier",
+              "Pacific/Guadalcanal",
+              "Pacific/Guam",
+              "Pacific/Honolulu",
+              "Pacific/Kanton",
+              "Pacific/Kiritimati",
+              "Pacific/Kosrae",
+              "Pacific/Kwajalein",
+              "Pacific/Majuro",
+              "Pacific/Marquesas",
+              "Pacific/Midway",
+              "Pacific/Nauru",
+              "Pacific/Niue",
+              "Pacific/Norfolk",
+              "Pacific/Noumea",
+              "Pacific/Pago_Pago",
+              "Pacific/Palau",
+              "Pacific/Pitcairn",
+              "Pacific/Pohnpei",
+              "Pacific/Port_Moresby",
+              "Pacific/Rarotonga",
+              "Pacific/Saipan",
+              "Pacific/Tahiti",
+              "Pacific/Tarawa",
+              "Pacific/Tongatapu",
+              "Pacific/Wake",
+              "Pacific/Wallis",
+              "US/Alaska",
+              "US/Arizona",
+              "US/Central",
+              "US/Eastern",
+              "US/Hawaii",
+              "US/Mountain",
+              "US/Pacific",
+              "UTC"
+            ]
+          },
+          "total_cycles": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "total_members": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "total_modules": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_by": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "workspace": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "ProjectLiteDto": {
+        "type": "object",
+        "description": "The pin's `ProjectLiteSerializer`: nine keys.",
+        "required": [
+          "id",
+          "identifier",
+          "name",
+          "description"
+        ],
+        "properties": {
+          "archived_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "cover_image": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "cover_image_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "description": {
+            "type": "string"
+          },
+          "emoji": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "icon_prop": {},
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "identifier": {
+            "type": "string",
+            "maxLength": 12
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 255
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "ApiKeyAuthentication": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-API-Key",
+        "description": "API key authentication. Provide your API key in the X-API-Key header."
+      }
+    }
+  }
+}
