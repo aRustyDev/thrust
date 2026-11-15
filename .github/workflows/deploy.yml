@@ -4,9 +4,15 @@ name: deploy
 # and an automatic `wrangler rollback` when it fails. There are no stages: at about two requests a second a 10 % slice is a hundred
 # requests, mostly the owner's, so the smoke is the gate.
 #
-#   * A push to main deploys STAGING, after `ci` succeeded for it, and only while the repository variable THRUST_DEPLOY_ENABLED is
-#     `true` (the switch that keeps this workflow quiet until an environment exists).
-#   * A manual run deploys `staging` or `production`, a commit of main, from main. `production` waits for the environment's reviewers.
+#   * STAGING is a release candidate (the rc/* flow, docs/src/architecture/cicd.md). When `ci` passes on a release-candidate pull request
+#     (release-plz's `rc/<timestamp>` branch, or an `rc/manual-*` one; only the release App and admins can write rc/*), this workflow
+#     dispatches itself ON that branch for that commit, and the dispatched run deploys it. The detour is GitHub's rule, not a choice:
+#     an environment's branch rule is checked against the run's own ref, a `workflow_run` always runs on main, and `staging` only
+#     takes rc/*. Only while the repository variable THRUST_DEPLOY_ENABLED is `true` (the switch that keeps this quiet until staging
+#     works); main never deploys.
+#   * A manual run deploys the commit it is run FROM: `staging` from an rc/* branch, `production` from a v* release tag (which release-plz
+#     makes when an rc pull request merges). `production` waits for the environment's reviewers. Each environment's branch rule says
+#     the same, so a run from anywhere else cannot reach its secrets even if this file were wrong.
 #   * A pull request that touches the deploy files runs `dry-run`: build the bundle and check the rendered configuration with
 #     `wrangler deploy --dry-run`. It uses no environment and no secret, and it is what proves, before the merge, that this file starts.
 #
@@ -31,19 +37,20 @@ on:
   workflow_run:
     workflows: [ci]
     types: [completed]
-    branches: [main]
+    # ci's head branch; plan-deploy.sh holds the rest of the rule (a pull request's run, this repository's, rc/<name> with no slash)
+    branches: ["rc/**"]
   workflow_dispatch:
     inputs:
       environment:
-        description: The environment to deploy to
+        description: The environment to deploy to (staging from an rc/* branch, production from a v* tag; pick it under "Use workflow from")
         type: choice
         options: [staging, production]
         required: true
-      ref:
-        description: A commit of main to deploy (default main)
+      sha:
+        description: The commit the branch must still be at (set by the automatic dispatch; leave empty by hand)
         type: string
         required: false
-        default: main
+        default: ""
       inject_smoke_failure:
         description: Make the smoke fail on purpose after it passed, to prove the rollback (staging only)
         type: boolean
@@ -90,6 +97,7 @@ jobs:
       mode: ${{ steps.plan.outputs.mode }}
       environment: ${{ steps.plan.outputs.environment }}
       sha: ${{ steps.plan.outputs.sha }}
+      ref: ${{ steps.plan.outputs.ref }}
       inject: ${{ steps.plan.outputs.inject }}
       skip_smoke: ${{ steps.plan.outputs.skip_smoke }}
     steps:
@@ -109,7 +117,7 @@ jobs:
           REPO: ${{ github.repository }}
           DEPLOY_ENABLED: ${{ vars.THRUST_DEPLOY_ENABLED }}
           DISPATCH_ENV: ${{ inputs.environment }}
-          DISPATCH_REF: ${{ inputs.ref }}
+          DISPATCH_SHA: ${{ inputs.sha }}
           DISPATCH_INJECT: ${{ inputs.inject_smoke_failure }}
           DISPATCH_SKIP_SMOKE: ${{ inputs.first_deploy_skip_smoke }}
         run: |
@@ -158,11 +166,33 @@ jobs:
             echo "- $REASON"
           } >> "$GITHUB_STEP_SUMMARY"
 
+  # ci passed on a release candidate: start this workflow again ON the rc/* branch, so the deploy runs on a ref that `staging`'s branch
+  # rule takes. A dispatch is one of the two events a workflow's own token may start a run with. The dispatched run checks everything
+  # again (plan-deploy.sh), including that the branch is still at this commit and that its `gate` passed. No checkout, no secret.
+  dispatch:
+    needs: plan
+    if: needs.plan.outputs.mode == 'dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - name: Dispatch the staging deploy on the release-candidate branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          REF: ${{ needs.plan.outputs.ref }}
+          SHA: ${{ needs.plan.outputs.sha }}
+        run: |
+          gh workflow run deploy.yml --repo "$REPO" --ref "$REF" -f environment=staging -f sha="$SHA"
+          echo "dispatched deploy.yml on $REF for $SHA (staging)" >> "$GITHUB_STEP_SUMMARY"
+
   # Build the bundle of the commit, with no secret anywhere in the job: the Worker (worker-build) and the `migrate` binary. The bundle
   # is one file, and in a deploy it is attested. `id-token` and `attestations` are what the attestation needs and nothing else uses.
   build:
     needs: plan
-    if: needs.plan.outputs.mode != 'skip'
+    if: needs.plan.outputs.mode == 'deploy' || needs.plan.outputs.mode == 'dry-run'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     permissions:
@@ -180,7 +210,9 @@ jobs:
           targets: wasm32-unknown-unknown
           worker-tools: "true"
           cache-key: deploy-release
-          save-cache: ${{ github.ref == 'refs/heads/main' }}
+          # A deploy runs on an rc/* branch or a v* tag. A cache is readable only from its own ref (and the default branch's from all),
+          # and every release candidate is a new branch, so a cache saved here would never be read again.
+          save-cache: "false"
 
       - name: Build the migrate binary
         run: scripts/rs cargo build --release --locked -p thrust-adapters-postgres --features native --bin migrate

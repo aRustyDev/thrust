@@ -3,14 +3,15 @@
 | Step | Status (2026-11-15) |
 |---|---|
 | PR 0: this review and the doc corrections | #177, merged |
-| Settings (owner) | not started |
+| Settings (owner) | applied 2026-11-15, except the staging environments' branch rule (after PR 2 merges) |
 | PR 1: git-cliff and the rc bot | #178, merged; replaced by PR 1b |
-| PR 1b: release-plz in place of the hand-written bot | open |
-| PR 2: staging from `rc/*` | not started, needs the settings |
-| PR 3: attestation of a release, production from the tag | not started, needs the settings and PR 2 |
+| PR 1b: release-plz in place of the hand-written bot | #183, merged; first release-candidate PR #184 (`v0.1.0`), open |
+| PR 2: staging from `rc/*` | open |
+| PR 3: attestation of a release, production from the tag | not started, needs PR 2 |
 | PR 4: run only the related checks | not started, independent |
 
-Order: PR 1b, the settings, PR 2, then PR 3. PR 4 can go any time.
+Order: PR 2, the staging branch rule, then PR 3. PR 4 can go any time. #184 waits for PR 3, so that `v0.1.0` gets its
+assets (immutable releases lock them on publish).
 
 **The owner's rule (2026-11-15): use an existing public solution wherever one does the job; hand-write only where none
 reliably does.** PR 1 was hand-written around git-cliff, and duplicated what git-cliff already does (`--prepend`,
@@ -24,13 +25,15 @@ by an agent.
 
 - **`main` ruleset** (25418178): add `pull_request` (no approvals required, one owner), `non_fast_forward` and
   `deletion`; keep `gate`. A merge queue is optional (`ci.yml` already runs on `merge_group`).
-- **`rc/*` ruleset**: restrict creation, update and deletion, and require `gate`. Bypass: the release App and the
-  admin role.
+- **`rc/*` ruleset**: restrict creation, update, deletion and force-push. Bypass: the release App and the admin role.
+  (Not `gate`: a required check gates pull requests INTO a branch, and nothing merges into `rc/*`.)
 - **`v*` tag ruleset**: restrict creation, update and deletion to the release App. Turn on immutable releases.
 - **GitHub App `thrust-release`**: contents and pull requests, write. Its id and key in a `release` environment
   limited to `main`.
 - **Environment branch policies**: `staging` and `staging-do-lifecycle` take only `rc/*`; `production` and
-  `production-do-lifecycle` take only `v*` tags and get required reviewers.
+  `production-do-lifecycle` take only `v*` tags and get required reviewers. GitHub checks them against the run's own ref,
+  and a `workflow_run` always runs on `main`, so the staging rule waits for PR 2, which deploys from a run on the `rc/*`
+  branch.
 - **Already needed**: the smoke variables and secret on staging; everything on production; the Cloudflare token's
   scope behind the `assets-upload-session` failure. #49 stays open until a real staging deploy and the drill pass.
 
@@ -69,15 +72,27 @@ by an agent.
 
 ## PR 2: staging from `rc/*` (`feat/deploy-from-rc`)
 
-- `ci.yml` also runs on a push to `rc/**`, always in full.
-- `deploy.yml`: `workflow_run` filtered to `rc/**`; a manual run takes staging with an `rc/*` ref, or production with a
-  `v*` tag.
-- `plan-deploy.sh`: staging needs `refs/heads/rc/*` (release-plz names it `rc/<timestamp>`), the branch tip, and `gate`
-  green on it; decide whether
-  `THRUST_DEPLOY_ENABLED` stays as an off switch. `test-plan-deploy.sh` over every combination.
-- `verify-bundle.sh`: the source ref `refs/heads/rc/*` for staging and `refs/tags/v*` for production; a must-fail case
-  for a feature branch.
-- `cicd.md` and `deploy.md` rewritten for the new trigger.
+As built (it differs from the first sketch, which had `ci` run on a push to `rc/**` and `deploy.yml` keep `workflow_run`):
+
+- **Why not `workflow_run` alone.** GitHub checks an environment's branch rule against the run's own ref, and a
+  `workflow_run` always runs on `main`, so `staging` restricted to `rc/*` would refuse it. And a push trigger on `rc/**` in
+  `ci.yml` would run the full suite twice per release candidate (the push and the pull request), with two `gate` reports
+  on one commit that `assert-sha-checks.sh` (every report must be SUCCESS) would trip on.
+- `ci.yml`: the pull request of a release candidate (head `rc/*` in this repository) runs in full, whatever its diff.
+- `deploy.yml`: `workflow_run` of `ci`, filtered to `rc/**`, plans `dispatch`, and a new `dispatch` job (`actions: write`,
+  no secret) runs `gh workflow run deploy.yml --ref <rc branch> -f environment=staging -f sha=<commit>`; the dispatched run
+  deploys. A manual run deploys the commit it runs from; the `ref` input is gone, a `sha` input (the commit the branch
+  must still be at) replaces it.
+- `plan-deploy.sh`: `dispatch` for a green `ci` on this repository's `rc/<name>` pull request while
+  `THRUST_DEPLOY_ENABLED` is `true` (kept as the off switch for the automatic path); staging from `refs/heads/rc/<name>`,
+  production from `refs/tags/v<version>` whose commit is on `main`; one segment after the prefix, as the rulesets match;
+  a moved branch skips. `test-plan-deploy.sh` over every combination.
+- `verify-bundle.sh <bundle> <repo> <source-ref>`: exactly that ref, which must be `refs/heads/rc/<name>` or
+  `refs/tags/v<version>` (anything else is refused before gh is asked); the action passes the run's own ref.
+- `fetch-previous-assets.sh`: artifacts of this repository's own runs (`head_repository_id == repository_id`) on an
+  `rc/*` branch or a `v*` tag, verified on the ref their run was on.
+- `cicd.md`, `deploy.md` rewritten for the new trigger. The deploy build no longer saves its cache (a cache is readable only
+  from its own ref, and every release candidate is a new branch).
 
 ## PR 3: attestation of a release, production from the tag (`feat/release-attest-deploy`)
 

@@ -2,7 +2,8 @@ name: ci
 
 # One REQUIRED check: `gate`. Everything else is evidence the gate inspects.
 # Triggers: pull_request and merge_group (a merge queue waits forever for a required check that its
-# workflow does not run on), push to main, and manual runs.
+# workflow does not run on), push to main, and manual runs. A release-candidate pull request (rc/*) runs in
+# full, and its green run is what starts the staging deploy (deploy.yml).
 on:
   pull_request:
   merge_group:
@@ -41,7 +42,23 @@ jobs:
           MG_BASE: ${{ github.event.merge_group.base_sha }}
           PUSH_BEFORE: ${{ github.event.before }}
           HEAD_SHA: ${{ github.sha }}
+          PR_HEAD_REF: ${{ github.head_ref }}
+          PR_HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          REPO: ${{ github.repository }}
         run: |
+          # A release candidate (this repository's rc/<name> pull request) runs everything: its `gate` is what lets deploy.yml put the
+          # commit on staging, and release-plz builds it on whatever main was, whether or not main's own run passed. Its diff against
+          # main (CHANGELOG.md, the version) says nothing about that.
+          if [ "$EVENT" = pull_request ] && [ "$PR_HEAD_REPO" = "$REPO" ]; then
+            case "$PR_HEAD_REF" in
+              rc/*)
+                echo "rust=true" >> "$GITHUB_OUTPUT"
+                echo "web=true" >> "$GITHUB_OUTPUT"
+                echo "release candidate $PR_HEAD_REF: run everything"
+                exit 0
+                ;;
+            esac
+          fi
           case "$EVENT" in
             pull_request) base="$PR_BASE" ;;
             merge_group) base="$MG_BASE" ;;
