@@ -1,0 +1,42 @@
+cold requests (cpuTime above a threshold), all kinds (seq + b1 + b2)
+threshold  arm  n cold    of   p25   p50   p75   p90   max
+       5ms   bS      61   222    24    26    41    44    58
+       5ms   vS      51   222    23    24    39    47    67
+       5ms   vZ      94   222    74    85   103   146   274
+      10ms   bS      61   222    24    26    41    44    58
+      10ms   vS      49   222    23    25    39    47    67
+      10ms   vZ      94   222    74    85   103   146   274
+      15ms   bS      61   222    24    26    41    44    58
+      15ms   vS      49   222    23    25    39    47    67
+      15ms   vZ      94   222    74    85   103   146   274
+
+the two S arms against each other (does the bigger module cost a cold start anything?):
+  > 5 ms: median vS 24 - median bS 26 = -2   95% bootstrap interval of the difference [-9, 1]   n=51, 61
+  >10 ms: median vS 25 - median bS 26 = -1   95% bootstrap interval of the difference [-9, 5]   n=49, 61
+  >15 ms: median vS 25 - median bS 26 = -1   95% bootstrap interval of the difference [-9, 5]   n=49, 61
+
+first zxcvbn call on a fresh isolate = median(vZ cold) - median(S cold, bS and vS pooled):
+  > 5 ms: 85.5 - 25.0 = 60.5   95% bootstrap interval [55.0, 64.0]   n=94, 112
+  >10 ms: 85.5 - 25.0 = 60.5   95% bootstrap interval [54.5, 64.0]   n=94, 110
+  >15 ms: 85.5 - 25.0 = 60.5   95% bootstrap interval [54.5, 64.0]   n=94, 110
+  vZ against vS alone (same build), >10 ms: 85.5 - 25 = 60.5   [53.5, 65.0]
+
+per round, median cpuTime of the cold requests (> 10 ms), by arm; rounds are the independent units here:
+  bS: r1:25(n=12), r6:34.5(n=8), r8:24(n=9), r10:24.5(n=10), r15:29.5(n=10), r17:36(n=12)
+  vS: r2:24(n=9), r4:41(n=7), r9:23(n=9), r11:25(n=8), r13:25.5(n=8), r18:24.5(n=8)
+  vZ: r3:86(n=15), r5:84(n=16), r7:90(n=16), r12:76.5(n=14), r14:80(n=18), r16:91(n=15)
+  lowest vZ round median 76.5; highest S round median 41; vZ rounds above every S round: 6 of 6
+
+cold requests (> 10 ms) by kind. The second burst is only PARTLY warm: concurrent requests keep reaching fresh isolates (about 12 to 27% of b2
+against 35 to 64% of b1), and on the Z arm a first call blocks its isolate, so more requests find a fresh one. The first pilot assumed b2 was warm:
+  bS seq:   5 of  30 cold
+  bS  b1:  41 of  96 cold
+  bS  b2:  15 of  96 cold
+  vS seq:   3 of  30 cold
+  vS  b1:  34 of  96 cold
+  vS  b2:  12 of  96 cold
+  vZ seq:   7 of  30 cold
+  vZ  b1:  61 of  96 cold
+  vZ  b2:  26 of  96 cold
+
+bar 3: the first strength check in a cold isolate costs no more CPU than one argon2 hash, about 45 ms p50 deployed (research/0012)

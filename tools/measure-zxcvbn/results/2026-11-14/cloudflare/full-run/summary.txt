@@ -1,0 +1,46 @@
+requests sent: 666; platform records found: 666
+not 400: 0   no platform record: 0   outcome not ok: 0   rounds with more than one version: []
+counted: 666
+
+cpuTime ms, bursts b1+b2 (32 concurrent requests per round, on whichever isolates the platform chose):
+                n    min    p50    p75    p90    max    mean
+bS            192      0      1     22     36     58    10.0
+vS            192      0      1      4     25     67     8.5
+vZ            192      1      3     84    116    274    42.8
+
+  module size, vS - bS (a cold isolate pays it whether or not zxcvbn runs):
+    p50: 1 - 1 = 0
+    p75: 4 - 22 = -18
+    p90: 25 - 36 = -11
+  zxcvbn's first call, vZ - vS:
+    p50: 3 - 1 = 2
+    p75: 84 - 4 = 80
+    p90: 116 - 25 = 91
+    max: 274 - 67 = 207
+
+same-connection sequences straight after a deploy (cpuTime ms by position; position 1 is the first request on the isolate /healthz instantiated):
+  bS round  1: [22, 1, 1, 1, 1]  first - median(later) = 21.0
+  bS round  6: [46, 1, 1, 1, 2]  first - median(later) = 45.0
+  bS round  8: [2, 3, 2, 1, 2]  first - median(later) = 0.0
+  bS round 10: [27, 1, 1, 1, 1]  first - median(later) = 26.0
+  bS round 15: [42, 2, 4, 2, 2]  first - median(later) = 40.0
+  bS round 17: [26, 1, 1, 1, 1]  first - median(later) = 25.0
+  vS round  2: [2, 3, 1, 1, 2]  first - median(later) = 0.5
+  vS round  4: [1, 1, 1, 1, 0]  first - median(later) = 0.0
+  vS round  9: [1, 1, 1, 1, 0]  first - median(later) = 0.0
+  vS round 11: [22, 1, 1, 2, 1]  first - median(later) = 21.0
+  vS round 13: [27, 3, 1, 1, 1]  first - median(later) = 26.0
+  vS round 18: [39, 7, 1, 2, 1]  first - median(later) = 37.5
+  vZ round  3: [74, 2, 1, 2, 1]  first - median(later) = 72.5
+  vZ round  5: [126, 3, 2, 3, 3]  first - median(later) = 123.0
+  vZ round  7: [38, 1, 2, 1, 1]  first - median(later) = 37.0
+  vZ round 12: [49, 21, 2, 1, 1]  first - median(later) = 47.5
+  vZ round 14: [82, 4, 1, 2, 4]  first - median(later) = 79.0
+  vZ round 16: [147, 2, 2, 3, 2]  first - median(later) = 145.0
+
+first minus later, bS: n=6 min=0.0 median=25.5 max=45.0
+first minus later, vS: n=6 min=0.0 median=10.75 max=37.5
+first minus later, vZ: n=6 min=37.0 median=75.75 max=145.0
+  bS and vS are the control (a first request that is not zxcvbn); vZ's excess over them is zxcvbn's first call on an instantiated isolate.
+
+bar 3: the first strength check costs no more CPU than one argon2 hash, about 45 ms p50 deployed (research/0012)

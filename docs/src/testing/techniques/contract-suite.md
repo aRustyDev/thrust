@@ -62,20 +62,23 @@ with a fixture made first as the control) and nothing more; the positive path is
   should, shows. `/api/v1` has no activity feed, so what the consumer does with an event stays with the slice's model.
 - `crates/thrust-contract-tests/tests/auth/mod.rs` and `tests/auth/matrix.rs`: identity, in the `main` pass (issue #38):
   sign-in and the cookie attributes, the CSRF double-submit rule, sign-out and sign-out-everywhere, deactivation, API
-  keys (`X-Api-Key`, shown once, revoked, expired, inactive owner) and one OIDC login, plus the generated matrix of every
+  keys (`X-Api-Key`, shown once, revoked, expired, inactive owner), plus the generated matrix of every
   credential kind × state × method × CSRF-token position against a status table (126 requests). Sign-in, the CSRF token
   and sign-out are Plane's routes (`POST /auth/sign-in/`, `GET /auth/get-csrf-token/`, `POST /auth/sign-out/`), a session
   is read back through `GET /api/users/me/`, and a cookie mutation is a work item made (S48) or changed (X03) through
   Plane's routes, which authenticate through the extractor the slice's do, so the matrix is the credential layer's table
-  and not a route's; sign-out-everywhere, the API-key routes and the OIDC login are still the slice's, for want of a
+  and not a route's; sign-out-everywhere and the API-key routes are still the slice's, for want of a
   Plane route (G-26). The CSRF rule is a
   switch (`THRUST_CSRF_ENFORCE`, Q-0050.8): the main pass runs with it on, and the `csrfoff` pass (the six `csrf_off_`
   tests, in these two files) runs the same table with it off, a cookie mutation with no token, and the identity routes
-  with the cookie alone. The OIDC tests
-  (`oidc_` prefix) run against a mock identity provider that the suite serves on `127.0.0.1`
+  with the cookie alone. The OIDC login is Plane's route too (`GET /auth/oidc/` and `/auth/oidc/callback/`, D-040), so
+  its tests are the three `compat_oidc_*` ones in `tests/compat/mod.rs`; the slice's own six `oidc_` tests in `auth` were
+  deleted with its routes (step 5d of #58, after the five things they held that the compat tests did not were ported).
+  They run against a mock identity provider that the suite serves on `127.0.0.1`
   (`crates/thrust-contract-tests/src/mock_idp.rs`, RS256 signed with the `rsa` crate, so it shares no code with the
-  `openidconnect` crate that verifies its tokens); a deployed Worker cannot reach it, so `scripts/stage2-contract.sh`
-  skips them (59 tests there).
+  `openidconnect` crate that verifies its tokens), registered with the app's callback as its redirect URI
+  (`scripts/contract.sh`); a deployed Worker cannot reach it, so `scripts/stage2-contract.sh`
+  skips them (64 tests there: the `main` pass less the `oidc_` and `operator_` tests).
 - `crates/thrust-contract-tests/tests/budget/mod.rs`: the round-trip budget (issue #39), in the `main` pass.
   `list_endpoints_stay_within_five_db_round_trips` reads the `x-thrust-db-round-trips` header (see
   [the test routes](../../flows/app.md)) of eight requests, each list seeded with six or more rows so that a statement per row
@@ -121,7 +124,7 @@ Spike 0002 (issue #37) adds two passes that are **not** in `contract-all.sh`, so
 - `engine` (own test binary, `crates/thrust-contract-tests/tests/engine.rs`, tests named `engine_`, so the main pass and `EXPECT_MAIN` are untouched; the target starts with a very high `/api/v1` limit, because the tests go through `/api/v1` with an API key per writer): the 50-writer, 10k-create test (each writer deletes the work items it made, as the pin's rule says, and the whole list is read back by cursor), search parity with `icontains` (the pin's workspace search: a name, a project identifier or a number says the query; a description is not searched), search freshness and scope (a stranger and a member of no project are answered with nothing, as the pin does), and the bulk seed. 4 tests on every target; `scripts/mutants.sh` runs it against the memory adapter's `mutant_dup_sequence` and `mutant_search_case_sensitive`.
 - `scale` (a binary, like `bench`): list, search and create latency with 100,000 items seeded through `/internal/seed-work-items`.
 
-`scripts/stage2-contract.sh` runs `main` (31 tests: the six `oidc_` tests need the mock provider on 127.0.0.1, which a deployed Worker cannot reach), `csrfoff` and `engine` against a deployed `worker-pg`, and an `email` pass that sends one real message each time it is run. Numbers and conditions: `research/0011-database-engine-cells.md`.
+`scripts/stage2-contract.sh` runs `main` (64 tests: the `oidc_` tests need the mock provider on 127.0.0.1, which a deployed Worker cannot reach, and the `operator_` tests need routes and a token a deployed Worker is started without), `csrfoff` and `engine` against a deployed `worker-pg`, and an `email` pass that sends one real message each time it is run. Numbers and conditions: `research/0011-database-engine-cells.md`.
 
 The spike also built `native-sqlite` and `worker-do` targets (the same suite against a SQLite adapter on rusqlite and inside one Durable Object) and a `do` pass for the object's own checks. They are archived on the tag `spike/0002-worker-do`, not in the tree.
 

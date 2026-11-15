@@ -3,7 +3,8 @@
 //! The pin's fork adds four GET routes for its OIDC provider (`oidc/`, `oidc/callback/` and the two under `spaces/`, PQ-213); the
 //! app's button (`hooks/oauth/core.tsx`) sends the browser to `/auth/oidc/`, drawn only when `/api/instances/` says
 //! `is_oidc_enabled`. These two sit over `thrust_core::oidc_start` and `oidc_callback`, which the slice's own routes
-//! (`/api/_slice/auth/oidc/...`) already used: the same state, nonce and PKCE verifier, the same refusals, the same session.
+//! (`/api/_slice/auth/oidc/...`, deleted once these had the contract tests, #58) used first: the same state, nonce and PKCE
+//! verifier, the same refusals, the same session.
 //!
 //! The login is a chain of top-level navigations, so there is no JSON body for the app to read, unlike the sign-in form's posts
 //! (D-022): every failure is a 302 to the app's root with `?error_code=&error_message=`, as the pin's fork answers them.

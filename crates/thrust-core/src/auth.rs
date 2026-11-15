@@ -249,6 +249,7 @@ const COMMON_PASSWORDS: &[&str] = &[
 
 /// Whether `password` is acceptable for a new account. A deliberately modest rule in place of Plane's zxcvbn score of
 /// at least 3. The `zxcvbn` crate would add about 2 MiB to the Worker bundle (measured, so size is not the obstacle) and
+/// about 60 ms of CPU to the first check in each fresh isolate (measured on Cloudflare; a warm check is 1 to 2 ms), and it
 /// declares `wasm-bindgen`, `web-sys` and `js-sys`, which this crate's graph may not hold (`scripts/check-deps.sh`), so it
 /// would need an adapter of its own (`research/0015-zxcvbn-worker-cost.md`). The rule is: at
 /// least [`MIN_PASSWORD_LEN`] characters, at least [`MIN_DISTINCT_CHARS`] different ones, and not one of the most

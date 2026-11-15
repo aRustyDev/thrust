@@ -1,0 +1,28 @@
+diff --git a/crates/thrust-core/Cargo.toml b/crates/thrust-core/Cargo.toml
+index dc8ce41..02a9b1f 100644
+--- a/crates/thrust-core/Cargo.toml
++++ b/crates/thrust-core/Cargo.toml
+@@ -41,6 +41,7 @@ sha2 = { version = "0.11", default-features = false }
+ # in the issue #38 feasibility probe). No `getrandom` feature: the salt comes from the `Rng` port, not from the platform.
+ argon2 = { version = "0.6", default-features = false, features = ["alloc", "password-hash"] }
+ subtle = { version = "2", default-features = false }
++zxcvbn = "=3.1.1"
+ 
+ # Test-only. `scripts/check-deps.sh` checks normal dependencies, so none of these reach the core graph.
+ # The memory adapters are the reference implementation the use-case tests run against; the executor is
+diff --git a/crates/thrust-core/src/auth.rs b/crates/thrust-core/src/auth.rs
+index bbd8dfb..2fe7a95 100644
+--- a/crates/thrust-core/src/auth.rs
++++ b/crates/thrust-core/src/auth.rs
+@@ -265,6 +265,11 @@ pub fn password_is_strong(password: &str) -> bool {
+     !COMMON_PASSWORDS.contains(&letters.as_str())
+ }
+ 
++/// MEASUREMENT VARIANT 1 (throwaway, never committed): references zxcvbn but nothing calls it.
++pub fn unused_zxcvbn_probe(password: &str) -> bool {
++    zxcvbn::zxcvbn(password, &[]).score() >= zxcvbn::Score::Three
++}
++
+ /// Whether an account has this email: what Plane's `email-check` answers, and what its sign-in asks before it checks the
+ /// password (so it can say "no such user" apart from "wrong password"). Plane answers it to anyone, so this does not
+ /// widen what a caller can learn there; the answer is `false` for an email that is not valid, without a lookup.
