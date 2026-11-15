@@ -96,8 +96,14 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # The release bot's test runs the real git-cliff on the repository's cliff.toml; the same version as release-pr.yml (a case of
+      # test-release-pr.sh holds the two equal).
+      - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
+        with:
+          tool: git-cliff@2.14.2
       - name: Test the helper scripts
         run: |
+          sh .github/scripts/tests/test-release-pr.sh
           sh .github/scripts/tests/test-ci-scripts.sh
           sh .github/scripts/tests/test-required-contexts.sh
           sh .github/scripts/tests/test-check-web-diff.sh
@@ -167,6 +173,11 @@ jobs:
         run: |
           scripts/render-wrangler.sh --self-test
           .github/scripts/lint-workflow.sh .github/workflows/deploy.yml .github/actions/deploy-worker/action.yml
+      # The release bot holds the release App's key in one job, `publish`, and nowhere else.
+      - name: Release workflow guard
+        env:
+          SECRET_JOBS: publish
+        run: .github/scripts/lint-workflow.sh .github/workflows/release-pr.yml
 
   # rustfmt and clippy (issue #40). Clippy runs with `-D warnings`, so the four lints `Cargo.toml` denies in core, ports and the
   # adapters (ADR-0006's panic policy: unwrap, expect, panic, indexing) and every other warning fail it. The second clippy run is

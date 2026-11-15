@@ -28,7 +28,10 @@ fi
 # read those bytes with include_bytes!, so a change to it alone must run them, not be skipped as docs.
 # e2e/ is the browser journey (issue #44) that the `e2e` cell of the contract matrix runs, so a change to it alone must run that cell.
 # (A change to web/ alone does not: it runs the `web` job below, which builds the app and does not drive it. That is a known gap, G-30.)
-if grep -qE '^(crates/|scripts/|e2e/|probes/|tools/oracle-v1/|tools/compat-record/|tools/compat-inventory/out-pinned/endpoint-inventory\.csv$|\.agents/plans/contrail/research/0003-compat-plane-inventory\.md$|Cargo\.(toml|lock)$|rust-toolchain|\.cargo/|\.config/|\.github/(workflows|actions|scripts|deploy)/|deny\.toml$|\.?(clippy|rustfmt)\.toml$)' "$tmp"; then
+# cliff.toml decides what the release bot (.github/scripts/release-pr.sh) puts in the changelog and when it releases, and its test in
+# `ci-scripts` reads the file, so a change to it alone must run that test. (This runs the whole Rust set; narrowing it is the
+# affected-only CI change of .agents/plans/cicd-review/PLAN.md, PR 4.)
+if grep -qE '^(crates/|scripts/|e2e/|probes/|tools/oracle-v1/|tools/compat-record/|tools/compat-inventory/out-pinned/endpoint-inventory\.csv$|\.agents/plans/contrail/research/0003-compat-plane-inventory\.md$|Cargo\.(toml|lock)$|rust-toolchain|\.cargo/|\.config/|\.github/(workflows|actions|scripts|deploy)/|deny\.toml$|cliff\.toml$|\.?(clippy|rustfmt)\.toml$)' "$tmp"; then
   echo "rust=true"
 else
   echo "rust=false"
