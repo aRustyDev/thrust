@@ -4,7 +4,10 @@
 #
 #   THRUST_BASE_URL=https://<worker>.<sub>.workers.dev \
 #   THRUST_ADMIN_TOKEN_FILE=<0600 file holding the Worker's THRUST_ADMIN_TOKEN> \
-#     scripts/stage2-contract.sh [main|worker|bindings|cron|sweeper|panic]
+#     scripts/stage2-contract.sh [main|csrfoff|worker|bindings|cron|crontrigger|sweeper|panic|blast|email|engine|budget|ratelimit]
+#
+# The number of tests of each pass below is its `EXPECT` in the `case` further down, and `scripts/check-contract-counts.sh` (a step of
+# CI's `hermetic` job) checks every one of them against the suite, because nothing in CI runs THIS script (it needs a deployed Worker).
 #
 # main      64 tests: the portable contract minus the 3 `oidc_` tests (the `compat_oidc_` ones: they need the mock IdP on
 #           127.0.0.1, which a deployed Worker cannot reach) (the deployed Worker's RL_V1 binding must be 60 a minute,
@@ -12,15 +15,19 @@
 #           THRUST_ARGON2_P=1, or every fixture seeds six passwords at the real cost). It refuses a THRUST_EXPECT_V1_LIMIT
 #           above 1000: the rate-limit test would send millions of creates to a Worker whose binding was raised for the engine pass
 # worker     1 test : Durable Object WebSocket hibernation + SQLite
-# bindings   5 tests: the probe routes' admin gate, and one real operation per binding (rate limit, secrets store, email), and the
-#            version header. Here the last is skipped with email: wrangler.stage2.toml has no [version_metadata], and what a
-#            deployed Worker reports as its version is what scripts/smoke-deploy.sh checks (issue #49)
+# bindings   3 tests (contract.sh's has 5): the probe routes' admin gate, and one real operation per binding (rate limit, secrets store,
+#            email), and the version header. Here email and the version header are skipped: email for the reason below,
+#            wrangler.stage2.toml has no [version_metadata], and what a deployed Worker reports as its version is what
+#            scripts/smoke-deploy.sh checks (issue #49)
 # cron       1 test : needs the Worker deployed with THRUST_OUTBOX_FASTPATH=off
+# crontrigger 1 test: the REAL every-minute trigger (`cron` uses wrangler dev's /__scheduled, which a deployed Worker lacks)
+# blast      1 test : OBSERVATIONAL: how many other in-flight requests fail around one panic (a panic aborts the isolate)
+# ratelimit  1 test : `v1_requests_are_rate_limited_per_key` alone (it is also one of the tests of `main`); see the refusal below
 # sweeper    3 tests: needs THRUST_OUTBOX_FASTPATH=off
 # panic      1 test : alone, against a Worker nobody else is using (a panic resets the isolate)
 # csrfoff    6 tests: needs the Worker deployed with THRUST_CSRF_ENFORCE=off (Q-0050.8, the production default while the
 #            stock frontend is in use). Every other pass needs it ON, which wrangler.stage2.toml sets; /_info is checked
-# engine     the engine pass (spike 0002, `contract.sh <target> engine`): the 50-writer test and the search tests.
+# engine     4 tests: the engine pass (spike 0002, `contract.sh <target> engine`): the 50-writer test and the search tests.
 #            Needs a Worker whose RL_V1 binding has a very high limit (the 50-writer test makes ~10k creates, each a request on an API
 #            key): a binding's limit is not a var, so it is set in the config the Worker is deployed from
 #            (`spike-0002-pg.sh deploy --v1-limit`).
@@ -80,7 +87,8 @@ case "$PASS" in
   # EXPECT is what these filters select: `cargo test -p thrust-contract-tests --test contract -- --list --format terse` with the same
   # --skip flags, counting the lines that end in `: test`. It was 59 until 2026-11-14 while the list had been 61 since #151 (its two
   # change-password tests), and #169's three password-reset tests made it 64 the same day: nothing in CI runs this script, so nothing
-  # noticed, and a correct run would have exited 5 at the guard below.
+  # noticed, and a correct run would have exited 5 at the guard below. `scripts/check-contract-counts.sh` now runs exactly that
+  # listing, for every arm of this `case`, in CI (it reads the `EXPECT=` and the filters of the lines below, so keep their shape).
   main)     EXPECT=64; "$RS" cargo test --manifest-path "$M" -p thrust-contract-tests --test contract -- --skip sweeper_ --skip panic_ --skip blast_ --skip oidc_ --skip operator_ --skip csrf_off_ >"$LOG.test.log" 2>&1 ;;
   # the csrf_off_ tests that need nothing else the deployed Worker lacks (all six: none of them is an `oidc_` test)
   csrfoff)  EXPECT=6;  "$RS" cargo test --manifest-path "$M" -p thrust-contract-tests --test contract -- csrf_off_ >"$LOG.test.log" 2>&1 ;;
