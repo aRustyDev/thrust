@@ -489,6 +489,363 @@
           }
         ]
       }
+    },
+    "/api/v1/workspaces/{slug}/projects/{project_id}/states/": {
+      "get": {
+        "tags": [
+          "States"
+        ],
+        "summary": "List states",
+        "operationId": "list_states",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "fields",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "per_page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated list of states",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_StateDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication credentials were not provided or are invalid."
+          },
+          "403": {
+            "description": "Permission denied. User lacks required permissions."
+          },
+          "404": {
+            "description": "The requested resource was not found."
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuthentication": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "States"
+        ],
+        "summary": "Create state",
+        "operationId": "create_state",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "State created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StateDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request data provided"
+          },
+          "401": {
+            "description": "Authentication credentials were not provided or are invalid."
+          },
+          "403": {
+            "description": "Permission denied. User lacks required permissions."
+          },
+          "404": {
+            "description": "The requested resource was not found."
+          },
+          "409": {
+            "description": "State with the same name already exists"
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuthentication": []
+          }
+        ]
+      }
+    },
+    "/api/v1/workspaces/{slug}/projects/{project_id}/states/{state_id}/": {
+      "get": {
+        "tags": [
+          "States"
+        ],
+        "summary": "Retrieve state",
+        "operationId": "retrieve_state",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "state_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "State retrieved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StateDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication credentials were not provided or are invalid."
+          },
+          "403": {
+            "description": "Permission denied. User lacks required permissions."
+          },
+          "404": {
+            "description": "The requested resource was not found."
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuthentication": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "States"
+        ],
+        "summary": "Delete state",
+        "operationId": "delete_state",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "state_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Resource deleted successfully"
+          },
+          "400": {
+            "description": "State cannot be deleted"
+          },
+          "401": {
+            "description": "Authentication credentials were not provided or are invalid."
+          },
+          "403": {
+            "description": "Permission denied. User lacks required permissions."
+          },
+          "404": {
+            "description": "The requested resource was not found."
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuthentication": []
+          }
+        ]
+      },
+      "patch": {
+        "tags": [
+          "States"
+        ],
+        "summary": "Update state",
+        "operationId": "update_state",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "state_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/PatchedStateRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "State updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StateDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request data provided"
+          },
+          "401": {
+            "description": "Authentication credentials were not provided or are invalid."
+          },
+          "403": {
+            "description": "Permission denied. User lacks required permissions."
+          },
+          "404": {
+            "description": "The requested resource was not found."
+          },
+          "409": {
+            "description": "Resource with same external ID already exists"
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuthentication": []
+          }
+        ]
+      }
     }
   },
   "components": {
@@ -1357,6 +1714,189 @@
           }
         }
       },
+      "Page_StateDto": {
+        "type": "object",
+        "description": "The 12-key envelope of every v1 list (`BasePaginator`): the page's rows, how many there are in all, how many pages, and the\ncursors of the next and the previous page. The pin's schema has one per resource (`PaginatedProjectResponse`, ...), which differ\nonly in what `results` holds.",
+        "required": [
+          "grouped_by",
+          "sub_grouped_by",
+          "total_count",
+          "next_cursor",
+          "prev_cursor",
+          "next_page_results",
+          "prev_page_results",
+          "count",
+          "total_pages",
+          "total_results",
+          "extra_stats",
+          "results"
+        ],
+        "properties": {
+          "count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "extra_stats": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "grouped_by": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Always `null`: a v1 list is not grouped. The key is always there (`required`), whatever it holds."
+          },
+          "next_cursor": {
+            "type": "string"
+          },
+          "next_page_results": {
+            "type": "boolean"
+          },
+          "prev_cursor": {
+            "type": "string"
+          },
+          "prev_page_results": {
+            "type": "boolean"
+          },
+          "results": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "description": "The pin's `StateSerializer`: 18 keys. `is_triage` is whether the group is the intake's, which a state of the list never is (the pin\nstores it apart from the group, and a request can set it on a state of another group: the register carries that). A key whose value\ncan be `null` here is `Option`, which is what the document says of it.",
+              "required": [
+                "id",
+                "created_at",
+                "updated_at",
+                "name",
+                "description",
+                "color",
+                "slug",
+                "sequence",
+                "group",
+                "is_triage",
+                "default",
+                "project",
+                "workspace"
+              ],
+              "properties": {
+                "color": {
+                  "type": "string",
+                  "maxLength": 255
+                },
+                "created_at": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "created_by": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "uuid"
+                },
+                "default": {
+                  "type": "boolean"
+                },
+                "deleted_at": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "date-time",
+                  "description": "Always `null`: a deleted state is not shown."
+                },
+                "description": {
+                  "type": "string"
+                },
+                "external_id": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "maxLength": 255
+                },
+                "external_source": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "maxLength": 255
+                },
+                "group": {
+                  "type": "string",
+                  "enum": [
+                    "backlog",
+                    "unstarted",
+                    "started",
+                    "completed",
+                    "cancelled",
+                    "triage"
+                  ]
+                },
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "is_triage": {
+                  "type": "boolean"
+                },
+                "name": {
+                  "type": "string",
+                  "maxLength": 255
+                },
+                "project": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "sequence": {
+                  "type": "number",
+                  "format": "double"
+                },
+                "slug": {
+                  "type": "string",
+                  "description": "The pin's `slugify` of the name ([`crate::states::slugify`]): it can be empty, for a name with no letter or digit that NFKD\nleaves in ASCII, which is what the pin answers too."
+                },
+                "updated_at": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "updated_by": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "uuid"
+                },
+                "workspace": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          },
+          "sub_grouped_by": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "total_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "total_pages": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "total_results": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
       "PatchedProjectUpdateRequest": {
         "type": "object",
         "description": "What a project's change takes (the pin's `ProjectUpdateSerializer`): the creation's keys, none required, and the two ids that a\nchange can set.",
@@ -1901,6 +2441,60 @@
               "US/Pacific",
               "UTC"
             ]
+          }
+        }
+      },
+      "PatchedStateRequest": {
+        "type": "object",
+        "description": "What a state's change takes: the creation's keys, none required.",
+        "properties": {
+          "color": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1
+          },
+          "default": {
+            "type": "boolean"
+          },
+          "description": {
+            "type": "string"
+          },
+          "external_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 255
+          },
+          "external_source": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 255
+          },
+          "group": {
+            "type": "string",
+            "enum": [
+              "backlog",
+              "unstarted",
+              "started",
+              "completed",
+              "cancelled",
+              "triage"
+            ]
+          },
+          "is_triage": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1
+          },
+          "sequence": {
+            "type": "number",
+            "format": "double"
           }
         }
       },
@@ -3162,6 +3756,177 @@
           "name": {
             "type": "string",
             "maxLength": 255
+          }
+        }
+      },
+      "StateDto": {
+        "type": "object",
+        "description": "The pin's `StateSerializer`: 18 keys. `is_triage` is whether the group is the intake's, which a state of the list never is (the pin\nstores it apart from the group, and a request can set it on a state of another group: the register carries that). A key whose value\ncan be `null` here is `Option`, which is what the document says of it.",
+        "required": [
+          "id",
+          "created_at",
+          "updated_at",
+          "name",
+          "description",
+          "color",
+          "slug",
+          "sequence",
+          "group",
+          "is_triage",
+          "default",
+          "project",
+          "workspace"
+        ],
+        "properties": {
+          "color": {
+            "type": "string",
+            "maxLength": 255
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "created_by": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "default": {
+            "type": "boolean"
+          },
+          "deleted_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "Always `null`: a deleted state is not shown."
+          },
+          "description": {
+            "type": "string"
+          },
+          "external_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 255
+          },
+          "external_source": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 255
+          },
+          "group": {
+            "type": "string",
+            "enum": [
+              "backlog",
+              "unstarted",
+              "started",
+              "completed",
+              "cancelled",
+              "triage"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "is_triage": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 255
+          },
+          "project": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sequence": {
+            "type": "number",
+            "format": "double"
+          },
+          "slug": {
+            "type": "string",
+            "description": "The pin's `slugify` of the name ([`crate::states::slugify`]): it can be empty, for a name with no letter or digit that NFKD\nleaves in ASCII, which is what the pin answers too."
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_by": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "workspace": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "StateRequest": {
+        "type": "object",
+        "description": "What a state's creation takes (the pin's `StateSerializer` as a request): `name` and `color` are required, the rest is optional, and\nonly the two external keys can be `null`.",
+        "required": [
+          "name",
+          "color"
+        ],
+        "properties": {
+          "color": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1
+          },
+          "default": {
+            "type": "boolean"
+          },
+          "description": {
+            "type": "string"
+          },
+          "external_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 255
+          },
+          "external_source": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 255
+          },
+          "group": {
+            "type": "string",
+            "enum": [
+              "backlog",
+              "unstarted",
+              "started",
+              "completed",
+              "cancelled",
+              "triage"
+            ]
+          },
+          "is_triage": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1
+          },
+          "sequence": {
+            "type": "number",
+            "format": "double"
           }
         }
       }

@@ -8,8 +8,10 @@
 //! One module per resource, as the routes are: a resource's bodies move here when its routes are described.
 
 mod projects;
+mod states;
 
 pub(crate) use projects::{ProjectDto, ProjectLiteDto};
+pub(crate) use states::StateDto;
 
 use serde::Serialize;
 use serde_json::{Map, Value};
