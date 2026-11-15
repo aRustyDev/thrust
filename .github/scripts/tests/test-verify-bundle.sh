@@ -1,7 +1,7 @@
 #!/bin/sh
 # .github/scripts/verify-bundle.sh against a fake `gh` that records what it was asked and answers as a file says (issue #49): the
-# verification must ask for every condition (this repository, its deploy.yml, main, no self-hosted runner), and a refusal by gh must be a
-# refusal. The fake verifies a bundle only if the bundle says so, so a script that stopped asking would be found by the flags it left out.
+# verification must ask for every condition (this repository, its deploy.yml, the exact ref, no self-hosted runner), a refusal by gh must
+# be a refusal, and a ref that does not deploy (main, a feature branch, a pull request, rc/a/b) is refused before gh is asked. The fake verifies a bundle only if the bundle says so, so a script that stopped asking would be found by the flags it left out.
 #
 #   sh .github/scripts/tests/test-verify-bundle.sh
 #
@@ -39,24 +39,36 @@ asked() { # asked <label> <flag text that must be in the call>
   if grep -qF -- "$2" "$FIX/gh.calls" 2> /dev/null; then pass=$((pass + 1)); echo "ok   it asked for $1"; else bad=$((bad + 1)); echo "BAD  it did not ask for $1 ('$2'): $(cat "$FIX/gh.calls" 2> /dev/null)"; fi
 }
 
-run "an attested bundle" 0 "is attested by o/r/.github/workflows/deploy.yml on refs/heads/main" "$T/good.tar.gz" o/r
-asked "this repository" "--repo o/r"
-asked "this repository's deploy workflow as the signer" "--signer-workflow o/r/.github/workflows/deploy.yml"
-asked "main as the source ref" "--source-ref refs/heads/main"
-asked "no self-hosted runner" "--deny-self-hosted-runners"
-if grep -q -- "--source-digest" "$FIX/gh.calls"; then bad=$((bad + 1)); echo "BAD  it asked for --source-digest, which a workflow_run cannot satisfy"; else pass=$((pass + 1)); echo "ok   it did not ask for --source-digest"; fi
+RC=refs/heads/rc/2026-11-15T07-33-32Z
+TAG=refs/tags/v0.1.0
+for ref in "$RC" refs/heads/rc/manual-1 "$TAG"; do
+  run "an attested bundle from $ref" 0 "is attested by o/r/.github/workflows/deploy.yml on $ref" "$T/good.tar.gz" o/r "$ref"
+  asked "this repository" "--repo o/r"
+  asked "this repository's deploy workflow as the signer" "--signer-workflow o/r/.github/workflows/deploy.yml"
+  asked "exactly $ref as the source ref" "--source-ref $ref"
+  asked "no self-hosted runner" "--deny-self-hosted-runners"
+  if grep -q -- "--source-digest" "$FIX/gh.calls"; then bad=$((bad + 1)); echo "BAD  it asked for --source-digest"; else pass=$((pass + 1)); echo "ok   it did not ask for --source-digest"; fi
+done
 
-run "a bundle gh refuses (a forged artifact has no attestation)" 1 "NOT VERIFIED" "$T/forged.tar.gz" o/r
+run "a bundle gh refuses (a forged artifact has no attestation)" 1 "NOT VERIFIED" "$T/forged.tar.gz" o/r "$RC"
+
+# a ref that does not deploy is refused, and gh is never asked: even an attested bundle from it is not for an environment
+for ref in refs/heads/main refs/heads/feat/x refs/heads/rc/a/b refs/heads/rc/ refs/tags/v0.1.0/x refs/tags/v refs/tags/release-1 \
+    refs/pull/1/merge rc/2026-11-15T07-33-32Z v0.1.0 refs/heads/xrc/1 refs/tags/xv1; do
+  run "a bundle from $ref" 1 "is not a ref that deploys" "$T/good.tar.gz" o/r "$ref"
+  if [ -s "$FIX/gh.calls" ]; then bad=$((bad + 1)); echo "BAD  gh was asked about $ref"; else pass=$((pass + 1)); echo "ok   gh was not asked about $ref"; fi
+done
 
 run "no arguments" 2 "usage"
-run "a bundle that is not there" 2 "is not a file" "$T/nope.tar.gz" o/r
-run "a repository that is not owner/repo" 2 "is not owner/repo" "$T/good.tar.gz" justname
+run "no source ref" 2 "usage" "$T/good.tar.gz" o/r
+run "a bundle that is not there" 2 "is not a file" "$T/nope.tar.gz" o/r "$RC"
+run "a repository that is not owner/repo" 2 "is not owner/repo" "$T/good.tar.gz" justname "$RC"
 
 # gh missing is a usage error and never a pass: no `gh` on the PATH at all
 rm -f "$FIX/gh.calls"
 # (an empty directory as the whole PATH: on a runner `gh` is in /usr/bin, so a PATH of /usr/bin:/bin would still find it)
 mkdir -p "$T/empty"
-env -i PATH="$T/empty" /bin/sh "$S" "$T/good.tar.gz" o/r > "$T/out.txt" 2>&1; got=$?
+env -i PATH="$T/empty" /bin/sh "$S" "$T/good.tar.gz" o/r "$RC" > "$T/out.txt" 2>&1; got=$?
 if [ "$got" = 2 ] && grep -q "gh is not installed" "$T/out.txt"; then pass=$((pass + 1)); echo "ok   no gh on the PATH is exit 2, not a pass"; else bad=$((bad + 1)); echo "BAD  no gh: exit $got"; sed 's/^/     | /' "$T/out.txt"; fi
 
 echo "passed=$pass bad=$bad"

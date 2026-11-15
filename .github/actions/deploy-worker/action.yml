@@ -125,17 +125,18 @@ runs:
         name: deploy-bundle-${{ inputs.sha }}
         path: ${{ runner.temp }}/bundle-download
 
-    # The attestation is the proof that this file came out of THIS repository's deploy workflow on main, and was not put there by
-    # anything else that can write an artifact. `source-digest` is not asked for: on a workflow_run the workflow's own commit is the
-    # tip of main and not the commit ci ran on, so the commit is bound another way: the bundle names the commit it was built from
-    # (BUILD_SHA, inside the attested file) and that is compared below.
+    # The attestation is the proof that this file came out of THIS repository's deploy workflow, on this run's own ref (an rc/* branch
+    # for staging, a v* tag for production: the `build` job of this same run made it), and was not put there by anything else that can
+    # write an artifact. The commit is bound another way: the bundle names the commit it was built from (BUILD_SHA, inside the attested
+    # file) and that is compared below.
     - name: Verify the attestation
       shell: bash
       env:
         GH_TOKEN: ${{ github.token }}
         REPO: ${{ github.repository }}
+        SOURCE_REF: ${{ github.ref }}
         BUNDLE_DIR: ${{ runner.temp }}/bundle-download
-      run: .github/scripts/verify-bundle.sh "$BUNDLE_DIR/deploy-bundle.tar.gz" "$REPO"
+      run: .github/scripts/verify-bundle.sh "$BUNDLE_DIR/deploy-bundle.tar.gz" "$REPO" "$SOURCE_REF"
 
     - name: Unpack the bundle
       shell: bash

@@ -1,8 +1,8 @@
 #!/bin/sh
 # .github/scripts/fetch-previous-assets.sh against a fake `gh` that serves a list of artifacts and their zips, with the real
 # verify-bundle.sh and unpack-bundle.sh behind it (issue #49). The point is what it will NOT take: an artifact that is expired, one made
-# by a run on another branch (a fork's pull request can upload one under any name), one without an attestation, one for another commit,
-# one with a link in it. Each is shown next to the one it does take.
+# by a fork's run (a fork's pull request can upload one under any name), one made on a ref that does not deploy (main, a feature branch,
+# rc/a/b), one without an attestation, one for another commit, one with a link in it. Each is shown next to the one it does take.
 #
 #   sh .github/scripts/tests/test-fetch-previous-assets.sh
 #
@@ -36,6 +36,7 @@ case "$1 $2" in
     [ -f "$FIX/$id.zip" ] || { echo "gh: Not Found (HTTP 404)" >&2; exit 1; }
     cat "$FIX/$id.zip" ;;
   "attestation verify")
+    echo "$*" >> "$FIX/gh.calls"
     [ -f "$FIX/attested" ] || { echo "gh: no attestations found" >&2; exit 1; } ;;
   *) echo "fake gh: unexpected: $*" >&2; exit 99 ;;
 esac
@@ -63,8 +64,9 @@ with zipfile.ZipFile(out, "w") as z:
     z.writestr("deploy-bundle.tar.gz", buf.getvalue())
 EOF
 }
-# artifact <id> <expired true|false> <created_at> <head_branch> [name]: one entry of the list
-artifact() { printf '{"id":%s,"name":"%s","expired":%s,"created_at":"%s","workflow_run":{"head_branch":"%s"}}' "$1" "${5:-deploy-bundle-$SHA}" "$2" "$3" "$4"; }
+# artifact <id> <expired true|false> <created_at> <head_branch> [name] [head repository id]: one entry of the list (this repository is 7)
+artifact() { printf '{"id":%s,"name":"%s","expired":%s,"created_at":"%s","workflow_run":{"head_branch":"%s","repository_id":7,"head_repository_id":%s}}' "$1" "${5:-deploy-bundle-$SHA}" "$2" "$3" "$4" "${6:-7}"; }
+RC=rc/2026-11-15T07-33-32Z
 list() { printf '{"total_count":%s,"artifacts":[%s]}' "$#" "$(printf '%s,' "$@" | sed 's/,$//')" > "$T/fix/list.json"; }
 
 run() { # run <label> <want-exit> <want-fragment> [sha]
@@ -82,69 +84,92 @@ run() { # run <label> <want-exit> <want-fragment> [sha]
 nothing_left() { # nothing_left <label>
   if [ -e "$T/dest/bundle" ]; then bad=$((bad + 1)); echo "BAD  $1: a refused bundle was left unpacked"; else pass=$((pass + 1)); echo "ok   $1: nothing was left unpacked"; fi
 }
-reset() { rm -f "$T/fix/"*.zip "$T/fix/list.json" "$T/fix/list.fail" "$T/fix/attested"; }
+reset() { rm -f "$T/fix/"*.zip "$T/fix/list.json" "$T/fix/list.fail" "$T/fix/attested" "$T/fix/gh.calls"; }
 
 # ---- the artifact it takes --------------------------------------------------------------------------------------------------------------
 reset; mkbundle 11 "$SHA" yes; touch "$T/fix/attested"
-list "$(artifact 11 false 2026-11-14T10:00:00Z main)"
+list "$(artifact 11 false 2026-11-14T10:00:00Z "$RC")"
 run "a verified bundle of the right commit, with web files" 0 "web=true"
 grep -q "^bundle=$T/dest/bundle$" "$T/stdout.txt" && [ -f "$T/dest/bundle/web/index.html" ] && pass=$((pass + 1)) && echo "ok   ...and it is unpacked where it says" || { bad=$((bad + 1)); echo "BAD  the bundle is not where it says"; }
 [ "$(wc -l < "$T/stdout.txt" | tr -d ' ')" = 2 ] && pass=$((pass + 1)) && echo "ok   ...and stdout carries only the two key=value lines" || { bad=$((bad + 1)); echo "BAD  stdout has more than bundle= and web=: $(cat "$T/stdout.txt")"; }
 
 reset; mkbundle 12 "$SHA" no; touch "$T/fix/attested"
-list "$(artifact 12 false 2026-11-14T10:00:00Z main)"
+list "$(artifact 12 false 2026-11-14T10:00:00Z "$RC")"
 run "a bundle from before the web app was part of it is not an error" 0 "web=false"
 
 # ---- which artifact: newest, unexpired, from main -------------------------------------------------------------------------------------
 reset; mkbundle 21 "$SHA" yes; mkbundle 22 "$SHA" no; touch "$T/fix/attested"
-list "$(artifact 21 false 2026-11-14T08:00:00Z main)" "$(artifact 22 false 2026-11-14T09:00:00Z main)"
+list "$(artifact 21 false 2026-11-14T08:00:00Z "$RC")" "$(artifact 22 false 2026-11-14T09:00:00Z "$RC")"
 run "of two good artifacts it takes the newest" 0 "web=false"
 reset; mkbundle 23 "$SHA" yes; mkbundle 24 "$SHA" no; touch "$T/fix/attested"
-list "$(artifact 23 false 2026-11-14T08:00:00Z main)" "$(artifact 24 true 2026-11-14T09:00:00Z main)"
+list "$(artifact 23 false 2026-11-14T08:00:00Z "$RC")" "$(artifact 24 true 2026-11-14T09:00:00Z "$RC")"
 run "a newer artifact that has expired is skipped for an older one that has not" 0 "web=true"
 
 reset; touch "$T/fix/attested"
 list
 run "no artifact at all" 3 "no usable artifact"
 reset; mkbundle 31 "$SHA" yes; touch "$T/fix/attested"
-list "$(artifact 31 true 2026-11-14T10:00:00Z main)"
+list "$(artifact 31 true 2026-11-14T10:00:00Z "$RC")"
 run "only an expired artifact" 3 "no unexpired"
 reset; mkbundle 32 "$SHA" yes; touch "$T/fix/attested"
 list "$(artifact 32 false 2026-11-14T10:00:00Z feat/forged)"
-run "an artifact made by a run on another branch (a forged one) is not looked at" 3 "from a run on main"
+run "an artifact made by a run on another branch (a forged one) is not looked at" 3 "on an rc/* branch or a v* tag"
 reset; mkbundle 33 "$SHA" yes; touch "$T/fix/attested"
-list "$(artifact 33 false 2026-11-14T10:00:00Z main "deploy-bundle-$OTHER")"
+list "$(artifact 33 false 2026-11-14T10:00:00Z "$RC" "deploy-bundle-$OTHER")"
 run "an artifact of another name is not it" 3 "no usable artifact"
 reset; mkbundle 34 "$SHA" yes; touch "$T/fix/attested"
-list "$(artifact 34 false 2026-11-14T10:00:00Z main)" "$(artifact 35 false 2026-11-14T11:00:00Z feat/forged)"
-run "a newer artifact from another branch does not hide a good one from main" 0 "web=true"
+list "$(artifact 34 false 2026-11-14T10:00:00Z "$RC")" "$(artifact 35 false 2026-11-14T11:00:00Z feat/forged)"
+run "a newer artifact from another branch does not hide a good one from an rc branch" 0 "web=true"
+
+# the ref it verifies on is the ref the artifact's run was on
+reset; mkbundle 36 "$SHA" yes; touch "$T/fix/attested"
+list "$(artifact 36 false 2026-11-14T10:00:00Z "$RC")"
+run "an artifact from an rc branch" 0 "web=true"
+grep -qF -- "--source-ref refs/heads/$RC" "$T/fix/gh.calls" && pass=$((pass + 1)) && echo "ok   ...verified on refs/heads/$RC" || { bad=$((bad + 1)); echo "BAD  not verified on the rc branch: $(cat "$T/fix/gh.calls")"; }
+reset; mkbundle 37 "$SHA" yes; touch "$T/fix/attested"
+list "$(artifact 37 false 2026-11-14T10:00:00Z v0.1.0)"
+run "an artifact from a release tag" 0 "web=true"
+grep -qF -- "--source-ref refs/tags/v0.1.0" "$T/fix/gh.calls" && pass=$((pass + 1)) && echo "ok   ...verified on refs/tags/v0.1.0" || { bad=$((bad + 1)); echo "BAD  not verified on the tag: $(cat "$T/fix/gh.calls")"; }
+
+# refs that do not deploy, and a fork's run, are not looked at, even when gh would verify them
+for b in main feat/x rc/a/b rc/ v1/x release-1 ""; do
+  reset; mkbundle 38 "$SHA" yes; touch "$T/fix/attested"
+  list "$(artifact 38 false 2026-11-14T10:00:00Z "$b")"
+  run "an artifact from a run on '$b' is not looked at" 3 "no usable artifact"
+done
+reset; mkbundle 39 "$SHA" yes; touch "$T/fix/attested"
+list "$(artifact 39 false 2026-11-14T10:00:00Z "$RC" "" 99)"
+run "an artifact from a fork's run on a branch named like ours is not looked at" 3 "a fork's"
+reset; mkbundle 40 "$SHA" yes; mkbundle 44 "$SHA" no; touch "$T/fix/attested"
+list "$(artifact 40 false 2026-11-14T10:00:00Z "$RC")" "$(artifact 44 false 2026-11-14T11:00:00Z "$RC" "" 99)"
+run "a newer artifact from a fork does not hide a good one of ours" 0 "web=true"
 
 # ---- what a bundle must pass --------------------------------------------------------------------------------------------------------------
 reset; mkbundle 41 "$SHA" yes
-list "$(artifact 41 false 2026-11-14T10:00:00Z main)"
+list "$(artifact 41 false 2026-11-14T10:00:00Z "$RC")"
 run "a bundle with no attestation" 4 "did not verify"
 nothing_left "a bundle with no attestation"
 
 reset; mkbundle 42 "$OTHER" yes; touch "$T/fix/attested"
-list "$(artifact 42 false 2026-11-14T10:00:00Z main)"
+list "$(artifact 42 false 2026-11-14T10:00:00Z "$RC")"
 run "an attested bundle that is for another commit" 4 "did not unpack"
 nothing_left "an attested bundle that is for another commit"
 
 reset; mkbundle 43 "$SHA" yes symlink; touch "$T/fix/attested"
-list "$(artifact 43 false 2026-11-14T10:00:00Z main)"
+list "$(artifact 43 false 2026-11-14T10:00:00Z "$RC")"
 run "an attested bundle with a symlink in it" 4 "did not unpack"
 nothing_left "an attested bundle with a symlink"
 
 # ---- GitHub not answering is a refusal, not a "nothing there" ------------------------------------------------------------------------
 reset; touch "$T/fix/list.fail"
 run "the list of artifacts failing" 4 "could not list the artifacts"
-reset; list "$(artifact 51 false 2026-11-14T10:00:00Z main)"
+reset; list "$(artifact 51 false 2026-11-14T10:00:00Z "$RC")"
 run "an artifact whose download fails" 4 "could not download artifact 51"
 reset; printf 'not json' > "$T/fix/list.json"
 run "a list that is not JSON" 4 "not the JSON this reads"
-reset; printf 'not a zip' > "$T/fix/61.zip"; list "$(artifact 61 false 2026-11-14T10:00:00Z main)"
+reset; printf 'not a zip' > "$T/fix/61.zip"; list "$(artifact 61 false 2026-11-14T10:00:00Z "$RC")"
 run "a download that is not a zip" 4 "not a zip file"
-reset; python3 -c "import zipfile,sys; z=zipfile.ZipFile(sys.argv[1],'w'); z.writestr('something-else.txt','x'); z.close()" "$T/fix/62.zip"; list "$(artifact 62 false 2026-11-14T10:00:00Z main)"
+reset; python3 -c "import zipfile,sys; z=zipfile.ZipFile(sys.argv[1],'w'); z.writestr('something-else.txt','x'); z.close()" "$T/fix/62.zip"; list "$(artifact 62 false 2026-11-14T10:00:00Z "$RC")"
 run "a zip without the bundle in it" 4 "no deploy-bundle.tar.gz"
 
 # ---- usage ----------------------------------------------------------------------------------------------------------------------------------
