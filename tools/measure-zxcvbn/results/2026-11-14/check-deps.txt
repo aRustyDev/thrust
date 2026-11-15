@@ -1,0 +1,17 @@
+scripts/check-deps.sh with zxcvbn 3.1.1 in thrust-core (variant called), FORBIDDEN lines: 15
+     1 FORBIDDEN: thrust-api depends on js-sys
+     1 FORBIDDEN: thrust-api depends on wasm-bindgen
+     1 FORBIDDEN: thrust-api depends on web-sys
+     1 FORBIDDEN: thrust-api-v1 depends on js-sys
+     1 FORBIDDEN: thrust-api-v1 depends on wasm-bindgen
+     1 FORBIDDEN: thrust-api-v1 depends on web-sys
+     1 FORBIDDEN: thrust-compat-plane depends on js-sys
+     1 FORBIDDEN: thrust-compat-plane depends on wasm-bindgen
+     1 FORBIDDEN: thrust-compat-plane depends on web-sys
+     1 FORBIDDEN: thrust-core depends on js-sys
+     1 FORBIDDEN: thrust-core depends on wasm-bindgen
+     1 FORBIDDEN: thrust-core depends on web-sys
+     1 FORBIDDEN: thrust-plane-types depends on js-sys
+     1 FORBIDDEN: thrust-plane-types depends on wasm-bindgen
+     1 FORBIDDEN: thrust-plane-types depends on web-sys
+scripts/check-deps.sh on the unmodified tree, FORBIDDEN lines: 0

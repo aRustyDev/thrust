@@ -1,0 +1,23 @@
+# The native half of the zxcvbn measurement (research/0015, section 4): how long the first zxcvbn call takes, and how much heap it leaves.
+# Test tooling, not product code: no crate imports it (ADR-0006 register).
+#
+# DETACHED from the repo's workspace on purpose (the empty [workspace] table below): `zxcvbn` must not enter the workspace's Cargo.lock,
+# because scripts/check-deps.sh forbids what it pulls in on wasm32 (wasm-bindgen, js-sys, web-sys) in thrust-core's graph. This crate has
+# its own Cargo.lock, with the crate pinned to the version that was measured.
+[package]
+name = "zxcvbn-first-call"
+version = "0.0.0"
+edition = "2021"
+license = "AGPL-3.0-only"
+publish = false
+
+[workspace]
+
+[dependencies]
+zxcvbn = "=3.1.1"
+
+# The workspace's release profile, so the native number is as comparable as a native number can be.
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1

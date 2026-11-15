@@ -1,0 +1,19 @@
+requests sent: 111; platform records found: 111
+not 400: 0   no platform record: 0   outcome not ok: 0   rounds with more than one version: [2]
+counted: 74
+
+cpuTime ms, bursts b1+b2 (32 concurrent requests per round, on whichever isolates the platform chose):
+                n    min    p50    p75    p90    max    mean
+bS             32      0     12     24     38     41    13.9
+vS              0
+vZ             32      1      4     78    147    193    51.1
+
+same-connection sequences straight after a deploy (cpuTime ms by position; position 1 is the first request on the isolate /healthz instantiated):
+  bS round  1: [23, 1, 1, 1, 1]  first - median(later) = 22.0
+  vZ round  3: [86, 1, 1, 1, 1]  first - median(later) = 85.0
+
+first minus later, bS: n=1 min=22.0 median=22.0 max=22.0
+first minus later, vZ: n=1 min=85.0 median=85.0 max=85.0
+  bS and vS are the control (a first request that is not zxcvbn); vZ's excess over them is zxcvbn's first call on an instantiated isolate.
+
+bar 3: the first strength check costs no more CPU than one argon2 hash, about 45 ms p50 deployed (research/0012)
