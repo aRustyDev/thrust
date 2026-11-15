@@ -1640,23 +1640,19 @@ async fn compat_sign_out_answers_one_way_ends_a_bearer_session_and_is_not_done_b
     assert_cookies_cleared(&r);
     assert_eq!(r.json::<Value>().await.unwrap(), json!({"redirect_path": "/"}));
 
-    let (_, token) = signed_up(&t).await;
-    let key: thrust_contracts::CreatedApiKey = {
-        let r = t
-            .http
-            .post(t.url(&format!("{SLICE_PREFIX}/api-keys")))
-            .bearer_auth(&token)
-            .json(&json!({}))
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(r.status(), 201);
-        r.json().await.unwrap()
-    };
+    // a seeded account: a real session from the sign-in route, and the key the fixture planted for the same account
+    let f = Fixture::seed(&t).await;
+    let u = &f.member_a;
+    let token = t.sign_in(u).await.token;
     let me = |req: reqwest::RequestBuilder| async { req.send().await.unwrap().status() };
     assert_eq!(me(t.http.get(t.url("/api/users/me/")).bearer_auth(&token)).await, 200);
+    assert_eq!(
+        me(t.http.get(t.url("/api/users/me/")).header("x-api-key", &u.key)).await,
+        200,
+        "control: the planted key is a working credential of the account, so that it ends nothing is not for want of one"
+    );
 
-    let r = t.http.post(t.url("/auth/sign-out/")).header("x-api-key", &key.token).send().await.unwrap();
+    let r = t.http.post(t.url("/auth/sign-out/")).header("x-api-key", &u.key).send().await.unwrap();
     assert_eq!(r.status(), 200, "the answer is the same");
     assert_eq!(me(t.http.get(t.url("/api/users/me/")).bearer_auth(&token)).await, 200, "but a key ends no session");
 
@@ -1778,38 +1774,29 @@ async fn compat_change_password_refuses_in_planes_order_changes_nothing_then_swa
 #[tokio::test]
 async fn compat_change_password_is_for_a_session_and_not_for_an_api_key() {
     let t = t();
-    let (email, token) = signed_up(&t).await;
-    let key: thrust_contracts::CreatedApiKey = {
-        let r = t
-            .http
-            .post(t.url(&format!("{SLICE_PREFIX}/api-keys")))
-            .bearer_auth(&token)
-            .json(&json!({}))
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(r.status(), 201);
-        r.json().await.unwrap()
-    };
-    let body = change_body(Some(STRONG), Some(NEW_STRONG));
+    // a seeded account: a real session from the sign-in route, and the key the fixture planted for the same account
+    let f = Fixture::seed(&t).await;
+    let u = &f.member_a;
+    let token = t.sign_in(u).await.token;
+    let body = change_body(Some(&u.password), Some(NEW_STRONG));
     let send = |req: reqwest::RequestBuilder| async { req.json(&body).send().await.unwrap() };
     for (what, req) in [
         ("no credential", t.http.post(t.url("/auth/change-password/"))),
         ("an unknown bearer token", t.http.post(t.url("/auth/change-password/")).bearer_auth("not-a-session-token")),
-        ("an API key", t.http.post(t.url("/auth/change-password/")).header("x-api-key", &key.token)),
-        ("an API key as a bearer token", t.http.post(t.url("/auth/change-password/")).bearer_auth(&key.token)),
+        ("an API key", t.http.post(t.url("/auth/change-password/")).header("x-api-key", &u.key)),
+        ("an API key as a bearer token", t.http.post(t.url("/auth/change-password/")).bearer_auth(&u.key)),
     ] {
         let r = send(req).await;
         assert_eq!(r.status(), 401, "{what}");
         assert!(SetCookie::all(&r).is_empty(), "{what}");
     }
-    assert_eq!(sign_in_status(&t, &email, STRONG).await, 200, "nothing was changed");
-    assert_eq!(sign_in_status(&t, &email, NEW_STRONG).await, 400);
+    assert_eq!(sign_in_status(&t, &u.email, &u.password).await, 200, "nothing was changed");
+    assert_eq!(sign_in_status(&t, &u.email, NEW_STRONG).await, 400);
 
     let r = send(t.http.post(t.url("/auth/change-password/")).bearer_auth(&token)).await;
     assert_eq!(r.status(), 200, "control: the account's own session changes it");
-    assert_eq!(sign_in_status(&t, &email, NEW_STRONG).await, 200);
-    assert_eq!(sign_in_status(&t, &email, STRONG).await, 400);
+    assert_eq!(sign_in_status(&t, &u.email, NEW_STRONG).await, 200);
+    assert_eq!(sign_in_status(&t, &u.email, &u.password).await, 400);
 }
 
 // ---------------------------------------------------------------------------------------------------------------------------------
