@@ -1,8 +1,9 @@
 # The release flow (docs/src/architecture/cicd.md, "Release candidates"), run by release-plz (https://release-plz.dev) with the
 # settings in release-plz.toml. Both jobs run on every push to main:
 #
-#   release      tags v<version> and publishes the GitHub release, but only when the push is the merge of a pull request from an
-#                rc/* branch (release_always = false). Any other push is a no-op.
+#   release      tags v<version> and creates the GitHub release as a draft, but only when the push is the merge of a pull request
+#                from an rc/* branch (release_always = false); then it starts release.yml on the tag, which attaches the attested
+#                assets and publishes the release. Any other push is a no-op.
 #   release-pr   keeps the release-candidate pull request: a branch rc/<timestamp> with the next version in Cargo.toml and
 #                Cargo.lock and the new CHANGELOG.md section, opened or force-updated by release-plz. Nothing to release, no PR.
 #
@@ -28,6 +29,8 @@ jobs:
     environment: release
     permissions:
       contents: read
+      # for the workflow's own token, to start release.yml on the new tag (below)
+      actions: write
     steps:
       - name: Mint the release App's token
         id: app
@@ -45,13 +48,30 @@ jobs:
       - uses: ./.github/actions/setup-rust
         with:
           cache-key: release-plz
-      - name: Tag and publish the release, if this push merged an rc/* pull request
+      - name: Tag and create the draft release, if this push merged an rc/* pull request
+        id: release-plz
         uses: release-plz/action@66b324fd6c72d05d2a08568492ecdd62bfb8a62b # v0.5.148
         with:
           command: release
           version: 0.4.3
         env:
           GITHUB_TOKEN: ${{ steps.app.outputs.token }}
+      # A draft release starts no workflow (GitHub runs nothing for a draft's `created` event), so start release.yml here, ON the tag:
+      # the run's ref is what its attestations record. A dispatch made with the workflow's own token does start a run (it is the
+      # exception to "GITHUB_TOKEN starts no workflow"). release-plz lists every crate it released, all under the one workspace tag.
+      - name: Start release.yml on the tag
+        if: steps.release-plz.outputs.releases_created == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RELEASES: ${{ steps.release-plz.outputs.releases }}
+        run: |
+          set -eu
+          printf '%s' "$RELEASES" | jq -r '[.[].tag] | unique | .[]' > tags.txt
+          test "$(wc -l < tags.txt)" -eq 1 || { echo "::error::release-plz made $(wc -l < tags.txt) tags, not one: $(tr '\n' ' ' < tags.txt)"; exit 1; }
+          tag="$(cat tags.txt)"
+          gh workflow run release.yml --repo "$REPO" --ref "$tag"
+          echo "release.yml started on $tag" >> "$GITHUB_STEP_SUMMARY"
 
   release-pr:
     needs: release

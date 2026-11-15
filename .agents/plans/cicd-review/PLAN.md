@@ -105,7 +105,8 @@ nothing on `main` points at once its branch is deleted, and production would hav
   (`create_git_tag_and_release` in its source), so the tag exists when the draft does.
 - `.github/actions/build-bundle`: the bundle build, out of `deploy.yml`, so `deploy.yml` and `release.yml` build it the same
   way.
-- `release.yml` (new), on `release: created` for a draft of a `v<version>` tag on `main`: `build` (the bundle, an SPDX SBOM of
+- `release.yml` (new), on `release: created` for a draft of a `v<version>` tag on `main` (**wrong, fixed in PR 3b below**:
+  GitHub runs no workflow for a draft's `created`): `build` (the bundle, an SPDX SBOM of
   the source with `anchore/sbom-action`, both attested with `actions/attest-build-provenance` and `actions/attest`) and
   `publish` (bundle, SBOM and `SHA256SUMS` onto the draft, then published; GitHub's own release attestation checked with
   `gh release verify` and `verify-asset`). A pull request that edits it runs `build` as a dry run.
@@ -115,6 +116,16 @@ nothing on `main` points at once its branch is deleted, and production would hav
   `gh release verify-asset`). `verify-bundle.sh` takes `release.yml` as the signer for a `v*` tag, `deploy.yml` for `rc/*`.
 - Docs: `docs/src/architecture/release.md` (the path, how to check a release, what to do when a step fails), `cicd.md`,
   `deploy.md`; ADR-0110 gets a dated update (the repository's ADRs are amended by dated updates, not superseded by new ones).
+
+**PR 3b, `fix/release-trigger` (2026-11-15), after the first release.** #187 merged `v0.1.0`: the App created the tag through
+the tag ruleset (no Administration permission needed) and the draft, but `release.yml` never ran. GitHub's documentation of
+the `release` event: workflows are not triggered for the `created`, `edited` or `deleted` activity types of a draft. The fix:
+release-plz.yml's `release` job dispatches `release.yml` on the tag release-plz reports (`releases` output; one tag or
+refuse), with `actions: write` on the workflow token (a `workflow_dispatch` by `GITHUB_TOKEN` is the documented exception that
+does start a run). `release.yml` runs on `workflow_dispatch` (and a pull request's dry run); its plan moved into
+`plan-release.sh`, tested over every combination of event, ref and commit (1,810 checks; 12 hand mutants caught). The draft
+check stays in `publish`, whose `contents: write` token can see drafts. `v0.1.0` itself cannot be dispatched: its commit's
+`release.yml` has no `workflow_dispatch`; the owner decides what becomes of it.
 
 The first sketch, kept for the record:
 
