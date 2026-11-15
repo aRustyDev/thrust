@@ -1,0 +1,29 @@
+# Verbatim output of scripts/startup-check.sh (`wrangler check startup`, wrangler 4.123.0) and of bundle/startup-repeat.sh, 2026-11-14, the Cloudflare
+# adapter set. Base 77ec027. The bundle size on each line is the proof of which build was profiled: 4895.81 KiB is the baseline, 6953.40 KiB the variant.
+#
+# The first single run of each (before the repeats; a cold cache, so higher than any repeat and not used):
+baseline, single run:   Bundle: 4895.81 KiB / gzip: 1534.11 KiB | Profile window: 18.7 ms | Sampled time: 13.1 ms | Active: 11.3 ms (including 0.0 ms garbage collection) | Idle: 1.8 ms | Samples: 7
+variant, single run:    Bundle: 6953.40 KiB / gzip: 2341.54 KiB | Profile window: 22.5 ms | Sampled time: 15.2 ms | Active: 13.7 ms (including 0.0 ms garbage collection) | Idle: 1.5 ms | Samples: 6
+#
+# The variant, five repeats:
+variant2 run 1 | Bundle: 6953.40 KiB / gzip: 2341.54 KiB | Profile window: 13.6 ms | Active: 6.4 ms (including 0.0 ms garbage collection)
+variant2 run 2 | Bundle: 6953.40 KiB / gzip: 2341.54 KiB | Profile window: 13.8 ms | Active: 6.4 ms (including 0.0 ms garbage collection)
+variant2 run 3 | Bundle: 6953.40 KiB / gzip: 2341.54 KiB | Profile window: 13.6 ms | Active: 2.5 ms (including 0.0 ms garbage collection)
+variant2 run 4 | Bundle: 6953.40 KiB / gzip: 2341.54 KiB | Profile window: 13.8 ms | Active: 7.6 ms (including 0.0 ms garbage collection)
+variant2 run 5 | Bundle: 6953.40 KiB / gzip: 2341.54 KiB | Profile window: 13.5 ms | Active: 6.4 ms (including 0.0 ms garbage collection)
+#
+# These five were LABELLED "baseline" when they ran. Their bundle size is the variant's (6953.40 KiB, not 4895.81): `wrangler check startup` re-runs the
+# `[build]` command, so after the baseline's saved build output was copied back into build/ it rebuilt the variant source over it. They are five more
+# variant runs, relabelled here; the real baseline repeats are the next block.
+variant (labelled baseline) run 1 | Bundle: 6953.40 KiB / gzip: 2341.54 KiB | Profile window: 15.5 ms | Active: 8.6 ms (including 0.0 ms garbage collection)
+variant (labelled baseline) run 2 | Bundle: 6953.40 KiB / gzip: 2341.54 KiB | Profile window: 14.7 ms | Active: 7.2 ms (including 0.0 ms garbage collection)
+variant (labelled baseline) run 3 | Bundle: 6953.40 KiB / gzip: 2341.54 KiB | Profile window: 14.7 ms | Active: 7.7 ms (including 0.0 ms garbage collection)
+variant (labelled baseline) run 4 | Bundle: 6953.40 KiB / gzip: 2341.54 KiB | Profile window: 13.5 ms | Active: 7.4 ms (including 0.0 ms garbage collection)
+variant (labelled baseline) run 5 | Bundle: 6953.40 KiB / gzip: 2341.54 KiB | Profile window: 14.4 ms | Active: 7.6 ms (including 0.0 ms garbage collection)
+#
+# The baseline, five repeats, after the source was reverted:
+baseline run 1 | Bundle: 4895.81 KiB / gzip: 1534.11 KiB | Profile window: 13.5 ms | Active: 6.4 ms (including 0.0 ms garbage collection)
+baseline run 2 | Bundle: 4895.81 KiB / gzip: 1534.11 KiB | Profile window: 13.2 ms | Active: 6.4 ms (including 0.0 ms garbage collection)
+baseline run 3 | Bundle: 4895.81 KiB / gzip: 1534.11 KiB | Profile window: 13.3 ms | Active: 6.4 ms (including 0.0 ms garbage collection)
+baseline run 4 | Bundle: 4895.81 KiB / gzip: 1534.11 KiB | Profile window: 13.3 ms | Active: 6.4 ms (including 0.0 ms garbage collection)
+baseline run 5 | Bundle: 4895.81 KiB / gzip: 1534.11 KiB | Profile window: 13.4 ms | Active: 6.4 ms (including 0.0 ms garbage collection)

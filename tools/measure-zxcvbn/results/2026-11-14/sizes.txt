@@ -1,0 +1,52 @@
+# Verbatim output of bundle/sizes.py, as printed during the measurement on 2026-11-14 (tab separated; the columns are label, file, bytes, gzip -9 bytes, sha256).
+# The build outputs themselves are 5 to 7 MB of wasm each and are not kept: rebuild them (README, "Bundle size") to check a hash.
+#
+# The first block: base 77ec027, `worker-build --release . --no-default-features` (the Cloudflare adapter set, the command of deploy.yml): the baseline,
+# built twice, then the three variant patches applied one at a time (patches/ holds those same patch files, unchanged; they also apply to 990e1ce and to d16dbd6). The needles are runs of 12 consecutive dictionary entries (results/needles.txt) and the
+# crate's source path. baseline-2 is a second build after `cargo clean -p thrust-worker`: identical bytes, so the noise floor of the comparison is 0.
+baseline-1	index_bg.wasm	bytes=4950404	gzip9=1551602	sha256=d63761e592e13a5c
+baseline-1	index.js	bytes=36716	gzip9=9258	sha256=29a4d4eccab45b3a
+baseline-1	worker/shim.mjs	bytes=164	gzip9=136	sha256=ac99177861405a60
+baseline-1	TOTAL	bytes=4987284	MiB=4.756	gzip9=1560996
+baseline-1	needle 'mark69,oakland1,me1234,gmctruck,extacy,sexdog,putang,poppen,billyd,1qaz2w,loveable,gimlet' in index_bg.wasm: 0
+baseline-1	needle 'chromosomal,belgians,woolen,ultrasonic,sequentially,boleyn,mordella,microsystems,initiator,elachista,mineralogy,rhododendron' in index_bg.wasm: 0
+baseline-1	needle 'zxcvbn-3.1.1' in index_bg.wasm: 0
+baseline-2	index_bg.wasm	bytes=4950404	gzip9=1551602	sha256=d63761e592e13a5c
+baseline-2	index.js	bytes=36716	gzip9=9258	sha256=29a4d4eccab45b3a
+baseline-2	worker/shim.mjs	bytes=164	gzip9=136	sha256=ac99177861405a60
+baseline-2	TOTAL	bytes=4987284	MiB=4.756	gzip9=1560996
+variant1-uncalled	index_bg.wasm	bytes=4953037	gzip9=1552307	sha256=c1f4396e31dfdd42
+variant1-uncalled	index.js	bytes=36716	gzip9=9258	sha256=29a4d4eccab45b3a
+variant1-uncalled	worker/shim.mjs	bytes=164	gzip9=136	sha256=ac99177861405a60
+variant1-uncalled	TOTAL	bytes=4989917	MiB=4.759	gzip9=1561701
+variant1-uncalled	needle 'mark69,oakland1,me1234,gmctruck,extacy,sexdog,putang,poppen,billyd,1qaz2w,loveable,gimlet' in index_bg.wasm: 0
+variant1-uncalled	needle 'chromosomal,belgians,woolen,ultrasonic,sequentially,boleyn,mordella,microsystems,initiator,elachista,mineralogy,rhododendron' in index_bg.wasm: 0
+variant1-uncalled	needle 'zxcvbn-3.1.1' in index_bg.wasm: 0
+variant2-default	index_bg.wasm	bytes=7056943	gzip9=2376950	sha256=a4b6c3060eddb7a0
+variant2-default	index.js	bytes=36924	gzip9=9328	sha256=d3339b400e00a634
+variant2-default	worker/shim.mjs	bytes=164	gzip9=136	sha256=ac99177861405a60
+variant2-default	TOTAL	bytes=7094031	MiB=6.765	gzip9=2386414
+variant2-default	needle 'mark69,oakland1,me1234,gmctruck,extacy,sexdog,putang,poppen,billyd,1qaz2w,loveable,gimlet' in index_bg.wasm: 1
+variant2-default	needle 'chromosomal,belgians,woolen,ultrasonic,sequentially,boleyn,mordella,microsystems,initiator,elachista,mineralogy,rhododendron' in index_bg.wasm: 1
+variant2-default	needle 'zxcvbn-3.1.1' in index_bg.wasm: 3
+variant2-nodefault	index_bg.wasm	bytes=7052467	gzip9=2376164	sha256=19ef5dc61c4930cc
+variant2-nodefault	index.js	bytes=36924	gzip9=9328	sha256=d3339b400e00a634
+variant2-nodefault	worker/shim.mjs	bytes=164	gzip9=136	sha256=ac99177861405a60
+variant2-nodefault	TOTAL	bytes=7089555	MiB=6.761	gzip9=2385628
+variant2-nodefault	needle 'mark69,oakland1,me1234,gmctruck,extacy,sexdog,putang,poppen,billyd,1qaz2w,loveable,gimlet' in index_bg.wasm: 1
+variant2-nodefault	needle 'chromosomal,belgians,woolen,ultrasonic,sequentially,boleyn,mordella,microsystems,initiator,elachista,mineralogy,rhododendron' in index_bg.wasm: 1
+#
+# The second block, the two builds that Stage B (Cloudflare) deployed: base 990e1ce, `worker-build --release .` (the memory adapter set, which needs
+# no bindings), the baseline and the variant (patches/variant-called.patch). The delta is 2,104,582 B for index_bg.wasm, 2.007 MiB for the three files.
+stageb-baseline	index_bg.wasm	bytes=5449824	gzip9=1702830	sha256=61044ff4a1bbb655
+stageb-baseline	index.js	bytes=36716	gzip9=9258	sha256=29a4d4eccab45b3a
+stageb-baseline	worker/shim.mjs	bytes=164	gzip9=136	sha256=ac99177861405a60
+stageb-baseline	TOTAL	bytes=5486704	MiB=5.233	gzip9=1712224
+stageb-baseline	needle 'mark69,oakland1,me1234,gmctruck,extacy,sexdog,putang,poppen,billyd,1qaz2w,loveable,gimlet' in index_bg.wasm: 0
+stageb-baseline	needle 'chromosomal,belgians,woolen,ultrasonic,sequentially,boleyn,mordella,microsystems,initiator,elachista,mineralogy,rhododendron' in index_bg.wasm: 0
+stageb-variant	index_bg.wasm	bytes=7554406	gzip9=2527065	sha256=4859ba20aca03101
+stageb-variant	index.js	bytes=36924	gzip9=9328	sha256=d3339b400e00a634
+stageb-variant	worker/shim.mjs	bytes=164	gzip9=136	sha256=ac99177861405a60
+stageb-variant	TOTAL	bytes=7591494	MiB=7.240	gzip9=2536529
+stageb-variant	needle 'mark69,oakland1,me1234,gmctruck,extacy,sexdog,putang,poppen,billyd,1qaz2w,loveable,gimlet' in index_bg.wasm: 1
+stageb-variant	needle 'chromosomal,belgians,woolen,ultrasonic,sequentially,boleyn,mordella,microsystems,initiator,elachista,mineralogy,rhododendron' in index_bg.wasm: 1

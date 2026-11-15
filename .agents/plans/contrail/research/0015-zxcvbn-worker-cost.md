@@ -2,8 +2,9 @@
 
 Date: 2026-11-14 · Issue [#44](https://github.com/aRustyDev/thrust/issues/44) · Deviation D-023 · Base `77ec027` (sections 1 to 4), `990e1ce` (section 4.2)
 Status: **done. Bundle size, startup and the first call's CPU on Cloudflare are measured. Bar 3 (first-call CPU) is missed at the median by
-about 15 ms (section 4.2); bars 1 and 2 are met. The owner reopened D-023 on 2026-11-14 to take that measurement; D-023 stays as confirmed
-until the owner decides otherwise.**
+about 15 ms (section 4.2); bars 1 and 2 are met. The owner reopened D-023 on 2026-11-14 to take that measurement and, having seen the figure and
+how rarely a password is set (section 4.3), decided to leave the rule as it is. The harness, tests, results and analysis are in
+`tools/measure-zxcvbn/` (section 6).**
 
 Evidence tags: **[re-run]** I ran it here, with the command given · **[tested-cf]** run against Workers deployed on Cloudflare's network
 (the Woven account, as `research/0012`) · **[derived]** read from source, not run · **[not measured]**.
@@ -125,12 +126,35 @@ and is not reported as zxcvbn's. The 60.5 ms comes from the cold-cluster compari
 
 **Pilots that shaped the design.** A first pilot redeployed one Worker per round and tagged each version: 23 of 111 responses came
 from the previous version's isolates seconds after the deploy, so builds were mixed; a new Worker per round has no previous version.
-It also treated the second burst as warm, which it is not (concurrent requests keep creating isolates).
+It also treated the second burst as warm. It is only partly warm: in the full run 12 to 27% of the second burst's requests were still cold, against 35 to
+64% of the first's (`cold-analysis.txt`), because concurrent requests keep reaching fresh isolates.
 
 **Caveats.** One account, one colo (the one this Mac's traffic reached; not recorded), one session on 2026-11-14; edge CPUs differ. `cpuTime` has a
 resolution of 1 ms. Z measured one 12-character password: the first call's cost is the dictionaries and the matchers' regexes, which do
 not depend on the input, but the cost of matching a long password on the platform is not measured (native: 3.7 to 4.4 ms for 72
 characters). The Workers were the memory adapter set, not the Cloudflare set, which changes nothing the strength check does.
+
+### 4.3 How often it runs (the owner's question of 2026-11-14; **[derived]** from the code: there is no usage data to measure)
+
+The strength check runs when a password is **set**, not when someone signs in. `thrust_core::password_is_strong` has five call sites, reached from six entry points:
+
+- **sign-up**: the compat route (`thrust-compat-plane/src/auth.rs`, S05, in Plane's order, after the email-exists lookup) **and** `create_account` inside
+  `thrust_core::sign_up`, so **twice per sign-up**;
+- `change_password` (Profile -> Security);
+- `reset_password` (the reset by email, #169, dark until a mail service is wired);
+- the operator's routes, off unless switched on: `admin_create_user` (through `create_account`) and `admin_set_password`.
+
+`sign_in`, sessions, API keys and page loads do not call it, and a user who signs in through SSO never sets a password here. Per user that is once at account creation and
+then a few times a year: per active user per day, close to zero.
+
+Because calls are that rare, a password-setting request will usually land on an isolate that has not built the dictionaries (reasoning, not measured), so the 60 ms is
+the typical cost of a call and the 1 to 2 ms warm figure applies only to bursts. In total CPU it is small: 1,000 active users each setting a password about 3 times a year are
+about 3 minutes of CPU a year (illustrative arithmetic).
+
+The exception is unauthenticated sign-up. Gap G-16 (`docs/src/testing/status.md`) records that Thrust does not throttle it (the Plane pin allows 10 a minute per IP), and the
+check runs before any hashing, so a caller can reach it at any rate. With the current rule that costs microseconds. With zxcvbn it would cost 1 to 2 ms warm (measured on the
+operator route, which runs one check; the compat route runs two, so about double, **[derived]**), and about 60 ms on each fresh isolate a flood reaches: 94 of 222 variant-Z requests
+were cold in the full run, against 49 and 61 of 222 for the S arms.
 
 ## 5. What this does not settle
 
@@ -151,7 +175,11 @@ reuses it; the first "baseline" repeat in this work profiled the wrong build unt
 Section 4.2: base `990e1ce`, the Woven account, wrangler 4.123.0, curl 8.7.1 (`--variable` needs curl 8.3 and `%header{}` 7.84), 2026-11-14.
 Both builds are `worker-build --release .` in `crates/thrust-worker` (the memory adapter set, which needs no bindings): the baseline is
 5,449,824 B for `index_bg.wasm` (5.233 MiB with the glue) and the variant 7,554,406 B (7.240 MiB), a delta of 2.007 MiB, the same as on the
-Cloudflare set (section 1). The harness is not in the repo: it is the pattern of `scripts/measure-argon2.sh` with a new Worker per round,
-the token in `--secrets-file` (a 0600 file), a preflight that refuses to run if any of its 19 Worker names or the KV title exists (a
-`wrangler deploy` on an existing name overwrites that Worker), a refusal to run unless the baseline's wasm lacks the dictionary and the
-variant's has it, and a teardown that deletes only what the run created. It can be added under `scripts/` if the owner wants it kept.
+Cloudflare set (section 1).
+
+**The harness, the tests, the results and the analysis are in `tools/measure-zxcvbn/`** (kept at the owner's request of 2026-11-14). Its README says how to run
+each part, which test was shown to be able to fail and how, and which result files are generated and which transcribed from the terminal. The Cloudflare driver is the
+pattern of `scripts/measure-argon2.sh` with a new Worker per round, the token in `--secrets-file` (a 0600 file), a preflight that refuses to run if any of its 19 Worker
+names or the KV title exists (a `wrangler deploy` on an existing name overwrites that Worker), a refusal to run unless the baseline's wasm lacks the dictionary and the
+variant's has it, and a teardown that deletes only what the run created. The variant is a patch (`patches/`), never committed as source: the `zxcvbn` crate must not enter
+the workspace (section 0, item 5).

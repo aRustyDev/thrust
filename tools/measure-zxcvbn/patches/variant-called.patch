@@ -1,0 +1,32 @@
+diff --git a/crates/thrust-core/Cargo.toml b/crates/thrust-core/Cargo.toml
+index dc8ce41..02a9b1f 100644
+--- a/crates/thrust-core/Cargo.toml
++++ b/crates/thrust-core/Cargo.toml
+@@ -41,6 +41,7 @@ sha2 = { version = "0.11", default-features = false }
+ # in the issue #38 feasibility probe). No `getrandom` feature: the salt comes from the `Rng` port, not from the platform.
+ argon2 = { version = "0.6", default-features = false, features = ["alloc", "password-hash"] }
+ subtle = { version = "2", default-features = false }
++zxcvbn = "=3.1.1"
+ 
+ # Test-only. `scripts/check-deps.sh` checks normal dependencies, so none of these reach the core graph.
+ # The memory adapters are the reference implementation the use-case tests run against; the executor is
+diff --git a/crates/thrust-core/src/auth.rs b/crates/thrust-core/src/auth.rs
+index bbd8dfb..b10c749 100644
+--- a/crates/thrust-core/src/auth.rs
++++ b/crates/thrust-core/src/auth.rs
+@@ -262,7 +262,14 @@ pub fn password_is_strong(password: &str) -> bool {
+         return false;
+     }
+     let letters = password.trim_matches(|c: char| !c.is_alphabetic()).to_lowercase();
+-    !COMMON_PASSWORDS.contains(&letters.as_str())
++    if COMMON_PASSWORDS.contains(&letters.as_str()) {
++        return false;
++    }
++    // MEASUREMENT VARIANT 2 (throwaway, never committed): Plane's rule, score >= 3 on the first and the last 72 characters.
++    let cs: Vec<char> = password.chars().collect();
++    let first: String = cs.iter().take(72).collect();
++    let last: String = cs.iter().rev().take(72).rev().collect();
++    zxcvbn::zxcvbn(&first, &[]).score() >= zxcvbn::Score::Three && zxcvbn::zxcvbn(&last, &[]).score() >= zxcvbn::Score::Three
+ }
+ 
+ /// Whether an account has this email: what Plane's `email-check` answers, and what its sign-in asks before it checks the

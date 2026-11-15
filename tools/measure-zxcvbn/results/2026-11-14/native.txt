@@ -1,0 +1,31 @@
+# Verbatim output of the native timing (native/src/main.rs, one process per run, release profile of the workspace), 2026-11-14, macOS arm64, rustc 1.99.0.
+# Format: see native/src/main.rs. Microseconds. The strength check is two zxcvbn calls (the first 72 characters and the last 72).
+#
+# First 15 cold processes (the first version of the program, without the heap counters):
+first_cold_us=9414 second_us=807 worst72_us=4025 warm_mean_us=615 scores weak=One strong=Four worst=Four
+first_cold_us=7960 second_us=812 worst72_us=3824 warm_mean_us=608 scores weak=One strong=Four worst=Four
+first_cold_us=8062 second_us=746 worst72_us=4384 warm_mean_us=607 scores weak=One strong=Four worst=Four
+first_cold_us=8250 second_us=765 worst72_us=4186 warm_mean_us=606 scores weak=One strong=Four worst=Four
+first_cold_us=8217 second_us=729 worst72_us=3840 warm_mean_us=607 scores weak=One strong=Four worst=Four
+first_cold_us=7927 second_us=790 worst72_us=3887 warm_mean_us=604 scores weak=One strong=Four worst=Four
+first_cold_us=8280 second_us=719 worst72_us=3954 warm_mean_us=608 scores weak=One strong=Four worst=Four
+first_cold_us=8139 second_us=716 worst72_us=3950 warm_mean_us=605 scores weak=One strong=Four worst=Four
+first_cold_us=7982 second_us=762 worst72_us=4000 warm_mean_us=604 scores weak=One strong=Four worst=Four
+first_cold_us=8146 second_us=757 worst72_us=3740 warm_mean_us=609 scores weak=One strong=Four worst=Four
+first_cold_us=8018 second_us=788 worst72_us=3857 warm_mean_us=601 scores weak=One strong=Four worst=Four
+first_cold_us=8055 second_us=792 worst72_us=3985 warm_mean_us=614 scores weak=One strong=Four worst=Four
+first_cold_us=8063 second_us=831 worst72_us=3844 warm_mean_us=609 scores weak=One strong=Four worst=Four
+first_cold_us=8024 second_us=751 worst72_us=4005 warm_mean_us=606 scores weak=One strong=Four worst=Four
+first_cold_us=8395 second_us=735 worst72_us=3858 warm_mean_us=606 scores weak=One strong=Four worst=Four
+#
+# Then 5 cold processes with the counting allocator (the heap is identical in every run):
+first_cold_us=8964 second_us=724 worst72_us=3725 warm_mean_us=602 retained_heap_bytes=4854543 peak_heap_bytes=5172648 scores weak=One strong=Four worst=Four
+first_cold_us=7733 second_us=786 worst72_us=3927 warm_mean_us=616 retained_heap_bytes=4854543 peak_heap_bytes=5172648 scores weak=One strong=Four worst=Four
+first_cold_us=7954 second_us=816 worst72_us=3893 warm_mean_us=604 retained_heap_bytes=4854543 peak_heap_bytes=5172648 scores weak=One strong=Four worst=Four
+first_cold_us=7806 second_us=815 worst72_us=3777 warm_mean_us=603 retained_heap_bytes=4854543 peak_heap_bytes=5172648 scores weak=One strong=Four worst=Four
+first_cold_us=7794 second_us=737 worst72_us=3758 warm_mean_us=593 retained_heap_bytes=4854543 peak_heap_bytes=5172648 scores weak=One strong=Four worst=Four
+#
+# Re-run from the committed tool (native/run.sh 3) at d16dbd6, to check that it reproduces: the same heap to the byte, the same timings within noise:
+first_cold_us=8918 second_us=732 worst72_us=3798 warm_mean_us=600 retained_heap_bytes=4854543 peak_heap_bytes=5172648 scores weak=One strong=Four worst=Four
+first_cold_us=8000 second_us=714 worst72_us=3724 warm_mean_us=599 retained_heap_bytes=4854543 peak_heap_bytes=5172648 scores weak=One strong=Four worst=Four
+first_cold_us=7904 second_us=724 worst72_us=3746 warm_mean_us=593 retained_heap_bytes=4854543 peak_heap_bytes=5172648 scores weak=One strong=Four worst=Four
