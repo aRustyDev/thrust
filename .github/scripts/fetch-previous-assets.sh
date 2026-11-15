@@ -5,9 +5,10 @@
 #
 # The previous release is the commit whose tag the live Worker version has. Its bundle was uploaded as the artifact
 # `deploy-bundle-<previous-sha>` by an earlier run of deploy.yml. This finds it, downloads it, and treats it as hostile until it is not:
-#   * only an artifact made by a run on `main`, and not expired, is looked at. Artifact names are not owned by anyone: a pull request from a
-#     fork can upload one under any name;
-#   * verify-bundle.sh: it must carry an attestation from this repository's deploy.yml on main, which a forged artifact cannot;
+#   * only an artifact that has not expired, made by a run of THIS repository's own code (not a fork's: the run's head repository is this
+#     one) on a ref that deploys (an rc/<name> branch or a v<version> tag), is looked at. Artifact names are not owned by anyone: a pull
+#     request from a fork can upload one under any name;
+#   * verify-bundle.sh: it must carry an attestation from this repository's deploy.yml on that exact ref, which a forged artifact cannot;
 #   * unpack-bundle.sh: plain files only, and BUILD_SHA must be <previous-sha>.
 # Of a newest-first list it takes the newest that passes the first filter, not the first that passes every check, so a good older one can
 # never stand in for a bad newer one.
@@ -44,14 +45,21 @@ trap 'rm -rf "$WORK"' EXIT INT TERM
 NAME="deploy-bundle-$SHA"
 gh api "repos/$REPO/actions/artifacts?name=$NAME&per_page=100" > "$WORK/list.json" 2> "$WORK/err" \
   || refuse "could not list the artifacts of $REPO: $(tr '\n' ' ' < "$WORK/err")"
-jq -r --arg name "$NAME" '[.artifacts[]? | select(.name == $name and .expired == false and .workflow_run.head_branch == "main")]
-    | sort_by(.created_at) | last | .id // empty' "$WORK/list.json" > "$WORK/id" 2> "$WORK/err" \
+# `head_branch` is the branch, or the tag, the run was on: a run started from a tag carries the tag's name
+jq -r --arg name "$NAME" '[.artifacts[]? | select(.name == $name and .expired == false
+      and .workflow_run.repository_id != null and .workflow_run.head_repository_id == .workflow_run.repository_id
+      and ((.workflow_run.head_branch // "") | test("^(rc/[^/]+|v[^/]+)$")))]
+    | sort_by(.created_at) | last | if . then "\(.id) \(.workflow_run.head_branch)" else empty end' "$WORK/list.json" > "$WORK/id" 2> "$WORK/err" \
   || refuse "the list of artifacts is not the JSON this reads: $(tr '\n' ' ' < "$WORK/err")"
-ID="$(cat "$WORK/id")"
+read -r ID RUN_ON < "$WORK/id" || ID=""
 if [ -z "$ID" ]; then
   total="$(jq -r '[.artifacts[]? | select(.name == "'"$NAME"'")] | length' "$WORK/list.json" 2> /dev/null || echo "?")"
-  none "no unexpired $NAME from a run on main ($total artifact(s) of that name in all; an expired one, or one from another branch, does not count)"
+  none "no unexpired $NAME from a run of this repository on an rc/* branch or a v* tag ($total artifact(s) of that name in all; an expired one, a fork's, or one from another branch does not count)"
 fi
+case "$RUN_ON" in
+  rc/*) SOURCE_REF="refs/heads/$RUN_ON" ;;
+  *) SOURCE_REF="refs/tags/$RUN_ON" ;;
+esac
 
 gh api "repos/$REPO/actions/artifacts/$ID/zip" > "$WORK/artifact.zip" 2> "$WORK/err" \
   || refuse "could not download artifact $ID: $(tr '\n' ' ' < "$WORK/err")"
@@ -59,7 +67,7 @@ mkdir -p "$WORK/dl"
 unzip -q -o "$WORK/artifact.zip" -d "$WORK/dl" 2> "$WORK/err" || refuse "artifact $ID is not a zip file: $(tr '\n' ' ' < "$WORK/err")"
 [ -f "$WORK/dl/deploy-bundle.tar.gz" ] || refuse "artifact $ID has no deploy-bundle.tar.gz in it"
 
-sh "$VERIFY" "$WORK/dl/deploy-bundle.tar.gz" "$REPO" >&2 || refuse "artifact $ID did not verify (see above)"
+sh "$VERIFY" "$WORK/dl/deploy-bundle.tar.gz" "$REPO" "$SOURCE_REF" >&2 || refuse "artifact $ID did not verify on $SOURCE_REF (see above)"
 mkdir -p "$DEST" || usage "cannot make $DEST"
 rm -rf "$DEST/bundle"
 sh "$UNPACK" "$WORK/dl/deploy-bundle.tar.gz" "$DEST/bundle" "$SHA" >&2 || { rm -rf "$DEST/bundle"; refuse "artifact $ID did not unpack (see above)"; }

@@ -2,8 +2,9 @@
 
 The repository has a CI pipeline and a deploy pipeline. One workflow, `ci.yml`, runs the test suites on every pull
 request. It calls a second workflow once per contract cell, a third repeats a cell on demand and weekly, and a fourth
-runs the browser journeys every day. A fifth, `deploy.yml`, deploys the Worker: to staging after a push to `main`, once
-the repository variable `THRUST_DEPLOY_ENABLED` is `true`, and to either environment by hand. A sixth, `release-plz.yml`,
+runs the browser journeys every day. A fifth, `deploy.yml`, deploys the Worker: a release candidate (`rc/*`) to staging
+once `ci` passes on its pull request and the repository variable `THRUST_DEPLOY_ENABLED` is `true`, and by hand, staging
+from an `rc/*` branch and production from a `v*` tag; `main` never deploys. A sixth, `release-plz.yml`,
 keeps the next release's candidate pull request after every push to `main`, and tags and publishes a release when one merges. No workflow publishes a
 server image. The first half of this page is how CI is built and what its one required check guarantees; [The deploy
 pipeline](#the-deploy-pipeline) is how the Worker gets to an environment, and the steps to run it are on [Deploying the
@@ -113,10 +114,11 @@ operate it are on [Deploying the Worker](deploy.md); this section is how it is b
 
 | Job | Holds | Does |
 |---|---|---|
-| `plan` | no secret | Which event and which commit (`plan-deploy.sh`, tested over every combination of its inputs). A push to `main` deploys staging after `ci` passed, and only while `THRUST_DEPLOY_ENABLED` is `true`. A manual run names `staging` or `production` and a commit of `main`, and must itself run from `main`. A pull request is a dry run. The commit's own `gate` must have passed, asked for by name on that commit (`assert-sha-checks.sh`), and the environments that gate the deploy must have required reviewers (`assert-gated-environments.sh`: GitHub creates an unprotected environment when a job names one that does not exist) |
+| `plan` | no secret | Which event and which commit (`plan-deploy.sh`, tested over every combination of its inputs). `ci` passing on a release-candidate pull request (head `rc/<name>` in this repository) plans `dispatch`, only while `THRUST_DEPLOY_ENABLED` is `true`. A manual run deploys the commit it runs from: `staging` from an `rc/<name>` branch, `production` from a `v<version>` tag whose commit is on `main`; the automatic dispatch also passes the commit it expects, and a branch that has moved since plans `skip`. A pull request is a dry run. The commit's own `gate` must have passed, asked for by name on that commit (`assert-sha-checks.sh`), and the environments that gate the deploy must have required reviewers (`assert-gated-environments.sh`: GitHub creates an unprotected environment when a job names one that does not exist) |
+| `dispatch` | `actions: write`, no secret | Starts `deploy.yml` again with `workflow_dispatch` ON the `rc/*` branch, for the commit `ci` passed. GitHub checks an environment's branch rule against the run's own ref, and a `workflow_run` always runs on `main`, so a staging deploy restricted to `rc/*` has to be its own run on that branch. A dispatch is one of the two events a workflow's own token may start a run with |
 | `build` | no secret | The Worker, the `migrate` binary and the web app (`web/`), into one bundle, attested (SLSA provenance) in a deploy |
 | `dry-run` | none | For a pull request that edits the deploy files: the bundle is built and `wrangler deploy --dry-run` checks the rendered configuration. No environment, no secret |
-| `deploy` | the environment's secrets | Verify the attestation, render the configuration, read what is live, classify the change, run the expand migration only if migration files changed, keep the previous release's web files, `wrangler deploy --tag <sha>`, the smoke, and its controls. It defers, deploying nothing, whatever cannot be rolled back across |
+| `deploy` | the environment's secrets | Verify the attestation (signed by this repository's `deploy.yml` on exactly this run's ref; `verify-bundle.sh` refuses any ref but `refs/heads/rc/<name>` and `refs/tags/v<version>` without asking), render the configuration, read what is live, classify the change, run the expand migration only if migration files changed, keep the previous release's web files, `wrangler deploy --tag <sha>`, the smoke, and its controls. It defers, deploying nothing, whatever cannot be rolled back across |
 | `deploy-do` | the same secrets, behind reviewers | What `deploy` deferred: the first deploy to an environment, any change to `[[migrations]]`, a live state that cannot be read, a previous release's web files that cannot be found. No automatic rollback |
 
 The controls, each with a test that makes it fail:
@@ -149,7 +151,14 @@ rollback), and the token's scopes, the queue consumer with a dead-letter queue, 
 not run. The pull-request dry run and the first two `workflow_run` events have `[verified 2026-11-14]`: on PR #165's run
 `plan`, `build` and `dry-run` succeeded and wrangler 4.151.2 accepted the rendered template against the bundle CI built; on
 `main`, the run after a failed `ci` planned `skip` ("ci did not succeed") and the run after a green one planned `skip`
-("automatic deploys are off").
+("automatic deploys are off"). Those runs were of the trigger before the `rc/*` flow (a push to `main`); the dispatch on an
+`rc/*` branch has not run yet.
+
+**The environments' branch rules** say the same as `plan`, so a run from anywhere else cannot reach an environment's
+secrets even if the workflow were wrong: `staging` and `staging-do-lifecycle` take only `rc/*` branches, `production` and
+`production-do-lifecycle` only `v*` tags (set by the owner; [Deploying the Worker](deploy.md#setting-an-environment-up)).
+The previous release's bundle is looked for among artifacts of this repository's own runs (not a fork's) on an `rc/*`
+branch or a `v*` tag, and verified on the ref its run was on (`fetch-previous-assets.sh`).
 
 ## Release candidates
 
@@ -186,6 +195,8 @@ workspace (below).
   `[verified 2026-11-15 on a copy of this workspace]`.)
 - **The App's token.** Both jobs act as the release GitHub App: a branch, tag or release made with `GITHUB_TOKEN` starts no
   workflow, so `ci` would not run on the `rc/*` branch and nothing triggered by the tag would start.
+- **Staging.** The release-candidate pull request runs `ci` in full, whatever its diff (the `changes` job), and a green run
+  dispatches the staging deploy of that commit on its branch ([The deploy pipeline](#the-deploy-pipeline)).
 
 How each setting was checked: on a copy of this workspace with release-plz 0.4.3 `[verified 2026-11-15]`. Right after a
 `v0.1.0` tag nothing is proposed; a fix in one crate proposes 0.1.1, rewrites `Cargo.toml`'s one version line, keeps
@@ -193,21 +204,27 @@ How each setting was checked: on a copy of this workspace with release-plz 0.4.3
 breaking `chore!:` proposes 0.2.0; test and docs commits alone propose nothing; a fix only under `web/` proposes nothing.
 Two settings the docs do not settle were read in the source instead: `release_always = false` matches the configured
 `pr_branch_prefix` (the docs still name `release-plz-`), and a tag pattern set only on `thrust-core` made every other crate
-look for a tag of its own and re-release all of history, which is why `git_tag_name` is set for the whole workspace. The
-`release-pr` and `release` jobs themselves have not run yet: they need the App.
+look for a tag of its own and re-release all of history, which is why `git_tag_name` is set for the whole workspace.
 
-**Not live yet.** Until the repository variable `RELEASE_APP_CLIENT_ID` is set, both jobs are skipped. To turn it on, the
-owner:
+**Live since 2026-11-15.** The owner set up:
 
-1. creates a GitHub App (no webhook) with repository permissions Contents: read and write, Pull requests: read and write,
-   and installs it on this repository only;
-2. creates the environment `release`, with deployment branches limited to `main`, and the secret `RELEASE_APP_PRIVATE_KEY`
-   (the App's private key) in it;
-3. sets the repository variable `RELEASE_APP_CLIENT_ID` to the App's client id (after step 2: GitHub creates an
-   unprotected environment when a job names one that does not exist);
-4. lets only the App and admins create, update or delete `rc/*` (a ruleset with the App as a bypass actor), and protects
-   `v*` tags the same way. If a tag ruleset restricts who may create tags, the App also needs Administration: read and
-   write, which release-plz documents for protected tags.
+1. a GitHub App (no webhook; Contents and Pull requests: read and write), installed on this repository only;
+2. the environment `release`, deployment branches limited to `main`, with the secret `RELEASE_APP_PRIVATE_KEY` (the App's
+   private key), and the repository variable `RELEASE_APP_CLIENT_ID` (the App's client id), which turns both jobs on;
+3. a ruleset on `rc/*` (create, update, delete and force-push refused to all but the App and the admin role), a ruleset on
+   `v*` tags (create, update and delete refused to all but the App), and immutable releases;
+4. on `main`, a pull request (no approvals, squash only), no force-push and no deletion, beside the required `gate`.
+
+The first run as the App `[verified 2026-11-15]` opened #184, `chore(release): v0.1.0`, from `rc/2026-11-15T07-33-32Z`:
+one commit that GitHub shows as verified, adding the `0.1.0` section to `CHANGELOG.md`, with `ci` running on it. One run
+before it was refused creating the branch (`403 Resource not accessible by integration`) while the App was being set up;
+the next, two minutes later, passed `[cause unverified]`. Not yet run: the `release` job on a merge, and whether creating
+a `v*` tag through the tag ruleset needs the App to hold Administration: read and write as well (release-plz documents it
+for protected tags; the App is a bypass actor, which should be enough).
+
+Immutable releases lock a release's assets when it is published, and release-plz publishes at once. So the release's own
+assets (the bundle, its SBOM, `SHA256SUMS`) need release-plz to make a draft that the next pull request's workflow fills and
+publishes (`git_release_draft`); a release merged before then stays without them.
 
 The attestation of a release and the production deploy from its tag are the next pull request
 (`.agents/plans/cicd-review/PLAN.md`, PR 3).
@@ -224,7 +241,8 @@ The attestation of a release and the production deploy from its tag are the next
 - `permissions: {}` at the top of each workflow, and `contents: read` and nothing else on each job of `ci.yml` and the
   workflows it calls. `deploy.yml` asks for more, per job: `checks: read` (`plan` reads the commit's checks),
   `id-token: write` and `attestations: write` (`build` only, for the attestation), `attestations: read` and
-  `actions: read` (the two deploy jobs: verify a bundle, fetch the previous release's). `lint-workflow.sh` enforces where
+  `actions: read` (the two deploy jobs: verify a bundle, fetch the previous release's), `actions: write` (`dispatch` only,
+  to start the staging run on the `rc/*` branch). `lint-workflow.sh` enforces where
   `secrets.`, `environment:` and `id-token: write` may appear. `release-plz.yml` asks for `contents: read` only; what it
   writes, it writes with the release App's token, minted in its two jobs, the only ones `lint-workflow.sh` lets hold a
   secret there. All 20 checkouts set `persist-credentials: false`.

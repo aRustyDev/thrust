@@ -3,7 +3,9 @@
 How to set an environment up, deploy to it, and get back out when a deploy goes wrong. How the pipeline is built, and what
 each control guarantees, is on [CI/CD](cicd.md#the-deploy-pipeline); this page is what a person does. The decisions behind
 it are ADR-0110 (the pipeline and its round-29 and round-30 updates), ADR-0101 (the token that stands in for OIDC) and
-ADR-0011 (why old web files are kept).
+ADR-0011 (why old web files are kept). Staging is no longer "a push to `main`", as ADR-0110 has it: it is the release
+candidate on an `rc/*` branch, and production a `v*` release tag (the owner's decision of 2026-11-14,
+`.agents/plans/cicd-review/`); the ADR that supersedes that part comes with the release pull request (PR 3 there).
 
 **No environment has had a deploy through this pipeline yet.** Everything below that says what a run does is what the
 scripts do against a fake Cloudflare, and what `wrangler deploy --dry-run` and two `workflow_run` events have shown. The
@@ -31,7 +33,10 @@ a copy that is missing a value fails its job with the name of the value.)
 
 - **Reviewers.** Required reviewers on `staging-do-lifecycle`, `production` and `production-do-lifecycle`. `plan` refuses to
   start a deploy if they are missing, because GitHub creates an unprotected environment when a job names one that does not
-  exist, which would silently open the manual gate. Restricting deployment branches to `main` is worth setting too.
+  exist, which would silently open the manual gate.
+- **Branch rules.** `staging` and `staging-do-lifecycle` take deployments only from `rc/*` branches, `production` and
+  `production-do-lifecycle` only from `v*` tags (deployment branches and tags, "Selected branches and tags"). GitHub checks
+  them against the run's own ref, which is why a staging deploy is a run dispatched on the release candidate's branch.
 - **Variables** (none is secret): `CLOUDFLARE_ACCOUNT_ID`, `THRUST_WORKER_NAME`, `THRUST_BASE_URL` (`https://<hostname>`),
   `THRUST_HYPERDRIVE_ID`, `THRUST_R2_BUCKET`, `THRUST_QUEUE`, `THRUST_QUEUE_DLQ`,
   `THRUST_RL_SIGNIN_ID`, `THRUST_RL_V1_ID`, `THRUST_CSRF_ENFORCE` (`on` or `off`, no default, so turning it on for
@@ -45,8 +50,9 @@ a copy that is missing a value fails its job with the name of the value.)
   attaches the queue consumer) `[unverified: the first deploy shows the narrowest set that works]`. It has no zone
   permission: the Custom Domain is attached by the infrastructure repository. It deviates from ADR-0101's OIDC because
   Cloudflare documents no OIDC federation for wrangler.
-- **The repository variable `THRUST_DEPLOY_ENABLED`** (a repository variable, not an environment's) switches deploys after a
-  push to `main` on when it is `true`. Until then a push plans `skip` and nothing else runs. Manual runs do not need it.
+- **The repository variable `THRUST_DEPLOY_ENABLED`** (a repository variable, not an environment's) switches the automatic
+  staging deploy of a release candidate on when it is `true`. Until then a green `ci` on an `rc/*` pull request plans `skip`
+  and nothing else runs. Manual runs do not need it.
 - **What is behind the variables**, in the infrastructure repository: for staging, a schema and a login role on
   `thrust-pg-dev` (with `pg_trgm` installed in `public` by an administrator, which migration `0006` needs and a schema-only
   role cannot do), a Hyperdrive configuration for that role, an R2 bucket, a queue and its dead-letter queue, two
@@ -62,7 +68,8 @@ a copy that is missing a value fails its job with the name of the value.)
 
 The Worker does not exist yet, so nothing can be attached to a hostname and the smoke has nowhere to look.
 
-1. Run **deploy** by hand: environment, `ref` `main`, and `first_deploy_skip_smoke` ticked.
+1. Run **deploy** by hand from the open release candidate's `rc/*` branch for staging, or from the `v*` tag for production
+   ("Use workflow from"), with the environment and `first_deploy_skip_smoke` ticked.
 2. `deploy` finds no live version, defers, and deploys nothing. Approve `deploy-do`. It runs the expand migration (the whole
    schema), creates the Worker with its Durable Object migration `v1`, and skips the smoke. There is no automatic rollback and
    nothing proves the version works yet; the run says so.
@@ -76,8 +83,10 @@ anything, and together with `inject_smoke_failure`.
 
 ## An ordinary deploy
 
-A push to `main` after `ci` passed, once `THRUST_DEPLOY_ENABLED` is `true`; or **deploy** by hand with a commit of `main`.
-`plan` first checks that the commit's own `gate` passed (asked for by name on that commit) and that the environments are
+Staging: `ci` passing on the release-candidate pull request, once `THRUST_DEPLOY_ENABLED` is `true` (the workflow then
+dispatches itself on the `rc/*` branch for that commit, and the dispatched run deploys it; if release-plz has moved the branch
+since, that run skips and the newer commit's own `ci` run starts its own). Or **deploy** by hand from an `rc/*` branch. Production:
+**deploy** by hand from a `v*` tag, which waits for the reviewers. `main` never deploys. `plan` first checks that the commit's own `gate` passed (asked for by name on that commit) and that the environments are
 gated. Then `build` makes the bundle with no secret anywhere in the job, and attests it. `deploy` verifies the attestation,
 reads what is live, and runs the expand migration only if a file under `crates/thrust-adapters-postgres/migrations/` differs
 from the live version's commit. It puts the previous release's web files under this release's (below), deploys at 100 %, and
@@ -105,7 +114,7 @@ migration. A lifecycle change that has to ship together with an API change reope
 
 ## The rollback drill
 
-Run **deploy** by hand on `staging` with `inject_smoke_failure` ticked, after a normal deploy. Every real check passes and
+Run **deploy** by hand on `staging`, from the `rc/*` branch just deployed, with `inject_smoke_failure` ticked, after a normal deploy. Every real check passes and
 then the smoke fails on purpose. Expect a red run, a `wrangler rollback` to the previous version, and a line saying the
 previous version answers. It is refused for production, and together with `first_deploy_skip_smoke`. No drill has been run yet;
 when one has, its run is linked here.
