@@ -366,9 +366,8 @@ async fn compat_sign_up_makes_an_account_that_is_signed_in_and_refuses_a_taken_e
     let body: Value = r.json().await.unwrap();
     assert_eq!(body, json!({"redirect_path": "/"}));
 
-    // the cookie is a real session: it authenticates against a route that needs one
-    let me = t.http.get(t.url(&format!("{SLICE_PREFIX}/auth/session"))).bearer_auth(&token).send().await.unwrap();
-    assert_eq!(me.status(), 200, "the session the sign-up made does not authenticate");
+    // the cookie is a real session: it authenticates against a route that needs one (Plane's "who am I", S02)
+    assert_eq!(t.me_status(&token).await, 200, "the session the sign-up made does not authenticate");
 
     // and the account exists, however the email is spelled
     let r = post(&t, "/auth/email-check/", &json!({"email": email.to_uppercase()})).await;
@@ -417,8 +416,7 @@ async fn compat_sign_in_signs_a_seeded_user_in_and_refuses_everyone_else_with_pl
         assert_eq!(r.status(), 200, "{what}");
         let token = session_cookie(&r).unwrap_or_else(|| panic!("{what}: no session cookie"));
         assert_eq!(r.json::<Value>().await.unwrap(), json!({"redirect_path": "/"}), "{what}");
-        let me = t.http.get(t.url(&format!("{SLICE_PREFIX}/auth/session"))).bearer_auth(&token).send().await.unwrap();
-        assert_eq!(me.status(), 200, "{what}: the session does not authenticate");
+        assert_eq!(t.me_status(&token).await, 200, "{what}: the session does not authenticate");
     }
 
     let inactive = f.extra_member(&t).await;
