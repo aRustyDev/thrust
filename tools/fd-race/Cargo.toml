@@ -1,0 +1,9 @@
+[package]
+name = "fdrace"
+version = "0.0.0"
+edition = "2021"
+
+[workspace]
+
+[profile.release]
+opt-level = 2

@@ -39,6 +39,14 @@ differ, even if `cargo test` exited 0 ("VACUITY GUARD" in `scripts/contract.sh`)
 zero tests reports green. Durable. When you add a contract test, update the matching `EXPECT_*` count at the top
 of `scripts/contract.sh` (and in `scripts/stage2-contract.sh` for a pass it runs) in the same commit.
 
+A count goes stale when a test is added, removed or renamed, and the guard above only fires when the script is run: some
+passes run in no CI cell, and `scripts/stage2-contract.sh` needs a deployed Worker (its `main` count was 59 for a day while the
+suite had 61, then 64). `scripts/check-contract-counts.sh` closes that: a step of the `hermetic` job asks libtest for each arm's
+own filters (`cargo test -- --list --format terse`, no server needed), counts the tests, and fails on a count that differs. It
+fails closed: an arm it cannot read, a filter that selects nothing, a listing that fails, or a different number of arms read
+than written is exit 2, not a pass. Its `--self-test` (a step of `deps`, no compile) runs it on worlds it must refuse, and the
+real run ends with a control, the real `stage2-contract.sh` with its `main` count made wrong, which must be refused.
+
 ## Non-vacuity
 
 A test asserting that the comparison it relies on actually compared something: enough inputs, non-empty documents,

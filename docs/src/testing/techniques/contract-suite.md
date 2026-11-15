@@ -133,7 +133,7 @@ The spike also built `native-sqlite` and `worker-do` targets (the same suite aga
 [Paired allow/deny](../evidence-and-controls.md#paired-allow-deny) in every test,
 [target guard](../evidence-and-controls.md#target-guard) and [count guard](../evidence-and-controls.md#count-guard)
 in every run, and a [planted mutant](../evidence-and-controls.md#planted-mutant) for each security or uniqueness
-invariant. Adding a test means updating the pass's `EXPECT_*` count. The CSRF switch has its own [target guard](../evidence-and-controls.md#target-guard):
+invariant. Adding a test means updating the pass's `EXPECT_*` count (and its `EXPECT=` in `stage2-contract.sh`): `scripts/check-contract-counts.sh` fails CI when one is stale, for the passes that no CI cell runs and for stage2's too. The CSRF switch has its own [target guard](../evidence-and-controls.md#target-guard):
 `scripts/contract.sh` refuses a main pass whose server does not enforce the token and a `csrfoff` pass whose server does, and
 `scripts/mutants.sh` shows both refusals. The generated tests add
 [generator coverage](../evidence-and-controls.md#generator-coverage) and fail when they sent no requests; a
