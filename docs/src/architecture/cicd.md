@@ -3,7 +3,8 @@
 The repository has a CI pipeline and a deploy pipeline. One workflow, `ci.yml`, runs the test suites on every pull
 request. It calls a second workflow once per contract cell, a third repeats a cell on demand and weekly, and a fourth
 runs the browser journeys every day. A fifth, `deploy.yml`, deploys the Worker: to staging after a push to `main`, once
-the repository variable `THRUST_DEPLOY_ENABLED` is `true`, and to either environment by hand. No workflow publishes a
+the repository variable `THRUST_DEPLOY_ENABLED` is `true`, and to either environment by hand. A sixth, `release-pr.yml`,
+keeps the next release's candidate branch and pull request after every push to `main`. No workflow publishes a
 server image. The first half of this page is how CI is built and what its one required check guarantees; [The deploy
 pipeline](#the-deploy-pipeline) is how the Worker gets to an environment, and the steps to run it are on [Deploying the
 Worker](deploy.md). The jobs and the command each CI job runs are in the CI section of
@@ -17,6 +18,8 @@ Worker](deploy.md). The jobs and the command each CI job runs are in the CI sect
 | `.github/workflows/contract-cell.yml` | A reusable workflow that runs one contract cell on its own runner |
 | `.github/workflows/flake-hunt.yml` | Repeats one cell 1 to 50 times (5 by default), by hand or every Monday at 03:17 UTC. It passes only if `scripts/flake-hunt.sh` prints `failures: 0 / N`, because the script ends with an `echo`, so its exit status does not say whether an iteration failed |
 | `.github/workflows/e2e-schedule.yml` | Runs the `worker-cf e2e` cell (through `contract-cell.yml`) every day at 04:41 UTC and by hand, and on a pull request that edits the file, so that the call is proved valid before it merges. It covers what the `ci` cell does not: a change to `web/` alone (`classify-changes.sh` keeps it out of `rust`) and drift in the runner, the browser and the packages. Not a gate: nothing waits for it and `gate` does not read it. The pinned-Plane leg is not here, because the oracle builds from an unpushed fork (`scripts/e2e.sh plane-oracle`, local) |
+| `.github/workflows/release-pr.yml` (`release-pr`) | The release-candidate bot: after each push to `main`, keeps `rc/vX.Y.Z` as `main` plus one commit that writes `CHANGELOG.md` and the version, and a pull request from it. See [Release candidates](#release-candidates) |
+| `cliff.toml` | git-cliff's configuration: what goes into the changelog, which is also what makes a release, and how the version is bumped |
 | `.github/workflows/deploy.yml` (`deploy`) | The deploy pipeline: plan, build and attest a bundle, deploy it to an environment and prove it, roll back by itself when the smoke fails. Runs after `ci` on a push to `main`, by hand, and on a pull request that edits its files (a dry run that touches no environment). See [The deploy pipeline](#the-deploy-pipeline) |
 | `.github/actions/setup-rust` | A composite action: the stable toolchain, the rustup targets and components, a keyed `rust-cache`, and optionally `worker-build` 0.8.7 and wrangler 4.151.2 |
 | `.github/actions/deploy-worker` | A composite action: verify the bundle's attestation, unpack it, install wrangler (the same version as `setup-rust`, kept equal by a test) and `cloudflared` at pinned versions, and run `scripts/deploy-worker.sh` |
@@ -74,14 +77,18 @@ its base branch. Nothing calls it, so it is a tool to run by hand.
   tasks uncached from an empty `node_modules` `[verified 2026-11-11 locally; not yet in CI]`.
 - **The matrix.** The `plan` job reads the `run <target> <pass>` lines of `scripts/contract-all.sh`, so no second
   list can drift. It fails if the number of cells it parsed differs from the number of lines that start with `run`,
-  if there are none, or if one repeats. There are 22 cells: 19 contract cells (the browser journeys' `worker-cf e2e`
-  among them) and the 3 `oracle` cells below `[verified 2026-11-14: PR #154's check list had 22 contract jobs, all
-  success; the 21 of PR #113 (2026-11-10) were before the e2e cell]`.
+  if there are none, or if one repeats. There are 23 cells: 20 contract cells (the browser journeys' `worker-cf e2e`
+  and the password reset by email's `native-memory mail` among them) and the 3 `oracle` cells below `[verified 2026-11-14: PR #154's
+  check list had 22 contract jobs, all success, before the mail cell; the 21 of PR #113 (2026-11-10) were before the e2e cell]`.
   Each runs on a fresh runner with its own checkout, which is why the shared-build-directory hazard that makes
   `contract-all.sh` run serially does not apply.
-- **A cell.** `contract-cell.yml` checks that `curl`, `openssl`, `lsof`, `pgrep` and `docker` exist, runs
+- **A cell.** `contract-cell.yml` checks that `curl`, `openssl`, `lsof`, `pgrep` and `docker` exist (and `nc` for the `mail` pass), runs
   `scripts/contract.sh <target> <pass>` with no pipe so the step's status is the script's, and uploads a marker named
   for the cell. The script's target guard and count guard apply as they do locally.
+- **The mail cell.** `native-memory mail` starts a Mailpit container (pinned, pulled from Docker Hub as `postgres` is) beside the native server, which is
+  given `THRUST_SMTP_*` and `THRUST_PUBLIC_BASE_URL`, and runs `tests/mail.rs`: the password reset by email through a mail server written by someone else.
+  The `pg-adapter` job also runs the SMTP adapter's Docker suite (`--test smtp_sink`, Mailpit again, with TLS and a login); the adapter's other two suites
+  are hermetic and run in `hermetic`.
 - **The oracle cells.** `native-memory oracle`, `native-pg oracle` and `worker-cf oracle` run the v1 oracle (issue #58,
   `tools/oracle-v1/README.md`) against the started target: the scoped Schemathesis gate, the corpus comparison, the
   comparison's own controls and the must-fail controls C0 to C4, ending in `VERDICT: PASS`. They are `run` lines of
@@ -144,18 +151,63 @@ not run. The pull-request dry run and the first two `workflow_run` events have `
 `main`, the run after a failed `ci` planned `skip` ("ci did not succeed") and the run after a green one planned `skip`
 ("automatic deploys are off").
 
+## Release candidates
+
+`release-pr.yml` runs `.github/scripts/release-pr.sh` after every push to `main` (and by hand). It keeps one branch,
+`rc/vX.Y.Z`, equal to `main` plus a single commit `chore(release): vX.Y.Z`, and one pull request from it to `main`. That
+commit writes three files: `CHANGELOG.md`, the version in `[workspace.package]` of `Cargo.toml`, and the workspace packages'
+versions in `Cargo.lock` (CI's `--locked` steps reject a lockfile that disagrees with `Cargo.toml`). Merging the pull request
+is the release. Squash merging keeps working, because the branch is one commit on `main`: its squash is that commit.
+
+- **What makes a release.** git-cliff (`cliff.toml`) lists features, fixes, performance work, refactors, reverts and any
+  breaking change. A commit it does not list (docs, tests, CI, chores) does not start a release, so a docs-only merge
+  changes nothing. The version comes from `git cliff --bumped-version`: the first is `v0.1.0`; in 0.x a feature or a
+  breaking change bumps the minor and a fix the patch. 1.0.0 is a decision made by tagging it, not a commit subject's.
+- **The changelog only grows.** The new section goes in before the newest one in `main`'s `CHANGELOG.md`, so a released
+  section is never rewritten. It is dated by `main`'s head commit (UTC), not by the day the bot ran, so the same `main`
+  always makes the same branch.
+- **When it does nothing.** The head commit is itself a release (the release workflow tags it and starts the bot again);
+  the last release merged into `main` has no tag yet (the next version cannot be counted from it, and the job summary says
+  so); or nothing since the last tag is listed.
+- **How it writes.** `prepare` holds no secret: it decides, writes the files, and computes the tree locally. `publish`
+  mints the release App's token, posts the tree to the API and refuses to go on unless GitHub's tree is the one `prepare`
+  computed, makes the commit through the API (so GitHub signs it as the App), then force-updates the branch, opens or
+  updates the pull request, and closes and deletes the `rc/*` branch of a version a newer one superseded. A branch already
+  equal to `main` plus that commit is left alone, so a re-run starts no CI and no deploy. The App's token, not the
+  workflow's own, because a branch pushed with `GITHUB_TOKEN` starts no workflow.
+- **Tests.** `test-release-pr.sh` (in `ci-scripts`) walks a release's life in a real repository with a bare `origin`, the
+  repository's own `cliff.toml` and a real git-cliff (the same version the bot installs, held equal by the test), and
+  checks `publish`'s API calls, their order and the bytes it sends against a fake `gh`. Twenty-one hand-made mutants of the
+  script were each caught by it `[verified 2026-11-15]`.
+
+**Not live yet.** Until the repository variable `RELEASE_APP_CLIENT_ID` is set, `publish` is skipped and the job summary
+shows what the bot would do. To turn it on, the owner:
+
+1. creates a GitHub App (no webhook) with repository permissions Contents: read and write, Pull requests: read and write,
+   and installs it on this repository only;
+2. sets the repository variable `RELEASE_APP_CLIENT_ID` to the App's client id;
+3. creates the environment `release`, with deployment branches limited to `main`, and the secret
+   `RELEASE_APP_PRIVATE_KEY` (the App's private key) in it. Create it before step 2: GitHub creates an unprotected
+   environment when a job names one that does not exist;
+4. lets only the App and admins create, update or delete `rc/*` (a ruleset with the App as a bypass actor).
+
+Until the release workflow exists (tagging the merge, the GitHub release, the production deploy), **do not merge an `rc/*`
+pull request**: nothing would tag it, and the bot would wait for a tag that never comes.
+
 ## Permissions and supply chain
 
-- All 38 external action references, of nine actions, are pinned to a full commit SHA with the version in a comment
-  `[verified 2026-11-14 by counting the uses lines of the workflows and actions]`; `.github/scripts/lint-workflow.sh` holds
-  `deploy.yml` and its action to it. The Rust toolchain is `stable`, not pinned, so a new clippy or rustfmt release can fail `lint`
+- All 45 external action references, of ten actions, are pinned to a full commit SHA with the version in a comment
+  `[verified 2026-11-15 by counting the uses lines of the workflows and actions]`; `.github/scripts/lint-workflow.sh` holds
+  `deploy.yml`, its action and `release-pr.yml` to it. The Rust toolchain is `stable`, not pinned, so a new clippy or rustfmt release can fail `lint`
   with no change to the code. `cargo-nextest` is 0.9.140 and `cargo-deny` is 0.20.2, both installed by
   `taiki-e/install-action`. `cloudflared` in the deploy is a release binary pinned by version and by SHA-256.
 - `permissions: {}` at the top of each workflow, and `contents: read` and nothing else on each job of `ci.yml` and the
   workflows it calls. `deploy.yml` asks for more, per job: `checks: read` (`plan` reads the commit's checks),
   `id-token: write` and `attestations: write` (`build` only, for the attestation), `attestations: read` and
   `actions: read` (the two deploy jobs: verify a bundle, fetch the previous release's). `lint-workflow.sh` enforces where
-  `secrets.`, `environment:` and `id-token: write` may appear. All 18 checkouts set `persist-credentials: false`.
+  `secrets.`, `environment:` and `id-token: write` may appear. `release-pr.yml` asks for `contents: read` only; what it
+  writes, it writes with the release App's token, minted in `publish`, the one job `lint-workflow.sh` lets hold a secret
+  there. All 20 checkouts set `persist-credentials: false`.
   Reusable-workflow and composite-action inputs reach the script through `env`, not through interpolation into the script
   text, which `lint-workflow.sh` checks for `deploy.yml` and its action.
 - `deny.toml` configures the `deny` job: advisories, licences, bans (`sqlx`, `sea-orm`, `diesel`, `diesel-async`) and
@@ -179,6 +231,23 @@ every one succeeded `[verified 2026-10-19 fa4bd6c]` with `gh run view`.
 - The book build and its checks.
 - A deploy that has run against Cloudflare. `deploy.yml` is tested against a fake Cloudflare, by its pull-request dry run
   and by `wrangler deploy --dry-run`; no environment has had a deploy through it yet (see [Deploying the Worker](deploy.md)).
+- A release. There is no changelog, version (the workspace is `0.0.0`), release tag, GitHub release or tag protection.
+- The upstream vitest files under `web/`, a fuzz target (there is no `fuzz/`), coverage, and `cargo mutants` (the
+  `mutants` job runs the planted mutants of `scripts/mutants.sh`, on `native-memory` and `native-pg` only).
+
+## Where the triggers are too wide or too narrow
+
+Found by the CI/CD review of 2026-11-14 (`.agents/plans/cicd-review/`), which also holds what to do about each.
+
+- **Too wide.** `rust=true` is all or nothing: one file under `scripts/` (a deploy-only script included), `probes/`
+  (which no job runs), `.github/deploy/`, a workflow that `ci` does not run (`flake-hunt.yml`, `e2e-schedule.yml`,
+  `deploy.yml`) or a results file under `tools/oracle-v1/` starts all 32 jobs (33 with `web`, which a CI file also starts): the 22
+  cells, `mutants`, `pg-adapter` and the rest. There is no narrowing by crate.
+- **Too narrow.** A change to `web/` alone does not run the `worker-cf e2e` cell, which serves that build (G-30).
+  `lint-workflow.sh` checks only `deploy.yml` and its action, not `ci.yml`, `contract-cell.yml`, `e2e-schedule.yml`,
+  `flake-hunt.yml` or `setup-rust`. `hermetic` and `pg-adapter` do not pass `--locked`. The toolchain floats on `stable`
+  and the advisory database is fetched live, and with no scheduled run of `ci` either surfaces only on the next
+  Rust-relevant pull request. `flake-hunt.yml` cannot select the `csrfoff`, `oracle` or `e2e` passes.
 
 ## Against the ADRs
 

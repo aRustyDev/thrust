@@ -79,6 +79,9 @@ expect "classify: another research doc and the rest of the inventory's tool are 
 # The lint and deny jobs read these three files, so a change to only one of them must still run the Rust jobs (issue #40):
 # classified as docs, `lint` and `deny` would be skipped and the gate would pass without running them.
 expect "classify: deny.toml" 0 "rust=true" classify 'deny.toml\n'
+expect "classify: cliff.toml alone runs the release bot's test" 0 "rust=true" classify 'cliff.toml\n'
+expect "classify: a cliff.toml look-alike or nested copy is not it" 0 "rust=false" classify 'cliff.toml.md\ndocs/cliff.toml\n'
+expect "classify: CHANGELOG.md alone is docs" 0 "rust=false" classify 'CHANGELOG.md\n'
 expect "classify: clippy.toml" 0 "rust=true" classify 'clippy.toml\n'
 expect "classify: rustfmt.toml" 0 "rust=true" classify 'rustfmt.toml\n'
 expect "classify: a config look-alike or a nested copy is not the root config" 0 "rust=false" classify 'deny.toml.md\ndocs/clippy.toml\ndocs/src/rustfmt.toml\n'

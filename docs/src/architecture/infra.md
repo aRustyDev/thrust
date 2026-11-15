@@ -291,20 +291,39 @@ What switching it on takes, for the day Q-0050.9 is done, and why it is not a va
 Tested on the four contract targets against the mock identity provider (`scripts/contract.sh`) and never against Zitadel or a
 remote issuer `[unverified]`; the contract `e2e` pass starts its target with no provider, as the deployment is.
 
-## Reset by email (built, and dark)
+## Reset by email (built; on for the native server that has a relay, dark everywhere else)
 
 The stock sign-in screen draws "Forgot your password?" as a link to the reset page when `/api/instances/` says `is_smtp_configured`, and as the
 "ask your admin" line otherwise. Thrust has the two routes behind the link (`POST /auth/forgot-password/` and `POST
-/auth/reset-password/<uidb64>/<token>/`, D-041), but **no mail service is wired in any deployment yet**: every deployment answers the request
-with `SMTP_NOT_CONFIGURED` (the pin's own answer without `EMAIL_HOST`), says `is_smtp_configured: false`, and the way back in is still the
-operator's reset above.
+/auth/reset-password/<uidb64>/<token>/`, D-041). A deployment answers the request with `SMTP_NOT_CONFIGURED` (the pin's own answer without
+`EMAIL_HOST`), and says `is_smtp_configured: false`, unless it has **both** a mail service and a `THRUST_PUBLIC_BASE_URL`. The native server
+(`thrust-server`) can have one, an SMTP relay it is told about in its environment (E2, below); **the Worker cannot yet** (its `send_email` binding is
+E3), so a deployed Worker is dark and the way back in is still the operator's reset above.
 
-What switching it on takes, for the day a mail service exists:
+What switching it on takes:
 
-- **A mail service.** The SMTP adapter of the self-hosted set is E2 and the Worker's `send_email` binding is E3; neither is built. The binding
-  sends only from a domain the Cloudflare account owns and has Email Sending enabled for, and refuses any other (spike 0002 step 10 saw both:
-  one real message from an owned domain was accepted on 2026-10-24, and one from `example.com` was refused; whether the accepted one reached a
-  mailbox was not checked).
+- **A mail service.** On the native server, an SMTP relay, set by `THRUST_SMTP_*`; the server reads them once, when it starts:
+
+  | variable | |
+  |---|---|
+  | `THRUST_SMTP_HOST` | the relay. Unset is no mail service; the other `THRUST_SMTP_*` set without it stop the server at start |
+  | `THRUST_SMTP_FROM` | the sender, `no-reply@example.com` or `Thrust <no-reply@example.com>`. Required with a host. The relay has to be willing to send from it (SPF, DKIM and DMARC for that domain are the deployment's and the relay's, not Thrust's) |
+  | `THRUST_SMTP_TLS` | `starttls` (the default: the connection is upgraded, and a relay that cannot be is not used in the clear), `tls` (encrypted from the first byte, port 465) or `none` (a relay on the same host, or a test sink) |
+  | `THRUST_SMTP_PORT` | 587 for `starttls`, 465 for `tls`, 25 for `none` |
+  | `THRUST_SMTP_USERNAME`, `THRUST_SMTP_PASSWORD` | both or neither. A secret: only from the environment. Refused with `THRUST_SMTP_TLS=none`, which would send the password in the clear |
+  | `THRUST_SMTP_CA_FILE` | a PEM file of the CA that signed the relay's certificate. Set, the certificate must chain to it **and to nothing else** and must name `THRUST_SMTP_HOST`; unset, the Mozilla roots decide |
+  | `THRUST_SMTP_TIMEOUT_SECS` | the most one message may take, connecting included (10) |
+
+  A half-written configuration (a port with no host, a username with no password, a mode that is not one of the three, a CA file that is missing, empty or
+  not a certificate) stops the server at start and says which variable, and never prints a password. A started server logs one line,
+  `mail: SMTP relay <host>:<port>, tls=<mode>, from <address>, <with a login | no login>`, and says so if there is no `THRUST_PUBLIC_BASE_URL`, because then
+  no link can be made and the feature stays off. The mail is sent in the request, one connection per message, with no queue and no retry (D-041, 5): a relay
+  that refuses or cannot be reached is the pin's generic 500 and leaves no link behind, the person asks again, and the server's log says what the relay said
+  (which can carry the recipient's address).
+
+  The Worker's binding is E3, not built. It sends only from a domain the Cloudflare account owns and has Email Sending enabled for, and refuses any other
+  (spike 0002 step 10 saw both: one real message from an owned domain was accepted on 2026-10-24, and one from `example.com` was refused; whether the accepted
+  one reached a mailbox was not checked).
 - **`THRUST_PUBLIC_BASE_URL`**, the address a link starts with (`https://projects.example.com`), set by the deployment and never taken from a
   request: a forged `Host` header would otherwise mail a victim a working token to someone else's page. Without it no link can be made, so
   the feature stays off even with a mail service.

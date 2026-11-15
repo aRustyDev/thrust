@@ -39,11 +39,21 @@ which lets an API key change the password, killed by the main pass; `mutant_oidc
 login's redirect, killed by the main pass and by `tests/oidc.rs`; and `mutant_oidc_flag_always_on`, which says the SSO button is on although no provider is
 configured, which no contract target can show because each is started with a provider: `crates/thrust-compat-plane/tests/oidc.rs` kills it, run with
 `--features mutant_oidc_flag_always_on`, and it has no `scripts/mutants.sh` row; and `mutant_smtp_flag_always_on` and `mutant_reset_redirect_without_code`, which say mail is on
-although nothing can send it and drop the `error_code` of a refused reset's redirect, killed by the main pass and by `tests/reset.rs`), the password reset by email's
+although nothing can send it and drop the `error_code` of a refused reset's redirect: the second is killed by the main pass and by `tests/reset.rs`; the first is
+killed by `tests/reset.rs` and the recorded S01, and since E2 the main pass REFUSES it before a test runs (the pass's vacuity guard asks `/api/instances/` and
+wants `false`: exit 5, so its `scripts/mutants.sh` row is a refusal row and not a kill row)), the password reset by email's
 `crates/thrust-core/Cargo.toml` mutants (`mutant_reset_token_reusable`, `_ignores_expiry`, `_uid_unchecked`, `_takes_token_first`, `_skips_strength` and `_keeps_sessions`,
-each killed by the main pass, with a `scripts/mutants.sh` row, and by `crates/thrust-core/tests/password_reset.rs`; and `_ignores_cooldown`, which no contract target can
-show because the test seam makes a token that the cooldown does not see, so only that file kills it) and
-`crates/thrust-adapters-selfhosted` (`mutant_discard_noop`),
+each killed by the main pass, with a `scripts/mutants.sh` row, and by `crates/thrust-core/tests/password_reset.rs`; and `_ignores_cooldown`, which the main pass cannot
+show because the test seam makes a token that the cooldown does not see, so only that file killed it until the `mail` pass, whose second test asks twice and counts the
+messages at a mail server: it has a row on that pass, as `_token_reusable` has too) and
+`crates/thrust-adapters-selfhosted` (`mutant_discard_noop`; and the SMTP adapter's six, each with a row against the suite aimed at it:
+`mutant_smtp_swap_refusal_and_outage`, which reads a relay's 5xx as an outage and its 4xx as a refusal, killed by `tests/smtp_wire` at every one of its 600 reply-code cases;
+`mutant_smtp_from_is_recipient` and `mutant_smtp_wrong_message_id`, killed by the same file's generated `prop_a_message_arrives_as_it_was_given`;
+`mutant_smtp_password_in_clear`, which lets a password go over a connection with no TLS, killed by `tests/smtp_config`'s 54,000-combination matrix;
+`mutant_smtp_starttls_opportunistic`, which makes STARTTLS a preference so that a relay that cannot upgrade is used in the clear, killed by `tests/smtp_wire`'s
+`a_relay_that_cannot_do_tls_is_not_used_when_tls_is_asked_for`; and
+`mutant_smtp_trust_any_certificate`, which trusts a relay's certificate whoever signed it and whatever it names, killed by the three TLS tests of `tests/smtp_sink` against
+Mailpit; and `thrust-server`'s `mutant_smtp_unwired`, which reads the relay and does not hand it to the app, which the `mail` pass refuses to run against: a vacuity-guard row, exit 5),
 gated with `#[cfg(feature = "mutant_…")]` at the line they break, passed through by `thrust-server`. Each is listed
 in `scripts/mutants.sh`. cargo-mutants: configured by `.cargo/mutants.toml` and the `mutants` nextest profile;
 `mutants.out*` is never committed.
