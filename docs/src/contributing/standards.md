@@ -66,10 +66,11 @@ What exists and what is missing, measured, is on [Status, gaps and drift](../tes
 
 ADR-0100 (a build matrix per adapter set) and ADR-0101 (CI supply-chain hygiene) are accepted and partly built:
 the full contract matrix runs on every Rust-relevant pull request, `gate` is the aggregate required job, and every
-action is pinned to a SHA, the `lint` job runs rustfmt and clippy, the `deny` job runs `cargo deny`, and the deploy
-bundle is attested (SLSA provenance) and verified before it is deployed. There is no nightly run, oracle schema check,
-scheduled check of the required contexts (or of the advisory database), Scorecard or trivy, and no release is
-attested, because there are no releases. ADR-0110 (the deploy pipeline) is accepted and built, and has not yet
+action is pinned to a SHA, the `lint` job runs rustfmt and clippy, the `deny` job runs `cargo deny`, the deploy
+bundle is attested (SLSA provenance) and verified before it is deployed, and the oracle schema check
+(`scripts/check-openapi.sh`, a step of the `deps` job) covers the Projects operations of `/api/v1` only. There is no
+nightly run, scheduled check of the required contexts (or of the advisory database), Scorecard or trivy, and no release
+is attested, because there are no releases. ADR-0110 (the deploy pipeline) is accepted and built, and has not yet
 completed a deploy to a real environment ([Deploying the Worker](../architecture/deploy.md)).
 [CI/CD](../architecture/cicd.md) sets each against the workflows. ADR-0120 to ADR-0123 (the test
 model and oracle, the port contract tests, the v1 oracle and parity tests, and the test standards and tooling) are

@@ -1,0 +1,78 @@
+{
+  "format_version": 1,
+  "about": "The differences between the pinned Plane schema and this crate's document that were decided (issue #58, scripts/check-openapi.sh). One entry per oasdiff check and text, with the operations it holds on. An entry that matches nothing on one of its operations is STALE and fails the check, as an entry of exceptions.yaml does; a difference that no entry covers fails it too. `ref` is the record of the decision.",
+  "accepted": [
+    {
+      "id": "SD-001",
+      "ref": "EX-006 (exceptions.yaml)",
+      "check": "response-property-became-nullable",
+      "text_contains": "cover_image_url`",
+      "operations": ["list_projects", "list_projects_lite", "create_project", "retrieve_project", "update_project"],
+      "reason": "A project with no cover answers `cover_image_url: null`. The pin's schema calls it a non-nullable string and sends null all the same; the owner chose to reproduce the behaviour, and this document says what is sent."
+    },
+    {
+      "id": "SD-002",
+      "ref": "EX-006 (exceptions.yaml)",
+      "check": "response-property-became-nullable",
+      "text_contains": "member_role`",
+      "operations": ["list_projects", "create_project", "retrieve_project", "update_project"],
+      "reason": "A project the caller sees only because it is public answers `member_role: null`. The pin's schema calls it a non-nullable integer and sends null all the same: its view annotates `member_role` with a subquery over the caller's own active ProjectMember row, which is NULL for a caller who has none (apps/api/plane/api/views/project.py:128-133, tag oracle/v1-pin-20261018), and its serializer declares `IntegerField(read_only=True)` (serializers/project.py:222). The recorded corpus has no such caller, so this is from the source and not from a recorded exchange. The same defect as EX-006's `cover_image_url`."
+    },
+    {
+      "id": "SD-003",
+      "ref": "EX-006 (exceptions.yaml)",
+      "check": "response-property-became-nullable",
+      "text_contains": "sort_order`",
+      "operations": ["list_projects", "create_project", "retrieve_project", "update_project"],
+      "reason": "A person who is not a member of the project has no place among its members, so `sort_order` is `null` where the list has it. The pin's schema calls it a non-nullable number and sends null all the same: its list annotates `sort_order` with a subquery over the caller's own ProjectMember row (apps/api/plane/api/views/project.py:173-181, tag oracle/v1-pin-20261018), NULL for a caller who has none, and its serializer declares `FloatField(read_only=True)` (serializers/project.py:221). The recorded corpus has no such caller (source, not a recorded exchange). One project's answer has no `sort_order` key at all (the corpus has 16 project bodies: the 10 list rows have it, the 6 one-project answers do not), so for the operations that are not a list the finding is about the declared schema; the document lists the key as optional. The same defect as EX-006's `cover_image_url`."
+    },
+    {
+      "id": "SD-004",
+      "ref": "D-030 (5)",
+      "check": "request-body-media-type-removed",
+      "text_contains": "application/x-www-form-urlencoded",
+      "operations": ["create_project", "update_project"],
+      "reason": "A body that is a form is a 415: Thrust reads JSON only (`request::json_body`). The pin also reads forms. The owner confirmed this on 2026-11-07."
+    },
+    {
+      "id": "SD-005",
+      "ref": "D-030 (5)",
+      "check": "request-body-media-type-removed",
+      "text_contains": "multipart/form-data",
+      "operations": ["create_project", "update_project"],
+      "reason": "A body that is multipart is a 415, as a form is (D-030 (5))."
+    },
+    {
+      "id": "SD-006",
+      "ref": "representation, not a deviation",
+      "check": "response-property-all-of-removed",
+      "text_contains": "NetworkEnum",
+      "operations": ["list_projects", "create_project", "retrieve_project", "update_project"],
+      "reason": "The pin writes `network` as `allOf: [NetworkEnum]` with Django's column range 0 to 32767 beside it; this document states the enum directly. Both say 0 or 2. oasdiff reports the form at warning level (the next three entries are the same difference)."
+    },
+    {
+      "id": "SD-007",
+      "ref": "representation, not a deviation",
+      "check": "response-property-enum-value-added",
+      "text_contains": "network` response property",
+      "operations": ["list_projects", "create_project", "retrieve_project", "update_project"],
+      "reason": "`network` is the enum 0 or 2 here and in the pin's `NetworkEnum`; oasdiff does not see through the pin's allOf (SD-006)."
+    },
+    {
+      "id": "SD-008",
+      "ref": "representation, not a deviation",
+      "check": "response-property-max-unset",
+      "text_contains": "network` response property's max",
+      "operations": ["list_projects", "create_project", "retrieve_project", "update_project"],
+      "reason": "The pin's 32767 is the range of the column; the enum is the constraint (SD-006)."
+    },
+    {
+      "id": "SD-009",
+      "ref": "representation, not a deviation",
+      "check": "response-property-min-unset",
+      "text_contains": "network` response property's min",
+      "operations": ["list_projects", "create_project", "retrieve_project", "update_project"],
+      "reason": "The pin's 0 is the range of the column; the enum is the constraint (SD-006)."
+    }
+  ]
+}

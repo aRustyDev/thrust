@@ -201,6 +201,14 @@ jobs:
         run: |
           python3 -I .github/scripts/check-release-plz.py
           .github/scripts/lint-workflow.sh .github/workflows/release-plz.yml
+      # Issue #58 (ADR-0032): the OpenAPI document that `thrust-api-v1` writes from the types its routes answer with, diffed against
+      # the pinned Plane schema with oasdiff (a pinned image; Docker is on the runner). Every difference must be a recorded one and
+      # every recorded one must still be there; the check breaks the document three ways and the register one way, and each must be
+      # refused. A step and not a job, so the gate's required contexts do not change.
+      - name: OpenAPI schema diff (oasdiff)
+        run: |
+          scripts/check-openapi.sh --self-test
+          scripts/check-openapi.sh
 
   # rustfmt and clippy (issue #40). Clippy runs with `-D warnings`, so the four lints `Cargo.toml` denies in core, ports and the
   # adapters (ADR-0006's panic policy: unwrap, expect, panic, indexing) and every other warning fail it. The second clippy run is
@@ -231,6 +239,11 @@ jobs:
       - name: clippy (the Worker, wasm32)
         if: ${{ !cancelled() }}
         run: scripts/rs cargo clippy -p thrust-worker --no-default-features --target wasm32-unknown-unknown --locked -- -D warnings
+      # The `openapi` feature of thrust-api-v1 (issue #58) is off in every run above, so the derives and path declarations behind it
+      # are linted here, under the same four denied lints.
+      - name: clippy (thrust-api-v1 with the OpenAPI feature)
+        if: ${{ !cancelled() }}
+        run: scripts/rs cargo clippy -p thrust-api-v1 --features openapi --all-targets --locked -- -D warnings
 
   # cargo-deny (issue #40; ADR-0100 and ADR-0101 require a Rust supply-chain gate), configured by `deny.toml`: advisories (RustSec),
   # licences, bans (sqlx, sea-orm, diesel: ADR-0044) and sources (crates.io only). It fetches the advisory database on every run, so
@@ -288,6 +301,12 @@ jobs:
         run: scripts/check-contract-counts.sh
       - name: Doctests
         run: scripts/rs cargo test --doc --workspace
+      # The tests of the OpenAPI document (issue #58) exist only with thrust-api-v1's `openapi` feature, which the run above does not
+      # turn on: the document's operations against the router, and its schemas against real bodies. nextest exits 4 if the filter
+      # selects nothing, so a feature that stopped compiling them cannot pass. The default profile and not `ci`, which would write
+      # `junit.xml` again and replace the report of the whole run that the next step uploads.
+      - name: OpenAPI tests (nextest, openapi feature)
+        run: scripts/rs cargo nextest run --no-fail-fast -p thrust-api-v1 --features openapi -E 'binary(openapi)'
       - name: Upload the JUnit report
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
