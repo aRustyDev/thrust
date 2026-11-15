@@ -3,8 +3,8 @@
 The repository has a CI pipeline and a deploy pipeline. One workflow, `ci.yml`, runs the test suites on every pull
 request. It calls a second workflow once per contract cell, a third repeats a cell on demand and weekly, and a fourth
 runs the browser journeys every day. A fifth, `deploy.yml`, deploys the Worker: to staging after a push to `main`, once
-the repository variable `THRUST_DEPLOY_ENABLED` is `true`, and to either environment by hand. A sixth, `release-pr.yml`,
-keeps the next release's candidate branch and pull request after every push to `main`. No workflow publishes a
+the repository variable `THRUST_DEPLOY_ENABLED` is `true`, and to either environment by hand. A sixth, `release-plz.yml`,
+keeps the next release's candidate pull request after every push to `main`, and tags and publishes a release when one merges. No workflow publishes a
 server image. The first half of this page is how CI is built and what its one required check guarantees; [The deploy
 pipeline](#the-deploy-pipeline) is how the Worker gets to an environment, and the steps to run it are on [Deploying the
 Worker](deploy.md). The jobs and the command each CI job runs are in the CI section of
@@ -18,8 +18,8 @@ Worker](deploy.md). The jobs and the command each CI job runs are in the CI sect
 | `.github/workflows/contract-cell.yml` | A reusable workflow that runs one contract cell on its own runner |
 | `.github/workflows/flake-hunt.yml` | Repeats one cell 1 to 50 times (5 by default), by hand or every Monday at 03:17 UTC. It passes only if `scripts/flake-hunt.sh` prints `failures: 0 / N`, because the script ends with an `echo`, so its exit status does not say whether an iteration failed |
 | `.github/workflows/e2e-schedule.yml` | Runs the `worker-cf e2e` cell (through `contract-cell.yml`) every day at 04:41 UTC and by hand, and on a pull request that edits the file, so that the call is proved valid before it merges. It covers what the `ci` cell does not: a change to `web/` alone (`classify-changes.sh` keeps it out of `rust`) and drift in the runner, the browser and the packages. Not a gate: nothing waits for it and `gate` does not read it. The pinned-Plane leg is not here, because the oracle builds from an unpushed fork (`scripts/e2e.sh plane-oracle`, local) |
-| `.github/workflows/release-pr.yml` (`release-pr`) | The release-candidate bot: after each push to `main`, keeps `rc/vX.Y.Z` as `main` plus one commit that writes `CHANGELOG.md` and the version, and a pull request from it. See [Release candidates](#release-candidates) |
-| `cliff.toml` | git-cliff's configuration: what goes into the changelog, which is also what makes a release, and how the version is bumped |
+| `.github/workflows/release-plz.yml` (`release-plz`) | The release flow, run by release-plz: after each push to `main`, opens or updates the release-candidate pull request from an `rc/*` branch, and tags `vX.Y.Z` and publishes the GitHub release when such a pull request merges. See [Release candidates](#release-candidates) |
+| `release-plz.toml` | release-plz's configuration: one version and one tag for the workspace, one root `CHANGELOG.md`, which commits make a release. Held to the workspace members by `.github/scripts/check-release-plz.py` |
 | `.github/workflows/deploy.yml` (`deploy`) | The deploy pipeline: plan, build and attest a bundle, deploy it to an environment and prove it, roll back by itself when the smoke fails. Runs after `ci` on a push to `main`, by hand, and on a pull request that edits its files (a dry run that touches no environment). See [The deploy pipeline](#the-deploy-pipeline) |
 | `.github/actions/setup-rust` | A composite action: the stable toolchain, the rustup targets and components, a keyed `rust-cache`, and optionally `worker-build` 0.8.7 and wrangler 4.151.2 |
 | `.github/actions/deploy-worker` | A composite action: verify the bundle's attestation, unpack it, install wrangler (the same version as `setup-rust`, kept equal by a test) and `cloudflared` at pinned versions, and run `scripts/deploy-worker.sh` |
@@ -153,61 +153,81 @@ not run. The pull-request dry run and the first two `workflow_run` events have `
 
 ## Release candidates
 
-`release-pr.yml` runs `.github/scripts/release-pr.sh` after every push to `main` (and by hand). It keeps one branch,
-`rc/vX.Y.Z`, equal to `main` plus a single commit `chore(release): vX.Y.Z`, and one pull request from it to `main`. That
-commit writes three files: `CHANGELOG.md`, the version in `[workspace.package]` of `Cargo.toml`, and the workspace packages'
-versions in `Cargo.lock` (CI's `--locked` steps reject a lockfile that disagrees with `Cargo.toml`). Merging the pull request
-is the release. Squash merging keeps working, because the branch is one commit on `main`: its squash is that commit.
+[release-plz](https://release-plz.dev) 0.4.3 runs the release flow, configured by `release-plz.toml` and run by
+`release-plz.yml` on every push to `main`. Nothing in it is hand-written except the guard that holds the configuration to the
+workspace (below).
 
-- **What makes a release.** git-cliff (`cliff.toml`) lists features, fixes, performance work, refactors, reverts and any
-  breaking change. A commit it does not list (docs, tests, CI, chores) does not start a release, so a docs-only merge
-  changes nothing. The version comes from `git cliff --bumped-version`: the first is `v0.1.0`; in 0.x a feature or a
-  breaking change bumps the minor and a fix the patch. 1.0.0 is a decision made by tagging it, not a commit subject's.
-- **The changelog only grows.** The new section goes in before the newest one in `main`'s `CHANGELOG.md`, so a released
-  section is never rewritten. It is dated by `main`'s head commit (UTC), not by the day the bot ran, so the same `main`
-  always makes the same branch.
-- **When it does nothing.** The head commit is itself a release (the release workflow tags it and starts the bot again);
-  the last release merged into `main` has no tag yet (the next version cannot be counted from it, and the job summary says
-  so); or nothing since the last tag is listed.
-- **How it writes.** `prepare` holds no secret: it decides, writes the files, and computes the tree locally. `publish`
-  mints the release App's token, posts the tree to the API and refuses to go on unless GitHub's tree is the one `prepare`
-  computed, makes the commit through the API (so GitHub signs it as the App), then force-updates the branch, opens or
-  updates the pull request, and closes and deletes the `rc/*` branch of a version a newer one superseded. A branch already
-  equal to `main` plus that commit is left alone, so a re-run starts no CI and no deploy. The App's token, not the
-  workflow's own, because a branch pushed with `GITHUB_TOKEN` starts no workflow.
-- **Tests.** `test-release-pr.sh` (in `ci-scripts`) walks a release's life in a real repository with a bare `origin`, the
-  repository's own `cliff.toml` and a real git-cliff (the same version the bot installs, held equal by the test), and
-  checks `publish`'s API calls, their order and the bytes it sends against a fake `gh`. Twenty-one hand-made mutants of the
-  script were each caught by it `[verified 2026-11-15]`.
+- **The release-candidate pull request** (`release-pr` job). When something releasable landed since the last `v*` tag,
+  release-plz opens a pull request from a branch `rc/<timestamp>`, or force-updates the open one, titled
+  `chore(release): vX.Y.Z`. Its commit sets `[workspace.package] version` in `Cargo.toml`, the workspace packages in
+  `Cargo.lock`, and adds the new section to `CHANGELOG.md` (release-plz's default format, Keep a Changelog). It is made
+  through the GitHub API, so GitHub signs it. The branch name carries a timestamp, not the version: release-plz takes only a
+  prefix (`pr_branch_prefix`).
+- **The release** (`release` job). When a push to `main` is the merge of a pull request from an `rc/` branch, release-plz
+  tags the merge commit `vX.Y.Z` and publishes the GitHub release with that version's changelog section. Any other push is
+  a no-op (`release_always = false`). Squash merge, the repository's only merge method, makes the merge commit the one
+  tagged.
+- **One version, one tag, one changelog.** Every crate is in one `version_group` and inherits the workspace version; the
+  tag and the release are made for `thrust-core` only, under `v{{ version }}`; `CHANGELOG.md` is written for
+  `thrust-core` with every other crate's commits included. release-plz has no workspace-level version group, so
+  `.github/scripts/check-release-plz.py` (run by `deps`, tested in `ci-scripts`) fails when `release-plz.toml` and the
+  workspace members differ, a crate does not inherit the workspace version, or there is not exactly one tagger.
+- **What makes a release.** A commit that touches a crate's files and is a fix, a feature, performance work, a refactor, a
+  revert, or a breaking change of any type (`release_commits`). A test, docs or chore commit does not. In 0.x a feature or a
+  breaking change bumps the minor and a fix the patch (`features_always_increment_minor`). The first release is `v0.1.0`,
+  the version `Cargo.toml` holds.
+- **What does not: a change outside the crates.** release-plz looks at the files each crate packages, so a change under
+  `web/` (which ships in the deploy bundle), `scripts/` or `e2e/` alone never opens a release-candidate pull request. To
+  release one, the owner (an `rc/*` bypass actor) does it by hand: a branch `rc/manual-<version>` from `main`; the one
+  `version = "..."` line of `[workspace.package]` set to the next version; `cargo update --workspace` (it moves every
+  workspace package in `Cargo.lock`); a section for that version at the top of `CHANGELOG.md`; a pull request titled
+  `chore(release): vX.Y.Z`; merge it. The `release` job tags and publishes it like any other. (`release-plz set-version`
+  is not the tool for this: it writes a version into the one crate's own `Cargo.toml`, out of the shared version
+  `[verified 2026-11-15 on a copy of this workspace]`.)
+- **The App's token.** Both jobs act as the release GitHub App: a branch, tag or release made with `GITHUB_TOKEN` starts no
+  workflow, so `ci` would not run on the `rc/*` branch and nothing triggered by the tag would start.
 
-**Not live yet.** Until the repository variable `RELEASE_APP_CLIENT_ID` is set, `publish` is skipped and the job summary
-shows what the bot would do. To turn it on, the owner:
+How each setting was checked: on a copy of this workspace with release-plz 0.4.3 `[verified 2026-11-15]`. Right after a
+`v0.1.0` tag nothing is proposed; a fix in one crate proposes 0.1.1, rewrites `Cargo.toml`'s one version line, keeps
+`Cargo.lock` consistent (`cargo metadata --locked` passes) and lists only that fix; a feature then proposes 0.2.0; a
+breaking `chore!:` proposes 0.2.0; test and docs commits alone propose nothing; a fix only under `web/` proposes nothing.
+Two settings the docs do not settle were read in the source instead: `release_always = false` matches the configured
+`pr_branch_prefix` (the docs still name `release-plz-`), and a tag pattern set only on `thrust-core` made every other crate
+look for a tag of its own and re-release all of history, which is why `git_tag_name` is set for the whole workspace. The
+`release-pr` and `release` jobs themselves have not run yet: they need the App.
+
+**Not live yet.** Until the repository variable `RELEASE_APP_CLIENT_ID` is set, both jobs are skipped. To turn it on, the
+owner:
 
 1. creates a GitHub App (no webhook) with repository permissions Contents: read and write, Pull requests: read and write,
    and installs it on this repository only;
-2. sets the repository variable `RELEASE_APP_CLIENT_ID` to the App's client id;
-3. creates the environment `release`, with deployment branches limited to `main`, and the secret
-   `RELEASE_APP_PRIVATE_KEY` (the App's private key) in it. Create it before step 2: GitHub creates an unprotected
-   environment when a job names one that does not exist;
-4. lets only the App and admins create, update or delete `rc/*` (a ruleset with the App as a bypass actor).
+2. creates the environment `release`, with deployment branches limited to `main`, and the secret `RELEASE_APP_PRIVATE_KEY`
+   (the App's private key) in it;
+3. sets the repository variable `RELEASE_APP_CLIENT_ID` to the App's client id (after step 2: GitHub creates an
+   unprotected environment when a job names one that does not exist);
+4. lets only the App and admins create, update or delete `rc/*` (a ruleset with the App as a bypass actor), and protects
+   `v*` tags the same way. If a tag ruleset restricts who may create tags, the App also needs Administration: read and
+   write, which release-plz documents for protected tags.
 
-Until the release workflow exists (tagging the merge, the GitHub release, the production deploy), **do not merge an `rc/*`
-pull request**: nothing would tag it, and the bot would wait for a tag that never comes.
+The attestation of a release and the production deploy from its tag are the next pull request
+(`.agents/plans/cicd-review/PLAN.md`, PR 3).
 
 ## Permissions and supply chain
 
-- All 45 external action references, of ten actions, are pinned to a full commit SHA with the version in a comment
+- All 44 external action references, of eleven actions, are pinned to a full commit SHA with the version in a comment
   `[verified 2026-11-15 by counting the uses lines of the workflows and actions]`; `.github/scripts/lint-workflow.sh` holds
-  `deploy.yml`, its action and `release-pr.yml` to it. The Rust toolchain is `stable`, not pinned, so a new clippy or rustfmt release can fail `lint`
+  `deploy.yml`, its action and `release-plz.yml` to it. `release-plz/action` pins its own actions by SHA and installs
+  release-plz with `cargo-binstall` at the version the workflow names (0.4.3); release-plz publishes no attestation for its
+  binaries (`gh attestation verify` finds none), so that download is trusted on its GitHub release alone. The Rust toolchain is `stable`, not pinned, so a new clippy or rustfmt release can fail `lint`
   with no change to the code. `cargo-nextest` is 0.9.140 and `cargo-deny` is 0.20.2, both installed by
   `taiki-e/install-action`. `cloudflared` in the deploy is a release binary pinned by version and by SHA-256.
 - `permissions: {}` at the top of each workflow, and `contents: read` and nothing else on each job of `ci.yml` and the
   workflows it calls. `deploy.yml` asks for more, per job: `checks: read` (`plan` reads the commit's checks),
   `id-token: write` and `attestations: write` (`build` only, for the attestation), `attestations: read` and
   `actions: read` (the two deploy jobs: verify a bundle, fetch the previous release's). `lint-workflow.sh` enforces where
-  `secrets.`, `environment:` and `id-token: write` may appear. `release-pr.yml` asks for `contents: read` only; what it
-  writes, it writes with the release App's token, minted in `publish`, the one job `lint-workflow.sh` lets hold a secret
-  there. All 20 checkouts set `persist-credentials: false`.
+  `secrets.`, `environment:` and `id-token: write` may appear. `release-plz.yml` asks for `contents: read` only; what it
+  writes, it writes with the release App's token, minted in its two jobs, the only ones `lint-workflow.sh` lets hold a
+  secret there. All 20 checkouts set `persist-credentials: false`.
   Reusable-workflow and composite-action inputs reach the script through `env`, not through interpolation into the script
   text, which `lint-workflow.sh` checks for `deploy.yml` and its action.
 - `deny.toml` configures the `deny` job: advisories, licences, bans (`sqlx`, `sea-orm`, `diesel`, `diesel-async`) and

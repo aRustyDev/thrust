@@ -96,14 +96,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # The release bot's test runs the real git-cliff on the repository's cliff.toml; the same version as release-pr.yml (a case of
-      # test-release-pr.sh holds the two equal).
-      - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
-        with:
-          tool: git-cliff@2.14.2
       - name: Test the helper scripts
         run: |
-          sh .github/scripts/tests/test-release-pr.sh
           sh .github/scripts/tests/test-ci-scripts.sh
           sh .github/scripts/tests/test-required-contexts.sh
           sh .github/scripts/tests/test-check-web-diff.sh
@@ -123,6 +117,7 @@ jobs:
           sh .github/scripts/tests/test-fetch-previous-assets.sh
           sh .github/scripts/tests/test-check-asset-retention.sh
           python3 -I .github/scripts/tests/test_merge_assets.py
+          python3 -I .github/scripts/tests/test_check_release_plz.py
 
   deps:
     needs: changes
@@ -173,11 +168,14 @@ jobs:
         run: |
           scripts/render-wrangler.sh --self-test
           .github/scripts/lint-workflow.sh .github/workflows/deploy.yml .github/actions/deploy-worker/action.yml
-      # The release bot holds the release App's key in one job, `publish`, and nowhere else.
-      - name: Release workflow guard
+      # The release flow: release-plz.toml must list every workspace member in one version group with one tag (release-plz has no
+      # workspace-level group and does not check this itself), and its workflow holds the release App's key only in its two jobs.
+      - name: Release configuration and workflow guards
         env:
-          SECRET_JOBS: publish
-        run: .github/scripts/lint-workflow.sh .github/workflows/release-pr.yml
+          SECRET_JOBS: release release-pr
+        run: |
+          python3 -I .github/scripts/check-release-plz.py
+          .github/scripts/lint-workflow.sh .github/workflows/release-plz.yml
       # Issue #58 (ADR-0032): the OpenAPI document that `thrust-api-v1` writes from the types its routes answer with, diffed against
       # the pinned Plane schema with oasdiff (a pinned image; Docker is on the runner). Every difference must be a recorded one and
       # every recorded one must still be there; the check breaks the document three ways and the register one way, and each must be
