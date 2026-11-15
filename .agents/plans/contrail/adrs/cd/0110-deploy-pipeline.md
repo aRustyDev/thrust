@@ -37,7 +37,7 @@ a `feature-deployment.yml` preview workflow **[S]**.
 
 **Decision (accepted, round 24): Option 2 with measured gates** — expand migration (CI) → upload at 0% traffic → smoke suite and oracle subset via the version-override header → 10% for 10 minutes → 100%; absolute-count gates (≤3 5xx, probe p95 < 500 ms, no CPU-limit exceptions) with automatic `wrangler rollback`; DO lifecycle changes via a manual-gated `wrangler deploy` (see the round-24 update).
 
-**Superseded in part (round 29), implemented (round 30):** the stages, the version-override smoke and the absolute-count gates of this decision were dropped in round 29 for a 100 % deploy proved by the smoke; the rest (expand migration first, the DO-lifecycle manual gate, automatic rollback) stands, and the pipeline is built. Read the round-29 and round-30 updates below for what is in force.
+**Superseded in part (round 29), implemented (round 30), environments changed by the release flow (2026-11-15, below):** the stages, the version-override smoke and the absolute-count gates of this decision were dropped in round 29 for a 100 % deploy proved by the smoke; the rest (expand migration first, the DO-lifecycle manual gate, automatic rollback) stands, and the pipeline is built. Read the round-29 and round-30 updates below for what is in force.
 
 (Earlier hypothesis, retained as rationale — the accepted outcome is above: Leading hypothesis: **Option 2** (confidence: medium).
 Order of operations: (1) expand-phase DB migration; (2) deploy callee Workers (`collab`, `consumer`) compatibly;
@@ -144,6 +144,32 @@ decided where the ADR was open, and where it differs:
   DO-lifecycle drill is the first deploy to staging; neither has been run, because no environment exists yet. The pipeline's
   control flow was run against a fake Cloudflare that keeps state, and `wrangler deploy --dry-run` accepts its rendered
   configuration. The steps are in `docs/src/architecture/deploy.md`.
+
+## Update — the release flow (2026-11-15)
+
+The owner's decisions of 2026-11-14 and 2026-11-15 (`.agents/plans/cicd-review/`) change **what** reaches each environment and
+**from where**; the pipeline above (expand migration, 100 %, the smoke, rollback, the manual gate) is unchanged. This supersedes the
+round-30 "Environments" bullet.
+
+* **Releases.** release-plz (`release-plz.toml`, `release-plz.yml`) keeps a release-candidate pull request from an `rc/<timestamp>`
+  branch after every push to `main`, with the version and `CHANGELOG.md`. Merging it tags `vX.Y.Z` on the merge commit and creates
+  the GitHub release as a draft. Only the release GitHub App and admins can write `rc/*`; only the App can make a `v*` tag; releases
+  are immutable once published.
+* **Staging is the release candidate,** not a push to `main`: `ci` passing on the rc pull request (which always runs in full)
+  dispatches the deploy on the `rc/*` branch. GitHub checks an environment's branch rule against the run's own ref and a
+  `workflow_run` runs on `main`, hence the dispatch. `staging` and its twin take only `rc/*` branches. `main` never deploys.
+* **Production is the release,** from its tag: `ci` passing on the tagged merge commit dispatches the deploy on the tag, and it
+  waits for the `production` reviewers. `production` and its twin take only `v*` tags.
+* **Built once, at the tag** (the owner's choice on 2026-11-15, over promoting staging's bundle). `release.yml` builds the bundle at
+  the tag, attests its build provenance and an SPDX SBOM of the source, attaches the bundle, the SBOM and `SHA256SUMS` to the draft,
+  and publishes it; GitHub then attests the immutable release and its assets. Production deploys that asset and builds nothing. The
+  bundle staging tested was built from the rc commit, whose tree is the tag's (a squash merge of the rc branch), with the same
+  locked inputs, but it is a different build: production does not run byte-for-byte what staging ran. Promoting staging's bundle
+  would have made the deployed version the rc commit, which nothing on `main` points at once the branch is deleted, and would have
+  stopped production until staging works.
+* **Still open:** whether the App needs Administration permission to create a protected `v*` tag (release-plz documents it; the
+  App is a bypass actor of the tag ruleset); the previous production release's web files come from its 90-day artifact, not yet
+  from the release itself.
 
 ## Open Questions
 

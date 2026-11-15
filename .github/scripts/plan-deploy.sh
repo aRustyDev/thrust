@@ -4,37 +4,43 @@
 #   .github/scripts/plan-deploy.sh        (everything comes from the environment)
 #
 # Prints `key=value` lines, ready for $GITHUB_OUTPUT:
-#   mode          deploy    build the commit and deploy it to `environment`
-#                 dispatch  start deploy.yml again with workflow_dispatch, ON the rc/* branch `ref`, for commit `sha`: GitHub checks an
-#                           environment's branch rule against the run's own ref, and a workflow_run always runs on main
+#   mode          deploy    deploy the commit to `environment` (staging: build it here; production: the bundle of `release`)
+#                 dispatch  start deploy.yml again with workflow_dispatch, ON `ref` (an rc/* branch or a v* tag), for commit `sha`:
+#                           GitHub checks an environment's branch rule against the run's own ref, and a workflow_run always runs on main
 #                 dry-run   build it and check the deploy configuration; touch no environment, use no secret (a pull request)
 #                 skip      do nothing
 #   environment   staging | production (empty unless mode is deploy or dispatch)
 #   sha           the commit (40 hex digits)
-#   ref           the branch to dispatch on (mode dispatch only; empty otherwise)
+#   ref           the branch or tag to dispatch on (mode dispatch only; empty otherwise)
+#   release       the release tag whose bundle production deploys (a production deploy only; empty otherwise)
 #   inject        true when the smoke is to fail on purpose, to prove the rollback (staging only)
 #   skip_smoke    true when the run is asked to deploy without the smoke (the first deploy of an environment only: the composite action
 #                 refuses it for any other)
 #   reason        one line
 #
 # The rules, which are the reason this is a script with a test and not an `if:` in YAML:
-#   * ci finishing green on a release-candidate pull request (its head an rc/<name> branch of THIS repository, which only the release
-#     App and admins can write) dispatches a staging deploy of that commit, only while the repository variable THRUST_DEPLOY_ENABLED
-#     is `true`. A run of ci for anything else (a push, main, a feature branch, a fork, a failure) deploys nothing.
+#   * ci finishing green, while the repository variable THRUST_DEPLOY_ENABLED is `true`, on
+#       - a release-candidate pull request (its head an rc/<name> branch of THIS repository, which only the release App and admins
+#         can write): dispatch a STAGING deploy of that commit on that branch;
+#       - a push to main whose commit carries exactly one release tag v<version> (RUN_TAGS: the tags on that commit; release-plz tags
+#         the merge of an rc pull request, and only the release App can make a v* tag): dispatch a PRODUCTION deploy on that tag.
+#         It waits for the environment's reviewers.
+#     A run of ci for anything else (a feature branch, an untagged push, a fork, a failure) deploys nothing.
 #   * a manual run deploys the commit it was run FROM, so the workflow's own code is the code it deploys:
 #       staging     from an rc/<name> branch;
-#       production  from a v<version> tag whose commit is on main (release-plz tags the merge of an rc pull request).
-#     `<name>` has no slash: the rulesets that guard rc/* and v* match one path segment, so rc/a/b is nobody's in particular.
-#     `sha`, when given (the dispatch above gives it), must still be the tip: if the branch moved since, the run skips, and the newer
-#     commit's own ci run dispatches its own deploy. `inject_smoke_failure` is refused for production, and together with `skip_smoke`
-#     (which makes no sense) for any environment.
+#       production  from a v<version> tag whose commit is on main.
+#     `<name>` and `<version>` have no slash: the rulesets that guard rc/* and v* match one path segment, so rc/a/b is nobody's in
+#     particular. `sha`, when given (the dispatch above gives it), must still be the tip: if the ref moved since, the run skips, and
+#     the newer commit's own ci run dispatches its own deploy. `inject_smoke_failure` is refused for production, and together with
+#     `skip_smoke` (which makes no sense) for any environment.
 #   * a pull request is a dry run.
 #
-# Environment: EVENT_NAME; for workflow_run RUN_CONCLUSION RUN_EVENT RUN_BRANCH RUN_SHA RUN_HEAD_REPO REPO DEPLOY_ENABLED; for
-# workflow_dispatch RUN_REF GITHUB_SHA DISPATCH_ENV DISPATCH_SHA DISPATCH_INJECT DISPATCH_SKIP_SMOKE, and MAIN_REF (default
+# Environment: EVENT_NAME; for workflow_run RUN_CONCLUSION RUN_EVENT RUN_BRANCH RUN_SHA RUN_HEAD_REPO RUN_TAGS REPO DEPLOY_ENABLED;
+# for workflow_dispatch RUN_REF GITHUB_SHA DISPATCH_ENV DISPATCH_SHA DISPATCH_INJECT DISPATCH_SKIP_SMOKE, and MAIN_REF (default
 # origin/main) for production; GITHUB_SHA for pull_request.
 # Exit status: 0 it planned (possibly `skip`); 1 the request is refused; 2 it was called wrongly.
 set -u
+set -f  # RUN_TAGS is split into words below, and must not be globbed
 LC_ALL=C
 export LC_ALL
 
@@ -42,39 +48,56 @@ MAIN_REF="${MAIN_REF:-origin/main}"
 
 refuse() { echo "plan-deploy: refused: $*" >&2; exit 1; }
 misuse() { echo "plan-deploy: $*" >&2; exit 2; }
-emit() { # emit <mode> <environment> <sha> <ref> <inject> <skip_smoke> <reason>
-  printf 'mode=%s\nenvironment=%s\nsha=%s\nref=%s\ninject=%s\nskip_smoke=%s\nreason=%s\n' "$1" "$2" "$3" "$4" "$5" "$6" "$7"
+emit() { # emit <mode> <environment> <sha> <ref> <release> <inject> <skip_smoke> <reason>
+  printf 'mode=%s\nenvironment=%s\nsha=%s\nref=%s\nrelease=%s\ninject=%s\nskip_smoke=%s\nreason=%s\n' \
+    "$1" "$2" "$3" "$4" "$5" "$6" "$7" "$8"
   exit 0
 }
-skip() { emit skip "" "${2:-}" "" false false "$1"; }
+skip() { emit skip "" "${2:-}" "" "" false false "$1"; }
 is_sha() { case "$1" in *[!0-9a-f]*|'') return 1 ;; esac; [ "${#1}" -eq 40 ]; }
 # one path segment after the prefix, as the rulesets match it
 is_rc_branch() { case "$1" in rc/*/*|rc/) return 1 ;; rc/*) return 0 ;; *) return 1 ;; esac; }
 is_rc_ref() { case "$1" in refs/heads/*) is_rc_branch "${1#refs/heads/}" ;; *) return 1 ;; esac; }
-is_release_tag() { case "$1" in refs/tags/v*/*|refs/tags/v) return 1 ;; refs/tags/v*) return 0 ;; *) return 1 ;; esac; }
+is_release_name() { case "$1" in v*/*|v) return 1 ;; v*) return 0 ;; *) return 1 ;; esac; }
+is_release_tag() { case "$1" in refs/tags/*) is_release_name "${1#refs/tags/}" ;; *) return 1 ;; esac; }
 
 [ -n "${EVENT_NAME:-}" ] || misuse "EVENT_NAME is not set"
 
 case "$EVENT_NAME" in
   workflow_run)
     [ "${RUN_CONCLUSION:-}" = success ] || skip "ci did not succeed (conclusion '${RUN_CONCLUSION:-}'): nothing to deploy"
-    [ "${RUN_EVENT:-}" = pull_request ] || skip "ci ran for '${RUN_EVENT:-}': only ci's run for a release-candidate pull request deploys"
-    is_rc_branch "${RUN_BRANCH:-}" || skip "ci ran for the branch '${RUN_BRANCH:-}', not a release candidate (rc/<name>)"
     [ -n "${RUN_HEAD_REPO:-}" ] && [ "${RUN_HEAD_REPO:-}" = "${REPO:-}" ] \
-      || skip "ci ran for '${RUN_HEAD_REPO:-}', not for this repository's own rc/* branch"
+      || skip "ci ran for '${RUN_HEAD_REPO:-}', not for this repository's own code"
+    case "${RUN_EVENT:-}" in
+      pull_request)
+        is_rc_branch "${RUN_BRANCH:-}" || skip "ci ran for the pull request of '${RUN_BRANCH:-}', not a release candidate (rc/<name>)"
+        target=staging; on="$RUN_BRANCH" ;;
+      push)
+        [ "${RUN_BRANCH:-}" = main ] || skip "ci ran for a push to '${RUN_BRANCH:-}', not to main"
+        releases=""; count=0
+        for t in ${RUN_TAGS:-}; do
+          if is_release_name "$t"; then releases="$releases $t"; count=$((count + 1)); fi
+        done
+        [ "$count" -ge 1 ] || skip "a push to main with no release tag: it is not a release (release-plz tags the merge of an rc pull request)"
+        [ "$count" -eq 1 ] || skip "the commit carries more than one release tag ($releases ): deploy one by hand"
+        target=production; on="${releases# }" ;;
+      *) skip "ci ran for '${RUN_EVENT:-}': only a release candidate's pull request or a tagged push to main deploys" ;;
+    esac
     is_sha "${RUN_SHA:-}" || misuse "RUN_SHA '${RUN_SHA:-}' is not a 40-digit commit sha"
     [ "${DEPLOY_ENABLED:-}" = true ] \
       || skip "automatic deploys are off: set the repository variable THRUST_DEPLOY_ENABLED to true when staging works" "$RUN_SHA"
-    emit dispatch staging "$RUN_SHA" "$RUN_BRANCH" false false "ci passed on the release candidate $RUN_BRANCH: dispatch its staging deploy on that branch"
+    emit dispatch "$target" "$RUN_SHA" "$on" "" false false "ci passed on $on: dispatch its $target deploy on it"
     ;;
   workflow_dispatch)
     env_name="${DISPATCH_ENV:-}"
     run_ref="${RUN_REF:-}"
+    release=""
     case "$env_name" in
       staging)
         is_rc_ref "$run_ref" || refuse "staging is deployed from a release-candidate branch (rc/<name>), not from '$run_ref'" ;;
       production)
-        is_release_tag "$run_ref" || refuse "production is deployed from a release tag (v<version>), not from '$run_ref'" ;;
+        is_release_tag "$run_ref" || refuse "production is deployed from a release tag (v<version>), not from '$run_ref'"
+        release="${run_ref#refs/tags/}" ;;
       *) refuse "the environment must be 'staging' or 'production', not '$env_name'" ;;
     esac
     inject="${DISPATCH_INJECT:-false}"
@@ -93,11 +116,11 @@ case "$EVENT_NAME" in
     fi
     [ -z "$want" ] || [ "$want" = "$sha" ] \
       || skip "$RUN_REF has moved on from $want to $sha since this was dispatched: the newer commit's own ci run deploys it" "$sha"
-    emit deploy "$env_name" "$sha" "" "$inject" "$skip_smoke" "a manual run from $RUN_REF ($sha) to $env_name"
+    emit deploy "$env_name" "$sha" "" "$release" "$inject" "$skip_smoke" "a manual run from $RUN_REF ($sha) to $env_name"
     ;;
   pull_request)
     is_sha "${GITHUB_SHA:-}" || misuse "GITHUB_SHA '${GITHUB_SHA:-}' is not a 40-digit commit sha"
-    emit dry-run "" "$GITHUB_SHA" "" false false "a pull request: build and check the deploy configuration, deploy nothing"
+    emit dry-run "" "$GITHUB_SHA" "" "" false false "a pull request: build and check the deploy configuration, deploy nothing"
     ;;
   *)
     skip "'$EVENT_NAME' does not deploy"
