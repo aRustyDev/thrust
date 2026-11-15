@@ -1,0 +1,90 @@
+# The release flow (docs/src/architecture/cicd.md, "Release candidates"), run by release-plz (https://release-plz.dev) with the
+# settings in release-plz.toml. Both jobs run on every push to main:
+#
+#   release      tags v<version> and publishes the GitHub release, but only when the push is the merge of a pull request from an
+#                rc/* branch (release_always = false). Any other push is a no-op.
+#   release-pr   keeps the release-candidate pull request: a branch rc/<timestamp> with the next version in Cargo.toml and
+#                Cargo.lock and the new CHANGELOG.md section, opened or force-updated by release-plz. Nothing to release, no PR.
+#
+# Both act as the release GitHub App, not as the workflow's own token: a branch, tag or release made with GITHUB_TOKEN starts no
+# workflow, so neither ci on the rc/* branch nor anything that runs on a new tag would start. release-plz writes through the GitHub
+# API (verified commits, no git credentials), so the checkout keeps persist-credentials: false.
+#
+# Until the repository variable RELEASE_APP_CLIENT_ID is set, both jobs are skipped. The owner's setup steps are in cicd.md.
+name: release-plz
+
+on:
+  push:
+    branches: [main]
+
+permissions: {}
+
+jobs:
+  release:
+    if: vars.RELEASE_APP_CLIENT_ID != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    # Holds the App's private key; its deployment branches are limited to main.
+    environment: release
+    permissions:
+      contents: read
+    steps:
+      - name: Mint the release App's token
+        id: app
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: read
+      # Every commit and tag: release-plz finds the previous version from the last v* tag.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./.github/actions/setup-rust
+        with:
+          cache-key: release-plz
+      - name: Tag and publish the release, if this push merged an rc/* pull request
+        uses: release-plz/action@66b324fd6c72d05d2a08568492ecdd62bfb8a62b # v0.5.148
+        with:
+          command: release
+          version: 0.4.3
+        env:
+          GITHUB_TOKEN: ${{ steps.app.outputs.token }}
+
+  release-pr:
+    needs: release
+    if: vars.RELEASE_APP_CLIENT_ID != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment: release
+    permissions:
+      contents: read
+    # One at a time and none cancelled, so two quick merges cannot interleave their updates of the pull request.
+    concurrency:
+      group: release-plz-pr
+      cancel-in-progress: false
+    steps:
+      - name: Mint the release App's token
+        id: app
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./.github/actions/setup-rust
+        with:
+          cache-key: release-plz
+      - name: Open or update the release-candidate pull request
+        uses: release-plz/action@66b324fd6c72d05d2a08568492ecdd62bfb8a62b # v0.5.148
+        with:
+          command: release-pr
+          version: 0.4.3
+        env:
+          GITHUB_TOKEN: ${{ steps.app.outputs.token }}

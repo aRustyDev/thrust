@@ -1,0 +1,130 @@
+# release-plz (https://release-plz.dev): the release-candidate pull request, the version, CHANGELOG.md, the tag and the GitHub
+# release. Run by .github/workflows/release-plz.yml. How the flow works and how to operate it: docs/src/architecture/cicd.md,
+# "Release candidates".
+#
+# The shape, each setting checked against release-plz 0.4.3 on a copy of this workspace before it was written down:
+# - git_only: no crate is published; the previous version is the last tag matching git_tag_name, not a registry.
+# - One version for the whole workspace: every crate below is in version_group "thrust" (release-plz has no workspace-level
+#   group, so a crate missing here would leave the group; .github/scripts/check-release-plz.py, run by the `deps` job of ci.yml,
+#   fails when the list and the workspace members differ). The crates inherit [workspace.package] version, which release-plz
+#   rewrites once.
+# - One tag, v<version>, and one GitHub release, made for thrust-core only. git_tag_name is set for the whole workspace so that
+#   every crate finds its previous version from that one tag (set only on thrust-core, the other crates looked for tags of their
+#   own, found none, and re-released all of history).
+# - One CHANGELOG.md at the root, written for thrust-core, with the other crates' commits included.
+# - release_always = false: a push to main releases only when it is the merge of a pull request from a branch starting with
+#   pr_branch_prefix (read in release-plz's source, release_plz_core/src/command/release.rs; its docs still say `release-plz-`).
+#   So an ordinary merge never tags, and the rc/* ruleset decides who can make such a branch.
+
+[workspace]
+git_only = true
+semver_check = false
+release_always = false
+pr_branch_prefix = "rc/"
+pr_name = "chore(release): v{{ version }}"
+git_tag_enable = false
+git_tag_name = "v{{ version }}"
+git_release_enable = false
+changelog_update = false
+# In 0.x a feature bumps the minor version (release-plz's default would bump the patch); a breaking change bumps the minor.
+features_always_increment_minor = true
+# Only these make a release: fixes, features, performance work, refactors, reverts, and a breaking change of any type. A commit
+# that touches a crate but is only a test, docs or chore does not. (Commits that touch no crate never do: see cicd.md for the
+# manual release of a change under web/, scripts/ or e2e/.)
+release_commits = "^(feat|fix|perf|refactor|revert)|^[a-z]+(\\([^)]*\\))?!:"
+
+[[package]]
+name = "thrust-core"
+version_group = "thrust"
+git_tag_enable = true
+git_release_enable = true
+git_release_name = "v{{ version }}"
+changelog_update = true
+changelog_path = "./CHANGELOG.md"
+changelog_include = [
+  "thrust-contracts",
+  "thrust-ports",
+  "thrust-adapters-memory",
+  "thrust-api",
+  "thrust-plane-types",
+  "thrust-api-v1",
+  "thrust-compat-plane",
+  "thrust-adapters-postgres",
+  "thrust-adapters-oidc",
+  "thrust-adapters-selfhosted",
+  "thrust-adapters-cloudflare",
+  "thrust-worker",
+  "thrust-server",
+  "thrust-contract-tests",
+  "thrust-oracle-fixture",
+  "thrust-editor-doc",
+  "thrust-editor-worker",
+]
+
+[[package]]
+name = "thrust-contracts"
+version_group = "thrust"
+
+[[package]]
+name = "thrust-ports"
+version_group = "thrust"
+
+[[package]]
+name = "thrust-adapters-memory"
+version_group = "thrust"
+
+[[package]]
+name = "thrust-api"
+version_group = "thrust"
+
+[[package]]
+name = "thrust-plane-types"
+version_group = "thrust"
+
+[[package]]
+name = "thrust-api-v1"
+version_group = "thrust"
+
+[[package]]
+name = "thrust-compat-plane"
+version_group = "thrust"
+
+[[package]]
+name = "thrust-adapters-postgres"
+version_group = "thrust"
+
+[[package]]
+name = "thrust-adapters-oidc"
+version_group = "thrust"
+
+[[package]]
+name = "thrust-adapters-selfhosted"
+version_group = "thrust"
+
+[[package]]
+name = "thrust-adapters-cloudflare"
+version_group = "thrust"
+
+[[package]]
+name = "thrust-worker"
+version_group = "thrust"
+
+[[package]]
+name = "thrust-server"
+version_group = "thrust"
+
+[[package]]
+name = "thrust-contract-tests"
+version_group = "thrust"
+
+[[package]]
+name = "thrust-oracle-fixture"
+version_group = "thrust"
+
+[[package]]
+name = "thrust-editor-doc"
+version_group = "thrust"
+
+[[package]]
+name = "thrust-editor-worker"
+version_group = "thrust"
