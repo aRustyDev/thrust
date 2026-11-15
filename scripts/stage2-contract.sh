@@ -6,8 +6,8 @@
 #   THRUST_ADMIN_TOKEN_FILE=<0600 file holding the Worker's THRUST_ADMIN_TOKEN> \
 #     scripts/stage2-contract.sh [main|worker|bindings|cron|sweeper|panic]
 #
-# main      59 tests: the portable contract minus the 6 `oidc_` tests (they need the mock IdP on 127.0.0.1, which a
-#           deployed Worker cannot reach) (the deployed Worker's RL_V1 binding must be 60 a minute,
+# main      64 tests: the portable contract minus the 3 `oidc_` tests (the `compat_oidc_` ones: they need the mock IdP on
+#           127.0.0.1, which a deployed Worker cannot reach) (the deployed Worker's RL_V1 binding must be 60 a minute,
 #           which wrangler.stage2.toml sets, and it needs a cheap argon2id cost, THRUST_ARGON2_M_KIB=64 THRUST_ARGON2_T=1
 #           THRUST_ARGON2_P=1, or every fixture seeds six passwords at the real cost). It refuses a THRUST_EXPECT_V1_LIMIT
 #           above 1000: the rate-limit test would send millions of creates to a Worker whose binding was raised for the engine pass
@@ -77,7 +77,11 @@ M="$ROOT/Cargo.toml"
 case "$PASS" in
   # The operator_ tests are skipped like the oidc_ ones: a deployed Worker is started without the operator's routes and without their token
   # (they are the contract targets' own configuration, scripts/contract.sh), so the count stays what it was.
-  main)     EXPECT=59; "$RS" cargo test --manifest-path "$M" -p thrust-contract-tests --test contract -- --skip sweeper_ --skip panic_ --skip blast_ --skip oidc_ --skip operator_ --skip csrf_off_ >"$LOG.test.log" 2>&1 ;;
+  # EXPECT is what these filters select: `cargo test -p thrust-contract-tests --test contract -- --list --format terse` with the same
+  # --skip flags, counting the lines that end in `: test`. It was 59 until 2026-11-14 while the list had been 61 since #151 (its two
+  # change-password tests), and #169's three password-reset tests made it 64 the same day: nothing in CI runs this script, so nothing
+  # noticed, and a correct run would have exited 5 at the guard below.
+  main)     EXPECT=64; "$RS" cargo test --manifest-path "$M" -p thrust-contract-tests --test contract -- --skip sweeper_ --skip panic_ --skip blast_ --skip oidc_ --skip operator_ --skip csrf_off_ >"$LOG.test.log" 2>&1 ;;
   # the csrf_off_ tests that need nothing else the deployed Worker lacks (all six: none of them is an `oidc_` test)
   csrfoff)  EXPECT=6;  "$RS" cargo test --manifest-path "$M" -p thrust-contract-tests --test contract -- csrf_off_ >"$LOG.test.log" 2>&1 ;;
   worker)   EXPECT=1;  "$RS" cargo test --manifest-path "$M" -p thrust-contract-tests --test worker_only -- worker_room_ --test-threads=1 --nocapture >"$LOG.test.log" 2>&1 ;;

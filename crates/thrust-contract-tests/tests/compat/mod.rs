@@ -1816,8 +1816,10 @@ async fn compat_change_password_is_for_a_session_and_not_for_an_api_key() {
 
 // ---------------------------------------------------------------------------------------------------------------------------------
 // X10 (D-040): OIDC through the routes the stock app's "Sign in with SSO" button uses, `GET /auth/oidc/` and `GET /auth/oidc/callback/`,
-// against the mock identity provider the suite serves on 127.0.0.1 (as the slice's own `oidc_` tests do, in `auth`). The mock registered one
-// redirect URI, and the target does not look at the path a callback arrives on, so the same code and state are sent to the app's callback.
+// against the mock identity provider the suite serves on 127.0.0.1. The mock registered one redirect URI, the app's callback
+// (`scripts/contract.sh` sets `THRUST_OIDC_REDIRECT_URI` to `<origin>/auth/oidc/callback/`, as a deployment must), so the provider's own redirect
+// lands on the route the app uses. These were the slice's `oidc_` tests in `auth` until step 5d of #58 deleted the slice's pair; what they asserted
+// that these did not is in them now.
 // A deployed Worker cannot reach 127.0.0.1: these `oidc_` tests are skipped by scripts/stage2-contract.sh.
 // ---------------------------------------------------------------------------------------------------------------------------------
 
@@ -1843,12 +1845,10 @@ async fn compat_oidc_begin(t: &Target, identity: Identity, tamper: Tamper) -> Ca
     idp.authorize(&location, identity, tamper)
 }
 
+/// The browser comes back to the redirect URI the provider registered, which is the app's callback: the URL is the mock's, not one built here.
 async fn compat_oidc_finish(t: &Target, cb: &Callback) -> reqwest::Response {
-    t.no_redirect()
-        .get(format!("{}?code={}&state={}", t.url("/auth/oidc/callback/"), cb.code, cb.state))
-        .send()
-        .await
-        .unwrap()
+    assert_eq!(cb.redirect_uri, t.url("/auth/oidc/callback/"), "the registered redirect URI is the app's callback");
+    t.no_redirect().get(cb.url()).send().await.unwrap()
 }
 
 /// A callback that was refused: a 302 to the app's root with the code the app reads (the pin's, PQ-213) and no cookie.
@@ -1859,9 +1859,37 @@ fn compat_oidc_refused(r: &reqwest::Response, code: u16, name: &str, what: &str)
     assert!(SetCookie::all(r).is_empty(), "{what}: a refused login must not set a cookie");
 }
 
+/// The session a callback made, as the app's browser holds it: both cookies with the attributes that make them safe (`__Host-` needs `Path=/` and forbids
+/// `Domain`; thirty days, as a password sign-in's are), a session token of 256 random bits and a CSRF value of 128, in hex. Returns the token.
+fn compat_oidc_session_token(r: &reqwest::Response) -> String {
+    let is_hex =
+        |s: &str, len: usize| s.len() == len && s.bytes().all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c));
+    let cookies = SetCookie::all(r);
+    let session = SetCookie::find(&cookies, SESSION_COOKIE).expect("a session cookie");
+    let csrf = SetCookie::find(&cookies, CSRF_COOKIE).expect("a csrf cookie");
+    assert!(is_hex(&session.value, 64), "256 random bits, hex: {}", session.value);
+    assert!(is_hex(&csrf.value, 32), "128 random bits, hex: {}", csrf.value);
+    for c in [session, csrf] {
+        assert!(c.has_attr("Secure") && c.has_attr("HttpOnly"), "{}", c.name);
+        assert_eq!(c.attr("SameSite"), Some("Lax"), "{}", c.name);
+        assert_eq!((c.attr("Path"), c.attr("Domain")), (Some("/"), None), "{}", c.name);
+        assert_eq!(c.attr("Max-Age"), Some("2592000"), "{}: 30 days", c.name);
+    }
+    session.value.clone()
+}
+
+/// Whose session a token is: the email `GET /api/users/me/` answers with. It is also the check that the cookie the callback set is a session.
+async fn compat_oidc_whose(t: &Target, token: &str) -> String {
+    let me = t.http.get(t.url("/api/users/me/")).bearer_auth(token).send().await.unwrap();
+    assert_eq!(me.status(), 200, "the cookie the callback set is a session");
+    me.json::<Value>().await.unwrap()["email"].as_str().expect("an email").to_string()
+}
+
 /// The login the button starts completes, and ends in a session the rest of the app accepts: a 302 to the root with the session and CSRF cookies. Controls: the
-/// start does not read `?next_path=` (a caller's place is not the provider's URL), and the first login of an account links the provider's subject, so the
-/// subject decides afterwards (another account's verified email on the same subject is still the first account).
+/// start does not read `?next_path=` (a caller's place is not the provider's URL); the first login of an account links the provider's subject, so the
+/// subject decides afterwards (another account's verified email on the same subject is still the first account) while a different subject with that email is
+/// a different login and goes to that account; the email is matched like a password sign-in's (case and padding do not matter); and the mock itself refuses
+/// an exchange whose PKCE verifier is not the challenge's, which is what shows that the target's own verifier is what made the logins above work.
 #[tokio::test]
 async fn compat_oidc_login_completes_through_the_apps_routes_and_is_a_working_session() {
     let t = t();
@@ -1876,28 +1904,34 @@ async fn compat_oidc_login_completes_through_the_apps_routes_and_is_a_working_se
     assert_eq!(r.status(), 302);
     assert_eq!(r.headers().get("location").and_then(|v| v.to_str().ok()), Some("/"));
     assert_eq!(r.headers().get("cache-control").and_then(|v| v.to_str().ok()), Some("no-store"));
-    let token = session_cookie(&r).expect("a session cookie");
-    assert!(SetCookie::find(&SetCookie::all(&r), CSRF_COOKIE).is_some(), "a csrf cookie");
-    let me = t.http.get(t.url("/api/users/me/")).bearer_auth(&token).send().await.unwrap();
-    assert_eq!(me.status(), 200, "the cookie the callback set is a session");
-    assert_eq!(me.json::<Value>().await.unwrap()["email"], f.member_a.email);
+    let token = compat_oidc_session_token(&r);
+    assert_eq!(compat_oidc_whose(&t, &token).await, f.member_a.email);
 
     // the link decides from now on: the same subject reporting another account's verified email is still the first account
     let cb = compat_oidc_begin(&t, Identity::verified(&sub, &f.admin_a.email), Tamper::None).await;
-    let r = compat_oidc_finish(&t, &cb).await;
-    let token = session_cookie(&r).expect("a session cookie");
-    let me = t.http.get(t.url("/api/users/me/")).bearer_auth(&token).send().await.unwrap();
-    assert_eq!(
-        me.json::<Value>().await.unwrap()["email"],
-        f.member_a.email,
-        "the subject is linked to the first account"
-    );
+    let token = compat_oidc_session_token(&compat_oidc_finish(&t, &cb).await);
+    assert_eq!(compat_oidc_whose(&t, &token).await, f.member_a.email, "the subject is linked to the first account");
+    // control: a different subject with that email is a different login, and goes to that account
+    let cb = compat_oidc_begin(&t, Identity::verified(&oidc_sub(), &f.admin_a.email), Tamper::None).await;
+    let token = compat_oidc_session_token(&compat_oidc_finish(&t, &cb).await);
+    assert_eq!(compat_oidc_whose(&t, &token).await, f.admin_a.email, "a different subject is a different login");
+    // the email is matched like a password sign-in's: case and padding do not matter
+    let padded = format!(" {} ", f.guest_a.email.to_uppercase());
+    let cb = compat_oidc_begin(&t, Identity::verified(&oidc_sub(), &padded), Tamper::None).await;
+    let token = compat_oidc_session_token(&compat_oidc_finish(&t, &cb).await);
+    assert_eq!(compat_oidc_whose(&t, &token).await, f.guest_a.email, "case and padding do not matter");
+
+    // control for the mock itself: it refuses an exchange whose PKCE verifier is not the challenge's
+    let cb = compat_oidc_begin(&t, Identity::verified(&oidc_sub(), &f.member_a.email), Tamper::None).await;
+    let (status, body) = MockIdp::shared().exchange_with_verifier(&cb, &"0".repeat(64)).await;
+    assert_eq!((status, body["error"].as_str()), (400, Some("invalid_grant")), "{body}");
 }
 
 /// Every way a login can be refused is a 302 to the root with the code the app reads, and no cookie: `SIGNUP_DISABLED` (5015) for an identity Thrust will not let in
-/// (no verified email, no account for it, a deactivated one: Thrust makes no account at a login, Q-0050.1), `OIDC_OAUTH_PROVIDER_ERROR` (5301) for a token that does not
-/// verify and for a state or code that is missing, unknown, used or refused by the person. Control: none of the refusals that did not use the login's state up
-/// stopped a genuine login from completing.
+/// (no verified email, also for a subject that is already linked; no account for it; a deactivated one: Thrust makes no account at a login, Q-0050.1),
+/// `OIDC_OAUTH_PROVIDER_ERROR` (5301) for a token that does not verify and for a state or code that is missing, unknown, used or refused by the person,
+/// also a fresh code that comes with a state already used. Control: none of the refusals that did not use the login's state up stopped a genuine login
+/// from completing.
 #[tokio::test]
 async fn compat_oidc_every_refusal_is_a_redirect_with_the_code_the_app_reads() {
     let t = t();
@@ -1917,6 +1951,21 @@ async fn compat_oidc_every_refusal_is_a_redirect_with_the_code_the_app_reads() {
     }
     // and no account was made for the stranger
     assert_eq!(sign_in_status(&t, &stranger, "anything").await, 400, "no user was made");
+    // an already linked subject does not get around the verified-email rule
+    let linked = oidc_sub();
+    let cb = compat_oidc_begin(&t, Identity::verified(&linked, &email), Tamper::None).await;
+    assert!(
+        session_cookie(&compat_oidc_finish(&t, &cb).await).is_some(),
+        "control: the first, verified login links the subject"
+    );
+    let unverified = Identity { sub: linked, email: Some(email.clone()), email_verified: Some(false) };
+    let cb = compat_oidc_begin(&t, unverified, Tamper::None).await;
+    compat_oidc_refused(
+        &compat_oidc_finish(&t, &cb).await,
+        5015,
+        "SIGNUP_DISABLED",
+        "a linked subject with an unverified email",
+    );
     // a deactivated user, by email and then by link
     let sub = oidc_sub();
     t.set_user_active(f.guest_a.id, false).await;
@@ -1979,6 +2028,21 @@ async fn compat_oidc_every_refusal_is_a_redirect_with_the_code_the_app_reads() {
         5301,
         "OIDC_OAUTH_PROVIDER_ERROR",
         "the same callback again",
+    );
+
+    // A state is good once, whatever code comes with it. The same callback again is also refused by the provider, for a reused code, and shows nothing of the
+    // state; so a second, fresh code for the same login (one the provider would accept) is what only a used state can refuse. This is what kills
+    // `mutant_oidc_state_reusable` over HTTP.
+    let idp = MockIdp::shared();
+    let location = compat_oidc_start(&t, "").await;
+    let first = idp.authorize(&location, Identity::verified(&oidc_sub(), &email), Tamper::None);
+    let second = idp.authorize(&location, Identity::verified(&oidc_sub(), &email), Tamper::None);
+    assert!(session_cookie(&compat_oidc_finish(&t, &first).await).is_some(), "the first code completes the login");
+    compat_oidc_refused(
+        &compat_oidc_finish(&t, &second).await,
+        5301,
+        "OIDC_OAUTH_PROVIDER_ERROR",
+        "a fresh code for a state that is used",
     );
 }
 

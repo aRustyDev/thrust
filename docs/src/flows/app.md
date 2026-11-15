@@ -33,8 +33,6 @@ CSRF token are Plane's routes, `POST /auth/sign-in/`, `POST /auth/sign-out/` and
 | `POST /api/_slice/api-keys` | a session; JSON `{label?, expires_at?}` | 201 and the key with its `token`, once |
 | `GET /api/_slice/api-keys` | a session | 200 and the user's keys: id, prefix, label, dates, never the token |
 | `DELETE /api/_slice/api-keys/{id}` | a session | 204 (again on a second call). 404 for an unknown id and for another user's key |
-| `GET /api/_slice/auth/oidc/start` | a configured provider | 302 to the provider's authorization endpoint. 404 when none is configured |
-| `GET /api/_slice/auth/oidc/callback` | `?code=&state=` from the provider | 303 to `/` with the same two cookies as a sign-in |
 **The workspace slug.** Every route carries the workspace slug before the project, where Plane puts it
 (`kwargs["slug"]` in `apps/api/plane/app/permissions/base.py:28,47,55` at the oracle tag `oracle/v1-pin-20261018`).
 A session belongs to a user, not to a workspace, so the slug is what says which workspace a request is for, and
@@ -150,15 +148,21 @@ version than the current one is moved to the current one after the response, so 
 without invalidating a key (the steps are in ADR-0052's 2026-10-24 note). `last_used_at` is stamped through the `Background`
 port, at most once an hour per key, so a request never waits for it.
 
-**OIDC.** `GET .../oidc/start` makes a `state`, a `nonce` and a PKCE verifier (256 random bits each), stores them in
-`oidc_logins` for ten minutes (the `state` as its digest) and redirects the browser to the provider. The callback takes
+**OIDC.** The routes are Plane's (`thrust-compat-plane`, D-040): the slice's own pair, which answered in JSON, was
+deleted in step 5d of #58. `GET /auth/oidc/` makes a `state`, a `nonce` and a PKCE verifier (256 random bits each), stores
+them in `oidc_logins` for ten minutes (the `state` as its digest) and redirects the browser to the provider. The callback,
+`GET /auth/oidc/callback/` (the redirect URI a deployment registers at its provider, `THRUST_OIDC_REDIRECT_URI`), takes
 the stored login by the `state` it was given, once, and refuses a state that is empty, unknown, replayed or expired
 before it asks the provider anything. Then the `openidconnect` crate exchanges the code with the stored verifier and
 verifies the ID token (signature, issuer, audience, expiry and the stored nonce). The provider must vouch for a
-verified email. The account is the one linked to `(issuer, sub)`; failing that, the active user with that email, who is
-then linked; failing that, nobody, because there is no just-in-time provisioning at P0 (Q-0050.1). A deactivated user is
-refused. A provider that refuses is 401, one that cannot be reached is 502, and with no provider configured the routes
-are 404. It ends in the same session and cookies as a password sign-in.
+verified email, also for a subject that is already linked. The account is the one linked to `(issuer, sub)`; failing
+that, the active user with that email (matched as a password sign-in's is), who is then linked; failing that, nobody,
+because there is no just-in-time provisioning at P0 (Q-0050.1). A deactivated user is refused. It ends in the same
+session and cookies as a password sign-in, and a 302 to `/`. Every refusal is a 302 to `/?error_code=&error_message=`
+with no cookie, because the login is a chain of top-level navigations with no body for the app to read: `SIGNUP_DISABLED`
+(5015) for an identity Thrust will not let in, `OIDC_OAUTH_PROVIDER_ERROR` (5301) for a token that does not verify, a
+provider that refuses or cannot be reached, and a state or code that is missing, unknown or used, and
+`OIDC_NOT_CONFIGURED` (5300) when no provider is configured.
 
 The permission check is in the core, not in the router, so every entry point that calls a use-case gets it.
 `authorize(app, who, slug, project, permission)` asks the `Database` port, in one query, for the workspace the slug
@@ -259,16 +263,16 @@ Errors raised by the use-cases and the router's own guards share one body,
 
 | Status | `code` | Raised when |
 |---|---|---|
-| 400 | `invalid` | A bad attachment name; an API key label over 100 characters or an expiry in the past; an OIDC callback with no code or an unknown, used or expired `state` |
-| 401 | `unauthenticated` | No credential, a session that is unknown, revoked, expired or whose user is inactive, a refused OIDC login, or a missing or wrong admin token |
-| 403 | `forbidden` | Not a member, a role that is too low, or an OIDC login without a verified email, without a matching user, or of a deactivated user |
+| 400 | `invalid` | A bad attachment name; an API key label over 100 characters or an expiry in the past |
+| 401 | `unauthenticated` | No credential, a session that is unknown, revoked, expired or whose user is inactive, or a missing or wrong admin token |
+| 403 | `forbidden` | Not a member, or a role that is too low |
 | 403 | `csrf_failed` | While CSRF enforcement is on: a mutation authenticated by the session cookie without an `X-CSRFToken` that equals the CSRF cookie |
 | 403 | `invalid_api_key` | An `X-Api-Key` that is unknown, revoked, expired or whose owner is inactive |
 | 404 | `not_found` | A slug that names no workspace, a workspace the caller is not in, a project that is not in it, no such item or attachment, or a test route that is switched off |
 | 409 | `conflict` | A uniqueness constraint failed, such as the operator's create of an account whose email is taken |
 | 413 | `too_large` | An attachment over the size limit |
 | 429 | `rate_limited` | Over a limit. No slice route raises this now: the create limit's route and use-case are gone (steps 5c-2 and 5c-3), and sign-in and change-password are Plane's routes. `Retry-After` carries the seconds |
-| 502 | `bad_gateway` | The OIDC provider cannot be reached or answered something unusable. The cause is logged, not returned |
+| 502 | `bad_gateway` | A server this one depends on failed. No slice route raises this now: the OIDC provider was the only one, and its login is Plane's route, which tells a failure as a redirect (see OIDC above). The mapping stays for the core's `Upstream` error. The cause is logged, not returned |
 | 500 | `internal` | Anything else. The body says only `internal error`; the cause is logged by the root |
 
 A request that axum's extractors reject before any handler runs gets a plain-text body instead of that shape:
