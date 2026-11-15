@@ -189,8 +189,11 @@ ADR-0100, ADR-0101 and ADR-0110 are accepted, in `.agents/plans/contrail/adrs/`.
   nightly. It also asks for one aggregate job as the only required context, which asserts that every expected leg
   ran, and for a periodic job that diffs the ruleset's required contexts against those reported. In place: the full
   matrix on every pull request that changes a Rust-relevant path, a lint step (`lint`: rustfmt and clippy), and the
-  aggregate job, as `gate`. Not in place: a nightly run (only the weekly flake hunt), the oracle schema check and the
-  periodic diff, which is `assert-required-contexts.sh` and is run by hand.
+  aggregate job, as `gate`. In place in part: the oracle schema check, a step of `deps` (`scripts/check-openapi.sh`, issue #58),
+  which diffs the OpenAPI document that `thrust-api-v1` writes with the pinned Plane schema for the operations listed in
+  `tools/oracle-v1/schema/described.operations` (the 8 Projects ones so far), and runs a clippy step (`lint`) and a test step
+  (`hermetic`) for the `openapi` feature that no other step turns on. Not in place: a nightly run (only the weekly flake hunt) and
+  the periodic diff, which is `assert-required-contexts.sh` and is run by hand.
 - **ADR-0101 (supply chain)** asks for SHA pinning, Scorecard, attestation and trivy, plus Worker-bundle
   attestation, GitHub OIDC for deploys, and Rust gates (`cargo-deny`, `cargo-vet` or `cargo audit`). In place: SHA
   pinning, one of the Rust gates, `cargo-deny` (`deny`), and the Worker bundle's attestation (SLSA provenance, which the
