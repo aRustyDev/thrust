@@ -12,13 +12,13 @@
 //! A route takes [`V1Path`] first (a path that does not match is the URLconf's 404, answered before a credential is read), then
 //! [`Ctx`] (the API key, the permission, the throttle), and answers `Result<_, V1Error>`.
 
-// `json!` of a project's 43 keys is more than the macro's default depth
-#![recursion_limit = "256"]
-
 mod ctx;
+mod dto;
 mod error;
 pub mod fields;
 mod labels;
+#[cfg(feature = "openapi")]
+pub mod openapi;
 pub mod pagination;
 mod projects;
 pub mod request;

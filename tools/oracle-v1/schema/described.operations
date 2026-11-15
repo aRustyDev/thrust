@@ -1,0 +1,13 @@
+# The operations of the pinned schema (openapi.v1.json) that this crate's own document (openapi.thrust.json) describes so far:
+# `scripts/check-openapi.sh` cuts the pin to exactly these, diffs the two with oasdiff, and fails if the document has more or fewer.
+# A resource is added when its bodies are types (issue #58); the end is the 32 operations of the scope `m1` (exceptions.yaml).
+#
+# Projects (8 of 8)
+list_projects
+create_project
+list_projects_lite
+retrieve_project
+update_project
+delete_project
+archive_project
+unarchive_project

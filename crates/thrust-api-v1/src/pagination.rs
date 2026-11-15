@@ -17,7 +17,8 @@
 //!   queryset from the end, which Django refuses).
 
 use axum::http::StatusCode;
-use serde_json::{json, Value};
+use serde::Serialize;
+use serde_json::Value;
 
 use crate::fields::py_int;
 use crate::V1Error;
@@ -105,20 +106,51 @@ impl Plan {
     }
 
     /// The 12-key envelope around a page's `results`, given how many rows there are in all.
-    pub fn envelope(&self, results: Vec<Value>, total: usize) -> Value {
-        json!({
-            "grouped_by": null,
-            "sub_grouped_by": null,
-            "total_count": total,
-            "next_cursor": format!("{}:{}:0", self.limit, self.page.saturating_add(1)),
-            "prev_cursor": format!("{}:{}:1", self.limit, self.page.saturating_sub(1)),
-            "next_page_results": total > self.offset.saturating_add(self.limit),
-            "prev_page_results": self.page > 0,
-            "count": results.len(),
-            "total_pages": total.div_ceil(self.limit),
-            "total_results": total,
-            "extra_stats": null,
-            "results": results,
-        })
+    pub fn page<T>(&self, results: Vec<T>, total: usize) -> Page<T> {
+        Page {
+            grouped_by: None,
+            sub_grouped_by: None,
+            total_count: total,
+            next_cursor: format!("{}:{}:0", self.limit, self.page.saturating_add(1)),
+            prev_cursor: format!("{}:{}:1", self.limit, self.page.saturating_sub(1)),
+            next_page_results: total > self.offset.saturating_add(self.limit),
+            prev_page_results: self.page > 0,
+            count: results.len(),
+            total_pages: total.div_ceil(self.limit),
+            total_results: total,
+            extra_stats: None,
+            results,
+        }
     }
+
+    /// [`Plan::page`] as a JSON value, for a list whose body is not a type yet. A resource's list moves to `page` when its bodies
+    /// are described (issue #58); this goes with the last of them.
+    pub fn envelope(&self, results: Vec<Value>, total: usize) -> Value {
+        // a `Page<Value>` is strings, numbers, booleans and nulls: it always serializes
+        serde_json::to_value(self.page(results, total)).unwrap_or(Value::Null)
+    }
+}
+
+/// The 12-key envelope of every v1 list (`BasePaginator`): the page's rows, how many there are in all, how many pages, and the
+/// cursors of the next and the previous page. The pin's schema has one per resource (`PaginatedProjectResponse`, ...), which differ
+/// only in what `results` holds.
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct Page<T> {
+    /// Always `null`: a v1 list is not grouped. The key is always there (`required`), whatever it holds.
+    #[cfg_attr(feature = "openapi", schema(required = true))]
+    pub grouped_by: Option<String>,
+    #[cfg_attr(feature = "openapi", schema(required = true))]
+    pub sub_grouped_by: Option<String>,
+    pub total_count: usize,
+    pub next_cursor: String,
+    pub prev_cursor: String,
+    pub next_page_results: bool,
+    pub prev_page_results: bool,
+    pub count: usize,
+    pub total_pages: usize,
+    pub total_results: usize,
+    #[cfg_attr(feature = "openapi", schema(required = true))]
+    pub extra_stats: Option<String>,
+    pub results: Vec<T>,
 }

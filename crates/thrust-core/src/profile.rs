@@ -26,6 +26,12 @@ pub fn is_known_timezone(tz: &str) -> bool {
     COMMON_TIMEZONES.binary_search(&tz).is_ok()
 }
 
+/// Every name [`is_known_timezone`] says yes to, sorted: the values of the pin's `TimezoneEnum`, for a document that must say what
+/// a route accepts from the list the route checks against and not from a copy of it.
+pub fn known_timezones() -> &'static [&'static str] {
+    &COMMON_TIMEZONES
+}
+
 /// Whether `value` contains something that reads as a URL: Plane's `URL_PATTERN` (`apps/api/plane/utils/url.py`), which it
 /// refuses in names. Written out by hand because core carries no regex engine; the compat layer's tests compare it with
 /// the pattern itself over generated ASCII text. What the pattern finds, anywhere in a line, case-insensitively:

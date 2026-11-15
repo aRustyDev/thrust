@@ -37,6 +37,9 @@ thiserror = "2"
 # RNG source (`js` on wasm32) themselves, so core/contracts build everywhere unchanged.
 uuid = { version = "1", default-features = false, features = ["serde", "std"] }
 futures-util = { version = "0.3", default-features = false, features = ["alloc"] }
+# The OpenAPI document of `/api/v1` (issue #58, ADR-0032): derives and path declarations, behind `thrust-api-v1`'s `openapi`
+# feature, so nothing of it is in the Worker bundle. 6.x writes OpenAPI 3.1 (the pin is 3.0.3: see `scripts/check-openapi.sh`).
+utoipa = { version = "6", features = ["uuid"] }
 
 # --- internal crates ---
 thrust-contracts = { path = "crates/thrust-contracts" }

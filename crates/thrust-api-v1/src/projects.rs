@@ -20,10 +20,11 @@ use thrust_contracts::{ProjectId, ProjectNetwork, Role, Timestamp, UserId, Uuid}
 use thrust_core::{CoreError, ProjectError, ProjectPatch};
 use thrust_ports::{ProjectListing, ProjectRow, WorkspaceScope};
 
+use crate::dto::{into_object, ProjectDto, ProjectLiteDto};
 use crate::fields::{
     bool_field, char_field, fail, int_field, no_such_pk, read, refuse_if_any, uuid_field, FieldErrors,
 };
-use crate::pagination::PageRequest;
+use crate::pagination::{Page, PageRequest};
 use crate::request::{json_body, pick_fields, query_map, Body};
 use crate::{with_allow, Ctx, PlaneUuid, V1Error, V1Path};
 
@@ -66,79 +67,75 @@ fn network_number(network: ProjectNetwork) -> u8 {
     }
 }
 
-/// The pin's `ProjectSerializer`: 43 keys, and `sort_order` besides when the caller's place in the list is part of the answer. The
-/// pin counts cycles and modules; Thrust has neither, so both are 0 (a deviation the register carries), and no deploy board exists.
-fn project_body(l: &ProjectListing, total_members: i64, with_sort_order: bool) -> Map<String, Value> {
+/// The pin's `ProjectSerializer` (`ProjectDto`): 43 keys, and `sort_order` besides when the caller's place in the list is part of the
+/// answer. The pin counts cycles and modules; Thrust has neither, so both are 0 (a deviation the register carries), and no deploy
+/// board exists.
+fn project_body(l: &ProjectListing, total_members: i64, with_sort_order: bool) -> Result<Map<String, Value>, V1Error> {
     let p = &l.project;
-    let user = |u: Option<UserId>| u.map_or(Value::Null, |u| json!(u.0));
-    let mut body = json!({
-        "id": p.id.0,
-        "workspace": p.workspace_id.0,
-        "name": p.name,
-        "identifier": p.identifier,
-        "description": p.description,
-        "description_text": p.description_text,
-        "description_html": p.description_html,
-        "network": network_number(p.network),
-        "emoji": p.emoji,
-        "icon_prop": p.icon_prop,
-        "logo_props": p.logo_props,
-        "cover_image": p.cover_image,
+    let user = |u: Option<UserId>| u.map(|u| u.0);
+    into_object(&ProjectDto {
+        id: p.id.0,
+        workspace: p.workspace_id.0,
+        name: p.name.clone(),
+        identifier: p.identifier.clone(),
+        description: p.description.clone(),
+        description_text: p.description_text.clone(),
+        description_html: p.description_html.clone(),
+        network: network_number(p.network),
+        emoji: p.emoji.clone(),
+        icon_prop: p.icon_prop.clone(),
+        logo_props: p.logo_props.clone(),
+        cover_image: p.cover_image.clone(),
         // the cover image's asset, once there are assets, is its address; until then it is the text the project holds
-        "cover_image_url": p.cover_image,
-        "cover_image_asset": p.cover_image_asset,
-        "default_assignee": user(p.default_assignee),
-        "project_lead": user(p.project_lead),
-        "module_view": p.module_view,
-        "cycle_view": p.cycle_view,
-        "issue_views_view": p.issue_views_view,
-        "page_view": p.page_view,
-        "intake_view": p.intake_view,
-        "is_time_tracking_enabled": p.is_time_tracking_enabled,
-        "is_issue_type_enabled": p.is_issue_type_enabled,
-        "guest_view_all_features": p.guest_view_all_features,
-        "estimate": p.estimate,
-        "archive_in": p.archive_in,
-        "close_in": p.close_in,
-        "default_state": p.default_state,
-        "archived_at": p.archived_at.map(ts),
-        "timezone": p.timezone,
-        "external_source": p.external_source,
-        "external_id": p.external_id,
-        "created_at": ts(p.created_at),
-        "updated_at": ts(p.updated_at),
-        "created_by": user(p.created_by),
-        "updated_by": user(p.updated_by),
-        "deleted_at": null,
-        "is_member": l.role.is_some(),
-        "member_role": l.role.map(role_number),
-        "total_members": total_members,
-        "total_cycles": 0,
-        "total_modules": 0,
-        "is_deployed": false,
-    });
-    if let (true, Some(map)) = (with_sort_order, body.as_object_mut()) {
-        map.insert("sort_order".into(), json!(l.member_sort_order));
-    }
-    match body {
-        Value::Object(map) => map,
-        _ => Map::new(),
-    }
+        cover_image_url: p.cover_image.clone(),
+        cover_image_asset: p.cover_image_asset,
+        default_assignee: user(p.default_assignee),
+        project_lead: user(p.project_lead),
+        module_view: p.module_view,
+        cycle_view: p.cycle_view,
+        issue_views_view: p.issue_views_view,
+        page_view: p.page_view,
+        intake_view: p.intake_view,
+        is_time_tracking_enabled: p.is_time_tracking_enabled,
+        is_issue_type_enabled: p.is_issue_type_enabled,
+        guest_view_all_features: p.guest_view_all_features,
+        estimate: p.estimate,
+        archive_in: p.archive_in,
+        close_in: p.close_in,
+        default_state: p.default_state,
+        archived_at: p.archived_at.map(ts),
+        timezone: p.timezone.clone(),
+        external_source: p.external_source.clone(),
+        external_id: p.external_id.clone(),
+        created_at: ts(p.created_at),
+        updated_at: ts(p.updated_at),
+        created_by: user(p.created_by),
+        updated_by: user(p.updated_by),
+        deleted_at: None,
+        is_member: l.role.is_some(),
+        member_role: l.role.map(role_number),
+        total_members,
+        total_cycles: 0,
+        total_modules: 0,
+        is_deployed: false,
+        sort_order: with_sort_order.then_some(l.member_sort_order),
+    })
 }
 
-/// The pin's `ProjectLiteSerializer`: nine keys.
-fn lite_body(p: &ProjectRow) -> Value {
-    json!({
-        "id": p.id.0,
-        "identifier": p.identifier,
-        "name": p.name,
-        "cover_image": p.cover_image,
-        "icon_prop": p.icon_prop,
-        "emoji": p.emoji,
-        "description": p.description,
-        "cover_image_url": p.cover_image,
-        "archived_at": p.archived_at.map(ts),
+/// The pin's `ProjectLiteSerializer` (`ProjectLiteDto`): nine keys.
+fn lite_body(p: &ProjectRow) -> Result<Value, V1Error> {
+    into_object(&ProjectLiteDto {
+        id: p.id.0,
+        identifier: p.identifier.clone(),
+        name: p.name.clone(),
+        cover_image: p.cover_image.clone(),
+        icon_prop: p.icon_prop.clone(),
+        emoji: p.emoji.clone(),
+        description: p.description.clone(),
+        cover_image_url: p.cover_image.clone(),
+        archived_at: p.archived_at.map(ts),
     })
+    .map(Value::Object)
 }
 
 // --- the order ----------------------------------------------------------------------------------------------------------------
@@ -321,7 +318,28 @@ fn set_user(p: &mut ProjectPatch, field: &str, user: Option<UserId>) {
 // --- the routes ---------------------------------------------------------------------------------------------------------------
 
 /// `GET .../projects/`: the projects the caller sees, ordered and paged.
-async fn list(V1Path(slug): V1Path<String>, ctx: Ctx, RawQuery(raw): RawQuery) -> Result<Json<Value>, V1Error> {
+#[cfg_attr(
+    feature = "openapi",
+    utoipa::path(
+        get,
+        path = "/api/v1/workspaces/{slug}/projects/",
+        operation_id = "list_projects",
+        tag = "Projects",
+        summary = "List or retrieve projects",
+        params(("slug" = String, Path), crate::openapi::ListQuery),
+        responses(
+            crate::openapi::Refused,
+            (status = 200, description = "Paginated list of projects", body = Page<ProjectDto>),
+            (status = 404, description = "Project not found"),
+        ),
+        security(("ApiKeyAuthentication" = []))
+    )
+)]
+pub(crate) async fn list(
+    V1Path(slug): V1Path<String>,
+    ctx: Ctx,
+    RawQuery(raw): RawQuery,
+) -> Result<Json<Page<Value>>, V1Error> {
     let scope = ctx.workspace_scope(&slug, Role::Guest).await?;
     let q = query_map(raw.as_deref());
     let plan =
@@ -341,13 +359,34 @@ async fn list(V1Path(slug): V1Path<String>, ctx: Ctx, RawQuery(raw): RawQuery) -
         .collect();
     let results = page
         .iter()
-        .map(|l| pick_fields(project_body(l, members.get(&l.project.id).copied().unwrap_or(0), true), &q))
-        .collect();
-    Ok(Json(plan.envelope(results, total)))
+        .map(|l| Ok(pick_fields(project_body(l, members.get(&l.project.id).copied().unwrap_or(0), true)?, &q)))
+        .collect::<Result<Vec<_>, V1Error>>()?;
+    Ok(Json(plan.page(results, total)))
 }
 
 /// `GET .../projects-lite/`: the same projects in nine keys; archived ones only when asked for.
-async fn list_lite(V1Path(slug): V1Path<String>, ctx: Ctx, RawQuery(raw): RawQuery) -> Result<Json<Value>, V1Error> {
+#[cfg_attr(
+    feature = "openapi",
+    utoipa::path(
+        get,
+        path = "/api/v1/workspaces/{slug}/projects-lite/",
+        operation_id = "list_projects_lite",
+        tag = "Projects",
+        summary = "List projects (lite)",
+        params(("slug" = String, Path), crate::openapi::LiteQuery),
+        responses(
+            crate::openapi::Refused,
+            (status = 200, description = "Paginated list of projects with minimal fields", body = Page<ProjectLiteDto>),
+            (status = 404, description = "Workspace not found"),
+        ),
+        security(("ApiKeyAuthentication" = []))
+    )
+)]
+pub(crate) async fn list_lite(
+    V1Path(slug): V1Path<String>,
+    ctx: Ctx,
+    RawQuery(raw): RawQuery,
+) -> Result<Json<Page<Value>>, V1Error> {
     let scope = ctx.workspace_scope(&slug, Role::Guest).await?;
     let q = query_map(raw.as_deref());
     let plan =
@@ -359,12 +398,31 @@ async fn list_lite(V1Path(slug): V1Path<String>, ctx: Ctx, RawQuery(raw): RawQue
     listings.retain(|l| with_archived || l.project.archived_at.is_none());
     sort_projects(&mut listings, &key, descending);
     let total = listings.len();
-    let results = plan.slice(listings).iter().map(|l| lite_body(&l.project)).collect();
-    Ok(Json(plan.envelope(results, total)))
+    let results = plan.slice(listings).iter().map(|l| lite_body(&l.project)).collect::<Result<Vec<_>, V1Error>>()?;
+    Ok(Json(plan.page(results, total)))
 }
 
 /// `POST .../projects/`: make a project; the caller becomes its admin.
-async fn create(
+#[cfg_attr(
+    feature = "openapi",
+    utoipa::path(
+        post,
+        path = "/api/v1/workspaces/{slug}/projects/",
+        operation_id = "create_project",
+        tag = "Projects",
+        summary = "Create project",
+        params(("slug" = String, Path)),
+        request_body(content = crate::openapi::ProjectCreateRequest, content_type = "application/json"),
+        responses(
+            crate::openapi::Refused,
+            (status = 201, description = "Project created successfully", body = ProjectDto),
+            (status = 404, description = "Workspace not found"),
+            (status = 409, description = "Project name already taken"),
+        ),
+        security(("ApiKeyAuthentication" = []))
+    )
+)]
+pub(crate) async fn create(
     V1Path(slug): V1Path<String>,
     ctx: Ctx,
     headers: HeaderMap,
@@ -384,7 +442,7 @@ async fn create(
     patch.logo_props = Some(default_logo(&ctx));
     let detail = thrust_core::create_project(&ctx.app, &scope, patch).await.map_err(|e| project_error(e, None))?;
     let members = i64::try_from(detail.members.len()).unwrap_or(i64::MAX);
-    Ok((StatusCode::CREATED, Json(Value::Object(project_body(&detail.listing, members, false)))))
+    Ok((StatusCode::CREATED, Json(Value::Object(project_body(&detail.listing, members, false)?))))
 }
 
 /// The pin's `PROJECT_ICON_DEFAULT_ICONS` and `PROJECT_ICON_DEFAULT_COLORS` (`ProjectCreateSerializer`), the lists a new project's
@@ -434,7 +492,24 @@ fn default_logo(ctx: &Ctx) -> Value {
 }
 
 /// `GET .../projects/{id}/`: a project the caller is in or a public one.
-async fn retrieve(
+#[cfg_attr(
+    feature = "openapi",
+    utoipa::path(
+        get,
+        path = "/api/v1/workspaces/{slug}/projects/{pk}/",
+        operation_id = "retrieve_project",
+        tag = "Projects",
+        summary = "Retrieve project",
+        params(("slug" = String, Path), ("pk" = Uuid, Path)),
+        responses(
+            crate::openapi::Refused,
+            (status = 200, description = "Project details", body = ProjectDto),
+            (status = 404, description = "Project not found"),
+        ),
+        security(("ApiKeyAuthentication" = []))
+    )
+)]
+pub(crate) async fn retrieve(
     V1Path((slug, id)): V1Path<(String, PlaneUuid)>,
     ctx: Ctx,
     RawQuery(raw): RawQuery,
@@ -445,12 +520,32 @@ async fn retrieve(
         other => project_error(other, None),
     })?;
     let members = i64::try_from(detail.members.len()).unwrap_or(i64::MAX);
-    Ok(Json(pick_fields(project_body(&detail.listing, members, false), &query_map(raw.as_deref()))))
+    Ok(Json(pick_fields(project_body(&detail.listing, members, false)?, &query_map(raw.as_deref()))))
 }
 
 /// `PATCH .../projects/{id}/`: change a project, for a writer. The pin reads the body first, then refuses an archived project, then
 /// checks the fields.
-async fn update(
+#[cfg_attr(
+    feature = "openapi",
+    utoipa::path(
+        patch,
+        path = "/api/v1/workspaces/{slug}/projects/{pk}/",
+        operation_id = "update_project",
+        tag = "Projects",
+        summary = "Update project",
+        params(("slug" = String, Path), ("pk" = Uuid, Path)),
+        // not required: an empty body is an empty object (`json_body`), as DRF reads it
+        request_body(content = Option<crate::openapi::PatchedProjectUpdateRequest>, content_type = "application/json"),
+        responses(
+            crate::openapi::Refused,
+            (status = 200, description = "Project updated successfully", body = ProjectDto),
+            (status = 404, description = "Project not found"),
+            (status = 409, description = "Project name already taken"),
+        ),
+        security(("ApiKeyAuthentication" = []))
+    )
+)]
+pub(crate) async fn update(
     V1Path((slug, id)): V1Path<(String, PlaneUuid)>,
     ctx: Ctx,
     headers: HeaderMap,
@@ -475,11 +570,28 @@ async fn update(
     let state = patch.default_state.flatten();
     let detail = thrust_core::change_project(&ctx.app, &scope, id, patch).await.map_err(|e| project_error(e, state))?;
     let members = i64::try_from(detail.members.len()).unwrap_or(i64::MAX);
-    Ok(Json(Value::Object(project_body(&detail.listing, members, false))))
+    Ok(Json(Value::Object(project_body(&detail.listing, members, false)?)))
 }
 
 /// `DELETE .../projects/{id}/`: delete a project, for a writer.
-async fn destroy(V1Path((slug, id)): V1Path<(String, PlaneUuid)>, ctx: Ctx) -> Result<StatusCode, V1Error> {
+#[cfg_attr(
+    feature = "openapi",
+    utoipa::path(
+        delete,
+        path = "/api/v1/workspaces/{slug}/projects/{pk}/",
+        operation_id = "delete_project",
+        tag = "Projects",
+        summary = "Delete project",
+        params(("slug" = String, Path), ("pk" = Uuid, Path)),
+        responses(
+            crate::openapi::Refused,
+            (status = 204, description = "Resource deleted successfully"),
+            (status = 404, description = "The requested resource was not found."),
+        ),
+        security(("ApiKeyAuthentication" = []))
+    )
+)]
+pub(crate) async fn destroy(V1Path((slug, id)): V1Path<(String, PlaneUuid)>, ctx: Ctx) -> Result<StatusCode, V1Error> {
     let id = ProjectId(id.0);
     let scope = ctx.workspace_access(&slug).await?;
     thrust_core::project_writer(&ctx.app, &scope, id).await.map_err(|e| project_error(e, None))?;
@@ -489,12 +601,49 @@ async fn destroy(V1Path((slug, id)): V1Path<(String, PlaneUuid)>, ctx: Ctx) -> R
 }
 
 /// `POST .../projects/{id}/archive/`.
-async fn archive(V1Path((slug, id)): V1Path<(String, PlaneUuid)>, ctx: Ctx) -> Result<StatusCode, V1Error> {
+#[cfg_attr(
+    feature = "openapi",
+    utoipa::path(
+        post,
+        path = "/api/v1/workspaces/{slug}/projects/{project_id}/archive/",
+        operation_id = "archive_project",
+        tag = "Projects",
+        summary = "Archive project",
+        params(("slug" = String, Path), ("project_id" = Uuid, Path)),
+        responses(
+            crate::openapi::Refused,
+            (status = 204, description = "Resource archived successfully"),
+            (status = 404, description = "The requested resource was not found."),
+        ),
+        security(("ApiKeyAuthentication" = []))
+    )
+)]
+pub(crate) async fn archive(V1Path((slug, id)): V1Path<(String, PlaneUuid)>, ctx: Ctx) -> Result<StatusCode, V1Error> {
     set_archived(&slug, id, ctx, true).await
 }
 
 /// `DELETE .../projects/{id}/archive/`.
-async fn unarchive(V1Path((slug, id)): V1Path<(String, PlaneUuid)>, ctx: Ctx) -> Result<StatusCode, V1Error> {
+#[cfg_attr(
+    feature = "openapi",
+    utoipa::path(
+        delete,
+        path = "/api/v1/workspaces/{slug}/projects/{project_id}/archive/",
+        operation_id = "unarchive_project",
+        tag = "Projects",
+        summary = "Unarchive project",
+        params(("slug" = String, Path), ("project_id" = Uuid, Path)),
+        responses(
+            crate::openapi::Refused,
+            (status = 204, description = "Resource unarchived successfully"),
+            (status = 404, description = "The requested resource was not found."),
+        ),
+        security(("ApiKeyAuthentication" = []))
+    )
+)]
+pub(crate) async fn unarchive(
+    V1Path((slug, id)): V1Path<(String, PlaneUuid)>,
+    ctx: Ctx,
+) -> Result<StatusCode, V1Error> {
     set_archived(&slug, id, ctx, false).await
 }
 
