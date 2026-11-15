@@ -160,6 +160,12 @@ jobs:
       # the gate's required contexts do not change.
       - name: Placement guard
         run: scripts/check-placement.sh
+      # The expected test counts of the contract suite's passes (scripts/contract.sh, scripts/stage2-contract.sh) go stale when a test
+      # is added, and the stage2 ones were wrong for a day because nothing in CI runs that script. The check itself needs the suite
+      # built, so it is a step of `hermetic`; this is its self-test, which runs it on worlds it must refuse (a count one too high, a
+      # filter that selects nothing, a script it cannot read) and needs no compile. A step and not a job, as the guards above.
+      - name: Contract count guard (self-test)
+        run: scripts/check-contract-counts.sh --self-test
       # Issue #49: the deployed Worker's configuration is a template, and the renderer refuses whatever is not whole. Its self-test is the
       # control (a missing variable, an all-zero id, a thrust-spike name, an unknown marker are each refused), and it renders the real
       # template too, so the two cannot drift apart. The workflow lint holds the deploy workflow to the rules of a workflow that has
@@ -256,6 +262,11 @@ jobs:
       # nextest exits 4 when the filter selects nothing, so an empty default profile fails this step.
       - name: Hermetic tests (nextest, ci profile)
         run: scripts/rs cargo nextest run --profile ci --workspace
+      # Every count in scripts/contract.sh and scripts/stage2-contract.sh against what its filters select in the suite (libtest's
+      # `--list`, no server), then the control: stage2-contract.sh with a wrong count must be refused. The suite is built by the step
+      # above, so this only lists it. It fails closed (exit 2) on an arm it cannot read or a filter that selects nothing.
+      - name: Contract counts (every EXPECT against the suite)
+        run: scripts/check-contract-counts.sh
       - name: Doctests
         run: scripts/rs cargo test --doc --workspace
       - name: Upload the JUnit report
