@@ -183,6 +183,23 @@ every one succeeded `[verified 2026-10-19 fa4bd6c]` with `gh run view`.
 - The book build and its checks.
 - A deploy that has run against Cloudflare. `deploy.yml` is tested against a fake Cloudflare, by its pull-request dry run
   and by `wrangler deploy --dry-run`; no environment has had a deploy through it yet (see [Deploying the Worker](deploy.md)).
+- A release. There is no changelog, version (the workspace is `0.0.0`), release tag, GitHub release or tag protection.
+- The upstream vitest files under `web/`, a fuzz target (there is no `fuzz/`), coverage, and `cargo mutants` (the
+  `mutants` job runs the planted mutants of `scripts/mutants.sh`, on `native-memory` and `native-pg` only).
+
+## Where the triggers are too wide or too narrow
+
+Found by the CI/CD review of 2026-11-14 (`.agents/plans/cicd-review/`), which also holds what to do about each.
+
+- **Too wide.** `rust=true` is all or nothing: one file under `scripts/` (a deploy-only script included), `probes/`
+  (which no job runs), `.github/deploy/`, a workflow that `ci` does not run (`flake-hunt.yml`, `e2e-schedule.yml`,
+  `deploy.yml`) or a results file under `tools/oracle-v1/` starts all 32 jobs (33 with `web`, which a CI file also starts): the 22
+  cells, `mutants`, `pg-adapter` and the rest. There is no narrowing by crate.
+- **Too narrow.** A change to `web/` alone does not run the `worker-cf e2e` cell, which serves that build (G-30).
+  `lint-workflow.sh` checks only `deploy.yml` and its action, not `ci.yml`, `contract-cell.yml`, `e2e-schedule.yml`,
+  `flake-hunt.yml` or `setup-rust`. `hermetic` and `pg-adapter` do not pass `--locked`. The toolchain floats on `stable`
+  and the advisory database is fetched live, and with no scheduled run of `ci` either surfaces only on the next
+  Rust-relevant pull request. `flake-hunt.yml` cannot select the `csrfoff`, `oracle` or `e2e` passes.
 
 ## Against the ADRs
 

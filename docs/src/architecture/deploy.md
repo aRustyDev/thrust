@@ -7,7 +7,11 @@ ADR-0011 (why old web files are kept).
 
 **No environment has had a deploy through this pipeline yet.** Everything below that says what a run does is what the
 scripts do against a fake Cloudflare, and what `wrangler deploy --dry-run` and two `workflow_run` events have shown. The
-first staging deploy is the check, and the list at the end says what it settles.
+first staging deploy is the check, and the list at the end says what it settles. The first attempt (run 43676097831,
+2026-11-15 04:34Z, a manual staging deploy of `d16dbd6`) deferred correctly to `deploy-do`, which then failed at
+`wrangler deploy`: Cloudflare refused the request to `.../workers/scripts/thrust-staging/assets-upload-session`, so
+nothing was deployed `[verified 2026-11-15 from the run's log; cause not established, the token's scope is the first
+suspect]`.
 
 ## A run ends in one of five ways
 
