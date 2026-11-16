@@ -351,9 +351,35 @@ whether an account exists. The mail is plain text. A weak new password leaves th
 signs nobody in.
 
 What it does not have. No per-address throttle on the route (the pin has 10 a minute; here the limit is per account, so a caller can still mail
-many different accounts quickly, which spends the mail budget: G-37), no HTML part, and not the email code (F-A04). `POST
+many different accounts quickly, which spends the mail budget: G-37), no HTML part. The email code (F-A04) is the next section. `POST
 /internal/issue-password-reset` is a **test route** (behind `THRUST_TEST_ROUTES` and the admin token, which no deployment turns on): it returns a
 token for any account without a mailbox, which is how the contract suite exercises the reset on every target.
+
+### Signing in with an emailed code (F-A04, D-042)
+
+The same mail service and the same switch, and nothing more to configure: a deployment that can send the reset can send a code, and says so with the one
+flag the app reads (`/api/instances/`: `is_smtp_configured` and `is_magic_login_enabled` are true together), which is what makes the stock app draw "Sign in
+with unique code" under the password. There is no variable, binding or template change, and no switch that turns the code off while the reset stays on (the
+pin's `ENABLE_MAGIC_LINK_LOGIN`, which would leave the app drawing a button that answers `MAGIC_LINK_LOGIN_DISABLED`): to have no code, have no mail. A deployment
+with no mail answers `SMTP_NOT_CONFIGURED` to the request and the form, and the app draws no button.
+
+What a request does. `POST /auth/magic-generate/` makes a six-digit code (the pin's: 100000 to 999999, drawn without bias), mails it in plain text, and stores
+only its digest in `login_codes` (migration 0018), one row an address, so an address has at most one code that works. It works once and for ten minutes; it allows
+five tries and the fifth wrong one ends it; a window of ten minutes, which the first code opens and the later ones do not lengthen, makes at most four codes for an
+address and the fifth request is `EMAIL_CODE_ATTEMPT_EXHAUSTED_SIGN_IN` (5100); a right code is used up together with the count of codes made. Those are the pin's numbers
+(`magic_code.py`) and are recorded as `X12` and `X13`. The digest only keeps the code out of a backup or a log: six digits are guessable by anyone who can read the
+table, so what protects an account is the short life, the tries and the count. On top of that the tries of an address are limited like a password's
+(`THRUST_SIGNIN_RATE_LIMIT` a minute), where the pin limits per IP.
+
+Sign-in only (the owner, 2026-11-16). A code is made, and mailed, only for an address an account has: the pin mails any address, for its sign-up
+(`/auth/magic-sign-up/`), which Thrust does not have, so an address nobody has is answered as a sent one and mailed nothing, which also keeps the route from being a
+way to send mail to strangers. The stock app reaches the code through the button under the password; its email check answers `CREDENTIAL` for every address, so
+it never offers a code to an address that has no account. A deactivated account is mailed a code as the pin does and refused when the right one is typed
+(`USER_ACCOUNT_DEACTIVATED`). The mail goes in the request, so a mail service that refuses it is the generic 500 of D-041 (5), and the code that was made for it is
+taken back with its place in the count, so an outage does not use up the four.
+
+What it does not have. No per-IP throttle (the pin has 10 a minute on these routes), no HTML part, no sign-up by code, and no browser journey of the form (the e2e
+targets have no mail service: G-41).
 
 ## Elsewhere and not built yet
 
