@@ -89,3 +89,4 @@ export class AuthService extends APIService {
     window.location.assign(response?.data?.redirect_path ?? "/");
   }
 }
+// ci probe
