@@ -2137,6 +2137,68 @@ async fn compat_forgot_password_is_dark_on_a_target_with_no_mail_service() {
     assert_eq!(instance["config"]["is_smtp_configured"], false, "{instance}");
 }
 
+/// The same for the sign-in with a code (D-042): a target with no mail service answers the request for a code 5025 (naming the address, as the pin
+/// does), and the form the code is typed into by the pin's order (5085 for no code, 5060 for an address nobody has, 5025 for one that an account
+/// has: the provider asks for the mail first, and names the key it keeps the code under, `magic_<address>`), each a 302 with no cookie, and a form
+/// with no CSRF token is refused whole. The app is told neither the code nor the reset is on.
+#[tokio::test]
+async fn compat_magic_sign_in_is_dark_on_a_target_with_no_mail_service() {
+    let t = t();
+    let (email, _) = signed_up(&t).await;
+    for (what, address) in [("a known address", email.as_str()), ("an unknown address", "nobody@example.test")] {
+        let r = post(&t, "/auth/magic-generate/", &json!({ "email": address })).await;
+        assert_eq!(r.status(), 400, "{what}");
+        let v: Value = r.json().await.unwrap();
+        assert_eq!(
+            (v["error_code"].clone(), v["error_message"].clone()),
+            (json!(5025), json!("SMTP_NOT_CONFIGURED")),
+            "{what}: {v}"
+        );
+        assert_eq!(v["email"], address, "{what}: the pin names the address");
+    }
+    let bad = post(&t, "/auth/magic-generate/", &json!({"email": "nope"})).await;
+    assert_eq!(bad.status(), 400);
+    assert_eq!(bad.json::<Value>().await.unwrap()["error_code"], 5005, "the pin's 500 is an INVALID_EMAIL here");
+
+    let token = "0123456789abcdef0123456789abcdef";
+    let form = |email: &str, code: &str, csrf: bool| {
+        let mut pairs = vec![("email", email.to_string()), ("code", code.to_string())];
+        let mut req = t.no_redirect().post(t.url("/auth/magic-sign-in/"));
+        if csrf {
+            pairs.push(("csrfmiddlewaretoken", token.to_string()));
+            req = req.header("cookie", format!("{CSRF_COOKIE}={token}"));
+        }
+        req.form(&pairs).send()
+    };
+    let enc = |e: &str| e.replace('@', "%40");
+    for (what, r, want) in [
+        (
+            "no code",
+            form(&email, "", true).await.unwrap(),
+            "/?error_code=5085&error_message=MAGIC_SIGN_IN_EMAIL_CODE_REQUIRED".to_string(),
+        ),
+        (
+            "an address nobody has",
+            form("nobody@example.test", "123456", true).await.unwrap(),
+            "/?error_code=5060&error_message=USER_DOES_NOT_EXIST".to_string(),
+        ),
+        (
+            "an address an account has",
+            form(&email, "123456", true).await.unwrap(),
+            format!("/?error_code=5025&error_message=SMTP_NOT_CONFIGURED&email=magic_{}", enc(&email)),
+        ),
+    ] {
+        assert_eq!(r.status(), 302, "{what}");
+        assert_eq!(r.headers().get("location").and_then(|v| v.to_str().ok()), Some(want.as_str()), "{what}");
+        assert!(SetCookie::all(&r).is_empty(), "{what}: a refusal sets no cookie");
+    }
+    let outsider = form(&email, "123456", false).await.unwrap();
+    assert_eq!(outsider.status(), 403, "a form without the page's CSRF token");
+    let instance: Value = t.http.get(t.url("/api/instances/")).send().await.unwrap().json().await.unwrap();
+    assert_eq!(instance["config"]["is_magic_login_enabled"], false, "{instance}");
+    assert_eq!(instance["config"]["is_smtp_configured"], false, "{instance}");
+}
+
 /// The reset form against each target's token table: refusals first, in the pin's order and with its codes, each changing nothing (not the
 /// password, not a session) and leaving the link working; then the success, which sets the new password, ends every session of the account
 /// and no other account's, signs nobody in and uses the link up. A link that has expired is refused like an unknown one, and the seam
