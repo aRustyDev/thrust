@@ -558,6 +558,27 @@ fn a_taken_name_or_key_is_a_409_with_the_names_message() {
     );
 }
 
+/// D-030 (5): a body that is a form or multipart is a 415 on a project; the pin reads both. The register entries SD-004 and SD-005
+/// (`tools/oracle-v1/schema/diff-accepted.json`) rest on this, and no test said it until the States' (`states.rs`, D-031 (5)) did:
+/// the two media types, on the two routes that read a body.
+#[rstest]
+fn a_form_or_a_multipart_body_is_a_415(
+    #[values("application/x-www-form-urlencoded", "multipart/form-data; boundary=x")] content_type: &str,
+    #[values("POST", "PATCH")] method: &str,
+) {
+    let w = real_world();
+    let uri = if method == "POST" { projects() } else { cast() };
+    let r = send_raw(
+        &w.router,
+        method,
+        &uri,
+        &[("x-api-key", Who::Admin.key()), ("content-type", content_type)],
+        b"name=x&identifier=XY".to_vec(),
+    );
+    assert_eq!(r.status, 415, "{method} {content_type}: {:?}", r.body);
+    assert_eq!(r.body, json!({"detail": format!("Unsupported media type \"{content_type}\" in request.")}));
+}
+
 /// A body that is not an object, as the corpus records (`errors.json`): the wrong content type, JSON that does not parse, a value that
 /// is not an object. A list is read as the pin's `{**request.data}` fails on it: a 500 that this view's catch-all words.
 #[test]

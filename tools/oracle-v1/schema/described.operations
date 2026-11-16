@@ -11,3 +11,10 @@ update_project
 delete_project
 archive_project
 unarchive_project
+#
+# States (5 of 5)
+list_states
+create_state
+retrieve_state
+update_state
+delete_state

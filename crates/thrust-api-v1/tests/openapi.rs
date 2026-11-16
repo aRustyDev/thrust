@@ -55,6 +55,10 @@ fn project_id() -> String {
     Uuid::from_u128(PROJECT).to_string()
 }
 
+fn state_id() -> String {
+    Uuid::from_u128(STATE_TODO).to_string()
+}
+
 /// A path of the document with the seeded world's values in its placeholders. A placeholder this does not know is a defect of the
 /// test, not a path to skip.
 fn filled(path: &str) -> String {
@@ -186,4 +190,64 @@ fn a_body_that_the_schema_does_not_describe_is_refused() {
     let mut hole = one.clone();
     hole["is_member"] = Value::Null;
     refused(&hole, "a null where the schema allows none");
+}
+
+/// The states of the seeded project: the default, one more, and the intake state, which a list leaves out. All 18 keys are in every
+/// row, `null` or not.
+#[test]
+fn a_states_body_is_its_schema() {
+    let doc = document();
+    let w = real_world();
+    let base = format!("/api/v1/workspaces/{SLUG}/projects/{}/states", project_id());
+    let one = get(&w, &format!("{base}/{}/", state_id()));
+    assert_body_is_its_schema(&doc, "StateDto", &one, &[], "GET state");
+    let list = get(&w, &format!("{base}/"));
+    assert_body_is_its_schema(&doc, "Page_StateDto", &list, &[], "GET states (the envelope)");
+    let rows = list["results"].as_array().expect("results");
+    assert_eq!(rows.len(), 2, "the default state and one more: the intake state is not listed");
+    for row in rows {
+        assert_body_is_its_schema(&doc, "StateDto", row, &[], "GET states (a row)");
+    }
+}
+
+/// The control of the test above, for the States' schema: an extra key, a lost key and a `null` that the schema does not allow.
+#[test]
+fn a_state_body_that_the_schema_does_not_describe_is_refused() {
+    let doc = document();
+    let w = real_world();
+    let one = get(&w, &format!("/api/v1/workspaces/{SLUG}/projects/{}/states/{}/", project_id(), state_id()));
+    let refused = |body: &Value, what: &str| {
+        let r = std::panic::catch_unwind(|| assert_body_is_its_schema(&doc, "StateDto", body, &[], what));
+        assert!(r.is_err(), "{what}: a body the schema does not describe was accepted");
+    };
+    let mut extra = one.clone();
+    extra["a_key_nobody_declared"] = json!(1);
+    refused(&extra, "an extra key");
+    let mut short = one.clone();
+    short.as_object_mut().expect("an object").remove("color");
+    refused(&short, "a missing key");
+    let mut hole = one.clone();
+    hole["group"] = Value::Null;
+    refused(&hole, "a null where the schema allows none");
+}
+
+/// D-031 (2): a name with no letter or digit that NFKD leaves in ASCII has the empty slug, on the pin and here, and the pin's schema
+/// gives `slug` a pattern that forbids it. The document does not repeat that pattern (SD-012 of the register) because the route can
+/// send an empty slug, which is what this shows; a pattern that rejects "" would be a claim the route does not keep.
+#[test]
+fn a_name_with_no_letter_has_an_empty_slug_which_the_document_does_not_forbid() {
+    let doc = document();
+    let w = real_world();
+    let uri = format!("/api/v1/workspaces/{SLUG}/projects/{}/states/", project_id());
+    let made = send_raw(
+        &w.router,
+        "POST",
+        &uri,
+        &[("x-api-key", "key-admin"), ("content-type", "application/json")],
+        r##"{"name": "日本語", "color": "#fff"}"##.as_bytes().to_vec(),
+    );
+    assert_eq!(made.status, 200, "{:?}", made.body);
+    assert_eq!(made.body["slug"], json!(""), "the route sends the empty slug of a name of CJK alone");
+    let slug = &doc["components"]["schemas"]["StateDto"]["properties"]["slug"];
+    assert!(slug.get("pattern").is_none(), "StateDto.slug claims a pattern that the route does not keep: {slug}");
 }

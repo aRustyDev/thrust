@@ -18,11 +18,12 @@ use thrust_core::{Permission, StateError, StatePatch};
 use thrust_ports::StateRow;
 use unicode_normalization::UnicodeNormalization;
 
+use crate::dto::{into_object, StateDto};
 use crate::fields::{
     bool_field, char_field, choice_field, float_field, name_was_padded, not_a_dictionary, read, refuse_if_any,
     FieldErrors,
 };
-use crate::pagination::PageRequest;
+use crate::pagination::{Page, PageRequest};
 use crate::projects::ts;
 use crate::request::{json_body, pick_fields, query_map, Body};
 use crate::{with_allow, Ctx, PlaneUuid, V1Error, V1Path};
@@ -82,34 +83,30 @@ pub fn slugify(name: &str) -> String {
     out.trim_matches(['-', '_']).to_string()
 }
 
-/// The pin's `StateSerializer`: 18 keys. `is_triage` is whether the group is the intake's, which a state of this list never is; the
-/// pin stores it apart from the group, and a request can set it on a state of another group (the register carries that).
-fn state_body(s: &StateRow) -> Map<String, Value> {
-    let user = |u: Option<UserId>| u.map_or(Value::Null, |u| json!(u.0));
-    let body = json!({
-        "id": s.id,
-        "created_at": ts(s.created_at),
-        "updated_at": ts(s.updated_at),
-        "deleted_at": null,
-        "name": s.name,
-        "description": s.description,
-        "color": s.color,
-        "slug": slugify(&s.name),
-        "sequence": s.sequence,
-        "group": s.group.as_str(),
-        "is_triage": s.group == StateGroup::Triage,
-        "default": s.is_default,
-        "external_source": s.external_source,
-        "external_id": s.external_id,
-        "created_by": user(s.created_by),
-        "updated_by": user(s.updated_by),
-        "project": s.project_id.0,
-        "workspace": s.workspace_id.0,
-    });
-    match body {
-        Value::Object(map) => map,
-        _ => Map::new(),
-    }
+/// The pin's `StateSerializer` (`StateDto`): 18 keys. `is_triage` is whether the group is the intake's, which a state of this list
+/// never is; the pin stores it apart from the group, and a request can set it on a state of another group (the register carries that).
+fn state_body(s: &StateRow) -> Result<Map<String, Value>, V1Error> {
+    let user = |u: Option<UserId>| u.map(|u| u.0);
+    into_object(&StateDto {
+        id: s.id,
+        created_at: ts(s.created_at),
+        updated_at: ts(s.updated_at),
+        deleted_at: None,
+        name: s.name.clone(),
+        description: s.description.clone(),
+        color: s.color.clone(),
+        slug: slugify(&s.name),
+        sequence: s.sequence,
+        group: s.group.as_str(),
+        is_triage: s.group == StateGroup::Triage,
+        default: s.is_default,
+        external_source: s.external_source.clone(),
+        external_id: s.external_id.clone(),
+        created_by: user(s.created_by),
+        updated_by: user(s.updated_by),
+        project: s.project_id.0,
+        workspace: s.workspace_id.0,
+    })
 }
 
 // --- reading a body -----------------------------------------------------------------------------------------------------------
@@ -175,23 +172,61 @@ fn state_patch(b: &Map<String, Value>, partial: bool) -> Result<StatePatch, V1Er
 // --- the routes ---------------------------------------------------------------------------------------------------------------
 
 /// `GET .../states/`: the project's states by `sequence`, paged.
-async fn list(
+#[cfg_attr(
+    feature = "openapi",
+    utoipa::path(
+        get,
+        path = "/api/v1/workspaces/{slug}/projects/{project_id}/states/",
+        operation_id = "list_states",
+        tag = "States",
+        summary = "List states",
+        params(("slug" = String, Path), ("project_id" = thrust_contracts::Uuid, Path), crate::openapi::StatesQuery),
+        responses(
+            crate::openapi::Refused,
+            (status = 200, description = "Paginated list of states", body = Page<StateDto>),
+            (status = 404, description = "The requested resource was not found."),
+        ),
+        security(("ApiKeyAuthentication" = []))
+    )
+)]
+pub(crate) async fn list(
     V1Path((slug, project)): V1Path<(String, PlaneUuid)>,
     ctx: Ctx,
     RawQuery(raw): RawQuery,
-) -> Result<Json<Value>, V1Error> {
+) -> Result<Json<Page<Value>>, V1Error> {
     let scope = ctx.project_scope(&slug, ProjectId(project.0), Permission::ReadProject).await?;
     let q = query_map(raw.as_deref());
     let plan =
         PageRequest::parse(q.get("per_page").map(String::as_str), q.get("cursor").map(String::as_str))?.plan()?;
     let all = thrust_core::visible_states(&ctx.app, &scope).await.map_err(|e| state_error(e, false))?;
     let total = all.len();
-    let results = plan.slice(all).iter().map(|s| pick_fields(state_body(s), &q)).collect();
-    Ok(Json(plan.envelope(results, total)))
+    let results =
+        plan.slice(all).iter().map(|s| Ok(pick_fields(state_body(s)?, &q))).collect::<Result<Vec<_>, V1Error>>()?;
+    Ok(Json(plan.page(results, total)))
 }
 
 /// `POST .../states/`: make a state. The pin answers 200, not 201.
-async fn create(
+#[cfg_attr(
+    feature = "openapi",
+    utoipa::path(
+        post,
+        path = "/api/v1/workspaces/{slug}/projects/{project_id}/states/",
+        operation_id = "create_state",
+        tag = "States",
+        summary = "Create state",
+        params(("slug" = String, Path), ("project_id" = thrust_contracts::Uuid, Path)),
+        request_body(content = crate::openapi::StateRequest, content_type = "application/json"),
+        responses(
+            crate::openapi::Refused,
+            (status = 200, description = "State created", body = StateDto),
+            (status = 400, description = "Invalid request data provided"),
+            (status = 404, description = "The requested resource was not found."),
+            (status = 409, description = "State with the same name already exists"),
+        ),
+        security(("ApiKeyAuthentication" = []))
+    )
+)]
+pub(crate) async fn create(
     V1Path((slug, project)): V1Path<(String, PlaneUuid)>,
     ctx: Ctx,
     headers: HeaderMap,
@@ -210,26 +245,72 @@ async fn create(
         Err(StateError::NameTaken { .. }) if padded => Err(V1Error::internal(
             "a padded state name clashes: the pin looks it up untrimmed, finds nothing, and `state.id` raises",
         )),
-        made => Ok(Json(Value::Object(state_body(&made.map_err(|e| state_error(e, false))?)))),
+        made => Ok(Json(Value::Object(state_body(&made.map_err(|e| state_error(e, false))?)?))),
     }
 }
 
 /// `GET .../states/{id}/`.
-async fn retrieve(
+#[cfg_attr(
+    feature = "openapi",
+    utoipa::path(
+        get,
+        path = "/api/v1/workspaces/{slug}/projects/{project_id}/states/{state_id}/",
+        operation_id = "retrieve_state",
+        tag = "States",
+        summary = "Retrieve state",
+        params(
+            ("slug" = String, Path),
+            ("project_id" = thrust_contracts::Uuid, Path),
+            ("state_id" = thrust_contracts::Uuid, Path)
+        ),
+        responses(
+            crate::openapi::Refused,
+            (status = 200, description = "State retrieved", body = StateDto),
+            (status = 404, description = "The requested resource was not found."),
+        ),
+        security(("ApiKeyAuthentication" = []))
+    )
+)]
+pub(crate) async fn retrieve(
     V1Path((slug, project, state)): V1Path<(String, PlaneUuid, PlaneUuid)>,
     ctx: Ctx,
     RawQuery(raw): RawQuery,
 ) -> Result<Json<Value>, V1Error> {
     let scope = ctx.project_scope(&slug, ProjectId(project.0), Permission::ReadProject).await?;
     let state = thrust_core::visible_state(&ctx.app, &scope, state.0).await.map_err(|e| state_error(e, false))?;
-    Ok(Json(pick_fields(state_body(&state), &query_map(raw.as_deref()))))
+    Ok(Json(pick_fields(state_body(&state)?, &query_map(raw.as_deref()))))
 }
 
 /// `PATCH .../states/{id}/`: change a state. The base view reads the body before the handler runs (`BaseAPIView.initial`), so a body
 /// that cannot be parsed (a media type it has no parser for, JSON that does not parse, a value that is no object or list) is refused
 /// before the state is looked for; the handler then finds the state, and only then does the serializer read what the body says, so
 /// a list, or a field that is wrong, comes after the 404.
-async fn update(
+#[cfg_attr(
+    feature = "openapi",
+    utoipa::path(
+        patch,
+        path = "/api/v1/workspaces/{slug}/projects/{project_id}/states/{state_id}/",
+        operation_id = "update_state",
+        tag = "States",
+        summary = "Update state",
+        params(
+            ("slug" = String, Path),
+            ("project_id" = thrust_contracts::Uuid, Path),
+            ("state_id" = thrust_contracts::Uuid, Path)
+        ),
+        // not required: an empty body is an empty object (`json_body`), as DRF reads it
+        request_body(content = Option<crate::openapi::PatchedStateRequest>, content_type = "application/json"),
+        responses(
+            crate::openapi::Refused,
+            (status = 200, description = "State updated", body = StateDto),
+            (status = 400, description = "Invalid request data provided"),
+            (status = 404, description = "The requested resource was not found."),
+            (status = 409, description = "Resource with same external ID already exists"),
+        ),
+        security(("ApiKeyAuthentication" = []))
+    )
+)]
+pub(crate) async fn update(
     V1Path((slug, project, state)): V1Path<(String, PlaneUuid, PlaneUuid)>,
     ctx: Ctx,
     headers: HeaderMap,
@@ -244,11 +325,33 @@ async fn update(
     };
     let patch = state_patch(&map, true)?;
     let state = thrust_core::change_state(&ctx.app, &scope, state.0, patch).await.map_err(|e| state_error(e, true))?;
-    Ok(Json(Value::Object(state_body(&state))))
+    Ok(Json(Value::Object(state_body(&state)?)))
 }
 
 /// `DELETE .../states/{id}/`.
-async fn destroy(
+#[cfg_attr(
+    feature = "openapi",
+    utoipa::path(
+        delete,
+        path = "/api/v1/workspaces/{slug}/projects/{project_id}/states/{state_id}/",
+        operation_id = "delete_state",
+        tag = "States",
+        summary = "Delete state",
+        params(
+            ("slug" = String, Path),
+            ("project_id" = thrust_contracts::Uuid, Path),
+            ("state_id" = thrust_contracts::Uuid, Path)
+        ),
+        responses(
+            crate::openapi::Refused,
+            (status = 204, description = "Resource deleted successfully"),
+            (status = 400, description = "State cannot be deleted"),
+            (status = 404, description = "The requested resource was not found."),
+        ),
+        security(("ApiKeyAuthentication" = []))
+    )
+)]
+pub(crate) async fn destroy(
     V1Path((slug, project, state)): V1Path<(String, PlaneUuid, PlaneUuid)>,
     ctx: Ctx,
 ) -> Result<StatusCode, V1Error> {
