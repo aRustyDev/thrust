@@ -324,7 +324,7 @@ What switching it on takes:
   On the Worker the mail service is Cloudflare Email Sending, through the Worker's `send_email` binding (`EMAIL`) and **no relay, no password and no token**:
   the binding is the credential (E3, `thrust-adapters-cloudflare::email`). It sends only from a domain the Cloudflare account owns and has Email Sending
   enabled for (`wrangler email sending list` lists them) and refuses any other (spike 0002 step 10 saw both: one real message from an owned domain was
-  accepted on 2026-10-24, and one from `example.com` was refused; whether the accepted one reached a mailbox was not checked). What a Worker is given:
+  accepted on 2026-10-24, and one from `example.com` was refused; whether the accepted one reached a mailbox was not checked; on 2026-11-16 one message from this adapter, sent as `no-reply@notify.sow.foo`, reached the owner's mailbox, G-39). What a Worker is given:
 
   | | |
   |---|---|
