@@ -4,12 +4,14 @@
 
 1. Generated crate graphs (300 random DAGs, seeded): every crate changed alone, and random pairs, against an independent
    reverse-reachability written here (a DFS over the reversed edges, not plan-ci.py's fixpoint). The jobs and the cells must be
-   exactly what the affected binaries and crates call for.
+   exactly what the affected binaries and crates call for. Each graph gets a generated layout (ADR-0009): flat, grouped one or
+   two levels down, with directories that share a prefix (`v1`, `v1x`) and a member inside another member's directory, so a
+   path must reach the longest member directory that holds it.
 2. Union: the plan of a list of paths is the union of the plans of its parts (random subsets of a corpus with one path per
    rule), so no path can hide another.
 3. Every rule is reached first by its own sample path (no rule shadowed by an earlier one), and matches a file tracked here.
 4. Fail-open: an empty list, an unknown crate directory, a file of crates/ outside a crate, an unknown script, a target the
-   planner does not know.
+   planner does not know. A group's README.md, outside every crate, runs nothing.
 5. The cases the plan and the gaps name (G-30: web/ alone runs the browser journeys; a deploy script runs no cell; docs run
    nothing).
 6. This repository: Cargo's real graph, every target of scripts/contract-all.sh known, the named crates real, and no script the
@@ -57,23 +59,30 @@ SERVER, WORKER, SUITE, PG = "thrust-server", "thrust-worker", "thrust-contract-t
 BINARY = {"native-memory": SERVER, "native-pg": SERVER, "worker-memory": WORKER, "worker-cf": WORKER}
 
 
-def metadata(deps, root="/w"):
-    """cargo metadata (--no-deps) for crates/<name> crates with these path dependencies, plus one registry dependency each."""
+def flat(deps):
+    """The layout before ADR-0009: every crate at crates/<name>."""
+    return {n: f"crates/{n}" for n in deps}
+
+
+def metadata(deps, root="/w", layout=None):
+    """cargo metadata (--no-deps) for crates at the layout's directories (default flat) with these path dependencies, plus one
+    registry dependency each."""
+    layout = layout or flat(deps)
     packages = []
     for name, uses in deps.items():
         kinds = ["normal", "dev", "build"]
         packages.append({
             "name": name,
-            "id": f"path+file://{root}/crates/{name}#0.1.0",
-            "manifest_path": f"{root}/crates/{name}/Cargo.toml",
-            "dependencies": [{"name": u, "path": f"{root}/crates/{u}", "kind": kinds[i % 3] if kinds[i % 3] != "normal" else None}
+            "id": f"path+file://{root}/{layout[name]}#0.1.0",
+            "manifest_path": f"{root}/{layout[name]}/Cargo.toml",
+            "dependencies": [{"name": u, "path": f"{root}/{layout[u]}", "kind": kinds[i % 3] if kinds[i % 3] != "normal" else None}
                              for i, u in enumerate(sorted(uses))] + [{"name": "serde", "kind": None}],
         })
     return {"workspace_root": root, "workspace_members": [p["id"] for p in packages], "packages": packages}
 
 
-def run_plan(paths, deps, cells=CELLS):
-    dirs, d = pc.workspace(metadata(deps))
+def run_plan(paths, deps, cells=CELLS, layout=None):
+    dirs, d = pc.workspace(metadata(deps, layout=layout))
     jobs, selected, _ = pc.plan(paths, dirs, d, cells)
     return set(jobs), set(selected)
 
@@ -86,6 +95,21 @@ def random_graph(rng):
     for i, n in enumerate(names):
         deps[n] = {m for m in names[:i] if rng.random() < 0.3}
     return deps
+
+
+def random_layout(rng, names):
+    """A layout for these crates: some flat, the rest in groups one or two levels down; two directories where one is a prefix of
+    the other's name (crates/api/v1, crates/api/v1x); and, half the time, a crate inside another crate's directory (ADR-0009
+    forbids it, but the planner must still give a file to the inner one)."""
+    groups = ["adapters", "api", "core", "testing/suites", "testing/fixtures"]
+    layout = {n: f"crates/{n}" if rng.random() < 0.3 else f"crates/{rng.choice(groups)}/{n}" for n in names}
+    a, b = rng.sample(names, 2)
+    layout[a], layout[b] = "crates/api/v1", "crates/api/v1x"
+    rest = [n for n in names if n not in (a, b)]
+    if len(rest) >= 2 and rng.random() < 0.5:
+        outer, inner = rng.sample(rest, 2)
+        layout[inner] = f"{layout[outer]}/nested"
+    return layout
 
 
 def reached_from(changed, deps):
@@ -124,16 +148,18 @@ rng = random.Random(20261116)
 for g in range(300):
     deps = random_graph(rng)
     names = sorted(deps)
+    layout = flat(deps) if g % 3 == 0 else random_layout(rng, names)
     cases = [[n] for n in names] + [rng.sample(names, 2) for _ in range(3)]
     for changed in cases:
-        paths = [f"crates/{c}/src/lib.rs" for c in changed]
-        check(f"graph {g}: {changed} changed", run_plan(paths, deps), want_for_crates(set(changed), deps))
+        paths = [f"{layout[c]}/src/lib.rs" for c in changed]
+        check(f"graph {g}: {changed} changed", run_plan(paths, deps, layout=layout), want_for_crates(set(changed), deps))
     # a manifest also runs deny; a test file of the crate is the crate
     n = rng.choice(names)
-    jobs, cells = run_plan([f"crates/{n}/Cargo.toml"], deps)
+    jobs, cells = run_plan([f"{layout[n]}/Cargo.toml"], deps, layout=layout)
     wj, wc = want_for_crates({n}, deps)
-    check(f"graph {g}: {n}'s Cargo.toml", (jobs, cells), (wj | {"deny"}, wc))
-    check(f"graph {g}: {n}'s test file", run_plan([f"crates/{n}/tests/t.rs"], deps), want_for_crates({n}, deps))
+    check(f"graph {g}: {n}'s Cargo.toml at {layout[n]}", (jobs, cells), (wj | {"deny"}, wc))
+    check(f"graph {g}: {n}'s test file at {layout[n]}", run_plan([f"{layout[n]}/tests/t.rs"], deps, layout=layout),
+          want_for_crates({n}, deps))
 
 # ---- 2. union -----------------------------------------------------------------------------------------------------------------
 REAL_GRAPH = {
@@ -141,10 +167,16 @@ REAL_GRAPH = {
     "thrust-adapters-cloudflare": {"thrust-contracts"}, PG: {"thrust-contracts"}, SUITE: {"thrust-contracts"},
     SERVER: {"thrust-core", PG}, WORKER: {"thrust-core", "thrust-adapters-cloudflare"}, "thrust-editor-doc": set(),
 }
+# REAL_GRAPH's crates where ADR-0009 puts them
+ADR_0009 = {
+    "thrust-contracts": "crates/core/types", "thrust-ports": "crates/core/ports", "thrust-core": "crates/core/usecases",
+    "thrust-adapters-cloudflare": "crates/adapters/cloudflare", PG: "crates/adapters/selfhosted", SUITE: "crates/testing/suites/api",
+    SERVER: "crates/server", WORKER: "crates/worker", "thrust-editor-doc": "crates/editor/doc",
+}
 # one path per rule, in the rules' order; `None` where the rule's sample is a crate path (below)
 SAMPLES = [
     "Cargo.lock", ".config/branding/colors.css", ".config/nextest.toml", ".github/workflows/ci.yml", ".github/actions/setup-rust/action.yml",
-    ".github/scripts/assert-gate.sh", ".github/scripts/toolchain-channel.sh", "scripts/contract.sh", "crates/thrust-core/src/lib.rs", "crates/README.md",
+    ".github/scripts/assert-gate.sh", ".github/scripts/toolchain-channel.sh", "scripts/contract.sh", "crates/thrust-core/src/lib.rs",
     ".github/deploy/ca.pem", "deny.toml", "clippy.toml", "release-plz.toml", "tools/oracle-v1/corpus/a.json",
     "tools/compat-record/record.py", "tools/compat-inventory/out-pinned/endpoint-inventory.csv",
     ".agents/plans/contrail/research/0003-compat-plane-inventory.md", "tools/e2e-har/scrub.py", "e2e/journeys/m1.spec.ts",
@@ -177,9 +209,17 @@ for pattern, _, why in pc.RULES:
 
 # ---- 4. fail open --------------------------------------------------------------------------------------------------------------
 EVERYTHING = (ALL_JOBS, set(CELLS))
-for path in ["crates/thrust-gone/src/lib.rs", "crates/README.md", "scripts/new-thing.sh", "Cargo.lock", "rust-toolchain.toml",
-             ".github/scripts/plan-ci.py", "scripts/worker-dev.sh"]:
+for path in ["crates/thrust-gone/src/lib.rs", "crates/adapters/notes.txt", "crates/README.txt", "scripts/new-thing.sh",
+             "Cargo.lock", "rust-toolchain.toml", ".github/scripts/plan-ci.py", "scripts/worker-dev.sh",
+             # a directory that is no crate but shares a prefix with one (crates/thrust-core): a whole path segment must match
+             "crates/thrust-core-gone/src/lib.rs"]:
     check(f"{path} runs everything", run_plan([path], REAL_GRAPH), EVERYTHING)
+check("crates/core/types-gone, beside the crate crates/core/types, runs everything",
+      run_plan(["crates/core/types-gone/src/lib.rs"], REAL_GRAPH, layout=ADR_0009), EVERYTHING)
+for path in ["crates/README.md", "crates/adapters/README.md", "crates/testing/suites/README.md"]:
+    check(f"{path}, a group's README inside no crate, runs nothing", run_plan([path], REAL_GRAPH), (set(), set()))
+check("a crate's own README.md is the crate", run_plan(["crates/thrust-core/README.md"], REAL_GRAPH),
+      run_plan(["crates/thrust-core/src/lib.rs"], REAL_GRAPH))
 jobs, cells = run_plan(["README.md"], REAL_GRAPH, CELLS + ["worker-new main"])
 check("a target the planner does not know runs even on a change that needs nothing", (jobs, cells), ({"contract"}, {"worker-new main"}))
 jobs, cells = run_plan(["crates/thrust-adapters-cloudflare/src/lib.rs"], REAL_GRAPH, CELLS + ["worker-new main"])
@@ -211,6 +251,12 @@ jobs, cells = run_plan(["crates/thrust-contract-tests/src/lib.rs"], REAL_GRAPH)
 check("the suite runs every cell and the mutants", (cells, "mutants" in jobs), (set(CELLS), True))
 jobs, cells = run_plan(["crates/thrust-editor-doc/src/lib.rs"], REAL_GRAPH)
 check("a crate no binary depends on runs no cell", (cells, "contract" in jobs, "hermetic" in jobs), (set(), False, True))
+# ADR-0009's layout plans exactly as the flat one did: moving a crate changes no plan.
+check("ADR_0009 places every crate of REAL_GRAPH", sorted(ADR_0009), sorted(REAL_GRAPH))
+for n in sorted(REAL_GRAPH):
+    for f in ("src/lib.rs", "Cargo.toml", "tests/t.rs"):
+        check(f"ADR-0009: {n}'s {f} at {ADR_0009[n]} plans as at crates/{n}",
+              run_plan([f"{ADR_0009[n]}/{f}"], REAL_GRAPH, layout=ADR_0009), run_plan([f"crates/{n}/{f}"], REAL_GRAPH))
 
 # ---- 6. this repository ----------------------------------------------------------------------------------------------------------
 md = subprocess.run(["cargo", "metadata", "--format-version", "1", "--no-deps", "--offline", "--manifest-path",
@@ -218,11 +264,13 @@ md = subprocess.run(["cargo", "metadata", "--format-version", "1", "--no-deps", 
 check("cargo metadata runs here", md.returncode, 0)
 if md.returncode == 0:
     dirs, real = pc.workspace(json.loads(md.stdout))
-    check("every crate directory is crates/<name>", sorted(dirs), sorted(f"crates/{n}" for n in real))
+    check("every member directory is under crates/", sorted(d for d in dirs if not d.startswith("crates/")), [])
+    check("every member's own file is that member's", sorted(d for d in dirs if pc.owner(f"{d}/src/lib.rs", dirs) != d), [])
+    dir_of = {n: d for d, n in dirs.items()}
     for name in sorted({pc.SUITE, pc.PG_ADAPTER, pc.MUTANTS_BINARY, *pc.TARGET_BINARY.values()}):
         check(f"{name}, named by the planner, is a crate of the workspace", name in real, True)
     for n in sorted(real):
-        jobs, sel, _ = pc.plan([f"crates/{n}/src/lib.rs"], dirs, real, CELLS)
+        jobs, sel, _ = pc.plan([f"{dir_of[n]}/src/lib.rs"], dirs, real, CELLS)
         check(f"this repository: {n} changed", (set(jobs), set(sel)), want_for_crates({n}, real))
 with open(os.path.join(ROOT, "scripts", "contract-all.sh"), encoding="utf-8") as f:
     targets = {line.split()[1] for line in f if re.match(r"^run [a-z0-9-]+ [a-z0-9-]+\s*$", line)}

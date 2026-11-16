@@ -18,7 +18,7 @@ fn at() -> Timestamp {
 }
 
 fn oracle_file(rel: &str) -> Value {
-    let path = format!("{}/../../tools/oracle-v1/{rel}", env!("CARGO_MANIFEST_DIR"));
+    let path = format!("{}/tools/oracle-v1/{rel}", env!("THRUST_ROOT"));
     let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{path}: {e}"));
     serde_json::from_str(&text).unwrap_or_else(|e| panic!("{path}: {e}"))
 }
@@ -41,9 +41,8 @@ fn recorded_results(file: &str, exchange: &str) -> Vec<Value> {
 /// The corpus cannot show most of these (a date is only set or not, a role only for the caller), so the script itself is the oracle.
 #[test]
 fn parity_the_tables_are_the_oracles_seed_script() {
-    let script =
-        std::fs::read_to_string(format!("{}/../../tools/oracle-v1/scripts/seed.py", env!("CARGO_MANIFEST_DIR")))
-            .expect("the vendored seed script");
+    let script = std::fs::read_to_string(format!("{}/tools/oracle-v1/scripts/seed.py", env!("THRUST_ROOT")))
+        .expect("the vendored seed script");
     let role = |r: Option<Role>| match r {
         Some(Role::Admin) => "20",
         Some(Role::Member) => "15",
