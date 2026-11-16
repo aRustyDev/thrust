@@ -237,7 +237,7 @@ fn the_plan_as_json_always_has_its_five_keys() {
 /// Pinned regression (#195): a database from before the ledger has nothing recorded, so the plan is every file, and `--plan` calls
 /// it the baseline. Today's production and staging databases take this path once.
 #[test]
-fn a_database_from_before_the_ledger_gets_every_file_once() {
+fn regression_a_database_from_before_the_ledger_gets_every_file_once() {
     let known = carried(&MIGRATIONS);
     let p = plan(&known, &[]);
     let every: Vec<String> = MIGRATIONS.iter().map(|m| m.file.to_string()).collect();

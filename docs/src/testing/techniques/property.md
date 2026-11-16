@@ -40,7 +40,7 @@ plausible wrong implementation. A property that passes on the wrong code is asse
 
 `crates/thrust-core/src/lib.rs` (`mod tests`): five `prop_` tests on the validators. `prop_accepted_blob_names_stay_inside_their_scope`
 found that `.` was accepted as an attachment name on its first run; the counterexample is committed in
-`crates/thrust-core/proptest-regressions/lib.txt` and pinned as the named case `single_dot`. The strategies build valid inputs
+`crates/thrust-core/proptest-regressions/lib.txt` and pinned as the named case `regression_single_dot`. The strategies build valid inputs
 by construction (weighted tokens) instead of rejecting them with `prop_assume!`, and draw the 1, 255 and 256
 character boundaries, empty and whitespace-only names as weighted values; `strategies_reach_every_input_class`
 checks that one run's 256 cases reach them and that the `prop_assume!` property keeps most of its inputs.

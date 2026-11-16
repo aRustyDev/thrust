@@ -50,7 +50,7 @@ It stays under `/api`, so the edge patterns planned for `/api/*` cover it (ADR-0
 
 The router builds every path from one constant, `SLICE_PREFIX` in `thrust-api`; the contract suite mirrors it in
 `thrust-contract-tests`, and the two must be equal or every request is a 404. The contract test
-`the_slice_routes_are_gone_from_the_reserved_v1_prefix` shows that each of these five tenant routes and each of the seven
+`regression_the_slice_routes_are_gone_from_the_reserved_v1_prefix` shows that each of these five tenant routes and each of the seven
 identity routes answers a routing 404 through `/api/v1` and is mounted through `/api/_slice`.
 
 These routes are temporary. [Issue #58](https://github.com/aRustyDev/thrust/issues/58) builds the Plane-shaped

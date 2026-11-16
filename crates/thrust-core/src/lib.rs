@@ -669,7 +669,7 @@ mod tests {
     #[case::dot_dot("..", false)]
     #[case::dot_dot_inside("a..b", false)]
     // found by prop_accepted_blob_names_stay_inside_their_scope (proptest-regressions/lib.txt)
-    #[case::single_dot(".", false)]
+    #[case::regression_single_dot(".", false)]
     // the limit counts bytes: 64 two-byte characters are exactly 128 bytes
     #[case::bytes_128("é".repeat(64), true)]
     #[case::bytes_130("é".repeat(65), false)]

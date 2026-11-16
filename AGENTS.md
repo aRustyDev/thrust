@@ -44,7 +44,9 @@ Where those docs and the rules below disagree, the rules win; record the disagre
    snapshot, or raise its timeout to get green. Fix the code, or say in the commit message why the test was wrong.
 4. Name tests by category; nextest routes on the prefix: `prop_` property, `model_` model-based, `parity_` golden
    fixtures, `oracle_` comparison with the TypeScript oracle, live or against its generated output (opt-in),
-   `fuzz_replay_` fuzz-input replay.
+   `fuzz_replay_` fuzz-input replay, `regression_` a pinned regression (rule 9). `regression_` follows a category
+   prefix when the test has one (`model_regression_…`), and rstest names a case `case_<n>_regression_…`, so select
+   regressions with `test(/regression_/)`, not `test(/\bregression_/)`.
 5. Keep a crate's tests in that crate: mutation testing runs only the mutated package's own tests. Most of today's
    workspace is tested only through `thrust-contract-tests`, so `cargo mutants` on a crate with no tests of its own
    stops at the baseline with exit 4; the contract suite's own mutation controls are `scripts/mutants.sh`.
@@ -59,8 +61,11 @@ Where those docs and the rules below disagree, the rules win; record the disagre
    domain, a `model_` sequence against a reference model, a `prop_` property, an `oracle_` differential run or a fuzz
    target. A static example, fixture, golden file or snapshot is allowed only as (a) a pinned regression (a shrunk
    counterexample, a fuzz crash, a fixed bug), (b) an example the spec, an ADR or Plane itself names, or (c) output
-   recorded from an independent oracle (`parity_`); its case name or a one-line comment says which. A behaviour
-   tested only by static cases is a gap: add the generative test or record the gap in `docs/src/testing/status.md`.
+   recorded from an independent oracle (`parity_`). A pinned regression's test or rstest case is named
+   `regression_…` AND a one-line comment says which bug or counterexample it pins. Inputs a generative test replays
+   before its own (a `.proptest-regressions` file, `fuzz/regressions/`, a model test's pinned sequences) are not tests
+   and take no name. For (b) and (c), the case name or a one-line comment says which. A behaviour tested only by
+   static cases is a gap: add the generative test or record the gap in `docs/src/testing/status.md`.
 <!-- ANCHOR_END: testing-rules -->
 
 | When you are | Load |

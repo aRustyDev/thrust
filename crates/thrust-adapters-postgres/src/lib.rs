@@ -3739,20 +3739,20 @@ mod tests {
     // Pinned regression (issue #40, ADR-0006): each of these was `expect("transaction already finished")`, a panic on request-driven
     // control flow (a first write whose `BEGIN` failed, then any further call on the same transaction).
     #[test]
-    fn a_call_on_a_transaction_that_lost_its_connection_is_an_error() {
+    fn regression_a_call_on_a_transaction_that_lost_its_connection_is_an_error() {
         let tx = discarded();
         let r = tx.client();
         assert!(matches!(&r, Err(DbError::Backend(m)) if m == TX_HAS_NO_CONNECTION));
     }
 
     #[test]
-    fn commit_on_a_transaction_that_lost_its_connection_is_an_error() {
+    fn regression_commit_on_a_transaction_that_lost_its_connection_is_an_error() {
         let r = ready(Box::new(discarded()).commit());
         assert!(matches!(&r, Err(DbError::Backend(m)) if m == TX_HAS_NO_CONNECTION), "{r:?}");
     }
 
     #[test]
-    fn rollback_on_a_transaction_that_lost_its_connection_is_a_no_op() {
+    fn regression_rollback_on_a_transaction_that_lost_its_connection_is_a_no_op() {
         let r = ready(Box::new(discarded()).rollback());
         assert!(r.is_ok(), "{r:?}");
     }

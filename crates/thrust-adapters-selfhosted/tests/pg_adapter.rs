@@ -188,7 +188,7 @@ async fn membership_distinguishes_member_non_member_and_other_tenant() {
 /// that has none: `rerun_every_file`). A pinned regression for the upgrade path
 /// of a stage-2 database; every other test here starts from an empty one.
 #[tokio::test]
-async fn migration_0003_backfills_a_database_created_before_it() {
+async fn regression_migration_0003_backfills_a_database_created_before_it() {
     let container = Postgres::default().start().await.expect("start postgres container");
     let port = container.get_host_port_ipv4(5432).await.expect("mapped port");
     let url = format!("postgres://postgres:postgres@127.0.0.1:{port}/postgres");
@@ -388,7 +388,7 @@ async fn the_identity_tables_have_hashes_and_no_plaintext_and_no_workspace() {
 /// running the migration again. The column is NOT NULL and must be positive, and applying the file twice leaves one
 /// check, not two. A pinned regression for the upgrade path (every other test starts from an empty database).
 #[tokio::test]
-async fn migration_0007_gives_existing_keys_version_1_and_is_idempotent() {
+async fn regression_migration_0007_gives_existing_keys_version_1_and_is_idempotent() {
     let container = Postgres::default().start().await.expect("start postgres container");
     let port = container.get_host_port_ipv4(5432).await.expect("mapped port");
     let url = format!("postgres://postgres:postgres@127.0.0.1:{port}/postgres");
@@ -768,7 +768,7 @@ async fn the_workspace_tables_have_the_columns_they_say_and_the_constraints_that
 /// the default time zone and colour, and applying it a second time changes nothing. A pinned regression for the upgrade
 /// path of a database that has data; every other test here starts from an empty one.
 #[tokio::test]
-async fn migration_0009_upgrades_a_database_that_has_workspaces_and_members() {
+async fn regression_migration_0009_upgrades_a_database_that_has_workspaces_and_members() {
     let container = Postgres::default().start().await.expect("start postgres container");
     let port = container.get_host_port_ipv4(5432).await.expect("mapped port");
     let url = format!("postgres://postgres:postgres@127.0.0.1:{port}/postgres");
@@ -988,7 +988,7 @@ async fn the_project_and_first_visit_tables_have_the_columns_they_say_and_the_co
 /// archive time, an empty logo and the default views (only pages on), and applying it again changes nothing. A pinned regression
 /// for the upgrade path of a database that has data; every other test here starts from an empty one.
 #[tokio::test]
-async fn migrations_0010_and_0011_upgrade_a_database_that_has_projects() {
+async fn regression_migrations_0010_and_0011_upgrade_a_database_that_has_projects() {
     let container = Postgres::default().start().await.expect("start postgres container");
     let port = container.get_host_port_ipv4(5432).await.expect("mapped port");
     let url = format!("postgres://postgres:postgres@127.0.0.1:{port}/postgres");
@@ -1451,7 +1451,7 @@ async fn the_project_tables_have_the_columns_they_say_and_the_constraints_that_k
 /// row the workspace of its project, and applying it a second time changes nothing. A pinned regression for the upgrade path of a
 /// database that has data; every other test here starts from an empty one.
 #[tokio::test]
-async fn migration_0012_upgrades_a_database_that_has_projects_members_and_settings() {
+async fn regression_migration_0012_upgrades_a_database_that_has_projects_members_and_settings() {
     let container = Postgres::default().start().await.expect("start postgres container");
     let port = container.get_host_port_ipv4(5432).await.expect("mapped port");
     let url = format!("postgres://postgres:postgres@127.0.0.1:{port}/postgres");
@@ -2224,7 +2224,7 @@ async fn the_work_item_tables_have_the_columns_they_say_and_the_constraints_that
 /// applying it a second time changes nothing. A pinned regression for the upgrade path of a database that has data; every other
 /// test here starts from an empty one.
 #[tokio::test]
-async fn migration_0013_upgrades_a_database_that_has_work_items() {
+async fn regression_migration_0013_upgrades_a_database_that_has_work_items() {
     let container = Postgres::default().start().await.expect("start postgres container");
     let port = container.get_host_port_ipv4(5432).await.expect("mapped port");
     let url = format!("postgres://postgres:postgres@127.0.0.1:{port}/postgres");
@@ -2759,7 +2759,8 @@ async fn refusal(
 /// changes nothing: the rows written in between are there as they were, in the order they were written, and the table's constraints
 /// are not added a second time. A pinned regression for the upgrade path of a database that has data, as 0013's.
 #[tokio::test]
-async fn migration_0014_adds_the_history_table_to_a_database_that_has_work_items_and_a_second_run_changes_nothing() {
+async fn regression_migration_0014_adds_the_history_table_to_a_database_that_has_work_items_and_a_second_run_changes_nothing(
+) {
     let container = Postgres::default().start().await.expect("start postgres container");
     let port = container.get_host_port_ipv4(5432).await.expect("mapped port");
     let url = format!("postgres://postgres:postgres@127.0.0.1:{port}/postgres");

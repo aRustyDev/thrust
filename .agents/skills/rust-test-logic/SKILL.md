@@ -12,7 +12,7 @@ Generate inputs, do not pick them: exhaustive matrices, model sequences, propert
 
 ## Ground rules
 - Run these tests with **cargo-nextest**; a suite that parses `cargo test` output stays on it until migrated on purpose (`references/nextest-profiles.md`). `cargo test --doc` is the one libtest call.
-- Name tests by category; nextest routes on the prefix: `prop_`, `model_`, `parity_`, `oracle_`.
+- Name tests by category; nextest routes on the prefix: `prop_`, `model_`, `parity_`, `oracle_`, and `regression_` for a pinned regression (after the category prefix if there is one; select it with `test(/regression_/)`, no `\b`).
 - Never pass `--retries`, `--flaky-result`, `NEXTEST_RETRIES` or `NEXTEST_FLAKY_RESULT`: the config's `flaky-result = "fail"` is a default, not a guard `[re-run]`. A randomized failure is a finding.
 - A failing test is a finding: do not delete, weaken, `#[ignore]`, regenerate or lengthen its timeout to get green.
 - Tests are hermetic and deterministic; a crate's tests live in that crate; commit regression data.
@@ -36,7 +36,7 @@ Generate inputs, do not pick them: exhaustive matrices, model sequences, propert
 4. Otherwise a `prop_` test per invariant, through the shared config helper; boundaries go in the strategy as weighted values. Untrusted bytes also get a fuzz target (rust-test-fuzz).
 5. Must match legacy TypeScript? `oracle_` over generated inputs, `parity_` fixtures as its hermetic record; the port itself is `ts-to-rust`.
 6. Named cases last, labelled: spec examples and fixed bugs.
-7. On a failure: read the shrunk input, pin it as a named regression case, fix the code (or say why the test was wrong).
+7. On a failure: read the shrunk input, pin it as a `regression_` case with a one-line comment saying what it pins, fix the code (or say why the test was wrong).
 8. Controls: a broken implementation fails the test; the generator reaches every input class that matters.
 
 ## Output contract
