@@ -22,6 +22,14 @@
 #                                                  No default: an environment that mails has chosen who it mails as (E3)
 #   THRUST_BASE_URL           __PUBLIC_BASE_URL__  the environment's public origin, `https://<host>` and nothing after it: the variable the smoke
 #                                                  uses, and where the links in the mails point (a request's Host is never used for them)
+# The edge's template (crates/thrust-edge/wrangler.deploy.toml, ADR-0111) adds:
+#   THRUST_EDGE_WORKER_NAME   __EDGE_WORKER_NAME__ the edge Worker's name, not the production Worker's (the edge calls that one)
+#   THRUST_FLAGSHIP_APP_ID    __FLAGSHIP_APP_ID__  the Flagship app's id, a lowercase UUID, not all zero
+#   THRUST_ACCESS_TEAM_DOMAIN __ACCESS_TEAM_DOMAIN__  `<team>.cloudflareaccess.com`
+#   THRUST_ACCESS_AUD_RC, THRUST_ACCESS_AUD_DEV
+#                             __ACCESS_AUD_RC__, __ACCESS_AUD_DEV__  the AUD tags of the two opt-in paths' Access applications: 64 lowercase
+#                                                  hex digits each, not all zero, and different (one application per audience)
+#   THRUST_WORKERS_DEV_SUBDOMAIN __WORKERS_DEV_SUBDOMAIN__  the account's workers.dev subdomain, where the Previews are
 #
 # What it refuses, all at once (it lists every problem, not the first): a marker whose variable is unset or empty; a value of the wrong
 # shape; an all-zero Hyperdrive id (what wrangler.toml carries for local runs); a name that still says `thrust-spike`; a marker in the
@@ -51,7 +59,13 @@ __RL_SIGNIN_ID__:THRUST_RL_SIGNIN_ID:nsid
 __RL_V1_ID__:THRUST_RL_V1_ID:nsid
 __CSRF_ENFORCE__:THRUST_CSRF_ENFORCE:onoff
 __EMAIL_FROM__:THRUST_EMAIL_FROM:email
-__PUBLIC_BASE_URL__:THRUST_BASE_URL:origin"
+__PUBLIC_BASE_URL__:THRUST_BASE_URL:origin
+__EDGE_WORKER_NAME__:THRUST_EDGE_WORKER_NAME:name
+__FLAGSHIP_APP_ID__:THRUST_FLAGSHIP_APP_ID:uuid
+__ACCESS_TEAM_DOMAIN__:THRUST_ACCESS_TEAM_DOMAIN:accessteam
+__ACCESS_AUD_RC__:THRUST_ACCESS_AUD_RC:hex64
+__ACCESS_AUD_DEV__:THRUST_ACCESS_AUD_DEV:hex64
+__WORKERS_DEV_SUBDOMAIN__:THRUST_WORKERS_DEV_SUBDOMAIN:name"
 
 usage() { echo "render-wrangler: $*" >&2; exit 2; }
 
@@ -119,6 +133,24 @@ check_value() {
       esac
       case "$origin_host" in localhost|*.localhost|*.local|127.*) problem "$var='$val': a host of this machine is not a public origin" ;; esac
       ;;
+    uuid)
+      h4='[0-9a-f][0-9a-f][0-9a-f][0-9a-f]'
+      case "$val" in
+        $h4$h4-$h4-$h4-$h4-$h4$h4$h4) ;;
+        *) problem "$var='$val': must be a lowercase UUID (8-4-4-4-12 hex digits)"; return ;;
+      esac
+      case "$val" in *[!0-]*) ;; *) problem "$var is all zeros: that is a placeholder" ;; esac
+      ;;
+    hex64)
+      case "$val" in *[!0-9a-f]*) problem "$var: must be 64 lowercase hex digits"; return ;; esac
+      [ "${#val}" -eq 64 ] || { problem "$var: must be 64 lowercase hex digits (got ${#val} characters)"; return; }
+      case "$val" in *[!0]*) ;; *) problem "$var is all zeros: that is a placeholder" ;; esac
+      ;;
+    accessteam)
+      team="${val%.cloudflareaccess.com}"
+      if [ "$team" = "$val" ]; then problem "$var='$val': must be <team>.cloudflareaccess.com"; return; fi
+      case "$team" in ''|*[!a-z0-9-]*|-*|*-) problem "$var='$val': the team must be one lowercase label"; return ;; esac
+      ;;
   esac
 }
 
@@ -154,6 +186,14 @@ render() {
   fi
   if [ -n "${THRUST_QUEUE:-}" ] && [ "${THRUST_QUEUE:-}" = "${THRUST_QUEUE_DLQ:-}" ]; then
     problem "THRUST_QUEUE_DLQ must be a different queue from THRUST_QUEUE"
+  fi
+  if echo "$found" | grep -qx __ACCESS_AUD_DEV__ && [ -n "${THRUST_ACCESS_AUD_RC:-}" ] \
+    && [ "${THRUST_ACCESS_AUD_RC:-}" = "${THRUST_ACCESS_AUD_DEV:-}" ]; then
+    problem "THRUST_ACCESS_AUD_RC and THRUST_ACCESS_AUD_DEV must differ: each audience has its own Access application"
+  fi
+  if echo "$found" | grep -qx __EDGE_WORKER_NAME__ && [ -n "${THRUST_EDGE_WORKER_NAME:-}" ] \
+    && [ "${THRUST_EDGE_WORKER_NAME:-}" = "${THRUST_WORKER_NAME:-}" ]; then
+    problem "THRUST_EDGE_WORKER_NAME must differ from THRUST_WORKER_NAME: the edge calls that Worker"
   fi
 
   if [ -n "$PROBLEMS" ]; then
@@ -206,8 +246,16 @@ self_test() {
     THRUST_CSRF_ENFORCE=off
     THRUST_EMAIL_FROM=no-reply@notify.thrust-staging.dev
     THRUST_BASE_URL=https://thrust-staging.dev
+    THRUST_EDGE_WORKER_NAME=thrust-edge
+    THRUST_FLAGSHIP_APP_ID=e3d57955-3250-4e58-b787-5faf4b7f8712
+    THRUST_ACCESS_TEAM_DOMAIN=team.cloudflareaccess.com
+    THRUST_ACCESS_AUD_RC=523f788ad6fe18e01ad8fbb6b85f9613323faa23b0d570fd418e782cd3e6afc3
+    THRUST_ACCESS_AUD_DEV=0a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f9
+    THRUST_WORKERS_DEV_SUBDOMAIN=team-4d9
     export THRUST_WORKER_NAME THRUST_HYPERDRIVE_ID THRUST_R2_BUCKET THRUST_QUEUE THRUST_QUEUE_DLQ \
-      THRUST_RL_SIGNIN_ID THRUST_RL_V1_ID THRUST_CSRF_ENFORCE THRUST_EMAIL_FROM THRUST_BASE_URL
+      THRUST_RL_SIGNIN_ID THRUST_RL_V1_ID THRUST_CSRF_ENFORCE THRUST_EMAIL_FROM THRUST_BASE_URL \
+      THRUST_EDGE_WORKER_NAME THRUST_FLAGSHIP_APP_ID THRUST_ACCESS_TEAM_DOMAIN THRUST_ACCESS_AUD_RC THRUST_ACCESS_AUD_DEV \
+      THRUST_WORKERS_DEV_SUBDOMAIN
   }
   # run <tmpl> <label> <want-exit> <want-fragment> '<snippet that changes the good environment>'
   run() {
@@ -311,6 +359,36 @@ EOF
   run "$T/mini.toml" "an origin with a capital letter is refused" 1 "lowercase host" 'THRUST_BASE_URL=https://Thrust-Staging.dev'
   run "$T/mini.toml" "an origin whose host has no dot is refused" 1 "needs a dot" 'THRUST_BASE_URL=https://thruststaging'
   run "$T/mini.toml" "an origin on this machine is refused" 1 "not a public origin" 'THRUST_BASE_URL=https://127.0.0.1'
+
+  # the edge's template (ADR-0111): it renders, its values land where they belong, and each of its variables is required
+  EDGE="$ROOT/crates/thrust-edge/wrangler.deploy.toml"
+  run "$EDGE" "the real edge template renders with a good environment" 0 "wrote" ':'
+  grep -q 'name = "thrust-edge"' "$T/out.toml" && grep -q 'service = "thrust-staging"' "$T/out.toml" \
+    && grep -q 'app_id = "e3d57955-3250-4e58-b787-5faf4b7f8712"' "$T/out.toml" \
+    && grep -q 'SHARED_ORIGIN = "https://thrust-staging.dev"' "$T/out.toml" \
+    && grep -q 'ACCESS_TEAM_DOMAIN = "team.cloudflareaccess.com"' "$T/out.toml" \
+    && grep -q 'PREVIEW_HOST_SUFFIX = "-thrust-staging.team-4d9.workers.dev"' "$T/out.toml" \
+    && pass=$((pass + 1)) && echo "ok   ...and the edge's values are in their places, the Preview suffix built from two of them" \
+    || { bad=$((bad + 1)); echo "BAD  the edge's rendered values are not where its template puts them"; }
+  for v in THRUST_EDGE_WORKER_NAME THRUST_WORKER_NAME THRUST_FLAGSHIP_APP_ID THRUST_BASE_URL THRUST_ACCESS_TEAM_DOMAIN THRUST_ACCESS_AUD_RC \
+    THRUST_ACCESS_AUD_DEV THRUST_WORKERS_DEV_SUBDOMAIN; do
+    run "$EDGE" "the edge template needs $v" 1 "$v is not set" "unset $v"
+  done
+  # ...and none of production's own (the edge binds no data): rendering it without them works
+  run "$EDGE" "the edge template needs none of production's data variables" 0 "wrote" \
+    'unset THRUST_HYPERDRIVE_ID THRUST_R2_BUCKET THRUST_QUEUE THRUST_QUEUE_DLQ THRUST_RL_SIGNIN_ID THRUST_RL_V1_ID THRUST_CSRF_ENFORCE THRUST_EMAIL_FROM'
+  run "$EDGE" "a Flagship app id that is not a UUID is refused" 1 "lowercase UUID" 'THRUST_FLAGSHIP_APP_ID=e3d57955325046e58b7875faf4b7f8712'
+  run "$EDGE" "a Flagship app id in capitals is refused" 1 "lowercase UUID" 'THRUST_FLAGSHIP_APP_ID=E3D57955-3250-4E58-B787-5FAF4B7F8712'
+  run "$EDGE" "an all-zero Flagship app id is refused" 1 "all zeros" 'THRUST_FLAGSHIP_APP_ID=00000000-0000-0000-0000-000000000000'
+  run "$EDGE" "an AUD that is too short is refused" 1 "64 lowercase hex digits" 'THRUST_ACCESS_AUD_RC=523f788a'
+  run "$EDGE" "an AUD with a capital is refused" 1 "64 lowercase hex digits" 'THRUST_ACCESS_AUD_DEV=0A1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f9'
+  run "$EDGE" "an all-zero AUD is refused" 1 "all zeros" 'THRUST_ACCESS_AUD_RC=0000000000000000000000000000000000000000000000000000000000000000'
+  run "$EDGE" "equal AUDs are refused (one Access application per audience)" 1 "must differ" 'THRUST_ACCESS_AUD_DEV=$THRUST_ACCESS_AUD_RC'
+  run "$EDGE" "an Access team that is not on cloudflareaccess.com is refused" 1 "<team>.cloudflareaccess.com" 'THRUST_ACCESS_TEAM_DOMAIN=team.example.org'
+  run "$EDGE" "an Access team with two labels is refused" 1 "one lowercase label" 'THRUST_ACCESS_TEAM_DOMAIN=a.b.cloudflareaccess.com'
+  run "$EDGE" "an edge named like the production Worker is refused" 1 "must differ from THRUST_WORKER_NAME" 'THRUST_EDGE_WORKER_NAME=thrust-staging'
+  # the relations hold only where their markers are: production's template renders with equal AUDs in the environment
+  run "$REAL" "production's template ignores the edge's relations" 0 "wrote" 'THRUST_ACCESS_AUD_DEV=$THRUST_ACCESS_AUD_RC; THRUST_EDGE_WORKER_NAME=thrust-staging'
 
   # every problem at once, not only the first
   run "$T/mini.toml" "all the problems are listed together" 1 "THRUST_R2_BUCKET is not set" 'unset THRUST_R2_BUCKET; THRUST_HYPERDRIVE_ID=0000'

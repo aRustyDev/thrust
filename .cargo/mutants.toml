@@ -20,6 +20,9 @@ exclude_globs = [
   "**/fuzz_harness.rs",
   "**/test_support.rs",
   "**/tests/common/**",
+  # wasm32 only (`#[cfg(target_arch = "wasm32")]`): a native run builds its mutants without compiling them, so every one would
+  # read as MISSED. It has no native test to catch them; that gap is G-41 in docs/src/testing/status.md.
+  "crates/thrust-edge/src/runtime.rs",
 ]
 
 # Uncomment if the workspace denies warnings: mutants that delete code trip unused-* lints.

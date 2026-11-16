@@ -174,6 +174,13 @@ jobs:
         run: |
           scripts/check-topology.sh
           scripts/check-topology.sh --self-test
+      # ADR-0111 (issue #195): the edge Worker in front of production routes and binds nothing else (no data, assets, placement,
+      # trigger or route; workers_dev and preview_urls off; one service binding, one Flagship binding). An allowlist, with its
+      # self-test as the control.
+      - name: Edge configuration guard (a routing Worker)
+        run: |
+          scripts/check-edge-config.sh
+          scripts/check-edge-config.sh --self-test
       # Issue #51: every reproduced Plane 500 is answered by `thrust_plane_types::plane_500`, so neither Plane-shaped crate writes a
       # 500 of its own. The self-test is the control: the guard is run on trees it must refuse, and on empty ones it must not pass.
       - name: Plane 500 guard
@@ -255,6 +262,10 @@ jobs:
       - name: clippy (the Worker, wasm32)
         if: ${{ !cancelled() }}
         run: scripts/rs cargo clippy -p thrust-worker --no-default-features --target wasm32-unknown-unknown --locked -- -D warnings
+      # The edge (ADR-0111) as it ships: its runtime module exists only in the wasm32 build, so the native run above never sees it.
+      - name: clippy (the edge, wasm32)
+        if: ${{ !cancelled() }}
+        run: scripts/rs cargo clippy -p thrust-edge --target wasm32-unknown-unknown --locked -- -D warnings
       # The `openapi` feature of thrust-api-v1 (issue #58) is off in every run above, so the derives and path declarations behind it
       # are linted here, under the same four denied lints.
       - name: clippy (thrust-api-v1 with the OpenAPI feature)
