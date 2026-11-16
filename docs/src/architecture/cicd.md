@@ -248,6 +248,16 @@ workspace (below).
   `thrust-core` with every other crate's commits included. release-plz has no workspace-level version group, so
   `.github/scripts/check-release-plz.py` (run by `deps`, tested in `ci-scripts`) fails when `release-plz.toml` and the
   workspace members differ, a crate does not inherit the workspace version, or there is not exactly one tagger.
+- **A new crate.** Every crate finds its previous version from the one `v*` tag, and release-plz 0.4.3 then looks for the
+  crate in that tag's workspace; a crate added since the last release is not there, and `release-pr` stops with
+  `cannot find package` (it did on `main` after `thrust-edge`, #211, landed after v0.2.0). So a new crate's entry gets a
+  first-release pattern, `git_tag_name = "<crate>-v{{ version }}"`, which matches no tag: release-plz treats the crate as
+  a first release, the commits under its directory go into the changelog, and they do not set the bump. Once a release
+  contains the crate the pattern must go, or every later release lists the crate's whole history again. `check-release-plz.py --first-release` holds both ends against the highest `v<major>.<minor>.<patch>` tag:
+  `required` in `deps` (which fetches the tags), so the pull request that adds a crate adds its pattern; `exact` in the
+  `release-pr` job before release-plz runs, which fails from the release that contains the crate until the pattern is
+  removed. `exact` is not in `deps` because it would fail every pull request in that window, and `main`'s run of the release
+  commit itself.
 - **What makes a release.** A commit that touches a crate's files and is a fix, a feature, performance work, a refactor, a
   revert, or a breaking change of any type (`release_commits`). A test, docs or chore commit does not. In 0.x a feature or a
   breaking change bumps the minor and a fix the patch (`features_always_increment_minor`). The first release is `v0.1.0`,
@@ -272,6 +282,20 @@ breaking `chore!:` proposes 0.2.0; test and docs commits alone propose nothing; 
 Two settings the docs do not settle were read in the source instead: `release_always = false` matches the configured
 `pr_branch_prefix` (the docs still name `release-plz-`), and a tag pattern set only on `thrust-core` made every other crate
 look for a tag of its own and re-release all of history, which is why `git_tag_name` is set for the whole workspace.
+
+The first-release pattern, with release-plz 0.4.3 on clones of `main` `[verified 2026-11-16]`. The code (`next_ver.rs`,
+`process_git_only_package`) treats a crate as a first release only when no tag matches its pattern.
+
+- At the merge of #218: without the pattern, `release-plz update` exits 1 with `cannot find package "thrust-edge"`, as
+  the `release-pr` job did on `main`. With it, it proposes 0.2.1 with #211's feature in the changelog, and the
+  candidate's `Cargo.lock` passes `cargo metadata --locked`.
+- At the merge of #221, which moved every crate (ADR-0009): the same failure without the pattern. With it, nothing is
+  proposed. release-plz counts a crate's commits by its current directory, so #211's feature, made under
+  `crates/thrust-edge/`, no longer counts, and the move is a `chore`. The other crates are found in v0.2.0 by name,
+  wherever they now live. #211's feature reaches a changelog only through a release made by hand (above).
+- Then a `fix(edge)` commit proposes 0.2.1. With v0.2.1 tagged and a second fix: keeping the pattern lists the first fix
+  (and the move) again in 0.2.2's section, and `--first-release exact` refuses it. With the pattern removed, 0.2.2
+  lists only the second fix.
 
 **Live since 2026-11-15.** The owner set up:
 

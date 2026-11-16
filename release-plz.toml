@@ -11,6 +11,12 @@
 # - One tag, v<version>, and one GitHub release, made for thrust-core only. git_tag_name is set for the whole workspace so that
 #   every crate finds its previous version from that one tag (set only on thrust-core, the other crates looked for tags of their
 #   own, found none, and re-released all of history).
+# - A crate added since the last release gets a first-release pattern, git_tag_name = "<crate>-v{{ version }}", which matches
+#   no tag. Without it release-plz looks for the crate in the last release's workspace and stops ("cannot find package"), which
+#   is what happened when thrust-edge (#211) arrived after v0.2.0. With it the crate is a first release: the commits under its
+#   directory go into the changelog, but they do not set the bump (verified at #218: v0.2.0 plus #211's feature proposed 0.2.1).
+#   Once a release contains the crate the pattern must go, or every release lists the crate's whole history again.
+#   check-release-plz.py --first-release holds both ends: `required` in ci.yml's deps job, `exact` in the release-pr job.
 # - One CHANGELOG.md at the root, written for thrust-core, with the other crates' commits included.
 # - release_always = false: a push to main releases only when it is the merge of a pull request from a branch starting with
 #   pr_branch_prefix (read in release-plz's source, release_plz_core/src/command/release.rs; its docs still say `release-plz-`).
@@ -118,6 +124,9 @@ version_group = "thrust"
 [[package]]
 name = "thrust-edge"
 version_group = "thrust"
+# First-release pattern (see the header): thrust-edge is not in v0.2.0. Remove it once a release contains the crate; the
+# release-pr job says when.
+git_tag_name = "thrust-edge-v{{ version }}"
 
 [[package]]
 name = "thrust-server"

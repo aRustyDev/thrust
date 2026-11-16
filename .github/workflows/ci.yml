@@ -162,6 +162,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          # The release configuration guard compares the workspace with the last v* tag.
+          fetch-tags: true
       - uses: ./.github/actions/setup-rust
         with:
           targets: wasm32-unknown-unknown
@@ -216,9 +218,10 @@ jobs:
       - name: Deploy configuration guard
         run: scripts/render-wrangler.sh --self-test
       # The release flow: release-plz.toml must list every workspace member in one version group with one tag (release-plz has no
-      # workspace-level group and does not check this itself).
+      # workspace-level group and does not check this itself), and a crate that is not in the last v* tag must have its
+      # first-release pattern, or release-plz stops on main (it did after #211). The tags come from the checkout's fetch-tags.
       - name: Release configuration guard
-        run: python3 -I .github/scripts/check-release-plz.py
+        run: python3 -I .github/scripts/check-release-plz.py --first-release required
       # Every workflow and composite action, found by directory so a new one is linted the day it is added: pinned actions, explicit
       # permissions, no expression in a run, no pull_request_target, checkout without kept credentials, and secrets, environments and
       # id-token only in the jobs lint-all-workflows.sh names for that file (the deploy's two gated jobs, the release App's two jobs,
