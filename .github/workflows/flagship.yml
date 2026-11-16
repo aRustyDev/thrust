@@ -1,0 +1,73 @@
+# Flagship as code (ADR-0111, #195): every flag of the edge's Flagship app follows .github/deploy/flagship/policy.json, and only
+# this workflow and the deploy jobs write them, through scripts/flagship.py. Off until the repository variable FLAGSHIP_APP_ID is
+# set (the app is made by OpenTofu in the infrastructure repository).
+#   sync   on a push to main that changes the policy, the script or this file, or by hand: makes every flag what the policy
+#          says, deletes the flags it does not make, and reads everything back.
+#   check  after sync, and every night: reports every difference from the policy (a change made in the dashboard is one) and
+#          asks Flagship what each flag serves to every principal kind and audience (--evaluate). It writes nothing, so a
+#          dashboard edit stays until a person decides: run this workflow by hand to put the policy back, or change the policy.
+# The environment `flagship` (deployment branches: main) holds FLAGSHIP_WRITE_TOKEN (sync) and FLAGSHIP_READ_TOKEN (check),
+# app-scoped tokens for this one app, and the variables CLOUDFLARE_ACCOUNT_ID and PREVIEW_HOST_SUFFIX (the edge's).
+# A pull request cannot check against the live app: it has no secrets, and a policy change is meant to differ from what is live.
+# It gets `flagship.py validate` (ci.yml's deps job) and test_flagship.py (ci-scripts) instead.
+name: flagship
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/deploy/flagship/**
+      - scripts/flagship.py
+      - .github/workflows/flagship.yml
+  schedule:
+    - cron: "23 5 * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+# One at a time, none cancelled: a sync half done is worse than a late one.
+concurrency:
+  group: flagship
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    if: vars.FLAGSHIP_APP_ID != '' && github.event_name != 'schedule'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: flagship
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Make every flag what the policy says
+        env:
+          FLAGSHIP_API_TOKEN: ${{ secrets.FLAGSHIP_WRITE_TOKEN }}
+          FLAGSHIP_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          FLAGSHIP_APP_ID: ${{ vars.FLAGSHIP_APP_ID }}
+          PREVIEW_HOST_SUFFIX: ${{ vars.PREVIEW_HOST_SUFFIX }}
+        run: python3 -I scripts/flagship.py sync
+
+  check:
+    needs: sync
+    # After a sync that ran, and alone at night (when sync is skipped); also after a failed sync, to say what is left.
+    if: always() && vars.FLAGSHIP_APP_ID != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: flagship
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # --retries: a flag written moments ago can take up to 30 s to be served everywhere (Flagship's documentation).
+      - name: Compare every flag with the policy, and what Flagship serves
+        env:
+          FLAGSHIP_API_TOKEN: ${{ secrets.FLAGSHIP_READ_TOKEN }}
+          FLAGSHIP_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          FLAGSHIP_APP_ID: ${{ vars.FLAGSHIP_APP_ID }}
+          PREVIEW_HOST_SUFFIX: ${{ vars.PREVIEW_HOST_SUFFIX }}
+        run: python3 -I scripts/flagship.py check --evaluate --retries 12

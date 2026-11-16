@@ -211,3 +211,20 @@ The ledger of ADR-0042's 2026-11-16 update (PR #201) records each file once. The
   Cloudflare Access for Workers, Flagship (binding, targeting, API tokens, limits), the Terraform provider ≥ 5.20.0
   (`cloudflare_flagship_app`, `cloudflare_flagship_flag`), Custom Domains (Worker-to-Worker communication).
 * Related: [[ADR-0110]], [[ADR-0092]], [[ADR-0090]], [[ADR-0008]], [[ADR-0042]], [[ADR-0061]], [[ADR-0006]].
+
+## Update — Flagship as code (2026-11-16)
+
+Built in #195's stage D.
+- **The writer.** `scripts/flagship.py` makes every flag from `.github/deploy/flagship/policy.json`, which also holds
+  `routing`'s value. Its commands are `validate`, `check`, `sync`, and `put`, `alias` and `delete` for the deploys and
+  teardowns. The plan's `flagship-sync.sh` and `flagship-target.sh` are these commands.
+- **The live check runs in `flagship.yml`, not on pull requests:** after every `sync` and every night, as
+  `check --evaluate`. A pull request has no secrets, and a policy change is meant to differ from what is live, so it gets
+  `flagship.py validate` and the tests against a fake instead. `check --evaluate` also asks Flagship what each flag serves
+  to every principal kind and audience, so a rule the service reads differently from the policy is caught there.
+- **A dashboard edit is reported by the nightly `check`, not overwritten.** `sync` restores the policy when a person runs
+  it.
+- **The rules.** A target flag's rules are one per policy entry, each with the conditions `kind in [...]` and
+  `audience in [...]`, all of which must match.
+- **The policy's audiences** must be exactly the edge's `ACCESS_AUD_<AUDIENCE>` variables.
+- **Not yet verified against the real service:** `docs/src/testing/status.md` G-43.

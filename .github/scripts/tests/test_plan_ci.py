@@ -178,11 +178,11 @@ SAMPLES = [
     "Cargo.lock", ".config/branding/colors.css", ".config/nextest.toml", ".github/workflows/ci.yml", ".github/actions/setup-rust/action.yml",
     ".github/actions/contract-pass-tools/action.yml", ".github/scripts/assert-gate.sh", ".github/scripts/toolchain-channel.sh",
     "scripts/contract.sh", "crates/core/usecases/src/lib.rs",
-    ".github/deploy/ca.pem", "deny.toml", "clippy.toml", "release-plz.toml", ".gitignore", "tools/oracle-v1/corpus/a.json",
+    ".github/deploy/flagship/policy.json", ".github/deploy/ca.pem", "deny.toml", "clippy.toml", "release-plz.toml", ".gitignore", "tools/oracle-v1/corpus/a.json",
     "tools/compat-record/record.py", "tools/compat-inventory/out-pinned/endpoint-inventory.csv",
     ".agents/plans/contrail/research/0003-compat-plane-inventory.md", "tools/e2e-har/scrub.py", "e2e/journeys/m1.spec.ts",
     "web/apps/web/app.tsx", "scripts/e2e.sh", "scripts/oracle-v1.sh", "scripts/mutants.sh", "scripts/stage2-contract.sh",
-    "scripts/check-web-diff.sh", "scripts/check-book.sh", "scripts/check-topology.sh", "scripts/smoke-deploy.sh", "scripts/verify-all.sh",
+    "scripts/check-web-diff.sh", "scripts/check-book.sh", "scripts/check-topology.sh", "scripts/smoke-deploy.sh", "scripts/flagship.py", "scripts/verify-all.sh",
     "scripts/new-thing.sh", "docs/src/intro.md", "AGENTS.md", ".github/scripts/lint-workflow.sh", ".github/workflows/deploy.yml",
 ]
 NOTHING = ["README.md", "CHANGELOG.md", ".agents/plans/x.md", "docs-notes.md", "CLAUDE.md", "crates-AGENTS.md", "probes/send-shape/run.sh", "tools/spike-0006/x", ".github/CODEOWNERS"]

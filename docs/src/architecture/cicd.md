@@ -30,7 +30,9 @@ Worker](deploy.md). The jobs and the command each CI job runs are in the CI sect
 | `.github/actions/build-bundle` | A composite action: the deploy bundle of the checked-out commit (the Worker, the `migrate` binary and the web app, in one reproducible file), used by `deploy.yml` and `release.yml` so that both build it the same way |
 | `.github/actions/deploy-worker` | A composite action: fetch the bundle (this run's build for staging, the release's asset for production, `fetch-release-bundle.sh`), verify its attestation, unpack it, install wrangler (the same version as `setup-rust`, kept equal by a test) and `cloudflared` at pinned versions, and run `scripts/deploy-worker.sh` |
 | `.github/scripts/` | The pipeline's own logic: `plan-ci.py`, `plan-cells.sh`, `assert-gate.sh`, `assert-required-contexts.sh` and `lint-all-workflows.sh`; and the deploy's: `plan-deploy.sh`, `classify-deploy.sh`, `active-version.py`, `assert-sha-checks.sh`, `assert-gated-environments.sh`, `verify-bundle.sh`, `unpack-bundle.sh`, `fetch-previous-assets.sh`, `fetch-release-bundle.sh` and `lint-workflow.sh`; and the release's: `plan-release.sh`. The `ci-scripts` job tests them with `.github/scripts/tests/` |
-| `.github/deploy/` | What the deploy trusts: the Cloudflare Origin CA root that signs `thrust-pg`'s certificate, with its fingerprint pinned by a test |
+| `.github/deploy/` | What the deploy trusts: the Cloudflare Origin CA root that signs `thrust-pg`'s certificate, with its fingerprint pinned by a test; and `flagship/policy.json`, who may reach which kind of target through the edge ([Routing flags](#routing-flags)) |
+| `.github/workflows/flagship.yml` (`flagship`) | The edge's routing flags: makes every flag of the Flagship app what the policy says, on a push to `main` that changes it, and checks them every night at 05:23 UTC ([Routing flags](#routing-flags)). Off until the repository variable `FLAGSHIP_APP_ID` is set |
+| `scripts/flagship.py` | The only writer of the routing flags: `validate`, `check`, `sync`, and `put`, `alias` and `delete` for the deploys and teardowns of targets. Tested by `.github/scripts/tests/test_flagship.py` against `flagship_fake.py` |
 | `scripts/deploy-worker.sh` and its parts | The deploy itself (render, classify, expand migration, `wrangler deploy`, smoke, rollback), run by the composite action: `render-wrangler.sh` (with the template `crates/worker/wrangler.deploy.toml`), `migrate-ci.sh`, `smoke-deploy.sh`, `smoke-bootstrap.sh`, `merge-assets.sh` and `check-asset-retention.sh` |
 | `scripts/check-web-diff.sh` | The Q-R2 gate for `web/` (the stock React app, imported from the oracle pin), run by the `web` job. Tested by `.github/scripts/tests/test-check-web-diff.sh` |
 
@@ -323,6 +325,43 @@ tag.
 Immutable releases lock a release's assets when it is published, so release-plz makes a draft (`git_release_draft`,
 read in its source: it creates the tag through the API first, then the release), and `release.yml`, dispatched on the tag,
 attaches the assets and publishes it.
+
+## Routing flags
+
+The edge (`crates/edge`, ADR-0111) asks Flagship where a pinned request goes. Every flag of its app is made from
+`.github/deploy/flagship/policy.json` by `scripts/flagship.py`; nobody edits a flag by hand.
+
+- **The flags.**
+  - `routing` is the kill switch, set from the policy's `routing`.
+  - `alias-<alias>` is one flag per alias the policy lists. It holds the target the alias names, written by
+    `flagship.py alias`.
+  - `target-<name>` is one flag per live target. `flagship.py put` writes it and `flagship.py delete` removes it; the
+    deploys and teardowns of targets call them.
+  - **Who gets a target.** A target flag serves its value, `{url, deployment, release, kind, data, expires}`, only to a
+    principal whose kind (`human` or `ci`) and audience (the opt-in path that admitted it) appear together in one of the
+    policy's rules for that kind of target. Anyone else gets `{}`, which the edge reads as production.
+- **The policy names no person.** Who may opt in through an audience is decided by the Access policy in the
+  infrastructure repository; this file says which kinds and audiences reach which kind of target. `flagship.py validate`,
+  run in `deps`, refuses an `@` and refuses audiences that differ from the edge's `ACCESS_AUD_<AUDIENCE>` variables.
+- **Switching routing on or off** is a pull request that sets `routing` in the policy; its merge runs `sync`.
+  - **In an emergency**, switching `routing` off in the dashboard, or disabling one target's flag, takes effect within
+    30 s.
+  - **Afterwards**, the nightly `check` reports the difference until the policy agrees or `flagship.yml` is run by hand
+    to restore it.
+- **`flagship.yml`.**
+  - `sync` runs on a push to `main` that changes the policy, the script or the workflow, and by hand. It also deletes
+    any flag the policy does not make.
+  - `check --evaluate` runs after it and every night. Besides comparing definitions, it asks Flagship what each flag
+    serves to every kind and audience.
+  - A pull request gets only `validate` and `test_flagship.py`: it has no secrets, and a policy change is meant to
+    differ from what is live.
+- **To turn it on**, once OpenTofu has made the app:
+  1. Create the environment `flagship`, with deployment branches limited to `main`.
+  2. Give it the secrets `FLAGSHIP_WRITE_TOKEN` and `FLAGSHIP_READ_TOKEN`: app-scoped Flagship tokens, Write and Read.
+  3. Give it the variables `CLOUDFLARE_ACCOUNT_ID` and `PREVIEW_HOST_SUFFIX` (the edge's).
+  4. Set the repository variable `FLAGSHIP_APP_ID`.
+
+What is not yet verified against the real service: [G-43](../testing/status.md).
 
 ## Permissions and supply chain
 
