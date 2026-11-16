@@ -1,0 +1,245 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "triggerd v1 policy structural schema",
+  "$comment": "SPEC.md is normative. UTF-8 byte limits, YAML AST restrictions, supported glob syntax, reserved keys, cross references, self-invalidation, unused disposition checks and work budgets require semantic validation.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "invalidate",
+    "changes",
+    "rules"
+  ],
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "invalidate": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 2048,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 1024
+      }
+    },
+    "changes": {
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 256,
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9-]*$"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/group"
+      }
+    },
+    "coverage": {
+      "type": "object",
+      "maxProperties": 256,
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9-]*$"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/disposition"
+      }
+    },
+    "rules": {
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 512,
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9-]*\\.[a-z][a-z0-9-]*$"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/rule"
+      }
+    }
+  },
+  "$defs": {
+    "group": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "paths": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 2048,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024
+          }
+        },
+        "exclude": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 2048,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024
+          }
+        }
+      },
+      "required": [
+        "paths"
+      ]
+    },
+    "rule": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "events": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "pull_request",
+              "push",
+              "workflow_dispatch",
+              "schedule",
+              "merge_group"
+            ]
+          }
+        },
+        "when": {
+          "$ref": "#/$defs/expression"
+        }
+      },
+      "required": [
+        "description",
+        "events",
+        "when"
+      ]
+    },
+    "expression": {
+      "oneOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "changed": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]*$"
+            }
+          },
+          "required": [
+            "changed"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "all": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "$ref": "#/$defs/expression"
+              }
+            }
+          },
+          "required": [
+            "all"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "any": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "$ref": "#/$defs/expression"
+              }
+            }
+          },
+          "required": [
+            "any"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "not": {
+              "$ref": "#/$defs/expression"
+            }
+          },
+          "required": [
+            "not"
+          ]
+        }
+      ]
+    },
+    "disposition": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "exempt"
+            },
+            "owner": {
+              "type": "string",
+              "minLength": 1
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "kind",
+            "owner",
+            "reason"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "external"
+            },
+            "owner": {
+              "type": "string",
+              "minLength": 1
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 1
+            },
+            "workflow": {
+              "type": "string",
+              "pattern": "^\\.github/workflows/[^/]+\\.ya?ml$"
+            },
+            "job": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "kind",
+            "owner",
+            "reason",
+            "workflow",
+            "job"
+          ]
+        }
+      ]
+    }
+  }
+}
