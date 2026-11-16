@@ -63,20 +63,30 @@ planner and the gate follow the ADR. The lint rules need the ADR's conventions, 
 **Purpose.** Later passes (5 caching, 6 parallelization, 7 CPU time) claim an improvement; this is what the claim is
 measured against. It is measured on the unchanged `ci`, and again after the migration to prove the migration cost nothing.
 
-**Acceptance.**
-- For the last 30 completed `ci` runs that ran past `changes` (so a docs-only run is not a sample of the full pipeline),
-  split into **full** (an `rc/*` pull request, a merge queue entry, the nightly run) and **affected-only**, the document
-  gives per job: runs, median and p90 duration, share of failures; per run: wall clock (`run_duration_ms`) and
-  runner-minutes (the sum of the jobs' `completed_at - started_at`).
+**Acceptance** (refined when the stage started, from what the API returned).
+- The last 30 runs of each class among the completed `ci` runs created since the job set last changed (#206,
+  2026-11-16T15:51:24Z; an older run has other jobs). The classes are decided by **what ran**, not what triggered the run:
+  **full** (every job group ran), **affected-only**, and **nothing** (counted, not sampled). Per job: runs, median and p90
+  duration, failures among its executions. Per run: the wall clock of the final attempt, split into the wait before the
+  first job and the execution span; the runner-seconds of every execution; and the part of those spent in jobs that failed.
+- An execution is a job name and its start time, because GitHub lists a job that passed in an earlier attempt again under
+  each later one, with a new id and its original times. A re-run's failed attempts count; a carried-over job counts once.
 - The method is in the document, and the script re-runs it and prints the same shape.
-- A control: the script run on a run list it must reject (an empty list; a run with no jobs) exits non-zero.
+- The controls: the script refuses an empty list of runs, a run with no jobs, a job with no conclusion, a negative
+  duration, an unknown job group and a malformed `--since`, and retries only a server error. Its self-test (38 checks) and
+  11 bugs planted one at a time, each caught, show that those refusals can fail.
+- The wall clock agrees with GitHub's `run_duration_ms` on three runs (within a second).
+
+**Done 2026-11-16**, in [research/0017-ci-baseline.md](../research/0017-ci-baseline.md) and
+[scripts/ci-baseline.py](../scripts/ci-baseline.py).
 
 **Steps.** `gh api repos/aRustyDev/thrust/actions/workflows/ci.yml/runs` for the run list; `.../runs/<id>/jobs` for each job's
 times; aggregate. The script is Python, run with `uv run`, kept in `.agents/plans/ci-workflows/scripts/`.
 
 **Public solutions.** `gh run list --json` has run-level times only, not a job's, so it cannot give the per-job table; the
-jobs endpoint can. No tool was found that aggregates this for a repository without a service account; the aggregation is
-about 60 lines. *(Hand-written: the aggregation. Probe: the timing endpoint above, which returned zero billable.)*
+jobs endpoint can. No tool was found that aggregates this for a repository without a service account; the aggregation is a
+small script with a self-test. *(Hand-written: the aggregation. Probe: the timing endpoint above, which returned zero
+billable.)*
 
 ## Stage 0.2: Nested-gate spike
 

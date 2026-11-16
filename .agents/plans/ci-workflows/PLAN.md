@@ -192,7 +192,7 @@ skipped.
 | Item | State |
 |---|---|
 | This plan | merged (#223) |
-| Phase 0 | planned in [phases/0001-foundation.md](phases/0001-foundation.md) (merged, #225). The owner's answers to its questions (2026-11-16) are recorded in the decisions table above. Stage 0.5, the baseline, is in progress |
+| Phase 0 | planned in [phases/0001-foundation.md](phases/0001-foundation.md) (merged, #225). The owner's answers to its questions (2026-11-16) are recorded in the decisions table above. Stage 0.5, the baseline, is done: [research/0017-ci-baseline.md](research/0017-ci-baseline.md) (this pull request). Next: stage 0.2, the gate spike |
 | #221 (crates move) | merged (50b4dba); stage 0.3 is unblocked |
 | Phase 1 and the phases after | not started |
 | Open for the owner | nothing |
