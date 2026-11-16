@@ -7,13 +7,17 @@ ADR-0011 (why old web files are kept). Staging is no longer "a push to `main`", 
 candidate on an `rc/*` branch, and production a `v*` release tag (the owner's decision of 2026-11-14,
 `.agents/plans/cicd-review/`), recorded in ADR-0110's update of 2026-11-15.
 
-**No environment has had a deploy through this pipeline yet.** Everything below that says what a run does is what the
-scripts do against a fake Cloudflare, and what `wrangler deploy --dry-run` and two `workflow_run` events have shown. The
-first staging deploy is the check, and the list at the end says what it settles. The first attempt (run 43676097831,
-2026-11-15 04:34Z, a manual staging deploy of `d16dbd6`) deferred correctly to `deploy-do`, which then failed at
-`wrangler deploy`: Cloudflare refused the request to `.../workers/scripts/thrust-staging/assets-upload-session`, so
-nothing was deployed `[verified 2026-11-15 from the run's log; cause not established, the token's scope is the first
-suspect]`.
+**Staging has had deploys through this pipeline (2026-11-15); production has not.** What a run does is also what the scripts
+do against a fake Cloudflare. The first attempt (run 43676097831, 04:34Z, a manual staging deploy of `d16dbd6`) deferred
+correctly to `deploy-do`, which then failed at `wrangler deploy`: Cloudflare refused the request to
+`.../workers/scripts/thrust-staging/assets-upload-session`, so nothing was deployed. The token held only Workers read
+permissions `[verified 2026-11-15: the same call with the same token gave 403 before the owner added the write permission,
+and 200 after]`. Its second attempt, once the token could write, created the Worker (version `9b0550ae`, no smoke: it was
+the first deploy). Then, under the `rc/*` flow and from a throwaway `rc/manual-*` branch at `a767aadf`: run 43758233044
+(deferred to the manual gate, because the previous release's bundle came from a run on `main`; approved; deployed; the
+smoke and its control passed), run 43763466550 (a deliberately wrong `THRUST_HYPERDRIVE_ID`: **failed**, Cloudflare code
+10157, the previous version untouched) and run 43763954773 (the right id: deployed, the smoke passed). The list at the end
+says what that settled and what has not been shown.
 
 ## A run ends in one of five ways
 
@@ -21,13 +25,14 @@ suspect]`.
 |---|---|---|
 | `deploy` green, `deploy-do` skipped | The commit is live, the smoke passed, its control refused a version nobody deployed, and (when there was a previous release) a script only that release had is still served | Nothing |
 | `deploy` green, `deploy-do` waiting | `deploy` deferred: the first deploy to this environment, a change to `[[migrations]]`, a live state it cannot read, or a previous release whose web files cannot be found. **Nothing was deployed.** The job summary says which | Read the summary. Approve `deploy-do` if you want it deployed, knowing a Durable Object lifecycle change cannot be rolled back |
-| `deploy` red before "deployed" | A check refused it and nothing changed: a missing variable (named in the error), a bundle that failed its attestation or is for another commit, an expand migration that failed, `wrangler` that could not list what is live | Read the failing step. Every migration is safe to run again, so re-run |
+| `deploy` red before "deployed" | A check refused it and nothing changed: a missing variable (named in the error), a bundle that failed its attestation or is for another commit, an expand migration that failed, `wrangler` that could not list what is live, or Cloudflare refusing the upload (a `THRUST_HYPERDRIVE_ID` that is not a Hyperdrive config gives `Hyperdrive binding 'HYPERDRIVE' references config '<id>' which was not found [code: 10157]` `[run 43763466550]`, and the previous version keeps serving) | Read the failing step. Every migration is safe to run again, so re-run |
 | `deploy` red after "deployed", `rolled_back: yes` | The smoke, its control or the asset control failed, and the previous version is serving again (a probe showed it answer) | The release is not live. Find out why from the run, and fix forward |
 | `deploy` red after "deployed", `rolled_back` anything else | No rollback was possible (a lifecycle change, or the first deploy), it failed, or it could not be verified. **A bad version may be serving** | [Roll back by hand](#rolling-back-by-hand), now |
 
 ## Setting an environment up
 
-An environment is a GitHub environment with the same set of variables and secrets in each of its two copies: `staging` and
+An environment is a GitHub environment with the same set of variables and secrets in each of its two copies (the same
+values, except `CLOUDFLARE_API_TOKEN`, which is a different token in each: see "The Cloudflare token" below): `staging` and
 `staging-do-lifecycle`, `production` and `production-do-lifecycle`. (`deploy` runs in the first, `deploy-do` in the second;
 a copy that is missing a value fails its job with the name of the value.)
 
@@ -46,10 +51,18 @@ a copy that is missing a value fails its job with the name of the value.)
 - **Secrets**: `CLOUDFLARE_API_TOKEN`, `TUNNEL_SERVICE_TOKEN_ID`, `TUNNEL_SERVICE_TOKEN_SECRET`, `DATABASE_URL`
   (`postgres://<role>:<password>@127.0.0.1:15432/thrust`: the host and port are fixed, they are the local end of the tunnel)
   and `SMOKE_PASSWORD`.
-- **The Cloudflare token** is scoped to Workers scripts (Account > Workers Scripts > Edit), and most likely Queues (a deploy
-  attaches the queue consumer) `[unverified: the first deploy shows the narrowest set that works]`. It has no zone
-  permission: the Custom Domain is attached by the infrastructure repository. It deviates from ADR-0101's OIDC because
-  Cloudflare documents no OIDC federation for wrangler.
+- **The Cloudflare token** is a different token in the two copies of an environment, with the names the token picker
+  shows `[measured 2026-11-15]`. `staging` and `production`, where `deploy` runs, hold the *ordinary* token: Account:
+  **Workers Editor** (the picker's *Workers* role at its Editor level) and **Queues Write**. It updates the existing Worker
+  and attaches its queue consumer, and it **cannot create a Worker**. `staging-do-lifecycle` and
+  `production-do-lifecycle`, where the reviewer-gated `deploy-do` runs and the first deploy creates the Worker, hold the
+  *lifecycle* token: **Workers Admin** and **Queues Write**. Neither has a zone permission, **yet both pass Cloudflare's
+  permission check for a Custom Domain write on the zone**: the Custom Domain API is filed under Workers Scripts, not
+  Workers Routes. So the domain is protected by review (it is declared in the infrastructure repository, and a plan shows
+  any change), not by the token. The picker cannot scope a Workers permission to one Worker, so either token can update
+  every Worker in the account. The infrastructure repository's runbook ("Credentials, by step") has the whole table and
+  how each token was measured. The token deviates from ADR-0101's OIDC because Cloudflare documents no OIDC federation
+  for wrangler.
 - **The repository variable `THRUST_DEPLOY_ENABLED`** (a repository variable, not an environment's) switches the automatic
   deploys on when it is `true`: staging for a release candidate, production for a release (which still waits for the
   reviewers). Until then a green `ci` on an `rc/*` pull request or on a tagged push to `main` plans `skip` and nothing else
@@ -106,8 +119,10 @@ breaks until the tab is reloaded. The deploy therefore keeps one release back: i
 files under the new release's. Afterwards it asks the live hostname for a script only the previous release had, and requires
 it to be served as that script, not as HTML.
 
-If the previous release's bundle cannot be found (expired, or never made by this pipeline), `deploy` defers to the manual
-gate: approving it deploys without keeping the old files, and open tabs may break until they reload. If it is found and fails
+If the previous release's bundle cannot be found (expired, never made by this pipeline, or made by a run on `main`: only a
+bundle from a run on an `rc/*` branch or a `v*` tag counts), `deploy` defers to the manual gate: approving it deploys
+without keeping the old files, and open tabs may break until they reload. So the **first deploy after a version that was
+deployed from `main`** always takes the gate (run 43758233044 did, on 2026-11-15). If it is found and fails
 a check (a forged or damaged one), the run fails, and there is no way past that at the gate.
 
 ## Deploying a Durable Object lifecycle change
@@ -137,8 +152,10 @@ Rollbacks page]`. Afterwards run the smoke by hand against the previous commit
 
 ## Rotating credentials
 
-- **The Cloudflare token.** Make the new token with the same scopes, set it as `CLOUDFLARE_API_TOKEN` in all four
-  environments, deploy the same commit to staging (an ordinary deploy that changes nothing), then revoke the old token.
+- **The Cloudflare tokens.** Make each new token with the same scopes (the ordinary one for `staging` and `production`, the
+  lifecycle one for the two `-do-lifecycle` copies), set it as `CLOUDFLARE_API_TOKEN` there, deploy the same commit to
+  staging (an ordinary deploy that changes nothing), then revoke the old token. Editing a token's permissions in
+  Cloudflare keeps its value, so that needs nothing changed in GitHub.
 - **The Access service token** (the infrastructure repository makes it, outside Terraform): set the new
   `TUNNEL_SERVICE_TOKEN_ID` and `TUNNEL_SERVICE_TOKEN_SECRET` in all four environments before the old one expires. A refused
   token shows as `migrate` failing to connect, with the tail of `cloudflared`'s log printed; the expand step only runs when a
@@ -148,12 +165,22 @@ Rollbacks page]`. Afterwards run the smoke by hand against the previous commit
 - **The Origin CA root** (`.github/deploy/cloudflare-origin-ca-rsa-root.pem`) expires on 2029-08-15. Replace it here and in the
   infrastructure repository before then; a test pins the fingerprint, so the change has to be made on purpose.
 
-## What the first staging deploy settles
+## What the first staging deploys settled
 
-Not verified until then: the shape of `wrangler deployments list --json` and `versions list --json` (the parser sends any
-other shape to the manual gate, never to an automatic rollback); the token's narrowest scopes; that `wrangler deploy`
-attaches the queue consumer with its dead-letter queue; the attestation flow end to end (`gh attestation verify` with the
-flags in `verify-bundle.sh`); that the workflow's own token can read an environment's protection rules (if it cannot, `plan`
-fails closed with a message that says so); the route to the database and Access accepting the service token; `verify-ca`
-meeting a real Origin CA certificate (the root is known to be accepted as a trust anchor); and the retention of web files
-over two real releases.
+**Settled on 2026-11-15**, by runs 43676097831 (second attempt), 43758233044, 43763466550 and 43763954773:
+
+- the shape of `wrangler deployments list --json` and `versions list --json`: the parser read both (`state=none`, then
+  `state=single` with the version id and its tag);
+- that `wrangler deploy` attaches the queue consumer with its dead-letter queue (Cloudflare shows the consumer with
+  `thrust-staging-events-dlq`);
+- the attestation flow end to end: `deploy` verified the bundle's attestation in every run;
+- that the workflow's own token can read an environment's protection rules: `plan` read them and passed;
+- the route to the database and Access accepting the service token, **from a GitHub-hosted runner**: `migrated (tls:
+  verify-ca)`, which also shows `verify-ca` meeting a real Origin CA certificate;
+- a wrong `THRUST_HYPERDRIVE_ID` fails the deploy with Cloudflare's code 10157 before anything is served, and the
+  control, the same dispatch with the right id, passes;
+- the token's scopes, in part: Workers Editor and Queues Write do an ordinary deploy, and creating the Worker takes Workers
+  Admin. Whether anything narrower would do was not tried.
+
+**Still not shown:** the retention of web files over two real releases (every deploy so far was a first deploy or the same
+commit again, so no older release's files were kept), and the rollback drill (above).
