@@ -7,8 +7,8 @@ ADR-0011 (why old web files are kept). Staging is no longer "a push to `main`", 
 candidate on an `rc/*` branch, and production a `v*` release tag (the owner's decision of 2026-11-14,
 `.agents/plans/cicd-review/`), recorded in ADR-0110's update of 2026-11-15.
 
-**Staging has had deploys through this pipeline (2026-11-15) and its rollback drill has passed (2026-11-16); production has not
-been deployed.** What a run does is also what the scripts
+**Staging has had deploys through this pipeline (2026-11-15) and its rollback drill has passed (2026-11-16); production has had
+its first deploy through it (2026-11-16, release `v0.2.0`; [what it settled](#what-the-first-production-deploy-settled)).** What a run does is also what the scripts
 do against a fake Cloudflare. The first attempt (run 43676097831, 04:34Z, a manual staging deploy of `d16dbd6`) deferred
 correctly to `deploy-do`, which then failed at `wrangler deploy`: Cloudflare refused the request to
 `.../workers/scripts/thrust-staging/assets-upload-session`, so nothing was deployed. The token held only Workers read
@@ -98,6 +98,17 @@ The Worker does not exist yet, so nothing can be attached to a hostname and the 
 
 `first_deploy_skip_smoke` is refused for an environment that already has a live version, before anyone is asked to approve
 anything, and together with `inject_smoke_failure`.
+
+**For production, a release starts a run by itself, and a first deploy must not approve it.** While `THRUST_DEPLOY_ENABLED` is
+`true`, publishing a release plans a production deploy once `ci` has passed on the tagged commit, and that run is dispatched
+**without** the tick: its `deploy` waits at `production` for the reviewers (for `v0.2.0` it was run 43908533141, waiting from
+16:32Z). Its smoke would look for a hostname that does not exist yet. Reject it, and dispatch step 1 by hand from the tag
+(`gh workflow run deploy.yml --ref v0.2.0 -f environment=production -f first_deploy_skip_smoke=true`). The two runs share the
+concurrency group `deploy-production`, so the run you dispatched shows its `deploy` as *pending*, not *waiting*, until the
+automatic one is rejected or has ended: that is the group, not a hang, and rejecting the automatic run first is the order to do it in.
+
+**A `deploy` job that goes red before anything is deployed, with an error of Cloudflare's own in the log** (attempt 1 of run
+43921084528, below), changed nothing: re-run the failed job. The re-run asks for the environment's approval again.
 
 ## An ordinary deploy
 
@@ -231,4 +242,47 @@ usually lacks the live commit. The classifier now fetches the live commit by its
 That is tested against a made-up history with diverged commits and against a fetch of a commit no branch holds, and **has not run
 on staging yet**: the first release candidate after it is the check.
 
-**Still not shown:** production has not been deployed through the pipeline.
+## What the first production deploy settled
+
+Release `v0.2.0` (commit `2cb8f355`), run 43921084528 on 2026-11-16, dispatched by hand from the tag with
+`first_deploy_skip_smoke` after the run the release had started by itself (43908533141) was rejected. The environments, the
+production database route (its own tunnel, Access application and service token) and the Worker's resources had been made in the
+infrastructure repository first.
+
+**Settled:**
+
+- `plan` read the protection rules of both production environments and passed;
+- the release's own attested bundle was the one deployed, and nothing was built in the run (`verify-bundle: ... is attested by
+  aRustyDev/thrust/.github/workflows/release.yml on refs/tags/v0.2.0`);
+- the first deploy deferred (`state=none`: "the first deploy to this environment (it carries the Durable Object migration and
+  the whole schema)"), and `deploy-do` ran once the owner approved it at `production-do-lifecycle`;
+- the route to the production database works from a GitHub-hosted runner: `migrate-ci: the tunnel's local end is up on
+  127.0.0.1:15432`, then `migrated (tls: verify-ca): no ledger yet: ran all 17 files once and recorded them`;
+- the Worker was created and deployed at 100 % (`thrust-production`, version `f3a8232b-8698-4ca9-8fac-60718cd1f761`, tagged
+  with the commit), with `merge-assets: new=1366 retained=0 total=1366` (a first deploy has nothing to keep), `automatic
+  rollback: false`, and the loud line `SMOKE SKIPPED (the first deploy of production, which has no hostname yet)`;
+- read back from the account afterwards, the bindings are production's own (its bucket, its queue with the consumer and the
+  dead-letter queue, its Hyperdrive configuration, its two rate-limit namespaces, `THRUST_CSRF_ENFORCE` `on`);
+- after the infrastructure repository attached the Custom Domain, `https://thrust.sow.foo/healthz` answered 200 `ok` with
+  `x-thrust-version` equal to the release's commit, and a smoke account made by `smoke-bootstrap.sh` signed in and read its
+  project. That smoke was **run by hand** (`smoke-deploy.sh`): three consecutive answers carrying the commit, a sign-in,
+  `/api/users/me/` and the project list. Its own controls failed as they must: a wrong expected version, a wrong password
+  (400, error 5065), a workspace that does not exist (403).
+
+**Found by the run:**
+
+- attempt 1 of the job `deploy` went red before it had changed anything: `wrangler versions list` for a Worker that did not exist
+  yet answered `An unknown error has occurred [code: 10013]`, and `deploy-worker.sh` takes only "does not exist" (`10007` and its
+  wording) as a missing Worker, so it failed, as it should for an error it does not know. Asked directly a few minutes
+  later (with another credential), the API answered `10007` for that Worker, and the re-run of the failed job passed (attempt 2). The cause was not found;
+- the run the release starts by itself is the wrong one for a first deploy, and its `deploy` holds the concurrency group
+  (above).
+
+**Still not shown for production:**
+
+- the pipeline's own smoke against production: step 5 of "The first deploy to an environment" (a deploy of the same commit without
+  the tick) has not run, and the smoke above was run by hand;
+- a second production release: the keeping of the previous release's web files, an ordinary deploy through the reviewers, and the
+  classifier on production's history. `inject_smoke_failure` is refused for production on purpose, so production's rollback has
+  not been exercised and rests on the staging drill;
+- a narrower Cloudflare token than the ones in use.

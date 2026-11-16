@@ -107,22 +107,14 @@ EXPECT_MAIL=7
 # The mail pass's relay: Mailpit, pinned (the SMTP adapter's own tests, tests/smtp_sink, pin the same version).
 MAILPIT_IMAGE=axllent/mailpit:v1.33.1
 
-# A free port, chosen at random: fixed ports collide with OrbStack-published containers and
-# with other sessions' wrangler instances (measured: 18080 and 8787 were both taken).
-pick_port() {
-  n=0
-  while [ "$n" -lt 50 ]; do
-    p=$((20000 + $(od -An -N2 -tu2 /dev/urandom | tr -d ' ') % 30000))
-    if ! lsof -nP -iTCP:"$p" -sTCP:LISTEN >/dev/null 2>&1; then
-      echo "$p"
-      return 0
-    fi
-    n=$((n + 1))
-  done
-  return 1
-}
+# Every port this run binds is drawn by `pick_port`, from below the kernel's outgoing-connection range (why: the library).
+# shellcheck source=scripts/lib/ports.sh
+. "$ROOT/scripts/lib/ports.sh"
+PORTS_TOP="$(ports_top)" || exit 3
+echo "[$TARGET/$PASS] ports drawn from $PORTS_FLOOR-$PORTS_TOP (the kernel's outgoing range starts at $(ephemeral_low))"
 
-PORT="${THRUST_PORT:-$(pick_port)}"
+PORT="${THRUST_PORT:-}"
+[ -n "$PORT" ] || PORT="$(pick_port)" || exit 3
 THRUST_ADMIN_TOKEN="$(openssl rand -hex 16)"
 export THRUST_ADMIN_TOKEN
 # The operator's routes (/internal/operator/*, Q-F7) are a door of their own, with a token of their own: the target is started with
@@ -139,7 +131,8 @@ export THRUST_SIGNIN_RATE_LIMIT="$SIGNIN_LIMIT"
 # target is configured to trust it. Every run has its own client secret, which only ever lives in this process's
 # environment and its children's (the Worker gets it through `env -i` in worker-dev.sh, not on argv). A deployed Worker
 # cannot reach 127.0.0.1, so scripts/stage2-contract.sh skips the `oidc_` tests.
-THRUST_MOCK_IDP_PORT="${THRUST_MOCK_IDP_PORT:-$(pick_port)}"
+THRUST_MOCK_IDP_PORT="${THRUST_MOCK_IDP_PORT:-}"
+[ -n "$THRUST_MOCK_IDP_PORT" ] || THRUST_MOCK_IDP_PORT="$(pick_port)" || exit 3
 THRUST_OIDC_CLIENT_SECRET="$(openssl rand -hex 16)"
 export THRUST_MOCK_IDP_PORT THRUST_OIDC_CLIENT_SECRET
 export THRUST_OIDC_ISSUER="http://127.0.0.1:$THRUST_MOCK_IDP_PORT"
@@ -232,13 +225,15 @@ if [ "$PASS" = "e2e" ]; then
 fi
 
 if [ "$ADAPTERS" = "postgres" ] || [ "$ADAPTERS" = "cloudflare" ]; then
-  PG_PORT="${THRUST_PG_PORT:-$(pick_port)}"
+  PG_PORT="${THRUST_PG_PORT:-}"
+  [ -n "$PG_PORT" ] || PG_PORT="$(pick_port)" || exit 3
   PG_PASSWORD="$(openssl rand -hex 12)"
   PG_CONTAINER="thrust-spike-pg-$$"
   # `-e NAME` without a value makes the docker CLI forward NAME from ITS environment, so the
   # password never appears on argv.
   POSTGRES_PASSWORD="$PG_PASSWORD" docker run -d --rm --name "$PG_CONTAINER" -e POSTGRES_PASSWORD -e POSTGRES_DB=thrust \
-    -p "127.0.0.1:$PG_PORT:5432" postgres:16-alpine -c "max_connections=$PG_MAX_CONNECTIONS" >"$LOG.pg.log" 2>&1 || { echo "could not start postgres" >&2; exit 3; }
+    -p "127.0.0.1:$PG_PORT:5432" postgres:16-alpine -c "max_connections=$PG_MAX_CONNECTIONS" >"$LOG.pg.log" 2>&1 ||
+    { echo "could not start postgres (port $PG_PORT); docker said:" >&2; tail -5 "$LOG.pg.log" >&2; exit 3; }
   i=0
   until [ "$(docker exec "$PG_CONTAINER" psql -U postgres -d thrust -tAc 'select 1' 2>/dev/null)" = "1" ]; do
     i=$((i + 1)); [ "$i" -gt 60 ] && { echo "postgres query probe failed" >&2; exit 3; }
@@ -259,7 +254,7 @@ fi
 if [ -n "${THRUST_PG_LATENCY_MS:-}" ] && [ -n "${PG_PORT:-}" ]; then
   # Put a fixed one-way delay between the server and Postgres (after the schema is applied directly), so a loopback run
   # pays something like the round trips of Hyperdrive + VPC service + tunnel. For the FR-22 before/after (research/0011).
-  PROXY_PORT="$(pick_port)"
+  PROXY_PORT="$(pick_port)" || exit 3
   uv run --quiet "$ROOT/scripts/pg-delay-proxy.py" "$PROXY_PORT" "$PG_PORT" "$THRUST_PG_LATENCY_MS" >"$LOG.proxy.log" 2>&1 &
   PROXY_PID=$!
   sleep 2
@@ -283,11 +278,14 @@ if [ "$PASS" = "mail" ] && [ "$KIND" = native ]; then
   # The relay: Mailpit, a mail server and sink written by someone else, so that what the server sends is read by a server that parses it for
   # itself. Plain (no TLS, no login: the adapter's own tests, tests/smtp_sink, are where those are shown). The native server's mail service is
   # its SMTP adapter; the Worker's is above.
-  MAIL_SMTP_PORT="${THRUST_MAIL_SMTP_PORT:-$(pick_port)}"
-  MAIL_HTTP_PORT="${THRUST_MAIL_HTTP_PORT:-$(pick_port)}"
+  MAIL_SMTP_PORT="${THRUST_MAIL_SMTP_PORT:-}"
+  [ -n "$MAIL_SMTP_PORT" ] || MAIL_SMTP_PORT="$(pick_port)" || exit 3
+  MAIL_HTTP_PORT="${THRUST_MAIL_HTTP_PORT:-}"
+  [ -n "$MAIL_HTTP_PORT" ] || MAIL_HTTP_PORT="$(pick_port)" || exit 3
   MAIL_CONTAINER="thrust-contract-mail-$$"
   docker run -d --rm --name "$MAIL_CONTAINER" -p "127.0.0.1:$MAIL_SMTP_PORT:1025" -p "127.0.0.1:$MAIL_HTTP_PORT:8025" "$MAILPIT_IMAGE" \
-    >"$LOG.mail.log" 2>&1 || { echo "could not start the mail server" >&2; exit 3; }
+    >"$LOG.mail.log" 2>&1 ||
+    { echo "could not start the mail server (ports $MAIL_SMTP_PORT, $MAIL_HTTP_PORT); docker said:" >&2; tail -5 "$LOG.mail.log" >&2; exit 3; }
   # up is what a client sees: the API answers and the SMTP port says 220
   i=0
   until curl -fsS "http://127.0.0.1:$MAIL_HTTP_PORT/api/v1/info" >/dev/null 2>&1 &&
@@ -334,6 +332,11 @@ until curl -fsS "$THRUST_BASE_URL/healthz" >/dev/null 2>&1; do
   if ! kill -0 "$SERVER_PID" 2>/dev/null; then
     echo "target process exited early; tail of server log:" >&2
     tail -30 "$LOG.server.log" >&2
+    # A refused bind (issue #93): name what holds the port, and in which state, so a recurrence explains itself.
+    if grep -qE 'AddrInUse|Address already in use' "$LOG.server.log" && command -v ss >/dev/null 2>&1; then
+      echo "port $PORT was refused; the sockets on it (ss):" >&2
+      ss -tan "( sport = :$PORT )" >&2 || true
+    fi
     exit 4
   fi
   sleep 1

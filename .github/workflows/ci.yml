@@ -140,6 +140,7 @@ jobs:
           sh .github/scripts/tests/test-lint-workflow.sh
           sh .github/scripts/tests/test-lint-all-workflows.sh
           sh .github/scripts/tests/test-check-flake-hunt-cell.sh
+          sh .github/scripts/tests/test-ports.sh
           sh .github/scripts/tests/test-deploy-worker.sh
           python3 -I .github/scripts/tests/test_active_version.py
           sh .github/scripts/tests/test-unpack-bundle.sh

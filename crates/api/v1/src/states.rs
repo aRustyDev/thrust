@@ -20,16 +20,13 @@ use unicode_normalization::UnicodeNormalization;
 
 use crate::dto::{into_object, StateDto};
 use crate::fields::{
-    bool_field, char_field, choice_field, float_field, name_was_padded, not_a_dictionary, read, refuse_if_any,
-    FieldErrors,
+    bool_field, choice_of, float_field, name_was_padded, not_a_dictionary, read_into, refuse_if_any, FieldErrors,
 };
 use crate::pagination::{Page, PageRequest};
 use crate::projects::ts;
 use crate::request::{json_body, pick_fields, query_map, Body};
+use crate::values::{NullableText, Prose, Text};
 use crate::{with_allow, Ctx, PlaneUuid, V1Error, V1Path};
-
-/// The groups a state may be in (`StateGroup`), as DRF's choice field lists them.
-const GROUPS: [&str; 6] = ["backlog", "unstarted", "started", "completed", "cancelled", "triage"];
 
 pub(crate) fn routes() -> Router {
     Router::new()
@@ -139,35 +136,120 @@ fn state_error(e: StateError, changing: bool) -> V1Error {
     }
 }
 
-/// What a body says of a state, as the pin's `StateSerializer` reads it: every field it knows is checked, and what is wrong is one
-/// 400. `is_triage` is read and checked and then not kept (it follows the group here), and `sequence` is read on a change; a creation
-/// that names one has it replaced by the database.
-fn state_patch(b: &Map<String, Value>, partial: bool) -> Result<StatePatch, V1Error> {
-    let mut errors = FieldErrors::new();
-    for field in ["name", "color"] {
-        if !partial && !b.contains_key(field) {
-            crate::fields::fail(&mut errors, field, "This field is required.");
+/// A state's group, read as DRF's choice field over the groups `StateGroup` has: the list is `StateGroup::ALL`, for the parser and for
+/// the document alike.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Group(StateGroup);
+
+impl Group {
+    fn read(v: &Value) -> Result<Self, String> {
+        choice_of(v, StateGroup::parse).map(Self)
+    }
+}
+
+#[cfg(feature = "openapi")]
+impl utoipa::PartialSchema for Group {
+    fn schema() -> utoipa::openapi::RefOr<utoipa::openapi::Schema> {
+        utoipa::openapi::RefOr::T(utoipa::openapi::Schema::Object(crate::openapi::state_group()))
+    }
+}
+
+#[cfg(feature = "openapi")]
+impl utoipa::ToSchema for Group {
+    fn name() -> std::borrow::Cow<'static, str> {
+        std::borrow::Cow::Borrowed("StateGroupChoice")
+    }
+}
+
+/// What a body says of a state, as the pin's `StateSerializer` reads it: every field it knows is read into this, and what is wrong is
+/// one 400. The pin names a body whose keys may all be left out `Patched…`, and this is that: a change reads into it as it is, and a
+/// creation reads into it and must also name [`PatchedStateRequest::REQUIRED`]. A key left out is `None`. Each field's type says what
+/// it takes, and the document is written from these types (the schema `PatchedStateRequest` is this struct, and `Creations` in
+/// `openapi.rs` makes `StateRequest` of it with `REQUIRED`), so the bounds below are the only place they are written. Only the two
+/// external keys take a `null`.
+#[derive(Debug, Default)]
+#[cfg_attr(
+    feature = "openapi",
+    derive(utoipa::ToSchema),
+    schema(description = "What a state's change takes: the creation's keys, none required.")
+)]
+pub(crate) struct PatchedStateRequest {
+    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
+    name: Option<Text<1, 255>>,
+    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
+    description: Option<Prose>,
+    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
+    color: Option<Text<1, 255>>,
+    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
+    sequence: Option<f64>,
+    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
+    group: Option<Group>,
+    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
+    default: Option<bool>,
+    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
+    external_source: Option<NullableText<0, 255>>,
+    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
+    external_id: Option<NullableText<0, 255>>,
+    // read and checked and then not kept: it follows the group here (the register carries the difference)
+    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
+    #[allow(
+        dead_code,
+        reason = "read, checked, and not kept: it is the document's key and the pin's, and here it follows the group"
+    )]
+    is_triage: Option<bool>,
+}
+
+impl PatchedStateRequest {
+    /// The keys a creation must name; a change names none of them. The document's creation is written from this list, so it is the
+    /// parser's.
+    pub(crate) const REQUIRED: [&'static str; 2] = ["name", "color"];
+
+    /// Read a body: every key it names is checked, and what is wrong is one 400. `sequence` is read on a change; a creation that names
+    /// one has it replaced by the database.
+    fn read(b: &Map<String, Value>, partial: bool) -> Result<Self, V1Error> {
+        let mut errors = FieldErrors::new();
+        for field in Self::REQUIRED {
+            if !partial && !b.contains_key(field) {
+                crate::fields::fail(&mut errors, field, "This field is required.");
+            }
+        }
+        let request = read_into!(PatchedStateRequest, errors, b, {
+            name: Text::read,
+            description: Prose::read,
+            color: Text::read,
+            sequence: float_field,
+            group: Group::read,
+            default: bool_field,
+            external_source: NullableText::read,
+            external_id: NullableText::read,
+            is_triage: bool_field,
+        });
+        refuse_if_any(errors)?;
+        Ok(request)
+    }
+}
+
+impl From<PatchedStateRequest> for StatePatch {
+    fn from(r: PatchedStateRequest) -> Self {
+        StatePatch {
+            name: r.name.map(Text::into_string),
+            description: r.description.map(Prose::into_string),
+            color: r.color.map(Text::into_string),
+            sequence: r.sequence,
+            group: r.group.map(|g| g.0),
+            is_default: r.default,
+            external_source: r.external_source.map(NullableText::into_option),
+            external_id: r.external_id.map(NullableText::into_option),
         }
     }
-    let text = |blank: bool, null: bool| move |v: &Value| char_field(v, Some(255), blank, null);
-    let patch = StatePatch {
-        name: read(&mut errors, b, "name", text(false, false)).flatten(),
-        description: read(&mut errors, b, "description", |v| char_field(v, None, true, false)).flatten(),
-        color: read(&mut errors, b, "color", text(false, false)).flatten(),
-        sequence: read(&mut errors, b, "sequence", float_field),
-        group: read(&mut errors, b, "group", |v| {
-            let group = choice_field(v, &GROUPS)?;
-            StateGroup::parse(group).ok_or_else(|| format!("\"{group}\" is not a valid choice."))
-        }),
-        is_default: read(&mut errors, b, "default", bool_field),
-        external_source: read(&mut errors, b, "external_source", text(true, true)),
-        external_id: read(&mut errors, b, "external_id", text(true, true)),
-    };
-    // a value `is_triage` that is no boolean is refused, as any field of the pin's serializer is
-    let _ = read(&mut errors, b, "is_triage", bool_field);
-    refuse_if_any(errors)?;
-    Ok(patch)
 }
+
+/// The creation's body in the document: `PatchedStateRequest` with `name` and `color` required, which `Creations` (`openapi.rs`) writes from
+/// the change's schema. The type is the name the path declarations use for it.
+#[cfg(feature = "openapi")]
+#[derive(utoipa::ToSchema)]
+#[allow(dead_code, reason = "a name for the document: nothing builds it")]
+pub(crate) struct StateRequest;
 
 // --- the routes ---------------------------------------------------------------------------------------------------------------
 
@@ -215,7 +297,7 @@ pub(crate) async fn list(
         tag = "States",
         summary = "Create state",
         params(("slug" = String, Path), ("project_id" = thrust_contracts::Uuid, Path)),
-        request_body(content = crate::openapi::StateRequest, content_type = "application/json"),
+        request_body(content = StateRequest, content_type = "application/json"),
         responses(
             crate::openapi::Refused,
             (status = 200, description = "State created", body = StateDto),
@@ -237,7 +319,7 @@ pub(crate) async fn create(
         Body::Object(map) => map,
         Body::Array => return Err(not_a_dictionary()),
     };
-    let patch = state_patch(&map, false)?;
+    let patch: StatePatch = PatchedStateRequest::read(&map, false)?.into();
     let padded = name_was_padded(&map, patch.name.as_deref());
     match thrust_core::create_state(&ctx.app, &scope, patch).await {
         // the pin looks the state that has the name up by the text as it was sent, which DRF trimmed before the database saw it: a
@@ -299,7 +381,7 @@ pub(crate) async fn retrieve(
             ("state_id" = thrust_contracts::Uuid, Path)
         ),
         // not required: an empty body is an empty object (`json_body`), as DRF reads it
-        request_body(content = Option<crate::openapi::PatchedStateRequest>, content_type = "application/json"),
+        request_body(content = Option<PatchedStateRequest>, content_type = "application/json"),
         responses(
             crate::openapi::Refused,
             (status = 200, description = "State updated", body = StateDto),
@@ -323,7 +405,7 @@ pub(crate) async fn update(
         Body::Object(map) => map,
         Body::Array => return Err(not_a_dictionary()),
     };
-    let patch = state_patch(&map, true)?;
+    let patch: StatePatch = PatchedStateRequest::read(&map, true)?.into();
     let state = thrust_core::change_state(&ctx.app, &scope, state.0, patch).await.map_err(|e| state_error(e, true))?;
     Ok(Json(Value::Object(state_body(&state)?)))
 }
