@@ -1,0 +1,147 @@
+{
+  "version": 1,
+  "description": "Illustrative independent minimum-check expectations; replace with reviewed repository dependency evidence before enforcement.",
+  "owner": "example-component-reviewer",
+  "defaults": {
+    "event": "pull_request",
+    "activity": "synchronize",
+    "scope": "",
+    "repository": "aRustyDev/thrust",
+    "base": "1111111111111111111111111111111111111111",
+    "head": "2222222222222222222222222222222222222222",
+    "before": null,
+    "prNumber": 1,
+    "policyRevision": "3333333333333333333333333333333333333333",
+    "actionRevision": "3333333333333333333333333333333333333333",
+    "testRevision": "3333333333333333333333333333333333333333"
+  },
+  "cases": [
+    {
+      "name": "API producer-only change must test UI consumer",
+      "evidence": "A consumer can break when only the producer contract/behavior changes; this expectation is not generated from triggerd.yml.",
+      "changes": [
+        {
+          "status": "modified",
+          "path": "apps/api/studios/project/example.py"
+        }
+      ],
+      "required": [
+        "api.inference-mock",
+        "ui.contract-tests",
+        "security.secrets"
+      ],
+      "forbidden": []
+    },
+    {
+      "name": "shared API contract selects both sides",
+      "evidence": "Both the API producer and UI consumer consume contracts/api.",
+      "changes": [
+        {
+          "status": "modified",
+          "path": "contracts/api/openapi.json"
+        }
+      ],
+      "required": [
+        "api.inference-mock",
+        "ui.contract-tests",
+        "security.secrets"
+      ],
+      "forbidden": []
+    },
+    {
+      "name": "new source component needs conservative selection",
+      "evidence": "No component ownership has been assigned for this new path, even though an unused broad group matches it.",
+      "changes": [
+        {
+          "status": "added",
+          "path": "src/new-service/main.py"
+        }
+      ],
+      "required": [
+        "api.inference-mock",
+        "docs.api-review",
+        "foo.both-python",
+        "security.secrets",
+        "ui.contract-tests"
+      ],
+      "forbidden": []
+    },
+    {
+      "name": "foo alone is insufficient for interaction",
+      "evidence": "The illustrative interaction explicitly requires both Python areas.",
+      "changes": [
+        {
+          "status": "modified",
+          "path": "src/foo/a.py"
+        }
+      ],
+      "required": [
+        "security.secrets"
+      ],
+      "forbidden": [
+        "foo.both-python"
+      ]
+    },
+    {
+      "name": "metadata exemption does not skip universal scan",
+      "evidence": "Prose-only exemption explicitly preserves the independent universal scan.",
+      "changes": [
+        {
+          "status": "modified",
+          "path": "README.md"
+        }
+      ],
+      "required": [
+        "security.secrets"
+      ],
+      "forbidden": []
+    }
+  ],
+  "mutations": [
+    {
+      "name": "remove API from UI consumer rule",
+      "operation": {
+        "kind": "remove-any-child",
+        "rule": "ui.contract-tests",
+        "group": "api"
+      },
+      "mustFail": [
+        "API producer-only change must test UI consumer"
+      ]
+    },
+    {
+      "name": "remove shared contract from API consumer",
+      "operation": {
+        "kind": "remove-any-child",
+        "rule": "api.inference-mock",
+        "group": "shared-api-contract"
+      },
+      "mustFail": [
+        "shared API contract selects both sides"
+      ]
+    },
+    {
+      "name": "broaden narrow fixture exemption to all other source",
+      "operation": {
+        "kind": "replace-paths",
+        "group": "foo-text-fixtures",
+        "paths": [
+          "src/**"
+        ]
+      },
+      "mustFail": [
+        "new source component needs conservative selection"
+      ]
+    },
+    {
+      "name": "omit UI workflow binding",
+      "operation": {
+        "kind": "remove-binding",
+        "rule": "ui.contract-tests"
+      },
+      "mustFail": [
+        "static bindings completeness"
+      ]
+    }
+  ]
+}

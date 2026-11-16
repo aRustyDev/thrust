@@ -1,0 +1,26 @@
+name: triggerd
+description: Bounded policy-based CI check selection
+inputs:
+  rules-file:
+    description: Checkout-relative triggerd policy path
+    required: false
+    default: .github/triggerd.yml
+  scope:
+    description: Optional exact rule namespace
+    required: false
+    default: ''
+  github-token:
+    description: Read-only GitHub token for pull-request collection
+    required: true
+  full-check:
+    description: Select every event-eligible rule without collecting a diff
+    required: false
+    default: 'false'
+outputs:
+  rules:
+    description: Compact JSON map of rule IDs to execution Booleans
+  details:
+    description: Compact JSON explanation and provenance object
+runs:
+  using: node24
+  main: dist/main.js

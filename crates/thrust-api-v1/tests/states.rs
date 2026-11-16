@@ -439,9 +439,9 @@ fn a_body_that_is_not_an_object_is_refused() {
     assert_eq!(empty.body, json!({"name": ["This field is required."], "color": ["This field is required."]}));
 }
 
-/// D-031 (5), proposed: a body that is a form or multipart is a 415 on a state, as on a project (D-030 (5)); the pin reads both. The
-/// register entries SD-010 and SD-011 (`tools/oracle-v1/schema/diff-accepted.json`) rest on this: the two media types, on the two
-/// routes that read a body.
+/// D-031 (5), which is D-030 (5) for every v1 route (owner, 2026-11-16): a body that is a form or multipart is a 415 on a state, as on
+/// a project; the pin reads both. The register entries SD-010 and SD-011 (`tools/oracle-v1/schema/diff-accepted.json`) rest on this:
+/// the two media types, on the two routes that read a body.
 #[rstest]
 fn a_form_or_a_multipart_body_is_a_415(
     #[values("application/x-www-form-urlencoded", "multipart/form-data; boundary=x")] content_type: &str,

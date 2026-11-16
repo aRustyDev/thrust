@@ -1,0 +1,352 @@
+{
+  "version": 1,
+  "description": "Exact scheduling expectations, not observed evaluator results; not the independent coverage oracle.",
+  "defaults": {
+    "event": "pull_request",
+    "activity": "synchronize",
+    "scope": "",
+    "repository": "aRustyDev/thrust",
+    "base": "1111111111111111111111111111111111111111",
+    "head": "2222222222222222222222222222222222222222",
+    "before": null,
+    "prNumber": 1,
+    "policyRevision": "3333333333333333333333333333333333333333",
+    "actionRevision": "3333333333333333333333333333333333333333",
+    "testRevision": "3333333333333333333333333333333333333333"
+  },
+  "cases": [
+    {
+      "name": "foo alone",
+      "changes": [
+        {
+          "status": "modified",
+          "path": "src/foo/a.py"
+        }
+      ],
+      "expected": {
+        "api.inference-mock": false,
+        "docs.api-review": false,
+        "foo.both-python": false,
+        "security.secrets": true,
+        "ui.contract-tests": false
+      }
+    },
+    {
+      "name": "bar alone",
+      "changes": [
+        {
+          "status": "modified",
+          "path": "src/bar/a.py"
+        }
+      ],
+      "expected": {
+        "api.inference-mock": false,
+        "docs.api-review": false,
+        "foo.both-python": false,
+        "security.secrets": true,
+        "ui.contract-tests": false
+      }
+    },
+    {
+      "name": "both across aggregate PR diff",
+      "changes": [
+        {
+          "status": "modified",
+          "path": "src/foo/a.py"
+        },
+        {
+          "status": "added",
+          "path": "src/bar/nested/b.py"
+        }
+      ],
+      "expected": {
+        "api.inference-mock": false,
+        "docs.api-review": false,
+        "foo.both-python": true,
+        "security.secrets": true,
+        "ui.contract-tests": false
+      }
+    },
+    {
+      "name": "narrow text exemption plus bar",
+      "changes": [
+        {
+          "status": "modified",
+          "path": "src/foo/a.txt"
+        },
+        {
+          "status": "modified",
+          "path": "src/bar/a.py"
+        }
+      ],
+      "expected": {
+        "api.inference-mock": false,
+        "docs.api-review": false,
+        "foo.both-python": false,
+        "security.secrets": true,
+        "ui.contract-tests": false
+      }
+    },
+    {
+      "name": "unused broad group does not account for new service",
+      "changes": [
+        {
+          "status": "added",
+          "path": "src/new-service/main.py"
+        }
+      ],
+      "expected": {
+        "api.inference-mock": true,
+        "docs.api-review": true,
+        "foo.both-python": true,
+        "security.secrets": true,
+        "ui.contract-tests": true
+      }
+    },
+    {
+      "name": "rename accounts for both sides",
+      "changes": [
+        {
+          "status": "renamed",
+          "path": "src/bar/a.py",
+          "previousPath": "src/foo/a.py"
+        }
+      ],
+      "expected": {
+        "api.inference-mock": false,
+        "docs.api-review": false,
+        "foo.both-python": true,
+        "security.secrets": true,
+        "ui.contract-tests": false
+      }
+    },
+    {
+      "name": "API only also selects UI consumer",
+      "changes": [
+        {
+          "status": "modified",
+          "path": "apps/api/studios/project/example.py"
+        }
+      ],
+      "expected": {
+        "api.inference-mock": true,
+        "docs.api-review": true,
+        "foo.both-python": false,
+        "security.secrets": true,
+        "ui.contract-tests": true
+      }
+    },
+    {
+      "name": "UI only selects UI consumer",
+      "changes": [
+        {
+          "status": "modified",
+          "path": "apps/ui/src/example.ts"
+        }
+      ],
+      "expected": {
+        "api.inference-mock": false,
+        "docs.api-review": false,
+        "foo.both-python": false,
+        "security.secrets": true,
+        "ui.contract-tests": true
+      }
+    },
+    {
+      "name": "API plus docs still executes docs checker",
+      "changes": [
+        {
+          "status": "modified",
+          "path": "apps/api/studios/project/example.py"
+        },
+        {
+          "status": "modified",
+          "path": "docs/src/apps/api/example.md"
+        }
+      ],
+      "expected": {
+        "api.inference-mock": true,
+        "docs.api-review": true,
+        "foo.both-python": false,
+        "security.secrets": true,
+        "ui.contract-tests": true
+      }
+    },
+    {
+      "name": "shared contract selects both consumers",
+      "changes": [
+        {
+          "status": "modified",
+          "path": "contracts/api/openapi.json"
+        }
+      ],
+      "expected": {
+        "api.inference-mock": true,
+        "docs.api-review": false,
+        "foo.both-python": false,
+        "security.secrets": true,
+        "ui.contract-tests": true
+      }
+    },
+    {
+      "name": "shared Python input selects declared API consumer",
+      "changes": [
+        {
+          "status": "modified",
+          "path": ".python-version"
+        }
+      ],
+      "expected": {
+        "api.inference-mock": true,
+        "docs.api-review": false,
+        "foo.both-python": false,
+        "security.secrets": true,
+        "ui.contract-tests": false
+      }
+    },
+    {
+      "name": "known docs external coverage",
+      "changes": [
+        {
+          "status": "modified",
+          "path": "docs/src/example.md"
+        }
+      ],
+      "expected": {
+        "api.inference-mock": false,
+        "docs.api-review": false,
+        "foo.both-python": false,
+        "security.secrets": true,
+        "ui.contract-tests": false
+      }
+    },
+    {
+      "name": "unknown application conservatively selects all",
+      "changes": [
+        {
+          "status": "added",
+          "path": "apps/new-service/main.go"
+        }
+      ],
+      "expected": {
+        "api.inference-mock": true,
+        "docs.api-review": true,
+        "foo.both-python": true,
+        "security.secrets": true,
+        "ui.contract-tests": true
+      }
+    },
+    {
+      "name": "engine invalidates all eligible rules",
+      "changes": [
+        {
+          "status": "modified",
+          "path": ".github/actions/triggerd/src/main.ts"
+        }
+      ],
+      "expected": {
+        "api.inference-mock": true,
+        "docs.api-review": true,
+        "foo.both-python": true,
+        "security.secrets": true,
+        "ui.contract-tests": true
+      }
+    },
+    {
+      "name": "verified empty net diff after full revert",
+      "changes": [],
+      "expected": {
+        "api.inference-mock": false,
+        "docs.api-review": false,
+        "foo.both-python": false,
+        "security.secrets": true,
+        "ui.contract-tests": false
+      }
+    },
+    {
+      "name": "deleted API input selects consumers",
+      "changes": [
+        {
+          "status": "removed",
+          "path": "apps/api/studios/project/example.py"
+        }
+      ],
+      "expected": {
+        "api.inference-mock": true,
+        "docs.api-review": true,
+        "foo.both-python": false,
+        "security.secrets": true,
+        "ui.contract-tests": true
+      }
+    },
+    {
+      "name": "rename old unknown path still forces fallback",
+      "changes": [
+        {
+          "status": "renamed",
+          "path": "apps/api/example.py",
+          "previousPath": "unowned/example.py"
+        }
+      ],
+      "expected": {
+        "api.inference-mock": true,
+        "docs.api-review": true,
+        "foo.both-python": true,
+        "security.secrets": true,
+        "ui.contract-tests": true
+      }
+    },
+    {
+      "name": "explicit PR full-check does not collect diff",
+      "changes": null,
+      "expected": {
+        "api.inference-mock": true,
+        "docs.api-review": true,
+        "foo.both-python": true,
+        "security.secrets": true,
+        "ui.contract-tests": true
+      },
+      "fullCheck": true,
+      "expectedChangeSet": {
+        "kind": "not-collected",
+        "reason": "explicit-full-check"
+      }
+    },
+    {
+      "name": "manual full-check preserves event eligibility",
+      "changes": null,
+      "expected": {
+        "api.inference-mock": true,
+        "docs.api-review": false,
+        "foo.both-python": true,
+        "security.secrets": true,
+        "ui.contract-tests": true
+      },
+      "context": {
+        "event": "workflow_dispatch",
+        "activity": "",
+        "base": null,
+        "prNumber": null
+      },
+      "expectedChangeSet": {
+        "kind": "not-collected",
+        "reason": "manual"
+      }
+    },
+    {
+      "name": "API scoped output keeps exact single key",
+      "changes": [
+        {
+          "status": "modified",
+          "path": "apps/ui/src/example.ts"
+        }
+      ],
+      "expected": {
+        "api.inference-mock": false
+      },
+      "context": {
+        "scope": "api"
+      }
+    }
+  ]
+}

@@ -35,8 +35,9 @@ pub enum Body {
 }
 
 /// Read the body. An empty body is an empty object; any content type but JSON is a 415 (the pin's other parsers, forms and
-/// multipart, are not read here yet); a body that does not parse is a 400 with the parser's message (Python's wording is not
-/// reproduced, so the register carries that difference); a JSON value that is neither an object nor a list is a 400.
+/// multipart, are not read here on purpose: D-030 (5), for every v1 route, to be revisited if a real client sends a form); a
+/// body that does not parse is a 400 with the parser's message (Python's wording is not reproduced, so the register carries
+/// that difference); a JSON value that is neither an object nor a list is a 400.
 pub fn json_body(headers: &HeaderMap, bytes: &[u8]) -> Result<Body, V1Error> {
     if bytes.iter().all(u8::is_ascii_whitespace) {
         return Ok(Body::Object(Map::new()));
