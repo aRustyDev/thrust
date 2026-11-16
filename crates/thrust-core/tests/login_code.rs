@@ -454,6 +454,16 @@ fn the_codes_are_the_pins_range_and_the_tail_is_thrown_away() {
     assert_eq!(code_from_bits(u32::MAX), None);
 }
 
+/// A generated draw near the top of the range made the periodicity check below add past `u32::MAX` (a bug of the test, not of the mapping): the
+/// draws that have no later draw of the same code are the last 900000 below the limit, and the ones above it.
+#[test]
+fn regression_the_periodicity_check_does_not_overflow_near_the_top_of_the_range() {
+    for bits in [u32::MAX, u32::MAX - 1, u32::MAX - 899_999, (u32::MAX / 900_000) * 900_000 - 1] {
+        let _ = code_from_bits(bits);
+        assert_eq!(bits.checked_add(900_000).filter(|b| *b < (u32::MAX / 900_000) * 900_000), None);
+    }
+}
+
 proptest! {
     /// Any draw below the limit is six digits, and the mapping is periodic over the whole range it keeps, so each of the 900000 codes has
     /// exactly as many draws as any other (a bias would show as a code with one more).
@@ -465,8 +475,8 @@ proptest! {
                 prop_assert!(bits < limit);
                 prop_assert!((100_000..=999_999).contains(&c));
                 prop_assert_eq!(c.to_string().len(), 6);
-                if bits + 900_000 < limit {
-                    prop_assert_eq!(code_from_bits(bits + 900_000), Some(c));
+                if let Some(later) = bits.checked_add(900_000).filter(|b| *b < limit) {
+                    prop_assert_eq!(code_from_bits(later), Some(c));
                 }
             }
             None => prop_assert!(bits >= limit),
