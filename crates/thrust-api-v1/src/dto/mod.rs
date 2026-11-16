@@ -10,10 +10,17 @@
 mod labels;
 mod projects;
 mod states;
+mod work_items;
 
 pub(crate) use labels::LabelDto;
 pub(crate) use projects::{ProjectDto, ProjectLiteDto};
 pub(crate) use states::StateDto;
+pub(crate) use work_items::{
+    IssueDto, IssueSearchDto, IssueSearchItemDto, LabelRef, Listing, StateBriefDto, StateRef, UserBriefDto, UserRef,
+};
+// only the document names the enum (the routes build it through `Priority`'s `Into`)
+#[cfg(feature = "openapi")]
+pub(crate) use work_items::PriorityEnum;
 
 use serde::Serialize;
 use serde_json::{Map, Value};
