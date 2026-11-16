@@ -297,8 +297,8 @@ The stock sign-in screen draws "Forgot your password?" as a link to the reset pa
 "ask your admin" line otherwise. Thrust has the two routes behind the link (`POST /auth/forgot-password/` and `POST
 /auth/reset-password/<uidb64>/<token>/`, D-041). A deployment answers the request with `SMTP_NOT_CONFIGURED` (the pin's own answer without
 `EMAIL_HOST`), and says `is_smtp_configured: false`, unless it has **both** a mail service and a `THRUST_PUBLIC_BASE_URL`. The native server
-(`thrust-server`) can have one, an SMTP relay it is told about in its environment (E2, below); **the Worker cannot yet** (its `send_email` binding is
-E3), so a deployed Worker is dark and the way back in is still the operator's reset above.
+(`thrust-server`) can have one, an SMTP relay it is told about in its environment (E2, below), and the Worker can, its `send_email` binding with a
+sender it is given (E3, below). A deployment with neither is dark, and the way back in is the operator's reset above.
 
 What switching it on takes:
 
@@ -321,9 +321,23 @@ What switching it on takes:
   that refuses or cannot be reached is the pin's generic 500 and leaves no link behind, the person asks again, and the server's log says what the relay said
   (which can carry the recipient's address).
 
-  The Worker's binding is E3, not built. It sends only from a domain the Cloudflare account owns and has Email Sending enabled for, and refuses any other
-  (spike 0002 step 10 saw both: one real message from an owned domain was accepted on 2026-10-24, and one from `example.com` was refused; whether the accepted
-  one reached a mailbox was not checked).
+  On the Worker the mail service is Cloudflare Email Sending, through the Worker's `send_email` binding (`EMAIL`) and **no relay, no password and no token**:
+  the binding is the credential (E3, `thrust-adapters-cloudflare::email`). It sends only from a domain the Cloudflare account owns and has Email Sending
+  enabled for (`wrangler email sending list` lists them) and refuses any other (spike 0002 step 10 saw both: one real message from an owned domain was
+  accepted on 2026-10-24, and one from `example.com` was refused; whether the accepted one reached a mailbox was not checked). What a Worker is given:
+
+  | | |
+  |---|---|
+  | `THRUST_EMAIL_FROM` | the sender, one plain address, `no-reply@notify.example.com`, on such a domain. Unset is no mail service. Set with no `EMAIL` binding, or not one plain address, the Worker says so on every request and does not start without mail quietly |
+  | `THRUST_EMAIL_FROM_NAME` | the name shown beside it (`Thrust`). Optional, and refused without a sender |
+  | `[[send_email]] name = "EMAIL"` | the binding. In the deploy template it is restricted to the one sender (`allowed_sender_addresses`), which the binding itself enforces whatever the code asks for |
+
+  The deployed Worker's two values are an environment's: `THRUST_EMAIL_FROM` is a GitHub environment variable with no default (the deploy refuses to render
+  without it, and refuses a name, a list, a capital letter and a placeholder domain), `THRUST_PUBLIC_BASE_URL` is filled from the `THRUST_BASE_URL` the
+  smoke already uses, so the links point at the origin people reach and cannot disagree with it. Staging sends as `no-reply@notify.sow.foo`, on a domain
+  the account has enabled. The mail goes in the request as on the native server (no queue, no retry). The binding's refusal is `Rejected` and a limit, an
+  outage or a code nobody has met is `Unavailable` (the 21 codes of Cloudflare's table are pinned in `tests/email.rs`); a refusal without a code, which is how
+  the local simulator and spike 0002's refusal of an unowned sender read, is told by its words, "not allowed".
 - **`THRUST_PUBLIC_BASE_URL`**, the address a link starts with (`https://projects.example.com`), set by the deployment and never taken from a
   request: a forged `Host` header would otherwise mail a victim a working token to someone else's page. Without it no link can be made, so
   the feature stays off even with a mail service.
