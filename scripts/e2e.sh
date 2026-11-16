@@ -5,7 +5,16 @@
 # lists it, and fails on any 404 or 5xx in the network log (the specs and e2e/support/ say what else would make a journey pass without
 # proving anything). Green on Plane and red on Thrust is a parity defect; red on Plane means the journey is wrong.
 #
-#   scripts/e2e.sh <target> [controls]
+#   scripts/e2e.sh <target> [mail] [controls]
+#     mail      the other suite: the journeys that need a mail service (e2e/journeys-mail/, one file each), on a Worker that has one
+#               (scripts/contract.sh's `e2e-mail` pass: the `send_email` binding as wrangler dev simulates it and THRUST_PUBLIC_BASE_URL
+#               set, so the app draws "Sign in with unique code"; the journey reads the code it is mailed from THRUST_MAIL_WRANGLER_LOG,
+#               the simulator's log). A suite of its own because the first one holds that the target has NO mail (the sign-in journey
+#               asserts that the button is absent, and the pinned Plane has none), and its count guard holds every file of e2e/journeys/
+#               to that. Worker targets only: not plane-oracle (the pin writes its code to its Valkey and its stack has no mail sink; see
+#               docs/src/testing/status.md). E2E_RECORD_HAR is refused for it: a HAR of a code sign-in holds a live code, and the committed
+#               HARs are the replay harness's input. Its controls are smtp-off, code-dropped and mail-unread (below), with wrong-target,
+#               slow-page and skip as for the first suite
 #     target    worker-cf | worker-memory
 #                         a Worker started the way scripts/contract.sh starts it (its `e2e` pass: the app's files served by the
 #                         Worker, CSRF enforcement at the Worker's own default, which is off) and stopped after. The native server
@@ -36,12 +45,20 @@
 #                 slow-page     the one that must PASS: the browser is slowed to a CI runner's pace (CPU 6x, E2E_CPU_RATE) and the profile
 #                               answer that the home page asks for as it mounts is held for 2 s. A journey that is right on a fast
 #                               machine only, such as one that answers the welcome tour the moment it shows, fails it (G-31)
+#               and, for the mail suite:
+#                 smtp-off      the browser says in `/api/instances/` that no mail service is configured, so that the app does not draw
+#                               the button; the journey must fail at "ask for a code"
+#                 code-dropped  the browser changes the code in the form it posts to `/auth/magic-sign-in/` to one that no code is, so
+#                               that the real server refuses it; the journey must fail at "the code signs in"
+#                 mail-unread   the journey looks in the simulator's log for the mail of an address that was never mailed, and waits
+#                               3 s; it must fail at "read the code from the mail"
 #
 #   E2E_RECORD_HAR=1   after a passing run, scrub the network log of each journey (tools/e2e-har/scrub.py) into e2e/har/<journey>.<target>.har,
 #                      with the bodies of the /api/ and /auth/ calls: the input of spike 0009's replay harness. Commit what it writes
 #
-# The count guard: every run's own JSON report must say that every journey in e2e/journeys/ passed, and none was skipped or flaky
-# (e2e/support/check-report.mjs). The number of journeys is the number of files, so a filter or a skip cannot select fewer and pass.
+# The count guard: every run's own JSON report must say that every journey in the suite's directory (e2e/journeys/, or e2e/journeys-mail/
+# for `mail`) passed, and none was skipped or flaky (e2e/support/check-report.mjs). The number of journeys is the number of files, so a
+# filter or a skip cannot select fewer and pass.
 #
 # The app must be built first (the result is web/apps/web/build/client): this script builds it when it is not, with the pnpm and Node
 # that web/ pins. In CI the cell builds it in steps of its own (.github/workflows/contract-cell.yml).
@@ -54,9 +71,30 @@
 # command. POSIX sh: CI runs it under dash.
 set -u
 
-TARGET="${1:?usage: e2e.sh <worker-cf|worker-memory|running|plane-oracle> [controls]}"
-WHAT="${2:-}"
-case "$WHAT" in "" | controls) ;; *) echo "e2e: the second argument is 'controls' or nothing, not '$WHAT'" >&2; exit 2 ;; esac
+TARGET="${1:?usage: e2e.sh <worker-cf|worker-memory|running|plane-oracle> [mail] [controls]}"
+shift
+WHAT=""
+# the suite: `journeys` (no mail on the target) or `mail`; `running` is told it by E2E_SUITE, which scripts/contract.sh's e2e-mail pass sets
+SUITE="${E2E_SUITE:-journeys}"
+for arg in "$@"; do
+  case "$arg" in
+    controls) WHAT=controls ;;
+    mail) SUITE=mail ;;
+    *) echo "e2e: an argument after the target is 'mail' or 'controls', not '$arg'" >&2; exit 2 ;;
+  esac
+done
+case "$SUITE" in
+  journeys) SUITE_DIR=journeys; PASS_NAME=e2e ;;
+  mail) SUITE_DIR=journeys-mail; PASS_NAME=e2e-mail ;;
+  *) echo "e2e: E2E_SUITE is '$SUITE': it is journeys or mail" >&2; exit 2 ;;
+esac
+export E2E_SUITE="$SUITE"
+if [ "$SUITE" = mail ]; then
+  [ "$TARGET" != plane-oracle ] ||
+    { echo "e2e: the mail suite has no pinned-Plane leg: the pin writes its code to its Valkey and its stack has no mail sink" >&2; exit 2; }
+  # a HAR of a code sign-in holds a live code and the session it makes, and the committed HARs are the replay harness's input
+  [ "${E2E_RECORD_HAR:-}" != 1 ] || { echo "e2e: E2E_RECORD_HAR is refused for the mail suite: its HAR would hold a live sign-in code" >&2; exit 2; }
+fi
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 APP="${E2E_ASSETS_DIR:-$ROOT/web/apps/web/build/client}"
 
@@ -68,13 +106,20 @@ case "$TARGET" in
       pnpm --dir "$ROOT/web" exec turbo run build --filter=web || { echo "e2e: the build of the app failed" >&2; exit 2; }
       [ -s "$APP/index.html" ] || { echo "e2e: the build made no $APP/index.html" >&2; exit 2; }
     fi
-    # start the target as the contract suite does and come back here, with it up, as `running`: contract.sh's `e2e` pass runs this script
+    # start the target as the contract suite does and come back here, with it up, as `running`: contract.sh's `e2e` pass (`e2e-mail` for the
+    # mail suite) runs this script
     export E2E_ASSETS_DIR="$APP" E2E_WHAT="$WHAT"
-    exec "$ROOT/scripts/contract.sh" "$TARGET" e2e
+    exec "$ROOT/scripts/contract.sh" "$TARGET" "$PASS_NAME"
     ;;
   running | plane-oracle) ;;
   *) echo "e2e: unknown target '$TARGET'" >&2; exit 2 ;;
 esac
+
+if [ "$SUITE" = mail ]; then
+  # the journey reads the code from the simulator's log; a target that was not started by the e2e-mail pass has none to read
+  [ -n "${THRUST_MAIL_WRANGLER_LOG:-}" ] ||
+    { echo "e2e: the mail suite reads the code from the Worker's simulated mail log: THRUST_MAIL_WRANGLER_LOG is not set (scripts/contract.sh's e2e-mail pass sets it)" >&2; exit 2; }
+fi
 
 if [ "$TARGET" = plane-oracle ]; then
   # the pinned Plane is the one target the journeys are told is `plane`; its browser origin is what compose.ui.yml tells the API
@@ -101,11 +146,11 @@ export E2E_OUT="$OUT"
 
 # one journey per file: this is the number the count guard holds the report to
 count_journeys() {
-  set -- "$ROOT"/e2e/journeys/*.spec.ts
+  set -- "$ROOT"/e2e/"$SUITE_DIR"/*.spec.ts
   if [ -e "$1" ]; then echo "$#"; else echo 0; fi
 }
 JOURNEYS="$(count_journeys)"
-[ "$JOURNEYS" -ge 1 ] || { echo "e2e: there are no journeys in $ROOT/e2e/journeys/" >&2; exit 2; }
+[ "$JOURNEYS" -ge 1 ] || { echo "e2e: there are no journeys in $ROOT/e2e/$SUITE_DIR/" >&2; exit 2; }
 
 # the journey's own dependencies, at the lockfile; and the browser they drive (a no-op when it is there)
 pnpm --dir "$ROOT/e2e" install --frozen-lockfile --ignore-scripts > "$OUT/install.log" 2>&1 ||
@@ -225,11 +270,17 @@ if [ "$VERDICT" = PASS ] && [ "${E2E_RECORD_HAR:-}" = 1 ]; then
 fi
 
 if [ "$WHAT" = controls ]; then
-  must_fail control-stickies-404 "with the stickies list answering 404" "an unexpected 404: GET /api/workspaces/.*/stickies/ -> 404" stickies-404
-  must_fail control-empty-list "with the work-item list emptied" "see it in the list:" empty-list
-  must_fail control-sso-on "with two sign-in providers turned on in the browser" "a sign-in method other than the password" sso-on
-  must_fail control-change-refused "with the change of password answered as refused in the browser" "change the password:" change-refused
-  must_fail control-change-dropped "with the change of password answered as done in the browser and never sent" "the other browser is signed out:" change-dropped
+  if [ "$SUITE" = mail ]; then
+    must_fail control-smtp-off "with the browser told that no mail service is configured" "ask for a code:" smtp-off
+    must_fail control-code-dropped "with the code in the form changed to one that is not a code" "the code signs in:" code-dropped
+    must_fail control-mail-unread "with the journey looking for the mail of an address that was never mailed" "read the code from the mail:" mail-unread
+  else
+    must_fail control-stickies-404 "with the stickies list answering 404" "an unexpected 404: GET /api/workspaces/.*/stickies/ -> 404" stickies-404
+    must_fail control-empty-list "with the work-item list emptied" "see it in the list:" empty-list
+    must_fail control-sso-on "with two sign-in providers turned on in the browser" "a sign-in method other than the password" sso-on
+    must_fail control-change-refused "with the change of password answered as refused in the browser" "change the password:" change-refused
+    must_fail control-change-dropped "with the change of password answered as done in the browser and never sent" "the other browser is signed out:" change-dropped
+  fi
   must_fail control-wrong-target "told it is on $OTHER" "TARGET GUARD ($OTHER)" "" "$OTHER"
   must_pass control-slow-page "with the browser slowed to a CI runner's pace and the profile answer of the home page late" slow-page
 

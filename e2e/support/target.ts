@@ -61,3 +61,21 @@ export async function assertTarget(baseURL: string, wanted: Target): Promise<voi
     throw guard(wanted, `not the pinned Plane: GET /api/schema/ answered ${schema.status} ${schema.type}, not an OpenAPI document`);
   }
 }
+
+// The mail suite's second question, asked after `assertTarget`: does this target have a mail service? The app draws "Sign in with unique code"
+// from `is_smtp_configured` of `/api/instances/`, and scripts/contract.sh's e2e-mail pass refuses a Worker that does not say it (its vacuity guard);
+// this is the same question from the journey's side, for a run that was not started by that pass (`scripts/e2e.sh running`). Without it a journey
+// aimed at a target with no mail would fail at "ask for a code", which reads as the app's fault. Its words are `TARGET GUARD (mail)`.
+export async function assertMailTarget(baseURL: string): Promise<void> {
+  const instance = await probe(`${baseURL}/api/instances/`);
+  const config = isObject(instance.json) && isObject(instance.json.config) ? instance.json.config : undefined;
+  if (!config || config.is_smtp_configured !== true) {
+    throw new Error(
+      `TARGET GUARD (mail): GET /api/instances/ says is_smtp_configured is ${String(config?.is_smtp_configured)}, and this journey needs a target with a mail service ` +
+        `(scripts/e2e.sh <target> mail starts one)`,
+    );
+  }
+  if (!process.env.THRUST_MAIL_WRANGLER_LOG) {
+    throw new Error("TARGET GUARD (mail): THRUST_MAIL_WRANGLER_LOG is not set, so the code that is mailed cannot be read");
+  }
+}

@@ -52,6 +52,9 @@ scripts/contract.sh <target> [pass]
                                              In contract-all.sh, so a CI cell. By hand: `scripts/oracle-v1.sh <target> [controls]`)
           e2e                               (worker-* only: the first browser journey, the stock app in Chromium against a Worker that serves it, with its must-fail
                                              control; needs Node and pnpm, and the app built. In contract-all.sh as `worker-cf e2e`, so a CI cell. By hand: `scripts/e2e.sh <target> [controls]`)
+          e2e-mail                          (worker-* only: the browser journeys that need a mail service, e2e/journeys-mail/: the same Worker and app with the `mail` pass's mail
+                                             service, and the journey reads the code it is mailed from the simulator's log. In contract-all.sh as `worker-cf e2e-mail`, so a CI
+                                             cell. By hand: `scripts/e2e.sh <target> mail [controls]`)
           engine | scale                    (every target, opt-in: not in contract-all.sh. The engine-deciding tests; list, search and create at 100k items)
 ```
 

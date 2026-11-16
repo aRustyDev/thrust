@@ -14,8 +14,14 @@ if (!baseURL) {
 const reporter: ReporterDescription[] = [["list"]];
 if (process.env.E2E_JSON) reporter.push(["json", { outputFile: process.env.E2E_JSON }]);
 
+// Two suites, because the target of one has no mail service and the target of the other has (scripts/e2e.sh: `mail`, which sets E2E_SUITE):
+// journeys/ holds that the sign-in page draws no way in but the password; journeys-mail/ needs the page to draw "Sign in with unique code".
+// Each suite's directory is what the count guard of scripts/e2e.sh counts, so a journey cannot move between them without that being seen.
+const suite = process.env.E2E_SUITE ?? "journeys";
+if (suite !== "journeys" && suite !== "mail") throw new Error(`E2E_SUITE is '${suite}': it is journeys or mail`);
+
 export default defineConfig({
-  testDir: "journeys",
+  testDir: suite === "mail" ? "journeys-mail" : "journeys",
   testMatch: "*.spec.ts",
   fullyParallel: false,
   workers: 1,

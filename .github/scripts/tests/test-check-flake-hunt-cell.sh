@@ -32,7 +32,7 @@ is_cell() { awk -v t="$1" -v p="$2" '$1 == "run" && $2 == t && $3 == p && NF == 
 # 1. every target x every pass contract.sh knows, against this repository's matrix
 cells=0
 for t in native-memory native-pg worker-memory worker-cf native-sqlite; do
-  for p in main sweeper csrfoff panic blast bench scale worker cron engine bindings e2e mail oracle budget nope; do
+  for p in main sweeper csrfoff panic blast bench scale worker cron engine bindings e2e e2e-mail mail oracle budget nope; do
     if is_cell "$t" "$p" "$ALL"; then want=0; cells=$((cells + 1)); else want=1; fi
     expect "$t $p" "$want" "" "$t" "$p" 5 "$ALL"
   done
@@ -69,7 +69,7 @@ expect "a prefix of a cell is not a cell" 1 "" native-memory mai 5 "$T/m.sh"
 expect "a target and pass in one argument is not a cell" 1 "" "native-memory main" "" 5 "$T/m.sh"
 
 # 5. the error says what the target does run
-expect "the error names the target's passes" 1 "worker-cf runs: main sweeper panic cron mail worker bindings oracle e2e" worker-cf csrfoff 5 "$ALL"
+expect "the error names the target's passes" 1 "worker-cf runs: main sweeper panic cron mail worker bindings oracle e2e e2e-mail" worker-cf csrfoff 5 "$ALL"
 expect "an unknown target is named as one" 1 "'native-sqlite' is not a target" native-sqlite main 5 "$ALL"
 
 # 6. flake-hunt.yml offers exactly the matrix's targets and passes

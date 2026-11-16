@@ -29,6 +29,14 @@
 #                              `VERDICT: PASS`, with its must-fail control unless E2E_WHAT is set to '' for none. In contract-all.sh, so a
 #                              CI cell. scripts/e2e.sh <target> [controls] is the way in by hand; its logs, and the network's HAR, go to
 #                              target/contract-logs/<target>-e2e.e2e/
+#             e2e-mail         (worker-* only) the browser journeys that need a mail service (e2e/journeys-mail/, E2E_SUITE=mail of
+#                              scripts/e2e.sh): the e2e pass's Worker and app, with the `mail` pass's mail service (the `send_email`
+#                              binding as wrangler dev simulates it, whose log the journey reads for the code it is mailed) and
+#                              THRUST_PUBLIC_BASE_URL, so the app draws "Sign in with unique code". A pass of its own because the e2e
+#                              pass holds that the target has NO mail (the sign-in journey asserts the button is absent, and the
+#                              pinned Plane has no mail either), and its count guard holds every journey of e2e/journeys/ to that. In
+#                              contract-all.sh, so a CI cell; scripts/e2e.sh <target> mail [controls] is the way in by hand; its logs go
+#                              to target/contract-logs/<target>-e2e-mail.e2e/
 #             mail             the password reset by email on a target that has a mail service (D-041), and `--test mail` walks the whole
 #                              path: the request, the message the mail service was given, the link in it, and the reset. A native target
 #                              (E2) gets THRUST_SMTP_* pointing at a Mailpit container (Docker) started beside it, whose API is where the
@@ -142,7 +150,7 @@ export THRUST_OIDC_REDIRECT_URI="$THRUST_BASE_URL/auth/oidc/callback/"
 # The e2e pass is the stock app in a browser, and the app draws an SSO button when `/api/instances/` says a provider is configured (D-040). The deployed
 # Worker has none (it cannot reach a WARP-only issuer until Q-0050.9), and the sign-in journey holds that the page shows the password and nothing else, so
 # that pass starts its target as the deployment runs: with no provider. (worker-dev.sh passes an empty setting on, which is none.)
-if [ "$PASS" = e2e ]; then
+if [ "$PASS" = e2e ] || [ "$PASS" = e2e-mail ]; then
   unset THRUST_OIDC_ISSUER THRUST_OIDC_CLIENT_ID THRUST_OIDC_CLIENT_SECRET THRUST_OIDC_REDIRECT_URI
 fi
 # Mail: only the `mail` pass has a mail service. Every other pass starts its target the way the deployments are today, with none, and the main
@@ -165,7 +173,7 @@ esac
 # setting the pass does not expect, to show that the guard refuses it.
 # The e2e pass is the stock app's own journey, which sends the token on its auth posts only, so it too runs at the default (off).
 case "$PASS" in
-  csrfoff | e2e) CSRF=off; WANT_CSRF=false; CSRF_DEFAULT=default ;;
+  csrfoff | e2e | e2e-mail) CSRF=off; WANT_CSRF=false; CSRF_DEFAULT=default ;;
   *) CSRF=on; WANT_CSRF=true; CSRF_DEFAULT=on ;;
 esac
 CSRF_SERVER="${THRUST_SERVER_CSRF_ENFORCE:-$CSRF_DEFAULT}"
@@ -216,7 +224,7 @@ case "$TARGET" in
   *) echo "unknown target $TARGET" >&2; exit 2 ;;
 esac
 
-if [ "$PASS" = "e2e" ]; then
+if [ "$PASS" = "e2e" ] || [ "$PASS" = "e2e-mail" ]; then
   # Only a Worker serves the app (ADR-0011, round 29: the native server's static files are not built), and it must have the app to serve.
   [ "$KIND" = worker ] || { echo "[$TARGET/$PASS] the native server does not serve the app yet: the e2e pass is for the worker targets" >&2; exit 2; }
   E2E_ASSETS_DIR="${E2E_ASSETS_DIR:-$ROOT/web/apps/web/build/client}"
@@ -263,7 +271,8 @@ if [ -n "${THRUST_PG_LATENCY_MS:-}" ] && [ -n "${PG_PORT:-}" ]; then
   echo "[$TARGET/$PASS] postgres behind a ${THRUST_PG_LATENCY_MS} ms one-way delay proxy (port $PROXY_PORT)"
 fi
 
-if [ "$PASS" = "mail" ] && [ "$KIND" != native ]; then
+if { [ "$PASS" = "mail" ] || [ "$PASS" = "e2e-mail" ]; } && [ "$KIND" != native ]; then
+  # (the e2e-mail pass is a Worker's only, and reads the same log from a browser journey, e2e/support/mail.ts, as the mail pass's tests do)
   # A Worker has no relay: its mail service is the `send_email` binding, and under `wrangler dev` (local, no `remote = true`) the binding is a
   # simulator that sends nothing and writes each message it is asked to send to the dev server's log (the sender, the recipient, the subject)
   # and to files (the text and the html), by the paths the log gives. That is wrangler's own account of what the binding was given, so the tests
@@ -314,7 +323,7 @@ if [ "$KIND" = "native" ]; then
   SERVER_PID=$!
 else
   # Worker: `wrangler dev` (local workerd). See scripts/worker-dev.sh. The e2e pass has it serve the app's files too.
-  if [ "$PASS" = "e2e" ]; then export THRUST_ASSETS_DIR="$E2E_ASSETS_DIR"; fi
+  if [ "$PASS" = "e2e" ] || [ "$PASS" = "e2e-mail" ]; then export THRUST_ASSETS_DIR="$E2E_ASSETS_DIR"; fi
   THRUST_PORT="$PORT" THRUST_ADAPTERS="$ADAPTERS" THRUST_OUTBOX_FASTPATH="$FASTPATH" \
     THRUST_CSRF_ENFORCE="$CSRF_SERVER" \
     "$ROOT/scripts/worker-dev.sh" >"$LOG.server.log" 2>&1 &
@@ -376,7 +385,7 @@ esac
 
 # The same guard for mail: the `mail` pass against a target with no mail service would fail its tests for the wrong reason (and every other
 # pass against one that has one would pass the dark test for none), so the app's own question, `/api/instances/`, must say what the pass needs.
-if [ "$PASS" = mail ]; then WANT_SMTP=true; else WANT_SMTP=false; fi
+if [ "$PASS" = mail ] || [ "$PASS" = e2e-mail ]; then WANT_SMTP=true; else WANT_SMTP=false; fi
 INSTANCES="$(curl -fsS "$THRUST_BASE_URL/api/instances/" 2>/dev/null || true)"
 case "$INSTANCES" in
   *"\"is_smtp_configured\":$WANT_SMTP"*) ;;
@@ -464,6 +473,14 @@ case "$PASS" in
     E2E_WHAT="${E2E_WHAT-controls}" E2E_OUT="${E2E_OUT:-$LOG.e2e}" "$ROOT/scripts/e2e.sh" running
     TEST_STATUS=$?
     echo "[$TARGET/$PASS] e2e exit=$TEST_STATUS"
+    exit "$TEST_STATUS"
+    ;;
+  e2e-mail)
+    # The same, for the journeys that need mail (e2e/journeys-mail/): the Worker above has the mail service, and the journey reads the code
+    # it is mailed from THRUST_MAIL_WRANGLER_LOG, which this script exported above and which the browser run inherits.
+    E2E_SUITE=mail E2E_WHAT="${E2E_WHAT-controls}" E2E_OUT="${E2E_OUT:-$LOG.e2e}" "$ROOT/scripts/e2e.sh" running
+    TEST_STATUS=$?
+    echo "[$TARGET/$PASS] e2e-mail exit=$TEST_STATUS"
     exit "$TEST_STATUS"
     ;;
   scale)
