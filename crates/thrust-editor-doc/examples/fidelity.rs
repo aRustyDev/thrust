@@ -111,7 +111,7 @@ fn main() {
         .position(|a| a == "--out")
         .and_then(|i| args.get(i + 1))
         .cloned()
-        .unwrap_or_else(|| concat!(env!("CARGO_MANIFEST_DIR"), "/../../target/spike-0006").to_string());
+        .unwrap_or_else(|| concat!(env!("THRUST_ROOT"), "/target/spike-0006").to_string());
     let corpus_path = if large {
         format!("{out_dir}/corpus-large.json")
     } else {

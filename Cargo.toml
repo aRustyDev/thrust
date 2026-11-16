@@ -54,6 +54,10 @@ thrust-api = { path = "crates/thrust-api" }
 thrust-plane-types = { path = "crates/thrust-plane-types" }
 thrust-api-v1 = { path = "crates/thrust-api-v1" }
 thrust-compat-plane = { path = "crates/thrust-compat-plane" }
+# `default-features = false` must be here: Cargo ignores a member's own `default-features = false` on an inherited
+# dependency unless the workspace entry has it. Every user of thrust-editor-doc asks for the one feature it needs.
+thrust-editor-doc = { path = "crates/thrust-editor-doc", default-features = false }
+thrust-oracle-fixture = { path = "crates/thrust-oracle-fixture" }
 
 # ADR-0006's panic policy: request-derived data can never panic, because on the Worker (panic=abort) a panic fails its own request
 # and can fail others on the same isolate. A crate opts in with `[lints] workspace = true`: thrust-core, thrust-ports and every

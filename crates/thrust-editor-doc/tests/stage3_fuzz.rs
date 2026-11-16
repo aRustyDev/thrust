@@ -18,7 +18,7 @@ fn same(a: &Value, b: &Value) -> bool {
 /// and `deep` nextest profiles, and fails when they are missing rather than passing with nothing compared.
 #[test]
 fn oracle_stage3_fuzz_html() {
-    let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../target/spike-0006");
+    let dir = concat!(env!("THRUST_ROOT"), "/target/spike-0006");
     let rd =
         std::fs::read_dir(dir).unwrap_or_else(|e| panic!("{dir}: {e} (generate it with tools/spike-0006/gen-all.sh)"));
     let mut files: Vec<_> = rd

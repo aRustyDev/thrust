@@ -1,0 +1,16 @@
+# Cargo configuration for the workspace (read by every cargo run inside this repository).
+#
+# THRUST_ROOT is the workspace root as an absolute path, with a trailing slash. Code that reads a file outside its own
+# crate builds the path from it, `concat!(env!("THRUST_ROOT"), "/tools/...")`, instead of climbing out of
+# CARGO_MANIFEST_DIR with `../..`, so a crate reads the same file at any depth under crates/ (ADR-0009). The leading `/`
+# leaves a `//`, which every path API reads as one separator.
+#
+# * `relative = true` resolves the value against the directory that holds `.cargo/` (measured: "" gives the root with a
+#   trailing slash, "." gives `<root>/.`).
+# * `force = true`: without it, a THRUST_ROOT already in the environment wins over this file (measured).
+# * Cargo finds this file from the directory it runs in, not from `--manifest-path`: run cargo from inside the repository,
+#   as every script and CI job does. From outside, the tests that use THRUST_ROOT fail to compile ("environment variable
+#   `THRUST_ROOT` not defined at compile time"); they never read a wrong path.
+# * cargo-mutants builds in a copy of the tree, and the copy's own `.cargo/config.toml` points THRUST_ROOT at the copy.
+[env]
+THRUST_ROOT = { value = "", relative = true, force = true }

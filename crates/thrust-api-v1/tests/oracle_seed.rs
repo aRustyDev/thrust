@@ -34,7 +34,7 @@ fn loaded() -> (axum::Router, Value) {
 }
 
 fn recorded(file: &str, exchange: &str) -> Value {
-    let path = format!("{}/../../tools/oracle-v1/corpus/{file}", env!("CARGO_MANIFEST_DIR"));
+    let path = format!("{}/tools/oracle-v1/corpus/{file}", env!("THRUST_ROOT"));
     let corpus: Value = serde_json::from_str(&std::fs::read_to_string(&path).expect("the corpus file")).expect("JSON");
     corpus["exchanges"]
         .as_array()
