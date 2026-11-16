@@ -1,6 +1,6 @@
 # Architecture gates
 
-Status: **live** · Gate: `scripts/check-deps.sh`
+Status: **live** · Gates: `scripts/check-deps.sh`, `scripts/check-layout.sh`
 
 ## Catches
 
@@ -9,9 +9,15 @@ the portable core, and the Worker and server graphs must stay separate. It also 
 `sea-orm`, `diesel`, `diesel-async`: ADR-0044) out of the whole workspace. A violation compiles and passes every
 behavioural test, which is why it needs its own gate.
 
+`scripts/check-layout.sh` checks ADR-0009's layout of `crates/` by directory: a crate in a group that does not name it,
+a test fixture or a spike that a shipping crate depends on, `core/` depending on a crate outside it, and a path that a
+move left stale where nothing would notice (a workflow's `paths:` filter, `.cargo/mutants.toml`'s globs, a `.gitignore`
+line under `crates/`).
+
 ## Use when / Not when
 
-Run after any change to a `Cargo.toml`, a feature flag or a crate boundary. It does not check code inside a crate:
+Run after any change to a `Cargo.toml`, a feature flag or a crate boundary, and `check-layout.sh` after adding, moving
+or removing a crate or a group. It does not check code inside a crate:
 clippy's panic lints do (the `lint` job), and `cargo deny` checks licences, advisories and sources and bans the ORM
 crates a second time (the `deny` job, configured by `deny.toml`).
 
@@ -25,10 +31,19 @@ The ORM check asks the whole workspace, in any crate, on any kind of edge and in
 answers one of three things for each crate: absent, present (the tree starts with that crate), or "cargo could not
 say" (offline, a stale lock), which fails with its own message so it is never read as absent.
 
+`scripts/check-layout.sh` reads the tracked files (`git ls-files`) and the workspace (`cargo metadata --no-deps`). A
+directory under `crates/` is a crate (a workspace member) or a group; a group holds no file but a `README.md` that
+names each directory in it as `` `<name>/` ``, and no crate contains another. No crate has a normal or build dependency
+on a crate in `testing/` or `spikes/`, and nothing in `core/` has one on a crate outside `core/`. Dev-dependencies are
+allowed in both: a test may use a fixture, and `thrust-core`'s tests run against the memory adapters. Its success
+line counts what it read (groups, filter entries, globs, ignore lines), so a check that read nothing shows it.
+
 ## Run
 
 ```sh
 scripts/check-deps.sh      # [verified 2026-10-19 dd093fa: exit 0]
+scripts/check-layout.sh               # [verified 2026-11-16: exit 0, 19 crates, 9 groups]
+scripts/check-layout.sh --self-test   # 23 cases, each must be accepted or refused as it says
 ```
 
 ## Required controls
@@ -45,6 +60,11 @@ graph (ADR-0044)`, and the tree under it starts at `sea-orm v1.1.20` and names `
 2026-11-05 7d0074f]`. With `sea-orm` as an optional dependency behind a feature that nothing enables, the script
 fails, because of `--all-features`, and so does `cargo deny check bans` `[verified 2026-11-05 7d0074f]`. Cargo needs
 the network for this to resolve; offline, the script reports its `ERROR` line, not a hit.
+
+`check-layout.sh --self-test` is its control, and CI runs it beside the check. It builds a small consistent world, which
+must pass, then breaks it one way at a time, and each case must exit 1 with the message of the rule it breaks (not
+just any failure). An empty world must exit 2, not 0. On the real tree, a tracked `crates/stray.txt` exits 1
+`[verified 2026-11-16]`.
 
 ## Owning skill
 

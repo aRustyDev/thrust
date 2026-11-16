@@ -7,7 +7,8 @@ further groups, and its `README.md` names its members and says what belongs in i
 prefix and do not change when a crate moves; directories drop it, and may differ from the package name
 (`core/types/` is `thrust-contracts`). Filtersets, `-p` flags, `release-plz.toml` and `use` paths all key on package
 names, so they are independent of this tree. To find a crate's directory from its name, use `cargo metadata` or the
-group READMEs.
+group READMEs. `scripts/check-layout.sh` (CI's `deps` job) checks these rules, and that each group's README names every
+directory in it.
 
 | Directory | What it holds |
 |---|---|

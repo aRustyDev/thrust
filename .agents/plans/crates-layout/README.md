@@ -21,5 +21,5 @@ work.
 | ADR-0009 | merged in #208, `accepted` (owner decisions of 2026-11-15) |
 | PR 1, `regression_` prefix | merged in #209: 17 pinned regressions renamed: the 15 tests behind `PLAN.md`'s list (its contract-model entry is data the model test replays, so it takes no name), the #195 ledger test that #201 added, and the `single_dot` case, labelled "found by" |
 | PR 2, depth-independent paths | merged in #212. Found while doing it: Cargo reads `.cargo/config.toml` from the directory it runs in, not from `--manifest-path`, so `THRUST_ROOT` needs cargo run from inside the repository (from outside, those tests fail to compile; they never read a wrong path) |
-| PR 3, the move | in review, branch `chore/crates-layout-move`. #194 was superseded by the release PR #219, which merged; #201 merged. `thrust-edge` (#211) moves to `crates/edge/`, the name ADR-0009 reserved for it. #220 (open) touches `crates/`: whichever of the two merges second takes the other's changes by merging `main` |
-| PR 4, layout guard | not started; after the move |
+| PR 3, the move | merged in #221 (`50b4dba`, 2026-11-16): 19 crates, `thrust-edge` (#211) to `crates/edge/`. #220, open across the move, conflicted as expected and was brought up to date by merging `main` into it (11 added files placed by git's directory-rename detection, 3 content conflicts that were the move's path rewrite) |
+| PR 4, layout guard | in review, branch `ci/crates-layout-guard`: `scripts/check-layout.sh` in the `deps` job |

@@ -185,6 +185,16 @@ Not edited: `.agents/plans/**` (dated records, including accepted ADRs such as A
 Optional, in the same PR or later: every literal path in a workflow's `paths:` filter exists, so a renamed file cannot
 silently stop a workflow from triggering.
 
+As built (2026-11-16):
+- **`core/` allows dev-dependencies.** `thrust-core`'s tests run against `thrust-adapters-memory` (a dev-dependency), so
+  "depends on nothing outside `core/`" is checked on normal and build edges, as `check-deps.sh` already checks `core`.
+- **A group's README must name each directory in it** (`` `<name>/` ``), ADR-0009 rule 1's "naming its members". So a
+  group README now runs the `deps` job in `plan-ci.py` (it ran nothing), and so does `.gitignore`.
+- **The optional check covers all three silent traps** found while planning PR 3: workflow `paths:`/`paths-ignore:`
+  filters, `.cargo/mutants.toml`'s `exclude_globs`/`examine_globs`, and `.gitignore` lines under `crates/` (each must lie
+  inside a crate).
+- `testing/suites/` and `testing/fixtures/` have READMEs (PR 3), so rule 1 holds for every group with no exception.
+
 ## Left for later (not this plan)
 
 - **The contract suite onto nextest.** It, `pg_adapter` and `smtp_sink` run on `cargo test` through scripts that parse
