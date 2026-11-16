@@ -558,7 +558,8 @@ fn a_taken_name_or_key_is_a_409_with_the_names_message() {
     );
 }
 
-/// D-030 (5): a body that is a form or multipart is a 415 on a project; the pin reads both. The register entries SD-004 and SD-005
+/// D-030 (5), confirmed for every v1 route (owner, 2026-11-16; revisit if a real client sends a form): a body that is a form or multipart
+/// is a 415 on a project; the pin reads both. The register entries SD-004 and SD-005
 /// (`tools/oracle-v1/schema/diff-accepted.json`) rest on this, and no test said it until the States' (`states.rs`, D-031 (5)) did:
 /// the two media types, on the two routes that read a body.
 #[rstest]
