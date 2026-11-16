@@ -107,6 +107,23 @@ Per FR-17 (`reviews/2026-10-19-fable-architecture-review.md`), this ADR is accep
 
 Not built yet: `0001_init.sql` is the spike's schema, not the product schema (its line 1); the binary applies that one file through `IF NOT EXISTS` statements and keeps no record of applied migrations; the `native-pg` and `worker-cf` contract cells apply it to an empty Postgres on every run, but the schema-parity test under Confirmation does not exist.
 
+## Update — a ledger, and contract migrations by name (2026-11-16)
+
+ADR-0111 runs more than one version of the code on one database, so `migrate` now records what it has applied (PR #201):
+* **The ledger** is the table `thrust_schema_migrations (file, sha256, applied_at)`. Each file is applied once, in a
+  transaction with its row. A database without the ledger gets every file once (they are idempotent) and all of them
+  recorded. A recorded file whose checksum changed is refused.
+* **`ledger::plan`** classifies a build against the ledger as Apply, Older (apply nothing and succeed) or refused
+  (changed, diverged or out of order).
+* **Contract migrations** are named `NNNN_contract_<what>.sql`. `migrate --no-contract` refuses one, and `migrate --plan`
+  prints the classification without writing anything.
+* **The lint:** `scripts/check-migration-lint.sh` refuses DROP, RENAME, a column type change and SET NOT NULL in any
+  non-contract file after `0017`.
+
+This ADR's expand/contract rule is now enforced, not only stated: the pipeline runs contract files only in the
+production deploy, and only when no older shared target is live (ADR-0111). It also settles the round-29 note's "keeps
+no record of applied migrations".
+
 ## Open Questions
 
 * Q-0042 — which option? (answered round 29, FR-17)
