@@ -11,7 +11,7 @@
 //! that was caught from a run that failed for another reason by that text.
 //!
 //! What is measured is a steady-state request, after the first of each. The first use of an API key stamps `last_used_at` in
-//! the background (`thrust-core/src/auth.rs`), and it runs on the target's own schedule, so it is waited for and not counted.
+//! the background (`crates/core/usecases/src/auth.rs`), and it runs on the target's own schedule, so it is waited for and not counted.
 //!
 //! The lists are eight, in the shape a client asks for them by default. Six are asked by an admin: Plane's projects (S17) and
 //! work items (S47) over the internal API, and `/api/v1`'s projects, states, labels and work items. (The slice's own list of

@@ -1,6 +1,6 @@
 //! Work items with their compat attributes in the memory adapter (issue #44, migration 0013): a work item's state, priority, dates,
 //! description, people and labels written in the transaction that inserts it, and a page of them read in an order. The Postgres
-//! adapter is held to the same answers by the generated sequences in `thrust-adapters-selfhosted/tests/model`.
+//! adapter is held to the same answers by the generated sequences in `crates/adapters/selfhosted/tests/model`.
 //!
 //! The rules, written out:
 //!

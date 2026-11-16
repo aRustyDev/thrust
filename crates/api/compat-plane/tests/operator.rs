@@ -1,6 +1,6 @@
 //! The operator's door, `/internal/operator/*` (Q-F7, issue #46), driven in process as the composition roots mount it: the shared
 //! router with the compat routes beside it, an `ApiConfig` as an extension. The core's rules (what a reset does to a password and
-//! to sessions) are stated in `thrust-core/tests/operator.rs`; this is the door: when it is there, who it lets in, what it answers,
+//! to sessions) are stated in `crates/core/usecases/tests/operator.rs`; this is the door: when it is there, who it lets in, what it answers,
 //! and what it leaves behind.
 //!
 //! What must hold: with the switch off the routes do not exist (404 for everyone, the token or not); with it on, exactly one

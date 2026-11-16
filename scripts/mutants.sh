@@ -7,7 +7,7 @@
 #   scripts/mutants.sh
 set -u
 # A counterexample found against a deliberately broken build is not a regression of the real code: do not let the
-# generated tests (crates/thrust-contract-tests/tests/model) save it into the source tree.
+# generated tests (crates/testing/suites/api/tests/model) save it into the source tree.
 export PROPTEST_DISABLE_FAILURE_PERSISTENCE=1
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="$ROOT/target/mutants"
@@ -142,7 +142,7 @@ guard_check "guard: csrfoff pass, server on" "$status" "$OUT/guard-off-vs-on.out
 #   - a server whose composition root reads the relay and does not hand it to the app tells the app mail is off, and the `mail` pass must not pass
 #     for want of a test that looks;
 #   - a server that says mail is on though nothing can send it (`mutant_smtp_flag_always_on`, which the main pass used to kill with the dark test
-#     and still does in `crates/thrust-compat-plane/tests/reset.rs` and the recorded S01) is refused by the main pass before its first test.
+#     and still does in `crates/api/compat-plane/tests/reset.rs` and the recorded S01) is refused by the main pass before its first test.
 refusal_check() {
   # $1 label, $2 feature, $3 pass, $4 the guard's message
   label="$1"; feature="$2"; pass="$3"; msg="$4"

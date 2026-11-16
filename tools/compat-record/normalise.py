@@ -1,7 +1,7 @@
 """Normalisation of recorded exchanges, the Python half of a pair.
 
-The Rust half is crates/thrust-compat-plane/tests/common/normalise.rs. Both read
-crates/thrust-compat-plane/tests/parity/normalise.json and must produce the same output for the same input; the shared
+The Rust half is crates/api/compat-plane/tests/common/normalise.rs. Both read
+crates/api/compat-plane/tests/parity/normalise.json and must produce the same output for the same input; the shared
 cases in tests/parity/normalise-cases.json are checked by `record.py --self-test` here and by the
 `parity_normaliser_cases` test there. If you change a rule, change both and add a case.
 """

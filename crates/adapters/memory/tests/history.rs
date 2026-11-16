@@ -1,5 +1,5 @@
 //! A work item's history and its update in the memory adapter (issue #44, stage 6b, migration 0014). The Postgres adapter is held to the
-//! same answers by the generated sequences in `thrust-adapters-selfhosted/tests/model` and the examples in its `pg_adapter.rs`.
+//! same answers by the generated sequences in `crates/adapters/selfhosted/tests/model` and the examples in its `pg_adapter.rs`.
 //!
 //! The rules, written out:
 //!

@@ -1,7 +1,7 @@
 //! The TLS side of `migrate` (issue #49): the settings it reads, the handshake `verify-ca` makes, and the two ways it must not
 //! quietly drop to plaintext. No Docker: the handshakes run in memory between a real rustls server and the client under test, over
 //! `tokio::io::duplex`, with certificates made for each run (a wrong CA and an expired leaf are one call each). The same client
-//! against a real Postgres is `tls` in `thrust-adapters-selfhosted/tests/pg_adapter.rs`.
+//! against a real Postgres is `tls` in `crates/adapters/selfhosted/tests/pg_adapter.rs`.
 //!
 //! What these tests are for. `thrust-pg` accepts only TLS (`hostnossl ... reject`), and it is reached through a tunnel at
 //! `127.0.0.1`, while its certificate names a hostname. So `verify-ca` has to check the chain, the signature and the dates and

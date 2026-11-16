@@ -13,10 +13,10 @@
 # This reads the text. It does not prove that wrangler or Cloudflare accepts it: `wrangler deploy --dry-run` and the
 # worker-cf contract cell do that.
 #
-#   scripts/check-placement.sh [dir]     dir defaults to crates/thrust-worker
+#   scripts/check-placement.sh [dir]     dir defaults to crates/worker
 set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-DIR="${1:-$ROOT/crates/thrust-worker}"
+DIR="${1:-$ROOT/crates/worker}"
 WANT='region=aws:us-east-1'
 STATUS=0
 

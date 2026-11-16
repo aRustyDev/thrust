@@ -1,5 +1,5 @@
 #!/bin/sh
-# Run the whole matrix serially (parallel runs share crates/thrust-worker/build and a second
+# Run the whole matrix serially (parallel runs share crates/worker/build and a second
 # wrangler rebuild reloads the first one's worker: measured). Writes target/contract-logs/summary.txt
 # and exits non-zero if any cell failed. Each line: target, pass, verdict, and the test count.
 #

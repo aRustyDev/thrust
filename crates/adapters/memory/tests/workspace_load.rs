@@ -1,7 +1,7 @@
 //! What the app reads when a member opens a workspace, in the memory adapter (issue #44, migrations 0010 and 0011): the
 //! projects the member can see, and the rows a first visit makes (the sidebar, the home page's widgets, the work-item list
 //! settings). The Postgres adapter is held to the same answers by the generated sequences in
-//! `thrust-adapters-selfhosted/tests/model`.
+//! `crates/adapters/selfhosted/tests/model`.
 //!
 //! The rules, written out:
 //!

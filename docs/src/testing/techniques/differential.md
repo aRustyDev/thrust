@@ -51,7 +51,7 @@ The sanitiser test also needs `tools/spike-0006/sanitize/run-all.sh` and the `co
 
 ## In-repo examples
 
-`crates/thrust-editor-doc/tests/stage3_fuzz.rs`, `entities_fuzz.rs`, `sanitize.rs`
+`crates/editor/doc/tests/stage3_fuzz.rs`, `entities_fuzz.rs`, `sanitize.rs`
 (`oracle_v1_write_with_sanitiser_matches_python_plus_js`); reverse direction (Rust output loaded by the real JavaScript)
 in `tools/spike-0006/oracle/verify-rust-out.ts`.
 

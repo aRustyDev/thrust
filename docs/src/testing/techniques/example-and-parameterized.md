@@ -70,9 +70,9 @@ implementation.
 
 ## In-repo examples
 
-- `crates/thrust-core/tests/authorize.rs`: `authorize_follows_the_role_table`, an rstest `#[values]` matrix of role by permission
+- `crates/core/usecases/tests/authorize.rs`: `authorize_follows_the_role_table`, an rstest `#[values]` matrix of role by permission
   against a table written out as the spec, not read from the code. This is the shape to copy.
-- `crates/thrust-core/src/lib.rs` (`mod tests`): `validate_name_cases` and `validate_blob_name_cases`, rstest tables beside the
+- `crates/core/usecases/src/lib.rs` (`mod tests`): `validate_name_cases` and `validate_blob_name_cases`, rstest tables beside the
   `prop_` validators; `regression_single_dot` is pinned from a property counterexample. Their other cases predate Rule 9 and
   carry no reason label (drift D-15 in [Status](../status.md)).
 
@@ -80,4 +80,4 @@ implementation.
 
 Matrices and pinned cases for `thrust-contracts` and `thrust-api` (G-3). The caller × project × route matrix over
 HTTP is built: `every_actor_project_and_route_gets_the_status_of_the_access_table` in
-`crates/thrust-contract-tests/tests/model/matrix.rs`, attachment routes included.
+`crates/testing/suites/api/tests/model/matrix.rs`, attachment routes included.

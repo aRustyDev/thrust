@@ -9,7 +9,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CONFIG="${1:-wrangler.toml}"
 OUT="$ROOT/target/startup"
 mkdir -p "$OUT"
-cd "$ROOT/crates/thrust-worker"
+cd "$ROOT/crates/worker"
 env -i HOME="$HOME" PATH="$PATH" TMPDIR="${TMPDIR:-/tmp}" WRANGLER_SEND_METRICS=false NO_COLOR=1 \
   wrangler check startup -c "$CONFIG" --outfile "$OUT/$CONFIG.cpuprofile" >"$OUT/$CONFIG.log" 2>&1
 cat "$OUT/$CONFIG.log"

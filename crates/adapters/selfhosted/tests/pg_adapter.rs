@@ -1586,7 +1586,7 @@ async fn creations_racing_for_one_project_name_make_exactly_one_project_with_not
 
 /// Issue #58, migration 0015: a deleted project stays as a row, marked with the time, and leaves every read; its name and key are free
 /// again, while two live projects still cannot share one; its states and members are kept; and a second deletion finds nothing. The
-/// memory adapter is held to the same by `thrust-core/tests/project_v1.rs`.
+/// memory adapter is held to the same by `crates/core/usecases/tests/project_v1.rs`.
 #[tokio::test]
 async fn a_deleted_project_leaves_every_read_and_frees_its_name_and_key() {
     let env = env().await;

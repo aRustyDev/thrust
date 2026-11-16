@@ -1,7 +1,7 @@
 //! The `sessions` directory table in the memory adapter (issue #36): a lookup returns a session exactly while its
 //! row exists, is not revoked and has `expires_at > now`; a touch moves `last_seen_at` and nothing else; a revoke
 //! sticks; an insert of a hash that exists leaves the row as it was. The Postgres adapter is held to the same answers
-//! by the generated sequences in `thrust-adapters-selfhosted/tests/model`. Exhaustive over the finite domain.
+//! by the generated sequences in `crates/adapters/selfhosted/tests/model`. Exhaustive over the finite domain.
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,

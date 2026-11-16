@@ -1,6 +1,6 @@
 //! Projects in the memory adapter (issue #44, migration 0012): making one with its members and states, renaming it, who is in it,
 //! its states and labels, and the workspace's counts. The Postgres adapter is held to the same answers by the generated
-//! sequences in `thrust-adapters-selfhosted/tests/model`; what that model cannot reach (several projects at once) is here.
+//! sequences in `crates/adapters/selfhosted/tests/model`; what that model cannot reach (several projects at once) is here.
 //!
 //! The rules, written out:
 //!

@@ -1,7 +1,7 @@
 //! The operator's way in, `/internal/operator/*` (Q-F7, issue #46), on every target: make an account with a temporary password, and
 //! set a new password for one, for a person who cannot sign in. The target is started with the routes on and a token
 //! (`scripts/contract.sh`); the hermetic tests state the switch, the token's length and the answers in detail
-//! (`thrust-compat-plane/tests/operator.rs`, `thrust-core/tests/operator.rs`), and this is what has to be true wherever the routes
+//! (`crates/api/compat-plane/tests/operator.rs`, `crates/core/usecases/tests/operator.rs`), and this is what has to be true wherever the routes
 //! are mounted, through the Plane sign-in the stock app uses.
 //!
 //! Every test that asserts "X is allowed" is paired with the neighbouring "Y is refused" inside the same test.

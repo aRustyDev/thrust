@@ -31,7 +31,7 @@ Worker](deploy.md). The jobs and the command each CI job runs are in the CI sect
 | `.github/actions/deploy-worker` | A composite action: fetch the bundle (this run's build for staging, the release's asset for production, `fetch-release-bundle.sh`), verify its attestation, unpack it, install wrangler (the same version as `setup-rust`, kept equal by a test) and `cloudflared` at pinned versions, and run `scripts/deploy-worker.sh` |
 | `.github/scripts/` | The pipeline's own logic: `plan-ci.py`, `plan-cells.sh`, `assert-gate.sh`, `assert-required-contexts.sh` and `lint-all-workflows.sh`; and the deploy's: `plan-deploy.sh`, `classify-deploy.sh`, `active-version.py`, `assert-sha-checks.sh`, `assert-gated-environments.sh`, `verify-bundle.sh`, `unpack-bundle.sh`, `fetch-previous-assets.sh`, `fetch-release-bundle.sh` and `lint-workflow.sh`; and the release's: `plan-release.sh`. The `ci-scripts` job tests them with `.github/scripts/tests/` |
 | `.github/deploy/` | What the deploy trusts: the Cloudflare Origin CA root that signs `thrust-pg`'s certificate, with its fingerprint pinned by a test |
-| `scripts/deploy-worker.sh` and its parts | The deploy itself (render, classify, expand migration, `wrangler deploy`, smoke, rollback), run by the composite action: `render-wrangler.sh` (with the template `crates/thrust-worker/wrangler.deploy.toml`), `migrate-ci.sh`, `smoke-deploy.sh`, `smoke-bootstrap.sh`, `merge-assets.sh` and `check-asset-retention.sh` |
+| `scripts/deploy-worker.sh` and its parts | The deploy itself (render, classify, expand migration, `wrangler deploy`, smoke, rollback), run by the composite action: `render-wrangler.sh` (with the template `crates/worker/wrangler.deploy.toml`), `migrate-ci.sh`, `smoke-deploy.sh`, `smoke-bootstrap.sh`, `merge-assets.sh` and `check-asset-retention.sh` |
 | `scripts/check-web-diff.sh` | The Q-R2 gate for `web/` (the stock React app, imported from the oracle pin), run by the `web` job. Tested by `.github/scripts/tests/test-check-web-diff.sh` |
 
 ## One required check
@@ -111,7 +111,7 @@ its base branch. Nothing calls it, so it is a tool to run by hand.
   |---|---|---|
   | a file under `web/` | `web`, `contract` | 1 (`worker-cf e2e`) |
   | `thrust-adapters-cloudflare` | `ci-scripts`, `deps`, `lint`, `hermetic`, `contract` | the 13 `worker-*` cells |
-  | `thrust-adapters-selfhosted/Cargo.toml` | the same, plus `deny`, `pg-adapter` and `mutants` | the 10 `native-*` cells |
+  | `crates/adapters/selfhosted/Cargo.toml` | the same, plus `deny`, `pg-adapter` and `mutants` | the 10 `native-*` cells |
   | `thrust-contracts` (everything depends on it) | all but `deny` and `web` | all 23 |
   | `tools/oracle-v1/` | `deps`, `hermetic`, `contract` | the 3 `oracle` cells |
   | `scripts/smoke-deploy.sh` | `ci-scripts` | none |

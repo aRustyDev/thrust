@@ -1,7 +1,7 @@
 //! The identity tables in the memory adapter (issue #38, migration 0005): users, accounts, API keys and pending OIDC
 //! logins, and what they do to the `sessions` lookup. Exhaustive over the finite domains (a key is known or not, live,
 //! expired or revoked, its user active or not). The Postgres adapter is held to the same answers by the generated
-//! sequences in `thrust-adapters-selfhosted/tests/model`.
+//! sequences in `crates/adapters/selfhosted/tests/model`.
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,

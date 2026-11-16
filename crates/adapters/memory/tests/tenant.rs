@@ -1,7 +1,7 @@
 //! The tenant key in the memory adapter (issues #35, #36): `membership` resolves the route's workspace slug, the
 //! caller's membership of that workspace and of the project, and a member row written with another workspace does
 //! not count; `allocate` refuses a project outside the workspace it is asked under. The Postgres adapter is held to
-//! the same answers by the generated sequences in `thrust-adapters-selfhosted/tests/model`. Exhaustive over the
+//! the same answers by the generated sequences in `crates/adapters/selfhosted/tests/model`. Exhaustive over the
 //! fixture's finite domain: every project, the slug named for it, and every user.
 #![allow(
     clippy::unwrap_used,

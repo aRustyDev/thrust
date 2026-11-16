@@ -16,13 +16,13 @@ profile = "mutants"
 # excluded in advance so the first crate to add one is not mutated. fuzz_harness.rs needed excluding in the
 # reference workspace; test_support.rs and tests/common/ are belt-and-braces (code under #[cfg(test)] is not mutated).
 exclude_globs = [
-  "crates/thrust-contract-tests/**",
+  "crates/testing/suites/api/**",
   "**/fuzz_harness.rs",
   "**/test_support.rs",
   "**/tests/common/**",
   # wasm32 only (`#[cfg(target_arch = "wasm32")]`): a native run builds its mutants without compiling them, so every one would
   # read as MISSED. It has no native test to catch them; that gap is G-41 in docs/src/testing/status.md.
-  "crates/thrust-edge/src/runtime.rs",
+  "crates/edge/src/runtime.rs",
 ]
 
 # Uncomment if the workspace denies warnings: mutants that delete code trip unused-* lints.

@@ -22,7 +22,7 @@ use thrust_adapters_cloudflare::{check_binding_period, decision, KeyClass, BINDI
 use thrust_ports::RateDecision;
 
 /// The two classes and the text the core and the v1 routes put before the `:` of their keys (`signin:<email>` in
-/// `thrust-core/src/auth.rs`, `v1:<api key>` in `thrust-api-v1/src/ctx.rs`).
+/// `crates/core/usecases/src/auth.rs`, `v1:<api key>` in `crates/api/v1/src/ctx.rs`).
 const CLASSES: [(&str, KeyClass); 2] = [("signin", KeyClass::SignIn), ("v1", KeyClass::V1)];
 
 // ---------------------------------------------------------------------------------------------

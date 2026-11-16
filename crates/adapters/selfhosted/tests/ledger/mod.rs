@@ -1,7 +1,7 @@
 //! The migration ledger (issue #195) against a real Postgres: a database without one gets every file once and records them, a second
 //! run applies nothing, a newer file runs once in a transaction with its row, and what the ledger refuses (an edited file, a build from
 //! another branch, a file older than the newest applied, a contract file when they are not allowed) applies nothing. The arithmetic
-//! alone, over generated inputs, is `thrust-adapters-postgres/tests/ledger.rs`.
+//! alone, over generated inputs, is `crates/adapters/postgres/tests/ledger.rs`.
 //!
 //! The extra files these tests carry are made up for them (`0018_ledger_probe.sql` and so on): each leaves a mark that a test can
 //! count, so that "applied once" is a count of one and not the absence of an error.

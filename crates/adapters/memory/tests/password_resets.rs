@@ -1,7 +1,7 @@
 //! The password-reset tokens in the memory adapter (migration 0017, F-A03, D-041): a mailed token's digest, the user it is for and
 //! when it was made. Exhaustive over the finite domains (which token is asked for, how old the user's last token is against how long
 //! the cooldown is). The Postgres adapter is held to the same answers by the generated sequences in
-//! `thrust-adapters-selfhosted/tests/model` (`ResetInsert`, `ResetFind`, `ResetTake`, `ResetCooldown`, `ResetLife`).
+//! `crates/adapters/selfhosted/tests/model` (`ResetInsert`, `ResetFind`, `ResetTake`, `ResetCooldown`, `ResetLife`).
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,

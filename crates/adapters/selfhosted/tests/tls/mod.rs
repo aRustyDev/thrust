@@ -1,5 +1,5 @@
 //! `verify-ca` (issue #49, `thrust_adapters_postgres::tls`) against a REAL Postgres 16 that takes only TLS, as `thrust-pg` does
-//! (`hostnossl all all all reject`). The in-memory handshakes in `thrust-adapters-postgres/tests/tls.rs` show what the verifier
+//! (`hostnossl all all all reject`). The in-memory handshakes in `crates/adapters/postgres/tests/tls.rs` show what the verifier
 //! accepts and refuses; this shows what only a server can: that Postgres's own SSLRequest exchange and SCRAM login work through the
 //! client, that the SERVER says the session is encrypted, that the SERVER refuses a plaintext client, and that the whole schema
 //! migrates over the encrypted connection.

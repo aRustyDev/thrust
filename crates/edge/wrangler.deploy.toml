@@ -1,5 +1,5 @@
 # The EDGE's deployed configuration (ADR-0111, issue #195): a template that scripts/render-wrangler.sh fills from the deploy
-# environment's variables (--template crates/thrust-edge/wrangler.deploy.toml --out crates/thrust-edge/.wrangler.deploy.run.toml).
+# environment's variables (--template crates/edge/wrangler.deploy.toml --out crates/edge/.wrangler.deploy.run.toml).
 # No comment in this file may contain a marker-shaped word: the renderer reads comments too.
 #
 # What it may hold is guarded by scripts/check-edge-config.sh (CI's deps job): the edge is a routing Worker, so

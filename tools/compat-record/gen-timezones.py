@@ -1,9 +1,9 @@
-"""Print `crates/thrust-core/src/timezones.rs`: the pinned Plane's list of valid `user_timezone` values.
+"""Print `crates/core/usecases/src/timezones.rs`: the pinned Plane's list of valid `user_timezone` values.
 
 Plane validates `user_timezone` against `pytz.common_timezones` (pytz 2024.1 at the pin, `apps/api/pyproject.toml`), so
 the list is generated from that package, run inside the oracle's own API container, not copied from anywhere else:
 
-    docker exec -i plane-oracle-api-1 python - < tools/compat-record/gen-timezones.py > crates/thrust-core/src/timezones.rs
+    docker exec -i plane-oracle-api-1 python - < tools/compat-record/gen-timezones.py > crates/core/usecases/src/timezones.rs
 
 The output is deterministic (pytz sorts the list); regenerate it only when the pin moves.
 """

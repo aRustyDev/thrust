@@ -10,7 +10,7 @@ A reference implementation whose behaviour defines "correct". Three different or
 | Oracle | What it is | Where | Used by |
 |---|---|---|---|
 | **Legacy-TypeScript oracle** | the original TypeScript run in Node, side by side with Rust | `oracle_` nextest tests that run Node (none yet); templates in `rust-test-logic` | [differential](techniques/differential.md) |
-| **Editor/sanitiser oracle (spike 0006)** | Plane's real editor packages (TipTap, Yjs) and Python `nh3`, run offline to produce corpora | `tools/spike-0006/`; replayed by the `oracle_` tests in `crates/thrust-editor-doc` | [golden](techniques/golden-fixtures.md), [differential](techniques/differential.md) |
+| **Editor/sanitiser oracle (spike 0006)** | Plane's real editor packages (TipTap, Yjs) and Python `nh3`, run offline to produce corpora | `tools/spike-0006/`; replayed by the `oracle_` tests in `crates/editor/doc` | [golden](techniques/golden-fixtures.md), [differential](techniques/differential.md) |
 | **Plane v1 oracle** | a pinned upstream Plane deployment the public API must match | ADR-0122 (planned) | [differential](techniques/differential.md) |
 
 `ts-to-rust` also replays **recorded** responses of a TypeScript or Python reference API against a port; that is a
@@ -22,7 +22,7 @@ golden test whose fixtures are HTTP exchanges.
 - **Differential test**: runs the same, usually generated, inputs through Rust and an oracle and compares. Needs the
   oracle or its freshly generated output. Prefix `oracle_` when live.
 - **Contract test**: asserts behaviour that every implementation of an interface must share; here, the HTTP suite in
-  `crates/thrust-contract-tests` run against every target.
+  `crates/testing/suites/api` run against every target.
 
 ## Exception register
 

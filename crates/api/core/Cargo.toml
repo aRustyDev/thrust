@@ -22,7 +22,7 @@ proptest = "1"
 rstest = "0.26"
 
 [features]
-# Control-run mutants of the operator's door (scripts/mutants.sh, and the hermetic router test that shows the same: crates/thrust-compat-plane/tests/operator.rs).
+# Control-run mutants of the operator's door (scripts/mutants.sh, and the hermetic router test that shows the same: crates/api/compat-plane/tests/operator.rs).
 # Never enabled outside those; the server crate forwards them.
 mutant_operator_ignores_flag = []
 mutant_operator_takes_admin_token = []

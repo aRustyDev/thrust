@@ -5,7 +5,7 @@
 #   scripts/render-wrangler.sh [--template FILE] [--out FILE]
 #   scripts/render-wrangler.sh --self-test
 #
-# Defaults: --template crates/thrust-worker/wrangler.deploy.toml, --out crates/thrust-worker/.wrangler.deploy.run.toml (ignored by git).
+# Defaults: --template crates/worker/wrangler.deploy.toml, --out crates/worker/.wrangler.deploy.run.toml (ignored by git).
 #
 # Variables, one per marker. They belong to a GitHub environment and none of them is secret:
 #   THRUST_WORKER_NAME        __WORKER_NAME__      the Worker's name
@@ -22,7 +22,7 @@
 #                                                  No default: an environment that mails has chosen who it mails as (E3)
 #   THRUST_BASE_URL           __PUBLIC_BASE_URL__  the environment's public origin, `https://<host>` and nothing after it: the variable the smoke
 #                                                  uses, and where the links in the mails point (a request's Host is never used for them)
-# The edge's template (crates/thrust-edge/wrangler.deploy.toml, ADR-0111) adds:
+# The edge's template (crates/edge/wrangler.deploy.toml, ADR-0111) adds:
 #   THRUST_EDGE_WORKER_NAME   __EDGE_WORKER_NAME__ the edge Worker's name, not the production Worker's (the edge calls that one)
 #   THRUST_FLAGSHIP_APP_ID    __FLAGSHIP_APP_ID__  the Flagship app's id, a lowercase UUID, not all zero
 #   THRUST_ACCESS_TEAM_DOMAIN __ACCESS_TEAM_DOMAIN__  `<team>.cloudflareaccess.com`
@@ -45,8 +45,8 @@ export LC_ALL
 
 SELF="$0"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-TEMPLATE="$ROOT/crates/thrust-worker/wrangler.deploy.toml"
-OUT="$ROOT/crates/thrust-worker/.wrangler.deploy.run.toml"
+TEMPLATE="$ROOT/crates/worker/wrangler.deploy.toml"
+OUT="$ROOT/crates/worker/.wrangler.deploy.run.toml"
 LOCAL_RL_IDS="1001 1002 1003 1004"
 
 # marker, variable, kind
@@ -361,7 +361,7 @@ EOF
   run "$T/mini.toml" "an origin on this machine is refused" 1 "not a public origin" 'THRUST_BASE_URL=https://127.0.0.1'
 
   # the edge's template (ADR-0111): it renders, its values land where they belong, and each of its variables is required
-  EDGE="$ROOT/crates/thrust-edge/wrangler.deploy.toml"
+  EDGE="$ROOT/crates/edge/wrangler.deploy.toml"
   run "$EDGE" "the real edge template renders with a good environment" 0 "wrote" ':'
   grep -q 'name = "thrust-edge"' "$T/out.toml" && grep -q 'service = "thrust-staging"' "$T/out.toml" \
     && grep -q 'app_id = "e3d57955-3250-4e58-b787-5faf4b7f8712"' "$T/out.toml" \

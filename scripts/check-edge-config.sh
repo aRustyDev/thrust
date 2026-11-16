@@ -2,7 +2,7 @@
 # The edge's configuration check (ADR-0111, issue #195): `thrust-edge` is a routing Worker in front of production, so its wrangler
 # configuration may hold only what routing needs.
 #
-#   scripts/check-edge-config.sh [dir]     check every wrangler*.toml in dir (default: crates/thrust-edge)
+#   scripts/check-edge-config.sh [dir]     check every wrangler*.toml in dir (default: crates/edge)
 #   scripts/check-edge-config.sh --self-test
 #                                          run the check against fixtures it must accept and fixtures it must refuse
 #
@@ -108,7 +108,7 @@ required = ["EDGE_PIN_KEY"]
 '
   mk() { mkdir -p "$tmp/$1"; printf '%s' "$2" > "$tmp/$1/wrangler.toml"; }
   mk good "$good"
-  mkdir -p "$tmp/real"; cp "$ROOT/crates/thrust-edge/wrangler.deploy.toml" "$tmp/real/wrangler.deploy.toml"
+  mkdir -p "$tmp/real"; cp "$ROOT/crates/edge/wrangler.deploy.toml" "$tmp/real/wrangler.deploy.toml"
   mk commented "$good# [[hyperdrive]]
 #route = \"x\"
 "
@@ -184,7 +184,7 @@ case "${1:-}" in
     exit $?
     ;;
   *)
-    check_dir "${1:-$ROOT/crates/thrust-edge}"
+    check_dir "${1:-$ROOT/crates/edge}"
     STATUS=$?
     [ "$STATUS" -eq 0 ] && echo "ok: the edge routes and binds nothing else"
     exit "$STATUS"

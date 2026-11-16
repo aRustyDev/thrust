@@ -7,4 +7,4 @@ compatibility_date = "2026-08-01"
 workers_dev = false
 
 [build]
-command = "../../scripts/rs worker-build --release ."
+command = "../../../scripts/rs worker-build --release ."

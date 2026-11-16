@@ -2,7 +2,7 @@
 //! the roles in a workspace's projects. Exhaustive over the finite domains (a member is active, deactivated or absent; a
 //! creation clashes on its id, its slug, its member's id or its owner, or does not) with the orderings spelled out, and
 //! a property for the project roles, whose inputs are a set of rows. The Postgres adapter is held to the same answers by the
-//! generated sequences in `thrust-adapters-selfhosted/tests/model`; what that model cannot reach (rows whose timestamps it
+//! generated sequences in `crates/adapters/selfhosted/tests/model`; what that model cannot reach (rows whose timestamps it
 //! chooses, several projects) is here.
 #![allow(
     clippy::unwrap_used,

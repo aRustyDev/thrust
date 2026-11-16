@@ -98,7 +98,7 @@ async fn run(mode: Mode) -> Result<(), Box<dyn std::error::Error>> {
     };
     // Not `?`: every statement has run once `migrate` returns, so a connection that does not hang up cleanly says nothing about the
     // migration, and a deploy must not go red over it. Against Postgres 16 `close` returned Ok (`CLOSE-OBSERVATION` in
-    // thrust-adapters-selfhosted/tests/tls); another server, or a proxy in front of one, was not tried.
+    // crates/adapters/selfhosted/tests/tls); another server, or a proxy in front of one, was not tried.
     let _ = conn.close().await;
     eprintln!("{said}");
     Ok(())

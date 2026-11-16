@@ -17,8 +17,8 @@ the [contract suite](contract-suite.md) can already see over HTTP, and never in 
 
 ## Name and location
 
-`crates/thrust-adapters-selfhosted/tests/pg_adapter.rs` (`#[tokio::test]`, starts a Postgres container through
-`testcontainers`), with its generated part in `crates/thrust-adapters-selfhosted/tests/model/mod.rs` compiled into the same
+`crates/adapters/selfhosted/tests/pg_adapter.rs` (`#[tokio::test]`, starts a Postgres container through
+`testcontainers`), with its generated part in `crates/adapters/selfhosted/tests/model/mod.rs` compiled into the same
 binary. It is excluded from the default and `deep` profiles by `binary(pg_adapter)`. The Worker side is exercised
 through the contract suite on the `worker-*` targets, which run on local workerd via `scripts/worker-dev.sh`.
 

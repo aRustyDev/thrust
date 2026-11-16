@@ -1,7 +1,7 @@
 //! The migration ledger's arithmetic (issue #195), without a database: [`plan`] against a reference model over every small world and
 //! over generated larger ones, what applying a plan leaves, the JSON `migrate --plan` prints, what a contract file is, and the list of
 //! files against the `migrations/` directory. The same code against a real Postgres is `ledger` in
-//! `thrust-adapters-selfhosted/tests/pg_adapter.rs`.
+//! `crates/adapters/selfhosted/tests/pg_adapter.rs`.
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,

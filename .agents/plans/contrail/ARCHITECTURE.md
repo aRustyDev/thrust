@@ -154,30 +154,57 @@ flowchart LR
 **Round 29 (2026-10-19, FR-05):** the driven ports are the §1c list; search, flags, AI, identity, secrets and
 telemetry are core code on one dialect.
 
-### 2a. Package layout (Rust workspace in `aRustyDev/thrust`, ADR-0005/0006; redrawn round 25)
+### 2a. Package layout (Rust workspace in `aRustyDev/thrust`, ADR-0005/0006; redrawn round 25, and for ADR-0009 on 2026-11-16)
+
+Directories follow ADR-0009: each is a group or a crate, never both, and the programs sit at the top of `crates/`. Package
+names do not change with the directory; each line gives the package after the directory. `crates/README.md` and each
+group's `README.md` list the members.
 
 ```
 thrust/
   crates/
-    thrust-ports/               # traits (round 29, the §1c list): Database connector/Repos/UoW, Queue, Scheduler,
-                                #   BlobStore, Email, Collab host, Clock/IdGen/Background;
-                                #   shared contract-test suites (ADR-0121)
-    thrust-core/                # domain + use-cases; depends on ports only; Authorizer + `Scope` proof types (ADR-0051)
-    thrust-contracts/           # event/outbox schemas, file-asset contract, API types (OpenAPI source, ADR-0032)
-    thrust-api-core/            # NOT AT P0 (round 29, FR-06): the core REST + OpenAPI surface for Dioxus, scripts
-                                #   and MCP, generated from the use-cases at M4, when the Dioxus client exists
-    thrust-api-v1/              # /api/v1 Plane wire-compat, a thin shim over core use-cases (ADR-0031)
-    thrust-compat-plane/        # TRANSITIONAL: Plane-shaped internal endpoints for the React app (ADR-0034); the
-                                #   slice plus the M2 screens' rows (F-X13), each deleted as its screen moves to
-                                #   Dioxus (ADR-0013 Phase 2; round 29, FR-01)
-    thrust-adapters-cloudflare/ # workers-rs: hyperdrive|d1, queues, r2, cron, email, ai-gateway, rate limiting …
-    thrust-adapters-selfhosted/ # native pool, in-process queue (the outbox), local disk (S3-compatible at P1),
-                                #   smtp (`lettre`), in-process scheduler … (round 29, FR-05, FR-19)
-    thrust-worker/              # composition root: wasm32 Cloudflare Worker (cargo feature set `cloudflare`)
-    thrust-server/              # composition root: native axum/tokio (cargo feature set `selfhosted`)
-    thrust-collab-do/           # NOT BEFORE M5 (round 29, FR-05, FR-11): the collab Worker's own root crate, added
-                                #   when the P1 room lands; a DO must be exported from the same Wasm module as `fetch`
-                                #   (spike 0001, ADR-0090), so until then the one Worker exports the DO classes
+    core/                       # the inside of the hexagon: depends on no crate outside core/
+      types/                    # thrust-contracts: event/outbox schemas, file-asset contract, API types (OpenAPI source,
+                                #   ADR-0032)
+      ports/                    # thrust-ports: traits (round 29, the §1c list): Database connector/Repos/UoW, Queue,
+                                #   Scheduler, BlobStore, Email, Collab host, Clock/IdGen/Background
+      usecases/                 # thrust-core: domain + use-cases; depends on ports only; Authorizer + `Scope` proof
+                                #   types (ADR-0051)
+    api/
+      core/                     # thrust-api: the one router compiled into both roots; the route groups compose into it
+      v1/                       # thrust-api-v1: /api/v1 Plane wire-compat, a thin shim over core use-cases (ADR-0031)
+      compat-plane/             # thrust-compat-plane: TRANSITIONAL: Plane-shaped internal endpoints for the React app
+                                #   (ADR-0034); the slice plus the M2 screens' rows (F-X13), each deleted as its screen
+                                #   moves to Dioxus (ADR-0013 Phase 2; round 29, FR-01)
+      plane-types/              # thrust-plane-types: what /api/v1 and compat-plane share (the pinned Plane's 500s, #51)
+                                # NOT AT P0 (round 29, FR-06): the core REST + OpenAPI surface for Dioxus, scripts
+                                #   and MCP, generated from the use-cases at M4, when the Dioxus client exists. It
+                                #   needs a directory other than api/core/ (ADR-0009, Consequences)
+    adapters/
+      cloudflare/               # thrust-adapters-cloudflare: workers-rs: hyperdrive|d1, queues, r2, cron, email,
+                                #   ai-gateway, rate limiting …
+      memory/                   # thrust-adapters-memory: every port in memory; wasm32 and native
+      oidc/                     # thrust-adapters-oidc: the OIDC relying party over the Fetch port; both roots
+      postgres/                 # thrust-adapters-postgres: the SQL, once, on tokio_postgres behind a `Connector`
+      selfhosted/               # thrust-adapters-selfhosted: native pool, in-process queue (the outbox), local disk
+                                #   (S3-compatible at P1), smtp (`lettre`), in-process scheduler … (round 29, FR-05,
+                                #   FR-19)
+    editor/
+      doc/                      # thrust-editor-doc: the editor document (ProseMirror JSON, HTML, Yjs) and the sanitiser
+    spikes/
+      editor-worker/            # thrust-editor-worker: spike 0006's measurement Worker; nothing builds or deploys it
+    testing/
+      fixtures/oracle/          # thrust-oracle-fixture: the v1 oracle's seed, for /internal/seed (#58)
+      suites/api/               # thrust-contract-tests: the one HTTP contract suite, run against every target
+                                #   (ADR-0121)
+    server/                     # thrust-server: composition root: native axum/tokio (cargo feature set `selfhosted`)
+    worker/                     # thrust-worker: composition root: wasm32 Cloudflare Worker (cargo feature set
+                                #   `cloudflare`)
+    edge/                       # thrust-edge: the Worker on the shared hostname (ADR-0111)
+    collab/                     # NOT BEFORE M5 (round 29, FR-05, FR-11): thrust-collab-do, the collab Worker's own
+                                #   root crate, added when the P1 room lands; a DO must be exported from the same Wasm
+                                #   module as `fetch` (spike 0001, ADR-0090), so until then the one Worker exports the
+                                #   DO classes. Other reserved program names: ADR-0009 rule 3
   web/                          # pnpm workspace: adopted React apps (web, space) + @plane/* packages,
                                 #   minimal changes only (ADR-0034); retired by ADR-0013 Phase 2
   docs/plan/                    # this planning package, once the repo is populated

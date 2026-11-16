@@ -29,8 +29,8 @@ scripts/rs cargo nextest run -E 'test(/\bfuzz_replay_/)'    # thrust-edge's repl
 ```
 
 Campaign commands are in `rust-test-fuzz`; all are `[unverified]` there because no nightly toolchain was available.
-The first targets are `crates/thrust-edge/fuzz/` (`pin_open`: the pin cookie, alone or in a Cookie header; `access_verify`: an
-Access token): `cargo +nightly fuzz run pin_open` from `crates/thrust-edge`, once cargo-fuzz and nightly are installed (G-41).
+The first targets are `crates/edge/fuzz/` (`pin_open`: the pin cookie, alone or in a Cookie header; `access_verify`: an
+Access token): `cargo +nightly fuzz run pin_open` from `crates/edge`, once cargo-fuzz and nightly are installed (G-41).
 
 ## Required controls
 
@@ -44,7 +44,7 @@ caught by the committed seeds).
 
 ## In-repo examples
 
-`crates/thrust-editor-doc/tests/decode_panics.rs`: `mutated_binaries_never_panic` mutates committed Yjs binaries
+`crates/editor/doc/tests/decode_panics.rs`: `mutated_binaries_never_panic` mutates committed Yjs binaries
 with a seeded RNG under `catch_unwind`; `oracle_mutated_html_never_panics` does the same for HTML the TypeScript
 oracle generated, and fails when that input is missing. No `fuzz/` directory exists yet.
 

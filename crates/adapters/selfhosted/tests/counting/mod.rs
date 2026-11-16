@@ -3,7 +3,7 @@
 //!
 //! `model_counting_connector_counts_exactly_the_statements_of_generated_sequences` generates sequences of transaction and
 //! read calls and checks, step by step, how many statements each sent against a small model of what the adapter sends
-//! (read from `crates/thrust-adapters-postgres/src/lib.rs`, written out below).
+//! (read from `crates/adapters/postgres/src/lib.rs`, written out below).
 //! `model_counting_strategy_reaches_every_step_class` is its Rule 8 control: a generator that never wrote inside a
 //! transaction, say, would pass on a counter that missed the `BEGIN`. Three properties a generated sequence cannot show
 //! are pinned as tests of their own.
