@@ -101,10 +101,29 @@ done
 
 echo
 echo "=== proof minting (issues #35, #44): Scope::mint only in authorize_with_role (which authorize is), WorkspaceScope::mint only in authorize_workspace, SystemScope::mint only in the composition roots ==="
-# thrust-core's unit-test module and the integration tests (crates/*/tests) may mint either; comment lines (doctests
-# included) are skipped. A call spelled through an alias or a qualified path is not caught: the complete check is
-# clippy's disallowed-methods. The `lint` job (issue #40) runs clippy, but `disallowed-methods` is not configured yet.
+# thrust-core's unit-test module and each member's own integration tests (`<member directory>/tests/`) may mint either;
+# comment lines (doctests included) are skipped. A call spelled through an alias or a qualified path is not caught: the
+# complete check is clippy's disallowed-methods. The `lint` job (issue #40) runs clippy, but `disallowed-methods` is not
+# configured yet.
+# The member directories come from cargo metadata, so a member's tests are exempt at any depth under crates/ (ADR-0009). Not a
+# pattern: `^crates/.*/tests/` would also exempt a `src/tests/` module, and the check would stop looking there.
 MINT='(^|[^A-Za-z0-9_])(Scope|SystemScope|WorkspaceScope)::mint\('
+MEMBER_DIRS="$(
+  "$ROOT/scripts/rs" cargo metadata --manifest-path "$MANIFEST" --format-version 1 --no-deps --offline 2> /dev/null \
+    | python3 -I -c 'import json, sys
+try:
+    m = json.load(sys.stdin)
+except ValueError:
+    sys.exit(0)  # cargo metadata failed: print nothing, and the empty list below fails the check
+root = m["workspace_root"].rstrip("/") + "/"
+for p in m["packages"]:
+    if p["id"] in m["workspace_members"]:
+        print(p["manifest_path"][len(root):-len("/Cargo.toml")])'
+)"
+if [ -z "$MEMBER_DIRS" ]; then
+  echo "FAILED: cargo metadata listed no member directory, so no member's tests can be told apart"
+  STATUS=1
+fi
 hits="$(
   awk -v f="crates/thrust-core/src/lib.rs" '
     /^#\[cfg\(test\)\]/ { cfgtest = 1; next }
@@ -119,7 +138,10 @@ hits="$(
   ' "$ROOT/crates/thrust-core/src/lib.rs"
   grep -rnE "$MINT" "$ROOT/crates" --include='*.rs' \
     | sed "s|^$ROOT/||" \
-    | grep -vE '^crates/[^/]+/tests/' \
+    | MEMBER_DIRS="$MEMBER_DIRS" awk '
+        BEGIN { n = split(ENVIRON["MEMBER_DIRS"], d, "\n") }
+        { for (i = 1; i <= n; i++) if (index($0, d[i] "/tests/") == 1) next; print }
+      ' \
     | grep -v '^crates/thrust-core/src/lib.rs:' \
     | grep -vE '^[^:]+:[0-9]+:[ \t]*//' \
     | grep -vE '^crates/(thrust-server/src/main\.rs|thrust-worker/src/lib\.rs|thrust-worker/src/memory\.rs):[0-9]+:.*[^A-Za-z0-9_]SystemScope::mint\(' \

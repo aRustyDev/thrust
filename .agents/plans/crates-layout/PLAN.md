@@ -57,9 +57,10 @@ says which bug it pins stays.
 Behaviour-preserving on today's flat layout. CI goes green with nothing moved.
 
 1. **A workspace-root variable instead of `../..`.** Add `.cargo/config.toml` with
-   `[env] THRUST_ROOT = { value = ".", relative = true }` (Cargo resolves a `relative` value against the directory that
-   contains `.cargo/`; check the exact `value` form in this PR), and rewrite the 12 Rust sites that climb out of a crate
-   to `concat!(env!("THRUST_ROOT"), "/…")`:
+   `[env] THRUST_ROOT = { value = "", relative = true, force = true }` (measured in PR 2: `""` gives the root with a
+   trailing slash, `"."` gives `<root>/.`, and without `force` a THRUST_ROOT already in the environment wins; Cargo reads
+   the file from the directory it runs in, not from `--manifest-path`), and rewrite the 12 Rust sites that climb out of
+   a crate to `concat!(env!("THRUST_ROOT"), "/…")`:
    - `thrust-adapters-postgres/tests/tls.rs:507` (`include_bytes!`, file-relative)
    - `thrust-api-v1/tests/openapi.rs:49`, `tests/oracle_seed.rs:37`
    - `thrust-editor-doc/examples/fidelity.rs:114`, `tests/controls.rs:218`, `tests/decode_panics.rs:87`,

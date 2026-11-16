@@ -139,6 +139,7 @@ jobs:
           sh .github/scripts/tests/test-assert-gated-environments.sh
           sh .github/scripts/tests/test-lint-workflow.sh
           sh .github/scripts/tests/test-lint-all-workflows.sh
+          sh .github/scripts/tests/test-check-flake-hunt-cell.sh
           sh .github/scripts/tests/test-deploy-worker.sh
           python3 -I .github/scripts/tests/test_active_version.py
           sh .github/scripts/tests/test-unpack-bundle.sh
@@ -174,6 +175,13 @@ jobs:
         run: |
           scripts/check-topology.sh
           scripts/check-topology.sh --self-test
+      # ADR-0111 (issue #195): the edge Worker in front of production routes and binds nothing else (no data, assets, placement,
+      # trigger or route; workers_dev and preview_urls off; one service binding, one Flagship binding). An allowlist, with its
+      # self-test as the control.
+      - name: Edge configuration guard (a routing Worker)
+        run: |
+          scripts/check-edge-config.sh
+          scripts/check-edge-config.sh --self-test
       # Issue #51: every reproduced Plane 500 is answered by `thrust_plane_types::plane_500`, so neither Plane-shaped crate writes a
       # 500 of its own. The self-test is the control: the guard is run on trees it must refuse, and on empty ones it must not pass.
       - name: Plane 500 guard
@@ -255,6 +263,10 @@ jobs:
       - name: clippy (the Worker, wasm32)
         if: ${{ !cancelled() }}
         run: scripts/rs cargo clippy -p thrust-worker --no-default-features --target wasm32-unknown-unknown --locked -- -D warnings
+      # The edge (ADR-0111) as it ships: its runtime module exists only in the wasm32 build, so the native run above never sees it.
+      - name: clippy (the edge, wasm32)
+        if: ${{ !cancelled() }}
+        run: scripts/rs cargo clippy -p thrust-edge --target wasm32-unknown-unknown --locked -- -D warnings
       # The `openapi` feature of thrust-api-v1 (issue #58) is off in every run above, so the derives and path declarations behind it
       # are linted here, under the same four denied lints.
       - name: clippy (thrust-api-v1 with the OpenAPI feature)
@@ -430,10 +442,34 @@ jobs:
       - name: The build made the SPA
         run: test -s web/apps/web/build/client/index.html
 
+  # The book (docs/, mdBook). Runs when docs/, AGENTS.md (the book includes its testing rules) or .config/branding/ (its palette)
+  # changes (plan-ci.py). `mdbook build` exits 0 on a broken {{#include}} and on a mistyped book.toml key, and leaves out a page
+  # SUMMARY.md does not list without a word, so scripts/check-book.sh fails on any ERROR line and on such a page; its self-test
+  # breaks a copy of the book each of those ways, and the missing preprocessor a fourth, and each must be refused. mdBook and
+  # mdbook-mermaid (which targets mdBook 0.5) come from install-action at exact versions, checked against its SHA-256 manifest.
+  docs:
+    needs: changes
+    if: contains(fromJSON(needs.changes.outputs.jobs || '[]'), 'docs')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
+        with:
+          tool: mdbook@0.5.4,mdbook-mermaid@0.17.1
+      - name: Build the book (no ERROR line, no page missing from SUMMARY.md)
+        run: scripts/check-book.sh
+      - name: The check's controls (each broken book must be refused)
+        run: scripts/check-book.sh --self-test
+
   gate:
     name: gate
     if: always()
-    needs: [changes, ci-scripts, deps, lint, deny, hermetic, pg-adapter, contract, mutants, web]
+    needs: [changes, ci-scripts, deps, lint, deny, hermetic, pg-adapter, contract, mutants, web, docs]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:

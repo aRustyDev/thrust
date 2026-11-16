@@ -14,6 +14,7 @@ members = [
     "crates/thrust-adapters-selfhosted",
     "crates/thrust-adapters-cloudflare",
     "crates/thrust-worker",
+    "crates/thrust-edge",
     "crates/thrust-server",
     "crates/thrust-contract-tests",
     "crates/thrust-oracle-fixture",
@@ -23,7 +24,7 @@ members = [
 
 [workspace.package]
 edition = "2021"
-version = "0.1.0"
+version = "0.2.0"
 license = "AGPL-3.0-only"
 publish = false
 
@@ -54,12 +55,20 @@ thrust-api = { path = "crates/thrust-api" }
 thrust-plane-types = { path = "crates/thrust-plane-types" }
 thrust-api-v1 = { path = "crates/thrust-api-v1" }
 thrust-compat-plane = { path = "crates/thrust-compat-plane" }
+# `default-features = false` must be here: Cargo ignores a member's own `default-features = false` on an inherited
+# dependency unless the workspace entry has it. Every user of thrust-editor-doc asks for the one feature it needs.
+thrust-editor-doc = { path = "crates/thrust-editor-doc", default-features = false }
+thrust-oracle-fixture = { path = "crates/thrust-oracle-fixture" }
 
 # ADR-0006's panic policy: request-derived data can never panic, because on the Worker (panic=abort) a panic fails its own request
 # and can fail others on the same isolate. A crate opts in with `[lints] workspace = true`: thrust-core, thrust-ports and every
 # adapter. These four are in clippy's `restriction` group, off unless named here. `deny`, not `forbid`, so a site that is right (a
 # startup `expect`, an index that a bound proves) can say so with `#[allow(clippy::..., reason = "...")]`. Test code is exempt
 # through `clippy.toml`.
+# cargo-fuzz builds with `--cfg fuzzing` (thrust-edge's fuzz harness exists only in tests and fuzz builds): an expected cfg.
+[workspace.lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(fuzzing)"] }
+
 [workspace.lints.clippy]
 unwrap_used = "deny"
 expect_used = "deny"

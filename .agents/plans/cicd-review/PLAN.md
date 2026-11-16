@@ -177,7 +177,10 @@ left, on the new tag (the App's token makes the tag start workflows):
   jobs, the cells or the gate's expected set, and each adds a binary to the required check's path. `dorny/paths-filter`
   maps paths to flags, but its filters would be YAML that no test runs. The graph comes from `cargo metadata`, which is
   built in.
-- **Left for their own PRs:** the smaller fixes above.
+- **Left for their own PRs:** the smaller fixes above, each one PR: `--locked` (#202), the toolchain pin (#204),
+  every workflow and action linted (#205), the `docs` job (#206), and `flake-hunt.yml` offering every pass of the
+  matrix (`ci/flake-hunt-passes`). The last one found `mail` missing too, beside the `csrfoff`, `oracle` and `e2e` the
+  review named, and moved the cell's pass setup into `.github/actions/contract-pass-tools` so both workflows share it.
 
 ## Later: the E2E and integration recommendations
 

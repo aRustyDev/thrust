@@ -58,7 +58,7 @@ mkdir -p "$T/plan1/scripts" && cp "$HERE/scripts/contract-all.sh" "$T/plan1/scri
 expect "plan: a run line with a changed format fails" 1 "the format changed" plan_in "$T/plan1"
 
 # ---- assert-gate.sh ------------------------------------------------------------------------------
-JOBS="ci-scripts deps lint deny hermetic pg-adapter contract mutants web"
+JOBS="ci-scripts deps lint deny hermetic pg-adapter contract mutants web docs"
 gate() { # gate <dir> <needs-json> <expected-jobs-json> <planned-json> <reported markers...>
   d="$T/gate/$1"; mkdir -p "$d/reported"; needs="$2"; expected="$3"; planned="$4"; shift 4
   for m in "$@"; do printf '%s\n' "$m" > "$d/reported/$(echo "$m" | tr ' ' '-').ok"; done
@@ -106,10 +106,10 @@ for j in $JOBS; do
   done
 done
 
-ALL='["ci-scripts","deps","lint","deny","hermetic","pg-adapter","contract","mutants","web"]'
-ALLOK="$(needs success ci-scripts=success deps=success lint=success deny=success hermetic=success pg-adapter=success contract=success mutants=success web=success)"
-expect "gate: everything expected, everything passed" 0 "9 expected jobs passed" gate a1 "$ALLOK" "$ALL" "$P" "$M1" "$M2"
-expect "gate: nothing expected, everything skipped (docs only)" 0 "no cells planned" gate a2 "$(needs success)" '[]' '[]'
+ALL='["ci-scripts","deps","lint","deny","hermetic","pg-adapter","contract","mutants","web","docs"]'
+ALLOK="$(needs success ci-scripts=success deps=success lint=success deny=success hermetic=success pg-adapter=success contract=success mutants=success web=success docs=success)"
+expect "gate: everything expected, everything passed" 0 "10 expected jobs passed" gate a1 "$ALLOK" "$ALL" "$P" "$M1" "$M2"
+expect "gate: nothing expected, everything skipped (README.md only)" 0 "no cells planned" gate a2 "$(needs success)" '[]' '[]'
 expect "gate: the changes job failed" 1 "changes job result is 'failure'" gate a3 "$(needs failure)" '[]' '[]'
 expect "gate: the changes job was skipped" 1 "changes job result is 'skipped'" gate a4 "$(needs skipped)" '[]' '[]'
 # the cells
@@ -119,11 +119,11 @@ expect "gate: contract expected but no cell planned" 1 "the planned cell set is 
 expect "gate: contract expected and passed, but no marker at all" 1 "no cell markers found" gate c4 "$(needs success contract=success)" '["contract"]' "$P"
 expect "gate: cells planned but contract not expected" 1 "cells are planned but the contract job is not expected" gate c5 "$(needs success)" '[]' "$P"
 # the planner and the gate's needs must agree on the job names
-expect "gate: the planner expects a job the gate does not know" 1 "the planner expects 'docs', which is not a job the gate knows" gate n1 "$(needs success)" '["docs"]' '[]'
+expect "gate: the planner expects a job the gate does not know" 1 "the planner expects 'pages', which is not a job the gate knows" gate n1 "$(needs success)" '["pages"]' '[]'
 NOWEB='{"changes":{"result":"success"},"lint":{"result":"skipped"}}'
 expect "gate: the planner expects a job that is not a need of the gate" 1 "the planner expects 'web', which is not a need of the gate" gate n2 "$NOWEB" '["web"]' '[]'
-EXTRA="$(needs success | sed 's/}$/,"docs":{"result":"success"}}/')"
-expect "gate: a need the planner does not know" 1 "'docs' is a need of the gate but not a job the planner knows" gate n3 "$EXTRA" '[]' '[]'
+EXTRA="$(needs success | sed 's/}$/,"pages":{"result":"success"}}/')"
+expect "gate: a need the planner does not know" 1 "'pages' is a need of the gate but not a job the planner knows" gate n3 "$EXTRA" '[]' '[]'
 expect "gate: EXPECTED_JOBS is not JSON" 1 "EXPECTED_JOBS is not a JSON array of strings" gate n4 "$(needs success)" 'lint' '[]'
 expect "gate: EXPECTED_JOBS is a JSON string" 1 "EXPECTED_JOBS is not a JSON array of strings" gate n5 "$(needs success)" '"lint"' '[]'
 expect "gate: EXPECTED_JOBS is a JSON object" 1 "EXPECTED_JOBS is not a JSON array of strings" gate n6 "$(needs success)" '{}' '[]'

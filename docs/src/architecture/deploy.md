@@ -25,7 +25,7 @@ says what that settled and what has not been shown.
 | The run | It means | What to do |
 |---|---|---|
 | `deploy` green, `deploy-do` skipped | The commit is live, the smoke passed, its control refused a version nobody deployed, and (when there was a previous release) a script only that release had is still served | Nothing |
-| `deploy` green, `deploy-do` waiting | `deploy` deferred: the first deploy to this environment, a change to `[[migrations]]`, a live state it cannot read, or a previous release whose web files cannot be found. **Nothing was deployed.** The job summary says which | Read the summary. Approve `deploy-do` if you want it deployed, knowing a Durable Object lifecycle change cannot be rolled back |
+| `deploy` green, `deploy-do` waiting | `deploy` deferred: the first deploy to this environment, a change to `[[migrations]]`, a deploy of older code than what is live, a live commit it cannot fetch, a live state it cannot read, or a previous release whose web files cannot be found. **Nothing was deployed.** The job summary says which | Read the summary. Approve `deploy-do` if you want it deployed, knowing a Durable Object lifecycle change cannot be rolled back |
 | `deploy` red before "deployed" | A check refused it and nothing changed: a missing variable (named in the error), a bundle that failed its attestation or is for another commit, an expand migration that failed, `wrangler` that could not list what is live, or Cloudflare refusing the upload (a `THRUST_HYPERDRIVE_ID` that is not a Hyperdrive config gives `Hyperdrive binding 'HYPERDRIVE' references config '<id>' which was not found [code: 10157]` `[run 43763466550]`, and the previous version keeps serving) | Read the failing step. Every migration is safe to run again, so re-run |
 | `deploy` red after "deployed", `rolled_back: yes` | The smoke, its control or the asset control failed, and the previous version is serving again (a probe showed it answer) | The release is not live. Find out why from the run, and fix forward |
 | `deploy` red after "deployed", `rolled_back` anything else | No rollback was possible (a lifecycle change, or the first deploy), it failed, or it could not be verified. **A bad version may be serving** | [Roll back by hand](#rolling-back-by-hand), now |
@@ -129,6 +129,23 @@ without keeping the old files, and open tabs may break until they reload. So the
 deployed from `main`** always takes the gate (run 43758233044 did, on 2026-11-15). If it is found and fails
 a check (a forged or damaged one), the run fails, and there is no way past that at the gate.
 
+## What the deploy compares with what is live
+
+The live version's tag is the commit that is running. `deploy` compares that commit with the one it is deploying by what they
+hold: the files under `crates/thrust-adapters-postgres/migrations/` (a difference runs the expand migration) and the
+`[[migrations]]` tables of `wrangler.deploy.toml` (a difference is a Durable Object lifecycle change, below). Neither commit has to
+descend from the other. release-plz force-updates the release candidate's branch, so the commit that is live is usually in no
+branch of the checkout any more; `deploy` asks GitHub for that one commit by its sha, with no secret, before it compares. GitHub
+serves a commit no branch holds to an anonymous fetch `[verified 2026-11-16: the earlier tip of
+rc/2026-11-16T02-58-22Z, which release-plz had just force-updated, fetched by its sha into an empty repository; a sha that exists
+nowhere is refused]`.
+
+It defers to the manual gate, deploying nothing, when it cannot say: there is no live version, the live tag is not a commit, the
+live commit could not be fetched, the checkout is too shallow to say which of the two is older, or **the deploy is older than
+what is live** (a redeploy of earlier code is a person's decision). The job summary gives the reason, and says when the two were
+compared by content alone. A diverged or out-of-order migration is refused by the database side (`migrate`'s ledger, issue #195),
+which the comparison never was.
+
 ## Deploying a Durable Object lifecycle change
 
 A change to `[[migrations]]` in `crates/thrust-worker/wrangler.deploy.toml` cannot be rolled back across and is not gradual
@@ -148,9 +165,11 @@ every real check passed (three answers carried the tag, the smoke account signed
 failure then put staging back on `5cd7ec87` (`rollback of 0c2c0f3…: the smoke failed` in `deployments list`) and ended the job
 red. The run redeployed the same commit, so the script's own check after the rollback, which compares tags, could not tell the
 two versions apart; what shows the rollback is the version id in `wrangler`'s output and in `deployments list`. A drill from a
-different commit would exercise that check too. Dispatch it from a branch that is at the live commit or descends from it:
-release-plz force-updates its `rc/*` branches, so a newer head is usually diverged from what is live, and the deploy stops at
-the manual gate before it reaches the smoke.
+different commit would exercise that check too. When the drill was run, a newer release candidate could not be used: it was
+diverged from what was live, and the classifier stopped it at the manual gate before the smoke. It no longer does (the
+classifier now compares by content, [above](#what-the-deploy-compares-with-what-is-live)), so a newer release candidate with no
+Durable Object change in it should get as far as the smoke, which makes it a drill from a different commit (not yet tried on
+staging). An older commit is still stopped.
 
 ## Rolling back by hand
 
@@ -205,7 +224,11 @@ Rollbacks page]`. Afterwards run the smoke by hand against the previous commit
   approved them, then deployed with `automatic rollback: false`;
 - the rollback drill (above).
 
-**Still not shown, and a known gap:** that the gate stops only what it should. The classifier fails closed when the live commit
-is not an ancestor of the new one, and release-plz force-updates the release candidate's branch, so the next candidate's history
-usually lacks the live commit: both runs above were stopped for that reason ("not an ancestor", and "not a commit in this
-checkout"), with no Durable Object change in them. Production has not been deployed through it.
+**Found by those runs, and changed since:** the gate stopped runs 43796746005 and 43803593395 for a reason that was not a Durable
+Object change. The classifier failed closed when the live commit was not an ancestor of the new one ("not an ancestor", and "not
+a commit in this checkout"), and release-plz force-updates the release candidate's branch, so the next candidate's history
+usually lacks the live commit. The classifier now fetches the live commit by its sha and compares by content ([above](#what-the-deploy-compares-with-what-is-live)).
+That is tested against a made-up history with diverged commits and against a fetch of a commit no branch holds, and **has not run
+on staging yet**: the first release candidate after it is the check.
+
+**Still not shown:** production has not been deployed through the pipeline.
