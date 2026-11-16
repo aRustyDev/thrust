@@ -143,3 +143,4 @@ cell on demand and weekly. Not in CI: the `oracle_` tests (they need the pinned 
 - pipe a suite through `tee` or end the command with `; echo $?` when you will act on its status: the reported exit
   code becomes the last command's. Redirect instead: `cmd > log 2>&1`;
 - `pkill wrangler` or `workerd`: other sessions run their own. The scripts kill only the processes they started.
+<!-- ci probe -->
