@@ -53,7 +53,7 @@ def check(label, got, want):
 ALL_JOBS = {"ci-scripts", "deps", "lint", "deny", "hermetic", "pg-adapter", "contract", "mutants", "web", "docs"}
 CELLS = [
     "native-memory main", "native-memory oracle", "native-pg main", "native-pg oracle",
-    "worker-memory main", "worker-cf main", "worker-cf oracle", "worker-cf e2e",
+    "worker-memory main", "worker-cf main", "worker-cf oracle", "worker-cf e2e", "worker-cf e2e-mail",
 ]
 SERVER, WORKER, SUITE, PG = "thrust-server", "thrust-worker", "thrust-contract-tests", "thrust-adapters-selfhosted"
 BINARY = {"native-memory": SERVER, "native-pg": SERVER, "worker-memory": WORKER, "worker-cf": WORKER}
@@ -229,9 +229,14 @@ jobs, cells = run_plan(["crates/adapters/cloudflare/src/lib.rs"], REAL_GRAPH, CE
 check("a target the planner does not know runs with a crate change", "worker-new main" in cells, True)
 
 # ---- 5. the named cases ----------------------------------------------------------------------------------------------------------
-check("G-30: web/ alone runs the web job and the browser journeys' cell",
-      run_plan(["web/apps/web/app.tsx"], REAL_GRAPH), ({"web", "contract"}, {"worker-cf e2e"}))
-check("e2e/ alone runs only the journeys' cell", run_plan(["e2e/journeys/m1.spec.ts"], REAL_GRAPH), ({"contract"}, {"worker-cf e2e"}))
+check("G-30: web/ alone runs the web job and both browser journey cells (the suites share the app, and the mail suite's page is the app's)",
+      run_plan(["web/apps/web/app.tsx"], REAL_GRAPH), ({"web", "contract"}, {"worker-cf e2e", "worker-cf e2e-mail"}))
+check("e2e/ alone runs only the journeys' cells, both suites'", run_plan(["e2e/journeys/m1.spec.ts"], REAL_GRAPH),
+      ({"contract"}, {"worker-cf e2e", "worker-cf e2e-mail"}))
+check("a journey of the mail suite alone runs the same two cells (e2e/support/ is shared, so the suites are not told apart)",
+      run_plan(["e2e/journeys-mail/m2-sign-in-by-code.spec.ts"], REAL_GRAPH), ({"contract"}, {"worker-cf e2e", "worker-cf e2e-mail"}))
+check("a change of the Worker's own crate runs the mail journey's cell with the Worker's other passes",
+      "worker-cf e2e-mail" in run_plan(["crates/adapters/cloudflare/src/lib.rs"], REAL_GRAPH)[1], True)
 check("a deploy script runs ci-scripts and no cell", run_plan(["scripts/smoke-deploy.sh"], REAL_GRAPH), ({"ci-scripts"}, set()))
 check("another workflow runs ci-scripts and deps, no cell", run_plan([".github/workflows/flake-hunt.yml"], REAL_GRAPH),
       ({"ci-scripts", "deps"}, set()))
@@ -316,8 +321,9 @@ def cli(*args, changed=None, cells="\n".join(CELLS) + "\n", md_obj=None):
 rc, out, _ = cli(changed="web/x.tsx\n")
 check("cli: exit 0", rc, 0)
 check("cli: jobs, in the gate's order", json.loads(out.get("jobs", "null")), ["contract", "web"])
-check("cli: cells", json.loads(out.get("cells", "null")), ["worker-cf e2e"])
-check("cli: matrix", json.loads(out.get("matrix", "null")), {"include": [{"target": "worker-cf", "pass": "e2e"}]})
+check("cli: cells", json.loads(out.get("cells", "null")), ["worker-cf e2e", "worker-cf e2e-mail"])
+check("cli: matrix", json.loads(out.get("matrix", "null")),
+      {"include": [{"target": "worker-cf", "pass": "e2e"}, {"target": "worker-cf", "pass": "e2e-mail"}]})
 rc, out, err = cli(changed="README.md\n")
 check("cli: README.md: no job, an empty matrix", (rc, out.get("jobs"), out.get("matrix"), out.get("cells")), (0, "[]", '{"include":[]}', "[]"))
 rc, out, err = cli(changed="")
