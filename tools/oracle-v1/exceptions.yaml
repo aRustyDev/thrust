@@ -55,7 +55,7 @@ scopes:
     # separate piece of work (thrust issue #58, recorded in the PR), not something this scope's baseline should absorb silently.
     #
     # The fuzzer sends JSON bodies only: the pin also reads form and multipart bodies and Thrust answers 415 to them, on purpose
-    # (DEVIATIONS D-030 (5), owner confirmed 2026-11-07), so a gate that sent them could not compare the two.
+    # (DEVIATIONS D-030 (5), owner confirmed 2026-11-07 for projects and 2026-11-16 for every v1 route), so a gate that sent them could not compare the two.
     json_bodies_only: true
     # Measured on the pin: a scoped run on a freshly seeded Plane (ba85d4d3d3, schemathesis 4.31.1, seed 1, deterministic), twice,
     # with the same result both times: 25 operations run (32 less the six DELETEs and the archive POST that SX-001 and SX-002 keep out),

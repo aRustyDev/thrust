@@ -32,7 +32,7 @@
       "check": "request-body-media-type-removed",
       "text_contains": "application/x-www-form-urlencoded",
       "operations": ["create_project", "update_project"],
-      "reason": "A body that is a form is a 415: Thrust reads JSON only (`request::json_body`). The pin also reads forms. The owner confirmed this on 2026-11-07."
+      "reason": "A body that is a form is a 415: Thrust reads JSON only (`request::json_body`). The pin also reads forms. The owner confirmed this on 2026-11-07 for projects and on 2026-11-16 for every v1 route, to be revisited if a real client sends a form (D-030 (5))."
     },
     {
       "id": "SD-005",
@@ -76,15 +76,15 @@
     },
     {
       "id": "SD-010",
-      "ref": "D-031 (5) (proposed, not yet confirmed by the owner)",
+      "ref": "D-031 (5), which is D-030 (5)",
       "check": "request-body-media-type-removed",
       "text_contains": "application/x-www-form-urlencoded",
       "operations": ["create_state", "update_state"],
-      "reason": "A body that is a form is a 415 on a state, as on a project (D-030 (5)): Thrust reads JSON only (`request::json_body`, one condition for every v1 route). The pin also reads forms. The owner confirmed D-030 (5) for projects on 2026-11-07; for states it is D-031 (5), proposed here."
+      "reason": "A body that is a form is a 415 on a state, as on a project (D-030 (5)): Thrust reads JSON only (`request::json_body`, one condition for every v1 route). The pin also reads forms. The owner confirmed D-030 (5) for projects on 2026-11-07 and for every v1 route on 2026-11-16; D-031 (5) is it, on the states."
     },
     {
       "id": "SD-011",
-      "ref": "D-031 (5) (proposed, not yet confirmed by the owner)",
+      "ref": "D-031 (5), which is D-030 (5)",
       "check": "request-body-media-type-removed",
       "text_contains": "multipart/form-data",
       "operations": ["create_state", "update_state"],
@@ -100,15 +100,15 @@
     },
     {
       "id": "SD-013",
-      "ref": "D-032 (6) (proposed, not yet confirmed by the owner)",
+      "ref": "D-032 (6), which is D-030 (5)",
       "check": "request-body-media-type-removed",
       "text_contains": "application/x-www-form-urlencoded",
       "operations": ["create_label", "update_label"],
-      "reason": "A body that is a form is a 415 on a label, as on a project (D-030 (5)) and a state (D-031 (5)): Thrust reads JSON only (`request::json_body`, one condition for every v1 route). The pin also reads forms. The owner confirmed D-030 (5) for projects on 2026-11-07; for labels it is D-032 (6), proposed here, and `a_form_or_a_multipart_body_is_a_415` in `tests/labels.rs` holds the behaviour."
+      "reason": "A body that is a form is a 415 on a label, as on a project (D-030 (5)) and a state (D-031 (5)): Thrust reads JSON only (`request::json_body`, one condition for every v1 route). The pin also reads forms. The owner confirmed D-030 (5) for projects on 2026-11-07 and for every v1 route on 2026-11-16; D-032 (6) is it, on the labels, and `a_form_or_a_multipart_body_is_a_415` in `tests/labels.rs` holds the behaviour."
     },
     {
       "id": "SD-014",
-      "ref": "D-032 (6) (proposed, not yet confirmed by the owner)",
+      "ref": "D-032 (6), which is D-030 (5)",
       "check": "request-body-media-type-removed",
       "text_contains": "multipart/form-data",
       "operations": ["create_label", "update_label"],
@@ -116,15 +116,15 @@
     },
     {
       "id": "SD-015",
-      "ref": "D-033 (11) (proposed, not yet confirmed by the owner)",
+      "ref": "D-033 (11), which is D-030 (5)",
       "check": "request-body-media-type-removed",
       "text_contains": "application/x-www-form-urlencoded",
       "operations": ["create_work_item", "update_work_item", "create_work_item_2", "update_work_item_2"],
-      "reason": "A body that is a form is a 415 on a work item, as on a project (D-030 (5)), a state (D-031 (5)) and a label (D-032 (6)): Thrust reads JSON only (`request::json_body`, one condition for every v1 route, and both families of paths share the handlers). The pin also reads forms. The owner confirmed D-030 (5) for projects on 2026-11-07; for work items it is D-033 (11), proposed here, and `a_form_or_a_multipart_body_is_a_415` in `tests/work_items.rs` holds the behaviour."
+      "reason": "A body that is a form is a 415 on a work item, as on a project (D-030 (5)), a state (D-031 (5)) and a label (D-032 (6)): Thrust reads JSON only (`request::json_body`, one condition for every v1 route, and both families of paths share the handlers). The pin also reads forms. The owner confirmed D-030 (5) for projects on 2026-11-07 and for every v1 route on 2026-11-16; D-033 (11) is it, on the work items, and `a_form_or_a_multipart_body_is_a_415` in `tests/work_items.rs` holds the behaviour."
     },
     {
       "id": "SD-016",
-      "ref": "D-033 (11) (proposed, not yet confirmed by the owner)",
+      "ref": "D-033 (11), which is D-030 (5)",
       "check": "request-body-media-type-removed",
       "text_contains": "multipart/form-data",
       "operations": ["create_work_item", "update_work_item", "create_work_item_2", "update_work_item_2"],
