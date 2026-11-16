@@ -98,11 +98,23 @@ A pass is selected by **test-name prefix** in `scripts/contract.sh`, not by next
 `contract.rs` form the `main` pass. A new test therefore picks its pass by its name.
 
 The `mail` pass is the exception: it is its own test binary (`tests/mail.rs`, run with `--test mail`), because it needs a target that has a mail
-service and every other pass needs one that has none. `scripts/contract.sh` starts a Mailpit container (a mail server written by someone else, so
-that what the server sends is read by a server that parses it for itself) and the native server with `THRUST_SMTP_*` pointing at it, and refuses to
-run when `/api/instances/` does not say `is_smtp_configured: true`. Every other pass refuses to run when it says anything but `false`, and unsets
-`THRUST_SMTP_*` and `THRUST_PUBLIC_BASE_URL` first, so a developer's shell cannot turn the dark test into a test of something else. Only the native
-targets have an SMTP adapter; the Worker's `send_email` binding is E3.
+service and every other pass needs one that has none. It refuses to run when `/api/instances/` does not say `is_smtp_configured: true`. Every other
+pass refuses to run when it says anything but `false`, and unsets `THRUST_SMTP_*`, `THRUST_EMAIL_FROM*` and `THRUST_PUBLIC_BASE_URL` first, so a
+developer's shell cannot turn the dark test into a test of something else. What the mail service is depends on the kind of target, and the three tests
+are the same on both, because the mail is read into one shape (`Subject`, `From`, `To`, `Text`):
+
+- **A native target** has the SMTP adapter. `scripts/contract.sh` starts a Mailpit container (a mail server written by someone else, so that what the
+  server sends is read by a server that parses it for itself) and the server with `THRUST_SMTP_*` pointing at it; the mail is read from Mailpit's API.
+- **A Worker target** has the `send_email` binding (E3), which under `wrangler dev` without `remote = true` is a simulator: it sends nothing, and writes
+  each message it is asked to send to the dev server's log (`From:`, `To:`, `Subject:`) and the text and html to files whose paths the log gives.
+  `scripts/contract.sh` starts the Worker with `THRUST_EMAIL_FROM` and reads that log, so the adapter that runs is the Worker's own, built for wasm32,
+  against the binding's real JS shape, and wrangler's account of what it was given is read from outside the adapter. No container: both Worker cells
+  (`worker-memory mail`, `worker-cf mail`) run in CI. The simulator's lines reach the log a few milliseconds **after** the response that caused them, so
+  a read straight after a request can miss its message and a "nothing was mailed" check would pass for want of waiting (measured: the first run read an
+  empty log). The tests therefore read after a marker: one more reset for an account of their own, waited for in the log, which is in order, so
+  everything sent before it is in it too. The simulator does not validate addresses and lets a line break in a subject through, so what refuses those is
+  the adapter's own check (`tests/email.rs`), not the binding. What the pass cannot show is the service behind the binding: a real send is a deployed
+  Worker's (G-39).
 
 ## Run
 

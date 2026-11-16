@@ -1,6 +1,6 @@
-# The operations of the pinned schema (openapi.v1.json) that this crate's own document (openapi.thrust.json) describes so far:
+# The operations of the pinned schema (openapi.v1.json) that this crate's own document (openapi.thrust.json) describes: all 32 of the scope `m1` (exceptions.yaml), the end of issue #58's steps by resource.
 # `scripts/check-openapi.sh` cuts the pin to exactly these, diffs the two with oasdiff, and fails if the document has more or fewer.
-# A resource is added when its bodies are types (issue #58); the end is the 32 operations of the scope `m1` (exceptions.yaml).
+# An operation outside the scope is added when its bodies are types, and not before.
 #
 # Projects (8 of 8)
 list_projects
@@ -18,3 +18,26 @@ create_state
 retrieve_state
 update_state
 delete_state
+#
+# Labels (5 of 5; the pin names the detail read `get_labels`)
+list_labels
+create_label
+get_labels
+update_label
+delete_label
+#
+# Work Items (14 of 14: seven operations under `issues/` and the same seven under `work-items/`, whose ids end in `_2`)
+list_work_items
+create_work_item
+retrieve_work_item
+update_work_item
+delete_work_item
+get_workspace_work_item
+search_work_items
+list_work_items_2
+create_work_item_2
+retrieve_work_item_2
+update_work_item_2
+delete_work_item_2
+get_workspace_work_item_2
+search_work_items_2

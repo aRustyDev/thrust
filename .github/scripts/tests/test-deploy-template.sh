@@ -78,8 +78,27 @@ expect "a changed cron is found" 1 "crons" parity "$BASE" "$T/other-cron.toml"
 mk other-limit -e 's/simple = { limit = 60, period = 60 }/simple = { limit = 61, period = 60 }/'
 expect "a changed rate-limit allowance is found" 1 "ratelimits" parity "$BASE" "$T/other-limit.toml"
 
-cp "$DEPLOY" "$T/probe.toml"; printf '\n[[send_email]]\nname = "EMAIL"\n' >> "$T/probe.toml"
+cp "$DEPLOY" "$T/probe.toml"; printf '\n[[ratelimits]]\nname = "RL"\nnamespace_id = "__RL_V1_ID__"\nsimple = { limit = 5, period = 60 }\n' >> "$T/probe.toml"
 expect "a probe-only binding in the template is found" 1 "probe-only bindings" parity "$BASE" "$T/probe.toml"
+
+# the mail service (E3): the EMAIL binding is in both and, in the template, restricted to the configured sender; the variables that give a
+# Worker a mail service are the deployment's and not a development run's
+mk no-sender-restriction -e '/^allowed_sender_addresses/d'
+expect "a template whose EMAIL binding is not restricted to the sender is found" 1 "allowed_sender_addresses" parity "$BASE" "$T/no-sender-restriction.toml"
+mk real-sender-restriction -e 's|allowed_sender_addresses = \["__EMAIL_FROM__"\]|allowed_sender_addresses = ["no-reply@notify.sow.foo"]|'
+expect "a real sender address in the template's restriction is found" 1 "not the sender marker" parity "$BASE" "$T/real-sender-restriction.toml"
+mk no-email-binding -e '/^\[\[send_email\]\]/,/^allowed_sender_addresses/d'
+expect "a template with no EMAIL binding is found" 1 "send_email" parity "$BASE" "$T/no-email-binding.toml"
+mk no-mail-name -e '/^THRUST_EMAIL_FROM_NAME/d'
+expect "a mail variable dropped from the template is found" 1 "the deploy template sets" parity "$BASE" "$T/no-mail-name.toml"
+mk no-mail-from -e '/^THRUST_EMAIL_FROM = /d'
+expect "the sender variable dropped from the template is found" 1 "the deploy template sets" parity "$BASE" "$T/no-mail-from.toml"
+mk real-origin -e 's|__PUBLIC_BASE_URL__|https://thrust-staging.sow.foo|'
+expect "a real origin in the template is found" 1 "not the origin marker" parity "$BASE" "$T/real-origin.toml"
+mk real-from -e 's|THRUST_EMAIL_FROM = "__EMAIL_FROM__"|THRUST_EMAIL_FROM = "no-reply@notify.sow.foo"|'
+expect "a real sender in the template's variable is found" 1 "not the sender marker" parity "$BASE" "$T/real-from.toml"
+awk '{ print } /^\[vars\]/ { print "THRUST_EMAIL_FROM = \"no-reply@thrust.test\"" }' "$BASE" > "$T/base-mail.toml"
+expect "a mail variable in the shared wrangler.toml is found" 1 "a development run would have a mail service" parity "$T/base-mail.toml" "$DEPLOY"
 
 cp "$DEPLOY" "$T/build.toml"; printf '\n[build]\ncommand = "echo build"\n' >> "$T/build.toml"
 expect "a [build] in the template is found" 1 "builds nothing" parity "$BASE" "$T/build.toml"

@@ -3698,6 +3698,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "getrandom 0.4.3",
+ "mailparse",
  "proptest",
  "rstest",
  "serde",

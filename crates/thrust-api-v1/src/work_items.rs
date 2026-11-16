@@ -22,11 +22,16 @@ use thrust_contracts::{Priority, ProjectId, Role, UserId, Uuid, WorkItemId, Work
 use thrust_core::{Ask, IssueAccess, IssueDraft, IssueError, IssueListQuery, IssueUpdate};
 use thrust_ports::{WorkItemOrder, WorkItemOrderField, WorkspaceSearch};
 
+use crate::dto::{
+    into_object, IssueDto, IssueSearchDto, IssueSearchItemDto, LabelDto, LabelRef, Listing, StateBriefDto, StateRef,
+    UserBriefDto, UserRef,
+};
 use crate::fields::{
     bool_field, char_field, choice_field, date_field, datetime_field, fail, float_field, int_field, no_such_pk_shown,
     not_a_dictionary, parse_uuid_text, pk_field, py_int, py_str, py_type_name, refuse_if_any, whole_numbers,
     FieldErrors, PkRead,
 };
+use crate::labels::label_dto;
 use crate::pagination::PageRequest;
 use crate::projects::ts;
 use crate::request::{json_body, pick_fields, query_map, Body};
@@ -100,82 +105,90 @@ async fn writer(ctx: &Ctx, slug: &str, project: ProjectId) -> Result<IssueAccess
 /// The parts of a work item that `expand` swaps for objects, read once for a page: the states, the people and the labels it names.
 #[derive(Default)]
 struct Expansion {
-    state: Option<HashMap<Uuid, Value>>,
-    assignees: Option<HashMap<UserId, Value>>,
-    labels: Option<HashMap<Uuid, Value>>,
+    state: Option<HashMap<Uuid, StateBriefDto>>,
+    assignees: Option<HashMap<UserId, UserBriefDto>>,
+    labels: Option<HashMap<Uuid, LabelDto>>,
 }
 
-/// `Issue`'s body as the pin's `IssueSerializer` writes it: 29 keys. A work item that is read is live, so it is not a draft, not
-/// archived and not deleted; it has no estimate point and no type.
-fn work_item_body(r: &WorkItemRow, x: &Expansion) -> Map<String, Value> {
+/// `Issue`'s body as the pin's `IssueSerializer` writes it, as an [`IssueDto`]: 29 keys. A work item that is read is live, so it is not
+/// a draft, not archived and not deleted; it has no estimate point and no type. A person, a state or a label that `expand` asked for
+/// and that is not among the ones read is its id, as for a request that did not ask.
+fn work_item_dto(r: &WorkItemRow, x: &Expansion) -> IssueDto {
     let (i, a) = (&r.item, &r.attrs);
-    let user = |u: Option<UserId>| u.map_or(Value::Null, |u| json!(u.0));
-    let state = match (a.state_id, &x.state) {
-        (Some(id), Some(map)) => map.get(&id).cloned().unwrap_or_else(|| json!(id)),
-        (state, _) => json!(state),
-    };
-    let assignees: Vec<Value> = a
+    let user = |u: Option<UserId>| u.map(|u| u.0);
+    let state = a.state_id.map(|id| match x.state.as_ref().and_then(|m| m.get(&id)) {
+        Some(brief) => StateRef::Expanded(brief.clone()),
+        None => StateRef::Id(id),
+    });
+    let assignees = a
         .assignee_ids
         .iter()
-        .map(|u| x.assignees.as_ref().and_then(|m| m.get(u).cloned()).unwrap_or_else(|| json!(u.0)))
+        .map(|u| match x.assignees.as_ref().and_then(|m| m.get(u)) {
+            Some(brief) => UserRef::Expanded(brief.clone()),
+            None => UserRef::Id(u.0),
+        })
         .collect();
-    let labels: Vec<Value> = a
+    let labels = a
         .label_ids
         .iter()
-        .map(|l| x.labels.as_ref().and_then(|m| m.get(l).cloned()).unwrap_or_else(|| json!(l)))
+        .map(|l| match x.labels.as_ref().and_then(|m| m.get(l)) {
+            Some(label) => LabelRef::Expanded(label.clone()),
+            None => LabelRef::Id(*l),
+        })
         .collect();
-    let body = json!({
-        "id": i.id.0,
-        "created_at": ts(i.created_at),
-        "updated_at": ts(a.updated_at),
-        "deleted_at": null,
-        "created_by": user(i.created_by),
-        "updated_by": user(a.updated_by),
-        "workspace": i.workspace_id.0,
-        "project": i.project_id.0,
-        "name": i.name,
-        "description_html": a.description_html,
-        "description_binary": null,
-        "priority": a.priority.as_str(),
-        "start_date": a.start_date.map(|d| d.to_string()),
-        "target_date": a.target_date.map(|d| d.to_string()),
-        "sequence_id": i.sequence_id,
-        "sort_order": i.sort_order as f64,
-        "completed_at": a.completed_at.map(ts),
-        "archived_at": null,
-        "is_draft": false,
-        "state": state,
-        "parent": a.parent_id,
-        "point": a.point,
-        "estimate_point": null,
-        "type": null,
-        "type_id": null,
-        "external_source": i.external_source,
-        "external_id": i.external_id,
-        "assignees": assignees,
-        "labels": labels,
-    });
-    match body {
-        Value::Object(map) => map,
-        _ => Map::new(),
+    IssueDto {
+        id: i.id.0,
+        created_at: ts(i.created_at),
+        updated_at: ts(a.updated_at),
+        deleted_at: None,
+        created_by: user(i.created_by),
+        updated_by: user(a.updated_by),
+        workspace: i.workspace_id.0,
+        project: i.project_id.0,
+        name: i.name.clone(),
+        description_html: a.description_html.clone(),
+        description_binary: None,
+        priority: a.priority.into(),
+        start_date: a.start_date.map(|d| d.to_string()),
+        target_date: a.target_date.map(|d| d.to_string()),
+        sequence_id: i.sequence_id,
+        sort_order: i.sort_order as f64,
+        completed_at: a.completed_at.map(ts),
+        archived_at: None,
+        is_draft: false,
+        state,
+        parent: a.parent_id,
+        point: a.point,
+        estimate_point: None,
+        type_: None,
+        type_id: None,
+        external_source: i.external_source.clone(),
+        external_id: i.external_id.clone(),
+        assignees,
+        labels,
     }
 }
 
+/// [`work_item_dto`] as the JSON object a read then cuts to the fields asked for.
+fn work_item_body(r: &WorkItemRow, x: &Expansion) -> Result<Map<String, Value>, V1Error> {
+    into_object(&work_item_dto(r, x))
+}
+
 /// A user as an expanded `assignees` shows them (`UserLiteSerializer`, as the oracle's corpus has it).
-async fn user_brief(ctx: &Ctx, id: UserId) -> Result<Value, V1Error> {
+async fn user_brief(ctx: &Ctx, id: UserId) -> Result<UserBriefDto, V1Error> {
     let email = ctx.app.ports.db.user_by_id(id).await?.and_then(|u| u.email);
     let profile = ctx.app.ports.db.profile(id).await?;
     let (first, last, display, avatar) =
         profile.map(|p| (p.first_name, p.last_name, p.display_name, p.avatar)).unwrap_or_default();
-    Ok(json!({
-        "id": id.0,
-        "first_name": first,
-        "last_name": last,
-        "display_name": display,
-        "email": email,
-        "avatar": avatar,
-        "avatar_url": if avatar.is_empty() { Value::Null } else { json!(avatar) },
-    }))
+    Ok(UserBriefDto {
+        id: id.0,
+        first_name: first,
+        last_name: last,
+        display_name: display,
+        email,
+        avatar_url: if avatar.is_empty() { None } else { Some(avatar.clone()) },
+        avatar,
+    })
 }
 
 /// What `expand` asks of these work items, looked up once: `state`, `assignees` and `labels`. The other names the base serializer
@@ -195,13 +208,13 @@ async fn expansion(
         x.state = Some(
             states
                 .into_iter()
-                .map(|s| (s.id, json!({ "id": s.id, "name": s.name, "color": s.color, "group": s.group.as_str() })))
+                .map(|s| (s.id, StateBriefDto { id: s.id, name: s.name, color: s.color, group: s.group.as_str() }))
                 .collect(),
         );
     }
     if wanted.contains("labels") {
         let labels = db.project_labels(&scope).await?;
-        x.labels = Some(labels.iter().map(|l| (l.id, Value::Object(crate::labels::label_body(l)))).collect());
+        x.labels = Some(labels.iter().map(|l| (l.id, label_dto(l))).collect());
     }
     if wanted.contains("assignees") {
         let people: BTreeSet<UserId> = rows.iter().flat_map(|r| r.attrs.assignee_ids.iter().copied()).collect();
@@ -222,7 +235,7 @@ async fn shown(
     row: &WorkItemRow,
 ) -> Result<Value, V1Error> {
     let x = expansion(ctx, access, q, &[row]).await?;
-    Ok(pick_fields(work_item_body(row, &x), q))
+    Ok(pick_fields(work_item_body(row, &x)?, q))
 }
 
 // --- reading a body ------------------------------------------------------------------------------------------------------------
@@ -555,11 +568,32 @@ fn order_of(q: &HashMap<String, String>) -> WorkItemOrder {
 
 /// `GET .../{family}/`: a page of the project's work items; or, when the request names an integration key (both halves), the one
 /// work item that has it, not a page.
-async fn list(
+///
+/// The two families of paths (`issues/` and `work-items/`) share every handler here, so the attributes below describe the `issues/`
+/// ones, and the document derives the `work-items/` ones from them (`openapi::WorkItemsTwice`, the pin's operation ids ending `_2`).
+#[cfg_attr(
+    feature = "openapi",
+    utoipa::path(
+        get,
+        path = "/api/v1/workspaces/{slug}/projects/{project_id}/issues/",
+        operation_id = "list_work_items",
+        tag = "Work Items",
+        summary = "List work items",
+        params(("slug" = String, Path), ("project_id" = thrust_contracts::Uuid, Path), crate::openapi::WorkItemsQuery),
+        responses(
+            crate::openapi::Refused,
+            (status = 200, description = "Paginated list of work items", body = Listing<IssueDto>),
+            (status = 400, description = "Invalid request data provided"),
+            (status = 404, description = "Project not found"),
+        ),
+        security(("ApiKeyAuthentication" = []))
+    )
+)]
+pub(crate) async fn list(
     V1Path((slug, project)): V1Path<(String, PlaneUuid)>,
     ctx: Ctx,
     RawQuery(raw): RawQuery,
-) -> Result<Json<Value>, V1Error> {
+) -> Result<Json<Listing<Value>>, V1Error> {
     let access = reader(&ctx, &slug, ProjectId(project.0)).await?;
     let q = query_map(raw.as_deref());
     let unsupported: Vec<&str> =
@@ -576,7 +610,7 @@ async fn list(
     let given = |name: &str| q.get(name).map(String::as_str).filter(|s| !s.is_empty());
     if let (Some(id), Some(source)) = (given("external_id"), given("external_source")) {
         let row = thrust_core::issue_by_external(&ctx.app, &access, source, id).await.map_err(item_error)?;
-        return Ok(Json(shown(&ctx, &access, &q, &row).await?));
+        return Ok(Json(Listing::One(shown(&ctx, &access, &q, &row).await?)));
     }
     let plan =
         PageRequest::parse(q.get("per_page").map(String::as_str), q.get("cursor").map(String::as_str))?.plan()?;
@@ -589,13 +623,34 @@ async fn list(
     let page = thrust_core::list_issues(&ctx.app, &access, query).await.map_err(item_error)?;
     let rows: Vec<&WorkItemRow> = page.rows.iter().collect();
     let x = expansion(&ctx, &access, &q, &rows).await?;
-    let results = page.rows.iter().map(|r| pick_fields(work_item_body(r, &x), &q)).collect();
-    Ok(Json(plan.envelope(results, usize::try_from(page.total).unwrap_or(usize::MAX))))
+    let results =
+        page.rows.iter().map(|r| Ok(pick_fields(work_item_body(r, &x)?, &q))).collect::<Result<Vec<_>, V1Error>>()?;
+    Ok(Json(Listing::Page(plan.page(results, usize::try_from(page.total).unwrap_or(usize::MAX)))))
 }
 
 /// `POST .../{family}/`: make a work item. The pin answers 201; a body that gives `deleted_at` a value makes the work item and then
 /// fails (PQ-404), which here makes none.
-async fn create(
+#[cfg_attr(
+    feature = "openapi",
+    utoipa::path(
+        post,
+        path = "/api/v1/workspaces/{slug}/projects/{project_id}/issues/",
+        operation_id = "create_work_item",
+        tag = "Work Items",
+        summary = "Create work item",
+        params(("slug" = String, Path), ("project_id" = thrust_contracts::Uuid, Path)),
+        request_body(content = crate::openapi::IssueRequest, content_type = "application/json"),
+        responses(
+            crate::openapi::Refused,
+            (status = 201, description = "Work Item created successfully", body = IssueDto),
+            (status = 400, description = "Invalid request data provided"),
+            (status = 404, description = "Project not found"),
+            (status = 409, description = "Resource with same external ID already exists"),
+        ),
+        security(("ApiKeyAuthentication" = []))
+    )
+)]
+pub(crate) async fn create(
     V1Path((slug, project)): V1Path<(String, PlaneUuid)>,
     ctx: Ctx,
     headers: HeaderMap,
@@ -633,11 +688,35 @@ async fn create(
     };
     let row = thrust_core::create_issue(&ctx.app, &access, draft).await.map_err(item_error)?;
     let x = expansion(&ctx, &access, &HashMap::new(), &[&row]).await?;
-    Ok((StatusCode::CREATED, Json(Value::Object(work_item_body(&row, &x)))))
+    Ok((StatusCode::CREATED, Json(Value::Object(work_item_body(&row, &x)?))))
 }
 
-/// `GET .../{family}/{pk}/`.
-async fn retrieve(
+/// `GET .../{family}/{pk}/`. The pin's schema lists `external_id`, `external_source` and `order_by` for it too, so the document does; this
+/// route reads `fields` and `expand` only, and a request that sends the others is answered as one that does not (a test says so).
+#[cfg_attr(
+    feature = "openapi",
+    utoipa::path(
+        get,
+        path = "/api/v1/workspaces/{slug}/projects/{project_id}/issues/{pk}/",
+        operation_id = "retrieve_work_item",
+        tag = "Work Items",
+        summary = "Retrieve work item",
+        params(
+            ("slug" = String, Path),
+            ("project_id" = thrust_contracts::Uuid, Path),
+            ("pk" = thrust_contracts::Uuid, Path),
+            crate::openapi::WorkItemQuery
+        ),
+        responses(
+            crate::openapi::Refused,
+            (status = 200, description = "List of issues or issue details", body = IssueDto),
+            (status = 400, description = "Invalid request data provided"),
+            (status = 404, description = "Work item not found"),
+        ),
+        security(("ApiKeyAuthentication" = []))
+    )
+)]
+pub(crate) async fn retrieve(
     V1Path((slug, project, pk)): V1Path<(String, PlaneUuid, PlaneUuid)>,
     ctx: Ctx,
     RawQuery(raw): RawQuery,
@@ -651,7 +730,32 @@ async fn retrieve(
 /// `PATCH .../{family}/{pk}/`. The base view parses the body before the handler runs, so a body that cannot be parsed is refused
 /// before the work item is looked for; the handler then finds it (as `Issue.objects` does, an archived project's too), and only then
 /// does the serializer read what the parsed body says.
-async fn update(
+#[cfg_attr(
+    feature = "openapi",
+    utoipa::path(
+        patch,
+        path = "/api/v1/workspaces/{slug}/projects/{project_id}/issues/{pk}/",
+        operation_id = "update_work_item",
+        tag = "Work Items",
+        summary = "Partially update work item",
+        params(
+            ("slug" = String, Path),
+            ("project_id" = thrust_contracts::Uuid, Path),
+            ("pk" = thrust_contracts::Uuid, Path)
+        ),
+        // not required: an empty body is an empty object (`json_body`), as DRF reads it
+        request_body(content = Option<crate::openapi::PatchedIssueRequest>, content_type = "application/json"),
+        responses(
+            crate::openapi::Refused,
+            (status = 200, description = "Work Item patched successfully", body = IssueDto),
+            (status = 400, description = "Invalid request data provided"),
+            (status = 404, description = "Work item not found"),
+            (status = 409, description = "Resource with same external ID already exists"),
+        ),
+        security(("ApiKeyAuthentication" = []))
+    )
+)]
+pub(crate) async fn update(
     V1Path((slug, project, pk)): V1Path<(String, PlaneUuid, PlaneUuid)>,
     ctx: Ctx,
     headers: HeaderMap,
@@ -720,11 +824,33 @@ async fn update(
         .map_err(item_error)?;
     let row = thrust_core::issue_to_change(&ctx.app, &access, id).await.map_err(item_error)?;
     let x = expansion(&ctx, &access, &HashMap::new(), &[&row]).await?;
-    Ok(Json(Value::Object(work_item_body(&row, &x))))
+    Ok(Json(Value::Object(work_item_body(&row, &x)?)))
 }
 
 /// `DELETE .../{family}/{pk}/`: a project admin or the work item's maker.
-async fn destroy(
+#[cfg_attr(
+    feature = "openapi",
+    utoipa::path(
+        delete,
+        path = "/api/v1/workspaces/{slug}/projects/{project_id}/issues/{pk}/",
+        operation_id = "delete_work_item",
+        tag = "Work Items",
+        summary = "Delete work item",
+        params(
+            ("slug" = String, Path),
+            ("project_id" = thrust_contracts::Uuid, Path),
+            ("pk" = thrust_contracts::Uuid, Path)
+        ),
+        responses(
+            (status = 204, description = "Resource deleted successfully"),
+            (status = 401, description = "Authentication credentials were not provided or are invalid."),
+            (status = 403, description = "Only admin or creator can perform this action"),
+            (status = 404, description = "Work item not found"),
+        ),
+        security(("ApiKeyAuthentication" = []))
+    )
+)]
+pub(crate) async fn destroy(
     V1Path((slug, project, pk)): V1Path<(String, PlaneUuid, PlaneUuid)>,
     ctx: Ctx,
 ) -> Result<StatusCode, V1Error> {
@@ -736,12 +862,37 @@ async fn destroy(
 /// `GET /workspaces/{slug}/{family}/search/`: the work items of the caller's own projects that a name, a project identifier or a
 /// number says. Any key may ask (the pin's permission is only that the caller is authenticated): a caller who is in no project of the
 /// workspace gets no work items, not a refusal.
-async fn search(V1Path(slug): V1Path<String>, ctx: Ctx, RawQuery(raw): RawQuery) -> Result<Json<Value>, V1Error> {
+///
+/// The pin's schema describes one hit as the whole answer (`IssueSearch`, with a `sequence_id` that is a string); what it answers is
+/// `{"issues": [hit, ...]}` with a whole number (the oracle's corpus, `search`), which is what this document says.
+#[cfg_attr(
+    feature = "openapi",
+    utoipa::path(
+        get,
+        path = "/api/v1/workspaces/{slug}/issues/search/",
+        operation_id = "search_work_items",
+        tag = "Work Items",
+        params(("slug" = String, Path), crate::openapi::SearchQuery),
+        responses(
+            crate::openapi::Refused,
+            (status = 200, description = "Work item search results", body = IssueSearchDto),
+            (status = 400, description = "Bad request - invalid search parameters"),
+            (status = 404, description = "Workspace not found"),
+        ),
+        security(("ApiKeyAuthentication" = []))
+    )
+)]
+pub(crate) async fn search(
+    V1Path(slug): V1Path<String>,
+    ctx: Ctx,
+    RawQuery(raw): RawQuery,
+) -> Result<Json<IssueSearchDto>, V1Error> {
     ctx.throttle().await?;
     let q = query_map(raw.as_deref());
     let text = q.get("search").cloned().unwrap_or_default();
+    let none = || Json(IssueSearchDto { issues: Vec::new() });
     if text.is_empty() {
-        return Ok(Json(json!({ "issues": [] })));
+        return Ok(none());
     }
     // `int(limit)` raises on text, and a negative slice is refused by the ORM: both are the pin's 500
     let limit = match q.get("limit") {
@@ -759,33 +910,47 @@ async fn search(V1Path(slug): V1Path<String>, ctx: Ctx, RawQuery(raw): RawQuery)
     };
     let scope = match thrust_core::authorize_workspace(&ctx.app, &ctx.principal, &WorkspaceSlug::new(&slug)).await {
         Ok(scope) => scope,
-        Err(thrust_core::CoreError::Forbidden | thrust_core::CoreError::NotFound) => {
-            return Ok(Json(json!({ "issues": [] })))
-        }
+        Err(thrust_core::CoreError::Forbidden | thrust_core::CoreError::NotFound) => return Ok(none()),
         Err(other) => return Err(other.into()),
     };
     let search = WorkspaceSearch { text: text.clone(), numbers: whole_numbers(&text), project, limit };
     let hits = thrust_core::search_issues(&ctx.app, &scope, search).await.map_err(item_error)?;
-    let issues: Vec<Value> = hits
+    let issues = hits
         .into_iter()
-        .map(|h| {
-            json!({
-                "name": h.name,
-                "id": h.id.0,
-                "sequence_id": h.sequence_id,
-                "project__identifier": h.project_identifier,
-                "project_id": h.project_id.0,
-                "workspace__slug": h.workspace_slug.0,
-            })
+        .map(|h| IssueSearchItemDto {
+            name: h.name,
+            id: h.id.0,
+            sequence_id: h.sequence_id,
+            project_identifier: h.project_identifier,
+            project_id: h.project_id.0,
+            workspace_slug: h.workspace_slug.0,
         })
         .collect();
-    Ok(Json(json!({ "issues": issues })))
+    Ok(Json(IssueSearchDto { issues }))
 }
 
 /// `GET /workspaces/{slug}/{family}/{KEY}-{n}/`: a work item by the identifier of its project and its number. The route splits at the
 /// last hyphen; the permission is a membership of a project of the workspace that has the identifier (a stranger, or an identifier
-/// that is nobody's, is the refusal of a permission); a number that is not a whole number is a 404 of its own words.
-async fn by_identifier(
+/// that is nobody's, is the refusal of a permission); a number that is not a whole number is a 404 of its own words. `fields` and
+/// `expand` are read as on a read by id, though the pin's schema declares no query for it, so the document does.
+#[cfg_attr(
+    feature = "openapi",
+    utoipa::path(
+        get,
+        path = "/api/v1/workspaces/{slug}/issues/{project_identifier}-{issue_identifier}/",
+        operation_id = "get_workspace_work_item",
+        tag = "Work Items",
+        summary = "Retrieve work item by identifiers",
+        params(crate::openapi::ByIdentifierPath, crate::openapi::ByIdentifierQuery),
+        responses(
+            crate::openapi::Refused,
+            (status = 200, description = "Work item details", body = IssueDto),
+            (status = 404, description = "Work item not found"),
+        ),
+        security(("ApiKeyAuthentication" = []))
+    )
+)]
+pub(crate) async fn by_identifier(
     V1Path((slug, ident)): V1Path<(String, String)>,
     ctx: Ctx,
     RawQuery(raw): RawQuery,

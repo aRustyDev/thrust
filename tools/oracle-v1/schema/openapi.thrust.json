@@ -10,6 +10,165 @@
     "version": "0.0.0"
   },
   "paths": {
+    "/api/v1/workspaces/{slug}/issues/search/": {
+      "get": {
+        "tags": [
+          "Work Items"
+        ],
+        "summary": "`GET /workspaces/{slug}/{family}/search/`: the work items of the caller's own projects that a name, a project identifier or a\nnumber says. Any key may ask (the pin's permission is only that the caller is authenticated): a caller who is in no project of the\nworkspace gets no work items, not a refusal.",
+        "description": "The pin's schema describes one hit as the whole answer (`IssueSearch`, with a `sequence_id` that is a string); what it answers is\n`{\"issues\": [hit, ...]}` with a whole number (the oracle's corpus, `search`), which is what this document says.",
+        "operationId": "search_work_items",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "workspace_search",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Work item search results",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssueSearchDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request - invalid search parameters"
+          },
+          "401": {
+            "description": "Authentication credentials were not provided or are invalid."
+          },
+          "403": {
+            "description": "Permission denied. User lacks required permissions."
+          },
+          "404": {
+            "description": "Workspace not found"
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuthentication": []
+          }
+        ]
+      }
+    },
+    "/api/v1/workspaces/{slug}/issues/{project_identifier}-{issue_identifier}/": {
+      "get": {
+        "tags": [
+          "Work Items"
+        ],
+        "summary": "Retrieve work item by identifiers",
+        "operationId": "get_workspace_work_item",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "project_identifier",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "issue_identifier",
+            "in": "path",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "fields",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Work item details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssueDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication credentials were not provided or are invalid."
+          },
+          "403": {
+            "description": "Permission denied. User lacks required permissions."
+          },
+          "404": {
+            "description": "Work item not found"
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuthentication": []
+          }
+        ]
+      }
+    },
     "/api/v1/workspaces/{slug}/projects-lite/": {
       "get": {
         "tags": [
@@ -355,14 +514,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "oneOf": [
-                  {
-                    "$ref": "#/components/schemas/PatchedProjectUpdateRequest"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
+                "$ref": "#/components/schemas/PatchedProjectUpdateRequest"
               }
             }
           }
@@ -481,6 +633,782 @@
           },
           "404": {
             "description": "The requested resource was not found."
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuthentication": []
+          }
+        ]
+      }
+    },
+    "/api/v1/workspaces/{slug}/projects/{project_id}/issues/": {
+      "get": {
+        "tags": [
+          "Work Items"
+        ],
+        "summary": "List work items",
+        "description": "The two families of paths (`issues/` and `work-items/`) share every handler here, so the attributes below describe the `issues/`\nones, and the document derives the `work-items/` ones from them (`openapi::WorkItemsTwice`, the pin's operation ids ending `_2`).",
+        "operationId": "list_work_items",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "external_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "external_source",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "fields",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "order_by",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "per_page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated list of work items",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Listing_IssueDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request data provided"
+          },
+          "401": {
+            "description": "Authentication credentials were not provided or are invalid."
+          },
+          "403": {
+            "description": "Permission denied. User lacks required permissions."
+          },
+          "404": {
+            "description": "Project not found"
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuthentication": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "Work Items"
+        ],
+        "summary": "Create work item",
+        "operationId": "create_work_item",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IssueRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Work Item created successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssueDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request data provided"
+          },
+          "401": {
+            "description": "Authentication credentials were not provided or are invalid."
+          },
+          "403": {
+            "description": "Permission denied. User lacks required permissions."
+          },
+          "404": {
+            "description": "Project not found"
+          },
+          "409": {
+            "description": "Resource with same external ID already exists"
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuthentication": []
+          }
+        ]
+      }
+    },
+    "/api/v1/workspaces/{slug}/projects/{project_id}/issues/{pk}/": {
+      "get": {
+        "tags": [
+          "Work Items"
+        ],
+        "summary": "Retrieve work item",
+        "operationId": "retrieve_work_item",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "pk",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "external_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "external_source",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "fields",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "order_by",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of issues or issue details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssueDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request data provided"
+          },
+          "401": {
+            "description": "Authentication credentials were not provided or are invalid."
+          },
+          "403": {
+            "description": "Permission denied. User lacks required permissions."
+          },
+          "404": {
+            "description": "Work item not found"
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuthentication": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "Work Items"
+        ],
+        "summary": "Delete work item",
+        "operationId": "delete_work_item",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "pk",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Resource deleted successfully"
+          },
+          "401": {
+            "description": "Authentication credentials were not provided or are invalid."
+          },
+          "403": {
+            "description": "Only admin or creator can perform this action"
+          },
+          "404": {
+            "description": "Work item not found"
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuthentication": []
+          }
+        ]
+      },
+      "patch": {
+        "tags": [
+          "Work Items"
+        ],
+        "summary": "Partially update work item",
+        "operationId": "update_work_item",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "pk",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatchedIssueRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Work Item patched successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssueDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request data provided"
+          },
+          "401": {
+            "description": "Authentication credentials were not provided or are invalid."
+          },
+          "403": {
+            "description": "Permission denied. User lacks required permissions."
+          },
+          "404": {
+            "description": "Work item not found"
+          },
+          "409": {
+            "description": "Resource with same external ID already exists"
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuthentication": []
+          }
+        ]
+      }
+    },
+    "/api/v1/workspaces/{slug}/projects/{project_id}/labels/": {
+      "get": {
+        "tags": [
+          "Labels"
+        ],
+        "summary": "`GET .../labels/`: the project's labels, newest first, paged. There is no `order_by` here (the pin's view orders by the URL's\nkeyword argument, which no route has), and `expand` is ignored (D-032). The pin's schema lists both as parameters, so the\ndocument does (`ListQuery`): a request that sends them is answered as one that does not.",
+        "operationId": "list_labels",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "fields",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "order_by",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "per_page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated list of labels",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_LabelDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request data provided"
+          },
+          "401": {
+            "description": "Authentication credentials were not provided or are invalid."
+          },
+          "403": {
+            "description": "Permission denied. User lacks required permissions."
+          },
+          "404": {
+            "description": "Project not found"
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuthentication": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "Labels"
+        ],
+        "summary": "`POST .../labels/`: make a label. The pin answers 201.",
+        "operationId": "create_label",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LabelCreateUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Label created successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LabelDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request data provided"
+          },
+          "401": {
+            "description": "Authentication credentials were not provided or are invalid."
+          },
+          "403": {
+            "description": "Permission denied. User lacks required permissions."
+          },
+          "404": {
+            "description": "The requested resource was not found."
+          },
+          "409": {
+            "description": "Label with the same name already exists"
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuthentication": []
+          }
+        ]
+      }
+    },
+    "/api/v1/workspaces/{slug}/projects/{project_id}/labels/{pk}/": {
+      "get": {
+        "tags": [
+          "Labels"
+        ],
+        "summary": "`GET .../labels/{id}/`. The pin's detail read builds its serializer with neither `fields` nor `expand`: both are ignored, so the\ndocument has no query for it.",
+        "operationId": "get_labels",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "pk",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Labels",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LabelDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication credentials were not provided or are invalid."
+          },
+          "403": {
+            "description": "Permission denied. User lacks required permissions."
+          },
+          "404": {
+            "description": "Label not found"
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuthentication": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "Labels"
+        ],
+        "summary": "`DELETE .../labels/{id}/`.",
+        "operationId": "delete_label",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "pk",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Resource deleted successfully"
+          },
+          "401": {
+            "description": "Authentication credentials were not provided or are invalid."
+          },
+          "403": {
+            "description": "Permission denied. User lacks required permissions."
+          },
+          "404": {
+            "description": "Label not found"
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuthentication": []
+          }
+        ]
+      },
+      "patch": {
+        "tags": [
+          "Labels"
+        ],
+        "summary": "`PATCH .../labels/{id}/`: change a label. The base view reads the body before the handler runs, so a body that cannot be parsed\nis refused before the label is looked for; the handler then finds the label (an archived project has none to find), and only then\ndoes the serializer read what the body says, so a list, or a field that is wrong, comes after the 404.",
+        "operationId": "update_label",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "pk",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatchedLabelCreateUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Label updated successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LabelDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request data provided"
+          },
+          "401": {
+            "description": "Authentication credentials were not provided or are invalid."
+          },
+          "403": {
+            "description": "Permission denied. User lacks required permissions."
+          },
+          "404": {
+            "description": "Label not found"
+          },
+          "409": {
+            "description": "Resource with same external ID already exists"
           }
         },
         "security": [
@@ -801,14 +1729,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "oneOf": [
-                  {
-                    "$ref": "#/components/schemas/PatchedStateRequest"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
+                "$ref": "#/components/schemas/PatchedStateRequest"
               }
             }
           }
@@ -846,10 +1767,1788 @@
           }
         ]
       }
+    },
+    "/api/v1/workspaces/{slug}/projects/{project_id}/work-items/": {
+      "get": {
+        "tags": [
+          "Work Items"
+        ],
+        "summary": "List work items",
+        "description": "The two families of paths (`issues/` and `work-items/`) share every handler here, so the attributes below describe the `issues/`\nones, and the document derives the `work-items/` ones from them (`openapi::WorkItemsTwice`, the pin's operation ids ending `_2`).",
+        "operationId": "list_work_items_2",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "external_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "external_source",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "fields",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "order_by",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "per_page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated list of work items",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Listing_IssueDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request data provided"
+          },
+          "401": {
+            "description": "Authentication credentials were not provided or are invalid."
+          },
+          "403": {
+            "description": "Permission denied. User lacks required permissions."
+          },
+          "404": {
+            "description": "Project not found"
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuthentication": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "Work Items"
+        ],
+        "summary": "Create work item",
+        "operationId": "create_work_item_2",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IssueRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Work Item created successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssueDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request data provided"
+          },
+          "401": {
+            "description": "Authentication credentials were not provided or are invalid."
+          },
+          "403": {
+            "description": "Permission denied. User lacks required permissions."
+          },
+          "404": {
+            "description": "Project not found"
+          },
+          "409": {
+            "description": "Resource with same external ID already exists"
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuthentication": []
+          }
+        ]
+      }
+    },
+    "/api/v1/workspaces/{slug}/projects/{project_id}/work-items/{pk}/": {
+      "get": {
+        "tags": [
+          "Work Items"
+        ],
+        "summary": "Retrieve work item",
+        "operationId": "retrieve_work_item_2",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "pk",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "external_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "external_source",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "fields",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "order_by",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of issues or issue details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssueDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request data provided"
+          },
+          "401": {
+            "description": "Authentication credentials were not provided or are invalid."
+          },
+          "403": {
+            "description": "Permission denied. User lacks required permissions."
+          },
+          "404": {
+            "description": "Work item not found"
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuthentication": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "Work Items"
+        ],
+        "summary": "Delete work item",
+        "operationId": "delete_work_item_2",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "pk",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Resource deleted successfully"
+          },
+          "401": {
+            "description": "Authentication credentials were not provided or are invalid."
+          },
+          "403": {
+            "description": "Only admin or creator can perform this action"
+          },
+          "404": {
+            "description": "Work item not found"
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuthentication": []
+          }
+        ]
+      },
+      "patch": {
+        "tags": [
+          "Work Items"
+        ],
+        "summary": "Partially update work item",
+        "operationId": "update_work_item_2",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "pk",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatchedIssueRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Work Item patched successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssueDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request data provided"
+          },
+          "401": {
+            "description": "Authentication credentials were not provided or are invalid."
+          },
+          "403": {
+            "description": "Permission denied. User lacks required permissions."
+          },
+          "404": {
+            "description": "Work item not found"
+          },
+          "409": {
+            "description": "Resource with same external ID already exists"
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuthentication": []
+          }
+        ]
+      }
+    },
+    "/api/v1/workspaces/{slug}/work-items/search/": {
+      "get": {
+        "tags": [
+          "Work Items"
+        ],
+        "summary": "`GET /workspaces/{slug}/{family}/search/`: the work items of the caller's own projects that a name, a project identifier or a\nnumber says. Any key may ask (the pin's permission is only that the caller is authenticated): a caller who is in no project of the\nworkspace gets no work items, not a refusal.",
+        "description": "The pin's schema describes one hit as the whole answer (`IssueSearch`, with a `sequence_id` that is a string); what it answers is\n`{\"issues\": [hit, ...]}` with a whole number (the oracle's corpus, `search`), which is what this document says.",
+        "operationId": "search_work_items_2",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "workspace_search",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Work item search results",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssueSearchDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request - invalid search parameters"
+          },
+          "401": {
+            "description": "Authentication credentials were not provided or are invalid."
+          },
+          "403": {
+            "description": "Permission denied. User lacks required permissions."
+          },
+          "404": {
+            "description": "Workspace not found"
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuthentication": []
+          }
+        ]
+      }
+    },
+    "/api/v1/workspaces/{slug}/work-items/{project_identifier}-{issue_identifier}/": {
+      "get": {
+        "tags": [
+          "Work Items"
+        ],
+        "summary": "Retrieve work item by identifiers",
+        "operationId": "get_workspace_work_item_2",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "project_identifier",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "issue_identifier",
+            "in": "path",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "fields",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Work item details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssueDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication credentials were not provided or are invalid."
+          },
+          "403": {
+            "description": "Permission denied. User lacks required permissions."
+          },
+          "404": {
+            "description": "Work item not found"
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuthentication": []
+          }
+        ]
+      }
     }
   },
   "components": {
     "schemas": {
+      "IssueDto": {
+        "type": "object",
+        "description": "The pin's `IssueSerializer`: 29 keys, all of them in every body. A work item that is read is live, so it is not a draft, not archived\nand not deleted, and it has no estimate point and no type (D-033). A key whose value can be `null` is `Option`, which is what the\ndocument says of it.",
+        "required": [
+          "id",
+          "created_at",
+          "updated_at",
+          "workspace",
+          "project",
+          "name",
+          "description_html",
+          "priority",
+          "sequence_id",
+          "sort_order",
+          "is_draft",
+          "assignees",
+          "labels"
+        ],
+        "properties": {
+          "archived_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date",
+            "description": "Always `null`: a list is of work items that are not archived."
+          },
+          "assignees": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UserRef"
+            }
+          },
+          "completed_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "created_by": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "deleted_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "Always `null`: a deleted work item is not shown."
+          },
+          "description_binary": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "byte",
+            "description": "Always `null`: the pin's binary form of the description is not kept."
+          },
+          "description_html": {
+            "type": "string"
+          },
+          "estimate_point": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "Always `null`: there are no estimates."
+          },
+          "external_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 255
+          },
+          "external_source": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 255
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "is_draft": {
+            "type": "boolean",
+            "description": "Always `false`: a draft is not shown."
+          },
+          "labels": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LabelRef"
+            }
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 255
+          },
+          "parent": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "point": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "maximum": 12,
+            "minimum": 0
+          },
+          "priority": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PriorityEnum"
+              }
+            ],
+            "title": "Issue Priority"
+          },
+          "project": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sequence_id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The project's running number (\"PLATF-7\" is 7). A bigint here; the pin's column is an int32, so its schema bounds it and this\none does not (the register says so)."
+          },
+          "sort_order": {
+            "type": "number",
+            "format": "double"
+          },
+          "start_date": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "state": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/StateRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "target_date": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "type": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "Always `null`: there are no work item types."
+          },
+          "type_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "Always `null`, as `type`."
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_by": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "workspace": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "IssueRequest": {
+        "type": "object",
+        "description": "What a work item's creation takes (the pin's `IssueSerializer` as a request): only `name` is required, and it cannot be blank. The\nroute reads every key the serializer has, and keeps the name, the description, the priority, the two dates, the state, the parent,\nthe point, the people, the labels and the integration key; the rest is read and checked and then not kept (D-033 (1)). `priority`\nand the lists are not `null`; a date, a key and the relations can be.",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "archived_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "assignees": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "created_by": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "deleted_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "description_html": {
+            "type": "string"
+          },
+          "estimate_point": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "external_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 255
+          },
+          "external_source": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 255
+          },
+          "is_draft": {
+            "type": "boolean"
+          },
+          "labels": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1
+          },
+          "parent": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "point": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "maximum": 12,
+            "minimum": 0
+          },
+          "priority": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PriorityEnum"
+              }
+            ],
+            "title": "Issue Priority"
+          },
+          "sequence_id": {
+            "type": "integer",
+            "maximum": 2147483647,
+            "minimum": -2147483648
+          },
+          "sort_order": {
+            "type": "number",
+            "format": "double"
+          },
+          "start_date": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "state": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "target_date": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "type": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "type_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          }
+        }
+      },
+      "IssueSearchDto": {
+        "type": "object",
+        "description": "What the workspace search answers: `{\"issues\": [...]}`. The pin's schema describes one hit as the whole answer; its recorded answers\nare this (the oracle's corpus, `search`).",
+        "required": [
+          "issues"
+        ],
+        "properties": {
+          "issues": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IssueSearchItemDto"
+            }
+          }
+        }
+      },
+      "IssueSearchItemDto": {
+        "type": "object",
+        "description": "One hit of the workspace search: the pin's `IssueSearch`, which its schema describes as the whole answer.",
+        "required": [
+          "name",
+          "id",
+          "sequence_id",
+          "project__identifier",
+          "project_id",
+          "workspace__slug"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "project__identifier": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sequence_id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "A whole number here and on the pin's wire (the oracle's corpus, `search`); the pin's schema says a string."
+          },
+          "workspace__slug": {
+            "type": "string"
+          }
+        }
+      },
+      "LabelCreateUpdateRequest": {
+        "type": "object",
+        "description": "What a label's creation takes (the pin's `LabelCreateUpdateSerializer`): only `name` is required, and `name` cannot be blank. `color`\nand `description` can be blank and cannot be `null`; the two external keys and `parent` can be `null`.",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "color": {
+            "type": "string",
+            "maxLength": 255
+          },
+          "description": {
+            "type": "string"
+          },
+          "external_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 255
+          },
+          "external_source": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 255
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1
+          },
+          "parent": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "sort_order": {
+            "type": "number",
+            "format": "double"
+          }
+        }
+      },
+      "LabelDto": {
+        "type": "object",
+        "description": "The pin's `LabelSerializer`: 15 keys, all of them in every body (a key whose value can be `null` is `Option`, which is what the\ndocument says of it). A work item that is read with `expand=labels` carries this body too (`work_items::expansion`).",
+        "required": [
+          "id",
+          "created_at",
+          "updated_at",
+          "workspace",
+          "project",
+          "name",
+          "description",
+          "color",
+          "sort_order"
+        ],
+        "properties": {
+          "color": {
+            "type": "string",
+            "maxLength": 255
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "created_by": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "deleted_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "Always `null`: a deleted label is not shown."
+          },
+          "description": {
+            "type": "string"
+          },
+          "external_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 255
+          },
+          "external_source": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 255
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 255
+          },
+          "parent": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "A live label of the same project, or none (D-032 (1))."
+          },
+          "project": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sort_order": {
+            "type": "number",
+            "format": "double"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_by": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "workspace": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "LabelRef": {
+        "oneOf": [
+          {
+            "type": "string",
+            "format": "uuid"
+          },
+          {
+            "$ref": "#/components/schemas/LabelDto"
+          }
+        ],
+        "description": "A label: its id, or with `expand=labels` the label as the label routes answer it."
+      },
+      "Listing_IssueDto": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/Page_IssueDto"
+          },
+          {
+            "type": "object",
+            "description": "The pin's `IssueSerializer`: 29 keys, all of them in every body. A work item that is read is live, so it is not a draft, not archived\nand not deleted, and it has no estimate point and no type (D-033). A key whose value can be `null` is `Option`, which is what the\ndocument says of it.",
+            "required": [
+              "id",
+              "created_at",
+              "updated_at",
+              "workspace",
+              "project",
+              "name",
+              "description_html",
+              "priority",
+              "sequence_id",
+              "sort_order",
+              "is_draft",
+              "assignees",
+              "labels"
+            ],
+            "properties": {
+              "archived_at": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "date",
+                "description": "Always `null`: a list is of work items that are not archived."
+              },
+              "assignees": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/UserRef"
+                }
+              },
+              "completed_at": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "date-time"
+              },
+              "created_at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "created_by": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uuid"
+              },
+              "deleted_at": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "date-time",
+                "description": "Always `null`: a deleted work item is not shown."
+              },
+              "description_binary": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "byte",
+                "description": "Always `null`: the pin's binary form of the description is not kept."
+              },
+              "description_html": {
+                "type": "string"
+              },
+              "estimate_point": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uuid",
+                "description": "Always `null`: there are no estimates."
+              },
+              "external_id": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 255
+              },
+              "external_source": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 255
+              },
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "is_draft": {
+                "type": "boolean",
+                "description": "Always `false`: a draft is not shown."
+              },
+              "labels": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/LabelRef"
+                }
+              },
+              "name": {
+                "type": "string",
+                "maxLength": 255
+              },
+              "parent": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uuid"
+              },
+              "point": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "maximum": 12,
+                "minimum": 0
+              },
+              "priority": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/PriorityEnum"
+                  }
+                ],
+                "title": "Issue Priority"
+              },
+              "project": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "sequence_id": {
+                "type": "integer",
+                "format": "int64",
+                "description": "The project's running number (\"PLATF-7\" is 7). A bigint here; the pin's column is an int32, so its schema bounds it and this\none does not (the register says so)."
+              },
+              "sort_order": {
+                "type": "number",
+                "format": "double"
+              },
+              "start_date": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "date"
+              },
+              "state": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/StateRef"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "target_date": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "date"
+              },
+              "type": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uuid",
+                "description": "Always `null`: there are no work item types."
+              },
+              "type_id": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uuid",
+                "description": "Always `null`, as `type`."
+              },
+              "updated_at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "updated_by": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uuid"
+              },
+              "workspace": {
+                "type": "string",
+                "format": "uuid"
+              }
+            }
+          }
+        ],
+        "description": "What a list answers: a page, or, when the request names an integration key (both halves), the one work item that has it. The pin's\nschema describes only the page."
+      },
+      "Page_IssueDto": {
+        "type": "object",
+        "description": "The 12-key envelope of every v1 list (`BasePaginator`): the page's rows, how many there are in all, how many pages, and the\ncursors of the next and the previous page. The pin's schema has one per resource (`PaginatedProjectResponse`, ...), which differ\nonly in what `results` holds.",
+        "required": [
+          "grouped_by",
+          "sub_grouped_by",
+          "total_count",
+          "next_cursor",
+          "prev_cursor",
+          "next_page_results",
+          "prev_page_results",
+          "count",
+          "total_pages",
+          "total_results",
+          "extra_stats",
+          "results"
+        ],
+        "properties": {
+          "count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "extra_stats": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "grouped_by": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Always `null`: a v1 list is not grouped. The key is always there (`required`), whatever it holds."
+          },
+          "next_cursor": {
+            "type": "string"
+          },
+          "next_page_results": {
+            "type": "boolean"
+          },
+          "prev_cursor": {
+            "type": "string"
+          },
+          "prev_page_results": {
+            "type": "boolean"
+          },
+          "results": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "description": "The pin's `IssueSerializer`: 29 keys, all of them in every body. A work item that is read is live, so it is not a draft, not archived\nand not deleted, and it has no estimate point and no type (D-033). A key whose value can be `null` is `Option`, which is what the\ndocument says of it.",
+              "required": [
+                "id",
+                "created_at",
+                "updated_at",
+                "workspace",
+                "project",
+                "name",
+                "description_html",
+                "priority",
+                "sequence_id",
+                "sort_order",
+                "is_draft",
+                "assignees",
+                "labels"
+              ],
+              "properties": {
+                "archived_at": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "date",
+                  "description": "Always `null`: a list is of work items that are not archived."
+                },
+                "assignees": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/UserRef"
+                  }
+                },
+                "completed_at": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "date-time"
+                },
+                "created_at": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "created_by": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "uuid"
+                },
+                "deleted_at": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "date-time",
+                  "description": "Always `null`: a deleted work item is not shown."
+                },
+                "description_binary": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "byte",
+                  "description": "Always `null`: the pin's binary form of the description is not kept."
+                },
+                "description_html": {
+                  "type": "string"
+                },
+                "estimate_point": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "uuid",
+                  "description": "Always `null`: there are no estimates."
+                },
+                "external_id": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "maxLength": 255
+                },
+                "external_source": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "maxLength": 255
+                },
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "is_draft": {
+                  "type": "boolean",
+                  "description": "Always `false`: a draft is not shown."
+                },
+                "labels": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/LabelRef"
+                  }
+                },
+                "name": {
+                  "type": "string",
+                  "maxLength": 255
+                },
+                "parent": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "uuid"
+                },
+                "point": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "maximum": 12,
+                  "minimum": 0
+                },
+                "priority": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/PriorityEnum"
+                    }
+                  ],
+                  "title": "Issue Priority"
+                },
+                "project": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "sequence_id": {
+                  "type": "integer",
+                  "format": "int64",
+                  "description": "The project's running number (\"PLATF-7\" is 7). A bigint here; the pin's column is an int32, so its schema bounds it and this\none does not (the register says so)."
+                },
+                "sort_order": {
+                  "type": "number",
+                  "format": "double"
+                },
+                "start_date": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "date"
+                },
+                "state": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/StateRef"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "target_date": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "date"
+                },
+                "type": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "uuid",
+                  "description": "Always `null`: there are no work item types."
+                },
+                "type_id": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "uuid",
+                  "description": "Always `null`, as `type`."
+                },
+                "updated_at": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "updated_by": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "uuid"
+                },
+                "workspace": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          },
+          "sub_grouped_by": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "total_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "total_pages": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "total_results": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "Page_LabelDto": {
+        "type": "object",
+        "description": "The 12-key envelope of every v1 list (`BasePaginator`): the page's rows, how many there are in all, how many pages, and the\ncursors of the next and the previous page. The pin's schema has one per resource (`PaginatedProjectResponse`, ...), which differ\nonly in what `results` holds.",
+        "required": [
+          "grouped_by",
+          "sub_grouped_by",
+          "total_count",
+          "next_cursor",
+          "prev_cursor",
+          "next_page_results",
+          "prev_page_results",
+          "count",
+          "total_pages",
+          "total_results",
+          "extra_stats",
+          "results"
+        ],
+        "properties": {
+          "count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "extra_stats": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "grouped_by": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Always `null`: a v1 list is not grouped. The key is always there (`required`), whatever it holds."
+          },
+          "next_cursor": {
+            "type": "string"
+          },
+          "next_page_results": {
+            "type": "boolean"
+          },
+          "prev_cursor": {
+            "type": "string"
+          },
+          "prev_page_results": {
+            "type": "boolean"
+          },
+          "results": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "description": "The pin's `LabelSerializer`: 15 keys, all of them in every body (a key whose value can be `null` is `Option`, which is what the\ndocument says of it). A work item that is read with `expand=labels` carries this body too (`work_items::expansion`).",
+              "required": [
+                "id",
+                "created_at",
+                "updated_at",
+                "workspace",
+                "project",
+                "name",
+                "description",
+                "color",
+                "sort_order"
+              ],
+              "properties": {
+                "color": {
+                  "type": "string",
+                  "maxLength": 255
+                },
+                "created_at": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "created_by": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "uuid"
+                },
+                "deleted_at": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "date-time",
+                  "description": "Always `null`: a deleted label is not shown."
+                },
+                "description": {
+                  "type": "string"
+                },
+                "external_id": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "maxLength": 255
+                },
+                "external_source": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "maxLength": 255
+                },
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "name": {
+                  "type": "string",
+                  "maxLength": 255
+                },
+                "parent": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "uuid",
+                  "description": "A live label of the same project, or none (D-032 (1))."
+                },
+                "project": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "sort_order": {
+                  "type": "number",
+                  "format": "double"
+                },
+                "updated_at": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "updated_by": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "uuid"
+                },
+                "workspace": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          },
+          "sub_grouped_by": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "total_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "total_pages": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "total_results": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
       "Page_ProjectDto": {
         "type": "object",
         "description": "The 12-key envelope of every v1 list (`BasePaginator`): the page's rows, how many there are in all, how many pages, and the\ncursors of the next and the previous page. The pin's schema has one per resource (`PaginatedProjectResponse`, ...), which differ\nonly in what `results` holds.",
@@ -1897,6 +4596,189 @@
           }
         }
       },
+      "PatchedIssueRequest": {
+        "type": "object",
+        "description": "What a work item's change takes: the creation's keys, none required.",
+        "properties": {
+          "archived_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "assignees": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "created_by": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "deleted_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "description_html": {
+            "type": "string"
+          },
+          "estimate_point": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "external_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 255
+          },
+          "external_source": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 255
+          },
+          "is_draft": {
+            "type": "boolean"
+          },
+          "labels": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1
+          },
+          "parent": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "point": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "maximum": 12,
+            "minimum": 0
+          },
+          "priority": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PriorityEnum"
+              }
+            ],
+            "title": "Issue Priority"
+          },
+          "sequence_id": {
+            "type": "integer",
+            "maximum": 2147483647,
+            "minimum": -2147483648
+          },
+          "sort_order": {
+            "type": "number",
+            "format": "double"
+          },
+          "start_date": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "state": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "target_date": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "type": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "type_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          }
+        }
+      },
+      "PatchedLabelCreateUpdateRequest": {
+        "type": "object",
+        "description": "What a label's change takes: the creation's keys, none required.",
+        "properties": {
+          "color": {
+            "type": "string",
+            "maxLength": 255
+          },
+          "description": {
+            "type": "string"
+          },
+          "external_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 255
+          },
+          "external_source": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 255
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1
+          },
+          "parent": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "sort_order": {
+            "type": "number",
+            "format": "double"
+          }
+        }
+      },
       "PatchedProjectUpdateRequest": {
         "type": "object",
         "description": "What a project's change takes (the pin's `ProjectUpdateSerializer`): the creation's keys, none required, and the two ids that a\nchange can set.",
@@ -2497,6 +5379,17 @@
             "format": "double"
           }
         }
+      },
+      "PriorityEnum": {
+        "type": "string",
+        "description": "The pin's `PriorityEnum`: the five priorities, as the pin writes them and in its order. The request descriptions use it too, so the\nfive names are written once.",
+        "enum": [
+          "urgent",
+          "high",
+          "medium",
+          "low",
+          "none"
+        ]
       },
       "ProjectCreateRequest": {
         "type": "object",
@@ -3759,6 +6652,39 @@
           }
         }
       },
+      "StateBriefDto": {
+        "type": "object",
+        "description": "A state as `expand=state` shows it: the four keys the oracle's corpus has.",
+        "required": [
+          "id",
+          "name",
+          "color",
+          "group"
+        ],
+        "properties": {
+          "color": {
+            "type": "string"
+          },
+          "group": {
+            "type": "string",
+            "enum": [
+              "backlog",
+              "unstarted",
+              "started",
+              "completed",
+              "cancelled",
+              "triage"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
       "StateDto": {
         "type": "object",
         "description": "The pin's `StateSerializer`: 18 keys. `is_triage` is whether the group is the intake's, which a state of the list never is (the pin\nstores it apart from the group, and a request can set it on a state of another group: the register carries that). A key whose value\ncan be `null` here is `Option`, which is what the document says of it.",
@@ -3872,6 +6798,18 @@
           }
         }
       },
+      "StateRef": {
+        "oneOf": [
+          {
+            "type": "string",
+            "format": "uuid"
+          },
+          {
+            "$ref": "#/components/schemas/StateBriefDto"
+          }
+        ],
+        "description": "A work item's state: its id, or with `expand=state` the state."
+      },
       "StateRequest": {
         "type": "object",
         "description": "What a state's creation takes (the pin's `StateSerializer` as a request): `name` and `color` are required, the rest is optional, and\nonly the two external keys can be `null`.",
@@ -3929,6 +6867,60 @@
             "format": "double"
           }
         }
+      },
+      "UserBriefDto": {
+        "type": "object",
+        "description": "A person as `expand=assignees` shows them (the pin's `UserLiteSerializer`).",
+        "required": [
+          "id",
+          "first_name",
+          "last_name",
+          "display_name",
+          "avatar"
+        ],
+        "properties": {
+          "avatar": {
+            "type": "string"
+          },
+          "avatar_url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`null` for a person with no avatar."
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "email": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "first_name": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "last_name": {
+            "type": "string"
+          }
+        }
+      },
+      "UserRef": {
+        "oneOf": [
+          {
+            "type": "string",
+            "format": "uuid"
+          },
+          {
+            "$ref": "#/components/schemas/UserBriefDto"
+          }
+        ],
+        "description": "An assignee: the person's id, or with `expand=assignees` the person."
       }
     },
     "securitySchemes": {

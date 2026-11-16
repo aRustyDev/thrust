@@ -9,6 +9,14 @@ publish.workspace = true
 [lints]
 workspace = true
 
+[features]
+# Planted bugs of the email adapter (E3), for scripts/mutants.sh: each makes one rule of `email.rs` wrong, and `tests/email.rs` must fail.
+# Never enabled outside a control run.
+mutant_cf_email_swap_refusal_and_outage = []
+mutant_cf_email_unknown_code_is_refused = []
+mutant_cf_email_from_is_recipient = []
+mutant_cf_email_recipient_unchecked = []
+
 [dependencies]
 thrust-contracts = { workspace = true }
 thrust-ports = { workspace = true }
@@ -26,3 +34,6 @@ wasm-bindgen-futures = "0.4"
 [dev-dependencies]
 proptest = "1"
 rstest = "0.26"
+# An independent reading of an address (E3's tests: what `is_plain_address` accepts, a parser that is not ours reads as one address), as the
+# SMTP adapter's wire tests read a message with it. A test dependency only.
+mailparse = "0.18"

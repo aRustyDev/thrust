@@ -20,7 +20,7 @@ use thrust_adapters_postgres::{Connector, CountingConnector, PgDatabase, RoundTr
 use thrust_api::{set_db_round_trips, set_version, ApiConfig, InternalErrorDetail, OperatorAudit};
 use thrust_contracts::Envelope;
 use thrust_core::{ActivityConsumer, App, Argon2Params, Argon2idHasher, CoreConfig, Ports, SystemScope};
-use thrust_ports::{Background, Clock, EventConsumer, IdGen, OidcProvider, PasswordHasher, Rng};
+use thrust_ports::{Background, Clock, EmailSender, EventConsumer, IdGen, OidcProvider, PasswordHasher, Rng};
 use tower_service::Service;
 use worker::worker_sys::web_sys;
 use worker::*;
@@ -104,6 +104,31 @@ fn core_config(env: &Env) -> CoreConfig {
     }
 }
 
+/// The mail service, when `THRUST_EMAIL_FROM` is set: the Worker's `send_email` binding (`EMAIL`) with that sender (and the name
+/// in `THRUST_EMAIL_FROM_NAME`, which the adapter documents), for the password reset by email (E3, D-041). Unset is "no mail
+/// service" (the app says so, and draws no link), which is every Worker until a deployment names a sender on a domain its account
+/// has Email Sending enabled for. A sender that is not usable, a name with no sender, and a sender with no binding are errors and not
+/// a Worker that quietly has no reset: the OIDC provider's reasoning, a reset nobody notices is not on is worse than a Worker that
+/// says so. (The reset also needs `THRUST_PUBLIC_BASE_URL`, `core_config`'s: the app reports mail as on only with both.)
+fn email_sender(env: &Env) -> Result<Option<Arc<dyn EmailSender>>> {
+    let Some(cfg) = EmailConfig::from_lookup(|name| text(env, name)).map_err(|e| Error::RustError(e.to_string()))?
+    else {
+        return Ok(None);
+    };
+    let binding = env.send_email(EMAIL_BINDING).map_err(|_| {
+        Error::RustError(format!("THRUST_EMAIL_FROM is set but the Worker has no `{EMAIL_BINDING}` send_email binding"))
+    })?;
+    // MUTANT (control run only): the sender is configured and the binding is there, and the mail service is not handed to the app, as if
+    // the composition root had forgotten to. The `mail` pass must refuse to run against it (its vacuity guard: the app says mail is off).
+    #[cfg(feature = "mutant_worker_email_unwired")]
+    {
+        let _ = (binding, cfg);
+        Ok(None)
+    }
+    #[cfg(not(feature = "mutant_worker_email_unwired"))]
+    Ok(Some(Arc::new(CfEmail::new(binding, cfg))))
+}
+
 /// The OIDC provider, when the issuer, client id and redirect URI are all configured (the client secret is a Worker
 /// secret). Some of the three and not all is an error, not a Worker that quietly has no login.
 fn oidc_provider(env: &Env) -> Result<Option<Arc<dyn OidcProvider>>> {
@@ -173,6 +198,7 @@ fn build_app(env: &Env, background: Arc<dyn Background>) -> Result<(App, Option<
     let rng: Arc<dyn Rng> = Arc::new(JsRng);
     let hasher: Arc<dyn PasswordHasher> = Arc::new(Argon2idHasher::new(cfg.argon2));
     let oidc = oidc_provider(env)?;
+    let email = email_sender(env)?;
 
     let mut round_trips = None;
     let app = match adapters.as_str() {
@@ -204,15 +230,14 @@ fn build_app(env: &Env, background: Arc<dyn Background>) -> Result<(App, Option<
                     rng,
                     hasher,
                     oidc,
-                    // the `send_email` binding is wired in E3, with a sender domain the account owns: until then no reset is offered
-                    email: None,
+                    email,
                 },
                 cfg,
                 SystemScope::mint(),
             )
         }
         #[cfg(feature = "memory")]
-        "memory" => memory::app(clock, ids, background, rng, hasher, oidc, cfg),
+        "memory" => memory::app(clock, ids, background, rng, hasher, memory::Optional { oidc, email }, cfg),
         other => return Err(Error::RustError(format!("THRUST_ADAPTERS '{other}' is not compiled into this bundle"))),
     };
     Ok((app, round_trips))
