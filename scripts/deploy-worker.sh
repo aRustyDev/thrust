@@ -12,6 +12,8 @@
 #      id, which is what a rollback goes back to, and its tag, which is the commit that is running;
 #   3. classify the change against it (.github/scripts/classify-deploy.sh): does the expand migration have to run, and is this a
 #      Durable Object lifecycle change? A lifecycle change cannot be rolled back across, and the first deploy to an environment is one.
+#      The live commit is fetched by its sha first when no branch of the checkout holds it (release-plz force-updates the release
+#      candidate's branch), and the two commits are compared by what they hold, whether or not one descends from the other;
 #      Without ALLOW_DO_LIFECYCLE=true such a deploy, and any deploy over a live state this cannot read, STOPS here and deploys nothing:
 #      `deferred=true`, which sends the run to the job whose environment has required reviewers;
 #  3b. the web files (ADR-0011): this release's build of web/ with the previous release's files kept under it, so that a tab still
@@ -153,6 +155,18 @@ if [ "$SKIP" = true ] && [ "$STATE" != none ]; then
 fi
 
 # ---- 3. what the change is -----------------------------------------------------------------------------------------------------
+is_sha() { case "$1" in *[!0-9a-f]*|'') return 1 ;; esac; [ "${#1}" -eq 40 ]; }
+# The live commit is often in no branch of this checkout: release-plz force-updates the release-candidate branch, so the commit the
+# last deploy ran from has been dropped from it, though GitHub still serves it by its sha. Ask for that one commit, so that the
+# classifier can compare what it holds with this one. It needs no secret (the repository is public), so it gets none. When the commit
+# cannot be had the classifier says so, and the deploy goes to the manual gate: nothing is guessed.
+if [ "$STATE" = single ] && is_sha "$PREV_TAG" && ! ( cd "$ROOT" && plain git cat-file -e "$PREV_TAG^{commit}" ) 2> /dev/null; then
+  if ( cd "$ROOT" && plain env GIT_TERMINAL_PROMPT=0 git fetch --no-tags --quiet origin "$PREV_TAG" ) > "$WORK/git-fetch.out" 2>&1; then
+    say "the live commit $PREV_TAG is in no branch of this checkout; fetched it by its sha"
+  else
+    say "the live commit $PREV_TAG is not in this checkout and could not be fetched ($(tail -n 1 "$WORK/git-fetch.out")); it counts as unknown"
+  fi
+fi
 case "$STATE" in
   none) CLASS_ARG=none ;;
   single) CLASS_ARG="${PREV_TAG:-untagged}" ;;
@@ -183,7 +197,6 @@ fi
 # previous release would be given HTML where it asked for a script. scripts/merge-assets.sh keeps one release back. The previous
 # release's files come from ITS bundle, found by the live version's tag (that is its commit) and verified as this release's is. There is
 # nothing to keep when there is no such release: the first deploy, a live version this pipeline did not deploy, the same commit again.
-is_sha() { case "$1" in *[!0-9a-f]*|'') return 1 ;; esac; [ "${#1}" -eq 40 ]; }
 PREV_ASSETS=""
 RETAIN_NOTE=""
 if [ "$STATE" = none ]; then
