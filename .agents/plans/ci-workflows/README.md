@@ -1,6 +1,6 @@
 # ci-workflows
 
-Splits CI, which is one 26 KB workflow (`ci.yml`) plus six others, into one workflow per concern (Test, Lint, Docs,
+Splits CI, which is one 26 KB workflow (`ci.yml`) plus seven others, into one workflow per concern (Test, Lint, Docs,
 Security, Web, E2E, Build, Release, Deploy, PR, Chores, Bench, Prof, Perf, UI/UX, Issue), with the steps they repeat
 factored into actions. Done looks like this: every concern has its own workflow file; `ci.yml` is only the planner, the
 calls and the one required `gate`; and every workflow has been through the eight passes (proof of concept to

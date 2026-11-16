@@ -166,6 +166,10 @@ Actions track, after phase 8).
 **Acceptance.** Merged and `accepted`; every convention is enforced by a check (0.4) or says why it cannot be; it cites the
 spike's table.
 
+**Done 2026-11-16**, in [ADR-0102](../../contrail/adrs/ci/0102-one-workflow-per-concern-and-the-verdict-job.md): `accepted`, with
+the six conventions, each tied to its fact, and a Confirmation that names the check for each (the ones of 0.3 and 0.4 are in
+place when those stages merge; two are enforced by GitHub itself). ADR-0100 has a dated note and the ADR index a row.
+
 ## Stage 0.3: Planner, gate and mutant driver
 
 **Purpose.** Give the planner and the gate the mechanism the migration needs, as a **behaviour-preserving** change: when it

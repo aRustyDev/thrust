@@ -83,6 +83,12 @@ Wording fix: the Cloudflare-set test leg is the Rust `wasm32` workerd harness (s
 
 Outcome rewritten to the accepted decision; repaired the garbled harness wording introduced by the earlier toolchain fix (Rust `wasm-bindgen-test` on workerd).
 
+## Update — 2026-11-16 (ADR-0102)
+
+The single aggregate required context is `gate`, in `ci.yml`. The one workflow is being split into one per concern, called by a
+thin `ci.yml` that keeps `gate`; each called workflow ends with a `verdict` job, and `gate` requires its result and its output.
+This ADR's decision (Option 1, the matrix shape, the one required context) is unchanged: see ADR-0102.
+
 ## Open Questions
 
 * Q-0100 — matrix shape and cost.
@@ -91,4 +97,4 @@ Outcome rewritten to the accepted decision; repaired the garbled harness wording
 
 ## More Information
 
-`.github/workflows/*` in this repo; `.github/rulesets/main-branch.json`. Related: [[ADR-0101]], [[ADR-0110]], [[ADR-0121]], [[ADR-0122]].
+`.github/workflows/*` in this repo; `.github/rulesets/main-branch.json`. Related: [[ADR-0101]], [[ADR-0102]], [[ADR-0110]], [[ADR-0121]], [[ADR-0122]].
