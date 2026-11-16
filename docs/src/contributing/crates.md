@@ -44,8 +44,9 @@ are on [Architecture gates](../testing/techniques/architecture-gates.md).
      dev-dependency.
 
    The directory drops the `thrust-` prefix, and the package keeps it: `crates/<group>/<dir>/` holds `thrust-<name>`.
-   Name the crate in its group's `README.md`. A directory is a crate or a group, never both, so a new group gets a
-   `README.md` of its own.
+   Name the crate in its group's `README.md` as `` `<dir>/` ``. A directory is a crate or a group, never both, so a new
+   group gets a `README.md` of its own. `scripts/check-layout.sh`, in CI's `deps` job, refuses a crate that its group's
+   `README.md` does not name, a directory under `crates/` that is neither, and a dependency the layout forbids.
 2. Create `crates/<group>/<dir>/Cargo.toml`. All 19 existing crates take `edition`, `version`, `license` and `publish`
    from the workspace (`edition.workspace = true` and so on), so the licence (`AGPL-3.0-only`) and `publish = false`
    stay in one place. Add the directory to `members` in the root `Cargo.toml`. The list is explicit, with no glob.

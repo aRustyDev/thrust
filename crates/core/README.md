@@ -1,7 +1,9 @@
 # crates/core/
 
-The inside of the hexagon (ADR-0002, ADR-0009 rule 4). **Nothing in `core/` depends on a crate outside `core/`**, and
-`scripts/check-deps.sh` keeps all three free of any runtime or platform crate.
+The inside of the hexagon (ADR-0002, ADR-0009 rule 4). **Nothing in `core/` has a normal or build dependency on a crate
+outside `core/`** (`scripts/check-layout.sh` checks it), and `scripts/check-deps.sh` keeps all three free of any runtime or
+platform crate. A dev-dependency is allowed: `thrust-core`'s tests run against `thrust-adapters-memory`, which reaches
+neither core's build nor what it ships.
 
 | Directory | Package | What it is |
 |---|---|---|

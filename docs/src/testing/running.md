@@ -83,6 +83,8 @@ the first one's Worker (the header of `scripts/contract-all.sh` records this). C
 ```sh
 scripts/rs cargo nextest run --ignore-default-filter -E 'binary(pg_adapter)'   # needs Docker [unverified: not run]
 scripts/check-deps.sh                                                         # [verified 2026-10-19 dd093fa: exit 0]
+scripts/check-layout.sh                                                       # ADR-0009: every crates/ directory a crate or a named group; testing/, spikes/, core/ edges; stale paths
+scripts/check-layout.sh --self-test                                           # the same rules on worlds it must refuse
 scripts/check-topology.sh                                                     # one Worker: no [[workflows]], no [[services]], main = build/worker/shim.mjs (issue #43)
 scripts/check-topology.sh --self-test                                         # the same check on fixtures it must refuse, so it cannot pass by looking at nothing
 ```
@@ -126,7 +128,7 @@ A pull request runs only the jobs and cells its change needs; how that is decide
 |---|---|
 | `changes` | derives the contract cells from the `run <target> <pass>` lines of `scripts/contract-all.sh`, then decides which jobs and cells the change needs (`.github/scripts/plan-ci.py`, over the changed paths and `cargo metadata`; fails open) |
 | `ci-scripts` | the tests of the CI helper scripts themselves (`.github/scripts/tests/`) |
-| `deps` | `scripts/check-deps.sh`, then `scripts/check-topology.sh` and `scripts/check-topology.sh --self-test` |
+| `deps` | `scripts/check-deps.sh`, then `scripts/check-layout.sh` (ADR-0009's layout of `crates/`) and the other guards, most with their `--self-test`: topology, edge configuration, Plane 500, acceptance list, placement, migration lint, contract counts, the wrangler render, release-plz, the workflow lint and the OpenAPI diff |
 | `lint` | `cargo fmt --all --check`, then `cargo clippy --workspace --all-targets --locked -- -D warnings`, then the same clippy for `thrust-worker` with `--no-default-features --target wasm32-unknown-unknown` (the clippy steps run even if rustfmt failed) |
 | `deny` | `cargo deny --locked check`: advisories, licences, bans and sources, from `deny.toml` |
 | `hermetic` | `cargo nextest run --profile ci --workspace --locked`, then `cargo test --doc --workspace --locked` |
