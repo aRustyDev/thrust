@@ -21,12 +21,13 @@ use thrust_ports::LabelRow;
 
 use crate::dto::{into_object, LabelDto};
 use crate::fields::{
-    char_field, fail, float_field, name_was_padded, no_such_pk, no_such_pk_shown, not_a_dictionary, pk_field, read,
-    refuse_if_any, FieldErrors, PkRead,
+    fail, float_field, name_was_padded, no_such_pk, no_such_pk_shown, not_a_dictionary, read_into, refuse_if_any,
+    FieldErrors,
 };
 use crate::pagination::{Page, PageRequest};
 use crate::projects::ts;
 use crate::request::{json_body, pick_fields, query_map, Body};
+use crate::values::{NullableKey, NullableText, Prose, Text};
 use crate::{with_allow, Ctx, PlaneUuid, V1Error, V1Path};
 
 pub(crate) fn routes() -> Router {
@@ -100,43 +101,109 @@ fn label_error(e: LabelError, changing: bool) -> V1Error {
 // --- reading a body -----------------------------------------------------------------------------------------------------------
 
 /// What a body says of a label, as the pin's `LabelCreateUpdateSerializer` reads it, field by field in the order the serializer lists
-/// them (name, color, description, external_source, external_id, parent, sort_order): what is wrong is collected into one 400, a
-/// `parent` the key column cannot read (`“x” is not a valid UUID.`, measured on the pin) included. A field it does not know is ignored.
+/// them (name, color, description, external_source, external_id, parent, sort_order). The pin names a body whose keys may all be left
+/// out `Patched…`, and this is that: a change reads into it as it is, and a creation reads into it and must also name
+/// [`PatchedLabelCreateUpdateRequest::REQUIRED`]. A key left out is `None`. Each field's type says what it takes, and the document is
+/// written from these types (the schema `PatchedLabelCreateUpdateRequest` is this struct, and `Creations` in `openapi.rs` makes
+/// `LabelCreateUpdateRequest` of it with `REQUIRED`), so the bounds below are the only place they are written. `color` and
+/// `description` can be blank and are never `null`; the two external keys and `parent` can be `null`.
+#[derive(Debug, Default)]
+#[cfg_attr(
+    feature = "openapi",
+    derive(utoipa::ToSchema),
+    schema(description = "What a label's change takes: the creation's keys, none required.")
+)]
+pub(crate) struct PatchedLabelCreateUpdateRequest {
+    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
+    name: Option<Text<1, 255>>,
+    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
+    color: Option<Text<0, 255>>,
+    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
+    description: Option<Prose>,
+    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
+    external_source: Option<NullableText<0, 255>>,
+    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
+    external_id: Option<NullableText<0, 255>>,
+    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
+    parent: Option<NullableKey>,
+    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
+    sort_order: Option<f64>,
+}
+
+impl PatchedLabelCreateUpdateRequest {
+    /// The keys a creation must name; a change names none of them. The document's creation is written from this list, so it is the
+    /// parser's.
+    pub(crate) const REQUIRED: [&'static str; 1] = ["name"];
+
+    /// The first stage: read every key the body names, with no database, and file what is wrong. The errors are handed back and not
+    /// refused, because the second stage ([`Self::check_parent`]) adds its own to the same 400, as the pin reports every field at once.
+    fn read(b: &Map<String, Value>, partial: bool) -> (Self, FieldErrors) {
+        let mut errors = FieldErrors::new();
+        for field in Self::REQUIRED {
+            if !partial && !b.contains_key(field) {
+                fail(&mut errors, field, "This field is required.");
+            }
+        }
+        let request = read_into!(PatchedLabelCreateUpdateRequest, errors, b, {
+            name: Text::read,
+            color: Text::read,
+            description: Prose::read,
+            external_source: NullableText::read,
+            external_id: NullableText::read,
+            parent: NullableKey::read,
+            sort_order: float_field,
+        });
+        (request, errors)
+    }
+
+    /// The second stage: a `parent` that names a label must name a live one of this project (the pin's field takes any label of any
+    /// project; this takes one of this project, D-032).
+    async fn check_parent(
+        &self,
+        ctx: &Ctx,
+        scope: &thrust_core::Scope,
+        errors: &mut FieldErrors,
+    ) -> Result<(), V1Error> {
+        let Some(key) = self.parent.as_ref().and_then(NullableKey::key) else { return Ok(()) };
+        if !thrust_core::is_label_of_project(&ctx.app, scope, key.id).await.map_err(|e| label_error(e, false))? {
+            fail(errors, "parent", no_such_pk_shown(&key.shown));
+        }
+        Ok(())
+    }
+}
+
+impl From<PatchedLabelCreateUpdateRequest> for LabelPatch {
+    fn from(r: PatchedLabelCreateUpdateRequest) -> Self {
+        LabelPatch {
+            name: r.name.map(Text::into_string),
+            description: r.description.map(Prose::into_string),
+            color: r.color.map(Text::into_string),
+            sort_order: r.sort_order,
+            parent: r.parent.map(NullableKey::into_id),
+            external_source: r.external_source.map(NullableText::into_option),
+            external_id: r.external_id.map(NullableText::into_option),
+        }
+    }
+}
+
+/// The creation's body in the document: `PatchedLabelCreateUpdateRequest` with `name` required, which `Creations` (`openapi.rs`) writes
+/// from the change's schema. The type is the name the path declarations use for it.
+#[cfg(feature = "openapi")]
+#[derive(utoipa::ToSchema)]
+#[allow(dead_code, reason = "a name for the document: nothing builds it")]
+pub(crate) struct LabelCreateUpdateRequest;
+
+/// What a body says of a label, read and checked: every field first, then the database's part, and what is wrong in either is one 400.
 async fn label_patch(
     ctx: &Ctx,
     scope: &thrust_core::Scope,
     b: &Map<String, Value>,
     partial: bool,
 ) -> Result<LabelPatch, V1Error> {
-    let mut errors = FieldErrors::new();
-    if !partial && !b.contains_key("name") {
-        fail(&mut errors, "name", "This field is required.");
-    }
-    let mut patch = LabelPatch {
-        name: read(&mut errors, b, "name", |v| char_field(v, Some(255), false, false)).flatten(),
-        color: read(&mut errors, b, "color", |v| char_field(v, Some(255), true, false)).flatten(),
-        description: read(&mut errors, b, "description", |v| char_field(v, None, true, false)).flatten(),
-        external_source: read(&mut errors, b, "external_source", |v| char_field(v, Some(255), true, true)),
-        external_id: read(&mut errors, b, "external_id", |v| char_field(v, Some(255), true, true)),
-        ..LabelPatch::default()
-    };
-    if let Some(v) = b.get("parent") {
-        match pk_field(v) {
-            PkRead::Null => patch.parent = Some(None),
-            // the pin's field takes any label of any project; this takes a live one of this project (D-032)
-            PkRead::Key { id, shown } => {
-                if thrust_core::is_label_of_project(&ctx.app, scope, id).await.map_err(|e| label_error(e, false))? {
-                    patch.parent = Some(Some(id));
-                } else {
-                    fail(&mut errors, "parent", no_such_pk_shown(&shown));
-                }
-            }
-            PkRead::Refused(message) => fail(&mut errors, "parent", message),
-        }
-    }
-    patch.sort_order = read(&mut errors, b, "sort_order", float_field);
+    let (request, mut errors) = PatchedLabelCreateUpdateRequest::read(b, partial);
+    request.check_parent(ctx, scope, &mut errors).await?;
     refuse_if_any(errors)?;
-    Ok(patch)
+    Ok(request.into())
 }
 
 // --- the routes ---------------------------------------------------------------------------------------------------------------
@@ -186,7 +253,7 @@ pub(crate) async fn list(
         operation_id = "create_label",
         tag = "Labels",
         params(("slug" = String, Path), ("project_id" = thrust_contracts::Uuid, Path)),
-        request_body(content = crate::openapi::LabelCreateUpdateRequest, content_type = "application/json"),
+        request_body(content = LabelCreateUpdateRequest, content_type = "application/json"),
         responses(
             crate::openapi::Refused,
             (status = 201, description = "Label created successfully", body = LabelDto),
@@ -270,7 +337,7 @@ pub(crate) async fn retrieve(
             ("pk" = thrust_contracts::Uuid, Path)
         ),
         // not required: an empty body is an empty object (`json_body`), as DRF reads it
-        request_body(content = Option<crate::openapi::PatchedLabelCreateUpdateRequest>, content_type = "application/json"),
+        request_body(content = Option<PatchedLabelCreateUpdateRequest>, content_type = "application/json"),
         responses(
             crate::openapi::Refused,
             (status = 200, description = "Label updated successfully", body = LabelDto),
