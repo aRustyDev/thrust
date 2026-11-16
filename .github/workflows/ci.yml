@@ -5,8 +5,9 @@ name: ci
 # workflow does not run on), push to main, a nightly run of main, and manual runs. A pull request and a push to main run
 # only the jobs and cells their change needs (.github/scripts/plan-ci.py). A release-candidate pull request (rc/*), a merge
 # queue entry, the nightly run and a manual run run everything; a release candidate's green run is what starts the staging
-# deploy (deploy.yml). The nightly run catches what no change brings: a new RustSec advisory, a new stable toolchain, drift
-# in the runner (ADR-0100). deploy.yml ignores it (plan-deploy.sh deploys only after a pull request or a push).
+# deploy (deploy.yml). The nightly run catches what no change brings: a new RustSec advisory, drift in the runner
+# (ADR-0100). (A new Rust release does not reach the build by itself: rust-toolchain.toml pins the version, and Dependabot
+# proposes the next one as a pull request.) deploy.yml ignores it (plan-deploy.sh deploys only after a pull request or a push).
 on:
   pull_request:
   merge_group:
@@ -51,6 +52,10 @@ jobs:
           PR_HEAD_REF: ${{ github.head_ref }}
           PR_HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
           REPO: ${{ github.repository }}
+          # The runner's own stable, not the version rust-toolchain.toml pins: `cargo metadata --no-deps` reads manifests and
+          # builds nothing, and without this rustup would first install the pinned toolchain here (and a failed install would
+          # quietly turn every plan into "run everything").
+          RUSTUP_TOOLCHAIN: stable
         run: |
           # The whole matrix, with its own guards (every `run` line parsed, none twice), into cells.txt.
           .github/scripts/plan-cells.sh > /dev/null
@@ -113,8 +118,13 @@ jobs:
         with:
           persist-credentials: false
       - name: Test the helper scripts
+        env:
+          # test_plan_ci.py runs `cargo metadata`; the runner's stable reads the manifests as well as the pinned version would
+          # (see the `changes` job), without installing it first.
+          RUSTUP_TOOLCHAIN: stable
         run: |
           sh .github/scripts/tests/test-ci-scripts.sh
+          sh .github/scripts/tests/test-toolchain-channel.sh
           sh .github/scripts/tests/test-required-contexts.sh
           sh .github/scripts/tests/test-check-web-diff.sh
           sh .github/scripts/tests/test-smoke-deploy.sh

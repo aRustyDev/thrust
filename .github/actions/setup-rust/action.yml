@@ -1,5 +1,5 @@
 name: setup-rust
-description: Rust toolchain, rustup targets, a keyed cache, and (optionally) the pinned Worker toolchain. One place to change versions for every job that builds the workspace.
+description: The Rust toolchain rust-toolchain.toml pins, rustup targets, a keyed cache, and (optionally) the pinned Worker toolchain. One place to change versions for every job that builds the workspace.
 
 inputs:
   targets:
@@ -33,9 +33,20 @@ inputs:
 runs:
   using: composite
   steps:
+    # The exact version rust-toolchain.toml pins (and nothing else: the script refuses `stable`, `nightly` or a partial version), so
+    # every job builds with the compiler a pull request tested. rustup would read the file too, but only once a toolchain is being
+    # installed; naming it here makes the install, the cache key and the log say which one. On its own line, so a refusal fails the step.
+    - name: The Rust version rust-toolchain.toml pins
+      id: toolchain
+      shell: bash
+      run: |
+        channel="$(.github/scripts/toolchain-channel.sh)"
+        echo "channel=$channel" >> "$GITHUB_OUTPUT"
+        echo "Rust $channel (rust-toolchain.toml)"
+
     - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
       with:
-        toolchain: stable
+        toolchain: ${{ steps.toolchain.outputs.channel }}
         targets: ${{ inputs.targets }}
         components: ${{ inputs.components }}
 
