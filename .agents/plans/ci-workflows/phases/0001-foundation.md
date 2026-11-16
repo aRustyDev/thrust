@@ -39,7 +39,7 @@ Done when:
 - ADR-0102 is merged, `accepted`, and records the design the spike chose;
 - the spike's controls have each been shown (a table of scenario, expected, observed, run id);
 - the planner and the gate handle callees, with the cases listed in 0.3, and the mutant driver is in the repository;
-- the lint conventions are enforced and the two indexes exist;
+- the lint conventions are enforced, `actionlint` runs in CI, and the two indexes exist;
 - the baseline is published;
 - and the migration (Phase 1) can start with **no further change to the planner, the gate or the lint** other than the
   moves themselves.
@@ -56,7 +56,7 @@ planner and the gate follow the ADR. The lint rules need the ADR's conventions, 
 | 2 | 0.2 spike | a **draft PR, closed unmerged** (like probes #196 to #199); its table goes into the ADR | nothing |
 | 3 | 0.1 ADR-0102 | `adrs/ci/0102-*.md` | the spike's table |
 | 4 | 0.3 planner, gate, mutant driver | scripts and tests; no workflow moves | ADR-0102 |
-| 5 | 0.4 lint and indexes | `lint-workflow.sh` rules, tests, two READMEs | ADR-0102 |
+| 5 | 0.4 lint and indexes | `lint-workflow.sh` rules, tests, `actionlint` in CI, two READMEs | ADR-0102 |
 
 ## Stage 0.5: Baseline
 
@@ -136,7 +136,7 @@ works today.
 - a callee routes by an input, never by `github.event_name` (F1);
 - no workflow-level `concurrency` in a file that has `workflow_call` (F3);
 - only the permissions its caller grants (F8);
-- the name of the callee's final job (see Questions);
+- the callee's final job is named `verdict` (decided by the owner, 2026-11-16);
 - every file keeps `permissions: {}` and a `permissions:` on each job.
 
 Alternatives not taken: a gate per workflow (N required checks, against ADR-0100's one aggregate context); `pr.yml` as the
@@ -166,7 +166,10 @@ merges, CI plans and judges exactly what it did before.
 - `test-ci-scripts.sh` gains the callee cases: each scenario of the spike's table as a generated case, the 80 existing
   cases unchanged and green, and the control that an absent callee result is a failure and not a skip.
 - `.github/scripts/tests/mutate-gate.sh` (the 34 hand mutants of the planner and the gate, each of which the tests must
-  catch) is committed, runs under `dash`, and reports a mutant that survives. See Questions for whether `ci-scripts` runs it.
+  catch) is committed, runs under `dash`, and reports a mutant that survives. It is a step of the `ci-scripts` job (the
+  owner's decision, 2026-11-16), so it runs whenever that job does and a surviving mutant fails the gate; the control is a
+  test weakened on purpose, which must make the step fail. A change that plans no `ci-scripts` (a docs-only one) skips it, as
+  it skips every other helper test.
 
 **Steps.** Planner and gate changes with their tests first (red, then green); the rules and the directory test; the mutant
 driver last, because it has to mutate the final text.
@@ -187,24 +190,30 @@ driver. It already exists in a session scratchpad and is being rewritten into th
   `gate` waits for it), linking `cicd.md` for the how. `plan-ci.py` reads these two as no job's input, with a test.
 - `lint-all-workflows.sh` needs **no** change for credentials (above); a test shows a new callee with no credentials passes
   with no entry.
+- `actionlint` runs in CI at a pinned version, as a step of `deps` (the owner's decision, 2026-11-16: add it). Every
+  workflow in the repository passes it, or each finding it keeps is named with the reason. The control: a copy of the
+  `contract` call with a `with:` key the callee does not declare must be refused.
 
 **Public solutions.** `actionlint` checks a caller's `with:` against the callee's declared inputs and outputs, which matters
 once there are a dozen such calls. It is **not wired into CI today** (the cicd-review plan only suggests running it by
 hand), and a search result mentions an open false-positive report about reading a callee's outputs through `needs` (actionlint
-#407; status not checked). Adding it is a new check, so it is a question, not a step. *(Hand-written: R8 and R9, which are
-this repository's conventions; actionlint has no rule for them.)*
+#407; status not checked: check it when this stage starts, since it matters only if the spike picks the design in which a
+callee reports its results). **How it is installed is decided here, at the start of the stage, by survey**: the tools
+`taiki-e/install-action` already installs in `ci.yml` (cargo-deny, cargo-nextest, mdbook) against actionlint's own release and
+checksum. *(Hand-written: R8 and R9, which are this repository's conventions; actionlint has no rule for them.)*
 
 ## Action candidates
 
 None in Phase 0. The first exact duplicate will be the verdict step, created in M1 only if A is chosen and only because it is
 then the same steps in several callees (asked about only if the copies are not identical).
 
-## Questions for the owner
+## Decisions on the questions (owner, 2026-11-16, after #225)
 
-1. **The name of a callee's final job.** Proposed: `verdict`, so the only job named `gate` in a check list is the
-   required one. Say if another name is wanted.
-2. **The mutant driver (0.3).** Commit it and run it in `ci-scripts` (more CI time, and the claim is checked on every
-   change), or commit it and run it by hand before a change to the planner or the gate? Recommended: CI, since a claim
-   checked only by hand has already lapsed once (the driver was lost with a session).
-3. **`actionlint` (0.4).** Add it as a pinned check in `deps`? It is the public tool for the `with:` contracts the split
-   creates, at the cost of a new dependency and a possible false positive.
+| Question | Answer |
+|---|---|
+| The name of a callee's final job | `verdict`, so the only job named `gate` in a check list is the required one |
+| The mutant driver (0.3) | Commit it and run it in `ci-scripts`. A claim checked only by hand had already lapsed once (the driver was lost with a session) |
+| `actionlint` (0.4) | Add it, as a pinned check in `deps`. The public tool for the `with:` contracts the split creates |
+| Prof's group | Low |
+
+No question is open.

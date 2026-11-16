@@ -13,10 +13,12 @@ are planned in detail when the phase starts, and a stage's steps when the stage 
 | Passes | After the migration, **every job goes through all eight passes**, the migrated ones and the new ones alike |
 | Order | The priority groups below. Within a phase, jobs that exist come before new ones |
 | Actions | Created when two or more jobs repeat the same steps, or steps similar enough that one action (often a **composite** action) can serve the group. **The exact same steps in two or more places: create the action and say so in the pull request. Anything less than exact: ask the owner first**, showing the candidate steps side by side and the proposed inputs |
+| The final job of a called workflow | Named **`verdict`**, so the only job called `gate` in a check list is the required one |
+| The mutant driver | Committed in stage 0.3 and run as a step of **`ci-scripts`**, so it runs whenever that job does and a surviving mutant fails the gate |
+| `actionlint` | **Added** as a pinned check (stage 0.4), to validate the `with:` contracts the split creates; how it is installed is chosen there, by survey |
 
 **Priority groups.** High: Build, Test, Release. Medium: PR, Lint, E2E, Deploy. Low: Docs, Perf, Bench, Security,
-Chores. Backlog: Web, UI/UX, Issue. **Prof is in no group; it is placed in Low here as an assumption** for the owner to
-confirm. Within a group, the order is mine: Test before Build (Test holds most of the gate, so it carries the most risk,
+Chores, Prof (confirmed by the owner, 2026-11-16). Backlog: Web, UI/UX, Issue. Within a group, the order is mine: Test before Build (Test holds most of the gate, so it carries the most risk,
 and Build's cross-target actions serve Release), and the groups' existing jobs (`deny`, `docs`) before their new ones.
 
 ## What the split must keep working
@@ -78,8 +80,8 @@ stateDiagram-v2
 |---|---|
 | 0.1 | **ADR-0102**: one orchestrator, called workflows, the nested gate. Conventions: a callee routes by input, has no workflow-level `concurrency`, gets only the permissions its caller grants, and follows the repo's job-id, `name:` and comment style |
 | 0.2 | **Gate spike** on a draft pull request (closed unmerged), because `workflow_dispatch` needs the file on `main`. It compares a verdict per callee with a callee that reports and one gate that judges (and `re-actors/alls-green`), on seven must-fail scenarios and eight measured facts |
-| 0.3 | **Planner and gate**: `plan-ci.py` gets a `WORKFLOWS` map and a `workflows` output, its rules run everything for every workflow file that runs checks, and `assert-gate.sh` takes its job list as an input. A behaviour-preserving change; the mutant driver is committed. Unblocked: #221 (the crates move) merged |
-| 0.4 | **Lint conventions and indexes**: new rules R8 (no workflow-level `concurrency` in a callee) and R9 (a callee does not read `github.event_name`). `lint-all-workflows.sh` needs no change for credentials: it gives a workflow it does not name the strictest policy. The two READMEs index the files and link `cicd.md` instead of restating it |
+| 0.3 | **Planner and gate**: `plan-ci.py` gets a `WORKFLOWS` map and a `workflows` output, its rules run everything for every workflow file that runs checks, and `assert-gate.sh` takes its job list as an input. A behaviour-preserving change; the mutant driver is committed and runs in `ci-scripts`. Unblocked: #221 (the crates move) merged |
+| 0.4 | **Lint conventions and indexes**: new rules R8 (no workflow-level `concurrency` in a callee) and R9 (a callee does not read `github.event_name`). `lint-all-workflows.sh` needs no change for credentials: it gives a workflow it does not name the strictest policy. `actionlint` is added as a pinned check. The two READMEs index the files and link `cicd.md` instead of restating it |
 | 0.5 | **Baseline**: wall-clock and runner-minutes (the sum of job durations) per job from recent `ci` runs; GitHub reports 0 billable minutes on this public repository. It is measured again after the migration, and passes 5 to 7 are measured against it |
 
 The order is 0.5, 0.2, 0.1, 0.3, 0.4; the stages are planned in [phases/0001-foundation.md](phases/0001-foundation.md).
@@ -130,7 +132,7 @@ action in M1 without asking, and the pull request says so. A near-duplicate foun
 | Low | **10 Security**: `security.yml` | supply-chain · secrets · sast · dast · rust · bash · docker · api · web | DAST needs a running target |
 | Low | **11 Chores**: `maintenance.yml` | licenses · ossf | GitHub disables a schedule in a public repository after 60 days without activity |
 | Low | **12 Bench**: `benchmarking.yml` | micro · macro | Noise on hosted runners |
-| Low | **13 Prof**: `profiling.yml` | cpu · memory · network · storage | **Placed in Low by assumption** |
+| Low | **13 Prof**: `profiling.yml` | cpu · memory · network · storage | |
 | Low | **14 Perf**: `performance.yml` | load · soak · spike · disaster-recovery · chaos | Needs a target; never gates a pull request |
 | Backlog | Web (`web.yml`), UI/UX (`uiux.yml`), Issue (`issues.yml`) | planned when promoted | `web` already has its file after M5 |
 | Track | **Actions** | the `triggerd` cut-over (after phase 8) · candidates named in the owner's tree (xbom, attest, provenance, mdbook, actions, licensing, harden-runner), each **proposed and asked about** in its phase unless it is an exact duplicate | A composite action where the steps are YAML; TypeScript on Node 24 like `triggerd` (`dist/` checked in, `check:dist`, tests run in CI) where there is logic |
@@ -182,15 +184,15 @@ skipped.
 5. `lint-all-workflows.sh` passes, every job has least privilege, and nothing uses `pull_request_target`.
 6. The planner's jobs equal the gate's known jobs; `test_plan_ci.py`, `test-ci-scripts.sh` and the hand mutants of the
    planner and the gate pass. The mutant driver was a session scratchpad file and is not in the repository, so this is
-   checkable by anyone only from stage 0.3, which commits it.
+   checkable by anyone only from stage 0.3, which commits it and runs it in `ci-scripts`.
 7. Every script of the `deps` job (wherever its guards end up) is run locally before each push.
 
 ## Status (2026-11-16)
 
 | Item | State |
 |---|---|
-| This plan | approved by the owner; in review as the pull request that adds this directory |
-| Phase 0 | planned in [phases/0001-foundation.md](phases/0001-foundation.md) (this pull request); nothing built. Next: stage 0.5, the baseline |
+| This plan | merged (#223) |
+| Phase 0 | planned in [phases/0001-foundation.md](phases/0001-foundation.md) (merged, #225). The owner's answers to its questions (2026-11-16) are recorded in the decisions table above. Stage 0.5, the baseline, is in progress |
 | #221 (crates move) | merged (50b4dba); stage 0.3 is unblocked |
 | Phase 1 and the phases after | not started |
-| Open for the owner | confirm Prof's placement in Low |
+| Open for the owner | nothing |
