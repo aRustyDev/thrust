@@ -215,11 +215,24 @@ fn py_float(f: f64) -> String {
 
 /// DRF `ChoiceField`: the value's text must be one of the choices; the choice is returned.
 pub fn choice_field<'a>(v: &Value, choices: &'a [&'a str]) -> Result<&'a str, String> {
+    let text = choice_by(v, |text| choices.contains(&text))?;
+    // `choice_by` found the text among the choices, so this finds the choice itself
+    choices.iter().find(|c| **c == text).copied().ok_or_else(|| format!("\"{text}\" is not a valid choice."))
+}
+
+/// DRF `ChoiceField` over a set that is not a slice (the timezones are a sorted table asked by name): Python's `str()` of the value,
+/// as it is, with no trimming (a `CharField` trims and a `ChoiceField` does not: measured on DRF 3.15.2, the pin's, where `" UTC"`,
+/// `""`, `true` and `[]` are each "is not a valid choice" and `null` is "may not be null"), must be a choice.
+pub fn choice_by(v: &Value, is_choice: impl Fn(&str) -> bool) -> Result<String, String> {
     if v.is_null() {
         return Err("This field may not be null.".into());
     }
     let text = py_str(v);
-    choices.iter().find(|c| **c == text).copied().ok_or_else(|| format!("\"{text}\" is not a valid choice."))
+    if is_choice(&text) {
+        Ok(text)
+    } else {
+        Err(format!("\"{text}\" is not a valid choice."))
+    }
 }
 
 /// DRF `FloatField`: Python's `float()` of the value. A number is itself, a bool is 0 or 1 (Python's `float(True)`), a string is read
