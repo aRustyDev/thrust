@@ -24,6 +24,21 @@ p.add_argument("--workspace", default="smoke-ws")
 p.add_argument("--project", default="smoke")
 p.add_argument("--no-project", action="store_true", help="the workspace lists no project")
 p.add_argument("--drop-cookie", action="store_true", help="a sign-in that answers 200 and sets no session cookie")
+# The edge (ADR-0111): with --pin TARGET this stands for the shared hostname with one target. A request carrying the pin cookie
+# `__Host-thrust_edge=pin-TARGET` is the target's (--version, `x-thrust-route: TARGET`); any other is production's (--prod-version,
+# `x-thrust-route: prod`, and its API answers 421, so a smoke that lost the pin cannot read the target's data).
+p.add_argument("--pin", help="the one target this edge routes to, by the pin cookie")
+p.add_argument("--prod-version", default="prod-version", help="what production says in x-thrust-version")
+p.add_argument("--route", help="what a pinned /healthz says in x-thrust-route (default: the --pin target)")
+p.add_argument("--no-route", action="store_true", help="send no x-thrust-route at all (a request that did not pass the edge)")
+# /_edge/opt-in/<rc|dev>?target=T: Access admits only the client id and secret in STUB_CLIENT_ID / STUB_CLIENT_SECRET (else 403 with
+# an empty body, as Access answers); then the edge sets the pin for the --pin target, after refusing the first --deny-first asks
+# as it does while the target's flag propagates.
+p.add_argument("--deny-first", type=int, default=0)
+p.add_argument("--unavailable-first", type=int, default=0, help="answer the first N opt-ins 503, as an edge that cannot reach Flagship")
+p.add_argument("--not-admitted", action="store_true", help="the edge refuses the token itself (403 'not admitted: ...')")
+p.add_argument("--opt-in-status", type=int, help="answer the opt-in with this status instead")
+p.add_argument("--no-pin-cookie", action="store_true", help="answer the opt-in 303 without setting the pin")
 a = p.parse_args()
 
 PASSWORD = os.environ.get("STUB_PASSWORD", "s3cret-pw")
@@ -31,6 +46,9 @@ CSRF = "csrf-tok-1"
 SESSION = "sess-1"
 lock = threading.Lock()
 health_calls = [0]
+opt_in_calls = [0]
+CLIENT_ID = os.environ.get("STUB_CLIENT_ID", "ci-id")
+CLIENT_SECRET = os.environ.get("STUB_CLIENT_SECRET", "ci-secret")
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -51,13 +69,53 @@ class Handler(BaseHTTPRequestHandler):
     def signed_in(self):
         return ("session=" + SESSION) in (self.headers.get("Cookie") or "")
 
+    def pinned(self):
+        return a.pin is None or ("__Host-thrust_edge=pin-" + a.pin) in (self.headers.get("Cookie") or "")
+
+    def opt_in(self, path):
+        audience = path[len("/_edge/opt-in/"):]
+        query = self.path.split("?", 1)[1] if "?" in self.path else ""
+        target = dict(kv.split("=", 1) for kv in query.split("&") if "=" in kv).get("target", "")
+        with lock:
+            opt_in_calls[0] += 1
+            n = opt_in_calls[0]
+        if self.headers.get("CF-Access-Client-Id") != CLIENT_ID or self.headers.get("CF-Access-Client-Secret") != CLIENT_SECRET:
+            self.send_response(403)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+        elif audience not in ("rc", "dev"):
+            self.reply(404, "no such audience")
+        elif n <= a.unavailable_first:
+            self.reply(503, "routing is unavailable")
+        elif a.opt_in_status:
+            self.reply(a.opt_in_status, "routing is unavailable" if a.opt_in_status == 503 else "something else")
+        elif a.not_admitted:
+            self.reply(403, "not admitted: the token's audience is not this path's")
+        elif target != a.pin or n <= a.deny_first:
+            self.reply(403, "that target does not exist or is not open to you")
+        else:
+            headers = [("Location", "/")]
+            if not a.no_pin_cookie:
+                headers.append(("Set-Cookie", "__Host-thrust_edge=pin-%s; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=3600" % target))
+            self.reply(303, "", headers)
+
     def do_GET(self):
         path = self.path.split("?")[0]
-        if path == "/healthz":
+        if path.startswith("/_edge/opt-in/"):
+            self.opt_in(path)
+        elif a.pin is not None and not self.pinned():
+            # production, as the edge serves it to a request without a valid pin
+            if path == "/healthz":
+                self.reply(200, "ok", [("x-thrust-version", a.prod_version), ("x-thrust-route", "prod")])
+            else:
+                self.reply(421, json.dumps({"error": "routed to production"}))
+        elif path == "/healthz":
             with lock:
                 health_calls[0] += 1
                 n = health_calls[0]
             headers = []
+            if a.pin is not None and not a.no_route:
+                headers.append(("x-thrust-route", a.route or a.pin))
             if a.alternate:
                 old, new = a.alternate.split(",")
                 headers.append(("x-thrust-version", old if n % 2 == 1 else new))
@@ -85,6 +143,9 @@ class Handler(BaseHTTPRequestHandler):
         path = self.path.split("?")[0]
         length = int(self.headers.get("Content-Length") or 0)
         raw = self.rfile.read(length)
+        if not self.pinned():
+            self.reply(421, json.dumps({"error": "routed to production"}))
+            return
         if path != "/auth/sign-in/":
             self.reply(404, json.dumps({"error": "not found"}))
             return
