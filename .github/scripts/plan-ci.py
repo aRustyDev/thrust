@@ -95,6 +95,7 @@ RULES = [
      {"jobs": ["ci-scripts"]}, "a deploy script (tested by ci-scripts; run by deploy.yml)"),
     (r"^scripts/flagship\.py$", {"jobs": ["deps", "ci-scripts"]},
      "the Flagship reconciler (its policy check runs in deps, its tests in ci-scripts; flagship.yml runs it)"),
+    (r"^scripts/preview-config\.py$", {"jobs": ["ci-scripts"]}, "a Preview target's configuration (tested by ci-scripts)"),
     (r"^scripts/(verify-all|flake-hunt|measure-argon2|spike-0002-pg|stage2-latency)\.sh$|^scripts/measure-argon2-summary\.py$",
      {}, "a script no job of ci.yml runs"),
     (r"^scripts/", FULL, "a script this planner does not know"),
