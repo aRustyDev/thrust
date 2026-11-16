@@ -18,6 +18,8 @@ use crate::{App, CoreError};
 /// Longest project name and key, in characters (the pin's columns).
 pub const MAX_PROJECT_NAME: usize = 255;
 pub const MAX_PROJECT_IDENTIFIER: usize = 12;
+/// The most months a project's `archive_in` and `close_in` may be (from 0): the bound the document and the v1 request read as well.
+pub const MAX_PROJECT_MONTHS: i32 = 12;
 
 /// The characters a project's name and key may not hold: Plane's `Project.FORBIDDEN_IDENTIFIER_CHARS_PATTERN`.
 const FORBIDDEN: &str = "&+,:;$^}{*=?@#|'<>.()%!-";
@@ -152,7 +154,7 @@ fn check_project(row: &ProjectRow) -> Result<(), CoreError> {
     if !crate::is_known_timezone(&row.timezone) {
         return bad("not a known time zone");
     }
-    if !(0..=12).contains(&row.archive_in) || !(0..=12).contains(&row.close_in) {
+    if !(0..=MAX_PROJECT_MONTHS).contains(&row.archive_in) || !(0..=MAX_PROJECT_MONTHS).contains(&row.close_in) {
         return bad("months run from 0 to 12");
     }
     // the column holds an object (migration 0010); the pin stores any value, which the app never sends (D-027)
