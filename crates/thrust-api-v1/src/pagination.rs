@@ -18,7 +18,6 @@
 
 use axum::http::StatusCode;
 use serde::Serialize;
-use serde_json::Value;
 
 use crate::fields::py_int;
 use crate::V1Error;
@@ -121,13 +120,6 @@ impl Plan {
             extra_stats: None,
             results,
         }
-    }
-
-    /// [`Plan::page`] as a JSON value, for a list whose body is not a type yet. A resource's list moves to `page` when its bodies
-    /// are described (issue #58); this goes with the last of them.
-    pub fn envelope(&self, results: Vec<Value>, total: usize) -> Value {
-        // a `Page<Value>` is strings, numbers, booleans and nulls: it always serializes
-        serde_json::to_value(self.page(results, total)).unwrap_or(Value::Null)
     }
 }
 

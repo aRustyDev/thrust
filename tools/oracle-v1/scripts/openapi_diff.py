@@ -14,7 +14,7 @@ Exit codes: 0 clean, 1 a finding that is not accepted or an accepted difference 
 for itself (nothing to compare, a name that is not there, a file that does not parse).
 
 `<operations>` is a file of operationIds, one per line, `#` for comments: the part of the pinned schema that this crate's document
-describes so far (issue #58: it grows a resource at a time, to the 32 operations of the scope `m1`).
+describes (issue #58: the 32 operations of the scope `m1`, which were added a resource at a time).
 
 `<accepted.json>` is the register of differences that were decided, one entry per (oasdiff check, text) with the operations it holds
 on and the reason. oasdiff's own `--err-ignore` has no notion of an entry that stopped being true; this one fails on it, as the

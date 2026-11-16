@@ -468,6 +468,46 @@ fn a_body_that_is_not_an_object_is_refused() {
     assert_eq!(empty.body, json!({"name": ["This field is required."]}));
 }
 
+/// D-033 (11), proposed: a body that is a form or multipart is a 415 on a work item, as on a project (D-030 (5)), a state (D-031 (5))
+/// and a label (D-032 (6)); the pin reads both. The register entries SD-015 and SD-016 (`tools/oracle-v1/schema/diff-accepted.json`)
+/// rest on this: the two media types, on the two routes that read a body, in both families of paths.
+#[rstest]
+fn a_form_or_a_multipart_body_is_a_415(
+    #[values("issues", "work-items")] family: &str,
+    #[values("application/x-www-form-urlencoded", "multipart/form-data; boundary=x")] content_type: &str,
+    #[values("POST", "PATCH")] method: &str,
+) {
+    let w = real_world();
+    let made = make(&w, Who::Admin, json!({"name": "a"}));
+    let uri = if method == "POST" { items(family) } else { item(family, id_of(&made)) };
+    let r = raw(&w, Who::Admin, method, &uri, content_type, "name=x");
+    assert_eq!(r.status, 415, "{method} {family} {content_type}: {:?}", r.body);
+    assert_eq!(r.body, json!({"detail": format!("Unsupported media type \"{content_type}\" in request.")}));
+}
+
+/// The pin's schema lists `external_id`, `external_source` and `order_by` for a read of one work item by id, so the document does. This
+/// route reads `fields` and `expand` only: a request that sends the others is answered as one that does not, so it does not answer
+/// another item whose key it names (two items here, with two keys, so that a route that read the key would show it).
+#[rstest]
+fn a_read_by_id_takes_no_notice_of_a_key_or_an_order(
+    #[values("issues", "work-items")] family: &str,
+    #[values(
+        "external_id=2&external_source=gh",
+        "external_id=nobody&external_source=nobody",
+        "order_by=name",
+        "order_by=-priority"
+    )]
+    query: &str,
+) {
+    let w = real_world();
+    let a = make(&w, Who::Admin, json!({"name": "a", "external_source": "gh", "external_id": "1"}));
+    make(&w, Who::Admin, json!({"name": "b", "external_source": "gh", "external_id": "2"}));
+    let plain = get(&w, Who::Admin, &item(family, id_of(&a)));
+    let asked = get(&w, Who::Admin, &format!("{}?{query}", item(family, id_of(&a))));
+    assert_eq!((asked.status, asked.body), (200, plain.body.clone()), "{query}");
+    assert_eq!(plain.body["name"], json!("a"));
+}
+
 // --- who may -------------------------------------------------------------------------------------------------------------------
 
 /// Any member of the project reads every work item, a guest too; an admin or a member writes, a guest does not (nor the guest who

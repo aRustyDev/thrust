@@ -142,7 +142,8 @@ const KEYS: [&str; 12] = [
 fn page_of(n: usize, per_page: Option<&str>, cursor: Option<&str>) -> Value {
     let plan = PageRequest::parse(per_page, cursor).unwrap().plan().unwrap();
     let rows = plan.slice((0..n).collect::<Vec<_>>());
-    plan.envelope(rows.into_iter().map(|i| json!(i)).collect(), n)
+    // the same serialization a route's `Json(Page<..>)` gets: a `Page` of numbers is JSON, so this cannot fail
+    serde_json::to_value(plan.page(rows, n)).unwrap()
 }
 
 /// The corpus's list of two projects (`projects.json#list`): one page of 1000, and the cursors it gives, which lead nowhere.

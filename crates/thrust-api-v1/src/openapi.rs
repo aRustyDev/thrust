@@ -13,11 +13,12 @@ use utoipa::openapi::schema::{Object, ObjectBuilder, SchemaType, Type};
 use utoipa::openapi::security::{ApiKey, ApiKeyValue, SecurityScheme};
 use utoipa::{IntoParams, IntoResponses, Modify, OpenApi, ToSchema};
 
-use crate::dto::{LabelDto, ProjectDto, ProjectLiteDto, StateDto};
+use crate::dto::{IssueDto, IssueSearchDto, LabelDto, Listing, PriorityEnum, ProjectDto, ProjectLiteDto, StateDto};
 use crate::pagination::Page;
 use thrust_contracts::Uuid;
 
-/// The document: every operation of the resources that are described so far (a resource is added as its bodies are types).
+/// The document: the 32 operations of the scope `m1` (Projects, States, Labels and Work Items), each written from the types its
+/// route answers with.
 #[derive(OpenApi)]
 #[openapi(
     info(
@@ -44,6 +45,13 @@ use thrust_contracts::Uuid;
         crate::labels::retrieve,
         crate::labels::update,
         crate::labels::destroy,
+        crate::work_items::list,
+        crate::work_items::create,
+        crate::work_items::retrieve,
+        crate::work_items::update,
+        crate::work_items::destroy,
+        crate::work_items::search,
+        crate::work_items::by_identifier,
     ),
     components(schemas(
         ProjectDto,
@@ -59,9 +67,16 @@ use thrust_contracts::Uuid;
         LabelDto,
         Page<LabelDto>,
         LabelCreateUpdateRequest,
-        PatchedLabelCreateUpdateRequest
+        PatchedLabelCreateUpdateRequest,
+        IssueDto,
+        Page<IssueDto>,
+        Listing<IssueDto>,
+        PriorityEnum,
+        IssueSearchDto,
+        IssueRequest,
+        PatchedIssueRequest
     )),
-    modifiers(&ApiKeyAuthentication)
+    modifiers(&ApiKeyAuthentication, &OptionalBodies, &WorkItemsTwice)
 )]
 struct ApiDoc;
 
@@ -83,6 +98,77 @@ impl Modify for ApiKeyAuthentication {
                 "API key authentication. Provide your API key in the X-API-Key header.",
             ))),
         );
+    }
+}
+
+/// A body that may be left out is `Option<T>` in a `#[utoipa::path]`, which utoipa writes as `oneOf [T, null]`. The pin writes it as
+/// `T` in a body that is not `required`, which is what a change here is: an empty body is an empty object (`request::json_body`), and the
+/// JSON value `null` is refused (400, "Request body must be a JSON object or array."), so the `null` is a claim the routes do not
+/// keep. This takes it out, and the `oneOf` with it, which also hid the body from `oasdiff` (it reports a body wrapped in a `oneOf`).
+struct OptionalBodies;
+
+impl Modify for OptionalBodies {
+    fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
+        use utoipa::openapi::{RefOr, Schema};
+        for item in openapi.paths.paths.values_mut() {
+            let operations = [
+                &mut item.get,
+                &mut item.put,
+                &mut item.post,
+                &mut item.delete,
+                &mut item.options,
+                &mut item.head,
+                &mut item.patch,
+                &mut item.trace,
+            ];
+            for operation in operations.into_iter().flatten() {
+                let Some(RefOr::T(body)) = operation.request_body.as_mut() else { continue };
+                for content in body.content.values_mut() {
+                    let RefOr::T(content) = content else { continue };
+                    let Some(RefOr::T(Schema::OneOf(one_of))) = content.schema.as_mut() else { continue };
+                    let is_null = |s: &RefOr<Schema>| matches!(s, RefOr::T(Schema::Object(o)) if o.schema_type == SchemaType::Type(Type::Null));
+                    if one_of.items.len() == 2 && one_of.items.iter().any(is_null) {
+                        if let Some(only) = one_of.items.iter().find(|s| !is_null(s)).cloned() {
+                            content.schema = Some(only);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// The pin documents each work item operation twice: under `issues/` and under `work-items/`, the second with an operation id that
+/// ends in `_2` (`work_items::routes` registers both families on the same handlers). The `#[utoipa::path]` of those handlers describe
+/// the `issues/` family, and this derives the other from it, so the two cannot differ: for every path that has `/issues/` in it, one
+/// with `/work-items/` in its place and each operation id followed by `_2`.
+struct WorkItemsTwice;
+
+impl Modify for WorkItemsTwice {
+    fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
+        let first: Vec<(String, utoipa::openapi::path::PathItem)> = openapi
+            .paths
+            .paths
+            .iter()
+            .filter(|(path, _)| path.contains("/issues/"))
+            .map(|(path, item)| (path.clone(), item.clone()))
+            .collect();
+        for (path, mut item) in first {
+            let operations = [
+                &mut item.get,
+                &mut item.put,
+                &mut item.post,
+                &mut item.delete,
+                &mut item.options,
+                &mut item.head,
+                &mut item.patch,
+                &mut item.trace,
+            ];
+            for operation in operations.into_iter().flatten() {
+                operation.operation_id = operation.operation_id.take().map(|id| format!("{id}_2"));
+            }
+            openapi.paths.paths.insert(path.replacen("/issues/", "/work-items/", 1), item);
+        }
     }
 }
 
@@ -124,6 +210,38 @@ pub(crate) fn state_group() -> Object {
     ObjectBuilder::new()
         .schema_type(Type::String)
         .enum_values(Some(thrust_contracts::StateGroup::ALL.iter().map(|g| g.as_str())))
+        .build()
+}
+
+/// A work item's `point`: a whole number from 0 to 12 or `null`, with no `format`, as the pin writes it. The database checks the range,
+/// and a request that names another is refused.
+pub(crate) fn point() -> Object {
+    ObjectBuilder::new()
+        .schema_type([Type::Integer, Type::Null].into_iter().collect::<SchemaType>())
+        .minimum(Some(0))
+        .maximum(Some(12))
+        .build()
+}
+
+/// A work item's `priority` as the pin writes it: the enum by reference, inside an `allOf` (how drf-spectacular gives a field of an enum
+/// type a title of its own). The same enum either way; written like the pin's so that `oasdiff` compares the enum itself, and a value
+/// that is added or lost is a finding, where two forms of one enum would need an entry that hid it.
+pub(crate) fn priority() -> utoipa::openapi::RefOr<utoipa::openapi::Schema> {
+    utoipa::openapi::RefOr::T(utoipa::openapi::Schema::AllOf(
+        utoipa::openapi::schema::AllOfBuilder::new()
+            .item(utoipa::openapi::Ref::from_schema_name("PriorityEnum"))
+            .title(Some("Issue Priority"))
+            .build(),
+    ))
+}
+
+/// A `sequence_id` that a request may carry (and that is read, checked and not kept): a 32-bit whole number, with no `format`, as the
+/// pin writes it.
+pub(crate) fn request_sequence_id() -> Object {
+    ObjectBuilder::new()
+        .schema_type(Type::Integer)
+        .minimum(Some(i64::from(i32::MIN)))
+        .maximum(Some(i64::from(i32::MAX)))
         .build()
 }
 
@@ -176,6 +294,67 @@ pub(crate) struct StatesQuery {
     fields: Option<String>,
     #[param(schema_with = whole_number)]
     per_page: Option<i64>,
+}
+
+/// The query of the work items' list: the page, `fields`, `expand`, `order_by` (an allowlist; another is the default), and the two halves
+/// of an integration key, which together make the list the one work item that has it.
+#[derive(IntoParams)]
+#[into_params(parameter_in = Query)]
+#[allow(dead_code, reason = "a description for the document: nothing builds it")]
+pub(crate) struct WorkItemsQuery {
+    cursor: Option<String>,
+    expand: Option<String>,
+    external_id: Option<String>,
+    external_source: Option<String>,
+    fields: Option<String>,
+    order_by: Option<String>,
+    #[param(schema_with = whole_number)]
+    per_page: Option<i64>,
+}
+
+/// The query of a read of one work item by id: the pin lists the five below, and the route reads `fields` and `expand` and nothing else.
+#[derive(IntoParams)]
+#[into_params(parameter_in = Query)]
+#[allow(dead_code, reason = "a description for the document: nothing builds it")]
+pub(crate) struct WorkItemQuery {
+    expand: Option<String>,
+    external_id: Option<String>,
+    external_source: Option<String>,
+    fields: Option<String>,
+    order_by: Option<String>,
+}
+
+/// The query of the workspace search. `search` is required in the pin's schema; a request without it is answered with no hits, as the
+/// pin answers it.
+#[derive(IntoParams)]
+#[into_params(parameter_in = Query)]
+#[allow(dead_code, reason = "a description for the document: nothing builds it")]
+pub(crate) struct SearchQuery {
+    #[param(schema_with = whole_number)]
+    limit: Option<i64>,
+    project_id: Option<Uuid>,
+    search: String,
+    workspace_search: Option<String>,
+}
+
+/// The path of a work item by the identifier of its project and its number (`PLATF-7`): the route splits the segment at its last hyphen.
+#[derive(IntoParams)]
+#[into_params(parameter_in = Path)]
+#[allow(dead_code, reason = "a description for the document: nothing builds it")]
+pub(crate) struct ByIdentifierPath {
+    slug: String,
+    project_identifier: String,
+    #[param(schema_with = whole_number)]
+    issue_identifier: i64,
+}
+
+/// The query of a work item by identifier: the pin's schema declares none, and the route reads `fields` and `expand` as a read by id does.
+#[derive(IntoParams)]
+#[into_params(parameter_in = Query)]
+#[allow(dead_code, reason = "a description for the document: nothing builds it")]
+pub(crate) struct ByIdentifierQuery {
+    expand: Option<String>,
+    fields: Option<String>,
 }
 
 /// What a project's creation takes (the pin's `ProjectCreateSerializer`). `description` and the two switches are optional and not
@@ -332,6 +511,97 @@ pub(crate) struct PatchedLabelCreateUpdateRequest {
     parent: Option<Uuid>,
     #[schema(required = false)]
     sort_order: f64,
+}
+
+/// What a work item's creation takes (the pin's `IssueSerializer` as a request): only `name` is required, and it cannot be blank. The
+/// route reads every key the serializer has, and keeps the name, the description, the priority, the two dates, the state, the parent,
+/// the point, the people, the labels and the integration key; the rest is read and checked and then not kept (D-033 (1)). `priority`
+/// and the lists are not `null`; a date, a key and the relations can be.
+#[derive(ToSchema)]
+#[allow(dead_code, reason = "a description for the document: the route reads the body by hand (`fields.rs`)")]
+pub(crate) struct IssueRequest {
+    #[schema(min_length = 1, max_length = 255)]
+    name: String,
+    #[schema(required = false)]
+    description_html: String,
+    #[schema(required = false, schema_with = priority)]
+    priority: PriorityEnum,
+    #[schema(format = Date)]
+    start_date: Option<String>,
+    #[schema(format = Date)]
+    target_date: Option<String>,
+    parent: Option<Uuid>,
+    state: Option<Uuid>,
+    #[schema(schema_with = point)]
+    point: Option<i32>,
+    #[schema(required = false)]
+    assignees: Vec<Uuid>,
+    #[schema(required = false)]
+    labels: Vec<Uuid>,
+    #[schema(max_length = 255)]
+    external_source: Option<String>,
+    #[schema(max_length = 255)]
+    external_id: Option<String>,
+    // read, checked and not kept
+    #[schema(required = false, schema_with = request_sequence_id)]
+    sequence_id: i32,
+    #[schema(required = false)]
+    sort_order: f64,
+    #[schema(format = Date)]
+    archived_at: Option<String>,
+    #[schema(required = false)]
+    is_draft: bool,
+    #[schema(format = DateTime)]
+    deleted_at: Option<String>,
+    created_by: Option<Uuid>,
+    estimate_point: Option<Uuid>,
+    #[schema(rename = "type")]
+    type_: Option<Uuid>,
+    type_id: Option<Uuid>,
+}
+
+/// What a work item's change takes: the creation's keys, none required.
+#[derive(ToSchema)]
+#[allow(dead_code, reason = "a description for the document: the route reads the body by hand (`fields.rs`)")]
+pub(crate) struct PatchedIssueRequest {
+    #[schema(min_length = 1, max_length = 255, required = false)]
+    name: String,
+    #[schema(required = false)]
+    description_html: String,
+    #[schema(required = false, schema_with = priority)]
+    priority: PriorityEnum,
+    #[schema(format = Date)]
+    start_date: Option<String>,
+    #[schema(format = Date)]
+    target_date: Option<String>,
+    parent: Option<Uuid>,
+    state: Option<Uuid>,
+    #[schema(schema_with = point)]
+    point: Option<i32>,
+    #[schema(required = false)]
+    assignees: Vec<Uuid>,
+    #[schema(required = false)]
+    labels: Vec<Uuid>,
+    #[schema(max_length = 255)]
+    external_source: Option<String>,
+    #[schema(max_length = 255)]
+    external_id: Option<String>,
+    // read, checked and not kept
+    #[schema(required = false, schema_with = request_sequence_id)]
+    sequence_id: i32,
+    #[schema(required = false)]
+    sort_order: f64,
+    #[schema(format = Date)]
+    archived_at: Option<String>,
+    #[schema(required = false)]
+    is_draft: bool,
+    #[schema(format = DateTime)]
+    deleted_at: Option<String>,
+    created_by: Option<Uuid>,
+    estimate_point: Option<Uuid>,
+    #[schema(rename = "type")]
+    type_: Option<Uuid>,
+    type_id: Option<Uuid>,
 }
 
 /// What a state's change takes: the creation's keys, none required.
