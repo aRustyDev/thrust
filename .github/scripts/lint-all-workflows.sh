@@ -19,6 +19,7 @@ policy() {
     deploy.yml) echo "deploy deploy-do|build" ;;      # the environments' secrets; the bundle's attestation
     release.yml) echo "$NONE|build" ;;                 # the release's attestations; its token is the workflow's own
     release-plz.yml) echo "release release-pr|$NONE" ;; # the release App's key, in the `release` environment
+    flagship.yml) echo "sync check|$NONE" ;;           # the Flagship app's tokens, in the `flagship` environment
     *) echo "$NONE|$NONE" ;;
   esac
 }

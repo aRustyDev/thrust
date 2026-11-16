@@ -1,0 +1,11 @@
+{
+  "$comment": "Who may reach which target through the edge (ADR-0111). Read by scripts/flagship.py, which makes every Flagship flag from it; never edit a flag by hand. Names principal kinds and audiences, never people: who may opt in through an audience is the Access policy in the infrastructure repository.",
+  "routing": false,
+  "audiences": ["dev", "rc"],
+  "aliases": ["prod", "staging"],
+  "targets": {
+    "release": [{ "kinds": ["ci", "human"], "audiences": ["dev", "rc"] }],
+    "rc": [{ "kinds": ["ci", "human"], "audiences": ["dev", "rc"] }],
+    "dev": [{ "kinds": ["ci", "human"], "audiences": ["dev"] }]
+  }
+}

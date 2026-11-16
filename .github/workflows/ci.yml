@@ -149,6 +149,7 @@ jobs:
           sh .github/scripts/tests/test-check-asset-retention.sh
           python3 -I .github/scripts/tests/test_merge_assets.py
           python3 -I .github/scripts/tests/test_check_release_plz.py
+          python3 -I .github/scripts/tests/test_flagship.py
           python3 -I .github/scripts/tests/test_plan_ci.py
 
   deps:
@@ -229,6 +230,10 @@ jobs:
       # first-release pattern, or release-plz stops on main (it did after #211). The tags come from the checkout's fetch-tags.
       - name: Release configuration guard
         run: python3 -I .github/scripts/check-release-plz.py --first-release required
+      # Issue #195: the Flagship policy every routing flag is made from. Its shape and names, no person (no `@`), and its
+      # audiences exactly the edge's ACCESS_AUD_<AUDIENCE> variables. Offline: the live app is checked by flagship.yml.
+      - name: Flagship policy guard
+        run: python3 -I scripts/flagship.py validate
       # Every workflow and composite action, found by directory so a new one is linted the day it is added: pinned actions, explicit
       # permissions, no expression in a run, no pull_request_target, checkout without kept credentials, and secrets, environments and
       # id-token only in the jobs lint-all-workflows.sh names for that file (the deploy's two gated jobs, the release App's two jobs,
