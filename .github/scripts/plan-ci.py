@@ -89,7 +89,8 @@ RULES = [
     (r"^scripts/(verify-all|flake-hunt|measure-argon2|spike-0002-pg|stage2-latency)\.sh$|^scripts/measure-argon2-summary\.py$",
      {}, "a script no job of ci.yml runs"),
     (r"^scripts/", FULL, "a script this planner does not know"),
-    (r"^\.github/scripts/(lint-workflow\.sh|check-release-plz\.py)$", {"jobs": ["ci-scripts", "deps"]}, "a guard the deps job runs"),
+    (r"^\.github/scripts/(lint-workflow\.sh|lint-all-workflows\.sh|check-release-plz\.py)$", {"jobs": ["ci-scripts", "deps"]},
+     "a guard the deps job runs"),
     (r"^\.github/(scripts|workflows|actions)/", {"jobs": ["ci-scripts", "deps"]},
      "another workflow, action or script (its tests, and the workflow lint)"),
 ]

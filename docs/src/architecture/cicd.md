@@ -28,7 +28,7 @@ Worker](deploy.md). The jobs and the command each CI job runs are in the CI sect
 | `.github/actions/setup-rust` | A composite action: the stable toolchain, the rustup targets and components, a keyed `rust-cache`, and optionally `worker-build` 0.8.7 and wrangler 4.151.2 |
 | `.github/actions/build-bundle` | A composite action: the deploy bundle of the checked-out commit (the Worker, the `migrate` binary and the web app, in one reproducible file), used by `deploy.yml` and `release.yml` so that both build it the same way |
 | `.github/actions/deploy-worker` | A composite action: fetch the bundle (this run's build for staging, the release's asset for production, `fetch-release-bundle.sh`), verify its attestation, unpack it, install wrangler (the same version as `setup-rust`, kept equal by a test) and `cloudflared` at pinned versions, and run `scripts/deploy-worker.sh` |
-| `.github/scripts/` | The pipeline's own logic: `plan-ci.py`, `plan-cells.sh`, `assert-gate.sh`, and `assert-required-contexts.sh`; and the deploy's: `plan-deploy.sh`, `classify-deploy.sh`, `active-version.py`, `assert-sha-checks.sh`, `assert-gated-environments.sh`, `verify-bundle.sh`, `unpack-bundle.sh`, `fetch-previous-assets.sh`, `fetch-release-bundle.sh` and `lint-workflow.sh`; and the release's: `plan-release.sh`. The `ci-scripts` job tests them with `.github/scripts/tests/` |
+| `.github/scripts/` | The pipeline's own logic: `plan-ci.py`, `plan-cells.sh`, `assert-gate.sh`, `assert-required-contexts.sh` and `lint-all-workflows.sh`; and the deploy's: `plan-deploy.sh`, `classify-deploy.sh`, `active-version.py`, `assert-sha-checks.sh`, `assert-gated-environments.sh`, `verify-bundle.sh`, `unpack-bundle.sh`, `fetch-previous-assets.sh`, `fetch-release-bundle.sh` and `lint-workflow.sh`; and the release's: `plan-release.sh`. The `ci-scripts` job tests them with `.github/scripts/tests/` |
 | `.github/deploy/` | What the deploy trusts: the Cloudflare Origin CA root that signs `thrust-pg`'s certificate, with its fingerprint pinned by a test |
 | `scripts/deploy-worker.sh` and its parts | The deploy itself (render, classify, expand migration, `wrangler deploy`, smoke, rollback), run by the composite action: `render-wrangler.sh` (with the template `crates/thrust-worker/wrangler.deploy.toml`), `migrate-ci.sh`, `smoke-deploy.sh`, `smoke-bootstrap.sh`, `merge-assets.sh` and `check-asset-retention.sh` |
 | `scripts/check-web-diff.sh` | The Q-R2 gate for `web/` (the stock React app, imported from the oracle pin), run by the `web` job. Tested by `.github/scripts/tests/test-check-web-diff.sh` |
@@ -291,7 +291,7 @@ attaches the assets and publishes it.
 
 - All 52 external action references, of thirteen actions, are pinned to a full commit SHA with the version in a comment
   `[verified 2026-11-15 by counting the uses lines of the workflows and actions]`; `.github/scripts/lint-workflow.sh` holds
-  `deploy.yml`, `release.yml`, their two actions and `release-plz.yml` to it. `release-plz/action` pins its own actions by SHA and installs
+  every workflow and composite action to it, through `lint-all-workflows.sh`, which finds them by directory. `release-plz/action` pins its own actions by SHA and installs
   release-plz with `cargo-binstall` at the version the workflow names (0.4.3); release-plz publishes no attestation for its
   binaries (`gh attestation verify` finds none), so that download is trusted on its GitHub release alone. `anchore/sbom-action` (the release's SBOM) downloads
   syft, pinned to v1.54.0 in the workflow. The Rust toolchain is `stable`, not pinned, so a new clippy or rustfmt release can fail `lint`
@@ -304,12 +304,13 @@ attaches the assets and publishes it.
   to start the deploy run on the `rc/*` branch or the `v*` tag). `release.yml`: `id-token: write` and
   `attestations: write` (`build` only, for the two attestations), `contents: write` (`publish` only, which attaches the assets
   and publishes the release; nothing else in it writes). `lint-workflow.sh` enforces where
-  `secrets.`, `environment:` and `id-token: write` may appear. `release-plz.yml` asks for `contents: read`, and
+  `secrets.`, `environment:` and `id-token: write` may appear, per file as `lint-all-workflows.sh` names it; a workflow it
+  does not name may have none of the three. `release-plz.yml` asks for `contents: read`, and
   `actions: write` in its `release` job to start `release.yml` on the new tag; what it
   writes, it writes with the release App's token, minted in its two jobs, the only ones `lint-workflow.sh` lets hold a
   secret there. All 22 checkouts set `persist-credentials: false`.
   Reusable-workflow and composite-action inputs reach the script through `env`, not through interpolation into the script
-  text, which `lint-workflow.sh` checks for `deploy.yml` and its action.
+  text, which `lint-workflow.sh` checks in every workflow and action.
 - `deny.toml` configures the `deny` job: advisories, licences, bans (`sqlx`, `sea-orm`, `diesel`, `diesel-async`) and
   sources (crates.io only). Its one advisory ignore is RUSTSEC-2023-0071 (`rsa`), with the reason and when to re-check
   it written beside it; any other advisory is fixed by upgrading. The job fetches the advisory database on every run,
@@ -346,8 +347,8 @@ Found by the CI/CD review of 2026-11-14 (`.agents/plans/cicd-review/`), which al
   ([What runs when](#what-runs-when)).
 - **Too narrow.** Fixed by the same PR: a change to `web/` alone now runs the `worker-cf e2e` cell (G-30), and a
   nightly run of `ci` on `main` surfaces a new advisory or a new stable toolchain without waiting for a pull request.
-  Still open: `lint-workflow.sh` checks only the deploy and release workflows and their actions, not `ci.yml`,
-  `contract-cell.yml`, `e2e-schedule.yml`, `flake-hunt.yml` or `setup-rust`. `hermetic` and `pg-adapter` do not pass
+  `lint-workflow.sh` now checks every workflow and action (`lint-all-workflows.sh`), so `ci.yml`, `contract-cell.yml`,
+  `e2e-schedule.yml`, `flake-hunt.yml` and `setup-rust` with the rest, and a new one from the day it is added. Still open: `hermetic` and `pg-adapter` do not pass
   `--locked`. The toolchain floats on `stable`. `flake-hunt.yml` cannot select the `csrfoff`, `oracle` or `e2e` passes.
 
 ## Against the ADRs

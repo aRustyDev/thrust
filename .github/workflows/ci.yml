@@ -127,6 +127,7 @@ jobs:
           sh .github/scripts/tests/test-assert-sha-checks.sh
           sh .github/scripts/tests/test-assert-gated-environments.sh
           sh .github/scripts/tests/test-lint-workflow.sh
+          sh .github/scripts/tests/test-lint-all-workflows.sh
           sh .github/scripts/tests/test-deploy-worker.sh
           python3 -I .github/scripts/tests/test_active_version.py
           sh .github/scripts/tests/test-unpack-bundle.sh
@@ -187,21 +188,19 @@ jobs:
         run: scripts/check-contract-counts.sh --self-test
       # Issue #49: the deployed Worker's configuration is a template, and the renderer refuses whatever is not whole. Its self-test is the
       # control (a missing variable, an all-zero id, a thrust-spike name, an unknown marker are each refused), and it renders the real
-      # template too, so the two cannot drift apart. The workflow lint holds the deploy workflow to the rules of a workflow that has
-      # credentials: pinned actions, explicit permissions, no expression in a run, secrets only in the two gated jobs.
-      - name: Deploy configuration and workflow guards
-        run: |
-          scripts/render-wrangler.sh --self-test
-          .github/scripts/lint-workflow.sh .github/workflows/deploy.yml .github/actions/deploy-worker/action.yml \
-            .github/workflows/release.yml .github/actions/build-bundle/action.yml
+      # template too, so the two cannot drift apart.
+      - name: Deploy configuration guard
+        run: scripts/render-wrangler.sh --self-test
       # The release flow: release-plz.toml must list every workspace member in one version group with one tag (release-plz has no
-      # workspace-level group and does not check this itself), and its workflow holds the release App's key only in its two jobs.
-      - name: Release configuration and workflow guards
-        env:
-          SECRET_JOBS: release release-pr
-        run: |
-          python3 -I .github/scripts/check-release-plz.py
-          .github/scripts/lint-workflow.sh .github/workflows/release-plz.yml
+      # workspace-level group and does not check this itself).
+      - name: Release configuration guard
+        run: python3 -I .github/scripts/check-release-plz.py
+      # Every workflow and composite action, found by directory so a new one is linted the day it is added: pinned actions, explicit
+      # permissions, no expression in a run, no pull_request_target, checkout without kept credentials, and secrets, environments and
+      # id-token only in the jobs lint-all-workflows.sh names for that file (the deploy's two gated jobs, the release App's two jobs,
+      # the two attesting `build` jobs). A workflow it does not name gets none of them.
+      - name: Workflow guard (every workflow and action)
+        run: .github/scripts/lint-all-workflows.sh
       # Issue #58 (ADR-0032): the OpenAPI document that `thrust-api-v1` writes from the types its routes answer with, diffed against
       # the pinned Plane schema with oasdiff (a pinned image; Docker is on the runner). Every difference must be a recorded one and
       # every recorded one must still be there; the check breaks the document three ways and the register one way, and each must be
