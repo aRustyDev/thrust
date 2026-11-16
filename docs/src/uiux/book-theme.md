@@ -69,6 +69,6 @@ page cannot drift from the file.
   up only on a machine that builds it ([CI/CD](../architecture/cicd.md)).
 - **The symlink needs a platform that supports them.** The repository already relies on symlinks (`.gitnexusrc` and
   `.claude/skills` are two).
-- **A palette change runs the whole Rust pipeline.** `.config/` is one of the paths the CI classifier treats as
-  Rust-relevant, because `.config/nextest.toml` lives there, so a change under `.config/branding/` starts every job.
-  Narrowing that path in `.github/scripts/classify-changes.sh` is a separate change.
+- **A palette change runs no CI job.** `.github/scripts/plan-ci.py`, which decides what a change runs, has a rule for
+  `.config/branding/` ahead of the one for `.config/` (where `.config/nextest.toml` makes any other change run
+  everything), and the book is not built in CI.

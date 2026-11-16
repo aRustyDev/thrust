@@ -2,13 +2,18 @@ name: ci
 
 # One REQUIRED check: `gate`. Everything else is evidence the gate inspects.
 # Triggers: pull_request and merge_group (a merge queue waits forever for a required check that its
-# workflow does not run on), push to main, and manual runs. A release-candidate pull request (rc/*) runs in
-# full, and its green run is what starts the staging deploy (deploy.yml).
+# workflow does not run on), push to main, a nightly run of main, and manual runs. A pull request and a push to main run
+# only the jobs and cells their change needs (.github/scripts/plan-ci.py). A release-candidate pull request (rc/*), a merge
+# queue entry, the nightly run and a manual run run everything; a release candidate's green run is what starts the staging
+# deploy (deploy.yml). The nightly run catches what no change brings: a new RustSec advisory, a new stable toolchain, drift
+# in the runner (ADR-0100). deploy.yml ignores it (plan-deploy.sh deploys only after a pull request or a push).
 on:
   pull_request:
   merge_group:
   push:
     branches: [main]
+  schedule:
+    - cron: "23 3 * * *"
   workflow_dispatch:
 
 permissions: {}
@@ -19,17 +24,19 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  # Affected-only: decide whether anything the Rust jobs depend on changed. This is a job, not a
-  # workflow-level `paths:` filter, because a workflow skipped by a path filter never reports its
-  # check and a required check that never reports blocks the PR forever.
+  # Affected-only: decide which jobs and which cells of the contract matrix the change needs (.github/scripts/plan-ci.py,
+  # from the changed paths and Cargo's own dependency graph). This is a job, not a workflow-level `paths:` filter, because a
+  # workflow skipped by a path filter never reports its check and a required check that never reports blocks the PR forever.
+  # The cell list comes from scripts/contract-all.sh itself (plan-cells.sh); there is no second list to drift.
   changes:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
       contents: read
     outputs:
-      rust: ${{ steps.classify.outputs.rust }}
-      web: ${{ steps.classify.outputs.web }}
+      jobs: ${{ steps.classify.outputs.jobs }}
+      matrix: ${{ steps.classify.outputs.matrix }}
+      cells: ${{ steps.classify.outputs.cells }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -39,72 +46,64 @@ jobs:
         env:
           EVENT: ${{ github.event_name }}
           PR_BASE: ${{ github.event.pull_request.base.sha }}
-          MG_BASE: ${{ github.event.merge_group.base_sha }}
           PUSH_BEFORE: ${{ github.event.before }}
           HEAD_SHA: ${{ github.sha }}
           PR_HEAD_REF: ${{ github.head_ref }}
           PR_HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
           REPO: ${{ github.repository }}
         run: |
+          # The whole matrix, with its own guards (every `run` line parsed, none twice), into cells.txt.
+          .github/scripts/plan-cells.sh > /dev/null
+          full=""
           # A release candidate (this repository's rc/<name> pull request) runs everything: its `gate` is what lets deploy.yml put the
           # commit on staging, and release-plz builds it on whatever main was, whether or not main's own run passed. Its diff against
           # main (CHANGELOG.md, the version) says nothing about that.
           if [ "$EVENT" = pull_request ] && [ "$PR_HEAD_REPO" = "$REPO" ]; then
             case "$PR_HEAD_REF" in
-              rc/*)
-                echo "rust=true" >> "$GITHUB_OUTPUT"
-                echo "web=true" >> "$GITHUB_OUTPUT"
-                echo "release candidate $PR_HEAD_REF: run everything"
-                exit 0
-                ;;
+              rc/*) full="release candidate $PR_HEAD_REF" ;;
             esac
+          fi
+          # A merge queue entry is the last check before main: it runs everything, whatever its diff.
+          if [ "$EVENT" = merge_group ]; then
+            full="a merge queue entry"
           fi
           case "$EVENT" in
             pull_request) base="$PR_BASE" ;;
-            merge_group) base="$MG_BASE" ;;
             push) base="$PUSH_BEFORE" ;;
             *) base="" ;;
           esac
-          case "$base" in
-            "" | 0000000000000000000000000000000000000000)
-              echo "rust=true" >> "$GITHUB_OUTPUT"
-              echo "web=true" >> "$GITHUB_OUTPUT"
-              echo "no usable base for '$EVENT'; failing open (run everything)"
-              exit 0
-              ;;
-          esac
-          if ! git diff --name-only "$base" "$HEAD_SHA" > changed.txt; then
-            echo "rust=true" >> "$GITHUB_OUTPUT"
-            echo "web=true" >> "$GITHUB_OUTPUT"
-            echo "cannot diff $base..$HEAD_SHA; failing open (run everything)"
-            exit 0
+          if [ -z "$full" ]; then
+            case "$base" in
+              "" | 0000000000000000000000000000000000000000) full="no base to diff for '$EVENT'" ;;
+            esac
           fi
-          echo "changed files: $(wc -l < changed.txt | tr -d ' ')"
-          .github/scripts/classify-changes.sh < changed.txt >> "$GITHUB_OUTPUT"
+          if [ -z "$full" ] && ! git diff --name-only "$base" "$HEAD_SHA" > changed.txt; then
+            full="cannot diff $base..$HEAD_SHA"
+          fi
+          # Cargo's graph of the workspace's own crates (--no-deps: no registry, no download). The runner image has cargo.
+          if [ -z "$full" ] && ! cargo metadata --format-version 1 --no-deps --offline > metadata.json; then
+            full="cargo metadata failed"
+          fi
+          if [ -n "$full" ]; then
+            echo "running everything: $full"
+            python3 -I .github/scripts/plan-ci.py --full "$full" --cells cells.txt > plan.out
+          else
+            echo "changed files: $(wc -l < changed.txt | tr -d ' ')"
+            python3 -I .github/scripts/plan-ci.py --changed changed.txt --metadata metadata.json --cells cells.txt > plan.out
+          fi
+          cat plan.out
+          cat plan.out >> "$GITHUB_OUTPUT"
+          {
+            echo "jobs: $(sed -n 's/^jobs=//p' plan.out)"
+            echo
+            echo "cells: $(sed -n 's/^cells=//p' plan.out)"
+          } >> "$GITHUB_STEP_SUMMARY"
 
-  # The cell list comes from scripts/contract-all.sh itself; there is no second list to drift.
-  plan:
-    needs: changes
-    if: needs.changes.outputs.rust == 'true'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    permissions:
-      contents: read
-    outputs:
-      matrix: ${{ steps.plan.outputs.matrix }}
-      cells: ${{ steps.plan.outputs.cells }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - id: plan
-        run: .github/scripts/plan-cells.sh >> "$GITHUB_OUTPUT"
-
-  # The logic behind the required check (gate, plan, classifier, certifier) is itself tested; a failing
+  # The logic behind the required check (gate, planner, certifier) is itself tested; a failing
   # helper test fails the gate through `needs`.
   ci-scripts:
     needs: changes
-    if: needs.changes.outputs.rust == 'true'
+    if: contains(fromJSON(needs.changes.outputs.jobs || '[]'), 'ci-scripts')
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -137,10 +136,11 @@ jobs:
           sh .github/scripts/tests/test-check-asset-retention.sh
           python3 -I .github/scripts/tests/test_merge_assets.py
           python3 -I .github/scripts/tests/test_check_release_plz.py
+          python3 -I .github/scripts/tests/test_plan_ci.py
 
   deps:
     needs: changes
-    if: needs.changes.outputs.rust == 'true'
+    if: contains(fromJSON(needs.changes.outputs.jobs || '[]'), 'deps')
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
@@ -217,7 +217,7 @@ jobs:
   # rustfmt failed, so one push reports everything.
   lint:
     needs: changes
-    if: needs.changes.outputs.rust == 'true'
+    if: contains(fromJSON(needs.changes.outputs.jobs || '[]'), 'lint')
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
@@ -252,7 +252,7 @@ jobs:
   # `deny.toml` before adding another.
   deny:
     needs: changes
-    if: needs.changes.outputs.rust == 'true'
+    if: contains(fromJSON(needs.changes.outputs.jobs || '[]'), 'deny')
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -276,7 +276,7 @@ jobs:
   # and are excluded by the profile's default filter, not here.
   hermetic:
     needs: changes
-    if: needs.changes.outputs.rust == 'true'
+    if: contains(fromJSON(needs.changes.outputs.jobs || '[]'), 'hermetic')
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
@@ -320,7 +320,7 @@ jobs:
   # The Postgres adapter tests start their own container through testcontainers (Docker on the runner).
   pg-adapter:
     needs: changes
-    if: needs.changes.outputs.rust == 'true'
+    if: contains(fromJSON(needs.changes.outputs.jobs || '[]'), 'pg-adapter')
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
@@ -342,12 +342,14 @@ jobs:
 
   # One job per cell, each on a fresh runner with its own checkout, so the shared-build-directory
   # hazard that forces contract-all.sh to run serially on one machine does not apply here.
+  # Only the cells the change needs (plan-ci.py): a target runs when the binary it serves is affected, a pass when its own
+  # inputs changed (tools/oracle-v1/ the oracle cells, e2e/ and web/ the browser journeys).
   contract:
-    needs: [changes, plan]
-    if: needs.changes.outputs.rust == 'true'
+    needs: changes
+    if: contains(fromJSON(needs.changes.outputs.jobs || '[]'), 'contract')
     strategy:
       fail-fast: false
-      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+      matrix: ${{ fromJSON(needs.changes.outputs.matrix) }}
     uses: ./.github/workflows/contract-cell.yml
     with:
       target: ${{ matrix.target }}
@@ -358,7 +360,7 @@ jobs:
   # Mutation controls: every deliberately broken build must make the suite fail.
   mutants:
     needs: changes
-    if: needs.changes.outputs.rust == 'true'
+    if: contains(fromJSON(needs.changes.outputs.jobs || '[]'), 'mutants')
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     permissions:
@@ -374,14 +376,14 @@ jobs:
       - name: Every mutant must be KILLED
         run: scripts/mutants.sh
 
-  # The stock React app (web/, issue #44, web/SOURCE). Runs when web/ or the CI files change (classify-changes.sh), not on
-  # `rust`. The Q-R2 gate first: only the files in web/ALLOWED-CHANGES may differ from the oracle pin. Then the install and the
+  # The stock React app (web/, issue #44, web/SOURCE). Runs when web/ or its Q-R2 gate changes (plan-ci.py); a change to web/
+  # also runs the browser journeys' cell, which drives what this builds. The Q-R2 gate first: only the files in web/ALLOWED-CHANGES may differ from the oracle pin. Then the install and the
   # build, so an import or an edit that no longer builds fails here and not later. pnpm is the version web/package.json pins,
   # read from it, so there is no second copy to drift; Node is web/.node-version. Dependency scripts are off (--ignore-scripts):
   # 1,158 packages is no place to run arbitrary install hooks, and the build does not need them.
   web:
     needs: changes
-    if: needs.changes.outputs.web == 'true'
+    if: contains(fromJSON(needs.changes.outputs.jobs || '[]'), 'web')
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
@@ -414,7 +416,7 @@ jobs:
   gate:
     name: gate
     if: always()
-    needs: [changes, plan, ci-scripts, deps, lint, deny, hermetic, pg-adapter, contract, mutants, web]
+    needs: [changes, ci-scripts, deps, lint, deny, hermetic, pg-adapter, contract, mutants, web]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
@@ -424,7 +426,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Collect the per-cell pass markers
-        if: needs.changes.outputs.rust == 'true'
+        if: contains(fromJSON(needs.changes.outputs.jobs || '[]'), 'contract')
         # If every cell failed there is nothing to download; the assert step below then fails on
         # "no cell markers", so tolerating the download error here cannot produce a green gate.
         continue-on-error: true
@@ -436,8 +438,7 @@ jobs:
       - name: Assert the planned set ran and passed
         env:
           NEEDS_JSON: ${{ toJSON(needs) }}
-          RUST_CHANGED: ${{ needs.changes.outputs.rust }}
-          WEB_CHANGED: ${{ needs.changes.outputs.web }}
-          PLANNED: ${{ needs.plan.outputs.cells || '[]' }}
+          EXPECTED_JOBS: ${{ needs.changes.outputs.jobs }}
+          PLANNED: ${{ needs.changes.outputs.cells || '[]' }}
           REPORTED_DIR: reported
         run: .github/scripts/assert-gate.sh

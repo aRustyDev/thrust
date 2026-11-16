@@ -5,8 +5,6 @@ name: e2e-schedule
 # Worker started the way scripts/contract.sh starts it, the journeys, and their controls.
 #
 # Why a schedule, when ci.yml already runs that cell on a pull request:
-#   - a change to web/ alone does not run it. classify-changes.sh keeps web/ out of `rust`, so the stock app is otherwise exercised
-#     only when a Rust change happens to land (G-30, known gap 2). Every day on main it is.
 #   - what drifts without a change of ours: the runner image, the browser Playwright installs, the packages the app resolves.
 #   - it is the run history the issue's "after two weeks green" asked for.
 # It is not a gate: nothing waits for it, and `gate` does not read it. A failure here is a notification, not a blocked merge.
