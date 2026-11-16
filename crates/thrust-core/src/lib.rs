@@ -15,6 +15,8 @@ extern crate self as thrust_core;
 
 mod auth;
 pub use auth::*;
+mod login_code;
+pub use login_code::*;
 mod password_reset;
 pub use password_reset::*;
 mod profile;
@@ -113,6 +115,15 @@ pub struct CoreConfig {
     pub password_reset_ttl_secs: i64,
     /// A request for an account whose link is younger than this makes and sends nothing: the form is not a way to mail someone over and over.
     pub password_reset_cooldown_secs: i64,
+    /// How long a mailed sign-in code works: ten minutes, which is the pin's own (`magic_` key `ex=600`, D-042).
+    pub login_code_ttl_secs: i64,
+    /// Tries a code allows, the right one included: the last wrong one ends the code (the pin's `MAX_VERIFY_ATTEMPTS`, 5).
+    pub login_code_max_attempts: u32,
+    /// The window in which at most `login_code_max_issued` codes are made for an address, from the first of them (the pin's
+    /// `ISSUE_WINDOW_SECONDS`, 600).
+    pub login_code_window_secs: i64,
+    /// Codes an address is made in a window: the first and three more (the pin's `MAX_CODES_PER_WINDOW`, 4).
+    pub login_code_max_issued: u32,
 }
 
 impl Default for CoreConfig {
@@ -133,6 +144,10 @@ impl Default for CoreConfig {
             public_base_url: None,
             password_reset_ttl_secs: 60 * 60,
             password_reset_cooldown_secs: 60,
+            login_code_ttl_secs: 10 * 60,
+            login_code_max_attempts: 5,
+            login_code_window_secs: 10 * 60,
+            login_code_max_issued: 4,
         }
     }
 }
