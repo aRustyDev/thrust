@@ -18,3 +18,10 @@ create_state
 retrieve_state
 update_state
 delete_state
+#
+# Labels (5 of 5; the pin names the detail read `get_labels`)
+list_labels
+create_label
+get_labels
+update_label
+delete_label

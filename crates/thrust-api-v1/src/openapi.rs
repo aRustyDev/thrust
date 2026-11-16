@@ -13,7 +13,7 @@ use utoipa::openapi::schema::{Object, ObjectBuilder, SchemaType, Type};
 use utoipa::openapi::security::{ApiKey, ApiKeyValue, SecurityScheme};
 use utoipa::{IntoParams, IntoResponses, Modify, OpenApi, ToSchema};
 
-use crate::dto::{ProjectDto, ProjectLiteDto, StateDto};
+use crate::dto::{LabelDto, ProjectDto, ProjectLiteDto, StateDto};
 use crate::pagination::Page;
 use thrust_contracts::Uuid;
 
@@ -39,6 +39,11 @@ use thrust_contracts::Uuid;
         crate::states::retrieve,
         crate::states::update,
         crate::states::destroy,
+        crate::labels::list,
+        crate::labels::create,
+        crate::labels::retrieve,
+        crate::labels::update,
+        crate::labels::destroy,
     ),
     components(schemas(
         ProjectDto,
@@ -50,7 +55,11 @@ use thrust_contracts::Uuid;
         StateDto,
         Page<StateDto>,
         StateRequest,
-        PatchedStateRequest
+        PatchedStateRequest,
+        LabelDto,
+        Page<LabelDto>,
+        LabelCreateUpdateRequest,
+        PatchedLabelCreateUpdateRequest
     )),
     modifiers(&ApiKeyAuthentication)
 )]
@@ -130,7 +139,9 @@ pub(crate) enum Refused {
     Forbidden,
 }
 
-/// The query of a list that reads `fields`, `expand`, `order_by` and the page.
+/// The query of a list, with the five parameters the pin's list schemas give: `cursor`, `expand`, `fields`, `order_by` and `per_page`.
+/// A route may take fewer of them than it lists: the labels' list ignores `expand` and `order_by`, as the pin's does (D-032 (2);
+/// `tests/labels.rs`, `fields_and_pages_work_on_the_list_and_order_by_and_expand_do_nothing`), and sending them changes nothing.
 #[derive(IntoParams)]
 #[into_params(parameter_in = Query)]
 #[allow(dead_code, reason = "a description for the document: nothing builds it")]
@@ -282,6 +293,45 @@ pub(crate) struct StateRequest {
     external_source: Option<String>,
     #[schema(max_length = 255)]
     external_id: Option<String>,
+}
+
+/// What a label's creation takes (the pin's `LabelCreateUpdateSerializer`): only `name` is required, and `name` cannot be blank. `color`
+/// and `description` can be blank and cannot be `null`; the two external keys and `parent` can be `null`.
+#[derive(ToSchema)]
+#[allow(dead_code, reason = "a description for the document: the route reads the body by hand (`fields.rs`)")]
+pub(crate) struct LabelCreateUpdateRequest {
+    #[schema(min_length = 1, max_length = 255)]
+    name: String,
+    #[schema(required = false, max_length = 255)]
+    color: String,
+    #[schema(required = false)]
+    description: String,
+    #[schema(max_length = 255)]
+    external_source: Option<String>,
+    #[schema(max_length = 255)]
+    external_id: Option<String>,
+    parent: Option<Uuid>,
+    #[schema(required = false)]
+    sort_order: f64,
+}
+
+/// What a label's change takes: the creation's keys, none required.
+#[derive(ToSchema)]
+#[allow(dead_code, reason = "a description for the document: the route reads the body by hand (`fields.rs`)")]
+pub(crate) struct PatchedLabelCreateUpdateRequest {
+    #[schema(min_length = 1, max_length = 255, required = false)]
+    name: String,
+    #[schema(required = false, max_length = 255)]
+    color: String,
+    #[schema(required = false)]
+    description: String,
+    #[schema(max_length = 255)]
+    external_source: Option<String>,
+    #[schema(max_length = 255)]
+    external_id: Option<String>,
+    parent: Option<Uuid>,
+    #[schema(required = false)]
+    sort_order: f64,
 }
 
 /// What a state's change takes: the creation's keys, none required.

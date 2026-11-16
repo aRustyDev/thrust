@@ -19,11 +19,12 @@ use thrust_contracts::{ProjectId, UserId};
 use thrust_core::{LabelError, LabelPatch, Permission};
 use thrust_ports::LabelRow;
 
+use crate::dto::{into_object, LabelDto};
 use crate::fields::{
     char_field, fail, float_field, name_was_padded, no_such_pk, no_such_pk_shown, not_a_dictionary, pk_field, read,
     refuse_if_any, FieldErrors, PkRead,
 };
-use crate::pagination::PageRequest;
+use crate::pagination::{Page, PageRequest};
 use crate::projects::ts;
 use crate::request::{json_body, pick_fields, query_map, Body};
 use crate::{with_allow, Ctx, PlaneUuid, V1Error, V1Path};
@@ -42,30 +43,26 @@ pub(crate) fn routes() -> Router {
 
 // --- the wire shape -----------------------------------------------------------------------------------------------------------
 
-/// The pin's `LabelSerializer` (`fields = "__all__"`): 15 keys.
-pub(crate) fn label_body(l: &LabelRow) -> Map<String, Value> {
-    let user = |u: Option<UserId>| u.map_or(Value::Null, |u| json!(u.0));
-    let body = json!({
-        "id": l.id,
-        "created_at": ts(l.created_at),
-        "updated_at": ts(l.updated_at),
-        "deleted_at": null,
-        "created_by": user(l.created_by),
-        "updated_by": user(l.updated_by),
-        "workspace": l.workspace_id.0,
-        "project": l.project_id.0,
-        "parent": l.parent_id,
-        "name": l.name,
-        "description": l.description,
-        "color": l.color,
-        "sort_order": l.sort_order,
-        "external_source": l.external_source,
-        "external_id": l.external_id,
-    });
-    match body {
-        Value::Object(map) => map,
-        _ => Map::new(),
-    }
+/// The pin's `LabelSerializer` (`fields = "__all__"`), as [`LabelDto`]: 15 keys.
+pub(crate) fn label_body(l: &LabelRow) -> Result<Map<String, Value>, V1Error> {
+    let user = |u: Option<UserId>| u.map(|u| u.0);
+    into_object(&LabelDto {
+        id: l.id,
+        created_at: ts(l.created_at),
+        updated_at: ts(l.updated_at),
+        deleted_at: None,
+        created_by: user(l.created_by),
+        updated_by: user(l.updated_by),
+        workspace: l.workspace_id.0,
+        project: l.project_id.0,
+        parent: l.parent_id,
+        name: l.name.clone(),
+        description: l.description.clone(),
+        color: l.color.clone(),
+        sort_order: l.sort_order,
+        external_source: l.external_source.clone(),
+        external_id: l.external_id.clone(),
+    })
 }
 
 /// What the pin answers for a refusal. A name that is taken is a 409 naming the label when a label is made, and the base view's 400
@@ -140,24 +137,62 @@ async fn label_patch(
 // --- the routes ---------------------------------------------------------------------------------------------------------------
 
 /// `GET .../labels/`: the project's labels, newest first, paged. There is no `order_by` here (the pin's view orders by the URL's
-/// keyword argument, which no route has), and `expand` is ignored (D-032).
-async fn list(
+/// keyword argument, which no route has), and `expand` is ignored (D-032). The pin's schema lists both as parameters, so the
+/// document does (`ListQuery`): a request that sends them is answered as one that does not.
+#[cfg_attr(
+    feature = "openapi",
+    utoipa::path(
+        get,
+        path = "/api/v1/workspaces/{slug}/projects/{project_id}/labels/",
+        operation_id = "list_labels",
+        tag = "Labels",
+        params(("slug" = String, Path), ("project_id" = thrust_contracts::Uuid, Path), crate::openapi::ListQuery),
+        responses(
+            crate::openapi::Refused,
+            (status = 200, description = "Paginated list of labels", body = Page<LabelDto>),
+            (status = 400, description = "Invalid request data provided"),
+            (status = 404, description = "Project not found"),
+        ),
+        security(("ApiKeyAuthentication" = []))
+    )
+)]
+pub(crate) async fn list(
     V1Path((slug, project)): V1Path<(String, PlaneUuid)>,
     ctx: Ctx,
     RawQuery(raw): RawQuery,
-) -> Result<Json<Value>, V1Error> {
+) -> Result<Json<Page<Value>>, V1Error> {
     let scope = ctx.project_scope(&slug, ProjectId(project.0), Permission::ReadProject).await?;
     let q = query_map(raw.as_deref());
     let plan =
         PageRequest::parse(q.get("per_page").map(String::as_str), q.get("cursor").map(String::as_str))?.plan()?;
     let all = thrust_core::visible_labels(&ctx.app, &scope).await.map_err(|e| label_error(e, false))?;
     let total = all.len();
-    let results = plan.slice(all).iter().map(|l| pick_fields(label_body(l), &q)).collect();
-    Ok(Json(plan.envelope(results, total)))
+    let results =
+        plan.slice(all).iter().map(|l| Ok(pick_fields(label_body(l)?, &q))).collect::<Result<Vec<_>, V1Error>>()?;
+    Ok(Json(plan.page(results, total)))
 }
 
 /// `POST .../labels/`: make a label. The pin answers 201.
-async fn create(
+#[cfg_attr(
+    feature = "openapi",
+    utoipa::path(
+        post,
+        path = "/api/v1/workspaces/{slug}/projects/{project_id}/labels/",
+        operation_id = "create_label",
+        tag = "Labels",
+        params(("slug" = String, Path), ("project_id" = thrust_contracts::Uuid, Path)),
+        request_body(content = crate::openapi::LabelCreateUpdateRequest, content_type = "application/json"),
+        responses(
+            crate::openapi::Refused,
+            (status = 201, description = "Label created successfully", body = LabelDto),
+            (status = 400, description = "Invalid request data provided"),
+            (status = 404, description = "The requested resource was not found."),
+            (status = 409, description = "Label with the same name already exists"),
+        ),
+        security(("ApiKeyAuthentication" = []))
+    )
+)]
+pub(crate) async fn create(
     V1Path((slug, project)): V1Path<(String, PlaneUuid)>,
     ctx: Ctx,
     headers: HeaderMap,
@@ -178,25 +213,70 @@ async fn create(
         )),
         made => {
             let label = made.map_err(|e| label_error(e, false))?;
-            Ok((StatusCode::CREATED, Json(Value::Object(label_body(&label)))))
+            Ok((StatusCode::CREATED, Json(Value::Object(label_body(&label)?))))
         }
     }
 }
 
-/// `GET .../labels/{id}/`. The pin's detail read builds its serializer with neither `fields` nor `expand`: both are ignored.
-async fn retrieve(
+/// `GET .../labels/{id}/`. The pin's detail read builds its serializer with neither `fields` nor `expand`: both are ignored, so the
+/// document has no query for it.
+#[cfg_attr(
+    feature = "openapi",
+    utoipa::path(
+        get,
+        path = "/api/v1/workspaces/{slug}/projects/{project_id}/labels/{pk}/",
+        operation_id = "get_labels",
+        tag = "Labels",
+        params(
+            ("slug" = String, Path),
+            ("project_id" = thrust_contracts::Uuid, Path),
+            ("pk" = thrust_contracts::Uuid, Path)
+        ),
+        responses(
+            crate::openapi::Refused,
+            (status = 200, description = "Labels", body = LabelDto),
+            (status = 404, description = "Label not found"),
+        ),
+        security(("ApiKeyAuthentication" = []))
+    )
+)]
+pub(crate) async fn retrieve(
     V1Path((slug, project, label)): V1Path<(String, PlaneUuid, PlaneUuid)>,
     ctx: Ctx,
 ) -> Result<Json<Value>, V1Error> {
     let scope = ctx.project_scope(&slug, ProjectId(project.0), Permission::ReadProject).await?;
     let label = thrust_core::visible_label(&ctx.app, &scope, label.0).await.map_err(|e| label_error(e, false))?;
-    Ok(Json(Value::Object(label_body(&label))))
+    Ok(Json(Value::Object(label_body(&label)?)))
 }
 
 /// `PATCH .../labels/{id}/`: change a label. The base view reads the body before the handler runs, so a body that cannot be parsed
 /// is refused before the label is looked for; the handler then finds the label (an archived project has none to find), and only then
 /// does the serializer read what the body says, so a list, or a field that is wrong, comes after the 404.
-async fn update(
+#[cfg_attr(
+    feature = "openapi",
+    utoipa::path(
+        patch,
+        path = "/api/v1/workspaces/{slug}/projects/{project_id}/labels/{pk}/",
+        operation_id = "update_label",
+        tag = "Labels",
+        params(
+            ("slug" = String, Path),
+            ("project_id" = thrust_contracts::Uuid, Path),
+            ("pk" = thrust_contracts::Uuid, Path)
+        ),
+        // not required: an empty body is an empty object (`json_body`), as DRF reads it
+        request_body(content = Option<crate::openapi::PatchedLabelCreateUpdateRequest>, content_type = "application/json"),
+        responses(
+            crate::openapi::Refused,
+            (status = 200, description = "Label updated successfully", body = LabelDto),
+            (status = 400, description = "Invalid request data provided"),
+            (status = 404, description = "Label not found"),
+            (status = 409, description = "Resource with same external ID already exists"),
+        ),
+        security(("ApiKeyAuthentication" = []))
+    )
+)]
+pub(crate) async fn update(
     V1Path((slug, project, label)): V1Path<(String, PlaneUuid, PlaneUuid)>,
     ctx: Ctx,
     headers: HeaderMap,
@@ -211,11 +291,31 @@ async fn update(
     };
     let patch = label_patch(&ctx, &scope, &map, true).await?;
     let label = thrust_core::change_label(&ctx.app, &scope, label.0, patch).await.map_err(|e| label_error(e, true))?;
-    Ok(Json(Value::Object(label_body(&label))))
+    Ok(Json(Value::Object(label_body(&label)?)))
 }
 
 /// `DELETE .../labels/{id}/`.
-async fn destroy(
+#[cfg_attr(
+    feature = "openapi",
+    utoipa::path(
+        delete,
+        path = "/api/v1/workspaces/{slug}/projects/{project_id}/labels/{pk}/",
+        operation_id = "delete_label",
+        tag = "Labels",
+        params(
+            ("slug" = String, Path),
+            ("project_id" = thrust_contracts::Uuid, Path),
+            ("pk" = thrust_contracts::Uuid, Path)
+        ),
+        responses(
+            crate::openapi::Refused,
+            (status = 204, description = "Resource deleted successfully"),
+            (status = 404, description = "Label not found"),
+        ),
+        security(("ApiKeyAuthentication" = []))
+    )
+)]
+pub(crate) async fn destroy(
     V1Path((slug, project, label)): V1Path<(String, PlaneUuid, PlaneUuid)>,
     ctx: Ctx,
 ) -> Result<StatusCode, V1Error> {

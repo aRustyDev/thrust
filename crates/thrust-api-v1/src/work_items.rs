@@ -201,7 +201,12 @@ async fn expansion(
     }
     if wanted.contains("labels") {
         let labels = db.project_labels(&scope).await?;
-        x.labels = Some(labels.iter().map(|l| (l.id, Value::Object(crate::labels::label_body(l)))).collect());
+        x.labels = Some(
+            labels
+                .iter()
+                .map(|l| Ok((l.id, Value::Object(crate::labels::label_body(l)?))))
+                .collect::<Result<_, V1Error>>()?,
+        );
     }
     if wanted.contains("assignees") {
         let people: BTreeSet<UserId> = rows.iter().flat_map(|r| r.attrs.assignee_ids.iter().copied()).collect();
