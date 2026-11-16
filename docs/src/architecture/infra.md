@@ -379,8 +379,8 @@ it never offers a code to an address that has no account. A deactivated account 
 (`USER_ACCOUNT_DEACTIVATED`). The mail goes in the request, so a mail service that refuses it is the generic 500 of D-041 (5), and the code that was made for it is
 taken back with its place in the count, so an outage does not use up the four.
 
-What it does not have. No per-IP throttle (the pin has 10 a minute on these routes), no HTML part, no sign-up by code, and no browser journey of the form (the e2e
-targets have no mail service: G-42).
+What it does not have. No per-IP throttle (the pin has 10 a minute on these routes), no HTML part, no sign-up by code, and no browser journey on the pinned Plane (the form has one on Thrust, the `worker-cf e2e-mail` cell, whose Worker has mail through
+wrangler's simulator: G-44; a code from a deployed Worker has none).
 
 ## Elsewhere and not built yet
 
