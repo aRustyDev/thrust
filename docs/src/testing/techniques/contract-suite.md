@@ -93,9 +93,13 @@ with a fixture made first as the control) and nothing more; the positive path is
   `contract-all.sh`.
 - `crates/testing/suites/api/tests/worker_only.rs`: Durable Object, cron and binding tests for `worker-*` targets.
 
-A pass is selected by **test-name prefix** in `scripts/contract.sh`, not by nextest: `sweeper_`, `panic_`,
-`blast_`, `csrf_off_`, `worker_room_`, `worker_cron_`, `worker_bindings_`, `stage2_cron_real_trigger_`. Unprefixed tests in
-`contract.rs` form the `main` pass. A new test therefore picks its pass by its name.
+A pass is selected by **test-name prefix**: `sweeper_`, `panic_`, `blast_`, `csrf_off_`, `worker_room_`, `worker_cron_`,
+`worker_bindings_`, `stage2_cron_real_trigger_`. Unprefixed tests in `contract.rs` form the `main` pass. A new test therefore
+picks its pass by its name. Each arm of `scripts/contract.sh` (and of `scripts/stage2-contract.sh`) is one call,
+`suite_pass <bin> '<filterset>' [nextest args]`: the prefixes as a nextest filterset over one test binary, run with the
+`contract` profile of `.config/nextest.toml`. `main`'s is `not test(/sweeper_|panic_|blast_|csrf_off_/)`. Under nextest
+each test is a process of its own, so the profile puts the `compat_oidc_` tests in a test group of one thread: each starts
+the mock identity provider on the one port the target was given as its issuer.
 
 The `mail` pass is the exception: it is its own test binary (`tests/mail.rs`, run with `--test mail`), because it needs a target that has a mail
 service and every other pass needs one that has none. It refuses to run when `/api/instances/` does not say `is_smtp_configured: true`. Every other

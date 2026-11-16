@@ -19,7 +19,7 @@ Durable. Example: `crates/testing/suites/api/tests/contract.rs` (see its header 
 ## Planted mutant
 
 A cargo feature named `mutant_*` that compiles a deliberately broken variant of an adapter; `scripts/mutants.sh`
-runs the suite against it and requires failure (exit 101 and at least one `FAILED`). A surviving mutant means some
+runs the suite against it and requires failure (nextest's exit 100 and a failure in the pass's JUnit report). A surviving mutant means some
 assertion is vacuous. Durable. Today: `mutant_ignore_tenant`, `mutant_dup_sequence`, `mutant_no_activity_dedupe`
 (`crates/adapters/memory`) and `mutant_discard_noop` (`crates/adapters/selfhosted`). Add one when a new
 invariant guards tenancy, uniqueness, idempotency or transaction safety. See [Mutation](techniques/mutation.md).
@@ -35,15 +35,15 @@ the wrong reason (`scripts/mutants.sh` starts a server with the other setting an
 ## Count guard
 
 The contract scripts compare the number of passed tests with the expected count for the pass and exit 5 when they
-differ, even if `cargo test` exited 0 ("VACUITY GUARD" in `scripts/contract.sh`). Without it, a filter that selects
+differ, even if nextest exited 0 ("VACUITY GUARD" in `scripts/contract.sh`; the count is read from nextest's JUnit report). Without it, a filter that selects
 zero tests reports green. Durable. When you add a contract test, update the matching `EXPECT_*` count at the top
 of `scripts/contract.sh` (and in `scripts/stage2-contract.sh` for a pass it runs) in the same commit.
 
 A count goes stale when a test is added, removed or renamed, and the guard above only fires when the script is run: some
 passes run in no CI cell, and `scripts/stage2-contract.sh` needs a deployed Worker (its `main` count was 59 for a day while the
-suite had 61, then 64). `scripts/check-contract-counts.sh` closes that: a step of the `hermetic` job asks libtest for each arm's
-own filters (`cargo test -- --list --format terse`, no server needed), counts the tests, and fails on a count that differs. It
-fails closed: an arm it cannot read, a filter that selects nothing, a listing that fails, or a different number of arms read
+suite had 61, then 64). `scripts/check-contract-counts.sh` closes that: a step of the `hermetic` job asks nextest for each arm's
+own filterset (`cargo nextest list --profile contract --message-format oneline -E …`, no server needed), counts the tests, and
+fails on a count that differs. It fails closed: an arm it cannot read, a filterset that selects nothing, a listing that fails, or a different number of arms read
 than written is exit 2, not a pass. Its `--self-test` (a step of `deps`, no compile) runs it on worlds it must refuse, and the
 real run ends with a control, the real `stage2-contract.sh` with its `main` count made wrong, which must be refused.
 
