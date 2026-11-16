@@ -1,0 +1,34 @@
+name: spike-f5
+
+# SPIKE for stage 0.2 of the CI split. Not for merging.
+# F5, the case the matrix does not cover: a VALID empty plan, so that every job inside the callee is skipped by a false `if` and
+# nothing else is odd. What is the calling job's result then: success (the plan's assumption), or skipped?
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/spike-*.yml
+      - .github/scripts/spike-*.sh
+
+permissions: {}
+
+jobs:
+  call:
+    uses: ./.github/workflows/spike-callee.yml
+    with:
+      design: naive
+      scenario: green
+      plan: '[]'
+    permissions:
+      contents: read
+
+  show:
+    needs: call
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    permissions: {}
+    env:
+      CALL_RESULT: ${{ needs.call.result }}
+    steps:
+      - run: echo "F5b with a valid empty plan every job inside is skipped; the calling job's result is $CALL_RESULT"
