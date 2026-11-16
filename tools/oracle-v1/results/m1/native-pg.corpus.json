@@ -1,9 +1,9 @@
 {
  "scope": "m1",
  "target": "thrust",
- "exchanges_compared": 108,
+ "exchanges_compared": 112,
  "by_resource": {
-  "projects": 25,
+  "projects": 29,
   "states": 14,
   "labels": 11,
   "work_items": 36,
@@ -15,7 +15,7 @@
   "work_items": 13,
   "errors": 6
  },
- "accepted": 13,
+ "accepted": 15,
  "unaccepted": [],
  "stale_entries": [],
  "vacuous": [],
@@ -26,6 +26,7 @@
   "EX-C01 list-archived-visible": 2,
   "EX-C01 list-order-by-name": 2,
   "EX-C01 list-per-page-1": 2,
+  "EX-C01 non-member-lists-a-public-project": 2,
   "EX-C02 invalid-json-body": 1,
   "EX-C03 list-order-by-priority-desc": 1,
   "EX-C04 list": 1,

@@ -12,19 +12,19 @@
     },
     {
       "id": "SD-002",
-      "ref": "EX-006 (exceptions.yaml)",
+      "ref": "EX-006 (exceptions.yaml); reproduced for `member_role`, owner 2026-11-16",
       "check": "response-property-became-nullable",
       "text_contains": "member_role`",
       "operations": ["list_projects", "create_project", "retrieve_project", "update_project"],
-      "reason": "A project the caller sees only because it is public answers `member_role: null`. The pin's schema calls it a non-nullable integer and sends null all the same: its view annotates `member_role` with a subquery over the caller's own active ProjectMember row, which is NULL for a caller who has none (apps/api/plane/api/views/project.py:128-133, tag oracle/v1-pin-20261018), and its serializer declares `IntegerField(read_only=True)` (serializers/project.py:222). The recorded corpus has no such caller, so this is from the source and not from a recorded exchange. The same defect as EX-006's `cover_image_url`."
+      "reason": "A project the caller sees only because it is public answers `member_role: null`. The pin's schema calls it a non-nullable integer and sends null all the same: its view annotates `member_role` with a subquery over the caller's own active ProjectMember row, which is NULL for a caller who has none (apps/api/plane/api/views/project.py:128-133, tag oracle/v1-pin-20261018), and its serializer declares `IntegerField(read_only=True)` (serializers/project.py:222). This is recorded as well as read: in the corpus's `non-member-lists-a-public-project` and `non-member-detail-of-a-public-project` the seeded `member`, who is in `ORA` only, gets `member_role: null` for the public project that the owner made and 15 for `ORA`; Thrust sends the same (the corpus comparison passes on both). The owner confirmed reproducing it on 2026-11-16. The same defect as EX-006's `cover_image_url`."
     },
     {
       "id": "SD-003",
-      "ref": "EX-006 (exceptions.yaml)",
+      "ref": "EX-006 (exceptions.yaml); reproduced for `sort_order`, owner 2026-11-16",
       "check": "response-property-became-nullable",
       "text_contains": "sort_order`",
       "operations": ["list_projects", "create_project", "retrieve_project", "update_project"],
-      "reason": "A person who is not a member of the project has no place among its members, so `sort_order` is `null` where the list has it. The pin's schema calls it a non-nullable number and sends null all the same: its list annotates `sort_order` with a subquery over the caller's own ProjectMember row (apps/api/plane/api/views/project.py:173-181, tag oracle/v1-pin-20261018), NULL for a caller who has none, and its serializer declares `FloatField(read_only=True)` (serializers/project.py:221). The recorded corpus has no such caller (source, not a recorded exchange). One project's answer has no `sort_order` key at all (the corpus has 16 project bodies: the 10 list rows have it, the 6 one-project answers do not), so for the operations that are not a list the finding is about the declared schema; the document lists the key as optional. The same defect as EX-006's `cover_image_url`."
+      "reason": "A person who is not a member of the project has no place among its members, so `sort_order` is `null` where the list has it. The pin's schema calls it a non-nullable number and sends null all the same: its list annotates `sort_order` with a subquery over the caller's own ProjectMember row (apps/api/plane/api/views/project.py:173-181, tag oracle/v1-pin-20261018), NULL for a caller who has none, and its serializer declares `FloatField(read_only=True)` (serializers/project.py:221). Recorded as well as read: `non-member-lists-a-public-project` has `sort_order: null` for the two public projects that the seeded `member` is not in (`PUB` and `WTY`) and 65535.0 for `ORA`, which they are in. A one-project answer has no `sort_order` key at all (every list row of the corpus has it and no one-project answer does, `non-member-detail-of-a-public-project` included), so for the operations that are not a list the finding is about the declared schema; the document lists the key as optional. Thrust sends the same (the corpus comparison passes on them). The owner confirmed reproducing it on 2026-11-16. The same defect as EX-006's `cover_image_url`."
     },
     {
       "id": "SD-004",

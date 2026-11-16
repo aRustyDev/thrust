@@ -1,9 +1,9 @@
 {
  "scope": "m1",
  "target": "plane",
- "exchanges_compared": 108,
+ "exchanges_compared": 112,
  "by_resource": {
-  "projects": 25,
+  "projects": 29,
   "states": 14,
   "labels": 11,
   "work_items": 36,
