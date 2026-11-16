@@ -59,6 +59,7 @@ pending — linked to its `Q-<adr#>` row in `../QUESTIONS.md`. New ADRs take the
 | 0094 | infra | [Postgres hosting: CNPG in woven-o11y via Tunnel and Workers VPC](infra/0094-postgres-hosting-cnpg-tunnel-vpc.md) | accepted | |
 | 0100 | ci | [Build matrix per adapter set](ci/0100-build-matrix-per-adapter-set.md) | accepted | |
 | 0101 | ci | [CI supply chain](ci/0101-ci-supply-chain.md) | accepted | |
+| 0102 | ci | [One workflow per concern, called by a thin `ci`, each judged by a `verdict` job](ci/0102-one-workflow-per-concern-and-the-verdict-job.md) | accepted | |
 | 0110 | cd | [Deploy pipeline](cd/0110-deploy-pipeline.md) | accepted | |
 | 0111 | cd | [One hostname for every target: edge Worker, Worker Previews, Flagship](cd/0111-one-hostname-n-targets.md) | accepted | Q-0111.1, Q-0111.2 |
 | 0120 | test/models | [Test model and oracle](test/models/0120-test-model-and-oracle.md) | accepted | |

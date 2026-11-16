@@ -107,9 +107,15 @@ struct Instance {
     workspaces_exist: bool,
 }
 
-/// The origin the browser used, for the three `*_base_url` values: Thrust serves the app and the API from one origin,
-/// where Plane has a separate `WEB_URL`. `x-forwarded-proto` is trusted only for the scheme.
-fn origin(headers: &HeaderMap) -> String {
+/// The origin for the three `*_base_url` values: Thrust serves the app and the API from one origin, where Plane has a
+/// separate `WEB_URL`. A deployment that configures its public address (`THRUST_PUBLIC_BASE_URL`, the base of the links in
+/// emails) gets that address whatever host the request came in on: behind the edge (ADR-0111, Q-0111.2) a target is asked
+/// under its Preview's host, which is not where the browser is. Otherwise it is the origin the browser used: the `Host`, and
+/// the scheme `x-forwarded-proto` names (trusted only for the scheme).
+fn origin(app: &App, headers: &HeaderMap) -> String {
+    if let Some(base) = app.cfg.public_base_url.as_deref().map(|b| b.trim_end_matches('/')).filter(|b| !b.is_empty()) {
+        return base.to_string();
+    }
     let host = headers.get(HOST).and_then(|v| v.to_str().ok()).unwrap_or("localhost");
     let scheme = headers
         .get("x-forwarded-proto")
@@ -128,7 +134,7 @@ pub(crate) async fn get_instance(
     headers: HeaderMap,
 ) -> Result<Json<InstanceResponse>, PlaneError> {
     let now = app.ports.clock.now().to_rfc3339_opts(SecondsFormat::Micros, true);
-    let origin = origin(&headers);
+    let origin = origin(&app, &headers);
     let workspaces_exist = thrust_core::any_workspace_exists(&app).await?;
     Ok(Json(InstanceResponse {
         config: Config {

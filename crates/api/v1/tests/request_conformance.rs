@@ -663,10 +663,21 @@ fn every_request_schema_of_the_document_is_one_the_test_above_runs() {
 #[test]
 fn a_document_that_says_something_the_parser_does_not_keep_is_reported() {
     type Break = fn(&mut Value);
+    // relative to what the schema says now: a bound is written once, in a type, and may change on purpose
+    fn bump(bound: &mut Value, by: i64) {
+        *bound = json!(bound.as_i64().expect("a bound that is a whole number") + by);
+    }
+    fn require(schema: &mut Value, key: &str, yes: bool) {
+        let required = schema["required"].as_array_mut().expect("a creation requires something");
+        required.retain(|k| k != key);
+        if yes {
+            required.push(json!(key));
+        }
+    }
     let breaks: &[(&str, &str, &str, Break)] = &[
-        ("StateRequest", "name", "a maxLength one more", |s| s["properties"]["name"]["maxLength"] = json!(256)),
-        ("StateRequest", "name", "a maxLength one less", |s| s["properties"]["name"]["maxLength"] = json!(254)),
-        ("StateRequest", "name", "a minLength of 0", |s| s["properties"]["name"]["minLength"] = json!(0)),
+        ("StateRequest", "name", "a maxLength one more", |s| bump(&mut s["properties"]["name"]["maxLength"], 1)),
+        ("StateRequest", "name", "a maxLength one less", |s| bump(&mut s["properties"]["name"]["maxLength"], -1)),
+        ("StateRequest", "name", "a minLength one less", |s| bump(&mut s["properties"]["name"]["minLength"], -1)),
         ("StateRequest", "name", "a null that the type allows", |s| {
             s["properties"]["name"]["type"] = json!(["string", "null"])
         }),
@@ -676,21 +687,19 @@ fn a_document_that_says_something_the_parser_does_not_keep_is_reported() {
         ("StateRequest", "group", "a choice more", |s| {
             s["properties"]["group"]["enum"].as_array_mut().expect("an enum").push(json!("paused"));
         }),
-        ("StateRequest", "name", "a key that is not required", |s| s["required"] = json!(["color"])),
-        ("StateRequest", "description", "a key that is required", |s| {
-            s["required"] = json!(["name", "color", "description"])
-        }),
+        ("StateRequest", "name", "a key that is not required", |s| require(s, "name", false)),
+        ("StateRequest", "description", "a key that is required", |s| require(s, "description", true)),
         ("PatchedProjectUpdateRequest", "archive_in", "a maximum one more", |s| {
-            s["properties"]["archive_in"]["maximum"] = json!(13)
+            bump(&mut s["properties"]["archive_in"]["maximum"], 1)
         }),
         ("PatchedProjectUpdateRequest", "archive_in", "a maximum one less", |s| {
-            s["properties"]["archive_in"]["maximum"] = json!(11)
+            bump(&mut s["properties"]["archive_in"]["maximum"], -1)
         }),
         ("PatchedProjectUpdateRequest", "close_in", "a minimum one less", |s| {
-            s["properties"]["close_in"]["minimum"] = json!(-1)
+            bump(&mut s["properties"]["close_in"]["minimum"], -1)
         }),
         ("PatchedProjectUpdateRequest", "close_in", "a minimum one more", |s| {
-            s["properties"]["close_in"]["minimum"] = json!(1)
+            bump(&mut s["properties"]["close_in"]["minimum"], 1)
         }),
         ("PatchedProjectUpdateRequest", "timezone", "a zone more", |s| {
             s["properties"]["timezone"]["enum"].as_array_mut().expect("an enum").push(json!("Mars/Olympus_Mons"));

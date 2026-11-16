@@ -1,6 +1,6 @@
 # ci-workflows
 
-Splits CI, which is one 26 KB workflow (`ci.yml`) plus six others, into one workflow per concern (Test, Lint, Docs,
+Splits CI, which is one 26 KB workflow (`ci.yml`) plus seven others, into one workflow per concern (Test, Lint, Docs,
 Security, Web, E2E, Build, Release, Deploy, PR, Chores, Bench, Prof, Perf, UI/UX, Issue), with the steps they repeat
 factored into actions. Done looks like this: every concern has its own workflow file; `ci.yml` is only the planner, the
 calls and the one required `gate`; and every workflow has been through the eight passes (proof of concept to
@@ -21,6 +21,7 @@ current release flow is in [cicd-review](../cicd-review/README.md).
 |---|---|
 | `PLAN.md` | the owner's decisions; the architecture; Phase 0 and the migration; the priority-ordered phase table; the templates for a phase and a stage; what each pass must show; the invariants every pull request keeps; the status table |
 | `research/0017-ci-baseline.md`, `scripts/ci-baseline.py` | what `ci` costs today (per job and per run, from GitHub's own records), and the script that measures it again; the number the passes that save time and the migration are checked against |
+| `research/0018-gate-spike.md` | how the one required `gate` judges a job inside a called workflow: five designs against seven scenarios, eleven facts measured, and the design chosen (A+); the evidence behind ADR-0102 |
 | `phases/0001-foundation.md` | Phase 0 planned stage by stage: what exists today, the spike that chooses how `gate` judges a called workflow, the planner and gate changes, the lint conventions, the baseline, and the questions for the owner |
 
 Phase documents (`phases/NNNN-*.md`) are written when a phase starts, not before. Phase numbers are allocated across the
