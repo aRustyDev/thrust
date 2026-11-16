@@ -67,10 +67,12 @@ scopes:
     # scope's operations.
     corpus:
       resources: [projects, states, labels, work_items, pagination, errors]
-      # the exchanges of those resources that fall on the 32 operations: 108 in the committed corpus. Issue #58 counted 105; the
+      # the exchanges of those resources that fall on the 32 operations: 112 in the committed corpus. Issue #58 counted 105; the
       # three more are the ones recorded on Plane for `DELETE .../issues/{pk}/` (create, delete, detail after), the one operation of
-      # the scope that the corpus had no exchange for.
-      min_exchanges_compared: 108
+      # the scope that the corpus had no exchange for; the four after that are the non-member's reads of a public project (a
+      # project made and deleted, `projects/create-public-project` to `delete-public-project`), which SD-002 and SD-003 of
+      # `schema/diff-accepted.json` rest on.
+      min_exchanges_compared: 112
     # Where each entry fires in a run of THIS scope on the pin, which REPLACES the entry's own `match.operations` for this scope.
     # The fuzzer's cases depend on which operations a run holds, so the lists above (measured on the whole schema) are not those
     # of a part of it: here the 500s of EX-001/EX-002 fall on the legacy `issues/` list and not on `work-items/` (one view serves
@@ -400,7 +402,8 @@ entries:
   optional: false
   match:
     resource: projects
-    exchanges: [list, list-per-page-1, list-order-by-name, detail, detail-by-pk-route, list-archived-visible]
+    exchanges: [list, list-per-page-1, list-order-by-name, detail, detail-by-pk-route, list-archived-visible,
+      non-member-lists-a-public-project]
     path_regex: '\.total_(cycles|modules)$'
   reason: >-
     Thrust has no cycles and no modules, so a project has none (`total_cycles` and `total_modules` are 0); the oracle's seeded project

@@ -114,6 +114,16 @@ SCENARIOS["projects"] = [
     S("delete-again", "DELETE", WS + "/projects/{{cap.scratch}}/", expect=[404],
       settle={"method": "PATCH", "path": WS + "/projects/{{cap.scratch}}/", "body": {}, "until": 403}),
     S("member-forbidden-delete-public-project", "DELETE", P + "/", auth="member", expect=[403]),
+    # A workspace member who is not in a PUBLIC project (`network` 2) sees it, and the two keys that the pin annotates from the caller's
+    # own membership are `null` for them: `member_role` (in the list and in the detail) and `sort_order` (the list only: the detail does
+    # not annotate it, so it has no such key). The seeded `member` is in `alpha` only, so a public project made by the owner is one they
+    # are not in. SD-002 and SD-003 of `schema/diff-accepted.json` rest on these three exchanges; the project is deleted at the end, as
+    # `scratch` is, so later resources see what they saw before. Appended, not inserted: the steps above keep their order and numbering.
+    S("create-public-project", "POST", WS + "/projects/", body={"name": "Oracle Public", "identifier": "PUB", "network": 2},
+      expect=[201], cap={"public": "id"}),
+    S("non-member-lists-a-public-project", "GET", WS + "/projects/", auth="member", expect=[200]),
+    S("non-member-detail-of-a-public-project", "GET", WS + "/projects/{{cap.public}}/", auth="member", expect=[200]),
+    S("delete-public-project", "DELETE", WS + "/projects/{{cap.public}}/", expect=[204]),
 ]
 
 SCENARIOS["states"] = [

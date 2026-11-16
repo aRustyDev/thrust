@@ -103,4 +103,16 @@ Each edit to a vendored file is its own commit and is listed here with the reaso
    are the runs after it: 12 failures, all accepted, on each (13 before), and 162 cases (161 before); the scope's own note
    says that Hypothesis stops generating for an operation once a case of it fails, which is the likely reason for the case
    more, not something measured.
+8. `harness/record_corpus.py`, `corpus/projects.json`, `corpus/INDEX.json`: four steps appended to the `projects` scenario and
+   recorded on the pin. The owner makes a public project (`PUB`), the seeded `member` (a workspace member who is not in it)
+   lists the workspace's projects and reads that project, and the owner deletes it. SD-002 and SD-003 of
+   `schema/diff-accepted.json` rest on them: for a project the caller is not in, the pin answers `is_member: false`,
+   `member_role: null` and, in the list, `sort_order: null`; its detail has no `sort_order` key at all. The list shows a third
+   public project, `WTY`, which an earlier step (`create-wrong-type`, which the pin answers 201) leaves behind; it has the same
+   nulls. The whole corpus was re-recorded for it on a stack built and seeded from nothing: the seed manifest, nine of the ten
+   resources and the first 26 `projects` exchanges came out byte-identical to the committed ones, so the 26 before the four are
+   unchanged.
+9. `exceptions.yaml`: `scopes.m1.corpus.min_exchanges_compared` is 112, not 108 (the four exchanges above), and
+   `non-member-lists-a-public-project` joins the exchanges of EX-C01: that list shows the seeded project `ORA`, which has one
+   cycle and one module on the pin and none on Thrust (D-030 (1)), as the owner's own lists do.
 New: `harness/compare_corpus.py` (the corpus comparison and its controls).
