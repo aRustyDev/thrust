@@ -1,0 +1,122 @@
+name: spike-callee
+
+# SPIKE for stage 0.2 of the CI split (.agents/plans/ci-workflows/phases/0001-foundation.md). Not for merging.
+# A called workflow with three inner jobs (a, b, c) and, for each design under test, the job that judges them. The scenario plants
+# the bug the design has to catch; `plan` is the list of inner jobs that must run, as plan-ci.py's `jobs` would be.
+
+on:
+  workflow_call:
+    inputs:
+      design:
+        description: naive | a | aplus | b | allsgreen
+        type: string
+        required: true
+      scenario:
+        description: green | skip-planned | fail-planned | unplanned-ran | no-verdict | malformed-plan
+        type: string
+        required: true
+      plan:
+        description: JSON array of the inner jobs that must run
+        type: string
+        required: true
+    outputs:
+      verdict:
+        description: pass when the verdict job ran and the inner jobs were as planned (design aplus)
+        value: ${{ jobs.verdict.outputs.verdict }}
+      results:
+        description: toJSON(needs) of the inner jobs (design b)
+        value: ${{ jobs.report.outputs.results }}
+
+permissions: {}
+
+jobs:
+  a:
+    if: contains(fromJSON(inputs.plan), 'a')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    permissions: {}
+    steps:
+      - run: echo "job a"
+
+  b:
+    # skip-planned: an `if` that disagrees with the plan, so a planned job is skipped
+    if: contains(fromJSON(inputs.plan), 'b') && inputs.scenario != 'skip-planned'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    permissions: {}
+    env:
+      SCENARIO: ${{ inputs.scenario }}
+    steps:
+      # fail-planned: an ordinary failure
+      - run: test "$SCENARIO" != fail-planned
+
+  c:
+    # unplanned-ran: an `if` that disagrees with the plan the other way, so an unplanned job runs
+    if: contains(fromJSON(inputs.plan), 'c') || inputs.scenario == 'unplanned-ran'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    permissions: {}
+    steps:
+      - run: echo "job c"
+
+  # design a and aplus: the callee judges its own jobs with the one script
+  verdict:
+    needs: [a, b, c]
+    # no-verdict: the judging job is skipped by a bug in its own `if`
+    if: always() && (inputs.design == 'a' || inputs.design == 'aplus') && inputs.scenario != 'no-verdict'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    permissions:
+      contents: read
+    outputs:
+      verdict: ${{ steps.mark.outputs.verdict }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Judge the inner jobs
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+          PLAN: ${{ inputs.plan }}
+          KNOWN: a b c
+        run: sh .github/scripts/spike-judge.sh
+      - id: mark
+        run: echo "verdict=pass" >> "$GITHUB_OUTPUT"
+
+  # design b: the callee only reports, the gate judges
+  report:
+    needs: [a, b, c]
+    if: always() && inputs.design == 'b' && inputs.scenario != 'no-verdict'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    permissions: {}
+    outputs:
+      results: ${{ steps.pack.outputs.results }}
+    steps:
+      - id: pack
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: echo "results=$(printf '%s' "$NEEDS_JSON" | jq -c .)" >> "$GITHUB_OUTPUT"
+
+  # design allsgreen: the public aggregate gate, told which jobs may be skipped (the ones the plan leaves out)
+  verdict-ag:
+    needs: [a, b, c]
+    if: always() && inputs.design == 'allsgreen' && inputs.scenario != 'no-verdict'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    permissions: {}
+    steps:
+      - id: skips
+        env:
+          PLAN: ${{ inputs.plan }}
+        run: |
+          printf '%s' "$PLAN" | jq -e 'type == "array" and all(.[]; type == "string")' > /dev/null || { echo "PLAN is not a JSON array of strings" >&2; exit 1; }
+          skips=""
+          for j in a b c; do
+            printf '%s' "$PLAN" | jq -e --arg j "$j" 'index($j)' > /dev/null || skips="$skips,$j"
+          done
+          echo "skips=${skips#,}" >> "$GITHUB_OUTPUT"
+      - uses: re-actors/alls-green@b5b5b37504aa4183270bd3d855c52a67f212be35 # v1.3.0
+        with:
+          jobs: ${{ toJSON(needs) }}
+          allowed-skips: ${{ steps.skips.outputs.skips }}

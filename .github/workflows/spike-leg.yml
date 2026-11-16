@@ -1,0 +1,50 @@
+name: spike-leg
+
+# SPIKE for stage 0.2 of the CI split. Not for merging.
+# One (design, scenario) pair, as `ci` would run a callee: the calling job, then a job that stands for the top-level `gate` and
+# asserts that its decision is the one it should be. It sits at the depth `ci` -> `test` -> `contract-cell` will have.
+
+on:
+  workflow_call:
+    inputs:
+      design:
+        type: string
+        required: true
+      scenario:
+        type: string
+        required: true
+
+permissions: {}
+
+jobs:
+  callee:
+    # callee-skipped: the calling job's own `if` is wrong, so a planned workflow never runs
+    if: inputs.scenario != 'callee-skipped'
+    uses: ./.github/workflows/spike-callee.yml
+    with:
+      design: ${{ inputs.design }}
+      scenario: ${{ inputs.scenario }}
+      plan: ${{ inputs.scenario == 'malformed-plan' && 'not json' || '["a","b"]' }}
+    permissions:
+      contents: read
+
+  top:
+    needs: callee
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    permissions:
+      contents: read
+    env:
+      DESIGN: ${{ inputs.design }}
+      SCENARIO: ${{ inputs.scenario }}
+      PLAN: ${{ inputs.scenario == 'malformed-plan' && 'not json' || '["a","b"]' }}
+      CALLEE_RESULT: ${{ needs.callee.result }}
+      CALLEE_VERDICT: ${{ needs.callee.outputs.verdict }}
+      CALLEE_RESULTS: ${{ needs.callee.outputs.results }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: What the gate would decide, and whether it should
+        run: sh .github/scripts/spike-top.sh

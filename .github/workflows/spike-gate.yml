@@ -1,0 +1,31 @@
+name: spike-gate
+
+# SPIKE for stage 0.2 of the CI split (.agents/plans/ci-workflows/phases/0001-foundation.md). Not for merging.
+# Every design against every scenario but the malformed plan (spike-malformed.yml: it may stop a whole run). Triggered by a pull
+# request that edits a spike file, because workflow_dispatch needs the file on the default branch.
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/spike-*.yml
+      - .github/scripts/spike-*.sh
+
+permissions: {}
+
+concurrency:
+  group: spike-gate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  leg:
+    strategy:
+      fail-fast: false
+      matrix:
+        design: [naive, a, aplus, b, allsgreen]
+        scenario: [green, skip-planned, fail-planned, unplanned-ran, callee-skipped, no-verdict]
+    uses: ./.github/workflows/spike-leg.yml
+    with:
+      design: ${{ matrix.design }}
+      scenario: ${{ matrix.scenario }}
+    permissions:
+      contents: read

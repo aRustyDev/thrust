@@ -1,0 +1,30 @@
+name: spike-malformed
+
+# SPIKE for stage 0.2 of the CI split. Not for merging.
+# The scenario kept apart from spike-gate.yml: a plan that is not JSON makes `fromJSON` fail in an `if`, and the point is what that
+# does (a failed job, or a whole run that never starts), which must not take the other legs with it.
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/spike-*.yml
+      - .github/scripts/spike-*.sh
+
+permissions: {}
+
+concurrency:
+  group: spike-malformed-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  leg:
+    strategy:
+      fail-fast: false
+      matrix:
+        design: [naive, a, aplus, b, allsgreen]
+    uses: ./.github/workflows/spike-leg.yml
+    with:
+      design: ${{ matrix.design }}
+      scenario: malformed-plan
+    permissions:
+      contents: read

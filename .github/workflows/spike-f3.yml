@@ -1,0 +1,23 @@
+name: spike-f3
+
+# SPIKE for stage 0.2 of the CI split. Not for merging.
+# F3: the caller has a workflow-level `concurrency` group, and the callee (spike-f3-callee.yml) writes the same expression. Does
+# the callee wait on its caller, get cancelled, or run?
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/spike-*.yml
+      - .github/scripts/spike-*.sh
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  call:
+    uses: ./.github/workflows/spike-f3-callee.yml
+    permissions:
+      contents: read

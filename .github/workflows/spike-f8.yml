@@ -1,0 +1,19 @@
+name: spike-f8
+
+# SPIKE for stage 0.2 of the CI split. Not for merging.
+# F8: the calling job grants `contents: read`; the callee (spike-f8-callee.yml) asks for `contents: write`. Expected: the run
+# does not start. Kept apart so that it cannot take any other spike run with it.
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/spike-*.yml
+      - .github/scripts/spike-*.sh
+
+permissions: {}
+
+jobs:
+  call:
+    uses: ./.github/workflows/spike-f8-callee.yml
+    permissions:
+      contents: read

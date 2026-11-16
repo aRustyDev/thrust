@@ -1,0 +1,18 @@
+name: spike-f8-callee
+
+# SPIKE for stage 0.2 of the CI split. Not for merging.
+# F8: a called workflow whose job asks for a permission its calling job does not grant.
+
+on:
+  workflow_call:
+
+permissions: {}
+
+jobs:
+  greedy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    permissions:
+      contents: write
+    steps:
+      - run: echo "the callee holds more than its caller granted"

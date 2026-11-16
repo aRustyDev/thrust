@@ -1,0 +1,47 @@
+name: spike-facts-callee
+
+# SPIKE for stage 0.2 of the CI split. Not for merging. A called workflow that reports what it can see, and uploads an artifact.
+
+on:
+  workflow_call:
+    outputs:
+      event:
+        description: github.event_name as the callee sees it
+        value: ${{ jobs.probe.outputs.event }}
+      workflow:
+        description: github.workflow as the callee sees it
+        value: ${{ jobs.probe.outputs.workflow }}
+      probe:
+        description: an output of the callee, to see whether it reaches the caller
+        value: ${{ jobs.probe.outputs.probe }}
+
+permissions: {}
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    permissions: {}
+    env:
+      EVENT: ${{ github.event_name }}
+      WORKFLOW: ${{ github.workflow }}
+    outputs:
+      event: ${{ steps.say.outputs.event }}
+      workflow: ${{ steps.say.outputs.workflow }}
+      probe: ${{ steps.say.outputs.probe }}
+    steps:
+      - id: say
+        run: |
+          echo "event=$EVENT" >> "$GITHUB_OUTPUT"
+          echo "workflow=$WORKFLOW" >> "$GITHUB_OUTPUT"
+          echo "probe=reached-the-caller" >> "$GITHUB_OUTPUT"
+          echo "F1 in the callee, github.event_name=$EVENT"
+          echo "F2 in the callee, github.workflow=$WORKFLOW"
+          mkdir marker
+          echo "uploaded-in-the-callee" > marker/marker.txt
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: spike-marker
+          path: marker/
+          if-no-files-found: error
+          retention-days: 1

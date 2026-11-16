@@ -1,0 +1,22 @@
+name: spike-f3-callee
+
+# SPIKE for stage 0.2 of the CI split. Not for merging.
+# F3: a called workflow with a workflow-level `concurrency` written the way a standalone workflow would write it. github.workflow
+# is the CALLER's name here, so this group is the same string as the caller's own.
+
+on:
+  workflow_call:
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  hello:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    permissions: {}
+    steps:
+      - run: echo "the callee ran"
