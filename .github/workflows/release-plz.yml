@@ -98,6 +98,11 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      # A crate added since the last release needs its first-release pattern (release-plz.toml's header), and a crate the last
+      # release contains must not keep one. Here and not in ci.yml's deps job (which checks only the first half): this is the
+      # run a stale pattern would spoil, and this job runs after `release`, so it sees the tag of a release made by this push.
+      - name: First-release patterns match the last release
+        run: python3 -I .github/scripts/check-release-plz.py --first-release exact
       - uses: ./.github/actions/setup-rust
         with:
           cache-key: release-plz
