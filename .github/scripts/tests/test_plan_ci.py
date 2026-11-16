@@ -144,7 +144,7 @@ REAL_GRAPH = {
 # one path per rule, in the rules' order; `None` where the rule's sample is a crate path (below)
 SAMPLES = [
     "Cargo.lock", ".config/branding/colors.css", ".config/nextest.toml", ".github/workflows/ci.yml", ".github/actions/setup-rust/action.yml",
-    ".github/scripts/assert-gate.sh", "scripts/contract.sh", "crates/thrust-core/src/lib.rs", "crates/README.md",
+    ".github/scripts/assert-gate.sh", ".github/scripts/toolchain-channel.sh", "scripts/contract.sh", "crates/thrust-core/src/lib.rs", "crates/README.md",
     ".github/deploy/ca.pem", "deny.toml", "clippy.toml", "release-plz.toml", "tools/oracle-v1/corpus/a.json",
     "tools/compat-record/record.py", "tools/compat-inventory/out-pinned/endpoint-inventory.csv",
     ".agents/plans/contrail/research/0003-compat-plane-inventory.md", "tools/e2e-har/scrub.py", "e2e/journeys/m1.spec.ts",
