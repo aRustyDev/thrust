@@ -165,6 +165,20 @@ Issue #43 built what FR-11 and FR-05 decided. The round-29 note above gives the 
 
 The reopen triggers stand as written: the bundle passing 20 MiB, or a Durable Object lifecycle change that has to ship with an API change.
 
+## Update — an edge Worker in front (2026-11-16)
+
+ADR-0111 puts `thrust-edge` on the public hostname, in front of `thrust`. It is a routing Worker: no application code,
+no data binding, one service binding to `thrust`, the Flagship binding and its own secrets.
+
+`thrust` stays the one Worker decided here (fetch, queue, scheduled, assets, placement). It has no route of its own and
+is reached through that service binding. So the "nothing in front of it" of the issue #43 note no longer holds:
+* `scripts/check-topology.sh` keeps checking `crates/thrust-worker`'s configurations, where a `[[services]]` block is
+  still refused;
+* the edge's own configuration is checked where it lives.
+
+The Previews of `thrust` that ADR-0111 adds are not extra Workers: they run under the same Worker, with their own
+configuration. The reopen triggers stand.
+
 ## Open Questions
 
 * Q-0090 — topology choice. (answered round 29, FR-11)

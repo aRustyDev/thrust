@@ -20,6 +20,10 @@
 #                                  `web/apps/web/build/client`. Written as an `[assets]` block into the throwaway copy of the config
 #                                  (see below), never into the shared wrangler.toml, which the contract cells use as they are. Unset
 #                                  serves no files. An absolute path, to a directory that holds an index.html (exit 2 otherwise)
+#   THRUST_EMAIL_FROM / _FROM_NAME the mail service of the password reset (E3): the sender's address and the name beside it. The config's
+#                                  `send_email` binding is `wrangler dev`'s simulator, which sends nothing and logs each message (and writes
+#                                  its text and html to files): scripts/contract.sh's `mail` pass reads that log. Unset: no mail service
+#   THRUST_PUBLIC_BASE_URL         where the links in emails point; the reset is on only with this AND a sender
 #   THRUST_ADMIN_TOKEN             (env only) gate for /internal/*
 #   THRUST_OPERATOR_ROUTES         1 mounts the operator's routes, /internal/operator/* (Q-F7); unset leaves them off, the Worker's default
 #   THRUST_OPERATOR_TOKEN          (env only) the operator's token for those routes, apart from the admin token; at least 32 characters, or
@@ -145,7 +149,8 @@ fi
 
 # Optional vars are passed only when set, so an unset one leaves the Worker's own default in force.
 set --
-for v in THRUST_ARGON2_M_KIB THRUST_ARGON2_T THRUST_ARGON2_P THRUST_SIGNIN_RATE_LIMIT THRUST_V1_RATE_LIMIT THRUST_OPERATOR_ROUTES; do
+for v in THRUST_ARGON2_M_KIB THRUST_ARGON2_T THRUST_ARGON2_P THRUST_SIGNIN_RATE_LIMIT THRUST_V1_RATE_LIMIT THRUST_OPERATOR_ROUTES \
+  THRUST_EMAIL_FROM THRUST_EMAIL_FROM_NAME THRUST_PUBLIC_BASE_URL; do
   eval "val=\${$v:-}"
   [ -n "$val" ] && set -- "$@" --var "$v:$val"
 done

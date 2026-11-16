@@ -172,7 +172,7 @@ async fn migration_0016_is_idempotent_and_keeps_its_rows() {
 
     let raw = env.conn.raw().await.unwrap();
     for _ in 0..2 {
-        thrust_adapters_postgres::migrate(&raw).await.unwrap();
+        rerun_every_file(&raw).await;
     }
     assert_eq!(env.db.asset(&scope, a.id).await.unwrap(), Some(a.clone()));
     let seen = env.db.project_detail(&scope, project).await.unwrap().unwrap().listing.project;

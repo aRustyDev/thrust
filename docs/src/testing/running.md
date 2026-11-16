@@ -1,6 +1,7 @@
 # Running the suites
 
-Every cargo command goes through `scripts/rs`, which puts rustup's stable toolchain first on `PATH` and fixes the
+Every cargo command goes through `scripts/rs`, which puts the rustup toolchain `rust-toolchain.toml` pins (the version CI
+builds with; `rustup toolchain install <version>` if it says it is missing) first on `PATH` and fixes the
 `rust-lld` library path on the dev machine (its header says why). Bare `cargo` may pick up a toolchain with no
 wasm32 standard library.
 
@@ -42,9 +43,11 @@ profile selects nothing. To reach the excluded integration suites through nextes
 scripts/contract.sh <target> [pass]
   target: native-memory | native-pg | worker-memory | worker-cf
   pass:   main | sweeper | panic | csrfoff | blast | bench | worker | cron | bindings
-          mail                              (native-* only: the password reset by email through a real mail server. A Mailpit container is started beside the target, the
-                                             target gets `THRUST_SMTP_*` and `THRUST_PUBLIC_BASE_URL`, and `--test mail` walks request, message, link and reset. Needs Docker and
-                                             `nc`. In contract-all.sh as `native-memory mail`, so a CI cell. Every other pass starts its target with no mail service)
+          mail                              (the password reset by email through a mail service. A native target: a Mailpit container is started beside it and it gets
+                                             `THRUST_SMTP_*` (needs Docker and `nc`). A Worker target: it gets `THRUST_EMAIL_FROM`, and its `send_email` binding is wrangler's
+                                             simulator, whose log is read (no container). Both get `THRUST_PUBLIC_BASE_URL`, and `--test mail` walks request, message, link
+                                             and reset. In contract-all.sh as `native-memory`, `worker-memory` and `worker-cf mail`, so CI cells. Every other pass starts
+                                             its target with no mail service)
           oracle                            (native-memory, native-pg, worker-cf: the v1 oracle's gate, corpus comparison and controls; needs `uv`.
                                              In contract-all.sh, so a CI cell. By hand: `scripts/oracle-v1.sh <target> [controls]`)
           e2e                               (worker-* only: the first browser journey, the stock app in Chromium against a Worker that serves it, with its must-fail
@@ -63,7 +66,7 @@ admin token and database password per run and keeps them out of files and argv.
 
 | Script | What it runs | Prerequisites |
 |---|---|---|
-| `scripts/contract-all.sh` | the 23-cell matrix serially (19 contract cells, the `native-memory mail` cell among them, 3 `oracle` cells and the `e2e` journey), summary in `target/contract-logs/summary.txt` | Docker, wrangler, `uv`, Node, pnpm and `nc` |
+| `scripts/contract-all.sh` | the 25-cell matrix serially (21 contract cells, the three `mail` cells among them, 3 `oracle` cells and the `e2e` journey), summary in `target/contract-logs/summary.txt` | Docker, wrangler, `uv`, Node, pnpm and `nc` |
 | `scripts/e2e.sh <target> [controls]` | the browser journeys (one spec each in `e2e/journeys/`): the built app in Chromium against a Worker that serves it, then with `controls` their must-fail controls; builds the app when it is not built. `plane-oracle` runs them on the pinned Plane instead (local only; `ORACLE_DIR`, and `E2E_RECORD_HAR=1` writes `e2e/har/`; `tools/e2e-plane/README.md`) | Docker (`worker-cf`, `plane-oracle`), wrangler, Node, pnpm, `uv` and the fork checkout (`plane-oracle`) |
 | `scripts/mutants.sh` | the planted mutants; every one must be KILLED | Docker |
 | `scripts/verify-all.sh` | the hermetic nextest run, matrix, mutants, `check-deps.sh`, `pg_adapter`, probes; summary in `target/verify/summary.txt` | Docker, wrangler |
@@ -98,7 +101,7 @@ only when `SPIKE0006_OUT=<dir>` is set, relative to the workspace root.
 
 ## Format, lint and the dependency audit
 
-The commands of the `lint` and `deny` jobs. The first two need the `clippy` and `rustfmt` components of the stable
+The commands of the `lint` and `deny` jobs. The first two need the `clippy` and `rustfmt` components of the pinned
 toolchain, and the last needs `cargo-deny` 0.20 on `PATH` (installing it is your decision); it fetches the RustSec
 advisory database, so it needs the network.
 

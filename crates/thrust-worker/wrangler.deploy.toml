@@ -7,7 +7,11 @@
 # It is wrangler.toml's twin and not its copy. What differs, on purpose:
 #   * no `[build]`: the deploy job that holds the credentials builds nothing, the build job made `build/worker/` and attested it;
 #   * the ids and names are markers, one set per environment (staging, production);
-#   * the probe-only bindings (`SS` Secrets Store, `EMAIL` send_email, `RL` rate limit) are left out: only the probe routes read them;
+#   * the probe-only bindings (`SS` Secrets Store, `RL` rate limit) are left out: only the probe routes read them. `EMAIL` is NOT probe-only
+#     any more: the password reset sends through it (E3), so it is here, and here it is restricted to the one sender the environment is
+#     configured with (`allowed_sender_addresses`), which the binding itself enforces whatever the code asks for;
+#   * three variables that only a deployment sets, and a development run leaves out so that it has no mail service unless a pass gives it
+#     one: `THRUST_EMAIL_FROM`, `THRUST_EMAIL_FROM_NAME` and `THRUST_PUBLIC_BASE_URL` (the links in emails point there);
 #   * the queue consumer names a dead-letter queue, which wrangler.toml does not: a message that fails its retries is kept, not dropped.
 # `.github/scripts/tests/test-render-wrangler.sh` compares the binding sets of the two files, so a binding added to one cannot be
 # forgotten in the other.
@@ -32,6 +36,18 @@ crons = ["* * * * *"]   # outbox sweeper (ADR-0046 / ADR-0072)
 # frontend talks to this Worker. It is a variable of each environment, with no default, so that turning it on for production is a
 # decision somebody made and not a copy of staging's value.
 THRUST_CSRF_ENFORCE = "__CSRF_ENFORCE__"
+# The password reset by email (E3, D-041). The sender is an address on a domain the account has Email Sending enabled for; it is a variable
+# of each environment with no default, like the line above, so that an environment that mails has chosen the address it mails from. The
+# links in the mails start with the environment's own public origin (the variable the smoke also uses): never a request's Host.
+THRUST_EMAIL_FROM = "__EMAIL_FROM__"
+THRUST_EMAIL_FROM_NAME = "Thrust"
+THRUST_PUBLIC_BASE_URL = "__PUBLIC_BASE_URL__"
+
+# The Email Sending binding (`EMAIL`). Its senders are restricted to the configured one: a Worker that were made to send from another
+# address, by a bug or by a variable that was changed, is refused by the binding, not by the Worker's own code.
+[[send_email]]
+name = "EMAIL"
+allowed_sender_addresses = ["__EMAIL_FROM__"]
 
 [[hyperdrive]]
 binding = "HYPERDRIVE"

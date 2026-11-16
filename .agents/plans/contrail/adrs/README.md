@@ -59,6 +59,7 @@ pending — linked to its `Q-<adr#>` row in `../QUESTIONS.md`. New ADRs take the
 | 0100 | ci | [Build matrix per adapter set](ci/0100-build-matrix-per-adapter-set.md) | accepted | |
 | 0101 | ci | [CI supply chain](ci/0101-ci-supply-chain.md) | accepted | |
 | 0110 | cd | [Deploy pipeline](cd/0110-deploy-pipeline.md) | accepted | |
+| 0111 | cd | [One hostname for every target: edge Worker, Worker Previews, Flagship](cd/0111-one-hostname-n-targets.md) | accepted | Q-0111.1, Q-0111.2 |
 | 0120 | test/models | [Test model and oracle](test/models/0120-test-model-and-oracle.md) | accepted | |
 | 0121 | test/patterns | [Port contract tests: one suite, N adapters](test/patterns/0121-port-contract-tests-one-suite-n-adapters.md) | accepted | |
 | 0122 | test/patterns | [v1 oracle and parity tests](test/patterns/0122-v1-oracle-and-parity-tests.md) | accepted | |

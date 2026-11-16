@@ -172,12 +172,31 @@ round-30 "Environments" bullet.
   Administration permission. `release.yml` did not start on the draft: GitHub runs no workflow for a draft release's `created`
   event. release-plz.yml now dispatches `release.yml` on the tag it made, so the run's ref is still the tag.
 
+## Update — one hostname, N targets (2026-11-16)
+
+ADR-0111 changes where each kind of deploy lands. The pipeline above is unchanged in kind: an attested bundle, the
+expand migration, the smoke with its control, the manual gates and rollback.
+
+* **Production** deploys as before (`wrangler deploy` at 100 %, the smoke, `wrangler rollback`). It is reached only
+  through `thrust-edge` on `thrust.sow.foo`, so its smoke goes through the edge. A contract migration
+  (`NNNN_contract_*.sql`, ADR-0042's 2026-11-16 update) runs only in this deploy, and only when no older shared target
+  is live.
+* **Staging is no longer a Worker of its own.** The release candidate deploys as a Preview of the production Worker on
+  production's data (the `shared` profile), named after its release, and `alias-staging` points at it.
+  * It migrates production's database only when it is the newest shared target and its migrations changed, and only
+    after a reviewer approves (the owner, 2026-11-15).
+  * Its smoke compares the Preview deployment id, because a Preview leaves the version tag empty (`research/0016`).
+* **`dev-*` targets** (pull requests) deploy as isolated Previews. That answers Q-0092.2's preview environments.
+* **`thrust-edge`** deploys only with a release, at 100 %, with its own smoke and rollback.
+* **Retirement:** `thrust-staging`, `thrust-staging.sow.foo` and staging's own data go once the first release target
+  has passed its drill.
+
 ## Open Questions
 
 * Q-0110 — pipeline shape. Answered: round 24, superseded in part by round 29, implemented in round 30.
 * Q-0110.1 — Health-gate signal and thresholds for auto-promotion/rollback. Answered: round 24's gates went with the rollout stages in round 29; the gate is the smoke and its control.
 * Q-0110.2 — Migration runner: who runs expand migrations on Hyperdrive/D1/DO-SQLite (ties to Q-0042)? Answered: CI (round 16), through the Access tunnel, only when migration files changed (round 30).
-* Q-0092.2 — preview environments. Open.
+* Q-0092.2 — preview environments. Answered by ADR-0111 (2026-11-16): `dev-*` Previews with isolated data.
 
 ## More Information
 

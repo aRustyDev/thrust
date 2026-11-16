@@ -15,6 +15,7 @@
 
 mod assets;
 mod counting;
+mod ledger;
 mod model;
 mod tls;
 
@@ -45,6 +46,16 @@ async fn env() -> Env {
     thrust_adapters_postgres::migrate(&raw).await.unwrap();
     drop(raw);
     Env { db: Arc::new(PgDatabase::new(conn.clone())), conn, _container: container }
+}
+
+/// What `migrate` did on every start before the ledger (issue #195), and what it still does to a database that has none: run every
+/// file. The upgrade-path tests below make a database from before migration N (on one `env()` migrated, or from files applied by
+/// hand) and then expect the file to run again, so they forget the ledger first. Every file run again over a schema that already has
+/// them is exactly what the ledger's baseline does, once, to the databases of before the ledger, so these tests go on proving that safe.
+async fn rerun_every_file(raw: &tokio_postgres::Client) {
+    raw.batch_execute("DROP TABLE IF EXISTS thrust_schema_migrations").await.unwrap();
+    let outcome = thrust_adapters_postgres::migrate(raw).await.unwrap();
+    assert!(matches!(outcome, thrust_adapters_postgres::MigrateOutcome::Baseline { .. }), "{outcome:?}");
 }
 
 fn new_id() -> Uuid {
@@ -173,7 +184,8 @@ async fn membership_distinguishes_member_non_member_and_other_tenant() {
 
 /// A database created before issue #36 has projects and member rows but no workspaces. `migrate` backfills them (slug
 /// = the id as text, a workspace member for every member row) before it puts the foreign keys on, and applying it a
-/// second time changes nothing (`migrate` runs every file on every start). A pinned regression for the upgrade path
+/// second time changes nothing (`migrate` ran every file on every start before the ledger, and still does once, on a database
+/// that has none: `rerun_every_file`). A pinned regression for the upgrade path
 /// of a stage-2 database; every other test here starts from an empty one.
 #[tokio::test]
 async fn migration_0003_backfills_a_database_created_before_it() {
@@ -194,8 +206,8 @@ async fn migration_0003_backfills_a_database_created_before_it() {
     )
     .await
     .unwrap();
-    thrust_adapters_postgres::migrate(&raw).await.unwrap();
-    thrust_adapters_postgres::migrate(&raw).await.unwrap();
+    rerun_every_file(&raw).await;
+    rerun_every_file(&raw).await;
     drop(raw);
     let db = PgDatabase::new(conn);
     let by_id = WorkspaceSlug::new(ws.0.to_string());
@@ -416,12 +428,12 @@ async fn migration_0007_gives_existing_keys_version_1_and_is_idempotent() {
     };
     assert!(raw.query("SELECT hash_version FROM api_keys", &[]).await.is_err(), "control: there is no such column yet");
 
-    thrust_adapters_postgres::migrate(&raw).await.unwrap();
+    rerun_every_file(&raw).await;
     assert_eq!(versions().await, [1, 1], "every key made before the column is version 1");
     // a key moved to another version keeps it when the migration runs again
     raw.execute("UPDATE api_keys SET hash_version = 2 WHERE id = $1", &[&a]).await.unwrap();
-    thrust_adapters_postgres::migrate(&raw).await.unwrap();
-    thrust_adapters_postgres::migrate(&raw).await.unwrap();
+    rerun_every_file(&raw).await;
+    rerun_every_file(&raw).await;
     assert_eq!(versions().await, [2, 1], "applying the file again does not reset a version");
 
     // the column's default, NOT NULL and CHECK: a key inserted without a version is version 1; none, zero or a
@@ -475,7 +487,8 @@ async fn migration_0007_gives_existing_keys_version_1_and_is_idempotent() {
     assert_eq!(checks, 1);
 }
 
-/// `migrate` runs every file on every start, so 0005 must be re-runnable and must not touch the rows it made.
+/// `migrate` ran every file on every start before the ledger (#195), and the ledger's baseline runs every file once more on a database
+/// from before it, so 0005 must be re-runnable and must not touch the rows it made.
 #[tokio::test]
 async fn migration_0005_is_idempotent_and_keeps_its_rows() {
     let env = env().await;
@@ -484,8 +497,8 @@ async fn migration_0005_is_idempotent_and_keeps_its_rows() {
     raw.execute("INSERT INTO users (id, email, is_active) VALUES ($1, 'keep@example.test', false)", &[&user.0])
         .await
         .unwrap();
-    thrust_adapters_postgres::migrate(&raw).await.unwrap();
-    thrust_adapters_postgres::migrate(&raw).await.unwrap();
+    rerun_every_file(&raw).await;
+    rerun_every_file(&raw).await;
     let row = raw.query_one("SELECT email, is_active FROM users WHERE id = $1", &[&user.0]).await.unwrap();
     assert_eq!((row.get::<_, String>(0), row.get::<_, bool>(1)), ("keep@example.test".to_string(), false));
 }
@@ -622,8 +635,8 @@ async fn migration_0008_is_idempotent_and_keeps_its_rows() {
         .await
         .unwrap();
     let raw = env.conn.raw().await.unwrap();
-    thrust_adapters_postgres::migrate(&raw).await.unwrap();
-    thrust_adapters_postgres::migrate(&raw).await.unwrap();
+    rerun_every_file(&raw).await;
+    rerun_every_file(&raw).await;
     assert_eq!(env.db.profile(user).await.unwrap().unwrap().first_name, "Kept");
 }
 
@@ -778,9 +791,9 @@ async fn migration_0009_upgrades_a_database_that_has_workspaces_and_members() {
     raw.execute("INSERT INTO workspace_members (workspace_id, user_id) VALUES ($1, $2), ($1, $3)", &[&ws, &u1, &u2])
         .await
         .unwrap();
-    thrust_adapters_postgres::migrate(&raw).await.unwrap();
+    rerun_every_file(&raw).await;
     let first = raw.query("SELECT user_id, id FROM workspace_members ORDER BY user_id", &[]).await.unwrap();
-    thrust_adapters_postgres::migrate(&raw).await.unwrap();
+    rerun_every_file(&raw).await;
     let again = raw.query("SELECT user_id, id FROM workspace_members ORDER BY user_id", &[]).await.unwrap();
     let ids = |rows: &[tokio_postgres::Row]| {
         rows.iter().map(|r| (r.get::<_, Uuid>(0), r.get::<_, Uuid>(1))).collect::<Vec<_>>()
@@ -1016,7 +1029,7 @@ async fn migrations_0010_and_0011_upgrade_a_database_that_has_projects() {
         .await
         .unwrap();
     }
-    thrust_adapters_postgres::migrate(&raw).await.unwrap();
+    rerun_every_file(&raw).await;
     async fn state(raw: &tokio_postgres::Client) -> Vec<(Uuid, String, String, Timestamp)> {
         raw.query("SELECT id, identifier, network, created_at FROM projects ORDER BY id", &[])
             .await
@@ -1026,7 +1039,7 @@ async fn migrations_0010_and_0011_upgrade_a_database_that_has_projects() {
             .collect()
     }
     let first = state(&raw).await;
-    thrust_adapters_postgres::migrate(&raw).await.unwrap();
+    rerun_every_file(&raw).await;
     assert_eq!(first, state(&raw).await, "a second run changed the projects");
     for (id, identifier, network, _) in &first {
         assert_eq!(identifier, &default_project_identifier(ProjectId(*id)), "the backfill and the helper disagree");
@@ -1490,7 +1503,7 @@ async fn migration_0012_upgrades_a_database_that_has_projects_members_and_settin
     .await
     .unwrap();
 
-    thrust_adapters_postgres::migrate(&raw).await.unwrap();
+    rerun_every_file(&raw).await;
     async fn state(raw: &tokio_postgres::Client) -> (Vec<(Uuid, Uuid)>, Vec<(Uuid, Uuid, f64, serde_json::Value)>) {
         let members = raw.query("SELECT user_id, id FROM project_members ORDER BY user_id", &[]).await.unwrap();
         let props = raw
@@ -1506,7 +1519,7 @@ async fn migration_0012_upgrades_a_database_that_has_projects_members_and_settin
         )
     }
     let first = state(&raw).await;
-    thrust_adapters_postgres::migrate(&raw).await.unwrap();
+    rerun_every_file(&raw).await;
     assert_eq!(first, state(&raw).await, "a second run changed the members or their settings");
     assert_ne!(first.0[0].1, first.0[1].1, "two members share an id");
     assert_eq!(
@@ -1719,14 +1732,14 @@ async fn migration_0015_makes_the_unique_indexes_partial_once_and_a_restart_keep
     for name in indexes {
         assert!(!def(name).await.contains("deleted_at"), "{name} should be plain before 0015");
     }
-    thrust_adapters_postgres::migrate(&raw).await.unwrap();
+    rerun_every_file(&raw).await;
     for name in indexes {
         assert!(def(name).await.contains("deleted_at IS NULL"), "{name} was not replaced");
     }
 
     // a restart: every file runs again, and the indexes are the same objects
     let before = [oid(indexes[0]).await, oid(indexes[1]).await];
-    thrust_adapters_postgres::migrate(&raw).await.unwrap();
+    rerun_every_file(&raw).await;
     raw.batch_execute(thrust_adapters_postgres::MIGRATION_0012).await.unwrap();
     assert_eq!([oid(indexes[0]).await, oid(indexes[1]).await], before, "a restart made an index again");
     for name in indexes {
@@ -1951,13 +1964,13 @@ async fn migration_0015_replaces_the_state_name_constraint_once_and_a_restart_ke
     .unwrap();
     assert_eq!(constraints().await, 1);
     assert!(!index_def().await.contains("deleted_at"));
-    thrust_adapters_postgres::migrate(&raw).await.unwrap();
+    rerun_every_file(&raw).await;
     assert!(index_def().await.contains("deleted_at IS NULL"), "the constraint was not replaced");
     assert_eq!(constraints().await, 0);
 
     // a restart makes nothing again
     let before = oid().await;
-    thrust_adapters_postgres::migrate(&raw).await.unwrap();
+    rerun_every_file(&raw).await;
     raw.batch_execute(thrust_adapters_postgres::MIGRATION_0012).await.unwrap();
     assert_eq!(oid().await, before, "a restart made the index again");
     assert_eq!(constraints().await, 0, "a restart made the constraint again");
@@ -2257,7 +2270,7 @@ async fn migration_0013_upgrades_a_database_that_has_work_items() {
     .await
     .unwrap();
 
-    thrust_adapters_postgres::migrate(&raw).await.unwrap();
+    rerun_every_file(&raw).await;
     async fn state(raw: &tokio_postgres::Client) -> Vec<String> {
         let r = raw
             .query_one(
@@ -2270,7 +2283,7 @@ async fn migration_0013_upgrades_a_database_that_has_work_items() {
         (0..8).map(|i| r.get::<_, Option<String>>(i).unwrap_or_else(|| "NULL".into())).collect()
     }
     let first = state(&raw).await;
-    thrust_adapters_postgres::migrate(&raw).await.unwrap();
+    rerun_every_file(&raw).await;
     assert_eq!(first, state(&raw).await, "a second run changed the work item");
     assert_eq!(&first[..6], ["none", "<p></p>", "NULL", "NULL", "NULL", "NULL"]);
     assert_eq!(
@@ -2803,7 +2816,7 @@ async fn migration_0014_adds_the_history_table_to_a_database_that_has_work_items
         "no history table yet"
     );
 
-    thrust_adapters_postgres::migrate(&raw).await.unwrap();
+    rerun_every_file(&raw).await;
     async fn rows(raw: &tokio_postgres::Client) -> Vec<String> {
         let rows = raw.query("SELECT seq, id::text, event_id::text, ordinal, created_at::text FROM work_item_activities ORDER BY seq", &[]).await.unwrap();
         rows.iter()
@@ -2834,8 +2847,8 @@ async fn migration_0014_adds_the_history_table_to_a_database_that_has_work_items
     let raw = conn.raw().await.unwrap();
     let written = rows(&raw).await;
     assert_eq!(written.len(), 2);
-    thrust_adapters_postgres::migrate(&raw).await.unwrap();
-    thrust_adapters_postgres::migrate(&raw).await.unwrap();
+    rerun_every_file(&raw).await;
+    rerun_every_file(&raw).await;
     assert_eq!(rows(&raw).await, written, "a second run changed the rows");
     let kinds = raw
         .query(
@@ -3973,13 +3986,13 @@ async fn migration_0015_replaces_the_label_name_constraint_once_and_a_restart_ke
     .unwrap();
     assert_eq!(constraints().await, 1);
     assert!(!index_def().await.contains("deleted_at"));
-    thrust_adapters_postgres::migrate(&raw).await.unwrap();
+    rerun_every_file(&raw).await;
     assert!(index_def().await.contains("deleted_at IS NULL"), "the constraint was not replaced");
     assert_eq!(constraints().await, 0);
 
     // a restart makes nothing again
     let before = oid().await;
-    thrust_adapters_postgres::migrate(&raw).await.unwrap();
+    rerun_every_file(&raw).await;
     raw.batch_execute(thrust_adapters_postgres::MIGRATION_0012).await.unwrap();
     assert_eq!(oid().await, before, "a restart made the index again");
     assert_eq!(constraints().await, 0, "a restart made the constraint again");
@@ -3994,10 +4007,16 @@ fn oracle_fixture() -> SeedFixture {
 }
 
 /// Each table of the `public` schema and how many rows it has, by name: the schema as the migrations made it, so that a table a later
-/// migration adds is counted without this test being told.
+/// migration adds is counted without this test being told. All but the migration ledger (#195): it says which migrations made the
+/// schema and is not data, so `reset` keeps it (`ledger::a_reset_keeps_the_ledger_and_the_next_migrate_applies_nothing`).
 async fn row_counts(raw: &tokio_postgres::Client) -> Vec<(String, i64)> {
-    let tables =
-        raw.query("SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename", &[]).await.unwrap();
+    let tables = raw
+        .query(
+            "SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename <> $1 ORDER BY tablename",
+            &[&thrust_adapters_postgres::ledger::LEDGER_TABLE],
+        )
+        .await
+        .unwrap();
     let mut out = Vec::new();
     for t in tables {
         let name: String = t.get(0);
