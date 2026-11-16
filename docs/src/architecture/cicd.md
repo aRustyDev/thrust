@@ -141,7 +141,9 @@ its base branch. Nothing calls it, so it is a tool to run by hand.
   `contract-all.sh` run serially does not apply.
 - **A cell.** `contract-cell.yml` prepares the pass through `contract-pass-tools`, which checks that `curl`, `openssl`, `lsof`, `pgrep` and `docker` exist (and `nc` for the native `mail` cell, which waits for its Mailpit with it, `uv` for `oracle`, and `node` and `pnpm` for `e2e`), runs
   `scripts/contract.sh <target> <pass>` with no pipe so the step's status is the script's, and uploads a marker named
-  for the cell. The script's target guard and count guard apply as they do locally.
+  for the cell. The script's target guard and count guard apply as they do locally. Every port the script binds (the target, the mock
+  identity provider, Postgres, Mailpit) is drawn by `scripts/lib/ports.sh` from below the kernel's outgoing-connection range, which
+  the script prints first (D-20 in the testing status).
 - **The mail cells.** `native-memory mail` starts a Mailpit container (pinned, pulled from Docker Hub as `postgres` is) beside the native server, which is
   given `THRUST_SMTP_*` and `THRUST_PUBLIC_BASE_URL`, and runs `tests/mail.rs`: the password reset by email through a mail server written by someone else.
   `worker-memory mail` and `worker-cf mail` (E3) run the same three tests against the Worker built for wasm32 and run by `wrangler dev`, whose
