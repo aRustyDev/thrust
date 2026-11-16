@@ -14,6 +14,7 @@ pending — linked to its `Q-<adr#>` row in `../QUESTIONS.md`. New ADRs take the
 | 0006 | architecture | [Runtime language and framework](architecture/0006-runtime-language-and-framework.md) | accepted | |
 | 0007 | architecture | [Adapter selection mechanism](architecture/0007-adapter-selection-mechanism.md) | accepted | |
 | 0008 | architecture | [Feature flags port](architecture/0008-feature-flags-port.md) | accepted | |
+| 0009 | architecture | [Crate directory layout](architecture/0009-crate-directory-layout.md) | accepted | |
 | 0010 | ui | [Service-layer adaptation](ui/0010-service-layer-adaptation.md) | superseded by 0034 | |
 | 0011 | ui | [Static asset hosting](ui/0011-static-asset-hosting.md) | accepted | |
 | 0012 | ui | [Editor and i18n reuse](ui/0012-editor-and-i18n-reuse.md) | accepted | |

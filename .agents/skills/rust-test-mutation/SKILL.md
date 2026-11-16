@@ -12,7 +12,7 @@ Coverage says a line ran; mutation says whether a test would fail if the line we
 
 ## Ground rules
 - Run tests with **cargo-nextest**. Some suites parse plain `cargo test` output (`test result:`, exit 101): do not convert them without migrating exit-code and pass-count handling (nextest exits 100 on failure `[re-run]`). `cargo test --doc` is the one libtest call.
-- Tests are named by category (`prop_`, `model_`, `parity_`, `oracle_`, `fuzz_replay_`, `e2e_`); nextest routes on the prefix.
+- Tests are named by category (`prop_`, `model_`, `parity_`, `oracle_`, `fuzz_replay_`, `e2e_`, and `regression_` for a pinned regression); nextest routes on the prefix.
 - No `--retries`, `--flaky-result`, `NEXTEST_RETRIES` or `NEXTEST_FLAKY_RESULT`. A retry follows a failure, so a test that catches a mutant, then passes on retry, is green and the mutant is reported MISSED `[derived]`; `--flaky-result pass` (or the env var) overrides a per-test `flaky-result = "fail"` `[re-run]`. Keep `retries = 0` in the `mutants` profile. A failing test is a finding: never delete, weaken, `#[ignore]`, regenerate or lengthen it to get green.
 - Tests are hermetic, deterministic and live in the crate they test. Never commit `mutants.out*`.
 - `cargo install cargo-mutants` and CI installers are the user's decision: propose and wait.

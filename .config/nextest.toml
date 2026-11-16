@@ -2,7 +2,9 @@
 # Verified with cargo-nextest 0.9.140; the 0.9.131 floor is from the source archive and was not re-run.
 #
 # Profiles:  default (fast hermetic loop) | ci | deep | oracle | mutants
-# Test-name prefixes route tests:  prop_  model_  oracle_  (parity_ and fuzz_replay_ run by default)
+# Test-name prefixes route tests:  prop_  model_  oracle_  (parity_, fuzz_replay_ and regression_ run by default)
+# regression_ = a pinned regression (AGENTS.md rule 9). It follows a category prefix (model_regression_...) or rstest's
+# case_<n>_, so select it with test(/regression_/), never \bregression_.
 # oracle_ = compared with the TypeScript (or Python) oracle: live through Node, or against its generated, git-ignored
 # output (tools/spike-0006/gen-all.sh). Either way it needs the oracle, so it is opt-in.
 # Filters use single-quoted TOML strings so `\b` reaches the regex engine unchanged.

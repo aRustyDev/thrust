@@ -1,11 +1,12 @@
 #!/bin/sh
-# Run any command with the rustup *stable* toolchain first on PATH.
+# Run any command with the rustup toolchain that rust-toolchain.toml pins first on PATH (the one CI builds with:
+# .github/scripts/toolchain-channel.sh reads it for both).
 #
 # Two environment faults on the dev machine (measured 2026-10-18), both fixed here:
 #
-# 1. `cargo`/`rustc` on PATH are Homebrew's 1.98.1, which ships no wasm32 std, while rustup's
-#    stable (1.99.0) has the wasm32-unknown-unknown target. `rustup run stable cargo` does NOT
-#    fix it: cargo still resolves a bare `rustc` through PATH and finds Homebrew's.
+# 1. `cargo`/`rustc` on PATH are Homebrew's 1.98.1, which ships no wasm32 std and ignores rust-toolchain.toml, while
+#    rustup's toolchains have the wasm32-unknown-unknown target. `rustup run <toolchain> cargo` does NOT fix it: cargo
+#    still resolves a bare `rustc` through PATH and finds Homebrew's.
 #    Fix = put the rustup toolchain bin dir first.
 #
 # 2. rustup 1.99.0's `rust-lld` aborts at link time with
@@ -17,7 +18,12 @@
 #   scripts/rs cargo check --target wasm32-unknown-unknown
 #   scripts/rs worker-build --release
 set -eu
-rustc_path="$(rustup which --toolchain stable rustc)"
+root="$(cd "$(dirname "$0")/.." && pwd)"
+channel="$("$root/.github/scripts/toolchain-channel.sh")"
+if ! rustc_path="$(rustup which --toolchain "$channel" rustc 2> /dev/null)"; then
+  echo "scripts/rs: Rust $channel (rust-toolchain.toml) is not installed: rustup toolchain install $channel" >&2
+  exit 1
+fi
 bindir="$(dirname "$rustc_path")"
 libdir="$(dirname "$bindir")/lib"
 PATH="$bindir:$HOME/.cargo/bin:$PATH"

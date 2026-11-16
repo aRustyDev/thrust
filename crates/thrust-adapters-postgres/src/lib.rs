@@ -18,6 +18,9 @@
 #[cfg(feature = "native")]
 pub mod tls;
 
+/// Which migration files a database has had applied (#195), and the arithmetic of what a build may still apply.
+pub mod ledger;
+
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 
@@ -46,24 +49,263 @@ pub const MIGRATION_0015: &str = include_str!("../migrations/0015_v1_surface.sql
 pub const MIGRATION_0016: &str = include_str!("../migrations/0016_assets.sql");
 pub const MIGRATION_0017: &str = include_str!("../migrations/0017_password_resets.sql");
 
-pub async fn migrate(client: &Client) -> Result<(), tokio_postgres::Error> {
-    client.batch_execute(MIGRATION_0001).await?;
-    client.batch_execute(MIGRATION_0002).await?;
-    client.batch_execute(MIGRATION_0003).await?;
-    client.batch_execute(MIGRATION_0004).await?;
-    client.batch_execute(MIGRATION_0005).await?;
-    client.batch_execute(MIGRATION_0006).await?;
-    client.batch_execute(MIGRATION_0007).await?;
-    client.batch_execute(MIGRATION_0008).await?;
-    client.batch_execute(MIGRATION_0009).await?;
-    client.batch_execute(MIGRATION_0010).await?;
-    client.batch_execute(MIGRATION_0011).await?;
-    client.batch_execute(MIGRATION_0012).await?;
-    client.batch_execute(MIGRATION_0013).await?;
-    client.batch_execute(MIGRATION_0014).await?;
-    client.batch_execute(MIGRATION_0015).await?;
-    client.batch_execute(MIGRATION_0016).await?;
-    client.batch_execute(MIGRATION_0017).await
+/// One migration file of the adapter: its file name, which is what the ledger records it by, and its SQL.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Migration {
+    pub file: &'static str,
+    pub sql: &'static str,
+}
+
+/// Every migration file, in the order they were written (their names' order). A file added to `migrations/` and not here is not
+/// applied, and `ledger`'s test of this list against the directory fails.
+pub const MIGRATIONS: [Migration; 17] = [
+    Migration { file: "0001_init.sql", sql: MIGRATION_0001 },
+    Migration { file: "0002_sequence_tenant_key.sql", sql: MIGRATION_0002 },
+    Migration { file: "0003_workspaces.sql", sql: MIGRATION_0003 },
+    Migration { file: "0004_sessions.sql", sql: MIGRATION_0004 },
+    Migration { file: "0005_identity.sql", sql: MIGRATION_0005 },
+    Migration { file: "0006_search.sql", sql: MIGRATION_0006 },
+    Migration { file: "0007_api_key_hash_version.sql", sql: MIGRATION_0007 },
+    Migration { file: "0008_user_profiles.sql", sql: MIGRATION_0008 },
+    Migration { file: "0009_workspace_details.sql", sql: MIGRATION_0009 },
+    Migration { file: "0010_project_details.sql", sql: MIGRATION_0010 },
+    Migration { file: "0011_workspace_user_settings.sql", sql: MIGRATION_0011 },
+    Migration { file: "0012_projects.sql", sql: MIGRATION_0012 },
+    Migration { file: "0013_work_item_details.sql", sql: MIGRATION_0013 },
+    Migration { file: "0014_work_item_history.sql", sql: MIGRATION_0014 },
+    Migration { file: "0015_v1_surface.sql", sql: MIGRATION_0015 },
+    Migration { file: "0016_assets.sql", sql: MIGRATION_0016 },
+    Migration { file: "0017_password_resets.sql", sql: MIGRATION_0017 },
+];
+
+/// What `migrate` may do, beyond applying what is missing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MigrateOptions {
+    /// Apply contract migrations (`NNNN_contract_*.sql`, [`ledger::is_contract`]). `false` refuses a run that has one to apply, and
+    /// applies nothing: a deploy of a target that is not production must not take away what an older version still uses (#195).
+    pub allow_contract: bool,
+}
+
+impl Default for MigrateOptions {
+    fn default() -> Self {
+        MigrateOptions { allow_contract: true }
+    }
+}
+
+/// What a run of `migrate` did.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MigrateOutcome {
+    /// The database had no ledger: every file ran once, and all of them were recorded, in one transaction.
+    Baseline { applied: usize },
+    /// These files were missing, and each was applied and recorded in its own transaction, in this order.
+    Applied { files: Vec<String> },
+    /// Nothing was missing.
+    Current,
+    /// The database has files this build does not know, and every file it does know: the build is older, and applied nothing.
+    Older { unknown: Vec<String> },
+}
+
+impl std::fmt::Display for MigrateOutcome {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            MigrateOutcome::Baseline { applied } => {
+                write!(f, "no ledger yet: ran all {applied} files once and recorded them")
+            }
+            MigrateOutcome::Applied { files } => write!(f, "applied {}: {}", files.len(), files.join(", ")),
+            MigrateOutcome::Current => write!(f, "up to date, nothing applied"),
+            MigrateOutcome::Older { unknown } => {
+                write!(
+                    f,
+                    "this build is older than the schema (it does not know {}), nothing applied",
+                    unknown.join(", ")
+                )
+            }
+        }
+    }
+}
+
+/// Why `migrate` refused, or failed.
+#[derive(Debug)]
+pub enum MigrateError {
+    /// The database said no.
+    Db(tokio_postgres::Error),
+    /// The ledger and the build cannot be reconciled (a [`ledger::Plan`] that is `Diverged`, `OutOfOrder` or `Changed`): nothing was
+    /// applied.
+    Refused(ledger::Plan),
+    /// Contract migrations were to be applied and [`MigrateOptions::allow_contract`] is off: nothing was applied.
+    ContractRefused(Vec<String>),
+}
+
+impl std::fmt::Display for MigrateError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            MigrateError::Db(e) => write!(f, "{e}"),
+            MigrateError::Refused(ledger::Plan::Changed { files }) => write!(
+                f,
+                "refused: {} recorded with another checksum than this build's (a migration was edited after it ran)",
+                files.join(", ")
+            ),
+            MigrateError::Refused(ledger::Plan::Diverged { pending, unknown }) => write!(
+                f,
+                "refused: the database has {}, which this build does not know, and lacks {}: the build is from a branch that \
+                 did not have what was applied since",
+                unknown.join(", "),
+                pending.join(", ")
+            ),
+            MigrateError::Refused(ledger::Plan::OutOfOrder { pending, newest_applied }) => write!(
+                f,
+                "refused: {} would be applied after {newest_applied}, which sorts after it",
+                pending.join(", ")
+            ),
+            MigrateError::Refused(plan) => write!(f, "refused: {plan:?}"),
+            MigrateError::ContractRefused(files) => {
+                write!(f, "refused: contract migrations to apply ({}) and contract migrations are not allowed here", files.join(", "))
+            }
+        }
+    }
+}
+
+impl std::error::Error for MigrateError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            MigrateError::Db(e) => Some(e),
+            _ => None,
+        }
+    }
+}
+
+impl From<tokio_postgres::Error> for MigrateError {
+    fn from(e: tokio_postgres::Error) -> Self {
+        MigrateError::Db(e)
+    }
+}
+
+/// The session-level advisory lock `migrate` holds while it reads and writes the ledger, so that two deploys at once take turns
+/// instead of both applying the same file. The value is arbitrary and only has to be this adapter's own: "thrustMG".
+const MIGRATE_LOCK: i64 = 0x7468_7275_7374_4d47;
+
+/// The ledger table (see [`ledger`]). `IF NOT EXISTS` only for the race the lock already rules out.
+const LEDGER_DDL: &str = "CREATE TABLE IF NOT EXISTS thrust_schema_migrations (\
+     file text PRIMARY KEY, sha256 text NOT NULL, applied_at timestamptz NOT NULL DEFAULT now())";
+
+/// The files a build carries, with their checksums, as [`ledger::plan`] takes them.
+pub fn carried(files: &[Migration]) -> Vec<ledger::Entry> {
+    files.iter().map(|m| ledger::Entry { file: m.file.to_string(), sha256: ledger::sha256_hex(m.sql) }).collect()
+}
+
+/// Apply the adapter's migrations: every file that the database's ledger does not have, each once (issue #195). Contract migrations
+/// are allowed; [`migrate_with`] says otherwise.
+pub async fn migrate(client: &Client) -> Result<MigrateOutcome, MigrateError> {
+    migrate_with(client, &MIGRATIONS, MigrateOptions::default()).await
+}
+
+/// [`migrate`] with the list of files and the options given. The list is a parameter so that the tests can carry files the
+/// adapter does not have (a newer one, an edited one, a contract one); everything else passes [`MIGRATIONS`].
+///
+/// A database without the ledger (every database before #195) gets the baseline: every file runs once, as `migrate` used to do on
+/// every start (the files were written to be run again), and all of them are recorded, in one transaction. After that, each missing
+/// file runs in its own transaction together with its ledger row, so a file that fails leaves neither its changes nor its row.
+pub async fn migrate_with(
+    client: &Client,
+    files: &[Migration],
+    options: MigrateOptions,
+) -> Result<MigrateOutcome, MigrateError> {
+    client.execute("SELECT pg_advisory_lock($1)", &[&MIGRATE_LOCK]).await?;
+    let result = migrate_locked(client, files, options).await;
+    // The lock also goes when the session ends; a caller that keeps the connection (the tests) needs it given back.
+    let _ = client.execute("SELECT pg_advisory_unlock($1)", &[&MIGRATE_LOCK]).await;
+    result
+}
+
+/// What [`migrate_with`] would do, without doing it: whether the database has a ledger, and the plan. A database without one
+/// plans every file (the baseline). Nothing is written, not even the ledger table.
+pub async fn plan_migrations(
+    client: &Client,
+    files: &[Migration],
+) -> Result<(bool, ledger::Plan), tokio_postgres::Error> {
+    let present = ledger_present(client).await?;
+    let recorded = if present { read_ledger(client).await? } else { Vec::new() };
+    Ok((present, ledger::plan(&carried(files), &recorded)))
+}
+
+async fn ledger_present(client: &Client) -> Result<bool, tokio_postgres::Error> {
+    client.query_one("SELECT to_regclass('thrust_schema_migrations') IS NOT NULL", &[]).await?.try_get(0)
+}
+
+async fn read_ledger(client: &Client) -> Result<Vec<ledger::Entry>, tokio_postgres::Error> {
+    client
+        .query("SELECT file, sha256 FROM thrust_schema_migrations", &[])
+        .await?
+        .iter()
+        .map(|row| Ok(ledger::Entry { file: row.try_get(0)?, sha256: row.try_get(1)? }))
+        .collect()
+}
+
+async fn record(client: &Client, m: &Migration) -> Result<(), tokio_postgres::Error> {
+    client
+        .execute(
+            "INSERT INTO thrust_schema_migrations (file, sha256) VALUES ($1, $2)",
+            &[&m.file, &ledger::sha256_hex(m.sql)],
+        )
+        .await
+        .map(|_| ())
+}
+
+/// `body` inside `BEGIN` .. `COMMIT`, or `ROLLBACK` when it fails.
+async fn in_transaction<F>(client: &Client, body: F) -> Result<(), tokio_postgres::Error>
+where
+    F: std::future::Future<Output = Result<(), tokio_postgres::Error>>,
+{
+    client.batch_execute("BEGIN").await?;
+    match body.await {
+        Ok(()) => client.batch_execute("COMMIT").await,
+        Err(e) => {
+            let _ = client.batch_execute("ROLLBACK").await;
+            Err(e)
+        }
+    }
+}
+
+async fn migrate_locked(
+    client: &Client,
+    files: &[Migration],
+    options: MigrateOptions,
+) -> Result<MigrateOutcome, MigrateError> {
+    let (present, plan) = plan_migrations(client, files).await?;
+    let (pending, contract) = match plan {
+        ledger::Plan::Apply { pending, contract } => (pending, contract),
+        ledger::Plan::Older { unknown } => return Ok(MigrateOutcome::Older { unknown }),
+        refused => return Err(MigrateError::Refused(refused)),
+    };
+    if !options.allow_contract && !contract.is_empty() {
+        return Err(MigrateError::ContractRefused(contract));
+    }
+    // In the order the files were written (their names'), whatever the order of the list.
+    let mut in_order: Vec<&Migration> = files.iter().collect();
+    in_order.sort_by_key(|m| m.file);
+    if !present {
+        in_transaction(client, async {
+            client.batch_execute(LEDGER_DDL).await?;
+            for m in &in_order {
+                client.batch_execute(m.sql).await?;
+                record(client, m).await?;
+            }
+            Ok(())
+        })
+        .await?;
+        return Ok(MigrateOutcome::Baseline { applied: in_order.len() });
+    }
+    if pending.is_empty() {
+        return Ok(MigrateOutcome::Current);
+    }
+    for m in in_order.iter().filter(|m| pending.iter().any(|p| p.as_str() == m.file)) {
+        in_transaction(client, async {
+            client.batch_execute(m.sql).await?;
+            record(client, m).await
+        })
+        .await?;
+    }
+    Ok(MigrateOutcome::Applied { files: pending })
 }
 
 pub trait ClientHandle: Send {
@@ -3120,13 +3362,15 @@ impl Database for PgDatabase {
 
     async fn reset(&self, _sys: &SystemScope) -> Result<(), DbError> {
         // One statement, so one transaction: either every table is empty or none is. The tables are looked up, not listed, so
-        // that a table a later migration adds is emptied without anyone remembering this function. The migrations are plain
-        // scripts that run again on every start and leave no bookkeeping table, and what they insert is a backfill of rows that
-        // are there already, so nothing here is something the schema needs to keep.
+        // that a table a later migration adds is emptied without anyone remembering this function. One table is left alone: the
+        // migration ledger (`ledger::LEDGER_TABLE`, #195), which says which migrations made this schema and is not data. Emptied, it
+        // would make the next `migrate` apply every file again over a schema that has them. What the migrations themselves insert
+        // is a backfill of rows that are there already, so nothing else here is something the schema needs to keep.
         const RESET: &str = "DO $$ \
             DECLARE tables text; \
             BEGIN \
-              SELECT string_agg(format('%I.%I', schemaname, tablename), ', ') INTO tables FROM pg_tables WHERE schemaname = 'public'; \
+              SELECT string_agg(format('%I.%I', schemaname, tablename), ', ') INTO tables FROM pg_tables \
+                WHERE schemaname = 'public' AND tablename <> 'thrust_schema_migrations'; \
               IF tables IS NOT NULL THEN \
                 EXECUTE 'TRUNCATE TABLE ' || tables || ' RESTART IDENTITY CASCADE'; \
               END IF; \
@@ -3495,20 +3739,20 @@ mod tests {
     // Pinned regression (issue #40, ADR-0006): each of these was `expect("transaction already finished")`, a panic on request-driven
     // control flow (a first write whose `BEGIN` failed, then any further call on the same transaction).
     #[test]
-    fn a_call_on_a_transaction_that_lost_its_connection_is_an_error() {
+    fn regression_a_call_on_a_transaction_that_lost_its_connection_is_an_error() {
         let tx = discarded();
         let r = tx.client();
         assert!(matches!(&r, Err(DbError::Backend(m)) if m == TX_HAS_NO_CONNECTION));
     }
 
     #[test]
-    fn commit_on_a_transaction_that_lost_its_connection_is_an_error() {
+    fn regression_commit_on_a_transaction_that_lost_its_connection_is_an_error() {
         let r = ready(Box::new(discarded()).commit());
         assert!(matches!(&r, Err(DbError::Backend(m)) if m == TX_HAS_NO_CONNECTION), "{r:?}");
     }
 
     #[test]
-    fn rollback_on_a_transaction_that_lost_its_connection_is_a_no_op() {
+    fn regression_rollback_on_a_transaction_that_lost_its_connection_is_a_no_op() {
         let r = ready(Box::new(discarded()).rollback());
         assert!(r.is_ok(), "{r:?}");
     }
