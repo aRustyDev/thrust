@@ -1,6 +1,6 @@
 [package]
 name = "thrust-editor-doc"
-description = "Spike 0006: Rust model of the Plane editor document (ProseMirror JSON, HTML, Yjs XmlFragment) for the node/mark set in @plane/editor"
+description = "The Plane editor document in Rust (ProseMirror JSON, HTML, Yjs XmlFragment) for the node/mark set in @plane/editor, and the HTML sanitiser that thrust-api-v1 and thrust-compat-plane use. Began as spike 0006."
 edition.workspace = true
 version.workspace = true
 license.workspace = true
