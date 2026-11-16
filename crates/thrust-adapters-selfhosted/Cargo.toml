@@ -49,7 +49,7 @@ deadpool-postgres = { version = "0.14", default-features = false, features = ["r
 # tests/smtp_wire: the addresses core accepts at sign-up (`is_valid_email`) are the ones the SMTP adapter must be able to send to.
 thrust-core = { workspace = true }
 # The oracle's seed as a fixture (#58): loaded into a real Postgres, emptied by `reset`, and loaded again (tests/pg_adapter.rs).
-thrust-oracle-fixture = { path = "../thrust-oracle-fixture" }
+thrust-oracle-fixture = { workspace = true }
 # tests/model: generated Database/Tx call sequences against a reference model (gap G-9).
 proptest = "1"
 serde_json = { workspace = true }

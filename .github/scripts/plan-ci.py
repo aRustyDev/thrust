@@ -15,8 +15,10 @@ It prints, for $GITHUB_OUTPUT:
 and, on stderr, why: each path with the rule it matched.
 
 How a path decides (RULES, first match wins; a path that matches no rule needs nothing, as docs/ and README.md do):
-  * a crate's own files (crates/<member>/...) change that crate. The crates that depend on it, through any kind of dependency
-    (normal, dev, build), are affected too, read from `cargo metadata`, so the graph is Cargo's and not a second list.
+  * a crate's own files (the files under a member's directory, at any depth under crates/: the longest member directory that
+    holds the path) change that crate. The crates that depend on it, through any kind of dependency (normal, dev, build), are
+    affected too, read from `cargo metadata`, so the graph is Cargo's and not a second list. A group's README.md under
+    crates/ that no member holds is read by no job; any other file of crates/ outside a member runs everything.
   * a file a crate's tests read from outside the crate (tools/oracle-v1/, .github/deploy/) runs the jobs that run those tests.
   * a file that only a guard, a job or a pass reads runs that guard's job, or that pass on every target.
   * a file whose readers are not known runs everything: an unknown crate directory, an unlisted script, the toolchain, the
@@ -64,8 +66,7 @@ RULES = [
     (r"^\.github/scripts/(plan-ci\.py|plan-cells\.sh|assert-gate\.sh)$", FULL, "this planner, or the gate that trusts it"),
     (r"^\.github/scripts/toolchain-channel\.sh$", FULL, "the reader of rust-toolchain.toml, which every build's compiler comes from"),
     (r"^scripts/(rs|contract\.sh|contract-all\.sh|worker-dev\.sh|pg-delay-proxy\.py)$", FULL, "the contract cells' harness"),
-    (r"^crates/[^/]+/", CRATE, "a crate"),
-    (r"^crates/", FULL, "a file of crates/ outside any crate"),
+    (r"^crates/", CRATE, "a file of crates/: its crate, by the longest member directory that holds it"),
     (r"^\.github/deploy/", {"jobs": ["hermetic", "ci-scripts"]}, "the CA root the deploy trusts (read by thrust-adapters-postgres's TLS tests)"),
     (r"^deny\.toml$", {"jobs": ["deny"]}, "cargo-deny's configuration"),
     (r"^\.?(clippy|rustfmt)\.toml$", {"jobs": ["lint"]}, "clippy's or rustfmt's configuration"),
@@ -97,6 +98,9 @@ RULES = [
 ]
 COMPILED = [(re.compile(p), effect, why) for p, effect, why in RULES]
 
+# A group directory's README.md (ADR-0009: crates/<group>/README.md, crates/README.md), when no member holds it.
+GROUP_README = re.compile(r"^crates/(.+/)?README\.md$")
+
 
 def fail(message):
     print(f"plan-ci: {message}", file=sys.stderr)
@@ -109,7 +113,7 @@ def read_lines(path):
 
 
 def workspace(metadata):
-    """{crate directory (crates/<dir>): crate name} and {crate: set of the workspace crates it depends on}."""
+    """{member directory, relative to the workspace root: crate name} and {crate: set of the workspace crates it depends on}."""
     root = metadata.get("workspace_root", "").rstrip("/") + "/"
     members = set(metadata.get("workspace_members", []))
     packages = [p for p in metadata.get("packages", []) if p.get("id") in members]
@@ -124,6 +128,15 @@ def workspace(metadata):
         dirs[manifest[len(root):-len("/Cargo.toml")]] = p["name"]
         deps[p["name"]] = {d["name"] for d in p.get("dependencies", []) if d.get("path") and d["name"] in names}
     return dirs, deps
+
+
+def owner(path, dirs):
+    """The member directory that holds path: the longest one that is a prefix of it (a whole path segment), or None."""
+    best = None
+    for d in dirs:
+        if path.startswith(d + "/") and (best is None or len(d) > len(best)):
+            best = d
+    return best
 
 
 def affected(changed, deps):
@@ -152,12 +165,14 @@ def plan(paths, dirs, deps, cells, full_reason=None):
                 full = full or f"{path}: {why}"
                 notes.append(f"{path}: {why} -> everything")
             elif effect == CRATE:
-                top = "/".join(path.split("/")[:2])
-                crate = dirs.get(top)
-                if crate is None:
-                    full = full or f"{path}: {top} is not a crate of the workspace"
-                    notes.append(f"{path}: {top} is not a crate of the workspace -> everything")
+                top = owner(path, dirs)
+                if top is None and GROUP_README.search(path):
+                    notes.append(f"{path}: a group's README, inside no crate -> nothing")
+                elif top is None:
+                    full = full or f"{path}: inside no crate of the workspace"
+                    notes.append(f"{path}: inside no crate of the workspace -> everything")
                 else:
+                    crate = dirs[top]
                     changed.add(crate)
                     if path == f"{top}/Cargo.toml":
                         jobs.add("deny")

@@ -10,7 +10,7 @@ material, and they are not this project's files.
 
 The Worker configuration has run locally under `wrangler dev` and once against real Cloudflare resources (the
 2026-10-18 spike run, torn down afterwards). The configuration a deploy uses is a template (`wrangler.deploy.toml`,
-below); no environment has had a deploy through the pipeline yet. How the code is layered is on
+below); staging has had deploys through the pipeline since 2026-11-15, and production none. How the code is layered is on
 [Application architecture](app.md).
 
 ```mermaid
@@ -196,8 +196,9 @@ and the tail of `cloudflared`'s log is printed then. `scripts/deploy-worker.sh` 
 changed between the live version's commit and the new one. The CA that signs `thrust-pg`'s certificate is
 `.github/deploy/cloudflare-origin-ca-rsa-root.pem` (the Cloudflare Origin CA root, which expires on 2029-08-15), and
 `thrust-adapters-postgres`'s tests show rustls accepts that exact file as a `verify-ca` root. The tunnel route, Access
-application, service token and migration role on `thrust-pg-dev` are the infrastructure repository's work, so the route has
-not been run against the real database, and neither has `verify-ca` met a real Origin CA certificate.
+application, service token and migration role on `thrust-pg-dev` are the infrastructure repository's work. The route has run
+for real: the deploys to staging on 2026-11-15 migrated over it (`migrated (tls: verify-ca)`), so Access accepted the service
+token and `verify-ca` met a real Origin CA certificate ([Deploying the Worker](deploy.md#what-the-first-staging-deploys-settled)).
 
 ## Recover a locked-out user
 

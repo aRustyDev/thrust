@@ -201,14 +201,15 @@ Its tests run in `ci-scripts` and `deps`, under dash: `deploy-worker.sh` runs ag
 has a case that must fail beside each that must pass, and each script was also broken by hand, one way at a time, to see
 its test fail.
 
-**Not yet run for real.** No environment has had a deploy through it. The shapes of `wrangler deployments list --json` and
-`versions list --json` are the documented ones (the parser sends any other shape to the manual gate, never to an automatic
-rollback), and the token's scopes, the queue consumer with a dead-letter queue, and the attestation flow end to end have
-not run. The pull-request dry run and the first two `workflow_run` events have `[verified 2026-11-14]`: on PR #165's run
-`plan`, `build` and `dry-run` succeeded and wrangler 4.151.2 accepted the rendered template against the bundle CI built; on
-`main`, the run after a failed `ci` planned `skip` ("ci did not succeed") and the run after a green one planned `skip`
-("automatic deploys are off"). Those runs were of the trigger before the `rc/*` flow (a push to `main`); the dispatch on an
-`rc/*` branch has not run yet.
+**Run for real.** The deploy has run on staging from `rc/*` branches since 2026-11-15, and
+[Deploying the Worker](deploy.md#what-the-first-staging-deploys-settled) lists what each run settled: the first deploy through
+the manual gate, the shapes of `wrangler deployments list --json` and `versions list --json`, the queue consumer with its
+dead-letter queue, the attestation flow end to end, the read of an environment's protection rules, the route through the Access
+tunnel with `verify-ca` meeting a real Origin CA certificate, the keeping of the previous release's web files over two
+releases, and the rollback drill (run 43811076183: the injected failure put the previous version back and ended the run red).
+**Not yet run:** production, and a narrower token than the one in use. **A known gap:** release-plz force-updates the release
+candidate's branch, so the live commit is usually not in the next candidate's history, and the classifier, which fails closed,
+sends that deploy to the manual gate although nothing in it needs one (runs 43796746005 and 43803593395).
 
 **The environments' branch rules** say the same as `plan`, so a run from anywhere else cannot reach an environment's
 secrets even if the workflow were wrong: `staging` and `staging-do-lifecycle` take only `rc/*` branches, `production` and
@@ -335,9 +336,13 @@ every one succeeded `[verified 2026-10-19 fa4bd6c]` with `gh run view`.
 - `scripts/verify-all.sh`. CI runs its steps as separate jobs, except the probes, which it does not run.
 - The `blast` and `bench` contract passes, which are not in `contract-all.sh`.
 - The book build and its checks.
-- A deploy that has run against Cloudflare. `deploy.yml` is tested against a fake Cloudflare, by its pull-request dry run
-  and by `wrangler deploy --dry-run`; no environment has had a deploy through it yet (see [Deploying the Worker](deploy.md)).
-- A release. There is no changelog, version (the workspace is `0.0.0`), release tag, GitHub release or tag protection.
+- A deploy that has run against Cloudflare. `ci` tests `deploy.yml`'s scripts against a fake Cloudflare, and the pull-request
+  dry run and `wrangler deploy --dry-run` check the rendered configuration. Real deploys to staging have run since 2026-11-15
+  and none to production (see [Deploying the Worker](deploy.md)).
+- A release being published. `release-plz.yml` runs on pushes to `main` and `release.yml` on the tag, not in `ci`, and on a pull
+  request `release.yml` is a dry run that attests and publishes nothing. The flow has run once: `v0.1.0` was published on
+  2026-11-16 (`gh release list`), and the changelog, the workspace version, the `v*` tag ruleset and immutable releases it
+  needs exist ([Release candidates](#release-candidates)).
 - The upstream vitest files under `web/`, a fuzz target (there is no `fuzz/`), coverage, and `cargo mutants` (the
   `mutants` job runs the planted mutants of `scripts/mutants.sh`, on `native-memory` and `native-pg` only).
 
