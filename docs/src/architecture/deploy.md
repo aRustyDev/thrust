@@ -40,9 +40,12 @@ a copy that is missing a value fails its job with the name of the value.)
 - **Variables** (none is secret): `CLOUDFLARE_ACCOUNT_ID`, `THRUST_WORKER_NAME`, `THRUST_BASE_URL` (`https://<hostname>`),
   `THRUST_HYPERDRIVE_ID`, `THRUST_R2_BUCKET`, `THRUST_QUEUE`, `THRUST_QUEUE_DLQ`,
   `THRUST_RL_SIGNIN_ID`, `THRUST_RL_V1_ID`, `THRUST_CSRF_ENFORCE` (`on` or `off`, no default, so turning it on for
-  production is a decision), `DB_ACCESS_HOSTNAME`, `SMOKE_EMAIL`, `SMOKE_WORKSPACE`, and optionally `SMOKE_PROJECT`
-  (default `smoke`). `scripts/render-wrangler.sh` checks each one's shape and refuses an all-zero id and a `thrust-spike`
-  name.
+  production is a decision), `THRUST_EMAIL_FROM` (the address the password reset mails are sent from, one plain
+  lowercase address on a domain the account has Email Sending enabled for; no default, so an environment that mails has
+  chosen who it mails as. The Worker's links in those mails point at `THRUST_BASE_URL`, which is why there is no second
+  variable for them), `DB_ACCESS_HOSTNAME`, `SMOKE_EMAIL`, `SMOKE_WORKSPACE`, and optionally `SMOKE_PROJECT`
+  (default `smoke`). `scripts/render-wrangler.sh` checks each one's shape and refuses an all-zero id, a `thrust-spike`
+  name, a sender with a name or a list in it, and a sender on a placeholder domain (`example.com`, `.test`, ...).
 - **Secrets**: `CLOUDFLARE_API_TOKEN`, `TUNNEL_SERVICE_TOKEN_ID`, `TUNNEL_SERVICE_TOKEN_SECRET`, `DATABASE_URL`
   (`postgres://<role>:<password>@127.0.0.1:15432/thrust`: the host and port are fixed, they are the local end of the tunnel)
   and `SMOKE_PASSWORD`.
