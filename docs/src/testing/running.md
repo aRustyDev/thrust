@@ -130,6 +130,7 @@ A pull request runs only the jobs and cells its change needs; how that is decide
 | `pg-adapter` | `cargo test -p thrust-adapters-selfhosted --test pg_adapter` |
 | `contract` | one job per cell (`.github/workflows/contract-cell.yml`): `scripts/contract.sh <target> <pass>` |
 | `mutants` | `scripts/mutants.sh` |
+| `docs` | when the book's inputs changed (`docs/`, `AGENTS.md`, `.config/branding/`): `scripts/check-book.sh` (`mdbook build`, failing on any `ERROR` line and on a page `SUMMARY.md` does not list), then `scripts/check-book.sh --self-test` (a copy broken four ways, each refused). mdBook 0.5.4 and mdbook-mermaid 0.17.1 |
 | `web` | when `web/` or its gate changed: `scripts/check-web-diff.sh` (the Q-R2 gate: only the files in `web/ALLOWED-CHANGES` differ from the oracle pin), then `pnpm --dir web install --frozen-lockfile --ignore-scripts` and `pnpm --dir web exec turbo run build --filter=web` |
 | `gate` | `.github/scripts/assert-gate.sh`: every job `changes` named succeeded, every other was skipped, **and** every planned cell uploaded its pass marker |
 

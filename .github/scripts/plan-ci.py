@@ -14,7 +14,7 @@ It prints, for $GITHUB_OUTPUT:
   matrix=<{"include":[{"target":..,"pass":..}]}> and cells=<JSON list of "<target> <pass>">   the cells that must run
 and, on stderr, why: each path with the rule it matched.
 
-How a path decides (RULES, first match wins; a path that matches no rule needs nothing, as docs/ and README.md do):
+How a path decides (RULES, first match wins; a path that matches no rule needs nothing, as README.md and .agents/ do):
   * a crate's own files (crates/<member>/...) change that crate. The crates that depend on it, through any kind of dependency
     (normal, dev, build), are affected too, read from `cargo metadata`, so the graph is Cargo's and not a second list.
   * a file a crate's tests read from outside the crate (tools/oracle-v1/, .github/deploy/) runs the jobs that run those tests.
@@ -38,7 +38,7 @@ import json
 import re
 import sys
 
-JOBS = ("ci-scripts", "deps", "lint", "deny", "hermetic", "pg-adapter", "contract", "mutants", "web")
+JOBS = ("ci-scripts", "deps", "lint", "deny", "hermetic", "pg-adapter", "contract", "mutants", "web", "docs")
 
 # The binary each target of scripts/contract.sh starts. Everything a cell runs against is built from it.
 TARGET_BINARY = {
@@ -57,7 +57,7 @@ CRATE = "crate"
 # (pattern, effect, why). An effect is FULL, CRATE, or {"jobs": [...], "passes": [...]}.
 RULES = [
     (r"^(Cargo\.(toml|lock)|rust-toolchain(\.toml)?)$", FULL, "the workspace manifest, the lockfile or the toolchain"),
-    (r"^\.config/branding/", {}, "the book's palette (read by docs/book.toml only; the book is not built in CI)"),
+    (r"^\.config/branding/", {"jobs": ["docs"]}, "the book's palette (read by docs/book.toml only)"),
     (r"^\.(cargo|config)/", FULL, "Cargo's or nextest's configuration"),
     (r"^\.github/workflows/(ci|contract-cell)\.yml$", FULL, "the workflow that runs the checks"),
     (r"^\.github/actions/setup-rust/", FULL, "the action every Rust job sets up with"),
@@ -82,6 +82,7 @@ RULES = [
     (r"^scripts/mutants\.sh$", {"jobs": ["mutants"]}, "the mutation controls"),
     (r"^scripts/(stage2-contract|check-contract-counts)\.sh$", {"jobs": ["hermetic", "deps"]}, "the contract counts and their guard"),
     (r"^scripts/check-web-diff\.sh$", {"jobs": ["web", "ci-scripts"]}, "the Q-R2 gate of web/"),
+    (r"^scripts/check-book\.sh$", {"jobs": ["docs"]}, "the book's check"),
     (r"^scripts/(check-(deps|topology|plane-500|acceptance-list|placement|openapi)|render-wrangler)\.sh$",
      {"jobs": ["deps", "ci-scripts"]}, "a guard of the deps job"),
     (r"^scripts/(smoke-deploy|smoke-bootstrap|migrate-ci|deploy-worker|merge-assets|check-asset-retention)\.sh$",
@@ -89,6 +90,8 @@ RULES = [
     (r"^scripts/(verify-all|flake-hunt|measure-argon2|spike-0002-pg|stage2-latency)\.sh$|^scripts/measure-argon2-summary\.py$",
      {}, "a script no job of ci.yml runs"),
     (r"^scripts/", FULL, "a script this planner does not know"),
+    (r"^docs/", {"jobs": ["docs"]}, "the book"),
+    (r"^AGENTS\.md$", {"jobs": ["docs"]}, "AGENTS.md (the book includes its testing rules)"),
     (r"^\.github/scripts/(lint-workflow\.sh|check-release-plz\.py)$", {"jobs": ["ci-scripts", "deps"]}, "a guard the deps job runs"),
     (r"^\.github/(scripts|workflows|actions)/", {"jobs": ["ci-scripts", "deps"]},
      "another workflow, action or script (its tests, and the workflow lint)"),
