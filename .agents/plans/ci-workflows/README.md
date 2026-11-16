@@ -6,8 +6,8 @@ factored into actions. Done looks like this: every concern has its own workflow 
 calls and the one required `gate`; and every workflow has been through the eight passes (proof of concept to
 production-grade documentation) in the owner's priority order.
 
-The work runs in three steps. **Phase 0** makes the split safe (the orchestrator pattern, a nested gate that cannot be
-fooled by a skipped job, the planner and the workflow lint). **Phase 1** moves today's jobs into the new files as a pure
+The work runs in three steps. **Phase 0** makes the split safe (the orchestrator pattern, a way for the gate to
+judge called workflows that a skipped job cannot fool, the planner and the workflow lint). **Phase 1** moves today's jobs into the new files as a pure
 refactor: same commands, same results, no passes. **Phases 2 to 14** then take each workflow through all eight passes.
 
 How CI works today is not repeated here: [CI/CD](../../../docs/src/architecture/cicd.md) is the reference, and
@@ -20,10 +20,10 @@ current release flow is in [cicd-review](../cicd-review/README.md).
 | Path | Contents |
 |---|---|
 | `PLAN.md` | the owner's decisions; the architecture; Phase 0 and the migration; the priority-ordered phase table; the templates for a phase and a stage; what each pass must show; the invariants every pull request keeps; the status table |
+| `phases/0001-foundation.md` | Phase 0 planned stage by stage: what exists today, the spike that chooses how `gate` judges a called workflow, the planner and gate changes, the lint conventions, the baseline, and the questions for the owner |
 
 Phase documents (`phases/NNNN-*.md`) are written when a phase starts, not before. Phase numbers are allocated across the
-whole repository, and none exists yet, so the first is `0001`. ADR-0102 (the orchestrator pattern) is written in
-Phase 0.
+whole repository, so the first is `0001`. ADR-0102 (the orchestrator pattern) is written in Phase 0, after the spike.
 
 ## Status (2026-11-16)
 
