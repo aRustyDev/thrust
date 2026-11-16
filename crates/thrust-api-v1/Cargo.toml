@@ -18,7 +18,7 @@ thrust-api = { workspace = true }
 # The three 500 bodies of the pin and the one function that answers them, shared with the internal API (#51).
 thrust-plane-types = { workspace = true }
 # What the pin does to a work item's description before it keeps it (`validate_html_content`); the compat plane has the same one.
-thrust-editor-doc = { path = "../thrust-editor-doc", default-features = false, features = ["sanitize"] }
+thrust-editor-doc = { workspace = true, features = ["sanitize"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 # The query string, as `axum`'s own `Query` reads it (already in the graph through axum): a name given twice keeps its last value.
@@ -45,7 +45,7 @@ required-features = ["openapi"]
 [dev-dependencies]
 thrust-adapters-memory = { workspace = true }
 # The oracle's seed as a fixture (#58): loaded into the memory adapter and read through these routes in tests/oracle_seed.rs.
-thrust-oracle-fixture = { path = "../thrust-oracle-fixture" }
+thrust-oracle-fixture = { workspace = true }
 tower = { version = "0.5", features = ["util"] }
 # The router future never yields to a reactor, so a plain executor drives it (as in thrust-core's tests).
 futures-executor = "0.3"

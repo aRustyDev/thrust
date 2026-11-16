@@ -84,7 +84,7 @@ fn mutated_binaries_never_panic() {
 /// `deep` nextest profiles, and fails when the input is missing rather than passing with nothing mutated.
 #[test]
 fn oracle_mutated_html_never_panics() {
-    let p = concat!(env!("CARGO_MANIFEST_DIR"), "/../../target/spike-0006/fuzz-html.json");
+    let p = concat!(env!("THRUST_ROOT"), "/target/spike-0006/fuzz-html.json");
     let s = std::fs::read_to_string(p)
         .unwrap_or_else(|e| panic!("{p}: {e} (generate it with tools/spike-0006/gen-all.sh)"));
     let c: Value = serde_json::from_str(&s).unwrap();

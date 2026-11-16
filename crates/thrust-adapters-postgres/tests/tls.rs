@@ -504,7 +504,8 @@ fn an_error_that_shows_the_same_text_as_its_cause_is_printed_once() {
 /// DATABASE_SSLROOTCERT (.github/deploy/README.md). The other tests make their own certificates; this one reads the real file, so a root
 /// that rustls would refuse (an unsupported feature, a damaged copy) is found here and not by a failed deploy. It shows the file is
 /// ACCEPTED as a trust anchor. Whether a real Origin CA certificate then verifies against it is for the first run against `thrust-pg`.
-const DEPLOY_ROOT: &[u8] = include_bytes!("../../../.github/deploy/cloudflare-origin-ca-rsa-root.pem");
+const DEPLOY_ROOT: &[u8] =
+    include_bytes!(concat!(env!("THRUST_ROOT"), "/.github/deploy/cloudflare-origin-ca-rsa-root.pem"));
 
 #[test]
 fn the_origin_ca_root_the_deploy_trusts_is_accepted_for_verify_ca() {
