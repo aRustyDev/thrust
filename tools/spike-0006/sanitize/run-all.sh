@@ -6,7 +6,7 @@ set -eu
 PLANE="${1:?plane tree}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/../../.." && pwd)"
-C="$ROOT/crates/thrust-editor-doc/tests/corpus"
+C="$ROOT/crates/editor/doc/tests/corpus"
 O="$ROOT/target/spike-0006"
 mkdir -p "$O"
 [ -n "${2:-}" ] && export UV_PROJECT_ENVIRONMENT="$2"

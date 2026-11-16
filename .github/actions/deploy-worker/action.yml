@@ -182,8 +182,8 @@ runs:
           test -s "$UNPACK_DIR/$f" || { echo "::error::the bundle has no $f"; exit 1; }
         done
         test -x "$UNPACK_DIR/migrate" || { echo "::error::the bundle has no migrate binary"; exit 1; }
-        rm -rf crates/thrust-worker/build
-        cp -R "$UNPACK_DIR/build" crates/thrust-worker/build
+        rm -rf crates/worker/build
+        cp -R "$UNPACK_DIR/build" crates/worker/build
         cp "$UNPACK_DIR/migrate" "$TOOLS_DIR/migrate"
 
     - name: Install wrangler (exact version)

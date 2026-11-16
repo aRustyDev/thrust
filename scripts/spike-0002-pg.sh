@@ -3,7 +3,7 @@
 # the resources, in the order research/0004 section 10.7 found.
 #
 #   scripts/spike-0002-pg.sh role                 create role + schema pr_<n> on thrust-pg-dev (pr-schema.sh)
-#   scripts/spike-0002-pg.sh migrate              apply crates/thrust-adapters-postgres/migrations/*.sql AS that role (a real password login)
+#   scripts/spike-0002-pg.sh migrate              apply crates/adapters/postgres/migrations/*.sql AS that role (a real password login)
 #   scripts/spike-0002-pg.sh hyperdrive           create the two Hyperdrive configs: thrust-spike-pg (caching off) and thrust-spike-pg-cached (on)
 #   scripts/spike-0002-pg.sh resources            create the R2 bucket and the two queues
 #   scripts/spike-0002-pg.sh deploy [--cached] [--no-placement] [--v1-limit N] [--var NAME:VALUE ...]   deploy the Worker (the first deploy also puts the admin secret); --v1-limit sets the RL_V1 binding's limit per minute, what one API key may do on /api/v1 (default 60, Plane's; the engine pass wants 1000000)
@@ -33,7 +33,7 @@ QUEUE=thrust-spike-pg-events
 DLQ=thrust-spike-pg-events-dlq
 HD=thrust-spike-pg
 HD_CACHED=thrust-spike-pg-cached
-WR="$ROOT/crates/thrust-worker"
+WR="$ROOT/crates/worker"
 TEMPLATE=wrangler.pg.stage.toml
 RUNCFG=.wrangler.pg.run.toml
 mkdir -p "$STATE"
@@ -72,7 +72,7 @@ case "${1:-}" in
     note "created role and schema pr_$PR on thrust-pg-dev (pr-schema.sh create $PR)"
     ;;
   migrate)
-    for f in "$ROOT"/crates/thrust-adapters-postgres/migrations/*.sql; do
+    for f in "$ROOT"/crates/adapters/postgres/migrations/*.sql; do
       as_role <"$f" || { note "FAILED: migration $(basename "$f") as pr_$PR"; exit 1; }
       note "applied $(basename "$f") as pr_$PR (password login, role-level search_path)"
     done

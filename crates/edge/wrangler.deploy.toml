@@ -1,0 +1,40 @@
+# The EDGE's deployed configuration (ADR-0111, issue #195): a template that scripts/render-wrangler.sh fills from the deploy
+# environment's variables (--template crates/edge/wrangler.deploy.toml --out crates/edge/.wrangler.deploy.run.toml).
+# No comment in this file may contain a marker-shaped word: the renderer reads comments too.
+#
+# What it may hold is guarded by scripts/check-edge-config.sh (CI's deps job): the edge is a routing Worker, so
+#   * no data binding, no assets, no placement, no trigger and no route (the infrastructure repository attaches the Custom
+#     Domain, as it does for thrust);
+#   * workers_dev and preview_urls off: the edge is reached only on the shared hostname, and none of its versions is public;
+#   * one service binding, to production thrust, and one Flagship binding.
+name = "__EDGE_WORKER_NAME__"
+main = "build/worker/shim.mjs"
+compatibility_date = "2026-11-01"
+workers_dev = false
+preview_urls = false
+
+# Production: every request without a valid pin, and every request the rules do not route elsewhere.
+[[services]]
+binding = "THRUST"
+service = "__WORKER_NAME__"
+
+# The routing flags: the kill switch, the aliases and one flag per live target. CI writes them; the edge only evaluates.
+[[flagship]]
+binding = "FLAGS"
+app_id = "__FLAGSHIP_APP_ID__"
+
+[vars]
+# The shared origin: where a target's redirects are pointed back to, and the host the targets are told they were asked for.
+SHARED_ORIGIN = "__PUBLIC_BASE_URL__"
+# The Access team: its keys verify the token on an opt-in path, and it is the token's issuer.
+ACCESS_TEAM_DOMAIN = "__ACCESS_TEAM_DOMAIN__"
+# One Access application per opt-in audience (the path that admitted a person says which audience it is): their AUD tags.
+ACCESS_AUD_RC = "__ACCESS_AUD_RC__"
+ACCESS_AUD_DEV = "__ACCESS_AUD_DEV__"
+# What a target's URL must end with: a Preview of the production Worker on workers.dev, and nothing else.
+PREVIEW_HOST_SUFFIX = "-__WORKER_NAME__.__WORKERS_DEV_SUBDOMAIN__.workers.dev"
+
+# Set with `wrangler secret put` by the deploy, never in this file: the pin's HMAC key, and the service token the edge shows
+# Access on the Previews (the only credential Access admits there).
+[secrets]
+required = ["EDGE_PIN_KEY", "PREVIEW_ACCESS_CLIENT_ID", "PREVIEW_ACCESS_CLIENT_SECRET"]

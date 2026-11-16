@@ -34,9 +34,9 @@ scripts/check-deps.sh      # [verified 2026-10-19 dd093fa: exit 0]
 ## Required controls
 
 The script prints the full dependency lists it checked; read them. To prove it can fail, temporarily add a
-forbidden crate (for example `worker`) to `crates/thrust-core/Cargo.toml` and expect a non-zero exit.
+forbidden crate (for example `worker`) to `crates/core/usecases/Cargo.toml` and expect a non-zero exit.
 
-The ORM check has its own control. Temporarily add `sea-orm` as a dependency of `crates/thrust-adapters-postgres`, a
+The ORM check has its own control. Temporarily add `sea-orm` as a dependency of `crates/adapters/postgres`, a
 crate the older sections do not name, and run the script: it exits 1, prints `FORBIDDEN: sea-orm is in the workspace
 graph (ADR-0044)`, and the tree under it starts at `sea-orm v1.1.20` and names `thrust-adapters-postgres`
 `[verified 2026-11-05 7d0074f]`. Two variants show why the flags are what they are. With `sea-orm` as a

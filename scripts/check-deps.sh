@@ -125,7 +125,7 @@ if [ -z "$MEMBER_DIRS" ]; then
   STATUS=1
 fi
 hits="$(
-  awk -v f="crates/thrust-core/src/lib.rs" '
+  awk -v f="crates/core/usecases/src/lib.rs" '
     /^#\[cfg\(test\)\]/ { cfgtest = 1; next }
     cfgtest && /^mod / { intests = 1 }
     { cfgtest = 0 }
@@ -135,16 +135,16 @@ hits="$(
     /SystemScope::mint\(/ { print f ":" NR ":" $0; next }
     /WorkspaceScope::mint\(/ && fn != "authorize_workspace" { print f ":" NR ":" $0; next }
     /(^|[^A-Za-z0-9_])Scope::mint\(/ && fn != "authorize_with_role" { print f ":" NR ":" $0 }
-  ' "$ROOT/crates/thrust-core/src/lib.rs"
+  ' "$ROOT/crates/core/usecases/src/lib.rs"
   grep -rnE "$MINT" "$ROOT/crates" --include='*.rs' \
     | sed "s|^$ROOT/||" \
     | MEMBER_DIRS="$MEMBER_DIRS" awk '
         BEGIN { n = split(ENVIRON["MEMBER_DIRS"], d, "\n") }
         { for (i = 1; i <= n; i++) if (index($0, d[i] "/tests/") == 1) next; print }
       ' \
-    | grep -v '^crates/thrust-core/src/lib.rs:' \
+    | grep -v '^crates/core/usecases/src/lib.rs:' \
     | grep -vE '^[^:]+:[0-9]+:[ \t]*//' \
-    | grep -vE '^crates/(thrust-server/src/main\.rs|thrust-worker/src/lib\.rs|thrust-worker/src/memory\.rs):[0-9]+:.*[^A-Za-z0-9_]SystemScope::mint\(' \
+    | grep -vE '^crates/(server/src/main\.rs|worker/src/lib\.rs|worker/src/memory\.rs):[0-9]+:.*[^A-Za-z0-9_]SystemScope::mint\(' \
     || true
 )"
 if [ -n "$hits" ]; then

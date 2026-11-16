@@ -26,15 +26,15 @@
 # is OLDER than the active version, an ancestor of it (a redeploy of older code, which is a person's decision); a checkout too shallow
 # to tell which of the two is older; a template that did not exist at the previous commit.
 #
-# Environment: DEPLOY_TEMPLATE (default crates/thrust-worker/wrangler.deploy.toml), MIGRATIONS_DIR (default
-# crates/thrust-adapters-postgres/migrations), both relative to the repository root.
+# Environment: DEPLOY_TEMPLATE (default crates/worker/wrangler.deploy.toml), MIGRATIONS_DIR (default
+# crates/adapters/postgres/migrations), both relative to the repository root.
 # Exit status: 0 it classified (whatever the answer); 2 it was called wrongly or the head commit has no template.
 set -u
 LC_ALL=C
 export LC_ALL
 
-TEMPLATE="${DEPLOY_TEMPLATE:-crates/thrust-worker/wrangler.deploy.toml}"
-MIGRATIONS="${MIGRATIONS_DIR:-crates/thrust-adapters-postgres/migrations}"
+TEMPLATE="${DEPLOY_TEMPLATE:-crates/worker/wrangler.deploy.toml}"
+MIGRATIONS="${MIGRATIONS_DIR:-crates/adapters/postgres/migrations}"
 
 usage() { echo "classify-deploy: $*" >&2; exit 2; }
 emit() { printf 'migrations_changed=%s\ndo_lifecycle=%s\nreason=%s\n' "$1" "$2" "$3"; exit 0; }

@@ -40,7 +40,7 @@ curl -s -o /dev/null -w "second-health-ms=%{time_total}\n" "http://127.0.0.1:$PO
 curl -s "http://127.0.0.1:$PORT/env" > "$OUT/$LABEL.env.json" 2>/dev/null || true
 if [ -n "${4:-}" ]; then export BENCH_PLAN="$4"; fi
 rc=0
-node "$HERE/bench-worker.mjs" "http://127.0.0.1:$PORT" "$LABEL" "$ROOT/crates/thrust-editor-doc/tests/corpus/corpus.json" "$ROOT/target/spike-0006/corpus-large.json" > "$OUT/$LABEL.json" 2> "$OUT/$LABEL.err" || rc=$?
+node "$HERE/bench-worker.mjs" "http://127.0.0.1:$PORT" "$LABEL" "$ROOT/crates/editor/doc/tests/corpus/corpus.json" "$ROOT/target/spike-0006/corpus-large.json" > "$OUT/$LABEL.json" 2> "$OUT/$LABEL.err" || rc=$?
 kill "$WPID" 2>/dev/null
 wait "$WPID" 2>/dev/null
 echo "bench rc=$rc  results: $OUT/$LABEL.json"

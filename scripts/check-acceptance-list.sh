@@ -5,7 +5,7 @@
 #   scripts/check-acceptance-list.sh --self-test    run the check against trees it must accept and trees it must refuse
 #
 # The compat plane's replay and oracle obligation is the acceptance list: the 48-route slice (S01 to S48), the three rows that open
-# the created work item (X01 to X03) and X04. The list is a file (crates/thrust-compat-plane/tests/parity/acceptance.csv) written by
+# the created work item (X01 to X03) and X04. The list is a file (crates/api/compat-plane/tests/parity/acceptance.csv) written by
 # tools/compat-record/gen-acceptance.py from research/0003 section 8.1. This holds the rest to it, each as `comm -3` of two sorted
 # lists that must print nothing:
 #   * the rows the list says are `served`  and  the rows that have a fixture (a fixture is a row's recording from the pin);
@@ -19,7 +19,7 @@
 # passes vacuously, which is not evidence. `--self-test` is the control, run next to the real check in CI.
 set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-PARITY="$ROOT/crates/thrust-compat-plane/tests/parity"
+PARITY="$ROOT/crates/api/compat-plane/tests/parity"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 

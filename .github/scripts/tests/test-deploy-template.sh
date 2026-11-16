@@ -5,8 +5,8 @@
 #
 #   sh .github/scripts/tests/test-deploy-template.sh
 HERE="$(cd "$(dirname "$0")/../../.." && pwd)"
-BASE="$HERE/crates/thrust-worker/wrangler.toml"
-DEPLOY="$HERE/crates/thrust-worker/wrangler.deploy.toml"
+BASE="$HERE/crates/worker/wrangler.toml"
+DEPLOY="$HERE/crates/worker/wrangler.deploy.toml"
 PARITY="$HERE/.github/scripts/tests/deploy_parity.py"
 WORKER_DEV="$HERE/scripts/worker-dev.sh"
 T="$(mktemp -d)"

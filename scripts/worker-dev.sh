@@ -46,7 +46,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 STATE="${THRUST_WRANGLER_STATE:-$ROOT/target/wrangler-state-${THRUST_PORT:?}}"
 rm -rf "$STATE"
 mkdir -p "$STATE"
-cd "$ROOT/crates/thrust-worker"
+cd "$ROOT/crates/worker"
 
 if [ -n "${DATABASE_URL:-}" ]; then
   # wrangler's env form of `localConnectionString` for the Hyperdrive binding named HYPERDRIVE

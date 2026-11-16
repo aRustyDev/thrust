@@ -65,9 +65,9 @@ def flat(deps):
 
 
 def metadata(deps, root="/w", layout=None):
-    """cargo metadata (--no-deps) for crates at the layout's directories (default flat) with these path dependencies, plus one
-    registry dependency each."""
-    layout = layout or flat(deps)
+    """cargo metadata (--no-deps) for crates at the layout's directories with these path dependencies, plus one registry
+    dependency each. The default layout is this repository's (ADR_0009), and flat for a crate it does not place."""
+    layout = layout or {n: ADR_0009.get(n, f"crates/{n}") for n in deps}
     packages = []
     for name, uses in deps.items():
         kinds = ["normal", "dev", "build"]
@@ -167,7 +167,7 @@ REAL_GRAPH = {
     "thrust-adapters-cloudflare": {"thrust-contracts"}, PG: {"thrust-contracts"}, SUITE: {"thrust-contracts"},
     SERVER: {"thrust-core", PG}, WORKER: {"thrust-core", "thrust-adapters-cloudflare"}, "thrust-editor-doc": set(),
 }
-# REAL_GRAPH's crates where ADR-0009 puts them
+# REAL_GRAPH's crates where ADR-0009 puts them, which is where this repository keeps them (section 6 checks it)
 ADR_0009 = {
     "thrust-contracts": "crates/core/types", "thrust-ports": "crates/core/ports", "thrust-core": "crates/core/usecases",
     "thrust-adapters-cloudflare": "crates/adapters/cloudflare", PG: "crates/adapters/selfhosted", SUITE: "crates/testing/suites/api",
@@ -177,7 +177,7 @@ ADR_0009 = {
 SAMPLES = [
     "Cargo.lock", ".config/branding/colors.css", ".config/nextest.toml", ".github/workflows/ci.yml", ".github/actions/setup-rust/action.yml",
     ".github/actions/contract-pass-tools/action.yml", ".github/scripts/assert-gate.sh", ".github/scripts/toolchain-channel.sh",
-    "scripts/contract.sh", "crates/thrust-core/src/lib.rs",
+    "scripts/contract.sh", "crates/core/usecases/src/lib.rs",
     ".github/deploy/ca.pem", "deny.toml", "clippy.toml", "release-plz.toml", "tools/oracle-v1/corpus/a.json",
     "tools/compat-record/record.py", "tools/compat-inventory/out-pinned/endpoint-inventory.csv",
     ".agents/plans/contrail/research/0003-compat-plane-inventory.md", "tools/e2e-har/scrub.py", "e2e/journeys/m1.spec.ts",
@@ -187,7 +187,7 @@ SAMPLES = [
 ]
 NOTHING = ["README.md", "CHANGELOG.md", ".agents/plans/x.md", "docs-notes.md", "CLAUDE.md", "crates-AGENTS.md", "probes/send-shape/run.sh", "tools/spike-0006/x", ".github/CODEOWNERS"]
 check("one sample per rule", len(SAMPLES), len(pc.RULES))
-corpus = SAMPLES + NOTHING + ["crates/thrust-adapters-cloudflare/src/lib.rs", "crates/thrust-server/Cargo.toml", "crates/thrust-contract-tests/src/lib.rs"]
+corpus = SAMPLES + NOTHING + ["crates/adapters/cloudflare/src/lib.rs", "crates/server/Cargo.toml", "crates/testing/suites/api/src/lib.rs"]
 for i in range(400):
     a = rng.sample(corpus, rng.randint(1, 4))
     b = rng.sample(corpus, rng.randint(1, 4))
@@ -210,21 +210,19 @@ for pattern, _, why in pc.RULES:
 
 # ---- 4. fail open --------------------------------------------------------------------------------------------------------------
 EVERYTHING = (ALL_JOBS, set(CELLS))
-for path in ["crates/thrust-gone/src/lib.rs", "crates/adapters/notes.txt", "crates/README.txt", "scripts/new-thing.sh",
+for path in ["crates/gone/src/lib.rs", "crates/adapters/notes.txt", "crates/README.txt", "scripts/new-thing.sh",
              "Cargo.lock", "rust-toolchain.toml", ".github/scripts/plan-ci.py", "scripts/worker-dev.sh",
              ".github/actions/contract-pass-tools/action.yml",
-             # a directory that is no crate but shares a prefix with one (crates/thrust-core): a whole path segment must match
-             "crates/thrust-core-gone/src/lib.rs"]:
+             # a directory that is no crate but shares a prefix with one (crates/core/types): a whole path segment must match
+             "crates/core/types-gone/src/lib.rs"]:
     check(f"{path} runs everything", run_plan([path], REAL_GRAPH), EVERYTHING)
-check("crates/core/types-gone, beside the crate crates/core/types, runs everything",
-      run_plan(["crates/core/types-gone/src/lib.rs"], REAL_GRAPH, layout=ADR_0009), EVERYTHING)
 for path in ["crates/README.md", "crates/adapters/README.md", "crates/testing/suites/README.md"]:
     check(f"{path}, a group's README inside no crate, runs nothing", run_plan([path], REAL_GRAPH), (set(), set()))
-check("a crate's own README.md is the crate", run_plan(["crates/thrust-core/README.md"], REAL_GRAPH),
-      run_plan(["crates/thrust-core/src/lib.rs"], REAL_GRAPH))
+check("a crate's own README.md is the crate", run_plan(["crates/core/usecases/README.md"], REAL_GRAPH),
+      run_plan(["crates/core/usecases/src/lib.rs"], REAL_GRAPH))
 jobs, cells = run_plan(["README.md"], REAL_GRAPH, CELLS + ["worker-new main"])
 check("a target the planner does not know runs even on a change that needs nothing", (jobs, cells), ({"contract"}, {"worker-new main"}))
-jobs, cells = run_plan(["crates/thrust-adapters-cloudflare/src/lib.rs"], REAL_GRAPH, CELLS + ["worker-new main"])
+jobs, cells = run_plan(["crates/adapters/cloudflare/src/lib.rs"], REAL_GRAPH, CELLS + ["worker-new main"])
 check("a target the planner does not know runs with a crate change", "worker-new main" in cells, True)
 
 # ---- 5. the named cases ----------------------------------------------------------------------------------------------------------
@@ -243,22 +241,22 @@ check("the oracle's files run its cells and the tests that read them",
       ({"hermetic", "deps", "contract"}, {"native-memory oracle", "native-pg oracle", "worker-cf oracle"}))
 check("the deploy's CA root runs the TLS tests (hermetic) and ci-scripts", run_plan([".github/deploy/ca.pem"], REAL_GRAPH),
       ({"hermetic", "ci-scripts"}, set()))
-jobs, cells = run_plan(["crates/thrust-adapters-cloudflare/src/lib.rs"], REAL_GRAPH)
+jobs, cells = run_plan(["crates/adapters/cloudflare/src/lib.rs"], REAL_GRAPH)
 check("a Worker-only crate runs the worker cells only", cells, {c for c in CELLS if c.startswith("worker-")})
 check("a Worker-only crate runs no mutants and no pg-adapter", jobs & {"mutants", "pg-adapter"}, set())
-jobs, cells = run_plan(["crates/thrust-adapters-selfhosted/src/lib.rs"], REAL_GRAPH)
+jobs, cells = run_plan(["crates/adapters/selfhosted/src/lib.rs"], REAL_GRAPH)
 check("the self-hosted adapter runs the native cells, pg-adapter and mutants",
       (cells, {"pg-adapter", "mutants"} <= jobs), ({c for c in CELLS if c.startswith("native-")}, True))
-jobs, cells = run_plan(["crates/thrust-contract-tests/src/lib.rs"], REAL_GRAPH)
+jobs, cells = run_plan(["crates/testing/suites/api/src/lib.rs"], REAL_GRAPH)
 check("the suite runs every cell and the mutants", (cells, "mutants" in jobs), (set(CELLS), True))
-jobs, cells = run_plan(["crates/thrust-editor-doc/src/lib.rs"], REAL_GRAPH)
+jobs, cells = run_plan(["crates/editor/doc/src/lib.rs"], REAL_GRAPH)
 check("a crate no binary depends on runs no cell", (cells, "contract" in jobs, "hermetic" in jobs), (set(), False, True))
-# ADR-0009's layout plans exactly as the flat one did: moving a crate changes no plan.
+# ADR-0009's layout plans exactly as the flat one before it did: moving a crate changed no plan.
 check("ADR_0009 places every crate of REAL_GRAPH", sorted(ADR_0009), sorted(REAL_GRAPH))
 for n in sorted(REAL_GRAPH):
     for f in ("src/lib.rs", "Cargo.toml", "tests/t.rs"):
         check(f"ADR-0009: {n}'s {f} at {ADR_0009[n]} plans as at crates/{n}",
-              run_plan([f"{ADR_0009[n]}/{f}"], REAL_GRAPH, layout=ADR_0009), run_plan([f"crates/{n}/{f}"], REAL_GRAPH))
+              run_plan([f"{ADR_0009[n]}/{f}"], REAL_GRAPH), run_plan([f"crates/{n}/{f}"], REAL_GRAPH, layout=flat(REAL_GRAPH)))
 
 # ---- 6. this repository ----------------------------------------------------------------------------------------------------------
 md = subprocess.run(["cargo", "metadata", "--format-version", "1", "--no-deps", "--offline", "--manifest-path",
@@ -269,6 +267,7 @@ if md.returncode == 0:
     check("every member directory is under crates/", sorted(d for d in dirs if not d.startswith("crates/")), [])
     check("every member's own file is that member's", sorted(d for d in dirs if pc.owner(f"{d}/src/lib.rs", dirs) != d), [])
     dir_of = {n: d for d, n in dirs.items()}
+    check("REAL_GRAPH's crates are where ADR_0009 puts them", {n: dir_of.get(n) for n in ADR_0009}, ADR_0009)
     for name in sorted({pc.SUITE, pc.PG_ADAPTER, pc.MUTANTS_BINARY, *pc.TARGET_BINARY.values()}):
         check(f"{name}, named by the planner, is a crate of the workspace", name in real, True)
     for n in sorted(real):

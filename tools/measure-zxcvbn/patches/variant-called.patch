@@ -1,8 +1,8 @@
-diff --git a/crates/thrust-core/Cargo.toml b/crates/thrust-core/Cargo.toml
-index dc8ce41..02a9b1f 100644
---- a/crates/thrust-core/Cargo.toml
-+++ b/crates/thrust-core/Cargo.toml
-@@ -41,6 +41,7 @@ sha2 = { version = "0.11", default-features = false }
+diff --git a/crates/core/usecases/Cargo.toml b/crates/core/usecases/Cargo.toml
+index 8f94607..9fb55e2 100644
+--- a/crates/core/usecases/Cargo.toml
++++ b/crates/core/usecases/Cargo.toml
+@@ -52,6 +52,7 @@ base64 = "0.22"
  # in the issue #38 feasibility probe). No `getrandom` feature: the salt comes from the `Rng` port, not from the platform.
  argon2 = { version = "0.6", default-features = false, features = ["alloc", "password-hash"] }
  subtle = { version = "2", default-features = false }
@@ -10,11 +10,11 @@ index dc8ce41..02a9b1f 100644
  
  # Test-only. `scripts/check-deps.sh` checks normal dependencies, so none of these reach the core graph.
  # The memory adapters are the reference implementation the use-case tests run against; the executor is
-diff --git a/crates/thrust-core/src/auth.rs b/crates/thrust-core/src/auth.rs
-index bbd8dfb..b10c749 100644
---- a/crates/thrust-core/src/auth.rs
-+++ b/crates/thrust-core/src/auth.rs
-@@ -262,7 +262,14 @@ pub fn password_is_strong(password: &str) -> bool {
+diff --git a/crates/core/usecases/src/auth.rs b/crates/core/usecases/src/auth.rs
+index 88b3e83..99a1166 100644
+--- a/crates/core/usecases/src/auth.rs
++++ b/crates/core/usecases/src/auth.rs
+@@ -265,7 +265,14 @@ pub fn password_is_strong(password: &str) -> bool {
          return false;
      }
      let letters = password.trim_matches(|c: char| !c.is_alphabetic()).to_lowercase();

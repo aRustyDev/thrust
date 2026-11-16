@@ -13,7 +13,7 @@ guards security, tenancy or uniqueness.
 Every "X is allowed" assertion is paired with a neighbouring "Y is rejected" assertion (cross-tenant, non-member,
 guest, duplicate, over-limit, oversize). Where a rejected request could still have changed state, the test also
 checks that it had **no effect**. Without the pair, a handler that allows everything, or rejects everything, passes.
-Durable. Example: `crates/thrust-contract-tests/tests/contract.rs` (see its header comment and
+Durable. Example: `crates/testing/suites/api/tests/contract.rs` (see its header comment and
 `cross_tenant_access_is_rejected_and_has_no_effect`).
 
 ## Planted mutant
@@ -21,7 +21,7 @@ Durable. Example: `crates/thrust-contract-tests/tests/contract.rs` (see its head
 A cargo feature named `mutant_*` that compiles a deliberately broken variant of an adapter; `scripts/mutants.sh`
 runs the suite against it and requires failure (exit 101 and at least one `FAILED`). A surviving mutant means some
 assertion is vacuous. Durable. Today: `mutant_ignore_tenant`, `mutant_dup_sequence`, `mutant_no_activity_dedupe`
-(`crates/thrust-adapters-memory`) and `mutant_discard_noop` (`crates/thrust-adapters-selfhosted`). Add one when a new
+(`crates/adapters/memory`) and `mutant_discard_noop` (`crates/adapters/selfhosted`). Add one when a new
 invariant guards tenancy, uniqueness, idempotency or transaction safety. See [Mutation](techniques/mutation.md).
 
 ## Target guard
@@ -50,26 +50,26 @@ real run ends with a control, the real `stage2-contract.sh` with its `main` coun
 ## Non-vacuity
 
 A test asserting that the comparison it relies on actually compared something: enough inputs, non-empty documents,
-bytes compared. Durable. Example: `stage3_not_vacuous` in `crates/thrust-editor-doc/tests/stage3.rs`. A
+bytes compared. Durable. Example: `stage3_not_vacuous` in `crates/editor/doc/tests/stage3.rs`. A
 differential or golden test that loads its inputs from a file needs one, and must **fail** when the file is
-missing: the `oracle_` tests in `crates/thrust-editor-doc/tests/` do both (resolved drift D-4 in
+missing: the `oracle_` tests in `crates/editor/doc/tests/` do both (resolved drift D-4 in
 [Status](status.md)).
 
 ## Mutated fixture
 
 Change the expected value, the schema or the comparator and require the test to fail. Durable form:
 `mutated_schema_is_detected_by_the_corpus_and_by_the_dump_diff` and
-`comparator_discriminates_between_different_documents` in `crates/thrust-editor-doc/tests/controls.rs`.
+`comparator_discriminates_between_different_documents` in `crates/editor/doc/tests/controls.rs`.
 
 ## Corrupted input
 
 Feed damaged binaries or text and require them to be rejected or detected, never silently decoded as something
-else. Durable form: `corrupted_binaries_are_detected` in `crates/thrust-editor-doc/tests/controls.rs`.
+else. Durable form: `corrupted_binaries_are_detected` in `crates/editor/doc/tests/controls.rs`.
 
 ## Must-fail case
 
 A test case whose input is known bad and whose assertion is that the code under test catches it. Durable form:
-`unsanitised_payload_is_caught` in `crates/thrust-editor-doc/tests/sanitize.rs`.
+`unsanitised_payload_is_caught` in `crates/editor/doc/tests/sanitize.rs`.
 
 ## Broken implementation
 
@@ -104,8 +104,8 @@ can reach a class eventually: with 1000 samples the original `thrust-core` valid
 their own 256 cases they never drew an empty or whitespace-only name or a one-character one, the inputs two of
 those properties are about. Where a property discards inputs with `prop_assume!`, assert the share it keeps too.
 
-In-repo: `model_strategy_reaches_every_step_class` in `crates/thrust-contract-tests/tests/model/mod.rs` and in
-`crates/thrust-core/tests/assets.rs` (over whole sequences), `model_postgres_strategy_reaches_every_step_class` in
-`crates/thrust-adapters-selfhosted/tests/model/mod.rs`, `generated_documents_reach_every_kind` in
-`crates/thrust-editor-doc/tests/roundtrip.rs`, and `strategies_reach_every_input_class` in
-`crates/thrust-core/src/lib.rs`.
+In-repo: `model_strategy_reaches_every_step_class` in `crates/testing/suites/api/tests/model/mod.rs` and in
+`crates/core/usecases/tests/assets.rs` (over whole sequences), `model_postgres_strategy_reaches_every_step_class` in
+`crates/adapters/selfhosted/tests/model/mod.rs`, `generated_documents_reach_every_kind` in
+`crates/editor/doc/tests/roundtrip.rs`, and `strategies_reach_every_input_class` in
+`crates/core/usecases/src/lib.rs`.

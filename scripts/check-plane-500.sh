@@ -102,7 +102,7 @@ case "${1:-}" in
     ;;
   *)
     if [ "$#" -eq 0 ]; then
-      set -- "$ROOT/crates/thrust-api-v1/src" "$ROOT/crates/thrust-compat-plane/src"
+      set -- "$ROOT/crates/api/v1/src" "$ROOT/crates/api/compat-plane/src"
     fi
     check_dirs "$@"
     exit $?

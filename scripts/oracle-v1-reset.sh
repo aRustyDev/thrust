@@ -9,7 +9,7 @@
 # control run. It does three things, and says which one failed:
 #
 #   1. POST /internal/reset   every row of every table, gone (the schema stays)                       exit 3 if not a 204
-#   2. POST /internal/seed    the fixture that `oracle-fixture` prints (crates/thrust-oracle-fixture) exit 4 if not a 204
+#   2. POST /internal/seed    the fixture that `oracle-fixture` prints (crates/testing/fixtures/oracle) exit 4 if not a 204
 #   3. two requests through /api/v1 that show the load took: the owner's token lists both projects (200), and the oracle's
 #      `expired` token is refused as Plane refuses it (403). A load that put nothing there cannot pass both.   exit 5 if not
 #

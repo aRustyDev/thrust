@@ -110,7 +110,7 @@ the whole path from a merge.) `plan` first checks that the commit's own `gate` p
 that the environments are gated. For staging, `build` then makes the bundle with no secret anywhere in the job, and attests
 it; production builds nothing and takes the bundle its release carries, only from a published, immutable release and only the
 file GitHub's attestation of that release names. `deploy` verifies the build attestation,
-reads what is live, and runs the expand migration only if a file under `crates/thrust-adapters-postgres/migrations/` differs
+reads what is live, and runs the expand migration only if a file under `crates/adapters/postgres/migrations/` differs
 from the live version's commit. It puts the previous release's web files under this release's (below), deploys at 100 %, and
 proves it. The job summary has a line for each step.
 
@@ -132,7 +132,7 @@ a check (a forged or damaged one), the run fails, and there is no way past that 
 ## What the deploy compares with what is live
 
 The live version's tag is the commit that is running. `deploy` compares that commit with the one it is deploying by what they
-hold: the files under `crates/thrust-adapters-postgres/migrations/` (a difference runs the expand migration) and the
+hold: the files under `crates/adapters/postgres/migrations/` (a difference runs the expand migration) and the
 `[[migrations]]` tables of `wrangler.deploy.toml` (a difference is a Durable Object lifecycle change, below). Neither commit has to
 descend from the other. release-plz force-updates the release candidate's branch, so the commit that is live is usually in no
 branch of the checkout any more; `deploy` asks GitHub for that one commit by its sha, with no secret, before it compares. GitHub
@@ -148,7 +148,7 @@ which the comparison never was.
 
 ## Deploying a Durable Object lifecycle change
 
-A change to `[[migrations]]` in `crates/thrust-worker/wrangler.deploy.toml` cannot be rolled back across and is not gradual
+A change to `[[migrations]]` in `crates/worker/wrangler.deploy.toml` cannot be rolled back across and is not gradual
 (ADR-0110, ADR-0090). `deploy` defers it, you approve `deploy-do`, and it deploys with no automatic rollback. Plan to fix
 forward: if the new version is bad, deploying the next commit is the way out, because Cloudflare refuses a rollback past the
 migration. A lifecycle change that has to ship together with an API change reopens ADR-0090.

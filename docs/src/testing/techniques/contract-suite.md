@@ -16,15 +16,15 @@ that only one adapter has (`worker_only.rs` holds the Worker-only tests, and ada
 
 ## Name and location
 
-`crates/thrust-contract-tests`. The suite only sees `THRUST_BASE_URL` and `THRUST_ADMIN_TOKEN`; it never learns
+`crates/testing/suites/api`. The suite only sees `THRUST_BASE_URL` and `THRUST_ADMIN_TOKEN`; it never learns
 which target it runs on. Fixtures are created through `POST /internal/seed`, the same route on every target
-(`crates/thrust-contract-tests/src/lib.rs`), which is mounted only when `thrust-api` is built with `test_routes`.
+(`crates/testing/suites/api/src/lib.rs`), which is mounted only when `thrust-api` is built with `test_routes`.
 The suite never calls `POST /internal/reset` (issue #58), which deletes every row: its tests run in parallel against one
 target and each owns only the fixture it made. It checks the route's gate (`reset_requires_the_admin_token_and_a_refused_call_deletes_nothing`,
 with a fixture made first as the control) and nothing more; the positive path is tested in the adapters and by
 `scripts/oracle-v1-reset.sh`.
 
-- `crates/thrust-contract-tests/tests/contract.rs`: the portable suite. Its work-item tests (sequence and `sort_order`,
+- `crates/testing/suites/api/tests/contract.rs`: the portable suite. Its work-item tests (sequence and `sort_order`,
   the list, soft delete, tenancy, the external key, concurrent creates, invalid input, the missing and the invalid key)
   run over `/api/v1` and answer as Plane does: the fixture plants an API key for every user (`User.key`, sent as
   `X-Api-Key`), a stranger is a 403, a list is newest first, and a member deletes only what they made. The tests whose
@@ -41,7 +41,7 @@ with a fixture made first as the control) and nothing more; the positive path is
   `scripts/worker-dev.sh` writes into a throwaway copy of the config from `THRUST_V1_RATE_LIMIT`; `scripts/contract.sh`
   tells the suite the limit it started the target with (`THRUST_EXPECT_V1_LIMIT`), so a target started with another one
   fails the test: that is its control.
-- `crates/thrust-contract-tests/tests/model/mod.rs`: its generated part, compiled into the same binary and run in the
+- `crates/testing/suites/api/tests/model/mod.rs`: its generated part, compiled into the same binary and run in the
   `main` pass: random operation sequences, events included, against a reference [model](model-based.md), every
   caller × project × route against the access table (252 requests: the activity feed and the three attachment routes),
   and the generator coverage control. Its
@@ -50,7 +50,7 @@ with a fixture made first as the control) and nothing more; the positive path is
   queue consumer does with an event. Its work items are made and deleted through `/api/v1` with the actors' API keys, as a
   vehicle: `/api/v1`'s own rules (names, external keys, sequence ids, who may change what, the list) are
   `tests/v1_model/`'s and are not repeated.
-- `crates/thrust-contract-tests/tests/v1_model/mod.rs` and `tests/v1_model/matrix.rs`: the same kind of test for `/api/v1`'s
+- `crates/testing/suites/api/tests/v1_model/mod.rs` and `tests/v1_model/matrix.rs`: the same kind of test for `/api/v1`'s
   work items, over API keys, in the `main` pass: random sequences of create, delete, detail and list (a page of one to three
   and the second page by its cursor) by every kind of caller, in two tenants, a project that does not exist and, now and
   then, a slug that is not the project's workspace's, against a reference model written from the pin's rules (a stranger
@@ -60,7 +60,7 @@ with a fixture made first as the control) and nothing more; the positive path is
   access table. `sweeper_model_v1_outbox_holds_one_event_per_change_and_nothing_more` runs the sequences in the `sweeper`
   pass and checks the outbox depth after every request, so a request that writes an event it should not, or none it
   should, shows. `/api/v1` has no activity feed, so what the consumer does with an event stays with the slice's model.
-- `crates/thrust-contract-tests/tests/auth/mod.rs` and `tests/auth/matrix.rs`: identity, in the `main` pass (issue #38):
+- `crates/testing/suites/api/tests/auth/mod.rs` and `tests/auth/matrix.rs`: identity, in the `main` pass (issue #38):
   sign-in and the cookie attributes, the CSRF double-submit rule, sign-out and sign-out-everywhere, deactivation, API
   keys (`X-Api-Key`, shown once, revoked, expired, inactive owner), plus the generated matrix of every
   credential kind × state × method × CSRF-token position against a status table (126 requests). Sign-in, the CSRF token
@@ -75,11 +75,11 @@ with a fixture made first as the control) and nothing more; the positive path is
   its tests are the three `compat_oidc_*` ones in `tests/compat/mod.rs`; the slice's own six `oidc_` tests in `auth` were
   deleted with its routes (step 5d of #58, after the five things they held that the compat tests did not were ported).
   They run against a mock identity provider that the suite serves on `127.0.0.1`
-  (`crates/thrust-contract-tests/src/mock_idp.rs`, RS256 signed with the `rsa` crate, so it shares no code with the
+  (`crates/testing/suites/api/src/mock_idp.rs`, RS256 signed with the `rsa` crate, so it shares no code with the
   `openidconnect` crate that verifies its tokens), registered with the app's callback as its redirect URI
   (`scripts/contract.sh`); a deployed Worker cannot reach it, so `scripts/stage2-contract.sh`
   skips them (64 tests there: the `main` pass less the `oidc_` and `operator_` tests).
-- `crates/thrust-contract-tests/tests/budget/mod.rs`: the round-trip budget (issue #39), in the `main` pass.
+- `crates/testing/suites/api/tests/budget/mod.rs`: the round-trip budget (issue #39), in the `main` pass.
   `list_endpoints_stay_within_five_db_round_trips` reads the `x-thrust-db-round-trips` header (see
   [the test routes](../../flows/app.md)) of eight requests, each list seeded with six or more rows so that a statement per row
   would show: Plane's projects (S17) and issues (S47) asked by an admin, S47 asked by a limited
@@ -91,7 +91,7 @@ with a fixture made first as the control) and nothing more; the positive path is
   [status](../status.md)): `/api/v1` work items with `?expand=assignees`, which send two statements per distinct
   assignee. The `budget` pass runs this test alone, for `scripts/mutants.sh`; it is not in
   `contract-all.sh`.
-- `crates/thrust-contract-tests/tests/worker_only.rs`: Durable Object, cron and binding tests for `worker-*` targets.
+- `crates/testing/suites/api/tests/worker_only.rs`: Durable Object, cron and binding tests for `worker-*` targets.
 
 A pass is selected by **test-name prefix** in `scripts/contract.sh`, not by nextest: `sweeper_`, `panic_`,
 `blast_`, `csrf_off_`, `worker_room_`, `worker_cron_`, `worker_bindings_`, `stage2_cron_real_trigger_`. Unprefixed tests in
@@ -133,7 +133,7 @@ See [Running](../running.md#the-contract-suite) for targets, passes and prerequi
 ## The engine pass and the scale pass
 
 Spike 0002 (issue #37) adds two passes that are **not** in `contract-all.sh`, so they are not required CI checks:
-- `engine` (own test binary, `crates/thrust-contract-tests/tests/engine.rs`, tests named `engine_`, so the main pass and `EXPECT_MAIN` are untouched; the target starts with a very high `/api/v1` limit, because the tests go through `/api/v1` with an API key per writer): the 50-writer, 10k-create test (each writer deletes the work items it made, as the pin's rule says, and the whole list is read back by cursor), search parity with `icontains` (the pin's workspace search: a name, a project identifier or a number says the query; a description is not searched), search freshness and scope (a stranger and a member of no project are answered with nothing, as the pin does), and the bulk seed. 4 tests on every target; `scripts/mutants.sh` runs it against the memory adapter's `mutant_dup_sequence` and `mutant_search_case_sensitive`.
+- `engine` (own test binary, `crates/testing/suites/api/tests/engine.rs`, tests named `engine_`, so the main pass and `EXPECT_MAIN` are untouched; the target starts with a very high `/api/v1` limit, because the tests go through `/api/v1` with an API key per writer): the 50-writer, 10k-create test (each writer deletes the work items it made, as the pin's rule says, and the whole list is read back by cursor), search parity with `icontains` (the pin's workspace search: a name, a project identifier or a number says the query; a description is not searched), search freshness and scope (a stranger and a member of no project are answered with nothing, as the pin does), and the bulk seed. 4 tests on every target; `scripts/mutants.sh` runs it against the memory adapter's `mutant_dup_sequence` and `mutant_search_case_sensitive`.
 - `scale` (a binary, like `bench`): list, search and create latency with 100,000 items seeded through `/internal/seed-work-items`.
 
 `scripts/stage2-contract.sh` runs `main` (64 tests: the `oidc_` tests need the mock provider on 127.0.0.1, which a deployed Worker cannot reach, and the `operator_` tests need routes and a token a deployed Worker is started without), `csrfoff` and `engine` against a deployed `worker-pg`, and an `email` pass that sends one real message each time it is run. Numbers and conditions: `research/0011-database-engine-cells.md`.
@@ -149,14 +149,14 @@ invariant. Adding a test means updating the pass's `EXPECT_*` count (and its `EX
 `scripts/contract.sh` refuses a main pass whose server does not enforce the token and a `csrfoff` pass whose server does, and
 `scripts/mutants.sh` shows both refusals. The generated tests add
 [generator coverage](../evidence-and-controls.md#generator-coverage) and fail when they sent no requests; a
-counterexample is saved in `crates/thrust-contract-tests/tests/model/mod.proptest-regressions`, committed
+counterexample is saved in `crates/testing/suites/api/tests/model/mod.proptest-regressions`, committed
 ([Rule 7](../rules.md)). `scripts/mutants.sh` sets `PROPTEST_DISABLE_FAILURE_PERSISTENCE`, so the counterexamples
 found against its broken builds are not saved.
 
 ## Owning skill
 
 **None** (G-1). `rust-test-app` explicitly excludes "HTTP assertions shared across adapters". Until a skill exists,
-copy the shape of an existing test in `crates/thrust-contract-tests/tests/contract.rs`: seed with `Fixture::seed`,
+copy the shape of an existing test in `crates/testing/suites/api/tests/contract.rs`: seed with `Fixture::seed`,
 assert the allowed case, assert the neighbouring rejected case and its lack of effect, and use `eventually()` for
 asynchronous effects. For a new operation or route, extend the generated part first ([Rule 9](../rules.md)): an `Op`
 and its rule in the model, or a `Route` in the matrix.
