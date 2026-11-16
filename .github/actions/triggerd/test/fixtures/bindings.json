@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "description": "Abstract full-policy binding fixture for static-validator tests; fictional jobs are not installed workflows.",
+  "planner": "plan",
+  "bindings": {
+    "api.inference-mock": "inference-mock",
+    "docs.api-review": "docs-api-review",
+    "foo.both-python": "foo-both-python",
+    "security.secrets": "security-secrets",
+    "ui.contract-tests": "ui-contract-tests"
+  },
+  "needs": {
+    "inference-mock": [
+      "plan"
+    ],
+    "docs-api-review": [
+      "plan"
+    ],
+    "foo-both-python": [
+      "plan"
+    ],
+    "security-secrets": [
+      "plan"
+    ],
+    "ui-contract-tests": [
+      "plan"
+    ]
+  }
+}

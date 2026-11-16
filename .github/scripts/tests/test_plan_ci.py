@@ -50,7 +50,7 @@ def check(label, got, want):
         print(f"BAD  {label}: got {got!r}, wanted {want!r}")
 
 
-ALL_JOBS = {"ci-scripts", "deps", "lint", "deny", "hermetic", "pg-adapter", "contract", "mutants", "web"}
+ALL_JOBS = {"ci-scripts", "deps", "lint", "deny", "hermetic", "pg-adapter", "contract", "mutants", "web", "docs"}
 CELLS = [
     "native-memory main", "native-memory oracle", "native-pg main", "native-pg oracle",
     "worker-memory main", "worker-cf main", "worker-cf oracle", "worker-cf e2e",
@@ -181,10 +181,10 @@ SAMPLES = [
     "tools/compat-record/record.py", "tools/compat-inventory/out-pinned/endpoint-inventory.csv",
     ".agents/plans/contrail/research/0003-compat-plane-inventory.md", "tools/e2e-har/scrub.py", "e2e/journeys/m1.spec.ts",
     "web/apps/web/app.tsx", "scripts/e2e.sh", "scripts/oracle-v1.sh", "scripts/mutants.sh", "scripts/stage2-contract.sh",
-    "scripts/check-web-diff.sh", "scripts/check-topology.sh", "scripts/smoke-deploy.sh", "scripts/verify-all.sh",
-    "scripts/new-thing.sh", ".github/scripts/lint-workflow.sh", ".github/workflows/deploy.yml",
+    "scripts/check-web-diff.sh", "scripts/check-book.sh", "scripts/check-topology.sh", "scripts/smoke-deploy.sh", "scripts/verify-all.sh",
+    "scripts/new-thing.sh", "docs/src/intro.md", "AGENTS.md", ".github/scripts/lint-workflow.sh", ".github/workflows/deploy.yml",
 ]
-NOTHING = ["docs/src/intro.md", "README.md", "CHANGELOG.md", "probes/send-shape/run.sh", "tools/spike-0006/x", ".github/CODEOWNERS"]
+NOTHING = ["README.md", "CHANGELOG.md", ".agents/plans/x.md", "docs-notes.md", "CLAUDE.md", "crates-AGENTS.md", "probes/send-shape/run.sh", "tools/spike-0006/x", ".github/CODEOWNERS"]
 check("one sample per rule", len(SAMPLES), len(pc.RULES))
 corpus = SAMPLES + NOTHING + ["crates/thrust-adapters-cloudflare/src/lib.rs", "crates/thrust-server/Cargo.toml", "crates/thrust-contract-tests/src/lib.rs"]
 for i in range(400):
@@ -220,8 +220,8 @@ for path in ["crates/README.md", "crates/adapters/README.md", "crates/testing/su
     check(f"{path}, a group's README inside no crate, runs nothing", run_plan([path], REAL_GRAPH), (set(), set()))
 check("a crate's own README.md is the crate", run_plan(["crates/thrust-core/README.md"], REAL_GRAPH),
       run_plan(["crates/thrust-core/src/lib.rs"], REAL_GRAPH))
-jobs, cells = run_plan(["docs/a.md"], REAL_GRAPH, CELLS + ["worker-new main"])
-check("a target the planner does not know runs even on docs", (jobs, cells), ({"contract"}, {"worker-new main"}))
+jobs, cells = run_plan(["README.md"], REAL_GRAPH, CELLS + ["worker-new main"])
+check("a target the planner does not know runs even on a change that needs nothing", (jobs, cells), ({"contract"}, {"worker-new main"}))
 jobs, cells = run_plan(["crates/thrust-adapters-cloudflare/src/lib.rs"], REAL_GRAPH, CELLS + ["worker-new main"])
 check("a target the planner does not know runs with a crate change", "worker-new main" in cells, True)
 
@@ -232,7 +232,10 @@ check("e2e/ alone runs only the journeys' cell", run_plan(["e2e/journeys/m1.spec
 check("a deploy script runs ci-scripts and no cell", run_plan(["scripts/smoke-deploy.sh"], REAL_GRAPH), ({"ci-scripts"}, set()))
 check("another workflow runs ci-scripts and deps, no cell", run_plan([".github/workflows/flake-hunt.yml"], REAL_GRAPH),
       ({"ci-scripts", "deps"}, set()))
-check("docs run nothing", run_plan(["docs/src/intro.md", "README.md"], REAL_GRAPH), (set(), set()))
+check("the book runs only the docs job", run_plan(["docs/src/intro.md"], REAL_GRAPH), ({"docs"}, set()))
+check("AGENTS.md, which the book includes, runs the docs job", run_plan(["AGENTS.md"], REAL_GRAPH), ({"docs"}, set()))
+check("the book's palette runs the docs job", run_plan([".config/branding/colors.css"], REAL_GRAPH), ({"docs"}, set()))
+check("README.md and the plans run nothing", run_plan(["README.md", ".agents/plans/x.md"], REAL_GRAPH), (set(), set()))
 check("the oracle's files run its cells and the tests that read them",
       run_plan(["tools/oracle-v1/schema/openapi.v1.json"], REAL_GRAPH),
       ({"hermetic", "deps", "contract"}, {"native-memory oracle", "native-pg oracle", "worker-cf oracle"}))
@@ -311,8 +314,8 @@ check("cli: exit 0", rc, 0)
 check("cli: jobs, in the gate's order", json.loads(out.get("jobs", "null")), ["contract", "web"])
 check("cli: cells", json.loads(out.get("cells", "null")), ["worker-cf e2e"])
 check("cli: matrix", json.loads(out.get("matrix", "null")), {"include": [{"target": "worker-cf", "pass": "e2e"}]})
-rc, out, err = cli(changed="docs/a.md\n")
-check("cli: docs: no job, an empty matrix", (rc, out.get("jobs"), out.get("matrix"), out.get("cells")), (0, "[]", '{"include":[]}', "[]"))
+rc, out, err = cli(changed="README.md\n")
+check("cli: README.md: no job, an empty matrix", (rc, out.get("jobs"), out.get("matrix"), out.get("cells")), (0, "[]", '{"include":[]}', "[]"))
 rc, out, err = cli(changed="")
 check("cli: an empty change list runs everything", (rc, set(json.loads(out.get("jobs", "[]"))), len(json.loads(out.get("cells", "[]")))),
       (0, ALL_JOBS, len(CELLS)))

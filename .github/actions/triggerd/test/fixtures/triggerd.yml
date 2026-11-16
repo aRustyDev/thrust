@@ -1,0 +1,92 @@
+# Illustrative policy, not the repository dependency inventory.
+version: 1
+invalidate:
+  - .github/triggerd.yml
+  - .github/actions/triggerd/**
+  - .github/workflows/ci.yml
+changes:
+  foo-python:
+    paths: [src/foo/**/*.py]
+  bar-python:
+    paths: [src/bar/**/*.py]
+  other-source:
+    paths: [src/**]
+    exclude: [src/foo/**/*.py, src/bar/**/*.py]
+  foo-text-fixtures:
+    paths: [src/foo/*.txt]
+  api:
+    paths: [apps/api/**]
+  ui:
+    paths: [apps/ui/**]
+  api-ci:
+    paths:
+      - .github/workflows/api.yml
+      - .github/workflows/reusable-api-inference.yml
+      - .github/actions/libs/apps/api/**
+  api-docs:
+    paths: [docs/src/apps/api/**]
+  docs:
+    paths: [docs/**]
+  shared-python-policy:
+    paths: [.python-version, .configs/python/**]
+  shared-api-contract:
+    paths: [contracts/api/**]
+  repo-metadata:
+    paths: [README.md, LICENSE, LICENSE.md]
+coverage:
+  foo-text-fixtures:
+    kind: exempt
+    owner: example-fixture-maintainer
+    reason: Synthetic text fixtures do not affect the illustrative Python interaction check; secrets still runs.
+  api-docs:
+    kind: external
+    owner: documentation-maintainer
+    reason: Existing documentation job remains unconditional during migration.
+    workflow: .github/workflows/checks.yml
+    job: docs
+  docs:
+    kind: external
+    owner: documentation-maintainer
+    reason: Existing documentation job remains unconditional during migration.
+    workflow: .github/workflows/checks.yml
+    job: docs
+  repo-metadata:
+    kind: exempt
+    owner: repository-maintainer
+    reason: Illustrative prose/license-only changes need no component behavior check; secrets still runs.
+# other-source is deliberately unconsumed and has no disposition.
+# Matching it does NOT suppress unmatched-path fallback.
+rules:
+  foo.both-python:
+    description: Check interaction when both Python areas change
+    events: [pull_request, push, workflow_dispatch, schedule, merge_group]
+    when:
+      all:
+        - changed: foo-python
+        - changed: bar-python
+  api.inference-mock:
+    description: Execute existing mock contracts when API or its shared inputs change
+    events: [pull_request, push, workflow_dispatch, schedule, merge_group]
+    when:
+      any:
+        - changed: api
+        - changed: api-ci
+        - changed: shared-python-policy
+        - changed: shared-api-contract
+  ui.contract-tests:
+    description: Illustrative consumer check when either side of the API contract changes
+    events: [pull_request, push, workflow_dispatch, schedule, merge_group]
+    when:
+      any:
+        - changed: api
+        - changed: ui
+        - changed: shared-api-contract
+  docs.api-review:
+    description: Execute a proposed docs checker; its findings are independent of selection
+    events: [pull_request]
+    when:
+      changed: api
+  security.secrets:
+    description: Preserve universal secret scanning policy
+    events: [pull_request, push, workflow_dispatch, schedule, merge_group]
+    when: true

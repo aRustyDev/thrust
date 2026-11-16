@@ -430,10 +430,34 @@ jobs:
       - name: The build made the SPA
         run: test -s web/apps/web/build/client/index.html
 
+  # The book (docs/, mdBook). Runs when docs/, AGENTS.md (the book includes its testing rules) or .config/branding/ (its palette)
+  # changes (plan-ci.py). `mdbook build` exits 0 on a broken {{#include}} and on a mistyped book.toml key, and leaves out a page
+  # SUMMARY.md does not list without a word, so scripts/check-book.sh fails on any ERROR line and on such a page; its self-test
+  # breaks a copy of the book each of those ways, and the missing preprocessor a fourth, and each must be refused. mdBook and
+  # mdbook-mermaid (which targets mdBook 0.5) come from install-action at exact versions, checked against its SHA-256 manifest.
+  docs:
+    needs: changes
+    if: contains(fromJSON(needs.changes.outputs.jobs || '[]'), 'docs')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
+        with:
+          tool: mdbook@0.5.4,mdbook-mermaid@0.17.1
+      - name: Build the book (no ERROR line, no page missing from SUMMARY.md)
+        run: scripts/check-book.sh
+      - name: The check's controls (each broken book must be refused)
+        run: scripts/check-book.sh --self-test
+
   gate:
     name: gate
     if: always()
-    needs: [changes, ci-scripts, deps, lint, deny, hermetic, pg-adapter, contract, mutants, web]
+    needs: [changes, ci-scripts, deps, lint, deny, hermetic, pg-adapter, contract, mutants, web, docs]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:

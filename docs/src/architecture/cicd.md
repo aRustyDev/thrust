@@ -43,11 +43,11 @@ decides:
   `.github/scripts/plan-ci.py` (see [What runs when](#what-runs-when)).
 - Every expected job must be exactly `success`. A skipped job is a failure here, not a pass.
 - Every job that is not expected must be `skipped`. One that ran anyway means its `if:` and the planner disagree.
-- The planner and the gate list the same nine jobs. An expected job that is not a need of the gate, or a need the
+- The planner and the gate list the same ten jobs. An expected job that is not a need of the gate, or a need the
   planner does not know, fails it, as does an input that is missing or is not a JSON array of strings.
 - `contract` is expected exactly when cells are planned. The set of cells that uploaded a pass marker must then equal
   the planned set, which must not be empty.
-- `test-ci-scripts.sh` generates the cases: each of the nine jobs, expected or not, with each of the four results (72
+- `test-ci-scripts.sh` generates the cases: each of the ten jobs, expected or not, with each of the four results (80
   cases), then the cells, the inputs and the names. 34 hand mutants of the planner and the gate are each caught by
   their tests `[verified 2026-11-16 locally, under dash; not yet in CI]`.
 
@@ -90,9 +90,10 @@ its base branch. Nothing calls it, so it is a tool to run by hand.
     - the scripts that run a cell;
     - an unknown directory under `crates/`;
     - an unlisted script under `scripts/`.
-  - A path that no rule matches needs nothing: `docs/`, `README.md`, `AGENTS.md`, `.agents/`, `probes/` (which only
-    `scripts/verify-all.sh` runs, locally) and the other `tools/`. A pull request of only such paths runs `changes` and
-    `gate`, and `gate` passes. **The book is not built in CI at all.**
+  - The book's inputs run the `docs` job: `docs/`, `AGENTS.md` (the book includes its testing rules), `.config/branding/`
+    (its palette) and `scripts/check-book.sh`.
+  - A path that no rule matches needs nothing: `README.md`, `.agents/`, `probes/` (which only `scripts/verify-all.sh`
+    runs, locally) and the other `tools/`. A pull request of only such paths runs `changes` and `gate`, and `gate` passes.
 - **Everything runs** in these cases:
   - a release candidate's pull request;
   - a merge-queue entry;
@@ -113,6 +114,7 @@ its base branch. Nothing calls it, so it is a tool to run by hand.
   | `thrust-contracts` (everything depends on it) | all but `deny` and `web` | all 23 |
   | `tools/oracle-v1/` | `deps`, `hermetic`, `contract` | the 3 `oracle` cells |
   | `scripts/smoke-deploy.sh` | `ci-scripts` | none |
+  | a page under `docs/` | `docs` | none |
 
 - **Tested** by `test_plan_ci.py`, about 4,900 checks:
   - 300 generated crate graphs, with each crate changed alone and in pairs, against an independent reverse-reachability;
@@ -335,7 +337,6 @@ every one succeeded `[verified 2026-10-19 fa4bd6c]` with `gh run view`.
   Cloudflare resources.
 - `scripts/verify-all.sh`. CI runs its steps as separate jobs, except the probes, which it does not run.
 - The `blast` and `bench` contract passes, which are not in `contract-all.sh`.
-- The book build and its checks.
 - A deploy that has run against Cloudflare. `ci` tests `deploy.yml`'s scripts against a fake Cloudflare, and the pull-request
   dry run and `wrangler deploy --dry-run` check the rendered configuration. Real deploys to staging have run since 2026-11-15
   and none to production (see [Deploying the Worker](deploy.md)).
