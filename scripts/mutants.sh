@@ -213,5 +213,27 @@ for quad in \
   kill_check_msg "smtp adapter + $name" "$status" "$OUT/smtp-$name.out" "$needle"
 done
 
+# The Cloudflare email adapter's mutants (E3 of the reset by email, D-041): each is a deliberately broken build of thrust-adapters-cloudflare, run
+# against its own test file (`tests/email.rs`, which runs natively: only the binding glue, `CfEmail`, needs workerd). Same shape as the SMTP rows: the
+# log has to say what the mutant breaks. A refusal read as an outage and the reverse (the 21 codes of Cloudflare's own table); an unknown code read as a
+# refusal; the sender of the mail taken from the recipient; a recipient that is not one plain address handed to the binding. (The Worker's wiring has
+# one more, `mutant_worker_email_unwired`, which needs the wasm build: it is a hand run of `scripts/contract.sh worker-memory mail`, G-39.)
+for quad in \
+  "swap-refusal-and-outage:mutant_cf_email_swap_refusal_and_outage:email:documented codes were read the wrong way" \
+  "unknown-code-is-refused:mutant_cf_email_unknown_code_is_refused:email:an unknown code was refused" \
+  "from-is-recipient:mutant_cf_email_from_is_recipient:email:the sender of the mail is not the configured one" \
+  "recipient-unchecked:mutant_cf_email_recipient_unchecked:email:a recipient that is not one address was not refused"; do
+  name="${quad%%:*}"
+  rest="${quad#*:}"
+  feature="${rest%%:*}"
+  rest="${rest#*:}"
+  bin="${rest%%:*}"
+  needle="${rest#*:}"
+  "$ROOT/scripts/rs" cargo test --manifest-path "$ROOT/Cargo.toml" -p thrust-adapters-cloudflare --features "$feature" --test "$bin" \
+    >"$OUT/cf-email-$name.out" 2>&1
+  status=$?
+  kill_check_msg "cloudflare email adapter + $name" "$status" "$OUT/cf-email-$name.out" "$needle"
+done
+
 cat "$SUMMARY"
 exit "$SURVIVED"

@@ -133,16 +133,19 @@ its base branch. Nothing calls it, so it is a tool to run by hand.
   tasks uncached from an empty `node_modules` `[verified 2026-11-11 locally; not yet in CI]`.
 - **The matrix.** The `changes` job reads the `run <target> <pass>` lines of `scripts/contract-all.sh`
   (`plan-cells.sh`), so no second list can drift, and the planner keeps the cells the change needs. It fails if the number of cells it parsed differs from the number of lines that start with `run`,
-  if there are none, or if one repeats. There are 23 cells: 20 contract cells (the browser journeys' `worker-cf e2e`
-  and the password reset by email's `native-memory mail` among them) and the 3 `oracle` cells below `[verified 2026-11-14: PR #154's
-  check list had 22 contract jobs, all success, before the mail cell; the 21 of PR #113 (2026-11-10) were before the e2e cell]`.
+  if there are none, or if one repeats. There are 25 cells: 22 contract cells (the browser journeys' `worker-cf e2e`
+  and the password reset by email's three `mail` cells, `native-memory`, `worker-memory` and `worker-cf`, among them) and the 3 `oracle` cells below `[verified 2026-11-14: PR #154's
+  check list had 22 contract jobs, all success, before the first mail cell; the 21 of PR #113 (2026-11-10) were before the e2e cell]`.
   Each runs on a fresh runner with its own checkout, which is why the shared-build-directory hazard that makes
   `contract-all.sh` run serially does not apply.
-- **A cell.** `contract-cell.yml` checks that `curl`, `openssl`, `lsof`, `pgrep` and `docker` exist (and `nc` for the `mail` pass), runs
+- **A cell.** `contract-cell.yml` checks that `curl`, `openssl`, `lsof`, `pgrep` and `docker` exist (and `nc` for the native `mail` cell, which waits for its Mailpit with it), runs
   `scripts/contract.sh <target> <pass>` with no pipe so the step's status is the script's, and uploads a marker named
   for the cell. The script's target guard and count guard apply as they do locally.
-- **The mail cell.** `native-memory mail` starts a Mailpit container (pinned, pulled from Docker Hub as `postgres` is) beside the native server, which is
+- **The mail cells.** `native-memory mail` starts a Mailpit container (pinned, pulled from Docker Hub as `postgres` is) beside the native server, which is
   given `THRUST_SMTP_*` and `THRUST_PUBLIC_BASE_URL`, and runs `tests/mail.rs`: the password reset by email through a mail server written by someone else.
+  `worker-memory mail` and `worker-cf mail` (E3) run the same three tests against the Worker built for wasm32 and run by `wrangler dev`, whose
+  `send_email` binding is wrangler's own simulator: nothing is sent, and the message the binding was given is read from the dev server's log and the files
+  it names. No container; the second also has the Postgres container every `worker-cf` cell has.
   The `pg-adapter` job also runs the SMTP adapter's Docker suite (`--test smtp_sink`, Mailpit again, with TLS and a login); the adapter's other two suites
   are hermetic and run in `hermetic`.
 - **The oracle cells.** `native-memory oracle`, `native-pg oracle` and `worker-cf oracle` run the v1 oracle (issue #58,
@@ -348,8 +351,9 @@ Found by the CI/CD review of 2026-11-14 (`.agents/plans/cicd-review/`), which al
 - **Too narrow.** Fixed by the same PR: a change to `web/` alone now runs the `worker-cf e2e` cell (G-30), and a
   nightly run of `ci` on `main` surfaces a new advisory or a new stable toolchain without waiting for a pull request.
   Still open: `lint-workflow.sh` checks only the deploy and release workflows and their actions, not `ci.yml`,
-  `contract-cell.yml`, `e2e-schedule.yml`, `flake-hunt.yml` or `setup-rust`. `hermetic` and `pg-adapter` do not pass
-  `--locked`. The toolchain floats on `stable`. `flake-hunt.yml` cannot select the `csrfoff`, `oracle` or `e2e` passes.
+  `contract-cell.yml`, `e2e-schedule.yml`, `flake-hunt.yml` or `setup-rust`. The toolchain floats on `stable`.
+  (`hermetic` and `pg-adapter` pass `--locked` now, as `lint` and `deny` did: a `Cargo.lock` that Cargo would have to
+  change fails them instead of being rewritten on the runner.) `flake-hunt.yml` cannot select the `csrfoff`, `oracle` or `e2e` passes.
 
 ## Against the ADRs
 
@@ -362,7 +366,7 @@ ADR-0100, ADR-0101 and ADR-0110 are accepted, in `.agents/plans/contrail/adrs/`.
   matrix on every pull request that changes a Rust-relevant path, a lint step (`lint`: rustfmt and clippy), and the
   aggregate job, as `gate`. In place in part: the oracle schema check, a step of `deps` (`scripts/check-openapi.sh`, issue #58),
   which diffs the OpenAPI document that `thrust-api-v1` writes with the pinned Plane schema for the operations listed in
-  `tools/oracle-v1/schema/described.operations` (the 18 of Projects, States and Labels so far), and runs a clippy step (`lint`) and a test step
+  `tools/oracle-v1/schema/described.operations` (all 32 of the scope `m1`), and runs a clippy step (`lint`) and a test step
   (`hermetic`) for the `openapi` feature that no other step turns on. Not in place: a nightly run (only the weekly flake hunt) and
   the periodic diff, which is `assert-required-contexts.sh` and is run by hand.
 - **ADR-0101 (supply chain)** asks for SHA pinning, Scorecard, attestation and trivy, plus Worker-bundle

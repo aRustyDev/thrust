@@ -79,6 +79,23 @@ Accepted. Environments: **dev (PR previews on a shared dev DB, per-PR schema/pre
 
 Reconciled the round-15/16 wording 'Cloudflare-side secrets provisioned by OpenTofu': that is **superseded** by Option 1. Secret *values* are set with `wrangler secret put` / `versions secret put` (or Secrets Store when GA) from CI, sourced from GitHub environment secrets (1Password locally); OpenTofu creates the resources (Workers, bindings, stores) but never holds secret values, which would otherwise land in tofu state. Environments (dev, staging, prod) are unchanged.
 
+## Update — one hostname, N targets (2026-11-16)
+
+ADR-0111 replaces the environment set. There is one production Worker and any number of targets, each a Worker Preview
+of it, on one hostname:
+* release targets (`vX.Y.Z`, and the alias `staging`) on production's data;
+* `dev-*` targets for pull requests, each with its own role, schema, Hyperdrive config and bucket on `thrust-pg-dev`.
+  This is round 16's per-PR schema (Q-0092.2), now built on Previews.
+
+Staging stops being an environment with data of its own.
+
+* **Secrets:** a Preview gets its secrets with `wrangler preview secret bulk` from a file, never argv. Flagship is
+  written with an app-scoped token held in the deploy environments.
+* **GitHub environments:** production database credentials sit only in reviewer-gated environments. A `preview-dev`
+  environment holds what `dev-*` provisioning needs.
+* **This ADR's other rules are unchanged:** secret values never enter OpenTofu state, and `secrets.required` is still
+  the declared contract.
+
 ## Open Questions
 
 * Q-0092 — secrets mechanism.

@@ -5,8 +5,12 @@
 Exit 0 when they agree on everything that is not a deliberate difference, 1 with the differences listed, 2 when a file is not usable.
 
 The deliberate differences, and nothing else:
-  * the probe-only bindings (`SS` Secrets Store, `EMAIL` send_email, `RL` rate limit) are not in the deploy template: only the probe
-    routes read them;
+  * the probe-only bindings (`SS` Secrets Store, `RL` rate limit) are not in the deploy template: only the probe routes read them.
+    (`EMAIL` send_email is in both: the password reset sends through it, E3. In the template it is restricted to the one sender the
+    environment is configured with, `allowed_sender_addresses = ["__EMAIL_FROM__"]`, which this checks);
+  * three variables only a deployment sets (`THRUST_EMAIL_FROM`, `THRUST_EMAIL_FROM_NAME`, `THRUST_PUBLIC_BASE_URL`): the template has
+    them and wrangler.toml must not, because a development run has no mail service unless a pass gives it one, and the main pass of the
+    contract suite holds that the route is dark;
   * ids and names are markers in the template (checked by what they are called, not by their value);
   * the queue consumer in the template has a `dead_letter_queue`;
   * wrangler.toml has `[build]` (the deploy job builds nothing), and the template has no `[build]`;
@@ -21,7 +25,9 @@ import re
 import sys
 import tomllib
 
-PROBE_ONLY = {"SS", "EMAIL", "RL"}
+PROBE_ONLY = {"SS", "RL"}
+# Variables a deployment sets and a development run must not: they give the Worker a mail service (E3).
+DEPLOY_ONLY_VARS = {"THRUST_EMAIL_FROM", "THRUST_EMAIL_FROM_NAME", "THRUST_PUBLIC_BASE_URL"}
 
 
 def load(path):
@@ -42,7 +48,9 @@ def shape(cfg, *, deploy):
     out["placement"] = cfg.get("placement")
     out["version_metadata"] = cfg.get("version_metadata")
     out["crons"] = cfg.get("triggers", {}).get("crons")
-    out["var_names"] = sorted(cfg.get("vars", {}))
+    out["var_names"] = sorted(set(cfg.get("vars", {})) - DEPLOY_ONLY_VARS)
+    out["deploy_only_vars_present"] = sorted(set(cfg.get("vars", {})) & DEPLOY_ONLY_VARS)
+    out["send_email"] = sorted(e["name"] for e in cfg.get("send_email", []))
     out["hyperdrive"] = sorted(h["binding"] for h in cfg.get("hyperdrive", []))
     out["r2"] = sorted(b["binding"] for b in cfg.get("r2_buckets", []))
     queues = cfg.get("queues", {})
@@ -58,7 +66,6 @@ def shape(cfg, *, deploy):
     # what is in wrangler.toml and must not be in a deployed Worker, or the other way round, is reported separately
     out["probe_only_present"] = sorted(
         {b["binding"] for b in cfg.get("secrets_store_secrets", [])} & PROBE_ONLY
-        | {e["name"] for e in cfg.get("send_email", [])} & PROBE_ONLY
         | {r["name"] for r in cfg.get("ratelimits", [])} & PROBE_ONLY
     )
     if deploy:
@@ -92,7 +99,7 @@ def main(argv):
     problems = []
 
     for key in a:
-        if key in ("probe_only_present",):
+        if key in ("probe_only_present", "deploy_only_vars_present"):
             continue
         if a[key] != b.get(key):
             problems.append(f"{key}: wrangler.toml has {a[key]!r}, the deploy template has {b.get(key)!r}")
@@ -102,6 +109,19 @@ def main(argv):
         problems.append("wrangler.toml has none of the probe-only bindings this comparison expects to leave out: update PROBE_ONLY")
     if b.get("has_build"):
         problems.append("the deploy template has a [build]: the job that holds the credentials builds nothing")
+    # the mail service is a deployment's choice: the template sets its variables, a development config does not
+    if a["deploy_only_vars_present"]:
+        problems.append(f"wrangler.toml sets {a['deploy_only_vars_present']}: a development run would have a mail service nobody asked for")
+    if b["deploy_only_vars_present"] != sorted(DEPLOY_ONLY_VARS):
+        problems.append(f"the deploy template sets {b['deploy_only_vars_present']}, not {sorted(DEPLOY_ONLY_VARS)}: the Worker would have no mail service, or a half of one")
+    # the binding the reset sends through is restricted to the one sender the environment is configured with
+    for e in deploy.get("send_email", []):
+        if e.get("name") == "EMAIL" and e.get("allowed_sender_addresses") != ["__EMAIL_FROM__"]:
+            problems.append(f"the deploy template's EMAIL binding has allowed_sender_addresses {e.get('allowed_sender_addresses')!r}, not the sender marker: a Worker made to send as another address would be let through")
+    if str(deploy.get("vars", {}).get("THRUST_EMAIL_FROM", "")) != "__EMAIL_FROM__":
+        problems.append(f"THRUST_EMAIL_FROM is {deploy.get('vars', {}).get('THRUST_EMAIL_FROM')!r} in the deploy template, not the sender marker")
+    if str(deploy.get("vars", {}).get("THRUST_PUBLIC_BASE_URL", "")) != "__PUBLIC_BASE_URL__":
+        problems.append(f"THRUST_PUBLIC_BASE_URL is {deploy.get('vars', {}).get('THRUST_PUBLIC_BASE_URL')!r} in the deploy template, not the origin marker")
     # every id and name in the template must be a marker, so that a real one is never committed
     for table, key in (("hyperdrive", "id"), ("r2_buckets", "bucket_name")):
         for entry in deploy.get(table, []):
@@ -140,7 +160,7 @@ def main(argv):
         for p in problems:
             print("  - " + p)
         return 1
-    print("deploy_parity: ok (same bindings, same limits, same migrations; probe-only bindings left out; every id and name is a marker)")
+    print("deploy_parity: ok (same bindings, same limits, same migrations; probe-only bindings left out; the mail service only where it is deployed, its sender restricted; every id and name is a marker)")
     return 0
 
 

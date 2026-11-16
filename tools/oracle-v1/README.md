@@ -43,7 +43,7 @@ time with `uvx --from schemathesis==4.31.1`. `oasdiff` runs from an image pinned
 The schema diff of the document that `thrust-api-v1` writes (`cargo run -p thrust-api-v1 --features openapi --example openapi`)
 against the pin is `scripts/check-openapi.sh` at the repository root, not a script of this directory: it needs a build. Its files
 are here: `schema/openapi.thrust.json` (the committed document, which `--update` rewrites), `schema/described.operations` (the
-operations of the pin that the document describes so far, which the pin is cut to), `schema/diff-accepted.json` (the differences that
+operations of the pin that the document describes, all 32 of the scope `m1`, which the pin is cut to), `schema/diff-accepted.json` (the differences that
 were decided, each with its record; one that stops being found fails the check) and `scripts/openapi_diff.py` (standard library only,
 with a `self-test`). It is not run by `scripts/oracle-v1.sh`.
 

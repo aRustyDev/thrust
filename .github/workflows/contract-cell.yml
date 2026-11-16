@@ -81,7 +81,8 @@ jobs:
           tools="curl openssl lsof pgrep docker"
           [ "$CELL_PASS" = oracle ] && tools="$tools uv"
           [ "$CELL_PASS" = e2e ] && tools="$tools node pnpm"
-          [ "$CELL_PASS" = mail ] && tools="$tools nc"
+          # the native cell waits for its Mailpit with `nc`; a Worker cell's mail service is wrangler's simulated binding (no container, no relay)
+          if [ "$CELL_PASS" = mail ]; then case "$CELL_TARGET" in native-*) tools="$tools nc" ;; esac; fi
           for tool in $tools; do
             command -v "$tool" > /dev/null 2>&1 || missing="$missing $tool"
           done

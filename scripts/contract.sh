@@ -29,11 +29,13 @@
 #                              `VERDICT: PASS`, with its must-fail control unless E2E_WHAT is set to '' for none. In contract-all.sh, so a
 #                              CI cell. scripts/e2e.sh <target> [controls] is the way in by hand; its logs, and the network's HAR, go to
 #                              target/contract-logs/<target>-e2e.e2e/
-#             mail             (native-* only) the password reset by email on a server that has a mail service (E2, D-041): a Mailpit
-#                              container (Docker) is started beside the target, the target gets THRUST_SMTP_* pointing at it and a
-#                              THRUST_PUBLIC_BASE_URL, and `--test mail` walks the whole path: the request, the message the mail server
-#                              reads, the link in it, and the reset. Every other pass starts its target with no mail service, as the
-#                              deployments are, and holds that the route is dark there. In contract-all.sh, so a CI cell
+#             mail             the password reset by email on a target that has a mail service (D-041), and `--test mail` walks the whole
+#                              path: the request, the message the mail service was given, the link in it, and the reset. A native target
+#                              (E2) gets THRUST_SMTP_* pointing at a Mailpit container (Docker) started beside it, whose API is where the
+#                              mail is read; a Worker target (E3) gets THRUST_EMAIL_FROM, its `send_email` binding being `wrangler dev`'s
+#                              simulator, whose log (and files) are where the mail is read, so that the Worker's own adapter, built for
+#                              wasm32, is the one that is run. Both get THRUST_PUBLIC_BASE_URL. Every other pass starts its target with no
+#                              mail service, as the deployments are, and holds that the route is dark there. In contract-all.sh, so a CI cell
 #             oracle           the v1 oracle's scoped gate and corpus comparison against the started target, with the /api/v1 rate
 #                              limit raised for the fuzzer, and (unless ORACLE_V1_WHAT is set, to '' for none) its must-fail
 #                              controls. In contract-all.sh, so a CI cell; needs `uv`. Success == its `VERDICT: PASS`, and its
@@ -152,7 +154,7 @@ fi
 # or THRUST_PUBLIC_BASE_URL in the shell must not reach it. The `mail` pass sets its own below, once its relay is up. THRUST_SMTP_PASSWORD is a
 # secret and stays out of the environment of any pass that does not use one.
 unset THRUST_SMTP_HOST THRUST_SMTP_PORT THRUST_SMTP_TLS THRUST_SMTP_USERNAME THRUST_SMTP_PASSWORD THRUST_SMTP_FROM THRUST_SMTP_CA_FILE \
-  THRUST_SMTP_TIMEOUT_SECS THRUST_PUBLIC_BASE_URL THRUST_MAIL_API_URL
+  THRUST_SMTP_TIMEOUT_SECS THRUST_PUBLIC_BASE_URL THRUST_MAIL_API_URL THRUST_EMAIL_FROM THRUST_EMAIL_FROM_NAME THRUST_MAIL_WRANGLER_LOG
 
 case "$PASS" in
   sweeper|cron) FASTPATH=off ;;
@@ -263,11 +265,21 @@ if [ -n "${THRUST_PG_LATENCY_MS:-}" ] && [ -n "${PG_PORT:-}" ]; then
   echo "[$TARGET/$PASS] postgres behind a ${THRUST_PG_LATENCY_MS} ms one-way delay proxy (port $PROXY_PORT)"
 fi
 
-if [ "$PASS" = "mail" ]; then
+if [ "$PASS" = "mail" ] && [ "$KIND" != native ]; then
+  # A Worker has no relay: its mail service is the `send_email` binding, and under `wrangler dev` (local, no `remote = true`) the binding is a
+  # simulator that sends nothing and writes each message it is asked to send to the dev server's log (the sender, the recipient, the subject)
+  # and to files (the text and the html), by the paths the log gives. That is wrangler's own account of what the binding was given, so the tests
+  # read it as they read Mailpit's API: from outside the adapter. The server's log is the file the Worker is started into below.
+  export THRUST_EMAIL_FROM=no-reply@thrust.test THRUST_EMAIL_FROM_NAME=Thrust
+  export THRUST_PUBLIC_BASE_URL="$THRUST_BASE_URL"
+  export THRUST_MAIL_WRANGLER_LOG="$LOG.server.log"
+  echo "[$TARGET/$PASS] mail service: the Worker's send_email binding as wrangler dev simulates it (read from $THRUST_MAIL_WRANGLER_LOG)"
+fi
+
+if [ "$PASS" = "mail" ] && [ "$KIND" = native ]; then
   # The relay: Mailpit, a mail server and sink written by someone else, so that what the server sends is read by a server that parses it for
-  # itself. Plain (no TLS, no login: the adapter's own tests, tests/smtp_sink, are where those are shown). Only the native server has an SMTP
-  # adapter; the Worker's `send_email` binding is E3.
-  [ "$KIND" = native ] || { echo "[$TARGET/$PASS] only the native server has a mail service yet (the Worker's is E3): the mail pass is for the native targets" >&2; exit 2; }
+  # itself. Plain (no TLS, no login: the adapter's own tests, tests/smtp_sink, are where those are shown). The native server's mail service is
+  # its SMTP adapter; the Worker's is above.
   MAIL_SMTP_PORT="${THRUST_MAIL_SMTP_PORT:-$(pick_port)}"
   MAIL_HTTP_PORT="${THRUST_MAIL_HTTP_PORT:-$(pick_port)}"
   MAIL_CONTAINER="thrust-contract-mail-$$"

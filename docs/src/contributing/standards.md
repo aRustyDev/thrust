@@ -69,7 +69,7 @@ ADR-0100 (a build matrix per adapter set) and ADR-0101 (CI supply-chain hygiene)
 the full contract matrix runs on every Rust-relevant pull request, `gate` is the aggregate required job, and every
 action is pinned to a SHA, the `lint` job runs rustfmt and clippy, the `deny` job runs `cargo deny`, the deploy
 bundle is attested (SLSA provenance) and verified before it is deployed, and the oracle schema check
-(`scripts/check-openapi.sh`, a step of the `deps` job) covers the Projects, States and Labels operations of `/api/v1` only. There is no
+(`scripts/check-openapi.sh`, a step of the `deps` job) covers the 32 operations of the scope `m1` of `/api/v1`. There is no
 nightly run, scheduled check of the required contexts (or of the advisory database), Scorecard or trivy, and no release
 is attested, because there are no releases. ADR-0110 (the deploy pipeline) is accepted and built, and has not yet
 completed a deploy to a real environment ([Deploying the Worker](../architecture/deploy.md)).

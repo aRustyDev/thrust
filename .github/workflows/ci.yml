@@ -119,6 +119,7 @@ jobs:
           sh .github/scripts/tests/test-check-web-diff.sh
           sh .github/scripts/tests/test-smoke-deploy.sh
           sh .github/scripts/tests/test-migrate-ci.sh
+          sh .github/scripts/tests/test-check-migration-lint.sh
           sh .github/scripts/tests/test-deploy-template.sh
           sh .github/scripts/tests/test-deploy-ca.sh
           sh .github/scripts/tests/test-classify-deploy.sh
@@ -179,6 +180,11 @@ jobs:
       # the gate's required contexts do not change.
       - name: Placement guard
         run: scripts/check-placement.sh
+      # Issue #195: a migration numbered above 0017 may only add to the schema (no DROP, RENAME, column TYPE change or SET NOT NULL)
+      # unless it is a contract migration (NNNN_contract_<what>.sql), which the deploy runs only in production and only when no older
+      # version shares the data. Its test (ci-scripts) is the control: each construct is refused where it must be and nowhere else.
+      - name: Migration expand-rule guard
+        run: scripts/check-migration-lint.sh
       # The expected test counts of the contract suite's passes (scripts/contract.sh, scripts/stage2-contract.sh) go stale when a test
       # is added, and the stage2 ones were wrong for a day because nothing in CI runs that script. The check itself needs the suite
       # built, so it is a step of `hermetic`; this is its self-test, which runs it on worlds it must refuse (a count one too high, a
@@ -273,7 +279,9 @@ jobs:
 
   # The hermetic loop: the default nextest profile (no Docker, Node, wrangler or running target) under the `ci`
   # profile, plus the doctests nextest cannot run. `oracle_` tests need the TypeScript oracle's generated output
-  # and are excluded by the profile's default filter, not here.
+  # and are excluded by the profile's default filter, not here. Every cargo command here, as in `lint`, `deny` and
+  # `pg-adapter`, passes --locked: a Cargo.lock that Cargo would have to change fails the job instead of being rewritten
+  # on the runner and tested in a form nobody committed.
   hermetic:
     needs: changes
     if: contains(fromJSON(needs.changes.outputs.jobs || '[]'), 'hermetic')
@@ -294,20 +302,20 @@ jobs:
           tool: cargo-nextest@0.9.140
       # nextest exits 4 when the filter selects nothing, so an empty default profile fails this step.
       - name: Hermetic tests (nextest, ci profile)
-        run: scripts/rs cargo nextest run --profile ci --workspace
+        run: scripts/rs cargo nextest run --profile ci --workspace --locked
       # Every count in scripts/contract.sh and scripts/stage2-contract.sh against what its filters select in the suite (libtest's
       # `--list`, no server), then the control: stage2-contract.sh with a wrong count must be refused. The suite is built by the step
       # above, so this only lists it. It fails closed (exit 2) on an arm it cannot read or a filter that selects nothing.
       - name: Contract counts (every EXPECT against the suite)
         run: scripts/check-contract-counts.sh
       - name: Doctests
-        run: scripts/rs cargo test --doc --workspace
+        run: scripts/rs cargo test --doc --workspace --locked
       # The tests of the OpenAPI document (issue #58) exist only with thrust-api-v1's `openapi` feature, which the run above does not
       # turn on: the document's operations against the router, and its schemas against real bodies. nextest exits 4 if the filter
       # selects nothing, so a feature that stopped compiling them cannot pass. The default profile and not `ci`, which would write
       # `junit.xml` again and replace the report of the whole run that the next step uploads.
       - name: OpenAPI tests (nextest, openapi feature)
-        run: scripts/rs cargo nextest run --no-fail-fast -p thrust-api-v1 --features openapi -E 'binary(openapi)'
+        run: scripts/rs cargo nextest run --no-fail-fast -p thrust-api-v1 --features openapi --locked -E 'binary(openapi)'
       - name: Upload the JUnit report
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -334,11 +342,11 @@ jobs:
           cache-key: native-pg-adapter
           save-cache: ${{ github.ref == 'refs/heads/main' }}
       - name: Postgres adapter tests (testcontainers)
-        run: scripts/rs cargo test -p thrust-adapters-selfhosted --test pg_adapter
+        run: scripts/rs cargo test -p thrust-adapters-selfhosted --test pg_adapter --locked
       # The SMTP adapter against Mailpit (a mail server nobody here wrote), in the same Docker job: STARTTLS, implicit TLS, a login, the
       # server's own refusals, and the controls that make each of them able to fail. Its other suites are hermetic and run in `hermetic`.
       - name: SMTP adapter tests (Mailpit, testcontainers)
-        run: scripts/rs cargo test -p thrust-adapters-selfhosted --test smtp_sink
+        run: scripts/rs cargo test -p thrust-adapters-selfhosted --test smtp_sink --locked
 
   # One job per cell, each on a fresh runner with its own checkout, so the shared-build-directory
   # hazard that forces contract-all.sh to run serially on one machine does not apply here.

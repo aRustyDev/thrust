@@ -69,6 +69,9 @@ inputs:
   csrf-enforce:
     description: "on or off: no default, so turning it on is a decision"
     required: true
+  email-from:
+    description: "The address the password reset mails are sent from: one plain lowercase address on a domain the account has Email Sending enabled for. No default: an environment that mails has chosen who it mails as"
+    required: true
   db-access-hostname:
     description: "The hostname of the Access application in front of thrust-pg"
     required: true
@@ -227,6 +230,7 @@ runs:
         THRUST_RL_SIGNIN_ID: ${{ inputs.rl-signin-id }}
         THRUST_RL_V1_ID: ${{ inputs.rl-v1-id }}
         THRUST_CSRF_ENFORCE: ${{ inputs.csrf-enforce }}
+        THRUST_EMAIL_FROM: ${{ inputs.email-from }}
         CLOUDFLARE_ACCOUNT_ID: ${{ inputs.cloudflare-account-id }}
         CLOUDFLARE_API_TOKEN: ${{ inputs.cloudflare-api-token }}
         # the expand step (scripts/migrate-ci.sh)
