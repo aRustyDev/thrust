@@ -1,4 +1,4 @@
-//! Prints the OpenAPI document of `/api/v1` on stdout (issue #58): the operations that are described so far, written from the types
+//! Prints the OpenAPI document of `/api/v1` on stdout (issue #58): the 32 operations of the scope `m1`, written from the types
 //! the routes answer with. `scripts/check-openapi.sh` runs this, compares the result with the committed copy, and diffs it against
 //! the pinned Plane schema with `oasdiff`.
 //!
