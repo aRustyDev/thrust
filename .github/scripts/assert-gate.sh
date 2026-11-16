@@ -31,7 +31,7 @@ for input in NEEDS_JSON EXPECTED_JOBS PLANNED REPORTED_DIR; do
 done
 
 # The jobs plan-ci.py can ask for. The gate's own `needs` must be these and `changes`.
-KNOWN="ci-scripts deps lint deny hermetic pg-adapter contract mutants web"
+KNOWN="ci-scripts deps lint deny hermetic pg-adapter contract mutants web docs"
 
 printf '%s' "$NEEDS_JSON" | jq -r 'to_entries[] | "\(.key) \(.value.result)"' > needs.txt
 echo "needed jobs:"
