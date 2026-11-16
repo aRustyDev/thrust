@@ -10,7 +10,7 @@ material, and they are not this project's files.
 
 The Worker configuration has run locally under `wrangler dev` and once against real Cloudflare resources (the
 2026-10-18 spike run, torn down afterwards). The configuration a deploy uses is a template (`wrangler.deploy.toml`,
-below); staging has had deploys through the pipeline since 2026-11-15, and production none. How the code is layered is on
+below); staging has had deploys through the pipeline since 2026-11-15, and production one (2026-11-16). How the code is layered is on
 [Application architecture](app.md).
 
 ```mermaid

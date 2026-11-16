@@ -21,6 +21,20 @@ pub fn fail(errors: &mut FieldErrors, field: &str, message: impl Into<String>) {
     errors.insert(field.to_string(), json!([message.into()]));
 }
 
+/// A request struct, read from a body: each field of the struct is read from the key that has its name, by the reader written beside it.
+/// The key is the field's own identifier (`stringify!`), so the two cannot be spelled apart, and the fields are read in the order
+/// they are written, which is the order the errors are filed in.
+///
+/// ```ignore
+/// read_into!(StateRequest, errors, body, { name: Text::<1, 255>::read, description: Prose::read })
+/// ```
+macro_rules! read_into {
+    ($request:ident, $errors:ident, $body:ident, { $($field:ident : $reader:expr),* $(,)? }) => {
+        $request { $($field: $crate::fields::read(&mut $errors, $body, stringify!($field), $reader)),* }
+    };
+}
+pub(crate) use read_into;
+
 /// Read a field if the body names it, and file what is wrong with it under its name. `None` is "not named", or "named and wrong".
 pub fn read<T>(
     errors: &mut FieldErrors,
@@ -215,24 +229,24 @@ fn py_float(f: f64) -> String {
 
 /// DRF `ChoiceField`: the value's text must be one of the choices; the choice is returned.
 pub fn choice_field<'a>(v: &Value, choices: &'a [&'a str]) -> Result<&'a str, String> {
-    let text = choice_by(v, |text| choices.contains(&text))?;
-    // `choice_by` found the text among the choices, so this finds the choice itself
-    choices.iter().find(|c| **c == text).copied().ok_or_else(|| format!("\"{text}\" is not a valid choice."))
+    choice_of(v, |text| choices.iter().copied().find(|c| *c == text))
 }
 
-/// DRF `ChoiceField` over a set that is not a slice (the timezones are a sorted table asked by name): Python's `str()` of the value,
-/// as it is, with no trimming (a `CharField` trims and a `ChoiceField` does not: measured on DRF 3.15.2, the pin's, where `" UTC"`,
-/// `""`, `true` and `[]` are each "is not a valid choice" and `null` is "may not be null"), must be a choice.
-pub fn choice_by(v: &Value, is_choice: impl Fn(&str) -> bool) -> Result<String, String> {
+/// DRF `ChoiceField` over a set that is not a slice (the timezones are a sorted table asked by name), as the value `parse` makes of the
+/// text. The text is Python's `str()` of the value, as it is, with no trimming (a `CharField` trims and a `ChoiceField` does not:
+/// measured on DRF 3.15.2, the pin's, where `" UTC"`, `""`, `true` and `[]` are each "is not a valid choice" and `null` is "may not be
+/// null"); `parse` answers `None` for a text that is no choice.
+pub fn choice_of<T>(v: &Value, parse: impl FnOnce(&str) -> Option<T>) -> Result<T, String> {
     if v.is_null() {
         return Err("This field may not be null.".into());
     }
     let text = py_str(v);
-    if is_choice(&text) {
-        Ok(text)
-    } else {
-        Err(format!("\"{text}\" is not a valid choice."))
-    }
+    parse(&text).ok_or_else(|| format!("\"{text}\" is not a valid choice."))
+}
+
+/// [`choice_of`] for a set that is asked by name and whose choice is the text itself.
+pub fn choice_by(v: &Value, is_choice: impl Fn(&str) -> bool) -> Result<String, String> {
+    choice_of(v, |text| is_choice(text).then(|| text.to_string()))
 }
 
 /// DRF `FloatField`: Python's `float()` of the value. A number is itself, a bool is 0 or 1 (Python's `float(True)`), a string is read
