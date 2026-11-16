@@ -18,7 +18,8 @@ How a path decides (RULES, first match wins; a path that matches no rule needs n
   * a crate's own files (the files under a member's directory, at any depth under crates/: the longest member directory that
     holds the path) change that crate. The crates that depend on it, through any kind of dependency (normal, dev, build), are
     affected too, read from `cargo metadata`, so the graph is Cargo's and not a second list. A group's README.md under
-    crates/ that no member holds is read by no job; any other file of crates/ outside a member runs everything.
+    crates/ that no member holds is read only by the layout guard (deps); any other file of crates/ outside a member runs
+    everything.
   * a file a crate's tests read from outside the crate (tools/oracle-v1/, .github/deploy/) runs the jobs that run those tests.
   * a file that only a guard, a job or a pass reads runs that guard's job, or that pass on every target.
   * a file whose readers are not known runs everything: an unknown crate directory, an unlisted script, the toolchain, the
@@ -72,6 +73,7 @@ RULES = [
     (r"^deny\.toml$", {"jobs": ["deny"]}, "cargo-deny's configuration"),
     (r"^\.?(clippy|rustfmt)\.toml$", {"jobs": ["lint"]}, "clippy's or rustfmt's configuration"),
     (r"^release-plz\.toml$", {"jobs": ["deps", "ci-scripts"]}, "release-plz's configuration (check-release-plz.py)"),
+    (r"^\.gitignore$", {"jobs": ["deps"]}, "the ignore list (the layout guard checks its lines under crates/)"),
     (r"^tools/oracle-v1/", {"jobs": ["hermetic", "deps"], "passes": ["oracle"]},
      "the v1 oracle: its cells, the OpenAPI diff, and the tests that read its schema and corpus"),
     (r"^tools/compat-record/", {"jobs": ["deps"], "passes": ["e2e"]}, "the compat recorder (the acceptance-list guard, scripts/e2e.sh)"),
@@ -86,7 +88,7 @@ RULES = [
     (r"^scripts/(stage2-contract|check-contract-counts)\.sh$", {"jobs": ["hermetic", "deps"]}, "the contract counts and their guard"),
     (r"^scripts/check-web-diff\.sh$", {"jobs": ["web", "ci-scripts"]}, "the Q-R2 gate of web/"),
     (r"^scripts/check-book\.sh$", {"jobs": ["docs"]}, "the book's check"),
-    (r"^scripts/(check-(deps|topology|plane-500|acceptance-list|placement|openapi|migration-lint|edge-config)|render-wrangler)\.sh$",
+    (r"^scripts/(check-(deps|layout|topology|plane-500|acceptance-list|placement|openapi|migration-lint|edge-config)|render-wrangler)\.sh$",
      {"jobs": ["deps", "ci-scripts"]}, "a guard of the deps job"),
     (r"^scripts/(smoke-deploy|smoke-bootstrap|migrate-ci|deploy-worker|merge-assets|check-asset-retention)\.sh$",
      {"jobs": ["ci-scripts"]}, "a deploy script (tested by ci-scripts; run by deploy.yml)"),
@@ -171,7 +173,8 @@ def plan(paths, dirs, deps, cells, full_reason=None):
             elif effect == CRATE:
                 top = owner(path, dirs)
                 if top is None and GROUP_README.search(path):
-                    notes.append(f"{path}: a group's README, inside no crate -> nothing")
+                    jobs.add("deps")
+                    notes.append(f"{path}: a group's README, inside no crate (the layout guard checks it names its crates) -> deps")
                 elif top is None:
                     full = full or f"{path}: inside no crate of the workspace"
                     notes.append(f"{path}: inside no crate of the workspace -> everything")

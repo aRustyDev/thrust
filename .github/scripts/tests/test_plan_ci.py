@@ -11,7 +11,7 @@
    rule), so no path can hide another.
 3. Every rule is reached first by its own sample path (no rule shadowed by an earlier one), and matches a file tracked here.
 4. Fail-open: an empty list, an unknown crate directory, a file of crates/ outside a crate, an unknown script, a target the
-   planner does not know. A group's README.md, outside every crate, runs nothing.
+   planner does not know. A group's README.md, outside every crate, runs only the deps job (the layout guard reads it).
 5. The cases the plan and the gaps name (G-30: web/ alone runs the browser journeys; a deploy script runs no cell; docs run
    nothing).
 6. This repository: Cargo's real graph, every target of scripts/contract-all.sh known, the named crates real, and no script the
@@ -178,7 +178,7 @@ SAMPLES = [
     "Cargo.lock", ".config/branding/colors.css", ".config/nextest.toml", ".github/workflows/ci.yml", ".github/actions/setup-rust/action.yml",
     ".github/actions/contract-pass-tools/action.yml", ".github/scripts/assert-gate.sh", ".github/scripts/toolchain-channel.sh",
     "scripts/contract.sh", "crates/core/usecases/src/lib.rs",
-    ".github/deploy/ca.pem", "deny.toml", "clippy.toml", "release-plz.toml", "tools/oracle-v1/corpus/a.json",
+    ".github/deploy/ca.pem", "deny.toml", "clippy.toml", "release-plz.toml", ".gitignore", "tools/oracle-v1/corpus/a.json",
     "tools/compat-record/record.py", "tools/compat-inventory/out-pinned/endpoint-inventory.csv",
     ".agents/plans/contrail/research/0003-compat-plane-inventory.md", "tools/e2e-har/scrub.py", "e2e/journeys/m1.spec.ts",
     "web/apps/web/app.tsx", "scripts/e2e.sh", "scripts/oracle-v1.sh", "scripts/mutants.sh", "scripts/stage2-contract.sh",
@@ -217,7 +217,10 @@ for path in ["crates/gone/src/lib.rs", "crates/adapters/notes.txt", "crates/READ
              "crates/core/types-gone/src/lib.rs"]:
     check(f"{path} runs everything", run_plan([path], REAL_GRAPH), EVERYTHING)
 for path in ["crates/README.md", "crates/adapters/README.md", "crates/testing/suites/README.md"]:
-    check(f"{path}, a group's README inside no crate, runs nothing", run_plan([path], REAL_GRAPH), (set(), set()))
+    check(f"{path}, a group's README inside no crate, runs only deps (the layout guard)", run_plan([path], REAL_GRAPH),
+          ({"deps"}, set()))
+check(".gitignore runs only deps (the layout guard reads its lines under crates/)", run_plan([".gitignore"], REAL_GRAPH),
+      ({"deps"}, set()))
 check("a crate's own README.md is the crate", run_plan(["crates/core/usecases/README.md"], REAL_GRAPH),
       run_plan(["crates/core/usecases/src/lib.rs"], REAL_GRAPH))
 jobs, cells = run_plan(["README.md"], REAL_GRAPH, CELLS + ["worker-new main"])
