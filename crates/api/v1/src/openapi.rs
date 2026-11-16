@@ -4,8 +4,9 @@
 //! What it is for. The pin is Plane's own schema (`tools/oracle-v1/schema/openapi.v1.json`, OpenAPI 3.0.3, the contract). This
 //! document says what THIS crate sends and accepts, so `oasdiff` can say where the two differ (`scripts/check-openapi.sh`). The
 //! answers are derived from the types the routes serialize (`dto`), so they cannot say one thing while the route does another. A
-//! request is read by hand (`fields.rs`: DRF's coercions and DRF's words), so the request bodies below are descriptions of what
-//! that reading takes, written by hand; a request type that a parser returns is a later step.
+//! request is read by hand (`fields.rs`: DRF's coercions and DRF's words). The States' is read into a type that writes its own
+//! schema (`states::PatchedStateRequest`, with the bounded values of `values.rs`), so for them the document is the parser's; the
+//! other request bodies below are descriptions of what a reading takes, written by hand, until each parser returns a typed struct.
 //!
 //! `cargo run -p thrust-api-v1 --features openapi --example openapi` prints the document.
 
@@ -62,8 +63,8 @@ use thrust_contracts::Uuid;
         PatchedProjectUpdateRequest,
         StateDto,
         Page<StateDto>,
-        StateRequest,
-        PatchedStateRequest,
+        crate::states::StateRequest,
+        crate::states::PatchedStateRequest,
         LabelDto,
         Page<LabelDto>,
         LabelCreateUpdateRequest,
@@ -76,7 +77,7 @@ use thrust_contracts::Uuid;
         IssueRequest,
         PatchedIssueRequest
     )),
-    modifiers(&ApiKeyAuthentication, &OptionalBodies, &WorkItemsTwice)
+    modifiers(&ApiKeyAuthentication, &Creations, &OptionalBodies, &WorkItemsTwice)
 )]
 struct ApiDoc;
 
@@ -98,6 +99,41 @@ impl Modify for ApiKeyAuthentication {
                 "API key authentication. Provide your API key in the X-API-Key header.",
             ))),
         );
+    }
+}
+
+/// A creation takes the keys of a change, and requires some of them. The change's schema is written from the type that the parser
+/// reads the body into; the creation's is made of it here, with the list of required keys that the same parser checks. So the two
+/// cannot differ in a key, a bound, a type or a `null`, and the one thing that tells them apart is the parser's own list.
+struct Creations;
+
+/// One creation: the name of its schema, the change it is made of, the keys it requires, and what it says of itself.
+struct Creation {
+    schema: &'static str,
+    change: &'static str,
+    required: &'static [&'static str],
+    description: &'static str,
+}
+
+const CREATIONS: [Creation; 1] = [Creation {
+    schema: "StateRequest",
+    change: "PatchedStateRequest",
+    required: &crate::states::PatchedStateRequest::REQUIRED,
+    description: "What a state's creation takes (the pin's `StateSerializer` as a request): `name` and `color` are required, the rest is optional, and\nonly the two external keys can be `null`.",
+}];
+
+impl Modify for Creations {
+    fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
+        use utoipa::openapi::{RefOr, Schema};
+        let components = openapi.components.get_or_insert_with(Default::default);
+        for creation in &CREATIONS {
+            // a change that is not an object is left as it is: the test of the pair says what is missing
+            let Some(RefOr::T(Schema::Object(change))) = components.schemas.get(creation.change) else { continue };
+            let mut object = change.clone();
+            object.required = creation.required.iter().map(|key| (*key).to_string()).collect();
+            object.description = Some(creation.description.to_string());
+            components.schemas.insert(creation.schema.to_string(), RefOr::T(Schema::Object(object)));
+        }
     }
 }
 
@@ -449,31 +485,6 @@ pub(crate) struct PatchedProjectUpdateRequest {
     estimate: Option<Uuid>,
 }
 
-/// What a state's creation takes (the pin's `StateSerializer` as a request): `name` and `color` are required, the rest is optional, and
-/// only the two external keys can be `null`.
-#[derive(ToSchema)]
-#[allow(dead_code, reason = "a description for the document: the route reads the body by hand (`fields.rs`)")]
-pub(crate) struct StateRequest {
-    #[schema(min_length = 1, max_length = 255)]
-    name: String,
-    #[schema(required = false)]
-    description: String,
-    #[schema(min_length = 1, max_length = 255)]
-    color: String,
-    #[schema(required = false)]
-    sequence: f64,
-    #[schema(required = false, schema_with = state_group)]
-    group: String,
-    #[schema(required = false)]
-    default: bool,
-    #[schema(required = false)]
-    is_triage: bool,
-    #[schema(max_length = 255)]
-    external_source: Option<String>,
-    #[schema(max_length = 255)]
-    external_id: Option<String>,
-}
-
 /// What a label's creation takes (the pin's `LabelCreateUpdateSerializer`): only `name` is required, and `name` cannot be blank. `color`
 /// and `description` can be blank and cannot be `null`; the two external keys and `parent` can be `null`.
 #[derive(ToSchema)]
@@ -602,28 +613,4 @@ pub(crate) struct PatchedIssueRequest {
     #[schema(rename = "type")]
     type_: Option<Uuid>,
     type_id: Option<Uuid>,
-}
-
-/// What a state's change takes: the creation's keys, none required.
-#[derive(ToSchema)]
-#[allow(dead_code, reason = "a description for the document: the route reads the body by hand (`fields.rs`)")]
-pub(crate) struct PatchedStateRequest {
-    #[schema(min_length = 1, max_length = 255, required = false)]
-    name: String,
-    #[schema(required = false)]
-    description: String,
-    #[schema(min_length = 1, max_length = 255, required = false)]
-    color: String,
-    #[schema(required = false)]
-    sequence: f64,
-    #[schema(required = false, schema_with = state_group)]
-    group: String,
-    #[schema(required = false)]
-    default: bool,
-    #[schema(required = false)]
-    is_triage: bool,
-    #[schema(max_length = 255)]
-    external_source: Option<String>,
-    #[schema(max_length = 255)]
-    external_id: Option<String>,
 }
