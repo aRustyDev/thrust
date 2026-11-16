@@ -17,6 +17,9 @@ process that needs it.
 
 Behaviour switches (environment variables of the test, read by the fakes):
   FAKE_LIST_ERROR=1      `deployments list` fails with an error that is not "the Worker does not exist"
+  FAKE_LIST_FLAKY=<what>:<n>  the first <n> calls of `wrangler <what> list` (`deployments` or `versions`) fail with the error Cloudflare
+                         answered with on 2026-11-16 (code 10013, run 43921084528 attempt 1), and then answer as usual. The count is kept in
+                         $FAKE_DIR/flaky-<what>, which the test clears before each run
   FAKE_DEPLOYMENTS_RAW   print this instead of the deployments (a shape the parser does not know)
   FAKE_DEPLOY=fail       `wrangler deploy` fails and changes nothing
   FAKE_SERVE_STICKY=1    the deploy succeeds but the edge keeps serving the old version (the new one never answers)
@@ -92,6 +95,19 @@ def wrangler(argv):
         if os.environ.get("FAKE_LIST_ERROR"):
             print("Error: the API is not answering [code: 10000]", file=sys.stderr)
             return 1
+        # Before the "does not exist" answer below, on purpose: in the incident this models, a Worker that did NOT exist was answered
+        # with 10013 instead of 10007, and a missing Worker is the one case the script does not treat as an error.
+        what, _, times = os.environ.get("FAKE_LIST_FLAKY", "").partition(":")
+        if what == cmd[0] and times:
+            counter = os.path.join(D, "flaky-" + what)
+            done = int(open(counter).read()) if os.path.exists(counter) else 0
+            if done < int(times):
+                with open(counter, "w") as f:
+                    f.write(str(done + 1))
+                print(f"✘ [ERROR] A request to the Cloudflare API (/accounts/acct123/workers/scripts/thrust-staging/{what}?deployable=true) failed.", file=sys.stderr)
+                print("", file=sys.stderr)
+                print("  An unknown error has occurred. If this error persists, please file a report in workers-sdk (https://github.com/cloudflare/workers-sdk/issues) or reach out to your account team. [code: 10013]", file=sys.stderr)
+                return 1
         if st is None:
             print("This Worker does not exist on your account. [code: 10007]", file=sys.stderr)
             return 1
