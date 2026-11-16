@@ -21,6 +21,7 @@ Exit status: 0 every mutant killed and every equivalent one survived; 1 a mutant
 import argparse
 import concurrent.futures
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -33,7 +34,8 @@ PLAN, GATE = "plan-ci.py", "assert-gate.sh"
 SHELL = shutil.which("dash") or "sh"
 TIMEOUT = 900
 
-# (file, label, the text to replace, its replacement). The text must occur once in the file.
+# (file, label, the text to replace, its replacement). The text, or a compiled regex whose replacement may use \1, must match once
+# in the file.
 MUTANTS = [
     # --- plan-ci.py: which jobs and cells a change needs
     (PLAN, "only direct dependents are affected", "if crate not in out and uses & out:", "if crate not in out and uses & set(changed):"),
@@ -49,17 +51,20 @@ MUTANTS = [
     (PLAN, "a file of crates/ outside a crate runs nothing", 'full = full or f"{path}: inside no crate of the workspace"', "pass"),
     (PLAN, "every matching rule applies, not the first", "            break\n        else:", "        else:"),
     (PLAN, "a crate manifest does not run deny", '                        jobs.add("deny")', "                        pass"),
-    (PLAN, "web/ does not run the journeys", '{"jobs": ["web"], "passes": ["e2e"]}, "the stock app', '{"jobs": ["web"]}, "the stock app'),
-    (PLAN, "the CA root does not run hermetic", '{"jobs": ["hermetic", "ci-scripts"]}, "the CA root', '{"jobs": ["ci-scripts"]}, "the CA root'),
+    # The mutants of a rule's effect find the rule by its pattern and change the effect, so a rule that gains a pass or a job (the
+    # second e2e suite added `e2e-mail` to four of them, an hour after the first run of this driver) does not break them; a rule
+    # that is renamed or removed does, which is the signal.
+    (PLAN, "web/ does not run the journeys", re.compile(r'(\(r"\^web/", \{"jobs": \["web"\]), "passes": \[[^\]]*\]\}'), r"\1}"),
+    (PLAN, "the CA root does not run hermetic", re.compile(r'(\(r"\^\\\.github/deploy/", \{"jobs": \[)"hermetic", '), r"\1"),
     (PLAN, "a crate change does not run lint", 'jobs.update(("ci-scripts", "deps", "lint", "hermetic"))',
      'jobs.update(("ci-scripts", "deps", "hermetic"))'),
     (PLAN, "an empty change list runs nothing", 'full = args.full or (None if paths else "the change list is empty")', "full = args.full"),
     (PLAN, "cells but no contract job", '    if selected:\n        jobs.add("contract")', '    if False:\n        jobs.add("contract")'),
     (PLAN, "native-pg is mapped to the Worker", '"native-pg": "thrust-server"', '"native-pg": "thrust-worker"'),
-    (PLAN, "e2e.sh runs no cell", '{"passes": ["e2e"]}, "the browser journeys\' runner"', '{}, "the browser journeys\' runner"'),
+    (PLAN, "e2e.sh runs no cell", re.compile(r'(\(r"\^scripts/e2e\\\.sh\$", )\{"passes": \[[^\]]*\]\}'), r"\1{}"),
     (PLAN, "an unknown script runs nothing", '(r"^scripts/", FULL, "a script this planner does not know")',
      '(r"^scripts/", {}, "a script this planner does not know")'),
-    (PLAN, "the oracle's files run no hermetic", '{"jobs": ["hermetic", "deps"], "passes": ["oracle"]}', '{"jobs": ["deps"], "passes": ["oracle"]}'),
+    (PLAN, "the oracle's files run no hermetic", re.compile(r'(\(r"\^tools/oracle-v1/", \{"jobs": \[)"hermetic", '), r"\1"),
     (PLAN, "--full runs only the matrix", "        return set(JOBS), list(cells),", '        return {"contract"}, list(cells),'),
     # --- plan-ci.py: the workflow files that run the checks, and the called workflows (ADR-0102)
     (PLAN, "a workflow that runs the checks, web.yml, is not run-everything", "|documentation|security|web)\\.yml$", "|documentation|security)\\.yml$"),
@@ -155,13 +160,20 @@ def judge(target, text, workdir):
     return gate_tests(os.path.join(workdir, "tree"), text)
 
 
+def apply(text, old, new):
+    """(how many times `old` matches, the text with the first match replaced). `old` is a string or a compiled regex."""
+    if isinstance(old, re.Pattern):
+        return len(old.findall(text)), old.sub(new, text, count=1)
+    return text.count(old), text.replace(old, new, 1)
+
+
 def one(entry, sources):
     target, label, old, new = entry
-    n = sources[target].count(old)
+    n, mutated = apply(sources[target], old, new)
     if n != 1:
         return "BROKEN", f"the text to replace is found {n} times in {target}, not once"
     with tempfile.TemporaryDirectory() as workdir:
-        status, out = judge(target, sources[target].replace(old, new, 1), workdir)
+        status, out = judge(target, mutated, workdir)
     if status is None:
         return "BROKEN", out
     return ("SURVIVED" if status == 0 else "killed"), out

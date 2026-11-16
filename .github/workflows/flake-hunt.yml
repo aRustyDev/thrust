@@ -31,6 +31,7 @@ on:
           - worker
           - bindings
           - e2e
+          - e2e-mail
         default: main
       iterations:
         description: Repetitions, 1 to 50

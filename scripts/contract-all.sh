@@ -44,6 +44,7 @@ run worker-cf worker
 run worker-cf bindings
 run worker-cf oracle
 run worker-cf e2e
+run worker-cf e2e-mail
 
 cat "$SUMMARY"
 exit "$FAILED"

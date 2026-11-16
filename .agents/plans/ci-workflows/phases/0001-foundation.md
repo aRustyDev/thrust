@@ -206,8 +206,11 @@ merges, CI plans and judges exactly what it did before.
   job (the owner's decision, 2026-11-16), so it runs whenever that job does and a surviving mutant fails the gate. The first
   run found a real gap (a CLI test that could not tell a working `plans` line from a broken one while the map is empty);
   it is closed. Controls: the tests must pass unmutated first; the text a mutant replaces must be found exactly once; a
-  mutant must compile; and two mutants that change nothing must survive. It takes 77 s at four workers (a hosted runner's
-  count) on a laptop, which pass 7 may shorten. A change that plans no `ci-scripts` (a docs-only one) skips it, as it skips
+  mutant must compile; and two mutants that change nothing must survive. The mutants of a rule's effect find the rule by its
+  pattern, not by the text of its pass list: an hour after the first run, `#238` added `e2e-mail` to four rules, two literal
+  anchors went BROKEN in CI (the driver failing closed, as it should) and became regexes. It takes 77 s at four workers on a
+  laptop; on a hosted runner `ci-scripts` took 119 s against a median of 71 s, so it added under a minute, and pass 7 may
+  shorten it. A change that plans no `ci-scripts` (a docs-only one) skips it, as it skips
   every other helper test.
 
 **Steps.** Planner and gate changes with their tests first (red, then green); the rules and the directory test; the mutant

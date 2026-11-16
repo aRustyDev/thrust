@@ -1,8 +1,9 @@
 name: e2e-schedule
 
-# The browser journeys (scripts/e2e.sh, e2e/journeys/) on a Worker, every day and by hand (issue #45). It runs the `worker-cf e2e` cell
-# through the same reusable workflow as ci.yml (contract-cell.yml), so it is the same cell: the app built from web/ on the runner, a
-# Worker started the way scripts/contract.sh starts it, the journeys, and their controls.
+# The browser journeys (scripts/e2e.sh, e2e/journeys/ and, for the ones that need a mail service, e2e/journeys-mail/) on a Worker, every day
+# and by hand (issue #45). It runs the `worker-cf e2e` and `worker-cf e2e-mail` cells through the same reusable workflow as ci.yml
+# (contract-cell.yml), so they are the same cells: the app built from web/ on the runner, a Worker started the way scripts/contract.sh
+# starts it, the journeys, and their controls.
 #
 # Why a schedule, when ci.yml already runs that cell on a pull request:
 #   - what drifts without a change of ours: the runner image, the browser Playwright installs, the packages the app resolves.
@@ -39,5 +40,15 @@ jobs:
       pass: e2e
     # the called workflow asks for `contents: read` of its own, and a caller that grants less makes the call fail at startup (ci.yml's
     # `contract` job does the same)
+    permissions:
+      contents: read
+
+  # the journeys that need a mail service (e2e/journeys-mail/): the `worker-cf e2e-mail` cell, the same cell as ci.yml's, on its own
+  # job so that one suite failing does not hide the other's result
+  e2e-mail:
+    uses: ./.github/workflows/contract-cell.yml
+    with:
+      target: worker-cf
+      pass: e2e-mail
     permissions:
       contents: read
