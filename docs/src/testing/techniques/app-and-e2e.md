@@ -1,7 +1,7 @@
 # App and end-to-end
 
 Status: **live** (Playwright journeys over the stock React app, `e2e/`) · **template-only** (axum router tests, Dioxus
-SSR, in-process harness) · **planned** (desktop, mobile) · Gate: the `worker-cf e2e` cell of the contract matrix (also run daily by `e2e-schedule.yml`, which gates nothing)
+SSR, in-process harness) · **planned** (desktop, mobile) · Gate: the `worker-cf e2e` and `worker-cf e2e-mail` cells of the contract matrix (also run daily by `e2e-schedule.yml`, which gates nothing)
 
 ## Catches
 
@@ -37,6 +37,7 @@ of the default nextest loop (`AGENTS.md`, testing rule 6).
 ```sh
 scripts/rs cargo nextest run -p thrust-api      # no tests yet [derived]
 scripts/e2e.sh worker-cf controls               # the journeys, then their controls; needs Docker, node and pnpm
+scripts/e2e.sh worker-cf mail controls          # the journeys that need a mail service (e2e/journeys-mail/), then theirs
 scripts/e2e.sh running                          # against a Worker that is already up (THRUST_BASE_URL, THRUST_ADMIN_TOKEN)
 ORACLE_DIR=<fork checkout>/oracle scripts/e2e.sh plane-oracle controls    # the pinned Plane; local only
 E2E_RECORD_HAR=1 ORACLE_DIR=... scripts/e2e.sh plane-oracle               # and write the scrubbed HAR into e2e/har/
@@ -50,6 +51,25 @@ pin's stock app (Thrust's `web/` with the Q-R2 ledger reverted to the pin, each 
 brings the oracle stack up fresh beside it on one origin, does the instance-admin setup, runs the journeys and takes the stack
 down. `down -v` drops the seeded snapshot that `scripts/oracle-v1.sh plane` needs, so re-seed after it. What it needs and
 what it leaves out: `tools/e2e-plane/README.md`.
+
+### The mail suite
+
+Some screens need a target that has a mail service: the code step of the sign-in (D-042) is drawn only when `/api/instances/` says
+`is_smtp_configured`, and what it is given is a code that was mailed. The first suite cannot hold such a journey, for three reasons:
+`m2-sign-in-methods` asserts that the target has no mail (no "Sign in with unique code", the "ask your admin" line, no call of the magic
+routes), the pinned Plane has none either, and the count guard holds every file of `e2e/journeys/` to "passed" on every run, so a journey
+that needs mail would fail every run of the suite without it. So the journeys that need mail are a second suite, `e2e/journeys-mail/`,
+run by its own pass (`scripts/contract.sh <target> e2e-mail`, the `worker-cf e2e-mail` cell, `scripts/e2e.sh <target> mail`) against a
+Worker with the `mail` pass's mail service: the `send_email` binding as `wrangler dev` simulates it, which sends nothing and writes each
+message to the server's log. `e2e/support/mail.ts` reads that log (`THRUST_MAIL_WRANGLER_LOG`, which `contract.sh` exports and the
+browser run inherits): it strips wrangler's colours, finds the messages, and `waitForMail` reads again every 100 ms until the one the
+journey needs is there, because the simulator's lines reach the log a few milliseconds after the response that caused them. It is the
+small cousin of `simulated_mails` in `crates/testing/suites/api/tests/mail.rs`, and the code is the last word of the subject.
+
+What the suite does not have, and why: the native targets (the native server does not serve the app), the pinned Plane (it writes its
+code to its Valkey, and its stack has no mail sink; status.md G-44), and a committed HAR (it would hold a live code, so
+`E2E_RECORD_HAR` is refused for it). `assertMailTarget` (`e2e/support/target.ts`) makes a journey aimed at a target without mail fail
+at `TARGET GUARD (mail)`, and `contract.sh`'s vacuity guard refuses to start the pass on a Worker that does not say it has mail.
 
 ## Required controls
 
@@ -71,8 +91,14 @@ page asks for, which the app applies over its own record of the answered welcome
 like that, G-31); a journey that answers the tour once and goes on fails it, and one that looks that the tour stayed answered,
 and answers it again if not, does not. It is only worth having because it was shown to fail the journey without that; a first
 version of the journey that only waited for the page to go quiet passed it on a fast machine and failed it in CI. The count
-guard holds every run's report to one passed journey per file in `e2e/journeys/`. A new journey is a new file, and brings no
-control of its own unless it has a detector the others lack. The HAR that is committed (`e2e/har/`) comes from a passing run
+guard holds every run's report to one passed journey per file in `e2e/journeys/` (`e2e/journeys-mail/` for the mail suite). A new
+journey is a new file, and brings no control of its own unless it has a detector the others lack. The mail suite's detectors are
+three: the browser tells the app that no mail service is configured (`smtp-off`: it must fail at "ask for a code", so the journey
+looks for the button and does not reach the code step some other way), the browser changes the code in the form it posts to one that
+no code is (`code-dropped`: the real server refuses it, and the journey must fail at "the code signs in", which makes it look at the
+page after the post and not at the post), and the journey asks the log for the mail of an address that was never mailed
+(`mail-unread`: it must fail at "read the code from the mail"; a reader that found some message whatever it was asked for would
+hand over a code that is not the person's). `wrong-target`, `slow-page` and `skip` run on it as on the first suite. The HAR that is committed (`e2e/har/`) comes from a passing run
 only, and `tools/e2e-har/scrub.py --self-test` shows its scrub removes planted secrets and that its check can fail.
 
 ## Owning skill
@@ -84,11 +110,13 @@ comparison of a ported UI is `clone-frontend` (`.agents/skills/clone-frontend/sc
 ## In-repo examples
 
 `e2e/journeys/m1-sign-up-to-work-item.spec.ts` (sign up to a listed work item), with the target adapter, network-log judge
-and controls in `e2e/support/`. For the Rust layers, none yet; templates are under
+and controls in `e2e/support/`; `e2e/journeys-mail/m2-sign-in-by-code.spec.ts` (a code is mailed, a wrong one and a replaced one are
+refused, the right one signs in), with the mail reader in `e2e/support/mail.ts`. For the Rust layers, none yet; templates are under
 `.agents/skills/rust-test-app/references/`.
 
 ## Target
 
 The UI parity smoke set: ADR-0123 and the parity matrix in `.agents/plans/contrail/TRACEABILITY.md`, which tables each
 journey with its screens and where it passes. The journeys for the M2 screens are issue #46's; each is a new file in
-`e2e/journeys/`, passes on the pinned Plane and on `worker-cf`, and is a new row of that table.
+`e2e/journeys/`, passes on the pinned Plane and on `worker-cf`, and is a new row of that table. (A journey that needs a mail service is a
+file of `e2e/journeys-mail/` and passes on `worker-cf` only, for now: G-44.)

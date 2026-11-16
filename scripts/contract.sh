@@ -29,6 +29,14 @@
 #                              `VERDICT: PASS`, with its must-fail control unless E2E_WHAT is set to '' for none. In contract-all.sh, so a
 #                              CI cell. scripts/e2e.sh <target> [controls] is the way in by hand; its logs, and the network's HAR, go to
 #                              target/contract-logs/<target>-e2e.e2e/
+#             e2e-mail         (worker-* only) the browser journeys that need a mail service (e2e/journeys-mail/, E2E_SUITE=mail of
+#                              scripts/e2e.sh): the e2e pass's Worker and app, with the `mail` pass's mail service (the `send_email`
+#                              binding as wrangler dev simulates it, whose log the journey reads for the code it is mailed) and
+#                              THRUST_PUBLIC_BASE_URL, so the app draws "Sign in with unique code". A pass of its own because the e2e
+#                              pass holds that the target has NO mail (the sign-in journey asserts the button is absent, and the
+#                              pinned Plane has no mail either), and its count guard holds every journey of e2e/journeys/ to that. In
+#                              contract-all.sh, so a CI cell; scripts/e2e.sh <target> mail [controls] is the way in by hand; its logs go
+#                              to target/contract-logs/<target>-e2e-mail.e2e/
 #             mail             the password reset by email on a target that has a mail service (D-041), and `--test mail` walks the whole
 #                              path: the request, the message the mail service was given, the link in it, and the reset. A native target
 #                              (E2) gets THRUST_SMTP_* pointing at a Mailpit container (Docker) started beside it, whose API is where the
@@ -42,9 +50,12 @@
 #                              logs go to target/contract-logs/<target>-oracle.oracle/. scripts/oracle-v1.sh <target> [controls]
 #                              is the way in by hand, and runs the controls only when asked
 #
-# Exit status is the status of `cargo test` itself (no pipes, no trailing echo). The suite's
-# pass count is also checked against the expected number so that a filter that selects zero
-# tests cannot report green.
+# Each pass runs on nextest: `cargo nextest run -p thrust-contract-tests --profile contract -E 'binary(<bin>) & (<filterset>)'`
+# (the `contract` profile is in .config/nextest.toml). Exit status is nextest's own (no pipes, no trailing echo): 100 when a
+# test failed. The pass's passed count, read from nextest's JUnit report (kept beside the pass's log as `<log>.junit.xml`),
+# is also checked against the expected number, so that a filterset that selects too few tests, or none, cannot report
+# green: either is exit 5. (nextest's own 4, "no test ran", becomes 5 too, because this script's 4 means the target never
+# came up.)
 #
 # Secrets: the admin token and the throwaway Postgres password are generated per run and only
 # ever live in this process's environment (and the children's), never in a file or on argv.
@@ -139,7 +150,7 @@ export THRUST_OIDC_REDIRECT_URI="$THRUST_BASE_URL/auth/oidc/callback/"
 # The e2e pass is the stock app in a browser, and the app draws an SSO button when `/api/instances/` says a provider is configured (D-040). The deployed
 # Worker has none (it cannot reach a WARP-only issuer until Q-0050.9), and the sign-in journey holds that the page shows the password and nothing else, so
 # that pass starts its target as the deployment runs: with no provider. (worker-dev.sh passes an empty setting on, which is none.)
-if [ "$PASS" = e2e ]; then
+if [ "$PASS" = e2e ] || [ "$PASS" = e2e-mail ]; then
   unset THRUST_OIDC_ISSUER THRUST_OIDC_CLIENT_ID THRUST_OIDC_CLIENT_SECRET THRUST_OIDC_REDIRECT_URI
 fi
 # Mail: only the `mail` pass has a mail service. Every other pass starts its target the way the deployments are today, with none, and the main
@@ -162,7 +173,7 @@ esac
 # setting the pass does not expect, to show that the guard refuses it.
 # The e2e pass is the stock app's own journey, which sends the token on its auth posts only, so it too runs at the default (off).
 case "$PASS" in
-  csrfoff | e2e) CSRF=off; WANT_CSRF=false; CSRF_DEFAULT=default ;;
+  csrfoff | e2e | e2e-mail) CSRF=off; WANT_CSRF=false; CSRF_DEFAULT=default ;;
   *) CSRF=on; WANT_CSRF=true; CSRF_DEFAULT=on ;;
 esac
 CSRF_SERVER="${THRUST_SERVER_CSRF_ENFORCE:-$CSRF_DEFAULT}"
@@ -213,7 +224,7 @@ case "$TARGET" in
   *) echo "unknown target $TARGET" >&2; exit 2 ;;
 esac
 
-if [ "$PASS" = "e2e" ]; then
+if [ "$PASS" = "e2e" ] || [ "$PASS" = "e2e-mail" ]; then
   # Only a Worker serves the app (ADR-0011, round 29: the native server's static files are not built), and it must have the app to serve.
   [ "$KIND" = worker ] || { echo "[$TARGET/$PASS] the native server does not serve the app yet: the e2e pass is for the worker targets" >&2; exit 2; }
   E2E_ASSETS_DIR="${E2E_ASSETS_DIR:-$ROOT/web/apps/web/build/client}"
@@ -260,7 +271,8 @@ if [ -n "${THRUST_PG_LATENCY_MS:-}" ] && [ -n "${PG_PORT:-}" ]; then
   echo "[$TARGET/$PASS] postgres behind a ${THRUST_PG_LATENCY_MS} ms one-way delay proxy (port $PROXY_PORT)"
 fi
 
-if [ "$PASS" = "mail" ] && [ "$KIND" != native ]; then
+if { [ "$PASS" = "mail" ] || [ "$PASS" = "e2e-mail" ]; } && [ "$KIND" != native ]; then
+  # (the e2e-mail pass is a Worker's only, and reads the same log from a browser journey, e2e/support/mail.ts, as the mail pass's tests do)
   # A Worker has no relay: its mail service is the `send_email` binding, and under `wrangler dev` (local, no `remote = true`) the binding is a
   # simulator that sends nothing and writes each message it is asked to send to the dev server's log (the sender, the recipient, the subject)
   # and to files (the text and the html), by the paths the log gives. That is wrangler's own account of what the binding was given, so the tests
@@ -311,7 +323,7 @@ if [ "$KIND" = "native" ]; then
   SERVER_PID=$!
 else
   # Worker: `wrangler dev` (local workerd). See scripts/worker-dev.sh. The e2e pass has it serve the app's files too.
-  if [ "$PASS" = "e2e" ]; then export THRUST_ASSETS_DIR="$E2E_ASSETS_DIR"; fi
+  if [ "$PASS" = "e2e" ] || [ "$PASS" = "e2e-mail" ]; then export THRUST_ASSETS_DIR="$E2E_ASSETS_DIR"; fi
   THRUST_PORT="$PORT" THRUST_ADAPTERS="$ADAPTERS" THRUST_OUTBOX_FASTPATH="$FASTPATH" \
     THRUST_CSRF_ENFORCE="$CSRF_SERVER" \
     "$ROOT/scripts/worker-dev.sh" >"$LOG.server.log" 2>&1 &
@@ -373,7 +385,7 @@ esac
 
 # The same guard for mail: the `mail` pass against a target with no mail service would fail its tests for the wrong reason (and every other
 # pass against one that has one would pass the dark test for none), so the app's own question, `/api/instances/`, must say what the pass needs.
-if [ "$PASS" = mail ]; then WANT_SMTP=true; else WANT_SMTP=false; fi
+if [ "$PASS" = mail ] || [ "$PASS" = e2e-mail ]; then WANT_SMTP=true; else WANT_SMTP=false; fi
 INSTANCES="$(curl -fsS "$THRUST_BASE_URL/api/instances/" 2>/dev/null || true)"
 case "$INSTANCES" in
   *"\"is_smtp_configured\":$WANT_SMTP"*) ;;
@@ -388,33 +400,45 @@ else
 fi
 export THRUST_STATE_SURVIVES_PANIC
 
+# suite_pass BIN FILTERSET [NEXTEST ARGS...]: one pass of the suite, on nextest with the `contract` profile. BIN is the test binary,
+# FILTERSET the pass's filterset over it (keep it single-quoted on one line: scripts/check-contract-counts.sh reads it from here and
+# lists it, to hold EXPECT_* to the suite), and the rest nextest's own arguments: `--no-capture` runs the tests one at a time and
+# prints what they print, which is what the passes that read a test's own output need. Sets TEST_STATUS, and moves the JUnit
+# report to `$LOG.junit.xml` (a stale one is removed first, so a run that wrote none is read as none).
+suite_pass() {
+  sp_bin="$1"
+  sp_set="$2"
+  shift 2
+  sp_junit="${CARGO_TARGET_DIR:-$ROOT/target}/nextest/contract/junit.xml"
+  rm -f "$sp_junit" "$LOG.junit.xml"
+  "$ROOT/scripts/rs" cargo nextest run --manifest-path "$ROOT/Cargo.toml" -p thrust-contract-tests --profile contract \
+    -E "binary($sp_bin) & ($sp_set)" "$@" >"$LOG.test.log" 2>&1
+  TEST_STATUS=$?
+  if [ -f "$sp_junit" ]; then mv "$sp_junit" "$LOG.junit.xml"; fi
+}
+
 case "$PASS" in
   sweeper)
-    "$ROOT/scripts/rs" cargo test --manifest-path "$ROOT/Cargo.toml" -p thrust-contract-tests --test contract -- sweeper_ --test-threads=1 --nocapture >"$LOG.test.log" 2>&1
-    TEST_STATUS=$?
+    suite_pass contract 'test(/sweeper_/)' --no-capture
     EXPECT=$EXPECT_SWEEPER
     ;;
   csrfoff)
-    "$ROOT/scripts/rs" cargo test --manifest-path "$ROOT/Cargo.toml" -p thrust-contract-tests --test contract -- csrf_off_ >"$LOG.test.log" 2>&1
-    TEST_STATUS=$?
+    suite_pass contract 'test(/csrf_off_/)'
     EXPECT=$EXPECT_CSRFOFF
     ;;
   panic)
-    "$ROOT/scripts/rs" cargo test --manifest-path "$ROOT/Cargo.toml" -p thrust-contract-tests --test contract -- panic_ --test-threads=1 --nocapture >"$LOG.test.log" 2>&1
-    TEST_STATUS=$?
+    suite_pass contract 'test(/panic_/)' --no-capture
     EXPECT=$EXPECT_PANIC
     ;;
   blast)
     # OBSERVATIONAL (not in contract-all): panics the handler while 16 clients run an I/O-bound
     # request and reports how many OTHER requests failed. Under `wrangler dev` the memory set can
     # lose the whole dev server here, which is itself an observation, so this is run by hand.
-    "$ROOT/scripts/rs" cargo test --manifest-path "$ROOT/Cargo.toml" -p thrust-contract-tests --test contract -- blast_ --test-threads=1 --nocapture >"$LOG.test.log" 2>&1
-    TEST_STATUS=$?
+    suite_pass contract 'test(/blast_/)' --no-capture
     EXPECT=$EXPECT_BLAST
     ;;
   worker)
-    "$ROOT/scripts/rs" cargo test --manifest-path "$ROOT/Cargo.toml" -p thrust-contract-tests --test worker_only -- worker_room_ --test-threads=1 --nocapture >"$LOG.test.log" 2>&1
-    TEST_STATUS=$?
+    suite_pass worker_only 'test(/worker_room_/)' --no-capture
     EXPECT=$EXPECT_WORKER
     ;;
   bench)
@@ -428,8 +452,7 @@ case "$PASS" in
     exit "$TEST_STATUS"
     ;;
   engine)
-    "$ROOT/scripts/rs" cargo test --manifest-path "$ROOT/Cargo.toml" -p thrust-contract-tests --test engine -- --test-threads=1 --nocapture >"$LOG.test.log" 2>&1
-    TEST_STATUS=$?
+    suite_pass engine 'all()' --no-capture
     EXPECT=$EXPECT_ENGINE
     ;;
   oracle)
@@ -452,6 +475,14 @@ case "$PASS" in
     echo "[$TARGET/$PASS] e2e exit=$TEST_STATUS"
     exit "$TEST_STATUS"
     ;;
+  e2e-mail)
+    # The same, for the journeys that need mail (e2e/journeys-mail/): the Worker above has the mail service, and the journey reads the code
+    # it is mailed from THRUST_MAIL_WRANGLER_LOG, which this script exported above and which the browser run inherits.
+    E2E_SUITE=mail E2E_WHAT="${E2E_WHAT-controls}" E2E_OUT="${E2E_OUT:-$LOG.e2e}" "$ROOT/scripts/e2e.sh" running
+    TEST_STATUS=$?
+    echo "[$TARGET/$PASS] e2e-mail exit=$TEST_STATUS"
+    exit "$TEST_STATUS"
+    ;;
   scale)
     "$ROOT/scripts/rs" cargo run --quiet --release --manifest-path "$ROOT/Cargo.toml" -p thrust-contract-tests --bin bench_scale -- \
       "${THRUST_SCALE_TOTAL:-100000}" "${THRUST_SCALE_PER_PROJECT:-1000}" >"$LOG.test.log" 2>&1
@@ -461,41 +492,47 @@ case "$PASS" in
     exit "$TEST_STATUS"
     ;;
   bindings)
-    "$ROOT/scripts/rs" cargo test --manifest-path "$ROOT/Cargo.toml" -p thrust-contract-tests --test worker_only -- worker_bindings_ --test-threads=1 --nocapture >"$LOG.test.log" 2>&1
-    TEST_STATUS=$?
+    suite_pass worker_only 'test(/worker_bindings_/)' --no-capture
     EXPECT=$EXPECT_BINDINGS
     ;;
   cron)
-    "$ROOT/scripts/rs" cargo test --manifest-path "$ROOT/Cargo.toml" -p thrust-contract-tests --test worker_only -- worker_cron_ --test-threads=1 --nocapture >"$LOG.test.log" 2>&1
-    TEST_STATUS=$?
+    suite_pass worker_only 'test(/worker_cron_/)' --no-capture
     EXPECT=$EXPECT_CRON
     ;;
   mail)
     # The password reset by email through a real mail server (its own test binary, `--test mail`): not part of `main`, which holds that the
     # route is dark on a target with no mail service.
-    "$ROOT/scripts/rs" cargo test --manifest-path "$ROOT/Cargo.toml" -p thrust-contract-tests --test mail -- --nocapture >"$LOG.test.log" 2>&1
-    TEST_STATUS=$?
+    suite_pass mail 'all()' --success-output immediate --failure-output immediate
     EXPECT=$EXPECT_MAIL
     ;;
   budget)
     # Only the round-trip budget test (issue #39), which is also part of `main`: scripts/mutants.sh runs a mutant of the counter
     # against this and not against the whole main pass. Not in contract-all.
-    "$ROOT/scripts/rs" cargo test --manifest-path "$ROOT/Cargo.toml" -p thrust-contract-tests --test contract -- list_endpoints_stay_within_five_db_round_trips --nocapture >"$LOG.test.log" 2>&1
-    TEST_STATUS=$?
+    suite_pass contract 'test(/list_endpoints_stay_within_five_db_round_trips/)' --no-capture
     EXPECT=$EXPECT_BUDGET
     ;;
   *)
-    "$ROOT/scripts/rs" cargo test --manifest-path "$ROOT/Cargo.toml" -p thrust-contract-tests --test contract -- --skip sweeper_ --skip panic_ --skip blast_ --skip csrf_off_ >"$LOG.test.log" 2>&1
-    TEST_STATUS=$?
+    suite_pass contract 'not test(/sweeper_|panic_|blast_|csrf_off_/)'
     EXPECT=$EXPECT_MAIN
     ;;
 esac
 
 grep -E "PANIC-OBSERVATION|HIBERNATION-OBSERVATION" "$LOG.test.log" || true
 
-grep -E "^test |^test result|panicked|FAILED" "$LOG.test.log"
-PASSED="$(sed -n 's/^test result: [a-zA-Z]*\. \([0-9]*\) passed.*/\1/p' "$LOG.test.log" | tail -1)"
-echo "[$TARGET/$PASS] cargo test exit=$TEST_STATUS passed=${PASSED:-?} expected=$EXPECT"
+grep -E '^ +(PASS|FAIL|SIG[A-Z]+|TIMEOUT|LEAK|SLOW) |Summary \[|panicked' "$LOG.test.log"
+# The count, from nextest's JUnit report: `<testsuites ... tests="N" failures="F" errors="E" ...>` holds the tests that ran (the
+# ones the filterset left out are not in it) and how many of them did not pass. No report (a build that failed) is no count.
+junit_attr() { sed -n "s/.*<testsuites[^>]* $2=\"\([0-9][0-9]*\)\".*/\1/p" "$1" 2>/dev/null | head -n 1; }
+RAN="$(junit_attr "$LOG.junit.xml" tests)"
+FAILURES="$(junit_attr "$LOG.junit.xml" failures)"
+ERRORS="$(junit_attr "$LOG.junit.xml" errors)"
+PASSED=""
+if [ -n "$RAN" ] && [ -n "$FAILURES" ] && [ -n "$ERRORS" ]; then PASSED=$((RAN - FAILURES - ERRORS)); fi
+echo "[$TARGET/$PASS] nextest exit=$TEST_STATUS passed=${PASSED:-?} expected=$EXPECT"
+if [ "$TEST_STATUS" -eq 4 ]; then
+  echo "[$TARGET/$PASS] VACUITY GUARD: no test ran (nextest exit 4: the filterset selects nothing)" >&2
+  exit 5
+fi
 if [ "$TEST_STATUS" -eq 0 ] && [ "${PASSED:-0}" -ne "$EXPECT" ]; then
   echo "[$TARGET/$PASS] VACUITY GUARD: exit 0 but passed count != expected" >&2
   exit 5

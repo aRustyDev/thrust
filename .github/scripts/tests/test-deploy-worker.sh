@@ -107,12 +107,12 @@ CLOUDFLARE_API_TOKEN=cf-secret-token CLOUDFLARE_ACCOUNT_ID=acct123 DATABASE_URL=
 TUNNEL_SERVICE_TOKEN_ID=id.access TUNNEL_SERVICE_TOKEN_SECRET=tunnel-secret SMOKE_PASSWORD=smoke-password
 WRANGLER=$T/bin/wrangler SMOKE_SCRIPT=$T/bin/smoke MIGRATE_CI_SCRIPT=$T/bin/migrate DEPLOY_CONFIG_OUT=$T/rendered.toml FAKE_DIR=$FAKE
 NEW_ASSETS_DIR=$T/newweb ASSETS_OUT_DIR=$T/.assets FETCH_PREVIOUS_SCRIPT=$T/bin/fetch ASSET_CHECK_SCRIPT=$T/bin/assetcheck
-GH_TOKEN=gh-secret-token GITHUB_REPOSITORY=o/r FAKE_NEW_ASSETS_DIR=$T/newweb"
+GH_TOKEN=gh-secret-token GITHUB_REPOSITORY=o/r FAKE_NEW_ASSETS_DIR=$T/newweb WRANGLER_READ_RETRY_SECONDS=0"
 
 # deploy <sha> [VAR=value ...]: run the script in a clean environment; RC is its status, $T/log its output, $T/outputs its outputs
 deploy() {
   sha="$1"; shift
-  rm -rf "$FAKE/calls.log" "$T/outputs" "$T/summary.md" "$T/rendered.toml" "$T/.assets"
+  rm -rf "$FAKE/calls.log" "$FAKE"/flaky-* "$T/outputs" "$T/summary.md" "$T/rendered.toml" "$T/.assets"
   # shellcheck disable=SC2086
   env -i PATH="$PATH" HOME="$T" GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null $GOOD DEPLOY_ENV=staging DEPLOY_SHA="$sha" \
     GITHUB_OUTPUT="$T/outputs" GITHUB_STEP_SUMMARY="$T/summary.md" "$@" sh "$R/scripts/deploy-worker.sh" > "$T/log" 2>&1
@@ -223,6 +223,7 @@ deploy "$H4" FAKE_SERVE_STICKY=1 FAKE_ROLLBACK=fail
 check "rollback fails: red" "$RC" 1
 check "rollback fails: reported" "$(out_of rolled_back)" failed
 grep -q "ROLLBACK FAILED" "$T/log" && pass=$((pass + 1)) || { failn=$((failn + 1)); echo "BAD  a failed rollback is not shouted"; }
+check "rollback fails: it was attempted once, not tried again (a rollback changes what is live)" "$(calls | grep -c '^wrangler rollback')" 1
 
 # H2. the rollback "succeeds" and the previous version does not answer: not verified, red
 seed_live "$H3"
@@ -344,6 +345,91 @@ deploy "$H4" FAKE_LIST_ERROR=1
 check "wrangler cannot list deployments: red" "$RC" 1
 check_call "wrangler cannot list deployments: nothing deployed" "wrangler deploy tag=" no
 check_call "wrangler cannot list deployments: it is not mistaken for a Worker that does not exist" "migrate RUN" no
+
+# N2. wrangler's two READ-ONLY listings answer with a transient error, and then answer: the deploy goes on, and says so.
+# PINNED REGRESSION: run 43921084528, attempt 1 (2026-11-16, the first production deploy): `versions list` of a Worker that did not exist
+# yet answered "An unknown error has occurred [code: 10013]", the script took it for a real failure, and the job went red; a re-run of
+# the same job passed. Only the listings are asked for again; a deploy and a rollback never are (the last cases below).
+nlist() { calls | grep -c "^wrangler $1 list$"; }
+seed_none
+deploy "$H4" ALLOW_DO_LIFECYCLE=true SKIP_SMOKE=true FAKE_LIST_FLAKY=versions:1
+check "a transient error on the versions listing of a Worker that does not exist yet (the incident): exit" "$RC" 0; [ "$RC" = 0 ] || dump
+check "...: versions were listed twice" "$(nlist versions)" 2
+check "...: deployments were listed once" "$(nlist deployments)" 1
+check "...: the missing Worker was read as missing, not guessed at" "$(out_of state)" none
+check "...: and the deploy went through" "$(out_of deployed)" true
+grep -q "wrangler versions list failed (try 1 of 3" "$T/log" && grep -q "code: 10013" "$T/log" && pass=$((pass + 1)) || { failn=$((failn + 1)); echo "BAD  the log does not show the failed try and its error"; dump; }
+grep -q "answered on try 2 of 3" "$T/log" && pass=$((pass + 1)) || { failn=$((failn + 1)); echo "BAD  the log does not say which try answered"; }
+grep -q "needed 2 tries" "$T/summary.md" && pass=$((pass + 1)) || { failn=$((failn + 1)); echo "BAD  the job summary does not say a listing needed a second try"; }
+secrets_scoped "a retried listing"
+
+seed_live "$H3"
+deploy "$H4" FAKE_LIST_FLAKY=deployments:2
+check "two transient errors, then an answer (the last of the 3 tries): exit" "$RC" 0; [ "$RC" = 0 ] || dump
+check "...: deployments were listed three times, versions once" "$(nlist deployments)/$(nlist versions)" "3/1"
+check "...: deployed" "$(out_of deployed)" true
+grep -q "answered on try 3 of 3" "$T/log" && pass=$((pass + 1)) || { failn=$((failn + 1)); echo "BAD  the log does not say that the listing answered on the third try"; }
+grep -q "needed 3 tries" "$T/summary.md" && pass=$((pass + 1)) || { failn=$((failn + 1)); echo "BAD  the job summary does not say a listing needed three tries"; }
+seed_live "$H3"
+deploy "$H4"
+grep -q "answered on try" "$T/log" && { failn=$((failn + 1)); echo "BAD  a listing that answered at once is reported as retried"; } || pass=$((pass + 1))
+grep -qE "needed [0-9]+ tries" "$T/summary.md" && { failn=$((failn + 1)); echo "BAD  the job summary mentions a retry that did not happen"; } || pass=$((pass + 1))
+
+seed_live "$H3"
+deploy "$H4" FAKE_LIST_FLAKY=versions:3
+check "three transient errors in a row (every try): red" "$RC" 1
+check "...: it stopped at 3 tries, it did not go on asking" "$(nlist versions)" 3
+check_call "...: nothing deployed" "wrangler deploy tag=" no
+check_call "...: no expand migration either" "migrate RUN" no
+grep -q "could not list the versions" "$T/log" && grep -q "code: 10013" "$T/log" && pass=$((pass + 1)) || { failn=$((failn + 1)); echo "BAD  the final failure does not say what failed and why"; }
+
+seed_live "$H3"
+deploy "$H4" FAKE_LIST_ERROR=1
+check "an error that never goes away: red, after 3 tries of the first listing" "$RC/$(nlist deployments)" "1/3"
+
+seed_none
+deploy "$H4"
+check "a Worker that does not exist is NOT asked about again: one listing of each" "$(nlist deployments)/$(nlist versions)" "1/1"
+
+seed_live "$H3"
+deploy "$H4" FAKE_LIST_FLAKY=deployments:1 WRANGLER_READ_ATTEMPTS=1
+check "WRANGLER_READ_ATTEMPTS=1 means no retry: red" "$RC" 1
+check "...: the listing was asked for once" "$(nlist deployments)" 1
+seed_live "$H3"
+deploy "$H4" FAKE_LIST_FLAKY=deployments:4 WRANGLER_READ_ATTEMPTS=5
+check "WRANGLER_READ_ATTEMPTS=5: four errors, then an answer: exit" "$RC" 0
+check "...: five listings" "$(nlist deployments)" 5
+
+for bad in 0 x -1 1.5; do
+  seed_live "$H3"
+  deploy "$H4" WRANGLER_READ_ATTEMPTS="$bad"
+  check "WRANGLER_READ_ATTEMPTS='$bad': refused" "$RC" 2
+  check_call "...: before anything was asked of wrangler" "wrangler" no
+done
+for bad in x -1 1.5; do
+  seed_live "$H3"
+  deploy "$H4" WRANGLER_READ_RETRY_SECONDS="$bad"
+  check "WRANGLER_READ_RETRY_SECONDS='$bad': refused" "$RC" 2
+done
+
+# the pause grows with the try: 5 s after the first failed try, 10 s after the second (a fake sleep records it and does not wait)
+mkdir -p "$T/sleepbin"
+printf '#!/bin/sh\necho "$1" >> "$SLEEP_LOG"\n' > "$T/sleepbin/sleep"; chmod +x "$T/sleepbin/sleep"
+rm -f "$T/sleeps"
+seed_live "$H3"
+deploy "$H4" PATH="$T/sleepbin:$PATH" SLEEP_LOG="$T/sleeps" WRANGLER_READ_RETRY_SECONDS=5 FAKE_LIST_FLAKY=versions:2
+check "a pause of 5 s then 10 s between three tries: exit" "$RC" 0; [ "$RC" = 0 ] || dump
+check "...: the pauses were 5 and 10" "$(tr '\n' ' ' < "$T/sleeps" 2> /dev/null)" "5 10 "
+rm -f "$T/sleeps"
+seed_live "$H3"
+deploy "$H4" PATH="$T/sleepbin:$PATH" SLEEP_LOG="$T/sleeps"
+check "no error, no pause: the fake sleep was never called" "$(cat "$T/sleeps" 2> /dev/null | wc -l | tr -d ' ')" 0
+
+# what changes what is live is never asked for again, whatever the error: ONE deploy, and ONE rollback
+seed_live "$H3"
+deploy "$H4" FAKE_DEPLOY=fail
+check "wrangler deploy fails: it was attempted once, not tried again" "$(calls | grep -c '^wrangler deploy tag=')" 1
+check "wrangler deploy fails: red, and nothing was served from it" "$RC/$(serving)" "1/$H3"
 
 # O. a deploy that fails changes nothing and does not roll back
 seed_live "$H3"

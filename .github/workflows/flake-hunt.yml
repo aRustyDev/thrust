@@ -31,6 +31,7 @@ on:
           - worker
           - bindings
           - e2e
+          - e2e-mail
         default: main
       iterations:
         description: Repetitions, 1 to 50
@@ -71,6 +72,7 @@ jobs:
           worker-tools: ${{ startsWith(inputs.target, 'worker') && 'true' || 'false' }}
           # Restore-only (save-cache is left at its default): reuses what the main-branch contract cells saved.
           cache-key: contract-${{ startsWith(inputs.target, 'worker') && 'wasm' || 'native' }}
+          nextest: 'true'   # scripts/contract.sh runs the pass on nextest
 
       # What the pass needs beyond Rust (uv for oracle; Node, the built app and Chromium for e2e), built once for every iteration,
       # and the preflight of its host tools: the same action a contract cell uses.

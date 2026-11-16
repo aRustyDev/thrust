@@ -6,7 +6,7 @@ inputs:
     description: native-memory | native-pg | worker-memory | worker-cf
     required: true
   pass:
-    description: A pass of scripts/contract.sh, e.g. main, oracle, e2e, mail
+    description: A pass of scripts/contract.sh, e.g. main, oracle, e2e, e2e-mail, mail
     required: true
 
 runs:
@@ -21,17 +21,18 @@ runs:
         version: "0.12.18"
         enable-cache: false
 
-    # The e2e pass drives the stock app in Chromium (scripts/e2e.sh): Node and pnpm at the versions web/ pins, the app built, the
-    # journey's own dependencies at their lockfile, and the browser with the system libraries it needs. Only that pass needs them.
+    # The e2e pass, and the e2e-mail pass (the same, for the journeys that need a mail service), drive the stock app in Chromium
+    # (scripts/e2e.sh): Node and pnpm at the versions web/ pins, the app built, the journey's own dependencies at their lockfile, and
+    # the browser with the system libraries it needs. Only those passes need them.
     # Dependency scripts stay off, as in the `web` job: the build does not need them.
     - name: Node (e2e pass)
-      if: inputs.pass == 'e2e'
+      if: inputs.pass == 'e2e' || inputs.pass == 'e2e-mail'
       uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
       with:
         node-version-file: web/.node-version
 
     - name: Build the app, and get the browser (e2e pass)
-      if: inputs.pass == 'e2e'
+      if: inputs.pass == 'e2e' || inputs.pass == 'e2e-mail'
       shell: bash
       env:
         TURBO_TELEMETRY_DISABLED: "1"
@@ -56,7 +57,7 @@ runs:
         missing=""
         tools="curl openssl lsof pgrep docker"
         [ "$PASS_NAME" = oracle ] && tools="$tools uv"
-        [ "$PASS_NAME" = e2e ] && tools="$tools node pnpm"
+        case "$PASS_NAME" in e2e | e2e-mail) tools="$tools node pnpm" ;; esac
         # the native mail pass waits for its Mailpit with `nc`; a Worker's mail service is wrangler's simulated binding (no container, no relay)
         if [ "$PASS_NAME" = mail ]; then case "$PASS_TARGET" in native-*) tools="$tools nc" ;; esac; fi
         for tool in $tools; do

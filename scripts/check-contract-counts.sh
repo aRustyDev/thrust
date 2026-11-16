@@ -4,24 +4,26 @@
 #   scripts/check-contract-counts.sh              the check on the real scripts, and a control that shows it can fail
 #   scripts/check-contract-counts.sh --self-test  the check on worlds it must accept and worlds it must refuse (no compile)
 #
-# `scripts/contract.sh` and `scripts/stage2-contract.sh` each run a pass as `cargo test ... -- <filters>` and exit 5 ("VACUITY GUARD")
+# `scripts/contract.sh` and `scripts/stage2-contract.sh` each run a pass as `suite_pass <bin> '<filterset>' [args]`, which is
+# `cargo nextest run -p thrust-contract-tests --profile contract -E 'binary(<bin>) & (<filterset>)'`, and exit 5 ("VACUITY GUARD")
 # when the number of tests that passed is not the number it expects (`EXPECT_*` in contract.sh, `EXPECT=` in each arm of
 # stage2-contract.sh). A count goes stale whenever a test is added, removed or renamed, and a stale one fails only when the script
 # is run: contract.sh's `main`, `sweeper`, `csrfoff`, `panic`, `worker`, `cron` and `bindings` run in CI cells, but `blast`, `budget`
 # and `engine` run nowhere in CI, and stage2-contract.sh needs a deployed Worker. It was 59 until 2026-11-14 while the list had been
 # 61 since #151, and #169's three tests made it 64 the same day; nothing noticed, and a correct run would have exited 5.
 #
-# This asks the suite itself, with no server and no environment: for each arm it runs the arm's own filters through libtest,
-# `cargo test -p thrust-contract-tests --test <bin> -- --list --format terse <filters>`, counts the lines that end in `: test`, and
-# compares the number with the arm's. It does not copy a filter, so a filter cannot drift from its count.
+# This asks the suite itself, with no server and no environment: for each arm it lists the arm's own filterset with nextest,
+# `cargo nextest list -p thrust-contract-tests --profile contract --message-format oneline -E 'binary(<bin>) & (<filterset>)'`, counts
+# the lines (one a test), and compares the number with the arm's. It does not copy a filterset, so a filterset cannot drift from its
+# count.
 #
 # It fails closed. Exit 0: every arm's count is the suite's. Exit 1: a count differs. Exit 2: it cannot vouch for itself, which is any
 # of: an arm it cannot read, a different number of arms read than of arms written, no arm at all, a count that is not a number, an
-# `EXPECT_` variable with no value (or two), a listing that fails, or a filter that selects nothing (libtest prints nothing and exits 0
-# for that, which is not a count of anything).
+# `EXPECT_` variable with no value (or two), a listing that fails, or a filterset that selects nothing (a listing of nothing is not a
+# count of anything).
 #
 # The control (AGENTS.md rule 8, "a check that cannot fail is not evidence"): the same check on a copy of stage2-contract.sh whose
-# `main` count is wrong must exit 1. `--self-test` is the cases: a world that agrees, a count one too high and one too low, a filter
+# `main` count is wrong must exit 1. `--self-test` is the cases: a world that agrees, a count one too high and one too low, a filterset
 # that selects nothing, a listing that fails, a script with nothing to read, an arm it cannot read, a variable with no value, the
 # default arm of contract.sh read as `main`. POSIX sh: CI runs it under dash.
 set -u
@@ -29,27 +31,30 @@ set -f
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 STAGE2="$ROOT/scripts/stage2-contract.sh"
 CONTRACT="$ROOT/scripts/contract.sh"
+# Arms are read into tab-separated records: a filterset holds `|`, so it cannot be the separator.
+T="$(printf '\t')"
+Q="'"
 
 # --- reading the scripts ------------------------------------------------------------------------------------------------------
 
-# arms_of_stage2 FILE: one line per arm, `pass|expected|bin|filters`, from lines like
-#   `  main)     EXPECT=64; "$RS" cargo test --manifest-path "$M" -p thrust-contract-tests --test contract -- <filters> >"$LOG.test.log" 2>&1 ;;`
+# arms_of_stage2 FILE: one record per arm, `pass<TAB>expected<TAB>bin<TAB>filterset`, from lines like
+#   `  main)     EXPECT=65; suite_pass contract 'not test(/sweeper_|panic_/)' ;;`
 arms_of_stage2() {
-  sed -n 's/^ *\([a-z0-9]*\)) *EXPECT=\([0-9][0-9]*\); *"\$RS" cargo test --manifest-path "\$M" -p thrust-contract-tests --test \([a-z_]*\) -- \(.*\) >"\$LOG\.test\.log" 2>&1 ;;$/\1|\2|\3|\4/p' "$1"
+  sed -n "s/^ *\([a-z0-9]*\)) *EXPECT=\([0-9][0-9]*\); *suite_pass \([a-z_]*\) '\([^']*\)'.*;;\$/\1$T\2$T\3$T\4/p" "$1"
 }
 
-# how many arms stage2-contract.sh has: the lines (comments left out) that run a test of the suite
+# how many arms stage2-contract.sh has: the lines (comments left out) that call suite_pass
 written_in_stage2() {
-  grep -v '^ *#' "$1" | grep -c -- '-p thrust-contract-tests --test '
+  grep -v '^ *#' "$1" | grep -c 'suite_pass '
 }
 
-# arms_of_contract FILE: one line per arm that has a count, `pass|variable|bin|filters`, from
-#   `  <pass>)` / `    "$ROOT/scripts/rs" cargo test ... --test <bin> -- <filters> >"$LOG.test.log" 2>&1` / `    EXPECT=$EXPECT_<VARIABLE>`
+# arms_of_contract FILE: one record per arm that has a count, `pass<TAB>variable<TAB>bin<TAB>filterset`, from
+#   `  <pass>)` / `    suite_pass <bin> '<filterset>' [args]` / `    EXPECT=$EXPECT_<VARIABLE>`
 # The default arm, `*)`, is the `main` pass.
 arms_of_contract() {
   acn_arm=""
   acn_bin=""
-  acn_args=""
+  acn_set=""
   while IFS= read -r acn_line; do
     case "$acn_line" in
       "  "[a-z]*")" | "  *)")
@@ -57,16 +62,22 @@ arms_of_contract() {
         acn_arm="${acn_arm%)}"
         [ "$acn_arm" = '*' ] && acn_arm=main
         acn_bin=""
-        acn_args=""
+        acn_set=""
         ;;
-      *"-p thrust-contract-tests --test "*)
-        acn_rest="${acn_line#*-p thrust-contract-tests --test }"
+      "    suite_pass "*)
+        acn_rest="${acn_line#    suite_pass }"
         acn_bin="${acn_rest%% *}"
-        acn_rest="${acn_rest#* -- }"
-        acn_args="${acn_rest%% >*}"
+        acn_rest="${acn_rest#* }"
+        case "$acn_rest" in
+          "$Q"*"$Q"*)
+            acn_set="${acn_rest#"$Q"}"
+            acn_set="${acn_set%%"$Q"*}"
+            ;;
+          *) acn_set="" ;;
+        esac
         ;;
       "    EXPECT=\$EXPECT_"*)
-        printf '%s|%s|%s|%s\n' "$acn_arm" "${acn_line#    EXPECT=\$EXPECT_}" "$acn_bin" "$acn_args"
+        printf '%s\t%s\t%s\t%s\n' "$acn_arm" "${acn_line#    EXPECT=\$EXPECT_}" "$acn_bin" "$acn_set"
         ;;
     esac
   done < "$1"
@@ -88,23 +99,22 @@ value_of_variable() {
 
 # --- asking the suite ---------------------------------------------------------------------------------------------------------
 
-# real_lister BIN FILTERS...: libtest's own list of the tests of one binary of the suite that these filters select
+# real_lister BIN FILTERSET: nextest's own list, one line a test, of the tests of one binary of the suite that the filterset selects
 real_lister() {
-  rl_bin="$1"
-  shift
-  "$ROOT/scripts/rs" cargo test --manifest-path "$ROOT/Cargo.toml" -p thrust-contract-tests --test "$rl_bin" -- --list --format terse "$@"
+  "$ROOT/scripts/rs" cargo nextest list --manifest-path "$ROOT/Cargo.toml" -p thrust-contract-tests --profile contract \
+    --message-format oneline -E "binary($1) & ($2)"
 }
 
 LISTER=real_lister
 
-# selected BIN FILTERS: how many tests those filters select, or a failure of the listing (exit status 2 and a message)
+# selected BIN FILTERSET: how many tests the filterset selects, or a failure of the listing (exit status 2 and a message)
 selected() {
-  sel_out="$($LISTER "$@" < /dev/null 2> "$W/list.err")" || {
-    echo "cannot vouch: the listing failed for: $*"
+  sel_out="$($LISTER "$1" "$2" < /dev/null 2> "$W/list.err")" || {
+    echo "cannot vouch: the listing failed for: binary($1) & ($2)"
     tail -n 15 "$W/list.err"
     return 2
   }
-  printf '%s\n' "$sel_out" | grep -c ': test$'
+  printf '%s\n' "$sel_out" | grep -c .
   return 0
 }
 
@@ -135,7 +145,7 @@ check_kind() {
   fi
   ck_status=0
   ck_seen=0
-  while IFS='|' read -r ck_pass ck_expect ck_bin ck_args; do
+  while IFS="$T" read -r ck_pass ck_expect ck_bin ck_set; do
     [ -z "$ck_only" ] || [ "$ck_only" = "$ck_pass" ] || continue
     ck_seen=$((ck_seen + 1))
     if [ "$ck_kind" = contract ]; then
@@ -144,21 +154,24 @@ check_kind() {
     case "$ck_expect" in
       "" | *[!0-9]*) echo "cannot vouch: $ck_kind $ck_pass: its count is not a number, or its variable has no single value"; return 2 ;;
     esac
-    # shellcheck disable=SC2086 # the filters are words: `--skip x`, `--test-threads=1`
-    ck_got="$(selected "$ck_bin" $ck_args)"
+    if [ -z "$ck_bin" ] || [ -z "$ck_set" ]; then
+      echo "cannot vouch: $ck_kind $ck_pass: its suite_pass call has no binary or no single-quoted filterset"
+      return 2
+    fi
+    ck_got="$(selected "$ck_bin" "$ck_set")"
     ck_rc=$?
     if [ "$ck_rc" -ne 0 ]; then
       printf '%s\n' "$ck_got"
       return 2
     fi
     if [ "$ck_got" -eq 0 ]; then
-      echo "cannot vouch: $ck_kind $ck_pass: the filters select nothing ($ck_bin -- $ck_args)"
+      echo "cannot vouch: $ck_kind $ck_pass: the filterset selects nothing (binary($ck_bin) & ($ck_set))"
       return 2
     fi
     if [ "$ck_got" -eq "$ck_expect" ]; then
       echo "ok   $ck_kind $ck_pass: $ck_got tests"
     else
-      echo "FAIL $ck_kind $ck_pass: its filters select $ck_got tests and the script expects $ck_expect (${ck_file#"$ROOT"/})"
+      echo "FAIL $ck_kind $ck_pass: its filterset selects $ck_got tests and the script expects $ck_expect (${ck_file#"$ROOT"/})"
       ck_status=1
     fi
   done < "$W/arms"
@@ -188,53 +201,53 @@ control() {
 
 # --- the cases ----------------------------------------------------------------------------------------------------------------
 
-# fake_lister BIN FILTERS...: as many lines as the world says (`$W/world`: `bin filters|count`), none if the world does not say
-# it, a failure for the count `fail`
+# fake_lister BIN FILTERSET: as many lines as the world says (`$W/world`: `bin filterset<TAB>count`), none if the world does not
+# say it, a failure for the count `fail`
 fake_lister() {
-  fl_key="$*"
-  fl_n="$(sed -n "s/^$(printf '%s' "$fl_key" | sed 's/[][\.*^$/]/\\&/g')|\\(.*\\)\$/\\1/p" "$W/world" | head -n 1)"
+  fl_n="$(awk -F "$T" -v k="$1 $2" '$1 == k { print $2; exit }' "$W/world")"
   [ "$fl_n" = fail ] && return 1
   fl_i=0
   while [ "$fl_i" -lt "${fl_n:-0}" ]; do
     fl_i=$((fl_i + 1))
-    echo "t::t$fl_i: test"
+    echo "thrust-contract-tests::$1 t$fl_i"
   done
-  echo
-  echo "${fl_n:-0} tests, 0 benchmarks"
 }
 
-STAGE2_FIXTURE='case "$PASS" in
-  main)     EXPECT=5; "$RS" cargo test --manifest-path "$M" -p thrust-contract-tests --test contract -- --skip a_ --skip b_ >"$LOG.test.log" 2>&1 ;;
-  worker)   EXPECT=1;  "$RS" cargo test --manifest-path "$M" -p thrust-contract-tests --test worker_only -- worker_room_ --test-threads=1 --nocapture >"$LOG.test.log" 2>&1 ;;
-  engine)   EXPECT=4;  "$RS" cargo test --manifest-path "$M" -p thrust-contract-tests --test engine -- --test-threads=1 --nocapture >"$LOG.test.log" 2>&1 ;;
-  *) echo "unknown pass $PASS" >&2; exit 2 ;;
-esac'
+STAGE2_FIXTURE="case \"\$PASS\" in
+  main)     EXPECT=5; suite_pass contract 'not test(/a_|b_/)' ;;
+  worker)   EXPECT=1;  suite_pass worker_only 'test(/worker_room_/)' --no-capture ;;
+  engine)   EXPECT=4;  suite_pass engine 'all()' --no-capture ;;
+  *) echo \"unknown pass \$PASS\" >&2; exit 2 ;;
+esac"
 
-CONTRACT_FIXTURE='EXPECT_MAIN=5
+CONTRACT_FIXTURE="EXPECT_MAIN=5
 EXPECT_SWEEPER=3
-case "$PASS" in
+case \"\$PASS\" in
   sweeper)
-    "$ROOT/scripts/rs" cargo test --manifest-path "$ROOT/Cargo.toml" -p thrust-contract-tests --test contract -- sweeper_ --test-threads=1 --nocapture >"$LOG.test.log" 2>&1
-    TEST_STATUS=$?
-    EXPECT=$EXPECT_SWEEPER
+    suite_pass contract 'test(/sweeper_/)' --no-capture
+    EXPECT=\$EXPECT_SWEEPER
     ;;
   bench)
-    "$ROOT/scripts/rs" cargo run --quiet --release --manifest-path "$ROOT/Cargo.toml" -p thrust-contract-tests --bin bench -- 200 1 >"$LOG.test.log" 2>&1
+    \"\$ROOT/scripts/rs\" cargo run --quiet --release --manifest-path \"\$ROOT/Cargo.toml\" -p thrust-contract-tests --bin bench -- 200 1 >\"\$LOG.test.log\" 2>&1
     exit 0
     ;;
   *)
-    "$ROOT/scripts/rs" cargo test --manifest-path "$ROOT/Cargo.toml" -p thrust-contract-tests --test contract -- --skip sweeper_ >"$LOG.test.log" 2>&1
-    TEST_STATUS=$?
-    EXPECT=$EXPECT_MAIN
+    suite_pass contract 'not test(/sweeper_/)'
+    EXPECT=\$EXPECT_MAIN
     ;;
-esac'
+esac"
 
-# the world in which both fixtures agree with the suite
-AGREEING_WORLD='contract --skip a_ --skip b_|5
-worker_only worker_room_ --test-threads=1 --nocapture|1
-engine --test-threads=1 --nocapture|4
-contract sweeper_ --test-threads=1 --nocapture|3
-contract --skip sweeper_|5'
+# the world in which both fixtures agree with the suite: `bin filterset<TAB>count`
+AGREEING_WORLD="contract not test(/a_|b_/)${T}5
+worker_only test(/worker_room_/)${T}1
+engine all()${T}4
+contract test(/sweeper_/)${T}3
+contract not test(/sweeper_/)${T}5"
+
+# world_with KEY COUNT: the agreeing world with KEY's count made COUNT
+world_with() {
+  printf '%s\n' "$AGREEING_WORLD" | awk -F "$T" -v k="$1" -v n="$2" 'BEGIN { OFS = FS } $1 == k { $2 = n } { print }'
+}
 
 # case WANT LABEL KIND FIXTURE WORLD [ONLY]: check_kind on a fixture in a world, and what exit status it must give
 self_case() {
@@ -260,20 +273,22 @@ self_test() {
   SC_FAILED=0
   self_case 0 "stage2: every count agrees with the suite" stage2 "$STAGE2_FIXTURE" "$AGREEING_WORLD"
   self_case 0 "contract: every count agrees, and the default arm is main" contract "$CONTRACT_FIXTURE" "$AGREEING_WORLD"
-  self_case 1 "stage2: a count one too low is refused" stage2 "$STAGE2_FIXTURE" "$(printf '%s\n' "$AGREEING_WORLD" | sed 's/^contract --skip a_ --skip b_|5$/contract --skip a_ --skip b_|6/')"
-  self_case 1 "stage2: a count one too high is refused" stage2 "$STAGE2_FIXTURE" "$(printf '%s\n' "$AGREEING_WORLD" | sed 's/^engine --test-threads=1 --nocapture|4$/engine --test-threads=1 --nocapture|3/')"
-  self_case 1 "contract: a count that differs is refused" contract "$CONTRACT_FIXTURE" "$(printf '%s\n' "$AGREEING_WORLD" | sed 's/^contract sweeper_ --test-threads=1 --nocapture|3$/contract sweeper_ --test-threads=1 --nocapture|4/')"
-  self_case 2 "stage2: a filter that selects nothing is not a count" stage2 "$STAGE2_FIXTURE" "$(printf '%s\n' "$AGREEING_WORLD" | sed 's/^worker_only worker_room_ --test-threads=1 --nocapture|1$/worker_only worker_room_ --test-threads=1 --nocapture|0/')"
-  self_case 2 "stage2: a listing that fails cannot vouch" stage2 "$STAGE2_FIXTURE" "$(printf '%s\n' "$AGREEING_WORLD" | sed 's/^engine --test-threads=1 --nocapture|4$/engine --test-threads=1 --nocapture|fail/')"
+  self_case 1 "stage2: a count one too low is refused" stage2 "$STAGE2_FIXTURE" "$(world_with 'contract not test(/a_|b_/)' 6)"
+  self_case 1 "stage2: a count one too high is refused" stage2 "$STAGE2_FIXTURE" "$(world_with 'engine all()' 3)"
+  self_case 1 "contract: a count that differs is refused" contract "$CONTRACT_FIXTURE" "$(world_with 'contract test(/sweeper_/)' 4)"
+  self_case 2 "stage2: a filterset that selects nothing is not a count" stage2 "$STAGE2_FIXTURE" "$(world_with 'worker_only test(/worker_room_/)' 0)"
+  self_case 2 "stage2: a listing that fails cannot vouch" stage2 "$STAGE2_FIXTURE" "$(world_with 'engine all()' fail)"
   self_case 2 "stage2: a script with no arm to read cannot vouch" stage2 'echo nothing to see' "$AGREEING_WORLD"
   self_case 2 "stage2: an arm that cannot be read (its count is not a number) cannot vouch" stage2 "$(printf '%s\n' "$STAGE2_FIXTURE" | sed 's/EXPECT=5;/EXPECT=five;/')" "$AGREEING_WORLD"
   self_case 2 "stage2: an arm with no count cannot vouch" stage2 "$(printf '%s\n' "$STAGE2_FIXTURE" | sed 's/EXPECT=1;  //')" "$AGREEING_WORLD"
+  self_case 2 "stage2: an arm whose filterset is not single-quoted cannot vouch" stage2 "$(printf '%s\n' "$STAGE2_FIXTURE" | sed "s/'all()'/all()/")" "$AGREEING_WORLD"
+  self_case 2 "contract: an arm whose filterset is not single-quoted cannot vouch" contract "$(printf '%s\n' "$CONTRACT_FIXTURE" | sed "s/'test(\/sweeper_\/)'/test(\/sweeper_\/)/")" "$AGREEING_WORLD"
   self_case 2 "contract: a variable that has no value cannot vouch" contract "$(printf '%s\n' "$CONTRACT_FIXTURE" | sed '/^EXPECT_SWEEPER=3$/d')" "$AGREEING_WORLD"
   self_case 2 "contract: a variable that has two values cannot vouch" contract "$(printf '%s\n' "$CONTRACT_FIXTURE" | sed 's/^EXPECT_MAIN=5$/EXPECT_MAIN=5\
 EXPECT_MAIN=6/')" "$AGREEING_WORLD"
   self_case 2 "contract: a script with no arm to read cannot vouch" contract 'echo nothing to see' "$AGREEING_WORLD"
-  self_case 1 "only one pass is checked when asked: a wrong main is refused" stage2 "$STAGE2_FIXTURE" "$(printf '%s\n' "$AGREEING_WORLD" | sed 's/^contract --skip a_ --skip b_|5$/contract --skip a_ --skip b_|9/')" main
-  self_case 0 "only one pass is checked when asked: a wrong main is not seen from worker" stage2 "$STAGE2_FIXTURE" "$(printf '%s\n' "$AGREEING_WORLD" | sed 's/^contract --skip a_ --skip b_|5$/contract --skip a_ --skip b_|9/')" worker
+  self_case 1 "only one pass is checked when asked: a wrong main is refused" stage2 "$STAGE2_FIXTURE" "$(world_with 'contract not test(/a_|b_/)' 9)" main
+  self_case 0 "only one pass is checked when asked: a wrong main is not seen from worker" stage2 "$STAGE2_FIXTURE" "$(world_with 'contract not test(/a_|b_/)' 9)" worker
   self_case 2 "only one pass is checked when asked: a pass that is not there cannot vouch" stage2 "$STAGE2_FIXTURE" "$AGREEING_WORLD" nosuchpass
   [ "$SC_FAILED" -eq 0 ] || { echo "$SC_FAILED case(s) failed"; return 1; }
   return 0

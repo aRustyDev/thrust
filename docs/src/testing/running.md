@@ -32,10 +32,10 @@ profile selects nothing. To reach the excluded integration suites through nextes
 |---|---|---|
 | 0 | either | all selected tests passed; check the count, see [count guard](evidence-and-controls.md#count-guard) |
 | 4 | nextest | **no tests to run**: the filter or prefix selected nothing. Not red, not green |
-| 100 | nextest | tests failed |
-| 101 | `cargo test` | tests failed (the contract scripts and `scripts/mutants.sh` rely on this) |
+| 100 | nextest | tests failed (the contract scripts pass it through, and `scripts/mutants.sh` reads it as a kill of a contract-suite row) |
+| 101 | `cargo test` | tests failed (`scripts/mutants.sh`'s adapter rows rely on this, until they move to nextest) |
 | 2 / 3 / 4 | `cargo mutants` | MISSED mutants / timeouts / the baseline itself failed or selected nothing (see `rust-test-mutation`) |
-| 5 | `scripts/contract.sh` | target guard or count guard tripped |
+| 5 | `scripts/contract.sh` | target guard or count guard tripped, or the pass's filterset selected nothing (nextest's 4, which would read as this script's "the target never came up") |
 
 ## The contract suite
 
@@ -52,6 +52,9 @@ scripts/contract.sh <target> [pass]
                                              In contract-all.sh, so a CI cell. By hand: `scripts/oracle-v1.sh <target> [controls]`)
           e2e                               (worker-* only: the first browser journey, the stock app in Chromium against a Worker that serves it, with its must-fail
                                              control; needs Node and pnpm, and the app built. In contract-all.sh as `worker-cf e2e`, so a CI cell. By hand: `scripts/e2e.sh <target> [controls]`)
+          e2e-mail                          (worker-* only: the browser journeys that need a mail service, e2e/journeys-mail/: the same Worker and app with the `mail` pass's mail
+                                             service, and the journey reads the code it is mailed from the simulator's log. In contract-all.sh as `worker-cf e2e-mail`, so a CI
+                                             cell. By hand: `scripts/e2e.sh <target> mail [controls]`)
           engine | scale                    (every target, opt-in: not in contract-all.sh. The engine-deciding tests; list, search and create at 100k items)
 ```
 
@@ -59,6 +62,10 @@ scripts/contract.sh <target> [pass]
 composition roots' default (enforcement off, Q-0050.8); every other pass runs with it on, except `e2e`, which runs at that default
 too (the stock app sends the token only on its auth posts), and the script refuses a pass whose
 target's `/_info` says otherwise (exit 5).
+
+Each pass runs `cargo nextest run -p thrust-contract-tests --profile contract -E 'binary(<bin>) & (<filterset>)'`, and the
+script reads the passed count from the JUnit report it keeps beside the pass's log (`<log>.junit.xml`). The `contract` profile
+runs the `compat_oidc_` tests one at a time: each starts the mock identity provider on the one port the target was given.
 
 The header of `scripts/contract.sh` describes each pass and which targets accept it. Prerequisites: Docker (for
 Postgres on `native-pg` and `worker-cf`), and `wrangler` for `worker-*` targets. The script generates a throwaway

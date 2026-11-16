@@ -13,7 +13,9 @@ nextest is for new hermetic crates and for the test categories in this skill. A 
 runs shared HTTP assertions against every adapter and parses libtest's `test result:` line, relying on exit 101.
 Leave it on `cargo test` until someone migrates its exit-code and pass-count handling on purpose: nextest exits 100
 when tests fail `[re-run]`, exits 4 when the filter selects nothing `[re-run]`, and prints no libtest `test result:`
-line `[derived]`. `cargo test --doc` stays a libtest call because nextest cannot run doctests.
+line `[derived]`. `cargo test --doc` stays a libtest call because nextest cannot run doctests. In this repository the
+contract suite has been migrated that way: `scripts/contract.sh` runs each pass with the `contract` profile and
+reads the passed count from nextest's JUnit report, and maps nextest's exit 4 to its own count-guard exit 5.
 
 ## Profiles
 

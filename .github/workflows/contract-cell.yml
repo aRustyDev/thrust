@@ -13,7 +13,7 @@ on:
         type: string
         required: true
       pass:
-        description: main | sweeper | panic | cron | csrfoff | worker | bindings | mail | oracle | e2e
+        description: main | sweeper | panic | cron | csrfoff | worker | bindings | mail | oracle | e2e | e2e-mail
         type: string
         required: true
 
@@ -41,6 +41,7 @@ jobs:
           worker-tools: ${{ startsWith(inputs.target, 'worker') && 'true' || 'false' }}
           cache-key: contract-${{ startsWith(inputs.target, 'worker') && 'wasm' || 'native' }}
           save-cache: ${{ github.ref == 'refs/heads/main' }}
+          nextest: 'true'   # scripts/contract.sh runs the pass on nextest
 
       # uv for the oracle pass, Node, the built app and Chromium for the e2e pass, and a preflight of every host tool the pass
       # relies on. In an action of its own so that flake-hunt.yml prepares a pass exactly as a cell does.
