@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0](https://github.com/aRustyDev/thrust/compare/v0.1.0...v0.2.0) - 2026-11-16
+
+### Added
+
+- *(api-v1)* describe the Work Items operations in the OpenAPI document, which now has all 32 of the pin's operations ([#203](https://github.com/aRustyDev/thrust/pull/203))
+- *(api-v1)* describe the Labels operations in the OpenAPI document, written from the type the routes answer with ([#193](https://github.com/aRustyDev/thrust/pull/193))
+- *(api-v1)* describe the States operations in the OpenAPI document, written from the type the routes answer with ([#188](https://github.com/aRustyDev/thrust/pull/188))
+- *(migrate)* apply each migration once, recorded in a ledger, and refuse a changed or contract file on request ([#201](https://github.com/aRustyDev/thrust/pull/201))
+- *(worker)* send the password reset mail from the Worker through Cloudflare Email Sending (E3) ([#200](https://github.com/aRustyDev/thrust/pull/200))
+
+### Other
+
+- name every pinned regression regression_, so one filterset finds them all ([#209](https://github.com/aRustyDev/thrust/pull/209))
+- crate paths that work at any directory depth (crates-layout PR 2) ([#212](https://github.com/aRustyDev/thrust/pull/212))
+- *(api-v1)* every v1 route reads JSON only, to be revisited if a real client sends a form ([#214](https://github.com/aRustyDev/thrust/pull/214))
+
 ## [0.1.0](https://github.com/aRustyDev/thrust/releases/tag/v0.1.0) - 2026-11-15
 
 ### Added
