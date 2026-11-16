@@ -151,6 +151,7 @@ jobs:
           python3 -I .github/scripts/tests/test_merge_assets.py
           python3 -I .github/scripts/tests/test_check_release_plz.py
           python3 -I .github/scripts/tests/test_flagship.py
+          python3 -I .github/scripts/tests/test_preview_config.py
           python3 -I .github/scripts/tests/test_plan_ci.py
 
   deps:
