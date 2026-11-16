@@ -176,7 +176,8 @@ ADR_0009 = {
 # one path per rule, in the rules' order; `None` where the rule's sample is a crate path (below)
 SAMPLES = [
     "Cargo.lock", ".config/branding/colors.css", ".config/nextest.toml", ".github/workflows/ci.yml", ".github/actions/setup-rust/action.yml",
-    ".github/scripts/assert-gate.sh", ".github/scripts/toolchain-channel.sh", "scripts/contract.sh", "crates/thrust-core/src/lib.rs",
+    ".github/actions/contract-pass-tools/action.yml", ".github/scripts/assert-gate.sh", ".github/scripts/toolchain-channel.sh",
+    "scripts/contract.sh", "crates/thrust-core/src/lib.rs",
     ".github/deploy/ca.pem", "deny.toml", "clippy.toml", "release-plz.toml", "tools/oracle-v1/corpus/a.json",
     "tools/compat-record/record.py", "tools/compat-inventory/out-pinned/endpoint-inventory.csv",
     ".agents/plans/contrail/research/0003-compat-plane-inventory.md", "tools/e2e-har/scrub.py", "e2e/journeys/m1.spec.ts",
@@ -211,6 +212,7 @@ for pattern, _, why in pc.RULES:
 EVERYTHING = (ALL_JOBS, set(CELLS))
 for path in ["crates/thrust-gone/src/lib.rs", "crates/adapters/notes.txt", "crates/README.txt", "scripts/new-thing.sh",
              "Cargo.lock", "rust-toolchain.toml", ".github/scripts/plan-ci.py", "scripts/worker-dev.sh",
+             ".github/actions/contract-pass-tools/action.yml",
              # a directory that is no crate but shares a prefix with one (crates/thrust-core): a whole path segment must match
              "crates/thrust-core-gone/src/lib.rs"]:
     check(f"{path} runs everything", run_plan([path], REAL_GRAPH), EVERYTHING)
