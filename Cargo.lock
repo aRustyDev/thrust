@@ -3889,6 +3889,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "thrust-edge"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "console_error_panic_hook",
+ "hmac 0.12.1",
+ "js-sys",
+ "proptest",
+ "rand 0.8.8",
+ "rsa",
+ "rstest",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "worker",
+]
+
+[[package]]
 name = "thrust-editor-doc"
 version = "0.1.0"
 dependencies = [

@@ -59,6 +59,7 @@ changelog_include = [
   "thrust-adapters-selfhosted",
   "thrust-adapters-cloudflare",
   "thrust-worker",
+  "thrust-edge",
   "thrust-server",
   "thrust-contract-tests",
   "thrust-oracle-fixture",
@@ -112,6 +113,10 @@ version_group = "thrust"
 
 [[package]]
 name = "thrust-worker"
+version_group = "thrust"
+
+[[package]]
+name = "thrust-edge"
 version_group = "thrust"
 
 [[package]]
