@@ -58,10 +58,13 @@ case "${FAKE_CLOUDFLARED:-listen}" in
     exec $PYRUN "$LISTEN_STUB" "${url##*:}" ;;
 esac
 EOF
-# The fake `migrate`. It records what it was given and exits as FAKE_MIGRATE_EXIT says.
+# The fake `migrate`. It records what it was given and exits as FAKE_MIGRATE_EXIT says. With `--plan` it prints a plan on stdout, as
+# the real one does.
 cat > "$T/bin/migrate" <<'EOF'
 #!/bin/sh
 echo ran > "$FAKE_DIR/migrate.ran"
+printf 'argv:%s\n' "$*" >> "$FAKE_DIR/migrate.env"
+[ "${1:-}" = --plan ] && echo '{"outcome":"current","pending":[],"contract":[],"unknown":[],"changed":[]}'
 echo "sslmode=${DATABASE_SSLMODE:-unset}" >> "$FAKE_DIR/migrate.env"
 echo "rootcert=${DATABASE_SSLROOTCERT:-unset}" >> "$FAKE_DIR/migrate.env"
 [ -n "${TUNNEL_SERVICE_TOKEN_ID:-}${TUNNEL_SERVICE_TOKEN_SECRET:-}" ] && echo "LEAK: the service token is in migrate's environment" >> "$FAKE_DIR/migrate.env"
@@ -73,7 +76,8 @@ SECRET_TOKEN="tok-secret-SHOULD-NOT-APPEAR"
 SECRET_PW="pw-SHOULD-NOT-APPEAR"
 
 # The good environment; a case then changes it with an `eval`-ed snippet. Fast waits: a case that is going to fail must fail fast.
-run_with() { # run_with '<shell snippet that changes the environment>'
+run_with() { # run_with '<shell snippet that changes the environment>' [<argument for the script>...]
+  snippet="$1"; shift
   rm -rf "$FAKE_DIR"; mkdir -p "$FAKE_DIR"
   (
     PATH="$T/bin:$PATH"; export PATH
@@ -83,8 +87,8 @@ run_with() { # run_with '<shell snippet that changes the environment>'
     export DATABASE_URL="postgres://migrator:$SECRET_PW@127.0.0.1:$PORT/thrust"
     export DATABASE_SSLROOTCERT="$T/ca.pem" MIGRATE_BIN="$T/bin/migrate" MIGRATE_LOCAL_PORT="$PORT"
     export MIGRATE_WAIT_ATTEMPTS=100 MIGRATE_WAIT_INTERVAL=0.1
-    eval "$1"
-    "$SCRIPT"
+    eval "$snippet"
+    "$SCRIPT" "$@"
   )
 }
 
@@ -173,6 +177,38 @@ expect "config: sslmode require is refused" 0 "refused ok: DATABASE_SSLMODE is s
 expect "config: a port that is not a number" 0 "refused ok: MIGRATE_LOCAL_PORT must be a port number" \
   refused 'export MIGRATE_LOCAL_PORT=abc' 'MIGRATE_LOCAL_PORT must be a port number'
 expect "config: sslmode verify-ca said out loud is fine" 0 "the tunnel's local end is up" run_with 'export DATABASE_SSLMODE=verify-ca'
+
+# ---- migrate's flags (issue #195): passed on as they are, one at most, and nothing else -------------------------------------
+passed_on() { # passed_on '<the argv migrate must have been given>' [<argument for the script>...]
+  # (its own names: `expect` keeps its `want` and `frag` in variables that every function shares)
+  argv_want="$1"; shift
+  run_with ':' "$@" > /dev/null 2>&1 || { echo "the run did not pass"; return 1; }
+  grep -qx "argv:$argv_want" "$FAKE_DIR/migrate.env" || { echo "migrate was not given '$argv_want':"; cat "$FAKE_DIR/migrate.env"; return 1; }
+  echo "passed-on ok: '$argv_want'"
+}
+expect "flags: with no flag, migrate is given no argument" 0 "passed-on ok: ''" passed_on ''
+expect "flags: --no-contract is passed on to migrate" 0 "passed-on ok: '--no-contract'" passed_on '--no-contract' --no-contract
+expect "flags: --plan is passed on to migrate" 0 "passed-on ok: '--plan'" passed_on '--plan' --plan
+plan_is_all_of_stdout() { # the plan's JSON is the whole of stdout, so a pipeline can parse it; the script's own lines are on stderr
+  run_with ':' --plan > "$T/plan.out" 2> "$T/plan.err" || { echo "the --plan run did not pass"; cat "$T/plan.err"; return 1; }
+  [ "$(cat "$T/plan.out")" = '{"outcome":"current","pending":[],"contract":[],"unknown":[],"changed":[]}' ] \
+    || { echo "stdout is not just the plan:"; cat "$T/plan.out"; return 1; }
+  grep -qF "the tunnel's local end is up" "$T/plan.err" || { echo "the script's own line is not on stderr: this looked at nothing"; return 1; }
+  echo "plan-stdout ok"
+}
+expect "flags: --plan's JSON is all of stdout, the script's own lines are on stderr" 0 "plan-stdout ok" plan_is_all_of_stdout
+refused_args() { # refused_args '<fragment>' <argument for the script>...: exit 2 with the fragment, and nothing started
+  args_frag="$1"; shift
+  run_with ':' "$@" > "$T/refused.out" 2>&1
+  rc=$?
+  [ "$rc" = 2 ] || { echo "wanted exit 2, got $rc"; cat "$T/refused.out"; return 1; }
+  grep -qF -- "$args_frag" "$T/refused.out" || { echo "wanted '$args_frag' in:"; cat "$T/refused.out"; return 1; }
+  nothing_started > /dev/null || { echo "something was started"; return 1; }
+  echo "refused ok: $*"
+}
+expect "flags: an unknown flag is refused before anything starts" 0 "refused ok: --force" refused_args 'usage: migrate-ci.sh' --force
+expect "flags: two flags are refused" 0 "refused ok: --no-contract --plan" refused_args 'usage: migrate-ci.sh' --no-contract --plan
+expect "flags: an empty argument is refused" 0 "refused ok: " refused_args 'usage: migrate-ci.sh' ''
 
 # ---- the secrets are in no output and no argv ---------------------------------------------------------------------------------
 no_secret_anywhere() { # the token secret and the password, over a run that passes and runs that fail three different ways

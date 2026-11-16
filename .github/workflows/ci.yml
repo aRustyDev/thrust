@@ -119,6 +119,7 @@ jobs:
           sh .github/scripts/tests/test-check-web-diff.sh
           sh .github/scripts/tests/test-smoke-deploy.sh
           sh .github/scripts/tests/test-migrate-ci.sh
+          sh .github/scripts/tests/test-check-migration-lint.sh
           sh .github/scripts/tests/test-deploy-template.sh
           sh .github/scripts/tests/test-deploy-ca.sh
           sh .github/scripts/tests/test-classify-deploy.sh
@@ -179,6 +180,11 @@ jobs:
       # the gate's required contexts do not change.
       - name: Placement guard
         run: scripts/check-placement.sh
+      # Issue #195: a migration numbered above 0017 may only add to the schema (no DROP, RENAME, column TYPE change or SET NOT NULL)
+      # unless it is a contract migration (NNNN_contract_<what>.sql), which the deploy runs only in production and only when no older
+      # version shares the data. Its test (ci-scripts) is the control: each construct is refused where it must be and nowhere else.
+      - name: Migration expand-rule guard
+        run: scripts/check-migration-lint.sh
       # The expected test counts of the contract suite's passes (scripts/contract.sh, scripts/stage2-contract.sh) go stale when a test
       # is added, and the stage2 ones were wrong for a day because nothing in CI runs that script. The check itself needs the suite
       # built, so it is a step of `hermetic`; this is its self-test, which runs it on worlds it must refuse (a count one too high, a

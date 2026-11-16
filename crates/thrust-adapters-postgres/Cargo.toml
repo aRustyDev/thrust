@@ -36,6 +36,8 @@ thrust-contracts = { workspace = true }
 thrust-ports = { workspace = true }
 async-trait = { workspace = true }
 serde_json = { workspace = true }
+# The migration ledger's checksum of each file (src/ledger.rs, #195). The version and features thrust-core already builds.
+sha2 = { version = "0.11", default-features = false }
 # `js` makes it build for wasm32; `runtime` (TCP connect) is added only by the native feature.
 tokio-postgres = { version = "0.7", default-features = false, features = ["js", "with-uuid-1", "with-chrono-0_4", "with-serde_json-1"] }
 tokio = { version = "1", default-features = false, features = ["rt", "macros"], optional = true }

@@ -82,7 +82,7 @@ RULES = [
     (r"^scripts/mutants\.sh$", {"jobs": ["mutants"]}, "the mutation controls"),
     (r"^scripts/(stage2-contract|check-contract-counts)\.sh$", {"jobs": ["hermetic", "deps"]}, "the contract counts and their guard"),
     (r"^scripts/check-web-diff\.sh$", {"jobs": ["web", "ci-scripts"]}, "the Q-R2 gate of web/"),
-    (r"^scripts/(check-(deps|topology|plane-500|acceptance-list|placement|openapi)|render-wrangler)\.sh$",
+    (r"^scripts/(check-(deps|topology|plane-500|acceptance-list|placement|openapi|migration-lint)|render-wrangler)\.sh$",
      {"jobs": ["deps", "ci-scripts"]}, "a guard of the deps job"),
     (r"^scripts/(smoke-deploy|smoke-bootstrap|migrate-ci|deploy-worker|merge-assets|check-asset-retention)\.sh$",
      {"jobs": ["ci-scripts"]}, "a deploy script (tested by ci-scripts; run by deploy.yml)"),
