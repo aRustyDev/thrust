@@ -25,6 +25,20 @@
 //                 successfully." and the server has changed nothing. The password journey must fail at "the other browser is signed out":
 //                 a journey that stops at the toast, or at the 200 in its network log (which this leaves), would pass with it.
 //
+// The mail suite's (e2e/journeys-mail/, scripts/e2e.sh `mail`), each one a run of its journey that must fail:
+//
+//   smtp-off      the browser says in the answer of `/api/instances/` that no mail service is configured, so that the app does not draw
+//                 "Sign in with unique code". The journey must fail at "ask for a code": a journey that does not look for the button
+//                 (or that reaches the code step some other way) would pass with it.
+//   code-dropped  the browser changes the code in the form it posts to `/auth/magic-sign-in/` to 000000, which no code is (they are 100000 to
+//                 999999), and sends it: the real server refuses it, and the app is sent back to the code step with its banner. The journey
+//                 must fail at "the code signs in": a journey that stops at "the form was posted", or at the page showing the code step,
+//                 would pass with it.
+//   mail-unread   the journey asks the simulator's log for the mail of an address that was never mailed, and waits 3 s for it. It must fail
+//                 at "read the code from the mail": a reader that finds a message whatever it is asked for would hand the journey a code
+//                 that is not its own (the server would then refuse it, which is why the sign-in is the journey's real check; this control
+//                 is the reader's own).
+//
 // The wrong-target control is not here: it is E2E_TARGET set to the other target (support/target.ts).
 //
 // These are browser-side on purpose: they need no second build of the server, and they run in every cell. The real server-side
@@ -43,6 +57,12 @@ export const STEP_METHODS = "a sign-in method other than the password";
 // the password journey's two steps that the `change-refused` and `change-dropped` controls must fail at, by these words
 export const STEP_CHANGE = "change the password";
 export const STEP_OTHER = "the other browser is signed out";
+// the code journey's three steps that `smtp-off`, `mail-unread` and `code-dropped` must fail at, by these words
+export const STEP_ASK = "ask for a code";
+export const STEP_READ = "read the code from the mail";
+export const STEP_SIGN_IN = "the code signs in";
+// how long the code journey waits for a mail, and for the one the `mail-unread` control asks for, which never comes
+export const MAIL_WAIT_MS = control === "mail-unread" ? 3_000 : 20_000;
 
 // how many times slower than this machine the browser runs under `slow-page` (E2E_CPU_RATE overrides it)
 const CPU_RATE = Number(process.env.E2E_CPU_RATE ?? "6");
@@ -55,13 +75,50 @@ const LATE_MS = 2_000;
 export async function installControl(
   page: Page,
   where: { workspaceSlug?: string } = {},
-): Promise<{ emptied: () => number; delayed: () => number; providersTurnedOn: () => number; refused: () => number; dropped: () => number }> {
+): Promise<{
+  emptied: () => number;
+  delayed: () => number;
+  providersTurnedOn: () => number;
+  refused: () => number;
+  dropped: () => number;
+  mailTurnedOff: () => number;
+  codesChanged: () => number;
+}> {
   let emptied = 0;
   let delayed = 0;
   let providersTurnedOn = 0;
   let refused = 0;
   let dropped = 0;
+  let mailTurnedOff = 0;
+  let codesChanged = 0;
   let taken = false;
+
+  if (control === "smtp-off") {
+    await page.route("**/api/instances/", async (route) => {
+      const response = await route.fetch();
+      const body: unknown = await response.json().catch(() => undefined);
+      const config = typeof body === "object" && body !== null ? (body as { config?: unknown }).config : undefined;
+      if (response.status() !== 200 || typeof config !== "object" || config === null) return route.fulfill({ response });
+      mailTurnedOff += 1;
+      return route.fulfill({
+        response,
+        json: { ...(body as object), config: { ...config, is_smtp_configured: false, is_magic_login_enabled: false } },
+      });
+    });
+  }
+
+  if (control === "code-dropped") {
+    // the form is a native post (urlencoded: `email`, `code`, `csrfmiddlewaretoken`), so the page is not told: its next page is the server's answer
+    await page.route("**/auth/magic-sign-in/", async (route) => {
+      const request = route.request();
+      if (request.method() !== "POST") return route.fallback();
+      const form = new URLSearchParams(request.postData() ?? "");
+      if (!form.has("code")) return route.fallback();
+      form.set("code", "000000");
+      codesChanged += 1;
+      return route.continue({ postData: form.toString() });
+    });
+  }
 
   if (control === "sso-on") {
     await page.route("**/api/instances/", async (route) => {
@@ -149,5 +206,7 @@ export async function installControl(
     providersTurnedOn: () => providersTurnedOn,
     refused: () => refused,
     dropped: () => dropped,
+    mailTurnedOff: () => mailTurnedOff,
+    codesChanged: () => codesChanged,
   };
 }
