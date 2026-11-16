@@ -21,6 +21,11 @@ are planned in detail when the phase starts, and a stage's steps when the stage 
 Chores, Prof (confirmed by the owner, 2026-11-16). Backlog: Web, UI/UX, Issue. Within a group, the order is mine: Test before Build (Test holds most of the gate, so it carries the most risk,
 and Build's cross-target actions serve Release), and the groups' existing jobs (`deny`, `docs`) before their new ones.
 
+**Related plan.** [test-suites](../test-suites/PLAN.md) (#234) plans the contract suite on nextest, a load suite and
+profiling as scripts and crates, and leaves their workflows to phases 2, 12, 13 and 14 here. Its pull requests edit commands
+inside jobs that Phase 1 moves (`contract.sh`'s passes, the `pg-adapter` job's `cargo test` lines): whichever lands second
+takes the other's change by merging `main`.
+
 ## What the split must keep working
 
 - The ruleset on `main` requires exactly one check, `gate`, and ADR-0100 asks for one aggregate required context.
@@ -34,18 +39,23 @@ and Build's cross-target actions serve Release), and the groups' existing jobs (
 - GitHub allows 10 nesting levels and 50 unique called workflows per top-level file (changelog of November 2025), and a
   called workflow must sit directly in `.github/workflows/`. A contract cell is then three levels deep (`ci` → `test` →
   `contract-cell`).
-- A calling job's `needs.<id>.result` is `success` when every job inside it was **skipped**. The top `gate` cannot see
-  a planned inner job that never ran. Either each callee ends with its own verdict, or the callee reports its jobs'
-  results and the one `gate` judges them; stage 0.2 chooses.
+- A calling job's `needs.<id>.result` is `success` when at least one job inside it succeeded, even if a planned sibling
+  was **skipped**, and the top `gate` cannot see that skip; only when nothing inside ran is the result `skipped`
+  ([research 0018](research/0018-gate-spike.md), F5). Stage 0.2 chose design A+: every callee ends with a `verdict` job that
+  judges its own jobs, and `gate` requires the callee's result to be `success` **and** its `verdict` output to be `pass`.
 - In a called workflow `github.event_name` is the **caller's** event. When `ci`'s nightly run calls `test.yml`, `test.yml`
   sees `schedule`, so a callee routes by an explicit input and never by the event name.
-- A callee must not set a workflow-level `concurrency` group: `github.workflow` resolves to the caller's name, so the
-  callee would cancel or wait on its caller.
+- A callee must not set a workflow-level `concurrency` group: `github.workflow` resolves to the caller's name, so a group
+  written the usual way equals the caller's, GitHub reports a deadlock, and the run starts no job (F3).
+- A callee must not ask for a permission its calling job does not grant: the run does not start (`startup_failure`), so no
+  `gate` would report (F8).
+- An `if` that cannot be evaluated skips its job without failing it (F9), so a planned job is judged by a result that must
+  be exactly `success`.
 
 ## Target architecture
 
-The diagram shows a verdict per callee, the expected choice; if stage 0.2 chooses the other candidate, the `inner_gate`
-state becomes "report the results" and `gate` judges them.
+The diagram is design A+, which stage 0.2 chose ([research 0018](research/0018-gate-spike.md)): `inner_gate` is the callee's
+`verdict` job, and `gate` reads both the calling job's result and the `verdict` output.
 
 ```mermaid
 stateDiagram-v2
@@ -58,7 +68,7 @@ stateDiagram-v2
     [*] --> slice: inputs.plan (this workflow's jobs and matrix), inputs.mode
     slice --> jobs: if planned
     jobs --> inner_gate: always()
-    inner_gate --> [*]: planned => success, unplanned => skipped
+    inner_gate --> [*]: planned => success, unplanned => skipped, then output verdict=pass
   }
   called --> gate: always()
   gate --> [*]: the one required check
@@ -67,10 +77,10 @@ stateDiagram-v2
 
 - **Called by `ci.yml` (inside the gate):** `test`, `lint`, `documentation`, `security`, `web`, and later `build`.
 - **Own triggers (outside the gate):** `e2e` (schedule and dispatch), `release`, `release-plz` (until the Release
-  phase), `deploy`, and later `maintenance`, `benchmarking`, `profiling`, `performance`, `pr` and `issues`.
+  phase), `deploy`, `flagship` (#229: the edge's Flagship flags, with its own environment and secrets; the Deploy phase), and later `maintenance`, `benchmarking`, `profiling`, `performance`, `pr` and `issues`.
 - **Files after the migration:** `ci.yml` (`ci`), `contract-cell.yml` (called), `test.yml` (Test), `lint.yml` (Lint),
   `documentation.yml` (Docs; the owner's tree spells it `documentaion.yml`, taken as a typo), `security.yml` (Security),
-  `web.yml` (Web), `e2e.yml` (E2E), and `deploy.yml`, `release.yml`, `release-plz.yml` unchanged. The phases add
+  `web.yml` (Web), `e2e.yml` (E2E), and `deploy.yml`, `flagship.yml`, `release.yml`, `release-plz.yml` unchanged. The phases add
   `build.yml`, `pr.yml`, `maintenance.yml` (Chores), `benchmarking.yml`, `profiling.yml`, `performance.yml`, `uiux.yml`
   and `issues.yml`.
 
@@ -78,9 +88,9 @@ stateDiagram-v2
 
 | Stage | What it does |
 |---|---|
-| 0.1 | **ADR-0102**: one orchestrator, called workflows, the nested gate. Conventions: a callee routes by input, has no workflow-level `concurrency`, gets only the permissions its caller grants, and follows the repo's job-id, `name:` and comment style |
-| 0.2 | **Gate spike** on a draft pull request (closed unmerged), because `workflow_dispatch` needs the file on `main`. It compares a verdict per callee with a callee that reports and one gate that judges (and `re-actors/alls-green`), on seven must-fail scenarios and eight measured facts |
-| 0.3 | **Planner and gate**: `plan-ci.py` gets a `WORKFLOWS` map and a `workflows` output, its rules run everything for every workflow file that runs checks, and `assert-gate.sh` takes its job list as an input. A behaviour-preserving change; the mutant driver is committed and runs in `ci-scripts`. Unblocked: #221 (the crates move) merged |
+| 0.1 | **ADR-0102**: one orchestrator, called workflows, the `verdict` job (design A+, chosen by the spike). Conventions: a callee routes by input, has no workflow-level `concurrency`, gets only the permissions its caller grants, and follows the repo's job-id, `name:` and comment style |
+| 0.2 | **Gate spike** on a draft pull request (closed unmerged), because `workflow_dispatch` needs the file on `main`. It compares a verdict per callee with a callee that reports and one gate that judges (and `re-actors/alls-green`), on seven must-fail scenarios and eight measured facts. **Done:** design A+, [research/0018](research/0018-gate-spike.md) |
+| 0.3 | **Planner and gate**: `plan-ci.py` gets a `WORKFLOWS` map and a `workflows` output, its rules run everything for every workflow file that runs checks, and `assert-gate.sh` takes its job list as an input; `gate` requires each expected callee's result to be `success` and its `verdict` output to be `pass`. A behaviour-preserving change; the mutant driver is committed and runs in `ci-scripts`. Unblocked: #221 (the crates move) merged |
 | 0.4 | **Lint conventions and indexes**: new rules R8 (no workflow-level `concurrency` in a callee) and R9 (a callee does not read `github.event_name`). `lint-all-workflows.sh` needs no change for credentials: it gives a workflow it does not name the strictest policy. `actionlint` is added as a pinned check. The two READMEs index the files and link `cicd.md` instead of restating it |
 | 0.5 | **Baseline**: wall-clock and runner-minutes (the sum of job durations) per job from recent `ci` runs; GitHub reports 0 billable minutes on this public repository. It is measured again after the migration, and passes 5 to 7 are measured against it |
 
@@ -192,7 +202,7 @@ skipped.
 | Item | State |
 |---|---|
 | This plan | merged (#223) |
-| Phase 0 | planned in [phases/0001-foundation.md](phases/0001-foundation.md) (merged, #225). The owner's answers to its questions (2026-11-16) are recorded in the decisions table above. Stage 0.5, the baseline, is done: [research/0017-ci-baseline.md](research/0017-ci-baseline.md) (this pull request). Next: stage 0.2, the gate spike |
+| Phase 0 | planned in [phases/0001-foundation.md](phases/0001-foundation.md) (merged, #225). The owner's answers to its questions (2026-11-16) are recorded in the decisions table above. Stage 0.5, the baseline, is done ([research/0017-ci-baseline.md](research/0017-ci-baseline.md), #230), and so is stage 0.2, the gate spike: design A+ ([research/0018-gate-spike.md](research/0018-gate-spike.md), this pull request; the spike was draft #232, closed). Next: stage 0.1, ADR-0102 |
 | #221 (crates move) | merged (50b4dba); stage 0.3 is unblocked |
 | Phase 1 and the phases after | not started |
 | Open for the owner | nothing |
