@@ -212,7 +212,7 @@ for pattern, _, why in pc.RULES:
 EVERYTHING = (ALL_JOBS, set(CELLS))
 for path in ["crates/gone/src/lib.rs", "crates/adapters/notes.txt", "crates/README.txt", "scripts/new-thing.sh",
              "Cargo.lock", "rust-toolchain.toml", ".github/scripts/plan-ci.py", "scripts/worker-dev.sh",
-             ".github/actions/contract-pass-tools/action.yml",
+             ".github/actions/contract-pass-tools/action.yml", "scripts/lib/ports.sh",
              # a directory that is no crate but shares a prefix with one (crates/core/types): a whole path segment must match
              "crates/core/types-gone/src/lib.rs"]:
     check(f"{path} runs everything", run_plan([path], REAL_GRAPH), EVERYTHING)
