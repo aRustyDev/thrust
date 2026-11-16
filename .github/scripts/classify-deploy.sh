@@ -14,10 +14,17 @@
 #                        across (ADR-0110): the `[[migrations]]` tables of the deploy template differ. It goes through the manual gate.
 #   reason               one line saying why, for the job summary
 #
+# The two commits are compared by what they hold, so neither has to descend from the other. release-plz force-updates the
+# release-candidate branch, so the commit that is live is usually in no branch's history any more, and a deploy whose only difference
+# from it is a release commit has nothing for a person to decide. What a difference in either direction means is the same: a migration
+# file that differs makes `migrate` look (it applies what the ledger lacks and refuses what is out of order), and a `[[migrations]]`
+# table that differs is a lifecycle change.
+#
 # Fail safe. Anything it cannot establish counts as a change, and as a lifecycle change, so the deploy takes the manual gate and does
 # not roll back by itself: no active version (the first deploy to an environment carries `[[migrations]] v1`); a previous tag that is
-# not a commit in this checkout (deployed some other way, or history not fetched); a previous commit that is not an ancestor of
-# <head-sha> (a redeploy of older code, a force-pushed branch); a template that did not exist at the previous commit.
+# not a commit in this checkout (deployed some other way, or a commit nobody could fetch: the caller asks for it first); a head that
+# is OLDER than the active version, an ancestor of it (a redeploy of older code, which is a person's decision); a checkout too shallow
+# to tell which of the two is older; a template that did not exist at the previous commit.
 #
 # Environment: DEPLOY_TEMPLATE (default crates/thrust-worker/wrangler.deploy.toml), MIGRATIONS_DIR (default
 # crates/thrust-adapters-postgres/migrations), both relative to the repository root.
@@ -46,9 +53,22 @@ case "$PREV" in
   *[!0-9a-f]*) emit true true "the active version's tag '$PREV' is not a commit sha: it was not deployed by this pipeline" ;;
 esac
 git cat-file -e "$PREV^{commit}" 2> /dev/null \
-  || emit true true "the active version's tag $PREV is not a commit in this checkout (history not fetched, or deployed from elsewhere)"
-git merge-base --is-ancestor "$PREV" "$HEAD_SHA" \
-  || emit true true "the active version ($PREV) is not an ancestor of $HEAD_SHA: a redeploy of older or diverged code needs a person's decision"
+  || emit true true "the active version's tag $PREV is not a commit in this checkout (it could not be fetched, or it was deployed from elsewhere)"
+
+# Which of the two is older. Both are resolved first, so that a short sha and the same commit under its full name are one commit.
+PREV_ID="$(git rev-parse --verify "$PREV^{commit}" 2> /dev/null)" || emit true true "the active version's tag $PREV does not resolve to a commit"
+HEAD_ID="$(git rev-parse --verify "$HEAD_SHA^{commit}" 2> /dev/null)" || usage "head '$HEAD_SHA' does not resolve to a commit"
+if [ "$PREV_ID" != "$HEAD_ID" ]; then
+  # a shallow checkout cuts the history short, so "not an ancestor" there may only mean "the history is not here": no guess is made
+  [ "$(git rev-parse --is-shallow-repository 2> /dev/null)" = false ] \
+    || emit true true "this checkout is shallow, so it cannot be told whether $HEAD_SHA is older than the active version ($PREV)"
+  git merge-base --is-ancestor "$HEAD_ID" "$PREV_ID"
+  case $? in
+    0) emit true true "$HEAD_SHA is older than the active version ($PREV): a redeploy of older code needs a person's decision" ;;
+    1) ;;
+    *) emit true true "it could not be told whether $HEAD_SHA is older than the active version ($PREV)" ;;
+  esac
+fi
 git cat-file -e "$PREV:$TEMPLATE" 2> /dev/null \
   || emit true true "the deploy template did not exist at the active version ($PREV)"
 
@@ -81,4 +101,9 @@ else
   lifecycle=true
 fi
 
-emit "$migrations" "$lifecycle" "compared with the active version $PREV: migrations $( [ "$migrations" = true ] && echo changed || echo unchanged ), Durable Object migrations $( [ "$lifecycle" = true ] && echo changed || echo unchanged )"
+# neither an ancestor of the other: say so, so that a person reading the summary knows the comparison was of content alone
+how="compared with the active version $PREV"
+if [ "$PREV_ID" != "$HEAD_ID" ] && ! git merge-base --is-ancestor "$PREV_ID" "$HEAD_ID"; then
+  how="compared by content with the active version $PREV, which $HEAD_SHA does not descend from (a rewritten release-candidate branch)"
+fi
+emit "$migrations" "$lifecycle" "$how: migrations $( [ "$migrations" = true ] && echo changed || echo unchanged ), Durable Object migrations $( [ "$lifecycle" = true ] && echo changed || echo unchanged )"

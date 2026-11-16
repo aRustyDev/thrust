@@ -380,7 +380,7 @@ it never offers a code to an address that has no account. A deactivated account 
 taken back with its place in the count, so an outage does not use up the four.
 
 What it does not have. No per-IP throttle (the pin has 10 a minute on these routes), no HTML part, no sign-up by code, and no browser journey of the form (the e2e
-targets have no mail service: G-41).
+targets have no mail service: G-42).
 
 ## Elsewhere and not built yet
 

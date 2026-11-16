@@ -15,16 +15,22 @@ on:
           - worker-memory
           - worker-cf
         default: native-memory
+      # Every pass of the contract matrix (scripts/contract-all.sh), and only those: test-check-flake-hunt-cell.sh holds both lists to it.
+      # Not every pairing is a cell; the first step refuses one the matrix does not run, and names the passes the target does.
       pass:
-        description: Pass to repeat (cron needs a worker-* target; worker and bindings need worker-cf)
+        description: Pass to repeat (the target and pass must be a cell of scripts/contract-all.sh)
         type: choice
         options:
           - main
           - sweeper
           - panic
+          - csrfoff
+          - mail
+          - oracle
           - cron
           - worker
           - bindings
+          - e2e
         default: main
       iterations:
         description: Repetitions, 1 to 50
@@ -55,6 +61,10 @@ jobs:
         with:
           persist-credentials: false
 
+      # Before any build: the target and pass must be a cell of the matrix, and the iterations 1 to 50.
+      - name: Validate inputs
+        run: .github/scripts/check-flake-hunt-cell.sh "$TARGET" "$PASS" "$ITER"
+
       - uses: ./.github/actions/setup-rust
         with:
           targets: ${{ startsWith(inputs.target, 'worker') && 'wasm32-unknown-unknown' || '' }}
@@ -62,19 +72,12 @@ jobs:
           # Restore-only (save-cache is left at its default): reuses what the main-branch contract cells saved.
           cache-key: contract-${{ startsWith(inputs.target, 'worker') && 'wasm' || 'native' }}
 
-      - name: Validate inputs
-        run: |
-          case "$ITER" in
-            "" | *[!0-9]*) echo "::error::iterations must be a whole number"; exit 1 ;;
-          esac
-          if [ "$ITER" -lt 1 ] || [ "$ITER" -gt 50 ]; then
-            echo "::error::iterations must be between 1 and 50"
-            exit 1
-          fi
-          case "$PASS" in
-            cron) case "$TARGET" in worker-*) ;; *) echo "::error::pass 'cron' needs a worker-* target"; exit 1 ;; esac ;;
-            worker | bindings) [ "$TARGET" = "worker-cf" ] || { echo "::error::pass '$PASS' needs target worker-cf"; exit 1; } ;;
-          esac
+      # What the pass needs beyond Rust (uv for oracle; Node, the built app and Chromium for e2e), built once for every iteration,
+      # and the preflight of its host tools: the same action a contract cell uses.
+      - uses: ./.github/actions/contract-pass-tools
+        with:
+          target: ${{ env.TARGET }}
+          pass: ${{ env.PASS }}
 
       # scripts/flake-hunt.sh ends with `echo "failures: X / N"`, so its exit status is ALWAYS 0.
       # The verdict is that last line: assert it exists and says zero failures out of N.

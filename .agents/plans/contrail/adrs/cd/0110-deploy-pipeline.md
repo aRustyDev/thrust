@@ -215,6 +215,22 @@ says had not been run have now been run, and that sentence is superseded.
 
 The runbook, `docs/src/architecture/deploy.md`, records each run and what it settled.
 
+## Update — the classifier compares content (2026-11-16)
+
+The **Open** item of the previous update is closed. `classify-deploy.sh` no longer sends a deploy to the manual gate because the
+live commit is not an ancestor of the new one. It compares the two commits by what they hold (the migration files and the
+`[[migrations]]` tables), whichever way their histories run, and the deploy asks GitHub for the live commit by its sha when no
+branch of the checkout has it (an anonymous `git fetch origin <sha>` served a commit that release-plz had dropped from its
+branch).
+
+Three things still stop at the gate for want of an answer: a live commit that cannot be fetched, a checkout too shallow to say
+which commit is older, and **a deploy of older code than what is live**. The last was one case of "not an ancestor" before and is
+kept on purpose: redeploying earlier code is a person's decision. What the ancestry check never protected is the schema: the
+ledger (issue #195) refuses a diverged or out-of-order build on the database side, and an older build applies nothing.
+
+Tested against a made-up history with side lines and sibling commits, and against a fetch of a commit no branch holds; not yet run
+on staging.
+
 ## Open Questions
 
 * Q-0110 — pipeline shape. Answered: round 24, superseded in part by round 29, implemented in round 30.

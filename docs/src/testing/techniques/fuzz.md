@@ -1,7 +1,8 @@
 # Fuzz
 
-Status: **live** as seeded mutation without a fuzzer (`decode_panics.rs`); coverage-guided fuzzing is
-**template-only** · Gate: `scripts/rs cargo nextest run` (replay only)
+Status: **live** as seeded mutation without a fuzzer (`decode_panics.rs`) and as the corpus replay of `thrust-edge`'s two
+harnesses (`fuzz_replay_pin_open`, `fuzz_replay_access_verify`); coverage-guided campaigns are **template-only** (no
+campaign has run) · Gate: `scripts/rs cargo nextest run` (replay only)
 
 ## Catches
 
@@ -24,10 +25,12 @@ it finds no inputs. Campaigns (`cargo fuzz run`) run outside nextest, on a sched
 ## Run
 
 ```sh
-scripts/rs cargo nextest run -E 'test(/\bfuzz_replay_/)'    # none exist yet [derived]
+scripts/rs cargo nextest run -E 'test(/\bfuzz_replay_/)'    # thrust-edge's replays and their controls [re-run]
 ```
 
 Campaign commands are in `rust-test-fuzz`; all are `[unverified]` there because no nightly toolchain was available.
+The first targets are `crates/thrust-edge/fuzz/` (`pin_open`: the pin cookie, alone or in a Cookie header; `access_verify`: an
+Access token): `cargo +nightly fuzz run pin_open` from `crates/thrust-edge`, once cargo-fuzz and nightly are installed (G-41).
 
 ## Required controls
 

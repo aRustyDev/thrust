@@ -1,0 +1,32 @@
+# The cargo-fuzz project of thrust-edge (rust-test-fuzz): its own workspace, built by `cargo +nightly fuzz` with `--cfg fuzzing`.
+#   cargo +nightly fuzz run pin_open        cargo +nightly fuzz run access_verify
+# Campaigns run outside nextest; what nextest runs every time is the replay of seeds/ and regressions/ (src/fuzz_harness.rs).
+[package]
+name = "thrust-edge-fuzz"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+thrust-edge = { path = ".." }
+
+[[bin]]
+name = "pin_open"
+path = "fuzz_targets/pin_open.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "access_verify"
+path = "fuzz_targets/access_verify.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]
+members = ["."]

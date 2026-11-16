@@ -23,6 +23,9 @@ ignore = [
 #     (`verify_rsa_signature`, `RsaPublicKey::verify`). Thrust's only call is `id_token.claims(..)` in `thrust-adapters-oidc`.
 #     (`openidconnect` also ships `CoreRsaPrivateSigningKey`, which signs with an `RsaPrivateKey`. Thrust never constructs it.)
 #   - and through `thrust-contract-tests`: its mock IdP signs with a throwaway key on 127.0.0.1, inside the test process.
+#   - and through `thrust-edge` (ADR-0111): it VERIFIES the Access token's RS256 signature with the team's PUBLIC keys
+#     (`access::verify`, `RsaPublicKey::verify`). Its tests sign with keys generated from fixed seeds inside the test process,
+#     and its fuzz seed token was signed by a key that was never written down.
 #
 # Re-check this whenever `rsa` or `openidconnect` is updated, and whenever the advisory gains a patched version. Remove the ignore
 # once a patched `rsa` is adopted (upstream closed RustCrypto/RSA#626 on 2026-11-01 and `rsa` 0.10.0-rc.21 exists, but
