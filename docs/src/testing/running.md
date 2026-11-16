@@ -1,6 +1,7 @@
 # Running the suites
 
-Every cargo command goes through `scripts/rs`, which puts rustup's stable toolchain first on `PATH` and fixes the
+Every cargo command goes through `scripts/rs`, which puts the rustup toolchain `rust-toolchain.toml` pins (the version CI
+builds with; `rustup toolchain install <version>` if it says it is missing) first on `PATH` and fixes the
 `rust-lld` library path on the dev machine (its header says why). Bare `cargo` may pick up a toolchain with no
 wasm32 standard library.
 
@@ -98,7 +99,7 @@ only when `SPIKE0006_OUT=<dir>` is set, relative to the workspace root.
 
 ## Format, lint and the dependency audit
 
-The commands of the `lint` and `deny` jobs. The first two need the `clippy` and `rustfmt` components of the stable
+The commands of the `lint` and `deny` jobs. The first two need the `clippy` and `rustfmt` components of the pinned
 toolchain, and the last needs `cargo-deny` 0.20 on `PATH` (installing it is your decision); it fetches the RustSec
 advisory database, so it needs the network.
 

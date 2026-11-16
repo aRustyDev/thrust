@@ -1,0 +1,6 @@
+# The Rust toolchain every build uses: CI (.github/actions/setup-rust installs exactly this) and scripts/rs, locally.
+# An exact version, not `stable`, so a new Rust release reaches the build as a pull request that CI tests (Dependabot,
+# .github/dependabot.yml) and not as a red run on whatever merged next. .github/scripts/toolchain-channel.sh reads it and
+# refuses anything but MAJOR.MINOR.PATCH. Targets and components are not listed here: each job adds the ones it needs.
+[toolchain]
+channel = "1.100.0"

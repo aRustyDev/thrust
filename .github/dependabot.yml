@@ -1,0 +1,12 @@
+# Dependabot version updates. Only the Rust toolchain for now: rust-toolchain.toml pins an exact version, and this proposes the
+# next stable release as a pull request, which CI tests in full (a change to rust-toolchain.toml makes .github/scripts/plan-ci.py
+# run everything). Cargo dependencies and the pinned actions are not here: adding them is its own decision.
+version: 2
+updates:
+  - package-ecosystem: rust-toolchain
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: chore
+      include: scope

@@ -25,7 +25,7 @@ Worker](deploy.md). The jobs and the command each CI job runs are in the CI sect
 | `.github/workflows/release.yml` (`release`) | Dispatched on the release tag by `release-plz.yml` (a draft release starts no workflow), or by hand on the tag; which run releases what is `plan-release.sh`. It builds the bundle at the tag, attests its build provenance and an SPDX SBOM of the source, attaches the bundle, the SBOM and `SHA256SUMS`, and publishes the release (immutable). On a pull request that edits it or the build, a dry run that attests and publishes nothing. See [Releasing](release.md) |
 | `release-plz.toml` | release-plz's configuration: one version and one tag for the workspace, one root `CHANGELOG.md`, which commits make a release. Held to the workspace members by `.github/scripts/check-release-plz.py` |
 | `.github/workflows/deploy.yml` (`deploy`) | The deploy pipeline: plan, build and attest a release candidate's bundle (staging) or take a release's (production), deploy it to an environment and prove it, roll back by itself when the smoke fails. Runs after `ci` on a release candidate or a tagged push to `main`, by hand, and on a pull request that edits its files (a dry run that touches no environment). See [The deploy pipeline](#the-deploy-pipeline) |
-| `.github/actions/setup-rust` | A composite action: the stable toolchain, the rustup targets and components, a keyed `rust-cache`, and optionally `worker-build` 0.8.7 and wrangler 4.151.2 |
+| `.github/actions/setup-rust` | A composite action: the Rust version `rust-toolchain.toml` pins (read by `.github/scripts/toolchain-channel.sh`, which refuses anything but an exact version), the rustup targets and components, a keyed `rust-cache`, and optionally `worker-build` 0.8.7 and wrangler 4.151.2 |
 | `.github/actions/build-bundle` | A composite action: the deploy bundle of the checked-out commit (the Worker, the `migrate` binary and the web app, in one reproducible file), used by `deploy.yml` and `release.yml` so that both build it the same way |
 | `.github/actions/deploy-worker` | A composite action: fetch the bundle (this run's build for staging, the release's asset for production, `fetch-release-bundle.sh`), verify its attestation, unpack it, install wrangler (the same version as `setup-rust`, kept equal by a test) and `cloudflared` at pinned versions, and run `scripts/deploy-worker.sh` |
 | `.github/scripts/` | The pipeline's own logic: `plan-ci.py`, `plan-cells.sh`, `assert-gate.sh`, and `assert-required-contexts.sh`; and the deploy's: `plan-deploy.sh`, `classify-deploy.sh`, `active-version.py`, `assert-sha-checks.sh`, `assert-gated-environments.sh`, `verify-bundle.sh`, `unpack-bundle.sh`, `fetch-previous-assets.sh`, `fetch-release-bundle.sh` and `lint-workflow.sh`; and the release's: `plan-release.sh`. The `ci-scripts` job tests them with `.github/scripts/tests/` |
@@ -96,8 +96,8 @@ its base branch. Nothing calls it, so it is a tool to run by hand.
 - **Everything runs** in these cases:
   - a release candidate's pull request;
   - a merge-queue entry;
-  - the nightly run of `main` (03:23 UTC), which catches a new RustSec advisory, a new stable toolchain or drift in the
-    runner, though no change brought it;
+  - the nightly run of `main` (03:23 UTC), which catches a new RustSec advisory or drift in the runner, though no
+    change brought it;
   - a manual run;
   - whenever the planner cannot answer: no base commit, a failed diff, an empty change list, or a failed `cargo metadata`.
 
@@ -294,8 +294,10 @@ attaches the assets and publishes it.
   `deploy.yml`, `release.yml`, their two actions and `release-plz.yml` to it. `release-plz/action` pins its own actions by SHA and installs
   release-plz with `cargo-binstall` at the version the workflow names (0.4.3); release-plz publishes no attestation for its
   binaries (`gh attestation verify` finds none), so that download is trusted on its GitHub release alone. `anchore/sbom-action` (the release's SBOM) downloads
-  syft, pinned to v1.54.0 in the workflow. The Rust toolchain is `stable`, not pinned, so a new clippy or rustfmt release can fail `lint`
-  with no change to the code. `cargo-nextest` is 0.9.140 and `cargo-deny` is 0.20.2, both installed by
+  syft, pinned to v1.54.0 in the workflow. The Rust toolchain is pinned to an exact version by `rust-toolchain.toml`, so a new clippy or
+  rustfmt reaches `lint` only as a pull request: Dependabot (`.github/dependabot.yml`, the `rust-toolchain` ecosystem, weekly)
+  proposes each new stable release, and a change to that file runs everything. The two `cargo metadata` calls that need no
+  build (the `changes` job, `test_plan_ci.py`) use the runner's own stable (`RUSTUP_TOOLCHAIN=stable`), so they install nothing. `cargo-nextest` is 0.9.140 and `cargo-deny` is 0.20.2, both installed by
   `taiki-e/install-action`. `cloudflared` in the deploy is a release binary pinned by version and by SHA-256.
 - `permissions: {}` at the top of each workflow, and `contents: read` and nothing else on each job of `ci.yml` and the
   workflows it calls. `deploy.yml` asks for more, per job: `checks: read` (`plan` reads the commit's checks),
@@ -345,10 +347,10 @@ Found by the CI/CD review of 2026-11-14 (`.agents/plans/cicd-review/`), which al
   all 32 jobs (33 with `web`, which a CI file also started), and nothing narrowed by crate. Now each runs what reads it
   ([What runs when](#what-runs-when)).
 - **Too narrow.** Fixed by the same PR: a change to `web/` alone now runs the `worker-cf e2e` cell (G-30), and a
-  nightly run of `ci` on `main` surfaces a new advisory or a new stable toolchain without waiting for a pull request.
+  nightly run of `ci` on `main` surfaces a new advisory without waiting for a pull request.
   Still open: `lint-workflow.sh` checks only the deploy and release workflows and their actions, not `ci.yml`,
   `contract-cell.yml`, `e2e-schedule.yml`, `flake-hunt.yml` or `setup-rust`. `hermetic` and `pg-adapter` do not pass
-  `--locked`. The toolchain floats on `stable`. `flake-hunt.yml` cannot select the `csrfoff`, `oracle` or `e2e` passes.
+  `--locked`. `flake-hunt.yml` cannot select the `csrfoff`, `oracle` or `e2e` passes.
 
 ## Against the ADRs
 
