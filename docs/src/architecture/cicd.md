@@ -131,16 +131,19 @@ its base branch. Nothing calls it, so it is a tool to run by hand.
   tasks uncached from an empty `node_modules` `[verified 2026-11-11 locally; not yet in CI]`.
 - **The matrix.** The `changes` job reads the `run <target> <pass>` lines of `scripts/contract-all.sh`
   (`plan-cells.sh`), so no second list can drift, and the planner keeps the cells the change needs. It fails if the number of cells it parsed differs from the number of lines that start with `run`,
-  if there are none, or if one repeats. There are 23 cells: 20 contract cells (the browser journeys' `worker-cf e2e`
-  and the password reset by email's `native-memory mail` among them) and the 3 `oracle` cells below `[verified 2026-11-14: PR #154's
-  check list had 22 contract jobs, all success, before the mail cell; the 21 of PR #113 (2026-11-10) were before the e2e cell]`.
+  if there are none, or if one repeats. There are 25 cells: 22 contract cells (the browser journeys' `worker-cf e2e`
+  and the password reset by email's three `mail` cells, `native-memory`, `worker-memory` and `worker-cf`, among them) and the 3 `oracle` cells below `[verified 2026-11-14: PR #154's
+  check list had 22 contract jobs, all success, before the first mail cell; the 21 of PR #113 (2026-11-10) were before the e2e cell]`.
   Each runs on a fresh runner with its own checkout, which is why the shared-build-directory hazard that makes
   `contract-all.sh` run serially does not apply.
-- **A cell.** `contract-cell.yml` checks that `curl`, `openssl`, `lsof`, `pgrep` and `docker` exist (and `nc` for the `mail` pass), runs
+- **A cell.** `contract-cell.yml` checks that `curl`, `openssl`, `lsof`, `pgrep` and `docker` exist (and `nc` for the native `mail` cell, which waits for its Mailpit with it), runs
   `scripts/contract.sh <target> <pass>` with no pipe so the step's status is the script's, and uploads a marker named
   for the cell. The script's target guard and count guard apply as they do locally.
-- **The mail cell.** `native-memory mail` starts a Mailpit container (pinned, pulled from Docker Hub as `postgres` is) beside the native server, which is
+- **The mail cells.** `native-memory mail` starts a Mailpit container (pinned, pulled from Docker Hub as `postgres` is) beside the native server, which is
   given `THRUST_SMTP_*` and `THRUST_PUBLIC_BASE_URL`, and runs `tests/mail.rs`: the password reset by email through a mail server written by someone else.
+  `worker-memory mail` and `worker-cf mail` (E3) run the same three tests against the Worker built for wasm32 and run by `wrangler dev`, whose
+  `send_email` binding is wrangler's own simulator: nothing is sent, and the message the binding was given is read from the dev server's log and the files
+  it names. No container; the second also has the Postgres container every `worker-cf` cell has.
   The `pg-adapter` job also runs the SMTP adapter's Docker suite (`--test smtp_sink`, Mailpit again, with TLS and a login); the adapter's other two suites
   are hermetic and run in `hermetic`.
 - **The oracle cells.** `native-memory oracle`, `native-pg oracle` and `worker-cf oracle` run the v1 oracle (issue #58,

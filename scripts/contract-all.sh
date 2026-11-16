@@ -34,10 +34,12 @@ run worker-memory sweeper
 run worker-memory panic
 run worker-memory cron
 run worker-memory csrfoff
+run worker-memory mail
 run worker-cf main
 run worker-cf sweeper
 run worker-cf panic
 run worker-cf cron
+run worker-cf mail
 run worker-cf worker
 run worker-cf bindings
 run worker-cf oracle

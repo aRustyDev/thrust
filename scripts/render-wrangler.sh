@@ -17,6 +17,11 @@
 #                             __RL_SIGNIN_ID__, __RL_V1_ID__  the two rate-limit namespace ids: positive whole numbers, different from one
 #                                                  another and from 1001-1004, which local runs use (the namespace is account-wide)
 #   THRUST_CSRF_ENFORCE       __CSRF_ENFORCE__     `on` or `off`. No default: turning it on for production is a decision
+#   THRUST_EMAIL_FROM         __EMAIL_FROM__       the address the password reset mails are sent from: one plain lowercase address on a domain the
+#                                                  account has Email Sending enabled for (`wrangler email sending list`), not a placeholder domain.
+#                                                  No default: an environment that mails has chosen who it mails as (E3)
+#   THRUST_BASE_URL           __PUBLIC_BASE_URL__  the environment's public origin, `https://<host>` and nothing after it: the variable the smoke
+#                                                  uses, and where the links in the mails point (a request's Host is never used for them)
 #
 # What it refuses, all at once (it lists every problem, not the first): a marker whose variable is unset or empty; a value of the wrong
 # shape; an all-zero Hyperdrive id (what wrangler.toml carries for local runs); a name that still says `thrust-spike`; a marker in the
@@ -44,7 +49,9 @@ __EVENTS_QUEUE__:THRUST_QUEUE:name
 __EVENTS_DLQ__:THRUST_QUEUE_DLQ:name
 __RL_SIGNIN_ID__:THRUST_RL_SIGNIN_ID:nsid
 __RL_V1_ID__:THRUST_RL_V1_ID:nsid
-__CSRF_ENFORCE__:THRUST_CSRF_ENFORCE:onoff"
+__CSRF_ENFORCE__:THRUST_CSRF_ENFORCE:onoff
+__EMAIL_FROM__:THRUST_EMAIL_FROM:email
+__PUBLIC_BASE_URL__:THRUST_BASE_URL:origin"
 
 usage() { echo "render-wrangler: $*" >&2; exit 2; }
 
@@ -79,6 +86,38 @@ check_value() {
       ;;
     onoff)
       case "$val" in on|off) ;; *) problem "$var='$val': must be 'on' or 'off'" ;; esac
+      ;;
+    email)
+      # one plain lowercase address: the alphabet leaves out a space, a quote, an angle bracket and a comma, so no name, list or header
+      case "$val" in
+        *[!a-z0-9@._+-]*) problem "$var='$val': must be one plain lowercase address like no-reply@notify.example.org (no name, angle brackets, spaces or list)"; return ;;
+        *@*@*|@*|*@) problem "$var='$val': must have one '@' with something on each side"; return ;;
+      esac
+      case "$val" in *@*) ;; *) problem "$var='$val': must have one '@' with something on each side"; return ;; esac
+      mail_local="${val%%@*}"; mail_domain="${val#*@}"
+      case "$mail_local" in .*|*.|*..*) problem "$var='$val': the part before '@' must not start or end with '.' or have '..' in it"; return ;; esac
+      case "$mail_domain" in
+        *.*) ;;
+        *) problem "$var='$val': the domain needs a dot"; return ;;
+      esac
+      case "$mail_domain" in .*|*.|*..*|-*|*-|*.-*|*-.*) problem "$var='$val': the domain is not well formed"; return ;; esac
+      case "$mail_domain" in
+        example.com|example.org|example.net|*.example.com|*.example.org|*.example.net|*.test|*.example|*.invalid|*.localhost)
+          problem "$var='$val': the domain is a placeholder (RFC 2606), not one the account sends from" ;;
+      esac
+      ;;
+    origin)
+      case "$val" in https://*) ;; *) problem "$var='$val': must start with https://"; return ;; esac
+      origin_host="${val#https://}"
+      case "$origin_host" in
+        ''|*[!a-z0-9.-]*) problem "$var='$val': must be https:// and a lowercase host, with no path, port or trailing slash"; return ;;
+        .*|*.|-*|*-|*..*) problem "$var='$val': the host is not well formed"; return ;;
+      esac
+      case "$origin_host" in
+        *.*) ;;
+        *) problem "$var='$val': the host needs a dot"; return ;;
+      esac
+      case "$origin_host" in localhost|*.localhost|*.local|127.*) problem "$var='$val': a host of this machine is not a public origin" ;; esac
       ;;
   esac
 }
@@ -165,8 +204,10 @@ self_test() {
     THRUST_RL_SIGNIN_ID=2102
     THRUST_RL_V1_ID=2103
     THRUST_CSRF_ENFORCE=off
+    THRUST_EMAIL_FROM=no-reply@notify.thrust-staging.dev
+    THRUST_BASE_URL=https://thrust-staging.dev
     export THRUST_WORKER_NAME THRUST_HYPERDRIVE_ID THRUST_R2_BUCKET THRUST_QUEUE THRUST_QUEUE_DLQ \
-      THRUST_RL_SIGNIN_ID THRUST_RL_V1_ID THRUST_CSRF_ENFORCE
+      THRUST_RL_SIGNIN_ID THRUST_RL_V1_ID THRUST_CSRF_ENFORCE THRUST_EMAIL_FROM THRUST_BASE_URL
   }
   # run <tmpl> <label> <want-exit> <want-fragment> '<snippet that changes the good environment>'
   run() {
@@ -196,6 +237,8 @@ dlq = "__EVENTS_DLQ__"
 b = "__RL_SIGNIN_ID__"
 c = "__RL_V1_ID__"
 csrf = "__CSRF_ENFORCE__"
+from = "__EMAIL_FROM__"
+base = "__PUBLIC_BASE_URL__"
 EOF
   # the real template, so the template and this script cannot drift apart
   REAL="$TEMPLATE"
@@ -206,16 +249,25 @@ EOF
   run "$T/mini.toml" "the rendered file has the values in it" 0 "wrote" ':'
   grep -q 'name = "thrust-staging"' "$T/out.toml" && grep -q 'id = "0123456789abcdef0123456789abcdef"' "$T/out.toml" \
     && grep -q 'dlq = "thrust-staging-events-dlq"' "$T/out.toml" \
+    && grep -q 'from = "no-reply@notify.thrust-staging.dev"' "$T/out.toml" && grep -q 'base = "https://thrust-staging.dev"' "$T/out.toml" \
     && pass=$((pass + 1)) && echo "ok   ...and they are the right values in the right places" \
     || { bad=$((bad + 1)); echo "BAD  the rendered values are not where the markers were"; }
 
   # every variable, taken away, is refused, and the message names it
-  for v in THRUST_WORKER_NAME THRUST_HYPERDRIVE_ID THRUST_R2_BUCKET THRUST_QUEUE THRUST_QUEUE_DLQ THRUST_RL_SIGNIN_ID THRUST_RL_V1_ID THRUST_CSRF_ENFORCE; do
+  for v in THRUST_WORKER_NAME THRUST_HYPERDRIVE_ID THRUST_R2_BUCKET THRUST_QUEUE THRUST_QUEUE_DLQ THRUST_RL_SIGNIN_ID THRUST_RL_V1_ID THRUST_CSRF_ENFORCE THRUST_EMAIL_FROM THRUST_BASE_URL; do
     run "$T/mini.toml" "$v unset is refused" 1 "$v is not set" "unset $v"
     run "$T/mini.toml" "$v empty is refused" 1 "$v is not set" "$v="
   done
   # a template that is the real one, for the one variable most likely to be forgotten when a marker is added
   run "$REAL" "the real template needs THRUST_CSRF_ENFORCE" 1 "THRUST_CSRF_ENFORCE is not set" "unset THRUST_CSRF_ENFORCE"
+  run "$REAL" "the real template needs THRUST_EMAIL_FROM" 1 "THRUST_EMAIL_FROM is not set" "unset THRUST_EMAIL_FROM"
+  # the real template puts the sender in two places, the variable the Worker reads and the binding's own restriction: both are filled
+  run "$REAL" "the real template renders the sender into the variable and into the binding's restriction" 0 "wrote" ':'
+  grep -q 'THRUST_EMAIL_FROM = "no-reply@notify.thrust-staging.dev"' "$T/out.toml" \
+    && grep -q 'allowed_sender_addresses = \["no-reply@notify.thrust-staging.dev"\]' "$T/out.toml" \
+    && grep -q 'THRUST_PUBLIC_BASE_URL = "https://thrust-staging.dev"' "$T/out.toml" \
+    && pass=$((pass + 1)) && echo "ok   ...and the sender is in both places, with the origin beside it" \
+    || { bad=$((bad + 1)); echo "BAD  the sender or the origin is not where the template puts it"; }
 
   # values of the wrong shape: the controls that make the checks above mean something
   run "$T/mini.toml" "an all-zero Hyperdrive id is refused" 1 "all zeros" 'THRUST_HYPERDRIVE_ID=00000000000000000000000000000000'
@@ -238,6 +290,27 @@ EOF
   run "$T/retired.toml" "a template with the retired RL_CREATE marker is refused" 1 "__RL_CREATE_ID__, which this script does not know" ':'
   run "$T/retired.toml" "...even when the environment still has THRUST_RL_CREATE_ID" 1 "which this script does not know" 'THRUST_RL_CREATE_ID=2101; export THRUST_RL_CREATE_ID'
   run "$T/mini.toml" "a CSRF value that is not on or off is refused" 1 "'on' or 'off'" 'THRUST_CSRF_ENFORCE=yes'
+  # the sender: one plain lowercase address, and one the account could send from
+  run "$T/mini.toml" "a sender with a name in it is refused" 1 "one plain lowercase address" 'THRUST_EMAIL_FROM="Thrust <no-reply@notify.thrust-staging.dev>"'
+  run "$T/mini.toml" "a list of senders is refused" 1 "one plain lowercase address" 'THRUST_EMAIL_FROM="a@thrust-staging.dev,b@thrust-staging.dev"'
+  run "$T/mini.toml" "a sender with a capital letter is refused" 1 "one plain lowercase address" 'THRUST_EMAIL_FROM=No-Reply@notify.thrust-staging.dev'
+  run "$T/mini.toml" "a sender that could break the TOML is refused" 1 "one plain lowercase address" 'THRUST_EMAIL_FROM=x\"y@thrust-staging.dev'
+  run "$T/mini.toml" "a sender with no @ is refused" 1 "one '@'" 'THRUST_EMAIL_FROM=no-reply.thrust-staging.dev'
+  run "$T/mini.toml" "a sender with two @ is refused" 1 "one '@'" 'THRUST_EMAIL_FROM=a@b@thrust-staging.dev'
+  run "$T/mini.toml" "a sender with nothing before the @ is refused" 1 "one '@'" 'THRUST_EMAIL_FROM=@thrust-staging.dev'
+  run "$T/mini.toml" "a sender whose domain has no dot is refused" 1 "needs a dot" 'THRUST_EMAIL_FROM=no-reply@localdomain'
+  run "$T/mini.toml" "a sender with an empty label in its domain is refused" 1 "not well formed" 'THRUST_EMAIL_FROM=no-reply@notify..thrust-staging.dev'
+  run "$T/mini.toml" "a sender on example.com is refused" 1 "placeholder" 'THRUST_EMAIL_FROM=no-reply@example.com'
+  run "$T/mini.toml" "a sender on a subdomain of example.org is refused" 1 "placeholder" 'THRUST_EMAIL_FROM=no-reply@notify.example.org'
+  run "$T/mini.toml" "a sender on a .test domain is refused" 1 "placeholder" 'THRUST_EMAIL_FROM=no-reply@thrust.test'
+  # the origin: https and a host, and a public one
+  run "$T/mini.toml" "an origin that is not https is refused" 1 "must start with https://" 'THRUST_BASE_URL=http://thrust-staging.dev'
+  run "$T/mini.toml" "an origin with a path is refused" 1 "no path, port or trailing slash" 'THRUST_BASE_URL=https://thrust-staging.dev/app'
+  run "$T/mini.toml" "an origin with a trailing slash is refused" 1 "no path, port or trailing slash" 'THRUST_BASE_URL=https://thrust-staging.dev/'
+  run "$T/mini.toml" "an origin with a port is refused" 1 "no path, port or trailing slash" 'THRUST_BASE_URL=https://thrust-staging.dev:8443'
+  run "$T/mini.toml" "an origin with a capital letter is refused" 1 "lowercase host" 'THRUST_BASE_URL=https://Thrust-Staging.dev'
+  run "$T/mini.toml" "an origin whose host has no dot is refused" 1 "needs a dot" 'THRUST_BASE_URL=https://thruststaging'
+  run "$T/mini.toml" "an origin on this machine is refused" 1 "not a public origin" 'THRUST_BASE_URL=https://127.0.0.1'
 
   # every problem at once, not only the first
   run "$T/mini.toml" "all the problems are listed together" 1 "THRUST_R2_BUCKET is not set" 'unset THRUST_R2_BUCKET; THRUST_HYPERDRIVE_ID=0000'

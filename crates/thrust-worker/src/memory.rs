@@ -16,15 +16,22 @@ struct MemShared {
 
 static MEM: OnceLock<MemShared> = OnceLock::new();
 
+/// The ports a deployment may not have: each is `None` until the deployment configures it.
+pub struct Optional {
+    pub oidc: Option<Arc<dyn OidcProvider>>,
+    pub email: Option<Arc<dyn EmailSender>>,
+}
+
 pub fn app(
     clock: Arc<dyn Clock>,
     ids: Arc<dyn IdGen>,
     background: Arc<dyn Background>,
     rng: Arc<dyn Rng>,
     hasher: Arc<dyn PasswordHasher>,
-    oidc: Option<Arc<dyn OidcProvider>>,
+    optional: Optional,
     cfg: CoreConfig,
 ) -> App {
+    let Optional { oidc, email } = optional;
     let m = MEM.get_or_init(|| MemShared {
         db: MemoryDatabase::new(),
         blobs: Arc::new(MemoryBlobStore::new()),
@@ -45,7 +52,7 @@ pub fn app(
             rng,
             hasher,
             oidc,
-            email: None,
+            email,
         },
         cfg,
         SystemScope::mint(),

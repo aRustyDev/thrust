@@ -53,7 +53,17 @@ messages at a mail server: it has a row on that pass, as `_token_reusable` has t
 `mutant_smtp_starttls_opportunistic`, which makes STARTTLS a preference so that a relay that cannot upgrade is used in the clear, killed by `tests/smtp_wire`'s
 `a_relay_that_cannot_do_tls_is_not_used_when_tls_is_asked_for`; and
 `mutant_smtp_trust_any_certificate`, which trusts a relay's certificate whoever signed it and whatever it names, killed by the three TLS tests of `tests/smtp_sink` against
-Mailpit; and `thrust-server`'s `mutant_smtp_unwired`, which reads the relay and does not hand it to the app, which the `mail` pass refuses to run against: a vacuity-guard row, exit 5),
+Mailpit; and `thrust-server`'s `mutant_smtp_unwired`, which reads the relay and does not hand it to the app, which the `mail` pass refuses to run against: a vacuity-guard row, exit 5), and
+`crates/thrust-adapters-cloudflare` (the email adapter's four, each with a row against `tests/email.rs`, which runs natively:
+`mutant_cf_email_swap_refusal_and_outage`, which reads the binding's refusal as an outage and the reverse, killed by the test that pins all 21 codes of Cloudflare's own table
+and by the one that reads a refusal that has no code; `mutant_cf_email_unknown_code_is_refused`, which refuses a code nobody has met instead of sending the message again later,
+killed by `prop_a_code_the_page_does_not_list_is_an_outage`; `mutant_cf_email_from_is_recipient`, which sends as the person it is writing to, killed by
+`prop_a_good_message_is_handed_over_as_it_is`; and `mutant_cf_email_recipient_unchecked`, which hands the binding a recipient that is not one plain address, killed by
+`prop_a_message_to_something_that_is_not_one_address_is_refused`; and `thrust-worker`'s `mutant_worker_email_unwired`, which reads the sender and the binding and does
+not hand the mail service to the app, which the Worker cells' `mail` pass refuses to run against (exit 5). That one has **no `scripts/mutants.sh` row**: it needs the wasm
+build, which that script and its CI job do not make, so it was run by hand on 2026-11-15 (`worker-memory mail`, build command edited to pass
+`--features mutant_worker_email_unwired`: `VACUITY GUARD: is_smtp_configured is not true`, no test run), as was `thrust-adapters-cloudflare/mutant_cf_email_from_is_recipient`
+through the Worker, which the simulator's `allowed_sender_addresses` refuses),
 gated with `#[cfg(feature = "mutant_…")]` at the line they break, passed through by `thrust-server`. Each is listed
 in `scripts/mutants.sh`. cargo-mutants: configured by `.cargo/mutants.toml` and the `mutants` nextest profile;
 `mutants.out*` is never committed.
