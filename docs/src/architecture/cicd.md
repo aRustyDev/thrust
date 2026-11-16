@@ -347,8 +347,9 @@ Found by the CI/CD review of 2026-11-14 (`.agents/plans/cicd-review/`), which al
 - **Too narrow.** Fixed by the same PR: a change to `web/` alone now runs the `worker-cf e2e` cell (G-30), and a
   nightly run of `ci` on `main` surfaces a new advisory or a new stable toolchain without waiting for a pull request.
   Still open: `lint-workflow.sh` checks only the deploy and release workflows and their actions, not `ci.yml`,
-  `contract-cell.yml`, `e2e-schedule.yml`, `flake-hunt.yml` or `setup-rust`. `hermetic` and `pg-adapter` do not pass
-  `--locked`. The toolchain floats on `stable`. `flake-hunt.yml` cannot select the `csrfoff`, `oracle` or `e2e` passes.
+  `contract-cell.yml`, `e2e-schedule.yml`, `flake-hunt.yml` or `setup-rust`. The toolchain floats on `stable`.
+  (`hermetic` and `pg-adapter` pass `--locked` now, as `lint` and `deny` did: a `Cargo.lock` that Cargo would have to
+  change fails them instead of being rewritten on the runner.) `flake-hunt.yml` cannot select the `csrfoff`, `oracle` or `e2e` passes.
 
 ## Against the ADRs
 
