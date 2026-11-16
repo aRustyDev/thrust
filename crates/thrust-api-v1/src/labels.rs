@@ -43,10 +43,10 @@ pub(crate) fn routes() -> Router {
 
 // --- the wire shape -----------------------------------------------------------------------------------------------------------
 
-/// The pin's `LabelSerializer` (`fields = "__all__"`), as [`LabelDto`]: 15 keys.
-pub(crate) fn label_body(l: &LabelRow) -> Result<Map<String, Value>, V1Error> {
+/// The pin's `LabelSerializer` (`fields = "__all__"`), as [`LabelDto`]: 15 keys. A work item read with `expand=labels` holds these.
+pub(crate) fn label_dto(l: &LabelRow) -> LabelDto {
     let user = |u: Option<UserId>| u.map(|u| u.0);
-    into_object(&LabelDto {
+    LabelDto {
         id: l.id,
         created_at: ts(l.created_at),
         updated_at: ts(l.updated_at),
@@ -62,7 +62,12 @@ pub(crate) fn label_body(l: &LabelRow) -> Result<Map<String, Value>, V1Error> {
         sort_order: l.sort_order,
         external_source: l.external_source.clone(),
         external_id: l.external_id.clone(),
-    })
+    }
+}
+
+/// [`label_dto`] as the JSON object the label routes then cut to the fields asked for.
+pub(crate) fn label_body(l: &LabelRow) -> Result<Map<String, Value>, V1Error> {
+    into_object(&label_dto(l))
 }
 
 /// What the pin answers for a refusal. A name that is taken is a 409 naming the label when a label is made, and the base view's 400

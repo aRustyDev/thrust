@@ -349,8 +349,10 @@ Found by the CI/CD review of 2026-11-14 (`.agents/plans/cicd-review/`), which al
 - **Too narrow.** Fixed by the same PR: a change to `web/` alone now runs the `worker-cf e2e` cell (G-30), and a
   nightly run of `ci` on `main` surfaces a new advisory without waiting for a pull request.
   Still open: `lint-workflow.sh` checks only the deploy and release workflows and their actions, not `ci.yml`,
-  `contract-cell.yml`, `e2e-schedule.yml`, `flake-hunt.yml` or `setup-rust`. `hermetic` and `pg-adapter` do not pass
-  `--locked`. `flake-hunt.yml` cannot select the `csrfoff`, `oracle` or `e2e` passes.
+  `contract-cell.yml`, `e2e-schedule.yml`, `flake-hunt.yml` or `setup-rust`. `flake-hunt.yml` cannot select the
+  `csrfoff`, `oracle` or `e2e` passes. (`hermetic` and `pg-adapter` pass `--locked` now, as `lint` and `deny` did: a
+  `Cargo.lock` that Cargo would have to change fails them instead of being rewritten on the runner. The toolchain is
+  pinned by `rust-toolchain.toml`.)
 
 ## Against the ADRs
 
@@ -363,7 +365,7 @@ ADR-0100, ADR-0101 and ADR-0110 are accepted, in `.agents/plans/contrail/adrs/`.
   matrix on every pull request that changes a Rust-relevant path, a lint step (`lint`: rustfmt and clippy), and the
   aggregate job, as `gate`. In place in part: the oracle schema check, a step of `deps` (`scripts/check-openapi.sh`, issue #58),
   which diffs the OpenAPI document that `thrust-api-v1` writes with the pinned Plane schema for the operations listed in
-  `tools/oracle-v1/schema/described.operations` (the 18 of Projects, States and Labels so far), and runs a clippy step (`lint`) and a test step
+  `tools/oracle-v1/schema/described.operations` (all 32 of the scope `m1`), and runs a clippy step (`lint`) and a test step
   (`hermetic`) for the `openapi` feature that no other step turns on. Not in place: a nightly run (only the weekly flake hunt) and
   the periodic diff, which is `assert-required-contexts.sh` and is run by hand.
 - **ADR-0101 (supply chain)** asks for SHA pinning, Scorecard, attestation and trivy, plus Worker-bundle

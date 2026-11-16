@@ -127,8 +127,8 @@ A pull request runs only the jobs and cells its change needs; how that is decide
 | `deps` | `scripts/check-deps.sh`, then `scripts/check-topology.sh` and `scripts/check-topology.sh --self-test` |
 | `lint` | `cargo fmt --all --check`, then `cargo clippy --workspace --all-targets --locked -- -D warnings`, then the same clippy for `thrust-worker` with `--no-default-features --target wasm32-unknown-unknown` (the clippy steps run even if rustfmt failed) |
 | `deny` | `cargo deny --locked check`: advisories, licences, bans and sources, from `deny.toml` |
-| `hermetic` | `cargo nextest run --profile ci --workspace`, then `cargo test --doc --workspace` |
-| `pg-adapter` | `cargo test -p thrust-adapters-selfhosted --test pg_adapter` |
+| `hermetic` | `cargo nextest run --profile ci --workspace --locked`, then `cargo test --doc --workspace --locked` |
+| `pg-adapter` | `cargo test -p thrust-adapters-selfhosted --test pg_adapter --locked`, then the same for `--test smtp_sink` |
 | `contract` | one job per cell (`.github/workflows/contract-cell.yml`): `scripts/contract.sh <target> <pass>` |
 | `mutants` | `scripts/mutants.sh` |
 | `web` | when `web/` or its gate changed: `scripts/check-web-diff.sh` (the Q-R2 gate: only the files in `web/ALLOWED-CHANGES` differ from the oracle pin), then `pnpm --dir web install --frozen-lockfile --ignore-scripts` and `pnpm --dir web exec turbo run build --filter=web` |

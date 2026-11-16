@@ -113,6 +113,70 @@
       "text_contains": "multipart/form-data",
       "operations": ["create_label", "update_label"],
       "reason": "A body that is multipart is a 415, as a form is (SD-013)."
+    },
+    {
+      "id": "SD-015",
+      "ref": "D-033 (11) (proposed, not yet confirmed by the owner)",
+      "check": "request-body-media-type-removed",
+      "text_contains": "application/x-www-form-urlencoded",
+      "operations": ["create_work_item", "update_work_item", "create_work_item_2", "update_work_item_2"],
+      "reason": "A body that is a form is a 415 on a work item, as on a project (D-030 (5)), a state (D-031 (5)) and a label (D-032 (6)): Thrust reads JSON only (`request::json_body`, one condition for every v1 route, and both families of paths share the handlers). The pin also reads forms. The owner confirmed D-030 (5) for projects on 2026-11-07; for work items it is D-033 (11), proposed here, and `a_form_or_a_multipart_body_is_a_415` in `tests/work_items.rs` holds the behaviour."
+    },
+    {
+      "id": "SD-016",
+      "ref": "D-033 (11) (proposed, not yet confirmed by the owner)",
+      "check": "request-body-media-type-removed",
+      "text_contains": "multipart/form-data",
+      "operations": ["create_work_item", "update_work_item", "create_work_item_2", "update_work_item_2"],
+      "reason": "A body that is multipart is a 415, as a form is (SD-015)."
+    },
+    {
+      "id": "SD-017",
+      "ref": "the pin's schema, not a deviation (the oracle's corpus, work_items.json, the exchange `search`)",
+      "check": "response-required-property-removed",
+      "text_contains": "removed the required property",
+      "operations": ["search_work_items", "search_work_items_2"],
+      "reason": "The pin's schema gives the search answer the six required keys of ONE hit (`IssueSearch`: `id`, `name`, `project__identifier`, `project_id`, `sequence_id`, `workspace__slug`). Its recorded answer is `{\"issues\": [hit, ...]}`, with `sequence_id` a whole number where the schema says a string (the corpus's `search`), and this document describes that (`IssueSearchDto`), which is what Thrust answers too (`a_search_finds_what_a_name_an_identifier_or_a_number_says` in `tests/work_items.rs`). The six findings are the six keys that the answer does not have at its top level."
+    },
+    {
+      "id": "SD-018",
+      "ref": "the pin's schema, not a deviation (D-033 (5); the corpus's `list-expand-assignees-labels-state`)",
+      "check": "response-property-one-of-added",
+      "text_contains": "StateRef, subschema #2` to the `state` response property",
+      "operations": ["create_work_item", "retrieve_work_item", "update_work_item", "get_workspace_work_item", "create_work_item_2", "retrieve_work_item_2", "update_work_item_2", "get_workspace_work_item_2"],
+      "reason": "The pin's schema says `state` is a uuid. With `expand=state` its routes answer the state's four keys instead (the corpus's `list-expand-assignees-labels-state`), and so do these (D-033 (5)), so the document says both: the id, or `StateBriefDto`. oasdiff reports a oneOf added to the property here and a change of its type in the next entry. `assignees` and `labels` are the same (an id or the object) and are not in the pin's `Issue` schema at all, so oasdiff has nothing to say of them."
+    },
+    {
+      "id": "SD-019",
+      "ref": "the pin's schema, not a deviation (D-033 (5); the corpus's `list-expand-assignees-labels-state`)",
+      "check": "response-property-type-changed",
+      "text_contains": "the `state` response's property `type/format` changed from `string, null/uuid` to `any`",
+      "operations": ["create_work_item", "retrieve_work_item", "update_work_item", "get_workspace_work_item", "create_work_item_2", "retrieve_work_item_2", "update_work_item_2", "get_workspace_work_item_2"],
+      "reason": "The same difference as SD-018: oasdiff reads a oneOf as the type `any`."
+    },
+    {
+      "id": "SD-020",
+      "ref": "the pin's schema, not a deviation (research/0014: the list's single-object mode)",
+      "check": "response-body-wrapped-in-one-of",
+      "text_contains": "the response body was restructured into a oneOf",
+      "operations": ["list_work_items", "list_work_items_2"],
+      "reason": "With both halves of an integration key (`external_id` and `external_source`) the list answers the one work item that has it, not a page, as the pin's view does (`a_key_in_the_query_makes_the_list_the_one_work_item_that_has_it`). The pin's schema describes only the page, so the document says both (`Listing<IssueDto>`). oasdiff does not look inside a oneOf, so the rows of a page are compared through the operations that answer one `IssueDto` (retrieve, create, update), which share the type."
+    },
+    {
+      "id": "SD-021",
+      "ref": "range, not a behaviour a request can reach (`WorkItem.sequence_id` is an i64)",
+      "check": "response-property-max-unset",
+      "text_contains": "`sequence_id` response property's max was unset",
+      "operations": ["create_work_item", "retrieve_work_item", "update_work_item", "get_workspace_work_item", "create_work_item_2", "retrieve_work_item_2", "update_work_item_2", "get_workspace_work_item_2"],
+      "reason": "The pin's column is an int32, so its schema bounds `sequence_id` to -2147483648 to 2147483647. Here the project's running number is an i64 and the document claims no bound. A project would have to make two thousand million work items for the two to differ."
+    },
+    {
+      "id": "SD-022",
+      "ref": "range, not a behaviour a request can reach (`WorkItem.sequence_id` is an i64)",
+      "check": "response-property-min-unset",
+      "text_contains": "`sequence_id` response property's min was unset",
+      "operations": ["create_work_item", "retrieve_work_item", "update_work_item", "get_workspace_work_item", "create_work_item_2", "retrieve_work_item_2", "update_work_item_2", "get_workspace_work_item_2"],
+      "reason": "The lower bound of the same range (SD-021)."
     }
   ]
 }
