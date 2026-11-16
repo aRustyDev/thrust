@@ -1,0 +1,189 @@
+# ci-workflows: plan
+
+Facts below are from `main` at `16eaa55` (2026-11-16); recount them when a phase starts. A phase's stages (one per job)
+are planned in detail when the phase starts, and a stage's steps when the stage starts.
+
+## Decisions (owner, 2026-11-16)
+
+| Question | Decision |
+|---|---|
+| Where the one required `gate` lives | A **thin `ci.yml` orchestrator** keeps the name `ci`, the planner `changes` and `gate`, and calls each concern's workflow through `workflow_call`. Each concern file also has `workflow_dispatch` (and `schedule` where it has one), so it can run alone. The ruleset, the deploy trigger and the gate's name do not change |
+| Planner | **`plan-ci.py`** through the migration and the phases. Moving to the `triggerd` action is its own stage of the Actions track, after the Medium group: add a matrix output, run it in shadow beside `plan-ci.py`, compare the outputs, then cut over |
+| Migration | Right after Phase 0, a **refactor only**: no eight passes, no behaviour change. It covers `ci.yml`'s jobs, `e2e-schedule.yml` → `e2e.yml` and `flake-hunt.yml` → `test.yml`. `release-plz.yml` waits for the Release phase: folding it needs routing by event and a real release to prove it |
+| Passes | After the migration, **every job goes through all eight passes**, the migrated ones and the new ones alike |
+| Order | The priority groups below. Within a phase, jobs that exist come before new ones |
+| Actions | Created when two or more jobs repeat the same steps, or steps similar enough that one action (often a **composite** action) can serve the group. **The exact same steps in two or more places: create the action and say so in the pull request. Anything less than exact: ask the owner first**, showing the candidate steps side by side and the proposed inputs |
+
+**Priority groups.** High: Build, Test, Release. Medium: PR, Lint, E2E, Deploy. Low: Docs, Perf, Bench, Security,
+Chores. Backlog: Web, UI/UX, Issue. **Prof is in no group; it is placed in Low here as an assumption** for the owner to
+confirm. Within a group, the order is mine: Test before Build (Test holds most of the gate, so it carries the most risk,
+and Build's cross-target actions serve Release), and the groups' existing jobs (`deny`, `docs`) before their new ones.
+
+## What the split must keep working
+
+- The ruleset on `main` requires exactly one check, `gate`, and ADR-0100 asks for one aggregate required context.
+- `deploy.yml` starts from `workflow_run: workflows: [ci]`, and `assert-sha-checks.sh` asks for `gate` by name on the
+  commit.
+- `plan-ci.py`'s job list must equal `assert-gate.sh`'s list of known jobs. `test_plan_ci.py` and the planner and gate
+  mutants enforce it.
+- `lint-all-workflows.sh` gives secrets, environments and `id-token` only to the jobs it names per file, and bans
+  `pull_request_target`.
+- `verify-bundle.sh` identifies a signer by workflow **file path** (`release.yml`, `deploy.yml`), so both filenames stay.
+- GitHub allows 10 nesting levels and 50 unique called workflows per top-level file (changelog of November 2025), and a
+  called workflow must sit directly in `.github/workflows/`. A contract cell is then three levels deep (`ci` → `test` →
+  `contract-cell`).
+- A calling job's `needs.<id>.result` is `success` when every job inside it was **skipped**. The top `gate` cannot see
+  a planned inner job that never ran; each callee needs its own `gate`.
+- In a called workflow `github.event_name` is the **caller's** event. When `ci`'s nightly run calls `test.yml`, `test.yml`
+  sees `schedule`, so a callee routes by an explicit input and never by the event name.
+- A callee must not set a workflow-level `concurrency` group: `github.workflow` resolves to the caller's name, so the
+  callee would cancel or wait on its caller.
+
+## Target architecture
+
+```mermaid
+stateDiagram-v2
+  [*] --> changes: pull_request / merge_group / push main / nightly / dispatch
+  changes --> full: rc/* PR, merge queue, nightly, dispatch, no diff base
+  changes --> affected: PR / push (plan-ci.py: paths + Cargo graph)
+  full --> called
+  affected --> called
+  state called {
+    [*] --> slice: inputs.plan (this workflow's jobs and matrix), inputs.mode
+    slice --> jobs: if planned
+    jobs --> inner_gate: always()
+    inner_gate --> [*]: planned => success, unplanned => skipped
+  }
+  called --> gate: always()
+  gate --> [*]: the one required check
+  gate --> deploy: workflow_run [ci] (unchanged)
+```
+
+- **Called by `ci.yml` (inside the gate):** `test`, `lint`, `documentation`, `security`, `web`, and later `build`.
+- **Own triggers (outside the gate):** `e2e` (schedule and dispatch), `release`, `release-plz` (until the Release
+  phase), `deploy`, and later `maintenance`, `benchmarking`, `profiling`, `performance`, `pr` and `issues`.
+- **Files after the migration:** `ci.yml` (`ci`), `contract-cell.yml` (called), `test.yml` (Test), `lint.yml` (Lint),
+  `documentation.yml` (Docs; the owner's tree spells it `documentaion.yml`, taken as a typo), `security.yml` (Security),
+  `web.yml` (Web), `e2e.yml` (E2E), and `deploy.yml`, `release.yml`, `release-plz.yml` unchanged. The phases add
+  `build.yml`, `pr.yml`, `maintenance.yml` (Chores), `benchmarking.yml`, `profiling.yml`, `performance.yml`, `uiux.yml`
+  and `issues.yml`.
+
+## Phase 0: Foundation
+
+| Stage | What it does |
+|---|---|
+| 0.1 | **ADR-0102**: one orchestrator, called workflows, the nested gate. Conventions: a callee routes by input, has no workflow-level `concurrency`, gets only the permissions its caller grants, and follows the repo's job-id, `name:` and comment style |
+| 0.2 | **Nested-gate spike** on a branch, dispatch only. Must-fail controls, each of which has to turn the top `gate` red: a planned inner job skipped; a planned inner job failed; an unplanned inner job that fails |
+| 0.3 | **Planner slices**: `plan-ci.py` emits each workflow's slice, and `assert-gate.sh` checks one level. Tests and mutants for both; the known-jobs list still equals the planner's. Unblocked: #221 (the crates move) merged |
+| 0.4 | **Lint and indexes**: `lint-all-workflows.sh` supports called workflows (the credentials each callee job may have). `.github/workflows/README.md` and `.github/actions/README.md` index the files and link `cicd.md` instead of restating it |
+| 0.5 | **Baseline**: wall-clock and billable minutes per job from recent `ci` runs. It is measured again after the migration, and passes 5 to 7 are measured against it |
+
+Phase 0 is done when ADR-0102 is merged, the spike's controls have been shown, and the planner and lint changes are
+merged.
+
+## Phase 1: Migration (refactor only, one pull request per target file)
+
+**Rules.** The same commands, the same job boundaries, the same gate result. A job id changes only where the owner's
+layout names the same job one to one (`lint` → Lint `rust`, `ci-scripts` → Test `bash`, `docs` → Docs `mdbook`, `deny` →
+Security `supply-chain`); every other job keeps its id (`hermetic`, `deps`, `pg-adapter`, `mutants`, `contract`, `web`),
+and splitting them is phase work. Each pull request carries a **parity table**: every old step, then the new
+workflow, job and step, then the command, identical.
+
+| Stage | Target | Moves |
+|---|---|---|
+| M1 | `test.yml` | `ci-scripts` → `bash`, `hermetic`, `pg-adapter`, `contract` (calls `contract-cell.yml`), `mutants`. `flake-hunt.yml` becomes `test.yml`'s dispatch inputs and weekly schedule, routed by an input `mode` |
+| M2 | `lint.yml` | `lint` → `rust`, `deps` |
+| M3 | `documentation.yml` | `docs` → `mdbook` |
+| M4 | `security.yml` | `deny` → `supply-chain` |
+| M5 | `web.yml` | `web` |
+| M6 | `e2e.yml` | `e2e-schedule.yml` renamed (schedule and dispatch, calls `contract-cell.yml` for `worker-cf e2e`). The contract matrix's own `e2e` pass stays in Test until the E2E phase |
+
+The nested gate is the same steps in every called workflow, so it becomes a composite action in M1 without asking; the
+pull request says so. A near-duplicate found while moving is asked about, not built.
+
+**The migration is done when:**
+- `ci.yml` holds only `changes`, the calls and `gate`;
+- the invariants below hold;
+- a full dispatch run and an affected-only pull-request run are both green, running the same set of commands as the
+  baseline;
+- an `rc/*` pull request still plans a staging dispatch;
+- the nightly run, the E2E schedule (by dispatch) and a flake-hunt dispatch are green;
+- the file table in `cicd.md` is true.
+
+## Phases 2 to 14: every workflow through the eight passes
+
+| Group | Phase: file (`name:`) | Stages (jobs; existing first) | To resolve in the phase |
+|---|---|---|---|
+| High | **2 Test**: `test.yml` | bash · hermetic → crates + doctest · pg-adapter · contract · mutants · flake-hunt · mdbook · workers | The owner's sample runs `-E 'package(p) and test(smoke\|mutant\|regression)'`: the `smoke` and `mutant` categories do not exist ([AGENTS.md](../../../AGENTS.md) rule 4 lists the prefixes). A crate with no hermetic tests exits 4. Consider `cargo nextest archive` (build once, fan out). The sample's job has `with:` and `steps:` together, which GitHub does not accept: a matrix job either calls a workflow or runs steps |
+| High | **3 Build**: `build.yml` | docker · windows · linux · macos · bsd · wasm | CI builds no image today; the only Dockerfiles are the stock web app's (`web/apps/web/Dockerfile.*`), which no job builds. BSD needs a VM or a cross toolchain. wasm overlaps the contract cells' Worker build |
+| High | **4 Release**: `release.yml` | the existing plan, build and publish · **fold in `release-plz.yml`** (version, changelog) · sbom · attest · slsa · build and test (release, static, cross) · msrv · sign · package · latest | Routing by event. The lint allowlist names the release jobs. Immutable releases. A full proof needs a real release, which the owner triggers |
+| Med | **5 Lint**: `lint.yml` | rust · deps (its 12 guard steps placed where they belong) · bash · docker · dotenv · yaml · json · codeowners · editorconfig · git | The boundary with Security's bash and docker |
+| Med | **6 E2E**: `e2e.yml` | schedule · the `e2e` pass carved out of Test · one `flow-<journey>` job per spec in `e2e/journeys/` | |
+| Med | **7 Deploy**: `deploy.yml` | cloudflare (today's jobs) · neon · tofu | `workflow_run: [ci]`, the reviewers, `assert-gated-environments.sh`. A staging drill from `rc/*` is needed. Infrastructure for neon and tofu lives in another repository |
+| Med | **8 PR**: `pr.yml` | stats · fmt · lint (title) · reports · issues · labels · assign · notify · body | A fork's pull request gets a read-only token and `pull_request_target` is banned, so the jobs that write need a design (a two-stage `workflow_run`, or same-repository pull requests only). The Conventional Commits title feeds release-plz |
+| Low | **9 Docs**: `documentation.yml` | mdbook · markdown · spelling · rustdoc · inclusiveness-analyzer · seo · readability · links · slop · i18n · a11y · generate | |
+| Low | **10 Security**: `security.yml` | supply-chain · secrets · sast · dast · rust · bash · docker · api · web | DAST needs a running target |
+| Low | **11 Chores**: `maintenance.yml` | licenses · ossf | GitHub disables a schedule in a public repository after 60 days without activity |
+| Low | **12 Bench**: `benchmarking.yml` | micro · macro | Noise on hosted runners |
+| Low | **13 Prof**: `profiling.yml` | cpu · memory · network · storage | **Placed in Low by assumption** |
+| Low | **14 Perf**: `performance.yml` | load · soak · spike · disaster-recovery · chaos | Needs a target; never gates a pull request |
+| Backlog | Web (`web.yml`), UI/UX (`uiux.yml`), Issue (`issues.yml`) | planned when promoted | `web` already has its file after M5 |
+| Track | **Actions** | the `triggerd` cut-over (after phase 8) · candidates named in the owner's tree (xbom, attest, provenance, mdbook, actions, licensing, harden-runner), each **proposed and asked about** in its phase unless it is an exact duplicate | A composite action where the steps are YAML; TypeScript on Node 24 like `triggerd` (`dist/` checked in, `check:dist`, tests run in CI) where there is logic |
+
+## Process
+
+A phase starts with a phase document, `phases/NNNN-<workflow>.md`. A stage starts with its section in that document.
+
+**A phase document holds:**
+- the workflow's purpose and use cases;
+- its triggers and a state machine;
+- its interface: inputs (`mode`, `plan`, dispatch inputs), outputs, permissions, secrets;
+- acceptance criteria for the workflow;
+- the jobs, one stage each, with their status;
+- **action candidates**: the exact duplicates listed, the near-duplicates as questions for the owner;
+- open questions.
+
+**A stage section holds:**
+- the job's purpose and use cases;
+- acceptance criteria;
+- the job's state machine;
+- its steps, broadly;
+- a **survey of public solutions** (candidate, pinned version, fit, chosen or rejected and why), done before any step is
+  written (a public solution is preferred to custom code);
+- for custom code: shell or Python first, refactored to a TypeScript action (JavaScript only where TypeScript is not
+  possible) once it is proven, each hand-written piece named with the probe that showed no built-in covers it;
+- a pass log: the pass, the pull request, the date, the evidence.
+
+**The passes.** For a job that already exists, a pass whose evidence already holds is recorded with that evidence, not
+skipped.
+
+| Pass | Exit evidence | Lands as |
+|---|---|---|
+| 1 Proof of concept | Runs by dispatch on one real input, with a **must-fail control** (AGENTS.md rule 8) | branch |
+| 2 Working prototype | Runs on its real triggers and inputs. A new job is **advisory**: outside the gate's expected set. Its failure modes are listed | branch or draft pull request |
+| 3 Documented | Header comment (why, not what), a row in the READMEs, an entry in `cicd.md` or `running.md`, permissions stated | the stage's pull request |
+| 4 MVP | A pull-request-time job is **in the gate** (planner, known-jobs list, `needs`) and in the lint registry, with helper tests and controls. Green on a full run and an affected-only run | the same pull request, promoted in its last commit |
+| 5 Caching | Baseline, change, measured again. A cache-key control (change an input, see a miss). "No benefit" is a valid result if measured | per job, or per workflow |
+| 6 Parallelization | The critical path measured before and after (split, matrix, shard, `needs` graph) | pull request |
+| 7 CPU time | Billable minutes measured before and after: affected-only rules, prebuilt tools, no duplicate build, runner size | pull request |
+| 8 Production documentation | Final docs, a runbook for each failure, the stage marked done | per workflow |
+
+## Invariants (checked in every pull request of the migration and the phases)
+
+1. `gate` stays the only required context, shown by `assert-required-contexts.sh`.
+2. No coverage is lost: the parity table covers every moved step.
+3. A planned job that is skipped or fails turns `gate` red at every nesting level, shown by a control.
+4. An `rc/*` pull request still plans a staging dispatch.
+5. `lint-all-workflows.sh` passes, every job has least privilege, and nothing uses `pull_request_target`.
+6. The planner's jobs equal the gate's known jobs; `test_plan_ci.py`, `test-ci-scripts.sh` and the mutants pass.
+7. Every script of the `deps` job (wherever its guards end up) is run locally before each push.
+
+## Status (2026-11-16)
+
+| Item | State |
+|---|---|
+| This plan | approved by the owner; in review as the pull request that adds this directory |
+| Phase 0 | not started. Next: write `phases/0001-foundation.md`, which plans stages 0.1 to 0.5 in detail |
+| #221 (crates move) | merged (50b4dba); stage 0.3 is unblocked |
+| Phase 1 and the phases after | not started |
+| Open for the owner | confirm Prof's placement in Low |
