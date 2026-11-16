@@ -109,6 +109,11 @@ rows! {
     parity_x10_forgot_password_without_smtp => "X10-dark",
     parity_x10_forgot_password => "X10",
     parity_x11_reset_password => "X11",
+    parity_x12_magic_generate_without_smtp => "X12-dark",
+    parity_x12_magic_generate => "X12",
+    parity_x13_magic_sign_in_without_smtp => "X13-dark",
+    parity_x13_magic_sign_in => "X13",
+    parity_x13_magic_sign_in_a_deactivated_account => "X13-deactivated",
 }
 
 /// A fixture without a test would pass unseen, and a test without a fixture is `load_fixture` panicking: hold the two
@@ -653,4 +658,73 @@ fn parity_control_a_mutated_reset_recording_is_a_divergence() {
     });
     assert_eq!(d.iter().filter(|m| m.starts_with("exchange ")).count(), 1, "{d:?}");
     assert!(d[0].contains("the uid of no account"), "{d:?}");
+}
+
+// --- controls for X12 and X13 (D-042): what the replay must be able to see -------------------------------------------------------------
+
+/// A sign-in by code that worked sets the session cookie, and one that was refused sets none. A router that takes every cookie off the answers
+/// of the form must diverge at each success of the row (the cookie is transport, which the normaliser drops, so the replay checks it itself).
+#[test]
+fn parity_control_a_sign_in_by_code_that_sets_no_session_is_a_divergence() {
+    use axum::{extract::Request, middleware::Next};
+    async fn no_cookies(req: Request, next: Next) -> Response<Body> {
+        let form = req.uri().path() == "/auth/magic-sign-in/";
+        let mut resp = next.run(req).await;
+        if form {
+            resp.headers_mut().remove("set-cookie");
+        }
+        resp
+    }
+    let d = journey_with(|router| router.layer(axum::middleware::from_fn(no_cookies)), ROWS, "X13", |_| {});
+    let lines = d.iter().filter(|m| m.contains("the recording says it must be set")).count();
+    assert_eq!(lines, 2, "the right code with spaces around it, and the right code with a next_path: {d:?}");
+}
+
+/// A refusal's redirect carries the code the page reads. A router that drops `error_code` from every redirect of the form must diverge at
+/// every refusal of the row, and at none of the successes.
+#[test]
+fn parity_control_a_refused_sign_in_by_code_without_its_code_is_a_divergence() {
+    use axum::{extract::Request, middleware::Next};
+    async fn drop_the_code(req: Request, next: Next) -> Response<Body> {
+        let form = req.uri().path() == "/auth/magic-sign-in/";
+        let mut resp = next.run(req).await;
+        if form {
+            if let Some(location) =
+                resp.headers().get("location").and_then(|v| v.to_str().ok()).map(|l| l.replace("error_code=", "code="))
+            {
+                resp.headers_mut().insert("location", location.parse().unwrap());
+            }
+        }
+        resp
+    }
+    let refusals = load_fixture("X13")["exchanges"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|e| e["response"]["headers"]["location"].as_str().is_some_and(|l| l.contains("error_code=")))
+        .count();
+    assert!(refusals >= 10, "the row refuses at least ten times: {refusals}");
+    let d = journey_with(|router| router.layer(axum::middleware::from_fn(drop_the_code)), ROWS, "X13", |_| {});
+    let diverged = d.iter().filter(|m| m.starts_with("exchange ")).count();
+    assert_eq!(diverged, refusals, "{d:?}");
+}
+
+/// A recording that was changed must be seen to differ: the fifth wrong code, which ended the code (5100), is made to say it was only
+/// wrong (5090), and the replay must diverge there and nowhere else.
+#[test]
+fn parity_control_a_mutated_sign_in_recording_is_a_divergence() {
+    let at = load_fixture("X13")["exchanges"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .position(|e| e["name"] == "a fifth wrong code, the last the code allows")
+        .expect("the fifth wrong code");
+    let d = journey(ROWS, "X13", |fixture| {
+        let loc = fixture["exchanges"][at]["response"]["headers"]["location"].as_str().unwrap().to_string();
+        fixture["exchanges"][at]["response"]["headers"]["location"] = json!(loc
+            .replace("5100", "5090")
+            .replace("EMAIL_CODE_ATTEMPT_EXHAUSTED_SIGN_IN", "INVALID_MAGIC_CODE_SIGN_IN"));
+    });
+    assert_eq!(d.iter().filter(|m| m.starts_with("exchange ")).count(), 1, "{d:?}");
+    assert!(d[0].contains("a fifth wrong code"), "{d:?}");
 }

@@ -1,0 +1,207 @@
+{
+  "exchanges": [
+    {
+      "name": "an account to ask codes for",
+      "request": {
+        "body": {
+          "form": {
+            "email": "magic-ask@example.test",
+            "password": "Journey-Sample-Pa55word-Zebra-81"
+          }
+        },
+        "method": "POST",
+        "path": "/auth/sign-up/"
+      },
+      "response": {
+        "body": null,
+        "headers": {
+          "content-type": "text/html; charset=utf-8",
+          "location": "<base_url>"
+        },
+        "status": 302
+      }
+    },
+    {
+      "name": "an account to ask five codes for",
+      "request": {
+        "body": {
+          "form": {
+            "email": "magic-capped@example.test",
+            "password": "Journey-Sample-Pa55word-Zebra-81"
+          }
+        },
+        "method": "POST",
+        "path": "/auth/sign-up/"
+      },
+      "response": {
+        "body": null,
+        "headers": {
+          "content-type": "text/html; charset=utf-8",
+          "location": "<base_url>"
+        },
+        "status": 302
+      }
+    },
+    {
+      "name": "an address an account has",
+      "request": {
+        "body": {
+          "email": "magic-ask@example.test"
+        },
+        "method": "POST",
+        "path": "/auth/magic-generate/"
+      },
+      "response": {
+        "body": {
+          "key": "magic_magic-ask@example.test"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "the same address, padded and in capitals",
+      "request": {
+        "body": {
+          "email": "  MAGIC-ASK@EXAMPLE.TEST "
+        },
+        "method": "POST",
+        "path": "/auth/magic-generate/"
+      },
+      "response": {
+        "body": {
+          "key": "magic_magic-ask@example.test"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "an address nobody has",
+      "request": {
+        "body": {
+          "email": "nobody@example.test"
+        },
+        "method": "POST",
+        "path": "/auth/magic-generate/"
+      },
+      "response": {
+        "body": {
+          "key": "magic_nobody@example.test"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "the first code asked for an address in ten minutes",
+      "request": {
+        "body": {
+          "email": "magic-capped@example.test"
+        },
+        "method": "POST",
+        "path": "/auth/magic-generate/"
+      },
+      "response": {
+        "body": {
+          "key": "magic_magic-capped@example.test"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "the second code asked for an address in ten minutes",
+      "request": {
+        "body": {
+          "email": "magic-capped@example.test"
+        },
+        "method": "POST",
+        "path": "/auth/magic-generate/"
+      },
+      "response": {
+        "body": {
+          "key": "magic_magic-capped@example.test"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "the third code asked for an address in ten minutes",
+      "request": {
+        "body": {
+          "email": "magic-capped@example.test"
+        },
+        "method": "POST",
+        "path": "/auth/magic-generate/"
+      },
+      "response": {
+        "body": {
+          "key": "magic_magic-capped@example.test"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "the fourth code asked for an address in ten minutes",
+      "request": {
+        "body": {
+          "email": "magic-capped@example.test"
+        },
+        "method": "POST",
+        "path": "/auth/magic-generate/"
+      },
+      "response": {
+        "body": {
+          "key": "magic_magic-capped@example.test"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "the fifth code asked for the address",
+      "request": {
+        "body": {
+          "email": "magic-capped@example.test"
+        },
+        "method": "POST",
+        "path": "/auth/magic-generate/"
+      },
+      "response": {
+        "body": {
+          "email": "magic-capped@example.test",
+          "error_code": 5100,
+          "error_message": "EMAIL_CODE_ATTEMPT_EXHAUSTED_SIGN_IN"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 400
+      }
+    }
+  ],
+  "format_version": 1,
+  "preconditions": [
+    "the pin has an SMTP host (`EMAIL_HOST`) and its sign-in with a code on (`ENABLE_MAGIC_LINK_LOGIN`, which a fresh pin has at `0`), for these rows only, put back after",
+    "the first two exchanges make magic-ask@example.test and magic-capped@example.test; the five requests for the second are the ones a window allows four of"
+  ],
+  "recorded_from": "ba85d4d3d3",
+  "row": "X12"
+}

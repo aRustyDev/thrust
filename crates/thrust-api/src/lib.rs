@@ -158,7 +158,7 @@ pub const CSRF_HEADER: &str = "x-csrftoken";
 pub const API_KEY_HEADER: &str = "x-api-key";
 
 /// The value of cookie `name` in the request's `Cookie` headers (the first one, if a client sent it twice).
-fn cookie_value<'a>(headers: &'a HeaderMap, name: &str) -> Option<&'a str> {
+pub fn cookie_value<'a>(headers: &'a HeaderMap, name: &str) -> Option<&'a str> {
     headers
         .get_all(COOKIE)
         .iter()

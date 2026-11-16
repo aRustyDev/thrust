@@ -94,7 +94,7 @@ const SUSPICIOUS: &[&str] = &[
 /// A relative path the browser may be sent to: one slash first and no second, no backslash or control character, no
 /// `..`, none of Plane's suspicious patterns, at most 500 characters. Plane's `validate_next_path` repairs what it can
 /// (it keeps the path of an absolute URL); this one refuses anything it would have to repair, which is never less safe.
-fn safe_next_path(raw: &Option<String>) -> Option<String> {
+pub(crate) fn safe_next_path(raw: &Option<String>) -> Option<String> {
     let p = raw.as_deref()?;
     let lower = p.to_lowercase();
     let ok = p.len() <= 500
@@ -107,7 +107,7 @@ fn safe_next_path(raw: &Option<String>) -> Option<String> {
 }
 
 /// Percent-encode everything but the unreserved characters and `/` (Python's `quote(s, safe="/")`).
-fn quote_keeping_slashes(s: &str) -> String {
+pub(crate) fn quote_keeping_slashes(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for b in s.bytes() {
         if b.is_ascii_alphanumeric() || b"_.-~/".contains(&b) {
@@ -123,7 +123,7 @@ fn quote_keeping_slashes(s: &str) -> String {
 /// place and the place is safe. The root page decides the rest (onboarding, a workspace, the workspace list) from the
 /// profile, which is why Plane's own redirect for a new user is the bare origin. Plane writes `next_path` into the
 /// query unencoded, so a `&` or `#` in it corrupts the query; this encodes them, which differs only for such paths.
-fn redirect_path(next_path: &Option<String>) -> String {
+pub(crate) fn redirect_path(next_path: &Option<String>) -> String {
     match safe_next_path(next_path) {
         Some(p) => format!("/?next_path={}", quote_keeping_slashes(&p)),
         None => "/".to_string(),

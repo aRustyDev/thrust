@@ -36,6 +36,12 @@ pub enum Code {
     InvalidPassword,
     SmtpNotConfigured,
     InvalidPasswordToken,
+    /// Measured on the pin (2026-11-16, X12, X13): the sign-in with an emailed code (D-042).
+    UserAccountDeactivated,
+    MagicSignInEmailCodeRequired,
+    InvalidMagicCodeSignIn,
+    ExpiredMagicCodeSignIn,
+    EmailCodeAttemptExhaustedSignIn,
 }
 
 impl Code {
@@ -60,6 +66,11 @@ impl Code {
             Code::InvalidPassword => 5020,
             Code::SmtpNotConfigured => 5025,
             Code::InvalidPasswordToken => 5125,
+            Code::UserAccountDeactivated => 5019,
+            Code::MagicSignInEmailCodeRequired => 5085,
+            Code::InvalidMagicCodeSignIn => 5090,
+            Code::ExpiredMagicCodeSignIn => 5095,
+            Code::EmailCodeAttemptExhaustedSignIn => 5100,
         }
     }
 
@@ -84,6 +95,11 @@ impl Code {
             Code::InvalidPassword => "INVALID_PASSWORD",
             Code::SmtpNotConfigured => "SMTP_NOT_CONFIGURED",
             Code::InvalidPasswordToken => "INVALID_PASSWORD_TOKEN",
+            Code::UserAccountDeactivated => "USER_ACCOUNT_DEACTIVATED",
+            Code::MagicSignInEmailCodeRequired => "MAGIC_SIGN_IN_EMAIL_CODE_REQUIRED",
+            Code::InvalidMagicCodeSignIn => "INVALID_MAGIC_CODE_SIGN_IN",
+            Code::ExpiredMagicCodeSignIn => "EXPIRED_MAGIC_CODE_SIGN_IN",
+            Code::EmailCodeAttemptExhaustedSignIn => "EMAIL_CODE_ATTEMPT_EXHAUSTED_SIGN_IN",
         }
     }
 }

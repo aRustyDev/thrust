@@ -118,13 +118,14 @@ class Client:
         self.jar = http.cookiejar.CookieJar()
         self.opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(self.jar), NoRedirect)
 
-    def request(self, method, path, body=None, form=None, headers=None, hidden_form=None, as_email=None, record_path=None):
+    def request(self, method, path, body=None, form=None, headers=None, hidden_form=None, as_email=None, record_path=None, record_form=None):
         """Returns the exchange as the raw dict `normalise.exchange` takes (name added by the caller).
 
         `hidden_form` is sent with a form post but not recorded (the CSRF token). `as_email` is recorded as the request's
         `as`: whose session this client holds, so the harness can send the request with that user's session. `record_path`
         is what is recorded as the path when it must not be the one that was sent: a reset link's `uidb64` and `token` differ on
-        every stack, so the fixture says `{uidb64}` and `{token}` and the harness puts its own account's link there."""
+        every stack, so the fixture says `{uidb64}` and `{token}` and the harness puts its own account's link there. `record_form` is the same
+        for a form: a sign-in code differs on every stack, so the fixture says `{code}` where the code that was sent goes."""
         hs = dict(headers or {})
         data = None
         if body is not None:
@@ -152,7 +153,7 @@ class Client:
         if body is not None:
             request["body"] = body
         elif form is not None:
-            request["body"] = {"form": form}
+            request["body"] = {"form": record_form if record_form is not None else form}
         return {
             "request": request,
             "response": {"status": status, "headers": response_headers(resp), "body": parsed},
@@ -1753,18 +1754,21 @@ def oracle_api_shell(code):
 
 
 def set_smtp(host):
-    """Give the pin an SMTP host (or take it away again with `None`) in its instance configuration, which it reads because `SKIP_ENV_VAR`
-    is on: that is the switch of `forgot-password`, which answers `SMTP_NOT_CONFIGURED` to everything until `EMAIL_HOST` is set. No mail goes
+    """Give the pin an SMTP host (or take it away again with `None`, which is the empty value its setup made the row with) in its instance
+    configuration, which it reads because `SKIP_ENV_VAR` is on: that is the switch of `forgot-password`, which answers `SMTP_NOT_CONFIGURED` to everything until `EMAIL_HOST` is set. No mail goes
     anywhere: its Celery worker is stopped, so the message waits in the broker. The instance cache is dropped, because `/api/instances/`
     says `is_smtp_configured` and a recording made after this one must not see the answer a cache kept."""
-    if host:
-        oracle_api_shell(
-            "from plane.license.models import InstanceConfiguration as C\n"
-            f"C.objects.update_or_create(key='EMAIL_HOST', defaults={{'value': '{host}', 'category': 'SMTP', 'is_encrypted': False}})\n"
-            "print('set')"
-        )
-    else:
-        oracle_api_shell("from plane.license.models import InstanceConfiguration as C\nC.objects.filter(key='EMAIL_HOST').delete()\nprint('removed')")
+    # The pin's own setup made the row with an empty value, and the model deletes softly (the row stays, hidden from `objects`, and its key is
+    # unique), so a row deleted by an earlier set would make the next `update_or_create` fail: the row is changed in place through the base
+    # manager, which sees it whether or not it is deleted, and "removed" is the empty value it had.
+    value = host or ""
+    out = oracle_api_shell(
+        "from plane.license.models import InstanceConfiguration as C\n"
+        f"n = C._base_manager.filter(key='EMAIL_HOST').update(value='{value}', deleted_at=None)\n"
+        "print('updated', n)"
+    )
+    if out != "updated 1":
+        raise SystemExit(f"could not set EMAIL_HOST to {value!r}: {out!r} (its row should exist on a fresh stack)")
     drop_instance_cache()
 
 
@@ -1895,6 +1899,203 @@ def step_x11(base, pacer):
     ]
 
 
+MAGIC_GENERATE = "/auth/magic-generate/"
+MAGIC_SIGN_IN = "/auth/magic-sign-in/"
+MAGIC_ACCOUNTS = {
+    "ask": "magic-ask@example.test",
+    "capped": "magic-capped@example.test",
+    "dark": "magic-dark@example.test",
+    "form-dark": "magic-form-dark@example.test",
+    "in": "magic-in@example.test",
+    "off": "magic-off@example.test",
+}
+
+
+def set_magic(on):
+    """Turn the pin's sign-in with a code on (`on`) or back off: its instance configuration key `ENABLE_MAGIC_LINK_LOGIN`, a row that the pin's
+    setup made with the value `0` (which is why S01 says `is_magic_login_enabled: false`). The row's other columns are left as they are. Without
+    `EMAIL_HOST` the code is `SMTP_NOT_CONFIGURED` whatever this is, because the pin asks for the host first. The instance cache is dropped, so
+    a recording made after this one does not see the answer a cache kept."""
+    out = oracle_api_shell(
+        "from plane.license.models import InstanceConfiguration as C\n"
+        f"n = C.objects.filter(key='ENABLE_MAGIC_LINK_LOGIN').update(value='{'1' if on else '0'}')\n"
+        "print('updated', n)"
+    )
+    if out != "updated 1":
+        raise SystemExit(f"could not set ENABLE_MAGIC_LINK_LOGIN to {on}: {out!r} (its row should exist on a fresh stack)")
+    drop_instance_cache()
+
+
+def read_magic_code(email):
+    """The code the pin's mail would carry for `email`: the `token` of the JSON it keeps at `magic_<address>` in its Valkey (the Celery worker that
+    would send it is stopped, so the message waits in the broker). Empty when the pin holds none."""
+    out = oracle_api_shell(
+        "from plane.settings.redis import redis_instance\nimport json\n"
+        f"raw = redis_instance().get('magic_{email}')\n"
+        "print('code=' + (json.loads(raw)['token'] if raw else ''))"
+    )
+    if not out.startswith("code="):
+        raise SystemExit(f"could not read the code held for {email}: {out!r}")
+    return out.removeprefix("code=")
+
+
+def deactivate_user(email):
+    """Deactivate an account the way the pin's own deactivation does: `is_active` off and `last_logout_time` set (its login refuses an account
+    that has both, `USER_ACCOUNT_DEACTIVATED`)."""
+    out = oracle_api_shell(
+        "from plane.db.models import User\nimport django.utils.timezone as tz\n"
+        f"n = User.objects.filter(email='{email}').update(is_active=False, last_logout_time=tz.now())\n"
+        "print('deactivated', n)"
+    )
+    if out != "deactivated 1":
+        raise SystemExit(f"could not deactivate {email}: {out!r}")
+
+
+def sign_up_for(base, pacer, email):
+    """The sign-up form's exchange for a new account (refused unless it worked, so a step never records against an account it does not have)."""
+    account = Client(base)
+    token = account.csrf()
+    pacer.wait()
+    made = account.request("POST", "/auth/sign-up/", form={"email": email, "password": STRONG}, headers={"X-CSRFToken": token}, hidden_form={"csrfmiddlewaretoken": token})
+    if made["response"]["status"] != 302 or "error_code" in made["response"]["headers"].get("Location", ""):
+        raise SystemExit(f"could not make {email}: {made['response']['headers'].get('Location', '')}")
+    return made
+
+
+def with_magic_on(run):
+    """Run `run()` with the pin able to mail (`EMAIL_HOST` set, for these rows only) and its sign-in with a code on, and put both back after."""
+    set_smtp("smtp.invalid")
+    set_magic(True)
+    try:
+        return run()
+    finally:
+        set_magic(False)
+        set_smtp(None)
+
+
+def code_form(base, pacer, email, code, label_code="{code}", **more):
+    """The unique-code step's form post (the native form `unique-code.tsx` posts) with `code` in it, recorded with `{code}` where the code goes
+    when it is the account's own (a wrong one is recorded as it was sent)."""
+    c = fresh(base)
+    token = c.csrf()
+    pacer.wait()
+    form = {"email": email, "code": code, **more}
+    shown = {**form, "code": label_code}
+    return c.request("POST", MAGIC_SIGN_IN, form=form, headers={"X-CSRFToken": token}, hidden_form={"csrfmiddlewaretoken": token}, record_form=shown)
+
+
+def step_x12_dark(base, pacer):
+    """POST /auth/magic-generate/ on a pin with no SMTP host: the app's unique-code step posts JSON `{email}` here, and the pin asks for the host
+    before it looks at the account (`SMTP_NOT_CONFIGURED`, 5025, with the address in the body), whatever the address is. The pin's answer to an
+    address that is not one is a 500 (its `validate_email` raises and nothing catches it), which the format cannot hold (an HTML body) and Thrust
+    does not write (it answers `INVALID_EMAIL`): measured, not recorded. This is every Thrust deployment until a mail service is wired (D-042)."""
+    made = sign_up_for(base, pacer, MAGIC_ACCOUNTS["dark"])
+    return [
+        ("an account to ask a code for", made),
+        ("no SMTP, an address an account has", post_json(base, pacer, MAGIC_GENERATE, {"email": MAGIC_ACCOUNTS["dark"]})),
+        ("no SMTP, an address nobody has", post_json(base, pacer, MAGIC_GENERATE, {"email": "nobody@example.test"})),
+    ]
+
+
+def step_x12(base, pacer):
+    """POST /auth/magic-generate/ on a pin that has an SMTP host and the sign-in with a code on (`with_magic_on`, for these rows only, put back
+    after): the key `magic_<address>` is the answer to ANY address, one an account has and one nobody has alike (the pin mails a code to either, for
+    its sign-up), in the spelling the account has; and the fifth request in ten minutes for an address is `EMAIL_CODE_ATTEMPT_EXHAUSTED_SIGN_IN`
+    (5100, with the address in the body), the four before it having been made a code each. The mail is queued on a worker that is stopped.
+
+    NOT recorded, because the format holds JSON bodies and the harness posts JSON: that the route takes a form-encoded body too (measured: the same
+    200), that a request is throttled with sign-in (10 a minute per address), and the 500 of an address that is not one."""
+    ask = sign_up_for(base, pacer, MAGIC_ACCOUNTS["ask"])
+    capped = sign_up_for(base, pacer, MAGIC_ACCOUNTS["capped"])
+
+    def run():
+        rows = [
+            ("an address an account has", post_json(base, pacer, MAGIC_GENERATE, {"email": MAGIC_ACCOUNTS["ask"]})),
+            ("the same address, padded and in capitals", post_json(base, pacer, MAGIC_GENERATE, {"email": f"  {MAGIC_ACCOUNTS['ask'].upper()} "})),
+            ("an address nobody has", post_json(base, pacer, MAGIC_GENERATE, {"email": "nobody@example.test"})),
+        ]
+        for n, ordinal in enumerate(("first", "second", "third", "fourth"), 1):
+            rows.append((f"the {ordinal} code asked for an address in ten minutes", post_json(base, pacer, MAGIC_GENERATE, {"email": MAGIC_ACCOUNTS["capped"]})))
+        rows.append(("the fifth code asked for the address", post_json(base, pacer, MAGIC_GENERATE, {"email": MAGIC_ACCOUNTS["capped"]})))
+        return rows
+
+    return [("an account to ask codes for", ask), ("an account to ask five codes for", capped), *with_magic_on(run)]
+
+
+def step_x13_dark(base, pacer):
+    """POST /auth/magic-sign-in/ on a pin with no SMTP host: the unique-code step's native form post, answered by a 302 to the app whatever it comes
+    to. The pin's order: the code and the address are there (5085), an account has the address (5060), and then its provider asks for the host
+    (5025, and the address it names is the KEY it keeps the code under, `magic_<address>`, which is a quirk of the pin and is reproduced)."""
+    made = sign_up_for(base, pacer, MAGIC_ACCOUNTS["form-dark"])
+    return [
+        ("an account to sign in to", made),
+        ("no code", code_form(base, pacer, MAGIC_ACCOUNTS["form-dark"], "", label_code="")),
+        ("no address", code_form(base, pacer, "", "123456", label_code="123456")),
+        ("an address nobody has", code_form(base, pacer, "nobody@example.test", "123456", label_code="123456")),
+        ("no SMTP, an address an account has", code_form(base, pacer, MAGIC_ACCOUNTS["form-dark"], "123456", label_code="123456")),
+    ]
+
+
+def step_x13(base, pacer):
+    """POST /auth/magic-sign-in/ on a pin that has an SMTP host and the sign-in with a code on (`with_magic_on`): the form a code is typed into,
+    answered by a 302 whatever it comes to. The code is what the pin kept for the account (read from its Valkey, `read_magic_code`), so the
+    fixture says `{code}` where the account's own goes and the harness puts its own there; a wrong code is `000000`, which no code can be (they
+    start at 100000). What is recorded: a code that was never asked for (5095), a code asked for and four wrong tries (5090), the fifth wrong
+    one that ends it (5100) and the right one after it (5095), a new code and the right one with spaces around it (a 302 to the app, with a
+    session), the same code again (5095), and a `next_path` kept in a refusal and in a success and dropped when it is not safe."""
+    email = MAGIC_ACCOUNTS["in"]
+    made = sign_up_for(base, pacer, email)
+
+    def ask(label):
+        return (label, post_json(base, pacer, MAGIC_GENERATE, {"email": email}))
+
+    def run():
+        rows = [("a wrong code, before any was asked for", code_form(base, pacer, email, "000000", label_code="000000"))]
+        rows.append(ask("a code is asked for"))
+        code = read_magic_code(email)
+        if len(code) != 6 or not code.isdigit():
+            raise SystemExit(f"the pin's code is not six digits: {code!r}")
+        for ordinal in ("a", "a second", "a third", "a fourth"):
+            rows.append((f"{ordinal} wrong code", code_form(base, pacer, email, "000000", label_code="000000")))
+        rows.append(("a fifth wrong code, the last the code allows", code_form(base, pacer, email, "000000", label_code="000000")))
+        rows.append(("the right code, after the fifth wrong one", code_form(base, pacer, email, code)))
+        rows.append(ask("a new code is asked for"))
+        code = read_magic_code(email)
+        rows.append(("the right code, with spaces around it", code_form(base, pacer, email, f"  {code}  ", label_code="  {code}  ")))
+        rows.append(("the same code again", code_form(base, pacer, email, code)))
+        rows.append(ask("a code is asked for"))
+        code = read_magic_code(email)
+        rows.append(("a wrong code, with a next_path", code_form(base, pacer, email, "000000", label_code="000000", next_path="/some/place")))
+        rows.append(("the right code, with a next_path", code_form(base, pacer, email, code, next_path="/some/place")))
+        rows.append(ask("a code is asked for"))
+        rows.append(("a wrong code, with a next_path that is not safe", code_form(base, pacer, email, "000000", label_code="000000", next_path="//evil.example")))
+        return rows
+
+    return [("an account to sign in to", made), *with_magic_on(run)]
+
+
+def step_x13_deactivated(base, pacer):
+    """POST /auth/magic-sign-in/ for an account that was deactivated after it was sent a code: the code is right and the pin refuses it
+    (`USER_ACCOUNT_DEACTIVATED`, 5019, with the address), having checked it first (the code is used up). A request for a code is answered for the
+    deactivated account as for any (the pin mails it). The deactivation is the pin's own (`deactivate_user`), made between the rows."""
+    email = MAGIC_ACCOUNTS["off"]
+    made = sign_up_for(base, pacer, email)
+
+    def run():
+        first = post_json(base, pacer, MAGIC_GENERATE, {"email": email})
+        deactivate_user(email)
+        again = post_json(base, pacer, MAGIC_GENERATE, {"email": email})
+        code = read_magic_code(email)
+        return [
+            ("a code is asked for", first),
+            ("a code is asked for, once the account is deactivated", again),
+            ("the right code of a deactivated account", code_form(base, pacer, email, code)),
+            ("the same code again", code_form(base, pacer, email, code)),
+        ]
+
+    return [("an account to sign in to", made), *with_magic_on(run)]
+
+
 # Which fixtures make an id that later ones use (`binds`), and which name one in their requests (`uses`).
 USES_PROJECT = {"uses": ["project"]}
 FIXTURE_META = {
@@ -1979,6 +2180,33 @@ FIXTURE_META = {
             "the first exchange makes resetter@example.test, an account of this fixture's own, and signs it in: `the session held before the reset` sends the session cookie the account held then (by hand), whatever the client kept afterwards",
             "`{uidb64}` and `{token}` in a path stand for the reset link made for that account in the pin (`PasswordResetTokenGenerator`), which differs on every stack; the harness puts its own account's link there",
             "a reset form is urlencoded, with a hidden CSRF field that is transport and not recorded; `a password sent as JSON` is a JSON body, which the pin does not read",
+        ],
+    },
+    "X12-dark": {
+        "preconditions": ["the pin has NO SMTP host: every request is answered `SMTP_NOT_CONFIGURED`, whatever the address", "the first exchange makes magic-dark@example.test"],
+    },
+    "X12": {
+        "preconditions": [
+            "the pin has an SMTP host (`EMAIL_HOST`) and its sign-in with a code on (`ENABLE_MAGIC_LINK_LOGIN`, which a fresh pin has at `0`), for these rows only, put back after",
+            "the first two exchanges make magic-ask@example.test and magic-capped@example.test; the five requests for the second are the ones a window allows four of",
+        ],
+    },
+    "X13-dark": {
+        "preconditions": ["the pin has NO SMTP host", "the first exchange makes magic-form-dark@example.test", "the form's hidden CSRF field is transport and not recorded"],
+    },
+    "X13": {
+        "preconditions": [
+            "the pin has an SMTP host and its sign-in with a code on, as for X12",
+            "the first exchange makes magic-in@example.test, whose address every other exchange names",
+            "`{code}` in a form stands for the code the pin kept for that account when the exchange was made (read from its Valkey: its Celery worker, which would mail it, is stopped); the harness puts the code its own mail service was given there. `000000` is a wrong code that no code can be (a code is never below 100000)",
+            "a form is urlencoded with a hidden CSRF field that is transport and not recorded",
+        ],
+    },
+    "X13-deactivated": {
+        "preconditions": [
+            "the pin has an SMTP host and its sign-in with a code on, as for X12",
+            "the first exchange makes magic-off@example.test; the account is DEACTIVATED (`is_active` off and `last_logout_time` set, as the pin's own deactivation does) between the first and the second code that is asked for",
+            "`{code}` is the code the pin kept for the account, as for X13",
         ],
     },
     "X09": {
@@ -2069,6 +2297,12 @@ STEPS = [
     ("X10-dark", step_x10_dark),
     ("X10", step_x10),
     ("X11", step_x11),
+    # the sign-in with an emailed code (F-A04, D-042): the request for a code and the form it is typed into, each dark (no SMTP host) and then with one
+    ("X12-dark", step_x12_dark),
+    ("X12", step_x12),
+    ("X13-dark", step_x13_dark),
+    ("X13", step_x13),
+    ("X13-deactivated", step_x13_deactivated),
 ]
 
 

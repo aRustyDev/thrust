@@ -22,6 +22,9 @@ mutant_oidc_failure_redirect_no_code = []
 # no `error_code`.
 mutant_smtp_flag_always_on = []
 mutant_reset_redirect_without_code = []
+# The sign-in with an emailed code (D-042): a refused sign-in whose redirect has no `error_code`, and a form that is not asked for its CSRF token.
+mutant_magic_redirect_without_code = []
+mutant_magic_csrf_unchecked = []
 
 [dependencies]
 thrust-contracts = { workspace = true }

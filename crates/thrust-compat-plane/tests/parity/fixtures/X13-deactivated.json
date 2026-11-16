@@ -1,0 +1,113 @@
+{
+  "exchanges": [
+    {
+      "name": "an account to sign in to",
+      "request": {
+        "body": {
+          "form": {
+            "email": "magic-off@example.test",
+            "password": "Journey-Sample-Pa55word-Zebra-81"
+          }
+        },
+        "method": "POST",
+        "path": "/auth/sign-up/"
+      },
+      "response": {
+        "body": null,
+        "headers": {
+          "content-type": "text/html; charset=utf-8",
+          "location": "<base_url>"
+        },
+        "status": 302
+      }
+    },
+    {
+      "name": "a code is asked for",
+      "request": {
+        "body": {
+          "email": "magic-off@example.test"
+        },
+        "method": "POST",
+        "path": "/auth/magic-generate/"
+      },
+      "response": {
+        "body": {
+          "key": "magic_magic-off@example.test"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "a code is asked for, once the account is deactivated",
+      "request": {
+        "body": {
+          "email": "magic-off@example.test"
+        },
+        "method": "POST",
+        "path": "/auth/magic-generate/"
+      },
+      "response": {
+        "body": {
+          "key": "magic_magic-off@example.test"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "the right code of a deactivated account",
+      "request": {
+        "body": {
+          "form": {
+            "code": "{code}",
+            "email": "magic-off@example.test"
+          }
+        },
+        "method": "POST",
+        "path": "/auth/magic-sign-in/"
+      },
+      "response": {
+        "body": null,
+        "headers": {
+          "content-type": "text/html; charset=utf-8",
+          "location": "<base_url>/?error_code=5019&error_message=USER_ACCOUNT_DEACTIVATED&email=magic-off%40example.test"
+        },
+        "status": 302
+      }
+    },
+    {
+      "name": "the same code again",
+      "request": {
+        "body": {
+          "form": {
+            "code": "{code}",
+            "email": "magic-off@example.test"
+          }
+        },
+        "method": "POST",
+        "path": "/auth/magic-sign-in/"
+      },
+      "response": {
+        "body": null,
+        "headers": {
+          "content-type": "text/html; charset=utf-8",
+          "location": "<base_url>/?error_code=5095&error_message=EXPIRED_MAGIC_CODE_SIGN_IN&email=magic-off%40example.test"
+        },
+        "status": 302
+      }
+    }
+  ],
+  "format_version": 1,
+  "preconditions": [
+    "the pin has an SMTP host and its sign-in with a code on, as for X12",
+    "the first exchange makes magic-off@example.test; the account is DEACTIVATED (`is_active` off and `last_logout_time` set, as the pin's own deactivation does) between the first and the second code that is asked for",
+    "`{code}` is the code the pin kept for the account, as for X13"
+  ],
+  "recorded_from": "ba85d4d3d3",
+  "row": "X13-deactivated"
+}
