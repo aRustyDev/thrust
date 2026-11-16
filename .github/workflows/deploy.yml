@@ -84,7 +84,7 @@ on:
       - scripts/check-asset-retention.sh
       - scripts/migrate-ci.sh
       - scripts/smoke-deploy.sh
-      - crates/thrust-worker/wrangler.deploy.toml
+      - crates/worker/wrangler.deploy.toml
 
 permissions: {}
 
@@ -273,10 +273,10 @@ jobs:
         run: |
           set -eu
           .github/scripts/unpack-bundle.sh "$DOWNLOAD/deploy-bundle.tar.gz" "$RUNNER_TEMP/bundle" "$SHA"
-          rm -rf crates/thrust-worker/build
-          cp -R "$RUNNER_TEMP/bundle/build" crates/thrust-worker/build
+          rm -rf crates/worker/build
+          cp -R "$RUNNER_TEMP/bundle/build" crates/worker/build
           # the web files, assembled as a deploy assembles them (a first release: nothing from a previous one)
-          scripts/merge-assets.sh "$RUNNER_TEMP/bundle/web" - crates/thrust-worker/.assets
+          scripts/merge-assets.sh "$RUNNER_TEMP/bundle/web" - crates/worker/.assets
       - name: Render the configuration (made-up values) and let wrangler check it
         env:
           THRUST_WORKER_NAME: thrust-dry-run
@@ -292,7 +292,7 @@ jobs:
         run: |
           set -eu
           scripts/render-wrangler.sh
-          cd crates/thrust-worker
+          cd crates/worker
           wrangler deploy -c .wrangler.deploy.run.toml --dry-run --outdir "$RUNNER_TEMP/dry-run-out"
 
   # The deploy. It waits for the environment's reviewers where there are any (production). It classifies first, and when this deploy

@@ -40,7 +40,7 @@ The environment variables are on [Infrastructure](../architecture/infra.md).
 The two `scripts/mutants.sh` bullets are `[verified 2026-10-19 c6376a6]`: the script ran, and all four planted bugs
 were killed. The Worker bundle and `native` bullets are `[derived]` from the scripts and not run.
 
-- **The Cloudflare-only Worker bundle:** the `[build]` command in `crates/thrust-worker/wrangler.toml` runs
+- **The Cloudflare-only Worker bundle:** the `[build]` command in `crates/worker/wrangler.toml` runs
   `worker-build --release . --no-default-features`, which drops `memory`. `wrangler.memory.toml` builds with the
   defaults.
 - **A planted bug in the server:** `scripts/mutants.sh` sets `THRUST_SERVER_FEATURES` to one `mutant_*` name and runs

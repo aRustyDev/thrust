@@ -4,7 +4,7 @@
 #   scripts/smoke-deploy.sh <base-url> <expected-version>
 #
 # <expected-version> is what the deploy tagged the version with (`wrangler deploy --tag <git sha>`). The Worker sends its own tag back
-# as `x-thrust-version` (crates/thrust-api, `set_version`), so a Worker that still serves the version it replaced FAILS this smoke
+# as `x-thrust-version` (crates/api/core, `set_version`), so a Worker that still serves the version it replaced FAILS this smoke
 # instead of passing it: that is the guard against a vacuous pass, and it is why the header has to be there, not merely right when
 # present. It needs no test route, no admin token and no seed route, none of which a real deployment has.
 #

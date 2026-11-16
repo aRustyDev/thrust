@@ -9,8 +9,8 @@ cited by path and symbol, not pasted, so a pattern stays correct when its code m
 **A use-case is a function of `&App` and a `Principal`.** `create_issue` (once `v1_issue_writer` or `issue_writer` has
 authorized the caller) looks up what the draft names, runs one transaction and relays the event after the commit.
 `delete_issue` checks who may, runs a transaction and relays. The list use-cases (`list_issues`, `list_activity`) authorize
-and read, with no transaction and no event. Shown by those functions in `crates/thrust-core/src/issues.rs` and
-`crates/thrust-core/src/lib.rs`.
+and read, with no transaction and no event. Shown by those functions in `crates/core/usecases/src/issues.rs` and
+`crates/core/usecases/src/lib.rs`.
 
 **Authorize in the core, and carry the proof.** `authorize` returns a `Scope`, the proof that the user may act in
 that workspace and project, and the use-case passes it to every repository call. The workspace comes from the route's
@@ -18,7 +18,7 @@ slug, not from the session: a `Principal` is a user and nothing else, so one ses
 belongs to, and `authorize` resolves the slug, the workspace membership and the project membership in one query. It
 answers 404 for a slug that names no workspace, a workspace the caller is not in, or a project outside it, and 403 for
 a member of the workspace who may not touch the project, so a cross-tenant probe learns nothing. Shown by `authorize`
-and `Permission::min_role` in `crates/thrust-core/src/lib.rs`.
+and `Permission::min_role` in `crates/core/usecases/src/lib.rs`.
 
 **Scope every tenant query by the tenant key.** The adapter reads the workspace and project from the `Scope` and the
 SQL filters on both: the reads and the soft delete filter on `workspace_id` and `project_id`, and sequence allocation
@@ -27,11 +27,11 @@ outside the workspace (migration 0002). `membership` joins `workspaces` on the s
 caller and `projects` on that workspace, and its left join on `project_members` also requires
 `m.workspace_id = p.workspace_id`. Each `Tx` write also refuses a work item or outbox
 row of another tenant than its scope (`check_tenant` in `thrust-ports`). Shown by `PgDatabase` in
-`crates/thrust-adapters-postgres/src/lib.rs`. The planted bug `mutant_ignore_tenant` removes the check in the memory
+`crates/adapters/postgres/src/lib.rs`. The planted bug `mutant_ignore_tenant` removes the check in the memory
 adapter, so that `scripts/mutants.sh` can show the contract suite catches it.
 
 **Repository calls take a `Scope`, never ids.** Every `Database` and `Tx` method takes `&Scope` or `&SystemScope`
-(`crates/thrust-ports/src/lib.rs`). The exceptions are the calls that run before a `Scope` exists: `membership`, which
+(`crates/core/ports/src/lib.rs`). The exceptions are the calls that run before a `Scope` exists: `membership`, which
 only `authorize` calls, and the session calls (`session`, `touch_session`, `revoke_session`, `insert_session`), which
 only `authenticate`, `revoke_session` and `seed` in `thrust-core` call. A session belongs to a user and is found by
 the hash of its token, so there is no tenant key to pass (`sessions` is a directory table, ADR-0041). Both proof types are declared in `thrust-ports`, because the ports take them and the adapters
@@ -66,13 +66,13 @@ clock or spawns a task itself, and a test can supply each. Shown by `App.ports` 
 
 **Every port future is `Send`.** The one shared router needs `Send` handlers on both targets, so the traits use plain
 `#[async_trait]`, and the Cloudflare adapters wrap their JavaScript-backed futures in `worker::send::SendFuture`.
-Shown by `crates/thrust-ports/src/lib.rs` and `crates/thrust-adapters-cloudflare/src/lib.rs`.
+Shown by `crates/core/ports/src/lib.rs` and `crates/adapters/cloudflare/src/lib.rs`.
 
 **One error type per layer, mapped at the boundary.** Each fallible port has its own error enum (`DbError`,
 `QueueError`, `BlobError`, `RateError`); `EventConsumer` returns a `String`. `From` impls turn the enums
 into `CoreError`, and `ApiError` turns `CoreError` into a status and a code. An internal error's real cause travels in an
 `InternalErrorDetail` response extension for the root to log, and the body says only `internal error`. Shown by
-`crates/thrust-core/src/lib.rs` and `crates/thrust-api/src/lib.rs`.
+`crates/core/usecases/src/lib.rs` and `crates/api/core/src/lib.rs`.
 
 **Write the SQL once, and vary how the connection is obtained.** `PgDatabase` is written against
 `tokio_postgres::Client`, and a `Connector` supplies the client: a pool on the server, a Hyperdrive socket on the
@@ -87,7 +87,7 @@ ports read nothing from the environment.
 
 **Add a route.**
 1. Write the use-case in `thrust-core`, starting with `authorize`.
-2. Add a handler in `crates/thrust-api/src/lib.rs`. It takes `Authed`, the `App` extension and the path and body,
+2. Add a handler in `crates/api/core/src/lib.rs`. It takes `Authed`, the `App` extension and the path and body,
    calls the use-case and returns `ApiResult`.
 3. Register it in `router()`. Both roots serve that router, so nothing platform-specific is needed.
 4. Add a contract test that pairs the allowed case with its rejected neighbour, and raise the pass's `EXPECT_*` count
@@ -95,13 +95,13 @@ ports read nothing from the environment.
 5. Run `scripts/check-deps.sh`.
 
 **Add a port.**
-1. Add the trait, with `Send` futures, and its error enum to `crates/thrust-ports/src/lib.rs`.
+1. Add the trait, with `Send` futures, and its error enum to `crates/core/ports/src/lib.rs`.
 2. Add a field to `Ports` in `thrust-core`.
 3. Implement it in `thrust-adapters-memory` first: its crate documentation calls it the reference implementation for
    the contract suite. It has no adapter for `Clock`, `IdGen` or `Background`, so skip this step for a port like those.
 4. Implement it in each platform adapter that has the capability.
-5. Build it into `Ports` in all three places that construct one: `crates/thrust-server/src/main.rs`, the
-   `cloudflare` arm of `build_app` in `crates/thrust-worker/src/lib.rs`, and `crates/thrust-worker/src/memory.rs`.
+5. Build it into `Ports` in all three places that construct one: `crates/server/src/main.rs`, the
+   `cloudflare` arm of `build_app` in `crates/worker/src/lib.rs`, and `crates/worker/src/memory.rs`.
 6. Add a contract test, and run `scripts/check-deps.sh`.
 
 **Add an adapter for an existing port.** Implement the trait in the adapter crate for that platform, construct it in

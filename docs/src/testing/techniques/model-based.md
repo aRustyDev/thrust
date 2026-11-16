@@ -18,8 +18,8 @@ redelivery, CRUD over a port. Not for a single request/response (an [app test](a
 ## Name and location
 
 Prefix `model_`: same nextest policy as `prop_`. In the crate that owns the port implementation. The memory adapter
-(`crates/thrust-adapters-memory`) is the natural model for the other adapter sets. A model of behaviour a client sees
-over HTTP goes in the contract suite instead (`crates/thrust-contract-tests/tests/model/mod.rs`), so it runs on every
+(`crates/adapters/memory`) is the natural model for the other adapter sets. A model of behaviour a client sees
+over HTTP goes in the contract suite instead (`crates/testing/suites/api/tests/model/mod.rs`), so it runs on every
 target; there the case budget is `THRUST_MODEL_CASES` (default 16), not `PROPTEST_CASES`.
 
 ## Run
@@ -32,7 +32,7 @@ scripts/rs cargo nextest run -E 'test(/\bmodel_/)'     # [derived]
 
 [Broken implementation](../evidence-and-controls.md#broken-implementation);
 [generator coverage](../evidence-and-controls.md#generator-coverage) over whole sequences; the planted mutants in
-`crates/thrust-adapters-memory` (`mutant_dup_sequence`, `mutant_no_activity_dedupe`) should also be killed by any
+`crates/adapters/memory` (`mutant_dup_sequence`, `mutant_no_activity_dedupe`) should also be killed by any
 model test over those ports.
 
 ## Owning skill
@@ -41,10 +41,10 @@ model test over those ports.
 
 ## In-repo examples
 
-`crates/thrust-core/tests/assets.rs`: `model_assets_match_the_reference_over_any_sequence`, a sequence of asset steps (the lifecycle: create,
+`crates/core/usecases/tests/assets.rs`: `model_assets_match_the_reference_over_any_sequence`, a sequence of asset steps (the lifecycle: create,
 upload, confirm, read, attach, and who may do each) against the memory adapters, compared with a reference model; its
 coverage control is `model_strategy_reaches_every_step_class` in the same file. The shared world (fixed clock, counter ids, a
-`Background` that panics if used) is `crates/thrust-core/tests/common/mod.rs`.
+`Background` that panics if used) is `crates/core/usecases/tests/common/mod.rs`.
 
 The core's model of the slice's create, delete and list, `model_work_items_match_the_reference_model`, went with those
 use-cases in step 5c-3 of #58, because its subject did. What it wrote down for work items (tenancy, roles, sequence ids that are
@@ -53,7 +53,7 @@ the generated `prop_work_items_are_numbered_and_placed_one_after_another`. Measu
 `cargo nextest run -p thrust-core --no-fail-fast`, the planted `mutant_ignore_tenant` still fails 40 of the core's tests and
 `mutant_dup_sequence` fails 3, so neither depends on the deleted model.
 
-`crates/thrust-contract-tests/tests/model/mod.rs`: `model_work_items_over_http_match_the_reference_model`, the same idea
+`crates/testing/suites/api/tests/model/mod.rs`: `model_work_items_over_http_match_the_reference_model`, the same idea
 over HTTP in the contract suite's `main` pass, so it runs unchanged against all four targets. It models what no Plane
 route replaces: attachments (ADR-0080: a name is one path segment, an upload over 5 MiB is refused, writers only, the item
 must be live to put, and a soft-deleted item's attachments stay readable), the activity feed, and what the queue consumer
@@ -87,7 +87,7 @@ Each project's caller is usually one who may write there and otherwise anyone, s
 state for the rare classes (a get after the item's soft delete, a cross-project get) while still covering every
 rejection.
 
-`crates/thrust-adapters-selfhosted/tests/model/mod.rs`: `model_postgres_adapter_matches_the_reference_model`, the
+`crates/adapters/selfhosted/tests/model/mod.rs`: `model_postgres_adapter_matches_the_reference_model`, the
 same idea one layer down, against the Postgres adapter and a real Postgres. The test chooses every id itself and the
 adapter's own values (sequence and sort numbers) are predictable, so the model is a pure planner: each generated
 operation becomes a script of port calls, each with the exact answer the adapter must give. Transactions of up to

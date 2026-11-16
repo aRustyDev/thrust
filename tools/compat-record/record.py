@@ -7,9 +7,9 @@
 
 The oracle stack is the one from the Plane fork (oracle/compose.oracle.yml, API on 127.0.0.1:18080); this script does
 not start it. It drives the journey's requests in order, normalises each exchange with the rules shared with the Rust
-harness (crates/thrust-compat-plane/tests/parity/normalise.json) and writes one fixture per step:
+harness (crates/api/compat-plane/tests/parity/normalise.json) and writes one fixture per step:
 
-    crates/thrust-compat-plane/tests/parity/fixtures/<step>.json
+    crates/api/compat-plane/tests/parity/fixtures/<step>.json
 
     uv run tools/compat-record/record.py
     uv run tools/compat-record/record.py --self-test
@@ -50,7 +50,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import normalise  # noqa: E402
 
 REPO = Path(__file__).resolve().parents[2]
-PARITY = REPO / "crates/thrust-compat-plane/tests/parity"
+PARITY = REPO / "crates/api/compat-plane/tests/parity"
 PIN = "ba85d4d3d3"
 
 # Synthetic identities: example.test is reserved, and the passwords exist only in the oracle's volume.

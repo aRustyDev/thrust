@@ -27,20 +27,20 @@ export GIT_CONFIG_GLOBAL GIT_CONFIG_SYSTEM
 
 # ---- a repository with the scripts under test, the real template, and a small history ------------------------------------------
 R="$T/repo"
-mkdir -p "$R/scripts" "$R/.github/scripts" "$R/crates/thrust-worker" "$R/crates/thrust-adapters-postgres/migrations"
+mkdir -p "$R/scripts" "$R/.github/scripts" "$R/crates/worker" "$R/crates/adapters/postgres/migrations"
 cp "$SCRIPT_UNDER_TEST" "$R/scripts/deploy-worker.sh"
 cp "$HERE/scripts/render-wrangler.sh" "$HERE/scripts/merge-assets.sh" "$R/scripts/"
 cp "$HERE/.github/scripts/classify-deploy.sh" "$HERE/.github/scripts/active-version.py" "$R/.github/scripts/"
-cp "$HERE/crates/thrust-worker/wrangler.deploy.toml" "$R/crates/thrust-worker/wrangler.deploy.toml"
+cp "$HERE/crates/worker/wrangler.deploy.toml" "$R/crates/worker/wrangler.deploy.toml"
 cd "$R" || exit 1
 git init -q -b main . || exit 1
 git config user.name "deploy test"; git config user.email "deploy-test@example.invalid"; git config commit.gpgsign false
 commit() { git add -A && git commit -q -m "$1" && git rev-parse HEAD; }
-echo "CREATE TABLE a (id int);" > crates/thrust-adapters-postgres/migrations/0001.sql
+echo "CREATE TABLE a (id int);" > crates/adapters/postgres/migrations/0001.sql
 H0="$(commit c0-base)"
 echo notes > README.md;                                                                   H1="$(commit c1-other)"
-echo "CREATE TABLE b (id int);" > crates/thrust-adapters-postgres/migrations/0002.sql;      H2="$(commit c2-migrations)"
-printf '\n[[migrations]]\ntag = "v2"\nnew_sqlite_classes = ["More"]\n' >> crates/thrust-worker/wrangler.deploy.toml
+echo "CREATE TABLE b (id int);" > crates/adapters/postgres/migrations/0002.sql;      H2="$(commit c2-migrations)"
+printf '\n[[migrations]]\ntag = "v2"\nnew_sqlite_classes = ["More"]\n' >> crates/worker/wrangler.deploy.toml
 H3="$(commit c3-durable-object-lifecycle)"
 echo more >> README.md;                                                                   H4="$(commit c4-other)"
 git checkout -q -b side "$H1"; echo side > side.txt; HS="$(commit side)"; git checkout -q main

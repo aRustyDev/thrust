@@ -1,0 +1,284 @@
+//! The round-trip budget (issue #39, FR-08 item 2): a list request sends at most 5 statements to the database.
+//!
+//! Plane's project page fires 13 reads and its workspace wrapper 9 (`research/0003`), and each statement is a network round
+//! trip from the Worker to the database (about 1 to 3 ms when the Worker is placed beside it, 20 to 30 ms when it is not). A
+//! compat layer that copies Django's query shapes would spend that on every list, so the budget is a gate and not a hope.
+//!
+//! The target says how many statements a request sent in `x-thrust-db-round-trips`, and only when test routes are on and
+//! the adapter set counts at all (Postgres: `native-pg` and `worker-cf`). The `memory` targets send no header, and the test
+//! says so: it asserts the header is absent there, so it cannot pass on a target that counts nothing by never looking.
+//! Both outcomes name their cause in the failure ("over budget", "below floor"), because `scripts/mutants.sh` tells a mutant
+//! that was caught from a run that failed for another reason by that text.
+//!
+//! What is measured is a steady-state request, after the first of each. The first use of an API key stamps `last_used_at` in
+//! the background (`crates/core/usecases/src/auth.rs`), and it runs on the target's own schedule, so it is waited for and not counted.
+//!
+//! The lists are eight, in the shape a client asks for them by default. Six are asked by an admin: Plane's projects (S17) and
+//! work items (S47) over the internal API, and `/api/v1`'s projects, states, labels and work items. (The slice's own list of
+//! work items was a seventh until the slice's work-item routes went.)
+//! Two are Plane's work items asked by a **limited guest**, who sees only what they made unless the project shows its guests
+//! everything: one who made six of the items, and one who made none, whose page is empty and costs its count as well. That
+//! is the dearest list a guest can ask for, and it was 6 statements, one over the budget, while the page's statement did not
+//! read the project's flag itself (G-24).
+//!
+//! Out of scope, and a known gap (`docs/src/testing/status.md`, G-24): `/api/v1` work items with `?expand=assignees`, which
+//! send two statements per distinct assignee.
+
+use std::time::Duration;
+
+use serde_json::Value;
+use thrust_contract_tests::*;
+use thrust_contracts::{
+    ApiKeyInfo, ProjectId, Role, SeedApiKey, SeedFixture, SeedLabel, SeedMembership, SeedProject, SeedSession,
+    SeedState, SeedWorkspace, SeedWorkspaceMember, StateGroup, UserId, WorkspaceSlug,
+};
+use uuid::Uuid;
+
+use super::t;
+
+/// Must equal `thrust_api::DB_ROUND_TRIPS_HEADER` (this crate is black-box and does not depend on it).
+const HEADER: &str = "x-thrust-db-round-trips";
+
+/// The most statements a list may send.
+const BUDGET: u32 = 5;
+
+/// The fewest a list can honestly send: it authenticates, checks the caller's membership and reads. A count below this means
+/// the counter misses statements, which is how a counter that counts nothing would otherwise pass.
+const FLOOR: u32 = 3;
+
+/// Rows in every list. Over a floor of 3, a statement per row is over the budget of 5 from the third row; this leaves margin.
+const ROWS: usize = 6;
+
+/// Who asks: the project's admin by session, the admin's API key (`/api/v1` takes nothing else), or someone else by session.
+enum Auth {
+    Admin,
+    ApiKey,
+    Session(String),
+}
+
+/// What the list must answer with, so that a test of the budget is never a test of an empty list by accident.
+enum Rows {
+    /// At least this many: a statement per row would show.
+    AtLeast(usize),
+    /// None: the page is empty on purpose, which costs a statement more than a page with rows (its count).
+    Empty,
+}
+
+/// One list: where it is, who asks, and what it must answer with.
+struct Route {
+    name: &'static str,
+    path: String,
+    auth: Auth,
+    rows: Rows,
+}
+
+/// The six lists asked by an admin, and Plane's work items asked by two limited guests (a guest of the compat plane sees only
+/// what they made, unless the project shows its guests everything): `guest` made six of the project's items, and `quiet` made
+/// none, so the page of `quiet` is empty and costs its count as well, the dearest list a guest can ask for.
+fn routes(f: &Fixture, quiet: &User) -> Vec<Route> {
+    let (slug, project) = (&f.a.slug, f.a.project.0);
+    let v1 = format!("/api/v1/workspaces/{slug}");
+    let compat = format!("/api/workspaces/{slug}");
+    let issues = format!("{compat}/projects/{project}/issues/");
+    let admin = |name, path, auth| Route { name, path, auth, rows: Rows::AtLeast(ROWS) };
+    vec![
+        admin("compat projects (S17)", format!("{compat}/projects/"), Auth::Admin),
+        admin("compat issues (S47)", issues.clone(), Auth::Admin),
+        admin("v1 projects", format!("{v1}/projects/"), Auth::ApiKey),
+        admin("v1 states", format!("{v1}/projects/{project}/states/"), Auth::ApiKey),
+        admin("v1 labels", format!("{v1}/projects/{project}/labels/"), Auth::ApiKey),
+        admin("v1 work items", format!("{v1}/projects/{project}/work-items/"), Auth::ApiKey),
+        Route {
+            name: "compat issues (S47), guest with items",
+            path: issues.clone(),
+            auth: Auth::Session(f.guest_a.token.clone()),
+            rows: Rows::AtLeast(ROWS),
+        },
+        Route {
+            name: "compat issues (S47), guest with none",
+            path: issues,
+            auth: Auth::Session(quiet.token.clone()),
+            rows: Rows::Empty,
+        },
+    ]
+}
+
+/// Rows, states, labels, projects and one API key: every list has `ROWS` or more, and the key is the admin's. Returns a guest
+/// of project A who made none of its work items.
+async fn seed(t: &Target, f: &Fixture, key: &str) -> User {
+    let items = |prefix: &str| -> Vec<(String, Option<String>)> {
+        (0..ROWS).map(|n| (format!("{prefix} {n}"), None)).collect()
+    };
+    seed_work_items(t, f, &f.a, f.admin_a.id, &items("budget item")).await;
+    // the guest `guest_a` made six of them too, so a limited guest asking for the list sees a page of their own
+    seed_work_items(t, f, &f.a, f.guest_a.id, &items("guest item")).await;
+    // and this guest made none: a limited guest sees only what they made, so their page is empty
+    let quiet = User {
+        id: UserId(Uuid::new_v4()),
+        token: format!("tok-{}", Uuid::new_v4().simple()),
+        key: String::new(),
+        email: format!("quiet-guest-{}@example.test", Uuid::new_v4().simple()),
+        password: "not used: this guest has a session and no login".into(),
+    };
+
+    // The caller is in every extra project, and each one's identifier comes from its random id, so they cannot collide.
+    let extra: Vec<SeedProject> = (0..ROWS)
+        .map(|n| SeedProject {
+            id: ProjectId(Uuid::new_v4()),
+            workspace_id: f.ws_a,
+            name: format!("budget project {n}"),
+        })
+        .collect();
+    let memberships = extra
+        .iter()
+        .map(|p| SeedMembership { project_id: p.id, workspace_id: f.ws_a, user_id: f.admin_a.id, role: Role::Admin })
+        .chain([SeedMembership { project_id: f.a.project, workspace_id: f.ws_a, user_id: quiet.id, role: Role::Guest }])
+        .collect();
+    let states = (0..ROWS)
+        .map(|n| SeedState {
+            id: Uuid::new_v4(),
+            project_id: f.a.project,
+            workspace_id: f.ws_a,
+            name: format!("budget state {n}"),
+            color: "#3f76ff".into(),
+            sequence: 1000.0 * (n as f64 + 1.0),
+            group: StateGroup::Started,
+            is_default: false,
+        })
+        .collect();
+    let labels = (0..ROWS)
+        .map(|n| SeedLabel {
+            id: Uuid::new_v4(),
+            project_id: f.a.project,
+            workspace_id: f.ws_a,
+            name: format!("budget label {n}"),
+            color: "#ff6b00".into(),
+            parent_id: None,
+            sort_order: 1000.0 * (n as f64 + 1.0),
+        })
+        .collect();
+    let fixture = SeedFixture {
+        workspaces: vec![SeedWorkspace { id: f.ws_a, slug: WorkspaceSlug::new(&f.a.slug) }],
+        users: vec![quiet.id],
+        workspace_members: vec![SeedWorkspaceMember { workspace_id: f.ws_a, user_id: quiet.id }],
+        projects: extra,
+        memberships,
+        sessions: vec![SeedSession { token: quiet.token.clone(), user_id: quiet.id }],
+        states,
+        labels,
+        api_keys: vec![SeedApiKey {
+            token: key.to_string(),
+            user_id: f.admin_a.id,
+            label: "budget".into(),
+            expires_at: None,
+            revoked: false,
+        }],
+        ..SeedFixture::default()
+    };
+    let r = t.admin_post("/internal/seed", &serde_json::to_value(&fixture).unwrap()).await;
+    assert_eq!(r.status(), 204, "seed the budget fixture: {:?}", r.text().await);
+    quiet
+}
+
+/// The first use of a key stamps `last_used_at` in the background. Use it once, and wait until the stamp is there, so that no
+/// measured request starts that task.
+async fn warm_the_key(t: &Target, f: &Fixture, key: &str, first: &Route) {
+    let r = t.http.get(t.url(&first.path)).header("x-api-key", key).send().await.unwrap();
+    assert_eq!(r.status(), 200, "the first use of the key: {:?}", r.text().await);
+    eventually("the key's first use to be recorded", Duration::from_secs(15), || async {
+        let r =
+            t.http.get(t.url(&format!("{SLICE_PREFIX}/api-keys"))).bearer_auth(&f.admin_a.token).send().await.unwrap();
+        let keys: Vec<ApiKeyInfo> = r.json().await.unwrap();
+        keys.into_iter().find(|k| k.label == "budget" && k.last_used_at.is_some())
+    })
+    .await;
+}
+
+/// How many rows a list answered with: an array, or the `results` of a paginated object.
+fn rows(body: &Value) -> usize {
+    match body {
+        Value::Array(a) => a.len(),
+        Value::Object(o) => o.get("results").and_then(Value::as_array).map_or(0, Vec::len),
+        _ => 0,
+    }
+}
+
+/// One request of a list: the statements the target says it sent (None when it sent no header) and the rows it answered with.
+async fn ask(t: &Target, f: &Fixture, key: &str, route: &Route) -> (Option<u32>, usize) {
+    let req = t.http.get(t.url(&route.path));
+    let req = match &route.auth {
+        Auth::Admin => req.bearer_auth(&f.admin_a.token),
+        Auth::ApiKey => req.header("x-api-key", key),
+        Auth::Session(token) => req.bearer_auth(token),
+    };
+    let r = req.send().await.unwrap();
+    let status = r.status();
+    let sent = r.headers().get(HEADER).map(|v| {
+        v.to_str()
+            .ok()
+            .and_then(|s| s.parse::<u32>().ok())
+            .unwrap_or_else(|| panic!("{}: the {HEADER} header is not a number: {v:?}", route.name))
+    });
+    let body: Value = r.json().await.unwrap_or(Value::Null);
+    assert_eq!(status, 200, "{}: {body}", route.name);
+    (sent, rows(&body))
+}
+
+#[tokio::test]
+async fn list_endpoints_stay_within_five_db_round_trips() {
+    let t = t();
+    let adapters = t.info().await["adapters"].as_str().expect("/_info names the adapter set").to_string();
+    let f = Fixture::seed(&t).await;
+    let key = format!("thrk_budget-{}", Uuid::new_v4().simple());
+    let quiet = seed(&t, &f, &key).await;
+    let routes = routes(&f, &quiet);
+    let first_with_the_key =
+        routes.iter().find(|r| matches!(r.auth, Auth::ApiKey)).expect("a route that takes the key");
+    warm_the_key(&t, &f, &key, first_with_the_key).await;
+
+    let mut measured = Vec::new();
+    for route in &routes {
+        // the first request of a list may carry a one-off cost of its own; the budget is for the one after it
+        ask(&t, &f, &key, route).await;
+        let (sent, got) = ask(&t, &f, &key, route).await;
+        // A list over too few rows cannot show a statement per row, so a thin list is a failure of the test and not a pass; and
+        // the list that is empty on purpose has to be empty, or it is not measuring the page that costs its count.
+        match route.rows {
+            Rows::AtLeast(n) => assert!(
+                got >= n,
+                "{}: the list has {got} rows and the test needs {n}: it would not show a statement per row",
+                route.name
+            ),
+            Rows::Empty => assert_eq!(got, 0, "{}: the page was to be empty, and has {got} rows", route.name),
+        }
+        measured.push((route.name, sent));
+    }
+    let report = measured.iter().map(|(name, n)| format!("{name}: {n:?}")).collect::<Vec<_>>().join(", ");
+    // The numbers go in the log (the `budget` pass shows test output), so a green run says what each list costs and not only
+    // that it fits.
+    println!("[{adapters}] statements per list: {report}");
+
+    match adapters.as_str() {
+        "postgres" | "cloudflare" => {
+            for (name, sent) in &measured {
+                let n = sent.unwrap_or_else(|| {
+                    panic!("{name} sent no {HEADER} header on a {adapters} target, which must count with test routes on ({report})")
+                });
+                assert!(n <= BUDGET, "{name} is over budget: {n} statements, at most {BUDGET} are allowed ({report})");
+                assert!(
+                    n >= FLOOR,
+                    "{name} is below floor: {n} statements, and a list that authenticates, checks membership and reads sends at least {FLOOR}, so the counter misses some ({report})"
+                );
+            }
+        }
+        "memory" => {
+            for (name, sent) in &measured {
+                assert!(
+                    sent.is_none(),
+                    "{name} sent {HEADER}={sent:?} on a memory target, which counts nothing: a count there is not a count ({report})"
+                );
+            }
+        }
+        other => panic!("the budget test does not know the adapter set '{other}': say what it counts ({report})"),
+    }
+}

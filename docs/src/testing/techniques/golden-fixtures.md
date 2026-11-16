@@ -17,14 +17,14 @@ found, every new input class), not by hand-picking inputs.
 
 Use when a reference implementation exists and its output can be recorded: editor-document conversions, sanitiser
 output, anything ported from TypeScript. Pair it with the differential run it records, and with a hermetic
-round-trip [property](property.md) where the conversion has an inverse (`crates/thrust-editor-doc/tests/roundtrip.rs`). Not as the only test of a
+round-trip [property](property.md) where the conversion has an inverse (`crates/editor/doc/tests/roundtrip.rs`). Not as the only test of a
 conversion, not when the inputs must be generated fresh each run (that is [differential](differential.md)), and
 never by regenerating the fixture to make a failing test pass ([Rule 3](../rules.md)).
 
 ## Name and location
 
 Prefix `parity_` (runs in the default profile). New fixtures go in the crate's `tests/parity/fixtures/` and are
-committed ([Rule 7](../rules.md)). The editor-doc spike keeps its corpus in `crates/thrust-editor-doc/tests/corpus/`,
+committed ([Rule 7](../rules.md)). The editor-doc spike keeps its corpus in `crates/editor/doc/tests/corpus/`,
 where `tools/spike-0006/gen-all.sh` writes it; it is committed, which is what Rule 7 requires.
 
 ## Run
@@ -49,9 +49,9 @@ owns them and its frozen suite wins.
 
 ## In-repo examples
 
-In `crates/thrust-editor-doc/tests/`: `stage1.rs`, `stage2.rs`, `stage3.rs` (against
-`crates/thrust-editor-doc/tests/corpus/corpus.json`), `sanitize.rs` (against
-`crates/thrust-editor-doc/tests/corpus/xss-corpus.json`), and the controls in `controls.rs`.
+In `crates/editor/doc/tests/`: `stage1.rs`, `stage2.rs`, `stage3.rs` (against
+`crates/editor/doc/tests/corpus/corpus.json`), `sanitize.rs` (against
+`crates/editor/doc/tests/corpus/xss-corpus.json`), and the controls in `controls.rs`.
 
 ## Target
 

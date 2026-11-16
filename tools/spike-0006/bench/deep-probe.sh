@@ -10,7 +10,7 @@ PORT="$(python3 -c 'import socket;s=socket.socket();s.bind(("127.0.0.1",0));prin
 STATE="$OUT/state-deep"
 rm -rf "$STATE"
 mkdir -p "$STATE"
-cd "$ROOT/crates/thrust-editor-worker" || exit 99
+cd "$ROOT/crates/spikes/editor-worker" || exit 99
 env -i HOME="$HOME" PATH="$PATH" TMPDIR="${TMPDIR:-/tmp}" WRANGLER_SEND_METRICS=false NO_COLOR=1 \
   wrangler dev -c wrangler.toml --local --ip 127.0.0.1 --port "$PORT" --persist-to "$STATE" --show-interactive-dev-session=false --log-level log \
   > "$OUT/deep.wrangler.log" 2>&1 &

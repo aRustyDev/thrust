@@ -1,7 +1,7 @@
 #!/bin/sh
 # The topology check (ADR-0090 round 29, FR-05, FR-11, issue #43): the Worker is ONE Worker, in Rust, with no Workflow.
 #
-#   scripts/check-topology.sh [dir]     check every wrangler*.toml in dir (default: crates/thrust-worker)
+#   scripts/check-topology.sh [dir]     check every wrangler*.toml in dir (default: crates/worker)
 #   scripts/check-topology.sh --self-test
 #                                       run the check against fixtures it must accept and fixtures it must refuse
 #
@@ -113,7 +113,7 @@ case "${1:-}" in
     exit $?
     ;;
   *)
-    check_dir "${1:-$ROOT/crates/thrust-worker}"
+    check_dir "${1:-$ROOT/crates/worker}"
     STATUS=$?
     [ "$STATUS" -eq 0 ] && echo "ok: one Worker, no Workflow, no service binding"
     exit "$STATUS"

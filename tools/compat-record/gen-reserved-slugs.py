@@ -1,10 +1,10 @@
-"""Print `crates/thrust-core/src/reserved_slugs.rs`: the pinned Plane's list of workspace slugs nobody may take.
+"""Print `crates/core/usecases/src/reserved_slugs.rs`: the pinned Plane's list of workspace slugs nobody may take.
 
 Plane refuses these in `POST /api/workspaces/` (`Slug is not valid`) and reports them as unavailable from
 `GET /api/workspace-slug-check/`. The list is `RESTRICTED_WORKSPACE_SLUGS` in `apps/api/plane/utils/constants.py`, read
 here from the oracle's own API container (the source has a few names twice; this prints each once, sorted):
 
-    docker exec -i plane-oracle-api-1 python - < tools/compat-record/gen-reserved-slugs.py > crates/thrust-core/src/reserved_slugs.rs
+    docker exec -i plane-oracle-api-1 python - < tools/compat-record/gen-reserved-slugs.py > crates/core/usecases/src/reserved_slugs.rs
 
 Regenerate it only when the pin moves.
 """

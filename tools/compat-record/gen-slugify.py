@@ -1,4 +1,4 @@
-"""Print `crates/thrust-api-v1/tests/parity/fixtures/slugify.json`: what the pinned Plane's `slugify` does to a name.
+"""Print `crates/api/v1/tests/parity/fixtures/slugify.json`: what the pinned Plane's `slugify` does to a name.
 
 A state's `slug` is `slugify(self.name)` in `State.save()` (`apps/api/plane/db/models/state.py:118`, tag
 `oracle/v1-pin-20261018`), with `slugify` from `django.template.defaultfilters`: a filter that calls
@@ -10,7 +10,7 @@ Django 5.2.17 and Python 3.12 are the pin's (`apps/api/uv.lock`, `apps/api/.pyth
 that says it is the pin's is the pin's:
 
     uv run --no-project --python 3.12 --with django==5.2.17 python -I tools/compat-record/gen-slugify.py \
-        > crates/thrust-api-v1/tests/parity/fixtures/slugify.json
+        > crates/api/v1/tests/parity/fixtures/slugify.json
 
 The fixture holds three things, none picked by hand except the pool the names are drawn from:
   * `alone`: every Unicode scalar value (surrogates are not characters, and a Rust `str` cannot hold one) whose slug, as a name

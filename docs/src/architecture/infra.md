@@ -37,9 +37,9 @@ One Worker handles HTTP (`fetch`), queue delivery (`queue`) and the cron trigger
 no Workflow and no service binding: `main` is `build/worker/shim.mjs`, the file `worker-build` writes. That is
 ADR-0090's Option 1, one Worker, until the P1 collab room is added as a Worker of its own, and the review's FR-05
 removed the Workflows shim (`entry.mjs`) that used to sit in front of it. `scripts/check-topology.sh` fails CI on a `[[workflows]]` or `[[services]]` block or a
-different `main` in any `crates/thrust-worker/wrangler*.toml`.
+different `main` in any `crates/worker/wrangler*.toml`.
 
-The bindings in `crates/thrust-worker/wrangler.toml`:
+The bindings in `crates/worker/wrangler.toml`:
 
 | Binding | Kind | Port it backs |
 |---|---|---|
@@ -137,7 +137,7 @@ A user signs in with an email and a password (Plane's `POST /auth/sign-in/`) or 
 provider, and gets a session row and cookies; the test seed (`POST /internal/seed`, test routes only) also creates
 sessions, users, API keys and provider links directly. The full flow is on [Application flow](../flows/app.md).
 
-Configuration is read from the environment, in `crates/thrust-server/src/main.rs`:
+Configuration is read from the environment, in `crates/server/src/main.rs`:
 
 | Variable | Default | Meaning |
 |---|---|---|

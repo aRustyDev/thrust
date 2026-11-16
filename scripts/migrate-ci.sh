@@ -4,7 +4,7 @@
 #
 #   scripts/migrate-ci.sh [--no-contract | --plan]
 #
-# The flag, if any, is `migrate`'s own and is passed on to it (crates/thrust-adapters-postgres/src/bin/migrate.rs, issue #195): without
+# The flag, if any, is `migrate`'s own and is passed on to it (crates/adapters/postgres/src/bin/migrate.rs, issue #195): without
 # one it applies every migration the database's ledger does not have; `--no-contract` refuses to apply a contract migration
 # (`NNNN_contract_*.sql`), as a deploy that is not production's must; `--plan` prints what would be done, as one line of JSON, and
 # changes nothing. Anything else is refused before the tunnel is opened. Only `migrate` writes to stdout, so the JSON of `--plan` is
@@ -13,7 +13,7 @@
 # Why this shape. `thrust-pg` has no public endpoint and accepts only TLS, so CI reaches it as a client of an Access application with a
 # service token (Q-0094, ADR-0094 Option 2). `cloudflared access tcp` listens on 127.0.0.1 and carries the bytes, so the database sees
 # a TLS client and the client sees a certificate that names a host and not 127.0.0.1: `migrate` runs under `verify-ca`, which checks
-# the chain and the dates and not the name (crates/thrust-adapters-postgres/src/tls.rs).
+# the chain and the dates and not the name (crates/adapters/postgres/src/tls.rs).
 #
 # Environment. Nothing secret goes through argv, and nothing goes to a process that does not need it: `cloudflared` is started
 # without the database URL, `migrate` without the service token.
