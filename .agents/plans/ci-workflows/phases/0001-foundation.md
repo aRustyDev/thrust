@@ -16,8 +16,9 @@ files. Four cases the foundation has to get right:
 1. A maintainer adds a job to `test.yml`. The planner and the gate pick it up, or the gate fails; it is never silently
    not run.
 2. A change touches only `deny.toml`. Only the Security workflow runs, and `gate` passes.
-3. A planned job inside a called workflow is skipped by a bug in its `if:`. `gate` is red. Today a calling job reports
-   `success` when every job inside it was skipped, so this is the case the existing design cannot see.
+3. A planned job inside a called workflow is skipped by a bug in its `if:`. `gate` is red. A calling job reports
+   `success` when at least one job inside it succeeded, so with two planned jobs and one skipped it is green, and the
+   existing design cannot see it ([research 0018](../research/0018-gate-spike.md), F5).
 4. `test.yml` is run alone (dispatch or schedule). Its result is judged too, not only when `ci` calls it.
 
 ## What exists today (read 2026-11-16)
@@ -32,6 +33,7 @@ files. Four cases the foundation has to get right:
 | `assert-sha-checks.sh` matches a check by exact name (`gate`), and a re-run needs every report of it to be SUCCESS | `assert-sha-checks.sh:47` | A callee job named `gate` would show as `<caller> / gate`, which does not collide, but two jobs called "gate" in a check list is a trap for a reader |
 | GitHub reports **0 billable minutes** here: `"billable":{"UBUNTU":{"total_ms":0,"jobs":11}}` beside `run_duration_ms: 51000` (run 43942132459, a public repository) | `gh api .../actions/runs/<id>/timing` | Passes 5 to 7 and stage 0.5 measure **runner-minutes** (the sum of job durations) and wall clock, not billable minutes |
 | `cicd.md` says 34 hand mutants of the planner and the gate are caught, "verified locally, under dash; not yet in CI". The driver was a session scratchpad file and is not in the repository | `cicd.md:52` | Invariant 6 cannot be checked by anyone else. Stage 0.3 commits a driver |
+| `flagship.yml` (#229, merged after this phase was planned) is a deploy-adjacent workflow: its own environment and secrets, push-to-main and nightly triggers, nothing `gate` waits for | `.github/workflows/flagship.yml` | It goes on the list of files that run no check (0.3) and belongs to the Deploy phase |
 
 ## Acceptance criteria for the phase
 
@@ -53,8 +55,8 @@ planner and the gate follow the ADR. The lint rules need the ADR's conventions, 
 | PR | Stage | Lands as | Needs |
 |---|---|---|---|
 | 1 | 0.5 baseline | `research/0017-ci-baseline.md` + its script | nothing |
-| 2 | 0.2 spike | a **draft PR, closed unmerged** (like probes #196 to #199); its table goes into the ADR | nothing |
-| 3 | 0.1 ADR-0102 | `adrs/ci/0102-*.md` | the spike's table |
+| 2 | 0.2 spike | a **draft PR, closed unmerged** (#232, like probes #196 to #199); its results are `research/0018-gate-spike.md`, which the ADR cites | nothing |
+| 3 | 0.1 ADR-0102 | `adrs/ci/0102-*.md` | `research/0018` |
 | 4 | 0.3 planner, gate, mutant driver | scripts and tests; no workflow moves | ADR-0102 |
 | 5 | 0.4 lint and indexes | `lint-workflow.sh` rules, tests, `actionlint` in CI, two READMEs | ADR-0102 |
 
@@ -100,7 +102,8 @@ billable.)*
   one `gate` flattens every callee's results into its own check. Strength: one place judges, and `assert-gate.sh`
   changes least. Cost: a callee run alone is not judged by anything.
 
-The expectation is **A**, because of use case 4, but the spike decides.
+The expectation was **A**, because of use case 4. The spike found A one case short (its own `verdict` job can be skipped) and
+chose **A+**: A, with the callee's `verdict` output required by `gate`.
 
 **Mechanism.** `workflow_dispatch` needs the file on the default branch (GitHub's docs; re-check when this stage starts),
 so a spike that exists only on a branch is triggered by `pull_request` with a `paths:` filter on its own files, as `e2e-schedule.yml` does. It is a draft pull
@@ -127,13 +130,18 @@ README (inputs `jobs`, `allowed-failures`, `allowed-skips`, all static lists) un
 - F2 `github.workflow` inside a callee is the caller's name.
 - F3 a workflow-level `concurrency` in a callee cancels or waits on its caller.
 - F4 a callee's job appears as `<caller job> / <callee job>` in `gh api .../check-runs` (what `assert-sha-checks.sh` reads).
-- F5 a calling job's result is `success` when every inner job was skipped.
+- F5 a calling job's result is `success` when every inner job was skipped. *(Measured: no. It is `success` when one inner job
+  succeeded and a planned one was skipped, and `skipped` when none ran.)*
 - F6 a callee's workflow outputs reach `needs.<caller>.outputs`, and the size they may have.
 - F7 an artifact uploaded in a callee can be downloaded by a later job of the caller (the contract cells' markers).
 - F8 a callee cannot hold a permission its calling job did not grant.
 
 **Acceptance.** The table is complete: seven scenarios times three candidates, and F1 to F8, each with a run id. One
 candidate is chosen, with the controls it passes and the ones it does not.
+
+**Done 2026-11-16**, in [research/0018-gate-spike.md](../research/0018-gate-spike.md): five designs (the three candidates,
+A+, and a `naive` control) against seven scenarios, F1 to F8 and three facts found on the way, in two identical samples.
+Chosen: **A+**, right on all seven. `naive` was wrong on three (the control can fail), A on one, `alls-green` on two.
 
 ## Stage 0.1: ADR-0102
 
@@ -143,10 +151,12 @@ candidate is chosen, with the controls it passes and the ones it does not.
 works today.
 
 **Content.** The decision: a thin orchestrator, called workflows, the judging design the spike chose. The conventions:
-- a callee routes by an input, never by `github.event_name` (F1);
-- no workflow-level `concurrency` in a file that has `workflow_call` (F3);
-- only the permissions its caller grants (F8);
-- the callee's final job is named `verdict` (decided by the owner, 2026-11-16);
+- a callee routes by an input, never by `github.event_name`, which is the caller's (F1);
+- no workflow-level `concurrency` in a file that has `workflow_call`: its group is built from the caller's name, equals the
+  caller's, and the run starts no job (F3);
+- only the permissions its caller grants: asking for more stops the run from starting (F8);
+- the callee's final job is named `verdict` (decided by the owner, 2026-11-16), runs `if: always()`, and sets the output
+  `verdict=pass` only after the judge passed; `gate` requires that output as well as the calling job's result (design A+);
 - every file keeps `permissions: {}` and a `permissions:` on each job.
 
 Alternatives not taken: a gate per workflow (N required checks, against ADR-0100's one aggregate context); `pr.yml` as the
@@ -169,12 +179,15 @@ merges, CI plans and judges exactly what it did before.
 - Its RULES name every workflow file that runs checks (`test`, `lint`, `documentation`, `security`, `web`) as **run
   everything**, as `ci` and `contract-cell` are, and `test_plan_ci.py` lists the real `.github/workflows/` directory and
   fails if a file there matches only the generic rule and is not on a short list of files that run no check (`deploy`,
-  `release`, `release-plz`, `e2e`). The control: delete one of the new names from the rule and the test must fail.
+  `release`, `release-plz`, `e2e`, `flagship`). The control: delete one of the new names from the rule and the test must fail.
   *(Narrowing a rule so that a change to `test.yml` runs only the test jobs is a Phase 2 optimization, not this.)*
-- `assert-gate.sh` takes its job list as an input and is the **one** script at every level (or, under B, flattens the
-  callees' results), with no copy. `same_jobs` is extended to the new places the list lives.
+- `assert-gate.sh` takes its job list as an input and is the **one** script at every level: the top-level `gate` and each
+  callee's `verdict` job run it, with no copy. `gate` requires of each expected callee both `result == success` and
+  `outputs.verdict == pass` (design A+; both are in `toJSON(needs)`, which the script already reads). `same_jobs` is
+  extended to the new places the list lives.
 - `test-ci-scripts.sh` gains the callee cases: each scenario of the spike's table as a generated case, the 80 existing
-  cases unchanged and green, and the control that an absent callee result is a failure and not a skip.
+  cases unchanged and green, the control that an absent callee result is a failure and not a skip, and the control that a
+  callee whose `verdict` output is missing fails the gate although its result is `success`.
 - `.github/scripts/tests/mutate-gate.sh` (the 34 hand mutants of the planner and the gate, each of which the tests must
   catch) is committed, runs under `dash`, and reports a mutant that survives. It is a step of the `ci-scripts` job (the
   owner's decision, 2026-11-16), so it runs whenever that job does and a surviving mutant fails the gate; the control is a
@@ -184,7 +197,8 @@ merges, CI plans and judges exactly what it did before.
 **Steps.** Planner and gate changes with their tests first (red, then green); the rules and the directory test; the mutant
 driver last, because it has to mutate the final text.
 
-**Public solutions.** `re-actors/alls-green`: see 0.2 (rejected only if the spike shows it fails a control). Mutation
+**Public solutions.** `re-actors/alls-green` was measured in 0.2: wrong on two of seven scenarios (an unplanned job that ran; a judge that was
+skipped), and it needs a hand-written step to say what may be skipped, so it replaces nothing. Mutation
 tools for Python exist (`mutmut`, `cosmic-ray`); none mutates POSIX shell, and the gate is shell. *(Hand-written: the mutant
 driver. It already exists in a session scratchpad and is being rewritten into the repository, not invented.)*
 
@@ -202,20 +216,22 @@ driver. It already exists in a session scratchpad and is being rewritten into th
   with no entry.
 - `actionlint` runs in CI at a pinned version, as a step of `deps` (the owner's decision, 2026-11-16: add it). Every
   workflow in the repository passes it, or each finding it keeps is named with the reason. The control: a copy of the
-  `contract` call with a `with:` key the callee does not declare must be refused.
+  `contract` call with a `with:` key the callee does not declare must be refused. It runs inside the checkout: outside a
+  git repository `actionlint` checked nothing and printed nothing (research 0018, F11), and the control is what shows it is looking.
 
 **Public solutions.** `actionlint` checks a caller's `with:` against the callee's declared inputs and outputs, which matters
 once there are a dozen such calls. It is **not wired into CI today** (the cicd-review plan only suggests running it by
-hand), and a search result mentions an open false-positive report about reading a callee's outputs through `needs` (actionlint
-#407; status not checked: check it when this stage starts, since it matters only if the spike picks the design in which a
-callee reports its results). **How it is installed is decided here, at the start of the stage, by survey**: the tools
+hand), and a search result mentioned an open false-positive report about reading a callee's outputs through `needs` (actionlint
+#407). It did not appear on the spike's reads of a declared output, and the same tool refused a read of an undeclared one
+(research 0018, F11). **How it is installed is decided here, at the start of the stage, by survey**: the tools
 `taiki-e/install-action` already installs in `ci.yml` (cargo-deny, cargo-nextest, mdbook) against actionlint's own release and
 checksum. *(Hand-written: R8 and R9, which are this repository's conventions; actionlint has no rule for them.)*
 
 ## Action candidates
 
-None in Phase 0. The first exact duplicate will be the verdict step, created in M1 only if A is chosen and only because it is
-then the same steps in several callees (asked about only if the copies are not identical).
+None in Phase 0. The first exact duplicate will be the `verdict` job's steps (checkout, judge, mark the output), the same in
+every callee under the chosen design: created as a composite action in M1 without asking (asked about only if the copies
+are not identical).
 
 ## Decisions on the questions (owner, 2026-11-16, after #225)
 
