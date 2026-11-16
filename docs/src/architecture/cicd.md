@@ -17,18 +17,18 @@ Worker](deploy.md). The jobs and the command each CI job runs are in the CI sect
 
 | File | Does |
 |---|---|
-| `.github/workflows/ci.yml` (`ci`) | The pipeline. Runs on pull requests, merge-queue entries, pushes to `main` and manual dispatch |
+| `.github/workflows/ci.yml` (`ci`) | The pipeline. Runs on pull requests, merge-queue entries, pushes to `main`, every night on `main` and by manual dispatch |
 | `.github/workflows/contract-cell.yml` | A reusable workflow that runs one contract cell on its own runner |
 | `.github/workflows/flake-hunt.yml` | Repeats one cell 1 to 50 times (5 by default), by hand or every Monday at 03:17 UTC. It passes only if `scripts/flake-hunt.sh` prints `failures: 0 / N`, because the script ends with an `echo`, so its exit status does not say whether an iteration failed |
-| `.github/workflows/e2e-schedule.yml` | Runs the `worker-cf e2e` cell (through `contract-cell.yml`) every day at 04:41 UTC and by hand, and on a pull request that edits the file, so that the call is proved valid before it merges. It covers what the `ci` cell does not: a change to `web/` alone (`classify-changes.sh` keeps it out of `rust`) and drift in the runner, the browser and the packages. Not a gate: nothing waits for it and `gate` does not read it. The pinned-Plane leg is not here, because the oracle builds from an unpushed fork (`scripts/e2e.sh plane-oracle`, local) |
-| `.github/workflows/release-plz.yml` (`release-plz`) | The release flow, run by release-plz: after each push to `main`, opens or updates the release-candidate pull request from an `rc/*` branch, and tags `vX.Y.Z` and creates the GitHub release as a draft when such a pull request merges. See [Release candidates](#release-candidates) |
-| `.github/workflows/release.yml` (`release`) | Started by the draft release: builds the bundle at the tag, attests its build provenance and an SPDX SBOM of the source, attaches the bundle, the SBOM and `SHA256SUMS`, and publishes the release (immutable). On a pull request that edits it or the build, a dry run that attests and publishes nothing. See [Releasing](release.md) |
+| `.github/workflows/e2e-schedule.yml` | Runs the `worker-cf e2e` cell (through `contract-cell.yml`) every day at 04:41 UTC and by hand, and on a pull request that edits the file, so that the call is proved valid before it merges. It covers what a pull request does not: drift in the runner, the browser and the packages, every day on `main`. Not a gate: nothing waits for it and `gate` does not read it. The pinned-Plane leg is not here, because the oracle builds from an unpushed fork (`scripts/e2e.sh plane-oracle`, local) |
+| `.github/workflows/release-plz.yml` (`release-plz`) | The release flow, run by release-plz: after each push to `main`, opens or updates the release-candidate pull request from an `rc/*` branch, and tags `vX.Y.Z`, creates the GitHub release as a draft and starts `release.yml` on the tag when such a pull request merges. See [Release candidates](#release-candidates) |
+| `.github/workflows/release.yml` (`release`) | Dispatched on the release tag by `release-plz.yml` (a draft release starts no workflow), or by hand on the tag; which run releases what is `plan-release.sh`. It builds the bundle at the tag, attests its build provenance and an SPDX SBOM of the source, attaches the bundle, the SBOM and `SHA256SUMS`, and publishes the release (immutable). On a pull request that edits it or the build, a dry run that attests and publishes nothing. See [Releasing](release.md) |
 | `release-plz.toml` | release-plz's configuration: one version and one tag for the workspace, one root `CHANGELOG.md`, which commits make a release. Held to the workspace members by `.github/scripts/check-release-plz.py` |
 | `.github/workflows/deploy.yml` (`deploy`) | The deploy pipeline: plan, build and attest a release candidate's bundle (staging) or take a release's (production), deploy it to an environment and prove it, roll back by itself when the smoke fails. Runs after `ci` on a release candidate or a tagged push to `main`, by hand, and on a pull request that edits its files (a dry run that touches no environment). See [The deploy pipeline](#the-deploy-pipeline) |
 | `.github/actions/setup-rust` | A composite action: the stable toolchain, the rustup targets and components, a keyed `rust-cache`, and optionally `worker-build` 0.8.7 and wrangler 4.151.2 |
 | `.github/actions/build-bundle` | A composite action: the deploy bundle of the checked-out commit (the Worker, the `migrate` binary and the web app, in one reproducible file), used by `deploy.yml` and `release.yml` so that both build it the same way |
 | `.github/actions/deploy-worker` | A composite action: fetch the bundle (this run's build for staging, the release's asset for production, `fetch-release-bundle.sh`), verify its attestation, unpack it, install wrangler (the same version as `setup-rust`, kept equal by a test) and `cloudflared` at pinned versions, and run `scripts/deploy-worker.sh` |
-| `.github/scripts/` | The pipeline's own logic: `classify-changes.sh`, `plan-cells.sh`, `assert-gate.sh`, and `assert-required-contexts.sh`; and the deploy's: `plan-deploy.sh`, `classify-deploy.sh`, `active-version.py`, `assert-sha-checks.sh`, `assert-gated-environments.sh`, `verify-bundle.sh`, `unpack-bundle.sh`, `fetch-previous-assets.sh`, `fetch-release-bundle.sh` and `lint-workflow.sh`. The `ci-scripts` job tests them with `.github/scripts/tests/` |
+| `.github/scripts/` | The pipeline's own logic: `plan-ci.py`, `plan-cells.sh`, `assert-gate.sh`, and `assert-required-contexts.sh`; and the deploy's: `plan-deploy.sh`, `classify-deploy.sh`, `active-version.py`, `assert-sha-checks.sh`, `assert-gated-environments.sh`, `verify-bundle.sh`, `unpack-bundle.sh`, `fetch-previous-assets.sh`, `fetch-release-bundle.sh` and `lint-workflow.sh`; and the release's: `plan-release.sh`. The `ci-scripts` job tests them with `.github/scripts/tests/` |
 | `.github/deploy/` | What the deploy trusts: the Cloudflare Origin CA root that signs `thrust-pg`'s certificate, with its fingerprint pinned by a test |
 | `scripts/deploy-worker.sh` and its parts | The deploy itself (render, classify, expand migration, `wrangler deploy`, smoke, rollback), run by the composite action: `render-wrangler.sh` (with the template `crates/thrust-worker/wrangler.deploy.toml`), `migrate-ci.sh`, `smoke-deploy.sh`, `smoke-bootstrap.sh`, `merge-assets.sh` and `check-asset-retention.sh` |
 | `scripts/check-web-diff.sh` | The Q-R2 gate for `web/` (the stock React app, imported from the oracle pin), run by the `web` job. Tested by `.github/scripts/tests/test-check-web-diff.sh` |
@@ -39,14 +39,17 @@ The ruleset on `main` requires exactly one status check, `gate` `[verified 2026-
 evidence that `gate` inspects. `gate` runs even when a job before it failed, and `.github/scripts/assert-gate.sh`
 decides:
 
-- The `changes` job must have succeeded.
-- If nothing Rust-relevant changed, no job may have failed or been cancelled, and skipped jobs are expected.
-- If something Rust-relevant changed, every needed job must be exactly `success`. A skipped job is a failure here,
-  not a pass. The set of cells that uploaded a pass marker must also equal the planned set, which must not be empty.
-- The `web` job is judged apart from those two rules, by `WEB_CHANGED` (`web/` or a CI file changed). If it is true,
-  `web` must be exactly `success`, and a skipped `web` fails the gate. If it is false, `web` may be skipped, as it is on
-  a Rust-only change, but not failed or cancelled; a gate run that is not told `WEB_CHANGED` fails. Eleven cases in
-  `test-ci-scripts.sh` pin this `[derived: the web job has not run in CI yet]`.
+- The `changes` job must have succeeded. It names the jobs that must run (`jobs`) and the contract cells (`cells`), from
+  `.github/scripts/plan-ci.py` (see [What runs when](#what-runs-when)).
+- Every expected job must be exactly `success`. A skipped job is a failure here, not a pass.
+- Every job that is not expected must be `skipped`. One that ran anyway means its `if:` and the planner disagree.
+- The planner and the gate list the same nine jobs. An expected job that is not a need of the gate, or a need the
+  planner does not know, fails it, as does an input that is missing or is not a JSON array of strings.
+- `contract` is expected exactly when cells are planned. The set of cells that uploaded a pass marker must then equal
+  the planned set, which must not be empty.
+- `test-ci-scripts.sh` generates the cases: each of the nine jobs, expected or not, with each of the four results (72
+  cases), then the cells, the inputs and the names. 34 hand mutants of the planner and the gate are each caught by
+  their tests `[verified 2026-11-16 locally, under dash; not yet in CI]`.
 
 The point is that "nothing failed" is not accepted as "everything ran". A cell that never started leaves no check
 behind, and a required check that never reports blocks a pull request forever.
@@ -55,36 +58,82 @@ its base branch. Nothing calls it, so it is a tool to run by hand.
 
 ## What runs when
 
-- **Path classification.** The `changes` job sorts the changed files. The Rust jobs run only if one of them is under
-  `crates/`, `scripts/`, `probes/`, `.cargo/`, `.config/`, `.github/workflows/`, `.github/actions/`,
-  `.github/scripts/` or `.github/deploy/`, or is `Cargo.toml`, `Cargo.lock`, `deny.toml`, `clippy.toml`, `rustfmt.toml` or a `rust-toolchain`
-  file (the last three are read by the `deny` and `lint` jobs, so a change to only one of them must still run those
-  jobs `[verified 2026-11-05 7d0074f]` by the three cases in `.github/scripts/tests/test-ci-scripts.sh`). The job fails open: with no usable
-  base commit, or an empty list, it runs everything. A pull request that changes only `docs/`, `AGENTS.md`,
-  `.agents/` or `tools/` (but not `tools/oracle-v1/`, below) runs no tests, and `gate` passes. Run on sample lists, the
-  classifier answers `rust=false` for `docs/`, `AGENTS.md`, `.agents/`, `tools/` and `.github/config/`, and `rust=true`
-  for a file under `crates/`, for `.config/nextest.toml`, for a workflow file and for an empty list `[verified 2026-10-19
-  fa4bd6c]`. `tools/oracle-v1/` is the v1 oracle's harness, register, corpus and results, which the three `oracle` cells
-  run, so a change under it alone is `rust=true` (three cases in `test-ci-scripts.sh`, one of them a `tools/` look-alike
-  that stays `rust=false`) `[verified 2026-11-10]`. On a pull
-  request that touches only `docs/`, `changes` passes, `plan`, `ci-scripts`, `deps`, `hermetic`, `pg-adapter`,
-  `mutants` and `contract` are skipped, and `gate` passes `[verified 2026-10-19 051b849]`. `lint` and `deny`, added
-  later, have the same `if` as `deps`, so a change to only `docs/` skips them too `[derived]`. **The book is not built in
-  CI at all.**
-- **The web job.** `changes` also answers `web=true` when a file is under `web/`, is `scripts/check-web-diff.sh`, or is
-  under `.github/workflows/`, `.github/actions/` or `.github/scripts/`, and it fails open for `web` as it does for
-  `rust`. The two answers are independent: a change under `web/` alone is `rust=false` and `web=true`, so only `changes`
-  and `web` run and `gate` passes on them. The `web` job runs `scripts/check-web-diff.sh` (only the files in
+- **Affected only.** The `changes` job diffs the change against its base and runs `.github/scripts/plan-ci.py` over the
+  changed paths, Cargo's graph of the workspace (`cargo metadata --no-deps`) and the matrix. A path's first matching rule
+  decides; the rules, and why each exists, are in the script.
+  - A crate's files change that crate, and every crate that depends on it, through any kind of dependency, is affected.
+    A change to any crate runs `ci-scripts`, `deps`, `lint` and `hermetic` (they build the whole workspace). A change to
+    its `Cargo.toml` runs `deny` too.
+  - A cell's target runs all its passes when the binary it starts is affected (`native-*` start `thrust-server`,
+    `worker-*` start `thrust-worker`), or when the suite itself, `thrust-contract-tests`, changed. `pg-adapter` runs when
+    `thrust-adapters-selfhosted` is affected. `mutants`, which mutates the native server, runs when `thrust-server` is
+    affected or the suite changed.
+  - Some files outside the crates are read by the crates' tests, which Cargo's graph cannot see, so they run those tests'
+    jobs:
+    - `tools/oracle-v1/` (its schema and corpus are read by the tests of four crates) runs `hermetic`, `deps` (the
+      OpenAPI diff) and the three `oracle` cells.
+    - `.github/deploy/` (read by the TLS tests of `thrust-adapters-postgres`) runs `hermetic` and `ci-scripts`.
+  - A file that only one pass reads runs that pass on every target:
+    - `e2e/`, `scripts/e2e.sh` and the e2e tools run `worker-cf e2e`.
+    - `web/` runs the `web` job and `worker-cf e2e`. A change to `web/` alone is now driven in a browser on its own pull
+      request (G-30's gap 2).
+  - A file that only a guard or a job reads runs that job:
+    - `deny.toml` runs `deny`; `clippy.toml` and `rustfmt.toml` run `lint`.
+    - `release-plz.toml` and the guards of `deps` run `deps`.
+    - A deploy script (`smoke-deploy.sh`, `migrate-ci.sh`, …) runs only `ci-scripts`.
+    - Another workflow, action or helper script runs `ci-scripts` and `deps` (the workflow lint).
+  - Everything runs on a path whose readers the planner does not know:
+    - the workspace manifest, the lockfile and the toolchain;
+    - `.cargo/` and `.config/`;
+    - `ci.yml`, `contract-cell.yml` and `setup-rust`;
+    - the planner and the gate;
+    - the scripts that run a cell;
+    - an unknown directory under `crates/`;
+    - an unlisted script under `scripts/`.
+  - A path that no rule matches needs nothing: `docs/`, `README.md`, `AGENTS.md`, `.agents/`, `probes/` (which only
+    `scripts/verify-all.sh` runs, locally) and the other `tools/`. A pull request of only such paths runs `changes` and
+    `gate`, and `gate` passes. **The book is not built in CI at all.**
+- **Everything runs** in these cases:
+  - a release candidate's pull request;
+  - a merge-queue entry;
+  - the nightly run of `main` (03:23 UTC), which catches a new RustSec advisory, a new stable toolchain or drift in the
+    runner, though no change brought it;
+  - a manual run;
+  - whenever the planner cannot answer: no base commit, a failed diff, an empty change list, or a failed `cargo metadata`.
+
+  A target of `contract-all.sh` that the planner does not know runs on every change. `deploy.yml` ignores the nightly
+  run: `plan-deploy.sh` deploys only after a pull request or a push.
+- **Examples** (the planner run on this repository) `[verified 2026-11-16 locally]`:
+
+  | Change | Jobs | Cells |
+  |---|---|---|
+  | a file under `web/` | `web`, `contract` | 1 (`worker-cf e2e`) |
+  | `thrust-adapters-cloudflare` | `ci-scripts`, `deps`, `lint`, `hermetic`, `contract` | the 13 `worker-*` cells |
+  | `thrust-adapters-selfhosted/Cargo.toml` | the same, plus `deny`, `pg-adapter` and `mutants` | the 10 `native-*` cells |
+  | `thrust-contracts` (everything depends on it) | all but `deny` and `web` | all 23 |
+  | `tools/oracle-v1/` | `deps`, `hermetic`, `contract` | the 3 `oracle` cells |
+  | `scripts/smoke-deploy.sh` | `ci-scripts` | none |
+
+- **Tested** by `test_plan_ci.py`, about 4,900 checks:
+  - 300 generated crate graphs, with each crate changed alone and in pairs, against an independent reverse-reachability;
+  - the plan of a list equals the union of the plans of its parts;
+  - every rule is the first match of its own sample, and matches a tracked file;
+  - the fail-open cases;
+  - this repository's real graph and targets;
+  - no script that the planner keeps out of the cells is called by what runs a cell.
+
+  `[verified 2026-11-16 locally; not yet in CI]`
+- **The web job.** The `web` job runs `scripts/check-web-diff.sh` (only the files in
   `web/ALLOWED-CHANGES` may differ from the pin; `web/SOURCE` says where `web/` came from), then
   `pnpm --dir web install --frozen-lockfile --ignore-scripts` and `pnpm --dir web exec turbo run build --filter=web`,
   and checks that `web/apps/web/build/client/index.html` exists. Node is `web/.node-version`; pnpm is the version
   `web/package.json` pins, read from it. That install and build ran on the import as it is, with pnpm 11.10.0, ten
   tasks uncached from an empty `node_modules` `[verified 2026-11-11 locally; not yet in CI]`.
-- **The matrix.** The `plan` job reads the `run <target> <pass>` lines of `scripts/contract-all.sh`, so no second
-  list can drift. It fails if the number of cells it parsed differs from the number of lines that start with `run`,
+- **The matrix.** The `changes` job reads the `run <target> <pass>` lines of `scripts/contract-all.sh`
+  (`plan-cells.sh`), so no second list can drift, and the planner keeps the cells the change needs. It fails if the number of cells it parsed differs from the number of lines that start with `run`,
   if there are none, or if one repeats. There are 25 cells: 22 contract cells (the browser journeys' `worker-cf e2e`
-  and the password reset by email's three `mail` cells, `native-memory`, `worker-memory` and `worker-cf`, among them) and the 3 `oracle` cells below
-  `[verified 2026-11-14: PR #154's check list had 22 contract jobs, all success, before the first mail cell; the 21 of PR #113 (2026-11-10) were before the e2e cell]`.
+  and the password reset by email's three `mail` cells, `native-memory`, `worker-memory` and `worker-cf`, among them) and the 3 `oracle` cells below `[verified 2026-11-14: PR #154's
+  check list had 22 contract jobs, all success, before the first mail cell; the 21 of PR #113 (2026-11-10) were before the e2e cell]`.
   Each runs on a fresh runner with its own checkout, which is why the shared-build-directory hazard that makes
   `contract-all.sh` run serially does not apply.
 - **A cell.** `contract-cell.yml` checks that `curl`, `openssl`, `lsof`, `pgrep` and `docker` exist (and `nc` for the native `mail` cell, which waits for its Mailpit with it), runs
@@ -226,13 +275,20 @@ look for a tag of its own and re-release all of history, which is why `git_tag_n
 The first run as the App `[verified 2026-11-15]` opened #184, `chore(release): v0.1.0`, from `rc/2026-11-15T07-33-32Z`:
 one commit that GitHub shows as verified, adding the `0.1.0` section to `CHANGELOG.md`, with `ci` running on it. One run
 before it was refused creating the branch (`403 Resource not accessible by integration`) while the App was being set up;
-the next, two minutes later, passed `[cause unverified]`. Not yet run: the `release` job on a merge, and whether creating
-a `v*` tag through the tag ruleset needs the App to hold Administration: read and write as well (release-plz documents it
-for protected tags; the App is a bypass actor, which should be enough).
+the next, two minutes later, passed `[cause unverified]`.
+
+The first merge, #187 (`v0.1.0`) `[verified 2026-11-15]`: the `release` job tagged the merge commit `v0.1.0` (an annotated
+tag by `arustydev-thrust-release[bot]`, through the tag ruleset, with no Administration permission) and created the draft
+release. `release.yml` did not start: it listened for the draft's `release: created`, and GitHub runs no workflow for the
+`created`, `edited` or `deleted` events of a draft release (its documentation of the `release` event says so). So the
+`release` job now starts `release.yml` itself, with `gh workflow run release.yml --ref <tag>`: a `workflow_dispatch` made
+with the workflow's own token does start a run (the documented exception), and the run's ref is the tag, which the
+attestations record. Its `releases` output lists each crate under the one workspace tag; the step refuses anything but one
+tag.
 
 Immutable releases lock a release's assets when it is published, so release-plz makes a draft (`git_release_draft`,
-read in its source: it creates the tag through the API first, then the release), and `release.yml`, started by the draft's
-creation, attaches the assets and publishes it.
+read in its source: it creates the tag through the API first, then the release), and `release.yml`, dispatched on the tag,
+attaches the assets and publishes it.
 
 ## Permissions and supply chain
 
@@ -251,7 +307,8 @@ creation, attaches the assets and publishes it.
   to start the deploy run on the `rc/*` branch or the `v*` tag). `release.yml`: `id-token: write` and
   `attestations: write` (`build` only, for the two attestations), `contents: write` (`publish` only, which attaches the assets
   and publishes the release; nothing else in it writes). `lint-workflow.sh` enforces where
-  `secrets.`, `environment:` and `id-token: write` may appear. `release-plz.yml` asks for `contents: read` only; what it
+  `secrets.`, `environment:` and `id-token: write` may appear. `release-plz.yml` asks for `contents: read`, and
+  `actions: write` in its `release` job to start `release.yml` on the new tag; what it
   writes, it writes with the release App's token, minted in its two jobs, the only ones `lint-workflow.sh` lets hold a
   secret there. All 22 checkouts set `persist-credentials: false`.
   Reusable-workflow and composite-action inputs reach the script through `env`, not through interpolation into the script
@@ -285,15 +342,16 @@ every one succeeded `[verified 2026-10-19 fa4bd6c]` with `gh run view`.
 
 Found by the CI/CD review of 2026-11-14 (`.agents/plans/cicd-review/`), which also holds what to do about each.
 
-- **Too wide.** `rust=true` is all or nothing: one file under `scripts/` (a deploy-only script included), `probes/`
-  (which no job runs), `.github/deploy/`, a workflow that `ci` does not run (`flake-hunt.yml`, `e2e-schedule.yml`,
-  `deploy.yml`) or a results file under `tools/oracle-v1/` starts all 32 jobs (33 with `web`, which a CI file also starts): the 22
-  cells, `mutants`, `pg-adapter` and the rest. There is no narrowing by crate.
-- **Too narrow.** A change to `web/` alone does not run the `worker-cf e2e` cell, which serves that build (G-30).
-  `lint-workflow.sh` checks only `deploy.yml` and its action, not `ci.yml`, `contract-cell.yml`, `e2e-schedule.yml`,
-  `flake-hunt.yml` or `setup-rust`. `hermetic` and `pg-adapter` do not pass `--locked`. The toolchain floats on `stable`
-  and the advisory database is fetched live, and with no scheduled run of `ci` either surfaces only on the next
-  Rust-relevant pull request. `flake-hunt.yml` cannot select the `csrfoff`, `oracle` or `e2e` passes.
+- **Too wide (fixed by PR 4, `perf/ci-affected-only`).** Before it, the `rust` flag was all or nothing: one file under
+  `scripts/` (a deploy-only script included), `probes/` (which no job runs), `.github/deploy/`, a workflow that `ci`
+  does not run (`flake-hunt.yml`, `e2e-schedule.yml`, `deploy.yml`) or a results file under `tools/oracle-v1/` started
+  all 32 jobs (33 with `web`, which a CI file also started), and nothing narrowed by crate. Now each runs what reads it
+  ([What runs when](#what-runs-when)).
+- **Too narrow.** Fixed by the same PR: a change to `web/` alone now runs the `worker-cf e2e` cell (G-30), and a
+  nightly run of `ci` on `main` surfaces a new advisory or a new stable toolchain without waiting for a pull request.
+  Still open: `lint-workflow.sh` checks only the deploy and release workflows and their actions, not `ci.yml`,
+  `contract-cell.yml`, `e2e-schedule.yml`, `flake-hunt.yml` or `setup-rust`. `hermetic` and `pg-adapter` do not pass
+  `--locked`. The toolchain floats on `stable`. `flake-hunt.yml` cannot select the `csrfoff`, `oracle` or `e2e` passes.
 
 ## Against the ADRs
 
@@ -306,7 +364,7 @@ ADR-0100, ADR-0101 and ADR-0110 are accepted, in `.agents/plans/contrail/adrs/`.
   matrix on every pull request that changes a Rust-relevant path, a lint step (`lint`: rustfmt and clippy), and the
   aggregate job, as `gate`. In place in part: the oracle schema check, a step of `deps` (`scripts/check-openapi.sh`, issue #58),
   which diffs the OpenAPI document that `thrust-api-v1` writes with the pinned Plane schema for the operations listed in
-  `tools/oracle-v1/schema/described.operations` (the 8 Projects ones so far), and runs a clippy step (`lint`) and a test step
+  `tools/oracle-v1/schema/described.operations` (the 13 of Projects and States so far), and runs a clippy step (`lint`) and a test step
   (`hermetic`) for the `openapi` feature that no other step turns on. Not in place: a nightly run (only the weekly flake hunt) and
   the periodic diff, which is `assert-required-contexts.sh` and is run by hand.
 - **ADR-0101 (supply chain)** asks for SHA pinning, Scorecard, attestation and trivy, plus Worker-bundle

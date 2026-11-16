@@ -13,7 +13,7 @@ use utoipa::openapi::schema::{Object, ObjectBuilder, SchemaType, Type};
 use utoipa::openapi::security::{ApiKey, ApiKeyValue, SecurityScheme};
 use utoipa::{IntoParams, IntoResponses, Modify, OpenApi, ToSchema};
 
-use crate::dto::{ProjectDto, ProjectLiteDto};
+use crate::dto::{ProjectDto, ProjectLiteDto, StateDto};
 use crate::pagination::Page;
 use thrust_contracts::Uuid;
 
@@ -34,6 +34,11 @@ use thrust_contracts::Uuid;
         crate::projects::destroy,
         crate::projects::archive,
         crate::projects::unarchive,
+        crate::states::list,
+        crate::states::create,
+        crate::states::retrieve,
+        crate::states::update,
+        crate::states::destroy,
     ),
     components(schemas(
         ProjectDto,
@@ -41,7 +46,11 @@ use thrust_contracts::Uuid;
         Page<ProjectDto>,
         Page<ProjectLiteDto>,
         ProjectCreateRequest,
-        PatchedProjectUpdateRequest
+        PatchedProjectUpdateRequest,
+        StateDto,
+        Page<StateDto>,
+        StateRequest,
+        PatchedStateRequest
     )),
     modifiers(&ApiKeyAuthentication)
 )]
@@ -101,6 +110,14 @@ pub(crate) fn timezone() -> Object {
         .build()
 }
 
+/// A state's group: one of the six `StateGroup` has, which is what a route checks a body's `group` against and what a body says.
+pub(crate) fn state_group() -> Object {
+    ObjectBuilder::new()
+        .schema_type(Type::String)
+        .enum_values(Some(thrust_contracts::StateGroup::ALL.iter().map(|g| g.as_str())))
+        .build()
+}
+
 /// The two answers that every operation can give before it does anything.
 #[derive(IntoResponses)]
 #[allow(dead_code, reason = "a description for the document: nothing builds it")]
@@ -134,6 +151,18 @@ pub(crate) struct LiteQuery {
     cursor: Option<String>,
     include_archived: Option<bool>,
     order_by: Option<String>,
+    #[param(schema_with = whole_number)]
+    per_page: Option<i64>,
+}
+
+/// The query of `states/`, which reads `fields` and the page and has no `order_by`.
+#[derive(IntoParams)]
+#[into_params(parameter_in = Query)]
+#[allow(dead_code, reason = "a description for the document: nothing builds it")]
+pub(crate) struct StatesQuery {
+    cursor: Option<String>,
+    expand: Option<String>,
+    fields: Option<String>,
     #[param(schema_with = whole_number)]
     per_page: Option<i64>,
 }
@@ -228,4 +257,53 @@ pub(crate) struct PatchedProjectUpdateRequest {
     is_time_tracking_enabled: bool,
     default_state: Option<Uuid>,
     estimate: Option<Uuid>,
+}
+
+/// What a state's creation takes (the pin's `StateSerializer` as a request): `name` and `color` are required, the rest is optional, and
+/// only the two external keys can be `null`.
+#[derive(ToSchema)]
+#[allow(dead_code, reason = "a description for the document: the route reads the body by hand (`fields.rs`)")]
+pub(crate) struct StateRequest {
+    #[schema(min_length = 1, max_length = 255)]
+    name: String,
+    #[schema(required = false)]
+    description: String,
+    #[schema(min_length = 1, max_length = 255)]
+    color: String,
+    #[schema(required = false)]
+    sequence: f64,
+    #[schema(required = false, schema_with = state_group)]
+    group: String,
+    #[schema(required = false)]
+    default: bool,
+    #[schema(required = false)]
+    is_triage: bool,
+    #[schema(max_length = 255)]
+    external_source: Option<String>,
+    #[schema(max_length = 255)]
+    external_id: Option<String>,
+}
+
+/// What a state's change takes: the creation's keys, none required.
+#[derive(ToSchema)]
+#[allow(dead_code, reason = "a description for the document: the route reads the body by hand (`fields.rs`)")]
+pub(crate) struct PatchedStateRequest {
+    #[schema(min_length = 1, max_length = 255, required = false)]
+    name: String,
+    #[schema(required = false)]
+    description: String,
+    #[schema(min_length = 1, max_length = 255, required = false)]
+    color: String,
+    #[schema(required = false)]
+    sequence: f64,
+    #[schema(required = false, schema_with = state_group)]
+    group: String,
+    #[schema(required = false)]
+    default: bool,
+    #[schema(required = false)]
+    is_triage: bool,
+    #[schema(max_length = 255)]
+    external_source: Option<String>,
+    #[schema(max_length = 255)]
+    external_id: Option<String>,
 }

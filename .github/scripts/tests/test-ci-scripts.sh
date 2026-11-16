@@ -1,5 +1,6 @@
 #!/bin/sh
-# Exercise plan-cells.sh, classify-changes.sh and assert-gate.sh, including the cases that must FAIL.
+# Exercise plan-cells.sh and assert-gate.sh, including the cases that must FAIL. (plan-ci.py, the planner between them, is
+# tested by test_plan_ci.py.)
 # Every case goes through `expect`, which checks the exit status AND a message fragment, so a case cannot
 # pass for the wrong reason and none is merely printed.
 HERE="$(cd "$(dirname "$0")/../../.." && pwd)"
@@ -56,109 +57,98 @@ expect "plan: a script with no run lines fails" 1 "parsed zero cells" plan_in "$
 mkdir -p "$T/plan1/scripts" && cp "$HERE/scripts/contract-all.sh" "$T/plan1/scripts/contract-all.sh" && printf 'run native-memory main extra\n' >> "$T/plan1/scripts/contract-all.sh"
 expect "plan: a run line with a changed format fails" 1 "the format changed" plan_in "$T/plan1"
 
-# ---- classify-changes.sh -------------------------------------------------------------------------
-classify() { printf '%b' "$1" | "$S/classify-changes.sh"; }
-expect "classify: docs only" 0 "rust=false" classify 'docs/src/intro.md\nREADME.md\n'
-expect "classify: a crate change" 0 "rust=true" classify 'docs/src/intro.md\ncrates/thrust-core/src/lib.rs\n'
-expect "classify: the lockfile" 0 "rust=true" classify 'Cargo.lock\n'
-expect "classify: the nextest config" 0 "rust=true" classify '.config/nextest.toml\n'
-expect "classify: a workflow change" 0 "rust=true" classify '.github/workflows/ci.yml\n'
-expect "classify: a helper script change" 0 "rust=true" classify '.github/scripts/assert-gate.sh\n'
-expect "classify: the CA root the deploy trusts, alone" 0 "rust=true" classify '.github/deploy/cloudflare-origin-ca-rsa-root.pem\n'
-expect "classify: a look-alike of the deploy directory is not it" 0 "rust=false" classify '.github/deployed-notes.md\n'
-expect "classify: an empty list fails open" 0 "rust=true" classify ''
-expect "classify: a look-alike path is not a crate" 0 "rust=false" classify 'crates-notes.md\n'
-expect "classify: the oracle's harness alone runs the oracle cells" 0 "rust=true" classify 'tools/oracle-v1/harness/run_conformance.py\n'
-expect "classify: the oracle's register alone" 0 "rust=true" classify 'tools/oracle-v1/exceptions.yaml\n'
-expect "classify: another tool's directory is not the oracle's" 0 "rust=false" classify 'tools/oracle-v1-notes.md\ntools/spike-0006/README.md\n'
-# The acceptance-list guard (issue #51) compares the recorder, the table the list is generated from and the pinned route inventory:
-expect "classify: the compat recorder alone runs the acceptance-list guard" 0 "rust=true" classify 'tools/compat-record/record.py\n'
-expect "classify: the table the acceptance list is generated from, alone" 0 "rust=true" classify '.agents/plans/contrail/research/0003-compat-plane-inventory.md\n'
-expect "classify: the pinned route inventory, alone" 0 "rust=true" classify 'tools/compat-inventory/out-pinned/endpoint-inventory.csv\n'
-expect "classify: another research doc and the rest of the inventory's tool are docs" 0 "rust=false" classify '.agents/plans/contrail/research/0004-oracle-harness.md\ntools/compat-inventory/README.md\ntools/compat-record-notes.md\n'
-# The lint and deny jobs read these three files, so a change to only one of them must still run the Rust jobs (issue #40):
-# classified as docs, `lint` and `deny` would be skipped and the gate would pass without running them.
-expect "classify: deny.toml" 0 "rust=true" classify 'deny.toml\n'
-expect "classify: release-plz.toml alone runs its guard" 0 "rust=true" classify 'release-plz.toml\n'
-expect "classify: a release-plz.toml look-alike or nested copy is not it" 0 "rust=false" classify 'release-plz.toml.md\ndocs/release-plz.toml\n'
-expect "classify: CHANGELOG.md alone is docs" 0 "rust=false" classify 'CHANGELOG.md\n'
-expect "classify: clippy.toml" 0 "rust=true" classify 'clippy.toml\n'
-expect "classify: rustfmt.toml" 0 "rust=true" classify 'rustfmt.toml\n'
-expect "classify: a config look-alike or a nested copy is not the root config" 0 "rust=false" classify 'deny.toml.md\ndocs/clippy.toml\ndocs/src/rustfmt.toml\n'
-
 # ---- assert-gate.sh ------------------------------------------------------------------------------
-gatew() { # gatew <dir> <needs-json> <rust> <web> <planned-json> <reported markers...>
-  d="$T/gate/$1"; mkdir -p "$d/reported"; needs="$2"; rust="$3"; web="$4"; planned="$5"; shift 5
+JOBS="ci-scripts deps lint deny hermetic pg-adapter contract mutants web"
+gate() { # gate <dir> <needs-json> <expected-jobs-json> <planned-json> <reported markers...>
+  d="$T/gate/$1"; mkdir -p "$d/reported"; needs="$2"; expected="$3"; planned="$4"; shift 4
   for m in "$@"; do printf '%s\n' "$m" > "$d/reported/$(echo "$m" | tr ' ' '-').ok"; done
-  ( cd "$d" && NEEDS_JSON="$needs" RUST_CHANGED="$rust" WEB_CHANGED="$web" PLANNED="$planned" REPORTED_DIR="$d/reported" "$S/assert-gate.sh" )
+  ( cd "$d" && NEEDS_JSON="$needs" EXPECTED_JOBS="$expected" PLANNED="$planned" REPORTED_DIR="$d/reported" "$S/assert-gate.sh" )
 }
-gate() { # gate <dir> <needs-json> <rust> <planned-json> <reported markers...>   (web/ unchanged: WEB_CHANGED=false)
-  gdir="$1"; gneeds="$2"; grust="$3"; shift 3
-  gatew "$gdir" "$gneeds" "$grust" false "$@"
+# needs <changes result> <job=result>...: the gate's needs, every job of $JOBS present; a job not named is skipped
+needs() {
+  ch="$1"; shift
+  printf '{"changes":{"result":"%s"}' "$ch"
+  for j in $JOBS; do
+    r=skipped
+    for kv in "$@"; do [ "${kv%%=*}" = "$j" ] && r="${kv#*=}"; done
+    printf ',"%s":{"result":"%s"}' "$j" "$r"
+  done
+  printf '}'
 }
-OKN='{"changes":{"result":"success"},"plan":{"result":"success"},"deps":{"result":"success"},"contract":{"result":"success"}}'
 P='["native-memory main","worker-cf bindings"]'
-expect "gate: all planned cells reported" 0 "2 of 2 planned cells reported success" gate g1 "$OKN" true "$P" "native-memory main" "worker-cf bindings"
-expect "gate: one planned cell never reported" 1 "planned cells that never reported success: worker-cf bindings" gate g2 "$OKN" true "$P" "native-memory main"
-expect "gate: marker for an unplanned cell" 1 "not in the planned set: native-pg main" gate g3 "$OKN" true "$P" "native-memory main" "worker-cf bindings" "native-pg main"
-expect "gate: empty planned set" 1 "the planned cell set is empty" gate g4 "$OKN" true "[]" "native-memory main"
-expect "gate: no markers at all" 1 "no cell markers found" gate g5 "$OKN" true "$P"
-SKIP='{"changes":{"result":"success"},"plan":{"result":"success"},"deps":{"result":"skipped"},"contract":{"result":"success"}}'
-expect "gate: rust changed but a needed job SKIPPED (vacuous)" 1 "deps skipped" gate g6 "$SKIP" true "$P" "native-memory main" "worker-cf bindings"
-BADJ='{"changes":{"result":"success"},"plan":{"result":"success"},"deps":{"result":"failure"},"contract":{"result":"success"}}'
-expect "gate: a needed job failed" 1 "deps failure" gate g7 "$BADJ" true "$P" "native-memory main" "worker-cf bindings"
-CHF='{"changes":{"result":"failure"},"plan":{"result":"skipped"},"deps":{"result":"skipped"},"contract":{"result":"skipped"}}'
-expect "gate: changes job failed" 1 "changes job result is" gate g8 "$CHF" false "[]"
-NOR='{"changes":{"result":"success"},"plan":{"result":"skipped"},"deps":{"result":"skipped"},"contract":{"result":"skipped"}}'
-expect "gate: docs-only change, heavy jobs skipped" 0 "legitimately skipped" gate g9 "$NOR" false "[]"
-NORF='{"changes":{"result":"success"},"plan":{"result":"skipped"},"deps":{"result":"cancelled"},"contract":{"result":"skipped"}}'
-expect "gate: docs-only but a job was cancelled" 1 "deps cancelled" gate g10 "$NORF" false "[]"
-CANC='{"changes":{"result":"success"},"plan":{"result":"success"},"deps":{"result":"success"},"contract":{"result":"cancelled"}}'
-expect "gate: matrix cancelled" 1 "contract cancelled" gate g11 "$CANC" true "$P" "native-memory main" "worker-cf bindings"
-HERF='{"changes":{"result":"success"},"plan":{"result":"success"},"deps":{"result":"success"},"hermetic":{"result":"failure"},"contract":{"result":"success"}}'
-expect "gate: hermetic tests failed though every cell passed" 1 "hermetic failure" gate g12 "$HERF" true "$P" "native-memory main" "worker-cf bindings"
-LINTF='{"changes":{"result":"success"},"plan":{"result":"success"},"deps":{"result":"success"},"lint":{"result":"failure"},"deny":{"result":"success"},"contract":{"result":"success"}}'
-expect "gate: lint failed though every cell passed" 1 "lint failure" gate g13 "$LINTF" true "$P" "native-memory main" "worker-cf bindings"
-DENYSK='{"changes":{"result":"success"},"plan":{"result":"success"},"deps":{"result":"success"},"lint":{"result":"success"},"deny":{"result":"skipped"},"contract":{"result":"success"}}'
-expect "gate: rust changed but deny SKIPPED (vacuous)" 1 "deny skipped" gate g14 "$DENYSK" true "$P" "native-memory main" "worker-cf bindings"
+M1="native-memory main"; M2="worker-cf bindings"
 
-# ---- the web job (issue #44): judged by WEB_CHANGED, apart from the Rust rules -----------------------------------
-WJ() { # WJ <web job result> <rust jobs result>: needs-json with the `web` job; the Rust jobs all <rust jobs result>
-  printf '{"changes":{"result":"success"},"plan":{"result":"%s"},"deps":{"result":"%s"},"contract":{"result":"%s"},"web":{"result":"%s"}}' "$2" "$2" "$2" "$1"
-}
-expect "gate: only web/ changed and the web job passed" 0 "legitimately skipped" gatew w1 "$(WJ success skipped)" false true "[]"
-expect "gate: web/ changed but the web job was SKIPPED (vacuous)" 1 "web changed but the web job result is 'skipped'" gatew w2 "$(WJ skipped skipped)" false true "[]"
-expect "gate: web/ changed and the web job failed" 1 "web changed but the web job result is 'failure'" gatew w3 "$(WJ failure skipped)" false true "[]"
-expect "gate: web/ changed and the web job was cancelled" 1 "web changed but the web job result is 'cancelled'" gatew w4 "$(WJ cancelled skipped)" false true "[]"
-expect "gate: web/ changed but the needs have no web job at all" 1 "web changed but the web job result is 'missing'" gatew w5 "$OKN" false true "[]"
-# The job is skipped when only Rust changed. Were that a failure, every Rust-only change would fail the gate.
-expect "gate: only rust changed, the web job skipped as it should be" 0 "2 of 2 planned cells reported success" gatew w6 "$(WJ skipped success)" true false "$P" "native-memory main" "worker-cf bindings"
-expect "gate: rust and web/ both changed and both passed" 0 "2 of 2 planned cells reported success" gatew w7 "$(WJ success success)" true true "$P" "native-memory main" "worker-cf bindings"
-expect "gate: web/ unchanged but the web job failed" 1 "the web job result is 'failure'" gatew w8 "$(WJ failure success)" true false "$P" "native-memory main" "worker-cf bindings"
-expect "gate: web/ unchanged and no rust change, the web job cancelled" 1 "the web job result is 'cancelled'" gatew w9 "$(WJ cancelled skipped)" false false "[]"
-expect "gate: rust changed, web/ changed, and the web job skipped" 1 "web changed but the web job result is 'skipped'" gatew w10 "$(WJ skipped success)" true true "$P" "native-memory main" "worker-cf bindings"
-no_web_env() { # the gate run without WEB_CHANGED at all: a workflow that does not pass it must fail, not read it as false
-  d="$T/gate/w11"; mkdir -p "$d/reported"
-  ( cd "$d" && env -u WEB_CHANGED NEEDS_JSON="$OKN" RUST_CHANGED=false PLANNED="[]" REPORTED_DIR="$d/reported" "$S/assert-gate.sh" )
-}
-expect "gate: a gate run that is not told WEB_CHANGED fails" 1 "WEB_CHANGED" no_web_env
+# Every job, expected or not, with every result: the gate passes exactly when an expected job succeeded or an unexpected one was
+# skipped. The other jobs are in a state that passes (contract expected and green, so the cell rules hold), so the case can only
+# fail because of the job under test.
+for j in $JOBS; do
+  for exp in yes no; do
+    for r in success skipped failure cancelled; do
+      if [ "$j" = contract ] && [ "$exp" = no ]; then
+        n="$(needs success "contract=$r")"; e='[]'; pl='[]'; set --
+      elif [ "$j" = contract ]; then
+        n="$(needs success "contract=$r")"; e='["contract"]'; pl="$P"; set -- "$M1" "$M2"
+      elif [ "$exp" = yes ]; then
+        n="$(needs success "contract=success" "$j=$r")"; e="[\"contract\",\"$j\"]"; pl="$P"; set -- "$M1" "$M2"
+      else
+        n="$(needs success "contract=success" "$j=$r")"; e='["contract"]'; pl="$P"; set -- "$M1" "$M2"
+      fi
+      if [ "$exp" = yes ] && [ "$r" = success ]; then
+        expect "gate: $j expected and $r" 0 "ok:" gate "m-$j-$exp-$r" "$n" "$e" "$pl" "$@"
+      elif [ "$exp" = no ] && [ "$r" = skipped ]; then
+        expect "gate: $j not expected and $r" 0 "ok:" gate "m-$j-$exp-$r" "$n" "$e" "$pl" "$@"
+      elif [ "$exp" = yes ]; then
+        expect "gate: $j expected but $r" 1 "$j was expected to run and its result is '$r'" gate "m-$j-$exp-$r" "$n" "$e" "$pl" "$@"
+      else
+        expect "gate: $j not expected but $r" 1 "$j was not expected to run and its result is '$r'" gate "m-$j-$exp-$r" "$n" "$e" "$pl" "$@"
+      fi
+    done
+  done
+done
 
-# ---- classify-changes.sh, the web output --------------------------------------------------------------------------
-classify_is() { # classify_is <paths> <want rust> <want web>: the whole output, in order
-  # (not `out` or `want`: `expect` keeps its own in globals, and a shell function has no locals)
-  cgot="$(printf '%b' "$1" | "$S/classify-changes.sh" 2> /dev/null)"
-  cexp="$(printf 'rust=%s\nweb=%s' "$2" "$3")"
-  if [ "$cgot" = "$cexp" ]; then echo "classify ok: rust=$2 web=$3"; else echo "classify gave '$cgot', wanted rust=$2 web=$3"; return 1; fi
+ALL='["ci-scripts","deps","lint","deny","hermetic","pg-adapter","contract","mutants","web"]'
+ALLOK="$(needs success ci-scripts=success deps=success lint=success deny=success hermetic=success pg-adapter=success contract=success mutants=success web=success)"
+expect "gate: everything expected, everything passed" 0 "9 expected jobs passed" gate a1 "$ALLOK" "$ALL" "$P" "$M1" "$M2"
+expect "gate: nothing expected, everything skipped (docs only)" 0 "no cells planned" gate a2 "$(needs success)" '[]' '[]'
+expect "gate: the changes job failed" 1 "changes job result is 'failure'" gate a3 "$(needs failure)" '[]' '[]'
+expect "gate: the changes job was skipped" 1 "changes job result is 'skipped'" gate a4 "$(needs skipped)" '[]' '[]'
+# the cells
+expect "gate: one planned cell never reported" 1 "planned cells that never reported success: worker-cf bindings" gate c1 "$(needs success contract=success)" '["contract"]' "$P" "$M1"
+expect "gate: a marker for an unplanned cell" 1 "not in the planned set: native-pg main" gate c2 "$(needs success contract=success)" '["contract"]' "$P" "$M1" "$M2" "native-pg main"
+expect "gate: contract expected but no cell planned" 1 "the planned cell set is empty" gate c3 "$(needs success contract=success)" '["contract"]' '[]' "$M1"
+expect "gate: contract expected and passed, but no marker at all" 1 "no cell markers found" gate c4 "$(needs success contract=success)" '["contract"]' "$P"
+expect "gate: cells planned but contract not expected" 1 "cells are planned but the contract job is not expected" gate c5 "$(needs success)" '[]' "$P"
+# the planner and the gate's needs must agree on the job names
+expect "gate: the planner expects a job the gate does not know" 1 "the planner expects 'docs', which is not a job the gate knows" gate n1 "$(needs success)" '["docs"]' '[]'
+NOWEB='{"changes":{"result":"success"},"lint":{"result":"skipped"}}'
+expect "gate: the planner expects a job that is not a need of the gate" 1 "the planner expects 'web', which is not a need of the gate" gate n2 "$NOWEB" '["web"]' '[]'
+EXTRA="$(needs success | sed 's/}$/,"docs":{"result":"success"}}/')"
+expect "gate: a need the planner does not know" 1 "'docs' is a need of the gate but not a job the planner knows" gate n3 "$EXTRA" '[]' '[]'
+expect "gate: EXPECTED_JOBS is not JSON" 1 "EXPECTED_JOBS is not a JSON array of strings" gate n4 "$(needs success)" 'lint' '[]'
+expect "gate: EXPECTED_JOBS is a JSON string" 1 "EXPECTED_JOBS is not a JSON array of strings" gate n5 "$(needs success)" '"lint"' '[]'
+expect "gate: EXPECTED_JOBS is a JSON object" 1 "EXPECTED_JOBS is not a JSON array of strings" gate n6 "$(needs success)" '{}' '[]'
+expect "gate: EXPECTED_JOBS holds a number" 1 "EXPECTED_JOBS is not a JSON array of strings" gate n7 "$(needs success)" '[1]' '[]'
+expect "gate: PLANNED is a JSON object" 1 "PLANNED is not a JSON array of strings" gate n8 "$(needs success)" '[]' '{}'
+unset_one() { # the gate run without one of its inputs: a workflow that does not pass it must fail, not read it as empty
+  d="$T/gate/u-$1"; mkdir -p "$d/reported"
+  # (exported first, then unset: `env -u X X=...` would set it again)
+  NEEDS_JSON="$(needs success)" EXPECTED_JOBS='[]' PLANNED='[]' REPORTED_DIR="$d/reported"
+  export NEEDS_JSON EXPECTED_JOBS PLANNED REPORTED_DIR
+  ( cd "$d" && env -u "$1" "$S/assert-gate.sh" )
+  st=$?
+  unset NEEDS_JSON EXPECTED_JOBS PLANNED REPORTED_DIR
+  return $st
 }
-expect "classify: web/ alone is a web change and not a rust change" 0 "classify ok: rust=false web=true" classify_is 'web/apps/web/components/account/auth-forms/password.tsx\n' false true
-expect "classify: a crate alone is not a web change" 0 "classify ok: rust=true web=false" classify_is 'crates/thrust-core/src/lib.rs\n' true false
-expect "classify: docs alone are neither" 0 "classify ok: rust=false web=false" classify_is 'docs/src/intro.md\n' false false
-expect "classify: an empty list fails open for both" 0 "classify ok: rust=true web=true" classify_is '' true true
-expect "classify: a workflow change runs both" 0 "classify ok: rust=true web=true" classify_is '.github/workflows/ci.yml\n' true true
-expect "classify: the Q-R2 gate script runs both" 0 "classify ok: rust=true web=true" classify_is 'scripts/check-web-diff.sh\n' true true
-expect "classify: a web look-alike is not web/" 0 "classify ok: rust=false web=false" classify_is 'web-notes.md\ndocs/web/x.md\nwebsite/index.html\n' false false
-# the browser journey's own files run the cell that runs it (a rust change, not a web one), and a look-alike does not
-expect "classify: e2e/ alone runs the journey's cell and is not a web change" 0 "classify ok: rust=true web=false" classify_is 'e2e/journeys/m1-sign-up-to-work-item.spec.ts\n' true false
-expect "classify: an e2e look-alike is not e2e/" 0 "classify ok: rust=false web=false" classify_is 'e2e-notes.md\ndocs/e2e/x.md\n' false false
+for v in NEEDS_JSON EXPECTED_JOBS PLANNED REPORTED_DIR; do
+  expect "gate: a run that is not given $v fails" 1 "$v is not set" unset_one "$v"
+done
+# The gate's list of jobs is the planner's: a job added to one and not the other is refused above, so they must be equal.
+same_jobs() {
+  g="$(sed -n 's/^KNOWN="\(.*\)"$/\1/p' "$S/assert-gate.sh")"
+  p="$(sed -n 's/^JOBS = (\(.*\))$/\1/p' "$S/plan-ci.py" | tr -d '",')"
+  if [ -n "$g" ] && [ "$g" = "$p" ] && [ "$g" = "$JOBS" ]; then echo "same jobs: $g"; else echo "gate '$g' planner '$p' test '$JOBS'"; return 1; fi
+}
+expect "gate: the gate, the planner and this test list the same jobs" 0 "same jobs" same_jobs
+
 echo "passed=$pass bad=$failn"
 [ "$failn" -eq 0 ]

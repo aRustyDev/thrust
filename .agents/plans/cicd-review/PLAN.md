@@ -105,7 +105,8 @@ nothing on `main` points at once its branch is deleted, and production would hav
   (`create_git_tag_and_release` in its source), so the tag exists when the draft does.
 - `.github/actions/build-bundle`: the bundle build, out of `deploy.yml`, so `deploy.yml` and `release.yml` build it the same
   way.
-- `release.yml` (new), on `release: created` for a draft of a `v<version>` tag on `main`: `build` (the bundle, an SPDX SBOM of
+- `release.yml` (new), on `release: created` for a draft of a `v<version>` tag on `main` (**wrong, fixed in PR 3b below**:
+  GitHub runs no workflow for a draft's `created`): `build` (the bundle, an SPDX SBOM of
   the source with `anchore/sbom-action`, both attested with `actions/attest-build-provenance` and `actions/attest`) and
   `publish` (bundle, SBOM and `SHA256SUMS` onto the draft, then published; GitHub's own release attestation checked with
   `gh release verify` and `verify-asset`). A pull request that edits it runs `build` as a dry run.
@@ -115,6 +116,16 @@ nothing on `main` points at once its branch is deleted, and production would hav
   `gh release verify-asset`). `verify-bundle.sh` takes `release.yml` as the signer for a `v*` tag, `deploy.yml` for `rc/*`.
 - Docs: `docs/src/architecture/release.md` (the path, how to check a release, what to do when a step fails), `cicd.md`,
   `deploy.md`; ADR-0110 gets a dated update (the repository's ADRs are amended by dated updates, not superseded by new ones).
+
+**PR 3b, `fix/release-trigger` (2026-11-15), after the first release.** #187 merged `v0.1.0`: the App created the tag through
+the tag ruleset (no Administration permission needed) and the draft, but `release.yml` never ran. GitHub's documentation of
+the `release` event: workflows are not triggered for the `created`, `edited` or `deleted` activity types of a draft. The fix:
+release-plz.yml's `release` job dispatches `release.yml` on the tag release-plz reports (`releases` output; one tag or
+refuse), with `actions: write` on the workflow token (a `workflow_dispatch` by `GITHUB_TOKEN` is the documented exception that
+does start a run). `release.yml` runs on `workflow_dispatch` (and a pull request's dry run); its plan moved into
+`plan-release.sh`, tested over every combination of event, ref and commit (1,810 checks; 12 hand mutants caught). The draft
+check stays in `publish`, whose `contents: write` token can see drafts. `v0.1.0` itself cannot be dispatched: its commit's
+`release.yml` has no `workflow_dispatch`; the owner decides what becomes of it.
 
 The first sketch, kept for the record:
 
@@ -145,6 +156,28 @@ left, on the new tag (the App's token makes the tag start workflows):
   case.
 - Smaller fixes: `lint-workflow.sh` over every workflow and `setup-rust`; `--locked` on `hermetic` and `pg-adapter`; a
   `docs` job (book build and orphan check); a `rust-toolchain.toml`; `scripts/verify-all.sh`'s "16-cell" comment.
+
+**As built (2026-11-16).** The plan above changed in four places when it met the code:
+
+- **One planner instead of classes.** `.github/scripts/plan-ci.py` replaces `classify-changes.sh` and the `plan` job.
+  It names the jobs and the cells directly, from a table of path rules (first match wins) and Cargo's graph
+  (`cargo metadata --no-deps`, any kind of dependency). A class layer in between would have been a second mapping to
+  keep in step.
+- **Jobs are skipped whole, not filtered inside.** `hermetic` has no `rdeps(...)` filter: nextest builds every test
+  binary of the workspace either way, so a filter saves seconds of test time and none of the build. `mutants.sh` rows
+  are not tagged: every row is built on the native server, so the job runs when `thrust-server` is affected.
+- **Cells are chosen by binary, not by adapter.** A target runs when the binary it starts is affected. Narrowing
+  further, by which adapter a target uses at run time, is a judgement Cargo cannot check. A pass runs on its own inputs
+  (`tools/oracle-v1/`, `e2e/`, `web/`).
+- **Found while building it.**
+  - Files outside the crates are read by tests: `tools/oracle-v1/` by four crates, `.github/deploy/` by one. They have
+    their own rules, since Cargo's graph cannot see them.
+  - `.config/branding/` (the book's palette) no longer runs everything.
+- **Built-ins considered.** `cargo-rail`, `affected` and `cargo-delta` compute the affected crates, but none knows the
+  jobs, the cells or the gate's expected set, and each adds a binary to the required check's path. `dorny/paths-filter`
+  maps paths to flags, but its filters would be YAML that no test runs. The graph comes from `cargo metadata`, which is
+  built in.
+- **Left for their own PRs:** the smaller fixes above.
 
 ## Later: the E2E and integration recommendations
 

@@ -73,6 +73,30 @@
       "text_contains": "network` response property's min",
       "operations": ["list_projects", "create_project", "retrieve_project", "update_project"],
       "reason": "The pin's 0 is the range of the column; the enum is the constraint (SD-006)."
+    },
+    {
+      "id": "SD-010",
+      "ref": "D-031 (5) (proposed, not yet confirmed by the owner)",
+      "check": "request-body-media-type-removed",
+      "text_contains": "application/x-www-form-urlencoded",
+      "operations": ["create_state", "update_state"],
+      "reason": "A body that is a form is a 415 on a state, as on a project (D-030 (5)): Thrust reads JSON only (`request::json_body`, one condition for every v1 route). The pin also reads forms. The owner confirmed D-030 (5) for projects on 2026-11-07; for states it is D-031 (5), proposed here."
+    },
+    {
+      "id": "SD-011",
+      "ref": "D-031 (5) (proposed, not yet confirmed by the owner)",
+      "check": "request-body-media-type-removed",
+      "text_contains": "multipart/form-data",
+      "operations": ["create_state", "update_state"],
+      "reason": "A body that is multipart is a 415, as a form is (SD-010)."
+    },
+    {
+      "id": "SD-012",
+      "ref": "D-031 (2)",
+      "check": "response-property-pattern-removed",
+      "text_contains": "slug` response's property pattern",
+      "operations": ["list_states", "create_state", "retrieve_state", "update_state"],
+      "reason": "The pin's schema gives `slug` the pattern `^[-a-zA-Z0-9_]+$` (the validator of a `SlugField`), and the pin does not keep to it: `State.save()` stores `slugify(name)` in a field that is `blank=True`, and a name of CJK or emoji alone has the empty slug on the pin and here (D-031 (2), owner confirmed). This document does not claim a pattern, because the route can send an empty slug (`tests/openapi.rs`, `a_name_with_no_letter_has_an_empty_slug_which_the_document_does_not_forbid`)."
     }
   ]
 }
