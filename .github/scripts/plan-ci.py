@@ -14,9 +14,11 @@ It prints, for $GITHUB_OUTPUT:
   matrix=<{"include":[{"target":..,"pass":..}]}> and cells=<JSON list of "<target> <pass>">   the cells that must run
 and, on stderr, why: each path with the rule it matched.
 
-How a path decides (RULES, first match wins; a path that matches no rule needs nothing, as docs/ and README.md do):
-  * a crate's own files (crates/<member>/...) change that crate. The crates that depend on it, through any kind of dependency
-    (normal, dev, build), are affected too, read from `cargo metadata`, so the graph is Cargo's and not a second list.
+How a path decides (RULES, first match wins; a path that matches no rule needs nothing, as README.md and .agents/ do):
+  * a crate's own files (the files under a member's directory, at any depth under crates/: the longest member directory that
+    holds the path) change that crate. The crates that depend on it, through any kind of dependency (normal, dev, build), are
+    affected too, read from `cargo metadata`, so the graph is Cargo's and not a second list. A group's README.md under
+    crates/ that no member holds is read by no job; any other file of crates/ outside a member runs everything.
   * a file a crate's tests read from outside the crate (tools/oracle-v1/, .github/deploy/) runs the jobs that run those tests.
   * a file that only a guard, a job or a pass reads runs that guard's job, or that pass on every target.
   * a file whose readers are not known runs everything: an unknown crate directory, an unlisted script, the toolchain, the
@@ -38,7 +40,7 @@ import json
 import re
 import sys
 
-JOBS = ("ci-scripts", "deps", "lint", "deny", "hermetic", "pg-adapter", "contract", "mutants", "web")
+JOBS = ("ci-scripts", "deps", "lint", "deny", "hermetic", "pg-adapter", "contract", "mutants", "web", "docs")
 
 # The binary each target of scripts/contract.sh starts. Everything a cell runs against is built from it.
 TARGET_BINARY = {
@@ -57,15 +59,14 @@ CRATE = "crate"
 # (pattern, effect, why). An effect is FULL, CRATE, or {"jobs": [...], "passes": [...]}.
 RULES = [
     (r"^(Cargo\.(toml|lock)|rust-toolchain(\.toml)?)$", FULL, "the workspace manifest, the lockfile or the toolchain"),
-    (r"^\.config/branding/", {}, "the book's palette (read by docs/book.toml only; the book is not built in CI)"),
+    (r"^\.config/branding/", {"jobs": ["docs"]}, "the book's palette (read by docs/book.toml only)"),
     (r"^\.(cargo|config)/", FULL, "Cargo's or nextest's configuration"),
     (r"^\.github/workflows/(ci|contract-cell)\.yml$", FULL, "the workflow that runs the checks"),
     (r"^\.github/actions/setup-rust/", FULL, "the action every Rust job sets up with"),
     (r"^\.github/scripts/(plan-ci\.py|plan-cells\.sh|assert-gate\.sh)$", FULL, "this planner, or the gate that trusts it"),
     (r"^\.github/scripts/toolchain-channel\.sh$", FULL, "the reader of rust-toolchain.toml, which every build's compiler comes from"),
     (r"^scripts/(rs|contract\.sh|contract-all\.sh|worker-dev\.sh|pg-delay-proxy\.py)$", FULL, "the contract cells' harness"),
-    (r"^crates/[^/]+/", CRATE, "a crate"),
-    (r"^crates/", FULL, "a file of crates/ outside any crate"),
+    (r"^crates/", CRATE, "a file of crates/: its crate, by the longest member directory that holds it"),
     (r"^\.github/deploy/", {"jobs": ["hermetic", "ci-scripts"]}, "the CA root the deploy trusts (read by thrust-adapters-postgres's TLS tests)"),
     (r"^deny\.toml$", {"jobs": ["deny"]}, "cargo-deny's configuration"),
     (r"^\.?(clippy|rustfmt)\.toml$", {"jobs": ["lint"]}, "clippy's or rustfmt's configuration"),
@@ -83,6 +84,7 @@ RULES = [
     (r"^scripts/mutants\.sh$", {"jobs": ["mutants"]}, "the mutation controls"),
     (r"^scripts/(stage2-contract|check-contract-counts)\.sh$", {"jobs": ["hermetic", "deps"]}, "the contract counts and their guard"),
     (r"^scripts/check-web-diff\.sh$", {"jobs": ["web", "ci-scripts"]}, "the Q-R2 gate of web/"),
+    (r"^scripts/check-book\.sh$", {"jobs": ["docs"]}, "the book's check"),
     (r"^scripts/(check-(deps|topology|plane-500|acceptance-list|placement|openapi|migration-lint|edge-config)|render-wrangler)\.sh$",
      {"jobs": ["deps", "ci-scripts"]}, "a guard of the deps job"),
     (r"^scripts/(smoke-deploy|smoke-bootstrap|migrate-ci|deploy-worker|merge-assets|check-asset-retention)\.sh$",
@@ -90,12 +92,17 @@ RULES = [
     (r"^scripts/(verify-all|flake-hunt|measure-argon2|spike-0002-pg|stage2-latency)\.sh$|^scripts/measure-argon2-summary\.py$",
      {}, "a script no job of ci.yml runs"),
     (r"^scripts/", FULL, "a script this planner does not know"),
+    (r"^docs/", {"jobs": ["docs"]}, "the book"),
+    (r"^AGENTS\.md$", {"jobs": ["docs"]}, "AGENTS.md (the book includes its testing rules)"),
     (r"^\.github/scripts/(lint-workflow\.sh|lint-all-workflows\.sh|check-release-plz\.py)$", {"jobs": ["ci-scripts", "deps"]},
      "a guard the deps job runs"),
     (r"^\.github/(scripts|workflows|actions)/", {"jobs": ["ci-scripts", "deps"]},
      "another workflow, action or script (its tests, and the workflow lint)"),
 ]
 COMPILED = [(re.compile(p), effect, why) for p, effect, why in RULES]
+
+# A group directory's README.md (ADR-0009: crates/<group>/README.md, crates/README.md), when no member holds it.
+GROUP_README = re.compile(r"^crates/(.+/)?README\.md$")
 
 
 def fail(message):
@@ -109,7 +116,7 @@ def read_lines(path):
 
 
 def workspace(metadata):
-    """{crate directory (crates/<dir>): crate name} and {crate: set of the workspace crates it depends on}."""
+    """{member directory, relative to the workspace root: crate name} and {crate: set of the workspace crates it depends on}."""
     root = metadata.get("workspace_root", "").rstrip("/") + "/"
     members = set(metadata.get("workspace_members", []))
     packages = [p for p in metadata.get("packages", []) if p.get("id") in members]
@@ -124,6 +131,15 @@ def workspace(metadata):
         dirs[manifest[len(root):-len("/Cargo.toml")]] = p["name"]
         deps[p["name"]] = {d["name"] for d in p.get("dependencies", []) if d.get("path") and d["name"] in names}
     return dirs, deps
+
+
+def owner(path, dirs):
+    """The member directory that holds path: the longest one that is a prefix of it (a whole path segment), or None."""
+    best = None
+    for d in dirs:
+        if path.startswith(d + "/") and (best is None or len(d) > len(best)):
+            best = d
+    return best
 
 
 def affected(changed, deps):
@@ -152,12 +168,14 @@ def plan(paths, dirs, deps, cells, full_reason=None):
                 full = full or f"{path}: {why}"
                 notes.append(f"{path}: {why} -> everything")
             elif effect == CRATE:
-                top = "/".join(path.split("/")[:2])
-                crate = dirs.get(top)
-                if crate is None:
-                    full = full or f"{path}: {top} is not a crate of the workspace"
-                    notes.append(f"{path}: {top} is not a crate of the workspace -> everything")
+                top = owner(path, dirs)
+                if top is None and GROUP_README.search(path):
+                    notes.append(f"{path}: a group's README, inside no crate -> nothing")
+                elif top is None:
+                    full = full or f"{path}: inside no crate of the workspace"
+                    notes.append(f"{path}: inside no crate of the workspace -> everything")
                 else:
+                    crate = dirs[top]
                     changed.add(crate)
                     if path == f"{top}/Cargo.toml":
                         jobs.add("deny")

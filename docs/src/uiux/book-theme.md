@@ -65,10 +65,10 @@ page cannot drift from the file.
   browser falls back to its default: links lose their colour and the build says nothing `[verified 2026-10-19, with the
   tokens file emptied]`.
 - **A missing file does fail the build.** A dangling `docs/branding` link, or a missing `colors.css`, stops
-  `mdbook build` with exit 101 `[verified 2026-10-19, with a dangling link]`. No CI job builds the book, so this shows
-  up only on a machine that builds it ([CI/CD](../architecture/cicd.md)).
+  `mdbook build` with exit 101 `[verified 2026-10-19, with a dangling link]`, and the `docs` job of CI with it
+  ([CI/CD](../architecture/cicd.md)).
 - **The symlink needs a platform that supports them.** The repository already relies on symlinks (`.gitnexusrc` and
   `.claude/skills` are two).
-- **A palette change runs no CI job.** `.github/scripts/plan-ci.py`, which decides what a change runs, has a rule for
-  `.config/branding/` ahead of the one for `.config/` (where `.config/nextest.toml` makes any other change run
-  everything), and the book is not built in CI.
+- **A palette change runs only the book's check.** `.github/scripts/plan-ci.py`, which decides what a change runs, has
+  a rule for `.config/branding/` (the `docs` job) ahead of the one for `.config/` (where `.config/nextest.toml` makes
+  any other change run everything).

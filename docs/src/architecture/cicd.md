@@ -43,11 +43,11 @@ decides:
   `.github/scripts/plan-ci.py` (see [What runs when](#what-runs-when)).
 - Every expected job must be exactly `success`. A skipped job is a failure here, not a pass.
 - Every job that is not expected must be `skipped`. One that ran anyway means its `if:` and the planner disagree.
-- The planner and the gate list the same nine jobs. An expected job that is not a need of the gate, or a need the
+- The planner and the gate list the same ten jobs. An expected job that is not a need of the gate, or a need the
   planner does not know, fails it, as does an input that is missing or is not a JSON array of strings.
 - `contract` is expected exactly when cells are planned. The set of cells that uploaded a pass marker must then equal
   the planned set, which must not be empty.
-- `test-ci-scripts.sh` generates the cases: each of the nine jobs, expected or not, with each of the four results (72
+- `test-ci-scripts.sh` generates the cases: each of the ten jobs, expected or not, with each of the four results (80
   cases), then the cells, the inputs and the names. 34 hand mutants of the planner and the gate are each caught by
   their tests `[verified 2026-11-16 locally, under dash; not yet in CI]`.
 
@@ -90,9 +90,10 @@ its base branch. Nothing calls it, so it is a tool to run by hand.
     - the scripts that run a cell;
     - an unknown directory under `crates/`;
     - an unlisted script under `scripts/`.
-  - A path that no rule matches needs nothing: `docs/`, `README.md`, `AGENTS.md`, `.agents/`, `probes/` (which only
-    `scripts/verify-all.sh` runs, locally) and the other `tools/`. A pull request of only such paths runs `changes` and
-    `gate`, and `gate` passes. **The book is not built in CI at all.**
+  - The book's inputs run the `docs` job: `docs/`, `AGENTS.md` (the book includes its testing rules), `.config/branding/`
+    (its palette) and `scripts/check-book.sh`.
+  - A path that no rule matches needs nothing: `README.md`, `.agents/`, `probes/` (which only `scripts/verify-all.sh`
+    runs, locally) and the other `tools/`. A pull request of only such paths runs `changes` and `gate`, and `gate` passes.
 - **Everything runs** in these cases:
   - a release candidate's pull request;
   - a merge-queue entry;
@@ -113,6 +114,7 @@ its base branch. Nothing calls it, so it is a tool to run by hand.
   | `thrust-contracts` (everything depends on it) | all but `deny` and `web` | all 23 |
   | `tools/oracle-v1/` | `deps`, `hermetic`, `contract` | the 3 `oracle` cells |
   | `scripts/smoke-deploy.sh` | `ci-scripts` | none |
+  | a page under `docs/` | `docs` | none |
 
 - **Tested** by `test_plan_ci.py`, about 4,900 checks:
   - 300 generated crate graphs, with each crate changed alone and in pairs, against an independent reverse-reachability;
@@ -201,14 +203,15 @@ Its tests run in `ci-scripts` and `deps`, under dash: `deploy-worker.sh` runs ag
 has a case that must fail beside each that must pass, and each script was also broken by hand, one way at a time, to see
 its test fail.
 
-**Not yet run for real.** No environment has had a deploy through it. The shapes of `wrangler deployments list --json` and
-`versions list --json` are the documented ones (the parser sends any other shape to the manual gate, never to an automatic
-rollback), and the token's scopes, the queue consumer with a dead-letter queue, and the attestation flow end to end have
-not run. The pull-request dry run and the first two `workflow_run` events have `[verified 2026-11-14]`: on PR #165's run
-`plan`, `build` and `dry-run` succeeded and wrangler 4.151.2 accepted the rendered template against the bundle CI built; on
-`main`, the run after a failed `ci` planned `skip` ("ci did not succeed") and the run after a green one planned `skip`
-("automatic deploys are off"). Those runs were of the trigger before the `rc/*` flow (a push to `main`); the dispatch on an
-`rc/*` branch has not run yet.
+**Run for real.** The deploy has run on staging from `rc/*` branches since 2026-11-15, and
+[Deploying the Worker](deploy.md#what-the-first-staging-deploys-settled) lists what each run settled: the first deploy through
+the manual gate, the shapes of `wrangler deployments list --json` and `versions list --json`, the queue consumer with its
+dead-letter queue, the attestation flow end to end, the read of an environment's protection rules, the route through the Access
+tunnel with `verify-ca` meeting a real Origin CA certificate, the keeping of the previous release's web files over two
+releases, and the rollback drill (run 43811076183: the injected failure put the previous version back and ended the run red).
+**Not yet run:** production, and a narrower token than the one in use. **A known gap:** release-plz force-updates the release
+candidate's branch, so the live commit is usually not in the next candidate's history, and the classifier, which fails closed,
+sends that deploy to the manual gate although nothing in it needs one (runs 43796746005 and 43803593395).
 
 **The environments' branch rules** say the same as `plan`, so a run from anywhere else cannot reach an environment's
 secrets even if the workflow were wrong: `staging` and `staging-do-lifecycle` take only `rc/*` branches, `production` and
@@ -334,10 +337,13 @@ every one succeeded `[verified 2026-10-19 fa4bd6c]` with `gh run view`.
   Cloudflare resources.
 - `scripts/verify-all.sh`. CI runs its steps as separate jobs, except the probes, which it does not run.
 - The `blast` and `bench` contract passes, which are not in `contract-all.sh`.
-- The book build and its checks.
-- A deploy that has run against Cloudflare. `deploy.yml` is tested against a fake Cloudflare, by its pull-request dry run
-  and by `wrangler deploy --dry-run`; no environment has had a deploy through it yet (see [Deploying the Worker](deploy.md)).
-- A release. There is no changelog, version (the workspace is `0.0.0`), release tag, GitHub release or tag protection.
+- A deploy that has run against Cloudflare. `ci` tests `deploy.yml`'s scripts against a fake Cloudflare, and the pull-request
+  dry run and `wrangler deploy --dry-run` check the rendered configuration. Real deploys to staging have run since 2026-11-15
+  and none to production (see [Deploying the Worker](deploy.md)).
+- A release being published. `release-plz.yml` runs on pushes to `main` and `release.yml` on the tag, not in `ci`, and on a pull
+  request `release.yml` is a dry run that attests and publishes nothing. The flow has run once: `v0.1.0` was published on
+  2026-11-16 (`gh release list`), and the changelog, the workspace version, the `v*` tag ruleset and immutable releases it
+  needs exist ([Release candidates](#release-candidates)).
 - The upstream vitest files under `web/`, a fuzz target (there is no `fuzz/`), coverage, and `cargo mutants` (the
   `mutants` job runs the planted mutants of `scripts/mutants.sh`, on `native-memory` and `native-pg` only).
 

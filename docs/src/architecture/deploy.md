@@ -7,7 +7,8 @@ ADR-0011 (why old web files are kept). Staging is no longer "a push to `main`", 
 candidate on an `rc/*` branch, and production a `v*` release tag (the owner's decision of 2026-11-14,
 `.agents/plans/cicd-review/`), recorded in ADR-0110's update of 2026-11-15.
 
-**Staging has had deploys through this pipeline (2026-11-15); production has not.** What a run does is also what the scripts
+**Staging has had deploys through this pipeline (2026-11-15) and its rollback drill has passed (2026-11-16); production has not
+been deployed.** What a run does is also what the scripts
 do against a fake Cloudflare. The first attempt (run 43676097831, 04:34Z, a manual staging deploy of `d16dbd6`) deferred
 correctly to `deploy-do`, which then failed at `wrangler deploy`: Cloudflare refused the request to
 `.../workers/scripts/thrust-staging/assets-upload-session`, so nothing was deployed. The token held only Workers read
@@ -139,8 +140,17 @@ migration. A lifecycle change that has to ship together with an API change reope
 
 Run **deploy** by hand on `staging`, from the `rc/*` branch just deployed, with `inject_smoke_failure` ticked, after a normal deploy. Every real check passes and
 then the smoke fails on purpose. Expect a red run, a `wrangler rollback` to the previous version, and a line saying the
-previous version answers. It is refused for production, and together with `first_deploy_skip_smoke`. No drill has been run yet;
-when one has, its run is linked here.
+previous version answers. It is refused for production, and together with `first_deploy_skip_smoke`.
+
+It has been run once: [run 43811076183](https://github.com/aRustyDev/thrust/actions/runs/43811076183), on 2026-11-16, from a
+throwaway branch `rc/manual-drill` at the live commit `0c2c0f3`. Staging was on version `5cd7ec87`. The deploy made `4b508caf`,
+every real check passed (three answers carried the tag, the smoke account signed in and read the project), and the injected
+failure then put staging back on `5cd7ec87` (`rollback of 0c2c0f3…: the smoke failed` in `deployments list`) and ended the job
+red. The run redeployed the same commit, so the script's own check after the rollback, which compares tags, could not tell the
+two versions apart; what shows the rollback is the version id in `wrangler`'s output and in `deployments list`. A drill from a
+different commit would exercise that check too. Dispatch it from a branch that is at the live commit or descends from it:
+release-plz force-updates its `rc/*` branches, so a newer head is usually diverged from what is live, and the deploy stops at
+the manual gate before it reaches the smoke.
 
 ## Rolling back by hand
 
@@ -185,5 +195,17 @@ Rollbacks page]`. Afterwards run the smoke by hand against the previous commit
 - the token's scopes, in part: Workers Editor and Queues Write do an ordinary deploy, and creating the Worker takes Workers
   Admin. Whether anything narrower would do was not tried.
 
-**Still not shown:** the retention of web files over two real releases (every deploy so far was a first deploy or the same
-commit again, so no older release's files were kept), and the rollback drill (above).
+**Settled on 2026-11-16:**
+
+- the keeping of web files over two real releases: run 43796469831 deployed `0612ae3` over `3679c70` and kept 138 files only
+  the earlier release had (`merge-assets: new=1366 retained=138 total=1504`); run 43803593395 deployed `0c2c0f3` over `e4da5b3`
+  and kept 29; the control that asks for a script of the earlier release passed in both. The log does not say whether that
+  control found a retired script to request or had nothing to look for;
+- the manual gate: runs 43796746005 and 43803593395 stopped at `staging-do-lifecycle` with nothing deployed until the owner
+  approved them, then deployed with `automatic rollback: false`;
+- the rollback drill (above).
+
+**Still not shown, and a known gap:** that the gate stops only what it should. The classifier fails closed when the live commit
+is not an ancestor of the new one, and release-plz force-updates the release candidate's branch, so the next candidate's history
+usually lacks the live commit: both runs above were stopped for that reason ("not an ancestor", and "not a commit in this
+checkout"), with no Durable Object change in them. Production has not been deployed through it.

@@ -215,7 +215,7 @@ fn corrupted_binaries_are_detected() {
     // only on request (SPIKE0006_OUT=<dir>, relative to the workspace root), so the default test loop writes nothing
     // outside a temp dir.
     if let Some(dir) = std::env::var_os("SPIKE0006_OUT") {
-        let dir = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../..")).join(dir);
+        let dir = std::path::Path::new(env!("THRUST_ROOT")).join(dir);
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("corrupt.json"), serde_json::to_string(&records).unwrap()).unwrap();
     }

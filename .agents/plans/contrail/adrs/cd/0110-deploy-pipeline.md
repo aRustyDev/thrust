@@ -191,6 +191,30 @@ expand migration, the smoke with its control, the manual gates and rollback.
 * **Retirement:** `thrust-staging`, `thrust-staging.sow.foo` and staging's own data go once the first release target
   has passed its drill.
 
+## Update — the first staging runs and the drill (2026-11-16)
+
+The round-30 pipeline has run on `thrust-staging` from `rc/*` branches. Both drills that round 30's "Confirmation, as it stands"
+says had not been run have now been run, and that sentence is superseded.
+
+* **The manual-gate drill** is the first deploy to staging: run 43676097831 (2026-11-15) deferred to `deploy-do`, which ran
+  after the owner approved it, with no automatic rollback. Run 43758233044 took the gate again, because the previous
+  release's bundle came from a run on `main`.
+* **The rollback drill** is run 43811076183 (2026-11-16): after a deploy whose real checks passed, an injected smoke failure
+  put staging back on the previous version and ended the run red. The same commit was redeployed, so the version id showed
+  the rollback and the script's own check, which compares tags, could not.
+* **A gap the ADR did not foresee.** The gate also stopped runs 43796746005 and 43803593395, with no Durable Object change in
+  either. release-plz force-updates the release candidate's branch, so the live commit is usually not in the next
+  candidate's history ("not an ancestor", or "not a commit in this checkout"), and the classifier fails closed. **Open:**
+  compare the two commits' migration tags and files directly, which needs neither to descend from the other, and gate only
+  when the live commit cannot be fetched. A drill has to be dispatched from a branch at or above the live commit for the
+  same reason.
+* **The expand migration's route has run for real** (round 30 said it had not): through the Access tunnel from a hosted
+  runner, `migrated (tls: verify-ca)` against `thrust-pg-dev`, so Access took the service token and `verify-ca` met a real
+  Origin CA certificate.
+* **Not run:** production, and the first release target's drill that ADR-0111 waits on.
+
+The runbook, `docs/src/architecture/deploy.md`, records each run and what it settled.
+
 ## Open Questions
 
 * Q-0110 — pipeline shape. Answered: round 24, superseded in part by round 29, implemented in round 30.

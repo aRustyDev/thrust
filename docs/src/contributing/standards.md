@@ -26,13 +26,14 @@ The testing rules themselves are in [Rules](../testing/rules.md), and the comman
 | The Postgres adapter behaves, including after an abandoned transaction | `cargo test -p thrust-adapters-selfhosted --test pg_adapter`. CI job `pg-adapter` | A test fails. It starts its own Postgres container, so it needs Docker | [Real backends](../testing/techniques/real-backends.md) |
 | The pipeline's own logic (the gate, the matrix planner, the change classifier) | `sh .github/scripts/tests/test-ci-scripts.sh` and `test-required-contexts.sh`. CI job `ci-scripts` | A helper's test fails, which fails `gate` through `needs` | [CI/CD](../architecture/cicd.md) |
 | The Rust gates above, except the pipeline's own tests, in one serial run | `scripts/verify-all.sh`. CI does not call it, and runs its steps as separate jobs, without the probes | Any step fails. The steps are the hermetic tests, the contract matrix, the planted mutants, `check-deps.sh`, the Postgres adapter tests and the `send-shape` probe. The `sqlx-wasm` probe also runs but cannot fail the run, `ammonia-400` is not run, it does not run `fmt`, `clippy` or `cargo deny`, and the whole script needs Docker | [Running the suites](../testing/running.md) |
-| The book builds and has no orphan page | `mdbook build docs`, a scan of the log for `^ERROR`, and the orphan check. Not run in CI | Either scan prints something. `mdbook build` itself exits 0 in both cases | `docs/AGENTS.md` |
+| The book builds and has no orphan page | `scripts/check-book.sh`: `mdbook build docs`, a scan of the log for `^ERROR`, and the orphan check. CI job `docs`, when the book's inputs change | Either scan finds something. `mdbook build` itself exits 0 in both cases | `docs/AGENTS.md` |
 
 A pass means something only if the gate can fail. The pages in the last column say how to show that for
 `check-deps.sh`, the contract suite and the planted mutants, and
 [Evidence and controls](../testing/evidence-and-controls.md) lists the kinds of control. `verify-all.sh` only runs the
-others. The book's own pages write down no control for its checks. The `mdbook` skill's reference does: a stray page
-is reported by the orphan check, and a broken `{{#include}}` gives an `ERROR` line while `mdbook build` exits 0.
+others. The book's check carries its own controls: `scripts/check-book.sh --self-test` breaks a copy of the book four
+ways (a broken `{{#include}}` and a mistyped `book.toml` key, on both of which `mdbook build` exits 0; the mermaid
+preprocessor missing; a page `SUMMARY.md` does not list), and each must be refused.
 
 The `lint` and `deny` gates were shown to fail on 2026-11-05 `[verified 7d0074f]`. A deliberate `.unwrap()` in non-test
 `thrust-core` stops clippy with `used unwrap() on an Option value` (`unwrap_used`); a mis-formatted line makes
