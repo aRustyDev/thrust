@@ -33,13 +33,17 @@ and Build's cross-target actions serve Release), and the groups' existing jobs (
   called workflow must sit directly in `.github/workflows/`. A contract cell is then three levels deep (`ci` → `test` →
   `contract-cell`).
 - A calling job's `needs.<id>.result` is `success` when every job inside it was **skipped**. The top `gate` cannot see
-  a planned inner job that never ran; each callee needs its own `gate`.
+  a planned inner job that never ran. Either each callee ends with its own verdict, or the callee reports its jobs'
+  results and the one `gate` judges them; stage 0.2 chooses.
 - In a called workflow `github.event_name` is the **caller's** event. When `ci`'s nightly run calls `test.yml`, `test.yml`
   sees `schedule`, so a callee routes by an explicit input and never by the event name.
 - A callee must not set a workflow-level `concurrency` group: `github.workflow` resolves to the caller's name, so the
   callee would cancel or wait on its caller.
 
 ## Target architecture
+
+The diagram shows a verdict per callee, the expected choice; if stage 0.2 chooses the other candidate, the `inner_gate`
+state becomes "report the results" and `gate` judges them.
 
 ```mermaid
 stateDiagram-v2
@@ -73,12 +77,13 @@ stateDiagram-v2
 | Stage | What it does |
 |---|---|
 | 0.1 | **ADR-0102**: one orchestrator, called workflows, the nested gate. Conventions: a callee routes by input, has no workflow-level `concurrency`, gets only the permissions its caller grants, and follows the repo's job-id, `name:` and comment style |
-| 0.2 | **Nested-gate spike** on a branch, dispatch only. Must-fail controls, each of which has to turn the top `gate` red: a planned inner job skipped; a planned inner job failed; an unplanned inner job that fails |
-| 0.3 | **Planner slices**: `plan-ci.py` emits each workflow's slice, and `assert-gate.sh` checks one level. Tests and mutants for both; the known-jobs list still equals the planner's. Unblocked: #221 (the crates move) merged |
-| 0.4 | **Lint and indexes**: `lint-all-workflows.sh` supports called workflows (the credentials each callee job may have). `.github/workflows/README.md` and `.github/actions/README.md` index the files and link `cicd.md` instead of restating it |
-| 0.5 | **Baseline**: wall-clock and billable minutes per job from recent `ci` runs. It is measured again after the migration, and passes 5 to 7 are measured against it |
+| 0.2 | **Gate spike** on a draft pull request (closed unmerged), because `workflow_dispatch` needs the file on `main`. It compares a verdict per callee with a callee that reports and one gate that judges (and `re-actors/alls-green`), on seven must-fail scenarios and eight measured facts |
+| 0.3 | **Planner and gate**: `plan-ci.py` gets a `WORKFLOWS` map and a `workflows` output, its rules run everything for every workflow file that runs checks, and `assert-gate.sh` takes its job list as an input. A behaviour-preserving change; the mutant driver is committed. Unblocked: #221 (the crates move) merged |
+| 0.4 | **Lint conventions and indexes**: new rules R8 (no workflow-level `concurrency` in a callee) and R9 (a callee does not read `github.event_name`). `lint-all-workflows.sh` needs no change for credentials: it gives a workflow it does not name the strictest policy. The two READMEs index the files and link `cicd.md` instead of restating it |
+| 0.5 | **Baseline**: wall-clock and runner-minutes (the sum of job durations) per job from recent `ci` runs; GitHub reports 0 billable minutes on this public repository. It is measured again after the migration, and passes 5 to 7 are measured against it |
 
-Phase 0 is done when ADR-0102 is merged, the spike's controls have been shown, and the planner and lint changes are
+The order is 0.5, 0.2, 0.1, 0.3, 0.4; the stages are planned in [phases/0001-foundation.md](phases/0001-foundation.md).
+Phase 0 is done when ADR-0102 is merged, the spike's controls have been shown, and the planner, gate and lint changes are
 merged.
 
 ## Phase 1: Migration (refactor only, one pull request per target file)
@@ -98,8 +103,8 @@ workflow, job and step, then the command, identical.
 | M5 | `web.yml` | `web` |
 | M6 | `e2e.yml` | `e2e-schedule.yml` renamed (schedule and dispatch, calls `contract-cell.yml` for `worker-cf e2e`). The contract matrix's own `e2e` pass stays in Test until the E2E phase |
 
-The nested gate is the same steps in every called workflow, so it becomes a composite action in M1 without asking; the
-pull request says so. A near-duplicate found while moving is asked about, not built.
+If the spike chooses a verdict per callee, that job is the same steps in every called workflow, so it becomes a composite
+action in M1 without asking, and the pull request says so. A near-duplicate found while moving is asked about, not built.
 
 **The migration is done when:**
 - `ci.yml` holds only `changes`, the calls and `gate`;
@@ -165,7 +170,7 @@ skipped.
 | 4 MVP | A pull-request-time job is **in the gate** (planner, known-jobs list, `needs`) and in the lint registry, with helper tests and controls. Green on a full run and an affected-only run | the same pull request, promoted in its last commit |
 | 5 Caching | Baseline, change, measured again. A cache-key control (change an input, see a miss). "No benefit" is a valid result if measured | per job, or per workflow |
 | 6 Parallelization | The critical path measured before and after (split, matrix, shard, `needs` graph) | pull request |
-| 7 CPU time | Billable minutes measured before and after: affected-only rules, prebuilt tools, no duplicate build, runner size | pull request |
+| 7 CPU time | Runner-minutes (the sum of job durations; GitHub reports 0 billable minutes on this public repository) measured before and after: affected-only rules, prebuilt tools, no duplicate build, runner size | pull request |
 | 8 Production documentation | Final docs, a runbook for each failure, the stage marked done | per workflow |
 
 ## Invariants (checked in every pull request of the migration and the phases)
@@ -175,7 +180,9 @@ skipped.
 3. A planned job that is skipped or fails turns `gate` red at every nesting level, shown by a control.
 4. An `rc/*` pull request still plans a staging dispatch.
 5. `lint-all-workflows.sh` passes, every job has least privilege, and nothing uses `pull_request_target`.
-6. The planner's jobs equal the gate's known jobs; `test_plan_ci.py`, `test-ci-scripts.sh` and the mutants pass.
+6. The planner's jobs equal the gate's known jobs; `test_plan_ci.py`, `test-ci-scripts.sh` and the hand mutants of the
+   planner and the gate pass. The mutant driver was a session scratchpad file and is not in the repository, so this is
+   checkable by anyone only from stage 0.3, which commits it.
 7. Every script of the `deps` job (wherever its guards end up) is run locally before each push.
 
 ## Status (2026-11-16)
@@ -183,7 +190,7 @@ skipped.
 | Item | State |
 |---|---|
 | This plan | approved by the owner; in review as the pull request that adds this directory |
-| Phase 0 | not started. Next: write `phases/0001-foundation.md`, which plans stages 0.1 to 0.5 in detail |
+| Phase 0 | planned in [phases/0001-foundation.md](phases/0001-foundation.md) (this pull request); nothing built. Next: stage 0.5, the baseline |
 | #221 (crates move) | merged (50b4dba); stage 0.3 is unblocked |
 | Phase 1 and the phases after | not started |
 | Open for the owner | confirm Prof's placement in Low |
