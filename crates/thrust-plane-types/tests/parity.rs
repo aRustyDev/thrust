@@ -41,7 +41,7 @@ fn fixtures_dir() -> PathBuf {
 }
 
 fn corpus_dir() -> PathBuf {
-    manifest().join("../../tools/oracle-v1/corpus")
+    PathBuf::from(env!("THRUST_ROOT")).join("tools/oracle-v1/corpus")
 }
 
 fn read_json(path: &std::path::Path) -> Value {

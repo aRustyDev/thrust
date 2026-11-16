@@ -114,7 +114,7 @@ fn diff_kind(a: &Value, b: &Value) -> String {
 #[test]
 fn oracle_v1_write_with_sanitiser_matches_python_plus_js() {
     use thrust_editor_doc::{html, ydoc};
-    let p = concat!(env!("CARGO_MANIFEST_DIR"), "/../../target/spike-0006/sanitised-converted.json");
+    let p = concat!(env!("THRUST_ROOT"), "/target/spike-0006/sanitised-converted.json");
     let s = std::fs::read_to_string(p).unwrap_or_else(|e| {
         panic!("{p}: {e} (generate it with tools/spike-0006/sanitize/run-all.sh, then the convert-sanitised oracle)")
     });

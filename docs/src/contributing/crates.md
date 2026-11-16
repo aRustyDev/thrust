@@ -36,12 +36,17 @@ are on [Architecture gates](../testing/techniques/architecture-gates.md).
    stay in one place.
 2. Add the path to `members` in the root `Cargo.toml`. The list is explicit, with no glob.
 3. If another crate will depend on it, add `<name> = { path = "crates/<name>" }` under `[workspace.dependencies]`
-   and depend on it with `{ workspace = true }`. Twelve crates are declared that way: contracts, ports, core, api,
-   plane-types, api-v1, compat-plane and the five adapter crates. The two roots and `thrust-contract-tests` are not, because nothing depends on them.
-   The editor crates are not either: `thrust-editor-worker` depends on `thrust-editor-doc` by path.
+   and depend on it with `{ workspace = true }`, never with a `path` of its own: then the root `Cargo.toml` is the only
+   file that names a crate's directory. Fourteen crates are declared that way: contracts, ports, core, api,
+   plane-types, api-v1, compat-plane, the five adapter crates, `thrust-editor-doc` and `thrust-oracle-fixture`. The two
+   roots, `thrust-contract-tests` and `thrust-editor-worker` are not, because nothing depends on them. A workspace entry
+   that turns default features off (`thrust-editor-doc`'s does) is the only place that can: Cargo ignores a member's
+   own `default-features = false` on an inherited dependency.
 4. Put the crate's tests in the crate. cargo-mutants runs only the mutated package's own tests, and
    `cargo nextest run -p <crate>` selects nothing, and exits 4, for a crate with no tests of its own. The reasoning is
-   Rule 5 in [Rules](../testing/rules.md).
+   Rule 5 in [Rules](../testing/rules.md). A test that reads a file outside its crate (the oracle's corpus, the deploy's
+   CA root, `target/`) builds the path from `env!("THRUST_ROOT")`, the workspace root that `.cargo/config.toml` sets,
+   never from `CARGO_MANIFEST_DIR` and `../..`, so it reads the same file wherever the crate sits (ADR-0009).
 5. If the crate has Cargo features, read [Cargo features](features.md) first.
 6. A crate that builds for wasm32 as a Worker is a `cdylib`, as `thrust-worker` and `thrust-editor-worker` are, and
    is built by `worker-build` through `scripts/rs`, which puts rustup's toolchain (with the wasm32 standard

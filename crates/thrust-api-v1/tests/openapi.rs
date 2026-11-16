@@ -46,7 +46,7 @@ fn operations(doc: &Value) -> Vec<(String, String)> {
 /// The operations the committed list says the document describes: the size of what the test below walks, so that it cannot shrink
 /// to nothing and pass.
 fn listed_operations() -> usize {
-    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../tools/oracle-v1/schema/described.operations");
+    let path = concat!(env!("THRUST_ROOT"), "/tools/oracle-v1/schema/described.operations");
     let text = std::fs::read_to_string(path).expect("the list of described operations");
     text.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with('#')).count()
 }
