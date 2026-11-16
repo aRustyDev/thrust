@@ -9,7 +9,10 @@
 # The order, and why:
 #   1. render the configuration from the environment's variables (scripts/render-wrangler.sh); a variable that is missing stops here;
 #   2. read what is live (`wrangler deployments list` and `versions list`, .github/scripts/active-version.py): the active version's
-#      id, which is what a rollback goes back to, and its tag, which is the commit that is running;
+#      id, which is what a rollback goes back to, and its tag, which is the commit that is running. A listing that fails, other than
+#      with "the Worker does not exist", is asked for again (WRANGLER_READ_ATTEMPTS tries in all, 3 by default, with a pause that grows),
+#      because it only reads: Cloudflare's API sometimes answers with an error that is gone seconds later. `wrangler deploy` and
+#      `wrangler rollback` are never asked for again by this script;
 #   3. classify the change against it (.github/scripts/classify-deploy.sh): does the expand migration have to run, and is this a
 #      Durable Object lifecycle change? A lifecycle change cannot be rolled back across, and the first deploy to an environment is one.
 #      The live commit is fetched by its sha first when no branch of the checkout holds it (release-plz force-updates the release
@@ -40,6 +43,8 @@
 #                        would serve the API and a blank page, and drop the last release's files as well
 #   GH_TOKEN, GITHUB_REPOSITORY   how the previous release's bundle is listed, downloaded and verified (`actions: read`,
 #                        `attestations: read`); only that step sees the token
+#   WRANGLER_READ_ATTEMPTS (default 3), WRANGLER_READ_RETRY_SECONDS (default 5)   how many times the two read-only listings of step 2
+#                        are tried, and the pause after a failed try (the try's number times this: 5 s, then 10 s); 1 means no retry
 #   CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID                 wrangler's own
 #   the renderer's variables (scripts/render-wrangler.sh)
 #   the expand step's (scripts/migrate-ci.sh) and the smoke's (scripts/smoke-deploy.sh): used only when they run
@@ -96,6 +101,10 @@ for v in ALLOW AUTO INJECT SKIP; do
   eval "val=\$$v"
   case "$val" in true|false) ;; *) usage "$v must be true or false, not '$val'" ;; esac
 done
+# how often the two READ-ONLY wrangler listings of step 2 are tried, and the pause after a failed try (times the try's number)
+READ_ATTEMPTS="${WRANGLER_READ_ATTEMPTS:-3}"; READ_PAUSE="${WRANGLER_READ_RETRY_SECONDS:-5}"
+case "$READ_ATTEMPTS" in ''|*[!0-9]*|0) usage "WRANGLER_READ_ATTEMPTS must be a positive whole number, not '$READ_ATTEMPTS'" ;; esac
+case "$READ_PAUSE" in ''|*[!0-9]*) usage "WRANGLER_READ_RETRY_SECONDS must be a whole number of seconds, not '$READ_PAUSE'" ;; esac
 [ "$INJECT" = true ] && [ "$DEPLOY_ENV" = production ] && usage "INJECT_SMOKE_FAILURE is refused for production"
 [ "$INJECT" = true ] && [ "$SKIP" = true ] && usage "INJECT_SMOKE_FAILURE and SKIP_SMOKE together: a smoke that is skipped cannot be made to fail"
 BASE="$THRUST_BASE_URL"
@@ -130,15 +139,32 @@ plain sh "$RENDER" --out "$CONFIG" || die "the deploy configuration could not be
 
 # ---- 2. what is live -----------------------------------------------------------------------------------------------------------
 list_json() { # list_json <what> <file>: `wrangler <what> list --json` into <file>; a Worker that does not exist is not an error
-  wr "$1" list --name "$NAME" --json > "$2" 2> "$2.err"
-  rc=$?
-  if [ "$rc" -ne 0 ]; then
+  # Any OTHER failure is tried again, up to READ_ATTEMPTS times: these two calls only read, so a second ask cannot do harm, and
+  # Cloudflare's API answers now and then with an error that is gone a few seconds later (run 43921084528, attempt 1: `versions list`
+  # answered "An unknown error has occurred [code: 10013]" for a Worker that did not exist, and a re-run of the job passed). A deploy
+  # and a rollback are NEVER retried here: they change what is live, and what a second try would do after a first that half-worked is
+  # not something to guess at in a script that runs unattended.
+  try=1
+  while :; do
+    wr "$1" list --name "$NAME" --json > "$2" 2> "$2.err"
+    rc=$?
+    [ "$rc" -eq 0 ] && break
     if cat "$2" "$2.err" | grep -qiE '10007|could not find|does not exist|not found'; then
       echo '[]' > "$2"
-      return 0
+      break
     fi
-    return 1
+    [ "$try" -ge "$READ_ATTEMPTS" ] && return 1
+    pause=$((READ_PAUSE * try))
+    # the whole error, flattened: its code comes last, and is what says what kind of failure it was
+    say "wrangler $1 list failed (try $try of $READ_ATTEMPTS: $(tr -s '\n ' ' ' < "$2.err" | cut -c1-600)); trying again in ${pause}s"
+    sleep "$pause"
+    try=$((try + 1))
+  done
+  if [ "$try" -gt 1 ]; then
+    say "wrangler $1 list answered on try $try of $READ_ATTEMPTS"
+    summary "- \`wrangler $1 list\` needed $try tries (Cloudflare's API answered with an error first)"
   fi
+  return 0
 }
 list_json deployments "$WORK/deployments.json" || { sed 's/^/  wrangler: /' "$WORK/deployments.json.err" >&2; die "wrangler could not list the deployments of $NAME; nothing was deployed"; }
 list_json versions "$WORK/versions.json" || { sed 's/^/  wrangler: /' "$WORK/versions.json.err" >&2; die "wrangler could not list the versions of $NAME; nothing was deployed"; }

@@ -1,8 +1,9 @@
 #!/bin/sh
 # Mutation controls: prove the contract suite can FAIL, i.e. that its "X is rejected" assertions
 # observe the thing they claim to test. Each mutant is a deliberately broken build; the suite must
-# fail on it (exit 101 and at least one test reported FAILED). A mutant that survives means some
-# assertion is vacuous.
+# fail on it. A row of the contract suite (scripts/contract.sh, on nextest) is killed when nextest exits 100 and the pass's
+# JUnit report counts a test that did not pass; a row of an adapter's own tests (still on `cargo test`) when cargo exits 101
+# and a test reported FAILED. A mutant that survives means some assertion is vacuous.
 #
 #   scripts/mutants.sh
 set -u
@@ -62,6 +63,39 @@ kill_check_msg() {
   fi
 }
 
+# A row of the contract suite: `scripts/contract.sh` runs the pass on nextest and keeps its JUnit report beside the pass's log
+# (`<log>.junit.xml` for `<log>.test.log`). Killed when nextest exited 100 (a test failed; 101 is a build that failed, and 4 or 5
+# a pass that ran nothing) and the report counts at least one test that did not pass.
+junit_attr() { sed -n "s/.*<testsuites[^>]* $2=\"\([0-9][0-9]*\)\".*/\1/p" "$1" 2>/dev/null | head -n 1; }
+kill_check_suite() {
+  # $1 label, $2 exit status, $3 the pass's log, $4 (optional) the row's own output file, for `show_why`
+  label="$1"; status="$2"; log="$3"
+  junit="${log%.test.log}.junit.xml"
+  failures="$(junit_attr "$junit" failures)"
+  errors="$(junit_attr "$junit" errors)"
+  failed=$(( ${failures:-0} + ${errors:-0} ))
+  if [ "$status" -eq 100 ] && [ "$failed" -ge 1 ]; then
+    printf '%-34s KILLED   (%s test(s) failed)\n' "$label" "$failed" >>"$SUMMARY"
+    grep -E '^ +FAIL \[' "$log" | sort -u | sed 's/^ */    /' >>"$SUMMARY"
+  else
+    printf '%-34s SURVIVED or did not run (exit=%s, failed tests=%s)\n' "$label" "$status" "$failed" >>"$SUMMARY"
+    show_why "${4:-}" "$label"
+    SURVIVED=1
+  fi
+}
+
+# kill_check_msg for a row of the contract suite.
+kill_check_suite_msg() {
+  # $1 label, $2 exit status, $3 the pass's log, $4 text the failure must contain, $5 (optional) the row's own output file
+  if grep -qF -- "$4" "$3"; then
+    kill_check_suite "$1" "$2" "$3" "${5:-}"
+  else
+    printf '%-34s SURVIVED or did not run (the log never says: %s)\n' "$1" "$4" >>"$SUMMARY"
+    show_why "${5:-}" "$1"
+    SURVIVED=1
+  fi
+}
+
 # name:feature:pass. The CSRF switch (Q-0050.8) has a mutant for each direction: ignored when on (the main pass, which runs
 # with enforcement on, must fail) and ignored when off (the `csrfoff` pass must fail).
 for triple in \
@@ -104,7 +138,7 @@ for triple in \
   pass="${rest##*:}"
   THRUST_SERVER_FEATURES="$feature" THRUST_LOGDIR="$OUT/$name" "$ROOT/scripts/contract.sh" native-memory "$pass" >"$OUT/$name.out" 2>&1
   status=$?
-  kill_check "native-memory $pass + $name" "$status" "$OUT/$name/native-memory-$pass.test.log" "$OUT/$name.out"
+  kill_check_suite "native-memory $pass + $name" "$status" "$OUT/$name/native-memory-$pass.test.log" "$OUT/$name.out"
 done
 
 # The engine pass (spike 0002, `contract.sh <target> engine`): the 50-writer, 10k-create test against the duplicate-sequence
@@ -120,7 +154,7 @@ for spec in \
   feature="${rest##*:}"
   THRUST_SERVER_FEATURES="$feature" THRUST_LOGDIR="$OUT/engine-$target-$name" "$ROOT/scripts/contract.sh" "$target" engine >"$OUT/engine-$target-$name.out" 2>&1
   status=$?
-  kill_check "$target engine + $name" "$status" "$OUT/engine-$target-$name/$target-engine.test.log" "$OUT/engine-$target-$name.out"
+  kill_check_suite "$target engine + $name" "$status" "$OUT/engine-$target-$name/$target-engine.test.log" "$OUT/engine-$target-$name.out"
 done
 # The vacuity guard of the CSRF switch (Q-0050.8): a pass that is started against a server with the OTHER enforcement
 # setting must be refused before a test runs (exit 5, and the message says csrf_enforce). Not a build mutant: the server
@@ -144,7 +178,7 @@ guard_check "guard: csrfoff pass, server on" "$status" "$OUT/guard-off-vs-on.out
 
 # The vacuity guard of mail (E2): `scripts/contract.sh` asks the app's own question, `/api/instances/`, and refuses to run (exit 5, no test ran) a pass
 # whose target gives the wrong answer: `true` for the `mail` pass, `false` for every other. Two builds are refused by it, and each is a row here
-# rather than in the kill loop above, because the verdict is the refusal and not a failed test (`kill_check` wants exit 101):
+# rather than in the kill loop above, because the verdict is the refusal and not a failed test (`kill_check_suite` wants exit 100):
 #   - a server whose composition root reads the relay and does not hand it to the app tells the app mail is off, and the `mail` pass must not pass
 #     for want of a test that looks;
 #   - a server that says mail is on though nothing can send it (`mutant_smtp_flag_always_on`, which the main pass used to kill with the dark test
@@ -192,7 +226,7 @@ for triple in \
   needle="${rest#*:}"
   THRUST_SERVER_FEATURES="$feature" THRUST_LOGDIR="$OUT/$name" "$ROOT/scripts/contract.sh" native-pg budget >"$OUT/$name.out" 2>&1
   status=$?
-  kill_check_msg "native-pg budget + $name" "$status" "$OUT/$name/native-pg-budget.test.log" "$needle" "$OUT/$name.out"
+  kill_check_suite_msg "native-pg budget + $name" "$status" "$OUT/$name/native-pg-budget.test.log" "$needle" "$OUT/$name.out"
 done
 
 # The SMTP adapter's mutants (E2 of the reset by email, D-041): each is a deliberately broken build of thrust-adapters-selfhosted, run against the

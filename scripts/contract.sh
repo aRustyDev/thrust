@@ -42,9 +42,12 @@
 #                              logs go to target/contract-logs/<target>-oracle.oracle/. scripts/oracle-v1.sh <target> [controls]
 #                              is the way in by hand, and runs the controls only when asked
 #
-# Exit status is the status of `cargo test` itself (no pipes, no trailing echo). The suite's
-# pass count is also checked against the expected number so that a filter that selects zero
-# tests cannot report green.
+# Each pass runs on nextest: `cargo nextest run -p thrust-contract-tests --profile contract -E 'binary(<bin>) & (<filterset>)'`
+# (the `contract` profile is in .config/nextest.toml). Exit status is nextest's own (no pipes, no trailing echo): 100 when a
+# test failed. The pass's passed count, read from nextest's JUnit report (kept beside the pass's log as `<log>.junit.xml`),
+# is also checked against the expected number, so that a filterset that selects too few tests, or none, cannot report
+# green: either is exit 5. (nextest's own 4, "no test ran", becomes 5 too, because this script's 4 means the target never
+# came up.)
 #
 # Secrets: the admin token and the throwaway Postgres password are generated per run and only
 # ever live in this process's environment (and the children's), never in a file or on argv.
@@ -104,22 +107,14 @@ EXPECT_MAIL=7
 # The mail pass's relay: Mailpit, pinned (the SMTP adapter's own tests, tests/smtp_sink, pin the same version).
 MAILPIT_IMAGE=axllent/mailpit:v1.33.1
 
-# A free port, chosen at random: fixed ports collide with OrbStack-published containers and
-# with other sessions' wrangler instances (measured: 18080 and 8787 were both taken).
-pick_port() {
-  n=0
-  while [ "$n" -lt 50 ]; do
-    p=$((20000 + $(od -An -N2 -tu2 /dev/urandom | tr -d ' ') % 30000))
-    if ! lsof -nP -iTCP:"$p" -sTCP:LISTEN >/dev/null 2>&1; then
-      echo "$p"
-      return 0
-    fi
-    n=$((n + 1))
-  done
-  return 1
-}
+# Every port this run binds is drawn by `pick_port`, from below the kernel's outgoing-connection range (why: the library).
+# shellcheck source=scripts/lib/ports.sh
+. "$ROOT/scripts/lib/ports.sh"
+PORTS_TOP="$(ports_top)" || exit 3
+echo "[$TARGET/$PASS] ports drawn from $PORTS_FLOOR-$PORTS_TOP (the kernel's outgoing range starts at $(ephemeral_low))"
 
-PORT="${THRUST_PORT:-$(pick_port)}"
+PORT="${THRUST_PORT:-}"
+[ -n "$PORT" ] || PORT="$(pick_port)" || exit 3
 THRUST_ADMIN_TOKEN="$(openssl rand -hex 16)"
 export THRUST_ADMIN_TOKEN
 # The operator's routes (/internal/operator/*, Q-F7) are a door of their own, with a token of their own: the target is started with
@@ -136,7 +131,8 @@ export THRUST_SIGNIN_RATE_LIMIT="$SIGNIN_LIMIT"
 # target is configured to trust it. Every run has its own client secret, which only ever lives in this process's
 # environment and its children's (the Worker gets it through `env -i` in worker-dev.sh, not on argv). A deployed Worker
 # cannot reach 127.0.0.1, so scripts/stage2-contract.sh skips the `oidc_` tests.
-THRUST_MOCK_IDP_PORT="${THRUST_MOCK_IDP_PORT:-$(pick_port)}"
+THRUST_MOCK_IDP_PORT="${THRUST_MOCK_IDP_PORT:-}"
+[ -n "$THRUST_MOCK_IDP_PORT" ] || THRUST_MOCK_IDP_PORT="$(pick_port)" || exit 3
 THRUST_OIDC_CLIENT_SECRET="$(openssl rand -hex 16)"
 export THRUST_MOCK_IDP_PORT THRUST_OIDC_CLIENT_SECRET
 export THRUST_OIDC_ISSUER="http://127.0.0.1:$THRUST_MOCK_IDP_PORT"
@@ -229,13 +225,15 @@ if [ "$PASS" = "e2e" ]; then
 fi
 
 if [ "$ADAPTERS" = "postgres" ] || [ "$ADAPTERS" = "cloudflare" ]; then
-  PG_PORT="${THRUST_PG_PORT:-$(pick_port)}"
+  PG_PORT="${THRUST_PG_PORT:-}"
+  [ -n "$PG_PORT" ] || PG_PORT="$(pick_port)" || exit 3
   PG_PASSWORD="$(openssl rand -hex 12)"
   PG_CONTAINER="thrust-spike-pg-$$"
   # `-e NAME` without a value makes the docker CLI forward NAME from ITS environment, so the
   # password never appears on argv.
   POSTGRES_PASSWORD="$PG_PASSWORD" docker run -d --rm --name "$PG_CONTAINER" -e POSTGRES_PASSWORD -e POSTGRES_DB=thrust \
-    -p "127.0.0.1:$PG_PORT:5432" postgres:16-alpine -c "max_connections=$PG_MAX_CONNECTIONS" >"$LOG.pg.log" 2>&1 || { echo "could not start postgres" >&2; exit 3; }
+    -p "127.0.0.1:$PG_PORT:5432" postgres:16-alpine -c "max_connections=$PG_MAX_CONNECTIONS" >"$LOG.pg.log" 2>&1 ||
+    { echo "could not start postgres (port $PG_PORT); docker said:" >&2; tail -5 "$LOG.pg.log" >&2; exit 3; }
   i=0
   until [ "$(docker exec "$PG_CONTAINER" psql -U postgres -d thrust -tAc 'select 1' 2>/dev/null)" = "1" ]; do
     i=$((i + 1)); [ "$i" -gt 60 ] && { echo "postgres query probe failed" >&2; exit 3; }
@@ -256,7 +254,7 @@ fi
 if [ -n "${THRUST_PG_LATENCY_MS:-}" ] && [ -n "${PG_PORT:-}" ]; then
   # Put a fixed one-way delay between the server and Postgres (after the schema is applied directly), so a loopback run
   # pays something like the round trips of Hyperdrive + VPC service + tunnel. For the FR-22 before/after (research/0011).
-  PROXY_PORT="$(pick_port)"
+  PROXY_PORT="$(pick_port)" || exit 3
   uv run --quiet "$ROOT/scripts/pg-delay-proxy.py" "$PROXY_PORT" "$PG_PORT" "$THRUST_PG_LATENCY_MS" >"$LOG.proxy.log" 2>&1 &
   PROXY_PID=$!
   sleep 2
@@ -280,11 +278,14 @@ if [ "$PASS" = "mail" ] && [ "$KIND" = native ]; then
   # The relay: Mailpit, a mail server and sink written by someone else, so that what the server sends is read by a server that parses it for
   # itself. Plain (no TLS, no login: the adapter's own tests, tests/smtp_sink, are where those are shown). The native server's mail service is
   # its SMTP adapter; the Worker's is above.
-  MAIL_SMTP_PORT="${THRUST_MAIL_SMTP_PORT:-$(pick_port)}"
-  MAIL_HTTP_PORT="${THRUST_MAIL_HTTP_PORT:-$(pick_port)}"
+  MAIL_SMTP_PORT="${THRUST_MAIL_SMTP_PORT:-}"
+  [ -n "$MAIL_SMTP_PORT" ] || MAIL_SMTP_PORT="$(pick_port)" || exit 3
+  MAIL_HTTP_PORT="${THRUST_MAIL_HTTP_PORT:-}"
+  [ -n "$MAIL_HTTP_PORT" ] || MAIL_HTTP_PORT="$(pick_port)" || exit 3
   MAIL_CONTAINER="thrust-contract-mail-$$"
   docker run -d --rm --name "$MAIL_CONTAINER" -p "127.0.0.1:$MAIL_SMTP_PORT:1025" -p "127.0.0.1:$MAIL_HTTP_PORT:8025" "$MAILPIT_IMAGE" \
-    >"$LOG.mail.log" 2>&1 || { echo "could not start the mail server" >&2; exit 3; }
+    >"$LOG.mail.log" 2>&1 ||
+    { echo "could not start the mail server (ports $MAIL_SMTP_PORT, $MAIL_HTTP_PORT); docker said:" >&2; tail -5 "$LOG.mail.log" >&2; exit 3; }
   # up is what a client sees: the API answers and the SMTP port says 220
   i=0
   until curl -fsS "http://127.0.0.1:$MAIL_HTTP_PORT/api/v1/info" >/dev/null 2>&1 &&
@@ -331,6 +332,11 @@ until curl -fsS "$THRUST_BASE_URL/healthz" >/dev/null 2>&1; do
   if ! kill -0 "$SERVER_PID" 2>/dev/null; then
     echo "target process exited early; tail of server log:" >&2
     tail -30 "$LOG.server.log" >&2
+    # A refused bind (issue #93): name what holds the port, and in which state, so a recurrence explains itself.
+    if grep -qE 'AddrInUse|Address already in use' "$LOG.server.log" && command -v ss >/dev/null 2>&1; then
+      echo "port $PORT was refused; the sockets on it (ss):" >&2
+      ss -tan "( sport = :$PORT )" >&2 || true
+    fi
     exit 4
   fi
   sleep 1
@@ -385,33 +391,45 @@ else
 fi
 export THRUST_STATE_SURVIVES_PANIC
 
+# suite_pass BIN FILTERSET [NEXTEST ARGS...]: one pass of the suite, on nextest with the `contract` profile. BIN is the test binary,
+# FILTERSET the pass's filterset over it (keep it single-quoted on one line: scripts/check-contract-counts.sh reads it from here and
+# lists it, to hold EXPECT_* to the suite), and the rest nextest's own arguments: `--no-capture` runs the tests one at a time and
+# prints what they print, which is what the passes that read a test's own output need. Sets TEST_STATUS, and moves the JUnit
+# report to `$LOG.junit.xml` (a stale one is removed first, so a run that wrote none is read as none).
+suite_pass() {
+  sp_bin="$1"
+  sp_set="$2"
+  shift 2
+  sp_junit="${CARGO_TARGET_DIR:-$ROOT/target}/nextest/contract/junit.xml"
+  rm -f "$sp_junit" "$LOG.junit.xml"
+  "$ROOT/scripts/rs" cargo nextest run --manifest-path "$ROOT/Cargo.toml" -p thrust-contract-tests --profile contract \
+    -E "binary($sp_bin) & ($sp_set)" "$@" >"$LOG.test.log" 2>&1
+  TEST_STATUS=$?
+  if [ -f "$sp_junit" ]; then mv "$sp_junit" "$LOG.junit.xml"; fi
+}
+
 case "$PASS" in
   sweeper)
-    "$ROOT/scripts/rs" cargo test --manifest-path "$ROOT/Cargo.toml" -p thrust-contract-tests --test contract -- sweeper_ --test-threads=1 --nocapture >"$LOG.test.log" 2>&1
-    TEST_STATUS=$?
+    suite_pass contract 'test(/sweeper_/)' --no-capture
     EXPECT=$EXPECT_SWEEPER
     ;;
   csrfoff)
-    "$ROOT/scripts/rs" cargo test --manifest-path "$ROOT/Cargo.toml" -p thrust-contract-tests --test contract -- csrf_off_ >"$LOG.test.log" 2>&1
-    TEST_STATUS=$?
+    suite_pass contract 'test(/csrf_off_/)'
     EXPECT=$EXPECT_CSRFOFF
     ;;
   panic)
-    "$ROOT/scripts/rs" cargo test --manifest-path "$ROOT/Cargo.toml" -p thrust-contract-tests --test contract -- panic_ --test-threads=1 --nocapture >"$LOG.test.log" 2>&1
-    TEST_STATUS=$?
+    suite_pass contract 'test(/panic_/)' --no-capture
     EXPECT=$EXPECT_PANIC
     ;;
   blast)
     # OBSERVATIONAL (not in contract-all): panics the handler while 16 clients run an I/O-bound
     # request and reports how many OTHER requests failed. Under `wrangler dev` the memory set can
     # lose the whole dev server here, which is itself an observation, so this is run by hand.
-    "$ROOT/scripts/rs" cargo test --manifest-path "$ROOT/Cargo.toml" -p thrust-contract-tests --test contract -- blast_ --test-threads=1 --nocapture >"$LOG.test.log" 2>&1
-    TEST_STATUS=$?
+    suite_pass contract 'test(/blast_/)' --no-capture
     EXPECT=$EXPECT_BLAST
     ;;
   worker)
-    "$ROOT/scripts/rs" cargo test --manifest-path "$ROOT/Cargo.toml" -p thrust-contract-tests --test worker_only -- worker_room_ --test-threads=1 --nocapture >"$LOG.test.log" 2>&1
-    TEST_STATUS=$?
+    suite_pass worker_only 'test(/worker_room_/)' --no-capture
     EXPECT=$EXPECT_WORKER
     ;;
   bench)
@@ -425,8 +443,7 @@ case "$PASS" in
     exit "$TEST_STATUS"
     ;;
   engine)
-    "$ROOT/scripts/rs" cargo test --manifest-path "$ROOT/Cargo.toml" -p thrust-contract-tests --test engine -- --test-threads=1 --nocapture >"$LOG.test.log" 2>&1
-    TEST_STATUS=$?
+    suite_pass engine 'all()' --no-capture
     EXPECT=$EXPECT_ENGINE
     ;;
   oracle)
@@ -458,41 +475,47 @@ case "$PASS" in
     exit "$TEST_STATUS"
     ;;
   bindings)
-    "$ROOT/scripts/rs" cargo test --manifest-path "$ROOT/Cargo.toml" -p thrust-contract-tests --test worker_only -- worker_bindings_ --test-threads=1 --nocapture >"$LOG.test.log" 2>&1
-    TEST_STATUS=$?
+    suite_pass worker_only 'test(/worker_bindings_/)' --no-capture
     EXPECT=$EXPECT_BINDINGS
     ;;
   cron)
-    "$ROOT/scripts/rs" cargo test --manifest-path "$ROOT/Cargo.toml" -p thrust-contract-tests --test worker_only -- worker_cron_ --test-threads=1 --nocapture >"$LOG.test.log" 2>&1
-    TEST_STATUS=$?
+    suite_pass worker_only 'test(/worker_cron_/)' --no-capture
     EXPECT=$EXPECT_CRON
     ;;
   mail)
     # The password reset by email through a real mail server (its own test binary, `--test mail`): not part of `main`, which holds that the
     # route is dark on a target with no mail service.
-    "$ROOT/scripts/rs" cargo test --manifest-path "$ROOT/Cargo.toml" -p thrust-contract-tests --test mail -- --nocapture >"$LOG.test.log" 2>&1
-    TEST_STATUS=$?
+    suite_pass mail 'all()' --success-output immediate --failure-output immediate
     EXPECT=$EXPECT_MAIL
     ;;
   budget)
     # Only the round-trip budget test (issue #39), which is also part of `main`: scripts/mutants.sh runs a mutant of the counter
     # against this and not against the whole main pass. Not in contract-all.
-    "$ROOT/scripts/rs" cargo test --manifest-path "$ROOT/Cargo.toml" -p thrust-contract-tests --test contract -- list_endpoints_stay_within_five_db_round_trips --nocapture >"$LOG.test.log" 2>&1
-    TEST_STATUS=$?
+    suite_pass contract 'test(/list_endpoints_stay_within_five_db_round_trips/)' --no-capture
     EXPECT=$EXPECT_BUDGET
     ;;
   *)
-    "$ROOT/scripts/rs" cargo test --manifest-path "$ROOT/Cargo.toml" -p thrust-contract-tests --test contract -- --skip sweeper_ --skip panic_ --skip blast_ --skip csrf_off_ >"$LOG.test.log" 2>&1
-    TEST_STATUS=$?
+    suite_pass contract 'not test(/sweeper_|panic_|blast_|csrf_off_/)'
     EXPECT=$EXPECT_MAIN
     ;;
 esac
 
 grep -E "PANIC-OBSERVATION|HIBERNATION-OBSERVATION" "$LOG.test.log" || true
 
-grep -E "^test |^test result|panicked|FAILED" "$LOG.test.log"
-PASSED="$(sed -n 's/^test result: [a-zA-Z]*\. \([0-9]*\) passed.*/\1/p' "$LOG.test.log" | tail -1)"
-echo "[$TARGET/$PASS] cargo test exit=$TEST_STATUS passed=${PASSED:-?} expected=$EXPECT"
+grep -E '^ +(PASS|FAIL|SIG[A-Z]+|TIMEOUT|LEAK|SLOW) |Summary \[|panicked' "$LOG.test.log"
+# The count, from nextest's JUnit report: `<testsuites ... tests="N" failures="F" errors="E" ...>` holds the tests that ran (the
+# ones the filterset left out are not in it) and how many of them did not pass. No report (a build that failed) is no count.
+junit_attr() { sed -n "s/.*<testsuites[^>]* $2=\"\([0-9][0-9]*\)\".*/\1/p" "$1" 2>/dev/null | head -n 1; }
+RAN="$(junit_attr "$LOG.junit.xml" tests)"
+FAILURES="$(junit_attr "$LOG.junit.xml" failures)"
+ERRORS="$(junit_attr "$LOG.junit.xml" errors)"
+PASSED=""
+if [ -n "$RAN" ] && [ -n "$FAILURES" ] && [ -n "$ERRORS" ]; then PASSED=$((RAN - FAILURES - ERRORS)); fi
+echo "[$TARGET/$PASS] nextest exit=$TEST_STATUS passed=${PASSED:-?} expected=$EXPECT"
+if [ "$TEST_STATUS" -eq 4 ]; then
+  echo "[$TARGET/$PASS] VACUITY GUARD: no test ran (nextest exit 4: the filterset selects nothing)" >&2
+  exit 5
+fi
 if [ "$TEST_STATUS" -eq 0 ] && [ "${PASSED:-0}" -ne "$EXPECT" ]; then
   echo "[$TARGET/$PASS] VACUITY GUARD: exit 0 but passed count != expected" >&2
   exit 5

@@ -80,7 +80,7 @@ RULES = [
     (r"^\.github/actions/contract-pass-tools/", FULL, "the action that prepares a contract cell's pass (uv, the app, the browser)"),
     (r"^\.github/scripts/(plan-ci\.py|plan-cells\.sh|assert-gate\.sh)$", FULL, "this planner, or the gate that trusts it"),
     (r"^\.github/scripts/toolchain-channel\.sh$", FULL, "the reader of rust-toolchain.toml, which every build's compiler comes from"),
-    (r"^scripts/(rs|contract\.sh|contract-all\.sh|worker-dev\.sh|pg-delay-proxy\.py)$", FULL, "the contract cells' harness"),
+    (r"^scripts/(rs|contract\.sh|contract-all\.sh|worker-dev\.sh|pg-delay-proxy\.py|lib/ports\.sh)$", FULL, "the contract cells' harness"),
     (r"^crates/", CRATE, "a file of crates/: its crate, by the longest member directory that holds it"),
     (r"^\.github/deploy/flagship/", {"jobs": ["deps", "ci-scripts"]}, "the Flagship policy (validated by deps, read by test_flagship.py)"),
     (r"^\.github/deploy/", {"jobs": ["hermetic", "ci-scripts"]}, "the CA root the deploy trusts (read by thrust-adapters-postgres's TLS tests)"),

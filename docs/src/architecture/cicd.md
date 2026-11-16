@@ -158,7 +158,9 @@ its base branch. Nothing calls it, so it is a tool to run by hand.
   `contract-all.sh` run serially does not apply.
 - **A cell.** `contract-cell.yml` prepares the pass through `contract-pass-tools`, which checks that `curl`, `openssl`, `lsof`, `pgrep` and `docker` exist (and `nc` for the native `mail` cell, which waits for its Mailpit with it, `uv` for `oracle`, and `node` and `pnpm` for `e2e`), runs
   `scripts/contract.sh <target> <pass>` with no pipe so the step's status is the script's, and uploads a marker named
-  for the cell. The script's target guard and count guard apply as they do locally.
+  for the cell. The script's target guard and count guard apply as they do locally. Every port the script binds (the target, the mock
+  identity provider, Postgres, Mailpit) is drawn by `scripts/lib/ports.sh` from below the kernel's outgoing-connection range, which
+  the script prints first (D-20 in the testing status).
 - **The mail cells.** `native-memory mail` starts a Mailpit container (pinned, pulled from Docker Hub as `postgres` is) beside the native server, which is
   given `THRUST_SMTP_*` and `THRUST_PUBLIC_BASE_URL`, and runs `tests/mail.rs`: the password reset by email through a mail server written by someone else.
   `worker-memory mail` and `worker-cf mail` (E3) run the same seven tests (E4 added the four of the sign-in with a code) against the Worker built for wasm32 and run by `wrangler dev`, whose
@@ -230,7 +232,7 @@ the manual gate, the shapes of `wrangler deployments list --json` and `versions 
 dead-letter queue, the attestation flow end to end, the read of an environment's protection rules, the route through the Access
 tunnel with `verify-ca` meeting a real Origin CA certificate, the keeping of the previous release's web files over two
 releases, and the rollback drill (run 43811076183: the injected failure put the previous version back and ended the run red).
-**Not yet run:** production, and a narrower token than the one in use. **Found by those runs, and changed since:** release-plz
+**Production has had its first deploy** (2026-11-16, release `v0.2.0`, run 43921084528: [what it settled](deploy.md#what-the-first-production-deploy-settled)). **Not yet run:** a second production deploy, the pipeline's own smoke against production (the first production smoke was run by hand), and a narrower token than the one in use. **Found by those runs, and changed since:** release-plz
 force-updates the release candidate's branch, so the live commit is usually not in the next candidate's history, and the
 classifier, which failed closed on that, sent two deploys to the manual gate with nothing in them that needed one (runs
 43796746005 and 43803593395). It now fetches the live commit by its sha and compares the two commits by content, and still
@@ -424,7 +426,7 @@ every one succeeded `[verified 2026-10-19 fa4bd6c]` with `gh run view`.
 - The `blast` and `bench` contract passes, which are not in `contract-all.sh`.
 - A deploy that has run against Cloudflare. `ci` tests `deploy.yml`'s scripts against a fake Cloudflare, and the pull-request
   dry run and `wrangler deploy --dry-run` check the rendered configuration. Real deploys to staging have run since 2026-11-15
-  and none to production (see [Deploying the Worker](deploy.md)).
+  and one to production (2026-11-16; see [Deploying the Worker](deploy.md)).
 - A release being published. `release-plz.yml` runs on pushes to `main` and `release.yml` on the tag, not in `ci`, and on a pull
   request `release.yml` is a dry run that attests and publishes nothing. The flow has run once: `v0.1.0` was published on
   2026-11-16 (`gh release list`), and the changelog, the workspace version, the `v*` tag ruleset and immutable releases it

@@ -9,8 +9,9 @@ this page cannot drift from them; the notes below explain why each exists. The n
 
 **Rule 1 (nextest).** nextest runs each test in its own process, applies per-category timeouts and makes the
 retry policy part of the config instead of the command line. Doctests are the one thing it cannot run. The contract
-suite and `pg_adapter` still run on `cargo test` through scripts that parse its `test result:` line; that is
-deliberate and documented in `AGENTS.md`, not an exception to copy.
+suite runs on nextest too, through `scripts/contract.sh` and the `contract` profile. `pg_adapter` and the SMTP adapter's
+`smtp_sink` still run on `cargo test` through scripts that parse its `test result:` line, until the test-suites plan
+moves them; that is deliberate and documented in `AGENTS.md`, not an exception to copy.
 
 **Rule 2 (no retry or flaky overrides).** A randomized test that failed once has found an input that breaks the
 code. A retry that passes hides it. `flaky-result = "fail"` in `.config/nextest.toml` is only a default:

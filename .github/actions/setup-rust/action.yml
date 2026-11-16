@@ -1,5 +1,5 @@
 name: setup-rust
-description: The Rust toolchain rust-toolchain.toml pins, rustup targets, a keyed cache, and (optionally) the pinned Worker toolchain. One place to change versions for every job that builds the workspace.
+description: The Rust toolchain rust-toolchain.toml pins, rustup targets, a keyed cache, and (optionally) the pinned Worker toolchain and cargo-nextest. One place to change versions for every job that builds the workspace.
 
 inputs:
   targets:
@@ -17,6 +17,14 @@ inputs:
     description: "'true' to save the cache at the end (set it for the default branch only)"
     required: false
     default: "false"
+  nextest:
+    description: "'true' to install cargo-nextest at the pinned version: every job that runs a Rust test through it (the hermetic loop, and every job that runs the contract suite)"
+    required: false
+    default: "false"
+  nextest-version:
+    description: Exact cargo-nextest version
+    required: false
+    default: "0.9.140"
   worker-tools:
     description: "'true' to install worker-build and wrangler at the pinned versions"
     required: false
@@ -58,6 +66,12 @@ runs:
       with:
         shared-key: ${{ inputs.cache-key }}
         save-if: ${{ inputs.save-cache == 'true' }}
+
+    # A prebuilt binary, checked by the action against its release's checksum; after the cache step, so it is not cached twice.
+    - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
+      if: inputs.nextest == 'true'
+      with:
+        tool: cargo-nextest@${{ inputs.nextest-version }}
 
     - name: Install worker-build (exact version, locked)
       if: inputs.worker-tools == 'true'
