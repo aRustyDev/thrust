@@ -347,11 +347,12 @@ jobs:
       - name: Doctests
         run: scripts/rs cargo test --doc --workspace --locked
       # The tests of the OpenAPI document (issue #58) exist only with thrust-api-v1's `openapi` feature, which the run above does not
-      # turn on: the document's operations against the router, and its schemas against real bodies. nextest exits 4 if the filter
+      # turn on: the document's operations against the router, its response schemas against real bodies, and its request schemas
+      # against the parsers (`request_conformance`: bodies generated from the schemas' own keywords). nextest exits 4 if the filter
       # selects nothing, so a feature that stopped compiling them cannot pass. The default profile and not `ci`, which would write
       # `junit.xml` again and replace the report of the whole run that the next step uploads.
       - name: OpenAPI tests (nextest, openapi feature)
-        run: scripts/rs cargo nextest run --no-fail-fast -p thrust-api-v1 --features openapi --locked -E 'binary(openapi)'
+        run: scripts/rs cargo nextest run --no-fail-fast -p thrust-api-v1 --features openapi --locked -E 'binary(openapi) | binary(request_conformance)'
       - name: Upload the JUnit report
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

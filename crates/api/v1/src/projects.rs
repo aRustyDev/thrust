@@ -22,7 +22,7 @@ use thrust_ports::{ProjectListing, ProjectRow, WorkspaceScope};
 
 use crate::dto::{into_object, ProjectDto, ProjectLiteDto};
 use crate::fields::{
-    bool_field, char_field, fail, int_field, no_such_pk, read, refuse_if_any, uuid_field, FieldErrors,
+    bool_field, char_field, choice_by, fail, int_field, no_such_pk, read, refuse_if_any, uuid_field, FieldErrors,
 };
 use crate::pagination::{Page, PageRequest};
 use crate::request::{json_body, pick_fields, query_map, Body};
@@ -253,14 +253,8 @@ async fn project_patch(
     let months = |v: &Value| int_field(v, 0, 12).and_then(|n| i32::try_from(n).map_err(|e| e.to_string()));
     p.archive_in = read(&mut errors, b, "archive_in", months);
     p.close_in = read(&mut errors, b, "close_in", months);
-    p.timezone = read(&mut errors, b, "timezone", |v| {
-        let zone = char_field(v, None, false, false)?.unwrap_or_default();
-        if thrust_core::is_known_timezone(&zone) {
-            Ok(zone)
-        } else {
-            Err(format!("\"{zone}\" is not a valid choice."))
-        }
-    });
+    // a model field with `choices` is a `ChoiceField`, which does not trim: a padded name is no choice (`choice_by`)
+    p.timezone = read(&mut errors, b, "timezone", |v| choice_by(v, thrust_core::is_known_timezone));
 
     // the fields that name a row: a user who is there; for a change, a state and an estimate
     for field in ["project_lead", "default_assignee"] {

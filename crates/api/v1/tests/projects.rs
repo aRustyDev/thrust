@@ -463,6 +463,16 @@ fn a_member_or_an_admin_of_the_workspace_makes_a_project(#[case] who: Who, #[cas
 #[case::months_that_are_not_numbers(json!({"name": "M", "identifier": "MON", "archive_in": "x"}), json!({"archive_in": ["A valid integer is required."]}))]
 #[case::not_a_boolean(json!({"name": "M", "identifier": "MON", "module_view": "maybe"}), json!({"module_view": ["Must be a valid boolean."]}))]
 #[case::not_a_zone(json!({"name": "M", "identifier": "MON", "timezone": "Nope/Zone"}), json!({"timezone": ["\"Nope/Zone\" is not a valid choice."]}))]
+#[case::a_timezone_in_the_wrong_case(json!({"name": "M", "identifier": "MON", "timezone": "utc"}), json!({"timezone": ["\"utc\" is not a valid choice."]}))]
+#[case::a_null_timezone(json!({"name": "M", "identifier": "MON", "timezone": null}), json!({"timezone": ["This field may not be null."]}))]
+// the four below pin a drift that tests/request_conformance.rs found: the timezone was read as a text and trimmed, so a name with a space
+// round it was taken, and a blank, a bool and a list had the messages of a `CharField`. A model field with `choices` is a `ChoiceField`,
+// which does not trim and quotes Python's `str()` of what it was given (the answers are those of DRF 3.15.2 on Django 4.2.30, the pin's
+// versions, for the same model field; not of the pin's HTTP)
+#[case::regression_a_padded_timezone(json!({"name": "M", "identifier": "MON", "timezone": " UTC"}), json!({"timezone": ["\" UTC\" is not a valid choice."]}))]
+#[case::regression_a_blank_timezone(json!({"name": "M", "identifier": "MON", "timezone": ""}), json!({"timezone": ["\"\" is not a valid choice."]}))]
+#[case::regression_a_bool_for_a_timezone(json!({"name": "M", "identifier": "MON", "timezone": true}), json!({"timezone": ["\"True\" is not a valid choice."]}))]
+#[case::regression_a_list_for_a_timezone(json!({"name": "M", "identifier": "MON", "timezone": ["UTC"]}), json!({"timezone": ["\"['UTC']\" is not a valid choice."]}))]
 #[case::not_a_uuid(json!({"name": "M", "identifier": "MON", "project_lead": "nope"}), json!({"project_lead": ["Must be a valid UUID."]}))]
 #[case::a_lead_who_is_nobody(json!({"name": "M", "identifier": "MON", "project_lead": "00000000-0000-0000-0000-000000000bad"}), json!({"project_lead": ["Invalid pk \"00000000-0000-0000-0000-000000000bad\" - object does not exist."]}))]
 #[case::several_at_once(json!({"identifier": "ABCDEFGHIJKLMNOP", "archive_in": 99}), json!({"name": ["This field is required."], "identifier": ["Ensure this field has no more than 12 characters."], "archive_in": ["Ensure this value is less than or equal to 12."]}))]
