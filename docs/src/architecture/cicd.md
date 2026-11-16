@@ -339,7 +339,10 @@ every one succeeded `[verified 2026-10-19 fa4bd6c]` with `gh run view`.
 - A deploy that has run against Cloudflare. `ci` tests `deploy.yml`'s scripts against a fake Cloudflare, and the pull-request
   dry run and `wrangler deploy --dry-run` check the rendered configuration. Real deploys to staging have run since 2026-11-15
   and none to production (see [Deploying the Worker](deploy.md)).
-- A release. There is no changelog, version (the workspace is `0.0.0`), release tag, GitHub release or tag protection.
+- A release being published. `release-plz.yml` runs on pushes to `main` and `release.yml` on the tag, not in `ci`, and on a pull
+  request `release.yml` is a dry run that attests and publishes nothing. The flow has run once: `v0.1.0` was published on
+  2026-11-16 (`gh release list`), and the changelog, the workspace version, the `v*` tag ruleset and immutable releases it
+  needs exist ([Release candidates](#release-candidates)).
 - The upstream vitest files under `web/`, a fuzz target (there is no `fuzz/`), coverage, and `cargo mutants` (the
   `mutants` job runs the planted mutants of `scripts/mutants.sh`, on `native-memory` and `native-pg` only).
 
