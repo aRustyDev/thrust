@@ -49,6 +49,17 @@ Flags are an ordinary table in the system-of-record database, read per request l
 
 This supersedes the leading hypothesis's "keep the port OpenFeature-compatible in semantics so Option 3 can be added as an adapter" and the port in this ADR's title. The Confirmation's cases (instance default, workspace override, unknown key = off) stay; with no port they test the evaluation, not a port contract. The Consequences' "audit via ADR-0048" applies from P1, when ADR-0048's audit rows arrive (ADR-0048, round 29).
 
+## Update — Flagship at the edge, not in the app (2026-11-16)
+
+ADR-0111 uses Cloudflare Flagship, but only in `thrust-edge`, to choose which deployed target a request reaches.
+Product feature flags are unchanged:
+* a `flags` table, no port and no OpenFeature seam;
+* edited by admins through the workspace settings.
+
+The two are different things: one routes deployments, the other gates product features. The self-hosted twin has no
+need of the first. Moving product flags to Flagship would bring back the external dependency this ADR rejected, and it
+would not exist self-hosted.
+
 ## Open Questions
 
 * Q-0008 — flag storage/evaluation model and who may edit flags. (answered round 29, FR-18)

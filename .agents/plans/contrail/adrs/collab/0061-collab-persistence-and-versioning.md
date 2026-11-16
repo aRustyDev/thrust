@@ -102,6 +102,18 @@ The review date of 2026-11-09 came due and the owner did not decide Q-0061 (2026
 
 On Q-0061 the owner wrote "Snapshot periodically I think?" (2026-11-11): a tentative lean, not a decision. It is recorded as consistent with Option 4, the leading hypothesis since 2026-10-17, so that hypothesis stands and its confidence stays low to medium. The owner did not say whether a write-ahead log sits under the snapshots; that reading is the recorder's. Snapshots alone (Option 3) lose recent edits on failure, which fails the spike's exit criterion of no data loss on forced DO eviction, so if the lean means no log, that needs saying before the spike. The ADR stays `proposed` and Q-0061 stays open; the strategy is still decided when spike 0005 starts (M5).
 
+## Update — rooms in a target that shares production's data (2026-11-16)
+
+ADR-0111 runs targets that share production's database and bucket.
+* **A shared target uses production's rooms.** With rooms of its own, it would snapshot a second, divergent copy of a
+  page over production's (this ADR's snapshot to `BlobStore` and `Database`). So a shared target binds production's
+  rooms (`script_name = "thrust"`).
+* **That keeps one writer per page.** The spike (`research/0016`) showed such a room runs production's code and
+  environment. The price is that a shared target cannot exercise a change to the room.
+* **Isolated targets have rooms of their own,** which Cloudflare creates per Preview and deletes with it.
+
+None of this chooses the persistence strategy: Q-0061 stays open.
+
 ## Open Questions
 
 * Q-0061 — choose the strategy (decision-pending; decide when spike 0005 starts, M5).

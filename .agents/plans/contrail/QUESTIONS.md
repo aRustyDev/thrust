@@ -227,7 +227,7 @@ review task #1 in PROMPT.md.
 | Q-0090.2 | Custom Domains or Routes for each host? | **answered** (round 26, desk): Custom Domains for both product hostnames |
 | Q-0091.1 | Does the self-hosted twin need private `.woven` hostname handling? | **answered** (round 29, owner; default): no; the twin is one binary behind the operator's own DNS and ingress (ADR-0091, round 29) |
 | Q-0092.1 | Which source feeds CI secrets: 1Password or GitHub environment secrets? | **answered** (round 15): 1Password locally, GitHub environment secrets for CI |
-| Q-0092.2 | Which environments exist; do PR previews get isolated DBs? | **answered** (round 16): dev (PR previews, shared DB, per-PR schema/prefix), staging, prod |
+| Q-0092.2 | Which environments exist; do PR previews get isolated DBs? | **answered** (round 16): dev (PR previews, shared DB, per-PR schema/prefix), staging, prod. **Superseded (2026-11-16, ADR-0111, #195):** one production Worker and any number of Worker Previews of it on one hostname: release targets (`vX.Y.Z`, the alias `staging`) on production's data, and `dev-*` targets for pull requests with their own role, schema, Hyperdrive config and bucket on `thrust-pg-dev`; staging has no data of its own |
 | Q-0093.1 | Which repo hosts the Cloudflare OpenTofu root, and what is its state backend? | **answered** (round 15): the infra repo hosts the Cloudflare Tofu root |
 | Q-0093.2 | Wrangler auto-provisioning or Terraform-created IDs? | **answered** (round 29, FR-17): Terraform-created ids. The OpenTofu Cloudflare provider in the infra repo creates the resources (Q-0093, Q-0093.1), and wrangler deploys Worker code only (Q-0093) |
 | Q-0100.1 | Which matrix subset is required on PRs, full matrix nightly? | **answered** (round 16): as Q-0100 |
@@ -374,3 +374,10 @@ review task #1 in PROMPT.md.
 | ID | Question | Status |
 |---|---|---|
 | Q-0041.3 | Postgres RLS as defence in depth under Q-0041's Option 1: add it or not, and when? It needs measuring first. The app roles own their objects (the per-PR roles of `pr-schema.sh` own their schemas; `thrust` owns the restored table in the restore drill), and a table owner bypasses RLS unless the table has `FORCE ROW LEVEL SECURITY`; Hyperdrive keeps no per-session state (Q-0006.4), so the setting would have to be a `SET LOCAL app.workspace_id` inside the transaction it protects. **[ADR]** | open. Raised when Q-0041 was decided (2026-11-10, owner: RLS is optional hardening, not part of Option 1). Owner: asmith; decide when multi-tenant mode is first enabled (ADR-0003), not before. |
+
+## Added 2026-11-16 (ADR-0111, #195)
+
+| ID | Question | Status |
+|---|---|---|
+| Q-0111.1 | `preview_urls = true` gives thrust's Previews their workers.dev URLs. Does it also open production's Version URLs past the edge, and does an Access app with destination `worker` (all of the Worker's traffic) close them without affecting the edge's service binding? **[ADR]** | open. Measure before production is first deployed (stage E of #195). |
+| Q-0111.2 | Does thrust work behind the edge in a Preview: the React app, the OIDC callback, CSRF? `/api/instances/` builds the app's origin from `Host`, which in a Preview is its own workers.dev host (research/0016), so it must prefer `THRUST_PUBLIC_BASE_URL`. **[ADR]** | open. Shown with the first release target (stage E of #195). |
