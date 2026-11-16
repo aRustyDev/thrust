@@ -26,11 +26,13 @@ same spec table.
 
 ### Pinned cases
 
-A named input with a known output, kept for one of three reasons, which its name or a one-line comment states:
+A named input with a known output, kept for one of three reasons, which its name or a one-line comment states. A
+regression needs both: the `regression_` name, so `test(/regression_/)` selects it, and the comment, which says what it
+pins ([Rule 9](../rules.md)).
 
 | Reason | Name or comment | Example |
 |---|---|---|
-| regression: a shrunk counterexample, fuzz crash or fixed bug | `#[case::issue_482_trailing_space]`, or `// regression: prop_… counterexample` | `single_dot` in `validate_blob_name_cases` |
+| regression: a shrunk counterexample, fuzz crash or fixed bug | `#[case::regression_issue_482_trailing_space]` (or `fn regression_…`) **and** `// regression: prop_… counterexample` | `regression_single_dot` in `validate_blob_name_cases` |
 | an example the spec, an ADR or Plane names | `// spec: ADR-0080 size limit` | |
 | output recorded from an independent oracle | use a [golden fixture](golden-fixtures.md) instead | |
 
@@ -71,7 +73,7 @@ implementation.
 - `crates/thrust-core/tests/authorize.rs`: `authorize_follows_the_role_table`, an rstest `#[values]` matrix of role by permission
   against a table written out as the spec, not read from the code. This is the shape to copy.
 - `crates/thrust-core/src/lib.rs` (`mod tests`): `validate_name_cases` and `validate_blob_name_cases`, rstest tables beside the
-  `prop_` validators; `single_dot` is pinned from a property counterexample. Their other cases predate Rule 9 and
+  `prop_` validators; `regression_single_dot` is pinned from a property counterexample. Their other cases predate Rule 9 and
   carry no reason label (drift D-15 in [Status](../status.md)).
 
 ## Target

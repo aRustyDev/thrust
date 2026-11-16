@@ -46,5 +46,7 @@ A generator searches that space on every run, and the shrunk counterexample it f
 static tests keep a role, as the memory of what a generator, a fuzzer or a user already found, but they are not
 where a behaviour is first specified. The three allowed kinds (regression, a named spec example, oracle output)
 are the cases where the input is fixed for a reason outside the test. Labelling each one shows a reviewer why it is
-static, and a static case with no label is the cue to write the generator. The ladder of generative techniques and
+static, and a static case with no label is the cue to write the generator. A regression also carries the
+`regression_` name, because a comment cannot be selected and a name can: `test(/regression_/)` lists every pinned
+regression in the workspace. The ladder of generative techniques and
 the seed policy are in [Strategy](strategy.md#generative-first).

@@ -315,7 +315,7 @@ fn model_counting_strategy_reaches_every_step_class() {
 /// `mutant_discard_noop` makes, through the counting connector. The same loop as the uncounted test of the same name,
 /// with the count the loop must cost: dropping a transaction sends nothing.
 #[tokio::test]
-async fn an_abandoned_transaction_does_not_poison_the_pool_through_the_counting_connector() {
+async fn regression_an_abandoned_transaction_does_not_poison_the_pool_through_the_counting_connector() {
     let env = env().await;
     let (ws, _o, p, _u) = seeded(&env).await;
     let s = scope(ws, p);
@@ -347,7 +347,7 @@ async fn an_abandoned_transaction_does_not_poison_the_pool_through_the_counting_
 /// Pinned regression (issue #39): a statement counts when it is sent, not when it succeeds. Postgres refuses a
 /// duplicate live external key after the INSERT has gone out, and `BEGIN` went before it.
 #[tokio::test]
-async fn a_statement_postgres_refuses_still_counts() {
+async fn regression_a_statement_postgres_refuses_still_counts() {
     let env = env().await;
     let (ws, _o, p, _u) = seeded(&env).await;
     let s = scope(ws, p);
@@ -371,7 +371,7 @@ async fn a_statement_postgres_refuses_still_counts() {
 /// one connector per request over one shared pool, and requests overlap, so two counted databases working at once must
 /// not see each other's statements, and an uncounted one over the same pool must count in neither.
 #[tokio::test]
-async fn counting_connectors_over_one_pool_count_separately() {
+async fn regression_counting_connectors_over_one_pool_count_separately() {
     let env = env().await;
     let (ws, _o, p, _u) = seeded(&env).await;
     let s = scope(ws, p);
@@ -393,7 +393,7 @@ async fn reads(db: &PgDatabase, s: Scope, n: usize) {
 /// budget of five. A page with rows is one statement and a page with none is two (the second is the count), for everyone: the
 /// maker of the item, a guest who made nothing, and a caller who is no guest at all.
 #[tokio::test]
-async fn a_limited_guests_page_costs_what_anyones_page_costs() {
+async fn regression_a_limited_guests_page_costs_what_anyones_page_costs() {
     let env = env().await;
     let (_, _, owner, s) = project_with_states(&env, "guest-cost").await;
     put_item(&env, s, "one", |_, _| {}).await.unwrap();

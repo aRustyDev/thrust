@@ -39,6 +39,7 @@ a correctly prefixed test needs no config change.
 | `parity_` | every profile that selects it | plain; fixtures are committed, so it is hermetic |
 | `oracle_` | `oracle`, `deep` only | group `ts-oracle` (2 threads), `retries = 0`, `flaky-result = "fail"`, `leak-timeout = "1s"` |
 | `fuzz_replay_` | `default` | owned by `rust-test-fuzz` |
+| `regression_` | every profile that selects it | plain. Not `\b`-anchored: it follows a category prefix (`model_regression_…`) and rstest's `case_<n>_`, so select it with `test(/regression_/)` |
 | `e2e_` | `e2e` only, package `e2e` | group `browser` (2 threads) is defined; the retry override is **commented out** in the template (see below) |
 
 Plain tests get `retries = 0` and `slow-timeout = { period = "30s", terminate-after = 4 }`: a test is flagged slow

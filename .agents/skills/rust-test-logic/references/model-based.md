@@ -105,9 +105,9 @@ This is not a per-route handler test. One request, one assertion on status and b
    regression that survives generator changes. Keep it in the same file so it shares the `send` helper:
 
 ```rust
-// Replay of the shrunk sequence: Create x4, Delete(last), Create. Example names and ids.
+// regression: replay of the shrunk sequence Create x4, Delete(last), Create. Example names and ids.
 #[tokio::test]
-async fn ids_are_never_reused_after_delete() {
+async fn regression_ids_are_never_reused_after_delete() {
     let app = router(AppState::default());
     for name in ["a", "b", "c", "d"] {
         send(&app, Method::POST, "/api/items", Some(json!({ "name": name }))).await;
