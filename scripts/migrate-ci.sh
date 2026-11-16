@@ -2,7 +2,13 @@
 # The deploy's expand migration, over the Access tunnel (issue #49, ADR-0110 round 29): open a TCP tunnel to `thrust-pg` with
 # `cloudflared access tcp`, run `migrate` through it over verified TLS, close the tunnel.
 #
-#   scripts/migrate-ci.sh
+#   scripts/migrate-ci.sh [--no-contract | --plan]
+#
+# The flag, if any, is `migrate`'s own and is passed on to it (crates/thrust-adapters-postgres/src/bin/migrate.rs, issue #195): without
+# one it applies every migration the database's ledger does not have; `--no-contract` refuses to apply a contract migration
+# (`NNNN_contract_*.sql`), as a deploy that is not production's must; `--plan` prints what would be done, as one line of JSON, and
+# changes nothing. Anything else is refused before the tunnel is opened. Only `migrate` writes to stdout, so the JSON of `--plan` is
+# the whole of it; this script's own lines go to stderr.
 #
 # Why this shape. `thrust-pg` has no public endpoint and accepts only TLS, so CI reaches it as a client of an Access application with a
 # service token (Q-0094, ADR-0094 Option 2). `cloudflared access tcp` listens on 127.0.0.1 and carries the bytes, so the database sees
@@ -30,6 +36,11 @@ set -u
 
 fail() { echo "migrate-ci: FAIL: $*" >&2; exit 1; }
 usage() { echo "migrate-ci: $*" >&2; exit 2; }
+
+case "$#:${1:-}" in
+  0:|1:--no-contract|1:--plan) ;;
+  *) usage "usage: migrate-ci.sh [--no-contract | --plan] (got: $*)" ;;
+esac
 
 for v in DB_ACCESS_HOSTNAME TUNNEL_SERVICE_TOKEN_ID TUNNEL_SERVICE_TOKEN_SECRET DATABASE_URL DATABASE_SSLROOTCERT MIGRATE_BIN; do
   eval "val=\${$v:-}"
@@ -87,10 +98,10 @@ until nc -z 127.0.0.1 "$PORT" > /dev/null 2>&1; do
   fi
   sleep "$INTERVAL"
 done
-echo "migrate-ci: the tunnel's local end is up on 127.0.0.1:$PORT"
+echo "migrate-ci: the tunnel's local end is up on 127.0.0.1:$PORT" >&2
 
 # DATABASE_SSLMODE is set for `migrate` and not left to the caller. The service token is not passed on to it.
-DATABASE_SSLMODE=verify-ca env -u TUNNEL_SERVICE_TOKEN_ID -u TUNNEL_SERVICE_TOKEN_SECRET "$MIGRATE_BIN"
+DATABASE_SSLMODE=verify-ca env -u TUNNEL_SERVICE_TOKEN_ID -u TUNNEL_SERVICE_TOKEN_SECRET "$MIGRATE_BIN" "$@"
 rc=$?
 if [ "$rc" -ne 0 ]; then
   echo "migrate-ci: migrate exited $rc; the end of cloudflared's log, which says why the connection failed if it did:" >&2

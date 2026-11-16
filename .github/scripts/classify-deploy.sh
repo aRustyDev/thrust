@@ -8,8 +8,8 @@
 #
 # Prints `key=value` lines, ready for $GITHUB_OUTPUT:
 #   migrations_changed   true when the expand migration has to run: a file under the migrations directory differs between the two
-#                        commits. `migrate` re-runs every file each time, including DROP and ADD CONSTRAINT, so a deploy that did not
-#                        change them does not run it.
+#                        commits. A deploy that changed none has nothing for `migrate` to apply (it applies only the files the
+#                        database's ledger lacks, issue #195), so it does not open the tunnel to run it.
 #   do_lifecycle         true when the deploy changes the Durable Object lifecycle, so it can neither be gradual nor be rolled back
 #                        across (ADR-0110): the `[[migrations]]` tables of the deploy template differ. It goes through the manual gate.
 #   reason               one line saying why, for the job summary
