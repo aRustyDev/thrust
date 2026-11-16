@@ -12,7 +12,14 @@
 It prints, for $GITHUB_OUTPUT:
   jobs=<JSON list of the jobs that must run>   the gate (assert-gate.sh) requires each to succeed, and every other to be skipped
   matrix=<{"include":[{"target":..,"pass":..}]}> and cells=<JSON list of "<target> <pass>">   the cells that must run
+  top=<JSON list>   what ci.yml's own gate expects (ADR-0102): the planned jobs that are still jobs of ci.yml itself, then the
+                    called workflows that have a planned job
+  workflows=<JSON list of the called workflows that have a planned job> and plans=<{"workflow": [its planned jobs]}>   each
+                    called workflow's `plan` input, which its `verdict` job judges it by
 and, on stderr, why: each path with the rule it matched.
+
+A job is a job of ci.yml itself or of one called workflow (WORKFLOWS, which each stage of the migration fills in). While no job has
+moved, top equals jobs, workflows is [] and plans is {}.
 
 How a path decides (RULES, first match wins; a path that matches no rule needs nothing, as README.md and .agents/ do):
   * a crate's own files (the files under a member's directory, at any depth under crates/: the longest member directory that
@@ -43,6 +50,10 @@ import sys
 
 JOBS = ("ci-scripts", "deps", "lint", "deny", "hermetic", "pg-adapter", "contract", "mutants", "web", "docs")
 
+# The called workflow each job belongs to (ADR-0102): {workflow: (its jobs)}. A job in none is still a job of ci.yml itself. Every
+# migration stage moves its jobs in here; a job may be in one workflow only, and a name here must be one of JOBS (check_workflows).
+WORKFLOWS = {}
+
 # The binary each target of scripts/contract.sh starts. Everything a cell runs against is built from it.
 TARGET_BINARY = {
     "native-memory": "thrust-server",
@@ -62,7 +73,9 @@ RULES = [
     (r"^(Cargo\.(toml|lock)|rust-toolchain(\.toml)?)$", FULL, "the workspace manifest, the lockfile or the toolchain"),
     (r"^\.config/branding/", {"jobs": ["docs"]}, "the book's palette (read by docs/book.toml only)"),
     (r"^\.(cargo|config)/", FULL, "Cargo's or nextest's configuration"),
-    (r"^\.github/workflows/(ci|contract-cell)\.yml$", FULL, "the workflow that runs the checks"),
+    # every workflow file that runs the checks `gate` waits for: today's two, and the ones the migration adds (ADR-0102). test_plan_ci.py
+    # lists .github/workflows/ and fails for a file that is neither here nor among the ones that run no check.
+    (r"^\.github/workflows/(ci|contract-cell|test|lint|documentation|security|web)\.yml$", FULL, "the workflow that runs the checks"),
     (r"^\.github/actions/setup-rust/", FULL, "the action every Rust job sets up with"),
     (r"^\.github/actions/contract-pass-tools/", FULL, "the action that prepares a contract cell's pass (uv, the app, the browser)"),
     (r"^\.github/scripts/(plan-ci\.py|plan-cells\.sh|assert-gate\.sh)$", FULL, "this planner, or the gate that trusts it"),
@@ -161,6 +174,34 @@ def affected(changed, deps):
     return out
 
 
+def check_workflows(workflows=None, jobs=JOBS):
+    """Refuses a WORKFLOWS that is not a partition: a name that is not a job, a job in two workflows, a workflow with no job."""
+    workflows = WORKFLOWS if workflows is None else workflows
+    seen = {}
+    for workflow, members in workflows.items():
+        if not members:
+            fail(f"workflow {workflow} has no job")
+        for job in members:
+            if job not in jobs:
+                fail(f"workflow {workflow} lists {job}, which is not one of the jobs")
+            if job in seen:
+                fail(f"{job} is in two workflows: {seen[job]} and {workflow}")
+            seen[job] = workflow
+
+
+def slices(planned, workflows=None, jobs=JOBS):
+    """(top, called, plans) for a set of planned jobs. `top` is what ci.yml's own gate expects: the planned jobs that are still jobs
+    of ci.yml itself, in the order of JOBS, then the called workflows that have a planned job. `plans` is each called workflow's
+    own planned jobs, which it is given as its `plan`."""
+    workflows = WORKFLOWS if workflows is None else workflows
+    check_workflows(workflows, jobs)
+    moved = {job for members in workflows.values() for job in members}
+    called = [w for w, members in workflows.items() if planned & set(members)]
+    plans = {w: [j for j in workflows[w] if j in planned] for w in called}
+    top = [j for j in jobs if j in planned and j not in moved] + called
+    return top, called, plans
+
+
 def plan(paths, dirs, deps, cells, full_reason=None):
     """Returns (jobs, selected cells, notes)."""
     notes = []
@@ -250,10 +291,14 @@ def main():
     for note in notes:
         print(note, file=sys.stderr)
     ordered = [j for j in JOBS if j in jobs]
+    top, called, plans = slices(set(ordered))  # before the first line is printed: a map that is not a partition prints nothing
     matrix = {"include": [{"target": c.split(" ")[0], "pass": c.split(" ")[1]} for c in selected]}
     print("jobs=" + json.dumps(ordered, separators=(",", ":")))
     print("matrix=" + json.dumps(matrix, separators=(",", ":")))
     print("cells=" + json.dumps(selected, separators=(",", ":")))
+    print("top=" + json.dumps(top, separators=(",", ":")))
+    print("workflows=" + json.dumps(called, separators=(",", ":")))
+    print("plans=" + json.dumps(plans, separators=(",", ":")))
     print(f"plan-ci: {len(ordered)} jobs, {len(selected)} of {len(cells)} cells", file=sys.stderr)
 
 

@@ -151,6 +151,8 @@ jobs:
           python3 -I .github/scripts/tests/test_check_release_plz.py
           python3 -I .github/scripts/tests/test_flagship.py
           python3 -I .github/scripts/tests/test_plan_ci.py
+          # The tests of the planner and the gate must be able to fail: each hand mutant of those two files is killed by them (ADR-0102).
+          python3 -I .github/scripts/tests/mutate_gate.py
 
   deps:
     needs: changes

@@ -51,8 +51,18 @@ decides:
 - `contract` is expected exactly when cells are planned. The set of cells that uploaded a pass marker must then equal
   the planned set, which must not be empty.
 - `test-ci-scripts.sh` generates the cases: each of the ten jobs, expected or not, with each of the four results (80
-  cases), then the cells, the inputs and the names. 34 hand mutants of the planner and the gate are each caught by
-  their tests `[verified 2026-11-16 locally, under dash; not yet in CI]`.
+  cases), then the cells, the inputs and the names.
+- **One script at every level** (ADR-0102). `assert-gate.sh` also takes `KNOWN_JOBS`, `CHANGES_JOB`, `CELL_JOB` and
+  `VERDICT_JOBS`, each of which defaults to what the gate above needs. A called workflow's `verdict` job sets them to judge
+  its own jobs; a gate that calls workflows sets `VERDICT_JOBS` to require of each expected callee that its result is
+  `success` **and** that its output `verdict` is `pass`, since a callee whose `verdict` job was skipped is `success` and
+  proves nothing. No workflow is called yet, so ci.yml's own gate runs as above. The cases (173 in `test-ci-scripts.sh`)
+  include the seven scenarios of the gate spike (`.agents/plans/ci-workflows/research/0018-gate-spike.md`).
+- **Tested to be able to fail.** `.github/scripts/tests/mutate_gate.py`, the last line of the `ci-scripts` job, plants 53 hand
+  mutants one at a time in `plan-ci.py` and `assert-gate.sh`, and each must fail the tests of its file (`test_plan_ci.py`;
+  `test-ci-scripts.sh` under dash, stopping at the first failing case). It refuses to answer when the tests fail on the
+  unmutated files, when the text a mutant replaces is not found exactly once, or when a mutant no longer compiles, and two
+  mutants that change nothing must survive, so a driver that kills everything is caught. `[verified 2026-11-16 locally, under dash]`
 
 The point is that "nothing failed" is not accepted as "everything ran". A cell that never started leaves no check
 behind, and a required check that never reports blocks a pull request forever.
@@ -119,15 +129,20 @@ its base branch. Nothing calls it, so it is a tool to run by hand.
   | `scripts/smoke-deploy.sh` | `ci-scripts` | none |
   | a page under `docs/` | `docs` | none |
 
-- **Tested** by `test_plan_ci.py`, about 4,900 checks:
+- **Tested** by `test_plan_ci.py`, about 6,800 checks:
   - 300 generated crate graphs, with each crate changed alone and in pairs, against an independent reverse-reachability;
   - the plan of a list equals the union of the plans of its parts;
   - every rule is the first match of its own sample, and matches a tracked file;
   - the fail-open cases;
   - this repository's real graph and targets;
-  - no script that the planner keeps out of the cells is called by what runs a cell.
+  - no script that the planner keeps out of the cells is called by what runs a cell;
+  - the called workflows (ADR-0102): 300 generated partitions of the jobs into workflows against an independent computation
+    of what `gate` expects and what each workflow is given, the maps that are refused (a job in two workflows, a name that is
+    no job, a workflow with no job), and the command line run on a copy of the planner whose map is not empty;
+  - every file under `.github/workflows/` is one that runs the checks (planned as everything) or one that runs none, so a new
+    workflow cannot fall into the generic rule and run no test.
 
-  `[verified 2026-11-16 locally; not yet in CI]`
+  `[verified 2026-11-16 locally; run by ci-scripts]`
 - **The web job.** The `web` job runs `scripts/check-web-diff.sh` (only the files in
   `web/ALLOWED-CHANGES` may differ from the pin; `web/SOURCE` says where `web/` came from), then
   `pnpm --dir web install --frozen-lockfile --ignore-scripts` and `pnpm --dir web exec turbo run build --filter=web`,

@@ -175,28 +175,40 @@ place when those stages merge; two are enforced by GitHub itself). ADR-0100 has 
 **Purpose.** Give the planner and the gate the mechanism the migration needs, as a **behaviour-preserving** change: when it
 merges, CI plans and judges exactly what it did before.
 
-**Acceptance.**
-- `plan-ci.py` has a `WORKFLOWS` map (workflow name to its jobs), a partition of `JOBS` (a test fails if a job is in none
-  or in two), and prints `workflows=<JSON list of the workflows with at least one planned job>`. Today the map is one
-  entry, `ci`, holding every job, so the output is equivalent to the current one. Each migration stage then moves names
-  out of `ci`.
+**Acceptance** (refined while it was built; **done 2026-11-16**, in this stage's pull request).
+- `plan-ci.py` has a `WORKFLOWS` map, `{called workflow: (its jobs)}`, empty today: a job in no workflow is still a job of
+  `ci.yml` itself. (The first plan made `ci` a one-entry map holding every job, which makes `ci` mean two things.)
+  `check_workflows` refuses a map that is not a partition (a name that is no job, a job in two workflows, a workflow with no
+  job) before the planner prints a line, and the test refuses the same. Beside `jobs`, `matrix` and `cells`, which do not
+  change, it prints `top` (what `ci.yml`'s own gate expects: the planned jobs still in `ci.yml`, then the called workflows
+  that have one), `workflows` (the called workflows with a planned job) and `plans` (each one's planned jobs, which is its
+  `plan` input). While the map is empty `top` equals `jobs`, `workflows` is `[]` and `plans` is `{}`, so CI plans what it
+  did; once a stage fills the map, Phase 1 needs no further change to the planner.
 - Its RULES name every workflow file that runs checks (`test`, `lint`, `documentation`, `security`, `web`) as **run
   everything**, as `ci` and `contract-cell` are, and `test_plan_ci.py` lists the real `.github/workflows/` directory and
   fails if a file there matches only the generic rule and is not on a short list of files that run no check (`deploy`,
-  `release`, `release-plz`, `e2e`, `flagship`). The control: delete one of the new names from the rule and the test must fail.
+  `release`, `release-plz`, `e2e-schedule`, `flake-hunt`, `flagship`). The control is a mutant of the driver below: a name
+  deleted from the rule must fail the test.
   *(Narrowing a rule so that a change to `test.yml` runs only the test jobs is a Phase 2 optimization, not this.)*
-- `assert-gate.sh` takes its job list as an input and is the **one** script at every level: the top-level `gate` and each
-  callee's `verdict` job run it, with no copy. `gate` requires of each expected callee both `result == success` and
-  `outputs.verdict == pass` (design A+; both are in `toJSON(needs)`, which the script already reads). `same_jobs` is
-  extended to the new places the list lives.
-- `test-ci-scripts.sh` gains the callee cases: each scenario of the spike's table as a generated case, the 80 existing
-  cases unchanged and green, the control that an absent callee result is a failure and not a skip, and the control that a
-  callee whose `verdict` output is missing fails the gate although its result is `success`.
-- `.github/scripts/tests/mutate-gate.sh` (the 34 hand mutants of the planner and the gate, each of which the tests must
-  catch) is committed, runs under `dash`, and reports a mutant that survives. It is a step of the `ci-scripts` job (the
-  owner's decision, 2026-11-16), so it runs whenever that job does and a surviving mutant fails the gate; the control is a
-  test weakened on purpose, which must make the step fail. A change that plans no `ci-scripts` (a docs-only one) skips it, as
-  it skips every other helper test.
+- `assert-gate.sh` is the **one** script at every level: the top-level `gate` and each callee's `verdict` job run it, with no
+  copy. It takes four optional inputs, each defaulting to what `ci.yml`'s gate needs, so a level that forgets one fails and
+  does not pass: `KNOWN_JOBS`, `CHANGES_JOB` (set and empty: none, as in a called workflow), `CELL_JOB` (the same) and
+  `VERDICT_JOBS`, the expected jobs that call a workflow, each of which must also carry the output `verdict` equal to `pass`
+  (design A+; both are in `toJSON(needs)`, which the script already reads). `same_jobs` reads the default list from its new
+  place in the script. No workflow calls another yet, so `ci.yml`'s gate is run as before, and its 109 cases are unchanged.
+- `test-ci-scripts.sh` has 173 cases: the callee-level scenarios of the spike (green, skip-planned, fail-planned,
+  unplanned-ran, malformed-plan) and every job of a callee with every result; a gate that calls workflows, with every result
+  of the callee against every kind of `verdict` (`pass`, `fail`, empty, `{}` and no outputs at all), so that only a success
+  that says `pass` passes; and the controls that a verdict job that forgets one of its three inputs fails.
+- `.github/scripts/tests/mutate_gate.py` (Python, not shell: the mutant table is clearer there, and the mutants run in
+  parallel) is committed: the 34 hand mutants of the first driver, rebased on today's source, and 19 for this stage, 53 in all,
+  each of which must fail the tests of its file (`test-ci-scripts.sh` under dash). It is the last line of the `ci-scripts`
+  job (the owner's decision, 2026-11-16), so it runs whenever that job does and a surviving mutant fails the gate. The first
+  run found a real gap (a CLI test that could not tell a working `plans` line from a broken one while the map is empty);
+  it is closed. Controls: the tests must pass unmutated first; the text a mutant replaces must be found exactly once; a
+  mutant must compile; and two mutants that change nothing must survive. It takes 77 s at four workers (a hosted runner's
+  count) on a laptop, which pass 7 may shorten. A change that plans no `ci-scripts` (a docs-only one) skips it, as it skips
+  every other helper test.
 
 **Steps.** Planner and gate changes with their tests first (red, then green); the rules and the directory test; the mutant
 driver last, because it has to mutate the final text.
@@ -204,7 +216,7 @@ driver last, because it has to mutate the final text.
 **Public solutions.** `re-actors/alls-green` was measured in 0.2: wrong on two of seven scenarios (an unplanned job that ran; a judge that was
 skipped), and it needs a hand-written step to say what may be skipped, so it replaces nothing. Mutation
 tools for Python exist (`mutmut`, `cosmic-ray`); none mutates POSIX shell, and the gate is shell. *(Hand-written: the mutant
-driver. It already exists in a session scratchpad and is being rewritten into the repository, not invented.)*
+driver, rewritten from the one that survived in a session scratchpad.)*
 
 ## Stage 0.4: Lint conventions and indexes
 
