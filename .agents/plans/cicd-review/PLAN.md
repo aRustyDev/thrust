@@ -157,6 +157,28 @@ left, on the new tag (the App's token makes the tag start workflows):
 - Smaller fixes: `lint-workflow.sh` over every workflow and `setup-rust`; `--locked` on `hermetic` and `pg-adapter`; a
   `docs` job (book build and orphan check); a `rust-toolchain.toml`; `scripts/verify-all.sh`'s "16-cell" comment.
 
+**As built (2026-11-16).** The plan above changed in four places when it met the code:
+
+- **One planner instead of classes.** `.github/scripts/plan-ci.py` replaces `classify-changes.sh` and the `plan` job.
+  It names the jobs and the cells directly, from a table of path rules (first match wins) and Cargo's graph
+  (`cargo metadata --no-deps`, any kind of dependency). A class layer in between would have been a second mapping to
+  keep in step.
+- **Jobs are skipped whole, not filtered inside.** `hermetic` has no `rdeps(...)` filter: nextest builds every test
+  binary of the workspace either way, so a filter saves seconds of test time and none of the build. `mutants.sh` rows
+  are not tagged: every row is built on the native server, so the job runs when `thrust-server` is affected.
+- **Cells are chosen by binary, not by adapter.** A target runs when the binary it starts is affected. Narrowing
+  further, by which adapter a target uses at run time, is a judgement Cargo cannot check. A pass runs on its own inputs
+  (`tools/oracle-v1/`, `e2e/`, `web/`).
+- **Found while building it.**
+  - Files outside the crates are read by tests: `tools/oracle-v1/` by four crates, `.github/deploy/` by one. They have
+    their own rules, since Cargo's graph cannot see them.
+  - `.config/branding/` (the book's palette) no longer runs everything.
+- **Built-ins considered.** `cargo-rail`, `affected` and `cargo-delta` compute the affected crates, but none knows the
+  jobs, the cells or the gate's expected set, and each adds a binary to the required check's path. `dorny/paths-filter`
+  maps paths to flags, but its filters would be YAML that no test runs. The graph comes from `cargo metadata`, which is
+  built in.
+- **Left for their own PRs:** the smaller fixes above.
+
 ## Later: the E2E and integration recommendations
 
 One issue per journey in FINDINGS §3 and per gap in §4, drafted to a file and filed only when the owner asks.
