@@ -361,7 +361,7 @@ ADR-0100, ADR-0101 and ADR-0110 are accepted, in `.agents/plans/contrail/adrs/`.
   matrix on every pull request that changes a Rust-relevant path, a lint step (`lint`: rustfmt and clippy), and the
   aggregate job, as `gate`. In place in part: the oracle schema check, a step of `deps` (`scripts/check-openapi.sh`, issue #58),
   which diffs the OpenAPI document that `thrust-api-v1` writes with the pinned Plane schema for the operations listed in
-  `tools/oracle-v1/schema/described.operations` (the 13 of Projects and States so far), and runs a clippy step (`lint`) and a test step
+  `tools/oracle-v1/schema/described.operations` (the 18 of Projects, States and Labels so far), and runs a clippy step (`lint`) and a test step
   (`hermetic`) for the `openapi` feature that no other step turns on. Not in place: a nightly run (only the weekly flake hunt) and
   the periodic diff, which is `assert-required-contexts.sh` and is run by hand.
 - **ADR-0101 (supply chain)** asks for SHA pinning, Scorecard, attestation and trivy, plus Worker-bundle

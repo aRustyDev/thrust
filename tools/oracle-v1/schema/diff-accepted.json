@@ -97,6 +97,22 @@
       "text_contains": "slug` response's property pattern",
       "operations": ["list_states", "create_state", "retrieve_state", "update_state"],
       "reason": "The pin's schema gives `slug` the pattern `^[-a-zA-Z0-9_]+$` (the validator of a `SlugField`), and the pin does not keep to it: `State.save()` stores `slugify(name)` in a field that is `blank=True`, and a name of CJK or emoji alone has the empty slug on the pin and here (D-031 (2), owner confirmed). This document does not claim a pattern, because the route can send an empty slug (`tests/openapi.rs`, `a_name_with_no_letter_has_an_empty_slug_which_the_document_does_not_forbid`)."
+    },
+    {
+      "id": "SD-013",
+      "ref": "D-032 (6) (proposed, not yet confirmed by the owner)",
+      "check": "request-body-media-type-removed",
+      "text_contains": "application/x-www-form-urlencoded",
+      "operations": ["create_label", "update_label"],
+      "reason": "A body that is a form is a 415 on a label, as on a project (D-030 (5)) and a state (D-031 (5)): Thrust reads JSON only (`request::json_body`, one condition for every v1 route). The pin also reads forms. The owner confirmed D-030 (5) for projects on 2026-11-07; for labels it is D-032 (6), proposed here, and `a_form_or_a_multipart_body_is_a_415` in `tests/labels.rs` holds the behaviour."
+    },
+    {
+      "id": "SD-014",
+      "ref": "D-032 (6) (proposed, not yet confirmed by the owner)",
+      "check": "request-body-media-type-removed",
+      "text_contains": "multipart/form-data",
+      "operations": ["create_label", "update_label"],
+      "reason": "A body that is multipart is a 415, as a form is (SD-013)."
     }
   ]
 }

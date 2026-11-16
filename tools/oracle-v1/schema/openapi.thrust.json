@@ -490,6 +490,371 @@
         ]
       }
     },
+    "/api/v1/workspaces/{slug}/projects/{project_id}/labels/": {
+      "get": {
+        "tags": [
+          "Labels"
+        ],
+        "summary": "`GET .../labels/`: the project's labels, newest first, paged. There is no `order_by` here (the pin's view orders by the URL's\nkeyword argument, which no route has), and `expand` is ignored (D-032). The pin's schema lists both as parameters, so the\ndocument does (`ListQuery`): a request that sends them is answered as one that does not.",
+        "operationId": "list_labels",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "expand",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "fields",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "order_by",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "per_page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated list of labels",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_LabelDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request data provided"
+          },
+          "401": {
+            "description": "Authentication credentials were not provided or are invalid."
+          },
+          "403": {
+            "description": "Permission denied. User lacks required permissions."
+          },
+          "404": {
+            "description": "Project not found"
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuthentication": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "Labels"
+        ],
+        "summary": "`POST .../labels/`: make a label. The pin answers 201.",
+        "operationId": "create_label",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LabelCreateUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Label created successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LabelDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request data provided"
+          },
+          "401": {
+            "description": "Authentication credentials were not provided or are invalid."
+          },
+          "403": {
+            "description": "Permission denied. User lacks required permissions."
+          },
+          "404": {
+            "description": "The requested resource was not found."
+          },
+          "409": {
+            "description": "Label with the same name already exists"
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuthentication": []
+          }
+        ]
+      }
+    },
+    "/api/v1/workspaces/{slug}/projects/{project_id}/labels/{pk}/": {
+      "get": {
+        "tags": [
+          "Labels"
+        ],
+        "summary": "`GET .../labels/{id}/`. The pin's detail read builds its serializer with neither `fields` nor `expand`: both are ignored, so the\ndocument has no query for it.",
+        "operationId": "get_labels",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "pk",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Labels",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LabelDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication credentials were not provided or are invalid."
+          },
+          "403": {
+            "description": "Permission denied. User lacks required permissions."
+          },
+          "404": {
+            "description": "Label not found"
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuthentication": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "Labels"
+        ],
+        "summary": "`DELETE .../labels/{id}/`.",
+        "operationId": "delete_label",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "pk",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Resource deleted successfully"
+          },
+          "401": {
+            "description": "Authentication credentials were not provided or are invalid."
+          },
+          "403": {
+            "description": "Permission denied. User lacks required permissions."
+          },
+          "404": {
+            "description": "Label not found"
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuthentication": []
+          }
+        ]
+      },
+      "patch": {
+        "tags": [
+          "Labels"
+        ],
+        "summary": "`PATCH .../labels/{id}/`: change a label. The base view reads the body before the handler runs, so a body that cannot be parsed\nis refused before the label is looked for; the handler then finds the label (an archived project has none to find), and only then\ndoes the serializer read what the body says, so a list, or a field that is wrong, comes after the 404.",
+        "operationId": "update_label",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "pk",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/PatchedLabelCreateUpdateRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Label updated successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LabelDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request data provided"
+          },
+          "401": {
+            "description": "Authentication credentials were not provided or are invalid."
+          },
+          "403": {
+            "description": "Permission denied. User lacks required permissions."
+          },
+          "404": {
+            "description": "Label not found"
+          },
+          "409": {
+            "description": "Resource with same external ID already exists"
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuthentication": []
+          }
+        ]
+      }
+    },
     "/api/v1/workspaces/{slug}/projects/{project_id}/states/": {
       "get": {
         "tags": [
@@ -850,6 +1215,314 @@
   },
   "components": {
     "schemas": {
+      "LabelCreateUpdateRequest": {
+        "type": "object",
+        "description": "What a label's creation takes (the pin's `LabelCreateUpdateSerializer`): only `name` is required, and `name` cannot be blank. `color`\nand `description` can be blank and cannot be `null`; the two external keys and `parent` can be `null`.",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "color": {
+            "type": "string",
+            "maxLength": 255
+          },
+          "description": {
+            "type": "string"
+          },
+          "external_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 255
+          },
+          "external_source": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 255
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1
+          },
+          "parent": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "sort_order": {
+            "type": "number",
+            "format": "double"
+          }
+        }
+      },
+      "LabelDto": {
+        "type": "object",
+        "description": "The pin's `LabelSerializer`: 15 keys, all of them in every body (a key whose value can be `null` is `Option`, which is what the\ndocument says of it). A work item that is read with `expand=labels` carries this body too (`work_items::expansion`).",
+        "required": [
+          "id",
+          "created_at",
+          "updated_at",
+          "workspace",
+          "project",
+          "name",
+          "description",
+          "color",
+          "sort_order"
+        ],
+        "properties": {
+          "color": {
+            "type": "string",
+            "maxLength": 255
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "created_by": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "deleted_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "Always `null`: a deleted label is not shown."
+          },
+          "description": {
+            "type": "string"
+          },
+          "external_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 255
+          },
+          "external_source": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 255
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 255
+          },
+          "parent": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "A live label of the same project, or none (D-032 (1))."
+          },
+          "project": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sort_order": {
+            "type": "number",
+            "format": "double"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_by": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "workspace": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "Page_LabelDto": {
+        "type": "object",
+        "description": "The 12-key envelope of every v1 list (`BasePaginator`): the page's rows, how many there are in all, how many pages, and the\ncursors of the next and the previous page. The pin's schema has one per resource (`PaginatedProjectResponse`, ...), which differ\nonly in what `results` holds.",
+        "required": [
+          "grouped_by",
+          "sub_grouped_by",
+          "total_count",
+          "next_cursor",
+          "prev_cursor",
+          "next_page_results",
+          "prev_page_results",
+          "count",
+          "total_pages",
+          "total_results",
+          "extra_stats",
+          "results"
+        ],
+        "properties": {
+          "count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "extra_stats": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "grouped_by": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Always `null`: a v1 list is not grouped. The key is always there (`required`), whatever it holds."
+          },
+          "next_cursor": {
+            "type": "string"
+          },
+          "next_page_results": {
+            "type": "boolean"
+          },
+          "prev_cursor": {
+            "type": "string"
+          },
+          "prev_page_results": {
+            "type": "boolean"
+          },
+          "results": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "description": "The pin's `LabelSerializer`: 15 keys, all of them in every body (a key whose value can be `null` is `Option`, which is what the\ndocument says of it). A work item that is read with `expand=labels` carries this body too (`work_items::expansion`).",
+              "required": [
+                "id",
+                "created_at",
+                "updated_at",
+                "workspace",
+                "project",
+                "name",
+                "description",
+                "color",
+                "sort_order"
+              ],
+              "properties": {
+                "color": {
+                  "type": "string",
+                  "maxLength": 255
+                },
+                "created_at": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "created_by": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "uuid"
+                },
+                "deleted_at": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "date-time",
+                  "description": "Always `null`: a deleted label is not shown."
+                },
+                "description": {
+                  "type": "string"
+                },
+                "external_id": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "maxLength": 255
+                },
+                "external_source": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "maxLength": 255
+                },
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "name": {
+                  "type": "string",
+                  "maxLength": 255
+                },
+                "parent": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "uuid",
+                  "description": "A live label of the same project, or none (D-032 (1))."
+                },
+                "project": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "sort_order": {
+                  "type": "number",
+                  "format": "double"
+                },
+                "updated_at": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "updated_by": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "uuid"
+                },
+                "workspace": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          },
+          "sub_grouped_by": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "total_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "total_pages": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "total_results": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
       "Page_ProjectDto": {
         "type": "object",
         "description": "The 12-key envelope of every v1 list (`BasePaginator`): the page's rows, how many there are in all, how many pages, and the\ncursors of the next and the previous page. The pin's schema has one per resource (`PaginatedProjectResponse`, ...), which differ\nonly in what `results` holds.",
@@ -1894,6 +2567,49 @@
           "total_results": {
             "type": "integer",
             "minimum": 0
+          }
+        }
+      },
+      "PatchedLabelCreateUpdateRequest": {
+        "type": "object",
+        "description": "What a label's change takes: the creation's keys, none required.",
+        "properties": {
+          "color": {
+            "type": "string",
+            "maxLength": 255
+          },
+          "description": {
+            "type": "string"
+          },
+          "external_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 255
+          },
+          "external_source": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 255
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1
+          },
+          "parent": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "sort_order": {
+            "type": "number",
+            "format": "double"
           }
         }
       },

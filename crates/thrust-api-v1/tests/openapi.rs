@@ -59,6 +59,10 @@ fn state_id() -> String {
     Uuid::from_u128(STATE_TODO).to_string()
 }
 
+fn label_id() -> String {
+    Uuid::from_u128(LABEL_BUG).to_string()
+}
+
 /// A path of the document with the seeded world's values in its placeholders. A placeholder this does not know is a defect of the
 /// test, not a path to skip.
 fn filled(path: &str) -> String {
@@ -229,6 +233,60 @@ fn a_state_body_that_the_schema_does_not_describe_is_refused() {
     let mut hole = one.clone();
     hole["group"] = Value::Null;
     refused(&hole, "a null where the schema allows none");
+}
+
+/// The labels of the seeded project (`bug`, `feature`, `docs`), and one made with a parent and the keys an integration gives it, so that
+/// each key is checked where it is `null` and where it is not. All 15 keys are in every row.
+#[test]
+fn a_labels_body_is_its_schema() {
+    let doc = document();
+    let w = real_world();
+    let base = format!("/api/v1/workspaces/{SLUG}/projects/{}/labels", project_id());
+    let one = get(&w, &format!("{base}/{}/", label_id()));
+    assert_body_is_its_schema(&doc, "LabelDto", &one, &[], "GET label");
+    let list = get(&w, &format!("{base}/"));
+    assert_body_is_its_schema(&doc, "Page_LabelDto", &list, &[], "GET labels (the envelope)");
+    let rows = list["results"].as_array().expect("results");
+    assert_eq!(rows.len(), 3, "bug, feature and docs");
+    for row in rows {
+        assert_body_is_its_schema(&doc, "LabelDto", row, &[], "GET labels (a row)");
+    }
+    let child = json!({"name": "child", "parent": label_id(), "external_source": "gh", "external_id": "7"});
+    let made = send_raw(
+        &w.router,
+        "POST",
+        &format!("{base}/"),
+        &[("x-api-key", "key-admin"), ("content-type", "application/json")],
+        child.to_string().into_bytes(),
+    );
+    assert_eq!(made.status, 201, "{:?}", made.body);
+    assert_body_is_its_schema(&doc, "LabelDto", &made.body, &[], "POST label (a child)");
+    assert_eq!(made.body["parent"], json!(label_id()), "the case ran with a parent that is not `null`");
+    assert_eq!((made.body["external_source"].clone(), made.body["external_id"].clone()), (json!("gh"), json!("7")));
+}
+
+/// The control of the test above, for the Labels' schema: an extra key, a lost key, and a `null` where the schema allows none (`name`,
+/// and `project`, which the pin's schema lets be `null` and this document does not, because a label always has one).
+#[test]
+fn a_label_body_that_the_schema_does_not_describe_is_refused() {
+    let doc = document();
+    let w = real_world();
+    let one = get(&w, &format!("/api/v1/workspaces/{SLUG}/projects/{}/labels/{}/", project_id(), label_id()));
+    let refused = |body: &Value, what: &str| {
+        let r = std::panic::catch_unwind(|| assert_body_is_its_schema(&doc, "LabelDto", body, &[], what));
+        assert!(r.is_err(), "{what}: a body the schema does not describe was accepted");
+    };
+    let mut extra = one.clone();
+    extra["a_key_nobody_declared"] = json!(1);
+    refused(&extra, "an extra key");
+    let mut short = one.clone();
+    short.as_object_mut().expect("an object").remove("color");
+    refused(&short, "a missing key");
+    for key in ["name", "project"] {
+        let mut hole = one.clone();
+        hole[key] = Value::Null;
+        refused(&hole, &format!("a null `{key}` where the schema allows none"));
+    }
 }
 
 /// D-031 (2): a name with no letter or digit that NFKD leaves in ASCII has the empty slug, on the pin and here, and the pin's schema

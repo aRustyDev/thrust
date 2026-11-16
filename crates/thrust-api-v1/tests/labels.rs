@@ -476,6 +476,27 @@ fn a_body_that_is_not_an_object_is_refused() {
     assert_eq!(empty.body, json!({"name": ["This field is required."]}));
 }
 
+/// D-032 (6), proposed: a body that is a form or multipart is a 415 on a label, as on a project (D-030 (5)) and a state (D-031 (5)); the
+/// pin reads both. The register entries SD-013 and SD-014 (`tools/oracle-v1/schema/diff-accepted.json`) rest on this: the two media
+/// types, on the two routes that read a body.
+#[rstest]
+fn a_form_or_a_multipart_body_is_a_415(
+    #[values("application/x-www-form-urlencoded", "multipart/form-data; boundary=x")] content_type: &str,
+    #[values("POST", "PATCH")] method: &str,
+) {
+    let w = real_world();
+    let uri = if method == "POST" { labels() } else { label(bug()) };
+    let r = send_raw(
+        &w.router,
+        method,
+        &uri,
+        &[("x-api-key", Who::Admin.key()), ("content-type", content_type)],
+        b"name=x".to_vec(),
+    );
+    assert_eq!(r.status, 415, "{method} {content_type}: {:?}", r.body);
+    assert_eq!(r.body, json!({"detail": format!("Unsupported media type \"{content_type}\" in request.")}));
+}
+
 // --- parents ------------------------------------------------------------------------------------------------------------------
 
 /// A parent is a live label of the same project (D-032): the pin takes any label of any project, which would let a request name, and

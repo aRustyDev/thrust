@@ -7,9 +7,11 @@
 //!
 //! One module per resource, as the routes are: a resource's bodies move here when its routes are described.
 
+mod labels;
 mod projects;
 mod states;
 
+pub(crate) use labels::LabelDto;
 pub(crate) use projects::{ProjectDto, ProjectLiteDto};
 pub(crate) use states::StateDto;
 
