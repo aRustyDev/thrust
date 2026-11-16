@@ -189,7 +189,10 @@ The controls, each with a test that makes it fail:
   unauthenticated probe must show the previous version answering. The run stays red either way, and the database keeps the
   expanded schema (expand/contract: the previous code runs on it).
 - **The manual gate.** The first deploy carries `[[migrations]] v1`, and a Durable Object lifecycle change can be neither
-  gradual nor rolled back across. They go through `deploy-do`.
+  gradual nor rolled back across. They go through `deploy-do`, and so does a deploy the classifier cannot place against what is
+  live: a deploy of older code, a live commit it could not fetch (it asks GitHub for it by its sha, since release-plz drops it
+  from the release candidate's branch), or a checkout too shallow to say. The classifier compares the two commits by what they
+  hold, so a rewritten branch with no migration or Durable Object change in it is not stopped.
 - **The previous release's web files.** A hashed file the new release dropped is answered `200 text/html`, the single-page
   fallback, not 404 (ADR-0011, Q-0011.1), and a 100 % deploy has no version affinity to hide it. So the deploy puts the
   previous release's files under its own (`merge-assets.sh`; the previous release's own build, so one release back), taken
@@ -210,9 +213,12 @@ the manual gate, the shapes of `wrangler deployments list --json` and `versions 
 dead-letter queue, the attestation flow end to end, the read of an environment's protection rules, the route through the Access
 tunnel with `verify-ca` meeting a real Origin CA certificate, the keeping of the previous release's web files over two
 releases, and the rollback drill (run 43811076183: the injected failure put the previous version back and ended the run red).
-**Not yet run:** production, and a narrower token than the one in use. **A known gap:** release-plz force-updates the release
-candidate's branch, so the live commit is usually not in the next candidate's history, and the classifier, which fails closed,
-sends that deploy to the manual gate although nothing in it needs one (runs 43796746005 and 43803593395).
+**Not yet run:** production, and a narrower token than the one in use. **Found by those runs, and changed since:** release-plz
+force-updates the release candidate's branch, so the live commit is usually not in the next candidate's history, and the
+classifier, which failed closed on that, sent two deploys to the manual gate with nothing in them that needed one (runs
+43796746005 and 43803593395). It now fetches the live commit by its sha and compares the two commits by content, and still
+defers a deploy of older code than what is live; tested here, not yet run on staging ([What the deploy compares with what is
+live](deploy.md#what-the-deploy-compares-with-what-is-live)).
 
 **The environments' branch rules** say the same as `plan`, so a run from anywhere else cannot reach an environment's
 secrets even if the workflow were wrong: `staging` and `staging-do-lifecycle` take only `rc/*` branches, `production` and

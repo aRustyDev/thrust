@@ -44,6 +44,19 @@ printf '\n[[migrations]]\ntag = "v2"\nnew_sqlite_classes = ["More"]\n' >> crates
 H3="$(commit c3-durable-object-lifecycle)"
 echo more >> README.md;                                                                   H4="$(commit c4-other)"
 git checkout -q -b side "$H1"; echo side > side.txt; HS="$(commit side)"; git checkout -q main
+# a line that left c3 for a commit changing nothing the classifier reads, as the release-candidate branch does when release-plz rewrites it
+git checkout -q -b side3 "$H3"; echo side3 > side3.txt; HS3="$(commit side3)"; git checkout -q main
+# a commit that no branch of THIS checkout holds, which GitHub still serves by its sha (the live commit of a branch that was rewritten):
+# it was made in another clone and pushed to an origin that then lost its branch, so only the object is left there
+git init -q --bare "$T/origin.git"
+git -C "$T/origin.git" config uploadpack.allowAnySHA1InWant true
+git clone -q "$R" "$T/other" 2> /dev/null
+git -C "$T/other" config user.name "deploy test"; git -C "$T/other" config user.email "deploy-test@example.invalid"; git -C "$T/other" config commit.gpgsign false
+git -C "$T/other" checkout -q -b gone "$H3"; echo gone > "$T/other/gone.txt"; git -C "$T/other" add -A; git -C "$T/other" commit -q -m gone
+HU="$(git -C "$T/other" rev-parse HEAD)"
+git -C "$T/other" push -q "$T/origin.git" HEAD:refs/heads/gone
+git -C "$T/origin.git" update-ref -d refs/heads/gone
+git remote add origin "$T/origin.git"
 
 # ---- the fakes ---------------------------------------------------------------------------------------------------------------------
 mkdir -p "$T/bin"
@@ -54,6 +67,19 @@ printf '#!/bin/sh\nexec python3 "%s" migrate "$@"\n' "$FAKES" > "$T/bin/migrate"
 printf '#!/bin/sh\nexec python3 "%s" fetch "$@"\n' "$FAKES" > "$T/bin/fetch"
 printf '#!/bin/sh\nexec python3 "%s" assetcheck "$@"\n' "$FAKES" > "$T/bin/assetcheck"
 chmod +x "$T/bin/wrangler" "$T/bin/smoke" "$T/bin/migrate" "$T/bin/fetch" "$T/bin/assetcheck"
+# `git` too: the script asks origin for the live commit, and no secret may reach that process (or the classifier's) either. This one
+# reports the secrets it can see, as the fakes do, and then runs the real git
+REALGIT="$(command -v git)"
+cat > "$T/bin/git.in" <<'EOF'
+#!/bin/sh
+for v in CLOUDFLARE_API_TOKEN DATABASE_URL TUNNEL_SERVICE_TOKEN_ID TUNNEL_SERVICE_TOKEN_SECRET SMOKE_PASSWORD GH_TOKEN; do
+  eval "val=\${$v:-}"
+  if [ -n "$val" ] && [ -n "${FAKE_DIR:-}" ]; then echo "git SEES $v" >> "$FAKE_DIR/calls.log"; fi
+done
+exec REALGIT_PATH "$@"
+EOF
+sed "s|REALGIT_PATH|$REALGIT|" "$T/bin/git.in" > "$T/bin/git"; rm -f "$T/bin/git.in"; chmod +x "$T/bin/git"
+PATH="$T/bin:$PATH"; export PATH
 FAKE="$T/fake"
 mkdir -p "$FAKE"
 # this commit's web build: the web/ of its bundle
@@ -113,6 +139,7 @@ secrets_scoped() { # secrets_scoped <label>
       migrate:SEES:DATABASE_URL|migrate:SEES:TUNNEL_SERVICE_TOKEN_ID|migrate:SEES:TUNNEL_SERVICE_TOKEN_SECRET) ;;
       smoke:SEES:SMOKE_PASSWORD) ;;
       fetch:SEES:GH_TOKEN) ;;
+      git:SEES:*) bad="$bad $line" ;;   # git asks origin for a commit and diffs two: it needs no secret at all
       *) bad="$bad $line" ;;
     esac
   done
@@ -284,9 +311,32 @@ check "an untagged live version: deferred" "$(out_of deferred)" true
 seed_live "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
 deploy "$H4"
 check "a live tag that is not in this history: deferred" "$(out_of deferred)" true
+# (the classifier's own reason also says "could not be fetched", so look for the deploy script's line, which only it prints)
+grep -q "and could not be fetched (.*); it counts as unknown" "$T/log" && pass=$((pass + 1)) || { failn=$((failn + 1)); echo "BAD  a live commit nobody can fetch: the log does not say the script tried"; }
 seed_live "$HS"
 deploy "$H4"
-check "a live commit that is not an ancestor: deferred" "$(out_of deferred)" true
+check "a diverged live commit that lacks a Durable Object migration: deferred" "$(out_of deferred)" true
+
+# M2. the live commit is not an ancestor of this one: that alone is no reason to stop (release-plz rewrites the release candidate's branch)
+seed_live "$HS3"
+deploy "$H4"
+check "a diverged live commit that differs in nothing the classifier reads: exit" "$RC" 0; [ "$RC" = 0 ] || dump
+check "...: not deferred, deployed" "$(out_of deferred)/$(out_of deployed)" "false/true"
+check "...: no expand migration" "$(has_call 'migrate RUN' && echo yes || echo no)" no
+check "...: automatic rollback is on" "$(grep -c 'automatic rollback: true' "$T/log")" 1
+# the live commit is in no branch of the checkout, and is fetched by its sha before the classifier looks
+git cat-file -e "$HU^{commit}" 2> /dev/null && { failn=$((failn + 1)); echo "BAD  the unreachable commit is already in the checkout, so the fetch is not what is tested"; }
+seed_live "$HU"
+deploy "$H4"
+check "a live commit in no branch, fetched by its sha: exit" "$RC" 0; [ "$RC" = 0 ] || dump
+check "...: not deferred, deployed" "$(out_of deferred)/$(out_of deployed)" "false/true"
+grep -q "fetched it by its sha" "$T/log" && pass=$((pass + 1)) || { failn=$((failn + 1)); echo "BAD  the log does not say the live commit was fetched"; }
+git cat-file -e "$HU^{commit}" 2> /dev/null && pass=$((pass + 1)) || { failn=$((failn + 1)); echo "BAD  the live commit is still not in the checkout after the fetch"; }
+secrets_scoped "a live commit fetched by its sha"
+# a deploy of older code is a person's decision
+seed_live "$H4"
+deploy "$H3"
+check "a deploy of older code: deferred, not deployed" "$(out_of deferred)/$(out_of deployed)" "true/false"
 
 # N. wrangler cannot list: nothing is deployed
 seed_live "$H3"
