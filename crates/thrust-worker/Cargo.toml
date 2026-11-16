@@ -14,6 +14,9 @@ crate-type = ["cdylib"]
 # `--no-default-features` so the size numbers measure only the Cloudflare adapter set.
 default = ["memory"]
 memory = ["dep:thrust-adapters-memory"]
+# A planted bug of the mail wiring (E3), for the control run only: the mail service is configured and not handed to the app. The `mail` pass of
+# the contract suite must refuse to run against it (scripts/mutants.sh does not build the Worker; the control is run by hand, G-39).
+mutant_worker_email_unwired = []
 
 [dependencies]
 thrust-contracts = { workspace = true }
