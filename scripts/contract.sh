@@ -42,9 +42,12 @@
 #                              logs go to target/contract-logs/<target>-oracle.oracle/. scripts/oracle-v1.sh <target> [controls]
 #                              is the way in by hand, and runs the controls only when asked
 #
-# Exit status is the status of `cargo test` itself (no pipes, no trailing echo). The suite's
-# pass count is also checked against the expected number so that a filter that selects zero
-# tests cannot report green.
+# Each pass runs on nextest: `cargo nextest run -p thrust-contract-tests --profile contract -E 'binary(<bin>) & (<filterset>)'`
+# (the `contract` profile is in .config/nextest.toml). Exit status is nextest's own (no pipes, no trailing echo): 100 when a
+# test failed. The pass's passed count, read from nextest's JUnit report (kept beside the pass's log as `<log>.junit.xml`),
+# is also checked against the expected number, so that a filterset that selects too few tests, or none, cannot report
+# green: either is exit 5. (nextest's own 4, "no test ran", becomes 5 too, because this script's 4 means the target never
+# came up.)
 #
 # Secrets: the admin token and the throwaway Postgres password are generated per run and only
 # ever live in this process's environment (and the children's), never in a file or on argv.
@@ -385,33 +388,45 @@ else
 fi
 export THRUST_STATE_SURVIVES_PANIC
 
+# suite_pass BIN FILTERSET [NEXTEST ARGS...]: one pass of the suite, on nextest with the `contract` profile. BIN is the test binary,
+# FILTERSET the pass's filterset over it (keep it single-quoted on one line: scripts/check-contract-counts.sh reads it from here and
+# lists it, to hold EXPECT_* to the suite), and the rest nextest's own arguments: `--no-capture` runs the tests one at a time and
+# prints what they print, which is what the passes that read a test's own output need. Sets TEST_STATUS, and moves the JUnit
+# report to `$LOG.junit.xml` (a stale one is removed first, so a run that wrote none is read as none).
+suite_pass() {
+  sp_bin="$1"
+  sp_set="$2"
+  shift 2
+  sp_junit="${CARGO_TARGET_DIR:-$ROOT/target}/nextest/contract/junit.xml"
+  rm -f "$sp_junit" "$LOG.junit.xml"
+  "$ROOT/scripts/rs" cargo nextest run --manifest-path "$ROOT/Cargo.toml" -p thrust-contract-tests --profile contract \
+    -E "binary($sp_bin) & ($sp_set)" "$@" >"$LOG.test.log" 2>&1
+  TEST_STATUS=$?
+  if [ -f "$sp_junit" ]; then mv "$sp_junit" "$LOG.junit.xml"; fi
+}
+
 case "$PASS" in
   sweeper)
-    "$ROOT/scripts/rs" cargo test --manifest-path "$ROOT/Cargo.toml" -p thrust-contract-tests --test contract -- sweeper_ --test-threads=1 --nocapture >"$LOG.test.log" 2>&1
-    TEST_STATUS=$?
+    suite_pass contract 'test(/sweeper_/)' --no-capture
     EXPECT=$EXPECT_SWEEPER
     ;;
   csrfoff)
-    "$ROOT/scripts/rs" cargo test --manifest-path "$ROOT/Cargo.toml" -p thrust-contract-tests --test contract -- csrf_off_ >"$LOG.test.log" 2>&1
-    TEST_STATUS=$?
+    suite_pass contract 'test(/csrf_off_/)'
     EXPECT=$EXPECT_CSRFOFF
     ;;
   panic)
-    "$ROOT/scripts/rs" cargo test --manifest-path "$ROOT/Cargo.toml" -p thrust-contract-tests --test contract -- panic_ --test-threads=1 --nocapture >"$LOG.test.log" 2>&1
-    TEST_STATUS=$?
+    suite_pass contract 'test(/panic_/)' --no-capture
     EXPECT=$EXPECT_PANIC
     ;;
   blast)
     # OBSERVATIONAL (not in contract-all): panics the handler while 16 clients run an I/O-bound
     # request and reports how many OTHER requests failed. Under `wrangler dev` the memory set can
     # lose the whole dev server here, which is itself an observation, so this is run by hand.
-    "$ROOT/scripts/rs" cargo test --manifest-path "$ROOT/Cargo.toml" -p thrust-contract-tests --test contract -- blast_ --test-threads=1 --nocapture >"$LOG.test.log" 2>&1
-    TEST_STATUS=$?
+    suite_pass contract 'test(/blast_/)' --no-capture
     EXPECT=$EXPECT_BLAST
     ;;
   worker)
-    "$ROOT/scripts/rs" cargo test --manifest-path "$ROOT/Cargo.toml" -p thrust-contract-tests --test worker_only -- worker_room_ --test-threads=1 --nocapture >"$LOG.test.log" 2>&1
-    TEST_STATUS=$?
+    suite_pass worker_only 'test(/worker_room_/)' --no-capture
     EXPECT=$EXPECT_WORKER
     ;;
   bench)
@@ -425,8 +440,7 @@ case "$PASS" in
     exit "$TEST_STATUS"
     ;;
   engine)
-    "$ROOT/scripts/rs" cargo test --manifest-path "$ROOT/Cargo.toml" -p thrust-contract-tests --test engine -- --test-threads=1 --nocapture >"$LOG.test.log" 2>&1
-    TEST_STATUS=$?
+    suite_pass engine 'all()' --no-capture
     EXPECT=$EXPECT_ENGINE
     ;;
   oracle)
@@ -458,41 +472,47 @@ case "$PASS" in
     exit "$TEST_STATUS"
     ;;
   bindings)
-    "$ROOT/scripts/rs" cargo test --manifest-path "$ROOT/Cargo.toml" -p thrust-contract-tests --test worker_only -- worker_bindings_ --test-threads=1 --nocapture >"$LOG.test.log" 2>&1
-    TEST_STATUS=$?
+    suite_pass worker_only 'test(/worker_bindings_/)' --no-capture
     EXPECT=$EXPECT_BINDINGS
     ;;
   cron)
-    "$ROOT/scripts/rs" cargo test --manifest-path "$ROOT/Cargo.toml" -p thrust-contract-tests --test worker_only -- worker_cron_ --test-threads=1 --nocapture >"$LOG.test.log" 2>&1
-    TEST_STATUS=$?
+    suite_pass worker_only 'test(/worker_cron_/)' --no-capture
     EXPECT=$EXPECT_CRON
     ;;
   mail)
     # The password reset by email through a real mail server (its own test binary, `--test mail`): not part of `main`, which holds that the
     # route is dark on a target with no mail service.
-    "$ROOT/scripts/rs" cargo test --manifest-path "$ROOT/Cargo.toml" -p thrust-contract-tests --test mail -- --nocapture >"$LOG.test.log" 2>&1
-    TEST_STATUS=$?
+    suite_pass mail 'all()' --success-output immediate --failure-output immediate
     EXPECT=$EXPECT_MAIL
     ;;
   budget)
     # Only the round-trip budget test (issue #39), which is also part of `main`: scripts/mutants.sh runs a mutant of the counter
     # against this and not against the whole main pass. Not in contract-all.
-    "$ROOT/scripts/rs" cargo test --manifest-path "$ROOT/Cargo.toml" -p thrust-contract-tests --test contract -- list_endpoints_stay_within_five_db_round_trips --nocapture >"$LOG.test.log" 2>&1
-    TEST_STATUS=$?
+    suite_pass contract 'test(/list_endpoints_stay_within_five_db_round_trips/)' --no-capture
     EXPECT=$EXPECT_BUDGET
     ;;
   *)
-    "$ROOT/scripts/rs" cargo test --manifest-path "$ROOT/Cargo.toml" -p thrust-contract-tests --test contract -- --skip sweeper_ --skip panic_ --skip blast_ --skip csrf_off_ >"$LOG.test.log" 2>&1
-    TEST_STATUS=$?
+    suite_pass contract 'not test(/sweeper_|panic_|blast_|csrf_off_/)'
     EXPECT=$EXPECT_MAIN
     ;;
 esac
 
 grep -E "PANIC-OBSERVATION|HIBERNATION-OBSERVATION" "$LOG.test.log" || true
 
-grep -E "^test |^test result|panicked|FAILED" "$LOG.test.log"
-PASSED="$(sed -n 's/^test result: [a-zA-Z]*\. \([0-9]*\) passed.*/\1/p' "$LOG.test.log" | tail -1)"
-echo "[$TARGET/$PASS] cargo test exit=$TEST_STATUS passed=${PASSED:-?} expected=$EXPECT"
+grep -E '^ +(PASS|FAIL|SIG[A-Z]+|TIMEOUT|LEAK|SLOW) |Summary \[|panicked' "$LOG.test.log"
+# The count, from nextest's JUnit report: `<testsuites ... tests="N" failures="F" errors="E" ...>` holds the tests that ran (the
+# ones the filterset left out are not in it) and how many of them did not pass. No report (a build that failed) is no count.
+junit_attr() { sed -n "s/.*<testsuites[^>]* $2=\"\([0-9][0-9]*\)\".*/\1/p" "$1" 2>/dev/null | head -n 1; }
+RAN="$(junit_attr "$LOG.junit.xml" tests)"
+FAILURES="$(junit_attr "$LOG.junit.xml" failures)"
+ERRORS="$(junit_attr "$LOG.junit.xml" errors)"
+PASSED=""
+if [ -n "$RAN" ] && [ -n "$FAILURES" ] && [ -n "$ERRORS" ]; then PASSED=$((RAN - FAILURES - ERRORS)); fi
+echo "[$TARGET/$PASS] nextest exit=$TEST_STATUS passed=${PASSED:-?} expected=$EXPECT"
+if [ "$TEST_STATUS" -eq 4 ]; then
+  echo "[$TARGET/$PASS] VACUITY GUARD: no test ran (nextest exit 4: the filterset selects nothing)" >&2
+  exit 5
+fi
 if [ "$TEST_STATUS" -eq 0 ] && [ "${PASSED:-0}" -ne "$EXPECT" ]; then
   echo "[$TARGET/$PASS] VACUITY GUARD: exit 0 but passed count != expected" >&2
   exit 5

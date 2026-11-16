@@ -1,7 +1,7 @@
 # Test-runner configuration (cargo-nextest). Adapted from .agents/skills/rust-test-logic/references/examples/nextest.toml.
 # Verified with cargo-nextest 0.9.140; the 0.9.131 floor is from the source archive and was not re-run.
 #
-# Profiles:  default (fast hermetic loop) | ci | deep | oracle | mutants
+# Profiles:  default (fast hermetic loop) | ci | deep | oracle | mutants | contract (the contract suite against a running target)
 # Test-name prefixes route tests:  prop_  model_  oracle_  (parity_, fuzz_replay_ and regression_ run by default)
 # regression_ = a pinned regression (AGENTS.md rule 9). It follows a category prefix (model_regression_...) or rstest's
 # case_<n>_, so select it with test(/regression_/), never \bregression_.
@@ -16,13 +16,19 @@ nextest-version = { required = "0.9.131" }
 
 [test-groups]
 ts-oracle = { max-threads = 2 }  # a live oracle test runs a Node.js process
+# The contract suite's mock identity provider (crates/testing/suites/api/src/mock_idp.rs) binds the one port the target under
+# test was started with as its OIDC issuer. Under nextest each test is a process of its own, so each compat_oidc_ test starts
+# its own provider on that port, and two at once would collide. One at a time. (A provider's key is its own: the OIDC
+# adapter fetches the key set on every call, and each flow runs inside one test.)
+mock-idp = { max-threads = 1 }
 
 # --- default: the fast, hermetic inner loop ----------------------------------------
 [profile.default]
 # Excluded from the hermetic loop: oracle_ tests need the oracle (Node, or its generated output); the contract suite panics without THRUST_BASE_URL and
-# THRUST_ADMIN_TOKEN (a running target); pg_adapter starts a Postgres container through Docker, and smtp_sink a Mailpit one. The last
-# three stay on `cargo test` through scripts/contract.sh, scripts/verify-all.sh and the pg-adapter job, which parse its output [derived:
-# read, not run]. The SMTP adapter's other two suites (smtp_wire: a scripted server in the test's own process; smtp_config) are hermetic and run here.
+# THRUST_ADMIN_TOKEN (a running target), and runs through scripts/contract.sh with the `contract` profile below; pg_adapter starts a
+# Postgres container through Docker, and smtp_sink a Mailpit one: those two stay on `cargo test` through scripts/verify-all.sh and the
+# pg-adapter job, which parse its output [derived: read, not run]. The SMTP adapter's other two suites (smtp_wire: a scripted server in
+# the test's own process; smtp_config) are hermetic and run here.
 default-filter = 'not (test(/\boracle_/) | package(thrust-contract-tests) | binary(pg_adapter) | binary(smtp_sink))'
 retries = 0
 slow-timeout = { period = "30s", terminate-after = 4 }
@@ -67,6 +73,30 @@ slow-timeout = { period = "300s", terminate-after = 6 }
 [profile.oracle]   # needs Node.js + the legacy TypeScript package, or the oracle's output in target/spike-0006/
 default-filter = 'test(/\boracle_/)'
 fail-fast = false
+
+# --- contract: the contract suite (ADR-0121) against a target that is already running -------
+# scripts/contract.sh and scripts/stage2-contract.sh start or find the target, then run one pass each as
+#   cargo nextest run -p thrust-contract-tests --profile contract -E 'binary(<bin>) & (<the pass's filterset>)'
+# and read the passed count from the JUnit report, which they move beside the pass's log. scripts/check-contract-counts.sh
+# lists each pass's filterset with this profile and holds the scripts' counts to it.
+[profile.contract]
+default-filter = 'package(thrust-contract-tests)'
+fail-fast = false
+failure-output = "immediate-final"
+
+[profile.contract.junit]
+path = "junit.xml"   # written to target/nextest/contract/junit.xml
+
+[[profile.contract.overrides]]
+filter = 'test(/compat_oidc_/)'
+test-group = "mock-idp"
+
+# No kill. On `cargo test` nothing timed a pass out, and a pass that measures (engine's 10k creates, the model tests against a
+# Worker under wrangler) can run for minutes. This override is the profile's own, so it also outranks the default profile's
+# `prop|model` override (terminate-after 5 x 60 s), which would otherwise apply here.
+[[profile.contract.overrides]]
+filter = 'all()'
+slow-timeout = { period = "120s" }
 
 # --- mutants: selected by cargo-mutants through .cargo/mutants.toml ---------------------
 # One failing test is enough to prove a mutant was caught: stop and kill stragglers.
