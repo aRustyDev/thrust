@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0](https://github.com/aRustyDev/thrust/compare/v0.1.0...v0.2.0) - 2026-11-16
+
+### Added
+
+- *(api-v1)* describe the States operations in the OpenAPI document, written from the type the routes answer with ([#188](https://github.com/aRustyDev/thrust/pull/188))
+
 ## [0.1.0](https://github.com/aRustyDev/thrust/releases/tag/v0.1.0) - 2026-11-15
 
 ### Added
