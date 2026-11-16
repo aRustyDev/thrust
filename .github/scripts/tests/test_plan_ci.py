@@ -420,6 +420,11 @@ check("every workflow file of this repository is one that runs the checks or one
 check("every file that runs the checks is planned as such, whatever the lists say",
       [n for n in real_files if n in CHECK_WORKFLOWS and run_plan([f".github/workflows/{n}.yml"], REAL_GRAPH) != EVERYTHING], [])
 
+# The two indexes are read by check-ci-index.sh, so a change to one runs that guard (deps) and its test (ci-scripts), which is what the
+# generic rule for .github/ gives; this keeps a README from ever being a file that runs nothing.
+for index in (".github/workflows/README.md", ".github/actions/README.md", ".github/scripts/check-ci-index.sh"):
+    check(f"{index} runs the index guard (deps) and its test (ci-scripts)", run_plan([index], REAL_GRAPH), ({"ci-scripts", "deps"}, set()))
+
 # ---- 10. the command line's new lines --------------------------------------------------------------------------------------------
 rc, out, _ = cli(changed="web/x.tsx\n")
 check("cli: top is the jobs while none has moved", out.get("top"), out.get("jobs"))
