@@ -4,9 +4,10 @@
 //! What it is for. The pin is Plane's own schema (`tools/oracle-v1/schema/openapi.v1.json`, OpenAPI 3.0.3, the contract). This
 //! document says what THIS crate sends and accepts, so `oasdiff` can say where the two differ (`scripts/check-openapi.sh`). The
 //! answers are derived from the types the routes serialize (`dto`), so they cannot say one thing while the route does another. A
-//! request is read by hand (`fields.rs`: DRF's coercions and DRF's words). The States' is read into a type that writes its own
-//! schema (`states::PatchedStateRequest`, with the bounded values of `values.rs`), so for them the document is the parser's; the
-//! other request bodies below are descriptions of what a reading takes, written by hand, until each parser returns a typed struct.
+//! request is read by hand (`fields.rs`: DRF's coercions and DRF's words). The States' and the Labels' are read into types that
+//! write their own schema (`states::PatchedStateRequest`, `labels::PatchedLabelCreateUpdateRequest`, with the bounded values of
+//! `values.rs`), so for them the document is the parser's; the other request bodies below are descriptions of what a reading takes,
+//! written by hand, until each parser returns a typed struct.
 //!
 //! `cargo run -p thrust-api-v1 --features openapi --example openapi` prints the document.
 
@@ -67,8 +68,8 @@ use thrust_contracts::Uuid;
         crate::states::PatchedStateRequest,
         LabelDto,
         Page<LabelDto>,
-        LabelCreateUpdateRequest,
-        PatchedLabelCreateUpdateRequest,
+        crate::labels::LabelCreateUpdateRequest,
+        crate::labels::PatchedLabelCreateUpdateRequest,
         IssueDto,
         Page<IssueDto>,
         Listing<IssueDto>,
@@ -115,12 +116,20 @@ struct Creation {
     description: &'static str,
 }
 
-const CREATIONS: [Creation; 1] = [Creation {
-    schema: "StateRequest",
-    change: "PatchedStateRequest",
-    required: &crate::states::PatchedStateRequest::REQUIRED,
-    description: "What a state's creation takes (the pin's `StateSerializer` as a request): `name` and `color` are required, the rest is optional, and\nonly the two external keys can be `null`.",
-}];
+const CREATIONS: [Creation; 2] = [
+    Creation {
+        schema: "StateRequest",
+        change: "PatchedStateRequest",
+        required: &crate::states::PatchedStateRequest::REQUIRED,
+        description: "What a state's creation takes (the pin's `StateSerializer` as a request): `name` and `color` are required, the rest is optional, and\nonly the two external keys can be `null`.",
+    },
+    Creation {
+        schema: "LabelCreateUpdateRequest",
+        change: "PatchedLabelCreateUpdateRequest",
+        required: &crate::labels::PatchedLabelCreateUpdateRequest::REQUIRED,
+        description: "What a label's creation takes (the pin's `LabelCreateUpdateSerializer`): only `name` is required, and `name` cannot be blank. `color`\nand `description` can be blank and cannot be `null`; the two external keys and `parent` can be `null`.",
+    },
+];
 
 impl Modify for Creations {
     fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
@@ -483,45 +492,6 @@ pub(crate) struct PatchedProjectUpdateRequest {
     is_time_tracking_enabled: bool,
     default_state: Option<Uuid>,
     estimate: Option<Uuid>,
-}
-
-/// What a label's creation takes (the pin's `LabelCreateUpdateSerializer`): only `name` is required, and `name` cannot be blank. `color`
-/// and `description` can be blank and cannot be `null`; the two external keys and `parent` can be `null`.
-#[derive(ToSchema)]
-#[allow(dead_code, reason = "a description for the document: the route reads the body by hand (`fields.rs`)")]
-pub(crate) struct LabelCreateUpdateRequest {
-    #[schema(min_length = 1, max_length = 255)]
-    name: String,
-    #[schema(required = false, max_length = 255)]
-    color: String,
-    #[schema(required = false)]
-    description: String,
-    #[schema(max_length = 255)]
-    external_source: Option<String>,
-    #[schema(max_length = 255)]
-    external_id: Option<String>,
-    parent: Option<Uuid>,
-    #[schema(required = false)]
-    sort_order: f64,
-}
-
-/// What a label's change takes: the creation's keys, none required.
-#[derive(ToSchema)]
-#[allow(dead_code, reason = "a description for the document: the route reads the body by hand (`fields.rs`)")]
-pub(crate) struct PatchedLabelCreateUpdateRequest {
-    #[schema(min_length = 1, max_length = 255, required = false)]
-    name: String,
-    #[schema(required = false, max_length = 255)]
-    color: String,
-    #[schema(required = false)]
-    description: String,
-    #[schema(max_length = 255)]
-    external_source: Option<String>,
-    #[schema(max_length = 255)]
-    external_id: Option<String>,
-    parent: Option<Uuid>,
-    #[schema(required = false)]
-    sort_order: f64,
 }
 
 /// What a work item's creation takes (the pin's `IssueSerializer` as a request): only `name` is required, and it cannot be blank. The

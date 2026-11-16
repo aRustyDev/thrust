@@ -8,8 +8,9 @@
 //! null]`. Whether a key may be left out is the field's (`Option<_>` in the request struct), as it is in the core patches.
 
 use serde_json::Value;
+use thrust_contracts::Uuid;
 
-use crate::fields::char_field;
+use crate::fields::{char_field, pk_field, PkRead};
 
 /// A text of `MIN` to `MAX` characters, read as DRF's `CharField` reads one: trimmed, counted in characters, a number taken as its
 /// text, a bool, a list and an object refused, and `null` refused. `MIN` is 0 (blank allowed) or 1 (blank refused): DRF's flag is that
@@ -48,6 +49,37 @@ impl<const MIN: usize, const MAX: usize> NullableText<MIN, MAX> {
     }
 }
 
+/// The key of a related row as a body gave it: the UUID it reads as, and the text it was sent as, which is what DRF quotes when no row
+/// has the key (`Invalid pk "<shown>" - object does not exist.`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Key {
+    pub(crate) id: Uuid,
+    pub(crate) shown: String,
+}
+
+/// A related row's key, or `null` (which is `None`): DRF's `PrimaryKeyRelatedField` over a UUID key, read as `pk_field` reads it. Only
+/// the key is read here; that a row has it is the route's to ask (a second stage, which needs the database).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct NullableKey(Option<Key>);
+
+impl NullableKey {
+    pub(crate) fn read(v: &Value) -> Result<Self, String> {
+        match pk_field(v) {
+            PkRead::Null => Ok(Self(None)),
+            PkRead::Key { id, shown } => Ok(Self(Some(Key { id, shown }))),
+            PkRead::Refused(message) => Err(message),
+        }
+    }
+
+    pub(crate) fn key(&self) -> Option<&Key> {
+        self.0.as_ref()
+    }
+
+    pub(crate) fn into_id(self) -> Option<Uuid> {
+        self.0.map(|key| key.id)
+    }
+}
+
 /// A text with no bound that may be blank and is never `null` (a `TextField`: a description).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Prose(String);
@@ -70,11 +102,11 @@ mod schema {
 
     use std::borrow::Cow;
 
-    use utoipa::openapi::schema::{ObjectBuilder, SchemaType, Type};
+    use utoipa::openapi::schema::{KnownFormat, ObjectBuilder, SchemaFormat, SchemaType, Type};
     use utoipa::openapi::{RefOr, Schema};
     use utoipa::{PartialSchema, ToSchema};
 
-    use super::{NullableText, Prose, Text};
+    use super::{NullableKey, NullableText, Prose, Text};
 
     /// `type: string` (or `[string, null]`) with the bounds that are there.
     fn text(nullable: bool, min: usize, max: Option<usize>) -> RefOr<Schema> {
@@ -111,6 +143,21 @@ mod schema {
     impl<const MIN: usize, const MAX: usize> ToSchema for NullableText<MIN, MAX> {
         fn name() -> Cow<'static, str> {
             Cow::Owned(format!("NullableText_{MIN}_{MAX}"))
+        }
+    }
+
+    impl PartialSchema for NullableKey {
+        fn schema() -> RefOr<Schema> {
+            let object = ObjectBuilder::new()
+                .schema_type([Type::String, Type::Null].into_iter().collect::<SchemaType>())
+                .format(Some(SchemaFormat::KnownFormat(KnownFormat::Uuid)));
+            RefOr::T(Schema::Object(object.build()))
+        }
+    }
+
+    impl ToSchema for NullableKey {
+        fn name() -> Cow<'static, str> {
+            Cow::Borrowed("NullableKey")
         }
     }
 
