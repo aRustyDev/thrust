@@ -91,7 +91,13 @@ for triple in \
   "reset-keeps-sessions:mutant_reset_keeps_sessions:main" \
   "reset-refusal-without-error-code:mutant_reset_redirect_without_code:main" \
   "mail-reset-ignores-cooldown:mutant_reset_ignores_cooldown:mail" \
-  "mail-reset-token-reusable:mutant_reset_token_reusable:mail"; do
+  "mail-reset-token-reusable:mutant_reset_token_reusable:mail" \
+  "magic-refusal-without-error-code:mutant_magic_redirect_without_code:main" \
+  "magic-form-without-csrf-token:mutant_magic_csrf_unchecked:main" \
+  "mail-code-cap-ignored:mutant_code_cap_ignored:mail" \
+  "mail-code-attempts-unbounded:mutant_code_attempts_unbounded:mail" \
+  "mail-code-deactivated-signs-in:mutant_code_deactivated_signs_in:mail" \
+  "mail-code-mails-unknown:mutant_code_mails_unknown:mail"; do
   name="${triple%%:*}"
   rest="${triple#*:}"
   feature="${rest%%:*}"

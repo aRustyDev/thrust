@@ -27,14 +27,14 @@ use crate::PlaneError;
 const CHECK_YOUR_EMAIL: &str = "Check your email to reset your password";
 
 /// The last value of `name` in an urlencoded body (Django's `QueryDict.get` answers the last of several), or `None`.
-fn form_value(body: &[u8], name: &str) -> Option<String> {
+pub(crate) fn form_value(body: &[u8], name: &str) -> Option<String> {
     let pairs: Vec<(String, String)> = serde_urlencoded::from_bytes(body).ok()?;
     pairs.into_iter().rev().find(|(k, _)| k == name).map(|(_, v)| v)
 }
 
 /// The address of a forgot-password body: JSON `{"email": ...}` as the app posts it, or a form as the pin also takes. Anything that is
 /// not text (a missing member, `null`, a number) is no address, which the pin answers `INVALID_EMAIL` and so does the core.
-fn requested_email(body: &[u8]) -> String {
+pub(crate) fn requested_email(body: &[u8]) -> String {
     match serde_json::from_slice::<Value>(body) {
         Ok(Value::Object(members)) => members.get("email").and_then(Value::as_str).unwrap_or_default().to_string(),
         Ok(_) => String::new(),

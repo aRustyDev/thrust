@@ -100,8 +100,8 @@ A pass is selected by **test-name prefix** in `scripts/contract.sh`, not by next
 The `mail` pass is the exception: it is its own test binary (`tests/mail.rs`, run with `--test mail`), because it needs a target that has a mail
 service and every other pass needs one that has none. It refuses to run when `/api/instances/` does not say `is_smtp_configured: true`. Every other
 pass refuses to run when it says anything but `false`, and unsets `THRUST_SMTP_*`, `THRUST_EMAIL_FROM*` and `THRUST_PUBLIC_BASE_URL` first, so a
-developer's shell cannot turn the dark test into a test of something else. What the mail service is depends on the kind of target, and the three tests
-are the same on both, because the mail is read into one shape (`Subject`, `From`, `To`, `Text`):
+developer's shell cannot turn the dark test into a test of something else. What the mail service is depends on the kind of target, and the seven tests
+(three of the password reset, four of the sign-in with a code) are the same on both, because the mail is read into one shape (`Subject`, `From`, `To`, `Text`):
 
 - **A native target** has the SMTP adapter. `scripts/contract.sh` starts a Mailpit container (a mail server written by someone else, so that what the
   server sends is read by a server that parses it for itself) and the server with `THRUST_SMTP_*` pointing at it; the mail is read from Mailpit's API.
@@ -121,7 +121,7 @@ are the same on both, because the mail is read into one shape (`Subject`, `From`
 ```sh
 scripts/contract.sh native-memory           # main pass, 37 tests [verified 2026-10-24: 37 passed]
 scripts/contract.sh native-memory csrfoff   # CSRF enforcement off, 6 tests [verified 2026-10-24: 6 passed]
-scripts/contract.sh native-memory mail      # the password reset by email through a real mail server (Mailpit), 3 tests [verified 2026-11-14: 3 passed]
+scripts/contract.sh native-memory mail      # the password reset by email and the sign-in with a code through a real mail server (Mailpit), 7 tests [verified 2026-11-16: 7 passed]
 scripts/contract.sh worker-cf bindings      # [unverified: not run]
 scripts/contract.sh native-memory oracle    # the v1 oracle: scoped gate, corpus comparison, controls (not a test count: VERDICT: PASS)
 scripts/e2e.sh worker-cf controls           # the first browser journey and its control (not a test count: VERDICT: PASS), `e2e` in contract-all.sh

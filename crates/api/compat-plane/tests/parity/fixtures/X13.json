@@ -1,0 +1,365 @@
+{
+  "exchanges": [
+    {
+      "name": "an account to sign in to",
+      "request": {
+        "body": {
+          "form": {
+            "email": "magic-in@example.test",
+            "password": "Journey-Sample-Pa55word-Zebra-81"
+          }
+        },
+        "method": "POST",
+        "path": "/auth/sign-up/"
+      },
+      "response": {
+        "body": null,
+        "headers": {
+          "content-type": "text/html; charset=utf-8",
+          "location": "<base_url>"
+        },
+        "status": 302
+      }
+    },
+    {
+      "name": "a wrong code, before any was asked for",
+      "request": {
+        "body": {
+          "form": {
+            "code": "000000",
+            "email": "magic-in@example.test"
+          }
+        },
+        "method": "POST",
+        "path": "/auth/magic-sign-in/"
+      },
+      "response": {
+        "body": null,
+        "headers": {
+          "content-type": "text/html; charset=utf-8",
+          "location": "<base_url>/?error_code=5095&error_message=EXPIRED_MAGIC_CODE_SIGN_IN&email=magic-in%40example.test"
+        },
+        "status": 302
+      }
+    },
+    {
+      "name": "a code is asked for",
+      "request": {
+        "body": {
+          "email": "magic-in@example.test"
+        },
+        "method": "POST",
+        "path": "/auth/magic-generate/"
+      },
+      "response": {
+        "body": {
+          "key": "magic_magic-in@example.test"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "a wrong code",
+      "request": {
+        "body": {
+          "form": {
+            "code": "000000",
+            "email": "magic-in@example.test"
+          }
+        },
+        "method": "POST",
+        "path": "/auth/magic-sign-in/"
+      },
+      "response": {
+        "body": null,
+        "headers": {
+          "content-type": "text/html; charset=utf-8",
+          "location": "<base_url>/?error_code=5090&error_message=INVALID_MAGIC_CODE_SIGN_IN&email=magic-in%40example.test"
+        },
+        "status": 302
+      }
+    },
+    {
+      "name": "a second wrong code",
+      "request": {
+        "body": {
+          "form": {
+            "code": "000000",
+            "email": "magic-in@example.test"
+          }
+        },
+        "method": "POST",
+        "path": "/auth/magic-sign-in/"
+      },
+      "response": {
+        "body": null,
+        "headers": {
+          "content-type": "text/html; charset=utf-8",
+          "location": "<base_url>/?error_code=5090&error_message=INVALID_MAGIC_CODE_SIGN_IN&email=magic-in%40example.test"
+        },
+        "status": 302
+      }
+    },
+    {
+      "name": "a third wrong code",
+      "request": {
+        "body": {
+          "form": {
+            "code": "000000",
+            "email": "magic-in@example.test"
+          }
+        },
+        "method": "POST",
+        "path": "/auth/magic-sign-in/"
+      },
+      "response": {
+        "body": null,
+        "headers": {
+          "content-type": "text/html; charset=utf-8",
+          "location": "<base_url>/?error_code=5090&error_message=INVALID_MAGIC_CODE_SIGN_IN&email=magic-in%40example.test"
+        },
+        "status": 302
+      }
+    },
+    {
+      "name": "a fourth wrong code",
+      "request": {
+        "body": {
+          "form": {
+            "code": "000000",
+            "email": "magic-in@example.test"
+          }
+        },
+        "method": "POST",
+        "path": "/auth/magic-sign-in/"
+      },
+      "response": {
+        "body": null,
+        "headers": {
+          "content-type": "text/html; charset=utf-8",
+          "location": "<base_url>/?error_code=5090&error_message=INVALID_MAGIC_CODE_SIGN_IN&email=magic-in%40example.test"
+        },
+        "status": 302
+      }
+    },
+    {
+      "name": "a fifth wrong code, the last the code allows",
+      "request": {
+        "body": {
+          "form": {
+            "code": "000000",
+            "email": "magic-in@example.test"
+          }
+        },
+        "method": "POST",
+        "path": "/auth/magic-sign-in/"
+      },
+      "response": {
+        "body": null,
+        "headers": {
+          "content-type": "text/html; charset=utf-8",
+          "location": "<base_url>/?error_code=5100&error_message=EMAIL_CODE_ATTEMPT_EXHAUSTED_SIGN_IN&email=magic-in%40example.test"
+        },
+        "status": 302
+      }
+    },
+    {
+      "name": "the right code, after the fifth wrong one",
+      "request": {
+        "body": {
+          "form": {
+            "code": "{code}",
+            "email": "magic-in@example.test"
+          }
+        },
+        "method": "POST",
+        "path": "/auth/magic-sign-in/"
+      },
+      "response": {
+        "body": null,
+        "headers": {
+          "content-type": "text/html; charset=utf-8",
+          "location": "<base_url>/?error_code=5095&error_message=EXPIRED_MAGIC_CODE_SIGN_IN&email=magic-in%40example.test"
+        },
+        "status": 302
+      }
+    },
+    {
+      "name": "a new code is asked for",
+      "request": {
+        "body": {
+          "email": "magic-in@example.test"
+        },
+        "method": "POST",
+        "path": "/auth/magic-generate/"
+      },
+      "response": {
+        "body": {
+          "key": "magic_magic-in@example.test"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "the right code, with spaces around it",
+      "request": {
+        "body": {
+          "form": {
+            "code": "  {code}  ",
+            "email": "magic-in@example.test"
+          }
+        },
+        "method": "POST",
+        "path": "/auth/magic-sign-in/"
+      },
+      "response": {
+        "body": null,
+        "headers": {
+          "content-type": "text/html; charset=utf-8",
+          "location": "<base_url>"
+        },
+        "status": 302
+      }
+    },
+    {
+      "name": "the same code again",
+      "request": {
+        "body": {
+          "form": {
+            "code": "{code}",
+            "email": "magic-in@example.test"
+          }
+        },
+        "method": "POST",
+        "path": "/auth/magic-sign-in/"
+      },
+      "response": {
+        "body": null,
+        "headers": {
+          "content-type": "text/html; charset=utf-8",
+          "location": "<base_url>/?error_code=5095&error_message=EXPIRED_MAGIC_CODE_SIGN_IN&email=magic-in%40example.test"
+        },
+        "status": 302
+      }
+    },
+    {
+      "name": "a code is asked for",
+      "request": {
+        "body": {
+          "email": "magic-in@example.test"
+        },
+        "method": "POST",
+        "path": "/auth/magic-generate/"
+      },
+      "response": {
+        "body": {
+          "key": "magic_magic-in@example.test"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "a wrong code, with a next_path",
+      "request": {
+        "body": {
+          "form": {
+            "code": "000000",
+            "email": "magic-in@example.test",
+            "next_path": "/some/place"
+          }
+        },
+        "method": "POST",
+        "path": "/auth/magic-sign-in/"
+      },
+      "response": {
+        "body": null,
+        "headers": {
+          "content-type": "text/html; charset=utf-8",
+          "location": "<base_url>/?next_path=/some/place&error_code=5090&error_message=INVALID_MAGIC_CODE_SIGN_IN&email=magic-in%40example.test"
+        },
+        "status": 302
+      }
+    },
+    {
+      "name": "the right code, with a next_path",
+      "request": {
+        "body": {
+          "form": {
+            "code": "{code}",
+            "email": "magic-in@example.test",
+            "next_path": "/some/place"
+          }
+        },
+        "method": "POST",
+        "path": "/auth/magic-sign-in/"
+      },
+      "response": {
+        "body": null,
+        "headers": {
+          "content-type": "text/html; charset=utf-8",
+          "location": "<base_url>/?next_path=/some/place"
+        },
+        "status": 302
+      }
+    },
+    {
+      "name": "a code is asked for",
+      "request": {
+        "body": {
+          "email": "magic-in@example.test"
+        },
+        "method": "POST",
+        "path": "/auth/magic-generate/"
+      },
+      "response": {
+        "body": {
+          "key": "magic_magic-in@example.test"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "name": "a wrong code, with a next_path that is not safe",
+      "request": {
+        "body": {
+          "form": {
+            "code": "000000",
+            "email": "magic-in@example.test",
+            "next_path": "//evil.example"
+          }
+        },
+        "method": "POST",
+        "path": "/auth/magic-sign-in/"
+      },
+      "response": {
+        "body": null,
+        "headers": {
+          "content-type": "text/html; charset=utf-8",
+          "location": "<base_url>/?error_code=5090&error_message=INVALID_MAGIC_CODE_SIGN_IN&email=magic-in%40example.test"
+        },
+        "status": 302
+      }
+    }
+  ],
+  "format_version": 1,
+  "preconditions": [
+    "the pin has an SMTP host and its sign-in with a code on, as for X12",
+    "the first exchange makes magic-in@example.test, whose address every other exchange names",
+    "`{code}` in a form stands for the code the pin kept for that account when the exchange was made (read from its Valkey: its Celery worker, which would mail it, is stopped); the harness puts the code its own mail service was given there. `000000` is a wrong code that no code can be (a code is never below 100000)",
+    "a form is urlencoded with a hidden CSRF field that is transport and not recorded"
+  ],
+  "recorded_from": "ba85d4d3d3",
+  "row": "X13"
+}

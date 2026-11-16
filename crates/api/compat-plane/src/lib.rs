@@ -36,6 +36,7 @@ mod fields_tests;
 mod instance;
 mod issue_history;
 mod issues;
+mod magic;
 mod oidc;
 mod page;
 mod projects;
@@ -117,6 +118,8 @@ pub fn routes() -> Router {
         .route("/auth/oidc/callback/", get(oidc::callback))
         // X10 and X11: the password reset by email. Dark until a mail service and a base URL are configured (D-041), and recorded from the pin
         .route("/auth/forgot-password/", post(reset::forgot_password)) // X10
-        .route("/auth/reset-password/{uidb64}/{token}/", post(reset::reset_password))
-    // X11
+        .route("/auth/reset-password/{uidb64}/{token}/", post(reset::reset_password)) // X11
+        // X12 and X13: the sign-in with an emailed code (D-042), sign-in only. Dark with the reset by email: the same switch
+        .route("/auth/magic-generate/", post(magic::generate)) // X12
+        .route("/auth/magic-sign-in/", post(magic::sign_in)) // X13
 }

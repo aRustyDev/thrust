@@ -103,10 +103,21 @@ pub fn app_with_db() -> (Router, Arc<MemoryDatabase>) {
 /// can send a reset (D-041): a mail service that keeps what it is given, and the address its link starts with. Every row but X10 is replayed on
 /// one that cannot, as every deployment is until a mail service is wired.
 pub fn app_world(mailing: bool) -> (Router, Arc<MemoryDatabase>, App) {
-    let email: Option<Arc<dyn EmailSender>> = mailing.then(|| Arc::new(MemoryEmail::new()) as Arc<dyn EmailSender>);
+    let (router, db, app, _) = app_world_with_mail(mailing);
+    (router, db, app)
+}
+
+/// [`app_world`] and the mail service it was given (`None` for a deployment that cannot mail): what a replay reads a sign-in code from.
+pub fn app_world_with_mail(mailing: bool) -> (Router, Arc<MemoryDatabase>, App, Option<Arc<MemoryEmail>>) {
+    let mail = mailing.then(|| Arc::new(MemoryEmail::new()));
+    let email: Option<Arc<dyn EmailSender>> = mail.clone().map(|m| m as Arc<dyn EmailSender>);
     let (app, db) = bare_world_parts(None, email, |c| {
         if mailing {
             c.public_base_url = Some("https://projects.example.test".to_string());
+            // The rows of the sign-in with a code type a dozen codes into one address on a clock that never moves, and the pin's own limit on
+            // them (10 a minute per IP) is one the recorder waited out, so the limit is out of the way here: the limiter's own tests are
+            // `tests/magic.rs` and `crates/core/usecases/tests/login_code.rs`.
+            c.sign_in_rate_limit = 1_000;
         }
     });
     // The activity consumer is what writes a work item's history, on a worker the pin runs side by side with the API. Here it runs
@@ -114,7 +125,7 @@ pub fn app_world(mailing: bool) -> (Router, Arc<MemoryDatabase>, App) {
     // up before each read, so every read finds the writes before it), and a test that needs the rows without a request calls
     // [`drain`] itself.
     let drain = Router::new().route("/__drain", axum::routing::post(drain_route)).layer(Extension(app.clone()));
-    (drain.merge(thrust_compat_plane::routes().layer(Extension(app.clone()))), db, app)
+    (drain.merge(thrust_compat_plane::routes().layer(Extension(app.clone()))), db, app, mail)
 }
 
 /// The `App` of [`app_with_db`] and its memory database, with no router: for a test that mounts routes of its own beside the compat
@@ -258,6 +269,21 @@ pub fn project(ex: &Value) -> Value {
     // D-041: the reset page's form is a native post, and Thrust answers it as the pin does, with the same 302, so it is NOT projected onto the JSON
     // of the sign-in (D-022). The request keeps its form (as `urlencoded`, which `send` posts as one); the recorded redirect loses its origin, because
     // the pin's is absolute and Thrust's is relative (the normaliser leaves a relative value alone), and is otherwise as recorded.
+    // D-042: the same for the form a sign-in code is typed into. A success is the pin's bare origin (Thrust's is the app's root, `/`), and
+    // everything else is a path on the origin, which Thrust writes without it.
+    if ex["request"]["path"].as_str() == Some("/auth/magic-sign-in/") {
+        if let Some(form) = ex["request"]["body"].get("form").cloned() {
+            ex["request"]["body"] = json!({ "urlencoded": form });
+        }
+        if let Some(rest) = ex["response"]["headers"]["location"]
+            .as_str()
+            .and_then(|l| l.strip_prefix("<base_url>"))
+            .map(str::to_string)
+        {
+            ex["response"]["headers"]["location"] = json!(if rest.is_empty() { "/".to_string() } else { rest });
+        }
+        return ex;
+    }
     if ex["request"]["path"].as_str().is_some_and(|p| p.starts_with("/auth/reset-password/")) {
         if let Some(form) = ex["request"]["body"].get("form").cloned() {
             ex["request"]["body"] = json!({ "urlencoded": form });
@@ -515,6 +541,9 @@ pub fn project_fixture(fixture: &Value) -> Vec<Value> {
 /// sent the session cookie of the user it had signed in.
 pub type Jar = std::collections::BTreeMap<String, String>;
 
+/// The CSRF token of a form the replay posts: any value, as long as the cookie and the field agree.
+const PAGE_CSRF_TOKEN: &str = "0123456789abcdef0123456789abcdef";
+
 pub fn jar_key(email: &str) -> String {
     email.trim().to_lowercase()
 }
@@ -536,7 +565,13 @@ pub fn send(router: &Router, name: &Value, req: &Value, jar: &Jar) -> Value {
         }
         Some(b) if b.get("urlencoded").is_some() => {
             builder = builder.header("content-type", "application/x-www-form-urlencoded");
-            Body::from(serde_urlencoded::to_string(&b["urlencoded"]).expect("a form of strings"))
+            let mut form = b["urlencoded"].clone();
+            // the sign-in code's form carries the CSRF token twice, as the app's page does (the recorder's is transport, and is not recorded)
+            if req["path"].as_str() == Some("/auth/magic-sign-in/") {
+                form["csrfmiddlewaretoken"] = json!(PAGE_CSRF_TOKEN);
+                builder = builder.header("cookie", format!("__Host-thrust_csrf={PAGE_CSRF_TOKEN}"));
+            }
+            Body::from(serde_urlencoded::to_string(&form).expect("a form of strings"))
         }
         Some(b) => {
             builder = builder.header("content-type", "application/json");
@@ -663,12 +698,19 @@ pub fn divergences_with(router: &Router, fixture: &Value, jar: &mut Jar) -> Vec<
         // a password change makes a session too (the caller stays signed in, D-039): it sets one when it worked and none when it did not.
         // It names no email in its body, so it never changes whose session the jar holds: the exchanges after it that name the account
         // send the one it held before, which is the point of the read that follows it.
-        let signs_in = matches!(
-            want["request"]["path"].as_str(),
-            Some("/auth/sign-in/" | "/auth/sign-up/" | "/auth/change-password/")
-        );
+        let by_code = want["request"]["path"].as_str() == Some("/auth/magic-sign-in/");
+        let signs_in = by_code
+            || matches!(
+                want["request"]["path"].as_str(),
+                Some("/auth/sign-in/" | "/auth/sign-up/" | "/auth/change-password/")
+            );
         if signs_in {
-            let expected = want["response"]["status"] == 200;
+            // a sign-in by code is a 302 whatever it comes to: it worked when the redirect has no `error_code`
+            let expected = if by_code {
+                want["response"]["headers"]["location"].as_str().is_some_and(|l| !l.contains("error_code="))
+            } else {
+                want["response"]["status"] == 200
+            };
             let token = session_token(&raw);
             if token.is_some() != expected {
                 lines.push(format!(
@@ -678,7 +720,9 @@ pub fn divergences_with(router: &Router, fixture: &Value, jar: &mut Jar) -> Vec<
                 ));
             }
             // the user signed in or up now holds this session for the rest of the journey
-            if let (Some(token), Some(email)) = (token, want["request"]["body"]["email"].as_str()) {
+            let who =
+                want["request"]["body"]["email"].as_str().or(want["request"]["body"]["urlencoded"]["email"].as_str());
+            if let (Some(token), Some(email)) = (token, who) {
                 jar.insert(jar_key(email), token);
             }
         }
@@ -770,8 +814,10 @@ pub fn journey_with(
     target: &str,
     edit: impl FnOnce(&mut Value),
 ) -> Vec<String> {
-    // X10 asks the route for a link on a deployment that can send one: the pin had an SMTP host for those rows (its dark ones are `X10-dark`)
-    let (router, db, app) = app_world(target == "X10");
+    // X10, X12 and X13 ask for a link or a code on a deployment that can send one: the pin had an SMTP host for those rows (its dark ones are
+    // `X10-dark`, `X12-dark` and `X13-dark`)
+    let mailing = matches!(target, "X10" | "X12" | "X13" | "X13-deactivated");
+    let (router, db, app, mail) = app_world_with_mail(mailing);
     let router = wrap(router);
     let mut jar = Jar::new();
     // the rows of a member who is not an admin: the recorder made the second user a member of the workspace (an invitation, taken)
@@ -792,6 +838,9 @@ pub fn journey_with(
     edit(&mut fixture);
     if target == "X11" {
         return reset_replay(&router, &db, &app, &fixture, &mut jar);
+    }
+    if matches!(target, "X13" | "X13-deactivated") {
+        return code_replay(&router, &db, &app, mail.as_deref().expect("a mail service"), &fixture, &mut jar);
     }
     divergences_with(&router, &fixture, &mut jar)
 }
@@ -824,6 +873,47 @@ fn reset_replay(router: &Router, db: &MemoryDatabase, app: &App, fixture: &Value
         ex["request"]["path"] = json!(path);
     }
     out.extend(divergences_with(router, &rest, jar));
+    out
+}
+
+/// X13 (D-042): the fixture asks for codes and types them into the form, and the pin's code differs on every stack, so the fixture says `{code}`
+/// where the account's own goes. Replay one exchange at a time, and before each that says `{code}` put in the newest code that was mailed to the
+/// address the form names, which is what a person reads off their mailbox. `X13-deactivated` also deactivates the account between its first two
+/// requests for a code, as the recorder did in the pin.
+fn code_replay(
+    router: &Router,
+    db: &MemoryDatabase,
+    app: &App,
+    mail: &MemoryEmail,
+    fixture: &Value,
+    jar: &mut Jar,
+) -> Vec<String> {
+    let exchanges = fixture["exchanges"].as_array().expect("exchanges");
+    let mut out = Vec::new();
+    for (i, ex) in exchanges.iter().enumerate() {
+        let mut ex = ex.clone();
+        // the pin deactivated the account after it had been asked for one code and before the next
+        if fixture["row"] == "X13-deactivated" && ex["name"] == "a code is asked for, once the account is deactivated" {
+            let email = exchanges[0]["request"]["body"]["form"]["email"].as_str().expect("the account made first");
+            assert!(futures_executor::block_on(thrust_core::set_user_active(app, user_id(db, email), false)).unwrap());
+        }
+        if let Some(form) = ex["request"]["body"].get("form").cloned() {
+            let email = form["email"].as_str().unwrap_or_default().to_string();
+            if form["code"].as_str().is_some_and(|c| c.contains("{code}")) {
+                let sent = mail.sent();
+                let newest = sent
+                    .iter()
+                    .rev()
+                    .find(|m| m.to == email)
+                    .unwrap_or_else(|| panic!("no code was mailed to {email}"));
+                let code = newest.subject.rsplit(' ').next().expect("a word").to_string();
+                ex["request"]["body"]["form"]["code"] = json!(form["code"].as_str().unwrap().replace("{code}", &code));
+            }
+        }
+        let mut part = fixture.clone();
+        part["exchanges"] = Value::Array(vec![ex]);
+        out.extend(divergences_with(router, &part, jar).into_iter().map(|d| format!("{d} (exchange {i} of the row)")));
+    }
     out
 }
 

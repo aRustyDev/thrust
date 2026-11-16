@@ -4,8 +4,9 @@
 // Why this is a journey and not a Rust test. The buttons are drawn by the app from what `/api/instances/` says (`is_oidc_enabled`,
 // `is_magic_login_enabled`, `is_smtp_configured`, ...). Thrust answers all of them off, as the pin does (S01), so the social buttons and the
 // code step never render. That the answer is right is the parity fixture's; that the SCREEN then shows no way in that Thrust cannot serve
-// is only a browser's to say, and it is what would break first if someone turned a flag on before building its route (password reset,
-// email code and social login have no route; PR #130, D-037).
+// is only a browser's to say, and it is what would break first if someone turned a flag on before its route could answer (social login has
+// no route; the OIDC login, the password reset and the sign-in with a code have theirs, D-040 to D-042, and answer only where a provider or a
+// mail service is configured, which these targets have not; PR #130, D-037).
 //
 // What would make this pass without proving anything, and what stops it:
 //   - a page that did not render: the email field must be on screen before anything is counted absent, and the sign-in step is reached
@@ -24,7 +25,7 @@ import { assertTarget, wantedTarget } from "../support/target";
 
 const ALLOWED_FAILURES: AllowedFailure[] = [];
 
-// routes of a sign-in method that Thrust has not built (and that the pin only calls when its SMTP or a provider is configured)
+// routes of a sign-in method that is off on these targets (the pin only calls them when its SMTP or a provider is configured, and so does the app)
 const METHOD_ROUTES = /^\/auth\/(forgot-password|reset-password|magic-generate|magic-sign-in|set-password|oidc|google|github|gitlab|gitea)\b/;
 
 test("the stock app: the sign-in page offers the password and nothing else, and the forgot-password control sends no request", async ({

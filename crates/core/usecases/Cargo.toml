@@ -35,6 +35,12 @@ mutant_reset_takes_token_first = []
 mutant_reset_skips_strength = []
 mutant_reset_keeps_sessions = []
 mutant_reset_ignores_cooldown = []
+# The sign-in code by email (D-042): the window's cap not enforced, the tries a code allows not limited, a deactivated account signed in by
+# a right code, and an address that no account has mailed all the same.
+mutant_code_cap_ignored = []
+mutant_code_attempts_unbounded = []
+mutant_code_deactivated_signs_in = []
+mutant_code_mails_unknown = []
 
 [dependencies]
 thrust-contracts = { workspace = true }

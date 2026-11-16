@@ -18,6 +18,7 @@
 use reqwest::Url;
 use serde_json::{json, Value};
 use thrust_contract_tests::*;
+use thrust_contracts::UserId;
 
 const STRONG: &str = "Contract-Sample-Pa55word-Zebra-81";
 const MAILED: &str = "Mailed-Reset-Pa55word-Otter-93-Contract";
@@ -329,4 +330,193 @@ async fn mail_what_sends_nothing_and_what_the_link_ignores() {
     assert_eq!(second.json::<Value>().await.unwrap(), json!({"message": "Check your email to reset your password"}));
     // no wait is needed to see a message that was sent: the mail goes in the request (D-041, 5), so the mail service held it before the answer came
     assert_eq!(mails_to(&t, &email).await.len(), 1, "a request inside the cooldown mailed something");
+}
+
+// --- the sign-in with an emailed code (F-A04, D-042) ----------------------------------------------------------------------------------
+
+/// The token of the page's form, any value, as long as the cookie and the hidden field agree: what `unique-code.tsx` gets from
+/// `GET /auth/get-csrf-token/`.
+const PAGE_CSRF: &str = "0123456789abcdef0123456789abcdef";
+
+async fn ask_code(t: &Target, email: &str) -> reqwest::Response {
+    t.http.post(t.url("/auth/magic-generate/")).json(&json!({ "email": email })).send().await.unwrap()
+}
+
+/// The unique-code step's form as the app posts it: urlencoded, with the hidden `csrfmiddlewaretoken` and the CSRF cookie the page holds. Without
+/// them (`csrf` false) it is the form of a page that is not ours.
+async fn code_form(t: &Target, email: &str, code: &str, csrf: bool) -> reqwest::Response {
+    let mut pairs = vec![("email", email), ("code", code)];
+    let mut req = t.no_redirect().post(t.url("/auth/magic-sign-in/"));
+    if csrf {
+        pairs.push(("csrfmiddlewaretoken", PAGE_CSRF));
+        req = req.header("cookie", format!("{CSRF_COOKIE}={PAGE_CSRF}"));
+    }
+    req.form(&pairs).send().await.unwrap()
+}
+
+/// The six digits that end a code mail's subject.
+fn code_in(mail: &Value) -> String {
+    let subject = mail["Subject"].as_str().expect("a subject");
+    let code = subject.rsplit(' ').next().unwrap_or_default();
+    assert!(
+        code.len() == 6 && code.chars().all(|c| c.is_ascii_digit()),
+        "a code of six digits ends the subject: {subject}"
+    );
+    code.to_string()
+}
+
+/// A code that is not `code`, and cannot be one that was made (a code starts at 100000).
+fn wrong_code() -> &'static str {
+    "000000"
+}
+
+fn refusal(code: u16, name: &str, email: &str) -> String {
+    format!("/?error_code={code}&error_message={name}&email={}", email.replace('@', "%40"))
+}
+
+/// The whole path of a code. A person who would rather not type a password asks; one message reaches the mail service, which a reader that is not
+/// the app's reads for itself; the code in it is the six digits of the subject and of the text, with no link; the form it is typed into signs the
+/// person in with it, once, and the session works. A wrong code comes first and changes nothing, so it is the mailed code and not any code that
+/// works, and a form that does not carry the page's CSRF token is refused whole.
+#[tokio::test]
+async fn mail_a_sign_in_code_is_mailed_and_signs_the_person_in_once() {
+    let t = t();
+    let (email, _) = sign_up(&t).await;
+    assert!(mails_to(&t, &email).await.is_empty(), "no mail before anything was asked");
+
+    let asked = ask_code(&t, &email).await;
+    assert_eq!(asked.status(), 200);
+    assert_eq!(asked.json::<Value>().await.unwrap(), json!({"key": format!("magic_{email}")}));
+    let mails = mails_to(&t, &email).await;
+    assert_eq!(mails.len(), 1, "one request, one message");
+    let mail = &mails[0];
+    let code = code_in(mail);
+    assert_eq!(mail["From"]["Address"], SENDER);
+    assert_eq!(mail["From"]["Name"], "Thrust", "the name beside the sender");
+    assert_eq!(mail["To"].as_array().unwrap().len(), 1);
+    assert_eq!(mail["To"][0]["Address"], email.as_str());
+    let text = mail["Text"].as_str().expect("a text part");
+    assert!(text.contains(&code), "the text carries the code: {text}");
+    assert!(!text.contains("http"), "a code is typed, never followed: {text}");
+
+    // CONTROL: a wrong code is refused and changes nothing
+    let wrong = code_form(&t, &email, wrong_code(), true).await;
+    assert_eq!(wrong.status(), 302);
+    assert_eq!(location(&wrong), refusal(5090, "INVALID_MAGIC_CODE_SIGN_IN", &email));
+    assert!(SetCookie::all(&wrong).is_empty(), "a refusal sets no cookie");
+    // a form without the page's token is refused whole, and spends no try
+    let outsider = code_form(&t, &email, &code, false).await;
+    assert_eq!(outsider.status(), 403, "{:?}", outsider.text().await);
+
+    // the code as mailed, with spaces round it as a paste may have them
+    let ok = code_form(&t, &email, &format!(" {code} "), true).await;
+    assert_eq!(ok.status(), 302);
+    assert_eq!(location(&ok), "/");
+    let cookies = SetCookie::all(&ok);
+    let session = SetCookie::find(&cookies, SESSION_COOKIE).expect("a sign-in by code makes a session").value.clone();
+    assert_eq!(t.me_status(&session).await, 200, "the session works");
+    assert_eq!(sign_in_status(&t, &email, STRONG).await, 200, "the password is as it was");
+
+    // used up
+    let again = code_form(&t, &email, &code, true).await;
+    assert_eq!(location(&again), refusal(5095, "EXPIRED_MAGIC_CODE_SIGN_IN", &email));
+    assert!(SetCookie::all(&again).is_empty());
+    assert_eq!(mails_to(&t, &email).await.len(), 1, "the sign-in sent no further mail");
+}
+
+/// What is mailed, and how many: an address nobody has is answered as a sent one and mailed nothing, and one that is not an address is a 400; an
+/// address is made four codes in a window and the fifth is refused with the pin's 5100, the four having been mailed one each; and a new code
+/// replaces the old, so that of four mailed codes only the newest signs in. Each "nothing" is beside a request that did send.
+#[tokio::test]
+async fn mail_what_a_code_is_made_for_and_how_many_are() {
+    let t = t();
+    let (email, _) = sign_up(&t).await;
+
+    let stranger = new_email();
+    let r = ask_code(&t, &stranger).await;
+    assert_eq!(r.status(), 200, "answered as a sent one");
+    assert_eq!(r.json::<Value>().await.unwrap(), json!({"key": format!("magic_{stranger}")}));
+    let bad = ask_code(&t, "not an address").await;
+    assert_eq!(bad.status(), 400);
+    assert_eq!(bad.json::<Value>().await.unwrap()["error_code"], 5005);
+
+    for n in 1..=4 {
+        assert_eq!(ask_code(&t, &email).await.status(), 200, "request {n}");
+    }
+    let fifth = ask_code(&t, &email).await;
+    assert_eq!(fifth.status(), 400);
+    let v: Value = fifth.json().await.unwrap();
+    assert_eq!(v["error_code"], 5100);
+    assert_eq!(v["error_message"], "EMAIL_CODE_ATTEMPT_EXHAUSTED_SIGN_IN");
+    assert_eq!(v["email"], email.as_str());
+
+    let mails = mails_to(&t, &email).await;
+    assert_eq!(mails.len(), 4, "the control: four requests sent, and the fifth sent nothing");
+    assert!(mails_to(&t, &stranger).await.is_empty(), "a stranger was mailed a code");
+
+    // oldest first: three replaced codes, and the newest
+    let codes: Vec<String> = mails.iter().map(code_in).collect();
+    for (n, old) in codes[..3].iter().enumerate() {
+        if *old == codes[3] {
+            continue; // the same six digits drawn twice: it is the newest, and works
+        }
+        let r = code_form(&t, &email, old, true).await;
+        assert_eq!(location(&r), refusal(5090, "INVALID_MAGIC_CODE_SIGN_IN", &email), "code {} was replaced", n + 1);
+    }
+    let ok = code_form(&t, &email, &codes[3], true).await;
+    assert_eq!(location(&ok), "/", "the newest signs in");
+}
+
+/// The tries: a code allows five, the fifth wrong one ends it (5100), the right code after that is 5095, and a person who asks again is mailed
+/// a new code that works. The count of tries is the code's, not the person's.
+#[tokio::test]
+async fn mail_five_wrong_tries_end_a_code_and_a_new_one_works() {
+    let t = t();
+    let (email, _) = sign_up(&t).await;
+    assert_eq!(ask_code(&t, &email).await.status(), 200);
+    let first = code_in(&mails_to(&t, &email).await[0]);
+    for n in 1..=4 {
+        let r = code_form(&t, &email, wrong_code(), true).await;
+        assert_eq!(location(&r), refusal(5090, "INVALID_MAGIC_CODE_SIGN_IN", &email), "try {n}");
+    }
+    let last = code_form(&t, &email, wrong_code(), true).await;
+    assert_eq!(location(&last), refusal(5100, "EMAIL_CODE_ATTEMPT_EXHAUSTED_SIGN_IN", &email));
+    let after = code_form(&t, &email, &first, true).await;
+    assert_eq!(
+        location(&after),
+        refusal(5095, "EXPIRED_MAGIC_CODE_SIGN_IN", &email),
+        "the right code, after it was ended"
+    );
+    assert!(SetCookie::all(&after).is_empty());
+
+    assert_eq!(ask_code(&t, &email).await.status(), 200, "the window still allows another");
+    let mails = mails_to(&t, &email).await;
+    assert_eq!(mails.len(), 2);
+    let second = code_in(&mails[1]);
+    let ok = code_form(&t, &email, &second, true).await;
+    assert_eq!(location(&ok), "/", "the new code works");
+}
+
+/// A code that is right for an account that was deactivated after it asked is refused with the pin's 5019 and used up, and no session is made.
+#[tokio::test]
+async fn mail_a_right_code_of_a_deactivated_account_is_refused_and_used_up() {
+    let t = t();
+    let (email, session) = sign_up(&t).await;
+    assert_eq!(ask_code(&t, &email).await.status(), 200);
+    let code = code_in(&mails_to(&t, &email).await[0]);
+    let me: Value = t.me(|r| r.bearer_auth(&session)).await.json().await.unwrap();
+    let user = UserId(me["id"].as_str().unwrap().parse().unwrap());
+    t.set_user_active(user, false).await;
+
+    let refused = code_form(&t, &email, &code, true).await;
+    assert_eq!(refused.status(), 302);
+    assert_eq!(location(&refused), refusal(5019, "USER_ACCOUNT_DEACTIVATED", &email));
+    assert!(SetCookie::all(&refused).is_empty(), "no session for a deactivated account");
+    t.set_user_active(user, true).await;
+    let used = code_form(&t, &email, &code, true).await;
+    assert_eq!(
+        location(&used),
+        refusal(5095, "EXPIRED_MAGIC_CODE_SIGN_IN", &email),
+        "the right code was used up by the refusal"
+    );
 }

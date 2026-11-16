@@ -89,7 +89,7 @@ case "$PASS" in
   # change-password tests), and #169's three password-reset tests made it 64 the same day: nothing in CI runs this script, so nothing
   # noticed, and a correct run would have exited 5 at the guard below. `scripts/check-contract-counts.sh` now runs exactly that
   # listing, for every arm of this `case`, in CI (it reads the `EXPECT=` and the filters of the lines below, so keep their shape).
-  main)     EXPECT=64; "$RS" cargo test --manifest-path "$M" -p thrust-contract-tests --test contract -- --skip sweeper_ --skip panic_ --skip blast_ --skip oidc_ --skip operator_ --skip csrf_off_ >"$LOG.test.log" 2>&1 ;;
+  main)     EXPECT=65; "$RS" cargo test --manifest-path "$M" -p thrust-contract-tests --test contract -- --skip sweeper_ --skip panic_ --skip blast_ --skip oidc_ --skip operator_ --skip csrf_off_ >"$LOG.test.log" 2>&1 ;;
   # the csrf_off_ tests that need nothing else the deployed Worker lacks (all six: none of them is an `oidc_` test)
   csrfoff)  EXPECT=6;  "$RS" cargo test --manifest-path "$M" -p thrust-contract-tests --test contract -- csrf_off_ >"$LOG.test.log" 2>&1 ;;
   worker)   EXPECT=1;  "$RS" cargo test --manifest-path "$M" -p thrust-contract-tests --test worker_only -- worker_room_ --test-threads=1 --nocapture >"$LOG.test.log" 2>&1 ;;

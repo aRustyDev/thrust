@@ -144,7 +144,7 @@ its base branch. Nothing calls it, so it is a tool to run by hand.
   for the cell. The script's target guard and count guard apply as they do locally.
 - **The mail cells.** `native-memory mail` starts a Mailpit container (pinned, pulled from Docker Hub as `postgres` is) beside the native server, which is
   given `THRUST_SMTP_*` and `THRUST_PUBLIC_BASE_URL`, and runs `tests/mail.rs`: the password reset by email through a mail server written by someone else.
-  `worker-memory mail` and `worker-cf mail` (E3) run the same three tests against the Worker built for wasm32 and run by `wrangler dev`, whose
+  `worker-memory mail` and `worker-cf mail` (E3) run the same seven tests (E4 added the four of the sign-in with a code) against the Worker built for wasm32 and run by `wrangler dev`, whose
   `send_email` binding is wrangler's own simulator: nothing is sent, and the message the binding was given is read from the dev server's log and the files
   it names. No container; the second also has the Postgres container every `worker-cf` cell has.
   The `pg-adapter` job also runs the SMTP adapter's Docker suite (`--test smtp_sink`, Mailpit again, with TLS and a login); the adapter's other two suites

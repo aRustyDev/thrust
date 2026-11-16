@@ -766,6 +766,42 @@ enum Op {
     ResetLife {
         who: U,
     },
+    /// A sign-in code for `who` is stored (F-A04, D-042): it lives `ttl` s, a window of `window` s allows `max` codes.
+    CodeIssue {
+        who: U,
+        ttl: u8,
+        window: u8,
+        max: u8,
+    },
+    /// `who`'s code is tried: the one that is stored (`current`, or a digest nobody stored when there is none) or a wrong one, with `max`
+    /// tries allowed.
+    CodeCheck {
+        who: U,
+        current: bool,
+        max: u8,
+    },
+    /// A code that was never delivered is taken back: the stored one (`current`) or one that is not.
+    CodeDiscard {
+        who: U,
+        current: bool,
+    },
+    /// The count of codes: a window allows two, the third is refused, a code that is used gives its place back, and so does a discarded one.
+    CodeCap {
+        who: U,
+    },
+    /// The tries: a code allows three, the third right one still counts, the third wrong one ends the code, and an ended code is none.
+    CodeAttempts {
+        who: U,
+    },
+    /// The time: a code that lives 3 s works 1 tick after, and is out of time exactly 3 ticks after; a window and a code that are both
+    /// over are dropped by the next insert of anyone.
+    CodeLife {
+        who: U,
+    },
+    /// The window: one code in 3 s, the second inside it is refused, the one exactly 3 s after the first is not.
+    CodeWindow {
+        who: U,
+    },
     Undispatched {
         limit: u32,
     },
@@ -955,6 +991,20 @@ fn op() -> impl Strategy<Value = Op> {
         3 => prop::option::weighted(0.85, 0..8usize).prop_map(|pick| Op::ResetTake { pick }),
         2 => user().prop_map(|who| Op::ResetCooldown { who }),
         2 => user().prop_map(|who| Op::ResetLife { who }),
+        3 => (
+            user(),
+            prop_oneof![Just(3u8), Just(100u8)],
+            prop_oneof![Just(3u8), Just(100u8)],
+            prop_oneof![Just(1u8), Just(2u8), Just(4u8)]
+        )
+            .prop_map(|(who, ttl, window, max)| Op::CodeIssue { who, ttl, window, max }),
+        4 => (user(), any::<bool>(), prop_oneof![Just(1u8), Just(3u8), Just(5u8)])
+            .prop_map(|(who, current, max)| Op::CodeCheck { who, current, max }),
+        2 => (user(), any::<bool>()).prop_map(|(who, current)| Op::CodeDiscard { who, current }),
+        2 => user().prop_map(|who| Op::CodeCap { who }),
+        2 => user().prop_map(|who| Op::CodeAttempts { who }),
+        2 => user().prop_map(|who| Op::CodeLife { who }),
+        2 => user().prop_map(|who| Op::CodeWindow { who }),
         1 => (1..6u32).prop_map(|limit| Op::Undispatched { limit }),
         1 => prop::option::weighted(0.85, 0..16usize).prop_map(|pick| Op::Mark { pick }),
         1 => Just(Op::Depth),
@@ -1199,6 +1249,30 @@ enum Class {
     /// A find or take of a token that a later one replaced: nothing.
     ResetReplacedHidden,
     ResetUnknown,
+    /// A code stored for a user with no row, or whose window was over (a window of its own).
+    CodeIssued,
+    /// A code stored inside an open window: it replaced the old and the count went up.
+    CodeIssuedAgain,
+    /// A code refused: the window had had its share.
+    CodeCapped,
+    /// An insert that dropped a row whose window and code were both over.
+    CodeSwept,
+    CodeMatched,
+    /// The right code, at the last try the code allows: it still counts.
+    CodeMatchedAtLimit,
+    CodeWrong,
+    /// The last wrong try: the code is gone and the count of codes made stays.
+    CodeExhausted,
+    /// A code that is stored and out of time.
+    CodeOutOfTime,
+    /// No code that works: no row, a used code, an exhausted one.
+    CodeNone,
+    /// A code taken back from a row that had had others: the count goes down.
+    CodeDiscardedKept,
+    /// A code taken back from a row that had only it: the row goes.
+    CodeDiscardedLast,
+    /// A take-back of a code that is not the user's current one: nothing.
+    CodeDiscardRefused,
     UndispatchedSome,
     Marked,
     MarkedAgain,
@@ -1309,7 +1383,7 @@ enum Class {
 }
 
 impl Class {
-    const ALL: [Class; 223] = [
+    const ALL: [Class; 236] = [
         Class::Created,
         Class::ExternalKeyFreed,
         Class::Conflict,
@@ -1455,6 +1529,19 @@ impl Class {
         Class::ResetSweptHidden,
         Class::ResetReplacedHidden,
         Class::ResetUnknown,
+        Class::CodeIssued,
+        Class::CodeIssuedAgain,
+        Class::CodeCapped,
+        Class::CodeSwept,
+        Class::CodeMatched,
+        Class::CodeMatchedAtLimit,
+        Class::CodeWrong,
+        Class::CodeExhausted,
+        Class::CodeOutOfTime,
+        Class::CodeNone,
+        Class::CodeDiscardedKept,
+        Class::CodeDiscardedLast,
+        Class::CodeDiscardRefused,
         Class::UndispatchedSome,
         Class::Marked,
         Class::MarkedAgain,
@@ -1910,6 +1997,24 @@ enum Call {
     TakePasswordReset {
         token: TokenHash,
         want: Option<PasswordReset>,
+    },
+    IssueLoginCode {
+        c: NewLoginCode,
+        window_secs: i64,
+        max_issued: u32,
+        want: LoginCodeIssue,
+    },
+    CheckLoginCode {
+        user: UserId,
+        code: TokenHash,
+        now: Timestamp,
+        max_attempts: u32,
+        want: LoginCodeCheck,
+    },
+    DiscardLoginCode {
+        user: UserId,
+        code: TokenHash,
+        want: bool,
     },
     Undispatched {
         limit: u32,
@@ -2563,6 +2668,17 @@ enum ResetState {
     Replaced,
 }
 
+/// One row of `login_codes` as the model knows it.
+#[derive(Debug, Clone)]
+struct CodeRow {
+    /// The code that works, and `None` once it was exhausted.
+    hash: Option<TokenHash>,
+    expires: Timestamp,
+    attempts: u32,
+    window_started: Timestamp,
+    issued: u32,
+}
+
 /// A seeded session as the model knows it.
 #[derive(Debug, Clone)]
 struct SessModel {
@@ -2586,6 +2702,8 @@ struct Model {
     logins: Vec<(NewOidcLogin, LoginState)>,
     /// Every reset token ever stored, with where it stands.
     resets: Vec<(NewPasswordReset, ResetState)>,
+    /// The sign-in code of each user that has a row (by the user's place in `U`): what the pin keeps in three Redis keys.
+    codes: BTreeMap<usize, CodeRow>,
     /// The profile of each of the three seeded login users, once an op has made it.
     profiles: [Option<UserProfile>; 3],
     /// Whether each seeded user's membership of each seeded workspace is active (it is for users who are not members).
@@ -2891,6 +3009,7 @@ impl Model {
             api_keys,
             logins: Vec::new(),
             resets: Vec::new(),
+            codes: BTreeMap::new(),
             profiles: [None, None, None],
             member_active: [[true; 2]; 7],
             sidebar: BTreeMap::new(),
@@ -3353,6 +3472,120 @@ impl Model {
                         Op::ResetTake { pick: Some(first) },
                         Op::ResetTake { pick: Some(second) },
                         Op::ResetTake { pick: Some(second) },
+                    ],
+                    &mut calls,
+                    &mut classes,
+                );
+            }
+            &Op::CodeCap { who } => {
+                let issue = Op::CodeIssue { who, ttl: 100, window: 100, max: 2 };
+                self.plan_all(
+                    &[
+                        issue.clone(),
+                        issue.clone(),
+                        // the third is refused: the window has had its two
+                        issue.clone(),
+                        // a code that is used gives its place back (the row goes with the count)
+                        Op::CodeCheck { who, current: true, max: 5 },
+                        // a code that was never delivered, and the only one: the row goes, and the code works no more
+                        issue.clone(),
+                        Op::CodeDiscard { who, current: true },
+                        Op::CodeCheck { who, current: true, max: 5 },
+                        // ... and one of two gives its place back and leaves the row
+                        issue.clone(),
+                        issue.clone(),
+                        Op::CodeDiscard { who, current: true },
+                        issue.clone(),
+                        issue.clone(),
+                        // taking back a code that is not the current one does nothing
+                        Op::CodeDiscard { who, current: false },
+                    ],
+                    &mut calls,
+                    &mut classes,
+                );
+            }
+            &Op::CodeAttempts { who } => {
+                let issue = Op::CodeIssue { who, ttl: 100, window: 100, max: 4 };
+                let wrong = Op::CodeCheck { who, current: false, max: 3 };
+                let right = Op::CodeCheck { who, current: true, max: 3 };
+                self.plan_all(
+                    &[
+                        issue.clone(),
+                        wrong.clone(),
+                        wrong.clone(),
+                        // the third try, and right: it still counts
+                        right.clone(),
+                        issue.clone(),
+                        wrong.clone(),
+                        wrong.clone(),
+                        // the third wrong one ends the code, and the right one afterwards finds none
+                        wrong.clone(),
+                        right.clone(),
+                        // a new code starts the tries again
+                        issue.clone(),
+                        wrong.clone(),
+                        right.clone(),
+                        // ... also when the old one had had two of its three: the new one has all three
+                        issue.clone(),
+                        wrong.clone(),
+                        wrong.clone(),
+                        issue.clone(),
+                        wrong.clone(),
+                        wrong.clone(),
+                        right.clone(),
+                    ],
+                    &mut calls,
+                    &mut classes,
+                );
+            }
+            &Op::CodeLife { who } => {
+                let tick_once = Op::KeyTouch { key: 2 };
+                let live = Op::CodeIssue { who, ttl: 3, window: 100, max: 4 };
+                self.plan_all(
+                    &[live.clone(), tick_once.clone(), Op::CodeCheck { who, current: true, max: 5 }],
+                    &mut calls,
+                    &mut classes,
+                );
+                // out of time exactly 3 ticks after: the code was made at T, the check is the third tick after
+                self.plan_all(
+                    &[
+                        live,
+                        tick_once.clone(),
+                        tick_once.clone(),
+                        Op::CodeCheck { who, current: true, max: 5 },
+                        Op::CodeCheck { who, current: true, max: 5 },
+                    ],
+                    &mut calls,
+                    &mut classes,
+                );
+                // a window and a code that are both over are dropped by the next insert, of another user
+                let other = U::ALL[(who as usize + 1) % U::ALL.len()];
+                self.plan_all(
+                    &[
+                        Op::CodeIssue { who, ttl: 3, window: 3, max: 4 },
+                        tick_once.clone(),
+                        tick_once.clone(),
+                        tick_once.clone(),
+                        tick_once,
+                        Op::CodeIssue { who: other, ttl: 100, window: 100, max: 4 },
+                        Op::CodeCheck { who, current: true, max: 5 },
+                    ],
+                    &mut calls,
+                    &mut classes,
+                );
+            }
+            &Op::CodeWindow { who } => {
+                let issue = Op::CodeIssue { who, ttl: 100, window: 3, max: 1 };
+                self.plan_all(
+                    &[
+                        issue.clone(),
+                        // inside the window: refused
+                        issue.clone(),
+                        Op::KeyTouch { key: 2 },
+                        // exactly 3 s after the first: the window is over (a window of `n` s is open for the `n` s from its start, not including the next)
+                        issue.clone(),
+                        // and the new one has a window of its own
+                        issue,
                     ],
                     &mut calls,
                     &mut classes,
@@ -4287,6 +4520,128 @@ impl Model {
                         calls.push(Call::TakePasswordReset { token: token_hash(), want: None });
                     }
                 }
+            }
+            &Op::CodeIssue { who, ttl, window, max } => {
+                let created_at = tick();
+                let user_id = self.fix.user(who);
+                let c = NewLoginCode {
+                    user_id,
+                    code_hash: token_hash(),
+                    created_at,
+                    expires_at: created_at + TimeDelta::seconds(i64::from(ttl)),
+                };
+                let window_len = TimeDelta::seconds(i64::from(window));
+                // the clean-up comes first, as in the adapters: a row whose window is over and that holds no code that still works goes
+                let before = self.codes.len();
+                self.codes.retain(|_, r| {
+                    r.window_started + window_len > created_at || (r.hash.is_some() && r.expires > created_at)
+                });
+                if self.codes.len() < before {
+                    classes.push(Class::CodeSwept);
+                }
+                let key = who as usize;
+                let want = match self.codes.get_mut(&key) {
+                    Some(r) if r.window_started + window_len > created_at => {
+                        if r.issued >= u32::from(max) {
+                            classes.push(Class::CodeCapped);
+                            LoginCodeIssue::Capped
+                        } else {
+                            r.hash = Some(c.code_hash);
+                            r.expires = c.expires_at;
+                            r.attempts = 0;
+                            r.issued += 1;
+                            classes.push(Class::CodeIssuedAgain);
+                            LoginCodeIssue::Issued
+                        }
+                    }
+                    _ => {
+                        self.codes.insert(
+                            key,
+                            CodeRow {
+                                hash: Some(c.code_hash),
+                                expires: c.expires_at,
+                                attempts: 0,
+                                window_started: created_at,
+                                issued: 1,
+                            },
+                        );
+                        classes.push(Class::CodeIssued);
+                        LoginCodeIssue::Issued
+                    }
+                };
+                calls.push(Call::IssueLoginCode {
+                    c,
+                    window_secs: i64::from(window),
+                    max_issued: u32::from(max),
+                    want,
+                });
+            }
+            &Op::CodeCheck { who, current, max } => {
+                let now = tick();
+                let key = who as usize;
+                let held = self.codes.get(&key).and_then(|r| r.hash);
+                let given = if current { held.unwrap_or_else(token_hash) } else { token_hash() };
+                let want = match self.codes.get_mut(&key) {
+                    Some(r) if r.hash.is_some() && r.expires > now => {
+                        r.attempts += 1;
+                        let attempt = r.attempts;
+                        if r.hash == Some(given) && attempt <= u32::from(max) {
+                            self.codes.remove(&key);
+                            classes.push(Class::CodeMatched);
+                            if attempt == u32::from(max) {
+                                classes.push(Class::CodeMatchedAtLimit);
+                            }
+                            LoginCodeCheck::Matched
+                        } else if attempt >= u32::from(max) {
+                            r.hash = None;
+                            r.attempts = 0;
+                            classes.push(Class::CodeExhausted);
+                            LoginCodeCheck::Exhausted
+                        } else {
+                            classes.push(Class::CodeWrong);
+                            LoginCodeCheck::Wrong
+                        }
+                    }
+                    Some(r) if r.hash.is_some() => {
+                        classes.push(Class::CodeOutOfTime);
+                        LoginCodeCheck::Expired
+                    }
+                    _ => {
+                        classes.push(Class::CodeNone);
+                        LoginCodeCheck::Expired
+                    }
+                };
+                calls.push(Call::CheckLoginCode {
+                    user: self.fix.user(who),
+                    code: given,
+                    now,
+                    max_attempts: u32::from(max),
+                    want,
+                });
+            }
+            &Op::CodeDiscard { who, current } => {
+                let key = who as usize;
+                let held = self.codes.get(&key).and_then(|r| r.hash);
+                let given = if current { held.unwrap_or_else(token_hash) } else { token_hash() };
+                let want = match self.codes.get_mut(&key) {
+                    Some(r) if r.hash == Some(given) => {
+                        if r.issued > 1 {
+                            r.hash = None;
+                            r.attempts = 0;
+                            r.issued -= 1;
+                            classes.push(Class::CodeDiscardedKept);
+                        } else {
+                            self.codes.remove(&key);
+                            classes.push(Class::CodeDiscardedLast);
+                        }
+                        true
+                    }
+                    _ => {
+                        classes.push(Class::CodeDiscardRefused);
+                        false
+                    }
+                };
+                calls.push(Call::DiscardLoginCode { user: self.fix.user(who), code: given, want });
             }
             &Op::Undispatched { limit } => {
                 let want: Vec<OutboxRow> = self.undispatched().into_iter().take(limit as usize).collect();
@@ -5718,6 +6073,18 @@ async fn execute(
         Call::TakePasswordReset { token, want } => {
             let got = bounded(at, db.take_password_reset(&token)).await?;
             prop_assert_eq!(got, want, "{}: take password reset", at);
+        }
+        Call::IssueLoginCode { c, window_secs, max_issued, want } => {
+            let got = bounded(at, db.issue_login_code(&c, window_secs, max_issued)).await?;
+            prop_assert_eq!(got, want, "{}: issue login code", at);
+        }
+        Call::CheckLoginCode { user, code, now, max_attempts, want } => {
+            let got = bounded(at, db.check_login_code(user, &code, now, max_attempts)).await?;
+            prop_assert_eq!(got, want, "{}: check login code", at);
+        }
+        Call::DiscardLoginCode { user, code, want } => {
+            let got = bounded(at, db.discard_login_code(user, &code)).await?;
+            prop_assert_eq!(got, want, "{}: discard login code", at);
         }
         Call::Undispatched { limit, want } => {
             let got = bounded(at, db.undispatched_outbox(&sys, limit)).await?;
