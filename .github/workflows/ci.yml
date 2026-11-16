@@ -334,9 +334,7 @@ jobs:
         with:
           cache-key: native-hermetic
           save-cache: ${{ github.ref == 'refs/heads/main' }}
-      - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
-        with:
-          tool: cargo-nextest@0.9.140
+          nextest: 'true'
       # nextest exits 4 when the filter selects nothing, so an empty default profile fails this step.
       - name: Hermetic tests (nextest, ci profile)
         run: scripts/rs cargo nextest run --profile ci --workspace --locked
@@ -419,6 +417,7 @@ jobs:
         with:
           cache-key: native-mutants
           save-cache: ${{ github.ref == 'refs/heads/main' }}
+          nextest: 'true'   # scripts/contract.sh runs each mutant's pass on nextest
       - name: Every mutant must be KILLED
         run: scripts/mutants.sh
 

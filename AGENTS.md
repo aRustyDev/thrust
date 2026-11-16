@@ -26,9 +26,11 @@ The Cargo workspace root is `Cargo.toml` (members are listed explicitly). These 
 
 Two suites are non-hermetic integration suites: the contract suite (`thrust-contract-tests`, run by
 `scripts/contract.sh`, needs a running target) and the Postgres adapter tests
-(`crates/adapters/selfhosted/tests/pg_adapter.rs`, need Docker). They stay on `cargo test` through those scripts,
-which parse its `test result:` line and exit 101 (nextest exits 100 when tests fail); migrate them on purpose, not
-by accident. The default nextest profile excludes both, and the `oracle_` tests; what it runs today is the hermetic
+(`crates/adapters/selfhosted/tests/pg_adapter.rs`, need Docker). The contract suite runs on nextest with the
+`contract` profile, one pass at a time, and its scripts read the passed count from nextest's JUnit report. The
+Postgres and SMTP adapter suites stay on `cargo test` through `scripts/verify-all.sh`, `scripts/mutants.sh` and the
+`pg-adapter` job, which parse its `test result:` line and exit 101 (nextest exits 100 when tests fail), until the
+test-suites plan moves them; migrate them on purpose, not by accident. The default nextest profile excludes both, and the `oracle_` tests; what it runs today is the hermetic
 `thrust-editor-doc`, `thrust-core` and `thrust-adapters-memory` suites. A crate with no hermetic tests of its own selects nothing (`-p <crate>` exits 4,
 `no tests to run`). That exit is not a test failure.
 

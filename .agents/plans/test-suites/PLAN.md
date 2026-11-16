@@ -58,7 +58,7 @@ test. A test group of one thread for `test(/compat_oidc_/)` serialises them.
 **Who parses `cargo test`'s output today:**
 - `scripts/contract.sh`: 11 passes run, the passed count read from `test result:`, exit 5 on a mismatch (ADR-0121's count
   guard).
-- `scripts/stage2-contract.sh`: 14 passes against a deployed Worker, each with its own count.
+- `scripts/stage2-contract.sh`: 13 passes against a deployed Worker, each with its own count.
 - `scripts/check-contract-counts.sh`: each arm's filters through `cargo test -- --list`, the count compared.
 - `scripts/mutants.sh`: a mutant is killed when the exit is 101 and a test reported `... FAILED`. It also runs the
   adapter suites `pg_adapter`, `smtp_*` and the Cloudflare email tests on `cargo test`.
@@ -191,7 +191,7 @@ a `prof_cpu_` test that must fail fails under the wrapper, and the profile file 
 | Item | State |
 |---|---|
 | Plan | this pull request |
-| PR 1, contract suite onto nextest | not started |
+| PR 1, contract suite onto nextest | in review, branch `test/contract-suite-nextest` |
 | PR 2, adapter suites onto nextest | not started |
 | PR 3, load suite | not started |
 | PR 4, profiling: heap | not started |
