@@ -46,7 +46,7 @@ runs:
 
     - name: Build the Worker
       shell: bash
-      working-directory: crates/thrust-worker
+      working-directory: crates/worker
       run: ../../scripts/rs worker-build --release . --no-default-features
 
     # The web app the Worker serves (ADR-0011), built as the `web` job and the e2e cell build it: Node and pnpm at the versions web/
@@ -76,13 +76,13 @@ runs:
         SHA: ${{ inputs.sha }}
       run: |
         set -eu
-        test -s crates/thrust-worker/build/worker/shim.mjs
-        test -s crates/thrust-worker/build/index.js
-        test -s crates/thrust-worker/build/index_bg.wasm
+        test -s crates/worker/build/worker/shim.mjs
+        test -s crates/worker/build/index.js
+        test -s crates/worker/build/index_bg.wasm
         test -s web/apps/web/build/client/index.html
         test -x target/release/migrate
         mkdir -p bundle
-        cp -R crates/thrust-worker/build bundle/build
+        cp -R crates/worker/build bundle/build
         cp -R web/apps/web/build/client bundle/web
         cp target/release/migrate bundle/migrate
         printf '%s\n' "$SHA" > bundle/BUILD_SHA

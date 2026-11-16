@@ -7,7 +7,7 @@ as `DATABASE_SSLROOTCERT` (`scripts/migrate-ci.sh`, `thrust_adapters_postgres::t
 It is a public certificate and it is byte for byte the one Cloudflare publishes
 (<https://developers.cloudflare.com/ssl/static/origin_ca_rsa_root.pem>); the infrastructure repository keeps the same file.
 `.github/scripts/tests/test-deploy-ca.sh` pins its SHA-256 fingerprint, so changing the file is a change a reviewer has to look at, and the
-`verify-ca` code is tested against exactly these bytes (`crates/thrust-adapters-postgres/tests/tls.rs`).
+`verify-ca` code is tested against exactly these bytes (`crates/adapters/postgres/tests/tls.rs`).
 
 | | |
 |---|---|

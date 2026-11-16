@@ -24,6 +24,7 @@ Counts and line numbers below are from `main` at `ce84d85` (2026-11-15); recount
 | `crates/thrust-editor-worker` | `crates/spikes/editor-worker` | `thrust-editor-worker` |
 | `crates/thrust-contract-tests` | `crates/testing/suites/api` | `thrust-contract-tests` |
 | `crates/thrust-oracle-fixture` | `crates/testing/fixtures/oracle` | `thrust-oracle-fixture` |
+| `crates/thrust-edge` | `crates/edge` | `thrust-edge` (added by #211 after this plan was written; ADR-0009 rule 3 reserved `edge/` for it) |
 | `crates/thrust-server` | `crates/server` | `thrust-server` |
 | `crates/thrust-worker` | `crates/worker` | `thrust-worker` |
 
@@ -97,7 +98,7 @@ Behaviour-preserving on today's flat layout. CI goes green with nothing moved.
 ## PR 3: the move
 
 Start it when #194 (the release PR) and #201 (the migration ledger) have merged, and no other open PR touches
-`crates/`. Any branch alive across the move rebases onto it: git's rename detection carries edits to moved files, but a
+`crates/`. (Started 2026-11-16: #194 was superseded by #219, merged; #220 was open and touches `crates/`.) Any branch alive across the move rebases onto it: git's rename detection carries edits to moved files, but a
 file a branch *adds* under an old directory lands at the old path.
 
 1. **Commit 1: renames only** (`git mv` per the mapping), so review and `git log --follow` see 100 % renames.
@@ -121,7 +122,7 @@ file a branch *adds* under an old directory lands at the old path.
 4. **Separate commit:** `thrust-editor-doc`'s description still begins "Spike 0006"; say what it is now.
 
 Verify:
-- `cargo metadata --format-version 1 --no-deps` before and after: the same 18 package names and the same dependency
+- `cargo metadata --format-version 1 --no-deps` before and after: the same 18 package names (19 with `thrust-edge`) and the same dependency
   edges (name, kind, features, target), differing only in `manifest_path`. Write the comparison as a small script and
   show it failing on a planted difference first (rule 8).
 - `git grep -n 'crates/thrust-' -- . ':!.agents/plans' ':!CHANGELOG.md'` finds nothing.
@@ -135,6 +136,12 @@ After merge: re-index GitNexus from the canonical checkout of `main` (AGENTS.md:
 prune this plan's worktrees.
 
 ### Files outside the docs that name a crate path (45)
+
+Recounted when PR 3 started (`d246b20`): 75 files name `crates/thrust-`, the 72 below plus three added since
+(`crates/thrust-edge/wrangler.deploy.toml`, `scripts/check-edge-config.sh`, `scripts/check-migration-lint.sh`). Besides
+those, 38 mentions in 24 files wrote a crate path without the `crates/` prefix (`thrust-core/tests/operator.rs`),
+mostly in comments and `docs/src/testing/status.md`; they now name the real path.
+
 
 `.cargo/mutants.toml`, `.gitignore`, `Cargo.toml`;
 `.github/actions/build-bundle/action.yml`, `.github/actions/deploy-worker/action.yml`, `.github/workflows/deploy.yml`,

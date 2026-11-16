@@ -60,13 +60,13 @@ MIGRATE_CI="${MIGRATE_CI_SCRIPT:-$ROOT/scripts/migrate-ci.sh}"
 RENDER="$ROOT/scripts/render-wrangler.sh"
 CLASSIFY="$ROOT/.github/scripts/classify-deploy.sh"
 ACTIVE="$ROOT/.github/scripts/active-version.py"
-CONFIG="${DEPLOY_CONFIG_OUT:-$ROOT/crates/thrust-worker/.wrangler.deploy.run.toml}"
+CONFIG="${DEPLOY_CONFIG_OUT:-$ROOT/crates/worker/.wrangler.deploy.run.toml}"
 PYTHON="${PYTHON:-python3}"
 MERGE_ASSETS="${MERGE_ASSETS_SCRIPT:-$ROOT/scripts/merge-assets.sh}"
 FETCH_PREVIOUS="${FETCH_PREVIOUS_SCRIPT:-$ROOT/.github/scripts/fetch-previous-assets.sh}"
 ASSET_CHECK="${ASSET_CHECK_SCRIPT:-$ROOT/scripts/check-asset-retention.sh}"
 # where the web files are put for wrangler: the `directory` of the template's [assets], which is relative to the rendered configuration
-ASSETS_OUT="${ASSETS_OUT_DIR:-$ROOT/crates/thrust-worker/.assets}"
+ASSETS_OUT="${ASSETS_OUT_DIR:-$ROOT/crates/worker/.assets}"
 
 WORK="$(mktemp -d)" || { echo "deploy-worker: cannot make a temporary directory" >&2; exit 2; }
 trap 'rm -rf "$WORK"' EXIT INT TERM

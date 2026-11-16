@@ -4,7 +4,7 @@
 #   1. the 16-cell contract matrix        (scripts/contract-all.sh)
 #   2. the mutation controls              (scripts/mutants.sh)   -> every mutant must be KILLED
 #   3. the dependency-graph check         (scripts/check-deps.sh)
-#   4. the testcontainers adapter tests   (thrust-adapters-selfhosted/tests/pg_adapter.rs, smtp_sink)
+#   4. the testcontainers adapter tests   (crates/adapters/selfhosted/tests/pg_adapter.rs, smtp_sink)
 #   5. the port-shape and sqlx probes     (probes/*/run.sh)
 # Serial on purpose (shared wrangler build dir, shared ports). Needs Docker.
 #

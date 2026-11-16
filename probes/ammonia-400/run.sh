@@ -3,5 +3,5 @@
 set -eu
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
-C="$ROOT/crates/thrust-editor-doc/tests/corpus"
+C="$ROOT/crates/editor/doc/tests/corpus"
 "$ROOT/scripts/rs" cargo run --release --quiet --manifest-path "$HERE/Cargo.toml" --target-dir "$ROOT/target/ammonia-400" -- "$C/xss-corpus.json" "$C/corpus.json" "$ROOT/target/spike-0006/xss-rust-400.json"

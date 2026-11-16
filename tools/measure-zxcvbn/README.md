@@ -27,14 +27,14 @@ The owner decided on 2026-11-14 to leave D-023 as it is (the hand-written rule).
 | `cloudflare/verify-teardown.sh` | checks that every Worker and the KV namespace it made are gone |
 | `results/2026-11-14/` | what was measured; see below |
 
-It reuses `crates/thrust-worker/measure/tail.mjs` (the tail consumer of `scripts/measure-argon2.sh`, issue #146) and follows that script's pattern.
+It reuses `crates/worker/measure/tail.mjs` (the tail consumer of `scripts/measure-argon2.sh`, issue #146) and follows that script's pattern.
 
 ## What was measured, and how to run it again
 
 Build with `scripts/rs`, which puts rustup's toolchain (with the wasm32 standard library) in front of Homebrew's. Reset a tree with
-`git checkout -- crates/thrust-core Cargo.lock` after a variant.
+`git checkout -- crates/core/usecases Cargo.lock` after a variant.
 
-**Bundle size** (`results/2026-11-14/sizes.txt`, `startup.txt`). In `crates/thrust-worker`: `../../scripts/rs worker-build --release . --no-default-features` (the
+**Bundle size** (`results/2026-11-14/sizes.txt`, `startup.txt`). In `crates/worker`: `../../scripts/rs worker-build --release . --no-default-features` (the
 command of `deploy.yml`), then `uv run --no-project python -I ../../tools/measure-zxcvbn/bundle/sizes.py <label> build @../../tools/measure-zxcvbn/results/2026-11-14/needles.txt`.
 Apply a patch from `patches/`, build again, run it again. `scripts/startup-check.sh wrangler.toml` (or `bundle/startup-repeat.sh`) for startup: it **re-runs the
 build**, so the bundle size it prints is the only proof of which source it profiled.
@@ -48,7 +48,7 @@ tools/measure-zxcvbn/native/Cargo.toml` runs the assertions on the probe passwor
 **The first call, on Cloudflare** (`cloudflare/`). Needs a wrangler login with the `workers`, `workers_kv`, `workers_scripts` and `workers_tail` scopes and the
 account id in `CLOUDFLARE_ACCOUNT_ID`; **it writes to that account**, so run it only on an account you may write throwaway Workers to. Build the memory adapter set
 twice, the baseline from the unmodified tree and the variant with `patches/variant-called.patch` (`../../scripts/rs worker-build --release .` in
-`crates/thrust-worker`, copying `build/` aside each time), take a needle from `results/2026-11-14/needles.txt`, and run
+`crates/worker`, copying `build/` aside each time), take a needle from `results/2026-11-14/needles.txt`, and run
 `BUILD_BASE=<dir> BUILD_VAR=<dir> NEEDLE=<line> CLOUDFLARE_ACCOUNT_ID=<id> tools/measure-zxcvbn/cloudflare/measure-cpu.sh 6`. Six cycles are 18 rounds, 18 new Workers
 named `thrust-spike-zxcvbn-rNN`, a tail consumer and a KV namespace, about 15 minutes. Then `summary.py <outdir>`, `cold-analysis.py <outdir>` and `verify-teardown.sh 18`.
 

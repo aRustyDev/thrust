@@ -27,15 +27,15 @@ GIT_CONFIG_GLOBAL=/dev/null; GIT_CONFIG_SYSTEM=/dev/null
 export GIT_CONFIG_GLOBAL GIT_CONFIG_SYSTEM
 
 R="$T/repo"
-mkdir -p "$R/crates/thrust-worker" "$R/crates/thrust-adapters-postgres/migrations"
+mkdir -p "$R/crates/worker" "$R/crates/adapters/postgres/migrations"
 cd "$R" || exit 1
 git init -q -b main . || exit 1
 git config user.name "classify test"
 git config user.email "classify-test@example.invalid"
 git config commit.gpgsign false
 
-TEMPLATE=crates/thrust-worker/wrangler.deploy.toml
-MIGDIR=crates/thrust-adapters-postgres/migrations
+TEMPLATE=crates/worker/wrangler.deploy.toml
+MIGDIR=crates/adapters/postgres/migrations
 
 write_template() { # write_template <date> <extra migrations text> <comment inside the first migrations table>
   mkdir -p "$(dirname "$TEMPLATE")"

@@ -31,7 +31,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="${2:-$ROOT/target/measure-argon2}"
 : "${CLOUDFLARE_ACCOUNT_ID:?set CLOUDFLARE_ACCOUNT_ID}"
 export CLOUDFLARE_ACCOUNT_ID WRANGLER_SEND_METRICS=false NO_COLOR=1
-WORKER_DIR="$ROOT/crates/thrust-worker"
+WORKER_DIR="$ROOT/crates/worker"
 MAIN=thrust-spike-auth
 TAIL=thrust-spike-auth-tail
 KV_TITLE=thrust-spike-auth-cpu

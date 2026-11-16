@@ -1,7 +1,7 @@
 #!/bin/sh
 # The expand rule of the migrations (issue #195): a new migration may only ADD to the schema, unless it says it takes something away.
 #
-#   scripts/check-migration-lint.sh [<migrations directory>]     (default: crates/thrust-adapters-postgres/migrations)
+#   scripts/check-migration-lint.sh [<migrations directory>]     (default: crates/adapters/postgres/migrations)
 #
 # Why. Once more than one version of the code runs over the same data (a release candidate, an older release kept beside the new one),
 # the schema has to serve all of them, so a migration that drops, renames or tightens something breaks the older ones while they still
@@ -21,7 +21,7 @@ LC_ALL=C
 export LC_ALL
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-DIR="${1:-$ROOT/crates/thrust-adapters-postgres/migrations}"
+DIR="${1:-$ROOT/crates/adapters/postgres/migrations}"
 [ $# -le 1 ] || { echo "check-migration-lint: usage: check-migration-lint.sh [<migrations directory>]" >&2; exit 2; }
 [ -d "$DIR" ] || { echo "check-migration-lint: $DIR is not a directory" >&2; exit 2; }
 

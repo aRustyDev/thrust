@@ -60,7 +60,7 @@ What exists and what is missing, measured, is on [Status, gaps and drift](../tes
 |---|---|---|
 | The licence is `AGPL-3.0-only`, and no crate is published | `[workspace.package]` in the root `Cargo.toml`, which every workspace member inherits. The three probe crates are outside the workspace and declare no licence | Nothing checks the workspace crates' own licence or `publish = false`: `deny.toml` skips them (`[licenses.private]`) so that AGPL is not on the list for anyone else, and checks the licences of what they depend on. The probes are outside `cargo deny`'s graph |
 | Commit subjects are Conventional Commits (`type(scope): summary`) | `.agents/plans/contrail/PROMPT.md` (the plan's handoff prompt) states it, and every non-merge commit after the initial one follows it | No hook or workflow checks it. There is no commitlint or release-please configuration |
-| Secrets come from the environment, never from a file or the command line | Comments in `crates/thrust-server/src/main.rs`, `crates/thrust-worker/wrangler.toml` and the scripts' headers | Nothing scans for them |
+| Secrets come from the environment, never from a file or the command line | Comments in `crates/server/src/main.rs`, `crates/worker/wrangler.toml` and the scripts' headers | Nothing scans for them |
 | The testing rules | `AGENTS.md`, rules 1 to 9 | Partly the nextest config and the scripts above. No command checks that rule 3 (a failing test is a finding), rule 8 (a check that cannot fail is not evidence) or rule 9 (generative first) was followed |
 
 ## Decided, and built only in part

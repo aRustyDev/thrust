@@ -24,7 +24,7 @@
 #
 #   BUILD_BASE=<dir> BUILD_VAR=<dir> NEEDLE=<dictionary entries> CLOUDFLARE_ACCOUNT_ID=<id> \
 #     tools/measure-zxcvbn/cloudflare/measure-cpu.sh [cycles] [outdir]
-#   <dir> is a worker-build `build/` directory of the memory adapter set (`worker-build --release .` in crates/thrust-worker), the baseline from the
+#   <dir> is a worker-build `build/` directory of the memory adapter set (`worker-build --release .` in crates/worker), the baseline from the
 #   unmodified tree and the variant with patches/variant-called.patch applied. The NEEDLE is a run of dictionary entries (bundle/make-needle.py).
 #   A cycle is one round per arm, so 6 cycles are 18 rounds and 18 Workers. The default outdir is target/measure-zxcvbn.
 #   It writes client.tsv and kv.json, which summary.py and cold-analysis.py read.
@@ -42,7 +42,7 @@ OUT="${2:-$ROOT/target/measure-zxcvbn}"
 : "${BUILD_VAR:?set BUILD_VAR}"
 : "${NEEDLE:?set NEEDLE: a run of dictionary entries that is in the variant's wasm and not in the baseline's}"
 export CLOUDFLARE_ACCOUNT_ID WRANGLER_SEND_METRICS=false NO_COLOR=1
-WORKER_DIR="$ROOT/crates/thrust-worker"
+WORKER_DIR="$ROOT/crates/worker"
 PREFIX=thrust-spike-zxcvbn-r
 TAIL=thrust-spike-zxcvbn-tail
 KV_TITLE=thrust-spike-zxcvbn-cpu
