@@ -167,9 +167,10 @@ round-30 "Environments" bullet.
   locked inputs, but it is a different build: production does not run byte-for-byte what staging ran. Promoting staging's bundle
   would have made the deployed version the rc commit, which nothing on `main` points at once the branch is deleted, and would have
   stopped production until staging works.
-* **Still open:** whether the App needs Administration permission to create a protected `v*` tag (release-plz documents it; the
-  App is a bypass actor of the tag ruleset); the previous production release's web files come from its 90-day artifact, not yet
-  from the release itself.
+* **Still open:** the previous production release's web files come from its 90-day artifact, not yet from the release itself.
+* **Settled by the first release, `v0.1.0` (2026-11-15).** The App made the `v*` tag through the tag ruleset without the
+  Administration permission. `release.yml` did not start on the draft: GitHub runs no workflow for a draft release's `created`
+  event. release-plz.yml now dispatches `release.yml` on the tag it made, so the run's ref is still the tag.
 
 ## Open Questions
 

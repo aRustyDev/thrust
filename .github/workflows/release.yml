@@ -4,7 +4,13 @@ name: release
 #
 # release-plz (release-plz.yml) tags `vX.Y.Z` on the merge of a release-candidate pull request and creates the GitHub release as a
 # DRAFT (release-plz.toml, git_release_draft). Releases are immutable once published (a repository setting): the tag can no longer move
-# and the assets can no longer change. So the assets go on while it is a draft, and this workflow, started by the draft's creation:
+# and the assets can no longer change. So the assets go on while it is a draft. A draft starts no workflow (GitHub runs nothing for
+# the `created` event of a draft release), so release-plz.yml dispatches this workflow ON the tag it just made; the run's ref is then
+# the tag, which is what the attestations record and verify-bundle.sh requires. If that run never started, dispatch it the same way:
+#
+#   gh workflow run release.yml --ref vX.Y.Z
+#
+# The jobs:
 #
 #   build    builds the deploy bundle at the tag (.github/actions/build-bundle, the same build a staging deploy makes), makes an SBOM
 #            of the source (anchore/sbom-action: Cargo.lock, the web app's pnpm lockfile), and attests the bundle twice with GitHub's
@@ -18,22 +24,22 @@ name: release
 # A pull request that changes this file or the build runs `build` without attesting or publishing anything: only a run shows that a
 # workflow starts, and the SBOM and the build are cheap to prove before the merge.
 on:
-  release:
-    types: [created]
+  workflow_dispatch:
   pull_request:
     paths:
       - .github/workflows/release.yml
       - .github/actions/build-bundle/**
+      - .github/scripts/plan-release.sh
 
 permissions: {}
 
 concurrency:
-  group: release-${{ github.event.release.tag_name || github.ref }}
+  group: release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  # What is this run for? A draft release of a v<version> tag whose commit is on main (only the release App can make a v* tag, and
-  # release-plz makes it on main's merge commit); or a pull request's dry run. Anything else does nothing.
+  # What is this run for? A dispatch on a v<version> tag whose commit is on main (only the release App can make a v* tag, and
+  # release-plz makes it on main's merge commit); or a pull request's dry run (.github/scripts/plan-release.sh, and its test).
   plan:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -51,29 +57,12 @@ jobs:
       - id: plan
         env:
           EVENT_NAME: ${{ github.event_name }}
-          DRAFT: ${{ github.event.release.draft }}
-          TAG: ${{ github.event.release.tag_name }}
-          RUN_SHA: ${{ github.sha }}
+          RUN_REF: ${{ github.ref }}
         run: |
-          set -eu
-          out() { printf 'mode=%s\ntag=%s\nsha=%s\n' "$1" "$2" "$3" | tee -a "$GITHUB_OUTPUT"; echo "$4" >> "$GITHUB_STEP_SUMMARY"; exit 0; }
-          case "$RUN_SHA" in *[!0-9a-f]*|'') echo "::error::'$RUN_SHA' is not a commit sha"; exit 1 ;; esac
-          case "$EVENT_NAME" in
-            pull_request) out dry-run "" "$RUN_SHA" "a pull request: build the bundle and the SBOM; attest and publish nothing" ;;
-            release) ;;
-            *) out skip "" "" "'$EVENT_NAME' does not release" ;;
-          esac
-          [ "$DRAFT" = true ] || out skip "" "" "the release $TAG was created published, not as a draft: its assets cannot be added (release-plz.toml sets git_release_draft)"
-          case "$TAG" in
-            v*/*|v) out skip "" "" "'$TAG' is not a release tag (v<version>)" ;;
-            v*) ;;
-            *) out skip "" "" "'$TAG' is not a release tag (v<version>)" ;;
-          esac
-          git merge-base --is-ancestor "$RUN_SHA" origin/main \
-            || { echo "::error::$TAG ($RUN_SHA) is not a commit of main: a release tag marks a merge"; exit 1; }
-          test "$(git rev-parse "refs/tags/$TAG^{commit}")" = "$RUN_SHA" \
-            || { echo "::error::the tag $TAG does not point at $RUN_SHA"; exit 1; }
-          out release "$TAG" "$RUN_SHA" "the release $TAG of $RUN_SHA: build, attest, attach, publish"
+          .github/scripts/plan-release.sh > plan.out
+          cat plan.out
+          cat plan.out >> "$GITHUB_OUTPUT"
+          sed -n 's/^reason=//p' plan.out >> "$GITHUB_STEP_SUMMARY"
 
   # The bundle and the SBOM, with no secret anywhere in the job. `id-token` and `attestations` are what the attestations need.
   build:
@@ -177,8 +166,9 @@ jobs:
           test -s deploy-bundle.tar.gz && test -s sbom.spdx.json
           sha256sum deploy-bundle.tar.gz sbom.spdx.json > SHA256SUMS
           cat SHA256SUMS
-          gh release view "$TAG" --repo "$REPO" --json isDraft --jq .isDraft > draft.txt
-          test "$(cat draft.txt)" = true || { echo "::error::$TAG is no longer a draft: its assets can no longer be added"; exit 1; }
+          gh release view "$TAG" --repo "$REPO" --json isDraft --jq .isDraft > draft.txt \
+            || { echo "::error::there is no release $TAG: release-plz creates it, as a draft, with the tag"; exit 1; }
+          test "$(cat draft.txt)" = true || { echo "::error::$TAG is not a draft: its assets can no longer be added"; exit 1; }
           tagged="$(gh api "repos/$REPO/commits/$TAG" --jq .sha)"
           test "$tagged" = "$SHA" || { echo "::error::$TAG now points at $tagged, not $SHA"; exit 1; }
           gh release upload "$TAG" deploy-bundle.tar.gz sbom.spdx.json SHA256SUMS --repo "$REPO" --clobber

@@ -124,6 +124,7 @@ jobs:
           sh .github/scripts/tests/test-deploy-ca.sh
           sh .github/scripts/tests/test-classify-deploy.sh
           sh .github/scripts/tests/test-plan-deploy.sh
+          sh .github/scripts/tests/test-plan-release.sh
           sh .github/scripts/tests/test-assert-sha-checks.sh
           sh .github/scripts/tests/test-assert-gated-environments.sh
           sh .github/scripts/tests/test-lint-workflow.sh

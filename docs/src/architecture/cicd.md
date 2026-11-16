@@ -21,14 +21,14 @@ Worker](deploy.md). The jobs and the command each CI job runs are in the CI sect
 | `.github/workflows/contract-cell.yml` | A reusable workflow that runs one contract cell on its own runner |
 | `.github/workflows/flake-hunt.yml` | Repeats one cell 1 to 50 times (5 by default), by hand or every Monday at 03:17 UTC. It passes only if `scripts/flake-hunt.sh` prints `failures: 0 / N`, because the script ends with an `echo`, so its exit status does not say whether an iteration failed |
 | `.github/workflows/e2e-schedule.yml` | Runs the `worker-cf e2e` cell (through `contract-cell.yml`) every day at 04:41 UTC and by hand, and on a pull request that edits the file, so that the call is proved valid before it merges. It covers what the `ci` cell does not: a change to `web/` alone (`classify-changes.sh` keeps it out of `rust`) and drift in the runner, the browser and the packages. Not a gate: nothing waits for it and `gate` does not read it. The pinned-Plane leg is not here, because the oracle builds from an unpushed fork (`scripts/e2e.sh plane-oracle`, local) |
-| `.github/workflows/release-plz.yml` (`release-plz`) | The release flow, run by release-plz: after each push to `main`, opens or updates the release-candidate pull request from an `rc/*` branch, and tags `vX.Y.Z` and creates the GitHub release as a draft when such a pull request merges. See [Release candidates](#release-candidates) |
-| `.github/workflows/release.yml` (`release`) | Started by the draft release: builds the bundle at the tag, attests its build provenance and an SPDX SBOM of the source, attaches the bundle, the SBOM and `SHA256SUMS`, and publishes the release (immutable). On a pull request that edits it or the build, a dry run that attests and publishes nothing. See [Releasing](release.md) |
+| `.github/workflows/release-plz.yml` (`release-plz`) | The release flow, run by release-plz: after each push to `main`, opens or updates the release-candidate pull request from an `rc/*` branch, and tags `vX.Y.Z`, creates the GitHub release as a draft and starts `release.yml` on the tag when such a pull request merges. See [Release candidates](#release-candidates) |
+| `.github/workflows/release.yml` (`release`) | Dispatched on the release tag by `release-plz.yml` (a draft release starts no workflow), or by hand on the tag; which run releases what is `plan-release.sh`. It builds the bundle at the tag, attests its build provenance and an SPDX SBOM of the source, attaches the bundle, the SBOM and `SHA256SUMS`, and publishes the release (immutable). On a pull request that edits it or the build, a dry run that attests and publishes nothing. See [Releasing](release.md) |
 | `release-plz.toml` | release-plz's configuration: one version and one tag for the workspace, one root `CHANGELOG.md`, which commits make a release. Held to the workspace members by `.github/scripts/check-release-plz.py` |
 | `.github/workflows/deploy.yml` (`deploy`) | The deploy pipeline: plan, build and attest a release candidate's bundle (staging) or take a release's (production), deploy it to an environment and prove it, roll back by itself when the smoke fails. Runs after `ci` on a release candidate or a tagged push to `main`, by hand, and on a pull request that edits its files (a dry run that touches no environment). See [The deploy pipeline](#the-deploy-pipeline) |
 | `.github/actions/setup-rust` | A composite action: the stable toolchain, the rustup targets and components, a keyed `rust-cache`, and optionally `worker-build` 0.8.7 and wrangler 4.151.2 |
 | `.github/actions/build-bundle` | A composite action: the deploy bundle of the checked-out commit (the Worker, the `migrate` binary and the web app, in one reproducible file), used by `deploy.yml` and `release.yml` so that both build it the same way |
 | `.github/actions/deploy-worker` | A composite action: fetch the bundle (this run's build for staging, the release's asset for production, `fetch-release-bundle.sh`), verify its attestation, unpack it, install wrangler (the same version as `setup-rust`, kept equal by a test) and `cloudflared` at pinned versions, and run `scripts/deploy-worker.sh` |
-| `.github/scripts/` | The pipeline's own logic: `classify-changes.sh`, `plan-cells.sh`, `assert-gate.sh`, and `assert-required-contexts.sh`; and the deploy's: `plan-deploy.sh`, `classify-deploy.sh`, `active-version.py`, `assert-sha-checks.sh`, `assert-gated-environments.sh`, `verify-bundle.sh`, `unpack-bundle.sh`, `fetch-previous-assets.sh`, `fetch-release-bundle.sh` and `lint-workflow.sh`. The `ci-scripts` job tests them with `.github/scripts/tests/` |
+| `.github/scripts/` | The pipeline's own logic: `classify-changes.sh`, `plan-cells.sh`, `assert-gate.sh`, and `assert-required-contexts.sh`; and the deploy's: `plan-deploy.sh`, `classify-deploy.sh`, `active-version.py`, `assert-sha-checks.sh`, `assert-gated-environments.sh`, `verify-bundle.sh`, `unpack-bundle.sh`, `fetch-previous-assets.sh`, `fetch-release-bundle.sh` and `lint-workflow.sh`; and the release's: `plan-release.sh`. The `ci-scripts` job tests them with `.github/scripts/tests/` |
 | `.github/deploy/` | What the deploy trusts: the Cloudflare Origin CA root that signs `thrust-pg`'s certificate, with its fingerprint pinned by a test |
 | `scripts/deploy-worker.sh` and its parts | The deploy itself (render, classify, expand migration, `wrangler deploy`, smoke, rollback), run by the composite action: `render-wrangler.sh` (with the template `crates/thrust-worker/wrangler.deploy.toml`), `migrate-ci.sh`, `smoke-deploy.sh`, `smoke-bootstrap.sh`, `merge-assets.sh` and `check-asset-retention.sh` |
 | `scripts/check-web-diff.sh` | The Q-R2 gate for `web/` (the stock React app, imported from the oracle pin), run by the `web` job. Tested by `.github/scripts/tests/test-check-web-diff.sh` |
@@ -223,13 +223,20 @@ look for a tag of its own and re-release all of history, which is why `git_tag_n
 The first run as the App `[verified 2026-11-15]` opened #184, `chore(release): v0.1.0`, from `rc/2026-11-15T07-33-32Z`:
 one commit that GitHub shows as verified, adding the `0.1.0` section to `CHANGELOG.md`, with `ci` running on it. One run
 before it was refused creating the branch (`403 Resource not accessible by integration`) while the App was being set up;
-the next, two minutes later, passed `[cause unverified]`. Not yet run: the `release` job on a merge, and whether creating
-a `v*` tag through the tag ruleset needs the App to hold Administration: read and write as well (release-plz documents it
-for protected tags; the App is a bypass actor, which should be enough).
+the next, two minutes later, passed `[cause unverified]`.
+
+The first merge, #187 (`v0.1.0`) `[verified 2026-11-15]`: the `release` job tagged the merge commit `v0.1.0` (an annotated
+tag by `arustydev-thrust-release[bot]`, through the tag ruleset, with no Administration permission) and created the draft
+release. `release.yml` did not start: it listened for the draft's `release: created`, and GitHub runs no workflow for the
+`created`, `edited` or `deleted` events of a draft release (its documentation of the `release` event says so). So the
+`release` job now starts `release.yml` itself, with `gh workflow run release.yml --ref <tag>`: a `workflow_dispatch` made
+with the workflow's own token does start a run (the documented exception), and the run's ref is the tag, which the
+attestations record. Its `releases` output lists each crate under the one workspace tag; the step refuses anything but one
+tag.
 
 Immutable releases lock a release's assets when it is published, so release-plz makes a draft (`git_release_draft`,
-read in its source: it creates the tag through the API first, then the release), and `release.yml`, started by the draft's
-creation, attaches the assets and publishes it.
+read in its source: it creates the tag through the API first, then the release), and `release.yml`, dispatched on the tag,
+attaches the assets and publishes it.
 
 ## Permissions and supply chain
 
@@ -248,7 +255,8 @@ creation, attaches the assets and publishes it.
   to start the deploy run on the `rc/*` branch or the `v*` tag). `release.yml`: `id-token: write` and
   `attestations: write` (`build` only, for the two attestations), `contents: write` (`publish` only, which attaches the assets
   and publishes the release; nothing else in it writes). `lint-workflow.sh` enforces where
-  `secrets.`, `environment:` and `id-token: write` may appear. `release-plz.yml` asks for `contents: read` only; what it
+  `secrets.`, `environment:` and `id-token: write` may appear. `release-plz.yml` asks for `contents: read`, and
+  `actions: write` in its `release` job to start `release.yml` on the new tag; what it
   writes, it writes with the release App's token, minted in its two jobs, the only ones `lint-workflow.sh` lets hold a
   secret there. All 22 checkouts set `persist-credentials: false`.
   Reusable-workflow and composite-action inputs reach the script through `env`, not through interpolation into the script

@@ -10,8 +10,8 @@ Worker](deploy.md). The decision is ADR-0110's update of 2026-11-15.
    from an `rc/<timestamp>` branch (the version and `CHANGELOG.md`). `ci` runs on it in full, and when it is green and the
    repository variable `THRUST_DEPLOY_ENABLED` is `true`, `deploy.yml` deploys that commit to **staging**.
 2. **The release.** Merging that pull request (squash, the only method) makes the commit release-plz tags `vX.Y.Z`, and it
-   creates the GitHub release as a **draft**.
-3. **Its assets** (`release.yml`, started by the draft): the deploy bundle is built at the tag, its build provenance and an SPDX
+   creates the GitHub release as a **draft**. A draft starts no workflow, so the same job starts `release.yml` on the tag.
+3. **Its assets** (`release.yml`, run on the tag): the deploy bundle is built at the tag, its build provenance and an SPDX
    SBOM of the source are attested, and `deploy-bundle.tar.gz`, `sbom.spdx.json` and `SHA256SUMS` are attached. Then the release
    is published. Published releases are immutable: the tag cannot move and the assets cannot change, and GitHub attests the
    release and its assets.
@@ -40,6 +40,7 @@ The bundle names the commit it was built from in `BUILD_SHA`; the Worker reports
 
 | What failed | State | What to do |
 |---|---|---|
+| `release.yml` never started (no run on the tag) | The tag exists; the release is a draft with no assets | Start it on the tag: `gh workflow run release.yml --ref vX.Y.Z`. The tag's commit must hold a `release.yml` with `workflow_dispatch`, which `v0.1.0`'s does not |
 | `release.yml` before `publish` (the build, the SBOM, an attestation) | The tag exists; the release is still a draft with no assets or some. Production refuses a draft | Re-run the failed jobs of that `release.yml` run. `publish` replaces any asset already attached (`--clobber`) |
 | `publish` says the release is no longer a draft | Someone published it by hand, or a second run did | If it was published without its assets it stays that way (immutable): release the next version. Production refuses a release without exactly one bundle |
 | `publish` says the release is not immutable | Immutable releases were turned off | Turn them on (repository settings); the release that was published meanwhile is not trusted by production |
