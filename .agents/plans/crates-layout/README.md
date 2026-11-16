@@ -14,7 +14,9 @@ work.
 |---|---|
 | `PLAN.md` | the four pull requests, in order, with what each changes and how it is verified; the status table; what is deliberately left for later |
 
-## Status (2026-11-16)
+## Status (2026-11-16): done
+
+All four pull requests are merged. What the plan deliberately left for later is the last section of `PLAN.md`.
 
 | Item | State |
 |---|---|
@@ -22,4 +24,4 @@ work.
 | PR 1, `regression_` prefix | merged in #209: 17 pinned regressions renamed: the 15 tests behind `PLAN.md`'s list (its contract-model entry is data the model test replays, so it takes no name), the #195 ledger test that #201 added, and the `single_dot` case, labelled "found by" |
 | PR 2, depth-independent paths | merged in #212. Found while doing it: Cargo reads `.cargo/config.toml` from the directory it runs in, not from `--manifest-path`, so `THRUST_ROOT` needs cargo run from inside the repository (from outside, those tests fail to compile; they never read a wrong path) |
 | PR 3, the move | merged in #221 (`50b4dba`, 2026-11-16): 19 crates, `thrust-edge` (#211) to `crates/edge/`. #220, open across the move, conflicted as expected and was brought up to date by merging `main` into it (11 added files placed by git's directory-rename detection, 3 content conflicts that were the move's path rewrite) |
-| PR 4, layout guard | in review, branch `ci/crates-layout-guard`: `scripts/check-layout.sh` in the `deps` job |
+| PR 4, layout guard | merged in #226 (`02c4d25`, 2026-11-16): `scripts/check-layout.sh` and its `--self-test` in the `deps` job. It allows `core/` dev-dependencies outside `core/` (`thrust-core`'s tests use the memory adapters) |
