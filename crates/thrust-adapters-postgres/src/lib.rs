@@ -48,6 +48,7 @@ pub const MIGRATION_0014: &str = include_str!("../migrations/0014_work_item_hist
 pub const MIGRATION_0015: &str = include_str!("../migrations/0015_v1_surface.sql");
 pub const MIGRATION_0016: &str = include_str!("../migrations/0016_assets.sql");
 pub const MIGRATION_0017: &str = include_str!("../migrations/0017_password_resets.sql");
+pub const MIGRATION_0018: &str = include_str!("../migrations/0018_login_codes.sql");
 
 /// One migration file of the adapter: its file name, which is what the ledger records it by, and its SQL.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -58,7 +59,7 @@ pub struct Migration {
 
 /// Every migration file, in the order they were written (their names' order). A file added to `migrations/` and not here is not
 /// applied, and `ledger`'s test of this list against the directory fails.
-pub const MIGRATIONS: [Migration; 17] = [
+pub const MIGRATIONS: [Migration; 18] = [
     Migration { file: "0001_init.sql", sql: MIGRATION_0001 },
     Migration { file: "0002_sequence_tenant_key.sql", sql: MIGRATION_0002 },
     Migration { file: "0003_workspaces.sql", sql: MIGRATION_0003 },
@@ -76,6 +77,7 @@ pub const MIGRATIONS: [Migration; 17] = [
     Migration { file: "0015_v1_surface.sql", sql: MIGRATION_0015 },
     Migration { file: "0016_assets.sql", sql: MIGRATION_0016 },
     Migration { file: "0017_password_resets.sql", sql: MIGRATION_0017 },
+    Migration { file: "0018_login_codes.sql", sql: MIGRATION_0018 },
 ];
 
 /// What `migrate` may do, beyond applying what is missing.
@@ -2540,6 +2542,128 @@ impl Database for PgDatabase {
             .await
             .map_err(db_err)?;
         Ok(row.map(|r| PasswordReset { user_id: UserId(r.get("user_id")), expires_at: r.get("expires_at") }))
+    }
+
+    async fn issue_login_code(
+        &self,
+        c: &NewLoginCode,
+        window_secs: i64,
+        max_issued: u32,
+    ) -> Result<LoginCodeIssue, DbError> {
+        let conn = self.conn().await?;
+        let pg = conn.pg();
+        let max_issued = i32::try_from(max_issued).unwrap_or(i32::MAX);
+        // the table's own clean-up: windows that are over, whose code (if any) is over too
+        pg.execute(
+            "DELETE FROM login_codes \
+             WHERE window_started_at + ($2::bigint * interval '1 second') <= $1::timestamptz \
+               AND (code_hash IS NULL OR code_expires_at <= $1::timestamptz)",
+            &[&c.created_at, &window_secs],
+        )
+        .await
+        .map_err(db_err)?;
+        // One statement decides and writes. A user with no row gets one; a user with a row whose window is over starts a new window (the
+        // new code replaces whatever the old row held); a user with a window that is open gets the new code and one more in the count,
+        // unless the window has had its share, which is the `WHERE` that makes the statement store nothing. The casts are the column
+        // types: a bare `$n` is resolved as text where the statement does not say.
+        let n = pg
+            .execute(
+                "INSERT INTO login_codes (user_id, code_hash, code_expires_at, attempts, window_started_at, issued) \
+                 VALUES ($1::uuid, $2::bytea, $3::timestamptz, 0, $4::timestamptz, 1) \
+                 ON CONFLICT (user_id) DO UPDATE SET \
+                     code_hash = EXCLUDED.code_hash, \
+                     code_expires_at = EXCLUDED.code_expires_at, \
+                     attempts = 0, \
+                     window_started_at = CASE \
+                         WHEN login_codes.window_started_at + ($5::bigint * interval '1 second') <= $4::timestamptz \
+                         THEN $4::timestamptz ELSE login_codes.window_started_at END, \
+                     issued = CASE \
+                         WHEN login_codes.window_started_at + ($5::bigint * interval '1 second') <= $4::timestamptz \
+                         THEN 1 ELSE login_codes.issued + 1 END \
+                 WHERE login_codes.window_started_at + ($5::bigint * interval '1 second') <= $4::timestamptz \
+                    OR login_codes.issued < $6::integer",
+                &[&c.user_id.0, &&c.code_hash.0[..], &c.expires_at, &c.created_at, &window_secs, &max_issued],
+            )
+            .await
+            .map_err(db_err)?;
+        Ok(if n == 1 { LoginCodeIssue::Issued } else { LoginCodeIssue::Capped })
+    }
+
+    async fn check_login_code(
+        &self,
+        user: UserId,
+        code: &TokenHash,
+        now: Timestamp,
+        max_attempts: u32,
+    ) -> Result<LoginCodeCheck, DbError> {
+        let conn = self.conn().await?;
+        let pg = conn.pg();
+        let max = i32::try_from(max_attempts).unwrap_or(i32::MAX);
+        // Every try at a code that works is counted first, by one statement, so that however many run at once at most `max` of them are ever
+        // looked at: the count each one is given is its own.
+        let counted = pg
+            .query_opt(
+                "UPDATE login_codes SET attempts = attempts + 1 \
+                 WHERE user_id = $1::uuid AND code_hash IS NOT NULL AND code_expires_at > $2::timestamptz \
+                 RETURNING attempts",
+                &[&user.0, &now],
+            )
+            .await
+            .map_err(db_err)?;
+        let Some(counted) = counted else {
+            return Ok(LoginCodeCheck::Expired);
+        };
+        let attempts: i32 = counted.get("attempts");
+        if attempts <= max {
+            // The right code is used up by the statement that finds it, so one code signs one person in once, whatever else runs at the same
+            // time. The row goes with its count of codes made, as the pin deletes its token and its counters.
+            let used = pg
+                .execute(
+                    "DELETE FROM login_codes \
+                     WHERE user_id = $1::uuid AND code_hash = $2::bytea AND code_expires_at > $3::timestamptz",
+                    &[&user.0, &&code.0[..], &now],
+                )
+                .await
+                .map_err(db_err)?;
+            if used == 1 {
+                return Ok(LoginCodeCheck::Matched);
+            }
+        }
+        if attempts >= max {
+            // the last try the code allows: the code goes and the count of codes made stays. The `attempts` test leaves alone a code that
+            // was made after this try was counted.
+            pg.execute(
+                "UPDATE login_codes SET code_hash = NULL, attempts = 0 WHERE user_id = $1::uuid AND attempts >= $2::integer",
+                &[&user.0, &max],
+            )
+            .await
+            .map_err(db_err)?;
+            return Ok(LoginCodeCheck::Exhausted);
+        }
+        Ok(LoginCodeCheck::Wrong)
+    }
+
+    async fn discard_login_code(&self, user: UserId, code: &TokenHash) -> Result<bool, DbError> {
+        let conn = self.conn().await?;
+        let pg = conn.pg();
+        // A row that held other codes keeps its count, less this one; a row that held only this one goes. Each statement acts on the row only
+        // while it still holds `code`, so after the first has changed it the second finds nothing, and one call undoes one code at most.
+        let kept = pg
+            .execute(
+                "UPDATE login_codes SET code_hash = NULL, attempts = 0, issued = issued - 1 \
+                 WHERE user_id = $1::uuid AND code_hash = $2::bytea AND issued > 1",
+                &[&user.0, &&code.0[..]],
+            )
+            .await
+            .map_err(db_err)?;
+        let gone = pg
+            .execute(
+                "DELETE FROM login_codes WHERE user_id = $1::uuid AND code_hash = $2::bytea AND issued <= 1",
+                &[&user.0, &&code.0[..]],
+            )
+            .await
+            .map_err(db_err)?;
+        Ok(kept + gone == 1)
     }
 
     async fn insert_asset(&self, scope: &WorkspaceScope, a: &AssetRow) -> Result<(), DbError> {

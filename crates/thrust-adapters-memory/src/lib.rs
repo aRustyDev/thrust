@@ -35,6 +35,20 @@ struct StoredPasswordReset {
     expires_at: Timestamp,
 }
 
+/// One row of `login_codes` (migration 0018): a user's current sign-in code, if any, and the count of codes made in the window.
+struct StoredLoginCode {
+    /// The current code's digest; `None` once it was exhausted (the count of codes made stays, so asking again is still capped).
+    code_hash: Option<TokenHash>,
+    /// When the current code's time is over (meaningless while `code_hash` is `None`).
+    expires_at: Timestamp,
+    /// Tries at the current code, wrong ones and the right one.
+    attempts: u32,
+    /// When the first code of the window was made.
+    window_started_at: Timestamp,
+    /// Codes made in the window.
+    issued: u32,
+}
+
 #[derive(Default)]
 struct DbState {
     /// The `sessions` table: keyed by the token hash, no workspace (a directory table).
@@ -49,6 +63,8 @@ struct DbState {
     oidc_logins: HashMap<TokenHash, OidcLogin>,
     /// The `password_resets` table (migration 0017): a mailed reset token's digest, with the user it is for and when it was made.
     password_resets: HashMap<TokenHash, StoredPasswordReset>,
+    /// The `login_codes` table (migration 0018): at most one row a user.
+    login_codes: HashMap<UserId, StoredLoginCode>,
     /// The `assets` table (migration 0016): by id, each row under the workspace it names.
     assets: HashMap<AssetId, AssetRow>,
     /// Slug -> workspace (the `workspaces.slug` unique index).
@@ -1285,6 +1301,95 @@ impl Database for MemoryDatabase {
             .password_resets
             .remove(token)
             .map(|v| PasswordReset { user_id: v.user_id, expires_at: v.expires_at }))
+    }
+
+    async fn issue_login_code(
+        &self,
+        c: &NewLoginCode,
+        window_secs: i64,
+        max_issued: u32,
+    ) -> Result<LoginCodeIssue, DbError> {
+        use thrust_contracts::chrono::TimeDelta;
+        let window = TimeDelta::seconds(window_secs);
+        let mut s = self.state.lock_unpoisoned();
+        // a row whose window is over and that holds no code that still works is of no use to anyone (the table's own clean-up)
+        s.login_codes.retain(|_, v| {
+            v.window_started_at + window > c.created_at || (v.code_hash.is_some() && v.expires_at > c.created_at)
+        });
+        match s.login_codes.get_mut(&c.user_id) {
+            // a window that is still open: the new code replaces the old and the count goes up, unless the window has had its share
+            Some(v) if v.window_started_at + window > c.created_at => {
+                if v.issued >= max_issued {
+                    return Ok(LoginCodeIssue::Capped);
+                }
+                v.code_hash = Some(c.code_hash);
+                v.expires_at = c.expires_at;
+                v.attempts = 0;
+                v.issued += 1;
+            }
+            // none, or one whose window is over (it held a code that still worked, which this one replaces): a window of its own
+            _ => {
+                s.login_codes.insert(
+                    c.user_id,
+                    StoredLoginCode {
+                        code_hash: Some(c.code_hash),
+                        expires_at: c.expires_at,
+                        attempts: 0,
+                        window_started_at: c.created_at,
+                        issued: 1,
+                    },
+                );
+            }
+        }
+        Ok(LoginCodeIssue::Issued)
+    }
+
+    async fn check_login_code(
+        &self,
+        user: UserId,
+        code: &TokenHash,
+        now: Timestamp,
+        max_attempts: u32,
+    ) -> Result<LoginCodeCheck, DbError> {
+        let mut s = self.state.lock_unpoisoned();
+        let Some(v) = s.login_codes.get_mut(&user) else {
+            return Ok(LoginCodeCheck::Expired);
+        };
+        let Some(stored) = v.code_hash.filter(|_| v.expires_at > now) else {
+            return Ok(LoginCodeCheck::Expired);
+        };
+        // every try is counted before it is looked at
+        v.attempts += 1;
+        if v.attempts <= max_attempts && stored == *code {
+            // used up with the count of codes made, as the pin deletes its token and its counters
+            s.login_codes.remove(&user);
+            return Ok(LoginCodeCheck::Matched);
+        }
+        if v.attempts >= max_attempts {
+            // the code goes, and the count of codes made stays: asking again is still capped
+            v.code_hash = None;
+            v.attempts = 0;
+            return Ok(LoginCodeCheck::Exhausted);
+        }
+        Ok(LoginCodeCheck::Wrong)
+    }
+
+    async fn discard_login_code(&self, user: UserId, code: &TokenHash) -> Result<bool, DbError> {
+        let mut s = self.state.lock_unpoisoned();
+        let Some(v) = s.login_codes.get_mut(&user) else {
+            return Ok(false);
+        };
+        if v.code_hash != Some(*code) {
+            return Ok(false);
+        }
+        if v.issued > 1 {
+            v.code_hash = None;
+            v.attempts = 0;
+            v.issued -= 1;
+        } else {
+            s.login_codes.remove(&user);
+        }
+        Ok(true)
     }
 
     async fn insert_asset(&self, scope: &WorkspaceScope, asset: &AssetRow) -> Result<(), DbError> {

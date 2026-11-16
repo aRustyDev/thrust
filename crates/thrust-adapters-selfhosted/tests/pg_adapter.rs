@@ -334,6 +334,17 @@ async fn the_identity_tables_have_hashes_and_no_plaintext_and_no_workspace() {
         columns("password_resets").await,
         want(&[("created_at", ts), ("expires_at", ts), ("token_hash", "bytea"), ("user_id", "uuid")])
     );
+    assert_eq!(
+        columns("login_codes").await,
+        want(&[
+            ("attempts", "integer"),
+            ("code_expires_at", ts),
+            ("code_hash", "bytea"),
+            ("issued", "integer"),
+            ("user_id", "uuid"),
+            ("window_started_at", ts),
+        ])
+    );
 
     // controls: each of these must be refused
     let user = UserId(new_id());
@@ -380,6 +391,26 @@ async fn the_identity_tables_have_hashes_and_no_plaintext_and_no_workspace() {
         .await
         .is_err(),
         "a reset token's key must be a 32-byte digest too"
+    );
+    assert!(
+        raw.execute(
+            "INSERT INTO login_codes (user_id, code_hash, code_expires_at, window_started_at, issued) \
+             VALUES ($1, '\\x7374617465'::bytea, now(), now(), 1)",
+            &[&new_id()],
+        )
+        .await
+        .is_err(),
+        "a sign-in code's digest must be 32 bytes too"
+    );
+    assert!(
+        raw.execute(
+            "INSERT INTO login_codes (user_id, code_hash, code_expires_at, window_started_at, issued) \
+             VALUES ($1, NULL, now(), now(), 0)",
+            &[&new_id()],
+        )
+        .await
+        .is_err(),
+        "a row of `login_codes` counts at least the code that made it"
     );
 }
 

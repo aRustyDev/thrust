@@ -697,6 +697,39 @@ pub struct PasswordReset {
     pub expires_at: Timestamp,
 }
 
+/// One sign-in code that was mailed (F-A04, D-042): six digits, shown once in the mail and stored only as the digest of its
+/// text. The digest only keeps the code out of a backup or a log: six digits are guessable by anyone who can read the table, so
+/// what protects an account is the short life, the count of wrong attempts and the count of codes a window allows.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NewLoginCode {
+    pub user_id: UserId,
+    pub code_hash: TokenHash,
+    pub created_at: Timestamp,
+    pub expires_at: Timestamp,
+}
+
+/// What [`Database::issue_login_code`] did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LoginCodeIssue {
+    /// The code is stored, and is the user's only one that works.
+    Issued,
+    /// The user has had as many codes as a window allows: nothing was stored.
+    Capped,
+}
+
+/// What [`Database::check_login_code`] found.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LoginCodeCheck {
+    /// The code is the user's, and is used up: the same call deleted it, and the user's count of codes made.
+    Matched,
+    /// A code works, and this is not it.
+    Wrong,
+    /// This was the last wrong attempt the code allows: it is gone, and a new one has to be asked for.
+    Exhausted,
+    /// No code works: none was made, it was used up, it was exhausted or its time is over.
+    Expired,
+}
+
 /// What a stored file is for (ADR-0047). Plane has ten (`FileAsset.EntityTypeContext`); only the one the stock app's project
 /// creation needs is built (issue #44, S28 to S33), and the others are refused where an asset is made until something reads them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -1070,6 +1103,35 @@ pub trait Database: Send + Sync {
 
     /// Take a reset token: it is returned once and deleted by the same call, so one mailed token resets one password.
     async fn take_password_reset(&self, token: &TokenHash) -> Result<Option<PasswordReset>, DbError>;
+
+    /// Store a sign-in code for `c.user_id`. A user has at most one that works: the new one replaces the older, and the count of wrong
+    /// attempts starts again at none. A user is made at most `max_issued` codes in a window of `window_secs` that starts with the first of
+    /// them and is not lengthened by the later ones (the pin's four in ten minutes): the next is [`LoginCodeIssue::Capped`] and nothing is
+    /// stored. The call drops the rows of other users whose window is over and that hold no code that still works.
+    async fn issue_login_code(
+        &self,
+        c: &NewLoginCode,
+        window_secs: i64,
+        max_issued: u32,
+    ) -> Result<LoginCodeIssue, DbError>;
+
+    /// Try `code` for `user` at `now`. A code works while it is stored, its time is not over and it has not been exhausted. Every try at a
+    /// working code is counted before it is looked at, and the `max_attempts`-th wrong one removes the code ([`LoginCodeCheck::Exhausted`]);
+    /// a right one at or before the last allowed attempt is used up in the same call ([`LoginCodeCheck::Matched`]: the code and the user's
+    /// count of codes made are deleted, as the pin deletes its token and counters), so one code signs one person in once, whatever else runs
+    /// at the same time. A user with no working code is [`LoginCodeCheck::Expired`], whatever `code` is.
+    async fn check_login_code(
+        &self,
+        user: UserId,
+        code: &TokenHash,
+        now: Timestamp,
+        max_attempts: u32,
+    ) -> Result<LoginCodeCheck, DbError>;
+
+    /// Take back a code that was stored and never delivered (the mail service refused the message): it is deleted, and the user's count of
+    /// codes made goes back by one (the row goes when that was the only one), so a mail outage does not use up the codes a window allows.
+    /// `false` when `code` is not the user's current one (a later request replaced it, or it was used up).
+    async fn discard_login_code(&self, user: UserId, code: &TokenHash) -> Result<bool, DbError>;
 
     /// Test support and deactivation until ADR-0053 provides the real one: set `is_active`. `true` if the user exists.
     async fn set_user_active(&self, sys: &SystemScope, user: UserId, active: bool) -> Result<bool, DbError>;
