@@ -149,3 +149,4 @@ if [ "${SMOKE_FORCE_FAIL:-}" = 1 ]; then
   fail "SMOKE_FORCE_FAIL=1: failing on purpose, after every real check passed"
 fi
 echo "smoke: PASS ($EXPECT at $BASE)"
+# ci probe
