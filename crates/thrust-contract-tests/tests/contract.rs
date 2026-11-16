@@ -80,7 +80,7 @@ fn is_routing_404(status: u16, body: &[u8]) -> bool {
 /// which is routed, so the 404 above is the prefix and not a bad request. A pinned regression for FR-06; once #58
 /// serves `/api/v1` again this test is retired or rewritten with the `_slice` routes.
 #[tokio::test]
-async fn the_slice_routes_are_gone_from_the_reserved_v1_prefix() {
+async fn regression_the_slice_routes_are_gone_from_the_reserved_v1_prefix() {
     let t = t();
     let f = Fixture::seed(&t).await;
     let item = WorkItemId(uuid::Uuid::new_v4());

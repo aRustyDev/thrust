@@ -14,12 +14,12 @@ work.
 |---|---|
 | `PLAN.md` | the four pull requests, in order, with what each changes and how it is verified; the status table; what is deliberately left for later |
 
-## Status (2026-11-15)
+## Status (2026-11-16)
 
 | Item | State |
 |---|---|
-| ADR-0009 | written, `accepted` (owner decisions of 2026-11-15) |
-| PR 1, `regression_` prefix | not started; independent of the move |
+| ADR-0009 | merged in #208, `accepted` (owner decisions of 2026-11-15) |
+| PR 1, `regression_` prefix | in review, branch `test/regression-prefix`: 17 pinned regressions renamed: the 15 tests behind `PLAN.md`'s list (its contract-model entry is data the model test replays, so it takes no name), the #195 ledger test that #201 added, and the `single_dot` case, labelled "found by" |
 | PR 2, depth-independent paths | not started; lands before the move |
-| PR 3, the move | not started; waits for #194 (release) and #201 (migration ledger), which touch `crates/` |
+| PR 3, the move | not started; waits for #194 (release). #201 (migration ledger) merged on 2026-11-16 |
 | PR 4, layout guard | not started; after the move |

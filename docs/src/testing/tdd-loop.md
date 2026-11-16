@@ -69,7 +69,8 @@ Ask whether the tests as a whole would notice a wrong implementation:
 - [ ] Each new test was seen red for the right reason, and the commit or PR body shows that output.
 - [ ] Each new test has its control, applied and reverted.
 - [ ] Each changed behaviour has a generative test, or a gap recorded in [Status](status.md); each new static case
-      says whether it is a regression, a named spec example or oracle output ([Rule 9](rules.md)).
+      says whether it is a regression, a named spec example or oracle output, and a regression is named
+      `regression_…` ([Rule 9](rules.md)).
 - [ ] Tests carry their category prefix ([Rule 4](rules.md)) and live in the crate they test ([Rule 5](rules.md)).
 - [ ] The default nextest profile is still hermetic ([Rule 6](rules.md)); anything needing Docker, wrangler or Node
       is behind a script or opt-in profile.

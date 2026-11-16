@@ -25,7 +25,7 @@ use rstest::rstest;
 #[case::spec_below_square(15, 3)]
 #[case::spec_square(16, 4)]
 // regression: issue 482, overflow at the top of the range (prop_isqrt_bounds counterexample)
-#[case::issue_482_max(u64::MAX, 4_294_967_295)]
+#[case::regression_issue_482_max(u64::MAX, 4_294_967_295)]
 fn isqrt_examples(#[case] n: u64, #[case] expected: u64) {
     assert_eq!(isqrt(n), expected);
 }
@@ -33,8 +33,9 @@ fn isqrt_examples(#[case] n: u64, #[case] expected: u64) {
 
 `isqrt`, its doc comment and issue 482 are examples. Zero, one and the maximum are boundaries: they belong in the
 `prop_` strategy as weighted values, and a case appears here only for the reason its label gives. Always name cases (`#[case::description(..)]`): the name is what shows up in a
-failure. A regression case is `#[case::issue_482_trailing_space(..)]` with a one-line comment linking the issue; never
-remove one without removing the behaviour it pins. A shrunk proptest counterexample becomes one of these.
+failure. A regression case is `#[case::regression_issue_482_trailing_space(..)]` with a one-line comment linking the issue; never
+remove one without removing the behaviour it pins. rstest names it `case_<n>_regression_issue_482_trailing_space`, so
+`test(/regression_/)` selects it and `test(/\bregression_/)` does not (no word boundary between `_` and `r`). A shrunk proptest counterexample becomes one of these.
 
 Put expected errors in the table instead of using `#[should_panic]`:
 

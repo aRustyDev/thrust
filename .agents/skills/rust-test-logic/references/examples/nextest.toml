@@ -2,7 +2,8 @@
 # Test-runner configuration (cargo-nextest). Validated with cargo-nextest 0.9.148.
 #
 # Profiles:  default (fast hermetic loop) | ci | deep | oracle | e2e | mutants
-# Test-name prefixes route tests:  prop_  model_  oracle_  (parity_ and fuzz_replay_ run by default)
+# Test-name prefixes route tests:  prop_  model_  oracle_  (parity_, fuzz_replay_ and regression_ run by default)
+# regression_ follows a category prefix or rstest's case_<n>_, so select it with test(/regression_/), never \bregression_.
 # Filters use single-quoted TOML strings so `\b` reaches the regex engine unchanged.
 nextest-version = { required = "0.9.131", recommended = "0.9.148" }
 
