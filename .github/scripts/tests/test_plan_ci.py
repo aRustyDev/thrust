@@ -144,7 +144,7 @@ REAL_GRAPH = {
 # one path per rule, in the rules' order; `None` where the rule's sample is a crate path (below)
 SAMPLES = [
     "Cargo.lock", ".config/branding/colors.css", ".config/nextest.toml", ".github/workflows/ci.yml", ".github/actions/setup-rust/action.yml",
-    ".github/scripts/assert-gate.sh", ".github/scripts/toolchain-channel.sh", "scripts/contract.sh", "crates/thrust-core/src/lib.rs", "crates/README.md",
+    ".github/actions/contract-pass-tools/action.yml", ".github/scripts/assert-gate.sh", ".github/scripts/toolchain-channel.sh", "scripts/contract.sh", "crates/thrust-core/src/lib.rs", "crates/README.md",
     ".github/deploy/ca.pem", "deny.toml", "clippy.toml", "release-plz.toml", "tools/oracle-v1/corpus/a.json",
     "tools/compat-record/record.py", "tools/compat-inventory/out-pinned/endpoint-inventory.csv",
     ".agents/plans/contrail/research/0003-compat-plane-inventory.md", "tools/e2e-har/scrub.py", "e2e/journeys/m1.spec.ts",
@@ -178,7 +178,7 @@ for pattern, _, why in pc.RULES:
 # ---- 4. fail open --------------------------------------------------------------------------------------------------------------
 EVERYTHING = (ALL_JOBS, set(CELLS))
 for path in ["crates/thrust-gone/src/lib.rs", "crates/README.md", "scripts/new-thing.sh", "Cargo.lock", "rust-toolchain.toml",
-             ".github/scripts/plan-ci.py", "scripts/worker-dev.sh"]:
+             ".github/scripts/plan-ci.py", "scripts/worker-dev.sh", ".github/actions/contract-pass-tools/action.yml"]:
     check(f"{path} runs everything", run_plan([path], REAL_GRAPH), EVERYTHING)
 jobs, cells = run_plan(["docs/a.md"], REAL_GRAPH, CELLS + ["worker-new main"])
 check("a target the planner does not know runs even on docs", (jobs, cells), ({"contract"}, {"worker-new main"}))

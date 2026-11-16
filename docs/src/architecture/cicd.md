@@ -19,12 +19,13 @@ Worker](deploy.md). The jobs and the command each CI job runs are in the CI sect
 |---|---|
 | `.github/workflows/ci.yml` (`ci`) | The pipeline. Runs on pull requests, merge-queue entries, pushes to `main`, every night on `main` and by manual dispatch |
 | `.github/workflows/contract-cell.yml` | A reusable workflow that runs one contract cell on its own runner |
-| `.github/workflows/flake-hunt.yml` | Repeats one cell 1 to 50 times (5 by default), by hand or every Monday at 03:17 UTC. It passes only if `scripts/flake-hunt.sh` prints `failures: 0 / N`, because the script ends with an `echo`, so its exit status does not say whether an iteration failed |
+| `.github/workflows/flake-hunt.yml` | Repeats one cell 1 to 50 times (5 by default), by hand or every Monday at 03:17 UTC (`native-memory main`). It offers every pass of the matrix, and its first step, `.github/scripts/check-flake-hunt-cell.sh`, refuses a target and pass that are not a cell of `scripts/contract-all.sh`, before anything is built; `test-check-flake-hunt-cell.sh` holds the workflow's two lists equal to the matrix's. A pass is prepared by the same action a cell uses (`contract-pass-tools`). It passes only if `scripts/flake-hunt.sh` prints `failures: 0 / N`, because the script ends with an `echo`, so its exit status does not say whether an iteration failed. The job stops at 120 minutes: a `worker-cf e2e` iteration takes about 9 (nightly run 43798891735), so that cell fits about 12 |
 | `.github/workflows/e2e-schedule.yml` | Runs the `worker-cf e2e` cell (through `contract-cell.yml`) every day at 04:41 UTC and by hand, and on a pull request that edits the file, so that the call is proved valid before it merges. It covers what a pull request does not: drift in the runner, the browser and the packages, every day on `main`. Not a gate: nothing waits for it and `gate` does not read it. The pinned-Plane leg is not here, because the oracle builds from an unpushed fork (`scripts/e2e.sh plane-oracle`, local) |
 | `.github/workflows/release-plz.yml` (`release-plz`) | The release flow, run by release-plz: after each push to `main`, opens or updates the release-candidate pull request from an `rc/*` branch, and tags `vX.Y.Z`, creates the GitHub release as a draft and starts `release.yml` on the tag when such a pull request merges. See [Release candidates](#release-candidates) |
 | `.github/workflows/release.yml` (`release`) | Dispatched on the release tag by `release-plz.yml` (a draft release starts no workflow), or by hand on the tag; which run releases what is `plan-release.sh`. It builds the bundle at the tag, attests its build provenance and an SPDX SBOM of the source, attaches the bundle, the SBOM and `SHA256SUMS`, and publishes the release (immutable). On a pull request that edits it or the build, a dry run that attests and publishes nothing. See [Releasing](release.md) |
 | `release-plz.toml` | release-plz's configuration: one version and one tag for the workspace, one root `CHANGELOG.md`, which commits make a release. Held to the workspace members by `.github/scripts/check-release-plz.py` |
 | `.github/workflows/deploy.yml` (`deploy`) | The deploy pipeline: plan, build and attest a release candidate's bundle (staging) or take a release's (production), deploy it to an environment and prove it, roll back by itself when the smoke fails. Runs after `ci` on a release candidate or a tagged push to `main`, by hand, and on a pull request that edits its files (a dry run that touches no environment). See [The deploy pipeline](#the-deploy-pipeline) |
+| `.github/actions/contract-pass-tools` | A composite action: what one pass of `scripts/contract.sh` needs beyond Rust (`uv` for `oracle`; Node, pnpm, the app built from `web/` and Chromium for `e2e`), then a check that every host tool the pass relies on exists. `contract-cell.yml` and `flake-hunt.yml` both use it, so a pass one of them can run the other can too |
 | `.github/actions/setup-rust` | A composite action: the Rust version `rust-toolchain.toml` pins (read by `.github/scripts/toolchain-channel.sh`, which refuses anything but an exact version), the rustup targets and components, a keyed `rust-cache`, and optionally `worker-build` 0.8.7 and wrangler 4.151.2 |
 | `.github/actions/build-bundle` | A composite action: the deploy bundle of the checked-out commit (the Worker, the `migrate` binary and the web app, in one reproducible file), used by `deploy.yml` and `release.yml` so that both build it the same way |
 | `.github/actions/deploy-worker` | A composite action: fetch the bundle (this run's build for staging, the release's asset for production, `fetch-release-bundle.sh`), verify its attestation, unpack it, install wrangler (the same version as `setup-rust`, kept equal by a test) and `cloudflared` at pinned versions, and run `scripts/deploy-worker.sh` |
@@ -85,7 +86,7 @@ its base branch. Nothing calls it, so it is a tool to run by hand.
   - Everything runs on a path whose readers the planner does not know:
     - the workspace manifest, the lockfile and the toolchain;
     - `.cargo/` and `.config/`;
-    - `ci.yml`, `contract-cell.yml` and `setup-rust`;
+    - `ci.yml`, `contract-cell.yml`, `setup-rust` and `contract-pass-tools`;
     - the planner and the gate;
     - the scripts that run a cell;
     - an unknown directory under `crates/`;
@@ -136,7 +137,7 @@ its base branch. Nothing calls it, so it is a tool to run by hand.
   check list had 22 contract jobs, all success, before the first mail cell; the 21 of PR #113 (2026-11-10) were before the e2e cell]`.
   Each runs on a fresh runner with its own checkout, which is why the shared-build-directory hazard that makes
   `contract-all.sh` run serially does not apply.
-- **A cell.** `contract-cell.yml` checks that `curl`, `openssl`, `lsof`, `pgrep` and `docker` exist (and `nc` for the native `mail` cell, which waits for its Mailpit with it), runs
+- **A cell.** `contract-cell.yml` prepares the pass through `contract-pass-tools`, which checks that `curl`, `openssl`, `lsof`, `pgrep` and `docker` exist (and `nc` for the native `mail` cell, which waits for its Mailpit with it, `uv` for `oracle`, and `node` and `pnpm` for `e2e`), runs
   `scripts/contract.sh <target> <pass>` with no pipe so the step's status is the script's, and uploads a marker named
   for the cell. The script's target guard and count guard apply as they do locally.
 - **The mail cells.** `native-memory mail` starts a Mailpit container (pinned, pulled from Docker Hub as `postgres` is) beside the native server, which is
@@ -358,7 +359,8 @@ Found by the CI/CD review of 2026-11-14 (`.agents/plans/cicd-review/`), which al
   - Fixed: `hermetic` and `pg-adapter` pass `--locked`, as `lint` and `deny` did: a `Cargo.lock` that Cargo would have to
     change fails them instead of being rewritten on the runner.
   - Fixed: the toolchain is pinned by `rust-toolchain.toml`, and Dependabot proposes each new release.
-  - Still open: `flake-hunt.yml` cannot select the `csrfoff`, `oracle` or `e2e` passes.
+  - Fixed: `flake-hunt.yml` offers every pass of the matrix (`csrfoff`, `mail`, `oracle` and `e2e` were missing), refuses
+    a pairing that is not a cell, and prepares a pass with the action a cell uses.
 
 ## Against the ADRs
 

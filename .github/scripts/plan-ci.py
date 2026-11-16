@@ -61,6 +61,7 @@ RULES = [
     (r"^\.(cargo|config)/", FULL, "Cargo's or nextest's configuration"),
     (r"^\.github/workflows/(ci|contract-cell)\.yml$", FULL, "the workflow that runs the checks"),
     (r"^\.github/actions/setup-rust/", FULL, "the action every Rust job sets up with"),
+    (r"^\.github/actions/contract-pass-tools/", FULL, "the action that prepares a contract cell's pass (uv, the app, the browser)"),
     (r"^\.github/scripts/(plan-ci\.py|plan-cells\.sh|assert-gate\.sh)$", FULL, "this planner, or the gate that trusts it"),
     (r"^\.github/scripts/toolchain-channel\.sh$", FULL, "the reader of rust-toolchain.toml, which every build's compiler comes from"),
     (r"^scripts/(rs|contract\.sh|contract-all\.sh|worker-dev\.sh|pg-delay-proxy\.py)$", FULL, "the contract cells' harness"),

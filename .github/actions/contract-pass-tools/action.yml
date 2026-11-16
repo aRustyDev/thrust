@@ -1,0 +1,68 @@
+name: contract-pass-tools
+description: What one pass of scripts/contract.sh needs on the runner beyond the Rust toolchain (uv for the oracle pass; Node, pnpm, the built app and Chromium for the e2e pass), then a preflight that every host tool the pass relies on is there. Shared by contract-cell.yml and flake-hunt.yml, so a pass that one of them can run the other can too.
+
+inputs:
+  target:
+    description: native-memory | native-pg | worker-memory | worker-cf
+    required: true
+  pass:
+    description: A pass of scripts/contract.sh, e.g. main, oracle, e2e, mail
+    required: true
+
+runs:
+  using: composite
+  steps:
+    # The oracle pass runs the v1 oracle's Python harness (scripts/oracle-v1.sh): every script is a `uv run --script` file and
+    # Schemathesis is fetched at its pinned version by `uvx`. Only that pass needs uv, and uv itself is pinned, as the action is.
+    - name: Install uv (oracle pass)
+      if: inputs.pass == 'oracle'
+      uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      with:
+        version: "0.12.18"
+        enable-cache: false
+
+    # The e2e pass drives the stock app in Chromium (scripts/e2e.sh): Node and pnpm at the versions web/ pins, the app built, the
+    # journey's own dependencies at their lockfile, and the browser with the system libraries it needs. Only that pass needs them.
+    # Dependency scripts stay off, as in the `web` job: the build does not need them.
+    - name: Node (e2e pass)
+      if: inputs.pass == 'e2e'
+      uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      with:
+        node-version-file: web/.node-version
+
+    - name: Build the app, and get the browser (e2e pass)
+      if: inputs.pass == 'e2e'
+      shell: bash
+      env:
+        TURBO_TELEMETRY_DISABLED: "1"
+        DO_NOT_TRACK: "1"
+      run: |
+        want="$(node -p "require('./web/package.json').packageManager.split('@')[1].split('+')[0]")"
+        npm install --global "pnpm@$want"
+        test "$(pnpm --dir web --version)" = "$want"
+        pnpm --dir web install --frozen-lockfile --ignore-scripts
+        pnpm --dir web exec turbo run build --filter=web
+        test -s web/apps/web/build/client/index.html
+        pnpm --dir e2e install --frozen-lockfile --ignore-scripts
+        pnpm --dir e2e exec playwright install --with-deps chromium
+
+    - name: Preflight - host tools scripts/contract.sh relies on
+      shell: bash
+      env:
+        # inputs go through env, never interpolated into the script text
+        PASS_TARGET: ${{ inputs.target }}
+        PASS_NAME: ${{ inputs.pass }}
+      run: |
+        missing=""
+        tools="curl openssl lsof pgrep docker"
+        [ "$PASS_NAME" = oracle ] && tools="$tools uv"
+        [ "$PASS_NAME" = e2e ] && tools="$tools node pnpm"
+        # the native mail pass waits for its Mailpit with `nc`; a Worker's mail service is wrangler's simulated binding (no container, no relay)
+        if [ "$PASS_NAME" = mail ]; then case "$PASS_TARGET" in native-*) tools="$tools nc" ;; esac; fi
+        for tool in $tools; do
+          command -v "$tool" > /dev/null 2>&1 || missing="$missing $tool"
+        done
+        if [ -n "$missing" ]; then
+          echo "::error::runner image lacks:$missing"
+          exit 1
+        fi
