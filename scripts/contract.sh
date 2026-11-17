@@ -116,9 +116,14 @@ EXPECT_MAIL=7
 # The mail pass's relay: Mailpit, pinned (the SMTP adapter's own tests, tests/smtp_sink, pin the same version).
 MAILPIT_IMAGE=axllent/mailpit:v1.33.1
 
-# Every port this run binds is drawn by `pick_port`, from below the kernel's outgoing-connection range (why: the library).
+# Every port this run binds is drawn by `pick_port`, from below the kernel's outgoing-connection range and never twice (why: the
+# library). The run's ports are kept in $LOG.ports, one a line in the order they were drawn, with the logs.
 # shellcheck source=scripts/lib/ports.sh
 . "$ROOT/scripts/lib/ports.sh"
+PORTS_DRAWN_FILE="$LOG.ports"
+: >"$PORTS_DRAWN_FILE"
+ports_remember "${THRUST_PORT:-}" "${THRUST_MOCK_IDP_PORT:-}" "${THRUST_PG_PORT:-}" "${THRUST_MAIL_SMTP_PORT:-}" \
+  "${THRUST_MAIL_HTTP_PORT:-}" || exit 3
 PORTS_TOP="$(ports_top)" || exit 3
 echo "[$TARGET/$PASS] ports drawn from $PORTS_FLOOR-$PORTS_TOP (the kernel's outgoing range starts at $(ephemeral_low))"
 
@@ -346,6 +351,13 @@ until curl -fsS "$THRUST_BASE_URL/healthz" >/dev/null 2>&1; do
     if grep -qE 'AddrInUse|Address already in use' "$LOG.server.log" && command -v ss >/dev/null 2>&1; then
       echo "port $PORT was refused; the sockets on it (ss):" >&2
       ss -tan "( sport = :$PORT )" >&2 || true
+      # A port that is listening was taken by something this run started, or by something else: say what this run holds.
+      echo "the ports of this run, in the order they were drawn or given: $(tr '\n' ' ' <"$PORTS_DRAWN_FILE")" >&2
+      echo "  server $PORT, mock identity provider $THRUST_MOCK_IDP_PORT, postgres ${PG_PORT:-none}," \
+        "mail ${MAIL_SMTP_PORT:-none}/${MAIL_HTTP_PORT:-none}, delay proxy ${PROXY_PORT:-none}" >&2
+      if command -v docker >/dev/null 2>&1; then
+        docker ps --format '  container {{.Names}} publishes {{.Ports}}' >&2 || true
+      fi
     fi
     exit 4
   fi

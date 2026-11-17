@@ -3,8 +3,9 @@
 # outgoing-connection range, so no closed client connection can hold it in TIME_WAIT (issue #93: the server's bind then failed with
 # EADDRINUSE although nothing listened). Generated: a matrix of range starts (Linux's, macOS's, between, the edge of the room, below
 # it) x 300 draws each, which must stay inside the bound and reach both its bottom and top quarter; unreadable ranges; a stubbed
-# `lsof` that marks ports busy; the real range of the machine this runs on (procfs, which dash's `read` cannot read); and
-# contract.sh's use of the library.
+# `lsof` that marks ports busy; that a run never draws a port twice (600 draws over the narrowest room are 600 ports), nor one it
+# was given, and that a picker with no file to remember in refuses; the real range of the machine this runs on (procfs, which
+# dash's `read` cannot read); and contract.sh's use of the library.
 #
 #   test-ports.sh [path to a copy of ports.sh]   (a path points it at a deliberately broken copy)
 HERE="$(cd "$(dirname "$0")/../../.." && pwd)"
@@ -35,9 +36,12 @@ exit 1
 EOF
 chmod +x "$T/bin/lsof" "$T/bin/sysctl"
 
-# run <range file> <shell code after sourcing the library>: output in $T/out, status returned
+# run <range file> <shell code after sourcing the library>: output in $T/out, status returned. The run's file of drawn ports is
+# $T/drawn, empty (a copy of $SEED when that is set), unless DRAWN_FILE says another file, or says nothing (DRAWN_FILE=).
 run() {
-  THRUST_EPHEMERAL_RANGE_FILE="$1" PATH="$T/bin:$PATH" sh -c '. "$1"; eval "$2"' _ "$LIB" "$2" >"$T/out" 2>&1
+  if [ -n "${SEED:-}" ]; then cp "$SEED" "$T/drawn"; else : >"$T/drawn"; fi
+  THRUST_EPHEMERAL_RANGE_FILE="$1" PORTS_DRAWN_FILE="${DRAWN_FILE-$T/drawn}" PATH="$T/bin:$PATH" \
+    sh -c '. "$1"; eval "$2"' _ "$LIB" "$2" >"$T/out" 2>&1
 }
 DRAW='i=0; while [ $i -lt 300 ]; do pick_port || exit 1; i=$((i + 1)); done'
 
@@ -88,12 +92,43 @@ unset SYSCTL_FIRST
 # 3. busy ports are never returned; all busy is a refusal
 f="$(range 32768 60999)"
 n=$((n + 1))
-if LSOF_BUSY=even run "$f" "$DRAW" && [ "$(wc -l <"$T/out" | tr -d ' ')" = 300 ] && ! awk '$1 % 2 == 0 { found = 1 } END { exit !found }' "$T/out"; then
+if (LSOF_BUSY=even; export LSOF_BUSY; run "$f" "$DRAW") && [ "$(wc -l <"$T/out" | tr -d ' ')" = 300 ] && ! awk '$1 % 2 == 0 { found = 1 } END { exit !found }' "$T/out"; then
   ok
 else bad "a port lsof reports as listening was returned (or a draw failed)"; sed 's/^/     | /' "$T/out" | head -5; fi
 n=$((n + 1))
-if LSOF_BUSY=all run "$f" 'pick_port'; then bad "every port busy, yet pick_port returned $(cat "$T/out")"
+if (LSOF_BUSY=all; export LSOF_BUSY; run "$f" 'pick_port'); then bad "every port busy, yet pick_port returned $(cat "$T/out")"
 elif grep -qF 'were all taken' "$T/out"; then ok; else bad "every port busy: output lacks 'were all taken'"; sed 's/^/     | /' "$T/out"; fi
+
+# 3b. a port is handed out once a run. `lsof` cannot see a port that nobody has bound yet, and contract.sh draws the server's port, the
+# mock identity provider's, Postgres's and Mailpit's before any of them listens, so a picker that forgot what it drew could return the
+# same port twice and the second service's bind would be refused by the first (measured on the real library, narrowest range: 400
+# draws gave 324 different ports and 66 handed out twice). The narrowest room is 1000 ports: 600 draws are 600 different ones.
+f="$(range 21000 60999)"
+DRAW600='i=0; while [ $i -lt 600 ]; do pick_port || exit 1; i=$((i + 1)); done'
+n=$((n + 1))
+if run "$f" "$DRAW600" && [ "$(wc -l <"$T/out" | tr -d ' ')" = 600 ] && [ "$(sort -u "$T/out" | wc -l | tr -d ' ')" = 600 ]; then ok
+else bad "600 draws over 1000 ports must be 600 different ports ($(sort "$T/out" | uniq -d | wc -l | tr -d ' ') were handed out twice)"; fi
+n=$((n + 1))
+if run "$f" "$DRAW" && cmp -s "$T/out" "$T/drawn"; then ok; else bad "the file of drawn ports must hold the draws, in the order they were made"; fi
+# ports a run was given (ports_remember) are never drawn: the even ones of the room are remembered, 300 draws are all odd; all of them is a refusal
+awk 'BEGIN { for (p = 20000; p < 21000; p += 2) print p }' >"$T/seed-even"
+awk 'BEGIN { for (p = 20000; p < 21000; p++) print p }' >"$T/seed-all"
+n=$((n + 1))
+if (SEED="$T/seed-even"; run "$f" "$DRAW") && [ "$(wc -l <"$T/out" | tr -d ' ')" = 300 ] && ! awk '$1 % 2 == 0 { found = 1 } END { exit !found }' "$T/out"; then ok
+else bad "a port the run already holds was drawn again (or a draw failed)"; sed 's/^/     | /' "$T/out" | head -5; fi
+n=$((n + 1))
+if (SEED="$T/seed-all"; run "$f" 'pick_port'); then bad "every port held by the run, yet pick_port returned $(cat "$T/out")"
+elif grep -qF 'were all taken' "$T/out"; then ok; else bad "every port held by the run: output lacks 'were all taken'"; sed 's/^/     | /' "$T/out"; fi
+n=$((n + 1))
+if run "$f" 'ports_remember 20001 "" 20002 && cat "$PORTS_DRAWN_FILE"' && [ "$(tr '\n' ' ' <"$T/out")" = "20001 20002 " ]; then ok
+else bad "ports_remember must record each port it is given and skip an empty one"; sed 's/^/     | /' "$T/out" | head -5; fi
+# no file to remember in, or none that can be written: a refusal and no port (a draw nothing remembers is the defect)
+n=$((n + 1))
+if (DRAWN_FILE=; run "$f" 'pick_port'); then bad "no PORTS_DRAWN_FILE, yet pick_port returned $(cat "$T/out")"
+elif grep -qF 'PORTS_DRAWN_FILE is not set' "$T/out"; then ok; else bad "no PORTS_DRAWN_FILE: output lacks the reason"; sed 's/^/     | /' "$T/out"; fi
+n=$((n + 1))
+if (DRAWN_FILE="$T/no/such/dir/ports"; run "$f" 'pick_port'); then bad "a file that cannot be written, yet pick_port returned $(cat "$T/out")"
+elif ! grep -qE '^[0-9]+$' "$T/out"; then ok; else bad "a file that cannot be written: a port was printed anyway"; fi
 
 # 4. the real range of this machine, through the default path (procfs on Linux, where dash's `read` gets one byte; sysctl on macOS)
 real=""
@@ -111,6 +146,17 @@ n=$((n + 1))
 unguarded="$(grep -n 'pick_port)' "$CONTRACT" | grep -v '|| exit 3')"
 calls="$(grep -c 'pick_port)' "$CONTRACT")"
 if [ "$calls" -ge 6 ] && [ -z "$unguarded" ]; then ok; else bad "every pick_port in contract.sh must be followed by '|| exit 3' ($calls calls; unguarded: $unguarded)"; fi
+# ... keeps its run's ports in a file of its own, and remembers every port the environment can give it (each THRUST_*_PORT it reads
+# is named once where it is read and once in the ports_remember call): a given port that is not remembered can be drawn
+n=$((n + 1))
+if grep -qF 'PORTS_DRAWN_FILE="$LOG.ports"' "$CONTRACT" && grep -qF 'ports_remember "' "$CONTRACT"; then ok
+else bad "contract.sh must set PORTS_DRAWN_FILE=\"\$LOG.ports\" and call ports_remember"; fi
+n=$((n + 1))
+unremembered=""
+for given in $(grep -o '\${THRUST_[A-Z_]*PORT:-}' "$CONTRACT" | sort -u); do
+  if [ "$(grep -cF "\"$given\"" "$CONTRACT")" -lt 2 ]; then unremembered="$unremembered $given"; fi
+done
+if [ -z "$unremembered" ]; then ok; else bad "contract.sh reads these ports from the environment and does not pass them to ports_remember:$unremembered"; fi
 
 echo "passed=$pass bad=$failn (of $n)"
 [ "$failn" -eq 0 ] && [ "$pass" = "$n" ]
