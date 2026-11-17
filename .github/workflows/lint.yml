@@ -198,6 +198,7 @@ jobs:
           persist-credentials: false
       - id: judge
         uses: ./.github/actions/verdict
+        if: inputs.plan == 'a plan nobody gives'
         with:
           needs: ${{ toJSON(needs) }}
           plan: ${{ inputs.plan }}
