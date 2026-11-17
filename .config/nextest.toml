@@ -3,8 +3,10 @@
 #
 # Profiles:  default (fast hermetic loop) | ci | deep | oracle | mutants | contract (the contract suite against a running target)
 #            | adapters (the adapter suites that need Docker) | load (the load tests against a running target)
+#            | prof (the profiling workloads, which write their profiles under target/profiling/)
 # Test-name prefixes route tests:  prop_  model_  oracle_  load_  (parity_, fuzz_replay_ and regression_ run by default)
 # load_ = a load test of thrust-load-tests: it measures a running target, so it runs only with the `load` profile.
+# prof_ = a profile of a workload of thrust-profiling: it writes outside a temp dir, so it runs only with the `prof` profile.
 # regression_ = a pinned regression (AGENTS.md rule 9). It follows a category prefix (model_regression_...) or rstest's
 # case_<n>_, so select it with test(/regression_/), never \bregression_.
 # oracle_ = compared with the TypeScript (or Python) oracle: live through Node, or against its generated, git-ignored
@@ -31,7 +33,7 @@ mock-idp = { max-threads = 1 }
 # Postgres container through Docker, and smtp_sink a Mailpit one: those two run with the `adapters` profile below. The SMTP adapter's
 # other two suites (smtp_wire: a scripted server in the test's own process; smtp_config) are hermetic and run here. The load tests
 # (thrust-load-tests' load_ tests) need a running target too; that crate's own tests of what they compute are hermetic and run here.
-default-filter = 'not (test(/\boracle_/) | package(thrust-contract-tests) | binary(pg_adapter) | binary(smtp_sink) | (package(thrust-load-tests) & test(/^load_/)))'
+default-filter = 'not (test(/\boracle_/) | package(thrust-contract-tests) | binary(pg_adapter) | binary(smtp_sink) | (package(thrust-load-tests) & test(/^load_/)) | (package(thrust-profiling) & test(/^prof_/)))'
 retries = 0
 slow-timeout = { period = "30s", terminate-after = 4 }
 
@@ -134,6 +136,23 @@ failure-output = "immediate"
 # No kill: the scale test seeds 110,000 rows before it measures, which takes minutes. The profile's own override, so it
 # outranks the default profile's ones.
 [[profile.load.overrides]]
+filter = 'all()'
+slow-timeout = { period = "300s" }
+
+# --- prof: the profiling workloads (crates/testing/profiling) ------------------------------
+#   cargo nextest run -p thrust-profiling --profile prof
+# A prof_ test profiles an in-process workload and writes the profile under target/profiling/; it prints its totals, so its output
+# is shown when it passes too. One at a time, so no two profiles share the machine. No number gates yet (X19).
+[profile.prof]
+default-filter = 'package(thrust-profiling) & test(/^prof_/)'
+test-threads = 1
+fail-fast = false
+success-output = "immediate"
+failure-output = "immediate"
+
+# No kill: dhat records a backtrace for every allocation, so the router's profile (320 requests, about a million allocations)
+# takes about 30 s. The profile's own override, so it outranks the default profile's ones.
+[[profile.prof.overrides]]
 filter = 'all()'
 slow-timeout = { period = "300s" }
 
