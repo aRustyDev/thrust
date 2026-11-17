@@ -708,21 +708,6 @@ pub struct SeedWorkItem {
 }
 
 // ---------------------------------------------------------------------------------------------
-// API DTOs
-// ---------------------------------------------------------------------------------------------
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ApiErrorBody {
-    pub error: ApiErrorDetail,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ApiErrorDetail {
-    pub code: String,
-    pub message: String,
-}
-
-// ---------------------------------------------------------------------------------------------
 // Identity DTOs (issue #38). Secrets only ever travel in the one response that creates them.
 // ---------------------------------------------------------------------------------------------
 
