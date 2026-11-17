@@ -134,16 +134,17 @@ A pull request runs only the jobs and cells its change needs; how that is decide
 | Job | Runs |
 |---|---|
 | `changes` | derives the contract cells from the `run <target> <pass>` lines of `scripts/contract-all.sh`, then decides which jobs and cells the change needs (`.github/scripts/plan-ci.py`, over the changed paths and `cargo metadata`; fails open) |
-| `ci-scripts` | the tests of the CI helper scripts themselves (`.github/scripts/tests/`) |
+| `test.yml` | the workflow `.github/workflows/test.yml`, called by `ci.yml` through its job `test`: it holds the jobs `ci-scripts`, `hermetic`, `pg-adapter` and `mutants` and a `verdict` job that judges them against the plan (any of the four, or all) and which `gate` requires (the migration moved the four jobs here; their names and commands are unchanged; the contract cells are still `ci.yml`'s `contract` job) |
+| `ci-scripts` | (in `test.yml`) the tests of the CI helper scripts themselves (`.github/scripts/tests/`) |
 | `lint.yml` | the workflow `.github/workflows/lint.yml`, called by `ci.yml` through its job `lint`: it holds the jobs `deps` and `lint` and a `verdict` job that judges them against the plan (one of the two, or both) and which `gate` requires (the migration moved both jobs here; their names and commands are unchanged) |
 | `deps` | (in `lint.yml`) `scripts/check-deps.sh`, then `scripts/check-layout.sh` (ADR-0009's layout of `crates/`) and the other guards, most with their `--self-test`: topology, edge configuration, Plane 500, acceptance list, placement, migration lint, contract counts, the wrangler render, release-plz, the workflow lint and the OpenAPI diff |
 | `lint` | (in `lint.yml`) `cargo fmt --all --check`, then `cargo clippy --workspace --all-targets --locked -- -D warnings`, then the same clippy for `thrust-worker` with `--no-default-features --target wasm32-unknown-unknown` (the clippy steps run even if rustfmt failed) |
 | `security` | the workflow `.github/workflows/security.yml`, called by `ci.yml`: its job `deny`, and its `verdict` job, which judges `deny` against the plan and which `gate` requires (the migration moved `deny` here; its name and commands are unchanged) |
 | `deny` | (in `security.yml`) `cargo deny --locked check`: advisories, licences, bans and sources, from `deny.toml` |
-| `hermetic` | `cargo nextest run --profile ci --workspace --locked`, then `cargo test --doc --workspace --locked` |
-| `pg-adapter` | `cargo nextest run -p thrust-adapters-selfhosted --profile adapters --locked -E 'binary(pg_adapter)'`, then the same for `binary(smtp_sink)` |
+| `hermetic` | (in `test.yml`) `cargo nextest run --profile ci --workspace --locked`, then `cargo test --doc --workspace --locked` |
+| `pg-adapter` | (in `test.yml`) `cargo nextest run -p thrust-adapters-selfhosted --profile adapters --locked -E 'binary(pg_adapter)'`, then the same for `binary(smtp_sink)` |
 | `contract` | one job per cell (`.github/workflows/contract-cell.yml`): `scripts/contract.sh <target> <pass>` |
-| `mutants` | `scripts/mutants.sh` |
+| `mutants` | (in `test.yml`) `scripts/mutants.sh` |
 | `documentation` | the workflow `.github/workflows/documentation.yml`, called by `ci.yml`: its job `docs`, and its `verdict` job, which judges `docs` against the plan and which `gate` requires (the migration moved `docs` here; its name and commands are unchanged) |
 | `docs` | (in `documentation.yml`) when the book's inputs changed (`docs/`, `AGENTS.md`, `.config/branding/`): `scripts/check-book.sh` (`mdbook build`, failing on any `ERROR` line and on a page `SUMMARY.md` does not list), then `scripts/check-book.sh --self-test` (a copy broken four ways, each refused). mdBook 0.5.4 and mdbook-mermaid 0.17.1 |
 | `web` | the workflow `.github/workflows/web.yml`, called by `ci.yml`, which holds the job `web` and a `verdict` job that judges it against the plan and which `gate` requires (the migration moved the job here; its name and commands are unchanged); `web` runs when `web/` or its gate changed: `scripts/check-web-diff.sh` (the Q-R2 gate: only the files in `web/ALLOWED-CHANGES` differ from the oracle pin), then `pnpm --dir web install --frozen-lockfile --ignore-scripts` and `pnpm --dir web exec turbo run build --filter=web` |
