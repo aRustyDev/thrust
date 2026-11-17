@@ -1,0 +1,38 @@
+name: verdict
+description: The judge at the end of a called workflow (ADR-0102). Judges the workflow's own jobs against the plan it was given, with the one script every level uses (assert-gate.sh), and only when that passed sets the output `verdict` to `pass`, which ci.yml's gate requires of the workflow. Used by the `verdict` job of each workflow ci.yml calls. That job checks the repository out first, because a local action is read from the checkout and so cannot check it out itself.
+
+inputs:
+  needs:
+    description: toJSON(needs) of the calling job, which must need every job of the workflow
+    required: true
+  plan:
+    description: JSON array of the workflow's jobs that are planned to run (the workflow's `plan` input)
+    required: true
+  jobs:
+    description: The jobs of the workflow, separated by spaces (assert-gate.sh's KNOWN_JOBS)
+    required: true
+
+outputs:
+  verdict:
+    description: pass, set only after the judge passed
+    value: ${{ steps.mark.outputs.verdict }}
+
+runs:
+  using: composite
+  steps:
+    # A planned job must be exactly `success`, one that is not planned must be `skipped`, and a plan that is not a JSON array of
+    # strings is a failure. No planner job and no cells to judge: both are ci.yml's, so both are set empty. Inputs go through env,
+    # never into the script text.
+    - name: Judge the jobs against the plan
+      shell: bash
+      env:
+        NEEDS_JSON: ${{ inputs.needs }}
+        EXPECTED_JOBS: ${{ inputs.plan }}
+        KNOWN_JOBS: ${{ inputs.jobs }}
+        CHANGES_JOB: ""
+        CELL_JOB: ""
+      run: .github/scripts/assert-gate.sh
+    # Only after the judge: a failed step ends a composite action, so this one never runs for a workflow that was not as planned.
+    - id: mark
+      shell: bash
+      run: echo "verdict=pass" >> "$GITHUB_OUTPUT"

@@ -137,7 +137,8 @@ A pull request runs only the jobs and cells its change needs; how that is decide
 | `ci-scripts` | the tests of the CI helper scripts themselves (`.github/scripts/tests/`) |
 | `deps` | `scripts/check-deps.sh`, then `scripts/check-layout.sh` (ADR-0009's layout of `crates/`) and the other guards, most with their `--self-test`: topology, edge configuration, Plane 500, acceptance list, placement, migration lint, contract counts, the wrangler render, release-plz, the workflow lint and the OpenAPI diff |
 | `lint` | `cargo fmt --all --check`, then `cargo clippy --workspace --all-targets --locked -- -D warnings`, then the same clippy for `thrust-worker` with `--no-default-features --target wasm32-unknown-unknown` (the clippy steps run even if rustfmt failed) |
-| `deny` | `cargo deny --locked check`: advisories, licences, bans and sources, from `deny.toml` |
+| `security` | the workflow `.github/workflows/security.yml`, called by `ci.yml`: its job `deny`, and its `verdict` job, which judges `deny` against the plan and which `gate` requires (the migration moved `deny` here; its name and commands are unchanged) |
+| `deny` | (in `security.yml`) `cargo deny --locked check`: advisories, licences, bans and sources, from `deny.toml` |
 | `hermetic` | `cargo nextest run --profile ci --workspace --locked`, then `cargo test --doc --workspace --locked` |
 | `pg-adapter` | `cargo nextest run -p thrust-adapters-selfhosted --profile adapters --locked -E 'binary(pg_adapter)'`, then the same for `binary(smtp_sink)` |
 | `contract` | one job per cell (`.github/workflows/contract-cell.yml`): `scripts/contract.sh <target> <pass>` |

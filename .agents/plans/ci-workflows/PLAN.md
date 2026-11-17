@@ -204,6 +204,6 @@ skipped.
 |---|---|
 | This plan | merged (#223) |
 | Phase 0, the foundation | **done.** Planned in [phases/0001-foundation.md](phases/0001-foundation.md) (#225); its owner questions are answered and recorded in the decisions table above. Stage 0.5, the baseline: [research/0017](research/0017-ci-baseline.md) (#230). Stage 0.2, the gate spike (draft #232, closed): [research/0018](research/0018-gate-spike.md) (#236). Stage 0.1: [ADR-0102](../contrail/adrs/ci/0102-one-workflow-per-concern-and-the-verdict-job.md) (#239). Stage 0.3, the planner, the gate and the mutant driver (#245). Stage 0.4, the lint rules, `actionlint` and the two indexes (#249) |
-| Phase 1, the migration | planned in [phases/0002-migration.md](phases/0002-migration.md) (#251); its four questions are answered (all as recommended) and recorded above. **M1, `documentation.yml`, is in progress**; M2 to M6 are not started |
+| Phase 1, the migration | planned in [phases/0002-migration.md](phases/0002-migration.md) (#251); its four questions are answered (all as recommended) and recorded above. **M1, `documentation.yml`, is done** (#254, merged 2026-11-17; probes #255 and #256, closed unmerged). **M2, `security.yml` and the `verdict` action, is in progress**; M3 to M6 are not started |
 | Phases 2 to 14 | not started |
 | Open for the owner | nothing |

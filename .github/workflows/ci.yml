@@ -162,7 +162,8 @@ jobs:
           python3 -I .github/scripts/tests/test_plan_ci.py
           # ci.yml, the planner and each called workflow's file agree (ADR-0102): the calls, the gate's VERDICT_JOBS, the verdict jobs
           python3 -I .github/scripts/tests/test_workflow_wiring.py
-          # The tests of the planner and the gate must be able to fail: each hand mutant of those two files is killed by them (ADR-0102).
+          # The tests of the planner and the gate must be able to fail: each hand mutant of the planner, the gate, this file, the called
+          # workflows and the verdict action is killed by them (ADR-0102).
           python3 -I .github/scripts/tests/mutate_gate.py
 
   deps:
@@ -319,31 +320,6 @@ jobs:
       - name: clippy (thrust-api-v1 with the OpenAPI feature)
         if: ${{ !cancelled() }}
         run: scripts/rs cargo clippy -p thrust-api-v1 --features openapi --all-targets --locked -- -D warnings
-
-  # cargo-deny (issue #40; ADR-0100 and ADR-0101 require a Rust supply-chain gate), configured by `deny.toml`: advisories (RustSec),
-  # licences, bans (sqlx, sea-orm, diesel: ADR-0044) and sources (crates.io only). It fetches the advisory database on every run, so
-  # a new advisory can turn it red with no change to the code: fix it by upgrading, and read the note above the one ignore in
-  # `deny.toml` before adding another.
-  deny:
-    needs: changes
-    if: contains(fromJSON(needs.changes.outputs.jobs || '[]'), 'deny')
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/setup-rust
-        with:
-          cache-key: deny
-          save-cache: ${{ github.ref == 'refs/heads/main' }}
-      - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
-        with:
-          tool: cargo-deny@0.20.2
-      - name: cargo deny check
-        run: scripts/rs cargo deny --locked check
 
   # The hermetic loop: the default nextest profile (no Docker, Node, wrangler or running target) under the `ci`
   # profile, plus the doctests nextest cannot run. `oracle_` tests need the TypeScript oracle's generated output
@@ -503,10 +479,21 @@ jobs:
     permissions:
       contents: read
 
+  # The supply-chain check (cargo-deny): security.yml, called here and judged by its own `verdict` job (ADR-0102), like the book's.
+  # The `deny` job is that workflow's.
+  security:
+    needs: changes
+    if: contains(fromJSON(needs.changes.outputs.top || '[]'), 'security')
+    uses: ./.github/workflows/security.yml
+    with:
+      plan: ${{ toJSON(fromJSON(needs.changes.outputs.plans || '{}').security) }}
+    permissions:
+      contents: read
+
   gate:
     name: gate
     if: always()
-    needs: [changes, ci-scripts, deps, lint, deny, hermetic, pg-adapter, contract, mutants, web, documentation]
+    needs: [changes, ci-scripts, deps, lint, hermetic, pg-adapter, contract, mutants, web, documentation, security]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
@@ -533,7 +520,7 @@ jobs:
           EXPECTED_JOBS: ${{ needs.changes.outputs.top }}
           # the called workflows. A STATIC list, not the planner's `workflows` output: a planner bug that left one out of that output
           # would switch off the check for it. test_plan_ci.py holds this list equal to the keys of the planner's WORKFLOWS.
-          VERDICT_JOBS: documentation
+          VERDICT_JOBS: documentation security
           PLANNED: ${{ needs.changes.outputs.cells || '[]' }}
           REPORTED_DIR: reported
         run: .github/scripts/assert-gate.sh

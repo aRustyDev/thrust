@@ -47,9 +47,9 @@ from datetime import datetime, timezone
 # The jobs of ci.yml that plan-ci.py can ask for (JOBS in .github/scripts/plan-ci.py). `changes` and `gate` always run.
 #
 # Each stage of the migration moves a job into a called workflow, whose jobs are `<workflow> / <job>` in the check list, so a job's
-# group is what precedes ` / `: `docs` becomes `documentation`. A window that holds runs from before a stage needs the names from
+# group is what precedes ` / `: `docs` becomes `documentation`, `deny` becomes `security`. A window that holds runs from before a stage needs the names from
 # before it (--groups "... docs"), and one from after it these (the default); a run with a name the list lacks stops the script.
-DEFAULT_GROUPS = "ci-scripts deps lint deny hermetic pg-adapter contract mutants web documentation"
+DEFAULT_GROUPS = "ci-scripts deps lint hermetic pg-adapter contract mutants web documentation security"
 ALWAYS = ("changes", "gate")
 FAILED = ("failure", "timed_out")
 SINCE = re.compile(r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$")

@@ -176,8 +176,8 @@ ADR_0009 = {
 # one path per rule, in the rules' order; `None` where the rule's sample is a crate path (below)
 SAMPLES = [
     "Cargo.lock", ".config/branding/colors.css", ".config/nextest.toml", ".github/workflows/ci.yml", ".github/actions/setup-rust/action.yml",
-    ".github/actions/contract-pass-tools/action.yml", ".github/scripts/assert-gate.sh", ".github/scripts/toolchain-channel.sh",
-    "scripts/contract.sh", "crates/core/usecases/src/lib.rs",
+    ".github/actions/contract-pass-tools/action.yml", ".github/actions/verdict/action.yml", ".github/scripts/assert-gate.sh",
+    ".github/scripts/toolchain-channel.sh", "scripts/contract.sh", "crates/core/usecases/src/lib.rs",
     ".github/deploy/flagship/policy.json", ".github/deploy/ca.pem", "deny.toml", "clippy.toml", "release-plz.toml", ".gitignore", "tools/oracle-v1/corpus/a.json",
     "tools/compat-record/record.py", "tools/compat-inventory/out-pinned/endpoint-inventory.csv",
     ".agents/plans/contrail/research/0003-compat-plane-inventory.md", "tools/e2e-har/scrub.py", "e2e/journeys/m1.spec.ts",
@@ -212,7 +212,7 @@ for pattern, _, why in pc.RULES:
 EVERYTHING = (ALL_JOBS, set(CELLS))
 for path in ["crates/gone/src/lib.rs", "crates/adapters/notes.txt", "crates/README.txt", "scripts/new-thing.sh",
              "Cargo.lock", "rust-toolchain.toml", ".github/scripts/plan-ci.py", "scripts/worker-dev.sh",
-             ".github/actions/contract-pass-tools/action.yml", "scripts/lib/ports.sh",
+             ".github/actions/contract-pass-tools/action.yml", ".github/actions/verdict/action.yml", "scripts/lib/ports.sh",
              # a directory that is no crate but shares a prefix with one (crates/core/types): a whole path segment must match
              "crates/core/types-gone/src/lib.rs"]:
     check(f"{path} runs everything", run_plan([path], REAL_GRAPH), EVERYTHING)
@@ -368,7 +368,7 @@ def independent_slices(planned, workflows, jobs):
 JOBS_LIST = list(pc.JOBS)
 # What WORKFLOWS holds today. Each stage of the migration edits this line, so the stage's change to the planner shows in this file,
 # and a mutant that empties the map is killed by it.
-EXPECTED_WORKFLOWS = {"documentation": ("docs",)}
+EXPECTED_WORKFLOWS = {"documentation": ("docs",), "security": ("deny",)}
 check("WORKFLOWS is a partition of the jobs", refused(lambda: pc.check_workflows()), None)
 check("WORKFLOWS holds the workflows moved so far, and their jobs", pc.WORKFLOWS, EXPECTED_WORKFLOWS)
 
@@ -459,7 +459,20 @@ check("cli: the book alone plans the documentation workflow and no job of ci.yml
       (["documentation"], ["documentation"], {"documentation": ["docs"]}))
 check("cli: the book alone: jobs still names the job `docs`", json.loads(out.get("jobs", "null")), ["docs"])
 rc, out, _ = cli(changed="deny.toml\n")
-check("cli: deny.toml plans a job of ci.yml and no workflow", (json.loads(out.get("top", "null")), json.loads(out.get("workflows", "null"))), (["deny"], []))
+check("cli: deny.toml alone plans the security workflow and no job of ci.yml",
+      (json.loads(out.get("top", "null")), json.loads(out.get("workflows", "null")), json.loads(out.get("plans", "null"))),
+      (["security"], ["security"], {"security": ["deny"]}))
+check("cli: deny.toml alone: jobs still names the job `deny`", json.loads(out.get("jobs", "null")), ["deny"])
+rc, out, _ = cli(changed="crates/server/Cargo.toml\n")
+check("cli: a crate's Cargo.toml plans the security workflow too, after the jobs still in ci.yml and the book's",
+      (json.loads(out.get("top", "null"))[-1:], json.loads(out.get("plans", "null")).get("security")), (["security"], ["deny"]))
+rc, out, _ = cli(changed="docs/src/intro.md\ndeny.toml\n")
+check("cli: the book and deny.toml: both workflows, each with its own job",
+      (json.loads(out.get("top", "null")), json.loads(out.get("plans", "null"))),
+      (["documentation", "security"], {"documentation": ["docs"], "security": ["deny"]}))
+rc, out, _ = cli(changed=".github/actions/verdict/action.yml\n")
+check("cli: a change to the verdict action runs everything, so both workflows are called",
+      json.loads(out.get("workflows", "null")), ["documentation", "security"])
 rc, out, _ = cli(changed="docs/src/intro.md\nweb/x.tsx\n")
 check("cli: the book and web/: the jobs still in ci.yml, then the workflow", json.loads(out.get("top", "null")), ["contract", "web", "documentation"])
 # Run the same command line on copies of the planner whose WORKFLOWS holds other maps, so that `plans` and the refusals are shown

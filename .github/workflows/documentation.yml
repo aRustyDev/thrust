@@ -48,10 +48,10 @@ jobs:
       - name: The check's controls (each broken book must be refused)
         run: scripts/check-book.sh --self-test
 
-  # ADR-0102: judges this workflow's jobs with the one script every level uses (assert-gate.sh): a planned job must be exactly
-  # `success`, one that is not planned must be `skipped`, and a plan that is not a JSON array of strings is a failure. `always()`, so
-  # it reports when `docs` was skipped, failed or cancelled. The output is set only after the judge passed, and ci.yml's `gate`
-  # requires it: a `verdict` job that was itself skipped leaves this workflow `success` and proves nothing.
+  # ADR-0102: judges this workflow's jobs against the plan, through the action every called workflow uses (it runs assert-gate.sh and
+  # sets the output only after that passed). `always()`, so it reports when `docs` was skipped, failed or cancelled. ci.yml's `gate`
+  # requires the output: a `verdict` job that was itself skipped leaves this workflow `success` and proves nothing. The checkout is
+  # here and not in the action, which is read from it.
   verdict:
     needs: docs
     if: always()
@@ -60,19 +60,14 @@ jobs:
     permissions:
       contents: read
     outputs:
-      verdict: ${{ steps.mark.outputs.verdict }}
+      verdict: ${{ steps.judge.outputs.verdict }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Judge the jobs against the plan
-        env:
-          NEEDS_JSON: ${{ toJSON(needs) }}
-          EXPECTED_JOBS: ${{ inputs.plan }}
-          # this level's jobs, and no planner job and no cells to judge (they are ci.yml's)
-          KNOWN_JOBS: docs
-          CHANGES_JOB: ""
-          CELL_JOB: ""
-        run: .github/scripts/assert-gate.sh
-      - id: mark
-        run: echo "verdict=pass" >> "$GITHUB_OUTPUT"
+      - id: judge
+        uses: ./.github/actions/verdict
+        with:
+          needs: ${{ toJSON(needs) }}
+          plan: ${{ inputs.plan }}
+          jobs: docs
