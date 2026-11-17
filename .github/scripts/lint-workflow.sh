@@ -11,7 +11,7 @@
 #   R4  no `${{ ... }}` expression inside the text of a `run:` (an input is data, not code: it goes through env)
 #   R5  no `pull_request_target`
 #   R6  every `actions/checkout` has `persist-credentials: false`
-#   R7  `secrets.` only in the jobs named in SECRET_JOBS (default `deploy deploy-do`), `environment:` only there too, and
+#   R7  `secrets.` only in the jobs named in SECRET_JOBS (default `deploy deploy-do deploy-target deploy-target-migrate`, deploy.yml's), `environment:` only there too, and
 #       `id-token: write` only in ID_TOKEN_JOBS (default `build`)
 # For a workflow that other workflows call (its `on:` has `workflow_call`; ADR-0102, research 0018):
 #   R8  no workflow-level `concurrency:`: github.workflow is the caller's name there, so the group equals the caller's, GitHub
@@ -25,7 +25,7 @@ LC_ALL=C
 export LC_ALL
 
 [ $# -ge 1 ] || { echo "usage: lint-workflow.sh <file>..." >&2; exit 2; }
-SECRET_JOBS="${SECRET_JOBS:-deploy deploy-do}"
+SECRET_JOBS="${SECRET_JOBS:-deploy deploy-do deploy-target deploy-target-migrate}"
 ID_TOKEN_JOBS="${ID_TOKEN_JOBS:-build}"
 status=0
 

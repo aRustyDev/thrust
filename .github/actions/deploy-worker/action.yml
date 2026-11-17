@@ -10,6 +10,12 @@ description: >-
 # the process that needs it and to no other.
 
 inputs:
+  script:
+    description: >-
+      `worker` (the default): scripts/deploy-worker.sh, a deploy of the environment's Worker. `target`: scripts/deploy-target.sh, a
+      Worker Preview of the production Worker reached through the edge (ADR-0111), with the target-* inputs below
+    required: false
+    default: worker
   environment:
     description: staging or production (the name of the GitHub environment, without `-do-lifecycle`)
     required: true
@@ -102,10 +108,55 @@ inputs:
     description: "The smoke account's password"
     required: true
 
+  # a target (script: target) only
+  target-name:
+    description: "The target's name (vX.Y.Z for a release candidate)"
+    required: false
+    default: ""
+  target-kind:
+    description: "A target kind of .github/deploy/flagship/policy.json"
+    required: false
+    default: rc
+  target-audience:
+    description: "The opt-in path the target's smoke uses"
+    required: false
+    default: rc
+  target-expires:
+    description: "YYYY-MM-DDTHH:MM:SSZ, when the target may be removed"
+    required: false
+    default: ""
+  target-alias:
+    description: "An alias of the policy to point at the target once it is proved (staging), or empty"
+    required: false
+    default: ""
+  allow-migrate:
+    description: "'true' only in the job whose environment has reviewers: expand production's schema before the target (no contract migration)"
+    required: false
+    default: "false"
+  flagship-app-id:
+    description: "The Flagship app's id"
+    required: false
+    default: ""
+  preview-host-suffix:
+    description: "-<worker>.<subdomain>.workers.dev, what a target's URL ends with (the edge's PREVIEW_HOST_SUFFIX)"
+    required: false
+    default: ""
+  flagship-api-token:
+    description: "An app-scoped Flagship token that may write the app's flags"
+    required: false
+    default: ""
+  edge-ci-client-id:
+    description: "The CI opt-in service token's id (Access, on the edge's opt-in paths)"
+    required: false
+    default: ""
+  edge-ci-client-secret:
+    description: "The CI opt-in service token's secret"
+    required: false
+    default: ""
 outputs:
   deferred:
-    description: "'true' when nothing was deployed because this deploy needs the manual gate"
-    value: ${{ steps.deploy.outputs.deferred }}
+    description: "'true' when nothing was deployed because this deploy needs the manual gate (a target: migrations wait for a reviewer)"
+    value: ${{ steps.deploy.outputs.deferred || steps.target.outputs.deferred }}
   deployed:
     description: "'true' when wrangler deployed the version"
     value: ${{ steps.deploy.outputs.deployed }}
@@ -211,6 +262,7 @@ runs:
         echo "$TOOLS_DIR" >> "$GITHUB_PATH"
 
     - name: Deploy and prove
+      if: inputs.script != 'target'
       id: deploy
       shell: bash
       env:
@@ -250,3 +302,50 @@ runs:
         SMOKE_WORKSPACE: ${{ inputs.smoke-workspace }}
         SMOKE_PROJECT: ${{ inputs.smoke-project }}
       run: scripts/deploy-worker.sh
+
+    # A target (ADR-0111): a Worker Preview of the production Worker, its flag, and the smoke through the edge. It sees the production
+    # Worker's variables (its configuration is production's, derived) and only the secrets a target needs; the database's only when
+    # allow-migrate is true, which only the reviewer-gated job passes. scripts/deploy-target.sh hands each secret to one step.
+    - name: Deploy the target and prove it
+      if: inputs.script == 'target'
+      id: target
+      shell: bash
+      env:
+        TARGET_NAME: ${{ inputs.target-name }}
+        TARGET_KIND: ${{ inputs.target-kind }}
+        TARGET_AUDIENCE: ${{ inputs.target-audience }}
+        TARGET_EXPIRES: ${{ inputs.target-expires }}
+        TARGET_ALIAS: ${{ inputs.target-alias }}
+        ALLOW_MIGRATE: ${{ inputs.allow-migrate }}
+        DEPLOY_SHA: ${{ inputs.sha }}
+        THRUST_BASE_URL: ${{ inputs.base-url }}
+        THRUST_WORKER_NAME: ${{ inputs.worker-name }}
+        THRUST_HYPERDRIVE_ID: ${{ inputs.hyperdrive-id }}
+        THRUST_R2_BUCKET: ${{ inputs.r2-bucket }}
+        THRUST_QUEUE: ${{ inputs.queue }}
+        THRUST_QUEUE_DLQ: ${{ inputs.queue-dlq }}
+        THRUST_RL_SIGNIN_ID: ${{ inputs.rl-signin-id }}
+        THRUST_RL_V1_ID: ${{ inputs.rl-v1-id }}
+        THRUST_CSRF_ENFORCE: ${{ inputs.csrf-enforce }}
+        THRUST_EMAIL_FROM: ${{ inputs.email-from }}
+        CLOUDFLARE_ACCOUNT_ID: ${{ inputs.cloudflare-account-id }}
+        CLOUDFLARE_API_TOKEN: ${{ inputs.cloudflare-api-token }}
+        FLAGSHIP_APP_ID: ${{ inputs.flagship-app-id }}
+        FLAGSHIP_API_TOKEN: ${{ inputs.flagship-api-token }}
+        PREVIEW_HOST_SUFFIX: ${{ inputs.preview-host-suffix }}
+        EDGE_CI_CLIENT_ID: ${{ inputs.edge-ci-client-id }}
+        EDGE_CI_CLIENT_SECRET: ${{ inputs.edge-ci-client-secret }}
+        # the expand step (scripts/migrate-ci.sh), used only with allow-migrate
+        DB_ACCESS_HOSTNAME: ${{ inputs.db-access-hostname }}
+        TUNNEL_SERVICE_TOKEN_ID: ${{ inputs.tunnel-service-token-id }}
+        TUNNEL_SERVICE_TOKEN_SECRET: ${{ inputs.tunnel-service-token-secret }}
+        DATABASE_URL: ${{ inputs.database-url }}
+        DATABASE_SSLROOTCERT: ${{ github.workspace }}/.github/deploy/cloudflare-origin-ca-rsa-root.pem
+        MIGRATE_BIN: ${{ runner.temp }}/tools/migrate
+        NEW_ASSETS_DIR: ${{ runner.temp }}/bundle/web
+        # the smoke, through the edge, as production's smoke account (a shared target reads production's data)
+        SMOKE_EMAIL: ${{ inputs.smoke-email }}
+        SMOKE_PASSWORD: ${{ inputs.smoke-password }}
+        SMOKE_WORKSPACE: ${{ inputs.smoke-workspace }}
+        SMOKE_PROJECT: ${{ inputs.smoke-project }}
+      run: scripts/deploy-target.sh
