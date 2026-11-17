@@ -75,4 +75,5 @@ jobs:
           CELL_JOB: ""
         run: .github/scripts/assert-gate.sh
       - id: mark
+        if: inputs.plan == 'a plan nobody gives'
         run: echo "verdict=pass" >> "$GITHUB_OUTPUT"
