@@ -1,9 +1,9 @@
 #!/bin/sh
 # Mutation controls: prove the contract suite can FAIL, i.e. that its "X is rejected" assertions
 # observe the thing they claim to test. Each mutant is a deliberately broken build; the suite must
-# fail on it. A row of the contract suite (scripts/contract.sh, on nextest) is killed when nextest exits 100 and the pass's
-# JUnit report counts a test that did not pass; a row of an adapter's own tests (still on `cargo test`) when cargo exits 101
-# and a test reported FAILED. A mutant that survives means some assertion is vacuous.
+# fail on it. Every row runs on nextest (the contract suite's through scripts/contract.sh, an adapter's own tests through
+# `adapter_row` below) and is killed when nextest exits 100 and the row's JUnit report counts a test that did not pass. A mutant
+# that survives means some assertion is vacuous.
 #
 #   scripts/mutants.sh
 set -u
@@ -34,16 +34,15 @@ show_why() {
   return 0
 }
 
-# record <label> <verdict line> <kind: suite|cargo> <log> [the row's own output file]: one summary line, then for a kill the tests that
-# failed (they are the assertions that guard the rule), and for anything else the end of what the row said.
+# record <label> <verdict line> <log> [the row's own output file]: one summary line, then for a kill the tests that failed (they are
+# the assertions that guard the rule), and for anything else the end of what the row said.
 record() {
-  r_label="$1"; r_verdict="${2%%|*}"; r_detail="${2#*|}"; r_kind="$3"; r_log="$4"; r_out="${5:-$4}"
+  r_label="$1"; r_verdict="${2%%|*}"; r_detail="${2#*|}"; r_log="$3"; r_out="${4:-$3}"
   printf '%-34s %-11s (%s)\n' "$r_label" "$r_verdict" "$r_detail" >>"$SUMMARY"
   case "$r_verdict" in
     KILLED)
       KILLED_N=$((KILLED_N + 1))
-      if [ "$r_kind" = suite ]; then grep -E '^ +FAIL \[' "$r_log" | sort -u | sed 's/^ */    /' >>"$SUMMARY"
-      else grep -E '\.\.\. FAILED$|^test .* \.\.\. $' "$r_log" | sed 's/^/    /' >>"$SUMMARY"; fi
+      grep -E '^ +FAIL \[' "$r_log" | sort -u | sed 's/^ */    /' >>"$SUMMARY"
       return 0 ;;
     SURVIVED) SURVIVED_N=$((SURVIVED_N + 1)) ;;
     UNCLEAR) UNCLEAR_N=$((UNCLEAR_N + 1)) ;;
@@ -53,21 +52,31 @@ record() {
   NOT_KILLED=1
 }
 
-# A row of an adapter's own tests (`cargo test`). $1 label, $2 exit status, $3 log file with test output, $4 (optional) the row's own output
-# file, for `show_why` (by default the log).
-kill_check() { record "$1" "$(verdict_cargo "$2" "$3")" cargo "$3" "${4:-}"; }
+# A row run on nextest: a pass of the contract suite (`scripts/contract.sh`), or an adapter's own tests (`adapter_row` below). Either
+# keeps its JUnit report beside its log (`<log>.junit.xml` for `<log>.test.log`). Killed when nextest exited 100 and the report counts
+# at least one test that did not pass. $1 label, $2 exit status, $3 the row's log, $4 (optional) the row's own output file, for `show_why`.
+kill_check_suite() { record "$1" "$(verdict_suite "$2" "$3")" "$3" "${4:-}"; }
 
 # A kill that also names its cause: without Docker every `pg_adapter` test panics in its setup, which would read as a kill. $4 is text only
 # the assertion the mutant is aimed at prints, so failures without it are UNCLEAR, not KILLED. $5 (optional) the row's own output file.
-kill_check_msg() { record "$1" "$(verdict_cargo "$2" "$3" "$4")" cargo "$3" "${5:-}"; }
+kill_check_suite_msg() { record "$1" "$(verdict_suite "$2" "$3" "$4")" "$3" "${5:-}"; }
 
-# A row of the contract suite: `scripts/contract.sh` runs the pass on nextest and keeps its JUnit report beside the pass's log
-# (`<log>.junit.xml` for `<log>.test.log`). Killed when nextest exited 100 and the report counts at least one test that did not
-# pass. $1 label, $2 exit status, $3 the pass's log, $4 (optional) the row's own output file, for `show_why`.
-kill_check_suite() { record "$1" "$(verdict_suite "$2" "$3")" suite "$3" "${4:-}"; }
-
-# kill_check_msg for a row of the contract suite. $4 the text the failure must contain, $5 (optional) the row's own output file.
-kill_check_suite_msg() { record "$1" "$(verdict_suite "$2" "$3" "$4")" suite "$3" "${5:-}"; }
+# adapter_row NAME PACKAGE FEATURE FILTERSET: an adapter's own tests, built with the mutant's feature, on nextest with the `adapters`
+# profile (.config/nextest.toml: a JUnit report and no timeout kill). `--ignore-default-filter` keeps those and drops the profile's
+# selection (the Docker suites), so a hermetic suite can be a row too. Its log is $OUT/NAME.test.log and its report
+# $OUT/NAME.junit.xml (a stale one is removed first, so a run that wrote none is read as none). Sets `status`: nextest's own, except
+# that its 4 (no test ran: the filterset selects nothing) becomes 5, as scripts/contract.sh makes it, which the verdict reads as the
+# vacuity guard and not as a target that never came up.
+adapter_row() {
+  ar_name="$1"; ar_package="$2"; ar_feature="$3"; ar_set="$4"
+  ar_junit="${CARGO_TARGET_DIR:-$ROOT/target}/nextest/adapters/junit.xml"
+  rm -f "$ar_junit" "$OUT/$ar_name.junit.xml"
+  "$ROOT/scripts/rs" cargo nextest run --manifest-path "$ROOT/Cargo.toml" -p "$ar_package" --features "$ar_feature" \
+    --profile adapters --ignore-default-filter -E "$ar_set" >"$OUT/$ar_name.test.log" 2>&1
+  status=$?
+  if [ -f "$ar_junit" ]; then mv "$ar_junit" "$OUT/$ar_name.junit.xml"; fi
+  if [ "$status" -eq 4 ]; then status=5; fi
+}
 
 # name:feature:pass. The CSRF switch (Q-0050.8) has a mutant for each direction: ignored when on (the main pass, which runs
 # with enforcement on, must fail) and ignored when off (the `csrfoff` pass must fail).
@@ -177,21 +186,18 @@ refusal_check "guard: mail pass, relay not wired" mutant_smtp_unwired mail 'VACU
 refusal_check "guard: main pass, mail flag on" mutant_smtp_flag_always_on main 'VACUITY GUARD: is_smtp_configured is not false'
 
 # Postgres adapter mutant: recycle a connection that is still inside an abandoned transaction.
-"$ROOT/scripts/rs" cargo test --manifest-path "$ROOT/Cargo.toml" -p thrust-adapters-selfhosted \
-  --features mutant_discard_noop --test pg_adapter -- an_abandoned_transaction model_postgres_adapter_matches >"$OUT/pg-discard.out" 2>&1
-status=$?
-kill_check "postgres adapter + discard-noop" "$status" "$OUT/pg-discard.out"
+adapter_row pg-discard thrust-adapters-selfhosted mutant_discard_noop \
+  'binary(pg_adapter) & test(/an_abandoned_transaction|model_postgres_adapter_matches/)'
+kill_check_suite "postgres adapter + discard-noop" "$status" "$OUT/pg-discard.test.log"
 
 # Postgres adapter mutant (issue #39): the round-trip counter counts nothing. The counting tests must notice, and the failure
 # must be a wrong count: "statements, the model says" is in the generated test's message and nowhere else, so a pool that never
 # started (no Docker) is not a kill.
-"$ROOT/scripts/rs" cargo test --manifest-path "$ROOT/Cargo.toml" -p thrust-adapters-selfhosted \
-  --features mutant_count_nothing --test pg_adapter -- counting >"$OUT/pg-count-nothing.out" 2>&1
-status=$?
-kill_check_msg "postgres adapter + count-nothing" "$status" "$OUT/pg-count-nothing.out" "statements, the model says"
+adapter_row pg-count-nothing thrust-adapters-selfhosted mutant_count_nothing 'binary(pg_adapter) & test(/counting/)'
+kill_check_suite_msg "postgres adapter + count-nothing" "$status" "$OUT/pg-count-nothing.test.log" "statements, the model says"
 
 # The same counter's mutants at the server, on native-pg (issue #39): the budget test, alone (the `budget` pass), must fail on
-# each, and for the reason the mutant is for. `kill_check` alone would also count a run that never reached the test (Postgres
+# each, and for the reason the mutant is for. `kill_check_suite` alone would also count a run that never reached the test (Postgres
 # did not start, the build failed), so the log has to say what the mutant breaks: a page that sends a statement per row is
 # "over budget", a counter that counts nothing is "below floor".
 for triple in \
@@ -207,7 +213,7 @@ for triple in \
 done
 
 # The SMTP adapter's mutants (E2 of the reset by email, D-041): each is a deliberately broken build of thrust-adapters-selfhosted, run against the
-# suite aimed at it. `kill_check_msg`, so the log has to say what the mutant breaks and a run that never got that far (no Docker for `smtp_sink`,
+# suite aimed at it. `kill_check_suite_msg`, so the log has to say what the mutant breaks and a run that never got that far (no Docker for `smtp_sink`,
 # a build that failed) is not a kill. binary:needle: a refusal read as an outage and the reverse (all 600 reply codes at the 5 steps); the sender's
 # address taken from the recipient; an id returned that the message does not carry; a password allowed over a connection in the clear; STARTTLS made
 # a preference, so a relay that cannot do TLS is used in the clear; a relay's certificate trusted whoever signed it (the three TLS tests, against Mailpit).
@@ -224,10 +230,8 @@ for quad in \
   rest="${rest#*:}"
   bin="${rest%%:*}"
   needle="${rest#*:}"
-  "$ROOT/scripts/rs" cargo test --manifest-path "$ROOT/Cargo.toml" -p thrust-adapters-selfhosted --features "$feature" --test "$bin" \
-    >"$OUT/smtp-$name.out" 2>&1
-  status=$?
-  kill_check_msg "smtp adapter + $name" "$status" "$OUT/smtp-$name.out" "$needle"
+  adapter_row "smtp-$name" thrust-adapters-selfhosted "$feature" "binary($bin)"
+  kill_check_suite_msg "smtp adapter + $name" "$status" "$OUT/smtp-$name.test.log" "$needle"
 done
 
 # The Cloudflare email adapter's mutants (E3 of the reset by email, D-041): each is a deliberately broken build of thrust-adapters-cloudflare, run
@@ -246,10 +250,8 @@ for quad in \
   rest="${rest#*:}"
   bin="${rest%%:*}"
   needle="${rest#*:}"
-  "$ROOT/scripts/rs" cargo test --manifest-path "$ROOT/Cargo.toml" -p thrust-adapters-cloudflare --features "$feature" --test "$bin" \
-    >"$OUT/cf-email-$name.out" 2>&1
-  status=$?
-  kill_check_msg "cloudflare email adapter + $name" "$status" "$OUT/cf-email-$name.out" "$needle"
+  adapter_row "cf-email-$name" thrust-adapters-cloudflare "$feature" "binary($bin)"
+  kill_check_suite_msg "cloudflare email adapter + $name" "$status" "$OUT/cf-email-$name.test.log" "$needle"
 done
 
 printf 'killed=%s survived=%s unclear=%s did-not-run=%s refused=%s not-refused=%s\n' \

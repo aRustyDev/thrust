@@ -366,12 +366,25 @@ def independent_slices(planned, workflows, jobs):
 
 
 JOBS_LIST = list(pc.JOBS)
+# What WORKFLOWS holds today. Each stage of the migration edits this line, so the stage's change to the planner shows in this file,
+# and a mutant that empties the map is killed by it.
+EXPECTED_WORKFLOWS = {"documentation": ("docs",)}
 check("WORKFLOWS is a partition of the jobs", refused(lambda: pc.check_workflows()), None)
-check("while no job has moved, WORKFLOWS is empty", pc.WORKFLOWS, {})
+check("WORKFLOWS holds the workflows moved so far, and their jobs", pc.WORKFLOWS, EXPECTED_WORKFLOWS)
+
+
+def normal(slices):
+    """slices() with each plan sorted, to compare with independent_slices()."""
+    top, called, plans = slices
+    return top, called, {w: sorted(j) for w, j in plans.items()}
+
+
 for _ in range(200):
     planned = set(rng.sample(JOBS_LIST, rng.randint(0, len(JOBS_LIST))))
-    check(f"no job moved: top is the planned jobs in order, no workflow, no plan ({sorted(planned)})", pc.slices(planned),
+    check(f"no workflow: top is the planned jobs in order, no workflow, no plan ({sorted(planned)})", pc.slices(planned, {}),
           ([j for j in JOBS_LIST if j in planned], [], {}))
+    check(f"the real map: top, the called workflows and their plans ({sorted(planned)})", normal(pc.slices(planned)),
+          independent_slices(planned, EXPECTED_WORKFLOWS, JOBS_LIST))
 # generated partitions: each job stays in ci.yml or goes into one workflow; the planned jobs are random. The workflows' names here
 # are not job names, so that a name in `top` is one thing or the other (the real clash, a workflow `web` holding a job `web`, is below)
 NAMES = ["wf-test", "wf-lint", "wf-documentation", "wf-security", "wf-web"]
@@ -431,21 +444,41 @@ for index in (".github/workflows/README.md", ".github/actions/README.md", ".gith
 
 # ---- 10. the command line's new lines --------------------------------------------------------------------------------------------
 rc, out, _ = cli(changed="web/x.tsx\n")
-check("cli: top is the jobs while none has moved", out.get("top"), out.get("jobs"))
-check("cli: no called workflow, no plan", (out.get("workflows"), out.get("plans")), ("[]", "{}"))
+check("cli: a change to web/ plans no moved job, so top is the jobs", out.get("top"), out.get("jobs"))
+check("cli: and no called workflow, no plan", (out.get("workflows"), out.get("plans")), ("[]", "{}"))
 rc, out, _ = cli(changed="README.md\n")
 check("cli: README.md: nothing to expect of ci.yml", (out.get("top"), out.get("workflows"), out.get("plans")), ("[]", "[]", "{}"))
 rc, out, _ = cli("--full", "a probe")
-check("cli: --full: top is every job", json.loads(out.get("top", "null")), JOBS_LIST)
-# Nothing is in a workflow yet, so the lines above cannot tell a working `plans` from a broken one. Run the same command line on a
-# copy of the planner whose WORKFLOWS holds two workflows.
+check("cli: --full: top is every job still in ci.yml, then every called workflow",
+      json.loads(out.get("top", "null")), independent_slices(set(JOBS_LIST), EXPECTED_WORKFLOWS, JOBS_LIST)[0])
+check("cli: --full: jobs is still every job, moved or not", json.loads(out.get("jobs", "null")), JOBS_LIST)
+# the real map, through the real command line
+rc, out, _ = cli(changed="docs/src/intro.md\n")
+check("cli: the book alone plans the documentation workflow and no job of ci.yml",
+      (json.loads(out.get("top", "null")), json.loads(out.get("workflows", "null")), json.loads(out.get("plans", "null"))),
+      (["documentation"], ["documentation"], {"documentation": ["docs"]}))
+check("cli: the book alone: jobs still names the job `docs`", json.loads(out.get("jobs", "null")), ["docs"])
+rc, out, _ = cli(changed="deny.toml\n")
+check("cli: deny.toml plans a job of ci.yml and no workflow", (json.loads(out.get("top", "null")), json.loads(out.get("workflows", "null"))), (["deny"], []))
+rc, out, _ = cli(changed="docs/src/intro.md\nweb/x.tsx\n")
+check("cli: the book and web/: the jobs still in ci.yml, then the workflow", json.loads(out.get("top", "null")), ["contract", "web", "documentation"])
+# Run the same command line on copies of the planner whose WORKFLOWS holds other maps, so that `plans` and the refusals are shown
+# against more than the one workflow of the real map.
+MAP_LINE = r"\nWORKFLOWS = \{.*\}\n"
 with open(SCRIPT, encoding="utf-8") as f:
     source = f.read()
-check("WORKFLOWS = {} is found once in the planner, to be replaced in the copy", source.count("\nWORKFLOWS = {}\n"), 1)
+check("the WORKFLOWS line is found once in the planner, to be replaced in the copies", len(re.findall(MAP_LINE, source)), 1)
+
+
+def with_map(text):
+    """The planner's source with its WORKFLOWS line replaced."""
+    return re.sub(MAP_LINE, lambda _: f"\nWORKFLOWS = {text}\n", source, count=1)
+
+
 with tempfile.TemporaryDirectory() as d:
     moved = os.path.join(d, "plan-ci-with-workflows.py")
     with open(moved, "w", encoding="utf-8") as f:
-        f.write(source.replace("\nWORKFLOWS = {}\n", '\nWORKFLOWS = {"wf-test": ("hermetic", "pg-adapter"), "wf-docs": ("docs",)}\n', 1))
+        f.write(with_map('{"wf-test": ("hermetic", "pg-adapter"), "wf-docs": ("docs",)}'))
     rc, out, _ = cli("--full", "a probe", script=moved)
     check("cli, two workflows: --full: top is the jobs left in ci.yml, then the two workflows",
           json.loads(out.get("top", "null")), [j for j in JOBS_LIST if j not in ("hermetic", "pg-adapter", "docs")] + ["wf-test", "wf-docs"])
@@ -460,7 +493,7 @@ with tempfile.TemporaryDirectory() as d:
     check("cli, two workflows: a change that needs nothing calls nothing", (out.get("top"), out.get("workflows"), out.get("plans")), ("[]", "[]", "{}"))
     bad_map = os.path.join(d, "plan-ci-bad-map.py")
     with open(bad_map, "w", encoding="utf-8") as f:
-        f.write(source.replace("\nWORKFLOWS = {}\n", '\nWORKFLOWS = {"a": ("docs",), "b": ("docs",)}\n', 1))
+        f.write(with_map('{"a": ("docs",), "b": ("docs",)}'))
     rc, out, err = cli("--full", "a probe", script=bad_map)
     check("cli: a map with a job in two workflows is refused (exit 2), says which, and prints nothing", (rc, out, "docs is in two workflows" in err),
           (2, {}, True))

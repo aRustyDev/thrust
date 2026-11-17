@@ -1,7 +1,7 @@
 #!/bin/sh
 # Build the book (docs/) and fail on what `mdbook build` lets through with exit 0: an ERROR line in its log (a broken
 # {{#include}}, a mistyped key of a book.toml table) and a page under docs/src/ that SUMMARY.md does not list (mdBook leaves it
-# out of the book without a word). Needs mdbook 0.5 and mdbook-mermaid on PATH (CI: the `docs` job of ci.yml).
+# out of the book without a word). Needs mdbook 0.5 and mdbook-mermaid on PATH (CI: the `docs` job of documentation.yml).
 #
 #   scripts/check-book.sh               the book as it is
 #   scripts/check-book.sh --self-test   the controls: a copy of the book broken four ways, each of which must be refused

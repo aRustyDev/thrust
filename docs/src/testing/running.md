@@ -32,8 +32,8 @@ profile selects nothing. To reach the excluded integration suites through nextes
 |---|---|---|
 | 0 | either | all selected tests passed; check the count, see [count guard](evidence-and-controls.md#count-guard) |
 | 4 | nextest | **no tests to run**: the filter or prefix selected nothing. Not red, not green |
-| 100 | nextest | tests failed (the contract scripts pass it through, and `scripts/mutants.sh` reads it as a kill of a contract-suite row) |
-| 101 | `cargo test` | tests failed (`scripts/mutants.sh`'s adapter rows rely on this, until they move to nextest) |
+| 100 | nextest | tests failed (the contract scripts pass it through, and `scripts/mutants.sh` reads it, with a failure in the row's JUnit report, as a kill) |
+| 101 | nextest, `cargo test --doc` | a build failed (nextest), or a doctest failed. `scripts/mutants.sh` does not read a failed build as a kill |
 | 2 / 3 / 4 | `cargo mutants` | MISSED mutants / timeouts / the baseline itself failed or selected nothing (see `rust-test-mutation`) |
 | 5 | `scripts/contract.sh` | target guard or count guard tripped, or the pass's filterset selected nothing (nextest's 4, which would read as this script's "the target never came up") |
 
@@ -139,10 +139,11 @@ A pull request runs only the jobs and cells its change needs; how that is decide
 | `lint` | `cargo fmt --all --check`, then `cargo clippy --workspace --all-targets --locked -- -D warnings`, then the same clippy for `thrust-worker` with `--no-default-features --target wasm32-unknown-unknown` (the clippy steps run even if rustfmt failed) |
 | `deny` | `cargo deny --locked check`: advisories, licences, bans and sources, from `deny.toml` |
 | `hermetic` | `cargo nextest run --profile ci --workspace --locked`, then `cargo test --doc --workspace --locked` |
-| `pg-adapter` | `cargo test -p thrust-adapters-selfhosted --test pg_adapter --locked`, then the same for `--test smtp_sink` |
+| `pg-adapter` | `cargo nextest run -p thrust-adapters-selfhosted --profile adapters --locked -E 'binary(pg_adapter)'`, then the same for `binary(smtp_sink)` |
 | `contract` | one job per cell (`.github/workflows/contract-cell.yml`): `scripts/contract.sh <target> <pass>` |
 | `mutants` | `scripts/mutants.sh` |
-| `docs` | when the book's inputs changed (`docs/`, `AGENTS.md`, `.config/branding/`): `scripts/check-book.sh` (`mdbook build`, failing on any `ERROR` line and on a page `SUMMARY.md` does not list), then `scripts/check-book.sh --self-test` (a copy broken four ways, each refused). mdBook 0.5.4 and mdbook-mermaid 0.17.1 |
+| `documentation` | the workflow `.github/workflows/documentation.yml`, called by `ci.yml`: its job `docs`, and its `verdict` job, which judges `docs` against the plan and which `gate` requires (the migration moved `docs` here; its name and commands are unchanged) |
+| `docs` | (in `documentation.yml`) when the book's inputs changed (`docs/`, `AGENTS.md`, `.config/branding/`): `scripts/check-book.sh` (`mdbook build`, failing on any `ERROR` line and on a page `SUMMARY.md` does not list), then `scripts/check-book.sh --self-test` (a copy broken four ways, each refused). mdBook 0.5.4 and mdbook-mermaid 0.17.1 |
 | `web` | when `web/` or its gate changed: `scripts/check-web-diff.sh` (the Q-R2 gate: only the files in `web/ALLOWED-CHANGES` differ from the oracle pin), then `pnpm --dir web install --frozen-lockfile --ignore-scripts` and `pnpm --dir web exec turbo run build --filter=web` |
 | `gate` | `.github/scripts/assert-gate.sh`: every job `changes` named succeeded, every other was skipped, **and** every planned cell uploaded its pass marker |
 

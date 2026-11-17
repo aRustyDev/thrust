@@ -18,8 +18,9 @@ It prints, for $GITHUB_OUTPUT:
                     called workflow's `plan` input, which its `verdict` job judges it by
 and, on stderr, why: each path with the rule it matched.
 
-A job is a job of ci.yml itself or of one called workflow (WORKFLOWS, which each stage of the migration fills in). While no job has
-moved, top equals jobs, workflows is [] and plans is {}.
+A job is a job of ci.yml itself or of one called workflow (WORKFLOWS, which each stage of the migration fills in). `jobs` is still
+every planned job, wherever it lives; `top` names a moved job's workflow instead (a change to docs/ plans the job `docs`, and
+`top` the workflow `documentation`, with `plans` = {"documentation": ["docs"]}).
 
 How a path decides (RULES, first match wins; a path that matches no rule needs nothing, as README.md and .agents/ do):
   * a crate's own files (the files under a member's directory, at any depth under crates/: the longest member directory that
@@ -52,7 +53,8 @@ JOBS = ("ci-scripts", "deps", "lint", "deny", "hermetic", "pg-adapter", "contrac
 
 # The called workflow each job belongs to (ADR-0102): {workflow: (its jobs)}. A job in none is still a job of ci.yml itself. Every
 # migration stage moves its jobs in here; a job may be in one workflow only, and a name here must be one of JOBS (check_workflows).
-WORKFLOWS = {}
+# ci.yml's `gate` lists these workflows too, as VERDICT_JOBS, and test_plan_ci.py holds the two equal.
+WORKFLOWS = {"documentation": ("docs",)}
 
 # The binary each target of scripts/contract.sh starts. Everything a cell runs against is built from it.
 TARGET_BINARY = {

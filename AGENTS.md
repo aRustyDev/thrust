@@ -28,9 +28,8 @@ Two suites are non-hermetic integration suites: the contract suite (`thrust-cont
 `scripts/contract.sh`, needs a running target) and the Postgres adapter tests
 (`crates/adapters/selfhosted/tests/pg_adapter.rs`, need Docker). The contract suite runs on nextest with the
 `contract` profile, one pass at a time, and its scripts read the passed count from nextest's JUnit report. The
-Postgres and SMTP adapter suites stay on `cargo test` through `scripts/verify-all.sh`, `scripts/mutants.sh` and the
-`pg-adapter` job, which parse its `test result:` line and exit 101 (nextest exits 100 when tests fail), until the
-test-suites plan moves them; migrate them on purpose, not by accident. The default nextest profile excludes both, and the `oracle_` tests; what it runs today is the hermetic
+Postgres and SMTP adapter suites that need Docker (`pg_adapter`, `smtp_sink`) run on nextest with the `adapters`
+profile. Every Rust test runs on nextest except the doctests (`cargo test --doc`; nextest cannot run them). The default nextest profile excludes both, and the `oracle_` tests; what it runs today is the hermetic
 `thrust-editor-doc`, `thrust-core` and `thrust-adapters-memory` suites. A crate with no hermetic tests of its own selects nothing (`-p <crate>` exits 4,
 `no tests to run`). That exit is not a test failure.
 
@@ -92,7 +91,7 @@ Where those docs and the rules below disagree, the rules win; record the disagre
 | Comparison with the TypeScript oracle (needs Node, or its output from `tools/spike-0006/gen-all.sh`) | `cargo nextest run --profile oracle` |
 | `/api/v1` against the Plane v1 oracle: scoped gate, corpus comparison, controls (needs `uv`; Docker for `native-pg` and `worker-cf`) | `scripts/oracle-v1.sh native-memory controls` (`tools/oracle-v1/README.md`) |
 | The browser journeys, one spec each in `e2e/journeys/`: the stock app in Chromium against a Worker that serves it, no 404 in the network log, with their must-fail controls and a count guard (needs Docker, wrangler, Node, pnpm; builds the app when it is not built) | `scripts/e2e.sh worker-cf controls` (`docs/src/testing/techniques/app-and-e2e.md`, `docs/src/testing/status.md` G-30, G-31). The same journeys on the pinned Plane, local only (needs the fork checkout): `ORACLE_DIR=<fork>/oracle scripts/e2e.sh plane-oracle controls` (`tools/e2e-plane/README.md`) |
-| Postgres adapter tests through nextest (needs Docker) | `cargo nextest run --ignore-default-filter -E 'binary(pg_adapter)'` |
+| The adapter suites that need Docker (`pg_adapter`, `smtp_sink`) | `cargo nextest run -p thrust-adapters-selfhosted --profile adapters` |
 | Mutation testing, one file (the crate needs tests of its own) | `cargo mutants -f <path>` |
 
 A `-E` filter is intersected with the profile's default filter, so `oracle_` tests only run under the `oracle` and

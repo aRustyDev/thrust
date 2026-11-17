@@ -1,11 +1,13 @@
-"""Hand mutants of plan-ci.py and assert-gate.sh: one bug planted in a copy at a time, and the tests of that file must fail for it.
-Run by ci-scripts, because a gate whose tests cannot fail is not a gate (AGENTS.md rule 8).
+"""Hand mutants of plan-ci.py, assert-gate.sh and the workflow files that call each other: one bug planted in a copy at a time, and
+the tests must fail for it. Run by ci-scripts, because a gate whose tests cannot fail is not a gate (AGENTS.md rule 8).
 
     python3 -I .github/scripts/tests/mutate_gate.py [--jobs N] [--only TEXT] [--list]
 
-  a plan-ci.py mutant must fail test_plan_ci.py, run with the copy as its argument;
+  a plan-ci.py mutant must fail test_plan_ci.py, run with the copy as its argument, or test_workflow_wiring.py, run on a copy of the
+  tree that holds it;
   an assert-gate.sh mutant must fail test-ci-scripts.sh, run under dash (Ubuntu's sh) in a copy of the tree it reads, stopping
-  at the first failing case (STOP_AT_FIRST_BAD), since one answer is all it wants.
+  at the first failing case (STOP_AT_FIRST_BAD), since one answer is all it wants;
+  a ci.yml or called-workflow mutant (documentation.yml, ...) must fail test_workflow_wiring.py, run on a copy of the tree that holds it.
 
 It refuses to answer, and says why, when its own answer could not be trusted:
   * the tests must pass on the unmutated files first, or every mutant would be "killed" by whatever broke them;
@@ -31,8 +33,16 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 SCRIPTS = os.path.abspath(os.path.join(HERE, ".."))
 ROOT = os.path.abspath(os.path.join(SCRIPTS, "..", ".."))
 PLAN, GATE = "plan-ci.py", "assert-gate.sh"
+CI, DOC = "ci.yml", "documentation.yml"  # the workflows: ci.yml, and each called workflow a migration stage adds
 SHELL = shutil.which("dash") or "sh"
 TIMEOUT = 900
+# where each target lives, relative to the repository root
+TARGET_PATH = {
+    PLAN: ".github/scripts/plan-ci.py",
+    GATE: ".github/scripts/assert-gate.sh",
+    CI: ".github/workflows/ci.yml",
+    DOC: ".github/workflows/documentation.yml",
+}
 
 # (file, label, the text to replace, its replacement). The text, or a compiled regex whose replacement may use \1, must match once
 # in the file.
@@ -93,7 +103,7 @@ MUTANTS = [
     (GATE, "an unplanned marker is accepted", '[ -z "$extra" ] ||', "true ||"),
     (GATE, "the cell job with zero cells passes", '[ -s planned.txt ] || fail "the $CELLS job is expected', 'true || fail "the $CELLS job is expected'),
     (GATE, "an input may be missing", '[ -n "$value" ] || fail "$input is not set"', 'true || fail "$input is not set"'),
-    (GATE, "the gate forgets the docs job", "mutants web docs}\"", "mutants web}\""),
+    (GATE, "the gate forgets the documentation workflow", "mutants web documentation}\"", "mutants web}\""),
     (GATE, "any JSON is an array", "jq -e 'type == \"array\" and all(.[]; type == \"string\")'", "jq -e 'true'"),
     (GATE, "an array of anything is an array of jobs", "jq -e 'type == \"array\" and all(.[]; type == \"string\")'", "jq -e 'type == \"array\"'"),
     # --- assert-gate.sh: the verdict of a called workflow, and the other levels (ADR-0102)
@@ -106,12 +116,40 @@ MUTANTS = [
     (GATE, "a verdict job that sets no cell job still needs cells", 'CELLS="${CELL_JOB-contract}"', 'CELLS="${CELL_JOB:-contract}"'),
     (GATE, "KNOWN_JOBS is ignored", 'KNOWN="${KNOWN_JOBS:-ci-scripts', 'KNOWN="${XKNOWN_JOBS:-ci-scripts'),
     (GATE, "PLANNED is needed even where there is no cell job", 'if [ -n "$CELLS" ]; then', "if true; then"),
+    # --- the wiring of the called workflows, and what a stage of the migration changes (ADR-0102)
+    (PLAN, "the planner forgets the documentation workflow", 'WORKFLOWS = {"documentation": ("docs",)}', "WORKFLOWS = {}"),
+    (PLAN, "the planner moves docs to a workflow of another name", 'WORKFLOWS = {"documentation": ("docs",)}', 'WORKFLOWS = {"docs-book": ("docs",)}'),
+    (CI, "the gate judges every planned job and not `top`", "EXPECTED_JOBS: ${{ needs.changes.outputs.top }}", "EXPECTED_JOBS: ${{ needs.changes.outputs.jobs }}"),
+    (CI, "the gate has no VERDICT_JOBS", "          VERDICT_JOBS: documentation\n", ""),
+    (CI, "the gate's VERDICT_JOBS names a workflow that is not called", "VERDICT_JOBS: documentation", "VERDICT_JOBS: documentation security"),
+    (CI, "the calling job runs on the planner's `jobs`", "if: contains(fromJSON(needs.changes.outputs.top || '[]'), 'documentation')",
+     "if: contains(fromJSON(needs.changes.outputs.jobs || '[]'), 'documentation')"),
+    (CI, "the gate does not need the called workflow", "mutants, web, documentation]", "mutants, web]"),
+    (CI, "the call passes a fixed plan, not the planner's", "plan: ${{ toJSON(fromJSON(needs.changes.outputs.plans || '{}').documentation) }}", "plan: '[\"docs\"]'"),
+    (CI, "`changes` does not output the plans", "      plans: ${{ steps.classify.outputs.plans }}\n", ""),
+    (CI, "`changes` does not output top", "      top: ${{ steps.classify.outputs.top }}\n", ""),
+    (CI, "the call is of another workflow's file", "uses: ./.github/workflows/documentation.yml", "uses: ./.github/workflows/contract-cell.yml"),
+    (CI, "the moved job is left in ci.yml as well", "  gate:\n    name: gate", "  docs:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: echo\n\n  gate:\n    name: gate"),
+    (CI, "a job of ci.yml runs on the wrong name", "if: contains(fromJSON(needs.changes.outputs.jobs || '[]'), 'deny')",
+     "if: contains(fromJSON(needs.changes.outputs.jobs || '[]'), 'lint')"),
+    (DOC, "the verdict job does not run when a job failed", "    if: always()\n", "    if: success()\n"),
+    (DOC, "the verdict job judges no plan", "EXPECTED_JOBS: ${{ inputs.plan }}", "EXPECTED_JOBS: '[]'"),
+    (DOC, "the verdict job knows no job of the workflow", "KNOWN_JOBS: docs\n", "KNOWN_JOBS: verdict\n"),
+    (DOC, "the verdict output is set by the judge step too", "run: .github/scripts/assert-gate.sh", 'run: echo "verdict=pass" >> "$GITHUB_OUTPUT"; .github/scripts/assert-gate.sh'),
+    (DOC, "the workflow does not expose the verdict", "value: ${{ jobs.verdict.outputs.verdict }}", "value: pass"),
+    (DOC, "the job runs whatever the plan", "if: contains(fromJSON(inputs.plan), 'docs')", "if: true"),
+    (DOC, "the called workflow sets a workflow-level concurrency", "permissions: {}\n\njobs:", "permissions: {}\n\nconcurrency:\n  group: documentation\n\njobs:"),
+    (DOC, "the called workflow cannot run alone", "  workflow_dispatch:\n", "  push:\n"),
+    (DOC, "the verdict job does not wait for the job", "    needs: docs\n", "    needs: []\n"),
+    (DOC, "the called workflow reads the event name", "KNOWN_JOBS: docs\n", "KNOWN_JOBS: docs\n          EVENT: ${{ github.event_name }}\n"),
 ]
 
 # Changes no behaviour, so the tests must still pass: if one is killed, the driver or the tests are broken, not strong.
 EQUIVALENT = [
     (PLAN, "(equivalent) a comment is added to the planner", "FULL = \"full\"\n", "FULL = \"full\"  # a comment\n"),
     (GATE, "(equivalent) a comment is added to the gate", "set -eu\n", "set -eu\n# a comment\n"),
+    (CI, "(equivalent) a comment is added to ci.yml", "on:\n  pull_request:\n", "on:\n  # a comment\n  pull_request:\n"),
+    (DOC, "(equivalent) a comment is added to documentation.yml", "permissions: {}\n\njobs:", "permissions: {}\n\n# a comment\njobs:"),
 ]
 
 
@@ -135,13 +173,24 @@ def gate_tests(base, gate_text):
                dict(os.environ, STOP_AT_FIRST_BAD="1"))
 
 
-def read(name):
-    with open(os.path.join(SCRIPTS, name), encoding="utf-8") as f:
+def wiring_tests(base, overrides):
+    """test_workflow_wiring.py, on a copy of .github/ under `base`, with these files (relative to the root) replaced by these texts."""
+    shutil.copytree(os.path.join(ROOT, ".github"), os.path.join(base, ".github"), ignore=shutil.ignore_patterns("__pycache__", "node_modules"))
+    for rel, text in overrides.items():
+        with open(os.path.join(base, rel), "w", encoding="utf-8") as f:
+            f.write(text)
+    return run([sys.executable, "-I", os.path.join(base, ".github", "scripts", "tests", "test_workflow_wiring.py"), base])
+
+
+def read(target):
+    with open(os.path.join(ROOT, TARGET_PATH[target]), encoding="utf-8") as f:
         return f.read()
 
 
 def judge(target, text, workdir):
     """(exit status, output) of the tests of `target` run against `text`, after the check that it still compiles."""
+    if target in (CI, DOC):
+        return wiring_tests(os.path.join(workdir, "tree"), {TARGET_PATH[target]: text})
     if target == PLAN:
         try:
             compile(text, PLAN, "exec")
@@ -150,7 +199,10 @@ def judge(target, text, workdir):
         path = os.path.join(workdir, PLAN)
         with open(path, "w", encoding="utf-8") as f:
             f.write(text)
-        return plan_tests(path)
+        status, out = plan_tests(path)
+        if status != 0:
+            return status, out
+        return wiring_tests(os.path.join(workdir, "tree"), {TARGET_PATH[PLAN]: text})
     syntax = os.path.join(workdir, "syntax.sh")
     with open(syntax, "w", encoding="utf-8") as f:
         f.write(text)
@@ -191,14 +243,12 @@ def main():
             print(f"{i:3} {target:15} {label}")
         return 0
 
-    sources = {PLAN: read(PLAN), GATE: read(GATE)}
-    with tempfile.TemporaryDirectory() as workdir:
-        base_plan, plan_out = judge(PLAN, sources[PLAN], workdir)
-    with tempfile.TemporaryDirectory() as workdir:
-        base_gate, gate_out = judge(GATE, sources[GATE], workdir)
-    for name, status, out in ((PLAN, base_plan, plan_out), (GATE, base_gate, gate_out)):
+    sources = {target: read(target) for target in TARGET_PATH}
+    for target in TARGET_PATH:
+        with tempfile.TemporaryDirectory() as workdir:
+            status, out = judge(target, sources[target], workdir)
         if status != 0:
-            print(f"mutate_gate: the tests of {name} fail on the unmutated file, so no mutant could be judged:\n{out[-1500:]}", file=sys.stderr)
+            print(f"mutate_gate: the tests of {target} fail on the unmutated file, so no mutant could be judged:\n{out[-1500:]}", file=sys.stderr)
             return 2
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as pool:

@@ -28,7 +28,7 @@ through the contract suite on the `worker-*` targets, which run on local workerd
 scripts/rs cargo nextest run --ignore-default-filter -E 'binary(pg_adapter)'   # needs Docker [verified 2026-10-20: 8 passed]
 ```
 
-`scripts/verify-all.sh` runs it with `cargo test` as step 4.
+`scripts/verify-all.sh` runs it on nextest, with the `adapters` profile, as step 4.
 
 ## Required controls
 

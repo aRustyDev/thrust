@@ -38,6 +38,10 @@ jobs:
       jobs: ${{ steps.classify.outputs.jobs }}
       matrix: ${{ steps.classify.outputs.matrix }}
       cells: ${{ steps.classify.outputs.cells }}
+      # what ci.yml's own gate expects (the jobs still here, then the called workflows with a planned job), and each called
+      # workflow's planned jobs: its `plan` (ADR-0102)
+      top: ${{ steps.classify.outputs.top }}
+      plans: ${{ steps.classify.outputs.plans }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -158,6 +162,8 @@ jobs:
           python3 -I .github/scripts/tests/test_preview_result.py
           sh .github/scripts/tests/test-deploy-target.sh
           python3 -I .github/scripts/tests/test_plan_ci.py
+          # ci.yml, the planner and each called workflow's file agree (ADR-0102): the calls, the gate's VERDICT_JOBS, the verdict jobs
+          python3 -I .github/scripts/tests/test_workflow_wiring.py
           # The tests of the planner and the gate must be able to fail: each hand mutant of those two files is killed by them (ADR-0102).
           python3 -I .github/scripts/tests/mutate_gate.py
 
@@ -404,12 +410,15 @@ jobs:
         with:
           cache-key: native-pg-adapter
           save-cache: ${{ github.ref == 'refs/heads/main' }}
+          nextest: 'true'
+      # The `adapters` profile (.config/nextest.toml): a report, and no timeout kill, as on cargo test. nextest exits 4 if the
+      # filterset selects nothing, so a renamed binary fails the step.
       - name: Postgres adapter tests (testcontainers)
-        run: scripts/rs cargo test -p thrust-adapters-selfhosted --test pg_adapter --locked
+        run: scripts/rs cargo nextest run -p thrust-adapters-selfhosted --profile adapters --locked -E 'binary(pg_adapter)'
       # The SMTP adapter against Mailpit (a mail server nobody here wrote), in the same Docker job: STARTTLS, implicit TLS, a login, the
       # server's own refusals, and the controls that make each of them able to fail. Its other suites are hermetic and run in `hermetic`.
       - name: SMTP adapter tests (Mailpit, testcontainers)
-        run: scripts/rs cargo test -p thrust-adapters-selfhosted --test smtp_sink --locked
+        run: scripts/rs cargo nextest run -p thrust-adapters-selfhosted --profile adapters --locked -E 'binary(smtp_sink)'
 
   # One job per cell, each on a fresh runner with its own checkout, so the shared-build-directory
   # hazard that forces contract-all.sh to run serially on one machine does not apply here.
@@ -485,34 +494,21 @@ jobs:
       - name: The build made the SPA
         run: test -s web/apps/web/build/client/index.html
 
-  # The book (docs/, mdBook). Runs when docs/, AGENTS.md (the book includes its testing rules) or .config/branding/ (its palette)
-  # changes (plan-ci.py). `mdbook build` exits 0 on a broken {{#include}} and on a mistyped book.toml key, and leaves out a page
-  # SUMMARY.md does not list without a word, so scripts/check-book.sh fails on any ERROR line and on such a page; its self-test
-  # breaks a copy of the book each of those ways, and the missing preprocessor a fourth, and each must be refused. mdBook and
-  # mdbook-mermaid (which targets mdBook 0.5) come from install-action at exact versions, checked against its SHA-256 manifest.
-  docs:
+  # The book (docs/, mdBook): documentation.yml, called here and judged by its own `verdict` job (ADR-0102). `top` says whether the
+  # change needs it, and `plans` gives it the jobs to run. The `docs` job is that workflow's.
+  documentation:
     needs: changes
-    if: contains(fromJSON(needs.changes.outputs.jobs || '[]'), 'docs')
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    if: contains(fromJSON(needs.changes.outputs.top || '[]'), 'documentation')
+    uses: ./.github/workflows/documentation.yml
+    with:
+      plan: ${{ toJSON(fromJSON(needs.changes.outputs.plans || '{}').documentation) }}
     permissions:
       contents: read
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
-        with:
-          tool: mdbook@0.5.4,mdbook-mermaid@0.17.1
-      - name: Build the book (no ERROR line, no page missing from SUMMARY.md)
-        run: scripts/check-book.sh
-      - name: The check's controls (each broken book must be refused)
-        run: scripts/check-book.sh --self-test
 
   gate:
     name: gate
     if: always()
-    needs: [changes, ci-scripts, deps, lint, deny, hermetic, pg-adapter, contract, mutants, web, docs]
+    needs: [changes, ci-scripts, deps, lint, deny, hermetic, pg-adapter, contract, mutants, web, documentation]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
@@ -534,7 +530,12 @@ jobs:
       - name: Assert the planned set ran and passed
         env:
           NEEDS_JSON: ${{ toJSON(needs) }}
-          EXPECTED_JOBS: ${{ needs.changes.outputs.jobs }}
+          # the jobs still here and the called workflows that have a planned job (the planner's `top`), not every planned job: a
+          # called workflow's own jobs are judged by its `verdict` job
+          EXPECTED_JOBS: ${{ needs.changes.outputs.top }}
+          # the called workflows. A STATIC list, not the planner's `workflows` output: a planner bug that left one out of that output
+          # would switch off the check for it. test_plan_ci.py holds this list equal to the keys of the planner's WORKFLOWS.
+          VERDICT_JOBS: documentation
           PLANNED: ${{ needs.changes.outputs.cells || '[]' }}
           REPORTED_DIR: reported
         run: .github/scripts/assert-gate.sh
