@@ -627,20 +627,80 @@ const SITUATIONS: [&str; 17] = [
     "attach-by-non-member",
 ];
 
+/// Three sequences that between them get to every one of `SITUATIONS`, by construction. Rule 8's control for the model: they are run
+/// first, through the same `run_model`, so that what the model reaches does not depend on a random draw. (It used to: the check
+/// at the end of the random run asked 256 random sequences to have, among them, got to every situation, and `opened-in-project`,
+/// which needs a create, an upload, a confirm, an attach and then an open by someone who is in the project, is reached by 3.4% of
+/// random sequences, so a run missed it about once in 7,900 and failed `hermetic` for a reason that had nothing to do with the
+/// code under test.) The indices are into the assets a sequence has made so far, in order; `OutsiderA` is in the workspace and
+/// not in the project, and `MemberB` is in neither.
+fn pinned() -> [Vec<Op>; 3] {
+    let create = |actor| Op::Create { actor, png: true, size: 4 };
+    let upload = |asset, sent| Op::Upload { asset, token_ok: true, sent };
+    [
+        // one asset opened and confirmed before there is an object, a grant spent by an upload that does not match and then asked
+        // for again, and another that is stored, confirmed twice and opened
+        vec![
+            create(Actor::AdminA),
+            create(Actor::AdminA),
+            Op::Open { actor: Actor::AdminA, asset: 0 },
+            Op::Confirm { actor: Actor::AdminA, asset: 0 },
+            upload(0, Sent::WrongSize),
+            upload(0, Sent::Right),
+            upload(1, Sent::Right),
+            Op::Confirm { actor: Actor::AdminA, asset: 1 },
+            Op::Confirm { actor: Actor::AdminA, asset: 1 },
+            Op::Open { actor: Actor::AdminA, asset: 1 },
+        ],
+        // an asset that is the project's cover, opened by a member of the project, and refused to someone who is only in the
+        // workspace: to open, and to confirm
+        vec![
+            create(Actor::AdminA),
+            upload(0, Sent::Right),
+            Op::Confirm { actor: Actor::AdminA, asset: 0 },
+            Op::Attach { actor: Some(Actor::AdminA), assets: vec![0] },
+            Op::Open { actor: Actor::AdminA, asset: 0 },
+            Op::Open { actor: Actor::OutsiderA, asset: 0 },
+            Op::Confirm { actor: Actor::OutsiderA, asset: 0 },
+        ],
+        // a cover replaced by the oldest asset of another set (the first attach made asset 0 the cover), one named with an asset of
+        // someone else's (left out), a set with none of the caller's, and a caller who is not in the project
+        vec![
+            create(Actor::AdminA),
+            create(Actor::AdminA),
+            create(Actor::MemberA),
+            Op::Attach { actor: Some(Actor::AdminA), assets: vec![0] },
+            Op::Attach { actor: Some(Actor::AdminA), assets: vec![1, 2] },
+            Op::Attach { actor: Some(Actor::AdminA), assets: vec![1, 2] },
+            Op::Attach { actor: Some(Actor::AdminA), assets: vec![2] },
+            Op::Attach { actor: Some(Actor::OutsiderA), assets: vec![0] },
+        ],
+    ]
+}
+
 #[test]
 fn model_assets_match_the_reference_over_any_sequence() {
     let seen = RefCell::new(BTreeSet::new());
+
+    // the pinned sequences first: each agrees with the model, and together they get to every situation
+    for ops in pinned() {
+        if let Err(e) = run_model(ops.clone(), &mut seen.borrow_mut()) {
+            panic!("a pinned sequence disagrees with the model: {e}\n{ops:?}");
+        }
+    }
+    {
+        let seen = seen.borrow();
+        for s in SITUATIONS {
+            assert!(seen.contains(s), "no pinned sequence gets to {s:?}; they get to {seen:?}");
+        }
+    }
+
+    // then the random ones, which look for what no one thought to pin
     let mut runner = TestRunner::new(Config { source_file: Some(file!()), ..proptest_config(256) });
     if let Err(e) = runner.run(&ops(), |ops| run_model(ops, &mut seen.borrow_mut())) {
         panic!("{e}");
     }
-    // only a run with enough cases is asked to have got everywhere (a mutation run may set `PROPTEST_CASES` low)
-    if runner.config().cases >= 128 {
-        let seen = seen.into_inner();
-        for s in SITUATIONS {
-            assert!(seen.contains(s), "no sequence got to {s:?}; they got to {seen:?}");
-        }
-    }
+    eprintln!("ASSET-MODEL-OBSERVATION: the pinned and the random sequences got to {:?}", seen.into_inner());
 }
 
 // the strategy reaches every kind of step
