@@ -64,10 +64,20 @@ r="$T/two2"; mkdir -p "$r/.github/workflows"; workflow other none > "$r/.github/
 expect "a bad workflow after a clean one fails the run" 1 "b.yml" "$r"
 r="$T/empty"; mkdir -p "$r/.github/workflows"
 expect "no workflow at all is a call gone wrong" 2 "no workflow under" "$r"
+# a called workflow (ADR-0102): one that holds no credential passes with no line in the policy, and one that holds a secret does not get one
+callee() { # callee <extra lines for the job>
+  printf 'name: c\non:\n  workflow_call:\n    inputs:\n      x:\n        type: string\n        required: true\npermissions: {}\njobs:\n  a:\n    runs-on: ubuntu-24.04\n    permissions:\n      contents: read\n%s    steps:\n      - run: echo hi\n' "$1"
+}
+r="$T/callee-clean"; mkdir -p "$r/.github/workflows"; callee '' > "$r/.github/workflows/callee.yml"
+expect "a called workflow that holds no credential passes with no entry in the policy" 0 "1 workflows" "$r"
+r="$T/callee-secret"; mkdir -p "$r/.github/workflows"; callee '    env:
+      TOKEN: ${{ secrets.TOKEN }}
+' > "$r/.github/workflows/callee.yml"
+expect "a called workflow that holds a secret is refused: the policy gives it none" 1 ": R7: " "$r"
 # this repository: clean, and every workflow and action file it has is counted
 nw="$(find "$HERE/.github/workflows" -maxdepth 1 \( -name '*.yml' -o -name '*.yaml' \) | wc -l | tr -d ' ')"
 na="$(find "$HERE/.github/actions" -mindepth 2 -maxdepth 2 \( -name 'action.yml' -o -name 'action.yaml' \) | wc -l | tr -d ' ')"
 expect "this repository's workflows and actions are clean, all of them" 0 "$nw workflows and $na actions" "$HERE"
 
-echo "passed=$pass bad=$failn (of $((n + 6)))"
+echo "passed=$pass bad=$failn (of $((n + 8)))"
 [ "$failn" -eq 0 ]

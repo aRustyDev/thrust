@@ -2147,7 +2147,7 @@ impl Tx for MemoryTx {
         if matches!((attrs.start_date, attrs.target_date), (Some(a), Some(b)) if a > b) {
             return Err(DbError::Backend("work_items_dates_ordered".into()));
         }
-        if attrs.point.is_some_and(|p| !(0..=12).contains(&p)) {
+        if attrs.point.is_some_and(|p| !(0..=MAX_WORK_ITEM_POINT).contains(&p)) {
             return Err(DbError::Backend("work_items_point_valid".into()));
         }
         // a parent is a work item that is there, or one this transaction inserted (the item itself is the second)
@@ -2196,7 +2196,7 @@ impl Tx for MemoryTx {
         if matches!((update.start_date, update.target_date), (Some(a), Some(b)) if a > b) {
             return Err(DbError::Backend("work_items_dates_ordered".into()));
         }
-        if update.point.is_some_and(|p| !(0..=12).contains(&p)) {
+        if update.point.is_some_and(|p| !(0..=MAX_WORK_ITEM_POINT).contains(&p)) {
             return Err(DbError::Backend("work_items_point_valid".into()));
         }
         let there = |w: &WorkItem| Some(w.id.0) == update.parent_id;

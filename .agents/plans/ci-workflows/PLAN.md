@@ -90,8 +90,8 @@ stateDiagram-v2
 |---|---|
 | 0.1 | **ADR-0102** (done: [adrs/ci/0102](../contrail/adrs/ci/0102-one-workflow-per-concern-and-the-verdict-job.md)): one orchestrator, called workflows, the `verdict` job (design A+, chosen by the spike). Conventions: a callee routes by input, has no workflow-level `concurrency`, gets only the permissions its caller grants, and follows the repo's job-id, `name:` and comment style |
 | 0.2 | **Gate spike** on a draft pull request (closed unmerged), because `workflow_dispatch` needs the file on `main`. It compares a verdict per callee with a callee that reports and one gate that judges (and `re-actors/alls-green`), on seven must-fail scenarios and eight measured facts. **Done:** design A+, [research/0018](research/0018-gate-spike.md) |
-| 0.3 | **Planner and gate**: `plan-ci.py` gets a `WORKFLOWS` map and a `workflows` output, its rules run everything for every workflow file that runs checks, and `assert-gate.sh` takes its job list as an input; `gate` requires each expected callee's result to be `success` and its `verdict` output to be `pass`. A behaviour-preserving change; the mutant driver is committed and runs in `ci-scripts`. Unblocked: #221 (the crates move) merged |
-| 0.4 | **Lint conventions and indexes**: new rules R8 (no workflow-level `concurrency` in a callee) and R9 (a callee does not read `github.event_name`). `lint-all-workflows.sh` needs no change for credentials: it gives a workflow it does not name the strictest policy. `actionlint` is added as a pinned check. The two READMEs index the files and link `cicd.md` instead of restating it |
+| 0.3 | **Planner and gate** (done: [phase 0001](phases/0001-foundation.md), this pull request): `plan-ci.py` gets a `WORKFLOWS` map and the outputs `top`, `workflows` and `plans`, its rules run everything for every workflow file that runs checks, and `assert-gate.sh` takes its job list as an input; `gate` requires each expected callee's result to be `success` and its `verdict` output to be `pass`. A behaviour-preserving change; the mutant driver is committed and runs in `ci-scripts`. Unblocked: #221 (the crates move) merged |
+| 0.4 | **Lint conventions and indexes** (done: [phase 0001](phases/0001-foundation.md), this pull request): new rules R8 (no workflow-level `concurrency` in a callee) and R9 (a callee does not read `github.event_name`). `lint-all-workflows.sh` needs no change for credentials: it gives a workflow it does not name the strictest policy. `actionlint` is added as a pinned check. The two READMEs index the files and link `cicd.md` instead of restating it |
 | 0.5 | **Baseline**: wall-clock and runner-minutes (the sum of job durations) per job from recent `ci` runs; GitHub reports 0 billable minutes on this public repository. It is measured again after the migration, and passes 5 to 7 are measured against it |
 
 The order is 0.5, 0.2, 0.1, 0.3, 0.4; the stages are planned in [phases/0001-foundation.md](phases/0001-foundation.md).
@@ -197,12 +197,12 @@ skipped.
    checkable by anyone only from stage 0.3, which commits it and runs it in `ci-scripts`.
 7. Every script of the `deps` job (wherever its guards end up) is run locally before each push.
 
-## Status (2026-11-16)
+## Status (2026-11-17)
 
 | Item | State |
 |---|---|
 | This plan | merged (#223) |
-| Phase 0 | planned in [phases/0001-foundation.md](phases/0001-foundation.md) (merged, #225). The owner's answers to its questions (2026-11-16) are recorded in the decisions table above. Stage 0.5, the baseline, is done ([research/0017-ci-baseline.md](research/0017-ci-baseline.md), #230), and so is stage 0.2, the gate spike: design A+ ([research/0018-gate-spike.md](research/0018-gate-spike.md), this pull request; the spike was draft #232, closed). Stage 0.1, ADR-0102, is written ([adrs/ci/0102](../contrail/adrs/ci/0102-one-workflow-per-concern-and-the-verdict-job.md), this pull request). Next: stages 0.3 (the planner, the gate and the mutant driver) and 0.4 (the lint rules, `actionlint` and the indexes), which can run side by side |
-| #221 (crates move) | merged (50b4dba); stage 0.3 is unblocked |
-| Phase 1 and the phases after | not started |
-| Open for the owner | nothing |
+| Phase 0, the foundation | **done.** Planned in [phases/0001-foundation.md](phases/0001-foundation.md) (#225); its owner questions are answered and recorded in the decisions table above. Stage 0.5, the baseline: [research/0017](research/0017-ci-baseline.md) (#230). Stage 0.2, the gate spike (draft #232, closed): [research/0018](research/0018-gate-spike.md) (#236). Stage 0.1: [ADR-0102](../contrail/adrs/ci/0102-one-workflow-per-concern-and-the-verdict-job.md) (#239). Stage 0.3, the planner, the gate and the mutant driver (#245). Stage 0.4, the lint rules, `actionlint` and the two indexes (#249) |
+| Phase 1, the migration | planned in [phases/0002-migration.md](phases/0002-migration.md) (this pull request); nothing built. The table above (M1 to M6) is the plan's first draft: the phase document proposes a different order and keeps the job ids, both awaiting the owner |
+| Phases 2 to 14 | not started |
+| Open for the owner | the four questions at the end of [phases/0002-migration.md](phases/0002-migration.md): the order of the stages, the job ids, `flake-hunt.yml`, and the workflows' `name:` |

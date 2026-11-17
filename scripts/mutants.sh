@@ -15,7 +15,12 @@ OUT="$ROOT/target/mutants"
 mkdir -p "$OUT"
 SUMMARY="$OUT/summary.txt"
 : >"$SUMMARY"
-SURVIVED=0
+# What a row's run says (KILLED, SURVIVED, UNCLEAR, DID NOT RUN): scripts/lib/mutants-verdict.sh, which says what each means.
+# shellcheck source=scripts/lib/mutants-verdict.sh
+. "$ROOT/scripts/lib/mutants-verdict.sh"
+# Any row that is not KILLED (or REFUSED, for the guard rows) fails the job: a row with no verdict has not shown the suite can fail.
+NOT_KILLED=0
+KILLED_N=0; SURVIVED_N=0; UNCLEAR_N=0; NOT_RUN_N=0; REFUSED_N=0; NOT_REFUSED_N=0
 
 # A row that was neither killed nor refused has not said why, and on a runner its output is thrown away with the job: the one thing the job log
 # then lacks is the reason. `contract.sh` says it when it stops (a server that exited early, one that never became healthy, a mail server that did not
@@ -29,72 +34,40 @@ show_why() {
   return 0
 }
 
-kill_check() {
-  # $1 label, $2 exit status, $3 log file with test output, $4 (optional) the row's own output file, for `show_why`
-  label="$1"; status="$2"; log="$3"
-  failed="$(grep -c '\.\.\. FAILED$' "$log")"
-  # A pass run with --nocapture (the engine pass) prints `test x ... ` and the panic text, and only then `FAILED` on a
-  # line of its own, so its failures are counted from cargo's own `test result: FAILED. N passed; M failed` line.
-  if [ "$failed" -eq 0 ]; then
-    failed="$(sed -n 's/^test result: FAILED\. [0-9]* passed; \([0-9]*\) failed.*/\1/p' "$log" | tail -1)"
-    failed="${failed:-0}"
-  fi
-  if [ "$status" -eq 101 ] && [ "$failed" -ge 1 ]; then
-    printf '%-34s KILLED   (%s test(s) failed)\n' "$label" "$failed" >>"$SUMMARY"
-    grep -E '\.\.\. FAILED$|^test .* \.\.\. $' "$log" | sed 's/^/    /' >>"$SUMMARY"
-  else
-    printf '%-34s SURVIVED or did not run (exit=%s, failed tests=%s)\n' "$label" "$status" "$failed" >>"$SUMMARY"
-    show_why "${4:-}" "$label"
-    SURVIVED=1
-  fi
+# record <label> <verdict line> <kind: suite|cargo> <log> [the row's own output file]: one summary line, then for a kill the tests that
+# failed (they are the assertions that guard the rule), and for anything else the end of what the row said.
+record() {
+  r_label="$1"; r_verdict="${2%%|*}"; r_detail="${2#*|}"; r_kind="$3"; r_log="$4"; r_out="${5:-$4}"
+  printf '%-34s %-11s (%s)\n' "$r_label" "$r_verdict" "$r_detail" >>"$SUMMARY"
+  case "$r_verdict" in
+    KILLED)
+      KILLED_N=$((KILLED_N + 1))
+      if [ "$r_kind" = suite ]; then grep -E '^ +FAIL \[' "$r_log" | sort -u | sed 's/^ */    /' >>"$SUMMARY"
+      else grep -E '\.\.\. FAILED$|^test .* \.\.\. $' "$r_log" | sed 's/^/    /' >>"$SUMMARY"; fi
+      return 0 ;;
+    SURVIVED) SURVIVED_N=$((SURVIVED_N + 1)) ;;
+    UNCLEAR) UNCLEAR_N=$((UNCLEAR_N + 1)) ;;
+    *) NOT_RUN_N=$((NOT_RUN_N + 1)) ;;
+  esac
+  show_why "$r_out" "$r_label"
+  NOT_KILLED=1
 }
 
-# A kill that also names its cause. `kill_check` counts any failure with exit 101 as a kill, and a run that never got as far as
-# the thing under test fails too: without Docker every `pg_adapter` test panics in its setup, which reads as KILLED. $4 is text
-# only the assertion the mutant is aimed at prints, so a log without it is not a kill.
-kill_check_msg() {
-  # $1 label, $2 exit status, $3 log file with test output, $4 text the failure must contain, $5 (optional) the row's own output file
-  if grep -qF -- "$4" "$3"; then
-    kill_check "$1" "$2" "$3" "${5:-}"
-  else
-    printf '%-34s SURVIVED or did not run (the log never says: %s)\n' "$1" "$4" >>"$SUMMARY"
-    show_why "${5:-}" "$1"
-    SURVIVED=1
-  fi
-}
+# A row of an adapter's own tests (`cargo test`). $1 label, $2 exit status, $3 log file with test output, $4 (optional) the row's own output
+# file, for `show_why` (by default the log).
+kill_check() { record "$1" "$(verdict_cargo "$2" "$3")" cargo "$3" "${4:-}"; }
+
+# A kill that also names its cause: without Docker every `pg_adapter` test panics in its setup, which would read as a kill. $4 is text only
+# the assertion the mutant is aimed at prints, so failures without it are UNCLEAR, not KILLED. $5 (optional) the row's own output file.
+kill_check_msg() { record "$1" "$(verdict_cargo "$2" "$3" "$4")" cargo "$3" "${5:-}"; }
 
 # A row of the contract suite: `scripts/contract.sh` runs the pass on nextest and keeps its JUnit report beside the pass's log
-# (`<log>.junit.xml` for `<log>.test.log`). Killed when nextest exited 100 (a test failed; 101 is a build that failed, and 4 or 5
-# a pass that ran nothing) and the report counts at least one test that did not pass.
-junit_attr() { sed -n "s/.*<testsuites[^>]* $2=\"\([0-9][0-9]*\)\".*/\1/p" "$1" 2>/dev/null | head -n 1; }
-kill_check_suite() {
-  # $1 label, $2 exit status, $3 the pass's log, $4 (optional) the row's own output file, for `show_why`
-  label="$1"; status="$2"; log="$3"
-  junit="${log%.test.log}.junit.xml"
-  failures="$(junit_attr "$junit" failures)"
-  errors="$(junit_attr "$junit" errors)"
-  failed=$(( ${failures:-0} + ${errors:-0} ))
-  if [ "$status" -eq 100 ] && [ "$failed" -ge 1 ]; then
-    printf '%-34s KILLED   (%s test(s) failed)\n' "$label" "$failed" >>"$SUMMARY"
-    grep -E '^ +FAIL \[' "$log" | sort -u | sed 's/^ */    /' >>"$SUMMARY"
-  else
-    printf '%-34s SURVIVED or did not run (exit=%s, failed tests=%s)\n' "$label" "$status" "$failed" >>"$SUMMARY"
-    show_why "${4:-}" "$label"
-    SURVIVED=1
-  fi
-}
+# (`<log>.junit.xml` for `<log>.test.log`). Killed when nextest exited 100 and the report counts at least one test that did not
+# pass. $1 label, $2 exit status, $3 the pass's log, $4 (optional) the row's own output file, for `show_why`.
+kill_check_suite() { record "$1" "$(verdict_suite "$2" "$3")" suite "$3" "${4:-}"; }
 
-# kill_check_msg for a row of the contract suite.
-kill_check_suite_msg() {
-  # $1 label, $2 exit status, $3 the pass's log, $4 text the failure must contain, $5 (optional) the row's own output file
-  if grep -qF -- "$4" "$3"; then
-    kill_check_suite "$1" "$2" "$3" "${5:-}"
-  else
-    printf '%-34s SURVIVED or did not run (the log never says: %s)\n' "$1" "$4" >>"$SUMMARY"
-    show_why "${5:-}" "$1"
-    SURVIVED=1
-  fi
-}
+# kill_check_msg for a row of the contract suite. $4 the text the failure must contain, $5 (optional) the row's own output file.
+kill_check_suite_msg() { record "$1" "$(verdict_suite "$2" "$3" "$4")" suite "$3" "${5:-}"; }
 
 # name:feature:pass. The CSRF switch (Q-0050.8) has a mutant for each direction: ignored when on (the main pass, which runs
 # with enforcement on, must fail) and ignored when off (the `csrfoff` pass must fail).
@@ -164,9 +137,11 @@ guard_check() {
   label="$1"; status="$2"; out="$3"
   if [ "$status" -eq 5 ] && grep -q 'VACUITY GUARD: csrf_enforce' "$out"; then
     printf '%-34s REFUSED  (exit 5, no test ran)\n' "$label" >>"$SUMMARY"
+    REFUSED_N=$((REFUSED_N + 1))
   else
     printf '%-34s NOT REFUSED (exit=%s)\n' "$label" "$status" >>"$SUMMARY" && show_why "$out" "$label"
-    SURVIVED=1
+    NOT_REFUSED_N=$((NOT_REFUSED_N + 1))
+    NOT_KILLED=1
   fi
 }
 THRUST_SERVER_CSRF_ENFORCE=off THRUST_LOGDIR="$OUT/guard-main-vs-off" "$ROOT/scripts/contract.sh" native-memory main >"$OUT/guard-main-vs-off.out" 2>&1
@@ -191,9 +166,11 @@ refusal_check() {
   status=$?
   if [ "$status" -eq 5 ] && grep -q "$msg" "$OUT/$name.out"; then
     printf '%-34s REFUSED  (exit 5, no test ran)\n' "$label" >>"$SUMMARY"
+    REFUSED_N=$((REFUSED_N + 1))
   else
     printf '%-34s NOT REFUSED (exit=%s)\n' "$label" "$status" >>"$SUMMARY" && show_why "$OUT/$name.out" "$label"
-    SURVIVED=1
+    NOT_REFUSED_N=$((NOT_REFUSED_N + 1))
+    NOT_KILLED=1
   fi
 }
 refusal_check "guard: mail pass, relay not wired" mutant_smtp_unwired mail 'VACUITY GUARD: is_smtp_configured is not true'
@@ -275,5 +252,7 @@ for quad in \
   kill_check_msg "cloudflare email adapter + $name" "$status" "$OUT/cf-email-$name.out" "$needle"
 done
 
+printf 'killed=%s survived=%s unclear=%s did-not-run=%s refused=%s not-refused=%s\n' \
+  "$KILLED_N" "$SURVIVED_N" "$UNCLEAR_N" "$NOT_RUN_N" "$REFUSED_N" "$NOT_REFUSED_N" >>"$SUMMARY"
 cat "$SUMMARY"
-exit "$SURVIVED"
+exit "$NOT_KILLED"

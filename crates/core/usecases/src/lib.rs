@@ -393,10 +393,14 @@ pub async fn revoke_session(app: &App, token: &str) -> Result<(), CoreError> {
 // Use-cases
 // ---------------------------------------------------------------------------------------------
 
+/// The most characters a name may have: the bound that [`validate_name`] checks, that its refusal quotes, and that the v1 request of a
+/// work item reads as well, so the parser, the document and this are one number. (A project's own is [`MAX_PROJECT_NAME`].)
+pub const MAX_NAME_CHARS: usize = 255;
+
 fn validate_name(name: &str) -> Result<(), CoreError> {
     let n = name.trim();
-    if n.is_empty() || n.chars().count() > 255 {
-        return Err(CoreError::Invalid("name must be 1..=255 characters".into()));
+    if n.is_empty() || n.chars().count() > MAX_NAME_CHARS {
+        return Err(CoreError::Invalid(format!("name must be 1..={MAX_NAME_CHARS} characters")));
     }
     Ok(())
 }

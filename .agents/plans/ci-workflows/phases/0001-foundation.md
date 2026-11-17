@@ -175,28 +175,43 @@ place when those stages merge; two are enforced by GitHub itself). ADR-0100 has 
 **Purpose.** Give the planner and the gate the mechanism the migration needs, as a **behaviour-preserving** change: when it
 merges, CI plans and judges exactly what it did before.
 
-**Acceptance.**
-- `plan-ci.py` has a `WORKFLOWS` map (workflow name to its jobs), a partition of `JOBS` (a test fails if a job is in none
-  or in two), and prints `workflows=<JSON list of the workflows with at least one planned job>`. Today the map is one
-  entry, `ci`, holding every job, so the output is equivalent to the current one. Each migration stage then moves names
-  out of `ci`.
+**Acceptance** (refined while it was built; **done 2026-11-16**, in this stage's pull request).
+- `plan-ci.py` has a `WORKFLOWS` map, `{called workflow: (its jobs)}`, empty today: a job in no workflow is still a job of
+  `ci.yml` itself. (The first plan made `ci` a one-entry map holding every job, which makes `ci` mean two things.)
+  `check_workflows` refuses a map that is not a partition (a name that is no job, a job in two workflows, a workflow with no
+  job) before the planner prints a line, and the test refuses the same. Beside `jobs`, `matrix` and `cells`, which do not
+  change, it prints `top` (what `ci.yml`'s own gate expects: the planned jobs still in `ci.yml`, then the called workflows
+  that have one), `workflows` (the called workflows with a planned job) and `plans` (each one's planned jobs, which is its
+  `plan` input). While the map is empty `top` equals `jobs`, `workflows` is `[]` and `plans` is `{}`, so CI plans what it
+  did; once a stage fills the map, Phase 1 needs no further change to the planner.
 - Its RULES name every workflow file that runs checks (`test`, `lint`, `documentation`, `security`, `web`) as **run
   everything**, as `ci` and `contract-cell` are, and `test_plan_ci.py` lists the real `.github/workflows/` directory and
   fails if a file there matches only the generic rule and is not on a short list of files that run no check (`deploy`,
-  `release`, `release-plz`, `e2e`, `flagship`). The control: delete one of the new names from the rule and the test must fail.
+  `release`, `release-plz`, `e2e-schedule`, `flake-hunt`, `flagship`). The control is a mutant of the driver below: a name
+  deleted from the rule must fail the test.
   *(Narrowing a rule so that a change to `test.yml` runs only the test jobs is a Phase 2 optimization, not this.)*
-- `assert-gate.sh` takes its job list as an input and is the **one** script at every level: the top-level `gate` and each
-  callee's `verdict` job run it, with no copy. `gate` requires of each expected callee both `result == success` and
-  `outputs.verdict == pass` (design A+; both are in `toJSON(needs)`, which the script already reads). `same_jobs` is
-  extended to the new places the list lives.
-- `test-ci-scripts.sh` gains the callee cases: each scenario of the spike's table as a generated case, the 80 existing
-  cases unchanged and green, the control that an absent callee result is a failure and not a skip, and the control that a
-  callee whose `verdict` output is missing fails the gate although its result is `success`.
-- `.github/scripts/tests/mutate-gate.sh` (the 34 hand mutants of the planner and the gate, each of which the tests must
-  catch) is committed, runs under `dash`, and reports a mutant that survives. It is a step of the `ci-scripts` job (the
-  owner's decision, 2026-11-16), so it runs whenever that job does and a surviving mutant fails the gate; the control is a
-  test weakened on purpose, which must make the step fail. A change that plans no `ci-scripts` (a docs-only one) skips it, as
-  it skips every other helper test.
+- `assert-gate.sh` is the **one** script at every level: the top-level `gate` and each callee's `verdict` job run it, with no
+  copy. It takes four optional inputs, each defaulting to what `ci.yml`'s gate needs, so a level that forgets one fails and
+  does not pass: `KNOWN_JOBS`, `CHANGES_JOB` (set and empty: none, as in a called workflow), `CELL_JOB` (the same) and
+  `VERDICT_JOBS`, the expected jobs that call a workflow, each of which must also carry the output `verdict` equal to `pass`
+  (design A+; both are in `toJSON(needs)`, which the script already reads). `same_jobs` reads the default list from its new
+  place in the script. No workflow calls another yet, so `ci.yml`'s gate is run as before, and its 109 cases are unchanged.
+- `test-ci-scripts.sh` has 173 cases: the callee-level scenarios of the spike (green, skip-planned, fail-planned,
+  unplanned-ran, malformed-plan) and every job of a callee with every result; a gate that calls workflows, with every result
+  of the callee against every kind of `verdict` (`pass`, `fail`, empty, `{}` and no outputs at all), so that only a success
+  that says `pass` passes; and the controls that a verdict job that forgets one of its three inputs fails.
+- `.github/scripts/tests/mutate_gate.py` (Python, not shell: the mutant table is clearer there, and the mutants run in
+  parallel) is committed: the 34 hand mutants of the first driver, rebased on today's source, and 19 for this stage, 53 in all,
+  each of which must fail the tests of its file (`test-ci-scripts.sh` under dash). It is the last line of the `ci-scripts`
+  job (the owner's decision, 2026-11-16), so it runs whenever that job does and a surviving mutant fails the gate. The first
+  run found a real gap (a CLI test that could not tell a working `plans` line from a broken one while the map is empty);
+  it is closed. Controls: the tests must pass unmutated first; the text a mutant replaces must be found exactly once; a
+  mutant must compile; and two mutants that change nothing must survive. The mutants of a rule's effect find the rule by its
+  pattern, not by the text of its pass list: an hour after the first run, `#238` added `e2e-mail` to four rules, two literal
+  anchors went BROKEN in CI (the driver failing closed, as it should) and became regexes. It takes 77 s at four workers on a
+  laptop; on a hosted runner `ci-scripts` took 119 s against a median of 71 s, so it added under a minute, and pass 7 may
+  shorten it. A change that plans no `ci-scripts` (a docs-only one) skips it, as it skips
+  every other helper test.
 
 **Steps.** Planner and gate changes with their tests first (red, then green); the rules and the directory test; the mutant
 driver last, because it has to mutate the final text.
@@ -204,32 +219,43 @@ driver last, because it has to mutate the final text.
 **Public solutions.** `re-actors/alls-green` was measured in 0.2: wrong on two of seven scenarios (an unplanned job that ran; a judge that was
 skipped), and it needs a hand-written step to say what may be skipped, so it replaces nothing. Mutation
 tools for Python exist (`mutmut`, `cosmic-ray`); none mutates POSIX shell, and the gate is shell. *(Hand-written: the mutant
-driver. It already exists in a session scratchpad and is being rewritten into the repository, not invented.)*
+driver, rewritten from the one that survived in a session scratchpad.)*
 
 ## Stage 0.4: Lint conventions and indexes
 
 **Purpose.** Make the ADR's conventions mechanical, so a callee that breaks one fails `deps` rather than a review.
 
-**Acceptance.**
-- `lint-workflow.sh` gains **R8** (a file whose `on:` has `workflow_call` has no workflow-level `concurrency:`) and **R9**
-  (it does not read `github.event_name`), each with a case in `test-lint-workflow.sh` that must fail and a case that must
-  pass. The current files, `contract-cell.yml` included, stay clean.
-- `.github/workflows/README.md` and `.github/actions/README.md` exist: one row per file (what it is, its triggers, whether
-  `gate` waits for it), linking `cicd.md` for the how. `plan-ci.py` reads these two as no job's input, with a test.
-- `lint-all-workflows.sh` needs **no** change for credentials (above); a test shows a new callee with no credentials passes
-  with no entry.
-- `actionlint` runs in CI at a pinned version, as a step of `deps` (the owner's decision, 2026-11-16: add it). Every
-  workflow in the repository passes it, or each finding it keeps is named with the reason. The control: a copy of the
-  `contract` call with a `with:` key the callee does not declare must be refused. It runs inside the checkout: outside a
-  git repository `actionlint` checked nothing and printed nothing (research 0018, F11), and the control is what shows it is looking.
+**Acceptance** (as built; **done 2026-11-16**, in this stage's pull request).
+- `lint-workflow.sh` gains **R8** (a file whose `on:` has `workflow_call`, written as a block, as `on: workflow_call` or as
+  `on: [..., workflow_call]`, has no workflow-level `concurrency:`; a job's own is fine) and **R9** (it reads neither
+  `github.event_name` nor `github.workflow`, which are the caller's; `github.workflow_ref` is another property and is left
+  alone). 11 new cases in `test-lint-workflow.sh`, each rule seen to fail and seen to allow what it should (a comment, a job's
+  own concurrency, a workflow that is not called: `ci.yml` has both). The real files, `contract-cell.yml` included, stay clean.
+- `.github/workflows/README.md` and `.github/actions/README.md`: one row per file with its triggers and whether `gate` waits
+  for it, linking `cicd.md` for the how. **A guard the plan did not name**: `check-ci-index.sh`, a step of `deps`, fails when a
+  file has no row, a row names no file, or a file has two (22 cases, including the two traps: a name in the second cell or in
+  prose is not a row). An index with no guard is a lie that has not happened yet. And the plan was wrong that the READMEs are "no
+  job's input": the guard reads them, so a change to one runs `deps` and `ci-scripts`, which the generic rule for `.github/`
+  already gives; `test_plan_ci.py` now says so.
+- `lint-all-workflows.sh` needs **no** change for credentials, and two cases show it: a called workflow that holds no
+  credential passes with no line in the policy, and one that holds a secret is refused (R7).
+- `actionlint` 1.7.12 runs in the `deps` job, through `.github/scripts/lint-actionlint.sh`. The script refuses to run outside a
+  git work tree (where `actionlint` checks nothing and says nothing: research 0018, F11) and, before it lints the repository,
+  runs a **control** in a git repository of its own: a caller that passes an undeclared input, omits a required one and reads an
+  undeclared output must be refused with all three messages, and a sound caller must be accepted. Its 10 cases use stand-in
+  binaries that each misbehave in one way (silent, refuse everything, leave out one message, find a fault), so `ci-scripts`
+  needs no `actionlint`; the two that run the real tool are skipped where it is absent. The baseline was clean: `actionlint`
+  exits 0 on all eight workflows, so there is no finding to keep or to name.
 
-**Public solutions.** `actionlint` checks a caller's `with:` against the callee's declared inputs and outputs, which matters
-once there are a dozen such calls. It is **not wired into CI today** (the cicd-review plan only suggests running it by
-hand), and a search result mentioned an open false-positive report about reading a callee's outputs through `needs` (actionlint
-#407). It did not appear on the spike's reads of a declared output, and the same tool refused a read of an undeclared one
-(research 0018, F11). **How it is installed is decided here, at the start of the stage, by survey**: the tools
-`taiki-e/install-action` already installs in `ci.yml` (cargo-deny, cargo-nextest, mdbook) against actionlint's own release and
-checksum. *(Hand-written: R8 and R9, which are this repository's conventions; actionlint has no rule for them.)*
+**Public solutions** (the survey the plan left to this stage). `actionlint` checks a caller's `with:` against the callee's
+declared inputs and outputs, which matters once there are a dozen such calls. **Installing it**: `taiki-e/install-action`, at the
+version `ci.yml` pins, offers `shellcheck` and `zizmor` but **not `actionlint`**. `actionlint`'s own release ships a tarball per
+platform and a checksums file; a third-party wrapper action would add a dependency to the supply chain to save six lines. So
+the step downloads the release archive and checks it against a SHA-256 written in the workflow, taken two ways that agree (the
+release's checksums file, and hashing the archive) and covered by the build attestation of `rhysd/actionlint`
+(`gh attestation verify` passes for that repository and fails with "no attestations found" for another, which is the control).
+The false-positive report about reading a callee's outputs through `needs` (actionlint #407) did not appear.
+*(Hand-written: R8 and R9, which are this repository's conventions, and the control; `actionlint` has no rule for them.)*
 
 ## Action candidates
 
