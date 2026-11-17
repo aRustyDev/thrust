@@ -71,8 +71,9 @@ decides:
   `test.yml` the same way, and the cells' cases (a planned cell that never reports, a marker for an unplanned cell, no cell
   planned, no marker, cells planned and the cell job not expected, the inputs only a workflow with cells has).
 - **A called workflow is judged twice** (ADR-0102). `assert-gate.sh` also takes `KNOWN_JOBS`, `CHANGES_JOB`, `CELL_JOB` and
-  `VERDICT_JOBS`, each of which defaults to what the gate above needs (the cell job to none: a level that has cells must say so,
-  and a verdict job that forgets to is not refused by the script, so the wiring test holds `test.yml` to say it). The called workflow's own `verdict` job calls the
+  `VERDICT_JOBS`, each of which defaults to what the gate above needs (the cell job to none: a level that has cells must say so.
+  A level that names no cell job and is given cells anyway is refused, so a verdict job that forgets its cell job fails on every
+  run that plans a cell, since the action passes the cells through; the wiring test holds `test.yml` to say it on every run). The called workflow's own `verdict` job calls the
   `verdict` action, which sets them to judge the workflow's jobs against the plan it was given; the gate lists the called
   workflows as `VERDICT_JOBS`, which requires of each
   expected one that its result is `success` **and** that its output `verdict` is `pass`, since a workflow whose `verdict` job
@@ -81,7 +82,7 @@ decides:
   `WORKFLOWS`. Today five workflows are called, `documentation.yml` (the `docs` job), `security.yml` (the `deny` job),
   `web.yml` (the `web` job), `lint.yml` (the `deps` and `lint` jobs) and `test.yml` (the `ci-scripts`, `hermetic`, `pg-adapter`, `contract` and
   `mutants` jobs), so a plan may name only some of a workflow's jobs: `clippy.toml` plans `lint` alone, a guard of `deps` plans `deps`
-  alone, a deploy script plans `ci-scripts` alone, and `e2e/` plans `contract` alone. The cases (196 in `test-ci-scripts.sh`) include the seven scenarios of the gate spike
+  alone, a deploy script plans `ci-scripts` alone, and `e2e/` plans `contract` alone. The cases (201 in `test-ci-scripts.sh`) include the seven scenarios of the gate spike
   (`.agents/plans/ci-workflows/research/0018-gate-spike.md`), each called workflow tried on its own.
 - **The wiring is tested against the real files.** `test_workflow_wiring.py` (136 checks, for five workflows) holds `ci.yml`, the
   planner and each called workflow's file to each other: the calling job (`needs: changes`, it runs when `top` names it, it
@@ -92,7 +93,7 @@ decides:
   judge reads) and its output, set only after the judge. The workflow that holds `contract` is checked for the matrix and the cells it
   is given, its call of `contract-cell.yml`, and the cell job and cells it passes to the action; `ci.yml` for passing them, and its
   gate for judging no cells; and `ci.yml` for holding only `changes`, the calls and `gate`.
-- **Tested to be able to fail.** `.github/scripts/tests/mutate_gate.py`, the last line of the `ci-scripts` job, plants 226 hand
+- **Tested to be able to fail.** `.github/scripts/tests/mutate_gate.py`, the last line of the `ci-scripts` job, plants 229 hand
   mutants one at a time in `plan-ci.py`, `assert-gate.sh`, `ci.yml`, the called workflows and the `verdict` action, and each
   must fail the tests of its file (`test_plan_ci.py` and `test_workflow_wiring.py`; `test-ci-scripts.sh` under dash, stopping
   at the first failing case). The mutants of a called workflow are written once and made for each of them (and for each of its jobs, a workflow of several

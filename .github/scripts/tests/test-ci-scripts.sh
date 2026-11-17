@@ -141,14 +141,19 @@ expect "gate: EXPECTED_JOBS is not JSON" 1 "EXPECTED_JOBS is not a JSON array of
 expect "gate: EXPECTED_JOBS is a JSON string" 1 "EXPECTED_JOBS is not a JSON array of strings" gate n5 "$(needs success)" '"lint"'
 expect "gate: EXPECTED_JOBS is a JSON object" 1 "EXPECTED_JOBS is not a JSON array of strings" gate n6 "$(needs success)" '{}'
 expect "gate: EXPECTED_JOBS holds a number" 1 "EXPECTED_JOBS is not a JSON array of strings" gate n7 "$(needs success)" '[1]'
-no_cells_read() { # a PLANNED that is not even an array, given to a gate that judges no cells: it is not read
-  PLANNED='{}'; export PLANNED
-  gate n8 "$(needs success)" '[]'
+given_cells() { # given_cells <dir> <PLANNED>: the gate, which names no cell job, given cells anyway
+  PLANNED="$2"; export PLANNED
+  gate "$1" "$(needs success)" '[]'
   st=$?
   unset PLANNED
   return $st
 }
-expect "gate: the gate judges no cells, so a PLANNED it is given is not read" 0 "ok: 0 expected jobs passed" no_cells_read
+# The gate judges no cells, so cells given to it would be judged by nobody: it refuses them. Nothing but an empty array is "no cells".
+expect "gate: given two cells, and no cell job to judge them" 1 "cells are planned but no cell job is named (CELL_JOB)" given_cells n8 '["native-memory main","worker-cf bindings"]'
+expect "gate: given a PLANNED that is not an array, and no cell job" 1 "cells are planned but no cell job is named (CELL_JOB)" given_cells n8b '{}'
+expect "gate: given a PLANNED that is not JSON, and no cell job" 1 "cells are planned but no cell job is named (CELL_JOB)" given_cells n8c 'native-memory main'
+expect "gate: given an empty array, and no cell job" 0 "ok: 0 expected jobs passed" given_cells n8d '[]'
+expect "gate: given an empty array written with a space, and no cell job" 0 "ok: 0 expected jobs passed" given_cells n8e '[ ]'
 unset_one() { # the gate run without one of its inputs: a workflow that does not pass it must fail, not read it as empty
   d="$T/gate/u-$1"; mkdir -p "$d"
   # (exported first, then unset: `env -u X X=...` would set it again)
@@ -216,10 +221,10 @@ for j in a b c; do
   done
 done
 # A verdict job that forgets one of the inputs that say which level it judges runs with ci.yml's default for it. For the known jobs and
-# the planner job that is a failure. For the cell job it is NOT: the default is none (ci.yml's gate has no cells), so a verdict job that
-# forgets it judges no cells and passes. It failed while the cells were ci.yml's; the property now lives in the wiring test, which holds
-# the one workflow that has cells (test.yml) to pass `cell-job: contract` and `cells` to the verdict action, and in the mutants that show
-# that test can fail.
+# the planner job that is a failure. For the cell job the default is none (ci.yml's gate has no cells): a verdict job that forgets it and
+# is given no cells judges none and passes, as the four workflows without cells do; one that forgets it and is given cells (the verdict
+# action passes `cells` through) fails, so test.yml's forgetting `cell-job` is refused on every run that plans a cell. The wiring test holds
+# test.yml to pass `cell-job: contract` on every run, and the mutants show that test can fail.
 forgot() { # forgot <the input to leave out: KNOWN_JOBS | CHANGES_JOB | CELL_JOB>
   d="$T/gate/forgot-$1"; mkdir -p "$d"
   KNOWN_JOBS="a b c" CHANGES_JOB="" CELL_JOB=""
@@ -231,7 +236,13 @@ forgot() { # forgot <the input to leave out: KNOWN_JOBS | CHANGES_JOB | CELL_JOB
 }
 expect "callee: a verdict job that forgot KNOWN_JOBS fails" 1 "the planner expects 'a', which is not a job the gate knows" forgot KNOWN_JOBS
 expect "callee: a verdict job that forgot CHANGES_JOB fails" 1 "changes job result is 'missing'" forgot CHANGES_JOB
-expect "callee: a verdict job that forgot CELL_JOB judges no cells and passes (the default is none; see the comment above)" 0 "ok:" forgot CELL_JOB
+expect "callee: a verdict job that forgot CELL_JOB, and is given no cells, judges none and passes (the default is none)" 0 "ok:" forgot CELL_JOB
+forgot_with_cells() { # a verdict job that forgot CELL_JOB and is given the cells, as the verdict action would give test.yml's
+  d="$T/gate/forgot-cells"; mkdir -p "$d"
+  ( cd "$d" && NEEDS_JSON="$(inner success success skipped)" EXPECTED_JOBS="$AB" KNOWN_JOBS="a b c" CHANGES_JOB="" \
+      PLANNED='["native-memory main"]' REPORTED_DIR="$d" "$S/assert-gate.sh" )
+}
+expect "callee: a verdict job that forgot CELL_JOB, and is given cells, fails" 1 "cells are planned but no cell job is named (CELL_JOB)" forgot_with_cells
 
 # ---- the contract cells, judged by the verdict job of the workflow that runs them (test.yml) ---------------------------------------
 # These rules were ci.yml's gate's until the job `contract` moved into test.yml (migration M5b): the same rules, at the level of a verdict
