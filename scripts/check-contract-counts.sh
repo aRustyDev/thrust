@@ -228,8 +228,8 @@ case \"\$PASS\" in
     EXPECT=\$EXPECT_SWEEPER
     ;;
   bench)
-    \"\$ROOT/scripts/rs\" cargo run --quiet --release --manifest-path \"\$ROOT/Cargo.toml\" -p thrust-contract-tests --bin bench -- 200 1 >\"\$LOG.test.log\" 2>&1
-    exit 0
+    load_pass load_latency_
+    exit \"\$TEST_STATUS\"
     ;;
   *)
     suite_pass contract 'not test(/sweeper_/)'

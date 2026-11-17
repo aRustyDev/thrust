@@ -11,10 +11,11 @@
 #                              (the native server's, and the Worker's `[vars]`). Every other pass runs with it ON
 #             panic            alone against a fresh target (a Worker panic resets the isolate)
 #             blast            OBSERVATIONAL, not in contract-all: failures of OTHER requests around one panic
-#             bench            latency bench (release native build); success == the bench exits 0
-#             scale            list, search and create latency with THRUST_SCALE_TOTAL (default 100000) work items in the
-#                              database, in projects of THRUST_SCALE_PER_PROJECT (default 1000) (spike 0002); like bench,
-#                              success == the binary exits 0
+#             bench            the latency load tests (thrust-load-tests' load_latency_*, release-built); success == every request
+#                              succeeded (nextest exit 0)
+#             scale            the scale load test (load_scale_*): list, search and create latency with THRUST_SCALE_TOTAL (default
+#                              100000) work items in the database, in projects of THRUST_SCALE_PER_PROJECT (default 1000) (spike
+#                              0002); like bench, success == every request succeeded
 #             worker         (worker-cf only) Durable Object WebSocket hibernation + SQLite
 #             cron             (worker-* only) fast path OFF; the Worker `scheduled` handler sweeps
 #             engine           the tests that decide the database engine (spike 0002): the 50-writer, 10k-create test,
@@ -417,6 +418,20 @@ suite_pass() {
   if [ -f "$sp_junit" ]; then mv "$sp_junit" "$LOG.junit.xml"; fi
 }
 
+# load_pass PREFIX: the load tests whose names start with PREFIX (thrust-load-tests, crates/testing/suites/load), release-built, with
+# the `load` profile: one at a time, each printing what it measured. Not a count: a load test passes when every request it made
+# succeeded, and no number gates. Sets TEST_STATUS; nextest's 4 (no test ran: the prefix selects nothing) becomes 5, as a pass's does.
+load_pass() {
+  "$ROOT/scripts/rs" cargo nextest run --manifest-path "$ROOT/Cargo.toml" --cargo-profile release -p thrust-load-tests --profile load \
+    -E "test(/^$1/)" >"$LOG.test.log" 2>&1
+  TEST_STATUS=$?
+  cat "$LOG.test.log"
+  if [ "$TEST_STATUS" -eq 4 ]; then
+    echo "[$TARGET/$PASS] VACUITY GUARD: no load test ran (nextest exit 4: nothing is named $1)" >&2
+    TEST_STATUS=5
+  fi
+}
+
 case "$PASS" in
   sweeper)
     suite_pass contract 'test(/sweeper_/)' --no-capture
@@ -442,12 +457,9 @@ case "$PASS" in
     EXPECT=$EXPECT_WORKER
     ;;
   bench)
-    # Release-built bench client; the target under test is whatever this script just started.
-    # Not a test: success == the bench binary exiting 0. Numbers are LOCAL (loopback), see research/0004.
-    { "$ROOT/scripts/rs" cargo run --quiet --release --manifest-path "$ROOT/Cargo.toml" -p thrust-contract-tests --bin bench -- 200 1 \
-        && "$ROOT/scripts/rs" cargo run --quiet --release --manifest-path "$ROOT/Cargo.toml" -p thrust-contract-tests --bin bench -- 200 8; } >"$LOG.test.log" 2>&1
-    TEST_STATUS=$?
-    cat "$LOG.test.log"
+    # The latency load tests (one request at a time, then eight at once; THRUST_LOAD_ITERATIONS creates each, 200 by default)
+    # against the target this script just started. Numbers are LOCAL (loopback), see research/0004.
+    load_pass load_latency_
     echo "[$TARGET/$PASS] bench exit=$TEST_STATUS"
     exit "$TEST_STATUS"
     ;;
@@ -484,10 +496,8 @@ case "$PASS" in
     exit "$TEST_STATUS"
     ;;
   scale)
-    "$ROOT/scripts/rs" cargo run --quiet --release --manifest-path "$ROOT/Cargo.toml" -p thrust-contract-tests --bin bench_scale -- \
-      "${THRUST_SCALE_TOTAL:-100000}" "${THRUST_SCALE_PER_PROJECT:-1000}" >"$LOG.test.log" 2>&1
-    TEST_STATUS=$?
-    cat "$LOG.test.log"
+    # The scale load test, which reads THRUST_SCALE_TOTAL and THRUST_SCALE_PER_PROJECT (100000 and 1000) itself.
+    load_pass load_scale_
     echo "[$TARGET/$PASS] scale exit=$TEST_STATUS"
     exit "$TEST_STATUS"
     ;;

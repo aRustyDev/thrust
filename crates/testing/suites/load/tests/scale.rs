@@ -1,6 +1,7 @@
-//! Scale probe for spike 0002 (issue #37): list, search and create latency with ~100k work items in the database.
-//!
-//!   THRUST_BASE_URL=... THRUST_ADMIN_TOKEN=... bench_scale [total_items] [items_per_project]
+//! The scale probe of spike 0002 (issue #37), as a load test: list, search and create latency with ~100k work items in the
+//! database. It needs a running target (`THRUST_BASE_URL`, `THRUST_ADMIN_TOKEN`): `scripts/contract.sh <target> scale` starts one
+//! and runs it with the `load` profile, release-built. `THRUST_SCALE_TOTAL` (100,000) and `THRUST_SCALE_PER_PROJECT` (1,000) set
+//! the size.
 //!
 //! It makes its own workspace with `total / per_project` projects through `/internal/seed`, fills each through
 //! `/internal/seed-work-items` (5,000 rows a request) and then measures, from this machine, through `/api/v1`:
@@ -12,130 +13,30 @@
 //!   that a page does not grow with the project, at c=1 and c=8, with the response size;
 //! * `GET search` of the whole workspace (`/api/v1`'s search spans the caller's projects, the slice's was one project's) for a
 //!   common word (hits the 100-result cap), a rare word, and a 2-character query, at c=1;
-//! * `POST create` into a project of that size, c=1 and c=8, as `bench` does.
+//! * `POST create` into a project of that size, c=1 and c=8, as the latency test does.
 //!
 //! The numbers are measured from one client machine: they are not the origin region's, see research/0011, and not comparable to
-//! the ones recorded for the slice's routes. Every request counts against an API key's allowance (`Target::v1_limit`, Plane's 60 a
-//! minute by default), so the probe makes as many admin keys as the requests need and takes them in turn.
+//! the ones recorded for the slice's routes. A test passes when every request it made succeeded; a number is not a pass or a fail.
+//! Every request counts against an API key's allowance (`Target::v1_limit`, Plane's 60 a minute by default), so the probe makes as
+//! many admin keys as the requests need and takes them in turn.
 
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use serde_json::json;
 use thrust_contract_tests::*;
 use thrust_contracts::*;
+use thrust_load_tests::{env_usize, keys_needed, report, scale_item, timed, Rotation};
 
 /// How many requests the probe makes through `/api/v1` after the seed: the size probes of the two lists (1 each), the timed lists (50 and
 /// 20 at two concurrencies), four searches of 40, and two rounds of 200 creates. Each counts against a key's allowance.
 const REQUESTS: usize = 2 + 2 * (50 + 20) + 4 * 40 + 2 * 200;
 
-/// The admins of the probe's workspace, each with an API key, taken in turn: the allowance is a key's, so with as many keys as the
-/// requests need, none of them is asked for more than it may give in a window, however long the probe takes.
-struct Keys {
-    admins: Vec<User>,
-    turn: AtomicUsize,
-}
-
-impl Keys {
-    fn next(&self) -> User {
-        self.admins[self.turn.fetch_add(1, Ordering::Relaxed) % self.admins.len()].clone()
-    }
-}
-
-const VERBS: &[&str] =
-    &["Fix", "Add", "Remove", "Refactor", "Document", "Investigate", "Migrate", "Review", "Rename", "Test"];
-const NOUNS: &[&str] = &[
-    "login flow",
-    "billing page",
-    "search index",
-    "queue consumer",
-    "retry policy",
-    "cycle view",
-    "module board",
-    "export job",
-    "webhook handler",
-    "email digest",
-    "rate limiter",
-    "audit log",
-    "session cookie",
-    "api key",
-    "import wizard",
-    "kanban column",
-];
-
-fn pct(sorted: &[Duration], p: f64) -> Duration {
-    if sorted.is_empty() {
-        return Duration::ZERO;
-    }
-    let idx = ((sorted.len() as f64) * p).ceil() as usize;
-    sorted[idx.saturating_sub(1).min(sorted.len() - 1)]
-}
-
-fn report(name: &str, mut v: Vec<Duration>) {
-    v.sort();
-    let ms = |d: Duration| d.as_secs_f64() * 1000.0;
-    println!(
-        "{name:<44} n={:<5} p50={:>8.2}ms p95={:>8.2}ms p99={:>8.2}ms max={:>8.2}ms",
-        v.len(),
-        ms(pct(&v, 0.50)),
-        ms(pct(&v, 0.95)),
-        ms(pct(&v, 0.99)),
-        ms(*v.last().unwrap_or(&Duration::ZERO)),
-    );
-}
-
-fn item(i: usize) -> (String, Option<String>) {
-    let name = format!("{} {} #{i}", VERBS[i % VERBS.len()], NOUNS[(i / VERBS.len()) % NOUNS.len()]);
-    let description = (!i.is_multiple_of(5)).then(|| {
-        format!(
-            "{} the {} so that the {} no longer {}; see {} for context (ref {:06})",
-            VERBS[(i * 7) % VERBS.len()],
-            NOUNS[(i * 3) % NOUNS.len()],
-            NOUNS[(i * 5) % NOUNS.len()],
-            ["fails", "stalls", "duplicates work", "loses events"][i % 4],
-            NOUNS[(i * 11) % NOUNS.len()],
-            i * 37 % 1_000_000
-        )
-    });
-    (name, description)
-}
-
-/// Run `n` requests of `f` with `conc` in flight, timing each.
-async fn timed<F, Fut>(n: usize, conc: usize, f: F) -> Vec<Duration>
-where
-    F: Fn(usize) -> Fut + Send + Sync + 'static,
-    Fut: std::future::Future<Output = ()> + Send + 'static,
-{
-    let f = Arc::new(f);
-    let mut out = Vec::with_capacity(n);
-    let mut done = 0;
-    while done < n {
-        let batch = conc.min(n - done);
-        let handles: Vec<_> = (0..batch)
-            .map(|k| {
-                let f = f.clone();
-                let i = done + k;
-                tokio::spawn(async move {
-                    let s = Instant::now();
-                    f(i).await;
-                    s.elapsed()
-                })
-            })
-            .collect();
-        for h in handles {
-            out.push(h.await.unwrap());
-        }
-        done += batch;
-    }
-    out
-}
-
-#[tokio::main]
-async fn main() {
-    let total: usize = std::env::args().nth(1).and_then(|v| v.parse().ok()).unwrap_or(100_000);
-    let per_project: usize = std::env::args().nth(2).and_then(|v| v.parse().ok()).unwrap_or(1_000);
-    let big: usize = std::env::var("THRUST_BENCH_BIG_PROJECT").ok().and_then(|v| v.parse().ok()).unwrap_or(10_000);
+#[tokio::test(flavor = "multi_thread")]
+async fn load_scale_list_search_and_create() {
+    let total = env_usize("THRUST_SCALE_TOTAL", 100_000);
+    let per_project = env_usize("THRUST_SCALE_PER_PROJECT", 1_000);
+    let big = env_usize("THRUST_BENCH_BIG_PROJECT", 10_000);
     let t = Arc::new(Target::from_env());
     let projects = total / per_project;
 
@@ -144,8 +45,7 @@ async fn main() {
     let uid = || uuid::Uuid::new_v4();
     let ws = WorkspaceId(uid());
     let slug = format!("scale-{}", uid().simple());
-    let per_key = (Target::v1_limit() as usize).saturating_sub(5).max(1);
-    let admins: Vec<User> = (0..REQUESTS.div_ceil(per_key))
+    let admins: Vec<User> = (0..keys_needed(REQUESTS, Target::v1_limit()))
         .map(|_| User {
             id: UserId(uid()),
             token: String::new(),
@@ -190,7 +90,7 @@ async fn main() {
     };
     let r = t.admin_post("/internal/seed", &serde_json::to_value(&fixture).unwrap()).await;
     assert_eq!(r.status(), 204, "seed fixture: {:?}", r.text().await);
-    let keys = Arc::new(Keys { admins, turn: AtomicUsize::new(0) });
+    let keys = Arc::new(Rotation::new(admins).expect("at least one admin"));
 
     // seed: `projects` projects of `per_project` items, then one big project of `big` items
     let seed_into = |project: ProjectId, n: usize, base: usize| {
@@ -201,7 +101,7 @@ async fn main() {
             while rows < n {
                 let chunk = 5_000.min(n - rows);
                 let items: Vec<SeedWorkItemSpec> = (0..chunk)
-                    .map(|k| item(base + rows + k))
+                    .map(|k| scale_item(base + rows + k))
                     .map(|(name, description)| SeedWorkItemSpec { name, description })
                     .collect();
                 let req = SeedWorkItemsRequest { workspace_id: ws, project_id: project, created_by: admin, items };
@@ -250,7 +150,12 @@ async fn main() {
                 }
             })
             .await;
-            report(&format!("GET list, first page of 100, project of {size} items, c={conc} ({} KB)", bytes / 1024), v);
+            report(
+                &mut std::io::stdout(),
+                &format!("GET list, first page of 100, project of {size} items, c={conc} ({} KB)", bytes / 1024),
+                v,
+            )
+            .unwrap();
         }
     }
 
@@ -272,7 +177,7 @@ async fn main() {
             }
         })
         .await;
-        report(&format!("GET search {label}"), v);
+        report(&mut std::io::stdout(), &format!("GET search {label}"), v).unwrap();
     }
 
     // create into a project of that size
@@ -287,6 +192,6 @@ async fn main() {
             }
         })
         .await;
-        report(&format!("POST create into a project of {per_project}+, c={conc}"), v);
+        report(&mut std::io::stdout(), &format!("POST create into a project of {per_project}+, c={conc}"), v).unwrap();
     }
 }
