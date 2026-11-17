@@ -69,6 +69,7 @@ changelog_include = [
   "thrust-server",
   "thrust-contract-tests",
   "thrust-load-tests",
+  "thrust-profiling",
   "thrust-oracle-fixture",
   "thrust-editor-doc",
   "thrust-editor-worker",
@@ -143,6 +144,13 @@ version_group = "thrust"
 # First-release pattern (see the header): thrust-load-tests is not in v0.2.0. Remove it once a release contains the crate; the
 # release-pr job says when.
 git_tag_name = "thrust-load-tests-v{{ version }}"
+
+[[package]]
+name = "thrust-profiling"
+version_group = "thrust"
+# First-release pattern (see the header): thrust-profiling is not in v0.2.0. Remove it once a release contains the crate; the
+# release-pr job says when.
+git_tag_name = "thrust-profiling-v{{ version }}"
 
 [[package]]
 name = "thrust-oracle-fixture"
