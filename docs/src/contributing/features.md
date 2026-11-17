@@ -47,7 +47,7 @@ were killed. The Worker bundle and `native` bullets are `[derived]` from the scr
   `scripts/contract.sh native-memory main`. The contract script passes the value to `cargo build -p thrust-server
   --features`.
 - **The planted Postgres bug:** `scripts/mutants.sh` runs
-  `cargo test -p thrust-adapters-selfhosted --features mutant_discard_noop --test pg_adapter -- an_abandoned_transaction`.
+  `cargo nextest run -p thrust-adapters-selfhosted --features mutant_discard_noop --profile adapters --ignore-default-filter -E 'binary(pg_adapter) & test(/an_abandoned_transaction|model_postgres_adapter_matches/)'`.
 - **`native`:** `thrust-adapters-selfhosted` enables it through its dependency on the Postgres crate, and
   `scripts/contract.sh` builds the `migrate` binary with `--features native`.
 

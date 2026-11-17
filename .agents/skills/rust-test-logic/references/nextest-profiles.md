@@ -15,7 +15,8 @@ Leave it on `cargo test` until someone migrates its exit-code and pass-count han
 when tests fail `[re-run]`, exits 4 when the filter selects nothing `[re-run]`, and prints no libtest `test result:`
 line `[derived]`. `cargo test --doc` stays a libtest call because nextest cannot run doctests. In this repository the
 contract suite has been migrated that way: `scripts/contract.sh` runs each pass with the `contract` profile and
-reads the passed count from nextest's JUnit report, and maps nextest's exit 4 to its own count-guard exit 5.
+reads the passed count from nextest's JUnit report, and maps nextest's exit 4 to its own count-guard exit 5. The
+Docker suites (`pg_adapter`, `smtp_sink`) run with the `adapters` profile, and only the doctests stay on `cargo test`.
 
 ## Profiles
 
