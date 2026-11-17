@@ -351,6 +351,55 @@ fn a_start_date_may_be_the_target_date_but_not_a_later_day(#[values(-1, 0, 1)] d
     }
 }
 
+/// A body is read in three stages (the fields, the rows they name, `validate()`), and the first two are one 400: a key that names no row
+/// is reported beside the other fields that are wrong, as the pin reports every field at once. Each kind of row refusal comes with each
+/// wrong field, on a creation and on a change; a list is refused by the place of its item.
+#[rstest]
+fn a_key_that_names_no_row_is_reported_beside_the_other_fields_that_are_wrong(
+    #[values(
+        ("parent", json!("5a1b3c4d-0000-4000-8000-000000000001"), None),
+        ("state", json!("5a1b3c4d-0000-4000-8000-000000000001"), None),
+        ("created_by", json!("5a1b3c4d-0000-4000-8000-000000000001"), None),
+        ("type", json!("5a1b3c4d-0000-4000-8000-000000000001"), None),
+        ("assignees", json!(["5a1b3c4d-0000-4000-8000-000000000001"]), Some("0")),
+        ("labels", json!(["5a1b3c4d-0000-4000-8000-000000000001"]), Some("0"))
+    )]
+    row: (&str, Value, Option<&str>),
+    #[values(
+        ("priority", json!("x"), "\"x\" is not a valid choice.".to_string()),
+        (
+            "point",
+            json!(thrust_contracts::MAX_WORK_ITEM_POINT + 1),
+            format!("Ensure this value is less than or equal to {}.", thrust_contracts::MAX_WORK_ITEM_POINT)
+        ),
+        ("name", json!(null), "This field may not be null.".to_string()),
+        ("is_draft", json!("maybe"), "Must be a valid boolean.".to_string())
+    )]
+    wrong: (&str, Value, String),
+    #[values("POST", "PATCH")] method: &str,
+) {
+    let w = real_world();
+    let nobody = "5a1b3c4d-0000-4000-8000-000000000001";
+    let missing = format!("Invalid pk \"{nobody}\" - object does not exist.");
+    let (row_key, row_value, place) = row;
+    let (key, value, message) = wrong;
+    let mut body = json!({"name": "x"});
+    body[row_key] = row_value;
+    body[key] = value;
+    let uri = if method == "POST" {
+        items("issues")
+    } else {
+        item("issues", id_of(&make(&w, Who::Admin, json!({"name": "seed"}))))
+    };
+    let r = call(&w, Who::Admin, method, &uri, &body);
+    let filed = place.map_or_else(|| json!([missing.clone()]), |i| json!({ i: [missing.clone()] }));
+    assert_eq!(
+        (r.status, r.body),
+        (400, json!({key: [message], row_key: filed})),
+        "{method}: {row_key} with a wrong {key}"
+    );
+}
+
 /// A key that a relation cannot read is `“x” is not a valid UUID.` under its own field, and the other fields' errors come beside it:
 /// DRF catches Django's `ValidationError` per field. Every answer here is the pinned Plane's, measured on a running one (reading the
 /// source had suggested the error escapes the field and makes a bare `Please provide valid detail`, which it does not).

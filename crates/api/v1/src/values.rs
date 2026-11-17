@@ -8,9 +8,12 @@
 //! null]`. Whether a key may be left out is the field's (`Option<_>` in the request struct), as it is in the core patches.
 
 use serde_json::Value;
+use thrust_contracts::chrono::NaiveDate;
 use thrust_contracts::Uuid;
 
-use crate::fields::{char_field, choice_by, int_field, pk_field, uuid_field, PkRead};
+use crate::fields::{
+    char_field, choice_by, date_field, datetime_field, int_field, pk_field, py_str, uuid_field, PkRead,
+};
 
 /// A text of `MIN` to `MAX` characters, read as DRF's `CharField` reads one: trimmed, counted in characters, a number taken as its
 /// text, a bool, a list and an object refused, and `null` refused. `MIN` is 0 (blank allowed) or 1 (blank refused): DRF's flag is that
@@ -91,6 +94,10 @@ pub(crate) struct Prose(String);
 impl Prose {
     pub(crate) fn read(v: &Value) -> Result<Self, String> {
         char_field(v, None, true, false).map(|text| Self(text.unwrap_or_default()))
+    }
+
+    pub(crate) fn as_str(&self) -> &str {
+        &self.0
     }
 
     pub(crate) fn into_string(self) -> String {
@@ -176,6 +183,81 @@ impl NullableUuid {
     }
 }
 
+/// A [`Text`] that also keeps the text as it was sent (Python's `str()` of the value, padding and all), which a work item's activity
+/// quotes: `into_parts` is the text as sent and the text as kept.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SentText<const MIN: usize, const MAX: usize> {
+    sent: String,
+    kept: String,
+}
+
+impl<const MIN: usize, const MAX: usize> SentText<MIN, MAX> {
+    const MIN_IS_BLANK_OR_NOT: () = assert!(MIN <= 1, "a Text has a minimum of 0 or 1: DRF's blank flag");
+
+    pub(crate) fn read(v: &Value) -> Result<Self, String> {
+        let () = Self::MIN_IS_BLANK_OR_NOT;
+        let kept = char_field(v, Some(MAX), MIN == 0, false)?.unwrap_or_default();
+        Ok(Self { sent: py_str(v), kept })
+    }
+
+    pub(crate) fn into_parts(self) -> (String, String) {
+        (self.sent, self.kept)
+    }
+}
+
+/// A date or `null` (which has no date), read as DRF's `DateField` on a column that allows null reads one; it keeps the text as it was
+/// sent, which the activity quotes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct NullableDate {
+    sent: Option<String>,
+    date: Option<NaiveDate>,
+}
+
+impl NullableDate {
+    pub(crate) fn read(v: &Value) -> Result<Self, String> {
+        date_field(v).map(|date| Self { sent: v.as_str().map(str::to_string), date })
+    }
+
+    pub(crate) fn date(&self) -> Option<NaiveDate> {
+        self.date
+    }
+
+    pub(crate) fn into_parts(self) -> (Option<String>, Option<NaiveDate>) {
+        (self.sent, self.date)
+    }
+}
+
+/// A date and time or `null`, of which only whether it was given is kept: a `deleted_at` is read and checked, and not stored.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct NullableDateTime(bool);
+
+impl NullableDateTime {
+    pub(crate) fn read(v: &Value) -> Result<Self, String> {
+        datetime_field(v).map(Self)
+    }
+
+    pub(crate) fn is_set(self) -> bool {
+        self.0
+    }
+}
+
+/// A [`Whole`] that can also be `null`, which is `None`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct NullableWhole<const MIN: i32, const MAX: i32>(Option<i32>);
+
+impl<const MIN: i32, const MAX: i32> NullableWhole<MIN, MAX> {
+    pub(crate) fn read(v: &Value) -> Result<Self, String> {
+        if v.is_null() {
+            return Ok(Self(None));
+        }
+        Whole::<MIN, MAX>::read(v).map(|n| Self(Some(n.get())))
+    }
+
+    pub(crate) fn get(self) -> Option<i32> {
+        self.0
+    }
+}
+
 #[cfg(feature = "openapi")]
 mod schema {
     //! What each type says in the document. An `Option<_>` field of one of these is written inline and not nullable
@@ -188,7 +270,10 @@ mod schema {
     use utoipa::openapi::{RefOr, Schema};
     use utoipa::{PartialSchema, ToSchema};
 
-    use super::{AnyJson, NullableKey, NullableProse, NullableText, NullableUuid, Prose, Text, Timezone, Whole};
+    use super::{
+        AnyJson, NullableDate, NullableDateTime, NullableKey, NullableProse, NullableText, NullableUuid, NullableWhole,
+        Prose, SentText, Text, Timezone, Whole,
+    };
 
     /// `type: string` (or `[string, null]`) with the bounds that are there.
     fn text(nullable: bool, min: usize, max: Option<usize>) -> RefOr<Schema> {
@@ -240,11 +325,69 @@ mod schema {
         }
     }
 
-    fn uuid_or_null() -> RefOr<Schema> {
+    /// `type: [string, null]` with a `format`.
+    fn nullable_string_with_format(format: KnownFormat) -> RefOr<Schema> {
         let object = ObjectBuilder::new()
             .schema_type([Type::String, Type::Null].into_iter().collect::<SchemaType>())
-            .format(Some(SchemaFormat::KnownFormat(KnownFormat::Uuid)));
+            .format(Some(SchemaFormat::KnownFormat(format)));
         RefOr::T(Schema::Object(object.build()))
+    }
+
+    fn uuid_or_null() -> RefOr<Schema> {
+        nullable_string_with_format(KnownFormat::Uuid)
+    }
+
+    impl<const MIN: usize, const MAX: usize> PartialSchema for SentText<MIN, MAX> {
+        fn schema() -> RefOr<Schema> {
+            text(false, MIN, Some(MAX))
+        }
+    }
+
+    impl<const MIN: usize, const MAX: usize> ToSchema for SentText<MIN, MAX> {
+        fn name() -> Cow<'static, str> {
+            Cow::Owned(format!("SentText_{MIN}_{MAX}"))
+        }
+    }
+
+    impl PartialSchema for NullableDate {
+        fn schema() -> RefOr<Schema> {
+            nullable_string_with_format(KnownFormat::Date)
+        }
+    }
+
+    impl ToSchema for NullableDate {
+        fn name() -> Cow<'static, str> {
+            Cow::Borrowed("NullableDate")
+        }
+    }
+
+    impl PartialSchema for NullableDateTime {
+        fn schema() -> RefOr<Schema> {
+            nullable_string_with_format(KnownFormat::DateTime)
+        }
+    }
+
+    impl ToSchema for NullableDateTime {
+        fn name() -> Cow<'static, str> {
+            Cow::Borrowed("NullableDateTime")
+        }
+    }
+
+    /// `type: [integer, null]` with the two bounds and no `format`.
+    impl<const MIN: i32, const MAX: i32> PartialSchema for NullableWhole<MIN, MAX> {
+        fn schema() -> RefOr<Schema> {
+            let object = ObjectBuilder::new()
+                .schema_type([Type::Integer, Type::Null].into_iter().collect::<SchemaType>())
+                .minimum(Some(i64::from(MIN)))
+                .maximum(Some(i64::from(MAX)));
+            RefOr::T(Schema::Object(object.build()))
+        }
+    }
+
+    impl<const MIN: i32, const MAX: i32> ToSchema for NullableWhole<MIN, MAX> {
+        fn name() -> Cow<'static, str> {
+            Cow::Owned(format!("NullableWhole_{MIN}_{MAX}"))
+        }
     }
 
     impl PartialSchema for NullableUuid {
