@@ -24,6 +24,11 @@
 #   SMOKE_STREAK_INTERVAL  seconds between two answers that did (default 1)
 #   SMOKE_FORCE_FAIL=1  after every real check has passed, fail on purpose. The deploy's rollback control (a failing smoke must
 #                       end with the previous version active) runs on staging with it set; it is refused for prod by the workflow.
+#   SMOKE_COOKIE_FILE   a curl cookie jar holding the edge's pin (scripts/edge-opt-in.sh), sent with every request of both phases:
+#                       the smoke of a target reached through the shared hostname (ADR-0111). Without the pin the edge answers
+#                       from production, so <expected-version> (the target's deployment id) cannot match by accident.
+#   SMOKE_EXPECT_ROUTE  with it, phase 1 also needs `x-thrust-route` (which the edge sets) to be this target's name: an answer
+#                       the edge took to production, or one that did not pass through the edge at all, is not this target's.
 #
 # Exit status: 0 the smoke passed; 1 a check failed; 2 it was called wrongly (a usage or configuration error, nothing was checked).
 set -u
@@ -58,6 +63,14 @@ case "$AUTH" in
   off) ;;
   *) usage "SMOKE_AUTH is 'on' or 'off', got '$AUTH'" ;;
 esac
+COOKIE="${SMOKE_COOKIE_FILE:-}"
+if [ -n "$COOKIE" ] && { [ ! -f "$COOKIE" ] || [ ! -r "$COOKIE" ]; }; then
+  usage "SMOKE_COOKIE_FILE is not a readable file: '$COOKIE'"
+fi
+ROUTE="${SMOKE_EXPECT_ROUTE:-}"
+# a target's name as the edge writes it (crates/edge/src/pin.rs, valid_name), or `prod`. The letters are spelled out: in a UTF-8
+# locale a range such as `a-z` also matches capitals (scripts/render-wrangler.sh found the same), and this script keeps the caller's.
+case "$ROUTE" in *[!0123456789abcdefghijklmnopqrstuvwxyz.-]*) usage "SMOKE_EXPECT_ROUTE is a target name (lowercase letters, digits, '.' and '-'), got '$ROUTE'" ;; esac
 PROJECT="${SMOKE_PROJECT:-smoke}"
 case "${SMOKE_WORKSPACE:-x}" in *[!0-9A-Za-z_-]*) usage "SMOKE_WORKSPACE is a slug (letters, digits, - and _)" ;; esac
 case "$PROJECT" in *[\"\\]*) usage "SMOKE_PROJECT must not contain a quote or a backslash" ;; esac
@@ -69,6 +82,9 @@ trap 'rm -rf "$T"' EXIT INT TERM
 # error to $T/e. Never follows a redirect: a 3xx where a 200 is expected is a failure, not something to chase.
 req() { # req <curl args...> <url>
   curl -sS --connect-timeout 5 --max-time 20 -D "$T/h" -o "$T/b" -w '%{http_code}' "$@" 2>"$T/e" || true
+}
+pinned() { # pinned <curl args...> <url>: req, with the edge's pin when there is one
+  if [ -n "$COOKIE" ]; then req -b "$COOKIE" "$@"; else req "$@"; fi
 }
 header() { # header <name>: the last value of that response header, without the CR and the padding
   tr -d '\r' < "$T/h" 2>/dev/null | grep -i "^$1:" | tail -1 | sed 's/^[^:]*:[[:space:]]*//; s/[[:space:]]*$//'
@@ -82,8 +98,9 @@ streak=0
 last="no attempt was made"
 while [ "$n" -lt "$ATTEMPTS" ]; do
   n=$((n + 1))
-  status="$(req -H 'Cache-Control: no-cache' "$BASE/healthz?smoke=$n")"
+  status="$(pinned -H 'Cache-Control: no-cache' "$BASE/healthz?smoke=$n")"
   got="$(header x-thrust-version)"
+  route="$(header x-thrust-route)"
   body="$(cat "$T/b" 2>/dev/null)"
   if [ "$status" = 000 ]; then
     last="could not reach $BASE/healthz: $(tr -d '\r\n' < "$T/e")"
@@ -93,6 +110,9 @@ while [ "$n" -lt "$ATTEMPTS" ]; do
     streak=0
   elif [ "$body" != ok ]; then
     last="/healthz answered 200 but its body is not 'ok'"
+    streak=0
+  elif [ -n "$ROUTE" ] && [ "$route" != "$ROUTE" ]; then
+    last="the edge routed this to '${route:-no x-thrust-route at all}', not '$ROUTE'"
     streak=0
   elif [ -z "$got" ]; then
     last="/healthz has no x-thrust-version header, so it cannot be told from the version it replaced"
@@ -118,6 +138,8 @@ if [ "$AUTH" = off ]; then
   echo "auth: SKIPPED (SMOKE_AUTH=off): nothing was read from the database"
 else
   JAR="$T/jar"
+  # Through the edge, the session's cookies join the pin in one jar, so every request of this phase reaches the same target.
+  if [ -n "$COOKIE" ]; then cp "$COOKIE" "$JAR" || usage "cannot copy SMOKE_COOKIE_FILE"; fi
   # The CSRF token goes with the sign-in whether this Worker enforces it or not: enforcement is a per-environment setting.
   status="$(req -c "$JAR" -b "$JAR" "$BASE/auth/get-csrf-token/")"
   [ "$status" = 200 ] || fail "auth: /auth/get-csrf-token/ answered $status, not 200"
@@ -148,4 +170,4 @@ fi
 if [ "${SMOKE_FORCE_FAIL:-}" = 1 ]; then
   fail "SMOKE_FORCE_FAIL=1: failing on purpose, after every real check passed"
 fi
-echo "smoke: PASS ($EXPECT at $BASE)"
+echo "smoke: PASS ($EXPECT at $BASE${ROUTE:+, routed to $ROUTE})"

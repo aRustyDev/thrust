@@ -107,7 +107,7 @@ RULES = [
     (r"^scripts/check-book\.sh$", {"jobs": ["docs"]}, "the book's check"),
     (r"^scripts/(check-(deps|layout|topology|plane-500|acceptance-list|placement|openapi|migration-lint|edge-config)|render-wrangler)\.sh$",
      {"jobs": ["deps", "ci-scripts"]}, "a guard of the deps job"),
-    (r"^scripts/(smoke-deploy|smoke-bootstrap|migrate-ci|deploy-worker|merge-assets|check-asset-retention)\.sh$",
+    (r"^scripts/(smoke-deploy|smoke-bootstrap|migrate-ci|deploy-worker|merge-assets|check-asset-retention|edge-opt-in)\.sh$",
      {"jobs": ["ci-scripts"]}, "a deploy script (tested by ci-scripts; run by deploy.yml)"),
     (r"^scripts/flagship\.py$", {"jobs": ["deps", "ci-scripts"]},
      "the Flagship reconciler (its policy check runs in deps, its tests in ci-scripts; flagship.yml runs it)"),

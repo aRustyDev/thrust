@@ -162,6 +162,97 @@ odd_password() {
 }
 expect "password: a quote, a backslash and a space in it still sign in" 0 "auth: PASS" odd_password
 
+# ---- through the edge (ADR-0111): the pin, from scripts/edge-opt-in.sh, and the route ---------------------------------------
+# The stub stands for the shared hostname with one target (--pin): only a request with the target's pin cookie reaches it; any
+# other is production (another version, `x-thrust-route: prod`, an API that answers 421). The opt-in is Access (the CI token's id
+# and secret) and then the edge, which refuses until the target's flag has propagated (--deny-first).
+OPTIN="$HERE/scripts/edge-opt-in.sh"
+export STUB_CLIENT_ID='ci-id' STUB_CLIENT_SECRET='ci-secret-7f3a9'
+OPT_ENV="EDGE_CI_CLIENT_ID=ci-id EDGE_CI_CLIENT_SECRET=ci-secret-7f3a9 OPT_IN_ATTEMPTS=4 OPT_IN_INTERVAL=0"
+
+# opt_in_against_stub <audience> <target>: start the stand-in, opt in into $T/pin.jar, stop it
+opt_in_against_stub() {
+  start_stub || return 99
+  # shellcheck disable=SC2086
+  env $OPT_ENV "$OPTIN" "http://127.0.0.1:$STUB_PORT" "$1" "$2" "$T/pin.jar"
+  rc=$?
+  stop_stub
+  return $rc
+}
+# through_edge <target> <expected-version> [route]: opt in for <target>, then the smoke with that pin (and the route, if given)
+through_edge() {
+  start_stub || return 99
+  # shellcheck disable=SC2086
+  env $OPT_ENV "$OPTIN" "http://127.0.0.1:$STUB_PORT" rc "$1" "$T/pin.jar" || { rc=$?; stop_stub; return $rc; }
+  # shellcheck disable=SC2086
+  env $SMOKE_ENV SMOKE_COOKIE_FILE="$T/pin.jar" ${3:+SMOKE_EXPECT_ROUTE=$3} "$SMOKE" "http://127.0.0.1:$STUB_PORT" "$2"
+  rc=$?
+  stop_stub
+  return $rc
+}
+
+SMOKE_ENV="$BASE_ENV"
+STUB_ARGS="--version dep-1 --pin v0.3.0"
+expect "edge: with the pin and the route, both phases reach the target (its smoke account reads its project)" 0 \
+  "smoke: PASS (dep-1 at http://127.0.0.1:" through_edge v0.3.0 dep-1 v0.3.0
+expect "edge: the pass names the route" 0 "routed to v0.3.0" through_edge v0.3.0 dep-1 v0.3.0
+expect "edge: without the pin the answer is production's, whose version is not the target's" 1 \
+  "the Worker serves prod-version, expected dep-1" smoke_against_stub dep-1
+STUB_ARGS="--version dep-1 --pin v0.3.0 --route v0.2.0"
+expect "edge: an answer routed to another target fails the route" 1 "the edge routed this to 'v0.2.0', not 'v0.3.0'" \
+  through_edge v0.3.0 dep-1 v0.3.0
+expect "edge: the route is not checked when none is expected (its control)" 0 "smoke: PASS" through_edge v0.3.0 dep-1
+STUB_ARGS="--version dep-1 --pin v0.3.0 --no-route"
+expect "edge: an answer with no route header (it did not pass the edge) fails the route" 1 "no x-thrust-route at all" \
+  through_edge v0.3.0 dep-1 v0.3.0
+STUB_ARGS="--version abc123"
+SMOKE_ENV="$BASE_ENV SMOKE_COOKIE_FILE=$T/no-such-jar"
+expect "edge: SMOKE_COOKIE_FILE that is not a file: a usage error, nothing asked" 2 "is not a readable file" smoke_against_stub abc123
+SMOKE_ENV="$BASE_ENV SMOKE_EXPECT_ROUTE=V0.3"
+expect "edge: SMOKE_EXPECT_ROUTE that is not a name: a usage error" 2 "SMOKE_EXPECT_ROUTE is a target name" smoke_against_stub abc123
+SMOKE_ENV="$BASE_ENV"
+
+# the opt-in itself
+STUB_ARGS="--pin v0.3.0 --deny-first 2"
+expect "opt-in: refused while the flag propagates, then pinned" 0 "pinned to v0.3.0 through rc (attempt 3/4)" opt_in_against_stub rc v0.3.0
+STUB_ARGS="--pin v0.3.0 --deny-first 9"
+expect "opt-in: a flag that never arrives fails after the attempts" 1 "no pin for v0.3.0 after 4 attempts" opt_in_against_stub rc v0.3.0
+STUB_ARGS="--pin v0.3.0"
+expect "opt-in: a target the edge does not route to fails after the attempts" 1 "no pin for v0.9.9" opt_in_against_stub rc v0.9.9
+expect "opt-in: an audience the edge has no path for is final" 1 "the edge answered 404" opt_in_against_stub ops v0.3.0
+wrong_token() { ( OPT_ENV="EDGE_CI_CLIENT_ID=ci-id EDGE_CI_CLIENT_SECRET=wrong OPT_IN_ATTEMPTS=4 OPT_IN_INTERVAL=0"; opt_in_against_stub rc v0.3.0 ); }
+# `FAIL: refused` is printed only by a refusal that is final; one that was retried ends with `FAIL: no pin ... after 4 attempts`
+expect "opt-in: a token Access refuses is final, not retried" 1 "FAIL: refused, and not because a flag is propagating (403: an empty body" wrong_token
+STUB_ARGS="--pin v0.3.0 --not-admitted"
+expect "opt-in: a token the edge refuses is final, not retried" 1 "FAIL: refused, and not because a flag is propagating (403: not admitted" \
+  opt_in_against_stub rc v0.3.0
+STUB_ARGS="--pin v0.3.0 --unavailable-first 2"
+expect "opt-in: an edge that answers 503 for a while, then pins" 0 "pinned to v0.3.0 through rc (attempt 3/4)" opt_in_against_stub rc v0.3.0
+STUB_ARGS="--pin v0.3.0 --opt-in-status 503"
+expect "opt-in: an edge that keeps answering 503 fails after the attempts" 1 "the edge answered 503" opt_in_against_stub rc v0.3.0
+STUB_ARGS="--pin v0.3.0 --opt-in-status 500"
+expect "opt-in: any other status is final" 1 "the edge answered 500" opt_in_against_stub rc v0.3.0
+STUB_ARGS="--pin v0.3.0 --no-pin-cookie"
+expect "opt-in: a 303 that sets no pin is a failure" 1 "answered 303 without the pin cookie" opt_in_against_stub rc v0.3.0
+STUB_ARGS="--pin v0.3.0"
+for bad in "RC v0.3.0" "rc V0.3.0" "rc -v0" "rc v0/3" "abcdefghijklmnopq v0.3.0"; do
+  # shellcheck disable=SC2086
+  expect "opt-in: '$bad' is a usage error, nothing asked" 2 "edge-opt-in:" opt_in_against_stub $bad
+done
+expect "opt-in: an origin over http elsewhere is a usage error" 2 "must be https" env $OPT_ENV "$OPTIN" "http://example.com" rc v0.3.0 "$T/x.jar"
+expect "opt-in: no token is a usage error" 2 "EDGE_CI_CLIENT_ID and EDGE_CI_CLIENT_SECRET are required" \
+  env OPT_IN_ATTEMPTS=1 "$OPTIN" "https://thrust.example.test" rc v0.3.0 "$T/x.jar"
+opt_in_no_leak() {
+  : > "$T/argv.log"
+  ( PATH="$T/bin:$PATH"; export PATH; opt_in_against_stub rc v0.3.0 ) > "$T/oleak.out" 2>&1 || {
+    echo "the opt-in did not pass:"; cat "$T/oleak.out"; return 1
+  }
+  grep -qF "/_edge/opt-in/rc" "$T/argv.log" || { echo "the argv log has no opt-in: the check looked at nothing"; return 1; }
+  if grep -qF "$STUB_CLIENT_SECRET" "$T/argv.log" "$T/oleak.out"; then echo "the secret is in curl's argv or in the output"; return 1; fi
+  echo "no leak: the opt-in secret is in no curl argv and not in the output (the opt-in was seen)"
+}
+expect "opt-in: the token's secret is in no curl argv and not in the output" 0 "no leak: the opt-in secret" opt_in_no_leak
+
 # ---- hygiene ---------------------------------------------------------------------------------------------------------------
 no_stub_left() {
   if ps -eo command | grep -F "smoke_stub.py --port-file $T" | grep -vF grep > /dev/null; then
