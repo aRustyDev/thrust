@@ -26,6 +26,13 @@ Switches (environment):
   FAKE_OPTIN=fail          the opt-in fails
   FAKE_SMOKE=fail          the smoke fails (its control, which asks for a version nobody deployed, is truthful anyway)
   FAKE_SMOKE_ANY=1         a broken smoke that passes whatever it is asked
+  FAKE_LIVE=<sha>|none|split  what production runs: one version tagged <sha>; no deployment; two versions sharing the traffic
+  FAKE_LIVE_LIST=fail      `deployments list` fails with an error that is not "no such Worker"
+  FAKE_MIGRATIONS=true     the classifier says the candidate brings migrations (default false); =fail: the classifier fails
+  FAKE_MIGRATE=fail        the expand migration fails
+
+    target_fakes.py classify <live tag> <sha>      .github/scripts/classify-deploy.sh's interface
+    target_fakes.py migrate <args>                 scripts/migrate-ci.sh's interface
 """
 
 import json
@@ -33,7 +40,8 @@ import os
 import sys
 
 D = os.environ.get("FAKE_DIR", "")
-SENSITIVE = ["CLOUDFLARE_API_TOKEN", "FLAGSHIP_API_TOKEN", "EDGE_CI_CLIENT_ID", "EDGE_CI_CLIENT_SECRET", "SMOKE_PASSWORD"]
+SENSITIVE = ["CLOUDFLARE_API_TOKEN", "FLAGSHIP_API_TOKEN", "EDGE_CI_CLIENT_ID", "EDGE_CI_CLIENT_SECRET", "SMOKE_PASSWORD",
+             "DATABASE_URL", "TUNNEL_SERVICE_TOKEN_ID", "TUNNEL_SERVICE_TOKEN_SECRET"]
 SUB = os.environ.get("FAKE_SUBDOMAIN", "team-4d9")
 REAL_FLAGSHIP = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "scripts", "flagship.py")
 
@@ -90,8 +98,51 @@ def applied(previews):
     return env
 
 
+def live(what):
+    """`deployments list` / `versions list` of production, in the shapes .github/scripts/active-version.py reads."""
+    if what == "deployments" and os.environ.get("FAKE_LIVE_LIST") == "fail":
+        print("X [ERROR] An unknown error has occurred [code: 10013]", file=sys.stderr)
+        return 1
+    mode = os.environ.get("FAKE_LIVE", "none")
+    if mode == "none":
+        print("[]")
+        return 0
+    versions = [{"id": "ver-a", "number": 1, "annotations": {"workers/tag": mode if mode != "split" else "a" * 40}}]
+    shares = [{"version_id": "ver-a", "percentage": 100}]
+    if mode == "split":
+        versions.append({"id": "ver-b", "number": 2, "annotations": {"workers/tag": "b" * 40}})
+        shares = [{"version_id": "ver-a", "percentage": 50}, {"version_id": "ver-b", "percentage": 50}]
+    if what == "deployments":
+        print(json.dumps([{"id": "dep-1", "source": "wrangler", "strategy": "percentage", "created_on": "2026-11-16T10:00:00Z",
+                           "versions": shares}]))
+    else:
+        print(json.dumps(versions))
+    return 0
+
+
+def classify(args):
+    log("classify", " ".join(args))
+    mode = os.environ.get("FAKE_MIGRATIONS", "false")
+    if mode == "fail":
+        print("classify-deploy: the live commit cannot be read", file=sys.stderr)
+        return 1
+    print(f"migrations_changed={mode}\ndo_lifecycle=false\nreason=the fake classifier")
+    return 0
+
+
+def migrate(args):
+    log("migrate", " ".join(args))
+    if os.environ.get("FAKE_MIGRATE") == "fail":
+        print("migrate-ci: the tunnel did not come up", file=sys.stderr)
+        return 1
+    print("migrated (tls: verify-ca)")
+    return 0
+
+
 def wrangler(args):
     log("wrangler", " ".join(args))
+    if args[:2] in (["deployments", "list"], ["versions", "list"]):
+        return live(args[0])
     st = state()
     if args[:2] == ["preview", "delete"]:
         label = opt(args, "--name")
@@ -170,6 +221,10 @@ def main():
         return optin(args)
     if role == "smoke":
         return smoke(args)
+    if role == "classify":
+        return classify(args)
+    if role == "migrate":
+        return migrate(args)
     log("flagship", " ".join(sys.argv[1:3]))
     os.execv(sys.executable, [sys.executable, "-I", os.path.abspath(REAL_FLAGSHIP)] + sys.argv[1:])
 
