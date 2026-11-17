@@ -198,6 +198,7 @@ thrust/
       suites/api/               # thrust-contract-tests: the one HTTP contract suite, run against every target
                                 #   (ADR-0121)
       suites/load/              # thrust-load-tests: the latency and scale load tests, against a running target
+      profiling/                # thrust-profiling: in-process workloads (the v1 router) and their profiles (prof_)
     server/                     # thrust-server: composition root: native axum/tokio (cargo feature set `selfhosted`)
     worker/                     # thrust-worker: composition root: wasm32 Cloudflare Worker (cargo feature set
                                 #   `cloudflare`)

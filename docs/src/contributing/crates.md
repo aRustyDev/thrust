@@ -47,7 +47,7 @@ are on [Architecture gates](../testing/techniques/architecture-gates.md).
    Name the crate in its group's `README.md` as `` `<dir>/` ``. A directory is a crate or a group, never both, so a new
    group gets a `README.md` of its own. `scripts/check-layout.sh`, in CI's `deps` job, refuses a crate that its group's
    `README.md` does not name, a directory under `crates/` that is neither, and a dependency the layout forbids.
-2. Create `crates/<group>/<dir>/Cargo.toml`. All 20 existing crates take `edition`, `version`, `license` and `publish`
+2. Create `crates/<group>/<dir>/Cargo.toml`. All 21 existing crates take `edition`, `version`, `license` and `publish`
    from the workspace (`edition.workspace = true` and so on), so the licence (`AGPL-3.0-only`) and `publish = false`
    stay in one place. Add the directory to `members` in the root `Cargo.toml`. The list is explicit, with no glob.
 3. If another crate will depend on it, add `thrust-<name> = { path = "crates/<group>/<dir>" }` under
@@ -55,7 +55,7 @@ are on [Architecture gates](../testing/techniques/architecture-gates.md).
    root `Cargo.toml` is the only file that names a crate's directory. Fifteen crates are declared that way: contracts,
    ports, core, api, plane-types, api-v1, compat-plane, the five adapter crates, `thrust-editor-doc`,
    `thrust-oracle-fixture` and `thrust-contract-tests` (a dev-dependency of `thrust-load-tests`). Nothing depends on the
-   three programs (`thrust-server`, `thrust-worker`, `thrust-edge`), `thrust-load-tests` or `thrust-editor-worker`, so
+   three programs (`thrust-server`, `thrust-worker`, `thrust-edge`), `thrust-load-tests`, `thrust-profiling` or `thrust-editor-worker`, so
    they have no entry. A workspace entry that turns default
    features off (`thrust-editor-doc`'s does) is the only place that can: Cargo ignores a member's own
    `default-features = false` on an inherited dependency.
