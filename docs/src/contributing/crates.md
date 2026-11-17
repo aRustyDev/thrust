@@ -7,10 +7,10 @@ depend on one another is on [Application architecture](../architecture/app.md); 
 
 | You are adding | It goes in | Constraint |
 |---|---|---|
-| A type that crosses a boundary: an id, a record, an event, a request or error body | `thrust-contracts` | Depends on serde, serde_json, uuid and chrono only. chrono has no `clock` feature there |
+| An identifier, domain record or event shared across layers | `thrust-contracts` | Depends on serde, serde_json, uuid and chrono only. chrono has no `clock` feature there |
 | A capability the core needs from outside: a store, a queue, time | a trait in `thrust-ports` | Every returned future is `Send`. [Patterns](patterns.md) has the steps |
 | A business rule, a use-case or a permission check | `thrust-core` | Reaches the outside only through the `Ports` bundle |
-| An HTTP route or its error mapping | `thrust-api` | The product handlers call a core use-case and never see a platform type. Only the test-route handlers reach `app.ports` directly |
+| An HTTP route, or a request, response or error DTO owned by this surface | the owning HTTP crate, such as `thrust-api` | The product handlers call a core use-case and never see a platform type. Only the test-route handlers reach `app.ports` directly. Do not move an HTTP DTO inward merely because it crosses the wire |
 | The text of a reproduced Plane 500, or the function that answers it | `thrust-plane-types` | Both Plane-shaped crates (`thrust-api-v1`, `thrust-compat-plane`) answer a 500 through `plane_500` and write none of their own: `scripts/check-plane-500.sh` rejects `StatusCode::INTERNAL_SERVER_ERROR` and its spellings in either, and CI's `deps` job runs it. Depends on `thrust-api` and axum only |
 | SQL | `thrust-adapters-postgres` | Written once, against `tokio_postgres::Client`, behind a `Connector` |
 | Code that only runs natively | `thrust-adapters-selfhosted` | Never compiled into the Worker |
@@ -28,6 +28,11 @@ that list, and CI's `deps` job runs the same script, so it does not cover that c
 normal dependencies, so a platform crate that is not on it passes. The ORM crates are the exception: the script asks
 the whole workspace for them, on every kind of edge. How the check works and how to prove it can fail
 are on [Architecture gates](../testing/techniques/architecture-gates.md).
+
+HTTP surfaces point inward: a surface-owned DTO stays in its owning HTTP crate, and `thrust-contracts`,
+`thrust-ports` and `thrust-core` must never depend on `thrust-compat-plane`. `scripts/check-deps.sh` confirms that
+`thrust-compat-plane` is a workspace member and fails closed unless `cargo tree` explicitly says it is absent from
+each of those three graphs.
 
 ## Adding a crate
 

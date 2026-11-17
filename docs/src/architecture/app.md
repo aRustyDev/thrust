@@ -29,7 +29,7 @@ flowchart TB
   api[thrust-api<br/>the shared axum router]
   core[thrust-core<br/>use-cases and the permission seam]
   ports[thrust-ports<br/>port traits]
-  contracts[thrust-contracts<br/>ids, records, events, DTOs]
+  contracts[thrust-contracts<br/>ids, records, events]
 
   worker --> api
   worker --> cf
@@ -59,10 +59,10 @@ depends on it directly. `thrust-api` and both roots also depend directly on `thr
 
 | Layer | Crate | Role |
 |---|---|---|
-| Data | `thrust-contracts` | Identifiers (`WorkspaceId`, `ProjectId`, ...), records (`WorkItem`, `Activity`), the event `Envelope`, the outbox row and the API request and error types. Depends on serde, serde_json, uuid and chrono without its clock feature |
+| Data | `thrust-contracts` | Identifiers (`WorkspaceId`, `ProjectId`, ...), records (`WorkItem`, `Activity`), the event `Envelope` and the outbox row. Depends on serde, serde_json, uuid and chrono without its clock feature |
 | Ports | `thrust-ports` | The port traits and their error types. Every returned future is `Send` |
 | Core | `thrust-core` | The use-cases, the `Ports` bundle, `App` and `CoreConfig`, the permission seam (`authorize`, which mints a `Scope`) and the identity use-cases (`sign_in`, sessions, CSRF, API keys with a versioned digest, the OIDC login) with the argon2id hasher. `CoreConfig` holds the CSRF enforcement switch (`csrf_enforce`) and the API key hash version (`api_key_hash_current`, `api_key_hash_supported`). It depends on `argon2` and `subtle`, both pure Rust, and on no OIDC crate |
-| HTTP | `thrust-api` | One `router()` that both roots serve. Handlers see `App` and never a platform type |
+| HTTP | `thrust-api` | One `router()` that both roots serve. Handlers see `App` and never a platform type; router-owned request, response and error DTOs stay here rather than leaking inward |
 | Adapters | `thrust-adapters-memory` | `Database` (workspaces, sessions, users, API keys and pending logins, and all), `Queue`, `BlobStore` and `RateLimiter` in process memory, for tests and as the reference the real adapters are compared with. It has no clock, id, random or background adapter |
 | | `thrust-adapters-postgres` | The `Database` port written once against `tokio_postgres::Client`, plus the schema migrations (0001 to 0007: 0006 is the `pg_trgm` search indexes, 0007 adds `api_keys.hash_version`) and a `migrate` binary |
 | | `thrust-adapters-selfhosted` | Native pieces: a system clock, UUID v7 ids, the operating system's random source, `reqwest` as the `Fetch` port, `Background` on tokio, and a deadpool connection pool that gives the Postgres adapter its connections |
@@ -118,7 +118,9 @@ tokio-postgres, hyper, worker, wasm-bindgen, sqlx, ...) is in the dependency gra
 `thrust-adapters-oidc` to the same list minus `wasm-bindgen` and `js-sys` (the `openidconnect` crate brings those two on
 wasm32 and nothing else) and also `reqwest`, and checks that `thrust-core` does not depend on it. It also
 checks that the Worker's wasm32 graph holds none of the native-only crates and that the server's graph holds none
-of the Worker-only ones. The `deps` job in CI runs it on every pull request that changes a Rust-relevant path
+of the Worker-only ones. It also confirms with `cargo metadata` that `thrust-compat-plane` is a workspace member and
+uses `cargo tree -i` to refuse that compatibility surface in the normal dependency graphs of `thrust-contracts`,
+`thrust-ports` and `thrust-core`; only Cargo's explicit absent answers pass. The `deps` job in CI runs it on every pull request that changes a Rust-relevant path
 ([CI/CD](cicd.md)), and `scripts/verify-all.sh` runs it along with the other checks. How to run it and how to prove it
 can fail are on
 [Architecture gates](../testing/techniques/architecture-gates.md).

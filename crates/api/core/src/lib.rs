@@ -15,7 +15,7 @@ use axum::http::{HeaderMap, HeaderName, HeaderValue, Method, Response, StatusCod
 use axum::response::IntoResponse;
 use axum::routing::{delete, get, post, put};
 use axum::{Extension, Json, Router};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use thrust_contracts::*;
 use thrust_core::{App, CoreError};
 
@@ -85,6 +85,19 @@ pub fn set_version<B>(resp: &mut Response<B>, tag: &str, id: &str) {
 }
 
 pub struct ApiError(pub CoreError);
+
+/// The shared router's error shape. This stays at the HTTP surface: its JSON is a wire contract,
+/// but no inner layer needs to know how the router spells an error.
+#[derive(Debug, Clone, Serialize)]
+struct ApiErrorBody {
+    error: ApiErrorDetail,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct ApiErrorDetail {
+    code: String,
+    message: String,
+}
 
 impl From<CoreError> for ApiError {
     fn from(e: CoreError) -> Self {
