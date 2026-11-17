@@ -110,14 +110,17 @@ jobs:
 
   # The repository's tests (the helper scripts' own, the hermetic loop, the Postgres adapter, the mutants): test.yml, called here and judged by
   # its own `verdict` job (ADR-0102), like the book's, the supply chain's, the app's and the lint's. `top` says whether the change needs it,
-  # and `plans` gives it the jobs to run (any of the four, or all). The job `contract`, and the markers of its cells, are still this file's:
-  # they move in the next stage. `ci-scripts`, `hermetic`, `pg-adapter` and `mutants` are that workflow's.
+  # and `plans` gives it the jobs to run (any of the five, or all), with the contract matrix and the planned cells (the planner's `matrix` and
+  # `cells`): the job `contract` runs the cells in that workflow, and its `verdict` job proves that each reported. `ci-scripts`, `hermetic`,
+  # `pg-adapter`, `contract` and `mutants` are that workflow's.
   test:
     needs: changes
     if: contains(fromJSON(needs.changes.outputs.top || '[]'), 'test')
     uses: ./.github/workflows/test.yml
     with:
       plan: ${{ toJSON(fromJSON(needs.changes.outputs.plans || '{}').test) }}
+      matrix: ${{ needs.changes.outputs.matrix || '{"include":[]}' }}
+      cells: ${{ needs.changes.outputs.cells || '[]' }}
     permissions:
       contents: read
 
@@ -130,23 +133,6 @@ jobs:
     uses: ./.github/workflows/lint.yml
     with:
       plan: ${{ toJSON(fromJSON(needs.changes.outputs.plans || '{}').lint) }}
-    permissions:
-      contents: read
-
-  # One job per cell, each on a fresh runner with its own checkout, so the shared-build-directory
-  # hazard that forces contract-all.sh to run serially on one machine does not apply here.
-  # Only the cells the change needs (plan-ci.py): a target runs when the binary it serves is affected, a pass when its own
-  # inputs changed (tools/oracle-v1/ the oracle cells, e2e/ and web/ the browser journeys).
-  contract:
-    needs: changes
-    if: contains(fromJSON(needs.changes.outputs.jobs || '[]'), 'contract')
-    strategy:
-      fail-fast: false
-      matrix: ${{ fromJSON(needs.changes.outputs.matrix) }}
-    uses: ./.github/workflows/contract-cell.yml
-    with:
-      target: ${{ matrix.target }}
-      pass: ${{ matrix.pass }}
     permissions:
       contents: read
 
@@ -187,7 +173,7 @@ jobs:
   gate:
     name: gate
     if: always()
-    needs: [changes, test, lint, contract, web, documentation, security]
+    needs: [changes, test, lint, web, documentation, security]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
@@ -196,25 +182,13 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Collect the per-cell pass markers
-        if: contains(fromJSON(needs.changes.outputs.jobs || '[]'), 'contract')
-        # If every cell failed there is nothing to download; the assert step below then fails on
-        # "no cell markers", so tolerating the download error here cannot produce a green gate.
-        continue-on-error: true
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          pattern: cell-ok-*
-          path: reported
-          merge-multiple: true
       - name: Assert the planned set ran and passed
         env:
           NEEDS_JSON: ${{ toJSON(needs) }}
-          # the jobs still here and the called workflows that have a planned job (the planner's `top`), not every planned job: a
-          # called workflow's own jobs are judged by its `verdict` job
+          # the called workflows that have a planned job (the planner's `top`: no job is left in this file for the gate to judge itself),
+          # not every planned job: a called workflow's own jobs, and the contract cells, are judged by its `verdict` job
           EXPECTED_JOBS: ${{ needs.changes.outputs.top }}
           # the called workflows. A STATIC list, not the planner's `workflows` output: a planner bug that left one out of that output
           # would switch off the check for it. test_plan_ci.py holds this list equal to the keys of the planner's WORKFLOWS.
           VERDICT_JOBS: documentation security web lint test
-          PLANNED: ${{ needs.changes.outputs.cells || '[]' }}
-          REPORTED_DIR: reported
         run: .github/scripts/assert-gate.sh

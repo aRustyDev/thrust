@@ -18,12 +18,12 @@ Worker](deploy.md). The jobs and the command each CI job runs are in the CI sect
 | File | Does |
 |---|---|
 | `.github/workflows/ci.yml` (`ci`) | The pipeline. Runs on pull requests, merge-queue entries, pushes to `main`, every night on `main` and by manual dispatch |
-| `.github/workflows/contract-cell.yml` | A reusable workflow that runs one contract cell on its own runner |
+| `.github/workflows/contract-cell.yml` | A reusable workflow that runs one contract cell on its own runner and uploads a marker that exactly that cell passed. Called by `test.yml`'s `contract` job, once per cell, and by `e2e-schedule.yml` |
 | `.github/workflows/documentation.yml` (`documentation`) | The book's check, called by `ci.yml` (its `documentation` job) and runnable alone: the `docs` job (moved here unchanged, ADR-0102 and the migration, phase 1 of `.agents/plans/ci-workflows/`) and a `verdict` job that judges it against the plan it was given. `ci.yml`'s `gate` waits for the calling job and requires the `verdict` output |
 | `.github/workflows/security.yml` (`security`) | The supply-chain check, called by `ci.yml` (its `security` job) and runnable alone: the `deny` job (moved here unchanged) and a `verdict` job that judges it against the plan it was given. `ci.yml`'s `gate` waits for the calling job and requires the `verdict` output |
 | `.github/workflows/web.yml` (`web`) | The stock app's build check, called by `ci.yml` (its `web` job, which keeps the id the job always had) and runnable alone: the `web` job (moved here unchanged) and a `verdict` job that judges it against the plan it was given. `ci.yml`'s `gate` waits for the calling job and requires the `verdict` output. The workflow and its job share a name, so the checks are `web / web` and `web / verdict` |
 | `.github/workflows/lint.yml` (`lint`) | The repository's guards and the Rust lint, called by `ci.yml` (its `lint` job, which keeps the id the job always had) and runnable alone: the `deps` and `lint` jobs (moved here unchanged) and a `verdict` job that judges them against the plan it was given, which may name one of the two or both. `ci.yml`'s `gate` waits for the calling job and requires the `verdict` output. The workflow and one of its jobs share a name, so the checks are `lint / deps`, `lint / lint` and `lint / verdict`. `deps` runs the guards of these files too, `lint.yml` among them |
-| `.github/workflows/test.yml` (`test`) | The repository's tests, called by `ci.yml` (its `test` job) and runnable alone: the jobs `ci-scripts` (the CI's own scripts: the planner, the gate, the lint, the mutant driver, the deploy and release helpers), `hermetic` (the nextest loop, the contract counts, the doctests, the OpenAPI tests), `pg-adapter` (the Postgres and SMTP adapters against containers) and `mutants` (the mutation controls), all moved here unchanged, and a `verdict` job that judges them against the plan it was given, which may name any of the four or all. `ci.yml`'s `gate` waits for the calling job and requires the `verdict` output. The contract cells are not in it yet: they are `ci.yml`'s `contract` job, and `gate` still downloads and judges their markers |
+| `.github/workflows/test.yml` (`test`) | The repository's tests, called by `ci.yml` (its `test` job) and runnable alone: the jobs `ci-scripts` (the CI's own scripts: the planner, the gate, the lint, the mutant driver, the deploy and release helpers), `hermetic` (the nextest loop, the contract counts, the doctests, the OpenAPI tests), `pg-adapter` (the Postgres and SMTP adapters against containers), `contract` (the contract cells: one call of `contract-cell.yml` per cell of the matrix `ci.yml` gives it) and `mutants` (the mutation controls), all moved here unchanged, and a `verdict` job that judges them against the plan it was given, which may name any of the five or all, and that collects the cells' pass markers and proves that each planned cell reported. `ci.yml`'s `gate` waits for the calling job and requires the `verdict` output; it judges no cells itself. `ci.yml` calls it with the planner's `plan`, `matrix` and `cells`, and the cell calls are three levels deep (`ci.yml` to `test.yml` to `contract-cell.yml`) |
 | `.github/workflows/flake-hunt.yml` | Repeats one cell 1 to 50 times (5 by default), by hand or every Monday at 03:17 UTC (`native-memory main`). It offers every pass of the matrix, and its first step, `.github/scripts/check-flake-hunt-cell.sh`, refuses a target and pass that are not a cell of `scripts/contract-all.sh`, before anything is built; `test-check-flake-hunt-cell.sh` holds the workflow's two lists equal to the matrix's. A pass is prepared by the same action a cell uses (`contract-pass-tools`). It passes only if `scripts/flake-hunt.sh` prints `failures: 0 / N`, because the script ends with an `echo`, so its exit status does not say whether an iteration failed. The job stops at 120 minutes: a `worker-cf e2e` iteration takes about 9 (nightly run 43798891735), so that cell fits about 12 |
 | `.github/workflows/e2e-schedule.yml` | Runs the `worker-cf e2e` and `worker-cf e2e-mail` cells (through `contract-cell.yml`, one job each) every day at 04:41 UTC and by hand, and on a pull request that edits the file, so that the call is proved valid before it merges. It covers what a pull request does not: drift in the runner, the browser and the packages, every day on `main`. Not a gate: nothing waits for it and `gate` does not read it. The pinned-Plane leg is not here, because the oracle builds from an unpushed fork (`scripts/e2e.sh plane-oracle`, local) |
 | `.github/workflows/release-plz.yml` (`release-plz`) | The release flow, run by release-plz: after each push to `main`, opens or updates the release-candidate pull request from an `rc/*` branch, and tags `vX.Y.Z`, creates the GitHub release as a draft and starts `release.yml` on the tag when such a pull request merges. See [Release candidates](#release-candidates) |
@@ -53,36 +53,46 @@ evidence that `gate` inspects. `gate` runs even when a job before it failed, and
 decides:
 
 - The `changes` job must have succeeded. It names the jobs that must run (`jobs`), what the gate itself expects (`top`: the
-  jobs still in `ci.yml`, then the workflows it calls that have a planned job), each called workflow's jobs (`plans`) and the
-  contract cells (`cells`), from `.github/scripts/plan-ci.py` (see [What runs when](#what-runs-when)).
+  workflows it calls that have a planned job; no job is left in `ci.yml` for the gate to judge itself), each called workflow's
+  jobs (`plans`) and the contract matrix and cells (`matrix` and `cells`, which `ci.yml` hands to `test.yml`), from
+  `.github/scripts/plan-ci.py` (see [What runs when](#what-runs-when)).
 - Every expected job must be exactly `success`. A skipped job is a failure here, not a pass.
 - Every job that is not expected must be `skipped`. One that ran anyway means its `if:` and the planner disagree.
-- The planner and the gate list the same six names: the jobs still in `ci.yml` and the workflows it calls. An expected job
+- The planner and the gate list the same five names: the workflows `ci.yml` calls. An expected job
   that is not a need of the gate, or a need the planner does not know, fails it, as does an input that is missing or is not
   a JSON array of strings.
-- `contract` is expected exactly when cells are planned. The set of cells that uploaded a pass marker must then equal
-  the planned set, which must not be empty.
-- `test-ci-scripts.sh` generates the cases: each of the six names, expected or not, with each of the four results (48
-  cases), then the cells, the inputs and the names.
+- **The contract cells are judged by `test`'s own `verdict` job, not by the gate** (they were the gate's until the job
+  `contract` moved into `test.yml`). `contract` is expected exactly when cells are planned, and the set of cells that uploaded a
+  pass marker must then equal the planned set, which must not be empty. The `verdict` action downloads the markers (the
+  artifacts `cell-ok-*` of the same run, across the nested call) when it is given a cell job, and tolerates a failed download:
+  with no marker the judge fails on `no cell markers`, so it cannot pass.
+- `test-ci-scripts.sh` generates the cases: each of the five names, expected or not, with each of the four results (40
+  cases), then the inputs and the names; and, at the level of a verdict job whose cell job is `contract`, each of the five jobs of
+  `test.yml` the same way, and the cells' cases (a planned cell that never reports, a marker for an unplanned cell, no cell
+  planned, no marker, cells planned and the cell job not expected, the inputs only a workflow with cells has).
 - **A called workflow is judged twice** (ADR-0102). `assert-gate.sh` also takes `KNOWN_JOBS`, `CHANGES_JOB`, `CELL_JOB` and
-  `VERDICT_JOBS`, each of which defaults to what the gate above needs. The called workflow's own `verdict` job calls the
+  `VERDICT_JOBS`, each of which defaults to what the gate above needs (the cell job to none: a level that has cells must say so,
+  and a verdict job that forgets to is not refused by the script, so the wiring test holds `test.yml` to say it). The called workflow's own `verdict` job calls the
   `verdict` action, which sets them to judge the workflow's jobs against the plan it was given; the gate lists the called
   workflows as `VERDICT_JOBS`, which requires of each
   expected one that its result is `success` **and** that its output `verdict` is `pass`, since a workflow whose `verdict` job
   was skipped is `success` and proves nothing. `VERDICT_JOBS` is a static list in `ci.yml`, not the planner's output, so a
   planner that dropped a workflow could not switch its check off; `test_workflow_wiring.py` holds it equal to the planner's
   `WORKFLOWS`. Today five workflows are called, `documentation.yml` (the `docs` job), `security.yml` (the `deny` job),
-  `web.yml` (the `web` job), `lint.yml` (the `deps` and `lint` jobs) and `test.yml` (the `ci-scripts`, `hermetic`, `pg-adapter` and
+  `web.yml` (the `web` job), `lint.yml` (the `deps` and `lint` jobs) and `test.yml` (the `ci-scripts`, `hermetic`, `pg-adapter`, `contract` and
   `mutants` jobs), so a plan may name only some of a workflow's jobs: `clippy.toml` plans `lint` alone, a guard of `deps` plans `deps`
-  alone, a deploy script plans `ci-scripts` alone. The cases (162 in `test-ci-scripts.sh`) include the seven scenarios of the gate spike
+  alone, a deploy script plans `ci-scripts` alone, and `e2e/` plans `contract` alone. The cases (196 in `test-ci-scripts.sh`) include the seven scenarios of the gate spike
   (`.agents/plans/ci-workflows/research/0018-gate-spike.md`), each called workflow tried on its own.
-- **The wiring is tested against the real files.** `test_workflow_wiring.py` (118 checks, for five workflows) holds `ci.yml`, the
+- **The wiring is tested against the real files.** `test_workflow_wiring.py` (136 checks, for five workflows) holds `ci.yml`, the
   planner and each called workflow's file to each other: the calling job (`needs: changes`, it runs when `top` names it, it
   passes its own plan from `plans`), the gate's needs and its `VERDICT_JOBS`, the workflow's jobs and its `verdict` job
   (`always()`, checking out and calling the `verdict` action with its needs, its plan and its jobs, and running nothing of
   its own), and no workflow-level `concurrency` or `github.event_name` in a called workflow. The action is checked once: its
-  judge (`assert-gate.sh`, no planner job and no cells) and its output, set only after the judge.
-- **Tested to be able to fail.** `.github/scripts/tests/mutate_gate.py`, the last line of the `ci-scripts` job, plants 199 hand
+  judge (`assert-gate.sh`, no planner job), its collection of the cells' markers (only when given a cell job, into the directory the
+  judge reads) and its output, set only after the judge. The workflow that holds `contract` is checked for the matrix and the cells it
+  is given, its call of `contract-cell.yml`, and the cell job and cells it passes to the action; `ci.yml` for passing them, and its
+  gate for judging no cells; and `ci.yml` for holding only `changes`, the calls and `gate`.
+- **Tested to be able to fail.** `.github/scripts/tests/mutate_gate.py`, the last line of the `ci-scripts` job, plants 226 hand
   mutants one at a time in `plan-ci.py`, `assert-gate.sh`, `ci.yml`, the called workflows and the `verdict` action, and each
   must fail the tests of its file (`test_plan_ci.py` and `test_workflow_wiring.py`; `test-ci-scripts.sh` under dash, stopping
   at the first failing case). The mutants of a called workflow are written once and made for each of them (and for each of its jobs, a workflow of several

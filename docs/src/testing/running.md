@@ -143,12 +143,12 @@ A pull request runs only the jobs and cells its change needs; how that is decide
 | `deny` | (in `security.yml`) `cargo deny --locked check`: advisories, licences, bans and sources, from `deny.toml` |
 | `hermetic` | (in `test.yml`) `cargo nextest run --profile ci --workspace --locked`, then `cargo test --doc --workspace --locked` |
 | `pg-adapter` | (in `test.yml`) `cargo nextest run -p thrust-adapters-selfhosted --profile adapters --locked -E 'binary(pg_adapter)'`, then the same for `binary(smtp_sink)` |
-| `contract` | one job per cell (`.github/workflows/contract-cell.yml`): `scripts/contract.sh <target> <pass>` |
+| `contract` | (in `test.yml`) one job per cell (`.github/workflows/contract-cell.yml`, called by `test.yml`, which `ci.yml` calls with the planner's matrix and cells): `scripts/contract.sh <target> <pass>`, then a marker that exactly that cell passed |
 | `mutants` | (in `test.yml`) `scripts/mutants.sh` |
 | `documentation` | the workflow `.github/workflows/documentation.yml`, called by `ci.yml`: its job `docs`, and its `verdict` job, which judges `docs` against the plan and which `gate` requires (the migration moved `docs` here; its name and commands are unchanged) |
 | `docs` | (in `documentation.yml`) when the book's inputs changed (`docs/`, `AGENTS.md`, `.config/branding/`): `scripts/check-book.sh` (`mdbook build`, failing on any `ERROR` line and on a page `SUMMARY.md` does not list), then `scripts/check-book.sh --self-test` (a copy broken four ways, each refused). mdBook 0.5.4 and mdbook-mermaid 0.17.1 |
 | `web` | the workflow `.github/workflows/web.yml`, called by `ci.yml`, which holds the job `web` and a `verdict` job that judges it against the plan and which `gate` requires (the migration moved the job here; its name and commands are unchanged); `web` runs when `web/` or its gate changed: `scripts/check-web-diff.sh` (the Q-R2 gate: only the files in `web/ALLOWED-CHANGES` differ from the oracle pin), then `pnpm --dir web install --frozen-lockfile --ignore-scripts` and `pnpm --dir web exec turbo run build --filter=web` |
-| `gate` | `.github/scripts/assert-gate.sh`: every job `changes` named succeeded, every other was skipped, **and** every planned cell uploaded its pass marker |
+| `gate` | `.github/scripts/assert-gate.sh`: every called workflow `changes` named succeeded **and** says its `verdict` was `pass`, every other was skipped. The cells are judged one level down: `test`'s own `verdict` job requires that every planned cell uploaded its pass marker |
 
 `gate` is the one check to require: it fails on a named job that was skipped, on a job that ran though it was not
 named, and on a planned cell that never reported, so a pipeline that silently ran less cannot read as green. `.github/workflows/flake-hunt.yml` repeats one

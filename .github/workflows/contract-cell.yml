@@ -2,7 +2,7 @@ name: contract-cell
 
 # Reusable workflow: run ONE cell of the contract matrix on its own runner.
 # Why a reusable workflow and not a composite action: a cell needs its own runner, timeout,
-# permissions and artifacts (a job), and two callers use it (ci.yml per cell, and anything that
+# permissions and artifacts (a job), and two callers use it (test.yml per cell, which ci.yml calls, and anything that
 # wants a single cell). Steps shared between jobs live in .github/actions/setup-rust instead.
 
 on:

@@ -379,7 +379,7 @@ JOBS_LIST = list(pc.JOBS)
 # What WORKFLOWS holds today. Each stage of the migration edits this line, so the stage's change to the planner shows in this file,
 # and a mutant that empties the map is killed by it.
 EXPECTED_WORKFLOWS = {"documentation": ("docs",), "security": ("deny",), "web": ("web",), "lint": ("deps", "lint"),
-                      "test": ("ci-scripts", "hermetic", "pg-adapter", "mutants")}
+                      "test": ("ci-scripts", "hermetic", "pg-adapter", "contract", "mutants")}
 check("WORKFLOWS is a partition of the jobs", refused(lambda: pc.check_workflows()), None)
 check("WORKFLOWS holds the workflows moved so far, and their jobs", pc.WORKFLOWS, EXPECTED_WORKFLOWS)
 
@@ -455,15 +455,17 @@ for index in (".github/workflows/README.md", ".github/actions/README.md", ".gith
 
 # ---- 10. the command line's new lines --------------------------------------------------------------------------------------------
 rc, out, _ = cli(changed="web/x.tsx\n")
-check("cli: a change to web/ plans the cell job of ci.yml, then the web workflow",
+check("cli: a change to web/ plans the web workflow, and the test workflow with the job contract alone (the browser journeys' cells)",
       (json.loads(out.get("top", "null")), json.loads(out.get("workflows", "null")), json.loads(out.get("plans", "null"))),
-      (["contract", "web"], ["web"], {"web": ["web"]}))
-check("cli: and `jobs` still names the job `web`, which now lives in the workflow of that name",
+      (["web", "test"], ["web", "test"], {"web": ["web"], "test": ["contract"]}))
+check("cli: and `jobs` still names the jobs `contract` and `web`, which now live in workflows",
       json.loads(out.get("jobs", "null")), ["contract", "web"])
 rc, out, _ = cli(changed="e2e/journeys/m1.spec.ts\n")
-check("cli: a change to e2e/ alone plans the cells and no workflow (the app is not rebuilt)",
+check("cli: a change to e2e/ alone plans the test workflow with the job contract alone, and no web workflow (the app is not rebuilt)",
       (json.loads(out.get("top", "null")), json.loads(out.get("workflows", "null")), json.loads(out.get("plans", "null"))),
-      (["contract"], [], {}))
+      (["test"], ["test"], {"test": ["contract"]}))
+check("cli: the cells themselves are still planned, for the test workflow to be given: `cells` and `matrix` name them",
+      (json.loads(out.get("cells", "null")), len(json.loads(out.get("matrix", "null"))["include"])), (["worker-cf e2e", "worker-cf e2e-mail"], 2))
 rc, out, _ = cli(changed="scripts/check-web-diff.sh\n")
 check("cli: the Q-R2 gate's script plans the workflow web, and its own test (the job ci-scripts of the workflow test)",
       (json.loads(out.get("top", "null")), json.loads(out.get("plans", "null"))), (["web", "test"], {"web": ["web"], "test": ["ci-scripts"]}))
@@ -514,8 +516,8 @@ rc, out, _ = cli(changed=".github/actions/verdict/action.yml\n")
 check("cli: a change to the verdict action runs everything, so every called workflow is called",
       json.loads(out.get("workflows", "null")), ["documentation", "security", "web", "lint", "test"])
 rc, out, _ = cli(changed="docs/src/intro.md\nweb/x.tsx\n")
-check("cli: the book and web/: the jobs still in ci.yml, then the workflows in the planner's order",
-      json.loads(out.get("top", "null")), ["contract", "documentation", "web"])
+check("cli: the book and web/: the workflows, in the planner's order (no job is left in ci.yml)",
+      json.loads(out.get("top", "null")), ["documentation", "web", "test"])
 # Run the same command line on copies of the planner whose WORKFLOWS holds other maps, so that `plans` and the refusals are shown
 # against more than the one workflow of the real map.
 MAP_LINE = r"\nWORKFLOWS = \{.*\}\n"
