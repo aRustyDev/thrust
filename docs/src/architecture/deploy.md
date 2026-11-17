@@ -286,3 +286,42 @@ infrastructure repository first.
   classifier on production's history. `inject_smoke_failure` is refused for production on purpose, so production's rollback has
   not been exercised and rests on the staging drill;
 - a narrower Cloudflare token than the ones in use.
+
+## Release candidates as targets (off until the cut-over)
+
+ADR-0111 replaces staging with targets: a release candidate deployed as a Worker Preview of the production Worker, reached
+through the edge on the shared hostname by those who opt in. The pipeline for it is built, and it is off.
+
+**How it is switched on.** While the repository variable `THRUST_TARGETS_ENABLED` is not `true`, nothing changes and release
+candidates deploy to staging. When it is `true`, a release candidate's green `ci` dispatches a deploy to the environment
+`target` instead. A manual run may also name `target`, from an `rc/*` branch.
+
+**What a target deploy does.** `scripts/deploy-target.sh`, run through the `deploy-worker` action, follows the sequence
+documented at the top of that script. In short:
+- **The target:** it is named `v<the workspace version>`, kind `rc`, shares production's data, and expires after 14 days.
+- **Production's commit:** the script reads it and classifies the candidate against it.
+- **Deploy and prove:** it deploys the Preview, checks what Cloudflare applied, writes the flag, smokes the target through
+  the edge, then points the alias `staging` at it.
+- **On any failure** from the Preview on, it deletes the flag, then the Preview.
+
+**Migrations.** A target uses production's database.
+- **No migrations:** a candidate whose migrations production already has deploys in `target`, which holds no database route.
+- **New migrations:** a candidate that brings migrations is deferred there, with nothing done.
+- **`deploy-target-migrate`,** in the environment `target-migrate`, then waits for its required reviewers. It expands the
+  schema with `scripts/migrate-ci.sh --no-contract` and deploys the target.
+- **Contract migrations** stay the production deploy's alone.
+
+**What the two environments need** (deployment branches: `rc/*`):
+
+| | `target` | `target-migrate` |
+|---|---|---|
+| Production's variables (`CLOUDFLARE_ACCOUNT_ID`, `THRUST_WORKER_NAME`, `THRUST_BASE_URL`, `THRUST_HYPERDRIVE_ID`, `THRUST_R2_BUCKET`, `THRUST_QUEUE`, `THRUST_QUEUE_DLQ`, `THRUST_RL_SIGNIN_ID`, `THRUST_RL_V1_ID`, `THRUST_CSRF_ENFORCE`, `THRUST_EMAIL_FROM`) and its smoke account (`SMOKE_EMAIL`, `SMOKE_WORKSPACE`, secret `SMOKE_PASSWORD`) | yes | yes |
+| `FLAGSHIP_APP_ID`, `PREVIEW_HOST_SUFFIX`; secrets `CLOUDFLARE_API_TOKEN`, `FLAGSHIP_WRITE_TOKEN`, `EDGE_CI_CLIENT_ID`, `EDGE_CI_CLIENT_SECRET` | yes | yes |
+| Production's database route: `DB_ACCESS_HOSTNAME`; secrets `TUNNEL_SERVICE_TOKEN_ID`, `TUNNEL_SERVICE_TOKEN_SECRET`, `DATABASE_URL` | no | yes |
+| Required reviewers | no | yes (the plan refuses to start a target deploy without them) |
+
+**Prerequisites:** none of this can run before the edge's infrastructure exists:
+- the Flagship app;
+- the Access apps and the CI opt-in token;
+- the edge itself on `thrust.sow.foo`;
+- production's `preview_urls`, which is Q-0111.1.

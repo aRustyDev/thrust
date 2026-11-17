@@ -9,7 +9,7 @@
 #                           GitHub checks an environment's branch rule against the run's own ref, and a workflow_run always runs on main
 #                 dry-run   build it and check the deploy configuration; touch no environment, use no secret (a pull request)
 #                 skip      do nothing
-#   environment   staging | production (empty unless mode is deploy or dispatch)
+#   environment   staging | target | production (empty unless mode is deploy or dispatch)
 #   sha           the commit (40 hex digits)
 #   ref           the branch or tag to dispatch on (mode dispatch only; empty otherwise)
 #   release       the release tag whose bundle production deploys (a production deploy only; empty otherwise)
@@ -21,21 +21,25 @@
 # The rules, which are the reason this is a script with a test and not an `if:` in YAML:
 #   * ci finishing green, while the repository variable THRUST_DEPLOY_ENABLED is `true`, on
 #       - a release-candidate pull request (its head an rc/<name> branch of THIS repository, which only the release App and admins
-#         can write): dispatch a STAGING deploy of that commit on that branch;
+#         can write): dispatch a STAGING deploy of that commit on that branch; or, while the repository variable
+#         THRUST_TARGETS_ENABLED is also `true`, a TARGET deploy instead: the candidate as a Worker Preview of production, reached
+#         through the edge (ADR-0111), which replaces staging at the cut-over;
 #       - a push to main whose commit carries exactly one release tag v<version> (RUN_TAGS: the tags on that commit; release-plz tags
 #         the merge of an rc pull request, and only the release App can make a v* tag): dispatch a PRODUCTION deploy on that tag.
 #         It waits for the environment's reviewers.
 #     A run of ci for anything else (a feature branch, an untagged push, a fork, a failure) deploys nothing.
 #   * a manual run deploys the commit it was run FROM, so the workflow's own code is the code it deploys:
 #       staging     from an rc/<name> branch;
+#       target      from an rc/<name> branch (the target deploy, scripts/deploy-target.sh);
 #       production  from a v<version> tag whose commit is on main.
 #     `<name>` and `<version>` have no slash: the rulesets that guard rc/* and v* match one path segment, so rc/a/b is nobody's in
 #     particular. `sha`, when given (the dispatch above gives it), must still be the tip: if the ref moved since, the run skips, and
 #     the newer commit's own ci run dispatches its own deploy. `inject_smoke_failure` is refused for production, and together with
-#     `skip_smoke` (which makes no sense) for any environment.
+#     `skip_smoke` (which makes no sense) for any environment. Neither is built for a target, so both are refused for one.
 #   * a pull request is a dry run.
 #
-# Environment: EVENT_NAME; for workflow_run RUN_CONCLUSION RUN_EVENT RUN_BRANCH RUN_SHA RUN_HEAD_REPO RUN_TAGS REPO DEPLOY_ENABLED;
+# Environment: EVENT_NAME; for workflow_run RUN_CONCLUSION RUN_EVENT RUN_BRANCH RUN_SHA RUN_HEAD_REPO RUN_TAGS REPO DEPLOY_ENABLED
+# TARGETS_ENABLED;
 # for workflow_dispatch RUN_REF GITHUB_SHA DISPATCH_ENV DISPATCH_SHA DISPATCH_INJECT DISPATCH_SKIP_SMOKE, and MAIN_REF (default
 # origin/main) for production; GITHUB_SHA for pull_request.
 # Exit status: 0 it planned (possibly `skip`); 1 the request is refused; 2 it was called wrongly.
@@ -71,7 +75,8 @@ case "$EVENT_NAME" in
     case "${RUN_EVENT:-}" in
       pull_request)
         is_rc_branch "${RUN_BRANCH:-}" || skip "ci ran for the pull request of '${RUN_BRANCH:-}', not a release candidate (rc/<name>)"
-        target=staging; on="$RUN_BRANCH" ;;
+        target=staging; on="$RUN_BRANCH"
+        [ "${TARGETS_ENABLED:-}" = true ] && target=target ;;
       push)
         [ "${RUN_BRANCH:-}" = main ] || skip "ci ran for a push to '${RUN_BRANCH:-}', not to main"
         releases=""; count=0
@@ -93,12 +98,12 @@ case "$EVENT_NAME" in
     run_ref="${RUN_REF:-}"
     release=""
     case "$env_name" in
-      staging)
-        is_rc_ref "$run_ref" || refuse "staging is deployed from a release-candidate branch (rc/<name>), not from '$run_ref'" ;;
+      staging|target)
+        is_rc_ref "$run_ref" || refuse "$env_name is deployed from a release-candidate branch (rc/<name>), not from '$run_ref'" ;;
       production)
         is_release_tag "$run_ref" || refuse "production is deployed from a release tag (v<version>), not from '$run_ref'"
         release="${run_ref#refs/tags/}" ;;
-      *) refuse "the environment must be 'staging' or 'production', not '$env_name'" ;;
+      *) refuse "the environment must be 'staging', 'target' or 'production', not '$env_name'" ;;
     esac
     inject="${DISPATCH_INJECT:-false}"
     skip_smoke="${DISPATCH_SKIP_SMOKE:-false}"
@@ -106,6 +111,8 @@ case "$EVENT_NAME" in
     case "$skip_smoke" in true|false) ;; *) refuse "first_deploy_skip_smoke must be true or false, not '$skip_smoke'" ;; esac
     [ "$inject" = true ] && [ "$env_name" = production ] && refuse "inject_smoke_failure is for staging: it makes a deploy fail on purpose, and production is not the place to prove the rollback"
     [ "$inject" = true ] && [ "$skip_smoke" = true ] && refuse "inject_smoke_failure and first_deploy_skip_smoke together: a smoke that is skipped cannot be made to fail"
+    [ "$env_name" = target ] && { [ "$inject" = true ] || [ "$skip_smoke" = true ]; } \
+      && refuse "inject_smoke_failure and first_deploy_skip_smoke are not built for a target: its deploy always smokes it, and a failure removes it"
     sha="${GITHUB_SHA:-}"
     is_sha "$sha" || misuse "GITHUB_SHA '$sha' is not a 40-digit commit sha"
     want="${DISPATCH_SHA:-}"
