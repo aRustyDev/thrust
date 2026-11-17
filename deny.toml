@@ -10,10 +10,16 @@ all-features = true
 # A crate nobody maintains is reported when the workspace names it itself, not when it is only somebody else's dependency
 # (`smallstr`, under `yrs`, has no fix to adopt: RUSTSEC-2026-0215). A vulnerability is reported wherever it is.
 unmaintained = "workspace"
-# THE ONLY IGNORE. Anything else that fails the check is fixed by upgrading, not ignored here.
+# Only these reviewed exceptions are allowed. Other findings remain errors.
 ignore = [
     { id = "RUSTSEC-2023-0071", reason = "rsa timing leak (Marvin Attack): no patched version, and Thrust holds no rsa private key an attacker can time. See the note above this table." },
+    { id = "RUSTSEC-2026-0543", reason = "Temporary exception for the chrono unmaintained advisory: all versions are affected, and replacing workspace date/time APIs requires a separate migration. Remove when chrono is no longer a direct workspace dependency or the advisory is withdrawn." },
 ]
+# RUSTSEC-2026-0543 is an unmaintained notice, not a specific reported vulnerability. The workspace
+# directly uses chrono in its contracts and self-hosted adapter; Postgres and other dependencies
+# also use it. This exception only suppresses this advisory, not new vulnerability advisories.
+# Remove it after the direct workspace dependencies migrate to a maintained alternative, or if
+# RustSec withdraws the advisory; re-evaluate if a separate chrono vulnerability is reported.
 # RUSTSEC-2023-0071: the `rsa` crate's private-key operations are not constant-time (CVE-2023-49092), so timing observable over a
 # network can leak a private key. No patched version exists: `rsa` 0.9.10 (the locked version) and 0.10.0-rc.18 were both still
 # affected on the advisory's 2026-09-12 note.
