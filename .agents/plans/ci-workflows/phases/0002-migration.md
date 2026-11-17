@@ -1,7 +1,7 @@
 # Phase 0002: Migration
 
-Part of [ci-workflows](../PLAN.md). Planned 2026-11-17; nothing built. Facts are from `main` at `f263ab4`, read on that day:
-recount them when a stage starts. Phase 1 of the plan, after [Phase 0](0001-foundation.md) (the foundation: merged). It moves
+Part of [ci-workflows](../PLAN.md). Planned 2026-11-17; M1 is built and merged (#254), the other stages are not. Facts are from
+`main` at `f263ab4`, read on that day: recount them when a stage starts. Phase 1 of the plan, after [Phase 0](0001-foundation.md) (the foundation: merged). It moves
 today's jobs out of `ci.yml` into one workflow per concern as a **pure refactor**: the same commands, the same job boundaries,
 the same result of `gate`. No pass applies to it; each stage's evidence is its acceptance criteria. The passes start in Phase 2,
 on the migrated layout.
@@ -93,12 +93,73 @@ moved, not written.
 against `re-actors/alls-green` and kept. The composite action for the `verdict` job is **not made in M1**, by the plan's rule:
 with one callee its steps are not repeated anywhere, and an action drawn from one example guesses its inputs.
 
-## The `verdict` action, by the plan's rule
+### M1: done (#254, merged 2026-11-17 as `8905e4c`)
 
-M2 is where the same steps stand in two files, so M2 makes the composite action (checkout, judge, mark the output) and says so in
-its pull request; M1's `verdict` job is then replaced by a call of it, in M2, so that the two callees are one change of the
-same kind. The `verdict` job of `test.yml` (M5) is **not** an exact copy: it also downloads the cell markers and passes the
-planned cells, so it is asked about when M5 starts, with the two side by side.
+What it showed, as the stage's own acceptance asked:
+- **Parity**, by `scripts/ci-commands.py`: 34 jobs before, 36 after; 30 unchanged, `docs` moved with its 4 steps identical, 3
+  changed as intended (`changes`, `gate`, `ci-scripts`), 2 appeared (`ci.yml:documentation`, `documentation.yml:verdict`), 0 gone.
+- **The wiring**, by `test_workflow_wiring.py` (35 checks) and `mutate_gate.py` (76 mutants killed, the 4 that change nothing
+  survived); a full run of 40 checks, `gate` certified, `documentation / docs` built the book.
+- **Two probes** that made the real `gate` red, each for its own reason: #255 (`docs` planned and skipped) failed
+  `documentation / verdict` and `gate`; #256 (the step that sets `verdict=pass` skipped) failed `gate` alone, with `documentation
+  succeeded but its verdict output is 'missing', not 'pass'`.
+
+What it found: the gate walks `needs` in the order `ci.yml` lists them, so a probe that also reddens `ci-scripts` hides its own
+message (plant a fault the text tests cannot see); `actionlint` refuses a constant `if: false`; a skip of the `verdict` job itself
+cannot be planted alone, because the wiring test checks `if: always()`, so a probe skips the step that sets the output instead.
+
+**A correction to M1's pull request**, which said the book and `deny.toml` cases would be "the next PR's (M2) first real
+affected-only run". They will not: every stage edits `ci.yml`, which the planner runs in full. The affected-only run is taken once,
+after M6, as the migration's acceptance; until then those cases are `test_plan_ci.py`'s.
+
+### M2 in detail: `security.yml`, and the `verdict` action
+
+**Purpose.** Move the supply-chain check out of `ci.yml`, and, because the `verdict` job's steps now stand in two files, make them
+a composite action, by the plan's rule: an exact duplicate in two places is made into an action without asking, and the pull
+request says so.
+
+**The duplicate, side by side.** The `verdict` job of `documentation.yml` (M1) and the one `security.yml` needs differ in one
+value, the jobs the workflow knows (`docs`, `deny`); every other line is the same: the runner, the timeout, the permission, the
+checkout, the judge step with its five variables, and the step that sets the output.
+
+| | In the action | Stays in the job |
+|---|---|---|
+| Judge step: `assert-gate.sh` with `NEEDS_JSON`, `EXPECTED_JOBS`, `KNOWN_JOBS`, and `CHANGES_JOB`, `CELL_JOB` both set empty | yes | |
+| The step that sets the output `verdict=pass`, after the judge | yes | |
+| `actions/checkout` | | **yes**: a local action is read from the checkout, so the checkout comes first and an action cannot make it |
+| `runs-on`, `timeout-minutes`, `permissions`, `needs`, `if: always()`, the job's `outputs` | | yes: they belong to the job (`.github/actions/README.md` says so) |
+
+Inputs of the action: `needs` (`toJSON(needs)` of the calling job), `plan` (the workflow's `plan` input) and `jobs` (the jobs the
+workflow knows); output: `verdict`. A variable the two copies share and the action fixes: `CHANGES_JOB` and `CELL_JOB` empty, since a
+called workflow has neither a planner job nor cells. `test.yml`'s `verdict` job (M5) does have cells, so it is **not** an exact copy and is
+asked about when M5 starts, with the two side by side; nothing here guesses its inputs.
+
+**Acceptance.**
+- `.github/actions/verdict/action.yml` (a row in `.github/actions/README.md`), and `documentation.yml`'s `verdict` job calls it: the
+  same job, with the judge and mark steps replaced by one step.
+- `.github/workflows/security.yml` (`name: security`): `workflow_call` (input `plan`, required; output `verdict`) and
+  `workflow_dispatch` (`plan` defaults to `["deny"]`); no workflow-level `concurrency:`; `permissions: {}`; the job `deny` moved
+  **verbatim** (steps, pins, comment) with `if: contains(fromJSON(inputs.plan), 'deny')` and without `needs: changes`; a `verdict`
+  job that calls the action.
+- `ci.yml`: `deny` is gone; a calling job `security`; `gate` needs it, and `VERDICT_JOBS` is `documentation security`.
+- The planner: `WORKFLOWS` holds `security: (deny)`; a rule makes a change to the action run everything (the gate trusts it, like
+  `assert-gate.sh`); the gate's default list, `same_jobs`, the indexes, `cicd.md`, `running.md`, `ci-baseline.py`'s groups and the mutant
+  driver follow. A change to `deny.toml` plans the workflow `security` and nothing else; a change to a crate's `Cargo.toml` plans it
+  too (cases of `test_plan_ci.py`).
+- The wiring test checks the action once (its judge, its two fixed variables, its output set after the judge and only there) and
+  each called workflow's `verdict` job (the call and its three inputs). The mutant driver gains mutants of the action and of
+  `security.yml`; every mutant is killed, none is broken, the equivalent ones survive.
+- Proof as for M1: the parity table and its check (`deny` moved, its steps identical; the `verdict` job of `documentation.yml` the one
+  change to an existing file's job), a full run, and two probes planted in `security.yml`: `deny` planned and skipped, and the call
+  of the action skipped. The second also shows that `documentation`, which shares the action, still passes.
+
+**State machine of the job.** As `docs`: planned, then runs, then succeeds or fails; not planned, then skipped. The `verdict` job
+is `if: always()`.
+
+**Public solutions.** None applies to the move. The judge is `assert-gate.sh` (research 0018 measured `re-actors/alls-green` against
+it). The job runs `cargo deny` as `scripts/rs cargo deny --locked check`, from `taiki-e/install-action`. Whether a public
+cargo-deny action fits better is a question for the Security phase's survey (pass 1, not made here); a refactor does not swap it,
+since that changes the command.
 
 ## Decisions on the questions (owner, 2026-11-17, after #251)
 
