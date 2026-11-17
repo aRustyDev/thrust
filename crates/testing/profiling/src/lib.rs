@@ -4,8 +4,9 @@
 //! clock, and ids and randomness from counters. The world is built in `tests/`, not here, because it mints the system's proof
 //! (`SystemScope::mint`), which only a composition root and a crate's own tests may do (scripts/check-deps.sh).
 //!
-//! The `prof_` tests (`tests/heap.rs`) profile it and write their profiles under `target/profiling/`, so they run only with the
-//! `prof` profile. `tests/workload.rs` holds the workload itself to answering every request, in the default loop.
+//! The `prof_` tests profile it: `tests/heap.rs` with dhat as its binary's allocator, `tests/cpu.rs` under samply, through the
+//! `prof` profile's wrapper script (`scripts/samply-wrapper.sh`). They write their profiles under `target/profiling/`, so they run
+//! only with the `prof` profile. `tests/workload.rs` holds the workload itself to answering every request, in the default loop.
 
 use axum::body::Body;
 use axum::http::{Method, Request};
