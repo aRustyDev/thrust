@@ -2,9 +2,9 @@
 # scripts/lib/mutants-verdict.sh: a row of scripts/mutants.sh is KILLED only when its tests ran and one failed (saying the needle, when
 # there is one); SURVIVED when its tests ran and all passed; UNCLEAR when tests failed without the needle; DID NOT RUN when it stopped
 # before its tests gave a verdict. Issue #93: a server that never came up used to read "SURVIVED or did not run", like a real survivor.
-# Generated: every exit status contract.sh or cargo can give (and one neither does) x every shape of report (none, no failure, failures,
-# errors; no test lines, `... FAILED` lines, a --nocapture `test result: FAILED` line) x no needle, a needle the log says, one it never
-# says, against the table below. Then the reasons a run stopped, and mutants.sh's use of the library.
+# Generated: every exit status contract.sh or nextest can give (and one neither does) x every shape of report (none, no failure,
+# failures, errors) x no needle, a needle the log says, one it never says x the log of a contract-suite pass and of an adapter row,
+# against the table below. Then the reasons a run stopped, and mutants.sh's use of the library: every row on nextest, none on cargo test.
 #
 #   test-mutants-verdict.sh [path to a copy of mutants-verdict.sh]   (a path points it at a deliberately broken copy)
 HERE="$(cd "$(dirname "$0")/../../.." && pwd)"
@@ -30,8 +30,7 @@ check() {
 
 # The table, written as the cases it decides (not as the library's own branches):
 #   tests ran, all passed           -> exit 0                                          -> SURVIVED
-#   tests ran, some failed          -> suite: exit 100 and the report counts >= 1     -> KILLED, or UNCLEAR when the needle is missing
-#                                      cargo: exit 101 and a failed test in the log
+#   tests ran, some failed          -> exit 100 and the report counts >= 1             -> KILLED, or UNCLEAR when the needle is missing
 #   anything else                                                                     -> DID NOT RUN
 want_for() {
   # $1 exit status, $2 failed tests the run's own report counts, $3 the code that means "a test failed", $4 needle mode
@@ -40,11 +39,13 @@ want_for() {
   else echo "DID NOT RUN"; fi
 }
 
-# 1. rows of the contract suite (nextest; a JUnit report beside the log)
+# 1. every row: nextest, a JUnit report beside the log. A contract-suite pass's log (scripts/contract.sh) and an adapter row's
+# (mutants.sh's adapter_row) are named alike, `<name>.test.log` beside `<name>.junit.xml`.
+for row in native-memory-main pg-discard; do
 for status in 0 1 2 3 4 5 100 101 137; do
   for report in none f0e0 f2e0 f0e1 f1e1; do
     for nm in none present absent; do
-      d="$T/suite-$status-$report-$nm"; mkdir -p "$d"; log="$d/native-memory-main.test.log"
+      d="$T/suite-$row-$status-$report-$nm"; mkdir -p "$d"; log="$d/$row.test.log"
       printf '        FAIL [   0.1s] thrust-contract-tests::contract some_test\n' >"$log"
       [ "$nm" = present ] && echo "panicked: $NEEDLE" >>"$log"
       failed=0
@@ -52,36 +53,16 @@ for status in 0 1 2 3 4 5 100 101 137; do
         none) ;;
         f*) f="${report#f}"; f="${f%e*}"; e="${report#*e}"; failed=$((f + e))
             printf '<?xml version="1.0"?>\n<testsuites name="contract" tests="70" failures="%s" errors="%s" timestamp="x">\n</testsuites>\n' "$f" "$e" \
-              >"$d/native-memory-main.junit.xml" ;;
+              >"$d/$row.junit.xml" ;;
       esac
       needle=""; [ "$nm" != none ] && needle="$NEEDLE"
       want="$(want_for "$status" "$failed" 100 "$nm")"
       text=""; [ "$want" = KILLED ] && text="$failed test(s) failed"
-      if [ -n "$needle" ]; then check "suite exit $status report $report needle $nm" "$want" "$text" verdict_suite "$status" "$log" "$needle"
-      else check "suite exit $status report $report" "$want" "$text" verdict_suite "$status" "$log"; fi
+      if [ -n "$needle" ]; then check "$row exit $status report $report needle $nm" "$want" "$text" verdict_suite "$status" "$log" "$needle"
+      else check "$row exit $status report $report" "$want" "$text" verdict_suite "$status" "$log"; fi
     done
   done
 done
-
-# 2. rows of an adapter's own tests (cargo test; the log only)
-for status in 0 1 101 137; do
-  for shape in none failed-lines nocapture ok-line; do
-    for nm in none present absent; do
-      log="$T/cargo-$status-$shape-$nm.log"
-      case "$shape" in
-        none) printf 'error[E0425]: cannot find value `x` in this scope\n' >"$log"; failed=0 ;;
-        failed-lines) printf 'test a ... ok\ntest b ... FAILED\ntest c ... FAILED\n' >"$log"; failed=2 ;;
-        nocapture) printf 'test a ... \nthread panicked\nFAILED\ntest result: FAILED. 3 passed; 1 failed; 0 ignored\n' >"$log"; failed=1 ;;
-        ok-line) printf 'test a ... ok\ntest result: ok. 1 passed; 0 failed\n' >"$log"; failed=0 ;;
-      esac
-      [ "$nm" = present ] && echo "assertion: $NEEDLE" >>"$log"
-      needle=""; [ "$nm" != none ] && needle="$NEEDLE"
-      want="$(want_for "$status" "$failed" 101 "$nm")"
-      text=""; [ "$want" = KILLED ] && text="$failed test(s) failed"
-      if [ -n "$needle" ]; then check "cargo exit $status $shape needle $nm" "$want" "$text" verdict_cargo "$status" "$log" "$needle"
-      else check "cargo exit $status $shape" "$want" "$text" verdict_cargo "$status" "$log"; fi
-    done
-  done
 done
 
 # 3. a run that stopped says why, by contract.sh's exit status
@@ -94,22 +75,26 @@ check "exit 101" "DID NOT RUN" "did not build" verdict_suite 101 "$log"
 check "exit 100, no report" "DID NOT RUN" "no report counts" verdict_suite 100 "$log"
 check "exit 137" "DID NOT RUN" "exit 137" verdict_suite 137 "$log"
 check "missing log" "DID NOT RUN" "never came up" verdict_suite 4 "$T/no-such.test.log"
-check "cargo build failed" "DID NOT RUN" "did not build" verdict_cargo 101 "$T/cargo-101-none-none.log"
 
 # 4. mutants.sh: every row goes through the library, the old merged wording is gone, a non-kill fails the script, and the summary ends in counts
 n=$((n + 1))
 if grep -qF '. "$ROOT/scripts/lib/mutants-verdict.sh"' "$MUTANTS"; then ok; else bad "mutants.sh must source scripts/lib/mutants-verdict.sh"; fi
 n=$((n + 1))
 if grep -q 'SURVIVED or did not run' "$MUTANTS"; then bad "mutants.sh still says 'SURVIVED or did not run'"; else ok; fi
-for fn in kill_check kill_check_msg kill_check_suite kill_check_suite_msg; do
+for fn in kill_check_suite kill_check_suite_msg; do
   n=$((n + 1))
   body="$(sed -n "s/^$fn() { \(.*\) }\$/\1/p" "$MUTANTS")"
-  case "$fn" in kill_check_suite*) lib=verdict_suite ;; *) lib=verdict_cargo ;; esac
   case "$body" in
-    "record "*"\$($lib "*) ok ;;
-    *) bad "$fn must hand its row to record with $lib (found: '$body')" ;;
+    "record "*"\$(verdict_suite "*) ok ;;
+    *) bad "$fn must hand its row to record with verdict_suite (found: '$body')" ;;
   esac
 done
+# every row runs on nextest: no `cargo test` (a row judged by libtest's text would need the verdict that is gone), and an adapter row
+# turns nextest's 4, no test ran, into 5, so its verdict is the vacuity guard and not a target that never came up
+n=$((n + 1))
+if grep -v '^ *#' "$MUTANTS" | grep -qE 'cargo test|verdict_cargo|^kill_check(_msg)?\(\)'; then bad "mutants.sh still runs a row on cargo test"; else ok; fi
+n=$((n + 1))
+if grep -qF 'if [ "$status" -eq 4 ]; then status=5; fi' "$MUTANTS"; then ok; else bad "adapter_row must turn nextest's 4 into 5"; fi
 n=$((n + 1))
 if grep -qx 'exit "$NOT_KILLED"' "$MUTANTS" && grep -q 'NOT_KILLED=1' "$MUTANTS"; then ok; else bad "mutants.sh must exit \$NOT_KILLED, set when a row is not killed"; fi
 n=$((n + 1))

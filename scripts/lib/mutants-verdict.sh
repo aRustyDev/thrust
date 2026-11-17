@@ -26,9 +26,10 @@ verdict_contract_reason() {
 # A JUnit report's `<testsuites ... NAME="N">`, or nothing when there is no report.
 verdict_junit_attr() { sed -n "s/.*<testsuites[^>]* $2=\"\([0-9][0-9]*\)\".*/\1/p" "$1" 2>/dev/null | head -n 1; }
 
-# verdict_suite <exit status> <the pass's log> [needle]: a row of the contract suite, which scripts/contract.sh runs on nextest. Its
-# JUnit report is beside the log (`<log>.junit.xml` for `<log>.test.log`). nextest exits 100 when a test failed; contract.sh exits 0
-# only when every test passed and as many as expected.
+# verdict_suite <exit status> <the row's log> [needle]: a row run on nextest, which is every row: a pass of the contract suite (through
+# scripts/contract.sh) or an adapter's own tests (through mutants.sh's `adapter_row`). Its JUnit report is beside the log
+# (`<log>.junit.xml` for `<log>.test.log`). nextest exits 100 when a test failed; contract.sh exits 0 only when every test passed and
+# as many as expected, and both it and adapter_row turn nextest's 4 (no test ran) into 5, the vacuity guard.
 verdict_suite() {
   vs_status="$1"; vs_log="$2"; vs_needle="${3:-}"
   vs_junit="${vs_log%.test.log}.junit.xml"
@@ -47,32 +48,5 @@ verdict_suite() {
     echo "DID NOT RUN|nextest failed (exit 100) but no report counts a failed test"
   else
     echo "DID NOT RUN|$(verdict_contract_reason "$vs_status")"
-  fi
-}
-
-# verdict_cargo <exit status> <log> [needle]: a row of an adapter's own tests, still on `cargo test`, which exits 101 both when a test
-# failed and when the tests did not build: only the log tells them apart.
-verdict_cargo() {
-  vc_status="$1"; vc_log="$2"; vc_needle="${3:-}"
-  vc_failed="$(grep -c '\.\.\. FAILED$' "$vc_log" 2>/dev/null)"
-  vc_failed="${vc_failed:-0}"
-  # A test run with --nocapture prints `test x ... `, its panic, and only then `FAILED` on a line of its own, so count from cargo's
-  # own `test result: FAILED. N passed; M failed` line when no line ends in `... FAILED`.
-  if [ "$vc_failed" -eq 0 ]; then
-    vc_failed="$(sed -n 's/^test result: FAILED\. [0-9]* passed; \([0-9]*\) failed.*/\1/p' "$vc_log" 2>/dev/null | tail -n 1)"
-    vc_failed="${vc_failed:-0}"
-  fi
-  if [ "$vc_status" -eq 0 ]; then
-    echo "SURVIVED|every test passed (exit 0)"
-  elif [ "$vc_status" -eq 101 ] && [ "$vc_failed" -ge 1 ]; then
-    if [ -z "$vc_needle" ] || grep -qF -- "$vc_needle" "$vc_log" 2>/dev/null; then
-      echo "KILLED|$vc_failed test(s) failed"
-    else
-      echo "UNCLEAR|$vc_failed test(s) failed, but the log never says: $vc_needle"
-    fi
-  elif [ "$vc_status" -eq 101 ]; then
-    echo "DID NOT RUN|cargo failed (exit 101) and no test failed: the tests did not build"
-  else
-    echo "DID NOT RUN|cargo exit $vc_status"
   fi
 }
