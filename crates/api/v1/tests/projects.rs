@@ -504,6 +504,55 @@ fn the_serializers_validate_refuses_one_thing_at_a_time(
     assert_eq!((r.status, &r.body), (status, &errors));
 }
 
+/// A body is read in three stages, and the order is the pin's: every field, then the people the fields name (a user who is not there),
+/// both into one 400, and then `validate()`, which only runs when all of that was fine. So a person who is nobody is reported beside
+/// the other fields that are wrong, on a creation, and hides the `validate()` refusals that a field error hides too.
+#[rstest]
+fn a_person_who_is_nobody_is_reported_beside_the_other_fields_that_are_wrong_and_hides_validate(
+    #[values("project_lead", "default_assignee")] person: &str,
+    #[values(
+        ("name", json!(null), "This field may not be null.".to_string()),
+        (
+            "archive_in",
+            json!(thrust_core::MAX_PROJECT_MONTHS + 1),
+            format!("Ensure this value is less than or equal to {}.", thrust_core::MAX_PROJECT_MONTHS)
+        ),
+        ("timezone", json!("Nope/Zone"), "\"Nope/Zone\" is not a valid choice.".to_string()),
+        ("emoji", json!(["x"]), "Not a valid string.".to_string())
+    )]
+    wrong: (&str, Value, String),
+) {
+    let w = real_world();
+    let nobody = "00000000-0000-0000-0000-000000000bad";
+    let missing = format!("Invalid pk \"{nobody}\" - object does not exist.");
+    let (key, value, message) = wrong;
+    let mut body = json!({"name": "Fine", "identifier": "FIN", person: nobody});
+    body[key] = value;
+    let r = call(&w, Who::Admin, "POST", &projects(), &body);
+    assert_eq!((r.status, r.body), (400, json!({key: [message], person: [missing.clone()]})), "a wrong {key}");
+    // with every field fine the person is the only error, and it hides what `validate()` would refuse
+    let r =
+        call(&w, Who::Admin, "POST", &projects(), &json!({"name": "Bad.Name", "identifier": "A-B", person: nobody}));
+    assert_eq!((r.status, r.body), (400, json!({person: [missing]})), "validate() is not reached");
+    assert_eq!(names(&get(&w, Who::Admin, &projects())), ["Cast Project"], "nothing was made");
+}
+
+/// A creation does not read the keys that only a change has, `estimate` and `default_state` (the pin's `ProjectCreateSerializer` has no
+/// such fields), so what a change refuses for them is no matter to it; the same body on a change is refused under that key.
+#[rstest]
+fn a_creation_ignores_the_two_keys_that_only_a_change_reads(
+    #[values("default_state", "estimate")] key: &str,
+    #[values(json!("not-a-uuid"), json!(5), json!(true), json!("00000000-0000-0000-0000-000000000bad"))] value: Value,
+) {
+    let w = real_world();
+    let made = call(&w, Who::Admin, "POST", &projects(), &json!({"name": "Fresh", "identifier": "FRS", key: value}));
+    assert_eq!(made.status, 201, "a creation that names {key}: {value}: {:?}", made.body);
+    assert_eq!(made.body["default_state"], Value::Null, "nothing of it was kept");
+    let changed = call(&w, Who::Admin, "PATCH", &cast(), &json!({key: value}));
+    assert_eq!(changed.status, 400, "a change that names {key}: {value}: {:?}", changed.body);
+    assert!(changed.body.get(key).is_some(), "refused under {key}: {:?}", changed.body);
+}
+
 /// Where Plane is lenient, v1 is: a number is a name (`create-wrong-type`, 201), a field it does not know is ignored (a `network`, an
 /// `id`, a `created_by`), a lead who is a member is made an admin as well, and a null for a field that allows one clears it.
 #[test]

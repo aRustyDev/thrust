@@ -4,9 +4,10 @@
 //! What it is for. The pin is Plane's own schema (`tools/oracle-v1/schema/openapi.v1.json`, OpenAPI 3.0.3, the contract). This
 //! document says what THIS crate sends and accepts, so `oasdiff` can say where the two differ (`scripts/check-openapi.sh`). The
 //! answers are derived from the types the routes serialize (`dto`), so they cannot say one thing while the route does another. A
-//! request is read by hand (`fields.rs`: DRF's coercions and DRF's words). The States' is read into a type that writes its own
-//! schema (`states::PatchedStateRequest`, with the bounded values of `values.rs`), so for them the document is the parser's; the
-//! other request bodies below are descriptions of what a reading takes, written by hand, until each parser returns a typed struct.
+//! request is read by hand (`fields.rs`: DRF's coercions and DRF's words). The States', the Labels' and the Projects' are read into
+//! types that write their own schema (`states::PatchedStateRequest`, `labels::PatchedLabelCreateUpdateRequest`,
+//! `projects::PatchedProjectUpdateRequest`, with the bounded values of `values.rs`), so for them the document is the parser's; the
+//! work items' request body below is a description of what a reading takes, written by hand, until its parser returns a typed struct.
 //!
 //! `cargo run -p thrust-api-v1 --features openapi --example openapi` prints the document.
 
@@ -59,16 +60,16 @@ use thrust_contracts::Uuid;
         ProjectLiteDto,
         Page<ProjectDto>,
         Page<ProjectLiteDto>,
-        ProjectCreateRequest,
-        PatchedProjectUpdateRequest,
+        crate::projects::ProjectCreateRequest,
+        crate::projects::PatchedProjectUpdateRequest,
         StateDto,
         Page<StateDto>,
         crate::states::StateRequest,
         crate::states::PatchedStateRequest,
         LabelDto,
         Page<LabelDto>,
-        LabelCreateUpdateRequest,
-        PatchedLabelCreateUpdateRequest,
+        crate::labels::LabelCreateUpdateRequest,
+        crate::labels::PatchedLabelCreateUpdateRequest,
         IssueDto,
         Page<IssueDto>,
         Listing<IssueDto>,
@@ -107,20 +108,39 @@ impl Modify for ApiKeyAuthentication {
 /// cannot differ in a key, a bound, a type or a `null`, and the one thing that tells them apart is the parser's own list.
 struct Creations;
 
-/// One creation: the name of its schema, the change it is made of, the keys it requires, and what it says of itself.
+/// One creation: the name of its schema, the change it is made of, the keys it requires, the keys of the change that it does not take,
+/// and what it says of itself.
 struct Creation {
     schema: &'static str,
     change: &'static str,
     required: &'static [&'static str],
+    without: &'static [&'static str],
     description: &'static str,
 }
 
-const CREATIONS: [Creation; 1] = [Creation {
-    schema: "StateRequest",
-    change: "PatchedStateRequest",
-    required: &crate::states::PatchedStateRequest::REQUIRED,
-    description: "What a state's creation takes (the pin's `StateSerializer` as a request): `name` and `color` are required, the rest is optional, and\nonly the two external keys can be `null`.",
-}];
+const CREATIONS: [Creation; 3] = [
+    Creation {
+        schema: "StateRequest",
+        change: "PatchedStateRequest",
+        required: &crate::states::PatchedStateRequest::REQUIRED,
+        without: &[],
+        description: "What a state's creation takes (the pin's `StateSerializer` as a request): `name` and `color` are required, the rest is optional, and\nonly the two external keys can be `null`.",
+    },
+    Creation {
+        schema: "LabelCreateUpdateRequest",
+        change: "PatchedLabelCreateUpdateRequest",
+        required: &crate::labels::PatchedLabelCreateUpdateRequest::REQUIRED,
+        without: &[],
+        description: "What a label's creation takes (the pin's `LabelCreateUpdateSerializer`): only `name` is required, and `name` cannot be blank. `color`\nand `description` can be blank and cannot be `null`; the two external keys and `parent` can be `null`.",
+    },
+    Creation {
+        schema: "ProjectCreateRequest",
+        change: "PatchedProjectUpdateRequest",
+        required: &crate::projects::PatchedProjectUpdateRequest::REQUIRED,
+        without: &crate::projects::PatchedProjectUpdateRequest::CHANGE_ONLY,
+        description: "What a project's creation takes (the pin's `ProjectCreateSerializer`). `description` and the two switches are optional and not\nnullable; the ids and the texts that can be `null` are `Option`.",
+    },
+];
 
 impl Modify for Creations {
     fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
@@ -131,6 +151,9 @@ impl Modify for Creations {
             let Some(RefOr::T(Schema::Object(change))) = components.schemas.get(creation.change) else { continue };
             let mut object = change.clone();
             object.required = creation.required.iter().map(|key| (*key).to_string()).collect();
+            for key in creation.without {
+                object.properties.remove(*key);
+            }
             object.description = Some(creation.description.to_string());
             components.schemas.insert(creation.schema.to_string(), RefOr::T(Schema::Object(object)));
         }
@@ -391,137 +414,6 @@ pub(crate) struct ByIdentifierPath {
 pub(crate) struct ByIdentifierQuery {
     expand: Option<String>,
     fields: Option<String>,
-}
-
-/// What a project's creation takes (the pin's `ProjectCreateSerializer`). `description` and the two switches are optional and not
-/// nullable; the ids and the texts that can be `null` are `Option`.
-#[derive(ToSchema)]
-#[allow(dead_code, reason = "a description for the document: the route reads the body by hand (`fields.rs`)")]
-pub(crate) struct ProjectCreateRequest {
-    #[schema(min_length = 1, max_length = 255)]
-    name: String,
-    #[schema(required = false)]
-    description: String,
-    project_lead: Option<Uuid>,
-    default_assignee: Option<Uuid>,
-    #[schema(min_length = 1, max_length = 12)]
-    identifier: String,
-    icon_prop: Option<serde_json::Value>,
-    #[schema(max_length = 255)]
-    emoji: Option<String>,
-    cover_image: Option<String>,
-    #[schema(required = false)]
-    module_view: bool,
-    #[schema(required = false)]
-    cycle_view: bool,
-    #[schema(required = false)]
-    issue_views_view: bool,
-    #[schema(required = false)]
-    page_view: bool,
-    #[schema(required = false)]
-    intake_view: bool,
-    #[schema(required = false)]
-    guest_view_all_features: bool,
-    #[schema(required = false, schema_with = months)]
-    archive_in: i32,
-    #[schema(required = false, schema_with = months)]
-    close_in: i32,
-    #[schema(required = false, schema_with = timezone)]
-    timezone: String,
-    #[schema(max_length = 255)]
-    external_source: Option<String>,
-    #[schema(max_length = 255)]
-    external_id: Option<String>,
-    #[schema(required = false)]
-    is_issue_type_enabled: bool,
-    #[schema(required = false)]
-    is_time_tracking_enabled: bool,
-}
-
-/// What a project's change takes (the pin's `ProjectUpdateSerializer`): the creation's keys, none required, and the two ids that a
-/// change can set.
-#[derive(ToSchema)]
-#[allow(dead_code, reason = "a description for the document: the route reads the body by hand (`fields.rs`)")]
-pub(crate) struct PatchedProjectUpdateRequest {
-    #[schema(min_length = 1, max_length = 255, required = false)]
-    name: String,
-    #[schema(required = false)]
-    description: String,
-    project_lead: Option<Uuid>,
-    default_assignee: Option<Uuid>,
-    #[schema(min_length = 1, max_length = 12, required = false)]
-    identifier: String,
-    icon_prop: Option<serde_json::Value>,
-    #[schema(max_length = 255)]
-    emoji: Option<String>,
-    cover_image: Option<String>,
-    #[schema(required = false)]
-    module_view: bool,
-    #[schema(required = false)]
-    cycle_view: bool,
-    #[schema(required = false)]
-    issue_views_view: bool,
-    #[schema(required = false)]
-    page_view: bool,
-    #[schema(required = false)]
-    intake_view: bool,
-    #[schema(required = false)]
-    guest_view_all_features: bool,
-    #[schema(required = false, schema_with = months)]
-    archive_in: i32,
-    #[schema(required = false, schema_with = months)]
-    close_in: i32,
-    #[schema(required = false, schema_with = timezone)]
-    timezone: String,
-    #[schema(max_length = 255)]
-    external_source: Option<String>,
-    #[schema(max_length = 255)]
-    external_id: Option<String>,
-    #[schema(required = false)]
-    is_issue_type_enabled: bool,
-    #[schema(required = false)]
-    is_time_tracking_enabled: bool,
-    default_state: Option<Uuid>,
-    estimate: Option<Uuid>,
-}
-
-/// What a label's creation takes (the pin's `LabelCreateUpdateSerializer`): only `name` is required, and `name` cannot be blank. `color`
-/// and `description` can be blank and cannot be `null`; the two external keys and `parent` can be `null`.
-#[derive(ToSchema)]
-#[allow(dead_code, reason = "a description for the document: the route reads the body by hand (`fields.rs`)")]
-pub(crate) struct LabelCreateUpdateRequest {
-    #[schema(min_length = 1, max_length = 255)]
-    name: String,
-    #[schema(required = false, max_length = 255)]
-    color: String,
-    #[schema(required = false)]
-    description: String,
-    #[schema(max_length = 255)]
-    external_source: Option<String>,
-    #[schema(max_length = 255)]
-    external_id: Option<String>,
-    parent: Option<Uuid>,
-    #[schema(required = false)]
-    sort_order: f64,
-}
-
-/// What a label's change takes: the creation's keys, none required.
-#[derive(ToSchema)]
-#[allow(dead_code, reason = "a description for the document: the route reads the body by hand (`fields.rs`)")]
-pub(crate) struct PatchedLabelCreateUpdateRequest {
-    #[schema(min_length = 1, max_length = 255, required = false)]
-    name: String,
-    #[schema(required = false, max_length = 255)]
-    color: String,
-    #[schema(required = false)]
-    description: String,
-    #[schema(max_length = 255)]
-    external_source: Option<String>,
-    #[schema(max_length = 255)]
-    external_id: Option<String>,
-    parent: Option<Uuid>,
-    #[schema(required = false)]
-    sort_order: f64,
 }
 
 /// What a work item's creation takes (the pin's `IssueSerializer` as a request): only `name` is required, and it cannot be blank. The

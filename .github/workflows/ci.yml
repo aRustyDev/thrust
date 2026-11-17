@@ -141,6 +141,7 @@ jobs:
           sh .github/scripts/tests/test-lint-all-workflows.sh
           sh .github/scripts/tests/test-check-flake-hunt-cell.sh
           sh .github/scripts/tests/test-ports.sh
+          sh .github/scripts/tests/test-mutants-verdict.sh
           sh .github/scripts/tests/test-deploy-worker.sh
           python3 -I .github/scripts/tests/test_active_version.py
           sh .github/scripts/tests/test-unpack-bundle.sh
@@ -151,7 +152,10 @@ jobs:
           python3 -I .github/scripts/tests/test_merge_assets.py
           python3 -I .github/scripts/tests/test_check_release_plz.py
           python3 -I .github/scripts/tests/test_flagship.py
+          python3 -I .github/scripts/tests/test_preview_config.py
           python3 -I .github/scripts/tests/test_plan_ci.py
+          # The tests of the planner and the gate must be able to fail: each hand mutant of those two files is killed by them (ADR-0102).
+          python3 -I .github/scripts/tests/mutate_gate.py
 
   deps:
     needs: changes

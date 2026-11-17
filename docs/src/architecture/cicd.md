@@ -20,7 +20,7 @@ Worker](deploy.md). The jobs and the command each CI job runs are in the CI sect
 | `.github/workflows/ci.yml` (`ci`) | The pipeline. Runs on pull requests, merge-queue entries, pushes to `main`, every night on `main` and by manual dispatch |
 | `.github/workflows/contract-cell.yml` | A reusable workflow that runs one contract cell on its own runner |
 | `.github/workflows/flake-hunt.yml` | Repeats one cell 1 to 50 times (5 by default), by hand or every Monday at 03:17 UTC (`native-memory main`). It offers every pass of the matrix, and its first step, `.github/scripts/check-flake-hunt-cell.sh`, refuses a target and pass that are not a cell of `scripts/contract-all.sh`, before anything is built; `test-check-flake-hunt-cell.sh` holds the workflow's two lists equal to the matrix's. A pass is prepared by the same action a cell uses (`contract-pass-tools`). It passes only if `scripts/flake-hunt.sh` prints `failures: 0 / N`, because the script ends with an `echo`, so its exit status does not say whether an iteration failed. The job stops at 120 minutes: a `worker-cf e2e` iteration takes about 9 (nightly run 43798891735), so that cell fits about 12 |
-| `.github/workflows/e2e-schedule.yml` | Runs the `worker-cf e2e` cell (through `contract-cell.yml`) every day at 04:41 UTC and by hand, and on a pull request that edits the file, so that the call is proved valid before it merges. It covers what a pull request does not: drift in the runner, the browser and the packages, every day on `main`. Not a gate: nothing waits for it and `gate` does not read it. The pinned-Plane leg is not here, because the oracle builds from an unpushed fork (`scripts/e2e.sh plane-oracle`, local) |
+| `.github/workflows/e2e-schedule.yml` | Runs the `worker-cf e2e` and `worker-cf e2e-mail` cells (through `contract-cell.yml`, one job each) every day at 04:41 UTC and by hand, and on a pull request that edits the file, so that the call is proved valid before it merges. It covers what a pull request does not: drift in the runner, the browser and the packages, every day on `main`. Not a gate: nothing waits for it and `gate` does not read it. The pinned-Plane leg is not here, because the oracle builds from an unpushed fork (`scripts/e2e.sh plane-oracle`, local) |
 | `.github/workflows/release-plz.yml` (`release-plz`) | The release flow, run by release-plz: after each push to `main`, opens or updates the release-candidate pull request from an `rc/*` branch, and tags `vX.Y.Z`, creates the GitHub release as a draft and starts `release.yml` on the tag when such a pull request merges. See [Release candidates](#release-candidates) |
 | `.github/workflows/release.yml` (`release`) | Dispatched on the release tag by `release-plz.yml` (a draft release starts no workflow), or by hand on the tag; which run releases what is `plan-release.sh`. It builds the bundle at the tag, attests its build provenance and an SPDX SBOM of the source, attaches the bundle, the SBOM and `SHA256SUMS`, and publishes the release (immutable). On a pull request that edits it or the build, a dry run that attests and publishes nothing. See [Releasing](release.md) |
 | `release-plz.toml` | release-plz's configuration: one version and one tag for the workspace, one root `CHANGELOG.md`, which commits make a release. Held to the workspace members by `.github/scripts/check-release-plz.py` |
@@ -33,6 +33,7 @@ Worker](deploy.md). The jobs and the command each CI job runs are in the CI sect
 | `.github/deploy/` | What the deploy trusts: the Cloudflare Origin CA root that signs `thrust-pg`'s certificate, with its fingerprint pinned by a test; and `flagship/policy.json`, who may reach which kind of target through the edge ([Routing flags](#routing-flags)) |
 | `.github/workflows/flagship.yml` (`flagship`) | The edge's routing flags: makes every flag of the Flagship app what the policy says, on a push to `main` that changes it, and checks them every night at 05:23 UTC ([Routing flags](#routing-flags)). Off until the repository variable `FLAGSHIP_APP_ID` is set |
 | `scripts/flagship.py` | The only writer of the routing flags: `validate`, `check`, `sync`, and `put`, `alias` and `delete` for the deploys and teardowns of targets. Tested by `.github/scripts/tests/test_flagship.py` against `flagship_fake.py` |
+| `scripts/preview-config.py` | A Preview target's configuration (ADR-0111): production's rendered configuration, unchanged at the top level, with a `previews` block derived from it, because a Preview inherits none of production's bindings. The `shared` profile restates every binding, uses production's rooms (`script_name`), and leaves out the queue consumer and the cron, which never target a Preview. A setting it does not know is refused. Not run by a deploy yet (stage E of #195). Tested by `.github/scripts/tests/test_preview_config.py` |
 | `scripts/deploy-worker.sh` and its parts | The deploy itself (render, classify, expand migration, `wrangler deploy`, smoke, rollback), run by the composite action: `render-wrangler.sh` (with the template `crates/worker/wrangler.deploy.toml`), `migrate-ci.sh`, `smoke-deploy.sh`, `smoke-bootstrap.sh`, `merge-assets.sh` and `check-asset-retention.sh` |
 | `scripts/check-web-diff.sh` | The Q-R2 gate for `web/` (the stock React app, imported from the oracle pin), run by the `web` job. Tested by `.github/scripts/tests/test-check-web-diff.sh` |
 
@@ -51,8 +52,18 @@ decides:
 - `contract` is expected exactly when cells are planned. The set of cells that uploaded a pass marker must then equal
   the planned set, which must not be empty.
 - `test-ci-scripts.sh` generates the cases: each of the ten jobs, expected or not, with each of the four results (80
-  cases), then the cells, the inputs and the names. 34 hand mutants of the planner and the gate are each caught by
-  their tests `[verified 2026-11-16 locally, under dash; not yet in CI]`.
+  cases), then the cells, the inputs and the names.
+- **One script at every level** (ADR-0102). `assert-gate.sh` also takes `KNOWN_JOBS`, `CHANGES_JOB`, `CELL_JOB` and
+  `VERDICT_JOBS`, each of which defaults to what the gate above needs. A called workflow's `verdict` job sets them to judge
+  its own jobs; a gate that calls workflows sets `VERDICT_JOBS` to require of each expected callee that its result is
+  `success` **and** that its output `verdict` is `pass`, since a callee whose `verdict` job was skipped is `success` and
+  proves nothing. No workflow is called yet, so ci.yml's own gate runs as above. The cases (173 in `test-ci-scripts.sh`)
+  include the seven scenarios of the gate spike (`.agents/plans/ci-workflows/research/0018-gate-spike.md`).
+- **Tested to be able to fail.** `.github/scripts/tests/mutate_gate.py`, the last line of the `ci-scripts` job, plants 53 hand
+  mutants one at a time in `plan-ci.py` and `assert-gate.sh`, and each must fail the tests of its file (`test_plan_ci.py`;
+  `test-ci-scripts.sh` under dash, stopping at the first failing case). It refuses to answer when the tests fail on the
+  unmutated files, when the text a mutant replaces is not found exactly once, or when a mutant no longer compiles, and two
+  mutants that change nothing must survive, so a driver that kills everything is caught. `[verified 2026-11-16 locally, under dash]`
 
 The point is that "nothing failed" is not accepted as "everything ran". A cell that never started leaves no check
 behind, and a required check that never reports blocks a pull request forever.
@@ -77,8 +88,9 @@ its base branch. Nothing calls it, so it is a tool to run by hand.
       OpenAPI diff) and the three `oracle` cells.
     - `.github/deploy/` (read by the TLS tests of `thrust-adapters-postgres`) runs `hermetic` and `ci-scripts`.
   - A file that only one pass reads runs that pass on every target:
-    - `e2e/`, `scripts/e2e.sh` and the e2e tools run `worker-cf e2e`.
-    - `web/` runs the `web` job and `worker-cf e2e`. A change to `web/` alone is now driven in a browser on its own pull
+    - `e2e/`, `scripts/e2e.sh` and the e2e tools run `worker-cf e2e` and `worker-cf e2e-mail` (the two suites share `e2e/support/`
+      and the runner, so a change to either is not told apart).
+    - `web/` runs the `web` job and both e2e cells. A change to `web/` alone is now driven in a browser on its own pull
       request (G-30's gap 2).
   - A file that only a guard or a job reads runs that job:
     - `deny.toml` runs `deny`; `clippy.toml` and `rustfmt.toml` run `lint`.
@@ -111,23 +123,28 @@ its base branch. Nothing calls it, so it is a tool to run by hand.
 
   | Change | Jobs | Cells |
   |---|---|---|
-  | a file under `web/` | `web`, `contract` | 1 (`worker-cf e2e`) |
-  | `thrust-adapters-cloudflare` | `ci-scripts`, `deps`, `lint`, `hermetic`, `contract` | the 13 `worker-*` cells |
+  | a file under `web/` | `web`, `contract` | 2 (`worker-cf e2e`, `worker-cf e2e-mail`) |
+  | `thrust-adapters-cloudflare` | `ci-scripts`, `deps`, `lint`, `hermetic`, `contract` | the 16 `worker-*` cells |
   | `crates/adapters/selfhosted/Cargo.toml` | the same, plus `deny`, `pg-adapter` and `mutants` | the 10 `native-*` cells |
-  | `thrust-contracts` (everything depends on it) | all but `deny` and `web` | all 23 |
+  | `thrust-contracts` (everything depends on it) | all but `deny` and `web` | all 26 |
   | `tools/oracle-v1/` | `deps`, `hermetic`, `contract` | the 3 `oracle` cells |
   | `scripts/smoke-deploy.sh` | `ci-scripts` | none |
   | a page under `docs/` | `docs` | none |
 
-- **Tested** by `test_plan_ci.py`, about 4,900 checks:
+- **Tested** by `test_plan_ci.py`, about 6,800 checks:
   - 300 generated crate graphs, with each crate changed alone and in pairs, against an independent reverse-reachability;
   - the plan of a list equals the union of the plans of its parts;
   - every rule is the first match of its own sample, and matches a tracked file;
   - the fail-open cases;
   - this repository's real graph and targets;
-  - no script that the planner keeps out of the cells is called by what runs a cell.
+  - no script that the planner keeps out of the cells is called by what runs a cell;
+  - the called workflows (ADR-0102): 300 generated partitions of the jobs into workflows against an independent computation
+    of what `gate` expects and what each workflow is given, the maps that are refused (a job in two workflows, a name that is
+    no job, a workflow with no job), and the command line run on a copy of the planner whose map is not empty;
+  - every file under `.github/workflows/` is one that runs the checks (planned as everything) or one that runs none, so a new
+    workflow cannot fall into the generic rule and run no test.
 
-  `[verified 2026-11-16 locally; not yet in CI]`
+  `[verified 2026-11-16 locally; run by ci-scripts]`
 - **The web job.** The `web` job runs `scripts/check-web-diff.sh` (only the files in
   `web/ALLOWED-CHANGES` may differ from the pin; `web/SOURCE` says where `web/` came from), then
   `pnpm --dir web install --frozen-lockfile --ignore-scripts` and `pnpm --dir web exec turbo run build --filter=web`,
@@ -136,9 +153,9 @@ its base branch. Nothing calls it, so it is a tool to run by hand.
   tasks uncached from an empty `node_modules` `[verified 2026-11-11 locally; not yet in CI]`.
 - **The matrix.** The `changes` job reads the `run <target> <pass>` lines of `scripts/contract-all.sh`
   (`plan-cells.sh`), so no second list can drift, and the planner keeps the cells the change needs. It fails if the number of cells it parsed differs from the number of lines that start with `run`,
-  if there are none, or if one repeats. There are 25 cells: 22 contract cells (the browser journeys' `worker-cf e2e`
+  if there are none, or if one repeats. There are 26 cells: 23 contract cells (the browser journeys' `worker-cf e2e`, the ones that need mail, `worker-cf e2e-mail`,
   and the password reset by email's three `mail` cells, `native-memory`, `worker-memory` and `worker-cf`, among them) and the 3 `oracle` cells below `[verified 2026-11-14: PR #154's
-  check list had 22 contract jobs, all success, before the first mail cell; the 21 of PR #113 (2026-11-10) were before the e2e cell]`.
+  check list had 22 contract jobs, all success, before the first mail cell; the 21 of PR #113 (2026-11-10) were before the e2e cell; `e2e-mail` was added 2026-11-16]`.
   Each runs on a fresh runner with its own checkout, which is why the shared-build-directory hazard that makes
   `contract-all.sh` run serially does not apply.
 - **A cell.** `contract-cell.yml` prepares the pass through `contract-pass-tools`, which checks that `curl`, `openssl`, `lsof`, `pgrep` and `docker` exist (and `nc` for the native `mail` cell, which waits for its Mailpit with it, `uv` for `oracle`, and `node` and `pnpm` for `e2e`), runs

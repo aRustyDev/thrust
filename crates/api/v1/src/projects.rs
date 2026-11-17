@@ -21,11 +21,10 @@ use thrust_core::{CoreError, ProjectError, ProjectPatch};
 use thrust_ports::{ProjectListing, ProjectRow, WorkspaceScope};
 
 use crate::dto::{into_object, ProjectDto, ProjectLiteDto};
-use crate::fields::{
-    bool_field, char_field, choice_by, fail, int_field, no_such_pk, read, refuse_if_any, uuid_field, FieldErrors,
-};
+use crate::fields::{bool_field, fail, no_such_pk, read_into, refuse_if_any, FieldErrors};
 use crate::pagination::{Page, PageRequest};
 use crate::request::{json_body, pick_fields, query_map, Body};
+use crate::values::{AnyJson, NullableProse, NullableText, NullableUuid, Prose, Text, Timezone, Whole};
 use crate::{with_allow, Ctx, PlaneUuid, V1Error, V1Path};
 
 /// The orders a project list takes (`PROJECT_ORDER_BY_ALLOWLIST`), each with an optional `-`; anything else is the default.
@@ -209,104 +208,223 @@ fn non_field(message: &str) -> V1Error {
     V1Error::Fields(errors)
 }
 
-/// What a body says of a project, read as the pin's `ProjectCreateSerializer` (and, for a change, `ProjectUpdateSerializer`) reads
-/// it: every field it knows is checked and what is wrong is collected into one 400; then `validate()`, which stops at its first
-/// refusal. A field it does not know (a `network`, an `id`) is ignored.
+/// What a body says of a project, as the pin's `ProjectCreateSerializer` (and, for a change, `ProjectUpdateSerializer`) reads it. The
+/// pin names a body whose keys may all be left out `Patched…`, and this is that: a change reads into it as it is, and a creation reads
+/// into it, must also name [`PatchedProjectUpdateRequest::REQUIRED`], and does not read [`PatchedProjectUpdateRequest::CHANGE_ONLY`].
+/// A key left out is `None`. Each field's type says what it takes, and the document is written from these types (the schema
+/// `PatchedProjectUpdateRequest` is this struct, and `Creations` in `openapi.rs` makes `ProjectCreateRequest` of it with `REQUIRED`
+/// and without `CHANGE_ONLY`), so the bounds below are the only place they are written; the two lengths are core's own constants. A
+/// field it does not know (a `network`, an `id`) is ignored.
+#[derive(Debug, Default)]
+#[cfg_attr(
+    feature = "openapi",
+    derive(utoipa::ToSchema),
+    schema(
+        description = "What a project's change takes (the pin's `ProjectUpdateSerializer`): the creation's keys, none required, and the two ids that a\nchange can set."
+    )
+)]
+pub(crate) struct PatchedProjectUpdateRequest {
+    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
+    name: Option<Text<1, { thrust_core::MAX_PROJECT_NAME }>>,
+    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
+    identifier: Option<Text<1, { thrust_core::MAX_PROJECT_IDENTIFIER }>>,
+    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
+    description: Option<Prose>,
+    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
+    emoji: Option<NullableText<0, 255>>,
+    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
+    cover_image: Option<NullableProse>,
+    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
+    external_source: Option<NullableText<0, 255>>,
+    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
+    external_id: Option<NullableText<0, 255>>,
+    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
+    icon_prop: Option<AnyJson>,
+    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
+    module_view: Option<bool>,
+    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
+    cycle_view: Option<bool>,
+    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
+    issue_views_view: Option<bool>,
+    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
+    page_view: Option<bool>,
+    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
+    intake_view: Option<bool>,
+    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
+    guest_view_all_features: Option<bool>,
+    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
+    is_issue_type_enabled: Option<bool>,
+    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
+    is_time_tracking_enabled: Option<bool>,
+    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
+    archive_in: Option<Whole<0, { thrust_core::MAX_PROJECT_MONTHS }>>,
+    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
+    close_in: Option<Whole<0, { thrust_core::MAX_PROJECT_MONTHS }>>,
+    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
+    timezone: Option<Timezone>,
+    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
+    project_lead: Option<NullableUuid>,
+    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
+    default_assignee: Option<NullableUuid>,
+    // the two that only a change reads (`CHANGE_ONLY`)
+    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
+    default_state: Option<NullableUuid>,
+    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
+    estimate: Option<NullableUuid>,
+}
+
+impl PatchedProjectUpdateRequest {
+    /// The keys a creation must name; a change names none of them. The document's creation is written from this list, so it is the
+    /// parser's.
+    pub(crate) const REQUIRED: [&'static str; 2] = ["name", "identifier"];
+
+    /// The keys that only a change reads (the pin's `ProjectUpdateSerializer` has them and `ProjectCreateSerializer` has not): a
+    /// creation that names one is read as if it did not. The document's creation is written without them, from this list.
+    pub(crate) const CHANGE_ONLY: [&'static str; 2] = ["default_state", "estimate"];
+
+    /// The first stage: read every key the body names, with no database, and file what is wrong. The errors are handed back and not
+    /// refused, because the second stage ([`Self::check_rows`]) adds its own to the same 400, as the pin reports every field at once.
+    fn read(b: &Map<String, Value>, partial: bool) -> (Self, FieldErrors) {
+        let mut errors = FieldErrors::new();
+        for field in Self::REQUIRED {
+            if !partial && !b.contains_key(field) {
+                fail(&mut errors, field, "This field is required.");
+            }
+        }
+        // a creation does not read what only a change has
+        let creation_body: Map<String, Value>;
+        let b = if partial {
+            b
+        } else {
+            creation_body = b
+                .iter()
+                .filter(|(k, _)| !Self::CHANGE_ONLY.contains(&k.as_str()))
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect();
+            &creation_body
+        };
+        let request = read_into!(PatchedProjectUpdateRequest, errors, b, {
+            name: Text::read,
+            identifier: Text::read,
+            description: Prose::read,
+            emoji: NullableText::read,
+            cover_image: NullableProse::read,
+            external_source: NullableText::read,
+            external_id: NullableText::read,
+            icon_prop: AnyJson::read,
+            module_view: bool_field,
+            cycle_view: bool_field,
+            issue_views_view: bool_field,
+            page_view: bool_field,
+            intake_view: bool_field,
+            guest_view_all_features: bool_field,
+            is_issue_type_enabled: bool_field,
+            is_time_tracking_enabled: bool_field,
+            archive_in: Whole::read,
+            close_in: Whole::read,
+            timezone: Timezone::read,
+            project_lead: NullableUuid::read,
+            default_assignee: NullableUuid::read,
+            default_state: NullableUuid::read,
+            estimate: NullableUuid::read,
+        });
+        (request, errors)
+    }
+
+    /// The second stage: the fields that name a row. A person must be a user that is there (the rows of the database); there are no
+    /// estimates here, so no key names one, and `null` names none.
+    async fn check_rows(&self, ctx: &Ctx, errors: &mut FieldErrors) -> Result<(), V1Error> {
+        for (field, person) in [("project_lead", self.project_lead), ("default_assignee", self.default_assignee)] {
+            let Some(id) = person.and_then(NullableUuid::id) else { continue };
+            if ctx.app.ports.db.user_by_id(UserId(id)).await?.is_none() {
+                fail(errors, field, no_such_pk(id));
+            }
+        }
+        if let Some(id) = self.estimate.and_then(NullableUuid::id) {
+            fail(errors, "estimate", no_such_pk(id));
+        }
+        Ok(())
+    }
+
+    /// The third stage, the serializer's `validate()`, which runs only when every field was fine and raises at the first thing wrong.
+    async fn validate(&self, ctx: &Ctx, scope: &WorkspaceScope) -> Result<(), V1Error> {
+        // (upper-casing the identifier does not change whether a character is forbidden)
+        if self.name.as_ref().map(Text::as_str).is_some_and(thrust_core::has_forbidden_project_chars) {
+            return Err(non_field("Project name cannot contain special characters."));
+        }
+        if self.identifier.as_ref().map(Text::as_str).is_some_and(thrust_core::has_forbidden_project_chars) {
+            return Err(non_field("Project identifier cannot contain special characters."));
+        }
+        if let Some(lead) = self.project_lead.and_then(NullableUuid::id) {
+            if !thrust_core::is_workspace_member(&ctx.app, scope, UserId(lead)).await? {
+                return Err(V1Error::Error(
+                    StatusCode::BAD_REQUEST,
+                    json!({ "project_lead": "The provided user is not a member of this workspace." }),
+                ));
+            }
+        }
+        if let Some(assignee) = self.default_assignee.and_then(NullableUuid::id) {
+            if !thrust_core::is_workspace_member(&ctx.app, scope, UserId(assignee)).await? {
+                return Err(non_field("Default assignee should be a user in the workspace"));
+            }
+        }
+        Ok(())
+    }
+}
+
+impl From<PatchedProjectUpdateRequest> for ProjectPatch {
+    fn from(r: PatchedProjectUpdateRequest) -> Self {
+        ProjectPatch {
+            name: r.name.map(Text::into_string),
+            // the model saves a key in upper case
+            identifier: r.identifier.map(|key| key.into_string().to_uppercase()),
+            description: r.description.map(Prose::into_string),
+            emoji: r.emoji.map(NullableText::into_option),
+            icon_prop: r.icon_prop.map(AnyJson::into_option),
+            project_lead: r.project_lead.map(|p| p.id().map(UserId)),
+            default_assignee: r.default_assignee.map(|p| p.id().map(UserId)),
+            cycle_view: r.cycle_view,
+            issue_views_view: r.issue_views_view,
+            module_view: r.module_view,
+            page_view: r.page_view,
+            intake_view: r.intake_view,
+            guest_view_all_features: r.guest_view_all_features,
+            is_time_tracking_enabled: r.is_time_tracking_enabled,
+            is_issue_type_enabled: r.is_issue_type_enabled,
+            cover_image: r.cover_image.map(NullableProse::into_option),
+            archive_in: r.archive_in.map(Whole::get),
+            close_in: r.close_in.map(Whole::get),
+            timezone: r.timezone.map(Timezone::into_string),
+            external_source: r.external_source.map(NullableText::into_option),
+            external_id: r.external_id.map(NullableText::into_option),
+            default_state: r.default_state.map(NullableUuid::id),
+            // `estimate` was checked and names no row here: nothing is kept of it
+            ..ProjectPatch::default()
+        }
+    }
+}
+
+/// The creation's body in the document: `PatchedProjectUpdateRequest` with `name` and `identifier` required and without the keys that
+/// only a change has, which `Creations` (`openapi.rs`) writes from the change's schema. The type is the name the path declarations
+/// use for it.
+#[cfg(feature = "openapi")]
+#[derive(utoipa::ToSchema)]
+#[allow(dead_code, reason = "a name for the document: nothing builds it")]
+pub(crate) struct ProjectCreateRequest;
+
+/// What a body says of a project, read and checked: every field first, then the rows they name, and what is wrong in either is one 400;
+/// then the serializer's `validate()`.
 async fn project_patch(
     ctx: &Ctx,
     scope: &WorkspaceScope,
     b: &Map<String, Value>,
     partial: bool,
 ) -> Result<ProjectPatch, V1Error> {
-    let mut errors = FieldErrors::new();
-    let mut p = ProjectPatch::default();
-
-    let text = |max: usize, blank: bool, null: bool| move |v: &Value| char_field(v, Some(max), blank, null);
-
-    // the two a creation must have
-    for field in ["name", "identifier"] {
-        if !partial && !b.contains_key(field) {
-            fail(&mut errors, field, "This field is required.");
-        }
-    }
-    let max_name = thrust_core::MAX_PROJECT_NAME;
-    let max_key = thrust_core::MAX_PROJECT_IDENTIFIER;
-    p.name = read(&mut errors, b, "name", text(max_name, false, false)).flatten();
-    // the model saves a key in upper case
-    p.identifier =
-        read(&mut errors, b, "identifier", text(max_key, false, false)).flatten().map(|key| key.to_uppercase());
-    // a `TextField` the column allows blank, a `CharField` or `TextField` that allows null
-    p.description = read(&mut errors, b, "description", |v| char_field(v, None, true, false)).flatten();
-    p.emoji = read(&mut errors, b, "emoji", text(255, true, true));
-    p.cover_image = read(&mut errors, b, "cover_image", |v| char_field(v, None, true, true));
-    p.external_source = read(&mut errors, b, "external_source", text(255, true, true));
-    p.external_id = read(&mut errors, b, "external_id", text(255, true, true));
-    p.icon_prop = b.get("icon_prop").map(|v| if v.is_null() { None } else { Some(v.clone()) });
-    p.module_view = read(&mut errors, b, "module_view", bool_field);
-    p.cycle_view = read(&mut errors, b, "cycle_view", bool_field);
-    p.issue_views_view = read(&mut errors, b, "issue_views_view", bool_field);
-    p.page_view = read(&mut errors, b, "page_view", bool_field);
-    p.intake_view = read(&mut errors, b, "intake_view", bool_field);
-    p.guest_view_all_features = read(&mut errors, b, "guest_view_all_features", bool_field);
-    p.is_issue_type_enabled = read(&mut errors, b, "is_issue_type_enabled", bool_field);
-    p.is_time_tracking_enabled = read(&mut errors, b, "is_time_tracking_enabled", bool_field);
-    let months = |v: &Value| int_field(v, 0, 12).and_then(|n| i32::try_from(n).map_err(|e| e.to_string()));
-    p.archive_in = read(&mut errors, b, "archive_in", months);
-    p.close_in = read(&mut errors, b, "close_in", months);
-    // a model field with `choices` is a `ChoiceField`, which does not trim: a padded name is no choice (`choice_by`)
-    p.timezone = read(&mut errors, b, "timezone", |v| choice_by(v, thrust_core::is_known_timezone));
-
-    // the fields that name a row: a user who is there; for a change, a state and an estimate
-    for field in ["project_lead", "default_assignee"] {
-        let Some(v) = b.get(field) else { continue };
-        match uuid_field(v) {
-            Err(m) => fail(&mut errors, field, m),
-            Ok(None) => set_user(&mut p, field, None),
-            Ok(Some(id)) if ctx.app.ports.db.user_by_id(UserId(id)).await?.is_none() => {
-                fail(&mut errors, field, no_such_pk(id));
-            }
-            Ok(Some(id)) => set_user(&mut p, field, Some(UserId(id))),
-        }
-    }
-    if partial {
-        p.default_state = read(&mut errors, b, "default_state", uuid_field);
-        // there are no estimates here, so no key names one; null names none
-        if let Some(id) = read(&mut errors, b, "estimate", uuid_field).flatten() {
-            fail(&mut errors, "estimate", no_such_pk(id));
-        }
-    }
+    let (request, mut errors) = PatchedProjectUpdateRequest::read(b, partial);
+    request.check_rows(ctx, &mut errors).await?;
     refuse_if_any(errors)?;
-
-    // `validate()`, which raises at the first thing wrong
-    if p.name.as_deref().is_some_and(thrust_core::has_forbidden_project_chars) {
-        return Err(non_field("Project name cannot contain special characters."));
-    }
-    // (upper-casing does not change whether a character is forbidden)
-    if p.identifier.as_deref().is_some_and(thrust_core::has_forbidden_project_chars) {
-        return Err(non_field("Project identifier cannot contain special characters."));
-    }
-    if let Some(Some(lead)) = p.project_lead {
-        if !thrust_core::is_workspace_member(&ctx.app, scope, lead).await? {
-            return Err(V1Error::Error(
-                StatusCode::BAD_REQUEST,
-                json!({ "project_lead": "The provided user is not a member of this workspace." }),
-            ));
-        }
-    }
-    if let Some(Some(assignee)) = p.default_assignee {
-        if !thrust_core::is_workspace_member(&ctx.app, scope, assignee).await? {
-            return Err(non_field("Default assignee should be a user in the workspace"));
-        }
-    }
-    Ok(p)
-}
-
-fn set_user(p: &mut ProjectPatch, field: &str, user: Option<UserId>) {
-    if field == "project_lead" {
-        p.project_lead = Some(user);
-    } else {
-        p.default_assignee = Some(user);
-    }
+    request.validate(ctx, scope).await?;
+    Ok(request.into())
 }
 
 // --- the routes ---------------------------------------------------------------------------------------------------------------
@@ -406,7 +524,7 @@ pub(crate) async fn list_lite(
         tag = "Projects",
         summary = "Create project",
         params(("slug" = String, Path)),
-        request_body(content = crate::openapi::ProjectCreateRequest, content_type = "application/json"),
+        request_body(content = ProjectCreateRequest, content_type = "application/json"),
         responses(
             crate::openapi::Refused,
             (status = 201, description = "Project created successfully", body = ProjectDto),
@@ -529,7 +647,7 @@ pub(crate) async fn retrieve(
         summary = "Update project",
         params(("slug" = String, Path), ("pk" = Uuid, Path)),
         // not required: an empty body is an empty object (`json_body`), as DRF reads it
-        request_body(content = Option<crate::openapi::PatchedProjectUpdateRequest>, content_type = "application/json"),
+        request_body(content = Option<PatchedProjectUpdateRequest>, content_type = "application/json"),
         responses(
             crate::openapi::Refused,
             (status = 200, description = "Project updated successfully", body = ProjectDto),

@@ -380,6 +380,33 @@ fn a_parent_the_key_cannot_read_is_refused_under_parent_beside_the_other_fields(
     assert_eq!(listed(&w), ["docs", "feature", "bug"], "nothing was made or changed");
 }
 
+/// A `parent` that is well formed and names no label of the project is the part of a body that needs the database, and it is read when
+/// another field was wrong too: the pin reports every field at once, so a body read in two stages (the fields, then the parent) must not
+/// stop after the first. Each wrong field below is reported beside the parent, on a creation and on a change.
+#[rstest]
+fn a_parent_that_is_not_there_is_reported_beside_the_other_fields_that_are_wrong(
+    #[values(
+        ("name", json!(null), "This field may not be null."),
+        ("color", json!(true), "Not a valid string."),
+        ("description", json!(null), "This field may not be null."),
+        ("sort_order", json!("x"), "A valid number is required."),
+        ("external_id", json!(["a"]), "Not a valid string.")
+    )]
+    wrong: (&str, Value, &str),
+    #[values("POST", "PATCH")] method: &str,
+) {
+    let w = real_world();
+    let nobody = "5a1b3c4d-0000-4000-8000-000000000001";
+    let (key, value, message) = wrong;
+    let mut body = json!({"name": "n", "parent": nobody});
+    body[key] = value;
+    let uri = if method == "POST" { labels() } else { label(bug()) };
+    let r = call(&w, Who::Admin, method, &uri, &body);
+    let want = json!({key: [message], "parent": [format!("Invalid pk \"{nobody}\" - object does not exist.")]});
+    assert_eq!((r.status, r.body), (400, want), "{method} with a wrong {key}");
+    assert_eq!(listed(&w), ["docs", "feature", "bug"], "nothing was made or changed");
+}
+
 /// The three answers to a name that is taken: a creation is a 409 naming the label that has it (the corpus's `create-duplicate`), a
 /// name sent with spaces round it finds no row to name (the pin's view raises: a 500), and a change is the base view's 400 (the
 /// corpus's `patch-rename-to-existing`).
