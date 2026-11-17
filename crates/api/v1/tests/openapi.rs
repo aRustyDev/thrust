@@ -499,8 +499,8 @@ fn a_body_that_may_be_left_out_is_not_described_as_null_and_a_null_body_is_refus
     }
 }
 
-/// The request descriptions of a change are written by hand beside those of a creation, so that nothing else ties them: a change takes
-/// the keys of a creation, with the same bounds, and requires none.
+/// A creation's schema is made of its change's (`Creations`), and this holds the result to what was meant: a change takes the keys of a
+/// creation, with the same bounds, and requires none. A creation that left a key out, or a change that required one, fails it.
 #[test]
 fn a_change_takes_the_keys_of_a_creation_and_requires_none() {
     let doc = document();
