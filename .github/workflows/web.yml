@@ -1,0 +1,86 @@
+name: web
+
+# The stock app's build check, called by ci.yml (its `web` job) and runnable alone (ADR-0102). ci.yml passes `plan`, the jobs of this
+# workflow that plan-ci.py says the change needs; a run by hand plans them all. The `verdict` job judges the jobs against that plan,
+# so that a planned job that never ran turns ci.yml's `gate` red: a calling job is `success` when only some of its jobs ran.
+
+on:
+  workflow_call:
+    inputs:
+      plan:
+        description: JSON array of this workflow's jobs to run (the planner's `plans.web`)
+        type: string
+        required: true
+    outputs:
+      verdict:
+        description: pass when every planned job succeeded and every other was skipped (ci.yml's gate requires it)
+        value: ${{ jobs.verdict.outputs.verdict }}
+  workflow_dispatch:
+    inputs:
+      plan:
+        description: JSON array of the jobs to run
+        type: string
+        default: '["web"]'
+
+permissions: {}
+
+jobs:
+  # The stock React app (web/, issue #44, web/SOURCE). Runs when web/ or its Q-R2 gate changes (plan-ci.py); a change to web/
+  # also runs the browser journeys' cell, which drives what this builds. The Q-R2 gate first: only the files in web/ALLOWED-CHANGES may differ from the oracle pin. Then the install and the
+  # build, so an import or an edit that no longer builds fails here and not later. pnpm is the version web/package.json pins,
+  # read from it, so there is no second copy to drift; Node is web/.node-version. Dependency scripts are off (--ignore-scripts):
+  # 1,158 packages is no place to run arbitrary install hooks, and the build does not need them.
+  web:
+    if: contains(fromJSON(inputs.plan), 'web')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      TURBO_TELEMETRY_DISABLED: "1"
+      DO_NOT_TRACK: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Q-R2 gate (only the allowed files differ from the pin)
+        run: scripts/check-web-diff.sh
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: web/.node-version
+      - name: pnpm, at the version web/package.json pins
+        run: |
+          want="$(node -p "require('./web/package.json').packageManager.split('@')[1].split('+')[0]")"
+          npm install --global "pnpm@$want"
+          test "$(pnpm --dir web --version)" = "$want"
+      - name: Install (frozen lockfile, no dependency scripts)
+        run: pnpm --dir web install --frozen-lockfile --ignore-scripts
+      - name: Build the app and the packages it needs
+        run: pnpm --dir web exec turbo run build --filter=web
+      # The control against a vacuous build: a build that exits 0 and makes no SPA must not pass.
+      - name: The build made the SPA
+        run: test -s web/apps/web/build/client/index.html
+
+  # ADR-0102: judges this workflow's jobs against the plan, through the action every called workflow uses (it runs assert-gate.sh and
+  # sets the output only after that passed). `always()`, so it reports when `web` was skipped, failed or cancelled. ci.yml's `gate`
+  # requires the output: a `verdict` job that was itself skipped leaves this workflow `success` and proves nothing. The checkout is
+  # here and not in the action, which is read from it.
+  verdict:
+    needs: web
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      verdict: ${{ steps.judge.outputs.verdict }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: judge
+        uses: ./.github/actions/verdict
+        with:
+          needs: ${{ toJSON(needs) }}
+          plan: ${{ inputs.plan }}
+          jobs: web

@@ -433,42 +433,17 @@ jobs:
       - name: Every mutant must be KILLED
         run: scripts/mutants.sh
 
-  # The stock React app (web/, issue #44, web/SOURCE). Runs when web/ or its Q-R2 gate changes (plan-ci.py); a change to web/
-  # also runs the browser journeys' cell, which drives what this builds. The Q-R2 gate first: only the files in web/ALLOWED-CHANGES may differ from the oracle pin. Then the install and the
-  # build, so an import or an edit that no longer builds fails here and not later. pnpm is the version web/package.json pins,
-  # read from it, so there is no second copy to drift; Node is web/.node-version. Dependency scripts are off (--ignore-scripts):
-  # 1,158 packages is no place to run arbitrary install hooks, and the build does not need them.
+  # The stock React app (web/): web.yml, called here and judged by its own `verdict` job (ADR-0102), like the book's and the supply
+  # chain's. `top` says whether the change needs it, and `plans` gives it the jobs to run. The `web` job is that workflow's; the call
+  # keeps the id `web`, so that `gate` waits for it under the name it always had.
   web:
     needs: changes
-    if: contains(fromJSON(needs.changes.outputs.jobs || '[]'), 'web')
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    if: contains(fromJSON(needs.changes.outputs.top || '[]'), 'web')
+    uses: ./.github/workflows/web.yml
+    with:
+      plan: ${{ toJSON(fromJSON(needs.changes.outputs.plans || '{}').web) }}
     permissions:
       contents: read
-    env:
-      TURBO_TELEMETRY_DISABLED: "1"
-      DO_NOT_TRACK: "1"
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: Q-R2 gate (only the allowed files differ from the pin)
-        run: scripts/check-web-diff.sh
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version-file: web/.node-version
-      - name: pnpm, at the version web/package.json pins
-        run: |
-          want="$(node -p "require('./web/package.json').packageManager.split('@')[1].split('+')[0]")"
-          npm install --global "pnpm@$want"
-          test "$(pnpm --dir web --version)" = "$want"
-      - name: Install (frozen lockfile, no dependency scripts)
-        run: pnpm --dir web install --frozen-lockfile --ignore-scripts
-      - name: Build the app and the packages it needs
-        run: pnpm --dir web exec turbo run build --filter=web
-      # The control against a vacuous build: a build that exits 0 and makes no SPA must not pass.
-      - name: The build made the SPA
-        run: test -s web/apps/web/build/client/index.html
 
   # The book (docs/, mdBook): documentation.yml, called here and judged by its own `verdict` job (ADR-0102). `top` says whether the
   # change needs it, and `plans` gives it the jobs to run. The `docs` job is that workflow's.
@@ -522,7 +497,7 @@ jobs:
           EXPECTED_JOBS: ${{ needs.changes.outputs.top }}
           # the called workflows. A STATIC list, not the planner's `workflows` output: a planner bug that left one out of that output
           # would switch off the check for it. test_plan_ci.py holds this list equal to the keys of the planner's WORKFLOWS.
-          VERDICT_JOBS: documentation security
+          VERDICT_JOBS: documentation security web
           PLANNED: ${{ needs.changes.outputs.cells || '[]' }}
           REPORTED_DIR: reported
         run: .github/scripts/assert-gate.sh

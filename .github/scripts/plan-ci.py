@@ -54,7 +54,7 @@ JOBS = ("ci-scripts", "deps", "lint", "deny", "hermetic", "pg-adapter", "contrac
 # The called workflow each job belongs to (ADR-0102): {workflow: (its jobs)}. A job in none is still a job of ci.yml itself. Every
 # migration stage moves its jobs in here; a job may be in one workflow only, and a name here must be one of JOBS (check_workflows).
 # ci.yml's `gate` lists these workflows too, as VERDICT_JOBS, and test_plan_ci.py holds the two equal.
-WORKFLOWS = {"documentation": ("docs",), "security": ("deny",)}
+WORKFLOWS = {"documentation": ("docs",), "security": ("deny",), "web": ("web",)}
 
 # The binary each target of scripts/contract.sh starts. Everything a cell runs against is built from it.
 TARGET_BINARY = {

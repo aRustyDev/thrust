@@ -25,6 +25,12 @@ A job is the same job wherever it lives, so the two versions are compared by job
 A job id that exists in two files on one side is matched by (file, id) first and by id alone only when that is unique, so an
 ambiguous pair is reported as gone and appeared, never silently paired.
 
+One case of that is a workflow that bears its job's name (`web` calls web.yml, which holds a job `web`): the id stays in ci.yml
+and now holds the call, and the job's steps appear under the same id in the other file. The two are paired by what they are, not by
+chance: a job that had steps and became a call (`uses:`, no steps) must find a job of the same id in another file with the same
+fingerprint, and then it is `moved` (the call itself is a change, to be named in --expect-changed); if it finds none, its steps are
+`LOST`, however expected the call is.
+
 What it does not see: comments (the parser drops them), and what a step does when it runs. It proves that no step was dropped,
 added or edited, not that the new workflow works; the probes and the runs do that.
 
@@ -142,6 +148,20 @@ def compare(before_files, after_files, expect_new=(), expect_changed=()):
     pairs, gone, appeared = pair(before, after)
     lines, bad = [], 0
     n_same = n_moved = 0
+    # an id that now holds a call: its steps must be, identical, under the same id in another file (see the module's docstring)
+    twins = []
+    for b, a in pairs:
+        if b[2] != a[2] and a[2].get("uses") and not b[2].get("uses") and b[2]["steps"] and not a[2]["steps"]:
+            twin = next((x for x in appeared if x[1] == b[1] and x[2] == b[2]), None)
+            if twin:
+                appeared.remove(twin)
+                twins.append((b, twin))
+            else:
+                bad += 1
+                lines.append(f"LOST     {b[0]}:{b[1]} became a call, and its {len(b[2]['steps'])} steps are in no other file under that id, identical")
+    for b, x in twins:
+        n_moved += 1
+        lines.append(f"moved    {b[0]}:{b[1]} -> {x[0]}:{x[1]}  ({len(x[2]['steps'])} steps, every one identical; {b[0]}:{b[1]} now holds the call)")
     for b, a in pairs:
         where = f"{a[0]}:{a[1]}"
         if b[2] == a[2]:
@@ -288,6 +308,54 @@ def self_test():
     # what is not a step
     status, _ = compare(before, {".github/workflows/ci.yml": "# a new comment\n" + wf(docs + lint)})
     check("a comment is not a difference", status == 0)
+    # a workflow that bears its job's name: the id stays in ci.yml and holds the call
+    web_job = job("""
+        web:
+          needs: changes
+          if: contains(fromJSON(needs.changes.outputs.jobs), 'web')
+          runs-on: ubuntu-24.04
+          env:
+            DO_NOT_TRACK: "1"
+          steps:
+            - uses: actions/checkout@abc
+            - run: pnpm --dir web install --frozen-lockfile
+            - run: pnpm --dir web exec turbo run build
+        """)
+    web_twin = web_job.replace("  needs: changes\n", "").replace("needs.changes.outputs.jobs", "inputs.plan")
+    check("(the fixture) the twin is the job without `needs`, and its `if` reads the plan input",
+          "needs: changes" not in web_twin and "fromJSON(inputs.plan)" in web_twin)
+    web_call = job("""
+        web:
+          needs: changes
+          if: contains(fromJSON(needs.changes.outputs.top), 'web')
+          uses: ./.github/workflows/web.yml
+          with:
+            plan: x
+        """)
+    same_id_before = {".github/workflows/ci.yml": wf(web_job + lint)}
+    ci_call = wf(web_call + lint)
+    status, lines = compare(same_id_before, {".github/workflows/ci.yml": ci_call, ".github/workflows/web.yml": wf(web_twin)},
+                            expect_changed=("ci.yml:web",))
+    check("a job that became a call of the workflow that holds it, under the same id: parity", status == 0)
+    check("and it is reported as a move, with the call named", any(l.startswith("moved    ci.yml:web -> web.yml:web") and "now holds the call" in l for l in lines))
+    status, lines = compare(same_id_before, {".github/workflows/ci.yml": ci_call, ".github/workflows/web.yml": wf(web_twin)})
+    check("the call itself is a change that must be named: otherwise refused", status == 1 and any(l.startswith("CHANGED  ci.yml:web") for l in lines))
+    status, lines = compare(same_id_before, {".github/workflows/ci.yml": ci_call, ".github/workflows/web.yml": wf(web_twin.replace(
+        "turbo run build", "turbo run build --force"))}, expect_changed=("ci.yml:web",))
+    check("a command changed in the twin is refused: its steps are lost, and the twin is a new job",
+          status == 1 and any(l.startswith("LOST     ci.yml:web") for l in lines) and any(l.startswith("APPEARED web.yml:web") for l in lines))
+    status, lines = compare(same_id_before, {".github/workflows/ci.yml": ci_call, ".github/workflows/web.yml": wf(web_twin.replace(
+        "    - run: pnpm --dir web install --frozen-lockfile\n", ""))}, expect_changed=("ci.yml:web",))
+    check("a step dropped in the twin is refused", status == 1 and any(l.startswith("LOST     ci.yml:web") for l in lines))
+    status, lines = compare(same_id_before, {".github/workflows/ci.yml": ci_call}, expect_changed=("ci.yml:web",))
+    check("a call with no twin anywhere is refused, though the call is expected: the steps are lost",
+          status == 1 and any(l.startswith("LOST     ci.yml:web") for l in lines))
+    status, lines = compare(same_id_before, {".github/workflows/ci.yml": ci_call, ".github/workflows/web.yml": wf(web_twin.replace(
+        "DO_NOT_TRACK", "DO_TRACK"))}, expect_changed=("ci.yml:web",))
+    check("a job-level variable changed in the twin is refused", status == 1 and any(l.startswith("LOST     ci.yml:web") for l in lines))
+    status, _ = compare(same_id_before, {".github/workflows/ci.yml": wf(web_job + lint), ".github/workflows/web.yml": wf(web_twin)},
+                        expect_new=("web.yml:web",))
+    check("a copy of the job in a second file, the first left in place, is only an appearance (not a move)", status == 0)
     # the refusals to read
     try:
         jobs_of({".github/workflows/bad.yml": "jobs: [unclosed"})

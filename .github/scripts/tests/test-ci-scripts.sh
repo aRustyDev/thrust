@@ -62,8 +62,8 @@ expect "plan: a run line with a changed format fails" 1 "the format changed" pla
 # ---- assert-gate.sh ------------------------------------------------------------------------------
 # What ci.yml's gate needs besides `changes`: the jobs still in ci.yml and the workflows it calls, which are CALLED (ci.yml sets
 # them as VERDICT_JOBS). Each migration stage moves a job's name out of this list and its workflow's name in.
-JOBS="ci-scripts deps lint hermetic pg-adapter contract mutants web documentation security"
-CALLED="documentation security"
+JOBS="ci-scripts deps lint hermetic pg-adapter contract mutants documentation security web"
+CALLED="documentation security web"
 gate() { # gate <dir> <needs-json> <expected-jobs-json> <planned-json> <reported markers...>
   d="$T/gate/$1"; mkdir -p "$d/reported"; needs="$2"; expected="$3"; planned="$4"; shift 4
   for m in "$@"; do printf '%s\n' "$m" > "$d/reported/$(echo "$m" | tr ' ' '-').ok"; done
@@ -115,7 +115,7 @@ for j in $JOBS; do
   done
 done
 
-ALL='["ci-scripts","deps","lint","hermetic","pg-adapter","contract","mutants","web","documentation","security"]'
+ALL='["ci-scripts","deps","lint","hermetic","pg-adapter","contract","mutants","documentation","security","web"]'
 # every job succeeded: "ci-scripts=success deps=success ..."
 OKARGS=""
 for j in $JOBS; do OKARGS="$OKARGS $j=success"; done
