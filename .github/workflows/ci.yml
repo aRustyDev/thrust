@@ -152,6 +152,8 @@ jobs:
           python3 -I .github/scripts/tests/test_check_release_plz.py
           python3 -I .github/scripts/tests/test_flagship.py
           python3 -I .github/scripts/tests/test_preview_config.py
+          python3 -I .github/scripts/tests/test_preview_result.py
+          sh .github/scripts/tests/test-deploy-target.sh
           python3 -I .github/scripts/tests/test_plan_ci.py
 
   deps:
