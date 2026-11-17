@@ -47,7 +47,7 @@ from datetime import datetime, timezone
 # The jobs of ci.yml that plan-ci.py can ask for (JOBS in .github/scripts/plan-ci.py). `changes` and `gate` always run.
 #
 # Each stage of the migration moves a job into a called workflow, whose jobs are `<workflow> / <job>` in the check list, so a job's
-# group is what precedes ` / `: `docs` becomes `documentation`, `deny` becomes `security`, `deps` becomes `lint` (as does `lint` itself), and `ci-scripts`, `hermetic`, `pg-adapter` and `mutants` become `test`. A window that holds runs from before a stage needs the names from
+# group is what precedes ` / `: `docs` becomes `documentation`, `deny` becomes `security`, `deps` becomes `lint` (as does `lint` itself), and `ci-scripts`, `hermetic`, `pg-adapter` and `mutants` become `test`. The contract cells moved into test.yml (M5b), so a cell's check is now `test / contract (<target>, <pass>) / <target> <pass>`; it is still of the group `contract` (CELL below), so the cells stay apart from the test workflow's own jobs. A window that holds runs from before a stage needs the names from
 # before it (--groups "... docs"), and one from after it these (the default); a run with a name the list lacks stops the script.
 DEFAULT_GROUPS = "test lint contract web documentation security"
 ALWAYS = ("changes", "gate")
@@ -63,8 +63,16 @@ def when(stamp):
     return datetime.fromisoformat(stamp.replace("Z", "+00:00")).timestamp()
 
 
+# A contract cell: `contract (native-memory, main) / native-memory main` before the cells moved into test.yml, and
+# `test / contract (native-memory, main) / native-memory main` since (the cell is a call two levels down). Either way it is a cell of the group
+# `contract`, and not of `test`, so that the cells (most of a run's runner time) stay apart from the test workflow's own jobs.
+CELL = re.compile(r"^(?:[^/]+ / )?contract \(([^,()]+), ([^()]+)\) / ")
+
+
 def group_of(name):
-    """`contract (native-memory, main) / native-memory main` is a cell of the group `contract`; any other name is its own group."""
+    """A contract cell is of the group `contract`; any other `<workflow> / <job>` is of the group `<workflow>`; any other name is its own."""
+    if CELL.match(name):
+        return "contract"
     if " / " not in name:
         return name
     head = name.split(" / ")[0]
@@ -72,7 +80,10 @@ def group_of(name):
 
 
 def display(name):
-    """The row label: a called workflow's job is `<group>: <its own name>`."""
+    """The row label: a cell is `contract: <target> <pass>`, and a called workflow's job is `<group>: <its own name>`."""
+    m = CELL.match(name)
+    if m:
+        return f"contract: {m.group(1)} {m.group(2)}"
     if " / " not in name:
         return name
     return f"{group_of(name)}: {name.split(' / ', 1)[1]}"
@@ -369,9 +380,17 @@ def self_test():
         refused(f"--since '{bad_since}'", "is not a UTC time", lambda s=bad_since: check_since(s))
 
     # grouping and labels, as they appear in a real run
-    cell = "contract (worker-cf, e2e) / worker-cf e2e"
+    cell = "contract (worker-cf, e2e) / worker-cf e2e"  # before M5b: the cell is a job of ci.yml's call
+    nested = "test / contract (worker-cf, e2e) / worker-cf e2e"  # since M5b: two levels down, under test.yml
     check("a cell's group is its caller job", group_of(cell) == "contract" and group_of("hermetic") == "hermetic")
     check("a cell's label", display(cell) == "contract: worker-cf e2e" and display("lint") == "lint")
+    check("a nested cell is of the group contract, not of test", group_of(nested) == "contract")
+    check("a nested cell has the same label as a plain one", display(nested) == display(cell) == "contract: worker-cf e2e")
+    # controls: what is not a cell must not be taken for one, or the cells' minutes would hide in (or leak out of) the test group
+    check("test's own jobs stay in test", all(group_of(f"test / {j}") == "test" for j in ("hermetic", "verdict", "mutants", "pg-adapter", "ci-scripts")))
+    check("test's own jobs keep their labels", display("test / verdict") == "test: verdict" and display("test / hermetic") == "test: hermetic")
+    check("a job that only mentions contract is not a cell", group_of("test / contract-docs") == "test" and group_of("contract") == "contract")
+    check("a call with a different matrix shape is not a cell", group_of("test / other (a, b, c) / x") == "test")
 
     print(f"passed={ok} bad={bad}")
     return bad == 0
