@@ -5,7 +5,7 @@ Status: **live** · Gates: `scripts/check-deps.sh`, `scripts/check-layout.sh`
 ## Catches
 
 X10 (P), X8 (B). Checks the dependency graph rather than behaviour: platform and runtime crates must stay out of
-the portable core, and the Worker and server graphs must stay separate. It also keeps the ORM crates (`sqlx`,
+the portable core, HTTP surfaces must not point inward from `thrust-compat-plane`, and the Worker and server graphs must stay separate. It also keeps the ORM crates (`sqlx`,
 `sea-orm`, `diesel`, `diesel-async`: ADR-0044) out of the whole workspace. A violation compiles and passes every
 behavioural test, which is why it needs its own gate.
 
@@ -24,7 +24,10 @@ crates a second time (the `deny` job, configured by `deny.toml`).
 ## Name and location
 
 `scripts/check-deps.sh`, the confirmation check for ADR-0002 (ports and adapters), ADR-0007 (adapter selection) and
-ADR-0044 (no ORM). It uses `cargo tree -i` on both targets and prints its evidence.
+ADR-0044 (no ORM). It uses `cargo tree -i` on both targets and prints its evidence. A compatibility-boundary section
+also uses `cargo metadata` to require `thrust-compat-plane` as a workspace member, then asks `cargo tree -e normal
+--target all -i thrust-compat-plane` for `thrust-contracts`, `thrust-ports` and `thrust-core`. Only Cargo's explicit
+absent replies pass; an error or any other output is `FORBIDDEN`.
 
 The ORM check asks the whole workspace, in any crate, on any kind of edge and in any feature set:
 `--workspace --all-features -e all --target all`. The older sections check named crates and only normal edges. It
@@ -49,7 +52,10 @@ scripts/check-layout.sh --self-test   # 23 cases, each must be accepted or refus
 ## Required controls
 
 The script prints the full dependency lists it checked; read them. To prove it can fail, temporarily add a
-forbidden crate (for example `worker`) to `crates/core/usecases/Cargo.toml` and expect a non-zero exit.
+forbidden crate (for example `worker`) to `crates/core/usecases/Cargo.toml` and expect a non-zero exit. For the
+compatibility boundary, in a disposable checkout add `thrust-compat-plane = { workspace = true }` to
+`thrust-core` and expect `FORBIDDEN: thrust-core depends on thrust-compat-plane`; remove the compat crate from
+the workspace members and expect the membership guard to exit non-zero.
 
 The ORM check has its own control. Temporarily add `sea-orm` as a dependency of `crates/adapters/postgres`, a
 crate the older sections do not name, and run the script: it exits 1, prints `FORBIDDEN: sea-orm is in the workspace

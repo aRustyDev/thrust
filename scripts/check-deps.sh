@@ -30,6 +30,33 @@ for crate in $CLEAN_CRATES; do
 done
 
 echo
+echo "=== compatibility boundary: thrust-compat-plane stays outward ==="
+compat_metadata="$("$ROOT/scripts/rs" cargo metadata --manifest-path "$MANIFEST" --format-version 1 --no-deps --offline 2>&1)"
+if ! printf '%s' "$compat_metadata" | python3 -I -c '
+import json
+import sys
+
+try:
+    metadata = json.load(sys.stdin)
+except ValueError:
+    sys.exit(1)
+
+members = set(metadata["workspace_members"])
+sys.exit(not any(package["name"] == "thrust-compat-plane" and package["id"] in members for package in metadata["packages"]))
+'; then
+  echo "FORBIDDEN: thrust-compat-plane is not a workspace member"
+  echo "$compat_metadata" | head -8
+  STATUS=1
+fi
+for crate in thrust-contracts thrust-ports thrust-core; do
+  out="$("$ROOT/scripts/rs" cargo tree --manifest-path "$MANIFEST" -p "$crate" -e normal --target all -i thrust-compat-plane 2>&1)"
+  case "$out" in
+    *"did not match any packages"*|*"nothing to print"*) echo "ok: thrust-compat-plane is not in $crate's graph" ;;
+    *) echo "FORBIDDEN: $crate depends on thrust-compat-plane"; echo "$out" | head -8; STATUS=1 ;;
+  esac
+done
+
+echo
 echo "=== adapters-memory (must also be runtime-free: it ships in the Worker and the server) ==="
 for bad in $FORBIDDEN; do
   out="$("$ROOT/scripts/rs" cargo tree --manifest-path "$MANIFEST" -p thrust-adapters-memory -e normal --target all -i "$bad" 2>&1)"
