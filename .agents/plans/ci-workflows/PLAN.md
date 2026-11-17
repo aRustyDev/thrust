@@ -9,7 +9,7 @@ are planned in detail when the phase starts, and a stage's steps when the stage 
 |---|---|
 | Where the one required `gate` lives | A **thin `ci.yml` orchestrator** keeps the name `ci`, the planner `changes` and `gate`, and calls each concern's workflow through `workflow_call`. Each concern file also has `workflow_dispatch` (and `schedule` where it has one), so it can run alone. The ruleset, the deploy trigger and the gate's name do not change |
 | Planner | **`plan-ci.py`** through the migration and the phases. Moving to the `triggerd` action is its own stage of the Actions track, after the Medium group: add a matrix output, run it in shadow beside `plan-ci.py`, compare the outputs, then cut over |
-| Migration | Right after Phase 0, a **refactor only**: no eight passes, no behaviour change. It covers `ci.yml`'s jobs, `e2e-schedule.yml` → `e2e.yml` and `flake-hunt.yml` → `test.yml`. `release-plz.yml` waits for the Release phase: folding it needs routing by event and a real release to prove it |
+| Migration | Right after Phase 0, a **refactor only**: no eight passes, no behaviour change. It covers `ci.yml`'s jobs and `e2e-schedule.yml` → `e2e.yml`, with the job ids unchanged, the simplest callee first, and lowercase workflow names (owner, 2026-11-17, after #251). `flake-hunt.yml` is **not** folded into `test.yml` here: it stays as it is and becomes a stage of the Test phase (folding it breaks R8 and edges R9). `release-plz.yml` waits for the Release phase: folding it needs routing by event and a real release to prove it |
 | Passes | After the migration, **every job goes through all eight passes**, the migrated ones and the new ones alike |
 | Order | The priority groups below. Within a phase, jobs that exist come before new ones |
 | Actions | Created when two or more jobs repeat the same steps, or steps similar enough that one action (often a **composite** action) can serve the group. **The exact same steps in two or more places: create the action and say so in the pull request. Anything less than exact: ask the owner first**, showing the candidate steps side by side and the proposed inputs |
@@ -100,23 +100,24 @@ merged.
 
 ## Phase 1: Migration (refactor only, one pull request per target file)
 
-**Rules.** The same commands, the same job boundaries, the same gate result. A job id changes only where the owner's
-layout names the same job one to one (`lint` → Lint `rust`, `ci-scripts` → Test `bash`, `docs` → Docs `mdbook`, `deny` →
-Security `supply-chain`); every other job keeps its id (`hermetic`, `deps`, `pg-adapter`, `mutants`, `contract`, `web`),
-and splitting them is phase work. Each pull request carries a **parity table**: every old step, then the new
-workflow, job and step, then the command, identical.
+**Rules.** The same commands, the same job boundaries, the same gate result, **and the same job ids** (owner, 2026-11-17: a job
+is renamed in the phase that owns its workflow, not in the migration). Each pull request carries a **parity table**: every old
+step, then the new workflow, job and step, then the command, identical; a script checks it. The order is the simplest callee
+first (owner, 2026-11-17); [phases/0002-migration.md](phases/0002-migration.md) says why, and plans each stage.
 
 | Stage | Target | Moves |
 |---|---|---|
-| M1 | `test.yml` | `ci-scripts` → `bash`, `hermetic`, `pg-adapter`, `contract` (calls `contract-cell.yml`), `mutants`. `flake-hunt.yml` becomes `test.yml`'s dispatch inputs and weekly schedule, routed by an input `mode` |
-| M2 | `lint.yml` | `lint` → `rust`, `deps` |
-| M3 | `documentation.yml` | `docs` → `mdbook` |
-| M4 | `security.yml` | `deny` → `supply-chain` |
-| M5 | `web.yml` | `web` |
+| M1 | `documentation.yml` (`name: documentation`) | `docs` |
+| M2 | `security.yml` | `deny` |
+| M3 | `web.yml` | `web` |
+| M4 | `lint.yml` | `lint`, `deps` |
+| M5 | `test.yml` | `ci-scripts`, `hermetic`, `pg-adapter`, `contract` (calls `contract-cell.yml`), `mutants`. **Not** `flake-hunt.yml`: it stays as it is and becomes a stage of the Test phase (owner, 2026-11-17) |
 | M6 | `e2e.yml` | `e2e-schedule.yml` renamed (schedule and dispatch, calls `contract-cell.yml` for `worker-cf e2e`). The contract matrix's own `e2e` pass stays in Test until the E2E phase |
 
-If the spike chooses a verdict per callee, that job is the same steps in every called workflow, so it becomes a composite
-action in M1 without asking, and the pull request says so. A near-duplicate found while moving is asked about, not built.
+The `verdict` job's steps become a composite action in **M2**, where they stand in two files, and the pull request says so. The
+`verdict` job of `test.yml` also downloads the cell markers, so it is not an exact copy and is asked about in M5. A
+near-duplicate found while moving is asked about, not built. The workflows' `name:` is lowercase, the repository's convention
+(owner, 2026-11-17).
 
 **The migration is done when:**
 - `ci.yml` holds only `changes`, the calls and `gate`;
@@ -124,7 +125,7 @@ action in M1 without asking, and the pull request says so. A near-duplicate foun
 - a full dispatch run and an affected-only pull-request run are both green, running the same set of commands as the
   baseline;
 - an `rc/*` pull request still plans a staging dispatch;
-- the nightly run, the E2E schedule (by dispatch) and a flake-hunt dispatch are green;
+- the nightly run and the E2E schedule (by dispatch) are green, and `flake-hunt.yml` is unchanged;
 - the file table in `cicd.md` is true.
 
 ## Phases 2 to 14: every workflow through the eight passes
@@ -203,6 +204,6 @@ skipped.
 |---|---|
 | This plan | merged (#223) |
 | Phase 0, the foundation | **done.** Planned in [phases/0001-foundation.md](phases/0001-foundation.md) (#225); its owner questions are answered and recorded in the decisions table above. Stage 0.5, the baseline: [research/0017](research/0017-ci-baseline.md) (#230). Stage 0.2, the gate spike (draft #232, closed): [research/0018](research/0018-gate-spike.md) (#236). Stage 0.1: [ADR-0102](../contrail/adrs/ci/0102-one-workflow-per-concern-and-the-verdict-job.md) (#239). Stage 0.3, the planner, the gate and the mutant driver (#245). Stage 0.4, the lint rules, `actionlint` and the two indexes (#249) |
-| Phase 1, the migration | planned in [phases/0002-migration.md](phases/0002-migration.md) (this pull request); nothing built. The table above (M1 to M6) is the plan's first draft: the phase document proposes a different order and keeps the job ids, both awaiting the owner |
+| Phase 1, the migration | planned in [phases/0002-migration.md](phases/0002-migration.md) (#251); its four questions are answered (all as recommended) and recorded above. **M1, `documentation.yml`, is in progress**; M2 to M6 are not started |
 | Phases 2 to 14 | not started |
-| Open for the owner | the four questions at the end of [phases/0002-migration.md](phases/0002-migration.md): the order of the stages, the job ids, `flake-hunt.yml`, and the workflows' `name:` |
+| Open for the owner | nothing |
