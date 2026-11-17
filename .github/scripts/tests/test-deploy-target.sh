@@ -15,7 +15,13 @@
 #   - a cleanup that fails says what it left;
 #   - every usage error (each missing variable, bad names, kinds, audiences the policy does not open to CI, a bad expiry) deploys
 #     nothing and calls nothing;
-#   - a second deploy of a live target replaces its Preview and its flag.
+#   - a second deploy of a live target replaces its Preview and its flag;
+#   - step 2b: the candidate is classified against production's live commit; one that brings migrations is DEFERRED with nothing
+#     done (no Preview, no migration); so is one over a production whose state cannot be read; with ALLOW_MIGRATE the schema is
+#     expanded with --no-contract, before the Preview, and only the migration sees the database's secrets; with nothing to migrate
+#     nothing is migrated; an undeployed production, a failed listing, classifier or migration each stop before any Preview;
+#   - step 9: TARGET_ALIAS is set last, after the smoke's control, and names the target; an alias that does not stick removes the
+#     target; an alias the policy lacks is a usage error.
 set -u
 HERE="$(cd "$(dirname "$0")/../../.." && pwd)"
 DEPLOY="$HERE/scripts/deploy-target.sh"
@@ -53,7 +59,11 @@ echo '<!doctype html>' > "$T/web/index.html"
 printf '#!/bin/sh\nexec python3 -I "%s" wrangler "$@"\n' "$FAKES" > "$T/wrangler"
 printf '#!/bin/sh\nexec python3 -I "%s" optin "$@"\n' "$FAKES" > "$T/optin.sh"
 printf '#!/bin/sh\nexec python3 -I "%s" smoke "$@"\n' "$FAKES" > "$T/smoke.sh"
-chmod +x "$T/wrangler" "$T/optin.sh" "$T/smoke.sh"
+printf '#!/bin/sh\nexec python3 -I "%s" classify "$@"\n' "$FAKES" > "$T/classify.sh"
+printf '#!/bin/sh\nexec python3 -I "%s" migrate "$@"\n' "$FAKES" > "$T/migrate.sh"
+chmod +x "$T/wrangler" "$T/optin.sh" "$T/smoke.sh" "$T/classify.sh" "$T/migrate.sh"
+# production's live commit: a real one, so the script finds it in this checkout and fetches nothing
+LIVE_SHA="$(git -C "$HERE" rev-parse HEAD)"
 FS_STATE="$T/fs.json"
 seed_flagship() { # seed_flagship <flags JSON> [modes JSON]
   printf '{"token": "fs-tok-91c", "account": "acct-1", "app": "app-1", "flags": %s, "modes": %s}\n' "$1" "${2:-{\}}" > "$FS_STATE"
@@ -83,6 +93,9 @@ deploy() {
     FLAGSHIP_API_BASE="$FS_BASE" PREVIEW_HOST_SUFFIX="$SUFFIX" EDGE_CI_CLIENT_ID=ci-id-1 EDGE_CI_CLIENT_SECRET=ci-sec-2b \
     SMOKE_EMAIL=smoke@example.test SMOKE_PASSWORD=smoke-pw-77 SMOKE_WORKSPACE=smoke-ws \
     WRANGLER="$T/wrangler" FLAGSHIP_SCRIPT="$FAKES" OPT_IN_SCRIPT="$T/optin.sh" SMOKE_SCRIPT="$T/smoke.sh" \
+    CLASSIFY_SCRIPT="$T/classify.sh" MIGRATE_CI_SCRIPT="$T/migrate.sh" FAKE_LIVE="$LIVE_SHA" \
+    DATABASE_URL=postgres://u:db-pw-31@127.0.0.1:15432/thrust TUNNEL_SERVICE_TOKEN_ID=tun-id-4 TUNNEL_SERVICE_TOKEN_SECRET=tun-sec-5 \
+    DB_ACCESS_HOSTNAME=thrust-pg-ci.example.test \
     DEPLOY_CONFIG_OUT="$T/cfg/target.toml" ASSETS_OUT_DIR="$T/cfg/.assets" \
     FAKE_DIR="$T/fake" FAKE_FLAGSHIP_STATE="$FS_STATE" FAKE_SUBDOMAIN=team-4d9 \
     "$@" sh "$DEPLOY"
@@ -122,7 +135,7 @@ import sys
 lines = open(sys.argv[1]).read().splitlines()
 steps = [l.split(" ", 2)[:2] for l in lines if " SEES " not in l]
 names = [s[0] + ("-" + s[1] if s[0] in ("wrangler", "flagship") else "") for s in steps]
-want = ["wrangler-preview", "flagship-put", "optin", "smoke", "smoke"]
+want = ["wrangler-deployments", "wrangler-versions", "classify", "wrangler-preview", "flagship-put", "optin", "smoke", "smoke"]
 print("steps:", names)
 assert names == want, names
 sees, current = {}, None
@@ -142,6 +155,7 @@ assert all(v == {"CLOUDFLARE_API_TOKEN"} for v in by_tool["wrangler"])
 assert all(v == {"FLAGSHIP_API_TOKEN"} for v in by_tool["flagship"])
 assert all(v == {"EDGE_CI_CLIENT_ID", "EDGE_CI_CLIENT_SECRET"} for v in by_tool["optin"])
 assert by_tool["smoke"] == [{"SMOKE_PASSWORD"}, set()], by_tool["smoke"]
+assert by_tool["classify"] == [set()], by_tool["classify"]
 smokes = [l for l in lines if l.startswith("smoke ") and " SEES " not in l]
 assert "route=v0.3.0 auth=on" in smokes[0] and "not-deployed-" in smokes[1] and "auth=off" in smokes[1], smokes
 EOF
@@ -203,6 +217,84 @@ reset
 expect "fail: a cleanup that fails says what it left" 1 "LEFT BEHIND, remove by hand:  the Preview v0-3-0" deploy FAKE_SMOKE=fail FAKE_DELETE=fail
 saw "fail: a cleanup that fails: cleaned=failed" "cleaned=failed"
 
+# ---- production's live commit, the deferral and the migration (step 2b) -----------------------------------------------------
+called() { grep -q "^$1" "$T/fake/calls.log"; }
+not_called() { ! grep -q "^$1" "$T/fake/calls.log"; }
+reset
+deploy > /dev/null 2>&1
+check "2b: the candidate is classified against production's live commit" grep -qx "classify $LIVE_SHA $SHA" "$T/fake/calls.log"
+check "2b: no migration when the candidate brings none" not_called migrate
+reset
+expect "2b: a candidate that brings migrations is deferred" 0 "DEFERRED: v0.3.0 brings migrations" deploy FAKE_MIGRATIONS=true
+saw "2b: deferred: the outputs say so" "deferred=true"
+check "2b: deferred: no Preview was asked for" not_called "wrangler preview"
+check "2b: deferred: no migration was run" not_called migrate
+check "2b: deferred: nothing is left" nothing_left v0.3.0
+reset
+expect "2b: production's state that cannot be read (split) is deferred" 0 "DEFERRED" deploy FAKE_LIVE=split
+check "2b: split: the classifier was not asked (the worst is assumed)" not_called classify
+reset
+expect "2b: with ALLOW_MIGRATE the schema is expanded, then the target deployed" 0 "deploy-target: PASS" deploy FAKE_MIGRATIONS=true ALLOW_MIGRATE=true
+saw "2b: migrated: the outputs say it was not deferred" "deferred=false"
+migrated_first() {
+  python3 -I - "$T/fake/calls.log" <<'EOF'
+import sys
+steps = [l for l in open(sys.argv[1]).read().splitlines() if " SEES " not in l]
+m = next(i for i, l in enumerate(steps) if l.startswith("migrate "))
+p = next(i for i, l in enumerate(steps) if l.startswith("wrangler preview "))
+print(steps[m], m, p)
+assert steps[m] == "migrate --no-contract" and m < p
+lines = open(sys.argv[1]).read().splitlines()
+sees = [l.split(" SEES ")[1] for l in lines[lines.index("migrate --no-contract") + 1:] if l.startswith("migrate SEES ")]
+assert sorted(sees) == ["DATABASE_URL", "TUNNEL_SERVICE_TOKEN_ID", "TUNNEL_SERVICE_TOKEN_SECRET"], sees
+others = [l for l in lines if " SEES " in l and not l.startswith("migrate ") and l.split(" SEES ")[1] in
+          ("DATABASE_URL", "TUNNEL_SERVICE_TOKEN_ID", "TUNNEL_SERVICE_TOKEN_SECRET")]
+assert others == [], others
+EOF
+}
+check "2b: migrated: --no-contract, before the Preview, and only the migration saw the database's secrets" migrated_first
+check "2b: migrated: the target is right" deployed_right v0.3.0 rc "$SHA"
+reset
+expect "2b: ALLOW_MIGRATE with nothing to migrate deploys without migrating" 0 "deploy-target: PASS" deploy ALLOW_MIGRATE=true
+check "2b: nothing to migrate: no migration was run" not_called migrate
+for mode in "FAKE_LIVE=none|is not deployed, and a target is a Preview of it" \
+  "FAKE_LIVE_LIST=fail|wrangler could not list the deployments" \
+  "FAKE_MIGRATIONS=fail|could not be classified against production's commit"; do
+  setting="${mode%%|*}"; frag="${mode#*|}"
+  reset
+  expect "2b fail: $setting" 1 "$frag" deploy "$setting"
+  check "2b fail: $setting: no Preview was asked for" not_called "wrangler preview"
+done
+reset
+expect "2b fail: a migration that fails deploys nothing" 1 "the expand migration failed" deploy FAKE_MIGRATIONS=true ALLOW_MIGRATE=true FAKE_MIGRATE=fail
+check "2b fail: a failed migration: no Preview was asked for" not_called "wrangler preview"
+
+# ---- the alias (step 9) -----------------------------------------------------------------------------------------------------
+alias_names() {
+  python3 -I - "$FS_STATE" "$1" "$2" <<'EOF'
+import json, sys
+flag = json.load(open(sys.argv[1]))["flags"].get("alias-" + sys.argv[2])
+print("alias flag:", flag)
+assert flag is not None and flag["variations"][flag["default_variation"]] == sys.argv[3]
+EOF
+}
+reset
+expect "alias: a proved target becomes staging" 0 "answers through https://thrust.example-shared.dev, as staging" deploy TARGET_ALIAS=staging
+check "alias: alias-staging names v0.3.0" alias_names staging v0.3.0
+alias_after_control() {
+  python3 -I - "$T/fake/calls.log" <<'EOF'
+import sys
+steps = [l for l in open(sys.argv[1]).read().splitlines() if " SEES " not in l]
+print(steps)
+assert steps[-1] == "flagship alias staging" and steps[-2].startswith("smoke ")
+EOF
+}
+check "alias: set last, after the smoke's control" alias_after_control
+reset
+seed_flagship '{"alias-staging": {"key": "alias-staging", "enabled": true, "default_variation": "target", "variations": {"target": "prod"}, "rules": []}}' '{"put_noop": true}'
+expect "alias: an alias that does not stick fails the deploy" 1 "the alias staging was not pointed at v0.3.0" deploy TARGET_ALIAS=staging
+check "alias: a failed alias: the target is removed" nothing_left v0.3.0
+
 # ---- usage errors: nothing deployed, nothing called -------------------------------------------------------------------------
 usage_case() { # usage_case <label> <fragment> <VAR=value...>
   label="$1"; frag="$2"; shift 2
@@ -229,6 +321,11 @@ usage_case "an expiry that is not a date" "TARGET_EXPIRES '2026-13-40T00:00:00Z'
 mkdir -p "$T/noweb"
 usage_case "web files without index.html" "NEW_ASSETS_DIR has no index.html" NEW_ASSETS_DIR="$T/noweb"
 usage_case "production's configuration cannot render" "could not be rendered" THRUST_HYPERDRIVE_ID=00000000000000000000000000000000
+usage_case "an alias the policy lacks" "TARGET_ALIAS 'beta' is not one of the policy's aliases" TARGET_ALIAS=beta
+usage_case "ALLOW_MIGRATE that is not true or false" "ALLOW_MIGRATE is true or false" ALLOW_MIGRATE=yes
+for v in DATABASE_URL TUNNEL_SERVICE_TOKEN_ID TUNNEL_SERVICE_TOKEN_SECRET DB_ACCESS_HOSTNAME; do
+  usage_case "ALLOW_MIGRATE without $v" "$v is not set (ALLOW_MIGRATE=true needs the database route)" ALLOW_MIGRATE=true "$v="
+done
 
 echo "passed=$pass bad=$failn"
 [ "$failn" -eq 0 ]
