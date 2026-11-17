@@ -1,0 +1,26 @@
+[package]
+name = "thrust-profiling"
+description = "In-process profiling workloads that span crates (ADR-0009, testing/profiling): the v1 router over the memory adapters, driven in-process; prof_ tests profile it (a heap profile with dhat), run with the `prof` profile."
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+# The workload: requests sent through a router in-process (tower's oneshot), with no server and no network.
+thrust-contracts = { workspace = true }
+axum = { version = "0.8", default-features = false, features = ["json"] }
+tower = { version = "0.5", features = ["util"] }
+futures-executor = "0.3"
+serde_json = { workspace = true }
+
+[dev-dependencies]
+# The world the workload runs against (tests/common): the real v1 routes over thrust-core and the memory adapters. In tests/,
+# because it mints the system's proof, which only a composition root and a crate's own tests may do (scripts/check-deps.sh).
+thrust-api-v1 = { workspace = true }
+thrust-core = { workspace = true }
+thrust-ports = { workspace = true }
+thrust-adapters-memory = { workspace = true }
+# dhat-rs: a heap profiler that is a global allocator, so it needs no tool installed. Only tests/heap.rs installs it.
+dhat = "0.3"
+proptest = "1"

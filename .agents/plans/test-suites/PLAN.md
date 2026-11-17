@@ -167,6 +167,12 @@ call, not to skip anything.
 Verify: a control workload that allocates a known extra amount reports a larger total by at least that amount, so the
 profile measures the workload and not nothing.
 
+As built (2026-11-17): the `default` profile leaves out only `package(thrust-profiling) & test(/^prof_/)`;
+`tests/workload.rs` (every request of a generated mix answered) runs in the default loop. The router's profile: 320 requests,
+128.8 MB in 1.03 M blocks, peak 1.58 MB, about 26 s under dhat (it records a backtrace per allocation), so the `prof` profile
+kills nothing. The control runs a smaller mix on fresh worlds: two runs without ballast allocate the same bytes, and 4 MiB of
+ballast adds exactly 4 MiB; with the ballast removed from the workload, the control fails ("added 0 bytes").
+
 ## PR 5: the CPU profile through a nextest wrapper script
 
 - `samply` (`cargo install samply`, the owner's decision when the PR starts; it records on macOS and Linux). A wrapper
@@ -199,6 +205,6 @@ a `prof_cpu_` test that must fail fails under the wrapper, and the profile file 
 | Plan | this pull request |
 | PR 1, contract suite onto nextest | merged in #243 (`a5a11ff`): CI found cargo-nextest missing from the contract cells, fixed with a `nextest` input to `setup-rust` |
 | PR 2, adapter suites onto nextest | merged in #252 (`b83ece3`): every Rust test on nextest except the doctests; merged with #248's mutants verdicts |
-| PR 3, load suite | in review, branch `test/load-suite` |
-| PR 4, profiling: heap | not started |
+| PR 3, load suite | merged in #262 (`ab9c29b`): `thrust-load-tests`; a new crate also needs `release-plz.toml` entries |
+| PR 4, profiling: heap | in review, branch `test/profiling-heap` |
 | PR 5, profiling: CPU | not started |
