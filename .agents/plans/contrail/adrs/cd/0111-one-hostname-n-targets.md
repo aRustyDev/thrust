@@ -228,3 +228,18 @@ Built in #195's stage D.
   `audience in [...]`, all of which must match.
 - **The policy's audiences** must be exactly the edge's `ACCESS_AUD_<AUDIENCE>` variables.
 - **Not yet verified against the real service:** `docs/src/testing/status.md` G-43.
+
+## Update — The edge's build and its version (2026-11-17)
+
+The first part of #195's stage E3 (deploying the edge).
+- **The edge says which build of it answered.** Every answer it gives carries `x-thrust-edge-version`: the tag of its
+  version (the release's commit), else the version id, by thrust's `x-thrust-version` rule. The exception is a passed-through
+  WebSocket upgrade. A value an upstream sends under that name is dropped. Its template declares `[version_metadata]`, and
+  `scripts/check-edge-config.sh` requires exactly one. Without the header, a deploy of the edge could not be told from the
+  version it replaced. `x-thrust-version` stays production's or the target's.
+- **The edge is built into the deploy bundle,** under `edge/build/`, beside thrust. `release.yml` therefore builds and
+  attests it with the release, and a release candidate's bundle proves it builds. One bundle and one attestation cover both
+  Workers, so the edge needs no second trust chain. A pull request's deploy dry run renders the edge's template and lets
+  `wrangler deploy --dry-run` check it against that build.
+- **Its secrets go up with each version** (`wrangler deploy --secrets-file`), since `secrets.required` makes a deploy that
+  lacks one fail. The dry run does not check secrets.

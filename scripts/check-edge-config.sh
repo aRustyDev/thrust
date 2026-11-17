@@ -12,16 +12,18 @@
 #     version of it may be public at a workers.dev URL;
 #   * a top-level key other than name, main, compatibility_date, compatibility_flags, workers_dev and preview_urls (a `route`,
 #     `routes`, `kv_namespaces` or any other binding written inline is caught here);
-#   * a table other than `[[services]]`, `[[flagship]]`, `[vars]` and `[secrets]`: an allowlist, so every data binding, assets,
-#     placement, a trigger or a route is refused, including kinds Cloudflare adds later;
-#   * anything but exactly one `[[services]]` (production) and exactly one `[[flagship]]`.
+#   * a table other than `[[services]]`, `[[flagship]]`, `[version_metadata]`, `[vars]` and `[secrets]`: an allowlist, so every
+#     data binding, assets, placement, a trigger or a route is refused, including kinds Cloudflare adds later;
+#   * anything but exactly one `[[services]]` (production), exactly one `[[flagship]]` and exactly one `[version_metadata]`:
+#     without the last the edge cannot say which build of it answers (`x-thrust-edge-version`), so no deploy of it could be
+#     told from the one it replaced.
 # A commented-out line does not count. A check that finds no config to look at would pass vacuously, so that is an error too;
 # `--self-test` is the control, run next to the real check in CI.
 set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SHIM="build/worker/shim.mjs"
 TOP_KEYS="name main compatibility_date compatibility_flags workers_dev preview_urls"
-TABLES="[[services]] [[flagship]] [vars] [secrets]"
+TABLES="[[services]] [[flagship]] [version_metadata] [vars] [secrets]"
 
 # top_value FILE KEY: the value of a top-level key (before the first table header), without quotes or a trailing comment
 top_value() {
@@ -54,7 +56,7 @@ check_dir() {
     for h in $headers; do
       case " $TABLES " in *" $h "*) ;; *) echo "FORBIDDEN: $name: table $h is not one the edge may have (no data, assets, placement, trigger or route)"; status=1 ;; esac
     done
-    for t in '[[services]]' '[[flagship]]'; do
+    for t in '[[services]]' '[[flagship]]' '[version_metadata]'; do
       n="$(echo "$headers" | grep -cxF "$t")"
       if [ "$n" -eq 1 ]; then echo "ok: one $t"; else echo "FORBIDDEN: $name has $n $t blocks, must have exactly one"; status=1; fi
     done
@@ -99,6 +101,9 @@ service = "thrust"
 [[flagship]]
 binding = "FLAGS"
 app_id = "x"
+
+[version_metadata]
+binding = "CF_VERSION_METADATA"
 
 [vars]
 SHARED_ORIGIN = "https://thrust.example"
@@ -150,6 +155,12 @@ service = \"other\"
 "
   mk no_flagship "$(printf '%s' "$good" | sed '/^\[\[flagship\]\]/,/^app_id/d')
 "
+  mk no_version_metadata "$(printf '%s' "$good" | sed '/^\[version_metadata\]/,/^binding = "CF_VERSION_METADATA"/d')
+"
+  mk two_version_metadata "$good
+[version_metadata]
+binding = \"OTHER\"
+"
   mk unknown_table "$good
 [observability]
 enabled = true
@@ -171,6 +182,8 @@ enabled = true
   expect fail inline_route "top-level key 'route'"
   expect fail two_services 'has 2 \[\[services\]\] blocks'
   expect fail no_flagship 'has 0 \[\[flagship\]\] blocks'
+  expect fail no_version_metadata 'has 0 \[version_metadata\] blocks'
+  expect fail two_version_metadata 'has 2 \[version_metadata\] blocks'
   expect fail unknown_table 'table \[observability\]'
   expect fail second 'wrangler.stage.toml: table \[\[d1_databases\]\]'
   expect fail empty "nothing to check"

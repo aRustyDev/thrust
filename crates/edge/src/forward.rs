@@ -8,9 +8,41 @@
 //! Preview's answer to the edge, and passed on it would be stored for the shared hostname. A `Location` that names the Preview
 //! host is rewritten to the shared origin (the edge fetches with `redirect: manual`, so the browser sees the redirect).
 //! `x-thrust-route` says which way the request went, replacing any the upstream sent.
+//!
+//! Every answer the edge gives, its own and a forwarded one, says which build of the edge gave it: `x-thrust-edge-version`
+//! ([`stamp_edge_version`]). It is what the edge's deploy smoke compares (scripts/deploy-edge.sh), the edge's counterpart of
+//! thrust's `x-thrust-version`, which is left as production or the target sent it.
 
 /// The response header that says where a request went: `prod`, or the target's name.
 pub const ROUTE_HEADER: &str = "x-thrust-route";
+
+/// The response header that says which build of the edge answered.
+pub const EDGE_VERSION_HEADER: &str = "x-thrust-edge-version";
+
+/// What [`EDGE_VERSION_HEADER`] says, from the edge's version metadata: the tag the deploy gave the version (the release's commit,
+/// `wrangler deploy --tag`), else the version id Cloudflare assigned, else nothing. The rule is thrust-api-core's
+/// `version_label`, kept here rather than depended on because the edge links no application crate: a value that is there but is
+/// not visible ASCII is nothing too (a header cannot carry it), and it does not fall through to the id, so a mis-tagged deploy
+/// shows no header, which the smoke reads as absent, rather than an id it could only call different.
+pub fn edge_version_label(tag: &str, id: &str) -> Option<String> {
+    [tag, id]
+        .into_iter()
+        .map(str::trim)
+        .find(|s| !s.is_empty())
+        .filter(|s| s.bytes().all(|b| b.is_ascii_graphic()))
+        .map(str::to_owned)
+}
+
+/// `headers` without any [`EDGE_VERSION_HEADER`] (in any case: an upstream cannot speak for the edge), followed by the edge's
+/// own when `label` is one.
+pub fn stamp_edge_version(headers: &[(String, String)], label: Option<&str>) -> Vec<(String, String)> {
+    headers
+        .iter()
+        .filter(|(n, _)| !n.eq_ignore_ascii_case(EDGE_VERSION_HEADER))
+        .cloned()
+        .chain(label.map(|l| (EDGE_VERSION_HEADER.to_string(), l.to_string())))
+        .collect()
+}
 
 /// `base` (`https://<host>`, nothing after it) followed by `path_and_query`, which must start with `/`.
 pub fn upstream_url(base: &str, path_and_query: &str) -> Option<String> {

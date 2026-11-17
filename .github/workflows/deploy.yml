@@ -95,6 +95,7 @@ on:
       - scripts/migrate-ci.sh
       - scripts/smoke-deploy.sh
       - crates/worker/wrangler.deploy.toml
+      - crates/edge/wrangler.deploy.toml
 
 permissions: {}
 
@@ -287,8 +288,9 @@ jobs:
         run: |
           set -eu
           .github/scripts/unpack-bundle.sh "$DOWNLOAD/deploy-bundle.tar.gz" "$RUNNER_TEMP/bundle" "$SHA"
-          rm -rf crates/worker/build
+          rm -rf crates/worker/build crates/edge/build
           cp -R "$RUNNER_TEMP/bundle/build" crates/worker/build
+          cp -R "$RUNNER_TEMP/bundle/edge/build" crates/edge/build
           # the web files, assembled as a deploy assembles them (a first release: nothing from a previous one)
           scripts/merge-assets.sh "$RUNNER_TEMP/bundle/web" - crates/worker/.assets
       - name: Render the configuration (made-up values) and let wrangler check it
@@ -308,6 +310,22 @@ jobs:
           scripts/render-wrangler.sh
           cd crates/worker
           wrangler deploy -c .wrangler.deploy.run.toml --dry-run --outdir "$RUNNER_TEMP/dry-run-out"
+      # The edge (ADR-0111): its template, rendered with made-up values, against the edge build this commit's bundle carries.
+      - name: Render the edge's configuration (made-up values) and let wrangler check it
+        env:
+          THRUST_EDGE_WORKER_NAME: thrust-edge-dry-run
+          THRUST_WORKER_NAME: thrust-dry-run
+          THRUST_BASE_URL: https://thrust-dry-run.dev
+          THRUST_FLAGSHIP_APP_ID: 01234567-89ab-cdef-0123-456789abcdef
+          THRUST_ACCESS_TEAM_DOMAIN: thrust-dry-run.cloudflareaccess.com
+          THRUST_ACCESS_AUD_RC: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+          THRUST_ACCESS_AUD_DEV: fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210
+          THRUST_WORKERS_DEV_SUBDOMAIN: thrust-dry-run
+        run: |
+          set -eu
+          scripts/render-wrangler.sh --template crates/edge/wrangler.deploy.toml --out crates/edge/.wrangler.deploy.run.toml
+          cd crates/edge
+          wrangler deploy -c .wrangler.deploy.run.toml --dry-run --outdir "$RUNNER_TEMP/dry-run-edge-out"
 
   # The deploy. It waits for the environment's reviewers where there are any (production). It classifies first, and when this deploy
   # needs the manual gate it deploys NOTHING and says so (`deferred`), which starts `deploy-do`.
