@@ -27,7 +27,7 @@ permissions: {}
 
 jobs:
   deps:
-    if: contains(fromJSON(inputs.plan), 'deps')
+    if: contains(fromJSON(inputs.plan), 'deps') && false
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
