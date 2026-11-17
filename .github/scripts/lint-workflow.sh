@@ -13,6 +13,10 @@
 #   R6  every `actions/checkout` has `persist-credentials: false`
 #   R7  `secrets.` only in the jobs named in SECRET_JOBS (default `deploy deploy-do`), `environment:` only there too, and
 #       `id-token: write` only in ID_TOKEN_JOBS (default `build`)
+# For a workflow that other workflows call (its `on:` has `workflow_call`; ADR-0102, research 0018):
+#   R8  no workflow-level `concurrency:`: github.workflow is the caller's name there, so the group equals the caller's, GitHub
+#       reports a deadlock and the run starts no job (a job may set its own)
+#   R9  no `github.event_name` or `github.workflow`: both are the caller's, so a callee routes by an input
 # For a composite action (it has a top-level `runs:`): R1, R4 and R6.
 #
 # Exit status: 0 clean; 1 a rule is broken (file:line: rule: what); 2 called wrongly.
@@ -29,7 +33,9 @@ for f in "$@"; do
   [ -f "$f" ] || { echo "lint-workflow: $f is not a file" >&2; exit 2; }
   kind=action
   grep -q '^jobs:' "$f" && kind=workflow
-  awk -v file="$f" -v kind="$kind" -v secret_jobs="$SECRET_JOBS" -v id_jobs="$ID_TOKEN_JOBS" '
+  callee=0
+  grep -q -E '^  workflow_call:|^on: *workflow_call|^on: *\[.*workflow_call' "$f" && callee=1
+  awk -v file="$f" -v kind="$kind" -v callee="$callee" -v secret_jobs="$SECRET_JOBS" -v id_jobs="$ID_TOKEN_JOBS" '
     function bad(rule, msg) { printf "%s:%d: %s: %s\n", file, NR, rule, msg; failed = 1 }
     function indent_of(s) { match(s, /^ */); return RLENGTH }
     function in_list(list, name,   n, a, i) { n = split(list, a, " "); for (i = 1; i <= n; i++) if (a[i] == name) return 1; return 0 }
@@ -63,6 +69,10 @@ for f in "$@"; do
         }
         if (in_jobs && ind == 4 && stripped ~ /^permissions:/) job_has_permissions = 1
         if (line ~ /pull_request_target/ && stripped !~ /^#/) bad("R5", "pull_request_target runs fork code with secrets")
+        if (callee == 1) {
+          if (line ~ /^concurrency:/) bad("R8", "a called workflow sets no workflow-level concurrency: github.workflow is the caller'"'"'s name there, so its group equals the caller'"'"'s and the run deadlocks (ADR-0102); a job may set its own")
+          if (stripped !~ /^#/ && line ~ /github\.(event_name|workflow)([^A-Za-z0-9_]|$)/) bad("R9", "a called workflow reads github.event_name or github.workflow, which are the caller'"'"'s (ADR-0102): route by an input")
+        }
         if (in_jobs && job != "") {
           if (stripped !~ /^#/ && line ~ /secrets\./ && !in_list(secret_jobs, job)) bad("R7", "secrets. in job \"" job "\", which is not one of: " secret_jobs)
           if (ind == 4 && stripped ~ /^environment:/ && !in_list(secret_jobs, job)) bad("R7", "environment: in job \"" job "\", which is not one of: " secret_jobs)

@@ -225,26 +225,37 @@ driver, rewritten from the one that survived in a session scratchpad.)*
 
 **Purpose.** Make the ADR's conventions mechanical, so a callee that breaks one fails `deps` rather than a review.
 
-**Acceptance.**
-- `lint-workflow.sh` gains **R8** (a file whose `on:` has `workflow_call` has no workflow-level `concurrency:`) and **R9**
-  (it does not read `github.event_name`), each with a case in `test-lint-workflow.sh` that must fail and a case that must
-  pass. The current files, `contract-cell.yml` included, stay clean.
-- `.github/workflows/README.md` and `.github/actions/README.md` exist: one row per file (what it is, its triggers, whether
-  `gate` waits for it), linking `cicd.md` for the how. `plan-ci.py` reads these two as no job's input, with a test.
-- `lint-all-workflows.sh` needs **no** change for credentials (above); a test shows a new callee with no credentials passes
-  with no entry.
-- `actionlint` runs in CI at a pinned version, as a step of `deps` (the owner's decision, 2026-11-16: add it). Every
-  workflow in the repository passes it, or each finding it keeps is named with the reason. The control: a copy of the
-  `contract` call with a `with:` key the callee does not declare must be refused. It runs inside the checkout: outside a
-  git repository `actionlint` checked nothing and printed nothing (research 0018, F11), and the control is what shows it is looking.
+**Acceptance** (as built; **done 2026-11-16**, in this stage's pull request).
+- `lint-workflow.sh` gains **R8** (a file whose `on:` has `workflow_call`, written as a block, as `on: workflow_call` or as
+  `on: [..., workflow_call]`, has no workflow-level `concurrency:`; a job's own is fine) and **R9** (it reads neither
+  `github.event_name` nor `github.workflow`, which are the caller's; `github.workflow_ref` is another property and is left
+  alone). 11 new cases in `test-lint-workflow.sh`, each rule seen to fail and seen to allow what it should (a comment, a job's
+  own concurrency, a workflow that is not called: `ci.yml` has both). The real files, `contract-cell.yml` included, stay clean.
+- `.github/workflows/README.md` and `.github/actions/README.md`: one row per file with its triggers and whether `gate` waits
+  for it, linking `cicd.md` for the how. **A guard the plan did not name**: `check-ci-index.sh`, a step of `deps`, fails when a
+  file has no row, a row names no file, or a file has two (22 cases, including the two traps: a name in the second cell or in
+  prose is not a row). An index with no guard is a lie that has not happened yet. And the plan was wrong that the READMEs are "no
+  job's input": the guard reads them, so a change to one runs `deps` and `ci-scripts`, which the generic rule for `.github/`
+  already gives; `test_plan_ci.py` now says so.
+- `lint-all-workflows.sh` needs **no** change for credentials, and two cases show it: a called workflow that holds no
+  credential passes with no line in the policy, and one that holds a secret is refused (R7).
+- `actionlint` 1.7.12 runs in the `deps` job, through `.github/scripts/lint-actionlint.sh`. The script refuses to run outside a
+  git work tree (where `actionlint` checks nothing and says nothing: research 0018, F11) and, before it lints the repository,
+  runs a **control** in a git repository of its own: a caller that passes an undeclared input, omits a required one and reads an
+  undeclared output must be refused with all three messages, and a sound caller must be accepted. Its 10 cases use stand-in
+  binaries that each misbehave in one way (silent, refuse everything, leave out one message, find a fault), so `ci-scripts`
+  needs no `actionlint`; the two that run the real tool are skipped where it is absent. The baseline was clean: `actionlint`
+  exits 0 on all eight workflows, so there is no finding to keep or to name.
 
-**Public solutions.** `actionlint` checks a caller's `with:` against the callee's declared inputs and outputs, which matters
-once there are a dozen such calls. It is **not wired into CI today** (the cicd-review plan only suggests running it by
-hand), and a search result mentioned an open false-positive report about reading a callee's outputs through `needs` (actionlint
-#407). It did not appear on the spike's reads of a declared output, and the same tool refused a read of an undeclared one
-(research 0018, F11). **How it is installed is decided here, at the start of the stage, by survey**: the tools
-`taiki-e/install-action` already installs in `ci.yml` (cargo-deny, cargo-nextest, mdbook) against actionlint's own release and
-checksum. *(Hand-written: R8 and R9, which are this repository's conventions; actionlint has no rule for them.)*
+**Public solutions** (the survey the plan left to this stage). `actionlint` checks a caller's `with:` against the callee's
+declared inputs and outputs, which matters once there are a dozen such calls. **Installing it**: `taiki-e/install-action`, at the
+version `ci.yml` pins, offers `shellcheck` and `zizmor` but **not `actionlint`**. `actionlint`'s own release ships a tarball per
+platform and a checksums file; a third-party wrapper action would add a dependency to the supply chain to save six lines. So
+the step downloads the release archive and checks it against a SHA-256 written in the workflow, taken two ways that agree (the
+release's checksums file, and hashing the archive) and covered by the build attestation of `rhysd/actionlint`
+(`gh attestation verify` passes for that repository and fails with "no attestations found" for another, which is the control).
+The false-positive report about reading a callee's outputs through `needs` (actionlint #407) did not appear.
+*(Hand-written: R8 and R9, which are this repository's conventions, and the control; `actionlint` has no rule for them.)*
 
 ## Action candidates
 
