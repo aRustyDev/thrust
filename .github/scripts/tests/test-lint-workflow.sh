@@ -83,6 +83,29 @@ run "R7: id-token: write outside the build job" 1 'R7: id-token: write in job "p
 make allowed-comment "$WF" 'text.replace("jobs:\n", "jobs:\n  # note: ${{ secrets.X }} in a comment is not a use, and pull_request_target neither\n", 1)' > /dev/null
 run "a comment that names a secret or an expression is not a breach" 0 "clean" "$T/allowed-comment"
 
+# R8 and R9: a workflow that other workflows call (ADR-0102, research 0018), tested on the real one
+CELL="$HERE/.github/workflows/contract-cell.yml"
+run "the real called workflow is clean" 0 "clean" "$CELL"
+make r8 "$CELL" 'text.replace("\npermissions: {}\n", "\npermissions: {}\n\nconcurrency:\n  group: cell\n  cancel-in-progress: false\n", 1)' > /dev/null
+run "R8: a workflow-level concurrency in a called workflow" 1 "R8: a called workflow sets no workflow-level concurrency" "$T/r8"
+make r8-both "$CELL" 'text.replace("  workflow_call:\n", "  workflow_dispatch:\n  workflow_call:\n", 1).replace("\npermissions: {}\n", "\npermissions: {}\n\nconcurrency:\n  group: cell\n", 1)' > /dev/null
+run "R8: the same when the workflow can also be run alone" 1 "R8: " "$T/r8-both"
+make r8-job "$CELL" 'text.replace("    runs-on: ubuntu-24.04\n", "    runs-on: ubuntu-24.04\n    concurrency:\n      group: cell\n", 1)' > /dev/null
+run "R8 allows a concurrency that a job sets for itself" 0 "clean" "$T/r8-job"
+printf 'name: x\non: workflow_call\npermissions: {}\nconcurrency:\n  group: g\njobs:\n  a:\n    runs-on: ubuntu-24.04\n    permissions: {}\n    steps:\n      - run: echo\n' > "$T/r8-inline"
+run "R8: a workflow written as on: workflow_call" 1 "R8: " "$T/r8-inline"
+printf 'name: x\non: [push, workflow_call]\npermissions: {}\nconcurrency:\n  group: g\njobs:\n  a:\n    runs-on: ubuntu-24.04\n    permissions: {}\n    steps:\n      - run: echo\n' > "$T/r8-list"
+run "R8: a workflow written as on: [push, workflow_call]" 1 "R8: " "$T/r8-list"
+make r9-event "$CELL" 'text.replace("    runs-on: ubuntu-24.04\n", "    if: github.event_name != \"schedule\"\n    runs-on: ubuntu-24.04\n", 1)' > /dev/null
+run "R9: a called workflow that reads github.event_name" 1 "R9: a called workflow reads github.event_name or github.workflow" "$T/r9-event"
+make r9-workflow "$CELL" 'text.replace("    env:\n", "    env:\n      WHO: ${{ github.workflow }}\n", 1)' > /dev/null
+run "R9: a called workflow that reads github.workflow" 1 "R9: a called workflow reads github.event_name or github.workflow" "$T/r9-workflow"
+make r9-ref "$CELL" 'text.replace("    env:\n", "    env:\n      REF: ${{ github.workflow_ref }}\n", 1)' > /dev/null
+run "R9 stops at the name: github.workflow_ref is another property" 0 "clean" "$T/r9-ref"
+make r9-comment "$CELL" 'text.replace("jobs:\n", "jobs:\n  # github.event_name comes from the caller, so this reads an input instead\n", 1)' > /dev/null
+run "R9: a comment that names github.event_name is not a read" 0 "clean" "$T/r9-comment"
+run "a workflow that is not called may set a workflow-level concurrency and read github.event_name (ci.yml does both)" 0 "clean" "$HERE/.github/workflows/ci.yml"
+
 # usage
 sh "$S" > "$T/out.txt" 2>&1; got=$?
 if [ "$got" = 2 ]; then pass=$((pass + 1)); echo "ok   no file is a usage error"; else bad=$((bad + 1)); echo "BAD  no file: exit $got"; fi
