@@ -37,6 +37,9 @@ crates/worker/.wrangler.pg.run.toml
 # what scripts/render-wrangler.sh makes from wrangler.deploy.toml: ids of a real environment, never committed
 crates/worker/.wrangler.deploy.run.toml
 crates/edge/.wrangler.deploy.run.toml
+# what scripts/deploy-target.sh makes for a Preview target: production's rendered configuration and the target's, derived from it
+crates/worker/.wrangler.target.run.toml
+crates/worker/.wrangler.target.run.json
 # cargo-fuzz's working output (the corpus it grows, its artifacts); only fuzz/seeds and fuzz/regressions are committed
 crates/edge/fuzz/corpus/
 crates/edge/fuzz/artifacts/
