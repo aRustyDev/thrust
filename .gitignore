@@ -28,6 +28,13 @@ docs/book/
 
 # wrangler / worker-build scratch
 .wrangler/
+infra/cloudflare/.terraform/
+infra/cloudflare/*.tfstate*
+crates/preview-provisioner/build/
+crates/preview-provisioner/.wrangler.closed.toml
+crates/preview-provisioner/fuzz/corpus/
+crates/preview-provisioner/fuzz/artifacts/
+crates/preview-provisioner/fuzz/Cargo.lock
 node_modules/
 crates/worker/build/
 crates/spikes/editor-worker/build/

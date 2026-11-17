@@ -216,6 +216,9 @@ def plan(paths, dirs, deps, cells, full_reason=None):
     jobs, passes, changed = set(), set(), set()
     full = full_reason
     for path in paths:
+        if path.startswith(("infra/preview/", "infra/cloudflare/")):
+            jobs.update(("ci-scripts", "pg-adapter"))
+            notes.append(f"{path}: preview infrastructure -> ci-scripts, pg-adapter")
         for pattern, effect, why in COMPILED:
             if not pattern.search(path):
                 continue
@@ -242,7 +245,8 @@ def plan(paths, dirs, deps, cells, full_reason=None):
                 notes.append(f"{path}: {why} -> {', '.join(effect.get('jobs', []) + effect.get('passes', [])) or 'nothing'}")
             break
         else:
-            notes.append(f"{path}: no job reads it")
+            if not path.startswith(("infra/preview/", "infra/cloudflare/")):
+                notes.append(f"{path}: no job reads it")
 
     if full:
         return set(JOBS), list(cells), [f"everything: {full}"] + notes
@@ -253,6 +257,8 @@ def plan(paths, dirs, deps, cells, full_reason=None):
         notes.append(f"changed crates: {', '.join(sorted(changed))}; affected: {', '.join(sorted(hit))}")
     if PG_ADAPTER in hit:
         jobs.add("pg-adapter")
+    if "thrust-preview-provisioner" in hit:
+        jobs.update(("ci-scripts", "pg-adapter"))
     if MUTANTS_BINARY in hit or SUITE in changed:
         jobs.add("mutants")
 

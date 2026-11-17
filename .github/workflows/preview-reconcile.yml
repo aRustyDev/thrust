@@ -1,0 +1,67 @@
+name: Reconcile preview resources
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: thrust-preview-reconciliation
+  cancel-in-progress: false
+
+jobs:
+  reconcile:
+    if: vars.THRUST_PREVIEW_PROVISIONER_ENABLED == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pull-requests: read
+    environment: preview-control-plane
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # Never run PR-controlled scripts with the control-plane credentials.
+          ref: ${{ github.event.repository.default_branch }}
+
+      - name: Build the desired same-repository PR set
+        env:
+          GH_TOKEN: ${{ github.token }}
+          THRUST_REPOSITORY: aRustyDev/thrust
+        run: |
+          set -euo pipefail
+          gh api --paginate --slurp "repos/$THRUST_REPOSITORY/pulls?state=open&per_page=100" > pulls.json
+          gh api --paginate --slurp "repos/$THRUST_REPOSITORY/events?per_page=100" > events.json
+          python3 infra/preview/scripts/pr-preview-desired.py \
+            --repository "$THRUST_REPOSITORY" --pulls pulls.json --events events.json \
+            --now "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > desired-prs.txt
+
+      - name: Reconcile schemas and Hyperdrive resources
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          HYPERDRIVE_API_TOKEN: ${{ secrets.HYPERDRIVE_API_TOKEN }}
+          THRUST_PREVIEW_PROVISIONER_URL: ${{ vars.THRUST_PREVIEW_PROVISIONER_URL }}
+          PREVIEW_PROVISIONER_ACCESS_CLIENT_ID: ${{ secrets.PREVIEW_PROVISIONER_ACCESS_CLIENT_ID }}
+          PREVIEW_PROVISIONER_ACCESS_CLIENT_SECRET: ${{ secrets.PREVIEW_PROVISIONER_ACCESS_CLIENT_SECRET }}
+        run: |
+          set -euo pipefail
+          infra/preview/scripts/reconcile-pr-previews.sh --desired desired-prs.txt
+
+      - name: Publish non-secret resource receipt
+        if: always()
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          HYPERDRIVE_API_TOKEN: ${{ secrets.HYPERDRIVE_API_TOKEN }}
+        run: infra/cloudflare/hyperdrive.sh list-pr > preview-resources.json
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: preview-resources-${{ github.run_id }}
+          path: preview-resources.json
+          if-no-files-found: error
+          retention-days: 1

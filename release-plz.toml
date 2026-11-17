@@ -65,6 +65,7 @@ changelog_include = [
   "thrust-adapters-selfhosted",
   "thrust-adapters-cloudflare",
   "thrust-worker",
+  "thrust-preview-provisioner",
   "thrust-edge",
   "thrust-server",
   "thrust-contract-tests",
@@ -122,6 +123,12 @@ version_group = "thrust"
 [[package]]
 name = "thrust-worker"
 version_group = "thrust"
+
+[[package]]
+name = "thrust-preview-provisioner"
+version_group = "thrust"
+# First-release pattern until a release contains the provisioner crate.
+git_tag_name = "thrust-preview-provisioner-v{{ version }}"
 
 [[package]]
 name = "thrust-edge"

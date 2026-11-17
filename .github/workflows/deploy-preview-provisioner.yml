@@ -1,0 +1,85 @@
+name: Deploy preview provisioner (closed)
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit:
+        description: Full commit SHA reachable from main
+        required: true
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: thrust-preview-provisioner-deployment
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify and select commit
+        env:
+          COMMIT: ${{ inputs.commit }}
+        run: |
+          set -euo pipefail
+          [[ "$COMMIT" =~ ^[0-9a-f]{40}$ ]]
+          git merge-base --is-ancestor "$COMMIT" origin/main
+          git checkout --detach "$COMMIT"
+      - uses: ./.github/actions/setup-rust
+        with:
+          targets: wasm32-unknown-unknown
+          worker-tools: 'true'
+          cache-key: preview-provisioner
+      - name: Build Worker
+        run: |
+          cd crates/preview-provisioner
+          ../../scripts/rs worker-build --release .
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: preview-provisioner-build
+          path: crates/preview-provisioner/build/
+          if-no-files-found: error
+          retention-days: 1
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    environment: preview-provisioner
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.commit }}
+          persist-credentials: false
+      - uses: ./.github/actions/setup-rust
+        with:
+          targets: wasm32-unknown-unknown
+          worker-tools: 'true'
+          cache-key: preview-provisioner
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: preview-provisioner-build
+          path: crates/preview-provisioner/build
+      - name: Deploy without public routes
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          HYPERDRIVE_ID: ${{ vars.THRUST_PREVIEW_PROVISIONER_HYPERDRIVE_ID }}
+          COMMIT: ${{ inputs.commit }}
+        run: |
+          set -euo pipefail
+          [[ "$HYPERDRIVE_ID" =~ ^[0-9a-f]{32}$ ]]
+          cd crates/preview-provisioner
+          # Do not rebuild in the job that holds deploy credentials.
+          sed -e '/^\[build\]/,+1d' -e "s/00000000000000000000000000000000/$HYPERDRIVE_ID/" wrangler.toml > .wrangler.closed.toml
+          python3 -c 'import tomllib; c=tomllib.load(open(".wrangler.closed.toml", "rb")); assert c.get("workers_dev") is False and c.get("preview_urls") is False and not any(k in c for k in ("route", "routes", "build"))'
+          wrangler deploy --config .wrangler.closed.toml --tag "$COMMIT"

@@ -1,0 +1,14 @@
+name = "thrust-preview-provisioner"
+main = "build/worker/shim.mjs"
+compatibility_date = "2026-08-01"
+# Initial deployment must not expose this privileged service before Worker-level Access exists.
+# Enable workers_dev only after attaching and verifying the Access policy.
+workers_dev = false
+preview_urls = false
+
+[build]
+command = "../../scripts/rs worker-build --release ."
+
+[[hyperdrive]]
+binding = "HYPERDRIVE"
+id = "00000000000000000000000000000000"

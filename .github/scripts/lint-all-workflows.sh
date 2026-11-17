@@ -20,6 +20,10 @@ policy() {
     release.yml) echo "$NONE|build" ;;                 # the release's attestations; its token is the workflow's own
     release-plz.yml) echo "release release-pr|$NONE" ;; # the release App's key, in the `release` environment
     flagship.yml) echo "sync check|$NONE" ;;           # the Flagship app's tokens, in the `flagship` environment
+    cloudflare-infrastructure.yml) echo "tofu|$NONE" ;;
+    deploy-preview-provisioner.yml) echo "deploy|$NONE" ;;
+    enable-preview-provisioner.yml) echo "enable|$NONE" ;;
+    preview-reconcile.yml) echo "reconcile|$NONE" ;;
     *) echo "$NONE|$NONE" ;;
   esac
 }

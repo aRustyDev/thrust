@@ -80,6 +80,11 @@ jobs:
           python3 -I .github/scripts/tests/test_preview_result.py
           sh .github/scripts/tests/test-deploy-target.sh
           python3 -I .github/scripts/tests/test_plan_ci.py
+          bash infra/preview/scripts/test-bootstrap-provisioner.sh
+          bash infra/preview/scripts/test-provisioner-client.sh
+          bash infra/preview/scripts/test-reconcile-pr-previews.sh
+          bash infra/cloudflare/test-scripts.sh
+          python3 -I infra/cloudflare/test-preview-access.py
           # ci.yml, the planner and each called workflow's file agree (ADR-0102): the calls, the gate's VERDICT_JOBS, the verdict jobs
           python3 -I .github/scripts/tests/test_workflow_wiring.py
           # The tests of the planner and the gate must be able to fail: each hand mutant of the planner, the gate, this file, the called
@@ -156,6 +161,8 @@ jobs:
       # server's own refusals, and the controls that make each of them able to fail. Its other suites are hermetic and run in `hermetic`.
       - name: SMTP adapter tests (Mailpit, testcontainers)
         run: scripts/rs cargo nextest run -p thrust-adapters-selfhosted --profile adapters --locked -E 'binary(smtp_sink)'
+      - name: Preview provisioner security and lifecycle (Postgres)
+        run: bash infra/preview/scripts/test-provisioner-bootstrap.sh
 
   # Mutation controls: every deliberately broken build must make the suite fail.
   mutants:
