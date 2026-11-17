@@ -1,6 +1,6 @@
 [package]
 name = "thrust-profiling"
-description = "In-process profiling workloads that span crates (ADR-0009, testing/profiling): the v1 router over the memory adapters, driven in-process; prof_ tests profile it (a heap profile with dhat), run with the `prof` profile."
+description = "In-process profiling workloads that span crates (ADR-0009, testing/profiling): the v1 router over the memory adapters, driven in-process; prof_ tests profile it (a heap profile with dhat, a CPU profile with samply), run with the `prof` profile."
 edition.workspace = true
 version.workspace = true
 license.workspace = true
