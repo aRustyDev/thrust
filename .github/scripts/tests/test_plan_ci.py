@@ -368,7 +368,7 @@ def independent_slices(planned, workflows, jobs):
 JOBS_LIST = list(pc.JOBS)
 # What WORKFLOWS holds today. Each stage of the migration edits this line, so the stage's change to the planner shows in this file,
 # and a mutant that empties the map is killed by it.
-EXPECTED_WORKFLOWS = {"documentation": ("docs",), "security": ("deny",), "web": ("web",)}
+EXPECTED_WORKFLOWS = {"documentation": ("docs",), "security": ("deny",), "web": ("web",), "lint": ("deps", "lint")}
 check("WORKFLOWS is a partition of the jobs", refused(lambda: pc.check_workflows()), None)
 check("WORKFLOWS holds the workflows moved so far, and their jobs", pc.WORKFLOWS, EXPECTED_WORKFLOWS)
 
@@ -474,15 +474,27 @@ check("cli: deny.toml alone plans the security workflow and no job of ci.yml",
       (["security"], ["security"], {"security": ["deny"]}))
 check("cli: deny.toml alone: jobs still names the job `deny`", json.loads(out.get("jobs", "null")), ["deny"])
 rc, out, _ = cli(changed="crates/server/Cargo.toml\n")
-check("cli: a crate's Cargo.toml plans the security workflow too, after the jobs still in ci.yml and the book's",
-      (json.loads(out.get("top", "null"))[-1:], json.loads(out.get("plans", "null")).get("security")), (["security"], ["deny"]))
+check("cli: a crate's Cargo.toml plans the security workflow too, and the lint workflow with both its jobs, after the jobs still in ci.yml",
+      (json.loads(out.get("top", "null"))[-2:], json.loads(out.get("plans", "null")).get("security"),
+       json.loads(out.get("plans", "null")).get("lint")), (["security", "lint"], ["deny"], ["deps", "lint"]))
+# a workflow of two jobs can have a partial plan: only the job the change needs, and `verdict` expects the other to be skipped
+rc, out, _ = cli(changed="clippy.toml\n")
+check("cli: clippy.toml plans the lint workflow with the job `lint` alone",
+      (json.loads(out.get("top", "null")), json.loads(out.get("plans", "null")), json.loads(out.get("jobs", "null"))),
+      (["lint"], {"lint": ["lint"]}, ["lint"]))
+rc, out, _ = cli(changed="scripts/check-layout.sh\n")
+check("cli: a guard of deps plans the lint workflow with the job `deps` alone, and `ci-scripts` (its test) in ci.yml",
+      (json.loads(out.get("top", "null")), json.loads(out.get("plans", "null"))), (["ci-scripts", "lint"], {"lint": ["deps"]}))
+rc, out, _ = cli(changed="clippy.toml\nscripts/check-layout.sh\n")
+check("cli: both together plan the two jobs, in the order of the workflow (deps first)",
+      json.loads(out.get("plans", "null")), {"lint": ["deps", "lint"]})
 rc, out, _ = cli(changed="docs/src/intro.md\ndeny.toml\n")
 check("cli: the book and deny.toml: both workflows, each with its own job",
       (json.loads(out.get("top", "null")), json.loads(out.get("plans", "null"))),
       (["documentation", "security"], {"documentation": ["docs"], "security": ["deny"]}))
 rc, out, _ = cli(changed=".github/actions/verdict/action.yml\n")
 check("cli: a change to the verdict action runs everything, so every called workflow is called",
-      json.loads(out.get("workflows", "null")), ["documentation", "security", "web"])
+      json.loads(out.get("workflows", "null")), ["documentation", "security", "web", "lint"])
 rc, out, _ = cli(changed="docs/src/intro.md\nweb/x.tsx\n")
 check("cli: the book and web/: the jobs still in ci.yml, then the workflows in the planner's order",
       json.loads(out.get("top", "null")), ["contract", "documentation", "web"])
