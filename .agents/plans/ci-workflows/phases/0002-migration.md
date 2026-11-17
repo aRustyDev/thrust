@@ -161,6 +161,52 @@ it). The job runs `cargo deny` as `scripts/rs cargo deny --locked check`, from `
 cargo-deny action fits better is a question for the Security phase's survey (pass 1, not made here); a refactor does not swap it,
 since that changes the command.
 
+### M2: done (#258, merged 2026-11-17 as `1bc9e9a`)
+
+What it showed:
+- **Parity**, by `scripts/ci-commands.py`: 36 jobs before, 39 after; 33 unchanged, `deny` moved with its 4 steps identical, 2 changed
+  as intended (`gate`: its `VERDICT_JOBS`; `documentation.yml`'s `verdict`: its two steps became one call), 3 appeared
+  (`ci.yml:security`, `security.yml:verdict`, the action), 0 gone.
+- **The wiring**: `test_workflow_wiring.py` 63 checks (the action once, each workflow's call), the gate's cases 182, the planner's 6,983;
+  `mutate_gate.py` 115 mutants killed, 6 that change nothing survived, on the runner too; a full run of 41 checks, `gate` certified.
+- **Two probes**: #259 (`deny` planned and skipped) failed `security / verdict` and `gate`, `documentation` still passed; #260 (the
+  call of the action skipped) failed `gate` alone, `security succeeded but its verdict output is 'missing', not 'pass'`.
+
+What it found: a local action is read from the checkout, so the checkout stays in each `verdict` job (the first plan said the action
+would hold it); and a run of the mutant driver is void if a file under `.github/` changes while it runs, since it copies the tree for
+each mutant.
+
+### M3 in detail: `web.yml`
+
+**Purpose.** Move the stock app's build check out of `ci.yml`, the third callee, which calls the `verdict` action as the first two do.
+
+**What is particular to it.** The workflow and its job share a name, `web`. In `ci.yml` the calling job keeps the id `web` (so `gate`'s
+`needs` list does not change), and inside `web.yml` the job is `web` too: the checks are `web / web` and `web / verdict`. The planner's
+`top` lists the jobs still in `ci.yml` and then the workflows, so `web` moves to the end of the gate's default list
+(`... mutants documentation security web`); the planner already tests a workflow that shares its job's name (`pc.slices({"web", ...},
+{"web": ("web",)})`), and what it does not yet do is the wiring test, which says that a moved job is no longer a job of `ci.yml` and
+must now allow the calling job of the same name, and say that no id is used twice.
+
+**Acceptance.**
+- `.github/workflows/web.yml` (`name: web`): `workflow_call` (input `plan`, required; output `verdict`) and `workflow_dispatch` (`plan`
+  defaults to `["web"]`); no workflow-level `concurrency:`; `permissions: {}`; the job `web` moved **verbatim** (the job-level
+  `TURBO_TELEMETRY_DISABLED` and `DO_NOT_TRACK`, the checkout, the Q-R2 gate, Node, the pnpm pin, the frozen install, the build, the
+  check that it made the SPA; the pins and the comment) with `if: contains(fromJSON(inputs.plan), 'web')` and without `needs: changes`;
+  and a `verdict` job that calls the action.
+- `ci.yml`: the `web` job is a call of `web.yml` (`needs: changes`, runs when `top` names `web`, `plan` from `plans`); `gate` needs it
+  as before, and `VERDICT_JOBS` is `documentation security web`.
+- The planner: `WORKFLOWS` holds `web: (web)`; the gate's default list, `same_jobs`, the indexes, `cicd.md`, `running.md` and the
+  mutant driver (a row in `CALLS`) follow. A change under `web/` plans the workflow `web` and, as before, both browser journey cells.
+- The wiring test allows a moved job's name in `ci.yml` only as the calling job of that name, and refuses an id used twice; the mutant of
+  "the moved job is left in `ci.yml`" becomes, for `web`, a second job of the same name.
+- Proof as for M2: the parity table and its check (`web` moved, its 7 steps identical), a full run, and two probes planted in
+  `web.yml`: `web` planned and skipped, and the call of the action skipped.
+
+**State machine of the job.** As `docs` and `deny`.
+
+**Public solutions.** None applies to the move. Whether a public action for pnpm fits better than `npm install --global pnpm@<the pin
+in web/package.json>` is a question for the Web phase's survey, not for a refactor, which keeps the commands.
+
 ## Decisions on the questions (owner, 2026-11-17, after #251)
 
 All four were answered as recommended.
@@ -173,3 +219,9 @@ All four were answered as recommended.
 | `name:` of a workflow | Lowercase, the repository's convention (`documentation`, `security`, `test`): the name shows in every check and in `workflow_run`'s `workflows:` list |
 
 No question is open.
+
+## Decisions made during the stages (owner)
+
+| After | Question | Answer |
+|---|---|---|
+| #258 (2026-11-17) | A shared `build-web` action for the Node, pnpm, install, build and SPA steps of the `web` job and of `contract-pass-tools`'s e2e passes. They are the same commands, but not an exact copy: four steps with job-level env against one step with step-level env, and `contract-pass-tools` runs two more commands after | **Deferred.** M3 moves `web` as it is. The action is proposed again in the Web and E2E phases, where pass 5 (caching the pnpm store) touches exactly these steps |

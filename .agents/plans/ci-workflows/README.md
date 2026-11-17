@@ -31,4 +31,5 @@ whole repository: Phase 0 of this plan is `0001` and Phase 1 is `0002`; each lat
 ## Status (2026-11-17)
 
 Phase 0, the foundation, is done and merged. Phase 1, the migration, is planned, its four questions are answered, its first
-stage, `documentation.yml`, is merged (#254), and its second, `security.yml`, is in progress; see the table at the end of `PLAN.md`.
+stage, `documentation.yml`, is merged (#254), its second, `security.yml`, is merged (#258), and its third, `web.yml`, is in progress; see
+the table at the end of `PLAN.md`.
