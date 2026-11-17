@@ -62,6 +62,8 @@ jobs:
           printf '%s %s\n' "$CELL_TARGET" "$CELL_PASS" > "cell-ok/${CELL_TARGET}-${CELL_PASS}.ok"
 
       - name: Upload the pass marker
+        # PROBE (do not merge): one planned cell passes and never reports
+        if: inputs.target != 'native-memory' || inputs.pass != 'main'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: cell-ok-${{ inputs.target }}-${{ inputs.pass }}
