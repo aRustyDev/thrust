@@ -136,6 +136,8 @@ def want_for_crates(changed, deps):
     jobs = {"ci-scripts", "deps", "lint", "hermetic"}
     if PG in hit:
         jobs.add("pg-adapter")
+    if "thrust-preview-provisioner" in hit:
+        jobs.add("pg-adapter")
     if SERVER in hit or SUITE in changed:
         jobs.add("mutants")
     cells = {c for c in CELLS if BINARY[c.split(" ")[0]] in hit or SUITE in changed}
@@ -238,6 +240,14 @@ check("a journey of the mail suite alone runs the same two cells (e2e/support/ i
 check("a change of the Worker's own crate runs the mail journey's cell with the Worker's other passes",
       "worker-cf e2e-mail" in run_plan(["crates/adapters/cloudflare/src/lib.rs"], REAL_GRAPH)[1], True)
 check("a deploy script runs ci-scripts and no cell", run_plan(["scripts/smoke-deploy.sh"], REAL_GRAPH), ({"ci-scripts"}, set()))
+check("preview infrastructure runs shell and Postgres checks", run_plan(["infra/preview/provisioner-bootstrap.sql"], REAL_GRAPH),
+      ({"ci-scripts", "pg-adapter"}, set()))
+check("Cloudflare infrastructure runs shell and Postgres checks", run_plan(["infra/cloudflare/preview-access.py"], REAL_GRAPH),
+      ({"ci-scripts", "pg-adapter"}, set()))
+preview_graph = dict(REAL_GRAPH, **{"thrust-preview-provisioner": {"thrust-adapters-cloudflare"}})
+preview_layout = dict(ADR_0009, **{"thrust-preview-provisioner": "crates/preview-provisioner"})
+preview_jobs, _ = run_plan(["crates/preview-provisioner/src/lib.rs"], preview_graph, layout=preview_layout)
+check("preview Worker change runs the Postgres check", "pg-adapter" in preview_jobs, True)
 check("another workflow runs ci-scripts and deps, no cell", run_plan([".github/workflows/flake-hunt.yml"], REAL_GRAPH),
       ({"ci-scripts", "deps"}, set()))
 check("the book runs only the docs job", run_plan(["docs/src/intro.md"], REAL_GRAPH), ({"docs"}, set()))
@@ -420,7 +430,7 @@ check("slices refuses a map that is not a partition", refused(lambda: pc.slices(
 # The files that run the checks `gate` waits for, today and as the migration adds them; and the ones that run no check, because they
 # have triggers of their own (the deploy and release flows, the schedules).
 CHECK_WORKFLOWS = ["ci", "contract-cell", "test", "lint", "documentation", "security", "web"]
-NO_CHECK_WORKFLOWS = ["deploy", "e2e-schedule", "flagship", "flake-hunt", "release", "release-plz"]
+NO_CHECK_WORKFLOWS = ["deploy", "e2e-schedule", "flagship", "flake-hunt", "release", "release-plz", "cloudflare-infrastructure", "deploy-preview-provisioner", "enable-preview-provisioner", "preview-control-tests", "preview-reconcile"]
 for name in CHECK_WORKFLOWS:
     check(f".github/workflows/{name}.yml runs everything", run_plan([f".github/workflows/{name}.yml"], REAL_GRAPH), EVERYTHING)
 for name in NO_CHECK_WORKFLOWS:

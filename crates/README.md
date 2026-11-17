@@ -20,6 +20,7 @@ directory in it.
 | [`testing/`](testing/README.md) | Crates that exist only for testing and never ship |
 | `server/` | `thrust-server`: the native composition root (axum/tokio) |
 | `worker/` | `thrust-worker`: the Cloudflare Worker composition root (wasm32) |
+| `preview-provisioner/` | `thrust-preview-provisioner`: restricted internal database provisioning Worker |
 | `edge/` | `thrust-edge`: the Worker on the shared hostname (ADR-0111) |
 
 ## Programs

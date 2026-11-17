@@ -1,0 +1,57 @@
+name: Cloudflare infrastructure
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: OpenTofu operation against the existing Thrust Cloudflare state
+        type: choice
+        required: true
+        default: plan
+        options: [plan, apply]
+
+permissions: {}
+
+concurrency:
+  group: thrust-cloudflare-infrastructure
+  cancel-in-progress: false
+
+jobs:
+  tofu:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    environment: cloudflare-infrastructure
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      TF_VAR_cloudflare_account_id: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.TOFU_R2_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.TOFU_R2_SECRET_ACCESS_KEY }}
+      AWS_ENDPOINT_URL_S3: ${{ vars.TOFU_R2_S3_ENDPOINT }}
+      AWS_REGION: auto
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2
+        with:
+          tofu_version: 1.12.4
+          tofu_wrapper: false
+      - name: Initialize the existing remote state
+        run: |
+          tofu -chdir=infra/cloudflare init -input=false \
+            -backend-config='bucket=tofu' \
+            -backend-config='key=products/thrust/cloudflare/646535719915/terraform.tfstate' \
+            -backend-config='region=auto' \
+            -backend-config='use_path_style=true' \
+            -backend-config='encrypt=false' \
+            -backend-config='use_lockfile=true' \
+            -backend-config='skip_credentials_validation=true' \
+            -backend-config='skip_region_validation=true' \
+            -backend-config='skip_requesting_account_id=true' \
+            -backend-config='skip_metadata_api_check=true'
+      - name: Plan
+        run: tofu -chdir=infra/cloudflare plan -input=false -out=tfplan
+      - name: Apply the fresh protected-run plan
+        if: inputs.operation == 'apply'
+        run: tofu -chdir=infra/cloudflare apply -input=false tfplan
