@@ -1,0 +1,78 @@
+name: documentation
+
+# The book's check, called by ci.yml (its `documentation` job) and runnable alone (ADR-0102). ci.yml passes `plan`, the jobs of this
+# workflow that plan-ci.py says the change needs; a run by hand plans them all. The `verdict` job judges the jobs against that plan,
+# so that a planned job that never ran turns ci.yml's `gate` red: a calling job is `success` when only some of its jobs ran.
+
+on:
+  workflow_call:
+    inputs:
+      plan:
+        description: JSON array of this workflow's jobs to run (the planner's `plans.documentation`)
+        type: string
+        required: true
+    outputs:
+      verdict:
+        description: pass when every planned job succeeded and every other was skipped (ci.yml's gate requires it)
+        value: ${{ jobs.verdict.outputs.verdict }}
+  workflow_dispatch:
+    inputs:
+      plan:
+        description: JSON array of the jobs to run
+        type: string
+        default: '["docs"]'
+
+permissions: {}
+
+jobs:
+  # The book (docs/, mdBook). Runs when docs/, AGENTS.md (the book includes its testing rules) or .config/branding/ (its palette)
+  # changes (plan-ci.py). `mdbook build` exits 0 on a broken {{#include}} and on a mistyped book.toml key, and leaves out a page
+  # SUMMARY.md does not list without a word, so scripts/check-book.sh fails on any ERROR line and on such a page; its self-test
+  # breaks a copy of the book each of those ways, and the missing preprocessor a fourth, and each must be refused. mdBook and
+  # mdbook-mermaid (which targets mdBook 0.5) come from install-action at exact versions, checked against its SHA-256 manifest.
+  docs:
+    if: contains(fromJSON(inputs.plan), 'docs')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
+        with:
+          tool: mdbook@0.5.4,mdbook-mermaid@0.17.1
+      - name: Build the book (no ERROR line, no page missing from SUMMARY.md)
+        run: scripts/check-book.sh
+      - name: The check's controls (each broken book must be refused)
+        run: scripts/check-book.sh --self-test
+
+  # ADR-0102: judges this workflow's jobs with the one script every level uses (assert-gate.sh): a planned job must be exactly
+  # `success`, one that is not planned must be `skipped`, and a plan that is not a JSON array of strings is a failure. `always()`, so
+  # it reports when `docs` was skipped, failed or cancelled. The output is set only after the judge passed, and ci.yml's `gate`
+  # requires it: a `verdict` job that was itself skipped leaves this workflow `success` and proves nothing.
+  verdict:
+    needs: docs
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      verdict: ${{ steps.mark.outputs.verdict }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Judge the jobs against the plan
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+          EXPECTED_JOBS: ${{ inputs.plan }}
+          # this level's jobs, and no planner job and no cells to judge (they are ci.yml's)
+          KNOWN_JOBS: docs
+          CHANGES_JOB: ""
+          CELL_JOB: ""
+        run: .github/scripts/assert-gate.sh
+      - id: mark
+        run: echo "verdict=pass" >> "$GITHUB_OUTPUT"

@@ -60,20 +60,27 @@ mkdir -p "$T/plan1/scripts" && cp "$HERE/scripts/contract-all.sh" "$T/plan1/scri
 expect "plan: a run line with a changed format fails" 1 "the format changed" plan_in "$T/plan1"
 
 # ---- assert-gate.sh ------------------------------------------------------------------------------
-JOBS="ci-scripts deps lint deny hermetic pg-adapter contract mutants web docs"
+# What ci.yml's gate needs besides `changes`: the jobs still in ci.yml and the workflows it calls, which are CALLED (ci.yml sets
+# them as VERDICT_JOBS). Each migration stage moves a job's name out of this list and its workflow's name in.
+JOBS="ci-scripts deps lint deny hermetic pg-adapter contract mutants web documentation"
+CALLED="documentation"
 gate() { # gate <dir> <needs-json> <expected-jobs-json> <planned-json> <reported markers...>
   d="$T/gate/$1"; mkdir -p "$d/reported"; needs="$2"; expected="$3"; planned="$4"; shift 4
   for m in "$@"; do printf '%s\n' "$m" > "$d/reported/$(echo "$m" | tr ' ' '-').ok"; done
-  ( cd "$d" && NEEDS_JSON="$needs" EXPECTED_JOBS="$expected" PLANNED="$planned" REPORTED_DIR="$d/reported" "$S/assert-gate.sh" )
+  ( cd "$d" && NEEDS_JSON="$needs" EXPECTED_JOBS="$expected" PLANNED="$planned" REPORTED_DIR="$d/reported" VERDICT_JOBS="$CALLED" "$S/assert-gate.sh" )
 }
-# needs <changes result> <job=result>...: the gate's needs, every job of $JOBS present; a job not named is skipped
+# needs <changes result> <job=result>...: the gate's needs, every job of $JOBS present; a job not named is skipped. A called workflow
+# reports `verdict=pass`, as its `verdict` job does when its own jobs were as planned.
 needs() {
   ch="$1"; shift
   printf '{"changes":{"result":"%s"}' "$ch"
   for j in $JOBS; do
     r=skipped
     for kv in "$@"; do [ "${kv%%=*}" = "$j" ] && r="${kv#*=}"; done
-    printf ',"%s":{"result":"%s"}' "$j" "$r"
+    case " $CALLED " in
+      *" $j "*) printf ',"%s":{"result":"%s","outputs":{"verdict":"pass"}}' "$j" "$r" ;;
+      *) printf ',"%s":{"result":"%s"}' "$j" "$r" ;;
+    esac
   done
   printf '}'
 }
@@ -108,9 +115,21 @@ for j in $JOBS; do
   done
 done
 
-ALL='["ci-scripts","deps","lint","deny","hermetic","pg-adapter","contract","mutants","web","docs"]'
-ALLOK="$(needs success ci-scripts=success deps=success lint=success deny=success hermetic=success pg-adapter=success contract=success mutants=success web=success docs=success)"
+ALL='["ci-scripts","deps","lint","deny","hermetic","pg-adapter","contract","mutants","web","documentation"]'
+ALLOK="$(needs success ci-scripts=success deps=success lint=success deny=success hermetic=success pg-adapter=success contract=success mutants=success web=success documentation=success)"
 expect "gate: everything expected, everything passed" 0 "10 expected jobs passed" gate a1 "$ALLOK" "$ALL" "$P" "$M1" "$M2"
+# a called workflow must also say pass: its result alone is not the proof (research 0018: a `verdict` job that was skipped leaves it success)
+nodoc() { printf '%s' "$1" | sed "s/\"documentation\":{\"result\":\"success\",\"outputs\":{\"verdict\":\"pass\"}}/\"documentation\":{\"result\":\"success\"$2}/"; }
+expect "gate: documentation succeeded and its verdict output is missing" 1 "documentation succeeded but its verdict output is 'missing'" \
+  gate a5 "$(nodoc "$ALLOK" '')" "$ALL" "$P" "$M1" "$M2"
+expect "gate: documentation succeeded and its verdict output is empty" 1 "documentation succeeded but its verdict output is 'missing'" \
+  gate a6 "$(nodoc "$ALLOK" ',"outputs":{"verdict":""}')" "$ALL" "$P" "$M1" "$M2"
+expect "gate: documentation succeeded and its verdict output is 'fail'" 1 "documentation succeeded but its verdict output is 'fail'" \
+  gate a7 "$(nodoc "$ALLOK" ',"outputs":{"verdict":"fail"}')" "$ALL" "$P" "$M1" "$M2"
+expect "gate: documentation is planned, and was skipped (its calling job's own if)" 1 "documentation was expected to run and its result is 'skipped'" \
+  gate a8 "$(needs success ci-scripts=success deps=success lint=success deny=success hermetic=success pg-adapter=success contract=success mutants=success web=success)" "$ALL" "$P" "$M1" "$M2"
+expect "gate: documentation is not planned, and the gate passes without its verdict" 0 "ok:" \
+  gate a9 "$(needs success)" '[]' '[]'
 expect "gate: nothing expected, everything skipped (README.md only)" 0 "no cells planned" gate a2 "$(needs success)" '[]' '[]'
 expect "gate: the changes job failed" 1 "changes job result is 'failure'" gate a3 "$(needs failure)" '[]' '[]'
 expect "gate: the changes job was skipped" 1 "changes job result is 'skipped'" gate a4 "$(needs skipped)" '[]' '[]'
@@ -255,10 +274,14 @@ for r in success skipped failure cancelled; do
   done
 done
 
-# The gate's list of jobs is the planner's: a job added to one and not the other is refused above, so they must be equal.
+# The gate's list of jobs is the planner's: a job added to one and not the other is refused above, so they must be equal. "The
+# planner's" is what it expects of ci.yml's own gate when everything is planned: its `top` of a full run, the jobs still in ci.yml
+# and then the workflows it calls (ADR-0102), asked of the planner itself and not worked out again here. The called workflows are
+# the keys of its WORKFLOWS, which are also ci.yml's VERDICT_JOBS (test_plan_ci.py holds those two equal).
 same_jobs() {
   g="$(sed -n 's/^KNOWN="${KNOWN_JOBS:-\(.*\)}"$/\1/p' "$S/assert-gate.sh")"
-  p="$(sed -n 's/^JOBS = (\(.*\))$/\1/p' "$S/plan-ci.py" | tr -d '",')"
+  printf 'native-memory main\n' > "$T/one-cell.txt"
+  p="$(python3 -I "$S/plan-ci.py" --full "same jobs" --cells "$T/one-cell.txt" 2> /dev/null | sed -n 's/^top=//p' | jq -r 'join(" ")')"
   if [ -n "$g" ] && [ "$g" = "$p" ] && [ "$g" = "$JOBS" ]; then echo "same jobs: $g"; else echo "gate '$g' planner '$p' test '$JOBS'"; return 1; fi
 }
 expect "gate: the gate, the planner and this test list the same jobs" 0 "same jobs" same_jobs
