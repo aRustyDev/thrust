@@ -17,6 +17,10 @@
 # to browser tests) are NOT in this file: add them from the template when the harness crate exists, and scope
 # retries to browser tests only.
 nextest-version = { required = "0.9.131" }
+# Wrapper scripts (nextest 0.9.98+, experimental, tracking issue nextest-rs/nextest#2384): the `prof` profile runs its CPU
+# profiles under samply through one. If the feature is renamed or dropped, nextest refuses the config: an unknown feature exits
+# 96, a wrapper script without the feature exits 95 (measured, 0.9.140). Either way no test runs without its profile.
+experimental = ["wrapper-scripts"]
 
 [test-groups]
 ts-oracle = { max-threads = 2 }  # a live oracle test runs a Node.js process
@@ -140,9 +144,14 @@ filter = 'all()'
 slow-timeout = { period = "300s" }
 
 # --- prof: the profiling workloads (crates/testing/profiling) ------------------------------
-#   cargo nextest run -p thrust-profiling --profile prof
+#   cargo nextest run -p thrust-profiling --profile prof                       (the CPU profile wants --cargo-profile release)
 # A prof_ test profiles an in-process workload and writes the profile under target/profiling/; it prints its totals, so its output
 # is shown when it passes too. One at a time, so no two profiles share the machine. No number gates yet (X19).
+# A prof_heap_ test installs dhat as its binary's allocator. A prof_cpu_ test runs under samply (cargo install samply), through
+# the wrapper script below, which writes target/profiling/<test>.json.gz.
+[scripts.wrapper.samply]
+command = { command-line = "scripts/samply-wrapper.sh", relative-to = "workspace-root" }
+
 [profile.prof]
 default-filter = 'package(thrust-profiling) & test(/^prof_/)'
 test-threads = 1
@@ -155,6 +164,10 @@ failure-output = "immediate"
 [[profile.prof.overrides]]
 filter = 'all()'
 slow-timeout = { period = "300s" }
+
+[[profile.prof.scripts]]
+filter = 'package(thrust-profiling) & test(/^prof_cpu_/)'
+run-wrapper = 'samply'
 
 # --- mutants: selected by cargo-mutants through .cargo/mutants.toml ---------------------
 # One failing test is enough to prove a mutant was caught: stop and kill stragglers.

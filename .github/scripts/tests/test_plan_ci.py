@@ -182,7 +182,7 @@ SAMPLES = [
     "tools/compat-record/record.py", "tools/compat-inventory/out-pinned/endpoint-inventory.csv",
     ".agents/plans/contrail/research/0003-compat-plane-inventory.md", "tools/e2e-har/scrub.py", "e2e/journeys/m1.spec.ts",
     "web/apps/web/app.tsx", "scripts/e2e.sh", "scripts/oracle-v1.sh", "scripts/mutants.sh", "scripts/stage2-contract.sh",
-    "scripts/check-web-diff.sh", "scripts/check-book.sh", "scripts/check-topology.sh", "scripts/smoke-deploy.sh", "scripts/flagship.py", "scripts/preview-config.py", "scripts/verify-all.sh",
+    "scripts/check-web-diff.sh", "scripts/check-book.sh", "scripts/check-topology.sh", "scripts/smoke-deploy.sh", "scripts/flagship.py", "scripts/preview-config.py", "scripts/samply-wrapper.sh", "scripts/verify-all.sh",
     "scripts/new-thing.sh", "docs/src/intro.md", "AGENTS.md", ".github/scripts/lint-workflow.sh", ".github/workflows/deploy.yml",
 ]
 NOTHING = ["README.md", "CHANGELOG.md", ".agents/plans/x.md", "docs-notes.md", "CLAUDE.md", "crates-AGENTS.md", "probes/send-shape/run.sh", "tools/spike-0006/x", ".github/CODEOWNERS"]

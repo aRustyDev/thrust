@@ -114,6 +114,8 @@ RULES = [
      "the Flagship reconciler (its policy check runs in deps, its tests in ci-scripts; flagship.yml runs it)"),
     (r"^scripts/preview-(config|result)\.py$", {"jobs": ["ci-scripts"]},
      "a Preview target's configuration, or the reading of what was deployed (tested by ci-scripts)"),
+    (r"^scripts/samply-wrapper\.sh$", {"jobs": ["ci-scripts"]},
+     "the `prof` profile's samply wrapper (tested by ci-scripts with a fake samply; `--profile prof` runs in no job)"),
     (r"^scripts/(verify-all|flake-hunt|measure-argon2|spike-0002-pg|stage2-latency)\.sh$|^scripts/measure-argon2-summary\.py$",
      {}, "a script no job of ci.yml runs"),
     (r"^scripts/", FULL, "a script this planner does not know"),
