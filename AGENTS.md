@@ -94,6 +94,7 @@ Where those docs and the rules below disagree, the rules win; record the disagre
 | `/api/v1` against the Plane v1 oracle: scoped gate, corpus comparison, controls (needs `uv`; Docker for `native-pg` and `worker-cf`) | `scripts/oracle-v1.sh native-memory controls` (`tools/oracle-v1/README.md`) |
 | The browser journeys, one spec each in `e2e/journeys/`: the stock app in Chromium against a Worker that serves it, no 404 in the network log, with their must-fail controls and a count guard (needs Docker, wrangler, Node, pnpm; builds the app when it is not built) | `scripts/e2e.sh worker-cf controls` (`docs/src/testing/techniques/app-and-e2e.md`, `docs/src/testing/status.md` G-30, G-31). The same journeys on the pinned Plane, local only (needs the fork checkout): `ORACLE_DIR=<fork>/oracle scripts/e2e.sh plane-oracle controls` (`tools/e2e-plane/README.md`) |
 | The adapter suites that need Docker (`pg_adapter`, `smtp_sink`) | `cargo nextest run -p thrust-adapters-selfhosted --profile adapters` |
+| The v1 router's profiles, written under `target/profiling/`: heap (dhat) and CPU (samply; needs `cargo install samply`) | `cargo nextest run -p thrust-profiling --profile prof --cargo-profile release` |
 | Mutation testing, one file (the crate needs tests of its own) | `cargo mutants -f <path>` |
 
 A `-E` filter is intersected with the profile's default filter, so `oracle_` tests only run under the `oracle` and
