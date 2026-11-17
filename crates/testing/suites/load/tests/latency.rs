@@ -1,47 +1,28 @@
-//! Local latency probe for the work-item path. Prints p50/p95/p99 for a create and a list through `/api/v1` (what the app's
-//! API clients call), for the slice's activity feed, and for a create's whole way to a visible activity row.
-//! Usage: THRUST_BASE_URL=... THRUST_ADMIN_TOKEN=... bench [iterations] [concurrency]
+//! The latency probe of the work-item path, as two load tests (one request at a time, and eight at once). Each prints p50, p95
+//! and p99 for a create and a list through `/api/v1` (what the app's API clients call), for the slice's activity feed, and for a
+//! create's whole way to a visible activity row. It needs a running target (`THRUST_BASE_URL`, `THRUST_ADMIN_TOKEN`):
+//! `scripts/contract.sh <target> bench` starts one and runs these with the `load` profile, release-built.
 //!
-//! This measures the *local* path (localhost HTTP -> target -> adapters). It is not a
-//! production latency number: see Stage 2 in research/0004.
+//! This measures the *local* path (localhost HTTP -> target -> adapters). It is not a production latency number: see Stage 2 in
+//! research/0004. A test passes when every request it made succeeded; a number is not a pass or a fail (no budget gates yet,
+//! X19). `THRUST_LOAD_ITERATIONS` sets the creates per test (200).
 //!
 //! The create and the list were the slice's until the vehicle tests moved (G-26), so a number from this probe is not comparable to
 //! one recorded before: a `/api/v1` create reads the project's states and members, takes a state, writes the item's attributes and
 //! a history, and its list is a page of at most a hundred. Each request counts against the key's allowance (Plane's 60 a minute,
 //! `Target::v1_limit`), so the probe takes a fresh member (a fresh key) every `limit - 5` requests, whatever the target's limit is.
 
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use serde_json::json;
 use thrust_contract_tests::*;
+use thrust_load_tests::{env_usize, per_key, report};
 
-fn pct(sorted: &[Duration], p: f64) -> Duration {
-    if sorted.is_empty() {
-        return Duration::ZERO;
-    }
-    let idx = ((sorted.len() as f64) * p).ceil() as usize;
-    sorted[idx.saturating_sub(1).min(sorted.len() - 1)]
-}
-
-fn report(name: &str, mut v: Vec<Duration>) {
-    v.sort();
-    let ms = |d: Duration| d.as_secs_f64() * 1000.0;
-    println!(
-        "{name:<28} n={:<5} p50={:>7.2}ms p95={:>7.2}ms p99={:>7.2}ms max={:>7.2}ms",
-        v.len(),
-        ms(pct(&v, 0.50)),
-        ms(pct(&v, 0.95)),
-        ms(pct(&v, 0.99)),
-        ms(*v.last().unwrap_or(&Duration::ZERO)),
-    );
-}
-
-#[tokio::main]
-async fn main() {
-    let n: usize = std::env::args().nth(1).and_then(|v| v.parse().ok()).unwrap_or(200);
-    let conc: usize = std::env::args().nth(2).and_then(|v| v.parse().ok()).unwrap_or(1);
-    let t = std::sync::Arc::new(Target::from_env());
-    let f = std::sync::Arc::new(Fixture::seed(&t).await);
+async fn latency(concurrency: usize) {
+    let n = env_usize("THRUST_LOAD_ITERATIONS", 200);
+    let t = Arc::new(Target::from_env());
+    let f = Arc::new(Fixture::seed(&t).await);
 
     // warm-up so isolate/connection start-up is not in the percentiles (reported separately)
     let w0 = Instant::now();
@@ -50,7 +31,7 @@ async fn main() {
     println!("first create (cold-ish): {:.2}ms", w0.elapsed().as_secs_f64() * 1000.0);
 
     // a key's allowance is per minute, and the batches below may be a concurrent few: stay clear of it
-    let per_key = (Target::v1_limit() as usize).saturating_sub(5).max(conc.max(1));
+    let per_key = per_key(Target::v1_limit(), concurrency);
     let mut creates = Vec::new();
     let mut lists = Vec::new();
     let mut activities = Vec::new();
@@ -58,10 +39,10 @@ async fn main() {
     let mut used = 0usize;
     let mut last_item = None;
 
-    // sequential section (conc == 1) or batches of `conc` concurrent requests
+    // batches of `concurrency` requests (one at a time when it is 1)
     let mut done = 0usize;
     while done < n {
-        let batch = conc.min(n - done);
+        let batch = concurrency.min(n - done);
         if used + batch > per_key {
             user = f.extra_member(&t).await;
             used = 0;
@@ -140,11 +121,21 @@ async fn main() {
         delivery.push(s.elapsed());
     }
 
-    println!("concurrency={conc}");
-    report("POST create work item", creates);
-    report("GET list work items", lists);
-    report("GET activity", activities);
+    println!("concurrency={concurrency}");
+    report(&mut std::io::stdout(), "POST create work item", creates).unwrap();
+    report(&mut std::io::stdout(), "GET list work items", lists).unwrap();
+    report(&mut std::io::stdout(), "GET activity", activities).unwrap();
     if !skip_delivery {
-        report("create -> activity visible", delivery);
+        report(&mut std::io::stdout(), "create -> activity visible", delivery).unwrap();
     }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn load_latency_one_request_at_a_time() {
+    latency(1).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn load_latency_eight_requests_at_once() {
+    latency(8).await;
 }

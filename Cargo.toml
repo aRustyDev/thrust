@@ -17,6 +17,7 @@ members = [
     "crates/edge",
     "crates/server",
     "crates/testing/suites/api",
+    "crates/testing/suites/load",
     "crates/testing/fixtures/oracle",
     "crates/editor/doc",
     "crates/spikes/editor-worker",
@@ -59,6 +60,7 @@ thrust-compat-plane = { path = "crates/api/compat-plane" }
 # dependency unless the workspace entry has it. Every user of thrust-editor-doc asks for the one feature it needs.
 thrust-editor-doc = { path = "crates/editor/doc", default-features = false }
 thrust-oracle-fixture = { path = "crates/testing/fixtures/oracle" }
+thrust-contract-tests = { path = "crates/testing/suites/api" }
 
 # ADR-0006's panic policy: request-derived data can never panic, because on the Worker (panic=abort) a panic fails its own request
 # and can fail others on the same isolate. A crate opts in with `[lints] workspace = true`: thrust-core, thrust-ports and every

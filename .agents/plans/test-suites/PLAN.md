@@ -146,6 +146,12 @@ Verify:
 
 `stress`, `spike` and `soak` are not created: each joins when it has a workload (ADR-0009, no stubs).
 
+As built (2026-11-17): the `default` profile leaves out only `package(thrust-load-tests) & test(/^load_/)`, not the whole
+package, so the library's own hermetic tests (`tests/measure.rs`: percentiles, key rotation, the seeded items, `timed`) run in
+the default loop. cargo-mutants on the crate: 38 mutants, 33 caught, 0 missed, 2 unviable, 3 timeouts (loops made endless). Its
+first run missed 6; the fix was to test `report`'s output (it takes the writer), `env_usize`, and the index `timed` hands each
+call, not to skip anything.
+
 ## PR 4: `crates/testing/profiling` (`thrust-profiling`), the heap profile
 
 - `crates/testing/profiling/` is one crate, `thrust-profiling`: each workload is a test file with `prof_` tests. It
@@ -192,7 +198,7 @@ a `prof_cpu_` test that must fail fails under the wrapper, and the profile file 
 |---|---|
 | Plan | this pull request |
 | PR 1, contract suite onto nextest | merged in #243 (`a5a11ff`): CI found cargo-nextest missing from the contract cells, fixed with a `nextest` input to `setup-rust` |
-| PR 2, adapter suites onto nextest | in review, branch `test/adapter-suites-nextest` |
-| PR 3, load suite | not started |
+| PR 2, adapter suites onto nextest | merged in #252 (`b83ece3`): every Rust test on nextest except the doctests; merged with #248's mutants verdicts |
+| PR 3, load suite | in review, branch `test/load-suite` |
 | PR 4, profiling: heap | not started |
 | PR 5, profiling: CPU | not started |

@@ -2,8 +2,9 @@
 # Verified with cargo-nextest 0.9.140; the 0.9.131 floor is from the source archive and was not re-run.
 #
 # Profiles:  default (fast hermetic loop) | ci | deep | oracle | mutants | contract (the contract suite against a running target)
-#            | adapters (the adapter suites that need Docker)
-# Test-name prefixes route tests:  prop_  model_  oracle_  (parity_, fuzz_replay_ and regression_ run by default)
+#            | adapters (the adapter suites that need Docker) | load (the load tests against a running target)
+# Test-name prefixes route tests:  prop_  model_  oracle_  load_  (parity_, fuzz_replay_ and regression_ run by default)
+# load_ = a load test of thrust-load-tests: it measures a running target, so it runs only with the `load` profile.
 # regression_ = a pinned regression (AGENTS.md rule 9). It follows a category prefix (model_regression_...) or rstest's
 # case_<n>_, so select it with test(/regression_/), never \bregression_.
 # oracle_ = compared with the TypeScript (or Python) oracle: live through Node, or against its generated, git-ignored
@@ -28,8 +29,9 @@ mock-idp = { max-threads = 1 }
 # Excluded from the hermetic loop: oracle_ tests need the oracle (Node, or its generated output); the contract suite panics without THRUST_BASE_URL and
 # THRUST_ADMIN_TOKEN (a running target), and runs through scripts/contract.sh with the `contract` profile below; pg_adapter starts a
 # Postgres container through Docker, and smtp_sink a Mailpit one: those two run with the `adapters` profile below. The SMTP adapter's
-# other two suites (smtp_wire: a scripted server in the test's own process; smtp_config) are hermetic and run here.
-default-filter = 'not (test(/\boracle_/) | package(thrust-contract-tests) | binary(pg_adapter) | binary(smtp_sink))'
+# other two suites (smtp_wire: a scripted server in the test's own process; smtp_config) are hermetic and run here. The load tests
+# (thrust-load-tests' load_ tests) need a running target too; that crate's own tests of what they compute are hermetic and run here.
+default-filter = 'not (test(/\boracle_/) | package(thrust-contract-tests) | binary(pg_adapter) | binary(smtp_sink) | (package(thrust-load-tests) & test(/^load_/)))'
 retries = 0
 slow-timeout = { period = "30s", terminate-after = 4 }
 
@@ -116,6 +118,24 @@ path = "junit.xml"   # written to target/nextest/adapters/junit.xml
 [[profile.adapters.overrides]]
 filter = 'all()'
 slow-timeout = { period = "120s" }
+
+# --- load: the load tests against a target that is already running -------------------------
+# scripts/contract.sh's `bench` and `scale` passes start a target and run them, release-built, as
+#   cargo nextest run --cargo-profile release -p thrust-load-tests --profile load -E 'test(/^load_latency_/)'   (or load_scale_)
+# One at a time, so one load test's requests are not in another's numbers. A load test prints what it measured, so its output
+# is shown when it passes too. A pass is every request succeeding; no number gates yet (X19).
+[profile.load]
+default-filter = 'package(thrust-load-tests) & test(/^load_/)'
+test-threads = 1
+fail-fast = false
+success-output = "immediate"
+failure-output = "immediate"
+
+# No kill: the scale test seeds 110,000 rows before it measures, which takes minutes. The profile's own override, so it
+# outranks the default profile's ones.
+[[profile.load.overrides]]
+filter = 'all()'
+slow-timeout = { period = "300s" }
 
 # --- mutants: selected by cargo-mutants through .cargo/mutants.toml ---------------------
 # One failing test is enough to prove a mutant was caught: stop and kill stragglers.

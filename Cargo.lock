@@ -3934,6 +3934,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "thrust-load-tests"
+version = "0.2.0"
+dependencies = [
+ "proptest",
+ "serde_json",
+ "thrust-contract-tests",
+ "thrust-contracts",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "thrust-oracle-fixture"
 version = "0.2.0"
 dependencies = [

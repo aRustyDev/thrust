@@ -9,14 +9,6 @@ publish.workspace = true
 [lib]
 path = "src/lib.rs"
 
-[[bin]]
-name = "bench"
-path = "src/bin/bench.rs"
-
-[[bin]]
-name = "bench_scale"
-path = "src/bin/bench_scale.rs"
-
 [dependencies]
 thrust-contracts = { workspace = true }
 serde_json = { workspace = true }
