@@ -21,7 +21,7 @@ use thrust_core::{CoreError, ProjectError, ProjectPatch};
 use thrust_ports::{ProjectListing, ProjectRow, WorkspaceScope};
 
 use crate::dto::{into_object, ProjectDto, ProjectLiteDto};
-use crate::fields::{bool_field, fail, no_such_pk, read_into, refuse_if_any, FieldErrors};
+use crate::fields::{fail, no_such_pk, refuse_if_any, request, FieldErrors};
 use crate::pagination::{Page, PageRequest};
 use crate::request::{json_body, pick_fields, query_map, Body};
 use crate::values::{AnyJson, NullableProse, NullableText, NullableUuid, Prose, Text, Timezone, Whole};
@@ -208,69 +208,41 @@ fn non_field(message: &str) -> V1Error {
     V1Error::Fields(errors)
 }
 
-/// What a body says of a project, as the pin's `ProjectCreateSerializer` (and, for a change, `ProjectUpdateSerializer`) reads it. The
-/// pin names a body whose keys may all be left out `Patched…`, and this is that: a change reads into it as it is, and a creation reads
-/// into it, must also name [`PatchedProjectUpdateRequest::REQUIRED`], and does not read [`PatchedProjectUpdateRequest::CHANGE_ONLY`].
-/// A key left out is `None`. Each field's type says what it takes, and the document is written from these types (the schema
-/// `PatchedProjectUpdateRequest` is this struct, and `Creations` in `openapi.rs` makes `ProjectCreateRequest` of it with `REQUIRED`
-/// and without `CHANGE_ONLY`), so the bounds below are the only place they are written; the two lengths are core's own constants. A
-/// field it does not know (a `network`, an `id`) is ignored.
-#[derive(Debug, Default)]
-#[cfg_attr(
-    feature = "openapi",
-    derive(utoipa::ToSchema),
-    schema(
-        description = "What a project's change takes (the pin's `ProjectUpdateSerializer`): the creation's keys, none required, and the two ids that a\nchange can set."
-    )
-)]
-pub(crate) struct PatchedProjectUpdateRequest {
-    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
-    name: Option<Text<1, { thrust_core::MAX_PROJECT_NAME }>>,
-    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
-    identifier: Option<Text<1, { thrust_core::MAX_PROJECT_IDENTIFIER }>>,
-    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
-    description: Option<Prose>,
-    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
-    emoji: Option<NullableText<0, 255>>,
-    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
-    cover_image: Option<NullableProse>,
-    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
-    external_source: Option<NullableText<0, 255>>,
-    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
-    external_id: Option<NullableText<0, 255>>,
-    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
-    icon_prop: Option<AnyJson>,
-    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
-    module_view: Option<bool>,
-    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
-    cycle_view: Option<bool>,
-    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
-    issue_views_view: Option<bool>,
-    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
-    page_view: Option<bool>,
-    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
-    intake_view: Option<bool>,
-    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
-    guest_view_all_features: Option<bool>,
-    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
-    is_issue_type_enabled: Option<bool>,
-    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
-    is_time_tracking_enabled: Option<bool>,
-    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
-    archive_in: Option<Whole<0, { thrust_core::MAX_PROJECT_MONTHS }>>,
-    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
-    close_in: Option<Whole<0, { thrust_core::MAX_PROJECT_MONTHS }>>,
-    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
-    timezone: Option<Timezone>,
-    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
-    project_lead: Option<NullableUuid>,
-    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
-    default_assignee: Option<NullableUuid>,
-    // the two that only a change reads (`CHANGE_ONLY`)
-    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
-    default_state: Option<NullableUuid>,
-    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
-    estimate: Option<NullableUuid>,
+request! {
+    #[schema(description = "What a project's change takes (the pin's `ProjectUpdateSerializer`): the creation's keys, none required, and the two ids that a\nchange can set.")]
+    /// What a body says of a project, as the pin's `ProjectCreateSerializer` (and, for a change, `ProjectUpdateSerializer`) reads it. The
+    /// pin names a body whose keys may all be left out `Patched…`, and this is that: a change reads into it as it is, and a creation reads
+    /// into it, must also name [`PatchedProjectUpdateRequest::REQUIRED`], and does not read [`PatchedProjectUpdateRequest::CHANGE_ONLY`].
+    /// A key left out is `None`. Each field's type says what it takes, and the document is written from these types (the schema
+    /// `PatchedProjectUpdateRequest` is this struct, and `Creations` in `openapi.rs` makes `ProjectCreateRequest` of it with `REQUIRED`
+    /// and without `CHANGE_ONLY`), so the bounds below are the only place they are written; the two lengths are core's own constants. A
+    /// field it does not know (a `network`, an `id`) is ignored.
+    pub(crate) struct PatchedProjectUpdateRequest {
+        name: Text<1, { thrust_core::MAX_PROJECT_NAME }>,
+        identifier: Text<1, { thrust_core::MAX_PROJECT_IDENTIFIER }>,
+        description: Prose,
+        emoji: NullableText<0, 255>,
+        cover_image: NullableProse,
+        external_source: NullableText<0, 255>,
+        external_id: NullableText<0, 255>,
+        icon_prop: AnyJson,
+        module_view: bool,
+        cycle_view: bool,
+        issue_views_view: bool,
+        page_view: bool,
+        intake_view: bool,
+        guest_view_all_features: bool,
+        is_issue_type_enabled: bool,
+        is_time_tracking_enabled: bool,
+        archive_in: Whole<0, { thrust_core::MAX_PROJECT_MONTHS }>,
+        close_in: Whole<0, { thrust_core::MAX_PROJECT_MONTHS }>,
+        timezone: Timezone,
+        project_lead: NullableUuid,
+        default_assignee: NullableUuid,
+        // the two that only a change reads (`CHANGE_ONLY`)
+        default_state: NullableUuid,
+        estimate: NullableUuid,
+    }
 }
 
 impl PatchedProjectUpdateRequest {
@@ -303,31 +275,7 @@ impl PatchedProjectUpdateRequest {
                 .collect();
             &creation_body
         };
-        let request = read_into!(PatchedProjectUpdateRequest, errors, b, {
-            name: Text::read,
-            identifier: Text::read,
-            description: Prose::read,
-            emoji: NullableText::read,
-            cover_image: NullableProse::read,
-            external_source: NullableText::read,
-            external_id: NullableText::read,
-            icon_prop: AnyJson::read,
-            module_view: bool_field,
-            cycle_view: bool_field,
-            issue_views_view: bool_field,
-            page_view: bool_field,
-            intake_view: bool_field,
-            guest_view_all_features: bool_field,
-            is_issue_type_enabled: bool_field,
-            is_time_tracking_enabled: bool_field,
-            archive_in: Whole::read,
-            close_in: Whole::read,
-            timezone: Timezone::read,
-            project_lead: NullableUuid::read,
-            default_assignee: NullableUuid::read,
-            default_state: NullableUuid::read,
-            estimate: NullableUuid::read,
-        });
+        let request = PatchedProjectUpdateRequest::read_fields(&mut errors, b);
         (request, errors)
     }
 

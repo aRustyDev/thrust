@@ -1,8 +1,9 @@
 //! The values a v1 request is read into: a text of so many characters, a text that can be `null`, a text with no bound.
 //!
-//! Each is one thing with two uses. [`Text::read`] reads a JSON value as DRF's `CharField` does, and (with the `openapi` feature) the
-//! type writes its own schema, `minLength` and `maxLength` from the same two numbers. So a bound is written once, in a field's type
-//! (`Text<1, 255>`), and the parser and the document cannot say different ones: there is no second place to change.
+//! Each is one thing with two uses. Its [`Field`] reader reads a JSON value as DRF's `CharField` does (for [`Text`]), and (with the
+//! `openapi` feature) the type writes its own schema, `minLength` and `maxLength` from the same two numbers. So a bound is written
+//! once, in a field's type (`Text<1, 255>`), and the parser and the document cannot say different ones: there is no second place to
+//! change.
 //!
 //! What the type says about `null` is part of the type: [`Text`] never takes one, [`NullableText`] does and writes `type: [string,
 //! null]`. Whether a key may be left out is the field's (`Option<_>` in the request struct), as it is in the core patches.
@@ -12,7 +13,7 @@ use thrust_contracts::chrono::NaiveDate;
 use thrust_contracts::Uuid;
 
 use crate::fields::{
-    char_field, choice_by, date_field, datetime_field, int_field, pk_field, py_str, uuid_field, PkRead,
+    char_field, choice_by, date_field, datetime_field, int_field, pk_field, py_str, uuid_field, Field, PkRead,
 };
 
 /// A text of `MIN` to `MAX` characters, read as DRF's `CharField` reads one: trimmed, counted in characters, a number taken as its
@@ -25,17 +26,21 @@ impl<const MIN: usize, const MAX: usize> Text<MIN, MAX> {
     /// What `MIN` can be: `CharField` knows blank or not.
     const MIN_IS_BLANK_OR_NOT: () = assert!(MIN <= 1, "a Text has a minimum of 0 or 1: DRF's blank flag");
 
-    pub(crate) fn read(v: &Value) -> Result<Self, String> {
-        let () = Self::MIN_IS_BLANK_OR_NOT;
-        char_field(v, Some(MAX), MIN == 0, false).map(|text| Self(text.unwrap_or_default()))
-    }
-
     pub(crate) fn as_str(&self) -> &str {
         &self.0
     }
 
     pub(crate) fn into_string(self) -> String {
         self.0
+    }
+}
+
+impl<const MIN: usize, const MAX: usize> Field for Text<MIN, MAX> {
+    type Refusal = String;
+
+    fn read(v: &Value) -> Result<Self, String> {
+        let () = Self::MIN_IS_BLANK_OR_NOT;
+        char_field(v, Some(MAX), MIN == 0, false).map(|text| Self(text.unwrap_or_default()))
     }
 }
 
@@ -46,13 +51,17 @@ pub(crate) struct NullableText<const MIN: usize, const MAX: usize>(Option<String
 impl<const MIN: usize, const MAX: usize> NullableText<MIN, MAX> {
     const MIN_IS_BLANK_OR_NOT: () = assert!(MIN <= 1, "a Text has a minimum of 0 or 1: DRF's blank flag");
 
-    pub(crate) fn read(v: &Value) -> Result<Self, String> {
-        let () = Self::MIN_IS_BLANK_OR_NOT;
-        char_field(v, Some(MAX), MIN == 0, true).map(Self)
-    }
-
     pub(crate) fn into_option(self) -> Option<String> {
         self.0
+    }
+}
+
+impl<const MIN: usize, const MAX: usize> Field for NullableText<MIN, MAX> {
+    type Refusal = String;
+
+    fn read(v: &Value) -> Result<Self, String> {
+        let () = Self::MIN_IS_BLANK_OR_NOT;
+        char_field(v, Some(MAX), MIN == 0, true).map(Self)
     }
 }
 
@@ -70,14 +79,6 @@ pub(crate) struct Key {
 pub(crate) struct NullableKey(Option<Key>);
 
 impl NullableKey {
-    pub(crate) fn read(v: &Value) -> Result<Self, String> {
-        match pk_field(v) {
-            PkRead::Null => Ok(Self(None)),
-            PkRead::Key { id, shown } => Ok(Self(Some(Key { id, shown }))),
-            PkRead::Refused(message) => Err(message),
-        }
-    }
-
     pub(crate) fn key(&self) -> Option<&Key> {
         self.0.as_ref()
     }
@@ -87,15 +88,23 @@ impl NullableKey {
     }
 }
 
+impl Field for NullableKey {
+    type Refusal = String;
+
+    fn read(v: &Value) -> Result<Self, String> {
+        match pk_field(v) {
+            PkRead::Null => Ok(Self(None)),
+            PkRead::Key { id, shown } => Ok(Self(Some(Key { id, shown }))),
+            PkRead::Refused(message) => Err(message),
+        }
+    }
+}
+
 /// A text with no bound that may be blank and is never `null` (a `TextField`: a description).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Prose(String);
 
 impl Prose {
-    pub(crate) fn read(v: &Value) -> Result<Self, String> {
-        char_field(v, None, true, false).map(|text| Self(text.unwrap_or_default()))
-    }
-
     pub(crate) fn as_str(&self) -> &str {
         &self.0
     }
@@ -105,17 +114,29 @@ impl Prose {
     }
 }
 
+impl Field for Prose {
+    type Refusal = String;
+
+    fn read(v: &Value) -> Result<Self, String> {
+        char_field(v, None, true, false).map(|text| Self(text.unwrap_or_default()))
+    }
+}
+
 /// A [`Prose`] that can also be `null`, which is `None` (a `cover_image`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct NullableProse(Option<String>);
 
 impl NullableProse {
-    pub(crate) fn read(v: &Value) -> Result<Self, String> {
-        char_field(v, None, true, true).map(Self)
-    }
-
     pub(crate) fn into_option(self) -> Option<String> {
         self.0
+    }
+}
+
+impl Field for NullableProse {
+    type Refusal = String;
+
+    fn read(v: &Value) -> Result<Self, String> {
+        char_field(v, None, true, true).map(Self)
     }
 }
 
@@ -125,13 +146,17 @@ impl NullableProse {
 pub(crate) struct Whole<const MIN: i32, const MAX: i32>(i32);
 
 impl<const MIN: i32, const MAX: i32> Whole<MIN, MAX> {
-    pub(crate) fn read(v: &Value) -> Result<Self, String> {
-        let n = int_field(v, i64::from(MIN), i64::from(MAX))?;
-        i32::try_from(n).map(Self).map_err(|e| e.to_string())
-    }
-
     pub(crate) fn get(self) -> i32 {
         self.0
+    }
+}
+
+impl<const MIN: i32, const MAX: i32> Field for Whole<MIN, MAX> {
+    type Refusal = String;
+
+    fn read(v: &Value) -> Result<Self, String> {
+        let n = int_field(v, i64::from(MIN), i64::from(MAX))?;
+        i32::try_from(n).map(Self).map_err(|e| e.to_string())
     }
 }
 
@@ -141,12 +166,16 @@ impl<const MIN: i32, const MAX: i32> Whole<MIN, MAX> {
 pub(crate) struct Timezone(String);
 
 impl Timezone {
-    pub(crate) fn read(v: &Value) -> Result<Self, String> {
-        choice_by(v, thrust_core::is_known_timezone).map(Self)
-    }
-
     pub(crate) fn into_string(self) -> String {
         self.0
+    }
+}
+
+impl Field for Timezone {
+    type Refusal = String;
+
+    fn read(v: &Value) -> Result<Self, String> {
+        choice_by(v, thrust_core::is_known_timezone).map(Self)
     }
 }
 
@@ -155,16 +184,20 @@ impl Timezone {
 pub(crate) struct AnyJson(Option<Value>);
 
 impl AnyJson {
+    pub(crate) fn into_option(self) -> Option<Value> {
+        self.0
+    }
+}
+
+impl Field for AnyJson {
+    type Refusal = String;
+
     #[allow(
         clippy::unnecessary_wraps,
         reason = "the reader of every value has the same shape: this is the one that reads anything"
     )]
-    pub(crate) fn read(v: &Value) -> Result<Self, String> {
+    fn read(v: &Value) -> Result<Self, String> {
         Ok(Self(if v.is_null() { None } else { Some(v.clone()) }))
-    }
-
-    pub(crate) fn into_option(self) -> Option<Value> {
-        self.0
     }
 }
 
@@ -174,12 +207,16 @@ impl AnyJson {
 pub(crate) struct NullableUuid(Option<Uuid>);
 
 impl NullableUuid {
-    pub(crate) fn read(v: &Value) -> Result<Self, String> {
-        uuid_field(v).map(Self)
-    }
-
     pub(crate) fn id(self) -> Option<Uuid> {
         self.0
+    }
+}
+
+impl Field for NullableUuid {
+    type Refusal = String;
+
+    fn read(v: &Value) -> Result<Self, String> {
+        uuid_field(v).map(Self)
     }
 }
 
@@ -194,14 +231,18 @@ pub(crate) struct SentText<const MIN: usize, const MAX: usize> {
 impl<const MIN: usize, const MAX: usize> SentText<MIN, MAX> {
     const MIN_IS_BLANK_OR_NOT: () = assert!(MIN <= 1, "a Text has a minimum of 0 or 1: DRF's blank flag");
 
-    pub(crate) fn read(v: &Value) -> Result<Self, String> {
+    pub(crate) fn into_parts(self) -> (String, String) {
+        (self.sent, self.kept)
+    }
+}
+
+impl<const MIN: usize, const MAX: usize> Field for SentText<MIN, MAX> {
+    type Refusal = String;
+
+    fn read(v: &Value) -> Result<Self, String> {
         let () = Self::MIN_IS_BLANK_OR_NOT;
         let kept = char_field(v, Some(MAX), MIN == 0, false)?.unwrap_or_default();
         Ok(Self { sent: py_str(v), kept })
-    }
-
-    pub(crate) fn into_parts(self) -> (String, String) {
-        (self.sent, self.kept)
     }
 }
 
@@ -214,10 +255,6 @@ pub(crate) struct NullableDate {
 }
 
 impl NullableDate {
-    pub(crate) fn read(v: &Value) -> Result<Self, String> {
-        date_field(v).map(|date| Self { sent: v.as_str().map(str::to_string), date })
-    }
-
     pub(crate) fn date(&self) -> Option<NaiveDate> {
         self.date
     }
@@ -227,17 +264,29 @@ impl NullableDate {
     }
 }
 
+impl Field for NullableDate {
+    type Refusal = String;
+
+    fn read(v: &Value) -> Result<Self, String> {
+        date_field(v).map(|date| Self { sent: v.as_str().map(str::to_string), date })
+    }
+}
+
 /// A date and time or `null`, of which only whether it was given is kept: a `deleted_at` is read and checked, and not stored.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct NullableDateTime(bool);
 
 impl NullableDateTime {
-    pub(crate) fn read(v: &Value) -> Result<Self, String> {
-        datetime_field(v).map(Self)
-    }
-
     pub(crate) fn is_set(self) -> bool {
         self.0
+    }
+}
+
+impl Field for NullableDateTime {
+    type Refusal = String;
+
+    fn read(v: &Value) -> Result<Self, String> {
+        datetime_field(v).map(Self)
     }
 }
 
@@ -246,23 +295,27 @@ impl NullableDateTime {
 pub(crate) struct NullableWhole<const MIN: i32, const MAX: i32>(Option<i32>);
 
 impl<const MIN: i32, const MAX: i32> NullableWhole<MIN, MAX> {
-    pub(crate) fn read(v: &Value) -> Result<Self, String> {
+    pub(crate) fn get(self) -> Option<i32> {
+        self.0
+    }
+}
+
+impl<const MIN: i32, const MAX: i32> Field for NullableWhole<MIN, MAX> {
+    type Refusal = String;
+
+    fn read(v: &Value) -> Result<Self, String> {
         if v.is_null() {
             return Ok(Self(None));
         }
         Whole::<MIN, MAX>::read(v).map(|n| Self(Some(n.get())))
-    }
-
-    pub(crate) fn get(self) -> Option<i32> {
-        self.0
     }
 }
 
 #[cfg(feature = "openapi")]
 mod schema {
     //! What each type says in the document. An `Option<_>` field of one of these is written inline and not nullable
-    //! (`#[schema(inline, nullable = false)]`): utoipa would wrap a nullable value of a type of ours in a `oneOf`, and a type says
-    //! for itself whether it takes `null`.
+    //! (`#[schema(inline, nullable = false)]`, which `request!` writes on every field): utoipa would wrap a nullable value of a type of
+    //! ours in a `oneOf`, and a type says for itself whether it takes `null`.
 
     use std::borrow::Cow;
 

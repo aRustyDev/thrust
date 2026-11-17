@@ -21,17 +21,94 @@ pub fn fail(errors: &mut FieldErrors, field: &str, message: impl Into<String>) {
     errors.insert(field.to_string(), json!([message.into()]));
 }
 
-/// A request struct, read from a body: each field of the struct is read from the key that has its name, by the reader written beside it.
-/// The key is the field's own identifier (`stringify!`), so the two cannot be spelled apart, and the fields are read in the order
-/// they are written, which is the order the errors are filed in. A field whose name is not the key's (a Rust keyword: `type`) says so
-/// with `as`, beside the `rename` of its schema.
+/// A value a body can hold, read from the JSON value as DRF's field of that kind reads it. The reader is the type's own, so a request
+/// struct says `name: Text<1, 255>` and nothing else says how `name` is read: [`request!`] reads each field with the reader of its
+/// type, and (with the `openapi` feature) the same type writes the field's schema. A refusal is what the reader answers when the value
+/// is wrong ([`Refusal`]).
+pub(crate) trait Field: Sized {
+    type Refusal: Refusal;
+
+    fn read(v: &Value) -> Result<Self, Self::Refusal>;
+}
+
+impl Field for bool {
+    type Refusal = String;
+
+    fn read(v: &Value) -> Result<Self, String> {
+        bool_field(v)
+    }
+}
+
+impl Field for f64 {
+    type Refusal = String;
+
+    fn read(v: &Value) -> Result<Self, String> {
+        float_field(v)
+    }
+}
+
+/// A request struct and how it is read from a body, written once: one `name: Type` line a field. Every field is an `Option<Type>`
+/// (`None` is "the body does not name it", and also "it names it and it is wrong"), and the macro writes what has to be the same for
+/// all of them and so is not written again:
+///
+/// - the field's schema, `#[schema(inline, nullable = false)]`: the type says whether it takes `null`, and a nullable value of a type
+///   of ours would otherwise be wrapped in a `oneOf` (see `values.rs`). It is written here once, and no field can leave it off;
+/// - `read_fields`, which reads the body into the struct: each field from the key that is its own name (`stringify!`, so the two cannot
+///   be spelled apart), by the reader of its type ([`Field`]), in the order the fields are written, which is the order the errors are
+///   filed in;
+/// - `Debug`, `Default` and (with the `openapi` feature) `ToSchema`, which every request struct has.
+///
+/// A field whose name is not the key's (a Rust keyword: `type`) says so with `as`, and the macro writes the `rename` of its schema from
+/// the same word. What the macro does not write: the keys a creation must name (`REQUIRED`), the stages after the reading (rows that
+/// must exist, the dates' order) and the conversion into the core's patch, which differ by resource.
 ///
 /// ```ignore
-/// read_into!(StateRequest, errors, body, { name: Text::<1, 255>::read, type_ as "type": NullableKey::read })
+/// request! {
+///     #[schema(description = "What a state's change takes: the creation's keys, none required.")]
+///     /// What a body says of a state.
+///     pub(crate) struct PatchedStateRequest {
+///         name: Text<1, 255>,
+///         #[allow(dead_code, reason = "read, checked, and not kept")]
+///         is_triage: bool,
+///         type_ as "type": NullableKey,
+///     }
+/// }
 /// ```
-macro_rules! read_into {
-    ($request:ident, $errors:ident, $body:ident, { $($field:ident $(as $key:literal)? : $reader:expr),* $(,)? }) => {
-        $request { $($field: $crate::fields::read(&mut $errors, $body, $crate::fields::key_of!($field $(, $key)?), $reader)),* }
+macro_rules! request {
+    (
+        #[schema(description = $description:literal)]
+        $(#[$meta:meta])*
+        $vis:vis struct $request:ident {
+            $($(#[$field_meta:meta])* $field:ident $(as $key:literal)? : $ty:ty),* $(,)?
+        }
+    ) => {
+        #[derive(Debug, Default)]
+        #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema), schema(description = $description))]
+        $(#[$meta])*
+        $vis struct $request {
+            $(
+                #[cfg_attr(feature = "openapi", schema(inline, nullable = false $(, rename = $key)?))]
+                $(#[$field_meta])*
+                $field: Option<$ty>,
+            )*
+        }
+
+        impl $request {
+            /// Read every field the body names, and file what is wrong with each under its key.
+            fn read_fields(
+                errors: &mut $crate::fields::FieldErrors,
+                body: &serde_json::Map<String, serde_json::Value>,
+            ) -> Self {
+                Self {
+                    $($field: $crate::fields::read(
+                        errors,
+                        body,
+                        $crate::fields::key_of!($field $(, $key)?),
+                        <$ty as $crate::fields::Field>::read,
+                    )),*
+                }
+            }
+        }
     };
 }
 
@@ -44,7 +121,7 @@ macro_rules! key_of {
         $key
     };
 }
-pub(crate) use {key_of, read_into};
+pub(crate) use {key_of, request};
 
 /// What a reader answers when a value is wrong, and how it is filed under the field. A `String` is DRF's message, filed as `[message]`.
 /// A [`Value`] is the whole answer, for a field that is a list whose items are wrong one by one (`{"0": [message]}`).
