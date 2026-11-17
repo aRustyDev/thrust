@@ -43,7 +43,9 @@ model test over those ports.
 
 `crates/core/usecases/tests/assets.rs`: `model_assets_match_the_reference_over_any_sequence`, a sequence of asset steps (the lifecycle: create,
 upload, confirm, read, attach, and who may do each) against the memory adapters, compared with a reference model; its
-coverage control is `model_strategy_reaches_every_step_class` in the same file. The shared world (fixed clock, counter ids, a
+coverage controls are `model_strategy_reaches_every_step_class` in the same file and three pinned sequences that get to each of
+the 17 situations the model must reach, by construction and before any random draw (a check that asked 256 random sequences to
+reach them all failed about once in 7,900 runs, on the rarest one), so the random run only looks for what no one pinned. The shared world (fixed clock, counter ids, a
 `Background` that panics if used) is `crates/core/usecases/tests/common/mod.rs`.
 
 The core's model of the slice's create, delete and list, `model_work_items_match_the_reference_model`, went with those
