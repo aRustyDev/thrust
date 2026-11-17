@@ -1,15 +1,24 @@
 name: test
 
 # The repository's tests, called by ci.yml (its `test` job) and runnable alone (ADR-0102). ci.yml passes `plan`, the jobs of this workflow
-# that plan-ci.py says the change needs (any of the four, or all); a run by hand plans them all. The `verdict` job judges the jobs against
-# that plan, so that a planned job that never ran turns ci.yml's `gate` red: a calling job is `success` when only some of its jobs ran.
-# The contract cells are still ci.yml's (the job `contract`, and `gate` judging their markers): they move in the next stage.
+# that plan-ci.py says the change needs (any of the five, or all), and `matrix` and `cells`, the contract cells it needs. The `verdict`
+# job judges the jobs against that plan, and the cells against their pass markers, so that a planned job that never ran, or a planned
+# cell that never passed, turns ci.yml's `gate` red: a calling job is `success` when only some of its jobs ran. A run by hand plans the
+# four other jobs and no cell: give `plan` with `contract`, a matrix and the same cells to run some (a run of `ci` by hand runs them all).
 
 on:
   workflow_call:
     inputs:
       plan:
         description: JSON array of this workflow's jobs to run (the planner's `plans.test`)
+        type: string
+        required: true
+      matrix:
+        description: The contract cells to run, as the matrix of the job `contract` (the planner's `matrix`)
+        type: string
+        required: true
+      cells:
+        description: JSON array of the same cells as "<target> <pass>" (the planner's `cells`), which the verdict job judges the markers against
         type: string
         required: true
     outputs:
@@ -22,6 +31,14 @@ on:
         description: JSON array of the jobs to run
         type: string
         default: '["ci-scripts","hermetic","pg-adapter","mutants"]'
+      matrix:
+        description: The contract cells to run, as a matrix (none by default)
+        type: string
+        default: '{"include":[]}'
+      cells:
+        description: JSON array of the same cells as "<target> <pass>"
+        type: string
+        default: '[]'
 
 permissions: {}
 
@@ -164,6 +181,22 @@ jobs:
       - name: Preview provisioner security and lifecycle (Postgres)
         run: bash infra/preview/scripts/test-provisioner-bootstrap.sh
 
+  # One job per cell, each on a fresh runner with its own checkout, so the shared-build-directory
+  # hazard that forces contract-all.sh to run serially on one machine does not apply here.
+  # Only the cells the change needs (plan-ci.py): a target runs when the binary it serves is affected, a pass when its own
+  # inputs changed (tools/oracle-v1/ the oracle cells, e2e/ and web/ the browser journeys).
+  contract:
+    if: contains(fromJSON(inputs.plan), 'contract')
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(inputs.matrix) }}
+    uses: ./.github/workflows/contract-cell.yml
+    with:
+      target: ${{ matrix.target }}
+      pass: ${{ matrix.pass }}
+    permissions:
+      contents: read
+
   # Mutation controls: every deliberately broken build must make the suite fail.
   mutants:
     if: contains(fromJSON(inputs.plan), 'mutants')
@@ -184,11 +217,12 @@ jobs:
         run: scripts/mutants.sh
 
   # ADR-0102: judges this workflow's jobs against the plan, through the action every called workflow uses (it runs assert-gate.sh and
-  # sets the output only after that passed). `always()`, so it reports when a job was skipped, failed or cancelled. ci.yml's `gate`
+  # sets the output only after that passed), and the cells of `contract` against the pass markers they uploaded, which the action
+  # downloads because it is given a cell job. `always()`, so it reports when a job was skipped, failed or cancelled. ci.yml's `gate`
   # requires the output: a `verdict` job that was itself skipped leaves this workflow `success` and proves nothing. The checkout is
   # here and not in the action, which is read from it.
   verdict:
-    needs: [ci-scripts, hermetic, pg-adapter, mutants]
+    needs: [ci-scripts, hermetic, pg-adapter, contract, mutants]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -205,4 +239,6 @@ jobs:
         with:
           needs: ${{ toJSON(needs) }}
           plan: ${{ inputs.plan }}
-          jobs: ci-scripts hermetic pg-adapter mutants
+          jobs: ci-scripts hermetic pg-adapter contract mutants
+          cell-job: contract
+          cells: ${{ inputs.cells }}

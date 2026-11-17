@@ -10,8 +10,9 @@
   --full      run everything, for the reason given (no usable base, a release candidate, a merge queue, the nightly run)
 
 It prints, for $GITHUB_OUTPUT:
-  jobs=<JSON list of the jobs that must run>   the gate (assert-gate.sh) requires each to succeed, and every other to be skipped
-  matrix=<{"include":[{"target":..,"pass":..}]}> and cells=<JSON list of "<target> <pass>">   the cells that must run
+  jobs=<JSON list of the jobs that must run, wherever they live>   the record of the plan; `top` and `plans` are what is judged
+  matrix=<{"include":[{"target":..,"pass":..}]}> and cells=<JSON list of "<target> <pass>">   the cells that must run: test.yml's job
+                    `contract` runs the matrix, and its `verdict` job judges the cells' pass markers against `cells`
   top=<JSON list>   what ci.yml's own gate expects (ADR-0102): the planned jobs that are still jobs of ci.yml itself, then the
                     called workflows that have a planned job
   workflows=<JSON list of the called workflows that have a planned job> and plans=<{"workflow": [its planned jobs]}>   each
@@ -54,7 +55,7 @@ JOBS = ("ci-scripts", "deps", "lint", "deny", "hermetic", "pg-adapter", "contrac
 # The called workflow each job belongs to (ADR-0102): {workflow: (its jobs)}. A job in none is still a job of ci.yml itself. Every
 # migration stage moves its jobs in here; a job may be in one workflow only, and a name here must be one of JOBS (check_workflows).
 # ci.yml's `gate` lists these workflows too, as VERDICT_JOBS, and test_plan_ci.py holds the two equal.
-WORKFLOWS = {"documentation": ("docs",), "security": ("deny",), "web": ("web",), "lint": ("deps", "lint"), "test": ("ci-scripts", "hermetic", "pg-adapter", "mutants")}
+WORKFLOWS = {"documentation": ("docs",), "security": ("deny",), "web": ("web",), "lint": ("deps", "lint"), "test": ("ci-scripts", "hermetic", "pg-adapter", "contract", "mutants")}
 
 # The binary each target of scripts/contract.sh starts. Everything a cell runs against is built from it.
 TARGET_BINARY = {

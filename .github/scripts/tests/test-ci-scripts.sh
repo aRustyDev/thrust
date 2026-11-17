@@ -60,14 +60,13 @@ mkdir -p "$T/plan1/scripts" && cp "$HERE/scripts/contract-all.sh" "$T/plan1/scri
 expect "plan: a run line with a changed format fails" 1 "the format changed" plan_in "$T/plan1"
 
 # ---- assert-gate.sh ------------------------------------------------------------------------------
-# What ci.yml's gate needs besides `changes`: the jobs still in ci.yml and the workflows it calls, which are CALLED (ci.yml sets
-# them as VERDICT_JOBS). Each migration stage moves a job's name out of this list and its workflow's name in.
-JOBS="contract documentation security web lint test"
+# What ci.yml's gate needs besides `changes`: the workflows it calls, which are CALLED (ci.yml sets them as VERDICT_JOBS). No job is left
+# in ci.yml itself: the migration moved each into a workflow, and the last, `contract`, took the judging of its cells into test.yml.
+JOBS="documentation security web lint test"
 CALLED="documentation security web lint test"
-gate() { # gate <dir> <needs-json> <expected-jobs-json> <planned-json> <reported markers...>
-  d="$T/gate/$1"; mkdir -p "$d/reported"; needs="$2"; expected="$3"; planned="$4"; shift 4
-  for m in "$@"; do printf '%s\n' "$m" > "$d/reported/$(echo "$m" | tr ' ' '-').ok"; done
-  ( cd "$d" && NEEDS_JSON="$needs" EXPECTED_JOBS="$expected" PLANNED="$planned" REPORTED_DIR="$d/reported" VERDICT_JOBS="$CALLED" "$S/assert-gate.sh" )
+gate() { # gate <dir> <needs-json> <expected-jobs-json>   (what ci.yml's gate passes: no cell job, no cells)
+  d="$T/gate/$1"; mkdir -p "$d"
+  ( cd "$d" && NEEDS_JSON="$2" EXPECTED_JOBS="$3" VERDICT_JOBS="$CALLED" "$S/assert-gate.sh" )
 }
 # needs <changes result> <job=result>...: the gate's needs, every job of $JOBS present; a job not named is skipped. A called workflow
 # reports `verdict=pass`, as its `verdict` job does when its own jobs were as planned.
@@ -84,93 +83,157 @@ needs() {
   done
   printf '}'
 }
-P='["native-memory main","worker-cf bindings"]'
-M1="native-memory main"; M2="worker-cf bindings"
 
 # Every job, expected or not, with every result: the gate passes exactly when an expected job succeeded or an unexpected one was
-# skipped. The other jobs are in a state that passes (contract expected and green, so the cell rules hold), so the case can only
-# fail because of the job under test.
+# skipped. The other jobs are not expected and skipped, a state that passes, so the case can only fail because of the job under test.
 for j in $JOBS; do
   for exp in yes no; do
     for r in success skipped failure cancelled; do
-      if [ "$j" = contract ] && [ "$exp" = no ]; then
-        n="$(needs success "contract=$r")"; e='[]'; pl='[]'; set --
-      elif [ "$j" = contract ]; then
-        n="$(needs success "contract=$r")"; e='["contract"]'; pl="$P"; set -- "$M1" "$M2"
-      elif [ "$exp" = yes ]; then
-        n="$(needs success "contract=success" "$j=$r")"; e="[\"contract\",\"$j\"]"; pl="$P"; set -- "$M1" "$M2"
-      else
-        n="$(needs success "contract=success" "$j=$r")"; e='["contract"]'; pl="$P"; set -- "$M1" "$M2"
-      fi
+      n="$(needs success "$j=$r")"
+      if [ "$exp" = yes ]; then e="[\"$j\"]"; else e='[]'; fi
       if [ "$exp" = yes ] && [ "$r" = success ]; then
-        expect "gate: $j expected and $r" 0 "ok:" gate "m-$j-$exp-$r" "$n" "$e" "$pl" "$@"
+        expect "gate: $j expected and $r" 0 "ok:" gate "m-$j-$exp-$r" "$n" "$e"
       elif [ "$exp" = no ] && [ "$r" = skipped ]; then
-        expect "gate: $j not expected and $r" 0 "ok:" gate "m-$j-$exp-$r" "$n" "$e" "$pl" "$@"
+        expect "gate: $j not expected and $r" 0 "ok:" gate "m-$j-$exp-$r" "$n" "$e"
       elif [ "$exp" = yes ]; then
-        expect "gate: $j expected but $r" 1 "$j was expected to run and its result is '$r'" gate "m-$j-$exp-$r" "$n" "$e" "$pl" "$@"
+        expect "gate: $j expected but $r" 1 "$j was expected to run and its result is '$r'" gate "m-$j-$exp-$r" "$n" "$e"
       else
-        expect "gate: $j not expected but $r" 1 "$j was not expected to run and its result is '$r'" gate "m-$j-$exp-$r" "$n" "$e" "$pl" "$@"
+        expect "gate: $j not expected but $r" 1 "$j was not expected to run and its result is '$r'" gate "m-$j-$exp-$r" "$n" "$e"
       fi
     done
   done
 done
 
-ALL='["contract","documentation","security","web","lint","test"]'
-# every job succeeded: "contract=success documentation=success ..."
+ALL='["documentation","security","web","lint","test"]'
+# every job succeeded: "documentation=success security=success ..."
 OKARGS=""
 for j in $JOBS; do OKARGS="$OKARGS $j=success"; done
 ALLOK="$(needs success $OKARGS)"
-expect "gate: everything expected, everything passed" 0 "6 expected jobs passed" gate a1 "$ALLOK" "$ALL" "$P" "$M1" "$M2"
+expect "gate: everything expected, everything passed" 0 "5 expected jobs passed" gate a1 "$ALLOK" "$ALL"
 # a called workflow must also say pass: its result alone is not the proof (research 0018: a `verdict` job that was skipped leaves it success).
 # Each called workflow is tried on its own, the others in a state that passes, so that the case can only fail because of it.
 noverdict() { printf '%s' "$1" | sed "s/\"$2\":{\"result\":\"success\",\"outputs\":{\"verdict\":\"pass\"}}/\"$2\":{\"result\":\"success\"$3}/"; }
 for w in $CALLED; do
   expect "gate: $w succeeded and its verdict output is missing" 1 "$w succeeded but its verdict output is 'missing'" \
-    gate "a5-$w" "$(noverdict "$ALLOK" "$w" '')" "$ALL" "$P" "$M1" "$M2"
+    gate "a5-$w" "$(noverdict "$ALLOK" "$w" '')" "$ALL"
   expect "gate: $w succeeded and its verdict output is empty" 1 "$w succeeded but its verdict output is 'missing'" \
-    gate "a6-$w" "$(noverdict "$ALLOK" "$w" ',"outputs":{"verdict":""}')" "$ALL" "$P" "$M1" "$M2"
+    gate "a6-$w" "$(noverdict "$ALLOK" "$w" ',"outputs":{"verdict":""}')" "$ALL"
   expect "gate: $w succeeded and its verdict output is 'fail'" 1 "$w succeeded but its verdict output is 'fail'" \
-    gate "a7-$w" "$(noverdict "$ALLOK" "$w" ',"outputs":{"verdict":"fail"}')" "$ALL" "$P" "$M1" "$M2"
+    gate "a7-$w" "$(noverdict "$ALLOK" "$w" ',"outputs":{"verdict":"fail"}')" "$ALL"
   OTHERS=""
   for j in $JOBS; do [ "$j" = "$w" ] || OTHERS="$OTHERS $j=success"; done
   expect "gate: $w is planned, and was skipped (its calling job's own if)" 1 "$w was expected to run and its result is 'skipped'" \
-    gate "a8-$w" "$(needs success $OTHERS)" "$ALL" "$P" "$M1" "$M2"
+    gate "a8-$w" "$(needs success $OTHERS)" "$ALL"
 done
-expect "gate: no called workflow is planned, and the gate passes" 0 "ok:" \
-  gate a9 "$(needs success)" '[]' '[]'
-expect "gate: nothing expected, everything skipped (README.md only)" 0 "no cells planned" gate a2 "$(needs success)" '[]' '[]'
-expect "gate: the changes job failed" 1 "changes job result is 'failure'" gate a3 "$(needs failure)" '[]' '[]'
-expect "gate: the changes job was skipped" 1 "changes job result is 'skipped'" gate a4 "$(needs skipped)" '[]' '[]'
-# the cells
-expect "gate: one planned cell never reported" 1 "planned cells that never reported success: worker-cf bindings" gate c1 "$(needs success contract=success)" '["contract"]' "$P" "$M1"
-expect "gate: a marker for an unplanned cell" 1 "not in the planned set: native-pg main" gate c2 "$(needs success contract=success)" '["contract"]' "$P" "$M1" "$M2" "native-pg main"
-expect "gate: contract expected but no cell planned" 1 "the planned cell set is empty" gate c3 "$(needs success contract=success)" '["contract"]' '[]' "$M1"
-expect "gate: contract expected and passed, but no marker at all" 1 "no cell markers found" gate c4 "$(needs success contract=success)" '["contract"]' "$P"
-expect "gate: cells planned but contract not expected" 1 "cells are planned but the contract job is not expected" gate c5 "$(needs success)" '[]' "$P"
+expect "gate: nothing expected, everything skipped (README.md only)" 0 "ok: 0 expected jobs passed" gate a2 "$(needs success)" '[]'
+expect "gate: the changes job failed" 1 "changes job result is 'failure'" gate a3 "$(needs failure)" '[]'
+expect "gate: the changes job was skipped" 1 "changes job result is 'skipped'" gate a4 "$(needs skipped)" '[]'
 # the planner and the gate's needs must agree on the job names
-expect "gate: the planner expects a job the gate does not know" 1 "the planner expects 'pages', which is not a job the gate knows" gate n1 "$(needs success)" '["pages"]' '[]'
+expect "gate: the planner expects a job the gate does not know" 1 "the planner expects 'pages', which is not a job the gate knows" gate n1 "$(needs success)" '["pages"]'
 NOWEB='{"changes":{"result":"success"},"lint":{"result":"skipped"}}'
-expect "gate: the planner expects a job that is not a need of the gate" 1 "the planner expects 'web', which is not a need of the gate" gate n2 "$NOWEB" '["web"]' '[]'
+expect "gate: the planner expects a job that is not a need of the gate" 1 "the planner expects 'web', which is not a need of the gate" gate n2 "$NOWEB" '["web"]'
 EXTRA="$(needs success | sed 's/}$/,"pages":{"result":"success"}}/')"
-expect "gate: a need the planner does not know" 1 "'pages' is a need of the gate but not a job the planner knows" gate n3 "$EXTRA" '[]' '[]'
-expect "gate: EXPECTED_JOBS is not JSON" 1 "EXPECTED_JOBS is not a JSON array of strings" gate n4 "$(needs success)" 'lint' '[]'
-expect "gate: EXPECTED_JOBS is a JSON string" 1 "EXPECTED_JOBS is not a JSON array of strings" gate n5 "$(needs success)" '"lint"' '[]'
-expect "gate: EXPECTED_JOBS is a JSON object" 1 "EXPECTED_JOBS is not a JSON array of strings" gate n6 "$(needs success)" '{}' '[]'
-expect "gate: EXPECTED_JOBS holds a number" 1 "EXPECTED_JOBS is not a JSON array of strings" gate n7 "$(needs success)" '[1]' '[]'
-expect "gate: PLANNED is a JSON object" 1 "PLANNED is not a JSON array of strings" gate n8 "$(needs success)" '[]' '{}'
+expect "gate: a need the planner does not know" 1 "'pages' is a need of the gate but not a job the planner knows" gate n3 "$EXTRA" '[]'
+# the job `contract` is test.yml's now: a gate that still listed it would be told so
+expect "gate: the planner expects the cell job, which is no longer a job the gate knows" 1 "the planner expects 'contract', which is not a job the gate knows" \
+  gate n9 "$(needs success)" '["contract"]'
+expect "gate: EXPECTED_JOBS is not JSON" 1 "EXPECTED_JOBS is not a JSON array of strings" gate n4 "$(needs success)" 'lint'
+expect "gate: EXPECTED_JOBS is a JSON string" 1 "EXPECTED_JOBS is not a JSON array of strings" gate n5 "$(needs success)" '"lint"'
+expect "gate: EXPECTED_JOBS is a JSON object" 1 "EXPECTED_JOBS is not a JSON array of strings" gate n6 "$(needs success)" '{}'
+expect "gate: EXPECTED_JOBS holds a number" 1 "EXPECTED_JOBS is not a JSON array of strings" gate n7 "$(needs success)" '[1]'
 unset_one() { # the gate run without one of its inputs: a workflow that does not pass it must fail, not read it as empty
-  d="$T/gate/u-$1"; mkdir -p "$d/reported"
+  d="$T/gate/u-$1"; mkdir -p "$d"
   # (exported first, then unset: `env -u X X=...` would set it again)
-  NEEDS_JSON="$(needs success)" EXPECTED_JOBS='[]' PLANNED='[]' REPORTED_DIR="$d/reported"
-  export NEEDS_JSON EXPECTED_JOBS PLANNED REPORTED_DIR
+  NEEDS_JSON="$(needs success)" EXPECTED_JOBS='[]'
+  export NEEDS_JSON EXPECTED_JOBS
   ( cd "$d" && env -u "$1" "$S/assert-gate.sh" )
   st=$?
-  unset NEEDS_JSON EXPECTED_JOBS PLANNED REPORTED_DIR
+  unset NEEDS_JSON EXPECTED_JOBS
   return $st
 }
-for v in NEEDS_JSON EXPECTED_JOBS PLANNED REPORTED_DIR; do
+for v in NEEDS_JSON EXPECTED_JOBS; do
   expect "gate: a run that is not given $v fails" 1 "$v is not set" unset_one "$v"
 done
+
+# ---- the contract cells, judged by test.yml's `verdict` job (ADR-0102; M5b moved them there from the gate) -----------------------
+# What the verdict action passes for test.yml: its five jobs, no planner job, the cell job `contract`, the planned cells and the
+# directory the markers were downloaded to.
+TJOBS="ci-scripts hermetic pg-adapter contract mutants"
+cells() { # cells <dir> <needs-json> <expected-jobs-json> <planned-json> <reported markers...>
+  d="$T/gate/$1"; mkdir -p "$d/reported"; needs="$2"; expected="$3"; planned="$4"; shift 4
+  for m in "$@"; do printf '%s\n' "$m" > "$d/reported/$(echo "$m" | tr ' ' '-').ok"; done
+  ( cd "$d" && NEEDS_JSON="$needs" EXPECTED_JOBS="$expected" KNOWN_JOBS="$TJOBS" CHANGES_JOB="" CELL_JOB=contract PLANNED="$planned" \
+    REPORTED_DIR="$d/reported" "$S/assert-gate.sh" )
+}
+tjobs() { # tjobs <job=result>...: the needs of test.yml's verdict job; a job not named is skipped
+  printf '{'; sep=""
+  for j in $TJOBS; do
+    r=skipped
+    for kv in "$@"; do [ "${kv%%=*}" = "$j" ] && r="${kv#*=}"; done
+    printf '%s"%s":{"result":"%s"}' "$sep" "$j" "$r"; sep=","
+  done
+  printf '}'
+}
+P='["native-memory main","worker-cf bindings"]'
+M1="native-memory main"; M2="worker-cf bindings"
+C='["contract"]'
+# The cell job, expected or not, with every result: expected means cells are planned and both reported; not expected, none planned.
+for exp in yes no; do
+  for r in success skipped failure cancelled; do
+    if [ "$exp" = yes ]; then e="$C"; pl="$P"; set -- "$M1" "$M2"; else e='[]'; pl='[]'; set --; fi
+    if [ "$exp" = yes ] && [ "$r" = success ]; then
+      expect "cells: contract expected and $r" 0 "2 of 2 planned cells reported success" cells "k-$exp-$r" "$(tjobs "contract=$r")" "$e" "$pl" "$@"
+    elif [ "$exp" = no ] && [ "$r" = skipped ]; then
+      expect "cells: contract not expected and $r" 0 "no cells planned" cells "k-$exp-$r" "$(tjobs "contract=$r")" "$e" "$pl" "$@"
+    elif [ "$exp" = yes ]; then
+      expect "cells: contract expected but $r" 1 "contract was expected to run and its result is '$r'" cells "k-$exp-$r" "$(tjobs "contract=$r")" "$e" "$pl" "$@"
+    else
+      expect "cells: contract not expected but $r" 1 "contract was not expected to run and its result is '$r'" cells "k-$exp-$r" "$(tjobs "contract=$r")" "$e" "$pl" "$@"
+    fi
+  done
+done
+ALLT="$(tjobs ci-scripts=success hermetic=success pg-adapter=success contract=success mutants=success)"
+expect "cells: every job of test.yml expected and passed, and both cells reported" 0 "5 expected jobs passed" \
+  cells c0 "$ALLT" '["ci-scripts","hermetic","pg-adapter","contract","mutants"]' "$P" "$M1" "$M2"
+expect "cells: one planned cell never reported" 1 "planned cells that never reported success: worker-cf bindings" cells c1 "$(tjobs contract=success)" "$C" "$P" "$M1"
+expect "cells: a marker for an unplanned cell" 1 "not in the planned set: native-pg main" cells c2 "$(tjobs contract=success)" "$C" "$P" "$M1" "$M2" "native-pg main"
+expect "cells: contract expected but no cell planned" 1 "the planned cell set is empty" cells c3 "$(tjobs contract=success)" "$C" '[]' "$M1"
+expect "cells: contract expected and passed, but no marker at all" 1 "no cell markers found" cells c4 "$(tjobs contract=success)" "$C" "$P"
+expect "cells: cells planned but contract not expected" 1 "cells are planned but the contract job is not expected" cells c5 "$(tjobs)" '[]' "$P"
+expect "cells: PLANNED is a JSON object" 1 "PLANNED is not a JSON array of strings" cells c6 "$(tjobs)" '[]' '{}'
+expect "cells: PLANNED is not JSON" 1 "PLANNED is not a JSON array of strings" cells c7 "$(tjobs)" '[]' 'native-memory main'
+unset_cell() { # the verdict of test.yml run without one of the inputs a cell job needs
+  d="$T/gate/uc-$1"; mkdir -p "$d/reported"
+  NEEDS_JSON="$(tjobs)" EXPECTED_JOBS='[]' KNOWN_JOBS="$TJOBS" CHANGES_JOB="" CELL_JOB=contract PLANNED='[]' REPORTED_DIR="$d/reported"
+  export NEEDS_JSON EXPECTED_JOBS KNOWN_JOBS CHANGES_JOB CELL_JOB PLANNED REPORTED_DIR
+  ( cd "$d" && env -u "$1" "$S/assert-gate.sh" )
+  st=$?
+  unset NEEDS_JSON EXPECTED_JOBS KNOWN_JOBS CHANGES_JOB CELL_JOB PLANNED REPORTED_DIR
+  return $st
+}
+for v in PLANNED REPORTED_DIR; do
+  expect "cells: a cell job's verdict that is not given $v fails" 1 "$v is not set" unset_cell "$v"
+done
+# A level that names no cell job and is given cells anyway: the cells would be judged by nobody. This is what a verdict job that forgot
+# its `cell-job` would do (the action passes `cells` through), and the gate, given the planner's cells, too.
+nocell() { # nocell <dir> <planned-json, or - for not given>
+  d="$T/gate/$1"; mkdir -p "$d"
+  if [ "$2" = - ]; then
+    ( cd "$d" && NEEDS_JSON="$(tjobs)" EXPECTED_JOBS='[]' KNOWN_JOBS="$TJOBS" CHANGES_JOB="" CELL_JOB="" "$S/assert-gate.sh" )
+  else
+    ( cd "$d" && NEEDS_JSON="$(tjobs)" EXPECTED_JOBS='[]' KNOWN_JOBS="$TJOBS" CHANGES_JOB="" CELL_JOB="" PLANNED="$2" "$S/assert-gate.sh" )
+  fi
+}
+expect "cells: no cell job, and cells are given" 1 "cells are planned but no cell job is named (CELL_JOB)" nocell z1 "$P"
+expect "cells: no cell job, and cells that are not JSON" 1 "cells are planned but no cell job is named (CELL_JOB)" nocell z2 'native-memory main'
+expect "cells: no cell job, and no cells (the four other workflows: the action's default)" 0 "ok: 0 expected jobs passed" nocell z3 '[]'
+expect "cells: no cell job, and an empty list with spaces" 0 "ok: 0 expected jobs passed" nocell z4 '[ ]'
+expect "cells: no cell job, and no PLANNED at all (ci.yml's gate)" 0 "ok: 0 expected jobs passed" nocell z5 -
+gate_given_cells() { # what ci.yml's gate passes, and the planner's cells besides
+  d="$T/gate/z6"; mkdir -p "$d"
+  ( cd "$d" && NEEDS_JSON="$(needs success)" EXPECTED_JOBS='[]' VERDICT_JOBS="$CALLED" PLANNED="$P" "$S/assert-gate.sh" )
+}
+expect "gate: the gate given the planner's cells, with no cell job, is refused" 1 "cells are planned but no cell job is named (CELL_JOB)" gate_given_cells
 # ---- assert-gate.sh at another level (ADR-0102) ----------------------------------------------------------------------------------
 # The one script also judges a called workflow's own jobs (its `verdict` job) and a gate that calls workflows. The scenarios of the
 # gate spike (research 0018) are cases here; every case above, which judges ci.yml's own jobs as before, is unchanged.
@@ -236,7 +299,9 @@ forgot() { # forgot <the input to leave out: KNOWN_JOBS | CHANGES_JOB | CELL_JOB
 }
 expect "callee: a verdict job that forgot KNOWN_JOBS fails" 1 "the planner expects 'a', which is not a job the gate knows" forgot KNOWN_JOBS
 expect "callee: a verdict job that forgot CHANGES_JOB fails" 1 "changes job result is 'missing'" forgot CHANGES_JOB
-expect "callee: a verdict job that forgot CELL_JOB fails" 1 "PLANNED is not set" forgot CELL_JOB
+# the default cell job is none, as for ci.yml's gate: a verdict job of a workflow with cells that forgot it is refused by the rule
+# "cells are planned but no cell job is named" (above) whenever cells are planned, and by the wiring test always
+expect "callee: a verdict job that forgot CELL_JOB judges no cell" 0 "ok: 2 expected jobs passed" forgot CELL_JOB
 
 # A gate that calls workflows `test` and `lint`: an expected callee must have succeeded AND say its verdict was pass.
 T1='["test"]'

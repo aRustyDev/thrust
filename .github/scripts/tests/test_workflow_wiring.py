@@ -9,12 +9,15 @@ workflow's own file must agree:
     `web` does, has its call under that id, which is the one job of that name);
   * ci.yml's `gate` needs every job of ci.yml, judges the planner's `top` and not every planned job, and lists the called workflows as
     VERDICT_JOBS, a static list held equal here to the keys of WORKFLOWS (the planner's own output would let a planner bug switch the
-    check off for the workflow it dropped);
+    check off for the workflow it dropped); it judges no cell, and ci.yml holds nothing but `changes`, the calls and `gate`;
+  * the workflow that holds the cell job (`contract`, a matrix call of contract-cell.yml) is called with the planner's `matrix` and
+    `cells`, runs that matrix, and has its `verdict` job judge the cells (`cell-job`, `cells`); no other workflow is given either;
   * the workflow's file has exactly the jobs the planner moved into it, then a `verdict` job: `if: always()`, needing those jobs,
     which checks the repository out and calls the action `verdict` with its needs, the plan it was given and those jobs, and
     exposes the output of that call;
   * the action (`.github/actions/verdict/`, once for all the workflows) judges what it is given with assert-gate.sh, with no planner
-    job and no cells, and sets the output only after the judge passed;
+    job, and the cells of the cell job it is given (none by default), whose markers it downloads before the judge; it sets the output only
+    after the judge passed;
   * each of its jobs runs when the plan names it, and it can be called and run alone, with no workflow-level `concurrency` and no
     `github.event_name` (the rules R8 and R9 of lint-workflow.sh).
 A root argument points it at a copy of the tree, which is how mutate_gate.py shows that this test can fail.
@@ -74,6 +77,10 @@ def block(text, job):
     return m.group(0) if m else ""
 
 
+# The job whose cells the `cell-ok-*` pass markers prove: the planner plans it exactly when it selects a cell (plan-ci.py), and it runs
+# the matrix through contract-cell.yml. The workflow that holds it gives its `verdict` job the cells to judge.
+CELL_JOB = "contract"
+
 ci_text = read_text(".github/workflows/ci.yml") or ""
 ci_jobs = job_ids(ci_text)
 moved_jobs = [j for jobs in pc.WORKFLOWS.values() for j in jobs]
@@ -93,8 +100,12 @@ check("a job that has moved is no longer a job of ci.yml, but for the call that 
 check("no job id of ci.yml is used twice (a call that bears its job's name is the one job of that name)", len(ci_jobs), len(set(ci_jobs)))
 check("ci.yml's gate judges the planner's `top`, not every planned job",
       re.search(r"EXPECTED_JOBS: \$\{\{ needs\.changes\.outputs\.top \}\}", ci_text) is not None, True)
-check("ci.yml's `changes` job outputs `top` and `plans`",
-      all(re.search(rf"^      {o}: \$\{{\{{ steps\.classify\.outputs\.{o} \}}\}}$", ci_text, re.M) for o in ("top", "plans")), True)
+check("ci.yml's `changes` job outputs `top`, `plans`, `matrix` and `cells`",
+      all(re.search(rf"^      {o}: \$\{{\{{ steps\.classify\.outputs\.{o} \}}\}}$", ci_text, re.M) for o in ("top", "plans", "matrix", "cells")), True)
+gate_body = block(ci_text, "gate")
+check("ci.yml's gate judges no cell: no marker downloaded, no cell job, no cells (they are judged where they run)",
+      [x for x in ("cell-ok-", "CELL_JOB", "PLANNED", "REPORTED_DIR", "download-artifact") if x in gate_body], [])
+check("the cell job is a job of exactly one called workflow", sum(CELL_JOB in jobs for jobs in pc.WORKFLOWS.values()), 1)
 
 for workflow, jobs in pc.WORKFLOWS.items():
     body = block(ci_text, workflow)
@@ -104,6 +115,10 @@ for workflow, jobs in pc.WORKFLOWS.items():
     check(f"the {workflow} call passes its plan from `plans`",
           f"plan: ${{{{ toJSON(fromJSON(needs.changes.outputs.plans || '{{}}').{workflow}) }}}}" in body, True)
     check(f"the {workflow} call needs `changes`", "needs: changes" in body, True)
+    has_cells = CELL_JOB in jobs
+    check(f"the {workflow} call passes the planner's matrix and cells exactly when it holds the cell job",
+          ("      matrix: ${{ needs.changes.outputs.matrix }}\n" in body, "      cells: ${{ needs.changes.outputs.cells || '[]' }}\n" in body,
+           "matrix:" in body, "cells:" in body), (has_cells,) * 4)
     path = f".github/workflows/{workflow}.yml"
     text = read_text(path)
     check(f"{path} exists", text is not None, True)
@@ -126,8 +141,22 @@ for workflow, jobs in pc.WORKFLOWS.items():
     check(f"{path}: the verdict job checks out first, then calls the action",
           0 < verdict.find("uses: actions/checkout@") < verdict.find("uses: ./.github/actions/verdict"), True)
     check(f"{path}: the call has the id the output is read from", "      - id: judge\n        uses: ./.github/actions/verdict\n" in verdict, True)
-    check(f"{path}: the call passes the job's needs, the plan it was given and exactly the workflow's jobs",
-          f"        with:\n          needs: ${{{{ toJSON(needs) }}}}\n          plan: ${{{{ inputs.plan }}}}\n          jobs: {' '.join(jobs)}\n" in verdict, True)
+    with_block = f"        with:\n          needs: ${{{{ toJSON(needs) }}}}\n          plan: ${{{{ inputs.plan }}}}\n          jobs: {' '.join(jobs)}\n"
+    if has_cells:
+        with_block += f"          cell-job: {CELL_JOB}\n          cells: ${{{{ inputs.cells }}}}\n"
+    check(f"{path}: the call passes the job's needs, the plan it was given, exactly the workflow's jobs"
+          + (", its cell job and the cells it was given" if has_cells else ", and no cell job"),
+          verdict.rstrip("\n").endswith(with_block.rstrip("\n")), True)
+    for name in ("matrix", "cells"):
+        check(f"{path}: the input {name} is declared, and required by a call, exactly when it holds the cell job",
+              re.search(rf"^  workflow_call:\n    inputs:\n(?:      .*\n|        .*\n)*?      {name}:\n        description: .*\n"
+                        rf"        type: string\n        required: true\n", text, re.M) is not None, has_cells)
+    if has_cells:
+        cell = block(text, CELL_JOB)
+        check(f"{path}: {CELL_JOB} runs the matrix it was given, one call of contract-cell.yml per cell, none stopping the others",
+              ("      fail-fast: false\n      matrix: ${{ fromJSON(inputs.matrix) }}\n" in cell,
+               "    uses: ./.github/workflows/contract-cell.yml\n" in cell,
+               "    with:\n      target: ${{ matrix.target }}\n      pass: ${{ matrix.pass }}\n" in cell), (True, True, True))
     check(f"{path}: the verdict job runs no command of its own (it could not set the output but through the action)",
           re.search(r"^\s+run:", verdict, re.M), None)
 
@@ -143,17 +172,26 @@ check(f"{action_path}: its output is the mark step's", "outputs:\n  verdict:\n  
       "    value: ${{ steps.mark.outputs.verdict }}\n" in action, True)
 check(f"{action_path}: it judges the needs it was given against the plan and the jobs it was given",
       all(f"        {k}: ${{{{ inputs.{v} }}}}\n" in action for k, v in (("NEEDS_JSON", "needs"), ("EXPECTED_JOBS", "plan"), ("KNOWN_JOBS", "jobs"))), True)
-check(f"{action_path}: it has no planner job and no cells to judge", "        CHANGES_JOB: \"\"\n        CELL_JOB: \"\"\n" in action, True)
+for name, default in (("cell-job", "''"), ("cells", "'[]'")):
+    check(f"{action_path}: the input {name} is declared, not required, and defaults to {default} (the four workflows with no cells pass neither)",
+          re.search(rf"^  {name}:\n    description: .*\n    required: false\n    default: {re.escape(default)}$", action, re.M) is not None, True)
+check(f"{action_path}: it has no planner job, and judges the cells of the cell job it is given, from the markers it downloaded",
+      "        CHANGES_JOB: \"\"\n        CELL_JOB: ${{ inputs.cell-job }}\n        PLANNED: ${{ inputs.cells }}\n        REPORTED_DIR: reported\n" in action, True)
+download_at = action.find("    - name: Collect the per-cell pass markers\n")
+check(f"{action_path}: it downloads the cells' pass markers when it is given a cell job, tolerating none (the judge refuses no marker), "
+      "into the directory the judge reads",
+      "    - name: Collect the per-cell pass markers\n      if: inputs.cell-job != ''\n      continue-on-error: true\n"
+      "      uses: actions/download-artifact@" in action and
+      "      with:\n        pattern: cell-ok-*\n        path: reported\n        merge-multiple: true\n" in action[download_at:], True)
+check(f"{action_path}: it downloads the markers before it judges", 0 < download_at < action.find("run: .github/scripts/assert-gate.sh"), True)
 check(f"{action_path}: it judges with the one script", action.count("run: .github/scripts/assert-gate.sh") == 1, True)
 judge_at, mark_at = action.find("run: .github/scripts/assert-gate.sh"), action.find("- id: mark")
 check(f"{action_path}: the output is set after the judge, and only there", 0 < judge_at < mark_at and action.count("verdict=pass") == 1, True)
 check(f"{action_path}: the mark step writes the output and nothing else, and runs only if the judge passed",
       action[mark_at:].split("\n", 1)[1:] == ['      shell: bash\n      run: echo "verdict=pass" >> "$GITHUB_OUTPUT"\n'], True)
 
-# the jobs that stay in ci.yml run when `jobs` names them, as before
-for job in (j for j in ci_jobs if j not in ("changes", "gate") and j not in pc.WORKFLOWS):
-    check(f"ci.yml's {job} job runs when the planner's `jobs` names it",
-          f"if: contains(fromJSON(needs.changes.outputs.jobs || '[]'), '{job}')" in block(ci_text, job), True)
+# The migration moved every job of ci.yml into a called workflow: what is left is the planner, one call of each workflow, and the gate.
+check("ci.yml holds only `changes`, a call of each workflow and `gate`", sorted(ci_jobs), sorted(["changes", "gate", *pc.WORKFLOWS]))
 
 print(f"passed={passed} bad={failed}")
 sys.exit(1 if failed else 0)

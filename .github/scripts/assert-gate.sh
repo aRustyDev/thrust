@@ -2,20 +2,22 @@
 # The ONE required check. It proves the right things ran; it never reasons from "nothing failed".
 #
 # One script judges at every level (ADR-0102): the `gate` of ci.yml, and the `verdict` job at the end of each called workflow,
-# which judges that workflow's own jobs. Run alone with the first four inputs it judges ci.yml's own jobs, as it always has.
+# which judges that workflow's own jobs (and test.yml's, the contract cells too). Run with the first two inputs alone it judges
+# what ci.yml's gate judges: the workflows it calls.
 #
 # Inputs (environment):
 #   NEEDS_JSON     toJSON(needs) of the judging job
-#   EXPECTED_JOBS  JSON array of the jobs that must run (the `jobs` output of the `changes` job, from plan-ci.py; in a called
+#   EXPECTED_JOBS  JSON array of the jobs that must run (the `top` output of the `changes` job, from plan-ci.py; in a called
 #                  workflow, its `plan` input)
 #   PLANNED        JSON array of "target pass" strings, the cells that must run (`cells` of `changes`); "[]" when none
 #   REPORTED_DIR   directory holding one <target>-<pass>.ok marker per cell that passed
-#                  (PLANNED and REPORTED_DIR are needed while CELL_JOB is set)
+#                  (PLANNED and REPORTED_DIR are needed while CELL_JOB is set: test.yml's `verdict` job, through the verdict action)
 # Optional, to judge another level. Unset, each is what ci.yml needs today, so a level that forgets one fails here and does not
 # quietly pass:
 #   KNOWN_JOBS     the jobs this level knows, separated by spaces (default: the jobs of ci.yml)
 #   CHANGES_JOB    the planner job that must have succeeded (default `changes`; set and empty: there is none, as in a called workflow)
-#   CELL_JOB       the job whose cells the markers prove (default `contract`; set and empty: there is none)
+#   CELL_JOB       the job whose cells the markers prove (default: none, as for ci.yml's gate since the cells moved into test.yml;
+#                  a level that names none and is given cells anyway fails, so a forgotten CELL_JOB is not a quiet pass)
 #   VERDICT_JOBS   the jobs that call a workflow, separated by spaces (default: none); see the rules
 #
 # Rules
@@ -27,7 +29,7 @@
 #   whose own `verdict` job was skipped is `success` and proves nothing.
 #   A job that is not expected must be `skipped`: one that ran anyway means its `if:` and the planner disagree.
 #   The cell job is expected exactly when cells are planned, and then the set of cells that reported success must equal the
-#   planned set.
+#   planned set. A level with no cell job must be given no cells.
 set -eu
 
 fail() {
@@ -37,10 +39,11 @@ fail() {
 
 # The default of KNOWN_JOBS is what ci.yml's own `needs` must be, besides the planner job: the jobs plan-ci.py plans that are still
 # jobs of ci.yml, and the workflows it calls (the planner's `top` of a full run; test-ci-scripts.sh holds the two equal).
-KNOWN="${KNOWN_JOBS:-contract documentation security web lint test}"
-# `-` and not `:-` for these two: set and empty means "there is none", and only unset means what ci.yml needs.
+KNOWN="${KNOWN_JOBS:-documentation security web lint test}"
+# `-` and not `:-`: set and empty means "there is none", and only unset means what ci.yml needs.
 CHANGES="${CHANGES_JOB-changes}"
-CELLS="${CELL_JOB-contract}"
+# what ci.yml needs is none, so set and empty and unset are the same
+CELLS="${CELL_JOB:-}"
 VERDICTS="${VERDICT_JOBS:-}"
 
 # Every input must be set and non-empty. Not `: "${VAR:?}"`: the shell picks that exit status (1 in bash, which is macOS's
@@ -103,6 +106,8 @@ while read -r job result; do
 done < needs.txt
 
 if [ -z "$CELLS" ]; then
+  # cells given to a level that names no cell job would be judged by nobody: a verdict job that forgot its cell job is refused here
+  [ "$(printf '%s' "${PLANNED:-[]}" | jq -c . 2> /dev/null)" = "[]" ] || fail "cells are planned but no cell job is named (CELL_JOB): $PLANNED"
   echo "ok: $(wc -l < expected.txt | tr -d ' ') expected jobs passed, the rest were skipped"
   exit 0
 fi
