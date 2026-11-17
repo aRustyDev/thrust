@@ -7,7 +7,8 @@ the tests must fail for it. Run by ci-scripts, because a gate whose tests cannot
   tree that holds it;
   an assert-gate.sh mutant must fail test-ci-scripts.sh, run under dash (Ubuntu's sh) in a copy of the tree it reads, stopping
   at the first failing case (STOP_AT_FIRST_BAD), since one answer is all it wants;
-  a ci.yml or called-workflow mutant (documentation.yml, ...) must fail test_workflow_wiring.py, run on a copy of the tree that holds it.
+  a ci.yml, called-workflow (documentation.yml, security.yml, ...) or verdict-action mutant must fail test_workflow_wiring.py, run on a
+  copy of the tree that holds it.
 
 It refuses to answer, and says why, when its own answer could not be trusted:
   * the tests must pass on the unmutated files first, or every mutant would be "killed" by whatever broke them;
@@ -33,7 +34,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 SCRIPTS = os.path.abspath(os.path.join(HERE, ".."))
 ROOT = os.path.abspath(os.path.join(SCRIPTS, "..", ".."))
 PLAN, GATE = "plan-ci.py", "assert-gate.sh"
-CI, DOC = "ci.yml", "documentation.yml"  # the workflows: ci.yml, and each called workflow a migration stage adds
+CI, DOC, SEC = "ci.yml", "documentation.yml", "security.yml"  # the workflows: ci.yml, and each called workflow a migration stage adds
+ACT = "verdict/action.yml"  # the action every called workflow's `verdict` job calls
 SHELL = shutil.which("dash") or "sh"
 TIMEOUT = 900
 # where each target lives, relative to the repository root
@@ -42,7 +44,50 @@ TARGET_PATH = {
     GATE: ".github/scripts/assert-gate.sh",
     CI: ".github/workflows/ci.yml",
     DOC: ".github/workflows/documentation.yml",
+    SEC: ".github/workflows/security.yml",
+    ACT: ".github/actions/verdict/action.yml",
 }
+# The workflows that tests judge as files: a mutant of one of these must fail test_workflow_wiring.py.
+WIRED = (CI, DOC, SEC, ACT)
+
+# The called workflows, each with its file, its one job, and the text of ci.yml's `gate` needs that names its call and what that becomes
+# without it. A stage of the migration adds a row, and every mutant below that is written for "a called workflow" is made for it.
+CALLS = [
+    (DOC, "documentation", "docs", "web, documentation, security]", "web, security]"),
+    (SEC, "security", "deny", "documentation, security]", "documentation]"),
+]
+
+
+def call_mutants():
+    """The mutants of each called workflow's call in ci.yml and of its own file: the same bugs, planted once per workflow."""
+    out = []
+    for target, w, job, needs_old, needs_new in CALLS:
+        out += [
+            (CI, f"the {w} call runs on the planner's `jobs`", f"if: contains(fromJSON(needs.changes.outputs.top || '[]'), '{w}')",
+             f"if: contains(fromJSON(needs.changes.outputs.jobs || '[]'), '{w}')"),
+            (CI, f"the gate does not need the {w} call", needs_old, needs_new),
+            (CI, f"the {w} call passes a fixed plan, not the planner's",
+             f"plan: ${{{{ toJSON(fromJSON(needs.changes.outputs.plans || '{{}}').{w}) }}}}", f"plan: '[\"{job}\"]'"),
+            (CI, f"the {w} call is of another workflow's file", f"uses: ./.github/workflows/{w}.yml", "uses: ./.github/workflows/contract-cell.yml"),
+            (CI, f"the moved job {job} is left in ci.yml as well", "  gate:\n    name: gate",
+             f"  {job}:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: echo\n\n  gate:\n    name: gate"),
+            (target, f"{w}: the verdict job does not run when a job failed", "    if: always()\n", "    if: success()\n"),
+            (target, f"{w}: the verdict job judges no plan", "          plan: ${{ inputs.plan }}\n", "          plan: '[]'\n"),
+            (target, f"{w}: the verdict job knows no job of the workflow", f"          jobs: {job}\n", "          jobs: verdict\n"),
+            (target, f"{w}: the verdict job does not wait for the job", f"    needs: {job}\n", "    needs: []\n"),
+            (target, f"{w}: the verdict job exposes nothing of the call", "    outputs:\n      verdict: ${{ steps.judge.outputs.verdict }}\n", ""),
+            (target, f"{w}: the verdict job calls another action", "uses: ./.github/actions/verdict", "uses: ./.github/actions/setup-rust"),
+            (target, f"{w}: the verdict job does not check the repository out",
+             re.compile(r"(    steps:\n)      - uses: actions/checkout@[^\n]*\n        with:\n          persist-credentials: false\n(      - id: judge)"), r"\1\2"),
+            (target, f"{w}: the verdict job has a command of its own", f"          jobs: {job}\n", f"          jobs: {job}\n      - run: echo hi\n"),
+            (target, f"{w}: the workflow does not expose the verdict", "value: ${{ jobs.verdict.outputs.verdict }}", "value: pass"),
+            (target, f"{w}: the job runs whatever the plan", f"if: contains(fromJSON(inputs.plan), '{job}')", "if: true"),
+            (target, f"{w}: the workflow sets a workflow-level concurrency", "permissions: {}\n\njobs:", f"permissions: {{}}\n\nconcurrency:\n  group: {w}\n\njobs:"),
+            (target, f"{w}: the workflow cannot run alone", "  workflow_dispatch:\n", "  push:\n"),
+            (target, f"{w}: the workflow reads the event name", f"          jobs: {job}\n",
+             f"          jobs: {job}\n          event: ${{{{ github.event_name }}}}\n"),
+        ]
+    return out
 
 # (file, label, the text to replace, its replacement). The text, or a compiled regex whose replacement may use \1, must match once
 # in the file.
@@ -79,6 +124,8 @@ MUTANTS = [
     # --- plan-ci.py: the workflow files that run the checks, and the called workflows (ADR-0102)
     (PLAN, "a workflow that runs the checks, web.yml, is not run-everything", "|documentation|security|web)\\.yml$", "|documentation|security)\\.yml$"),
     (PLAN, "a workflow that runs the checks, documentation.yml, is not run-everything", "|lint|documentation|security|web)", "|lint|security|web)"),
+    (PLAN, "a workflow that runs the checks, security.yml, is not run-everything", "|documentation|security|web)", "|documentation|web)"),
+    (PLAN, "the verdict action is not run-everything", re.compile(r'(\(r"\^\\\.github/actions/verdict/", )FULL'), r"\1{}"),
     (PLAN, "a job may be in two workflows", "            if job in seen:", "            if False:"),
     (PLAN, "a workflow may list a name that is not a job", "            if job not in jobs:", "            if False:"),
     (PLAN, "a workflow may have no job", "        if not members:", "        if False:"),
@@ -103,7 +150,8 @@ MUTANTS = [
     (GATE, "an unplanned marker is accepted", '[ -z "$extra" ] ||', "true ||"),
     (GATE, "the cell job with zero cells passes", '[ -s planned.txt ] || fail "the $CELLS job is expected', 'true || fail "the $CELLS job is expected'),
     (GATE, "an input may be missing", '[ -n "$value" ] || fail "$input is not set"', 'true || fail "$input is not set"'),
-    (GATE, "the gate forgets the documentation workflow", "mutants web documentation}\"", "mutants web}\""),
+    (GATE, "the gate forgets the documentation workflow", "web documentation security}\"", "web security}\""),
+    (GATE, "the gate forgets the security workflow", "documentation security}\"", "documentation}\""),
     (GATE, "any JSON is an array", "jq -e 'type == \"array\" and all(.[]; type == \"string\")'", "jq -e 'true'"),
     (GATE, "an array of anything is an array of jobs", "jq -e 'type == \"array\" and all(.[]; type == \"string\")'", "jq -e 'type == \"array\"'"),
     # --- assert-gate.sh: the verdict of a called workflow, and the other levels (ADR-0102)
@@ -117,32 +165,33 @@ MUTANTS = [
     (GATE, "KNOWN_JOBS is ignored", 'KNOWN="${KNOWN_JOBS:-ci-scripts', 'KNOWN="${XKNOWN_JOBS:-ci-scripts'),
     (GATE, "PLANNED is needed even where there is no cell job", 'if [ -n "$CELLS" ]; then', "if true; then"),
     # --- the wiring of the called workflows, and what a stage of the migration changes (ADR-0102)
-    (PLAN, "the planner forgets the documentation workflow", 'WORKFLOWS = {"documentation": ("docs",)}', "WORKFLOWS = {}"),
-    (PLAN, "the planner moves docs to a workflow of another name", 'WORKFLOWS = {"documentation": ("docs",)}', 'WORKFLOWS = {"docs-book": ("docs",)}'),
+    (PLAN, "the planner forgets the workflows", 'WORKFLOWS = {"documentation": ("docs",), "security": ("deny",)}', "WORKFLOWS = {}"),
+    (PLAN, "the planner forgets the documentation workflow", '{"documentation": ("docs",), "security"', '{"security"'),
+    (PLAN, "the planner forgets the security workflow", ', "security": ("deny",)}', "}"),
+    (PLAN, "the planner moves docs to a workflow of another name", '{"documentation": ("docs",)', '{"docs-book": ("docs",)'),
+    (PLAN, "the planner moves deny to a workflow of another name", '"security": ("deny",)', '"supply-chain": ("deny",)'),
     (CI, "the gate judges every planned job and not `top`", "EXPECTED_JOBS: ${{ needs.changes.outputs.top }}", "EXPECTED_JOBS: ${{ needs.changes.outputs.jobs }}"),
-    (CI, "the gate has no VERDICT_JOBS", "          VERDICT_JOBS: documentation\n", ""),
-    (CI, "the gate's VERDICT_JOBS names a workflow that is not called", "VERDICT_JOBS: documentation", "VERDICT_JOBS: documentation security"),
-    (CI, "the calling job runs on the planner's `jobs`", "if: contains(fromJSON(needs.changes.outputs.top || '[]'), 'documentation')",
-     "if: contains(fromJSON(needs.changes.outputs.jobs || '[]'), 'documentation')"),
-    (CI, "the gate does not need the called workflow", "mutants, web, documentation]", "mutants, web]"),
-    (CI, "the call passes a fixed plan, not the planner's", "plan: ${{ toJSON(fromJSON(needs.changes.outputs.plans || '{}').documentation) }}", "plan: '[\"docs\"]'"),
+    (CI, "the gate has no VERDICT_JOBS", "          VERDICT_JOBS: documentation security\n", ""),
+    (CI, "the gate's VERDICT_JOBS names a workflow that is not called", "VERDICT_JOBS: documentation security", "VERDICT_JOBS: documentation security web"),
+    (CI, "the gate's VERDICT_JOBS forgets a called workflow", "VERDICT_JOBS: documentation security", "VERDICT_JOBS: documentation"),
     (CI, "`changes` does not output the plans", "      plans: ${{ steps.classify.outputs.plans }}\n", ""),
     (CI, "`changes` does not output top", "      top: ${{ steps.classify.outputs.top }}\n", ""),
-    (CI, "the call is of another workflow's file", "uses: ./.github/workflows/documentation.yml", "uses: ./.github/workflows/contract-cell.yml"),
-    (CI, "the moved job is left in ci.yml as well", "  gate:\n    name: gate", "  docs:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: echo\n\n  gate:\n    name: gate"),
-    (CI, "a job of ci.yml runs on the wrong name", "if: contains(fromJSON(needs.changes.outputs.jobs || '[]'), 'deny')",
+    (CI, "a job of ci.yml runs on the wrong name", "if: contains(fromJSON(needs.changes.outputs.jobs || '[]'), 'hermetic')",
      "if: contains(fromJSON(needs.changes.outputs.jobs || '[]'), 'lint')"),
-    (DOC, "the verdict job does not run when a job failed", "    if: always()\n", "    if: success()\n"),
-    (DOC, "the verdict job judges no plan", "EXPECTED_JOBS: ${{ inputs.plan }}", "EXPECTED_JOBS: '[]'"),
-    (DOC, "the verdict job knows no job of the workflow", "KNOWN_JOBS: docs\n", "KNOWN_JOBS: verdict\n"),
-    (DOC, "the verdict output is set by the judge step too", "run: .github/scripts/assert-gate.sh", 'run: echo "verdict=pass" >> "$GITHUB_OUTPUT"; .github/scripts/assert-gate.sh'),
-    (DOC, "the workflow does not expose the verdict", "value: ${{ jobs.verdict.outputs.verdict }}", "value: pass"),
-    (DOC, "the job runs whatever the plan", "if: contains(fromJSON(inputs.plan), 'docs')", "if: true"),
-    (DOC, "the called workflow sets a workflow-level concurrency", "permissions: {}\n\njobs:", "permissions: {}\n\nconcurrency:\n  group: documentation\n\njobs:"),
-    (DOC, "the called workflow cannot run alone", "  workflow_dispatch:\n", "  push:\n"),
-    (DOC, "the verdict job does not wait for the job", "    needs: docs\n", "    needs: []\n"),
-    (DOC, "the called workflow reads the event name", "KNOWN_JOBS: docs\n", "KNOWN_JOBS: docs\n          EVENT: ${{ github.event_name }}\n"),
+    # --- the verdict action, which every called workflow's `verdict` job calls (written once, from the second workflow on)
+    (ACT, "the action judges no plan", "        EXPECTED_JOBS: ${{ inputs.plan }}\n", "        EXPECTED_JOBS: '[]'\n"),
+    (ACT, "the action knows no job of the workflow", "KNOWN_JOBS: ${{ inputs.jobs }}", "KNOWN_JOBS: verdict"),
+    (ACT, "the action judges the needs of nobody", "NEEDS_JSON: ${{ inputs.needs }}", "NEEDS_JSON: '{}'"),
+    (ACT, "the action asks for a planner job, which a called workflow has not", '        CHANGES_JOB: ""\n', ""),
+    (ACT, "the action asks for cells, which a called workflow has not", '        CELL_JOB: ""\n', ""),
+    (ACT, "the action judges with another script", "run: .github/scripts/assert-gate.sh", "run: true"),
+    (ACT, "the output is set by the judge step too", "run: .github/scripts/assert-gate.sh", 'run: echo "verdict=pass" >> "$GITHUB_OUTPUT"; .github/scripts/assert-gate.sh'),
+    (ACT, "the output is set even when the judge failed", "    - id: mark\n", "    - id: mark\n      if: always()\n"),
+    (ACT, "the output is another word than pass", 'echo "verdict=pass"', 'echo "verdict=ok"'),
+    (ACT, "the action does not expose the output", "value: ${{ steps.mark.outputs.verdict }}", "value: pass"),
+    (ACT, "the plan is not a required input", re.compile(r"(  plan:\n    description: [^\n]*\n)    required: true"), r"\1    required: false"),
 ]
+MUTANTS += call_mutants()
 
 # Changes no behaviour, so the tests must still pass: if one is killed, the driver or the tests are broken, not strong.
 EQUIVALENT = [
@@ -150,6 +199,8 @@ EQUIVALENT = [
     (GATE, "(equivalent) a comment is added to the gate", "set -eu\n", "set -eu\n# a comment\n"),
     (CI, "(equivalent) a comment is added to ci.yml", "on:\n  pull_request:\n", "on:\n  # a comment\n  pull_request:\n"),
     (DOC, "(equivalent) a comment is added to documentation.yml", "permissions: {}\n\njobs:", "permissions: {}\n\n# a comment\njobs:"),
+    (SEC, "(equivalent) a comment is added to security.yml", "permissions: {}\n\njobs:", "permissions: {}\n\n# a comment\njobs:"),
+    (ACT, "(equivalent) a comment is added to the verdict action", "runs:\n  using: composite\n", "runs:\n  # a comment\n  using: composite\n"),
 ]
 
 
@@ -189,7 +240,7 @@ def read(target):
 
 def judge(target, text, workdir):
     """(exit status, output) of the tests of `target` run against `text`, after the check that it still compiles."""
-    if target in (CI, DOC):
+    if target in WIRED:
         return wiring_tests(os.path.join(workdir, "tree"), {TARGET_PATH[target]: text})
     if target == PLAN:
         try:

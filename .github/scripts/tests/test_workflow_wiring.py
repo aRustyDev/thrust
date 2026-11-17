@@ -10,7 +10,10 @@ workflow's own file must agree:
     VERDICT_JOBS, a static list held equal here to the keys of WORKFLOWS (the planner's own output would let a planner bug switch the
     check off for the workflow it dropped);
   * the workflow's file has exactly the jobs the planner moved into it, then a `verdict` job: `if: always()`, needing those jobs,
-    judging them with assert-gate.sh against the plan it was given, and setting the output the workflow exposes only after it did;
+    which checks the repository out and calls the action `verdict` with its needs, the plan it was given and those jobs, and
+    exposes the output of that call;
+  * the action (`.github/actions/verdict/`, once for all the workflows) judges what it is given with assert-gate.sh, with no planner
+    job and no cells, and sets the output only after the judge passed;
   * each of its jobs runs when the plan names it, and it can be called and run alone, with no workflow-level `concurrency` and no
     `github.event_name` (the rules R8 and R9 of lint-workflow.sh).
 A root argument points it at a copy of the tree, which is how mutate_gate.py shows that this test can fail.
@@ -112,14 +115,35 @@ for workflow, jobs in pc.WORKFLOWS.items():
     needs = re.search(r"^    needs: (\[.*\]|\S+)$", verdict, re.M)
     listed = sorted(x.strip() for x in needs.group(1).strip("[]").split(",")) if needs else None
     check(f"{path}: the verdict job needs every one of the workflow's jobs", listed, sorted(jobs))
-    check(f"{path}: the verdict job judges exactly those jobs", f"KNOWN_JOBS: {' '.join(jobs)}\n" in verdict, True)
-    check(f"{path}: the verdict job judges against the plan it was given", "EXPECTED_JOBS: ${{ inputs.plan }}" in verdict, True)
-    check(f"{path}: the verdict job judges with the one script", "run: .github/scripts/assert-gate.sh" in verdict, True)
-    check(f"{path}: the verdict job has no planner job and no cells to judge", "CHANGES_JOB: \"\"" in verdict and "CELL_JOB: \"\"" in verdict, True)
-    judge, mark = verdict.find("assert-gate.sh"), verdict.find("id: mark")
-    check(f"{path}: the output is set after the judge, and only there", 0 < judge < mark and verdict.count("verdict=pass") == 1, True)
-    check(f"{path}: the verdict output is the one thing the mark step writes",
-          re.search(r'run: echo "verdict=pass" >> "\$GITHUB_OUTPUT"', verdict) is not None, True)
+    # the judge and the output are the action's (checked once, below); this job checks the repository out, calls it, and exposes what it says
+    check(f"{path}: the verdict job exposes the call's output", "    outputs:\n      verdict: ${{ steps.judge.outputs.verdict }}\n" in verdict, True)
+    check(f"{path}: the verdict job has two steps, the checkout and the call", len(re.findall(r"^      - ", verdict, re.M)), 2)
+    check(f"{path}: the verdict job checks out first, then calls the action",
+          0 < verdict.find("uses: actions/checkout@") < verdict.find("uses: ./.github/actions/verdict"), True)
+    check(f"{path}: the call has the id the output is read from", "      - id: judge\n        uses: ./.github/actions/verdict\n" in verdict, True)
+    check(f"{path}: the call passes the job's needs, the plan it was given and exactly the workflow's jobs",
+          f"        with:\n          needs: ${{{{ toJSON(needs) }}}}\n          plan: ${{{{ inputs.plan }}}}\n          jobs: {' '.join(jobs)}\n" in verdict, True)
+    check(f"{path}: the verdict job runs no command of its own (it could not set the output but through the action)",
+          re.search(r"^\s+run:", verdict, re.M), None)
+
+# The action every `verdict` job calls: the judge and the output, written once (it was a copy in each workflow until the second one).
+action_path = ".github/actions/verdict/action.yml"
+action = read_text(action_path)
+check(f"{action_path} exists, as soon as one workflow is called", action is not None or not pc.WORKFLOWS, True)
+action = action or ""
+for name in ("needs", "plan", "jobs"):
+    check(f"{action_path}: the input {name} is declared and required", f"  {name}:\n    description:" in action and
+          re.search(rf"^  {name}:\n    description: .*\n    required: true$", action, re.M) is not None, True)
+check(f"{action_path}: its output is the mark step's", "outputs:\n  verdict:\n    description: pass, set only after the judge passed\n"
+      "    value: ${{ steps.mark.outputs.verdict }}\n" in action, True)
+check(f"{action_path}: it judges the needs it was given against the plan and the jobs it was given",
+      all(f"        {k}: ${{{{ inputs.{v} }}}}\n" in action for k, v in (("NEEDS_JSON", "needs"), ("EXPECTED_JOBS", "plan"), ("KNOWN_JOBS", "jobs"))), True)
+check(f"{action_path}: it has no planner job and no cells to judge", "        CHANGES_JOB: \"\"\n        CELL_JOB: \"\"\n" in action, True)
+check(f"{action_path}: it judges with the one script", action.count("run: .github/scripts/assert-gate.sh") == 1, True)
+judge_at, mark_at = action.find("run: .github/scripts/assert-gate.sh"), action.find("- id: mark")
+check(f"{action_path}: the output is set after the judge, and only there", 0 < judge_at < mark_at and action.count("verdict=pass") == 1, True)
+check(f"{action_path}: the mark step writes the output and nothing else, and runs only if the judge passed",
+      action[mark_at:].split("\n", 1)[1:] == ['      shell: bash\n      run: echo "verdict=pass" >> "$GITHUB_OUTPUT"\n'], True)
 
 # the jobs that stay in ci.yml run when `jobs` names them, as before
 for job in (j for j in ci_jobs if j not in ("changes", "gate") and j not in pc.WORKFLOWS):

@@ -1,0 +1,74 @@
+name: security
+
+# The supply-chain check, called by ci.yml (its `security` job) and runnable alone (ADR-0102). ci.yml passes `plan`, the jobs of this
+# workflow that plan-ci.py says the change needs; a run by hand plans them all. The `verdict` job judges the jobs against that plan,
+# so that a planned job that never ran turns ci.yml's `gate` red: a calling job is `success` when only some of its jobs ran.
+
+on:
+  workflow_call:
+    inputs:
+      plan:
+        description: JSON array of this workflow's jobs to run (the planner's `plans.security`)
+        type: string
+        required: true
+    outputs:
+      verdict:
+        description: pass when every planned job succeeded and every other was skipped (ci.yml's gate requires it)
+        value: ${{ jobs.verdict.outputs.verdict }}
+  workflow_dispatch:
+    inputs:
+      plan:
+        description: JSON array of the jobs to run
+        type: string
+        default: '["deny"]'
+
+permissions: {}
+
+jobs:
+  # cargo-deny (issue #40; ADR-0100 and ADR-0101 require a Rust supply-chain gate), configured by `deny.toml`: advisories (RustSec),
+  # licences, bans (sqlx, sea-orm, diesel: ADR-0044) and sources (crates.io only). It fetches the advisory database on every run, so
+  # a new advisory can turn it red with no change to the code: fix it by upgrading, and read the note above the one ignore in
+  # `deny.toml` before adding another.
+  deny:
+    if: contains(fromJSON(inputs.plan), 'deny')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-rust
+        with:
+          cache-key: deny
+          save-cache: ${{ github.ref == 'refs/heads/main' }}
+      - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
+        with:
+          tool: cargo-deny@0.20.2
+      - name: cargo deny check
+        run: scripts/rs cargo deny --locked check
+
+  # ADR-0102: judges this workflow's jobs against the plan, through the action every called workflow uses (it runs assert-gate.sh and
+  # sets the output only after that passed). `always()`, so it reports when `deny` was skipped, failed or cancelled. ci.yml's `gate`
+  # requires the output: a `verdict` job that was itself skipped leaves this workflow `success` and proves nothing. The checkout is
+  # here and not in the action, which is read from it.
+  verdict:
+    needs: deny
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      verdict: ${{ steps.judge.outputs.verdict }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: judge
+        uses: ./.github/actions/verdict
+        with:
+          needs: ${{ toJSON(needs) }}
+          plan: ${{ inputs.plan }}
+          jobs: deny

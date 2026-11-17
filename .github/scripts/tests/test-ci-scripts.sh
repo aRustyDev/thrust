@@ -62,8 +62,8 @@ expect "plan: a run line with a changed format fails" 1 "the format changed" pla
 # ---- assert-gate.sh ------------------------------------------------------------------------------
 # What ci.yml's gate needs besides `changes`: the jobs still in ci.yml and the workflows it calls, which are CALLED (ci.yml sets
 # them as VERDICT_JOBS). Each migration stage moves a job's name out of this list and its workflow's name in.
-JOBS="ci-scripts deps lint deny hermetic pg-adapter contract mutants web documentation"
-CALLED="documentation"
+JOBS="ci-scripts deps lint hermetic pg-adapter contract mutants web documentation security"
+CALLED="documentation security"
 gate() { # gate <dir> <needs-json> <expected-jobs-json> <planned-json> <reported markers...>
   d="$T/gate/$1"; mkdir -p "$d/reported"; needs="$2"; expected="$3"; planned="$4"; shift 4
   for m in "$@"; do printf '%s\n' "$m" > "$d/reported/$(echo "$m" | tr ' ' '-').ok"; done
@@ -115,20 +115,28 @@ for j in $JOBS; do
   done
 done
 
-ALL='["ci-scripts","deps","lint","deny","hermetic","pg-adapter","contract","mutants","web","documentation"]'
-ALLOK="$(needs success ci-scripts=success deps=success lint=success deny=success hermetic=success pg-adapter=success contract=success mutants=success web=success documentation=success)"
+ALL='["ci-scripts","deps","lint","hermetic","pg-adapter","contract","mutants","web","documentation","security"]'
+# every job succeeded: "ci-scripts=success deps=success ..."
+OKARGS=""
+for j in $JOBS; do OKARGS="$OKARGS $j=success"; done
+ALLOK="$(needs success $OKARGS)"
 expect "gate: everything expected, everything passed" 0 "10 expected jobs passed" gate a1 "$ALLOK" "$ALL" "$P" "$M1" "$M2"
-# a called workflow must also say pass: its result alone is not the proof (research 0018: a `verdict` job that was skipped leaves it success)
-nodoc() { printf '%s' "$1" | sed "s/\"documentation\":{\"result\":\"success\",\"outputs\":{\"verdict\":\"pass\"}}/\"documentation\":{\"result\":\"success\"$2}/"; }
-expect "gate: documentation succeeded and its verdict output is missing" 1 "documentation succeeded but its verdict output is 'missing'" \
-  gate a5 "$(nodoc "$ALLOK" '')" "$ALL" "$P" "$M1" "$M2"
-expect "gate: documentation succeeded and its verdict output is empty" 1 "documentation succeeded but its verdict output is 'missing'" \
-  gate a6 "$(nodoc "$ALLOK" ',"outputs":{"verdict":""}')" "$ALL" "$P" "$M1" "$M2"
-expect "gate: documentation succeeded and its verdict output is 'fail'" 1 "documentation succeeded but its verdict output is 'fail'" \
-  gate a7 "$(nodoc "$ALLOK" ',"outputs":{"verdict":"fail"}')" "$ALL" "$P" "$M1" "$M2"
-expect "gate: documentation is planned, and was skipped (its calling job's own if)" 1 "documentation was expected to run and its result is 'skipped'" \
-  gate a8 "$(needs success ci-scripts=success deps=success lint=success deny=success hermetic=success pg-adapter=success contract=success mutants=success web=success)" "$ALL" "$P" "$M1" "$M2"
-expect "gate: documentation is not planned, and the gate passes without its verdict" 0 "ok:" \
+# a called workflow must also say pass: its result alone is not the proof (research 0018: a `verdict` job that was skipped leaves it success).
+# Each called workflow is tried on its own, the others in a state that passes, so that the case can only fail because of it.
+noverdict() { printf '%s' "$1" | sed "s/\"$2\":{\"result\":\"success\",\"outputs\":{\"verdict\":\"pass\"}}/\"$2\":{\"result\":\"success\"$3}/"; }
+for w in $CALLED; do
+  expect "gate: $w succeeded and its verdict output is missing" 1 "$w succeeded but its verdict output is 'missing'" \
+    gate "a5-$w" "$(noverdict "$ALLOK" "$w" '')" "$ALL" "$P" "$M1" "$M2"
+  expect "gate: $w succeeded and its verdict output is empty" 1 "$w succeeded but its verdict output is 'missing'" \
+    gate "a6-$w" "$(noverdict "$ALLOK" "$w" ',"outputs":{"verdict":""}')" "$ALL" "$P" "$M1" "$M2"
+  expect "gate: $w succeeded and its verdict output is 'fail'" 1 "$w succeeded but its verdict output is 'fail'" \
+    gate "a7-$w" "$(noverdict "$ALLOK" "$w" ',"outputs":{"verdict":"fail"}')" "$ALL" "$P" "$M1" "$M2"
+  OTHERS=""
+  for j in $JOBS; do [ "$j" = "$w" ] || OTHERS="$OTHERS $j=success"; done
+  expect "gate: $w is planned, and was skipped (its calling job's own if)" 1 "$w was expected to run and its result is 'skipped'" \
+    gate "a8-$w" "$(needs success $OTHERS)" "$ALL" "$P" "$M1" "$M2"
+done
+expect "gate: no called workflow is planned, and the gate passes" 0 "ok:" \
   gate a9 "$(needs success)" '[]' '[]'
 expect "gate: nothing expected, everything skipped (README.md only)" 0 "no cells planned" gate a2 "$(needs success)" '[]' '[]'
 expect "gate: the changes job failed" 1 "changes job result is 'failure'" gate a3 "$(needs failure)" '[]' '[]'

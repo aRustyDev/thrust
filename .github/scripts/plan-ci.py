@@ -54,7 +54,7 @@ JOBS = ("ci-scripts", "deps", "lint", "deny", "hermetic", "pg-adapter", "contrac
 # The called workflow each job belongs to (ADR-0102): {workflow: (its jobs)}. A job in none is still a job of ci.yml itself. Every
 # migration stage moves its jobs in here; a job may be in one workflow only, and a name here must be one of JOBS (check_workflows).
 # ci.yml's `gate` lists these workflows too, as VERDICT_JOBS, and test_plan_ci.py holds the two equal.
-WORKFLOWS = {"documentation": ("docs",)}
+WORKFLOWS = {"documentation": ("docs",), "security": ("deny",)}
 
 # The binary each target of scripts/contract.sh starts. Everything a cell runs against is built from it.
 TARGET_BINARY = {
@@ -80,6 +80,7 @@ RULES = [
     (r"^\.github/workflows/(ci|contract-cell|test|lint|documentation|security|web)\.yml$", FULL, "the workflow that runs the checks"),
     (r"^\.github/actions/setup-rust/", FULL, "the action every Rust job sets up with"),
     (r"^\.github/actions/contract-pass-tools/", FULL, "the action that prepares a contract cell's pass (uv, the app, the browser)"),
+    (r"^\.github/actions/verdict/", FULL, "the action every called workflow judges its jobs with (ci.yml's gate requires its output)"),
     (r"^\.github/scripts/(plan-ci\.py|plan-cells\.sh|assert-gate\.sh)$", FULL, "this planner, or the gate that trusts it"),
     (r"^\.github/scripts/toolchain-channel\.sh$", FULL, "the reader of rust-toolchain.toml, which every build's compiler comes from"),
     (r"^scripts/(rs|contract\.sh|contract-all\.sh|worker-dev\.sh|pg-delay-proxy\.py|lib/ports\.sh)$", FULL, "the contract cells' harness"),
