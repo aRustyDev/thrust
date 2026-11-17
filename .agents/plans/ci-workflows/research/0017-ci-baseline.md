@@ -59,9 +59,14 @@ Observations for the passes that follow, not decisions. Figures are medians of t
 ## To repeat it
 
 ```sh
-uv run --script .agents/plans/ci-workflows/scripts/ci-baseline.py --since 2026-11-16T15:51:24Z
+# the window this document measured: runs from before the migration, with the job names of that time
+uv run --script .agents/plans/ci-workflows/scripts/ci-baseline.py --since 2026-11-16T15:51:24Z \
+  --groups "ci-scripts deps lint deny hermetic pg-adapter contract mutants web docs"
 uv run --script .agents/plans/ci-workflows/scripts/ci-baseline.py --self-test     # 38 checks, no network
 ```
+
+The script's default `--groups` follows the migration (a stage moves a job into a workflow, and a moved job's group is its
+workflow), so the command above needs the old names and a window after the migration uses the default.
 
 - It needs `gh`, authenticated, and prints the tables below to stdout; it exits 2, and prints no table, when it cannot
   trust the data (no run to measure, a run with no jobs, a job with no conclusion, a negative duration, an unknown job group,

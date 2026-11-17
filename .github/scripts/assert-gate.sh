@@ -21,7 +21,7 @@
 # Rules
 #   The planner job must have succeeded.
 #   Every expected job is a need of the judging job (a job it cannot see cannot be proved), and every need is a job this level
-#   knows (plan-ci.py's JOBS for ci.yml), so a job added to ci.yml and not to the planner fails here instead of never running.
+#   knows (plan-ci.py's `top` for ci.yml), so a job added to ci.yml and not to the planner fails here instead of never running.
 #   An expected job must be exactly `success`: a skipped one is a vacuous pass, not a pass.
 #   An expected job that calls a workflow (VERDICT_JOBS) must also carry the output `verdict` equal to `pass`: a called workflow
 #   whose own `verdict` job was skipped is `success` and proves nothing.
@@ -35,8 +35,9 @@ fail() {
   exit 1
 }
 
-# The jobs plan-ci.py can ask for: the default of KNOWN_JOBS. ci.yml's own `needs` must be these and the planner job.
-KNOWN="${KNOWN_JOBS:-ci-scripts deps lint deny hermetic pg-adapter contract mutants web docs}"
+# The default of KNOWN_JOBS is what ci.yml's own `needs` must be, besides the planner job: the jobs plan-ci.py plans that are still
+# jobs of ci.yml, and the workflows it calls (the planner's `top` of a full run; test-ci-scripts.sh holds the two equal).
+KNOWN="${KNOWN_JOBS:-ci-scripts deps lint deny hermetic pg-adapter contract mutants web documentation}"
 # `-` and not `:-` for these two: set and empty means "there is none", and only unset means what ci.yml needs.
 CHANGES="${CHANGES_JOB-changes}"
 CELLS="${CELL_JOB-contract}"
