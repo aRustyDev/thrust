@@ -169,160 +169,17 @@ jobs:
           # workflows and the verdict action is killed by them (ADR-0102).
           python3 -I .github/scripts/tests/mutate_gate.py
 
-  deps:
-    needs: changes
-    if: contains(fromJSON(needs.changes.outputs.jobs || '[]'), 'deps')
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          # The release configuration guard compares the workspace with the last v* tag.
-          fetch-tags: true
-      - uses: ./.github/actions/setup-rust
-        with:
-          targets: wasm32-unknown-unknown
-          cache-key: deps
-          save-cache: ${{ github.ref == 'refs/heads/main' }}
-      - name: Dependency-graph guard
-        run: scripts/check-deps.sh
-      # ADR-0009: every directory under crates/ is a crate or a group with a README.md that names it; nothing ships a crate from
-      # testing/ or spikes/; core/ depends on nothing outside it; and the paths a move could silently break (workflow `paths:`
-      # filters, mutants.toml's globs, .gitignore lines under crates/) still exist. The self-test is the control.
-      - name: Crate layout guard
-        run: |
-          scripts/check-layout.sh
-          scripts/check-layout.sh --self-test
-      # One Worker, in Rust, with no Workflow and no service binding (ADR-0090, FR-05, FR-11, issue #43). The self-test is the
-      # control: the guard is run on configs it must refuse, so a guard that stopped looking would fail here and not pass.
-      - name: Topology guard (one Worker)
-        run: |
-          scripts/check-topology.sh
-          scripts/check-topology.sh --self-test
-      # ADR-0111 (issue #195): the edge Worker in front of production routes and binds nothing else (no data, assets, placement,
-      # trigger or route; workers_dev and preview_urls off; one service binding, one Flagship binding). An allowlist, with its
-      # self-test as the control.
-      - name: Edge configuration guard (a routing Worker)
-        run: |
-          scripts/check-edge-config.sh
-          scripts/check-edge-config.sh --self-test
-      # Issue #51: every reproduced Plane 500 is answered by `thrust_plane_types::plane_500`, so neither Plane-shaped crate writes a
-      # 500 of its own. The self-test is the control: the guard is run on trees it must refuse, and on empty ones it must not pass.
-      - name: Plane 500 guard
-        run: |
-          scripts/check-plane-500.sh
-          scripts/check-plane-500.sh --self-test
-      # Issue #51: the compat replay's fixtures and the oracle recorder's steps are the rows of the F-X13 acceptance list (round 29),
-      # which is generated from research/0003 and joined with the pinned route inventory: `comm -3` of each pair prints nothing. The
-      # self-test is the control: lists with a missing, extra or pending row are refused, and an empty list is not a pass.
-      - name: Acceptance-list guard
-        run: |
-          scripts/check-acceptance-list.sh
-          scripts/check-acceptance-list.sh --self-test
-      # Issue #39: the Worker's two real configs carry `[placement] region = "aws:us-east-1"`. A step and not a job, so
-      # the gate's required contexts do not change.
-      - name: Placement guard
-        run: scripts/check-placement.sh
-      # Issue #195: a migration numbered above 0017 may only add to the schema (no DROP, RENAME, column TYPE change or SET NOT NULL)
-      # unless it is a contract migration (NNNN_contract_<what>.sql), which the deploy runs only in production and only when no older
-      # version shares the data. Its test (ci-scripts) is the control: each construct is refused where it must be and nowhere else.
-      - name: Migration expand-rule guard
-        run: scripts/check-migration-lint.sh
-      # The expected test counts of the contract suite's passes (scripts/contract.sh, scripts/stage2-contract.sh) go stale when a test
-      # is added, and the stage2 ones were wrong for a day because nothing in CI runs that script. The check itself needs the suite
-      # built, so it is a step of `hermetic`; this is its self-test, which runs it on worlds it must refuse (a count one too high, a
-      # filter that selects nothing, a script it cannot read) and needs no compile. A step and not a job, as the guards above.
-      - name: Contract count guard (self-test)
-        run: scripts/check-contract-counts.sh --self-test
-      # Issue #49: the deployed Worker's configuration is a template, and the renderer refuses whatever is not whole. Its self-test is the
-      # control (a missing variable, an all-zero id, a thrust-spike name, an unknown marker are each refused), and it renders the real
-      # template too, so the two cannot drift apart.
-      - name: Deploy configuration guard
-        run: scripts/render-wrangler.sh --self-test
-      # The release flow: release-plz.toml must list every workspace member in one version group with one tag (release-plz has no
-      # workspace-level group and does not check this itself), and a crate that is not in the last v* tag must have its
-      # first-release pattern, or release-plz stops on main (it did after #211). The tags come from the checkout's fetch-tags.
-      - name: Release configuration guard
-        run: python3 -I .github/scripts/check-release-plz.py --first-release required
-      # Issue #195: the Flagship policy every routing flag is made from. Its shape and names, no person (no `@`), and its
-      # audiences exactly the edge's ACCESS_AUD_<AUDIENCE> variables. Offline: the live app is checked by flagship.yml.
-      - name: Flagship policy guard
-        run: python3 -I scripts/flagship.py validate
-      # Every workflow and composite action, found by directory so a new one is linted the day it is added: pinned actions, explicit
-      # permissions, no expression in a run, no pull_request_target, checkout without kept credentials, and secrets, environments and
-      # id-token only in the jobs lint-all-workflows.sh names for that file (the deploy's two gated jobs, the release App's two jobs,
-      # the two attesting `build` jobs). A workflow it does not name gets none of them.
-      - name: Workflow guard (every workflow and action)
-        run: .github/scripts/lint-all-workflows.sh
-      # The indexes of the two directories, .github/workflows/README.md and .github/actions/README.md, have one row for every file they
-      # index and none for a file that is gone: an index that lists a deleted workflow or omits a new one is a lie (ADR-0102, stage 0.4).
-      - name: CI index guard (workflows and actions)
-        run: sh .github/scripts/check-ci-index.sh
-      # actionlint checks every workflow, and each call of a called workflow: the `with:` it passes against the callee's inputs, and the
-      # outputs it reads through `needs`. It is installed from its own release, because taiki-e/install-action, which installs the other
-      # tools here, does not offer it. lint-actionlint.sh runs it only inside this checkout, where it finds the project (in a plain
-      # directory it checks nothing and says nothing), and first proves that it refuses a call that breaks the contract (research 0018, F11).
-      - name: actionlint (every workflow), and the control that shows it is looking
-        env:
-          ACTIONLINT_VERSION: "1.7.12"
-          # The SHA-256 of actionlint_1.7.12_linux_amd64.tar.gz, from the release's own checksums file and from hashing the archive, which
-          # the build attestation of rhysd/actionlint covers (`gh attestation verify`, with a control against another repository; 2026-11-16).
-          ACTIONLINT_SHA256: "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8"
-        run: |
-          curl -fsSL -o "$RUNNER_TEMP/actionlint.tar.gz" "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
-          echo "${ACTIONLINT_SHA256}  $RUNNER_TEMP/actionlint.tar.gz" | sha256sum -c -
-          tar -xzf "$RUNNER_TEMP/actionlint.tar.gz" -C "$RUNNER_TEMP" actionlint
-          ACTIONLINT="$RUNNER_TEMP/actionlint" sh .github/scripts/lint-actionlint.sh
-      # Issue #58 (ADR-0032): the OpenAPI document that `thrust-api-v1` writes from the types its routes answer with, diffed against
-      # the pinned Plane schema with oasdiff (a pinned image; Docker is on the runner). Every difference must be a recorded one and
-      # every recorded one must still be there; the check breaks the document three ways and the register one way, and each must be
-      # refused. A step and not a job, so the gate's required contexts do not change.
-      - name: OpenAPI schema diff (oasdiff)
-        run: |
-          scripts/check-openapi.sh --self-test
-          scripts/check-openapi.sh
-
-  # rustfmt and clippy (issue #40). Clippy runs with `-D warnings`, so the four lints `Cargo.toml` denies in core, ports and the
-  # adapters (ADR-0006's panic policy: unwrap, expect, panic, indexing) and every other warning fail it. The second clippy run is
-  # the Worker as it ships: wasm32, no default features, so the `memory` adapter set is out of it. The clippy steps run even when
-  # rustfmt failed, so one push reports everything.
+  # The repository's guards (`deps`) and the Rust lint (`lint`): lint.yml, called here and judged by its own `verdict` job (ADR-0102), like the
+  # book's, the supply chain's and the app's. `top` says whether the change needs it, and `plans` gives it the jobs to run (one of the two, or
+  # both). The call keeps the id `lint`, so that `gate` waits for it under the name the job always had; `deps` is that workflow's too.
   lint:
     needs: changes
-    if: contains(fromJSON(needs.changes.outputs.jobs || '[]'), 'lint')
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    if: contains(fromJSON(needs.changes.outputs.top || '[]'), 'lint')
+    uses: ./.github/workflows/lint.yml
+    with:
+      plan: ${{ toJSON(fromJSON(needs.changes.outputs.plans || '{}').lint) }}
     permissions:
       contents: read
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/setup-rust
-        with:
-          components: clippy, rustfmt
-          targets: wasm32-unknown-unknown
-          cache-key: lint
-          save-cache: ${{ github.ref == 'refs/heads/main' }}
-      - name: rustfmt
-        run: scripts/rs cargo fmt --all --check
-      - name: clippy (native, every target)
-        if: ${{ !cancelled() }}
-        run: scripts/rs cargo clippy --workspace --all-targets --locked -- -D warnings
-      - name: clippy (the Worker, wasm32)
-        if: ${{ !cancelled() }}
-        run: scripts/rs cargo clippy -p thrust-worker --no-default-features --target wasm32-unknown-unknown --locked -- -D warnings
-      # The edge (ADR-0111) as it ships: its runtime module exists only in the wasm32 build, so the native run above never sees it.
-      - name: clippy (the edge, wasm32)
-        if: ${{ !cancelled() }}
-        run: scripts/rs cargo clippy -p thrust-edge --target wasm32-unknown-unknown --locked -- -D warnings
-      # The `openapi` feature of thrust-api-v1 (issue #58) is off in every run above, so the derives and path declarations behind it
-      # are linted here, under the same four denied lints.
-      - name: clippy (thrust-api-v1 with the OpenAPI feature)
-        if: ${{ !cancelled() }}
-        run: scripts/rs cargo clippy -p thrust-api-v1 --features openapi --all-targets --locked -- -D warnings
 
   # The hermetic loop: the default nextest profile (no Docker, Node, wrangler or running target) under the `ci`
   # profile, plus the doctests nextest cannot run. `oracle_` tests need the TypeScript oracle's generated output
@@ -471,7 +328,7 @@ jobs:
   gate:
     name: gate
     if: always()
-    needs: [changes, ci-scripts, deps, lint, hermetic, pg-adapter, contract, mutants, web, documentation, security]
+    needs: [changes, ci-scripts, lint, hermetic, pg-adapter, contract, mutants, web, documentation, security]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
@@ -498,7 +355,7 @@ jobs:
           EXPECTED_JOBS: ${{ needs.changes.outputs.top }}
           # the called workflows. A STATIC list, not the planner's `workflows` output: a planner bug that left one out of that output
           # would switch off the check for it. test_plan_ci.py holds this list equal to the keys of the planner's WORKFLOWS.
-          VERDICT_JOBS: documentation security web
+          VERDICT_JOBS: documentation security web lint
           PLANNED: ${{ needs.changes.outputs.cells || '[]' }}
           REPORTED_DIR: reported
         run: .github/scripts/assert-gate.sh

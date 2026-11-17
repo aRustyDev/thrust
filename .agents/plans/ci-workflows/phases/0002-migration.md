@@ -61,7 +61,7 @@ cheapest where there is least to move.
 | M1 | `documentation.yml` | `docs` | One job. No matrix, no cell markers, no secrets, no Docker. It exercises every part of the wiring: `changes`' outputs, the calling job, the `verdict` job, `gate`'s `VERDICT_JOBS`, the planner's map, the index, the probes |
 | M2 | `security.yml` | `deny` | The second callee, so the `verdict` job's steps are now **the same in two places**: the composite action is made here, by the plan's rule (see below) |
 | M3 | `web.yml` | `web` | One job again, with its own environment (Node, pnpm, and two environment variables at the job level) |
-| M4 | `lint.yml` | `lint`, `deps` | Two jobs, and `deps` has sixteen steps, the workflow guard and the two added in Phase 0 (the index guard, `actionlint`) among them: the first callee that holds more than one job, and the one that runs the guards of the files it is moving into |
+| M4 | `lint.yml` | `lint`, `deps` | Two jobs, and `deps` has eighteen steps (recounted when M4 started; `lint` has seven), the workflow guard and the two added in Phase 0 (the index guard, `actionlint`) among them: the first callee that holds more than one job, and the one that runs the guards of the files it is moving into |
 | M5 | `test.yml` | `ci-scripts`, `hermetic`, `pg-adapter`, `contract`, `mutants` | The largest: the matrix call, the cell markers, and the `verdict` job that must judge them. Its own design, written when it starts |
 | M6 | `e2e.yml` | `e2e-schedule.yml` renamed | Not a callee; the index and the planner's lists change |
 
@@ -212,6 +212,68 @@ must now allow the calling job of the same name, and say that no id is used twic
 
 **Public solutions.** None applies to the move. Whether a public action for pnpm fits better than `npm install --global pnpm@<the pin
 in web/package.json>` is a question for the Web phase's survey, not for a refactor, which keeps the commands.
+
+### M3: done (#264, merged 2026-11-17 as `af9f365`)
+
+What it showed:
+- **Parity**, by `scripts/ci-commands.py`: 39 jobs before, 41 after; 37 unchanged, `web` moved with its 7 steps identical, 2 changed as
+  intended (the `web` job of `ci.yml`, now the call; `gate`: its `VERDICT_JOBS`), 1 appeared (`web.yml:verdict`), 0 gone.
+- **The wiring**: `test_workflow_wiring.py` 82 checks, the gate's cases 186, the planner's 6,986; `mutate_gate.py` 136 mutants killed, the 7
+  that change nothing survived, on the runner too; a full run of 42 checks, `gate` certified.
+- **Two probes**: #265 (`web` planned and skipped) failed `web / verdict` and `gate`, with `documentation` and `security` still green; #266
+  (the call of the action skipped) failed `gate` alone, `web succeeded but its verdict output is 'missing', not 'pass'`.
+
+What it found: a workflow that bears its job's name (`web` calls `web.yml`, which holds the job `web`) has the id in both files, which
+two tools had to learn (the wiring test allows a moved job's name in `ci.yml` only as the call that bears it and refuses an id used
+twice; the parity script now says `LOST` for a job that became a call and whose steps are nowhere else); and `main` moved three times
+while the stage was built, so the build was committed, `main` merged in, and everything run again on the merged tree. The owner's
+deferral of `build-web` is in the decisions at the end.
+
+### M4 in detail: `lint.yml`
+
+**Purpose.** Move the Rust lint and the repository's guards out of `ci.yml`: the fourth callee, and the first that holds two jobs.
+
+**What is particular to it.**
+1. **Two jobs, so a plan can be partial.** A change to `clippy.toml` plans `lint` and not `deps`; a change to a guard of `deps` plans `deps`
+   (and `ci-scripts`) and not `lint`. The `verdict` job judges both: a planned job must be `success`, and one that is not planned must be
+   `skipped`. The gate-level cases for it exist (a callee with two planned jobs and one unplanned); this stage adds the planner's real
+   cases through the command line, and the probe skips one of the two.
+2. **The name clash again.** The workflow `lint` bears the name of its job `lint`, as `web` does, and `deps` is a plain move. The checks
+   are `lint / lint`, `lint / deps` and `lint / verdict`. The calling job in `ci.yml` keeps the id `lint`; `deps` leaves `gate`'s `needs`.
+3. **`deps` runs the guards of the files it moves into.** In `lint.yml` it lints `lint.yml` itself, and every other workflow and action:
+   the workflow lint (R1 to R9), the index guard and `actionlint`. So the run of this very pull request is what shows `deps` green in its new
+   home; no probe is needed for that, and none could replace it.
+4. **`deps` keeps `fetch-tags: true` on its checkout** (the release guard compares the workspace with the last tag) and its job
+   `timeout-minutes: 20`; `lint` its 20 as well. `deps` is 18 steps (the checkout, `setup-rust`, and sixteen guards or checks, ending in the
+   OpenAPI diff, which needs Docker) and `lint` is 7.
+5. **The mutant driver's `CALLS` rows hold one job each**; this stage lets a row hold several, and makes the mutants of a workflow with
+   several jobs (a verdict job that waits for one only, one that knows one only, a job that runs whatever the plan, per job).
+
+**Acceptance.**
+- `.github/workflows/lint.yml` (`name: lint`): `workflow_call` (input `plan`, required; output `verdict`) and `workflow_dispatch` (`plan`
+  defaults to `["deps","lint"]`); no workflow-level `concurrency:`; `permissions: {}`; the jobs `deps` and `lint` moved **verbatim** (steps,
+  pins, comments, `fetch-tags`) with `if: contains(fromJSON(inputs.plan), '<id>')` and without `needs: changes`; and a `verdict` job that
+  needs both and calls the action.
+- `ci.yml`: the `deps` job is gone; the `lint` job is a call of `lint.yml` (`needs: changes`, runs when `top` names `lint`, `plan` from `plans`);
+  `gate` needs `lint` as before and no longer `deps`; `VERDICT_JOBS` is `documentation security web lint`.
+- The planner: `WORKFLOWS` holds `lint: (deps, lint)`; the gate's default list becomes `ci-scripts hermetic pg-adapter contract mutants
+  documentation security web lint`; `same_jobs`, the indexes, `cicd.md`, `running.md`, `ci-baseline.py`'s groups (`deps` leaves the
+  default list: `lint / deps` is in the group `lint`) and the mutant driver follow. A change to `clippy.toml` plans the workflow `lint` with
+  the plan `["lint"]`, and to `scripts/check-layout.sh` the plan `["deps"]` (cases of `test_plan_ci.py`).
+- The wiring test needs no new rule (it already holds a list of jobs and a call that bears its job's name); the mutant driver gains the
+  mutants of a two-job workflow.
+- Proof as for M3: the parity table and its check (`deps` moved with its 18 steps and `lint` with its 7, every one identical), a full run
+  (the `deps` job green in `lint.yml` is the proof of 3), and two probes planted in `lint.yml`: `deps` planned and skipped (with `lint`
+  still passing, so the verdict names one job), and the call of the action skipped.
+
+**State machine of each job.** As `docs`, `deny` and `web`.
+
+**Public solutions.** None applies to the move. The guards are the repository's own scripts; `actionlint` is installed from its release
+archive with a pinned SHA-256 because `taiki-e/install-action` does not offer it (Phase 0). Whether `clippy` and `rustfmt` fit a public
+lint action is a question for the Lint phase's survey, not for a refactor, which keeps the commands.
+
+**No action is proposed.** `lint` and `deps` share a checkout and a `setup-rust` call and nothing else, and `setup-rust` already is the
+action; the `deps` guards are pairs of a check and its `--self-test`, which a loop in a script would hide, not an action.
 
 ## Decisions on the questions (owner, 2026-11-17, after #251)
 
