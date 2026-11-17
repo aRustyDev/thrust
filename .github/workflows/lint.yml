@@ -87,6 +87,15 @@ jobs:
       # version shares the data. Its test (ci-scripts) is the control: each construct is refused where it must be and nowhere else.
       - name: Migration expand-rule guard
         run: scripts/check-migration-lint.sh
+      # Cargo.lock is what cargo writes (#279, #284): `cargo metadata --locked`, which every other step uses, accepts a lockfile whose
+      # packages are in the wrong order, and a cargo command without it then rewrites the file, so a clean checkout is dirty after its
+      # first cargo run. The check runs cargo without `--locked` and fails when it changes the file (and puts the file back either way).
+      # Its self-test is the control: two packages swapped, a member the lockfile has not heard of, no lockfile and a cargo that fails.
+      # Steps and not a job, as the guards around them.
+      - name: Cargo.lock guard (self-test)
+        run: scripts/check-cargo-lock.sh --self-test
+      - name: Cargo.lock guard
+        run: scripts/check-cargo-lock.sh
       # The expected test counts of the contract suite's passes (scripts/contract.sh, scripts/stage2-contract.sh) go stale when a test
       # is added, and the stage2 ones were wrong for a day because nothing in CI runs that script. The check itself needs the suite
       # built, so it is a step of `hermetic`; this is its self-test, which runs it on worlds it must refuse (a count one too high, a
