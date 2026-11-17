@@ -44,9 +44,9 @@ workflows; `actionlint` and `diff` on the YAML do not know that a job moved. The
 | A called workflow's jobs are `<calling job> / <job>` in the check list, and a matrix call is `<calling job> (<cell>) / <job>` | research 0018, F4 | Nothing requires a name but `gate`. `ci-baseline.py` classifies a job by what precedes ` / `, so its `--groups` changes with the layout, as research 0017 says |
 | Renaming a job id (`docs`, `ci-scripts`) touches about 20 and 40 lines of the planner, the gate, the tests and the mutants, and about 20 lines of documentation, each | counted 2026-11-17 | A rename is mechanical, but it is not free: see the questions |
 
-## The stages, and the order proposed
+## The stages, and the order
 
-The plan listed M1 to M6 in the order of the owner's priority groups, with `test.yml` first. This phase proposes **the simplest
+The plan listed M1 to M6 in the order of the owner's priority groups, with `test.yml` first. This phase takes **the simplest
 callee first**, because the first real called workflow is where whatever the spike could not show will show, and that is
 cheapest where there is least to move.
 
@@ -100,26 +100,15 @@ its pull request; M1's `verdict` job is then replaced by a call of it, in M2, so
 same kind. The `verdict` job of `test.yml` (M5) is **not** an exact copy: it also downloads the cell markers and passes the
 planned cells, so it is asked about when M5 starts, with the two side by side.
 
-## Questions for the owner
+## Decisions on the questions (owner, 2026-11-17, after #251)
 
-Each has a recommendation; none blocks M1's writing, and each changes what M1 contains.
+All four were answered as recommended.
 
-1. **The order.** M1 as above (`documentation.yml` first, `test.yml` fifth), or the plan's order (`test.yml` first)?
-   *Recommended: the simplest first.* The plan's order follows your priority groups, which govern the passes of Phases 2 to 14;
-   nothing in the migration depends on it, and `test.yml` is the stage most likely to find something the spike did not.
-2. **The job ids.** Keep `docs`, `ci-scripts`, `lint` and `deny` through the migration, and rename them in the phase that owns the
-   workflow (`mdbook`, `bash`, `rust`, `supply-chain`), or rename them as each moves?
-   *Recommended: keep them.* A migration that changes no name is easy to prove; a rename is about 60 lines of the planner and its
-   tests and 40 of documentation per job, and `ci-scripts` is not one-to-one with `bash` (it also runs the planner's Python tests
-   and the mutants, which the Test phase will place). The plan said to rename where the layout names the same job; that was an
-   assumption, and these counts are what it did not know.
-3. **`flake-hunt.yml`.** The plan folds it into `test.yml` as a dispatch input and a weekly schedule. Folding it needs a
-   job-level `concurrency:` (R8 forbids the workflow-level one it has) and reads "no `mode` given" as "the weekly hunt", since a
-   scheduled run has no inputs and a callee may not read `github.event_name` (R9). It can be done, and `required: true` on the
-   call's `mode` keeps `ci` from ever reaching the empty case. Options: (a) fold it as described, in M5; (b) keep
-   `flake-hunt.yml` as it is through the migration and make it a stage of the Test phase, where `test.yml` is being reworked
-   anyway; (c) leave it a workflow of its own for good. *Recommended: (b).* A refactor that bends two of its own rules to move a
-   file buys nothing the Test phase does not buy at less risk.
-4. **`name:` of a workflow.** The repository's workflows are named in lowercase (`ci`, `deploy`, `contract-cell`); your tree names
-   them `Test`, `Docs` and so on. *Recommended: the repository's convention* (`documentation`, `security`, `test`), since the name
-   shows in every check and in `workflow_run`'s `workflows:` list. Say if you want the capitalised ones.
+| Question | Answer |
+|---|---|
+| The order | The simplest callee first: M1 `documentation.yml`, `test.yml` fifth. Your priority groups govern the passes of Phases 2 to 14; nothing in the migration depends on them, and `test.yml` is the stage most likely to find something the spike did not |
+| The job ids | Kept through the migration (`docs`, `ci-scripts`, `lint`, `deny`, ...), and renamed in the phase that owns the workflow. A rename is about 60 lines of the planner and its tests and 20 to 40 of documentation per job, and `ci-scripts` is not one-to-one with `bash` (it also runs the planner's Python tests and the mutants) |
+| `flake-hunt.yml` | Kept exactly as it is through the migration, and a stage of the Test phase (Phase 2), where `test.yml` is being reworked anyway. Folding it in needs a job-level `concurrency:` (R8 forbids the workflow-level one it has) and reads "no `mode` given" as "the weekly hunt" (R9), a refactor that bends two of its own rules for nothing the Test phase does not buy at less risk |
+| `name:` of a workflow | Lowercase, the repository's convention (`documentation`, `security`, `test`): the name shows in every check and in `workflow_run`'s `workflows:` list |
+
+No question is open.

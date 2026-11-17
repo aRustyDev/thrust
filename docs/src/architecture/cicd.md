@@ -19,6 +19,7 @@ Worker](deploy.md). The jobs and the command each CI job runs are in the CI sect
 |---|---|
 | `.github/workflows/ci.yml` (`ci`) | The pipeline. Runs on pull requests, merge-queue entries, pushes to `main`, every night on `main` and by manual dispatch |
 | `.github/workflows/contract-cell.yml` | A reusable workflow that runs one contract cell on its own runner |
+| `.github/workflows/documentation.yml` (`documentation`) | The book's check, called by `ci.yml` (its `documentation` job) and runnable alone: the `docs` job (moved here unchanged, ADR-0102 and the migration, phase 1 of `.agents/plans/ci-workflows/`) and a `verdict` job that judges it against the plan it was given. `ci.yml`'s `gate` waits for the calling job and requires the `verdict` output |
 | `.github/workflows/flake-hunt.yml` | Repeats one cell 1 to 50 times (5 by default), by hand or every Monday at 03:17 UTC (`native-memory main`). It offers every pass of the matrix, and its first step, `.github/scripts/check-flake-hunt-cell.sh`, refuses a target and pass that are not a cell of `scripts/contract-all.sh`, before anything is built; `test-check-flake-hunt-cell.sh` holds the workflow's two lists equal to the matrix's. A pass is prepared by the same action a cell uses (`contract-pass-tools`). It passes only if `scripts/flake-hunt.sh` prints `failures: 0 / N`, because the script ends with an `echo`, so its exit status does not say whether an iteration failed. The job stops at 120 minutes: a `worker-cf e2e` iteration takes about 9 (nightly run 43798891735), so that cell fits about 12 |
 | `.github/workflows/e2e-schedule.yml` | Runs the `worker-cf e2e` and `worker-cf e2e-mail` cells (through `contract-cell.yml`, one job each) every day at 04:41 UTC and by hand, and on a pull request that edits the file, so that the call is proved valid before it merges. It covers what a pull request does not: drift in the runner, the browser and the packages, every day on `main`. Not a gate: nothing waits for it and `gate` does not read it. The pinned-Plane leg is not here, because the oracle builds from an unpushed fork (`scripts/e2e.sh plane-oracle`, local) |
 | `.github/workflows/release-plz.yml` (`release-plz`) | The release flow, run by release-plz: after each push to `main`, opens or updates the release-candidate pull request from an `rc/*` branch, and tags `vX.Y.Z`, creates the GitHub release as a draft and starts `release.yml` on the tag when such a pull request merges. See [Release candidates](#release-candidates) |
@@ -36,6 +37,7 @@ Worker](deploy.md). The jobs and the command each CI job runs are in the CI sect
 | `scripts/flagship.py` | The only writer of the routing flags: `validate`, `check`, `sync`, and `put`, `alias` and `delete` for the deploys and teardowns of targets. Tested by `.github/scripts/tests/test_flagship.py` against `flagship_fake.py` |
 | `scripts/preview-config.py` | A Preview target's configuration (ADR-0111): production's rendered configuration, unchanged at the top level, with a `previews` block derived from it, because a Preview inherits none of production's bindings. The `shared` profile restates every binding, uses production's rooms (`script_name`), and leaves out the queue consumer and the cron, which never target a Preview. A setting it does not know is refused. Not run by a deploy yet (stage E of #195). Tested by `.github/scripts/tests/test_preview_config.py` |
 | `scripts/deploy-worker.sh` and its parts | The deploy itself (render, classify, expand migration, `wrangler deploy`, smoke, rollback), run by the composite action: `render-wrangler.sh` (with the template `crates/worker/wrangler.deploy.toml`), `migrate-ci.sh`, `smoke-deploy.sh`, `smoke-bootstrap.sh`, `merge-assets.sh` and `check-asset-retention.sh` |
+| `scripts/edge-opt-in.sh` | Opt in at the edge as CI (ADR-0111). It asks `/_edge/opt-in/<audience>?target=<name>` with the CI opt-in service token (from a file, never argv) and writes the edge's pin to a cookie jar, retrying while the target's flag propagates. It is for the smoke of a target: `smoke-deploy.sh` with `SMOKE_COOKIE_FILE` (the pin on every request) and `SMOKE_EXPECT_ROUTE` (the edge's `x-thrust-route` must name the target). No deploy runs it yet (stage E of #195). Tested in `test-smoke-deploy.sh` against `smoke_stub.py` |
 | `scripts/check-web-diff.sh` | The Q-R2 gate for `web/` (the stock React app, imported from the oracle pin), run by the `web` job. Tested by `.github/scripts/tests/test-check-web-diff.sh` |
 
 ## One required check
@@ -44,27 +46,37 @@ The ruleset on `main` requires exactly one status check, `gate` `[verified 2026-
 evidence that `gate` inspects. `gate` runs even when a job before it failed, and `.github/scripts/assert-gate.sh`
 decides:
 
-- The `changes` job must have succeeded. It names the jobs that must run (`jobs`) and the contract cells (`cells`), from
-  `.github/scripts/plan-ci.py` (see [What runs when](#what-runs-when)).
+- The `changes` job must have succeeded. It names the jobs that must run (`jobs`), what the gate itself expects (`top`: the
+  jobs still in `ci.yml`, then the workflows it calls that have a planned job), each called workflow's jobs (`plans`) and the
+  contract cells (`cells`), from `.github/scripts/plan-ci.py` (see [What runs when](#what-runs-when)).
 - Every expected job must be exactly `success`. A skipped job is a failure here, not a pass.
 - Every job that is not expected must be `skipped`. One that ran anyway means its `if:` and the planner disagree.
-- The planner and the gate list the same ten jobs. An expected job that is not a need of the gate, or a need the
-  planner does not know, fails it, as does an input that is missing or is not a JSON array of strings.
+- The planner and the gate list the same ten names: the jobs still in `ci.yml` and the workflows it calls. An expected job
+  that is not a need of the gate, or a need the planner does not know, fails it, as does an input that is missing or is not
+  a JSON array of strings.
 - `contract` is expected exactly when cells are planned. The set of cells that uploaded a pass marker must then equal
   the planned set, which must not be empty.
-- `test-ci-scripts.sh` generates the cases: each of the ten jobs, expected or not, with each of the four results (80
+- `test-ci-scripts.sh` generates the cases: each of the ten names, expected or not, with each of the four results (80
   cases), then the cells, the inputs and the names.
-- **One script at every level** (ADR-0102). `assert-gate.sh` also takes `KNOWN_JOBS`, `CHANGES_JOB`, `CELL_JOB` and
-  `VERDICT_JOBS`, each of which defaults to what the gate above needs. A called workflow's `verdict` job sets them to judge
-  its own jobs; a gate that calls workflows sets `VERDICT_JOBS` to require of each expected callee that its result is
-  `success` **and** that its output `verdict` is `pass`, since a callee whose `verdict` job was skipped is `success` and
-  proves nothing. No workflow is called yet, so ci.yml's own gate runs as above. The cases (173 in `test-ci-scripts.sh`)
+- **A called workflow is judged twice** (ADR-0102). `assert-gate.sh` also takes `KNOWN_JOBS`, `CHANGES_JOB`, `CELL_JOB` and
+  `VERDICT_JOBS`, each of which defaults to what the gate above needs. The called workflow's own `verdict` job sets them to
+  judge its jobs against the plan it was given; the gate lists the called workflows as `VERDICT_JOBS`, which requires of each
+  expected one that its result is `success` **and** that its output `verdict` is `pass`, since a workflow whose `verdict` job
+  was skipped is `success` and proves nothing. `VERDICT_JOBS` is a static list in `ci.yml`, not the planner's output, so a
+  planner that dropped a workflow could not switch its check off; `test_workflow_wiring.py` holds it equal to the planner's
+  `WORKFLOWS`. Today one workflow is called, `documentation.yml` (the `docs` job). The cases (178 in `test-ci-scripts.sh`)
   include the seven scenarios of the gate spike (`.agents/plans/ci-workflows/research/0018-gate-spike.md`).
-- **Tested to be able to fail.** `.github/scripts/tests/mutate_gate.py`, the last line of the `ci-scripts` job, plants 53 hand
-  mutants one at a time in `plan-ci.py` and `assert-gate.sh`, and each must fail the tests of its file (`test_plan_ci.py`;
-  `test-ci-scripts.sh` under dash, stopping at the first failing case). It refuses to answer when the tests fail on the
-  unmutated files, when the text a mutant replaces is not found exactly once, or when a mutant no longer compiles, and two
-  mutants that change nothing must survive, so a driver that kills everything is caught. `[verified 2026-11-16 locally, under dash]`
+- **The wiring is tested against the real files.** `test_workflow_wiring.py` (35 checks, for one workflow) holds `ci.yml`, the
+  planner and each called workflow's file to each other: the calling job (`needs: changes`, it runs when `top` names it, it
+  passes its own plan from `plans`), the gate's needs and its `VERDICT_JOBS`, the workflow's jobs and its `verdict` job
+  (`always()`, judging those jobs against its plan with the one script, setting its output only after), and no workflow-level
+  `concurrency` or `github.event_name` in a called workflow.
+- **Tested to be able to fail.** `.github/scripts/tests/mutate_gate.py`, the last line of the `ci-scripts` job, plants 76 hand
+  mutants one at a time in `plan-ci.py`, `assert-gate.sh`, `ci.yml` and `documentation.yml`, and each must fail the tests of its
+  file (`test_plan_ci.py` and `test_workflow_wiring.py`; `test-ci-scripts.sh` under dash, stopping at the first failing case). It
+  refuses to answer when the tests fail on the unmutated files, when the text a mutant replaces is not found exactly once, or
+  when a mutant no longer compiles, and four mutants that change nothing must survive, so a driver that kills everything is
+  caught. `[verified 2026-11-17 locally, under dash]`
 
 The point is that "nothing failed" is not accepted as "everything ran". A cell that never started leaves no check
 behind, and a required check that never reports blocks a pull request forever.
@@ -106,8 +118,8 @@ its base branch. Nothing calls it, so it is a tool to run by hand.
     - the scripts that run a cell;
     - an unknown directory under `crates/`;
     - an unlisted script under `scripts/`.
-  - The book's inputs run the `docs` job: `docs/`, `AGENTS.md` (the book includes its testing rules), `.config/branding/`
-    (its palette) and `scripts/check-book.sh`.
+  - The book's inputs run the `docs` job, which lives in `documentation.yml` and is called by `ci.yml`: `docs/`, `AGENTS.md`
+    (the book includes its testing rules), `.config/branding/` (its palette) and `scripts/check-book.sh`.
   - A path that no rule matches needs nothing: `README.md`, `.agents/`, `probes/` (which only `scripts/verify-all.sh`
     runs, locally) and the other `tools/`. A pull request of only such paths runs `changes` and `gate`, and `gate` passes.
 - **Everything runs** in these cases:
@@ -130,7 +142,7 @@ its base branch. Nothing calls it, so it is a tool to run by hand.
   | `thrust-contracts` (everything depends on it) | all but `deny` and `web` | all 26 |
   | `tools/oracle-v1/` | `deps`, `hermetic`, `contract` | the 3 `oracle` cells |
   | `scripts/smoke-deploy.sh` | `ci-scripts` | none |
-  | a page under `docs/` | `docs` | none |
+  | a page under `docs/` | `docs` (in `documentation.yml`) | none |
 
 - **Tested** by `test_plan_ci.py`, about 6,800 checks:
   - 300 generated crate graphs, with each crate changed alone and in pairs, against an independent reverse-reachability;
