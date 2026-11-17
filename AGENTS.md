@@ -45,7 +45,8 @@ Where those docs and the rules below disagree, the rules win; record the disagre
    snapshot, or raise its timeout to get green. Fix the code, or say in the commit message why the test was wrong.
 4. Name tests by category; nextest routes on the prefix: `prop_` property, `model_` model-based, `parity_` golden
    fixtures, `oracle_` comparison with the TypeScript oracle, live or against its generated output (opt-in),
-   `fuzz_replay_` fuzz-input replay, `regression_` a pinned regression (rule 9). `regression_` follows a category
+   `fuzz_replay_` fuzz-input replay, `regression_` a pinned regression (rule 9), `load_` a load test of
+   `thrust-load-tests` (it measures a running target: the `load` profile, through `scripts/contract.sh <target> bench|scale`). `regression_` follows a category
    prefix when the test has one (`model_regression_…`), and rstest names a case `case_<n>_regression_…`, so select
    regressions with `test(/regression_/)`, not `test(/\bregression_/)`.
 5. Keep a crate's tests in that crate: mutation testing runs only the mutated package's own tests. Most of today's

@@ -197,6 +197,7 @@ thrust/
       fixtures/oracle/          # thrust-oracle-fixture: the v1 oracle's seed, for /internal/seed (#58)
       suites/api/               # thrust-contract-tests: the one HTTP contract suite, run against every target
                                 #   (ADR-0121)
+      suites/load/              # thrust-load-tests: the latency and scale load tests, against a running target
     server/                     # thrust-server: composition root: native axum/tokio (cargo feature set `selfhosted`)
     worker/                     # thrust-worker: composition root: wasm32 Cloudflare Worker (cargo feature set
                                 #   `cloudflare`)
