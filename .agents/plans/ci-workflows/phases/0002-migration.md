@@ -416,6 +416,7 @@ What it showed:
 - **Two probes**: #282 (a planned cell succeeded and never uploaded its marker) failed `test / verdict`, with `planned cells that never reported
   success: native-memory sweeper`, and `gate`, with nothing else red; #283 (the call of the action skipped) failed `gate` alone, with every job
   and every cell green, which is the case that matters most here, because with that call skipped no cell is judged at all.
+- **`main`'s own run on the merge commit** (a push run): 42 of 42 jobs succeeded, the first run of the nested cells on `main`.
 
 What it found:
 - **The cost of the design, as planned**: a verdict job that forgets `CELL_JOB` no longer fails by default. The wiring test and its mutants carry the
