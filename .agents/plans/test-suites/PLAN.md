@@ -216,13 +216,17 @@ measured; eight broken copies of the wrapper each fail it. The CPU profile: 20 r
 - **The port-picking race** that fails a cell with exit 4 (and made one spike run above stop before its tests) is its
   own fix.
 
-## Status (2026-11-16)
+## Status (2026-11-17): done
+
+All five pull requests are merged: every Rust test runs on nextest except the doctests, the two probes are `load_` tests in
+`thrust-load-tests`, and one command writes the v1 router's heap and CPU profiles, each with a control that fails. What the
+plan deliberately left for later is the section above, "Left for later (not this plan)".
 
 | Item | State |
 |---|---|
-| Plan | this pull request |
+| Plan | merged in #234 (`7be2a33`, 2026-11-16) |
 | PR 1, contract suite onto nextest | merged in #243 (`a5a11ff`): CI found cargo-nextest missing from the contract cells, fixed with a `nextest` input to `setup-rust` |
 | PR 2, adapter suites onto nextest | merged in #252 (`b83ece3`): every Rust test on nextest except the doctests; merged with #248's mutants verdicts |
 | PR 3, load suite | merged in #262 (`ab9c29b`): `thrust-load-tests`; a new crate also needs `release-plz.toml` entries |
 | PR 4, profiling: heap | merged in #267 (`cf23669`): `thrust-profiling`; its world is in `tests/common`, because `check-deps.sh` refuses `SystemScope::mint` in a library |
-| PR 5, profiling: CPU | in review, branch `test/profiling-cpu` |
+| PR 5, profiling: CPU | merged in #272 (`e5ea637`, 2026-11-17): samply 0.13.1 through `scripts/samply-wrapper.sh`. samply exits 0 when the test is killed by a signal, so the wrapper also requires libtest's pass line |
