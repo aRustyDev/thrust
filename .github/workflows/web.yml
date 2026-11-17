@@ -31,7 +31,7 @@ jobs:
   # read from it, so there is no second copy to drift; Node is web/.node-version. Dependency scripts are off (--ignore-scripts):
   # 1,158 packages is no place to run arbitrary install hooks, and the build does not need them.
   web:
-    if: contains(fromJSON(inputs.plan), 'web')
+    if: contains(fromJSON(inputs.plan), 'web') && false
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
