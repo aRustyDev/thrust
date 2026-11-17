@@ -18,6 +18,7 @@ members = [
     "crates/server",
     "crates/testing/suites/api",
     "crates/testing/suites/load",
+    "crates/testing/profiling",
     "crates/testing/fixtures/oracle",
     "crates/editor/doc",
     "crates/spikes/editor-worker",

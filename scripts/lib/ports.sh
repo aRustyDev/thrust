@@ -48,15 +48,39 @@ ports_top() {
   echo "$top"
 }
 
-# A port in [PORTS_FLOOR, ports_top] that nothing listens on, chosen at random: fixed ports collide with OrbStack-published
-# containers and other sessions' wrangler instances (measured: 18080 and 8787 were both taken).
+# The file that remembers the ports of one run, one a line: the ones pick_port drew and the ones the environment gave
+# (ports_remember). The caller sets it, to a file of its own, before the first draw. A run draws the port of the server, of the mock
+# identity provider, of Postgres and of Mailpit before any of them listens, and `lsof` cannot see a port nobody has bound yet, so
+# without this a later draw can return an earlier one (measured: 400 draws over 1000 ports gave 66 ports twice) and the second
+# service's bind is refused by the first. It is a file and not a variable because pick_port runs in `$( )`, a subshell.
+#   PORTS_DRAWN_FILE="$LOG.ports"; : > "$PORTS_DRAWN_FILE"
+
+# ports_remember <port>...: ports that were not drawn here (an environment variable gave them), so that no draw returns one of
+# them. An empty argument is skipped, so `ports_remember "${THRUST_PORT:-}" ...` takes whatever is set.
+ports_remember() {
+  for given in "$@"; do
+    if [ -n "$given" ]; then
+      echo "$given" >>"$PORTS_DRAWN_FILE" || return 1
+    fi
+  done
+  return 0
+}
+
+# A port in [PORTS_FLOOR, ports_top] that nothing listens on and that this run has not drawn, chosen at random: fixed ports collide
+# with OrbStack-published containers and other sessions' wrangler instances (measured: 18080 and 8787 were both taken). Refuses
+# when PORTS_DRAWN_FILE is not set: a picker that forgets what it drew is the defect above.
 pick_port() {
+  if [ -z "${PORTS_DRAWN_FILE:-}" ]; then
+    echo "pick_port: PORTS_DRAWN_FILE is not set; without it a port can be handed out twice" >&2
+    return 1
+  fi
   top="$(ports_top)" || return 1
   span=$((top - PORTS_FLOOR + 1))
   n=0
   while [ "$n" -lt 50 ]; do
     p=$((PORTS_FLOOR + $(od -An -N2 -tu2 /dev/urandom | tr -d ' ') % span))
-    if ! lsof -nP -iTCP:"$p" -sTCP:LISTEN >/dev/null 2>&1; then
+    if ! grep -qx "$p" "$PORTS_DRAWN_FILE" 2>/dev/null && ! lsof -nP -iTCP:"$p" -sTCP:LISTEN >/dev/null 2>&1; then
+      echo "$p" >>"$PORTS_DRAWN_FILE" || return 1
       echo "$p"
       return 0
     fi
