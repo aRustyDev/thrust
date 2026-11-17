@@ -1,7 +1,8 @@
 """A stand-in for the deployed Worker, for test-smoke-deploy.sh (issue #49). Standard library only.
 
 It answers the five requests scripts/smoke-deploy.sh makes, as the Worker does, and each flag breaks one thing the smoke has to
-catch. It binds 127.0.0.1 on a port the system picks and writes that port to --port-file once it is listening. The password the
+catch. With --pin, --route or --edge-version it stands for the shared hostname with the edge in front (ADR-0111), for the smoke of
+a target, the edge-opt-in.sh and the edge's own deploy (scripts/edge-controls.sh). It binds 127.0.0.1 on a port the system picks and writes that port to --port-file once it is listening. The password the
 sign-in accepts comes from the environment (STUB_PASSWORD), not from a flag, so it is in no process's argv.
 """
 
@@ -29,7 +30,8 @@ p.add_argument("--drop-cookie", action="store_true", help="a sign-in that answer
 # `x-thrust-route: prod`, and its API answers 421, so a smoke that lost the pin cannot read the target's data).
 p.add_argument("--pin", help="the one target this edge routes to, by the pin cookie")
 p.add_argument("--prod-version", default="prod-version", help="what production says in x-thrust-version")
-p.add_argument("--route", help="what a pinned /healthz says in x-thrust-route (default: the --pin target)")
+p.add_argument("--route", help="what a pinned /healthz says in x-thrust-route (default: the --pin target); without --pin, "
+               "what every /healthz says (production behind the edge, whose API works: --route prod)")
 p.add_argument("--no-route", action="store_true", help="send no x-thrust-route at all (a request that did not pass the edge)")
 # /_edge/opt-in/<rc|dev>?target=T: Access admits only the client id and secret in STUB_CLIENT_ID / STUB_CLIENT_SECRET (else 403 with
 # an empty body, as Access answers); then the edge sets the pin for the --pin target, after refusing the first --deny-first asks
@@ -39,6 +41,12 @@ p.add_argument("--unavailable-first", type=int, default=0, help="answer the firs
 p.add_argument("--not-admitted", action="store_true", help="the edge refuses the token itself (403 'not admitted: ...')")
 p.add_argument("--opt-in-status", type=int, help="answer the opt-in with this status instead")
 p.add_argument("--no-pin-cookie", action="store_true", help="answer the opt-in 303 without setting the pin")
+# The edge's own deploy (scripts/deploy-edge.sh, scripts/edge-controls.sh): which build of the edge answers, and two broken edges.
+p.add_argument("--edge-version", help="what every answer says in x-thrust-edge-version (none without it)")
+p.add_argument("--honour-any-pin", action="store_true", help="a broken edge: any __Host-thrust_edge cookie, even a forged one, pins")
+p.add_argument("--opt-in-open", action="store_true", help="a broken edge: the opt-in pins whoever asks, with no Access credential")
+p.add_argument("--no-edge-paths", action="store_true", help="no /_edge/ path is served (404): neither Access nor the edge is there")
+p.add_argument("--unavailable-first-gets", type=int, default=0, help="answer the first N GETs of any path 503, then as usual")
 a = p.parse_args()
 
 PASSWORD = os.environ.get("STUB_PASSWORD", "s3cret-pw")
@@ -46,6 +54,7 @@ CSRF = "csrf-tok-1"
 SESSION = "sess-1"
 lock = threading.Lock()
 health_calls = [0]
+gets = [0]
 opt_in_calls = [0]
 CLIENT_ID = os.environ.get("STUB_CLIENT_ID", "ci-id")
 CLIENT_SECRET = os.environ.get("STUB_CLIENT_SECRET", "ci-secret")
@@ -63,14 +72,22 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(data)))
         for k, v in headers:
             self.send_header(k, v)
+        self.edge_header()
         self.end_headers()
         self.wfile.write(data)
+
+    def edge_header(self):
+        if a.edge_version:
+            self.send_header("x-thrust-edge-version", a.edge_version)
 
     def signed_in(self):
         return ("session=" + SESSION) in (self.headers.get("Cookie") or "")
 
     def pinned(self):
-        return a.pin is None or ("__Host-thrust_edge=pin-" + a.pin) in (self.headers.get("Cookie") or "")
+        cookie = self.headers.get("Cookie") or ""
+        if a.honour_any_pin and "__Host-thrust_edge=" in cookie:
+            return True
+        return a.pin is None or ("__Host-thrust_edge=pin-" + a.pin) in cookie
 
     def opt_in(self, path):
         audience = path[len("/_edge/opt-in/"):]
@@ -79,9 +96,13 @@ class Handler(BaseHTTPRequestHandler):
         with lock:
             opt_in_calls[0] += 1
             n = opt_in_calls[0]
-        if self.headers.get("CF-Access-Client-Id") != CLIENT_ID or self.headers.get("CF-Access-Client-Secret") != CLIENT_SECRET:
+        if a.opt_in_open:
+            pin = "__Host-thrust_edge=pin-%s; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=3600" % target
+            self.reply(303, "", [("Location", "/"), ("Set-Cookie", pin)])
+        elif self.headers.get("CF-Access-Client-Id") != CLIENT_ID or self.headers.get("CF-Access-Client-Secret") != CLIENT_SECRET:
             self.send_response(403)
             self.send_header("Content-Length", "0")
+            self.edge_header()
             self.end_headers()
         elif audience not in ("rc", "dev"):
             self.reply(404, "no such audience")
@@ -101,7 +122,12 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         path = self.path.split("?")[0]
-        if path.startswith("/_edge/opt-in/"):
+        with lock:
+            gets[0] += 1
+            unavailable = gets[0] <= a.unavailable_first_gets
+        if unavailable:
+            self.reply(503, "the edge is starting")
+        elif path.startswith("/_edge/opt-in/") and not a.no_edge_paths:
             self.opt_in(path)
         elif a.pin is not None and not self.pinned():
             # production, as the edge serves it to a request without a valid pin
@@ -114,7 +140,7 @@ class Handler(BaseHTTPRequestHandler):
                 health_calls[0] += 1
                 n = health_calls[0]
             headers = []
-            if a.pin is not None and not a.no_route:
+            if (a.pin is not None or a.route) and not a.no_route:
                 headers.append(("x-thrust-route", a.route or a.pin))
             if a.alternate:
                 old, new = a.alternate.split(",")

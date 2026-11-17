@@ -29,6 +29,9 @@
 #                       from production, so <expected-version> (the target's deployment id) cannot match by accident.
 #   SMOKE_EXPECT_ROUTE  with it, phase 1 also needs `x-thrust-route` (which the edge sets) to be this target's name: an answer
 #                       the edge took to production, or one that did not pass through the edge at all, is not this target's.
+#   SMOKE_EXPECT_EDGE   with it, phase 1 also needs `x-thrust-edge-version` (which the edge puts on every answer) to be this
+#                       version of the edge: the smoke of a deploy of the edge itself (scripts/deploy-edge.sh), which an answer
+#                       from the edge it replaced, or from no edge at all, must fail.
 #
 # Exit status: 0 the smoke passed; 1 a check failed; 2 it was called wrongly (a usage or configuration error, nothing was checked).
 set -u
@@ -71,6 +74,8 @@ ROUTE="${SMOKE_EXPECT_ROUTE:-}"
 # a target's name as the edge writes it (crates/edge/src/pin.rs, valid_name), or `prod`. The letters are spelled out: in a UTF-8
 # locale a range such as `a-z` also matches capitals (scripts/render-wrangler.sh found the same), and this script keeps the caller's.
 case "$ROUTE" in *[!0123456789abcdefghijklmnopqrstuvwxyz.-]*) usage "SMOKE_EXPECT_ROUTE is a target name (lowercase letters, digits, '.' and '-'), got '$ROUTE'" ;; esac
+EDGE="${SMOKE_EXPECT_EDGE:-}"
+case "$EDGE" in *[!0-9A-Za-z._:/@+=-]*) usage "SMOKE_EXPECT_EDGE has a character a version tag does not: '$EDGE'" ;; esac
 PROJECT="${SMOKE_PROJECT:-smoke}"
 case "${SMOKE_WORKSPACE:-x}" in *[!0-9A-Za-z_-]*) usage "SMOKE_WORKSPACE is a slug (letters, digits, - and _)" ;; esac
 case "$PROJECT" in *[\"\\]*) usage "SMOKE_PROJECT must not contain a quote or a backslash" ;; esac
@@ -101,6 +106,7 @@ while [ "$n" -lt "$ATTEMPTS" ]; do
   status="$(pinned -H 'Cache-Control: no-cache' "$BASE/healthz?smoke=$n")"
   got="$(header x-thrust-version)"
   route="$(header x-thrust-route)"
+  edge="$(header x-thrust-edge-version)"
   body="$(cat "$T/b" 2>/dev/null)"
   if [ "$status" = 000 ]; then
     last="could not reach $BASE/healthz: $(tr -d '\r\n' < "$T/e")"
@@ -110,6 +116,9 @@ while [ "$n" -lt "$ATTEMPTS" ]; do
     streak=0
   elif [ "$body" != ok ]; then
     last="/healthz answered 200 but its body is not 'ok'"
+    streak=0
+  elif [ -n "$EDGE" ] && [ "$edge" != "$EDGE" ]; then
+    last="the edge that answered is '${edge:-no x-thrust-edge-version at all}', not '$EDGE'"
     streak=0
   elif [ -n "$ROUTE" ] && [ "$route" != "$ROUTE" ]; then
     last="the edge routed this to '${route:-no x-thrust-route at all}', not '$ROUTE'"
@@ -170,4 +179,4 @@ fi
 if [ "${SMOKE_FORCE_FAIL:-}" = 1 ]; then
   fail "SMOKE_FORCE_FAIL=1: failing on purpose, after every real check passed"
 fi
-echo "smoke: PASS ($EXPECT at $BASE${ROUTE:+, routed to $ROUTE})"
+echo "smoke: PASS ($EXPECT at $BASE${ROUTE:+, routed to $ROUTE}${EDGE:+, by the edge $EDGE})"

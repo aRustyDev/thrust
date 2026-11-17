@@ -97,6 +97,7 @@ jobs:
           python3 -I .github/scripts/tests/test_preview_config.py
           python3 -I .github/scripts/tests/test_preview_result.py
           sh .github/scripts/tests/test-deploy-target.sh
+          sh .github/scripts/tests/test-deploy-edge.sh
           python3 -I .github/scripts/tests/test_plan_ci.py
           bash infra/preview/scripts/test-bootstrap-provisioner.sh
           bash infra/preview/scripts/test-provisioner-client.sh
