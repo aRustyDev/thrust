@@ -257,6 +257,10 @@ check("the self-hosted adapter runs the native cells, pg-adapter and mutants",
       (cells, {"pg-adapter", "mutants"} <= jobs), ({c for c in CELLS if c.startswith("native-")}, True))
 jobs, cells = run_plan(["crates/testing/suites/api/src/lib.rs"], REAL_GRAPH)
 check("the suite runs every cell and the mutants", (cells, "mutants" in jobs), (set(CELLS), True))
+# The mutation controls' verdicts are read by mutants.sh (the job) and by test-mutants-verdict.sh (ci-scripts), which also reads mutants.sh.
+for path in ["scripts/mutants.sh", "scripts/lib/mutants-verdict.sh"]:
+    jobs, cells = run_plan([path], REAL_GRAPH)
+    check(f"{path} runs the mutants job and its test, and no cell", ({"mutants", "ci-scripts"} <= jobs, cells), (True, set()))
 jobs, cells = run_plan(["crates/editor/doc/src/lib.rs"], REAL_GRAPH)
 check("a crate no binary depends on runs no cell", (cells, "contract" in jobs, "hermetic" in jobs), (set(), False, True))
 # ADR-0009's layout plans exactly as the flat one before it did: moving a crate changed no plan.
