@@ -19,9 +19,7 @@ use thrust_ports::StateRow;
 use unicode_normalization::UnicodeNormalization;
 
 use crate::dto::{into_object, StateDto};
-use crate::fields::{
-    bool_field, choice_of, float_field, name_was_padded, not_a_dictionary, read_into, refuse_if_any, FieldErrors,
-};
+use crate::fields::{choice_of, name_was_padded, not_a_dictionary, refuse_if_any, request, Field, FieldErrors};
 use crate::pagination::{Page, PageRequest};
 use crate::projects::ts;
 use crate::request::{json_body, pick_fields, query_map, Body};
@@ -141,7 +139,9 @@ fn state_error(e: StateError, changing: bool) -> V1Error {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct Group(StateGroup);
 
-impl Group {
+impl Field for Group {
+    type Refusal = String;
+
     fn read(v: &Value) -> Result<Self, String> {
         choice_of(v, StateGroup::parse).map(Self)
     }
@@ -161,42 +161,30 @@ impl utoipa::ToSchema for Group {
     }
 }
 
-/// What a body says of a state, as the pin's `StateSerializer` reads it: every field it knows is read into this, and what is wrong is
-/// one 400. The pin names a body whose keys may all be left out `Patched…`, and this is that: a change reads into it as it is, and a
-/// creation reads into it and must also name [`PatchedStateRequest::REQUIRED`]. A key left out is `None`. Each field's type says what
-/// it takes, and the document is written from these types (the schema `PatchedStateRequest` is this struct, and `Creations` in
-/// `openapi.rs` makes `StateRequest` of it with `REQUIRED`), so the bounds below are the only place they are written. Only the two
-/// external keys take a `null`.
-#[derive(Debug, Default)]
-#[cfg_attr(
-    feature = "openapi",
-    derive(utoipa::ToSchema),
-    schema(description = "What a state's change takes: the creation's keys, none required.")
-)]
-pub(crate) struct PatchedStateRequest {
-    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
-    name: Option<Text<1, 255>>,
-    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
-    description: Option<Prose>,
-    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
-    color: Option<Text<1, 255>>,
-    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
-    sequence: Option<f64>,
-    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
-    group: Option<Group>,
-    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
-    default: Option<bool>,
-    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
-    external_source: Option<NullableText<0, 255>>,
-    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
-    external_id: Option<NullableText<0, 255>>,
-    // read and checked and then not kept: it follows the group here (the register carries the difference)
-    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
-    #[allow(
-        dead_code,
-        reason = "read, checked, and not kept: it is the document's key and the pin's, and here it follows the group"
-    )]
-    is_triage: Option<bool>,
+request! {
+    #[schema(description = "What a state's change takes: the creation's keys, none required.")]
+    /// What a body says of a state, as the pin's `StateSerializer` reads it: every field it knows is read into this, and what is wrong is
+    /// one 400. The pin names a body whose keys may all be left out `Patched…`, and this is that: a change reads into it as it is, and a
+    /// creation reads into it and must also name [`PatchedStateRequest::REQUIRED`]. A key left out is `None`. Each field's type says what
+    /// it takes, and the document is written from these types (the schema `PatchedStateRequest` is this struct, and `Creations` in
+    /// `openapi.rs` makes `StateRequest` of it with `REQUIRED`), so the bounds below are the only place they are written. Only the two
+    /// external keys take a `null`.
+    pub(crate) struct PatchedStateRequest {
+        name: Text<1, 255>,
+        description: Prose,
+        color: Text<1, 255>,
+        sequence: f64,
+        group: Group,
+        default: bool,
+        external_source: NullableText<0, 255>,
+        external_id: NullableText<0, 255>,
+        // read and checked and then not kept: it follows the group here (the register carries the difference)
+        #[allow(
+            dead_code,
+            reason = "read, checked, and not kept: it is the document's key and the pin's, and here it follows the group"
+        )]
+        is_triage: bool,
+    }
 }
 
 impl PatchedStateRequest {
@@ -213,17 +201,7 @@ impl PatchedStateRequest {
                 crate::fields::fail(&mut errors, field, "This field is required.");
             }
         }
-        let request = read_into!(PatchedStateRequest, errors, b, {
-            name: Text::read,
-            description: Prose::read,
-            color: Text::read,
-            sequence: float_field,
-            group: Group::read,
-            default: bool_field,
-            external_source: NullableText::read,
-            external_id: NullableText::read,
-            is_triage: bool_field,
-        });
+        let request = PatchedStateRequest::read_fields(&mut errors, b);
         refuse_if_any(errors)?;
         Ok(request)
     }

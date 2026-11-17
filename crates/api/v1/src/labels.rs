@@ -21,8 +21,7 @@ use thrust_ports::LabelRow;
 
 use crate::dto::{into_object, LabelDto};
 use crate::fields::{
-    fail, float_field, name_was_padded, no_such_pk, no_such_pk_shown, not_a_dictionary, read_into, refuse_if_any,
-    FieldErrors,
+    fail, name_was_padded, no_such_pk, no_such_pk_shown, not_a_dictionary, refuse_if_any, request, FieldErrors,
 };
 use crate::pagination::{Page, PageRequest};
 use crate::projects::ts;
@@ -100,34 +99,24 @@ fn label_error(e: LabelError, changing: bool) -> V1Error {
 
 // --- reading a body -----------------------------------------------------------------------------------------------------------
 
-/// What a body says of a label, as the pin's `LabelCreateUpdateSerializer` reads it, field by field in the order the serializer lists
-/// them (name, color, description, external_source, external_id, parent, sort_order). The pin names a body whose keys may all be left
-/// out `Patched…`, and this is that: a change reads into it as it is, and a creation reads into it and must also name
-/// [`PatchedLabelCreateUpdateRequest::REQUIRED`]. A key left out is `None`. Each field's type says what it takes, and the document is
-/// written from these types (the schema `PatchedLabelCreateUpdateRequest` is this struct, and `Creations` in `openapi.rs` makes
-/// `LabelCreateUpdateRequest` of it with `REQUIRED`), so the bounds below are the only place they are written. `color` and
-/// `description` can be blank and are never `null`; the two external keys and `parent` can be `null`.
-#[derive(Debug, Default)]
-#[cfg_attr(
-    feature = "openapi",
-    derive(utoipa::ToSchema),
-    schema(description = "What a label's change takes: the creation's keys, none required.")
-)]
-pub(crate) struct PatchedLabelCreateUpdateRequest {
-    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
-    name: Option<Text<1, 255>>,
-    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
-    color: Option<Text<0, 255>>,
-    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
-    description: Option<Prose>,
-    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
-    external_source: Option<NullableText<0, 255>>,
-    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
-    external_id: Option<NullableText<0, 255>>,
-    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
-    parent: Option<NullableKey>,
-    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
-    sort_order: Option<f64>,
+request! {
+    #[schema(description = "What a label's change takes: the creation's keys, none required.")]
+    /// What a body says of a label, as the pin's `LabelCreateUpdateSerializer` reads it, field by field in the order the serializer lists
+    /// them (name, color, description, external_source, external_id, parent, sort_order). The pin names a body whose keys may all be left
+    /// out `Patched…`, and this is that: a change reads into it as it is, and a creation reads into it and must also name
+    /// [`PatchedLabelCreateUpdateRequest::REQUIRED`]. A key left out is `None`. Each field's type says what it takes, and the document is
+    /// written from these types (the schema `PatchedLabelCreateUpdateRequest` is this struct, and `Creations` in `openapi.rs` makes
+    /// `LabelCreateUpdateRequest` of it with `REQUIRED`), so the bounds below are the only place they are written. `color` and
+    /// `description` can be blank and are never `null`; the two external keys and `parent` can be `null`.
+    pub(crate) struct PatchedLabelCreateUpdateRequest {
+        name: Text<1, 255>,
+        color: Text<0, 255>,
+        description: Prose,
+        external_source: NullableText<0, 255>,
+        external_id: NullableText<0, 255>,
+        parent: NullableKey,
+        sort_order: f64,
+    }
 }
 
 impl PatchedLabelCreateUpdateRequest {
@@ -144,15 +133,7 @@ impl PatchedLabelCreateUpdateRequest {
                 fail(&mut errors, field, "This field is required.");
             }
         }
-        let request = read_into!(PatchedLabelCreateUpdateRequest, errors, b, {
-            name: Text::read,
-            color: Text::read,
-            description: Prose::read,
-            external_source: NullableText::read,
-            external_id: NullableText::read,
-            parent: NullableKey::read,
-            sort_order: float_field,
-        });
+        let request = PatchedLabelCreateUpdateRequest::read_fields(&mut errors, b);
         (request, errors)
     }
 

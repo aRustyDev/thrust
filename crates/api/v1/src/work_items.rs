@@ -27,8 +27,8 @@ use crate::dto::{
     UserBriefDto, UserRef,
 };
 use crate::fields::{
-    bool_field, choice_of, fail, float_field, no_such_pk_shown, not_a_dictionary, parse_uuid_text, pk_field, py_int,
-    py_type_name, read_into, refuse_if_any, whole_numbers, FieldErrors, PkRead,
+    choice_of, fail, no_such_pk_shown, not_a_dictionary, parse_uuid_text, pk_field, py_int, py_type_name,
+    refuse_if_any, request, whole_numbers, Field, FieldErrors, PkRead,
 };
 use crate::labels::label_dto;
 use crate::pagination::PageRequest;
@@ -309,12 +309,16 @@ fn uuid_list(ids: &[Uuid]) -> String {
 struct KeyList(Vec<Key>);
 
 impl KeyList {
-    fn read(v: &Value) -> Result<Self, Value> {
-        read_key_list(v).map(|keys| Self(keys.into_iter().map(|(id, shown)| Key { id, shown }).collect()))
-    }
-
     fn ids<T>(self, make: impl Fn(Uuid) -> T) -> Vec<T> {
         self.0.into_iter().map(|key| make(key.id)).collect()
+    }
+}
+
+impl Field for KeyList {
+    type Refusal = Value;
+
+    fn read(v: &Value) -> Result<Self, Value> {
+        read_key_list(v).map(|keys| Self(keys.into_iter().map(|(id, shown)| Key { id, shown }).collect()))
     }
 }
 
@@ -340,7 +344,9 @@ impl utoipa::ToSchema for KeyList {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct PriorityValue(Priority);
 
-impl PriorityValue {
+impl Field for PriorityValue {
+    type Refusal = String;
+
     fn read(v: &Value) -> Result<Self, String> {
         choice_of(v, Priority::parse).map(Self)
     }
@@ -360,66 +366,42 @@ impl utoipa::ToSchema for PriorityValue {
     }
 }
 
-/// What a body says of a work item, as the pin's `IssueSerializer` reads it: every field it knows is read into this, and what is wrong
-/// is one 400. The pin names a body whose keys may all be left out `Patched…`, and this is that: a change reads into it as it is, and a
-/// creation reads into it and must also name [`PatchedIssueRequest::REQUIRED`]. A key left out is `None`. Each field's type says what
-/// it takes, and the document is written from these types (the schema `PatchedIssueRequest` is this struct, and `Creations` in
-/// `openapi.rs` makes `IssueRequest` of it with `REQUIRED`), so the bounds below are the only place they are written. The route reads
-/// every key the serializer has and keeps some of them (D-033 (1)); the others are read, checked and not kept. `priority` and the lists
-/// are not `null`; a date, a key and the relations can be.
-#[derive(Debug, Default)]
-#[cfg_attr(
-    feature = "openapi",
-    derive(utoipa::ToSchema),
-    schema(description = "What a work item's change takes: the creation's keys, none required.")
-)]
-pub(crate) struct PatchedIssueRequest {
-    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
-    name: Option<SentText<1, { thrust_core::MAX_NAME_CHARS }>>,
-    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
-    description_html: Option<Prose>,
-    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
-    priority: Option<PriorityValue>,
-    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
-    start_date: Option<NullableDate>,
-    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
-    target_date: Option<NullableDate>,
-    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
-    parent: Option<NullableKey>,
-    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
-    state: Option<NullableKey>,
-    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
-    point: Option<NullableWhole<0, { thrust_contracts::MAX_WORK_ITEM_POINT }>>,
-    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
-    assignees: Option<KeyList>,
-    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
-    labels: Option<KeyList>,
-    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
-    external_source: Option<NullableText<0, 255>>,
-    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
-    external_id: Option<NullableText<0, 255>>,
-    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
-    #[allow(dead_code, reason = "read, checked, and not kept (D-033 (1)): the document says it and the pin reads it")]
-    sequence_id: Option<Whole<{ i32::MIN }, { i32::MAX }>>,
-    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
-    #[allow(dead_code, reason = "read, checked, and not kept (D-033 (1)): the document says it and the pin reads it")]
-    sort_order: Option<f64>,
-    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
-    #[allow(dead_code, reason = "read, checked, and not kept (D-033 (1)): the document says it and the pin reads it")]
-    archived_at: Option<NullableDate>,
-    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
-    #[allow(dead_code, reason = "read, checked, and not kept (D-033 (1)): the document says it and the pin reads it")]
-    is_draft: Option<bool>,
-    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
-    deleted_at: Option<NullableDateTime>,
-    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
-    created_by: Option<NullableKey>,
-    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
-    estimate_point: Option<NullableKey>,
-    #[cfg_attr(feature = "openapi", schema(inline, nullable = false, rename = "type"))]
-    type_: Option<NullableKey>,
-    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
-    type_id: Option<NullableKey>,
+request! {
+    #[schema(description = "What a work item's change takes: the creation's keys, none required.")]
+    /// What a body says of a work item, as the pin's `IssueSerializer` reads it: every field it knows is read into this, and what is wrong
+    /// is one 400. The pin names a body whose keys may all be left out `Patched…`, and this is that: a change reads into it as it is, and a
+    /// creation reads into it and must also name [`PatchedIssueRequest::REQUIRED`]. A key left out is `None`. Each field's type says what
+    /// it takes, and the document is written from these types (the schema `PatchedIssueRequest` is this struct, and `Creations` in
+    /// `openapi.rs` makes `IssueRequest` of it with `REQUIRED`), so the bounds below are the only place they are written. The route reads
+    /// every key the serializer has and keeps some of them (D-033 (1)); the others are read, checked and not kept. `priority` and the lists
+    /// are not `null`; a date, a key and the relations can be.
+    pub(crate) struct PatchedIssueRequest {
+        assignees: KeyList,
+        labels: KeyList,
+        type_ as "type": NullableKey,
+        type_id: NullableKey,
+        estimate_point: NullableKey,
+        name: SentText<1, { thrust_core::MAX_NAME_CHARS }>,
+        description_html: Prose,
+        priority: PriorityValue,
+        start_date: NullableDate,
+        target_date: NullableDate,
+        #[allow(dead_code, reason = "read, checked, and not kept (D-033 (1)): the document says it and the pin reads it")]
+        sequence_id: Whole<{ i32::MIN }, { i32::MAX }>,
+        #[allow(dead_code, reason = "read, checked, and not kept (D-033 (1)): the document says it and the pin reads it")]
+        sort_order: f64,
+        #[allow(dead_code, reason = "read, checked, and not kept (D-033 (1)): the document says it and the pin reads it")]
+        archived_at: NullableDate,
+        #[allow(dead_code, reason = "read, checked, and not kept (D-033 (1)): the document says it and the pin reads it")]
+        is_draft: bool,
+        external_source: NullableText<0, 255>,
+        external_id: NullableText<0, 255>,
+        point: NullableWhole<0, { thrust_contracts::MAX_WORK_ITEM_POINT }>,
+        deleted_at: NullableDateTime,
+        created_by: NullableKey,
+        parent: NullableKey,
+        state: NullableKey,
+    }
 }
 
 impl PatchedIssueRequest {
@@ -436,29 +418,7 @@ impl PatchedIssueRequest {
                 fail(&mut errors, field, "This field is required.");
             }
         }
-        let request = read_into!(PatchedIssueRequest, errors, b, {
-            assignees: KeyList::read,
-            labels: KeyList::read,
-            type_ as "type": NullableKey::read,
-            type_id: NullableKey::read,
-            estimate_point: NullableKey::read,
-            name: SentText::read,
-            description_html: Prose::read,
-            priority: PriorityValue::read,
-            start_date: NullableDate::read,
-            target_date: NullableDate::read,
-            sequence_id: Whole::read,
-            sort_order: float_field,
-            archived_at: NullableDate::read,
-            is_draft: bool_field,
-            external_source: NullableText::read,
-            external_id: NullableText::read,
-            point: NullableWhole::read,
-            deleted_at: NullableDateTime::read,
-            created_by: NullableKey::read,
-            parent: NullableKey::read,
-            state: NullableKey::read,
-        });
+        let request = PatchedIssueRequest::read_fields(&mut errors, b);
         (request, errors)
     }
 
