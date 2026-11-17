@@ -1,0 +1,21 @@
+[package]
+name = "thrust-load-tests"
+description = "Load tests against a running target (ADR-0009, testing/suites/load): the latency and scale probes as nextest tests named load_, run by scripts/contract.sh's bench and scale passes with the `load` profile."
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+# `timed` runs a batch of requests concurrently on the test's runtime.
+tokio = { version = "1", default-features = false, features = ["rt"] }
+
+[dev-dependencies]
+# The suite's client: Target (THRUST_BASE_URL, THRUST_ADMIN_TOKEN), User, Fixture and the /api/v1 helpers. A dev-dependency:
+# ADR-0009 rule 6 allows no other kind of dependency on a crate in testing/.
+thrust-contract-tests = { workspace = true }
+thrust-contracts = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true, features = ["v4"] }
+tokio = { version = "1", default-features = false, features = ["rt-multi-thread", "macros", "time"] }
+proptest = "1"
