@@ -62,8 +62,8 @@ expect "plan: a run line with a changed format fails" 1 "the format changed" pla
 # ---- assert-gate.sh ------------------------------------------------------------------------------
 # What ci.yml's gate needs besides `changes`: the jobs still in ci.yml and the workflows it calls, which are CALLED (ci.yml sets
 # them as VERDICT_JOBS). Each migration stage moves a job's name out of this list and its workflow's name in.
-JOBS="ci-scripts deps lint hermetic pg-adapter contract mutants documentation security web"
-CALLED="documentation security web"
+JOBS="ci-scripts hermetic pg-adapter contract mutants documentation security web lint"
+CALLED="documentation security web lint"
 gate() { # gate <dir> <needs-json> <expected-jobs-json> <planned-json> <reported markers...>
   d="$T/gate/$1"; mkdir -p "$d/reported"; needs="$2"; expected="$3"; planned="$4"; shift 4
   for m in "$@"; do printf '%s\n' "$m" > "$d/reported/$(echo "$m" | tr ' ' '-').ok"; done
@@ -115,12 +115,12 @@ for j in $JOBS; do
   done
 done
 
-ALL='["ci-scripts","deps","lint","hermetic","pg-adapter","contract","mutants","documentation","security","web"]'
+ALL='["ci-scripts","hermetic","pg-adapter","contract","mutants","documentation","security","web","lint"]'
 # every job succeeded: "ci-scripts=success deps=success ..."
 OKARGS=""
 for j in $JOBS; do OKARGS="$OKARGS $j=success"; done
 ALLOK="$(needs success $OKARGS)"
-expect "gate: everything expected, everything passed" 0 "10 expected jobs passed" gate a1 "$ALLOK" "$ALL" "$P" "$M1" "$M2"
+expect "gate: everything expected, everything passed" 0 "9 expected jobs passed" gate a1 "$ALLOK" "$ALL" "$P" "$M1" "$M2"
 # a called workflow must also say pass: its result alone is not the proof (research 0018: a `verdict` job that was skipped leaves it success).
 # Each called workflow is tried on its own, the others in a state that passes, so that the case can only fail because of it.
 noverdict() { printf '%s' "$1" | sed "s/\"$2\":{\"result\":\"success\",\"outputs\":{\"verdict\":\"pass\"}}/\"$2\":{\"result\":\"success\"$3}/"; }

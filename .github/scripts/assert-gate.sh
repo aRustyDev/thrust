@@ -37,7 +37,7 @@ fail() {
 
 # The default of KNOWN_JOBS is what ci.yml's own `needs` must be, besides the planner job: the jobs plan-ci.py plans that are still
 # jobs of ci.yml, and the workflows it calls (the planner's `top` of a full run; test-ci-scripts.sh holds the two equal).
-KNOWN="${KNOWN_JOBS:-ci-scripts deps lint hermetic pg-adapter contract mutants documentation security web}"
+KNOWN="${KNOWN_JOBS:-ci-scripts hermetic pg-adapter contract mutants documentation security web lint}"
 # `-` and not `:-` for these two: set and empty means "there is none", and only unset means what ci.yml needs.
 CHANGES="${CHANGES_JOB-changes}"
 CELLS="${CELL_JOB-contract}"
