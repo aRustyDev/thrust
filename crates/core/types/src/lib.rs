@@ -197,6 +197,11 @@ pub struct WorkItem {
     pub deleted_at: Option<Timestamp>,
 }
 
+/// The most a work item's `point` may be (from 0): the bound that the v1 request reads, that its document says, and that the memory
+/// adapter keeps as `work_items_point_valid`. The Postgres column's `CHECK` (migration 0015) says the same number in SQL, which no
+/// constant reaches: a change to this one is a change to that one too.
+pub const MAX_WORK_ITEM_POINT: i32 = 12;
+
 /// A work item's priority: Plane's five, written as it writes them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

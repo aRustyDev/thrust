@@ -23,30 +23,59 @@ pub fn fail(errors: &mut FieldErrors, field: &str, message: impl Into<String>) {
 
 /// A request struct, read from a body: each field of the struct is read from the key that has its name, by the reader written beside it.
 /// The key is the field's own identifier (`stringify!`), so the two cannot be spelled apart, and the fields are read in the order
-/// they are written, which is the order the errors are filed in.
+/// they are written, which is the order the errors are filed in. A field whose name is not the key's (a Rust keyword: `type`) says so
+/// with `as`, beside the `rename` of its schema.
 ///
 /// ```ignore
-/// read_into!(StateRequest, errors, body, { name: Text::<1, 255>::read, description: Prose::read })
+/// read_into!(StateRequest, errors, body, { name: Text::<1, 255>::read, type_ as "type": NullableKey::read })
 /// ```
 macro_rules! read_into {
-    ($request:ident, $errors:ident, $body:ident, { $($field:ident : $reader:expr),* $(,)? }) => {
-        $request { $($field: $crate::fields::read(&mut $errors, $body, stringify!($field), $reader)),* }
+    ($request:ident, $errors:ident, $body:ident, { $($field:ident $(as $key:literal)? : $reader:expr),* $(,)? }) => {
+        $request { $($field: $crate::fields::read(&mut $errors, $body, $crate::fields::key_of!($field $(, $key)?), $reader)),* }
     };
 }
-pub(crate) use read_into;
+
+/// The key a field is read from: its own name, or the one it is given.
+macro_rules! key_of {
+    ($field:ident) => {
+        stringify!($field)
+    };
+    ($field:ident, $key:literal) => {
+        $key
+    };
+}
+pub(crate) use {key_of, read_into};
+
+/// What a reader answers when a value is wrong, and how it is filed under the field. A `String` is DRF's message, filed as `[message]`.
+/// A [`Value`] is the whole answer, for a field that is a list whose items are wrong one by one (`{"0": [message]}`).
+pub trait Refusal {
+    fn filed(self) -> Value;
+}
+
+impl Refusal for String {
+    fn filed(self) -> Value {
+        json!([self])
+    }
+}
+
+impl Refusal for Value {
+    fn filed(self) -> Value {
+        self
+    }
+}
 
 /// Read a field if the body names it, and file what is wrong with it under its name. `None` is "not named", or "named and wrong".
-pub fn read<T>(
+pub fn read<T, E: Refusal>(
     errors: &mut FieldErrors,
     body: &Map<String, Value>,
     field: &str,
-    f: impl FnOnce(&Value) -> Result<T, String>,
+    f: impl FnOnce(&Value) -> Result<T, E>,
 ) -> Option<T> {
     let v = body.get(field)?;
     match f(v) {
         Ok(x) => Some(x),
-        Err(message) => {
-            fail(errors, field, message);
+        Err(refusal) => {
+            errors.insert(field.to_string(), refusal.filed());
             None
         }
     }

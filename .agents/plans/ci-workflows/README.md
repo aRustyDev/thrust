@@ -22,11 +22,13 @@ current release flow is in [cicd-review](../cicd-review/README.md).
 | `PLAN.md` | the owner's decisions; the architecture; Phase 0 and the migration; the priority-ordered phase table; the templates for a phase and a stage; what each pass must show; the invariants every pull request keeps; the status table |
 | `research/0017-ci-baseline.md`, `scripts/ci-baseline.py` | what `ci` costs today (per job and per run, from GitHub's own records), and the script that measures it again; the number the passes that save time and the migration are checked against |
 | `research/0018-gate-spike.md` | how the one required `gate` judges a job inside a called workflow: five designs against seven scenarios, eleven facts measured, and the design chosen (A+); the evidence behind ADR-0102 |
-| `phases/0001-foundation.md` | Phase 0 planned stage by stage: what exists today, the spike that chooses how `gate` judges a called workflow, the planner and gate changes, the lint conventions, the baseline, and the questions for the owner |
+| `phases/0001-foundation.md` | Phase 0 planned stage by stage: what exists today, the spike that chooses how `gate` judges a called workflow, the planner and gate changes, the lint conventions, the baseline, and the questions for the owner (answered) |
+| `phases/0002-migration.md` | Phase 1, the migration, planned: what "the same" means and how each pull request proves it, what exists today, the order of the stages (the simplest callee first), the first stage in detail, and the questions for the owner |
 
 Phase documents (`phases/NNNN-*.md`) are written when a phase starts, not before. Phase numbers are allocated across the
-whole repository, so the first is `0001`. ADR-0102 (the orchestrator pattern) is written in Phase 0, after the spike.
+whole repository: Phase 0 of this plan is `0001` and Phase 1 is `0002`; each later phase takes the next free number.
 
-## Status (2026-11-16)
+## Status (2026-11-17)
 
-See the table at the end of `PLAN.md`. The plan is approved; nothing is built.
+Phase 0, the foundation, is done and merged. Phase 1, the migration, is planned and waiting for the owner's answers to four
+questions; see the table at the end of `PLAN.md`.

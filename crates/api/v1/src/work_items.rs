@@ -27,17 +27,17 @@ use crate::dto::{
     UserBriefDto, UserRef,
 };
 use crate::fields::{
-    bool_field, char_field, choice_field, date_field, datetime_field, fail, float_field, int_field, no_such_pk_shown,
-    not_a_dictionary, parse_uuid_text, pk_field, py_int, py_str, py_type_name, refuse_if_any, whole_numbers,
-    FieldErrors, PkRead,
+    bool_field, choice_of, fail, float_field, no_such_pk_shown, not_a_dictionary, parse_uuid_text, pk_field, py_int,
+    py_type_name, read_into, refuse_if_any, whole_numbers, FieldErrors, PkRead,
 };
 use crate::labels::label_dto;
 use crate::pagination::PageRequest;
 use crate::projects::ts;
 use crate::request::{json_body, pick_fields, query_map, Body};
+use crate::values::{
+    Key, NullableDate, NullableDateTime, NullableKey, NullableText, NullableWhole, Prose, SentText, Whole,
+};
 use crate::{with_allow, Ctx, PlaneUuid, V1Error, V1Path};
-
-const PRIORITIES: [&str; 5] = ["urgent", "high", "medium", "low", "none"];
 
 pub(crate) fn routes() -> Router {
     let mut r = Router::new();
@@ -303,228 +303,296 @@ fn uuid_list(ids: &[Uuid]) -> String {
     format!("[{}]", items.join(", "))
 }
 
+/// A list of related rows' keys (a work item's people and labels), read as DRF's `ListField` of related fields reads one: each item
+/// is a key, and what is wrong with an item is filed by its place (`{"0": [message]}`). That a row has the key is the second stage's.
+#[derive(Debug, Default)]
+struct KeyList(Vec<Key>);
+
+impl KeyList {
+    fn read(v: &Value) -> Result<Self, Value> {
+        read_key_list(v).map(|keys| Self(keys.into_iter().map(|(id, shown)| Key { id, shown }).collect()))
+    }
+
+    fn ids<T>(self, make: impl Fn(Uuid) -> T) -> Vec<T> {
+        self.0.into_iter().map(|key| make(key.id)).collect()
+    }
+}
+
+#[cfg(feature = "openapi")]
+impl utoipa::PartialSchema for KeyList {
+    fn schema() -> utoipa::openapi::RefOr<utoipa::openapi::Schema> {
+        use utoipa::openapi::schema::{ArrayBuilder, KnownFormat, ObjectBuilder, SchemaFormat, Type};
+        let uuid =
+            ObjectBuilder::new().schema_type(Type::String).format(Some(SchemaFormat::KnownFormat(KnownFormat::Uuid)));
+        utoipa::openapi::RefOr::T(utoipa::openapi::Schema::Array(ArrayBuilder::new().items(uuid).build()))
+    }
+}
+
+#[cfg(feature = "openapi")]
+impl utoipa::ToSchema for KeyList {
+    fn name() -> std::borrow::Cow<'static, str> {
+        std::borrow::Cow::Borrowed("KeyList")
+    }
+}
+
+/// A work item's priority, read as DRF's choice field over the priorities `Priority` has: the list is `Priority::ALL`, for the parser and
+/// for the document alike (written the pin's way, the enum by reference inside an `allOf`: `openapi::priority`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct PriorityValue(Priority);
+
+impl PriorityValue {
+    fn read(v: &Value) -> Result<Self, String> {
+        choice_of(v, Priority::parse).map(Self)
+    }
+}
+
+#[cfg(feature = "openapi")]
+impl utoipa::PartialSchema for PriorityValue {
+    fn schema() -> utoipa::openapi::RefOr<utoipa::openapi::Schema> {
+        crate::openapi::priority()
+    }
+}
+
+#[cfg(feature = "openapi")]
+impl utoipa::ToSchema for PriorityValue {
+    fn name() -> std::borrow::Cow<'static, str> {
+        std::borrow::Cow::Borrowed("PriorityValue")
+    }
+}
+
+/// What a body says of a work item, as the pin's `IssueSerializer` reads it: every field it knows is read into this, and what is wrong
+/// is one 400. The pin names a body whose keys may all be left out `Patched…`, and this is that: a change reads into it as it is, and a
+/// creation reads into it and must also name [`PatchedIssueRequest::REQUIRED`]. A key left out is `None`. Each field's type says what
+/// it takes, and the document is written from these types (the schema `PatchedIssueRequest` is this struct, and `Creations` in
+/// `openapi.rs` makes `IssueRequest` of it with `REQUIRED`), so the bounds below are the only place they are written. The route reads
+/// every key the serializer has and keeps some of them (D-033 (1)); the others are read, checked and not kept. `priority` and the lists
+/// are not `null`; a date, a key and the relations can be.
+#[derive(Debug, Default)]
+#[cfg_attr(
+    feature = "openapi",
+    derive(utoipa::ToSchema),
+    schema(description = "What a work item's change takes: the creation's keys, none required.")
+)]
+pub(crate) struct PatchedIssueRequest {
+    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
+    name: Option<SentText<1, { thrust_core::MAX_NAME_CHARS }>>,
+    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
+    description_html: Option<Prose>,
+    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
+    priority: Option<PriorityValue>,
+    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
+    start_date: Option<NullableDate>,
+    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
+    target_date: Option<NullableDate>,
+    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
+    parent: Option<NullableKey>,
+    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
+    state: Option<NullableKey>,
+    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
+    point: Option<NullableWhole<0, { thrust_contracts::MAX_WORK_ITEM_POINT }>>,
+    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
+    assignees: Option<KeyList>,
+    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
+    labels: Option<KeyList>,
+    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
+    external_source: Option<NullableText<0, 255>>,
+    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
+    external_id: Option<NullableText<0, 255>>,
+    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
+    #[allow(dead_code, reason = "read, checked, and not kept (D-033 (1)): the document says it and the pin reads it")]
+    sequence_id: Option<Whole<{ i32::MIN }, { i32::MAX }>>,
+    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
+    #[allow(dead_code, reason = "read, checked, and not kept (D-033 (1)): the document says it and the pin reads it")]
+    sort_order: Option<f64>,
+    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
+    #[allow(dead_code, reason = "read, checked, and not kept (D-033 (1)): the document says it and the pin reads it")]
+    archived_at: Option<NullableDate>,
+    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
+    #[allow(dead_code, reason = "read, checked, and not kept (D-033 (1)): the document says it and the pin reads it")]
+    is_draft: Option<bool>,
+    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
+    deleted_at: Option<NullableDateTime>,
+    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
+    created_by: Option<NullableKey>,
+    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
+    estimate_point: Option<NullableKey>,
+    #[cfg_attr(feature = "openapi", schema(inline, nullable = false, rename = "type"))]
+    type_: Option<NullableKey>,
+    #[cfg_attr(feature = "openapi", schema(inline, nullable = false))]
+    type_id: Option<NullableKey>,
+}
+
+impl PatchedIssueRequest {
+    /// The keys a creation must name; a change names none of them. The document's creation is written from this list, so it is the
+    /// parser's.
+    pub(crate) const REQUIRED: [&'static str; 1] = ["name"];
+
+    /// The first stage: read every key the body names, with no database, and file what is wrong. The errors are handed back and not
+    /// refused, because the second stage ([`Self::check_rows`]) adds its own to the same 400, as the pin reports every field at once.
+    fn read(b: &Map<String, Value>, partial: bool) -> (Self, FieldErrors) {
+        let mut errors = FieldErrors::new();
+        for field in Self::REQUIRED {
+            if !partial && !b.contains_key(field) {
+                fail(&mut errors, field, "This field is required.");
+            }
+        }
+        let request = read_into!(PatchedIssueRequest, errors, b, {
+            assignees: KeyList::read,
+            labels: KeyList::read,
+            type_ as "type": NullableKey::read,
+            type_id: NullableKey::read,
+            estimate_point: NullableKey::read,
+            name: SentText::read,
+            description_html: Prose::read,
+            priority: PriorityValue::read,
+            start_date: NullableDate::read,
+            target_date: NullableDate::read,
+            sequence_id: Whole::read,
+            sort_order: float_field,
+            archived_at: NullableDate::read,
+            is_draft: bool_field,
+            external_source: NullableText::read,
+            external_id: NullableText::read,
+            point: NullableWhole::read,
+            deleted_at: NullableDateTime::read,
+            created_by: NullableKey::read,
+            parent: NullableKey::read,
+            state: NullableKey::read,
+        });
+        (request, errors)
+    }
+
+    /// The second stage: the keys that name a row. A person must be a user that is there, a label one of the project's, a parent a work
+    /// item of the project and a state one of its states, "or not there", as for a row that does not exist (D-033: the pin tells the two
+    /// apart, which tells a caller what exists in projects it cannot see); there are no types and no estimate points here, so a key
+    /// for either names a row that is not there. A list is refused by the place of the item that is wrong.
+    async fn check_rows(&self, ctx: &Ctx, access: &IssueAccess, errors: &mut FieldErrors) -> Result<(), V1Error> {
+        let (scope, db) = (access.scope(), &ctx.app.ports.db);
+        if let Some(list) = &self.assignees {
+            let mut bad = Map::new();
+            for (i, key) in list.0.iter().enumerate() {
+                if db.user_by_id(UserId(key.id)).await?.is_none() {
+                    bad.insert(i.to_string(), json!([no_such_pk_shown(&key.shown)]));
+                }
+            }
+            if !bad.is_empty() {
+                errors.insert("assignees".into(), Value::Object(bad));
+            }
+        }
+        if let Some(list) = &self.labels {
+            let known = db.project_labels(&scope).await?;
+            let mut bad = Map::new();
+            for (i, key) in list.0.iter().enumerate() {
+                if !known.iter().any(|l| l.id == key.id) {
+                    bad.insert(i.to_string(), json!([no_such_pk_shown(&key.shown)]));
+                }
+            }
+            if !bad.is_empty() {
+                errors.insert("labels".into(), Value::Object(bad));
+            }
+        }
+        // the pin reads a type under two names, the model's own `type` and the serializer's `type_id` (both measured: each answers under
+        // its own name)
+        for (field, key) in
+            [("type", &self.type_), ("type_id", &self.type_id), ("estimate_point", &self.estimate_point)]
+        {
+            if let Some(key) = key.as_ref().and_then(NullableKey::key) {
+                fail(errors, field, no_such_pk_shown(&key.shown));
+            }
+        }
+        if let Some(key) = self.created_by.as_ref().and_then(NullableKey::key) {
+            if db.user_by_id(UserId(key.id)).await?.is_none() {
+                fail(errors, "created_by", no_such_pk_shown(&key.shown));
+            }
+        }
+        if let Some(key) = self.parent.as_ref().and_then(NullableKey::key) {
+            if db.work_item_row(&scope, WorkItemId(key.id)).await?.is_none() {
+                fail(errors, "parent", no_such_pk_shown(&key.shown));
+            }
+        }
+        if let Some(key) = self.state.as_ref().and_then(NullableKey::key) {
+            if !db.project_states(&scope).await?.iter().any(|s| s.id == key.id) {
+                fail(errors, "state", no_such_pk_shown(&key.shown));
+            }
+        }
+        Ok(())
+    }
+
+    /// The third stage, the serializer's `validate()`, which runs only when every field was fine and raises at its first refusal; then
+    /// what the route keeps of the body.
+    async fn validate(self, ctx: &Ctx, access: &IssueAccess) -> Result<Parsed, V1Error> {
+        let (scope, db) = (access.scope(), &ctx.app.ports.db);
+        let date = |d: &Option<NullableDate>| d.as_ref().and_then(NullableDate::date);
+        if let (Some(start), Some(target)) = (date(&self.start_date), date(&self.target_date)) {
+            if start > target {
+                return Err(non_field("Start date cannot exceed target date"));
+            }
+        }
+        let mut description_html = None;
+        if let Some(prose) = &self.description_html {
+            let sent = prose.as_str();
+            // `html.fromstring("")` has no document to read
+            if sent.is_empty() {
+                return Err(non_field("Invalid HTML passed"));
+            }
+            match thrust_editor_doc::sanitize::validate_html_content(sent) {
+                Ok(clean) => description_html = Some(clean.unwrap_or_else(|| sent.to_string())),
+                Err(_) => {
+                    let mut errors = FieldErrors::new();
+                    fail(&mut errors, "error", "html content is not valid");
+                    return Err(V1Error::Fields(errors));
+                }
+            }
+        }
+        if let Some(list) = &self.assignees {
+            let members = db.project_members(&scope).await?;
+            let invalid: Vec<Uuid> = list
+                .0
+                .iter()
+                .map(|key| UserId(key.id))
+                .filter(|u| !members.iter().any(|m| m.user_id == *u && m.role >= Role::Member))
+                .map(|u| u.0)
+                .collect();
+            if !invalid.is_empty() {
+                return Err(non_field(&format!(
+                    "Assignees {} are not active members of this project",
+                    uuid_list(&invalid)
+                )));
+            }
+        }
+        Ok(Parsed {
+            name: self.name.map(SentText::into_parts),
+            description_html,
+            priority: self.priority.map(|p| p.0),
+            start: self.start_date.map(NullableDate::into_parts),
+            target: self.target_date.map(NullableDate::into_parts),
+            parent: self.parent.map(NullableKey::into_id),
+            state: self.state.map(NullableKey::into_id),
+            point: self.point.map(NullableWhole::get),
+            assignees: self.assignees.map(|list| list.ids(UserId)),
+            labels: self.labels.map(|list| list.ids(|id| id)),
+            external_source: self.external_source.map(NullableText::into_option),
+            external_id: self.external_id.map(NullableText::into_option),
+            deleted_at: self.deleted_at.is_some_and(NullableDateTime::is_set),
+        })
+    }
+}
+
+/// The creation's body in the document: `PatchedIssueRequest` with `name` required, which `Creations` (`openapi.rs`) writes from the
+/// change's schema. The type is the name the path declarations use for it.
+#[cfg(feature = "openapi")]
+#[derive(utoipa::ToSchema)]
+#[allow(dead_code, reason = "a name for the document: nothing builds it")]
+pub(crate) struct IssueRequest;
+
 /// Read a body the way the pin's `IssueSerializer` does: every field it knows is checked, and what is wrong is one 400 (the fields in
-/// the first place, then `validate()`'s refusals, one at a time); a key Django cannot read is `“x” is not a valid UUID.` under its
-/// field, with the other fields' errors beside it (measured on the pin). A key that names a state, a label or a parent that is not
-/// one of the project's is "not there", as for a row that does not exist (D-033: the pin tells the two apart, which tells a caller
-/// what exists in projects it cannot see).
+/// the first place, then the rows they name, then `validate()`'s refusals, one at a time); a key Django cannot read is
+/// `“x” is not a valid UUID.` under its field, with the other fields' errors beside it (measured on the pin).
 async fn read_item(ctx: &Ctx, access: &IssueAccess, b: &Map<String, Value>, partial: bool) -> Result<Parsed, V1Error> {
-    let (scope, db) = (access.scope(), &ctx.app.ports.db);
-    let mut errors = FieldErrors::new();
-    let mut p = Parsed::default();
-    let text = |max: Option<usize>, blank: bool, null: bool| move |v: &Value| char_field(v, max, blank, null);
-
-    // the declared fields: the people, the labels and the type
-    if let Some(v) = b.get("assignees") {
-        match read_key_list(v) {
-            Ok(keys) => {
-                let mut bad = Map::new();
-                let mut people = Vec::new();
-                for (i, (id, shown)) in keys.iter().enumerate() {
-                    if db.user_by_id(UserId(*id)).await?.is_none() {
-                        bad.insert(i.to_string(), json!([no_such_pk_shown(shown)]));
-                    } else {
-                        people.push(UserId(*id));
-                    }
-                }
-                if bad.is_empty() {
-                    p.assignees = Some(people);
-                } else {
-                    errors.insert("assignees".into(), Value::Object(bad));
-                }
-            }
-            Err(e) => {
-                errors.insert("assignees".into(), e);
-            }
-        }
-    }
-    if let Some(v) = b.get("labels") {
-        match read_key_list(v) {
-            Ok(keys) => {
-                let known = db.project_labels(&scope).await?;
-                let mut bad = Map::new();
-                let mut labels = Vec::new();
-                for (i, (id, shown)) in keys.iter().enumerate() {
-                    if known.iter().any(|l| l.id == *id) {
-                        labels.push(*id);
-                    } else {
-                        bad.insert(i.to_string(), json!([no_such_pk_shown(shown)]));
-                    }
-                }
-                if bad.is_empty() {
-                    p.labels = Some(labels);
-                } else {
-                    errors.insert("labels".into(), Value::Object(bad));
-                }
-            }
-            Err(e) => {
-                errors.insert("labels".into(), e);
-            }
-        }
-    }
-    // there are no types and no estimate points here: a key names a row that is not there. The pin reads a type under two names, the
-    // model's own `type` and the serializer's `type_id` (both measured: each answers under its own name)
-    for field in ["type", "type_id", "estimate_point"] {
-        if let Some(v) = b.get(field) {
-            match pk_field(v) {
-                PkRead::Null => {}
-                PkRead::Key { shown, .. } => fail(&mut errors, field, no_such_pk_shown(&shown)),
-                PkRead::Refused(m) => fail(&mut errors, field, m),
-            }
-        }
-    }
-
-    // the model's fields
-    if !partial && !b.contains_key("name") {
-        fail(&mut errors, "name", "This field is required.");
-    }
-    if let Some(v) = b.get("name") {
-        match char_field(v, Some(255), false, false) {
-            Ok(name) => p.name = Some((py_str(v), name.unwrap_or_default())),
-            Err(m) => fail(&mut errors, "name", m),
-        }
-    }
-    let html = b.get("description_html").map(|v| char_field(v, None, true, false));
-    match &html {
-        Some(Ok(t)) => p.description_html = Some(t.clone().unwrap_or_default()),
-        Some(Err(m)) => fail(&mut errors, "description_html", m.clone()),
-        None => {}
-    }
-    if let Some(v) = b.get("priority") {
-        match choice_field(v, &PRIORITIES) {
-            Ok(priority) => p.priority = Priority::parse(priority),
-            Err(m) => fail(&mut errors, "priority", m),
-        }
-    }
-    for (field, slot) in [("start_date", &mut p.start), ("target_date", &mut p.target)] {
-        if let Some(v) = b.get(field) {
-            match date_field(v) {
-                Ok(date) => *slot = Some((v.as_str().map(str::to_string), date)),
-                Err(m) => fail(&mut errors, field, m),
-            }
-        }
-    }
-    // read, checked, and not kept
-    if let Some(v) = b.get("sequence_id") {
-        if let Err(m) = int_field(v, i64::from(i32::MIN), i64::from(i32::MAX)) {
-            fail(&mut errors, "sequence_id", m);
-        }
-    }
-    if let Some(v) = b.get("sort_order") {
-        if let Err(m) = float_field(v) {
-            fail(&mut errors, "sort_order", m);
-        }
-    }
-    if let Some(v) = b.get("archived_at") {
-        if let Err(m) = date_field(v) {
-            fail(&mut errors, "archived_at", m);
-        }
-    }
-    if let Some(v) = b.get("is_draft") {
-        if let Err(m) = bool_field(v) {
-            fail(&mut errors, "is_draft", m);
-        }
-    }
-    for (field, slot) in [("external_source", &mut p.external_source), ("external_id", &mut p.external_id)] {
-        if let Some(v) = b.get(field) {
-            match text(Some(255), true, true)(v) {
-                Ok(t) => *slot = Some(t),
-                Err(m) => fail(&mut errors, field, m),
-            }
-        }
-    }
-    if let Some(v) = b.get("point") {
-        if v.is_null() {
-            p.point = Some(None);
-        } else {
-            match int_field(v, 0, 12).and_then(|n| i32::try_from(n).map_err(|e| e.to_string())) {
-                Ok(n) => p.point = Some(Some(n)),
-                Err(m) => fail(&mut errors, "point", m),
-            }
-        }
-    }
-    if let Some(v) = b.get("deleted_at") {
-        match datetime_field(v) {
-            Ok(set) => p.deleted_at = set,
-            Err(m) => fail(&mut errors, "deleted_at", m),
-        }
-    }
-    if let Some(v) = b.get("created_by") {
-        match pk_field(v) {
-            PkRead::Null => {}
-            PkRead::Key { id, shown } => {
-                if db.user_by_id(UserId(id)).await?.is_none() {
-                    fail(&mut errors, "created_by", no_such_pk_shown(&shown));
-                }
-            }
-            PkRead::Refused(m) => fail(&mut errors, "created_by", m),
-        }
-    }
-    // the work items and the states: of this project, or not there
-    if let Some(v) = b.get("parent") {
-        match pk_field(v) {
-            PkRead::Null => p.parent = Some(None),
-            PkRead::Key { id, shown } => {
-                if db.work_item_row(&scope, WorkItemId(id)).await?.is_some() {
-                    p.parent = Some(Some(id));
-                } else {
-                    fail(&mut errors, "parent", no_such_pk_shown(&shown));
-                }
-            }
-            PkRead::Refused(m) => fail(&mut errors, "parent", m),
-        }
-    }
-    if let Some(v) = b.get("state") {
-        match pk_field(v) {
-            PkRead::Null => p.state = Some(None),
-            PkRead::Key { id, shown } => {
-                if db.project_states(&scope).await?.iter().any(|s| s.id == id) {
-                    p.state = Some(Some(id));
-                } else {
-                    fail(&mut errors, "state", no_such_pk_shown(&shown));
-                }
-            }
-            PkRead::Refused(m) => fail(&mut errors, "state", m),
-        }
-    }
+    let (request, mut errors) = PatchedIssueRequest::read(b, partial);
+    request.check_rows(ctx, access, &mut errors).await?;
     refuse_if_any(errors)?;
-
-    // `validate()`, which raises at its first refusal
-    if let (Some((_, Some(start))), Some((_, Some(target)))) = (&p.start, &p.target) {
-        if start > target {
-            return Err(non_field("Start date cannot exceed target date"));
-        }
-    }
-    if let Some(Ok(sent)) = &html {
-        let sent = sent.as_deref().unwrap_or_default();
-        // `html.fromstring("")` has no document to read
-        if sent.is_empty() {
-            return Err(non_field("Invalid HTML passed"));
-        }
-        match thrust_editor_doc::sanitize::validate_html_content(sent) {
-            Ok(clean) => p.description_html = Some(clean.unwrap_or_else(|| sent.to_string())),
-            Err(_) => {
-                let mut errors = FieldErrors::new();
-                fail(&mut errors, "error", "html content is not valid");
-                return Err(V1Error::Fields(errors));
-            }
-        }
-    }
-    if let Some(people) = &p.assignees {
-        let members = db.project_members(&scope).await?;
-        let invalid: Vec<Uuid> = people
-            .iter()
-            .filter(|u| !members.iter().any(|m| m.user_id == **u && m.role >= Role::Member))
-            .map(|u| u.0)
-            .collect();
-        if !invalid.is_empty() {
-            return Err(non_field(&format!(
-                "Assignees {} are not active members of this project",
-                uuid_list(&invalid)
-            )));
-        }
-    }
-    Ok(p)
+    request.validate(ctx, access).await
 }
 
 /// The 409 for an integration key that another work item has, naming `id`.
@@ -639,7 +707,7 @@ pub(crate) async fn list(
         tag = "Work Items",
         summary = "Create work item",
         params(("slug" = String, Path), ("project_id" = thrust_contracts::Uuid, Path)),
-        request_body(content = crate::openapi::IssueRequest, content_type = "application/json"),
+        request_body(content = IssueRequest, content_type = "application/json"),
         responses(
             crate::openapi::Refused,
             (status = 201, description = "Work Item created successfully", body = IssueDto),
@@ -744,7 +812,7 @@ pub(crate) async fn retrieve(
             ("pk" = thrust_contracts::Uuid, Path)
         ),
         // not required: an empty body is an empty object (`json_body`), as DRF reads it
-        request_body(content = Option<crate::openapi::PatchedIssueRequest>, content_type = "application/json"),
+        request_body(content = Option<PatchedIssueRequest>, content_type = "application/json"),
         responses(
             crate::openapi::Refused,
             (status = 200, description = "Work Item patched successfully", body = IssueDto),

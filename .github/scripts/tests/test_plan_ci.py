@@ -257,6 +257,10 @@ check("the self-hosted adapter runs the native cells, pg-adapter and mutants",
       (cells, {"pg-adapter", "mutants"} <= jobs), ({c for c in CELLS if c.startswith("native-")}, True))
 jobs, cells = run_plan(["crates/testing/suites/api/src/lib.rs"], REAL_GRAPH)
 check("the suite runs every cell and the mutants", (cells, "mutants" in jobs), (set(CELLS), True))
+# The mutation controls' verdicts are read by mutants.sh (the job) and by test-mutants-verdict.sh (ci-scripts), which also reads mutants.sh.
+for path in ["scripts/mutants.sh", "scripts/lib/mutants-verdict.sh"]:
+    jobs, cells = run_plan([path], REAL_GRAPH)
+    check(f"{path} runs the mutants job and its test, and no cell", ({"mutants", "ci-scripts"} <= jobs, cells), (True, set()))
 jobs, cells = run_plan(["crates/editor/doc/src/lib.rs"], REAL_GRAPH)
 check("a crate no binary depends on runs no cell", (cells, "contract" in jobs, "hermetic" in jobs), (set(), False, True))
 # ADR-0009's layout plans exactly as the flat one before it did: moving a crate changed no plan.
@@ -302,9 +306,9 @@ for script in sorted(f for f in tracked if f.startswith("scripts/") and "/" not 
     check(f"{script} runs no cell, so nothing that runs a cell calls it", re.search(re.escape(name) + r"\b", harness_text) is None, True)
 
 # ---- 7. the command line ---------------------------------------------------------------------------------------------------------
-def cli(*args, changed=None, cells="\n".join(CELLS) + "\n", md_obj=None):
+def cli(*args, changed=None, cells="\n".join(CELLS) + "\n", md_obj=None, script=None):
     with tempfile.TemporaryDirectory() as d:
-        argv = [sys.executable, "-I", SCRIPT, "--cells", os.path.join(d, "cells.txt")]
+        argv = [sys.executable, "-I", script or SCRIPT, "--cells", os.path.join(d, "cells.txt")]
         with open(os.path.join(d, "cells.txt"), "w") as f:
             f.write(cells)
         if changed is not None:
@@ -341,6 +345,125 @@ check("cli: metadata with no member is refused", cli(changed="a\n", md_obj={"wor
 bad = metadata(REAL_GRAPH)
 bad["packages"][0]["manifest_path"] = "/elsewhere/x/Cargo.toml"
 check("cli: a crate outside the workspace root is refused", cli(changed="a\n", md_obj=bad)[0], 2)
+
+# ---- 8. the called workflows (ADR-0102) ------------------------------------------------------------------------------------------
+def refused(fn):
+    """The exit code of the planner's `fail`, or None when it did not refuse."""
+    try:
+        fn()
+    except SystemExit as e:
+        return e.code
+    return None
+
+
+def independent_slices(planned, workflows, jobs):
+    """slices() written another way: where each job lives first, then the groups."""
+    home = {j: w for w, members in workflows.items() for j in members}
+    top = [j for j in jobs if j in planned and j not in home] + [w for w in workflows if set(workflows[w]) & planned]
+    called = [w for w in workflows if set(workflows[w]) & planned]
+    plans = {w: sorted(j for j in planned if home.get(j) == w) for w in called}
+    return top, called, plans
+
+
+JOBS_LIST = list(pc.JOBS)
+check("WORKFLOWS is a partition of the jobs", refused(lambda: pc.check_workflows()), None)
+check("while no job has moved, WORKFLOWS is empty", pc.WORKFLOWS, {})
+for _ in range(200):
+    planned = set(rng.sample(JOBS_LIST, rng.randint(0, len(JOBS_LIST))))
+    check(f"no job moved: top is the planned jobs in order, no workflow, no plan ({sorted(planned)})", pc.slices(planned),
+          ([j for j in JOBS_LIST if j in planned], [], {}))
+# generated partitions: each job stays in ci.yml or goes into one workflow; the planned jobs are random. The workflows' names here
+# are not job names, so that a name in `top` is one thing or the other (the real clash, a workflow `web` holding a job `web`, is below)
+NAMES = ["wf-test", "wf-lint", "wf-documentation", "wf-security", "wf-web"]
+for g in range(300):
+    chosen = rng.sample(NAMES, rng.randint(0, len(NAMES)))
+    workflows = {w: [] for w in chosen}
+    for job in JOBS_LIST:
+        if chosen and rng.random() < 0.7:
+            workflows[rng.choice(chosen)].append(job)
+    workflows = {w: tuple(m) for w, m in workflows.items() if m}
+    planned = set(rng.sample(JOBS_LIST, rng.randint(0, len(JOBS_LIST))))
+    top, called, plans = pc.slices(planned, workflows)
+    wtop, wcalled, wplans = independent_slices(planned, workflows, JOBS_LIST)
+    check(f"partition {g}: top", top, wtop)
+    check(f"partition {g}: the called workflows", called, wcalled)
+    check(f"partition {g}: each plan holds its own planned jobs", {w: sorted(j) for w, j in plans.items()}, wplans)
+    # every planned job is judged exactly once: by ci.yml's gate as itself, or by the `verdict` job of its one workflow
+    inside = [j for w in plans for j in plans[w]]
+    check(f"partition {g}: no planned job is judged twice or not at all", sorted(top[:len(top) - len(called)] + inside), sorted(planned))
+    check(f"partition {g}: a called workflow with no planned job is not asked for", sorted(set(top) & set(workflows) - set(called)), [])
+# the real clash of names: the workflow `web` holds the job `web`, and `lint` the job `lint` while `deny` stays in ci.yml
+check("a workflow and its own job share a name: top has the calling job once", pc.slices({"web", "deny"}, {"web": ("web",)}),
+      (["deny", "web"], ["web"], {"web": ["web"]}))
+check("a workflow whose job is not planned is not asked for, though an inline job has its name",
+      pc.slices({"lint"}, {"lint": ("deny",)}), (["lint"], [], {}))
+# a map that is not a partition is refused (exit 2), never half-used
+check("a job in two workflows is refused", refused(lambda: pc.check_workflows({"test": ("lint", "docs"), "web": ("docs",)})), 2)
+check("a name that is not a job is refused", refused(lambda: pc.check_workflows({"test": ("hermetic", "nonesuch")})), 2)
+check("a workflow with no job is refused", refused(lambda: pc.check_workflows({"test": ()})), 2)
+check("slices refuses a map that is not a partition", refused(lambda: pc.slices({"lint"}, {"test": ("lint",), "web": ("lint",)})), 2)
+
+# ---- 9. the workflow files (ADR-0102) ---------------------------------------------------------------------------------------------
+# The files that run the checks `gate` waits for, today and as the migration adds them; and the ones that run no check, because they
+# have triggers of their own (the deploy and release flows, the schedules).
+CHECK_WORKFLOWS = ["ci", "contract-cell", "test", "lint", "documentation", "security", "web"]
+NO_CHECK_WORKFLOWS = ["deploy", "e2e-schedule", "flagship", "flake-hunt", "release", "release-plz"]
+for name in CHECK_WORKFLOWS:
+    check(f".github/workflows/{name}.yml runs everything", run_plan([f".github/workflows/{name}.yml"], REAL_GRAPH), EVERYTHING)
+for name in NO_CHECK_WORKFLOWS:
+    check(f".github/workflows/{name}.yml runs only its helper tests and the workflow lint",
+          run_plan([f".github/workflows/{name}.yml"], REAL_GRAPH), ({"ci-scripts", "deps"}, set()))
+check("a workflow named like a check without being one (testing.yml) is not run-everything",
+      run_plan([".github/workflows/testing.yml"], REAL_GRAPH), ({"ci-scripts", "deps"}, set()))
+check("the names of the two lists are disjoint", sorted(set(CHECK_WORKFLOWS) & set(NO_CHECK_WORKFLOWS)), [])
+workflow_dir = os.path.join(ROOT, ".github", "workflows")
+real_files = sorted(f[:-4] for f in os.listdir(workflow_dir) if f.endswith(".yml"))
+check("this repository has workflow files", len(real_files) >= 8, True)
+check("every workflow file of this repository is one that runs the checks or one that runs none: add a new file to a list here, "
+      "and to the planner's rule when it runs the checks", [n for n in real_files if n not in CHECK_WORKFLOWS + NO_CHECK_WORKFLOWS], [])
+check("every file that runs the checks is planned as such, whatever the lists say",
+      [n for n in real_files if n in CHECK_WORKFLOWS and run_plan([f".github/workflows/{n}.yml"], REAL_GRAPH) != EVERYTHING], [])
+
+# The two indexes are read by check-ci-index.sh, so a change to one runs that guard (deps) and its test (ci-scripts), which is what the
+# generic rule for .github/ gives; this keeps a README from ever being a file that runs nothing.
+for index in (".github/workflows/README.md", ".github/actions/README.md", ".github/scripts/check-ci-index.sh"):
+    check(f"{index} runs the index guard (deps) and its test (ci-scripts)", run_plan([index], REAL_GRAPH), ({"ci-scripts", "deps"}, set()))
+
+# ---- 10. the command line's new lines --------------------------------------------------------------------------------------------
+rc, out, _ = cli(changed="web/x.tsx\n")
+check("cli: top is the jobs while none has moved", out.get("top"), out.get("jobs"))
+check("cli: no called workflow, no plan", (out.get("workflows"), out.get("plans")), ("[]", "{}"))
+rc, out, _ = cli(changed="README.md\n")
+check("cli: README.md: nothing to expect of ci.yml", (out.get("top"), out.get("workflows"), out.get("plans")), ("[]", "[]", "{}"))
+rc, out, _ = cli("--full", "a probe")
+check("cli: --full: top is every job", json.loads(out.get("top", "null")), JOBS_LIST)
+# Nothing is in a workflow yet, so the lines above cannot tell a working `plans` from a broken one. Run the same command line on a
+# copy of the planner whose WORKFLOWS holds two workflows.
+with open(SCRIPT, encoding="utf-8") as f:
+    source = f.read()
+check("WORKFLOWS = {} is found once in the planner, to be replaced in the copy", source.count("\nWORKFLOWS = {}\n"), 1)
+with tempfile.TemporaryDirectory() as d:
+    moved = os.path.join(d, "plan-ci-with-workflows.py")
+    with open(moved, "w", encoding="utf-8") as f:
+        f.write(source.replace("\nWORKFLOWS = {}\n", '\nWORKFLOWS = {"wf-test": ("hermetic", "pg-adapter"), "wf-docs": ("docs",)}\n', 1))
+    rc, out, _ = cli("--full", "a probe", script=moved)
+    check("cli, two workflows: --full: top is the jobs left in ci.yml, then the two workflows",
+          json.loads(out.get("top", "null")), [j for j in JOBS_LIST if j not in ("hermetic", "pg-adapter", "docs")] + ["wf-test", "wf-docs"])
+    check("cli, two workflows: --full: both are called", json.loads(out.get("workflows", "null")), ["wf-test", "wf-docs"])
+    check("cli, two workflows: --full: each is given its jobs as its plan", json.loads(out.get("plans", "null")),
+          {"wf-test": ["hermetic", "pg-adapter"], "wf-docs": ["docs"]})
+    check("cli, two workflows: --full: jobs still lists every planned job, inside a workflow or not", json.loads(out.get("jobs", "null")), JOBS_LIST)
+    rc, out, _ = cli(changed="docs/src/intro.md\n", script=moved)
+    check("cli, two workflows: the book alone: only the docs workflow", (json.loads(out.get("top", "null")), json.loads(out.get("workflows", "null")),
+          json.loads(out.get("plans", "null"))), (["wf-docs"], ["wf-docs"], {"wf-docs": ["docs"]}))
+    rc, out, _ = cli(changed="README.md\n", script=moved)
+    check("cli, two workflows: a change that needs nothing calls nothing", (out.get("top"), out.get("workflows"), out.get("plans")), ("[]", "[]", "{}"))
+    bad_map = os.path.join(d, "plan-ci-bad-map.py")
+    with open(bad_map, "w", encoding="utf-8") as f:
+        f.write(source.replace("\nWORKFLOWS = {}\n", '\nWORKFLOWS = {"a": ("docs",), "b": ("docs",)}\n', 1))
+    rc, out, err = cli("--full", "a probe", script=bad_map)
+    check("cli: a map with a job in two workflows is refused (exit 2), says which, and prints nothing", (rc, out, "docs is in two workflows" in err),
+          (2, {}, True))
 
 print(f"passed={passed} bad={failed}")
 sys.exit(1 if failed else 0)

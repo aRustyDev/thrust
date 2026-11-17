@@ -1,9 +1,9 @@
 //! The request schemas of the document against the parsers that read the requests (issue #58, step 0 of the request-parser series).
 //!
-//! The document describes a request body in eight hand-written types (`openapi.rs`); the routes read the body with hand parsers
-//! (`fields.rs`). The two are written apart, and the only things that compare them are `oasdiff` (the document against the PIN, not
-//! against the parser) and a test that a change takes the keys of a creation. A bound can change in the parser and the document go on
-//! saying the old one.
+//! The document describes a request body in eight schemas, and the routes read the body with hand parsers (`fields.rs`) into the
+//! structs those schemas are derived from. A bound is a type there, so the parser and the document cannot say two numbers; but a
+//! type's reader and its schema are two functions, an attribute can be forgotten, and `oasdiff` compares the document with the PIN,
+//! not with the parser. (Until the structs, the schemas were hand-written beside the parsers, and nothing compared them.)
 //!
 //! This test closes that gap from the document's side. It reads each request schema, GENERATES the bodies the schema's own keywords
 //! speak of, and sends each to the real router, in a world of its own:

@@ -139,8 +139,11 @@ jobs:
           sh .github/scripts/tests/test-assert-gated-environments.sh
           sh .github/scripts/tests/test-lint-workflow.sh
           sh .github/scripts/tests/test-lint-all-workflows.sh
+          sh .github/scripts/tests/test-check-ci-index.sh
+          sh .github/scripts/tests/test-lint-actionlint.sh
           sh .github/scripts/tests/test-check-flake-hunt-cell.sh
           sh .github/scripts/tests/test-ports.sh
+          sh .github/scripts/tests/test-mutants-verdict.sh
           sh .github/scripts/tests/test-deploy-worker.sh
           python3 -I .github/scripts/tests/test_active_version.py
           sh .github/scripts/tests/test-unpack-bundle.sh
@@ -153,6 +156,8 @@ jobs:
           python3 -I .github/scripts/tests/test_flagship.py
           python3 -I .github/scripts/tests/test_preview_config.py
           python3 -I .github/scripts/tests/test_plan_ci.py
+          # The tests of the planner and the gate must be able to fail: each hand mutant of those two files is killed by them (ADR-0102).
+          python3 -I .github/scripts/tests/mutate_gate.py
 
   deps:
     needs: changes
@@ -242,6 +247,25 @@ jobs:
       # the two attesting `build` jobs). A workflow it does not name gets none of them.
       - name: Workflow guard (every workflow and action)
         run: .github/scripts/lint-all-workflows.sh
+      # The indexes of the two directories, .github/workflows/README.md and .github/actions/README.md, have one row for every file they
+      # index and none for a file that is gone: an index that lists a deleted workflow or omits a new one is a lie (ADR-0102, stage 0.4).
+      - name: CI index guard (workflows and actions)
+        run: sh .github/scripts/check-ci-index.sh
+      # actionlint checks every workflow, and each call of a called workflow: the `with:` it passes against the callee's inputs, and the
+      # outputs it reads through `needs`. It is installed from its own release, because taiki-e/install-action, which installs the other
+      # tools here, does not offer it. lint-actionlint.sh runs it only inside this checkout, where it finds the project (in a plain
+      # directory it checks nothing and says nothing), and first proves that it refuses a call that breaks the contract (research 0018, F11).
+      - name: actionlint (every workflow), and the control that shows it is looking
+        env:
+          ACTIONLINT_VERSION: "1.7.12"
+          # The SHA-256 of actionlint_1.7.12_linux_amd64.tar.gz, from the release's own checksums file and from hashing the archive, which
+          # the build attestation of rhysd/actionlint covers (`gh attestation verify`, with a control against another repository; 2026-11-16).
+          ACTIONLINT_SHA256: "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8"
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/actionlint.tar.gz" "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          echo "${ACTIONLINT_SHA256}  $RUNNER_TEMP/actionlint.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/actionlint.tar.gz" -C "$RUNNER_TEMP" actionlint
+          ACTIONLINT="$RUNNER_TEMP/actionlint" sh .github/scripts/lint-actionlint.sh
       # Issue #58 (ADR-0032): the OpenAPI document that `thrust-api-v1` writes from the types its routes answer with, diffed against
       # the pinned Plane schema with oasdiff (a pinned image; Docker is on the runner). Every difference must be a recorded one and
       # every recorded one must still be there; the check breaks the document three ways and the register one way, and each must be

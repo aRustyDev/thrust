@@ -29,7 +29,8 @@ Worker](deploy.md). The jobs and the command each CI job runs are in the CI sect
 | `.github/actions/setup-rust` | A composite action: the Rust version `rust-toolchain.toml` pins (read by `.github/scripts/toolchain-channel.sh`, which refuses anything but an exact version), the rustup targets and components, a keyed `rust-cache`, and optionally `worker-build` 0.8.7 and wrangler 4.151.2 |
 | `.github/actions/build-bundle` | A composite action: the deploy bundle of the checked-out commit (the Worker, the `migrate` binary and the web app, in one reproducible file), used by `deploy.yml` and `release.yml` so that both build it the same way |
 | `.github/actions/deploy-worker` | A composite action: fetch the bundle (this run's build for staging, the release's asset for production, `fetch-release-bundle.sh`), verify its attestation, unpack it, install wrangler (the same version as `setup-rust`, kept equal by a test) and `cloudflared` at pinned versions, and run `scripts/deploy-worker.sh` |
-| `.github/scripts/` | The pipeline's own logic: `plan-ci.py`, `plan-cells.sh`, `assert-gate.sh`, `assert-required-contexts.sh` and `lint-all-workflows.sh`; and the deploy's: `plan-deploy.sh`, `classify-deploy.sh`, `active-version.py`, `assert-sha-checks.sh`, `assert-gated-environments.sh`, `verify-bundle.sh`, `unpack-bundle.sh`, `fetch-previous-assets.sh`, `fetch-release-bundle.sh` and `lint-workflow.sh`; and the release's: `plan-release.sh`. The `ci-scripts` job tests them with `.github/scripts/tests/` |
+| `.github/scripts/` | The pipeline's own logic: `plan-ci.py`, `plan-cells.sh`, `assert-gate.sh`, `assert-required-contexts.sh`, `lint-all-workflows.sh`, `lint-actionlint.sh` and `check-ci-index.sh`; and the deploy's: `plan-deploy.sh`, `classify-deploy.sh`, `active-version.py`, `assert-sha-checks.sh`, `assert-gated-environments.sh`, `verify-bundle.sh`, `unpack-bundle.sh`, `fetch-previous-assets.sh`, `fetch-release-bundle.sh` and `lint-workflow.sh`; and the release's: `plan-release.sh`. The `ci-scripts` job tests them with `.github/scripts/tests/` |
+| `.github/workflows/README.md`, `.github/actions/README.md` | The indexes of the two directories: one row for each file, with its triggers and whether `gate` waits for it. `check-ci-index.sh`, in the `deps` job, fails when a file has no row, a row names no file, or a file has two |
 | `.github/deploy/` | What the deploy trusts: the Cloudflare Origin CA root that signs `thrust-pg`'s certificate, with its fingerprint pinned by a test; and `flagship/policy.json`, who may reach which kind of target through the edge ([Routing flags](#routing-flags)) |
 | `.github/workflows/flagship.yml` (`flagship`) | The edge's routing flags: makes every flag of the Flagship app what the policy says, on a push to `main` that changes it, and checks them every night at 05:23 UTC ([Routing flags](#routing-flags)). Off until the repository variable `FLAGSHIP_APP_ID` is set |
 | `scripts/flagship.py` | The only writer of the routing flags: `validate`, `check`, `sync`, and `put`, `alias` and `delete` for the deploys and teardowns of targets. Tested by `.github/scripts/tests/test_flagship.py` against `flagship_fake.py` |
@@ -53,8 +54,18 @@ decides:
 - `contract` is expected exactly when cells are planned. The set of cells that uploaded a pass marker must then equal
   the planned set, which must not be empty.
 - `test-ci-scripts.sh` generates the cases: each of the ten jobs, expected or not, with each of the four results (80
-  cases), then the cells, the inputs and the names. 34 hand mutants of the planner and the gate are each caught by
-  their tests `[verified 2026-11-16 locally, under dash; not yet in CI]`.
+  cases), then the cells, the inputs and the names.
+- **One script at every level** (ADR-0102). `assert-gate.sh` also takes `KNOWN_JOBS`, `CHANGES_JOB`, `CELL_JOB` and
+  `VERDICT_JOBS`, each of which defaults to what the gate above needs. A called workflow's `verdict` job sets them to judge
+  its own jobs; a gate that calls workflows sets `VERDICT_JOBS` to require of each expected callee that its result is
+  `success` **and** that its output `verdict` is `pass`, since a callee whose `verdict` job was skipped is `success` and
+  proves nothing. No workflow is called yet, so ci.yml's own gate runs as above. The cases (173 in `test-ci-scripts.sh`)
+  include the seven scenarios of the gate spike (`.agents/plans/ci-workflows/research/0018-gate-spike.md`).
+- **Tested to be able to fail.** `.github/scripts/tests/mutate_gate.py`, the last line of the `ci-scripts` job, plants 53 hand
+  mutants one at a time in `plan-ci.py` and `assert-gate.sh`, and each must fail the tests of its file (`test_plan_ci.py`;
+  `test-ci-scripts.sh` under dash, stopping at the first failing case). It refuses to answer when the tests fail on the
+  unmutated files, when the text a mutant replaces is not found exactly once, or when a mutant no longer compiles, and two
+  mutants that change nothing must survive, so a driver that kills everything is caught. `[verified 2026-11-16 locally, under dash]`
 
 The point is that "nothing failed" is not accepted as "everything ran". A cell that never started leaves no check
 behind, and a required check that never reports blocks a pull request forever.
@@ -122,15 +133,20 @@ its base branch. Nothing calls it, so it is a tool to run by hand.
   | `scripts/smoke-deploy.sh` | `ci-scripts` | none |
   | a page under `docs/` | `docs` | none |
 
-- **Tested** by `test_plan_ci.py`, about 4,900 checks:
+- **Tested** by `test_plan_ci.py`, about 6,800 checks:
   - 300 generated crate graphs, with each crate changed alone and in pairs, against an independent reverse-reachability;
   - the plan of a list equals the union of the plans of its parts;
   - every rule is the first match of its own sample, and matches a tracked file;
   - the fail-open cases;
   - this repository's real graph and targets;
-  - no script that the planner keeps out of the cells is called by what runs a cell.
+  - no script that the planner keeps out of the cells is called by what runs a cell;
+  - the called workflows (ADR-0102): 300 generated partitions of the jobs into workflows against an independent computation
+    of what `gate` expects and what each workflow is given, the maps that are refused (a job in two workflows, a name that is
+    no job, a workflow with no job), and the command line run on a copy of the planner whose map is not empty;
+  - every file under `.github/workflows/` is one that runs the checks (planned as everything) or one that runs none, so a new
+    workflow cannot fall into the generic rule and run no test.
 
-  `[verified 2026-11-16 locally; not yet in CI]`
+  `[verified 2026-11-16 locally; run by ci-scripts]`
 - **The web job.** The `web` job runs `scripts/check-web-diff.sh` (only the files in
   `web/ALLOWED-CHANGES` may differ from the pin; `web/SOURCE` says where `web/` came from), then
   `pnpm --dir web install --frozen-lockfile --ignore-scripts` and `pnpm --dir web exec turbo run build --filter=web`,
@@ -379,7 +395,9 @@ What is not yet verified against the real service: [G-43](../testing/status.md).
   rustfmt reaches `lint` only as a pull request: Dependabot (`.github/dependabot.yml`, the `rust-toolchain` ecosystem, weekly)
   proposes each new stable release, and a change to that file runs everything. The two `cargo metadata` calls that need no
   build (the `changes` job, `test_plan_ci.py`) use the runner's own stable (`RUSTUP_TOOLCHAIN=stable`), so they install nothing. `cargo-nextest` is 0.9.140 and `cargo-deny` is 0.20.2, both installed by
-  `taiki-e/install-action`. `cloudflared` in the deploy is a release binary pinned by version and by SHA-256.
+  `taiki-e/install-action`. `cloudflared` in the deploy is a release binary pinned by version and by SHA-256, and so is `actionlint` (1.7.12) in the
+  `deps` job, because `taiki-e/install-action` does not offer it; the archive's build attestation from `rhysd/actionlint`
+  was verified when the hash was pinned.
 - `permissions: {}` at the top of each workflow, and `contents: read` and nothing else on each job of `ci.yml` and the
   workflows it calls. `deploy.yml` asks for more, per job: `checks: read` (`plan` reads the commit's checks),
   `id-token: write` and `attestations: write` (`build` only, for the attestation), `attestations: read` and
@@ -394,6 +412,14 @@ What is not yet verified against the real service: [G-43](../testing/status.md).
   secret there. All 22 checkouts set `persist-credentials: false`.
   Reusable-workflow and composite-action inputs reach the script through `env`, not through interpolation into the script
   text, which `lint-workflow.sh` checks in every workflow and action.
+- **A workflow that other workflows call** (its `on:` has `workflow_call`; ADR-0102) is also held to two rules of
+  `lint-workflow.sh`: no workflow-level `concurrency` (`github.workflow` is the caller's name there, so the group equals the
+  caller's and the run deadlocks), and no `github.event_name` or `github.workflow` (both are the caller's: a callee routes by an
+  input). `actionlint`, run by `lint-actionlint.sh` in the `deps` job, checks every workflow and each call in it: the `with:` it
+  passes against the callee's inputs and the outputs it reads through `needs`. It checks nothing outside a git repository, so the
+  script refuses to run outside one and, before it lints the repository, shows that it refuses a call that breaks the contract
+  three ways (and accepts a sound one). Its tests use stand-in binaries that each misbehave in one way, so `ci-scripts` needs no
+  `actionlint`. `[verified 2026-11-16 locally, with actionlint 1.7.12]`
 - `deny.toml` configures the `deny` job: advisories, licences, bans (`sqlx`, `sea-orm`, `diesel`, `diesel-async`) and
   sources (crates.io only). Its one advisory ignore is RUSTSEC-2023-0071 (`rsa`), with the reason and when to re-check
   it written beside it; any other advisory is fixed by upgrading. The job fetches the advisory database on every run,
