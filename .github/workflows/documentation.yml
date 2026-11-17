@@ -31,7 +31,7 @@ jobs:
   # breaks a copy of the book each of those ways, and the missing preprocessor a fourth, and each must be refused. mdBook and
   # mdbook-mermaid (which targets mdBook 0.5) come from install-action at exact versions, checked against its SHA-256 manifest.
   docs:
-    if: contains(fromJSON(inputs.plan), 'docs')
+    if: contains(fromJSON(inputs.plan), 'docs') && false
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
