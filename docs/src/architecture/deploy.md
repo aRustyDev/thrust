@@ -325,3 +325,53 @@ documented at the top of that script. In short:
 - the Access apps and the CI opt-in token;
 - the edge itself on `thrust.sow.foo`;
 - production's `preview_urls`, which is Q-0111.1.
+
+## The edge's deploy (off until the cut-over)
+
+ADR-0111 puts the edge Worker, `thrust-edge`, in front of production on the shared hostname. A release deploys it after
+production, from the same attested bundle (it carries the edge's build under `edge/build/`). The pipeline for it is built,
+and it is off.
+
+**How it is switched on.** While the repository variable `THRUST_EDGE_ENABLED` is not `true`, a release deploys production
+only. When it is `true`, the job `deploy-edge` follows a production deploy that succeeded, in the environment `edge`. A
+deploy deferred to the manual gate counts only once `deploy-do` has succeeded.
+
+**What it does.** `scripts/deploy-edge.sh`, run through the `deploy-worker` action (`script: edge`), follows the sequence
+documented at the top of that script. In short:
+- **Every release,** not only when `crates/edge` changed. Every release bumps the workspace version and the lock the edge
+  is built from, so the edge's tag is always the release's commit.
+- **The deploy:** `wrangler deploy --tag <sha>`, with the edge's three secrets uploaded with the version from a file only
+  its owner can read.
+- **The first deploy** stops there, green. The edge has no hostname until the infrastructure moves `thrust.sow.foo` to it.
+- **After that, the proof:**
+  - the smoke through the edge: this edge answers (`x-thrust-edge-version`), production is behind it
+    (`x-thrust-route: prod`) at the release, and the smoke account reads its project;
+  - the smoke's control: an edge nobody deployed must fail;
+  - the edge's own controls (`scripts/edge-controls.sh`): a forged pin goes to production, and the opt-in gives no pin
+    without Access.
+- **On any failure:** it rolls back to the edge that was live and proves it answers again. The run stays red.
+
+**What the environment `edge` needs** (deployment tags `v*`; required reviewers are optional, since the release's
+production deploy was already approved in the same run):
+
+| Kind | Names |
+|---|---|
+| Variables | `CLOUDFLARE_ACCOUNT_ID`, `THRUST_WORKER_NAME` (production's), `THRUST_BASE_URL` (the shared origin), `THRUST_EDGE_WORKER_NAME`, `FLAGSHIP_APP_ID`, `THRUST_ACCESS_TEAM_DOMAIN`, `THRUST_ACCESS_AUD_RC`, `THRUST_ACCESS_AUD_DEV`, `THRUST_WORKERS_DEV_SUBDOMAIN`, `SMOKE_EMAIL`, `SMOKE_WORKSPACE` (`SMOKE_PROJECT` is optional) |
+| Secrets | `CLOUDFLARE_API_TOKEN` (Workers Scripts on the edge's Worker), `EDGE_PIN_KEY` (at least 32 bytes; rotating it ends every pin), `PREVIEW_ACCESS_CLIENT_ID`, `PREVIEW_ACCESS_CLIENT_SECRET` (the service token Access admits on the Previews), `SMOKE_PASSWORD` |
+
+**How a `deploy-edge` run ends:**
+
+| The run | It means | What to do |
+|---|---|---|
+| green, `smoke: passed` | This release's edge is in front of production, proved on the hostname | Nothing |
+| green, `smoke: skipped` | The first deploy: the edge exists and is not on the hostname yet | Move `thrust.sow.foo` to it before the next release |
+| red before "deployed" | Nothing changed: a missing variable or secret, a render refused, a live edge that is split or cannot be read, `wrangler deploy` failing | Fix what the error names, and re-run the job |
+| red after "deployed", `rolled_back: yes` | The smoke, its control or the edge's controls failed, and the previous edge answers again with production behind it | The release's production is live; its edge is not. Fix forward |
+| red after "deployed", `rolled_back` anything else | No rollback was asked for, it failed, or the previous edge could not be shown answering. **A bad edge may be in front of production** | `wrangler rollback <version> --name thrust-edge` by hand. If the edge cannot be made to answer, move the hostname back to production (the infrastructure's rollback) |
+
+**The cut-over, in order:**
+1. Set the environment `edge` and `THRUST_EDGE_ENABLED=true`.
+2. The next release deploys the edge for the first time, with its smoke skipped.
+3. The infrastructure moves `thrust.sow.foo` to the edge, before the release after that. Until then the edge's smoke fails
+   and rolls it back.
+4. Every later release proves the edge on the hostname.

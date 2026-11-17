@@ -22,8 +22,11 @@ name: deploy
 #     production's data, expires after 14 days, and is pointed at by the alias `staging` once proved. One that brings migrations
 #     production's database lacks is deferred by `deploy-target` (nothing done) to `deploy-target-migrate`, which waits for the
 #     reviewers of `target-migrate`, expands the schema (no contract migration) and deploys it. Off until the cut-over: staging stays.
-#   * A pull request that touches the deploy files runs `dry-run`: build the bundle and check the rendered configuration with
-#     `wrangler deploy --dry-run`. It uses no environment and no secret, and it is what proves, before the merge, that this file starts.
+#   * The EDGE (ADR-0111, scripts/deploy-edge.sh) follows every production deploy that succeeded, while the repository variable
+#     THRUST_EDGE_ENABLED is `true`: `deploy-edge`, in the environment `edge`, deploys the edge Worker from the release's bundle,
+#     proves it on the shared hostname and rolls it back when that fails. Off until the cut-over.
+#   * A pull request that touches the deploy files runs `dry-run`: build the bundle and check the rendered configurations (the
+#     Worker's and the edge's) with `wrangler deploy --dry-run`. It uses no environment and no secret, and it is what proves, before the merge, that this file starts.
 #
 # Who holds what. `plan` and `build` hold NO secret: the code of a commit is built before anything that could be hurt by it runs, and the
 # bundle is attested (SLSA provenance, ADR-0101). `deploy` holds the environment's secrets and builds nothing: it verifies the
@@ -46,6 +49,10 @@ name: deploy
 # and, besides: variables FLAGSHIP_APP_ID PREVIEW_HOST_SUFFIX; secrets CLOUDFLARE_API_TOKEN FLAGSHIP_WRITE_TOKEN EDGE_CI_CLIENT_ID
 # EDGE_CI_CLIENT_SECRET SMOKE_PASSWORD. Only `target-migrate` (deployment branches rc/*, required reviewers) holds the database's:
 # DB_ACCESS_HOSTNAME, and the secrets TUNNEL_SERVICE_TOKEN_ID TUNNEL_SERVICE_TOKEN_SECRET DATABASE_URL (production's route).
+# `edge` (deployment tags v*) holds: variables CLOUDFLARE_ACCOUNT_ID THRUST_WORKER_NAME (production's) THRUST_BASE_URL (the shared
+# origin) THRUST_EDGE_WORKER_NAME FLAGSHIP_APP_ID THRUST_ACCESS_TEAM_DOMAIN THRUST_ACCESS_AUD_RC THRUST_ACCESS_AUD_DEV
+# THRUST_WORKERS_DEV_SUBDOMAIN SMOKE_EMAIL SMOKE_WORKSPACE; secrets CLOUDFLARE_API_TOKEN EDGE_PIN_KEY PREVIEW_ACCESS_CLIENT_ID
+# PREVIEW_ACCESS_CLIENT_SECRET SMOKE_PASSWORD.
 on:
   workflow_run:
     workflows: [ci]
@@ -94,6 +101,8 @@ on:
       - scripts/check-asset-retention.sh
       - scripts/migrate-ci.sh
       - scripts/smoke-deploy.sh
+      - scripts/deploy-edge.sh
+      - scripts/edge-controls.sh
       - crates/worker/wrangler.deploy.toml
       - crates/edge/wrangler.deploy.toml
 
@@ -578,3 +587,72 @@ jobs:
           tunnel-service-token-secret: ${{ secrets.TUNNEL_SERVICE_TOKEN_SECRET }}
           database-url: ${{ secrets.DATABASE_URL }}
           smoke-password: ${{ secrets.SMOKE_PASSWORD }}
+
+  # The edge (ADR-0111): once production has deployed a release and proved it, the same release's edge Worker, from the same attested
+  # bundle (scripts/deploy-edge.sh: the deploy, the smoke through the edge, the edge's controls, and a rollback when any fails). Every
+  # release, while the repository variable THRUST_EDGE_ENABLED is `true`: off until the cut-over. A production deploy deferred to the
+  # manual gate counts once `deploy-do` has succeeded. The environment `edge` holds what the edge needs and nothing of production's
+  # database or of Flagship's writers: the edge binds the Flagship app, it writes no flag.
+  deploy-edge:
+    needs: [plan, deploy, deploy-do]
+    if: >-
+      !cancelled() && vars.THRUST_EDGE_ENABLED == 'true' && needs.plan.outputs.mode == 'deploy'
+      && needs.plan.outputs.environment == 'production' && needs.deploy.result == 'success'
+      && (needs.deploy.outputs.deferred != 'true' || needs.deploy-do.result == 'success')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: edge
+    concurrency:
+      group: deploy-edge
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      attestations: read
+    outputs:
+      deployed: ${{ steps.deploy.outputs.deployed }}
+      rolled_back: ${{ steps.deploy.outputs.rolled_back }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: web/.node-version
+      - id: deploy
+        uses: ./.github/actions/deploy-worker
+        with:
+          script: edge
+          environment: production
+          sha: ${{ needs.plan.outputs.sha }}
+          release-tag: ${{ needs.plan.outputs.release }}
+          cloudflare-account-id: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          worker-name: ${{ vars.THRUST_WORKER_NAME }}
+          base-url: ${{ vars.THRUST_BASE_URL }}
+          edge-worker-name: ${{ vars.THRUST_EDGE_WORKER_NAME }}
+          flagship-app-id: ${{ vars.FLAGSHIP_APP_ID }}
+          access-team-domain: ${{ vars.THRUST_ACCESS_TEAM_DOMAIN }}
+          access-aud-rc: ${{ vars.THRUST_ACCESS_AUD_RC }}
+          access-aud-dev: ${{ vars.THRUST_ACCESS_AUD_DEV }}
+          workers-dev-subdomain: ${{ vars.THRUST_WORKERS_DEV_SUBDOMAIN }}
+          smoke-email: ${{ vars.SMOKE_EMAIL }}
+          smoke-workspace: ${{ vars.SMOKE_WORKSPACE }}
+          smoke-project: ${{ vars.SMOKE_PROJECT || 'smoke' }}
+          cloudflare-api-token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          edge-pin-key: ${{ secrets.EDGE_PIN_KEY }}
+          preview-access-client-id: ${{ secrets.PREVIEW_ACCESS_CLIENT_ID }}
+          preview-access-client-secret: ${{ secrets.PREVIEW_ACCESS_CLIENT_SECRET }}
+          smoke-password: ${{ secrets.SMOKE_PASSWORD }}
+          # production's own configuration and database route are not the edge's
+          hyperdrive-id: ""
+          r2-bucket: ""
+          queue: ""
+          queue-dlq: ""
+          rl-signin-id: ""
+          rl-v1-id: ""
+          csrf-enforce: ""
+          email-from: ""
+          db-access-hostname: ""
+          tunnel-service-token-id: ""
+          tunnel-service-token-secret: ""
+          database-url: ""
