@@ -113,6 +113,8 @@ and [service-token documentation](https://developers.cloudflare.com/cloudflare-o
 
 The reconcile environment needs `THRUST_PREVIEW_PROVISIONER_URL`,
 `PREVIEW_PROVISIONER_ACCESS_CLIENT_ID` and `PREVIEW_PROVISIONER_ACCESS_CLIENT_SECRET` in addition
-to the existing Hyperdrive credentials. Reconciliation cannot succeed until Access and the public
-route are configured. A pending marker persists across a database-password update until the
-corresponding Hyperdrive update succeeds; the next run retries any pending preview.
+to the existing Hyperdrive credentials. Once the Access-protected route is enabled and verified,
+set the repository variable `THRUST_PREVIEW_PROVISIONER_ENABLED` to `true` to activate reconciliation.
+Until then its job is skipped, including on the PR that introduces it. A pending marker persists
+across a database-password update until the corresponding Hyperdrive update succeeds; the next
+run retries any pending preview.
