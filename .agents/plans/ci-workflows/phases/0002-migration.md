@@ -31,6 +31,12 @@ is reported; a step that only moved is not. Its control is the reason to trust i
 and one with one command changed, must each be reported. *(Hand-written: nothing public compares the steps of two sets of
 workflows; `actionlint` and `diff` on the YAML do not know that a job moved. The survey is repeated when the stage starts.)*
 
+M3 added a rule for a workflow that bears its job's name (`web`): the id stays in `ci.yml` and holds the call, so the same id is in
+both files. The script pairs them by what they are: a job that became a call (`uses:`, no steps) must find, under the same id in
+another file, a job with the same fingerprint, and then it is `moved`; if it finds none its steps are `LOST`, however expected the
+call is. Its self-test went from 24 to 33 checks, and four bugs planted in the new rule were each caught (the twin found by id
+alone, the loss not reported, every changed job looked at, the twin left among the appearances).
+
 ## What exists today (read 2026-11-17)
 
 | Fact | Where | Consequence |

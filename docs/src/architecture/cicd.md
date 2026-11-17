@@ -21,6 +21,7 @@ Worker](deploy.md). The jobs and the command each CI job runs are in the CI sect
 | `.github/workflows/contract-cell.yml` | A reusable workflow that runs one contract cell on its own runner |
 | `.github/workflows/documentation.yml` (`documentation`) | The book's check, called by `ci.yml` (its `documentation` job) and runnable alone: the `docs` job (moved here unchanged, ADR-0102 and the migration, phase 1 of `.agents/plans/ci-workflows/`) and a `verdict` job that judges it against the plan it was given. `ci.yml`'s `gate` waits for the calling job and requires the `verdict` output |
 | `.github/workflows/security.yml` (`security`) | The supply-chain check, called by `ci.yml` (its `security` job) and runnable alone: the `deny` job (moved here unchanged) and a `verdict` job that judges it against the plan it was given. `ci.yml`'s `gate` waits for the calling job and requires the `verdict` output |
+| `.github/workflows/web.yml` (`web`) | The stock app's build check, called by `ci.yml` (its `web` job, which keeps the id the job always had) and runnable alone: the `web` job (moved here unchanged) and a `verdict` job that judges it against the plan it was given. `ci.yml`'s `gate` waits for the calling job and requires the `verdict` output. The workflow and its job share a name, so the checks are `web / web` and `web / verdict` |
 | `.github/workflows/flake-hunt.yml` | Repeats one cell 1 to 50 times (5 by default), by hand or every Monday at 03:17 UTC (`native-memory main`). It offers every pass of the matrix, and its first step, `.github/scripts/check-flake-hunt-cell.sh`, refuses a target and pass that are not a cell of `scripts/contract-all.sh`, before anything is built; `test-check-flake-hunt-cell.sh` holds the workflow's two lists equal to the matrix's. A pass is prepared by the same action a cell uses (`contract-pass-tools`). It passes only if `scripts/flake-hunt.sh` prints `failures: 0 / N`, because the script ends with an `echo`, so its exit status does not say whether an iteration failed. The job stops at 120 minutes: a `worker-cf e2e` iteration takes about 9 (nightly run 43798891735), so that cell fits about 12 |
 | `.github/workflows/e2e-schedule.yml` | Runs the `worker-cf e2e` and `worker-cf e2e-mail` cells (through `contract-cell.yml`, one job each) every day at 04:41 UTC and by hand, and on a pull request that edits the file, so that the call is proved valid before it merges. It covers what a pull request does not: drift in the runner, the browser and the packages, every day on `main`. Not a gate: nothing waits for it and `gate` does not read it. The pinned-Plane leg is not here, because the oracle builds from an unpushed fork (`scripts/e2e.sh plane-oracle`, local) |
 | `.github/workflows/release-plz.yml` (`release-plz`) | The release flow, run by release-plz: after each push to `main`, opens or updates the release-candidate pull request from an `rc/*` branch, and tags `vX.Y.Z`, creates the GitHub release as a draft and starts `release.yml` on the tag when such a pull request merges. See [Release candidates](#release-candidates) |
@@ -28,7 +29,7 @@ Worker](deploy.md). The jobs and the command each CI job runs are in the CI sect
 | `release-plz.toml` | release-plz's configuration: one version and one tag for the workspace, one root `CHANGELOG.md`, which commits make a release. Held to the workspace members by `.github/scripts/check-release-plz.py` |
 | `.github/workflows/deploy.yml` (`deploy`) | The deploy pipeline: plan, build and attest a release candidate's bundle (staging) or take a release's (production), deploy it to an environment and prove it, roll back by itself when the smoke fails. Runs after `ci` on a release candidate or a tagged push to `main`, by hand, and on a pull request that edits its files (a dry run that touches no environment). See [The deploy pipeline](#the-deploy-pipeline) |
 | `.github/actions/contract-pass-tools` | A composite action: what one pass of `scripts/contract.sh` needs beyond Rust (`uv` for `oracle`; Node, pnpm, the app built from `web/` and Chromium for `e2e`), then a check that every host tool the pass relies on exists. `contract-cell.yml` and `flake-hunt.yml` both use it, so a pass one of them can run the other can too |
-| `.github/actions/verdict` | A composite action: the judge at the end of a called workflow. It runs `assert-gate.sh` over the workflow's own jobs against the plan it was given (no planner job, no cells), and only after that passed sets the output `verdict=pass` that `ci.yml`'s `gate` requires. `documentation.yml` and `security.yml` call it from their `verdict` job; the job checks the repository out first, since a local action is read from the checkout |
+| `.github/actions/verdict` | A composite action: the judge at the end of a called workflow. It runs `assert-gate.sh` over the workflow's own jobs against the plan it was given (no planner job, no cells), and only after that passed sets the output `verdict=pass` that `ci.yml`'s `gate` requires. `documentation.yml`, `security.yml` and `web.yml` call it from their `verdict` job; the job checks the repository out first, since a local action is read from the checkout |
 | `.github/actions/setup-rust` | A composite action: the Rust version `rust-toolchain.toml` pins (read by `.github/scripts/toolchain-channel.sh`, which refuses anything but an exact version), the rustup targets and components, a keyed `rust-cache`, and optionally `worker-build` 0.8.7 and wrangler 4.151.2 |
 | `.github/actions/build-bundle` | A composite action: the deploy bundle of the checked-out commit (the Worker, the `migrate` binary and the web app, in one reproducible file), used by `deploy.yml` and `release.yml` so that both build it the same way |
 | `.github/actions/deploy-worker` | A composite action: fetch the bundle (this run's build for staging, the release's asset for production, `fetch-release-bundle.sh`), verify its attestation, unpack it, install wrangler (the same version as `setup-rust`, kept equal by a test) and `cloudflared` at pinned versions, and run `scripts/deploy-worker.sh` |
@@ -40,7 +41,7 @@ Worker](deploy.md). The jobs and the command each CI job runs are in the CI sect
 | `scripts/preview-config.py` | A Preview target's configuration (ADR-0111): production's rendered configuration, unchanged at the top level, with a `previews` block derived from it, because a Preview inherits none of production's bindings. The `shared` profile restates every binding, uses production's rooms (`script_name`), and leaves out the queue consumer and the cron, which never target a Preview. A setting it does not know is refused. Not run by a deploy yet (stage E of #195). Tested by `.github/scripts/tests/test_preview_config.py` |
 | `scripts/deploy-worker.sh` and its parts | The deploy itself (render, classify, expand migration, `wrangler deploy`, smoke, rollback), run by the composite action: `render-wrangler.sh` (with the template `crates/worker/wrangler.deploy.toml`), `migrate-ci.sh`, `smoke-deploy.sh`, `smoke-bootstrap.sh`, `merge-assets.sh` and `check-asset-retention.sh` |
 | `scripts/edge-opt-in.sh` | Opt in at the edge as CI (ADR-0111). It asks `/_edge/opt-in/<audience>?target=<name>` with the CI opt-in service token (from a file, never argv) and writes the edge's pin to a cookie jar, retrying while the target's flag propagates. It is for the smoke of a target: `smoke-deploy.sh` with `SMOKE_COOKIE_FILE` (the pin on every request) and `SMOKE_EXPECT_ROUTE` (the edge's `x-thrust-route` must name the target). No deploy runs it yet (stage E of #195). Tested in `test-smoke-deploy.sh` against `smoke_stub.py` |
-| `scripts/check-web-diff.sh` | The Q-R2 gate for `web/` (the stock React app, imported from the oracle pin), run by the `web` job. Tested by `.github/scripts/tests/test-check-web-diff.sh` |
+| `scripts/check-web-diff.sh` | The Q-R2 gate for `web/` (the stock React app, imported from the oracle pin), run by the `web` job (in `web.yml`). Tested by `.github/scripts/tests/test-check-web-diff.sh` |
 
 ## One required check
 
@@ -67,21 +68,21 @@ decides:
   expected one that its result is `success` **and** that its output `verdict` is `pass`, since a workflow whose `verdict` job
   was skipped is `success` and proves nothing. `VERDICT_JOBS` is a static list in `ci.yml`, not the planner's output, so a
   planner that dropped a workflow could not switch its check off; `test_workflow_wiring.py` holds it equal to the planner's
-  `WORKFLOWS`. Today two workflows are called, `documentation.yml` (the `docs` job) and `security.yml` (the `deny` job). The
-  cases (182 in `test-ci-scripts.sh`) include the seven scenarios of the gate spike
+  `WORKFLOWS`. Today three workflows are called, `documentation.yml` (the `docs` job), `security.yml` (the `deny` job) and
+  `web.yml` (the `web` job). The cases (186 in `test-ci-scripts.sh`) include the seven scenarios of the gate spike
   (`.agents/plans/ci-workflows/research/0018-gate-spike.md`), each called workflow tried on its own.
-- **The wiring is tested against the real files.** `test_workflow_wiring.py` (63 checks, for two workflows) holds `ci.yml`, the
+- **The wiring is tested against the real files.** `test_workflow_wiring.py` (82 checks, for three workflows) holds `ci.yml`, the
   planner and each called workflow's file to each other: the calling job (`needs: changes`, it runs when `top` names it, it
   passes its own plan from `plans`), the gate's needs and its `VERDICT_JOBS`, the workflow's jobs and its `verdict` job
   (`always()`, checking out and calling the `verdict` action with its needs, its plan and its jobs, and running nothing of
   its own), and no workflow-level `concurrency` or `github.event_name` in a called workflow. The action is checked once: its
   judge (`assert-gate.sh`, no planner job and no cells) and its output, set only after the judge.
-- **Tested to be able to fail.** `.github/scripts/tests/mutate_gate.py`, the last line of the `ci-scripts` job, plants 115 hand
+- **Tested to be able to fail.** `.github/scripts/tests/mutate_gate.py`, the last line of the `ci-scripts` job, plants 136 hand
   mutants one at a time in `plan-ci.py`, `assert-gate.sh`, `ci.yml`, the called workflows and the `verdict` action, and each
   must fail the tests of its file (`test_plan_ci.py` and `test_workflow_wiring.py`; `test-ci-scripts.sh` under dash, stopping
   at the first failing case). The mutants of a called workflow are written once and made for each of them. It
   refuses to answer when the tests fail on the unmutated files, when the text a mutant replaces is not found exactly once, or
-  when a mutant no longer compiles, and six mutants that change nothing must survive, so a driver that kills everything is
+  when a mutant no longer compiles, and seven mutants that change nothing must survive, so a driver that kills everything is
   caught. `[verified 2026-11-17 locally, under dash]`
 
 The point is that "nothing failed" is not accepted as "everything ran". A cell that never started leaves no check
@@ -109,7 +110,7 @@ its base branch. Nothing calls it, so it is a tool to run by hand.
   - A file that only one pass reads runs that pass on every target:
     - `e2e/`, `scripts/e2e.sh` and the e2e tools run `worker-cf e2e` and `worker-cf e2e-mail` (the two suites share `e2e/support/`
       and the runner, so a change to either is not told apart).
-    - `web/` runs the `web` job and both e2e cells. A change to `web/` alone is now driven in a browser on its own pull
+    - `web/` runs the `web` job (in `web.yml`) and both e2e cells. A change to `web/` alone is now driven in a browser on its own pull
       request (G-30's gap 2).
   - A file that only a guard or a job reads runs that job:
     - `deny.toml` runs `deny`, which lives in `security.yml` and is called by `ci.yml`; `clippy.toml` and `rustfmt.toml` run `lint`.
@@ -119,7 +120,7 @@ its base branch. Nothing calls it, so it is a tool to run by hand.
   - Everything runs on a path whose readers the planner does not know:
     - the workspace manifest, the lockfile and the toolchain;
     - `.cargo/` and `.config/`;
-    - `ci.yml`, `contract-cell.yml`, the called workflows (`documentation.yml`, `security.yml`), `setup-rust`,
+    - `ci.yml`, `contract-cell.yml`, the called workflows (`documentation.yml`, `security.yml`, `web.yml`), `setup-rust`,
       `contract-pass-tools` and `verdict`;
     - the planner and the gate;
     - the scripts that run a cell;
@@ -165,7 +166,7 @@ its base branch. Nothing calls it, so it is a tool to run by hand.
     workflow cannot fall into the generic rule and run no test.
 
   `[verified 2026-11-16 locally; run by ci-scripts]`
-- **The web job.** The `web` job runs `scripts/check-web-diff.sh` (only the files in
+- **The web job.** The `web` job (in `web.yml`, called by `ci.yml`) runs `scripts/check-web-diff.sh` (only the files in
   `web/ALLOWED-CHANGES` may differ from the pin; `web/SOURCE` says where `web/` came from), then
   `pnpm --dir web install --frozen-lockfile --ignore-scripts` and `pnpm --dir web exec turbo run build --filter=web`,
   and checks that `web/apps/web/build/client/index.html` exists. Node is `web/.node-version`; pnpm is the version

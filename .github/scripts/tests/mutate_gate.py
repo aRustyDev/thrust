@@ -34,7 +34,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 SCRIPTS = os.path.abspath(os.path.join(HERE, ".."))
 ROOT = os.path.abspath(os.path.join(SCRIPTS, "..", ".."))
 PLAN, GATE = "plan-ci.py", "assert-gate.sh"
-CI, DOC, SEC = "ci.yml", "documentation.yml", "security.yml"  # the workflows: ci.yml, and each called workflow a migration stage adds
+CI, DOC, SEC, WEB = "ci.yml", "documentation.yml", "security.yml", "web.yml"  # the workflows: ci.yml, and each called workflow a stage adds
 ACT = "verdict/action.yml"  # the action every called workflow's `verdict` job calls
 SHELL = shutil.which("dash") or "sh"
 TIMEOUT = 900
@@ -45,16 +45,18 @@ TARGET_PATH = {
     CI: ".github/workflows/ci.yml",
     DOC: ".github/workflows/documentation.yml",
     SEC: ".github/workflows/security.yml",
+    WEB: ".github/workflows/web.yml",
     ACT: ".github/actions/verdict/action.yml",
 }
 # The workflows that tests judge as files: a mutant of one of these must fail test_workflow_wiring.py.
-WIRED = (CI, DOC, SEC, ACT)
+WIRED = (CI, DOC, SEC, WEB, ACT)
 
 # The called workflows, each with its file, its one job, and the text of ci.yml's `gate` needs that names its call and what that becomes
 # without it. A stage of the migration adds a row, and every mutant below that is written for "a called workflow" is made for it.
 CALLS = [
     (DOC, "documentation", "docs", "web, documentation, security]", "web, security]"),
     (SEC, "security", "deny", "documentation, security]", "documentation]"),
+    (WEB, "web", "web", "mutants, web, documentation", "mutants, documentation"),
 ]
 
 
@@ -150,8 +152,9 @@ MUTANTS = [
     (GATE, "an unplanned marker is accepted", '[ -z "$extra" ] ||', "true ||"),
     (GATE, "the cell job with zero cells passes", '[ -s planned.txt ] || fail "the $CELLS job is expected', 'true || fail "the $CELLS job is expected'),
     (GATE, "an input may be missing", '[ -n "$value" ] || fail "$input is not set"', 'true || fail "$input is not set"'),
-    (GATE, "the gate forgets the documentation workflow", "web documentation security}\"", "web security}\""),
-    (GATE, "the gate forgets the security workflow", "documentation security}\"", "documentation}\""),
+    (GATE, "the gate forgets the documentation workflow", "documentation security web}\"", "security web}\""),
+    (GATE, "the gate forgets the security workflow", "security web}\"", "web}\""),
+    (GATE, "the gate forgets the web workflow", " web}\"", "}\""),
     (GATE, "any JSON is an array", "jq -e 'type == \"array\" and all(.[]; type == \"string\")'", "jq -e 'true'"),
     (GATE, "an array of anything is an array of jobs", "jq -e 'type == \"array\" and all(.[]; type == \"string\")'", "jq -e 'type == \"array\"'"),
     # --- assert-gate.sh: the verdict of a called workflow, and the other levels (ADR-0102)
@@ -165,15 +168,18 @@ MUTANTS = [
     (GATE, "KNOWN_JOBS is ignored", 'KNOWN="${KNOWN_JOBS:-ci-scripts', 'KNOWN="${XKNOWN_JOBS:-ci-scripts'),
     (GATE, "PLANNED is needed even where there is no cell job", 'if [ -n "$CELLS" ]; then', "if true; then"),
     # --- the wiring of the called workflows, and what a stage of the migration changes (ADR-0102)
-    (PLAN, "the planner forgets the workflows", 'WORKFLOWS = {"documentation": ("docs",), "security": ("deny",)}', "WORKFLOWS = {}"),
+    (PLAN, "the planner forgets the workflows", 'WORKFLOWS = {"documentation": ("docs",), "security": ("deny",), "web": ("web",)}', "WORKFLOWS = {}"),
     (PLAN, "the planner forgets the documentation workflow", '{"documentation": ("docs",), "security"', '{"security"'),
-    (PLAN, "the planner forgets the security workflow", ', "security": ("deny",)}', "}"),
+    (PLAN, "the planner forgets the security workflow", ', "security": ("deny",)', ""),
+    (PLAN, "the planner forgets the web workflow", ', "web": ("web",)}', "}"),
     (PLAN, "the planner moves docs to a workflow of another name", '{"documentation": ("docs",)', '{"docs-book": ("docs",)'),
     (PLAN, "the planner moves deny to a workflow of another name", '"security": ("deny",)', '"supply-chain": ("deny",)'),
+    (PLAN, "the planner moves web to a workflow of another name", '"web": ("web",)', '"site": ("web",)'),
     (CI, "the gate judges every planned job and not `top`", "EXPECTED_JOBS: ${{ needs.changes.outputs.top }}", "EXPECTED_JOBS: ${{ needs.changes.outputs.jobs }}"),
-    (CI, "the gate has no VERDICT_JOBS", "          VERDICT_JOBS: documentation security\n", ""),
-    (CI, "the gate's VERDICT_JOBS names a workflow that is not called", "VERDICT_JOBS: documentation security", "VERDICT_JOBS: documentation security web"),
-    (CI, "the gate's VERDICT_JOBS forgets a called workflow", "VERDICT_JOBS: documentation security", "VERDICT_JOBS: documentation"),
+    (CI, "the gate has no VERDICT_JOBS", "          VERDICT_JOBS: documentation security web\n", ""),
+    (CI, "the gate's VERDICT_JOBS names a workflow that is not called", "VERDICT_JOBS: documentation security web",
+     "VERDICT_JOBS: documentation security web lint"),
+    (CI, "the gate's VERDICT_JOBS forgets a called workflow", "VERDICT_JOBS: documentation security web", "VERDICT_JOBS: documentation security"),
     (CI, "`changes` does not output the plans", "      plans: ${{ steps.classify.outputs.plans }}\n", ""),
     (CI, "`changes` does not output top", "      top: ${{ steps.classify.outputs.top }}\n", ""),
     (CI, "a job of ci.yml runs on the wrong name", "if: contains(fromJSON(needs.changes.outputs.jobs || '[]'), 'hermetic')",
@@ -200,6 +206,7 @@ EQUIVALENT = [
     (CI, "(equivalent) a comment is added to ci.yml", "on:\n  pull_request:\n", "on:\n  # a comment\n  pull_request:\n"),
     (DOC, "(equivalent) a comment is added to documentation.yml", "permissions: {}\n\njobs:", "permissions: {}\n\n# a comment\njobs:"),
     (SEC, "(equivalent) a comment is added to security.yml", "permissions: {}\n\njobs:", "permissions: {}\n\n# a comment\njobs:"),
+    (WEB, "(equivalent) a comment is added to web.yml", "permissions: {}\n\njobs:", "permissions: {}\n\n# a comment\njobs:"),
     (ACT, "(equivalent) a comment is added to the verdict action", "runs:\n  using: composite\n", "runs:\n  # a comment\n  using: composite\n"),
 ]
 

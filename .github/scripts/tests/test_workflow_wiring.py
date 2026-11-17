@@ -5,7 +5,8 @@
 For every workflow in the planner's WORKFLOWS (the jobs a migration stage has moved out of ci.yml), the planner, `ci.yml` and the
 workflow's own file must agree:
   * ci.yml has a calling job of that name: `needs: changes`, it runs when the planner's `top` names it, it calls that workflow's file
-    and passes it its own plan from `plans`; and the job is no longer a job of ci.yml itself;
+    and passes it its own plan from `plans`; and the job is no longer a job of ci.yml itself (a workflow that bears its job's name, as
+    `web` does, has its call under that id, which is the one job of that name);
   * ci.yml's `gate` needs every job of ci.yml, judges the planner's `top` and not every planned job, and lists the called workflows as
     VERDICT_JOBS, a static list held equal here to the keys of WORKFLOWS (the planner's own output would let a planner bug switch the
     check off for the workflow it dropped);
@@ -85,7 +86,11 @@ check("ci.yml's VERDICT_JOBS is the keys of the planner's WORKFLOWS: a static li
 gate_needs = re.search(r"^  gate:.*?^    needs: \[(.*?)\]", ci_text, re.M | re.S)
 check("ci.yml's gate needs every other job of ci.yml, and nothing else",
       sorted(x.strip() for x in gate_needs.group(1).split(",")) if gate_needs else None, sorted(j for j in ci_jobs if j != "gate"))
-check("a job that has moved is no longer a job of ci.yml", [j for j in moved_jobs if j in ci_jobs], [])
+# A moved job's name may still be a job of ci.yml in one case: the call of the workflow that bears it (`web` calls web.yml, which holds
+# the job `web`). That call is checked below (it must call its workflow's file), and an id used twice is refused here.
+check("a job that has moved is no longer a job of ci.yml, but for the call that bears its workflow's name",
+      [j for j in moved_jobs if j in ci_jobs and j not in pc.WORKFLOWS], [])
+check("no job id of ci.yml is used twice (a call that bears its job's name is the one job of that name)", len(ci_jobs), len(set(ci_jobs)))
 check("ci.yml's gate judges the planner's `top`, not every planned job",
       re.search(r"EXPECTED_JOBS: \$\{\{ needs\.changes\.outputs\.top \}\}", ci_text) is not None, True)
 check("ci.yml's `changes` job outputs `top` and `plans`",
