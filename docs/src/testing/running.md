@@ -94,6 +94,8 @@ scripts/check-layout.sh                                                       # 
 scripts/check-layout.sh --self-test                                           # the same rules on worlds it must refuse
 scripts/check-topology.sh                                                     # one Worker: no [[workflows]], no [[services]], main = build/worker/shim.mjs (issue #43)
 scripts/check-topology.sh --self-test                                         # the same check on fixtures it must refuse, so it cannot pass by looking at nothing
+scripts/check-cargo-lock.sh                                                   # Cargo.lock is what cargo writes: a cargo run without --locked changes nothing (the file is put back either way)
+scripts/check-cargo-lock.sh --self-test                                       # the same on workspaces it must refuse: two packages swapped, a member the lockfile has not heard of
 ```
 
 The editor-doc differential inputs that are not committed are generated from the pinned Plane tree (tag
@@ -137,7 +139,7 @@ A pull request runs only the jobs and cells its change needs; how that is decide
 | `test.yml` | the workflow `.github/workflows/test.yml`, called by `ci.yml` through its job `test`: it holds the jobs `ci-scripts`, `hermetic`, `pg-adapter` and `mutants` and a `verdict` job that judges them against the plan (any of the four, or all) and which `gate` requires (the migration moved the four jobs here; their names and commands are unchanged; the contract cells are still `ci.yml`'s `contract` job) |
 | `ci-scripts` | (in `test.yml`) the tests of the CI helper scripts themselves (`.github/scripts/tests/`) |
 | `lint.yml` | the workflow `.github/workflows/lint.yml`, called by `ci.yml` through its job `lint`: it holds the jobs `deps` and `lint` and a `verdict` job that judges them against the plan (one of the two, or both) and which `gate` requires (the migration moved both jobs here; their names and commands are unchanged) |
-| `deps` | (in `lint.yml`) `scripts/check-deps.sh`, then `scripts/check-layout.sh` (ADR-0009's layout of `crates/`) and the other guards, most with their `--self-test`: topology, edge configuration, Plane 500, acceptance list, placement, migration lint, contract counts, the wrangler render, release-plz, the workflow lint and the OpenAPI diff |
+| `deps` | (in `lint.yml`) `scripts/check-deps.sh`, then `scripts/check-layout.sh` (ADR-0009's layout of `crates/`) and the other guards, most with their `--self-test`: topology, edge configuration, Plane 500, acceptance list, placement, migration lint, the lockfile's form, contract counts, the wrangler render, release-plz, the workflow lint and the OpenAPI diff |
 | `lint` | (in `lint.yml`) `cargo fmt --all --check`, then `cargo clippy --workspace --all-targets --locked -- -D warnings`, then the same clippy for `thrust-worker` with `--no-default-features --target wasm32-unknown-unknown` (the clippy steps run even if rustfmt failed) |
 | `security` | the workflow `.github/workflows/security.yml`, called by `ci.yml`: its job `deny`, and its `verdict` job, which judges `deny` against the plan and which `gate` requires (the migration moved `deny` here; its name and commands are unchanged) |
 | `deny` | (in `security.yml`) `cargo deny --locked check`: advisories, licences, bans and sources, from `deny.toml` |
