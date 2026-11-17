@@ -29,8 +29,8 @@ step hermetic-tests "$ROOT/scripts/rs" cargo nextest run --manifest-path "$ROOT/
 step contract-matrix "$ROOT/scripts/contract-all.sh"
 step mutants "$ROOT/scripts/mutants.sh"
 step check-deps "$ROOT/scripts/check-deps.sh"
-step pg-adapter-tests "$ROOT/scripts/rs" cargo test --manifest-path "$ROOT/Cargo.toml" -p thrust-adapters-selfhosted --test pg_adapter
-step smtp-adapter-tests "$ROOT/scripts/rs" cargo test --manifest-path "$ROOT/Cargo.toml" -p thrust-adapters-selfhosted --test smtp_sink
+step pg-adapter-tests "$ROOT/scripts/rs" cargo nextest run --manifest-path "$ROOT/Cargo.toml" -p thrust-adapters-selfhosted --profile adapters -E 'binary(pg_adapter)'
+step smtp-adapter-tests "$ROOT/scripts/rs" cargo nextest run --manifest-path "$ROOT/Cargo.toml" -p thrust-adapters-selfhosted --profile adapters -E 'binary(smtp_sink)'
 step probe-send-shape "$ROOT/probes/send-shape/run.sh"
 # the sqlx probe is EXPECTED to fail to compile; the step only checks that the script ran
 "$ROOT/probes/sqlx-wasm/run.sh" >"$OUT/probe-sqlx-wasm.log" 2>&1

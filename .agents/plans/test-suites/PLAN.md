@@ -191,8 +191,8 @@ a `prof_cpu_` test that must fail fails under the wrapper, and the profile file 
 | Item | State |
 |---|---|
 | Plan | this pull request |
-| PR 1, contract suite onto nextest | in review, branch `test/contract-suite-nextest` |
-| PR 2, adapter suites onto nextest | not started |
+| PR 1, contract suite onto nextest | merged in #243 (`a5a11ff`): CI found cargo-nextest missing from the contract cells, fixed with a `nextest` input to `setup-rust` |
+| PR 2, adapter suites onto nextest | in review, branch `test/adapter-suites-nextest` |
 | PR 3, load suite | not started |
 | PR 4, profiling: heap | not started |
 | PR 5, profiling: CPU | not started |

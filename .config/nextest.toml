@@ -2,6 +2,7 @@
 # Verified with cargo-nextest 0.9.140; the 0.9.131 floor is from the source archive and was not re-run.
 #
 # Profiles:  default (fast hermetic loop) | ci | deep | oracle | mutants | contract (the contract suite against a running target)
+#            | adapters (the adapter suites that need Docker)
 # Test-name prefixes route tests:  prop_  model_  oracle_  (parity_, fuzz_replay_ and regression_ run by default)
 # regression_ = a pinned regression (AGENTS.md rule 9). It follows a category prefix (model_regression_...) or rstest's
 # case_<n>_, so select it with test(/regression_/), never \bregression_.
@@ -26,9 +27,8 @@ mock-idp = { max-threads = 1 }
 [profile.default]
 # Excluded from the hermetic loop: oracle_ tests need the oracle (Node, or its generated output); the contract suite panics without THRUST_BASE_URL and
 # THRUST_ADMIN_TOKEN (a running target), and runs through scripts/contract.sh with the `contract` profile below; pg_adapter starts a
-# Postgres container through Docker, and smtp_sink a Mailpit one: those two stay on `cargo test` through scripts/verify-all.sh and the
-# pg-adapter job, which parse its output [derived: read, not run]. The SMTP adapter's other two suites (smtp_wire: a scripted server in
-# the test's own process; smtp_config) are hermetic and run here.
+# Postgres container through Docker, and smtp_sink a Mailpit one: those two run with the `adapters` profile below. The SMTP adapter's
+# other two suites (smtp_wire: a scripted server in the test's own process; smtp_config) are hermetic and run here.
 default-filter = 'not (test(/\boracle_/) | package(thrust-contract-tests) | binary(pg_adapter) | binary(smtp_sink))'
 retries = 0
 slow-timeout = { period = "30s", terminate-after = 4 }
@@ -95,6 +95,25 @@ test-group = "mock-idp"
 # Worker under wrangler) can run for minutes. This override is the profile's own, so it also outranks the default profile's
 # `prop|model` override (terminate-after 5 x 60 s), which would otherwise apply here.
 [[profile.contract.overrides]]
+filter = 'all()'
+slow-timeout = { period = "120s" }
+
+# --- adapters: the adapter suites that need Docker -----------------------------------------
+# pg_adapter (a Postgres container per test, testcontainers) and smtp_sink (a Mailpit container per test). Each test starts its
+# own container, so nextest's process per test shares nothing it did not share before. CI's `pg-adapter` job and
+# scripts/verify-all.sh run them with this profile; scripts/mutants.sh runs its adapter rows with it and `--ignore-default-filter`,
+# which keeps the report and the timeouts and drops only the selection.
+[profile.adapters]
+default-filter = 'binary(pg_adapter) | binary(smtp_sink)'
+fail-fast = false
+failure-output = "immediate-final"
+
+[profile.adapters.junit]
+path = "junit.xml"   # written to target/nextest/adapters/junit.xml
+
+# No kill, as on `cargo test`: the slowest test took 30 s here (model_postgres_strategy_reaches_every_step_class, 2026-11-16),
+# and a runner is slower. The profile's own override, so it also outranks the default profile's prop|model one.
+[[profile.adapters.overrides]]
 filter = 'all()'
 slow-timeout = { period = "120s" }
 
