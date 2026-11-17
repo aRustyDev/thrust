@@ -60,6 +60,8 @@ jobs:
         run: |
           mkdir -p cell-ok
           printf '%s %s\n' "$CELL_TARGET" "$CELL_PASS" > "cell-ok/${CELL_TARGET}-${CELL_PASS}.ok"
+          # PROBE (do not merge): a marker for a cell that was not planned, next to this cell's own
+          if [ "$CELL_TARGET $CELL_PASS" = "native-memory main" ]; then printf 'native-memory nonesuch\n' > cell-ok/native-memory-nonesuch.ok; fi
 
       - name: Upload the pass marker
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
