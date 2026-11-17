@@ -16,6 +16,12 @@ name: deploy
 #     attached to the (immutable) release. Same switch, THRUST_DEPLOY_ENABLED.
 #   * A manual run deploys the commit it is run FROM: `staging` from an rc/* branch, `production` from a v* release tag. Each
 #     environment's branch rule says the same, so a run from anywhere else cannot reach its secrets even if this file were wrong.
+#   * A TARGET is a release candidate deployed as a Worker Preview of the production Worker, reached through the edge on the shared
+#     hostname (ADR-0111, scripts/deploy-target.sh): while the repository variable THRUST_TARGETS_ENABLED is also `true`, a release
+#     candidate goes to the `target` environment instead of staging. It is named v<the workspace version>, kind `rc`, shares
+#     production's data, expires after 14 days, and is pointed at by the alias `staging` once proved. One that brings migrations
+#     production's database lacks is deferred by `deploy-target` (nothing done) to `deploy-target-migrate`, which waits for the
+#     reviewers of `target-migrate`, expands the schema (no contract migration) and deploys it. Off until the cut-over: staging stays.
 #   * A pull request that touches the deploy files runs `dry-run`: build the bundle and check the rendered configuration with
 #     `wrangler deploy --dry-run`. It uses no environment and no secret, and it is what proves, before the merge, that this file starts.
 #
@@ -36,6 +42,10 @@ name: deploy
 #              SMOKE_EMAIL SMOKE_WORKSPACE (SMOKE_PROJECT is optional)
 #   secrets    CLOUDFLARE_API_TOKEN TUNNEL_SERVICE_TOKEN_ID TUNNEL_SERVICE_TOKEN_SECRET DATABASE_URL SMOKE_PASSWORD
 # The resources behind them are the infrastructure repository's (ApiraTech/infrastructure #1015-#1017).
+# `target` and `target-migrate` hold production's variables above (a target's configuration is production's) and its smoke account,
+# and, besides: variables FLAGSHIP_APP_ID PREVIEW_HOST_SUFFIX; secrets CLOUDFLARE_API_TOKEN FLAGSHIP_WRITE_TOKEN EDGE_CI_CLIENT_ID
+# EDGE_CI_CLIENT_SECRET SMOKE_PASSWORD. Only `target-migrate` (deployment branches rc/*, required reviewers) holds the database's:
+# DB_ACCESS_HOSTNAME, and the secrets TUNNEL_SERVICE_TOKEN_ID TUNNEL_SERVICE_TOKEN_SECRET DATABASE_URL (production's route).
 on:
   workflow_run:
     workflows: [ci]
@@ -47,7 +57,7 @@ on:
       environment:
         description: The environment to deploy to (staging from an rc/* branch, production from a v* tag; pick it under "Use workflow from")
         type: choice
-        options: [staging, production]
+        options: [staging, target, production]
         required: true
       sha:
         description: The commit the branch must still be at (set by the automatic dispatch; leave empty by hand)
@@ -121,6 +131,7 @@ jobs:
           RUN_HEAD_REPO: ${{ github.event.workflow_run.head_repository.full_name }}
           REPO: ${{ github.repository }}
           DEPLOY_ENABLED: ${{ vars.THRUST_DEPLOY_ENABLED }}
+          TARGETS_ENABLED: ${{ vars.THRUST_TARGETS_ENABLED }}
           DISPATCH_ENV: ${{ inputs.environment }}
           DISPATCH_SHA: ${{ inputs.sha }}
           DISPATCH_INJECT: ${{ inputs.inject_smoke_failure }}
@@ -158,6 +169,7 @@ jobs:
           case "$TARGET" in
             production) .github/scripts/assert-gated-environments.sh "$REPO" production production-do-lifecycle ;;
             staging) .github/scripts/assert-gated-environments.sh "$REPO" staging-do-lifecycle ;;
+            target) .github/scripts/assert-gated-environments.sh "$REPO" target-migrate ;;
             *) echo "::error::unknown environment '$TARGET'"; exit 1 ;;
           esac
       - name: Summary
@@ -205,7 +217,9 @@ jobs:
   # the tag, attested and attached (the deploy job fetches it).
   build:
     needs: plan
-    if: (needs.plan.outputs.mode == 'deploy' && needs.plan.outputs.environment == 'staging') || needs.plan.outputs.mode == 'dry-run'
+    if: >-
+      (needs.plan.outputs.mode == 'deploy' && (needs.plan.outputs.environment == 'staging' || needs.plan.outputs.environment == 'target'))
+      || needs.plan.outputs.mode == 'dry-run'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     permissions:
@@ -301,7 +315,7 @@ jobs:
     needs: [plan, build]
     # `build` runs for staging only; production takes its release's bundle, so for it a skipped `build` is the expected one.
     if: >-
-      !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.mode == 'deploy'
+      !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.mode == 'deploy' && needs.plan.outputs.environment != 'target'
       && (needs.build.result == 'success' || (needs.build.result == 'skipped' && needs.plan.outputs.environment == 'production'))
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -406,6 +420,142 @@ jobs:
           smoke-workspace: ${{ vars.SMOKE_WORKSPACE }}
           smoke-project: ${{ vars.SMOKE_PROJECT || 'smoke' }}
           cloudflare-api-token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          tunnel-service-token-id: ${{ secrets.TUNNEL_SERVICE_TOKEN_ID }}
+          tunnel-service-token-secret: ${{ secrets.TUNNEL_SERVICE_TOKEN_SECRET }}
+          database-url: ${{ secrets.DATABASE_URL }}
+          smoke-password: ${{ secrets.SMOKE_PASSWORD }}
+
+  # A release candidate as a target (ADR-0111): the bundle `build` made and attested in this run, deployed as a Worker Preview of the
+  # production Worker by scripts/deploy-target.sh. Its name is v<the workspace version> (the release it would be), so the release
+  # candidate's target becomes that release's once tagged. A candidate that brings migrations production's database lacks is not
+  # deployed here (`deferred`): this environment has no database route.
+  deploy-target:
+    needs: [plan, build]
+    if: >-
+      !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.mode == 'deploy' && needs.plan.outputs.environment == 'target'
+      && needs.build.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: target
+    concurrency:
+      group: deploy-target
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      attestations: read
+    outputs:
+      deferred: ${{ steps.deploy.outputs.deferred }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: web/.node-version
+      - id: name
+        name: Name the target, and when it expires
+        run: |
+          version="$(python3 -I -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["workspace"]["package"]["version"])')"
+          echo "name=v$version" >> "$GITHUB_OUTPUT"
+          echo "expires=$(date -u -d '+14 days' +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+      - id: deploy
+        uses: ./.github/actions/deploy-worker
+        with:
+          script: target
+          environment: target
+          sha: ${{ needs.plan.outputs.sha }}
+          target-name: ${{ steps.name.outputs.name }}
+          target-expires: ${{ steps.name.outputs.expires }}
+          target-alias: staging
+          cloudflare-account-id: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          worker-name: ${{ vars.THRUST_WORKER_NAME }}
+          base-url: ${{ vars.THRUST_BASE_URL }}
+          hyperdrive-id: ${{ vars.THRUST_HYPERDRIVE_ID }}
+          r2-bucket: ${{ vars.THRUST_R2_BUCKET }}
+          queue: ${{ vars.THRUST_QUEUE }}
+          queue-dlq: ${{ vars.THRUST_QUEUE_DLQ }}
+          rl-signin-id: ${{ vars.THRUST_RL_SIGNIN_ID }}
+          rl-v1-id: ${{ vars.THRUST_RL_V1_ID }}
+          csrf-enforce: ${{ vars.THRUST_CSRF_ENFORCE }}
+          email-from: ${{ vars.THRUST_EMAIL_FROM }}
+          flagship-app-id: ${{ vars.FLAGSHIP_APP_ID }}
+          preview-host-suffix: ${{ vars.PREVIEW_HOST_SUFFIX }}
+          smoke-email: ${{ vars.SMOKE_EMAIL }}
+          smoke-workspace: ${{ vars.SMOKE_WORKSPACE }}
+          smoke-project: ${{ vars.SMOKE_PROJECT || 'smoke' }}
+          cloudflare-api-token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          flagship-api-token: ${{ secrets.FLAGSHIP_WRITE_TOKEN }}
+          edge-ci-client-id: ${{ secrets.EDGE_CI_CLIENT_ID }}
+          edge-ci-client-secret: ${{ secrets.EDGE_CI_CLIENT_SECRET }}
+          smoke-password: ${{ secrets.SMOKE_PASSWORD }}
+          # no database route in this environment: a candidate that needs one is deferred to deploy-target-migrate
+          db-access-hostname: ""
+          tunnel-service-token-id: ""
+          tunnel-service-token-secret: ""
+          database-url: ""
+
+  # The same target, behind the reviewers of `target-migrate`, for what `deploy-target` deferred: production's schema is expanded first
+  # (scripts/migrate-ci.sh --no-contract, through production's database route), then the target deployed (ADR-0111: a shared target that
+  # brings a new migration waits for a reviewer).
+  deploy-target-migrate:
+    needs: [plan, build, deploy-target]
+    if: "!cancelled() && needs.deploy-target.result == 'success' && needs.deploy-target.outputs.deferred == 'true'"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: target-migrate
+    concurrency:
+      group: deploy-target
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      attestations: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: web/.node-version
+      - id: name
+        name: Name the target, and when it expires
+        run: |
+          version="$(python3 -I -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["workspace"]["package"]["version"])')"
+          echo "name=v$version" >> "$GITHUB_OUTPUT"
+          echo "expires=$(date -u -d '+14 days' +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+      - uses: ./.github/actions/deploy-worker
+        with:
+          script: target
+          environment: target
+          sha: ${{ needs.plan.outputs.sha }}
+          allow-migrate: "true"
+          target-name: ${{ steps.name.outputs.name }}
+          target-expires: ${{ steps.name.outputs.expires }}
+          target-alias: staging
+          cloudflare-account-id: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          worker-name: ${{ vars.THRUST_WORKER_NAME }}
+          base-url: ${{ vars.THRUST_BASE_URL }}
+          hyperdrive-id: ${{ vars.THRUST_HYPERDRIVE_ID }}
+          r2-bucket: ${{ vars.THRUST_R2_BUCKET }}
+          queue: ${{ vars.THRUST_QUEUE }}
+          queue-dlq: ${{ vars.THRUST_QUEUE_DLQ }}
+          rl-signin-id: ${{ vars.THRUST_RL_SIGNIN_ID }}
+          rl-v1-id: ${{ vars.THRUST_RL_V1_ID }}
+          csrf-enforce: ${{ vars.THRUST_CSRF_ENFORCE }}
+          email-from: ${{ vars.THRUST_EMAIL_FROM }}
+          db-access-hostname: ${{ vars.DB_ACCESS_HOSTNAME }}
+          flagship-app-id: ${{ vars.FLAGSHIP_APP_ID }}
+          preview-host-suffix: ${{ vars.PREVIEW_HOST_SUFFIX }}
+          smoke-email: ${{ vars.SMOKE_EMAIL }}
+          smoke-workspace: ${{ vars.SMOKE_WORKSPACE }}
+          smoke-project: ${{ vars.SMOKE_PROJECT || 'smoke' }}
+          cloudflare-api-token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          flagship-api-token: ${{ secrets.FLAGSHIP_WRITE_TOKEN }}
+          edge-ci-client-id: ${{ secrets.EDGE_CI_CLIENT_ID }}
+          edge-ci-client-secret: ${{ secrets.EDGE_CI_CLIENT_SECRET }}
           tunnel-service-token-id: ${{ secrets.TUNNEL_SERVICE_TOKEN_ID }}
           tunnel-service-token-secret: ${{ secrets.TUNNEL_SERVICE_TOKEN_SECRET }}
           database-url: ${{ secrets.DATABASE_URL }}

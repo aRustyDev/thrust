@@ -111,7 +111,8 @@ first (owner, 2026-11-17); [phases/0002-migration.md](phases/0002-migration.md) 
 | M2 | `security.yml` | `deny` |
 | M3 | `web.yml` | `web` |
 | M4 | `lint.yml` | `lint`, `deps` |
-| M5 | `test.yml` | `ci-scripts`, `hermetic`, `pg-adapter`, `contract` (calls `contract-cell.yml`), `mutants`. **Not** `flake-hunt.yml`: it stays as it is and becomes a stage of the Test phase (owner, 2026-11-17) |
+| M5a | `test.yml` | `ci-scripts`, `hermetic`, `pg-adapter`, `mutants`: plain moves; `contract` and the cell-marker rule stay in `ci.yml` and `gate` (owner, 2026-11-17: M5 is split in two) |
+| M5b | `test.yml` | `contract` (calls `contract-cell.yml`) and the judging of its cells: the `verdict` action gains `cell-job` and `cells` (owner, 2026-11-17). **Not** `flake-hunt.yml`: it stays as it is and becomes a stage of the Test phase (owner, 2026-11-17) |
 | M6 | `e2e.yml` | `e2e-schedule.yml` renamed (schedule and dispatch, calls `contract-cell.yml` for `worker-cf e2e`). The contract matrix's own `e2e` pass stays in Test until the E2E phase |
 
 The `verdict` job's steps become a composite action in **M2**, where they stand in two files, and the pull request says so. The
@@ -204,6 +205,6 @@ skipped.
 |---|---|
 | This plan | merged (#223) |
 | Phase 0, the foundation | **done.** Planned in [phases/0001-foundation.md](phases/0001-foundation.md) (#225); its owner questions are answered and recorded in the decisions table above. Stage 0.5, the baseline: [research/0017](research/0017-ci-baseline.md) (#230). Stage 0.2, the gate spike (draft #232, closed): [research/0018](research/0018-gate-spike.md) (#236). Stage 0.1: [ADR-0102](../contrail/adrs/ci/0102-one-workflow-per-concern-and-the-verdict-job.md) (#239). Stage 0.3, the planner, the gate and the mutant driver (#245). Stage 0.4, the lint rules, `actionlint` and the two indexes (#249) |
-| Phase 1, the migration | planned in [phases/0002-migration.md](phases/0002-migration.md) (#251); its four questions are answered (all as recommended) and recorded above. **M1, `documentation.yml`, is done** (#254, merged 2026-11-17; probes #255 and #256, closed unmerged). **M2, `security.yml` and the `verdict` action, is done** (#258, merged 2026-11-17; probes #259 and #260, closed unmerged). **M3, `web.yml`, is done** (#264, merged 2026-11-17; probes #265 and #266, closed unmerged). **M4, `lint.yml`, is in progress**; M5 and M6 are not started |
+| Phase 1, the migration | planned in [phases/0002-migration.md](phases/0002-migration.md) (#251); its four questions are answered (all as recommended) and recorded above. **M1, `documentation.yml`, is done** (#254, merged 2026-11-17; probes #255 and #256, closed unmerged). **M2, `security.yml` and the `verdict` action, is done** (#258, merged 2026-11-17; probes #259 and #260, closed unmerged). **M3, `web.yml`, is done** (#264, merged 2026-11-17; probes #265 and #266, closed unmerged). **M4, `lint.yml`, is done** (#269, merged 2026-11-17; probes #270 and #271, closed unmerged). **M5a, `test.yml` without `contract`, is in progress**; M5b and M6 are not started |
 | Phases 2 to 14 | not started |
 | Open for the owner | nothing |

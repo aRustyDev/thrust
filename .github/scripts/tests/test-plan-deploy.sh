@@ -42,22 +42,25 @@ for conclusion in success failure ""; do
     for branch in "$RC" rc/manual-1 rc/a/b main feat/x ""; do
       for head_repo in "$REPO" "someone/thrust"; do
         for enabled in true false; do
+         for targets in true false ""; do
           for tags in "" v0.1.0 "v0.1.0 other" "v0.1.0 v0.1.1" release-1 v1/x v; do
             n=$((n + 1))
             out="$(plan EVENT_NAME=workflow_run RUN_CONCLUSION="$conclusion" RUN_EVENT="$event" RUN_BRANCH="$branch" RUN_SHA="$M2" \
-              RUN_HEAD_REPO="$head_repo" RUN_TAGS="$tags" REPO="$REPO" DEPLOY_ENABLED="$enabled")"; rc=$?
+              RUN_HEAD_REPO="$head_repo" RUN_TAGS="$tags" REPO="$REPO" DEPLOY_ENABLED="$enabled" TARGETS_ENABLED="$targets")"; rc=$?
             # the rules, stated here on their own: ci green on our own code with the switch on, and either a pull request from one of
             # our rc/<name> branches (one segment, as the ruleset matches) -> staging on that branch, or a push to main whose commit
-            # has exactly one v<version> tag -> production on that tag
+            # has exactly one v<version> tag -> production on that tag. With the targets switch on as well, the candidate goes to the
+            # `target` environment instead of staging (ADR-0111); a release is production's either way
             want=skip; want_env=""; want_ref=""
             case "$tags" in v0.1.0|"v0.1.0 other") one_release=v0.1.0 ;; *) one_release="" ;; esac
             if [ "$conclusion" = success ] && [ "$head_repo" = "$REPO" ] && [ "$enabled" = true ]; then
               case "$event:$branch" in
-                "pull_request:$RC"|pull_request:rc/manual-1) want=dispatch; want_env=staging; want_ref="$branch" ;;
+                "pull_request:$RC"|pull_request:rc/manual-1)
+                  want=dispatch; want_env=staging; want_ref="$branch"; [ "$targets" = true ] && want_env=target ;;
                 push:main) if [ -n "$one_release" ]; then want=dispatch; want_env=production; want_ref="$one_release"; fi ;;
               esac
             fi
-            label="workflow_run($conclusion,$event,$branch,$head_repo,$enabled,tags=$tags)"
+            label="workflow_run($conclusion,$event,$branch,$head_repo,$enabled,targets=$targets,tags=$tags)"
             check "$label exit" "$rc" 0
             check "$label mode" "$(field "$out" mode)" "$want"
             check "$label environment" "$(field "$out" environment)" "$want_env"
@@ -68,6 +71,7 @@ for conclusion in success failure ""; do
               check "$label no injected failure" "$(field "$out" inject)" false
             fi
           done
+         done
         done
       done
     done
@@ -93,7 +97,7 @@ check "RUN_TAGS is not globbed: the tag is the literal word" "$(field "$out" ref
 # ---- workflow_dispatch: every combination ---------------------------------------------------------------------------------------------
 n=0
 for run_ref in "refs/heads/$RC" refs/heads/rc/a/b refs/heads/main refs/tags/v0.1.0 refs/tags/v0.1.0/x refs/tags/release-1 refs/pull/1/merge ""; do
- for env_name in staging production dev ""; do
+ for env_name in staging target production dev ""; do
   for inject in true false yes; do
     for skip_smoke in true false yes; do
       for head in "$M2" "$S1"; do
@@ -105,7 +109,7 @@ for run_ref in "refs/heads/$RC" refs/heads/rc/a/b refs/heads/main refs/tags/v0.1
           # the rules, stated here on their own
           want_rc=0
           case "$env_name" in
-            staging) [ "$run_ref" = "refs/heads/$RC" ] || want_rc=1 ;;
+            staging|target) [ "$run_ref" = "refs/heads/$RC" ] || want_rc=1 ;;
             production) [ "$run_ref" = refs/tags/v0.1.0 ] || want_rc=1; [ "$head" = "$S1" ] && want_rc=1 ;;
             *) want_rc=1 ;;
           esac
@@ -113,6 +117,7 @@ for run_ref in "refs/heads/$RC" refs/heads/rc/a/b refs/heads/main refs/tags/v0.1
           case "$skip_smoke" in true|false) ;; *) want_rc=1 ;; esac
           [ "$inject" = true ] && [ "$env_name" = production ] && want_rc=1
           [ "$inject" = true ] && [ "$skip_smoke" = true ] && want_rc=1
+          [ "$env_name" = target ] && { [ "$inject" = true ] || [ "$skip_smoke" = true ]; } && want_rc=1
           [ "$want_sha" = bad ] && want_rc=1
           label="dispatch(run_ref=$run_ref,env=$env_name,inject=$inject,skip=$skip_smoke,head=$head,sha=$want_sha)"
           check "$label exit" "$rc" "$want_rc"

@@ -62,7 +62,8 @@ cheapest where there is least to move.
 | M2 | `security.yml` | `deny` | The second callee, so the `verdict` job's steps are now **the same in two places**: the composite action is made here, by the plan's rule (see below) |
 | M3 | `web.yml` | `web` | One job again, with its own environment (Node, pnpm, and two environment variables at the job level) |
 | M4 | `lint.yml` | `lint`, `deps` | Two jobs, and `deps` has eighteen steps (recounted when M4 started; `lint` has seven), the workflow guard and the two added in Phase 0 (the index guard, `actionlint`) among them: the first callee that holds more than one job, and the one that runs the guards of the files it is moving into |
-| M5 | `test.yml` | `ci-scripts`, `hermetic`, `pg-adapter`, `contract`, `mutants` | The largest: the matrix call, the cell markers, and the `verdict` job that must judge them. Its own design, written when it starts |
+| M5a | `test.yml` | `ci-scripts`, `hermetic`, `pg-adapter`, `mutants` | Four plain moves, like M4. `contract` and the cell-marker rule stay in `ci.yml` and `gate` for this stage (owner, 2026-11-17: M5 is split) |
+| M5b | `test.yml` | `contract` | The matrix call (three levels deep), the cell markers, and the `verdict` job that must judge them: the `verdict` action gains `cell-job` and `cells`, and `gate` stops downloading markers. Planned when M5a is done |
 | M6 | `e2e.yml` | `e2e-schedule.yml` renamed | Not a callee; the index and the planner's lists change |
 
 Every stage edits `ci.yml`, so they run one after another, each starting from the `main` that holds the last.
@@ -275,6 +276,66 @@ lint action is a question for the Lint phase's survey, not for a refactor, which
 **No action is proposed.** `lint` and `deps` share a checkout and a `setup-rust` call and nothing else, and `setup-rust` already is the
 action; the `deps` guards are pairs of a check and its `--self-test`, which a loop in a script would hide, not an action.
 
+### M4: done (#269, merged 2026-11-17 as `099d6d7`)
+
+What it showed:
+- **Parity**, by `scripts/ci-commands.py`: 41 jobs before, 43 after; 38 unchanged, `deps` moved with its 18 steps and `lint` with its 7,
+  every one identical, 2 changed as intended (the `lint` job of `ci.yml`, now the call; `gate`), 1 appeared (`lint.yml:verdict`), 0 gone.
+  The cut of `ci.yml` was done by a script that refused unless every line it removed was in `lint.yml`, in order.
+- **The wiring**: `test_workflow_wiring.py` 100 checks, the gate's cases 182, the planner's 6,993; `mutate_gate.py` 165 mutants killed, the 8
+  that change nothing survived, on the runner too; a full run of 43 checks, `gate` certified. The OpenAPI diff was run locally for the first time.
+- **Two probes**: #270 (`deps` planned and skipped, `lint` untouched) failed `lint / verdict` and `gate`, the verdict naming the one of the two
+  jobs that did not run while `lint / lint` stayed green; #271 (the call of the action skipped) failed `gate` alone.
+
+What it found: `deps` ran its guards inside `lint.yml`, on `lint.yml` itself, and was green, which is the proof that the job works in its new
+home; the mutant driver's `CALLS` rows needed to hold a list of jobs; and earlier pull-request bodies had said "every guard of `deps`" ran
+locally when the OpenAPI diff (Docker) had not.
+
+### M5a in detail: `test.yml`, without `contract`
+
+**Purpose.** Move the four plain jobs of the Test concern out of `ci.yml`, as in M4, and leave the one that is different (`contract`, its
+matrix call and the cell-marker rule) for M5b, where it is tested alone (owner's decision, 2026-11-17, below).
+
+**What is particular to it.**
+1. **`contract` and the marker rule stay.** `ci.yml` keeps the job `contract` and `gate` keeps downloading the `cell-ok-*` markers and judging
+   the cells. So `top` lists `contract` and then the workflows, and the gate's default list is `contract documentation security web lint test`.
+2. **No name clash.** No job is called `test`, so the calling job `test` is new and `gate` needs it in place of four.
+3. **The four jobs are in three stretches of `ci.yml`**, with the `lint` call and `contract` between them; the cut script of M4 takes the
+   three stretches and checks each removed line against `test.yml`.
+4. **`ci-scripts` tests the files it moves into**: it runs the wiring test and the mutant driver, which read `test.yml`. Its own run is the proof.
+5. **`hermetic` uploads an artifact** (`junit-hermetic`); a name that does not match `gate`'s `cell-ok-*` pattern, so the marker rule is not
+   disturbed. The jobs differ in timeout (10, 30, 30 and 45 minutes) and in what they set up, and are moved verbatim.
+6. **A workflow of four jobs**: the plan may name any of them (a deploy script plans `ci-scripts` alone; a change to a crate plans
+   `ci-scripts`, `hermetic` and more).
+
+**Acceptance.**
+- `.github/workflows/test.yml` (`name: test`): `workflow_call` (input `plan`, required; output `verdict`) and `workflow_dispatch` (`plan`
+  defaults to the four jobs); no workflow-level `concurrency:`; `permissions: {}`; the four jobs moved **verbatim** in the order they have,
+  with `if: contains(fromJSON(inputs.plan), '<id>')` and no `needs: changes`; and a `verdict` job that needs the four and calls the action.
+- `ci.yml`: the four jobs are gone; a calling job `test` (`needs: changes`, runs when `top` names `test`, `plan` from `plans`); `gate` needs
+  `test` in place of the four, and `VERDICT_JOBS` is `documentation security web lint test`.
+- The planner: `WORKFLOWS` holds `test: (ci-scripts, hermetic, pg-adapter, mutants)`; the gate's default list, `same_jobs`, the indexes,
+  `cicd.md`, `running.md`, `ci-baseline.py`'s groups and the mutant driver (a row in `CALLS`) follow. A change to a deploy script plans the
+  workflow `test` with the plan `["ci-scripts"]`.
+- Proof as for M4: the parity table and its check (the four jobs moved, every step identical), a full run, and two probes planted in
+  `test.yml`: one of the four planned and skipped (with the others still passing), and the call of the action skipped.
+
+**State machine of each job.** As the others.
+
+**Public solutions.** None applies to the move. The four jobs run the repository's own scripts and `cargo nextest`, installed by
+`setup-rust`; a public action for any of them is a question for the Test phase's survey (Phase 2), not for a refactor.
+
+**No action is proposed.** The four jobs share a checkout and a `setup-rust` call and nothing else.
+
+### M5b, in outline (planned in detail when M5a is done)
+
+`contract` moves in: a matrix call of `contract-cell.yml`, so a call three levels deep (`ci.yml` to `test.yml` to `contract-cell.yml`),
+with the planner's `matrix` and `cells` passed to `test.yml` as inputs. The cells are then judged by `test / verdict`: the `verdict`
+action gains the optional inputs `cell-job` and `cells` (empty and `[]` by default, so the four other callees are unchanged), downloads the
+`cell-ok-*` markers when `cell-job` is set, and passes `CELL_JOB`, `PLANNED` and `REPORTED_DIR` to the judge. `gate` stops downloading the
+markers, and its default for the cell job becomes none, which moves the cell cases of `test-ci-scripts.sh` to the callee level. The probes
+add what only cells can show: a planned cell that never reports, and a marker for a cell that was not planned.
+
 ## Decisions on the questions (owner, 2026-11-17, after #251)
 
 All four were answered as recommended.
@@ -293,3 +354,5 @@ No question is open.
 | After | Question | Answer |
 |---|---|---|
 | #258 (2026-11-17) | A shared `build-web` action for the Node, pnpm, install, build and SPA steps of the `web` job and of `contract-pass-tools`'s e2e passes. They are the same commands, but not an exact copy: four steps with job-level env against one step with step-level env, and `contract-pass-tools` runs two more commands after | **Deferred.** M3 moves `web` as it is. The action is proposed again in the Web and E2E phases, where pass 5 (caching the pnpm store) touches exactly these steps |
+| #269 (2026-11-17) | How `test.yml`'s `verdict` job gets the cell judging (the same judge and mark steps as the `verdict` action, plus a step that downloads the `cell-ok-*` markers, which `gate` does today, and three more variables). A near-duplicate of the action, not an exact copy: extend the action, make a second one, or write the job inline | **Extend the action** with the optional inputs `cell-job` and `cells`; the four existing callers are unchanged. No second action, no inline job |
+| #269 (2026-11-17) | Split M5, the largest stage, in two? Four of its jobs are plain moves; `contract` is a matrix call three levels deep, and moving it moves the marker rule out of `gate` | **Two stages**: M5a the four plain jobs (`contract` and the marker rule stay), M5b `contract` and the cells' judging |

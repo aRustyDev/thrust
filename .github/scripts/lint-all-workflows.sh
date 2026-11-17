@@ -16,7 +16,7 @@ NONE=-
 # policy <workflow file name>: "<jobs that may use secrets and an environment>|<jobs that may have id-token: write>"
 policy() {
   case "$1" in
-    deploy.yml) echo "deploy deploy-do|build" ;;      # the environments' secrets; the bundle's attestation
+    deploy.yml) echo "deploy deploy-do deploy-target deploy-target-migrate|build" ;;  # the environments' secrets; the attestation
     release.yml) echo "$NONE|build" ;;                 # the release's attestations; its token is the workflow's own
     release-plz.yml) echo "release release-pr|$NONE" ;; # the release App's key, in the `release` environment
     flagship.yml) echo "sync check|$NONE" ;;           # the Flagship app's tokens, in the `flagship` environment
