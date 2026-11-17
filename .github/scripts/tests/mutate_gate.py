@@ -59,10 +59,11 @@ WIRED = (CI, DOC, SEC, WEB, LNT, TST, ACT)
 CALLS = [
     (DOC, "documentation", ("docs",), "web, documentation, security]", "web, security]"),
     (SEC, "security", ("deny",), "documentation, security]", "documentation]"),
-    (WEB, "web", ("web",), "contract, web, documentation", "contract, documentation"),
-    (LNT, "lint", ("deps", "lint"), "test, lint, contract", "test, contract"),
-    (TST, "test", ("ci-scripts", "hermetic", "pg-adapter", "mutants"), "changes, test, lint", "changes, lint"),
+    (WEB, "web", ("web",), "lint, web, documentation", "lint, documentation"),
+    (LNT, "lint", ("deps", "lint"), "test, lint, web", "test, web"),
+    (TST, "test", ("ci-scripts", "hermetic", "pg-adapter", "contract", "mutants"), "changes, test, lint", "changes, lint"),
 ]
+CELL_JOB = "contract"  # the job that runs the contract cells; the workflow that holds it gets the mutants of the cells (call_mutants)
 
 
 def call_mutants():
@@ -109,6 +110,32 @@ def call_mutants():
                 (target, f"{w}: the verdict job knows the first job only", f"          jobs: {jobs_text}\n", f"          jobs: {jobs[0]}\n"),
                 (target, f"{w}: the verdict job knows the jobs in a list that is not the workflow's", f"          jobs: {jobs_text}\n",
                  f"          jobs: {jobs_text} verdict\n"),
+            ]
+        if CELL_JOB in jobs:  # what only the workflow that runs the contract cells can get wrong (and the call, and the gate, around it)
+            out += [
+                (CI, f"the {w} call passes no matrix", "      matrix: ${{ needs.changes.outputs.matrix || '{\"include\":[]}' }}\n", ""),
+                (CI, f"the {w} call passes no cells", "      cells: ${{ needs.changes.outputs.cells || '[]' }}\n", ""),
+                (CI, f"the {w} call passes the cells where the matrix goes", "matrix: ${{ needs.changes.outputs.matrix || '{\"include\":[]}' }}",
+                 "matrix: ${{ needs.changes.outputs.cells || '[]' }}"),
+                (CI, "the gate still downloads the cell markers", "      - name: Assert the planned set ran and passed\n",
+                 "      - name: Collect the per-cell pass markers\n        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2\n"
+                 "        with:\n          pattern: cell-ok-*\n          path: reported\n          merge-multiple: true\n"
+                 "      - name: Assert the planned set ran and passed\n"),
+                (CI, "the gate is still given the planned cells", "          VERDICT_JOBS: documentation security web lint test\n",
+                 "          VERDICT_JOBS: documentation security web lint test\n          PLANNED: ${{ needs.changes.outputs.cells || '[]' }}\n"),
+                (target, f"{w}: the verdict call passes no cell job", "          cell-job: contract\n", ""),
+                (target, f"{w}: the verdict call passes no cells", "          cells: ${{ inputs.cells }}\n", ""),
+                (target, f"{w}: the verdict call passes other cells than it was given", "cells: ${{ inputs.cells }}\n", "cells: '[]'\n"),
+                (target, f"{w}: the verdict call names another job as the cell job", "cell-job: contract\n", "cell-job: mutants\n"),
+                (target, f"{w}: the contract matrix is a fixed one, not the one it was given", "matrix: ${{ fromJSON(inputs.matrix) }}\n",
+                 'matrix: {"include":[{"target":"native-memory","pass":"main"}]}\n'),
+                (target, f"{w}: a failed cell stops the others", "      fail-fast: false\n", "      fail-fast: true\n"),
+                (target, f"{w}: contract calls another workflow", "    uses: ./.github/workflows/contract-cell.yml\n", "    uses: ./.github/workflows/web.yml\n"),
+                (target, f"{w}: the matrix is not asked of the caller",
+                 re.compile(r"      matrix:\n        description: The contract matrix, [^\n]*\n        type: string\n        required: true\n"), ""),
+                (target, f"{w}: the cells are optional for the caller",
+                 re.compile(r"(      cells:\n        description: JSON array of the \"<target> <pass>\" cells that are planned \(the planner's `cells`\)\n        type: string\n)"
+                            r"        required: true"), r"\1        required: false"),
             ]
     return out
 
@@ -175,7 +202,6 @@ MUTANTS = [
     (GATE, "an unplanned marker is accepted", '[ -z "$extra" ] ||', "true ||"),
     (GATE, "the cell job with zero cells passes", '[ -s planned.txt ] || fail "the $CELLS job is expected', 'true || fail "the $CELLS job is expected'),
     (GATE, "an input may be missing", '[ -n "$value" ] || fail "$input is not set"', 'true || fail "$input is not set"'),
-    (GATE, "the gate forgets the job contract", ":-contract documentation", ":-documentation"),
     (GATE, "the gate forgets the documentation workflow", "documentation security web lint test}\"", "security web lint test}\""),
     (GATE, "the gate forgets the security workflow", "security web lint test}\"", "web lint test}\""),
     (GATE, "the gate forgets the web workflow", " web lint test}\"", " lint test}\""),
@@ -190,21 +216,25 @@ MUTANTS = [
     (GATE, "a name in VERDICT_JOBS that is no job is accepted",
      "*) fail \"VERDICT_JOBS names '$job', which is not a job the gate knows\" ;;", "*) ;;"),
     (GATE, "a verdict job that sets no planner job still needs one", 'CHANGES="${CHANGES_JOB-changes}"', 'CHANGES="${CHANGES_JOB:-changes}"'),
-    (GATE, "a verdict job that sets no cell job still needs cells", 'CELLS="${CELL_JOB-contract}"', 'CELLS="${CELL_JOB:-contract}"'),
-    (GATE, "KNOWN_JOBS is ignored", 'KNOWN="${KNOWN_JOBS:-contract', 'KNOWN="${XKNOWN_JOBS:-contract'),
+    (GATE, "a level that names no cell job is asked for cells (the default cell job is contract)", 'CELLS="${CELL_JOB:-}"', 'CELLS="${CELL_JOB:-contract}"'),
+    (GATE, "KNOWN_JOBS is ignored", 'KNOWN="${KNOWN_JOBS:-documentation', 'KNOWN="${XKNOWN_JOBS:-documentation'),
     (GATE, "PLANNED is needed even where there is no cell job", 'if [ -n "$CELLS" ]; then', "if true; then"),
     # --- the wiring of the called workflows, and what a stage of the migration changes (ADR-0102)
     (PLAN, "the planner forgets the workflows",
      'WORKFLOWS = {"documentation": ("docs",), "security": ("deny",), "web": ("web",), "lint": ("deps", "lint"), '
-     '"test": ("ci-scripts", "hermetic", "pg-adapter", "mutants")}', "WORKFLOWS = {}"),
+     '"test": ("ci-scripts", "hermetic", "pg-adapter", "contract", "mutants")}', "WORKFLOWS = {}"),
     (PLAN, "the planner forgets the documentation workflow", '{"documentation": ("docs",), "security"', '{"security"'),
     (PLAN, "the planner forgets the security workflow", ', "security": ("deny",)', ""),
     (PLAN, "the planner forgets the web workflow", ', "web": ("web",)', ""),
     (PLAN, "the planner forgets the lint workflow", ', "lint": ("deps", "lint")', ""),
-    (PLAN, "the planner forgets the test workflow", ', "test": ("ci-scripts", "hermetic", "pg-adapter", "mutants")}', "}"),
+    (PLAN, "the planner forgets the test workflow", ', "test": ("ci-scripts", "hermetic", "pg-adapter", "contract", "mutants")}', "}"),
     (PLAN, "the planner moves test's jobs to a workflow of another name", '"test": ("ci-scripts"', '"suite": ("ci-scripts"'),
-    (PLAN, "the planner leaves ci-scripts in ci.yml", '("ci-scripts", "hermetic", "pg-adapter", "mutants")', '("hermetic", "pg-adapter", "mutants")'),
-    (PLAN, "the planner leaves mutants in ci.yml", '("ci-scripts", "hermetic", "pg-adapter", "mutants")', '("ci-scripts", "hermetic", "pg-adapter")'),
+    (PLAN, "the planner leaves ci-scripts in ci.yml", '("ci-scripts", "hermetic", "pg-adapter", "contract", "mutants")',
+     '("hermetic", "pg-adapter", "contract", "mutants")'),
+    (PLAN, "the planner leaves contract in ci.yml", '("ci-scripts", "hermetic", "pg-adapter", "contract", "mutants")',
+     '("ci-scripts", "hermetic", "pg-adapter", "mutants")'),
+    (PLAN, "the planner leaves mutants in ci.yml", '("ci-scripts", "hermetic", "pg-adapter", "contract", "mutants")',
+     '("ci-scripts", "hermetic", "pg-adapter", "contract")'),
     (PLAN, "the planner moves lint's jobs to a workflow of another name", '"lint": ("deps", "lint")', '"style": ("deps", "lint")'),
     (PLAN, "the planner leaves deps in ci.yml", '("deps", "lint")', '("lint",)'),
     (PLAN, "the planner leaves lint in ci.yml", '("deps", "lint")', '("deps",)'),
@@ -218,16 +248,29 @@ MUTANTS = [
     (CI, "the gate's VERDICT_JOBS forgets a called workflow", "VERDICT_JOBS: documentation security web lint test", "VERDICT_JOBS: documentation security web lint"),
     (CI, "`changes` does not output the plans", "      plans: ${{ steps.classify.outputs.plans }}\n", ""),
     (CI, "`changes` does not output top", "      top: ${{ steps.classify.outputs.top }}\n", ""),
-    # the job `contract` is the one job of ci.yml that still reads `jobs`; its name is also in the gate's marker step, so the anchor is the job
-    (CI, "a job of ci.yml runs on the wrong name",
-     re.compile(r"(  contract:\n    needs: changes\n    if: contains\(fromJSON\(needs\.changes\.outputs\.jobs \|\| '\[\]'\), ')contract('\))"),
-     r"\1lint\2"),
     # --- the verdict action, which every called workflow's `verdict` job calls (written once, from the second workflow on)
     (ACT, "the action judges no plan", "        EXPECTED_JOBS: ${{ inputs.plan }}\n", "        EXPECTED_JOBS: '[]'\n"),
     (ACT, "the action knows no job of the workflow", "KNOWN_JOBS: ${{ inputs.jobs }}", "KNOWN_JOBS: verdict"),
     (ACT, "the action judges the needs of nobody", "NEEDS_JSON: ${{ inputs.needs }}", "NEEDS_JSON: '{}'"),
     (ACT, "the action asks for a planner job, which a called workflow has not", '        CHANGES_JOB: ""\n', ""),
-    (ACT, "the action asks for cells, which a called workflow has not", '        CELL_JOB: ""\n', ""),
+    # the cells: the caller names the cell job and the planned cells, and the action collects the markers for the judge to compare
+    (ACT, "the action ignores the cell job it was given", "CELL_JOB: ${{ inputs.cell-job }}", 'CELL_JOB: ""'),
+    (ACT, "the action asks for the cell job whatever it was given", "CELL_JOB: ${{ inputs.cell-job }}", "CELL_JOB: contract"),
+    (ACT, "the action ignores the planned cells it was given", "PLANNED: ${{ inputs.cells }}", "PLANNED: '[]'"),
+    (ACT, "the judge reads the markers from another directory than they were put in", "REPORTED_DIR: reported", "REPORTED_DIR: elsewhere"),
+    (ACT, "the markers are put in another directory than the judge reads", "        path: reported\n", "        path: elsewhere\n"),
+    (ACT, "the markers are collected even when there is no cell job", "      if: inputs.cell-job != ''\n", ""),
+    (ACT, "the markers are never collected", "      if: inputs.cell-job != ''\n", "      if: inputs.cell-job == 'never'\n"),
+    (ACT, "a missing marker stops the action before the judge can say so", "      continue-on-error: true\n", ""),
+    (ACT, "the markers are collected from an action that is not pinned", "actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2",
+     "actions/download-artifact@v8"),
+    # the judge first, then the collection: the two blocks swapped
+    (ACT, "the markers are collected after the judge",
+     re.compile(r"(    - name: Collect the per-cell pass markers\n.*?        merge-multiple: true\n)(    # A planned job must be exactly.*?      run: \.github/scripts/assert-gate\.sh\n)", re.S),
+     r"\2\1"),
+    (ACT, "every marker is not collected", "        pattern: cell-ok-*\n", "        pattern: cell-ok-native-*\n"),
+    (ACT, "the cell job is a required input", re.compile(r"(  cell-job:\n    description: [^\n]*\n)    required: false"), r"\1    required: true"),
+    (ACT, "the cells default to nothing that is an array", '    default: "[]"', '    default: ""'),
     (ACT, "the action judges with another script", "run: .github/scripts/assert-gate.sh", "run: true"),
     (ACT, "the output is set by the judge step too", "run: .github/scripts/assert-gate.sh", 'run: echo "verdict=pass" >> "$GITHUB_OUTPUT"; .github/scripts/assert-gate.sh'),
     (ACT, "the output is set even when the judge failed", "    - id: mark\n", "    - id: mark\n      if: always()\n"),

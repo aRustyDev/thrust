@@ -1,5 +1,5 @@
 name: verdict
-description: The judge at the end of a called workflow (ADR-0102). Judges the workflow's own jobs against the plan it was given, with the one script every level uses (assert-gate.sh), and only when that passed sets the output `verdict` to `pass`, which ci.yml's gate requires of the workflow. Used by the `verdict` job of each workflow ci.yml calls. That job checks the repository out first, because a local action is read from the checkout and so cannot check it out itself.
+description: The judge at the end of a called workflow (ADR-0102). Judges the workflow's own jobs against the plan it was given, with the one script every level uses (assert-gate.sh), and only when that passed sets the output `verdict` to `pass`, which ci.yml's gate requires of the workflow. A workflow that runs the contract cells also gives the cell job and the planned cells, and the action then collects the cells' pass markers and has the judge prove that every planned cell reported. Used by the `verdict` job of each workflow ci.yml calls. That job checks the repository out first, because a local action is read from the checkout and so cannot check it out itself.
 
 inputs:
   needs:
@@ -11,6 +11,14 @@ inputs:
   jobs:
     description: The jobs of the workflow, separated by spaces (assert-gate.sh's KNOWN_JOBS)
     required: true
+  cell-job:
+    description: The job of the workflow that runs the contract cells, whose pass markers the judge proves (assert-gate.sh's CELL_JOB). Empty, the default, for a workflow that has no cells
+    required: false
+    default: ""
+  cells:
+    description: JSON array of the "<target> <pass>" cells that are planned (the planner's `cells`), read only when `cell-job` is set
+    required: false
+    default: "[]"
 
 outputs:
   verdict:
@@ -20,9 +28,20 @@ outputs:
 runs:
   using: composite
   steps:
+    # Each cell uploads a marker (cell-ok-<target>-<pass>) that exactly that cell passed, and the judge compares the markers with the planned
+    # cells. Only for a workflow that has a cell job. If every cell failed there is nothing to download; the judge then fails on "no cell
+    # markers", so tolerating the download error here cannot produce a passing verdict.
+    - name: Collect the per-cell pass markers
+      if: inputs.cell-job != ''
+      continue-on-error: true
+      uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+      with:
+        pattern: cell-ok-*
+        path: reported
+        merge-multiple: true
     # A planned job must be exactly `success`, one that is not planned must be `skipped`, and a plan that is not a JSON array of
-    # strings is a failure. No planner job and no cells to judge: both are ci.yml's, so both are set empty. Inputs go through env,
-    # never into the script text.
+    # strings is a failure. No planner job to judge (it is ci.yml's, so it is set empty). The cell job is the caller's, or none. Inputs go
+    # through env, never into the script text.
     - name: Judge the jobs against the plan
       shell: bash
       env:
@@ -30,7 +49,9 @@ runs:
         EXPECTED_JOBS: ${{ inputs.plan }}
         KNOWN_JOBS: ${{ inputs.jobs }}
         CHANGES_JOB: ""
-        CELL_JOB: ""
+        CELL_JOB: ${{ inputs.cell-job }}
+        PLANNED: ${{ inputs.cells }}
+        REPORTED_DIR: reported
       run: .github/scripts/assert-gate.sh
     # Only after the judge: a failed step ends a composite action, so this one never runs for a workflow that was not as planned.
     - id: mark

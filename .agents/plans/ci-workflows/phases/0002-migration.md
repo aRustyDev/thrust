@@ -327,14 +327,78 @@ matrix call and the cell-marker rule) for M5b, where it is tested alone (owner's
 
 **No action is proposed.** The four jobs share a checkout and a `setup-rust` call and nothing else.
 
-### M5b, in outline (planned in detail when M5a is done)
+### M5a: done (#275, merged 2026-11-17 as `bb24076`)
 
-`contract` moves in: a matrix call of `contract-cell.yml`, so a call three levels deep (`ci.yml` to `test.yml` to `contract-cell.yml`),
-with the planner's `matrix` and `cells` passed to `test.yml` as inputs. The cells are then judged by `test / verdict`: the `verdict`
-action gains the optional inputs `cell-job` and `cells` (empty and `[]` by default, so the four other callees are unchanged), downloads the
-`cell-ok-*` markers when `cell-job` is set, and passes `CELL_JOB`, `PLANNED` and `REPORTED_DIR` to the judge. `gate` stops downloading the
-markers, and its default for the cell job becomes none, which moves the cell cases of `test-ci-scripts.sh` to the callee level. The probes
-add what only cells can show: a planned cell that never reports, and a marker for a cell that was not planned.
+What it showed:
+- **Parity**, by `scripts/ci-commands.py`: 43 jobs before, 45 after; 38 unchanged, `ci-scripts`, `hermetic`, `pg-adapter` and `mutants` moved with
+  their 2, 7, 4 and 3 steps, every one identical, 1 changed as intended (`gate`), 2 appeared (`ci.yml:test`, `test.yml:verdict`), 0 gone.
+  `test.yml` and the cut of `ci.yml` were generated from `ci.yml`'s own text, and the script refused unless all 149 removed lines were found in order.
+- **The wiring**: `test_workflow_wiring.py` 118 checks, the gate's cases 162, the planner's 6,998 on the runner; `mutate_gate.py` 199 mutants
+  killed, the 9 that change nothing survived, on the runner too; a full run of 44 checks, `gate` certified. `test / ci-scripts` ran its whole
+  list, the wiring test and the mutant driver included, in `test.yml`.
+- **Two probes**: #276 (`hermetic` planned and skipped, the other three jobs green) failed `test / verdict` and `gate`, the verdict naming
+  `hermetic`; #277 (the call of the action skipped) failed `gate` alone.
+
+What it found: a **semantic merge conflict**: while `ci-scripts` was being moved, #272 added a test to its command list in `ci.yml`. Git saw a
+deletion against an addition; the resolution kept the deletion and put the line in `test.yml`, checked by a script (main's other 51 lines were
+already there) and by the parity check against `main` as it then stood. Three mutants went BROKEN, because the move had changed their anchor
+text, and were re-anchored (the gate's list no longer starts with `ci-scripts`; `hermetic`'s `if` is gone from `ci.yml`; `hermetic`'s JUnit
+upload step has an `if: always()` of its own).
+
+And one thing that was not M5a's: `main`'s run on its merge commit was **red**, in `security / deny`, from a new RustSec advisory
+(RUSTSEC-2026-0543, `chrono` unmaintained, no safe upgrade), the kind of failure that job's comment says to expect with no change to the code.
+#279 added a documented temporary exception to `deny.toml`.
+
+### M5b in detail: `contract`, and the judging of its cells
+
+**Purpose.** Move the last job of the Test concern, `contract`, and with it the rule that judges its cells, out of `ci.yml` and `gate`. After
+it `ci.yml` holds `changes`, the calls and `gate`, which is the migration's acceptance for `ci.yml`.
+
+**What is particular to it.**
+1. **The matrix call is nested.** `ci.yml` calls `test.yml` (the job `test`), which calls `contract-cell.yml` once per cell (the job `contract`,
+   a matrix): three levels, against a limit of ten. The planner's `matrix` and `cells` outputs reach `test.yml` as two new inputs, strings that
+   hold JSON (`matrix`, default `{"include":[]}`, and `cells`, default `[]`). `contract-cell.yml` itself, and its other callers
+   (`e2e-schedule.yml`, and `flake-hunt.yml` through an action), are not touched.
+2. **The cells are judged by `test / verdict`**, as you decided: the `verdict` action gains the optional inputs `cell-job` (default empty:
+   none, as for the four other callees) and `cells` (default `[]`). When `cell-job` is set, a first step downloads the `cell-ok-*` markers, as
+   `gate`'s step does today (`continue-on-error`: with no marker the judge fails on "no cell markers"), and the judge is given `CELL_JOB`,
+   `PLANNED` and `REPORTED_DIR`. The markers are artifacts of the same run, so the download works across the nested call; the run is what proves it.
+3. **`gate` stops judging cells.** Its marker step and its `PLANNED` and `REPORTED_DIR` go. `assert-gate.sh`'s defaults describe the top-level
+   gate, which now has no cells: the default cell job becomes none (it was `contract`) and the default known jobs are the five called workflows.
+   **The cost, said plainly:** a verdict job that forgot `CELL_JOB` used to fail, because the default asked for cells it was not given
+   (`test-ci-scripts.sh` has that case). With the default none, a callee that forgets it passes without judging cells. The property moves to
+   the places that can hold it: the wiring test requires `test.yml`'s call of the action to pass `cell-job: contract` and `cells`, and a
+   mutant (the call forgets `cell-job`) shows the test can fail.
+4. **The gate's cell cases move to the callee level, they are not dropped.** The cells' cases (a planned cell that never reports, a marker for
+   an unplanned cell, no cell planned, no marker, cells planned and the cell job not expected, the unset `PLANNED` and `REPORTED_DIR`) and the
+   per-job loop's special case for `contract` are re-expressed with `CELL_JOB=contract` at the level of a verdict job.
+5. **`top` is only workflows now**: no job is left in `ci.yml` for the gate to judge directly.
+6. **The check names change** (a cell becomes a call two levels down); `ci-baseline.py` classifies cells by name, so its handling is read from
+   the first run and adapted.
+
+**Acceptance.**
+- `test.yml`: inputs `plan`, `matrix` and `cells` (`workflow_dispatch` has them with defaults); the job `contract` moved from `ci.yml` as a
+  matrix call of `contract-cell.yml` (`if` on the plan, the matrix from the input, the same `with:`, `fail-fast: false`, `permissions: contents: read`), placed
+  between `pg-adapter` and `mutants` as in `ci.yml`; the `verdict` job needs the five jobs and passes `cell-job: contract` and `cells`.
+- `.github/actions/verdict/action.yml`: the two inputs, the conditional download, the three variables from the inputs.
+- `ci.yml`: `contract` is gone; the `test` call passes `matrix` and `cells` from `changes`; `gate` needs `[changes, test, lint, web, documentation,
+  security]`, downloads nothing, and passes no `PLANNED` or `REPORTED_DIR`.
+- The planner's map holds `test: (ci-scripts, hermetic, pg-adapter, contract, mutants)`; the gate's defaults; the tests (the planner's, the gate's
+  at both levels, the wiring test for the cell call and the action's new inputs); the mutant driver (a row of five jobs, and the mutants that
+  only cells have: the call without `cell-job` or `cells` or `matrix`, a gate that still downloads markers, the action that ignores `cell-job`,
+  never downloads, or reads another directory than it downloaded to); the indexes, `cicd.md`, `running.md`, `ci-baseline.py`.
+- Proof: parity (`contract` moved with its call identical), a full run (**the 26 cells reported to `test / verdict`**, and `gate` still
+  certified), and two probes: **a planned cell whose marker is never uploaded** (planted in `contract-cell.yml`: the cell succeeds, and
+  `test / verdict` must say `planned cells that never reported success`), and the call of the action skipped.
+
+**State machine of the job.** `contract` is planned, then runs one job per planned cell and uploads a marker for each cell that passed; it
+succeeds when every cell does. `test / verdict` then judges the five jobs and the cells: every planned cell has a marker and no marker is
+for an unplanned cell.
+
+**Public solutions.** None applies to the move. The judge is `assert-gate.sh`; the download is `actions/download-artifact`, which the gate
+already uses at the same pin.
+
+**Questions for the owner:** none. The two that this stage had (the shape of the action, the split) are answered above.
 
 ## Decisions on the questions (owner, 2026-11-17, after #251)
 
