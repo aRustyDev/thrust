@@ -1,6 +1,6 @@
 # Phase 0002: Migration
 
-Part of [ci-workflows](../PLAN.md). Planned 2026-11-17; M1 is built and merged (#254), the other stages are not. Facts are from
+Part of [ci-workflows](../PLAN.md). Planned 2026-11-17; M1 to M5a are built and merged (#254, #258, #264, #269, #275), M5b and M6 are not. Facts are from
 `main` at `f263ab4`, read on that day: recount them when a stage starts. Phase 1 of the plan, after [Phase 0](0001-foundation.md) (the foundation: merged). It moves
 today's jobs out of `ci.yml` into one workflow per concern as a **pure refactor**: the same commands, the same job boundaries,
 the same result of `gate`. No pass applies to it; each stage's evidence is its acceptance criteria. The passes start in Phase 2,
@@ -327,14 +327,79 @@ matrix call and the cell-marker rule) for M5b, where it is tested alone (owner's
 
 **No action is proposed.** The four jobs share a checkout and a `setup-rust` call and nothing else.
 
-### M5b, in outline (planned in detail when M5a is done)
+### M5a: done (#275, merged 2026-11-17 as `bb24076`)
 
-`contract` moves in: a matrix call of `contract-cell.yml`, so a call three levels deep (`ci.yml` to `test.yml` to `contract-cell.yml`),
-with the planner's `matrix` and `cells` passed to `test.yml` as inputs. The cells are then judged by `test / verdict`: the `verdict`
-action gains the optional inputs `cell-job` and `cells` (empty and `[]` by default, so the four other callees are unchanged), downloads the
-`cell-ok-*` markers when `cell-job` is set, and passes `CELL_JOB`, `PLANNED` and `REPORTED_DIR` to the judge. `gate` stops downloading the
-markers, and its default for the cell job becomes none, which moves the cell cases of `test-ci-scripts.sh` to the callee level. The probes
-add what only cells can show: a planned cell that never reports, and a marker for a cell that was not planned.
+What it showed:
+- **Parity**, by `scripts/ci-commands.py`: 43 jobs before, 45 after; 38 unchanged, `ci-scripts`, `hermetic`, `pg-adapter` and `mutants`
+  moved with 2, 7, 4 and 3 steps, every one identical, 1 changed as intended (`gate`), 2 appeared (`ci.yml:test`, `test.yml:verdict`), 0 gone.
+  `test.yml` and the cut of `ci.yml` were generated from `ci.yml`'s own text by a script that refused unless each of the 149 lines it removed
+  was in `test.yml`, in order.
+- **The wiring**: `test_workflow_wiring.py` 118 checks, the gate's cases 162, the planner's 6,998 on the runner; `mutate_gate.py` 199 mutants
+  killed, the 9 that change nothing survived; a full run of 44 checks (run 44037583676), `gate` certified.
+- **Two probes**: #276 (`hermetic` planned and skipped, the other three untouched) failed `test / verdict` and `gate`, the verdict naming
+  `hermetic` while the other three stayed green; #277 (the call of the action skipped) failed `gate` alone.
+
+What it found: a change to a job's commands that lands while the job is moving is a semantic conflict, not a textual one (#272 added a line to
+`ci-scripts` in `ci.yml` while it was being moved; the line was put into `test.yml` and the parity check run again against the new `main`);
+three mutants' anchors were changed by the move and were re-anchored; `hermetic`'s upload step has an `if: always()` of its own.
+
+**After it merged**, #279 (the preview control plane) edited the moved jobs in their new home, which is where such edits now belong:
+five commands at the end of `ci-scripts` and one step in `pg-adapter`, and in the planner, paths under `infra/preview/` and
+`infra/cloudflare/` and the crate `thrust-preview-provisioner` plan `ci-scripts` and `pg-adapter`, written as a branch before `RULES` and
+not as rules. It also added `preview-control-tests.yml`, which runs on every pull request outside `gate` and repeats those commands, the
+provisioner's tests (which `hermetic` runs too) and its `wasm32` build, which no job `gate` waits for runs. None of this is the migration's to
+change (it is a refactor); M5b moves nothing of it, and it is recorded for the Test phase.
+
+### M5b in detail: `contract`, and the judging of its cells
+
+**Purpose.** Move the last job of `ci.yml`, `contract` (a matrix call of `contract-cell.yml`), into `test.yml`, and move the judging of its
+cells with it, from `gate` to `test / verdict` (owner's decisions, 2026-11-17, below). After it, `ci.yml` holds only `changes`, the five
+calls and `gate`, the first condition of the migration's end.
+
+**What is particular to it.**
+1. **A call three levels deep.** `ci.yml` calls `test.yml`, whose `contract` job calls `contract-cell.yml` once per cell. `test.yml` gains
+   two inputs, `matrix` and `cells`, which the `test` call passes from `changes`' outputs as `contract` and `gate` read them today
+   (`matrix` as it is, `cells` with `|| '[]'`). The checks become `test / contract (<target>, <pass>) / <target> <pass>`.
+2. **The job changes by one line besides its `if` and `needs`.** Its matrix reads `fromJSON(inputs.matrix)` instead of
+   `fromJSON(needs.changes.outputs.matrix)`. The parity script compares `strategy`, so `test.yml:contract` is an expected change, and its
+   diff must be that line and nothing else. It goes between `pg-adapter` and `mutants`, the planner's order, with the comment above it.
+3. **The markers are judged where the cells run.** The `verdict` action gains `cell-job` (default empty: none) and `cells` (default `[]`),
+   the step that downloads the `cell-ok-*` markers (moved from `gate`, `continue-on-error` and its reason kept, run when `cell-job` is set),
+   and passes `CELL_JOB`, `PLANNED` and `REPORTED_DIR` to the judge. `test.yml`'s `verdict` job passes `cell-job: contract` and its `cells`;
+   the other four callers pass neither and judge as before. On a run of `test.yml` that plans no cell the step downloads nothing, and the
+   judge then requires the planned set to be empty, as `gate` does today when `contract` is not planned.
+4. **`gate` no longer reads cells.** Its download step goes and it passes no `PLANNED` or `REPORTED_DIR`; `assert-gate.sh`'s default for
+   `CELL_JOB` becomes none and for `KNOWN_JOBS` the five workflows, since each default is what `ci.yml`'s gate needs (a level that forgets an
+   input then judges as `gate` does). The cases that judge cells move in `test-ci-scripts.sh` from the gate's level to the level of
+   `test.yml`'s `verdict` job, with the workflow's real job names; the gate's 48 generated cases lose their special case for `contract`.
+5. **Nothing of `ci.yml` reads the planner's `jobs` any more** (the download step was the last). The output stays, as the planner's record
+   in the log; whether to drop it is the Build phase's question, not a refactor's.
+6. **A run of `test.yml` alone** plans its four other jobs and no cell by default (`matrix` `{"include":[]}`, `cells` `[]`): the matrix is
+   the planner's, and a second list of cells would drift. To run cells by hand, give `plan` with `contract`, a matrix and the same cells; a
+   dispatch of `ci` runs every cell.
+
+**Acceptance.**
+- `test.yml`: the inputs `matrix` and `cells` (required by `workflow_call`, defaulted by `workflow_dispatch`); the job `contract` as above;
+  `verdict` needs the five jobs and passes `cell-job: contract` and `cells: ${{ inputs.cells }}` besides what it passes today.
+- `ci.yml`: no `contract` job; the `test` call passes `matrix` and `cells`; `gate` needs `[changes, test, lint, web, documentation, security]`,
+  has no download step and sets no `PLANNED` or `REPORTED_DIR`. `VERDICT_JOBS` is unchanged.
+- The planner: `WORKFLOWS` holds `test: (ci-scripts, hermetic, pg-adapter, contract, mutants)`; `top` names only workflows; a change to `e2e/`
+  alone plans `{"test": ["contract"]}`. The gate's default list, `same_jobs`, the indexes, `cicd.md`, `running.md`, `ci-baseline.py`'s groups
+  (`contract` joins `test`) and the mutant driver follow.
+- The wiring test: the workflow that holds `contract` is called with `matrix` and `cells`, its `contract` job's matrix is the input and its
+  `verdict` passes `cell-job` and `cells`; no other workflow passes either; the action declares both inputs with their defaults, downloads the
+  markers only when `cell-job` is set and before the judge, and hands the judge the cell job, the cells and the directory. A mutant of each.
+- Proof: the parity table and its check (`contract` changed by its matrix line only; `gate` and the action changed as named), a full run, and
+  two probes that only cells can show, each turning `test / verdict` and `gate` red: a planned cell that never reports its marker, and a
+  marker for a cell that was not planned.
+
+**State machine of the cells.** As in `gate` today: the job `contract` is expected exactly when cells are planned; then its result must be
+`success`, and the cells that uploaded a marker must be the planned set, not empty; otherwise it must be `skipped` and the planned set empty.
+
+**Public solutions.** None applies to the move. The marker rule is the repository's own (research 0018); the download is
+`actions/download-artifact`, as before.
+
+**No action is proposed.** The action that judges the cells is the `verdict` action, extended (owner's decision); nothing else repeats.
 
 ## Decisions on the questions (owner, 2026-11-17, after #251)
 
