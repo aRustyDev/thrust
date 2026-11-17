@@ -1,7 +1,7 @@
 # App and end-to-end
 
 Status: **live** (Playwright journeys over the stock React app, `e2e/`) · **template-only** (axum router tests, Dioxus
-SSR, in-process harness) · **planned** (desktop, mobile) · Gate: the `worker-cf e2e` and `worker-cf e2e-mail` cells of the contract matrix (also run daily by `e2e-schedule.yml`, which gates nothing)
+SSR, in-process harness) · **planned** (desktop, mobile) · Gate: the `worker-cf e2e` and `worker-cf e2e-mail` cells of the contract matrix (also run daily by `e2e.yml`, which gates nothing)
 
 ## Catches
 

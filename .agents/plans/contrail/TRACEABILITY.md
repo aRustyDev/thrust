@@ -138,7 +138,7 @@ One row per journey. A journey is a file, `e2e/journeys/<name>.spec.ts` (`e2e/jo
 mail service: a second suite with a pass of its own, `worker-cf e2e-mail`, because the first holds that the target has none), and one that is not written has none. A screen counts
 as covered when its journey passes on **both** targets: the pinned Plane, the UI oracle (local, `scripts/e2e.sh plane-oracle`,
 because the oracle builds from the unpushed fork), and `worker-cf` (CI: the `worker-cf e2e` cell on every Rust change, and
-`e2e-schedule.yml` every day, which also covers a change to `web/` alone). Green on Plane and red on Thrust is a parity
+`e2e.yml` every day, which also covers a change to `web/` alone). Green on Plane and red on Thrust is a parity
 defect; red on Plane means the journey is wrong. What guards a journey against passing without proving anything, and the
 controls that show it: `docs/src/testing/techniques/app-and-e2e.md`; what was measured: `docs/src/testing/status.md` G-31.
 
