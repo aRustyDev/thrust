@@ -4073,20 +4073,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "thrust-preview-provisioner"
-version = "0.2.0"
-dependencies = [
- "futures-util",
- "proptest",
- "serde",
- "serde_json",
- "thrust-adapters-cloudflare",
- "thrust-adapters-postgres",
- "tokio-postgres",
- "worker",
-]
-
-[[package]]
 name = "thrust-profiling"
 version = "0.2.0"
 dependencies = [
@@ -4101,6 +4087,20 @@ dependencies = [
  "thrust-core",
  "thrust-ports",
  "tower",
+]
+
+[[package]]
+name = "thrust-preview-provisioner"
+version = "0.2.0"
+dependencies = [
+ "futures-util",
+ "proptest",
+ "serde",
+ "serde_json",
+ "thrust-adapters-cloudflare",
+ "thrust-adapters-postgres",
+ "tokio-postgres",
+ "worker",
 ]
 
 [[package]]
