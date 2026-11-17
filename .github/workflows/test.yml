@@ -65,6 +65,7 @@ jobs:
           sh .github/scripts/tests/test-check-flake-hunt-cell.sh
           sh .github/scripts/tests/test-ports.sh
           sh .github/scripts/tests/test-mutants-verdict.sh
+          sh .github/scripts/tests/test-samply-wrapper.sh
           sh .github/scripts/tests/test-deploy-worker.sh
           python3 -I .github/scripts/tests/test_active_version.py
           sh .github/scripts/tests/test-unpack-bundle.sh

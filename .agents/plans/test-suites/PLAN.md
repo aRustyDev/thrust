@@ -185,6 +185,24 @@ ballast adds exactly 4 MiB; with the ballast removed from the workload, the cont
 Verify, the wrapper's own control: a wrapper that never runs the test binary makes the test pass without running it. So
 a `prof_cpu_` test that must fail fails under the wrapper, and the profile file names the workload's functions.
 
+As built (2026-11-17, samply 0.13.1, nextest 0.9.140): the wrapper is `scripts/samply-wrapper.sh`, under
+`[scripts.wrapper.samply]` with `relative-to = "workspace-root"`, applied by `[[profile.prof.scripts]]` to
+`test(/^prof_cpu_/)`. It runs `samply record --save-only --no-open --unstable-presymbolicate`; the symbols sidecar makes the
+profile open without the build. Found on the way:
+
+- **samply exits 0 when the profiled process is killed by a signal** (it passes on a normal exit status). Under a plain
+  wrapper an aborting test PASSED (measured). So the wrapper also requires libtest's pass line for one test, and an
+  aborting test fails.
+- **A test selected without the wrapper** (another profile) would pass and write no profile, so the wrapper exports
+  `THRUST_PROF_SAMPLY` and `prof_cpu_router` refuses to run without it.
+- **If the experimental feature changes**, nextest refuses the config: an unknown feature exits 96, a wrapper script
+  without the feature exits 95. Neither runs a test unprofiled.
+- samply cannot profile a signed system binary on macOS (`/bin/sh`); a test binary is built locally, so it can.
+
+`.github/scripts/tests/test-samply-wrapper.sh` tests the wrapper in `ci-scripts` with a fake samply that behaves as
+measured; eight broken copies of the wrapper each fail it. The CPU profile: 20 rounds of the mix (6,400 requests) take about
+2 s in the release build, 17 s in the dev build.
+
 ## Left for later (not this plan)
 
 - **The workflows.** CI-split Phase 2 (Test) runs the contract cells and `mutants` with whatever this plan leaves; Phase
@@ -206,5 +224,5 @@ a `prof_cpu_` test that must fail fails under the wrapper, and the profile file 
 | PR 1, contract suite onto nextest | merged in #243 (`a5a11ff`): CI found cargo-nextest missing from the contract cells, fixed with a `nextest` input to `setup-rust` |
 | PR 2, adapter suites onto nextest | merged in #252 (`b83ece3`): every Rust test on nextest except the doctests; merged with #248's mutants verdicts |
 | PR 3, load suite | merged in #262 (`ab9c29b`): `thrust-load-tests`; a new crate also needs `release-plz.toml` entries |
-| PR 4, profiling: heap | in review, branch `test/profiling-heap` |
-| PR 5, profiling: CPU | not started |
+| PR 4, profiling: heap | merged in #267 (`cf23669`): `thrust-profiling`; its world is in `tests/common`, because `check-deps.sh` refuses `SystemScope::mint` in a library |
+| PR 5, profiling: CPU | in review, branch `test/profiling-cpu` |
