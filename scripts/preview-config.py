@@ -25,7 +25,8 @@ A key the configuration has that this does not know is refused (exit 1), so a bi
 out of the targets without a decision. The `isolated` profile takes --resources <trusted JSON>: `pr` (integer), `hyperdrive_id`,
 `bucket`, `queue`, `rate_signin`, `rate_v1`, `base_url`, and `csrf`. Bucket and queue names are derived from the PR number;
 the identifiers must be supplied by a trusted controller and checked against live resources before deployment. This renderer
-does not provision or verify them. Email is disabled, and the room belongs to the Preview.
+does not provision or verify them. Email is disabled, and the room belongs to the Preview. The queue is the events producer
+alone: production's dead-letter producer and `THRUST_EVENTS_DLQ` (issue #53) are for the consumer, which a Preview does not have.
 
 Exit 0 written; 1 refused (the reasons on stderr, every one); 2 called wrongly or an unreadable configuration.
 """
@@ -130,20 +131,26 @@ def isolated_block(config, resources):
         items = config.get(key)
         if not isinstance(items, list) or any(not isinstance(x, dict) for x in items) or {x.get(field) for x in items} != names or len(items) != len(names):
             errors.append(f"{key} does not have the expected production bindings")
+    # Production produces to the events queue and to its dead-letter queue (issue #53: the Worker sends what it sets aside there). A
+    # Preview consumes nothing, so it sets nothing aside: it gets the events producer alone, and the dead-letter producer and the
+    # variable that names that queue stay production's.
     q = config.get("queues")
-    if not isinstance(q, dict) or set(q) - set(QUEUE_KEYS) or not isinstance(q.get("producers"), list) or len(q["producers"]) != 1 or not isinstance(q["producers"][0], dict) or q["producers"][0].get("binding") != "EVENTS":
-        errors.append("queues does not have the expected EVENTS producer")
+    producers = q.get("producers") if isinstance(q, dict) else None
+    names = [p.get("binding") if isinstance(p, dict) else None for p in producers] if isinstance(producers, list) else []
+    if not isinstance(q, dict) or set(q) - set(QUEUE_KEYS) or sorted(names, key=str) != ["EVENTS", "EVENTS_DLQ"]:
+        errors.append("queues does not have the expected EVENTS and EVENTS_DLQ producers")
     rooms = config.get("durable_objects")
     if not isinstance(rooms, dict) or set(rooms) != {"bindings"} or rooms["bindings"] != [{"name": "ROOM", "class_name": "RoomDo"}]:
         errors.append("durable_objects does not have the expected local ROOM binding")
     version = config.get("version_metadata")
     if version != {"binding": "CF_VERSION_METADATA"}:
         errors.append("version_metadata does not have the expected binding")
-    if set(config.get("vars", {})) != {"THRUST_CSRF_ENFORCE", "THRUST_EMAIL_FROM", "THRUST_EMAIL_FROM_NAME", "THRUST_PUBLIC_BASE_URL"}:
+    if set(config.get("vars", {})) != {"THRUST_CSRF_ENFORCE", "THRUST_EMAIL_FROM", "THRUST_EMAIL_FROM_NAME", "THRUST_EVENTS_DLQ", "THRUST_PUBLIC_BASE_URL"}:
         errors.append("vars does not have the expected production variables")
     if errors:
         return None, errors
-    if hd == config["hyperdrive"][0].get("id") or resources["bucket"] == config["r2_buckets"][0].get("bucket_name") or resources["queue"] == q["producers"][0].get("queue"):
+    production_queues = {p.get("queue") for p in producers}
+    if hd == config["hyperdrive"][0].get("id") or resources["bucket"] == config["r2_buckets"][0].get("bucket_name") or resources["queue"] in production_queues:
         errors.append("isolated data resources must differ from production")
     if set(rate_ids) & {item.get("namespace_id") for item in config["ratelimits"]}:
         errors.append("isolated rate limit ids must differ from production")
