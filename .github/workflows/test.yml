@@ -49,6 +49,8 @@ jobs:
   ci-scripts:
     if: contains(fromJSON(inputs.plan), 'ci-scripts')
     runs-on: ubuntu-24.04
+    # The job took 132 to 204 s in ten runs of 2026-11-18 (277 to 411 s when its commands ran one after another), and runners differ by about 1.5x:
+    # ten minutes is the margin for a slow one, and a command that hangs is stopped by it.
     timeout-minutes: 10
     permissions:
       contents: read
@@ -62,17 +64,34 @@ jobs:
           # (see the `changes` job), without installing it first.
           RUSTUP_TOOLCHAIN: stable
         run: |
+          # The commands do not depend on one another, so they run a core at a time and not one after another: for a typical pull request this job is the
+          # critical path (research 0019, phase 0003). The slowest start first, so that the job does not end with one slow command alone; the order is a hint from
+          # the runs of 2026-11-18, and a wrong one costs time, never a result. `--halt never` runs every command and the exit status is the number that failed;
+          # `--group` keeps each command's lines together; the joblog says how long each took.
+          # Two of the commands, so that nobody reads them as helper tests: test_workflow_wiring.py holds ci.yml, the planner and each called workflow's file
+          # to one another (ADR-0102: the calls, the gate's VERDICT_JOBS, the verdict jobs), and mutate_gate.py kills every hand mutant of the planner, the gate,
+          # this file, the called workflows and the verdict action with their tests, so that those tests are shown able to fail.
+          status=0
+          parallel --will-cite --group --halt never --jobs 100% --joblog "$RUNNER_TEMP/ci-scripts.joblog" <<'EOF' || status=$?
+          python3 -I .github/scripts/tests/test_preview_result.py
+          python3 -I .github/scripts/tests/mutate_gate.py
+          sh .github/scripts/tests/test-plan-deploy.sh
+          python3 -I .github/scripts/tests/test_preview_config.py
+          sh .github/scripts/tests/test-ports.sh
+          python3 -I .github/scripts/tests/test_flagship.py
+          sh .github/scripts/tests/test-deploy-worker.sh
+          sh .github/scripts/tests/test-deploy-target.sh
+          sh .github/scripts/tests/test-smoke-deploy.sh
+          bash infra/cloudflare/test-scripts.sh
           sh .github/scripts/tests/test-ci-scripts.sh
           sh .github/scripts/tests/test-toolchain-channel.sh
           sh .github/scripts/tests/test-required-contexts.sh
           sh .github/scripts/tests/test-check-web-diff.sh
-          sh .github/scripts/tests/test-smoke-deploy.sh
           sh .github/scripts/tests/test-migrate-ci.sh
           sh .github/scripts/tests/test-check-migration-lint.sh
           sh .github/scripts/tests/test-deploy-template.sh
           sh .github/scripts/tests/test-deploy-ca.sh
           sh .github/scripts/tests/test-classify-deploy.sh
-          sh .github/scripts/tests/test-plan-deploy.sh
           sh .github/scripts/tests/test-plan-release.sh
           sh .github/scripts/tests/test-assert-sha-checks.sh
           sh .github/scripts/tests/test-assert-gated-environments.sh
@@ -81,10 +100,8 @@ jobs:
           sh .github/scripts/tests/test-check-ci-index.sh
           sh .github/scripts/tests/test-lint-actionlint.sh
           sh .github/scripts/tests/test-check-flake-hunt-cell.sh
-          sh .github/scripts/tests/test-ports.sh
           sh .github/scripts/tests/test-mutants-verdict.sh
           sh .github/scripts/tests/test-samply-wrapper.sh
-          sh .github/scripts/tests/test-deploy-worker.sh
           python3 -I .github/scripts/tests/test_active_version.py
           sh .github/scripts/tests/test-unpack-bundle.sh
           sh .github/scripts/tests/test-verify-bundle.sh
@@ -93,23 +110,22 @@ jobs:
           sh .github/scripts/tests/test-check-asset-retention.sh
           python3 -I .github/scripts/tests/test_merge_assets.py
           python3 -I .github/scripts/tests/test_check_release_plz.py
-          python3 -I .github/scripts/tests/test_flagship.py
-          python3 -I .github/scripts/tests/test_preview_config.py
-          python3 -I .github/scripts/tests/test_preview_result.py
-          sh .github/scripts/tests/test-deploy-target.sh
           sh .github/scripts/tests/test-deploy-edge.sh
           python3 -I .github/scripts/tests/test_plan_ci.py
           bash infra/preview/scripts/test-bootstrap-provisioner.sh
           bash infra/preview/scripts/test-provisioner-client.sh
           bash infra/preview/scripts/test-reconcile-pr-previews.sh
-          bash infra/cloudflare/test-scripts.sh
           python3 -I infra/cloudflare/test-preview-access.py
           python3 -I infra/edge/test-service-token.py
-          # ci.yml, the planner and each called workflow's file agree (ADR-0102): the calls, the gate's VERDICT_JOBS, the verdict jobs
           python3 -I .github/scripts/tests/test_workflow_wiring.py
-          # The tests of the planner and the gate must be able to fail: each hand mutant of the planner, the gate, this file, the called
-          # workflows and the verdict action is killed by them (ADR-0102).
-          python3 -I .github/scripts/tests/mutate_gate.py
+          EOF
+          echo "--- each command, slowest first (seconds, exit status), on $(nproc) cores"
+          tail -n +2 "$RUNNER_TEMP/ci-scripts.joblog" | sort -t "$(printf '\t')" -k4,4nr | awk -F '\t' '{ printf "%7.1f  exit %s  %s\n", $4, $7, $9 }'
+          if [ "$status" -ne 0 ]; then
+            echo "--- FAILED ($status):"
+            tail -n +2 "$RUNNER_TEMP/ci-scripts.joblog" | awk -F '\t' '$7 != 0 { print "  exit " $7 ": " $9 }'
+          fi
+          exit "$status"
 
   # The hermetic loop: the default nextest profile (no Docker, Node, wrangler or running target) under the `ci`
   # profile, plus the doctests nextest cannot run. `oracle_` tests need the TypeScript oracle's generated output
