@@ -4,6 +4,7 @@ members = [
     "crates/core/types",
     "crates/core/ports",
     "crates/core/usecases",
+    "crates/core/html",
     "crates/adapters/memory",
     "crates/api/core",
     "crates/api/plane-types",
@@ -49,6 +50,7 @@ utoipa = { version = "6", features = ["uuid"] }
 thrust-contracts = { path = "crates/core/types" }
 thrust-ports = { path = "crates/core/ports" }
 thrust-core = { path = "crates/core/usecases" }
+thrust-html = { path = "crates/core/html" }
 thrust-adapters-memory = { path = "crates/adapters/memory" }
 thrust-adapters-postgres = { path = "crates/adapters/postgres" }
 thrust-adapters-cloudflare = { path = "crates/adapters/cloudflare" }

@@ -108,8 +108,9 @@ fn css_is_dangerous(v: &str) -> bool {
 fn url_ok(v: &str) -> bool {
     let n: String =
         v.chars().filter(|c| !c.is_control() && !c.is_whitespace()).flat_map(|c| c.to_lowercase()).collect();
-    match n.find([':', '/', '?', '#']) {
-        Some(i) if n.as_bytes()[i] == b':' => matches!(&n[..i], "http" | "https"),
+    let Some(i) = n.find([':', '/', '?', '#']) else { return true };
+    match (n.get(..i), n.get(i..)) {
+        (Some(scheme), Some(rest)) if rest.starts_with(':') => matches!(scheme, "http" | "https"),
         _ => true, // relative reference
     }
 }
@@ -166,7 +167,8 @@ pub fn validate_binary_data(data: &[u8]) -> Result<(), &'static str> {
     if data.len() < 4 {
         return Err("Binary data too short to be valid document format");
     }
-    let head = String::from_utf8_lossy(&data[..data.len().min(200)]).to_lowercase();
+    // the first 200 bytes, or all of it when it is shorter
+    let head = String::from_utf8_lossy(data.get(..200).unwrap_or(data)).to_lowercase();
     for p in ["<html", "<!doctype", "<script", "javascript:", "data:", "<iframe"] {
         if head.contains(p) {
             return Err("Binary data contains suspicious content patterns");
@@ -193,8 +195,8 @@ fn strip_once(s: &str) -> String {
     let b = s.as_bytes();
     let mut out = String::with_capacity(s.len());
     let mut i = 0;
-    while i < b.len() {
-        match b[i] {
+    while let Some(&byte) = b.get(i) {
+        match byte {
             b'<' => {
                 let rest = &s[i..];
                 if rest.starts_with("<!--") {
@@ -214,7 +216,7 @@ fn strip_once(s: &str) -> String {
                             i = b.len();
                         }
                     }
-                } else if rest.len() > 1 && (rest.as_bytes()[1].is_ascii_alphabetic() || rest.as_bytes()[1] == b'/') {
+                } else if rest.as_bytes().get(1).is_some_and(|c| c.is_ascii_alphabetic() || *c == b'/') {
                     match tag_end(rest) {
                         Some(e) => i += e + 1,
                         None => {
@@ -250,7 +252,7 @@ fn strip_once(s: &str) -> String {
                 } else {
                     let n = rest.bytes().take_while(|c| c.is_ascii_alphanumeric() || *c == b'-' || *c == b'.').count();
                     if n > 0
-                        && rest.as_bytes()[0].is_ascii_alphabetic()
+                        && rest.as_bytes().first().is_some_and(|c| c.is_ascii_alphabetic())
                         && rest.as_bytes().get(n).map(|c| !c.is_ascii_alphanumeric()).unwrap_or(false)
                     {
                         out.push('&');
@@ -267,7 +269,8 @@ fn strip_once(s: &str) -> String {
                 i += 1;
             }
             _ => {
-                let ch = s[i..].chars().next().unwrap();
+                // `i` is on a character boundary and inside `s`, so there is always a character here
+                let Some(ch) = s.get(i..).and_then(|t| t.chars().next()) else { break };
                 out.push(ch);
                 i += ch.len_utf8();
             }
@@ -278,17 +281,14 @@ fn strip_once(s: &str) -> String {
 
 /// index of the `>` that closes the tag starting at `s[0] == '<'`, honouring quoted attribute values
 fn tag_end(s: &str) -> Option<usize> {
-    let b = s.as_bytes();
-    let mut i = 1;
     let mut quote: Option<u8> = None;
-    while i < b.len() {
-        match (quote, b[i]) {
-            (None, b'"') | (None, b'\'') => quote = Some(b[i]),
+    for (i, byte) in s.bytes().enumerate().skip(1) {
+        match (quote, byte) {
+            (None, b'"') | (None, b'\'') => quote = Some(byte),
             (Some(q), c) if c == q => quote = None,
             (None, b'>') => return Some(i),
             _ => {}
         }
-        i += 1;
     }
     None
 }

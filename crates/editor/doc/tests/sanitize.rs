@@ -170,31 +170,5 @@ fn oracle_v1_write_with_sanitiser_matches_python_plus_js() {
     }
 }
 
-#[test]
-fn validate_html_content_semantics() {
-    assert_eq!(sanitize::validate_html_content(""), Ok(None));
-    let big = "a".repeat(sanitize::MAX_SIZE + 1);
-    assert_eq!(sanitize::validate_html_content(&big), Err(sanitize::SanitizeError::TooLarge));
-    assert!(sanitize::validate_html_content("<p>x</p>").unwrap().unwrap().contains("<p>x</p>"));
-    assert!(sanitize::validate_binary_data(b"<script>alert(1)</script> padding padding").is_err());
-    assert!(sanitize::validate_binary_data(&[1, 2]).is_err());
-    assert!(sanitize::validate_binary_data(&[1, 2, 3, 4, 5]).is_ok());
-    assert!(sanitize::validate_binary_data(&[]).is_ok());
-}
-
-/// must-fail control for the harness itself: an unsanitised payload is not allowed to survive the check
-#[test]
-fn unsanitised_payload_is_caught() {
-    let s = sanitize::Sanitizer::default();
-    for p in ["<img src=x onerror=alert(1)>", "<script>alert(1)</script>", "<a href=\"javascript:alert(1)\">x</a>"] {
-        let out = s.clean(p);
-        assert!(
-            !out.contains("onerror") && !out.contains("<script") && !out.contains("javascript:"),
-            "sanitiser let through: {out}"
-        );
-        assert!(
-            p.contains("onerror") || p.contains("<script") || p.contains("javascript:"),
-            "control payload must be dangerous as given"
-        );
-    }
-}
+// `validate_html_content_semantics` and `unsanitised_payload_is_caught` moved to `crates/core/html/tests/sanitize.rs` with the
+// sanitiser (issue #48); what stays here needs the editor's schema or the nh3 oracle.

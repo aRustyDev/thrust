@@ -1,0 +1,16 @@
+[package]
+name = "thrust-html"
+description = "The HTML sanitiser (ammonia with Plane's allow-list) and Django's strip_tags, for a work item's description. Pure Rust; inside the hexagon, so the use-cases can call it."
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+# 4.2.5 is the floor: the allow-list's output is specified against ammonia 4.1 or later (D-019), and RUSTSEC-2026-0533 (mutation
+# XSS through embedded SVG and MathML) is patched from 4.2.5. ammonia pulls html5ever, which is pure Rust and builds for wasm32
+# (thrust-compat-plane and thrust-api-v1 already ship it in the Worker).
+ammonia = "4.2.5"

@@ -1,6 +1,6 @@
 [package]
 name = "thrust-editor-doc"
-description = "The Plane editor document in Rust (ProseMirror JSON, HTML, Yjs XmlFragment) for the node/mark set in @plane/editor, and the HTML sanitiser that thrust-api-v1 and thrust-compat-plane use. Began as spike 0006."
+description = "The Plane editor document in Rust (ProseMirror JSON, HTML, Yjs XmlFragment) for the node/mark set in @plane/editor, and, behind the `sanitize` feature, a re-export of the sanitiser in thrust-html (the one thrust-api-v1 and thrust-compat-plane use). Began as spike 0006."
 edition.workspace = true
 version.workspace = true
 license.workspace = true
@@ -11,14 +11,15 @@ default = ["yjs", "sanitize"]
 # The Yjs update encoding (`ydoc`). yrs reaches getrandom through fastrand, which brings wasm-bindgen and js-sys on wasm32, so a
 # crate that wants only the sanitiser (thrust-compat-plane) turns this off; scripts/check-deps.sh keeps those out of it.
 yjs = ["dep:yrs"]
-# ammonia pulls html5ever; split out so the size of the conversions alone can be measured
-sanitize = ["dep:ammonia"]
+# thrust-html (ammonia, which pulls html5ever) re-exported as `sanitize`; split out so the size of the conversions alone can be measured
+sanitize = ["dep:thrust-html"]
 
 [dependencies]
 yrs = { version = "0.28", optional = true }
 serde_json = "1"
 base64 = "0.22"
-ammonia = { version = "4", optional = true }
+# The sanitiser moved to crates/core/html (issue #48) so that the use-cases can call it; `thrust_editor_doc::sanitize` is the same crate.
+thrust-html = { workspace = true, optional = true }
 regex = "1"
 htmlentity = "1"
 
