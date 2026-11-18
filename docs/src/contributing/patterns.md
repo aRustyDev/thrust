@@ -69,7 +69,9 @@ clock or spawns a task itself, and a test can supply each. Shown by `App.ports` 
 Shown by `crates/core/ports/src/lib.rs` and `crates/adapters/cloudflare/src/lib.rs`.
 
 **One error type per layer, mapped at the boundary.** Each fallible port has its own error enum (`DbError`,
-`QueueError`, `BlobError`, `RateError`); `EventConsumer` returns a `String`. `From` impls turn the enums
+`QueueError`, `BlobError`, `RateError`); `EventConsumer` returns a `ConsumerError`, `Permanent` or `Transient`, which is
+what tells a queue adapter to dead-letter a message or deliver it again (`consumer_error` turns a `CoreError` into one, and its
+`match` has no wildcard arm). `From` impls turn the enums
 into `CoreError`, and `ApiError` turns `CoreError` into a status and a code. An internal error's real cause travels in an
 `InternalErrorDetail` response extension for the root to log, and the body says only `internal error`. Shown by
 `crates/core/usecases/src/lib.rs` and `crates/api/core/src/lib.rs`.

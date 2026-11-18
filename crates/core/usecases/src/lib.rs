@@ -644,10 +644,39 @@ pub async fn delete_attachment(
 #[derive(Clone)]
 pub struct ActivityConsumer(pub App);
 
+/// What a failure of the consumer means for the message (ADR-0070, FR-21): whether delivering it again can help.
+///
+/// An error about the message itself (it is malformed, or names something that is not there) is [`ConsumerError::Permanent`]. An error
+/// about something the consumer needed (the database, the queue, the blob store, a limiter, another server) is
+/// [`ConsumerError::Transient`]: every port error reaches this function as [`CoreError::Internal`], so a database that is down and a
+/// storage that is down are told apart from a malformed message, which is what matters.
+///
+/// The match names every variant and has no wildcard arm, so a new `CoreError` cannot be added without choosing its kind here. The
+/// arms that no consumer produces today (the authorization ones) are `Permanent`: a message does not get permission by waiting.
+///
+/// One known misclassification: a history row that names a work item the database does not have comes back from the adapter as
+/// `DbError::Backend`, so it is `Transient`. It is delivered again, fails the same way, and is dead-lettered after
+/// [`MAX_DELIVERIES`] with its error kept, which costs three retries and loses nothing.
+pub fn consumer_error(e: CoreError) -> ConsumerError {
+    let text = e.to_string();
+    match e {
+        CoreError::Invalid(_)
+        | CoreError::NotFound
+        | CoreError::Unauthenticated
+        | CoreError::Forbidden
+        | CoreError::Csrf
+        | CoreError::InvalidApiKey
+        | CoreError::TooLarge => ConsumerError::Permanent(text),
+        CoreError::Internal(_) | CoreError::Upstream(_) | CoreError::RateLimited { .. } | CoreError::Conflict(_) => {
+            ConsumerError::Transient(text)
+        }
+    }
+}
+
 #[async_trait::async_trait]
 impl EventConsumer for ActivityConsumer {
-    async fn handle(&self, env: &Envelope) -> Result<(), String> {
-        process_event(&self.0, env).await.map(|_| ()).map_err(|e| e.to_string())
+    async fn handle(&self, env: &Envelope) -> Result<(), ConsumerError> {
+        process_event(&self.0, env).await.map(|_| ()).map_err(consumer_error)
     }
 }
 

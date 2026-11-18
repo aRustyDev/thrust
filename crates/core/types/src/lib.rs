@@ -425,6 +425,26 @@ pub struct Activity {
     pub created_at: Timestamp,
 }
 
+/// A queue message the consumer set aside instead of processing (ADR-0070, issue #53): one row of `dead_letters`, and what
+/// `GET /internal/dead-letters` lists.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DeadLetter {
+    /// The queue's own id for the message when it has one, so a message that is delivered again makes no second row; otherwise an
+    /// id the consumer minted.
+    pub id: String,
+    pub received_at: Timestamp,
+    pub topic: String,
+    /// The event's id when the body decoded as an [`Envelope`].
+    pub event_id: Option<EventId>,
+    /// The message as it arrived: an envelope's JSON, or the raw text of a body that is not one.
+    pub body: String,
+    /// Why it was set aside.
+    pub error: String,
+    /// How many times it was delivered. `None` when the queue itself dead-lettered it, because a dead-letter queue starts the count
+    /// again (research 0004, F4) and the number is not known.
+    pub attempts: Option<u32>,
+}
+
 // ---------------------------------------------------------------------------------------------
 // Test fixtures (served by the `/internal/seed` route that exists only when test routes are on).
 // ---------------------------------------------------------------------------------------------

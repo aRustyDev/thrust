@@ -1441,12 +1441,64 @@ pub trait Queue: Send + Sync {
     async fn send(&self, topic: &str, msg: &Envelope, opts: SendOpts) -> Result<(), QueueError>;
 }
 
+/// Why a consumer did not process a message, which is what decides what the queue does with it (ADR-0070, FR-21, issue #53).
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum ConsumerError {
+    /// The message itself is wrong, so delivering it again cannot help: it is dead-lettered at once.
+    #[error("permanent: {0}")]
+    Permanent(String),
+    /// The message may be fine and something it needs was not there: it is delivered again after a delay, and dead-lettered when it
+    /// has been delivered [`MAX_DELIVERIES`] times.
+    #[error("transient: {0}")]
+    Transient(String),
+}
+
 /// Driving-side callback invoked by a queue adapter for each delivered message. Core provides the
 /// implementation (`ActivityConsumer`); every queue adapter and every consumer entrypoint
-/// (Worker `queue` event, native consumer loop) calls the same body.
+/// (Worker `queue` event, native consumer loop) calls the same body, and decides what to do with its answer with [`disposition`].
 #[async_trait]
 pub trait EventConsumer: Send + Sync {
-    async fn handle(&self, env: &Envelope) -> Result<(), String>;
+    async fn handle(&self, env: &Envelope) -> Result<(), ConsumerError>;
+}
+
+/// How many times a message is delivered before a transient error is given up on: the first delivery and three retries. The Worker's
+/// queue consumer is configured with `max_retries = 3`, which is the same number, so Cloudflare's own limit only ever backs this one up.
+pub const MAX_DELIVERIES: u32 = 4;
+
+/// The delay before the second delivery. Each later one waits twice as long as the one before, up to [`RETRY_MAX_DELAY`].
+pub const RETRY_BASE_DELAY: Duration = Duration::from_secs(5);
+
+/// The longest delay between two deliveries of one message.
+pub const RETRY_MAX_DELAY: Duration = Duration::from_secs(60);
+
+/// How long to wait before delivering a message again, given how many times it has been delivered so far (`1` after the first
+/// delivery): [`RETRY_BASE_DELAY`] doubled once for every delivery after the first, and never more than [`RETRY_MAX_DELAY`].
+pub fn retry_delay(deliveries: u32) -> Duration {
+    // 2^16 times the base is already past the cap, so the shift never has to go further (and cannot overflow).
+    let doublings = deliveries.saturating_sub(1).min(16);
+    RETRY_BASE_DELAY.saturating_mul(1u32 << doublings).min(RETRY_MAX_DELAY)
+}
+
+/// What a queue adapter does with a message after the consumer answered.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Disposition {
+    /// Done: acknowledge it.
+    Ack,
+    /// Deliver it again after this long.
+    Retry(Duration),
+    /// Set it aside in the dead letters, then acknowledge it.
+    DeadLetter,
+}
+
+/// The one policy of every queue adapter (the Worker's consumer and the in-process queue): what to do with a message the consumer
+/// answered `outcome` to, when it has been delivered `deliveries` times, this one included (`1` for the first).
+pub fn disposition(outcome: &Result<(), ConsumerError>, deliveries: u32) -> Disposition {
+    match outcome {
+        Ok(()) => Disposition::Ack,
+        Err(ConsumerError::Permanent(_)) => Disposition::DeadLetter,
+        Err(ConsumerError::Transient(_)) if deliveries >= MAX_DELIVERIES => Disposition::DeadLetter,
+        Err(ConsumerError::Transient(_)) => Disposition::Retry(retry_delay(deliveries)),
+    }
 }
 
 // ---------------------------------------------------------------------------------------------
