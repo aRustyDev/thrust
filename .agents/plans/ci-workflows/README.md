@@ -25,6 +25,7 @@ current release flow is in [cicd-review](../cicd-review/README.md).
 | `scripts/ci-commands.py`, `scripts/compare-job-sets.py`, `scripts/critical-path.py`, `scripts/cicd-table-vs-tree.py` | the migration's evidence tools: the step-by-step parity of two versions of the workflows; the job sets of two runs; where a run's wall clock goes; `cicd.md`'s file table against the tree |
 | `research/0018-gate-spike.md` | how the one required `gate` judges a job inside a called workflow: five designs against seven scenarios, eleven facts measured, and the design chosen (A+); the evidence behind ADR-0102 |
 | `phases/0001-foundation.md` | Phase 0 planned stage by stage: what exists today, the spike that chooses how `gate` judges a called workflow, the planner and gate changes, the lint conventions, the baseline, and the questions for the owner (answered) |
+| `phases/0003-test.md` | Phase 2, Test, planned: what `test.yml` and `flake-hunt.yml` run today and what it costs, the interface and state machine, the acceptance criteria, the eight stages in order, the action candidates, and the four questions for the owner (answered) |
 | `phases/0002-migration.md` | Phase 1, the migration: what "the same" means and how each pull request proves it, what existed, the order of the stages (the simplest callee first), each of the six stages in detail with what it showed, the questions for the owner (answered), and the acceptance |
 
 Phase documents (`phases/NNNN-*.md`) are written when a phase starts, not before. Phase numbers are allocated across the
@@ -35,4 +36,4 @@ whole repository: Phase 0 of this plan is `0001` and Phase 1 is `0002`; each lat
 Phase 0, the foundation, is done and merged. Phase 1, the migration, is **done**: its six stages are merged (`documentation.yml`, #254; `security.yml`, #258;
 `web.yml`, #264; `lint.yml`, #269; `test.yml`, split in two, #275 and #281; `e2e.yml`, #289), `ci.yml` holds only `changes`, the calls and `gate`, and its
 acceptance is recorded in [phases/0002-migration.md](phases/0002-migration.md), with the cost after it in [research 0019](research/0019-ci-baseline-after-migration.md).
-Phases 2 to 14 are not started; see the table at the end of `PLAN.md`.
+Phase 2, Test, is planned in [phases/0003-test.md](phases/0003-test.md) and its four questions are answered; no stage has started. Phases 3 to 14 are not started; see the table at the end of `PLAN.md`.
