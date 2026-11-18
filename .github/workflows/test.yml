@@ -49,6 +49,8 @@ jobs:
   ci-scripts:
     if: contains(fromJSON(inputs.plan), 'ci-scripts')
     runs-on: ubuntu-24.04
+    # The job took 132 to 204 s in ten runs of 2026-11-18 (277 to 411 s when its commands ran one after another), and runners differ by about 1.5x:
+    # ten minutes is the margin for a slow one, and a command that hangs is stopped by it.
     timeout-minutes: 10
     permissions:
       contents: read
