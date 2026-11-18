@@ -15,6 +15,8 @@ name: release
 #   build    builds the deploy bundle at the tag (.github/actions/build-bundle, the same build a staging deploy makes), makes an SBOM
 #            of the source (anchore/sbom-action: Cargo.lock, the web app's pnpm lockfile), and attests the bundle twice with GitHub's
 #            own actions: its build provenance (SLSA), and the SBOM as a statement about it. No secret, nothing written to the release.
+#            The bundle carries the edge Worker as well as thrust (ADR-0111), so the edge is built and attested with the release
+#            whose bundle the edge's deploy takes.
 #   publish  attaches the bundle, the SBOM and SHA256SUMS to the draft and publishes it. GitHub then attests the immutable release and
 #            its assets itself (`gh release verify`, `gh release verify-asset`).
 #

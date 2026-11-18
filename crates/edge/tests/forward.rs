@@ -11,7 +11,7 @@ mod common;
 use common::proptest_config;
 use proptest::prelude::*;
 use rstest::rstest;
-use thrust_edge::forward::{self, ROUTE_HEADER};
+use thrust_edge::forward::{self, EDGE_VERSION_HEADER, ROUTE_HEADER};
 
 const PREVIEW: &str = "v0-3-0-thrust.team.workers.dev";
 const SHARED: &str = "https://thrust.sow.foo";
@@ -49,6 +49,55 @@ proptest! {
         }).cloned().chain(std::iter::once((ROUTE_HEADER.to_string(), route.clone()))).collect();
         prop_assert_eq!(out, want);
     }
+}
+
+proptest! {
+    #![proptest_config(proptest_config(512))]
+
+    /// Whatever the upstream sent under the edge's version header, in any case, is dropped; every other header stays, in
+    /// order; and the edge's label, when it has one, is there exactly once, last.
+    #[test]
+    fn prop_the_edge_version_is_the_edges_own(
+        headers in prop::collection::vec(prop_oneof![
+            ("[A-Za-z][A-Za-z0-9-]{0,12}", "[ -~]{0,20}"),
+            (prop_oneof![
+                Just("x-thrust-edge-version".to_string()),
+                Just("X-Thrust-Edge-Version".to_string()),
+                Just("X-THRUST-EDGE-VERSION".to_string()),
+            ], "[!-~]{1,20}"),
+        ], 0..10),
+        label in prop::option::of("[!-~]{1,40}"),
+    ) {
+        let out = forward::stamp_edge_version(&headers, label.as_deref());
+        let kept = headers.iter().filter(|(n, _)| n.to_ascii_lowercase() != EDGE_VERSION_HEADER).cloned();
+        let want: Vec<(String, String)> = kept.chain(label.clone().map(|l| (EDGE_VERSION_HEADER.to_string(), l))).collect();
+        prop_assert_eq!(out, want);
+    }
+
+    /// A tag that is there wins over the id, whatever the id is, and padding around it is not part of it; with no tag the id
+    /// is the label.
+    #[test]
+    fn prop_the_label_is_the_tag_else_the_id(tag in "[!-~]{1,40}", id in "[ -~]{0,40}", pad in "[ ]{0,2}") {
+        prop_assert_eq!(forward::edge_version_label(&format!("{pad}{tag}{pad}"), &id), Some(tag.clone()));
+        prop_assert_eq!(forward::edge_version_label("", &format!("{pad}{tag}{pad}")), Some(tag));
+    }
+}
+
+/// Every pairing of a tag and an id of each shape a version can have. The expectation is spelled out per shape, not computed:
+/// a release's sha wins, an id stands in only for a missing tag, and a value no header can carry is nothing, not the id.
+#[rstest]
+fn the_edge_version_label(
+    #[values("", "  ", "0123456789abcdef0123456789abcdef01234567", "two words", "caf\u{e9}")] tag: &str,
+    #[values("", "8a1d7f0e-2f8c-4c4e-9b1a-3c2d1e0f9a8b", "id with space")] id: &str,
+) {
+    const SHA: &str = "0123456789abcdef0123456789abcdef01234567";
+    const ID: &str = "8a1d7f0e-2f8c-4c4e-9b1a-3c2d1e0f9a8b";
+    let want = match (tag, id) {
+        (SHA, _) => Some(SHA),
+        ("" | "  ", ID) => Some(ID),
+        _ => None,
+    };
+    assert_eq!(forward::edge_version_label(tag, id).as_deref(), want, "tag {tag:?}, id {id:?}");
 }
 
 /// A Location naming the Preview host, absolute or scheme-relative, in any case, goes to the shared origin with its path,
