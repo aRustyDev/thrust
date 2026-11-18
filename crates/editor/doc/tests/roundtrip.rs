@@ -293,6 +293,10 @@ fn without_whitespace(s: &str) -> String {
 // Properties
 // ---------------------------------------------------------------------------------------------
 
+/// The default sanitiser, built once for all the cases (the builder is the expensive part).
+static SANITISER: std::sync::LazyLock<thrust_editor_doc::sanitize::Sanitizer> =
+    std::sync::LazyLock::new(thrust_editor_doc::sanitize::Sanitizer::default);
+
 proptest! {
     #![proptest_config(common::proptest_config(256))]
 
@@ -357,6 +361,20 @@ proptest! {
         let once = domparse::html_to_doc(&schema, &html::to_html(&schema, &d));
         let twice = domparse::html_to_doc(&schema, &html::to_html(&schema, &once));
         prop_assert_eq!(json_of(&schema, &twice), json_of(&schema, &once), "html: {}", html::to_html(&schema, &once));
+    }
+
+    /// The editor's HTML for a generated document comes back from the default sanitiser as the same document: the generated
+    /// counterpart of `allow_list_preservation_of_editor_html`, which reads the 195 recorded ones (issue #48).
+    #[test]
+    fn prop_default_sanitiser_preserves_rendered_documents(spec in blocks(), rich in any::<bool>()) {
+        let schema = schema(rich);
+        let rendered = html::to_html(&schema, &build(&schema, &spec));
+        let clean = SANITISER.clean(&rendered);
+        prop_assert_eq!(
+            json_of(&schema, &domparse::html_to_doc(&schema, &clean)),
+            json_of(&schema, &domparse::html_to_doc(&schema, &rendered)),
+            "html: {}\nclean: {}", rendered, clean
+        );
     }
 
     #[test]

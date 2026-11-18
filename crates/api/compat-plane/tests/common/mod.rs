@@ -523,12 +523,85 @@ pub fn compact_ids(exchanges: Vec<Value>, kept: usize) -> Vec<Value> {
     exchanges.iter().map(|e| apply(e, &mut |n| renumber(n))).collect()
 }
 
+// The description's projection (D-018). The pin's nh3 rewrites the `rel` of every link it keeps to `noopener noreferrer`
+// (`link_rel`); Thrust keeps the `rel` it was sent, as the editor wrote it (`thrust_html::thrust_builder`), so a link sent with none
+// has none. Every recording that has one sent none, so what Thrust answers is the pin's `description_html` without the `rel` that
+// nh3 added. A recording that sends a `rel` of its own is outside what this can project (the pin's answer would be the rewrite of a
+// value Thrust keeps), and `project_fixture` refuses it instead of guessing.
+
+/// What nh3 writes into a link whatever it was sent (ammonia's default `link_rel`).
+const NH3_LINK_REL: &str = " rel=\"noopener noreferrer\"";
+
+/// `html` without the `rel` that nh3 adds to a link: the ` rel="noopener noreferrer"` inside an `<a ...>` tag, and nowhere else (a
+/// `<abbr>` is not a link, and a `rel` of any other value is not nh3's).
+pub fn without_the_rel_nh3_adds(html: &str) -> String {
+    let mut out = String::with_capacity(html.len());
+    let mut rest = html;
+    while let Some(start) = rest.find("<a") {
+        let (before, from_tag) = rest.split_at(start);
+        out.push_str(before);
+        let end = from_tag.find('>').map_or(from_tag.len(), |e| e + 1);
+        let (tag, after) = from_tag.split_at(end);
+        let is_a_link = tag.as_bytes().get(2).is_some_and(|c| c.is_ascii_whitespace() || *c == b'>');
+        out.push_str(&if is_a_link { tag.replacen(NH3_LINK_REL, "", 1) } else { tag.to_string() });
+        rest = after;
+    }
+    out.push_str(rest);
+    out
+}
+
+/// `v` with every `description_html` string in it passed through [`without_the_rel_nh3_adds`].
+fn project_descriptions(v: &Value) -> Value {
+    match v {
+        Value::Object(m) => Value::Object(
+            m.iter()
+                .map(|(k, x)| match (k.as_str(), x) {
+                    ("description_html", Value::String(s)) => (k.clone(), Value::String(without_the_rel_nh3_adds(s))),
+                    _ => (k.clone(), project_descriptions(x)),
+                })
+                .collect(),
+        ),
+        Value::Array(a) => Value::Array(a.iter().map(project_descriptions).collect()),
+        other => other.clone(),
+    }
+}
+
+/// Whether any `description_html` in `v` carries a `rel` of its own.
+fn sends_a_rel(v: &Value) -> bool {
+    match v {
+        Value::Object(m) => m.iter().any(|(k, x)| match (k.as_str(), x) {
+            ("description_html", Value::String(s)) => s.contains("rel="),
+            _ => sends_a_rel(x),
+        }),
+        Value::Array(a) => a.iter().any(sends_a_rel),
+        _ => false,
+    }
+}
+
 /// A recorded fixture as Thrust is expected to answer it: each exchange projected (the sign-in redirects of D-022, the asset stage's
-/// of D-035) and the numbering of ids closed up over what was dropped.
+/// of D-035, the link `rel` of D-018) and the numbering of ids closed up over what was dropped.
 pub fn project_fixture(fixture: &Value) -> Vec<Value> {
     let row = fixture["row"].as_str().unwrap_or("");
-    let projected: Vec<Value> =
-        fixture["exchanges"].as_array().expect("exchanges").iter().map(|ex| project_asset(row, project(ex))).collect();
+    let exchanges = fixture["exchanges"].as_array().expect("exchanges");
+    for ex in exchanges {
+        assert!(
+            !sends_a_rel(&ex["request"]),
+            "{row}: {}: a request sends a `rel` of its own, which the D-018 projection cannot project (it assumes the pin's `rel` is nh3's, \
+             not the sender's); write that expectation by hand",
+            ex["name"]
+        );
+    }
+    let projected: Vec<Value> = exchanges
+        .iter()
+        .map(|ex| {
+            let mut ex = project_asset(row, project(ex));
+            // only a body that is there: assigning to a missing one would write `"body": null` into a redirect
+            if let Some(body) = ex["response"].get("body").cloned() {
+                ex["response"]["body"] = project_descriptions(&body);
+            }
+            ex
+        })
+        .collect();
     compact_ids(projected, fixture["uses"].as_array().map_or(0, Vec::len))
 }
 

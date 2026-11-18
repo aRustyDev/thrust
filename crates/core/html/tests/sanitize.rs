@@ -17,6 +17,23 @@ fn validate_html_content_semantics() {
     assert!(sanitize::validate_binary_data(&[]).is_ok());
 }
 
+/// Plane's limits are exact: `MAX_SIZE` is 10 MB, a payload of exactly that size is accepted and one byte more is refused, and a
+/// binary of four bytes is long enough while three are not (`content_validator.py`, found by mutation testing: the tests above were
+/// written relative to the constant, so a changed constant or a limit moved by one passed them).
+#[test]
+fn the_size_limits_are_plane_s_to_the_byte() {
+    assert_eq!(sanitize::MAX_SIZE, 10 * 1024 * 1024);
+    assert!(sanitize::validate_html_content(&"a".repeat(sanitize::MAX_SIZE)).unwrap().is_some());
+    assert_eq!(
+        sanitize::validate_html_content(&"a".repeat(sanitize::MAX_SIZE + 1)),
+        Err(sanitize::SanitizeError::TooLarge)
+    );
+    assert!(sanitize::validate_binary_data(&vec![1u8; sanitize::MAX_SIZE]).is_ok());
+    assert!(sanitize::validate_binary_data(&vec![1u8; sanitize::MAX_SIZE + 1]).is_err());
+    assert!(sanitize::validate_binary_data(&[1, 2, 3, 4]).is_ok());
+    assert!(sanitize::validate_binary_data(&[1, 2, 3]).is_err());
+}
+
 /// must-fail control for the harness itself: an unsanitised payload is not allowed to survive the check
 #[test]
 fn unsanitised_payload_is_caught() {

@@ -4032,6 +4032,8 @@ name = "thrust-html"
 version = "0.2.0"
 dependencies = [
  "ammonia",
+ "proptest",
+ "serde_json",
 ]
 
 [[package]]

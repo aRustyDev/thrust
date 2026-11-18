@@ -473,6 +473,39 @@ pub async fn activity(t: &Target, who: &User, at: &At, item: WorkItemId) -> Vec<
     r.json::<Vec<Activity>>().await.unwrap()
 }
 
+// --- what a description is cleaned of (issue #48) --------------------------------------------------------------------------------
+
+/// The nine payloads of the spike-0006 XSS corpus (`crates/editor/doc/tests/corpus/xss-corpus.json`) that survive Plane's allow-list, by
+/// the corpus's id (`research/0008` §7): six `style` values, `td background`, a `td style`, and a callout's `data-emoji-url`. A static
+/// example the research names, repeated here because this suite drives a running target and links no sanitiser; `thrust-html`'s own test
+/// reads the same nine from the corpus by id, so a copy that drifted is found there.
+pub const SANITISER_SURVIVORS: [(&str, &str); 9] = [
+    ("owasp-css-110", r#"<p style="background:url(javascript:alert(1))">x</p>"#),
+    ("owasp-css-111", r#"<p style="width:expression(alert(1))">x</p>"#),
+    ("owasp-css-112", r#"<p style="behavior:url(xss.htc)">x</p>"#),
+    ("owasp-css-113", r#"<p style="-moz-binding:url(https://example.invalid/xss.xml#xss)">x</p>"#),
+    ("owasp-css-114", r#"<div style="background-image:url('javascript:alert(1)')">x</div>"#),
+    ("owasp-css-115", r#"<div style="list-style:url(javascript:alert(1))">x</div>"#),
+    ("owasp-tag-090", r#"<table><tr><td background="javascript:alert(1)">x</td></tr></table>"#),
+    (
+        "plane-table-147",
+        r#"<table><tr><td colspan="2" style="background:url(javascript:alert(1))">x</td></tr></table>"#,
+    ),
+    (
+        "plane-callout-144",
+        r#"<div data-block-type="callout-component" data-emoji-url="javascript:alert(1)"><p>x</p></div>"#,
+    ),
+];
+
+/// Whether a description that was read back is neutralised: nothing that made one of the nine executable is left, and the text
+/// (`x`) is. A substring check is enough here because each of the nine carries its token in one attribute value, which the sanitiser
+/// drops whole or keeps whole.
+pub fn neutralised(description_html: &str) -> bool {
+    let lower = description_html.to_lowercase();
+    ["javascript:", "expression(", "behavior:", "-moz-binding"].iter().all(|t| !lower.contains(t))
+        && lower.contains(">x<")
+}
+
 // --- `/api/v1`: Plane's wire shape, authenticated by API key --------------------------------------------------------------------
 
 /// Where Plane's v1 API is served (ADR-0031), and the header it authenticates by.
