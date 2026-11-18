@@ -1,7 +1,8 @@
 name: build-bundle
 description: >-
-  Build the deploy bundle of the checked-out commit: the Worker (worker-build), the `migrate` binary and the web app, in one
-  reproducible file, `deploy-bundle.tar.gz`, in the working directory. Holds no secret and attests nothing: the caller attests it.
+  Build the deploy bundle of the checked-out commit: the Worker (worker-build), the `migrate` binary, the web app and the edge
+  Worker (`thrust-edge`, ADR-0111), in one reproducible file, `deploy-bundle.tar.gz`, in the working directory. Holds no secret and
+  attests nothing: the caller attests it.
   Used by deploy.yml (a release candidate, for staging; a pull request's dry run) and release.yml (a release tag, for production
   and the release's assets), so the two build it the same way.
 
@@ -49,6 +50,14 @@ runs:
       working-directory: crates/worker
       run: ../../scripts/rs worker-build --release . --no-default-features
 
+    # The Worker on the shared hostname (ADR-0111). It is built with the release, attested with it, and deployed only by a
+    # release, after production (the edge's deploy); a release candidate's bundle carries it too, so its build is proved before
+    # the release is cut.
+    - name: Build the edge Worker
+      shell: bash
+      working-directory: crates/edge
+      run: ../../scripts/rs worker-build --release .
+
     # The web app the Worker serves (ADR-0011), built as the `web` job and the e2e cell build it: Node and pnpm at the versions web/
     # pins, a frozen lockfile, no dependency scripts. It goes into the bundle, so it is attested with the Worker, and so the NEXT deploy
     # can take this release's files from this bundle and keep them under its own (scripts/merge-assets.sh).
@@ -81,8 +90,12 @@ runs:
         test -s crates/worker/build/index_bg.wasm
         test -s web/apps/web/build/client/index.html
         test -x target/release/migrate
-        mkdir -p bundle
+        test -s crates/edge/build/worker/shim.mjs
+        test -s crates/edge/build/index.js
+        test -s crates/edge/build/index_bg.wasm
+        mkdir -p bundle/edge
         cp -R crates/worker/build bundle/build
+        cp -R crates/edge/build bundle/edge/build
         cp -R web/apps/web/build/client bundle/web
         cp target/release/migrate bundle/migrate
         printf '%s\n' "$SHA" > bundle/BUILD_SHA

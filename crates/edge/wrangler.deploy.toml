@@ -6,7 +6,8 @@
 #   * no data binding, no assets, no placement, no trigger and no route (the infrastructure repository attaches the Custom
 #     Domain, as it does for thrust);
 #   * workers_dev and preview_urls off: the edge is reached only on the shared hostname, and none of its versions is public;
-#   * one service binding, to production thrust, and one Flagship binding.
+#   * one service binding, to production thrust, and one Flagship binding;
+#   * its version's metadata, which is how the deploy tells one build of the edge from another.
 name = "__EDGE_WORKER_NAME__"
 main = "build/worker/shim.mjs"
 compatibility_date = "2026-11-01"
@@ -23,6 +24,11 @@ service = "__WORKER_NAME__"
 binding = "FLAGS"
 app_id = "__FLAGSHIP_APP_ID__"
 
+# The tag is the release's commit (`wrangler deploy --tag`); the edge sends it back on every answer as
+# `x-thrust-edge-version`, and the deploy's smoke compares.
+[version_metadata]
+binding = "CF_VERSION_METADATA"
+
 [vars]
 # The shared origin: where a target's redirects are pointed back to, and the host the targets are told they were asked for.
 SHARED_ORIGIN = "__PUBLIC_BASE_URL__"
@@ -34,7 +40,8 @@ ACCESS_AUD_DEV = "__ACCESS_AUD_DEV__"
 # What a target's URL must end with: a Preview of the production Worker on workers.dev, and nothing else.
 PREVIEW_HOST_SUFFIX = "-__WORKER_NAME__.__WORKERS_DEV_SUBDOMAIN__.workers.dev"
 
-# Set with `wrangler secret put` by the deploy, never in this file: the pin's HMAC key, and the service token the edge shows
-# Access on the Previews (the only credential Access admits there).
+# Uploaded with each version by the edge's deploy (`wrangler deploy --secrets-file`), never in this file: the
+# pin's HMAC key, and the service token the edge shows Access on the Previews (the only credential Access admits there).
+# `wrangler deploy` refuses a version that would lack one of them.
 [secrets]
 required = ["EDGE_PIN_KEY", "PREVIEW_ACCESS_CLIENT_ID", "PREVIEW_ACCESS_CLIENT_SECRET"]

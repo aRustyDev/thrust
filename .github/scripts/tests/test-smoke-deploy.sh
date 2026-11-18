@@ -1,6 +1,6 @@
 #!/bin/sh
-# Exercise scripts/smoke-deploy.sh (issue #49) against a stand-in for the deployed Worker (smoke_stub.py), including the cases that
-# must FAIL. Every case goes through `expect`, which checks the exit status AND a message fragment, so a case cannot pass for the
+# Exercise scripts/smoke-deploy.sh (issue #49), scripts/edge-opt-in.sh and scripts/edge-controls.sh (ADR-0111) against a stand-in for
+# the deployed Worker and the edge in front of it (smoke_stub.py), including the cases that must FAIL. Every case goes through `expect`, which checks the exit status AND a message fragment, so a case cannot pass for the
 # wrong reason and none is merely printed. The passing case is what gives each failing one its meaning: the same stub, the same
 # script and the same environment pass until exactly one thing is broken.
 HERE="$(cd "$(dirname "$0")/../../.." && pwd)"
@@ -252,6 +252,74 @@ opt_in_no_leak() {
   echo "no leak: the opt-in secret is in no curl argv and not in the output (the opt-in was seen)"
 }
 expect "opt-in: the token's secret is in no curl argv and not in the output" 0 "no leak: the opt-in secret" opt_in_no_leak
+
+# ---- the edge's own deploy: SMOKE_EXPECT_EDGE, and scripts/edge-controls.sh ------------------------------------------------
+# The stand-in as the shared hostname with the edge in front of production: every answer carries the edge's version, /healthz is
+# routed `prod`, and production's API works (the edge's smoke reads production's data through it).
+STUB_ARGS="--version rel-1 --route prod --edge-version edge-1"
+SMOKE_ENV="$BASE_ENV SMOKE_EXPECT_ROUTE=prod SMOKE_EXPECT_EDGE=edge-1"
+expect "edge deploy: this edge answers, routed to production, which reads its project" 0 \
+  "smoke: PASS (rel-1 at http://127.0.0.1:" smoke_against_stub rel-1
+expect "edge deploy: the pass names the edge" 0 "routed to prod, by the edge edge-1" smoke_against_stub rel-1
+SMOKE_ENV="$BASE_ENV SMOKE_EXPECT_ROUTE=prod SMOKE_EXPECT_EDGE=edge-2"
+expect "edge deploy: an answer from another edge (the one it replaced) fails" 1 "the edge that answered is 'edge-1', not 'edge-2'" \
+  smoke_against_stub rel-1
+SMOKE_ENV="$BASE_ENV SMOKE_EXPECT_ROUTE=prod"
+expect "edge deploy: the edge is not checked when none is expected (its control)" 0 "smoke: PASS" smoke_against_stub rel-1
+STUB_ARGS="--version rel-1 --route prod"
+SMOKE_ENV="$BASE_ENV SMOKE_EXPECT_ROUTE=prod SMOKE_EXPECT_EDGE=edge-1"
+expect "edge deploy: an answer with no edge version (no edge in front) fails" 1 "no x-thrust-edge-version at all" \
+  smoke_against_stub rel-1
+STUB_ARGS="--version rel-2 --route prod --edge-version edge-1"
+expect "edge deploy: the right edge in front of the wrong production fails" 1 "the Worker serves rel-2, expected rel-1" \
+  smoke_against_stub rel-1
+SMOKE_ENV="$BASE_ENV SMOKE_EXPECT_EDGE=edge,1"
+expect "edge deploy: SMOKE_EXPECT_EDGE that is not a version: a usage error" 2 "SMOKE_EXPECT_EDGE has a character" \
+  smoke_against_stub rel-1
+SMOKE_ENV="$BASE_ENV"
+
+CONTROLS="$HERE/scripts/edge-controls.sh"
+# controls_against_stub <expected-edge-version>: start the stand-in with $STUB_ARGS, run the controls, stop the stand-in
+controls_against_stub() {
+  start_stub || return 99
+  EDGE_CONTROL_ATTEMPTS=2 EDGE_CONTROL_INTERVAL=0 sh "$CONTROLS" "http://127.0.0.1:$STUB_PORT" "$1"
+  rc=$?
+  stop_stub
+  return $rc
+}
+# The stand-in in front of production with one target, v0.3.0: only `pin-v0.3.0` pins, and Access admits only the CI token.
+STUB_ARGS="--version dep-1 --pin v0.3.0 --prod-version rel-1 --edge-version edge-1"
+expect "edge controls: a forged pin goes to production, and the opt-in admits no one Access did not" 0 "edge-controls: PASS" \
+  controls_against_stub edge-1
+expect "edge controls: the refusal it saw was Access's 403" 0 "the opt-in refuses a request Access did not admit (403, no pin)" \
+  controls_against_stub edge-1
+expect "edge controls: the forged pin's answer from another edge fails" 1 "the answer came from the edge 'edge-1', not 'edge-2'" \
+  controls_against_stub edge-2
+STUB_ARGS="--version dep-1 --pin v0.3.0 --prod-version rel-1 --edge-version edge-1 --honour-any-pin"
+expect "edge controls: an edge that takes an unsigned pin fails" 1 "a forged pin was routed to 'v0.3.0', not to production" \
+  controls_against_stub edge-1
+STUB_ARGS="--version dep-1 --pin v0.3.0 --prod-version rel-1 --edge-version edge-1 --opt-in-open"
+expect "edge controls: an opt-in that pins whoever asks fails" 1 "the opt-in set a pin for a request Access did not admit (it answered 303)" \
+  controls_against_stub edge-1
+STUB_ARGS="--version dep-1 --route prod --edge-version edge-1 --no-edge-paths"
+expect "edge controls: an opt-in path nothing protects (404) is not a refusal" 1 \
+  "the opt-in answered 404 to a request Access did not admit, not a refusal" controls_against_stub edge-1
+controls_against_dead_server() {
+  start_stub || return 99
+  stop_stub
+  EDGE_CONTROL_ATTEMPTS=2 EDGE_CONTROL_INTERVAL=0 sh "$CONTROLS" "http://127.0.0.1:$STUB_PORT" edge-1
+}
+expect "edge controls: no answer at all fails" 1 "a forged pin: /healthz answered 000" controls_against_dead_server
+# EDGE_CONTROL_ATTEMPTS=2 in controls_against_stub: one 503 is asked again and passes; two are the answer
+STUB_ARGS="--version dep-1 --pin v0.3.0 --prod-version rel-1 --edge-version edge-1 --unavailable-first-gets 1"
+expect "edge controls: a 5xx is asked again" 0 "edge-controls: PASS" controls_against_stub edge-1
+STUB_ARGS="--version dep-1 --pin v0.3.0 --prod-version rel-1 --edge-version edge-1 --unavailable-first-gets 2"
+expect "edge controls: a 5xx on every attempt is the answer" 1 "a forged pin: /healthz answered 503, not 200" controls_against_stub edge-1
+expect "edge controls: no expected version is a usage error" 2 "usage: edge-controls.sh" sh "$CONTROLS" "http://127.0.0.1:1"
+expect "edge controls: a base that is not a URL is a usage error" 2 "must start with http" sh "$CONTROLS" "127.0.0.1" edge-1
+expect "edge controls: an expected version with a space is a usage error" 2 "has a character" sh "$CONTROLS" "http://127.0.0.1:1" "edge 1"
+expect "edge controls: no attempts is a usage error" 2 "EDGE_CONTROL_ATTEMPTS" \
+  env EDGE_CONTROL_ATTEMPTS=0 sh "$CONTROLS" "http://127.0.0.1:1" edge-1
 
 # ---- hygiene ---------------------------------------------------------------------------------------------------------------
 no_stub_left() {

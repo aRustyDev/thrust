@@ -278,30 +278,53 @@ async fn to_target(req: &Request, env: &Env, cfg: &Config, target: &route::Targe
     hand_back(resp, &target.name, Some(target.host()), &cfg.shared_origin)
 }
 
+/// The label of the edge's own version, from the `CF_VERSION_METADATA` binding (`[version_metadata]` in its wrangler config):
+/// see [`forward::edge_version_label`]. None when the binding is not declared.
+fn edge_version(env: &Env) -> Option<String> {
+    let v = env.get_binding::<WorkerVersionMetadata>("CF_VERSION_METADATA").ok()?;
+    forward::edge_version_label(&v.tag(), &v.id())
+}
+
+/// Puts the edge's version on an answer. A `101` is handed back as it came: its WebSocket goes with the response object, and
+/// a rebuilt one would lose it.
+fn stamp(resp: Response, env: &Env) -> Result<Response> {
+    if resp.status_code() == 101 {
+        return Ok(resp);
+    }
+    let pairs = forward::stamp_edge_version(&header_pairs(resp.headers()), edge_version(env).as_deref());
+    Ok(resp.with_headers(headers_from(&pairs)?))
+}
+
 #[event(fetch)]
 async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
     console_error_panic_hook::set_once();
+    let resp = answer(req, &env).await?;
+    stamp(resp, &env)
+}
+
+/// The edge's answer, before [`stamp`]: its own paths, production, or the target the pin and the rules allow.
+async fn answer(req: Request, env: &Env) -> Result<Response> {
     let path = req.path();
     // A missing var or secret takes the edge's own paths and the routing down, never production.
-    let cfg = match Config::from_env(&env) {
+    let cfg = match Config::from_env(env) {
         Ok(cfg) => cfg,
         Err(e) if path.starts_with("/_edge/") => return plain(503, &format!("the edge is not configured: {e}")),
-        Err(_) => return to_production(&req, &env).await,
+        Err(_) => return to_production(&req, env).await,
     };
     if let Some(rest) = path.strip_prefix("/_edge/") {
         return match rest.split_once('/') {
-            Some(("opt-in", audience)) => opt_in(&req, &env, &cfg, audience).await,
+            Some(("opt-in", audience)) => opt_in(&req, env, &cfg, audience).await,
             None if rest == "opt-out" => see_other("/", &pin::clear_cookie()),
-            None if rest == "whoami" => whoami(&req, &env, &cfg).await,
+            None if rest == "whoami" => whoami(&req, env, &cfg).await,
             _ => plain(404, "not an edge path"),
         };
     }
-    let decision = match (current_pin(&req, &cfg), FlagshipFlags::from_env(&env)) {
+    let decision = match (current_pin(&req, &cfg), FlagshipFlags::from_env(env)) {
         (Some(p), Some(flags)) => route::decide(Some(&p), &flags, &cfg.preview_suffix).await,
         _ => Decision::Production,
     };
     match &decision {
-        Decision::Production => to_production(&req, &env).await,
-        Decision::Target(t) => to_target(&req, &env, &cfg, t).await,
+        Decision::Production => to_production(&req, env).await,
+        Decision::Target(t) => to_target(&req, env, &cfg, t).await,
     }
 }
