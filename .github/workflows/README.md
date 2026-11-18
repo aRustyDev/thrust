@@ -21,7 +21,7 @@ waited for: nothing in `gate` reads it.
 | `cloudflare-infrastructure.yml` | `workflow_dispatch` | no | Plans or applies the Thrust Cloudflare infrastructure |
 | `deploy-preview-provisioner.yml` | `workflow_dispatch` | no | Deploys the provisioner without a public route |
 | `enable-preview-provisioner.yml` | `workflow_dispatch` | no | Verifies Access before enabling the provisioner route |
-| `preview-control-tests.yml` | `pull_request`, `merge_group`, `push` to `main`, `workflow_dispatch` | no | Runs the preview control-plane tests separately; relevant tests also run in `ci.yml` |
+| `preview-control-tests.yml` | `pull_request`, `merge_group`, `push` to `main`, `workflow_dispatch` | no | Runs the preview control-plane tests separately; relevant tests also run in `test.yml` |
 | `preview-reconcile.yml` | `pull_request`, `schedule`, `workflow_dispatch` | no | Reconciles per-PR database and Hyperdrive resources |
 | `e2e.yml` | `schedule` (every day, 04:41 UTC), `workflow_dispatch`, `pull_request` that edits the file | no | Runs the `worker-cf` browser-journey cells every day, through `contract-cell.yml`, to catch drift in the runner, the browser and the packages |
 | `flagship.yml` | `push` to `main` that changes the policy, `schedule` (every night, 05:23 UTC), `workflow_dispatch` | no | The edge's routing flags as code: makes every flag what the policy says, and checks them every night. Off until the repository variable `FLAGSHIP_APP_ID` is set |

@@ -9,7 +9,7 @@
 # The environment `flagship` (deployment branches: main) holds FLAGSHIP_WRITE_TOKEN (sync) and FLAGSHIP_READ_TOKEN (check),
 # app-scoped tokens for this one app, and the variables CLOUDFLARE_ACCOUNT_ID and PREVIEW_HOST_SUFFIX (the edge's).
 # A pull request cannot check against the live app: it has no secrets, and a policy change is meant to differ from what is live.
-# It gets `flagship.py validate` (ci.yml's deps job) and test_flagship.py (ci-scripts) instead.
+# It gets `flagship.py validate` (lint.yml's deps job) and test_flagship.py (test.yml's ci-scripts job) instead.
 name: flagship
 
 on:
