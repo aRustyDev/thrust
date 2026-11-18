@@ -1,6 +1,6 @@
 # Phase 0002: Migration
 
-Part of [ci-workflows](../PLAN.md). Planned 2026-11-17; M1 is built and merged (#254), the other stages are not. Facts are from
+Part of [ci-workflows](../PLAN.md). Planned 2026-11-17; M1 to M5b are built and merged (#254, #258, #264, #269, #275, #281) and M6 is in progress. Facts are from
 `main` at `f263ab4`, read on that day: recount them when a stage starts. Phase 1 of the plan, after [Phase 0](0001-foundation.md) (the foundation: merged). It moves
 today's jobs out of `ci.yml` into one workflow per concern as a **pure refactor**: the same commands, the same job boundaries,
 the same result of `gate`. No pass applies to it; each stage's evidence is its acceptance criteria. The passes start in Phase 2,
@@ -63,8 +63,8 @@ cheapest where there is least to move.
 | M3 | `web.yml` | `web` | One job again, with its own environment (Node, pnpm, and two environment variables at the job level) |
 | M4 | `lint.yml` | `lint`, `deps` | Two jobs, and `deps` has eighteen steps (recounted when M4 started; `lint` has seven), the workflow guard and the two added in Phase 0 (the index guard, `actionlint`) among them: the first callee that holds more than one job, and the one that runs the guards of the files it is moving into |
 | M5a | `test.yml` | `ci-scripts`, `hermetic`, `pg-adapter`, `mutants` | Four plain moves, like M4. `contract` and the cell-marker rule stay in `ci.yml` and `gate` for this stage (owner, 2026-11-17: M5 is split) |
-| M5b | `test.yml` | `contract` | The matrix call (three levels deep), the cell markers, and the `verdict` job that must judge them: the `verdict` action gains `cell-job` and `cells`, and `gate` stops downloading markers. Planned when M5a is done |
-| M6 | `e2e.yml` | `e2e-schedule.yml` renamed | Not a callee; the index and the planner's lists change |
+| M5b | `test.yml` | `contract` | The matrix call (three levels deep), the cell markers, and the `verdict` job that must judge them: the `verdict` action gains `cell-job` and `cells`, and `gate` stops downloading markers. Done (#281) |
+| M6 | `e2e.yml` | `e2e-schedule.yml` renamed | Not a callee: the name in the index, the docs and the planner test's list changes (the planner needs no rule, see M6 in detail) |
 
 Every stage edits `ci.yml`, so they run one after another, each starting from the `main` that holds the last.
 
@@ -399,6 +399,86 @@ for an unplanned cell.
 already uses at the same pin.
 
 **Questions for the owner:** none. The two that this stage had (the shape of the action, the split) are answered above.
+
+### M5b: done (#281, merged 2026-11-17 as `5cadf2f`)
+
+What it showed:
+- **Parity**, by `scripts/ci-commands.py`: 53 jobs before and after; 48 unchanged and 5 changed as intended (the `verdict` action, `ci.yml:test`,
+  `ci.yml:gate`, `test.yml:verdict`, `test.yml:contract`), none appeared or gone. `contract` is the same call (its `fail-fast`, `with` and
+  `permissions` included) and differs in one line: the matrix comes from `inputs.matrix`, not from `needs.changes.outputs.matrix`. It was cut
+  from `ci.yml` by a script that refused unless every removed line but the three that differ by design was found in `test.yml`, in order.
+- **The wiring**: `test_workflow_wiring.py` 136 checks, the gate's cases 196 (162 before: the cell cases were re-run at the level of a verdict job,
+  not dropped), the planner's 7,008; `mutate_gate.py` 226 mutants killed, the 9 that change nothing survive, on the runner too. I read the first
+  failing check of each of the 27 new mutants: each fails on its own fault.
+- **Two full runs**, one on the build (`f5f2ca7`) and one on the head after merging `main` (`4c3c833`): 42 of 42 jobs, `gate` certified. **The markers
+  crossed the nested call**: `test / verdict` collected the `cell-ok-*` artifacts and said `26 of 26 planned cells reported success`, three levels
+  down from `ci.yml`; `gate` judged no cell.
+- **Two probes**: #282 (a planned cell succeeded and never uploaded its marker) failed `test / verdict`, with `planned cells that never reported
+  success: native-memory sweeper`, and `gate`, with nothing else red; #283 (the call of the action skipped) failed `gate` alone, with every job
+  and every cell green, which is the case that matters most here, because with that call skipped no cell is judged at all.
+- **`main`'s own run on the merge commit** (a push run): 42 of 42 jobs succeeded, the first run of the nested cells on `main`.
+
+What it found:
+- **The cost of the design, as planned**: a verdict job that forgets `CELL_JOB` no longer fails by default. The wiring test and its mutants carry the
+  property now. A parallel session built the same stage as #285 and was closed on the owner's word; its one extra rule, that `assert-gate.sh`
+  refuses a non-empty `PLANNED` when no cell job is named, would make a forgotten `cell-job` fail whenever cells are planned. It was not taken
+  into #281: it is a change to the gate's behaviour, and an offer to the owner.
+- **A cell's check name changed** (`test / contract (<target>, <pass>) / <target> <pass>`), so `ci-baseline.py`'s split on the first caller name
+  would have counted the 26 cells as `test`'s. It recognises a cell by its own shape now (`CELL`), with a control; its self-test went from 38 to 44.
+- **A mistake of mine, and its fix**: `git commit -a` swept a local `Cargo.lock` reorder into the first commit of probe #282 (main's lock had a
+  package out of cargo's order after #279; #284 fixed it on `main`). A follow-up commit restored `main`'s lock, so the probe's net diff was its one line.
+  Stage by explicit path in a worktree where cargo runs.
+
+### M6 in detail: `e2e.yml`
+
+**Purpose.** Name the daily browser-journey workflow after its concern: `e2e-schedule.yml` becomes `e2e.yml` (`name: e2e`), as the plan's layout
+says. It is the last stage of the migration; the migration's acceptance follows it.
+
+**What is particular to it.**
+1. **It is not a callee.** It has triggers of its own (a schedule, a dispatch, and a pull request that edits the file), `gate` does not read it,
+   and it has no `verdict` job, no entry in `VERDICT_JOBS` and none in the planner's map. None of the callee stages' wiring applies to it, and
+   none of their proofs can show anything about it.
+2. **What changes**: the file name, `name:` (`e2e-schedule` to `e2e`), the `paths:` filter of its own pull-request trigger, and the
+   concurrency group (`e2e-schedule-${{ github.ref }}` to `e2e-${{ github.ref }}`; a top-level workflow may have one, R8 binds only callees).
+   The job ids `e2e` and `e2e-mail`, their calls of `contract-cell.yml`, their `with:` and their `permissions:` do not change. Four comments that
+   M5b made false (they say `ci.yml` runs the cell and that `ci.yml`'s `contract` job grants `contents: read`; both are `test.yml`'s now) are
+   corrected in the same edit. A comment is not a command and `ci-commands.py` does not compare comments, so that diff is read by eye.
+3. **Where the name is used.** The planner test's `NO_CHECK_WORKFLOWS` (`e2e-schedule` to `e2e`); the workflows index; `cicd.md` (the table
+   row and two sentences); `testing/techniques/app-and-e2e.md`; `contrail/TRACEABILITY.md`. The **planner itself needs no change**: `e2e.yml` is
+   a file that runs no check, so it falls under the generic `.github/workflows/` rule exactly as the old file did (a change to it plans the
+   helper tests and the workflow lint). The dated records of runs under the old name (`testing/status.md` G-31, `cicd-review/FINDINGS.md`) stay as
+   written, and `cicd.md`'s row says the file was named so.
+4. **The run history splits.** Runs of the old file stay under `e2e-schedule`; the new file starts its own, and the schedule moves with the
+   file: the first scheduled run under `e2e` is the next 04:41 UTC after the merge.
+5. **Its own pull request runs it.** The `paths:` filter now names `e2e.yml`, so the pull request that adds the file runs the two cells: the proof
+   that the renamed call is valid (a reusable workflow called with the wrong permissions fails at startup, with no job).
+6. **The first affected-only run of the migration.** M6 does not edit `ci.yml`, so for the first time a stage's own run is affected-only (the
+   files it changes plan `lint`, `test` and `documentation`, not `web` or `security`). That is one real data point for the acceptance, not the
+   whole of it: the acceptance chooses changes that exercise each callee.
+
+**Acceptance.**
+- `e2e.yml` exists and `e2e-schedule.yml` does not, in one rename (`git mv`, so the history follows); the two calls are identical.
+- `rg e2e-schedule` finds only the dated records and the plan documents that tell this history.
+- The planner test lists `e2e` and refuses a workflow file that is in no list; the index guard passes with the new row.
+- Proof: parity (`e2e` and `e2e-mail` moved with identical calls), the pull request's own run (affected-only, green) **and the e2e workflow's own
+  run on it (both cells green)**, and two probes.
+
+**The probes are not the callee stages' probes, and why.** `gate` does not read `e2e`, so a planned job skipped or a skipped `verdict` cannot
+turn it red and would show nothing. The faults a rename can leave behind that the gate **does** see are two stale references, so a probe plants
+each in the finished build, one per draft pull request, closed unmerged:
+- **A: the planner test's list still names `e2e-schedule`.** `e2e.yml` is then in no list, and `test / ci-scripts` must fail on it (and `gate`).
+- **B: the index still has the row for `e2e-schedule.yml` and none for `e2e.yml`.** `check-ci-index.sh`, in `lint / deps`, must fail on it (and `gate`).
+Each is first checked locally to fail for its own reason alone.
+
+**What it will not show.** That the schedule fires under the new file name (it is read from the run list the morning after the merge); and that
+a failing `e2e` blocks nothing, which is unchanged and not probed.
+
+**State machine.** Unchanged: a schedule, a dispatch or an edit of the file starts it; the two cells run in parallel through `contract-cell.yml`;
+a failure notifies and blocks nothing.
+
+**Public solutions.** None applies to a rename.
+
+**Questions for the owner:** none. The rename is the plan's own decision.
 
 ## Decisions on the questions (owner, 2026-11-17, after #251)
 
