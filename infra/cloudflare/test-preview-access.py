@@ -94,14 +94,31 @@ class AccessSetup(unittest.TestCase):
         class Response(io.BytesIO):
             status = 200
         class Opener:
+            calls = 0
             def open(self, req, **kwargs):
-                if isinstance(req, str):
-                    raise access.urllib.error.HTTPError(req, 403, 'denied', {}, io.BytesIO())
+                self.calls += 1
+                assert req.get_header('User-agent') == 'thrust-preview-control-plane/1.0'
+                if self.calls == 1:
+                    raise access.urllib.error.HTTPError(req.full_url, 404, 'not ready', {}, io.BytesIO(b'error code: 1042'))
+                if self.calls == 2:
+                    raise access.urllib.error.HTTPError(req.full_url, 403, 'denied', {}, io.BytesIO())
                 return Response(b'[]')
-        with patch.object(access, 'request', self.request), patch.object(access, 'pages', self.pages), patch.object(access.urllib.request, 'build_opener', return_value=Opener()):
+        with patch.object(access, 'request', self.request), patch.object(access, 'pages', self.pages), patch.object(access.urllib.request, 'build_opener', return_value=Opener()), patch.object(access.time, 'sleep'):
             access.enable('account', 'token', 'worker', self.file, 'https://thrust-preview-provisioner.test.workers.dev')
         route_calls = [call for call in self.calls if call == ('POST', '/workers/scripts/thrust-preview-provisioner/subdomain')]
         self.assertEqual(len(route_calls), 1)
+
+    def test_browser_integrity_denial_does_not_count_as_access(self):
+        self.run_apply()
+        self.calls.clear()
+        class Opener:
+            def open(self, req, **kwargs):
+                raise access.urllib.error.HTTPError(req.full_url, 403, 'blocked', {}, io.BytesIO(b'error code: 1010'))
+        with patch.object(access, 'request', self.request), patch.object(access, 'pages', self.pages), patch.object(access.urllib.request, 'build_opener', return_value=Opener()):
+            with self.assertRaises(ValueError):
+                access.enable('account', 'token', 'worker', self.file, 'https://thrust-preview-provisioner.test.workers.dev')
+        route_calls = [call for call in self.calls if call == ('POST', '/workers/scripts/thrust-preview-provisioner/subdomain')]
+        self.assertEqual(len(route_calls), 2)
 
 
 if __name__ == '__main__':
