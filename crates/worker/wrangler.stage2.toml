@@ -29,6 +29,8 @@ THRUST_OUTBOX_FASTPATH = "on"
 # say so in /_info. The `csrfoff` pass needs a Worker deployed with "off" instead. The production default is off
 # (wrangler.toml) until the custom frontend replaces the stock one.
 THRUST_CSRF_ENFORCE = "on"
+# The dead-letter queue behind the events queue (ADR-0070, FR-21, issue #53): how the queue handler tells the two queues' batches apart.
+THRUST_EVENTS_DLQ = "thrust-spike-events-dlq"
 # The rate limits are the `[[ratelimits]]` bindings below, not vars: THRUST_SIGNIN_RATE_LIMIT and the count in THRUST_V1_RATE_LIMIT
 # are not read on Cloudflare, and the Worker refuses a THRUST_V1_RATE_LIMIT period other than 10 or 60 seconds. (A window of 3600
 # used to be set here so the contract's rate-limit test would not straddle a window boundary, research/0004 F3; the test now holds
@@ -47,12 +49,23 @@ bucket_name = "thrust-spike-blobs"
 binding = "EVENTS"
 queue = "thrust-spike-events"
 
+[[queues.producers]]
+binding = "EVENTS_DLQ"
+queue = "thrust-spike-events-dlq"
+
 [[queues.consumers]]
 queue = "thrust-spike-events"
 max_batch_size = 10
 max_batch_timeout = 1
 max_retries = 3
 dead_letter_queue = "thrust-spike-events-dlq"
+
+# The consumer of the dead-letter queue (nothing stands behind it, so it gets patience).
+[[queues.consumers]]
+queue = "thrust-spike-events-dlq"
+max_batch_size = 10
+max_batch_timeout = 1
+max_retries = 10
 
 [[durable_objects.bindings]]
 name = "ROOM"

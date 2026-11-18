@@ -1,0 +1,1 @@
+{"event_id":"00000000-0000-0000-0000-0000000000e1","schema_version":1,"workspace_id":"00000000-0000-0000-0000-0000000000a1","event_type":"work_item.created","entity_type":"work_item","entity_id":"00000000-0000-0000-0000-0000000000e2","actor_id":null,"occurred_at":"2026-10-18T00:00:00Z","payload":{},"trace_id":null}

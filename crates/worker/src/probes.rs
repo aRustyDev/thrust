@@ -42,6 +42,7 @@ pub async fn probe_route(req: web_sys::Request, env: &Env, path: &str) -> Result
         "ai" => ai(env).await,
         "pgshapes" => pgshapes(env).await,
         "r2purge" => r2purge(env).await,
+        "queue-raw" => queue_raw(env).await,
         _ => Err(Error::RustError(format!("unknown probe '{name}'"))),
     };
     match out {
@@ -51,6 +52,17 @@ pub async fn probe_route(req: web_sys::Request, env: &Env, path: &str) -> Result
             Ok(r.into())
         }
     }
+}
+
+/// Queues producer binding, raw text (ADR-0070, FR-21, issue #53): put a message on the events queue that is not an event, as a producer
+/// other than this repository's can. `/internal/inject-event` takes only a valid envelope, so this is the one way to reach the
+/// consumer's branch for a body that does not decode. Returns the text, which is what the dead letter must hold.
+async fn queue_raw(env: &Env) -> Result<Value> {
+    // not JSON, and different on every call, so a test can tell its own message from the ones of any other run
+    let text = format!("not an event, probe {}-{}", Date::now().as_millis(), (js_sys::Math::random() * 1e9) as u64);
+    let builder = RawMessageBuilder::new(wasm_bindgen::JsValue::from_str(&text));
+    env.queue("EVENTS")?.send_raw(builder.build_with_content_type(QueueContentType::Text)).await?;
+    Ok(json!({ "text": text }))
 }
 
 /// Rate Limiting binding (`[[ratelimits]]`, limit 3 per 10 s): native in workers-rs.

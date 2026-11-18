@@ -42,6 +42,9 @@ THRUST_CSRF_ENFORCE = "__CSRF_ENFORCE__"
 THRUST_EMAIL_FROM = "__EMAIL_FROM__"
 THRUST_EMAIL_FROM_NAME = "Thrust"
 THRUST_PUBLIC_BASE_URL = "__PUBLIC_BASE_URL__"
+# The name of the dead-letter queue behind the events queue (ADR-0070, FR-21, issue #53): how the one queue handler tells the batches of
+# the two queues apart. The same marker as the events consumer's `dead_letter_queue` below, so the two cannot differ.
+THRUST_EVENTS_DLQ = "__EVENTS_DLQ__"
 
 # The Email Sending binding (`EMAIL`). Its senders are restricted to the configured one: a Worker that were made to send from another
 # address, by a bug or by a variable that was changed, is refused by the binding, not by the Worker's own code.
@@ -61,12 +64,26 @@ bucket_name = "__BLOBS_BUCKET__"
 binding = "EVENTS"
 queue = "__EVENTS_QUEUE__"
 
+# The dead-letter queue (ADR-0070, FR-21, issue #53): the Worker sends a message it gives up on here, and the queue moves here a message
+# whose retries ran out. The Worker consumes it too and writes each message as a row of `dead_letters`.
+[[queues.producers]]
+binding = "EVENTS_DLQ"
+queue = "__EVENTS_DLQ__"
+
 [[queues.consumers]]
 queue = "__EVENTS_QUEUE__"
 max_batch_size = 10
 max_batch_timeout = 1
+# The Worker gives up on a message itself at its 4th delivery (`thrust_ports::MAX_DELIVERIES`): the first and these 3 retries.
 max_retries = 3
 dead_letter_queue = "__EVENTS_DLQ__"
+
+# The consumer of the dead-letter queue. Nothing stands behind it (a queue cannot be its own dead-letter queue), so it gets patience.
+[[queues.consumers]]
+queue = "__EVENTS_DLQ__"
+max_batch_size = 10
+max_batch_timeout = 1
+max_retries = 10
 
 # The P1 collab template (ARCHITECTURE 2a): the only Durable Object class. A change to anything under [[migrations]] is a Durable Object
 # lifecycle change: it cannot be rolled back across, so the deploy sends it through its own manual-gated job (deploy.yml, `deploy-do`).

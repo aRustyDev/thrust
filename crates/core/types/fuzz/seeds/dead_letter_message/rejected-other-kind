@@ -1,0 +1,1 @@
+{"kind":"thrust.dead-letter.v2","source_id":"msg-1","topic":"events","event_id":null,"body":"x","error":"y","attempts":1}

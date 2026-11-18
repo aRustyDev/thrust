@@ -19,5 +19,7 @@ serde_json = { workspace = true }
 futures-util = { workspace = true }
 
 [dev-dependencies]
+# the ports crate has no executor of its own; the memory adapters never yield, so this is enough to drive a test
+futures-executor = "0.3"
 proptest = "1"
 rstest = "0.26"

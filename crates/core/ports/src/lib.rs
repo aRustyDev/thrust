@@ -14,6 +14,9 @@ use async_trait::async_trait;
 use thiserror::Error;
 use thrust_contracts::*;
 
+mod settle;
+pub use settle::{settle, settle_dead_letter, Settled};
+
 /// Boxed `Send` future used by [`Background`]. No executor is implied by the type.
 pub type BoxFuture<T> = Pin<Box<dyn Future<Output = T> + Send + 'static>>;
 

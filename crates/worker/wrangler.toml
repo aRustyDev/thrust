@@ -47,6 +47,9 @@ crons = ["* * * * *"]   # outbox sweeper (ADR-0046 / ADR-0072)
 # prefix, as in Plane. Set "on" when the custom frontend replaces the stock one (PLAN.md, M4). The contract targets and
 # Stage 2 run with it on (scripts/worker-dev.sh, wrangler.stage2.toml).
 THRUST_CSRF_ENFORCE = "off"
+# The name of the dead-letter queue behind the events queue (ADR-0070, FR-21, issue #53): how the one queue handler tells the batches of
+# the two queues apart. It must be the `dead_letter_queue` of the events consumer below (the deploy parity test holds the template to it).
+THRUST_EVENTS_DLQ = "thrust-spike-events-dlq"
 # The operator's routes, /internal/operator/* (Q-F7, D-038): not set here, so they do not exist. To use them set
 # THRUST_OPERATOR_ROUTES = "1" and put THRUST_OPERATOR_TOKEN (at least 32 characters) in the Worker's secrets, never in this file.
 # The runbook is "Recover a locked-out user" in docs/src/architecture/infra.md.
@@ -63,11 +66,28 @@ bucket_name = "thrust-spike-blobs"
 binding = "EVENTS"
 queue = "thrust-spike-events"
 
+# The dead-letter queue (ADR-0070, FR-21, issue #53): the Worker sends a message it gives up on here, and the queue moves here a message
+# whose retries ran out. The Worker consumes it too and writes each message as a row of `dead_letters`.
+[[queues.producers]]
+binding = "EVENTS_DLQ"
+queue = "thrust-spike-events-dlq"
+
 [[queues.consumers]]
 queue = "thrust-spike-events"
 max_batch_size = 10
 max_batch_timeout = 1
+# The Worker gives up on a message itself at its 4th delivery (`thrust_ports::MAX_DELIVERIES`), which is the first delivery and these
+# 3 retries: the queue's limit is the same, so it only backs the Worker up.
 max_retries = 3
+dead_letter_queue = "thrust-spike-events-dlq"
+
+# The consumer of the dead-letter queue. Nothing stands behind it (a queue cannot be its own dead-letter queue), so it gets patience
+# instead: a row that cannot be written is tried again for a while before the message is dropped.
+[[queues.consumers]]
+queue = "thrust-spike-events-dlq"
+max_batch_size = 10
+max_batch_timeout = 1
+max_retries = 10
 
 # The P1 collab template (ARCHITECTURE 2a): the only Durable Object class. No deployed Worker ever carried a migration with the
 # rate limiter's class (the Stage 2 Worker and `thrust-spike-pg` were deleted, research/0011 section 11.2), so `v1` is edited and
