@@ -1236,6 +1236,16 @@ pub trait Database: Send + Sync {
 
     async fn outbox_depth(&self, sys: &SystemScope) -> Result<u64, DbError>;
 
+    /// Set a message aside (ADR-0070, issue #53): the queue consumer's write of a dead letter. Idempotent on `id`, so a message that
+    /// is delivered again after it was set aside makes no second row; returns `true` if a row was inserted, `false` if the id was
+    /// there. A dead letter belongs to no tenant (a body that does not decode names none), so the write and the read below are
+    /// untenanted.
+    async fn insert_dead_letter(&self, sys: &SystemScope, letter: &DeadLetter) -> Result<bool, DbError>;
+
+    /// The dead letters, newest first (by `received_at`, then by `id` in byte order, so every adapter answers in the same order),
+    /// at most `limit` of them.
+    async fn dead_letters(&self, sys: &SystemScope, limit: u32) -> Result<Vec<DeadLetter>, DbError>;
+
     // --- Assets (issue #44, the asset stage; ADR-0047). The bytes are in the `BlobStore`; these are the rows that say whose they
     // are and where they stand.
 
@@ -1459,6 +1469,28 @@ pub enum ConsumerError {
 #[async_trait]
 pub trait EventConsumer: Send + Sync {
     async fn handle(&self, env: &Envelope) -> Result<(), ConsumerError>;
+
+    /// Set a message aside in the dead letters. A queue adapter calls it when [`disposition`] says so, or when a body does not decode,
+    /// and so never writes to the database itself: it holds no `SystemScope`, and `scripts/check-deps.sh` keeps it that way. An error
+    /// is `Transient` (the write did not happen, and the adapter applies the same policy to it).
+    async fn dead_letter(&self, letter: &NewDeadLetter) -> Result<(), ConsumerError>;
+}
+
+/// A message to set aside: what a queue adapter knows when it gives up on one. The consumer adds the time and, when the queue has no
+/// id for the message, an id (`DeadLetter`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NewDeadLetter {
+    /// The queue's own id for the message, which becomes the row's id: a message that is delivered again then makes no second row.
+    pub source_id: Option<String>,
+    pub topic: String,
+    /// The event's id when the body decoded as an [`Envelope`].
+    pub event_id: Option<EventId>,
+    /// The message as it arrived: an envelope's JSON, or the raw text of a body that is not one. Any text will do, a NUL included:
+    /// `record_dead_letter` replaces it before the database sees it, because Postgres cannot store one.
+    pub body: String,
+    pub error: String,
+    /// How many times it was delivered, when the adapter knows.
+    pub attempts: Option<u32>,
 }
 
 /// How many times a message is delivered before a transient error is given up on: the first delivery and three retries. The Worker's

@@ -436,7 +436,8 @@ pub struct DeadLetter {
     pub topic: String,
     /// The event's id when the body decoded as an [`Envelope`].
     pub event_id: Option<EventId>,
-    /// The message as it arrived: an envelope's JSON, or the raw text of a body that is not one.
+    /// The message as it arrived: an envelope's JSON, or the raw text of a body that is not one. A NUL in it is stored as `U+FFFD`
+    /// (Postgres cannot keep one, and the memory adapter answers the same).
     pub body: String,
     /// Why it was set aside.
     pub error: String,

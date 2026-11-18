@@ -110,6 +110,8 @@ struct DbState {
     /// (event, place) key that makes a write idempotent.
     history: Vec<WorkItemActivity>,
     history_keys: HashSet<(EventId, i32)>,
+    /// `dead_letters` (migration 0020), in the order they were written; the id is the table's primary key.
+    dead_letters: Vec<DeadLetter>,
 }
 
 struct SessionRow {
@@ -1842,6 +1844,23 @@ impl Database for MemoryDatabase {
     async fn outbox_depth(&self, _sys: &SystemScope) -> Result<u64, DbError> {
         let s = self.state.lock_unpoisoned();
         Ok(s.outbox.iter().filter(|r| r.dispatched_at.is_none()).count() as u64)
+    }
+
+    async fn insert_dead_letter(&self, _sys: &SystemScope, letter: &DeadLetter) -> Result<bool, DbError> {
+        let mut s = self.state.lock_unpoisoned();
+        if s.dead_letters.iter().any(|d| d.id == letter.id) {
+            return Ok(false);
+        }
+        s.dead_letters.push(letter.clone());
+        Ok(true)
+    }
+
+    async fn dead_letters(&self, _sys: &SystemScope, limit: u32) -> Result<Vec<DeadLetter>, DbError> {
+        let mut rows = self.state.lock_unpoisoned().dead_letters.clone();
+        // newest first; `String`'s order is byte order, which is what the Postgres adapter asks for with COLLATE "C"
+        rows.sort_by(|a, b| (b.received_at, &b.id).cmp(&(a.received_at, &a.id)));
+        rows.truncate(limit as usize);
+        Ok(rows)
     }
 
     async fn seed(&self, _sys: &SystemScope, f: &SeedFixture) -> Result<(), DbError> {
