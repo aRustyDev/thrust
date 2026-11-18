@@ -8,6 +8,7 @@ This copy, in `aRustyDev/thrust`, is canonical (`spikes/README.md`).
 | Document | What it holds |
 |---|---|
 | [`PLAN.md`](PLAN.md) | Milestones M0 to M6 with exit criteria, the critical path, the M2 screen list, status and issue numbers. |
+| [`preview-57.md`](preview-57.md) | Per-PR preview control plane, remaining deployment work and action assessment (#57). |
 | [`SPEC.md`](SPEC.md) | Goals, principles, requirements (R-F, R-P, R-S), the Plane-to-Cloudflare mapping and risks. |
 | [`ARCHITECTURE.md`](ARCHITECTURE.md) | Deployed architecture (Cloudflare set and self-hosted twin) and the hexagonal application layout. |
 | [`FEATURES.md`](FEATURES.md) | The feature inventory (F-A to F-X) with a tier for every row (P0, P1, P2, drop). |
