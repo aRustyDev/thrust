@@ -103,7 +103,7 @@ fn clean(html: &str) -> String {
 proptest! {
     /// A `style` that carries a dangerous token, however it is cased or broken up, loses the whole attribute.
     #[test]
-    fn prop_a_dangerous_style_value_is_dropped(v in obfuscated(&CSS_TOKENS, &["", "/**/", "/*x*/", " ", "\t"])) {
+    fn prop_a_dangerous_style_value_is_dropped(v in obfuscated(&CSS_TOKENS, &["", "/**/", "/*x*/", " ", "\t", "\u{1}"])) {
         let out = clean(&format!("<p style=\"color:red;{v}\">x</p>"));
         prop_assert!(!out.contains("style"), "{}", out);
         prop_assert!(out.contains(">x<"), "{}", out);
@@ -156,6 +156,171 @@ proptest! {
         if kept {
             prop_assert!(out.contains(&format!("rel=\"{rel}\"")), "{}", out);
         }
+    }
+}
+
+// ---- CSS escapes: `j\61vascript:` is `javascript:` to a stylesheet ---------------------------------------------------------
+
+/// How one character of a token is written in a CSS value (CSS Syntax 3, §4.3.7, "consume an escaped code point"). The encoder is
+/// written here from the spec, apart from the decoder under test, so a decoder that reads an escape differently fails.
+#[derive(Clone, Copy, Debug)]
+enum Spell {
+    /// As it is.
+    Plain,
+    /// `\` and the character: the character itself, unless it is a hex digit (`\a` is U+000A), which then stays plain.
+    Backslash,
+    /// `\` and the code point in hex, as short as it goes. The whitespace `end` closes it; `bare` leaves it unclosed when the next
+    /// character does not continue the hex number (`\61vascript` is `a` and `vascript`).
+    Short { upper: bool, end: &'static str, bare: bool },
+    /// `\` and exactly six hex digits, which nothing needs to close: a seventh digit is not part of it (`\00006aavascript`).
+    Padded { upper: bool },
+}
+
+fn spell() -> impl Strategy<Value = Spell> {
+    prop_oneof![
+        3 => Just(Spell::Plain),
+        2 => Just(Spell::Backslash),
+        3 => (any::<bool>(), prop::sample::select(&[" ", "\t", "\n", "\r\n", "\u{c}"]), any::<bool>())
+            .prop_map(|(upper, end, bare)| Spell::Short { upper, end, bare }),
+        3 => any::<bool>().prop_map(|upper| Spell::Padded { upper }),
+    ]
+}
+
+/// `token` with each character written as its `Spell` says, and a letter or two in upper case.
+fn spelled(token: &str, spells: &[Spell], upper: &[bool]) -> String {
+    let mut out = String::new();
+    let mut open = false; // the last part is a `bare` short escape: a hex digit next would continue its number
+    for (i, c) in token.chars().enumerate() {
+        let c = if upper.get(i).copied().unwrap_or(false) { c.to_ascii_uppercase() } else { c };
+        let code = c as u32;
+        let (part, bare) = match spells.get(i).copied().unwrap_or(Spell::Plain) {
+            Spell::Backslash if !c.is_ascii_hexdigit() => (format!("\\{c}"), false),
+            Spell::Short { upper, end, bare } => {
+                let hex = if upper { format!("{code:X}") } else { format!("{code:x}") };
+                (if bare { format!("\\{hex}") } else { format!("\\{hex}{end}") }, bare)
+            }
+            Spell::Padded { upper } => (if upper { format!("\\{code:06X}") } else { format!("\\{code:06x}") }, false),
+            Spell::Plain | Spell::Backslash => (c.to_string(), false),
+        };
+        if open && part.starts_with(|n: char| n.is_ascii_hexdigit()) {
+            out.push(' '); // the one thing that ends it
+        }
+        out.push_str(&part);
+        open = bare;
+    }
+    out
+}
+
+proptest! {
+    /// A dangerous token, with each of its characters written plain, with a backslash, as a short or a padded hex escape, in either
+    /// case, closed by any whitespace or by nothing, still takes the whole `style` away: what a stylesheet reads is what is judged.
+    #[test]
+    fn prop_a_dangerous_css_token_is_seen_through_any_escape_of_its_characters(
+        token in prop::sample::select(&CSS_TOKENS),
+        spells in prop::collection::vec(spell(), 16),
+        upper in prop::collection::vec(any::<bool>(), 16),
+    ) {
+        let v = spelled(token, &spells, &upper);
+        let out = clean(&format!("<p style=\"color:red;{v};margin:0\">x</p>"));
+        prop_assert!(!out.contains("style"), "{:?} -> {}", v, out);
+        prop_assert!(out.contains(">x<"), "{}", out);
+    }
+
+    /// A token inside a comment, spelled any way, is part of the comment: the value is kept. What a stylesheet does not read is not
+    /// judged, which also shows that the property above is not passing by dropping every value that holds a token.
+    #[test]
+    fn prop_a_token_inside_a_comment_is_not_judged(
+        token in prop::sample::select(&CSS_TOKENS),
+        spells in prop::collection::vec(spell(), 16),
+        upper in prop::collection::vec(any::<bool>(), 16),
+    ) {
+        let v = spelled(token, &spells, &upper);
+        let out = clean(&format!("<p style=\"color:red;/* {v} */margin:0\">x</p>"));
+        prop_assert!(out.contains("style=\"color:red;/* "), "{:?} -> {}", v, out);
+    }
+
+    /// And a comment that an escaped slash did not open hides nothing: the token after `\/*` is read, spelled any way.
+    #[test]
+    fn prop_an_escaped_slash_opens_no_comment(
+        token in prop::sample::select(&CSS_TOKENS),
+        spells in prop::collection::vec(spell(), 16),
+        upper in prop::collection::vec(any::<bool>(), 16),
+    ) {
+        let v = spelled(token, &spells, &upper);
+        let out = clean(&format!("<p style=\"color:red;\\/* {v} */margin:0\">x</p>"));
+        prop_assert!(!out.contains("style"), "{:?} -> {}", v, out);
+    }
+
+    /// The control of the one above: escapes of characters that spell nothing dangerous are kept as written (`\5B57\4F53` is how a
+    /// stylesheet writes 字体), so it does not pass by dropping every value that has a backslash in it.
+    #[test]
+    fn prop_an_escaped_harmless_value_is_kept(
+        cps in prop::collection::vec(0x4e00u32..0x9fff, 1..6),
+        upper in any::<bool>(),
+    ) {
+        let names: Vec<String> = cps.iter().map(|c| if upper { format!("\\{c:X}") } else { format!("\\{c:x}") }).collect();
+        let style = format!("font-family:{}", names.join(" "));
+        let out = clean(&format!("<p style=\"{style}\">x</p>"));
+        prop_assert!(out.contains(&format!("style=\"{style}\"")), "{}", out);
+    }
+}
+
+/// Pins the gap that PR #305's report named on 2026-11-18: `css_is_dangerous` took the backslashes out and did not read a hex
+/// escape, so `j\61vascript:` and the like passed the value filter. Each value is `javascript:`, `expression(`, `url(data:`,
+/// `vbscript:`, `behavior:`, `-moz-binding` or `@import` to a stylesheet, however its characters are written.
+#[test]
+fn regression_a_css_hex_escape_cannot_spell_a_dangerous_token() {
+    for v in [
+        r"background:url(j\61vascript:alert(1))", // `\61` ends at `v`, which is no hex digit
+        r"background:url(\6a avascript:alert(1))", // the space ends the escape, and is not part of the value
+        r"background:url(\6A\61 \76 ascript:alert(1))",
+        r"background:url(\00006a avascript:alert(1))", // six digits, leading zeros
+        r"background:url(\00006aavascript:alert(1))",  // six digits end it: the seventh is the `a` of `avascript`
+        r"width:\65xpression(alert(1))",
+        r"width:\65 xpression(alert(1))",
+        r"background:\75rl(\64 ata:text/html,x)",
+        r"x:\76 bscript:1", // a space must end `\76`: `\76b` would be U+076B
+        r"x:-moz-\62 inding:url(x)",
+        r"x:\62 ehavior:url(x)",
+        r"\40import 'x'",
+        r"\@import 'x'", // a backslash before a character that is no hex digit is that character
+        r"x:j\000061 vascript:1",
+        // `\/` is an escaped slash, so `\/*` opens no comment and what follows it is read (the comment was cut out before the escape was)
+        r"x:\/* javascript:alert(1) */",
+        r"x:\/* \6a avascript:1 */",
+        r"x:/* a */javascript:1",   // a comment that is closed hides only what it holds
+        r"x:/*/ a */ javascript:1", // `/*/` opens one and the `/` does not close it: `*/` after does
+        r"x:java\\script:1",        // `\\` is a backslash, taken out as ever: it can only make a token easier to see
+        // a code point that no `char` can be is dropped, so it cannot be the break that hides a token (old browsers ignored a NUL)
+        r"x:java\0 script:1",
+        r"x:java\d800 script:1",
+        r"x:java\110000 script:1",
+        "x:java\u{1}script:1", // a control character, not an escape: removed as `url_ok` does
+    ] {
+        let out = clean(&format!("<p style=\"{v}\">x</p>"));
+        assert!(!out.contains("style"), "{v:?} was kept: {out}");
+        assert!(out.contains(">x<"), "{v:?}: {out}");
+    }
+}
+
+/// What the test above is not allowed to pass by: a hex number is read greedily to six digits, so these spell something that is not
+/// a dangerous token, and a comment holds what it holds without it being read. All are kept as written.
+#[test]
+fn a_css_escape_that_spells_something_else_is_kept() {
+    for v in [
+        r"x:\76bscript:1",     // `\76b` is U+076B
+        r"x:\6a1avascript:1",  // `\6a1a` is U+6A1A
+        r"x:\6a 61vascript:1", // `j`, then `61vascript`
+        r"content:'\201C'",
+        r"font-family:\5B57\4F53",
+        r"x:\@mport 1", // `\@` is `@`, and `@mport` is no `@import`
+        // a comment is a comment: what it holds is not read, closed or not (CSS Syntax 3, §4.3.2)
+        r"color:red /* javascript:alert(1) */",
+        r"color:red /* expression(1)",
+        r"color:red /*/ javascript:1",
+    ] {
+        let out = clean(&format!("<p style=\"{v}\">x</p>"));
+        assert!(out.contains(&format!("style=\"{v}\"")), "{v:?} was dropped: {out}");
     }
 }
 

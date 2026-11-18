@@ -306,7 +306,10 @@ fn expected(before: &Model, w: &World, specs: &[Spec]) -> Result<Model, ()> {
             (Spec::Description(n), _) => {
                 m.description = format!("<p>d{n}</p>");
                 m.text = Some(format!("d{n}"));
-                m.policy = Some(1);
+                // The starting rows below say `Some(1)`, a row cleaned under an older policy than the current one: a description that
+                // is named moves the row to the current version, and one that is not named leaves it at 1 (a model that started at
+                // the current version could not tell an update that stores the policy from one that forgets to).
+                m.policy = Some(thrust_html::SCHEMA_VERSION);
             }
             (Spec::Priority(_), Ask::Priority(p)) => m.priority = p,
             (Spec::State(to), _) => m.state = to.map_or(STATE_BACKLOG, |t| STATES[usize::from(t) % 3]),
