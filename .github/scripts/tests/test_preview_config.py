@@ -9,7 +9,7 @@
    and consumers, room bindings with and without a script_name of their own, every subset of the top-level-only settings.
    The output equals the model's, which is written here and not taken from the script.
 3. Refusals, each with nothing written: every binding kind the script does not know, a configuration that already has a
-   `previews` block, no name, no version_metadata, an unknown queue or Durable Object setting, the `isolated` profile;
+   `previews` block, no name, no version_metadata, an unknown queue or Durable Object setting, isolated without resources;
    and an unreadable file is exit 2.
 A path argument points it at a deliberately broken copy, to show this test fails.
 """
@@ -58,11 +58,14 @@ def model(cfg):
     return out
 
 
-def derive(cfg_path, profile="shared"):
+def derive(cfg_path, profile="shared", resources=None):
     out = os.path.join(work, "out.json")
     if os.path.exists(out):
         os.remove(out)
-    p = subprocess.run([sys.executable, "-I", SCRIPT, "--config", cfg_path, "--profile", profile, "--out", out],
+    args = [sys.executable, "-I", SCRIPT, "--config", cfg_path, "--profile", profile, "--out", out]
+    if resources is not None:
+        args += ["--resources", write_json(resources, "resources.json")]
+    p = subprocess.run(args,
                        capture_output=True, text=True)
     produced = None
     if os.path.exists(out):
@@ -178,9 +181,37 @@ for label, cfg, needle in (
     rc, out, got = derive(write_json(cfg))
     check(f"refused: {label}, named, nothing written", (rc, needle in out, got), (1, True, None))
 rc, out, got = derive(write_json(base), profile="isolated")
-check("refused: the isolated profile (stage F), nothing written", (rc, "isolated" in out, got), (1, True, None))
+check("refused: isolated without resources, nothing written", (rc, "isolated" in out, got), (1, True, None))
 rc, out, got = derive(os.path.join(work, "missing.toml"))
 check("an unreadable configuration: exit 2", (rc, got), (2, None))
+
+# Isolated configs use explicit PR resources; generated ids and PR numbers test that no production data binding leaks in.
+for i in range(40):
+    n = rng.randint(1, 999999999)
+    resources = {"pr": n, "hyperdrive_id": f"{rng.randrange(1, 2**128):032x}", "bucket": f"thrust-pr-{n}-blobs",
+                 "queue": f"thrust-pr-{n}-events", "rate_signin": str(200000 + i * 2), "rate_v1": str(200001 + i * 2),
+                 "base_url": prod["vars"]["THRUST_PUBLIC_BASE_URL"], "csrf": rng.choice(["on", "off"])}
+    rc, out, got = derive(rendered, "isolated", resources)
+    check(f"isolated {i}: succeeds", rc, 0)
+    if got:
+        block = got["previews"]
+        check(f"isolated {i}: top level unchanged", {k: v for k, v in got.items() if k != "previews"}, prod)
+        check(f"isolated {i}: correct data resources", (block["hyperdrive"][0]["id"], block["r2_buckets"][0]["bucket_name"],
+              block["queues"]["producers"][0]["queue"]), (resources["hyperdrive_id"], resources["bucket"], resources["queue"]))
+        check(f"isolated {i}: local room, no consumer or email", (block["durable_objects"], "consumers" in block["queues"], "send_email" in block),
+              ({"bindings": [{"name": "ROOM", "class_name": "RoomDo"}]}, False, False))
+        check(f"isolated {i}: explicit variables and rate ids", (block["vars"], [x["namespace_id"] for x in block["ratelimits"]]),
+              ({"THRUST_CSRF_ENFORCE": resources["csrf"], "THRUST_PUBLIC_BASE_URL": resources["base_url"]}, [resources["rate_signin"], resources["rate_v1"]]))
+    for key, value in (("pr", 0), ("hyperdrive_id", prod["hyperdrive"][0]["id"]), ("bucket", "production"),
+                       ("queue", "production"), ("rate_signin", prod["ratelimits"][0]["namespace_id"]),
+                       ("base_url", "http://unsafe.example"), ("csrf", "maybe")):
+        bad = {**resources, key: value}
+        rc, out, got = derive(rendered, "isolated", bad)
+        check(f"isolated {i}: invalid {key} refused", (rc, got), (1, None))
+    changed = copy.deepcopy(prod)
+    changed["durable_objects"]["bindings"][0]["script_name"] = "thrust-production"
+    rc, out, got = derive(write_json(changed), "isolated", resources)
+    check(f"isolated {i}: external room refused", (rc, got), (1, None))
 
 print(f"test_preview_config: {passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)

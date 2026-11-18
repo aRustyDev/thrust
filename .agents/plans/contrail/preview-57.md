@@ -1,0 +1,54 @@
+# Per-PR previews (#57)
+
+Thrust owns reconciliation and the Access-protected provisioner; GitHub Actions uses no
+Kubernetes credential. The development database bootstrap, dedicated Hyperdrive, Worker,
+Access policy and service token are live. Reconciliation creates per-PR roles, schemas and
+Hyperdrives, repairs interrupted credential updates, and sweeps closed PRs. PR #298's
+creation and cleanup were observed through Actions and the provisioner inventory. The
+provisioner checks are part of the required CI gate (#298). A synthetic direct live test
+exercised password-update recovery; the interrupted-update path still needs an Actions test.
+
+## Remaining work
+
+1. Define and implement a trusted migration execution and credential contract. Migrate the
+   exact PR revision as `pr_<n>` through a bounded, authenticated path; never expose the
+   provisioner, deployment or shared database credentials to PR-controlled code. Demonstrate
+   that a migration attempting to write to `public` fails. Order migration before deployment.
+2. Derive an isolated Preview configuration from trusted inputs: the reconciled per-PR
+   Hyperdrive, isolated bucket and queue, dev rate limits, and Preview-owned Durable Objects.
+   The Worker currently requires a queue producer binding even though Previews do not consume
+   queues. Define provisioning and cleanup for the extra resources. Do not copy production
+   resources or secrets. `scripts/preview-config.py` now renders this profile with explicitly
+   supplied resource identifiers, distinct production data resources, Preview-owned rooms and
+   disabled email. It does not establish ownership or origin of a supplied ID; its caller must
+   verify those against trusted live inventory. It is not yet wired to deployment. Configure
+   Access before making Preview URLs reachable.
+3. Deploy the exact built revision, check the actual applied binding identities and smoke the
+   Preview, then publish its Flagship target. `scripts/preview-result.py` currently checks
+   Hyperdrive, R2 and queue binding names only: establish the live API response shape and add
+   fail-closed identity checks or a separately verified binding contract before relying on it.
+   A stale run must not publish over a newer commit or a closed PR.
+4. Reconcile Preview, Flagship, database, Hyperdrive, bucket and queue deletion, including
+   missed close events and interrupted updates. Exercise a real PR through open, migrate,
+   connect, deploy, close and cleanup; run interrupted Hyperdrive recovery through Actions.
+
+## Deployment action assessment (2026-11-18)
+
+The [official Wrangler action](https://github.com/marketplace/actions/deploy-to-cloudflare-workers-with-wrangler)
+can deploy a named Preview and return its URL and IDs. Evaluate it for the trusted upload and
+GitHub Deployment reporting; compare with the existing pinned Wrangler invocation in
+`scripts/deploy-target.sh`. An action does not replace exact-revision, binding, smoke, Access
+or Flagship checks. Pin any adopted action to a reviewed full commit and its Wrangler version.
+
+The [W3Dev deploy action](https://github.com/W3Dev/cloudflare-worker-deploy) is a reference for
+native Preview creation, outputs and close-event deletion; assess its handling of prebuilt
+artifacts and permissions before adoption. The [Preview URL lookup](https://github.com/marketplace/actions/cloudflare-preview-url)
+can help a separate read-only test workflow, subject to its naming support; the deploy itself
+already returns the URL. The [shidil](https://github.com/marketplace/actions/cloudflare-workers-preview)
+and [mertselimb](https://github.com/marketplace/actions/cloudflare-workers-pr-preview) actions
+are oriented around PR-specific Worker deployments rather than this native Preview lifecycle.
+None supplies the Postgres provisioner, resource isolation or reconciliation contract.
+
+[Cloudflare's resource matrix](https://developers.cloudflare.com/workers/previews/resources/)
+states that Hyperdrive, R2 and queues are shared when their identifiers are shared; a Preview
+name by itself does not isolate them.
