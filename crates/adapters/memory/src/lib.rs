@@ -2043,6 +2043,9 @@ impl Database for MemoryDatabase {
                 updated_at: w.created_at,
                 updated_by: None,
                 description_html: w.description_html.clone(),
+                // a seeded row is as one written before the derived columns existed: nothing was derived for it
+                description_stripped: None,
+                description_schema: None,
                 assignee_ids: w.assignee_ids.clone(),
                 label_ids: w.label_ids.clone(),
                 parent_id: w.parent_id,
@@ -2280,6 +2283,8 @@ impl Tx for MemoryTx {
             attrs.updated_at = update.updated_at;
             attrs.updated_by = Some(update.updated_by);
             attrs.description_html = update.description_html;
+            attrs.description_stripped = update.description_stripped;
+            attrs.description_schema = update.description_schema;
             attrs.parent_id = update.parent_id;
             attrs.point = update.point;
             if let Some(people) = update.assignee_ids {

@@ -2089,6 +2089,9 @@ async fn the_work_item_tables_have_the_columns_they_say_and_the_constraints_that
             ("deleted_at", ts),
             ("description", text),
             ("description_html", text),
+            // issue #48 (migration 0019): the text and the policy of the one stored form, and no JSON or binary beside it
+            ("description_schema", "smallint"),
+            ("description_stripped", text),
             ("external_id", text),
             ("external_source", text),
             ("id", uuid),
@@ -2331,6 +2334,42 @@ async fn regression_migration_0013_upgrades_a_database_that_has_work_items() {
     assert_eq!((row.item.name.as_str(), row.state_group), ("Legacy item", None));
 }
 
+/// Issue #48, its first acceptance box (D-020): the table of work items keeps a description in ONE form, the cleaned HTML, and the two
+/// things derived from it, its text and the policy it was cleaned under. It has no `description_json` and no `description_binary`: at P0
+/// they would be a second stored form, one of them not cleaned (FR-14), and `thrust-editor-doc` derives them from the HTML at P1.
+/// Control: the same question asked of a table that does have them finds them, so it can see what it looks for.
+#[tokio::test]
+async fn a_work_item_has_the_one_stored_form_of_a_description_and_no_other() {
+    let env = env().await;
+    let raw = env.conn.raw().await.unwrap();
+    async fn columns(raw: &tokio_postgres::Client, table: &str) -> Vec<String> {
+        raw.query(
+            "SELECT column_name::text FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = $1",
+            &[&table],
+        )
+        .await
+        .unwrap()
+        .iter()
+        .map(|r| r.get::<_, String>(0))
+        .collect()
+    }
+    let work_items = columns(&raw, "work_items").await;
+    for kept in ["description_html", "description_stripped", "description_schema"] {
+        assert!(work_items.iter().any(|c| c == kept), "work_items has no {kept}: {work_items:?}");
+    }
+    for refused in ["description_json", "description_binary"] {
+        assert!(!work_items.iter().any(|c| c == refused), "work_items has a {refused}");
+    }
+    raw.batch_execute("CREATE TABLE a_table_with_both_forms (description_json jsonb, description_binary bytea)")
+        .await
+        .unwrap();
+    let both = columns(&raw, "a_table_with_both_forms").await;
+    assert!(
+        both.iter().any(|c| c == "description_json") && both.iter().any(|c| c == "description_binary"),
+        "the question cannot see a column that is there: {both:?}"
+    );
+}
+
 /// A work item of the scope's project with these attributes, in the open transaction.
 async fn insert_with_attrs(
     tx: &mut Box<dyn Tx>,
@@ -2381,6 +2420,8 @@ async fn a_work_item_and_its_attributes_are_one_transaction() {
         updated_at: when,
         updated_by: Some(owner),
         description_html: "<p>Résumé &amp; more</p>".into(),
+        description_stripped: Some("Résumé &amp; more".into()),
+        description_schema: Some(1),
         assignee_ids: vec![owner, owner],
         label_ids: vec![label],
         parent_id: None,
@@ -3252,6 +3293,8 @@ async fn an_update_replaces_the_join_rows_of_the_people_and_labels_it_names_and_
         updated_at: at(10),
         updated_by: owner,
         description_html: "<p></p>".into(),
+        description_stripped: Some(String::new()),
+        description_schema: Some(1),
         assignee_ids: people,
         label_ids: labels,
         external_source: None,
@@ -3309,6 +3352,8 @@ async fn an_update_sees_what_its_own_transaction_wrote() {
         updated_at: at(10),
         updated_by: owner,
         description_html: "<p>x</p>".into(),
+        description_stripped: Some("x".into()),
+        description_schema: Some(1),
         assignee_ids: Some(vec![owner]),
         label_ids: None,
         external_source: None,
@@ -3387,6 +3432,8 @@ async fn an_update_finds_a_live_work_item_of_the_scopes_own_project_alone() {
         updated_at: at(10),
         updated_by: owner,
         description_html: "<p>after</p>".into(),
+        description_stripped: Some("after".into()),
+        description_schema: Some(1),
         assignee_ids: Some(vec![owner]),
         label_ids: None,
         external_source: None,
@@ -3484,6 +3531,8 @@ fn whole(
         updated_at: Utc.timestamp_opt(1_800_001_000, 0).unwrap(),
         updated_by: by,
         description_html: r.attrs.description_html.clone(),
+        description_stripped: r.attrs.description_stripped.clone(),
+        description_schema: r.attrs.description_schema,
         assignee_ids: None,
         label_ids: None,
         external_source: key.map(|k| k.0.to_string()),

@@ -45,6 +45,8 @@ mutant_code_mails_unknown = []
 [dependencies]
 thrust-contracts = { workspace = true }
 thrust-ports = { workspace = true }
+# What a work item's description is cleaned and read with (issue #48); core may depend on it because it is in core/ and has no runtime.
+thrust-html = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }

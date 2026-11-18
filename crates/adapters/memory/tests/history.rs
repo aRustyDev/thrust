@@ -526,6 +526,8 @@ fn before() -> WorkItemAttrs {
         updated_at: at(1),
         updated_by: Some(uid(3)),
         description_html: "<p>before</p>".into(),
+        description_stripped: Some("before".into()),
+        description_schema: Some(1),
         assignee_ids: vec![uid(1), uid(2)],
         label_ids: vec![label_id(1), label_id(2)],
         parent_id: None,
@@ -573,6 +575,8 @@ fn change() -> WorkItemUpdate {
         updated_at: at(50),
         updated_by: uid(2),
         description_html: "<p>after</p>".into(),
+        description_stripped: Some("after".into()),
+        description_schema: Some(2),
         assignee_ids: Some(vec![uid(3)]),
         label_ids: Some(vec![label_id(3)]),
         external_source: Some("gh".into()),
@@ -614,6 +618,8 @@ fn after(row: &WorkItemRow, u: &WorkItemUpdate) -> WorkItemRow {
     r.attrs.updated_at = u.updated_at;
     r.attrs.updated_by = Some(u.updated_by);
     r.attrs.description_html = u.description_html.clone();
+    r.attrs.description_stripped = u.description_stripped.clone();
+    r.attrs.description_schema = u.description_schema;
     r.attrs.parent_id = u.parent_id;
     r.attrs.point = u.point;
     r.item.external_source = u.external_source.clone();
@@ -658,6 +664,8 @@ fn any_update() -> impl Strategy<Value = WorkItemUpdate> {
                 completed_at: completed.map(at),
                 updated_at: at(updated),
                 updated_by: uid(by),
+                description_stripped: Some(html.clone()),
+                description_schema: Some(1),
                 description_html: html,
                 assignee_ids: people.map(|p| p.into_iter().map(uid).collect()),
                 label_ids: labels.map(|l| l.into_iter().map(label_id).collect()),

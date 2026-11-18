@@ -47,6 +47,9 @@ import json, sys
 desired = {int(x) for x in open(sys.argv[1]) if x.strip()}
 schemas = {int(x["number"]): x for x in json.load(open(sys.argv[2]))}
 hyperdrive = {int(x["number"]): x for x in json.load(open(sys.argv[3]))}
+# Check every existing desired origin before any database or Cloudflare mutation.
+for number in sorted(desired & set(hyperdrive)):
+    print("verify", number)
 for number in sorted(desired):
     s = schemas.get(number, {})
     if not (s.get("schema") and s.get("login_role") and s.get("search_path")) or s.get("pending", True) or number not in hyperdrive:
@@ -57,6 +60,10 @@ PY
 
 while read -r action number; do
   [[ -n "${action:-}" ]] || continue
+  if [[ "$action" == verify ]]; then
+    "$HYPERDRIVE" verify-pr "$number" >/dev/null
+    continue
+  fi
   if [[ "$dry" -eq 1 ]]; then echo "$action pr_$number"; continue; fi
   if [[ "$action" == ensure ]]; then
     password="$tmp/pr-$number.password"
@@ -66,6 +73,8 @@ while read -r action number; do
     else
       "$HYPERDRIVE" ensure "thrust-pr-$number" --vpc-service thrust-pg-dev --user "pr_$number" --password-file "$password"
     fi
+    # Do not acknowledge password synchronization until the resulting config still matches.
+    "$HYPERDRIVE" verify-pr "$number" >/dev/null
     "$SCHEMA" acknowledge "$number"
     rm -f "$password"
   else

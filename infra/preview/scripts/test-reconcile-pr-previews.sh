@@ -38,7 +38,15 @@ else echo "schema $*" >>"$CALLS"; fi
 SH
 cat >"$T/hyperdrive" <<'SH'
 #!/bin/sh
-if [ "$1" = list-pr ]; then printf '%s\n' '[{"number":8,"id":"h8","name":"thrust-pr-8"},{"number":4,"id":"h4","name":"thrust-pr-4"}]'; else echo "hyperdrive $*" >>"$CALLS"; [ "${FAIL_HYPERDRIVE:-0}" != 1 ]; fi
+if [ "$1" = list-pr ]; then printf '%s\n' '[{"number":8,"id":"h8","name":"thrust-pr-8"},{"number":4,"id":"h4","name":"thrust-pr-4"}]'; else
+  echo "hyperdrive $*" >>"$CALLS"
+  if [ "$1" != verify-pr ]; then [ "${FAIL_HYPERDRIVE:-0}" != 1 ] || exit 1; fi
+  if [ "$1" = verify-pr ]; then
+    [ "${FAIL_VERIFY:-0}" != 1 ] || exit 1
+    count=$(grep -c '^hyperdrive verify-pr ' "$CALLS")
+    [ "$count" != "${FAIL_VERIFY_AT:-0}" ] || exit 1
+  fi
+fi
 SH
 chmod +x "$T/schema" "$T/hyperdrive"
 printf '8\n9\n' >"$T/desired"
@@ -48,6 +56,15 @@ printf '8\n' >"$T/pending-desired"
 inventory='[{"number":8,"schema":true,"login_role":true,"search_path":true,"pending":true}]'
 CALLS="$T/calls" SCHEMA_INVENTORY="$inventory" PR_SCHEMA_SH="$T/schema" HYPERDRIVE_SH="$T/hyperdrive" "$RECONCILE" --desired "$T/pending-desired" --dry-run >"$T/out"
 grep -qx 'ensure pr_8' "$T/out" && ok 'pending password synchronization is retried' || bad 'pending retry'
+: >"$T/calls"
+if CALLS="$T/calls" FAIL_VERIFY=1 PR_SCHEMA_SH="$T/schema" HYPERDRIVE_SH="$T/hyperdrive" "$RECONCILE" --desired "$T/desired" >/dev/null 2>&1; then bad 'drifted existing Hyperdrive passed'; else
+  if grep -qE 'schema (create|drop|acknowledge)|hyperdrive (ensure|rotate-password|drop-pr)' "$T/calls"; then bad 'drift caused a mutation'; else ok 'drift refuses reconciliation before any mutation'; fi
+fi
+: >"$T/calls"
+if CALLS="$T/calls" SCHEMA_INVENTORY="$inventory" FAIL_VERIFY_AT=2 PR_SCHEMA_SH="$T/schema" HYPERDRIVE_SH="$T/hyperdrive" "$RECONCILE" --desired "$T/pending-desired" >/dev/null 2>&1; then bad 'post-update drift passed'; else
+  if grep -q 'schema acknowledge 8' "$T/calls"; then bad 'post-update drift acknowledged'; else ok 'post-update drift leaves password synchronization pending'; fi
+fi
+: >"$T/calls"
 if CALLS="$T/calls" SCHEMA_INVENTORY="$inventory" FAIL_HYPERDRIVE=1 PR_SCHEMA_SH="$T/schema" HYPERDRIVE_SH="$T/hyperdrive" "$RECONCILE" --desired "$T/pending-desired" >/dev/null 2>&1; then bad 'failed Hyperdrive update passed'; else
   if grep -q 'schema acknowledge 8' "$T/calls"; then bad 'failure acknowledged'; else ok 'failed Hyperdrive update is not acknowledged'; fi
 fi

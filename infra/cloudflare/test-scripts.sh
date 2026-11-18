@@ -229,6 +229,39 @@ prconfigs='{"success":true,"errors":[],"result":[
 echo "$prconfigs" >"$tmp/list.json"
 rc="$(run list-pr)"
 [[ "$rc" == 0 ]] && grep -q '"number": 12' "$tmp/out" && ! grep -q 'unmanaged' "$tmp/out" && ok "list-pr exposes only exact managed names" || bad "list-pr inventory (rc=$rc)"
+
+# The non-secret deployment receipt must reject each form of origin drift. Generate different
+# PR numbers and independently change one field at a time, including absent and duplicate configs.
+python3 - "$script" "$FAKE_LIST" "$PRL" <<'PY' && ok 'verify-pr rejects drift and emits a receipt only for a matching origin' || bad 'verify-pr isolation controls'
+import copy, json, os, subprocess, sys
+script, fixture, max_limit = sys.argv[1], sys.argv[2], int(sys.argv[3])
+for number in (1, 12, 999999999):
+    name = f"thrust-pr-{number}"
+    item = {"id": "12" * 16, "name": name, "origin": {"scheme": "postgresql", "database": "thrust",
+            "user": f"pr_{number}", "service_id": "vpc-dev"}, "caching": {"disabled": True}, "origin_connection_limit": max_limit}
+    def run(items, selector=str(number)):
+        with open(fixture, "w") as f:
+            json.dump({"success": True, "result": items}, f)
+        return subprocess.run([script, "verify-pr", selector], capture_output=True, text=True, env=os.environ)
+    good = run([item])
+    assert good.returncode == 0, good.stderr
+    assert json.loads(good.stdout) == {"number": number, "id": item["id"], "name": name}
+    cases = []
+    for key, value in (("scheme", "mysql"), ("database", "other"), ("user", "pr_999"), ("service_id", "vpc-prod")):
+        wrong = copy.deepcopy(item); wrong["origin"][key] = value; cases.append([wrong])
+    for key, value in (("id", "0" * 32), ("caching", {}), ("origin_connection_limit", max_limit + 1),
+                       ("origin_connection_limit", None), ("origin_connection_limit", True)):
+        wrong = copy.deepcopy(item); wrong[key] = value; cases.append([wrong])
+    duplicate = copy.deepcopy(item); duplicate["id"] = "34" * 16
+    cases += [[], [item, duplicate]]
+    for case in cases:
+        result = run(case)
+        assert result.returncode != 0 and not result.stdout, (number, case, result.stdout, result.stderr)
+    for selector in ("0", "01", "1x", "1000000000"):
+        result = run([item], selector)
+        assert result.returncode != 0 and not result.stdout, selector
+PY
+echo "$prconfigs" >"$tmp/list.json"
 rc="$(run drop-pr 12)"
 [[ "$rc" == 0 ]] && grep -q '/hyperdrive/configs/h12' "$FAKE_CALLS" && ok "drop-pr deletes only the exact managed config id" || bad "drop-pr delete (rc=$rc): $(<"$tmp/out")"
 echo "$good" >"$tmp/list.json"

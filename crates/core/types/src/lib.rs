@@ -257,7 +257,13 @@ pub struct WorkItemAttrs {
     pub completed_at: Option<Timestamp>,
     pub updated_at: Timestamp,
     pub updated_by: Option<UserId>,
+    /// The description, cleaned (issue #48): the one form that P0 stores, so there is no JSON or binary beside it.
     pub description_html: String,
+    /// The text of `description_html` (`strip_tags` of it; the pin's `description_stripped`), and the policy `description_html` was
+    /// cleaned under (`thrust_html::SCHEMA_VERSION`). Both `None` for a row that was written before migration 0019, and for a work
+    /// item the slice made: nothing was derived for it, and an empty description is `Some("")`.
+    pub description_stripped: Option<String>,
+    pub description_schema: Option<i16>,
     /// Ascending by id.
     pub assignee_ids: Vec<UserId>,
     /// Ascending by id.
@@ -281,6 +287,8 @@ impl WorkItemAttrs {
             updated_at: created_at,
             updated_by: None,
             description_html: "<p></p>".to_string(),
+            description_stripped: None,
+            description_schema: None,
             assignee_ids: Vec::new(),
             label_ids: Vec::new(),
             parent_id: None,
@@ -311,6 +319,10 @@ pub struct WorkItemUpdate {
     pub updated_at: Timestamp,
     pub updated_by: UserId,
     pub description_html: String,
+    /// The text and the policy of `description_html` after the update: new ones when the request gave a description, the row's own
+    /// when it did not (see [`WorkItemAttrs`]).
+    pub description_stripped: Option<String>,
+    pub description_schema: Option<i16>,
     /// `Some` replaces the people assigned, every row of them (those of people who have left the project too); `None` leaves them.
     pub assignee_ids: Option<Vec<UserId>>,
     /// `Some` replaces the labels; `None` leaves them.

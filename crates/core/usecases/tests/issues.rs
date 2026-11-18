@@ -145,6 +145,48 @@ fn what_a_creation_names_is_kept() {
     );
 }
 
+/// D-020 (issue #48): a description is cleaned by the use-case, which the compat plane and `/api/v1` both hand it to as sent, and the text
+/// derived from the cleaned form is stored with it, with the policy it was cleaned under. A work item sent none has the pin's empty
+/// paragraph (and its empty text), an empty description stays empty, and what must not be stored is not, in the HTML or in the text.
+/// The cases are the pin's own behaviours (`validate_html_content`, `strip_tags`), not the code's.
+#[rstest]
+#[case::none_sent(None, "<p></p>", "")]
+#[case::empty_stays_empty(Some(""), "", "")]
+#[case::plain(Some("<p>hi</p>"), "<p>hi</p>", "hi")]
+#[case::an_entity_stays_as_text(Some("<p>a &amp; <b>b</b></p>"), "<p>a &amp; <b>b</b></p>", "a &amp; b")]
+#[case::a_script_and_a_handler_are_not_stored(Some("<p onclick=\"x()\">hi</p><script>x()</script>"), "<p>hi</p>", "hi")]
+#[case::what_plane_lets_through_is_not_stored(
+    Some("<p style=\"background:url(javascript:alert(1))\">hi</p>"),
+    "<p>hi</p>",
+    "hi"
+)]
+fn a_description_is_cleaned_and_stored_with_its_text_and_its_policy(
+    #[case] sent: Option<&str>,
+    #[case] html: &str,
+    #[case] text: &str,
+) {
+    let w = seeded();
+    let row =
+        made(&w, Actor::MemberA, IssueDraft { description_html: sent.map(str::to_string), ..draft("n") }).unwrap();
+    assert_eq!(row.attrs.description_html, html);
+    assert_eq!(row.attrs.description_stripped.as_deref(), Some(text));
+    assert_eq!(row.attrs.description_schema, Some(1));
+}
+
+/// The pin refuses more than 10 MB of HTML. The request layers check that first, in its words, so this is the use-case's own answer to
+/// one that comes anyway: refused, and nothing is written.
+#[test]
+fn a_description_over_the_limit_is_refused_and_nothing_is_written() {
+    let w = seeded();
+    let over = "a".repeat(thrust_html::MAX_SIZE + 1);
+    let got = made(&w, Actor::MemberA, IssueDraft { description_html: Some(over), ..draft("big") });
+    assert!(matches!(got, Err(IssueError::InvalidDescription)), "{got:?}");
+    assert_eq!(page(&w, Actor::AdminA).unwrap().total, 0, "a refused creation writes nothing");
+    // control: exactly at the limit it is accepted, so the refusal above is the size and nothing else
+    let at = "a".repeat(thrust_html::MAX_SIZE);
+    assert!(made(&w, Actor::MemberA, IssueDraft { description_html: Some(at), ..draft("at the limit") }).is_ok());
+}
+
 /// Spec (`validate`): a start date after the target date is refused, the same day is not, and a refused creation writes nothing.
 #[rstest]
 fn the_dates_must_be_in_order(#[values(0, 1, 2)] start: u32, #[values(0, 1, 2)] target: u32) {

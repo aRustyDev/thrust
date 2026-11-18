@@ -3980,6 +3980,7 @@ dependencies = [
  "thiserror 2.0.21",
  "thrust-adapters-memory",
  "thrust-contracts",
+ "thrust-html",
  "thrust-ports",
 ]
 

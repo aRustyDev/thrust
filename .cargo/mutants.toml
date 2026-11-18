@@ -25,5 +25,14 @@ exclude_globs = [
   "crates/edge/src/runtime.rs",
 ]
 
+# An equivalent mutant, shown and not assumed: `thrust_html::strip_tags` loops while the text has a `<` and a `>`, and `||` for `&&` changes
+# nothing. `strip_once` removes a `<` only by finding the `>` that ends it (a tag, a comment, a declaration), so a text with no `>` has
+# none to remove and one with no `<` has none either: the first pass leaves the count of `<` as it was, and the loop breaks at once,
+# which is what not entering it comes to. (The same function's `==` for `!=` is not equivalent, it loops for ever, and is caught as a
+# timeout.) The regex matches the mutant's whole name as `--list` prints it.
+exclude_re = [
+  "replace && with \\|\\| in strip_tags",
+]
+
 # Uncomment if the workspace denies warnings: mutants that delete code trip unused-* lints.
 # cap_lints = true

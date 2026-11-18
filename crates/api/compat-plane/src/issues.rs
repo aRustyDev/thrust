@@ -116,6 +116,13 @@ fn refusal(e: IssueError) -> PlaneError {
         }
         // the problems of a creation are put in DRF's words by `create`, which has the texts the request used
         IssueError::Fields(_) => PlaneError::BadRequest(json!({"error": "The payload is not valid"})),
+        // the size check of `issue_draft` and `issue_update` answers this first, in the same words; this is the use-case's own answer to
+        // one that came anyway
+        IssueError::InvalidDescription => {
+            let mut errors = FieldErrors::new();
+            fail(&mut errors, "error", "html content is not valid");
+            PlaneError::Fields(errors)
+        }
         IssueError::Core(e) => e.into(),
     }
 }
@@ -236,9 +243,10 @@ fn issue_draft(b: &Map<String, Value>) -> Result<(IssueDraft, Texts), FieldError
     }
     if let Some(v) = b.get("description_html") {
         match char_field(v, None, true, false) {
-            // the pin cleans what it stores; an empty text stays empty (the cleaner answers none for it)
-            Ok(text) => match thrust_html::validate_html_content(text.as_deref().unwrap_or_default()) {
-                Ok(clean) => draft.description_html = clean.or(text),
+            // the pin cleans what it stores, and so does the use-case (`thrust_html::describe`, one path for this plane and v1); the size
+            // the pin refuses is checked here, in its words, with the other fields' problems
+            Ok(text) => match thrust_html::check_size(text.as_deref().unwrap_or_default()) {
+                Ok(()) => draft.description_html = text,
                 Err(_) => fail(&mut errors, "error", "html content is not valid"),
             },
             Err(m) => fail(&mut errors, "description_html", m),
@@ -604,9 +612,9 @@ fn issue_update(members: &[(String, Value)]) -> Result<(IssueUpdate, Texts), Fie
             "description_html" => {
                 describes = !v.is_null();
                 match char_field(v, None, true, false) {
-                    // the pin cleans what it stores; an empty text stays empty (the cleaner answers none for it)
-                    Ok(text) => match thrust_html::validate_html_content(text.as_deref().unwrap_or_default()) {
-                        Ok(clean) => update.asks.push(Ask::Description(clean.or(text).unwrap_or_default())),
+                    // the use-case cleans it (see `issue_draft`); an empty text stays empty
+                    Ok(text) => match thrust_html::check_size(text.as_deref().unwrap_or_default()) {
+                        Ok(()) => update.asks.push(Ask::Description(text.unwrap_or_default())),
                         Err(_) => fail(&mut errors, "error", "html content is not valid"),
                     },
                     Err(m) => fail(&mut errors, "description_html", m),
