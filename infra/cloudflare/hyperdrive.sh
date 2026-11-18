@@ -38,6 +38,10 @@
 #   hyperdrive.sh list-pr
 #       Prints a JSON array of only managed per-PR configs. Standard environment configs are not
 #       in the reconciliation surface.
+#   hyperdrive.sh verify-pr <pr-number>
+#       Read-only verification of one config's name, id, dev VPC origin, role, database, disabled
+#       cache and bounded connection limit. Prints a non-secret JSON receipt only on success.
+#       This does not prove the stored password or the database's schema ownership.
 #   hyperdrive.sh drop-pr <pr-number>
 #       Deletes only the exact config named thrust-pr-<pr-number>. Missing is success.
 #
@@ -323,6 +327,36 @@ if not d.get("success"):
     print("hyperdrive: password rotation FAILED:", [e.get("message") for e in d.get("errors", [])]); sys.exit(1)
 print("hyperdrive: password replaced on", d["result"]["name"], "(id", d["result"]["id"] + ")")
 '
+    ;;
+  verify-pr)
+    n="${1:-}"
+    [[ "$#" -eq 1 && "$n" =~ ^[1-9][0-9]{0,8}$ ]] || die "verify-pr needs one canonical PR number in 1..999999999"
+    need_env
+    sid="$(vpc_service_id thrust-pg-dev)"
+    [[ -n "$sid" ]] || die "the dev VPC service id is empty" 3
+    list_configs >"$tmp/configs.json"
+    python3 - "$tmp/configs.json" "$n" "$sid" "$THRUST_PR_ROLE_CONNECTION_LIMIT" <<'PY'
+import json, re, sys
+path, number, sid, limit = sys.argv[1:]
+name = f"thrust-pr-{number}"
+items = [item for item in json.load(open(path)) if item.get("name") == name]
+if len(items) != 1:
+    raise SystemExit(f"hyperdrive: expected one {name} configuration, found {len(items)}")
+item = items[0]
+origin = item.get("origin")
+caching = item.get("caching")
+ident = item.get("id")
+connection_limit = item.get("origin_connection_limit")
+if (not isinstance(ident, str) or not re.fullmatch(r"[0-9a-f]{32}", ident) or ident == "0" * 32
+        or not isinstance(origin, dict) or origin.get("scheme") not in ("postgres", "postgresql")
+        or origin.get("service_id") != sid or origin.get("database") != "thrust"
+        or origin.get("user") != f"pr_{number}"
+        or not isinstance(caching, dict) or caching.get("disabled") is not True
+        or type(connection_limit) is not int or not 5 <= connection_limit <= int(limit)):
+    raise SystemExit(f"hyperdrive: {name} does not match the expected isolated origin, cache or connection limit")
+json.dump({"number": int(number), "id": ident, "name": name}, sys.stdout)
+print()
+PY
     ;;
   list-pr)
     [[ $# -eq 0 ]] || die "list-pr takes no arguments"

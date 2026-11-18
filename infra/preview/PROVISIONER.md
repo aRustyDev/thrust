@@ -119,3 +119,11 @@ set the repository variable `THRUST_PREVIEW_PROVISIONER_ENABLED` to `true` to ac
 Until then its job is skipped, including on the PR that introduces it. A pending marker persists
 across a database-password update until the corresponding Hyperdrive update succeeds; the next
 run retries any pending preview.
+
+`infra/cloudflare/hyperdrive.sh verify-pr <number>` checks a live config's exact name, ID,
+development VPC service, database, per-PR login, disabled cache and bounded connection limit,
+and emits a non-secret JSON receipt only if they match. Reconciliation checks all existing
+desired configs before changing anything, and checks each newly created or updated config
+again before acknowledging its password update. A drifted origin therefore fails closed.
+This is a point-in-time check: it does not verify the stored password, schema ownership or
+what a deployed Worker actually bound, and callers must coordinate against concurrent updates.
