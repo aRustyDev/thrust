@@ -243,3 +243,27 @@ The first part of #195's stage E3 (deploying the edge).
   `wrangler deploy --dry-run` check it against that build.
 - **Its secrets go up with each version** (`wrangler deploy --secrets-file`), since `secrets.required` makes a deploy that
   lacks one fail. The dry run does not check secrets.
+
+## Update — The edge's deploy (2026-11-17)
+
+The rest of #195's stage E3: `scripts/deploy-edge.sh`, `scripts/edge-controls.sh`, and `deploy.yml`'s `deploy-edge`.
+- **Every release deploys the edge,** after production. This deviates from the plan's "when `crates/edge` changed". Every
+  release bumps the workspace version and the lock the edge is built from, so a rule on paths could not tell an edge change
+  from a release. A rule that missed a dependency's fix would be worse than a redeploy. The edge's tag is therefore always
+  the release's commit.
+- **The proof** comes in three parts, all on the shared hostname:
+  - the smoke through the edge: this edge answers, the request reaches production, production is at the release, and a
+    real read works;
+  - the smoke's control: an edge nobody deployed must fail;
+  - the edge's own controls: a forged pin goes to production, and the opt-in gives no pin to a request Access did not
+    admit.
+
+  Any failure rolls back to the edge that was live, and a probe must show that edge answering again.
+- **The first deploy is not smoked.** A Worker that did not exist has no hostname, so the first edge deploy cannot reach
+  `thrust.sow.foo` until the infrastructure moves it. That deploy stops green, and the next release proves it.
+- **A split or unreadable live edge stops the deploy:** nobody plans a gradual rollout of the edge, and there would be no
+  one version to roll back to.
+- **The job runs in its own environment, `edge`,** while the repository variable `THRUST_EDGE_ENABLED` is `true`. That
+  environment holds what the edge needs, and none of production's database route or Flagship's write token. It requires no
+  reviewers of its own: the same run's production deploy was already approved.
+
