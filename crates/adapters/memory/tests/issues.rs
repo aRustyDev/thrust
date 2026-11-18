@@ -172,6 +172,8 @@ impl Spec {
             updated_at: at(self.updated),
             updated_by: Some(uid(by)),
             description_html: "<p>x</p>".into(),
+            description_stripped: Some("x".into()),
+            description_schema: Some(1),
             assignee_ids: vec![],
             label_ids: vec![],
             parent_id: None,

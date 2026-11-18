@@ -71,6 +71,12 @@ fn item_error(e: IssueError) -> V1Error {
             V1Error::error(StatusCode::FORBIDDEN, "Only admin or creator can delete the work item")
         }
         IssueError::Fields(_) => V1Error::error(StatusCode::BAD_REQUEST, "The payload is not valid"),
+        // the size check of `validate()` answers this first, in the same words; this is the use-case's own answer to one that came anyway
+        IssueError::InvalidDescription => {
+            let mut errors = FieldErrors::new();
+            fail(&mut errors, "error", "html content is not valid");
+            V1Error::Fields(errors)
+        }
         IssueError::Core(other) => other.into(),
     }
 }
@@ -495,8 +501,10 @@ impl PatchedIssueRequest {
             if sent.is_empty() {
                 return Err(non_field("Invalid HTML passed"));
             }
-            match thrust_html::validate_html_content(sent) {
-                Ok(clean) => description_html = Some(clean.unwrap_or_else(|| sent.to_string())),
+            // the use-case cleans it (`thrust_html::describe`, the one path of this API and the compat plane); the size the pin refuses is
+            // checked here, in its words
+            match thrust_html::check_size(sent) {
+                Ok(()) => description_html = Some(sent.to_string()),
                 Err(_) => {
                     let mut errors = FieldErrors::new();
                     fail(&mut errors, "error", "html content is not valid");

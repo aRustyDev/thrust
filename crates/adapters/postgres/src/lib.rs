@@ -49,6 +49,7 @@ pub const MIGRATION_0015: &str = include_str!("../migrations/0015_v1_surface.sql
 pub const MIGRATION_0016: &str = include_str!("../migrations/0016_assets.sql");
 pub const MIGRATION_0017: &str = include_str!("../migrations/0017_password_resets.sql");
 pub const MIGRATION_0018: &str = include_str!("../migrations/0018_login_codes.sql");
+pub const MIGRATION_0019: &str = include_str!("../migrations/0019_description_stripped.sql");
 
 /// One migration file of the adapter: its file name, which is what the ledger records it by, and its SQL.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -59,7 +60,7 @@ pub struct Migration {
 
 /// Every migration file, in the order they were written (their names' order). A file added to `migrations/` and not here is not
 /// applied, and `ledger`'s test of this list against the directory fails.
-pub const MIGRATIONS: [Migration; 18] = [
+pub const MIGRATIONS: [Migration; 19] = [
     Migration { file: "0001_init.sql", sql: MIGRATION_0001 },
     Migration { file: "0002_sequence_tenant_key.sql", sql: MIGRATION_0002 },
     Migration { file: "0003_workspaces.sql", sql: MIGRATION_0003 },
@@ -78,6 +79,7 @@ pub const MIGRATIONS: [Migration; 18] = [
     Migration { file: "0016_assets.sql", sql: MIGRATION_0016 },
     Migration { file: "0017_password_resets.sql", sql: MIGRATION_0017 },
     Migration { file: "0018_login_codes.sql", sql: MIGRATION_0018 },
+    Migration { file: "0019_description_stripped.sql", sql: MIGRATION_0019 },
 ];
 
 /// What `migrate` may do, beyond applying what is missing.
@@ -649,7 +651,7 @@ fn work_item(r: &Row) -> WorkItem {
 const WIR_COLS: &str = "w.id, w.workspace_id, w.project_id, w.sequence_id, w.sort_order, w.name, w.description, \
     w.external_source, w.external_id, w.created_by, w.created_at, w.archived_at, w.is_draft, w.deleted_at, \
     w.state_id, w.priority, w.start_date, w.target_date, w.completed_at, w.updated_at, w.updated_by, w.description_html, \
-    w.parent_id, w.point, st.state_group AS st_group, \
+    w.description_stripped, w.description_schema, w.parent_id, w.point, st.state_group AS st_group, \
     ARRAY(SELECT a.user_id FROM work_item_assignees a \
             JOIN project_members pm ON pm.project_id = a.project_id AND pm.workspace_id = a.workspace_id AND pm.user_id = a.user_id \
             JOIN workspace_members wm ON wm.workspace_id = a.workspace_id AND wm.user_id = a.user_id AND wm.is_active \
@@ -671,6 +673,8 @@ fn work_item_row(r: &Row) -> Result<WorkItemRow, DbError> {
             updated_at: r.get("updated_at"),
             updated_by: r.get::<_, Option<Uuid>>("updated_by").map(UserId),
             description_html: r.get("description_html"),
+            description_stripped: r.get("description_stripped"),
+            description_schema: r.get("description_schema"),
             assignee_ids: r.get::<_, Vec<Uuid>>("assignee_ids").into_iter().map(UserId).collect(),
             label_ids: r.get("label_ids"),
             parent_id: r.get("parent_id"),
@@ -3629,7 +3633,8 @@ impl Tx for PgTx {
             .client()?
             .execute(
                 "UPDATE work_items SET state_id = $4, priority = $5, start_date = $6, target_date = $7, completed_at = $8, \
-                   updated_at = $9, updated_by = $10, description_html = $11, parent_id = $12, point = $13 \
+                   updated_at = $9, updated_by = $10, description_html = $11, parent_id = $12, point = $13, \
+                   description_stripped = $14, description_schema = $15 \
                  WHERE workspace_id = $1 AND project_id = $2 AND id = $3",
                 &[
                     &ws.0,
@@ -3645,6 +3650,8 @@ impl Tx for PgTx {
                     &attrs.description_html,
                     &attrs.parent_id,
                     &attrs.point,
+                    &attrs.description_stripped,
+                    &attrs.description_schema,
                 ],
             )
             .await
@@ -3692,7 +3699,7 @@ impl Tx for PgTx {
             .execute(
                 "UPDATE work_items SET name = $4, state_id = $5, priority = $6, start_date = $7, target_date = $8, completed_at = $9, \
                    updated_at = $10, updated_by = $11, description_html = $12, parent_id = $13, point = $14, \
-                   external_source = $15, external_id = $16 \
+                   external_source = $15, external_id = $16, description_stripped = $17, description_schema = $18 \
                  WHERE workspace_id = $1 AND project_id = $2 AND id = $3 AND deleted_at IS NULL AND archived_at IS NULL AND is_draft = false",
                 &[
                     &ws.0,
@@ -3711,6 +3718,8 @@ impl Tx for PgTx {
                     &update.point,
                     &update.external_source,
                     &update.external_id,
+                    &update.description_stripped,
+                    &update.description_schema,
                 ],
             )
             .await
