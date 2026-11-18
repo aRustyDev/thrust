@@ -187,6 +187,8 @@ skipped.
 | 7 CPU time | Runner-minutes (the sum of job durations; GitHub reports 0 billable minutes on this public repository) measured before and after: affected-only rules, prebuilt tools, no duplicate build, runner size | pull request |
 | 8 Production documentation | Final docs, a runbook for each failure, the stage marked done | per workflow |
 
+The preview control-plane CI gap noted above is addressed by the required gate: `lint` checks the provisioner's wasm32 build, while `ci-scripts`, `hermetic` and `pg-adapter` run its existing tests. The redundant standalone workflow is removed and the infrastructure path selection is a tested planner rule. The provisioner crate's special `pg-adapter` selection remains a branch in the planner.
+
 ## Invariants (checked in every pull request of the migration and the phases)
 
 1. `gate` stays the only required context, shown by `assert-required-contexts.sh`.

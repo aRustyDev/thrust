@@ -237,7 +237,7 @@ fn issue_draft(b: &Map<String, Value>) -> Result<(IssueDraft, Texts), FieldError
     if let Some(v) = b.get("description_html") {
         match char_field(v, None, true, false) {
             // the pin cleans what it stores; an empty text stays empty (the cleaner answers none for it)
-            Ok(text) => match thrust_editor_doc::sanitize::validate_html_content(text.as_deref().unwrap_or_default()) {
+            Ok(text) => match thrust_html::validate_html_content(text.as_deref().unwrap_or_default()) {
                 Ok(clean) => draft.description_html = clean.or(text),
                 Err(_) => fail(&mut errors, "error", "html content is not valid"),
             },
@@ -605,12 +605,10 @@ fn issue_update(members: &[(String, Value)]) -> Result<(IssueUpdate, Texts), Fie
                 describes = !v.is_null();
                 match char_field(v, None, true, false) {
                     // the pin cleans what it stores; an empty text stays empty (the cleaner answers none for it)
-                    Ok(text) => {
-                        match thrust_editor_doc::sanitize::validate_html_content(text.as_deref().unwrap_or_default()) {
-                            Ok(clean) => update.asks.push(Ask::Description(clean.or(text).unwrap_or_default())),
-                            Err(_) => fail(&mut errors, "error", "html content is not valid"),
-                        }
-                    }
+                    Ok(text) => match thrust_html::validate_html_content(text.as_deref().unwrap_or_default()) {
+                        Ok(clean) => update.asks.push(Ask::Description(clean.or(text).unwrap_or_default())),
+                        Err(_) => fail(&mut errors, "error", "html content is not valid"),
+                    },
                     Err(m) => fail(&mut errors, "description_html", m),
                 }
             }

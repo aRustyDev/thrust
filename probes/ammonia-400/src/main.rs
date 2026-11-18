@@ -1,8 +1,8 @@
-//! Same sanitiser source as crates/editor/doc/src/sanitize.rs, compiled against ammonia =4.0.0.
+//! Same sanitiser source as crates/core/html/src/lib.rs, compiled against ammonia =4.0.0.
 //!   probes/ammonia-400/run.sh   (writes target/spike-0006/xss-rust-400.json)
 use serde_json::{json, Map, Value};
 
-#[path = "../../../crates/editor/doc/src/sanitize.rs"]
+#[path = "../../../crates/core/html/src/lib.rs"]
 mod sanitize;
 
 fn main() {

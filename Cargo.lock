@@ -3901,7 +3901,7 @@ dependencies = [
  "thrust-api",
  "thrust-contracts",
  "thrust-core",
- "thrust-editor-doc",
+ "thrust-html",
  "thrust-oracle-fixture",
  "thrust-plane-types",
  "thrust-ports",
@@ -3927,7 +3927,7 @@ dependencies = [
  "thrust-api",
  "thrust-contracts",
  "thrust-core",
- "thrust-editor-doc",
+ "thrust-html",
  "thrust-plane-types",
  "thrust-ports",
  "tower",
@@ -4007,12 +4007,12 @@ dependencies = [
 name = "thrust-editor-doc"
 version = "0.2.0"
 dependencies = [
- "ammonia",
  "base64 0.22.1",
  "htmlentity",
  "proptest",
  "regex",
  "serde_json",
+ "thrust-html",
  "yrs",
 ]
 
@@ -4025,6 +4025,13 @@ dependencies = [
  "serde_json",
  "thrust-editor-doc",
  "worker",
+]
+
+[[package]]
+name = "thrust-html"
+version = "0.2.0"
+dependencies = [
+ "ammonia",
 ]
 
 [[package]]
