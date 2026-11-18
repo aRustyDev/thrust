@@ -31,7 +31,7 @@ async fn fresh() -> Fresh {
 }
 
 /// The adapter's files and these made-up ones after them.
-fn with(extra: &[(&'static str, &'static str)]) -> Vec<Migration> {
+fn with(extra: &[(&'static str, &'static str)]) -> Vec<Migration<'static>> {
     MIGRATIONS.iter().copied().chain(extra.iter().map(|&(file, sql)| Migration { file, sql })).collect()
 }
 
@@ -61,7 +61,7 @@ async fn probe_rows(raw: &tokio_postgres::Client) -> i64 {
     raw.query_one("SELECT count(*) FROM ledger_probe", &[]).await.unwrap().get(0)
 }
 
-fn names(files: &[Migration]) -> Vec<String> {
+fn names(files: &[Migration<'_>]) -> Vec<String> {
     files.iter().map(|m| m.file.to_string()).collect()
 }
 
@@ -186,7 +186,7 @@ async fn an_edited_file_is_refused_and_nothing_runs() {
     let before = ledger_rows(&raw).await;
     let last = MIGRATIONS[MIGRATIONS.len() - 1];
     let edited_sql: &'static str = Box::leak(format!("{}\n-- edited after it ran\n", last.sql).into_boxed_str());
-    let mut files: Vec<Migration> = MIGRATIONS.to_vec();
+    let mut files: Vec<Migration<'_>> = MIGRATIONS.to_vec();
     *files.last_mut().unwrap() = Migration { file: last.file, sql: edited_sql };
     files.push(Migration { file: PROBE.0, sql: PROBE.1 });
 

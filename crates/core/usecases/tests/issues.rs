@@ -170,7 +170,7 @@ fn a_description_is_cleaned_and_stored_with_its_text_and_its_policy(
         made(&w, Actor::MemberA, IssueDraft { description_html: sent.map(str::to_string), ..draft("n") }).unwrap();
     assert_eq!(row.attrs.description_html, html);
     assert_eq!(row.attrs.description_stripped.as_deref(), Some(text));
-    assert_eq!(row.attrs.description_schema, Some(1));
+    assert_eq!(row.attrs.description_schema, Some(thrust_html::SCHEMA_VERSION));
 }
 
 /// The pin refuses more than 10 MB of HTML. The request layers check that first, in its words, so this is the use-case's own answer to
