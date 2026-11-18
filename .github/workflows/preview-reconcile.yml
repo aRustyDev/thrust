@@ -43,6 +43,7 @@ jobs:
       - name: Reconcile schemas and Hyperdrive resources
         env:
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          THRUST_DEV_VPC_SERVICE_ID: ${{ vars.THRUST_DEV_VPC_SERVICE_ID }}
           HYPERDRIVE_API_TOKEN: ${{ secrets.HYPERDRIVE_API_TOKEN }}
           THRUST_PREVIEW_PROVISIONER_URL: ${{ vars.THRUST_PREVIEW_PROVISIONER_URL }}
           PREVIEW_PROVISIONER_ACCESS_CLIENT_ID: ${{ secrets.PREVIEW_PROVISIONER_ACCESS_CLIENT_ID }}
