@@ -104,7 +104,12 @@ async fn main() {
     let ids: Arc<dyn IdGen> = Arc::new(NativeIdGen);
     let background: Arc<dyn Background> = Arc::new(TokioBackground);
     let consumer_slot: ConsumerSlot = Default::default();
-    let queue: Arc<dyn Queue> = Arc::new(MemoryQueue::new(background.clone(), consumer_slot.clone()));
+    // A message the consumer rejects with a transient error waits `retry_delay` between deliveries (5, 10, 20 s) before it is set
+    // aside, as on the Worker; a permanent one is set aside at once. See `thrust_ports::disposition`.
+    let queue: Arc<dyn Queue> = Arc::new(
+        MemoryQueue::new(background.clone(), consumer_slot.clone())
+            .with_sleep(Arc::new(|delay| Box::pin(tokio::time::sleep(delay)))),
+    );
 
     // The pool, kept beside the database: with test routes on, each request counts its statements over a connector of its
     // own (issue #39), because this one `PgDatabase` serves every request and a counter inside it would count them all.
