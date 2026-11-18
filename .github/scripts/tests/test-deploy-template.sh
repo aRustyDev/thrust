@@ -58,7 +58,39 @@ mk real-namespace -e 's/__RL_V1_ID__/2103/'
 expect "a real rate-limit namespace id in the template is found" 1 "not a marker" parity "$BASE" "$T/real-namespace.toml"
 
 mk real-dlq -e 's/__EVENTS_DLQ__/thrust-staging-events-dlq/'
-expect "a real dead-letter queue in the template is found" 1 "must both be markers" parity "$BASE" "$T/real-dlq.toml"
+expect "a real dead-letter queue in the template is found" 1 "must be markers" parity "$BASE" "$T/real-dlq.toml"
+
+# the queues (ADR-0070, FR-21, issue #53): the dead-letter queue is read by a consumer of its own, which has no dead-letter queue (a queue
+# cannot be its own); THRUST_EVENTS_DLQ names it; the events consumer's retries cover the delivery policy; and each file says so alone
+# (a backslash and a newline in the replacement: the one way to put a line in that both BSD sed and GNU sed take)
+mk dlq-has-dlq -e 's/^max_retries = 10$/max_retries = 10\
+dead_letter_queue = "__EVENTS_DLQ__"/'
+expect "a dead-letter queue that is its own dead-letter queue is found" 1 "a queue cannot be its own" parity "$BASE" "$T/dlq-has-dlq.toml"
+
+mk dlq-var-wrong -e 's/^THRUST_EVENTS_DLQ = "__EVENTS_DLQ__"/THRUST_EVENTS_DLQ = "__EVENTS_QUEUE__"/'
+expect "a THRUST_EVENTS_DLQ that names another queue is found" 1 "the deploy template: THRUST_EVENTS_DLQ is" parity "$BASE" "$T/dlq-var-wrong.toml"
+
+mk few-retries -e 's/^max_retries = 3$/max_retries = 2/'
+expect "an events consumer that gives up before the policy does is found" 1 "max_retries is 2, under 3" parity "$BASE" "$T/few-retries.toml"
+
+mk dlq-no-producer -e 's/binding = "EVENTS_DLQ"/binding = "EVENTS_DEAD"/'
+expect "a Worker with no way to send to the dead-letter queue is found" 1 "both needed" parity "$BASE" "$T/dlq-no-producer.toml"
+
+mk dlq-unread -e '/^queue = "__EVENTS_DLQ__"$/{N;s/^queue = "__EVENTS_DLQ__"\(.\)max_batch_size/queue = "__EVENTS_OTHER__"\1max_batch_size/;}'
+expect "a dead-letter queue nobody reads is found" 1 "not exactly the events queue and its dead-letter queue" parity "$BASE" "$T/dlq-unread.toml"
+
+sed 's/^THRUST_EVENTS_DLQ = "thrust-spike-events-dlq"/THRUST_EVENTS_DLQ = "thrust-spike-other"/' "$BASE" > "$T/base-dlq-var.toml"
+if cmp -s "$BASE" "$T/base-dlq-var.toml"; then echo "BAD  the change for 'base-dlq-var' changed nothing, so its control proves nothing"; failn=$((failn + 1)); fi
+expect "wrangler.toml naming another dead-letter queue is found" 1 "wrangler.toml: THRUST_EVENTS_DLQ is" parity "$T/base-dlq-var.toml" "$DEPLOY"
+
+# the number comes from the policy's own constant: the same files, and a policy that allows more deliveries than the queue's retries
+sed 's/pub const MAX_DELIVERIES: u32 = 4;/pub const MAX_DELIVERIES: u32 = 6;/' "$HERE/crates/core/ports/src/lib.rs" > "$T/ports-six.rs"
+if cmp -s "$HERE/crates/core/ports/src/lib.rs" "$T/ports-six.rs"; then echo "BAD  the change for 'ports-six' changed nothing, so its control proves nothing"; failn=$((failn + 1)); fi
+export DEPLOY_PARITY_PORTS="$T/ports-six.rs"
+expect "a policy of more deliveries than the queue's retries is found" 1 "max_retries is 3, under 5" parity "$BASE" "$DEPLOY"
+export DEPLOY_PARITY_PORTS="$T/no-such-ports-file.rs"
+expect "a ports source that cannot be read is a usage error" 2 "cannot read" parity "$BASE" "$DEPLOY"
+unset DEPLOY_PARITY_PORTS
 
 mk real-name -e 's/__WORKER_NAME__/thrust-staging/'
 expect "a real Worker name in the template is found" 1 "name is" parity "$BASE" "$T/real-name.toml"

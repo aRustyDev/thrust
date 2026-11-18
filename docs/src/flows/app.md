@@ -70,6 +70,7 @@ These routes exist for tests and answer 404 unless `THRUST_TEST_ROUTES` is on:
 | `POST /internal/sweep` | same | 200 and a sweep report (`found`, `published`, `failed`) |
 | `GET /internal/outbox-depth` | same | 200 and `{"undispatched": n}` |
 | `POST /internal/inject-event` | same | 202 after putting an event on the queue |
+| `GET /internal/dead-letters` | same | 200 and the messages the consumer set aside, newest first and at most 100, each `{id, received_at, topic, event_id, body, error, attempts}`. The same table on every target (`attempts` is the count of deliveries, and `null` for a message the queue itself moved to the Worker's dead-letter queue, which starts the count again). A dead letter carries what a producer sent, so it is behind the admin token like the rest |
 
 With test routes on, a target that counts its database statements also puts `x-thrust-db-round-trips: n` on every response
 ([issue #39](https://github.com/aRustyDev/thrust/issues/39)): the statements the request had sent through the adapter when the
@@ -246,8 +247,15 @@ Delivery is at least once, and the consumer is built for that.
 - **The consumer** is `ActivityConsumer`, which calls `process_event`. It needs a `project_id` in the payload
   (otherwise the event is invalid), and it inserts an activity row whose verb is the last part of the event type,
   so `work_item.created` gives `created`. The row is keyed on the event id, so a redelivered event inserts nothing.
-- **Failures.** On the Worker, a message the consumer rejects is retried after 5 seconds, and a message that cannot
-  be decoded is acknowledged and dropped.
+- **Failures** (ADR-0070, FR-21, issue #53). The consumer's error is `Permanent` (the message is wrong: no
+  `project_id`, an entity that is not there) or `Transient` (the database, the queue or the blob store was not there), and
+  `thrust_ports::disposition` decides from it, the same way for every queue adapter. A permanent error sets the message
+  aside at once. A transient one is delivered again after 5, 10 and 20 seconds, and the fourth delivery sets it aside.
+  A body that is not an event at all is set aside at once, as it came. Setting aside is a row of `dead_letters`
+  (`GET /internal/dead-letters`): the in-process queue (native, and the Worker's in-memory target) writes it through the
+  consumer, and the Worker sends it to the dead-letter queue, whose consumer writes it. The in-process queue waits
+  between deliveries only where it has a timer (the native server); the Worker's in-memory target retries at once. A
+  dead letter whose own write fails four times is lost, and the in-process queue counts it (`lost_count`).
 
 ## Attachments
 

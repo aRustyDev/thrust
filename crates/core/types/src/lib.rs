@@ -3,6 +3,11 @@
 //! Dependency rule (checked by `scripts/check-deps.sh`): this crate depends on serde, uuid and
 //! chrono only. No tokio, no wasm-bindgen, no driver.
 
+/// The fuzz harness of the one parser of outside text here, [`DeadLetterMessage::parse`] (tests and fuzz builds only): `fuzz/` runs
+/// campaigns on it and the `fuzz_replay_` tests replay the corpus.
+#[cfg(any(test, fuzzing))]
+pub mod fuzz_harness;
+
 pub use chrono;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -423,6 +428,75 @@ pub struct Activity {
     pub verb: String,
     pub actor_id: Option<UserId>,
     pub created_at: Timestamp,
+}
+
+/// A queue message the consumer set aside instead of processing (ADR-0070, issue #53): one row of `dead_letters`, and what
+/// `GET /internal/dead-letters` lists.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DeadLetter {
+    /// The queue's own id for the message when it has one, so a message that is delivered again makes no second row; otherwise an
+    /// id the consumer minted.
+    pub id: String,
+    pub received_at: Timestamp,
+    pub topic: String,
+    /// The event's id when the body decoded as an [`Envelope`].
+    pub event_id: Option<EventId>,
+    /// The message as it arrived: an envelope's JSON, or the raw text of a body that is not one. A NUL in it is stored as `U+FFFD`
+    /// (Postgres cannot keep one, and the memory adapter answers the same).
+    pub body: String,
+    /// Why it was set aside.
+    pub error: String,
+    /// How many times it was delivered. `None` when the queue itself dead-lettered it, because a dead-letter queue starts the count
+    /// again (research 0004, F4) and the number is not known.
+    pub attempts: Option<u32>,
+}
+
+/// The `kind` that marks a [`DeadLetterMessage`].
+pub const DEAD_LETTER_MESSAGE_KIND: &str = "thrust.dead-letter.v1";
+
+/// What the Worker's queue consumer puts on the events dead-letter queue when it gives up on a message (ADR-0070, issue #53): the message
+/// and why, as JSON text. The Worker's consumer of that queue turns each one into a [`DeadLetter`] row, so the table holds the same rows
+/// whether the Worker set a message aside or the queue did.
+///
+/// A message that Cloudflare moved to that queue itself, because its retries ran out, is not one of these: its body is the original
+/// message, or whatever text a producer sent. The `kind` marker is what tells them apart, and [`DeadLetterMessage::parse`] takes only a
+/// body that carries it, with exactly these fields, so that a producer's message is never taken for one of ours.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DeadLetterMessage {
+    /// Always [`DEAD_LETTER_MESSAGE_KIND`].
+    pub kind: String,
+    /// The queue's id for the message that was set aside, which becomes the row's id.
+    pub source_id: String,
+    pub topic: String,
+    pub event_id: Option<EventId>,
+    pub body: String,
+    pub error: String,
+    pub attempts: u32,
+}
+
+impl DeadLetterMessage {
+    pub fn new(
+        source_id: String,
+        topic: String,
+        event_id: Option<EventId>,
+        body: String,
+        error: String,
+        attempts: u32,
+    ) -> Self {
+        Self { kind: DEAD_LETTER_MESSAGE_KIND.to_owned(), source_id, topic, event_id, body, error, attempts }
+    }
+
+    /// The message as the text that goes on the queue.
+    pub fn to_text(&self) -> Result<String, serde_json::Error> {
+        serde_json::to_string(self)
+    }
+
+    /// `Some` only for text that is one of these: JSON of exactly this shape whose `kind` is [`DEAD_LETTER_MESSAGE_KIND`]. Anything
+    /// else (an envelope, other JSON, text that is not JSON) is `None`: it is a message of someone else's.
+    pub fn parse(text: &str) -> Option<Self> {
+        serde_json::from_str::<Self>(text).ok().filter(|m| m.kind == DEAD_LETTER_MESSAGE_KIND)
+    }
 }
 
 // ---------------------------------------------------------------------------------------------

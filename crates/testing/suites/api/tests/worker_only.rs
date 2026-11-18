@@ -197,6 +197,36 @@ async fn worker_bindings_secrets_store_binding() {
     assert!(!v.to_string().contains("dummy"), "the probe must never echo the secret value");
 }
 
+/// Issue #53 (FR-21; research 0004, S2-9 and F4): a message on the events queue that is not an event used to be acknowledged and dropped,
+/// and Stage 2 could not even drive that branch, because `/internal/inject-event` takes only a valid envelope. The `queue-raw` probe puts
+/// raw text on the queue binding, as a producer other than ours can. The consumer must set it aside at once, whole and as it came, and
+/// the Worker's consumer of the dead-letter queue must write the row. It is in the `bindings` pass because it needs the queue binding
+/// (the `worker_bindings_` prefix is what that pass selects).
+///
+/// The control is restoring the drop: then no row ever appears and this wait runs out (run by hand, see the pull request).
+#[tokio::test]
+async fn worker_bindings_undecodable_message_is_dead_lettered() {
+    let t = Target::from_env();
+    let (st, v) = probe(&t, "queue-raw").await;
+    assert_eq!(st, 200, "{v}");
+    let text = v["text"].as_str().expect("the probe says what it sent").to_owned();
+
+    let row = eventually("the dead letter of a body that is not an event", Duration::from_secs(30), || async {
+        let rows: Vec<Value> = t.admin_get("/internal/dead-letters").await.json().await.unwrap_or_default();
+        rows.into_iter().find(|d| d["body"] == Value::String(text.clone()))
+    })
+    .await;
+    assert!(row["event_id"].is_null(), "a body that is not an event names no event: {row}");
+    assert_eq!(row["attempts"], 1, "set aside on its first delivery: {row}");
+    assert_eq!(row["topic"], "events");
+    let error = row["error"].as_str().unwrap();
+    assert!(error.starts_with("permanent: ") && error.contains("not an event"), "the reason says what it is: {error}");
+
+    // one row, and the text is exactly what was sent
+    let rows: Vec<Value> = t.admin_get("/internal/dead-letters").await.json().await.unwrap();
+    assert_eq!(rows.iter().filter(|d| d["body"] == Value::String(text.clone())).count(), 1, "one message is one row");
+}
+
 #[tokio::test]
 async fn worker_bindings_email_send_binding_simulated_locally() {
     let t = Target::from_env();

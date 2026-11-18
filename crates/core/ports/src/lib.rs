@@ -14,6 +14,9 @@ use async_trait::async_trait;
 use thiserror::Error;
 use thrust_contracts::*;
 
+mod settle;
+pub use settle::{settle, settle_dead_letter, Settled};
+
 /// Boxed `Send` future used by [`Background`]. No executor is implied by the type.
 pub type BoxFuture<T> = Pin<Box<dyn Future<Output = T> + Send + 'static>>;
 
@@ -1236,6 +1239,16 @@ pub trait Database: Send + Sync {
 
     async fn outbox_depth(&self, sys: &SystemScope) -> Result<u64, DbError>;
 
+    /// Set a message aside (ADR-0070, issue #53): the queue consumer's write of a dead letter. Idempotent on `id`, so a message that
+    /// is delivered again after it was set aside makes no second row; returns `true` if a row was inserted, `false` if the id was
+    /// there. A dead letter belongs to no tenant (a body that does not decode names none), so the write and the read below are
+    /// untenanted.
+    async fn insert_dead_letter(&self, sys: &SystemScope, letter: &DeadLetter) -> Result<bool, DbError>;
+
+    /// The dead letters, newest first (by `received_at`, then by `id` in byte order, so every adapter answers in the same order),
+    /// at most `limit` of them.
+    async fn dead_letters(&self, sys: &SystemScope, limit: u32) -> Result<Vec<DeadLetter>, DbError>;
+
     // --- Assets (issue #44, the asset stage; ADR-0047). The bytes are in the `BlobStore`; these are the rows that say whose they
     // are and where they stand.
 
@@ -1441,12 +1454,86 @@ pub trait Queue: Send + Sync {
     async fn send(&self, topic: &str, msg: &Envelope, opts: SendOpts) -> Result<(), QueueError>;
 }
 
+/// Why a consumer did not process a message, which is what decides what the queue does with it (ADR-0070, FR-21, issue #53).
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum ConsumerError {
+    /// The message itself is wrong, so delivering it again cannot help: it is dead-lettered at once.
+    #[error("permanent: {0}")]
+    Permanent(String),
+    /// The message may be fine and something it needs was not there: it is delivered again after a delay, and dead-lettered when it
+    /// has been delivered [`MAX_DELIVERIES`] times.
+    #[error("transient: {0}")]
+    Transient(String),
+}
+
 /// Driving-side callback invoked by a queue adapter for each delivered message. Core provides the
 /// implementation (`ActivityConsumer`); every queue adapter and every consumer entrypoint
-/// (Worker `queue` event, native consumer loop) calls the same body.
+/// (Worker `queue` event, native consumer loop) calls the same body, and decides what to do with its answer with [`disposition`].
 #[async_trait]
 pub trait EventConsumer: Send + Sync {
-    async fn handle(&self, env: &Envelope) -> Result<(), String>;
+    async fn handle(&self, env: &Envelope) -> Result<(), ConsumerError>;
+
+    /// Set a message aside in the dead letters. A queue adapter calls it when [`disposition`] says so, or when a body does not decode,
+    /// and so never writes to the database itself: it holds no `SystemScope`, and `scripts/check-deps.sh` keeps it that way. An error
+    /// is `Transient` (the write did not happen, and the adapter applies the same policy to it).
+    async fn dead_letter(&self, letter: &NewDeadLetter) -> Result<(), ConsumerError>;
+}
+
+/// A message to set aside: what a queue adapter knows when it gives up on one. The consumer adds the time and, when the queue has no
+/// id for the message, an id (`DeadLetter`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NewDeadLetter {
+    /// The queue's own id for the message, which becomes the row's id: a message that is delivered again then makes no second row.
+    pub source_id: Option<String>,
+    pub topic: String,
+    /// The event's id when the body decoded as an [`Envelope`].
+    pub event_id: Option<EventId>,
+    /// The message as it arrived: an envelope's JSON, or the raw text of a body that is not one. Any text will do, a NUL included:
+    /// `record_dead_letter` replaces it before the database sees it, because Postgres cannot store one.
+    pub body: String,
+    pub error: String,
+    /// How many times it was delivered, when the adapter knows.
+    pub attempts: Option<u32>,
+}
+
+/// How many times a message is delivered before a transient error is given up on: the first delivery and three retries. The Worker's
+/// queue consumer is configured with `max_retries = 3`, which is the same number, so Cloudflare's own limit only ever backs this one up.
+pub const MAX_DELIVERIES: u32 = 4;
+
+/// The delay before the second delivery. Each later one waits twice as long as the one before, up to [`RETRY_MAX_DELAY`].
+pub const RETRY_BASE_DELAY: Duration = Duration::from_secs(5);
+
+/// The longest delay between two deliveries of one message.
+pub const RETRY_MAX_DELAY: Duration = Duration::from_secs(60);
+
+/// How long to wait before delivering a message again, given how many times it has been delivered so far (`1` after the first
+/// delivery): [`RETRY_BASE_DELAY`] doubled once for every delivery after the first, and never more than [`RETRY_MAX_DELAY`].
+pub fn retry_delay(deliveries: u32) -> Duration {
+    // 2^16 times the base is already past the cap, so the shift never has to go further (and cannot overflow).
+    let doublings = deliveries.saturating_sub(1).min(16);
+    RETRY_BASE_DELAY.saturating_mul(1u32 << doublings).min(RETRY_MAX_DELAY)
+}
+
+/// What a queue adapter does with a message after the consumer answered.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Disposition {
+    /// Done: acknowledge it.
+    Ack,
+    /// Deliver it again after this long.
+    Retry(Duration),
+    /// Set it aside in the dead letters, then acknowledge it.
+    DeadLetter,
+}
+
+/// The one policy of every queue adapter (the Worker's consumer and the in-process queue): what to do with a message the consumer
+/// answered `outcome` to, when it has been delivered `deliveries` times, this one included (`1` for the first).
+pub fn disposition(outcome: &Result<(), ConsumerError>, deliveries: u32) -> Disposition {
+    match outcome {
+        Ok(()) => Disposition::Ack,
+        Err(ConsumerError::Permanent(_)) => Disposition::DeadLetter,
+        Err(ConsumerError::Transient(_)) if deliveries >= MAX_DELIVERIES => Disposition::DeadLetter,
+        Err(ConsumerError::Transient(_)) => Disposition::Retry(retry_delay(deliveries)),
+    }
 }
 
 // ---------------------------------------------------------------------------------------------

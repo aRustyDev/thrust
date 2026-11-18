@@ -1,0 +1,1 @@
+{"kind":"thrust.dead-letter.v1","source_id":"msg-1","topic":"events","event_id":"00000000-0000-0000-0000-0000000000e1","body":"not json","error":"permanent: invalid: event without project_id","attempts":1}

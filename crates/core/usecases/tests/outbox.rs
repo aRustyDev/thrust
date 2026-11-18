@@ -140,5 +140,9 @@ fn the_activity_consumer_records_events_and_rejects_bad_ones() {
     assert_eq!(rows[0].verb, "created");
 
     env.payload = serde_json::json!({});
-    assert!(block_on(consumer.handle(&env)).is_err(), "an event without a project id is not acknowledged");
+    let got = block_on(consumer.handle(&env));
+    assert!(
+        matches!(got, Err(ConsumerError::Permanent(_))),
+        "an event without a project id is rejected for good: {got:?}"
+    );
 }

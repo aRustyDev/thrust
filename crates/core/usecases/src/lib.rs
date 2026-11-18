@@ -572,6 +572,33 @@ pub async fn process_event(app: &App, env: &Envelope) -> Result<bool, CoreError>
     Ok(inserted)
 }
 
+/// Set a message aside (ADR-0070, issue #53): the consumer's half of a dead letter. The row's id is the queue's own id for the message
+/// when it has one, so a message that is delivered again after it was set aside makes no second row; when it has none, a fresh id.
+/// Returns whether a row was written.
+///
+/// The text is stored as it arrived with one exception: a NUL (`U+0000`) becomes `U+FFFD`. A body is whatever a producer sent, which
+/// is what this table is for, and Postgres cannot store a NUL in `text`: left in, such a message would fail its write, be delivered
+/// again, fail again and be lost, the one outcome a dead letter exists to prevent. The memory adapter could keep it, but the two must
+/// answer the same, so the change is made here, once, before either adapter sees the text.
+pub async fn record_dead_letter(app: &App, letter: &NewDeadLetter) -> Result<bool, CoreError> {
+    let clean = |text: &str| text.replace('\0', "\u{FFFD}");
+    let row = DeadLetter {
+        id: letter.source_id.as_deref().map(clean).unwrap_or_else(|| app.ports.ids.new_uuid().to_string()),
+        received_at: app.ports.clock.now(),
+        topic: clean(&letter.topic),
+        event_id: letter.event_id,
+        body: clean(&letter.body),
+        error: clean(&letter.error),
+        attempts: letter.attempts,
+    };
+    Ok(app.ports.db.insert_dead_letter(&app.system, &row).await?)
+}
+
+/// The dead letters, newest first, at most `limit` (`GET /internal/dead-letters`, a test route).
+pub async fn dead_letters(app: &App, limit: u32) -> Result<Vec<DeadLetter>, CoreError> {
+    Ok(app.ports.db.dead_letters(&app.system, limit).await?)
+}
+
 // --- attachments (BlobStore) ----------------------------------------------------------------
 
 /// An attachment name is one ordinary path segment, so the blob key cannot leave its
@@ -644,10 +671,49 @@ pub async fn delete_attachment(
 #[derive(Clone)]
 pub struct ActivityConsumer(pub App);
 
+/// What a failure of the consumer means for the message (ADR-0070, FR-21): whether delivering it again can help.
+///
+/// An error about the message itself (it is malformed, or names something that is not there) is [`ConsumerError::Permanent`]. An error
+/// about something the consumer needed (the database, the queue, the blob store, a limiter, another server) is
+/// [`ConsumerError::Transient`]: every port error reaches this function as [`CoreError::Internal`], so a database that is down and a
+/// storage that is down are told apart from a malformed message, which is what matters.
+///
+/// The match names every variant and has no wildcard arm, so a new `CoreError` cannot be added without choosing its kind here. The
+/// arms that no consumer produces today (the authorization ones) are `Permanent`: a message does not get permission by waiting.
+///
+/// One known misclassification: a history row that names a work item the database does not have comes back from the adapter as
+/// `DbError::Backend`, so it is `Transient`. It is delivered again, fails the same way, and is dead-lettered after
+/// [`MAX_DELIVERIES`] with its error kept, which costs three retries and loses nothing.
+pub fn consumer_error(e: CoreError) -> ConsumerError {
+    let text = e.to_string();
+    // MUTANT (control run only): an invalid message is treated like a transient failure, so it is delivered again with the backoff
+    // and not set aside at once. The contract suite must catch it (`permanent_consumer_error_is_dead_lettered_without_retry`).
+    #[cfg(feature = "mutant_invalid_is_transient")]
+    if matches!(e, CoreError::Invalid(_)) {
+        return ConsumerError::Transient(text);
+    }
+    match e {
+        CoreError::Invalid(_)
+        | CoreError::NotFound
+        | CoreError::Unauthenticated
+        | CoreError::Forbidden
+        | CoreError::Csrf
+        | CoreError::InvalidApiKey
+        | CoreError::TooLarge => ConsumerError::Permanent(text),
+        CoreError::Internal(_) | CoreError::Upstream(_) | CoreError::RateLimited { .. } | CoreError::Conflict(_) => {
+            ConsumerError::Transient(text)
+        }
+    }
+}
+
 #[async_trait::async_trait]
 impl EventConsumer for ActivityConsumer {
-    async fn handle(&self, env: &Envelope) -> Result<(), String> {
-        process_event(&self.0, env).await.map(|_| ()).map_err(|e| e.to_string())
+    async fn handle(&self, env: &Envelope) -> Result<(), ConsumerError> {
+        process_event(&self.0, env).await.map(|_| ()).map_err(consumer_error)
+    }
+
+    async fn dead_letter(&self, letter: &NewDeadLetter) -> Result<(), ConsumerError> {
+        record_dead_letter(&self.0, letter).await.map(|_| ()).map_err(consumer_error)
     }
 }
 

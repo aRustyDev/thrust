@@ -555,6 +555,16 @@ async fn outbox_depth(_: Admin, Extension(app): Extension<App>) -> ApiResult<Jso
     Ok(Json(serde_json::json!({ "undispatched": n })))
 }
 
+/// How many dead letters `GET /internal/dead-letters` lists at most: a test route, and a run of the contract suite makes a handful.
+const DEAD_LETTERS_LISTED: u32 = 100;
+
+/// Test support: the messages the queue consumer set aside (ADR-0070, issue #53), newest first. The same table on every target, so one
+/// contract test reads the effect of the failure policy of the in-process queue and of the Worker's alike. A dead letter carries an
+/// event's body, so it is behind the admin token like every route under `/internal`.
+async fn list_dead_letters(_: Admin, Extension(app): Extension<App>) -> ApiResult<Json<Vec<DeadLetter>>> {
+    Ok(Json(thrust_core::dead_letters(&app, DEAD_LETTERS_LISTED).await?))
+}
+
 async fn list_activity_for_item(
     Authed(who): Authed,
     Extension(app): Extension<App>,
@@ -642,6 +652,7 @@ pub fn router() -> Router {
         .route(&format!("{SLICE_PREFIX}/api-keys/{{id}}"), delete(revoke_api_key))
         .route("/internal/outbox-depth", get(outbox_depth))
         .route("/internal/inject-event", post(inject_event))
+        .route("/internal/dead-letters", get(list_dead_letters))
         // Work items are made, read, listed, searched and deleted through `/api/v1` and Plane's compat routes
         // (`thrust-compat-plane`); what stays under the slice's prefix is what no Plane route replaces.
         .route(&slice_path("/work-items/{id}/activity"), get(list_activity_for_item))

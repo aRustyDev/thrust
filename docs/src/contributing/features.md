@@ -15,11 +15,12 @@ show about how to add another. The three probe crates are outside the workspace 
 | `thrust-adapters-memory` | `mutant_ignore_tenant`, `mutant_dup_sequence`, `mutant_no_activity_dedupe` | off | Planted bugs: forget the tenant predicate, hand out the same sequence number every time, skip the activity de-duplication |
 | `thrust-adapters-selfhosted` | `mutant_discard_noop` | off | Planted bug: hand a connection that is still inside an abandoned transaction back to the pool |
 | `thrust-adapters-memory` | `mutant_search_case_sensitive` | off | Planted bug: search without folding case |
-| `thrust-server` | the `mutant_*` names of `thrust-adapters-memory`, and the CSRF and e-mail ones of `thrust-core` | off | Forwards each one to the crate that has it, so a build of the server can switch a planted bug on |
+| `thrust-core` | `mutant_*` (the CSRF, e-mail, password and sign-in ones, and `mutant_invalid_is_transient`) | off | Planted bugs in the use-cases. `mutant_invalid_is_transient` (issue #53) treats an event the consumer rejects as invalid like a transient failure, so it is delivered again with the backoff and not set aside at once; `permanent_consumer_error_is_dead_lettered_without_retry` must catch it |
+| `thrust-server` | the `mutant_*` names of `thrust-adapters-memory`, and the ones of `thrust-core` | off | Forwards each one to the crate that has it, so a build of the server can switch a planted bug on |
 | `thrust-editor-doc` | `sanitize` | on | Pulls in `thrust-html` (the ammonia sanitiser and html5ever) and re-exports it as `sanitize`. It is split out so the size of the conversions alone can be measured |
 | `thrust-editor-worker` | `sanitize` | on | Forwards to `thrust-editor-doc/sanitize` |
 
-These crates declare no features: `thrust-contracts`, `thrust-ports`, `thrust-core`, `thrust-html`, `thrust-api`,
+These crates declare no features: `thrust-contracts`, `thrust-ports`, `thrust-html`, `thrust-api`,
 `thrust-adapters-cloudflare` and `thrust-contract-tests`.
 
 ## Adapter sets are not features

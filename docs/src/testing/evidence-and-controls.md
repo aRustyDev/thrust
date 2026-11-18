@@ -21,7 +21,8 @@ Durable. Example: `crates/testing/suites/api/tests/contract.rs` (see its header 
 A cargo feature named `mutant_*` that compiles a deliberately broken variant of an adapter; `scripts/mutants.sh`
 runs the suite against it and requires failure (nextest's exit 100 and a failure in the pass's JUnit report). A surviving mutant means some
 assertion is vacuous. Durable. Today: `mutant_ignore_tenant`, `mutant_dup_sequence`, `mutant_no_activity_dedupe`
-(`crates/adapters/memory`) and `mutant_discard_noop` (`crates/adapters/selfhosted`). Add one when a new
+(`crates/adapters/memory`), `mutant_invalid_is_transient` (`crates/core/usecases`: the queue consumer's retry policy, issue #53) and
+`mutant_discard_noop` (`crates/adapters/selfhosted`). Add one when a new
 invariant guards tenancy, uniqueness, idempotency or transaction safety. See [Mutation](techniques/mutation.md).
 
 ## Target guard

@@ -18,9 +18,12 @@ use thrust_adapters_cloudflare::*;
 use thrust_adapters_oidc::{OidcConfig, OpenIdProvider};
 use thrust_adapters_postgres::{Connector, CountingConnector, PgDatabase, RoundTrips};
 use thrust_api::{set_db_round_trips, set_version, ApiConfig, InternalErrorDetail, OperatorAudit};
-use thrust_contracts::Envelope;
-use thrust_core::{ActivityConsumer, App, Argon2Params, Argon2idHasher, CoreConfig, Ports, SystemScope};
-use thrust_ports::{Background, Clock, EmailSender, EventConsumer, IdGen, OidcProvider, PasswordHasher, Rng};
+use thrust_contracts::DeadLetterMessage;
+use thrust_core::{ActivityConsumer, App, Argon2Params, Argon2idHasher, CoreConfig, Ports, SystemScope, EVENTS_TOPIC};
+use thrust_ports::{
+    settle, settle_dead_letter, Background, Clock, EmailSender, IdGen, NewDeadLetter, OidcProvider, PasswordHasher,
+    Rng, Settled,
+};
 use tower_service::Service;
 use worker::worker_sys::web_sys;
 use worker::*;
@@ -308,30 +311,105 @@ async fn fetch(req: web_sys::Request, env: Env, ctx: Context) -> Result<web_sys:
 }
 
 // ---------------------------------------------------------------------------------------------
-// queue consumer (ADR-0070): same `process_event` body as the native consumer
+// queue consumer (ADR-0070, FR-21): the events queue and the dead-letter queue behind it
 // ---------------------------------------------------------------------------------------------
 
+/// The Worker consumes two queues. The decisions about a message (is it an event, what did the consumer answer, retry or set aside, and
+/// what is a dead letter) are `thrust_ports::settle` and `settle_dead_letter`, which are tested natively and are the same policy as the
+/// in-process queue's. What is here is only what needs the platform: reading a message, and acknowledging it, delivering it again or
+/// sending its dead letter.
+///
+/// A message the consumer gives up on is set aside by sending a `DeadLetterMessage` to the dead-letter queue, and the Worker's consumer
+/// of that queue writes the row. One table then holds what the Worker set aside and what Cloudflare moved there itself after its own
+/// retries, and a failed write is simply delivered again.
 #[event(queue)]
 async fn queue(batch: MessageBatch<String>, env: Env, _ctx: Context) -> Result<()> {
     let (app, _) = build_app(&env, Arc::new(LocalBackground))?;
     let consumer = ActivityConsumer(app);
-    for msg in batch.messages()? {
-        match serde_json::from_str::<Envelope>(msg.body()) {
-            Ok(envelope) => match consumer.handle(&envelope).await {
-                Ok(()) => msg.ack(),
-                Err(e) => {
-                    console_error!("consumer failed for {}: {e}", envelope.event_id);
-                    msg.retry_with_options(&QueueRetryOptionsBuilder::new().with_delay_seconds(5).build());
-                }
-            },
-            Err(e) => {
-                // A poison message must not loop forever; a real deployment routes it to a DLQ.
-                console_error!("dropping undecodable queue message: {e}");
-                msg.ack();
-            }
+    // Which of the two queues this batch is from: by the name `THRUST_EVENTS_DLQ` gives the dead-letter queue (the deploy's parity test
+    // holds it equal to the `dead_letter_queue` of the events consumer). A Worker without the name treats every batch as the events
+    // queue's, and sets nothing aside (see `send_dead_letter`), so that a misconfiguration cannot make a message go round.
+    let dead_letter_queue = text(&env, "THRUST_EVENTS_DLQ").filter(|name| !name.is_empty());
+    let from_dead_letter_queue = dead_letter_queue.as_deref() == Some(batch.queue().as_str());
+    // `raw_iter`, not `messages`: `messages` reads the whole batch as strings and, when one body is not a string (a producer's JSON or
+    // V8 message), fails the batch, so that every message in it is delivered again for one bad one. A raw message is read on its own.
+    for msg in batch.raw_iter() {
+        if from_dead_letter_queue {
+            dead_letter_queue_message(&consumer, &msg).await;
+        } else {
+            events_queue_message(&consumer, &env, &msg).await;
         }
     }
     Ok(())
+}
+
+/// A message's body as text. Everything this repository sends is text (`CfQueue` sends an envelope as a string); a body that some other
+/// producer sent as JSON or V8 is written out as JSON, which is the nearest thing to what it was.
+fn body_text(msg: &RawMessage) -> String {
+    let body = msg.body();
+    body.as_string()
+        .or_else(|| worker::js_sys::JSON::stringify(&body).ok().map(String::from))
+        .unwrap_or_else(|| format!("{body:?}"))
+}
+
+fn retry_in(delay: std::time::Duration) -> QueueRetryOptions {
+    QueueRetryOptionsBuilder::new().with_delay_seconds(u32::try_from(delay.as_secs()).unwrap_or(u32::MAX)).build()
+}
+
+async fn events_queue_message(consumer: &ActivityConsumer, env: &Env, msg: &RawMessage) {
+    let deliveries = msg.attempts();
+    match settle(consumer, EVENTS_TOPIC, &msg.id(), &body_text(msg), deliveries).await {
+        Settled::Ack => msg.ack(),
+        Settled::Retry { delay, error } => {
+            console_error!(
+                "message {} failed (delivery {deliveries}), delivered again in {}s: {error}",
+                msg.id(),
+                delay.as_secs()
+            );
+            msg.retry_with_options(&retry_in(delay));
+        }
+        Settled::SetAside(letter) => match send_dead_letter(env, &letter).await {
+            Ok(()) => msg.ack(),
+            Err(e) => {
+                // Not acknowledged, so delivered again; and if that keeps failing the queue's own `max_retries` moves the original
+                // message to the dead-letter queue, where it becomes a row all the same.
+                console_error!("message {} could not be set aside ({}): {e}", msg.id(), letter.error);
+                msg.retry_with_options(&retry_in(thrust_ports::retry_delay(deliveries)));
+            }
+        },
+    }
+}
+
+async fn dead_letter_queue_message(consumer: &ActivityConsumer, msg: &RawMessage) {
+    match settle_dead_letter(consumer, EVENTS_TOPIC, &msg.id(), &body_text(msg)).await {
+        Ok(()) => msg.ack(),
+        Err(e) => {
+            // No queue stands behind this one, so its own `max_retries` (set high) is all the patience there is.
+            console_error!("dead letter {} could not be written: {e}", msg.id());
+            msg.retry_with_options(&retry_in(thrust_ports::retry_delay(msg.attempts())));
+        }
+    }
+}
+
+/// Send a message's dead letter to the dead-letter queue. It fails when the Worker does not know the queue's name
+/// (`THRUST_EVENTS_DLQ`), because without it the Worker cannot tell the dead-letter queue's batches from the events queue's and would
+/// send what it consumed from the one back onto the same one.
+async fn send_dead_letter(env: &Env, letter: &NewDeadLetter) -> Result<()> {
+    if text(env, "THRUST_EVENTS_DLQ").filter(|name| !name.is_empty()).is_none() {
+        return Err(Error::RustError("THRUST_EVENTS_DLQ is not set".into()));
+    }
+    let message = DeadLetterMessage::new(
+        letter.source_id.clone().unwrap_or_default(),
+        letter.topic.clone(),
+        letter.event_id,
+        letter.body.clone(),
+        letter.error.clone(),
+        letter.attempts.unwrap_or(1),
+    );
+    let text = message.to_text().map_err(|e| Error::RustError(e.to_string()))?;
+    // as `CfQueue` sends an envelope: a string, so that the text arrives as it was written
+    let builder = RawMessageBuilder::new(worker::wasm_bindgen::JsValue::from_str(&text));
+    env.queue("EVENTS_DLQ")?.send_raw(builder.build_with_content_type(QueueContentType::Text)).await
 }
 
 // ---------------------------------------------------------------------------------------------

@@ -1,0 +1,25 @@
+# The cargo-fuzz project of thrust-contracts (rust-test-fuzz): its own workspace, built by `cargo +nightly fuzz` with `--cfg fuzzing`.
+#   cargo +nightly fuzz run dead_letter_message
+# Campaigns run outside nextest; what nextest runs every time is the replay of seeds/ and regressions/ (src/fuzz_harness.rs).
+[package]
+name = "thrust-contracts-fuzz"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+thrust-contracts = { path = ".." }
+
+[[bin]]
+name = "dead_letter_message"
+path = "fuzz_targets/dead_letter_message.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]
+members = ["."]

@@ -40,7 +40,8 @@ read the ids from them, and each has one constructor, `mint`:
 - `SystemScope::mint` is called only by the composition roots (`thrust-server`, and `thrust-worker` for both adapter
   sets), which hand it to `App::new`. `App` keeps it private, and the outbox relay, the sweeper, the queue consumer and
   `seed` pass it to the untenanted calls (`undispatched_outbox`, `mark_outbox_dispatched`, `outbox_depth`,
-  `insert_activity`, `seed`).
+  `insert_activity`, `insert_dead_letter`, `dead_letters`, `seed`). A queue adapter holds none, so it sets a message aside through
+  `EventConsumer::dead_letter`, which core implements.
 
 The fields are private, so a struct literal outside `thrust-ports` does not compile, and passing bare ids to a
 repository method is a type error. The `compile_fail` doctests on `authorize` show both. The constructor itself is
@@ -69,7 +70,9 @@ clock or spawns a task itself, and a test can supply each. Shown by `App.ports` 
 Shown by `crates/core/ports/src/lib.rs` and `crates/adapters/cloudflare/src/lib.rs`.
 
 **One error type per layer, mapped at the boundary.** Each fallible port has its own error enum (`DbError`,
-`QueueError`, `BlobError`, `RateError`); `EventConsumer` returns a `String`. `From` impls turn the enums
+`QueueError`, `BlobError`, `RateError`); `EventConsumer` returns a `ConsumerError`, `Permanent` or `Transient`, which is
+what tells a queue adapter to dead-letter a message or deliver it again (`consumer_error` turns a `CoreError` into one, and its
+`match` has no wildcard arm). `From` impls turn the enums
 into `CoreError`, and `ApiError` turns `CoreError` into a status and a code. An internal error's real cause travels in an
 `InternalErrorDetail` response extension for the root to log, and the body says only `internal error`. Shown by
 `crates/core/usecases/src/lib.rs` and `crates/api/core/src/lib.rs`.

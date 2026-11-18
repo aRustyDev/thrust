@@ -3,7 +3,9 @@
 //! adapters against. State lives behind `std::sync::Mutex` (single-threaded on wasm32).
 
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
+use std::time::Duration;
 
 use async_trait::async_trait;
 use thrust_contracts::*;
@@ -110,6 +112,8 @@ struct DbState {
     /// (event, place) key that makes a write idempotent.
     history: Vec<WorkItemActivity>,
     history_keys: HashSet<(EventId, i32)>,
+    /// `dead_letters` (migration 0020), in the order they were written; the id is the table's primary key.
+    dead_letters: Vec<DeadLetter>,
 }
 
 struct SessionRow {
@@ -1844,6 +1848,23 @@ impl Database for MemoryDatabase {
         Ok(s.outbox.iter().filter(|r| r.dispatched_at.is_none()).count() as u64)
     }
 
+    async fn insert_dead_letter(&self, _sys: &SystemScope, letter: &DeadLetter) -> Result<bool, DbError> {
+        let mut s = self.state.lock_unpoisoned();
+        if s.dead_letters.iter().any(|d| d.id == letter.id) {
+            return Ok(false);
+        }
+        s.dead_letters.push(letter.clone());
+        Ok(true)
+    }
+
+    async fn dead_letters(&self, _sys: &SystemScope, limit: u32) -> Result<Vec<DeadLetter>, DbError> {
+        let mut rows = self.state.lock_unpoisoned().dead_letters.clone();
+        // newest first; `String`'s order is byte order, which is what the Postgres adapter asks for with COLLATE "C"
+        rows.sort_by(|a, b| (b.received_at, &b.id).cmp(&(a.received_at, &a.id)));
+        rows.truncate(limit as usize);
+        Ok(rows)
+    }
+
     async fn seed(&self, _sys: &SystemScope, f: &SeedFixture) -> Result<(), DbError> {
         let mut s = self.state.lock_unpoisoned();
         for u in &f.users {
@@ -2334,33 +2355,116 @@ impl Tx for MemoryTx {
 /// Late-bound consumer (breaks the App <-> Queue construction cycle).
 pub type ConsumerSlot = Arc<OnceLock<Arc<dyn EventConsumer>>>;
 
+/// How the queue waits before a message is delivered again: given the delay the policy chose, a future that ends when it has passed.
+/// The adapter has no clock or timer of its own (it builds for wasm32 as well and takes no runtime), so the composition root brings
+/// one.
+pub type Sleep = Arc<dyn Fn(Duration) -> BoxFuture<()> + Send + Sync>;
+
+/// The in-process queue: `send` hands the message to the consumer through `Background`, and applies the same failure policy as the
+/// Worker's consumer (ADR-0070, FR-21): [`disposition`] decides, after each answer, whether the message is done, delivered again after
+/// [`retry_delay`], or set aside as a dead letter through [`EventConsumer::dead_letter`].
+///
+/// Without [`MemoryQueue::with_sleep`] a message that is to be delivered again is delivered at once, which is what a hermetic test
+/// wants and what the Worker's in-memory target has to do (a task that waits seconds does not outlive the request there).
 pub struct MemoryQueue {
     background: Arc<dyn Background>,
     consumer: ConsumerSlot,
     sent: Mutex<Vec<Envelope>>,
+    sleep: Option<Sleep>,
+    lost: Arc<AtomicUsize>,
 }
 
 impl MemoryQueue {
     pub fn new(background: Arc<dyn Background>, consumer: ConsumerSlot) -> Self {
-        Self { background, consumer, sent: Mutex::new(Vec::new()) }
+        Self { background, consumer, sent: Mutex::new(Vec::new()), sleep: None, lost: Arc::new(AtomicUsize::new(0)) }
+    }
+
+    /// Wait between two deliveries of a message, as [`retry_delay`] says, with `sleep`.
+    #[must_use]
+    pub fn with_sleep(mut self, sleep: Sleep) -> Self {
+        self.sleep = Some(sleep);
+        self
     }
 
     pub fn sent_count(&self) -> usize {
         self.sent.lock_unpoisoned().len()
     }
+
+    /// How many messages were given up on without being set aside: the consumer's write of their dead letter failed as often as the
+    /// policy allows. Such a message is gone, which is what an in-process queue is (a restart loses every message in flight as well);
+    /// this is how a test, or an operator reading it, can tell.
+    pub fn lost_count(&self) -> usize {
+        self.lost.load(Ordering::Relaxed)
+    }
 }
 
 #[async_trait]
 impl Queue for MemoryQueue {
-    async fn send(&self, _topic: &str, msg: &Envelope, _opts: SendOpts) -> Result<(), QueueError> {
+    async fn send(&self, topic: &str, msg: &Envelope, _opts: SendOpts) -> Result<(), QueueError> {
         self.sent.lock_unpoisoned().push(msg.clone());
-        if let Some(c) = self.consumer.get().cloned() {
-            let env = msg.clone();
+        if let Some(consumer) = self.consumer.get().cloned() {
+            let (env, topic) = (msg.clone(), topic.to_owned());
+            let (sleep, lost) = (self.sleep.clone(), self.lost.clone());
             self.background.spawn(Box::pin(async move {
-                let _ = c.handle(&env).await;
+                deliver(consumer.as_ref(), sleep.as_ref(), &lost, &topic, &env).await;
             }));
         }
         Ok(())
+    }
+}
+
+/// Wait `delay`, if the queue has a way to.
+async fn pause(sleep: Option<&Sleep>, delay: Duration) {
+    if let Some(sleep) = sleep {
+        sleep(delay).await;
+    }
+}
+
+/// One message, from its first delivery to the end of it: acknowledged, or set aside, or (when even that fails) lost.
+async fn deliver(consumer: &dyn EventConsumer, sleep: Option<&Sleep>, lost: &AtomicUsize, topic: &str, env: &Envelope) {
+    let mut deliveries = 1u32;
+    loop {
+        let outcome = consumer.handle(env).await;
+        match disposition(&outcome, deliveries) {
+            Disposition::Ack => return,
+            Disposition::Retry(delay) => {
+                pause(sleep, delay).await;
+                deliveries += 1;
+            }
+            Disposition::DeadLetter => {
+                let letter = NewDeadLetter {
+                    source_id: None,
+                    topic: topic.to_owned(),
+                    event_id: Some(env.event_id),
+                    // an envelope is JSON by construction; the fallback is for the type's sake and says so
+                    body: serde_json::to_string(env)
+                        .unwrap_or_else(|e| format!("(the envelope did not serialize: {e})")),
+                    error: outcome.err().map(|e| e.to_string()).unwrap_or_default(),
+                    attempts: Some(deliveries),
+                };
+                if !set_aside(consumer, sleep, &letter).await {
+                    lost.fetch_add(1, Ordering::Relaxed);
+                }
+                return;
+            }
+        }
+    }
+}
+
+/// Write a dead letter, applying the delivery policy to the write itself: a transient failure is tried again after the same delays,
+/// and the write is given up on after as many tries as a message gets. `false` when it was given up on.
+async fn set_aside(consumer: &dyn EventConsumer, sleep: Option<&Sleep>, letter: &NewDeadLetter) -> bool {
+    let mut writes = 1u32;
+    loop {
+        let outcome = consumer.dead_letter(letter).await;
+        match disposition(&outcome, writes) {
+            Disposition::Ack => return true,
+            Disposition::Retry(delay) => {
+                pause(sleep, delay).await;
+                writes += 1;
+            }
+            Disposition::DeadLetter => return false,
+        }
     }
 }
 

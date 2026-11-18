@@ -84,6 +84,7 @@ for triple in \
   "ignore-tenant:mutant_ignore_tenant:main" \
   "duplicate-sequence-number:mutant_dup_sequence:main" \
   "no-activity-dedupe:mutant_no_activity_dedupe:main" \
+  "invalid-is-transient:mutant_invalid_is_transient:main" \
   "ignore-revoked:mutant_ignore_revoked:main" \
   "skip-csrf:mutant_skip_csrf:main" \
   "csrf-switch-ignored-when-on:mutant_csrf_never:main" \

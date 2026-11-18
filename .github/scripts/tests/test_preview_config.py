@@ -198,6 +198,8 @@ for i in range(40):
         check(f"isolated {i}: top level unchanged", {k: v for k, v in got.items() if k != "previews"}, prod)
         check(f"isolated {i}: correct data resources", (block["hyperdrive"][0]["id"], block["r2_buckets"][0]["bucket_name"],
               block["queues"]["producers"][0]["queue"]), (resources["hyperdrive_id"], resources["bucket"], resources["queue"]))
+        # production also produces to its dead-letter queue (issue #53); a Preview consumes nothing, so it sets nothing aside
+        check(f"isolated {i}: the events producer alone", block["queues"]["producers"], [{"binding": "EVENTS", "queue": resources["queue"]}])
         check(f"isolated {i}: local room, no consumer or email", (block["durable_objects"], "consumers" in block["queues"], "send_email" in block),
               ({"bindings": [{"name": "ROOM", "class_name": "RoomDo"}]}, False, False))
         check(f"isolated {i}: explicit variables and rate ids", (block["vars"], [x["namespace_id"] for x in block["ratelimits"]]),
@@ -212,6 +214,19 @@ for i in range(40):
     changed["durable_objects"]["bindings"][0]["script_name"] = "thrust-production"
     rc, out, got = derive(write_json(changed), "isolated", resources)
     check(f"isolated {i}: external room refused", (rc, got), (1, None))
+
+# The isolated profile knows production's queue shape exactly (the events producer and its dead-letter producer, and the variable that
+# names the dead-letter queue, issue #53): one it has no decision for, or one gone, is refused and named, not copied or ignored.
+for label, mutate, needle in (
+    ("a third producer", lambda c: c["queues"]["producers"].append({"binding": "OTHER", "queue": "other"}), "EVENTS and EVENTS_DLQ producers"),
+    ("no dead-letter producer", lambda c: c["queues"].update(producers=[p for p in c["queues"]["producers"] if p["binding"] != "EVENTS_DLQ"]),
+     "EVENTS and EVENTS_DLQ producers"),
+    ("no THRUST_EVENTS_DLQ variable", lambda c: c["vars"].pop("THRUST_EVENTS_DLQ"), "expected production variables"),
+):
+    changed = copy.deepcopy(prod)
+    mutate(changed)
+    rc, out, got = derive(write_json(changed), "isolated", resources)
+    check(f"isolated refused: {label}, named, nothing written", (rc, needle in out, got), (1, True, None))
 
 print(f"test_preview_config: {passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)

@@ -82,11 +82,23 @@ Behaviour worth knowing:
 - **Request bodies are buffered.** The Worker reads the whole body (at most 8 MiB, the router's limit) before it
   routes, so there are no streaming uploads. The source comment records why: skipping this made a share of local
   runs fail with a request-stream error.
-- **Queue consumer.** A message the consumer rejects is retried after 5 seconds, up to the queue's `max_retries`
-  of 3, and then goes to the dead-letter queue if one is configured. `wrangler.toml` configures none. The Stage 2
-  config and the deploy template (`wrangler.deploy.toml`) name one, and the spike run recorded a rejected event reaching
-  it (research note 0004, S2-9). A message
-  that cannot be decoded is acknowledged and dropped, so it never reaches a dead-letter queue.
+- **Queue consumer** (ADR-0070, FR-21, issue #53). The Worker consumes two queues, the events queue and the dead-letter
+  queue behind it, and tells their batches apart by `THRUST_EVENTS_DLQ`. Each message of the events queue is read on its
+  own (a body that is not a string no longer fails its whole batch) and decoded. A body that is not an event is set
+  aside at once, as it came, and the consumer is not asked about it. An event goes to the consumer, whose error is
+  permanent (the message is wrong: an event with no `project_id`) or transient (something it needed was not there).
+  A permanent error sets the message aside at once; a transient one is delivered again after 5, 10 and 20 seconds
+  and the fourth delivery sets it aside. Setting a message aside sends a `DeadLetterMessage` to the dead-letter queue
+  and acknowledges the original; if that send fails the message is delivered again, and the queue's own `max_retries`
+  of 3 (the same four deliveries) moves the original to the dead-letter queue as a backstop. The Worker's consumer of
+  that queue (`max_retries` of 10, and nothing behind it) writes each message as a row of `dead_letters`, so the table
+  holds what the Worker set aside and what Cloudflare moved there itself, and `GET /internal/dead-letters` (test
+  routes, the admin token) reads it on every target. A message Cloudflare moved has no count of deliveries, because
+  that queue starts the count again. A Worker that does not know the dead-letter queue's name sets nothing aside, so a
+  misconfiguration cannot make a message go round. The decisions are `thrust_ports::settle` and `settle_dead_letter`,
+  the same policy as the in-process queue's; the Worker only reads a message and acts on the answer. All four configs
+  (`wrangler.toml`, the deploy template and the two Stage configs) declare both queues, and
+  `.github/scripts/tests/deploy_parity.py` holds `wrangler.toml` and the template to the same shape.
 - **Cron.** Each tick runs one outbox sweep of up to 100 rows.
 - **Configuration and secrets.** The config file holds no secret. The Hyperdrive and Secrets Store ids in it
   are all-zero placeholders for local use; R2 and the queue are given by name, and the rate-limit namespace ids are
@@ -101,8 +113,7 @@ Behaviour worth knowing:
 - **The deployed Worker.** `wrangler.deploy.toml` is the configuration a deploy uses (issue #49), `wrangler.toml`'s twin
   with a few differences on purpose: markers where the ids and names go, filled from an environment's variables by
   `scripts/render-wrangler.sh`, which refuses an unset variable, an all-zero id, a `thrust-spike` name and a marker it does
-  not know; no `[build]`, because the deploy job that holds the credentials builds nothing; a dead-letter queue on the
-  queue consumer; no probe-only bindings (`RL`, `SS`, `EMAIL`); and the web app as `[assets]`, with the same
+  not know; no `[build]`, because the deploy job that holds the credentials builds nothing; no probe-only bindings (`RL`, `SS`, `EMAIL`); and the web app as `[assets]`, with the same
   `run_worker_first` list as `scripts/worker-dev.sh` writes for the contract cells (the `.assets` directory is made by the
   deploy: this release's build of `web/` with the previous release's files under it, because a missing hashed file is
   answered `200 text/html`, ADR-0011). `.github/scripts/tests/test-deploy-template.sh` compares its bindings, limits and

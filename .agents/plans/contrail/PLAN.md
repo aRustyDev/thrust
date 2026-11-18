@@ -161,7 +161,7 @@ Subjects are shortened from the handoff's Track B table (`reviews/2026-10-19-fab
 | #50 | reject non-canonical-case `/api`, `/auth`, `/live`; run the Worker first at the Access phase | M6 | | FR-13 | |
 | #51 | one `plane_500()` helper; compat parity scoped to the acceptance list | M1 | #44 | FR-18 | `plane-byd.5` |
 | #52 | compat DTOs out of `thrust-contracts`; `check-deps.sh` rule | M1 | #44 | FR-20 | |
-| #53 | permanent versus transient consumer errors; DLQ for undecodable messages; `dead_letters` table | M2 | #43 | FR-21 | |
+| #53 | permanent versus transient consumer errors; DLQ for undecodable messages; `dead_letters` table (built 2026-11-18 on `feat/queue-dead-letters`, after `worker` 0.9 in #303, which gives the Worker the delivery count: ADR-0070's issue #53 update, `docs/src/testing/status.md` G-47) | M2 | #43 | FR-21 | |
 | #54 | one `yrs` room hosted on a Durable Object and on axum | M5 | #46 | FR-05, FR-15 | |
 | #55 | the compat-inventory and spike-0004 Python scripts into `tools/` (`uv`) (done on `chore/import-inventory-scripts`: `tools/compat-inventory/` and `tools/spike-0004/`, each with a provenance README) | M0 | | FR-15 | |
 | #56 | exports and seeding as queue jobs with a `jobs` table | M3 | #43 #46 | FR-05 | |

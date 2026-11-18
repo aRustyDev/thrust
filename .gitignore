@@ -53,6 +53,9 @@ crates/worker/.wrangler.target.run.json
 # cargo-fuzz's working output (the corpus it grows, its artifacts); only fuzz/seeds and fuzz/regressions are committed
 crates/edge/fuzz/corpus/
 crates/edge/fuzz/artifacts/
+crates/core/types/fuzz/corpus/
+crates/core/types/fuzz/artifacts/
+crates/core/types/fuzz/Cargo.lock
 # the files the deploy uploads as the web app: this release's build with the previous release's added (scripts/merge-assets.sh)
 crates/worker/.assets/
 .dev.vars

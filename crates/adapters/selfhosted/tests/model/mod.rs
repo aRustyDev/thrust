@@ -73,6 +73,11 @@
 //! * `insert_activity` is `true` for a new `event_id` and `false` for one already projected, in any project;
 //!   `list_activity` returns the project's rows in insertion order, optionally for one entity, and nothing through
 //!   another workspace;
+//! * `insert_dead_letter` (issue #53, migration 0020) is `true` for an id that is not there and `false` for one that is, and the
+//!   row that is there stays as it was (the first write stands); `dead_letters(n)` returns at most `n` rows, newest first by
+//!   `received_at` and then by `id` in byte order. The table is global like the outbox and earlier cases leave rows in it, which
+//!   are all older than this case's (one clock), so a listing is held to this case's rows as its head and nothing but older rows
+//!   after it;
 //! * `update_work_item` (issue #44, migration 0014) writes the name, the state, the priority, the dates, the completion time, the
 //!   description and the editor it carries to a work item of the scope's workspace and project that a read of live items finds (not
 //!   deleted, archived or a draft), and replaces the people and the labels (once each, in id order) only when it names them; an item that
@@ -819,6 +824,38 @@ enum Op {
         ws: Ws,
         entity: Option<usize>,
     },
+    /// `again`: a delivery of one of this case's dead letters that comes a second time, with other text (the first write stands),
+    /// or a new one. `same_time`: made at the time of the one before it, so the id has to break the tie.
+    InsertDeadLetter {
+        again: Option<usize>,
+        same_time: bool,
+        attempts: Option<u32>,
+        event: bool,
+    },
+    ListDeadLetters {
+        limit: u32,
+    },
+    /// A few `insert_dead_letter`s and then a listing, in one step. Ties in time and ids that come a second time are what the listing's
+    /// order and the first-write-stands rule are about, and they need several inserts and a read in the same case: as separate steps
+    /// (two in a hundred kinds) a case of a default run rarely held both, and a defect in either got through.
+    DeadLetterBurst {
+        inserts: Vec<DeadLetterIns>,
+        limit: u32,
+    },
+}
+
+/// What one `insert_dead_letter` of a case is: see `Model::plan_dead_letter`.
+#[derive(Debug, Clone, Copy)]
+struct DeadLetterIns {
+    again: Option<usize>,
+    same_time: bool,
+    attempts: Option<u32>,
+    event: bool,
+}
+
+fn dead_letter_ins() -> impl Strategy<Value = DeadLetterIns> {
+    (prop::option::weighted(0.3, 0..16usize), any::<bool>(), prop::option::of(1..=5u32), any::<bool>())
+        .prop_map(|(again, same_time, attempts, event)| DeadLetterIns { again, same_time, attempts, event })
 }
 
 fn proj() -> impl Strategy<Value = P> {
@@ -1011,6 +1048,15 @@ fn op() -> impl Strategy<Value = Op> {
         2 => (proj(), ev()).prop_map(|(proj, event)| Op::InsertActivity { proj, event }),
         1 => (proj(), ws(), prop::option::weighted(0.5, 0..16usize))
             .prop_map(|(proj, ws, entity)| Op::ListActivity { proj, ws, entity }),
+        1 => dead_letter_ins().prop_map(|i| Op::InsertDeadLetter {
+            again: i.again,
+            same_time: i.same_time,
+            attempts: i.attempts,
+            event: i.event,
+        }),
+        1 => (0..8u32).prop_map(|limit| Op::ListDeadLetters { limit }),
+        3 => (prop::collection::vec(dead_letter_ins(), 2..7), 0..8u32)
+            .prop_map(|(inserts, limit)| Op::DeadLetterBurst { inserts, limit }),
     ]
 }
 
@@ -1283,6 +1329,16 @@ enum Class {
     ActivityListed,
     ActivityListedForEntity,
     ActivityWrongWorkspace,
+    /// `insert_dead_letter` of a new id, at a time of its own.
+    DeadLetterInserted,
+    /// `insert_dead_letter` of a new id at the time of the one before it: the id breaks the tie in the listing.
+    DeadLetterTie,
+    /// `insert_dead_letter` of an id that is there, with other text: `false`, and the first write stands.
+    DeadLetterRedelivered,
+    /// `dead_letters(n)` with `n` at least what the case wrote.
+    DeadLettersListed,
+    /// `dead_letters(n)` with `n` under what the case wrote: the newest `n` only.
+    DeadLettersLimited,
     /// `allocate` under the other tenant's workspace, refused; the transaction is rolled back.
     AllocateWrongWorkspace,
     /// `membership` of the stray member row: `NotAMember`.
@@ -1383,7 +1439,7 @@ enum Class {
 }
 
 impl Class {
-    const ALL: [Class; 236] = [
+    const ALL: [Class; 241] = [
         Class::Created,
         Class::ExternalKeyFreed,
         Class::Conflict,
@@ -1552,6 +1608,11 @@ impl Class {
         Class::ActivityListed,
         Class::ActivityListedForEntity,
         Class::ActivityWrongWorkspace,
+        Class::DeadLetterInserted,
+        Class::DeadLetterTie,
+        Class::DeadLetterRedelivered,
+        Class::DeadLettersListed,
+        Class::DeadLettersLimited,
         Class::AllocateWrongWorkspace,
         Class::StrayMemberIgnored,
         Class::ItemWithAttrs,
@@ -2036,6 +2097,15 @@ enum Call {
         p: ProjectId,
         entity: Option<WorkItemId>,
         want: Vec<Activity>,
+    },
+    InsertDeadLetter {
+        letter: DeadLetter,
+        want: bool,
+    },
+    /// `want` is this case's rows, newest first and cut to `limit`: the head of the answer.
+    ListDeadLetters {
+        limit: u32,
+        want: Vec<DeadLetter>,
     },
 }
 
@@ -2730,6 +2800,8 @@ struct Model {
     activity: Vec<Activity>,
     /// Every event id projected so far (the uniqueness is global).
     projected: BTreeSet<EventId>,
+    /// This case's dead letters, in the order they were written (the first write of an id stands).
+    dead_letters: Vec<DeadLetter>,
 }
 
 /// One clock for the whole run: strictly increasing, whole seconds (so Postgres stores them exactly), and never
@@ -3023,6 +3095,7 @@ impl Model {
             outbox: Vec::new(),
             activity: Vec::new(),
             projected: BTreeSet::new(),
+            dead_letters: Vec::new(),
         }
     }
 
@@ -4712,8 +4785,72 @@ impl Model {
                 };
                 calls.push(Call::ListActivity { ws: self.fix.ws_for(proj, ws), p: self.fix.p[s], entity, want });
             }
+            &Op::InsertDeadLetter { again, same_time, attempts, event } => {
+                self.plan_dead_letter(DeadLetterIns { again, same_time, attempts, event }, &mut calls, &mut classes);
+            }
+            &Op::ListDeadLetters { limit } => self.plan_dead_letter_list(limit, &mut calls, &mut classes),
+            Op::DeadLetterBurst { inserts, limit } => {
+                for ins in inserts {
+                    self.plan_dead_letter(*ins, &mut calls, &mut classes);
+                }
+                self.plan_dead_letter_list(*limit, &mut calls, &mut classes);
+            }
         }
         (calls, classes)
+    }
+
+    /// One `insert_dead_letter`: a new id, or (`again`) one this case wrote, with other text, which the first write must outlive; at
+    /// a time of its own, or (`same_time`) at the time of the one before it, so that the listing's order rests on the id.
+    fn plan_dead_letter(&mut self, ins: DeadLetterIns, calls: &mut Vec<Call>, classes: &mut Vec<Class>) {
+        let id = match ins.again.filter(|_| !self.dead_letters.is_empty()) {
+            Some(i) => self.dead_letters[i % self.dead_letters.len()].id.clone(),
+            // upper and lower case, so that byte order and a database's locale order would disagree where it has one
+            None => {
+                let n = new_id();
+                if n.as_u128().is_multiple_of(2) {
+                    format!("dl-{n}")
+                } else {
+                    format!("DL-{n}")
+                }
+            }
+        };
+        let tie = ins.same_time && !self.dead_letters.is_empty();
+        let received_at = match self.dead_letters.last() {
+            Some(last) if tie => last.received_at,
+            _ => tick(),
+        };
+        let letter = DeadLetter {
+            id,
+            received_at,
+            topic: "events".into(),
+            event_id: ins.event.then(|| EventId(new_id())),
+            body: format!("body {}", new_id()),
+            error: "permanent: invalid: event without project_id".into(),
+            attempts: ins.attempts,
+        };
+        let want = !self.dead_letters.iter().any(|d| d.id == letter.id);
+        classes.push(match (want, tie) {
+            (false, _) => Class::DeadLetterRedelivered,
+            (true, true) => Class::DeadLetterTie,
+            (true, false) => Class::DeadLetterInserted,
+        });
+        if want {
+            self.dead_letters.push(letter.clone());
+        }
+        calls.push(Call::InsertDeadLetter { letter, want });
+    }
+
+    /// One `dead_letters(limit)`: this case's rows, newest first, cut to `limit`.
+    fn plan_dead_letter_list(&self, limit: u32, calls: &mut Vec<Call>, classes: &mut Vec<Class>) {
+        let mut want = self.dead_letters.clone();
+        want.sort_by(|a, b| b.received_at.cmp(&a.received_at).then_with(|| b.id.as_bytes().cmp(a.id.as_bytes())));
+        want.truncate(limit as usize);
+        classes.push(if (limit as usize) < self.dead_letters.len() {
+            Class::DeadLettersLimited
+        } else {
+            Class::DeadLettersListed
+        });
+        calls.push(Call::ListDeadLetters { limit, want });
     }
 
     /// Plan `ops` one after the other, appending their calls and classes.
@@ -6113,6 +6250,30 @@ async fn execute(
         Call::ListActivity { ws, p, entity, want } => {
             let got = bounded(at, db.list_activity(&scope(ws, p), entity)).await?;
             prop_assert_eq!(got, want, "{}: list activity", at);
+        }
+        Call::InsertDeadLetter { letter, want } => {
+            let got = bounded(at, db.insert_dead_letter(&sys, &letter)).await?;
+            prop_assert_eq!(got, want, "{}: insert dead letter (true = new id)", at);
+        }
+        Call::ListDeadLetters { limit, want } => {
+            let got = bounded(at, db.dead_letters(&sys, limit)).await?;
+            // The table is global and an earlier case may have left rows in it, but they are all older than this case's (one clock for
+            // the whole run): this case's rows are the head of the answer, exactly, and only older rows can follow them.
+            prop_assert!(
+                got.len() <= limit as usize,
+                "{}: dead letters: {} rows for a limit of {}",
+                at,
+                got.len(),
+                limit
+            );
+            prop_assert!(
+                got.len() >= want.len(),
+                "{}: dead letters: {} rows, this case wrote {} of them",
+                at,
+                got.len(),
+                want.len()
+            );
+            prop_assert_eq!(&got[..want.len()], &want[..], "{}: dead letters", at);
         }
     }
     Ok(())

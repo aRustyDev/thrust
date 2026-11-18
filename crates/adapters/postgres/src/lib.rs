@@ -50,6 +50,7 @@ pub const MIGRATION_0016: &str = include_str!("../migrations/0016_assets.sql");
 pub const MIGRATION_0017: &str = include_str!("../migrations/0017_password_resets.sql");
 pub const MIGRATION_0018: &str = include_str!("../migrations/0018_login_codes.sql");
 pub const MIGRATION_0019: &str = include_str!("../migrations/0019_description_stripped.sql");
+pub const MIGRATION_0020: &str = include_str!("../migrations/0020_dead_letters.sql");
 
 /// One migration file: its ledger name and SQL, borrowed from the caller or embedded in the binary.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -60,7 +61,7 @@ pub struct Migration<'a> {
 
 /// Every migration file, in the order they were written (their names' order). A file added to `migrations/` and not here is not
 /// applied, and `ledger`'s test of this list against the directory fails.
-pub const MIGRATIONS: [Migration<'static>; 19] = [
+pub const MIGRATIONS: [Migration<'static>; 20] = [
     Migration { file: "0001_init.sql", sql: MIGRATION_0001 },
     Migration { file: "0002_sequence_tenant_key.sql", sql: MIGRATION_0002 },
     Migration { file: "0003_workspaces.sql", sql: MIGRATION_0003 },
@@ -80,6 +81,7 @@ pub const MIGRATIONS: [Migration<'static>; 19] = [
     Migration { file: "0017_password_resets.sql", sql: MIGRATION_0017 },
     Migration { file: "0018_login_codes.sql", sql: MIGRATION_0018 },
     Migration { file: "0019_description_stripped.sql", sql: MIGRATION_0019 },
+    Migration { file: "0020_dead_letters.sql", sql: MIGRATION_0020 },
 ];
 
 /// What `migrate` may do, beyond applying what is missing.
@@ -3346,6 +3348,56 @@ impl Database for PgDatabase {
             .await
             .map_err(db_err)?;
         Ok(r.get::<_, i64>("n") as u64)
+    }
+
+    async fn insert_dead_letter(&self, _sys: &SystemScope, letter: &DeadLetter) -> Result<bool, DbError> {
+        let c = self.conn().await?;
+        // `attempts` is a count of deliveries, which is never near the limit of an `integer`; the clamp is for the type, not a case
+        let attempts = letter.attempts.map(|n| i32::try_from(n).unwrap_or(i32::MAX));
+        let n = c
+            .pg()
+            .execute(
+                "INSERT INTO dead_letters (id, received_at, topic, event_id, body, error, attempts) \
+                 VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (id) DO NOTHING",
+                &[
+                    &letter.id,
+                    &letter.received_at,
+                    &letter.topic,
+                    &letter.event_id.map(|e| e.0),
+                    &letter.body,
+                    &letter.error,
+                    &attempts,
+                ],
+            )
+            .await
+            .map_err(db_err)?;
+        Ok(n == 1)
+    }
+
+    async fn dead_letters(&self, _sys: &SystemScope, limit: u32) -> Result<Vec<DeadLetter>, DbError> {
+        let c = self.conn().await?;
+        // `COLLATE "C"`: byte order, the order of the memory adapter's `String`s, whatever the database's locale is
+        let rows = c
+            .pg()
+            .query(
+                "SELECT id, received_at, topic, event_id, body, error, attempts FROM dead_letters \
+                 ORDER BY received_at DESC, id COLLATE \"C\" DESC LIMIT $1",
+                &[&(limit as i64)],
+            )
+            .await
+            .map_err(db_err)?;
+        Ok(rows
+            .iter()
+            .map(|r| DeadLetter {
+                id: r.get("id"),
+                received_at: r.get("received_at"),
+                topic: r.get("topic"),
+                event_id: r.get::<_, Option<Uuid>>("event_id").map(EventId),
+                body: r.get("body"),
+                error: r.get("error"),
+                attempts: r.get::<_, Option<i32>>("attempts").map(|n| n as u32),
+            })
+            .collect())
     }
 
     async fn seed(&self, _sys: &SystemScope, f: &SeedFixture) -> Result<(), DbError> {
