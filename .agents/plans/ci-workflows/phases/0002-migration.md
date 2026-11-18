@@ -1,6 +1,6 @@
 # Phase 0002: Migration
 
-Part of [ci-workflows](../PLAN.md). Planned 2026-11-17; M1 to M5b are built and merged (#254, #258, #264, #269, #275, #281) and M6 is in progress. Facts are from
+Part of [ci-workflows](../PLAN.md). Planned 2026-11-17; every stage is built and merged (#254, #258, #264, #269, #275, #281, #289) and the migration's acceptance is recorded after M6. Facts are from
 `main` at `f263ab4`, read on that day: recount them when a stage starts. Phase 1 of the plan, after [Phase 0](0001-foundation.md) (the foundation: merged). It moves
 today's jobs out of `ci.yml` into one workflow per concern as a **pure refactor**: the same commands, the same job boundaries,
 the same result of `gate`. No pass applies to it; each stage's evidence is its acceptance criteria. The passes start in Phase 2,
@@ -482,6 +482,46 @@ a failure notifies and blocks nothing.
 **Public solutions.** None applies to a rename.
 
 **Questions for the owner:** none. The rename is the plan's own decision.
+
+### M6: done (#289, merged 2026-11-18 as `fa1febb`)
+
+What it showed:
+- **Parity**, by `scripts/ci-commands.py`: 53 jobs before and after, 51 unchanged and 2 moved (`e2e` and `e2e-mail`, calls identical); the control, on this very
+  change, was a copy whose `e2e-mail` call runs the wrong pass and one whose call lost its `permissions`, each reported `CHANGED (NOT expected)` with exit 1.
+- **The first affected-only run of the migration**, which was the pull request's own (it does not edit `ci.yml`): 15 jobs, 8 ran and 7 were skipped by the plan
+  (`documentation`, `lint` with `deps` only, and `test` with `ci-scripts` only); `test / verdict` said `no cells planned`; `gate` was certified.
+- **The renamed workflow ran on the pull request** through its `paths:` filter, and both cells passed (`e2e / worker-cf e2e`, about 9.5 minutes, and
+  `e2e-mail / worker-cf e2e-mail`, about 5).
+- **Two probes**: #291 (the planner test's list still names `e2e-schedule`) failed `test / ci-scripts` and `gate`; #292 (the index keeps the old row) failed
+  `lint / deps` **and** `test / ci-scripts`. The plan had predicted `lint / deps` alone: the guard's own test also reads the real index. Each probe's own `e2e` run was cancelled as redundant.
+
+What it found: four comments that M5b had made false (fixed in the same edit), and the point above about the two guards.
+
+### The migration's acceptance: done (recorded in this pull request)
+
+Each criterion of the plan, and what shows it. Everything quoted was read from the run or the file, not taken from a description of it.
+
+| Criterion | Evidence |
+|---|---|
+| `ci.yml` holds only `changes`, the calls and `gate` | Its jobs are `changes`, `test`, `lint`, `web`, `documentation`, `security` (each a `uses:` of its workflow, `needs: changes`) and `gate` (`needs` the six). A wiring check pins it |
+| Invariant 1: `gate` is the only required context | `assert-required-contexts.sh`, strict on `gate`, certified #281 and #289 (and every pull request of the stages) |
+| Invariant 2: no coverage lost | Per stage, the parity of each pull request. **For the whole migration** (`ci-commands.py` from `b83ece3`, the commit before M1, to `564c929`): 34 jobs before, 53 after, **0 gone**, 18 unchanged, 8 moved with identical steps, 10 changed, 17 appeared. Of the 10 changed, 5 are the migration's by design (`changes`: two outputs; `lint` and `web`: now calls; `gate`; `contract`: the matrix's source) and 5 are other pull requests' additions (`deploy-worker`, `deploy.yml:plan`, and lines added to `ci-scripts`, `pg-adapter` and `deps`); of the 17 that appeared, 9 are the migration's (the `verdict` action, five `verdict` jobs and the three calls `test`, `documentation`, `security`) and 8 are other work's (the preview and infrastructure workflows, the deploy targets). For the three jobs that others also changed, a line-by-line comparison found **no line gone** and traced each of the 12 added lines to a commit that is not the migration's, except `test_workflow_wiring.py`, which is M1's own |
+| Invariant 3: a skipped or failed planned job turns `gate` red at every level | **Fourteen probes**, two for each of M1 to M6 (M5 has two parts), each closed unmerged after turning the real `gate` red for its own reason: #255 and #256, #259 and #260, #265 and #266, #270 and #271, #276 and #277, #282 and #283, #291 and #292 |
+| Invariant 4 and the criterion: an `rc/*` pull request still plans a staging dispatch | #227's run `44214903508`, on `caa13b3` (which contains M6): `running everything: release candidate rc/2026-11-16T20-16-16Z`, 42 of 42 jobs, `gate` ok. `deploy.yml` then planned a staging `workflow_dispatch` for `caa13b3` (run `44217103734`): `plan` and `build` succeeded. Its `deploy` job is **queued, not failed**, and not by the migration: `deploy` and `deploy-do` share the concurrency group `deploy-staging` (`cancel-in-progress: false`), and an older staging run (`43816740997`, from 2026-11-16) has had its `deploy-do` job waiting since 06:26Z for the reviewer of `staging-do-lifecycle`. I approved and cancelled nothing |
+| Invariant 5: `lint-all-workflows.sh` passes, least privilege, no `pull_request_target` | The workflow lint ran in `lint / deps` of every run above and passes on 18 workflows and 6 actions |
+| Invariants 6 and 7: the planner equals the gate; the tests and mutants pass; the guards run before each push | `test / ci-scripts` runs the tests and the mutant driver on every full run, green on the nightly and the dispatch below; each pull request's description says what was run locally |
+| A full dispatch run is green and runs the same commands as the baseline | `ci` by `workflow_dispatch` on `564c929`: run `44216506614`, **42 of 42 jobs**. (Another session dispatched it, and I read it: event, commit, jobs.) Against the full push run on `b83ece3` (`44008843071`, 37 jobs) the job names are the same once the workflow prefix is stripped, **26 of 26 cells included, with `verdict` the only name added** (five jobs); the control, the affected-only run as the second run, reports 27 jobs lost and exits 1 (`compare-job-sets.py`) |
+| An affected-only pull-request run is green | #289's, above (8 of 15 jobs). Since M5b, pull-request runs of other shapes were green too: 5 of 12 jobs (`pg-adapter` and `ci-scripts`, #293), 10 of 15 (the book, `deps`, `ci-scripts`, `lint` and `hermetic`), and full runs for the `rc/*` pull request and the pull requests that edit CI. The only runs that did not pass are superseded ones (cancelled) and the probes, which fail on purpose |
+| The nightly is green | `schedule` run `44230791965` at 03:29 UTC on `564c929`, the whole migrated layout: `running everything: no base to diff for 'schedule'`, **42 of 42**, every `verdict` ok (`test`: `26 of 26 planned cells reported success`), `gate` ok. In a called workflow `github.event_name` is the caller's (here `schedule`); none of the called workflows, the cell workflow or the `verdict` action reads it (R9), and this is the run that shows they do not need to |
+| The E2E schedule is green by dispatch | `e2e` by `workflow_dispatch` on `564c929`: run `44216510310`, 2 of 2 jobs. (Dispatched by the other session; read by me.) |
+| `flake-hunt.yml` is unchanged | `git diff b83ece3 564c929 -- .github/workflows/flake-hunt.yml` is empty |
+| The file table in `cicd.md` is true | It was not complete: it named 18 of the 24 workflows and actions on disk, and **5 workflows and 1 action had no row** (`cloudflare-infrastructure`, `deploy-preview-provisioner`, `enable-preview-provisioner`, `preview-control-tests`, `preview-reconcile`; the `triggerd` action), all added by other work. Rows were added, taken from the facts of each file; the table now names 24 of 24, and every row names a file that exists (`cicd-table-vs-tree.py`, which failed before and passes now). Three statements that the migration made false were corrected too: `running.md`'s row for `test.yml` (it still said the cells were `ci.yml`'s job: M5b's miss), `flagship.yml`'s comment (it said `deps` is in `ci.yml`: M4's miss) and the index row of `preview-control-tests.yml` (it said its tests also run in `ci.yml`: M5a's) |
+
+What the acceptance found:
+- **The table in `cicd.md` had drifted without the migration**: six files were added by other work with a row in the indexes (which `check-ci-index.sh` guards) and none in the table (which nothing guards). The same guard could hold `cicd.md`'s table to the tree; that is an offer to the owner, not built.
+- **Three of my own stages had left a statement false** (M4, M5a and M5b above), found by searching the current docs and scripts for `ci.yml` next to the name of a job that no longer lives there.
+- **One drift that is not the migration's and was not touched**: `running.md`'s row for the `lint` job lists two of its four clippy steps.
+- **The new baseline** is [research 0019](../research/0019-ci-baseline-after-migration.md): a full run costs 931 runner-seconds more at the median (20%), of which **43 s (0.8%) are the five `verdict` jobs**, the migration's own, and the rest a bigger `ci-scripts` and a 26th cell, which came before it; the migration adds 15 to 19 s to the critical path (1.2 to 2%).
 
 ## Decisions on the questions (owner, 2026-11-17, after #251)
 

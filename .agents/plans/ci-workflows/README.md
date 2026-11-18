@@ -21,15 +21,18 @@ current release flow is in [cicd-review](../cicd-review/README.md).
 |---|---|
 | `PLAN.md` | the owner's decisions; the architecture; Phase 0 and the migration; the priority-ordered phase table; the templates for a phase and a stage; what each pass must show; the invariants every pull request keeps; the status table |
 | `research/0017-ci-baseline.md`, `scripts/ci-baseline.py` | what `ci` costs today (per job and per run, from GitHub's own records), and the script that measures it again; the number the passes that save time and the migration are checked against |
+| `research/0019-ci-baseline-after-migration.md` | what `ci` costs after the migration, measured the way 0017 was, and how much of the difference is the migration's (the five `verdict` jobs: 43 runner-seconds, 15 to 19 s on the critical path) |
+| `scripts/ci-commands.py`, `scripts/compare-job-sets.py`, `scripts/critical-path.py`, `scripts/cicd-table-vs-tree.py` | the migration's evidence tools: the step-by-step parity of two versions of the workflows; the job sets of two runs; where a run's wall clock goes; `cicd.md`'s file table against the tree |
 | `research/0018-gate-spike.md` | how the one required `gate` judges a job inside a called workflow: five designs against seven scenarios, eleven facts measured, and the design chosen (A+); the evidence behind ADR-0102 |
 | `phases/0001-foundation.md` | Phase 0 planned stage by stage: what exists today, the spike that chooses how `gate` judges a called workflow, the planner and gate changes, the lint conventions, the baseline, and the questions for the owner (answered) |
-| `phases/0002-migration.md` | Phase 1, the migration, planned: what "the same" means and how each pull request proves it, what exists today, the order of the stages (the simplest callee first), the first stage in detail, and the questions for the owner |
+| `phases/0002-migration.md` | Phase 1, the migration: what "the same" means and how each pull request proves it, what existed, the order of the stages (the simplest callee first), each of the six stages in detail with what it showed, the questions for the owner (answered), and the acceptance |
 
 Phase documents (`phases/NNNN-*.md`) are written when a phase starts, not before. Phase numbers are allocated across the
 whole repository: Phase 0 of this plan is `0001` and Phase 1 is `0002`; each later phase takes the next free number.
 
 ## Status (2026-11-17)
 
-Phase 0, the foundation, is done and merged. Phase 1, the migration, is planned, its four questions are answered, its first
-stage, `documentation.yml`, is merged (#254), its second, `security.yml`, is merged (#258), its third, `web.yml`, is merged (#264), and its fourth, `lint.yml`, is merged (#269), and its fifth, `test.yml`, was split in two and both halves are merged (M5a, #275; M5b, #281), which leaves `ci.yml` holding only `changes`, the calls and `gate`; its sixth and last stage, `e2e.yml`, is in progress, and the migration's
-acceptance follows it; see the table at the end of `PLAN.md`.
+Phase 0, the foundation, is done and merged. Phase 1, the migration, is **done**: its six stages are merged (`documentation.yml`, #254; `security.yml`, #258;
+`web.yml`, #264; `lint.yml`, #269; `test.yml`, split in two, #275 and #281; `e2e.yml`, #289), `ci.yml` holds only `changes`, the calls and `gate`, and its
+acceptance is recorded in [phases/0002-migration.md](phases/0002-migration.md), with the cost after it in [research 0019](research/0019-ci-baseline-after-migration.md).
+Phases 2 to 14 are not started; see the table at the end of `PLAN.md`.
