@@ -18,7 +18,10 @@ exercised password-update recovery; the interrupted-update path still needs an A
    does not support. Use a transaction-scoped lock on the Hyperdrive path. SQL transaction-control
    statements can end the outer transaction and release that lock; this must be prevented or the
    migration source must be trusted before the runner accepts PR-provided SQL. The atomic runner
-   alone does not validate SQL or establish this boundary.
+   alone does not validate SQL or establish this boundary. `migration-artifact.py` extracts a
+   bounded, checksummed list from an exact Git commit without running PR code. Its caller must
+   separately prove that the commit is the authorized current PR head; the artifact is untrusted
+   data and it does not validate SQL, authorize a run, or establish an execution boundary.
 2. Derive an isolated Preview configuration from trusted inputs: the reconciled per-PR
    Hyperdrive, isolated bucket and queue, dev rate limits, and Preview-owned Durable Objects.
    The Worker currently requires a queue producer binding even though Previews do not consume
