@@ -51,16 +51,16 @@ pub const MIGRATION_0017: &str = include_str!("../migrations/0017_password_reset
 pub const MIGRATION_0018: &str = include_str!("../migrations/0018_login_codes.sql");
 pub const MIGRATION_0019: &str = include_str!("../migrations/0019_description_stripped.sql");
 
-/// One migration file of the adapter: its file name, which is what the ledger records it by, and its SQL.
+/// One migration file: its ledger name and SQL, borrowed from the caller or embedded in the binary.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Migration {
-    pub file: &'static str,
-    pub sql: &'static str,
+pub struct Migration<'a> {
+    pub file: &'a str,
+    pub sql: &'a str,
 }
 
 /// Every migration file, in the order they were written (their names' order). A file added to `migrations/` and not here is not
 /// applied, and `ledger`'s test of this list against the directory fails.
-pub const MIGRATIONS: [Migration; 19] = [
+pub const MIGRATIONS: [Migration<'static>; 19] = [
     Migration { file: "0001_init.sql", sql: MIGRATION_0001 },
     Migration { file: "0002_sequence_tenant_key.sql", sql: MIGRATION_0002 },
     Migration { file: "0003_workspaces.sql", sql: MIGRATION_0003 },
@@ -193,7 +193,7 @@ const LEDGER_DDL: &str = "CREATE TABLE IF NOT EXISTS thrust_schema_migrations (\
      file text PRIMARY KEY, sha256 text NOT NULL, applied_at timestamptz NOT NULL DEFAULT now())";
 
 /// The files a build carries, with their checksums, as [`ledger::plan`] takes them.
-pub fn carried(files: &[Migration]) -> Vec<ledger::Entry> {
+pub fn carried(files: &[Migration<'_>]) -> Vec<ledger::Entry> {
     files.iter().map(|m| ledger::Entry { file: m.file.to_string(), sha256: ledger::sha256_hex(m.sql) }).collect()
 }
 
@@ -211,7 +211,7 @@ pub async fn migrate(client: &Client) -> Result<MigrateOutcome, MigrateError> {
 /// file runs in its own transaction together with its ledger row, so a file that fails leaves neither its changes nor its row.
 pub async fn migrate_with(
     client: &Client,
-    files: &[Migration],
+    files: &[Migration<'_>],
     options: MigrateOptions,
 ) -> Result<MigrateOutcome, MigrateError> {
     client.execute("SELECT pg_advisory_lock($1)", &[&MIGRATE_LOCK]).await?;
@@ -225,7 +225,7 @@ pub async fn migrate_with(
 /// plans every file (the baseline). Nothing is written, not even the ledger table.
 pub async fn plan_migrations(
     client: &Client,
-    files: &[Migration],
+    files: &[Migration<'_>],
 ) -> Result<(bool, ledger::Plan), tokio_postgres::Error> {
     let present = ledger_present(client).await?;
     let recorded = if present { read_ledger(client).await? } else { Vec::new() };
@@ -245,7 +245,7 @@ async fn read_ledger(client: &Client) -> Result<Vec<ledger::Entry>, tokio_postgr
         .collect()
 }
 
-async fn record(client: &Client, m: &Migration) -> Result<(), tokio_postgres::Error> {
+async fn record(client: &Client, m: &Migration<'_>) -> Result<(), tokio_postgres::Error> {
     client
         .execute(
             "INSERT INTO thrust_schema_migrations (file, sha256) VALUES ($1, $2)",
@@ -272,7 +272,7 @@ where
 
 async fn migrate_locked(
     client: &Client,
-    files: &[Migration],
+    files: &[Migration<'_>],
     options: MigrateOptions,
 ) -> Result<MigrateOutcome, MigrateError> {
     let (present, plan) = plan_migrations(client, files).await?;
@@ -285,7 +285,7 @@ async fn migrate_locked(
         return Err(MigrateError::ContractRefused(contract));
     }
     // In the order the files were written (their names'), whatever the order of the list.
-    let mut in_order: Vec<&Migration> = files.iter().collect();
+    let mut in_order: Vec<&Migration<'_>> = files.iter().collect();
     in_order.sort_by_key(|m| m.file);
     if !present {
         in_transaction(client, async {
