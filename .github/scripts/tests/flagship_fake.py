@@ -8,8 +8,8 @@ and writes it back after every change, so the test seeds and inspects the app th
     {"token": "...", "account": "...", "app": "...", "flags": {"<key>": <flag>}, "modes": {...}}
 
 What it implements, after the published schema (/client/v4/accounts/{account_id}/flagship/apps/{app_id}/...): list flags (limit 1-200,
-an opaque cursor, result_info.cursor null on the last page), get, create (409 when the key exists), update with PUT (404 when
-it does not; metadata omitted is cleared), delete, and evaluate with a JSON context. A body is checked as the schema says
+an opaque cursor, result_info.cursor null on the last page), get, create (201, as the live API answers it; 409 when the key
+exists), update with PUT (404 when it does not; metadata omitted is cleared), delete, and evaluate with a JSON context. A body is checked as the schema says
 (required and allowed fields, the key's pattern, default_variation and every serve_variation naming a variation, one type for
 every variation, unique priorities, the operators, clauses of AND/OR) and refused with 400 otherwise. A request without the
 bearer token is 401. Every request is one line of <calls.log>: `<METHOD> <path>`.
@@ -20,6 +20,8 @@ whose conditions all match (an empty list matches everything); a condition on an
 "modes" switches, for the failures the script has to notice:
   page: <n>          list at most n flags a page, whatever limit asks
   put_noop: true     PUT answers 200 and changes nothing
+  write_code: <n>    a create, update or delete that succeeds answers n instead (204 with no body): the codes the live API has
+                     not been seen to use, and codes outside 2xx for a write the service reports as failed
   eval_or: true      a rule matches when ANY of its conditions does (a service whose semantics are not the documented ones)
   eval_lag: <n>      the first n evaluations answer the flag's default variation, as during propagation (counted in "evals")
   eval_envelope: true  evaluate answers in Cloudflare's envelope {success, result: {...}} instead of the bare result
@@ -208,7 +210,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return self.envelope(409, errors=["a flag with this key exists"])
             flags[body["key"]] = self.stored(body)
             save(state)
-            return self.envelope(200, flags[body["key"]])
+            return self.written(modes, 201, flags[body["key"]])
         if rest == "/evaluate" and method == "POST":
             if not isinstance(body, dict) or "flagKey" not in body or set(body) - {"flagKey", "context"}:
                 return self.envelope(400, errors=["the body needs flagKey, and context at most"])
@@ -234,7 +236,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if method == "DELETE":
             del flags[key]
             save(state)
-            return self.envelope(200, {"key": key})
+            return self.written(modes, 200, {"key": key})
         if method == "PUT":
             errors = flag_errors(body)
             if not errors and body["key"] != key:
@@ -244,8 +246,18 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if not modes.get("put_noop"):
                 flags[key] = self.stored(body)
                 save(state)
-            return self.envelope(200, flags[key])
+            return self.written(modes, 200, flags[key])
         return self.envelope(405, errors=["method not allowed"])
+
+    def written(self, modes, code, result):
+        """The answer to a create, update or delete that succeeded: `code`, unless the mode write_code says otherwise."""
+        code = modes.get("write_code", code)
+        if code == 204:
+            self.send_response(204)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return None
+        return self.envelope(code, result, errors=() if code < 400 else ["the service reports the write failed"])
 
     @staticmethod
     def stored(body):
