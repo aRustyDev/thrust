@@ -300,8 +300,36 @@ for label, args, want in (("an alias the policy lacks", ("beta", "prod"), 2), ("
 seed(GOOD)
 check("delete a live target: exit 0", run("delete", "v0.2.0")[0], 0)
 check("delete a live target: gone, the rest untouched", app(), {k: f for k, f in GOOD.items() if k != key("target", "v0.2.0")})
-check("delete an absent target: exit 0", run("delete", "v9.9.9")[0], 0)
+rc, out = run("delete", "v9.9.9")
+check("delete an absent target: exit 0, says it was absent", (rc, "target-v9_9_9: already absent" in out), (0, True))
 check("delete a name that is not one: exit 2", run("delete", "v9_9")[0], 2)
+
+# ---------------------------------------------------------------- the status of a write
+
+# The live API answers a create 201: the first sync on the live app (flagship.yml run 44373055490, 2026-11-18) made `routing`,
+# then took its own 201 for a failure. The fake now answers a create 201, so every create above runs into it; the codes of an
+# update and a delete are not documented. Every 2xx is a write done (the read-back is the check), anything else stops the run.
+for code in (200, 201, 202, 204):
+    seed({k: f for k, f in GOOD.items() if k != "routing"}, write_code=code)
+    check(f"a create answered {code}: sync exit 0, routing made", (run("sync")[0], app()), (0, GOOD))
+    seed({"routing": expected_routing(False)}, write_code=code)
+    rc, out = run("put", "v0.3.0", write_value(value("rc")))
+    check(f"a create answered {code}: put exit 0, read back", (rc, "written and read back" in out), (0, True))
+    seed({key("target", "v0.3.0"): expected_target(POLICY, "v0.3.0", value("rc"))}, write_code=code)
+    rc, out = run("put", "v0.3.0", write_value(v2))
+    check(f"an update answered {code}: put exit 0, the new value", (rc, app()[key("target", "v0.3.0")]),
+          (0, expected_target(POLICY, "v0.3.0", v2)))
+    seed(GOOD, write_code=code)
+    rc, out = run("delete", "v0.2.0")
+    check(f"a delete answered {code}: exit 0, gone, said so", (rc, key("target", "v0.2.0") in app(), "target-v0_2_0: deleted" in out),
+          (0, False, True))
+for code in (409, 500):
+    seed({k: f for k, f in GOOD.items() if k != "routing"}, write_code=code)
+    check(f"a create answered {code}: sync exit 2", run("sync")[0], 2)
+    seed({key("target", "v0.3.0"): expected_target(POLICY, "v0.3.0", value("rc"))}, write_code=code)
+    check(f"an update answered {code}: put exit 2", run("put", "v0.3.0", write_value(v2))[0], 2)
+    seed(GOOD, write_code=code)
+    check(f"a delete answered {code}: exit 2", run("delete", "v0.2.0")[0], 2)
 
 # ---------------------------------------------------------------- check and sync
 

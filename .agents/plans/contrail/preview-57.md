@@ -14,6 +14,11 @@ exercised password-update recovery; the interrupted-update path still needs an A
    exact PR revision as `pr_<n>` through a bounded, authenticated path; never expose the
    provisioner, deployment or shared database credentials to PR-controlled code. Demonstrate
    that a migration attempting to write to `public` fails. Order migration before deployment.
+   The existing native runner uses a session advisory lock, which Hyperdrive transaction pooling
+   does not support. Use a transaction-scoped lock on the Hyperdrive path. SQL transaction-control
+   statements can end the outer transaction and release that lock; this must be prevented or the
+   migration source must be trusted before the runner accepts PR-provided SQL. The atomic runner
+   alone does not validate SQL or establish this boundary.
 2. Derive an isolated Preview configuration from trusted inputs: the reconciled per-PR
    Hyperdrive, isolated bucket and queue, dev rate limits, and Preview-owned Durable Objects.
    The Worker currently requires a queue producer binding even though Previews do not consume

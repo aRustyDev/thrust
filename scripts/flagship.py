@@ -317,14 +317,18 @@ class Api:
         status, parsed = self.expect("GET", f"/flags/{key}", ok=(200, 404))
         return parsed.get("result") if status == 200 and isinstance(parsed, dict) else None
 
+    # A write is done on any 2xx: the live API answers a create 201 (2026-11-18) and documents no code for an update or a delete.
+    # What makes a write trusted is the read-back after it (sync's second review, put's verify, delete's get), not its code.
+    WRITTEN = tuple(range(200, 300))
+
     def write(self, flag):
         if self.get(flag["key"]) is None:
-            self.expect("POST", "/flags", flag)
+            self.expect("POST", "/flags", flag, ok=self.WRITTEN)
         else:
-            self.expect("PUT", f"/flags/{flag['key']}", flag)
+            self.expect("PUT", f"/flags/{flag['key']}", flag, ok=self.WRITTEN)
 
     def delete(self, key):
-        return self.expect("DELETE", f"/flags/{key}", ok=(200, 404))[0] == 200
+        return self.expect("DELETE", f"/flags/{key}", ok=(*self.WRITTEN, 404))[0] != 404
 
     def evaluate(self, key, context):
         _, parsed = self.expect("POST", "/evaluate", {"flagKey": key, "context": context})

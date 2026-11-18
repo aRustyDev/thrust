@@ -72,24 +72,63 @@ pub fn plane_builder() -> ammonia::Builder<'static> {
     b
 }
 
-fn css_is_dangerous(v: &str) -> bool {
-    // strip comments, drop backslashes and whitespace, lower-case: `exp/**/ression(`, `java\script:`, `JAVA SCRIPT:` and friends.
-    // A CSS HEX escape (`j\61vascript:`, `\6a avascript:`) is NOT decoded, so it passes; measured on 2026-11-18, not fixed here (D-016's
-    // claim is the corpus's 125 of 125, and browsers do not run `javascript:` from a CSS `url()` [inferred], the class of the nine).
-    let mut s = String::with_capacity(v.len());
-    let mut rest = v;
-    while let Some(i) = rest.find("/*") {
-        s.push_str(&rest[..i]);
-        match rest[i + 2..].find("*/") {
-            Some(j) => rest = &rest[i + 2 + j + 2..],
-            None => {
-                rest = "";
-                break;
+/// What a CSS value says once its comments and escapes are read, in one pass and in the order a stylesheet reads them (CSS Syntax 3,
+/// §4.3.2 and §4.3.7), because each can hide the other's opener:
+///
+/// - `/*` opens a comment, which ends at the first `*/` after it, or at the end of the value, and is removed (`/*/` opens one and does
+///   not close it);
+/// - a backslash and one to six hex digits is the code point they name (`\61` is `a`), taken greedily, so `\61vascript` is `a` and
+///   `vascript` but `\76bscript` is U+076B and `script`. The one whitespace character that ends an escape is left in place:
+///   `css_is_dangerous` removes whitespace anyway;
+/// - a backslash and any other character is that character, taken as it is and never as an opener: `\/*` is a slash and a star and
+///   opens no comment (what follows is read), and `\\` is a backslash.
+///
+/// A code point that is no `char` (a surrogate, one past U+10FFFF) is dropped, and zero is a NUL that the caller removes: a stylesheet
+/// reads U+FFFD there, but this is only ever used to find a token, and a break that a browser might skip (old ones skipped a NUL) is
+/// safer taken out, since it can then only make a token easier to see.
+fn css_text(v: &str) -> String {
+    let mut out = String::with_capacity(v.len());
+    let mut chars = v.chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            '/' if chars.next_if_eq(&'*').is_some() => {
+                let mut star = false;
+                for n in chars.by_ref() {
+                    if star && n == '/' {
+                        break;
+                    }
+                    star = n == '*';
+                }
             }
+            '\\' => {
+                let mut code: Option<u32> = None;
+                for _ in 0..6 {
+                    let Some(digit) = chars.peek().and_then(|n| n.to_digit(16)) else { break };
+                    chars.next();
+                    code = Some(code.unwrap_or(0) * 16 + digit);
+                }
+                match code {
+                    Some(code) => out.extend(char::from_u32(code)),
+                    None => out.extend(chars.next()),
+                }
+            }
+            c => out.push(c),
         }
     }
-    s.push_str(rest);
-    let s: String = s.chars().filter(|c| !c.is_whitespace() && *c != '\\').flat_map(|c| c.to_lowercase()).collect();
+    out
+}
+
+fn css_is_dangerous(v: &str) -> bool {
+    // read the comments and escapes, drop whitespace, control characters and backslashes, lower-case: `exp/**/ression(`, `java\script:`,
+    // `j\61vascript:`, `\6a avascript:`, `JAVA SCRIPT:` and friends. A backslash that is left (`\\`) is dropped as it always was:
+    // that can only make a token easier to see. (Before 2026-11-18 a hex escape was not read, so `j\61vascript:` passed, and a
+    // comment was cut out before an escape could say `\/*` was no comment: PR #305's report named the first, and
+    // `regression_a_css_hex_escape_cannot_spell_a_dangerous_token` pins both.)
+    let s: String = css_text(v)
+        .chars()
+        .filter(|c| !c.is_whitespace() && !c.is_control() && *c != '\\')
+        .flat_map(|c| c.to_lowercase())
+        .collect();
     [
         "expression(",
         "javascript:",
@@ -167,7 +206,12 @@ pub fn thrust_builder() -> ammonia::Builder<'static> {
 
 /// The version of what `description_html` was cleaned with: this allow-list and the editor schema it must not damage (the pin
 /// `oracle/v1-pin-20261018`). A change to either bumps it, so a stored description says which policy it was made under (ADR-0012).
-pub const SCHEMA_VERSION: i16 = 1;
+///
+/// - 1: Plane's allow-list, the value filters (a CSS escape was not read), the editor's embed and `rel` (#300 to #305).
+/// - 2: a `style` value is judged after its CSS comments and escapes are read as a stylesheet reads them (`j\61vascript:` is
+///   `javascript:`, `\/*` opens no comment), and a control character in it is removed. A description stored under 1 may hold a
+///   `style` that 2 would have dropped.
+pub const SCHEMA_VERSION: i16 = 2;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum SanitizeError {

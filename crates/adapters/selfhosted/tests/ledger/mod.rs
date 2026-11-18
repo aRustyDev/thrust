@@ -8,8 +8,8 @@
 
 use thrust_adapters_postgres::ledger::{Plan, LEDGER_TABLE};
 use thrust_adapters_postgres::{
-    carried, migrate, migrate_with, plan_migrations, MigrateError, MigrateOptions, MigrateOutcome, Migration,
-    MIGRATIONS,
+    carried, migrate, migrate_atomic_with, migrate_with, plan_migrations, MigrateError, MigrateOptions, MigrateOutcome,
+    Migration, MIGRATIONS,
 };
 
 use super::*;
@@ -63,6 +63,70 @@ async fn probe_rows(raw: &tokio_postgres::Client) -> i64 {
 
 fn names(files: &[Migration<'_>]) -> Vec<String> {
     files.iter().map(|m| m.file.to_string()).collect()
+}
+
+/// Every position of a failing file rolls the complete transaction back, and a good retry applies once.
+#[tokio::test]
+async fn model_atomic_migrations_roll_back_at_each_failure_position() {
+    let db = fresh().await;
+    let raw = db.conn.raw().await.unwrap();
+    migrate(&raw).await.unwrap();
+    let file_names: Vec<String> = (0..4).map(|n| format!("900{n}_atomic.sql")).collect();
+    for failing in 0..4 {
+        let sources: Vec<String> =
+            (0..4)
+                .map(|n| {
+                    if n == failing {
+                        "SELECT 1 / 0;".to_string()
+                    } else {
+                        format!("CREATE TABLE atomic_{n} (n int);")
+                    }
+                })
+                .collect();
+        let mut files: Vec<Migration<'_>> = MIGRATIONS.to_vec();
+        files.extend(file_names.iter().zip(&sources).map(|(file, sql)| Migration { file, sql }));
+        assert!(matches!(migrate_atomic_with(&raw, &files, NO_CONTRACT).await, Err(MigrateError::Db(_))));
+        for n in 0..4 {
+            assert!(!table_exists(&raw, &format!("atomic_{n}")).await);
+        }
+        assert_eq!(ledger_files(&raw).await, names(&MIGRATIONS));
+    }
+    let sources: Vec<String> = (0..4)
+        .map(|n| {
+            format!("CREATE TABLE atomic_{n} (n int); DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_locks WHERE locktype = 'advisory' AND pid = pg_backend_pid() AND granted) THEN RAISE EXCEPTION 'migration lock missing'; END IF; END $$;")
+        })
+        .collect();
+    let mut files: Vec<Migration<'_>> = MIGRATIONS.to_vec();
+    files.extend(file_names.iter().zip(&sources).map(|(file, sql)| Migration { file, sql }));
+    assert_eq!(
+        migrate_atomic_with(&raw, &files, NO_CONTRACT).await.unwrap(),
+        MigrateOutcome::Applied { files: file_names.clone() }
+    );
+    assert_eq!(migrate_atomic_with(&raw, &files, NO_CONTRACT).await.unwrap(), MigrateOutcome::Current);
+    let held: i64 = raw.query_one("SELECT count(*) FROM pg_catalog.pg_locks WHERE locktype = 'advisory' AND pid = pg_backend_pid() AND granted", &[]).await.unwrap().get(0);
+    assert_eq!(held, 0, "transaction lock must be released at commit");
+    files.push(Migration { file: "9004_contract_forbidden.sql", sql: "CREATE TABLE atomic_contract (n int);" });
+    assert!(matches!(migrate_atomic_with(&raw, &files, NO_CONTRACT).await, Err(MigrateError::ContractRefused(_))));
+    assert!(!table_exists(&raw, "atomic_contract").await);
+}
+
+/// Two callers on separate connections serialize on the transaction lock and apply the baseline once.
+#[tokio::test]
+async fn model_atomic_migrations_serialize_concurrent_baselines() {
+    let db = fresh().await;
+    let first = db.conn.raw().await.unwrap();
+    let second = db.conn.raw().await.unwrap();
+    let (a, b) = tokio::join!(
+        migrate_atomic_with(&first, &MIGRATIONS, NO_CONTRACT),
+        migrate_atomic_with(&second, &MIGRATIONS, NO_CONTRACT)
+    );
+    let (a, b) = (a.unwrap(), b.unwrap());
+    assert!(matches!(
+        (&a, &b),
+        (MigrateOutcome::Baseline { .. }, MigrateOutcome::Current)
+            | (MigrateOutcome::Current, MigrateOutcome::Baseline { .. })
+    ));
+    assert_eq!(ledger_files(&first).await, names(&MIGRATIONS));
 }
 
 /// A new database: `--plan` says baseline and writes nothing, not even the ledger table; `migrate` runs every file and records each
