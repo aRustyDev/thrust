@@ -117,8 +117,12 @@ jobs:
           python3 -I infra/edge/test-service-token.py
           python3 -I .github/scripts/tests/test_workflow_wiring.py
           EOF
-          echo "--- each command, slowest first (seconds, exit status)"
+          echo "--- each command, slowest first (seconds, exit status), on $(nproc) cores"
           tail -n +2 "$RUNNER_TEMP/ci-scripts.joblog" | sort -t "$(printf '\t')" -k4,4nr | awk -F '\t' '{ printf "%7.1f  exit %s  %s\n", $4, $7, $9 }'
+          if [ "$status" -ne 0 ]; then
+            echo "--- FAILED ($status):"
+            tail -n +2 "$RUNNER_TEMP/ci-scripts.joblog" | awk -F '\t' '$7 != 0 { print "  exit " $7 ": " $9 }'
+          fi
           exit "$status"
 
   # The hermetic loop: the default nextest profile (no Docker, Node, wrangler or running target) under the `ci`
