@@ -22,6 +22,9 @@ use thrust_editor_doc::{
 };
 use worker::*;
 
+// `Sanitizer::default()` here is Thrust's policy (`thrust_html::thrust_builder`) since issue #48, so `/html-to-all` and `/deep` measure that;
+// `/sanitize?hardened=0` and `=1` still build Plane's and the hardened builder by name. The CPU numbers of research/0008 §9 were measured
+// with Plane's builder.
 // `--no-default-features` builds the conversions without the sanitiser so the size of ammonia/html5ever is measurable
 #[cfg(feature = "sanitize")]
 mod sanitize {

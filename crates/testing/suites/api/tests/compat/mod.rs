@@ -2318,3 +2318,89 @@ async fn compat_reset_password_a_link_is_for_its_own_account_and_a_new_link_repl
     assert_eq!(sign_in_status(&t, &a_email, "Replacing-Link-Pa55word-9").await, 200);
     assert_eq!(sign_in_status(&t, &b_email, STRONG).await, 200, "B's password is as it was");
 }
+
+/// Issue #48 (D-016 to D-018): a work item's description, written through Plane's internal routes, is cleaned of the nine payloads that
+/// Plane's own allow-list lets through (`SANITISER_SURVIVORS`), on create and on update, and read back that way; and the markup the editor
+/// itself writes, which Plane's list strips or rewrites (a link's `rel`, a work-item embed), comes back as it was written. A
+/// `description_json` in the body is accepted and is not kept. Controls: each of the nine is executable as sent (so a read-back that is
+/// not has been cleaned), and the editor's markup is not read back from the request.
+#[tokio::test]
+async fn compat_a_description_is_cleaned_of_what_plane_lets_through_on_create_and_on_update() {
+    let t = t();
+    let f = Fixture::seed(&t).await;
+    let issues = compat_issues(&f.a);
+    let open =
+        |id: &str| format!("{}?expand=issue_reactions,issue_attachments,issue_link,parent", compat_issue(&f.a, id));
+    for (id, html) in SANITISER_SURVIVORS {
+        assert!(!neutralised(html), "{id}: the control payload is not executable as sent");
+    }
+    let description_json = json!({"type": "doc", "content": []});
+
+    // on create: each of the nine, read back
+    for (id, html) in SANITISER_SURVIVORS {
+        let r = post_as(
+            &t,
+            &f.member_a.token,
+            &issues,
+            &json!({"name": id, "description_html": html, "description_json": description_json}),
+        )
+        .await;
+        assert_eq!(r.status(), 201, "{id}: create with a description_json");
+        let made: Value = r.json().await.unwrap();
+        let opened = get(&t, &f.member_a.token, &open(made["id"].as_str().unwrap())).await;
+        let stored = opened["description_html"].as_str().unwrap();
+        assert!(neutralised(stored), "{id}: created with it, read back {stored}");
+        assert!(
+            opened.get("description_json").is_none(),
+            "{id}: the work item answers a description_json it was given"
+        );
+    }
+
+    // on update: the same nine, one work item changed each time
+    let r = post_as(&t, &f.member_a.token, &issues, &json!({"name": "to change", "description_html": "<p>start</p>"}))
+        .await;
+    assert_eq!(r.status(), 201);
+    let made: Value = r.json().await.unwrap();
+    let (item, path) = (made["id"].as_str().unwrap().to_string(), compat_issue(&f.a, made["id"].as_str().unwrap()));
+    for (id, html) in SANITISER_SURVIVORS {
+        let r = patch(
+            &t,
+            &f.member_a.token,
+            &path,
+            &json!({"description_html": html, "description_json": description_json}),
+        )
+        .await;
+        assert_eq!(r.status(), 204, "{id}: update with a description_json");
+        let opened = get(&t, &f.member_a.token, &open(&item)).await;
+        let stored = opened["description_html"].as_str().unwrap();
+        assert!(neutralised(stored), "{id}: updated with it, read back {stored}");
+    }
+
+    // what the editor writes is kept, on both: the link's own `rel` (Plane's list rewrites it to `noopener noreferrer`) and the embed
+    // (Plane's list strips it)
+    let editors = concat!(
+        r#"<p><a href="https://example.com" target="_blank" rel="noopener noreferrer nofollow">it</a></p>"#,
+        r#"<issue-embed-component entity_identifier="7" project_identifier="PLATF" workspace_identifier="acme" id="e1" entity_name="issue"></issue-embed-component>"#
+    );
+    let kept = |stored: &str, what: &str| {
+        for part in [
+            r#"rel="noopener noreferrer nofollow""#,
+            "<issue-embed-component",
+            r#"entity_identifier="7""#,
+            r#"project_identifier="PLATF""#,
+            r#"workspace_identifier="acme""#,
+            r#"entity_name="issue""#,
+        ] {
+            assert!(stored.contains(part), "{what}: {part} was not kept: {stored}");
+        }
+    };
+    let r =
+        post_as(&t, &f.member_a.token, &issues, &json!({"name": "editor markup", "description_html": editors})).await;
+    assert_eq!(r.status(), 201);
+    let made: Value = r.json().await.unwrap();
+    let opened = get(&t, &f.member_a.token, &open(made["id"].as_str().unwrap())).await;
+    kept(opened["description_html"].as_str().unwrap(), "created");
+    let r = patch(&t, &f.member_a.token, &path, &json!({"description_html": editors})).await;
+    assert_eq!(r.status(), 204);
+    kept(get(&t, &f.member_a.token, &open(&item)).await["description_html"].as_str().unwrap(), "updated");
+}

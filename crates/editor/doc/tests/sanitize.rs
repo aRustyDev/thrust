@@ -11,45 +11,94 @@ fn load() -> Value {
     serde_json::from_str(&std::fs::read_to_string(p).unwrap()).unwrap()
 }
 
-/// Does Plane's allow-list change what the editor would load? parse(html) vs parse(sanitise(html)) for every corpus HTML.
-#[test]
-fn allow_list_preservation_of_editor_html() {
+/// The editor-generated HTML documents of the corpus (not the `foreign` ones, which are deliberately hostile or odd and are
+/// measured by the XSS corpus), with the variant of the schema each is read with.
+fn editor_html() -> Vec<(String, Variant, String)> {
     let c = load();
-    let s = sanitize::Sanitizer::default();
-    let hardened = sanitize::hardened_builder();
-    let (mut n, mut same, mut hard_same) = (0, 0, 0);
-    let mut changed: Vec<String> = vec![];
-    let mut causes: std::collections::BTreeMap<String, usize> = Default::default();
-    for d in c["docs"].as_array().unwrap() {
-        let Some(h) = d.get("html_in").and_then(|x| x.as_str()).or_else(|| d.get("html").and_then(|x| x.as_str()))
-        else {
-            continue;
-        };
-        if h.is_empty() || d["kind"] == "foreign" {
-            continue; // foreign html is deliberately hostile/odd: measured separately by the XSS corpus
-        }
-        let variant = if d["variant"] == "rich" { Variant::Rich } else { Variant::Document };
+    c["docs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|d| {
+            let h = d.get("html_in").and_then(|x| x.as_str()).or_else(|| d.get("html").and_then(|x| x.as_str()))?;
+            if h.is_empty() || d["kind"] == "foreign" {
+                return None;
+            }
+            let variant = if d["variant"] == "rich" { Variant::Rich } else { Variant::Document };
+            Some((d["id"].as_str().unwrap().to_string(), variant, h.to_string()))
+        })
+        .collect()
+}
+
+/// What a sanitiser does to the editor's own HTML: parse(html) against parse(clean(html)) for every document of `editor_html`.
+struct Preservation {
+    total: usize,
+    changed: Vec<String>,
+    /// the first differing construct of each changed document (`diff_kind`), counted
+    causes: std::collections::BTreeMap<String, usize>,
+}
+
+fn preservation(clean: impl Fn(&str) -> String) -> Preservation {
+    let mut p = Preservation { total: 0, changed: vec![], causes: Default::default() };
+    for (id, variant, h) in editor_html() {
         let schema = Schema::new(variant);
-        let before = domparse::html_to_doc(&schema, h).to_json(&schema);
-        let clean = s.clean(h);
-        let after = domparse::html_to_doc(&schema, &clean).to_json(&schema);
-        n += 1;
-        if norm_num(before.clone()) == norm_num(after.clone()) {
-            same += 1;
-        } else {
-            changed.push(d["id"].as_str().unwrap().to_string());
-            *causes.entry(diff_kind(&before, &after)).or_default() += 1;
-        }
-        let hclean = hardened.clean(h).to_string();
-        if hclean == clean {
-            hard_same += 1;
+        let before = domparse::html_to_doc(&schema, &h).to_json(&schema);
+        let after = domparse::html_to_doc(&schema, &clean(&h)).to_json(&schema);
+        p.total += 1;
+        if norm_num(before.clone()) != norm_num(after.clone()) {
+            p.changed.push(id);
+            *p.causes.entry(diff_kind(&before, &after)).or_default() += 1;
         }
     }
-    eprintln!("sanitiser preserves the parsed document for {same}/{n} editor-generated HTML documents; hardened output byte-identical to plain for {hard_same}/{n}");
-    eprintln!("documents whose parsed content changes through Plane's allow-list: {}", changed.len());
-    eprintln!("first differing construct per changed document (kind -> count):");
-    for (k, v) in &causes {
-        eprintln!("  {v:3}  {k}");
+    p
+}
+
+/// How many editor-generated HTML documents the corpus holds. Issue #48 and `research/0008` §7 say 195 and 129 unchanged; the corpus
+/// (byte-identical to the one the spike measured) has 196 and 130 unchanged. The 66 that Plane's list changes, and why (5 and 61),
+/// agree; only the spike's total is one short. A corpus that grows or shrinks fails here, so the other counts are read afresh.
+const EDITOR_DOCUMENTS: usize = 196;
+
+/// Does the default allow-list change what the editor would load? It must not, for any of the documents the editor generated
+/// (issue #48, D-017 and D-018: with `issue-embed-component` and `rel` allowed, nothing Plane's list strips is left to strip).
+#[test]
+fn allow_list_preservation_of_editor_html() {
+    let s = sanitize::Sanitizer::default();
+    let p = preservation(|h| s.clean(h));
+    assert_eq!(p.total, EDITOR_DOCUMENTS, "the corpus has {} editor-generated HTML documents", p.total);
+    assert!(
+        p.changed.is_empty(),
+        "the default allow-list changes {} of {} editor documents: {:?}; first difference per document: {:?}",
+        p.changed.len(),
+        p.total,
+        p.changed,
+        p.causes
+    );
+}
+
+/// The control of the test above: Plane's own allow-list changes 66 of the same documents, for two reasons only, 5 that lose their
+/// `issue-embed-component` and 61 whose `rel` loses `nofollow` (`research/0008` §7, D-017, D-018). If this stopped being true, the
+/// test above would be passing on a corpus that Plane's list does not hurt.
+#[test]
+fn plane_allow_list_changes_66_of_the_editor_documents_for_two_reasons() {
+    let plane = sanitize::Sanitizer::new(sanitize::plane_builder());
+    let p = preservation(|h| plane.clean(h));
+    assert_eq!(p.total, EDITOR_DOCUMENTS);
+    assert_eq!(p.total - p.changed.len(), 130, "changed: {:?}; causes: {:?}", p.changed, p.causes);
+    let cause = |pat: &dyn Fn(&str) -> bool| p.causes.iter().filter(|(k, _)| pat(k)).map(|(_, n)| n).sum::<usize>();
+    let embeds = cause(&|k| k.contains("issue-embed-component"));
+    let rels = cause(&|k| k.starts_with("link.rel"));
+    assert_eq!((embeds, rels, embeds + rels), (5, 61, 66), "causes: {:?}", p.causes);
+}
+
+/// D-016's other half: the value filters take nothing from the editor's own HTML. The hardened builder's output is byte-identical to
+/// Plane's on every one of the documents.
+#[test]
+fn hardened_builder_changes_none_of_the_editor_html() {
+    let (hardened, plane) = (sanitize::hardened_builder(), sanitize::plane_builder());
+    let docs = editor_html();
+    assert_eq!(docs.len(), EDITOR_DOCUMENTS);
+    for (id, _, h) in docs {
+        assert_eq!(hardened.clean(&h).to_string(), plane.clean(&h).to_string(), "{id}");
     }
 }
 
@@ -137,7 +186,9 @@ fn oracle_v1_write_with_sanitiser_matches_python_plus_js() {
             }
         }
     }
-    let san = sanitize::Sanitizer::default();
+    // Plane's own builder, not the default: nh3 is the oracle here, and the default keeps `rel` and `issue-embed-component` and
+    // filters values, which nh3 does not (D-016 to D-018). Left on the default this test would fail on the 66 documents those change.
+    let san = sanitize::Sanitizer::new(sanitize::plane_builder());
     let (mut ok, mut n) = (0, 0);
     let mut fails = vec![];
     for (k, h) in inputs {

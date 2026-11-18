@@ -12,7 +12,9 @@ fn main() {
     let xss: Value = serde_json::from_str(&std::fs::read_to_string(&args[1]).unwrap()).unwrap();
     let corpus: Value = serde_json::from_str(&std::fs::read_to_string(&args[2]).unwrap()).unwrap();
     let mut out = Map::new();
-    let s = sanitize::Sanitizer::default();
+    // Plane's builder: `clean` and `stripped` are what tools/spike-0006/sanitize/run.py compares with nh3's output. The default
+    // (`thrust_builder`) is a deliberate departure from it (D-016 to D-018).
+    let s = sanitize::Sanitizer::new(sanitize::plane_builder());
     let mut inputs: Vec<(String, String)> = xss
         .as_array()
         .unwrap()

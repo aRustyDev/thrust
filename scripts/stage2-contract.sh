@@ -105,7 +105,7 @@ case "$PASS" in
   # run would have exited 5 at the guard below. `scripts/check-contract-counts.sh` now runs exactly that listing, for every arm of
   # this `case`, in CI (it reads the `EXPECT=` and the `suite_pass` call of the lines below, so keep their shape: one line an arm,
   # the filterset single-quoted).
-  main)     EXPECT=65; suite_pass contract 'not test(/sweeper_|panic_|blast_|oidc_|operator_|csrf_off_/)' ;;
+  main)     EXPECT=67; suite_pass contract 'not test(/sweeper_|panic_|blast_|oidc_|operator_|csrf_off_/)' ;;
   # the csrf_off_ tests that need nothing else the deployed Worker lacks (all six: none of them is an `oidc_` test)
   csrfoff)  EXPECT=6;  suite_pass contract 'test(/csrf_off_/)' ;;
   worker)   EXPECT=1;  suite_pass worker_only 'test(/worker_room_/)' --no-capture ;;

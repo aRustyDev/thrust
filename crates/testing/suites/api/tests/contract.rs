@@ -262,6 +262,97 @@ async fn soft_delete_hides_rows_and_never_reuses_sequence_ids() {
     assert_eq!(five.sequence_id(), 5);
 }
 
+/// The `description_html` that `/api/v1` answers for one work item (a detail that must answer 200).
+async fn v1_description(t: &Target, who: &User, at: &At, id: &str) -> String {
+    let r = t.http.get(t.url(&v1_item(at, id))).header(API_KEY_HEADER, &who.key).send().await.unwrap();
+    assert_eq!(r.status(), 200, "GET {id}");
+    r.json::<Value>().await.unwrap()["description_html"]
+        .as_str()
+        .expect("a work item has a description_html")
+        .to_string()
+}
+
+/// Issue #48 (D-016 to D-018): the same as the compat route's, through `/api/v1`, which shares the one cleaning path with it: the nine payloads
+/// that Plane's allow-list lets through (`SANITISER_SURVIVORS`) come back neutralised from a create and from an update, the editor's own
+/// link `rel` and work-item embed come back as written, and a `description_json` in the body is accepted and not answered. Controls:
+/// each of the nine is executable as sent, and the editor's markup is read back from the server, not from the request.
+#[tokio::test]
+async fn v1_a_description_is_cleaned_of_what_plane_lets_through_on_create_and_on_update() {
+    let t = t();
+    let f = Fixture::seed(&t).await;
+    for (id, html) in SANITISER_SURVIVORS {
+        assert!(!neutralised(html), "{id}: the control payload is not executable as sent");
+    }
+    let description_json = json!({"type": "doc", "content": []});
+
+    // on create
+    for (id, html) in SANITISER_SURVIVORS {
+        let r = v1_create(
+            &t,
+            &f.member_a,
+            &f.a,
+            json!({"name": id, "description_html": html, "description_json": description_json}),
+        )
+        .await;
+        assert_eq!(r.status(), 201, "{id}: create with a description_json: {:?}", r.text().await);
+        let made = Issue(r.json().await.unwrap());
+        let stored = v1_description(&t, &f.member_a, &f.a, &made.id()).await;
+        assert!(neutralised(&stored), "{id}: created with it, read back {stored}");
+        assert!(
+            made.0.get("description_json").is_none(),
+            "{id}: the work item answers a description_json it was given"
+        );
+    }
+
+    // on update: one work item, changed to each in turn
+    let item = v1_create_ok(&t, &f.member_a, &f.a, "to change").await;
+    for (id, html) in SANITISER_SURVIVORS {
+        let r = t
+            .http
+            .patch(t.url(&v1_item(&f.a, &item.id())))
+            .header(API_KEY_HEADER, &f.member_a.key)
+            .json(&json!({"description_html": html, "description_json": description_json}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(r.status(), 200, "{id}: update with a description_json: {:?}", r.text().await);
+        let stored = v1_description(&t, &f.member_a, &f.a, &item.id()).await;
+        assert!(neutralised(&stored), "{id}: updated with it, read back {stored}");
+    }
+
+    // what the editor writes is kept: the link's own `rel` (Plane's list rewrites it) and the embed (Plane's list strips it)
+    let editors = concat!(
+        r#"<p><a href="https://example.com" target="_blank" rel="noopener noreferrer nofollow">it</a></p>"#,
+        r#"<issue-embed-component entity_identifier="7" project_identifier="PLATF" workspace_identifier="acme" id="e1" entity_name="issue"></issue-embed-component>"#
+    );
+    let kept = |stored: &str, what: &str| {
+        for part in [
+            r#"rel="noopener noreferrer nofollow""#,
+            "<issue-embed-component",
+            r#"entity_identifier="7""#,
+            r#"project_identifier="PLATF""#,
+            r#"workspace_identifier="acme""#,
+            r#"entity_name="issue""#,
+        ] {
+            assert!(stored.contains(part), "{what}: {part} was not kept: {stored}");
+        }
+    };
+    let r = v1_create(&t, &f.member_a, &f.a, json!({"name": "editor markup", "description_html": editors})).await;
+    assert_eq!(r.status(), 201);
+    let made = Issue(r.json().await.unwrap());
+    kept(&v1_description(&t, &f.member_a, &f.a, &made.id()).await, "created");
+    let r = t
+        .http
+        .patch(t.url(&v1_item(&f.a, &item.id())))
+        .header(API_KEY_HEADER, &f.member_a.key)
+        .json(&json!({"description_html": editors}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 200);
+    kept(&v1_description(&t, &f.member_a, &f.a, &item.id()).await, "updated");
+}
+
 /// Tenant B's admin reaches for tenant A's project and is refused, and nothing is made. The pin refuses a stranger with the 403 it gives
 /// anyone who is not a member of the project, and answers a project that is not there the same way (`ProjectEntityPermission`), so
 /// every one of the cases below is a 403: what tells them apart from a bad route is that tenant A's own admin is not refused.

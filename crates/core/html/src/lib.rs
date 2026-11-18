@@ -1,6 +1,7 @@
-//! HTML sanitisation with the allow-list Plane applies today.
+//! HTML sanitisation: Plane's allow-list (`plane_builder`), the hardened variant (`hardened_builder`, D-016) and the one Thrust
+//! uses (`thrust_builder`, the default: D-016 to D-019).
 //!
-//! Source of truth: `apps/api/plane/utils/content_validator.py` (`validate_html_content`):
+//! Source of truth for Plane's: `apps/api/plane/utils/content_validator.py` (`validate_html_content`):
 //!   `nh3.clean(html, tags=nh3.ALLOWED_TAGS | CUSTOM_TAGS, attributes=ATTRIBUTES, url_schemes={http,https,mailto,tel})`
 //! `nh3` 0.2.18 is a binding to the Rust crate `ammonia` 4.0.0, so the same engine (and, for the same version, the
 //! same output) is available natively and on wasm32. `ATTRIBUTES` REPLACES ammonia's per-tag defaults (nh3 calls
@@ -72,7 +73,9 @@ pub fn plane_builder() -> ammonia::Builder<'static> {
 }
 
 fn css_is_dangerous(v: &str) -> bool {
-    // strip comments and escapes, drop whitespace, lower-case: `exp/**/ression(`, `j\61vascript:` and friends
+    // strip comments, drop backslashes and whitespace, lower-case: `exp/**/ression(`, `java\script:`, `JAVA SCRIPT:` and friends.
+    // A CSS HEX escape (`j\61vascript:`, `\6a avascript:`) is NOT decoded, so it passes; measured on 2026-11-18, not fixed here (D-016's
+    // claim is the corpus's 125 of 125, and browsers do not run `javascript:` from a CSS `url()` [inferred], the class of the nine).
     let mut s = String::with_capacity(v.len());
     let mut rest = v;
     while let Some(i) = rest.find("/*") {
@@ -115,24 +118,67 @@ fn url_ok(v: &str) -> bool {
     }
 }
 
+/// The tokens of a `rel` that the editor writes (`noopener noreferrer nofollow`). A `rel` with any other token is dropped, so a
+/// stored `rel="opener"` cannot give a `target="_blank"` link back the `window.opener` that browsers take from it by default.
+const REL_TOKENS: &[&str] = &["noopener", "noreferrer", "nofollow"];
+
+fn rel_ok(v: &str) -> bool {
+    v.split_ascii_whitespace().all(|t| REL_TOKENS.iter().any(|ok| t.eq_ignore_ascii_case(ok)))
+}
+
+/// Whether an attribute VALUE may stay: the one rule set that `hardened_builder` and `thrust_builder` share (ammonia keeps one
+/// attribute filter, so the second builder cannot stack its own on the first's). `rel` is only ever asked about by
+/// `thrust_builder`: Plane's allow-list has no `rel` for the filter to see.
+fn value_ok(attr: &str, value: &str) -> bool {
+    match attr {
+        "style" => !css_is_dangerous(value),
+        "background" | "data-emoji-url" => url_ok(value),
+        "rel" => rel_ok(value),
+        _ => true,
+    }
+}
+
 /// `plane_builder()` plus value filters for the places Plane's allow-list lets attacker-controlled URLs and CSS through
-/// (`style`, `td/tr background`, `data-emoji-url`). A deliberate hardening, NOT parity with nh3.
+/// (`style`, `td/tr background`, `data-emoji-url`). A deliberate hardening, NOT parity with nh3 (D-016).
 pub fn hardened_builder() -> ammonia::Builder<'static> {
     let mut b = plane_builder();
-    b.attribute_filter(|_el, attr, value| match attr {
-        "style" if css_is_dangerous(value) => None,
-        "background" | "data-emoji-url" if !url_ok(value) => None,
-        _ => Some(value.into()),
-    });
+    b.attribute_filter(|_el, attr, value| value_ok(attr, value).then(|| value.into()));
     b
 }
+
+/// The work-item embed the editor writes (`issue-embed-component`, D-017). Its `id` is already a generic attribute.
+const EMBED_TAG: &str = "issue-embed-component";
+const EMBED_ATTRS: &[&str] = &["entity_identifier", "project_identifier", "workspace_identifier", "entity_name"];
+
+/// What Thrust keeps of a description: `hardened_builder()` plus what Plane's allow-list would strip from the editor's own output,
+/// so that none of the editor-generated documents changes (195 of 195, `crates/editor/doc/tests/sanitize.rs`):
+/// - `issue-embed-component` and its attributes (D-017);
+/// - `a rel` as the editor writes it (D-018), which means turning off ammonia's own `link_rel` (it refuses to run with both).
+///
+/// This is the default of `Sanitizer` and `validate_html_content`.
+pub fn thrust_builder() -> ammonia::Builder<'static> {
+    let mut b = hardened_builder();
+    b.add_tags([EMBED_TAG]);
+    b.add_tag_attributes(EMBED_TAG, EMBED_ATTRS.iter().copied());
+    b.add_tag_attributes("a", ["rel"]);
+    b.link_rel(None);
+    b
+}
+
+/// The version of what `description_html` was cleaned with: this allow-list and the editor schema it must not damage (the pin
+/// `oracle/v1-pin-20261018`). A change to either bumps it, so a stored description says which policy it was made under (ADR-0012).
+pub const SCHEMA_VERSION: i16 = 1;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum SanitizeError {
     TooLarge,
 }
 
-/// `validate_html_content`: `Ok(None)` for empty input (the Python returns `clean_html=None`), `Err` over 10 MB.
+/// The default policy, built once: building a builder is the expensive part, and this runs on every description write.
+static DEFAULT: std::sync::LazyLock<ammonia::Builder<'static>> = std::sync::LazyLock::new(thrust_builder);
+
+/// Plane's `validate_html_content` with Thrust's allow-list (`thrust_builder`, not `plane_builder`): `Ok(None)` for empty input (the
+/// Python returns `clean_html=None`), `Err` over 10 MB.
 pub fn validate_html_content(html: &str) -> Result<Option<String>, SanitizeError> {
     if html.is_empty() {
         return Ok(None);
@@ -140,17 +186,22 @@ pub fn validate_html_content(html: &str) -> Result<Option<String>, SanitizeError
     if html.len() > MAX_SIZE {
         return Err(SanitizeError::TooLarge);
     }
-    Ok(Some(plane_builder().clean(html).to_string()))
+    Ok(Some(DEFAULT.clean(html).to_string()))
 }
 
-/// Reusable form (the builder is the expensive part).
+/// Reusable form (the builder is the expensive part). `default()` is Thrust's allow-list; a test that compares with nh3 asks for
+/// `Sanitizer::new(plane_builder())`.
 pub struct Sanitizer(ammonia::Builder<'static>);
 impl Default for Sanitizer {
     fn default() -> Self {
-        Sanitizer(plane_builder())
+        Sanitizer(thrust_builder())
     }
 }
 impl Sanitizer {
+    pub fn new(builder: ammonia::Builder<'static>) -> Self {
+        Sanitizer(builder)
+    }
+
     pub fn clean(&self, html: &str) -> String {
         self.0.clean(html).to_string()
     }

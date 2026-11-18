@@ -604,6 +604,67 @@ fn parity_control_the_numbering_closes_up_over_what_the_projection_drops() {
     assert_eq!(out[0], ex("/z/", "<uuid:4>"));
 }
 
+// --- controls for the description's projection (D-018) ----------------------------------------------------------------------------
+// X01 reads back a description whose link the pin gave `rel="noopener noreferrer"` and Thrust leaves as it was sent (no `rel`). The
+// projection takes that one `rel` out of the recording; each control makes one other thing wrong and requires the replay to see it.
+
+const CLEANED: &str = "one with a description the pin cleaned";
+
+/// The projection hides nh3's `rel` and nothing else: another `rel`, other text, or a link that is not there, is a divergence.
+#[test]
+fn parity_control_x01_the_projection_hides_nh3s_rel_and_nothing_else() {
+    assert!(mutated("X01", |_| {}).is_empty(), "the recording as it is has no divergence");
+    for (what, html) in [
+        ("another rel", r#"<p>y</p><a rel="nofollow">l</a><img src="x">"#),
+        ("other text", r#"<p>z</p><a rel="noopener noreferrer">l</a><img src="x">"#),
+        ("no link", r#"<p>y</p><img src="x">"#),
+    ] {
+        let d = mutated("X01", |f| exchange_named(f, CLEANED)["response"]["body"]["description_html"] = json!(html));
+        assert!(!d.is_empty(), "{what} was not seen");
+    }
+}
+
+/// A recording that sends a `rel` of its own is refused, not projected: nh3 rewrites it, Thrust keeps it, and no rule of the projection
+/// can say what Thrust should answer.
+#[test]
+#[should_panic(expected = "D-018")]
+fn parity_control_a_recording_that_sends_a_rel_is_refused_by_the_projection() {
+    mutated("S48", |f| {
+        exchange_named(f, "a description with markup the pin cleans")["request"]["body"]["description_html"] =
+            json!(r#"<a href="https://example.test" rel="nofollow">l</a>"#);
+    });
+}
+
+mod description_projection {
+    use super::*;
+    use proptest::prelude::*;
+
+    proptest! {
+        /// nh3's `rel` comes out of a link's tag wherever it sits among the other attributes, and out of no other tag (`<abbr>`,
+        /// `<article>` and `<aside>` start with `<a` and are not links).
+        #[test]
+        fn prop_only_the_rel_nh3_adds_to_a_link_is_projected_away(
+            href in "[a-z]{1,8}",
+            text in "[a-z ]{0,12}",
+            rel_last in any::<bool>(),
+            tag in prop::sample::select(&["a", "abbr", "article", "aside"]),
+        ) {
+            let attrs = if rel_last {
+                format!(" href=\"{href}\" rel=\"noopener noreferrer\"")
+            } else {
+                format!(" rel=\"noopener noreferrer\" href=\"{href}\"")
+            };
+            let sent = format!("<{tag}{attrs}>{text}</{tag}>");
+            let out = without_the_rel_nh3_adds(&sent);
+            if tag == "a" {
+                prop_assert_eq!(out, format!("<a href=\"{href}\">{text}</a>"));
+            } else {
+                prop_assert_eq!(out, sent);
+            }
+        }
+    }
+}
+
 // --- controls for X10 and X11 (D-041): what the replay must be able to see ---------------------------------------------------------
 
 /// A reset signs nobody in, on the pin and here. A router that sets a session cookie on every answer of the reset form must diverge

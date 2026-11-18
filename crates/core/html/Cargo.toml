@@ -14,3 +14,8 @@ workspace = true
 # XSS through embedded SVG and MathML) is patched from 4.2.5. ammonia pulls html5ever, which is pure Rust and builds for wasm32
 # (thrust-compat-plane and thrust-api-v1 already ship it in the Worker).
 ammonia = "4.2.5"
+
+[dev-dependencies]
+# tests/policy.rs: generated attribute values, and the committed XSS corpus read by id.
+proptest = "1"
+serde_json = { workspace = true }
