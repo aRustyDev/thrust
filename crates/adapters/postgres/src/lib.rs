@@ -217,10 +217,41 @@ pub async fn migrate_with(
     options: MigrateOptions,
 ) -> Result<MigrateOutcome, MigrateError> {
     client.execute("SELECT pg_advisory_lock($1)", &[&MIGRATE_LOCK]).await?;
-    let result = migrate_locked(client, files, options).await;
+    let result = migrate_locked(client, files, options, false).await;
     // The lock also goes when the session ends; a caller that keeps the connection (the tests) needs it given back.
     let _ = client.execute("SELECT pg_advisory_unlock($1)", &[&MIGRATE_LOCK]).await;
     result
+}
+
+/// Apply migrations in a single transaction with a transaction-scoped advisory lock.
+///
+/// Use this on transaction-pooled connections such as Hyperdrive: session-level advisory locks
+/// can outlive a client there. Unlike [`migrate_with`], a failure in any pending file rolls back
+/// every file from this invocation. The caller must provide an exclusive, idle connection and
+/// must discard it if commit or rollback fails, or the connection is interrupted.
+/// SQL must be trusted and must not contain transaction-control statements. This function does
+/// not parse or validate SQL and is not a boundary for untrusted migration files.
+pub async fn migrate_atomic_with(
+    client: &Client,
+    files: &[Migration<'_>],
+    options: MigrateOptions,
+) -> Result<MigrateOutcome, MigrateError> {
+    client.batch_execute("BEGIN").await?;
+    let result = async {
+        client.execute("SELECT pg_advisory_xact_lock($1)", &[&MIGRATE_LOCK]).await?;
+        migrate_locked(client, files, options, true).await
+    }
+    .await;
+    match result {
+        Ok(outcome) => {
+            client.batch_execute("COMMIT").await?;
+            Ok(outcome)
+        }
+        Err(error) => {
+            let _ = client.batch_execute("ROLLBACK").await;
+            Err(error)
+        }
+    }
 }
 
 /// What [`migrate_with`] would do, without doing it: whether the database has a ledger, and the plan. A database without one
@@ -272,10 +303,22 @@ where
     }
 }
 
+async fn in_migration_transaction<F>(client: &Client, outer: bool, body: F) -> Result<(), tokio_postgres::Error>
+where
+    F: std::future::Future<Output = Result<(), tokio_postgres::Error>>,
+{
+    if outer {
+        body.await
+    } else {
+        in_transaction(client, body).await
+    }
+}
+
 async fn migrate_locked(
     client: &Client,
     files: &[Migration<'_>],
     options: MigrateOptions,
+    outer_transaction: bool,
 ) -> Result<MigrateOutcome, MigrateError> {
     let (present, plan) = plan_migrations(client, files).await?;
     let (pending, contract) = match plan {
@@ -290,7 +333,7 @@ async fn migrate_locked(
     let mut in_order: Vec<&Migration<'_>> = files.iter().collect();
     in_order.sort_by_key(|m| m.file);
     if !present {
-        in_transaction(client, async {
+        in_migration_transaction(client, outer_transaction, async {
             client.batch_execute(LEDGER_DDL).await?;
             for m in &in_order {
                 client.batch_execute(m.sql).await?;
@@ -305,7 +348,7 @@ async fn migrate_locked(
         return Ok(MigrateOutcome::Current);
     }
     for m in in_order.iter().filter(|m| pending.iter().any(|p| p.as_str() == m.file)) {
-        in_transaction(client, async {
+        in_migration_transaction(client, outer_transaction, async {
             client.batch_execute(m.sql).await?;
             record(client, m).await
         })
