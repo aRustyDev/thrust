@@ -4775,6 +4775,8 @@ impl Model {
             updated_at: it.created_at + TimeDelta::seconds(spec.updated),
             updated_by: Some(self.fix.users[0]),
             description_html: format!("<p>{}</p>", it.sequence_id),
+            description_stripped: Some(it.sequence_id.to_string()),
+            description_schema: Some(1),
             assignee_ids: assignees,
             label_ids,
             parent_id: None,
@@ -5022,6 +5024,13 @@ impl Model {
                 }
                 v
             });
+            // the description and the text derived from it, as the use-case stores them (`strip_tags` keeps an entity as text)
+            let (html, stripped) = [
+                ("<p></p>", ""),
+                ("<p>a &amp; b</p>", "a &amp; b"),
+                ("<p>日本語 — it's</p>", "日本語 — it's"),
+                ("<p>\"x\"</p>", "\"x\""),
+            ][usize::from(upd.description) % 4];
             let update = WorkItemUpdate {
                 name: NAMES[usize::from(upd.name) % NAMES.len()].to_string(),
                 state_id,
@@ -5031,9 +5040,9 @@ impl Model {
                 completed_at: upd.completed.map(|c| Utc.timestamp_opt(1_800_100_000 + c, 0).unwrap()),
                 updated_at: tick(),
                 updated_by: editor,
-                description_html: ["<p></p>", "<p>a &amp; b</p>", "<p>日本語 — it's</p>", "<p>\"x\"</p>"]
-                    [usize::from(upd.description) % 4]
-                    .to_string(),
+                description_html: html.to_string(),
+                description_stripped: Some(stripped.to_string()),
+                description_schema: Some(1),
                 assignee_ids: people_named.clone(),
                 label_ids: labels_named.clone(),
                 // the update is whole: the item keeps the key it has, and has no parent and no point to change
@@ -5123,6 +5132,8 @@ impl Model {
             a.updated_at = update.updated_at;
             a.updated_by = Some(update.updated_by);
             a.description_html = update.description_html.clone();
+            a.description_stripped = update.description_stripped.clone();
+            a.description_schema = update.description_schema;
             a.parent_id = update.parent_id;
             a.point = update.point;
             w.external_source = update.external_source.clone();

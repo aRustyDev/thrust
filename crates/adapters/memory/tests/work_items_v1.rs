@@ -166,6 +166,8 @@ fn whole(r: &WorkItemRow, parent: Option<Uuid>, point: Option<i32>, key: Option<
         updated_at: at(100),
         updated_by: uid(1),
         description_html: r.attrs.description_html.clone(),
+        description_stripped: r.attrs.description_stripped.clone(),
+        description_schema: r.attrs.description_schema,
         assignee_ids: None,
         label_ids: None,
         external_source: key.map(|k| k.0.to_string()),

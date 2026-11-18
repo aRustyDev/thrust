@@ -199,6 +199,9 @@ fn a_work_item_of_another_project_is_not_found_and_a_stranger_is_forbidden_first
 struct Model {
     name: String,
     description: String,
+    /// The text of the description and the policy it was cleaned under, which go with it (D-020).
+    text: Option<String>,
+    policy: Option<i16>,
     priority: Priority,
     state: u128,
     completed: bool,
@@ -231,7 +234,8 @@ impl Spec {
                 sent: if n % 2 == 0 { format!("  name {n}  ") } else { format!("name {n}") },
                 name: format!("name {n}"),
             },
-            Spec::Description(n) => Ask::Description(format!("<p>d{n}</p>")),
+            // sent with what must not be stored: the use-case cleans it, and the text is that of what is kept
+            Spec::Description(n) => Ask::Description(format!("<p>d{n}</p><script>x()</script>")),
             Spec::Priority(n) => Ask::Priority(Priority::ALL[usize::from(*n) % 5]),
             Spec::State(s) => Ask::State(s.map(|s| uuid(STATES[usize::from(s) % 3]))),
             Spec::Start(d) => {
@@ -299,7 +303,11 @@ fn expected(before: &Model, w: &World, specs: &[Spec]) -> Result<Model, ()> {
     for s in specs {
         match (s, s.ask(w)) {
             (Spec::Name(_), Ask::Name { name, .. }) => m.name = name,
-            (Spec::Description(_), Ask::Description(h)) => m.description = h,
+            (Spec::Description(n), _) => {
+                m.description = format!("<p>d{n}</p>");
+                m.text = Some(format!("d{n}"));
+                m.policy = Some(1);
+            }
             (Spec::Priority(_), Ask::Priority(p)) => m.priority = p,
             (Spec::State(to), _) => m.state = to.map_or(STATE_BACKLOG, |t| STATES[usize::from(t) % 3]),
             (Spec::Start(d), _) => m.start = d.map(|d| date(i64::from(d))),
@@ -335,6 +343,8 @@ fn model_of(r: &WorkItemRow) -> Model {
     Model {
         name: r.item.name.clone(),
         description: r.attrs.description_html.clone(),
+        text: r.attrs.description_stripped.clone(),
+        policy: r.attrs.description_schema,
         priority: r.attrs.priority,
         state: r.attrs.state_id.map(|s| s.as_u128()).unwrap(),
         completed: r.attrs.completed_at.is_some(),
@@ -528,6 +538,8 @@ fn some_row(spec: &Model) -> WorkItemRow {
             updated_at: at,
             updated_by: None,
             description_html: spec.description.clone(),
+            description_stripped: spec.text.clone(),
+            description_schema: spec.policy,
             assignee_ids: spec.assignees.iter().copied().collect(),
             label_ids: spec.labels.iter().copied().collect(),
             parent_id: None,
@@ -542,6 +554,8 @@ fn model() -> impl Strategy<Value = Model> {
         |(n, d, p, s, start, target, people, labels)| Model {
             name: format!("name {n}"),
             description: format!("<p>d{d}</p>"),
+            text: Some(format!("d{d}")),
+            policy: Some(1),
             priority: Priority::ALL[usize::from(p)],
             state: STATES[usize::from(s)],
             completed: false,
@@ -652,6 +666,8 @@ fn what_was_asked_is_compared_as_the_text_it_came_in() {
     let before = some_row(&Model {
         name: "n".into(),
         description: "<p></p>".into(),
+        text: Some(String::new()),
+        policy: Some(1),
         priority: Priority::None,
         state: STATE_BACKLOG,
         completed: false,
@@ -681,6 +697,8 @@ fn a_long_value_is_cut_on_a_character_boundary(#[values("a", "é", "€", "𝄞"
     let before = some_row(&Model {
         name: "n".into(),
         description: "<p></p>".into(),
+        text: Some(String::new()),
+        policy: Some(1),
         priority: Priority::None,
         state: STATE_BACKLOG,
         completed: false,

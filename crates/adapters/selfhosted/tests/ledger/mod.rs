@@ -3,7 +3,7 @@
 //! another branch, a file older than the newest applied, a contract file when they are not allowed) applies nothing. The arithmetic
 //! alone, over generated inputs, is `crates/adapters/postgres/tests/ledger.rs`.
 //!
-//! The extra files these tests carry are made up for them (`0019_ledger_probe.sql` and so on): each leaves a mark that a test can
+//! The extra files these tests carry are made up for them (`9000_ledger_probe.sql` and so on, numbered after every real file, however many there are: the ledger orders by name, and one that sorted before a real file would be out of order): each leaves a mark that a test can
 //! count, so that "applied once" is a count of one and not the absence of an error.
 
 use thrust_adapters_postgres::ledger::{Plan, LEDGER_TABLE};
@@ -37,7 +37,7 @@ fn with(extra: &[(&'static str, &'static str)]) -> Vec<Migration> {
 
 /// A file that inserts a row each time it runs, into a table it makes once: run once, the table has one row.
 const PROBE: (&str, &str) =
-    ("0019_ledger_probe.sql", "CREATE TABLE IF NOT EXISTS ledger_probe (n int); INSERT INTO ledger_probe VALUES (19);");
+    ("9000_ledger_probe.sql", "CREATE TABLE IF NOT EXISTS ledger_probe (n int); INSERT INTO ledger_probe VALUES (19);");
 
 /// The ledger's rows, by file: (file, sha256, applied_at as text).
 async fn ledger_rows(raw: &tokio_postgres::Client) -> Vec<(String, String, String)> {
@@ -97,7 +97,7 @@ async fn a_new_database_gets_the_baseline_and_a_second_run_applies_nothing() {
 async fn a_baseline_that_fails_leaves_the_database_as_it_was() {
     let db = fresh().await;
     let raw = db.conn.raw().await.unwrap();
-    let got = migrate_with(&raw, &with(&[("0019_ledger_fails.sql", "SELECT 1 / 0;")]), ALLOW_CONTRACT).await;
+    let got = migrate_with(&raw, &with(&[("9000_ledger_fails.sql", "SELECT 1 / 0;")]), ALLOW_CONTRACT).await;
     assert!(matches!(got, Err(MigrateError::Db(_))), "{got:?}");
     assert!(!table_exists(&raw, LEDGER_TABLE).await, "a failed baseline left a ledger");
     assert!(
@@ -149,16 +149,16 @@ async fn a_newer_file_runs_once_in_a_transaction_with_its_row() {
     // two more files in one run: the first applies, the second fails half way
     let files = with(&[
         PROBE,
-        ("0020_ledger_second.sql", "CREATE TABLE ledger_second (n int);"),
-        ("0021_ledger_fails.sql", "CREATE TABLE ledger_half_done (n int); SELECT 1 / 0;"),
+        ("9001_ledger_second.sql", "CREATE TABLE ledger_second (n int);"),
+        ("9002_ledger_fails.sql", "CREATE TABLE ledger_half_done (n int); SELECT 1 / 0;"),
     ]);
     let got = migrate_with(&raw, &files, ALLOW_CONTRACT).await;
     assert!(matches!(got, Err(MigrateError::Db(_))), "{got:?}");
     assert!(table_exists(&raw, "ledger_second").await);
     assert!(!table_exists(&raw, "ledger_half_done").await, "the failed file's table was kept");
     let recorded = ledger_files(&raw).await;
-    assert!(recorded.contains(&"0020_ledger_second.sql".to_string()));
-    assert!(!recorded.contains(&"0021_ledger_fails.sql".to_string()), "the failed file was recorded");
+    assert!(recorded.contains(&"9001_ledger_second.sql".to_string()));
+    assert!(!recorded.contains(&"9002_ledger_fails.sql".to_string()), "the failed file was recorded");
 }
 
 /// A file and its ledger row are one transaction: when the row cannot be written, the file's changes are undone too. The fault is
@@ -168,9 +168,9 @@ async fn a_newer_file_runs_once_in_a_transaction_with_its_row() {
 async fn a_file_whose_row_cannot_be_written_leaves_nothing() {
     let env = env().await;
     let raw = env.conn.raw().await.unwrap();
-    let file = "0019_ledger_row_taken.sql";
+    let file = "9000_ledger_row_taken.sql";
     let sql = "CREATE TABLE ledger_row_taken (n int); \
-               INSERT INTO thrust_schema_migrations (file, sha256) VALUES ('0019_ledger_row_taken.sql', 'not this file');";
+               INSERT INTO thrust_schema_migrations (file, sha256) VALUES ('9000_ledger_row_taken.sql', 'not this file');";
     let got = migrate_with(&raw, &with(&[(file, sql)]), ALLOW_CONTRACT).await;
     assert!(matches!(got, Err(MigrateError::Db(_))), "{got:?}");
     assert!(!table_exists(&raw, "ledger_row_taken").await, "the file's change outlived its row");
@@ -229,7 +229,7 @@ async fn a_build_from_another_branch_is_refused() {
     let env = env().await;
     let raw = env.conn.raw().await.unwrap();
     migrate_with(&raw, &with(&[PROBE]), ALLOW_CONTRACT).await.unwrap();
-    let other = with(&[("0019_other_branch.sql", "CREATE TABLE ledger_other_branch (n int);")]);
+    let other = with(&[("9000_other_branch.sql", "CREATE TABLE ledger_other_branch (n int);")]);
     let got = migrate_with(&raw, &other, ALLOW_CONTRACT).await;
     assert!(matches!(&got, Err(MigrateError::Refused(Plan::Diverged { .. }))), "{got:?}");
     assert!(!table_exists(&raw, "ledger_other_branch").await);
@@ -240,7 +240,7 @@ async fn a_build_from_another_branch_is_refused() {
 async fn a_file_older_than_the_newest_applied_is_refused() {
     let env = env().await;
     let raw = env.conn.raw().await.unwrap();
-    let newer = ("0020_ledger_newer.sql", "CREATE TABLE ledger_newer (n int);");
+    let newer = ("9001_ledger_newer.sql", "CREATE TABLE ledger_newer (n int);");
     migrate_with(&raw, &with(&[newer]), ALLOW_CONTRACT).await.unwrap();
     let got = migrate_with(&raw, &with(&[PROBE, newer]), ALLOW_CONTRACT).await;
     assert!(matches!(&got, Err(MigrateError::Refused(Plan::OutOfOrder { .. }))), "{got:?}");
@@ -251,7 +251,7 @@ async fn a_file_older_than_the_newest_applied_is_refused() {
 /// are. On a database without the ledger the refusal comes before the baseline, so not even the ledger table is made.
 #[tokio::test]
 async fn a_contract_file_is_refused_on_request_and_applied_otherwise() {
-    let contract = ("0019_contract_ledger_probe.sql", "CREATE TABLE ledger_contract_ran (n int);");
+    let contract = ("9000_contract_ledger_probe.sql", "CREATE TABLE ledger_contract_ran (n int);");
 
     let db = fresh().await;
     let raw = db.conn.raw().await.unwrap();
@@ -268,8 +268,8 @@ async fn a_contract_file_is_refused_on_request_and_applied_otherwise() {
     // and an expand file is not refused by the same option
     assert!(migrate_with(&raw, &with(&[PROBE]), NO_CONTRACT).await.is_ok());
 
-    let got = migrate_with(&raw, &with(&[PROBE, ("0020_contract_ledger_probe.sql", contract.1)]), ALLOW_CONTRACT).await;
-    assert_eq!(got.unwrap(), MigrateOutcome::Applied { files: vec!["0020_contract_ledger_probe.sql".to_string()] });
+    let got = migrate_with(&raw, &with(&[PROBE, ("9001_contract_ledger_probe.sql", contract.1)]), ALLOW_CONTRACT).await;
+    assert_eq!(got.unwrap(), MigrateOutcome::Applied { files: vec!["9001_contract_ledger_probe.sql".to_string()] });
     assert!(table_exists(&raw, "ledger_contract_ran").await);
 }
 

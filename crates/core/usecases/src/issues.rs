@@ -69,6 +69,10 @@ pub enum IssueError {
     /// A v1 deletion by someone who is neither a project admin nor the work item's maker.
     #[error("only an admin or the creator can delete the work item")]
     OnlyAdminOrCreator,
+    /// The description is more than the 10 MB the pin refuses (`validate_html_content`). The request layers check that while they read
+    /// the body, in the pin's words and with the other fields' problems, so this is the use-case's own answer to one that came anyway.
+    #[error("html content is not valid")]
+    InvalidDescription,
     #[error(transparent)]
     Core(#[from] CoreError),
 }
@@ -217,7 +221,8 @@ pub async fn issue_to_update(
 pub struct IssueDraft {
     /// 1 to 255 characters once trimmed.
     pub name: String,
-    /// Already cleaned of what must not be stored; `None` is the pin's empty paragraph.
+    /// The description as it was sent: the use-case cleans it (`thrust_html::describe`) and derives the text stored beside it.
+    /// `None` is the pin's empty paragraph.
     pub description_html: Option<String>,
     /// `None` is `none`.
     pub priority: Option<Priority>,
@@ -349,6 +354,9 @@ pub async fn create_issue(app: &App, access: &IssueAccess, draft: IssueDraft) ->
         .state_id
         .and_then(|id| states.iter().find(|s| s.id == id))
         .or_else(|| states.iter().find(|s| s.is_default));
+    // the one place a description is cleaned and its text derived (D-020): compat and v1 both come through here
+    let described = thrust_html::describe(draft.description_html.as_deref().unwrap_or("<p></p>"))
+        .map_err(|_| IssueError::InvalidDescription)?;
     let now = app.ports.clock.now();
     let attrs = WorkItemAttrs {
         state_id: state.map(|s| s.id),
@@ -358,7 +366,9 @@ pub async fn create_issue(app: &App, access: &IssueAccess, draft: IssueDraft) ->
         completed_at: state.filter(|s| s.group == StateGroup::Completed).map(|_| now),
         updated_at: now,
         updated_by: None,
-        description_html: draft.description_html.clone().unwrap_or_else(|| "<p></p>".to_string()),
+        description_html: described.html,
+        description_stripped: Some(described.stripped),
+        description_schema: Some(described.schema),
         assignee_ids: assignees,
         label_ids: labels,
         parent_id: draft.parent_id,
@@ -556,7 +566,8 @@ pub enum Ask {
         sent: String,
         name: String,
     },
-    /// Already cleaned of what must not be stored.
+    /// The description as it was sent: `update_issue` cleans it before anything else reads it, so the history and the row have the
+    /// cleaned form.
     Description(String),
     Priority(Priority),
     /// `None` is the project's default state (the pin gives a work item the default when it would have none).
@@ -803,11 +814,22 @@ pub async fn update_issue(
     app: &App,
     access: &IssueAccess,
     before: WorkItemRow,
-    update: IssueUpdate,
+    mut update: IssueUpdate,
 ) -> Result<(), IssueError> {
     let scope = access.scope;
     let db = &app.ports.db;
     let id = before.item.id;
+
+    // a description is cleaned here, once, before the history or the row read it (D-020): what is compared with the stored text, quoted
+    // in the history and stored is the cleaned form, and compat and v1 both come through here
+    let mut described: Option<thrust_html::Description> = None;
+    for ask in &mut update.asks {
+        if let Ask::Description(sent) = ask {
+            let d = thrust_html::describe(sent).map_err(|_| IssueError::InvalidDescription)?;
+            sent.clone_from(&d.html);
+            described = Some(d);
+        }
+    }
 
     let mut name = before.item.name.clone();
     let mut html = before.attrs.description_html.clone();
@@ -904,6 +926,11 @@ pub async fn update_issue(
         Some(update_history(&before, &update.asks, &names))
     };
 
+    // the text and the policy go with the description: new ones when the request gave it, the row's own when it did not
+    let (description_stripped, description_schema) = match described {
+        Some(d) => (Some(d.stripped), Some(d.schema)),
+        None => (before.attrs.description_stripped.clone(), before.attrs.description_schema),
+    };
     let change = WorkItemUpdate {
         name,
         state_id,
@@ -914,6 +941,8 @@ pub async fn update_issue(
         updated_at: now,
         updated_by: access.who.user_id,
         description_html: html,
+        description_stripped,
+        description_schema,
         assignee_ids: assignees,
         label_ids: kept_labels,
         external_source,

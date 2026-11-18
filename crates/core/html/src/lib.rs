@@ -177,16 +177,43 @@ pub enum SanitizeError {
 /// The default policy, built once: building a builder is the expensive part, and this runs on every description write.
 static DEFAULT: std::sync::LazyLock<ammonia::Builder<'static>> = std::sync::LazyLock::new(thrust_builder);
 
+/// Plane's size check, which `validate_html_content` starts with: `Err` over 10 MB. The request layers use it to refuse an oversize
+/// description in the pin's words, while they read the rest of the body, before the use-case cleans it.
+pub fn check_size(html: &str) -> Result<(), SanitizeError> {
+    if html.len() > MAX_SIZE {
+        return Err(SanitizeError::TooLarge);
+    }
+    Ok(())
+}
+
 /// Plane's `validate_html_content` with Thrust's allow-list (`thrust_builder`, not `plane_builder`): `Ok(None)` for empty input (the
 /// Python returns `clean_html=None`), `Err` over 10 MB.
 pub fn validate_html_content(html: &str) -> Result<Option<String>, SanitizeError> {
     if html.is_empty() {
         return Ok(None);
     }
-    if html.len() > MAX_SIZE {
-        return Err(SanitizeError::TooLarge);
-    }
+    check_size(html)?;
     Ok(Some(DEFAULT.clean(html).to_string()))
+}
+
+/// What a work item keeps of a description it was sent (issue #48, D-020): the one form that P0 stores, and what is derived from it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Description {
+    /// The cleaned HTML; the empty text stays empty, as the pin keeps it.
+    pub html: String,
+    /// `strip_tags` of `html`, the text a search or a preview reads (`description_stripped`).
+    pub stripped: String,
+    /// [`SCHEMA_VERSION`], the policy `html` was cleaned under.
+    pub schema: i16,
+}
+
+/// Clean a description as it was sent, and derive what is stored with it. The one place that does: the use-cases call it, so the
+/// compat plane and `/api/v1` share it. `Err` over 10 MB (the request layers have checked that already, with [`check_size`]).
+pub fn describe(sent: &str) -> Result<Description, SanitizeError> {
+    // `Ok(None)` is only an empty `sent`, which is kept empty
+    let html = validate_html_content(sent)?.unwrap_or_default();
+    let stripped = strip_tags(&html);
+    Ok(Description { html, stripped, schema: SCHEMA_VERSION })
 }
 
 /// Reusable form (the builder is the expensive part). `default()` is Thrust's allow-list; a test that compares with nh3 asks for
@@ -302,8 +329,8 @@ fn strip_once(s: &str) -> String {
                     }
                 } else {
                     let n = rest.bytes().take_while(|c| c.is_ascii_alphanumeric() || *c == b'-' || *c == b'.').count();
-                    if n > 0
-                        && rest.as_bytes().first().is_some_and(|c| c.is_ascii_alphabetic())
+                    // (a first byte that is alphabetic is counted by `take_while`, so `n >= 1` here: no `n > 0` of its own to keep)
+                    if rest.as_bytes().first().is_some_and(|c| c.is_ascii_alphabetic())
                         && rest.as_bytes().get(n).map(|c| !c.is_ascii_alphanumeric()).unwrap_or(false)
                     {
                         out.push('&');

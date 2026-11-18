@@ -38,6 +38,8 @@ fn by_class(e: IssueError) -> PlaneError {
         | IssueError::NotAllowedToView
         | IssueError::Fields(_)
         | IssueError::StartAfterTarget
+        // a view that only reads a work item's history writes no description
+        | IssueError::InvalidDescription
         // only the v1 API's deletion says this; the compat plane never meets it
         | IssueError::OnlyAdminOrCreator => refused_by_class(),
     }
