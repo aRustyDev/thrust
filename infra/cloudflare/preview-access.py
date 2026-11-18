@@ -10,6 +10,7 @@ import os
 import re
 import stat
 import sys
+import time
 import urllib.error
 import urllib.request
 import urllib.parse
@@ -134,16 +135,24 @@ def enable(account, api_token, worker_id, credentials_file, url):
     try:
         request(account, api_token, "POST", path, {"enabled": True, "previews_enabled": False})
         opener = urllib.request.build_opener(NoRedirect)
-        try:
-            with opener.open(endpoint, timeout=30):
-                raise ValueError("anonymous request unexpectedly reached the Worker")
-        except urllib.error.HTTPError as exc:
-            login_host = urllib.parse.urlsplit(exc.headers.get("Location", "")).hostname or ""
-            allowed_denial = exc.code == 403 or (exc.code == 302 and login_host.endswith(".cloudflareaccess.com"))
-            exc.close()
-            if not allowed_denial:
-                raise ValueError("anonymous request was not rejected by Access") from exc
-        headers = {"CF-Access-Client-Id": credentials["client_id"], "CF-Access-Client-Secret": credentials["client_secret"]}
+        user_agent = "thrust-preview-control-plane/1.0"
+        for attempt in range(13):
+            try:
+                with opener.open(urllib.request.Request(endpoint, headers={"User-Agent": user_agent}), timeout=30):
+                    raise ValueError("anonymous request unexpectedly reached the Worker")
+            except urllib.error.HTTPError as exc:
+                login_host = urllib.parse.urlsplit(exc.headers.get("Location", "")).hostname or ""
+                body = exc.read(512)
+                allowed_denial = ((exc.code == 403 and b"error code: 1010" not in body)
+                                  or (exc.code == 302 and login_host.endswith(".cloudflareaccess.com")))
+                exc.close()
+                if exc.code == 404 and b"error code: 1042" in body and attempt < 12:
+                    time.sleep(5)
+                    continue
+                if not allowed_denial:
+                    raise ValueError("anonymous request was not rejected by Access") from exc
+                break
+        headers = {"User-Agent": user_agent, "CF-Access-Client-Id": credentials["client_id"], "CF-Access-Client-Secret": credentials["client_secret"]}
         with opener.open(urllib.request.Request(endpoint, headers=headers), timeout=30) as response:
             if response.status != 200 or not isinstance(json.load(response), list):
                 raise ValueError("authenticated inventory smoke failed")
