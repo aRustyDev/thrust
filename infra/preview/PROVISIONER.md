@@ -111,7 +111,8 @@ requires immediate operator action. Cloudflare's policy and service-token API ar
 the [Worker Access documentation](https://developers.cloudflare.com/workers/configuration/cloudflare-access/)
 and [service-token documentation](https://developers.cloudflare.com/cloudflare-one/access-controls/service-credentials/service-tokens/).
 
-The reconcile environment needs `THRUST_PREVIEW_PROVISIONER_URL`,
+The reconcile environment needs `THRUST_PREVIEW_PROVISIONER_URL`, `THRUST_DEV_VPC_SERVICE_ID`
+(the Cloudflare VPC service ID for `thrust-pg-dev`),
 `PREVIEW_PROVISIONER_ACCESS_CLIENT_ID` and `PREVIEW_PROVISIONER_ACCESS_CLIENT_SECRET` in addition
 to the existing Hyperdrive credentials. Once the Access-protected route is enabled and verified,
 set the repository variable `THRUST_PREVIEW_PROVISIONER_ENABLED` to `true` to activate reconciliation.
