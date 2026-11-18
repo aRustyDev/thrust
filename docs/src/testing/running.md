@@ -156,6 +156,15 @@ A pull request runs only the jobs and cells its change needs; how that is decide
 named, and on a planned cell that never reported, so a pipeline that silently ran less cannot read as green. `.github/workflows/flake-hunt.yml` repeats one
 cell on demand and weekly. Not in CI: the `oracle_` tests (they need the pinned Plane oracle's output) and stage 2.
 
+### When `ci-scripts` is red
+
+- **Read the end of the job's log.** It prints each of the 45 commands with its seconds and exit status, slowest first, and when any failed, `--- FAILED (n):` and each failed command with its exit status. The failed command's own output is above, kept together.
+  Every command runs even when one fails, so a red job can name several: fix them all before you push.
+- **Reproduce one command** from the repository root, as the job runs it: `sh .github/scripts/tests/<name>.sh` (under `dash` if your `sh` is bash: the runner's is dash), `python3 -I .github/scripts/tests/<name>.py`, with `RUSTUP_TOOLCHAIN=stable` for `test_plan_ci.py`.
+  The commands do not depend on one another, so any one can be run alone, or all of them at once by any parallel runner.
+- **A job stopped after ten minutes** has a command that hung, and prints no table (it was killed before). A command's lines appear only when it finishes, so the hung one is among the commands of the list in `test.yml` whose output is missing from the log.
+- **A command that fails once and passes on a rerun** is a finding to file, not to retry away ([Rule 2](rules.md)). Rerun the failed job once to see whether it repeats.
+
 ## Don't
 
 - pass `--retries`, `--flaky-result`, `NEXTEST_RETRIES` or `NEXTEST_FLAKY_RESULT` ([Rule 2](rules.md));
