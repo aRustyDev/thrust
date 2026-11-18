@@ -32,7 +32,7 @@ inputs:
   worker-build-version:
     description: Exact worker-build version, installed with `cargo install --locked`
     required: false
-    default: "0.8.7"
+    default: "0.9.0"
   wrangler-version:
     description: Exact wrangler version, installed with `npm install --global`
     required: false

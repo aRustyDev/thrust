@@ -9,6 +9,12 @@ name = "thrust-worker"
 main = "build/worker/shim.mjs"
 # Newest date the local workerd in wrangler 4.123.0 accepts is 2026-08-18 (measured). CI runs the wrangler pinned in
 # .github/actions/setup-rust/action.yml (4.151.2), whose newer workerd accepts this date as well.
+#
+# Since worker 0.9 (the crate) this Worker needs a wrangler of 4.151.2 or newer to RUN locally, and 4.123.0 does not: the crate wraps
+# every `#[event]` handler in a span and calls `tracing.getActiveSpan()` of `cloudflare:workers`, which Cloudflare added to the runtime on
+# 2026-09-25 and a workerd from before that lacks. Measured 2026-11-18 with this config and the same build: wrangler 4.123.0 answers
+# every request 500 `Critical error` (`/healthz` never turns healthy: `scripts/contract.sh worker-cf` exits 4, twice), wrangler 4.151.2
+# passes the `main` pass 71/71 and the `bindings` pass 5/5. The newest wrangler that fails is not known, only these two.
 compatibility_date = "2026-08-01"
 workers_dev = false
 
