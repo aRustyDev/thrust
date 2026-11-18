@@ -2,7 +2,8 @@ name: deploy-worker
 description: >-
   Deploy the attested bundle of one commit to one environment and prove it: verify the attestation, install the pinned tools, then run
   scripts/deploy-worker.sh (render, classify, expand migration, wrangler deploy, smoke, rollback). Used by the `deploy` job and, with
-  the manual gate, by `deploy-do` (issue #49, ADR-0110 round 29).
+  the manual gate, by `deploy-do` (issue #49, ADR-0110 round 29); with `script`, by the target jobs (scripts/deploy-target.sh) and
+  by `deploy-edge` (scripts/deploy-edge.sh, the edge Worker from the same bundle).
 
 # Everything the script reads comes in as an input and goes to the script through env, never into the text of a `run:` (an input is
 # data, not code). The credentials are inputs too, because a composite action cannot read the `secrets` context: the CALLER passes
@@ -13,7 +14,8 @@ inputs:
   script:
     description: >-
       `worker` (the default): scripts/deploy-worker.sh, a deploy of the environment's Worker. `target`: scripts/deploy-target.sh, a
-      Worker Preview of the production Worker reached through the edge (ADR-0111), with the target-* inputs below
+      Worker Preview of the production Worker reached through the edge (ADR-0111), with the target-* inputs below. `edge`:
+      scripts/deploy-edge.sh, the edge Worker of the release's bundle in front of production, with the edge-* inputs below
     required: false
     default: worker
   environment:
@@ -153,23 +155,63 @@ inputs:
     description: "The CI opt-in service token's secret"
     required: false
     default: ""
+
+  # the edge (script: edge) only; flagship-app-id above is the edge's too
+  edge-worker-name:
+    description: "The edge Worker's name (thrust-edge), not production's"
+    required: false
+    default: ""
+  access-team-domain:
+    description: "<team>.cloudflareaccess.com: the issuer of the Access tokens the edge verifies on its opt-in paths"
+    required: false
+    default: ""
+  access-aud-rc:
+    description: "The AUD tag of the Access application on /_edge/opt-in/rc"
+    required: false
+    default: ""
+  access-aud-dev:
+    description: "The AUD tag of the Access application on /_edge/opt-in/dev"
+    required: false
+    default: ""
+  workers-dev-subdomain:
+    description: "The account's workers.dev subdomain, where production's Previews are"
+    required: false
+    default: ""
+  edge-pin-key:
+    description: "The pin's HMAC key, at least 32 bytes"
+    required: false
+    default: ""
+  preview-access-client-id:
+    description: "The service token the edge shows Access on the Previews: its id"
+    required: false
+    default: ""
+  preview-access-client-secret:
+    description: "The service token the edge shows Access on the Previews: its secret"
+    required: false
+    default: ""
 outputs:
   deferred:
     description: "'true' when nothing was deployed because this deploy needs the manual gate (a target: migrations wait for a reviewer)"
     value: ${{ steps.deploy.outputs.deferred || steps.target.outputs.deferred }}
   deployed:
     description: "'true' when wrangler deployed the version"
-    value: ${{ steps.deploy.outputs.deployed }}
+    value: ${{ steps.deploy.outputs.deployed || steps.edge.outputs.deployed }}
   rolled_back:
     description: no, yes, failed or unverified
-    value: ${{ steps.deploy.outputs.rolled_back }}
+    value: ${{ steps.deploy.outputs.rolled_back || steps.edge.outputs.rolled_back }}
 
 runs:
   using: composite
   steps:
     - name: Preflight - the tools the deploy needs are on the runner
       shell: bash
+      env:
+        SCRIPT: ${{ inputs.script }}
       run: |
+        case "$SCRIPT" in
+          worker|target|edge) ;;
+          *) echo "::error::script is worker, target or edge, not '$SCRIPT'"; exit 1 ;;
+        esac
         missing=""
         for tool in git curl nc python3 tar sha256sum gh npm jq unzip; do
           command -v "$tool" > /dev/null 2>&1 || missing="$missing $tool"
@@ -237,6 +279,21 @@ runs:
         cp -R "$UNPACK_DIR/build" crates/worker/build
         cp "$UNPACK_DIR/migrate" "$TOOLS_DIR/migrate"
 
+    # The edge's build, from the same attested bundle (edge/build/, .github/actions/build-bundle), where its rendered configuration
+    # (crates/edge/.wrangler.deploy.run.toml) points: the shim imports ../index.js, which imports index_bg.wasm.
+    - name: Put the edge's build beside its configuration (edge)
+      if: inputs.script == 'edge'
+      shell: bash
+      env:
+        UNPACK_DIR: ${{ runner.temp }}/bundle
+      run: |
+        set -eu
+        for f in edge/build/worker/shim.mjs edge/build/index.js edge/build/index_bg.wasm; do
+          test -s "$UNPACK_DIR/$f" || { echo "::error::the bundle has no $f (it was built before the bundle carried the edge)"; exit 1; }
+        done
+        rm -rf crates/edge/build
+        cp -R "$UNPACK_DIR/edge/build" crates/edge/build
+
     - name: Install wrangler (exact version)
       shell: bash
       env:
@@ -246,6 +303,8 @@ runs:
     # cloudflared reaches thrust-pg through the Access tunnel (scripts/migrate-ci.sh). It is a release binary of cloudflare/cloudflared,
     # pinned by version AND by its SHA-256 (taken from the release and checked against a download of it on 2026-11-14).
     - name: Install cloudflared (pinned, checksum verified)
+      # the edge reaches no database
+      if: inputs.script != 'edge'
       shell: bash
       env:
         CLOUDFLARED_VERSION: "2026.10.7"
@@ -262,7 +321,7 @@ runs:
         echo "$TOOLS_DIR" >> "$GITHUB_PATH"
 
     - name: Deploy and prove
-      if: inputs.script != 'target'
+      if: inputs.script == 'worker'
       id: deploy
       shell: bash
       env:
@@ -349,3 +408,33 @@ runs:
         SMOKE_WORKSPACE: ${{ inputs.smoke-workspace }}
         SMOKE_PROJECT: ${{ inputs.smoke-project }}
       run: scripts/deploy-target.sh
+
+    # The edge (ADR-0111): the release's edge Worker in front of production, proved on the shared hostname. It sees no database
+    # secret and no Flagship token: it writes no flag, it only binds the app. scripts/deploy-edge.sh hands the edge's three secrets
+    # to wrangler in a file, and the smoke account's password to the smoke alone.
+    - name: Deploy the edge and prove it
+      if: inputs.script == 'edge'
+      id: edge
+      shell: bash
+      env:
+        DEPLOY_SHA: ${{ inputs.sha }}
+        THRUST_BASE_URL: ${{ inputs.base-url }}
+        THRUST_WORKER_NAME: ${{ inputs.worker-name }}
+        THRUST_EDGE_WORKER_NAME: ${{ inputs.edge-worker-name }}
+        THRUST_FLAGSHIP_APP_ID: ${{ inputs.flagship-app-id }}
+        THRUST_ACCESS_TEAM_DOMAIN: ${{ inputs.access-team-domain }}
+        THRUST_ACCESS_AUD_RC: ${{ inputs.access-aud-rc }}
+        THRUST_ACCESS_AUD_DEV: ${{ inputs.access-aud-dev }}
+        THRUST_WORKERS_DEV_SUBDOMAIN: ${{ inputs.workers-dev-subdomain }}
+        CLOUDFLARE_ACCOUNT_ID: ${{ inputs.cloudflare-account-id }}
+        CLOUDFLARE_API_TOKEN: ${{ inputs.cloudflare-api-token }}
+        EDGE_PIN_KEY: ${{ inputs.edge-pin-key }}
+        PREVIEW_ACCESS_CLIENT_ID: ${{ inputs.preview-access-client-id }}
+        PREVIEW_ACCESS_CLIENT_SECRET: ${{ inputs.preview-access-client-secret }}
+        # always: the edge has no Durable Object or migration that a rollback could cross
+        AUTO_ROLLBACK: "true"
+        SMOKE_EMAIL: ${{ inputs.smoke-email }}
+        SMOKE_PASSWORD: ${{ inputs.smoke-password }}
+        SMOKE_WORKSPACE: ${{ inputs.smoke-workspace }}
+        SMOKE_PROJECT: ${{ inputs.smoke-project }}
+      run: scripts/deploy-edge.sh
