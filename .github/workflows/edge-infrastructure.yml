@@ -1,0 +1,150 @@
+name: Edge infrastructure
+
+# The edge's own Cloudflare root, infra/edge (ADR-0111): the Flagship app the edge evaluates, an Access application per opt-in
+# audience, and the one that locks the production Worker's Previews to the edge. Its state is its OWN key, shared with no other
+# root (infra/edge/README.md says why that matters here).
+#
+#   * A pull request that changes infra/edge or this file runs `test`, with no credential and no environment: `tofu validate`,
+#     the contract test (a mocked provider), the root's guards (no flag and no service token declared here; this root's state key
+#     is used nowhere else), and service-token.py's tests.
+#   * A dispatch runs `tofu` in the environment `edge-infrastructure`: `plan`, or `apply` of a fresh plan made in the same run.
+#     `gated` asks GitHub first, by name, whether that environment has required reviewers, and nothing runs if it has none
+#     (GitHub creates an environment with no protection the first time a job names it).
+#
+# The environment `edge-infrastructure` (deployment branches: main; required reviewers) holds:
+#   secrets   CLOUDFLARE_API_TOKEN (Flagship app Edit; Access: Apps and Policies Edit), TOFU_R2_ACCESS_KEY_ID,
+#             TOFU_R2_SECRET_ACCESS_KEY
+#   variables CLOUDFLARE_ACCOUNT_ID, TOFU_R2_S3_ENDPOINT, and the root's identifiers (none is a person): EDGE_OPT_IN_GROUP_IDS
+#             (JSON, {"rc": ["<group id>"], "dev": []}), EDGE_CI_OPT_IN_TOKEN_ID, EDGE_PREVIEWS_TOKEN_ID, EDGE_PRODUCTION_WORKER_ID
+on:
+  pull_request:
+    paths:
+      - infra/edge/**
+      - .github/workflows/edge-infrastructure.yml
+      - .github/deploy/flagship/policy.json
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: OpenTofu operation on the edge's state
+        type: choice
+        required: true
+        default: plan
+        options: [plan, apply]
+
+permissions: {}
+
+concurrency:
+  group: edge-infrastructure-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  test:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2
+        with:
+          tofu_version: 1.12.4
+          tofu_wrapper: false
+      - name: Validate and run the contract test (mocked provider, no credential)
+        run: |
+          set -eu
+          tofu -chdir=infra/edge init -backend=false -input=false -lockfile=readonly
+          tofu -chdir=infra/edge validate
+          tofu -chdir=infra/edge test
+      # The flags are thrust CI's (scripts/flagship.py) and a service token's secret would sit in this unencrypted state, so
+      # neither may be declared here. The guard is shown failing on a file that declares one, so it cannot pass by matching nothing.
+      - name: No flag and no service token is declared in this root
+        run: |
+          set -eu
+          pattern='resource[[:space:]]+"cloudflare_(flagship_flag|zero_trust_access_service_token)"'
+          if grep -nE "$pattern" infra/edge/*.tf; then echo "::error::infra/edge declares a flag or a service token"; exit 1; fi
+          printf 'resource "cloudflare_flagship_flag" "x" {}\n' > "$RUNNER_TEMP/control.tf"
+          grep -qE "$pattern" "$RUNNER_TEMP/control.tf" || { echo "::error::the guard does not see a declared flag"; exit 1; }
+      # Two roots on one state key each destroy what only the other declares: this root's key appears in this file alone.
+      - name: This root's state key is used by no other workflow
+        run: |
+          set -eu
+          key='products/thrust/edge/646535719915/terraform.tfstate'
+          others="$(grep -rlF "$key" .github/workflows | grep -vx '.github/workflows/edge-infrastructure.yml' || true)"
+          test -z "$others" || { echo "::error::$key is also used by: $others"; exit 1; }
+          grep -qF "$key" .github/workflows/edge-infrastructure.yml || { echo "::error::the guard looked for a key this file does not use"; exit 1; }
+      - name: service-token.py's tests
+        run: python3 -I infra/edge/test-service-token.py
+
+  gated:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: The environment edge-infrastructure has required reviewers
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: .github/scripts/assert-gated-environments.sh "$REPO" edge-infrastructure
+
+  tofu:
+    needs: gated
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    environment: edge-infrastructure
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      TF_VAR_cloudflare_account_id: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+      TF_VAR_opt_in_group_ids: ${{ vars.EDGE_OPT_IN_GROUP_IDS || '{}' }}
+      TF_VAR_ci_opt_in_token_id: ${{ vars.EDGE_CI_OPT_IN_TOKEN_ID }}
+      TF_VAR_edge_previews_token_id: ${{ vars.EDGE_PREVIEWS_TOKEN_ID }}
+      TF_VAR_production_worker_id: ${{ vars.EDGE_PRODUCTION_WORKER_ID }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.TOFU_R2_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.TOFU_R2_SECRET_ACCESS_KEY }}
+      AWS_ENDPOINT_URL_S3: ${{ vars.TOFU_R2_S3_ENDPOINT }}
+      AWS_REGION: auto
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2
+        with:
+          tofu_version: 1.12.4
+          tofu_wrapper: false
+      - name: Initialize this root's own state
+        run: |
+          tofu -chdir=infra/edge init -input=false -lockfile=readonly \
+            -backend-config='bucket=tofu' \
+            -backend-config='key=products/thrust/edge/646535719915/terraform.tfstate' \
+            -backend-config='region=auto' \
+            -backend-config='use_path_style=true' \
+            -backend-config='encrypt=false' \
+            -backend-config='use_lockfile=true' \
+            -backend-config='skip_credentials_validation=true' \
+            -backend-config='skip_region_validation=true' \
+            -backend-config='skip_requesting_account_id=true' \
+            -backend-config='skip_metadata_api_check=true'
+      - name: Plan
+        run: tofu -chdir=infra/edge plan -input=false -out=tfplan
+      - name: Apply the plan made in this run
+        if: inputs.operation == 'apply'
+        run: tofu -chdir=infra/edge apply -input=false tfplan
+      # The outputs are identifiers, none secret: where each one goes is in infra/edge/README.md.
+      - name: The outputs
+        if: inputs.operation == 'apply'
+        run: |
+          {
+            echo "### infra/edge outputs"
+            echo '```'
+            tofu -chdir=infra/edge output
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

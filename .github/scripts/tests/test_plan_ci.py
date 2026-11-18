@@ -184,7 +184,7 @@ SAMPLES = [
     "tools/compat-record/record.py", "tools/compat-inventory/out-pinned/endpoint-inventory.csv",
     ".agents/plans/contrail/research/0003-compat-plane-inventory.md", "tools/e2e-har/scrub.py", "e2e/journeys/m1.spec.ts",
     "web/apps/web/app.tsx", "scripts/e2e.sh", "scripts/oracle-v1.sh", "scripts/mutants.sh", "scripts/stage2-contract.sh",
-    "scripts/check-web-diff.sh", "scripts/check-book.sh", "scripts/check-topology.sh", "scripts/smoke-deploy.sh", "scripts/flagship.py", "scripts/preview-config.py", "scripts/samply-wrapper.sh", "scripts/verify-all.sh",
+    "scripts/check-web-diff.sh", "scripts/check-book.sh", "scripts/check-topology.sh", "scripts/smoke-deploy.sh", "scripts/flagship.py", "scripts/preview-config.py", "infra/edge/access.tf", "scripts/samply-wrapper.sh", "scripts/verify-all.sh",
     "scripts/new-thing.sh", "docs/src/intro.md", "AGENTS.md", ".github/scripts/lint-workflow.sh", ".github/workflows/deploy.yml",
 ]
 NOTHING = ["README.md", "CHANGELOG.md", ".agents/plans/x.md", "docs-notes.md", "CLAUDE.md", "crates-AGENTS.md", "probes/send-shape/run.sh", "tools/spike-0006/x", ".github/CODEOWNERS"]
@@ -244,6 +244,8 @@ check("preview infrastructure runs shell and Postgres checks", run_plan(["infra/
       ({"ci-scripts", "pg-adapter"}, set()))
 check("Cloudflare infrastructure runs shell and Postgres checks", run_plan(["infra/cloudflare/preview-access.py"], REAL_GRAPH),
       ({"ci-scripts", "pg-adapter"}, set()))
+check("the edge's Cloudflare root runs ci-scripts and no cell", run_plan(["infra/edge/access.tf"], REAL_GRAPH), ({"ci-scripts"}, set()))
+check("the edge's token script runs ci-scripts and no cell", run_plan(["infra/edge/service-token.py"], REAL_GRAPH), ({"ci-scripts"}, set()))
 preview_graph = dict(REAL_GRAPH, **{"thrust-preview-provisioner": {"thrust-adapters-cloudflare"}})
 preview_layout = dict(ADR_0009, **{"thrust-preview-provisioner": "crates/preview-provisioner"})
 preview_jobs, _ = run_plan(["crates/preview-provisioner/src/lib.rs"], preview_graph, layout=preview_layout)
@@ -431,7 +433,7 @@ check("slices refuses a map that is not a partition", refused(lambda: pc.slices(
 # The files that run the checks `gate` waits for, today and as the migration adds them; and the ones that run no check, because they
 # have triggers of their own (the deploy and release flows, the schedules).
 CHECK_WORKFLOWS = ["ci", "contract-cell", "test", "lint", "documentation", "security", "web"]
-NO_CHECK_WORKFLOWS = ["deploy", "e2e", "flagship", "flake-hunt", "release", "release-plz", "cloudflare-infrastructure", "deploy-preview-provisioner", "enable-preview-provisioner", "preview-reconcile"]
+NO_CHECK_WORKFLOWS = ["deploy", "e2e", "flagship", "flake-hunt", "release", "release-plz", "cloudflare-infrastructure", "edge-infrastructure", "deploy-preview-provisioner", "enable-preview-provisioner", "preview-reconcile"]
 for name in CHECK_WORKFLOWS:
     check(f".github/workflows/{name}.yml runs everything", run_plan([f".github/workflows/{name}.yml"], REAL_GRAPH), EVERYTHING)
 for name in NO_CHECK_WORKFLOWS:
