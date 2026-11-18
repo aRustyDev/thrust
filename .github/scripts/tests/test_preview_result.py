@@ -8,15 +8,24 @@ the URL and the deployment id printed. Then, for EVERY declared binding of each,
 script_name gone or another; for every variable, other text; and the URL and the deployment id broken every way the edge would
 refuse: each must be refused, naming what is wrong. An answer with no JSON object (wrangler failing before it, or an array) is exit 2.
 A path argument points it at a deliberately broken copy, to show this test fails.
+
+The thousands of cases call the script's `main()` in this process, with its output captured, and get what a process would give: the exit status, stdout and
+stderr. A process for each of them was most of this test's time (about 60 s of 80). So that the in-process call stays an honest stand-in for the command
+line, a sample of cases of every kind (accepted, each way of refused, no JSON, not an object, wrongly called) is also run through a real process, as
+`python3 -I <script> ...`, and the two must agree on all three.
 """
 
+import contextlib
 import copy
+import importlib.util
+import io
 import json
 import os
 import random
 import subprocess
 import sys
 import tempfile
+import traceback
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SCRIPT = sys.argv[1] if len(sys.argv) > 1 else os.path.join(HERE, "..", "..", "..", "scripts", "preview-result.py")
@@ -35,12 +44,48 @@ def check(label, got, want):
         print(f"BAD  {label}: got {got!r}, wanted {want!r}")
 
 
-def run(answer_text, previews, label):
+def load(path):
+    """The script as a module. Its name is not `__main__`, so its entry point (`sys.exit(main(sys.argv))`) does not run."""
+    spec = importlib.util.spec_from_file_location("preview_result_under_test", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+PREVIEW_RESULT = load(SCRIPT)
+
+
+def call(argv):
+    """What a process running the script with these arguments would give, without starting one: (exit status, stdout, stderr)."""
+    out, err = io.StringIO(), io.StringIO()
+    try:
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            rc = PREVIEW_RESULT.main(argv)
+    except SystemExit as e:
+        rc = e.code
+    except Exception:
+        rc = 1  # an uncaught exception ends a process with status 1 and the traceback on stderr
+        err.write(traceback.format_exc())
+    return (0 if rc is None else rc if isinstance(rc, int) else 1), out.getvalue(), err.getvalue()
+
+
+def write_inputs(answer_text, previews):
     out_path, cfg_path = os.path.join(work, "out"), os.path.join(work, "cfg.json")
     with open(out_path, "w") as f:
         f.write(answer_text)
     with open(cfg_path, "w") as f:
         json.dump({"name": "thrust-production", "previews": previews}, f)
+    return out_path, cfg_path
+
+
+def run(answer_text, previews, label):
+    out_path, cfg_path = write_inputs(answer_text, previews)
+    return call([SCRIPT, out_path, cfg_path, label, SUFFIX])
+
+
+def run_process(answer_text, previews, label):
+    """The same, through a real process: the command line, and the `-I` the workflow runs it with."""
+    out_path, cfg_path = write_inputs(answer_text, previews)
     p = subprocess.run([sys.executable, "-I", SCRIPT, out_path, cfg_path, label, SUFFIX], capture_output=True, text=True)
     return p.returncode, p.stdout, p.stderr
 
@@ -156,6 +201,45 @@ rc, out, err = run("🌀 Building list of assets...\nX [ERROR] the upload failed
 check("an answer with no JSON line: exit 2", rc, 2)
 rc, out, err = run(text([1, 2]), p, "v0-3-0")
 check("an answer that is not an object (no line starts with '{'): exit 2", rc, 2)
+
+
+# The in-process call stands in for the command line in every case above, so a sample of every kind of case is run both ways, and the two must agree on
+# the exit status, stdout and stderr: the entry point, the arguments and the `-I` the workflow runs it with are the process's, and are covered here.
+def agree(why, answer_text, previews, label):
+    check(f"in-process and process agree: {why}", run(answer_text, previews, label), run_process(answer_text, previews, label))
+
+
+kinds = set()
+for _ in range(6):
+    p = previews_block()
+    label = rng.choice(["v0-3-0", "staging-1", "pr-42", "a"])
+    env = applied(p)
+    dep = "51f4a871-4944-4278-9c2a-785e1bea4125"
+    agree("an answer for what was asked", text(answer(label, dep, env)), p, label)
+    kinds.add("accepted")
+    broken = copy.deepcopy(env)
+    del broken[names(p)[0]]
+    agree("a binding missing", text(answer(label, dep, broken)), p, label)
+    kinds.add("binding")
+    for b in (p.get("durable_objects") or {}).get("bindings") or []:
+        broken = copy.deepcopy(env)
+        broken[b["name"]]["script_name"] = "thrust-other"
+        agree("a room on another script", text(answer(label, dep, broken)), p, label)
+        kinds.add("room")
+        break
+    for name, value in (p.get("vars") or {}).items():
+        broken = copy.deepcopy(env)
+        broken[name]["text"] = value + "x"
+        agree("a variable with other text", text(answer(label, dep, broken)), p, label)
+        kinds.add("var")
+        break
+check("the sample reached every kind of case", sorted(kinds), ["accepted", "binding", "room", "var", ])
+agree("no URL", text(answer("v0-3-0", "dep-1", env, [])), p, "v0-3-0")
+agree("a deployment id the edge refuses", text(answer("v0-3-0", "DEP-1", env)), p, "v0-3-0")
+agree("no JSON line (exit 2)", "🌀 Building list of assets...\nX [ERROR] the upload failed\n", p, "v0-3-0")
+agree("an answer that is not an object (exit 2)", text([1, 2]), p, "v0-3-0")
+bare = subprocess.run([sys.executable, "-I", SCRIPT], capture_output=True, text=True)
+check("in-process and process agree: called with no arguments (exit 2)", call([SCRIPT]), (bare.returncode, bare.stdout, bare.stderr))
 
 print(f"test_preview_result: {passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)
