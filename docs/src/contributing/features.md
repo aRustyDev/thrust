@@ -1,6 +1,6 @@
 # Cargo features
 
-Seven of the 13 workspace crates declare Cargo features, and six declare none. The adapter sets are not among the
+Seven of the 14 workspace crates declare Cargo features, and seven declare none. The adapter sets are not among the
 features: there is no `cloudflare` or `selfhosted` feature, even though two crate descriptions use those words. This
 page lists every feature of the workspace members, how the build scripts switch them on, and what the existing ones
 show about how to add another. The three probe crates are outside the workspace and declare features of their own
@@ -16,10 +16,10 @@ show about how to add another. The three probe crates are outside the workspace 
 | `thrust-adapters-selfhosted` | `mutant_discard_noop` | off | Planted bug: hand a connection that is still inside an abandoned transaction back to the pool |
 | `thrust-adapters-memory` | `mutant_search_case_sensitive` | off | Planted bug: search without folding case |
 | `thrust-server` | the `mutant_*` names of `thrust-adapters-memory`, and the CSRF and e-mail ones of `thrust-core` | off | Forwards each one to the crate that has it, so a build of the server can switch a planted bug on |
-| `thrust-editor-doc` | `sanitize` | on | Pulls in the ammonia sanitiser (and html5ever). It is split out so the size of the conversions alone can be measured |
+| `thrust-editor-doc` | `sanitize` | on | Pulls in `thrust-html` (the ammonia sanitiser and html5ever) and re-exports it as `sanitize`. It is split out so the size of the conversions alone can be measured |
 | `thrust-editor-worker` | `sanitize` | on | Forwards to `thrust-editor-doc/sanitize` |
 
-These crates declare no features: `thrust-contracts`, `thrust-ports`, `thrust-core`, `thrust-api`,
+These crates declare no features: `thrust-contracts`, `thrust-ports`, `thrust-core`, `thrust-html`, `thrust-api`,
 `thrust-adapters-cloudflare` and `thrust-contract-tests`.
 
 ## Adapter sets are not features

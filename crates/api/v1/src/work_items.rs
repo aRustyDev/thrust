@@ -495,7 +495,7 @@ impl PatchedIssueRequest {
             if sent.is_empty() {
                 return Err(non_field("Invalid HTML passed"));
             }
-            match thrust_editor_doc::sanitize::validate_html_content(sent) {
+            match thrust_html::validate_html_content(sent) {
                 Ok(clean) => description_html = Some(clean.unwrap_or_else(|| sent.to_string())),
                 Err(_) => {
                     let mut errors = FieldErrors::new();
