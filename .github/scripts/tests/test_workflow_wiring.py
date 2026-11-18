@@ -202,5 +202,28 @@ check("ci.yml's gate judges no cells: it downloads no marker and is given no pla
 # to read the planner's `jobs` any more.
 check("ci.yml holds only `changes`, the calls of the called workflows and `gate`", sorted(ci_jobs), sorted(["changes", "gate"] + list(pc.WORKFLOWS)))
 
+# The ci-scripts job runs its commands a core at a time (Test phase, stage 1), so a failure of any of them must still fail the job. A step that ran them
+# all and then exited 0 would pass the gate with every helper test broken, so the lines that carry the status are checked as text, and the mutant driver
+# removes each of them. And since the commands are a list in the workflow, a test script that is not in it would never run: every one is.
+SCRIPTS_JOB = "ci-scripts"
+scripts_wf = next((w for w, jobs in pc.WORKFLOWS.items() if SCRIPTS_JOB in jobs), None)
+check(f"the job {SCRIPTS_JOB} is a job of a called workflow", scripts_wf is not None, True)
+if scripts_wf:
+    scripts_path = f".github/workflows/{scripts_wf}.yml"
+    scripts_block = block(read_text(scripts_path) or "", SCRIPTS_JOB)
+    heredoc = re.search(r"^          parallel (.*) <<'EOF' \|\| status=\$\?\n((?:          .*\n)*?)          EOF\n", scripts_block, re.M)
+    check(f"{scripts_path}: {SCRIPTS_JOB} runs its commands under parallel, from a heredoc, and keeps the status when parallel fails", heredoc is not None, True)
+    flags = heredoc.group(1) if heredoc else ""
+    check(f"{scripts_path}: {SCRIPTS_JOB}: parallel runs every command and fails at the end (--halt never), and keeps a command's lines together (--group)",
+          "--halt never" in flags and "--group" in flags, True)
+    step_lines = [l.strip() for l in scripts_block.splitlines() if l.startswith("          ") and l.strip() and not l.strip().startswith("#")]
+    check(f"{scripts_path}: {SCRIPTS_JOB}: the step ends with `exit \"$status\"`, the number of commands that failed", step_lines[-1] if step_lines else None, 'exit "$status"')
+    commands = [l.strip() for l in (heredoc.group(2) if heredoc else "").splitlines() if l.strip()]
+    check(f"{scripts_path}: {SCRIPTS_JOB}: no command is listed twice", len(commands), len(set(commands)))
+    tests_dir = os.path.join(ROOT, ".github", "scripts", "tests")
+    on_disk = sorted(f for f in os.listdir(tests_dir) if re.match(r"(test[-_].*|mutate_gate\.py)$", f))
+    listed = sorted({name for c in commands for name in re.findall(r"\.github/scripts/tests/(\S+)", c)})
+    check(f"{scripts_path}: {SCRIPTS_JOB} runs every test script of .github/scripts/tests/ (a new one is added to the list)", on_disk, listed)
+
 print(f"passed={passed} bad={failed}")
 sys.exit(1 if failed else 0)

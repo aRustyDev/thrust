@@ -282,6 +282,12 @@ MUTANTS = [
     (ACT, "the output is another word than pass", 'echo "verdict=pass"', 'echo "verdict=ok"'),
     (ACT, "the action does not expose the output", "value: ${{ steps.mark.outputs.verdict }}", "value: pass"),
     (ACT, "the plan is not a required input", re.compile(r"(  plan:\n    description: [^\n]*\n)    required: true"), r"\1    required: false"),
+    # the ci-scripts step runs its commands a core at a time (Test phase, stage 1): a failure of any of them must still fail the job
+    (TST, "ci-scripts forgets the status of its commands", "<<'EOF' || status=$?", "<<'EOF' || true"),
+    (TST, "ci-scripts exits 0 whatever failed", '          exit "$status"\n', "          exit 0\n"),
+    (TST, "ci-scripts stops at the first failing command", "parallel --will-cite --group --halt never", "parallel --will-cite --group --halt now,fail=1"),
+    (TST, "ci-scripts no longer keeps a command's lines together", "parallel --will-cite --group --halt never", "parallel --will-cite --halt never"),
+    (TST, "ci-scripts drops a test script from its list", "          sh .github/scripts/tests/test-ports.sh\n", ""),
 ]
 MUTANTS += call_mutants()
 
