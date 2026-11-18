@@ -321,8 +321,7 @@ documented at the top of that script. In short:
 | Required reviewers | no | yes (the plan refuses to start a target deploy without them) |
 
 **Prerequisites:** none of this can run before the edge's infrastructure exists:
-- the Flagship app;
-- the Access apps and the CI opt-in token;
+- the Flagship app, and the Access apps with the CI opt-in token: [`infra/edge`](https://github.com/aRustyDev/thrust/tree/main/infra/edge#switching-the-edge-on);
 - the edge itself on `thrust.sow.foo`;
 - production's `preview_urls`, which is Q-0111.1.
 
@@ -370,7 +369,8 @@ production deploy was already approved in the same run):
 | red after "deployed", `rolled_back` anything else | No rollback was asked for, it failed, or the previous edge could not be shown answering. **A bad edge may be in front of production** | `wrangler rollback <version> --name thrust-edge` by hand. If the edge cannot be made to answer, move the hostname back to production (the infrastructure's rollback) |
 
 **The cut-over, in order:**
-1. Set the environment `edge` and `THRUST_EDGE_ENABLED=true`.
+1. Apply `infra/edge` (the Flagship app and the Access applications; its README's "Switching the edge on" has the order and
+   where each output and credential goes), then set the environment `edge` and `THRUST_EDGE_ENABLED=true`.
 2. The next release deploys the edge for the first time, with its smoke skipped.
 3. The infrastructure moves `thrust.sow.foo` to the edge, before the release after that. Until then the edge's smoke fails
    and rolls it back.

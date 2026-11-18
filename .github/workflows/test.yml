@@ -104,6 +104,7 @@ jobs:
           bash infra/preview/scripts/test-reconcile-pr-previews.sh
           bash infra/cloudflare/test-scripts.sh
           python3 -I infra/cloudflare/test-preview-access.py
+          python3 -I infra/edge/test-service-token.py
           # ci.yml, the planner and each called workflow's file agree (ADR-0102): the calls, the gate's VERDICT_JOBS, the verdict jobs
           python3 -I .github/scripts/tests/test_workflow_wiring.py
           # The tests of the planner and the gate must be able to fail: each hand mutant of the planner, the gate, this file, the called

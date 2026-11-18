@@ -21,6 +21,7 @@ policy() {
     release-plz.yml) echo "release release-pr|$NONE" ;; # the release App's key, in the `release` environment
     flagship.yml) echo "sync check|$NONE" ;;           # the Flagship app's tokens, in the `flagship` environment
     cloudflare-infrastructure.yml) echo "tofu|$NONE" ;;
+    edge-infrastructure.yml) echo "tofu|$NONE" ;;           # the edge root's state and Cloudflare token, in `edge-infrastructure`
     deploy-preview-provisioner.yml) echo "deploy|$NONE" ;;
     enable-preview-provisioner.yml) echo "enable|$NONE" ;;
     preview-reconcile.yml) echo "reconcile|$NONE" ;;

@@ -30,6 +30,9 @@ docs/book/
 .wrangler/
 infra/cloudflare/.terraform/
 infra/cloudflare/*.tfstate*
+infra/edge/.terraform/
+infra/edge/*.tfstate*
+infra/edge/tfplan
 crates/preview-provisioner/build/
 crates/preview-provisioner/.wrangler.closed.toml
 crates/preview-provisioner/fuzz/corpus/

@@ -267,3 +267,17 @@ The rest of #195's stage E3: `scripts/deploy-edge.sh`, `scripts/edge-controls.sh
   environment holds what the edge needs, and none of production's database route or Flagship's write token. It requires no
   reviewers of its own: the same run's production deploy was already approved.
 
+
+## Update — The edge's Cloudflare resources live in thrust (2026-11-18)
+
+The owner's decision, made while switching the edge on: the Flagship app and the edge's Access applications are declared in
+thrust, in `infra/edge`, applied by `edge-infrastructure.yml`. Until now the plan put them in the infrastructure repository.
+- **Why thrust:** #279 had just moved Thrust's Cloudflare root into this repository (`infra/cloudflare`).
+- **Why a root of its own, with its own state key, rather than `infra/cloudflare`:** that root shares its R2 state key with the
+  infrastructure repository's `products/thrust/cloudflare`, which also declares production's and staging's buckets, queues
+  and Custom Domains. Each root's apply would destroy what only the other declares. Resolving that is a separate piece of
+  work.
+- **Who may opt in** is an Access group named by id only. Thrust is public, so the groups and their members are kept outside it.
+- **The two service tokens** are made by `infra/edge/service-token.py`, not by OpenTofu: the provider keeps a token's secret in
+  state, and this state is unencrypted.
+- **The Custom Domain move** at the cut-over stays in the infrastructure repository, which owns that domain.
