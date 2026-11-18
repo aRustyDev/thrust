@@ -468,7 +468,10 @@ turn it red and would show nothing. The faults a rename can leave behind that th
 each in the finished build, one per draft pull request, closed unmerged:
 - **A: the planner test's list still names `e2e-schedule`.** `e2e.yml` is then in no list, and `test / ci-scripts` must fail on it (and `gate`).
 - **B: the index still has the row for `e2e-schedule.yml` and none for `e2e.yml`.** `check-ci-index.sh`, in `lint / deps`, must fail on it (and `gate`).
-Each is first checked locally to fail for its own reason alone.
+  *Corrected after the run:* **two** guards refuse it, not one: the guard's own test (`test-check-ci-index.sh`, which runs the guard on the real
+  repository) fails in `test / ci-scripts` too, as the planner's rule says (a change to an index runs the guard and its test). The plan
+  named only the first because the probe was checked locally against the guard and not against its test.
+Each is first checked locally to fail for its own reason alone (for B, with the guard's test as well).
 
 **What it will not show.** That the schedule fires under the new file name (it is read from the run list the morning after the merge); and that
 a failing `e2e` blocks nothing, which is unchanged and not probed.
