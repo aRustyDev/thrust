@@ -219,6 +219,11 @@ MUTANTS = [
     (GATE, "a level that names no cell job is asked for cells (the default cell job is contract)", 'CELLS="${CELL_JOB:-}"', 'CELLS="${CELL_JOB:-contract}"'),
     (GATE, "KNOWN_JOBS is ignored", 'KNOWN="${KNOWN_JOBS:-documentation', 'KNOWN="${XKNOWN_JOBS:-documentation'),
     (GATE, "PLANNED is needed even where there is no cell job", 'if [ -n "$CELLS" ]; then', "if true; then"),
+    (GATE, "cells given to a level that names no cell job are judged by nobody",
+     '[ "$(printf \'%s\' "${PLANNED:-[]}" | jq -c . 2> /dev/null)" = "[]" ] || fail "cells are planned but no cell job',
+     'true || fail "cells are planned but no cell job'),
+    (GATE, "an empty array of cells is told by its text, not its value", "| jq -c . 2> /dev/null)\" = \"[]\" ]", "| cat)\" = \"[]\" ]"),
+    (GATE, "a level with no cell job is given cells only when PLANNED is unset", '"${PLANNED:-[]}" | jq -c .', '"[]" | jq -c .'),
     # --- the wiring of the called workflows, and what a stage of the migration changes (ADR-0102)
     (PLAN, "the planner forgets the workflows",
      'WORKFLOWS = {"documentation": ("docs",), "security": ("deny",), "web": ("web",), "lint": ("deps", "lint"), '

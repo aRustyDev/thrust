@@ -12,7 +12,8 @@
 #   PLANNED        JSON array of "target pass" strings, the cells that must run (`cells` of `changes`); needed only while CELL_JOB is set
 #   REPORTED_DIR   directory holding one <target>-<pass>.ok marker per cell that passed; needed only while CELL_JOB is set
 # Optional, to judge another level. Unset, each is what ci.yml's gate needs today, so a level that forgets one fails here and does not
-# quietly pass (the cell job is the one exception: its default is none, so a level that has cells must say so):
+# quietly pass (the cell job's default is none, so a level that has cells must say so, and one that is given cells and names no cell job
+# fails: see the last rule):
 #   KNOWN_JOBS     the jobs this level knows, separated by spaces (default: the called workflows of ci.yml)
 #   CHANGES_JOB    the planner job that must have succeeded (default `changes`; set and empty: there is none, as in a called workflow)
 #   CELL_JOB       the job whose cells the markers prove (default: none, as for ci.yml's gate and most called workflows; test.yml's
@@ -28,7 +29,8 @@
 #   whose own `verdict` job was skipped is `success` and proves nothing.
 #   A job that is not expected must be `skipped`: one that ran anyway means its `if:` and the planner disagree.
 #   The cell job is expected exactly when cells are planned, and then the set of cells that reported success must equal the
-#   planned set.
+#   planned set. A level that names no cell job must be given no cells (PLANNED unset or an empty array): cells given to it would be
+#   judged by nobody, which is what a verdict job that forgot its cell job would do, since the verdict action passes the cells through.
 set -eu
 
 fail() {
@@ -105,6 +107,7 @@ while read -r job result; do
 done < needs.txt
 
 if [ -z "$CELLS" ]; then
+  [ "$(printf '%s' "${PLANNED:-[]}" | jq -c . 2> /dev/null)" = "[]" ] || fail "cells are planned but no cell job is named (CELL_JOB): $PLANNED"
   echo "ok: $(wc -l < expected.txt | tr -d ' ') expected jobs passed, the rest were skipped"
   exit 0
 fi
