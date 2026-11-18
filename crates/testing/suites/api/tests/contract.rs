@@ -167,6 +167,11 @@ async fn internal_routes_require_the_admin_token() {
     assert_eq!(r.status(), 401, "no admin token");
     let r = t.http.post(t.url("/internal/sweep")).header("x-admin-token", "wrong").send().await.unwrap();
     assert_eq!(r.status(), 401, "wrong admin token");
+    // the dead letters carry what a producer sent, so reading them is behind the same door as everything under /internal
+    let r = t.http.get(t.url("/internal/dead-letters")).send().await.unwrap();
+    assert_eq!(r.status(), 401, "no admin token, dead letters");
+    let r = t.http.get(t.url("/internal/dead-letters")).header("x-admin-token", "wrong").send().await.unwrap();
+    assert_eq!(r.status(), 401, "wrong admin token, dead letters");
 }
 
 /// `/internal/reset` (issue #58) deletes every row, so this is the one internal route whose gate matters most, and the one this
@@ -488,6 +493,69 @@ async fn concurrent_creates_never_duplicate_a_sequence_id() {
     seqs.sort();
     assert_eq!(seqs, (1..=n as i64).collect::<Vec<_>>(), "sequence ids must be unique and contiguous");
     assert_eq!(v1_list_ok(&t, &f.admin_a, &f.a).await.len(), n, "and every create is a work item of the list");
+}
+
+/// What the consumer set aside, newest first (`GET /internal/dead-letters`): the same table on every target, whichever queue ran.
+async fn dead_letters(t: &Target) -> Vec<Value> {
+    let r = t.admin_get("/internal/dead-letters").await;
+    assert_eq!(r.status(), 200, "dead letters: {:?}", r.text().await);
+    r.json().await.unwrap()
+}
+
+/// An event that can never be processed, as research 0004 (S2-9) and FR-21 name it: no `project_id` in its payload.
+fn event_without_a_project(event_id: uuid::Uuid) -> Value {
+    json!({
+        "event_id": event_id,
+        "schema_version": 1,
+        "workspace_id": uuid::Uuid::new_v4(),
+        "event_type": "work_item.created",
+        "entity_type": "work_item",
+        "entity_id": uuid::Uuid::new_v4(),
+        "actor_id": null,
+        "occurred_at": "2026-10-18T00:00:00Z",
+        "payload": {},
+        "trace_id": null
+    })
+}
+
+/// Issue #53 (FR-21; research 0004, S2-9, which names this event): an event with no `project_id` is wrong for good, so the consumer
+/// sets it aside on its FIRST delivery and does not retry it. Before, Stage 2 delivered it four times, 5 to 6 s apart, before the queue
+/// gave up on it. It appears once in `/internal/dead-letters`, with the delivery count of one, why, and the message as it was sent.
+///
+/// The same table answers on every target, so this holds the failure policy of the in-process queue (native, and the Worker's in-memory
+/// target) and of the Worker's consumer on Cloudflare Queues alike. The control is the mutant `mutant_invalid_is_transient`
+/// (`scripts/mutants.sh`): with `Invalid` treated as transient, the native queue waits 5, 10 and 20 s and this wait runs out, and the
+/// target with no timer retries at once and the count is four.
+#[tokio::test]
+async fn permanent_consumer_error_is_dead_lettered_without_retry() {
+    let t = t();
+    let (first, second) = (uuid::Uuid::new_v4(), uuid::Uuid::new_v4());
+    let sent = event_without_a_project(first);
+    assert_eq!(t.admin_post("/internal/inject-event", &sent).await.status(), 202);
+
+    let row = eventually("the dead letter of an event with no project_id", Duration::from_secs(15), || async {
+        dead_letters(&t).await.into_iter().find(|d| d["event_id"] == json!(first))
+    })
+    .await;
+    assert_eq!(row["attempts"], json!(1), "set aside on its first delivery, not retried: {row}");
+    assert_eq!(row["topic"], json!("events"));
+    let error = row["error"].as_str().unwrap();
+    assert!(
+        error.starts_with("permanent: ") && error.contains("project_id"),
+        "the reason is permanent and names what is missing: {error}"
+    );
+    let body: Value = serde_json::from_str(row["body"].as_str().unwrap()).unwrap();
+    assert_eq!(body, sent, "the body is the message as it was sent");
+
+    // once, and not again later: a second poison event is sent after it and waited for, and by then everything sent before it has been
+    // through the consumer (the marker pattern of the mail pass), so the first is still one row
+    assert_eq!(t.admin_post("/internal/inject-event", &event_without_a_project(second)).await.status(), 202);
+    eventually("the dead letter of the marker event", Duration::from_secs(15), || async {
+        dead_letters(&t).await.into_iter().find(|d| d["event_id"] == json!(second))
+    })
+    .await;
+    let firsts = dead_letters(&t).await.into_iter().filter(|d| d["event_id"] == json!(first)).count();
+    assert_eq!(firsts, 1, "an event set aside once is one row");
 }
 
 /// A work item made and deleted through `/api/v1` puts one event each in the outbox, which reaches the queue consumer, which writes one

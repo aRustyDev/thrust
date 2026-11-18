@@ -686,6 +686,12 @@ pub struct ActivityConsumer(pub App);
 /// [`MAX_DELIVERIES`] with its error kept, which costs three retries and loses nothing.
 pub fn consumer_error(e: CoreError) -> ConsumerError {
     let text = e.to_string();
+    // MUTANT (control run only): an invalid message is treated like a transient failure, so it is delivered again with the backoff
+    // and not set aside at once. The contract suite must catch it (`permanent_consumer_error_is_dead_lettered_without_retry`).
+    #[cfg(feature = "mutant_invalid_is_transient")]
+    if matches!(e, CoreError::Invalid(_)) {
+        return ConsumerError::Transient(text);
+    }
     match e {
         CoreError::Invalid(_)
         | CoreError::NotFound

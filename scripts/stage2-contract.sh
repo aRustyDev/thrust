@@ -15,8 +15,10 @@
 #           THRUST_ARGON2_P=1, or every fixture seeds six passwords at the real cost). It refuses a THRUST_EXPECT_V1_LIMIT
 #           above 1000: the rate-limit test would send millions of creates to a Worker whose binding was raised for the engine pass
 # worker     1 test : Durable Object WebSocket hibernation + SQLite
-# bindings   3 tests (contract.sh's has 5): the probe routes' admin gate, and one real operation per binding (rate limit, secrets store,
-#            email), and the version header. Here email and the version header are skipped: email for the reason below,
+# bindings   4 tests (contract.sh's has 6): the probe routes' admin gate, and one real operation per binding (rate limit, secrets store,
+#            email), the version header, and a message that is not an event reaching the dead letters (issue #53: the Worker needs the
+#            dead-letter queue and the consumer on it that wrangler.stage2.toml now has). Here email and the version header are skipped:
+#            email for the reason below,
 #            wrangler.stage2.toml has no [version_metadata], and what a deployed Worker reports as its version is what
 #            scripts/smoke-deploy.sh checks (issue #49)
 # cron       1 test : needs the Worker deployed with THRUST_OUTBOX_FASTPATH=off
@@ -105,14 +107,14 @@ case "$PASS" in
   # run would have exited 5 at the guard below. `scripts/check-contract-counts.sh` now runs exactly that listing, for every arm of
   # this `case`, in CI (it reads the `EXPECT=` and the `suite_pass` call of the lines below, so keep their shape: one line an arm,
   # the filterset single-quoted).
-  main)     EXPECT=67; suite_pass contract 'not test(/sweeper_|panic_|blast_|oidc_|operator_|csrf_off_/)' ;;
+  main)     EXPECT=68; suite_pass contract 'not test(/sweeper_|panic_|blast_|oidc_|operator_|csrf_off_/)' ;;
   # the csrf_off_ tests that need nothing else the deployed Worker lacks (all six: none of them is an `oidc_` test)
   csrfoff)  EXPECT=6;  suite_pass contract 'test(/csrf_off_/)' ;;
   worker)   EXPECT=1;  suite_pass worker_only 'test(/worker_room_/)' --no-capture ;;
   # Email is skipped on purpose: a real send needs a sender domain owned by the account and a verified
   # destination; the deployed binding rejects `example.com` ("domain is not owned by the same account").
   # It is reported as NOT exercised, never as passed.
-  bindings) EXPECT=3;  suite_pass worker_only 'test(/worker_bindings_/) & not test(/email_send|version_metadata/)' --no-capture ;;
+  bindings) EXPECT=4;  suite_pass worker_only 'test(/worker_bindings_/) & not test(/email_send|version_metadata/)' --no-capture ;;
   cron)     EXPECT=1;  suite_pass worker_only 'test(/worker_cron_/)' --no-capture ;;
   # crontrigger: the REAL every-minute trigger (the `cron` pass uses wrangler dev's /__scheduled, which a deployed Worker lacks)
   crontrigger) EXPECT=1; suite_pass worker_only 'test(/stage2_cron_real_trigger_/)' --no-capture ;;

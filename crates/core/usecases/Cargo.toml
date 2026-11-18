@@ -41,6 +41,9 @@ mutant_code_cap_ignored = []
 mutant_code_attempts_unbounded = []
 mutant_code_deactivated_signs_in = []
 mutant_code_mails_unknown = []
+# A message the consumer rejects as invalid is treated like a transient failure (FR-21, issue #53): delivered again with the backoff and
+# set aside only at its fourth delivery, not at once.
+mutant_invalid_is_transient = []
 
 [dependencies]
 thrust-contracts = { workspace = true }
