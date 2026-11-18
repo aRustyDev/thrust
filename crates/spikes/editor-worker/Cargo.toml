@@ -17,5 +17,5 @@ sanitize = ["thrust-editor-doc/sanitize"]
 thrust-editor-doc = { workspace = true, features = ["yjs"] }
 serde_json = { workspace = true }
 base64 = "0.22"
-worker = { version = "0.8" }
+worker = { version = "0.9" }
 console_error_panic_hook = "0.1"

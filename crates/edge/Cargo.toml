@@ -27,7 +27,7 @@ rsa = { version = "0.9", default-features = false, features = ["sha2"] }
 
 # The runtime glue (src/runtime.rs) exists only in the wasm32 build; the decision modules and their tests build natively without it.
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-worker = "0.8"
+worker = "0.9"
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
 js-sys = "0.3"
