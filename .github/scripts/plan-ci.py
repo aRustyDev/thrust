@@ -85,6 +85,8 @@ RULES = [
     (r"^\.github/scripts/toolchain-channel\.sh$", FULL, "the reader of rust-toolchain.toml, which every build's compiler comes from"),
     (r"^scripts/(rs|contract\.sh|contract-all\.sh|worker-dev\.sh|pg-delay-proxy\.py|lib/ports\.sh)$", FULL, "the contract cells' harness"),
     (r"^crates/", CRATE, "a file of crates/: its crate, by the longest member directory that holds it"),
+    (r"^infra/(preview|cloudflare)/", {"jobs": ["ci-scripts", "pg-adapter"]},
+     "preview and Cloudflare infrastructure (script and Postgres security tests)"),
     (r"^\.github/deploy/flagship/", {"jobs": ["deps", "ci-scripts"]}, "the Flagship policy (validated by deps, read by test_flagship.py)"),
     (r"^\.github/deploy/", {"jobs": ["hermetic", "ci-scripts"]}, "the CA root the deploy trusts (read by thrust-adapters-postgres's TLS tests)"),
     (r"^deny\.toml$", {"jobs": ["deny"]}, "cargo-deny's configuration"),
@@ -216,9 +218,6 @@ def plan(paths, dirs, deps, cells, full_reason=None):
     jobs, passes, changed = set(), set(), set()
     full = full_reason
     for path in paths:
-        if path.startswith(("infra/preview/", "infra/cloudflare/")):
-            jobs.update(("ci-scripts", "pg-adapter"))
-            notes.append(f"{path}: preview infrastructure -> ci-scripts, pg-adapter")
         for pattern, effect, why in COMPILED:
             if not pattern.search(path):
                 continue
@@ -245,8 +244,7 @@ def plan(paths, dirs, deps, cells, full_reason=None):
                 notes.append(f"{path}: {why} -> {', '.join(effect.get('jobs', []) + effect.get('passes', [])) or 'nothing'}")
             break
         else:
-            if not path.startswith(("infra/preview/", "infra/cloudflare/")):
-                notes.append(f"{path}: no job reads it")
+            notes.append(f"{path}: no job reads it")
 
     if full:
         return set(JOBS), list(cells), [f"everything: {full}"] + notes

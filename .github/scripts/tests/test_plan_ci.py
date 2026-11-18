@@ -179,7 +179,7 @@ ADR_0009 = {
 SAMPLES = [
     "Cargo.lock", ".config/branding/colors.css", ".config/nextest.toml", ".github/workflows/ci.yml", ".github/actions/setup-rust/action.yml",
     ".github/actions/contract-pass-tools/action.yml", ".github/actions/verdict/action.yml", ".github/scripts/assert-gate.sh",
-    ".github/scripts/toolchain-channel.sh", "scripts/contract.sh", "crates/core/usecases/src/lib.rs",
+    ".github/scripts/toolchain-channel.sh", "scripts/contract.sh", "crates/core/usecases/src/lib.rs", "infra/preview/provisioner-bootstrap.sql",
     ".github/deploy/flagship/policy.json", ".github/deploy/ca.pem", "deny.toml", "clippy.toml", "release-plz.toml", ".gitignore", "tools/oracle-v1/corpus/a.json",
     "tools/compat-record/record.py", "tools/compat-inventory/out-pinned/endpoint-inventory.csv",
     ".agents/plans/contrail/research/0003-compat-plane-inventory.md", "tools/e2e-har/scrub.py", "e2e/journeys/m1.spec.ts",
@@ -431,7 +431,7 @@ check("slices refuses a map that is not a partition", refused(lambda: pc.slices(
 # The files that run the checks `gate` waits for, today and as the migration adds them; and the ones that run no check, because they
 # have triggers of their own (the deploy and release flows, the schedules).
 CHECK_WORKFLOWS = ["ci", "contract-cell", "test", "lint", "documentation", "security", "web"]
-NO_CHECK_WORKFLOWS = ["deploy", "e2e", "flagship", "flake-hunt", "release", "release-plz", "cloudflare-infrastructure", "deploy-preview-provisioner", "enable-preview-provisioner", "preview-control-tests", "preview-reconcile"]
+NO_CHECK_WORKFLOWS = ["deploy", "e2e", "flagship", "flake-hunt", "release", "release-plz", "cloudflare-infrastructure", "deploy-preview-provisioner", "enable-preview-provisioner", "preview-reconcile"]
 for name in CHECK_WORKFLOWS:
     check(f".github/workflows/{name}.yml runs everything", run_plan([f".github/workflows/{name}.yml"], REAL_GRAPH), EVERYTHING)
 for name in NO_CHECK_WORKFLOWS:
