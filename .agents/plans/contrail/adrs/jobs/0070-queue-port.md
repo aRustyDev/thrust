@@ -122,6 +122,31 @@ This is the shape the native server already runs: `crates/thrust-server/src/main
 
 This supersedes the Decision's RabbitMQ adapter, the RabbitMQ sentences in the Consequences (prefetch, DLX and TTL equivalents; the delayed-message plugin; the consistent-hash exchange), the RabbitMQ testcontainer in the Confirmation, and the `lapin` part of its lint rule. Option 3's "polling load" objection does not apply to the self-hosted set: the outbox sweeper already polls the database every minute. Workflow-shaped needs no longer go to ADR-0071: long jobs are queue messages with a `jobs` table and idempotent steps (ADR-0071, round 29).
 
+Per FR-21 (`reviews/2026-10-19-fable-architecture-review.md`; the owner's decision is its §5 table, backlog, and answers Q-0006.5), the consumer's failure policy is decided by what the failure means for the message. `EventConsumer::handle` returns a `ConsumerError`, which the sketch above names and the port did not have: `Permanent` (the message is wrong, so delivering it again cannot help) is set aside at once, `Transient` (something the consumer needed was not there) is delivered again with a growing delay and set aside when the deliveries run out, and a body that is not an event is set aside as raw text before it is acknowledged, instead of being acknowledged and dropped. Natively the dead letters are a `dead_letters` table. Issue #53 built it; the next section says what it settled.
+
+## Update — issue #53 (2026-11-18)
+
+Issue #53 built the FR-21 policy of the round-29 note, on the in-process queue (native, and the Worker's in-memory target) and on the Worker's consumer of Cloudflare Queues alike.
+
+| What arrives | What happens |
+|---|---|
+| a body that is not an event | set aside at once, as it came, with no event id; the consumer is not asked |
+| an event the consumer accepts | acknowledged |
+| `Permanent`: `Invalid` (an event with no `project_id`), `NotFound`, the authorization errors, `TooLarge` | set aside at once |
+| `Transient`: `Internal` (every port error reaches core as this), `Upstream`, `RateLimited`, `Conflict` | delivered again after 5, 10 and 20 s; set aside at its fourth delivery |
+
+What it settled where the note and the code could have differed:
+
+* **The kind is chosen in core, by variant, in `consumer_error`**, whose `match` names every `CoreError` and has no wildcard arm, so a new variant cannot be added without a decision. A database that is down is transient and a message with no `project_id` is permanent, which is what matters. One known misclassification: a history row for a work item the adapter does not have comes back as `DbError::Backend`, so it is transient. It is delivered four times and then set aside with its reason, which costs three retries and loses nothing.
+* **`MAX_DELIVERIES` is 4**: the first delivery and three retries. The Worker's `max_retries = 3` is the same number, so Cloudflare's own limit only backs the policy up, and the deploy parity test reads the constant from `thrust-ports` and holds both configs to it.
+* **One policy, in `thrust-ports`:** `disposition` and `retry_delay` decide for every adapter, and `settle` and `settle_dead_letter` are the Worker's side (decode, ask, decide; and read the dead-letter queue), so the Worker is a shell that reads a message and acts. They are tested natively.
+* **Setting aside is a row of `dead_letters`** (migration 0020; no tenant, because a body that does not decode names none). Its `id` is the queue's own id for the message, so a message delivered again is one row. `attempts` is nullable: Cloudflare's dead-letter queue starts the count again (research 0004, F4), so a message the queue moved there has none. Text is stored with a NUL replaced by U+FFFD, because Postgres cannot store one and a body is whatever a producer sent.
+* **The Worker sends a `DeadLetterMessage` to the dead-letter queue and consumes that queue itself**, and does not write the row from the events handler. One writer then makes the same row whether the Worker set the message aside or Cloudflare moved it after its retries, and a failed database write is delivered again (the queue holds the message) and not lost. A message near the 128 KB ceiling cannot be wrapped (the wrapper adds the reason and escaping): it reaches the table by Cloudflare's backstop, with no count and no reason.
+* **A dead letter whose own write fails four times is lost** on the in-process queue, which counts it (`MemoryQueue::lost_count`); on the Worker the dead-letter queue's consumer has `max_retries = 10` and nothing behind it. Nothing reads the count yet.
+* **A queue has one active consumer**, so the Worker now owns each environment's dead-letter queue: check that nothing else is attached before the first deploy of a build that consumes it.
+
+The test that holds it, `permanent_consumer_error_is_dead_lettered_without_retry`, runs on every contract target against `GET /internal/dead-letters` (test routes, the admin token), with `worker_bindings_undecodable_message_is_dead_lettered` for the body that is not an event, which only a probe can send (`/internal/inject-event` takes a valid envelope). The planted `mutant_invalid_is_transient` is its control. What is not shown is in `docs/src/testing/status.md`, G-47.
+
 ## Open Questions
 
 * Q-0073 — which tasks are Queue consumers vs Workflow vs Cron vs sync (mapping in ADR-0073).

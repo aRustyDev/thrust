@@ -63,7 +63,12 @@ killed by `prop_a_code_the_page_does_not_list_is_an_outage`; `mutant_cf_email_fr
 not hand the mail service to the app, which the Worker cells' `mail` pass refuses to run against (exit 5). That one has **no `scripts/mutants.sh` row**: it needs the wasm
 build, which that script and its CI job do not make, so it was run by hand on 2026-11-15 (`worker-memory mail`, build command edited to pass
 `--features mutant_worker_email_unwired`: `VACUITY GUARD: is_smtp_configured is not true`, no test run), as was `thrust-adapters-cloudflare/mutant_cf_email_from_is_recipient`
-through the Worker, which the simulator's `allowed_sender_addresses` refuses),
+through the Worker, which the simulator's `allowed_sender_addresses` refuses), and `crates/core/usecases`'s `mutant_invalid_is_transient` (issue #53),
+which treats an event the consumer rejects as invalid like a transient failure, so that it is delivered again with the backoff and not set aside at once: killed
+by the contract suite's `permanent_consumer_error_is_dead_lettered_without_retry`, which waits 15 s for a row with a count of one, and by nothing else
+(its `scripts/mutants.sh` row runs on native-memory; on 2026-11-18 it was also run by hand on `worker-cf main`, 73 passed and that test failed, and so was
+restoring the acknowledge-and-drop of a message that is not an event in the Worker's consumer, `worker-cf main` and `bindings`, where the two new tests failed and
+nothing else did),
 gated with `#[cfg(feature = "mutant_…")]` at the line they break, passed through by `thrust-server`. Each is listed
 in `scripts/mutants.sh`. cargo-mutants: configured by `.cargo/mutants.toml` and the `mutants` nextest profile;
 `mutants.out*` is never committed.

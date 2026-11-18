@@ -73,7 +73,9 @@ a copy that is missing a value fails its job with the name of the value.)
   runs. Manual runs do not need it.
 - **What is behind the variables**, in the infrastructure repository: for staging, a schema and a login role on
   `thrust-pg-dev` (with `pg_trgm` installed in `public` by an administrator, which migration `0006` needs and a schema-only
-  role cannot do), a Hyperdrive configuration for that role, an R2 bucket, a queue and its dead-letter queue, two
+  role cannot do), a Hyperdrive configuration for that role, an R2 bucket, a queue and its dead-letter queue (the Worker
+  consumes both, issue #53, and a queue has one active consumer, Cloudflare says, so check that nothing
+  else is attached to the dead-letter queue before the first deploy of a build that consumes it), two
   rate-limit namespace ids (sign-in and `/api/v1`) that differ from each other and are not `1001` to `1004`, the Custom Domain, and the tunnel, Access application and service
   token that `scripts/migrate-ci.sh` uses. The CA that signs `thrust-pg`'s certificate is in the repository
   (`.github/deploy/`, expires 2029-08-15).
