@@ -37,6 +37,7 @@ PLAN, GATE = "plan-ci.py", "assert-gate.sh"
 CI, DOC, SEC, WEB, LNT, TST = "ci.yml", "documentation.yml", "security.yml", "web.yml", "lint.yml", "test.yml"  # ci.yml, and each called workflow
 ACT = "verdict/action.yml"  # the action every called workflow's `verdict` job calls
 DEEP = "deep.yml"  # not a called workflow: the nightly run of the randomized tests, which nothing waits for
+TOOLS = "contract-pass-tools/action.yml"  # what a pass needs on the runner; the e2e cells are the longest job of every full run
 SHELL = shutil.which("dash") or "sh"
 TIMEOUT = 900
 # where each target lives, relative to the repository root
@@ -51,9 +52,10 @@ TARGET_PATH = {
     TST: ".github/workflows/test.yml",
     ACT: ".github/actions/verdict/action.yml",
     DEEP: ".github/workflows/deep.yml",
+    TOOLS: ".github/actions/contract-pass-tools/action.yml",
 }
 # The workflows that tests judge as files: a mutant of one of these must fail test_workflow_wiring.py.
-WIRED = (CI, DOC, SEC, WEB, LNT, TST, ACT, DEEP)
+WIRED = (CI, DOC, SEC, WEB, LNT, TST, ACT, DEEP, TOOLS)
 
 # The called workflows, each with its file, its jobs (in the order the file has them), and the text of ci.yml's `gate` needs that names its
 # call and what that becomes without it. A stage of the migration adds a row, and every mutant below that is written for "a called
@@ -310,6 +312,9 @@ MUTANTS = [
     (DEEP, "deep saves the cache and may evict what the pull requests use", "save-cache: 'false'", "save-cache: 'true'"),
     (DEEP, "deep is called by another workflow", "on:\n  workflow_dispatch:", "on:\n  workflow_call:\n  workflow_dispatch:"),
     (DEEP, "deep never runs by itself", "  schedule:\n    - cron: \"37 5 * * *\"\n", ""),
+    # contract-pass-tools (Test phase, stage 6): the e2e cells get the browser and not the fonts apt would add (138 s to 57 s of the tools step, the cell's tail gone); nothing fails without it
+    (TOOLS, "the e2e tools step apt-installs the browser's system packages again", "        pnpm --dir e2e exec playwright install chromium\n", "        pnpm --dir e2e exec playwright install --with-deps chromium\n"),
+    (TOOLS, "the e2e tools step no longer installs the browser", "        pnpm --dir e2e exec playwright install chromium\n", ""),
 ]
 MUTANTS += call_mutants()
 
@@ -325,6 +330,7 @@ EQUIVALENT = [
     (TST, "(equivalent) a comment is added to test.yml", "permissions: {}\n\njobs:", "permissions: {}\n\n# a comment\njobs:"),
     (ACT, "(equivalent) a comment is added to the verdict action", "runs:\n  using: composite\n", "runs:\n  # a comment\n  using: composite\n"),
     (DEEP, "(equivalent) a comment is added to deep.yml", "permissions: {}\n\njobs:", "permissions: {}\n\n# a comment\njobs:"),
+    (TOOLS, "(equivalent) a comment is added to contract-pass-tools", "runs:\n  using: composite\n", "runs:\n  # a comment\n  using: composite\n"),
 ]
 
 

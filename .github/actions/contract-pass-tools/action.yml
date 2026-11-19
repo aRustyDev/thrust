@@ -23,7 +23,7 @@ runs:
 
     # The e2e pass, and the e2e-mail pass (the same, for the journeys that need a mail service), drive the stock app in Chromium
     # (scripts/e2e.sh): Node and pnpm at the versions web/ pins, the app built, the journey's own dependencies at their lockfile, and
-    # the browser with the system libraries it needs. Only those passes need them.
+    # the browser (without apt-installing its system packages: see the comment on the install). Only those passes need them.
     # Dependency scripts stay off, as in the `web` job: the build does not need them.
     - name: Node (e2e pass)
       if: inputs.pass == 'e2e' || inputs.pass == 'e2e-mail'
@@ -45,7 +45,14 @@ runs:
         pnpm --dir web exec turbo run build --filter=web
         test -s web/apps/web/build/client/index.html
         pnpm --dir e2e install --frozen-lockfile --ignore-scripts
-        pnpm --dir e2e exec playwright install --with-deps chromium
+        # The browser, and not its system packages: `playwright install --with-deps chromium` only apt-installs fonts here (fonts-freefont-ttf,
+        # fonts-ipafont-gothic, fonts-tlwg-loma-otf, fonts-unifont, fonts-wqy-zenhei and the xfonts-* set, about 32 MB) and four Mesa upgrades, because
+        # the runner image already has the libraries Chromium needs. That download took 8 minutes at 66 kB/s on a slow mirror, and it was most of the e2e
+        # cell's run-to-run spread (this step 61 to 577 s over 24 runs, the cell 491 to 1,068 s, the longest job of every full run). No journey asserts on
+        # rendering (a screenshot is taken only on a failure, and those now lack the CJK glyphs). Four paired rounds, both e2e cells each, all passed
+        # without them: this step 138 s to 57 s (e2e) and 114 s to 56 s (e2e-mail) at the medians. If a runner image ever lacks a library, Playwright's
+        # own error says so: put `--with-deps` back.
+        pnpm --dir e2e exec playwright install chromium
 
     - name: Preflight - host tools scripts/contract.sh relies on
       shell: bash
