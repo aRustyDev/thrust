@@ -126,6 +126,15 @@ progress_ok() {
   ran="$(wc -l <"$T/$2-progress-4-1.ran" | tr -d ' ')"
   if [ "$got" != "$ran 0" ]; then echo "the log names '$got' (rows, of another shard) for $ran rows run"; return 1; fi
 }
+fail_fast_ok() {
+  # the discard-noop row ends at its first failure, and no other adapter row does: the others look for a needle that one aimed test prints, and a test
+  # terminated because another failed first would turn their kill into UNCLEAR
+  run_shard "$1" 1 0 "$2-ff"
+  ff_adapters="$(grep '^adapter ' "$T/$2-ff-1-0.ran")"
+  ff_with="$(printf '%s\n' "$ff_adapters" | grep -c -- '--max-fail=1:immediate')"
+  if [ "$ff_with" != 1 ]; then echo "$ff_with adapter rows end at their first failure, wanted 1"; return 1; fi
+  if ! printf '%s\n' "$ff_adapters" | grep -- '--max-fail=1:immediate' | grep -q -- '--features mutant_discard_noop '; then echo "the row that does is not discard-noop"; return 1; fi
+}
 bad_settings_refused() {
   # shards:index pairs that are not a shard of a split, each refused with exit 2 and before a row runs
   for bs_pair in 4:4 0:0 4:x 04:1 4: :1 4:-1 3:7; do
@@ -140,6 +149,7 @@ check "the shards together run every row once, the list names those rows, the gu
 check "a shard with no row fails and says so" empty_shard_fails "$T/real" real
 check "a count or an index that is not a shard of a split is refused before a row runs" bad_settings_refused "$T/real" real
 check "the log names each row the shard starts, and only its own" progress_ok "$T/real" real
+check "the discard-noop row ends at its first failure, and no other adapter row does" fail_fast_ok "$T/real" real
 
 # 3. the controls: each broken copy must be rejected by the check aimed at it
 variant() {
@@ -154,6 +164,8 @@ variant "$T/k5.sh" "$LIB" 's/if \[ "\$1" -ne "\$ROWS_SELECTED" \]; then/if false
 variant "$T/k7.sh" "$LIB" 's/\[ "\$SHARD_I" -ge "\$SHARD_N" \]/false/'
 variant "$T/k8.sh" "$LIB" '/^    echo "row \$ROW_N: \$1"$/d'
 variant "$T/k3-mutants.sh" "$MUTANTS" '/want "cloudflare email adapter + \$name" || continue/d'
+variant "$T/k9-mutants.sh" "$MUTANTS" "s/ --max-fail=1:immediate\$//"
+variant "$T/k10-mutants.sh" "$MUTANTS" 's/-E "\$ar_set" "\$@"/-E "$ar_set" --max-fail=1:immediate "$@"/'
 
 control "a wrong modulus: positions" lib_positions_ok "$T/k1.sh"
 control "a want that always selects: positions" lib_positions_ok "$T/k2.sh"
@@ -174,6 +186,10 @@ mk_tree "$T/k7" "$MUTANTS" "$T/k7.sh"
 control "an index past the last shard accepted" bad_settings_refused "$T/k7" k7
 mk_tree "$T/k8" "$MUTANTS" "$T/k8.sh"
 control "a row that is not named in the log when it starts" progress_ok "$T/k8" k8
+mk_tree "$T/k9" "$T/k9-mutants.sh" "$LIB"
+control "the discard-noop row no longer ends at its first failure" fail_fast_ok "$T/k9" k9
+mk_tree "$T/k10" "$T/k10-mutants.sh" "$LIB"
+control "every adapter row ends at its first failure" fail_fast_ok "$T/k10" k10
 
 echo "passed=$pass bad=$failn (of $n)"
 [ "$failn" -eq 0 ] && [ "$pass" = "$n" ]
