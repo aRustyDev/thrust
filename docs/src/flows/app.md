@@ -13,7 +13,8 @@ same on the Worker and on the native server. The crates involved are on
 
 | Method and path | Needs | Answers |
 |---|---|---|
-| `GET /healthz` | nothing | 200 `ok`. The Worker also sends `x-thrust-version` (on every response it routes), which the deploy's smoke compares with the commit it deployed; the native server sends none |
+| `GET /healthz` | nothing | 200 `ok`. The Worker also sends `x-thrust-version` (on every response it routes), which the deploy's smoke compares with the commit it deployed; the native server sends none. Any other query string is ignored, so the smoke's `?smoke=N` and the edge's `?edge-control=...` get the same 200 |
+| `GET /healthz?deep=1` | nothing | The deep health check (issue #42, ADR-0094): one statement (`SELECT now()`, which Hyperdrive never caches) through the database, and 200 `ok`, or 503 `unavailable` with no word of why (the cause is logged, never sent). Both answers are `no-store`. `status.woven` probes it every 60 s, and the availability SLO is read from that probe (SPEC §6.4). Plain `/healthz` stays database-free |
 | `GET /api/_slice/workspaces/{slug}/projects/{project_id}/work-items/{id}/activity` | Bearer token, role Guest | 200 and the item's activity |
 | `GET /api/_slice/workspaces/{slug}/projects/{project_id}/activity` | Bearer token, role Guest | 200 and the project's activity |
 | `PUT /api/_slice/workspaces/{slug}/projects/{project_id}/work-items/{id}/attachments/{name}` | Bearer token, role Member | 204 |
