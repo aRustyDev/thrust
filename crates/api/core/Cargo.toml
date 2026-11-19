@@ -15,9 +15,19 @@ serde_json = { workspace = true }
 # default-features = false drops `tokio`, `http1`, `tracing`, `form`... — only the pure router
 # + extractors remain, which is what compiles to wasm32 and runs under workerd.
 axum = { version = "0.8", default-features = false, features = ["json", "query", "matched-path"] }
+# The query string of `/healthz`, as `axum`'s own `Query` reads it (already in the graph through axum; thrust-api-v1 takes it the same way).
+form_urlencoded = "1"
 
-# Test-only, the same pins as thrust-core's: `scripts/check-deps.sh` checks normal dependencies, so neither reaches the router's graph.
+# Test-only, the same pins as thrust-core's: `scripts/check-deps.sh` checks normal dependencies, so none of these reaches the router's graph.
+# tests/healthz.rs drives the router in process with `oneshot` over the memory adapters (a database that is up) and over the Postgres adapter
+# with a `Connector` that always refuses (a database that is down: the one `Database` that can fail with no server). The router future never
+# yields to a reactor, so a plain executor drives it.
 [dev-dependencies]
+thrust-adapters-memory = { workspace = true }
+thrust-adapters-postgres = { workspace = true }
+tower = { version = "0.5", features = ["util"] }
+futures-executor = "0.3"
+async-trait = { workspace = true }
 proptest = "1"
 rstest = "0.26"
 

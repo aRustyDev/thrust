@@ -35,6 +35,56 @@ async fn health_ok() {
     assert_eq!(r.text().await.unwrap(), "ok");
 }
 
+/// The deep health check (issue #42, ADR-0094): `GET /healthz?deep=1` runs one statement through the database, and `status.woven` probes
+/// it every 60 s, so the availability SLO is read from it. With the database up it answers 200 `ok` and `no-store` (a cached `ok` would
+/// measure the cache), on every target. Plain `/healthz`, with any other query string (the deploy's smoke and the edge's controls send
+/// their own), stays 200 `ok` and asks the database nothing.
+///
+/// What the status code cannot show is that the deep path reached the database and the plain one did not, so on a target that counts
+/// statements (test routes on, a Postgres set) the count is the evidence: `x-thrust-db-round-trips` is 1 for a deep request and 0 for a
+/// plain one. A memory target counts nothing, and the header must be absent there. The answer to a database that is DOWN (503, and a body
+/// that says nothing of why) is `crates/api/core/tests/healthz.rs`: no pass of this suite stops a database (docs/src/testing/status.md G-48).
+#[tokio::test]
+async fn deep_healthz_reports_the_database() {
+    // Every query string the suite sends, and whether it asks for the deep check. The router test has the full table.
+    const QUERIES: &[(&str, bool)] = &[
+        ("", false),
+        ("?smoke=7", false),
+        ("?edge-control=forged-pin", false),
+        ("?deep=0", false),
+        ("?deep", false),
+        ("?Deep=1", false),
+        ("?deep=1", true),
+        ("?deep=%31", true),
+        ("?smoke=7&deep=1", true),
+    ];
+    const HEADER: &str = "x-thrust-db-round-trips";
+    let t = t();
+    let adapters = t.info().await["adapters"].as_str().expect("/_info names the adapter set").to_string();
+    for (query, deep) in QUERIES {
+        let r = t.http.get(t.url(&format!("/healthz{query}"))).send().await.unwrap();
+        let what = format!("[{adapters}] GET /healthz{query}");
+        assert_eq!(r.status(), 200, "{what}");
+        if *deep {
+            let cache = r.headers().get("cache-control").map(|v| v.to_str().unwrap().to_string());
+            assert_eq!(cache.as_deref(), Some("no-store"), "{what}: a cached answer would measure the cache");
+        }
+        let sent = r.headers().get(HEADER).map(|v| v.to_str().unwrap().parse::<u32>().unwrap());
+        assert_eq!(r.text().await.unwrap(), "ok", "{what}");
+        match adapters.as_str() {
+            "postgres" | "cloudflare" => assert_eq!(
+                sent,
+                Some(u32::from(*deep)),
+                "{what}: {HEADER} is the statements the request sent: one for the deep check, none for a plain /healthz"
+            ),
+            "memory" => {
+                assert_eq!(sent, None, "{what}: a memory target counts nothing, so a count there is not a count")
+            }
+            other => panic!("this test does not know the adapter set '{other}': say what it counts"),
+        }
+    }
+}
+
 /// The prefix the slice's routes left (#47, FR-06): `/api/v1` is reserved for routes that are wire-compatible with
 /// Plane. This is the one place the suite names it, on purpose, to show nothing is served there any more.
 const RETIRED_SLICE_PREFIX: &str = "/api/v1";
