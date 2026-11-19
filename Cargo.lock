@@ -4096,7 +4096,7 @@ dependencies = [
 
 [[package]]
 name = "thrust-preview-migration-executor"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "futures-util",
  "proptest",
