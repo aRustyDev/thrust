@@ -167,7 +167,7 @@ impl WorkspaceScope {
 }
 
 /// Permission for the untenanted operations: the outbox relay and sweeper, the queue consumer's
-/// activity write, and `seed`. Minted only by the composition roots and the consumer entry
+/// activity write, the deep health check (`ping`), and `seed`. Minted only by the composition roots and the consumer entry
 /// (ADR-0045 round 29); `scripts/check-deps.sh` rejects a call to [`SystemScope::mint`] elsewhere.
 #[derive(Debug)]
 pub struct SystemScope {
@@ -796,6 +796,16 @@ pub struct AssetRow {
     pub deleted_at: Option<Timestamp>,
 }
 
+/// A soft-deleted work item that the retention job may now delete for good (issue #59), with the place its blobs are under
+/// (`{workspace}/{project}/{id}/`) and the time that places it in the job's walk.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PurgeCandidate {
+    pub workspace_id: WorkspaceId,
+    pub project_id: ProjectId,
+    pub id: WorkItemId,
+    pub deleted_at: Timestamp,
+}
+
 #[async_trait]
 pub trait Database: Send + Sync {
     /// The one call that runs before a [`Scope`] exists: only `thrust_core::authorize` makes it,
@@ -1238,6 +1248,53 @@ pub trait Database: Send + Sync {
     async fn mark_outbox_dispatched(&self, sys: &SystemScope, event: EventId, at: Timestamp) -> Result<(), DbError>;
 
     async fn outbox_depth(&self, sys: &SystemScope) -> Result<u64, DbError>;
+
+    // --- Retention (issue #59, F-D10, deviation D-001). A job that runs for every tenant at once, so each of these takes the
+    // `SystemScope`. A row is old when its time is strictly before the cutoff, as Plane's `deleted_at < now - days` has it: a row
+    // deleted exactly `days` ago stays.
+
+    /// The soft-deleted work items that may be deleted for good, in the order of (`deleted_at`, `id`) with the id compared byte by
+    /// byte, from the one after `after` (the last one of the page before) and at most `limit` of them. A work item is one when
+    /// its own `deleted_at` is before `cutoff` and so is that of every work item under it, so that a work item that is live, or was
+    /// deleted since, is never left without the parent it names. (The pin lets a work item be its own parent, and a loop of work
+    /// items be each other's: each is old, so each is taken, whole.) Walking by the key, not from the first row each time, lets a
+    /// caller move on past a row it cannot delete yet.
+    async fn purgeable_work_items(
+        &self,
+        sys: &SystemScope,
+        cutoff: Timestamp,
+        after: Option<(Timestamp, WorkItemId)>,
+        limit: u32,
+    ) -> Result<Vec<PurgeCandidate>, DbError>;
+
+    /// Delete for good the work items among `ids` that are still purgeable at `cutoff` (the rule of [`Database::purgeable_work_items`],
+    /// asked again under a lock, so a row that changed since the page was read is left), with what hangs on them: their assignee and
+    /// label rows and their history (deviation D-043: Plane keeps it, and no read shows it once its work item is gone). The
+    /// `activity` projection and the project's counters stay (a deleted number is never handed out again, ADR-0043 B1). All or
+    /// nothing. Returns how many work items it deleted, which is fewer than `ids` when some were not purgeable. (In Postgres a
+    /// work item that stays but names one that goes as its parent loses the name, because the foreign key would refuse the delete.)
+    async fn purge_work_items(&self, sys: &SystemScope, ids: &[WorkItemId], cutoff: Timestamp) -> Result<u64, DbError>;
+
+    /// Delete the oldest (by `created_at`, then by event) `limit` outbox rows that were dispatched and were made before `cutoff`.
+    /// A row that was not dispatched is never deleted, however old: it is a message that has not gone out. Returns how many.
+    async fn purge_outbox(&self, sys: &SystemScope, cutoff: Timestamp, limit: u32) -> Result<u64, DbError>;
+
+    /// Test support behind `/internal/work-items/{id}`: the work item's `deleted_at` whatever its state, as the table has it. `None`
+    /// when no row has the id (never there, or deleted for good); `Some(None)` for a live one; `Some(Some(at))` for a deleted one.
+    async fn work_item_deleted_at(
+        &self,
+        sys: &SystemScope,
+        id: WorkItemId,
+    ) -> Result<Option<Option<Timestamp>>, DbError>;
+
+    /// The deep health check (issue #42, ADR-0094): run one statement through the database's own path and say whether it answered.
+    /// `GET /healthz?deep=1` is what calls it, and `status.woven` probes that every 60 s, so the SLO is measured through the
+    /// tunnel and the cluster and not only through the Worker. It reads nothing and writes nothing, and belongs to no tenant.
+    ///
+    /// The statement must be one that Hyperdrive never answers from its cache (`SELECT now()`, which is STABLE; a read that uses only
+    /// IMMUTABLE functions, `select 1` among them, can be). An adapter with no network has nothing to reach and answers `Ok`.
+    /// There is deliberately no default body: an adapter that forgot this method would report healthy without asking anything.
+    async fn ping(&self, sys: &SystemScope) -> Result<(), DbError>;
 
     /// Set a message aside (ADR-0070, issue #53): the queue consumer's write of a dead letter. Idempotent on `id`, so a message that
     /// is delivered again after it was set aside makes no second row; returns `true` if a row was inserted, `false` if the id was

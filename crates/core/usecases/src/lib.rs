@@ -500,6 +500,12 @@ pub async fn outbox_depth(app: &App) -> Result<u64, CoreError> {
     Ok(app.ports.db.outbox_depth(&app.system).await?)
 }
 
+/// The deep health check behind `GET /healthz?deep=1` (issue #42, ADR-0094): one statement through the database, and an error if it did
+/// not answer. It is a use-case and not a call from the handler because the `SystemScope` it needs stays inside `App`.
+pub async fn ping_database(app: &App) -> Result<(), CoreError> {
+    Ok(app.ports.db.ping(&app.system).await?)
+}
+
 /// Test support behind `/internal/seed`: insert fixture rows.
 pub async fn seed(app: &App, fixture: &SeedFixture) -> Result<(), CoreError> {
     app.ports.db.seed(&app.system, fixture).await?;
@@ -782,10 +788,13 @@ mod tests {
 
     /// Visible characters (multi-byte ones included, since the limit counts characters), with the two end lengths of
     /// the range drawn on their own as well: a uniform length almost never is one.
+    ///
+    /// Built, not filtered: a whitespace draw becomes `x`. A `prop_filter` here rejected about 7.7% of the characters, about 22 a case,
+    /// and proptest gives up at 65,536 local rejects, which 4096 cases pass (status G-48): `visible_names_are_built_not_filtered`.
     fn non_whitespace(len: std::ops::RangeInclusive<usize>) -> impl Strategy<Value = String> {
         let (lo, hi) = (*len.start(), *len.end());
         prop_oneof![1 => Just(lo), 1 => Just(hi), 8 => len].prop_flat_map(|n| {
-            prop::collection::vec(any::<char>().prop_filter("not whitespace", |c| !c.is_whitespace()), n)
+            prop::collection::vec(any::<char>().prop_map(|c| if c.is_whitespace() { 'x' } else { c }), n)
                 .prop_map(|cs| cs.into_iter().collect::<String>())
         })
     }
@@ -848,6 +857,22 @@ mod tests {
         fn prop_blob_names_with_a_slash_are_rejected(before in segment(), after in segment()) {
             let name = format!("{before}/{after}");
             prop_assert!(validate_blob_name(&name).is_err());
+        }
+    }
+
+    /// Rule 8 for `non_whitespace`: it builds its strings, so it never rejects. A runner that allows no rejects at all fails a
+    /// strategy that filters on its first discarded draw (the `prop_filter` it had was found by the `deep` profile, status G-48), and
+    /// no string it builds has whitespace in it.
+    #[test]
+    fn visible_names_are_built_not_filtered() {
+        use proptest::strategy::ValueTree;
+        use proptest::test_runner::{Config, RngAlgorithm, TestRng, TestRunner};
+
+        let config = Config { max_local_rejects: 0, max_global_rejects: 0, ..Config::default() };
+        let mut runner = TestRunner::new_with_rng(config, TestRng::deterministic_rng(RngAlgorithm::ChaCha));
+        for _ in 0..256 {
+            let name = non_whitespace(256..=320).new_tree(&mut runner).expect("the strategy rejected a draw").current();
+            assert!(!name.chars().any(char::is_whitespace), "{name:?} has whitespace");
         }
     }
 

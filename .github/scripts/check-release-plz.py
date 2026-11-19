@@ -27,9 +27,20 @@ crate is in it when its package name is (a crate that moved directory is not new
             of the release commit itself, from the moment the release is tagged until the pattern is removed.
 Exit 2: a file is missing or is not TOML, or --first-release finds no tag v<major>.<minor>.<patch> (a checkout without
 tags) or cannot read the tag's manifests.
+
+    python3 -I .github/scripts/check-release-plz.py --release-tag [<repository root>] < releases.json
+
+prints the one tag a release made, for release-plz.yml to start release.yml on, and checks nothing else. The input is
+release-plz's `releases` output: one object per crate released, each with the tag its git_tag_name gives. Only the tagger
+(the entry with git_tag_enable = true) makes its tag, so a crate on its first-release pattern is listed with a tag
+<name>-v<version> that does not exist (release v0.3.0 listed five). The tag is the tagger's, and it must be v<version>.
+Exit 1 when the tagger is not released exactly once or its tag is not v<its version>; exit 2 when the input is not a JSON
+list of objects or release-plz.toml has not exactly one tagger. None of the checks above runs: by now the tag exists, and
+a stale first-release pattern (which `exact` refuses) must not keep a made release from being published.
 """
 
 import argparse
+import json
 import pathlib
 import re
 import subprocess
@@ -175,11 +186,42 @@ def problems(root, first_release=None):
     return tag, found
 
 
+def release_tag(root, text):
+    """The tag of the release in release-plz's `releases` output `text`, and None; or None and why there is none."""
+    config = load(pathlib.Path(root) / "release-plz.toml")
+    taggers = [e.get("name") for e in config.get("package", []) if e.get("git_tag_enable") is True]
+    if len(taggers) != 1:
+        stop(f"exactly one [[package]] entry must have git_tag_enable = true, found {len(taggers)}")
+    tagger = taggers[0]
+    try:
+        releases = json.loads(text)
+    except json.JSONDecodeError as e:
+        stop(f"release-plz's releases are not JSON: {e}")
+    if not isinstance(releases, list) or not all(isinstance(r, dict) for r in releases):
+        stop("release-plz's releases are not a JSON list of objects")
+    mine = [r for r in releases if r.get("package_name") == tagger]
+    if len(mine) != 1:
+        return None, f"release-plz released {tagger}, the crate that makes the tag, {len(mine)} times, not once"
+    tag, version = mine[0].get("tag"), mine[0].get("version")
+    if not isinstance(version, str) or not version or tag != f"v{version}":
+        return None, f"{tagger}'s tag is {tag!r}, not v<version> of its version {version!r}"
+    return tag, None
+
+
 def main(argv):
     parser = argparse.ArgumentParser(prog="check-release-plz.py")
-    parser.add_argument("--first-release", choices=["required", "exact"])
+    modes = parser.add_mutually_exclusive_group()
+    modes.add_argument("--first-release", choices=["required", "exact"])
+    modes.add_argument("--release-tag", action="store_true")
     parser.add_argument("root", nargs="?", default=".")
     args = parser.parse_args(argv[1:])
+    if args.release_tag:
+        tag, problem = release_tag(args.root, sys.stdin.read())
+        if problem:
+            print(f"check-release-plz: {problem}", file=sys.stderr)
+            return 1
+        print(tag)
+        return 0
     tag, found = problems(args.root, args.first_release)
     for p in found:
         print(f"check-release-plz: {p}")

@@ -139,6 +139,12 @@ jobs:
     timeout-minutes: 30
     permissions:
       contents: read
+    # No debug info in this job's builds (the `mutants` profile already has none). Measured 2026-11-19, three warm runs of the job each: the nextest step 99 s
+    # to 72 s, the job 162-171 s to 134 s, the cache 605 MiB to 401 MiB, the same 4,780 + 26 tests passing. A panic still names its file and line; only a
+    # backtrace loses its file:line frames. At the job level so that every cargo step shares one profile (a different one rebuilds), and so that rust-cache
+    # puts it in the cache key (it hashes CARGO_* variables): the first run on main after this builds a new cache. The phase document has the numbers.
+    env:
+      CARGO_PROFILE_DEV_DEBUG: none
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -225,9 +231,9 @@ jobs:
   mutants:
     if: contains(fromJSON(inputs.plan), 'mutants')
     runs-on: ubuntu-24.04
-    # A shard is about four minutes, so this stops a hung row at a fifth of what the one runner of the 54 rows was given (45).
+    # A shard is about four minutes, so this stops a hung row at a fifth of what the one runner of the 57 rows was given (45).
     timeout-minutes: 20
-    # The 54 rows (scripts/mutants.sh) cannot share a checkout: each rebuilds thrust-server with a mutant's cargo feature into one `target/`
+    # The 57 rows (scripts/mutants.sh) cannot share a checkout: each rebuilds thrust-server with a mutant's cargo feature into one `target/`
     # and moves a JUnit report from a shared path. So the job is a matrix of runners with a `target/` each, and a runner runs the rows at its
     # positions (scripts/lib/mutants-shard.sh). The id stays `mutants`: a matrix job's `needs.mutants.result` is the aggregate of its legs, so
     # the planner, `verdict` and `gate` read it as before. The number of runners is the length of the list below, nothing else: the script is

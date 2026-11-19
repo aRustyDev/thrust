@@ -442,7 +442,7 @@ check("slices refuses a map that is not a partition", refused(lambda: pc.slices(
 # The files that run the checks `gate` waits for, today and as the migration adds them; and the ones that run no check, because they
 # have triggers of their own (the deploy and release flows, the schedules).
 CHECK_WORKFLOWS = ["ci", "contract-cell", "test", "lint", "documentation", "security", "web"]
-NO_CHECK_WORKFLOWS = ["deploy", "e2e", "flagship", "flake-hunt", "release", "release-plz", "cloudflare-infrastructure", "edge-infrastructure", "deploy-preview-provisioner", "enable-preview-provisioner", "preview-reconcile", "preview-migration-source"]
+NO_CHECK_WORKFLOWS = ["deploy", "deep", "e2e", "flagship", "flake-hunt", "release", "release-plz", "cloudflare-infrastructure", "edge-infrastructure", "deploy-preview-provisioner", "enable-preview-provisioner", "preview-reconcile", "preview-migration-source"]
 for name in CHECK_WORKFLOWS:
     check(f".github/workflows/{name}.yml runs everything", run_plan([f".github/workflows/{name}.yml"], REAL_GRAPH), EVERYTHING)
 for name in NO_CHECK_WORKFLOWS:

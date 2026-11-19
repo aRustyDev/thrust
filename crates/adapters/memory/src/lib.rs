@@ -189,7 +189,56 @@ impl DbState {
     }
 }
 
+/// Whether a row made or deleted at `t` is old enough to go at `cutoff` (issue #59): strictly before it, as Plane's
+/// `deleted_at < now - days`, so a row of exactly the window's age stays.
+#[cfg(not(feature = "mutant_purge_at_cutoff"))]
+fn older_than(t: Timestamp, cutoff: Timestamp) -> bool {
+    t < cutoff
+}
+
+// MUTANT (control run only): a row of exactly the window's age goes too. The retention tests that sit on the boundary must catch it.
+#[cfg(feature = "mutant_purge_at_cutoff")]
+fn older_than(t: Timestamp, cutoff: Timestamp) -> bool {
+    t <= cutoff
+}
+
+/// Whether an outbox row may be deleted whatever its age (issue #59): only one that went out. One that did not is a message the
+/// sweeper still owes.
+#[cfg(not(feature = "mutant_outbox_purge_by_age"))]
+fn outbox_row_is_done(r: &OutboxRow) -> bool {
+    r.dispatched_at.is_some()
+}
+
+// MUTANT (control run only): an outbox row goes on its age alone, dispatched or not. The retention tests that keep an old row that
+// was never dispatched must catch it.
+#[cfg(feature = "mutant_outbox_purge_by_age")]
+fn outbox_row_is_done(_: &OutboxRow) -> bool {
+    true
+}
+
 impl DbState {
+    /// Whether the work item may be deleted for good at `cutoff` (the rule of `Database::purgeable_work_items`): it was deleted
+    /// before the cutoff, and so was every work item under it.
+    fn purgeable(&self, w: &WorkItem, cutoff: Timestamp) -> bool {
+        w.deleted_at.is_some_and(|t| older_than(t, cutoff)) && self.children_are_old(w, cutoff)
+    }
+
+    #[cfg(not(feature = "mutant_purge_ignores_children"))]
+    fn children_are_old(&self, w: &WorkItem, cutoff: Timestamp) -> bool {
+        // A work item that is its own parent is old, or `purgeable` would not have asked: it never keeps itself.
+        self.work_items
+            .iter()
+            .filter(|c| self.work_item_attrs.get(&c.id).and_then(|a| a.parent_id) == Some(w.id.0))
+            .all(|c| c.deleted_at.is_some_and(|t| older_than(t, cutoff)))
+    }
+
+    // MUTANT (control run only): a work item goes on its own time, whatever its children's. The tests that keep a work item that has a
+    // child which is not old (the forest property, and the named case) must catch it.
+    #[cfg(feature = "mutant_purge_ignores_children")]
+    fn children_are_old(&self, _: &WorkItem, _: Timestamp) -> bool {
+        true
+    }
+
     fn unique_violation(&self, item: &WorkItem) -> bool {
         match (&item.external_source, &item.external_id) {
             (Some(src), Some(ext)) => self.work_items.iter().any(|w| {
@@ -1846,6 +1895,90 @@ impl Database for MemoryDatabase {
     async fn outbox_depth(&self, _sys: &SystemScope) -> Result<u64, DbError> {
         let s = self.state.lock_unpoisoned();
         Ok(s.outbox.iter().filter(|r| r.dispatched_at.is_none()).count() as u64)
+    }
+
+    async fn purgeable_work_items(
+        &self,
+        _sys: &SystemScope,
+        cutoff: Timestamp,
+        after: Option<(Timestamp, WorkItemId)>,
+        limit: u32,
+    ) -> Result<Vec<PurgeCandidate>, DbError> {
+        let s = self.state.lock_unpoisoned();
+        let mut found: Vec<PurgeCandidate> = s
+            .work_items
+            .iter()
+            .filter(|w| s.purgeable(w, cutoff))
+            .filter_map(|w| {
+                Some(PurgeCandidate {
+                    workspace_id: w.workspace_id,
+                    project_id: w.project_id,
+                    id: w.id,
+                    deleted_at: w.deleted_at?,
+                })
+            })
+            .filter(|c| after.is_none_or(|(t, id)| (c.deleted_at, c.id) > (t, id)))
+            .collect();
+        found.sort_by_key(|c| (c.deleted_at, c.id));
+        found.truncate(limit as usize);
+        Ok(found)
+    }
+
+    async fn purge_work_items(
+        &self,
+        _sys: &SystemScope,
+        ids: &[WorkItemId],
+        cutoff: Timestamp,
+    ) -> Result<u64, DbError> {
+        let mut s = self.state.lock_unpoisoned();
+        // The rule is asked of the rows as they are before any of them goes: a work item and the work item under it may go together.
+        let gone: HashSet<WorkItemId> =
+            s.work_items.iter().filter(|w| ids.contains(&w.id) && s.purgeable(w, cutoff)).map(|w| w.id).collect();
+        if gone.is_empty() {
+            return Ok(0);
+        }
+        // Postgres clears the parent of a work item that stays and names one that goes, because its foreign key would refuse the
+        // delete. Here there is no key, and a deleted work item is read by nothing, so a name left pointing at a gone one is never seen.
+        s.work_item_attrs.retain(|id, _| !gone.contains(id));
+        s.work_items.retain(|w| !gone.contains(&w.id));
+        // The history goes with the work item, and so do its keys: Postgres frees `(event_id, ordinal)` with the row.
+        let dropped: Vec<(EventId, i32)> =
+            s.history.iter().filter(|r| gone.contains(&r.work_item_id)).map(|r| (r.event_id, r.ordinal)).collect();
+        s.history.retain(|r| !gone.contains(&r.work_item_id));
+        for key in dropped {
+            s.history_keys.remove(&key);
+        }
+        Ok(gone.len() as u64)
+    }
+
+    async fn purge_outbox(&self, _sys: &SystemScope, cutoff: Timestamp, limit: u32) -> Result<u64, DbError> {
+        let mut s = self.state.lock_unpoisoned();
+        let mut old: Vec<(Timestamp, EventId)> = s
+            .outbox
+            .iter()
+            .filter(|r| outbox_row_is_done(r) && older_than(r.created_at, cutoff))
+            .map(|r| (r.created_at, r.envelope.event_id))
+            .collect();
+        old.sort();
+        old.truncate(limit as usize);
+        let doomed: HashSet<EventId> = old.into_iter().map(|(_, event)| event).collect();
+        let rows = s.outbox.len();
+        s.outbox.retain(|r| !doomed.contains(&r.envelope.event_id));
+        Ok((rows - s.outbox.len()) as u64)
+    }
+
+    async fn work_item_deleted_at(
+        &self,
+        _sys: &SystemScope,
+        id: WorkItemId,
+    ) -> Result<Option<Option<Timestamp>>, DbError> {
+        let s = self.state.lock_unpoisoned();
+        Ok(s.work_items.iter().find(|w| w.id == id).map(|w| w.deleted_at))
+    }
+
+    /// There is no network between this adapter and its state, so there is nothing that can be unreachable (issue #42).
+    async fn ping(&self, _sys: &SystemScope) -> Result<(), DbError> {
+        Ok(())
     }
 
     async fn insert_dead_letter(&self, _sys: &SystemScope, letter: &DeadLetter) -> Result<bool, DbError> {

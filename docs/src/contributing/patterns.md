@@ -38,9 +38,10 @@ the hash of its token, so there is no tenant key to pass (`sessions` is a direct
 read the ids from them, and each has one constructor, `mint`:
 - `Scope::mint` is called only by `authorize`.
 - `SystemScope::mint` is called only by the composition roots (`thrust-server`, and `thrust-worker` for both adapter
-  sets), which hand it to `App::new`. `App` keeps it private, and the outbox relay, the sweeper, the queue consumer and
-  `seed` pass it to the untenanted calls (`undispatched_outbox`, `mark_outbox_dispatched`, `outbox_depth`,
-  `insert_activity`, `insert_dead_letter`, `dead_letters`, `seed`). A queue adapter holds none, so it sets a message aside through
+  sets), which hand it to `App::new`. `App` keeps it private, and the outbox relay, the sweeper, the queue consumer,
+  the deep health check (`thrust_core::ping_database`, behind `GET /healthz?deep=1`) and `seed` pass it to the untenanted
+  calls (`undispatched_outbox`, `mark_outbox_dispatched`, `outbox_depth`, `insert_activity`, `insert_dead_letter`,
+  `dead_letters`, `ping`, `seed`). A queue adapter holds none, so it sets a message aside through
   `EventConsumer::dead_letter`, which core implements.
 
 The fields are private, so a struct literal outside `thrust-ports` does not compile, and passing bare ids to a
