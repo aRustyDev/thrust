@@ -18,7 +18,10 @@ exercised password-update recovery; the interrupted-update path still needs an A
    does not support. Use a transaction-scoped lock on the Hyperdrive path. SQL transaction-control
    statements can end the outer transaction and release that lock; this must be prevented or the
    migration source must be trusted before the runner accepts PR-provided SQL. The atomic runner
-   alone does not validate SQL or establish this boundary. `migration-artifact.py` extracts a
+   alone does not validate SQL. `migrate_guarded_with` executes SQL inside a PostgreSQL exception
+   block to prevent transaction termination; real-Postgres tests cover escape attempts and a
+   restricted preview role. This protects the transaction boundary, not authorization or resource
+   isolation, and it has not yet been exercised through live Hyperdrive. `migration-artifact.py` extracts a
    bounded, checksummed list from an exact Git commit without running PR code. Its caller must
    separately prove that the commit is the authorized current PR head; the artifact is untrusted
    data and it does not validate SQL, authorize a run, or establish an execution boundary. The

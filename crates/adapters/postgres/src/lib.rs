@@ -217,7 +217,7 @@ pub async fn migrate_with(
     options: MigrateOptions,
 ) -> Result<MigrateOutcome, MigrateError> {
     client.execute("SELECT pg_advisory_lock($1)", &[&MIGRATE_LOCK]).await?;
-    let result = migrate_locked(client, files, options, false).await;
+    let result = migrate_locked(client, files, options, false, false).await;
     // The lock also goes when the session ends; a caller that keeps the connection (the tests) needs it given back.
     let _ = client.execute("SELECT pg_advisory_unlock($1)", &[&MIGRATE_LOCK]).await;
     result
@@ -236,10 +236,31 @@ pub async fn migrate_atomic_with(
     files: &[Migration<'_>],
     options: MigrateOptions,
 ) -> Result<MigrateOutcome, MigrateError> {
+    migrate_atomic_inner(client, files, options, false).await
+}
+
+/// Run migration SQL inside a PostgreSQL exception-handling subtransaction, under the same
+/// transaction-scoped lock as [`migrate_atomic_with`]. PostgreSQL rejects transaction termination
+/// inside the subtransaction. This protects the transaction boundary; it does not authorize the
+/// caller or confine SQL privileges, which must be enforced independently by the connection role.
+pub async fn migrate_guarded_with(
+    client: &Client,
+    files: &[Migration<'_>],
+    options: MigrateOptions,
+) -> Result<MigrateOutcome, MigrateError> {
+    migrate_atomic_inner(client, files, options, true).await
+}
+
+async fn migrate_atomic_inner(
+    client: &Client,
+    files: &[Migration<'_>],
+    options: MigrateOptions,
+    guarded: bool,
+) -> Result<MigrateOutcome, MigrateError> {
     client.batch_execute("BEGIN").await?;
     let result = async {
         client.execute("SELECT pg_advisory_xact_lock($1)", &[&MIGRATE_LOCK]).await?;
-        migrate_locked(client, files, options, true).await
+        migrate_locked(client, files, options, true, guarded).await
     }
     .await;
     match result {
@@ -251,6 +272,24 @@ pub async fn migrate_atomic_with(
             let _ = client.batch_execute("ROLLBACK").await;
             Err(error)
         }
+    }
+}
+
+/// Encode SQL as data, so it cannot terminate the enclosing DO block by choosing its delimiter.
+fn guarded_sql(sql: &str) -> String {
+    use std::fmt::Write;
+    let mut hex = String::with_capacity(sql.len().saturating_mul(2));
+    for byte in sql.as_bytes() {
+        let _ = write!(&mut hex, "{byte:02x}");
+    }
+    format!("DO $thrust_migration_guard$ BEGIN EXECUTE pg_catalog.convert_from(pg_catalog.decode('{hex}', 'hex'), 'UTF8'); EXCEPTION WHEN OTHERS THEN RAISE; END $thrust_migration_guard$;")
+}
+
+async fn migration_sql(client: &Client, sql: &str, guarded: bool) -> Result<(), tokio_postgres::Error> {
+    if guarded {
+        client.batch_execute(&guarded_sql(sql)).await
+    } else {
+        client.batch_execute(sql).await
     }
 }
 
@@ -319,6 +358,7 @@ async fn migrate_locked(
     files: &[Migration<'_>],
     options: MigrateOptions,
     outer_transaction: bool,
+    guarded: bool,
 ) -> Result<MigrateOutcome, MigrateError> {
     let (present, plan) = plan_migrations(client, files).await?;
     let (pending, contract) = match plan {
@@ -336,7 +376,7 @@ async fn migrate_locked(
         in_migration_transaction(client, outer_transaction, async {
             client.batch_execute(LEDGER_DDL).await?;
             for m in &in_order {
-                client.batch_execute(m.sql).await?;
+                migration_sql(client, m.sql, guarded).await?;
                 record(client, m).await?;
             }
             Ok(())
@@ -349,7 +389,7 @@ async fn migrate_locked(
     }
     for m in in_order.iter().filter(|m| pending.iter().any(|p| p.as_str() == m.file)) {
         in_migration_transaction(client, outer_transaction, async {
-            client.batch_execute(m.sql).await?;
+            migration_sql(client, m.sql, guarded).await?;
             record(client, m).await
         })
         .await?;
@@ -3934,11 +3974,34 @@ impl Tx for PgTx {
 }
 
 #[cfg(test)]
+mod test_support;
+
+#[cfg(test)]
 mod tests {
+    use proptest::prelude::*;
     use std::future::Future;
     use std::task::{Context, Poll, Waker};
 
     use super::*;
+
+    proptest! {
+        #![proptest_config(crate::test_support::proptest_config(256))]
+        #[test]
+        fn prop_guarded_sql_encodes_arbitrary_utf8_as_data(sql in ".{0,512}") {
+            let guarded = guarded_sql(&sql);
+            let prefix = "DO $thrust_migration_guard$ BEGIN EXECUTE pg_catalog.convert_from(pg_catalog.decode('";
+            let suffix = "', 'hex'), 'UTF8'); EXCEPTION WHEN OTHERS THEN RAISE; END $thrust_migration_guard$;";
+            let encoded = guarded.strip_prefix(prefix).and_then(|s| s.strip_suffix(suffix));
+            prop_assert!(encoded.is_some());
+            let encoded = encoded.unwrap_or_default();
+            let (pairs, remainder) = encoded.as_bytes().as_chunks::<2>();
+            prop_assert!(remainder.is_empty());
+            let decoded: Option<Vec<u8>> = pairs.iter()
+                .map(|pair| std::str::from_utf8(pair).ok().and_then(|s| u8::from_str_radix(s, 16).ok()))
+                .collect();
+            prop_assert_eq!(decoded.as_deref(), Some(sql.as_bytes()));
+        }
+    }
 
     /// A `Connector` that is never asked: the transactions below have no connection, which is the point.
     struct NoConnector;
