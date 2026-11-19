@@ -257,5 +257,18 @@ if hermetic_wf:
     check(f"{hermetic_path}: {HERMETIC_JOB} builds without debug info, at the job level so that every cargo step shares one profile",
           "    env:\n      CARGO_PROFILE_DEV_DEBUG: none\n    steps:\n" in hermetic_block, True)
 
+# deep.yml (Test phase, stage 3, status G-48): the randomized tests at 4096 cases every night, not gated. It is its own workflow, like flake-hunt.yml: ci.yml does not call
+# it and `gate` does not read it, so a red night blocks nothing. A run that hid its failures, or one that ran the `oracle_` tests (a runner has no oracle: they would fail
+# every night for want of one), or one that lost its schedule, would all still "work", so the lines that carry those are checked as text and the mutant driver changes each.
+deep_text = read_text(".github/workflows/deep.yml")
+check("deep.yml is there", deep_text is not None, True)
+if deep_text is not None:
+    check("deep.yml is not a called workflow: no `workflow_call`, and ci.yml has no job for it", "workflow_call" not in deep_text and "deep" not in ci_jobs, True)
+    check("deep.yml runs by hand and every night", "  workflow_dispatch:\n" in deep_text and re.search(r"^  schedule:\n    - cron: ", deep_text, re.M) is not None, True)
+    check("deep.yml runs the deep profile over the workspace, less the oracle_ tests, which need an oracle a runner does not have",
+          "        run: scripts/rs cargo nextest run --profile deep --workspace --locked -E 'not test(/\\boracle_/)'\n" in deep_text, True)
+    check("deep.yml's cases default to 4096", "          PROPTEST_CASES: ${{ inputs.cases || 4096 }}\n" in deep_text, True)
+    check("deep.yml only restores the cache: a nightly must not evict what the pull requests use", "          save-cache: 'false'\n" in deep_text, True)
+
 print(f"passed={passed} bad={failed}")
 sys.exit(1 if failed else 0)

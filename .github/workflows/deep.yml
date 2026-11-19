@@ -1,0 +1,53 @@
+name: deep
+
+# The randomized tests (`prop_` and `model_`) at 4096 cases, every night and by hand (Test phase, stage 3; status G-48, owner's decision of
+# 2026-11-19). Not gated: `ci.yml` does not call it, `gate` does not read it, and a red run blocks nothing. It is the `deep` nextest profile
+# (.config/nextest.toml), which no job ran before, measured at 270 to 491 s of tests on a runner in four runs, a job of 6.5 to 11 minutes (the runners differ by about 1.5 times).
+#
+# Not the `oracle_` tests, which are in the profile's selection: they compare with the TypeScript oracle's generated output
+# (tools/spike-0006/gen-all.sh, which needs Node), and a runner has none, so they fail here for want of it and are run by hand (G-5).
+#
+# It is red at random for as long as issue #114 (a panic inside the yrs decoder, `prop_decode_never_panics_on_mutated_updates`) is open, and
+# that test is left in on purpose: a nightly that hid it would hide the issue. Any other red test is a finding, not noise.
+# Scheduled runs are for the default branch only, and GitHub disables a schedule in a public repository after 60 days without activity.
+# It also runs on a pull request that edits this file, so that the file is proved before it merges (GitHub dispatches only a workflow that is
+# already on the default branch), as e2e.yml does.
+on:
+  workflow_dispatch:
+    inputs:
+      cases:
+        description: PROPTEST_CASES for the run (the profile's own comment says 4096 or more)
+        type: number
+        default: 4096
+  schedule:
+    - cron: "37 5 * * *"
+  pull_request:
+    paths:
+      - .github/workflows/deep.yml
+
+permissions: {}
+
+jobs:
+  deep:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    # As the `hermetic` job of test.yml: the same build, so the same cache (rust-cache hashes this variable into its key). Restored here and
+    # never saved, so that this job cannot evict what the pull requests use.
+    env:
+      CARGO_PROFILE_DEV_DEBUG: none
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-rust
+        with:
+          cache-key: native-hermetic
+          save-cache: 'false'
+          nextest: 'true'
+      # The profile's own selection is the randomized tests, less the contract suite and the Docker suites; `-E` is intersected with it.
+      - name: The randomized tests (nextest, deep profile)
+        env:
+          PROPTEST_CASES: ${{ inputs.cases || 4096 }}
+        run: scripts/rs cargo nextest run --profile deep --workspace --locked -E 'not test(/\boracle_/)'

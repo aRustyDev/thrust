@@ -154,7 +154,7 @@ A pull request runs only the jobs and cells its change needs; how that is decide
 
 `gate` is the one check to require: it fails on a named job that was skipped, on a job that ran though it was not
 named, and on a planned cell that never reported, so a pipeline that silently ran less cannot read as green. `.github/workflows/flake-hunt.yml` repeats one
-cell on demand and weekly. Not in CI: the `oracle_` tests (they need the pinned Plane oracle's output) and stage 2.
+cell on demand and weekly, and `.github/workflows/deep.yml` runs the randomized tests (the `deep` profile, less the `oracle_` tests) at 4096 cases every night; neither is gated. Not in CI: the `oracle_` tests (they need the pinned Plane oracle's output) and stage 2.
 
 ### When `ci-scripts` is red
 
