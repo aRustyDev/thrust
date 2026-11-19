@@ -139,6 +139,12 @@ jobs:
     timeout-minutes: 30
     permissions:
       contents: read
+    # No debug info in this job's builds (the `mutants` profile already has none). Measured 2026-11-19, three warm runs of the job each: the nextest step 99 s
+    # to 72 s, the job 162-171 s to 134 s, the cache 605 MiB to 401 MiB, the same 4,780 + 26 tests passing. A panic still names its file and line; only a
+    # backtrace loses its file:line frames. At the job level so that every cargo step shares one profile (a different one rebuilds), and so that rust-cache
+    # puts it in the cache key (it hashes CARGO_* variables): the first run on main after this builds a new cache. The phase document has the numbers.
+    env:
+      CARGO_PROFILE_DEV_DEBUG: none
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

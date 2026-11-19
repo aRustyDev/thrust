@@ -245,5 +245,17 @@ if mutants_wf:
     check(f"{mutants_path}: {MUTANTS_JOB}: one shard saves the cache (the others would each build the archive and fail to reserve its key)",
           "          save-cache: ${{ github.ref == 'refs/heads/main' && strategy.job-index == 0 }}\n" in mutants_block, True)
 
+# The hermetic job builds without debug info (Test phase, stage 3): its nextest step 99 s to 72 s, measured (the phase document). Nothing breaks when the line is
+# missing, so the saving would go unnoticed: the line is checked as text, at the job level (an `env` on one step would leave the other cargo steps on another
+# profile, and cargo rebuilds when the profile differs), and the mutant driver changes it.
+HERMETIC_JOB = "hermetic"
+hermetic_wf = next((w for w, jobs in pc.WORKFLOWS.items() if HERMETIC_JOB in jobs), None)
+check(f"the job {HERMETIC_JOB} is a job of a called workflow", hermetic_wf is not None, True)
+if hermetic_wf:
+    hermetic_path = f".github/workflows/{hermetic_wf}.yml"
+    hermetic_block = block(read_text(hermetic_path) or "", HERMETIC_JOB)
+    check(f"{hermetic_path}: {HERMETIC_JOB} builds without debug info, at the job level so that every cargo step shares one profile",
+          "    env:\n      CARGO_PROFILE_DEV_DEBUG: none\n    steps:\n" in hermetic_block, True)
+
 print(f"passed={passed} bad={failed}")
 sys.exit(1 if failed else 0)

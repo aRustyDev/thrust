@@ -299,6 +299,9 @@ MUTANTS = [
     (TST, "mutants is not a matrix", "    strategy:\n      fail-fast: false\n      matrix:\n        shard: [0, 1, 2, 3]\n", ""),
     (TST, "every mutants shard saves the cache", "save-cache: ${{ github.ref == 'refs/heads/main' && strategy.job-index == 0 }}",
      "save-cache: ${{ github.ref == 'refs/heads/main' }}"),
+    # the hermetic job builds without debug info (Test phase, stage 3): nothing fails without it, so the check is the only thing that notices
+    (TST, "hermetic builds with debug info again", "      CARGO_PROFILE_DEV_DEBUG: none\n", "      CARGO_PROFILE_DEV_DEBUG: full\n"),
+    (TST, "hermetic has no debug setting", "    env:\n      CARGO_PROFILE_DEV_DEBUG: none\n    steps:\n", "    steps:\n"),
 ]
 MUTANTS += call_mutants()
 
