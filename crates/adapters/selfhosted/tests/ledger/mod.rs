@@ -214,11 +214,13 @@ async fn model_preview_migration_rejects_wrong_connection_and_privileges() {
             admin.batch_execute(&undo).await.unwrap();
             assert!(!table_exists(&client, "thrust_schema_migrations").await);
         }
-        client.batch_execute("SET search_path = public").await.unwrap();
-        assert!(matches!(
-            migrate_preview_with(&client, number, "postgres", &artifact).await,
-            Err(MigrateError::PreviewIdentityRefused)
-        ));
+        for path in ["public".to_owned(), format!("{role}, public")] {
+            client.batch_execute(&format!("SET search_path = {path}")).await.unwrap();
+            assert!(matches!(
+                migrate_preview_with(&client, number, "postgres", &artifact).await,
+                Err(MigrateError::PreviewIdentityRefused)
+            ));
+        }
         client.batch_execute(&format!("SET search_path = {role}")).await.unwrap();
         admin.batch_execute(&format!("SET ROLE {role}; SET search_path = {role}")).await.unwrap();
         assert!(matches!(
