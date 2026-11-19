@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0](https://github.com/aRustyDev/thrust/compare/v0.2.0...v0.3.0) - 2026-11-19
+
+### Added
+
+- *(queue)* permanent versus transient consumer errors, and a dead_letters table on every target ([#310](https://github.com/aRustyDev/thrust/pull/310))
+- *(issues)* clean a description once in the use-cases and store its text and policy ([#305](https://github.com/aRustyDev/thrust/pull/305))
+- *(auth)* sign in with an emailed code, sign-in only (F-A04, D-042) ([#220](https://github.com/aRustyDev/thrust/pull/220))
+- *(html)* make the hardened sanitiser the default, keeping the editor's embed and rel ([#302](https://github.com/aRustyDev/thrust/pull/302))
+- *(edge)* say which build of the edge answered, and carry the edge in the attested deploy bundle ([#294](https://github.com/aRustyDev/thrust/pull/294))
+
+### Fixed
+
+- *(html)* read a style's CSS comments and escapes before judging it ([#309](https://github.com/aRustyDev/thrust/pull/309))
+- *(compat-plane)* name the configured public address in /api/instances/, not the host the request came in on ([#233](https://github.com/aRustyDev/thrust/pull/233))
+
+### Other
+
+- *(core)* reach the asset model's situations by construction, not by a random draw ([#280](https://github.com/aRustyDev/thrust/pull/280))
+- *(api-v1)* read a work item's request into a typed struct that writes its own schema ([#250](https://github.com/aRustyDev/thrust/pull/250))
+- *(api-v1)* read a project's request into a typed struct that writes its own schema ([#247](https://github.com/aRustyDev/thrust/pull/247))
+- *(api)* keep error DTOs at router boundary ([#263](https://github.com/aRustyDev/thrust/pull/263))
+- *(html)* move the sanitiser into crates/core/html ([#300](https://github.com/aRustyDev/thrust/pull/300))
+- move every crate into its ADR-0009 directory (crates-layout PR 3) ([#221](https://github.com/aRustyDev/thrust/pull/221))
+- *(api-v1)* write a request struct, its reader and its schema from one line a field ([#261](https://github.com/aRustyDev/thrust/pull/261))
+- *(api-v1)* read a label's request into a typed struct that writes its own schema ([#242](https://github.com/aRustyDev/thrust/pull/242))
+- *(api-v1)* read a state's request into a typed struct that writes its own schema ([#235](https://github.com/aRustyDev/thrust/pull/235))
+- *(api-v1)* hold each request schema to its parser with bodies the schema generates (request-parser step 0) ([#228](https://github.com/aRustyDev/thrust/pull/228))
+- Guard preview migration transaction boundaries ([#322](https://github.com/aRustyDev/thrust/pull/322))
+- Add transaction-scoped migration locking ([#315](https://github.com/aRustyDev/thrust/pull/315))
+- Allow borrowed migration input ([#308](https://github.com/aRustyDev/thrust/pull/308))
+- *(deps)* move the worker crates to workers-rs 0.9 ([#303](https://github.com/aRustyDev/thrust/pull/303))
+- Add preview provisioning control plane ([#279](https://github.com/aRustyDev/thrust/pull/279))
+- the load suite, thrust-load-tests, with the latency and scale probes as nextest tests (test-suites PR 3) ([#262](https://github.com/aRustyDev/thrust/pull/262))
+- the v1 router's CPU profile, under samply through a nextest wrapper script (test-suites PR 5) ([#272](https://github.com/aRustyDev/thrust/pull/272))
+- the profiling crate, thrust-profiling, with the v1 router's heap profile (test-suites PR 4) ([#267](https://github.com/aRustyDev/thrust/pull/267))
+- update Cargo.lock dependencies
+
 ## [0.2.0](https://github.com/aRustyDev/thrust/compare/v0.1.0...v0.2.0) - 2026-11-16
 
 ### Added
