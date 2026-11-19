@@ -108,6 +108,7 @@ RULES = [
     (r"^scripts/(stage2-contract|check-contract-counts)\.sh$", {"jobs": ["hermetic", "deps"]}, "the contract counts and their guard"),
     (r"^scripts/check-web-diff\.sh$", {"jobs": ["web", "ci-scripts"]}, "the Q-R2 gate of web/"),
     (r"^scripts/check-book\.sh$", {"jobs": ["docs"]}, "the book's check"),
+    (r"^scripts/test-preview-migration-worker\.sh$", {"jobs": ["pg-adapter"]}, "the preview migration Worker runtime check"),
     (r"^scripts/(check-(deps|layout|topology|plane-500|acceptance-list|placement|openapi|migration-lint|edge-config|cargo-lock)|render-wrangler)\.sh$",
      {"jobs": ["deps", "ci-scripts"]}, "a guard of the deps job"),
     (r"^scripts/(smoke-deploy|smoke-bootstrap|migrate-ci|deploy-worker|merge-assets|check-asset-retention|edge-opt-in|deploy-target|deploy-edge|edge-controls)\.sh$",
@@ -259,6 +260,8 @@ def plan(paths, dirs, deps, cells, full_reason=None):
         jobs.add("pg-adapter")
     if "thrust-preview-provisioner" in hit:
         jobs.update(("ci-scripts", "pg-adapter"))
+    if "thrust-preview-migration-executor" in hit:
+        jobs.add("pg-adapter")
     if MUTANTS_BINARY in hit or SUITE in changed:
         jobs.add("mutants")
 

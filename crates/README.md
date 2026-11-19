@@ -21,6 +21,7 @@ directory in it.
 | `server/` | `thrust-server`: the native composition root (axum/tokio) |
 | `worker/` | `thrust-worker`: the Cloudflare Worker composition root (wasm32) |
 | `preview-provisioner/` | `thrust-preview-provisioner`: restricted internal database provisioning Worker |
+| `preview-migration-executor/` | `thrust-preview-migration-executor`: closed-by-default preview migration Worker |
 | `edge/` | `thrust-edge`: the Worker on the shared hostname (ADR-0111) |
 
 ## Programs

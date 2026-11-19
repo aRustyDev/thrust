@@ -67,6 +67,7 @@ changelog_include = [
   "thrust-adapters-cloudflare",
   "thrust-worker",
   "thrust-preview-provisioner",
+  "thrust-preview-migration-executor",
   "thrust-edge",
   "thrust-server",
   "thrust-contract-tests",
@@ -132,6 +133,12 @@ version_group = "thrust"
 [[package]]
 name = "thrust-preview-provisioner"
 version_group = "thrust"
+
+[[package]]
+name = "thrust-preview-migration-executor"
+version_group = "thrust"
+# First-release pattern until a release contains the executor crate.
+git_tag_name = "thrust-preview-migration-executor-v{{ version }}"
 
 [[package]]
 name = "thrust-edge"
