@@ -1,0 +1,55 @@
+name: Prepare preview migration source
+
+# workflow_run uses the trusted default-branch workflow. PR commits are fetched as Git objects
+# only: they are never checked out, built or executed in this job. The artifact is untrusted data.
+on:
+  workflow_run:
+    workflows: [Reconcile preview resources]
+    types: [completed]
+
+permissions: {}
+
+concurrency:
+  group: preview-migration-source-${{ github.event.workflow_run.head_sha }}
+  cancel-in-progress: true
+
+jobs:
+  source:
+    if: github.repository == 'aRustyDev/thrust' && github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Verify PR head and extract migration data
+        id: prepare
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          gh api --paginate --slurp "repos/$REPOSITORY/pulls?state=open&per_page=100" > "$RUNNER_TEMP/pulls.json"
+          PR_NUMBER="$(python3 -I infra/preview/scripts/verify-pr-head.py --pulls "$RUNNER_TEMP/pulls.json" \
+            --repository "$REPOSITORY" --sha "$HEAD_SHA")"
+          verify() {
+            gh api "repos/$REPOSITORY/pulls/$PR_NUMBER" > "$RUNNER_TEMP/pr.json"
+            python3 -I infra/preview/scripts/verify-pr-head.py --pull "$RUNNER_TEMP/pr.json" \
+              --repository "$REPOSITORY" --number "$PR_NUMBER" --sha "$HEAD_SHA"
+          }
+          verify
+          git fetch --no-tags --depth=1 origin "$HEAD_SHA"
+          python3 -I infra/preview/scripts/migration-artifact.py --repo . --commit "$HEAD_SHA" > "$RUNNER_TEMP/migrations.json"
+          verify
+          echo "number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: preview-migrations-pr-${{ steps.prepare.outputs.number }}-${{ github.event.workflow_run.head_sha }}
+          path: ${{ runner.temp }}/migrations.json
+          if-no-files-found: error
+          retention-days: 1
