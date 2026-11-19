@@ -21,7 +21,13 @@ exercised password-update recovery; the interrupted-update path still needs an A
    alone does not validate SQL or establish this boundary. `migration-artifact.py` extracts a
    bounded, checksummed list from an exact Git commit without running PR code. Its caller must
    separately prove that the commit is the authorized current PR head; the artifact is untrusted
-   data and it does not validate SQL, authorize a run, or establish an execution boundary.
+   data and it does not validate SQL, authorize a run, or establish an execution boundary. The
+   `preview-migration-source.yml` workflow prepares that artifact after a PR reconciliation run,
+   resolving exactly one eligible open same-repository PR from the run's head SHA and rechecking
+   the PR after extraction. It runs trusted scripts from main and never checks out PR code. These
+   point-in-time checks can go stale: a future consumer must validate the artifact, its trusted
+   source run and the current PR head again before any privileged action. The triggering PR run
+   is not proof of provisioned resources or migration authorization; independently verify both.
 2. Derive an isolated Preview configuration from trusted inputs: the reconciled per-PR
    Hyperdrive, isolated bucket and queue, dev rate limits, and Preview-owned Durable Objects.
    The Worker currently requires a queue producer binding even though Previews do not consume

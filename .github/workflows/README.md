@@ -23,6 +23,7 @@ waited for: nothing in `gate` reads it.
 | `deploy-preview-provisioner.yml` | `workflow_dispatch` | no | Deploys the provisioner without a public route |
 | `enable-preview-provisioner.yml` | `workflow_dispatch` | no | Verifies Access before enabling the provisioner route |
 | `preview-reconcile.yml` | `pull_request`, `schedule`, `workflow_dispatch` | no | Reconciles per-PR database and Hyperdrive resources |
+| `preview-migration-source.yml` | `workflow_run` of preview reconciliation | no | Reads same-repository PR migration files as untrusted Git data after verifying the PR head |
 | `e2e.yml` | `schedule` (every day, 04:41 UTC), `workflow_dispatch`, `pull_request` that edits the file | no | Runs the `worker-cf` browser-journey cells every day, through `contract-cell.yml`, to catch drift in the runner, the browser and the packages |
 | `flagship.yml` | `push` to `main` that changes the policy, `schedule` (every night, 05:23 UTC), `workflow_dispatch` | no | The edge's routing flags as code: makes every flag what the policy says, and checks them every night. Off until the repository variable `FLAGSHIP_APP_ID` is set |
 | `flake-hunt.yml` | `workflow_dispatch`, `schedule` (Mondays, 03:17 UTC) | no | Repeats one contract cell 1 to 50 times to catch a flake |
