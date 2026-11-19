@@ -1,0 +1,27 @@
+name = "thrust-preview-migration-executor"
+main = "build/worker/shim.mjs"
+# Latest date supported by the repository's pinned Wrangler/workerd.
+compatibility_date = "2026-10-26"
+# This template is intentionally unreachable and disabled. A trusted deployment must create
+# and verify Access before exposing a route, and bind a verified per-PR Hyperdrive configuration.
+workers_dev = false
+preview_urls = false
+
+[observability]
+enabled = true
+
+[observability.traces]
+enabled = true
+
+[vars]
+EXECUTOR_ENABLED = "false"
+PREVIEW_NUMBER = ""
+PREVIEW_COMMIT = ""
+PREVIEW_DATABASE = ""
+
+[build]
+command = "../../scripts/rs worker-build --release ."
+
+[[hyperdrive]]
+binding = "HYPERDRIVE"
+id = "00000000000000000000000000000000"

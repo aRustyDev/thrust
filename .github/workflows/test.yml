@@ -196,6 +196,8 @@ jobs:
           cache-key: native-pg-adapter
           save-cache: ${{ github.ref == 'refs/heads/main' }}
           nextest: 'true'
+          worker-tools: 'true'
+          targets: wasm32-unknown-unknown
       # The `adapters` profile (.config/nextest.toml): a report, and no timeout kill, as on cargo test. nextest exits 4 if the
       # filterset selects nothing, so a renamed binary fails the step.
       - name: Postgres adapter tests (testcontainers)
@@ -206,6 +208,8 @@ jobs:
         run: scripts/rs cargo nextest run -p thrust-adapters-selfhosted --profile adapters --locked -E 'binary(smtp_sink)'
       - name: Preview provisioner security and lifecycle (Postgres)
         run: bash infra/preview/scripts/test-provisioner-bootstrap.sh
+      - name: Preview migration Worker closed-state and binding controls
+        run: bash scripts/test-preview-migration-worker.sh
 
   # One job per cell, each on a fresh runner with its own checkout, so the shared-build-directory
   # hazard that forces contract-all.sh to run serially on one machine does not apply here.
