@@ -68,18 +68,19 @@ kill_check_suite() { record "$1" "$(verdict_suite "$2" "$3")" "$3" "${4:-}"; }
 # the assertion the mutant is aimed at prints, so failures without it are UNCLEAR, not KILLED. $5 (optional) the row's own output file.
 kill_check_suite_msg() { record "$1" "$(verdict_suite "$2" "$3" "$4")" "$3" "${5:-}"; }
 
-# adapter_row NAME PACKAGE FEATURE FILTERSET: an adapter's own tests, built with the mutant's feature, on nextest with the `adapters`
-# profile (.config/nextest.toml: a JUnit report and no timeout kill). `--ignore-default-filter` keeps those and drops the profile's
+# adapter_row NAME PACKAGE FEATURE FILTERSET [NEXTEST ARGUMENT...]: an adapter's own tests, built with the mutant's feature, on nextest with the
+# `adapters` profile (.config/nextest.toml: a JUnit report and no timeout kill). `--ignore-default-filter` keeps those and drops the profile's
 # selection (the Docker suites), so a hermetic suite can be a row too. Its log is $OUT/NAME.test.log and its report
 # $OUT/NAME.junit.xml (a stale one is removed first, so a run that wrote none is read as none). Sets `status`: nextest's own, except
 # that its 4 (no test ran: the filterset selects nothing) becomes 5, as scripts/contract.sh makes it, which the verdict reads as the
-# vacuity guard and not as a target that never came up.
+# vacuity guard and not as a target that never came up. Any further arguments go to nextest as they are (see the discard-noop row).
 adapter_row() {
   ar_name="$1"; ar_package="$2"; ar_feature="$3"; ar_set="$4"
+  shift 4
   ar_junit="${CARGO_TARGET_DIR:-$ROOT/target}/nextest/adapters/junit.xml"
   rm -f "$ar_junit" "$OUT/$ar_name.junit.xml"
   "$ROOT/scripts/rs" cargo nextest run --manifest-path "$ROOT/Cargo.toml" -p "$ar_package" --features "$ar_feature" \
-    --profile adapters --ignore-default-filter -E "$ar_set" >"$OUT/$ar_name.test.log" 2>&1
+    --profile adapters --ignore-default-filter -E "$ar_set" "$@" >"$OUT/$ar_name.test.log" 2>&1
   status=$?
   if [ -f "$ar_junit" ]; then mv "$ar_junit" "$OUT/$ar_name.junit.xml"; fi
   if [ "$status" -eq 4 ]; then status=5; fi
@@ -200,10 +201,16 @@ refusal_check() {
 refusal_check "guard: mail pass, relay not wired" mutant_smtp_unwired mail 'VACUITY GUARD: is_smtp_configured is not true'
 refusal_check "guard: main pass, mail flag on" mutant_smtp_flag_always_on main 'VACUITY GUARD: is_smtp_configured is not false'
 
-# Postgres adapter mutant: recycle a connection that is still inside an abandoned transaction.
+# Postgres adapter mutant: recycle a connection that is still inside an abandoned transaction. The two `an_abandoned_transaction` tests fail on it in
+# about 3 s; the model test fails on it too, but takes either about 5 s or about 125 s (it waits on the connection the mutant poisoned), at random.
+# One failure is the kill, so the first one ends the row: `--max-fail=1:immediate` terminates the tests still running (plain `--fail-fast` would
+# wait for the model test). The model test stays in the filterset as a second witness: it ends the row itself, as before, whenever the other two do
+# not fail. A terminated test counts as failed in nextest's JUnit report, so the verdict's "3 test(s) failed" is one real failure and two
+# terminated, and the Postgres container of a terminated test is left running (the runner is discarded with the job; locally, remove the containers
+# labelled org.testcontainers.managed-by=testcontainers).
 if want "postgres adapter + discard-noop"; then
   adapter_row pg-discard thrust-adapters-selfhosted mutant_discard_noop \
-    'binary(pg_adapter) & test(/an_abandoned_transaction|model_postgres_adapter_matches/)'
+    'binary(pg_adapter) & test(/an_abandoned_transaction|model_postgres_adapter_matches/)' --max-fail=1:immediate
   kill_check_suite "postgres adapter + discard-noop" "$status" "$OUT/pg-discard.test.log"
 fi
 
