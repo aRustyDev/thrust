@@ -40,7 +40,15 @@ exercised password-update recovery; the interrupted-update path still needs an A
    role attributes and memberships, and schema/database CREATE privileges inside the locked
    transaction before applying an artifact. This is not a complete audit of table, function,
    or other grants; the restricted-role bootstrap and its live privileges remain independent
-   security boundaries. These
+   security boundaries. A closed-by-default `preview-migration-executor` Worker now connects a
+   configured per-PR Hyperdrive to this entry point and checks bounded artifact data. Its local
+   Worker-runtime test covers disabled configuration, a mismatched binding, malformed data and
+   an unavailable database; it is part of the PostgreSQL CI job. The template has no route and
+   no deployment workflow. Before enabling it, a trusted caller must prove artifact provenance,
+   authorize and recheck the PR head, verify the Hyperdrive origin and grants, and enforce Access.
+   In particular, assess the preview login's ability to alter its own role or password and any
+   inherited/public table or function grants before accepting untrusted SQL.
+   Test the complete path through a real Hyperdrive binding. These
    point-in-time checks can go stale: a future consumer must validate the artifact, its trusted
    source run and the current PR head again before any privileged action. The triggering PR run
    is not proof of provisioned resources or migration authorization; independently verify both.

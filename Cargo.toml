@@ -16,6 +16,7 @@ members = [
     "crates/adapters/cloudflare",
     "crates/worker",
     "crates/preview-provisioner",
+    "crates/preview-migration-executor",
     "crates/edge",
     "crates/server",
     "crates/testing/suites/api",
