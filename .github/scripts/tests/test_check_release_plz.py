@@ -11,9 +11,15 @@ tagger, two taggers, a tagger with a git_tag_name. Each must exit 1 and name wha
 (required and exact), a crate the last release has must not keep one (exact only), a crate that only moved directory is not new,
 the last release is the highest v<major>.<minor>.<patch> (not the last in name order, not a pre-release), and no such tag is exit 2.
 
+--release-tag over generated release-plz outputs: whichever crates are on their first-release pattern (every subset), in every
+order, the tag printed is the tagger's and nothing else is printed; a tagger released zero or two times, or with a tag that is not
+v<its version>, is exit 1; input that is not a JSON list of objects, or a release-plz.toml without exactly one tagger, is exit 2.
+Pinned: release-plz's own output for v0.3.0 against the repository's release-plz.toml.
+
 The repository's own files must pass. A path argument points it at a deliberately broken copy, to show this test fails.
 """
 
+import json
 import os
 import subprocess
 import sys
@@ -246,6 +252,98 @@ check("no release tag, required: says so", "no tag v<major>.<minor>.<patch>" in 
 
 p = subprocess.run([sys.executable, "-I", SCRIPT, "--first-release=sometimes", ROOT], capture_output=True, text=True)
 check("an unknown --first-release mode: exit 2", p.returncode, 2)
+
+# --release-tag. release-plz's `releases` output lists every crate it released with the tag its git_tag_name gives; only the
+# tagger's tag is made, so a crate on its first-release pattern carries a tag that does not exist.
+VERSION = "0.3.0"
+
+
+def releases(patterned=(), order=CRATES):
+    out = []
+    for name in order:
+        tag = f"{name}-v{VERSION}" if name in patterned else f"v{VERSION}"
+        out.append({"package_name": name, "prs": [], "tag": tag, "version": VERSION})
+    return out
+
+
+def with_tagger(**changes):
+    """releases() with the tagger's object changed; a key given None is dropped."""
+    out = releases()
+    tagger = next(r for r in out if r["package_name"] == TAGGER)
+    for k, v in changes.items():
+        if v is None:
+            del tagger[k]
+        else:
+            tagger[k] = v
+    return out
+
+
+def run_release_tag(text, entries=None):
+    with tempfile.TemporaryDirectory() as d:
+        write_workspace(d, entries if entries is not None else good_entries())
+        p = subprocess.run([sys.executable, "-I", SCRIPT, "--release-tag", d], input=text, capture_output=True, text=True)
+        return p.returncode, p.stdout, p.stderr
+
+
+# Every subset of the non-taggers on their pattern, and the tagger at every position in the list.
+others = [c for c in CRATES if c != TAGGER]
+for mask in range(1 << len(others)):
+    patterned = {c for i, c in enumerate(others) if mask >> i & 1}
+    for at in range(len(CRATES)):
+        order = others[:at] + [TAGGER] + others[at:]
+        rc, out, err = run_release_tag(json.dumps(releases(patterned, order)))
+        label = f"--release-tag, patterned {sorted(patterned)}, tagger at {at}"
+        check(f"{label}: exit 0", rc, 0)
+        check(f"{label}: prints the tagger's tag, alone", out, f"v{VERSION}\n")
+
+for times in (0, 2):
+    rel = [r for r in releases() if r["package_name"] != TAGGER] + [r for r in releases() if r["package_name"] == TAGGER] * times
+    rc, out, err = run_release_tag(json.dumps(rel))
+    check(f"--release-tag, the tagger released {times} times: exit 1", rc, 1)
+    check(f"--release-tag, the tagger released {times} times: says so", f"{times} times, not once" in err, True)
+    check(f"--release-tag, the tagger released {times} times: prints no tag", out, "")
+
+# The tagger's tag is not v<its version>: its first-release pattern, another version, no v, empty, absent, not a string; or its
+# version is empty, absent or not a string, including with the tag such a version would give.
+cases = [dict(tag=t) for t in (f"{TAGGER}-v{VERSION}", "v0.3.1", VERSION, "", None, 3)]
+cases += [dict(version=v) for v in ("", None, 3)] + [dict(version=None, tag="vNone"), dict(version="", tag="v")]
+for changes in cases:
+    rc, out, err = run_release_tag(json.dumps(with_tagger(**changes)))
+    check(f"--release-tag, the tagger with {changes}: exit 1", rc, 1)
+    check(f"--release-tag, the tagger with {changes}: prints no tag", out, "")
+
+for text in ("", "not json", "{}", '{"tag": "v0.3.0"}', "[1, 2]", '"v0.3.0"', "null"):
+    rc, out, err = run_release_tag(text)
+    check(f"--release-tag on {text!r}: exit 2", rc, 2)
+    check(f"--release-tag on {text!r}: prints no tag", out, "")
+
+entries = [{k: v for k, v in e.items() if k != "git_tag_enable"} for e in good_entries()]
+rc, out, err = run_release_tag(json.dumps(releases()), entries=entries)
+check("--release-tag with no tagger in release-plz.toml: exit 2", rc, 2)
+entries = good_entries()
+next(e for e in entries if e["name"] == "crate-0")["git_tag_enable"] = True
+rc, out, err = run_release_tag(json.dumps(releases()), entries=entries)
+check("--release-tag with two taggers in release-plz.toml: exit 2", rc, 2)
+
+p = subprocess.run([sys.executable, "-I", SCRIPT, "--release-tag", "--first-release=exact", ROOT], capture_output=True, text=True)
+check("--release-tag with --first-release: exit 2", p.returncode, 2)
+
+# Pinned regression: release-plz 0.4.3's `releases` for v0.3.0 (release-plz run 44448098427, its pull request lists dropped),
+# where five crates were on their first-release pattern and counting every tag stopped the release before release.yml.
+V030 = [
+    ("thrust-contracts", "v0.3.0"), ("thrust-ports", "v0.3.0"), ("thrust-html", "thrust-html-v0.3.0"), ("thrust-core", "v0.3.0"),
+    ("thrust-adapters-memory", "v0.3.0"), ("thrust-api", "v0.3.0"), ("thrust-plane-types", "v0.3.0"), ("thrust-api-v1", "v0.3.0"),
+    ("thrust-oracle-fixture", "v0.3.0"), ("thrust-compat-plane", "v0.3.0"), ("thrust-adapters-postgres", "v0.3.0"),
+    ("thrust-adapters-oidc", "v0.3.0"), ("thrust-adapters-selfhosted", "v0.3.0"), ("thrust-adapters-cloudflare", "v0.3.0"),
+    ("thrust-worker", "v0.3.0"), ("thrust-preview-provisioner", "thrust-preview-provisioner-v0.3.0"),
+    ("thrust-edge", "thrust-edge-v0.3.0"), ("thrust-server", "v0.3.0"), ("thrust-contract-tests", "v0.3.0"),
+    ("thrust-load-tests", "thrust-load-tests-v0.3.0"), ("thrust-profiling", "thrust-profiling-v0.3.0"),
+    ("thrust-editor-doc", "v0.3.0"), ("thrust-editor-worker", "v0.3.0"),
+]
+text = json.dumps([{"package_name": n, "prs": [], "tag": t, "version": "0.3.0"} for n, t in V030])
+p = subprocess.run([sys.executable, "-I", SCRIPT, "--release-tag", ROOT], input=text, capture_output=True, text=True)
+check("regression_v0_3_0 release-plz output, the repository's release-plz.toml: exit 0", p.returncode, 0)
+check("regression_v0_3_0 release-plz output, the repository's release-plz.toml: prints v0.3.0", p.stdout, "v0.3.0\n")
 
 with tempfile.TemporaryDirectory() as d:
     p = subprocess.run([sys.executable, "-I", SCRIPT, d], capture_output=True, text=True)

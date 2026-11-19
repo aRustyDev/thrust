@@ -386,8 +386,16 @@ release. `release.yml` did not start: it listened for the draft's `release: crea
 `created`, `edited` or `deleted` events of a draft release (its documentation of the `release` event says so). So the
 `release` job now starts `release.yml` itself, with `gh workflow run release.yml --ref <tag>`: a `workflow_dispatch` made
 with the workflow's own token does start a run (the documented exception), and the run's ref is the tag, which the
-attestations record. Its `releases` output lists each crate under the one workspace tag; the step refuses anything but one
-tag.
+attestations record. Its `releases` output lists every crate released, each with the tag its `git_tag_name` gives, but only
+the tagger makes its tag: a crate on its first-release pattern is listed with a `<crate>-v<version>` that does not exist. So
+the step takes the tagger's tag (`check-release-plz.py --release-tag`, which also requires it to be `v<version>` and the
+tagger to be released once) and checks nothing else, since the tag already exists by then.
+
+`v0.3.0`, #227 `[verified 2026-11-19]`: the step counted every crate's tag and refused six (`v0.3.0` and the five crates on
+their first-release pattern), so `release.yml` never started, the release stayed a draft, and the production deploy that
+ci's dispatch started stopped at `fetch-release-bundle: refused: could not read the release v0.3.0: release not found`. The
+tag and the draft were right, so the recovery is `release.yml` started by hand on the tag, as its header says; the step was
+changed to the rule above.
 
 Immutable releases lock a release's assets when it is published, so release-plz makes a draft (`git_release_draft`,
 read in its source: it creates the tag through the API first, then the release), and `release.yml`, dispatched on the tag,
