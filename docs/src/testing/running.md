@@ -169,7 +169,7 @@ cell on demand and weekly, and `.github/workflows/deep.yml` runs the randomized 
 
 - **Read the nextest summary** (`Summary [...] 4780 tests run: ...`) and the `FAIL` lines above it: a failing test is a finding ([Rule 3](rules.md)), not something to retry away.
 - **`prop_decode_never_panics_on_mutated_updates` (thrust-editor-doc) is issue #114**: a panic inside the yrs decoder on a one-byte mutation, which fails this job at random (1 of 22 probe runs on 2026-11-19, with every other test passing). It is open and not fixed; a red job whose only failure is that test is this issue, and one with any other failure is not.
-- **The profile `deep`** (`PROPTEST_CASES=4096`, which no job runs yet) fails today for reasons that are not this job's: see [status](status.md) G-5.
+- **The profile `deep`** (`PROPTEST_CASES=4096`) runs nightly in `.github/workflows/deep.yml`, not gated, and is red at random for the same reason (#114): see [status](status.md) G-48.
 
 ### When a `mutants` leg is red
 
