@@ -270,5 +270,15 @@ if deep_text is not None:
     check("deep.yml's cases default to 4096", "          PROPTEST_CASES: ${{ inputs.cases || 4096 }}\n" in deep_text, True)
     check("deep.yml only restores the cache: a nightly must not evict what the pull requests use", "          save-cache: 'false'\n" in deep_text, True)
 
+# contract-pass-tools (Test phase, stage 6): the e2e passes get the browser and not the fonts `--with-deps` would apt-install (about 32 MB, 8 minutes on a slow mirror, most of the e2e cell's
+# run-to-run spread, and that cell is the longest job of every full run). Nothing fails without the saving, so the line that carries it is checked as text and the mutant driver changes it.
+tools_text = read_text(".github/actions/contract-pass-tools/action.yml")
+check("contract-pass-tools is there", tools_text is not None, True)
+if tools_text is not None:
+    check("contract-pass-tools installs the e2e browser by itself, in its own line",
+          "        pnpm --dir e2e exec playwright install chromium\n" in tools_text, True)
+    check("contract-pass-tools does not apt-install the browser's system packages (no command line, comments aside, has `playwright install --with-deps`)",
+          [l for l in tools_text.splitlines() if "playwright install --with-deps" in l and not l.strip().startswith("#")], [])
+
 print(f"passed={passed} bad={failed}")
 sys.exit(1 if failed else 0)
