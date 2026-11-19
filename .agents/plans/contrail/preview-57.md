@@ -31,7 +31,11 @@ exercised password-update recovery; the interrupted-update path still needs an A
    data and it does not validate SQL, authorize a run, or establish an execution boundary. The
    `preview-migration-source.yml` workflow prepares that artifact after a PR reconciliation run,
    resolving exactly one eligible open same-repository PR from the run's head SHA and rechecking
-   the PR after extraction. It runs trusted scripts from main and never checks out PR code. These
+   the PR after extraction. It runs trusted scripts from main and never checks out PR code.
+   `preview_artifact::Artifact` validates bounded JSON, ordered unique file names and versions,
+   SQL digests, and the expected commit before offering borrowed migrations to an executor. A
+   digest within an untrusted artifact is not evidence of provenance: the executor still needs
+   a trusted source run and must match its inputs to the actual commit. These
    point-in-time checks can go stale: a future consumer must validate the artifact, its trusted
    source run and the current PR head again before any privileged action. The triggering PR run
    is not proof of provisioned resources or migration authorization; independently verify both.

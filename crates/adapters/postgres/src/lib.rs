@@ -20,6 +20,8 @@ pub mod tls;
 
 /// Which migration files a database has had applied (#195), and the arithmetic of what a build may still apply.
 pub mod ledger;
+/// Bounded validation of untrusted preview migration artifacts.
+pub mod preview_artifact;
 
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
