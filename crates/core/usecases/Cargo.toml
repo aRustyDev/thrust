@@ -69,6 +69,10 @@ subtle = { version = "2", default-features = false }
 # futures-executor rather than tokio, because the memory adapters never yield.
 [dev-dependencies]
 thrust-adapters-memory = { workspace = true }
+# tests/health.rs: the one `Database` that can fail with no server (the Postgres adapter over a `Connector` that refuses), because the memory
+# adapters can never fail, and without a database that does, `ping_database` could return `Ok(())` and no test here would notice. The adapter
+# depends on the ports and not on core, so this is no cycle.
+thrust-adapters-postgres = { workspace = true }
 futures-executor = "0.3"
 proptest = "1"
 rstest = "0.26"

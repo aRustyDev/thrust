@@ -17,7 +17,9 @@
 //! * `commit` and `rollback` are one statement each when a write opened the transaction, and none otherwise;
 //! * a dropped transaction sends nothing: its connection is discarded, and the server rolls back what it held;
 //! * `work_item_page` is one statement for a page that has rows and two for one that has none (the second is the count);
-//! * `get_work_item` is one statement, whether or not it finds the row.
+//! * `get_work_item` is one statement, whether or not it finds the row;
+//! * `ping` (the deep health check, issue #42) is one statement, `SELECT now()`, on a shared connection of its own: whether or not a
+//!   transaction is open and has written, it neither opens one nor ends one, and the transaction's own count does not move.
 //!
 //! Budget: `THRUST_MODEL_CASES` cases (default 32), shared with the other model test. Every call has a 20 s timeout.
 
@@ -71,6 +73,8 @@ enum Step {
     },
     /// `get_work_item` of an id nobody has.
     Get,
+    /// `ping`, with whatever transaction is open left as it was.
+    Ping,
 }
 
 fn steps() -> impl Strategy<Value = Vec<Step>> {
@@ -83,6 +87,7 @@ fn steps() -> impl Strategy<Value = Vec<Step>> {
             1 => Just(Step::Abandon),
             2 => (1u32..=3, 0u32..=3).prop_map(|(limit, page)| Step::Page { limit, page }),
             1 => Just(Step::Get),
+            2 => Just(Step::Ping),
         ],
         1..24,
     )
@@ -104,10 +109,12 @@ enum Class {
     PageWithRows,
     PageWithoutRows,
     Get,
+    PingBeforeWrite,
+    PingAfterWrite,
 }
 
 impl Class {
-    const ALL: [Class; 13] = [
+    const ALL: [Class; 15] = [
         Class::AllocateBeforeWrite,
         Class::AllocateAfterWrite,
         Class::InsertFirst,
@@ -121,6 +128,8 @@ impl Class {
         Class::PageWithRows,
         Class::PageWithoutRows,
         Class::Get,
+        Class::PingBeforeWrite,
+        Class::PingAfterWrite,
     ];
 }
 
@@ -182,6 +191,7 @@ impl Model {
                 }
             }
             Step::Get => (1, Class::Get),
+            Step::Ping => (1, if self.wrote { Class::PingAfterWrite } else { Class::PingBeforeWrite }),
         }
     }
 
@@ -217,6 +227,10 @@ async fn run_case(env: &Env, steps: &[Step]) -> Result<(), TestCaseError> {
             Step::Get => {
                 call("get_work_item", db.get_work_item(&s, WorkItemId(Uuid::nil()), Visibility::Visible)).await?;
             }
+            Step::Ping => {
+                // `SystemScope::mint` is allowed here: scripts/check-deps.sh exempts a member's own tests/ directory
+                call("ping", db.ping(&SystemScope::mint())).await?;
+            }
             _ => {
                 if tx.is_none() {
                     tx = Some(call("begin", db.begin(&s)).await?);
@@ -241,7 +255,7 @@ async fn run_case(env: &Env, steps: &[Step]) -> Result<(), TestCaseError> {
                         call("rollback", t.rollback()).await?;
                     }
                     Step::Abandon => drop(tx.take()),
-                    Step::Page { .. } | Step::Get => {}
+                    Step::Page { .. } | Step::Get | Step::Ping => {}
                 }
             }
         }

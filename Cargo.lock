@@ -3877,14 +3877,20 @@ dependencies = [
 name = "thrust-api"
 version = "0.3.0"
 dependencies = [
+ "async-trait",
  "axum",
+ "form_urlencoded",
+ "futures-executor",
  "proptest",
  "rstest",
  "serde",
  "serde_json",
+ "thrust-adapters-memory",
+ "thrust-adapters-postgres",
  "thrust-contracts",
  "thrust-core",
  "thrust-ports",
+ "tower",
 ]
 
 [[package]]
@@ -3981,6 +3987,7 @@ dependencies = [
  "subtle",
  "thiserror 2.0.21",
  "thrust-adapters-memory",
+ "thrust-adapters-postgres",
  "thrust-contracts",
  "thrust-html",
  "thrust-ports",

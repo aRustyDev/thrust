@@ -543,6 +543,12 @@ impl ClientHandle for Counted {
     }
 }
 
+/// The statement of [`Database::ping`] (issue #42, ADR-0094). It is `now()` and not `1` on purpose: Hyperdrive answers a read from its
+/// cache when the read uses only IMMUTABLE functions, so `select 1` could come back from the cache on any config with caching on and
+/// say "healthy" with the database gone. `now()` is STABLE, so Hyperdrive never caches it. (Every Thrust config has caching off today;
+/// this keeps the probe honest if one is ever turned on.)
+const PING_SQL: &str = "SELECT now()";
+
 fn db_err(e: tokio_postgres::Error) -> DbError {
     if e.code() == Some(&SqlState::UNIQUE_VIOLATION) {
         let c = e.as_db_error().and_then(|d| d.constraint()).unwrap_or("?");
@@ -3463,6 +3469,14 @@ impl Database for PgDatabase {
             .await
             .map_err(db_err)?;
         Ok(r.get::<_, i64>("n") as u64)
+    }
+
+    /// One statement on the shared connection: a checkout that fails (a refused or timed-out connect, a failed handshake) and a statement
+    /// that fails both come back as `DbError::Backend`. The row is not read, because `Row::get` is the one call here that can panic.
+    async fn ping(&self, _sys: &SystemScope) -> Result<(), DbError> {
+        let c = self.conn().await?;
+        c.pg().query_one(PING_SQL, &[]).await.map_err(db_err)?;
+        Ok(())
     }
 
     async fn insert_dead_letter(&self, _sys: &SystemScope, letter: &DeadLetter) -> Result<bool, DbError> {

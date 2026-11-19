@@ -8,7 +8,7 @@
 //! Handlers therefore never see a platform type.
 
 use axum::body::{Body, Bytes};
-use axum::extract::{DefaultBodyLimit, FromRequestParts, Path};
+use axum::extract::{DefaultBodyLimit, FromRequestParts, Path, RawQuery};
 use axum::http::header::{AUTHORIZATION, CACHE_CONTROL, CONTENT_TYPE, COOKIE, RETRY_AFTER, SET_COOKIE};
 use axum::http::request::Parts;
 use axum::http::{HeaderMap, HeaderName, HeaderValue, Method, Response, StatusCode};
@@ -295,8 +295,41 @@ pub struct OperatorAudit(pub String);
 // Handlers
 // ---------------------------------------------------------------------------------------------
 
-async fn healthz() -> &'static str {
-    "ok"
+/// `GET /healthz`, and with `?deep=1` the deep health check (issue #42, ADR-0094).
+///
+/// Plain, it answers 200 `ok` and touches nothing: the deploy's smoke (`?smoke=N`) and the edge's controls (`?edge-control=...`) both
+/// send their own query strings to it and need exactly that, so the query is read with [`RawQuery`], which cannot be rejected, and
+/// every parameter but `deep=1` is ignored. (A typed `Query<..>` would answer 400 to a query it did not like, and break both.)
+///
+/// Deep, it runs one statement through the database (`thrust_core::ping_database`) and answers 200 `ok`, or 503 `unavailable`. The body
+/// of a 503 never says why: the cause goes on the response as [`InternalErrorDetail`], which both roots log. The deep answers are
+/// `no-store`, since a cached "ok" would measure the cache. `status.woven` probes this every 60 s, and the availability SLO is read
+/// from it, so a request that gets no `App` is a 503 as well: a root that cannot serve it is down.
+async fn healthz(RawQuery(query): RawQuery, app: Option<Extension<App>>) -> Response<Body> {
+    if !asks_for_deep(query.as_deref()) {
+        return "ok".into_response();
+    }
+    let checked = match app {
+        Some(Extension(app)) => thrust_core::ping_database(&app).await,
+        None => Err(missing_app().0),
+    };
+    let mut resp = match &checked {
+        Ok(()) => "ok".into_response(),
+        Err(_) => (StatusCode::SERVICE_UNAVAILABLE, "unavailable").into_response(),
+    };
+    resp.headers_mut().insert(CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    if let Err(e) = checked {
+        resp.extensions_mut().insert(InternalErrorDetail(format!("deep health check: {e}")));
+    }
+    resp
+}
+
+/// Whether a query string asks for the deep check: it has a `deep` parameter whose value is `1`, read the way `axum`'s `Query` reads a
+/// query (percent-decoded, `+` as a space), so `d%65ep=%31` counts. `deep=0`, a bare `deep`, `Deep=1` and `deep=11` do not. A query that
+/// names `deep` twice asks for the check when ANY of them is `1` (`Query` would keep the last): one statement nobody needed costs
+/// nothing, and a caller who wrote `deep=1` meant it. `tests/healthz.rs` pins this table.
+fn asks_for_deep(query: Option<&str>) -> bool {
+    query.is_some_and(|q| form_urlencoded::parse(q.as_bytes()).any(|(k, v)| k == "deep" && v == "1"))
 }
 
 /// What the target says it is: its kind, its adapter set, and whether it enforces the CSRF token on cookie mutations
