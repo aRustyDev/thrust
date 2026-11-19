@@ -226,6 +226,15 @@ async fn model_preview_migration_rejects_wrong_connection_and_privileges() {
             Err(MigrateError::PreviewIdentityRefused)
         ));
         admin.batch_execute("RESET ROLE; RESET search_path").await.unwrap();
+        // Control: without the preview identity gate the same connection can migrate even
+        // when a caller claims the wrong PR; its SQL and ledger must actually appear.
+        assert!(matches!(
+            migrate_guarded_with(&client, &artifact.migrations(), NO_CONTRACT).await,
+            Ok(MigrateOutcome::Baseline { .. })
+        ));
+        assert!(table_exists(&client, "identity_probe").await);
+        assert!(table_exists(&client, "thrust_schema_migrations").await);
+        client.batch_execute("DROP TABLE identity_probe, thrust_schema_migrations").await.unwrap();
         assert_eq!(
             migrate_preview_with(&client, number, "postgres", &artifact).await.unwrap(),
             MigrateOutcome::Baseline { applied: 1 }
@@ -235,6 +244,17 @@ async fn model_preview_migration_rejects_wrong_connection_and_privileges() {
             migrate_preview_with(&client, number, "postgres", &artifact).await.unwrap(),
             MigrateOutcome::Current
         );
+        let contract_sql = "DROP TABLE identity_probe";
+        let contract_data = serde_json::to_vec(&serde_json::json!({"version":1,"commit":commit,"files":[
+            {"name":"0001_identity.sql","sql":sql,"sha256":thrust_adapters_postgres::ledger::sha256_hex(sql)},
+            {"name":"0002_contract_drop.sql","sql":contract_sql,"sha256":thrust_adapters_postgres::ledger::sha256_hex(contract_sql)}
+        ]})).unwrap();
+        let contract_artifact = Artifact::parse(&contract_data, commit).unwrap();
+        assert!(matches!(
+            migrate_preview_with(&client, number, "postgres", &contract_artifact).await,
+            Err(MigrateError::ContractRefused(_))
+        ));
+        assert!(table_exists(&client, "identity_probe").await);
     }
 }
 
