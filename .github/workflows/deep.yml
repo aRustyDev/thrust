@@ -2,7 +2,7 @@ name: deep
 
 # The randomized tests (`prop_` and `model_`) at 4096 cases, every night and by hand (Test phase, stage 3; status G-48, owner's decision of
 # 2026-11-19). Not gated: `ci.yml` does not call it, `gate` does not read it, and a red run blocks nothing. It is the `deep` nextest profile
-# (.config/nextest.toml), which no job ran before, measured at 313 to 383 s of tests on a runner (about 7 minutes a night).
+# (.config/nextest.toml), which no job ran before, measured at 270 to 491 s of tests on a runner in four runs, a job of 6.5 to 11 minutes (the runners differ by about 1.5 times).
 #
 # Not the `oracle_` tests, which are in the profile's selection: they compare with the TypeScript oracle's generated output
 # (tools/spike-0006/gen-all.sh, which needs Node), and a runner has none, so they fail here for want of it and are run by hand (G-5).
