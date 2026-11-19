@@ -58,7 +58,9 @@ jobs:
           GITHUB_TOKEN: ${{ steps.app.outputs.token }}
       # A draft release starts no workflow (GitHub runs nothing for a draft's `created` event), so start release.yml here, ON the tag:
       # the run's ref is what its attestations record. A dispatch made with the workflow's own token does start a run (it is the
-      # exception to "GITHUB_TOKEN starts no workflow"). release-plz lists every crate it released, all under the one workspace tag.
+      # exception to "GITHUB_TOKEN starts no workflow"). release-plz lists every crate it released with the tag its git_tag_name
+      # gives, but only the tagger's is made: a crate on its first-release pattern shows a <crate>-v<version> that does not exist
+      # (v0.3.0 showed five, and counting them all stopped its release here). check-release-plz.py --release-tag picks the tagger's.
       - name: Start release.yml on the tag
         if: steps.release-plz.outputs.releases_created == 'true'
         env:
@@ -67,9 +69,8 @@ jobs:
           RELEASES: ${{ steps.release-plz.outputs.releases }}
         run: |
           set -eu
-          printf '%s' "$RELEASES" | jq -r '[.[].tag] | unique | .[]' > tags.txt
-          test "$(wc -l < tags.txt)" -eq 1 || { echo "::error::release-plz made $(wc -l < tags.txt) tags, not one: $(tr '\n' ' ' < tags.txt)"; exit 1; }
-          tag="$(cat tags.txt)"
+          printf '%s' "$RELEASES" | python3 -I .github/scripts/check-release-plz.py --release-tag > tag.txt
+          tag="$(cat tag.txt)"
           gh workflow run release.yml --repo "$REPO" --ref "$tag"
           echo "release.yml started on $tag" >> "$GITHUB_STEP_SUMMARY"
 

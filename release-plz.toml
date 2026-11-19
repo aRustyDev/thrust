@@ -88,9 +88,6 @@ version_group = "thrust"
 [[package]]
 name = "thrust-html"
 version_group = "thrust"
-# First-release pattern (see the header): thrust-html is not in v0.2.0. Remove it once a release contains the crate; the
-# release-pr job says when.
-git_tag_name = "thrust-html-v{{ version }}"
 
 [[package]]
 name = "thrust-adapters-memory"
@@ -135,15 +132,10 @@ version_group = "thrust"
 [[package]]
 name = "thrust-preview-provisioner"
 version_group = "thrust"
-# First-release pattern until a release contains the provisioner crate.
-git_tag_name = "thrust-preview-provisioner-v{{ version }}"
 
 [[package]]
 name = "thrust-edge"
 version_group = "thrust"
-# First-release pattern (see the header): thrust-edge is not in v0.2.0. Remove it once a release contains the crate; the
-# release-pr job says when.
-git_tag_name = "thrust-edge-v{{ version }}"
 
 [[package]]
 name = "thrust-server"
@@ -156,16 +148,10 @@ version_group = "thrust"
 [[package]]
 name = "thrust-load-tests"
 version_group = "thrust"
-# First-release pattern (see the header): thrust-load-tests is not in v0.2.0. Remove it once a release contains the crate; the
-# release-pr job says when.
-git_tag_name = "thrust-load-tests-v{{ version }}"
 
 [[package]]
 name = "thrust-profiling"
 version_group = "thrust"
-# First-release pattern (see the header): thrust-profiling is not in v0.2.0. Remove it once a release contains the crate; the
-# release-pr job says when.
-git_tag_name = "thrust-profiling-v{{ version }}"
 
 [[package]]
 name = "thrust-oracle-fixture"
