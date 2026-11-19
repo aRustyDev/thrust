@@ -269,8 +269,9 @@ check("the self-hosted adapter runs the native cells, pg-adapter and mutants",
       (cells, {"pg-adapter", "mutants"} <= jobs), ({c for c in CELLS if c.startswith("native-")}, True))
 jobs, cells = run_plan(["crates/testing/suites/api/src/lib.rs"], REAL_GRAPH)
 check("the suite runs every cell and the mutants", (cells, "mutants" in jobs), (set(CELLS), True))
-# The mutation controls' verdicts are read by mutants.sh (the job) and by test-mutants-verdict.sh (ci-scripts), which also reads mutants.sh.
-for path in ["scripts/mutants.sh", "scripts/lib/mutants-verdict.sh"]:
+# The mutation controls' verdicts and the sharing out of their rows are read by mutants.sh (the job) and by test-mutants-verdict.sh and
+# test-mutants-shards.sh (ci-scripts), which also read mutants.sh.
+for path in ["scripts/mutants.sh", "scripts/lib/mutants-verdict.sh", "scripts/lib/mutants-shard.sh"]:
     jobs, cells = run_plan([path], REAL_GRAPH)
     check(f"{path} runs the mutants job and its test, and no cell", ({"mutants", "ci-scripts"} <= jobs, cells), (True, set()))
 jobs, cells = run_plan(["crates/editor/doc/src/lib.rs"], REAL_GRAPH)

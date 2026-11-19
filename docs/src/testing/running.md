@@ -75,7 +75,7 @@ admin token and database password per run and keeps them out of files and argv.
 |---|---|---|
 | `scripts/contract-all.sh` | the 25-cell matrix serially (21 contract cells, the three `mail` cells among them, 3 `oracle` cells and the `e2e` journey), summary in `target/contract-logs/summary.txt` | Docker, wrangler, `uv`, Node, pnpm and `nc` |
 | `scripts/e2e.sh <target> [controls]` | the browser journeys (one spec each in `e2e/journeys/`): the built app in Chromium against a Worker that serves it, then with `controls` their must-fail controls; builds the app when it is not built. `plane-oracle` runs them on the pinned Plane instead (local only; `ORACLE_DIR`, and `E2E_RECORD_HAR=1` writes `e2e/har/`; `tools/e2e-plane/README.md`) | Docker (`worker-cf`, `plane-oracle`), wrangler, Node, pnpm, `uv` and the fork checkout (`plane-oracle`) |
-| `scripts/mutants.sh` | the planted mutants; every one must be KILLED | Docker |
+| `scripts/mutants.sh` | the planted mutants; every one must be KILLED. `MUTANTS_SHARDS=<n> MUTANTS_SHARD=<i>` runs only the rows at positions `i + 1`, `i + 1 + n`, ... (what one leg of the CI matrix runs), and `MUTANTS_LIST=1` lists every row with its shard and runs none | Docker |
 | `scripts/verify-all.sh` | the hermetic nextest run, matrix, mutants, `check-deps.sh`, `pg_adapter`, probes; summary in `target/verify/summary.txt` | Docker, wrangler |
 | `scripts/flake-hunt.sh <target> <pass> <iterations>` | one cell N times, keeping every log | as the cell |
 | `scripts/stage2-contract.sh [pass]` | the suite against a **deployed** Worker (run it with `sh`) | an owner-provided Cloudflare sandbox only |
@@ -137,7 +137,7 @@ A pull request runs only the jobs and cells its change needs; how that is decide
 |---|---|
 | `changes` | derives the contract cells from the `run <target> <pass>` lines of `scripts/contract-all.sh`, then decides which jobs and cells the change needs (`.github/scripts/plan-ci.py`, over the changed paths and `cargo metadata`; fails open) |
 | `test.yml` | the workflow `.github/workflows/test.yml`, called by `ci.yml` through its job `test`: it holds the jobs `ci-scripts`, `hermetic`, `pg-adapter`, `contract` (the cells) and `mutants` and a `verdict` job that judges them, and the cells' markers, against the plan (any of the five, or all) and which `gate` requires (the migration moved the five jobs here; their names and commands are unchanged) |
-| `ci-scripts` | (in `test.yml`) the tests of the CI helper scripts themselves (`.github/scripts/tests/`), 45 commands run a core at a time under GNU parallel, the slowest first: every one runs, the job fails if any does, and its log ends with each command's time and exit status (and, on a failure, which commands failed) |
+| `ci-scripts` | (in `test.yml`) the tests of the CI helper scripts themselves (`.github/scripts/tests/`), 46 commands run a core at a time under GNU parallel, the slowest first: every one runs, the job fails if any does, and its log ends with each command's time and exit status (and, on a failure, which commands failed) |
 | `lint.yml` | the workflow `.github/workflows/lint.yml`, called by `ci.yml` through its job `lint`: it holds the jobs `deps` and `lint` and a `verdict` job that judges them against the plan (one of the two, or both) and which `gate` requires (the migration moved both jobs here; their names and commands are unchanged) |
 | `deps` | (in `lint.yml`) `scripts/check-deps.sh`, then `scripts/check-layout.sh` (ADR-0009's layout of `crates/`) and the other guards, most with their `--self-test`: topology, edge configuration, Plane 500, acceptance list, placement, migration lint, the lockfile's form, contract counts, the wrangler render, release-plz, the workflow lint and the OpenAPI diff |
 | `lint` | (in `lint.yml`) `cargo fmt --all --check`, then `cargo clippy --workspace --all-targets --locked -- -D warnings`, then the same clippy for `thrust-worker` with `--no-default-features --target wasm32-unknown-unknown` (the clippy steps run even if rustfmt failed) |
@@ -146,7 +146,7 @@ A pull request runs only the jobs and cells its change needs; how that is decide
 | `hermetic` | (in `test.yml`) `cargo nextest run --profile ci --workspace --locked`, then `cargo test --doc --workspace --locked` |
 | `pg-adapter` | (in `test.yml`) `cargo nextest run -p thrust-adapters-selfhosted --profile adapters --locked -E 'binary(pg_adapter)'`, then the same for `binary(smtp_sink)` |
 | `contract` | (in `test.yml`) one job per cell (`.github/workflows/contract-cell.yml`, called by `test.yml`, which `ci.yml` calls with the planner's matrix and cells): `scripts/contract.sh <target> <pass>`, then a marker that exactly that cell passed |
-| `mutants` | (in `test.yml`) `scripts/mutants.sh` |
+| `mutants` | (in `test.yml`) `scripts/mutants.sh`, as a matrix of four runners (`strategy.job-total` and `strategy.job-index` tell the script how many shards there are and which it is): the 54 rows rebuild `thrust-server` with a mutant's feature into one `target/`, so they cannot share a checkout, and each runner runs the rows at its positions. The job id stays `mutants`, so `verdict` and `gate` read the aggregate of the four legs |
 | `documentation` | the workflow `.github/workflows/documentation.yml`, called by `ci.yml`: its job `docs`, and its `verdict` job, which judges `docs` against the plan and which `gate` requires (the migration moved `docs` here; its name and commands are unchanged) |
 | `docs` | (in `documentation.yml`) when the book's inputs changed (`docs/`, `AGENTS.md`, `.config/branding/`): `scripts/check-book.sh` (`mdbook build`, failing on any `ERROR` line and on a page `SUMMARY.md` does not list), then `scripts/check-book.sh --self-test` (a copy broken four ways, each refused). mdBook 0.5.4 and mdbook-mermaid 0.17.1 |
 | `web` | the workflow `.github/workflows/web.yml`, called by `ci.yml`, which holds the job `web` and a `verdict` job that judges it against the plan and which `gate` requires (the migration moved the job here; its name and commands are unchanged); `web` runs when `web/` or its gate changed: `scripts/check-web-diff.sh` (the Q-R2 gate: only the files in `web/ALLOWED-CHANGES` differ from the oracle pin), then `pnpm --dir web install --frozen-lockfile --ignore-scripts` and `pnpm --dir web exec turbo run build --filter=web` |
@@ -158,12 +158,20 @@ cell on demand and weekly. Not in CI: the `oracle_` tests (they need the pinned 
 
 ### When `ci-scripts` is red
 
-- **Read the end of the job's log.** It prints each of the 45 commands with its seconds and exit status, slowest first, and when any failed, `--- FAILED (n):` and each failed command with its exit status. The failed command's own output is above, kept together.
+- **Read the end of the job's log.** It prints each of the 46 commands with its seconds and exit status, slowest first, and when any failed, `--- FAILED (n):` and each failed command with its exit status. The failed command's own output is above, kept together.
   Every command runs even when one fails, so a red job can name several: fix them all before you push.
 - **Reproduce one command** from the repository root, as the job runs it: `sh .github/scripts/tests/<name>.sh` (under `dash` if your `sh` is bash: the runner's is dash), `python3 -I .github/scripts/tests/<name>.py`, with `RUSTUP_TOOLCHAIN=stable` for `test_plan_ci.py`.
   The commands do not depend on one another, so any one can be run alone, or all of them at once by any parallel runner.
 - **A job stopped after ten minutes** has a command that hung, and prints no table (it was killed before). A command's lines appear only when it finishes, so the hung one is among the commands of the list in `test.yml` whose output is missing from the log.
 - **A command that fails once and passes on a rerun** is a finding to file, not to retry away ([Rule 2](rules.md)). Rerun the failed job once to see whether it repeats.
+
+### When a `mutants` leg is red
+
+- **Each leg judges 13 or 14 of the 54 rows.** Its log names each row as it starts (`row 6: native-memory main + skip-csrf`; a row's own output goes to a file, so nothing else appears), and ends with the summary: one line per row (`KILLED`, `SURVIVED`, `UNCLEAR`, `DID NOT RUN`, `REFUSED`, `NOT REFUSED`), `shard <i> of <n>: <rows> of the <total> rows`, and the counts. Legs do not cancel one another, so a red job can have several red legs: read all of them.
+- **`SURVIVED`** is the finding the job exists to make: the suite passed against a build broken on purpose, so an assertion is vacuous. **`DID NOT RUN`** says why (a build, a server that did not come up, Docker); it is not evidence about any assertion.
+- **A leg that says `VACUITY GUARD: shard i of n selected no row`** has more shards than rows or a wrong index; **`... selected k rows and recorded m verdicts`** means a row in `scripts/mutants.sh` does not start with `want "<label>"`, so it runs on every leg. `.github/scripts/tests/test-mutants-shards.sh` finds that before a push.
+- **Reproduce one leg** from the repository root with Docker running: `MUTANTS_SHARDS=4 MUTANTS_SHARD=<i> scripts/mutants.sh`, or one row alone by finding its number in `MUTANTS_SHARDS=4 MUTANTS_SHARD=0 MUTANTS_LIST=1 scripts/mutants.sh` and picking the shard it falls on. Never two at once in one checkout: they share `target/`.
+- **A leg stopped after twenty minutes** has a row that hung, and prints no summary (it was killed before). The last `row <k>: <label>` line of its log is the row it was in.
 
 ## Don't
 

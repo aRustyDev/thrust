@@ -6,6 +6,9 @@
 # that survives means some assertion is vacuous.
 #
 #   scripts/mutants.sh
+#   MUTANTS_SHARDS=4 MUTANTS_SHARD=1 scripts/mutants.sh   only the rows at positions 2, 6, 10, ... (what one runner of the matrix runs)
+#   MUTANTS_LIST=1 scripts/mutants.sh                     list every row and the shard it falls on, run nothing
+# scripts/lib/mutants-shard.sh says how rows are shared out, and why a row starts with `want`.
 set -u
 # A counterexample found against a deliberately broken build is not a regression of the real code: do not let the
 # generated tests (crates/testing/suites/api/tests/model) save it into the source tree.
@@ -18,6 +21,10 @@ SUMMARY="$OUT/summary.txt"
 # What a row's run says (KILLED, SURVIVED, UNCLEAR, DID NOT RUN): scripts/lib/mutants-verdict.sh, which says what each means.
 # shellcheck source=scripts/lib/mutants-verdict.sh
 . "$ROOT/scripts/lib/mutants-verdict.sh"
+# Which rows this run is responsible for (the job is a matrix of shards, each on a runner with a `target/` of its own).
+# shellcheck source=scripts/lib/mutants-shard.sh
+. "$ROOT/scripts/lib/mutants-shard.sh"
+shard_init || exit 2
 # Any row that is not KILLED (or REFUSED, for the guard rows) fails the job: a row with no verdict has not shown the suite can fail.
 NOT_KILLED=0
 KILLED_N=0; SURVIVED_N=0; UNCLEAR_N=0; NOT_RUN_N=0; REFUSED_N=0; NOT_REFUSED_N=0
@@ -119,6 +126,7 @@ for triple in \
   rest="${triple#*:}"
   feature="${rest%%:*}"
   pass="${rest##*:}"
+  want "native-memory $pass + $name" || continue
   THRUST_SERVER_FEATURES="$feature" THRUST_LOGDIR="$OUT/$name" "$ROOT/scripts/contract.sh" native-memory "$pass" >"$OUT/$name.out" 2>&1
   status=$?
   kill_check_suite "native-memory $pass + $name" "$status" "$OUT/$name/native-memory-$pass.test.log" "$OUT/$name.out"
@@ -135,6 +143,7 @@ for spec in \
   rest="${spec#*:}"
   name="${rest%%:*}"
   feature="${rest##*:}"
+  want "$target engine + $name" || continue
   THRUST_SERVER_FEATURES="$feature" THRUST_LOGDIR="$OUT/engine-$target-$name" "$ROOT/scripts/contract.sh" "$target" engine >"$OUT/engine-$target-$name.out" 2>&1
   status=$?
   kill_check_suite "$target engine + $name" "$status" "$OUT/engine-$target-$name/$target-engine.test.log" "$OUT/engine-$target-$name.out"
@@ -154,12 +163,16 @@ guard_check() {
     NOT_KILLED=1
   fi
 }
-THRUST_SERVER_CSRF_ENFORCE=off THRUST_LOGDIR="$OUT/guard-main-vs-off" "$ROOT/scripts/contract.sh" native-memory main >"$OUT/guard-main-vs-off.out" 2>&1
-status=$?
-guard_check "guard: main pass, server off" "$status" "$OUT/guard-main-vs-off.out"
-THRUST_SERVER_CSRF_ENFORCE=on THRUST_LOGDIR="$OUT/guard-off-vs-on" "$ROOT/scripts/contract.sh" native-memory csrfoff >"$OUT/guard-off-vs-on.out" 2>&1
-status=$?
-guard_check "guard: csrfoff pass, server on" "$status" "$OUT/guard-off-vs-on.out"
+if want "guard: main pass, server off"; then
+  THRUST_SERVER_CSRF_ENFORCE=off THRUST_LOGDIR="$OUT/guard-main-vs-off" "$ROOT/scripts/contract.sh" native-memory main >"$OUT/guard-main-vs-off.out" 2>&1
+  status=$?
+  guard_check "guard: main pass, server off" "$status" "$OUT/guard-main-vs-off.out"
+fi
+if want "guard: csrfoff pass, server on"; then
+  THRUST_SERVER_CSRF_ENFORCE=on THRUST_LOGDIR="$OUT/guard-off-vs-on" "$ROOT/scripts/contract.sh" native-memory csrfoff >"$OUT/guard-off-vs-on.out" 2>&1
+  status=$?
+  guard_check "guard: csrfoff pass, server on" "$status" "$OUT/guard-off-vs-on.out"
+fi
 
 # The vacuity guard of mail (E2): `scripts/contract.sh` asks the app's own question, `/api/instances/`, and refuses to run (exit 5, no test ran) a pass
 # whose target gives the wrong answer: `true` for the `mail` pass, `false` for every other. Two builds are refused by it, and each is a row here
@@ -171,6 +184,7 @@ guard_check "guard: csrfoff pass, server on" "$status" "$OUT/guard-off-vs-on.out
 refusal_check() {
   # $1 label, $2 feature, $3 pass, $4 the guard's message
   label="$1"; feature="$2"; pass="$3"; msg="$4"
+  want "$label" || return 0
   name="guard-$pass-$feature"
   THRUST_SERVER_FEATURES="$feature" THRUST_LOGDIR="$OUT/$name" "$ROOT/scripts/contract.sh" native-memory "$pass" >"$OUT/$name.out" 2>&1
   status=$?
@@ -187,15 +201,19 @@ refusal_check "guard: mail pass, relay not wired" mutant_smtp_unwired mail 'VACU
 refusal_check "guard: main pass, mail flag on" mutant_smtp_flag_always_on main 'VACUITY GUARD: is_smtp_configured is not false'
 
 # Postgres adapter mutant: recycle a connection that is still inside an abandoned transaction.
-adapter_row pg-discard thrust-adapters-selfhosted mutant_discard_noop \
-  'binary(pg_adapter) & test(/an_abandoned_transaction|model_postgres_adapter_matches/)'
-kill_check_suite "postgres adapter + discard-noop" "$status" "$OUT/pg-discard.test.log"
+if want "postgres adapter + discard-noop"; then
+  adapter_row pg-discard thrust-adapters-selfhosted mutant_discard_noop \
+    'binary(pg_adapter) & test(/an_abandoned_transaction|model_postgres_adapter_matches/)'
+  kill_check_suite "postgres adapter + discard-noop" "$status" "$OUT/pg-discard.test.log"
+fi
 
 # Postgres adapter mutant (issue #39): the round-trip counter counts nothing. The counting tests must notice, and the failure
 # must be a wrong count: "statements, the model says" is in the generated test's message and nowhere else, so a pool that never
 # started (no Docker) is not a kill.
-adapter_row pg-count-nothing thrust-adapters-selfhosted mutant_count_nothing 'binary(pg_adapter) & test(/counting/)'
-kill_check_suite_msg "postgres adapter + count-nothing" "$status" "$OUT/pg-count-nothing.test.log" "statements, the model says"
+if want "postgres adapter + count-nothing"; then
+  adapter_row pg-count-nothing thrust-adapters-selfhosted mutant_count_nothing 'binary(pg_adapter) & test(/counting/)'
+  kill_check_suite_msg "postgres adapter + count-nothing" "$status" "$OUT/pg-count-nothing.test.log" "statements, the model says"
+fi
 
 # The same counter's mutants at the server, on native-pg (issue #39): the budget test, alone (the `budget` pass), must fail on
 # each, and for the reason the mutant is for. `kill_check_suite` alone would also count a run that never reached the test (Postgres
@@ -208,6 +226,7 @@ for triple in \
   rest="${triple#*:}"
   feature="${rest%%:*}"
   needle="${rest#*:}"
+  want "native-pg budget + $name" || continue
   THRUST_SERVER_FEATURES="$feature" THRUST_LOGDIR="$OUT/$name" "$ROOT/scripts/contract.sh" native-pg budget >"$OUT/$name.out" 2>&1
   status=$?
   kill_check_suite_msg "native-pg budget + $name" "$status" "$OUT/$name/native-pg-budget.test.log" "$needle" "$OUT/$name.out"
@@ -231,6 +250,7 @@ for quad in \
   rest="${rest#*:}"
   bin="${rest%%:*}"
   needle="${rest#*:}"
+  want "smtp adapter + $name" || continue
   adapter_row "smtp-$name" thrust-adapters-selfhosted "$feature" "binary($bin)"
   kill_check_suite_msg "smtp adapter + $name" "$status" "$OUT/smtp-$name.test.log" "$needle"
 done
@@ -251,10 +271,15 @@ for quad in \
   rest="${rest#*:}"
   bin="${rest%%:*}"
   needle="${rest#*:}"
+  want "cloudflare email adapter + $name" || continue
   adapter_row "cf-email-$name" thrust-adapters-cloudflare "$feature" "binary($bin)"
   kill_check_suite_msg "cloudflare email adapter + $name" "$status" "$OUT/cf-email-$name.test.log" "$needle"
 done
 
+# A list run ends here. Any other run must have judged exactly the rows it chose: a row outside `want` ran everywhere, a shard with no rows ran
+# nothing (scripts/lib/mutants-shard.sh).
+shard_finish $((KILLED_N + SURVIVED_N + UNCLEAR_N + NOT_RUN_N + REFUSED_N + NOT_REFUSED_N)) || NOT_KILLED=1
+printf 'shard %s of %s: %s of the %s rows\n' "$SHARD_I" "$SHARD_N" "$ROWS_SELECTED" "$ROW_N" >>"$SUMMARY"
 printf 'killed=%s survived=%s unclear=%s did-not-run=%s refused=%s not-refused=%s\n' \
   "$KILLED_N" "$SURVIVED_N" "$UNCLEAR_N" "$NOT_RUN_N" "$REFUSED_N" "$NOT_REFUSED_N" >>"$SUMMARY"
 cat "$SUMMARY"
