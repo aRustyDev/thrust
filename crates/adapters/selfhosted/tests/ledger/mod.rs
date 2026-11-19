@@ -120,10 +120,35 @@ async fn model_guarded_migrations_run_as_the_preview_role() {
             .unwrap();
         let current: String = raw.query_one("SELECT current_user", &[]).await.unwrap().get(0);
         assert_eq!(current, role);
+        if number == 4 {
+            // Pins the collision case: the scoped catalog view must never replace an existing object.
+            raw.batch_execute("CREATE VIEW pg_constraint AS SELECT 42 AS marker").await.unwrap();
+            assert!(migrate_guarded_with(&raw, &MIGRATIONS, NO_CONTRACT).await.is_err());
+            let marker: i32 =
+                raw.query_one(&format!("SELECT marker FROM {role}.pg_constraint"), &[]).await.unwrap().get(0);
+            assert_eq!(marker, 42);
+            assert!(!table_exists(&raw, "thrust_schema_migrations").await);
+            raw.batch_execute(&format!("DROP VIEW {role}.pg_constraint")).await.unwrap();
+        }
         assert_eq!(
             migrate_guarded_with(&raw, &MIGRATIONS, NO_CONTRACT).await.unwrap(),
             MigrateOutcome::Baseline { applied: MIGRATIONS.len() }
         );
+        let view: Option<String> = raw
+            .query_one("SELECT pg_catalog.to_regclass($1)::text", &[&format!("{role}.pg_constraint")])
+            .await
+            .unwrap()
+            .get(0);
+        assert!(view.is_none(), "temporary catalog view survived migration");
+        let entries = thrust_adapters_postgres::carried(&MIGRATIONS);
+        for entry in entries {
+            let checksum: String = raw
+                .query_one("SELECT sha256 FROM thrust_schema_migrations WHERE file = $1", &[&entry.file])
+                .await
+                .unwrap()
+                .get(0);
+            assert_eq!(checksum, entry.sha256);
+        }
         let bad = format!("CREATE TABLE public.preview_forbidden_{number} (n int);");
         let mut files = MIGRATIONS.to_vec();
         files.push(Migration { file: "9000_public_forbidden.sql", sql: &bad });

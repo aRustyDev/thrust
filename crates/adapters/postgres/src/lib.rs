@@ -286,11 +286,38 @@ fn guarded_sql(sql: &str) -> String {
 }
 
 async fn migration_sql(client: &Client, sql: &str, guarded: bool) -> Result<(), tokio_postgres::Error> {
-    if guarded {
-        client.batch_execute(&guarded_sql(sql)).await
-    } else {
-        client.batch_execute(sql).await
+    if !guarded {
+        return client.batch_execute(sql).await;
     }
+    // These immutable migrations look up constraint names without restricting the schema.
+    // For a preview, expose a schema-scoped catalog view only while those exact files run.
+    // The view and path change are transaction-local in effect: on any failure the outer
+    // transaction rolls back, and on success both are removed before the ledger is updated.
+    if sql == MIGRATION_0002 || sql == MIGRATION_0003 {
+        let row = client
+            .query_one("SELECT current_user::text, current_schema()::text, current_setting('search_path')", &[])
+            .await?;
+        let role: String = row.try_get(0)?;
+        let schema: Option<String> = row.try_get(1)?;
+        let path: String = row.try_get(2)?;
+        let preview = role.strip_prefix("pr_").is_some_and(|n| !n.is_empty() && n.bytes().all(|c| c.is_ascii_digit()));
+        if preview && schema.as_deref() == Some(role.as_str()) {
+            // role contains only ASCII letters, underscore and digits; it is safe as an identifier
+            // and string literal. CREATE VIEW fails rather than replacing an existing object.
+            client.batch_execute(&format!("CREATE VIEW \"{role}\".pg_constraint AS SELECT * FROM pg_catalog.pg_constraint WHERE connamespace = '{role}'::pg_catalog.regnamespace")).await?;
+            client
+                .execute(
+                    "SELECT pg_catalog.set_config('search_path', pg_catalog.quote_ident($1) || ', pg_catalog', true)",
+                    &[&role],
+                )
+                .await?;
+            client.batch_execute(&guarded_sql(sql)).await?;
+            client.batch_execute(&format!("DROP VIEW \"{role}\".pg_constraint")).await?;
+            client.execute("SELECT pg_catalog.set_config('search_path', $1, true)", &[&path]).await?;
+            return Ok(());
+        }
+    }
+    client.batch_execute(&guarded_sql(sql)).await
 }
 
 /// What [`migrate_with`] would do, without doing it: whether the database has a ledger, and the plan. A database without one
