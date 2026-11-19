@@ -186,6 +186,9 @@ jobs:
       - name: Check preview provisioner (wasm32)
         if: ${{ !cancelled() }}
         run: scripts/rs cargo check -p thrust-preview-provisioner --target wasm32-unknown-unknown --locked
+      - name: clippy (preview migration executor, wasm32)
+        if: ${{ !cancelled() }}
+        run: scripts/rs cargo clippy -p thrust-preview-migration-executor --target wasm32-unknown-unknown --locked -- -D warnings
       # The `openapi` feature of thrust-api-v1 (issue #58) is off in every run above, so the derives and path declarations behind it
       # are linted here, under the same four denied lints.
       - name: clippy (thrust-api-v1 with the OpenAPI feature)

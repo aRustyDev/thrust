@@ -138,6 +138,8 @@ def want_for_crates(changed, deps):
         jobs.add("pg-adapter")
     if "thrust-preview-provisioner" in hit:
         jobs.add("pg-adapter")
+    if "thrust-preview-migration-executor" in hit:
+        jobs.add("pg-adapter")
     if SERVER in hit or SUITE in changed:
         jobs.add("mutants")
     cells = {c for c in CELLS if BINARY[c.split(" ")[0]] in hit or SUITE in changed}
@@ -184,7 +186,7 @@ SAMPLES = [
     "tools/compat-record/record.py", "tools/compat-inventory/out-pinned/endpoint-inventory.csv",
     ".agents/plans/contrail/research/0003-compat-plane-inventory.md", "tools/e2e-har/scrub.py", "e2e/journeys/m1.spec.ts",
     "web/apps/web/app.tsx", "scripts/e2e.sh", "scripts/oracle-v1.sh", "scripts/mutants.sh", "scripts/stage2-contract.sh",
-    "scripts/check-web-diff.sh", "scripts/check-book.sh", "scripts/check-topology.sh", "scripts/smoke-deploy.sh", "scripts/flagship.py", "scripts/preview-config.py", "infra/edge/access.tf", "scripts/samply-wrapper.sh", "scripts/verify-all.sh",
+    "scripts/check-web-diff.sh", "scripts/check-book.sh", "scripts/test-preview-migration-worker.sh", "scripts/check-topology.sh", "scripts/smoke-deploy.sh", "scripts/flagship.py", "scripts/preview-config.py", "infra/edge/access.tf", "scripts/samply-wrapper.sh", "scripts/verify-all.sh",
     "scripts/new-thing.sh", "docs/src/intro.md", "AGENTS.md", ".github/scripts/lint-workflow.sh", ".github/workflows/deploy.yml",
 ]
 NOTHING = ["README.md", "CHANGELOG.md", ".agents/plans/x.md", "docs-notes.md", "CLAUDE.md", "crates-AGENTS.md", "probes/send-shape/run.sh", "tools/spike-0006/x", ".github/CODEOWNERS"]
@@ -250,6 +252,12 @@ preview_graph = dict(REAL_GRAPH, **{"thrust-preview-provisioner": {"thrust-adapt
 preview_layout = dict(ADR_0009, **{"thrust-preview-provisioner": "crates/preview-provisioner"})
 preview_jobs, _ = run_plan(["crates/preview-provisioner/src/lib.rs"], preview_graph, layout=preview_layout)
 check("preview Worker change runs the Postgres check", "pg-adapter" in preview_jobs, True)
+executor_graph = dict(REAL_GRAPH, **{"thrust-preview-migration-executor": {"thrust-adapters-cloudflare"}})
+executor_layout = dict(ADR_0009, **{"thrust-preview-migration-executor": "crates/preview-migration-executor"})
+executor_jobs, _ = run_plan(["crates/preview-migration-executor/src/lib.rs"], executor_graph, layout=executor_layout)
+check("migration executor change runs the Worker runtime check", "pg-adapter" in executor_jobs, True)
+check("migration Worker runtime script selects its job", run_plan(["scripts/test-preview-migration-worker.sh"], REAL_GRAPH),
+      ({"pg-adapter"}, set()))
 check("another workflow runs ci-scripts and deps, no cell", run_plan([".github/workflows/flake-hunt.yml"], REAL_GRAPH),
       ({"ci-scripts", "deps"}, set()))
 check("the book runs only the docs job", run_plan(["docs/src/intro.md"], REAL_GRAPH), ({"docs"}, set()))

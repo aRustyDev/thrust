@@ -53,6 +53,7 @@ pub const MIGRATION_0017: &str = include_str!("../migrations/0017_password_reset
 pub const MIGRATION_0018: &str = include_str!("../migrations/0018_login_codes.sql");
 pub const MIGRATION_0019: &str = include_str!("../migrations/0019_description_stripped.sql");
 pub const MIGRATION_0020: &str = include_str!("../migrations/0020_dead_letters.sql");
+pub const MIGRATION_0021: &str = include_str!("../migrations/0021_retention_indexes.sql");
 
 /// One migration file: its ledger name and SQL, borrowed from the caller or embedded in the binary.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -63,7 +64,7 @@ pub struct Migration<'a> {
 
 /// Every migration file, in the order they were written (their names' order). A file added to `migrations/` and not here is not
 /// applied, and `ledger`'s test of this list against the directory fails.
-pub const MIGRATIONS: [Migration<'static>; 20] = [
+pub const MIGRATIONS: [Migration<'static>; 21] = [
     Migration { file: "0001_init.sql", sql: MIGRATION_0001 },
     Migration { file: "0002_sequence_tenant_key.sql", sql: MIGRATION_0002 },
     Migration { file: "0003_workspaces.sql", sql: MIGRATION_0003 },
@@ -84,6 +85,7 @@ pub const MIGRATIONS: [Migration<'static>; 20] = [
     Migration { file: "0018_login_codes.sql", sql: MIGRATION_0018 },
     Migration { file: "0019_description_stripped.sql", sql: MIGRATION_0019 },
     Migration { file: "0020_dead_letters.sql", sql: MIGRATION_0020 },
+    Migration { file: "0021_retention_indexes.sql", sql: MIGRATION_0021 },
 ];
 
 /// What `migrate` may do, beyond applying what is missing.
@@ -3469,6 +3471,117 @@ impl Database for PgDatabase {
             .await
             .map_err(db_err)?;
         Ok(r.get::<_, i64>("n") as u64)
+    }
+
+    async fn purgeable_work_items(
+        &self,
+        _sys: &SystemScope,
+        cutoff: Timestamp,
+        after: Option<(Timestamp, WorkItemId)>,
+        limit: u32,
+    ) -> Result<Vec<PurgeCandidate>, DbError> {
+        let c = self.conn().await?;
+        let (after_at, after_id) = (after.map(|(t, _)| t), after.map(|(_, id)| id.0));
+        // `$2` and `$3` are both null for the first page. The work items under a work item are found through `work_items_by_parent`.
+        // One that is its own parent needs no care: it is old, or it would not be a candidate, so it never keeps itself.
+        let rows = c
+            .pg()
+            .query(
+                "SELECT w.workspace_id, w.project_id, w.id, w.deleted_at FROM work_items w \
+                 WHERE w.deleted_at < $1 \
+                   AND ($2::timestamptz IS NULL OR (w.deleted_at, w.id) > ($2::timestamptz, $3::uuid)) \
+                   AND NOT EXISTS ( \
+                     SELECT 1 FROM work_items c WHERE c.parent_id = w.id AND (c.deleted_at IS NULL OR c.deleted_at >= $1)) \
+                 ORDER BY w.deleted_at, w.id LIMIT $4",
+                &[&cutoff, &after_at, &after_id, &i64::from(limit)],
+            )
+            .await
+            .map_err(db_err)?;
+        Ok(rows
+            .iter()
+            .map(|r| PurgeCandidate {
+                workspace_id: WorkspaceId(r.get("workspace_id")),
+                project_id: ProjectId(r.get("project_id")),
+                id: WorkItemId(r.get("id")),
+                deleted_at: r.get("deleted_at"),
+            })
+            .collect())
+    }
+
+    async fn purge_work_items(
+        &self,
+        _sys: &SystemScope,
+        ids: &[WorkItemId],
+        cutoff: Timestamp,
+    ) -> Result<u64, DbError> {
+        if ids.is_empty() {
+            return Ok(0);
+        }
+        let ids: Vec<Uuid> = ids.iter().map(|i| i.0).collect();
+        // Several statements that stand or fall together, on a connection of their own, as `insert_workspace` does. Every foreign
+        // key into `work_items` is NO ACTION, so what hangs on a work item goes first, and a work item that stays but names one
+        // that goes (a deleted one just past the end of this batch, which a later batch takes) loses its parent.
+        let c = self.connector.checkout(true).await?;
+        let cl = c.pg();
+        cl.batch_execute("BEGIN").await.map_err(db_err)?;
+        let res: Result<u64, DbError> = async {
+            // The rows that still qualify, locked: a row another transaction is about to name as a parent waits for this one, and
+            // then finds it gone (a foreign key violation, which is the right answer to "make it the parent of a work item").
+            let rows = cl
+                .query(
+                    "SELECT w.id FROM work_items w WHERE w.id = ANY($1) AND w.deleted_at < $2 \
+                       AND NOT EXISTS ( \
+                         SELECT 1 FROM work_items c WHERE c.parent_id = w.id AND (c.deleted_at IS NULL OR c.deleted_at >= $2)) \
+                     ORDER BY w.id FOR UPDATE OF w",
+                    &[&ids, &cutoff],
+                )
+                .await
+                .map_err(db_err)?;
+            let gone: Vec<Uuid> = rows.iter().map(|r| r.get("id")).collect();
+            if gone.is_empty() {
+                return Ok(0);
+            }
+            cl.execute("UPDATE work_items SET parent_id = NULL WHERE parent_id = ANY($1) AND id <> ALL($1)", &[&gone])
+                .await
+                .map_err(db_err)?;
+            for table in ["work_item_assignees", "work_item_labels", "work_item_activities"] {
+                cl.execute(&format!("DELETE FROM {table} WHERE work_item_id = ANY($1)"), &[&gone]).await.map_err(db_err)?;
+            }
+            cl.execute("DELETE FROM work_items WHERE id = ANY($1)", &[&gone]).await.map_err(db_err)
+        }
+        .await;
+        match res {
+            Ok(n) => cl.batch_execute("COMMIT").await.map(|()| n).map_err(db_err),
+            Err(e) => {
+                let _ = cl.batch_execute("ROLLBACK").await;
+                Err(e)
+            }
+        }
+    }
+
+    async fn purge_outbox(&self, _sys: &SystemScope, cutoff: Timestamp, limit: u32) -> Result<u64, DbError> {
+        let c = self.conn().await?;
+        // The oldest first, which `outbox_dispatched_by_age` (migration 0021) serves; rows another run holds are left to it.
+        c.pg()
+            .execute(
+                "DELETE FROM outbox WHERE event_id IN ( \
+                   SELECT event_id FROM outbox WHERE dispatched_at IS NOT NULL AND created_at < $1 \
+                   ORDER BY created_at, event_id LIMIT $2 FOR UPDATE SKIP LOCKED)",
+                &[&cutoff, &i64::from(limit)],
+            )
+            .await
+            .map_err(db_err)
+    }
+
+    async fn work_item_deleted_at(
+        &self,
+        _sys: &SystemScope,
+        id: WorkItemId,
+    ) -> Result<Option<Option<Timestamp>>, DbError> {
+        let c = self.conn().await?;
+        let row =
+            c.pg().query_opt("SELECT deleted_at FROM work_items WHERE id = $1", &[&id.0]).await.map_err(db_err)?;
+        Ok(row.map(|r| r.get("deleted_at")))
     }
 
     /// One statement on the shared connection: a checkout that fails (a refused or timed-out connect, a failed handshake) and a statement

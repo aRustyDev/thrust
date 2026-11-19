@@ -17,6 +17,7 @@ mod assets;
 mod counting;
 mod ledger;
 mod model;
+mod retention;
 mod tls;
 
 use std::sync::Arc;
