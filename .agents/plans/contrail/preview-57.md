@@ -35,7 +35,12 @@ exercised password-update recovery; the interrupted-update path still needs an A
    `preview_artifact::Artifact` validates bounded JSON, ordered unique file names and versions,
    SQL digests, and the expected commit before offering borrowed migrations to an executor. A
    digest within an untrusted artifact is not evidence of provenance: the executor still needs
-   a trusted source run and must match its inputs to the actual commit. These
+   a trusted source run and must match its inputs to the actual commit. `migrate_preview_with`
+   checks the configured database, login and current role, schema ownership and search path,
+   role attributes and memberships, and schema/database CREATE privileges inside the locked
+   transaction before applying an artifact. This is not a complete audit of table, function,
+   or other grants; the restricted-role bootstrap and its live privileges remain independent
+   security boundaries. These
    point-in-time checks can go stale: a future consumer must validate the artifact, its trusted
    source run and the current PR head again before any privileged action. The triggering PR run
    is not proof of provisioned resources or migration authorization; independently verify both.

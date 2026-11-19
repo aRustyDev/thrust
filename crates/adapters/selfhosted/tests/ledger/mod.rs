@@ -8,8 +8,8 @@
 
 use thrust_adapters_postgres::ledger::{Plan, LEDGER_TABLE};
 use thrust_adapters_postgres::{
-    carried, migrate, migrate_atomic_with, migrate_guarded_with, migrate_with, plan_migrations, MigrateError,
-    MigrateOptions, MigrateOutcome, Migration, MIGRATIONS,
+    carried, migrate, migrate_atomic_with, migrate_guarded_with, migrate_preview_with, migrate_with, plan_migrations,
+    MigrateError, MigrateOptions, MigrateOutcome, Migration, MIGRATIONS,
 };
 
 use super::*;
@@ -160,6 +160,103 @@ async fn model_guarded_migrations_run_as_the_preview_role() {
         assert!(!table_exists(&raw, &format!("public.preview_forbidden_{number}")).await);
         assert_eq!(ledger_files(&raw).await, names(&MIGRATIONS));
         raw.batch_execute("RESET ROLE; RESET search_path;").await.unwrap();
+    }
+}
+
+/// Each preview identity is checked inside the migration transaction before any file runs.
+#[tokio::test]
+async fn model_preview_migration_rejects_wrong_connection_and_privileges() {
+    use thrust_adapters_postgres::preview_artifact::Artifact;
+    let db = fresh().await;
+    let admin = db.conn.raw().await.unwrap();
+    admin
+        .batch_execute("REVOKE CREATE ON SCHEMA public FROM PUBLIC; CREATE ROLE preview_extra NOLOGIN;")
+        .await
+        .unwrap();
+    let port = db._container.get_host_port_ipv4(5432).await.unwrap();
+    let commit = "0123456789abcdef0123456789abcdef01234567";
+    let sql = "CREATE TABLE identity_probe (n int);";
+    let data = serde_json::to_vec(&serde_json::json!({"version":1,"commit":commit,"files":[{
+        "name":"0001_identity.sql","sql":sql,"sha256":thrust_adapters_postgres::ledger::sha256_hex(sql)
+    }]}))
+    .unwrap();
+    let artifact = Artifact::parse(&data, commit).unwrap();
+    for number in 1..=3 {
+        let role = format!("pr_{number}");
+        admin.batch_execute(&format!("CREATE ROLE {role} LOGIN PASSWORD 'testpass'; CREATE SCHEMA {role} AUTHORIZATION {role}; ALTER ROLE {role} IN DATABASE postgres SET search_path = {role};")).await.unwrap();
+        let conn =
+            PoolConnector::from_url(&format!("postgres://{role}:testpass@127.0.0.1:{port}/postgres"), 1).unwrap();
+        let client = conn.raw().await.unwrap();
+        for (requested, database) in [(number + 1, "postgres"), (number, "other"), (0, "postgres")] {
+            assert!(matches!(
+                migrate_preview_with(&client, requested, database, &artifact).await,
+                Err(MigrateError::PreviewIdentityRefused)
+            ));
+            assert!(!table_exists(&client, "thrust_schema_migrations").await);
+        }
+        for (enable, undo) in [
+            (format!("GRANT CREATE ON SCHEMA public TO {role}"), format!("REVOKE CREATE ON SCHEMA public FROM {role}")),
+            (
+                format!("GRANT CREATE ON DATABASE postgres TO {role}"),
+                format!("REVOKE CREATE ON DATABASE postgres FROM {role}"),
+            ),
+            (format!("GRANT preview_extra TO {role}"), format!("REVOKE preview_extra FROM {role}")),
+            (format!("ALTER SCHEMA {role} OWNER TO postgres"), format!("ALTER SCHEMA {role} OWNER TO {role}")),
+        ] {
+            admin.batch_execute(&enable).await.unwrap();
+            assert!(
+                matches!(
+                    migrate_preview_with(&client, number, "postgres", &artifact).await,
+                    Err(MigrateError::PreviewIdentityRefused)
+                ),
+                "{enable}"
+            );
+            admin.batch_execute(&undo).await.unwrap();
+            assert!(!table_exists(&client, "thrust_schema_migrations").await);
+        }
+        for path in ["public".to_owned(), format!("{role}, public")] {
+            client.batch_execute(&format!("SET search_path = {path}")).await.unwrap();
+            assert!(matches!(
+                migrate_preview_with(&client, number, "postgres", &artifact).await,
+                Err(MigrateError::PreviewIdentityRefused)
+            ));
+        }
+        client.batch_execute(&format!("SET search_path = {role}")).await.unwrap();
+        admin.batch_execute(&format!("SET ROLE {role}; SET search_path = {role}")).await.unwrap();
+        assert!(matches!(
+            migrate_preview_with(&admin, number, "postgres", &artifact).await,
+            Err(MigrateError::PreviewIdentityRefused)
+        ));
+        admin.batch_execute("RESET ROLE; RESET search_path").await.unwrap();
+        // Control: without the preview identity gate the same connection can migrate even
+        // when a caller claims the wrong PR; its SQL and ledger must actually appear.
+        assert!(matches!(
+            migrate_guarded_with(&client, &artifact.migrations(), NO_CONTRACT).await,
+            Ok(MigrateOutcome::Baseline { .. })
+        ));
+        assert!(table_exists(&client, "identity_probe").await);
+        assert!(table_exists(&client, "thrust_schema_migrations").await);
+        client.batch_execute("DROP TABLE identity_probe, thrust_schema_migrations").await.unwrap();
+        assert_eq!(
+            migrate_preview_with(&client, number, "postgres", &artifact).await.unwrap(),
+            MigrateOutcome::Baseline { applied: 1 }
+        );
+        assert!(table_exists(&client, "identity_probe").await);
+        assert_eq!(
+            migrate_preview_with(&client, number, "postgres", &artifact).await.unwrap(),
+            MigrateOutcome::Current
+        );
+        let contract_sql = "DROP TABLE identity_probe";
+        let contract_data = serde_json::to_vec(&serde_json::json!({"version":1,"commit":commit,"files":[
+            {"name":"0001_identity.sql","sql":sql,"sha256":thrust_adapters_postgres::ledger::sha256_hex(sql)},
+            {"name":"0002_contract_drop.sql","sql":contract_sql,"sha256":thrust_adapters_postgres::ledger::sha256_hex(contract_sql)}
+        ]})).unwrap();
+        let contract_artifact = Artifact::parse(&contract_data, commit).unwrap();
+        assert!(matches!(
+            migrate_preview_with(&client, number, "postgres", &contract_artifact).await,
+            Err(MigrateError::ContractRefused(_))
+        ));
+        assert!(table_exists(&client, "identity_probe").await);
     }
 }
 

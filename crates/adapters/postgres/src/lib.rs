@@ -142,6 +142,8 @@ pub enum MigrateError {
     Refused(ledger::Plan),
     /// Contract migrations were to be applied and [`MigrateOptions::allow_contract`] is off: nothing was applied.
     ContractRefused(Vec<String>),
+    /// The connection is not the expected restricted preview identity.
+    PreviewIdentityRefused,
 }
 
 impl std::fmt::Display for MigrateError {
@@ -169,6 +171,7 @@ impl std::fmt::Display for MigrateError {
             MigrateError::ContractRefused(files) => {
                 write!(f, "refused: contract migrations to apply ({}) and contract migrations are not allowed here", files.join(", "))
             }
+            MigrateError::PreviewIdentityRefused => write!(f, "refused: database connection does not match the restricted preview identity"),
         }
     }
 }
@@ -238,7 +241,7 @@ pub async fn migrate_atomic_with(
     files: &[Migration<'_>],
     options: MigrateOptions,
 ) -> Result<MigrateOutcome, MigrateError> {
-    migrate_atomic_inner(client, files, options, false).await
+    migrate_atomic_inner(client, files, options, false, None).await
 }
 
 /// Run migration SQL inside a PostgreSQL exception-handling subtransaction, under the same
@@ -250,7 +253,31 @@ pub async fn migrate_guarded_with(
     files: &[Migration<'_>],
     options: MigrateOptions,
 ) -> Result<MigrateOutcome, MigrateError> {
-    migrate_atomic_inner(client, files, options, true).await
+    migrate_atomic_inner(client, files, options, true, None).await
+}
+
+/// Apply a validated artifact only after checking the preview connection inside the locked
+/// transaction. The caller must independently authenticate the PR, commit, artifact provenance,
+/// the expected database, and all database grants; these checks are not a complete privilege audit.
+/// Use an exclusive connection and discard it on failure.
+pub async fn migrate_preview_with(
+    client: &Client,
+    number: u32,
+    database: &str,
+    artifact: &preview_artifact::Artifact,
+) -> Result<MigrateOutcome, MigrateError> {
+    if !(1..=999_999_999).contains(&number) || database.is_empty() {
+        return Err(MigrateError::PreviewIdentityRefused);
+    }
+    let role = format!("pr_{number}");
+    migrate_atomic_inner(
+        client,
+        &artifact.migrations(),
+        MigrateOptions { allow_contract: false },
+        true,
+        Some((database, &role)),
+    )
+    .await
 }
 
 async fn migrate_atomic_inner(
@@ -258,10 +285,29 @@ async fn migrate_atomic_inner(
     files: &[Migration<'_>],
     options: MigrateOptions,
     guarded: bool,
+    preview: Option<(&str, &str)>,
 ) -> Result<MigrateOutcome, MigrateError> {
     client.batch_execute("BEGIN").await?;
     let result = async {
         client.execute("SELECT pg_advisory_xact_lock($1)", &[&MIGRATE_LOCK]).await?;
+        if let Some((database, role)) = preview {
+            let row = client.query_one(
+                "SELECT current_database() = $1::text AND session_user = $2::text AND current_user = $2::text \
+                 AND current_schema() = $2::text AND current_schemas(false) = ARRAY[$2::text]::name[] \
+                 AND NOT pg_catalog.has_database_privilege(current_user, current_database(), 'CREATE') \
+                 AND EXISTS (SELECT 1 FROM pg_catalog.pg_roles r JOIN pg_catalog.pg_namespace n ON n.nspname = $2::text AND n.nspowner = r.oid \
+                     WHERE r.rolname = $2::text AND r.rolcanlogin AND NOT r.rolsuper AND NOT r.rolcreatedb \
+                     AND NOT r.rolcreaterole AND NOT r.rolreplication AND NOT r.rolbypassrls \
+                     AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_auth_members m WHERE m.member = r.oid)) \
+                 AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_namespace n WHERE n.nspname <> $2::text \
+                     AND pg_catalog.left(n.nspname, 8) <> 'pg_temp_' AND pg_catalog.left(n.nspname, 14) <> 'pg_toast_temp_' \
+                     AND pg_catalog.has_schema_privilege(current_user, n.oid, 'CREATE'))",
+                &[&database, &role],
+            ).await?;
+            if !row.try_get::<_, Option<bool>>(0)?.unwrap_or(false) {
+                return Err(MigrateError::PreviewIdentityRefused);
+            }
+        }
         migrate_locked(client, files, options, true, guarded).await
     }
     .await;
