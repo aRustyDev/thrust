@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0](https://github.com/aRustyDev/thrust/compare/v0.3.0...v0.4.0) - 2026-11-19
+
+### Added
+
+- *(api)* answer GET /healthz?deep=1 from one SELECT now() through the database ([#332](https://github.com/aRustyDev/thrust/pull/332))
+
+### Other
+
+- *(core)* keep proptest's reject budgets per case and build non-whitespace names ([#330](https://github.com/aRustyDev/thrust/pull/330))
+- Check preview database identity before migration ([#326](https://github.com/aRustyDev/thrust/pull/326))
+- Validate preview migration artifacts before execution ([#324](https://github.com/aRustyDev/thrust/pull/324))
+
 ## [0.3.0](https://github.com/aRustyDev/thrust/compare/v0.2.0...v0.3.0) - 2026-11-19
 
 ### Added
