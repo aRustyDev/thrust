@@ -225,5 +225,25 @@ if scripts_wf:
     listed = sorted({name for c in commands for name in re.findall(r"\.github/scripts/tests/(\S+)", c)})
     check(f"{scripts_path}: {SCRIPTS_JOB} runs every test script of .github/scripts/tests/ (a new one is added to the list)", on_disk, listed)
 
+# The mutants job is a matrix of runners (Test phase, stage 2), and scripts/mutants.sh gives each its share of the rows from two numbers. If either were
+# wrong the rows would not be shared out (a leg that is told nothing runs every row, one told a count that is not the matrix's drops some), and no row's
+# verdict would say so, so the lines that carry them are checked as text and the mutant driver changes each. The script's own tests prove the sharing
+# (test-mutants-shards.sh); what only the workflow can get wrong is here.
+MUTANTS_JOB = "mutants"
+mutants_wf = next((w for w, jobs in pc.WORKFLOWS.items() if MUTANTS_JOB in jobs), None)
+check(f"the job {MUTANTS_JOB} is a job of a called workflow", mutants_wf is not None, True)
+if mutants_wf:
+    mutants_path = f".github/workflows/{mutants_wf}.yml"
+    mutants_block = block(read_text(mutants_path) or "", MUTANTS_JOB)
+    legs = re.search(r"^    strategy:\n      fail-fast: false\n      matrix:\n        shard: \[([0-9, ]+)\]\n", mutants_block, re.M)
+    check(f"{mutants_path}: {MUTANTS_JOB} is a matrix of shards, `fail-fast: false` so each reports its own rows", legs is not None, True)
+    check(f"{mutants_path}: {MUTANTS_JOB} has more than one shard (one would be the whole run on one runner again)",
+          len(legs.group(1).split(",")) > 1 if legs else None, True)
+    check(f"{mutants_path}: {MUTANTS_JOB}'s script is told the number of shards by the matrix itself (strategy.job-total), not by a number written beside it",
+          "        env:\n          MUTANTS_SHARDS: ${{ strategy.job-total }}\n" in mutants_block, True)
+    check(f"{mutants_path}: {MUTANTS_JOB}'s script is told which shard it is (strategy.job-index)", "          MUTANTS_SHARD: ${{ strategy.job-index }}\n        run: scripts/mutants.sh\n" in mutants_block, True)
+    check(f"{mutants_path}: {MUTANTS_JOB}: one shard saves the cache (the others would each build the archive and fail to reserve its key)",
+          "          save-cache: ${{ github.ref == 'refs/heads/main' && strategy.job-index == 0 }}\n" in mutants_block, True)
+
 print(f"passed={passed} bad={failed}")
 sys.exit(1 if failed else 0)

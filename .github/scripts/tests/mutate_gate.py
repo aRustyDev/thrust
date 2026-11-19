@@ -129,7 +129,8 @@ def call_mutants():
                 (target, f"{w}: the verdict call names another job as the cell job", "cell-job: contract\n", "cell-job: mutants\n"),
                 (target, f"{w}: the contract matrix is a fixed one, not the one it was given", "matrix: ${{ fromJSON(inputs.matrix) }}\n",
                  'matrix: {"include":[{"target":"native-memory","pass":"main"}]}\n'),
-                (target, f"{w}: a failed cell stops the others", "      fail-fast: false\n", "      fail-fast: true\n"),
+                (target, f"{w}: a failed cell stops the others", "      fail-fast: false\n      matrix: ${{ fromJSON(inputs.matrix) }}\n",
+                 "      fail-fast: true\n      matrix: ${{ fromJSON(inputs.matrix) }}\n"),
                 (target, f"{w}: contract calls another workflow", "    uses: ./.github/workflows/contract-cell.yml\n", "    uses: ./.github/workflows/web.yml\n"),
                 (target, f"{w}: the matrix is not asked of the caller",
                  re.compile(r"      matrix:\n        description: The contract matrix, [^\n]*\n        type: string\n        required: true\n"), ""),
@@ -288,6 +289,16 @@ MUTANTS = [
     (TST, "ci-scripts stops at the first failing command", "parallel --will-cite --group --halt never", "parallel --will-cite --group --halt now,fail=1"),
     (TST, "ci-scripts no longer keeps a command's lines together", "parallel --will-cite --group --halt never", "parallel --will-cite --halt never"),
     (TST, "ci-scripts drops a test script from its list", "          sh .github/scripts/tests/test-ports.sh\n", ""),
+    # the mutants job is a matrix of shards (Test phase, stage 2): the script is told how many and which, and a wrong pair loses rows or runs them twice
+    (TST, "mutants is not told how many shards there are", "          MUTANTS_SHARDS: ${{ strategy.job-total }}\n", ""),
+    (TST, "mutants is told a number of shards that is not the matrix's", "MUTANTS_SHARDS: ${{ strategy.job-total }}", "MUTANTS_SHARDS: 4"),
+    (TST, "mutants is not told which shard it is", "          MUTANTS_SHARD: ${{ strategy.job-index }}\n", ""),
+    (TST, "mutants is told every shard is the first", "MUTANTS_SHARD: ${{ strategy.job-index }}", "MUTANTS_SHARD: 0"),
+    (TST, "mutants is one runner again", "        shard: [0, 1, 2, 3]\n", "        shard: [0]\n"),
+    (TST, "mutants stops its other shards at the first red one", "      fail-fast: false\n      matrix:\n        shard:", "      fail-fast: true\n      matrix:\n        shard:"),
+    (TST, "mutants is not a matrix", "    strategy:\n      fail-fast: false\n      matrix:\n        shard: [0, 1, 2, 3]\n", ""),
+    (TST, "every mutants shard saves the cache", "save-cache: ${{ github.ref == 'refs/heads/main' && strategy.job-index == 0 }}",
+     "save-cache: ${{ github.ref == 'refs/heads/main' }}"),
 ]
 MUTANTS += call_mutants()
 
