@@ -8,8 +8,8 @@
 
 use thrust_adapters_postgres::ledger::{Plan, LEDGER_TABLE};
 use thrust_adapters_postgres::{
-    carried, migrate, migrate_atomic_with, migrate_with, plan_migrations, MigrateError, MigrateOptions, MigrateOutcome,
-    Migration, MIGRATIONS,
+    carried, migrate, migrate_atomic_with, migrate_guarded_with, migrate_with, plan_migrations, MigrateError,
+    MigrateOptions, MigrateOutcome, Migration, MIGRATIONS,
 };
 
 use super::*;
@@ -63,6 +63,104 @@ async fn probe_rows(raw: &tokio_postgres::Client) -> i64 {
 
 fn names(files: &[Migration<'_>]) -> Vec<String> {
     files.iter().map(|m| m.file.to_string()).collect()
+}
+
+/// PostgreSQL must reject transaction control from untrusted migration data while permitting the
+/// real baseline's multi-statement SQL and nested DO blocks.
+#[tokio::test]
+async fn model_guarded_migrations_refuse_transaction_escapes() {
+    let db = fresh().await;
+    let raw = db.conn.raw().await.unwrap();
+    assert_eq!(
+        migrate_guarded_with(&raw, &MIGRATIONS, NO_CONTRACT).await.unwrap(),
+        MigrateOutcome::Baseline { applied: MIGRATIONS.len() }
+    );
+    let attacks = [
+        "COMMIT;",
+        "ROLLBACK;",
+        "END;",
+        "SAVEPOINT hostile;",
+        "DO $$ BEGIN COMMIT; END $$;",
+        "DO $$ BEGIN ROLLBACK; END $$;",
+        "CREATE PROCEDURE hostile() LANGUAGE plpgsql AS $$ BEGIN COMMIT; END $$; CALL hostile();",
+    ];
+    for attack in attacks {
+        let sql = format!(
+            "CREATE TABLE migration_escape_probe (n int); {attack} CREATE TABLE migration_escape_after (n int);"
+        );
+        let mut files: Vec<Migration<'_>> = MIGRATIONS.to_vec();
+        files.push(Migration { file: "9000_escape_probe.sql", sql: &sql });
+        let result = migrate_guarded_with(&raw, &files, NO_CONTRACT).await;
+        assert!(matches!(result, Err(MigrateError::Db(_))), "escape accepted: {attack}: {result:?}");
+        assert!(!table_exists(&raw, "migration_escape_probe").await, "escape committed: {attack}");
+        assert!(!table_exists(&raw, "migration_escape_after").await, "escape continued: {attack}");
+        assert_eq!(ledger_files(&raw).await, names(&MIGRATIONS));
+    }
+    let sql = "SELECT '$thrust_migration_guard$; COMMIT;'; CREATE TABLE guard_literal (n int);";
+    let mut files = MIGRATIONS.to_vec();
+    files.push(Migration { file: "9000_guard_literal.sql", sql });
+    assert!(matches!(migrate_guarded_with(&raw, &files, NO_CONTRACT).await, Ok(MigrateOutcome::Applied { .. })));
+    assert!(table_exists(&raw, "guard_literal").await);
+}
+
+/// Each restricted PR role can migrate its own schema and cannot create a table in public.
+#[tokio::test]
+async fn model_guarded_migrations_run_as_the_preview_role() {
+    let db = fresh().await;
+    let raw = db.conn.raw().await.unwrap();
+    raw.batch_execute(
+        "CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public; REVOKE CREATE ON SCHEMA public FROM PUBLIC;",
+    )
+    .await
+    .unwrap();
+    for number in 1..=4 {
+        let role = format!("pr_{number}");
+        raw.batch_execute(&format!("CREATE ROLE {role} NOLOGIN; CREATE SCHEMA {role} AUTHORIZATION {role}; SET ROLE {role}; SET search_path = {role};"))
+            .await
+            .unwrap();
+        let current: String = raw.query_one("SELECT current_user", &[]).await.unwrap().get(0);
+        assert_eq!(current, role);
+        if number == 4 {
+            // Pins the collision case: the scoped catalog view must never replace an existing object.
+            raw.batch_execute("CREATE VIEW pg_constraint AS SELECT 42 AS marker").await.unwrap();
+            assert!(migrate_guarded_with(&raw, &MIGRATIONS, NO_CONTRACT).await.is_err());
+            let marker: i32 =
+                raw.query_one(&format!("SELECT marker FROM {role}.pg_constraint"), &[]).await.unwrap().get(0);
+            assert_eq!(marker, 42);
+            assert!(!table_exists(&raw, "thrust_schema_migrations").await);
+            raw.batch_execute(&format!("DROP VIEW {role}.pg_constraint")).await.unwrap();
+        }
+        assert_eq!(
+            migrate_guarded_with(&raw, &MIGRATIONS, NO_CONTRACT).await.unwrap(),
+            MigrateOutcome::Baseline { applied: MIGRATIONS.len() }
+        );
+        let view: Option<String> = raw
+            .query_one("SELECT pg_catalog.to_regclass($1)::text", &[&format!("{role}.pg_constraint")])
+            .await
+            .unwrap()
+            .get(0);
+        assert!(view.is_none(), "temporary catalog view survived migration");
+        let entries = thrust_adapters_postgres::carried(&MIGRATIONS);
+        for entry in entries {
+            let checksum: String = raw
+                .query_one("SELECT sha256 FROM thrust_schema_migrations WHERE file = $1", &[&entry.file])
+                .await
+                .unwrap()
+                .get(0);
+            assert_eq!(checksum, entry.sha256);
+        }
+        let bad = format!("CREATE TABLE public.preview_forbidden_{number} (n int);");
+        let mut files = MIGRATIONS.to_vec();
+        files.push(Migration { file: "9000_public_forbidden.sql", sql: &bad });
+        let failure = migrate_guarded_with(&raw, &files, NO_CONTRACT).await.unwrap_err();
+        assert!(
+            matches!(&failure, MigrateError::Db(error) if error.code() == Some(&tokio_postgres::error::SqlState::INSUFFICIENT_PRIVILEGE)),
+            "{failure:?}"
+        );
+        assert!(!table_exists(&raw, &format!("public.preview_forbidden_{number}")).await);
+        assert_eq!(ledger_files(&raw).await, names(&MIGRATIONS));
+        raw.batch_execute("RESET ROLE; RESET search_path;").await.unwrap();
+    }
 }
 
 /// Every position of a failing file rolls the complete transaction back, and a good retry applies once.
