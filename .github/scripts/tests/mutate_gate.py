@@ -301,6 +301,9 @@ MUTANTS = [
     (TST, "mutants is not a matrix", "    strategy:\n      fail-fast: false\n      matrix:\n        shard: [0, 1, 2, 3]\n", ""),
     (TST, "every mutants shard saves the cache", "save-cache: ${{ github.ref == 'refs/heads/main' && strategy.job-index == 0 }}",
      "save-cache: ${{ github.ref == 'refs/heads/main' }}"),
+    # the hermetic job builds without debug info (Test phase, stage 3): nothing fails without it, so the check is the only thing that notices
+    (TST, "hermetic builds with debug info again", "      CARGO_PROFILE_DEV_DEBUG: none\n", "      CARGO_PROFILE_DEV_DEBUG: full\n"),
+    (TST, "hermetic has no debug setting", "    env:\n      CARGO_PROFILE_DEV_DEBUG: none\n    steps:\n", "    steps:\n"),
     # deep.yml, the nightly randomized tests (Test phase, stage 3, status G-48): not called, not gated, and each of these would still "work"
     (DEEP, "deep runs the oracle_ tests, which a runner has no oracle for", " -E 'not test(/\\boracle_/)'", ""),
     (DEEP, "deep runs at the default number of cases", "${{ inputs.cases || 4096 }}", "${{ inputs.cases }}"),
