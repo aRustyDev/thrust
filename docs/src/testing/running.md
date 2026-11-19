@@ -143,7 +143,7 @@ A pull request runs only the jobs and cells its change needs; how that is decide
 | `lint` | (in `lint.yml`) `cargo fmt --all --check`, then `cargo clippy --workspace --all-targets --locked -- -D warnings`, then the same clippy for `thrust-worker` with `--no-default-features --target wasm32-unknown-unknown` (the clippy steps run even if rustfmt failed) |
 | `security` | the workflow `.github/workflows/security.yml`, called by `ci.yml`: its job `deny`, and its `verdict` job, which judges `deny` against the plan and which `gate` requires (the migration moved `deny` here; its name and commands are unchanged) |
 | `deny` | (in `security.yml`) `cargo deny --locked check`: advisories, licences, bans and sources, from `deny.toml` |
-| `hermetic` | (in `test.yml`) `cargo nextest run --profile ci --workspace --locked`, then `cargo test --doc --workspace --locked` |
+| `hermetic` | (in `test.yml`) `cargo nextest run --profile ci --workspace --locked`, the contract counts guard, `cargo test --doc --workspace --locked`, then the OpenAPI tests (`openapi` feature). Built without debug info (`CARGO_PROFILE_DEV_DEBUG: none`): a panic still names its file and line, a backtrace has no file:line frames |
 | `pg-adapter` | (in `test.yml`) `cargo nextest run -p thrust-adapters-selfhosted --profile adapters --locked -E 'binary(pg_adapter)'`, then the same for `binary(smtp_sink)` |
 | `contract` | (in `test.yml`) one job per cell (`.github/workflows/contract-cell.yml`, called by `test.yml`, which `ci.yml` calls with the planner's matrix and cells): `scripts/contract.sh <target> <pass>`, then a marker that exactly that cell passed |
 | `mutants` | (in `test.yml`) `scripts/mutants.sh`, as a matrix of four runners (`strategy.job-total` and `strategy.job-index` tell the script how many shards there are and which it is): the 54 rows rebuild `thrust-server` with a mutant's feature into one `target/`, so they cannot share a checkout, and each runner runs the rows at its positions. The job id stays `mutants`, so `verdict` and `gate` read the aggregate of the four legs |
@@ -164,6 +164,12 @@ cell on demand and weekly. Not in CI: the `oracle_` tests (they need the pinned 
   The commands do not depend on one another, so any one can be run alone, or all of them at once by any parallel runner.
 - **A job stopped after ten minutes** has a command that hung, and prints no table (it was killed before). A command's lines appear only when it finishes, so the hung one is among the commands of the list in `test.yml` whose output is missing from the log.
 - **A command that fails once and passes on a rerun** is a finding to file, not to retry away ([Rule 2](rules.md)). Rerun the failed job once to see whether it repeats.
+
+### When `hermetic` is red
+
+- **Read the nextest summary** (`Summary [...] 4780 tests run: ...`) and the `FAIL` lines above it: a failing test is a finding ([Rule 3](rules.md)), not something to retry away.
+- **`prop_decode_never_panics_on_mutated_updates` (thrust-editor-doc) is issue #114**: a panic inside the yrs decoder on a one-byte mutation, which fails this job at random (1 of 22 probe runs on 2026-11-19, with every other test passing). It is open and not fixed; a red job whose only failure is that test is this issue, and one with any other failure is not.
+- **The profile `deep`** (`PROPTEST_CASES=4096`, which no job runs yet) fails today for reasons that are not this job's: see [status](status.md) G-5.
 
 ### When a `mutants` leg is red
 

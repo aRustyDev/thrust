@@ -43,7 +43,7 @@ async fn health_ok() {
 /// What the status code cannot show is that the deep path reached the database and the plain one did not, so on a target that counts
 /// statements (test routes on, a Postgres set) the count is the evidence: `x-thrust-db-round-trips` is 1 for a deep request and 0 for a
 /// plain one. A memory target counts nothing, and the header must be absent there. The answer to a database that is DOWN (503, and a body
-/// that says nothing of why) is `crates/api/core/tests/healthz.rs`: no pass of this suite stops a database (docs/src/testing/status.md G-48).
+/// that says nothing of why) is `crates/api/core/tests/healthz.rs`: no pass of this suite stops a database (docs/src/testing/status.md G-49).
 #[tokio::test]
 async fn deep_healthz_reports_the_database() {
     // Every query string the suite sends, and whether it asks for the deep check. The router test has the full table.
