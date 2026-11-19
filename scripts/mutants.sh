@@ -283,6 +283,23 @@ for quad in \
   kill_check_suite_msg "cloudflare email adapter + $name" "$status" "$OUT/cf-email-$name.test.log" "$needle"
 done
 
+# The memory adapter's retention mutants (issue #59, F-D10): each is a deliberately broken build of thrust-adapters-memory, run against its own
+# `tests/retention.rs` (the Postgres adapter's purge is held to the same rules by `pg_adapter.rs`, which needs Docker and has no mutant). Like the
+# rows above, the log has to say what the mutant breaks, so a build that failed is not a kill. A work item of exactly the window's age goes too;
+# an outbox row goes on its age though it was never dispatched; a work item goes though a work item under it is not old.
+for triple in \
+  "purge-at-cutoff:mutant_purge_at_cutoff:s from the cutoff" \
+  "outbox-purge-by-age:mutant_outbox_purge_by_age:the outbox purge:" \
+  "purge-ignores-children:mutant_purge_ignores_children:a work item with a child that is not old stays"; do
+  name="${triple%%:*}"
+  rest="${triple#*:}"
+  feature="${rest%%:*}"
+  needle="${rest#*:}"
+  want "retention + $name" || continue
+  adapter_row "retention-$name" thrust-adapters-memory "$feature" 'binary(retention)'
+  kill_check_suite_msg "retention + $name" "$status" "$OUT/retention-$name.test.log" "$needle"
+done
+
 # A list run ends here. Any other run must have judged exactly the rows it chose: a row outside `want` ran everywhere, a shard with no rows ran
 # nothing (scripts/lib/mutants-shard.sh).
 shard_finish $((KILLED_N + SURVIVED_N + UNCLEAR_N + NOT_RUN_N + REFUSED_N + NOT_REFUSED_N)) || NOT_KILLED=1
