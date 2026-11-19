@@ -36,6 +36,7 @@ ROOT = os.path.abspath(os.path.join(SCRIPTS, "..", ".."))
 PLAN, GATE = "plan-ci.py", "assert-gate.sh"
 CI, DOC, SEC, WEB, LNT, TST = "ci.yml", "documentation.yml", "security.yml", "web.yml", "lint.yml", "test.yml"  # ci.yml, and each called workflow
 ACT = "verdict/action.yml"  # the action every called workflow's `verdict` job calls
+DEEP = "deep.yml"  # not a called workflow: the nightly run of the randomized tests, which nothing waits for
 SHELL = shutil.which("dash") or "sh"
 TIMEOUT = 900
 # where each target lives, relative to the repository root
@@ -49,9 +50,10 @@ TARGET_PATH = {
     LNT: ".github/workflows/lint.yml",
     TST: ".github/workflows/test.yml",
     ACT: ".github/actions/verdict/action.yml",
+    DEEP: ".github/workflows/deep.yml",
 }
 # The workflows that tests judge as files: a mutant of one of these must fail test_workflow_wiring.py.
-WIRED = (CI, DOC, SEC, WEB, LNT, TST, ACT)
+WIRED = (CI, DOC, SEC, WEB, LNT, TST, ACT, DEEP)
 
 # The called workflows, each with its file, its jobs (in the order the file has them), and the text of ci.yml's `gate` needs that names its
 # call and what that becomes without it. A stage of the migration adds a row, and every mutant below that is written for "a called
@@ -299,6 +301,12 @@ MUTANTS = [
     (TST, "mutants is not a matrix", "    strategy:\n      fail-fast: false\n      matrix:\n        shard: [0, 1, 2, 3]\n", ""),
     (TST, "every mutants shard saves the cache", "save-cache: ${{ github.ref == 'refs/heads/main' && strategy.job-index == 0 }}",
      "save-cache: ${{ github.ref == 'refs/heads/main' }}"),
+    # deep.yml, the nightly randomized tests (Test phase, stage 3, status G-48): not called, not gated, and each of these would still "work"
+    (DEEP, "deep runs the oracle_ tests, which a runner has no oracle for", " -E 'not test(/\\boracle_/)'", ""),
+    (DEEP, "deep runs at the default number of cases", "${{ inputs.cases || 4096 }}", "${{ inputs.cases }}"),
+    (DEEP, "deep saves the cache and may evict what the pull requests use", "save-cache: 'false'", "save-cache: 'true'"),
+    (DEEP, "deep is called by another workflow", "on:\n  workflow_dispatch:", "on:\n  workflow_call:\n  workflow_dispatch:"),
+    (DEEP, "deep never runs by itself", "  schedule:\n    - cron: \"37 5 * * *\"\n", ""),
 ]
 MUTANTS += call_mutants()
 
@@ -313,6 +321,7 @@ EQUIVALENT = [
     (LNT, "(equivalent) a comment is added to lint.yml", "permissions: {}\n\njobs:", "permissions: {}\n\n# a comment\njobs:"),
     (TST, "(equivalent) a comment is added to test.yml", "permissions: {}\n\njobs:", "permissions: {}\n\n# a comment\njobs:"),
     (ACT, "(equivalent) a comment is added to the verdict action", "runs:\n  using: composite\n", "runs:\n  # a comment\n  using: composite\n"),
+    (DEEP, "(equivalent) a comment is added to deep.yml", "permissions: {}\n\njobs:", "permissions: {}\n\n# a comment\njobs:"),
 ]
 
 
