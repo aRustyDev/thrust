@@ -500,6 +500,12 @@ pub async fn outbox_depth(app: &App) -> Result<u64, CoreError> {
     Ok(app.ports.db.outbox_depth(&app.system).await?)
 }
 
+/// The deep health check behind `GET /healthz?deep=1` (issue #42, ADR-0094): one statement through the database, and an error if it did
+/// not answer. It is a use-case and not a call from the handler because the `SystemScope` it needs stays inside `App`.
+pub async fn ping_database(app: &App) -> Result<(), CoreError> {
+    Ok(app.ports.db.ping(&app.system).await?)
+}
+
 /// Test support behind `/internal/seed`: insert fixture rows.
 pub async fn seed(app: &App, fixture: &SeedFixture) -> Result<(), CoreError> {
     app.ports.db.seed(&app.system, fixture).await?;

@@ -1976,6 +1976,11 @@ impl Database for MemoryDatabase {
         Ok(s.work_items.iter().find(|w| w.id == id).map(|w| w.deleted_at))
     }
 
+    /// There is no network between this adapter and its state, so there is nothing that can be unreachable (issue #42).
+    async fn ping(&self, _sys: &SystemScope) -> Result<(), DbError> {
+        Ok(())
+    }
+
     async fn insert_dead_letter(&self, _sys: &SystemScope, letter: &DeadLetter) -> Result<bool, DbError> {
         let mut s = self.state.lock_unpoisoned();
         if s.dead_letters.iter().any(|d| d.id == letter.id) {

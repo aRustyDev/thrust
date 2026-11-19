@@ -27,6 +27,7 @@ waited for: nothing in `gate` reads it.
 | `e2e.yml` | `schedule` (every day, 04:41 UTC), `workflow_dispatch`, `pull_request` that edits the file | no | Runs the `worker-cf` browser-journey cells every day, through `contract-cell.yml`, to catch drift in the runner, the browser and the packages |
 | `flagship.yml` | `push` to `main` that changes the policy, `schedule` (every night, 05:23 UTC), `workflow_dispatch` | no | The edge's routing flags as code: makes every flag what the policy says, and checks them every night. Off until the repository variable `FLAGSHIP_APP_ID` is set |
 | `flake-hunt.yml` | `workflow_dispatch`, `schedule` (Mondays, 03:17 UTC) | no | Repeats one contract cell 1 to 50 times to catch a flake |
+| `deep.yml` | `workflow_dispatch`, `schedule` (every day, 05:37 UTC), `pull_request` that edits the file | no | The randomized tests (`prop_` and `model_`) at 4096 cases: the `deep` nextest profile, less the `oracle_` tests. Not gated; red at random while issue #114 is open |
 | `release-plz.yml` | `push` to `main` | no | The release flow: keeps the release-candidate pull request up to date, and on its merge tags the release, creates it as a draft and starts `release.yml` |
 | `release.yml` | `workflow_dispatch` (on the release tag), `pull_request` that edits it (a dry run) | no | Builds the release bundle at its tag, attests it and its SBOM, attaches them and publishes the release |
 

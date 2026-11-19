@@ -167,7 +167,7 @@ impl WorkspaceScope {
 }
 
 /// Permission for the untenanted operations: the outbox relay and sweeper, the queue consumer's
-/// activity write, and `seed`. Minted only by the composition roots and the consumer entry
+/// activity write, the deep health check (`ping`), and `seed`. Minted only by the composition roots and the consumer entry
 /// (ADR-0045 round 29); `scripts/check-deps.sh` rejects a call to [`SystemScope::mint`] elsewhere.
 #[derive(Debug)]
 pub struct SystemScope {
@@ -1286,6 +1286,15 @@ pub trait Database: Send + Sync {
         sys: &SystemScope,
         id: WorkItemId,
     ) -> Result<Option<Option<Timestamp>>, DbError>;
+
+    /// The deep health check (issue #42, ADR-0094): run one statement through the database's own path and say whether it answered.
+    /// `GET /healthz?deep=1` is what calls it, and `status.woven` probes that every 60 s, so the SLO is measured through the
+    /// tunnel and the cluster and not only through the Worker. It reads nothing and writes nothing, and belongs to no tenant.
+    ///
+    /// The statement must be one that Hyperdrive never answers from its cache (`SELECT now()`, which is STABLE; a read that uses only
+    /// IMMUTABLE functions, `select 1` among them, can be). An adapter with no network has nothing to reach and answers `Ok`.
+    /// There is deliberately no default body: an adapter that forgot this method would report healthy without asking anything.
+    async fn ping(&self, sys: &SystemScope) -> Result<(), DbError>;
 
     /// Set a message aside (ADR-0070, issue #53): the queue consumer's write of a dead letter. Idempotent on `id`, so a message that
     /// is delivered again after it was set aside makes no second row; returns `true` if a row was inserted, `false` if the id was
