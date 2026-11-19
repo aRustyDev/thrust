@@ -18,6 +18,11 @@ mutant_no_activity_dedupe = []
 mutant_ignore_revoked = []
 mutant_search_case_sensitive = []
 mutant_set_password_every_user = []
+# Issue #59 (retention): a row of exactly the window's age goes too; an outbox row goes though it was never dispatched; a work item
+# goes though a work item under it is not old.
+mutant_purge_at_cutoff = []
+mutant_outbox_purge_by_age = []
+mutant_purge_ignores_children = []
 
 [dependencies]
 thrust-contracts = { workspace = true }
