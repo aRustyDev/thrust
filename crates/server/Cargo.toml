@@ -41,6 +41,11 @@ mutant_reset_takes_token_first = ["thrust-core/mutant_reset_takes_token_first"]
 mutant_reset_skips_strength = ["thrust-core/mutant_reset_skips_strength"]
 mutant_reset_keeps_sessions = ["thrust-core/mutant_reset_keeps_sessions"]
 mutant_reset_ignores_cooldown = ["thrust-core/mutant_reset_ignores_cooldown"]
+# The daily hard delete (issue #59): a row of exactly the window's age goes too, and an outbox row goes though it was never dispatched (in the
+# memory adapter); the window is not counted back from now (in core).
+mutant_purge_at_cutoff = ["thrust-adapters-memory/mutant_purge_at_cutoff"]
+mutant_outbox_purge_by_age = ["thrust-adapters-memory/mutant_outbox_purge_by_age"]
+mutant_retention_ignores_cutoff = ["thrust-core/mutant_retention_ignores_cutoff"]
 # The SMTP relay configured and then not handed to the app (the composition root's own wiring, E2).
 mutant_smtp_unwired = []
 mutant_oidc_flag_always_on = ["thrust-compat-plane/mutant_oidc_flag_always_on"]

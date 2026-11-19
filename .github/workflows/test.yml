@@ -227,9 +227,9 @@ jobs:
   mutants:
     if: contains(fromJSON(inputs.plan), 'mutants')
     runs-on: ubuntu-24.04
-    # A shard is about four minutes, so this stops a hung row at a fifth of what the one runner of the 57 rows was given (45).
+    # A shard is about four minutes, so this stops a hung row at a fifth of what the one runner of the 65 rows was given (45).
     timeout-minutes: 20
-    # The 57 rows (scripts/mutants.sh) cannot share a checkout: each rebuilds thrust-server with a mutant's cargo feature into one `target/`
+    # The 65 rows (scripts/mutants.sh) cannot share a checkout: each rebuilds thrust-server with a mutant's cargo feature into one `target/`
     # and moves a JUnit report from a shared path. So the job is a matrix of runners with a `target/` each, and a runner runs the rows at its
     # positions (scripts/lib/mutants-shard.sh). The id stays `mutants`: a matrix job's `needs.mutants.result` is the aggregate of its legs, so
     # the planner, `verdict` and `gate` read it as before. The number of runners is the length of the list below, nothing else: the script is

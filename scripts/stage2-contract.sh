@@ -25,7 +25,7 @@
 # crontrigger 1 test: the REAL every-minute trigger (`cron` uses wrangler dev's /__scheduled, which a deployed Worker lacks)
 # blast      1 test : OBSERVATIONAL: how many other in-flight requests fail around one panic (a panic aborts the isolate)
 # ratelimit  1 test : `v1_requests_are_rate_limited_per_key` alone (it is also one of the tests of `main`); see the refusal below
-# sweeper    3 tests: needs THRUST_OUTBOX_FASTPATH=off
+# sweeper    4 tests: needs THRUST_OUTBOX_FASTPATH=off
 # panic      1 test : alone, against a Worker nobody else is using (a panic resets the isolate)
 # csrfoff    6 tests: needs the Worker deployed with THRUST_CSRF_ENFORCE=off (Q-0050.8, the production default while the
 #            stock frontend is in use). Every other pass needs it ON, which wrangler.stage2.toml sets; /_info is checked
@@ -118,7 +118,7 @@ case "$PASS" in
   cron)     EXPECT=1;  suite_pass worker_only 'test(/worker_cron_/)' --no-capture ;;
   # crontrigger: the REAL every-minute trigger (the `cron` pass uses wrangler dev's /__scheduled, which a deployed Worker lacks)
   crontrigger) EXPECT=1; suite_pass worker_only 'test(/stage2_cron_real_trigger_/)' --no-capture ;;
-  sweeper)  EXPECT=3;  suite_pass contract 'test(/sweeper_/)' --no-capture ;;
+  sweeper)  EXPECT=4;  suite_pass contract 'test(/sweeper_/)' --no-capture ;;
   panic)    EXPECT=1;  suite_pass contract 'test(/panic_/)' --no-capture ;;
   # blast is OBSERVATIONAL: how many OTHER in-flight requests fail around one panic (a panic aborts the isolate)
   blast)    EXPECT=1;  suite_pass contract 'test(/blast_/)' --no-capture ;;
