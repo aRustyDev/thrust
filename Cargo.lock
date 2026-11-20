@@ -3788,7 +3788,7 @@ checksum = "3bf63baf9f5039dadc247375c29eb13706706cfde997d0330d05aa63a77d8820"
 
 [[package]]
 name = "thrust-adapters-cloudflare"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "async-trait",
  "getrandom 0.4.3",
@@ -3808,7 +3808,7 @@ dependencies = [
 
 [[package]]
 name = "thrust-adapters-memory"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "async-trait",
  "futures-executor",
@@ -3821,7 +3821,7 @@ dependencies = [
 
 [[package]]
 name = "thrust-adapters-oidc"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "async-trait",
  "openidconnect",
@@ -3830,7 +3830,7 @@ dependencies = [
 
 [[package]]
 name = "thrust-adapters-postgres"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "async-trait",
  "proptest",
@@ -3849,7 +3849,7 @@ dependencies = [
 
 [[package]]
 name = "thrust-adapters-selfhosted"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "async-trait",
  "chrono",
@@ -3875,7 +3875,7 @@ dependencies = [
 
 [[package]]
 name = "thrust-api"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "async-trait",
  "axum",
@@ -3895,7 +3895,7 @@ dependencies = [
 
 [[package]]
 name = "thrust-api-v1"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "axum",
  "form_urlencoded",
@@ -3919,7 +3919,7 @@ dependencies = [
 
 [[package]]
 name = "thrust-compat-plane"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "async-trait",
  "axum",
@@ -3942,7 +3942,7 @@ dependencies = [
 
 [[package]]
 name = "thrust-contract-tests"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "axum",
  "base64 0.22.1",
@@ -3961,7 +3961,7 @@ dependencies = [
 
 [[package]]
 name = "thrust-contracts"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "chrono",
  "proptest",
@@ -3972,7 +3972,7 @@ dependencies = [
 
 [[package]]
 name = "thrust-core"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "argon2",
  "async-trait",
@@ -3995,7 +3995,7 @@ dependencies = [
 
 [[package]]
 name = "thrust-edge"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "base64 0.22.1",
  "console_error_panic_hook",
@@ -4015,7 +4015,7 @@ dependencies = [
 
 [[package]]
 name = "thrust-editor-doc"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "base64 0.22.1",
  "htmlentity",
@@ -4028,7 +4028,7 @@ dependencies = [
 
 [[package]]
 name = "thrust-editor-worker"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "base64 0.22.1",
  "console_error_panic_hook",
@@ -4039,7 +4039,7 @@ dependencies = [
 
 [[package]]
 name = "thrust-html"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "ammonia",
  "proptest",
@@ -4048,7 +4048,7 @@ dependencies = [
 
 [[package]]
 name = "thrust-load-tests"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "proptest",
  "serde_json",
@@ -4060,7 +4060,7 @@ dependencies = [
 
 [[package]]
 name = "thrust-oracle-fixture"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "proptest",
  "serde_json",
@@ -4070,7 +4070,7 @@ dependencies = [
 
 [[package]]
 name = "thrust-plane-types"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "axum",
  "futures-executor",
@@ -4082,7 +4082,7 @@ dependencies = [
 
 [[package]]
 name = "thrust-ports"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "async-trait",
  "futures-executor",
@@ -4096,7 +4096,7 @@ dependencies = [
 
 [[package]]
 name = "thrust-preview-migration-executor"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "futures-util",
  "proptest",
@@ -4107,7 +4107,7 @@ dependencies = [
 
 [[package]]
 name = "thrust-preview-provisioner"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "futures-util",
  "proptest",
@@ -4121,7 +4121,7 @@ dependencies = [
 
 [[package]]
 name = "thrust-profiling"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "axum",
  "dhat",
@@ -4138,7 +4138,7 @@ dependencies = [
 
 [[package]]
 name = "thrust-server"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "axum",
  "serde_json",
@@ -4158,7 +4158,7 @@ dependencies = [
 
 [[package]]
 name = "thrust-worker"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "axum",
  "console_error_panic_hook",
