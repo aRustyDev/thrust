@@ -1,4 +1,5 @@
-//! Tests of what exists only on wasm32: the Worker's own glue (G-6). The configuration it reads from a JS `Env`, its refusals to start,
+//! Tests of what exists only on wasm32: the Worker's own glue (G-6). The configuration it reads from a JS `Env` (the retention windows included),
+//! its refusals to start,
 //! how a queue message's body becomes text, the retry delay, and the JS-backed clock, ids and random bytes. Nothing here runs natively,
 //! because every one of them takes a JS value or calls into the JS runtime.
 //!
@@ -210,9 +211,14 @@ fn shown(cfg: &CoreConfig) -> String {
     format!("{cfg:?}")
 }
 
+/// The Worker's `CoreConfig` of an environment that is meant to read: `core_config` refuses a retention window that is not a number of days.
+fn configured(env: &Env) -> CoreConfig {
+    core_config(env).expect("an environment that reads")
+}
+
 #[wasm_bindgen_test]
 fn core_config_maps_each_variable_to_its_own_field() {
-    assert_eq!(shown(&core_config(&strings(&[]))), shown(&worker_defaults()), "nothing set");
+    assert_eq!(shown(&configured(&strings(&[]))), shown(&worker_defaults()), "nothing set");
     let vars = core_vars();
     assert_eq!(vars.len(), 9);
     for (name, value, change) in &vars {
@@ -223,7 +229,7 @@ fn core_config_maps_each_variable_to_its_own_field() {
             shown(&worker_defaults()),
             "{name}={value:?} must change something, or this case proves nothing"
         );
-        assert_eq!(shown(&core_config(&one(name, value))), shown(&want), "{name}={value:?}");
+        assert_eq!(shown(&configured(&one(name, value))), shown(&want), "{name}={value:?}");
     }
     // all of them at once: two fields reading one variable, or one reading two, show here
     let mut all = worker_defaults();
@@ -231,17 +237,75 @@ fn core_config_maps_each_variable_to_its_own_field() {
         change(&mut all);
     }
     let every: Vec<(&str, &str)> = vars.iter().map(|(name, value, _)| (*name, *value)).collect();
-    assert_eq!(shown(&core_config(&strings(&every))), shown(&all), "all nine");
+    assert_eq!(shown(&configured(&strings(&every))), shown(&all), "all nine");
     // a value that does not read is the default, for every variable that is a flag or a number (the base URL is any text)
     for (name, _, _) in vars.iter().filter(|(name, _, _)| *name != "THRUST_PUBLIC_BASE_URL") {
         assert_eq!(
-            shown(&core_config(&one(name, "not-a-value"))),
+            shown(&configured(&one(name, "not-a-value"))),
             shown(&worker_defaults()),
             "{name} that does not read"
         );
     }
     // an empty base URL is no base URL, so that no link can be made
-    assert_eq!(shown(&core_config(&one("THRUST_PUBLIC_BASE_URL", ""))), shown(&worker_defaults()));
+    assert_eq!(shown(&configured(&one("THRUST_PUBLIC_BASE_URL", ""))), shown(&worker_defaults()));
+}
+
+// ---------------------------------------------------------------------------------------------
+// the retention windows (issue #59): a whole number of days, or no Worker
+// ---------------------------------------------------------------------------------------------
+
+/// A retention window: the variable that sets it, and the field it sets.
+type Window = (&'static str, fn(&mut CoreConfig, u32));
+
+#[wasm_bindgen_test]
+fn a_retention_window_is_a_whole_number_of_days_or_the_worker_does_not_start() {
+    // a window read as something else than the person meant deletes rows that were meant to stay, so a window that is not a number refuses, where
+    // every other number of the Worker's configuration reads as its default
+    let windows: [Window; 2] = [
+        ("THRUST_HARD_DELETE_AFTER_DAYS", |c, n| c.hard_delete_after_days = n),
+        ("THRUST_OUTBOX_RETENTION_DAYS", |c, n| c.outbox_retention_days = n),
+    ];
+    let mut inputs = words(&['0', '1', '9', '+', '-', ' ', 'x', '.'], 3);
+    // the top of a u32 and one over, and the spellings that a lenient reader takes for a number
+    inputs.extend(["4294967295", "4294967296", "-1", "-0", "007", "+7", "1e3", "1_000", "٣"].map(String::from));
+    let (mut read, mut refused) = (0, 0);
+    for (name, set) in windows {
+        for input in &inputs {
+            let result = core_config(&one(name, input));
+            if input.is_empty() {
+                // an empty window is no window: the default stays
+                assert_eq!(shown(&result.expect("an empty window reads")), shown(&worker_defaults()), "{name} empty");
+            } else if let Some(days) = decimal(input, 0, i128::from(u32::MAX)) {
+                let mut want = worker_defaults();
+                set(&mut want, u32::try_from(days).expect("in range by construction"));
+                assert_eq!(shown(&result.expect("a window that reads")), shown(&want), "{name}={input:?}");
+                read += 1;
+            } else {
+                let message = result.expect_err("a window that is not a number of days").to_string();
+                assert!(
+                    message.contains(name) && message.contains(&format!("{input:?}")),
+                    "{name}={input:?}: {message}"
+                );
+                refused += 1;
+            }
+        }
+    }
+    // the generator reaches both kinds, for both windows
+    assert!(read >= 100 && refused >= 1000, "{read} windows read, {refused} refused");
+
+    // both at once, each into its own field (values that are not the defaults, 30 and 90)
+    let (hard, outbox) = ("THRUST_HARD_DELETE_AFTER_DAYS", "THRUST_OUTBOX_RETENTION_DAYS");
+    let mut want = worker_defaults();
+    want.hard_delete_after_days = 17;
+    want.outbox_retention_days = 5;
+    assert_ne!(shown(&want), shown(&worker_defaults()));
+    assert_eq!(shown(&configured(&strings(&[(hard, "17"), (outbox, "5")]))), shown(&want));
+    // a bad window is the one named, and the good one beside it is not
+    let message = |env: &[(&str, &str)]| core_config(&strings(env)).expect_err("refused").to_string();
+    let bad_hard = message(&[(hard, "soon"), (outbox, "5")]);
+    assert!(bad_hard.contains(hard) && !bad_hard.contains(outbox), "{bad_hard}");
+    let bad_outbox = message(&[(hard, "17"), (outbox, "soon")]);
+    assert!(bad_outbox.contains(outbox) && !bad_outbox.contains(hard), "{bad_outbox}");
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -350,6 +414,13 @@ fn the_composition_root_refuses_what_it_cannot_serve() {
     match build_app(&one("THRUST_ADAPTERS", "memory"), background()) {
         Ok((_, round_trips)) => assert!(round_trips.is_none()),
         Err(e) => panic!("the memory set did not build: {e}"),
+    }
+    // a retention window that is not a number of days stops the app from being built, on every request, batch and cron run: nothing is deleted on a
+    // guess
+    #[cfg(feature = "memory")]
+    {
+        let refused = refusal(&[("THRUST_ADAPTERS", "memory"), ("THRUST_OUTBOX_RETENTION_DAYS", "soon")]);
+        assert!(refused.contains("THRUST_OUTBOX_RETENTION_DAYS"), "{refused:?}");
     }
     // the cloudflare set checks its windows before it asks for a binding: a window it cannot count over is why it does not start
     let bad = refusal(&[("THRUST_ADAPTERS", "cloudflare"), ("THRUST_V1_RATE_LIMIT", "10/second")]);

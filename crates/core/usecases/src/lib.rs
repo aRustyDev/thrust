@@ -39,6 +39,8 @@ mod labels;
 pub use labels::*;
 mod states;
 pub use states::*;
+mod retention;
+pub use retention::*;
 #[cfg(test)]
 mod timezones_tests;
 use thrust_contracts::chrono::TimeDelta;
@@ -124,6 +126,12 @@ pub struct CoreConfig {
     pub login_code_window_secs: i64,
     /// Codes an address is made in a window: the first and three more (the pin's `MAX_CODES_PER_WINDOW`, 4).
     pub login_code_max_issued: u32,
+    /// Days a soft-deleted work item is kept before the daily job deletes it for good (issue #59, F-D10): 30, the owner's deviation
+    /// D-001 from Plane's 60 (`HARD_DELETE_AFTER_DAYS`). 0 deletes a work item at the next run after it was deleted.
+    pub hard_delete_after_days: u32,
+    /// Days a dispatched outbox row is kept (ADR-0046, Q-0046.2): 90. The retained outbox is the P0 audit trail (ADR-0048), so
+    /// this is also how long that is.
+    pub outbox_retention_days: u32,
 }
 
 impl Default for CoreConfig {
@@ -148,6 +156,8 @@ impl Default for CoreConfig {
             login_code_max_attempts: 5,
             login_code_window_secs: 10 * 60,
             login_code_max_issued: 4,
+            hard_delete_after_days: 30,
+            outbox_retention_days: 90,
         }
     }
 }
@@ -617,8 +627,14 @@ fn validate_blob_name(name: &str) -> Result<(), CoreError> {
     Ok(())
 }
 
+/// Where a work item's attachments are: every blob under it has a key that starts with this, and no other work item's does (the id
+/// ends in a `/`). The daily hard delete lists it to delete the blobs of a work item it deletes (issue #59).
+fn blob_prefix(workspace: WorkspaceId, project: ProjectId, item: WorkItemId) -> String {
+    format!("{workspace}/{project}/{item}/")
+}
+
 fn blob_key(scope: &Scope, item: WorkItemId, name: &str) -> String {
-    format!("{}/{}/{}/{}", scope.workspace_id(), scope.project_id(), item, name)
+    format!("{}{}", blob_prefix(scope.workspace_id(), scope.project_id(), item), name)
 }
 
 #[allow(

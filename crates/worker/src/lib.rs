@@ -79,9 +79,12 @@ fn num<T: std::str::FromStr>(env: &Env, name: &str, default: T) -> T {
     text(env, name).and_then(|v| v.parse().ok()).unwrap_or(default)
 }
 
-fn core_config(env: &Env) -> CoreConfig {
+/// The Worker's `CoreConfig` from its vars and secrets. An error stops the Worker from building its app (every request, queue batch and
+/// cron run builds one), which is how a retention window that is not a number of days is refused (issue #59): read as the default, it
+/// would delete rows the person meant to keep.
+fn core_config(env: &Env) -> Result<CoreConfig> {
     let defaults = CoreConfig::default();
-    CoreConfig {
+    let cfg = CoreConfig {
         // The sign-in limit below is what the in-isolate (`memory`) set counts with. On the `cloudflare` set the allowance is the
         // `[[ratelimits]]` binding's: its window is checked against the bindings' periods (`check_rate_windows`), and its limit
         // only gives the upper bound that `CfRateLimiter` reports as `remaining`.
@@ -107,7 +110,8 @@ fn core_config(env: &Env) -> CoreConfig {
             p_cost: num(env, "THRUST_ARGON2_P", defaults.argon2.p_cost),
         },
         ..defaults
-    }
+    };
+    cfg.with_retention_from(|name| text(env, name)).map_err(|e| Error::RustError(e.to_string()))
 }
 
 /// The mail service, when `THRUST_EMAIL_FROM` is set: the Worker's `send_email` binding (`EMAIL`) with that sender (and the name
@@ -200,7 +204,7 @@ fn build_app(env: &Env, background: Arc<dyn Background>) -> Result<(App, Option<
     let clock: Arc<dyn Clock> = Arc::new(JsClock);
     let ids: Arc<dyn IdGen> = Arc::new(JsIdGen);
 
-    let cfg = core_config(env);
+    let cfg = core_config(env)?;
     let rng: Arc<dyn Rng> = Arc::new(JsRng);
     let hasher: Arc<dyn PasswordHasher> = Arc::new(Argon2idHasher::new(cfg.argon2));
     let oidc = oidc_provider(env)?;

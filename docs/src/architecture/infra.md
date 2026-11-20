@@ -158,11 +158,14 @@ Configuration is read from the environment, in `crates/server/src/main.rs`:
 | `THRUST_PG_POOL` | `16` | Postgres pool size |
 | `THRUST_OUTBOX_FASTPATH` | on | Publish events right after commit; off leaves every event to the sweeper |
 | `THRUST_SWEEP_INTERVAL_SECS` | `0` | Interval of the in-process outbox sweeper; `0` turns it off |
+| `THRUST_HARD_DELETE_AFTER_DAYS` | `30` | Days a soft-deleted work item is kept before the hard delete (issue #59, F-D10) deletes it for good: deviation D-001, where Plane's is 60. A whole number, 0 or more; anything else stops the server at startup, because a window read as the default would delete rows the operator meant to keep. The job is `run_retention` (run today by `POST /internal/retention`) |
+| `THRUST_OUTBOX_RETENTION_DAYS` | `90` | Days a dispatched outbox row is kept (ADR-0046, Q-0046.2), which is also how long the P0 audit trail is (ADR-0048). The same rule as above |
 | `THRUST_TEST_ROUTES` | off | Turns on `/_info`, `/_test/panic` and `/internal/*`; with it off they answer 404 |
 | `THRUST_ADMIN_TOKEN` | none | The secret `/internal/*` requires, as the `x-admin-token` header |
 
 The Worker reads `THRUST_ADAPTERS`,
-`THRUST_OUTBOX_FASTPATH`, `THRUST_TEST_ROUTES` and `THRUST_ADMIN_TOKEN` from its own environment. Its database comes
+`THRUST_OUTBOX_FASTPATH`, `THRUST_TEST_ROUTES`, `THRUST_ADMIN_TOKEN` and the two retention windows from its own environment (a window that
+is not a number of days stops it building its app, which is every request, queue batch and cron run). Its database comes
 from the Hyperdrive binding, so it has no `DATABASE_URL`. The server turns a panic in a handler into a JSON 500 and
 logs the cause.
 

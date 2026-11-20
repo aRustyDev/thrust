@@ -122,7 +122,10 @@ for triple in \
   "mail-code-cap-ignored:mutant_code_cap_ignored:mail" \
   "mail-code-attempts-unbounded:mutant_code_attempts_unbounded:mail" \
   "mail-code-deactivated-signs-in:mutant_code_deactivated_signs_in:mail" \
-  "mail-code-mails-unknown:mutant_code_mails_unknown:mail"; do
+  "mail-code-mails-unknown:mutant_code_mails_unknown:mail" \
+  "sweeper-retention-purge-at-cutoff:mutant_purge_at_cutoff:sweeper" \
+  "sweeper-retention-ignores-cutoff:mutant_retention_ignores_cutoff:sweeper" \
+  "sweeper-retention-outbox-purge-by-age:mutant_outbox_purge_by_age:sweeper"; do
   name="${triple%%:*}"
   rest="${triple#*:}"
   feature="${rest%%:*}"
@@ -281,6 +284,25 @@ for quad in \
   want "cloudflare email adapter + $name" || continue
   adapter_row "cf-email-$name" thrust-adapters-cloudflare "$feature" "binary($bin)"
   kill_check_suite_msg "cloudflare email adapter + $name" "$status" "$OUT/cf-email-$name.test.log" "$needle"
+done
+
+# The use-cases' retention mutants (issue #59, F-D10): the job's own tests (`thrust-core/tests/retention.rs`) against a broken build of
+# thrust-core, and, through thrust-core's dev-dependency, against the memory adapter's `<=` and outbox-by-age mutants (the feature is
+# `thrust-adapters-memory/<name>`: cargo enables a dev-dependency's feature from the package that has it). A window that does not parse is
+# read as the default; the window is not counted back from now; a work item goes and its attachments stay.
+for triple in \
+  "ignores-cutoff:mutant_retention_ignores_cutoff:a work item deleted" \
+  "days-lenient:mutant_retention_days_lenient:is refused, not read as the default" \
+  "keeps-blobs:mutant_retention_keeps_blobs:one attachment each" \
+  "purge-at-cutoff:thrust-adapters-memory/mutant_purge_at_cutoff:a work item deleted" \
+  "outbox-purge-by-age:thrust-adapters-memory/mutant_outbox_purge_by_age:only the dispatched row"; do
+  name="${triple%%:*}"
+  rest="${triple#*:}"
+  feature="${rest%%:*}"
+  needle="${rest#*:}"
+  want "retention (use-cases) + $name" || continue
+  adapter_row "retention-core-$name" thrust-core "$feature" 'binary(retention)'
+  kill_check_suite_msg "retention (use-cases) + $name" "$status" "$OUT/retention-core-$name.test.log" "$needle"
 done
 
 # The memory adapter's retention mutants (issue #59, F-D10): each is a deliberately broken build of thrust-adapters-memory, run against its own
