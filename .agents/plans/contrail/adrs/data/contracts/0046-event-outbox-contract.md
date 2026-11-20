@@ -119,6 +119,16 @@ Per FR-17 (`reviews/2026-10-19-fable-architecture-review.md`), this ADR is accep
 * **Consumer idempotency.** `process_event` (lines 432-454) writes the activity row with `ON CONFLICT (event_id) DO NOTHING` against a unique `event_id` (`crates/thrust-adapters-postgres/src/lib.rs:253-258`; `0001_init.sql:64-67`), and the `no-activity-dedupe` mutation control (`scripts/mutants.sh:32`) is a broken build the suite must fail. The activity row is a consumer projection, which settles the Neutral consequence above.
 * **Retention.** Outbox rows are kept 90 days (round 16). The retention job is not built yet.
 
+## Update — issue #59, the outbox retention (2026-11-20)
+
+The retention job that the round-29 note says is not built is built (`run_retention`, `crates/core/usecases/src/retention.rs`; the daily hard
+delete of ADR-0072). It keeps outbox rows for `THRUST_OUTBOX_RETENTION_DAYS` days, **90** unless set (round 16; a whole number of days, 0 or
+more, anything else stops the server at startup and the Worker's app from building). A row is deleted when it **has been dispatched** and its
+`created_at` is strictly more than that long before the run, oldest first, 1,000 at a time under `FOR UPDATE SKIP LOCKED`, at most 100 batches a
+run; the partial index `outbox_dispatched_by_age` (migration 0021) serves it. A row that was **never dispatched is not deleted, however old**:
+it is an event the consumers are still owed, and deleting it would drop the audit trail (ADR-0048) without delivering it. The 90 days are
+therefore the P0 audit trail's length as well. No replay API is added (Q-0046.2 stays as the round-16 note has it).
+
 ## Open Questions
 
 * Q-0046 — approve outbox + envelope; activity as sync write vs consumer projection. (answered round 29, FR-17)

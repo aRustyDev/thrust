@@ -149,6 +149,8 @@ The plan's `ARCHITECTURE.md` (draft v0, `.agents/plans/contrail/ARCHITECTURE.md`
   answers each of those methods off, so the app draws no button or code step for them (D-037). The one method beyond the password that has routes, OIDC (`/auth/oidc/` and its callback, D-040), is dark: `is_oidc_enabled` is true only where a provider is configured and none is, so no button is drawn ([Sign in with SSO](infra.md#sign-in-with-sso-built-and-dark)). The one control a reset would take,
   the "Forgot your password?" popover, is a line in `password.tsx` that says to ask an admin, and the admin's tool is the operator's two routes (D-038, [Recover a locked-out user](infra.md#recover-a-locked-out-user)). The Worker serves the build only for the browser journey (the `e2e` pass of `scripts/contract.sh`: `scripts/worker-dev.sh` writes an `[assets]` block into a throwaway copy of the config when `THRUST_ASSETS_DIR` is set, one single-page app with every path the Worker handles run first, ADR-0011); the shared `wrangler.toml` has none, and the native server does not serve the build.
 - **Ports:** Workflow, Scheduler, Collab, Search, Email, AI, Identity, Secrets, Telemetry and Flags have no trait.
-  Scheduling today is a `scheduled` handler on the Worker and an optional timer in the server.
+  Scheduling today is a `scheduled` handler on the Worker, which runs the job of the cron that fired, and two timers in the server: an
+  optional one for the outbox sweep and one for the daily hard delete. What each cron runs is the table `thrust_core::SCHEDULES`
+  (`schedules.rs`), and the wrangler files' triggers are held to it by `deploy_parity.py`.
 - **Adapters:** the self-hosted set in the plan's diagrams (RabbitMQ, Valkey, S3) does not exist. See
   [Infrastructure](infra.md).

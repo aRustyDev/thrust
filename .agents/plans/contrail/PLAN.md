@@ -167,7 +167,7 @@ Subjects are shortened from the handoff's Track B table (`reviews/2026-10-19-fab
 | #56 | exports and seeding as queue jobs with a `jobs` table | M3 | #43 #46 | FR-05 | |
 | #57 | per-PR schema sweep owner and CI wiring for preview environments | M1 | | Q-0094.7 (FR-10) | `plane-byd.4` |
 | #58 | `/api/v1` projects, states, labels and work items with the oracle gate | M1 | #35 #36 #47 | FR-01 | |
-| #59 | daily hard-delete retention cleanup (F-D10) | M2 | | FR-01 | |
+| #59 | daily hard-delete retention cleanup (F-D10) (built 2026-11-20 in three pull requests: #336 the purge ports and adapters, #340 `run_retention` and its windows, and the schedules on `feat/59-schedule-hard-delete`; work items and dispatched outbox rows only, the history goes with the work item (D-043): ADR-0072's, ADR-0046's and ADR-0043's issue #59 updates, `docs/src/testing/status.md` G-50) | M2 | | FR-01 | |
 
 ## Decisions taken in round 29
 
