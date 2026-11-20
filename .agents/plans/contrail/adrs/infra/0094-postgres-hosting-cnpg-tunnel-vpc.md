@@ -211,6 +211,39 @@ The record had already settled most of it. **Hyperdrive Write** is on the accoun
 
 **Per-operator `op://` items** (owner, 2026-11-10): each operator keeps theirs in their own 1Password vault, and the repository ships placeholders only. The record calls the token `thrust-spikes` (October) and "the tunnels token" (November) without saying they are one token; that is unresolved and changes nothing still to be done.
 
+## Update — the deep probe is live (2026-11-20, issue #42)
+
+Conditions 1 and 2 of the round-29 note above are in place. Condition 3, the exit trigger, is unchanged.
+
+* **The endpoint.** `GET /healthz?deep=1` on the product hostname runs one `SELECT now()` through Hyperdrive
+  (`Database::ping`, PR #332; v0.4.0, in production since 2026-11-19). It answers 200 `ok`, or 503 `unavailable` with no
+  cause in the body (the cause goes to the Worker's log), and both answers carry `Cache-Control: no-store`. Plain
+  `/healthz` is unchanged and still never asks the database for a connection. `now()` is `STABLE`, so Hyperdrive never
+  answers it from its cache, which is why the round-29 note named it and not `select 1`.
+* **The probe.** The `Thrust` line of `Data & Apps` on `status.woven`, Gatus key `data---apps_thrust`:
+  `https://thrust.sow.foo/healthz?deep=1` every 60 s, red unless the status is 200 and the body is exactly `ok`, Slack
+  after 5 failures (infrastructure PR #1040). It has no response-time condition: one SLI per probe. The body condition
+  matters, because a wrong path answers the SPA fallback, a 200 `text/html`, which a status check alone cannot tell from a
+  healthy answer.
+* **Shown to fail, then to pass.** Before the line was left on, a temporary, unalerted control with the same conditions
+  was pointed at `/healthz-control-42?deep=1`. It was red for five probes (the status passed, the body condition failed)
+  while the real line was green, and it turned green when repointed at the real URL with nothing else changed. It was then
+  removed, so the production line never carried a deliberate failure.
+* **Reading the figure.** `curl -s http://status.woven/api/v1/endpoints/data---apps_thrust/uptimes/30d`. First reading, 12 probes in (2026-11-20): `1.000000`. The prober measures about
+  0.25 to 0.35 s a probe, which is one database round trip a minute. The full 30-day figure is read at the M2 exit check.
+* **Not shown.** A database that is down is shown only in process (a router test over a `Connector` that refuses), not
+  on a live target: no contract pass stops a database (owner, 2026-11-18; G-49 in `docs/src/testing/status.md`). The alert
+  path (5 failures to Slack) was not exercised.
+* **Where the history lives.** Only in the status server's own SQLite, so rebuilding that server erases it and the
+  server's own glitches count as Thrust outages (issue #328). A full `tofu plan` of the status root from the
+  infrastructure repository's `main` currently wants to replace that server (its `user_data` and compose file differ from
+  what is live), which is why the three applies were targeted at the config object only (infrastructure PR #1040).
+* **Access (issue #50).** Once Cloudflare Access gates the product hostname, `/healthz` joins the bypass list (ADR-0090's
+  list is `/api`, `/auth` and `/live`), or this line goes red for good, because the prober is a `non_identity` session.
+
+**What this does to the earlier statement.** The sentence in condition 1 above that "`status.woven` does not probe this
+path today" is out of date as of this update. The rest of that note stands.
+
 ## Open Questions
 
 * Q-0094.1 — CNPG layout: HA, environments, per-PR schemas, backup retention.
