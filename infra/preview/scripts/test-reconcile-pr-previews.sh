@@ -72,6 +72,7 @@ printf '8\n8\n' >"$T/duplicate"
 if CALLS="$T/calls" PR_SCHEMA_SH="$T/schema" HYPERDRIVE_SH="$T/hyperdrive" "$RECONCILE" --desired "$T/duplicate" --dry-run >/dev/null 2>&1; then bad "control: duplicate desired inventory passed"; else ok "control: malformed desired inventory fails before mutation"; fi
 
 python3 -I "$HERE/test_migration_artifact.py"
+python3 -I "$HERE/test_migration_authorization.py"
 python3 -I "$HERE/test_verify_pr_head.py"
 if ((fail)); then exit 1; fi
 echo "preview reconciliation tests: PASS"
