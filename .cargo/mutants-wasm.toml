@@ -1,0 +1,14 @@
+# cargo-mutants on the Worker's wasm32 glue (G-6, stage 8 of the Test phase), by hand: it is no job. The default configuration (mutants.toml) builds and
+# tests natively, where the Worker's own code is not compiled in a way that can run (every mutant would read as MISSED, as G-41 records for the edge's
+# runtime), so this one builds for wasm32 and runs the tests of crates/worker/src/wasm_tests.rs through the same runner CI uses:
+#
+#   WASM_BINDGEN_TEST_RUNNER=<a wasm-bindgen-test-runner of the version Cargo.lock pins> \
+#     cargo mutants --config .cargo/mutants-wasm.toml -p thrust-worker -f crates/worker/src/lib.rs
+#
+# A mutant of code that only the contract cells reach (the fetch, queue and scheduled handlers) is MISSED here, which is the truth: no unit test of the
+# Worker reaches it. The result is in docs/src/testing/status.md (G-6).
+test_tool = "nextest"
+additional_cargo_args = ["--target", "wasm32-unknown-unknown"]
+additional_cargo_test_args = ["--profile", "workers"]
+# no debuginfo, as the tests themselves: the runner processes the whole binary once per test (Cargo.toml, [profile.wasm-test])
+profile = "wasm-test"

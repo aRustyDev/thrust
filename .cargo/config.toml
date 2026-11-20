@@ -14,3 +14,9 @@
 # * cargo-mutants builds in a copy of the tree, and the copy's own `.cargo/config.toml` points THRUST_ROOT at the copy.
 [env]
 THRUST_ROOT = { value = "", relative = true, force = true }
+
+# The Worker's wasm32 unit tests (G-6): `cargo test` and `cargo nextest run` with `--target wasm32-unknown-unknown` run a test binary through this,
+# which is wasm-bindgen-test-runner in Node plus the stand-ins for workerd's own modules. Nothing else runs a wasm32 binary: builds, `cargo check`
+# and clippy never call a runner. A path with a slash is read from the directory that holds `.cargo/`. scripts/wasm-tests.sh is the command.
+[target.wasm32-unknown-unknown]
+runner = "scripts/wasm-test-runner.sh"

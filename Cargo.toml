@@ -114,3 +114,9 @@ opt-level = 3
 [profile.mutants]
 inherits = "test"
 debug = "none"
+
+# Build profile of the Worker's wasm32 unit tests (scripts/wasm-tests.sh, nextest's `workers` profile): no debuginfo. The runner processes the
+# whole test binary once per test, and with debuginfo (158 MB) that took 20 s a test, against 1.9 s without (26 MB): measured 2026-11-20.
+[profile.wasm-test]
+inherits = "test"
+debug = "none"

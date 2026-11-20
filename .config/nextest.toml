@@ -4,6 +4,7 @@
 # Profiles:  default (fast hermetic loop) | ci | deep | oracle | mutants | contract (the contract suite against a running target)
 #            | adapters (the adapter suites that need Docker) | load (the load tests against a running target)
 #            | prof (the profiling workloads, which write their profiles under target/profiling/)
+#            | workers (the Worker's wasm32 unit tests, through wasm-bindgen-test-runner: scripts/wasm-tests.sh)
 # Test-name prefixes route tests:  prop_  model_  oracle_  load_  (parity_, fuzz_replay_ and regression_ run by default)
 # load_ = a load test of thrust-load-tests: it measures a running target, so it runs only with the `load` profile.
 # prof_ = a profile of a workload of thrust-profiling: it writes outside a temp dir, so it runs only with the `prof` profile.
@@ -124,6 +125,19 @@ path = "junit.xml"   # written to target/nextest/adapters/junit.xml
 [[profile.adapters.overrides]]
 filter = 'all()'
 slow-timeout = { period = "120s" }
+
+# --- workers: the Worker's wasm32 unit tests (crates/worker/src/wasm_tests.rs) ------------------
+# They exist only when the Worker is built for wasm32, so a host run has none of them, and they run through wasm-bindgen-test-runner in Node
+# (scripts/wasm-test-runner.sh, which .cargo/config.toml names). The command is scripts/wasm-tests.sh, which CI's `workers` job runs. Each test is a
+# process of the runner (about two CPU-seconds before it runs anything), so they are few and each one is a matrix or a loop.
+# Inherits [profile.default]'s timeouts: the slowest takes seconds.
+[profile.workers]
+default-filter = 'package(thrust-worker)'
+fail-fast = false
+failure-output = "immediate-final"
+
+[profile.workers.junit]
+path = "junit.xml"   # written to target/nextest/workers/junit.xml
 
 # --- load: the load tests against a target that is already running -------------------------
 # scripts/contract.sh's `bench` and `scale` passes start a target and run them, release-built, as
