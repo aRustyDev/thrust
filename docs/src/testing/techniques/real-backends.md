@@ -51,4 +51,5 @@ generated: `model_postgres_adapter_matches_the_reference_model`.
 ## Target
 
 testcontainers for self-hosted adapters and `wasm-bindgen-test`/workerd for the wasm32 leg: ADR-0123
-(`.agents/plans/contrail/adrs/test/standards/0123-test-standards-and-tooling.md`).
+(`.agents/plans/contrail/adrs/test/standards/0123-test-standards-and-tooling.md`). The wasm32 leg exists for the
+Worker's own glue, but on Node, not on workerd (no public runner hosts it there): [status](../status.md) G-6.

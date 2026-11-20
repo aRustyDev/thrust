@@ -38,3 +38,6 @@ http-body-util = "0.1"
 console_error_panic_hook = "0.1"
 # only to name `Type`/`ToSql` in the Stage 2 `pgshapes` probe; same declaration as the adapters'
 tokio-postgres = { version = "0.7", default-features = false, features = ["js"] }
+
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+wasm-bindgen-test = "0.3.80"

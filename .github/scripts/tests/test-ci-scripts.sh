@@ -246,11 +246,11 @@ expect "callee: a verdict job that forgot CELL_JOB, and is given cells, fails" 1
 
 # ---- the contract cells, judged by the verdict job of the workflow that runs them (test.yml) ---------------------------------------
 # These rules were ci.yml's gate's until the job `contract` moved into test.yml (migration M5b): the same rules, at the level of a verdict
-# job whose cell job is `contract`. Its jobs are the five of test.yml and it has no planner job. A cell that passes uploads a marker; this
+# job whose cell job is `contract`. Its jobs are the six of test.yml and it has no planner job. A cell that passes uploads a marker; this
 # job is given the planned cells and the directory the markers were collected in.
 P='["native-memory main","worker-cf bindings"]'
 M1="native-memory main"; M2="worker-cf bindings"
-CJOBS="ci-scripts hermetic pg-adapter contract mutants"
+CJOBS="ci-scripts hermetic pg-adapter contract mutants workers"
 cell() { # cell <dir> <needs-json> <expected-jobs-json> <planned-json> <reported markers...>
   d="$T/gate/$1"; mkdir -p "$d/reported"; needs="$2"; expected="$3"; planned="$4"; shift 4
   for m in "$@"; do printf '%s\n' "$m" > "$d/reported/$(echo "$m" | tr ' ' '-').ok"; done
@@ -295,9 +295,9 @@ for j in $CJOBS; do
     done
   done
 done
-expect "cells: every job planned and passed, every planned cell reported" 0 "5 expected jobs passed, the rest were skipped; 2 of 2 planned cells reported success" \
-  cell k1 "$(cneeds ci-scripts=success hermetic=success pg-adapter=success contract=success mutants=success)" \
-  '["ci-scripts","hermetic","pg-adapter","contract","mutants"]' "$P" "$M1" "$M2"
+expect "cells: every job planned and passed, every planned cell reported" 0 "6 expected jobs passed, the rest were skipped; 2 of 2 planned cells reported success" \
+  cell k1 "$(cneeds ci-scripts=success hermetic=success pg-adapter=success contract=success mutants=success workers=success)" \
+  '["ci-scripts","hermetic","pg-adapter","contract","mutants","workers"]' "$P" "$M1" "$M2"
 expect "cells: one planned cell never reported" 1 "planned cells that never reported success: worker-cf bindings" cell c1 "$(cneeds contract=success)" '["contract"]' "$P" "$M1"
 expect "cells: a marker for an unplanned cell" 1 "not in the planned set: native-pg main" cell c2 "$(cneeds contract=success)" '["contract"]' "$P" "$M1" "$M2" "native-pg main"
 expect "cells: contract expected but no cell planned" 1 "the planned cell set is empty" cell c3 "$(cneeds contract=success)" '["contract"]' '[]' "$M1"

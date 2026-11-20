@@ -50,7 +50,7 @@ def check(label, got, want):
         print(f"BAD  {label}: got {got!r}, wanted {want!r}")
 
 
-ALL_JOBS = {"ci-scripts", "deps", "lint", "deny", "hermetic", "pg-adapter", "contract", "mutants", "web", "docs"}
+ALL_JOBS = {"ci-scripts", "deps", "lint", "deny", "hermetic", "pg-adapter", "contract", "mutants", "workers", "web", "docs"}
 CELLS = [
     "native-memory main", "native-memory oracle", "native-pg main", "native-pg oracle",
     "worker-memory main", "worker-cf main", "worker-cf oracle", "worker-cf e2e", "worker-cf e2e-mail",
@@ -142,6 +142,8 @@ def want_for_crates(changed, deps):
         jobs.add("pg-adapter")
     if SERVER in hit or SUITE in changed:
         jobs.add("mutants")
+    if WORKER in hit:
+        jobs.add("workers")
     cells = {c for c in CELLS if BINARY[c.split(" ")[0]] in hit or SUITE in changed}
     if cells:
         jobs.add("contract")
@@ -185,7 +187,7 @@ SAMPLES = [
     ".github/deploy/flagship/policy.json", ".github/deploy/ca.pem", "deny.toml", "clippy.toml", "release-plz.toml", ".gitignore", "tools/oracle-v1/corpus/a.json",
     "tools/compat-record/record.py", "tools/compat-inventory/out-pinned/endpoint-inventory.csv",
     ".agents/plans/contrail/research/0003-compat-plane-inventory.md", "tools/e2e-har/scrub.py", "e2e/journeys/m1.spec.ts",
-    "web/apps/web/app.tsx", "scripts/e2e.sh", "scripts/oracle-v1.sh", "scripts/mutants.sh", "scripts/stage2-contract.sh",
+    "web/apps/web/app.tsx", "scripts/e2e.sh", "scripts/oracle-v1.sh", "scripts/mutants.sh", "scripts/wasm-tests.sh", "scripts/stage2-contract.sh",
     "scripts/check-web-diff.sh", "scripts/check-book.sh", "scripts/test-preview-migration-worker.sh", "scripts/check-topology.sh", "scripts/smoke-deploy.sh", "scripts/flagship.py", "scripts/preview-config.py", "infra/edge/access.tf", "scripts/samply-wrapper.sh", "scripts/verify-all.sh",
     "scripts/new-thing.sh", "docs/src/intro.md", "AGENTS.md", ".github/scripts/lint-workflow.sh", ".github/workflows/deploy.yml",
 ]
@@ -272,6 +274,14 @@ check("the deploy's CA root runs the TLS tests (hermetic) and ci-scripts", run_p
 jobs, cells = run_plan(["crates/adapters/cloudflare/src/lib.rs"], REAL_GRAPH)
 check("a Worker-only crate runs the worker cells only", cells, {c for c in CELLS if c.startswith("worker-")})
 check("a Worker-only crate runs no mutants and no pg-adapter", jobs & {"mutants", "pg-adapter"}, set())
+check("a Worker-only crate runs the Worker's wasm32 tests", "workers" in jobs, True)
+check("the Worker itself runs them", "workers" in run_plan(["crates/worker/src/lib.rs"], REAL_GRAPH)[0], True)
+check("a crate the Worker does not depend on does not", "workers" in run_plan(["crates/server/src/lib.rs"], REAL_GRAPH)[0], False)
+check("the native server's adapter does not", "workers" in run_plan(["crates/adapters/selfhosted/src/lib.rs"], REAL_GRAPH)[0], False)
+# The wasm32 tests' scripts, their runner and its stand-ins are read by the workers job and by test-wasm-tests.sh (ci-scripts).
+for path in ["scripts/wasm-tests.sh", "scripts/wasm-test-runner.sh", "scripts/lib/workerd-stubs.cjs"]:
+    jobs, cells = run_plan([path], REAL_GRAPH)
+    check(f"{path} runs the workers job and its test, and no cell", ({"workers", "ci-scripts"} <= jobs, cells), (True, set()))
 jobs, cells = run_plan(["crates/adapters/selfhosted/src/lib.rs"], REAL_GRAPH)
 check("the self-hosted adapter runs the native cells, pg-adapter and mutants",
       (cells, {"pg-adapter", "mutants"} <= jobs), ({c for c in CELLS if c.startswith("native-")}, True))
@@ -301,7 +311,7 @@ if md.returncode == 0:
     check("every member's own file is that member's", sorted(d for d in dirs if pc.owner(f"{d}/src/lib.rs", dirs) != d), [])
     dir_of = {n: d for d, n in dirs.items()}
     check("REAL_GRAPH's crates are where ADR_0009 puts them", {n: dir_of.get(n) for n in ADR_0009}, ADR_0009)
-    for name in sorted({pc.SUITE, pc.PG_ADAPTER, pc.MUTANTS_BINARY, *pc.TARGET_BINARY.values()}):
+    for name in sorted({pc.SUITE, pc.PG_ADAPTER, pc.MUTANTS_BINARY, pc.WORKER, *pc.TARGET_BINARY.values()}):
         check(f"{name}, named by the planner, is a crate of the workspace", name in real, True)
     for n in sorted(real):
         jobs, sel, _ = pc.plan([f"{dir_of[n]}/src/lib.rs"], dirs, real, CELLS)
@@ -390,7 +400,7 @@ JOBS_LIST = list(pc.JOBS)
 # What WORKFLOWS holds today. Each stage of the migration edits this line, so the stage's change to the planner shows in this file,
 # and a mutant that empties the map is killed by it.
 EXPECTED_WORKFLOWS = {"documentation": ("docs",), "security": ("deny",), "web": ("web",), "lint": ("deps", "lint"),
-                      "test": ("ci-scripts", "hermetic", "pg-adapter", "contract", "mutants")}
+                      "test": ("ci-scripts", "hermetic", "pg-adapter", "contract", "mutants", "workers")}
 check("WORKFLOWS is a partition of the jobs", refused(lambda: pc.check_workflows()), None)
 check("WORKFLOWS holds the workflows moved so far, and their jobs", pc.WORKFLOWS, EXPECTED_WORKFLOWS)
 
