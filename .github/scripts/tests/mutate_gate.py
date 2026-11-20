@@ -65,7 +65,7 @@ CALLS = [
     (SEC, "security", ("deny",), "documentation, security]", "documentation]"),
     (WEB, "web", ("web",), "lint, web, documentation", "lint, documentation"),
     (LNT, "lint", ("deps", "lint"), "test, lint, web", "test, web"),
-    (TST, "test", ("ci-scripts", "hermetic", "pg-adapter", "contract", "mutants"), "changes, test, lint", "changes, lint"),
+    (TST, "test", ("ci-scripts", "hermetic", "pg-adapter", "contract", "mutants", "workers"), "changes, test, lint", "changes, lint"),
 ]
 CELL_JOB = "contract"  # the job that runs the contract cells; the workflow that holds it gets the mutants of the cells (call_mutants)
 
@@ -232,19 +232,21 @@ MUTANTS = [
     # --- the wiring of the called workflows, and what a stage of the migration changes (ADR-0102)
     (PLAN, "the planner forgets the workflows",
      'WORKFLOWS = {"documentation": ("docs",), "security": ("deny",), "web": ("web",), "lint": ("deps", "lint"), '
-     '"test": ("ci-scripts", "hermetic", "pg-adapter", "contract", "mutants")}', "WORKFLOWS = {}"),
+     '"test": ("ci-scripts", "hermetic", "pg-adapter", "contract", "mutants", "workers")}', "WORKFLOWS = {}"),
     (PLAN, "the planner forgets the documentation workflow", '{"documentation": ("docs",), "security"', '{"security"'),
     (PLAN, "the planner forgets the security workflow", ', "security": ("deny",)', ""),
     (PLAN, "the planner forgets the web workflow", ', "web": ("web",)', ""),
     (PLAN, "the planner forgets the lint workflow", ', "lint": ("deps", "lint")', ""),
-    (PLAN, "the planner forgets the test workflow", ', "test": ("ci-scripts", "hermetic", "pg-adapter", "contract", "mutants")}', "}"),
+    (PLAN, "the planner forgets the test workflow", ', "test": ("ci-scripts", "hermetic", "pg-adapter", "contract", "mutants", "workers")}', "}"),
     (PLAN, "the planner moves test's jobs to a workflow of another name", '"test": ("ci-scripts"', '"suite": ("ci-scripts"'),
-    (PLAN, "the planner leaves ci-scripts in ci.yml", '("ci-scripts", "hermetic", "pg-adapter", "contract", "mutants")',
-     '("hermetic", "pg-adapter", "contract", "mutants")'),
-    (PLAN, "the planner leaves contract in ci.yml", '("ci-scripts", "hermetic", "pg-adapter", "contract", "mutants")',
-     '("ci-scripts", "hermetic", "pg-adapter", "mutants")'),
-    (PLAN, "the planner leaves mutants in ci.yml", '("ci-scripts", "hermetic", "pg-adapter", "contract", "mutants")',
-     '("ci-scripts", "hermetic", "pg-adapter", "contract")'),
+    (PLAN, "the planner leaves ci-scripts in ci.yml", '("ci-scripts", "hermetic", "pg-adapter", "contract", "mutants", "workers")',
+     '("hermetic", "pg-adapter", "contract", "mutants", "workers")'),
+    (PLAN, "the planner leaves contract in ci.yml", '("ci-scripts", "hermetic", "pg-adapter", "contract", "mutants", "workers")',
+     '("ci-scripts", "hermetic", "pg-adapter", "mutants", "workers")'),
+    (PLAN, "the planner leaves mutants in ci.yml", '("ci-scripts", "hermetic", "pg-adapter", "contract", "mutants", "workers")',
+     '("ci-scripts", "hermetic", "pg-adapter", "contract", "workers")'),
+    (PLAN, "the planner leaves workers in ci.yml", '("ci-scripts", "hermetic", "pg-adapter", "contract", "mutants", "workers")',
+     '("ci-scripts", "hermetic", "pg-adapter", "contract", "mutants")'),
     (PLAN, "the planner moves lint's jobs to a workflow of another name", '"lint": ("deps", "lint")', '"style": ("deps", "lint")'),
     (PLAN, "the planner leaves deps in ci.yml", '("deps", "lint")', '("lint",)'),
     (PLAN, "the planner leaves lint in ci.yml", '("deps", "lint")', '("deps",)'),
@@ -315,6 +317,24 @@ MUTANTS = [
     # contract-pass-tools (Test phase, stage 6): the e2e cells get the browser and not the fonts apt would add (138 s to 57 s of the tools step, the cell's tail gone); nothing fails without it
     (TOOLS, "the e2e tools step apt-installs the browser's system packages again", "        pnpm --dir e2e exec playwright install chromium\n", "        pnpm --dir e2e exec playwright install --with-deps chromium\n"),
     (TOOLS, "the e2e tools step no longer installs the browser", "        pnpm --dir e2e exec playwright install chromium\n", ""),
+    # the workers job (Test phase, stage 8, status G-6): the Worker's wasm32 unit tests. Each of these leaves a job that still looks healthy, until a bump of wasm-bindgen or a cache eviction
+    (TST, "workers installs a runner of a version written in the workflow", "          tool: wasm-bindgen@${{ steps.wasm-bindgen.outputs.version }}\n", "          tool: wasm-bindgen@0.2.130\n"),
+    (TST, "workers reads the runner's version from something else", '          id="$(scripts/rs cargo pkgid --locked wasm-bindgen)"\n', '          id="registry+https://github.com/rust-lang/crates.io-index#wasm-bindgen@0.2.130"\n'),
+    (TST, "workers reads the runner's version without holding Cargo to the lock", '          id="$(scripts/rs cargo pkgid --locked wasm-bindgen)"\n', '          id="$(scripts/rs cargo pkgid wasm-bindgen)"\n'),
+    (TST, "workers installs a runner named by the whole package id", '          echo "version=${id##*[#@]}" >> "$GITHUB_OUTPUT"\n', '          echo "version=$id" >> "$GITHUB_OUTPUT"\n'),
+    (TST, "workers runs nextest and not the script with the count guard", "        run: scripts/wasm-tests.sh\n",
+     "        run: scripts/rs cargo nextest run --profile workers --target wasm32-unknown-unknown -p thrust-worker --locked\n"),
+    (TST, "workers has a Node that lacks module.registerHooks", "          node-version-file: web/.node-version\n", "          node-version: '20'\n"),
+    (TST, "workers builds for no wasm32 target", "          nextest: 'true'\n          targets: wasm32-unknown-unknown\n", "          nextest: 'true'\n"),
+    (TST, "workers shares a cache key with the hermetic job", "          cache-key: wasm-workers\n", "          cache-key: native-hermetic\n"),
+    (TST, "the verdict does not wait for workers", "    needs: [ci-scripts, hermetic, pg-adapter, contract, mutants, workers]\n", "    needs: [ci-scripts, hermetic, pg-adapter, contract, mutants]\n"),
+    (TST, "the verdict does not judge workers", "          jobs: ci-scripts hermetic pg-adapter contract mutants workers\n", "          jobs: ci-scripts hermetic pg-adapter contract mutants\n"),
+    (PLAN, "workers is not planned when the Worker changes", '    if WORKER in hit:\n        jobs.add("workers")\n', ""),
+    (PLAN, "workers is planned for every crate change", "    if WORKER in hit:\n", "    if changed:\n"),
+    (PLAN, "workers is planned when the native server changes", "    if WORKER in hit:\n", "    if WORKER in hit or MUTANTS_BINARY in hit:\n"),
+    (PLAN, "a change to the wasm32 tests' scripts plans no workers", '{"jobs": ["workers", "ci-scripts"]}', '{"jobs": ["ci-scripts"]}'),
+    (PLAN, "a change to the wasm32 tests' scripts plans no ci-scripts", '{"jobs": ["workers", "ci-scripts"]}', '{"jobs": ["workers"]}'),
+    (PLAN, "the planner does not know the workers job", '"mutants", "workers", "web", "docs")', '"mutants", "web", "docs")'),
 ]
 MUTANTS += call_mutants()
 

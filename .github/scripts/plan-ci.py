@@ -39,7 +39,7 @@ Then, from the changed crates C and the affected crates A (C and everything that
   * the target of a cell runs its passes when the binary it serves is in A (native-* serve thrust-server, worker-* serve
     thrust-worker), or when the suite itself (thrust-contract-tests) changed.
   * pg-adapter when thrust-adapters-selfhosted is in A; mutants (built on the native server) when thrust-server is in A or the
-    suite changed.
+    suite changed; workers (the Worker's wasm32 unit tests) when thrust-worker is in A.
 
 Fails open: a target the map below does not know runs on every change (and says so); `--full` runs everything.
 """
@@ -49,12 +49,12 @@ import json
 import re
 import sys
 
-JOBS = ("ci-scripts", "deps", "lint", "deny", "hermetic", "pg-adapter", "contract", "mutants", "web", "docs")
+JOBS = ("ci-scripts", "deps", "lint", "deny", "hermetic", "pg-adapter", "contract", "mutants", "workers", "web", "docs")
 
 # The called workflow each job belongs to (ADR-0102): {workflow: (its jobs)}. A job in none is still a job of ci.yml itself. Every
 # migration stage moves its jobs in here; a job may be in one workflow only, and a name here must be one of JOBS (check_workflows).
 # ci.yml's `gate` lists these workflows too, as VERDICT_JOBS, and test_plan_ci.py holds the two equal.
-WORKFLOWS = {"documentation": ("docs",), "security": ("deny",), "web": ("web",), "lint": ("deps", "lint"), "test": ("ci-scripts", "hermetic", "pg-adapter", "contract", "mutants")}
+WORKFLOWS = {"documentation": ("docs",), "security": ("deny",), "web": ("web",), "lint": ("deps", "lint"), "test": ("ci-scripts", "hermetic", "pg-adapter", "contract", "mutants", "workers")}
 
 # The binary each target of scripts/contract.sh starts. Everything a cell runs against is built from it.
 TARGET_BINARY = {
@@ -66,6 +66,7 @@ TARGET_BINARY = {
 SUITE = "thrust-contract-tests"
 PG_ADAPTER = "thrust-adapters-selfhosted"
 MUTANTS_BINARY = "thrust-server"
+WORKER = "thrust-worker"
 
 FULL = "full"
 CRATE = "crate"
@@ -105,6 +106,8 @@ RULES = [
     (r"^scripts/oracle-v1(-reset)?\.sh$", {"passes": ["oracle"]}, "the v1 oracle's runner"),
     (r"^scripts/(mutants\.sh|lib/mutants-(verdict|shard)\.sh)$", {"jobs": ["mutants", "ci-scripts"]},
      "the mutation controls, their verdicts and the sharing out of their rows (test-mutants-verdict.sh and test-mutants-shards.sh read them)"),
+    (r"^scripts/(wasm-tests|wasm-test-runner)\.sh$|^scripts/lib/workerd-stubs\.cjs$", {"jobs": ["workers", "ci-scripts"]},
+     "the Worker's wasm32 tests, their runner and its stand-ins for workerd's modules (test-wasm-tests.sh reads them)"),
     (r"^scripts/(stage2-contract|check-contract-counts)\.sh$", {"jobs": ["hermetic", "deps"]}, "the contract counts and their guard"),
     (r"^scripts/check-web-diff\.sh$", {"jobs": ["web", "ci-scripts"]}, "the Q-R2 gate of web/"),
     (r"^scripts/check-book\.sh$", {"jobs": ["docs"]}, "the book's check"),
@@ -264,6 +267,8 @@ def plan(paths, dirs, deps, cells, full_reason=None):
         jobs.add("pg-adapter")
     if MUTANTS_BINARY in hit or SUITE in changed:
         jobs.add("mutants")
+    if WORKER in hit:
+        jobs.add("workers")
 
     selected = []
     for cell in cells:
