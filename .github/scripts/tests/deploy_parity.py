@@ -1,8 +1,11 @@
 """Compare the deployed Worker's template (wrangler.deploy.toml) with the config every other run uses (wrangler.toml).
 
     deploy_parity.py <wrangler.toml> <wrangler.deploy.toml> [scripts/worker-dev.sh]
+    deploy_parity.py --crons <wrangler file>...
 
 Exit 0 when they agree on everything that is not a deliberate difference, 1 with the differences listed, 2 when a file is not usable.
+
+`--crons` checks only the triggers of each file it is given (the two stage files, which nothing else compares): see `cron_problems`.
 
 The deliberate differences, and nothing else:
   * the probe-only bindings (`SS` Secrets Store, `RL` rate limit) are not in the deploy template: only the probe routes read them.
@@ -25,6 +28,10 @@ dead-letter queue, and miniflare refuses it), `THRUST_EVENTS_DLQ` must name it (
 batches apart), and the events consumer's `max_retries` must allow the number of deliveries `thrust_ports::MAX_DELIVERIES` says, so that
 the queue's own limit only ever backs the Worker's policy up.
 
+Each file's `triggers.crons` must also be exactly the crons of `thrust_core::SCHEDULES` (issue #59), which `cron_problems` checks in every
+file it is given: the Worker's `scheduled` handler runs the job of the cron that fired and nothing for one the table does not have, so a
+trigger the table lacks is a trigger that does nothing, and a schedule no file triggers is a job that never runs.
+
 Run from `test-deploy-template.sh`, which also runs it on copies it has broken, to show it can fail.
 """
 
@@ -40,6 +47,11 @@ DEPLOY_ONLY_VARS = {"THRUST_EMAIL_FROM", "THRUST_EMAIL_FROM_NAME", "THRUST_PUBLI
 # Where the delivery policy's limit is written: this file is `.github/scripts/tests/deploy_parity.py`, and the repository is three up.
 # `DEPLOY_PARITY_PORTS` names another file, which is how `test-deploy-template.sh` shows the check follows the constant and not a number.
 PORTS = Path(os.environ.get("DEPLOY_PARITY_PORTS") or Path(__file__).resolve().parents[3] / "crates" / "core" / "ports" / "src" / "lib.rs")
+# Where the schedules are written, and `DEPLOY_PARITY_SCHEDULES` for the same reason as the line above.
+SCHEDULES = Path(
+    os.environ.get("DEPLOY_PARITY_SCHEDULES")
+    or Path(__file__).resolve().parents[3] / "crates" / "core" / "usecases" / "src" / "schedules.rs"
+)
 
 
 def max_deliveries():
@@ -54,6 +66,35 @@ def max_deliveries():
         print(f"deploy_parity: {PORTS} has no `pub const MAX_DELIVERIES: u32 = N;` to compare the queue's max_retries with")
         sys.exit(2)
     return int(m.group(1))
+
+
+def schedule_crons():
+    """The crons of `thrust_core::SCHEDULES`, read from its source (the one place they are written), in the order they are written. Comment
+    lines are dropped first, so that a doc comment that quotes a cron is not a schedule."""
+    try:
+        text = SCHEDULES.read_text(encoding="utf-8")
+    except OSError as e:
+        print(f"deploy_parity: cannot read {SCHEDULES}: {e}")
+        sys.exit(2)
+    code = re.sub(r"(?m)^\s*//.*$", "", text)
+    found = re.findall(r'\bcron:\s*"([^"]*)"', code)
+    if not found:
+        print(f'deploy_parity: {SCHEDULES} has no `cron: "..."` to compare the triggers with')
+        sys.exit(2)
+    return found
+
+
+def cron_problems(what, cfg):
+    """What is wrong with the triggers of `cfg` (`what` names the file): they are exactly the crons of the table of schedules, none
+    missing, none extra, none twice."""
+    want = schedule_crons()
+    got = cfg.get("triggers", {}).get("crons", [])
+    if sorted(got) == sorted(want):
+        return []
+    return [
+        f"{what}: triggers.crons is {got!r}, not the crons of crates/core/usecases/src/schedules.rs, {want!r}: "
+        "a trigger the table does not have runs nothing, and a schedule no trigger fires is a job that never runs"
+    ]
 
 
 def queue_problems(what, cfg, *, marker):
@@ -155,7 +196,23 @@ def worker_dev_list(path):
     return tomllib.loads("x = " + m.group(1))["x"]
 
 
+def main_crons(files):
+    """`--crons <file>...`: only the triggers, in each file."""
+    problems = []
+    for f in files:
+        problems += cron_problems(f, load(f))
+    if problems:
+        print("deploy_parity: the triggers and the schedules disagree:")
+        for p in problems:
+            print("  - " + p)
+        return 1
+    print(f"deploy_parity: crons ok ({len(files)} files, each triggering exactly the schedules of the code)")
+    return 0
+
+
 def main(argv):
+    if len(argv) >= 3 and argv[1] == "--crons":
+        return main_crons(argv[2:])
     if len(argv) not in (3, 4):
         print(__doc__)
         return 2
@@ -205,6 +262,9 @@ def main(argv):
     # files to each other)
     problems += queue_problems("wrangler.toml", base, marker=False)
     problems += queue_problems("the deploy template", deploy, marker=True)
+    # the triggers, each file on its own terms against the table of schedules (the comparison above holds the two files to each other)
+    problems += cron_problems("wrangler.toml", base)
+    problems += cron_problems("the deploy template", deploy)
     for r in deploy.get("ratelimits", []):
         if not str(r.get("namespace_id", "")).startswith("__"):
             problems.append(f"ratelimit {r.get('name')} namespace_id is {r.get('namespace_id')!r}, not a marker")

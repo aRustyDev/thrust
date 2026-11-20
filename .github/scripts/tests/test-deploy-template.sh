@@ -104,8 +104,57 @@ expect "a changed queue consumer setting is found" 1 "queue_consumers" parity "$
 mk other-class -e 's/new_sqlite_classes = \["RoomDo"\]/new_sqlite_classes = ["RoomDo", "Other"]/'
 expect "a changed Durable Object migration is found" 1 "migrations" parity "$BASE" "$T/other-class.toml"
 
-mk other-cron -e 's/crons = \["\* \* \* \* \*"\]/crons = ["*\/5 * * * *"]/'
+mk other-cron -e 's/^crons = \["\* \* \* \* \*", "0 0 \* \* \*"\]$/crons = ["*\/5 * * * *", "0 0 * * *"]/'
 expect "a changed cron is found" 1 "crons" parity "$BASE" "$T/other-cron.toml"
+
+# the triggers (issue #59): every wrangler file triggers exactly the schedules of crates/core/usecases/src/schedules.rs, which the Worker's
+# `scheduled` handler runs the job of; a trigger the table lacks does nothing, and a schedule nothing triggers never runs
+SCHED="$HERE/crates/core/usecases/src/schedules.rs"
+STAGE2="$HERE/crates/worker/wrangler.stage2.toml"
+PGSTAGE="$HERE/crates/worker/wrangler.pg.stage.toml"
+parity_crons() { $PYRUN "$PARITY" --crons "$@"; }
+mkfrom() { # mkfrom <source file> <name> <sed script...>: a copy of another file with the change
+  src="$1"; name="$2"; shift 2
+  sed "$@" "$src" > "$T/$name.toml"
+  if cmp -s "$src" "$T/$name.toml"; then echo "BAD  the change for '$name' changed nothing, so its control proves nothing"; failn=$((failn + 1)); fi
+}
+TWO='^crons = \["\* \* \* \* \*", "0 0 \* \* \*"\]$'
+
+expect "every wrangler file triggers exactly the schedules of the code" 0 "deploy_parity: crons ok (4 files" parity_crons "$BASE" "$DEPLOY" "$STAGE2" "$PGSTAGE"
+
+mk no-hard-delete-cron -e "s/$TWO/crons = [\"* * * * *\"]/"
+expect "a template that does not fire the hard delete is found" 1 "the deploy template: triggers.crons is" parity "$BASE" "$T/no-hard-delete-cron.toml"
+mkfrom "$BASE" base-no-sweep-cron -e "s/$TWO/crons = [\"0 0 * * *\"]/"
+expect "a wrangler.toml that does not fire the sweep is found" 1 "wrangler.toml: triggers.crons is" parity "$T/base-no-sweep-cron.toml" "$DEPLOY"
+mkfrom "$STAGE2" stage2-one -e "s/$TWO/crons = [\"* * * * *\"]/"
+expect "a stage file that does not fire the hard delete is found" 1 "stage2-one.toml: triggers.crons is" parity_crons "$BASE" "$DEPLOY" "$T/stage2-one.toml" "$PGSTAGE"
+mkfrom "$PGSTAGE" pgstage-extra -e "s/$TWO/crons = [\"* * * * *\", \"0 0 * * *\", \"0 3 * * *\"]/"
+expect "a stage file that fires a cron the code does not have is found" 1 "pgstage-extra.toml: triggers.crons is" parity_crons "$BASE" "$DEPLOY" "$STAGE2" "$T/pgstage-extra.toml"
+mkfrom "$STAGE2" stage2-twice -e "s/$TWO/crons = [\"* * * * *\", \"0 0 * * *\", \"0 0 * * *\"]/"
+expect "a cron triggered twice is found" 1 "stage2-twice.toml: triggers.crons is" parity_crons "$T/stage2-twice.toml"
+expect "--crons with no file is a usage error" 2 "deploy_parity.py --crons" parity_crons
+
+# a cron added to the two files together, and not to the code: the files agree with each other, so only the table can say it is wrong
+mkfrom "$BASE" base-three -e "s/$TWO/crons = [\"* * * * *\", \"0 0 * * *\", \"0 3 * * *\"]/"
+mkfrom "$DEPLOY" deploy-three -e "s/$TWO/crons = [\"* * * * *\", \"0 0 * * *\", \"0 3 * * *\"]/"
+expect "a cron added to both files and not to the code is found" 1 "not the crons of crates/core/usecases/src/schedules.rs" parity "$T/base-three.toml" "$T/deploy-three.toml"
+# ... and the table gaining that schedule is what makes it right, so the check follows the code and not a number of crons
+awk '{ print } /id: "hard-delete"/ { print "    Schedule { id: \"third\", cron: \"0 3 * * *\", job: Job::HardDelete }," }' "$SCHED" > "$T/schedules-three.rs"
+if cmp -s "$SCHED" "$T/schedules-three.rs"; then echo "BAD  the change for 'schedules-three' changed nothing, so its control proves nothing"; failn=$((failn + 1)); fi
+export DEPLOY_PARITY_SCHEDULES="$T/schedules-three.rs"
+expect "a schedule no wrangler file triggers is found" 1 "not the crons of crates/core/usecases/src/schedules.rs" parity "$BASE" "$DEPLOY"
+expect "the same files agree with a table that has the third schedule" 0 "deploy_parity: ok" parity "$T/base-three.toml" "$T/deploy-three.toml"
+# a cron quoted in a comment is not a schedule
+awk '{ print } /^pub const SCHEDULES/ { print "    // cron: \"9 9 * * *\" is only a comment" }' "$SCHED" > "$T/schedules-comment.rs"
+if cmp -s "$SCHED" "$T/schedules-comment.rs"; then echo "BAD  the change for 'schedules-comment' changed nothing, so its control proves nothing"; failn=$((failn + 1)); fi
+export DEPLOY_PARITY_SCHEDULES="$T/schedules-comment.rs"
+expect "a cron quoted in a comment of the table is not a schedule" 0 "deploy_parity: ok" parity "$BASE" "$DEPLOY"
+export DEPLOY_PARITY_SCHEDULES="$T/no-such-schedules-file.rs"
+expect "a schedules source that cannot be read is a usage error" 2 "cannot read" parity "$BASE" "$DEPLOY"
+printf 'nothing here\n' > "$T/schedules-none.rs"
+export DEPLOY_PARITY_SCHEDULES="$T/schedules-none.rs"
+expect "a schedules source with no cron in it is a usage error" 2 "has no" parity "$BASE" "$DEPLOY"
+unset DEPLOY_PARITY_SCHEDULES
 
 mk other-limit -e 's/simple = { limit = 60, period = 60 }/simple = { limit = 61, period = 60 }/'
 expect "a changed rate-limit allowance is found" 1 "ratelimits" parity "$BASE" "$T/other-limit.toml"
