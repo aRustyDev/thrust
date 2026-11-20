@@ -41,6 +41,8 @@ mod states;
 pub use states::*;
 mod retention;
 pub use retention::*;
+mod schedules;
+pub use schedules::*;
 #[cfg(test)]
 mod timezones_tests;
 use thrust_contracts::chrono::TimeDelta;
