@@ -195,6 +195,26 @@ it goes back to binds an R2 bucket, KV namespace or queue that no longer exists 
 Rollbacks page]`. Afterwards run the smoke by hand against the previous commit
 (`scripts/smoke-deploy.sh https://<hostname> <commit>`).
 
+## The availability probe
+
+`status.woven` (Gatus, in the infrastructure repository: `shared/aws/status-page/files/gatus.yaml`) probes
+`https://thrust.sow.foo/healthz?deep=1` every 60 s as the `Thrust` line of `Data & Apps`. It is the source of the 99.5 %
+over 30 days availability SLO (SPEC §6.4; ADR-0094, Q-0094.4).
+
+- **What it asks.** `GET /healthz?deep=1` runs one `SELECT now()` through Hyperdrive and answers 200 `ok`, or 503
+  `unavailable`; both carry `Cache-Control: no-store`. The line is red unless the status is 200 and the body is exactly `ok`.
+  Plain `/healthz` never touches the database, and the deploy smoke test and the edge controls use that one.
+- **Reading the figure.** `status.woven` resolves only over WARP. The 30-day uptime, a fraction:
+  `curl -s http://status.woven/api/v1/endpoints/data---apps_thrust/uptimes/30d`. The latest results:
+  `curl -s http://status.woven/api/v1/endpoints/statuses | jq '.[] | select(.key=="data---apps_thrust") | .results[-5:]'`.
+- **What red means.** The Worker, Hyperdrive, the VPC service, the tunnel or thrust-pg. The 503 names no cause; the cause is
+  in the Worker's log (`deep health check: ...`). If the page's `Control` lines are red too, suspect the prober before Thrust.
+- **What can distort the figure.** The history lives only in the status server's SQLite: a rebuild of that server erases it,
+  and the server's own glitches count as Thrust outages (issue #328).
+- **Changing the line** is a change in the infrastructure repository, applied to the config object only: a full plan of the
+  status root currently wants to replace the status server (ADR-0094, update of 2026-11-20).
+- **Behind Access** (issue #50), `/healthz` must be on the bypass list, or the line goes red for good.
+
 ## Rotating credentials
 
 - **The Cloudflare tokens.** Make each new token with the same scopes (the ordinary one for `staging` and `production`, the
