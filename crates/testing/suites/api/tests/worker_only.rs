@@ -8,6 +8,7 @@ use std::time::Duration;
 use futures_util::{SinkExt, StreamExt};
 use serde_json::Value;
 use thrust_contract_tests::*;
+use thrust_contracts::WorkItemId;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::Message;
 
@@ -135,6 +136,61 @@ async fn worker_cron_scheduled_handler_runs_the_sweeper() {
     assert_eq!(acts.len(), 1);
     assert_eq!(acts[0].verb, "created");
     assert_eq!(t.outbox_depth().await, 0, "the scheduled sweep must mark rows dispatched");
+}
+
+/// Whether a row has the work item's id, as `GET /internal/work-items/{id}` says (200 or 404): no `/api/v1` read shows a deleted one.
+async fn work_item_row_status(t: &Target, id: WorkItemId) -> u16 {
+    t.admin_get(&format!("/internal/work-items/{id}")).await.status().as_u16()
+}
+
+/// Pass `cron` (fast path OFF, and the Worker started with `THRUST_HARD_DELETE_AFTER_DAYS=0`, which `scripts/contract.sh` sets for this
+/// pass and no other: with a window of no days, a work item deleted a moment ago is old enough for the hard delete). Fires the two crons
+/// of `SCHEDULES` at the Worker's `scheduled` handler through `--test-scheduled`, as the triggers do, and shows that it runs the job of
+/// the cron that fired and not the other: a work item that is deleted and past its window is still there after the sweep's cron, and gone
+/// after the hard delete's. A handler that ran both jobs whatever the cron fails the first check, and one that ran only the sweep (or
+/// neither) fails the last.
+#[tokio::test]
+async fn worker_cron_scheduled_handler_runs_the_hard_delete() {
+    let t = Target::from_env();
+    // what keeps this from being vacuous: with the default window of 30 days nothing deleted a moment ago would go, so a handler that
+    // never ran the hard delete would pass the last check
+    let info = t.info().await;
+    assert_eq!(
+        info["hard_delete_after_days"], 0,
+        "the Worker's window is not 0 days (/_info says {}), so a work item deleted a moment ago would not be old enough and this test would prove nothing",
+        info["hard_delete_after_days"]
+    );
+    let f = Fixture::seed(&t).await;
+    let before = t.outbox_depth().await;
+    let id = v1_create_ok(&t, &f.member_a, &f.a, "cron-hard-deleted").await.work_item_id();
+    assert_eq!(v1_delete(&t, &f.member_a, &f.a, &id.to_string()).await.status(), 204);
+    assert_eq!(
+        t.outbox_depth().await,
+        before + 2,
+        "the fast path is on: the creation and the deletion would not be waiting for the sweeper"
+    );
+
+    // the sweep's cron delivers the two events, so that nothing is handled after the work item is gone (the consumer would refuse an event
+    // for a work item that is not there, and set it aside), and it must delete nothing, old as the work item is
+    let r = t.http.get(t.url("/__scheduled?cron=*+*+*+*+*")).send().await.unwrap();
+    assert_eq!(r.status(), 200, "scheduled endpoint, the sweep's cron");
+    eventually("the creation and the deletion handled", Duration::from_secs(20), || async {
+        (activity(&t, &f.guest_a, &f.a, id).await.len() >= 2).then_some(())
+    })
+    .await;
+    assert_eq!(
+        work_item_row_status(&t, id).await,
+        200,
+        "the sweep's cron deleted a work item for good, which is the hard delete's job"
+    );
+
+    // the hard delete's cron deletes it
+    let r = t.http.get(t.url("/__scheduled?cron=0+0+*+*+*")).send().await.unwrap();
+    assert_eq!(r.status(), 200, "scheduled endpoint, the hard delete's cron");
+    eventually("the work item deleted for good", Duration::from_secs(20), || async {
+        (work_item_row_status(&t, id).await == 404).then_some(())
+    })
+    .await;
 }
 
 // ---------------------------------------------------------------------------------------------

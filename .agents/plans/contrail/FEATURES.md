@@ -82,7 +82,7 @@ behavior + its API contract. Mark features whose frontend also needs new work.
 | F-D07 | Analytics (workspace/project dashboards, saved `AnalyticView`) | `analytics/`, `AnalyticView` | DB | P1 |
 | F-D08 | Global search (P0 adapter: database FTS, ADR-0083) | `app/views/search` | Search | P0 |
 | F-D09 | Published/public boards (`spaces`) | `space/`, `ProjectDeployBoard`, `apps/space` | DB | P0 |
-| F-D10 | Data retention cleanups (api logs, email logs, versions, webhook logs; hard-delete) | `bgtasks` daily | Cron | P0 (hard-delete at 30 d; deviation D-001) |
+| F-D10 | Data retention cleanups (api logs, email logs, versions, webhook logs; hard-delete) (built for work items and dispatched outbox rows, issue #59: `run_retention`, daily at 00:00 UTC; the other tables are not purged yet) | `bgtasks` daily | Cron | P0 (hard-delete at 30 d; deviation D-001) |
 | F-D11 | i18n (locale files in `@plane/i18n`) | `packages/i18n` | static | P0 (inherited) |
 | F-D12 | Telemetry (OTel only; PostHog dropped) — likely opt-in | settings | Observability | P2 (opt-in) |
 | F-D13 | Link crawler/unfurl (SSRF-guarded) | `bgtasks` (link crawl) | Queue | P1 |

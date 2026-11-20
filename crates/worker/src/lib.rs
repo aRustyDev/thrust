@@ -417,27 +417,27 @@ async fn send_dead_letter(env: &Env, letter: &NewDeadLetter) -> Result<()> {
 }
 
 // ---------------------------------------------------------------------------------------------
-// cron (ADR-0072): the outbox sweeper of ADR-0046
+// cron (ADR-0072): the schedules of `thrust_core::SCHEDULES`: the outbox sweeper of ADR-0046 and the daily hard delete of issue #59
 // ---------------------------------------------------------------------------------------------
 
+/// Runs the job of the trigger that fired. Each trigger is one of the `triggers.crons` of the wrangler files, and the job is whatever
+/// `SCHEDULES` says it runs: this handler reads the trigger's own cron string, so adding a schedule is a line in that table and in the
+/// files (`deploy_parity.py` holds them to it). A string the table does not have runs nothing, and says so, so that a trigger nobody
+/// wired is a line in the log and not a second sweep.
 #[event(scheduled)]
 async fn scheduled(event: ScheduledEvent, env: Env, _ctx: ScheduleContext) {
     console_error_panic_hook::set_once();
+    let cron = event.cron();
     let app = match build_app(&env, Arc::new(LocalBackground)) {
         Ok((v, _)) => v,
         Err(e) => {
-            console_error!("scheduled: cannot build app: {e}");
+            console_error!("scheduled cron='{cron}': cannot build app: {e}");
             return;
         }
     };
-    match thrust_core::sweep_outbox(&app, 100).await {
-        Ok(rep) => console_log!(
-            "scheduled cron='{}': sweep found={} published={} failed={}",
-            event.cron(),
-            rep.found,
-            rep.published,
-            rep.failed
-        ),
-        Err(e) => console_error!("scheduled: sweep failed: {e}"),
+    match thrust_core::run_cron(&app, &cron).await {
+        Some(Ok(report)) => console_log!("scheduled cron='{cron}': {report:?}"),
+        Some(Err(e)) => console_error!("scheduled cron='{cron}': the job failed: {e}"),
+        None => console_error!("scheduled: no schedule has the cron '{cron}', so nothing ran"),
     }
 }

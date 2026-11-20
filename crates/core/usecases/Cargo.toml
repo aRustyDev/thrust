@@ -49,6 +49,8 @@ mutant_invalid_is_transient = []
 mutant_retention_days_lenient = []
 mutant_retention_ignores_cutoff = []
 mutant_retention_keeps_blobs = []
+# The schedules (issue #59): the trigger that fired is not read, so every one runs the first schedule's job.
+mutant_cron_ignored = []
 
 [dependencies]
 thrust-contracts = { workspace = true }

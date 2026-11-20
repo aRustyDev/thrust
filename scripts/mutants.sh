@@ -322,6 +322,21 @@ for triple in \
   kill_check_suite_msg "retention + $name" "$status" "$OUT/retention-$name.test.log" "$needle"
 done
 
+# The schedules' mutant (issue #59, ADR-0072): the trigger that fired is not read, so every cron runs the first schedule's job, the sweep.
+# thrust-core's own tests of `run_cron` (`tests/schedules.rs`) say which job each cron runs and which it does not. The Worker's `scheduled`
+# handler calls `run_cron` and is held to it by the contract suite's `cron` pass; this script builds no Worker (G-39), so a handler that read
+# no cron of its own is a control run by hand (the pull request that added the schedule shows it).
+for triple in \
+  "cron-ignored:mutant_cron_ignored:its trigger ran OutboxSweep"; do
+  name="${triple%%:*}"
+  rest="${triple#*:}"
+  feature="${rest%%:*}"
+  needle="${rest#*:}"
+  want "schedules + $name" || continue
+  adapter_row "schedules-$name" thrust-core "$feature" 'binary(schedules)'
+  kill_check_suite_msg "schedules + $name" "$status" "$OUT/schedules-$name.test.log" "$needle"
+done
+
 # A list run ends here. Any other run must have judged exactly the rows it chose: a row outside `want` ran everywhere, a shard with no rows ran
 # nothing (scripts/lib/mutants-shard.sh).
 shard_finish $((KILLED_N + SURVIVED_N + UNCLEAR_N + NOT_RUN_N + REFUSED_N + NOT_REFUSED_N)) || NOT_KILLED=1
