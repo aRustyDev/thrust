@@ -7,7 +7,12 @@
 // `ERR_UNSUPPORTED_ESM_URL_SCHEME ... 'cloudflare:'` (the snippets are ES modules). Measured 2026-11-20 on Node 26.9.0, wasm-bindgen 0.2.130; the
 // public tools were looked at first and none answers these modules for Node (the phase document, stage 8, has the survey).
 //
-// What it does: `module.registerHooks` (Node 22.15 and later; CI pins 22.22.0 in web/.node-version) covers `require` and `import` alike. Each module
+// Which Node: 26, or 24.12 and later. `module.registerHooks` (22.15 and later) covers `require` and `import` alike, but the test binary's snippets are
+// ES modules that the runner's CommonJS glue require()s, and every Node 22 and 23, 24 before 24.12 and 25 before 25.2 assert on the `cloudflare:` specifier
+// of such a graph before any hook is asked (ERR_INTERNAL_ASSERTION, "a bug in Node.js"; the first run of the `workers` job, on 22.22.0, failed all of its
+// tests with it, though everything here had passed on 26.9.0). scripts/wasm-test-runner.sh refuses an older Node in words. The `workers` job runs 26.13.1.
+//
+// What it does: `module.registerHooks` covers `require` and `import` alike. Each module
 // below is answered with one that exports the single name the Worker asks of it. Three of them as `undefined`: no unit test calls them, and a call
 // that reached one would fail at the call, which is what a test of the glue should see. `tracing` is the exception, because the entry points
 // DO ask it: the code `#[event]` generates wraps every request and every queue batch in `worker::observability::in_current_span`, which calls

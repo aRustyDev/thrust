@@ -9,6 +9,8 @@
 # machine that has another (`cargo install wasm-bindgen-cli --version =<the lock's>`, or a prebuilt binary of that release) is refused here,
 # by naming both versions, before any test runs.
 #
+# Node must be 26, or 24.12 and later (see below, where it is checked).
+#
 #   WASM_BINDGEN_TEST_RUNNER  the runner to use (default: wasm-bindgen-test-runner on PATH)
 #   WASM_TEST_CARGO           the cargo that says which wasm-bindgen the lock pins (default: cargo; for the test of this script)
 set -eu
@@ -31,6 +33,31 @@ fi
 # `wasm-bindgen-test-runner 0.2.130`: the last word
 if [ "${found##* }" != "$wanted" ]; then
   echo "scripts/wasm-test-runner.sh: $runner is '$found', and Cargo.lock pins wasm-bindgen $wanted: the runner must be $wanted exactly." >&2
+  exit 1
+fi
+
+# The Node the runner starts (it runs `node`). The Worker's inline JavaScript imports `cloudflare:workers` and its like, and every Node 22 and 23, 24 before
+# 24.12 and 25 before 25.2 assert on an import of such a specifier from an ES module that was require()d: ERR_INTERNAL_ASSERTION, "a bug in Node.js", before
+# any hook is asked (found by the first run of the `workers` job, on 22.22.0; the releases were told apart by reading lib/internal/modules/esm/loader.js of each).
+# So it is refused here, in words, and not left to that message.
+node_version="$(node --version 2> /dev/null)" || {
+  echo "scripts/wasm-test-runner.sh: cannot run node" >&2
+  exit 1
+}
+node_version="${node_version#v}"
+major="${node_version%%.*}"
+minor="${node_version#*.}"
+minor="${minor%%.*}"
+case "$major.$minor" in
+  . | .* | *. | *[!0-9.]*)
+    echo "scripts/wasm-test-runner.sh: cannot read the version of node: '$node_version'" >&2
+    exit 1
+    ;;
+esac
+if [ "$major" -lt 24 ] || { [ "$major" -eq 24 ] && [ "$minor" -lt 12 ]; } || { [ "$major" -eq 25 ] && [ "$minor" -lt 2 ]; }; then
+  echo "scripts/wasm-test-runner.sh: Node $node_version cannot load the Worker's wasm32 tests: it asserts (ERR_INTERNAL_ASSERTION) on the import of a \`cloudflare:\` module" >&2
+  echo "  from an ES module that was require()d, as every Node 22 and 23, 24 before 24.12 and 25 before 25.2 do. Use Node 26 (the \`workers\` job runs 26.13.1)," >&2
+  echo "  or 24.12 or later (read in Node's source, not run)." >&2
   exit 1
 fi
 

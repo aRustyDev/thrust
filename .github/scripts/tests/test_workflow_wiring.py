@@ -282,7 +282,7 @@ if tools_text is not None:
 
 # The workers job (Test phase, stage 8, status G-6) runs the Worker's wasm32 unit tests under wasm-bindgen-test-runner in Node. Five things about it can be wrong and leave
 # the job looking healthy until a Cargo.lock bump or a cache eviction: a runner pinned to a version written in the workflow (it must be the lock's, or the job goes red on
-# the next bump of wasm-bindgen with a message about the runner), a Node that lacks module.registerHooks (the stand-ins for workerd's modules need 22.15), no wasm32 target
+# the next bump of wasm-bindgen with a message about the runner), a Node that asserts on the Worker's `cloudflare:` imports (every 22, which is what the web jobs pin, and 23, 24 before 24.12, 25 before 25.2: the first run of this job, ERR_INTERNAL_ASSERTION, on 22.22.0), no wasm32 target
 # (the build would fail, but only after the cache and the tools), a cache key shared with a native job (a wasm32 test profile saved under it evicts that job's entries), and a
 # run of nextest that is not scripts/wasm-tests.sh (which carries the count guard). Each is a line, checked as text, and the mutant driver changes each.
 WORKERS_JOB = "workers"
@@ -299,7 +299,10 @@ if workers_wf:
           and '          echo "version=${id##*[#@]}" >> "$GITHUB_OUTPUT"\n' in workers_block, True)
     check(f"{workers_path}: {WORKERS_JOB} writes no version of wasm-bindgen itself (no `wasm-bindgen@<digit>` outside a comment)",
           [l for l in workers_code if re.search(r"wasm-bindgen@[0-9]", l)], [])
-    check(f"{workers_path}: {WORKERS_JOB} has the Node the web jobs pin, which has module.registerHooks", "          node-version-file: web/.node-version\n" in workers_block, True)
+    node_pin = re.search(r"^          node-version: '([0-9]+)\.([0-9]+)\.[0-9]+'$", workers_block, re.M)
+    node_ok = bool(node_pin) and (int(node_pin.group(1)), int(node_pin.group(2))) >= (26, 0)
+    check(f"{workers_path}: {WORKERS_JOB} pins Node 26 or later by an exact version, and not the web jobs' 22 (which asserts on the Worker's cloudflare: imports)", node_ok, True)
+    check(f"{workers_path}: {WORKERS_JOB} does not take its Node from web/.node-version", [l for l in workers_code if "web/.node-version" in l], [])
     check(f"{workers_path}: {WORKERS_JOB} sets up the wasm32 target and nextest", "          nextest: 'true'\n          targets: wasm32-unknown-unknown\n" in workers_block, True)
     check(f"{workers_path}: {WORKERS_JOB} has a cache key of its own, which no other job uses",
           ("          cache-key: wasm-workers\n" in workers_block, (read_text(workers_path) or "").count("cache-key: wasm-workers\n")), (True, 1))

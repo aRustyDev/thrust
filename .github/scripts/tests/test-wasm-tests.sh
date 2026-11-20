@@ -3,13 +3,14 @@
 # tests themselves:
 #   1. scripts/wasm-test-runner.sh, cargo's runner for wasm32: it passes its arguments to the real runner unchanged, sets NODE_OPTIONS to load the
 #      stand-ins for workerd's modules (keeping what was there), and refuses a runner that is not the lock's wasm-bindgen EXACTLY (an older patch,
-#      a newer one, a prefix of the right one, another crate's version), one that does not run, and a Cargo that cannot name one version of
+#      a newer one, a prefix of the right one, another crate's version), one that does not run, a Node that asserts on the Worker's `cloudflare:` imports
+#      (every 22 and 23, 24 before 24.12, 25 before 25.2: stand-in nodes of each side of each boundary), and a Cargo that cannot name one version of
 #      wasm-bindgen (none in the lock, or two). Which version the lock pins is Cargo's to say (`cargo pkgid --locked`): a stand-in Cargo answers here,
 #      in the two forms of its output, and the real one answers once, against the real lock, when there is a cargo;
 #   2. scripts/wasm-tests.sh: every `#[wasm_bindgen_test]` the source declares must have a test in the report (a run that drops one passes
 #      nextest and must not pass this), a report left by an earlier run is not read, a failing run fails, and a run with arguments (a filter) is
 #      not held to the count;
-#   3. scripts/lib/workerd-stubs.cjs, when Node has `module.registerHooks` (22.15 or later; the `workers` job runs the real thing on 22.22.0): each
+#   3. scripts/lib/workerd-stubs.cjs, when Node has `module.registerHooks` (22.15 or later; the `workers` job runs the real thing on 26): each
 #      workerd module the Worker imports loads and exports what it is asked for (`tracing` answers as workerd does outside an invocation), the global
 #      `FixedLengthStream` errors on a body of any other length than it was given, an unlisted `cloudflare:` module is refused naming the file, and an
 #      ordinary module is not touched.
@@ -58,9 +59,15 @@ stub() { # stub <version>: a runner that answers --version and otherwise prints 
   chmod +x "$T/runner-$1"
 }
 for v in 0.2.130 0.2.129 0.2.131 0.2.13 0.2.1300 0.4.80; do stub "$v"; done
+node_stub() { # node_stub <version>: a `node` that says this version, first on PATH, so that no check depends on the Node of the machine it runs on
+  mkdir -p "$T/node-$1"
+  printf '#!/bin/sh\nif [ "$1" = "--version" ]; then echo "v%s"; exit 0; fi\nexit 1\n' "$1" > "$T/node-$1/node"
+  chmod +x "$T/node-$1/node"
+}
+node_stub 26.13.1
 run_wrapper() { # run_wrapper <wrapper> <runner> <cargo> <args...>
   rw_wrapper="$1"; rw_runner="$2"; rw_cargo="$3"; shift 3
-  WASM_BINDGEN_TEST_RUNNER="$rw_runner" WASM_TEST_CARGO="$rw_cargo" "$rw_wrapper" "$@"
+  PATH="$T/node-26.13.1:$PATH" WASM_BINDGEN_TEST_RUNNER="$rw_runner" WASM_TEST_CARGO="$rw_cargo" "$rw_wrapper" "$@"
 }
 wrapper="$tree/scripts/wasm-test-runner.sh"
 passes_args_through() { # the arguments arrive as they were, spaces and all, one each
@@ -70,7 +77,7 @@ passes_args_through() { # the arguments arrive as they were, spaces and all, one
 }
 # with NODE_OPTIONS absent from the environment, so that a wrapper that forgets to export it is not saved by a variable that already was
 sets_node_options() {
-  out="$(env -u NODE_OPTIONS WASM_BINDGEN_TEST_RUNNER="$T/runner-0.2.130" WASM_TEST_CARGO="$cg" "$1" x.wasm)" || return 1
+  out="$(env -u NODE_OPTIONS PATH="$T/node-26.13.1:$PATH" WASM_BINDGEN_TEST_RUNNER="$T/runner-0.2.130" WASM_TEST_CARGO="$cg" "$1" x.wasm)" || return 1
   printf '%s\n' "$out" | grep -q '^NODE_OPTIONS=--require ".*scripts/lib/workerd-stubs.cjs"$'
 }
 keeps_node_options() {
@@ -89,6 +96,23 @@ control "runner: one that does not run" run_wrapper "$wrapper" "$T/no-such-runne
 control "runner: a lock with two wasm-bindgen (Cargo says it is ambiguous)" run_wrapper "$wrapper" "$T/runner-0.2.130" "$T/cargo-ambiguous" x.wasm
 control "runner: a lock with none (Cargo says nothing matched)" run_wrapper "$wrapper" "$T/runner-0.4.80" "$T/cargo-none" x.wasm
 control "runner: no cargo" run_wrapper "$wrapper" "$T/runner-0.2.130" "$T/no-such-cargo" x.wasm
+# The Node the runner starts: the Worker's inline JavaScript imports `cloudflare:*`, and every Node 22 and 23, 24 before 24.12 and 25 before 25.2 assert on
+# that from an ES module that was require()d (the first run of the `workers` job, on 22.22.0). The boundaries are the ones of Node's own source.
+with_node() { # with_node <version> <wrapper>: the wrapper, with a node of this version first on PATH
+  node_stub "$1"
+  PATH="$T/node-$1:$PATH" WASM_BINDGEN_TEST_RUNNER="$T/runner-0.2.130" WASM_TEST_CARGO="$cg" "$2" x.wasm
+}
+for v in 24.12.0 24.22.3 25.2.0 25.9.0 26.9.0 26.13.1; do
+  check "runner: Node $v runs" with_node "$v" "$wrapper"
+done
+for v in 20.20.2 22.15.0 22.22.0 22.23.5 23.11.1 24.11.1 25.0.0 25.1.0; do
+  control "runner: Node $v is refused" with_node "$v" "$wrapper"
+done
+mkdir -p "$T/node-odd"
+printf '#!/bin/sh\nif [ "$1" = "--version" ]; then echo "nightly"; exit 0; fi\n' > "$T/node-odd/node"; chmod +x "$T/node-odd/node"
+control "runner: a node that does not say a version" env PATH="$T/node-odd:$PATH" WASM_BINDGEN_TEST_RUNNER="$T/runner-0.2.130" WASM_TEST_CARGO="$cg" "$wrapper" x.wasm
+printf '#!/bin/sh\nexit 1\n' > "$T/node-odd/node"
+control "runner: a node that does not run" env PATH="$T/node-odd:$PATH" WASM_BINDGEN_TEST_RUNNER="$T/runner-0.2.130" WASM_TEST_CARGO="$cg" "$wrapper" x.wasm
 # the controls of the checks themselves: the wrapper without its export, without its version comparison, asking Cargo about another crate, and
 # not asking for the locked version
 sed 's/^export NODE_OPTIONS$/:/' "$wrapper" > "$T/no-export.sh"; chmod +x "$T/no-export.sh"; cp "$T/no-export.sh" "$tree/scripts/no-export.sh"
@@ -101,6 +125,16 @@ control "runner check: a wrapper that does not ask for the locked version" runs_
 refuses_stale() { refuses run_wrapper "$1" "$T/runner-0.2.129" "$cg" x.wasm; }
 check "runner check: the real wrapper refuses a stale runner" refuses_stale "$wrapper"
 control "runner check: a wrapper that does not compare versions" refuses_stale "$tree/scripts/no-compare.sh"
+# the Node guard, one boundary at a time: a wrapper that lets Node 22 through, one that lets 24.11 through and one that lets 25.1 through
+sed 's/"\$major" -lt 24/"$major" -lt 0/' "$wrapper" > "$tree/scripts/any-major.sh"
+sed 's/"\$minor" -lt 12/"$minor" -lt 0/' "$wrapper" > "$tree/scripts/any-24.sh"
+sed 's/"\$minor" -lt 2 /"$minor" -lt 0 /' "$wrapper" > "$tree/scripts/any-25.sh"
+chmod +x "$tree/scripts/any-major.sh" "$tree/scripts/any-24.sh" "$tree/scripts/any-25.sh"
+refuses_old_nodes() { refuses with_node 22.22.0 "$1" && refuses with_node 24.11.1 "$1" && refuses with_node 25.1.0 "$1"; }
+check "runner check: the real wrapper refuses Node 22.22.0, 24.11.1 and 25.1.0" refuses_old_nodes "$wrapper"
+control "runner check: a wrapper that lets Node 22 through" refuses_old_nodes "$tree/scripts/any-major.sh"
+control "runner check: a wrapper that lets Node 24.11 through" refuses_old_nodes "$tree/scripts/any-24.sh"
+control "runner check: a wrapper that lets Node 25.1 through" refuses_old_nodes "$tree/scripts/any-25.sh"
 # the real cargo, on the real lock, through the real wrapper: the version it names is the one a runner must be, and a runner of another is refused
 if command -v cargo > /dev/null 2>&1 && real_id="$(cd "$HERE" && cargo pkgid --locked wasm-bindgen 2> /dev/null)"; then
   real_version="${real_id##*[#@]}"

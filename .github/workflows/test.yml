@@ -282,10 +282,13 @@ jobs:
           save-cache: ${{ github.ref == 'refs/heads/main' }}
           nextest: 'true'
           targets: wasm32-unknown-unknown
-      # Node 22.15 or later, which scripts/lib/workerd-stubs.cjs needs (module.registerHooks): the version the web jobs pin.
+      # Node 26, and not the web jobs' pin (web/.node-version, 22.22.0): the Worker's inline JavaScript imports `cloudflare:workers` and its like, and
+      # every Node 22 and 23, 24 before 24.12 and 25 before 25.2 assert (ERR_INTERNAL_ASSERTION: "a bug in Node.js") on an import of such a specifier
+      # from an ES module that was require()d, before any hook is asked (run 44822700250 of this job on 22.22.0; lib/internal/modules/esm/loader.js of
+      # each release). 26.9.0 is what the tests were run on by hand. scripts/wasm-test-runner.sh refuses an older Node by saying so.
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version-file: web/.node-version
+          node-version: '26.13.1'
       # The runner must be the wasm-bindgen that Cargo.lock pins, exactly (scripts/wasm-test-runner.sh refuses another): Cargo itself says which, so a
       # bump of the crate moves the runner with it. `cargo pkgid` prints `registry+<index>#wasm-bindgen@<version>` and fails when the lock has none or
       # more than one. Assigned first and echoed after, so that a failure fails the step.
