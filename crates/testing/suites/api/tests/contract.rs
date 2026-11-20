@@ -222,6 +222,23 @@ async fn internal_routes_require_the_admin_token() {
     assert_eq!(r.status(), 401, "no admin token, dead letters");
     let r = t.http.get(t.url("/internal/dead-letters")).header("x-admin-token", "wrong").send().await.unwrap();
     assert_eq!(r.status(), 401, "wrong admin token, dead letters");
+    // the daily hard delete takes every tenant's old rows, and what it reads is a deleted work item's row (issue #59)
+    let r = t.http.post(t.url("/internal/retention")).json(&json!({})).send().await.unwrap();
+    assert_eq!(r.status(), 401, "no admin token, retention");
+    let r = t
+        .http
+        .post(t.url("/internal/retention"))
+        .header("x-admin-token", "wrong")
+        .json(&json!({}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 401, "wrong admin token, retention");
+    let item = t.url("/internal/work-items/00000000-0000-0000-0000-000000000001");
+    let r = t.http.get(&item).send().await.unwrap();
+    assert_eq!(r.status(), 401, "no admin token, a work item's deleted_at");
+    let r = t.http.get(&item).header("x-admin-token", "wrong").send().await.unwrap();
+    assert_eq!(r.status(), 401, "wrong admin token, a work item's deleted_at");
 }
 
 /// `/internal/reset` (issue #58) deletes every row, so this is the one internal route whose gate matters most, and the one this
@@ -981,4 +998,142 @@ async fn sweeper_publishes_rows_the_fast_path_did_not() {
     assert_eq!(acts.len(), 1);
     assert_eq!(acts[0].verb, "created");
     assert_eq!(t.outbox_depth().await, 0, "swept rows must be marked dispatched");
+}
+
+/// The time on this machine, which a target started by the suite shares.
+fn real_now() -> thrust_contracts::chrono::DateTime<thrust_contracts::chrono::Utc> {
+    let d = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap();
+    thrust_contracts::chrono::DateTime::from_timestamp(d.as_secs() as i64, d.subsec_nanos()).unwrap()
+}
+
+/// `POST /internal/retention` counting from `now` (issue #59), and what it answers.
+async fn retention_at(t: &Target, now: thrust_contracts::chrono::DateTime<thrust_contracts::chrono::Utc>) -> Value {
+    let now = now.to_rfc3339_opts(thrust_contracts::chrono::SecondsFormat::Nanos, true);
+    let r = t.admin_post("/internal/retention", &json!({ "now": now })).await;
+    assert_eq!(r.status(), 200, "retention at {now}");
+    r.json().await.unwrap()
+}
+
+/// A work item's `deleted_at` as the table has it (`GET /internal/work-items/{id}`), for no `/api/v1` read shows a deleted work item:
+/// `None` when no row has the id, `Some(None)` for a live one.
+async fn deleted_at(
+    t: &Target,
+    id: WorkItemId,
+) -> Option<Option<thrust_contracts::chrono::DateTime<thrust_contracts::chrono::Utc>>> {
+    let r = t.admin_get(&format!("/internal/work-items/{id}")).await;
+    match r.status().as_u16() {
+        404 => None,
+        200 => {
+            let body: Value = r.json().await.unwrap();
+            Some(body["deleted_at"].as_str().map(|s| {
+                thrust_contracts::chrono::DateTime::parse_from_rfc3339(s)
+                    .unwrap()
+                    .with_timezone(&thrust_contracts::chrono::Utc)
+            }))
+        }
+        other => panic!("GET /internal/work-items/{id}: {other}"),
+    }
+}
+
+/// When a work item that is there and deleted was deleted.
+async fn deleted_when(t: &Target, id: WorkItemId) -> thrust_contracts::chrono::DateTime<thrust_contracts::chrono::Utc> {
+    deleted_at(t, id).await.expect("the work item is there").expect("and deleted")
+}
+
+/// The daily hard delete (issue #59, F-D10, D-001) on a running target, in the sweeper pass because it needs the outbox rows to wait for
+/// the sweeper (the fast path is off) and no test moving beside it: it takes every tenant's old rows. The target's window is read from
+/// `/_info` and the run is counted from a `now` the test gives, so that a work item deleted a moment ago can be a month old.
+///
+/// A work item goes when it was deleted STRICTLY more than the window ago, in either tenant, and a live one never goes; an outbox row goes
+/// when it was dispatched and is older than its window, and one nobody dispatched never does. Everything is asserted on this test's own rows
+/// (the target is shared), and nothing is purged before the consumer has handled the events that name a work item: its history is written
+/// from them, and one that arrived after the work item was gone would be refused as a stray.
+#[tokio::test]
+async fn sweeper_retention_purges_only_rows_past_the_window() {
+    use thrust_contracts::chrono::TimeDelta;
+
+    let t = t();
+    let f = Fixture::seed(&t).await;
+    let info = t.info().await;
+    let window = TimeDelta::days(info["hard_delete_after_days"].as_i64().expect("/_info names the work item window"));
+    let outbox_window =
+        TimeDelta::days(info["outbox_retention_days"].as_i64().expect("/_info names the outbox window"));
+    let micro = TimeDelta::microseconds(1);
+    let mut outbox_purged = 0u64;
+    let depth_before = t.outbox_depth().await;
+
+    // four work items: a and b of tenant A to be deleted, c of A that stays live, d of tenant B to be deleted
+    let a = v1_create_ok(&t, &f.member_a, &f.a, "retention a").await.work_item_id();
+    let b = v1_create_ok(&t, &f.member_a, &f.a, "retention b").await.work_item_id();
+    let c = v1_create_ok(&t, &f.member_a, &f.a, "retention c").await.work_item_id();
+    let d = v1_create_ok(&t, &f.admin_b, &f.b, "retention d").await.work_item_id();
+    let created = t.outbox_depth().await - depth_before;
+    assert_eq!(created, 4, "one event each, waiting for the sweeper");
+
+    // an outbox row nobody dispatched is not purged, however old the run says it is
+    let far = real_now() + outbox_window + TimeDelta::days(365);
+    outbox_purged += retention_at(&t, far).await["outbox"].as_u64().unwrap();
+    assert_eq!(t.outbox_depth().await, depth_before + created, "an outbox row that was not dispatched is never purged");
+    for id in [a, b, c, d] {
+        assert!(deleted_at(&t, id).await.is_some(), "a live work item is never purged");
+    }
+
+    // deliver their events and wait for the consumer to handle them
+    assert_eq!(t.admin_post("/internal/sweep", &json!({})).await.status(), 200);
+    for (who, at, id) in [(&f.guest_a, &f.a, a), (&f.guest_a, &f.a, b), (&f.guest_a, &f.a, c), (&f.admin_b, &f.b, d)] {
+        eventually("the creation of a work item handled", Duration::from_secs(20), || async {
+            (!activity(&t, who, at, id).await.is_empty()).then_some(())
+        })
+        .await;
+    }
+
+    // delete a, b and d, one after another and apart enough that their times differ, and wait for those events as well
+    let before_deletes = t.outbox_depth().await;
+    for (who, at, id) in [(&f.member_a, &f.a, a), (&f.member_a, &f.a, b), (&f.admin_b, &f.b, d)] {
+        assert_eq!(v1_delete(&t, who, at, &id.to_string()).await.status(), 204);
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
+    let deleted = t.outbox_depth().await - before_deletes;
+    assert_eq!(t.admin_post("/internal/sweep", &json!({})).await.status(), 200);
+    for (who, at, id) in [(&f.guest_a, &f.a, a), (&f.guest_a, &f.a, b), (&f.admin_b, &f.b, d)] {
+        eventually("the deletion of a work item handled", Duration::from_secs(20), || async {
+            (activity(&t, who, at, id).await.len() >= 2).then_some(())
+        })
+        .await;
+    }
+    assert_eq!(t.outbox_depth().await, 0, "every row of ours is dispatched");
+
+    // when each was deleted, as the table has it
+    let (ta, tb, td) = (deleted_when(&t, a).await, deleted_when(&t, b).await, deleted_when(&t, d).await);
+    assert!(ta < tb && tb < td, "deleted one after another: {ta} {tb} {td}");
+    assert_eq!(deleted_at(&t, c).await, Some(None), "c is live");
+
+    // exactly the window ago: nothing of ours goes, for a row goes only when it is strictly older
+    retention_at(&t, ta + window).await;
+    for id in [a, b, c, d] {
+        assert!(deleted_at(&t, id).await.is_some(), "a work item deleted exactly {window} before the run stays");
+    }
+    // a microsecond more: a, the oldest, goes, with the others still inside the window
+    let rep = retention_at(&t, ta + window + micro).await;
+    assert!(rep["work_items"].as_u64().unwrap() >= 1, "a was old enough: {rep}");
+    assert_eq!(deleted_at(&t, a).await, None, "a, deleted more than the window ago, is gone");
+    for id in [b, c, d] {
+        assert!(deleted_at(&t, id).await.is_some(), "b, c and d are inside the window or live");
+    }
+    // later still: b of tenant A and d of tenant B go, and c, which was never deleted, stays
+    retention_at(&t, td + window + micro).await;
+    assert_eq!(deleted_at(&t, b).await, None, "b is gone");
+    assert_eq!(deleted_at(&t, d).await, None, "d, of the other tenant, is gone");
+    assert_eq!(deleted_at(&t, c).await, Some(None), "c is live and stays");
+    assert_eq!(retention_at(&t, td + window + micro).await["work_items"], 0, "a second run has nothing to do");
+
+    // the rows that were dispatched go once they are older than their window (`retention_at` above counted from the deletions, which
+    // are a moment ago, so none of them was old enough then)
+    outbox_purged +=
+        retention_at(&t, real_now() + outbox_window + TimeDelta::days(1)).await["outbox"].as_u64().unwrap();
+    assert!(
+        outbox_purged >= created + deleted,
+        "the {} rows of this test were dispatched and are older than {outbox_window}: {outbox_purged} purged",
+        created + deleted
+    );
 }

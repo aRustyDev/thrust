@@ -342,9 +342,14 @@ async fn info(
     if !cfg.test_routes {
         return Err(ApiError(CoreError::NotFound));
     }
-    Ok(Json(
-        serde_json::json!({ "target": cfg.target, "adapters": cfg.adapters, "csrf_enforce": app.cfg.csrf_enforce }),
-    ))
+    // The retention windows (issue #59) are here so that a test reads the window the target runs with, and does not assume the default.
+    Ok(Json(serde_json::json!({
+        "target": cfg.target,
+        "adapters": cfg.adapters,
+        "csrf_enforce": app.cfg.csrf_enforce,
+        "hard_delete_after_days": app.cfg.hard_delete_after_days,
+        "outbox_retention_days": app.cfg.outbox_retention_days,
+    })))
 }
 
 async fn panic_route(Extension(cfg): Extension<ApiConfig>) -> ApiResult<&'static str> {
@@ -583,6 +588,39 @@ async fn inject_event(_: Admin, Extension(app): Extension<App>, Json(env): Json<
     Ok(StatusCode::ACCEPTED)
 }
 
+/// The body of `POST /internal/retention`: `now`, when given, is the time the run counts back from, in place of the app's clock.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RetentionRequest {
+    #[serde(default)]
+    now: Option<Timestamp>,
+}
+
+/// Test support (issue #59): run the daily hard delete now, optionally as if it were another time, which is how a test stands a month
+/// ahead of a work item it deleted a moment ago. It is the job the schedule runs, so a run that deletes is real: it takes every
+/// tenant's rows that are old at that time, which is why it is behind the admin token like the rest of `/internal`.
+async fn retention(
+    _: Admin,
+    Extension(app): Extension<App>,
+    Json(req): Json<RetentionRequest>,
+) -> ApiResult<Json<thrust_core::RetentionReport>> {
+    let now = req.now.unwrap_or_else(|| app.ports.clock.now());
+    Ok(Json(thrust_core::run_retention_at(&app, now).await?))
+}
+
+/// Test support (issue #59): a work item's `deleted_at` whatever its state, because no `/api/v1` read shows a deleted work item. 404
+/// when no row has the id (never made, or deleted for good); `{"deleted_at": null}` for a live one.
+async fn work_item_deleted_at(
+    _: Admin,
+    Extension(app): Extension<App>,
+    Path(id): Path<WorkItemId>,
+) -> ApiResult<Json<serde_json::Value>> {
+    match thrust_core::work_item_deleted_at(&app, id).await? {
+        None => Err(ApiError(CoreError::NotFound)),
+        Some(at) => Ok(Json(serde_json::json!({ "deleted_at": at }))),
+    }
+}
+
 async fn outbox_depth(_: Admin, Extension(app): Extension<App>) -> ApiResult<Json<serde_json::Value>> {
     let n = thrust_core::outbox_depth(&app).await?;
     Ok(Json(serde_json::json!({ "undispatched": n })))
@@ -673,6 +711,8 @@ pub fn router() -> Router {
         .route("/internal/seed", post(seed))
         .route("/internal/reset", post(reset))
         .route("/internal/sweep", post(sweep))
+        .route("/internal/retention", post(retention))
+        .route("/internal/work-items/{id}", get(work_item_deleted_at))
         .route("/internal/revoke-session", post(revoke_session))
         .route("/internal/seed-work-items", post(seed_work_items))
         .route("/internal/set-user-active", post(set_user_active))

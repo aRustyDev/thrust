@@ -44,6 +44,11 @@ mutant_code_mails_unknown = []
 # A message the consumer rejects as invalid is treated like a transient failure (FR-21, issue #53): delivered again with the backoff and
 # set aside only at its fourth delivery, not at once.
 mutant_invalid_is_transient = []
+# The daily hard delete (issue #59): a window that does not parse is the default and not a refusal; the window is not counted back from
+# now; a work item goes and its attachments stay behind.
+mutant_retention_days_lenient = []
+mutant_retention_ignores_cutoff = []
+mutant_retention_keeps_blobs = []
 
 [dependencies]
 thrust-contracts = { workspace = true }

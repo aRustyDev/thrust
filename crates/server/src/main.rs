@@ -154,6 +154,9 @@ async fn main() {
         },
         ..defaults
     };
+    // How long a deleted work item and a dispatched outbox row are kept (issue #59). Unlike the numbers above, a value that is not a
+    // number of days stops the server: read as the default, it would delete rows the operator meant to keep.
+    let cfg = cfg.with_retention_from(|name| std::env::var(name).ok()).unwrap_or_else(|e| panic!("{e}"));
     let hasher = Arc::new(Argon2idHasher::new(cfg.argon2));
     let email = smtp_email(cfg.public_base_url.as_deref());
 

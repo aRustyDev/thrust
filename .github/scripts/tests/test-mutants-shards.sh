@@ -108,11 +108,16 @@ partition_ok() {
   done
 }
 empty_shard_fails() {
-  # more shards than rows: the last shard has none, and a run that ran nothing has killed nothing
-  run_shard "$1" 60 59 "$2-empty"
-  if [ "$(cat "$T/$2-empty-60-59.status")" -eq 0 ]; then echo "a shard with no row exited 0"; return 1; fi
-  grep -q 'selected no row' "$T/$2-empty-60-59.err" || { echo "it did not say why: $(cat "$T/$2-empty-60-59.err")"; return 1; }
-  if [ -s "$T/$2-empty-60-59.ran" ]; then echo "it ran something"; return 1; fi
+  # more shards than rows: the last shard has none, and a run that ran nothing has killed nothing. The count of rows is the script's own (the
+  # list mode names each), so that a row added to mutants.sh does not turn "more shards than rows" into a shard that has one
+  ee_rows="$(RAN_LOG=/dev/null MUTANTS_SHARDS=1 MUTANTS_SHARD=0 MUTANTS_LIST=1 sh "$1/scripts/mutants.sh" 2>/dev/null | wc -l | tr -d ' ')"
+  ee_n=$((ee_rows + 1))
+  ee_i=$((ee_n - 1))
+  ee_f="$T/$2-empty-$ee_n-$ee_i"
+  run_shard "$1" "$ee_n" "$ee_i" "$2-empty"
+  if [ "$(cat "$ee_f.status")" -eq 0 ]; then echo "a shard with no row exited 0"; return 1; fi
+  grep -q 'selected no row' "$ee_f.err" || { echo "it did not say why: $(cat "$ee_f.err")"; return 1; }
+  if [ -s "$ee_f.ran" ]; then echo "it ran something"; return 1; fi
 }
 guard_fires() {
   # a row outside `want` runs on every shard, so a shard judges more rows than it selected
