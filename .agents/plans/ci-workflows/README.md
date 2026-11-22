@@ -36,4 +36,4 @@ whole repository: Phase 0 of this plan is `0001` and Phase 1 is `0002`; each lat
 Phase 0, the foundation, is done and merged. Phase 1, the migration, is **done**: its six stages are merged (`documentation.yml`, #254; `security.yml`, #258;
 `web.yml`, #264; `lint.yml`, #269; `test.yml`, split in two, #275 and #281; `e2e.yml`, #289), `ci.yml` holds only `changes`, the calls and `gate`, and its
 acceptance is recorded in [phases/0002-migration.md](phases/0002-migration.md), with the cost after it in [research 0019](research/0019-ci-baseline-after-migration.md).
-Phase 2, Test, is planned in [phases/0003-test.md](phases/0003-test.md) and its four questions are answered; no stage has started. Phases 3 to 14 are not started; see the table at the end of `PLAN.md`.
+Phase 2, Test, is planned in [phases/0003-test.md](phases/0003-test.md) and its four questions are answered. Its stages 1 to 7 are done and recorded there, and stage 8, `workers`, is in its pull request; pass 8, the final documentation, closes the phase. Phases 3 to 14 are not started; see the table at the end of `PLAN.md`.

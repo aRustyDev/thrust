@@ -32,6 +32,9 @@ mod durable;
 #[cfg(feature = "memory")]
 mod memory;
 mod probes;
+// Tests of the glue that exists only on wasm32 (G-6): run through wasm-bindgen-test by the `workers` job of test.yml (scripts/wasm-tests.sh).
+#[cfg(all(test, target_arch = "wasm32"))]
+mod wasm_tests;
 
 static ROUTER: std::sync::OnceLock<axum::Router> = std::sync::OnceLock::new();
 

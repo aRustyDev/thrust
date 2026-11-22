@@ -1,10 +1,10 @@
 name: test
 
 # The repository's tests, called by ci.yml (its `test` job) and runnable alone (ADR-0102). ci.yml passes `plan`, the jobs of this workflow
-# that plan-ci.py says the change needs (any of the five, or all), and the planner's `matrix` and `cells`, the contract cells that job
+# that plan-ci.py says the change needs (any of the six, or all), and the planner's `matrix` and `cells`, the contract cells that job
 # `contract` runs and that the `verdict` job proves: each cell uploads a marker when it passes, and the verdict job compares the markers with
 # the planned cells. The `verdict` job judges the jobs against the plan, so that a planned job that never ran turns ci.yml's `gate` red: a
-# calling job is `success` when only some of its jobs ran. A run by hand plans the four jobs that need no cells; to run the cells, give
+# calling job is `success` when only some of its jobs ran. A run by hand plans the five jobs that need no cells; to run the cells, give
 # `plan` the job `contract` and `matrix` and `cells` as the planner writes them (a dispatch of ci.yml itself is the full run).
 
 on:
@@ -31,7 +31,7 @@ on:
       plan:
         description: JSON array of the jobs to run
         type: string
-        default: '["ci-scripts","hermetic","pg-adapter","mutants"]'
+        default: '["ci-scripts","hermetic","pg-adapter","mutants","workers"]'
       matrix:
         description: The contract matrix (needed only when the plan has `contract`)
         type: string
@@ -102,6 +102,7 @@ jobs:
           sh .github/scripts/tests/test-check-flake-hunt-cell.sh
           sh .github/scripts/tests/test-mutants-verdict.sh
           sh .github/scripts/tests/test-mutants-shards.sh
+          sh .github/scripts/tests/test-wasm-tests.sh
           sh .github/scripts/tests/test-samply-wrapper.sh
           python3 -I .github/scripts/tests/test_active_version.py
           sh .github/scripts/tests/test-unpack-bundle.sh
@@ -261,12 +262,63 @@ jobs:
           MUTANTS_SHARD: ${{ strategy.job-index }}
         run: scripts/mutants.sh
 
+  # The Worker's own glue, on wasm32 (G-6, stage 8 of the Test phase): crates/worker/src/wasm_tests.rs, which only a wasm32 build has, run by
+  # wasm-bindgen-test-runner in Node through nextest's `workers` profile (scripts/wasm-tests.sh; .cargo/config.toml names the runner script).
+  # Planned when thrust-worker is affected, that is the crate or any crate it depends on (plan-ci.py). By hand: dispatch this workflow with the
+  # plan ["workers"], or run scripts/wasm-tests.sh with a runner of the lock's wasm-bindgen version.
+  workers:
+    if: contains(fromJSON(inputs.plan), 'workers')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-rust
+        with:
+          cache-key: wasm-workers
+          save-cache: ${{ github.ref == 'refs/heads/main' }}
+          nextest: 'true'
+          targets: wasm32-unknown-unknown
+      # Node 26, and not the web jobs' pin (web/.node-version, 22.22.0): the Worker's inline JavaScript imports `cloudflare:workers` and its like, and
+      # every Node 22 and 23, 24 before 24.12 and 25 before 25.2 assert (ERR_INTERNAL_ASSERTION: "a bug in Node.js") on an import of such a specifier
+      # from an ES module that was require()d, before any hook is asked (run 44822700250 of this job on 22.22.0; lib/internal/modules/esm/loader.js of
+      # each release). 26.9.0 is what the tests were run on by hand. scripts/wasm-test-runner.sh refuses an older Node by saying so.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '26.13.1'
+      # The runner must be the wasm-bindgen that Cargo.lock pins, exactly (scripts/wasm-test-runner.sh refuses another): Cargo itself says which, so a
+      # bump of the crate moves the runner with it. `cargo pkgid` prints `registry+<index>#wasm-bindgen@<version>` and fails when the lock has none or
+      # more than one. Assigned first and echoed after, so that a failure fails the step.
+      - name: The wasm-bindgen of Cargo.lock
+        id: wasm-bindgen
+        run: |
+          id="$(scripts/rs cargo pkgid --locked wasm-bindgen)"
+          echo "version=${id##*[#@]}" >> "$GITHUB_OUTPUT"
+      # A prebuilt binary, checked by the action against its release's checksum: wasm-bindgen-test-runner, from the release of that version.
+      - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
+        with:
+          tool: wasm-bindgen@${{ steps.wasm-bindgen.outputs.version }}
+      # nextest exits 4 when the profile selects nothing, and the script fails when the report has fewer tests than the source declares.
+      - name: The Worker's wasm32 tests (nextest, workers profile)
+        run: scripts/wasm-tests.sh
+      - name: Upload the JUnit report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: junit-workers
+          path: target/nextest/workers/junit.xml
+          if-no-files-found: ignore
+          retention-days: 7
+
   # ADR-0102: judges this workflow's jobs against the plan, through the action every called workflow uses (it runs assert-gate.sh and
   # sets the output only after that passed). `always()`, so it reports when a job was skipped, failed or cancelled. ci.yml's `gate`
   # requires the output: a `verdict` job that was itself skipped leaves this workflow `success` and proves nothing. The checkout is
   # here and not in the action, which is read from it.
   verdict:
-    needs: [ci-scripts, hermetic, pg-adapter, contract, mutants]
+    needs: [ci-scripts, hermetic, pg-adapter, contract, mutants, workers]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -283,6 +335,6 @@ jobs:
         with:
           needs: ${{ toJSON(needs) }}
           plan: ${{ inputs.plan }}
-          jobs: ci-scripts hermetic pg-adapter contract mutants
+          jobs: ci-scripts hermetic pg-adapter contract mutants workers
           cell-job: contract
           cells: ${{ inputs.cells }}
