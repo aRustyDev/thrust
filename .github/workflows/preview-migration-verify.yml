@@ -1,0 +1,69 @@
+name: Verify preview migration source
+
+# This is a read-only rehearsal of the future privileged caller. The source artifact is
+# untrusted: compare it to fresh Git objects and recheck the PR before reporting success.
+on:
+  workflow_run:
+    workflows: [Prepare preview migration source]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      source_run_id:
+        description: Completed source workflow run ID
+        required: true
+        type: string
+
+permissions: {}
+
+jobs:
+  verify:
+    if: github.repository == 'aRustyDev/thrust' && ((github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Select source artifact
+        id: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          SOURCE_RUN: ${{ inputs.source_run_id || github.event.workflow_run.id }}
+        run: |
+          set -euo pipefail
+          [[ "$SOURCE_RUN" =~ ^[1-9][0-9]*$ ]]
+          gh api "repos/$REPOSITORY/actions/runs/$SOURCE_RUN" > "$RUNNER_TEMP/source-run.json"
+          gh api --paginate --slurp "repos/$REPOSITORY/actions/runs/$SOURCE_RUN/artifacts?per_page=100" > "$RUNNER_TEMP/source-artifacts.json"
+          python3 -I infra/preview/scripts/select-migration-artifact.py \
+            --inventory "$RUNNER_TEMP/source-artifacts.json" --run "$SOURCE_RUN" >> "$GITHUB_OUTPUT"
+      - name: Reproduce artifact and recheck PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          SOURCE_RUN: ${{ inputs.source_run_id || github.event.workflow_run.id }}
+          ARTIFACT_ID: ${{ steps.source.outputs.id }}
+          ARTIFACT_NAME: ${{ steps.source.outputs.name }}
+          PR_NUMBER: ${{ steps.source.outputs.number }}
+          HEAD_SHA: ${{ steps.source.outputs.commit }}
+        run: |
+          set -euo pipefail
+          gh api "repos/$REPOSITORY/actions/artifacts/$ARTIFACT_ID" > "$RUNNER_TEMP/artifact.json"
+          gh api "repos/$REPOSITORY/pulls/$PR_NUMBER" > "$RUNNER_TEMP/pr.json"
+          python3 -I infra/preview/scripts/verify-pr-head.py --pull "$RUNNER_TEMP/pr.json" \
+            --repository "$REPOSITORY" --number "$PR_NUMBER" --sha "$HEAD_SHA"
+          git fetch --no-tags --depth=1 origin "$HEAD_SHA"
+          gh run download "$SOURCE_RUN" --name "$ARTIFACT_NAME" --dir "$RUNNER_TEMP/source-artifact"
+          python3 -I infra/preview/scripts/authorize-migration-artifact.py --repo . --repository "$REPOSITORY" \
+            --number "$PR_NUMBER" --commit "$HEAD_SHA" --run "$RUNNER_TEMP/source-run.json" \
+            --metadata "$RUNNER_TEMP/artifact.json" --pull "$RUNNER_TEMP/pr.json" \
+            --artifact "$RUNNER_TEMP/source-artifact/migrations.json" > "$RUNNER_TEMP/verified-migrations.json"
+          gh api "repos/$REPOSITORY/pulls/$PR_NUMBER" > "$RUNNER_TEMP/pr-current.json"
+          python3 -I infra/preview/scripts/verify-pr-head.py --pull "$RUNNER_TEMP/pr-current.json" \
+            --repository "$REPOSITORY" --number "$PR_NUMBER" --sha "$HEAD_SHA"
+          echo "Verified migration source for PR #$PR_NUMBER at $HEAD_SHA."

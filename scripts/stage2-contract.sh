@@ -21,7 +21,8 @@
 #            email for the reason below,
 #            wrangler.stage2.toml has no [version_metadata], and what a deployed Worker reports as its version is what
 #            scripts/smoke-deploy.sh checks (issue #49)
-# cron       1 test : needs the Worker deployed with THRUST_OUTBOX_FASTPATH=off
+# cron       2 tests: needs the Worker deployed with THRUST_OUTBOX_FASTPATH=off, and the second (the hard delete's cron, issue #59) with
+#            THRUST_HARD_DELETE_AFTER_DAYS=0 as well, which it checks on /_info and fails without
 # crontrigger 1 test: the REAL every-minute trigger (`cron` uses wrangler dev's /__scheduled, which a deployed Worker lacks)
 # blast      1 test : OBSERVATIONAL: how many other in-flight requests fail around one panic (a panic aborts the isolate)
 # ratelimit  1 test : `v1_requests_are_rate_limited_per_key` alone (it is also one of the tests of `main`); see the refusal below
@@ -115,7 +116,7 @@ case "$PASS" in
   # destination; the deployed binding rejects `example.com` ("domain is not owned by the same account").
   # It is reported as NOT exercised, never as passed.
   bindings) EXPECT=4;  suite_pass worker_only 'test(/worker_bindings_/) & not test(/email_send|version_metadata/)' --no-capture ;;
-  cron)     EXPECT=1;  suite_pass worker_only 'test(/worker_cron_/)' --no-capture ;;
+  cron)     EXPECT=2;  suite_pass worker_only 'test(/worker_cron_/)' --no-capture ;;
   # crontrigger: the REAL every-minute trigger (the `cron` pass uses wrangler dev's /__scheduled, which a deployed Worker lacks)
   crontrigger) EXPECT=1; suite_pass worker_only 'test(/stage2_cron_real_trigger_/)' --no-capture ;;
   sweeper)  EXPECT=4;  suite_pass contract 'test(/sweeper_/)' --no-capture ;;

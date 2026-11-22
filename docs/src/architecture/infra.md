@@ -21,7 +21,7 @@ flowchart LR
     w --> r2[(R2: BLOBS)]
     w --> q[[Queue: EVENTS]]
     w --> rl[RL_SIGNIN, RL_V1<br/>Rate Limiting bindings]
-    cron[Cron every minute] --> w
+    cron[Cron: every minute,<br/>and daily at 00:00 UTC] --> w
     q --> w
   end
   subgraph sh[Self-hosted set: thrust-server]
@@ -50,6 +50,7 @@ The bindings in `crates/worker/wrangler.toml`:
 | `CF_VERSION_METADATA` | Version metadata | none: the Worker sends the running version's tag (else its id) as the `x-thrust-version` header on every response it routes, and sends no header when it has neither. A deploy tags the version with the commit (`wrangler deploy --tag <sha>`) and the smoke compares the two (`scripts/smoke-deploy.sh`, issue #49). Local `wrangler dev` has no tag and a random UUID for the id, so the header there is that id (measured with wrangler 4.123.0) |
 | `ROOM` | Durable Object `RoomDo` (SQLite) | none: a WebSocket room, reachable only through `/_test/room/...`, which needs test routes and the admin token |
 | cron `* * * * *` | Cron trigger | runs the outbox sweeper |
+| cron `0 0 * * *` | Cron trigger | runs the hard delete (`run_retention`, issue #59): at 00:00 UTC, deletes the work items deleted for longer than `THRUST_HARD_DELETE_AFTER_DAYS` and the dispatched outbox rows older than `THRUST_OUTBOX_RETENTION_DAYS` |
 
 `RL`, `SS` and `EMAIL` (a rate-limiting binding of its own, Secrets Store and email) are binding probes. Only
 `probes.rs`, reached through `/_test/bindings/...`, uses them. No use-case does. There is no probe for a service
@@ -99,7 +100,14 @@ Behaviour worth knowing:
   the same policy as the in-process queue's; the Worker only reads a message and acts on the answer. All four configs
   (`wrangler.toml`, the deploy template and the two Stage configs) declare both queues, and
   `.github/scripts/tests/deploy_parity.py` holds `wrangler.toml` and the template to the same shape.
-- **Cron.** Each tick runs one outbox sweep of up to 100 rows.
+- **Cron.** The `scheduled` handler reads the cron string that fired and runs the job of the schedule that has it
+  (`thrust_core::SCHEDULES`, ADR-0072): the every-minute tick runs one outbox sweep of up to 100 rows, and the daily
+  one the hard delete, which does at most 50 batches of 100 work items and 100 batches of 1,000 outbox rows and says
+  whether it left any (the next day carries on). A string the table does not have runs nothing and is logged. The four
+  configs that carry triggers (`wrangler.toml`, the deploy template and the two Stage configs) trigger exactly the
+  crons of the table, which `.github/scripts/tests/deploy_parity.py` holds them to; `wrangler.memory.toml` and
+  `wrangler.measure.toml` have none, and tests fire a cron at them through `--test-scheduled`. The native server has
+  no cron: its hard delete is a timer that wakes at each 00:00 UTC, and its sweep the optional one below.
 - **Configuration and secrets.** The config file holds no secret. The Hyperdrive and Secrets Store ids in it
   are all-zero placeholders for local use; R2 and the queue are given by name, and the rate-limit namespace ids are
   `1001` (the probe's), `1003` and `1004` (`1002` was `RL_CREATE`'s). The Worker reads `THRUST_ADMIN_TOKEN` from its secrets or variables, and the local Postgres URL reaches
@@ -158,7 +166,7 @@ Configuration is read from the environment, in `crates/server/src/main.rs`:
 | `THRUST_PG_POOL` | `16` | Postgres pool size |
 | `THRUST_OUTBOX_FASTPATH` | on | Publish events right after commit; off leaves every event to the sweeper |
 | `THRUST_SWEEP_INTERVAL_SECS` | `0` | Interval of the in-process outbox sweeper; `0` turns it off |
-| `THRUST_HARD_DELETE_AFTER_DAYS` | `30` | Days a soft-deleted work item is kept before the hard delete (issue #59, F-D10) deletes it for good: deviation D-001, where Plane's is 60. A whole number, 0 or more; anything else stops the server at startup, because a window read as the default would delete rows the operator meant to keep. The job is `run_retention` (run today by `POST /internal/retention`) |
+| `THRUST_HARD_DELETE_AFTER_DAYS` | `30` | Days a soft-deleted work item is kept before the hard delete (issue #59, F-D10) deletes it for good: deviation D-001, where Plane's is 60. A whole number, 0 or more; anything else stops the server at startup, because a window read as the default would delete rows the operator meant to keep. The job is `run_retention`, run daily at 00:00 UTC (by the Worker's `0 0 * * *` trigger, and on the native server by a timer that is always on) and on demand by `POST /internal/retention` |
 | `THRUST_OUTBOX_RETENTION_DAYS` | `90` | Days a dispatched outbox row is kept (ADR-0046, Q-0046.2), which is also how long the P0 audit trail is (ADR-0048). The same rule as above |
 | `THRUST_TEST_ROUTES` | off | Turns on `/_info`, `/_test/panic` and `/internal/*`; with it off they answer 404 |
 | `THRUST_ADMIN_TOKEN` | none | The secret `/internal/*` requires, as the `x-admin-token` header |

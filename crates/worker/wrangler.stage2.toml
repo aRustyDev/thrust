@@ -19,7 +19,9 @@ region = "aws:us-east-1"
 command = "../../scripts/rs worker-build --release . --no-default-features"
 
 [triggers]
-crons = ["* * * * *"]   # outbox sweeper (ADR-0046 / ADR-0072)
+# The crons of crates/core/usecases/src/schedules.rs, no more and no fewer (deploy_parity.py): the outbox sweeper every minute
+# (ADR-0046 / ADR-0072) and the hard delete at 00:00 UTC (issue #59, F-D10).
+crons = ["* * * * *", "0 0 * * *"]
 
 [vars]
 THRUST_TEST_ROUTES = "1"            # spike only: exposes /internal/* and /_info to the contract suite

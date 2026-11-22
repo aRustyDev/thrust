@@ -116,6 +116,29 @@ For the archived `worker-do` cell (tag `spike/0002-worker-do`), allocation was s
 
 **Decided 2026-10-24 (owner, ADR-0040): Postgres is the system of record, so the FR-22 order measured above is the order of record.** It is confirmed on the platform (correct and harmless, about 15 percent of the c=8 create p50 and nothing at c=1), and the price this ADR accepted, a gap for a number taken by a create that then fails, stands.
 
+## Update — issue #59, the hard delete (2026-11-20)
+
+The daily hard delete (F-D10, D-001) is built: `run_retention` in `crates/core/usecases/src/retention.rs`, and the `Database` calls
+`purgeable_work_items` and `purge_work_items` (`crates/core/ports/src/lib.rs`) in the memory and Postgres adapters. The rule:
+
+- A soft-deleted work item is purged when `deleted_at` is strictly before `now − THRUST_HARD_DELETE_AFTER_DAYS` (30 unless set; Plane's is
+  `deleted_at < now − HARD_DELETE_AFTER_DAYS`, strict too), **and every work item under it was also deleted before the cutoff**. Every foreign key
+  is `NO ACTION`, so without the second clause a live or recent child would be left naming a parent that is gone; with it, the parent waits
+  for the child. A work item that is its own parent, or in a loop (parity with the pin allows both), satisfies it.
+- It is deleted with what hangs on it, in one transaction for a batch with the rows locked: the assignee and label rows, **its history**
+  (`work_item_activities`, deviation D-043: the alternative, keeping it by dropping the foreign key, would be the first contract migration,
+  which the preview path and `deploy-target.sh` refuse), and, before any of that, its attachment blobs. A child outside the batch has its
+  `parent_id` cleared; by the rule it is a deleted work item past the cutoff, so nothing live or recent is touched, and it goes in a later
+  batch or a later run if nothing recent hangs under it.
+- **What stays**: `project_sequences`, so a purged number is never handed out again (B1, shown by a test: the next work item is numbered after
+  every one the project ever had); the `activity` projection, which has no foreign key to the work item; and the outbox, for its own window
+  (ADR-0046).
+- The comment in the header of migration `0014` ("never deleted for good") is stale. It is part of that migration's checksum and is not
+  edited; this note supersedes it. The two indexes the job reads by are migration 0021 (additive, so the preview path takes it).
+- **Not purged yet:** `projects`, `states`, `labels` and `assets` also carry `deleted_at`. The owner (2026-11-18) scoped #59 to work items and
+  the outbox; those four go to a follow-up issue, children before parents, with `project_sequences` of a purged project to decide.
+  Q-0043.2's "which tables" is answered for work items and the outbox here and open for those.
+
 ## Open Questions
 
 * Q-0043 — approve A/B/C choices. (answered round 29, FR-17, FR-22)
