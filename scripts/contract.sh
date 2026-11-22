@@ -109,7 +109,7 @@ EXPECT_CSRFOFF=6
 EXPECT_PANIC=1
 EXPECT_BLAST=1
 EXPECT_WORKER=1
-EXPECT_CRON=1
+EXPECT_CRON=2
 EXPECT_BINDINGS=6
 EXPECT_ENGINE=4
 EXPECT_MAIL=7
@@ -170,6 +170,13 @@ case "$PASS" in
   sweeper|cron) FASTPATH=off ;;
   *) FASTPATH=on ;;
 esac
+
+# The retention windows (issue #59): a developer's own must not reach the target, so every pass runs at the defaults (30 days for a work
+# item, 90 for the outbox), which the `sweeper` pass reads back from /_info. The exception is `cron`: its test of the Worker's `scheduled`
+# handler needs a work item that was deleted a moment ago to be old enough for the hard delete, so that pass has a window of no days and
+# the test refuses a target that says otherwise. No other test of that pass deletes anything.
+unset THRUST_HARD_DELETE_AFTER_DAYS THRUST_OUTBOX_RETENTION_DAYS
+if [ "$PASS" = cron ]; then export THRUST_HARD_DELETE_AFTER_DAYS=0; fi
 
 # CSRF enforcement (Q-0050.8). The composition roots default it OFF, but the contract targets keep the meaning of their CSRF
 # tests, so every pass runs with it ON except `csrfoff`, which starts the target with no setting at all ("default": the

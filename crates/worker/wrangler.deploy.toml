@@ -29,7 +29,9 @@ region = "aws:us-east-1"
 binding = "CF_VERSION_METADATA"
 
 [triggers]
-crons = ["* * * * *"]   # outbox sweeper (ADR-0046 / ADR-0072)
+# The crons of crates/core/usecases/src/schedules.rs, no more and no fewer (deploy_parity.py): the outbox sweeper every minute
+# (ADR-0046 / ADR-0072) and the hard delete at 00:00 UTC (issue #59, F-D10).
+crons = ["* * * * *", "0 0 * * *"]
 
 [vars]
 # Whether a mutation authenticated by the session cookie must carry the CSRF token (ADR-0052, Q-0050.8). "off" while the stock Plane

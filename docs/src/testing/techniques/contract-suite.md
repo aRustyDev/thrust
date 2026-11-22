@@ -97,7 +97,10 @@ A pass is selected by **test-name prefix**: `sweeper_`, `panic_`, `blast_`, `csr
 `worker_bindings_`, `stage2_cron_real_trigger_`. Unprefixed tests in `contract.rs` form the `main` pass. A new test therefore
 picks its pass by its name. Each arm of `scripts/contract.sh` (and of `scripts/stage2-contract.sh`) is one call,
 `suite_pass <bin> '<filterset>' [nextest args]`: the prefixes as a nextest filterset over one test binary, run with the
-`contract` profile of `.config/nextest.toml`. `main`'s is `not test(/sweeper_|panic_|blast_|csrf_off_/)`. Under nextest
+`contract` profile of `.config/nextest.toml`. `main`'s is `not test(/sweeper_|panic_|blast_|csrf_off_/)`. The `cron` pass (`worker_cron_`) is the one pass whose target is started with
+a different window for the hard delete, `THRUST_HARD_DELETE_AFTER_DAYS=0` (every other pass runs at the defaults, and
+`scripts/contract.sh` unsets a developer's own), because its second test fires the hard delete's cron at the Worker and needs a work item
+deleted a moment ago to be old enough; the test reads `/_info` and fails on a Worker whose window is not 0. Under nextest
 each test is a process of its own, so the profile puts the `compat_oidc_` tests in a test group of one thread: each starts
 the mock identity provider on the one port the target was given as its issuer.
 

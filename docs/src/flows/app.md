@@ -267,6 +267,27 @@ An attachment name is 1 to 128 bytes with no `/` and no `..`, or the request is 
 `BlobStore` key is `<workspace>/<project>/<work item>/<name>`, built from the `Scope`, so a caller can only reach
 blobs inside a project they were authorized for.
 
+## The daily hard delete
+
+No request deletes anything for good: a deleted work item keeps its row with `deleted_at` set (ADR-0043), and an outbox row stays
+after it is dispatched. Once a day, at 00:00 UTC, `run_retention` (issue #59, F-D10, D-001) deletes what has been kept long enough.
+The Worker runs it from its `0 0 * * *` trigger (the `scheduled` handler runs the job of the cron that fired, from
+`thrust_core::SCHEDULES`, ADR-0072), the native server from a timer that wakes at each midnight, and `POST /internal/retention` runs it
+on demand, counting from the `now` it is given.
+
+- **A work item** goes when it was deleted strictly more than `THRUST_HARD_DELETE_AFTER_DAYS` ago (30), in any workspace, and every work
+  item under it was deleted that long ago too, so no live or recent work item is left under a parent that is gone. Its attachments go
+  first (the blobs under `<workspace>/<project>/<work item>/`): one that will not go leaves the work item for the next run, counted in
+  `failed`, and not a blob that nothing names. Then, in one transaction for a batch, its assignee and label rows, its history
+  (`work_item_activities`, D-043) and the work item. The project's counter stays, so a number is not handed out twice, and so does the
+  `activity` projection.
+- **An outbox row** goes when it was dispatched and was made more than `THRUST_OUTBOX_RETENTION_DAYS` ago (90), oldest first. One that was
+  never dispatched stays, however old: it is an event still owed to its consumers.
+- **A run** does at most 50 batches of 100 work items and 100 batches of 1,000 outbox rows. Its report says `complete: false` when it
+  stopped there or left a work item for a blob, and the next day's run carries on. A second run deletes nothing the first did not, and a
+  day the server was down is not made up, for the rule is by age.
+- **Not yet:** projects, states, labels and assets also carry `deleted_at` and are not deleted for good.
+
 ## Errors
 
 Errors raised by the use-cases and the router's own guards share one body,

@@ -51,7 +51,7 @@ needed" must be recorded before the row starts). "Test home" is where the accept
 | F-D07 | Analytics (workspace/project dashboards, saved `AnalyticView`) | P1 | — GAP: ADR when P1 is scheduled |  |  |
 | F-D08 | Global search (P0 adapter: database FTS, ADR-0083) | P0 | 0083 | 0002 | search parity corpus (substring + FTS) |
 | F-D09 | Published/public boards (`spaces`) | P0 | 0022, 0141 |  | e2e + unauthenticated-boundary tests |
-| F-D10 | Data retention cleanups (api logs, email logs, versions, webhook logs; | P0 (hard-delete at 30 d; deviation D-001 | 0043, 0072 |  | cron test + retention test |
+| F-D10 | Data retention cleanups (api logs, email logs, versions, webhook logs; hard-delete) (the hard delete of work items, with their history, join rows and attachments, and of dispatched outbox rows is built, issue #59, D-043: daily at 00:00 UTC, from the Worker's `0 0 * * *` trigger and the native server's timer, after `THRUST_HARD_DELETE_AFTER_DAYS` (30) and `THRUST_OUTBOX_RETENTION_DAYS` (90); projects, states, labels and assets, which carry `deleted_at` too, and the logs the other tables would hold, are not purged yet) | P0 (hard-delete at 30 d; deviation D-001) | 0043, 0046, 0072 |  | cron test (`worker_cron_scheduled_handler_runs_the_hard_delete`) + retention tests (`thrust-core` `retention` and `schedules`, the adapters' `retention`, contract `sweeper_retention_purges_only_rows_past_the_window`) |
 | F-D11 | i18n (locale files in `@plane/i18n`) | P0 (inherited) | no ADR needed (CRUD over core use-cases; ADR-0045 pattern); reuse @plane/i18n (ADR-0012) |  | e2e |
 | F-D12 | Telemetry (OTel only; PostHog dropped) — likely opt-in | P2 (opt-in) | 0130 |  | integration |
 | F-D13 | Link crawler/unfurl (SSRF-guarded) | P1 | 0141, 0073 |  | SSRF tests |

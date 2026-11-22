@@ -92,6 +92,35 @@ The TypeScript schedule table is replaced by a Rust `const` table (ADR-0006). Th
 
 Spike 0001: the `scheduled` handler is native in workers-rs (`#[event(scheduled)]`) and runs the outbox sweeper `[tested]` through wrangler's `--test-scheduled` endpoint (nothing delivered before the call, delivered after). **An actual cron trigger firing is unverified** (Stage 2 step S2-4). The sweeper pass also ran on both native targets, where it is reached through `POST /internal/sweep`.
 
+## Update — issue #59, the daily hard delete (2026-11-20)
+
+The `SCHEDULES` table is built, in `crates/core/usecases/src/schedules.rs` (the path in the sketch above predates ADR-0009), with the two
+schedules there are today: `outbox-sweep` (`* * * * *`) and `hard-delete` (`0 0 * * *`, F-D10, D-001). Where the build differs from the sketch:
+
+- **No build script.** The crons are written in the wrangler files that carry triggers (`wrangler.toml`, `wrangler.deploy.toml`,
+  `wrangler.stage2.toml`, `wrangler.pg.stage.toml`; `wrangler.memory.toml` and `wrangler.measure.toml` have none, as a test fires a cron at them
+  through `--test-scheduled`), and `.github/scripts/tests/deploy_parity.py` reads the `cron: "…"` literals of the table and requires each
+  file's `triggers.crons` to be exactly those, none missing, none extra, none twice (`--crons` for the two Stage files, which nothing else
+  compares). A trigger the table lacks, or a schedule no file triggers, fails CI's `ci-scripts`; `test-deploy-template.sh` shows each way it
+  can be wrong, including a cron added to the files and not to the code. That is the "static check" of Confirmation, for the triggers; the
+  "every job resolves" half is the compiler's, since `Schedule::job` is an enum.
+- **One place runs a job.** `run_cron(app, cron)` finds the schedule whose cron is that string, written the same, and runs its job
+  (`run_job`). The Worker's `scheduled` handler passes it `event.cron()` (it used to sweep whatever fired); the server's timers call
+  `run_job`. A cron the table does not have runs nothing and is logged, so a trigger nobody wired is a line in the log and not a second
+  sweep. `mutant_cron_ignored` (a handler that reads no cron) is killed by `thrust-core/tests/schedules.rs` and, on the Worker, by
+  `worker_cron_scheduled_handler_runs_the_hard_delete`.
+- **A job does not enqueue.** `Job::HardDelete` (the sketch called it `MaintenanceHardDelete`) runs its bounded batches inline: at most 50
+  batches of 100 work items, with the attachments under them, and 100 batches of 1,000 outbox rows, then it says `complete: false` and the next
+  day carries on. A backlog is drained over days. That fits the handler's 15 minutes with room, and a queue would add a producer and a
+  consumer for a job that must not run twice at once.
+- **Self-hosted.** The in-process scheduler is, for this job, a task that sleeps to the next 00:00 UTC strictly after the last it ran for
+  (`next_utc_midnight_after`), so a wake a moment early cannot run a day twice, and then runs `Job::HardDelete`. It has no leader election,
+  which the Consequences above ask for: ADR-0070 (round 29) has one process hold the database. A day missed while the process was down is not
+  made up, because the rule is by age and the next run deletes what it would have.
+- **Not verified:** that a real `0 0 * * *` trigger fires on a deployed Worker. The handler is shown through `--test-scheduled` on both Worker
+  targets, as the sweep's was in round 26; the every-minute trigger has a Stage 2 test of the real firing, and a daily one cannot be waited for
+  the same way. Recorded as a gap, `docs/src/testing/status.md` G-50.
+
 ## Open Questions
 
 * Q-0072.1 — **answered (round 20)**: single schedule.

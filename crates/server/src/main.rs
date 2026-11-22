@@ -189,8 +189,29 @@ async fn main() {
             let mut t = tokio::time::interval(Duration::from_secs(sweep_every));
             loop {
                 t.tick().await;
-                if let Err(e) = thrust_core::sweep_outbox(&app, 100).await {
+                if let Err(e) = thrust_core::run_job(&app, thrust_core::Job::OutboxSweep).await {
                     eprintln!("sweep failed: {e}");
+                }
+            }
+        });
+    }
+
+    // The daily hard delete (issue #59, F-D10): at 00:00 UTC, when the Worker's `0 0 * * *` trigger fires, from the schedule the same
+    // table holds. Each wait is to the first midnight strictly after the last one this ran for, so a wake a moment early cannot run a
+    // day's job twice, and after a late wake (the host was suspended) it carries on from now and does not replay the days it slept
+    // through. A run missed while the server was down is not made up: the rule is by age, so the next run deletes what it would have.
+    // One process holds the database (ADR-0070), so there is no one else to elect.
+    {
+        let app = app.clone();
+        tokio::spawn(async move {
+            let mut last = app.ports.clock.now();
+            while let Some(due) = thrust_core::next_utc_midnight_after(last) {
+                let wait = (due - app.ports.clock.now()).to_std().unwrap_or(Duration::ZERO);
+                tokio::time::sleep(wait).await;
+                last = due.max(app.ports.clock.now());
+                match thrust_core::run_job(&app, thrust_core::Job::HardDelete).await {
+                    Ok(report) => println!("hard delete at {due}: {report:?}"),
+                    Err(e) => eprintln!("hard delete at {due} failed: {e}"),
                 }
             }
         });
