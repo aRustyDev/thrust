@@ -359,5 +359,54 @@ if bash_wf:
     check(f"{bash_path}: {BASH_JOB} runs no other command", len([l for l in bash_code if re.match(r"^\s+run:", l)]), 1)
     check(f"{bash_path}: {BASH_JOB} sets up no Rust toolchain or cache (it reads shell)", [l for l in bash_code if "setup-rust" in l or "cache" in l], [])
 
+# The wasm job (Phase 3, stage 2) builds the two Workers the deploy bundle ships, in release, with the bundle's own commands, and shares the bundle's cache key so that the next
+# release candidate or tag restores what `main` saved. Six things about it can be wrong and leave the job green: a Worker built by another command than the bundle's (the proof would be of
+# something that does not ship), a Worker built in another directory, a check that looks at one of the Workers or one of the three files only (a build that wrote no wasm would pass), a cache key that
+# is not the bundle's (the job would work and help nobody), a cache key saved on every ref (a pull request's entry would evict `main`'s), and no wasm32 target (the build would fail, but only after the
+# cache and the tools). Each is a line, checked as text, and the mutant driver changes each.
+WASM_JOB = "wasm"
+wasm_wf = next((w for w, jobs in pc.WORKFLOWS.items() if WASM_JOB in jobs), None)
+check(f"the job {WASM_JOB} is a job of a called workflow", wasm_wf is not None, True)
+if wasm_wf:
+    wasm_path = f".github/workflows/{wasm_wf}.yml"
+    wasm_text = read_text(wasm_path) or ""
+    wasm_block = block(wasm_text, WASM_JOB)
+    bundle_text = read_text(".github/actions/build-bundle/action.yml") or ""
+
+    def stripped(text):
+        return [l.strip() for l in text.splitlines()]
+
+    def has_sequence(text, sequence):
+        """Whether these lines, stripped of their indentation, follow one another in the text."""
+        lines = stripped(text)
+        return any(lines[i:i + len(sequence)] == sequence for i in range(len(lines)))
+
+    for label, directory, command in (("the Worker", "crates/worker", "../../scripts/rs worker-build --release . --no-default-features"),
+                                      ("the edge Worker", "crates/edge", "../../scripts/rs worker-build --release .")):
+        sequence = [f"working-directory: {directory}", f"run: {command}"]
+        check(f"{wasm_path}: {WASM_JOB} builds {label} in {directory} with the command the deploy bundle builds it with",
+              (has_sequence(wasm_block, sequence), has_sequence(bundle_text, sequence)), (True, True))
+    check(f"{wasm_path}: {WASM_JOB} runs worker-build in release only (no worker-build line without --release)",
+          [l for l in wasm_block.splitlines() if re.search(r"run: .*worker-build", l) and "--release" not in l], [])
+    expected_files = ('          for dir in crates/worker/build crates/edge/build; do\n            for file in worker/shim.mjs index.js index_bg.wasm; do\n'
+                      '              test -s "$dir/$file" || { echo "::error::worker-build wrote no $dir/$file"; exit 1; }\n')
+    check(f"{wasm_path}: {WASM_JOB} checks the three files worker-build writes, for both Workers, and fails when one is missing", expected_files in wasm_block, True)
+    check(f"{wasm_path}: {WASM_JOB} checks what the bundle checks (shim.mjs, index.js and index_bg.wasm of the Worker, and the same three of the edge)",
+          all(f"test -s crates/{w}/build/{f}" in bundle_text for w in ("worker", "edge") for f in ("worker/shim.mjs", "index.js", "index_bg.wasm")), True)
+    check(f"{wasm_path}: {WASM_JOB} builds for wasm32 with the Worker tools, a cache key saved on main only",
+          "          targets: wasm32-unknown-unknown\n          worker-tools: \"true\"\n          cache-key: deploy-release\n"
+          "          save-cache: ${{ github.ref == 'refs/heads/main' }}\n" in wasm_block, True)
+    users = "".join(read_text(f".github/workflows/{f}") or "" for f in sorted(os.listdir(os.path.join(ROOT, ".github", "workflows"))) if f.endswith(".yml"))
+    users += "".join(read_text(f".github/actions/{d}/action.yml") or "" for d in sorted(os.listdir(os.path.join(ROOT, ".github", "actions"))) if os.path.isdir(os.path.join(ROOT, ".github", "actions", d)))
+    check(f"{wasm_path}: the cache key deploy-release has two users, the {WASM_JOB} job that saves it and build-bundle that restores it, and no other job",
+          (users.count("cache-key: deploy-release\n"), "cache-key: deploy-release\n" in bundle_text), (2, True))
+    check(f"{wasm_path}: build-bundle only restores that cache (it saves none: its `save-cache` is its caller's input, which defaults to false)",
+          "save-cache: ${{ inputs.save-cache }}" in bundle_text and 'default: "false"' in bundle_text, True)
+    check(f"{wasm_path}: {WASM_JOB} uploads both Workers, fails when there are none, and keeps them three days",
+          "          name: build-wasm-wasm32-unknown-unknown\n          path: |\n            crates/worker/build\n            crates/edge/build\n"
+          "          if-no-files-found: error\n          retention-days: 3\n" in wasm_block, True)
+    check(f"{wasm_path}: {WASM_JOB} has no secret, no environment and no id-token: a compile proof publishes and attests nothing",
+          [l for l in wasm_block.splitlines() if re.search(r"secrets\.|environment:|id-token|attestations|contents: write", l) and not l.strip().startswith("#")], [])
+
 print(f"passed={passed} bad={failed}")
 sys.exit(1 if failed else 0)
