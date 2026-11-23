@@ -96,6 +96,7 @@ Where those docs and the rules below disagree, the rules win; record the disagre
 | The adapter suites that need Docker (`pg_adapter`, `smtp_sink`) | `cargo nextest run -p thrust-adapters-selfhosted --profile adapters` |
 | The Worker's wasm32 unit tests, `crates/worker/src/wasm_tests.rs` (needs Node 26, the wasm32 target and a `wasm-bindgen-test-runner` of exactly the version `Cargo.lock` pins for `wasm-bindgen`, in `PATH` or `WASM_BINDGEN_TEST_RUNNER`; `docs/src/testing/running.md`, `docs/src/testing/status.md` G-6) | `scripts/wasm-tests.sh` |
 | Shell lint, CI job `bash`: shellcheck over every shell script the repository maintains (needs shellcheck 0.11.0 exactly; `.shellcheckrc` sets what fails; a finding that is meant is annotated where it is, `# shellcheck disable=SCnnnn # why`; `docs/src/testing/running.md`) | `.github/scripts/check-shell.sh` |
+| YAML lint, CI job `yaml`: yamllint over every YAML file the repository maintains, for a file that does not parse and a key written twice (needs yamllint 1.38.0 exactly; `.yamllint.yaml` sets what fails; `docs/src/testing/running.md`) | `.github/scripts/check-yaml.sh` |
 | The v1 router's profiles, written under `target/profiling/`: heap (dhat) and CPU (samply; needs `cargo install samply`) | `cargo nextest run -p thrust-profiling --profile prof --cargo-profile release` |
 | Mutation testing, one file (the crate needs tests of its own) | `cargo mutants -f <path>` |
 

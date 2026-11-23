@@ -50,7 +50,7 @@ def check(label, got, want):
         print(f"BAD  {label}: got {got!r}, wanted {want!r}")
 
 
-ALL_JOBS = {"ci-scripts", "deps", "lint", "bash", "deny", "hermetic", "pg-adapter", "contract", "mutants", "workers", "linux", "wasm", "web", "docs"}
+ALL_JOBS = {"ci-scripts", "deps", "lint", "bash", "yaml", "deny", "hermetic", "pg-adapter", "contract", "mutants", "workers", "linux", "wasm", "web", "docs"}
 CELLS = [
     "native-memory main", "native-memory oracle", "native-pg main", "native-pg oracle",
     "worker-memory main", "worker-cf main", "worker-cf oracle", "worker-cf e2e", "worker-cf e2e-mail",
@@ -266,8 +266,8 @@ executor_jobs, _ = run_plan(["crates/preview-migration-executor/src/lib.rs"], ex
 check("migration executor change runs the Worker runtime check", "pg-adapter" in executor_jobs, True)
 check("migration Worker runtime script selects its job, and the shell lint", run_plan(["scripts/test-preview-migration-worker.sh"], REAL_GRAPH),
       ({"pg-adapter", "bash"}, set()))
-check("another workflow runs ci-scripts and deps, no cell", run_plan([".github/workflows/flake-hunt.yml"], REAL_GRAPH),
-      ({"ci-scripts", "deps"}, set()))
+check("another workflow runs ci-scripts and deps, and the YAML lint, no cell", run_plan([".github/workflows/flake-hunt.yml"], REAL_GRAPH),
+      ({"ci-scripts", "deps", "yaml"}, set()))
 check("the book runs only the docs job", run_plan(["docs/src/intro.md"], REAL_GRAPH), ({"docs"}, set()))
 check("AGENTS.md, which the book includes, runs the docs job", run_plan(["AGENTS.md"], REAL_GRAPH), ({"docs"}, set()))
 check("the book's palette runs the docs job", run_plan([".config/branding/colors.css"], REAL_GRAPH), ({"docs"}, set()))
@@ -304,6 +304,22 @@ check("a script that no job of ci.yml ran plans only the shell lint", run_plan([
 check("shellcheck's configuration plans the shell lint and nothing else", run_plan([".shellcheckrc"], REAL_GRAPH), ({"bash"}, set()))
 check("a change to a crate and a script plans the shell lint with the crate's jobs",
       "bash" in run_plan(["crates/server/src/lib.rs", "scripts/verify-all.sh"], REAL_GRAPH)[0], True)
+# The YAML lint (Lint phase, stage 2, the job `yaml`): a YAML file wherever it is, outside web/, plans it besides what the first matching rule says
+# (ALSO, as the shell lint does), and the configuration plans it alone. The stock app's YAML (web/) is not ours, and no other kind of file plans it.
+for path in [".yamllint.yaml", ".github/dependabot.yml", ".github/workflows/flake-hunt.yml", ".github/workflows/lint.yml", ".github/actions/deploy-worker/action.yml",
+             "tools/oracle-v1/compose.oracle.yml", "tools/oracle-v1/exceptions.yaml", "tools/oracle-v1/ci/oracle.yml", "tools/e2e-plane/compose.ui.yml",
+             "e2e/pnpm-lock.yaml", ".agents/config/serena/project.yml", ".agents/plans/p/q.yml", "a/b/c.yaml", "x.yml"]:
+    check(f"{path} plans the YAML lint", "yaml" in run_plan([path], REAL_GRAPH)[0], True)
+for path in ["web/apps/web/x.yml", "web/pnpm-lock.yaml", "docs/src/intro.md", "crates/server/src/lib.rs", "deny.toml", "scripts/verify-all.sh", "e2e/journeys/m1.spec.ts",
+             "tools/oracle-v1/x.json", ".github/actions/README.md", "notes.yml.bak", "yaml.md"]:
+    check(f"{path} does not plan the YAML lint", "yaml" in run_plan([path], REAL_GRAPH)[0], False)
+check("the YAML lint's configuration plans the YAML lint and nothing else", run_plan([".yamllint.yaml"], REAL_GRAPH), ({"yaml"}, set()))
+check("dependabot's configuration plans the YAML lint and nothing else", run_plan([".github/dependabot.yml"], REAL_GRAPH), ({"yaml"}, set()))
+check("a YAML file a rule gives jobs keeps them, and adds the YAML lint", {"hermetic", "deps", "yaml"} <= run_plan(["tools/oracle-v1/compose.oracle.yml"], REAL_GRAPH)[0], True)
+check("a composite action plans the shell lint and the YAML lint, with the workflow lint and its tests",
+      {"bash", "yaml", "deps", "ci-scripts"} <= run_plan([".github/actions/deploy-worker/action.yml"], REAL_GRAPH)[0], True)
+check("a change to a crate and a YAML file plans the YAML lint with the crate's jobs",
+      {"yaml", "hermetic"} <= run_plan(["crates/server/src/lib.rs", ".github/dependabot.yml"], REAL_GRAPH)[0], True)
 # The `linux` job (Phase 3, stage 1) builds the native server and `migrate` in release (build.yml): planned when either crate is affected.
 check("the native server's own change plans linux", "linux" in run_plan(["crates/server/src/lib.rs"], REAL_GRAPH)[0], True)
 check("a crate the server depends on plans linux", "linux" in run_plan(["crates/core/usecases/src/lib.rs"], REAL_GRAPH)[0], True)
@@ -447,7 +463,7 @@ def independent_slices(planned, workflows, jobs):
 JOBS_LIST = list(pc.JOBS)
 # What WORKFLOWS holds today. Each stage of the migration edits this line, so the stage's change to the planner shows in this file,
 # and a mutant that empties the map is killed by it.
-EXPECTED_WORKFLOWS = {"documentation": ("docs",), "security": ("deny",), "web": ("web",), "lint": ("deps", "lint", "bash"),
+EXPECTED_WORKFLOWS = {"documentation": ("docs",), "security": ("deny",), "web": ("web",), "lint": ("deps", "lint", "bash", "yaml"),
                       "test": ("ci-scripts", "hermetic", "pg-adapter", "contract", "mutants", "workers"), "build": ("linux", "wasm")}
 check("WORKFLOWS is a partition of the jobs", refused(lambda: pc.check_workflows()), None)
 check("WORKFLOWS holds the workflows moved so far, and their jobs", pc.WORKFLOWS, EXPECTED_WORKFLOWS)
@@ -504,10 +520,10 @@ NO_CHECK_WORKFLOWS = ["deploy", "deep", "build-extended", "e2e", "flagship", "fl
 for name in CHECK_WORKFLOWS:
     check(f".github/workflows/{name}.yml runs everything", run_plan([f".github/workflows/{name}.yml"], REAL_GRAPH), EVERYTHING)
 for name in NO_CHECK_WORKFLOWS:
-    check(f".github/workflows/{name}.yml runs only its helper tests and the workflow lint",
-          run_plan([f".github/workflows/{name}.yml"], REAL_GRAPH), ({"ci-scripts", "deps"}, set()))
+    check(f".github/workflows/{name}.yml runs only its helper tests, the workflow lint and the YAML lint",
+          run_plan([f".github/workflows/{name}.yml"], REAL_GRAPH), ({"ci-scripts", "deps", "yaml"}, set()))
 check("a workflow named like a check without being one (testing.yml) is not run-everything",
-      run_plan([".github/workflows/testing.yml"], REAL_GRAPH), ({"ci-scripts", "deps"}, set()))
+      run_plan([".github/workflows/testing.yml"], REAL_GRAPH), ({"ci-scripts", "deps", "yaml"}, set()))
 check("the names of the two lists are disjoint", sorted(set(CHECK_WORKFLOWS) & set(NO_CHECK_WORKFLOWS)), [])
 workflow_dir = os.path.join(ROOT, ".github", "workflows")
 real_files = sorted(f[:-4] for f in os.listdir(workflow_dir) if f.endswith(".yml"))

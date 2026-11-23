@@ -429,6 +429,36 @@ if deps_wf and bash_wf:
     check(f"{deps_path}: {DEPS_JOB} runs actionlint through lint-actionlint.sh, once, and not by hand",
           (len([l for l in deps_code if "lint-actionlint.sh" in l]), [l for l in deps_code if re.match(r"^\s+\"?(\$RUNNER_TEMP/)?actionlint\"?(\s|$)", l)]), (1, []))
 
+# The yaml job (Lint phase, stage 2) runs yamllint over the YAML the repository maintains, through .github/scripts/check-yaml.sh. yamllint is on no image and install-action has no
+# manifest for it, so it is installed as Schemathesis is in contract-pass-tools: a pinned setup-uv and a pinned version. Five things about it can be wrong and leave the job looking
+# healthy until the runner differs from a laptop: a yamllint at a version the helper is not held to (the helper refuses it, but only on the runner), no install (the helper refuses
+# that too), an install after the helper (PATH is read when it runs), a uv that is not the one the repository pins (a second uv to keep), and a run that is not the helper (which carries
+# the control, and the list of what is not ours). Each is a line, checked as text.
+YAML_JOB = "yaml"
+yaml_wf = next((w for w, jobs in pc.WORKFLOWS.items() if YAML_JOB in jobs), None)
+check(f"the job {YAML_JOB} is a job of a called workflow", yaml_wf is not None, True)
+if yaml_wf:
+    yaml_path = f".github/workflows/{yaml_wf}.yml"
+    yaml_block = block(read_text(yaml_path) or "", YAML_JOB)
+    yaml_code = [l for l in yaml_block.splitlines() if not l.strip().startswith("#")]
+    yaml_helper = read_text(".github/scripts/check-yaml.sh") or ""
+    yaml_held = re.search(r'^YAMLLINT_VERSION="([^"]+)"$', yaml_helper, re.M)
+    check("check-yaml.sh names the version it is held to, once", len(re.findall(r'^YAMLLINT_VERSION="', yaml_helper, re.M)), 1)
+    yaml_installs = re.findall(r"^        run: uv tool install yamllint==(\S+)$", yaml_block, re.M)
+    check(f"{yaml_path}: {YAML_JOB} installs yamllint once, at the version check-yaml.sh is held to ({yaml_held.group(1) if yaml_held else None})",
+          yaml_installs == [yaml_held.group(1)] if yaml_held else None, True)
+    uv_pin = r"astral-sh/setup-uv@[0-9a-f]{40} # v\S+"
+    check(f"{yaml_path}: {YAML_JOB} installs uv with setup-uv, pinned to the commit and the uv version contract-pass-tools pins, with no cache",
+          (re.findall(rf"^      - uses: ({uv_pin})\n        with:\n          version: \"(\S+)\"\n          enable-cache: false\n", yaml_block, re.M)
+           == re.findall(rf"^      uses: ({uv_pin})\n      with:\n        version: \"(\S+)\"\n        enable-cache: false\n", read_text(".github/actions/contract-pass-tools/action.yml") or "", re.M)
+           != []), True)
+    yaml_install_at = next((i for i, l in enumerate(yaml_code) if "uv tool install yamllint" in l), -1)
+    yaml_run_at = next((i for i, l in enumerate(yaml_code) if "check-yaml.sh" in l), -1)
+    check(f"{yaml_path}: {YAML_JOB} installs yamllint before the step that runs the helper", 0 <= yaml_install_at < yaml_run_at, True)
+    check(f"{yaml_path}: {YAML_JOB} runs the helper, which carries the control, and not yamllint by hand", "        run: sh .github/scripts/check-yaml.sh\n" in yaml_block, True)
+    check(f"{yaml_path}: {YAML_JOB} runs no other command than the install and the helper", len([l for l in yaml_code if re.match(r"^\s+run:", l)]), 2)
+    check(f"{yaml_path}: {YAML_JOB} sets up no Rust toolchain and no cache of its own (it reads YAML)", [l for l in yaml_code if "setup-rust" in l or "rust-cache" in l or "actions/cache" in l], [])
+
 # The wasm job (Phase 3, stage 2) builds the two Workers the deploy bundle ships, in release, with the bundle's own commands, and shares the bundle's cache key so that the next
 # release candidate or tag restores what `main` saved. Six things about it can be wrong and leave the job green: a Worker built by another command than the bundle's (the proof would be of
 # something that does not ship), a Worker built in another directory, a check that looks at one of the Workers or one of the three files only (a build that wrote no wasm would pass), a cache key that

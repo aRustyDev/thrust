@@ -99,6 +99,7 @@ jobs:
           sh .github/scripts/tests/test-lint-all-workflows.sh
           sh .github/scripts/tests/test-check-ci-index.sh
           sh .github/scripts/tests/test-check-shell.sh
+          sh .github/scripts/tests/test-check-yaml.sh
           sh .github/scripts/tests/test-lint-actionlint.sh
           sh .github/scripts/tests/test-check-flake-hunt-cell.sh
           sh .github/scripts/tests/test-mutants-verdict.sh
