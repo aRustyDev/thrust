@@ -2,17 +2,59 @@
 
 Thrust owns reconciliation and the Access-protected provisioner; GitHub Actions uses no
 Kubernetes credential. The development database bootstrap, dedicated Hyperdrive, Worker,
-Access policy and service token are live. Reconciliation creates per-PR roles, schemas and
-Hyperdrives, repairs interrupted credential updates, and sweeps closed PRs. PR #298's
-creation and cleanup were observed through Actions and the provisioner inventory. The
-provisioner checks are part of the required CI gate (#298). A synthetic direct live test
-exercised password-update recovery; the interrupted-update path still needs an Actions test.
+Access policy and service token are live. The existing reconciliation path creates per-PR roles,
+schemas and Hyperdrives on `thrust-pg-dev`, repairs interrupted credential updates, and sweeps
+closed PRs. PR #298's creation and cleanup were observed through Actions and the provisioner
+inventory. The provisioner checks are part of the required CI gate (#298). A synthetic direct
+live test exercised password-update recovery; the interrupted-update path still needs an Actions
+test.
+
+## Snapshot-plus-per-PR-cluster target (2026-11-23)
+
+The shared-schema path is a legacy transition, not the isolation model that will enable Preview
+migrations. The target reuses a **sealed base snapshot** for equal trusted inputs and gives each
+active PR a different mutable CNPG cluster. Equal schema names do not establish equality; the
+snapshot fingerprint is the tagged SHA-256 of the exact authorized migration artifact, PostgreSQL
+major version, and immutable bootstrap SHA-256. An equal fingerprint may reuse a base snapshot,
+but it never shares a live database, Cluster, PVC, credential, VPC service, Hyperdrive config,
+or Worker binding across PRs.
+
+`thrust-preview-provisioner::preview_cluster_plan` now makes the snapshot, cluster and
+idempotency-key naming contract deterministic and rejects non-canonical digests or unsupported
+PostgreSQL majors. Its generative tests prove that equal trusted inputs reuse only the snapshot,
+while distinct PRs get distinct mutable cluster identities; they also prove that changing the
+migration input or PostgreSQL major changes the fingerprint. `infra/preview/CLUSTER_CONTROL_PLANE.md`
+defines the enforcement and activation boundary. This is deliberately not wired into the live
+schema reconciler yet: no in-cluster controller, snapshot-capable storage validation, dynamic VPC
+service lifecycle, or end-to-end receipt exists, so switching it on would only remove working
+previews without establishing the new isolation.
+
+The active PR cluster must have controller-owned CPU/memory limits, `storage` and `walStorage`
+PVC capacities, a connection ceiling, and a dedicated namespace aggregate `ResourceQuota`. The
+last protects the preview fleet; the individual Cluster/PVC and Pod limits protect each Preview.
+Kubernetes RBAC cannot restrict writes by label, so the Kubernetes-side controller must be scoped
+to a dedicated namespace and validate names and durable lease state before every write. GitHub
+Actions and the Cloudflare Worker stay without Kubernetes credentials.
 
 ## Remaining work
 
-1. Define and implement a trusted migration execution and credential contract. Migrate the
+1. Implement and activate the Kubernetes-side cluster controller. It must persist a PR lease,
+   build/verify/seal the base snapshot, restore a fresh one-instance CNPG Cluster for each PR,
+   create unique non-exported credentials, enforce the controller-owned quota profile, and return
+   a non-secret receipt. Validate the exact CNPG recovery API against the deployed operator and
+   prove that the CSI driver supports the selected snapshot/clone path, that PVC capacities are
+   hard limits, and that WAL recovery is correct. Model crash/retry at each lease phase. The
+   controller service account must be namespace-scoped; GitHub Actions has no kubeconfig and the
+   Cloudflare Worker has no Kubernetes credential.
+2. Implement dynamic Cloudflare connectivity for the new clusters. Each cluster needs an exact
+   `*-rw` VPC TCP service, a unique Hyperdrive config and a receipt tying their IDs to the lease.
+   Extend the Cloudflare resource controller with idempotent create/verify/delete and recovery
+   for interrupted updates. Do not use a tunnel-wide VPC network binding. Upgrade the existing
+   VPC service TLS configuration to private-CA `verify_full` before trusting new routes; the
+   current development services record an unauthenticated encrypted hop.
+3. Define and implement a trusted migration execution and credential contract. Migrate the
    exact PR revision as `pr_<n>` through a bounded, authenticated path; never expose the
-   provisioner, deployment or shared database credentials to PR-controlled code. Demonstrate
+   provisioner, deployment or cluster database credentials to PR-controlled code. Demonstrate
    that a migration attempting to write to `public` fails. Order migration before deployment.
    The existing native runner uses a session advisory lock, which Hyperdrive transaction pooling
    does not support. Use a transaction-scoped lock on the Hyperdrive path. SQL transaction-control
@@ -72,7 +114,7 @@ exercised password-update recovery; the interrupted-update path still needs an A
    point-in-time checks can go stale: a future consumer must validate the artifact, its trusted
    source run and the current PR head again before any privileged action. The triggering PR run
    is not proof of provisioned resources or migration authorization; independently verify both.
-2. Derive an isolated Preview configuration from trusted inputs: the reconciled per-PR
+4. Derive an isolated Preview configuration from trusted inputs: the reconciled per-PR
    Hyperdrive, isolated bucket and queue, dev rate limits, and Preview-owned Durable Objects.
    The Worker currently requires a queue producer binding even though Previews do not consume
    queues. Define provisioning and cleanup for the extra resources. Do not copy production
@@ -88,12 +130,12 @@ exercised password-update recovery; the interrupted-update path still needs an A
    a trusted allocator and an audited non-production namespace range are still required before this is a complete
    isolated configuration. Its hermetic controls run in the existing `ci-scripts` job; this does not make the
    control-plane test workflow itself a required repository gate.
-3. Deploy the exact built revision, check the actual applied binding identities and smoke the
+5. Deploy the exact built revision, check the actual applied binding identities and smoke the
    Preview, then publish its Flagship target. `scripts/preview-result.py` currently checks
    Hyperdrive, R2 and queue binding names only: establish the live API response shape and add
    fail-closed identity checks or a separately verified binding contract before relying on it.
    A stale run must not publish over a newer commit or a closed PR.
-4. Reconcile Preview, Flagship, database, Hyperdrive, bucket and queue deletion, including
+6. Reconcile Preview, Flagship, database cluster, VPC service, Hyperdrive, bucket and queue deletion, including
    missed close events and interrupted updates. Exercise a real PR through open, migrate,
    connect, deploy, close and cleanup; run interrupted Hyperdrive recovery through Actions.
 
