@@ -1,6 +1,8 @@
 //! Native composition root. Reads its configuration from the environment (secrets only from
 //! the environment, never from a file) and wires one adapter set into `thrust_core::App`.
 
+// PROBE A (not to be merged): a comment only, so that the planner plans the server's jobs, `linux` among them, and no byte of the binary changes.
+
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
