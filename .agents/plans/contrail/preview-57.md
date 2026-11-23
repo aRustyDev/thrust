@@ -86,7 +86,8 @@ exercised password-update recovery; the interrupted-update path still needs an A
    delayed cleanup. It is intentionally not wired to Actions: first clear/migrate the legacy prefix and configure
    the separate narrowly scoped R2/Queues token. Cloudflare has no provisionable rate-limit namespace object, so
    a trusted allocator and an audited non-production namespace range are still required before this is a complete
-   isolated configuration.
+   isolated configuration. Its hermetic controls run in the existing `ci-scripts` job; this does not make the
+   control-plane test workflow itself a required repository gate.
 3. Deploy the exact built revision, check the actual applied binding identities and smoke the
    Preview, then publish its Flagship target. `scripts/preview-result.py` currently checks
    Hyperdrive, R2 and queue binding names only: establish the live API response shape and add

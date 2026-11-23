@@ -119,6 +119,7 @@ jobs:
           bash infra/preview/scripts/test-provisioner-client.sh
           bash infra/preview/scripts/test-reconcile-pr-previews.sh
           python3 -I infra/cloudflare/test-preview-access.py
+          python3 -I infra/cloudflare/test_preview_data_resources.py
           python3 -I infra/edge/test-service-token.py
           python3 -I .github/scripts/tests/test_workflow_wiring.py
           EOF
