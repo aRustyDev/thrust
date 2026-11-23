@@ -4,6 +4,6 @@ output "thrust_tunnel_id" {
 }
 
 output "vpc_service_ids" {
-  description = "Workers VPC service IDs keyed by service name (thrust-pg, thrust-pg-dev). Pass the matching ID to `wrangler hyperdrive create --service-id`. Not secrets."
+  description = "Workers VPC service IDs keyed by durable or canonical Preview cluster service name. Pass the matching ID to `wrangler hyperdrive create --service-id`. Not secrets."
   value       = { for name, svc in cloudflare_connectivity_directory_service.postgres : name => svc.service_id }
 }
