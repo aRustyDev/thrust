@@ -228,6 +228,7 @@ expect "secrets: neither the token secret nor the password is in any output or i
 
 # ---- hygiene -----------------------------------------------------------------------------------------------------------------
 no_listener_left() {
+  # shellcheck disable=SC2009 # a fixed string in a process's command line: pgrep -f takes a regular expression
   if ps -eo command | grep -F "listen_stub.py $PORT" | grep -vF grep > /dev/null; then echo "a stand-in tunnel is still listening"; return 1; fi
   echo "no stand-in tunnel is left running"
 }

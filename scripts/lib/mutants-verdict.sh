@@ -1,3 +1,4 @@
+# shellcheck shell=sh
 # The verdict on one row of scripts/mutants.sh: what a run against a deliberately broken build says about the tests. Sourced by
 # scripts/mutants.sh; tested by .github/scripts/tests/test-mutants-verdict.sh. Each function prints one line, `VERDICT|detail`:
 #

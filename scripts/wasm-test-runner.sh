@@ -61,6 +61,8 @@ if [ "$major" -lt 24 ] || { [ "$major" -eq 24 ] && [ "$minor" -lt 12 ]; } || { [
   exit 1
 fi
 
+# shellcheck disable=SC2089 # the quotes are for Node, which reads NODE_OPTIONS as a command line (a path with a blank in it); the shell never splits it
 NODE_OPTIONS="--require \"$root/scripts/lib/workerd-stubs.cjs\"${NODE_OPTIONS:+ $NODE_OPTIONS}"
+# shellcheck disable=SC2090 # exported, and so handed to Node as it is: nothing in the shell expands it unquoted
 export NODE_OPTIONS
 exec "$runner" "$@"

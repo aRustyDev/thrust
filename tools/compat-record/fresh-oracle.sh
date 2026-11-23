@@ -22,7 +22,7 @@ for extra_file in ${ORACLE_COMPOSE_EXTRA:-}; do
 done
 
 dc() {
-  # $EXTRA is a list of -f arguments, so it is left unquoted on purpose
+  # shellcheck disable=SC2086 # $EXTRA is a list of -f arguments, so it is left unquoted on purpose
   docker compose -f "$ORACLE_DIR/compose.oracle.yml" -f "$HERE/oracle-assets.yml" $EXTRA --env-file "$ORACLE_DIR/.env.oracle" "$@"
 }
 

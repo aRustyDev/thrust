@@ -1,3 +1,4 @@
+# shellcheck shell=sh
 # Which rows of scripts/mutants.sh one run is responsible for. Sourced by scripts/mutants.sh; tested by .github/scripts/tests/test-mutants-shards.sh.
 #
 # The rows cannot share a checkout (each rebuilds `thrust-server` with a mutant's cargo feature into one `target/`, and moves a JUnit report from a

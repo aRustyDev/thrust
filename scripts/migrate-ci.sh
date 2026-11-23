@@ -68,6 +68,7 @@ command -v nc > /dev/null 2>&1 || usage "nc is not installed (it is how the tunn
 
 T="$(mktemp -d)"
 TUNNEL_PID=""
+# shellcheck disable=SC2329 # run by the trap below
 cleanup() {
   if [ -n "$TUNNEL_PID" ]; then
     kill "$TUNNEL_PID" 2> /dev/null

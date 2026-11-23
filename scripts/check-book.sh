@@ -32,7 +32,7 @@ check() {
   orphans="$(comm -13 "$out/listed.txt" "$out/present.txt")"
   if [ -n "$orphans" ]; then
     echo "check-book: pages under docs/src/ that SUMMARY.md does not list, so the book leaves them out:" >&2
-    printf '  %s\n' $orphans >&2
+    printf '%s\n' "$orphans" | sed 's/^/  /' >&2
     failed=1
   fi
   pages="$(wc -l < "$out/present.txt" | tr -d ' ')"

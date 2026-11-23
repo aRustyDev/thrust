@@ -326,6 +326,7 @@ done
 # thrust-core's own tests of `run_cron` (`tests/schedules.rs`) say which job each cron runs and which it does not. The Worker's `scheduled`
 # handler calls `run_cron` and is held to it by the contract suite's `cron` pass; this script builds no Worker (G-39), so a handler that read
 # no cron of its own is a control run by hand (the pull request that added the schedule shows it).
+# shellcheck disable=SC2043 # one row today: the loop is the shape the next schedule's mutant is added to
 for triple in \
   "cron-ignored:mutant_cron_ignored:its trigger ran OutboxSweep"; do
   name="${triple%%:*}"

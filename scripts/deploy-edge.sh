@@ -113,7 +113,7 @@ plain() { env -u CLOUDFLARE_API_TOKEN -u EDGE_PIN_KEY -u PREVIEW_ACCESS_CLIENT_I
 wr() { env -u EDGE_PIN_KEY -u PREVIEW_ACCESS_CLIENT_ID -u PREVIEW_ACCESS_CLIENT_SECRET -u SMOKE_PASSWORD "$WRANGLER" "$@"; }
 smoke() { # smoke <extra VAR=value words, or empty> <expected production version>
   extra="$1"; shift
-  # $extra is deliberately split: it is only ever `NAME=value` words written in this file
+  # shellcheck disable=SC2086 # $extra is deliberately split: it is only ever `NAME=value` words written in this file
   env -u CLOUDFLARE_API_TOKEN -u EDGE_PIN_KEY -u PREVIEW_ACCESS_CLIENT_ID -u PREVIEW_ACCESS_CLIENT_SECRET $extra sh "$SMOKE" "$BASE" "$@"
 }
 

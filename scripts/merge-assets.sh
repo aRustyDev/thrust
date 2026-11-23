@@ -60,6 +60,7 @@ retained=0
 if [ "$PREV" != "-" ]; then
   # the files the previous release had and this one does not
   ( cd "$PREV" && find . -type f ) > "${TMPDIR:-/tmp}/merge-assets.$$.list" || refuse "could not list $PREV"
+  # shellcheck disable=SC2094 # the `rm` in the failure branch ends the script (refuse), so the loop never reads a list it has removed
   while IFS= read -r f; do
     if [ ! -e "$OUT/$f" ]; then
       mkdir -p "$OUT/$(dirname "$f")" && cp "$PREV/$f" "$OUT/$f" || { rm -f "${TMPDIR:-/tmp}/merge-assets.$$.list"; refuse "could not copy $f from $PREV"; }

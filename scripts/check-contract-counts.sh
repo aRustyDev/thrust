@@ -100,6 +100,7 @@ value_of_variable() {
 # --- asking the suite ---------------------------------------------------------------------------------------------------------
 
 # real_lister BIN FILTERSET: nextest's own list, one line a test, of the tests of one binary of the suite that the filterset selects
+# shellcheck disable=SC2329 # run as $LISTER, which names it below
 real_lister() {
   "$ROOT/scripts/rs" cargo nextest list --manifest-path "$ROOT/Cargo.toml" -p thrust-contract-tests --profile contract \
     --message-format oneline -E "binary($1) & ($2)"
@@ -203,6 +204,7 @@ control() {
 
 # fake_lister BIN FILTERSET: as many lines as the world says (`$W/world`: `bin filterset<TAB>count`), none if the world does not
 # say it, a failure for the count `fail`
+# shellcheck disable=SC2329 # run as $LISTER, which the self-test sets to it
 fake_lister() {
   fl_n="$(awk -F "$T" -v k="$1 $2" '$1 == k { print $2; exit }' "$W/world")"
   [ "$fl_n" = fail ] && return 1

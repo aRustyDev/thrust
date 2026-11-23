@@ -16,6 +16,7 @@
 #   sh .github/scripts/tests/test-classify-deploy.sh
 #
 # CLASSIFY_SCRIPT points the test at a copy of the script, so a deliberately broken copy can be shown to fail it.
+# shellcheck disable=SC2034 # the commit ids S0..Se2 are read by name through eval, in sha_of
 HERE="$(cd "$(dirname "$0")/../../.." && pwd)"
 SCRIPT="${CLASSIFY_SCRIPT:-$HERE/.github/scripts/classify-deploy.sh}"
 T="$(mktemp -d)"
