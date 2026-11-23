@@ -7,7 +7,11 @@ name: build-extended
 # NOT GATED: `ci.yml` does not call this workflow, `gate` does not read it, and a red run blocks nothing (not a pull request, and not a release candidate:
 # the staging deploy waits for `ci`'s `gate` and for nothing here). So it has no `plan` and no `verdict`, as deep.yml has none. It runs
 #   * every night (06:11 UTC, on `main`), which is also what saves the cache and keeps it from the seven days a repository's unread caches live;
-#   * when a release candidate is pushed (`rc/*`: the branch release-plz makes for the release pull request): the pre-release check;
+#   * when a release candidate is pushed (`rc/*`: the branch release-plz makes for the release pull request): the pre-release check. release-plz updates that
+#     branch after EVERY merge to `main` (it is `main` plus the version bump), so this is a run per merge, not one per release. To make a commit GitHub marks
+#     "Verified", release-plz first pushes a twin of the branch, `rc/<time>-tmp-<random>` (the API cannot force-push, so it builds the commit on a new branch,
+#     moves the real branch to it and deletes the twin). The twin ends at the same commit as the real branch, so a run for it is a duplicate on a branch that
+#     is gone a moment later, and the filter leaves it out (`'!rc/*-tmp-*'`, tried on a probe: the name without `-tmp-` started a run and the twin did not);
 #   * by hand;
 #   * on a pull request that edits this file or the action it uses (build-native, which `linux` of build.yml uses too), so that the file is proved before it
 #     merges: GitHub dispatches only a workflow that is already on the default branch, as for deep.yml and e2e.yml. No other pull request starts it.
@@ -25,6 +29,7 @@ on:
   push:
     branches:
       - rc/*
+      - '!rc/*-tmp-*'
   pull_request:
     paths:
       - .github/workflows/build-extended.yml

@@ -385,7 +385,24 @@ if ext_text is not None:
     check(f"{EXT_PATH} has no verdict job, and no job needs another (nothing in it is waited for)",
           ("verdict:" in ext_text, [l for l in ext_code if re.match(r"^\s+needs:", l)]), (False, []))
     check(f"{EXT_PATH} runs every night", '  schedule:\n    - cron: "11 6 * * *"\n' in ext_text, True)
-    check(f"{EXT_PATH} runs when a release candidate is pushed, and by hand", "  push:\n    branches:\n      - rc/*\n" in ext_text and "  workflow_dispatch:\n" in ext_text, True)
+    check(f"{EXT_PATH} runs when a release candidate is pushed, and by hand", "  push:\n    branches:\n      - rc/*\n      - '!rc/*-tmp-*'\n" in ext_text and "  workflow_dispatch:\n" in ext_text, True)
+    # release-plz makes a commit GitHub marks Verified by building it on a twin of the release-candidate branch (`rc/<time>-tmp-<random>`), moving the real branch to it and deleting the twin,
+    # so each update pushes the same commit twice: to a branch that stays and to one that is gone a moment later. The twin must not start a run (one full macOS and Windows build, wasted),
+    # and nothing else may be lost with it: the release candidate, and the one the owner makes by hand (`rc/manual-<version>`). GitHub's rule, applied to the filter as written: a branch runs
+    # when the last pattern it matches is not a `!` one; `*` is any run of characters but `/`. The twin's name is `release-plz`'s (crates/release_plz_core/src/command/release_pr/mod.rs).
+    push_block = re.search(r"^  push:\n    branches:\n((?:      - .*\n)+)", ext_text, re.M)
+    push_patterns = [l.strip()[2:].strip("'") for l in push_block.group(1).splitlines()] if push_block else []
+
+    def push_runs(branch):
+        runs = False
+        for pattern in push_patterns:
+            negated = pattern.startswith("!")
+            glob = pattern[1:] if negated else pattern
+            if re.fullmatch("".join(".*" if part == "**" else "[^/]*" if part == "*" else re.escape(part) for part in re.split(r"(\*\*|\*)", glob)), branch):
+                runs = not negated
+        return runs
+    check(f"{EXT_PATH}: a push to a release candidate and to the owner's hand-made one runs, a push to its twin or to main does not",
+          [push_runs(b) for b in ("rc/2026-11-19T06-42-32Z", "rc/manual-0.5.0", "rc/2026-11-19T06-42-32Z-tmp-Ab12Cd", "main")], [True, True, False, False])
     check(f"{EXT_PATH} is started by a pull request only if it edits this file or the action it uses, so no other pull request pays for it",
           "  pull_request:\n    paths:\n      - .github/workflows/build-extended.yml\n      - .github/actions/build-native/**\n\npermissions: {}\n" in ext_text, True)
     check(f"{EXT_PATH} grants nothing at the top, and its jobs read the repository only", "\npermissions: {}\n" in ext_text and
