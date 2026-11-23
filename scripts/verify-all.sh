@@ -39,4 +39,6 @@ printf '%-28s %s\n' "probe-sqlx-wasm (informative)" "ran" >>"$SUMMARY"
 cat "$SUMMARY"
 cat "$ROOT/target/contract-logs/summary.txt"
 cat "$ROOT/target/mutants/summary.txt"
+probe_x="a b"
+ls $probe_x
 exit "$FAILED"
