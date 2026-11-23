@@ -26,7 +26,7 @@ on:
       plan:
         description: JSON array of the jobs to run
         type: string
-        default: '["linux"]'
+        default: '["linux","wasm"]'
 
 permissions: {}
 
@@ -72,12 +72,66 @@ jobs:
           if-no-files-found: error
           retention-days: 3
 
+  # The two Workers the deploy bundle ships, built in release for wasm32-unknown-unknown with the bundle's own commands: the Worker as it ships
+  # (`--no-default-features`) and the edge Worker on the shared hostname (ADR-0111). Nothing but build-bundle builds the edge Worker in release,
+  # so a break that only its release build sees would reach a release candidate; that is the proof this job adds. The Worker as it ships is
+  # built at pull-request time by the ten `worker-cf` cells too (wrangler.toml's build command is the bundle's), and with its default features by the
+  # six `worker-memory` cells: the job builds it again, on purpose, so that the cache below holds what the bundle needs, and for the artifact.
+  # Planned when thrust-worker or thrust-edge is affected (plan-ci.py). By hand: dispatch this workflow with the plan ["wasm"].
+  #
+  # THE CACHE KEY IS build-bundle's (`deploy-release`), on purpose. A cache is read by every ref but written by one: the bundle is built on an rc/*
+  # branch or a tag, whose caches nothing else reads, and it never saved one. This job runs on pull requests and on `main`, and on `main` it saves
+  # the key, so that the next bundle restores worker-build (compiled from source in 106 s on a cold runner, and a no-op when restored) and the
+  # Workers' dependencies. The bundle's commands below are held equal to build-bundle's by the wiring test.
+  wasm:
+    if: contains(fromJSON(inputs.plan), 'wasm')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-rust
+        with:
+          targets: wasm32-unknown-unknown
+          worker-tools: "true"
+          cache-key: deploy-release
+          save-cache: ${{ github.ref == 'refs/heads/main' }}
+      - name: Build the Worker (release, as it ships)
+        working-directory: crates/worker
+        run: ../../scripts/rs worker-build --release . --no-default-features
+      - name: Build the edge Worker (release)
+        working-directory: crates/edge
+        run: ../../scripts/rs worker-build --release .
+      # The control against a vacuous build: worker-build writes the whole of build/ (the shim imports ../index.js, which imports index_bg.wasm), and a
+      # build that exits 0 and leaves one of the three out must not pass. The files build-bundle checks, for both Workers.
+      - name: The builds made the Workers' files
+        run: |
+          set -eu
+          for dir in crates/worker/build crates/edge/build; do
+            for file in worker/shim.mjs index.js index_bg.wasm; do
+              test -s "$dir/$file" || { echo "::error::worker-build wrote no $dir/$file"; exit 1; }
+            done
+          done
+          ls -l crates/worker/build/index_bg.wasm crates/edge/build/index_bg.wasm
+      - name: Upload the Workers
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: build-wasm-wasm32-unknown-unknown
+          path: |
+            crates/worker/build
+            crates/edge/build
+          if-no-files-found: error
+          retention-days: 3
+
   # ADR-0102: judges this workflow's jobs against the plan, through the action every called workflow uses (it runs assert-gate.sh and
   # sets the output only after that passed). `always()`, so it reports when a job was skipped, failed or cancelled. ci.yml's `gate`
   # requires the output: a `verdict` job that was itself skipped leaves this workflow `success` and proves nothing. The checkout is
   # here and not in the action, which is read from it.
   verdict:
-    needs: linux
+    needs: [linux, wasm]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -94,4 +148,4 @@ jobs:
         with:
           needs: ${{ toJSON(needs) }}
           plan: ${{ inputs.plan }}
-          jobs: linux
+          jobs: linux wasm
