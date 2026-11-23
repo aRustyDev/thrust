@@ -19,6 +19,13 @@ The fingerprint input is a trusted artifact digest, not a schema name. A schema 
 nothing about its migrations, PostgreSQL major version, bootstrap extensions, or bootstrap grants.
 The migration-source authorization flow must produce the artifact before this request is made.
 
+`PreviewClusterLease` and `reconcile_cluster_lease` are the first controller implementation.
+They select one idempotent action per retry and reject partial resource inventories rather than
+trying to guess how to repair them. Creation is snapshot -> cluster -> connectivity -> durable
+ready receipt; PR deletion reverses only the mutable resources and leaves the shared snapshot to
+the snapshot garbage collector. A changed fingerprint becomes a separate provisioning candidate,
+so the old ready lease stays attached until the caller has verified the candidate receipt.
+
 ## Controller boundary
 
 GitHub Actions remains without Kubernetes credentials. The Access-protected Cloudflare provisioner

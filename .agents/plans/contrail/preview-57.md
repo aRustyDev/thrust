@@ -29,6 +29,14 @@ schema reconciler yet: no in-cluster controller, snapshot-capable storage valida
 service lifecycle, or end-to-end receipt exists, so switching it on would only remove working
 previews without establishing the new isolation.
 
+The first controller component is now executable: `PreviewClusterLease` and
+`reconcile_cluster_lease` model a durable per-PR lease. A retry advances only snapshot -> cluster
+-> connectivity -> ready receipt, rejects contradictory partial inventory, and deletes only
+connectivity -> cluster -> lease. It never deletes a fingerprint-keyed snapshot as part of one
+PR's close. A changed fingerprint creates a candidate lease while the existing ready lease stays
+attached. Persistence, Kubernetes/CNPG actions, receipts and atomic active-candidate switching
+remain to be implemented.
+
 The active PR cluster must have controller-owned CPU/memory limits, `storage` and `walStorage`
 PVC capacities, a connection ceiling, and a dedicated namespace aggregate `ResourceQuota`. The
 last protects the preview fleet; the individual Cluster/PVC and Pod limits protect each Preview.

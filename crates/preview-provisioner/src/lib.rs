@@ -7,13 +7,129 @@ use sha2::{Digest, Sha256};
 /// A plan deliberately identifies two different things: a base snapshot, which may be reused
 /// when its trusted migration inputs are byte-for-byte identical, and a live cluster, which is
 /// unique to the PR. A caller must never use `base_snapshot` as a live database identifier.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PreviewClusterPlan {
     pub number: i32,
     pub fingerprint: String,
     pub base_snapshot: String,
     pub cluster: String,
     pub idempotency_key: String,
+}
+
+/// Persisted phase of one PR's preview-cluster lease.
+///
+/// The future Kubernetes-side controller stores this alongside the non-secret resource receipt.
+/// It must not infer a phase from resource names: an interrupted operation is indistinguishable
+/// from a completed one without durable lease state.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ClusterLeasePhase {
+    Provisioning,
+    Ready,
+    Deleting,
+}
+
+/// A PR-local lease for the named mutable cluster. Shared base snapshots are not leased here and
+/// therefore cannot be deleted as a side effect of closing one PR.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PreviewClusterLease {
+    pub plan: PreviewClusterPlan,
+    pub phase: ClusterLeasePhase,
+}
+
+impl PreviewClusterLease {
+    pub fn provisioning(plan: PreviewClusterPlan) -> Self {
+        Self { plan, phase: ClusterLeasePhase::Provisioning }
+    }
+
+    pub fn request_deletion(&mut self) {
+        self.phase = ClusterLeasePhase::Deleting;
+    }
+
+    /// Produces a candidate lease for a changed trusted fingerprint.
+    ///
+    /// A controller keeps the current ready lease attached while it provisions this candidate,
+    /// then switches the active receipt atomically. It must reject a replacement request while
+    /// deletion is in progress.
+    pub fn replacement_candidate(&self, plan: PreviewClusterPlan) -> Option<Self> {
+        if self.phase == ClusterLeasePhase::Deleting || self.plan == plan {
+            return None;
+        }
+        Some(Self::provisioning(plan))
+    }
+}
+
+/// The non-secret resource facts checked on every controller retry.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ClusterLeaseInventory {
+    pub snapshot: bool,
+    pub cluster: bool,
+    pub connectivity: bool,
+}
+
+/// Why inventory cannot be safely reconciled automatically.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ClusterLeaseDrift {
+    ClusterWithoutSnapshot,
+    ConnectivityWithoutCluster,
+    ReadyLeaseIsIncomplete,
+}
+
+/// One idempotent controller action. The executor records the outcome before the next call.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ClusterLeaseAction {
+    EnsureSnapshot { snapshot: String },
+    EnsureCluster { cluster: String },
+    EnsureConnectivity { cluster: String },
+    MarkReady,
+    DeleteConnectivity { cluster: String },
+    DeleteCluster { cluster: String },
+    DeleteLease,
+    Refuse(ClusterLeaseDrift),
+    Noop,
+}
+
+/// Selects at most one safe action for a lease retry.
+///
+/// Provisioning advances snapshot -> cluster -> connectivity -> durable ready receipt. A partial
+/// inventory is never repaired by guessing: the controller must inspect the resource receipt and
+/// recover deliberately. Deletion reverses the mutable dependency order and intentionally leaves
+/// the fingerprint-keyed snapshot for other active leases or the snapshot garbage collector.
+pub fn reconcile_cluster_lease(lease: &PreviewClusterLease, inventory: ClusterLeaseInventory) -> ClusterLeaseAction {
+    if lease.phase == ClusterLeasePhase::Deleting {
+        if inventory.connectivity {
+            return ClusterLeaseAction::DeleteConnectivity { cluster: lease.plan.cluster.clone() };
+        }
+        if inventory.cluster {
+            return ClusterLeaseAction::DeleteCluster { cluster: lease.plan.cluster.clone() };
+        }
+        return ClusterLeaseAction::DeleteLease;
+    }
+
+    if inventory.connectivity && !inventory.cluster {
+        return ClusterLeaseAction::Refuse(ClusterLeaseDrift::ConnectivityWithoutCluster);
+    }
+    if inventory.cluster && !inventory.snapshot {
+        return ClusterLeaseAction::Refuse(ClusterLeaseDrift::ClusterWithoutSnapshot);
+    }
+
+    if lease.phase == ClusterLeasePhase::Ready {
+        return if inventory.snapshot && inventory.cluster && inventory.connectivity {
+            ClusterLeaseAction::Noop
+        } else {
+            ClusterLeaseAction::Refuse(ClusterLeaseDrift::ReadyLeaseIsIncomplete)
+        };
+    }
+
+    if !inventory.snapshot {
+        return ClusterLeaseAction::EnsureSnapshot { snapshot: lease.plan.base_snapshot.clone() };
+    }
+    if !inventory.cluster {
+        return ClusterLeaseAction::EnsureCluster { cluster: lease.plan.cluster.clone() };
+    }
+    if !inventory.connectivity {
+        return ClusterLeaseAction::EnsureConnectivity { cluster: lease.plan.cluster.clone() };
+    }
+    ClusterLeaseAction::MarkReady
 }
 
 /// Computes the names a Kubernetes-side preview-cluster controller must use.
@@ -144,6 +260,71 @@ mod tests {
             .prop_map(|bytes| bytes.into_iter().map(char::from).collect())
     }
 
+    fn lease(number: i32, phase: ClusterLeasePhase) -> PreviewClusterLease {
+        PreviewClusterLease {
+            plan: PreviewClusterPlan {
+                number,
+                fingerprint: "f".repeat(64),
+                base_snapshot: "thrust-preview-base-pg16-ffffffffffffffff".to_owned(),
+                cluster: format!("thrust-preview-pr-{number}-ffffffffffff"),
+                idempotency_key: format!("preview/{number}/{}", "f".repeat(64)),
+            },
+            phase,
+        }
+    }
+
+    fn model_action(phase: ClusterLeasePhase, inventory: ClusterLeaseInventory) -> &'static str {
+        if phase == ClusterLeasePhase::Deleting {
+            return if inventory.connectivity {
+                "delete-connectivity"
+            } else if inventory.cluster {
+                "delete-cluster"
+            } else {
+                "delete-lease"
+            };
+        }
+        if inventory.connectivity && !inventory.cluster {
+            return "refuse-connectivity-without-cluster";
+        }
+        if inventory.cluster && !inventory.snapshot {
+            return "refuse-cluster-without-snapshot";
+        }
+        if phase == ClusterLeasePhase::Ready {
+            return if inventory.snapshot && inventory.cluster && inventory.connectivity {
+                "noop"
+            } else {
+                "refuse-ready-incomplete"
+            };
+        }
+        if !inventory.snapshot {
+            "ensure-snapshot"
+        } else if !inventory.cluster {
+            "ensure-cluster"
+        } else if !inventory.connectivity {
+            "ensure-connectivity"
+        } else {
+            "mark-ready"
+        }
+    }
+
+    fn action_name(action: &ClusterLeaseAction) -> &'static str {
+        match action {
+            ClusterLeaseAction::EnsureSnapshot { .. } => "ensure-snapshot",
+            ClusterLeaseAction::EnsureCluster { .. } => "ensure-cluster",
+            ClusterLeaseAction::EnsureConnectivity { .. } => "ensure-connectivity",
+            ClusterLeaseAction::MarkReady => "mark-ready",
+            ClusterLeaseAction::DeleteConnectivity { .. } => "delete-connectivity",
+            ClusterLeaseAction::DeleteCluster { .. } => "delete-cluster",
+            ClusterLeaseAction::DeleteLease => "delete-lease",
+            ClusterLeaseAction::Refuse(ClusterLeaseDrift::ClusterWithoutSnapshot) => "refuse-cluster-without-snapshot",
+            ClusterLeaseAction::Refuse(ClusterLeaseDrift::ConnectivityWithoutCluster) => {
+                "refuse-connectivity-without-cluster"
+            }
+            ClusterLeaseAction::Refuse(ClusterLeaseDrift::ReadyLeaseIsIncomplete) => "refuse-ready-incomplete",
+            ClusterLeaseAction::Noop => "noop",
+        }
+    }
+
     proptest! {
         #[test]
         fn prop_valid_numbers_route(n in 1i32..=999_999_999) {
@@ -221,6 +402,100 @@ mod tests {
                 prop_assert_eq!(plan, None);
             }
         }
+        #[test]
+        fn prop_invalid_preview_number_or_postgres_major_is_refused(
+            number in any::<i32>(),
+            postgres_major in any::<u16>(),
+        ) {
+            let digest = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+            let plan = preview_cluster_plan(number, digest, postgres_major, digest);
+            if !(1..=999_999_999).contains(&number) || !(14..=18).contains(&postgres_major) {
+                prop_assert_eq!(plan, None);
+            }
+        }
+        #[test]
+        fn model_cluster_lease_reconciliation_matches_dependency_table(
+            phase in prop_oneof![Just(ClusterLeasePhase::Provisioning), Just(ClusterLeasePhase::Ready), Just(ClusterLeasePhase::Deleting)],
+            snapshots in prop::collection::vec(any::<bool>(), 1..32),
+            clusters in prop::collection::vec(any::<bool>(), 1..32),
+            connectivity in prop::collection::vec(any::<bool>(), 1..32),
+        ) {
+            let lease = lease(42, phase);
+            for ((snapshot, cluster), connectivity) in snapshots.into_iter().zip(clusters).zip(connectivity) {
+                let inventory = ClusterLeaseInventory { snapshot, cluster, connectivity };
+                let action = reconcile_cluster_lease(&lease, inventory);
+                prop_assert_eq!(action_name(&action), model_action(phase, inventory));
+            }
+        }
+    }
+
+    #[test]
+    // Spec example: an uninterrupted create must establish dependencies before publishing ready.
+    fn controller_walks_a_successful_lease_in_dependency_order() {
+        let mut lease = lease(42, ClusterLeasePhase::Provisioning);
+        let mut inventory = ClusterLeaseInventory::default();
+        assert!(matches!(reconcile_cluster_lease(&lease, inventory), ClusterLeaseAction::EnsureSnapshot { .. }));
+        inventory.snapshot = true;
+        assert!(matches!(reconcile_cluster_lease(&lease, inventory), ClusterLeaseAction::EnsureCluster { .. }));
+        inventory.cluster = true;
+        assert!(matches!(reconcile_cluster_lease(&lease, inventory), ClusterLeaseAction::EnsureConnectivity { .. }));
+        inventory.connectivity = true;
+        assert_eq!(reconcile_cluster_lease(&lease, inventory), ClusterLeaseAction::MarkReady);
+        lease.phase = ClusterLeasePhase::Ready;
+        assert_eq!(reconcile_cluster_lease(&lease, inventory), ClusterLeaseAction::Noop);
+    }
+
+    #[test]
+    // Spec example: closing a PR must not delete the shared snapshot.
+    fn controller_never_deletes_a_shared_snapshot_with_a_pr_lease() {
+        let mut lease = lease(42, ClusterLeasePhase::Provisioning);
+        lease.request_deletion();
+        let inventory = ClusterLeaseInventory { snapshot: true, cluster: true, connectivity: true };
+        assert!(matches!(reconcile_cluster_lease(&lease, inventory), ClusterLeaseAction::DeleteConnectivity { .. }));
+        let inventory = ClusterLeaseInventory { snapshot: true, cluster: true, connectivity: false };
+        assert!(matches!(reconcile_cluster_lease(&lease, inventory), ClusterLeaseAction::DeleteCluster { .. }));
+        let inventory = ClusterLeaseInventory { snapshot: true, cluster: false, connectivity: false };
+        assert_eq!(reconcile_cluster_lease(&lease, inventory), ClusterLeaseAction::DeleteLease);
+    }
+
+    #[test]
+    // Spec example: a changed fingerprint is staged while the ready preview remains attached.
+    fn controller_keeps_the_ready_lease_while_a_changed_fingerprint_is_a_candidate() {
+        let ready = lease(42, ClusterLeasePhase::Ready);
+        let mut changed = ready.plan.clone();
+        changed.fingerprint = "e".repeat(64);
+        changed.cluster = "thrust-preview-pr-42-eeeeeeeeeeee".to_owned();
+        changed.idempotency_key = format!("preview/42/{}", "e".repeat(64));
+        let candidate = ready.replacement_candidate(changed.clone());
+        assert_eq!(ready.phase, ClusterLeasePhase::Ready);
+        assert!(matches!(candidate, Some(PreviewClusterLease { phase: ClusterLeasePhase::Provisioning, .. })));
+
+        let deleting = lease(42, ClusterLeasePhase::Deleting);
+        assert_eq!(deleting.replacement_candidate(changed), None);
+    }
+
+    #[test]
+    fn model_cluster_lease_inventory_matrix_reaches_every_action_class() {
+        let phases = [ClusterLeasePhase::Provisioning, ClusterLeasePhase::Ready, ClusterLeasePhase::Deleting];
+        let values = [false, true];
+        let mut seen = Vec::new();
+        for phase in phases {
+            for snapshot in values {
+                for cluster in values {
+                    for connectivity in values {
+                        let action = reconcile_cluster_lease(
+                            &lease(42, phase),
+                            ClusterLeaseInventory { snapshot, cluster, connectivity },
+                        );
+                        let name = action_name(&action);
+                        if !seen.contains(&name) {
+                            seen.push(name);
+                        }
+                    }
+                }
+            }
+        }
+        assert_eq!(seen.len(), 11, "the model input matrix must reach every lease action and refusal class");
     }
     #[test]
     fn fuzz_replay_request_seeds() {
