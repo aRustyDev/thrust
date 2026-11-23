@@ -3,6 +3,10 @@
 
 // PROBE A (not to be merged): a comment only, so that the planner plans the server's jobs, `linux` among them, and no byte of the binary changes.
 
+// PROBE B (not to be merged): a break that exists only when debug assertions are off, so only a release build sees it. The contract cells, the mutants and the tests build in debug.
+#[cfg(not(debug_assertions))]
+compile_error!("PROBE B: a break that only the release profile sees");
+
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
