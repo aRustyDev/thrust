@@ -43,6 +43,12 @@ refuses unknown fields, forged derived names and malformed bytes, and contains n
 credentials nor Kubernetes/Cloudflare tokens. The existing fuzz target replays both a valid lease
 seed and malformed request inputs. It is not an authenticated network endpoint yet.
 
+The matching ready-only receipt format now names the derived per-cluster VPC service and
+Hyperdrive configuration and returns only their bounded opaque IDs plus the CNPG cluster UID.
+It validates the lease again and cannot carry a connection string or password. The controller
+must still verify those IDs against Cloudflare/CNPG before emitting it, and the deployment path
+must independently verify the receipt before binding a Preview.
+
 The active PR cluster must have controller-owned CPU/memory limits, `storage` and `walStorage`
 PVC capacities, a connection ceiling, and a dedicated namespace aggregate `ResourceQuota`. The
 last protects the preview fleet; the individual Cluster/PVC and Pod limits protect each Preview.

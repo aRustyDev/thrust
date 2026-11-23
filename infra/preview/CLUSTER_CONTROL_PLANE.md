@@ -32,6 +32,12 @@ key from the artifact/bootstrap digests and PostgreSQL major; it rejects any mis
 field. The document carries no secret and has no quota/profile field. Authentication, controller
 profile selection and receipt persistence remain server-side responsibilities.
 
+A `thrust.dev/preview-cluster-receipt/v1` document is accepted only for a ready lease. It repeats
+the validated lease, its derived VPC-service and Hyperdrive configuration names, and supplies
+only the CNPG cluster UID, VPC service ID and Hyperdrive ID. Those IDs are opaque identifiers,
+not credentials. Before emitting a receipt, the controller must verify each ID against the live
+resource and the lease; before deployment, the binding path must verify the receipt again.
+
 ## Controller boundary
 
 GitHub Actions remains without Kubernetes credentials. The Access-protected Cloudflare provisioner

@@ -3,7 +3,9 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 pub const CLUSTER_LEASE_API_VERSION: &str = "thrust.dev/preview-cluster-lease/v1";
+pub const CLUSTER_RECEIPT_API_VERSION: &str = "thrust.dev/preview-cluster-receipt/v1";
 const MAX_CLUSTER_LEASE_DOCUMENT_BYTES: usize = 4096;
+const MAX_CLUSTER_RECEIPT_DOCUMENT_BYTES: usize = 8192;
 
 /// An immutable plan for one preview's disposable database cluster.
 ///
@@ -20,6 +22,8 @@ pub struct PreviewClusterPlan {
     pub fingerprint: String,
     pub base_snapshot: String,
     pub cluster: String,
+    pub vpc_service: String,
+    pub hyperdrive: String,
     pub idempotency_key: String,
 }
 
@@ -50,6 +54,24 @@ pub struct PreviewClusterLease {
 struct ClusterLeaseDocument {
     api_version: String,
     lease: PreviewClusterLease,
+}
+
+/// A non-secret receipt an authenticated controller returns only after it has verified every
+/// named live resource. Deployment code uses it as a binding contract, not as a credential.
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct PreviewClusterReceipt {
+    pub lease: PreviewClusterLease,
+    pub cluster_uid: String,
+    pub vpc_service_id: String,
+    pub hyperdrive_id: String,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct ClusterReceiptDocument {
+    api_version: String,
+    receipt: PreviewClusterReceipt,
 }
 
 impl PreviewClusterLease {
@@ -97,6 +119,44 @@ pub fn encode_cluster_lease(lease: &PreviewClusterLease) -> Option<Vec<u8>> {
     serde_json::to_vec(&ClusterLeaseDocument {
         api_version: CLUSTER_LEASE_API_VERSION.to_owned(),
         lease: lease.clone(),
+    })
+    .ok()
+}
+
+/// Parses a bounded receipt and accepts it only when its lease is ready and all opaque platform
+/// identifiers are non-secret, bounded identifiers. The controller must perform the live API
+/// identity checks before it emits this receipt.
+pub fn parse_cluster_receipt(bytes: &[u8]) -> Option<PreviewClusterReceipt> {
+    if bytes.len() > MAX_CLUSTER_RECEIPT_DOCUMENT_BYTES {
+        return None;
+    }
+    let document: ClusterReceiptDocument = serde_json::from_slice(bytes).ok()?;
+    let receipt = document.receipt;
+    if document.api_version != CLUSTER_RECEIPT_API_VERSION
+        || receipt.lease.phase != ClusterLeasePhase::Ready
+        || !receipt.lease.plan.is_valid()
+        || !opaque_id(&receipt.cluster_uid)
+        || !opaque_id(&receipt.vpc_service_id)
+        || !opaque_id(&receipt.hyperdrive_id)
+    {
+        return None;
+    }
+    Some(receipt)
+}
+
+/// Encodes a validated, non-secret receipt for the Preview deployment path.
+pub fn encode_cluster_receipt(receipt: &PreviewClusterReceipt) -> Option<Vec<u8>> {
+    if receipt.lease.phase != ClusterLeasePhase::Ready
+        || !receipt.lease.plan.is_valid()
+        || !opaque_id(&receipt.cluster_uid)
+        || !opaque_id(&receipt.vpc_service_id)
+        || !opaque_id(&receipt.hyperdrive_id)
+    {
+        return None;
+    }
+    serde_json::to_vec(&ClusterReceiptDocument {
+        api_version: CLUSTER_RECEIPT_API_VERSION.to_owned(),
+        receipt: receipt.clone(),
     })
     .ok()
 }
@@ -205,6 +265,8 @@ pub fn preview_cluster_plan(
     let cluster_suffix = fingerprint.get(..12)?;
     let base_snapshot = format!("thrust-preview-base-pg{postgres_major}-{snapshot_suffix}");
     let cluster = format!("thrust-preview-pr-{number}-{cluster_suffix}");
+    let vpc_service = cluster.clone();
+    let hyperdrive = cluster.clone();
     let idempotency_key = format!("preview/{number}/{fingerprint}");
     Some(PreviewClusterPlan {
         number,
@@ -214,8 +276,15 @@ pub fn preview_cluster_plan(
         fingerprint,
         base_snapshot,
         cluster,
+        vpc_service,
+        hyperdrive,
         idempotency_key,
     })
+}
+
+fn opaque_id(value: &str) -> bool {
+    (1..=128).contains(&value.len())
+        && value.bytes().all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_')
 }
 
 impl PreviewClusterPlan {
@@ -327,6 +396,15 @@ mod tests {
             None => unreachable!(),
         };
         PreviewClusterLease { plan, phase }
+    }
+
+    fn receipt(number: i32) -> PreviewClusterReceipt {
+        PreviewClusterReceipt {
+            lease: lease(number, ClusterLeasePhase::Ready),
+            cluster_uid: "cnpg-cluster-uid-42".to_owned(),
+            vpc_service_id: "cloudflare-vpc-service-42".to_owned(),
+            hyperdrive_id: "cloudflare-hyperdrive-42".to_owned(),
+        }
     }
 
     fn model_action(phase: ClusterLeasePhase, inventory: ClusterLeaseInventory) -> &'static str {
@@ -495,6 +573,38 @@ mod tests {
             let _ = parse_cluster_lease(&bytes);
         }
         #[test]
+        fn prop_cluster_receipt_json_round_trips_ready_lease(
+            artifact in digest_strategy(),
+            bootstrap in digest_strategy(),
+            postgres_major in 14_u16..=18,
+            number in 1_i32..=999_999_999,
+            cluster_uid in "[A-Za-z0-9_-]{1,128}",
+            vpc_service_id in "[A-Za-z0-9_-]{1,128}",
+            hyperdrive_id in "[A-Za-z0-9_-]{1,128}",
+        ) {
+            let plan = preview_cluster_plan(number, &artifact, postgres_major, &bootstrap);
+            match plan {
+                Some(plan) => {
+                    let receipt = PreviewClusterReceipt {
+                        lease: PreviewClusterLease { plan, phase: ClusterLeasePhase::Ready },
+                        cluster_uid,
+                        vpc_service_id,
+                        hyperdrive_id,
+                    };
+                    let encoded = encode_cluster_receipt(&receipt);
+                    match encoded {
+                        Some(encoded) => prop_assert_eq!(parse_cluster_receipt(&encoded), Some(receipt)),
+                        None => prop_assert!(false, "valid receipt did not encode"),
+                    }
+                }
+                None => prop_assert!(false, "valid generated receipt inputs were refused"),
+            }
+        }
+        #[test]
+        fn prop_cluster_receipt_bytes_never_panic(bytes in proptest::collection::vec(any::<u8>(), 0..16384)) {
+            let _ = parse_cluster_receipt(&bytes);
+        }
+        #[test]
         fn model_cluster_lease_reconciliation_matches_dependency_table(
             phase in prop_oneof![Just(ClusterLeasePhase::Provisioning), Just(ClusterLeasePhase::Ready), Just(ClusterLeasePhase::Deleting)],
             snapshots in prop::collection::vec(any::<bool>(), 1..32),
@@ -587,6 +697,22 @@ mod tests {
     }
 
     #[test]
+    // Spec example: a receipt cannot make a provisioning lease deployable.
+    fn cluster_receipt_refuses_non_ready_lease() {
+        let mut receipt = receipt(42);
+        receipt.lease.phase = ClusterLeasePhase::Provisioning;
+        assert_eq!(encode_cluster_receipt(&receipt), None);
+        let document = serde_json::to_vec(&ClusterReceiptDocument {
+            api_version: CLUSTER_RECEIPT_API_VERSION.to_owned(),
+            receipt,
+        });
+        let Ok(document) = document else {
+            panic!("test receipt document must encode");
+        };
+        assert_eq!(parse_cluster_receipt(&document), None);
+    }
+
+    #[test]
     fn model_cluster_lease_inventory_matrix_reaches_every_action_class() {
         let phases = [ClusterLeasePhase::Provisioning, ClusterLeasePhase::Ready, ClusterLeasePhase::Deleting];
         let values = [false, true];
@@ -614,11 +740,13 @@ mod tests {
         for bytes in [
             include_bytes!("../fuzz/seeds/request/valid-json").as_slice(),
             include_bytes!("../fuzz/seeds/request/valid-lease.json").as_slice(),
+            include_bytes!("../fuzz/seeds/request/valid-receipt.json").as_slice(),
             include_bytes!("../fuzz/seeds/request/valid-path").as_slice(),
             b"".as_slice(),
         ] {
             let _ = password(bytes);
             let _ = parse_cluster_lease(bytes);
+            let _ = parse_cluster_receipt(bytes);
             if let Ok(path) = std::str::from_utf8(bytes) {
                 let _ = route("PUT", path);
             }
