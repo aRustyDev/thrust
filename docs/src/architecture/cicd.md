@@ -97,7 +97,7 @@ decides:
   `mutants` and `workers` jobs) and `build.yml` (the `linux` and `wasm` jobs), so a plan may name only some of a workflow's jobs: `clippy.toml` plans `lint` alone, `.shellcheckrc` plans `bash` alone, a guard of `deps` plans `deps`
   and `bash` (as does every shell script), a deploy script plans `ci-scripts` and `bash`, and `e2e/` plans `contract` alone. The cases (221 in `test-ci-scripts.sh`) include the seven scenarios of the gate spike
   (`.agents/plans/ci-workflows/research/0018-gate-spike.md`), each called workflow tried on its own.
-- **The wiring is tested against the real files.** `test_workflow_wiring.py` (239 checks, for six workflows) holds `ci.yml`, the
+- **The wiring is tested against the real files.** `test_workflow_wiring.py` (254 checks, for six workflows) holds `ci.yml`, the
   planner and each called workflow's file to each other: the calling job (`needs: changes`, it runs when `top` names it, it
   passes its own plan from `plans`), the gate's needs and its `VERDICT_JOBS`, the workflow's jobs and its `verdict` job
   (`always()`, checking out and calling the `verdict` action with its needs, its plan and its jobs, and running nothing of
@@ -106,14 +106,14 @@ decides:
   judge reads) and its output, set only after the judge. The workflow that holds `contract` is checked for the matrix and the cells it
   is given, its call of `contract-cell.yml`, and the cell job and cells it passes to the action; `ci.yml` for passing them, and its
   gate for judging no cells; and `ci.yml` for holding only `changes`, the calls and `gate`.
-- **Tested to be able to fail.** `.github/scripts/tests/mutate_gate.py`, one of the commands of the `ci-scripts` job, plants 379 hand
+- **Tested to be able to fail.** `.github/scripts/tests/mutate_gate.py`, one of the commands of the `ci-scripts` job, plants 403 hand
   mutants one at a time in `plan-ci.py`, `assert-gate.sh`, `ci.yml`, the called workflows and the `verdict` action, and each
   must fail the tests of its file (`test_plan_ci.py` and `test_workflow_wiring.py`; `test-ci-scripts.sh` under dash, stopping
   at the first failing case). The mutants of a called workflow are written once and made for each of them (and for each of its jobs, a workflow of several
   jobs getting the mutants only several can have). It
   refuses to answer when the tests fail on the unmutated files, when the text a mutant replaces is not found exactly once, or
   when a mutant no longer compiles, and fourteen mutants that change nothing must survive, so a driver that kills everything is
-  caught. `[verified 2026-11-23 locally, under dash: 379 killed, 14 survive]`
+  caught. `[verified 2026-11-23 locally, under dash, on the branch merged with main: 403 killed, 14 survive]`
 
 The point is that "nothing failed" is not accepted as "everything ran". A cell that never started leaves no check
 behind, and a required check that never reports blocks a pull request forever.

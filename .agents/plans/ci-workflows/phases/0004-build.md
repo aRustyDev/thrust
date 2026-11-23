@@ -385,7 +385,7 @@ It is a regression of #365, which moved `linux`'s steps into the action "with it
 | 1 PoC | #367's runs `45117864517` and `45119239892` | `windows` green on a real input, twice: 238 s and 290 s cold, both binaries `PE32+ x86-64`; the `exe` control (10 cases) |
 | 2 Prototype | #367 | the pull-request path trigger started it, on both heads of the pull request (the flat layout's run shows `save-cache: false` and `save-if: false` on a pull request, as it must); the night, the release-candidate push and the dispatch cannot run before the merge |
 | 3 Documented | #367 | `cicd.md`, `running.md` (rows and a runbook with the cache's silent failure), the workflows and actions indexes, the header comments |
-| 4 "MVP" | #367 | not in the gate, held by the wiring test (249 checks) and the mutants (399 of 399 killed, 14 that change nothing survive; the first run of the flat layout found one mutant whose text anchor my edit had moved, and it was fixed, not dropped); the workflow lint, `actionlint` and the shell guard over the action; `ci-commands.py` against `main` |
+| 4 "MVP" | #367 | not in the gate, held by the wiring test (249 checks, 254 with #366 merged in) and the mutants (399 of 399 killed, 403 of 403 with #366 merged in, 14 that change nothing survive; the first run of the flat layout found one mutant whose text anchor my edit had moved, and it was fixed, not dropped); the workflow lint, `actionlint` and the shell guard over the action; `ci-commands.py` against `main` |
 | 5 Caching | #367 | the finding above, the probe and the fix; **the save is read after the merge** |
 | 6, 7 | | as for `macos`: nothing to parallelise or minimise beyond the cache |
 
