@@ -1,7 +1,7 @@
 name: build-extended
 
-# The builds that are useful and are not required checks: a compile proof of the native server and `migrate` on macOS (Build phase, stage 3), and the targets
-# that follow it (a Windows and a BSD build, if the owner wants them here too). The owner's decision of 2026-11-23: "I'd prefer if macos build jobs weren't
+# The builds that are useful and are not required checks: a compile proof of the native server and `migrate` on macOS (Build phase, stage 3) and on Windows
+# (stage 4), and the targets that follow them (a BSD build, if the owner wants it here too). The owner's decision of 2026-11-23, about macOS: "I'd prefer if macos build jobs weren't
 # required checks. These are useful, but I see them as lower priority checks that should run during either a pre-release check or nightly."
 #
 # NOT GATED: `ci.yml` does not call this workflow, `gate` does not read it, and a red run blocks nothing (not a pull request, and not a release candidate:
@@ -16,6 +16,7 @@ name: build-extended
 #
 # The jobs are the build-native action's steps on a runner of their own: it checks that the compiler's host is the target the job claims, builds `thrust-server`
 # and `migrate` in release with the repository's commands, checks that both exist, and uploads them for three days. Nothing is published, signed or attested.
+# Each job sets Rust up ITSELF, before the action, with a cache key of its own: a cache is not saved when setup-rust is two composite actions deep.
 
 on:
   workflow_dispatch:
