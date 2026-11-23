@@ -1,11 +1,18 @@
 name: build-native
 description: >-
   A compile proof of the native server and the migration binary, in release, for the target of the runner it runs on: the steps that the jobs
-  `linux` and `macos` of build.yml (and the jobs for the targets that follow) share. It checks that the runner builds for the target the job
+  `linux` (build.yml), `macos` and `windows` (build-extended.yml) share. It checks that the runner builds for the target the job
   claims, builds `thrust-server` and `migrate`, checks that both binaries exist, and uploads them for three days. It publishes, signs and
   attests nothing, and holds no secret.
 
-# The caller checks the commit out first (persist-credentials: false). `runs-on` is the job's, not the action's.
+# The caller checks the commit out first (persist-credentials: false) and then sets Rust up itself, with setup-rust, naming its cache. `runs-on`
+# is the job's, not the action's.
+#
+# THIS ACTION MUST NOT CALL setup-rust, and that is measured, not a preference. It did, and the cache was never saved: a post step (rust-cache
+# saves in its post step) of an action that sits two composite actions deep gets the wrong inputs from the runner, so `save-if` is read as false
+# and the step returns without a word. Same action, same `save-if: true`, same exact cache hit on Linux: a job that called setup-rust itself
+# logged "Cache up-to-date." and this one logged nothing (runs 45108571272 and 45117020873); on macOS no entry was ever created, in two dispatches
+# on `main`. The runner issues are actions/runner#2009, #2030 and #3514, and devcontainers/ci#442. So each job calls setup-rust, one composite deep.
 #
 # The two build lines are the repository's: `thrust-server` under its [profile.release] (which is the Worker's: what an operator gets from
 # `cargo build --release`, and what the contract suite's `bench` and `scale` passes measure), and `migrate` with the command build-bundle builds
@@ -14,23 +21,24 @@ description: >-
 inputs:
   name:
     description: >-
-      The job's short name (linux, macos, ...). It keys the cache (`build-<name>`, saved on `main` only) and names the artifact, so two jobs
-      cannot share a cache or an artifact unless they share a name.
+      The job's short name (linux, macos, ...). It names the artifact (`build-<name>-<target>`), so two jobs cannot share an artifact unless
+      they share a name; the job's own setup-rust call keys the cache with the same name (`build-<name>`).
     required: true
   target:
     description: >-
       The Rust target triple the runner builds for (x86_64-unknown-linux-gnu, aarch64-apple-darwin, ...). The action checks it against the
       compiler's own host, so a job that landed on another runner fails instead of uploading binaries for the wrong target under this name.
     required: true
+  exe:
+    description: >-
+      The suffix of an executable on the target: empty everywhere but Windows, where it is `.exe`. A job that forgets it fails at the check that
+      both binaries exist, which names the file it looked for.
+    required: false
+    default: ""
 
 runs:
   using: composite
   steps:
-    - uses: ./.github/actions/setup-rust
-      with:
-        cache-key: build-${{ inputs.name }}
-        save-cache: ${{ github.ref == 'refs/heads/main' }}
-
     # The control against a proof of the wrong target: the name and the artifact say `target`, and only the compiler knows what it builds for.
     - name: The runner builds for the target
       shell: bash
@@ -54,19 +62,21 @@ runs:
     # The control against a vacuous build: a build that exits 0 and makes no binary must not pass.
     - name: The build made both binaries
       shell: bash
+      env:
+        EXE: ${{ inputs.exe }}
       run: |
         set -eu
         for bin in thrust-server migrate; do
-          test -x "target/release/$bin" || { echo "::error::cargo built nothing at target/release/$bin"; exit 1; }
+          test -x "target/release/$bin$EXE" || { echo "::error::cargo built nothing at target/release/$bin$EXE"; exit 1; }
         done
-        ls -l target/release/thrust-server target/release/migrate
+        ls -l "target/release/thrust-server$EXE" "target/release/migrate$EXE"
 
     - name: Upload the binaries
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
       with:
         name: build-${{ inputs.name }}-${{ inputs.target }}
         path: |
-          target/release/thrust-server
-          target/release/migrate
+          target/release/thrust-server${{ inputs.exe }}
+          target/release/migrate${{ inputs.exe }}
         if-no-files-found: error
         retention-days: 3
