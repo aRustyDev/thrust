@@ -4153,6 +4153,7 @@ dependencies = [
  "proptest",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "thrust-adapters-cloudflare",
  "thrust-adapters-postgres",
  "tokio-postgres",
