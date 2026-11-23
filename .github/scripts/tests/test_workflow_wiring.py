@@ -334,8 +334,13 @@ check(f"{native_action_path}: its input exe is optional and empty by default (on
 check(f"{native_action_path}: it checks that the runner's Rust host is the target the job claims, before it builds anything",
       "      env:\n        TARGET: ${{ inputs.target }}\n      run: |\n        set -eu\n        host=\"$(rustc -vV | sed -n 's/^host: //p')\"\n        test \"$host\" = \"$TARGET\" || { echo \""
       in native_action and 0 < native_action.find("The runner builds for the target") < native_action.find("Build thrust-server (release)"), True)
-check(f"{native_action_path}: its cache key is derived from the job's name, saved on main only",
-      "        cache-key: build-${{ inputs.name }}\n        save-cache: ${{ github.ref == 'refs/heads/main' }}\n" in native_action, True)
+# A post step (rust-cache saves the cache in its post step) of an action that sits two composite actions deep gets the wrong inputs from the runner, reads `save-if` as false and
+# returns without a word: the cache of `linux` stopped being saved when its steps moved into this action, and the macOS cache was never created (runs 45108571272 and 45117020873
+# against the flat `wasm` job's, on `main`). So the action must not call setup-rust, and each job must, one composite deep.
+check(f"{native_action_path}: it does not call setup-rust (two composites deep, the cache would never be saved)",
+      [l for l in native_action.splitlines() if "actions/setup-rust" in l and not l.strip().startswith("#")], [])
+check("the only composite actions that call setup-rust are build-bundle, which only restores a cache (its `save-cache` is its caller's input and defaults to false), and no other",
+      sorted(d for d in os.listdir(os.path.join(ROOT, ".github", "actions")) if "uses: ./.github/actions/setup-rust" in (read_text(f".github/actions/{d}/action.yml") or "")), ["build-bundle"])
 check(f"{native_action_path}: it uploads the binaries under the job's name and target, fails when there are none, and keeps them three days",
       "        name: build-${{ inputs.name }}-${{ inputs.target }}\n        path: |\n          target/release/thrust-server${{ inputs.exe }}\n          target/release/migrate${{ inputs.exe }}\n"
       "        if-no-files-found: error\n        retention-days: 3\n" in native_action, True)
@@ -343,8 +348,8 @@ check(f"{native_action_path}: it has no secret, no environment and no id-token: 
       [l for l in native_action.splitlines() if re.search(r"secrets\.|environment:|id-token|attestations|contents: write", l) and not l.strip().startswith("#")], [])
 all_text = "".join(read_text(f".github/workflows/{f}") or "" for f in sorted(os.listdir(os.path.join(ROOT, ".github", "workflows"))) if f.endswith(".yml"))
 all_text += "".join(read_text(f".github/actions/{d}/action.yml") or "" for d in sorted(os.listdir(os.path.join(ROOT, ".github", "actions"))) if os.path.isdir(os.path.join(ROOT, ".github", "actions", d)))
-check("the only cache key that begins with build- is the native action's, derived from a job's name (two jobs share a cache only if they share a name)",
-      re.findall(r"cache-key: (build-[^\n]+)", all_text), ["build-${{ inputs.name }}"])
+check("the cache keys that begin with build- are the native jobs' own, one each, which no other job uses",
+      sorted(re.findall(r"cache-key: (build-[^\n]+)", all_text)), sorted(f"build-{job}" for job in NATIVE))
 check("no two native jobs share a target (the artifact of each is named after its name and target)", sorted(v[2] for v in NATIVE.values()), sorted({v[2] for v in NATIVE.values()}))
 check("the native job that is a required check, linux, is a job of a called workflow, and macos is the job of none (it is not in the gate)",
       ([w for w, jobs in pc.WORKFLOWS.items() if "linux" in jobs], [w for w, jobs in pc.WORKFLOWS.items() if "macos" in jobs], "macos" in pc.JOBS), (["build"], [], False))
@@ -357,7 +362,9 @@ for job, (job_wf, runner, target, exe) in NATIVE.items():
     check(f"{job_path}: {job} calls build-native with its own name and target ({job}, {target}), after the checkout",
           f"      - uses: ./.github/actions/build-native\n        with:\n          name: {job}\n          target: {target}\n" + (f"          exe: {exe}\n" if exe else "") in job_block
           and ("exe:" not in job_block if not exe else True)
-          and 0 < job_block.find("uses: actions/checkout@") < job_block.find("uses: ./.github/actions/build-native"), True)
+          and 0 < job_block.find("uses: actions/checkout@") < job_block.find("uses: ./.github/actions/setup-rust") < job_block.find("uses: ./.github/actions/build-native"), True)
+    check(f"{job_path}: {job} sets Rust up itself, one composite deep, with a cache key of its own saved on main only",
+          f"      - uses: ./.github/actions/setup-rust\n        with:\n          cache-key: build-{job}\n          save-cache: ${{{{ github.ref == 'refs/heads/main' }}}}\n" in job_block, True)
     check(f"{job_path}: {job} has no step of its own that runs a command (the steps are the action's)",
           [l for l in job_block.splitlines() if re.match(r"^\s+(- )?run:", l)], [])
     check(f"{job_path}: {job} has no secret, no environment and no id-token: a compile proof publishes and attests nothing",

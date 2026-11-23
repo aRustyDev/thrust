@@ -45,9 +45,14 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # Rust is set up HERE and not in the action: a post step (the one that saves the cache) two composite actions deep gets the wrong inputs, and the cache
+      # was never saved (build-native's header has the measurement).
+      - uses: ./.github/actions/setup-rust
+        with:
+          cache-key: build-linux
+          save-cache: ${{ github.ref == 'refs/heads/main' }}
       # The steps are the action's (build-native), which the jobs of build-extended.yml (the targets that are not required checks: macos, and the ones that
-      # follow) share: they were written here first, and were an exact copy of what those need but for the runner, the cache key and the artifact's name,
-      # which are the job's inputs.
+      # follow) share: they were written here first, and were an exact copy of what those need but for the runner, the cache key and the artifact's name.
       - uses: ./.github/actions/build-native
         with:
           name: linux

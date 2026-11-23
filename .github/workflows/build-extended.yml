@@ -50,6 +50,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # Rust is set up here, one composite deep, so that its post step can save the cache (see the header of build-native).
+      - uses: ./.github/actions/setup-rust
+        with:
+          cache-key: build-macos
+          save-cache: ${{ github.ref == 'refs/heads/main' }}
       - uses: ./.github/actions/build-native
         with:
           name: macos
@@ -68,6 +73,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: ./.github/actions/setup-rust
+        with:
+          cache-key: build-windows
+          save-cache: ${{ github.ref == 'refs/heads/main' }}
       - uses: ./.github/actions/build-native
         with:
           name: windows
