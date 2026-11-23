@@ -170,7 +170,13 @@ async fn model_preview_migration_rejects_wrong_connection_and_privileges() {
     let db = fresh().await;
     let admin = db.conn.raw().await.unwrap();
     admin
-        .batch_execute("REVOKE CREATE ON SCHEMA public FROM PUBLIC; CREATE ROLE preview_extra NOLOGIN;")
+        .batch_execute(
+            "REVOKE CREATE ON SCHEMA public FROM PUBLIC; CREATE ROLE preview_extra NOLOGIN; \
+             CREATE SCHEMA preview_shared; CREATE TABLE preview_shared.data (n integer); \
+             CREATE TABLE public.preview_shared_data (n integer); CREATE SEQUENCE preview_shared.serial; \
+             CREATE FUNCTION preview_shared.elevated() RETURNS integer LANGUAGE sql SECURITY DEFINER AS 'SELECT 1'; \
+             REVOKE ALL ON FUNCTION preview_shared.elevated() FROM PUBLIC;",
+        )
         .await
         .unwrap();
     let port = db._container.get_host_port_ipv4(5432).await.unwrap();
@@ -202,6 +208,26 @@ async fn model_preview_migration_rejects_wrong_connection_and_privileges() {
             ),
             (format!("GRANT preview_extra TO {role}"), format!("REVOKE preview_extra FROM {role}")),
             (format!("ALTER SCHEMA {role} OWNER TO postgres"), format!("ALTER SCHEMA {role} OWNER TO {role}")),
+            // The preview must not inherit access to application data, even read-only access,
+            // from a shared or public schema.
+            (
+                format!("GRANT SELECT ON TABLE preview_shared.data TO {role}"),
+                format!("REVOKE SELECT ON TABLE preview_shared.data FROM {role}"),
+            ),
+            (
+                format!("GRANT SELECT ON TABLE public.preview_shared_data TO {role}"),
+                format!("REVOKE SELECT ON TABLE public.preview_shared_data FROM {role}"),
+            ),
+            (
+                format!("GRANT USAGE ON SEQUENCE preview_shared.serial TO {role}"),
+                format!("REVOKE USAGE ON SEQUENCE preview_shared.serial FROM {role}"),
+            ),
+            // An executable SECURITY DEFINER routine can run with an owner other than the
+            // preview role, so it is an elevation boundary even when table grants are absent.
+            (
+                format!("GRANT EXECUTE ON FUNCTION preview_shared.elevated() TO {role}"),
+                format!("REVOKE EXECUTE ON FUNCTION preview_shared.elevated() FROM {role}"),
+            ),
         ] {
             admin.batch_execute(&enable).await.unwrap();
             assert!(
