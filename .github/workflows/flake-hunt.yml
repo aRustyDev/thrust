@@ -64,7 +64,7 @@ jobs:
 
       # Before any build: the target and pass must be a cell of the matrix, and the iterations 1 to 50.
       - name: Validate inputs
-        run: .github/scripts/check-flake-hunt-cell.sh "$TARGET" "$PASS" "$ITER"
+        run: .github/scripts/check-flake-hunt-cell.sh "$TARGET" "$PASS" $ITER
 
       - uses: ./.github/actions/setup-rust
         with:
