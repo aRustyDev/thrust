@@ -255,13 +255,14 @@ jobs:
         run: sh .github/scripts/check-yaml.sh
 
   # The JSON the repository maintains (Lint phase, stage 3): that it parses, and that no object has a key twice, which no parser refuses (the last
-  # wins; jq and yq take it, measured) and which no check read: 29 of the 180 files are named by no script, workflow or source file (git grep). The check is
-  # .github/scripts/check-json.py, Python's own json module, which is on the image: biome 2.5.15 (which install-action offers) was measured on the
-  # runner and by default reads 178 of the 180 files and exits 0 (a file over 1 MiB is skipped with a warning, a lockfile is never read) and misses
-  # a key written twice with an escape, so it is not the check. The helper names the files (every tracked `*.json` less web/, the records of finished
-  # experiments and any node_modules/), and before it reads one runs a control: a key twice (also in an array, also spelled with an escape), a file
-  # that does not parse and NaN must be refused, an unstyled file, the same key in two objects and a number of 5,000 digits must pass. Nothing to
-  # install or pin: no Rust toolchain, no cache.
+  # wins; jq and yq take it, measured) and which no check read: 27 of the 180 files (22 skill evals, three configurations, two recorded
+  # measurements) are named by no script, workflow or source file (git grep). The check is .github/scripts/check-json.py, Python's own json
+  # module, which is on the image: biome 2.5.15 (which install-action offers) was measured on the runner and by default reads 178 of the 180
+  # files and exits 0 (a file over 1 MiB is skipped with a warning, a lockfile is never read) and misses a key written twice with an escape, so
+  # it is not the check. The helper names the files (every tracked `*.json` less web/, the records of finished experiments and any
+  # node_modules/), and before it reads one runs a control: a key twice (also in an array, also spelled with an escape), a file that does not
+  # parse and NaN must be refused, an unstyled file, the same key in two objects and a number of 5,000 digits must pass. Nothing to install or
+  # pin: no Rust toolchain, no cache.
   json:
     if: contains(fromJSON(inputs.plan), 'json')
     runs-on: ubuntu-24.04
