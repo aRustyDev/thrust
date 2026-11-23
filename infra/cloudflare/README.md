@@ -53,6 +53,16 @@ The `preview-control-plane` environment holds the independent runtime credential
 [preview-reconcile.yml](../../.github/workflows/preview-reconcile.yml) consumes those values to reconcile only
 same-repository previews.
 
+`preview-data-resources.sh` is the separately scoped controller for Preview R2 buckets and Queues. It is
+not wired to Actions yet. Before that happens, make `PREVIEW_DATA_API_TOKEN` available only in the protected
+`preview-control-plane` environment, with **Workers R2 Storage Write** and **Queues Write** for this account.
+It must not be the Hyperdrive token or a Worker deployment token. First inventory with
+`infra/cloudflare/preview-data-resources.sh list-pr` and explicitly remove or migrate every matching legacy resource; R2 and Queues do not expose an
+immutable owner field, so the `thrust-pr-<number>-{blobs,events}` prefix becomes reserved to this controller
+after cutover. `drop-pr` refuses a still-bound Queue and never deletes a nonempty bucket immediately: it adds
+only its one-day expiry rule, retries deletion on later reconciliations, and refuses to overwrite any other
+lifecycle rule. Run its generated hermetic controls with `python3 -I infra/cloudflare/test_preview_data_resources.py`.
+
 For a local, read-only validation only:
 
 ```bash
