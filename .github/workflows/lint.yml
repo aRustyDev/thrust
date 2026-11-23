@@ -1,7 +1,7 @@
 name: lint
 
-# The repository's guards, the Rust lint, the shell lint and the YAML lint, called by ci.yml (its `lint` job) and runnable alone (ADR-0102). ci.yml passes
-# `plan`, the jobs of this workflow that plan-ci.py says the change needs (`deps`, `lint`, `bash`, `yaml`: any of them); a run by hand plans all. The `verdict` job judges
+# The repository's guards, the Rust lint, the shell lint, the YAML lint and the JSON lint, called by ci.yml (its `lint` job) and runnable alone (ADR-0102). ci.yml passes
+# `plan`, the jobs of this workflow that plan-ci.py says the change needs (`deps`, `lint`, `bash`, `yaml`, `json`: any of them); a run by hand plans all. The `verdict` job judges
 # the jobs against that plan, so that a planned job that never ran turns ci.yml's `gate` red: a calling job is `success` when only some of
 # its jobs ran.
 
@@ -21,7 +21,7 @@ on:
       plan:
         description: JSON array of the jobs to run
         type: string
-        default: '["deps","lint","bash","yaml"]'
+        default: '["deps","lint","bash","yaml","json"]'
 
 permissions: {}
 
@@ -254,12 +254,34 @@ jobs:
       - name: yamllint (the control, then every maintained YAML file)
         run: sh .github/scripts/check-yaml.sh
 
+  # The JSON the repository maintains (Lint phase, stage 3): that it parses, and that no object has a key twice, which no parser refuses (the last
+  # wins; jq and yq take it, measured) and which no check read: 27 of the 180 files (22 skill evals, three configurations, two recorded
+  # measurements) are named by no script, workflow or source file (git grep). The check is .github/scripts/check-json.py, Python's own json
+  # module, which is on the image: biome 2.5.15 (which install-action offers) was measured on the runner and by default reads 178 of the 180
+  # files and exits 0 (a file over 1 MiB is skipped with a warning, a lockfile is never read) and misses a key written twice with an escape, so
+  # it is not the check. The helper names the files (every tracked `*.json` less web/, the records of finished experiments and any
+  # node_modules/), and before it reads one runs a control: a key twice (also in an array, also spelled with an escape), a file that does not
+  # parse and NaN must be refused, an unstyled file, the same key in two objects and a number of 5,000 digits must pass. Nothing to install or
+  # pin: no Rust toolchain, no cache.
+  json:
+    if: contains(fromJSON(inputs.plan), 'json')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: JSON (the control, then every maintained file)
+        run: python3 -I .github/scripts/check-json.py
+
   # ADR-0102: judges this workflow's jobs against the plan, through the action every called workflow uses (it runs assert-gate.sh and
   # sets the output only after that passed). `always()`, so it reports when a job was skipped, failed or cancelled. ci.yml's `gate`
   # requires the output: a `verdict` job that was itself skipped leaves this workflow `success` and proves nothing. The checkout is
   # here and not in the action, which is read from it.
   verdict:
-    needs: [deps, lint, bash, yaml]
+    needs: [deps, lint, bash, yaml, json]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -276,4 +298,4 @@ jobs:
         with:
           needs: ${{ toJSON(needs) }}
           plan: ${{ inputs.plan }}
-          jobs: deps lint bash yaml
+          jobs: deps lint bash yaml json

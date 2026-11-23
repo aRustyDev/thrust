@@ -50,7 +50,7 @@ def check(label, got, want):
         print(f"BAD  {label}: got {got!r}, wanted {want!r}")
 
 
-ALL_JOBS = {"ci-scripts", "deps", "lint", "bash", "yaml", "deny", "hermetic", "pg-adapter", "contract", "mutants", "workers", "linux", "wasm", "web", "docs"}
+ALL_JOBS = {"ci-scripts", "deps", "lint", "bash", "yaml", "json", "deny", "hermetic", "pg-adapter", "contract", "mutants", "workers", "linux", "wasm", "web", "docs"}
 CELLS = [
     "native-memory main", "native-memory oracle", "native-pg main", "native-pg oracle",
     "worker-memory main", "worker-cf main", "worker-cf oracle", "worker-cf e2e", "worker-cf e2e-mail",
@@ -272,9 +272,9 @@ check("the book runs only the docs job", run_plan(["docs/src/intro.md"], REAL_GR
 check("AGENTS.md, which the book includes, runs the docs job", run_plan(["AGENTS.md"], REAL_GRAPH), ({"docs"}, set()))
 check("the book's palette runs the docs job", run_plan([".config/branding/colors.css"], REAL_GRAPH), ({"docs"}, set()))
 check("README.md and the plans run nothing", run_plan(["README.md", ".agents/plans/x.md"], REAL_GRAPH), (set(), set()))
-check("the oracle's files run its cells and the tests that read them",
+check("the oracle's files run its cells and the tests that read them, and a JSON one the JSON lint",
       run_plan(["tools/oracle-v1/schema/openapi.v1.json"], REAL_GRAPH),
-      ({"hermetic", "deps", "contract"}, {"native-memory oracle", "native-pg oracle", "worker-cf oracle"}))
+      ({"hermetic", "deps", "contract", "json"}, {"native-memory oracle", "native-pg oracle", "worker-cf oracle"}))
 check("the deploy's CA root runs the TLS tests (hermetic) and ci-scripts", run_plan([".github/deploy/ca.pem"], REAL_GRAPH),
       ({"hermetic", "ci-scripts"}, set()))
 jobs, cells = run_plan(["crates/adapters/cloudflare/src/lib.rs"], REAL_GRAPH)
@@ -320,6 +320,27 @@ check("a composite action plans the shell lint and the YAML lint, with the workf
       {"bash", "yaml", "deps", "ci-scripts"} <= run_plan([".github/actions/deploy-worker/action.yml"], REAL_GRAPH)[0], True)
 check("a change to a crate and a YAML file plans the YAML lint with the crate's jobs",
       {"yaml", "hermetic"} <= run_plan(["crates/server/src/lib.rs", ".github/dependabot.yml"], REAL_GRAPH)[0], True)
+
+# The JSON lint (Lint phase, stage 3, the job `json`): a JSON file wherever it is, outside web/, plans it besides what the first matching rule says
+# (ALSO, as the shell and YAML lints do), and so does the check itself. The stock app's JSON (web/) is not ours, and no other kind of file plans it.
+for path in [".claude/settings.json", ".agents/config/gitnexus/gitnexusrc.json", ".agents/skills/mdbook/evals/evals.json", ".github/actions/triggerd/package.json",
+             ".github/actions/triggerd/test/fixtures/decisions.json", ".github/deploy/flagship/policy.json", "crates/api/compat-plane/x/y.json",
+             "crates/editor/doc/tests/corpus/corpus.json", "tools/oracle-v1/schema/openapi.v1.json", "tools/oracle-v1/results/m1/plane.gate.json",
+             "e2e/package.json", ".agents/plans/p/q.json", "tools/spike-0004/x.json", "a/b/c.json", "x.json", ".github/scripts/check-json.py"]:
+    check(f"{path} plans the JSON lint", "json" in run_plan([path], REAL_GRAPH)[0], True)
+for path in ["web/package.json", "web/apps/web/tsconfig.json", "web/pnpm-lock.yaml", "docs/src/intro.md", "crates/server/src/lib.rs", "deny.toml", "scripts/verify-all.sh",
+             "e2e/journeys/m1.spec.ts", ".github/dependabot.yml", "x.jsonc", "x.json5", "x.jsonl", "x.json.bak", "json.md", ".github/scripts/check-yaml.sh",
+             ".github/scripts/tests/test_check_json.py"]:
+    check(f"{path} does not plan the JSON lint", "json" in run_plan([path], REAL_GRAPH)[0], False)
+check("a JSON file no rule names plans the JSON lint and nothing else", run_plan([".claude/settings.json"], REAL_GRAPH), ({"json"}, set()))
+check("the JSON check plans the JSON lint, the helper tests and the workflow lint", run_plan([".github/scripts/check-json.py"], REAL_GRAPH),
+      ({"json", "ci-scripts", "deps"}, set()))
+check("the JSON check's test plans the helper tests and the workflow lint, and not the JSON lint", run_plan([".github/scripts/tests/test_check_json.py"], REAL_GRAPH),
+      ({"ci-scripts", "deps"}, set()))
+check("a JSON file a rule gives jobs keeps them, and adds the JSON lint", {"hermetic", "json"} <= run_plan(["crates/api/compat-plane/x/y.json"], REAL_GRAPH)[0], True)
+check("a JSON file a rule gives the deploy jobs keeps them", {"json", "ci-scripts", "deps"} <= run_plan([".github/deploy/flagship/policy.json"], REAL_GRAPH)[0], True)
+check("a change to a crate, a YAML file and a JSON file plans both data lints with the crate's jobs",
+      {"yaml", "json", "hermetic"} <= run_plan(["crates/server/src/lib.rs", ".github/dependabot.yml", ".claude/settings.json"], REAL_GRAPH)[0], True)
 # The `linux` job (Phase 3, stage 1) builds the native server and `migrate` in release (build.yml): planned when either crate is affected.
 check("the native server's own change plans linux", "linux" in run_plan(["crates/server/src/lib.rs"], REAL_GRAPH)[0], True)
 check("a crate the server depends on plans linux", "linux" in run_plan(["crates/core/usecases/src/lib.rs"], REAL_GRAPH)[0], True)
@@ -463,7 +484,7 @@ def independent_slices(planned, workflows, jobs):
 JOBS_LIST = list(pc.JOBS)
 # What WORKFLOWS holds today. Each stage of the migration edits this line, so the stage's change to the planner shows in this file,
 # and a mutant that empties the map is killed by it.
-EXPECTED_WORKFLOWS = {"documentation": ("docs",), "security": ("deny",), "web": ("web",), "lint": ("deps", "lint", "bash", "yaml"),
+EXPECTED_WORKFLOWS = {"documentation": ("docs",), "security": ("deny",), "web": ("web",), "lint": ("deps", "lint", "bash", "yaml", "json"),
                       "test": ("ci-scripts", "hermetic", "pg-adapter", "contract", "mutants", "workers"), "build": ("linux", "wasm")}
 check("WORKFLOWS is a partition of the jobs", refused(lambda: pc.check_workflows()), None)
 check("WORKFLOWS holds the workflows moved so far, and their jobs", pc.WORKFLOWS, EXPECTED_WORKFLOWS)

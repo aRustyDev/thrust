@@ -34,7 +34,8 @@ How a path decides (RULES, first match wins; a path that matches no rule needs n
     lockfile, the workflow and actions that run the matrix, and this planner and its gate.
   * besides all that (ALSO, which adds a job to what the first matching rule says): a shell script (a `*.sh` outside web/; the
     one script without the extension, scripts/rs, runs everything), .shellcheckrc or a composite action's action.yml (its run
-    blocks are shell) plans the job `bash`; a YAML file (a `*.yml` or `*.yaml` outside web/, .yamllint.yaml among them) plans the job `yaml`.
+    blocks are shell) plans the job `bash`; a YAML file (a `*.yml` or `*.yaml` outside web/, .yamllint.yaml among them) plans the job `yaml`;
+    a JSON file (a `*.json` outside web/) or the JSON check itself plans the job `json`.
 
 Then, from the changed crates C and the affected crates A (C and everything that depends on it):
   * C not empty: ci-scripts, deps, lint and hermetic (the whole workspace: they build it all anyway).
@@ -54,12 +55,12 @@ import json
 import re
 import sys
 
-JOBS = ("ci-scripts", "deps", "lint", "bash", "yaml", "deny", "hermetic", "pg-adapter", "contract", "mutants", "workers", "linux", "wasm", "web", "docs")
+JOBS = ("ci-scripts", "deps", "lint", "bash", "yaml", "json", "deny", "hermetic", "pg-adapter", "contract", "mutants", "workers", "linux", "wasm", "web", "docs")
 
 # The called workflow each job belongs to (ADR-0102): {workflow: (its jobs)}. A job in none is still a job of ci.yml itself. Every
 # migration stage moves its jobs in here; a job may be in one workflow only, and a name here must be one of JOBS (check_workflows).
 # ci.yml's `gate` lists these workflows too, as VERDICT_JOBS, and test_plan_ci.py holds the two equal.
-WORKFLOWS = {"documentation": ("docs",), "security": ("deny",), "web": ("web",), "lint": ("deps", "lint", "bash", "yaml"), "test": ("ci-scripts", "hermetic", "pg-adapter", "contract", "mutants", "workers"), "build": ("linux", "wasm")}
+WORKFLOWS = {"documentation": ("docs",), "security": ("deny",), "web": ("web",), "lint": ("deps", "lint", "bash", "yaml", "json"), "test": ("ci-scripts", "hermetic", "pg-adapter", "contract", "mutants", "workers"), "build": ("linux", "wasm")}
 
 # The binary each target of scripts/contract.sh starts. Everything a cell runs against is built from it.
 TARGET_BINARY = {
@@ -155,6 +156,8 @@ ALSO = [
     (r"^\.shellcheckrc$", "bash", "shellcheck's configuration"),
     (r"^\.github/actions/[^/]+/action\.yml$", "bash", "a composite action (shellcheck reads its run blocks)"),
     (r"^(?!web/).*\.ya?ml$", "yaml", "a YAML file (yamllint's job; .github/scripts/check-yaml.sh decides which it reads; .yamllint.yaml is one)"),
+    (r"^(?!web/).*\.json$", "json", "a JSON file (check-json.py's job; it decides which it reads)"),
+    (r"^\.github/scripts/check-json\.py$", "json", "the JSON check, which the json job runs over the tree"),
 ]
 ALSO_COMPILED = [(re.compile(p), job, why) for p, job, why in ALSO]
 

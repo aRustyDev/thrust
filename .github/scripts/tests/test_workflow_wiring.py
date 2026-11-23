@@ -488,6 +488,28 @@ if yaml_wf:
     check(f"{yaml_path}: {YAML_JOB} runs no other command than the install and the helper", len([l for l in yaml_code if re.match(r"^\s+run:", l)]), 2)
     check(f"{yaml_path}: {YAML_JOB} sets up no Rust toolchain and no cache of its own (it reads YAML)", [l for l in yaml_code if "setup-rust" in l or "rust-cache" in l or "actions/cache" in l], [])
 
+# The json job (Lint phase, stage 3) runs .github/scripts/check-json.py over the JSON the repository maintains. The helper is Python's own json module, which every runner image has, so
+# the job installs nothing and pins nothing; that is what can go wrong quietly. Four things about it can be wrong and leave the job looking healthy: a run that is not the helper (which
+# carries the control and the list of what is not ours), a helper run without -I (it would read PYTHON* variables and a site directory of the runner, and a different interpreter's idea
+# of JSON), a second step that is not the helper (a check that was added and never judged, or a tool installed to do the helper's work), and a setup that does not belong to a job that
+# reads JSON. Each is a line, checked as text.
+JSON_JOB = "json"
+json_wf = next((w for w, jobs in pc.WORKFLOWS.items() if JSON_JOB in jobs), None)
+check(f"the job {JSON_JOB} is a job of a called workflow", json_wf is not None, True)
+if json_wf:
+    json_path = f".github/workflows/{json_wf}.yml"
+    json_block = block(read_text(json_path) or "", JSON_JOB)
+    json_code = [l for l in json_block.splitlines() if not l.strip().startswith("#")]
+    check(f"{json_path}: {JSON_JOB} runs the helper in isolated mode, which carries the control, and not a parser by hand",
+          "        run: python3 -I .github/scripts/check-json.py\n" in json_block, True)
+    check(f"{json_path}: {JSON_JOB} runs no other command than the helper", len([l for l in json_code if re.match(r"^\s+run:", l)]), 1)
+    check(f"{json_path}: {JSON_JOB} uses no action but the checkout (nothing to install: the helper is Python's own json module)",
+          [l.strip() for l in json_code if "uses:" in l and "actions/checkout@" not in l], [])
+    check(f"{json_path}: {JSON_JOB} installs no tool of its own (a tool that does the helper's work is a second check)",
+          [l for l in json_code if re.search(r"install-action|setup-uv|setup-python|uv tool|pip install|npm |npx |biome|jq ", l)], [])
+    check(f"{json_path}: {JSON_JOB} sets up no Rust toolchain and no cache of its own (it reads JSON)", [l for l in json_code if "setup-rust" in l or "rust-cache" in l or "actions/cache" in l], [])
+    check(f"{json_path}: {JSON_JOB} names the helper that exists", os.path.exists(os.path.join(ROOT, ".github/scripts/check-json.py")), True)
+
 # The wasm job (Phase 3, stage 2) builds the two Workers the deploy bundle ships, in release, with the bundle's own commands, and shares the bundle's cache key so that the next
 # release candidate or tag restores what `main` saved. Six things about it can be wrong and leave the job green: a Worker built by another command than the bundle's (the proof would be of
 # something that does not ship), a Worker built in another directory, a check that looks at one of the Workers or one of the three files only (a build that wrote no wasm would pass), a cache key that
