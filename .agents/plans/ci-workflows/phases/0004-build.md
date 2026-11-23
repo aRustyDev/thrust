@@ -127,7 +127,7 @@ others follow; the one with a measured saving second; the probes, which cost not
 | # | Stage | Job (proposed) | Exists today as | What the passes have to settle | Status |
 |---|---|---|---|---|---|
 | 1 | linux | `linux` | `migrate` (release) in the bundle; `thrust-server` (debug) in the cells; `thrust-server` (release) only in the `bench` and `scale` passes | **The template**: `build.yml`, its `verdict`, `ci.yml`'s `build` call, `gate`'s `needs`, the planner's `JOBS`, `WORKFLOWS` and path rules, the wiring test and the mutants; what an artifact is; which triples (question 2) | **passes 1 to 7 done** (#352, merged 2026-11-23, and this record; [below](#stage-1-in-detail-linux-the-template)): the job is 134 s cold and 101 to 102 s with the cache (−24%), off every critical path; a break that only the release profile sees turned it, its `verdict` and `gate` red and nothing else (probe B), where every debug-built job stayed green |
-| 2 | wasm | `wasm` | the bundle's two `worker-build` runs (73 s and 17 s, after 106 s to install the tool), the cells' wrangler build, the provisioner's | whether the Workers are built once and shared or twice; **the `deploy-release` cache saved from `main`** (hypothesis above); installing `worker-build` as a prebuilt binary instead of compiling it; whether `wrangler` is needed in a build at all (the web action is not made here: the owner deferred it, see *Action candidates*) | **in progress** |
+| 2 | wasm | `wasm` | the bundle's two `worker-build` runs (73 s and 17 s, after 106 s to install the tool), the cells' wrangler build, the provisioner's | whether the Workers are built once and shared or twice; **the `deploy-release` cache saved from `main`** (hypothesis above); installing `worker-build` as a prebuilt binary instead of compiling it; whether `wrangler` is needed in a build at all (the web action is not made here: the owner deferred it, see *Action candidates*) | **passes 1 to 4 in #356** ([below](#stage-2-in-detail-wasm)): 238 s cold, 47% of it compiling `worker-build`; passes 5 to 7 (the warm time, and whether the bundle restores the cache) follow the merge |
 | 3 | macos | `macos` | nothing | the probe: does the server build on `aarch64-apple-darwin`, how long, what artifact; whether a cache fits the budget | not started |
 | 4 | windows | `windows` | nothing | the probe: does `ring` build on `x86_64-pc-windows-msvc`; the shell the steps run in (bash is on the runner) | not started |
 | 5 | docker | `docker` | nothing: no Dockerfile | question 3; an image built from a Dockerfile of the repository's, **not pushed** | not started |
@@ -199,6 +199,63 @@ Probe B is the stage's reason to exist, and the live control of the invariant th
 | 5 Caching | the dispatch `45096751902` on `main`, probe A's run `45095952963` | **Measured, and it pays: 134 s cold to 101 and 102 s warm (−24%).** The cold figure is #352's run (`build / linux`, "No cache found"); `main`'s own run of the merge took 167 s because it saved the cache (222.8 MB: `v0-rust-build-linux-Linux-x64-2fd77104-272d588c`). Warm, on `main` (dispatch of `build.yml` with the plan `["linux"]`, "Cache hit … full match") and on a pull request (probe A: **a pull request's run restores the cache `main` saved**, which the plan had listed as not yet measured): restore 4.3 s (the step total 17.7 s against 11.5 s, which had no download), the server build 86.5 s to 54.9 s, `migrate` 21.7 s to 13.6 s. The first real change after the merge, #353 (a fix in `thrust-adapters-postgres`, so `linux` was planned), took **89 s** on `main`'s push run `45097099843`. What the cache holds is the dependencies: the workspace's own crates are recompiled (`cache-workspace-crates` is off), and the fat LTO runs each time. The key is `rust-cache`'s own (prefix, `shared-key: build-linux`, the job, a hash of the Rust environment, a hash of the lockfile), and it changes with the lockfile: the repository's other caches show four generations of the same job's key (`209984db`, `e40323b1`, `7bbf394d`, `272d588c`). The repository's caches are 10,370 MiB of 10,240 with this entry in (26 entries), so it costs the oldest entry its place (the `mutants` cache of 2026-11-19, 708 MB, last used 11-20): kept, because 32 s of 134 is a saving no other job of the workflow gives |
 | 6 Parallelization | measured on the same runs | **No change.** The job is on no critical path (a full run: the e2e cell, 552 s; an affected-only run of a server change: `mutants` leg 0, 309 s), so making it shorter would shorten nothing. Its two commands share one `target/`, and a second job for `migrate` would pay the checkout and the setup (about 18 s) to save 13.6 s |
 | 7 CPU minimization | runner-seconds | **No change.** A planned `linux` costs 101 to 134 runner-seconds, about 2% of a full run's median (5,240 s, research 0020), and it is planned by crate, as the other jobs are. A rule that spared it for a change to a crate's tests would need the planner to tell a test file from a source file, which it does not (a crate's files are the crate), for a saving of the same 2%. Not done |
+
+### Stage 2 in detail: `wasm`
+
+**Purpose and use cases.** `wasm` proves that the two Workers the deploy bundle ships still build in **release** for `wasm32-unknown-unknown`, with the bundle's own commands, and keeps what it built for three days. It also holds the cache that the bundle's own build lacks. It runs for a pull request or a push that affects `thrust-worker` or `thrust-edge`, for a change of `build.yml` and for a full run, and alone by dispatching `build.yml` with the plan `["wasm"]`.
+
+**Acceptance.**
+1. It fails when the release build of either Worker fails, and when `worker-build` leaves a file out or writes it empty, shown by a control.
+2. A planned `wasm` that fails turns `build / verdict` and `gate` red: structurally (the wiring checks and the 28 new mutants); the live chain is stage 1's probe B, which runs through the same `verdict` job.
+3. It is planned exactly when `thrust-worker` or `thrust-edge` is affected, against an independent model.
+4. Its Worker and edge commands, and the files it checks, are the bundle's, held equal by the wiring test.
+5. Its cache key is the bundle's, saved on `main` only, and the bundle then restores it **(measured after the merge, below)**.
+
+**Steps** (`build.yml`): checkout; `setup-rust` (the toolchain, the target `wasm32-unknown-unknown`, `worker-build` and `wrangler` at the pinned versions, a `rust-cache` keyed `deploy-release`, saved on `main` only); `worker-build --release . --no-default-features` in `crates/worker`; `worker-build --release .` in `crates/edge`; a check that each wrote `worker/shim.mjs`, `index.js` and a non-empty `index_bg.wasm`; an upload of both `build/` directories as `build-wasm-wasm32-unknown-unknown` for three days.
+
+**What it costs** (run `45105438353` of #356, a full run, `build / wasm`; **cold**, as the run of every pull request is until `main` has saved the cache) [re-run: the job's log]:
+
+| Step | Seconds | Note |
+|---|---|---|
+| checkout | 5.8 | |
+| `setup-rust`: toolchain, `wasm32` target, cache restore | 13.8 | "No cache found." |
+| `cargo install worker-build --locked` | **110.7** | **47% of the job**; cargo: "Finished `release` profile in 1m 50s" |
+| `npm install --global wrangler` | 7.4 | no command of this job calls it (see pass 7) |
+| the Worker (`worker-build --release . --no-default-features`) | 74.1 | the Worker's cargo build 63 s, then `wasm-opt` and `esbuild` |
+| the edge Worker (`worker-build --release .`) | 16.9 | cargo 15.5 s |
+| the check, the upload | 2.6 | 1,917,864 bytes zipped |
+| **the job** | **238** | |
+
+What it shows:
+- **The numbers are the bundle's.** The bundle's own log (run `45084816796`, read above) has `worker-build` at 106 s, the Worker at 73 s, the edge at 17 s and `wrangler` at 7.5 s; this job has 111, 74, 17 and 7. The job is the bundle's build with a different caller, which is the point of holding the commands equal.
+- **Almost half of it is compiling a tool.** `worker-build` has no prebuilt binary to fetch instead: `workers-rs`'s releases (v0.9.0 down to v0.8.4) have **no assets** and the crate's manifest has no `binstall` metadata [re-run: `gh api` on the releases and the manifest]. In a warm Worker cell the same line takes 0.4 s and says "Ignored package `worker-build v0.9.0` is already installed", because `rust-cache` restored `~/.cargo/bin` [re-run: run `45094823898`'s `worker-memory main` cell]. So the cache is the only lever, and it works once something saves it.
+- **The Workers are small.** The Worker's `index_bg.wasm` is 5,212,316 bytes and the edge's 675,116; the artifact is 1.9 MB zipped.
+- **`worker-build` downloads three tools on a cold run** (`wasm-bindgen` 0.2.130, `wasm-opt` 133, `esbuild` 0.28.2; about 2 s in all by the log's timestamps). Whether they persist across runs outside the cache was not measured **[unverified]**.
+
+**Survey of public solutions.**
+
+| Candidate | Read from | Fit | Decision |
+|---|---|---|---|
+| `worker-build` | `workers-rs` v0.9.0 (pinned by `setup-rust`) | what the bundle, the wrangler configs and the preview provisioner's workflow already run | **chosen**; no prebuilt binary exists, so it is compiled and cached |
+| `taiki-e/install-action` | its README (search result) | installs tools from GitHub Releases, and falls back to `cargo-binstall` for a tool it does not list | rejected for `worker-build`: with no release asset to fetch, the fallback would compile it too **[derived: from the README; not run]** |
+| `cargo binstall` | the manifest and the releases above | fetches a prebuilt binary where a crate publishes one | rejected: `worker-build` publishes none |
+| `Swatinem/rust-cache` (`cache-bin`) | already used by `setup-rust` | restores `~/.cargo/bin` and `target/` | **chosen**: it is the lever, and the bundle's key was never saved |
+
+**Custom code, and why it has no built-in.** One piece: the check that `worker-build` wrote its files (two nested `for` loops and `test -s`). The bundle has the same six `test -s` lines. Whether `worker-build` can exit 0 and leave a file out I did not find documented either way **[unverified]**; the shim imports `../index.js`, which imports `index_bg.wasm`, so a missing file would fail at deploy and not at build, which is why both the bundle and this job check. Its control is the step's own text, taken from `build.yml` (`scratchpad/wasm-check-control.py`): it fails for each of the six files missing and each of the six empty, for one Worker only and for none, and passes for all six: **16 of 16 cases**.
+
+**Failure modes (pass 2).** A compile error in either Worker's release build (the cells do not build the edge at all, and build the Worker with the same command in the `worker-cf` cells); `worker-build` exiting 0 and writing a partial `build/` (the check); a version of `worker-build` that does not compile (pinned, and installed with `--locked`); a download of `wasm-bindgen`, `wasm-opt` or `esbuild` that fails (a network failure of the runner, as for every job); the cache entry evicted in a repository over its 10 GB limit (the install then compiles again, 238 s as above); a timeout of 30 minutes.
+
+**What this stage does not do.** It does not build the preview provisioner or the preview migration executor Workers: they are not in the bundle, and the provisioner's build is by its own manual workflow. It does not make the `worker-cf` cells take the Worker from this job (a build once and shared: about 10 builds of the same wasm, the owner's call, noted in the Test phase), and it does not change `build-bundle`.
+
+**Pass log (so far).**
+
+| Pass | Where | Evidence |
+|---|---|---|
+| 1 PoC | #356's run `45105438353` | `build / wasm` green on a real input (the commit itself), 238 s cold; the check's control (16 of 16) |
+| 2 Prototype | #356's run | on its real trigger (`workflow_call` from `ci.yml`, in a full run); the failure modes are above |
+| 3 Documented | #356 | `cicd.md`, `running.md` (a row and a runbook), the workflows index, the header comment of `build.yml` |
+| 4 MVP | #356 | in the gate: the planner's `JOBS` and `WORKFLOWS`, the verdict's `needs` and `jobs`; `test_plan_ci.py` 7058, `test_workflow_wiring.py` 208, `mutate_gate.py` **341 of 341 killed** (313 before), 12 that change nothing survive; `ci-commands.py` against `main`: `PARITY` (one job appears, the verdict's `jobs` line changes, none is gone); the 28 commands of `deps`, `deny`, `fmt` and clippy pass |
+| 5 to 7 | after the merge | **Not yet measured**: the cache this stage adds is saved on `main` only, so its first run on a pull request is cold. After the merge: the warm time of `wasm`, and whether the bundle restores the cache (a dry run of the bundle on a pull request that touches `build-bundle`) |
 
 ## Action candidates
 
