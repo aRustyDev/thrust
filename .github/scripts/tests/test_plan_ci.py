@@ -50,12 +50,13 @@ def check(label, got, want):
         print(f"BAD  {label}: got {got!r}, wanted {want!r}")
 
 
-ALL_JOBS = {"ci-scripts", "deps", "lint", "deny", "hermetic", "pg-adapter", "contract", "mutants", "workers", "web", "docs"}
+ALL_JOBS = {"ci-scripts", "deps", "lint", "deny", "hermetic", "pg-adapter", "contract", "mutants", "workers", "linux", "web", "docs"}
 CELLS = [
     "native-memory main", "native-memory oracle", "native-pg main", "native-pg oracle",
     "worker-memory main", "worker-cf main", "worker-cf oracle", "worker-cf e2e", "worker-cf e2e-mail",
 ]
 SERVER, WORKER, SUITE, PG = "thrust-server", "thrust-worker", "thrust-contract-tests", "thrust-adapters-selfhosted"
+POSTGRES = "thrust-adapters-postgres"  # the crate of the `migrate` binary, which the `linux` job builds with the server
 BINARY = {"native-memory": SERVER, "native-pg": SERVER, "worker-memory": WORKER, "worker-cf": WORKER}
 
 
@@ -144,6 +145,8 @@ def want_for_crates(changed, deps):
         jobs.add("mutants")
     if WORKER in hit:
         jobs.add("workers")
+    if SERVER in hit or POSTGRES in hit:
+        jobs.add("linux")
     cells = {c for c in CELLS if BINARY[c.split(" ")[0]] in hit or SUITE in changed}
     if cells:
         jobs.add("contract")
@@ -282,6 +285,18 @@ check("the native server's adapter does not", "workers" in run_plan(["crates/ada
 for path in ["scripts/wasm-tests.sh", "scripts/wasm-test-runner.sh", "scripts/lib/workerd-stubs.cjs"]:
     jobs, cells = run_plan([path], REAL_GRAPH)
     check(f"{path} runs the workers job and its test, and no cell", ({"workers", "ci-scripts"} <= jobs, cells), (True, set()))
+# The `linux` job (Phase 3, stage 1) builds the native server and `migrate` in release (build.yml): planned when either crate is affected.
+check("the native server's own change plans linux", "linux" in run_plan(["crates/server/src/lib.rs"], REAL_GRAPH)[0], True)
+check("a crate the server depends on plans linux", "linux" in run_plan(["crates/core/usecases/src/lib.rs"], REAL_GRAPH)[0], True)
+check("a Worker-only crate does not plan linux", "linux" in run_plan(["crates/adapters/cloudflare/src/lib.rs"], REAL_GRAPH)[0], False)
+check("the Worker itself does not plan linux", "linux" in run_plan(["crates/worker/src/lib.rs"], REAL_GRAPH)[0], False)
+check("a crate no binary depends on does not plan linux", "linux" in run_plan(["crates/editor/doc/src/lib.rs"], REAL_GRAPH)[0], False)
+# the crate of `migrate` alone: here the server does not depend on it, so only its own name can plan the job
+migrate_graph = dict(REAL_GRAPH, **{POSTGRES: {"thrust-contracts"}})
+migrate_layout = dict(ADR_0009, **{POSTGRES: "crates/adapters/postgres"})
+check("the crate of migrate plans linux where the server does not depend on it",
+      "linux" in run_plan(["crates/adapters/postgres/src/lib.rs"], migrate_graph, layout=migrate_layout)[0], True)
+check("the server's own change still plans it there", "linux" in run_plan(["crates/server/src/lib.rs"], migrate_graph, layout=migrate_layout)[0], True)
 jobs, cells = run_plan(["crates/adapters/selfhosted/src/lib.rs"], REAL_GRAPH)
 check("the self-hosted adapter runs the native cells, pg-adapter and mutants",
       (cells, {"pg-adapter", "mutants"} <= jobs), ({c for c in CELLS if c.startswith("native-")}, True))
@@ -311,7 +326,7 @@ if md.returncode == 0:
     check("every member's own file is that member's", sorted(d for d in dirs if pc.owner(f"{d}/src/lib.rs", dirs) != d), [])
     dir_of = {n: d for d, n in dirs.items()}
     check("REAL_GRAPH's crates are where ADR_0009 puts them", {n: dir_of.get(n) for n in ADR_0009}, ADR_0009)
-    for name in sorted({pc.SUITE, pc.PG_ADAPTER, pc.MUTANTS_BINARY, pc.WORKER, *pc.TARGET_BINARY.values()}):
+    for name in sorted({pc.SUITE, pc.PG_ADAPTER, pc.MUTANTS_BINARY, pc.WORKER, *pc.BUILD_CRATES, *pc.TARGET_BINARY.values()}):
         check(f"{name}, named by the planner, is a crate of the workspace", name in real, True)
     for n in sorted(real):
         jobs, sel, _ = pc.plan([f"{dir_of[n]}/src/lib.rs"], dirs, real, CELLS)
@@ -400,7 +415,7 @@ JOBS_LIST = list(pc.JOBS)
 # What WORKFLOWS holds today. Each stage of the migration edits this line, so the stage's change to the planner shows in this file,
 # and a mutant that empties the map is killed by it.
 EXPECTED_WORKFLOWS = {"documentation": ("docs",), "security": ("deny",), "web": ("web",), "lint": ("deps", "lint"),
-                      "test": ("ci-scripts", "hermetic", "pg-adapter", "contract", "mutants", "workers")}
+                      "test": ("ci-scripts", "hermetic", "pg-adapter", "contract", "mutants", "workers"), "build": ("linux",)}
 check("WORKFLOWS is a partition of the jobs", refused(lambda: pc.check_workflows()), None)
 check("WORKFLOWS holds the workflows moved so far, and their jobs", pc.WORKFLOWS, EXPECTED_WORKFLOWS)
 
@@ -451,7 +466,7 @@ check("slices refuses a map that is not a partition", refused(lambda: pc.slices(
 # ---- 9. the workflow files (ADR-0102) ---------------------------------------------------------------------------------------------
 # The files that run the checks `gate` waits for, today and as the migration adds them; and the ones that run no check, because they
 # have triggers of their own (the deploy and release flows, the schedules).
-CHECK_WORKFLOWS = ["ci", "contract-cell", "test", "lint", "documentation", "security", "web"]
+CHECK_WORKFLOWS = ["ci", "contract-cell", "test", "lint", "documentation", "security", "web", "build"]
 NO_CHECK_WORKFLOWS = ["deploy", "deep", "e2e", "flagship", "flake-hunt", "release", "release-plz", "cloudflare-infrastructure", "edge-infrastructure", "deploy-preview-provisioner", "enable-preview-provisioner", "preview-reconcile", "preview-migration-source", "preview-migration-verify"]
 for name in CHECK_WORKFLOWS:
     check(f".github/workflows/{name}.yml runs everything", run_plan([f".github/workflows/{name}.yml"], REAL_GRAPH), EVERYTHING)
@@ -515,9 +530,10 @@ check("cli: deny.toml alone plans the security workflow and no job of ci.yml",
       (["security"], ["security"], {"security": ["deny"]}))
 check("cli: deny.toml alone: jobs still names the job `deny`", json.loads(out.get("jobs", "null")), ["deny"])
 rc, out, _ = cli(changed="crates/server/Cargo.toml\n")
-check("cli: a crate's Cargo.toml plans the security workflow too, the lint workflow with both its jobs, and the test workflow, after the jobs still in ci.yml",
-      (json.loads(out.get("top", "null"))[-3:], json.loads(out.get("plans", "null")).get("security"),
-       json.loads(out.get("plans", "null")).get("lint")), (["security", "lint", "test"], ["deny"], ["deps", "lint"]))
+check("cli: the native server's Cargo.toml plans the security workflow too, the lint workflow with both its jobs, the test workflow and the build workflow, after the jobs still in ci.yml",
+      (json.loads(out.get("top", "null"))[-4:], json.loads(out.get("plans", "null")).get("security"),
+       json.loads(out.get("plans", "null")).get("lint"), json.loads(out.get("plans", "null")).get("build")),
+      (["security", "lint", "test", "build"], ["deny"], ["deps", "lint"], ["linux"]))
 # a workflow of two jobs can have a partial plan: only the job the change needs, and `verdict` expects the other to be skipped
 rc, out, _ = cli(changed="clippy.toml\n")
 check("cli: clippy.toml plans the lint workflow with the job `lint` alone",
@@ -535,7 +551,7 @@ check("cli: the book and deny.toml: both workflows, each with its own job",
       (["documentation", "security"], {"documentation": ["docs"], "security": ["deny"]}))
 rc, out, _ = cli(changed=".github/actions/verdict/action.yml\n")
 check("cli: a change to the verdict action runs everything, so every called workflow is called",
-      json.loads(out.get("workflows", "null")), ["documentation", "security", "web", "lint", "test"])
+      json.loads(out.get("workflows", "null")), ["documentation", "security", "web", "lint", "test", "build"])
 rc, out, _ = cli(changed="docs/src/intro.md\nweb/x.tsx\n")
 check("cli: the book and web/: the workflows, in the planner's order (no job is left in ci.yml)",
       json.loads(out.get("top", "null")), ["documentation", "web", "test"])

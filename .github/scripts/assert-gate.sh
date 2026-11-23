@@ -40,7 +40,7 @@ fail() {
 
 # The default of KNOWN_JOBS is what ci.yml's own `needs` must be, besides the planner job: the workflows it calls (the planner's `top` of
 # a full run, since no job is left in ci.yml; test-ci-scripts.sh holds the two equal).
-KNOWN="${KNOWN_JOBS:-documentation security web lint test}"
+KNOWN="${KNOWN_JOBS:-documentation security web lint test build}"
 # `-` and not `:-` for this one: set and empty means "there is none", and only unset means what ci.yml needs (the planner job).
 CHANGES="${CHANGES_JOB-changes}"
 # No cells unless the level says so: ci.yml's gate has none, so what it needs is none.
