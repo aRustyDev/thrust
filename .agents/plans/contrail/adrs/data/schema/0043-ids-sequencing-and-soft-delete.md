@@ -136,7 +136,7 @@ The daily hard delete (F-D10, D-001) is built: `run_retention` in `crates/core/u
 - The comment in the header of migration `0014` ("never deleted for good") is stale. It is part of that migration's checksum and is not
   edited; this note supersedes it. The two indexes the job reads by are migration 0021 (additive, so the preview path takes it).
 - **Not purged yet:** `projects`, `states`, `labels` and `assets` also carry `deleted_at`. The owner (2026-11-18) scoped #59 to work items and
-  the outbox; those four go to a follow-up issue, children before parents, with `project_sequences` of a purged project to decide.
+  the outbox; those four go to a follow-up issue, #348, children before parents, with `project_sequences` of a purged project to decide.
   Q-0043.2's "which tables" is answered for work items and the outbox here and open for those.
 
 ## Open Questions
